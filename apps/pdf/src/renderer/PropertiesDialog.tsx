@@ -3,6 +3,7 @@ import type { ReactElement } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { MetadataInput } from '../shared/ipc'
 import type { TFunc } from './i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 interface RawInfo {
   Title?: string
@@ -54,6 +55,7 @@ export function PropertiesDialog({
 }): ReactElement {
   const [info, setInfo] = useState<RawInfo | null>(null)
   const [form, setForm] = useState<MetadataInput>({})
+  const dialogRef = useModalDialog(onCancel)
 
   useEffect(() => {
     let cancelled = false
@@ -94,7 +96,14 @@ export function PropertiesDialog({
 
   return (
     <div className="pdf-modal-mask" onClick={onCancel}>
-      <div className="pdf-modal pdf-modal-wide" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="pdf-modal pdf-modal-wide"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('propsTitle')}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="pdf-modal-title">{t('propsTitle')}</div>
         {edit('title', t('propTitle'))}
         {edit('author', t('propAuthor'))}

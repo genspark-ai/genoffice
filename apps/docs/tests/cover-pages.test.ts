@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { COVER_PRESETS, buildCoverNodes, insertCoverPage } from '../src/renderer/editor/cover-pages'
+import {
+  COVER_END_MARK,
+  COVER_PRESETS,
+  COVER_START_MARK,
+  buildCoverNodes,
+  coverPageRange,
+  insertCoverPage,
+  removeCoverPage,
+} from '../src/renderer/editor/cover-pages'
 
 function createEditor(): Editor {
   return new Editor({
@@ -45,9 +53,7 @@ describe('buildCoverNodes', () => {
   it('maps styling onto paragraph attrs and text marks', () => {
     const preset = COVER_PRESETS.find((p) => p.id === 'banded')!
     const nodes = buildCoverNodes(preset)
-    const band = nodes.find(
-      (n) => n.content?.some((c) => c.text === '文档标题'),
-    )!
+    const band = nodes.find((n) => n.content?.some((c) => c.text === '\u6587\u6863\u6807\u9898'))!
     expect(band.attrs?.shadingFill).toBeTruthy()
     expect(band.attrs?.align).toBe('center')
     const marks = band.content![0].marks!
@@ -80,5 +86,62 @@ describe('insertCoverPage', () => {
       expect(all).toContain('文档标题')
       editor.destroy()
     }
+  })
+})
+
+describe('removeCoverPage', () => {
+  const texts = (editor: Editor) =>
+    (editor.getJSON().content ?? []).map(
+      (n) => n.content?.map((c) => ('text' in c ? c.text : '')).join('') ?? '',
+    )
+
+  it('is unavailable until a gallery cover exists', () => {
+    const editor = createEditor()
+    expect(coverPageRange(editor.state.doc)).toBeNull()
+    expect(removeCoverPage(editor)).toBe(false)
+    expect(texts(editor)).toEqual(['First body paragraph'])
+    editor.destroy()
+  })
+
+  it('marks the first cover paragraph and the trailing break with hidden bookmarks', () => {
+    const nodes = buildCoverNodes(COVER_PRESETS[0])
+    expect(nodes[0].attrs?.hiddenBookmarks).toEqual([COVER_START_MARK])
+    expect(nodes[nodes.length - 1].attrs?.hiddenBookmarks).toEqual([COVER_END_MARK])
+  })
+
+  it('removes exactly the inserted cover and its page break, keeping the body', () => {
+    const editor = createEditor()
+    insertCoverPage(editor, COVER_PRESETS[0])
+    expect(coverPageRange(editor.state.doc)).toEqual({
+      from: 0,
+      to: editor.state.doc.nodeSize - 2 - editor.state.doc.lastChild!.nodeSize,
+    })
+    expect(removeCoverPage(editor)).toBe(true)
+    expect(texts(editor)).toEqual(['First body paragraph'])
+    expect(coverPageRange(editor.state.doc)).toBeNull()
+    expect(editor.state.doc.firstChild!.attrs.pageBreakBefore).toBe(false)
+    editor.destroy()
+  })
+
+  it('survives edits inside the cover: the range follows the markers, not the preset shape', () => {
+    const editor = createEditor()
+    insertCoverPage(editor, COVER_PRESETS[0])
+    const titlePos = editor.state.doc.resolve(editor.state.doc.child(0).nodeSize + 1).end()
+    editor.chain().setTextSelection(titlePos).insertContent(' edited').splitBlock().run()
+    expect(removeCoverPage(editor)).toBe(true)
+    expect(texts(editor)).toEqual(['First body paragraph'])
+    editor.destroy()
+  })
+
+  it('inserting another cover replaces the current one instead of stacking', () => {
+    const editor = createEditor()
+    insertCoverPage(editor, COVER_PRESETS[0])
+    insertCoverPage(editor, COVER_PRESETS[1])
+    const all = texts(editor)
+    expect(all.filter((t) => t.includes('\u6587\u6863\u6807\u9898'))).toHaveLength(1)
+    expect(all[all.length - 1]).toBe('First body paragraph')
+    expect(removeCoverPage(editor)).toBe(true)
+    expect(texts(editor)).toEqual(['First body paragraph'])
+    editor.destroy()
   })
 })

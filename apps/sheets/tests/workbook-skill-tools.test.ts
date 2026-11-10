@@ -7,7 +7,8 @@ import {
   type SheetsSkillDeps,
   type ToolExecution,
 } from '../src/renderer/ai/tools'
-import type { ChangePlan } from '../src/domain/workbook.types'
+import { getActiveSheetInfo } from '../src/renderer/ai/workbook-readers'
+import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
 
 function call(name: string, input: Record<string, unknown>) {
   return { id: 'call-1', name, input }
@@ -38,6 +39,10 @@ function fakeDeps(overrides: Partial<SheetsSkillDeps> = {}): SheetsSkillDeps {
     readCells: () => ({}),
     readFormats: () => ({}),
     readSheetFeatures: () => 'Feature state of sheet Sheet1 (id=sheet-1):\nAutoFilter: none',
+    findCells: () => ({ matches: [], truncated: false, incompleteSheets: [] }),
+    selectRange: () => ({ ok: true, sheetName: 'Sheet1' }),
+    tracePrecedents: () => ({ refs: [] }),
+    traceDependents: () => ({ dependents: [], truncated: false, incompleteSheets: [] }),
     proposeOperations: () => ({ ok: false, error: 'not configured' }),
     ...overrides,
   }
@@ -140,6 +145,242 @@ describe('buildWorkbookContext', () => {
   })
 })
 
+describe('getActiveSheetInfo: the run selection scope', () => {
+  const SHEETS = [
+    { id: 'sh1', name: 'Data', cells: { A1: {} } },
+    { id: 'sh2', name: 'My Summary', cells: {} },
+  ]
+
+  function demoReadContext(
+    liveSelection: string | null,
+    activeSheetId = 'sh1',
+  ): Parameters<typeof getActiveSheetInfo>[0] {
+    const worksheet = (id: string) => ({
+      getSheetId: () => id,
+      getSheetName: () => SHEETS.find((sheet) => sheet.id === id)?.name ?? '',
+      getMergedRanges: () => [],
+    })
+    return {
+      univerRef: {
+        current: {
+          univerAPI: {
+            getActiveWorkbook: () => ({
+              getActiveRange: () =>
+                liveSelection === null ? null : { getA1Notation: () => liveSelection },
+              getActiveSheet: () => worksheet(activeSheetId),
+              getSheetBySheetId: (id: string) =>
+                SHEETS.some((sheet) => sheet.id === id) ? worksheet(id) : null,
+              getSheets: () => SHEETS.map((sheet) => worksheet(sheet.id)),
+            }),
+          },
+        },
+      },
+      lazyWorkbookRef: { current: null },
+      adapterRef: { current: { getSnapshot: () => ({ revision: 3, sheets: SHEETS }) } },
+    } as unknown as Parameters<typeof getActiveSheetInfo>[0]
+  }
+
+  it('reports the live selection when no run owns a scope', () => {
+    const info = getActiveSheetInfo(demoReadContext('B2:B50'))
+    expect(info.selection).toBe('B2:B50')
+    expect(info.selectionFrozen).toBeUndefined()
+    expect(buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))).toContain(
+      'Current selection: B2:B50',
+    )
+  })
+
+  it('keeps the send-time snapshot while the user clicks elsewhere mid-run', () => {
+    const info = getActiveSheetInfo(demoReadContext('D9'), { a1: 'B2:B50', sheetId: 'sh1' })
+    expect(info.selection).toBe('B2:B50')
+    expect(info.selectionFrozen).toBe(true)
+    const text = buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))
+    expect(text).toContain('User selection: B2:B50')
+    expect(text).toContain('captured when the user sent this message')
+    expect(text).not.toContain('D9')
+  })
+
+  it('qualifies a snapshot taken on a sheet that is no longer active', () => {
+    const info = getActiveSheetInfo(demoReadContext('A1', 'sh1'), {
+      a1: 'B2:D9',
+      sheetId: 'sh2',
+    })
+    expect(info.selection).toBe('My Summary!B2:D9')
+  })
+
+  it('names the columns a whole-column scope covers', () => {
+    const info = getActiveSheetInfo(demoReadContext('D9'), {
+      a1: 'B1:B417',
+      sheetId: 'sh1',
+      columns: ['Amount'],
+    })
+    expect(info.selectionColumns).toEqual(['Amount'])
+    const text = buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))
+    expect(text).toContain('User selection: B1:B417 (the whole "Amount" column) — captured')
+  })
+
+  it('pluralizes a scope covering several columns', () => {
+    const info = getActiveSheetInfo(demoReadContext('D9'), {
+      a1: 'B1:C417',
+      sheetId: 'sh1',
+      columns: ['Amount', 'Qty'],
+    })
+    expect(buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))).toContain(
+      '(the whole "Amount", "Qty" columns)',
+    )
+  })
+
+  it('reports no selection at all once the user drops the scope', () => {
+    const info = getActiveSheetInfo(demoReadContext('B2:B50'), null)
+    expect(info.selection).toBeUndefined()
+    expect(info.selectionFrozen).toBeUndefined()
+    expect(buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))).not.toContain(
+      'selection',
+    )
+  })
+})
+
+describe('getActiveSheetInfo: lazy extents after structural ops', () => {
+  function lazyReadContext(
+    structuralOps: Map<string, unknown[]>,
+  ): Parameters<typeof getActiveSheetInfo>[0] {
+    const worksheet = {
+      getSheetId: () => 'sh1',
+      getSheetName: () => 'Data',
+      getMergedRanges: () => [],
+    }
+    return {
+      univerRef: {
+        current: {
+          univerAPI: {
+            getActiveWorkbook: () => ({
+              getActiveRange: () => null,
+              getActiveSheet: () => worksheet,
+              getSheets: () => [worksheet],
+            }),
+          },
+        },
+      },
+      lazyWorkbookRef: {
+        current: {
+          file: {
+            sessionId: 'session-1',
+            visuals: [],
+            sheets: [{ id: 'sh1', name: 'Data', rowCount: 100, columnCount: 8 }],
+          },
+          loadedRanges: new Map(),
+          editJournal: { visualAdds: [], structuralOps },
+        },
+      },
+      adapterRef: { current: { getSnapshot: () => ({ revision: 0, sheets: [] }) } },
+    } as unknown as Parameters<typeof getActiveSheetInfo>[0]
+  }
+
+  it('reports the screen extent, not the stale file extent', () => {
+    const info = getActiveSheetInfo(
+      lazyReadContext(
+        new Map([
+          [
+            'sh1',
+            [
+              { kind: 'insert-rows', index: 10, count: 5 },
+              { kind: 'remove-cols', index: 0, count: 2 },
+            ],
+          ],
+        ]),
+      ),
+    )
+    expect(info.sheets[0]).toMatchObject({ id: 'sh1', rows: 105, columns: 6 })
+    const text = buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))
+    expect(text).toContain('A1:F105')
+  })
+
+  it('reports a zero extent as empty, not unknown', () => {
+    const info = getActiveSheetInfo(
+      lazyReadContext(new Map([['sh1', [{ kind: 'remove-rows', index: 0, count: 100 }]]])),
+    )
+    expect(info.sheets[0]).toMatchObject({ id: 'sh1', rows: 0, columns: 8 })
+    const text = buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))
+    expect(text).toContain('no data (empty sheet)')
+    expect(text).not.toContain('data extent about')
+  })
+
+  it('matches the file extent when no structural ops ran', () => {
+    const info = getActiveSheetInfo(lazyReadContext(new Map()))
+    expect(info.sheets[0]).toMatchObject({ id: 'sh1', rows: 100, columns: 8 })
+  })
+})
+
+describe('executeWorkbookTool: aggregate_range', () => {
+  it('rejects a missing/unparsable range and oversize ranges', async () => {
+    const deps = fakeDeps({ aggregateRange: vi.fn() })
+    expect((await executeWorkbookTool(call('aggregate_range', {}), deps)).isError).toBe(true)
+    expect(
+      (await executeWorkbookTool(call('aggregate_range', { range: 'nope' }), deps)).isError,
+    ).toBe(true)
+    const oversize = await executeWorkbookTool(
+      call('aggregate_range', { range: 'A1:ZZ99999' }),
+      deps,
+    )
+    expect(oversize.isError).toBe(true)
+    expect(oversize.output).toContain('one column')
+    expect(deps.aggregateRange).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unknown sheetId instead of falling back to another sheet', async () => {
+    const deps = fakeDeps({ aggregateRange: vi.fn() })
+    const result = await executeWorkbookTool(
+      call('aggregate_range', { range: 'A1:A10', sheetId: 'sheet-9' }),
+      deps,
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('Unknown sheet: sheet-9')
+    expect(deps.aggregateRange).not.toHaveBeenCalled()
+  })
+
+  it('formats the aggregate returned by the dep', async () => {
+    const aggregateRange = vi.fn().mockResolvedValue({
+      ok: true,
+      aggregate: {
+        cells: 88_587,
+        nonEmpty: 88_587,
+        distinct: 312,
+        numericCount: 0,
+        sum: 0,
+        min: null,
+        max: null,
+        average: null,
+        topValues: [
+          { value: '供应商A', count: 900 },
+          { value: '供应商B', count: 800 },
+        ],
+      },
+    })
+    const result = await executeWorkbookTool(
+      call('aggregate_range', { range: 'D2:D88588', sheetId: 'sheet-1', topValues: 1 }),
+      fakeDeps({ aggregateRange }),
+    )
+    expect(result.isError).toBeUndefined()
+    expect(aggregateRange).toHaveBeenCalledWith(
+      'sheet-1',
+      expect.objectContaining({ startRow: 1, endRow: 88_587, startColumn: 3, endColumn: 3 }),
+    )
+    expect(result.output).toContain('distinct values: 312')
+    expect(result.output).toContain('供应商A: 900')
+    expect(result.output).not.toContain('供应商B')
+  })
+
+  it('propagates dep errors as tool errors', async () => {
+    const result = await executeWorkbookTool(
+      call('aggregate_range', { range: 'D2:D10' }),
+      fakeDeps({
+        aggregateRange: vi.fn().mockResolvedValue({ ok: false, error: 'still indexing' }),
+      }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('still indexing')
+  })
+})
+
 describe('executeWorkbookTool: read_range', () => {
   it('rejects a missing or unparsable range', () => {
     expect(execSync(call('read_range', {}), fakeDeps()).isError).toBe(true)
@@ -182,7 +423,7 @@ describe('executeWorkbookTool: read_range', () => {
       B2: { value: null, formula: '=SUM(C1:C9)' },
     })
     const result = execSync(call('read_range', { range: 'A1:B2' }), fakeDeps({ readCells }))
-    expect(readCells).toHaveBeenCalledWith(['A1', 'B1', 'A2', 'B2'])
+    expect(readCells).toHaveBeenCalledWith(['A1', 'B1', 'A2', 'B2'], undefined)
     const lines = result.output.split('\n')
     expect(lines[0]).toContain('requested range A1:B2')
     expect(lines[0]).toContain('Do not infer total rows')
@@ -190,6 +431,28 @@ describe('executeWorkbookTool: read_range', () => {
     expect(lines[2]).toBe('1\tName\tTotal')
     expect(lines[3]).toBe('2\t\t=SUM(C1:C9)')
     expect(result.mutated).toBe(false)
+  })
+
+  it('reads a non-active sheet when sheetId is given', () => {
+    const readCells = vi.fn().mockReturnValue({ A1: { value: 'from summary' } })
+    const result = execSync(
+      call('read_range', { range: 'A1', sheetId: 'sheet-2' }),
+      fakeDeps({ readCells }),
+    )
+    expect(readCells).toHaveBeenCalledWith(['A1'], 'sheet-2')
+    expect(result.isError).toBeFalsy()
+    expect(result.output).toContain('from summary')
+  })
+
+  it('rejects an unknown sheetId with a clear error', () => {
+    const readCells = vi.fn()
+    const result = execSync(
+      call('read_range', { range: 'A1', sheetId: 'nope' }),
+      fakeDeps({ readCells }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('Unknown sheet: nope')
+    expect(readCells).not.toHaveBeenCalled()
   })
 
   it('escapes control characters in cell text so each grid row stays one physical line', () => {
@@ -313,7 +576,7 @@ describe('executeWorkbookTool: read_formats', () => {
       B2: { numberFormat: '0.00%', border: { type: 'all' } },
     })
     const result = execSync(call('read_formats', { range: 'A1:B2' }), fakeDeps({ readFormats }))
-    expect(readFormats).toHaveBeenCalledWith(['A1', 'B1', 'A2', 'B2'])
+    expect(readFormats).toHaveBeenCalledWith(['A1', 'B1', 'A2', 'B2'], undefined)
     expect(result.output).toContain('A1: bold, fill #FFF2CC')
     expect(result.output).toContain('B2: number format 0.00%, border all')
   })
@@ -341,6 +604,42 @@ describe('executeWorkbookTool: read_sheet_features', () => {
     execSync({ id: '2', name: 'read_sheet_features', input: { sheetId: 'sheet-2' } }, deps)
     expect(seen).toEqual([undefined, 'sheet-2'])
   })
+
+  it('rejects an unknown sheetId before reading', () => {
+    const readSheetFeatures = vi.fn()
+    const result = execSync(
+      { id: '1', name: 'read_sheet_features', input: { sheetId: 'nope' } },
+      fakeDeps({ readSheetFeatures }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('Unknown sheet: nope')
+    expect(readSheetFeatures).not.toHaveBeenCalled()
+  })
+
+  it('streams the sheet in before reading grid-backed feature models', async () => {
+    const readSheetFeatures = vi.fn().mockReturnValue('AutoFilter: A1:C9')
+    const ensureRangeLoaded = vi.fn().mockResolvedValue(true)
+    const result = await executeWorkbookTool(
+      { id: '1', name: 'read_sheet_features', input: { sheetId: 'sheet-2' } },
+      fakeDeps({ readSheetFeatures, ensureRangeLoaded }),
+    )
+    expect(ensureRangeLoaded).toHaveBeenCalledWith(
+      { startRow: 0, endRow: 0, startColumn: 0, endColumn: 0 },
+      'sheet-2',
+    )
+    expect(result.output).toContain('AutoFilter: A1:C9')
+  })
+
+  it('fails closed when the sheet cannot be streamed in', async () => {
+    const readSheetFeatures = vi.fn()
+    const ensureRangeLoaded = vi.fn().mockResolvedValue(false)
+    const result = await executeWorkbookTool(
+      { id: '1', name: 'read_sheet_features', input: {} },
+      fakeDeps({ readSheetFeatures, ensureRangeLoaded }),
+    )
+    expect(result.isError).toBe(true)
+    expect(readSheetFeatures).not.toHaveBeenCalled()
+  })
 })
 
 describe('executeWorkbookTool: read_cells', () => {
@@ -358,11 +657,62 @@ describe('executeWorkbookTool: read_cells', () => {
       call('read_cells', { addresses: ['A1', 'B1', 'C1'] }),
       fakeDeps({ readCells }),
     )
-    expect(readCells).toHaveBeenCalledWith(['A1', 'B1', 'C1'])
+    expect(readCells).toHaveBeenCalledWith(['A1', 'B1', 'C1'], undefined)
     expect(result.output).toContain('A1: 42')
     expect(result.output).toContain('B1: =SUM(A1:A10)')
     expect(result.output).toContain('C1: (unknown)')
     expect(result.mutated).toBe(false)
+  })
+
+  it('ensures the covering range of the addresses is streamed in before reading', async () => {
+    const readCells = vi.fn().mockReturnValue({ B2: { value: 1 }, D5: { value: 2 } })
+    const ensureRangeLoaded = vi.fn().mockResolvedValue(true)
+    const result = await executeWorkbookTool(
+      call('read_cells', { addresses: ['B2', 'D5'], sheetId: 'sheet-2' }),
+      fakeDeps({ readCells, ensureRangeLoaded }),
+    )
+    expect(ensureRangeLoaded).toHaveBeenCalledWith(
+      { startRow: 1, endRow: 4, startColumn: 1, endColumn: 3 },
+      'sheet-2',
+    )
+    expect(result.output).toContain('B2: 1')
+    expect(readCells).toHaveBeenCalledWith(['B2', 'D5'], 'sheet-2')
+  })
+
+  it('reads wide scatters when no streaming is needed (ensure returns true)', async () => {
+    const readCells = vi.fn().mockReturnValue({ A1: { value: 1 }, ZZ9999: { value: 2 } })
+    const ensureRangeLoaded = vi.fn().mockResolvedValue(true)
+    const result = await executeWorkbookTool(
+      call('read_cells', { addresses: ['A1', 'ZZ9999'] }),
+      fakeDeps({ readCells, ensureRangeLoaded }),
+    )
+    expect(result.isError).toBeFalsy()
+    expect(result.output).toContain('A1: 1')
+    expect(result.output).toContain('ZZ9999: 2')
+  })
+
+  it('tells the model to cluster its reads when the covering box cannot load', async () => {
+    const readCells = vi.fn()
+    const ensureRangeLoaded = vi.fn().mockResolvedValue(false)
+    const result = await executeWorkbookTool(
+      call('read_cells', { addresses: ['A1', 'ZZ9999'] }),
+      fakeDeps({ readCells, ensureRangeLoaded }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('closer-together read_cells calls')
+    expect(readCells).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the requested cells cannot be loaded', async () => {
+    const readCells = vi.fn()
+    const ensureRangeLoaded = vi.fn().mockResolvedValue(false)
+    const result = await executeWorkbookTool(
+      call('read_cells', { addresses: ['B2'] }),
+      fakeDeps({ readCells, ensureRangeLoaded }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('could not be fully loaded')
+    expect(readCells).not.toHaveBeenCalled()
   })
 
   it('formula cell with a computed value displays "value (formula)"', () => {
@@ -424,6 +774,72 @@ describe('executeWorkbookTool: propose_operations', () => {
     expect(proposeOperations).not.toHaveBeenCalled()
   })
 
+  it('a rejected mixed batch says nothing was applied and names the fields each bad op takes', () => {
+    const proposeOperations = vi.fn()
+    const operations = [
+      ...Array.from({ length: 7 }, (_, i) => ({
+        op: 'format_range',
+        sheetId: 'sheet-1',
+        range: `E${i + 2}`,
+        format: { numberFormat: '0.0%' },
+      })),
+      ...['A', 'B', 'C', 'D', 'E'].map((col) => ({
+        op: 'set_col_width',
+        sheetId: 'sheet-1',
+        col,
+        width: 120,
+      })),
+    ]
+    const result = execSync(
+      call('propose_operations', { operations, summary: 'format + widths' }),
+      fakeDeps({ proposeOperations }),
+    )
+    expect(result.isError).toBe(true)
+    expect(proposeOperations).not.toHaveBeenCalled()
+    expect(result.output).toContain('none of the 12 operation(s) were applied')
+    expect(result.output).toContain('resubmit the whole batch')
+    expect(result.output).toContain(
+      '- operations[7] (set_col_width): missing column (expected string), missing widthPx (expected number); unknown field(s) col, width — set_col_width takes: sheetId, column, count, widthPx',
+    )
+    expect(result.output).toContain('- operations[11] (set_col_width)')
+    expect(result.output).not.toContain('operations[0]')
+    expect(result.output).not.toContain('"path"')
+  })
+
+  it('an unknown op name lists the valid ops', () => {
+    const result = execSync(
+      call('propose_operations', {
+        operations: [{ op: 'set_column_width', sheetId: 'sheet-1', column: 'A', widthPx: 120 }],
+        summary: 'x',
+      }),
+      fakeDeps({ proposeOperations: vi.fn() }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain(
+      "operations[0] (set_column_width): op: Invalid discriminator value. Expected 'set_cell' | ",
+    )
+    expect(result.output).toContain("'set_col_width'")
+  })
+
+  it('a plan-level rejection also says nothing was applied', () => {
+    const result = execSync(
+      call('propose_operations', {
+        operations: [
+          { op: 'set_cell', sheetId: 'sheet-1', address: 'A1', value: 1 },
+          { op: 'set_cell', sheetId: 'sheet-1', address: 'A2', value: 2 },
+        ],
+        summary: 'x',
+      }),
+      fakeDeps({
+        proposeOperations: vi.fn().mockReturnValue({ ok: false, error: 'Unknown sheet: sheet-1' }),
+      }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toBe(
+      'Rejected — none of the 2 operation(s) were applied (a batch is all-or-nothing): Unknown sheet: sheet-1',
+    )
+  })
+
   it('forwards validated operations and reports auto-applied success', () => {
     const proposeOperations = vi.fn().mockReturnValue({ ok: true, plan: EMPTY_PLAN })
     const result = execSync(
@@ -442,6 +858,26 @@ describe('executeWorkbookTool: propose_operations', () => {
     expect(result.output).toContain('old → new')
     expect(result.output).toContain('Auto-applied')
     expect(result.output).toContain('Undo')
+  })
+
+  it('surfaces apply-time notices from the applied outcome', async () => {
+    const proposeOperations = vi.fn().mockReturnValue({
+      ok: true,
+      plan: EMPTY_PLAN,
+      applied: Promise.resolve({
+        ok: true,
+        notices: ['copy_range A1:B2: 2 formula cell(s) were copied as their current values'],
+      }),
+    })
+    const result = await executeWorkbookTool(
+      call('propose_operations', {
+        operations: [{ op: 'set_cell', sheetId: 'sheet-1', address: 'A1', value: 'new' }],
+        summary: 'Update A1',
+      }),
+      fakeDeps({ proposeOperations }),
+    )
+    expect(result.isError).toBeFalsy()
+    expect(result.output).toContain('Note: copy_range A1:B2')
   })
 
   it('after writing a formula, reads back the computed value asynchronously (write → verify)', async () => {
@@ -469,7 +905,47 @@ describe('executeWorkbookTool: propose_operations', () => {
     )
     expect(result.mutated).toBe(true)
     expect(result.output).toContain('Formula results: B4 = 60')
-    expect(readCells).toHaveBeenCalledWith(['B4'])
+    expect(readCells).toHaveBeenCalledWith(['B4'], 'sheet-1')
+  })
+
+  it('reads back formulas per target sheet, labeling addresses when sheets mix', async () => {
+    const plan: ChangePlan = {
+      ...EMPTY_PLAN,
+      cellChanges: [
+        {
+          sheetId: 'sheet-1',
+          address: 'B4',
+          before: { value: null },
+          after: { value: null, formula: '=SUM(B1:B3)' },
+        },
+        {
+          sheetId: 'sheet-2',
+          address: 'C1',
+          before: { value: null },
+          after: { value: null, formula: '=Sheet1!B4*2' },
+        },
+      ],
+    }
+    const proposeOperations = vi.fn().mockReturnValue({ ok: true, plan })
+    const readCells = vi
+      .fn()
+      .mockImplementation((addresses: string[], sheetId?: string) =>
+        sheetId === 'sheet-2' ? { C1: { value: 120 } } : { B4: { value: 60 } },
+      )
+    const result = await executeWorkbookTool(
+      call('propose_operations', {
+        operations: [
+          { op: 'set_formula', sheetId: 'sheet-1', address: 'B4', formula: '=SUM(B1:B3)' },
+          { op: 'set_formula', sheetId: 'sheet-2', address: 'C1', formula: '=Sheet1!B4*2' },
+        ],
+        summary: 'Cross-sheet sums',
+      }),
+      fakeDeps({ proposeOperations, readCells }),
+    )
+    expect(readCells).toHaveBeenCalledWith(['B4'], 'sheet-1')
+    expect(readCells).toHaveBeenCalledWith(['C1'], 'sheet-2')
+    expect(result.output).toContain('Sheet1!B4 = 60')
+    expect(result.output).toContain('Summary!C1 = 120')
   })
 
   it('warns explicitly when read-back finds a formula error value', async () => {
@@ -534,6 +1010,25 @@ describe('executeWorkbookTool: propose_operations', () => {
     expect(result.output).toContain('workbook changed since preview')
   })
 
+  it('reports a mid-batch failure as partially committed, never as unchanged', async () => {
+    const proposeOperations = vi.fn().mockReturnValue({
+      ok: true,
+      plan: EMPTY_PLAN,
+      applied: Promise.resolve({ ok: false, reason: 'Unknown chart', partiallyApplied: true }),
+    })
+    const result = await executeWorkbookTool(
+      call('propose_operations', {
+        operations: [{ op: 'set_cell', sheetId: 'sheet-1', address: 'A1', value: 'new' }],
+        summary: 'Update A1',
+      }),
+      fakeDeps({ proposeOperations }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('MID-BATCH')
+    expect(result.output).toContain('already committed')
+    expect(result.output).not.toContain('UNCHANGED')
+  })
+
   it('propagates a conflict/streaming-guard error from proposeOperations', () => {
     const proposeOperations = vi.fn().mockReturnValue({ ok: false, error: 'still streaming in' })
     const result = execSync(
@@ -544,7 +1039,259 @@ describe('executeWorkbookTool: propose_operations', () => {
       fakeDeps({ proposeOperations }),
     )
     expect(result.isError).toBe(true)
-    expect(result.output).toBe('still streaming in')
+    expect(result.output).toContain('none of the 1 operation(s) were applied')
+    expect(result.output).toContain('still streaming in')
+  })
+})
+
+describe('executeWorkbookTool: find_cells', () => {
+  it('rejects a missing query unless errors_only is set', () => {
+    const result = execSync(call('find_cells', {}), fakeDeps())
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('query')
+  })
+
+  it('allows an omitted query with errors_only=true', () => {
+    const findCells = vi.fn().mockReturnValue({
+      matches: [{ sheetName: 'Sheet1', address: 'C3', value: '#REF!', formula: '=A1/B1' }],
+      truncated: false,
+      incompleteSheets: [],
+    })
+    const result = execSync(call('find_cells', { errors_only: true }), fakeDeps({ findCells }))
+    expect(result.isError).toBeUndefined()
+    expect(findCells).toHaveBeenCalledWith(
+      expect.objectContaining({ errorsOnly: true, lookIn: 'both', maxResults: 50 }),
+    )
+    expect(result.output).toContain('Sheet1!C3: #REF! (=A1/B1)')
+  })
+
+  it('normalizes look_in, clamps max_results, and forwards sheetId', () => {
+    const findCells = vi.fn().mockReturnValue({
+      matches: [],
+      truncated: false,
+      incompleteSheets: [],
+    })
+    execSync(
+      call('find_cells', {
+        query: 'total',
+        look_in: 'formulas',
+        max_results: 9999,
+        sheetId: 'sheet-2',
+      }),
+      fakeDeps({ findCells }),
+    )
+    expect(findCells).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: 'total',
+        lookIn: 'formulas',
+        maxResults: 200,
+        sheetId: 'sheet-2',
+      }),
+    )
+  })
+
+  it('reports matches with truncation and indexing notes', () => {
+    const findCells = vi.fn().mockReturnValue({
+      matches: [
+        { sheetName: 'Sheet1', address: 'A1', value: 'Total' },
+        { sheetName: 'Summary', address: 'B2', value: 120, formula: '=SUM(A:A)' },
+      ],
+      truncated: true,
+      incompleteSheets: ['Data'],
+    })
+    const result = execSync(call('find_cells', { query: 'total' }), fakeDeps({ findCells }))
+    expect(result.output).toContain('2 matching cell(s)')
+    expect(result.output).toContain('stopped at the cap')
+    expect(result.output).toContain('Sheet1!A1: Total')
+    expect(result.output).toContain('Summary!B2: 120 (=SUM(A:A))')
+    expect(result.output).toContain('indexing has not finished on Data')
+  })
+
+  it('reports no matches without an error', () => {
+    const result = execSync(call('find_cells', { query: 'missing' }), fakeDeps())
+    expect(result.isError).toBeUndefined()
+    expect(result.output).toContain('No matching cells found')
+  })
+
+  it('surfaces truncation even when nothing matched in the scanned region', () => {
+    const findCells = vi.fn().mockReturnValue({
+      matches: [],
+      truncated: true,
+      incompleteSheets: [],
+    })
+    const result = execSync(call('find_cells', { query: 'missing' }), fakeDeps({ findCells }))
+    expect(result.isError).toBeUndefined()
+    expect(result.output).toContain('stopped at the scan budget')
+    expect(result.output).toContain('do NOT conclude there are no matches')
+  })
+
+  it('propagates search errors (unknown sheet, bad regex)', () => {
+    const findCells = vi.fn().mockReturnValue({
+      matches: [],
+      truncated: false,
+      incompleteSheets: [],
+      error: 'Invalid regex: bad pattern',
+    })
+    const result = execSync(
+      call('find_cells', { query: '(', regex: true }),
+      fakeDeps({ findCells }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('Invalid regex')
+  })
+})
+
+describe('executeWorkbookTool: select_range', () => {
+  it('rejects an unparsable range', () => {
+    const result = execSync(call('select_range', { range: 'nope!!' }), fakeDeps())
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('Cannot parse range')
+  })
+
+  it('selects a range and reports the normalized label', () => {
+    const selectRange = vi.fn().mockReturnValue({ ok: true, sheetName: 'Summary' })
+    const result = execSync(
+      call('select_range', { range: '$b$2:c4', sheetId: 'sheet-2' }),
+      fakeDeps({ selectRange }),
+    )
+    expect(selectRange).toHaveBeenCalledWith(
+      'sheet-2',
+      expect.objectContaining({ startRow: 1, startColumn: 1, endRow: 3, endColumn: 2 }),
+    )
+    expect(result.isError).toBeUndefined()
+    expect(result.output).toContain('Selected Summary!B2:C4')
+    expect(result.mutated).toBe(false)
+  })
+
+  it('collapses a single cell to one address', () => {
+    const result = execSync(call('select_range', { range: 'B2' }), fakeDeps())
+    expect(result.output).toContain('Sheet1!B2 ')
+    expect(result.output).not.toContain('B2:B2')
+  })
+
+  it('propagates selection failures', () => {
+    const selectRange = vi.fn().mockReturnValue({ ok: false, error: 'Unknown sheet: ghost' })
+    const result = execSync(
+      call('select_range', { range: 'A1', sheetId: 'ghost' }),
+      fakeDeps({ selectRange }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('Unknown sheet: ghost')
+  })
+})
+
+describe('executeWorkbookTool: trace_precedents', () => {
+  it('rejects a range instead of a single cell', () => {
+    const result = execSync(call('trace_precedents', { address: 'A1:B2' }), fakeDeps())
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('single cell')
+  })
+
+  it('normalizes $-refs and formats refs with error flags', () => {
+    const tracePrecedents = vi.fn().mockReturnValue({
+      formula: '=B1/B2',
+      value: '#DIV/0!',
+      refs: [
+        {
+          label: 'B1',
+          cellCount: 1,
+          samples: [{ address: 'B1', value: 10 }],
+          hasError: false,
+        },
+        {
+          label: 'B2',
+          cellCount: 1,
+          samples: [{ address: 'B2', value: 0 }],
+          hasError: false,
+        },
+      ],
+      usesNames: false,
+    })
+    const result = execSync(
+      call('trace_precedents', { address: '$c$10' }),
+      fakeDeps({ tracePrecedents }),
+    )
+    expect(tracePrecedents).toHaveBeenCalledWith(undefined, 'C10')
+    expect(result.output).toContain('C10 = #DIV/0! (=B1/B2)')
+    expect(result.output).toContain('- B1 (1 cell(s)): B1=10')
+  })
+
+  it('marks error-bearing and external refs and defined-name usage', () => {
+    const tracePrecedents = vi.fn().mockReturnValue({
+      formula: '=SUM(Data!A1:A9)+[Ext.xlsx]S1!B2+Total',
+      value: '#REF!',
+      refs: [
+        {
+          label: 'Data!A1:A9',
+          cellCount: 9,
+          samples: [{ address: 'A1', value: '#REF!', formula: '=Gone!A1' }],
+          hasError: true,
+        },
+        { label: '[Ext.xlsx]S1!…', cellCount: 0, samples: [], hasError: false, external: true },
+      ],
+      usesNames: true,
+    })
+    const result = execSync(
+      call('trace_precedents', { address: 'C1' }),
+      fakeDeps({ tracePrecedents }),
+    )
+    expect(result.output).toContain('⚠️ contains error values')
+    expect(result.output).toContain('external/unresolved reference')
+    expect(result.output).toContain('defined names')
+  })
+
+  it('explains non-formula cells', () => {
+    const tracePrecedents = vi.fn().mockReturnValue({ refs: [], value: 42 })
+    const result = execSync(
+      call('trace_precedents', { address: 'A1' }),
+      fakeDeps({ tracePrecedents }),
+    )
+    expect(result.isError).toBeUndefined()
+    expect(result.output).toContain('not a formula cell; value: 42')
+  })
+})
+
+describe('executeWorkbookTool: trace_dependents', () => {
+  it('lists dependents with truncation and indexing notes', () => {
+    const traceDependents = vi.fn().mockReturnValue({
+      dependents: [
+        { sheetName: 'Sheet1', address: 'C1', formula: '=B1*2', value: 20 },
+        { sheetName: 'Summary', address: 'A1', formula: '=Sheet1!B1', value: 20 },
+      ],
+      truncated: true,
+      incompleteSheets: ['Data'],
+    })
+    const result = execSync(
+      call('trace_dependents', { address: 'b1', sheetId: 'sheet-1' }),
+      fakeDeps({ traceDependents }),
+    )
+    expect(traceDependents).toHaveBeenCalledWith('sheet-1', 'B1')
+    expect(result.output).toContain('2+ formula cell(s) read B1')
+    expect(result.output).toContain('- Summary!A1 = 20 (=Sheet1!B1)')
+    expect(result.output).toContain('result cap')
+    expect(result.output).toContain('indexing has not finished on Data')
+  })
+
+  it('reports zero dependents with the defined-name caveat', () => {
+    const result = execSync(call('trace_dependents', { address: 'Z9' }), fakeDeps())
+    expect(result.isError).toBeUndefined()
+    expect(result.output).toContain('No formulas read Z9')
+    expect(result.output).toContain('defined name')
+  })
+
+  it('propagates errors', () => {
+    const traceDependents = vi.fn().mockReturnValue({
+      dependents: [],
+      truncated: false,
+      incompleteSheets: [],
+      error: 'Unknown sheet: ghost',
+    })
+    const result = execSync(
+      call('trace_dependents', { address: 'A1', sheetId: 'ghost' }),
+      fakeDeps({ traceDependents }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('Unknown sheet: ghost')
   })
 })
 

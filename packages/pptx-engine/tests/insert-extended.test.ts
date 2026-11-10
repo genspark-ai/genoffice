@@ -19,7 +19,6 @@ import {
   addSmartArt,
   addMedia,
   addModel3d,
-  model3dPartOf,
   solidPng,
   setElementLink,
   getElementLink,
@@ -34,6 +33,7 @@ import {
   type PictureElement,
   type TextElement,
 } from '../src/index'
+import { relsPathFor } from '../src/zip'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
@@ -473,7 +473,7 @@ describe('addMedia / addModel3d', () => {
     expect(el.media?.kind).toBe('audio')
   })
 
-  it('3d model embeds glb part and poster picture with descr marker', async () => {
+  it('3d model embeds the glb as a model3d part behind its picture', async () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46]) // "glTF"
     const r = addModel3d(opened, 0, { bytes: glb, ext: 'glb', offset: { ...OFF } })
@@ -482,9 +482,8 @@ describe('addMedia / addModel3d', () => {
     const reopened = await openPptx(await savePptx(opened))
     const el = reopened.deck.slides[0]!.elements.at(-1) as PictureElement
     expect(el.type).toBe('picture')
-    const part = model3dPartOf(el)
-    expect(part).toMatch(/^ppt\/media\/media\d+\.glb$/)
-    expect(reopened.archive.readBytes(part!)).toEqual(glb)
+    expect(el.model3d?.target).toMatch(/^ppt\/media\/model3d\d+\.glb$/)
+    expect(reopened.archive.readBytes(el.model3d!.target!)).toEqual(glb)
   })
 
   it('solidPng produces a decodable png signature', () => {
@@ -494,22 +493,21 @@ describe('addMedia / addModel3d', () => {
 })
 
 describe('unsupported chart kinds', () => {
-  // Classic-namespace chart type the model doesn't support (same bucket as stock/surface;
-  // chartex parts like waterfall/funnel never even reach parseChartXml)
-  const BUBBLE_CHART = `<?xml version="1.0"?><c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea><c:layout/>
-<c:bubbleChart><c:ser><c:idx val="0"/>
-  <c:xVal><c:numRef><c:f>x</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt></c:numCache></c:numRef></c:xVal>
-  <c:yVal><c:numRef><c:f>y</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>10</c:v></c:pt><c:pt idx="1"><c:v>20</c:v></c:pt></c:numCache></c:numRef></c:yVal>
-  <c:bubbleSize><c:numRef><c:f>s</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>5</c:v></c:pt><c:pt idx="1"><c:v>9</c:v></c:pt></c:numCache></c:numRef></c:bubbleSize>
-</c:ser></c:bubbleChart>
+  // Classic-namespace chart type the model doesn't support (surface; chartex parts
+  // like waterfall/funnel never even reach parseChartXml)
+  const SURFACE_CHART = `<?xml version="1.0"?><c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea><c:layout/>
+<c:surface3DChart><c:ser><c:idx val="0"/>
+  <c:cat><c:strRef><c:f>c</c:f><c:strCache><c:ptCount val="2"/><c:pt idx="0"><c:v>A</c:v></c:pt><c:pt idx="1"><c:v>B</c:v></c:pt></c:strCache></c:strRef></c:cat>
+  <c:val><c:numRef><c:f>v</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>10</c:v></c:pt><c:pt idx="1"><c:v>20</c:v></c:pt></c:numCache></c:numRef></c:val>
+</c:ser></c:surface3DChart>
 </c:plotArea></c:chart></c:chartSpace>`
 
-  it('parseChartXml returns null for a bubble chart (no recognizable plot)', () => {
-    expect(parseChartXml(BUBBLE_CHART)).toBeNull()
+  it('parseChartXml returns null for a surface chart (no recognizable plot)', () => {
+    expect(parseChartXml(SURFACE_CHART)).toBeNull()
   })
 
   it('an unsupported chart degrades to a passthrough element and survives an unrelated edit + save byte-for-byte', async () => {
-    // Build a deck with a chart, then swap its part for a bubble chart on disk
+    // Build a deck with a chart, then swap its part for a surface chart on disk
     const opened = await openPptx(fx('01_standard_business.pptx'))
     addChart(opened, 0, {
       kind: 'bar',
@@ -521,7 +519,7 @@ describe('unsupported chart kinds', () => {
     const chartPart = [...staged.archive.entries.keys()].find((p) =>
       /^ppt\/charts\/chart\d+\.xml$/.test(p),
     )!
-    staged.archive.entries.set(chartPart, Buffer.from(BUBBLE_CHART, 'utf8'))
+    staged.archive.entries.set(chartPart, Buffer.from(SURFACE_CHART, 'utf8'))
     const buf = await savePptx(staged)
 
     // Reopen: the graphicFrame no longer parses as a chart — it must become a passthrough chip, not vanish
@@ -538,7 +536,7 @@ describe('unsupported chart kinds', () => {
     const saved = await openPptx(await savePptx(reopened))
 
     // The chart part and the graphicFrame bytes are untouched
-    expect(saved.archive.readText(chartPart)).toBe(BUBBLE_CHART)
+    expect(saved.archive.readText(chartPart)).toBe(SURFACE_CHART)
     const pt2 = saved.deck.slides[0]!.elements.find(
       (e) => e.type === 'passthrough',
     ) as PassthroughElement
@@ -566,6 +564,48 @@ describe('setElementLink / getElementLink', () => {
     })
   })
 
+  it('url link tooltip round-trips through save and reopen', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    const fresh = setElementLink(opened, 0, el.id, {
+      kind: 'url',
+      url: 'https://example.com/tip',
+      tooltip: 'See notes',
+    })!
+    expect(getElementLink(opened, 0, fresh.elements.at(-1)!.id)).toEqual({
+      kind: 'url',
+      url: 'https://example.com/tip',
+      tooltip: 'See notes',
+    })
+    const reopened = await openPptx(await savePptx(opened))
+    expect(getElementLink(reopened, 0, reopened.deck.slides[0]!.elements.at(-1)!.id)).toEqual({
+      kind: 'url',
+      url: 'https://example.com/tip',
+      tooltip: 'See notes',
+    })
+  })
+
+  it('re-setting a link without a tooltip keeps the existing ScreenTip', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    const first = setElementLink(opened, 0, el.id, {
+      kind: 'url',
+      url: 'https://example.com/one',
+      tooltip: 'Keep "A & B" <me>',
+    })!
+    const second = setElementLink(opened, 0, first.elements.at(-1)!.id, {
+      kind: 'url',
+      url: 'https://example.com/two',
+    })!
+    expect(getElementLink(opened, 0, second.elements.at(-1)!.id)).toEqual({
+      kind: 'url',
+      url: 'https://example.com/two',
+      tooltip: 'Keep "A & B" <me>',
+    })
+  })
+
   it('slide jump link resolves to target slide index', async () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     duplicateSlide(opened, 0) // ensure at least 2 slides
@@ -580,14 +620,86 @@ describe('setElementLink / getElementLink', () => {
     expect(last.anchor.originalXml).toContain('ppaction://hlinksldjump')
   })
 
+  it('named show action writes hlinkshowjump with an empty r:id and no relationship', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    const relsBefore = opened.archive.readText(relsPathFor(slide.path))
+    const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    const s1 = setElementLink(opened, 0, el.id, { kind: 'action', action: 'nextslide' })!
+    expect(s1.elements.at(-1)!.anchor.originalXml).toContain(
+      '<a:hlinkClick xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="" action="ppaction://hlinkshowjump?jump=nextslide"/>',
+    )
+    expect(opened.archive.readText(relsPathFor(slide.path))).toBe(relsBefore)
+
+    const reopened = await openPptx(await savePptx(opened))
+    const last = reopened.deck.slides[0]!.elements.at(-1)!
+    expect(getElementLink(reopened, 0, last.id)).toEqual({ kind: 'action', action: 'nextslide' })
+    expect(getSlideLinks(reopened, 0)).toContainEqual({
+      elementId: last.id,
+      target: { kind: 'action', action: 'nextslide' },
+    })
+
+    // Replacing with a url and clearing both work on an action link
+    const s2 = setElementLink(reopened, 0, last.id, { kind: 'action', action: 'endshow' })!
+    expect(getElementLink(reopened, 0, s2.elements.at(-1)!.id)).toEqual({
+      kind: 'action',
+      action: 'endshow',
+    })
+    const s3 = setElementLink(reopened, 0, s2.elements.at(-1)!.id, null)!
+    expect(s3.elements.at(-1)!.anchor.originalXml).not.toContain('hlinkClick')
+  })
+
   it('clearing the link removes hlinkClick', async () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     const slide = opened.deck.slides[0]!
     const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
     const s1 = setElementLink(opened, 0, el.id, { kind: 'url', url: 'https://x.dev' })!
     const linked = s1.elements.at(-1)!
+    const oldRid = /r:id="([^"]+)"/.exec(linked.anchor.originalXml)![1]!
     const s2 = setElementLink(opened, 0, linked.id, null)!
     expect(getElementLink(opened, 0, s2.elements.at(-1)!.id)).toBeNull()
+    expect(opened.archive.readText(relsPathFor(s2.path))).not.toContain(`Id="${oldRid}"`)
+  })
+
+  it('replacing a link prunes the obsolete hyperlink relationship', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    const first = setElementLink(opened, 0, el.id, { kind: 'url', url: 'https://old.dev' })!
+    const linked = first.elements.at(-1)!
+    const oldRid = /r:id="([^"]+)"/.exec(linked.anchor.originalXml)![1]!
+
+    const second = setElementLink(opened, 0, linked.id, { kind: 'url', url: 'https://new.dev' })!
+    const rels = opened.archive.readText(relsPathFor(second.path))!
+    expect(rels).not.toContain(`Id="${oldRid}"`)
+    expect(rels).not.toContain('Target="https://old.dev"')
+    expect(rels).toContain('Target="https://new.dev"')
+  })
+
+  it('keeps an old hyperlink relationship while another element still uses its rId', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    const linkedSlide = setElementLink(opened, 0, el.id, {
+      kind: 'url',
+      url: 'https://shared.dev',
+    })!
+    const linked = linkedSlide.elements.at(-1)!
+    const oldRid = /r:id="([^"]+)"/.exec(linked.anchor.originalXml)![1]!
+    const sharer = addElement(linkedSlide, {
+      kind: 'ellipse',
+      offset: { ...OFF, x: 5486400 },
+    })
+    // Newborn cNvPr carries a creationId extLst (paired tag); hlinkClick goes
+    // right after the opening tag — its schema slot is before extLst
+    sharer.anchor.originalXml = sharer.anchor.originalXml.replace(
+      /(<p:cNvPr[^>]*>)/,
+      `$1<a:hlinkClick r:id="${oldRid}"/>`,
+    )
+    linkedSlide.structureDirty = true
+
+    setElementLink(opened, 0, linked.id, { kind: 'url', url: 'https://new.dev' })
+    expect(opened.archive.readText(relsPathFor(linkedSlide.path))).toContain(`Id="${oldRid}"`)
   })
 
   it('getSlideLinks collects every linked element on the slide', async () => {
@@ -622,6 +734,28 @@ describe('setElementLink / getElementLink', () => {
     expect(links[0]!.elementId).not.toBe(grouped.groupId)
     const group = grouped.slide.elements.find((e) => e.id === grouped.groupId) as GroupElement
     expect(group.children.some((c) => c.id === links[0]!.elementId)).toBe(true)
+  })
+
+  it('getSlideLinks keeps a group own link when its header carries attributes', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    const a = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    const b = addElement(slide, { kind: 'ellipse', offset: { ...OFF, x: 5486400 } })
+    const grouped = groupElements(opened, 0, [a.id, b.id])!
+    const linked = setElementLink(opened, 0, grouped.groupId, {
+      kind: 'url',
+      url: 'https://group.dev',
+    })!
+    const group = linked.elements.find((e) => e.type === 'group') as GroupElement
+    // Producers may put attributes on the group's non-visual header
+    group.anchor.originalXml = group.anchor.originalXml.replace(
+      '<p:nvGrpSpPr>',
+      '<p:nvGrpSpPr foo="1">',
+    )
+
+    expect(getSlideLinks(opened, 0)).toEqual([
+      { elementId: group.id, target: { kind: 'url', url: 'https://group.dev' } },
+    ])
   })
 })
 
@@ -773,5 +907,102 @@ describe('per-data-point chart colors', () => {
     reopened = await openPptx(await savePptx(reopened))
     el = reopened.deck.slides[0]!.elements.at(-1) as ChartElement
     expect(el.chart.series[0]!.pointColors?.[1]).toBeUndefined()
+  })
+})
+
+describe('3-D chart kinds survive insert and edit round-trips', () => {
+  it('pie3D inserts, edits keep the 3-D type, and an explicit switch to 2-D works', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    addChart(opened, 0, {
+      kind: 'pie3D',
+      categories: ['A', 'B'],
+      series: [{ name: 'S', values: [7, 3] }],
+      offset: { ...OFF },
+    })
+    let reopened = await openPptx(await savePptx(opened))
+    let el = reopened.deck.slides[0]!.elements.at(-1) as ChartElement
+    expect(el.chart.kind).toBe('pie')
+    expect(el.chart.pseudo3D).toBe(true)
+
+    // Data-only edit keeps 3-D
+    expect(editChartElement(reopened, 0, el.id, { series: [{ name: 'S', values: [5, 5] }] })).toBe(
+      true,
+    )
+    reopened = await openPptx(await savePptx(reopened))
+    el = reopened.deck.slides[0]!.elements.at(-1) as ChartElement
+    expect(el.chart.pseudo3D).toBe(true)
+    expect(el.chart.series[0]!.values).toEqual([5, 5])
+
+    // Explicit type change back to flat pie drops the 3-D view
+    expect(editChartElement(reopened, 0, el.id, { kind: 'pie' })).toBe(true)
+    reopened = await openPptx(await savePptx(reopened))
+    el = reopened.deck.slides[0]!.elements.at(-1) as ChartElement
+    expect(el.chart.pseudo3D).toBeUndefined()
+  })
+
+  it('bar3D inserts and a data edit keeps the 3-D type', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    addChart(opened, 0, {
+      kind: 'bar3D',
+      categories: ['A', 'B'],
+      series: [{ name: 'S', values: [1, 2] }],
+      offset: { ...OFF },
+    })
+    let reopened = await openPptx(await savePptx(opened))
+    let el = reopened.deck.slides[0]!.elements.at(-1) as ChartElement
+    expect(el.chart.kind).toBe('bar')
+    expect(el.chart.pseudo3D).toBe(true)
+    expect(
+      editChartElement(reopened, 0, el.id, {
+        categories: ['A', 'B', 'C'],
+        series: [{ name: 'S', values: [1, 2, 3] }],
+      }),
+    ).toBe(true)
+    reopened = await openPptx(await savePptx(reopened))
+    el = reopened.deck.slides[0]!.elements.at(-1) as ChartElement
+    expect(el.chart.pseudo3D).toBe(true)
+    expect(el.chart.categories).toEqual(['A', 'B', 'C'])
+  })
+})
+
+describe('editChartElement doughnut hole preservation', () => {
+  it('a custom holeSizePct survives a data-only rebuild and is patchable', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const r = addChart(opened, 0, {
+      kind: 'doughnut',
+      categories: ['A', 'B'],
+      series: [{ name: 'S', values: [1, 2] }],
+      offset: { ...OFF },
+      holeSizePct: 72,
+    })!
+    const chartXml = (path: string) => {
+      const rels = opened.archive.readText(relsPathFor('ppt/slides/slide1.xml'))!
+      const target = /Target="([^"]*chart\d+\.xml)"/.exec(rels)![1]!
+      return opened.archive.readText(path || `ppt/charts/${target.split('/').pop()}`)!
+    }
+    expect(chartXml('')).toContain('<c:holeSize val="72"/>')
+    // Data-only edit: the hole used to reset to the build default (50)
+    expect(editChartElement(opened, 0, r.elementId, { categories: ['A', 'B', 'C'] })).toBe(true)
+    expect(chartXml('')).toContain('<c:holeSize val="72"/>')
+    // Explicit patch wins
+    expect(editChartElement(opened, 0, r.elementId, { holeSizePct: 30 })).toBe(true)
+    expect(chartXml('')).toContain('<c:holeSize val="30"/>')
+  })
+})
+
+describe('pie → doughnut type switch (Bugbot: parsed pie holePct 0 must not clamp to a 1% hole)', () => {
+  it('switching a pie to doughnut gets the default 50% hole', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const r = addChart(opened, 0, {
+      kind: 'pie',
+      categories: ['A', 'B'],
+      series: [{ name: 'S', values: [1, 2] }],
+      offset: { ...OFF },
+    })!
+    expect(editChartElement(opened, 0, r.elementId, { kind: 'doughnut' })).toBe(true)
+    const rels = opened.archive.readText(relsPathFor('ppt/slides/slide1.xml'))!
+    const target = /Target="([^"]*chart\d+\.xml)"/.exec(rels)![1]!
+    const xml = opened.archive.readText(`ppt/charts/${target.split('/').pop()}`)!
+    expect(xml).toContain('<c:holeSize val="50"/>')
   })
 })

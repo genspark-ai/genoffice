@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyImageWrap, parseDocx, saveDocx } from '../src/index'
+import { applyImageWrap, applyImageZOrder, parseDocx, saveDocx } from '../src/index'
 import { buildDocx, IMAGE_PARAGRAPH_XML } from './helpers/build-docx'
 
 const ANCHOR_SQUARE_RIGHT_XML =
@@ -24,7 +24,17 @@ describe('image text wrap (wp:anchor)', () => {
   })
 
   it('parses behind / topAndBottom / front variants', async () => {
-    const behind = ANCHOR_SQUARE_RIGHT_XML.replace('behindDoc="0"', 'behindDoc="1"')
+    // behind = behindDoc with NO wrap element; an explicit wrap element wins
+    // (Word draws behindDoc+wrapSquare behind the text and still wraps around it)
+    const behind = ANCHOR_SQUARE_RIGHT_XML.replace('behindDoc="0"', 'behindDoc="1"').replace(
+      '<wp:wrapSquare wrapText="bothSides"/>',
+      '<wp:wrapNone/>',
+    )
+    const behindWithWrap = ANCHOR_SQUARE_RIGHT_XML.replace('behindDoc="0"', 'behindDoc="1"')
+    expect(
+      (await parseDocx(await buildDocx({ bodyXml: behindWithWrap, withImage: true }))).blocks[0]
+        .imageWrap,
+    ).toBe('square-right')
     const topBottom = ANCHOR_SQUARE_RIGHT_XML.replace(
       '<wp:wrapSquare wrapText="bothSides"/>',
       '<wp:wrapTopAndBottom/>',
@@ -45,6 +55,166 @@ describe('image text wrap (wp:anchor)', () => {
       await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true }),
     )
     expect(inline.blocks[0].imageWrap).toBeUndefined()
+  })
+
+  it('parses the picture outline (pic:spPr a:ln solid fill, tdf#162551)', async () => {
+    const withLn = ANCHOR_SQUARE_RIGHT_XML.replace(
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>',
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill>' +
+        '<pic:spPr><a:ln w="28575"><a:solidFill><a:srgbClr val="FFD428"/></a:solidFill></a:ln></pic:spPr></pic:pic>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: withLn, withImage: true }))
+    expect(doc.blocks[0].imageBorder).toEqual({ color: 'FFD428', widthPt: 2.25 })
+    const noFill = withLn.replace(
+      '<a:solidFill><a:srgbClr val="FFD428"/></a:solidFill>',
+      '<a:noFill/>',
+    )
+    expect(
+      (await parseDocx(await buildDocx({ bodyXml: noFill, withImage: true }))).blocks[0]
+        .imageBorder,
+    ).toBeUndefined()
+  })
+
+  it('derives the float side from wrapText and far posOffset (tdf#97090)', async () => {
+    const withPosH = (posH: string, wrapText = 'bothSides') =>
+      ANCHOR_SQUARE_RIGHT_XML.replace(
+        '<wp:positionH relativeFrom="column"><wp:align>right</wp:align></wp:positionH>',
+        posH,
+      ).replace('wrapText="bothSides"', `wrapText="${wrapText}"`)
+    const cases: Array<[string, string, string]> = [
+      // text on the left only -> object floats right
+      [
+        '<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>',
+        'left',
+        'square-right',
+      ],
+      // text on the right only -> object floats left even with a far offset
+      [
+        '<wp:positionH relativeFrom="column"><wp:posOffset>5000000</wp:posOffset></wp:positionH>',
+        'right',
+        'square-left',
+      ],
+      // bothSides + absolute X past mid-body -> right
+      [
+        '<wp:positionH relativeFrom="column"><wp:posOffset>3187064</wp:posOffset></wp:positionH>',
+        'bothSides',
+        'square-right',
+      ],
+      // bothSides + near X -> left
+      [
+        '<wp:positionH relativeFrom="column"><wp:posOffset>100000</wp:posOffset></wp:positionH>',
+        'bothSides',
+        'square-left',
+      ],
+    ]
+    for (const [posH, wrapText, expected] of cases) {
+      const doc = await parseDocx(
+        await buildDocx({ bodyXml: withPosH(posH, wrapText), withImage: true }),
+      )
+      expect(doc.blocks[0].imageWrap, `${wrapText} ${posH}`).toBe(expected)
+    }
+  })
+
+  it('floats a wide bothSides picture right when its center passes mid-body (public issue #118)', async () => {
+    // left edge before the midline, but the 3in-wide body fills the right half
+    const xml = ANCHOR_SQUARE_RIGHT_XML.replace(
+      '<wp:positionH relativeFrom="column"><wp:align>right</wp:align></wp:positionH>',
+      '<wp:positionH relativeFrom="column"><wp:posOffset>2407073</wp:posOffset></wp:positionH>',
+    ).replace('<wp:extent cx="914400" cy="914400"/>', '<wp:extent cx="2851200" cy="2138400"/>')
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    expect(doc.blocks[0].imageWrap).toBe('square-right')
+    expect(doc.blocks[0].imageOffsetXEmu).toBe(2407073)
+    expect(doc.blocks[0].imageWrapDistTopEmu).toBe(0)
+    expect(doc.blocks[0].imageWrapDistBottomEmu).toBe(0)
+    expect(doc.blocks[0].imageWrapDistLeftEmu).toBe(114300)
+    expect(doc.blocks[0].imageWrapDistRightEmu).toBe(114300)
+  })
+
+  it('keeps leading spaces and first-line indent on an atomic picture block (public issue #118)', async () => {
+    const xml = IMAGE_PARAGRAPH_XML.replace(
+      '<w:p>',
+      '<w:p><w:pPr><w:ind w:firstLine="420"/>' +
+        '<w:rPr><w:rFonts w:eastAsia="SimSun"/><w:sz w:val="24"/></w:rPr></w:pPr>' +
+        '<w:r><w:t xml:space="preserve">    </w:t></w:r>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('image')
+    expect(block.imageLeadingText).toBe('    ')
+    expect(block.imageLeadingFont).toBe('SimSun')
+    expect(block.imageLeadingImplicitSpaceCount).toBe(4)
+    expect(block.imageLeadingExplicitSpaceWidthPx).toBeUndefined()
+    expect(block.imageParagraphIndentFirstLine).toBe(420)
+    expect(block.imageWidthPx).toBe(96)
+
+    const explicit = xml.replace(
+      '<w:r><w:t xml:space="preserve">    </w:t></w:r>',
+      '<w:r><w:rPr><w:sz w:val="24"/></w:rPr>' + '<w:t xml:space="preserve">    </w:t></w:r>',
+    )
+    const explicitBlock = (await parseDocx(await buildDocx({ bodyXml: explicit, withImage: true })))
+      .blocks[0]
+    expect(explicitBlock.imageLeadingExplicitSpaceWidthPx).toBe(32)
+    expect(explicitBlock.imageLeadingImplicitSpaceCount).toBeUndefined()
+  })
+
+  it('keeps the picture paragraph line rule, mark rPr and a leading tab', async () => {
+    const xml = IMAGE_PARAGRAPH_XML.replace(
+      '<w:p>',
+      '<w:p><w:pPr><w:spacing w:before="100" w:line="360" w:lineRule="auto"/>' +
+        '<w:rPr><w:rFonts w:ascii="Verdana" w:hAnsi="Verdana" w:eastAsia="SimSun"/><w:sz w:val="20"/></w:rPr></w:pPr>' +
+        '<w:r><w:tab/></w:r>',
+    )
+    const block = (await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))).blocks[0]
+    expect(block.type).toBe('image')
+    expect(block.imageParagraphLineTwips).toBe(360)
+    expect(block.imageParagraphLineRule).toBe('auto')
+    expect(block.imageMarkFont).toBe('Verdana')
+    expect(block.imageMarkFontEastAsia).toBe('SimSun')
+    expect(block.imageMarkSizeHalfPoints).toBe(20)
+    expect(block.imageLeadingText).toBe('\t')
+    expect(block.imageLeadingImplicitSpaceCount).toBeUndefined()
+    const paired = xml.replace('<w:tab/>', '<w:tab></w:tab>')
+    const pairedBlock = (await parseDocx(await buildDocx({ bodyXml: paired, withImage: true })))
+      .blocks[0]
+    expect(pairedBlock.imageLeadingText).toBe('\t')
+
+    const exact = xml.replace('w:line="360" w:lineRule="auto"', 'w:line="300" w:lineRule="exact"')
+    const exactBlock = (await parseDocx(await buildDocx({ bodyXml: exact, withImage: true })))
+      .blocks[0]
+    expect(exactBlock.imageParagraphLineRule).toBe('exact')
+    const plain = (
+      await parseDocx(await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true }))
+    ).blocks[0]
+    expect(plain.imageParagraphLineTwips).toBeUndefined()
+    expect(plain.imageMarkFont).toBeUndefined()
+  })
+
+  it('the picture line font follows the drawing run and its style, not the paragraph mark', async () => {
+    const style =
+      '<w:style w:type="paragraph" w:styleId="NoSpacing"><w:name w:val="No Spacing"/>' +
+      '<w:rPr><w:rFonts w:ascii="Book Antiqua" w:hAnsi="Book Antiqua" w:eastAsia="Times New Roman"/><w:sz w:val="20"/></w:rPr></w:style>'
+    const xml = IMAGE_PARAGRAPH_XML.replace(
+      '<w:p><w:r>',
+      '<w:p><w:pPr><w:pStyle w:val="NoSpacing"/><w:spacing w:line="480" w:lineRule="auto"/>' +
+        '<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="24"/></w:rPr></w:pPr>' +
+        '<w:r><w:rPr><w:noProof/></w:rPr>',
+    )
+    const styled = (
+      await parseDocx(await buildDocx({ bodyXml: xml, withImage: true, extraStylesXml: style }))
+    ).blocks[0]
+    expect(styled.imageMarkFont).toBe('Book Antiqua')
+    expect(styled.imageMarkFontEastAsia).toBe('Times New Roman')
+    expect(styled.imageMarkSizeHalfPoints).toBe(20)
+
+    const direct = xml.replace(
+      '<w:r><w:rPr><w:noProof/></w:rPr>',
+      '<w:r><w:rPr><w:rFonts w:ascii="Verdana" w:hAnsi="Verdana"/><w:sz w:val="36"/></w:rPr>',
+    )
+    const directBlock = (
+      await parseDocx(await buildDocx({ bodyXml: direct, withImage: true, extraStylesXml: style }))
+    ).blocks[0]
+    expect(directBlock.imageMarkFont).toBe('Verdana')
+    expect(directBlock.imageMarkSizeHalfPoints).toBe(36)
   })
 
   it('converts inline -> square anchor with position and wrap elements', () => {
@@ -74,6 +244,14 @@ describe('image text wrap (wp:anchor)', () => {
     expect(out).toContain('behindDoc="1"')
     expect(out).toContain('<wp:wrapNone/>')
     expect(out).not.toContain('wp:wrapSquare')
+  })
+
+  it('zOrder raises relativeHeight so stacked behind anchors keep paint order', () => {
+    const out = applyImageWrap(ANCHOR_SQUARE_RIGHT_XML, 'behind', undefined, undefined, 7)
+    expect(out).toContain('relativeHeight="251658247"')
+    // default stays at the base value
+    const plain = applyImageWrap(ANCHOR_SQUARE_RIGHT_XML, 'behind')
+    expect(plain).toContain('relativeHeight="251658240"')
   })
 
   it('applies margin-relative position presets (Word position gallery)', () => {
@@ -124,6 +302,70 @@ describe('image text wrap (wp:anchor)', () => {
     const p3 = await parseDocx(backInline)
     expect(p3.blocks[0].imageWrap).toBeUndefined()
     expect(p3.blocks[0].imageDataUrl).toBeTruthy()
+  })
+
+  it('parses imageZOrder from a non-base relativeHeight (round-trip paint order)', async () => {
+    // relativeHeight = 251658240 base + 5
+    const xml = ANCHOR_SQUARE_RIGHT_XML.replace('relativeHeight="1"', 'relativeHeight="251658245"')
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    expect(doc.blocks[0].imageZOrder).toBe(5)
+
+    // base value (or absent) leaves imageZOrder undefined
+    const base = ANCHOR_SQUARE_RIGHT_XML.replace('relativeHeight="1"', 'relativeHeight="251658240"')
+    const doc2 = await parseDocx(await buildDocx({ bodyXml: base, withImage: true }))
+    expect(doc2.blocks[0].imageZOrder).toBeUndefined()
+  })
+
+  it('applyImageZOrder re-encodes relativeHeight and nothing else', () => {
+    const out = applyImageZOrder(ANCHOR_SQUARE_RIGHT_XML, 3)
+    expect(out).toContain('relativeHeight="251658243"')
+    // byte-identical apart from the one attribute value: position basis,
+    // wrap element and distances must survive a pure reorder
+    expect(out.replace('relativeHeight="251658243"', 'relativeHeight="1"')).toBe(
+      ANCHOR_SQUARE_RIGHT_XML,
+    )
+    // no rank = base level; inline (no anchor) passes through untouched
+    expect(applyImageZOrder(ANCHOR_SQUARE_RIGHT_XML)).toContain('relativeHeight="251658240"')
+    expect(applyImageZOrder(IMAGE_PARAGRAPH_XML, 5)).toBe(IMAGE_PARAGRAPH_XML)
+  })
+
+  it('compresses wild producer relativeHeight values to compact ranks', async () => {
+    // LibreOffice-style: arbitrary small relativeHeight (1, 7) decodes to huge
+    // negative ranks; parse re-ranks the document's anchors 0..n-1 in paint
+    // order so the editor's ±1 reorder steps and CSS bands stay meaningful
+    const second = ANCHOR_SQUARE_RIGHT_XML.replace(
+      'relativeHeight="1"',
+      'relativeHeight="7"',
+    ).replace('id="1" name="图片 1"', 'id="2" name="图片 2"')
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: ANCHOR_SQUARE_RIGHT_XML + second, withImage: true }),
+    )
+    expect(doc.blocks[0].imageZOrder).toBeUndefined() // rank 0 = base level
+    expect(doc.blocks[1].imageZOrder).toBe(1)
+  })
+
+  it('round-trips imageZOrder through applyImageWrap + saveDocx + reparse', async () => {
+    const bytes = await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true })
+    const parsed = await parseDocx(bytes)
+    // float it in front with a stacking rank of 3
+    const saved = await saveDocx(parsed, [
+      {
+        kind: 'xml',
+        xml: applyImageWrap(parsed.blocks[0].originalXml!, 'front', undefined, undefined, 3),
+      },
+    ])
+    const p2 = await parseDocx(saved)
+    expect(p2.blocks[0].imageWrap).toBe('front')
+    expect(p2.blocks[0].imageZOrder).toBe(3)
+    // bump the rank; wrap unchanged
+    const bumped = await saveDocx(p2, [
+      {
+        kind: 'xml',
+        xml: applyImageWrap(p2.blocks[0].originalXml!, 'front', undefined, undefined, 13),
+      },
+    ])
+    const p3 = await parseDocx(bumped)
+    expect(p3.blocks[0].imageZOrder).toBe(13)
   })
 
   it('embeds new images as anchors when NewImage.wrap is set', async () => {
@@ -190,6 +432,69 @@ describe('tight / through wrap (wrapPolygon fidelity)', () => {
     expect(out).not.toContain('wp:wrapTight')
   })
 
+  it('keeps an inline photo gallery flowing next to banded anchors', async () => {
+    const anchored = (offYEmu: number) =>
+      '<w:r><w:drawing>' +
+      '<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">' +
+      '<wp:simplePos x="0" y="0"/>' +
+      '<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>' +
+      `<wp:positionV relativeFrom="paragraph"><wp:posOffset>${offYEmu}</wp:posOffset></wp:positionV>` +
+      '<wp:extent cx="1905000" cy="952500"/>' +
+      '<wp:wrapTopAndBottom/>' +
+      '<wp:docPr id="1" name="p"/>' +
+      '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+    const inlinePic =
+      '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+      '<wp:extent cx="1905000" cy="2520000"/><wp:docPr id="2" name="g"/>' +
+      '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>'
+    const body =
+      '<w:p>' +
+      anchored(0) +
+      anchored(3810000) +
+      '<w:r><w:t>7</w:t></w:r>' +
+      inlinePic.repeat(8) +
+      '</w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: body, withImage: true }))
+    const block = doc.blocks[0]
+    // a protected textbox block cannot be split across pages: a gallery taller
+    // than one page would be clipped to the anchor paragraph's first page
+    expect(block.type).not.toBe('passthrough')
+    expect((block.runs ?? []).filter((r) => r.image)).toHaveLength(10)
+  })
+
+  it('displaces an allowOverlap="0" anchor colliding with a sibling (tdf#134114)', async () => {
+    const anchorPic = (attrs: string, cx: number, cy: number) =>
+      '<w:r><w:drawing>' +
+      `<wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" ${attrs}>` +
+      '<wp:simplePos x="0" y="0"/>' +
+      '<wp:positionH relativeFrom="column"><wp:align>center</wp:align></wp:positionH>' +
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>180340</wp:posOffset></wp:positionV>' +
+      `<wp:extent cx="${cx}" cy="${cy}"/>` +
+      '<wp:wrapSquare wrapText="bothSides"/>' +
+      '<wp:docPr id="1" name="p"/>' +
+      '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+    const body =
+      '<w:p>' +
+      anchorPic('allowOverlap="1"', 802800, 1198800) +
+      anchorPic('allowOverlap="0"', 1432800, 1076400) +
+      '<w:r><w:t>No overlap in the frames, please.</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: body, withImage: true }))
+    const imgs = (doc.blocks[0].runs ?? []).filter((r) => r.image)
+    expect(imgs).toHaveLength(2)
+    // positionH align=center + wrapSquare maps to the centered topBottom slot
+    expect(imgs[0].image!.wrap).toBe('topBottom')
+    // the colliding allowOverlap="0" picture leaves the flow as a front overlay
+    // under the collider's box
+    expect(imgs[1].image!.wrap).toBe('front')
+    expect(imgs[1].image!.offsetYEmu).toBe(Math.round((125.86 + 2) * 9525))
+  })
+
   it('tight wrap round-trips through save + reparse', async () => {
     const bytes = await buildDocx({ bodyXml: tightXml, withImage: true })
     const parsed = await parseDocx(bytes)
@@ -203,5 +508,66 @@ describe('tight / through wrap (wrapPolygon fidelity)', () => {
     expect(p2.blocks[0].imageWrap).toBe('tight-left')
     expect(p2.blocks[0].imageOffsetXEmu).toBe(100)
     expect(p2.blocks[0].originalXml).toContain('<wp:wrapPolygon')
+  })
+})
+
+describe('picture paragraph layout metadata', () => {
+  it('reads a w:br w:clear break beside a side-wrapped picture into its anchor line', async () => {
+    const xml = ANCHOR_SQUARE_RIGHT_XML.replace(
+      '</w:r></w:p>',
+      '</w:r><w:r><w:br w:type="textWrapping" w:clear="all"/></w:r></w:p>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    expect(doc.blocks[0].type).toBe('image')
+    expect(doc.blocks[0].anchorLine?.clear).toBe('all')
+    const plain = await parseDocx(
+      await buildDocx({ bodyXml: ANCHOR_SQUARE_RIGHT_XML, withImage: true }),
+    )
+    expect(plain.blocks[0].anchorLine?.clear).toBeUndefined()
+  })
+
+  it('keeps the direct spacing of an inline picture paragraph', async () => {
+    const xml = IMAGE_PARAGRAPH_XML.replace(
+      '<w:p>',
+      '<w:p><w:pPr><w:spacing w:before="200" w:after="280"/></w:pPr>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    expect(doc.blocks[0].type).toBe('image')
+    expect(doc.blocks[0].imageParagraphSpaceBefore).toBe(200)
+    expect(doc.blocks[0].imageParagraphSpaceAfter).toBe(280)
+    // no direct spacing: the docDefaults after-spacing the fixture declares (160) travels
+    // inline, the same value the base CSS rule gave the picture wrapper
+    const bare = await parseDocx(await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true }))
+    expect(bare.blocks[0].imageParagraphSpaceAfter).toBe(bare.docDefaults?.spaceAfterTwips)
+    expect(bare.blocks[0].imageParagraphSpaceAfter).toBe(160)
+  })
+
+  it('resolves an inline picture paragraph spacing through its style chain', async () => {
+    const extraStylesXml =
+      '<w:style w:type="paragraph" w:styleId="FigBase"><w:name w:val="Fig Base"/>' +
+      '<w:pPr><w:spacing w:before="240" w:after="240"/></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Fig"><w:name w:val="Fig"/>' +
+      '<w:basedOn w:val="FigBase"/><w:pPr><w:spacing w:after="60"/></w:pPr></w:style>'
+    const xml = IMAGE_PARAGRAPH_XML.replace('<w:p>', '<w:p><w:pPr><w:pStyle w:val="Fig"/></w:pPr>')
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true, extraStylesXml }))
+    expect(doc.blocks[0].imageParagraphSpaceBefore).toBe(240)
+    expect(doc.blocks[0].imageParagraphSpaceAfter).toBe(60)
+    const direct = xml.replace('</w:pPr>', '<w:spacing w:before="0"/></w:pPr>')
+    const d2 = await parseDocx(
+      await buildDocx({ bodyXml: direct, withImage: true, extraStylesXml }),
+    )
+    expect(d2.blocks[0].imageParagraphSpaceBefore).toBe(0)
+  })
+
+  it('keeps the inline picture effectExtent as extra line room', async () => {
+    const xml = IMAGE_PARAGRAPH_XML.replace(
+      '<wp:extent cx="914400" cy="914400"/>',
+      '<wp:extent cx="914400" cy="914400"/><wp:effectExtent l="0" t="19050" r="0" b="6350"/>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    expect(doc.blocks[0].imageEffectExtentTopPx).toBe(2)
+    expect(doc.blocks[0].imageEffectExtentBottomPx).toBe(0.67)
+    const bare = await parseDocx(await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true }))
+    expect(bare.blocks[0].imageEffectExtentBottomPx).toBeUndefined()
   })
 })

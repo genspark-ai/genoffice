@@ -89,7 +89,7 @@ describe('paragraph-level formatting (align / line spacing / indent)', () => {
       lineRule: 'auto',
     })
     expect(doc.blocks[2].format).toEqual({ align: 'justify', indentLeft: 720 })
-    expect(doc.blocks[3].format).toBeUndefined()
+    expect(doc.blocks[3].format).toEqual({})
   })
 
   it('parses and generates first-line and hanging indents', async () => {
@@ -116,6 +116,28 @@ describe('paragraph-level formatting (align / line spacing / indent)', () => {
       GEN_CTX,
     )
     expect(hangingXml).toContain('<w:ind w:left="720" w:hanging="360"/>')
+  })
+
+  it('round-trips negative indents (text extending into the margins)', async () => {
+    // Word allows signed w:left/w:right; a rebuilt paragraph must not lose
+    // them (they used to be dropped, shifting the paragraph on save — r116)
+    const bytes = await buildDocx({
+      bodyXml:
+        '<w:p><w:pPr><w:ind w:left="-284" w:right="-427"/></w:pPr>' +
+        '<w:r><w:t>into the margins</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    expect(doc.blocks[0].format).toEqual({ indentLeft: -284, indentRight: -427 })
+
+    const negativeXml = generateParagraphXml(
+      {
+        type: 'paragraph',
+        format: { indentLeft: -284, indentRight: -427 },
+        runs: [{ text: 'a' }],
+      },
+      GEN_CTX,
+    )
+    expect(negativeXml).toContain('<w:ind w:left="-284" w:right="-427"/>')
   })
 
   it('exposes exact/atLeast spacing as lineRawTwips+lineRule (F1)', async () => {

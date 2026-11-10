@@ -1,16 +1,29 @@
+import { CellValueType } from '@univerjs/core'
 import { describe, expect, it } from 'vitest'
 
 import {
   createEditJournal,
+  bulkConstantFillValueAt,
+  journalCellContentAt,
   isSheetRemoved,
   recordFilterChange,
+  recordBulkConstantFill,
+  removeBulkConstantFill,
+  restoreJournalCells,
   fromNeutralStyle,
   journalEntriesInRange,
   journalSize,
+  recordPageSetup,
+  recordProtectedRangesChange,
+  recordRemoveNumfmt,
   recordSetNumfmt,
   recordSetRangeValues,
+  recordThemeColors,
+  recordThemeFonts,
+  recordWorkbookProtection,
   recordSheetDuplicate,
   recordSheetHidden,
+  recordSheetTabColor,
   recordSheetInsert,
   recordSheetOrderChange,
   recordSheetRemove,
@@ -23,12 +36,264 @@ import {
   toNeutralStyle,
   toRecalcUserInput,
   toSaveChartEdits,
+  toSaveBulkConstantFills,
   toSaveEdits,
   toSavePivotAdds,
   toSaveTableAdds,
   toSaveSheetOps,
+  toSavePageSetupStates,
   toSaveStructuralOps,
+  recordCellImageAdd,
 } from '../src/renderer/edit-journal'
+
+describe('bulk constant-fill journal', () => {
+  it('stores a whole-column fill as one save entry', () => {
+    const journal = createEditJournal()
+    recordBulkConstantFill(journal, {
+      sheetId: 'sheet-1',
+      startRow: 1,
+      endRow: 88_587,
+      startColumn: 97,
+      endColumn: 97,
+      value: 'merrick',
+    })
+    expect(journalSize(journal)).toBe(1)
+    expect(toSaveBulkConstantFills(journal)).toEqual([
+      {
+        sheetId: 'sheet-1',
+        startRow: 1,
+        endRow: 88_587,
+        startColumn: 97,
+        endColumn: 97,
+        value: 'merrick',
+      },
+    ])
+    expect(bulkConstantFillValueAt(journal, 'sheet-1', 44_000, 97)).toEqual({
+      found: true,
+      value: 'merrick',
+    })
+    expect(bulkConstantFillValueAt(journal, 'sheet-1', 44_000, 96)).toEqual({ found: false })
+  })
+
+  it('lets an explicit cell edit override a bulk fill and supports undo removal', () => {
+    const journal = createEditJournal()
+    const { fill } = recordBulkConstantFill(journal, {
+      sheetId: 'sheet-1',
+      startRow: 1,
+      endRow: 10,
+      startColumn: 2,
+      endColumn: 2,
+      value: 'default',
+    })
+    recordSetRangeValues(journal, 'sheet-1', { 5: { 2: { v: 'override' } } })
+    expect(bulkConstantFillValueAt(journal, 'sheet-1', 5, 2)).toEqual({ found: false })
+    removeBulkConstantFill(journal, fill)
+    expect(toSaveBulkConstantFills(journal)).toEqual([])
+  })
+
+  it('lets a bulk fill override earlier per-cell value entries (clear-then-fill)', () => {
+    const journal = createEditJournal()
+    // A clear_range journals one null-value entry per cell; a later fill over
+    // the same cells must win in reads and at save, or the fill silently
+    // reverts on disk while the viewport shows the filled values.
+    recordSetRangeValues(journal, 'sheet-1', { 3: { 98: { v: null } }, 4: { 98: { v: null } } })
+    recordBulkConstantFill(journal, {
+      sheetId: 'sheet-1',
+      startRow: 2,
+      endRow: 88_587,
+      startColumn: 98,
+      endColumn: 98,
+      value: 'merrick',
+    })
+    expect(bulkConstantFillValueAt(journal, 'sheet-1', 3, 98)).toEqual({
+      found: true,
+      value: 'merrick',
+    })
+    expect(toSaveEdits(journal)).toEqual([])
+    expect(toSaveBulkConstantFills(journal)).toHaveLength(1)
+  })
+
+  it('restores the purged entries when the fill is undone', () => {
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-1', { 3: { 98: { v: null } }, 4: { 98: { v: null } } })
+    const { fill, purgedCells } = recordBulkConstantFill(journal, {
+      sheetId: 'sheet-1',
+      startRow: 2,
+      endRow: 88_587,
+      startColumn: 98,
+      endColumn: 98,
+      value: 'merrick',
+    })
+    expect(purgedCells).toHaveLength(2)
+    expect(toSaveEdits(journal)).toEqual([])
+
+    removeBulkConstantFill(journal, fill)
+    restoreJournalCells(journal, fill.sheetId, purgedCells)
+
+    // The pre-fill clear is back: reads see the cleared cells again and the
+    // save payload carries them.
+    expect(bulkConstantFillValueAt(journal, 'sheet-1', 3, 98)).toEqual({ found: false })
+    expect(journalCellContentAt(journal, 'sheet-1', 3, 98)).toEqual({
+      found: true,
+      value: null,
+      formula: null,
+    })
+    expect(toSaveEdits(journal)).toHaveLength(2)
+    expect(toSaveBulkConstantFills(journal)).toEqual([])
+  })
+
+  it('keeps the style part of an overridden earlier cell edit', () => {
+    const journal = createEditJournal()
+    journal.cells.set(
+      'sheet-1',
+      new Map([
+        [
+          '3:2',
+          {
+            row: 3,
+            column: 2,
+            hasValue: true,
+            value: null,
+            style: { bold: true },
+            styleReset: true,
+          },
+        ],
+      ]),
+    )
+    recordBulkConstantFill(journal, {
+      sheetId: 'sheet-1',
+      startRow: 1,
+      endRow: 10,
+      startColumn: 2,
+      endColumn: 2,
+      value: 'filled',
+    })
+    expect(bulkConstantFillValueAt(journal, 'sheet-1', 3, 2)).toEqual({
+      found: true,
+      value: 'filled',
+    })
+    expect(journal.cells.get('sheet-1')?.get('3:2')).toEqual({
+      row: 3,
+      column: 2,
+      hasValue: false,
+      value: null,
+      style: { bold: true },
+      styleReset: true,
+    })
+  })
+
+  it('does not purge cell entries outside the fill rectangle', () => {
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-1', { 0: { 2: { v: 'header' } }, 3: { 5: { v: 'x' } } })
+    recordBulkConstantFill(journal, {
+      sheetId: 'sheet-1',
+      startRow: 1,
+      endRow: 10,
+      startColumn: 2,
+      endColumn: 2,
+      value: 'filled',
+    })
+    expect(toSaveEdits(journal)).toHaveLength(2)
+  })
+
+  it('reads a just-journaled source value before the streamed viewport refreshes', () => {
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-1', { 1: { 97: { v: 'merrick' } } })
+    expect(journalCellContentAt(journal, 'sheet-1', 1, 97)).toEqual({
+      found: true,
+      value: 'merrick',
+      formula: null,
+    })
+  })
+
+  it('keeps a bulk value visible through a style-only cell edit', () => {
+    const journal = createEditJournal()
+    recordBulkConstantFill(journal, {
+      sheetId: 'sheet-1',
+      startRow: 1,
+      endRow: 10,
+      startColumn: 2,
+      endColumn: 2,
+      value: 'default',
+    })
+    journal.cells.set(
+      'sheet-1',
+      new Map([['5:2', { row: 5, column: 2, hasValue: false, value: null }]]),
+    )
+    expect(journalCellContentAt(journal, 'sheet-1', 5, 2)).toEqual({
+      found: true,
+      value: 'default',
+      formula: null,
+    })
+  })
+
+  it('moves and splits fill ranges across later structural edits', () => {
+    const journal = createEditJournal()
+    recordBulkConstantFill(journal, {
+      sheetId: 'sheet-1',
+      startRow: 2,
+      endRow: 8,
+      startColumn: 4,
+      endColumn: 4,
+      value: 'filled',
+    })
+    recordStructuralOp(journal, 'sheet-1', { kind: 'insert-rows', index: 5, count: 2 })
+
+    expect(bulkConstantFillValueAt(journal, 'sheet-1', 4, 4)).toEqual({
+      found: true,
+      value: 'filled',
+    })
+    expect(bulkConstantFillValueAt(journal, 'sheet-1', 5, 4)).toEqual({ found: false })
+    expect(bulkConstantFillValueAt(journal, 'sheet-1', 7, 4)).toEqual({
+      found: true,
+      value: 'filled',
+    })
+
+    recordStructuralOp(journal, 'sheet-1', { kind: 'remove-cols', index: 3, count: 1 })
+    expect(bulkConstantFillValueAt(journal, 'sheet-1', 7, 3)).toEqual({
+      found: true,
+      value: 'filled',
+    })
+    expect(bulkConstantFillValueAt(journal, 'sheet-1', 7, 4)).toEqual({ found: false })
+  })
+
+  it('removes every shifted fragment when undoing the original fill', () => {
+    const journal = createEditJournal()
+    const { fill } = recordBulkConstantFill(journal, {
+      sheetId: 'sheet-1',
+      startRow: 2,
+      endRow: 8,
+      startColumn: 4,
+      endColumn: 4,
+      value: 'filled',
+    })
+    recordStructuralOp(journal, 'sheet-1', { kind: 'insert-rows', index: 5, count: 2 })
+    expect(toSaveBulkConstantFills(journal)).toHaveLength(2)
+
+    removeBulkConstantFill(journal, fill)
+    expect(toSaveBulkConstantFills(journal)).toEqual([])
+  })
+})
+
+describe('recordSetRangeValues cell types', () => {
+  it('journals a BOOLEAN-typed 0/1 as a boolean so the save keeps t="b"', () => {
+    // copy_range of a TRUE cell (file `<c t="b"><v>1</v>`) reaches the
+    // mutation as Univer's normalized {v: 1, t: BOOLEAN}; journaling the
+    // bare 1 saved a number where the source had TRUE.
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-2', {
+      0: { 1: { v: 1, t: CellValueType.BOOLEAN }, 2: { v: 0, t: CellValueType.BOOLEAN } },
+      1: { 1: { v: 1 }, 2: { v: '1', t: CellValueType.STRING } },
+    })
+    const at = (row: number, column: number) =>
+      journalCellContentAt(journal, 'sheet-2', row, column)
+    expect(at(0, 1)).toEqual({ found: true, value: true, formula: null })
+    expect(at(0, 2)).toEqual({ found: true, value: false, formula: null })
+    expect(at(1, 1)).toEqual({ found: true, value: 1, formula: null })
+    expect(at(1, 2)).toEqual({ found: true, value: '1', formula: null })
+    expect(toSaveEdits(journal).map((entry) => entry.value)).toEqual([true, false, 1, '1'])
+  })
+})
 
 describe('recordTableAdd', () => {
   const table = {
@@ -150,6 +415,40 @@ describe('recordSetRangeValues', () => {
     expect(entry?.style).toEqual({ italic: true })
   })
 
+  it('journals the ribbon No Fill (bg: { rgb: null }) as a fill clear', () => {
+    // setBackground(null) reaches the mutation wrapped as { rgb: null }, not
+    // as a bare null. Dropping it left Save disabled and the fill in the
+    // file after the ribbon had already painted the cells clear.
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-1', { 0: { 2: { s: { bg: { rgb: null } } } } })
+    expect(journal.cells.get('sheet-1')?.get('0:2')).toEqual({
+      row: 0,
+      column: 2,
+      hasValue: false,
+      value: null,
+      style: { fillColor: null },
+    })
+    expect(journalSize(journal)).toBe(1)
+  })
+
+  it('journals the empty-rgb no-fill sentinel and a wrapped Automatic font color', () => {
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-1', {
+      0: { 0: { s: { bg: { rgb: '' }, cl: { rgb: null } } } },
+    })
+    expect(journal.cells.get('sheet-1')?.get('0:0')?.style).toEqual({
+      fillColor: null,
+      fontColor: null,
+    })
+  })
+
+  it('lets a later fill override a journaled clear', () => {
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-1', { 0: { 0: { s: { bg: { rgb: null } } } } })
+    recordSetRangeValues(journal, 'sheet-1', { 0: { 0: { s: { bg: { rgb: '#00FF00' } } } } })
+    expect(journal.cells.get('sheet-1')?.get('0:0')?.style).toEqual({ fillColor: '#00FF00' })
+  })
+
   it('flattens rich-text edits to plain text', () => {
     const journal = createEditJournal()
     recordSetRangeValues(journal, 'sheet-1', {
@@ -215,6 +514,28 @@ describe('recordSetRangeValues', () => {
   })
 })
 
+describe('recordRemoveNumfmt', () => {
+  it('journals a cleared format as General so the save drops the old one', () => {
+    const journal = createEditJournal()
+    const recorded = recordRemoveNumfmt(journal, 'sheet-1', {
+      ranges: [{ startRow: 0, endRow: 1, startColumn: 6, endColumn: 6 }],
+    })
+    expect(recorded).toHaveLength(2)
+    expect(journal.cells.get('sheet-1')?.get('0:6')?.style).toEqual({ numberFormat: 'General' })
+    expect(journal.cells.get('sheet-1')?.get('1:6')?.style).toEqual({ numberFormat: 'General' })
+  })
+
+  it('ignores malformed or unbounded ranges', () => {
+    const journal = createEditJournal()
+    expect(recordRemoveNumfmt(journal, 'sheet-1', {})).toEqual([])
+    expect(
+      recordRemoveNumfmt(journal, 'sheet-1', {
+        ranges: [{ startRow: 0, endRow: Number.NaN, startColumn: 0, endColumn: 0 }],
+      }),
+    ).toEqual([])
+  })
+})
+
 describe('recordSetNumfmt', () => {
   it('expands pattern ranges into per-cell style entries', () => {
     const journal = createEditJournal()
@@ -276,6 +597,11 @@ describe('style conversion', () => {
   })
 
   it('maps text rotation and double underline both ways', () => {
+    expect(toNeutralStyle({ va: 3 })).toEqual({ vertAlign: 'superscript' })
+    expect(toNeutralStyle({ va: 2 })).toEqual({ vertAlign: 'subscript' })
+    expect(toNeutralStyle({ va: null })).toEqual({ vertAlign: null })
+    expect(fromNeutralStyle({ vertAlign: 'subscript' })).toEqual({ va: 2 })
+    expect(fromNeutralStyle({ vertAlign: null })).toEqual({ va: null })
     expect(toNeutralStyle({ tr: { a: 45 } })).toEqual({ textRotation: 45 })
     expect(toNeutralStyle({ tr: { a: -45 } })).toEqual({ textRotation: 135 })
     expect(toNeutralStyle({ tr: { a: 0, v: 1 } })).toEqual({ textRotation: 255 })
@@ -499,6 +825,15 @@ describe('sheet lifecycle journal', () => {
     expect(journalSize(journal)).toBe(1)
   })
 
+  it('a duplicated sheet renamed later still saves as a duplicate', () => {
+    const journal = createEditJournal()
+    recordSheetDuplicate(journal, 'u-copy', 'Data (Copy)', 'sheet-1')
+    recordSheetRename(journal, 'u-copy', 'DataV2', undefined)
+    expect(toSaveSheetOps(journal)).toEqual([
+      { kind: 'duplicate-sheet', sheetId: 'u-copy', name: 'DataV2', sourceSheetId: 'sheet-1' },
+    ])
+  })
+
   it('adding then removing a sheet cancels out', () => {
     const journal = createEditJournal()
     recordSheetInsert(journal, 'u-new', 'Sheet4')
@@ -543,9 +878,25 @@ describe('sheet duplicate journal', () => {
     const journal = createEditJournal()
     recordSetRangeValues(journal, 'sheet-1', { 0: { 0: { v: 1 } } })
     recordStructuralOp(journal, 'sheet-1', { kind: 'insert-rows', index: 0, count: 1 })
+    recordBulkConstantFill(journal, {
+      sheetId: 'sheet-1',
+      startRow: 1,
+      endRow: 10,
+      startColumn: 2,
+      endColumn: 2,
+      value: 'default',
+    })
     recordSheetDuplicate(journal, 'u-copy', 'Data Copy', 'sheet-1')
     // Edits to the source after the copy must not leak into it.
     recordSetRangeValues(journal, 'sheet-1', { 5: { 5: { v: 2 } } })
+    recordBulkConstantFill(journal, {
+      sheetId: 'sheet-1',
+      startRow: 20,
+      endRow: 30,
+      startColumn: 2,
+      endColumn: 2,
+      value: 'later',
+    })
     expect(toSaveSheetOps(journal)).toEqual([
       { kind: 'duplicate-sheet', sheetId: 'u-copy', name: 'Data Copy', sourceSheetId: 'sheet-1' },
     ])
@@ -554,6 +905,16 @@ describe('sheet duplicate journal', () => {
     expect(copyEdits[0]).toMatchObject({ row: 1, column: 0, value: 1 })
     expect(toSaveStructuralOps(journal).filter((op) => op.sheetId === 'u-copy')).toEqual([
       { sheetId: 'u-copy', kind: 'insert-rows', index: 0, count: 1 },
+    ])
+    expect(toSaveBulkConstantFills(journal).filter((fill) => fill.sheetId === 'u-copy')).toEqual([
+      {
+        sheetId: 'u-copy',
+        startRow: 1,
+        endRow: 10,
+        startColumn: 2,
+        endColumn: 2,
+        value: 'default',
+      },
     ])
     expect(toSaveEdits(journal).filter((edit) => edit.sheetId === 'sheet-1')).toHaveLength(2)
   })
@@ -627,6 +988,34 @@ describe('sheet visibility and order journal', () => {
       { kind: 'set-sheet-hidden', sheetId: 'sheet-2', hidden: true },
       { kind: 'reorder-sheets' },
     ])
+  })
+
+  it('journals tab colors normalized to #RRGGBB and drops a revert', () => {
+    const journal = createEditJournal()
+    recordSheetTabColor(journal, 'sheet-1', '#92d050', null)
+    expect(journalSize(journal)).toBe(1)
+    expect(toSaveSheetOps(journal)).toEqual([
+      { kind: 'set-sheet-tab-color', sheetId: 'sheet-1', color: '#92D050' },
+    ])
+    recordSheetTabColor(journal, 'sheet-1', undefined, null)
+    expect(journalSize(journal)).toBe(0)
+    recordSheetTabColor(journal, 'sheet-2', '', '#FF0000')
+    expect(toSaveSheetOps(journal)).toEqual([
+      { kind: 'set-sheet-tab-color', sheetId: 'sheet-2', color: null },
+    ])
+    recordSheetTabColor(journal, 'sheet-2', 'ff0000', '#FF0000')
+    expect(journalSize(journal)).toBe(0)
+  })
+
+  it('copies a pending tab color onto a duplicate of the sheet', () => {
+    const journal = createEditJournal()
+    recordSheetTabColor(journal, 'sheet-1', '#92D050', null)
+    recordSheetDuplicate(journal, 'u-copy', 'Copy', 'sheet-1')
+    expect(toSaveSheetOps(journal)).toContainEqual({
+      kind: 'set-sheet-tab-color',
+      sheetId: 'u-copy',
+      color: '#92D050',
+    })
   })
 })
 
@@ -847,5 +1236,119 @@ describe('recordStructuralOp move-rows', () => {
     const restored = journal.cells.get('sheet-1')
     expect(restored?.get('1:0')?.value).toBe('moved')
     expect(restored?.get('3:0')?.value).toBe('displaced')
+  })
+})
+
+describe('workbook protection / theme / protected-range journaling', () => {
+  it('workbook protection drops when toggled back to the original', () => {
+    const journal = createEditJournal()
+    recordWorkbookProtection(journal, true, false)
+    expect(journal.workbookProtection.desired).toBe(true)
+    expect(journalSize(journal)).toBe(1)
+    recordWorkbookProtection(journal, false, false)
+    expect(journal.workbookProtection.desired).toBeNull()
+    expect(journalSize(journal)).toBe(0)
+  })
+
+  it('theme colors and fonts count once each and overwrite on re-pick', () => {
+    const journal = createEditJournal()
+    recordThemeColors(
+      journal,
+      'Indigo',
+      Array.from({ length: 12 }, () => '#111111'),
+    )
+    recordThemeFonts(journal, 'Georgia', 'Georgia', 'Georgia')
+    expect(journalSize(journal)).toBe(2)
+    recordThemeColors(
+      journal,
+      'Forest',
+      Array.from({ length: 12 }, () => '#222222'),
+    )
+    expect(journal.theme.colors?.name).toBe('Forest')
+    expect(journalSize(journal)).toBe(2)
+  })
+
+  it('protected-range dirt skips removed sheets in the size count', () => {
+    const journal = createEditJournal()
+    recordProtectedRangesChange(journal, 'sheet-1')
+    recordProtectedRangesChange(journal, 'sheet-2')
+    expect(journalSize(journal)).toBe(2)
+    recordSheetRemove(journal, 'sheet-2')
+    expect(journalSize(journal)).toBe(2) // sheet-2's dirt swaps for the removal op
+  })
+})
+
+describe('recordStructuralOp page-break remapping', () => {
+  it('shifts journaled breaks through inserts and drops deleted ones', () => {
+    const journal = createEditJournal()
+    recordPageSetup(journal, 'sheet-1', { rowBreaks: [3, 8], colBreaks: [2] })
+    recordStructuralOp(journal, 'sheet-1', { kind: 'insert-rows', index: 5, count: 2 })
+    expect(journal.pageSetup.get('sheet-1')?.rowBreaks).toEqual([3, 10])
+    expect(journal.pageSetup.get('sheet-1')?.colBreaks).toEqual([2])
+    recordStructuralOp(journal, 'sheet-1', { kind: 'remove-rows', index: 2, count: 3 })
+    expect(journal.pageSetup.get('sheet-1')?.rowBreaks).toEqual([7])
+  })
+
+  it('undo (the inverse op) restores the shifted break set', () => {
+    const journal = createEditJournal()
+    recordPageSetup(journal, 'sheet-1', { rowBreaks: [6] })
+    recordStructuralOp(journal, 'sheet-1', { kind: 'insert-rows', index: 0, count: 4 })
+    expect(journal.pageSetup.get('sheet-1')?.rowBreaks).toEqual([10])
+    recordStructuralOp(journal, 'sheet-1', { kind: 'remove-rows', index: 0, count: 4 })
+    expect(journal.structuralOps.get('sheet-1')).toBeUndefined()
+    expect(journal.pageSetup.get('sheet-1')?.rowBreaks).toEqual([6])
+  })
+})
+
+describe('right-to-left page-setup journal', () => {
+  it('merges the direction flag with other sheet-view state and saves it', () => {
+    const journal = createEditJournal()
+    recordPageSetup(journal, 'sheet-1', { showGridlines: false })
+    recordPageSetup(journal, 'sheet-1', { rightToLeft: true })
+    recordPageSetup(journal, 'sheet-2', { rightToLeft: false })
+    expect(toSavePageSetupStates(journal)).toEqual([
+      { sheetId: 'sheet-1', showGridlines: false, rightToLeft: true },
+      { sheetId: 'sheet-2', rightToLeft: false },
+    ])
+  })
+})
+
+describe('cell picture journal', () => {
+  const png = 'data:image/png;base64,iVBORw0KGgo='
+  it('counts an embedded picture as a pending edit unless its sheet is removed', () => {
+    const journal = createEditJournal()
+    recordCellImageAdd(journal, {
+      sheetId: 's1',
+      row: 1,
+      column: 1,
+      mediaType: 'image/png',
+      dataUrl: png,
+    })
+    recordCellImageAdd(journal, {
+      sheetId: 's2',
+      row: 1,
+      column: 1,
+      mediaType: 'image/png',
+      dataUrl: png,
+    })
+    expect(journalSize(journal)).toBe(2)
+    recordSheetRemove(journal, 's2')
+    expect(journalSize(journal)).toBe(2) // s1 picture + the sheet removal
+  })
+
+  it('a second picture in the same cell displaces the first', () => {
+    const journal = createEditJournal()
+    const first = {
+      sheetId: 's1',
+      row: 3,
+      column: 4,
+      mediaType: 'image/png' as const,
+      dataUrl: png,
+    }
+    expect(recordCellImageAdd(journal, first)).toBeUndefined()
+    expect(
+      recordCellImageAdd(journal, { ...first, dataUrl: 'data:image/gif;base64,R0lGODlh' }),
+    ).toEqual(first)
+    expect(journal.cellImageAdds).toHaveLength(1)
   })
 })

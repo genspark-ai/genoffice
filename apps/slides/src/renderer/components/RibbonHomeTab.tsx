@@ -1,10 +1,17 @@
 /** Home tab of the slides ribbon. Extracted from Ribbon.tsx. */
 import { useState } from 'react'
 import { platformShortcuts } from '@genoffice/i18n'
+import {
+  ColorPicker,
+  isSymbolFontFamily,
+  partitionFontFamilies,
+  useScrollWindow,
+} from '@genoffice/ui'
 import { saveEditSelection } from '../TextEditOverlay'
 import { armColorInput } from '../color-input'
 import { displayFontFamily } from '../konva-adapter'
 import { useSystemFontFamilies } from '../system-fonts'
+import { useFontCatalog } from '../font-manager'
 import {
   GensparkMark,
   IconAiBeautify,
@@ -13,6 +20,8 @@ import {
   IconAlignCenter,
   IconAlignJustify,
   IconAlignLeft,
+  IconDirLtr,
+  IconDirRtl,
   IconAlignRight,
   IconBullets,
   IconClearFormat,
@@ -43,6 +52,8 @@ import {
   IconSection,
   IconShrinkFont,
   IconSlideLayout,
+  IconSubscript,
+  IconSuperscript,
 } from './icons'
 import {
   BIG,
@@ -55,6 +66,21 @@ import {
   closeSiblingPanels,
   type RibbonTabCtx,
 } from './ribbon-shared'
+import {
+  BULLET_HANG_PRESETS,
+  BULLET_PRESETS,
+  EXTRA_BULLET_SYMBOLS,
+  NUMBER_PRESETS,
+  bulletRunText,
+} from '../bullet-presets'
+
+/** The New Slide screentip shows the platform's real chord: ⇧⌘N on mac, Ctrl+M elsewhere. */
+const IS_MAC = navigator.platform.toLowerCase().includes('mac')
+
+// Symbol fonts (Wingdings & co.) render their own name as pictographs, so the
+// picker shows those names in the UI font (like Word) instead of the font itself.
+const fontPreviewFamily = (f: string): string | undefined =>
+  isSymbolFontFamily(f) ? undefined : displayFontFamily(f)
 
 export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
   const {
@@ -64,6 +90,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
     canPaste,
     curBulletChar,
     curAlign,
+    curRtl,
     curFontFamily,
     curFontSizeMixed,
     curFontSizePt,
@@ -81,6 +108,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
     onAddSlideWithLayout,
     onAiPreset,
     onAlign,
+    onDirection,
     onArrange,
     onFlip,
     onCopy,
@@ -105,7 +133,6 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
     arrangeOpen,
     closePanels,
     collapseOpen,
-    collapsedGroups,
     colorOpen,
     commitFontDraft,
     commitSizeDraft,
@@ -121,7 +148,6 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
     onCustomBulletColor,
     onCustomTextColor,
     paraOpen,
-    recentColors,
     setArrangeOpen,
     setCollapseOpen,
     setColorOpen,
@@ -145,14 +171,75 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
   // Typed-ahead font query: only what the user actually typed filters the menu
   // (opening via the caret or focusing shows the full list)
   const [fontFilter, setFontFilter] = useState('')
-  const { families: systemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
+  const { families: allSystemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
+  const {
+    catalog: fontCatalog,
+    busy: fontBusy,
+    failed: fontFailed,
+    load: loadFontCatalog,
+    download: downloadFont,
+    installLocal: installLocalFonts,
+  } = useFontCatalog()
+  // Store fonts are invisible to queryLocalFonts, so installed catalog families
+  // count as known even though the enumeration misses them.
+  const installedCatalogFamilies = fontCatalog.filter((c) => c.installed).map((c) => c.family)
+  // Candidates the machine proves absent drop out; when enumeration is
+  // unavailable the full candidate list stays visible.
+  const { builtin: fontFamilies, system: systemFontFamilies } = partitionFontFamilies(
+    FONT_FAMILIES,
+    allSystemFontFamilies,
+    installedCatalogFamilies,
+  )
+  // Catalog families stay listed after install (store fonts are invisible to
+  // queryLocalFonts). Installed ones dedupe against the built-in/system sections;
+  // uninstalled ones always show here so built-in names like Noto Sans JP keep an
+  // in-picker download path (the built-in row is hidden below while uninstalled).
+  const catalogFonts = fontCatalog.filter(
+    (c) =>
+      !c.installed || (!FONT_FAMILIES.includes(c.family) && !systemFontFamilies.includes(c.family)),
+  )
+  const uninstalledCatalog = new Set(fontCatalog.filter((c) => !c.installed).map((c) => c.family))
   const matchesFontFilter = (f: string) =>
     !fontFilter.trim() || f.toLowerCase().includes(fontFilter.trim().toLowerCase())
+  const fontMenuWindow = useScrollWindow(fontOpen)
+  let fontRow = 0
+  const previewAt = (f: string) =>
+    fontMenuWindow.inWindow(fontRow++) ? fontPreviewFamily(f) : undefined
+  // a download row has no preview but still occupies a row of the scroller
+  const skipRow = () => {
+    fontRow++
+    return undefined
+  }
   const EMU_PER_PX = 9525
   const commitHangDraft = () => {
     const px = parseFloat(hangDraft.replace(',', '.'))
     if (!Number.isFinite(px) || px < 0 || !hasSelection) return
     onParagraphFormat({ bulletHangEmu: Math.round(px * EMU_PER_PX) })
+  }
+  const [symDraft, setSymDraft] = useState('')
+  const commitSymDraft = () => {
+    const ch = [...symDraft.trim()][0]
+    if (!ch || !hasSelection) return
+    onParagraphFormat({ bullet: 'char', bulletChar: ch })
+  }
+  const [startDraft, setStartDraft] = useState('')
+  const commitStartDraft = () => {
+    const n = parseInt(startDraft, 10)
+    if (!Number.isInteger(n) || n < 1 || !hasSelection) return
+    onParagraphFormat({ startAt: n })
+  }
+  const pickBulletPicture = async () => {
+    const picked = await window.slidesApi.pickPictureFile()
+    if (picked) onParagraphFormat({ bullet: 'blip', bulletImage: picked })
+  }
+  const draftKeys = (commit: () => void) => (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      commit()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      e.currentTarget.blur()
+    }
   }
   return (
     <>
@@ -278,17 +365,19 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
       <Group label={t('ribbonTabSlideShow')}>
         <div className="rb-drop-wrap">
           <button
-            className="rb-big"
+            className="rb-big rb-split"
             disabled={!hasDoc}
             onClick={() => onSlideShow(slideShowFromStart)}
             data-tip={t(slideShowFromStart ? 'ribbonFromBeginningTip' : 'ribbonFromCurrentTip')}
           >
             <span className="rb-big-icon">
-              {slideShowFromStart ? (
-                <IconPlayFromStart size={BIG} />
-              ) : (
-                <IconPlayCurrent size={BIG} />
-              )}
+              <span className="rb-split-main">
+                {slideShowFromStart ? (
+                  <IconPlayFromStart size={BIG} />
+                ) : (
+                  <IconPlayCurrent size={BIG} />
+                )}
+              </span>
               <span
                 className={`rb-caret-hit${slideShowOpen ? ' active' : ''}`}
                 onMouseDown={(e) => {
@@ -338,11 +427,13 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
         </div>
       </Group>
       <div className="ribbon-sep" />
+      {/* The slides group always renders collapsed behind one dropdown; the
+          flyout holds the combined new-slide + layout / add-section layout */}
       <Group
         label={t('ribbonGroupSlides')}
         groupId="slides"
         collapse={{
-          collapsed: collapsedGroups.includes('slides'),
+          collapsed: true,
           open: collapseOpen === 'slides',
           onToggle: () => {
             closePanels(['collapse'])
@@ -353,13 +444,16 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
       >
         <div className="rb-drop-wrap">
           <button
-            className="rb-big"
+            className="rb-big rb-split"
             disabled={!hasDoc}
             onClick={onAddSlide}
-            data-tip={t('ribbonNewSlideTip')}
+            data-tip={platformShortcuts(t('ribbonNewSlideTip'))}
+            data-tip-kbd={IS_MAC ? '⇧⌘N' : 'Ctrl+M'}
           >
             <span className="rb-big-icon">
-              <IconNewSlide size={BIG} />
+              <span className="rb-split-main">
+                <IconNewSlide size={BIG} />
+              </span>
               <span
                 className={`rb-caret-hit${layoutOpen ? ' active' : ''}`}
                 data-tip={t('ribbonChooseLayoutNew')}
@@ -391,58 +485,56 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
             </div>
           )}
         </div>
-        <div className="rb-drop-wrap">
-          <button
-            className={`rb-big ${layoutPickOpen ? 'active' : ''}`}
-            disabled={!hasDoc}
-            onMouseDown={(e) => {
-              e.stopPropagation()
-              closeSiblingPanels(e, closePanels, 'layoutPick')
-            }}
-            onClick={() => setLayoutPickOpen((v) => !v)}
-            data-tip={t('ribbonLayoutTip')}
-          >
-            <span className="rb-big-icon">
-              <IconSlideLayout size={BIG} />
+        <div className="rb-col rb-slides-col">
+          <div className="rb-drop-wrap">
+            <button
+              className={`rb-small ${layoutPickOpen ? 'active' : ''}`}
+              disabled={!hasDoc}
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                closeSiblingPanels(e, closePanels, 'layoutPick')
+              }}
+              onClick={() => setLayoutPickOpen((v) => !v)}
+              data-tip={t('ribbonLayoutTip')}
+            >
+              <IconSlideLayout size={20} />
+              <span>{t('ribbonLayout')}</span>
               <RbCaret />
-            </span>
-            <span>{t('ribbonLayout')}</span>
+            </button>
+            {layoutPickOpen && (
+              <div className="rb-drop rb-layout-drop" onMouseDown={(e) => e.stopPropagation()}>
+                <div className="rb-drop-title">{t('ribbonChooseLayoutChange')}</div>
+                <LayoutList
+                  layouts={layouts}
+                  size={layoutSize}
+                  onPick={(path) => {
+                    setLayoutPickOpen(false)
+                    onSetLayout(path)
+                  }}
+                />
+                <div className="rb-menu-div" />
+                <button
+                  className="rb-layout-reset"
+                  onClick={() => {
+                    setLayoutPickOpen(false)
+                    onResetLayout()
+                  }}
+                >
+                  {t('ribbonResetLayout')}
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            className="rb-small"
+            disabled={!hasDoc}
+            onClick={onAddSection}
+            data-tip={t('ribbonAddSectionTip')}
+          >
+            <IconSection size={20} />
+            <span>{t('ribbonAddSection')}</span>
           </button>
-          {layoutPickOpen && (
-            <div className="rb-drop rb-layout-drop" onMouseDown={(e) => e.stopPropagation()}>
-              <div className="rb-drop-title">{t('ribbonChooseLayoutChange')}</div>
-              <LayoutList
-                layouts={layouts}
-                size={layoutSize}
-                onPick={(path) => {
-                  setLayoutPickOpen(false)
-                  onSetLayout(path)
-                }}
-              />
-              <div className="rb-menu-div" />
-              <button
-                className="rb-layout-reset"
-                onClick={() => {
-                  setLayoutPickOpen(false)
-                  onResetLayout()
-                }}
-              >
-                {t('ribbonResetLayout')}
-              </button>
-            </div>
-          )}
         </div>
-        <button
-          className="rb-big"
-          disabled={!hasDoc}
-          onClick={onAddSection}
-          data-tip={t('ribbonAddSectionTip')}
-        >
-          <span className="rb-big-icon">
-            <IconSection size={BIG} />
-          </span>
-          <span>{t('ribbonAddSection')}</span>
-        </button>
       </Group>
       <div className="ribbon-sep" />
       <Group label={t('ribbonGroupFont')}>
@@ -480,6 +572,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                     // popup (size/color/...) before opening the font list
                     closePanels(['font'])
                     loadSystemFonts()
+                    loadFontCatalog()
                     setFontOpen(true)
                   }}
                   onBlur={() => {
@@ -512,7 +605,10 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                     if (editing || hasTextSelection) {
                       closeSiblingPanels(e, closePanels, 'font')
                       setFontFilter('')
-                      if (!fontOpen) loadSystemFonts()
+                      if (!fontOpen) {
+                        loadSystemFonts()
+                        loadFontCatalog()
+                      }
                       setFontOpen((v) => !v)
                     }
                   }}
@@ -523,20 +619,25 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
               {fontOpen && (
                 <div
                   className="rb-drop rb-menu rb-menu-scroll rb-font-menu"
+                  ref={fontMenuWindow.ref}
+                  onScroll={fontMenuWindow.onScroll}
                   onMouseDown={(e) => e.stopPropagation()}
                 >
                   {(curFontFamily &&
-                  !FONT_FAMILIES.includes(curFontFamily) &&
+                  !fontFamilies.includes(curFontFamily) &&
                   !systemFontFamilies.includes(curFontFamily)
-                    ? [curFontFamily, ...FONT_FAMILIES]
-                    : FONT_FAMILIES
+                    ? [curFontFamily, ...fontFamilies]
+                    : fontFamilies
                   )
                     .filter(matchesFontFilter)
+                    // Built-in names that are uninstalled catalog fonts render in the
+                    // downloadable section instead (apply-only would set a missing font)
+                    .filter((f) => f === curFontFamily || !uninstalledCatalog.has(f))
                     .map((f) => (
                       <button
                         key={f}
                         className={f === curFontFamily ? 'on' : ''}
-                        style={{ fontFamily: displayFontFamily(f) }}
+                        style={{ fontFamily: previewAt(f) }}
                         onMouseDown={(e) => {
                           e.preventDefault()
                           onFontFamily(f)
@@ -553,7 +654,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                         <button
                           key={f}
                           className={f === curFontFamily ? 'on' : ''}
-                          style={{ fontFamily: displayFontFamily(f) }}
+                          style={{ fontFamily: previewAt(f) }}
                           onMouseDown={(e) => {
                             e.preventDefault()
                             onFontFamily(f)
@@ -565,6 +666,66 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                       ))}
                     </>
                   )}
+                  {catalogFonts.some((c) => matchesFontFilter(c.family)) && (
+                    <>
+                      <div className="rb-menu-group-label">{t('ribbonFontsDownloadable')}</div>
+                      {catalogFonts
+                        .filter((c) => matchesFontFilter(c.family))
+                        .map((c) =>
+                          c.installed ? (
+                            <button
+                              key={c.family}
+                              className={c.family === curFontFamily ? 'on' : ''}
+                              style={{ fontFamily: previewAt(c.family) }}
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                onFontFamily(c.family)
+                                setFontOpen(false)
+                              }}
+                            >
+                              {c.family}
+                            </button>
+                          ) : (
+                            <button
+                              key={c.family}
+                              className="rb-font-download"
+                              style={{ fontFamily: skipRow() }}
+                              disabled={fontBusy.has(c.family)}
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                void downloadFont(c.family).then((ok) => {
+                                  if (ok) {
+                                    onFontFamily(c.family)
+                                    setFontOpen(false)
+                                  }
+                                })
+                              }}
+                            >
+                              {c.family}
+                              <span className="rb-font-download-tag">
+                                {fontBusy.has(c.family)
+                                  ? t('ribbonFontDownloading')
+                                  : fontFailed.has(c.family)
+                                    ? t('ribbonFontDownloadFailed')
+                                    : '⤓'}
+                              </span>
+                            </button>
+                          ),
+                        )}
+                    </>
+                  )}
+                  <button
+                    className="rb-font-install-local"
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      void installLocalFonts().then((families) => {
+                        if (families.length === 1) onFontFamily(families[0]!)
+                        if (families.length) setFontOpen(false)
+                      })
+                    }}
+                  >
+                    {t('ribbonFontInstallLocal')}
+                  </button>
                 </div>
               )}
             </div>
@@ -694,20 +855,8 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
             >
               <s>ab</s>
             </button>
-            {fmtBtn(
-              'superscript',
-              <span>
-                x<sup className="rb-accent">2</sup>
-              </span>,
-              t('ribbonSuperscript'),
-            )}
-            {fmtBtn(
-              'subscript',
-              <span>
-                x<sub className="rb-accent">2</sub>
-              </span>,
-              t('ribbonSubscript'),
-            )}
+            {fmtBtn('superscript', <IconSuperscript size={18} />, t('ribbonSuperscript'))}
+            {fmtBtn('subscript', <IconSubscript size={18} />, t('ribbonSubscript'))}
             <span className="rb-mini-sep" />
             <div className="rb-drop-wrap">
               <button
@@ -731,44 +880,37 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                 </span>
               </button>
               {colorOpen && (
-                <div className="rb-drop rb-color-grid" onMouseDown={(e) => e.stopPropagation()}>
-                  {[...TEXT_COLORS, ...recentColors.filter((c) => !TEXT_COLORS.includes(c))].map(
-                    (c) => (
-                      <button
-                        key={c}
-                        className="rb-swatch"
-                        style={{ background: c }}
-                        data-tip={c}
-                        aria-label={c}
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          setLastColor(c)
-                          if (editing) onTextColor(c)
-                          else onElementTextColor(c)
-                          setColorOpen(false)
-                        }}
-                      />
-                    ),
-                  )}
-                  {/* Any-color entry: native picker, same as the shape-fill input in the Format pane.
-                            data-keep-edit: opening it doesn't commit the text edit */}
-                  <label
-                    className="rb-color-more"
-                    data-keep-edit=""
-                    data-tip={t('ribbonMoreColors')}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <input
-                      type="color"
-                      value={lastColor}
-                      onPointerDown={(e) => {
+                /* data-keep-edit: interacting with the palette (incl. the native
+                   More Colors picker) must not commit the text edit */
+                <div
+                  className="rb-color-pop"
+                  data-keep-edit=""
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <ColorPicker
+                    value={lastColor}
+                    strings={{
+                      themeColors: t('ribbonThemeColorsSection'),
+                      standardColors: t('ribbonStandardColors'),
+                      moreColors: t('ribbonMoreColors'),
+                    }}
+                    onPick={(hex) => {
+                      if (!hex) return
+                      setLastColor(hex)
+                      if (editing) onTextColor(hex)
+                      else onElementTextColor(hex)
+                      setColorOpen(false)
+                    }}
+                    moreInputProps={{
+                      onPointerDown: (e) => {
                         armColorInput(e.currentTarget)
                         if (editing) saveEditSelection()
-                      }}
-                      onChange={(e) => onCustomTextColor(e.target.value)}
-                    />
-                    {t('ribbonMoreColors')}
-                  </label>
+                      },
+                      // debounced apply + selection restore (native picker fires
+                      // onChange continuously while dragging)
+                      onChange: (e) => onCustomTextColor(e.currentTarget.value),
+                    }}
+                  />
                 </div>
               )}
             </div>
@@ -866,35 +1008,106 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                   >
                     {t('ribbonNone')}
                   </button>
-                  {['•', '○', '▪', '◆', '-', '✓', '►', '※'].map((g) => (
+                  {BULLET_PRESETS.map((p) => (
                     <button
-                      key={g}
-                      className={`rb-bullet-tile ${curBulletChar === g ? 'on' : ''}`}
+                      key={p.glyph}
+                      className={`rb-bullet-tile ${curBulletChar === bulletRunText(p.char, p.font) ? 'on' : ''}`}
                       disabled={!hasSelection}
                       data-tip={t('ribbonBulletChar')}
                       onMouseDown={(e) => {
                         e.preventDefault()
-                        if (hasSelection) onParagraphFormat({ bullet: 'char', bulletChar: g })
+                        if (hasSelection)
+                          onParagraphFormat({
+                            bullet: 'char',
+                            bulletChar: p.char,
+                            bulletFont: p.font,
+                          })
                       }}
                     >
                       {[0, 1, 2].map((i) => (
                         <span key={i} className="rb-bullet-tile-row">
-                          <span className="rb-bullet-tile-glyph">{g}</span>
+                          <span className="rb-bullet-tile-glyph">{p.glyph}</span>
                           <span className="rb-bullet-tile-bar" />
                         </span>
                       ))}
                     </button>
                   ))}
                 </div>
+                <div className="rb-row rb-bullet-custom">
+                  {EXTRA_BULLET_SYMBOLS.map((ch) => (
+                    <button
+                      key={ch}
+                      className={`rb-bullet-sym ${curBulletChar === ch ? 'on' : ''}`}
+                      disabled={!hasSelection}
+                      data-tip={t('ribbonBulletCustom')}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        if (hasSelection) onParagraphFormat({ bullet: 'char', bulletChar: ch })
+                      }}
+                    >
+                      {ch}
+                    </button>
+                  ))}
+                  <input
+                    className="rb-bullet-hang rb-bullet-sym-input"
+                    disabled={!hasSelection}
+                    data-tip={t('ribbonBulletCustomTip')}
+                    placeholder={t('ribbonBulletCustom')}
+                    value={symDraft}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onChange={(e) => setSymDraft(e.target.value)}
+                    onKeyDown={draftKeys(commitSymDraft)}
+                  />
+                  <button
+                    className={`rb-bullet-hang ${curBulletChar === '#img' ? 'on' : ''}`}
+                    disabled={!hasSelection}
+                    data-tip={t('ribbonBulletPicture')}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      if (hasSelection) void pickBulletPicture()
+                    }}
+                  >
+                    {t('ribbonBulletPicture')}
+                  </button>
+                </div>
+                <div className="rb-para-label">{t('ribbonNumberStyle')}</div>
+                <div className="rb-bullet-grid">
+                  {NUMBER_PRESETS.map((p) => (
+                    <button
+                      key={p.numType}
+                      className={`rb-bullet-tile ${curBulletChar === `#num:${p.numType}` ? 'on' : ''}`}
+                      disabled={!hasSelection}
+                      data-tip={t('ribbonNumberStyle')}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        if (hasSelection)
+                          onParagraphFormat({ bullet: 'number', numType: p.numType })
+                      }}
+                    >
+                      {p.sample.map((s, i) => (
+                        <span key={i} className="rb-bullet-tile-row">
+                          <span className="rb-bullet-tile-glyph rb-bullet-tile-num">{s}</span>
+                          <span className="rb-bullet-tile-bar" />
+                        </span>
+                      ))}
+                    </button>
+                  ))}
+                  <input
+                    className="rb-bullet-hang rb-bullet-start-input"
+                    type="number"
+                    min={1}
+                    disabled={!hasSelection}
+                    data-tip={t('ribbonNumberStartAtTip')}
+                    placeholder={t('ribbonNumberStartAt')}
+                    value={startDraft}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onChange={(e) => setStartDraft(e.target.value)}
+                    onKeyDown={draftKeys(commitStartDraft)}
+                  />
+                </div>
                 <div className="rb-para-label">{t('ribbonBulletHang')}</div>
                 <div className="rb-row">
-                  {(
-                    [
-                      ['ribbonBulletHangNarrow', 114300],
-                      ['ribbonBulletHangNormal', 228600],
-                      ['ribbonBulletHangWide', 342900],
-                    ] as const
-                  ).map(([key, emu]) => (
+                  {BULLET_HANG_PRESETS.map(([key, emu]) => (
                     <button
                       key={key}
                       className="rb-bullet-hang"
@@ -994,6 +1207,27 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                       onMouseDown={(e) => {
                         e.preventDefault()
                         if (editing || hasSelection) onAlign(align)
+                      }}
+                    >
+                      {icon}
+                    </button>
+                  ))}
+                  <span className="rb-mini-sep" />
+                  {(
+                    [
+                      [false, <IconDirLtr key="ltr" size={20} />, t('ribbonDirLtr')],
+                      [true, <IconDirRtl key="rtl" size={20} />, t('ribbonDirRtl')],
+                    ] as const
+                  ).map(([rtl, icon, label]) => (
+                    <button
+                      key={rtl ? 'rtl' : 'ltr'}
+                      className={`rb-icon ${curRtl === rtl ? 'active' : ''}`}
+                      disabled={!editing && !hasSelection}
+                      data-tip={label}
+                      aria-label={label}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        if (editing || hasSelection) onDirection(rtl)
                       }}
                     >
                       {icon}

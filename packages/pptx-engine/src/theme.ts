@@ -4,19 +4,27 @@
  * schemeClr / theme fonts into final values.
  */
 import { XMLParser } from 'fast-xml-parser'
-import { asXmlNode, type XmlNode } from './xml-utils'
+import { asXmlNode, xmlArray, type XmlNode } from './xml-utils'
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
 
 export interface Theme {
   /** clrScheme: dk1/lt1/dk2/lt2/accent1..6/hlink/folHlink → #RRGGBB */
   colors: Record<string, string>
+  /**
+   * Master p:clrMap (or slide/layout a:overrideClrMapping): schemeClr name → clrScheme key.
+   * Dark masters invert it (bg1="dk1" tx1="lt1" …); absent → standard mapping.
+   */
+  clrMap?: Record<string, string>
   /** fontScheme: major / minor Latin fonts */
   majorFont?: string
   minorFont?: string
   /** fontScheme: major / minor East Asian fonts */
   majorEaFont?: string
   minorEaFont?: string
+  /** fontScheme per-script fonts (<a:font script="Jpan" typeface=…/>), keyed by script tag */
+  majorScriptFonts?: Record<string, string>
+  minorScriptFonts?: Record<string, string>
   /** fontScheme: major / minor Complex Script fonts (Arabic/Hebrew/Thai/Hindi etc.) */
   majorCsFont?: string
   minorCsFont?: string
@@ -69,8 +77,18 @@ function readColorNode(node: unknown): string | undefined {
   const srgb = asXmlNode(n['a:srgbClr'])
   if (n['a:srgbClr']) return '#' + String(srgb['@_val']).toUpperCase()
   const sys = asXmlNode(n['a:sysClr'])
-  if (n['a:sysClr']) return '#' + String(sys['@_lastClr'] ?? '000000').toUpperCase()
+  if (n['a:sysClr']) return sysColorHex(sys['@_val'], sys['@_lastClr'])
   return undefined
+}
+
+/**
+ * PowerPoint paints `window`/`windowText` as the live system colors (white/black on every
+ * modern desktop) and ignores a stale `lastClr`; other system colors keep the cached value.
+ */
+export function sysColorHex(val: unknown, lastClr: unknown): string {
+  if (val === 'window') return '#FFFFFF'
+  if (val === 'windowText') return '#000000'
+  return '#' + String(lastClr ?? '000000').toUpperCase()
 }
 
 /** Font typeface attribute of e.g. fontScheme['a:majorFont']['a:latin'] (undefined when absent). */
@@ -79,13 +97,37 @@ function typeface(scheme: XmlNode, font: string, script: string): string | undef
   return typeof v === 'string' && v ? v : undefined
 }
 
+function scriptFonts(scheme: XmlNode, font: string): Record<string, string> | undefined {
+  const out: Record<string, string> = {}
+  for (const f of xmlArray(asXmlNode(scheme[font])['a:font'])) {
+    const n = asXmlNode(f)
+    const script = n['@_script']
+    const face = n['@_typeface']
+    if (typeof script === 'string' && typeof face === 'string' && face) out[script] = face
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
 export function parseTheme(themeXml: string): Theme {
   const doc = asXmlNode(parser.parse(themeXml))
   const themeEl = asXmlNode(doc['a:theme'] ?? doc.theme)
   const elements = asXmlNode(themeEl['a:themeElements'])
   const clrScheme = asXmlNode(elements['a:clrScheme'])
   const colors: Record<string, string> = {}
-  for (const key of ['dk1', 'lt1', 'dk2', 'lt2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6', 'hlink', 'folHlink']) {
+  for (const key of [
+    'dk1',
+    'lt1',
+    'dk2',
+    'lt2',
+    'accent1',
+    'accent2',
+    'accent3',
+    'accent4',
+    'accent5',
+    'accent6',
+    'hlink',
+    'folHlink',
+  ]) {
     const c = readColorNode(clrScheme['a:' + key])
     if (c) colors[key] = c
   }
@@ -96,6 +138,8 @@ export function parseTheme(themeXml: string): Theme {
   const minorEaFont = typeface(fontScheme, 'a:minorFont', 'a:ea')
   const majorCsFont = typeface(fontScheme, 'a:majorFont', 'a:cs')
   const minorCsFont = typeface(fontScheme, 'a:minorFont', 'a:cs')
+  const majorScriptFonts = scriptFonts(fontScheme, 'a:majorFont')
+  const minorScriptFonts = scriptFonts(fontScheme, 'a:minorFont')
   // fmtScheme templates are parsed in order from raw-text slices (fillStyleLst children mix element types; regular parsing would lose the idx order)
   const fmtM = /<a:fmtScheme\b[^>]*>[\s\S]*?<\/a:fmtScheme>/.exec(themeXml)
   const fmt = fmtM?.[0] ?? ''
@@ -111,6 +155,8 @@ export function parseTheme(themeXml: string): Theme {
     minorEaFont,
     majorCsFont,
     minorCsFont,
+    ...(majorScriptFonts ? { majorScriptFonts } : {}),
+    ...(minorScriptFonts ? { minorScriptFonts } : {}),
     ...(fillStyles ? { fillStyles } : {}),
     ...(lnStyles ? { lnStyles } : {}),
     ...(effectStyles ? { effectStyles } : {}),
@@ -119,21 +165,76 @@ export function parseTheme(themeXml: string): Theme {
 }
 
 /**
+ * Chart-part theme override (<a:themeOverride>, referenced from the chart's own
+ * rels): the chart's schemeClr refs and default palette resolve against ITS
+ * clrScheme/fontScheme, not the deck theme's — decks legitimately remap accents
+ * per chart. Wrapping the override's themeElements as a full theme reuses
+ * parseTheme; fields the override omits fall back to the base theme.
+ */
+export function themeWithOverride(base: Theme | undefined, overrideXml: string): Theme {
+  const inner = /<a:themeOverride\b[^>]*>([\s\S]*)<\/a:themeOverride>/.exec(overrideXml)?.[1]
+  if (!inner) return base ?? { colors: {} }
+  const parsed = parseTheme(`<a:theme><a:themeElements>${inner}</a:themeElements></a:theme>`)
+  // Per-field merge: parseTheme lists absent fonts as undefined, which a plain
+  // spread would clobber the base values with. clrMap is a master concern and
+  // never part of the override.
+  const merged: Theme = { ...base, colors: { ...base?.colors, ...parsed.colors } }
+  for (const [k, v] of Object.entries(parsed)) {
+    if (k !== 'colors' && k !== 'clrMap' && v !== undefined) {
+      ;(merged as unknown as Record<string, unknown>)[k] = v
+    }
+  }
+  return merged
+}
+
+/**
  * Theme font reference ("+mj-lt" / "+mn-ea" etc.) → final font name.
  * Values not starting with "+" are returned as-is; returns undefined when the theme has no match.
  */
-export function resolveFontRef(typeface: string | undefined, theme: Theme | undefined): string | undefined {
+/** 'han': ideographs without a language — resolves only when the theme names a single Han script */
+export type EaScript = 'ja' | 'ko' | 'sc' | 'tc' | 'han'
+const EA_SCRIPT_TAG: Record<Exclude<EaScript, 'han'>, string> = {
+  ja: 'Jpan',
+  ko: 'Hang',
+  sc: 'Hans',
+  tc: 'Hant',
+}
+const HAN_SCRIPT_TAGS = ['Jpan', 'Hans', 'Hant']
+
+/** East Asian script of a BCP-47 lang/altLang tag (ja-JP → ja, zh-TW → tc, zh-CN → sc). */
+export function eaScriptOfLang(tag: unknown): Exclude<EaScript, 'han'> | undefined {
+  const t = String(tag ?? '').toLowerCase()
+  if (t.startsWith('ja')) return 'ja'
+  if (t.startsWith('ko')) return 'ko'
+  if (/^zh(-(tw|hk|mo|hant))/.test(t)) return 'tc'
+  if (t.startsWith('zh')) return 'sc'
+  return undefined
+}
+
+export function resolveFontRef(
+  typeface: string | undefined,
+  theme: Theme | undefined,
+  /** Script of the text using an ea theme ref: with an empty <a:ea typeface=""/> PowerPoint
+   *  takes the fontScheme's per-script entry (Jpan/Hang/Hans/Hant) before the Latin font. */
+  eaScript?: EaScript,
+): string | undefined {
   if (!typeface) return undefined
   if (!typeface.startsWith('+')) return typeface
+  const scriptFont = (fonts: Record<string, string> | undefined): string | undefined => {
+    if (!eaScript || !fonts) return undefined
+    if (eaScript !== 'han') return fonts[EA_SCRIPT_TAG[eaScript]]
+    const han = HAN_SCRIPT_TAGS.filter((t) => fonts[t])
+    return han.length === 1 ? fonts[han[0]!] : undefined
+  }
   switch (typeface) {
     case '+mj-lt':
       return theme?.majorFont
     case '+mn-lt':
       return theme?.minorFont
     case '+mj-ea':
-      return theme?.majorEaFont ?? theme?.majorFont
+      return theme?.majorEaFont ?? scriptFont(theme?.majorScriptFonts) ?? theme?.majorFont
     case '+mn-ea':
-      return theme?.minorEaFont ?? theme?.minorFont
+      return theme?.minorEaFont ?? scriptFont(theme?.minorScriptFonts) ?? theme?.minorFont
     case '+mj-cs':
       return theme?.majorCsFont ?? theme?.majorFont
     case '+mn-cs':
@@ -144,10 +245,57 @@ export function resolveFontRef(typeface: string | undefined, theme: Theme | unde
 }
 
 /** schemeClr name (e.g. 'tx1','bg1','accent1','phClr') → final #RRGGBB. */
-export function resolveSchemeColor(name: string, theme: Theme | undefined, phClr?: string): string | undefined {
+export function resolveSchemeColor(
+  name: string,
+  theme: Theme | undefined,
+  phClr?: string,
+): string | undefined {
   if (name === 'phClr') return phClr
   // Standard mapping: tx1→dk1, bg1→lt1, tx2→dk2, bg2→lt2
-  const map: Record<string, string> = { tx1: 'dk1', bg1: 'lt1', tx2: 'dk2', bg2: 'lt2' }
-  const key = map[name] ?? name
+  const standard: Record<string, string> = { tx1: 'dk1', bg1: 'lt1', tx2: 'dk2', bg2: 'lt2' }
+  const key = theme?.clrMap?.[name] ?? standard[name] ?? name
   return theme?.colors[key]
+}
+
+const CLR_MAP_NAMES = [
+  'bg1',
+  'tx1',
+  'bg2',
+  'tx2',
+  'accent1',
+  'accent2',
+  'accent3',
+  'accent4',
+  'accent5',
+  'accent6',
+  'hlink',
+  'folHlink',
+]
+
+function clrMapFromTag(tag: string): Record<string, string> | undefined {
+  const out: Record<string, string> = {}
+  for (const name of CLR_MAP_NAMES) {
+    // OPC allows single quotes, so match the attribute value either way round
+    const v = new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`).exec(tag)?.[2]
+    if (v) out[name] = v
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+/**
+ * Effective color mapping for a slide: slide/layout <a:overrideClrMapping> wins over the
+ * master's <p:clrMap> (<a:masterClrMapping/> just inherits). Undefined → standard mapping.
+ */
+export function parseClrMap(
+  masterXml?: string,
+  layoutXml?: string,
+  slideXml?: string,
+): Record<string, string> | undefined {
+  for (const xml of [slideXml, layoutXml]) {
+    const tag = xml ? /<a:overrideClrMapping\b[^>]*\/?>/.exec(xml)?.[0] : undefined
+    const map = tag ? clrMapFromTag(tag) : undefined
+    if (map) return map
+  }
+  const tag = masterXml ? /<p:clrMap\b[^>]*\/?>/.exec(masterXml)?.[0] : undefined
+  return tag ? clrMapFromTag(tag) : undefined
 }

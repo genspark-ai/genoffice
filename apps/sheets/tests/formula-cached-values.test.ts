@@ -6,7 +6,7 @@
  */
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
-import { applyCellEditsToXlsx } from '../src/gateway/xlsx-gateway'
+import { applyCellEditsToXlsx } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 import { buildStructureFixture } from './fixture-builder'
 
 const SHEET = 'Data'

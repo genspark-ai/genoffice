@@ -4,7 +4,8 @@
  * the App component passes a VisualSyncContext built fresh per call so refs
  * and state never go stale.
  */
-import { parseRange } from '../domain/cell-address'
+import { parseRange } from '@genoffice/xlsx-gateway/domain/cell-address'
+import { chartCategoryVector, seriesOrientation } from './chart-category-vector'
 import {
   applyChartStateEdit,
   refIntersects,
@@ -12,20 +13,21 @@ import {
   type CellBounds,
   type ChartVisualState,
   type SheetVisual,
-} from '../domain/chart-visual'
-import type { InMemoryWorkbookAdapter } from '../domain/in-memory-workbook'
+} from '@genoffice/xlsx-gateway/domain/chart-visual'
+import type { InMemoryWorkbookAdapter } from '@genoffice/xlsx-gateway/domain/in-memory-workbook'
 import type { WorkbookVisualObject } from '../shared/desktop-api'
 import {
-  recordChartEdit,
-  recordVisualEdit,
-  removeVisualAdd,
-  updateVisualAdd,
-} from './edit-journal'
+  cacheLessRefs,
+  hasPendingFormulaCells,
+  unionBounds,
+  type ChartGridValue,
+} from './chart-sync-pending'
+import { recordChartEdit, recordVisualEdit, removeVisualAdd, updateVisualAdd } from './edit-journal'
 import { t } from './i18n/locale'
 import {
   captureVisualJournal,
   pushVisualUndo,
-  readChartGridValues,
+  readChartGrid,
   readChartRangeVector,
   readDemoChartRangeVector,
   restoreVisualJournal,
@@ -47,6 +49,7 @@ export interface VisualSyncContext {
     readonly current: {
       timer: ReturnType<typeof setTimeout> | null
       dirty: Map<string, CellBounds>
+      pending: Map<string, CellBounds>
     }
   }
   setMessage: (message: string) => void
@@ -81,6 +84,14 @@ export function queueChartDataSync(
   }, 500)
 }
 
+/// Re-queues the ranges a sync held back while their formulas were still
+/// being evaluated; App calls this on the engine's calculationEnd.
+export function flushPendingChartDataSync(ctx: VisualSyncContext): void {
+  const pending = [...ctx.chartSyncRef.current.pending]
+  ctx.chartSyncRef.current.pending.clear()
+  for (const [sheetId, bounds] of pending) queueChartDataSync(ctx, sheetId, bounds)
+}
+
 async function runChartDataSync(ctx: VisualSyncContext): Promise<void> {
   const runtime = ctx.univerRef.current
   const workbook = runtime?.univerAPI.getActiveWorkbook()
@@ -99,24 +110,64 @@ async function runChartDataSync(ctx: VisualSyncContext): Promise<void> {
       const name = sheetNames.get(sheetId)
       return name !== undefined && refIntersects(ref, name, bounds)
     })
-  const readVector = async (
-    ref: string,
-  ): Promise<(string | number | boolean | null | undefined)[] | null> => {
+  const valuesOrientation = (ref: string | undefined) => {
+    const split = ref === undefined ? null : splitSheetRef(ref)
+    try {
+      return split ? seriesOrientation(parseRange(split.range)) : undefined
+    } catch {
+      return undefined
+    }
+  }
+  const resolveRef = (ref: string): { sheetId: string; range: string } | null => {
     const split = splitSheetRef(ref)
     const sheetId = split ? sheetIdByName.get(split.sheetName) : undefined
-    if (!split || sheetId === undefined) return null
+    return split && sheetId !== undefined ? { sheetId, range: split.range } : null
+  }
+  // Formula cells with no value to read would bake as 0 — a journaled
+  // formula on a streamed workbook, or one the engine has not evaluated yet.
+  const readValues = async (
+    ref: string,
+  ): Promise<{ vector: ChartGridValue[]; pendingFormula: boolean } | null> => {
+    const resolved = resolveRef(ref)
+    if (!resolved) return null
     try {
-      if (state) return (await readChartGridValues(state, runtime, sheetId, split.range)).flat()
-      const target = workbook.getSheetBySheetId(sheetId)
+      if (state) {
+        const grid = await readChartGrid(state, runtime, resolved.sheetId, resolved.range)
+        return { vector: grid.values.flat(), pendingFormula: grid.pendingFormula }
+      }
+      const target = workbook.getSheetBySheetId(resolved.sheetId)
       if (!target) return null
-      return (
-        target.getRange(split.range).getValues() as (
-          string | number | boolean | null | undefined
-        )[][]
-      ).flat()
+      const range = target.getRange(resolved.range)
+      return {
+        vector: (range.getValues() as ChartGridValue[][]).flat(),
+        pendingFormula: hasPendingFormulaCells(range.getCellDatas().flat()),
+      }
     } catch {
       return null
     }
+  }
+  const readGrid = async (ref: string): Promise<ChartGridValue[][] | null> => {
+    const resolved = resolveRef(ref)
+    if (!resolved) return null
+    try {
+      if (state)
+        return (await readChartGrid(state, runtime, resolved.sheetId, resolved.range)).values
+      const target = workbook.getSheetBySheetId(resolved.sheetId)
+      return target ? (target.getRange(resolved.range).getValues() as ChartGridValue[][]) : null
+    } catch {
+      return null
+    }
+  }
+  // Univer's engine will evaluate the cells: park the bounds and let
+  // calculationEnd re-queue them. A streamed workbook's journaled formulas
+  // never get an in-session value, so there the previous cache simply stands.
+  const holdUntilCalculated = (ref: string): void => {
+    if (state && !state.formulaMode) return
+    const sheetId = resolveRef(ref)?.sheetId
+    const bounds = sheetId === undefined ? undefined : dirty.get(sheetId)
+    if (sheetId === undefined || !bounds) return
+    const pending = ctx.chartSyncRef.current.pending
+    pending.set(sheetId, unionBounds(pending.get(sheetId), bounds))
   }
   const charts: { editKey: string; visualId: string; chart: ChartVisualState }[] = state
     ? [...state.file.visuals, ...state.editJournal.visualAdds]
@@ -144,33 +195,55 @@ async function runChartDataSync(ctx: VisualSyncContext): Promise<void> {
   let changed = false
   for (const { editKey, visualId, chart } of charts) {
     const seriesEdits: NonNullable<ChartEditData['series']>[number][] = []
+    // A cache-less file vector (no strCache/numCache) reads back as [] —
+    // there is nothing to refresh, and "refreshing" it would bake grid
+    // values into the XML. The renderer hydrates such charts from the grid
+    // instead; a reinstall below re-runs that hydration with the new values,
+    // and pending formulas park the bounds so it runs again after the engine.
+    let staleHydration = false
     for (const [index, series] of chart.series.entries()) {
       const wantValues = touched(series.valuesRef)
       const wantCategories = touched(series.categoriesRef)
       if (!wantValues && !wantCategories) continue
+      for (const ref of cacheLessRefs(series, touched)) {
+        staleHydration = true
+        if ((await readValues(ref))?.pendingFormula) holdUntilCalculated(ref)
+      }
       const entry: NonNullable<ChartEditData['series']>[number] = { index }
-      if (wantValues && series.valuesRef) {
-        const vector = await readVector(series.valuesRef)
-        if (vector) {
-          const values = vector.map((value) => {
+      if (wantValues && series.valuesRef && series.values.length > 0) {
+        const read = await readValues(series.valuesRef)
+        if (read?.pendingFormula) {
+          holdUntilCalculated(series.valuesRef)
+        } else if (read) {
+          const values = read.vector.map((value) => {
             const numeric = typeof value === 'number' ? value : Number(String(value ?? '').trim())
             return Number.isFinite(numeric) ? numeric : 0
           })
-          if (JSON.stringify(values) !== JSON.stringify(series.values)) entry.values = values
+          if (JSON.stringify(values) !== JSON.stringify(series.values)) {
+            entry.values = values
+            entry.valuesRef = series.valuesRef
+          }
         }
       }
-      if (wantCategories && series.categoriesRef) {
-        const vector = await readVector(series.categoriesRef)
+      if (wantCategories && series.categoriesRef && series.categories.length > 0) {
+        const grid = await readGrid(series.categoriesRef)
+        const vector = grid
+          ? chartCategoryVector(grid, series.categories.length, valuesOrientation(series.valuesRef))
+          : null
         if (vector) {
           const categories = vector.map((value) => String(value ?? '').slice(0, 255))
           if (JSON.stringify(categories) !== JSON.stringify(series.categories)) {
             entry.categories = categories
+            entry.categoriesRef = series.categoriesRef
           }
         }
       }
       if (entry.values !== undefined || entry.categories !== undefined) seriesEdits.push(entry)
     }
-    if (seriesEdits.length === 0) continue
+    if (seriesEdits.length === 0) {
+      if (staleHydration) changed = true
+      continue
+    }
     changed = true
     const edit: ChartEditData = { series: seriesEdits }
     if (!state) {
@@ -350,7 +423,21 @@ export function applyShapeEdit(
   if (!runtime) return
   if (!state) {
     const applied = applyDemoVisualChange(ctx, visualId, (before) =>
-      changes.remove ? null : { ...before, ...(changes.anchor ? { anchor: changes.anchor } : {}) },
+      changes.remove
+        ? null
+        : {
+            ...before,
+            ...(changes.anchor ? { anchor: changes.anchor } : {}),
+            ...(changes.frameSize
+              ? { frameWidth: changes.frameSize.width, frameHeight: changes.frameSize.height }
+              : {}),
+            ...(changes.rotation === undefined ? {} : { rotation: changes.rotation }),
+            ...(changes.flipH === undefined ? {} : { flipH: changes.flipH }),
+            ...(changes.flipV === undefined ? {} : { flipV: changes.flipV }),
+            ...(changes.altText === undefined ? {} : { altText: changes.altText }),
+            ...(changes.editAs === undefined ? {} : { editAs: changes.editAs }),
+            ...(changes.hyperlink === undefined ? {} : { hyperlink: changes.hyperlink }),
+          },
     )
     if (changes.remove) clearVisualSelection(visualId)
     ctx.setMessage(
@@ -381,11 +468,12 @@ export function applyShapeEdit(
     clearVisualSelection(visualId)
   } else if (!updateVisualAdd(state.editJournal, visualId, changes)) {
     const visual = state.file.visuals.find((candidate) => candidate.id === visualId)
-    if (changes.text !== undefined || changes.anchor === undefined) {
+    const { text, remove: _remove, ...fileChanges } = changes
+    if (text !== undefined || Object.keys(fileChanges).length === 0) {
       ctx.setMessage(t('appFileVisualMoveDeleteOnly'))
       return
     }
-    if (!visual || !recordVisualEdit(state.editJournal, visual, { anchor: changes.anchor })) {
+    if (!visual || !recordVisualEdit(state.editJournal, visual, fileChanges)) {
       ctx.setMessage(t('appVisualNoMove'))
       return
     }
@@ -410,7 +498,11 @@ export function applyShapeEdit(
       ? t('appVisualDeleted')
       : changes.text !== undefined
         ? t('appShapeTextUpdated')
-        : t('appShapeMoved'),
+        : changes.fillColor !== undefined || changes.lineColor !== undefined
+          ? t('appShapeStyleUpdated')
+          : changes.anchor && Object.keys(changes).length <= 2
+            ? t('appShapeMoved')
+            : t('appVisualArranged'),
   )
   ctx.refreshLazyVisuals(state)
 }

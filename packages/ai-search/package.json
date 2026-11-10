@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
-  "description": "Shared web/image search (Serper Google API + DuckDuckGo fallback) for docs/sheets/slides AI. No Electron deps; runs in main process (Node fetch).",
+  "description": "Shared web/image search (Genspark, Serper, Serply, SearchApi, Tavily, Parallel, DuckDuckGo fallback) for docs/sheets/slides AI. No Electron deps; runs in main process (Node fetch).",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -14,11 +14,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@genspark/cli": "^1.4.2"
+    "@genoffice/ai-provider": "*",
+    "@genoffice/electron-utils": "*",
+    "@genspark/cli": "^1.4.2",
+    "@modelcontextprotocol/sdk": "^1.32.1"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.12"
   }
 }

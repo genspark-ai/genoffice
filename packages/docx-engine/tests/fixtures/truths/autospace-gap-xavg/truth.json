@@ -1,0 +1,108 @@
+{
+  "id": "autospace-gap-xavg",
+  "title": "Latin -> CJK autospace gap = half the Latin face's OS/2 xAvgCharWidth; CJK -> Latin and CJK-capable ascii faces stay 1/4 em",
+  "section": "word-truths.md#L580",
+  "probe_date": "2026-10-20",
+  "source": "probes probe -> as_probe*.pdf (12 and 36pt plus a 7-36pt sweep over Batang/Gulim/Malgun EA faces): Cambria 0.308, Calibri 0.260, Aptos 0.280, Consolas 0.275, Verdana 0.254, Arial 0.221, Georgia 0.220, Times New Roman 0.200, Garamond 0.194; Batang/Malgun/Yu Gothic 0.250; URL lines of the missing KR superfamily pitch 14.45 = 11 x 1.172 x 1.1208 (Cambria)",
+  "cases": [
+    {
+      "kind": "gapEm",
+      "font": "Cambria",
+      "expect": 0.308,
+      "tol": 0.001
+    },
+    {
+      "kind": "gapEm",
+      "font": "Calibri",
+      "expect": 0.26,
+      "tol": 0.001
+    },
+    {
+      "kind": "gapEm",
+      "font": "Aptos",
+      "expect": 0.28,
+      "tol": 0.001
+    },
+    {
+      "kind": "gapEm",
+      "font": "Consolas",
+      "expect": 0.275,
+      "tol": 0.001
+    },
+    {
+      "kind": "gapEm",
+      "font": "Verdana",
+      "expect": 0.254,
+      "tol": 0.001
+    },
+    {
+      "kind": "gapEm",
+      "font": "Arial",
+      "expect": 0.221,
+      "tol": 0.001
+    },
+    {
+      "kind": "gapEm",
+      "font": "Georgia",
+      "expect": 0.22,
+      "tol": 0.001
+    },
+    {
+      "kind": "gapEm",
+      "font": "Times New Roman",
+      "expect": 0.2,
+      "tol": 0.001
+    },
+    {
+      "kind": "gapEm",
+      "font": "Garamond",
+      "expect": 0.194,
+      "tol": 0.001
+    },
+    {
+      "kind": "gapEm",
+      "font": "Batang",
+      "expect": 0.25,
+      "tol": 0.0001,
+      "note": "CJK-capable ascii face: 1/4 em both ways"
+    },
+    {
+      "kind": "gapEm",
+      "font": "Malgun Gothic",
+      "expect": 0.25,
+      "tol": 0.0001
+    },
+    {
+      "kind": "gapEm",
+      "font": "Yu Gothic",
+      "expect": 0.25,
+      "tol": 0.0001
+    },
+    {
+      "kind": "latinLineFactor",
+      "font": "Noto Sans CJK KR",
+      "expect": 1.172,
+      "note": "Latin-only lines of the missing KR superfamily lay out in Cambria"
+    },
+    {
+      "kind": "krNoBreakIncludes",
+      "text": "5,000\uc6d0)\uc774",
+      "expect": [7],
+      "note": "Korean word-wrap: no split between a closing bracket and the following hangul"
+    },
+    {
+      "kind": "krNoBreakIncludes",
+      "text": "\uc0c9\u00b7\ubb34\uac8c\uac10",
+      "expect": [2],
+      "note": "no split after the middle dot"
+    },
+    {
+      "kind": "krNoBreakIncludes",
+      "text": "[3]\uc544\ub0b4",
+      "expect": [3],
+      "note": "no split between ] and hangul"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

@@ -16,6 +16,7 @@ import { join, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { builtinModules, createRequire } from 'node:module'
+import { licenseText } from './license-text.mjs'
 
 const require = createRequire(import.meta.url)
 
@@ -29,6 +30,7 @@ const BUILTIN = new Set(builtinModules)
  */
 const SRC_GLOBS = [
   'apps/docs/src',
+  'apps/html/src',
   'apps/markdown/src',
   'apps/pdf/src',
   'apps/sheets/src',
@@ -62,15 +64,21 @@ function extraResourceSeeds() {
   return names
 }
 
-/** license file lives somewhere non-obvious */
-const LICENSE_PATH = { electron: 'dist/LICENSE' }
-
 /** license text is not published to npm; supply the notice by hand */
 const NOTE = {
   '@fluentui/react-icons':
     'Copyright (c) Microsoft Corporation. Licensed under the MIT License.\nhttps://github.com/microsoft/fluentui-system-icons',
   '@genspark/cli':
     'Copyright (c) Genspark. Licensed under the MIT License.\nhttps://www.npmjs.com/package/@genspark/cli',
+}
+
+/**
+ * Notices a package's own files leave out: rhwp publishes only its MIT
+ * license, while its WebAssembly build carries Rust crates and a BSD-3-Clause
+ * port that its repository documents separately.
+ */
+const EXTRA_NOTICE = {
+  '@rhwp/core': 'tools/notices/rhwp-core.txt',
 }
 
 /** SPDX strings that need a word on which side of a dual license we take */
@@ -181,24 +189,16 @@ function closure(seed) {
   return { resolved: [...seen].filter(([, v]) => v !== null), missing }
 }
 
-const LICENSE_FILE = /^(LICENSE|LICENCE|COPYING)(\.|$)/i
-
-function licenseText(name, dir) {
-  const override = LICENSE_PATH[name]
-  if (override && existsSync(join(dir, override))) {
-    return readFileSync(join(dir, override), 'utf8').trim()
-  }
-  const files = readdirSync(dir).filter((f) => LICENSE_FILE.test(f))
-  files.sort((a, b) => a.length - b.length)
-  if (files.length > 0) return readFileSync(join(dir, files[0]), 'utf8').trim()
-  return null
-}
-
-function noticeText(dir) {
+function noticeText(name, dir) {
+  const parts = []
   for (const f of ['NOTICE', 'NOTICE.txt', 'NOTICE.md']) {
-    if (existsSync(join(dir, f))) return readFileSync(join(dir, f), 'utf8').trim()
+    if (existsSync(join(dir, f))) {
+      parts.push(readFileSync(join(dir, f), 'utf8').trim())
+      break
+    }
   }
-  return null
+  if (EXTRA_NOTICE[name]) parts.push(readFileSync(join(ROOT, EXTRA_NOTICE[name]), 'utf8').trim())
+  return parts.length > 0 ? parts.join('\n\n') : null
 }
 
 function spdxOf(name, pkg) {
@@ -267,7 +267,7 @@ for (const [name, { dir, pkg }] of resolved) {
     const repo = repoOf(pkg)
     out += `Licensed under ${spdxOf(name, pkg)}.${repo ? `\n${repo}` : ''}\n`
   }
-  const notice = noticeText(dir)
+  const notice = noticeText(name, dir)
   if (notice) out += `\nNOTICE:\n${notice}\n`
 }
 
@@ -289,7 +289,17 @@ if (crates === null) {
   for (const [text, first] of texts) out += `\n[first seen in ${first}]\n${text}\n`
 }
 
-/** Bundled fonts (for docs rendering; all metric-compatible replacements for Microsoft fonts) */
+const GOTHIC_KR_COPYRIGHT = [
+  'Copyright (c) 2010, NHN Corporation (http://www.nhncorp.com),',
+  'with Reserved Font Name Nanum, Naver Nanum, NanumGothic, Naver ',
+  'NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver',
+  'NanumBrush, NanumPen, Naver NanumPen.',
+].join('\n')
+
+/**
+ * Bundled web/document fonts. KaTeX code remains separately covered by its
+ * npm-package MIT notice above; its webfonts carry OFL terms.
+ */
 const FONTS = [
   [
     'Liberation Sans / Serif / Mono 2.1.5',
@@ -311,6 +321,65 @@ const FONTS = [
     'SIL OFL 1.1',
     '© Adobe / Google. This bundle ships a subset of the original fonts (reduced glyph coverage for size);\nno other modifications were made.',
   ],
+  [
+    'GenOffice UI Kana JP (Noto Sans JP derivative)',
+    'SIL OFL 1.1',
+    'Source: Noto Sans JP from https://github.com/notofonts/noto-cjk. Copyright 2014-2021 Adobe\n(http://www.adobe.com/), with Reserved Font Name "Source". This bundle ships Regular and Bold\ninstances subset to U+3000-30FF, with modified advances and horizontally condensed outlines to\nmatch Meiryo UI metrics and vertical metrics set to the Hiragino class. Renamed to GenOffice UI\nKana JP per OFL 1.1; the upstream Reserved Font Name is not used.',
+  ],
+  [
+    'GenOffice Sans KR (Noto Sans CJK KR derivative)',
+    'SIL OFL 1.1',
+    'Copyright 2014-2021 Adobe (http://www.adobe.com/), Google LLC, Reserved Font Name "Source".\nSubset with modified advance widths and horizontally transformed Noto CJK outlines to match measured\nKorean Office-family metrics; renamed per OFL 1.1. No Microsoft font outlines are included.',
+  ],
+  [
+    'GenOffice Serif KR (Noto Serif CJK KR derivative)',
+    'SIL OFL 1.1',
+    'Copyright 2017-2024 Adobe (http://www.adobe.com/), Reserved Font Name "Source".\nSubset with modified advance widths and horizontally transformed Noto CJK outlines to match measured\nKorean Office-family metrics; renamed per OFL 1.1. No Microsoft font outlines are included.',
+  ],
+  [
+    'GenOffice Che Latin KR (Noto Sans CJK KR derivative)',
+    'SIL OFL 1.1',
+    'Copyright 2014-2021 Adobe (http://www.adobe.com/), Google LLC, Reserved Font Name "Source".\nASCII subset with fixed 0.5em advances and horizontally transformed Noto CJK outlines; Microsoft\nDotumChe is used only as a metric reference. Renamed per OFL 1.1. No Microsoft outlines are included.',
+  ],
+  [
+    'Noto Naskh Arabic / Noto Sans Arabic (subset)',
+    'SIL OFL 1.1',
+    '© The Noto Project Authors. This bundle ships a subset of the original fonts;\nglyphs and metrics are unmodified.',
+  ],
+  [
+    'GenOffice Gothic KR (NanumGothic derivative)',
+    'SIL OFL 1.1',
+    `${GOTHIC_KR_COPYRIGHT}\nSubset with unmodified metrics; renamed per OFL 1.1.`,
+  ],
+  [
+    'GenOffice Poppins (Poppins derivative)',
+    'SIL OFL 1.1',
+    'Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins).\nLatin subset with unmodified metrics and advances; renamed.',
+  ],
+  [
+    'GenOffice DM Sans (DM Sans derivative)',
+    'SIL OFL 1.1',
+    'Copyright 2014-2017 Indian Type Foundry (info@indiantypefoundry.com). Copyright 2019 Google LLC.\nLatin subset with unmodified metrics and advances; renamed.',
+  ],
+  [
+    'GenOffice Tamil (Noto Sans Tamil derivative)',
+    'SIL OFL 1.1',
+    '© The Noto Project Authors, original Reserved Font Name "Noto". Modified advance widths;\nrenamed per OFL 1.1.',
+  ],
+  [
+    'GenOffice Bengali (Noto Sans Bengali derivative)',
+    'SIL OFL 1.1',
+    '© The Noto Project Authors, original Reserved Font Name "Noto". Modified advance widths;\nrenamed per OFL 1.1.',
+  ],
+  [
+    'KaTeX webfonts',
+    'SIL OFL 1.1',
+    'Copyright (c) 2009-2010, Design Science, Inc. (<www.mathjax.org>)\n' +
+      'Copyright (c) 2014-2018 Khan Academy (<www.khanacademy.org>),\n' +
+      'with Reserved Font Names KaTeX_AMS, KaTeX_Caligraphic, KaTeX_Fraktur, ' +
+      'KaTeX_Main, KaTeX_Math, KaTeX_SansSerif, KaTeX_Script, KaTeX_Size1, ' +
+      'KaTeX_Size2, KaTeX_Size3, KaTeX_Size4, and KaTeX_Typewriter.',
+  ],
 ]
 
 out += hr('3. Bundled fonts')
@@ -328,6 +397,12 @@ https://www.unicode.org/Public/17.0.0/ucd/EquivalentUnifiedIdeograph.txt
 
 `
 out += readFileSync(join(ROOT, 'LICENSE-UNICODE.txt'), 'utf8').trim() + '\n'
+
+for (const term of ['@embedpdf/pdfium', 'Copyright 2014 PDFium Authors', 'Apache License']) {
+  if (!out.includes(term)) {
+    throw new Error(`generated third-party notice is missing PDFium term: ${term}`)
+  }
+}
 
 const dest = join(ROOT, 'apps/shell/build/THIRD-PARTY-NOTICES.txt')
 mkdirSync(dirname(dest), { recursive: true })

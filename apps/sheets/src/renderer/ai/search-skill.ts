@@ -39,6 +39,14 @@ export function createSearchSkill(): AgentSkill {
         return { output: 'query must not be empty', isError: true, summary: t('aiToolWebSearch') }
       }
       const r = await window.desktopApi.webSearch(query, Number(call.input.maxResults) || 6)
+      // a backend failure must not read as "no results" — the model would fabricate conclusions
+      if (r.method === 'error') {
+        return {
+          output: `web search failed (service error, not an empty result — you may retry): ${r.error ?? 'unknown error'}`,
+          isError: true,
+          summary: t('aiToolWebSearch'),
+        }
+      }
       const lines: string[] = []
       if (r.answer) lines.push(`Direct answer: ${r.answer}\n`)
       r.results.forEach((it, i) =>

@@ -1,0 +1,783 @@
+/**
+ * Slide- and deck-level ops: slide lifecycle (add/duplicate/paste/delete/
+ * move/layout), backgrounds, transitions/animations/hidden, sections,
+ * header-footer, notes/comments, find-replace, and the deck page size.
+ * File dialogs, OS clipboard state, and RenderSlide rebuilding stay in the
+ * IPC shims. applyTheme's document change (entry surgery) is an op; the
+ * whole-deck reparse that refreshes resolved colors afterwards is a derived
+ * view rebuild, not an edit, and stays in the shim.
+ */
+import {
+  addPicture,
+  addSection,
+  addSlideComment,
+  applyHeaderFooter,
+  applyThemeToArchive,
+  commitSaved,
+  materializeSlide,
+  remapDeckColors,
+  reparseDeck,
+  deleteSlide,
+  deleteSlideComment,
+  duplicateSlide,
+  insertBlankSlide,
+  insertSlideWithLayout,
+  autofitGeneratedTextBoxes,
+  listSlideLayouts,
+  mergeSlideFromSource,
+  moveSection,
+  moveSlide,
+  pasteSlide,
+  promoteSlideBackground,
+  removeSection,
+  renameSection,
+  replaceAllInDeck,
+  resetSlideBackground,
+  resetSlideLayout,
+  setSections,
+  setSlideAdvanceTime,
+  setSlideAnimations,
+  setSlideBackground,
+  setSlideBackgroundImage,
+  setSlideBgGraphicsHidden,
+  setSlideHidden,
+  setSlideLayout,
+  setSlideNotes,
+  setSlideSize,
+  setSlideTransition,
+  elementSpid,
+  matchesElementRef,
+  ANIM_EFFECTS,
+  ANIM_TRIGGERS,
+  TRANSITION_KINDS,
+  type SectionInfo,
+  type ThemeSpec,
+  type SlideAnimation,
+  type SlideTransitionKind,
+  type TextElement,
+} from '@genoffice/pptx-engine'
+import {
+  coerceBytes,
+  dataUrlExt,
+  GuidedError,
+  register,
+  requireFinite,
+  requireHexColor,
+  resolveSlide,
+  slideDurableId,
+  type Op,
+  type OpContext,
+  type OpRecord,
+} from './registry'
+
+// ── slide lifecycle ─────────────────────────────────────────────────────
+
+register({
+  name: 'deleteSlide',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    if (!deleteSlide(ctx.opened, index)) {
+      throw new GuidedError(`op "deleteSlide": slide ${index} could not be removed.`)
+    }
+    return { op, before: { index } }
+  },
+})
+
+register({
+  name: 'duplicateSlide',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    const slide = duplicateSlide(ctx.opened, index, { clearText: op.clearText === true })
+    if (!slide)
+      throw new GuidedError(`op "duplicateSlide": slide ${index} could not be duplicated.`)
+    return { op, after: { index: index + 1 } }
+  },
+})
+
+register({
+  name: 'addBlankSlide',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    if (!insertBlankSlide(ctx.opened, index)) {
+      throw new GuidedError(
+        `op "addBlankSlide": a blank slide could not be inserted after ${index}.`,
+      )
+    }
+    return { op, after: { index: index + 1 } }
+  },
+})
+
+/** `layout` (gallery name, 0-based index or part path) or the legacy `layoutPath` → layout part path. */
+function resolveLayoutPath(op: Op, ctx: OpContext): string {
+  const layouts = listSlideLayouts(ctx.opened.archive)
+  const ref = op.layout ?? op.layoutPath
+  const available = () => layouts.map((l, i) => `${i}: "${l.name}"`).join(', ')
+  if (typeof ref === 'number') {
+    const hit = layouts[ref]
+    if (!hit) {
+      throw new GuidedError(
+        `op "${op.op}": layout index ${ref} is out of range (0-${layouts.length - 1}). Layouts: [${available()}].`,
+      )
+    }
+    return hit.path
+  }
+  if (typeof ref !== 'string' || !ref.trim()) {
+    throw new GuidedError(
+      `op "${op.op}" needs "layout": a layout name or 0-based index. Layouts: [${available()}].`,
+    )
+  }
+  const byPath = layouts.find((l) => l.path === ref)
+  if (byPath) return byPath.path
+  const norm = ref.trim().toLowerCase()
+  const byName = layouts.filter((l) => l.name.toLowerCase() === norm)
+  if (byName.length === 1) return byName[0]!.path
+  if (byName.length > 1) {
+    throw new GuidedError(
+      `op "${op.op}": ${byName.length} layouts are named "${ref}" — pass the index instead. Layouts: [${available()}].`,
+    )
+  }
+  throw new GuidedError(`op "${op.op}": no layout "${ref}". Layouts: [${available()}].`)
+}
+
+// The new slide goes after target.slide (default: the last slide).
+register({
+  name: 'addSlideWithLayout',
+  validate(op, ctx) {
+    if (op.target?.slide !== undefined) resolveSlide(ctx, op)
+    resolveLayoutPath(op, ctx)
+  },
+  apply(op, ctx): OpRecord {
+    const index =
+      op.target?.slide !== undefined
+        ? resolveSlide(ctx, op).index
+        : ctx.opened.deck.slides.length - 1
+    const layoutPath = resolveLayoutPath(op, ctx)
+    const slide = insertSlideWithLayout(ctx.opened, index, layoutPath)
+    if (!slide) {
+      throw new GuidedError(`op "addSlideWithLayout": layout "${layoutPath}" could not be applied.`)
+    }
+    return {
+      op,
+      created: [slideDurableId(slide)],
+      after: { index: index + 1, layout: layoutPath },
+    }
+  },
+})
+
+// Paste a copied slide after afterIndex (raw legacy semantics — the engine
+// clamps; picture mode flattens the copied slide's PNG onto the anchor slide).
+// bundle/png come from the app clipboard, owned by the shim.
+register({
+  name: 'pasteSlide',
+  validate(op) {
+    if (typeof op.afterIndex !== 'number') {
+      throw new GuidedError('op "pasteSlide" needs "afterIndex": the slide index to paste after.')
+    }
+    if (op.mode === 'picture') {
+      if (typeof op.png !== 'string' || !op.png) {
+        throw new GuidedError('op "pasteSlide" mode "picture" needs "png": base64 slide bitmap.')
+      }
+      return
+    }
+    if (typeof op.bundle !== 'object' || op.bundle === null) {
+      throw new GuidedError('op "pasteSlide" needs "bundle": a copied slide bundle.')
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const afterIndex = op.afterIndex as number
+    if (op.mode === 'picture') {
+      const { deck } = ctx.opened
+      const anchorIndex = Math.min(Math.max(afterIndex, 0), deck.slides.length - 1)
+      const slide = deck.slides[anchorIndex]
+      if (!slide) throw new GuidedError('op "pasteSlide": no anchor slide for the bitmap.')
+      const el = addPicture(ctx.opened, slide, {
+        bytes: new Uint8Array(Buffer.from(String(op.png), 'base64')),
+        ext: 'png',
+        offset: { x: 0, y: 0, cx: deck.size.cx, cy: deck.size.cy },
+      })
+      if (!el) throw new GuidedError('op "pasteSlide": the slide bitmap could not be placed.')
+      return { op, created: [el.id], after: { index: anchorIndex } }
+    }
+    const slide = pasteSlide(
+      ctx.opened,
+      afterIndex,
+      op.bundle as Parameters<typeof pasteSlide>[2],
+      {
+        keepSourceFormatting: op.mode === 'source',
+      },
+    )
+    if (!slide) throw new GuidedError('op "pasteSlide": the copied slide could not be pasted.')
+    return { op, after: { index: ctx.opened.deck.slides.indexOf(slide) } }
+  },
+})
+
+// ── insertSlidePptx ─────────────────────────────────────────────────────
+// Lands one generated page: merge an extracted single-slide pptx source into the
+// deck, position it, and (for regenerate) drop the page it replaces — one atomic
+// action, so the landing pipeline produces OpRecords like every other edit.
+// The source payload is main-process data (extractMergeSlideSource); not a model surface.
+register({
+  name: 'insertSlidePptx',
+  validate(op, ctx) {
+    const source = op.source as
+      | { slideXml?: unknown; rels?: unknown; media?: unknown; layoutChain?: unknown }
+      | null
+      | undefined
+    if (typeof source !== 'object' || source === null || typeof source.slideXml !== 'string') {
+      throw new GuidedError(
+        'op "insertSlidePptx" needs "source": an extracted single-slide pptx (main-process payload).',
+      )
+    }
+    // The merge dereferences these without guards; a missing key is a TypeError
+    for (const f of ['rels', 'media', 'layoutChain'] as const) {
+      if (!Array.isArray(source[f])) {
+        throw new GuidedError(
+          `op "insertSlidePptx": "source.${f}" must be an array (may be empty).`,
+        )
+      }
+    }
+    const total = ctx.opened.deck.slides.length
+    const at = op.at
+    if (at != null && (typeof at !== 'number' || !Number.isInteger(at) || at < 0 || at > total)) {
+      throw new GuidedError(`op "insertSlidePptx": "at" is out of range (0-${total}).`)
+    }
+    if (op.replace && (typeof at !== 'number' || at >= total)) {
+      throw new GuidedError(
+        'op "insertSlidePptx": "replace" needs "at" pointing at an existing slide.',
+      )
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const opened = ctx.opened
+    const total = opened.deck.slides.length
+    const slide = mergeSlideFromSource(
+      opened,
+      op.source as Parameters<typeof mergeSlideFromSource>[1],
+    )
+    if (!slide) throw new GuidedError('op "insertSlidePptx": the source page could not be merged.')
+    promoteSlideBackground(slide, opened.deck.size)
+    autofitGeneratedTextBoxes(slide)
+    const at = op.at as number | undefined
+    // The merge appends at index=total; move into place, then (replace) drop the displaced old page
+    if (at != null && at < total && !moveSlide(opened, total, at)) {
+      throw new GuidedError('op "insertSlidePptx": positioning the new page failed.')
+    }
+    if (op.replace && !deleteSlide(opened, (at as number) + 1)) {
+      throw new GuidedError('op "insertSlidePptx": removing the replaced page failed.')
+    }
+    return { op, created: [slideDurableId(slide)], after: { index: at ?? total } }
+  },
+})
+
+register({
+  name: 'moveSlide',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    if (typeof op.to !== 'number')
+      throw new GuidedError('op "moveSlide" needs "to": a slide index.')
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    if (!moveSlide(ctx.opened, index, op.to as number)) {
+      throw new GuidedError(`op "moveSlide": cannot move slide ${index} to ${op.to}.`)
+    }
+    return { op, before: { index }, after: { index: op.to } }
+  },
+})
+
+register({
+  name: 'setSlideLayout',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    if (op.layout != null || op.layoutPath != null) resolveLayoutPath(op, ctx)
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    const layoutPath =
+      op.layout != null || op.layoutPath != null ? resolveLayoutPath(op, ctx) : null
+    const ok = layoutPath
+      ? setSlideLayout(ctx.opened, index, layoutPath)
+      : resetSlideLayout(ctx.opened, index)
+    if (!ok) {
+      throw new GuidedError(
+        `op "setSlideLayout": layout ${layoutPath ? `"${layoutPath}"` : '(reset)'} could not be applied to slide ${index}.`,
+      )
+    }
+    return { op, after: layoutPath }
+  },
+})
+
+register({
+  name: 'setSlideSize',
+  validate(op) {
+    if (
+      typeof op.cx !== 'number' ||
+      typeof op.cy !== 'number' ||
+      !Number.isFinite(op.cx) ||
+      !Number.isFinite(op.cy) ||
+      op.cx <= 0 ||
+      op.cy <= 0
+    ) {
+      throw new GuidedError('op "setSlideSize" needs "cx"/"cy" (EMU).')
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const before = { ...ctx.opened.deck.size }
+    if (!setSlideSize(ctx.opened, op.cx as number, op.cy as number)) {
+      throw new GuidedError('op "setSlideSize": the deck size could not be changed.')
+    }
+    return { op, before, after: { cx: op.cx, cy: op.cy } }
+  },
+})
+
+// ── background ──────────────────────────────────────────────────────────
+
+/**
+ * Full-page "backdrop" rectangles: design templates often use a text-free solid
+ * rectangle covering the whole page as background; changing only the page
+ * background would be hidden behind them — so repaint such rectangles along
+ * with the background, or make them transparent when the new background is a
+ * picture.
+ */
+function repaintFullBleedBackdrops(
+  ctx: { opened: { deck: { size: { cx: number; cy: number } } } },
+  slide: { elements: unknown[] },
+  fill:
+    | { type: 'solid'; color: string }
+    | {
+        type: 'gradient'
+        stops: Array<{ pos: number; color: string }>
+        angle?: number
+        path?: 'circle'
+      }
+    | { type: 'none' },
+): void {
+  const size = ctx.opened.deck.size
+  for (const raw of slide.elements) {
+    const el = raw as TextElement
+    if (el.type !== 'shape' && el.type !== 'text') continue
+    const fillType = el.fill?.type
+    if (fillType !== 'solid' && fillType !== 'gradient') continue
+    if (el.text?.paragraphs.some((p) => p.runs.some((r) => r.text.trim()))) continue
+    const { x, y, cx, cy } = el.transform.offset
+    const coversX = x <= size.cx * 0.05 && x + cx >= size.cx * 0.95
+    const coversY = y <= size.cy * 0.05 && y + cy >= size.cy * 0.95
+    if (!coversX || !coversY) continue
+    el.fill = fill
+    el.dirtyFill = true
+  }
+}
+
+// One slide per op; multi-slide "apply to all" fans out to N ops in one
+// transaction. Image backgrounds report the landed media part in
+// after.mediaPath so later ops in the same batch reuse it (one part, N rels).
+register({
+  name: 'setBackground',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    const kind = op.kind
+    if (kind === 'solid') {
+      requireHexColor(op.color, 'setBackground', 'color')
+    } else if (kind === 'gradient') {
+      requireHexColor(op.from, 'setBackground', 'from')
+      requireHexColor(op.to, 'setBackground', 'to')
+      if (op.angleDeg !== undefined) requireFinite(op.angleDeg, 'setBackground', 'angleDeg')
+    } else if (kind === 'image') {
+      const source = op.source as
+        { bytes?: unknown; ext?: unknown; mediaPath?: unknown } | undefined
+      if (!source || (!source.bytes && !source.mediaPath)) {
+        throw new GuidedError(
+          'op "setBackground" image needs "source": {bytes, ext} or {mediaPath}.',
+        )
+      }
+      if (source.bytes != null) {
+        if (typeof source.ext !== 'string' || !source.ext) {
+          const hint = dataUrlExt(source.bytes)
+          if (hint) source.ext = hint
+        }
+        source.bytes = coerceBytes(source.bytes, 'setBackground', 'source.bytes')
+        if (typeof source.ext !== 'string' || !source.ext) {
+          throw new GuidedError('op "setBackground" image needs "source.ext".')
+        }
+      }
+    } else if (kind !== 'reset' && kind !== 'graphics') {
+      throw new GuidedError('op "setBackground" needs "kind": solid/gradient/image/reset/graphics.')
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { slide } = resolveSlide(ctx, op)
+    if (op.kind === 'solid') {
+      setSlideBackground(ctx.opened, slide, String(op.color))
+      repaintFullBleedBackdrops(ctx, slide, { type: 'solid', color: String(op.color) })
+      return { op, after: { kind: 'solid' } }
+    }
+    if (op.kind === 'gradient') {
+      const stops = [
+        { pos: 0, color: String(op.from) },
+        { pos: 1, color: String(op.to) },
+      ]
+      const angle = Math.round(((op.angleDeg as number | undefined) ?? 0) * 60000)
+      setSlideBackground(ctx.opened, slide, {
+        stops,
+        ...(op.radial ? { radial: true } : { angle }),
+      })
+      repaintFullBleedBackdrops(ctx, slide, {
+        type: 'gradient',
+        stops,
+        ...(op.radial ? { path: 'circle' as const } : { angle }),
+      })
+      return { op, after: { kind: 'gradient' } }
+    }
+    if (op.kind === 'image') {
+      const used = setSlideBackgroundImage(
+        ctx.opened,
+        slide,
+        op.source as Parameters<typeof setSlideBackgroundImage>[2],
+        op.tile === true,
+      )
+      if (!used) throw new GuidedError('op "setBackground": the image could not be landed.')
+      repaintFullBleedBackdrops(ctx, slide, { type: 'none' })
+      return { op, after: { kind: 'image', mediaPath: used } }
+    }
+    if (op.kind === 'reset') {
+      resetSlideBackground(ctx.opened, slide)
+      return { op, after: { kind: 'reset' } }
+    }
+    setSlideBgGraphicsHidden(ctx.opened, slide, op.hidden === true)
+    return { op, after: { kind: 'graphics', hidden: op.hidden === true } }
+  },
+})
+
+// ── per-slide toggles ───────────────────────────────────────────────────
+
+register({
+  name: 'setHidden',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+  },
+  apply(op, ctx): OpRecord {
+    const { slide } = resolveSlide(ctx, op)
+    setSlideHidden(slide, op.hidden === true)
+    return { op, after: op.hidden === true }
+  },
+})
+
+register({
+  name: 'setTransition',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    // An unmapped kind would serialize as literal element text ("undefined")
+    if (!TRANSITION_KINDS.includes(op.kind as (typeof TRANSITION_KINDS)[number])) {
+      throw new GuidedError(
+        `op "setTransition" needs "kind": one of [${TRANSITION_KINDS.join(', ')}].`,
+      )
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { slide } = resolveSlide(ctx, op)
+    setSlideTransition(slide, op.kind as SlideTransitionKind)
+    return { op, after: op.kind }
+  },
+})
+
+register({
+  name: 'setAdvanceTime',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    // advTm is xsd:unsignedInt — negatives/NaN would land verbatim
+    if (op.ms !== null && (typeof op.ms !== 'number' || !Number.isFinite(op.ms) || op.ms < 0)) {
+      throw new GuidedError(
+        'op "setAdvanceTime" needs "ms": non-negative milliseconds, or null to clear.',
+      )
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { slide } = resolveSlide(ctx, op)
+    setSlideAdvanceTime(slide, op.ms == null ? null : Math.round(op.ms as number))
+    return { op, after: op.ms }
+  },
+})
+
+// sourceId → spid mapping happens here (model concern): animations address
+// shapes by spid in <p:timing>, but callers speak element ids.
+register({
+  name: 'setAnimations',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    if (!Array.isArray(op.items)) throw new GuidedError('op "setAnimations" needs "items".')
+    for (const [i, raw] of (op.items as Array<Record<string, unknown>>).entries()) {
+      if (typeof raw?.sourceId !== 'string' || !raw.sourceId) {
+        throw new GuidedError(`op "setAnimations": items[${i}] needs "sourceId": an element id.`)
+      }
+      if (!ANIM_EFFECTS.includes(raw.effect as (typeof ANIM_EFFECTS)[number])) {
+        throw new GuidedError(
+          `op "setAnimations": items[${i}].effect must be one of [${ANIM_EFFECTS.join(', ')}].`,
+        )
+      }
+      if (!ANIM_TRIGGERS.includes(raw.trigger as (typeof ANIM_TRIGGERS)[number])) {
+        throw new GuidedError(
+          `op "setAnimations": items[${i}].trigger must be one of [${ANIM_TRIGGERS.join(', ')}].`,
+        )
+      }
+      for (const f of ['durationMs', 'delayMs'] as const) {
+        if (
+          typeof raw[f] !== 'number' ||
+          !Number.isFinite(raw[f] as number) ||
+          (raw[f] as number) < 0
+        ) {
+          throw new GuidedError(`op "setAnimations": items[${i}].${f} must be >= 0 milliseconds.`)
+        }
+      }
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { slide } = resolveSlide(ctx, op)
+    const anims: SlideAnimation[] = []
+    const unresolved: string[] = []
+    for (const raw of op.items as Array<Record<string, unknown>>) {
+      // Refs resolve like every other op — durable e_<guid8>/e_<cNvPr id> included.
+      // Silent dropping is not an option: a full-replace op that drops every item
+      // would wipe the slide's existing animations while reporting success.
+      const el = slide.elements.find((x) => matchesElementRef(x, String(raw.sourceId)))
+      const spid = el ? elementSpid(el) : null
+      if (spid == null) {
+        unresolved.push(String(raw.sourceId))
+        continue
+      }
+      anims.push({
+        spid,
+        effect: raw.effect as SlideAnimation['effect'],
+        trigger: raw.trigger as SlideAnimation['trigger'],
+        durationMs: Math.max(0, Math.round(raw.durationMs as number)),
+        delayMs: Math.max(0, Math.round(raw.delayMs as number)),
+        ...(raw.motionPath != null
+          ? { motionPath: raw.motionPath as SlideAnimation['motionPath'] }
+          : {}),
+        ...(raw.paragraph != null ? { paragraph: raw.paragraph as number } : {}),
+        ...(typeof raw.direction === 'string'
+          ? { direction: raw.direction as SlideAnimation['direction'] }
+          : {}),
+        ...(typeof raw.presetXml === 'string' ? { presetXml: raw.presetXml } : {}),
+        ...(el!.type === 'picture' && el!.media ? { mediaKind: el!.media.kind } : {}),
+      })
+    }
+    if (unresolved.length) {
+      throw new GuidedError(
+        `op "setAnimations": no element ${unresolved.map((u) => `"${u}"`).join(', ')} on the slide. Available: [${slide.elements.map((x) => x.id).join(', ')}].`,
+      )
+    }
+    setSlideAnimations(slide, anims)
+    return { op, after: { count: anims.length } }
+  },
+})
+
+// ── deck-level ──────────────────────────────────────────────────────────
+
+register({
+  name: 'findReplace',
+  validate(op) {
+    if (typeof op.find !== 'string' || !op.find) {
+      throw new GuidedError('op "findReplace" needs "find": a non-empty search string.')
+    }
+    if (typeof op.replace !== 'string') throw new GuidedError('op "findReplace" needs "replace".')
+  },
+  apply(op, ctx): OpRecord {
+    const { count, changedSlides } = replaceAllInDeck(
+      ctx.opened.deck,
+      String(op.find),
+      String(op.replace),
+      {
+        matchCase: op.matchCase as boolean | undefined,
+        firstOnly: op.firstOnly as boolean | undefined,
+        slideIndex: op.slideIndex as number | undefined,
+        elementId: op.elementId as string | undefined,
+      },
+    )
+    if (!count) {
+      throw new GuidedError(`op "findReplace": "${op.find}" was not found anywhere in the deck.`)
+    }
+    return { op, after: { count, changedSlides } }
+  },
+})
+
+register({
+  name: 'applyHeaderFooter',
+  validate(op) {
+    if (typeof op.settings !== 'object' || op.settings === null) {
+      throw new GuidedError('op "applyHeaderFooter" needs "settings".')
+    }
+  },
+  apply(op, ctx): OpRecord {
+    if (!applyHeaderFooter(ctx.opened, op.settings as Parameters<typeof applyHeaderFooter>[1])) {
+      throw new GuidedError('op "applyHeaderFooter": nothing changed (same settings as before).')
+    }
+    return { op, after: op.settings }
+  },
+})
+
+// ── sections ────────────────────────────────────────────────────────────
+
+const sectionOp = (
+  name: string,
+  applyFn: (op: Op, ctx: { opened: Parameters<typeof setSections>[0] }) => unknown,
+  needs?: (op: Op) => void,
+): void =>
+  register({
+    name,
+    validate(op) {
+      needs?.(op)
+    },
+    apply(op, ctx): OpRecord {
+      const r = applyFn(op, ctx)
+      if (!r) throw new GuidedError(`op "${name}": the section change was rejected.`)
+      return { op, after: r }
+    },
+  })
+
+sectionOp(
+  'setSections',
+  (op, ctx) => {
+    setSections(ctx.opened, op.sections as SectionInfo[])
+    return true
+  },
+  (op) => {
+    if (!Array.isArray(op.sections)) throw new GuidedError('op "setSections" needs "sections".')
+  },
+)
+sectionOp('addSection', (op, ctx) =>
+  addSection(ctx.opened, op.atSlideIndex as number, op.name as string),
+)
+sectionOp('renameSection', (op, ctx) =>
+  renameSection(ctx.opened, op.id as string, op.name as string),
+)
+sectionOp('removeSection', (op, ctx) =>
+  removeSection(ctx.opened, op.id as string, { keepSlides: true }),
+)
+sectionOp('moveSection', (op, ctx) =>
+  moveSection(ctx.opened, op.id as string, op.dir as 'up' | 'down'),
+)
+
+// ── notes / comments ────────────────────────────────────────────────────
+
+register({
+  name: 'setNotes',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    if (typeof op.text !== 'string') throw new GuidedError('op "setNotes" needs "text".')
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    if (!setSlideNotes(ctx.opened, index, String(op.text))) {
+      throw new GuidedError(`op "setNotes": notes for slide ${index} could not be written.`)
+    }
+    return { op, after: op.text }
+  },
+})
+
+register({
+  name: 'addComment',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    if (typeof op.text !== 'string' || !op.text)
+      throw new GuidedError('op "addComment" needs "text".')
+    if (typeof op.author !== 'string' || !op.author)
+      throw new GuidedError('op "addComment" needs "author".')
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    const added = addSlideComment(ctx.opened, index, {
+      author: String(op.author),
+      text: String(op.text),
+    })
+    if (!added)
+      throw new GuidedError(`op "addComment": the comment could not be added to slide ${index}.`)
+    return { op, after: added }
+  },
+})
+
+register({
+  name: 'deleteComment',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    if (typeof op.authorId !== 'number' || typeof op.idx !== 'number') {
+      throw new GuidedError('op "deleteComment" needs "authorId" and "idx".')
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    if (
+      !deleteSlideComment(ctx.opened, index, {
+        authorId: op.authorId as number,
+        idx: op.idx as number,
+      })
+    ) {
+      throw new GuidedError(
+        `op "deleteComment": no comment (author ${op.authorId}, #${op.idx}) on slide ${index}.`,
+      )
+    }
+    return { op }
+  },
+})
+
+// ── applyTheme ──────────────────────────────────────────────────────────
+// Theme swap as entry surgery: bake unsaved edits first (dirty slices saved
+// later would overwrite the surgery), patch theme parts + remap explicit
+// colors, then give background-less slides the theme base color so dark
+// themes don't leave white pages. The whole-deck reparse that refreshes
+// resolved colors afterwards is a derived view rebuild and stays in the shim.
+register({
+  name: 'applyTheme',
+  validate(op) {
+    if (typeof op.name !== 'string' || !op.name) {
+      throw new GuidedError('op "applyTheme" needs "name": the theme name.')
+    }
+    const colors = op.colors
+    if (typeof colors !== 'object' || colors === null || Array.isArray(colors)) {
+      throw new GuidedError(
+        'op "applyTheme" needs "colors": a scheme-slot → "#RRGGBB" record (dk1/lt1/dk2/lt2/accent1..6/hlink/folHlink).',
+      )
+    }
+    for (const [k, v] of Object.entries(colors as Record<string, unknown>)) {
+      if (typeof v !== 'string' || !/^#?[0-9a-fA-F]{6}$/.test(v.trim())) {
+        throw new GuidedError(`op "applyTheme": colors.${k} must be a "#RRGGBB" string.`)
+      }
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const spec: ThemeSpec = {
+      name: op.name as string,
+      colors: op.colors as Record<string, string>,
+      ...(typeof op.majorFont === 'string' && op.majorFont ? { majorFont: op.majorFont } : {}),
+      ...(typeof op.minorFont === 'string' && op.minorFont ? { minorFont: op.minorFont } : {}),
+    }
+    commitSaved(ctx.opened)
+    const patched = applyThemeToArchive(ctx.opened, spec)
+    const remapped = remapDeckColors(ctx.opened, spec)
+    let backgrounds = 0
+    const lt1 = spec.colors.lt1
+    if ((patched > 0 || remapped > 0) && lt1) {
+      // The remap is entry surgery only — refresh the in-memory model from the
+      // remapped bytes first, or materializing a background below would rewrite
+      // exactly those slides from the stale model and undo the remap
+      ctx.opened.deck.slides = reparseDeck(ctx.opened).deck.slides
+      const slides = ctx.opened.deck.slides
+      for (let i = 0; i < slides.length; i++) {
+        const s = slides[i]!
+        if (s.background) continue
+        setSlideBackground(ctx.opened, s, `#${lt1.replace(/^#/, '')}`)
+        materializeSlide(ctx.opened, i)
+        backgrounds++
+      }
+    }
+    return { op, after: { patched, remapped, backgrounds } }
+  },
+})

@@ -11,12 +11,14 @@ import {
   getSections,
   moveSection,
   moveSlide,
+  normalizeSections,
   openPptx,
   removeSection,
   renameSection,
   savePptx,
   setSections,
   type OpenedPptx,
+  type SectionInfo,
 } from '../src/index'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -225,5 +227,52 @@ describe('sections (p14:sectionLst)', () => {
     setSections(opened, [])
     expect(getSections(opened)).toEqual([])
     expect(presXml(opened)).not.toContain('<p:extLst>')
+  })
+})
+
+describe('normalizeSections (#1024)', () => {
+  const sec = (name: string, slideIndices: number[]): SectionInfo => ({
+    id: `{${name}}`,
+    name,
+    slideIndices,
+  })
+
+  it('a section starts at its minimum index, not its first', () => {
+    const r = normalizeSections([sec('A', [3, 1]), sec('B', [2])], 6)
+    expect(r.lead).toEqual([0])
+    expect(r.starts).toEqual([1, 2])
+    expect(r.sections.map((s) => s.slideIndices)).toEqual([[1], [2, 3, 4, 5]])
+  })
+
+  it('an empty section inherits the next section start; no sections covers everything', () => {
+    const r = normalizeSections([sec('A', [2, 3, 4]), sec('B', [])], 5)
+    expect(r.lead).toEqual([0, 1])
+    expect(r.sections.map((s) => s.slideIndices)).toEqual([[2, 3, 4], []])
+    expect(normalizeSections([], 4)).toEqual({
+      lead: [0, 1, 2, 3],
+      starts: [],
+      sections: [],
+    })
+  })
+
+  it('a very large slideIndices list does not overflow the call stack', () => {
+    // Math.min(...indices) throws RangeError past ~1e5 arguments; the minimum is
+    // now folded pairwise, so the size of the list no longer matters.
+    const many = Array.from({ length: 500_000 }, (_, i) => i % 10)
+    const r = normalizeSections([sec('A', many)], 10)
+    expect(r.starts).toEqual([0])
+    expect(r.lead).toEqual([])
+    expect(r.sections[0]!.slideIndices).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+  })
+
+  it('folding pairwise matches Math.min spread for unsorted and single-element lists', () => {
+    const cases: number[][] = [[5], [4, 9, 2, 7], [2, 2, 2], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]]
+    for (const indices of cases) {
+      const r = normalizeSections([sec('A', indices)], 10)
+      expect(r.starts).toEqual([Math.min(...indices)])
+      expect(r.sections[0]!.slideIndices).toEqual(
+        Array.from({ length: 10 - Math.min(...indices) }, (_, i) => Math.min(...indices) + i),
+      )
+    }
   })
 })

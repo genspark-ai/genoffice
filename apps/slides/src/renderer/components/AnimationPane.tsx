@@ -5,7 +5,7 @@
  */
 import React from 'react'
 import type { AnimEffectKind, AnimationItem } from '../../shared/ipc'
-import { animClassOf } from '../animation-play'
+import { animClassOf, animGalleryKind } from '../animation-play'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { IconSidebarCollapse } from './icons'
 
@@ -30,6 +30,9 @@ const EFFECT_KEY: Record<AnimEffectKind, StringKey> = {
   shrink: 'paneAnimEffShrink',
   zoomOut: 'paneAnimEffZoomOut',
   motionPath: 'paneAnimEffMotionPath',
+  mediaPlay: 'paneAnimEffMediaPlay',
+  mediaPause: 'paneAnimEffMediaPause',
+  mediaStop: 'paneAnimEffMediaStop',
 }
 
 const TRIGGER_GLYPH = { onClick: '🖱', withPrev: '⇉', afterPrev: '⏱' } as const
@@ -116,7 +119,7 @@ export function AnimationPane({
               {TRIGGER_GLYPH[it.trigger]}
             </span>
             <span className="anim-row-main">
-              <span className="anim-row-effect">{t(EFFECT_KEY[it.effect])}</span>
+              <span className="anim-row-effect">{t(EFFECT_KEY[animGalleryKind(it)])}</span>
               <span className="anim-row-target">
                 {it.targetName}
                 {it.paragraph != null && ` · ${t('paneAnimParaN', { n: it.paragraph + 1 })}`}

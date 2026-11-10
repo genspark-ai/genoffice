@@ -5,9 +5,12 @@ import {
   capTableRowHeights,
   inlineToRuns,
   pmDocToSavePlan,
+  pmNodeToGeneratedBlock,
   runsToInline,
   signatureOfBlock,
   signatureOfGenerated,
+  tableModelToPmNode,
+  textboxParaSignature,
   type PmNode,
 } from '../src/renderer/editor/convert'
 
@@ -36,6 +39,32 @@ describe('inlineToRuns hard break after atomic runs', () => {
   })
 })
 
+describe('Zotero field conversion', () => {
+  it('preserves one field id and its cross-paragraph boundaries', () => {
+    const instruction = 'ADDIN ZOTERO_BIBL {} CSL_BIBLIOGRAPHY'
+    const parts = ['begin', 'inside', 'end'] as const
+    const inline = parts.map(
+      (part, index) =>
+        runsToInline([
+          {
+            text: `Reference ${index + 1}`,
+            instrField: instruction,
+            zoteroFieldId: 17,
+            zoteroFieldPart: part,
+          },
+        ])[0],
+    )
+
+    const marks = inline.map((node) => node.marks?.find((mark) => mark.type === 'instrField'))
+    expect(marks.map((mark) => mark?.attrs?.fieldId)).toEqual([17, 17, 17])
+    expect(marks.map((mark) => mark?.attrs?.fieldPart)).toEqual(parts)
+
+    const runs = inline.map((node) => inlineToRuns([node])[0])
+    expect(runs.map((run) => run.zoteroFieldId)).toEqual([17, 17, 17])
+    expect(runs.map((run) => run.zoteroFieldPart)).toEqual(parts)
+  })
+})
+
 describe('runsToInline image runs', () => {
   it('keeps sibling w:t text on a run that also carries a drawing', () => {
     const runs = [
@@ -51,14 +80,48 @@ describe('runsToInline image runs', () => {
       { type: 'text', text: 'caption', marks: [{ type: 'bold' }] },
       {
         type: 'docInlineImage',
+        marks: [{ type: 'bold' }],
         attrs: {
           dataUrl: 'data:image/png;base64,QUJD',
           widthPx: 96,
           heightPx: null,
           xml: '<w:drawing/>',
+          wrap: null,
+          offsetXEmu: null,
+          offsetYEmu: null,
+          relV: null,
+          relH: null,
+          posH: null,
+          posV: null,
+          wrapDistTopEmu: null,
+          wrapDistBottomEmu: null,
+          wrapDistLeftEmu: null,
+          wrapDistRightEmu: null,
+          border: null,
+          lineCenterV: false,
+          rotDeg: null,
+          flipH: false,
+          flipV: false,
+          layers: null,
+          rule: null,
+          rawRPr: null,
         },
       },
     ])
+  })
+
+  it('round-trips a textbox image run without changing its signature', () => {
+    const para = {
+      runs: [
+        { text: 'tick ' },
+        { text: '', image: { dataUrl: 'data:image/png;base64,QUJD', xml: '<w:drawing/>' } },
+      ],
+    }
+    const roundtripped = { runs: inlineToRuns(runsToInline(para.runs)) }
+    expect(textboxParaSignature(roundtripped)).toBe(textboxParaSignature(para))
+    // deleting the image must surface as a change even when the text is intact
+    const dropped = { runs: [{ text: 'tick ' }] }
+    expect(textboxParaSignature(dropped)).not.toBe(textboxParaSignature(para))
   })
 
   it('emits only the image atom for a text-less drawing run', () => {
@@ -73,6 +136,25 @@ describe('runsToInline image runs', () => {
           widthPx: null,
           heightPx: null,
           xml: '<w:drawing/>',
+          wrap: null,
+          offsetXEmu: null,
+          offsetYEmu: null,
+          relV: null,
+          relH: null,
+          posH: null,
+          posV: null,
+          wrapDistTopEmu: null,
+          wrapDistBottomEmu: null,
+          wrapDistLeftEmu: null,
+          wrapDistRightEmu: null,
+          border: null,
+          lineCenterV: false,
+          rotDeg: null,
+          flipH: false,
+          flipV: false,
+          layers: null,
+          rule: null,
+          rawRPr: null,
         },
       },
     ])
@@ -107,6 +189,25 @@ describe('paragraph format signatures', () => {
     const ltr = signatureOfBlock(base)
     const rtl = signatureOfBlock({ ...base, format: { bidi: true } })
     expect(ltr).not.toBe(rtl)
+  })
+
+  it('keeps a bare <w:br/> run between formatted runs its own run (genoffice#524)', () => {
+    const runs = [
+      { text: 'First line', bold: true },
+      { text: '\n' },
+      { text: 'Second line', bold: true },
+    ]
+    const roundtripped = inlineToRuns(runsToInline(runs))
+    expect(roundtripped).toEqual(runs)
+    expect(signatureOfGenerated({ type: 'paragraph', runs: roundtripped })).toBe(
+      signatureOfBlock({ ...base, runs }),
+    )
+  })
+
+  it('still folds a bare break into a plain neighbour', () => {
+    expect(inlineToRuns(runsToInline([{ text: 'a' }, { text: '\n' }, { text: 'b' }]))).toEqual([
+      { text: 'a\nb' },
+    ])
   })
 })
 
@@ -244,6 +345,146 @@ describe('section row-height cap (declared trHeight taller than a page)', () => 
   })
 })
 
+describe('oversize floating tables (w:tblpPr) lose the float', () => {
+  const row = [{ paras: ['x'] }]
+
+  it('a table taller than a page flows instead of floating', () => {
+    const model: TableModel = { rows: Array.from({ length: 60 }, () => row), floatSide: 'left' }
+    expect(tableModelToPmNode(model).attrs!.tblFloat).toBeNull()
+  })
+
+  it('a small floating table keeps its side', () => {
+    const model: TableModel = { rows: [row, row], floatSide: 'right' }
+    expect(tableModelToPmNode(model).attrs!.tblFloat).toBe('right')
+  })
+
+  it('declared row heights count toward the overflow estimate', () => {
+    const model: TableModel = { rows: [row], rowHeightsTwips: [20000], floatSide: 'left' }
+    expect(tableModelToPmNode(model).attrs!.tblFloat).toBeNull()
+  })
+
+  it('a text-anchored float at least as wide as the text column flows inline', () => {
+    const model: TableModel = {
+      rows: [row, row],
+      colWidthsTwips: [6000, 6000],
+      floatSide: 'left',
+      floatPos: { xTwips: 300, yTwips: 0, horzAnchor: 'page', vertAnchor: 'text' },
+    }
+    const node = tableModelToPmNode(model, null, null, null, 10210, 10069, 11910)
+    expect(node.attrs!.tblFloat).toBeNull()
+    expect(node.attrs!.tblFloatSuppressed).toBe(true)
+  })
+
+  it('a single-row text-anchored float leaving under 1in beside it flows inline', () => {
+    const model: TableModel = {
+      rows: [row],
+      colWidthsTwips: [9074],
+      floatSide: 'left',
+      floatPos: {
+        xTwips: 0,
+        yTwips: -27,
+        horzAnchor: 'margin',
+        vertAnchor: 'text',
+        distanceTwips: { left: 180, right: 180 },
+      },
+    }
+    const node = tableModelToPmNode(model, null, null, null, 10390, 10390, 11910)
+    expect(node.attrs!.tblFloat).toBeNull()
+    expect(node.attrs!.tblFloatSuppressed).toBe(true)
+  })
+
+  it('a narrow-room text-anchored float stays wrapped when nothing beside it has words', () => {
+    const model: TableModel = {
+      rows: [row],
+      colWidthsTwips: [9074],
+      floatSide: 'left',
+      floatPos: { xTwips: 0, yTwips: -27, horzAnchor: 'margin', vertAnchor: 'text' },
+    }
+    const para = (text: string): Block => ({
+      id: 'p',
+      type: 'paragraph',
+      docxIndex: 1,
+      originalXml: '<w:p/>',
+      runs: [{ text }],
+    })
+    const picture = (imageWidthPx: number): Block => ({
+      id: 'i',
+      type: 'image',
+      docxIndex: 2,
+      originalXml: '<w:p/>',
+      imageWidthPx,
+    })
+    const nextTable: Block = { id: 't', type: 'table', docxIndex: 3, originalXml: '<w:tbl/>' }
+    const floating: Block = {
+      ...nextTable,
+      table: {
+        rows: [row],
+        floatSide: 'left',
+        floatPos: { xTwips: 0, yTwips: 7840, vertAnchor: 'page' },
+      },
+    }
+    const convert = (followers: Block[]) =>
+      tableModelToPmNode(model, null, null, null, 10390, 10390, 11910, false, undefined, followers)
+    // blank lines and a 15px icon fit the 1316-twip room up to the next table
+    expect(convert([para(''), para(' '), picture(15), nextTable]).attrs!.tblFloat).toBe('left')
+    // a floating table in between is no flow stop (the icon still wraps)
+    expect(convert([para(''), floating, para(''), picture(15), nextTable]).attrs!.tblFloat).toBe(
+      'left',
+    )
+    // a word or a wide picture beside it flows the table inline as before,
+    // and so do blank lines alone (nothing visible sits beside the float)
+    expect(convert([para(''), para('text'), picture(15), nextTable]).attrs!.tblFloat).toBeNull()
+    expect(convert([picture(200), nextTable]).attrs!.tblFloat).toBeNull()
+    expect(convert([para(''), para(' '), nextTable]).attrs!.tblFloat).toBeNull()
+    expect(convert([]).attrs!.tblFloat).toBeNull()
+  })
+
+  it('a text-anchored float with at least 1in beside it keeps floating', () => {
+    const model: TableModel = {
+      rows: [row, row],
+      colWidthsTwips: [8700],
+      floatSide: 'left',
+      floatPos: { xTwips: 0, yTwips: 0, horzAnchor: 'margin', vertAnchor: 'text' },
+    }
+    const node = tableModelToPmNode(model, null, null, null, 10390, 10390, 11910)
+    expect(node.attrs!.tblFloat).toBe('left')
+    expect(node.attrs!.tblFloatSuppressed).toBe(false)
+  })
+
+  it('a page-anchored full-width float keeps floating', () => {
+    const model: TableModel = {
+      rows: [row, row],
+      colWidthsTwips: [6000, 6000],
+      floatSide: 'left',
+      floatPos: { xTwips: 300, yTwips: 400, horzAnchor: 'page', vertAnchor: 'page' },
+    }
+    const node = tableModelToPmNode(model, null, null, null, 10210, 10069, 11910)
+    expect(node.attrs!.tblFloat).toBe('left')
+  })
+
+  it('a full-width float positioned mid-page keeps its clamped-float rendering', () => {
+    const model: TableModel = {
+      rows: [row, row],
+      colWidthsTwips: [6000, 6000],
+      floatSide: 'left',
+      floatPos: { xTwips: 4000, yTwips: 200, horzAnchor: 'page', vertAnchor: 'text' },
+    }
+    const node = tableModelToPmNode(model, null, null, null, 10210, 10069, 11910)
+    expect(node.attrs!.tblFloat).toBe('left')
+  })
+
+  it('a narrow text-anchored float keeps floating', () => {
+    const model: TableModel = {
+      rows: [row, row],
+      colWidthsTwips: [3000],
+      floatSide: 'right',
+      floatPos: { xTwips: 300, yTwips: 0, horzAnchor: 'margin', vertAnchor: 'text' },
+    }
+    const node = tableModelToPmNode(model, null, null, null, 10210, 10069, 11910)
+    expect(node.attrs!.tblFloat).toBe('right')
+  })
+})
+
 describe('run character shading (w:shd) mark mapping', () => {
   it('round-trips run.shading through the docTextStyle mark alongside highlight', () => {
     const inline = runsToInline([{ text: 'badge', shading: 'FFC000', highlight: 'yellow' }])
@@ -253,6 +494,51 @@ describe('run character shading (w:shd) mark mapping', () => {
     const runs = inlineToRuns(inline)
     expect(runs[0].shading).toBe('FFC000')
     expect(runs[0].highlight).toBe('yellow')
+  })
+})
+
+describe('paragraph border color/width round trip', () => {
+  const raw =
+    '<w:p><w:pPr><w:pBdr>' +
+    '<w:bottom w:val="single" w:sz="18" w:space="1" w:color="4472C4"/>' +
+    '</w:pBdr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>'
+  const block: Block = {
+    id: 'b0',
+    type: 'paragraph',
+    docxIndex: 0,
+    originalXml: raw,
+    rawPPr:
+      '<w:pPr><w:pBdr><w:bottom w:val="single" w:sz="18" w:space="1" w:color="4472C4"/></w:pBdr></w:pPr>',
+    runs: [{ text: 'x' }],
+    // the parser keeps a declared positive w:space as spacePt (an omitted/0 one stays undeclared)
+    format: { borders: 'b', borderLines: { b: { color: '4472C4', szPt: 2.25, spacePt: 1 } } },
+  }
+
+  it('borderLines survive PM attrs and do not dirty the block', () => {
+    const doc = blocksToPmDoc([block])
+    expect(doc.content?.[0].attrs?.borderLines).toBe(
+      JSON.stringify({ b: { color: '4472C4', szPt: 2.25, spacePt: 1 } }),
+    )
+    const plan = pmDocToSavePlan(doc, [block])
+    expect(plan.changedCount).toBe(0)
+    expect(plan.saveBlocks[0]).toEqual({ kind: 'original', docxIndex: 0 })
+  })
+
+  it('keeps borderLines in the regenerated format after an unrelated edit', () => {
+    const node = blocksToPmDoc([block]).content![0]
+    const doc: PmNode = {
+      type: 'doc',
+      content: [{ ...node, attrs: { ...node.attrs, align: 'center' } }],
+    }
+    const plan = pmDocToSavePlan(doc, [block])
+    const saved = plan.saveBlocks[0]
+    if (saved.kind !== 'generated') throw new Error(`expected generated, got ${saved.kind}`)
+    expect(saved.block.format?.borderLines).toEqual({
+      b: { color: '4472C4', szPt: 2.25, spacePt: 1 },
+    })
+    expect(saved.block.rawPPr).toContain(
+      '<w:bottom w:val="single" w:sz="18" w:space="1" w:color="4472C4"/>',
+    )
   })
 })
 
@@ -284,5 +570,135 @@ describe('empty paragraph line size attr', () => {
     const saved = plan.saveBlocks[0]
     if (saved.kind !== 'generated') throw new Error(`expected generated, got ${saved.kind}`)
     expect(saved.block.format?.emptyRunSizeHalfPoints).toBe(2)
+  })
+})
+
+describe('paragraph direction inference (run w:rtl / RTL script, no w:bidi)', () => {
+  const paraBlock = (over: Partial<Block>): Block => ({
+    id: 'b0',
+    type: 'paragraph',
+    docxIndex: 0,
+    originalXml: '<w:p/>',
+    ...over,
+  })
+  const rtlBlock = paraBlock({
+    runs: [{ text: 'مرحبا بالعالم', rtl: true }],
+    format: { align: 'right' },
+  })
+
+  it('sets the render-only bidiInferred attr and keeps the visual alignment', () => {
+    const doc = blocksToPmDoc([rtlBlock])
+    expect(doc.content?.[0].attrs).toMatchObject({
+      bidi: false,
+      bidiInferred: true,
+      align: 'right',
+    })
+  })
+
+  it('infers from a first strong RTL character without run flags', () => {
+    const doc = blocksToPmDoc([paraBlock({ runs: [{ text: '123 שלום' }] })])
+    expect(doc.content?.[0].attrs?.bidiInferred).toBe(true)
+  })
+
+  it('lets run w:rtl decide only weak-only text', () => {
+    const weak = blocksToPmDoc([paraBlock({ runs: [{ text: '42 —', rtl: true }] })])
+    expect(weak.content?.[0].attrs?.bidiInferred).toBe(true)
+    // first strong char is Latin: an embedded rtl run must not flip the base direction
+    const mixed = blocksToPmDoc([
+      paraBlock({ runs: [{ text: 'He said ' }, { text: 'مرحبا', rtl: true }] }),
+    ])
+    expect(mixed.content?.[0].attrs?.bidiInferred).toBe(false)
+  })
+
+  it('does not infer for LTR text or explicitly bidi paragraphs', () => {
+    const ltr = blocksToPmDoc([paraBlock({ runs: [{ text: 'Hello' }] })])
+    expect(ltr.content?.[0].attrs?.bidiInferred).toBe(false)
+    const explicit = blocksToPmDoc([{ ...rtlBlock, format: { bidi: true, align: 'right' } }])
+    expect(explicit.content?.[0].attrs).toMatchObject({ bidi: true, bidiInferred: false })
+  })
+
+  it('never writes the inference back: block stays original, regenerated format has no bidi', () => {
+    const doc = blocksToPmDoc([rtlBlock])
+    const plan = pmDocToSavePlan(doc, [rtlBlock])
+    expect(plan.changedCount).toBe(0)
+    expect(plan.saveBlocks[0]).toEqual({ kind: 'original', docxIndex: 0 })
+    expect(pmNodeToGeneratedBlock(doc.content![0]).format?.bidi).toBeUndefined()
+  })
+})
+
+describe('protected block pageBreakBefore', () => {
+  it('carries the anchor paragraph flag onto the docProtected node', () => {
+    const block = {
+      id: 'b1',
+      docxIndex: 1,
+      type: 'image',
+      label: 'Image',
+      imageDataUrl: 'data:image/png;base64,AA==',
+      format: { pageBreakBefore: true },
+    } as unknown as Block
+    const doc = blocksToPmDoc([block])
+    expect(doc.content?.[0]?.type).toBe('docProtected')
+    expect(doc.content?.[0]?.attrs?.pageBreakBefore).toBe(true)
+  })
+})
+
+describe('centred floating table wider than the column (w:tblpXSpec="center")', () => {
+  const section: SectionInfo = {
+    settings: {
+      pageWidth: 12240,
+      pageHeight: 15840,
+      orientation: 'portrait',
+      marginTop: 1440,
+      marginRight: 1440,
+      marginBottom: 1440,
+      marginLeft: 1440,
+      pageBorder: false,
+      columns: 1,
+    },
+    startType: 'nextPage',
+    firstBlockIndex: 0,
+    lastBlockIndex: 0,
+    sectPrXml: '',
+    titlePg: false,
+    headerRefs: {},
+    footerRefs: {},
+  }
+  const block: Block = {
+    id: 'b0',
+    type: 'table',
+    docxIndex: 0,
+    originalXml: '<w:tbl/>',
+    table: {
+      rows: [
+        [{ paras: ['a'] }, { paras: ['b'] }],
+        [{ paras: ['c'] }, { paras: ['d'] }],
+      ],
+      colWidthsTwips: [4000, 6850],
+      floatSide: 'left',
+      floatPos: {
+        xTwips: 0,
+        yTwips: 635,
+        horzAnchor: 'margin',
+        vertAnchor: 'text',
+        xSpec: 'center',
+      },
+    },
+  }
+
+  it('keeps the declared width (Word centres it on the margin box, overhanging both sides)', () => {
+    const node = blocksToPmDoc([block], [section]).content![0]
+    expect(node.attrs!.widthPx).toBe(724)
+  })
+
+  it('a short table hung below its anchor stays a float so the anchor lines fill the band', () => {
+    const node = blocksToPmDoc([block], [section]).content![0]
+    expect(node.attrs!.tblFloat).toBe('left')
+    expect(node.attrs!.tblFloatSuppressed).toBe(false)
+    // without the offset the same over-wide text-anchored float still flows inline
+    const flush: Block = {
+      ...block,
+      table: { ...block.table!, floatPos: { ...block.table!.floatPos!, yTwips: 0 } },
+    }
+    expect(blocksToPmDoc([flush], [section]).content![0].attrs!.tblFloatSuppressed).toBe(true)
   })
 })

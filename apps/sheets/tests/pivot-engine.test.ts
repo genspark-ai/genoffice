@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { parsePivotDefinition, setPivotRefreshOnLoad } from '../src/gateway/xlsx-pivot'
+import {
+  parsePivotDefinition,
+  setPivotRefreshOnLoad,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-pivot'
 import {
   PivotRefreshError,
   growPivotDefinition,
   recomputePivotData,
-} from '../src/domain/pivot-engine'
+} from '@genoffice/xlsx-gateway/domain/pivot-engine'
 
 const PIVOT_XML =
   '<pivotTableDefinition name="PivotTable1" cacheId="1">' +
@@ -163,6 +166,29 @@ describe('recomputePivotData', () => {
     const definition = parsePivotDefinition(averaged, CACHE_XML)
     const result = recomputePivotData(definition, SOURCE)
     expect(result.data[0]).toEqual([7.5, 20, 35 / 3])
+  })
+
+  it('aggregates large Max and Min sources without spreading values', () => {
+    const maxDefinition = parsePivotDefinition(
+      PIVOT_XML.replace(
+        '<dataField name="Sum of Sales" fld="2"/>',
+        '<dataField name="Max of Sales" fld="2" subtotal="max"/>',
+      ),
+      CACHE_XML,
+    )
+    const minDefinition = parsePivotDefinition(
+      PIVOT_XML.replace(
+        '<dataField name="Sum of Sales" fld="2"/>',
+        '<dataField name="Min of Sales" fld="2" subtotal="min"/>',
+      ),
+      CACHE_XML,
+    )
+    const source = [
+      ['Region', 'Product', 'Sales'],
+      ...Array.from({ length: 130_000 }, (_, index) => ['East', 'A', index]),
+    ]
+    expect(recomputePivotData(maxDefinition, source).data[0]?.[0]).toBe(129_999)
+    expect(recomputePivotData(minDefinition, source).data[0]?.[0]).toBe(0)
   })
 })
 

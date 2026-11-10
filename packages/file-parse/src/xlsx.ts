@@ -1,5 +1,21 @@
 import JSZip from 'jszip'
+import { parseAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
+import { offsetFormulaRefs } from '@genoffice/xlsx-gateway/domain/formula-shift'
+import { assertZipInflatesWithinLimits, assertZipWithinLimits } from '@genoffice/docx-engine'
+import { resolveTarget } from './opc'
 import { XMLParser } from 'fast-xml-parser'
+import {
+  builtinDateFormat,
+  classifyFormatCode,
+  formatSerial,
+  type DateFormatParts,
+} from './xlsx-dates'
+import { decodeXlsxEscapes } from '@genoffice/xlsx-gateway/gateway/xlsx-escapes'
+
+function stripNamespacePrefix(name: string): string {
+  const separator = name.indexOf(':')
+  return separator < 0 ? name : name.slice(separator + 1)
+}
 
 // Text fidelity: no trim (xml:space="preserve" runs carry the spaces between words),
 // no numeric coercion of tag values (otherwise <t>02139</t> becomes a number and loses characters)
@@ -8,6 +24,8 @@ const parser = new XMLParser({
   attributeNamePrefix: '@_',
   trimValues: false,
   parseTagValue: false,
+  removeNSPrefix: false,
+  transformTagName: stripNamespacePrefix,
   // trimValues also governs attributes; nothing read here (r:id, Target, cell ref, sheet
   // name) carries meaningful edge whitespace, and an untrimmed Target builds the wrong zip
   // path, which silently drops the whole sheet
@@ -17,6 +35,11 @@ const parser = new XMLParser({
 function asArray<T>(value: T | T[] | undefined): T[] {
   if (value === undefined || value === null) return []
   return Array.isArray(value) ? value : [value]
+}
+
+function relationshipId(node: Record<string, unknown>): string {
+  const qualified = Object.entries(node).find(([key]) => /^@_[^:]+:id$/.test(key))
+  return String(qualified?.[1] ?? node['@_id'] ?? '')
 }
 
 /** unwrap a fast-xml-parser text node (plain value, or { '#text': ... } when it carried attributes) */
@@ -30,37 +53,146 @@ function textOf(node: unknown): string {
 
 /** shared string entry: <si><t>…</t></si> or rich-text runs <si><r><t>…</t></r>…</si> */
 function sharedStringText(si: Record<string, unknown>): string {
-  if (si['t'] !== undefined) return textOf(si['t'])
-  return asArray(si['r'] as unknown)
-    .map((run) => textOf((run as Record<string, unknown>)['t']))
-    .join('')
+  let out = ''
+  for (const key of Object.keys(si)) {
+    if (key === 't') {
+      for (const node of asArray(si[key] as unknown)) out += decodeXlsxEscapes(textOf(node))
+    } else if (key === 'r') {
+      for (const run of asArray(si[key] as unknown)) {
+        const r = run as Record<string, unknown>
+        for (const node of asArray(r['t'] as unknown)) out += decodeXlsxEscapes(textOf(node))
+      }
+    }
+  }
+  return out
 }
 
-/** "BC12" → zero-based column index 54 */
+/** "BC12" → zero-based column index 54 (cell refs are case-insensitive per ECMA-376) */
 function columnIndex(cellRef: string): number {
   let index = 0
-  for (const ch of cellRef) {
+  let letters = 0
+  for (const ch of cellRef.toUpperCase()) {
     if (ch < 'A' || ch > 'Z') break
+    letters += 1
     index = index * 26 + (ch.charCodeAt(0) - 64)
   }
+  if (letters === 0) return -1
   return index - 1
 }
 
 interface Cell {
   '@_r'?: string
   '@_t'?: string
+  '@_s'?: string
   v?: unknown
+  f?: unknown
   is?: Record<string, unknown>
 }
 
-function cellText(cell: Cell, shared: string[]): string {
+type SharedFormulas = Map<string, { formula: string; ref: string | undefined }>
+
+function sharedIndex(cell: Cell): string | undefined {
+  const si =
+    typeof cell.f === 'object' && cell.f !== null
+      ? (cell.f as Record<string, unknown>)['@_si']
+      : undefined
+  return si === undefined ? undefined : String(si)
+}
+
+/** the master cell may well carry a cached value, so register it before the value check */
+function recordSharedFormula(cell: Cell, sharedFormulas: SharedFormulas): void {
+  const si = sharedIndex(cell)
+  const own = textOf(cell.f).trim()
+  if (si !== undefined && own) sharedFormulas.set(si, { formula: own, ref: cell['@_r'] })
+}
+
+/** openpyxl/ExcelJS write formulas with no cached <v>; the formula text is all there is until Excel recalculates */
+function formulaText(cell: Cell, sharedFormulas: SharedFormulas): string {
+  const si = sharedIndex(cell)
+  const own = textOf(cell.f).trim()
+  const master = si !== undefined ? sharedFormulas.get(si) : undefined
+  let text = own || master?.formula || ''
+  const ref = cell['@_r']
+  if (
+    !own &&
+    master?.ref &&
+    ref &&
+    [master.ref, ref].every((address) => /^\$?[A-Z]+\$?[1-9]\d*$/i.test(address))
+  ) {
+    const source = parseAddress(master.ref.toUpperCase())
+    const target = parseAddress(ref.toUpperCase())
+    text = offsetFormulaRefs(master.formula, target.row - source.row, target.column - source.column)
+  }
+  return text ? `=${text}` : ''
+}
+
+/** cellXfs index → date/time parts, for the xf entries whose numFmt renders a calendar value */
+type DateStyles = Map<number, DateFormatParts>
+
+/**
+ * A date cell is stored as a plain serial; without its style the model sees 45292 where the
+ * sheet shows 1-Jan-24. Resolve each cellXfs entry's numFmt once per workbook.
+ */
+async function loadDateStyles(zip: JSZip, path: string): Promise<DateStyles> {
+  const styles: DateStyles = new Map()
+  const xml = await zipText(zip, path)
+  if (!xml) return styles
+  const sheet = (parser.parse(xml) as Record<string, any>).styleSheet
+  const custom = new Map<number, DateFormatParts | null>()
+  for (const fmt of asArray(sheet?.numFmts?.numFmt) as Array<Record<string, unknown>>) {
+    const id = Number(fmt['@_numFmtId'])
+    if (Number.isInteger(id)) custom.set(id, classifyFormatCode(String(fmt['@_formatCode'] ?? '')))
+  }
+  const xfs = asArray(sheet?.cellXfs?.xf) as Array<Record<string, unknown>>
+  xfs.forEach((xf, index) => {
+    const id = Number(xf['@_numFmtId'] ?? 0)
+    const parts = custom.has(id) ? custom.get(id) : builtinDateFormat(id)
+    if (parts) styles.set(index, parts)
+  })
+  return styles
+}
+
+function isDate1904(workbook: Record<string, any>): boolean {
+  const flag = String(workbook.workbook?.workbookPr?.['@_date1904'] ?? '')
+    .trim()
+    .toLowerCase()
+  return flag === '1' || flag === 'true'
+}
+
+function cellText(
+  cell: Cell,
+  shared: string[],
+  dates: DateStyles,
+  date1904: boolean,
+  sharedFormulas: SharedFormulas,
+): string {
   const type = cell['@_t'] ?? ''
   if (type === 'inlineStr') return cell.is ? sharedStringText(cell.is) : ''
+  if (cell.f !== undefined) {
+    if (textOf(cell.v).trim() === '') return formulaText(cell, sharedFormulas)
+  }
   // <v> is ST_Xstring so it reaches the caller verbatim; the two reads that need it as a
   // scalar handle their own whitespace (Number tolerates it, the boolean compare strips it)
   const value = textOf(cell.v)
-  if (type === 's') return shared[Number(value)] ?? ''
+  if ((type === '' || type === 'n') && cell['@_s'] !== undefined) {
+    const parts = dates.get(Number(cell['@_s']))
+    if (parts && value.trim() !== '') {
+      const rendered = formatSerial(Number(value), parts, date1904)
+      if (rendered !== null) return rendered
+    }
+  }
+  if (type === 's') {
+    // An empty or missing <v> must stay empty: Number('') is 0 and would
+    // otherwise leak shared[0] into the cell. Out-of-range or non-numeric
+    // indexes also degrade to empty rather than corrupting the row.
+    const trimmed = value.trim()
+    if (trimmed === '') return ''
+    const index = Number(trimmed)
+    if (!Number.isInteger(index) || index < 0 || index >= shared.length) return ''
+    return shared[index] ?? ''
+  }
   if (type === 'b') return value.trim() === '1' ? 'TRUE' : 'FALSE'
+  if (type === 'str') return decodeXlsxEscapes(value)
   return value
 }
 
@@ -69,31 +201,160 @@ async function zipText(zip: JSZip, path: string): Promise<string | undefined> {
   return file ? file.async('text') : undefined
 }
 
+interface ZipPrefix {
+  text: string
+  truncated: boolean
+}
+
+/// What nodeStream() wraps; typed here because JSZip's d.ts leaves it out.
+interface JSZipStream {
+  on(event: 'data', cb: (chunk: Uint8Array) => void): JSZipStream
+  on(event: 'end', cb: () => void): JSZipStream
+  on(event: 'error', cb: (err: Error) => void): JSZipStream
+  pause(): void
+  resume(): void
+}
+
+/** Inflate only the first maxBytes of a part; a 232 MB sheet never becomes a string. */
+function zipTextPrefix(zip: JSZip, path: string, maxBytes: number): Promise<ZipPrefix | undefined> {
+  const file = zip.file(path)
+  if (!file) return Promise.resolve(undefined)
+  if (!Number.isFinite(maxBytes))
+    return file.async('text').then((text) => ({ text, truncated: false }))
+  return new Promise((resolve, reject) => {
+    const chunks: Uint8Array[] = []
+    let size = 0
+    let settled = false
+    const finish = (truncated: boolean): void => {
+      if (settled) return
+      settled = true
+      const buf = new Uint8Array(size)
+      let offset = 0
+      for (const chunk of chunks) {
+        buf.set(chunk, offset)
+        offset += chunk.length
+      }
+      resolve({ text: new TextDecoder().decode(buf), truncated })
+    }
+    const stream = (
+      file as unknown as { internalStream(type: 'uint8array'): JSZipStream }
+    ).internalStream('uint8array')
+    stream.on('data', (chunk: Uint8Array) => {
+      if (settled) return
+      chunks.push(chunk)
+      size += chunk.length
+      if (size >= maxBytes) {
+        stream.pause()
+        finish(true)
+      }
+    })
+    stream.on('end', () => finish(false))
+    stream.on('error', (err: Error) => {
+      if (!settled) {
+        settled = true
+        reject(err)
+      }
+    })
+    stream.resume()
+  })
+}
+
+/** Malformed refs (e.g. XXXXXX99) would otherwise grow the cells array by
+ *  millions via the padding loop below. */
+export const MAX_XLSX_COLS = 16_384
+
+/** Longest run of empty slots kept verbatim between two filled cells. */
+const MAX_EMPTY_RUN = 8
+
+/// Empty slots carry no text: trailing ones are dropped and long inner runs
+/// collapse to a count, so a lone far-right cell (XFD) costs bytes, not ~49 KB
+/// of separators per row (measured 18 KB -> 94 MB before).
+function joinRowCells(cells: readonly string[]): string {
+  const out: string[] = []
+  let run = 0
+  for (const cell of cells) {
+    if (cell === '') {
+      run += 1
+      continue
+    }
+    if (run > MAX_EMPTY_RUN) out.push(`(${run} empty)`)
+    else for (; run > 0; run -= 1) out.push('')
+    run = 0
+    out.push(cell)
+  }
+  return out.join(' | ')
+}
+
+export interface XlsxTextOptions {
+  /// Sheet XML past this many extracted characters is not even parsed: the DOM
+  /// of a 100k-row sheet costs ~1 GB of heap for text nobody keeps (genoffice#2011).
+  maxChars?: number
+}
+
+const XML_BYTES_PER_TEXT_CHAR = 8
+const XML_CLIP_SLACK = 256 * 1024
+const EMPTY_SHEET_XML = '<worksheet><sheetData/></worksheet>'
+
+export function sheetXmlByteLimit(budgetChars: number): number {
+  return budgetChars * XML_BYTES_PER_TEXT_CHAR + XML_CLIP_SLACK
+}
+
+const ROW_END_RE = /<\/([\w.-]+:)?row>/g
+const SHEET_DATA_RE = /<([\w.-]+:)?sheetData[\s>]/
+
+/** Drop whole rows past the budget, keeping the document well-formed; a
+ *  truncated prefix is always cut back to its last complete row. */
+export function clipSheetXml(xml: string, budgetChars: number, truncated = false): string {
+  const limit = sheetXmlByteLimit(budgetChars)
+  if (!truncated && xml.length <= limit) return xml
+  const head = xml.slice(0, limit)
+  let last: RegExpExecArray | null = null
+  for (const m of head.matchAll(ROW_END_RE)) last = m
+  const dataAt = SHEET_DATA_RE.exec(head)?.index ?? -1
+  if (!last || dataAt < 0 || last.index < dataAt) return truncated ? EMPTY_SHEET_XML : xml
+  const ns = last[1] ?? ''
+  return `${head.slice(0, last.index + last[0].length)}</${ns}sheetData></${ns}worksheet>`
+}
+
 /** extract sheet text from an xlsx: one "# SheetName" section per sheet, cells joined with " | " */
-export async function xlsxToText(bytes: Uint8Array): Promise<string> {
+export async function xlsxToText(bytes: Uint8Array, opts: XlsxTextOptions = {}): Promise<string> {
+  const maxChars = opts.maxChars ?? Infinity
+  let used = 0
+  // The declared-size pass below is advisory; this metered gate is the one that
+  // holds when a part lies about its size (GH #759).
+  await assertZipInflatesWithinLimits(bytes)
   const zip = await JSZip.loadAsync(bytes)
+  assertZipWithinLimits(zip)
   const workbookXml = await zipText(zip, 'xl/workbook.xml')
   if (!workbookXml) throw new Error('Invalid xlsx: missing xl/workbook.xml')
 
   // Sheet order and names come from workbook.xml; r:id maps to the actual sheet path via the workbook rels
   const workbook = parser.parse(workbookXml) as Record<string, any>
   const sheets = asArray(workbook.workbook?.sheets?.sheet) as Array<Record<string, unknown>>
+  const date1904 = isDate1904(workbook)
 
   const relsXml = await zipText(zip, 'xl/_rels/workbook.xml.rels')
   const relTargets = new Map<string, string>()
+  let stylesPath = 'xl/styles.xml'
+  let sharedStringsPath = 'xl/sharedStrings.xml'
   if (relsXml) {
     const rels = parser.parse(relsXml) as Record<string, any>
     for (const rel of asArray(rels.Relationships?.Relationship) as Array<Record<string, unknown>>) {
+      const id = String(rel['@_Id'] ?? '')
       const target = String(rel['@_Target'] ?? '')
-      relTargets.set(
-        String(rel['@_Id'] ?? ''),
-        target.startsWith('/') ? target.slice(1) : `xl/${target}`,
-      )
+      const resolved = target.trim() === '' ? '' : resolveTarget('xl/workbook.xml', target)
+      if (id !== '' && resolved !== '') relTargets.set(id, resolved)
+      if (resolved && String(rel['@_TargetMode'] ?? '').toLowerCase() !== 'external') {
+        const type = String(rel['@_Type'] ?? '')
+        if (type.endsWith('/styles')) stylesPath = resolved
+        if (type.endsWith('/sharedStrings')) sharedStringsPath = resolved
+      }
     }
   }
 
+  const dateStyles = await loadDateStyles(zip, stylesPath)
   const shared: string[] = []
-  const sharedXml = await zipText(zip, 'xl/sharedStrings.xml')
+  const sharedXml = await zipText(zip, sharedStringsPath)
   if (sharedXml) {
     const sst = parser.parse(sharedXml) as Record<string, any>
     for (const si of asArray(sst.sst?.si) as Array<Record<string, unknown>>) {
@@ -102,25 +363,109 @@ export async function xlsxToText(bytes: Uint8Array): Promise<string> {
   }
 
   const sections: string[] = []
+  let sheetsWithData = 0
+  let imageOnlySheets = 0
   for (const sheet of sheets) {
-    const path = relTargets.get(String(sheet['@_r:id'] ?? ''))
-    const sheetXml = path ? await zipText(zip, path) : undefined
-    if (!sheetXml) continue
+    if (used >= maxChars) break
+    const path = relTargets.get(relationshipId(sheet))
+    const budget = maxChars - used
+    const raw = path ? await zipTextPrefix(zip, path, sheetXmlByteLimit(budget)) : undefined
+    if (!raw?.text) continue
+    const sheetXml =
+      maxChars === Infinity ? raw.text : clipSheetXml(raw.text, budget, raw.truncated)
     const worksheet = parser.parse(sheetXml) as Record<string, any>
     const lines: string[] = [`# ${String(sheet['@_name'] ?? '')}`]
-    for (const row of asArray(worksheet.worksheet?.sheetData?.row) as Array<
-      Record<string, unknown>
-    >) {
-      const cells: string[] = []
+    let sheetChars = lines[0].length
+    const rows = asArray(worksheet.worksheet?.sheetData?.row) as Array<Record<string, unknown>>
+    let hasData = false
+    const sharedFormulas: SharedFormulas = new Map()
+    for (const row of rows) {
+      for (const cell of asArray(row.c as Cell | Cell[])) recordSharedFormula(cell, sharedFormulas)
+    }
+    for (const row of rows) {
+      // Sparse by column; a slot holds several values only when refs collide.
+      const slots: string[][] = []
       for (const cell of asArray(row.c as Cell | Cell[])) {
-        const text = cellText(cell, shared)
-        const col = cell['@_r'] ? columnIndex(cell['@_r']) : cells.length
-        while (cells.length < col) cells.push('')
-        cells[col] = text
+        const text = cellText(cell, shared, dateStyles, date1904, sharedFormulas)
+        const ref = cell['@_r']
+        // A malformed ref (no leading column letters) yields -1; append in
+        // document order instead of writing slots[-1] which would drop text.
+        // Clamp wild columns (e.g. XXXXXX99) to append: padding millions of
+        // empty cells would OOM on a hostile file.
+        const col = ref ? columnIndex(ref) : slots.length
+        const target = col >= 0 && col < MAX_XLSX_COLS ? col : slots.length
+        // A ref landing on a slot an earlier ref-less, malformed or duplicate
+        // cell took would drop that value silently: keep it right after the
+        // claimant instead (push here, read back in reverse when joining).
+        const slot = slots[target]
+        if (!slot) slots[target] = [text]
+        else if (slot[slot.length - 1] === '') slot[slot.length - 1] = text
+        else slot.push(text)
+        if (text.trim()) hasData = true
       }
-      lines.push(cells.join(' | '))
+      const cells: string[] = []
+      for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i]
+        if (!slot) cells.push('')
+        else for (let j = slot.length - 1; j >= 0; j--) cells.push(slot[j])
+      }
+      const line = joinRowCells(cells)
+      lines.push(line)
+      sheetChars += line.length + 1
+      if (used + sheetChars >= maxChars) break
+    }
+    used += sheetChars
+    if (hasData) sheetsWithData += 1
+    else if (path && worksheet.worksheet?.drawing) {
+      imageOnlySheets += 1
+      const pictures = await countDrawingPictures(zip, path, worksheet.worksheet.drawing)
+      lines.push(
+        pictures > 0
+          ? `[image-only sheet: ${pictures} image${pictures === 1 ? '' : 's'}, no cell data]`
+          : '[image-only sheet: a drawing but no cell data]',
+      )
     }
     sections.push(lines.join('\n'))
   }
-  return sections.join('\n\n')
+  if (sheets.length > 0 && sections.length === 0) {
+    throw new Error(
+      relsXml === undefined
+        ? `Invalid xlsx: xl/_rels/workbook.xml.rels is missing, so none of the ` +
+            `${sheets.length} declared sheet${sheets.length === 1 ? '' : 's'} can be resolved`
+        : `Invalid xlsx: no sheet relationship in xl/_rels/workbook.xml.rels resolves to a ` +
+            `readable worksheet part (${sheets.length} declared)`,
+    )
+  }
+  const body = sections.join('\n\n')
+  if (sheetsWithData > 0 || imageOnlySheets === 0) return body
+  const n = sections.length
+  return `[No extractable text: none of the ${n} sheet${n === 1 ? '' : 's'} holds cell data; the content is in embedded images, which this extraction does not read.]\n\n${body}`
+}
+
+function countElements(value: unknown, name: string): number {
+  if (Array.isArray(value)) return value.reduce((n, item) => n + countElements(item, name), 0)
+  if (value === null || typeof value !== 'object') return 0
+  return Object.entries(value).reduce((n, [key, child]) => {
+    const matches = key === name ? (Array.isArray(child) ? child.length : 1) : 0
+    return n + matches + countElements(child, name)
+  }, 0)
+}
+
+/** follow the sheet's <drawing r:id> to its drawing part and count the pictures anchored there */
+async function countDrawingPictures(
+  zip: JSZip,
+  sheetPath: string,
+  drawing: Record<string, unknown>,
+): Promise<number> {
+  const relsPath = sheetPath.replace(/([^/]+)$/, '_rels/$1.rels')
+  const relsXml = await zipText(zip, relsPath)
+  if (!relsXml) return 0
+  const rels = parser.parse(relsXml) as Record<string, any>
+  const wanted = relationshipId(drawing)
+  for (const rel of asArray(rels.Relationships?.Relationship) as Array<Record<string, unknown>>) {
+    if (String(rel['@_Id'] ?? '') !== wanted) continue
+    const drawingXml = await zipText(zip, resolveTarget(sheetPath, String(rel['@_Target'] ?? '')))
+    return drawingXml ? countElements(parser.parse(drawingXml), 'pic') : 0
+  }
+  return 0
 }

@@ -10,6 +10,7 @@ export default defineConfig({
     alias: {
       // Subpath before the bare name: string aliases are prefix replacements
       '@genoffice/pptx-engine/table-grid': resolve(here, '../pptx-engine/src/table-grid.ts'),
+      '@genoffice/pptx-engine/identity': resolve(here, '../pptx-engine/src/identity.ts'),
       '@genoffice/pptx-engine/background-promote': resolve(
         here,
         '../pptx-engine/src/background-promote.ts',

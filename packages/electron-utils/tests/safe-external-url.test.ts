@@ -35,4 +35,13 @@ describe('safeExternalUrl', () => {
     expect(safeExternalUrl('mailto:a@b.com', opts)).toBe('mailto:a@b.com')
     expect(safeExternalUrl('http://example.com', opts)).toBeNull()
   })
+
+  it('trims surrounding whitespace instead of returning it verbatim', () => {
+    // The WHATWG parser strips surrounding whitespace while parsing, so the
+    // untrimmed input validates but would fail in shell.openExternal.
+    expect(safeExternalUrl('  https://example.com/a?b=c  ')).toBe('https://example.com/a?b=c')
+    expect(safeExternalUrl('\nhttp://example.com\n')).toBe('http://example.com')
+    expect(safeExternalUrl('   ')).toBeNull()
+    expect(safeExternalUrl('  file:///etc/passwd  ')).toBeNull()
+  })
 })

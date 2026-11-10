@@ -1,4 +1,5 @@
 import { Editor } from '@tiptap/core'
+import type { Node as ProseNode } from '@tiptap/pm/model'
 import { NodeSelection } from '@tiptap/pm/state'
 import { parseDocx, saveDocx } from '@genoffice/docx-engine'
 import JSZip from 'jszip'
@@ -22,6 +23,230 @@ async function openImageDoc(bodyXml = IMAGE_PARAGRAPH_XML, extraRels?: string) {
 }
 
 describe('image wrap in the editor', () => {
+  it('renders eight resize handles plus a floating-image position marker', async () => {
+    const { editor } = await openImageDoc()
+    const directions = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+    const imageBox = editor.view.dom.querySelector<HTMLElement>('.doc-img-wrap')!
+
+    expect(
+      [...imageBox.querySelectorAll<HTMLElement>('.img-resize-handle')].map(
+        (handle) => handle.dataset.resizeHandle,
+      ),
+    ).toEqual(directions)
+    expect(editor.view.dom.querySelector('.doc-image-anchor-marker')).toBeNull()
+
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'front',
+      imageOffsetYEmu: 40 * 9525,
+    })
+    const marker = editor.view.dom.querySelector<HTMLElement>('.doc-image-anchor-marker')!
+    expect(marker.textContent).toContain('⚓')
+    expect(marker.dataset.anchorY).toBeUndefined()
+    expect(marker.style.transform).toBe('')
+    editor.destroy()
+  })
+
+  it('keeps selection controls outside a cropped picture viewport', async () => {
+    const croppedXml = IMAGE_PARAGRAPH_XML.replace(
+      '</pic:blipFill>',
+      '<a:srcRect l="10000" t="5000" r="10000" b="5000"/></pic:blipFill>',
+    )
+    const { editor } = await openImageDoc(croppedXml)
+    const imageBox = editor.view.dom.querySelector<HTMLElement>('.doc-img-crop')!
+    const viewport = imageBox.querySelector<HTMLElement>('.doc-img-crop-viewport')!
+
+    expect(viewport.style.overflow).toBe('hidden')
+    expect(imageBox.style.overflow).toBe('')
+    expect(imageBox.querySelectorAll('.img-resize-handle')).toHaveLength(8)
+    expect(viewport.querySelector('.img-resize-handle')).toBeNull()
+    editor.destroy()
+  })
+
+  it('moves the anchor to the nearest paragraph and rebases the picture offset', async () => {
+    const paragraph = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
+    const { editor, parsed } = await openImageDoc(
+      paragraph('Anchor A') + IMAGE_PARAGRAPH_XML + paragraph('Anchor B') + paragraph('Anchor C'),
+    )
+    let imagePos = -1
+    const paragraphPositions: number[] = []
+    editor.state.doc.forEach((node, pos) => {
+      if (node.type.name === 'docProtected') imagePos = pos
+      else if (node.type.name === 'docParagraph') paragraphPositions.push(pos)
+    })
+    editor.view.dispatch(
+      editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, imagePos)),
+    )
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'front',
+      imageOffsetXEmu: 0,
+      imageOffsetYEmu: 0,
+    })
+
+    const rect = (left: number, top: number, width: number, height: number) =>
+      new DOMRect(left, top, width, height)
+    // B ends exactly where C begins. A drop on that shared edge must choose C.
+    const paragraphTops = [40, 100, 160]
+    paragraphPositions.forEach((pos, index) => {
+      const dom = editor.view.nodeDOM(pos) as HTMLElement
+      dom.getBoundingClientRect = () => rect(100, paragraphTops[index], 500, 60)
+    })
+    const wrapper = editor.view.nodeDOM(imagePos) as HTMLElement
+    wrapper.getBoundingClientRect = () => rect(100, 100, 500, 0)
+    const imageBox = wrapper.querySelector<HTMLElement>('.doc-img-wrap')!
+    imageBox.getBoundingClientRect = () => rect(200, 100, 100, 50)
+
+    imageBox.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 200, clientY: 100 }),
+    )
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 200, clientY: 160 }))
+    const marker = wrapper.querySelector<HTMLElement>('.doc-image-anchor-marker')!
+    expect(marker.dataset.anchorTargetPos).toBe(String(paragraphPositions[2]))
+    expect(marker.style.transform).toContain('60')
+
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 200, clientY: 160 }))
+    expect(editor.state.doc.content.content.map((node) => node.type.name)).toEqual([
+      'docParagraph',
+      'docParagraph',
+      'docProtected',
+      'docParagraph',
+    ])
+    const movedImage =
+      editor.state.selection instanceof NodeSelection && editor.state.selection.node
+    expect(movedImage && movedImage.attrs.imageOffsetYEmu).toBe(0)
+
+    const saved = await saveDocx(
+      parsed,
+      pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks).saveBlocks,
+    )
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.blocks.filter((block) => !block.hidden).map((block) => block.type)).toEqual([
+      'paragraph',
+      'paragraph',
+      'image',
+      'paragraph',
+    ])
+    editor.destroy()
+  })
+
+  it('drops an in-line picture where it was let go, measured without its own line', async () => {
+    const paragraph = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
+    const { editor } = await openImageDoc(
+      paragraph('A') + IMAGE_PARAGRAPH_XML + paragraph('B') + paragraph('C') + paragraph('D'),
+    )
+    let imagePos = -1
+    const paragraphPositions: number[] = []
+    editor.state.doc.forEach((node, pos) => {
+      if (node.type.name === 'docProtected') imagePos = pos
+      else if (node.type.name === 'docParagraph') paragraphPositions.push(pos)
+    })
+    expect(editor.state.doc.nodeAt(imagePos)?.attrs.imageWrap).toBeNull()
+
+    const rect = (left: number, top: number, width: number, height: number) =>
+      new DOMRect(left, top, width, height)
+    const wrapper = editor.view.nodeDOM(imagePos) as HTMLElement
+    // the picture's 200px line pushes B..D down; once the drop takes it out of
+    // the flow they move up (D sits after a 40px gap)
+    const shownTops = [40, 300, 360, 460]
+    const flowTops = [40, 100, 160, 260]
+    paragraphPositions.forEach((pos, index) => {
+      const dom = editor.view.nodeDOM(pos) as HTMLElement
+      dom.getBoundingClientRect = () =>
+        rect(100, (wrapper.style.display === 'none' ? flowTops : shownTops)[index], 500, 60)
+    })
+    wrapper.getBoundingClientRect = () => rect(100, 100, 500, 200)
+    const imageBox = wrapper.querySelector<HTMLElement>('.doc-img-wrap')!
+    imageBox.getBoundingClientRect = () => rect(200, 100, 100, 200)
+
+    imageBox.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 250, clientY: 150 }),
+    )
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 250, clientY: 300 }))
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 250, clientY: 300 }))
+
+    // the top lands at 250: C (160..220) is the nearest paragraph above it —
+    // not D below, which would need a negative offset lifting it over C
+    expect(editor.state.doc.content.content.map((node) => node.type.name)).toEqual([
+      'docParagraph',
+      'docParagraph',
+      'docProtected',
+      'docParagraph',
+      'docParagraph',
+    ])
+    expect(editor.state.doc.child(3).textContent).toBe('C')
+    const moved = editor.state.selection instanceof NodeSelection && editor.state.selection.node
+    expect(moved && moved.attrs.imageWrap).toBe('square-left')
+    expect(moved && moved.attrs.imageOffsetXEmu).toBe(100 * 9525)
+    expect(moved && moved.attrs.imageOffsetYEmu).toBe((250 - 160) * 9525)
+    expect(wrapper.style.display).toBe('')
+    editor.destroy()
+  })
+
+  it('resizes from a northwest handle and keeps the opposite corner fixed', async () => {
+    const { editor } = await openImageDoc()
+    const emu = 9525
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', {
+      imageWidthPx: 100,
+      imageHeightPx: 50,
+      imageWrap: 'front',
+      imageOffsetXEmu: 100 * emu,
+      imageOffsetYEmu: 50 * emu,
+    })
+
+    editor.view.dom
+      .querySelector<HTMLElement>('.img-resize-handle-nw')!
+      .dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 100, clientY: 100 }),
+      )
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 90, clientY: 90 }))
+
+    const attrs = editor.state.doc.nodeAt(0)!.attrs
+    expect(attrs.imageWidthPx).toBe(112)
+    expect(attrs.imageHeightPx).toBe(56)
+    expect(attrs.imageOffsetXEmu).toBe(88 * emu)
+    expect(attrs.imageOffsetYEmu).toBe(44 * emu)
+    editor.destroy()
+  })
+
+  it('keeps the opposite edge fixed while previewing in-flow west and north resizes', async () => {
+    const { editor } = await openImageDoc()
+    const emu = 9525
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', {
+      imageWidthPx: 100,
+      imageHeightPx: 50,
+      imageWrap: 'square-left',
+      imageOffsetXEmu: 100 * emu,
+      imageOffsetYEmu: 0,
+    })
+
+    let imageBox = editor.view.dom.querySelector<HTMLElement>('.doc-img-wrap')!
+    imageBox
+      .querySelector<HTMLElement>('.img-resize-handle-w')!
+      .dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 100, clientY: 100 }),
+      )
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 90, clientY: 100 }))
+    expect(imageBox.style.left).toBe('-10px')
+    expect(imageBox.style.width).toBe('110px')
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 90, clientY: 100 }))
+    expect(editor.state.doc.nodeAt(0)!.attrs.imageOffsetXEmu).toBe(90 * emu)
+
+    imageBox = editor.view.dom.querySelector<HTMLElement>('.doc-img-wrap')!
+    imageBox
+      .querySelector<HTMLElement>('.img-resize-handle-n')!
+      .dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 100, clientY: 100 }),
+      )
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 100, clientY: 90 }))
+    expect(imageBox.style.top).toBe('-10px')
+    expect(imageBox.style.height).toBe('60px')
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 100, clientY: 90 }))
+    expect(editor.state.doc.nodeAt(0)!.attrs.imageOffsetYEmu).toBe(-10 * emu)
+    editor.destroy()
+  })
+
   it('keeps an untouched image byte-identical', async () => {
     const { editor, parsed, source } = await openImageDoc()
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
@@ -307,6 +532,614 @@ describe('image wrap in the editor', () => {
     expect(docXml).not.toContain('<a:fillRect l=')
     const reparsed2 = await parseDocx(saved)
     expect(reparsed2.blocks[0].imageFillRect).toBeUndefined()
+    editor.destroy()
+  })
+
+  // LibreOffice-style anchors: arbitrary raw relativeHeight (1, 7) instead of
+  // Word's 251658240+rank encoding. Parse compresses them to compact ranks.
+  const WILD_ANCHOR_XML =
+    '<w:p><w:r><w:drawing>' +
+    '<wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">' +
+    '<wp:simplePos x="0" y="0"/>' +
+    '<wp:positionH relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionH>' +
+    '<wp:positionV relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionV>' +
+    '<wp:extent cx="914400" cy="914400"/>' +
+    '<wp:wrapNone/>' +
+    '<wp:docPr id="1" name="pic 1"/>' +
+    '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+    '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>'
+  const WILD_TWO_ANCHORS_XML =
+    WILD_ANCHOR_XML +
+    WILD_ANCHOR_XML.replace('relativeHeight="1"', 'relativeHeight="7"').replace(
+      'id="1" name="pic 1"',
+      'id="2" name="pic 2"',
+    )
+
+  it('preserves a locked picture anchor for WPS/Word drag semantics', async () => {
+    const { editor, parsed, source } = await openImageDoc(
+      WILD_ANCHOR_XML.replace('locked="0"', 'locked="1"'),
+    )
+    expect(parsed.blocks[0].imageAnchorLocked).toBe(true)
+    expect(editor.state.doc.firstChild?.attrs.imageAnchorLocked).toBe(true)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount).toBe(0)
+    expect(await saveDocx(parsed, plan.saveBlocks)).toEqual(source)
+    editor.destroy()
+  })
+
+  it('untouched wild-relativeHeight anchors stay byte-identical on save', async () => {
+    const { editor, parsed, source } = await openImageDoc(WILD_TWO_ANCHORS_XML)
+    expect(parsed.blocks[0].imageZOrder).toBeUndefined() // compact rank 0
+    expect(parsed.blocks[1].imageZOrder).toBe(1)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount).toBe(0)
+    expect(await saveDocx(parsed, plan.saveBlocks)).toEqual(source)
+    editor.destroy()
+  })
+
+  it('a z-order edit harmonizes wild sibling anchors to base+rank encoding', async () => {
+    const { editor, parsed } = await openImageDoc(WILD_TWO_ANCHORS_XML)
+    // send the SECOND picture (rank 1, on top) to the back, like the Arrange menu
+    let pos = -1
+    editor.state.doc.descendants((n, p) => {
+      if (n.type.name === 'docProtected' && n.attrs.imageZOrder === 1) pos = p
+      return pos === -1
+    })
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)))
+    editor.commands.updateAttributes('docProtected', { imageZOrder: -1 })
+
+    // both anchors rewritten: the edited one AND its wild sibling (Word paints
+    // by raw relativeHeight, so mixed encodings would invert the order)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount).toBe(2)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const docXml = await (await JSZip.loadAsync(saved)).file('word/document.xml')!.async('string')
+    const rels = [...docXml.matchAll(/relativeHeight="(\d+)"/g)].map((m) => Number(m[1]))
+    expect(rels).toEqual([251658240, 251658239]) // base+0, base-1 — raw order matches intent
+    // harmonization is surgical: page anchoring and wrap bytes survive on BOTH
+    // anchors (a full rebuild would reset relativeFrom to the editor default)
+    expect(docXml.match(/relativeFrom="page"/g)?.length).toBe(4)
+    expect(docXml.match(/<wp:wrapNone\/>/g)?.length).toBe(2)
+
+    // reopen: ranks decode small (no wild values left), order preserved
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.blocks[0].imageZOrder).toBeUndefined()
+    expect(reparsed.blocks[1].imageZOrder).toBe(-1)
+    editor.destroy()
+  })
+
+  it('a wrap-only change keeps an existing stacking rank', async () => {
+    const xml = IMAGE_PARAGRAPH_XML // inline image, then float it with a rank
+    const { editor, parsed } = await openImageDoc(xml)
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', { imageWrap: 'front', imageZOrder: 3 })
+    const saved = await saveDocx(
+      parsed,
+      pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks).saveBlocks,
+    )
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.blocks[0].imageZOrder).toBe(3)
+
+    // now change ONLY the wrap mode; the rank must survive the rewrite
+    const editor2 = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(reparsed.blocks) as never,
+    })
+    editor2.view.dispatch(editor2.state.tr.setSelection(NodeSelection.create(editor2.state.doc, 0)))
+    editor2.commands.updateAttributes('docProtected', { imageWrap: 'behind' })
+    const saved2 = await saveDocx(
+      reparsed,
+      pmDocToSavePlan(editor2.getJSON() as PmNode, reparsed.blocks).saveBlocks,
+    )
+    const reparsed2 = await parseDocx(saved2)
+    expect(reparsed2.blocks[0].imageWrap).toBe('behind')
+    expect(reparsed2.blocks[0].imageZOrder).toBe(3)
+    editor.destroy()
+    editor2.destroy()
+  })
+
+  it('harmonizes a geometry-only edited sibling carrying a wild relativeHeight', async () => {
+    // Bugbot #767: when one picture's z-order changes, a SIBLING that was only
+    // resized/aligned/rotated must also be re-encoded from its wild producer
+    // relativeHeight to base+rank — otherwise Word paints the raw-valued
+    // sibling above the re-encoded pictures and inverts the stacking.
+    const { editor, parsed } = await openImageDoc(WILD_TWO_ANCHORS_XML)
+    // resize the FIRST picture (rank 0) — a pure geometry patch, no wrap/z change
+    let firstPos = -1
+    let secondPos = -1
+    editor.state.doc.descendants((n, p) => {
+      if (n.type.name === 'docProtected') {
+        if (n.attrs.imageZOrder === 1) secondPos = p
+        else if (firstPos === -1) firstPos = p
+      }
+      return true
+    })
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(firstPos, undefined, {
+        ...editor.state.doc.nodeAt(firstPos)!.attrs,
+        imageWidthPx: 48,
+        imageHeightPx: 48,
+      }),
+    )
+    // and send the SECOND picture to the back (the z-order edit that triggers
+    // the harmonize pre-scan)
+    editor.view.dispatch(
+      editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, secondPos)),
+    )
+    editor.commands.updateAttributes('docProtected', { imageZOrder: -1 })
+
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const docXml = await (await JSZip.loadAsync(saved)).file('word/document.xml')!.async('string')
+    const rels = [...docXml.matchAll(/relativeHeight="(\d+)"/g)].map((m) => Number(m[1]))
+    // BOTH anchors carry base+rank encoding: no wild 1/7 value survives
+    expect(rels.every((r) => r >= 251658000)).toBe(true)
+    expect(rels).toEqual([251658240, 251658239]) // first base+0, second base-1
+    // the re-encode is surgical: page anchoring survives on both anchors
+    expect(docXml.match(/relativeFrom="page"/g)?.length).toBe(4)
+
+    const reparsed = await parseDocx(saved)
+    // geometry patch preserved on the first picture
+    expect(reparsed.blocks[0].imageWidthPx).toBe(48)
+    // ranks decode small (no wild values left), order preserved
+    expect(reparsed.blocks[0].imageZOrder).toBeUndefined()
+    expect(reparsed.blocks[1].imageZOrder).toBe(-1)
+    editor.destroy()
+  })
+
+  it('square wrap renders numeric posOffset as position margins (drop WYSIWYG)', async () => {
+    const { editor } = await openImageDoc()
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    // 120px right, 40px down of the anchor (EMU_PER_PX = 9525)
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'square-left',
+      imageOffsetXEmu: 120 * 9525,
+      imageOffsetYEmu: 40 * 9525,
+    })
+    const el = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-square-left')!
+    expect(el.style.marginLeft).toBe('120px')
+    expect(el.style.marginTop).toBe('40px')
+    // the 60% float clamp must not shrink a freely positioned picture
+    expect(el.style.maxWidth).toBe('none')
+
+    // right floats position from the right edge: colW − x − width
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'square-right',
+      imageWidthPx: 96,
+    })
+    const right = editor.view.dom.querySelector<HTMLElement>(
+      '.doc-protected.img-wrap-square-right',
+    )!
+    expect(right.style.marginRight).toMatch(
+      /max\(100% - 216(\.0)?px, -1 \* var\(--doc-margin-right,0px\)\)/,
+    )
+    editor.destroy()
+  })
+
+  it('margin-top aligned square wrap pins the turned bounding box on the landing page', async () => {
+    // prod corpus 20261020 sample 043: quarter-turned photo, positionH margin
+    // offset + positionV margin align=top (no vertical offset)
+    const { editor } = await openImageDoc()
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'square-left',
+      imageOffsetXEmu: -1265555,
+      imageOffsetYEmu: null,
+      imageRelV: 'margin',
+      imagePosV: 'top',
+      imageRotDeg: 90,
+      imageWidthPx: 880,
+      imageHeightPx: 449,
+    })
+    const el = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-square-left')!
+    expect(el.dataset.tblpVy).toBe('0.0')
+    expect(el.dataset.tblpVanchor).toBe('margin')
+    expect(el.style.marginTop).toBe('var(--tblp-dy,0px)')
+    // the inner wrap already reserves the turned box: no extra inset lift
+    const wrap = el.querySelector<HTMLElement>('.doc-img-wrap')!
+    expect(wrap.style.marginTop).toBe('')
+    editor.destroy()
+  })
+
+  it('run-level square float honors posOffset X and sides by picture center (public issue #118)', async () => {
+    // text + anchor share the paragraph -> run-level docInlineImage path;
+    // left edge before mid-body but the wide body fills the right half
+    const bodyXml =
+      '<w:p><w:r><w:t>before</w:t></w:r><w:r><w:drawing>' +
+      '<wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">' +
+      '<wp:simplePos x="0" y="0"/>' +
+      '<wp:positionH relativeFrom="column"><wp:posOffset>2407073</wp:posOffset></wp:positionH>' +
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>' +
+      '<wp:extent cx="2851200" cy="2138400"/>' +
+      '<wp:wrapSquare wrapText="bothSides"/>' +
+      '<wp:docPr id="1" name="pic 1"/>' +
+      '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>' +
+      '<w:r><w:t>after</w:t></w:r></w:p>'
+    const { editor } = await openImageDoc(bodyXml)
+    const img = editor.view.dom.querySelector<HTMLImageElement>(
+      'img.doc-inline-img--wrap-square-right',
+    )!
+    expect(img).toBeTruthy()
+    // colW − x − width from the right edge: x=2407073 EMU ≈ 252.7px, w ≈ 299px
+    // jsdom folds the margins into a shorthand it cannot split again once a
+    // var() fallback is inside: top / right / bottom / left (bottom and left
+    // carry the cell-only terms, inert outside a td)
+    expect(img.getAttribute('style')).toMatch(
+      new RegExp(
+        String.raw`margin: 0\.0px max\(100% - calc\(55[12](\.\d)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) calc\(0\.0px \+ clamp\(.*\) min\(12\.0px, calc\(100% - 299\.3px - max\(`,
+      ),
+    )
+    expect(img.style.maxWidth).toBe('none')
+    editor.destroy()
+  })
+
+  it('positions an atomic inline picture after its spaces and first-line indent (public issue #118)', async () => {
+    const bodyXml = IMAGE_PARAGRAPH_XML.replace(
+      '<w:p>',
+      '<w:p><w:pPr><w:ind w:firstLine="420"/>' +
+        '<w:rPr><w:rFonts w:eastAsia="SimSun"/><w:sz w:val="24"/></w:rPr></w:pPr>' +
+        '<w:r><w:t xml:space="preserve">    </w:t></w:r>',
+    )
+    const { editor } = await openImageDoc(bodyXml)
+    const imageBlock = editor.view.dom.firstElementChild as HTMLElement
+    expect(editor.getJSON().content?.[0]?.type).toBe('docProtected')
+    expect(imageBlock.style.textIndent).toBe('')
+    expect(imageBlock.querySelector('.doc-image-leading-space')).toBeNull()
+    expect(imageBlock.querySelector<HTMLElement>('.doc-img-wrap')?.style.marginLeft).toBe(
+      'calc(2em + 28px)',
+    )
+    expect(imageBlock.querySelector('.doc-protected-img')).toBeTruthy()
+    editor.destroy()
+  })
+
+  it('wrap distances must not clobber the vertical posOffset (Bugbot)', async () => {
+    const { editor } = await openImageDoc()
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'square-left',
+      imageOffsetYEmu: 40 * 9525,
+      imageWrapDistTopEmu: 0,
+      imageWrapDistBottomEmu: 0,
+      imageWrapDistLeftEmu: 114300,
+      imageWrapDistRightEmu: 114300,
+    })
+    const el = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-square-left')!
+    // the position margin survives the distT=0 clearance; distB/distR still apply
+    expect(el.style.marginTop).toBe('40px')
+    expect(el.style.marginBottom).toBe('0px')
+    expect(el.style.marginRight).toBe('12px')
+    editor.destroy()
+  })
+
+  it('front/behind anchors ignore wrap distances (zero-height wrapper keeps no margins)', async () => {
+    const { editor } = await openImageDoc()
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'front',
+      imageWrapDistTopEmu: 114300,
+      imageWrapDistBottomEmu: 114300,
+    })
+    const el = editor.view.dom.querySelector<HTMLElement>('.doc-protected.doc-img-float')!
+    expect(el.style.marginTop).toBe('')
+    expect(el.style.marginBottom).toBe('')
+    editor.destroy()
+  })
+
+  it('applies paragraph indents to an image-only paragraph without leading text (Bugbot)', async () => {
+    const bodyXml = IMAGE_PARAGRAPH_XML.replace(
+      '<w:p>',
+      '<w:p><w:pPr><w:ind w:left="720" w:firstLine="420"/></w:pPr>',
+    )
+    const { editor } = await openImageDoc(bodyXml)
+    const imageBlock = editor.view.dom.firstElementChild as HTMLElement
+    expect(editor.getJSON().content?.[0]?.type).toBe('docProtected')
+    expect(imageBlock.style.marginInlineStart).toBe('36pt')
+    expect(imageBlock.style.textIndent).toBe('21pt')
+    editor.destroy()
+  })
+
+  it('topBottom wrap with an explicit X leaves the centered slot', async () => {
+    const { editor } = await openImageDoc()
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'topBottom',
+      imageOffsetXEmu: 60 * 9525,
+      imageOffsetYEmu: 0,
+    })
+    const el = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-topBottom')!
+    expect(el.style.textAlign).toBe('left')
+    const inner = el.querySelector<HTMLElement>('.doc-img-wrap')!
+    expect(inner.style.marginLeft).toBe('60px')
+    editor.destroy()
+  })
+
+  it('negative posOffset (above/left of the anchor) round-trips like Word', async () => {
+    const { editor, parsed } = await openImageDoc()
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'behind',
+      imageOffsetXEmu: -190500,
+      imageOffsetYEmu: -95250,
+    })
+    const saved = await saveDocx(
+      parsed,
+      pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks).saveBlocks,
+    )
+    const docXml = await (await JSZip.loadAsync(saved)).file('word/document.xml')!.async('string')
+    expect(docXml).toContain('<wp:posOffset>-190500</wp:posOffset>')
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.blocks[0].imageOffsetXEmu).toBe(-190500)
+    expect(reparsed.blocks[0].imageOffsetYEmu).toBe(-95250)
+    expect(reparsed.blocks[0].imageWrap).toBe('behind')
+    editor.destroy()
+  })
+})
+
+const TIGHT_WRAP =
+  '<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/>' +
+  '<wp:lineTo x="0" y="21600"/><wp:lineTo x="21600" y="21600"/><wp:lineTo x="21600" y="0"/>' +
+  '<wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight>'
+
+function anchoredPicture(x: number, y: number, cx: number, cy: number): string {
+  return (
+    `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" ` +
+    `relativeHeight="251658240" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">` +
+    `<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>${x}</wp:posOffset></wp:positionH>` +
+    `<wp:positionV relativeFrom="paragraph"><wp:posOffset>${y}</wp:posOffset></wp:positionV>` +
+    `<wp:extent cx="${cx}" cy="${cy}"/>${TIGHT_WRAP}<wp:docPr id="1" name="Picture 1"/>` +
+    `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+    `<pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="Picture 1"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="rId10"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+    `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>` +
+    `</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`
+  )
+}
+
+const FLOAT_TABLE_XML =
+  '<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" ' +
+  'w:horzAnchor="page" w:tblpX="689" w:tblpY="331"/><w:tblW w:w="5766" w:type="dxa"/>' +
+  '<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2883"/><w:gridCol w:w="2883"/></w:tblGrid>' +
+  '<w:tr><w:tc><w:tcPr><w:tcW w:w="2883" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>' +
+  '<w:tc><w:tcPr><w:tcW w:w="2883" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+
+describe('side-wrapped pictures that leave no room for text', () => {
+  it('renders a picture that cannot sit beside a floating table as a band at its offset', async () => {
+    const { editor } = await openImageDoc(
+      FLOAT_TABLE_XML + `<w:p>${anchoredPicture(3307080, 410210, 3159760, 3214370)}</w:p>`,
+    )
+    const block = editor.view.dom.querySelector<HTMLElement>('.doc-protected-image')!
+    expect(block.classList.contains('img-wrap-band')).toBe(true)
+    expect(block.classList.contains('doc-img-float')).toBe(true)
+    expect(block.classList.contains('img-wrap-tight-right')).toBe(false)
+    // band = offset 43.1px + height 337px
+    expect(parseFloat(block.style.minHeight)).toBeCloseTo(380.1, 0)
+    const wrap = block.querySelector<HTMLElement>('.doc-img-wrap')!
+    expect(wrap.style.position).toBe('absolute')
+    expect(wrap.style.left).toBe('347.2px')
+    expect(wrap.style.top).toBe('43.1px')
+    editor.destroy()
+  })
+
+  it('floats a run-level anchored picture below its anchor line by the posOffset Y', async () => {
+    const { editor } = await openImageDoc(
+      `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${anchoredPicture(5156200, 359410, 1498600, 1498600)}` +
+        `<w:r><w:t>Heading</w:t></w:r></w:p>`,
+    )
+    const img = editor.view.dom.querySelector<HTMLElement>('img.doc-inline-img--wrap-tight-right')!
+    expect(img.getAttribute('style')).toMatch(/margin: 37\.7px /)
+    editor.destroy()
+  })
+
+  it('a cell picture lifted above its anchor paragraph leaves room for the cell clamp', async () => {
+    // signature anchored two empty lines above a name block inside a borderless
+    // table cell: Word keeps a layoutInCell picture inside the cell
+    const cell = (body: string) =>
+      '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:tc>' +
+      `<w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr><w:p/>${body}` +
+      '<w:p><w:r><w:t>(Name)</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    // jsdom drops a calc() with var() from the parsed inline style: read the
+    // rendered declaration off the node spec instead
+    const renderedImg = async (body: string) => {
+      const { editor } = await openImageDoc(cell(body))
+      let attrs: Record<string, string> | undefined
+      editor.state.doc.descendants((node) => {
+        if (node.type.name === 'docInlineImage') {
+          const spec = editor.schema.nodes.docInlineImage.spec.toDOM!(node) as [
+            string,
+            typeof attrs,
+          ]
+          attrs = spec[1]
+        }
+      })
+      expect(editor.view.dom.querySelector('td img.doc-inline-img--wrap-tight-left')).toBeTruthy()
+      editor.destroy()
+      return attrs!
+    }
+    const inCell = anchoredPicture(1261745, -2315845, 1910080, 677545)
+    const clamped = await renderedImg(`<w:p>${inCell}</w:p>`)
+    expect(clamped.style).toContain('margin-top:calc(-243.1px + var(--cell-lift,0px))')
+    expect(clamped['data-cell-lift']).toBe('1')
+
+    const free = await renderedImg(
+      `<w:p>${inCell.replace('layoutInCell="1"', 'layoutInCell="0"')}</w:p>`,
+    )
+    expect(free.style).toContain('margin-top:-243.1px')
+    expect(free['data-cell-lift']).toBeUndefined()
+  })
+
+  it('keeps a layoutInCell side wrap inside its cell and grows the row by the empty line (genoffice#2480)', async () => {
+    const cell = (body: string) =>
+      '<w:tbl><w:tblPr><w:tblW w:w="3402" w:type="dxa"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="3402"/></w:tblGrid><w:tr><w:tc>' +
+      `<w:tcPr><w:tcW w:w="3402" w:type="dxa"/></w:tcPr><w:p>${body}</w:p></w:tc></w:tr></w:tbl>`
+    const renderedImg = async (body: string) => {
+      const { editor } = await openImageDoc(cell(body))
+      let attrs: Record<string, string> | undefined
+      editor.state.doc.descendants((node) => {
+        if (node.type.name === 'docInlineImage') {
+          const spec = editor.schema.nodes.docInlineImage.spec.toDOM!(node) as [
+            string,
+            typeof attrs,
+          ]
+          attrs = spec[1]
+        }
+      })
+      const cellClip = editor.view.dom.querySelector('td')?.getAttribute('data-cell-clip')
+      editor.destroy()
+      return { ...attrs!, cellClip: cellClip ?? '' } as Record<string, string>
+    }
+    // 8.5 cm picture centred on the margin band inside a 6 cm cell
+    const centred = anchoredPicture(0, 60000, 3060000, 1764000).replace(
+      /<wp:positionH relativeFrom="column"><wp:posOffset>0<\/wp:posOffset><\/wp:positionH>/,
+      '<wp:positionH relativeFrom="margin"><wp:align>center</wp:align></wp:positionH>',
+    )
+    const inCell = await renderedImg(centred)
+    expect(inCell['data-cell-pic']).toBe('1')
+    expect(inCell.cellClip).toBe('1')
+    // the band X clamps to the paper edge (0 in a cell), the far margin caps the
+    // margin box at the cell width and the row grows by the line it displaces
+    expect(inCell.style).toContain(
+      'margin-left:max(-1 * var(--doc-margin-left,0px), calc(50% - 160.6px',
+    )
+    expect(inCell.style).toMatch(/margin-right:min\(12\.0px, calc\(100% - 321\.3px - max\(/)
+    expect(inCell.style).toMatch(
+      /margin-bottom:calc\(0\.0px \+ clamp\(0px, .* \* 1000, var\(--cell-line,0px\)\)\)/,
+    )
+
+    const free = await renderedImg(centred.replace('layoutInCell="1"', 'layoutInCell="0"'))
+    expect(free['data-cell-pic']).toBeUndefined()
+    expect(free.cellClip).toBe('')
+    expect(free.style).toContain('margin-right:12.0px')
+    expect(free.style).not.toContain('--cell-line')
+
+    // page-relative Y: Word measures it from the cell top
+    const pageRel = await renderedImg(
+      centred.replace(
+        '<wp:positionV relativeFrom="paragraph">',
+        '<wp:positionV relativeFrom="page">',
+      ),
+    )
+    expect(pageRel.style).toContain('--cell-y:6.3px')
+    expect(pageRel.style).toMatch(
+      /margin-top:calc\(min\(0px, calc\(6\.3px - var\(--doc-margin-top,0px\)\)\) \+ var\(--cell-page-y,0px\)\)/,
+    )
+  })
+
+  it('composes the posOffset Y of a quarter-turned run-level float with its footprint inset', async () => {
+    // 157x100 turned 90deg sticks out (157-100)/2 = 28.5px above the extent box
+    const turned = anchoredPicture(5156200, 359410, 1498600, 952500).replace(
+      '<a:xfrm>',
+      '<a:xfrm rot="5400000">',
+    )
+    const { editor } = await openImageDoc(`<w:p>${turned}<w:r><w:t>Heading</w:t></w:r></w:p>`)
+    const img = editor.view.dom.querySelector<HTMLElement>('img.doc-inline-img--wrap-tight-right')!
+    // Word places the extent box at the offset and turns it about its centre,
+    // so the img box top stays at 37.7px and the visual reaches 9.2px above it
+    expect(img.getAttribute('style')).toMatch(/margin: 37\.7px /)
+    expect(img.style.transform).toContain('rotate(90deg)')
+    editor.destroy()
+  })
+})
+
+describe('quarter-turned block pictures', () => {
+  const turned = (x: number, y: number, cx: number, cy: number) =>
+    anchoredPicture(x, y, cx, cy).replace('<a:xfrm>', '<a:xfrm rot="5400000">')
+
+  it('lifts a side-wrapped picture by the inset when the offset is smaller', async () => {
+    // 370.87x309.4 turned: inset 30.7px; offset 8.3px puts the visual 22.5px above the anchor
+    const { editor } = await openImageDoc(`<w:p>${turned(-330835, 78740, 3532505, 2947035)}</w:p>`)
+    const block = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-tight-left')!
+    expect(block.style.marginTop).toBe('0px')
+    const wrap = block.querySelector<HTMLElement>('.doc-img-wrap')!
+    expect(parseFloat(wrap.style.marginTop)).toBeCloseTo(-22.5, 1)
+    expect(wrap.style.marginLeft).toBe('')
+    expect(block.style.marginLeft).toBe('-4px')
+    editor.destroy()
+  })
+
+  it('keeps the remaining offset as the wrapper margin', async () => {
+    // 288x144 turned: inset 72px; offset 86.4px leaves 14.4px
+    const { editor } = await openImageDoc(`<w:p>${turned(0, 822960, 2743200, 1371600)}</w:p>`)
+    const block = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-tight-left')!
+    expect(block.style.marginTop).toBe('14.4px')
+    expect(block.querySelector<HTMLElement>('.doc-img-wrap')!.style.marginTop).toBe('')
+    editor.destroy()
+  })
+})
+
+// jsdom's CSSOM drops max(), var() and shape-outside: read the rendered spec
+function renderedImageStyle(editor: Editor): string {
+  let node: ProseNode | undefined
+  editor.state.doc.descendants((n) => {
+    if (n.type.name === 'docInlineImage') node = n
+  })
+  const spec = editor.schema.nodes.docInlineImage.spec.toDOM!(node!) as [string, { style: string }]
+  return spec[1].style
+}
+
+describe('wrapTopAndBottom placed below its anchor paragraph top', () => {
+  const topBottom = (y: number) =>
+    anchoredPicture(788972, y, 4425950, 2807970).replace(TIGHT_WRAP, '<wp:wrapTopAndBottom/>')
+
+  it('floats the picture at the paragraph-relative offset so the anchor line flows first', async () => {
+    const { editor } = await openImageDoc(
+      `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${topBottom(308610)}<w:r><w:t>Faculty</w:t></w:r></w:p>`,
+    )
+    const img = editor.view.dom.querySelector<HTMLImageElement>(
+      'img.doc-inline-img--wrap-topBottom',
+    )!
+    expect(img.classList.contains('doc-inline-img--band-offset')).toBe(true)
+    expect(editor.view.dom.querySelector('p.doc-anchor-host.doc-band-host')).not.toBeNull()
+    const style = renderedImageStyle(editor)
+    expect(style).toContain('margin-top:32.4px')
+    expect(style).toContain('margin-bottom:0.0px')
+    expect(style).toContain(
+      'margin-left:calc(82.8px - var(--anchor-ind,0px) - var(--anchor-pad,0px))',
+    )
+    expect(style).toContain(
+      'margin-right:max(0px, calc(100% - 464.7px - calc(82.8px - var(--anchor-ind,0px) - var(--anchor-pad,0px))))',
+    )
+    expect(style).toContain('shape-outside:inset(32.4px 0 0 0)')
+    editor.destroy()
+  })
+
+  it('subtracts the anchor paragraph start indent from the column-relative X', async () => {
+    const { editor } = await openImageDoc(
+      `<w:p><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>${topBottom(308610)}<w:r><w:t>Faculty</w:t></w:r></w:p>`,
+    )
+    const host = editor.view.dom.querySelector<HTMLElement>('p.doc-anchor-host')!
+    expect(host.style.marginInlineStart).toBe('36pt')
+    expect(host.style.getPropertyValue('--anchor-ind')).toBe('36pt')
+    expect(renderedImageStyle(editor)).toContain(
+      'margin-left:calc(82.8px - var(--anchor-ind,0px) - var(--anchor-pad,0px))',
+    )
+    editor.destroy()
+  })
+
+  it('marks a heading host so the float stays contained', async () => {
+    const { editor } = await openImageDoc(
+      `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>${topBottom(308610)}<w:r><w:t>Faculty</w:t></w:r></w:p>`,
+    )
+    expect(
+      editor.view.dom.querySelector('h1.doc-anchor-host img.doc-inline-img--band-offset'),
+    ).not.toBeNull()
+    editor.destroy()
+  })
+
+  it('keeps the plain block line for an offset at or above the paragraph top', async () => {
+    const { editor } = await openImageDoc(`<w:p>${topBottom(0)}<w:r><w:t>Faculty</w:t></w:r></w:p>`)
+    const img = editor.view.dom.querySelector<HTMLImageElement>(
+      'img.doc-inline-img--wrap-topBottom',
+    )!
+    expect(img.classList.contains('doc-inline-img--band-offset')).toBe(false)
+    expect(img.style.shapeOutside).toBe('')
+    expect(editor.view.dom.querySelector('.doc-band-host')).toBeNull()
     editor.destroy()
   })
 })

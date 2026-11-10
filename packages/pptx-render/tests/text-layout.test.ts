@@ -1,8 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { HeuristicMetrics, OpentypeMetrics, type OpentypeFontLike } from '../src/metrics'
-import { layoutText } from '../src/text-layout'
+import {
+  HeuristicMetrics,
+  OpentypeMetrics,
+  type FontMetricsProvider,
+  type OpentypeFontLike,
+  type RunStyle,
+} from '../src/metrics'
+import { DEFAULT_INSETS_EMU, layoutText, type TextLayoutInput } from '../src/text-layout'
 import { makeViewport } from '../src/coords'
-import type { TextBody } from '@genoffice/pptx-engine'
+import { DEFAULT_BODY_INSETS, type Paragraph, type TextBody } from '@genoffice/pptx-engine'
 
 const vp = makeViewport({ cx: 9525 * 1000, cy: 9525 * 1000 }, 1000) // scale 1
 
@@ -15,6 +21,10 @@ function body(partial: Partial<TextBody> & Pick<TextBody, 'paragraphs'>): TextBo
     ...partial,
   }
 }
+
+it('the layout inset defaults mirror the parser (kept separate so the renderer bundle stays engine-free)', () => {
+  expect(DEFAULT_INSETS_EMU).toEqual(DEFAULT_BODY_INSETS)
+})
 
 describe('2.3 metrics', () => {
   const m = new HeuristicMetrics()
@@ -54,6 +64,12 @@ describe('2.3 metrics', () => {
     const met = om.metrics(real)
     expect(met.ascent).toBeCloseTo(80, 4)
     expect(met.descent).toBeCloseTo(20, 4)
+    expect(met.lineHeight).toBeCloseTo(100, 4)
+    // hhea lineGap becomes external leading (advances lines, outside the line box)
+    const om2 = new OpentypeMetrics(() => ({ ...fakeFont, lineGap: 100 }))
+    const met2 = om2.metrics(real)
+    expect(met2.lineHeight).toBeCloseTo(100, 4)
+    expect(met2.externalLeading).toBeCloseTo(10, 4)
     // Unknown fonts fall back to the heuristic (no throw)
     const unknown = { fontFamily: 'Nope', fontSizePx: 100, bold: false, italic: false }
     expect(om.measure('ab', unknown)).toBeGreaterThan(0)
@@ -61,6 +77,209 @@ describe('2.3 metrics', () => {
 })
 
 describe('2.3 text layout', () => {
+  it('small caps: lowercase letters set as capitals at 80% of the run size (PowerPoint probe)', () => {
+    const lay = layoutText({
+      body: body({ paragraphs: [{ runs: [{ text: 'Red de', fontSize: 20, cap: 'small' }] }] }),
+      boxWidthPx: 800,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const runs = lay.lines[0]!.runs.filter((r) => r.text.trim())
+    expect(runs.map((r) => r.text)).toEqual(['R', 'ED', 'DE'])
+    expect(runs[1]!.fontSizePx).toBeCloseTo(runs[0]!.fontSizePx * 0.8, 5)
+    expect(runs[2]!.fontSizePx).toBeCloseTo(runs[0]!.fontSizePx * 0.8, 5)
+    expect(runs.every((r) => r.srcRunIdx === 0)).toBe(true)
+  })
+
+  it('vertical layout stamps effective rtl on columns (ribbon/editor state parity with horizontal)', () => {
+    const lay = (vert: 'eaVert' | 'vert') =>
+      layoutText({
+        body: body({
+          paragraphs: [{ runs: [{ text: '\u05d0\u05d1\u05d2', fontSize: 18 }] }],
+          vert,
+        }),
+        boxWidthPx: 200,
+        boxHeightPx: 200,
+        metrics: new HeuristicMetrics(),
+        vp,
+      })
+    expect(lay('eaVert').lines.every((l) => l.rtl === true)).toBe(true)
+    expect(lay('vert').lines.every((l) => l.rtl === true)).toBe(true)
+  })
+
+  describe('RTL list mirroring (PowerPoint probe-measured)', () => {
+    const HE = '\u05d0\u05d1\u05d2'
+    const lay = (paragraphs: Paragraph[]) =>
+      layoutText({
+        body: body({ paragraphs }),
+        boxWidthPx: 400,
+        boxHeightPx: 300,
+        metrics: new HeuristicMetrics(),
+        vp,
+      }).lines[0]!
+    const bulletOf = (l: ReturnType<typeof lay>) => l.runs.find((r) => r.isBullet)!
+    const textSpan = (l: ReturnType<typeof lay>) => {
+      const rs = l.runs.filter((r) => !r.isBullet)
+      return [Math.min(...rs.map((r) => r.x)), Math.max(...rs.map((r) => r.x + r.widthPx))]
+    }
+
+    it('RTL bullet hangs on the right of the text, flush right by default (marL from the right edge)', () => {
+      const marL = 228600 // 24px at scale 1
+      const line = lay([
+        {
+          runs: [{ text: HE, fontSize: 18 }],
+          rtl: true,
+          marL,
+          indent: -marL,
+          bullet: { type: 'char', char: '•' },
+        },
+      ])
+      const b = bulletOf(line)
+      const [tl, tr] = textSpan(line)
+      expect(b.x).toBeGreaterThan(tr) // glyph right of the body text
+      // bulletX = marL + indent = 0 → glyph right edge at the box right edge
+      expect(b.x + b.widthPx).toBeCloseTo(400, 0)
+      // body text ends marL short of the right edge
+      expect(tr).toBeCloseTo(400 - 24, 0)
+      expect(tl).toBeGreaterThan(0)
+    })
+
+    it('explicit physical left align keeps the RTL bullet adjacent at the text right', () => {
+      const marL = 228600
+      const line = lay([
+        {
+          runs: [{ text: HE, fontSize: 18 }],
+          rtl: true,
+          align: 'left',
+          marL,
+          indent: -marL,
+          bullet: { type: 'char', char: '•' },
+        },
+      ])
+      const b = bulletOf(line)
+      const [tl, tr] = textSpan(line)
+      expect(tl).toBeCloseTo(0, 0) // physical left, like PowerPoint
+      // reserved advance between text end and glyph = -indent - bulletW
+      expect(b.x - tr).toBeCloseTo(24 - b.widthPx, 0)
+    })
+
+    it('numbered RTL bullet renders with an RTL base ("1." displays as ".1")', () => {
+      const marL = 342900
+      const line = lay([
+        {
+          runs: [{ text: HE, fontSize: 18 }],
+          rtl: true,
+          marL,
+          indent: -marL,
+          bullet: { type: 'number' },
+        },
+      ])
+      expect(bulletOf(line).rtl).toBe(true)
+    })
+
+    it('justified RTL paragraph: spread and final lines share the mirrored right boundary', () => {
+      const marL = 228600 // 24px: mirrored to the right edge
+      const long = '\u05d0\u05d1\u05d2 '.repeat(20).trim()
+      const layout = layoutText({
+        body: body({
+          paragraphs: [{ runs: [{ text: long, fontSize: 18 }], rtl: true, align: 'justify', marL }],
+        }),
+        boxWidthPx: 200,
+        boxHeightPx: 400,
+        metrics: new HeuristicMetrics(),
+        vp,
+      })
+      expect(layout.lines.length).toBeGreaterThan(1)
+      const edges = layout.lines.map((l) => Math.max(...l.runs.map((r) => r.x + r.widthPx)))
+      for (const e of edges) expect(e).toBeCloseTo(200 - 24, 0)
+      expect(Math.min(...layout.lines[0]!.runs.map((r) => r.x))).toBeCloseTo(0, 0)
+    })
+
+    it('LTR control: bullet stays at the left', () => {
+      const marL = 228600
+      const line = lay([
+        {
+          runs: [{ text: 'Latin', fontSize: 18 }],
+          marL,
+          indent: -marL,
+          bullet: { type: 'char', char: '•' },
+        },
+      ])
+      const b = bulletOf(line)
+      const [tl] = textSpan(line)
+      expect(b.x).toBeCloseTo(0, 0)
+      expect(tl).toBeCloseTo(24, 0)
+      expect(b.rtl).toBeUndefined()
+    })
+  })
+
+  it('paragraph rtl=true: RTL base for pure-LTR text (trailing neutral moves left, default align right)', () => {
+    const lay = (rtl?: boolean) =>
+      layoutText({
+        body: body({ paragraphs: [{ runs: [{ text: 'Hi!', fontSize: 18 }], rtl }] }),
+        boxWidthPx: 400,
+        boxHeightPx: 200,
+        metrics: new HeuristicMetrics(),
+        vp,
+      }).lines[0]!
+    const rtlLine = lay(true)
+    // UAX#9 with an RTL base: the trailing '!' (neutral) takes the base level and
+    // renders at the visual left of the LTR word
+    const bang = rtlLine.runs.find((r) => r.text.includes('!'))!
+    const word = rtlLine.runs.find((r) => r.text.includes('Hi'))!
+    expect(bang.x).toBeLessThan(word.x)
+    // Default alignment is right (applied as an x offset; TextLine.align only carries explicit values)
+    const rightEdge = Math.max(...rtlLine.runs.map((r) => r.x + r.widthPx))
+    expect(rightEdge).toBeCloseTo(400, 0)
+    expect(rtlLine.align).toBeUndefined()
+    // Without the attribute the first strong char (LTR) wins: single run, no reorder, left aligned
+    const ltrLine = lay(undefined)
+    expect(ltrLine.runs.map((r) => r.text).join('')).toBe('Hi!')
+    expect(Math.min(...ltrLine.runs.map((r) => r.x))).toBeCloseTo(0, 0)
+  })
+
+  it('paragraph rtl=true: logical-first LTR run renders at the right in mixed text', () => {
+    const lay = (rtl?: boolean) =>
+      layoutText({
+        body: body({
+          paragraphs: [{ runs: [{ text: 'AB \u05d0\u05d1\u05d2', fontSize: 18 }], rtl }],
+        }),
+        boxWidthPx: 400,
+        boxHeightPx: 200,
+        metrics: new HeuristicMetrics(),
+        vp,
+      }).lines[0]!
+    const xOf = (line: ReturnType<typeof lay>, t: string) =>
+      line.runs.find((r) => r.text.includes(t))!.x
+    const rtlLine = lay(true)
+    expect(xOf(rtlLine, 'AB')).toBeGreaterThan(xOf(rtlLine, '\u05d0'))
+    // Inferred base is LTR here (first strong char is 'A'): 'AB' stays left
+    const autoLine = lay(undefined)
+    expect(xOf(autoLine, 'AB')).toBeLessThan(xOf(autoLine, '\u05d0'))
+  })
+
+  it('paragraph rtl=false: explicit LTR base overrides RTL-first inference (no default right align)', () => {
+    const lay = (rtl?: boolean) =>
+      layoutText({
+        body: body({
+          paragraphs: [{ runs: [{ text: '\u05d0\u05d1\u05d2 AB', fontSize: 18 }], rtl }],
+        }),
+        boxWidthPx: 400,
+        boxHeightPx: 200,
+        metrics: new HeuristicMetrics(),
+        vp,
+      }).lines[0]!
+    // Inferred RTL base right-aligns (as an x offset); explicit rtl="0" restores the left edge
+    const inferred = lay(undefined)
+    expect(Math.max(...inferred.runs.map((r) => r.x + r.widthPx))).toBeCloseTo(400, 0)
+    const ltrLine = lay(false)
+    expect(Math.min(...ltrLine.runs.map((r) => r.x))).toBeCloseTo(0, 0)
+    // Base LTR keeps the logical-first Hebrew run at the visual left
+    const xOf = (t: string) => ltrLine.runs.find((r) => r.text.includes(t))!.x
+    expect(xOf('\u05d0')).toBeLessThan(xOf('AB'))
+  })
+
   it('single short line stays one line', () => {
     const layout = layoutText({
       body: body({ paragraphs: [{ runs: [{ text: 'Hi', fontSize: 18 }] }] }),
@@ -139,6 +358,70 @@ describe('2.3 text layout', () => {
     expect(layout.lines.length).toBeGreaterThan(1)
   })
 
+  it('kinsoku: a closing mark never starts a line (its predecessor is pulled down)', () => {
+    // 4 chars fit per line (4 × 24px = 96px); without kinsoku 、would head line 2
+    const layout = layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [
+              { text: '\u3042\u3042\u3042\u3042\u3001\u3044\u3044', fontSize: 24, eaLang: 'ja' },
+            ],
+          },
+        ],
+      }),
+      boxWidthPx: 96,
+      boxHeightPx: 3000,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const lines = layout.lines.map((l) => l.runs.map((r) => r.text).join(''))
+    expect(lines[0]).toBe('あああ')
+    expect(lines[1]!.startsWith('あ、')).toBe(true)
+  })
+
+  it('kinsoku: chained closing marks pull the whole tail down', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [
+              { text: '\u3042\u3042\u3042\u3002\u300d\u3044\u3044', fontSize: 24, eaLang: 'ja' },
+            ],
+          },
+        ],
+      }),
+      boxWidthPx: 96,
+      boxHeightPx: 3000,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const lines = layout.lines.map((l) => l.runs.map((r) => r.text).join(''))
+    expect(lines[0]).toBe('ああ')
+    expect(lines[1]!.startsWith('あ。」')).toBe(true)
+  })
+
+  it('kinsoku: an opening bracket never ends a line', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [
+              { text: '\u3042\u3042\u3042\u300c\u3044\u3044\u3044', fontSize: 24, eaLang: 'ja' },
+            ],
+          },
+        ],
+      }),
+      boxWidthPx: 96,
+      boxHeightPx: 3000,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const lines = layout.lines.map((l) => l.runs.map((r) => r.text).join(''))
+    expect(lines[0]).toBe('あああ')
+    expect(lines[1]!.startsWith('「い')).toBe(true)
+  })
+
   it('autofit=shrink reduces font scale when content overflows height', () => {
     const many = Array.from({ length: 30 }, (_, i) => ({
       runs: [{ text: `Line ${i} of text`, fontSize: 40 }],
@@ -188,8 +471,29 @@ describe('2.3 text layout', () => {
       vp,
     })
     expect(spaced.contentHeight).toBeGreaterThan(single.contentHeight)
-    // Double line spacing + 12pt before + 6pt after
-    expect(spaced.lines[0]!.top).toBeGreaterThan(0) // spaceBefore pushed the line start down
+    // PowerPoint ignores space-before on the frame's first paragraph (0047 measured);
+    // the taller line comes from lineHeight/spaceAfter only
+    expect(spaced.lines[0]!.top).toBe(0)
+  })
+
+  it('space-before applies from the second paragraph on, never the first', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [
+          { runs: [{ text: 'a', fontSize: 20 }], spaceBefore: 12 },
+          { runs: [{ text: 'b', fontSize: 20 }], spaceBefore: 12 },
+        ],
+      }),
+      boxWidthPx: 400,
+      boxHeightPx: 400,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    expect(layout.lines[0]!.top).toBe(0)
+    expect(layout.lines[1]!.top - (layout.lines[0]!.top + layout.lines[0]!.height)).toBeCloseTo(
+      (12 * 96) / 72,
+      1,
+    )
   })
 
   it('align=center centers each line horizontally (baked into run x)', () => {
@@ -488,7 +792,7 @@ describe('spcPct paragraph spacing + justify alignment', () => {
     expect(layout.lines[1]!.top).toBeCloseTo(28.8 + 14.4, 1)
   })
 
-  it('justify: wrapped lines fill the available width, the last line of a paragraph stays left-aligned', () => {
+  it('justify: wrapped lines widen word gaps to fill the width (PowerPoint keeps letter spacing), the last line stays left-aligned', () => {
     const long = 'word '.repeat(20).trim()
     const layout = layoutText({
       body: body({ paragraphs: [{ runs: [{ text: long, fontSize: 18 }], align: 'justify' }] }),
@@ -497,21 +801,41 @@ describe('spcPct paragraph spacing + justify alignment', () => {
       metrics: new HeuristicMetrics(),
       vp,
     })
+    const m = new HeuristicMetrics()
+    const wordW = m.measure('word', {
+      fontFamily: 'Calibri',
+      fontSizePx: 24, // 18pt at scale 1 = 24px
+      bold: false,
+      italic: false,
+    })
     expect(layout.lines.length).toBeGreaterThan(1)
     for (let i = 0; i < layout.lines.length; i++) {
       const ln = layout.lines[i]!
       const last = ln.runs[ln.runs.length - 1]!
-      const per = last.justifyExtraPx ?? 0
-      // Last glyph's right edge = x + width - the extra trailing letter-space
-      const rightEdge = last.x + last.widthPx - per * (per ? 1 : 0)
-      if (i < layout.lines.length - 1) {
-        expect(per).toBeGreaterThan(0)
-        expect(rightEdge).toBeCloseTo(200, 0)
-      } else {
-        expect(per).toBe(0)
-        expect(rightEdge).toBeLessThan(200)
+      const rightEdge = last.x + last.widthPx
+      for (const r of ln.runs) {
+        expect(r.justifyExtraPx).toBeUndefined()
+        // words keep their natural advance; only space fragments absorb the extra
+        if (r.text === 'word') expect(r.widthPx).toBeCloseTo(wordW, 1)
       }
+      if (i < layout.lines.length - 1) expect(rightEdge).toBeCloseTo(200, 0)
+      else expect(rightEdge).toBeLessThan(200)
     }
+  })
+
+  it('justify without spaces (CJK) falls back to spreading between characters', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [{ runs: [{ text: '字'.repeat(30), fontSize: 18 }], align: 'justify' }],
+      }),
+      boxWidthPx: 200,
+      boxHeightPx: 2000,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    expect(layout.lines.length).toBeGreaterThan(1)
+    const first = layout.lines[0]!.runs[0]!
+    expect(first.justifyExtraPx ?? 0).toBeGreaterThan(0)
   })
 
   it('justify does not affect lines ended by a soft break', () => {
@@ -558,7 +882,7 @@ describe('shrink discrete steps + superscript/subscript baseline', () => {
     if (layout.fontScale <= 0.85) expect(layout.lnSpcReduction).toBeGreaterThan(0)
   })
 
-  it('existing scale caps the ceiling: only steps smaller than it are used', () => {
+  it('a stored fontScale renders as-is (PowerPoint-on-open: no re-fit even when overflowing)', () => {
     const many = Array.from({ length: 20 }, () => ({
       runs: [{ text: '很长的一行文字内容', fontSize: 20 }],
     }))
@@ -568,6 +892,51 @@ describe('shrink discrete steps + superscript/subscript baseline', () => {
       boxHeightPx: 120,
       metrics: new HeuristicMetrics(),
       vp,
+    })
+    // Probe-measured: PowerPoint honors the cached ratio on open/export and overflows
+    // rather than re-fitting (a bare <a:normAutofit/> even renders at 100%).
+    expect(layout.fontScale).toBe(0.7)
+    expect(layout.lnSpcReduction).toBe(0.2)
+  })
+
+  it('autofit glyph size quantizes to whole points (round half up, PPT probe-measured)', () => {
+    const layoutAt = (fontScale: number, fontSize: number) => {
+      const layout = layoutText({
+        body: body({
+          autofit: 'shrink',
+          fontScale,
+          lnSpcReduction: 0,
+          paragraphs: [{ runs: [{ text: 'HX', fontSize }] }] as any,
+        }),
+        boxWidthPx: 800,
+        boxHeightPx: 600,
+        metrics: new HeuristicMetrics(),
+        vp,
+      })
+      return (layout.lines[0]!.runs[0] as any).fontSizePx
+    }
+    const px = (pt: number) => (pt * 96) / 72
+    // 20pt × 47.5% = 9.5 → 10pt; × 46% = 9.2 → 9pt; 28pt × 46% = 12.88 → 13pt;
+    // 20pt × 52% = 10.4 → 10pt (nearest, not the 10.5 half-point list)
+    expect(layoutAt(0.475, 20)).toBeCloseTo(px(10), 4)
+    expect(layoutAt(0.46, 20)).toBeCloseTo(px(9), 4)
+    expect(layoutAt(0.46, 28)).toBeCloseTo(px(13), 4)
+    expect(layoutAt(0.52, 20)).toBeCloseTo(px(10), 4)
+    // no autofit scale → explicit fractional sizes stay fractional
+    expect(layoutAt(1, 10.5)).toBeCloseTo(px(10.5), 4)
+  })
+
+  it('refitAutofit (edit flows): steps below the stored scale, capped by it', () => {
+    const many = Array.from({ length: 20 }, () => ({
+      runs: [{ text: '很长的一行文字内容', fontSize: 20 }],
+    }))
+    const layout = layoutText({
+      body: body({ autofit: 'shrink', fontScale: 0.7, lnSpcReduction: 0.2, paragraphs: many }),
+      boxWidthPx: 400,
+      boxHeightPx: 120,
+      metrics: new HeuristicMetrics(),
+      vp,
+      refitAutofit: true,
     })
     expect(layout.fontScale).toBeLessThan(0.7)
     // Existing 20% line-spacing reduction: stepping down further never regresses to a smaller reduction
@@ -603,6 +972,25 @@ describe('vertical text (bodyPr vert) column layout', () => {
   const m = new HeuristicMetrics()
   const layoutV = (b: TextBody, w = 200, h = 300) =>
     layoutText({ body: b, boxWidthPx: w, boxHeightPx: h, metrics: m, vp })
+
+  it('numbered paragraphs keep their scheme on the bullet glyph run (ribbon highlight / toggle)', () => {
+    const layout = layoutV(
+      body({
+        vert: 'eaVert',
+        paragraphs: [
+          {
+            runs: [{ text: '\u7e26', fontSize: 18 }],
+            bullet: { type: 'number', numType: 'romanUcPeriod' },
+            marL: 342900,
+            indent: -342900,
+          },
+        ],
+      }),
+    )
+    const b = layout.lines[0]!.runs.find((r) => r.isBullet)!
+    expect(b.text).toBe('I.')
+    expect(b.numType).toBe('romanUcPeriod')
+  })
 
   it('eaVert: two CJK paragraphs → two columns, right-to-left, chars flow downward within a column, all inside the box', () => {
     const layout = layoutV(
@@ -661,17 +1049,102 @@ describe('vertical text (bodyPr vert) column layout', () => {
     )
   })
 
-  it('vert/vert270/wordArtVert degrade to the same column layout as eaVert (vert flag preserved)', () => {
-    const mk = (vert: TextBody['vert']) =>
-      layoutV(body({ vert, paragraphs: [{ runs: [{ text: '縦書', fontSize: 18 }] }] }))
-    const coords = (l: ReturnType<typeof mk>) =>
-      l.lines.map((ln) => ln.runs.map((r) => [r.text, r.x, r.baselineY]))
-    const ea = mk('eaVert')
-    for (const v of ['vert', 'vert270', 'wordArtVert'] as const) {
-      const l = mk(v)
-      expect(l.vert).toBe(v)
-      expect(coords(l)).toEqual(coords(ea))
+  it('wordArtVert (stacked): upright glyphs, columns flow left→right (ECMA wordArtVertRtl is the RTL variant)', () => {
+    // Latin stacks one upright letter per cell instead of rotating as a word
+    const latin = layoutV(
+      body({ vert: 'wordArtVert', paragraphs: [{ runs: [{ text: 'ABC', fontSize: 18 }] }] }),
+    )
+    expect(latin.vert).toBe('wordArtVert')
+    const runs = latin.lines.flatMap((l) => l.runs)
+    expect(runs.map((r) => r.text)).toEqual(['A', 'B', 'C'])
+    expect(runs.every((r) => !r.rotate90)).toBe(true)
+    for (let i = 1; i < runs.length; i++)
+      expect(runs[i]!.baselineY).toBeGreaterThan(runs[i - 1]!.baselineY)
+    // anchor=top → the first column hugs the LEFT edge (eaVert hugs the right)
+    for (const r of runs) expect(r.x).toBeLessThan(30)
+    // Two paragraphs → two columns, the second further RIGHT
+    const two = layoutV(
+      body({
+        vert: 'wordArtVert',
+        paragraphs: [
+          { runs: [{ text: '縦書', fontSize: 18 }] },
+          { runs: [{ text: '二列', fontSize: 18 }] },
+        ],
+      }),
+    )
+    const [c1, c2] = two.lines
+    expect(c2!.runs[0]!.x).toBeGreaterThan(c1!.runs[0]!.x)
+  })
+
+  it('vert rotates the whole block 90° cw: rotate90 glyphs read top→bottom from the right edge', () => {
+    const layout = layoutV(
+      body({ vert: 'vert', paragraphs: [{ runs: [{ text: '縦書きABC', fontSize: 18 }] }] }),
+    )
+    expect(layout.vert).toBe('vert')
+    const runs = layout.lines.flatMap((l) => l.runs)
+    // Every glyph rotates — CJK included (unlike eaVert)
+    expect(runs.every((r) => r.rotate90)).toBe(true)
+    expect(runs.map((r) => r.text).join('')).toBe('縦書きABC')
+    // Line direction maps to downward: baselines strictly increase along the text
+    for (let i = 1; i < runs.length; i++)
+      expect(runs[i]!.baselineY).toBeGreaterThan(runs[i - 1]!.baselineY)
+    // anchor=top → the (single) line hugs the right edge of the 200px box
+    for (const r of runs) {
+      expect(r.x).toBeGreaterThan(200 - 30)
+      expect(r.x).toBeLessThanOrEqual(200)
     }
+  })
+
+  it('vert270 rotates 90° ccw: rotate270 glyphs read bottom→top from the left edge', () => {
+    const layout = layoutV(
+      body({ vert: 'vert270', paragraphs: [{ runs: [{ text: '縦書き', fontSize: 18 }] }] }),
+    )
+    expect(layout.vert).toBe('vert270')
+    const runs = layout.lines.flatMap((l) => l.runs)
+    expect(runs.every((r) => r.rotate270)).toBe(true)
+    // Reading direction is upward: baselines strictly decrease along the text
+    for (let i = 1; i < runs.length; i++)
+      expect(runs[i]!.baselineY).toBeLessThan(runs[i - 1]!.baselineY)
+    // anchor=top → the line hugs the left edge, rotation anchors stay inside the
+    // 300px-tall box (the renderer's node origin is baselineY - 0.8em)
+    for (const r of runs) {
+      expect(r.x).toBeGreaterThanOrEqual(0)
+      expect(r.x).toBeLessThan(30)
+      expect(r.baselineY - 0.8 * r.fontSizePx).toBeLessThanOrEqual(300)
+    }
+  })
+
+  it('vert contentHeight is the REAL vertical extent (autofit-resize writes it into the shape height)', () => {
+    // 3 CJK glyphs at 18pt (24px): one rotated line spanning ~72px downward — the
+    // pre-rotation layout's contentHeight (~29px line box) measures the wrong axis
+    const layout = layoutV(
+      body({ vert: 'vert', paragraphs: [{ runs: [{ text: '縦書き', fontSize: 18 }] }] }),
+    )
+    expect(layout.contentHeight).toBeGreaterThan(60)
+    expect(layout.contentHeight).toBeLessThan(100)
+    expect(layout.inkBottom).toBeUndefined()
+  })
+
+  it('vert wrap: lines break at the box HEIGHT and stack right→left as rotated columns', () => {
+    const layout = layoutV(
+      body({
+        vert: 'vert',
+        paragraphs: [{ runs: [{ text: '縦書きテスト'.repeat(5), fontSize: 18 }] }],
+      }),
+      300,
+      100,
+    )
+    expect(layout.lines.length).toBeGreaterThan(1)
+    // Later lines sit further left (stacking direction after 90° cw rotation)
+    const xs = layout.lines.map((l) => l.runs[0]!.x)
+    for (let i = 1; i < xs.length; i++) expect(xs[i]!).toBeLessThan(xs[i - 1]!)
+    // Content is lossless
+    expect(layout.lines.flatMap((l) => l.runs.map((r) => r.text)).join('')).toBe(
+      '縦書きテスト'.repeat(5),
+    )
+    // Glyphs stay within the box height (wrap happened against the height, not the width)
+    for (const r of layout.lines.flatMap((l) => l.runs))
+      expect(r.baselineY).toBeLessThanOrEqual(100 + 24) // one glyph box of slack at the wrap edge
   })
 
   it('anchor acts along the text flow: bottom hugs the left, middle centers', () => {
@@ -718,5 +1191,1169 @@ describe('vertical layout latin word rotation', () => {
     // Rotated word anchors stay within the column (not outside the content area)
     expect(rotated[0]!.x).toBeGreaterThan(0)
     expect(rotated[0]!.x).toBeLessThanOrEqual(300)
+  })
+})
+
+describe('text highlight propagation', () => {
+  it('run highlight lands on every glyph run split from it, others stay clean', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [
+              { text: 'marked text', fontSize: 18, highlight: '#FF0000' },
+              { text: ' plain', fontSize: 18 },
+            ],
+          },
+        ],
+      }),
+      boxWidthPx: 400,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const runs = layout.lines.flatMap((l) => l.runs)
+    const marked = runs.filter((r) => r.highlight)
+    expect(marked.length).toBeGreaterThan(0)
+    expect(marked.every((r) => r.highlight === '#FF0000')).toBe(true)
+    expect(marked.map((r) => r.text).join('')).toBe('marked text')
+    expect(
+      runs
+        .filter((r) => !r.highlight)
+        .map((r) => r.text)
+        .join(''),
+    ).toBe(' plain')
+  })
+})
+
+describe('table cell edge spacing (trimEdgeSpacing)', () => {
+  const paras = [
+    { runs: [{ text: 'first', fontSize: 12 }], spaceBefore: 10, spaceAfter: 10 },
+    { runs: [{ text: 'last', fontSize: 12 }], spaceBefore: 10, spaceAfter: 10 },
+  ]
+  it('drops the first space-before and last space-after only', () => {
+    const plain = layoutText({
+      body: body({ paragraphs: paras }),
+      boxWidthPx: 400,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const trimmed = layoutText({
+      body: body({ paragraphs: paras }),
+      boxWidthPx: 400,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+      trimEdgeSpacing: true,
+    })
+    // First-paragraph space-before is dropped in every body (PowerPoint semantics);
+    // trimEdgeSpacing additionally drops the last space-after (pt → px at scale 1: ×96/72)
+    expect(plain.contentHeight - trimmed.contentHeight).toBeCloseTo((10 * 96) / 72, 1)
+    // inner spacing (after-first + before-last) is kept
+    expect(trimmed.lines[1]!.top - (trimmed.lines[0]!.top + trimmed.lines[0]!.height)).toBeCloseTo(
+      (20 * 96) / 72,
+      1,
+    )
+    // first line starts at the very top
+    expect(trimmed.lines[0]!.top).toBe(0)
+  })
+})
+
+describe('autofit ignores trailing blank paragraphs', () => {
+  it('keeps the stored scale when only trailing blanks overflow', () => {
+    // 3 content lines fit the box; 4 trailing blanks push contentHeight past it
+    const paragraphs = [
+      { runs: [{ text: 'one', fontSize: 18 }] },
+      { runs: [{ text: 'two', fontSize: 18 }] },
+      { runs: [{ text: 'three', fontSize: 18 }] },
+      { runs: [] },
+      { runs: [] },
+      { runs: [] },
+      { runs: [] },
+    ]
+    const layout = layoutText({
+      body: body({ paragraphs, autofit: 'shrink' }),
+      boxWidthPx: 400,
+      boxHeightPx: 100,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    expect(layout.fontScale).toBe(1)
+  })
+  it('still shrinks when real content overflows', () => {
+    const paragraphs = Array.from({ length: 12 }, () => ({
+      runs: [{ text: 'line of text', fontSize: 18 }],
+    }))
+    const layout = layoutText({
+      body: body({ paragraphs, autofit: 'shrink' }),
+      boxWidthPx: 400,
+      boxHeightPx: 100,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    expect(layout.fontScale).toBeLessThan(1)
+  })
+})
+
+describe('buAutoNum startAt', () => {
+  const m = new HeuristicMetrics()
+  const style = { fontFamily: 'Arial', fontSizePx: 20, bold: false, italic: false }
+  const para = (text: string, startAt?: number) => ({
+    runs: [{ text, ...style, fontSize: 20 }],
+    bullet: { type: 'number' as const, ...(startAt != null ? { startAt } : {}) },
+    marL: 457200,
+    indent: -457200,
+  })
+
+  it('starts the sequence at startAt; a following paragraph without startAt restarts at 1 (PowerPoint probe)', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [para('first', 3), para('second', 3), para('third')] as any,
+      }),
+      boxWidthPx: 800,
+      boxHeightPx: 200,
+      metrics: m,
+      vp,
+    })
+    const bullets = layout.lines
+      .map((l) => l.runs.find((r: any) => r.isBullet))
+      .filter(Boolean)
+      .map((r: any) => r.text)
+    expect(bullets).toEqual(['3.', '4.', '1.'])
+    const runs = layout.lines
+      .map((l) => l.runs.find((r: any) => r.isBullet))
+      .filter(Boolean) as any[]
+    expect(runs.map((r) => r.startAt)).toEqual([3, 3, undefined])
+  })
+
+  it('clamps a startAt below 1 to 1', () => {
+    const layout = layoutText({
+      body: body({ paragraphs: [para('first', -2), para('second', -2)] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 200,
+      metrics: m,
+      vp,
+    })
+    const bullets = layout.lines
+      .map((l) => l.runs.find((r: any) => r.isBullet))
+      .filter(Boolean)
+      .map((r: any) => r.text)
+    expect(bullets).toEqual(['1.', '2.'])
+  })
+
+  it('defaults to 1 without startAt', () => {
+    const layout = layoutText({
+      body: body({ paragraphs: [para('only')] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 200,
+      metrics: m,
+      vp,
+    })
+    const b = layout.lines[0]!.runs.find((r: any) => r.isBullet) as any
+    expect(b.text).toBe('1.')
+  })
+
+  it('formats the glyph by numType (ST_TextAutonumberScheme)', () => {
+    const cases: Array<[string, string[]]> = [
+      ['circleNumDbPlain', ['①', '②']],
+      ['circleNumWdBlackPlain', ['❶', '❷']],
+      ['circleNumWdWhitePlain', ['①', '②']],
+      ['arabicParenR', ['1)', '2)']],
+      ['arabicParenBoth', ['(1)', '(2)']],
+      ['alphaLcPeriod', ['a.', 'b.']],
+      ['alphaUcParenR', ['A)', 'B)']],
+      ['romanUcPeriod', ['I.', 'II.']],
+      ['romanLcParenBoth', ['(i)', '(ii)']],
+      ['arabicPlain', ['1', '2']],
+    ]
+    for (const [numType, expected] of cases) {
+      const withType = (text: string) => ({ ...para(text), bullet: { type: 'number', numType } })
+      const layout = layoutText({
+        body: body({ paragraphs: [withType('first'), withType('second')] as any }),
+        boxWidthPx: 800,
+        boxHeightPx: 200,
+        metrics: m,
+        vp,
+      })
+      const bullets = layout.lines
+        .map((l) => l.runs.find((r: any) => r.isBullet))
+        .filter(Boolean)
+        .map((r: any) => r.text)
+      expect(bullets, numType).toEqual(expected)
+    }
+  })
+})
+
+describe('lnSpc > 100%: excess spacing sits above the glyphs', () => {
+  const m = new HeuristicMetrics()
+  const style = { fontFamily: 'Arial', fontSizePx: 20, bold: false, italic: false }
+  const para = (text: string, lineHeight?: number) => ({
+    runs: [{ text, ...style, fontSize: 20 }],
+    ...(lineHeight != null ? { lineHeight } : {}),
+  })
+
+  it('150% spacing pushes the first baseline down by the half-line excess', () => {
+    const single = layoutText({
+      body: body({ paragraphs: [para('watermark')] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 400,
+      metrics: m,
+      vp,
+    })
+    const spaced = layoutText({
+      body: body({ paragraphs: [para('watermark', 150)] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 400,
+      metrics: m,
+      vp,
+    })
+    // PowerPoint model (48pt probe): explicit pct spacing places the baseline at
+    // 0.7333 x the line box, ignoring font metrics; single spacing bottom-anchors
+    // (box - descent). Heuristic metrics: descent 0.2em.
+    const b1 = single.lines[0]!.runs[0]!.baselineY
+    const b2 = spaced.lines[0]!.runs[0]!.baselineY
+    expect(single.lines[0]!.height).toBeCloseTo(spaced.lines[0]!.height / 1.5, 1)
+    expect(b1).toBeCloseTo(single.lines[0]!.height - 0.2 * (single.lines[0]!.height / 1.2), 1)
+    expect(b2).toBeCloseTo(spaced.lines[0]!.height * (0.88 / 1.2), 1)
+  })
+
+  it('sub-100% spacing shrinks the box and lifts the baseline with it (ink may poke above)', () => {
+    const tight = layoutText({
+      body: body({ paragraphs: [para('text', 70)] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 400,
+      metrics: m,
+      vp,
+    })
+    const single = layoutText({
+      body: body({ paragraphs: [para('text')] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 400,
+      metrics: m,
+      vp,
+    })
+    expect(tight.lines[0]!.height).toBeCloseTo(single.lines[0]!.height * 0.7, 1)
+    // generic law: baseline = 0.7333 x box — above the single-spacing baseline
+    expect(tight.lines[0]!.runs[0]!.baselineY).toBeCloseTo(tight.lines[0]!.height * (0.88 / 1.2), 1)
+    expect(tight.lines[0]!.runs[0]!.baselineY).toBeLessThan(single.lines[0]!.runs[0]!.baselineY)
+  })
+})
+
+describe('bodyPr numCol columns', () => {
+  it('flows lines into the next column when the box height is exceeded', () => {
+    const paras = Array.from({ length: 8 }, (_, i) => ({
+      runs: [{ text: `p${i}`, fontSize: 20 }],
+    }))
+    const layout = layoutText({
+      body: { ...body({ paragraphs: paras }), numCol: 2, spcCol: 0 },
+      boxWidthPx: 400,
+      boxHeightPx: 4 * 20 * (96 / 72) * 1.2 + 2, // fits 4 lines per column
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const xs = layout.lines.map((l) => l.runs[0]!.x)
+    // First 4 lines in column 1 (x < 200), rest shifted a full column stride right
+    expect(xs.slice(0, 4).every((x) => x < 200)).toBe(true)
+    expect(xs.slice(4).every((x) => x >= 200)).toBe(true)
+    // Column 2 restarts at the top, baselines rebased with the line tops
+    expect(layout.lines[4]!.top).toBe(0)
+    expect(layout.lines[4]!.runs[0]!.baselineY).toBeLessThan(layout.lines[3]!.runs[0]!.baselineY)
+    expect(layout.contentHeight).toBeCloseTo(layout.lines[3]!.top + layout.lines[3]!.height, 1)
+  })
+
+  it('single column behavior unchanged when numCol absent', () => {
+    const layout = layoutText({
+      body: body({ paragraphs: [{ runs: [{ text: 'x', fontSize: 20 }] }] }),
+      boxWidthPx: 400,
+      boxHeightPx: 100,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    expect(layout.lines.length).toBe(1)
+  })
+})
+
+describe('WordArt effect passthrough', () => {
+  const m = new HeuristicMetrics()
+  const run = {
+    text: 'Word',
+    fontSize: 20,
+    color: '#111111',
+    gradient: {
+      stops: [
+        { pos: 0, color: '#FF0000' },
+        { pos: 1, color: '#0000FF' },
+      ],
+      angle: 5400000,
+    },
+    glow: { color: '#ED7D31', radius: 53100 },
+    reflection: true,
+  }
+
+  it('gradient/glow/reflection reach the glyph runs (angle in degrees, glow in px)', () => {
+    const layout = layoutText({
+      body: body({ paragraphs: [{ runs: [run] }] }),
+      boxWidthPx: 400,
+      boxHeightPx: 100,
+      metrics: m,
+      vp,
+    })
+    const g = layout.lines[0]!.runs[0]!
+    expect(g.gradient?.angleDeg).toBe(90)
+    expect(g.gradient?.stops).toHaveLength(2)
+    expect(g.glow?.color).toBe('#ED7D31')
+    expect(g.glow?.blurPx).toBeGreaterThan(0)
+    expect(g.reflection).toBe(true)
+  })
+
+  it('bodyPr extrusion projects to a screen offset (lat 30° → downward)', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [{ runs: [{ text: 'W', fontSize: 20, color: '#111111' }] }],
+        extrusion3d: { color: '#C0504D', depthEmu: 127000, latDeg: 30, lonDeg: 0 },
+      }),
+      boxWidthPx: 400,
+      boxHeightPx: 100,
+      metrics: m,
+      vp,
+    })
+    expect(layout.extrusion?.color).toBe('#C0504D')
+    expect(layout.extrusion?.dx).toBeCloseTo(0, 5)
+    // PowerPoint renders the depth below the glyphs for a positive camera latitude
+    expect(layout.extrusion!.dy).toBeGreaterThan(0)
+  })
+})
+
+describe('kerning threshold (rPr kern)', () => {
+  const kernFont: OpentypeFontLike = {
+    unitsPerEm: 1000,
+    ascender: 800,
+    descender: -200,
+    getAdvanceWidth: (text, size, options) =>
+      // 0.5em per char, minus a fake 0.1em kern pair per boundary when kerning is on
+      ((text.length * 500 - (options?.kerning !== false ? (text.length - 1) * 100 : 0)) / 1000) *
+      size,
+    charToGlyphIndex: () => 1,
+  }
+  const om = new OpentypeMetrics(() => kernFont)
+  const run = (kern: number | undefined, fontSize: number) => ({
+    anchor: 'top' as const,
+    insets: { l: 0, t: 0, r: 0, b: 0 },
+    autofit: 'none' as const,
+    wrap: true,
+    paragraphs: [
+      {
+        runs: [{ text: 'AVAV', fontSize, ...(kern != null ? { kern } : {}) }],
+        pPrExplicit: {},
+      },
+    ],
+  })
+  const width = (kern: number | undefined, fontSize: number) =>
+    layoutText({
+      body: run(kern, fontSize) as any,
+      boxWidthPx: 500,
+      boxHeightPx: 100,
+      metrics: om,
+      vp,
+    }).lines[0]!.runs[0]!.widthPx
+
+  it('kerns at or above the threshold, not below (absent = 12 pt default)', () => {
+    expect(width(undefined, 18)).toBeCloseTo(width(12, 18), 5) // both kerned
+    expect(width(undefined, 10)).toBeGreaterThan(width(undefined, 18) * (10 / 18) + 1e-6) // 10pt unkerned = wider per pt
+    expect(width(0, 18)).toBeGreaterThan(width(undefined, 18)) // kern=0 disables at any size
+  })
+
+  it('marks below-threshold glyph runs kerningOff for the draw layer', () => {
+    const l = layoutText({
+      body: run(undefined, 10) as any,
+      boxWidthPx: 500,
+      boxHeightPx: 100,
+      metrics: om,
+      vp,
+    })
+    expect(l.lines[0]!.runs[0]!.kerningOff).toBe(true)
+    const l2 = layoutText({
+      body: run(undefined, 18) as any,
+      boxWidthPx: 500,
+      boxHeightPx: 100,
+      metrics: om,
+      vp,
+    })
+    expect(l2.lines[0]!.runs[0]!.kerningOff).toBeUndefined()
+  })
+})
+
+describe('paragraph marR / tab stops / dash & wide-space wrapping', () => {
+  const m = new HeuristicMetrics()
+  const lay = (paragraphs: Paragraph[], boxWidthPx = 200) =>
+    layoutText({ body: body({ paragraphs }), boxWidthPx, boxHeightPx: 400, metrics: m, vp })
+
+  it('marR narrows the wrap width from the right', () => {
+    const p: Paragraph = { runs: [{ text: '一二三四五六七八', fontSize: 18 }] } // 8 × 24px
+    expect(lay([p]).lines).toHaveLength(1)
+    // marR = 100px → avail 100px → 4 chars per line
+    const wrapped = lay([{ ...p, marR: 952500 }]).lines
+    expect(wrapped).toHaveLength(2)
+    expect(wrapped[0]!.runs[0]!.x).toBe(0) // LTR: marR only narrows, the left edge stays
+  })
+
+  it('tab advances to the next custom stop, then to the default grid', () => {
+    const runs = [
+      { text: 'ab', fontSize: 18 },
+      { text: '\t', fontSize: 18 },
+      { text: 'cd', fontSize: 18 },
+    ]
+    const stopped = lay([{ runs, tabStops: [{ pos: 952500 }] }], 400).lines[0]!
+    expect(stopped.runs.find((r) => r.text === 'cd')!.x).toBeCloseTo(100, 0)
+    // No custom stop → the 1" (96px) default grid
+    const grid = lay([{ runs }], 400).lines[0]!
+    expect(grid.runs.find((r) => r.text === 'cd')!.x).toBeCloseTo(96, 0)
+  })
+
+  it('breaks after a dash instead of mid-word', () => {
+    const p: Paragraph = { runs: [{ text: 'Cloud–Edge', fontSize: 18 }] }
+    const lines = lay([p], 100).lines
+    expect(lines).toHaveLength(2)
+    expect(lines[0]!.runs.map((r) => r.text).join('')).toBe('Cloud–')
+    expect(lines[1]!.runs.map((r) => r.text).join('')).toBe('Edge')
+  })
+
+  it('ideographic spaces at a wrap point are swallowed, recorded verbatim, and never indent the next line', () => {
+    const p: Paragraph = { runs: [{ text: '一二三四　　五六七八', fontSize: 18 }] }
+    const lines = lay([p], 100).lines
+    expect(lines).toHaveLength(2)
+    expect(lines[0]!.trailingSpace).toBe(true)
+    expect(lines[0]!.trailingText).toBe('　　')
+    expect(lines[1]!.runs[0]!.x).toBe(0)
+    expect(lines[1]!.runs.map((r) => r.text).join('')).toBe('五六七八')
+  })
+})
+
+it('first-line tabs land on inset-absolute stops despite a first-line indent', () => {
+  const m = new HeuristicMetrics()
+  const lines = layoutText({
+    body: body({
+      paragraphs: [
+        {
+          runs: [
+            { text: 'ab', fontSize: 18 },
+            { text: '\t', fontSize: 18 },
+            { text: 'cd', fontSize: 18 },
+          ],
+          indent: 190500, // 20px first-line indent
+          tabStops: [{ pos: 952500 }], // 100px from the inset edge
+        },
+      ],
+    }),
+    boxWidthPx: 400,
+    boxHeightPx: 100,
+    metrics: m,
+    vp,
+  }).lines
+  // drawn x = line-local x + first-line shift; the stop is absolute, so 'cd' sits at 100px
+  expect(lines[0]!.runs.find((r) => r.text === 'cd')!.x).toBeCloseTo(100, 0)
+})
+
+it('a positive first-line indent consumes first-line wrap budget (hanging widens it)', () => {
+  const m = new HeuristicMetrics()
+  const lay = (indent?: number) =>
+    layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [{ text: '一二三四五六七八', fontSize: 18 }],
+            ...(indent != null ? { indent } : {}),
+          },
+        ],
+      }),
+      boxWidthPx: 100,
+      boxHeightPx: 400,
+      metrics: m,
+      vp,
+    }).lines
+  // 24px/char, 100px box: no indent → 4 chars on line 1
+  expect(lay()[0]!.runs.length).toBe(4)
+  // 20px first-line indent → 80px budget → 3 chars, drawn starting at 20px
+  const indented = lay(190500)
+  expect(indented[0]!.runs.length).toBe(3)
+  expect(indented[0]!.runs[0]!.x).toBeCloseTo(20, 0)
+  expect(indented[1]!.runs[0]!.x).toBe(0)
+})
+
+it('anchorCtr centers the text block bounding box horizontally (alignment stays within)', () => {
+  const m = new HeuristicMetrics()
+  const lay = (anchorCtr?: boolean) =>
+    layoutText({
+      body: body({
+        paragraphs: [
+          { runs: [{ text: '一二三四', fontSize: 18 }] }, // 96px
+          { runs: [{ text: '一二', fontSize: 18 }] }, // 48px
+        ],
+        ...(anchorCtr ? { anchorCtr } : {}),
+      }),
+      boxWidthPx: 200,
+      boxHeightPx: 200,
+      metrics: m,
+      vp,
+    }).lines
+  expect(lay()[0]!.runs[0]!.x).toBe(0)
+  const centered = lay(true)
+  // block width 96 → dx = (200-96)/2 = 52; the narrower line keeps its left alignment within the block
+  expect(centered[0]!.runs[0]!.x).toBeCloseTo(52, 0)
+  expect(centered[1]!.runs[0]!.x).toBeCloseTo(52, 0)
+})
+
+it('enclosed alphanumerics measure full-width in the missing-glyph fallback', () => {
+  const m = new HeuristicMetrics()
+  const style = { fontFamily: 'Century Gothic', fontSizePx: 100, bold: false, italic: false }
+  // ⑤ falls back to a CJK font at draw time; measuring it narrow overlaps the next run
+  expect(m.measure('⑤', style)).toBeCloseTo(100, 0)
+})
+
+describe('Symbol-font bullets', () => {
+  const bulletOf = (paragraphs: Paragraph[]) =>
+    layoutText({
+      body: body({ paragraphs }),
+      boxWidthPx: 400,
+      boxHeightPx: 300,
+      metrics: new HeuristicMetrics(),
+      vp,
+    }).lines[0]!.runs.find((r) => r.isBullet)!
+
+  it('maps <a:buFont Symbol> PUA/byte bullet codes through the Symbol table (U+F0B7 → •)', () => {
+    // a real deck: every level-1 bullet drew as a tofu box because the PUA code stayed raw
+    const pua = bulletOf([
+      {
+        runs: [{ text: 'item', fontSize: 14 }],
+        bullet: { type: 'char', char: '', font: 'Symbol' },
+      },
+    ])
+    expect(pua.text).toBe('•')
+    expect(pua.fontFamily).toBe('Symbol')
+    const raw = bulletOf([
+      {
+        runs: [{ text: 'item', fontSize: 14 }],
+        bullet: { type: 'char', char: '·', font: 'Symbol' },
+      },
+    ])
+    expect(raw.text).toBe('•')
+  })
+
+  it('leaves Wingdings bullets in the F0xx range and plain-font bullets untouched', () => {
+    const wd = bulletOf([
+      {
+        runs: [{ text: 'item', fontSize: 14 }],
+        bullet: { type: 'char', char: '§', font: 'Wingdings' },
+      },
+    ])
+    expect(wd.text).toBe('')
+    const plain = bulletOf([
+      {
+        runs: [{ text: 'item', fontSize: 14 }],
+        bullet: { type: 'char', char: '', font: 'Arial' },
+      },
+    ])
+    expect(plain.text).toBe('')
+  })
+})
+
+describe('mixed-script runs', () => {
+  it('Latin tokens of a CJK-bucket run draw with the run latinFamily, wide chars keep the ea face', () => {
+    const { lines } = layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [
+              {
+                text: 'ISO 45001 안전 관리',
+                fontSize: 14,
+                fontFamily: 'Malgun Gothic',
+                latinFamily: 'NanumSquareEB',
+                fontScriptHint: 'ko',
+              },
+            ],
+          },
+        ],
+      }),
+      boxWidthPx: 600,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const runs = lines.flatMap((l) => l.runs)
+    const fam = (t: string) => runs.find((r) => r.text.includes(t))?.fontFamily
+    expect(fam('ISO')).toBe('NanumSquareEB')
+    expect(fam('45001')).toBe('NanumSquareEB')
+    expect(fam('안')).toBe('Malgun Gothic')
+    expect(fam('관')).toBe('Malgun Gothic')
+  })
+
+  it('non-Latin narrow scripts and halfwidth kana keep the bucket face', () => {
+    const { lines } = layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [
+              {
+                text: 'ｶﾅ שלום مرحبا AB 漢',
+                fontSize: 14,
+                fontFamily: 'Yu Gothic',
+                latinFamily: 'Arial',
+                fontScriptHint: 'ja',
+              },
+            ],
+          },
+        ],
+      }),
+      boxWidthPx: 600,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const runs = lines.flatMap((l) => l.runs)
+    const fam = (t: string) => runs.find((r) => r.text.includes(t))?.fontFamily
+    expect(fam('ｶ')).toBe('Yu Gothic')
+    expect(fam('שלום')).toBe('Yu Gothic')
+    expect(fam('مرحبا')).toBe('Yu Gothic')
+    expect(fam('AB')).toBe('Arial')
+    expect(fam('漢')).toBe('Yu Gothic')
+  })
+})
+
+describe('latinOnly substitution hint', () => {
+  const seen: RunStyle[] = []
+  const recording: FontMetricsProvider = {
+    ...new HeuristicMetrics(),
+    measure: (text, style) => {
+      seen.push(style)
+      return new HeuristicMetrics().measure(text, style)
+    },
+    metrics: (style) => new HeuristicMetrics().metrics(style),
+  }
+  const lay = (runs: Paragraph['runs']) => {
+    seen.length = 0
+    layoutText({
+      body: body({ paragraphs: [{ runs }] }),
+      boxWidthPx: 600,
+      boxHeightPx: 200,
+      metrics: recording,
+      vp,
+    })
+    return seen
+  }
+  it('a Latin-only run in a CJK-named face measures with latinOnly, a CJK run does not', () => {
+    const latin = lay([{ text: 'ISO 45001', fontSize: 14, fontFamily: 'NanumSquareExtraBold' }])
+    expect(latin.length).toBeGreaterThan(0)
+    expect(latin.every((s) => s.latinOnly === true)).toBe(true)
+    const kr = lay([
+      { text: '안전 관리', fontSize: 14, fontFamily: 'NanumSquareExtraBold', fontScriptHint: 'ko' },
+    ])
+    expect(kr.some((s) => s.latinOnly)).toBe(false)
+  })
+  it('Latin tokens of a CJK-bucket run with one face for both slots still go latinOnly', () => {
+    const styles = lay([
+      { text: 'ISO 45001 안전', fontSize: 14, fontFamily: 'Noto Sans KR', fontScriptHint: 'ko' },
+    ])
+    expect(
+      styles.some(
+        (s) => s.fontFamily === 'Noto Sans KR' && s.latinOnly === true && s.substScript == null,
+      ),
+    ).toBe(true)
+    expect(styles.some((s) => s.fontFamily === 'Noto Sans KR' && s.substScript === 'ko')).toBe(true)
+  })
+  it('a Latin-only run keeps its declared-charset hint on every token', () => {
+    const styles = lay([
+      { text: 'ISO 45001', fontSize: 14, fontFamily: 'LG Smart', fontScriptHint: 'ko' },
+    ])
+    expect(styles.length).toBeGreaterThan(0)
+    expect(styles.every((s) => s.substScript === 'ko' && s.latinOnly === true)).toBe(true)
+  })
+  it('a halfwidth-kana run still splits its Latin tokens off', () => {
+    const styles = lay([
+      { text: 'ｶﾞｽ 123', fontSize: 14, fontFamily: 'Noto Sans JP', fontScriptHint: 'ja' },
+    ])
+    expect(styles.some((s) => s.latinOnly === true && s.substScript == null)).toBe(true)
+    expect(styles.some((s) => s.substScript === 'ja')).toBe(true)
+  })
+
+  it('Latin tokens of a mixed run carry latinOnly with the latin family, wide tokens do not', () => {
+    const styles = lay([
+      {
+        text: 'ISO 안전',
+        fontSize: 14,
+        fontFamily: 'Malgun Gothic',
+        latinFamily: 'NanumSquareEB',
+        fontScriptHint: 'ko',
+      },
+    ])
+    expect(
+      styles.some(
+        (s) => s.fontFamily === 'NanumSquareEB' && s.latinOnly === true && s.substScript == null,
+      ),
+    ).toBe(true)
+    expect(
+      styles.some(
+        (s) => s.fontFamily === 'Malgun Gothic' && !s.latinOnly && s.substScript === 'ko',
+      ),
+    ).toBe(true)
+  })
+})
+
+describe('bullet parity (PowerPoint)', () => {
+  const m = new HeuristicMetrics()
+  const lay = (paragraphs: Paragraph[], media?: (ref: string) => string | undefined) =>
+    layoutText({
+      body: body({ paragraphs: paragraphs as Paragraph[] }),
+      boxWidthPx: 800,
+      boxHeightPx: 600,
+      metrics: m,
+      vp,
+      media,
+    })
+  const bulletsOf = (l: ReturnType<typeof lay>) =>
+    l.lines.filter((ln) => ln.paraStart).map((ln) => ln.runs.find((r) => r.isBullet))
+  const num = (text: string, level = 0, numType = 'arabicPeriod'): Paragraph =>
+    ({
+      runs: [{ text, fontSize: 18 }],
+      ...(level ? { level } : {}),
+      marL: 342900 * (level + 1),
+      indent: -342900,
+      bullet: { type: 'number', numType },
+    }) as Paragraph
+
+  it('nested numbering keeps one counter per level; the outer list continues after a sublist', () => {
+    const l = lay([
+      num('one'),
+      num('two'),
+      num('a', 1, 'alphaLcPeriod'),
+      num('b', 1, 'alphaLcPeriod'),
+      num('i', 2, 'romanLcPeriod'),
+      num('c', 1, 'alphaLcPeriod'),
+      num('three'),
+      num('a again', 1, 'alphaLcPeriod'),
+    ])
+    expect(bulletsOf(l).map((b) => b!.text)).toEqual([
+      '1.',
+      '2.',
+      'a.',
+      'b.',
+      'i.',
+      'c.',
+      '3.',
+      'a.',
+    ])
+  })
+
+  it('an unnumbered text paragraph restarts its level; empty paragraphs change nothing', () => {
+    const l = lay([
+      num('one'),
+      { runs: [{ text: '', fontSize: 18 }], bullet: { type: 'number' } } as Paragraph,
+      num('two'),
+      { runs: [{ text: 'plain', fontSize: 18 }], bullet: { type: 'none' } } as Paragraph,
+      num('one again'),
+    ])
+    expect(bulletsOf(l).map((b) => b?.text)).toEqual(['1.', undefined, '2.', undefined, '1.'])
+  })
+
+  it('a scheme change or a differing startAt (1 when absent) restarts the level', () => {
+    const withStart = (text: string, startAt: number): Paragraph =>
+      ({ ...num(text), bullet: { type: 'number', numType: 'arabicPeriod', startAt } }) as Paragraph
+    const l = lay([
+      num('one'),
+      num('two'),
+      num('A', 0, 'alphaUcPeriod'),
+      num('B', 0, 'alphaUcPeriod'),
+      withStart('seven', 7),
+      withStart('eight', 7),
+      num('one again'),
+      withStart('seven again', 7),
+    ])
+    expect(bulletsOf(l).map((b) => b!.text)).toEqual([
+      '1.',
+      '2.',
+      'A.',
+      'B.',
+      '7.',
+      '8.',
+      '1.',
+      '7.',
+    ])
+  })
+
+  it('buSzPts sizes the glyph in absolute points, buSzPct relative to the first run', () => {
+    const l = lay([
+      {
+        runs: [{ text: 'x', fontSize: 18 }],
+        marL: 342900,
+        indent: -342900,
+        bullet: { type: 'char', char: '•', sizePt: 36 },
+      } as Paragraph,
+      {
+        runs: [{ text: 'x', fontSize: 18 }],
+        marL: 342900,
+        indent: -342900,
+        bullet: { type: 'char', char: '•', sizePct: 50 },
+      } as Paragraph,
+    ])
+    const [a, b] = bulletsOf(l)
+    expect(a!.fontSizePx).toBeCloseTo(48, 3) // 36pt at scale 1 (96/72)
+    expect(b!.fontSizePx).toBeCloseTo(12, 3)
+  })
+
+  it('picture bullet: image run on the baseline, cap-height tall; missing media falls back to the dot', () => {
+    const para = {
+      runs: [{ text: 'x', fontSize: 18 }],
+      marL: 342900,
+      indent: -342900,
+      bullet: { type: 'blip', mediaRef: 'ppt/media/image1.png', blipEmbedId: 'rId6' },
+    } as Paragraph
+    const withMedia = lay([para], (ref) =>
+      ref === 'ppt/media/image1.png' ? 'data:image/png;base64,AA' : undefined,
+    )
+    const b = bulletsOf(withMedia)[0]!
+    expect(b.image).toBe('data:image/png;base64,AA')
+    expect(b.text).toBe('')
+    expect(b.ascentPx).toBeCloseTo(24 * 0.75, 3) // 18pt text at scale 1, 1:1 image
+    expect(b.widthPx).toBeCloseTo(b.ascentPx!, 3)
+    const textRun = withMedia.lines[0]!.runs.find((r) => !r.isBullet)!
+    expect(textRun.x).toBeGreaterThanOrEqual(b.x + b.widthPx)
+    const noMedia = bulletsOf(lay([para]))[0]!
+    expect(noMedia.image).toBeUndefined()
+    expect(noMedia.text).toBe('•')
+  })
+})
+
+describe('PowerPoint super/subscript glyph size + hanging indent clamp', () => {
+  it('super/subscript runs draw at 2/3 of the run size (probe: 18pt reads 12pt at any offset)', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [
+              { text: 'x', fontSize: 18 },
+              { text: '2', fontSize: 18, baseline: 30 },
+              { text: 'n', fontSize: 18, baseline: -25 },
+            ],
+          },
+        ],
+      }),
+      boxWidthPx: 400,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const [base, sup, sub] = layout.lines[0]!.runs
+    expect(base!.fontSizePx).toBeCloseTo(24, 4)
+    expect(sup!.fontSizePx).toBeCloseTo(16, 4)
+    expect(sub!.fontSizePx).toBeCloseTo(16, 4)
+  })
+
+  it('a hanging indent without a bullet cannot start the first line left of the inset', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [{ runs: [{ text: 'Hello', fontSize: 18 }], marL: 0, indent: -402590 }],
+      }),
+      boxWidthPx: 400,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    expect(layout.lines[0]!.runs[0]!.x).toBeCloseTo(0, 4)
+  })
+})
+
+describe('Korean word wrap and hanging punctuation (PowerPoint probe)', () => {
+  const m = new HeuristicMetrics()
+  // 24pt runs lay out at 32px (scale 1)
+  const style = { fontFamily: 'Arial', fontSizePx: 32, bold: false, italic: false }
+  const w = (t: string) => m.measure(t, style)
+  // Korean-tagged runs by default (lang="ko-KR"): only those keep Hangul words whole
+  const JA = { eaLang: 'ja' as const }
+  const lines = (
+    text: string,
+    boxWidthPx: number,
+    para: Partial<Paragraph> = {},
+    run: Partial<Paragraph['runs'][number]> = { eaLang: 'ko' },
+  ) =>
+    layoutText({
+      body: body({ paragraphs: [{ runs: [{ text, fontSize: 24, ...run }], ...para }] }),
+      boxWidthPx,
+      boxHeightPx: 3000,
+      metrics: m,
+      vp,
+    }).lines.map((l) =>
+      l.runs
+        .map((r) => r.text)
+        .join('')
+        .trim(),
+    )
+
+  it('Hangul wraps by word: the whole space-delimited word moves down', () => {
+    // room for one more syllable, but PowerPoint keeps the second word together
+    const box = w('\uac00\ub098\ub2e4 \ub77c') + 1
+    expect(lines('가나다 라마바', box)).toEqual(['가나다', '라마바'])
+  })
+
+  it('Hangul without a Korean language tag breaks per syllable (PowerPoint for Mac probe)', () => {
+    // an en-US run breaks inside the last Hangul word; a ko-KR run moves that word down whole
+    const box = w('\uac00\ub098\ub2e4 \ub77c') + 1
+    expect(lines('\uac00\ub098\ub2e4 \ub77c\ub9c8\ubc14', box, {}, {})).toEqual([
+      '\uac00\ub098\ub2e4 \ub77c',
+      '\ub9c8\ubc14',
+    ])
+  })
+
+  it('a Hangul word wider than the line still hard-breaks per syllable', () => {
+    const box = w('가나') + 1
+    expect(lines('가나다라', box)).toEqual(['가나', '다라'])
+  })
+
+  it('an over-long word leaves its last piece open for the following words', () => {
+    // two syllables fill a line; the tail '다' shares its line with ' 라'
+    const box = w('\uac00\ub098') + w('\uac00') / 2
+    expect(lines('\uac00\ub098\ub2e4 \ub77c', box)).toEqual(['\uac00\ub098', '\ub2e4 \ub77c'])
+  })
+
+  it('a first-on-line word wider than the box only by its closing mark hangs instead of breaking', () => {
+    const box = w('\uac00\uac00\uac00\uac00') + w('\uff09') / 2
+    expect(lines('\uac00\uac00\uac00\uac00\uff09', box)).toEqual(['\uac00\uac00\uac00\uac00\uff09'])
+  })
+
+  it('a trailing closing mark hangs past the margin by its own advance', () => {
+    // room for the ideographs and only half the bracket: the bracket overhangs
+    const box = w('\uac00\uac00\uac00') + w('\uff09') / 2
+    expect(lines('\uac00\uac00\uac00\uff09', box)).toEqual(['\uac00\uac00\uac00\uff09'])
+    // the allowance is the mark itself: anything after it starts the next line
+    expect(lines('\uac00\uac00\uac00\uff09\ub098', box)).toEqual([
+      '\uac00\uac00\uac00\uff09',
+      '\ub098',
+    ])
+  })
+
+  it('a trailing Hangul syllable gets no allowance', () => {
+    const box = w('가나다 라마') + w('바') / 2
+    expect(lines('가나다 라마바', box)).toEqual(['가나다', '라마바'])
+  })
+
+  it('hangingPunct="0" switches the overhang off', () => {
+    const box = w('\uac00\uac00\uac00') + w('\uff09') / 2
+    expect(lines('\uac00\uac00\uac00\uff09', box, { hangingPunct: false }).length).toBe(2)
+  })
+
+  it('latinLnBrk="1" lets Hangul break per syllable again', () => {
+    const box = w('\uac00\ub098\ub2e4 \ub77c') + 1
+    expect(lines('\uac00\ub098\ub2e4 \ub77c\ub9c8\ubc14', box, { latinLnBrk: true })).toEqual([
+      '\uac00\ub098\ub2e4 \ub77c',
+      '\ub9c8\ubc14',
+    ])
+  })
+
+  it('eaLnBrk="0" switches kinsoku off: a closing mark may start a line', () => {
+    // hanging punctuation off too, so the mark cannot simply overhang
+    const box = w('\u3042\u3042\u3042\u3042') + 1
+    const text = '\u3042\u3042\u3042\u3042\u3001\u3044'
+    expect(lines(text, box, { eaLnBrk: false, hangingPunct: false }, JA)).toEqual([
+      '\u3042\u3042\u3042\u3042',
+      '\u3001\u3044',
+    ])
+    expect(lines(text, box, { hangingPunct: false }, JA)[0]).toBe('\u3042\u3042\u3042')
+  })
+
+  it('Latin-only paragraphs never hang', () => {
+    const box = w('aaa bb') + w(')') / 2
+    expect(lines('aaa bb)', box)).toEqual(['aaa', 'bb)'])
+  })
+})
+
+describe('line breaking follows the run language tag (PowerPoint for Mac probe)', () => {
+  const m = new HeuristicMetrics()
+  const style = { fontFamily: 'Arial', fontSizePx: 32, bold: false, italic: false }
+  const w = (t: string) => m.measure(t, style)
+  const lines = (
+    text: string,
+    boxWidthPx: number,
+    run: Partial<Paragraph['runs'][number]>,
+    para: Partial<Paragraph> = {},
+    defaultEaLang?: TextLayoutInput['defaultEaLang'],
+  ) =>
+    layoutText({
+      body: body({ paragraphs: [{ runs: [{ text, fontSize: 24, ...run }], ...para }] }),
+      boxWidthPx,
+      boxHeightPx: 3000,
+      metrics: m,
+      vp,
+      ...(defaultEaLang ? { defaultEaLang } : {}),
+    }).lines.map((l) =>
+      l.runs
+        .map((r) => r.text)
+        .join('')
+        .trim(),
+    )
+  const A4 = '\u3042\u3042\u3042\u3042'
+  const A3 = '\u3042\u3042\u3042'
+  const box = w(A4) + 1
+
+  it('en-US CJK text has no kinsoku: a closing mark may start a line', () => {
+    expect(lines(`${A4}\u3002\u3044`, box, { eaLang: 'none' })).toEqual([A4, '\u3002\u3044'])
+    expect(lines(`${A3}\u300c\u3044\u3044`, box, { eaLang: 'none' })).toEqual([
+      `${A3}\u300c`,
+      '\u3044\u3044',
+    ])
+  })
+
+  it('ja-JP keeps the long-vowel mark off a line start; zh-CN does not', () => {
+    expect(lines(`${A4}\u30fc\u3044`, box, { eaLang: 'ja' })).toEqual([A3, '\u3042\u30fc\u3044'])
+    expect(lines(`${A4}\u30fc\u3044`, box, { eaLang: 'sc' })).toEqual([A4, '\u30fc\u3044'])
+  })
+
+  it('each language hangs its own closing marks: \uff09 hangs in zh-CN, is pulled in ja-JP', () => {
+    expect(lines(`${A4}\uff09\u3044`, box, { eaLang: 'sc' })).toEqual([`${A4}\uff09`, '\u3044'])
+    expect(lines(`${A4}\uff09\u3044`, box, { eaLang: 'ja' })).toEqual([A3, '\u3042\uff09\u3044'])
+  })
+
+  it('ko-KR rules need Hangul: a Hanja-only line keeps none', () => {
+    const han4 = '\u56fd\u56fd\u56fd\u56fd'
+    expect(lines(`${han4}\u3002\u56fd`, box, { eaLang: 'ko' })).toEqual([han4, '\u3002\u56fd'])
+  })
+
+  it('latinLnBrk="1" splits a Latin word mid-word to fill the line', () => {
+    const latinBox = w('aaa bbbb') + 1
+    expect(lines('aaa bbbbbbb', latinBox, {}, { latinLnBrk: true })).toEqual(['aaa bbbb', 'bbb'])
+    // without the flag the word moves down whole
+    expect(lines('aaa bbbbbbb', latinBox, {})).toEqual(['aaa', 'bbbbbbb'])
+  })
+
+  it('latinLnBrk="1" keeps Latin words whole in Korean-tagged text', () => {
+    const latinBox = w('aaa bbbb') + 1
+    expect(lines('aaa bbbbbbb', latinBox, { eaLang: 'ko' }, { latinLnBrk: true })).toEqual([
+      'aaa',
+      'bbbbbbb',
+    ])
+  })
+})
+
+describe('text with no language tag anywhere follows the default editing language', () => {
+  const m = new HeuristicMetrics()
+  const style = { fontFamily: 'Arial', fontSizePx: 32, bold: false, italic: false }
+  const w = (t: string) => m.measure(t, style)
+  const lines = (
+    text: string,
+    boxWidthPx: number,
+    run: Partial<Paragraph['runs'][number]>,
+    defaultEaLang?: TextLayoutInput['defaultEaLang'],
+  ) =>
+    layoutText({
+      body: body({ paragraphs: [{ runs: [{ text, fontSize: 24, ...run }] }] }),
+      boxWidthPx,
+      boxHeightPx: 3000,
+      metrics: m,
+      vp,
+      ...(defaultEaLang ? { defaultEaLang } : {}),
+    }).lines.map((l) =>
+      l.runs
+        .map((r) => r.text)
+        .join('')
+        .trim(),
+    )
+  const A4 = '\u3042\u3042\u3042\u3042'
+  const box = w(A4) + 1
+  const text = `${A4}\u3002\u3044`
+
+  it('an untagged run takes the default language: ja-JP lets the full stop hang', () => {
+    expect(lines(text, box, {}, 'ja')).toEqual([`${A4}\u3002`, '\u3044'])
+  })
+
+  it('without a default, an untagged run has no East Asian rules (an en-US install)', () => {
+    expect(lines(text, box, {})).toEqual([A4, '\u3002\u3044'])
+  })
+
+  it('an explicit non-East-Asian tag is not overridden by the default', () => {
+    expect(lines(text, box, { eaLang: 'none' }, 'ja')).toEqual([A4, '\u3002\u3044'])
+  })
+
+  it("a run's own East Asian tag wins over the default", () => {
+    expect(lines(`${A4}\u30fc\u3044`, box, { eaLang: 'sc' }, 'ja')).toEqual([A4, '\u30fc\u3044'])
+  })
+
+  it('a ko-KR default keeps untagged Hangul words whole', () => {
+    const hangulBox = w('\uac00\ub098\ub2e4 \ub77c') + 1
+    const korean = '\uac00\ub098\ub2e4 \ub77c\ub9c8\ubc14'
+    expect(lines(korean, hangulBox, {}, 'ko')).toEqual(['\uac00\ub098\ub2e4', '\ub77c\ub9c8\ubc14'])
+    expect(lines(korean, hangulBox, {})).toEqual(['\uac00\ub098\ub2e4 \ub77c', '\ub9c8\ubc14'])
+  })
+})
+
+describe('hard-break measurement cost (#1007)', () => {
+  const m = new HeuristicMetrics()
+  const style = { fontFamily: 'Arial', fontSizePx: 32, bold: false, italic: false }
+  const w = (t: string) => m.measure(t, style)
+
+  /** HeuristicMetrics plus a tally of how much text the layout asked to measure. */
+  const counting = () => {
+    let calls = 0
+    let chars = 0
+    const provider: FontMetricsProvider = {
+      metrics: (s) => m.metrics(s),
+      measure: (text, s) => {
+        calls++
+        chars += [...text].length
+        return m.measure(text, s)
+      },
+    }
+    return { provider, stats: () => ({ calls, chars }) }
+  }
+
+  const layoutOf = (
+    text: string,
+    boxWidthPx: number,
+    metrics: FontMetricsProvider,
+    para: Partial<Paragraph> = {},
+  ) =>
+    layoutText({
+      body: body({ paragraphs: [{ runs: [{ text, fontSize: 24 }], ...para }] }),
+      boxWidthPx,
+      boxHeightPx: 200_000,
+      metrics,
+      vp,
+    }).lines.map((l) => l.runs.map((r) => r.text).join(''))
+
+  it('measures an over-long word linearly instead of re-measuring the whole buffer', () => {
+    // One word, no spaces, 4000 clusters in a box that holds 100. The old code
+    // re-measured the whole buffer for every grapheme (~40 lines x 1+2+..+100),
+    // so the characters handed to measure grew quadratically; a linear layout
+    // pass measures each line once.
+    const cluster = w('\uac00')
+    const perLine = 100
+    const pattern = '\uac00\uB098\uB2E4\uB77C\uB9C8\uBC14\uC0AC\uC544'
+    const text = pattern.repeat(500)
+    const n = [...text].length
+    expect(n).toBe(4000)
+    const c = counting()
+    const out = layoutOf(text, cluster * perLine, c.provider)
+    expect(out).toHaveLength(n / perLine)
+    expect([...out[0]!].length).toBe(perLine)
+    expect(out.join('')).toBe(text)
+    expect(c.stats().chars).toBeLessThan(n * 10)
+  })
+
+  it('letter spacing on an over-long word also measures linearly', () => {
+    const cluster = w('\uac00')
+    const text = '\uac00\uB098\uB2E4\uB77C'.repeat(1000)
+    const n = [...text].length
+    const c = counting()
+    const out = layoutOf(text, cluster * 100, c.provider, {
+      runs: [{ text, fontSize: 24, letterSpacing: 2 }],
+    })
+    expect(out.length).toBeGreaterThan(1)
+    expect(out.join('')).toBe(text)
+    // the letter-spacing term used to be recomputed over the whole buffer too
+    expect(c.stats().chars).toBeLessThan(n * 10)
+  })
+
+  it('a word that fits on one line is never hard-broken', () => {
+    const text = '\uac00\uB098\uB2E4'
+    const c = counting()
+    expect(layoutOf(text, w(text) + 1, c.provider)).toEqual([text])
   })
 })

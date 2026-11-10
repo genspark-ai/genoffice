@@ -16,21 +16,25 @@ export const EMU_PER_PT = 12700 // 914400 / 72
 
 /** EMU → px (under the given scale). With scale=1, converts at the 96dpi baseline. */
 export function emuToPx(emu: number, scale = 1): number {
+  if (!Number.isFinite(emu) || !Number.isFinite(scale)) return 0
   return (emu / EMU_PER_PX_96) * scale
 }
 
 /** pt → px (for font sizes), 96dpi: 1pt = 96/72 px. */
 export function ptToPx(pt: number, scale = 1): number {
+  if (!Number.isFinite(pt) || !Number.isFinite(scale)) return 0
   return ((pt * 96) / 72) * scale
 }
 
 /** OOXML rot (1/60000 degree) → degrees. */
 export function rotToDeg(rot: number): number {
+  if (!Number.isFinite(rot)) return 0
   return rot / 60000
 }
 
 /** OOXML rot (1/60000 degree) → radians. */
 export function rotToRad(rot: number): number {
+  if (!Number.isFinite(rot)) return 0
   return (rotToDeg(rot) * Math.PI) / 180
 }
 
@@ -46,13 +50,23 @@ export interface Viewport {
 /**
  * Computes a proportional viewport from the slide size + target width.
  * Pass fitWidthPx: the canvas fills that width proportionally, height follows the slide ratio.
+ * Degenerate inputs (non-finite or <= 0) fall back to the default slide size
+ * 9144000x6858000 EMU per axis so the result stays finite.
  */
 export function makeViewport(size: SlideSize, fitWidthPx: number): Viewport {
-  const baseWidthPx = size.cx / EMU_PER_PX_96 // the slide's "natural" pixel width at 96dpi
-  const scale = fitWidthPx / baseWidthPx
+  // Default 10in x 7.5in slide in EMU.
+  const DEFAULT_CX_EMU = 9144000
+  const DEFAULT_CY_EMU = 6858000
+  const isPositiveFinite = (v: number): boolean => Number.isFinite(v) && v > 0
+  const safeCx = isPositiveFinite(size.cx) ? size.cx : DEFAULT_CX_EMU
+  const safeCy = isPositiveFinite(size.cy) ? size.cy : DEFAULT_CY_EMU
+  // Fall back to the natural width (scale 1) when the target width is degenerate.
+  const safeFitWidthPx = isPositiveFinite(fitWidthPx) ? fitWidthPx : safeCx / EMU_PER_PX_96
+  const baseWidthPx = safeCx / EMU_PER_PX_96 // the slide's "natural" pixel width at 96dpi
+  const scale = safeFitWidthPx / baseWidthPx
   return {
-    widthPx: fitWidthPx,
-    heightPx: (size.cy / EMU_PER_PX_96) * scale,
+    widthPx: safeFitWidthPx,
+    heightPx: (safeCy / EMU_PER_PX_96) * scale,
     scale,
   }
 }
@@ -107,10 +121,16 @@ export function placeTransform(
   const r = rectToPx(t.offset, vp)
   const sx = parent.scaleX ?? 1
   const sy = parent.scaleY ?? 1
-  const x = r.x * sx + parent.x
-  const y = r.y * sy + parent.y
-  const w = r.w * sx
-  const h = r.h * sy
+  // A child turned 90°/270° inside a non-uniformly scaled group: PowerPoint scales the
+  // rotated (visual) box, so the shape's own width follows the group's Y factor and its
+  // height the X factor (prod deck: 90° chevrons in a 1.04×/3.14× group otherwise triple
+  // in thickness and drift off their row)
+  const deg = ((rotToDeg(t.rot) % 180) + 180) % 180
+  const quarter = sx !== sy && Math.abs(deg - 90) < 0.5
+  const w = r.w * (quarter ? sy : sx)
+  const h = r.h * (quarter ? sx : sy)
+  const x = (r.x + r.w / 2) * sx + parent.x - w / 2
+  const y = (r.y + r.h / 2) * sy + parent.y - h / 2
   return {
     x,
     y,

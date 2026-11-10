@@ -86,6 +86,30 @@ const cancelStore = (): Record<string, (() => void) | undefined> =>
   window as unknown as Record<string, (() => void) | undefined>
 const activeCancel = () => cancelStore()[CANCEL_KEY]
 
+export interface DrawSizeEmu {
+  widthEmu: number
+  heightEmu: number
+}
+
+/** Size the gesture inserts: the caller's predefined size on a click, the drawn rect on a drag. */
+export function commitSizeEmu(
+  rect: DrawRectPx,
+  isClick: boolean,
+  zoom: number,
+  clickSize: DrawSizeEmu = { widthEmu: DEFAULT_SHAPE_EMU, heightEmu: DEFAULT_SHAPE_EMU },
+): DrawSizeEmu {
+  return isClick ? clickSize : drawRectToEmu(rect, zoom)
+}
+
+export interface ShapeDrawOptions {
+  /** Single-click insert size (default: Word's 1x1 inch shape). */
+  clickSize?: DrawSizeEmu
+  /** Ghost colors previewing what the gesture inserts (default: the Office-blue shape). */
+  ghost?: { fill: string; border: string }
+  /** Runs once the inserted node sits at its drawn spot (text boxes focus their editor here). */
+  onInserted?: (pos: number) => void
+}
+
 /**
  * Arm the crosshair draw mode on the editor. `insert` performs the actual
  * insertion (widthEmu/heightEmu size, optionally at an explicit doc position)
@@ -96,6 +120,7 @@ export function startShapeDrawMode(
   editor: Editor,
   prst: string,
   insert: (opts: { widthEmu: number; heightEmu: number; atPos?: number }) => number | null,
+  options?: ShapeDrawOptions,
 ): void {
   activeCancel()?.()
   const view = editor.view
@@ -125,9 +150,9 @@ export function startShapeDrawMode(
       ghost.style.zIndex = '9999'
       ghost.style.pointerEvents = 'none'
       if (!isLine) {
-        // Ghost of the default Office-blue shape the gesture will insert
-        ghost.style.background = 'rgba(68,114,196,0.45)'
-        ghost.style.border = '1px solid #2F5496'
+        // Ghost of the shape the gesture will insert (Office blue unless told otherwise)
+        ghost.style.background = options?.ghost?.fill ?? 'rgba(68,114,196,0.45)'
+        ghost.style.border = `1px solid ${options?.ghost?.border ?? '#2F5496'}`
       }
       ghost.style.boxSizing = 'border-box'
       document.body.appendChild(ghost)
@@ -159,9 +184,7 @@ export function startShapeDrawMode(
 
   const commit = (rect: DrawRectPx, isClick: boolean) => {
     const zoom = zoomOf()
-    const { widthEmu, heightEmu } = isClick
-      ? { widthEmu: DEFAULT_SHAPE_EMU, heightEmu: DEFAULT_SHAPE_EMU }
-      : drawRectToEmu(rect, zoom)
+    const { widthEmu, heightEmu } = commitSizeEmu(rect, isClick, zoom, options?.clickSize)
     // Anchor at the top-level block under the gesture origin (caret position otherwise)
     const found = view.posAtCoords({ left: rect.x, top: rect.y })
     let atPos: number | undefined
@@ -184,17 +207,21 @@ export function startShapeDrawMode(
         const at = box.getBoundingClientRect()
         const dx = (rect.x - at.left) / zoom
         const dy = (commitTargetY(rect, at.height, isStraightLineKind(prst)) - at.top) / zoom
-        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return
-        view.dispatch(
-          view.state.tr.setNodeMarkup(insertedAt, undefined, {
-            ...node.attrs,
-            imageWrap: node.attrs.imageWrap ?? 'square-left',
-            imageOffsetXEmu: Number(node.attrs.imageOffsetXEmu ?? 0) + Math.round(dx * EMU_PER_PX),
-            imageOffsetYEmu: Number(node.attrs.imageOffsetYEmu ?? 0) + Math.round(dy * EMU_PER_PX),
-            imagePosH: null,
-            imagePosV: null,
-          }),
-        )
+        if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) {
+          view.dispatch(
+            view.state.tr.setNodeMarkup(insertedAt, undefined, {
+              ...node.attrs,
+              imageWrap: node.attrs.imageWrap ?? 'square-left',
+              imageOffsetXEmu:
+                Number(node.attrs.imageOffsetXEmu ?? 0) + Math.round(dx * EMU_PER_PX),
+              imageOffsetYEmu:
+                Number(node.attrs.imageOffsetYEmu ?? 0) + Math.round(dy * EMU_PER_PX),
+              imagePosH: null,
+              imagePosV: null,
+            }),
+          )
+        }
+        options?.onInserted?.(insertedAt)
       }),
     )
   }

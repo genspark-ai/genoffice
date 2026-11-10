@@ -47,10 +47,11 @@ describe('collectDocFonts', () => {
 
 describe('checkMissingFonts', () => {
   it('reports a missing font with its first available substitute', () => {
-    stubCanvas(['STFangsong', 'STKaiti'])
-    // fresh module per stub: the 2d context is cached module-wide
-    expect(checkMissingFonts(['仿宋_GB2312'])).toEqual([
-      { name: '仿宋_GB2312', substitute: 'STFangsong' },
+    stubCanvas(['STSong', 'STKaiti'])
+    // fresh module per stub: the 2d context is cached module-wide; a Han name
+    // without a fontTable entry is SimSun class for Word
+    expect(checkMissingFonts(['\u4eff\u5b8b_GB2312'])).toEqual([
+      { name: '\u4eff\u5b8b_GB2312', substitute: 'STSong' },
     ])
   })
 
@@ -69,6 +70,28 @@ describe('checkMissingFonts', () => {
     stubCanvas(['Noto Sans CJK SC', 'GenOffice Songti SC', 'STSong'])
     expect(checkMissingFonts(['Noto Sans CJK SC'])).toEqual([
       { name: 'Noto Sans CJK SC', substitute: 'STSong' },
+    ])
+  })
+})
+
+describe('collectDocFonts', () => {
+  it('reports table cell runs, nested tables and the styles Latin slot', () => {
+    const cell = (font: string, nested?: object) => ({
+      paras: [''],
+      richParas: [{ runs: [{ text: 'x', fontAscii: font }] }],
+      ...(nested ? { nestedTables: [nested] } : {}),
+    })
+    const parsed = {
+      blocks: [
+        { type: 'table', table: { rows: [[cell('Cambria', { rows: [[cell('Georgia')]] })]] } },
+      ],
+      styles: new Map([['T', { display: { font: 'Noto Sans CJK SC', fontAscii: 'Calibri' } }]]),
+    } as never
+    expect(collectDocFonts(parsed).sort()).toEqual([
+      'Calibri',
+      'Cambria',
+      'Georgia',
+      'Noto Sans CJK SC',
     ])
   })
 })

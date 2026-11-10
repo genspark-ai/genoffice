@@ -10,6 +10,7 @@ import {
   shiftPinnedCells,
   type ClosureSheetInput,
 } from '../src/renderer/formula-closure'
+import { formulaKeepsCache, usesLocaleDependentFunction } from '../src/renderer/univer-sync'
 
 const sheet = (
   id: string,
@@ -27,6 +28,19 @@ describe('parseFormulaReferences', () => {
     expect(refs[1]?.token).toEqual({ startRow: 0, endRow: 0, startColumn: 2, endColumn: 2 })
     expect(refs[2]?.qualifier).toBe("'My Sheet'")
     expect(refs[3]?.qualifier).toBe('Data')
+  })
+
+  // The prod_040 incident shape: an Arabic sheet name, unquoted, qualifying
+  // absolute references. An ASCII-only qualifier pattern dropped these
+  // entirely, so the closure never loaded B30/B31 and NPV computed with a
+  // zero rate.
+  it('parses unquoted non-ASCII sheet qualifiers, absolute and relative', () => {
+    const zakat = parseFormulaReferences('IF(B18>0,B18*الافتراضات!$B$30,0)')
+    expect(zakat).toHaveLength(3)
+    expect(zakat[2]?.qualifier).toBe('الافتراضات')
+    expect(zakat[2]?.token).toEqual({ startRow: 29, endRow: 29, startColumn: 1, endColumn: 1 })
+    const relative = parseFormulaReferences('الافتراضات!B16+集計!C2:C4')
+    expect(relative.map((ref) => ref.qualifier)).toEqual(['الافتراضات', '集計'])
   })
 
   it('ignores references inside string literals and marks whole columns unbounded', () => {
@@ -51,23 +65,102 @@ describe('containsUnresolvedNames', () => {
     expect(containsUnresolvedNames('SUM(MyRange)')).toBe(true)
     expect(containsUnresolvedNames('Total*2')).toBe(true)
   })
+
+  it('flags non-ASCII defined names but not non-ASCII sheet qualifiers', () => {
+    expect(containsUnresolvedNames('IF(B18>0,B18*الافتراضات!$B$30,0)')).toBe(false)
+    expect(containsUnresolvedNames('NPV(الافتراضات!$B$31,C16:G16)+B18')).toBe(false)
+    expect(containsUnresolvedNames('合計*2')).toBe(true)
+  })
+
+  it('flags external-workbook references so their cached values survive (prod_009)', () => {
+    expect(containsUnresolvedNames('[1]PG_3!C13')).toBe(true)
+    expect(containsUnresolvedNames("'[1]F-PG_4'!C13")).toBe(true)
+    expect(containsUnresolvedNames('SUM([2]Data!$A$1:$A$9)')).toBe(true)
+    // A bracketed number inside a string literal is not a workbook index.
+    expect(containsUnresolvedNames('CONCAT("[1]",A1)')).toBe(false)
+  })
+
+  it('does not read error literals as defined names (genoffice#2024 sample)', () => {
+    expect(containsUnresolvedNames('((D2*#REF!)+(E2))/C2')).toBe(false)
+    expect(containsUnresolvedNames('#REF!')).toBe(false)
+    expect(containsUnresolvedNames('IF(A1>0,#N/A,#DIV/0!)+#VALUE!+#NAME?+#NUM!+#NULL!')).toBe(false)
+    expect(containsUnresolvedNames("'Sheet 1'!#REF!*2")).toBe(false)
+    expect(containsUnresolvedNames('Sheet1!#REF!*2')).toBe(false)
+    expect(containsUnresolvedNames('SUM(Data.2024!#REF!)')).toBe(false)
+    expect(containsUnresolvedNames("'Bob''s Sheet'!#REF!*2")).toBe(false)
+    expect(containsUnresolvedNames('#REF!*Total')).toBe(true)
+  })
+
+  it('flags path-qualified external-workbook references (issue 235)', () => {
+    expect(containsUnresolvedNames("'C:\\data\\[source.xlsx]Sheet1'!A1*2")).toBe(true)
+    expect(containsUnresolvedNames('[source.xlsm]Sheet1!A1')).toBe(true)
+    expect(containsUnresolvedNames("SUM('[Budget 2024.xlsx]Q1'!A1:A9)")).toBe(true)
+    expect(containsUnresolvedNames('INDEX(A1:A9,MATCH("[x.xlsx]",B1:B9,0))')).toBe(false)
+  })
+})
+
+describe('formulaKeepsCache', () => {
+  it('keeps the cached value for Google Sheets __xludf exports (prod_016)', () => {
+    // Recalculating turns the float-repr fallback literal (46235.0) into a
+    // string the numfmt layer skips; the cached <v> is the computed value.
+    expect(formulaKeepsCache('IFERROR(__xludf.DUMMYFUNCTION("""COMPUTED_VALUE"""),46235.0)')).toBe(
+      true,
+    )
+    expect(formulaKeepsCache('IFERROR(__xludf.DUMMYFUNCTION("X"),"✖")')).toBe(true)
+  })
+
+  it('recalculates ordinary formulas', () => {
+    expect(formulaKeepsCache('SUM(A1:A5)')).toBe(false)
+  })
+
+  it('keeps the cached value for locale-dependent functions (prod_039)', () => {
+    // ko file: cached hangul numerals + ₩; the engine would emit zh + $.
+    expect(formulaKeepsCache('="금액 "&NUMBERSTRING(B2,1)&"원 ("&DOLLAR(B2,0)&")"')).toBe(true)
+    expect(formulaKeepsCache('dollar(A1)')).toBe(true)
+    expect(usesLocaleDependentFunction('NUMBERSTRING (A1,2)')).toBe(true)
+  })
+
+  it('does not flag lookalike names or quoted text as locale-dependent', () => {
+    expect(usesLocaleDependentFunction('XDOLLAR(A1)')).toBe(false)
+    expect(usesLocaleDependentFunction('DOLLARS(A1)')).toBe(false)
+    expect(usesLocaleDependentFunction('CONCAT("DOLLAR(",A1)')).toBe(false)
+    expect(usesLocaleDependentFunction('SUM(A1:A5)')).toBe(false)
+  })
 })
 
 describe('computeFormulaClosure', () => {
   it('collects formulas plus referenced precedents across sheets', () => {
-    const result = computeFormulaClosure([
-      sheet('sheet-1', 'Data', [
-        { row: 0, column: 3, formula: 'SUM(A1:A3)' },
-        { row: 1, column: 3, formula: "'Other'!B2*2" },
-      ]),
-      sheet('sheet-2', 'Other', []),
-    ], 1000)
+    const result = computeFormulaClosure(
+      [
+        sheet('sheet-1', 'Data', [
+          { row: 0, column: 3, formula: 'SUM(A1:A3)' },
+          { row: 1, column: 3, formula: "'Other'!B2*2" },
+        ]),
+        sheet('sheet-2', 'Other', []),
+      ],
+      1000,
+    )
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.formulaCount).toBe(2)
     // 2 formulas + A1:A3 + Other!B2
     expect(result.totalCells).toBe(6)
     expect(result.cellsBySheet.get('sheet-2')?.has(cellKey(1, 1))).toBe(true)
+  })
+
+  it('loads precedents referenced through unquoted non-ASCII sheet names', () => {
+    const result = computeFormulaClosure(
+      [
+        sheet('sheet-2', 'الافتراضات', []),
+        sheet('sheet-3', 'قائمة الدخل', [
+          { row: 18, column: 1, formula: 'IF(B18>0,B18*الافتراضات!$B$30,0)' },
+        ]),
+      ],
+      1000,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.cellsBySheet.get('sheet-2')?.has(cellKey(29, 1))).toBe(true)
   })
 
   it('clamps whole-column references to the used range and bails over budget', () => {
@@ -124,7 +217,11 @@ describe('closureFetchRanges', () => {
 
 describe('shiftPinnedCells', () => {
   it('moves keys through inserts and drops removed positions', () => {
-    const pinned = new Map([['5:2', 'a'], ['10:2', 'b'], ['3:0', 'c']])
+    const pinned = new Map([
+      ['5:2', 'a'],
+      ['10:2', 'b'],
+      ['3:0', 'c'],
+    ])
     const inserted = shiftPinnedCells(pinned, { kind: 'insert-rows', index: 4, count: 2 })
     expect([...inserted.keys()].sort()).toEqual(['12:2', '3:0', '7:2'])
     const removed = shiftPinnedCells(pinned, { kind: 'remove-rows', index: 5, count: 1 })

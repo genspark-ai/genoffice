@@ -25,6 +25,8 @@ export function readThemeFonts(themeXml: string): ThemeFonts | null {
   const majorEastAsia = slot('a:majorFont', 'a:ea')
   const minorCs = slot('a:minorFont', 'a:cs')
   const majorCs = slot('a:majorFont', 'a:cs')
+  const majorScripts = scriptFontsOf(themeXml, 'a:majorFont')
+  const minorScripts = scriptFontsOf(themeXml, 'a:minorFont')
   return {
     major: major ?? '',
     minor: minor ?? '',
@@ -32,7 +34,20 @@ export function readThemeFonts(themeXml: string): ThemeFonts | null {
     ...(majorEastAsia ? { majorEastAsia } : {}),
     ...(minorCs ? { minorCs } : {}),
     ...(majorCs ? { majorCs } : {}),
+    ...(majorScripts ? { majorScripts } : {}),
+    ...(minorScripts ? { minorScripts } : {}),
   }
+}
+
+/** per-script faces of a font group (<a:font script="Hang" typeface="…"/>) */
+function scriptFontsOf(themeXml: string, tag: string): Record<string, string> | undefined {
+  const section = sectionOf(themeXml, tag)
+  if (!section) return undefined
+  const out: Record<string, string> = {}
+  for (const m of section.matchAll(/<a:font script="([^"]+)" typeface="([^"]+)"/g)) {
+    out[m[1]] = m[2]
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 function sectionOf(xml: string, tag: string): string | null {
@@ -112,10 +127,28 @@ const THEME_COLOR_SLOTS: Record<string, keyof ThemeColors> = {
 
 const SLOT_FALLBACK: Partial<Record<keyof ThemeColors, string>> = { dk1: '000000', lt1: 'FFFFFF' }
 
+/** built-in Office palette: what Word resolves theme colors against when a
+ *  document ships no word/theme/theme1.xml part */
+export const DEFAULT_THEME_COLORS: Readonly<ThemeColors> = {
+  dk1: '000000',
+  lt1: 'FFFFFF',
+  dk2: '44546A',
+  lt2: 'E7E6E6',
+  accent1: '4472C4',
+  accent2: 'ED7D31',
+  accent3: 'A5A5A5',
+  accent4: 'FFC000',
+  accent5: '5B9BD5',
+  accent6: '70AD47',
+  hlink: '0563C1',
+  folHlink: '954F72',
+}
+
 /**
  * Resolve a w:themeColor reference (+ optional w:themeTint / w:themeShade,
- * hex 00-FF) against the palette. sRGB per-channel approximation of Word's
- * tint/shade math — close enough for display; w:val stays authoritative on save.
+ * hex 00-FF) against the palette. Word scales HSL lightness (shade: L*s;
+ * tint: L*t + (1-t)), which reproduces its cached w:val/w:fill within 1/255;
+ * the cached value stays authoritative on save.
  */
 export function resolveThemeColor(
   themeColor: string,
@@ -126,17 +159,57 @@ export function resolveThemeColor(
   const slot = THEME_COLOR_SLOTS[themeColor]
   if (!slot) return null
   const base = (colors[slot] as string | undefined) ?? SLOT_FALLBACK[slot]
-  if (!base || !/^[0-9A-Fa-f]{6}$/.test(base)) return null
-  let rgb = [0, 2, 4].map((i) => parseInt(base.slice(i, i + 2), 16))
+  const baseTrimmed = (base ?? '').trim()
+  if (!baseTrimmed || !/^[0-9A-Fa-f]{6}$/.test(baseTrimmed)) return null
   const factorOf = (hex?: string) => {
     const v = hex ? parseInt(hex, 16) : NaN
     return Number.isFinite(v) ? Math.max(0, Math.min(255, v)) / 255 : null
   }
   const s = factorOf(shade)
-  if (s !== null) rgb = rgb.map((c) => c * s)
   const t = factorOf(tint)
-  if (t !== null) rgb = rgb.map((c) => c * t + 255 * (1 - t))
-  return rgb.map((c) => Math.round(c).toString(16).padStart(2, '0').toUpperCase()).join('')
+  if (s === null && t === null) return baseTrimmed.toUpperCase()
+  const [h, sat, l0] = rgbToHsl(
+    [0, 2, 4].map((i) => parseInt(baseTrimmed.slice(i, i + 2), 16) / 255),
+  )
+  let l = l0
+  if (s !== null) l *= s
+  if (t !== null) l = l * t + (1 - t)
+  return hslToRgb(h, sat, l)
+    .map((c) =>
+      Math.round(c * 255)
+        .toString(16)
+        .padStart(2, '0')
+        .toUpperCase(),
+    )
+    .join('')
+}
+
+function rgbToHsl([r, g, b]: number[]): [number, number, number] {
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const l = (max + min) / 2
+  const d = max - min
+  if (d === 0) return [0, 0, l]
+  const s = d / (1 - Math.abs(2 * l - 1))
+  let h: number
+  if (max === r) h = ((g - b) / d + 6) % 6
+  else if (max === g) h = (b - r) / d + 2
+  else h = (r - g) / d + 4
+  return [h / 6, s, l]
+}
+
+function hslToRgb(h: number, s: number, l: number): number[] {
+  if (s === 0) return [l, l, l]
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+  const p = 2 * l - q
+  const channel = (t0: number) => {
+    const t = ((t0 % 1) + 1) % 1
+    if (t < 1 / 6) return p + (q - p) * 6 * t
+    if (t < 1 / 2) return q
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
+    return p
+  }
+  return [channel(h + 1 / 3), channel(h), channel(h - 1 / 3)]
 }
 
 export function applyThemeColors(themeXml: string, colors: ThemeColors): string {
@@ -165,8 +238,8 @@ export function applyThemeColors(themeXml: string, colors: ThemeColors): string 
  * format scheme skeleton.
  */
 export function buildThemeXml(fonts: ThemeFonts, colors: ThemeColors): string {
-  const c = (tag: (typeof COLOR_TAGS)[number], fallback: string) =>
-    `<a:${tag}><a:srgbClr val="${colors[tag] ?? fallback}"/></a:${tag}>`
+  const c = (tag: (typeof COLOR_TAGS)[number]) =>
+    `<a:${tag}><a:srgbClr val="${colors[tag] ?? DEFAULT_THEME_COLORS[tag]}"/></a:${tag}>`
   const font = (tag: string, typeface: string) =>
     `<${tag}><a:latin typeface="${escapeXmlAttr(typeface)}"/>` +
     `<a:ea typeface="${escapeXmlAttr(fonts.eastAsia ?? '')}"/><a:cs typeface=""/></${tag}>`
@@ -177,16 +250,16 @@ export function buildThemeXml(fonts: ThemeFonts, colors: ThemeColors): string {
     `<a:clrScheme name="${escapeXmlAttr(colors.name ?? 'Office')}">` +
     '<a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1>' +
     '<a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>' +
-    c('dk2', '44546A') +
-    c('lt2', 'E7E6E6') +
-    c('accent1', '4472C4') +
-    c('accent2', 'ED7D31') +
-    c('accent3', 'A5A5A5') +
-    c('accent4', 'FFC000') +
-    c('accent5', '5B9BD5') +
-    c('accent6', '70AD47') +
-    '<a:hlink><a:srgbClr val="0563C1"/></a:hlink>' +
-    '<a:folHlink><a:srgbClr val="954F72"/></a:folHlink>' +
+    c('dk2') +
+    c('lt2') +
+    c('accent1') +
+    c('accent2') +
+    c('accent3') +
+    c('accent4') +
+    c('accent5') +
+    c('accent6') +
+    `<a:hlink><a:srgbClr val="${DEFAULT_THEME_COLORS.hlink}"/></a:hlink>` +
+    `<a:folHlink><a:srgbClr val="${DEFAULT_THEME_COLORS.folHlink}"/></a:folHlink>` +
     '</a:clrScheme>' +
     `<a:fontScheme name="Office">${font('a:majorFont', fonts.major)}${font('a:minorFont', fonts.minor)}</a:fontScheme>` +
     '<a:fmtScheme name="Office">' +

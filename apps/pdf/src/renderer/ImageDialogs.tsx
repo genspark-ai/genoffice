@@ -9,14 +9,13 @@
  * pixels plus the kept-region fractions so App can shrink the page footprint to match.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactElement } from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactElement, ReactNode } from 'react'
 import { removeBackground, sampleBackgroundColors, type PixelImage, type RGB } from './cutout'
-import type { CropFractions } from './image-bake'
+import { DEFAULT_CUTOUT_TOLERANCE, type CropFractions } from './image-bake'
 import type { StringKey, TFunc } from './i18n/locale'
 
 /** Longest side of the preview canvas (px) */
 const PREVIEW_MAX = 520
-const DEFAULT_TOLERANCE = 30
 const CROP_HANDLE_GUTTER = 6
 
 const fitPreview = (
@@ -40,6 +39,21 @@ const CHECKERBOARD: CSSProperties = {
 const toDataUrl = (b64: string): string => `data:image/png;base64,${b64}`
 const toBase64 = (dataUrl: string): string => dataUrl.split(',')[1] ?? ''
 
+/** Kept region of a decoded image as a base64 PNG (throws on canvas failure) */
+export function cropImagePng(img: HTMLImageElement, crop: CropFractions): string {
+  const w = img.naturalWidth
+  const h = img.naturalHeight
+  const sx = Math.round(crop.l * w)
+  const sy = Math.round(crop.t * h)
+  const sw = Math.max(1, Math.round((crop.r - crop.l) * w))
+  const sh = Math.max(1, Math.round((crop.b - crop.t) * h))
+  const c = document.createElement('canvas')
+  c.width = sw
+  c.height = sh
+  c.getContext('2d')!.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
+  return toBase64(c.toDataURL('image/png'))
+}
+
 /* ================= Remove background ================= */
 
 export function CutoutDialog({
@@ -55,7 +69,7 @@ export function CutoutDialog({
   onApply: (png: string) => void
   onCancel: () => void
 }): ReactElement {
-  const [tolerance, setTolerance] = useState(DEFAULT_TOLERANCE)
+  const [tolerance, setTolerance] = useState(DEFAULT_CUTOUT_TOLERANCE)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<StringKey | null>(null)
   const [removedPct, setRemovedPct] = useState(0)
@@ -69,6 +83,20 @@ export function CutoutDialog({
   /** Background representative colors (sampled once at source resolution, shared by preview/apply) */
   const bgColorsRef = useRef<RGB[]>([])
   const rafRef = useRef<number | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const previouslyFocused = useRef<HTMLElement | null>(null)
+
+  // Focus the first field on mount; return focus to the opener on unmount
+  useEffect(() => {
+    previouslyFocused.current = document.activeElement as HTMLElement | null
+    const root = dialogRef.current
+    if (root && !root.contains(document.activeElement)) {
+      root.querySelector<HTMLElement>('input, textarea, select, button')?.focus()
+    }
+    return () => {
+      previouslyFocused.current?.focus?.()
+    }
+  }, [])
 
   const renderPreview = useCallback((tol: number) => {
     const pv = previewRef.current
@@ -114,7 +142,7 @@ export function CutoutDialog({
         canvas.height = preview.height
       }
       setLoaded(true)
-      renderPreview(DEFAULT_TOLERANCE)
+      renderPreview(DEFAULT_CUTOUT_TOLERANCE)
     }
     img.onerror = () => {
       if (!cancelled) setError('imageLoadFail')
@@ -174,7 +202,11 @@ export function CutoutDialog({
   return (
     <div className="pdf-modal-mask" onClick={onCancel}>
       <div
+        ref={dialogRef}
         className="pdf-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('imageCutout')}
         style={{ maxWidth: PREVIEW_MAX + 48 }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -193,6 +225,7 @@ export function CutoutDialog({
         >
           {error ? (
             <span
+              role="alert"
               style={{
                 color: 'var(--pdf-error)',
                 background: 'var(--surface)',
@@ -262,6 +295,8 @@ export function CropDialog({
   image,
   onApply,
   onCancel,
+  title,
+  extraFooter,
 }: {
   t: TFunc
   /** Source pixels (base64 PNG, no data: prefix) */
@@ -269,6 +304,10 @@ export function CropDialog({
   /** Apply: cropped PNG (base64) + kept-region fractions (for the footprint shrink) */
   onApply: (png: string, crop: CropFractions) => void
   onCancel: () => void
+  /** Dialog title; defaults to the image-crop label */
+  title?: string
+  /** Extra controls rendered between the hint and the action buttons (e.g. a scope checkbox) */
+  extraFooter?: ReactNode
 }): ReactElement {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<StringKey | null>(null)
@@ -282,6 +321,20 @@ export function CropDialog({
     startY: number
     start: CropFractions
   } | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const previouslyFocused = useRef<HTMLElement | null>(null)
+
+  // Focus the first field on mount; return focus to the opener on unmount
+  useEffect(() => {
+    previouslyFocused.current = document.activeElement as HTMLElement | null
+    const root = dialogRef.current
+    if (root && !root.contains(document.activeElement)) {
+      root.querySelector<HTMLElement>('input, textarea, select, button')?.focus()
+    }
+    return () => {
+      previouslyFocused.current?.focus?.()
+    }
+  }, [])
 
   const updateView = useCallback(() => {
     const img = imgRef.current
@@ -321,18 +374,8 @@ export function CropDialog({
   const apply = useCallback(() => {
     const img = imgRef.current
     if (!img) return
-    const w = img.naturalWidth
-    const h = img.naturalHeight
-    const sx = Math.round(crop.l * w)
-    const sy = Math.round(crop.t * h)
-    const sw = Math.max(1, Math.round((crop.r - crop.l) * w))
-    const sh = Math.max(1, Math.round((crop.b - crop.t) * h))
     try {
-      const c = document.createElement('canvas')
-      c.width = sw
-      c.height = sh
-      c.getContext('2d')!.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
-      onApply(toBase64(c.toDataURL('image/png')), crop)
+      onApply(cropImagePng(img, crop), crop)
     } catch {
       setError('imageProcessFail')
     }
@@ -438,7 +481,11 @@ export function CropDialog({
   return (
     <div className="pdf-modal-mask" onClick={onCancel}>
       <div
+        ref={dialogRef}
         className="pdf-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('imageCrop')}
         style={{
           width: PREVIEW_MAX + 48 + CROP_HANDLE_GUTTER * 2,
           maxWidth: 'calc(100vw - 32px)',
@@ -448,7 +495,7 @@ export function CropDialog({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="pdf-modal-title">{t('imageCrop')}</div>
+        <div className="pdf-modal-title">{title ?? t('imageCrop')}</div>
         <div
           style={{
             ...CHECKERBOARD,
@@ -464,6 +511,7 @@ export function CropDialog({
         >
           {error ? (
             <span
+              role="alert"
               style={{
                 color: 'var(--pdf-error)',
                 background: 'var(--surface)',
@@ -553,6 +601,7 @@ export function CropDialog({
         <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 8 }}>
           {t('imageCropHint')}
         </div>
+        {extraFooter}
         <div className="pdf-modal-actions">
           <button className="pdf-modal-btn" onClick={onCancel}>
             {t('cancel')}

@@ -110,6 +110,34 @@ describe('parseDocx', () => {
     expect(visible[3].runs).toEqual([{ text: '有批注', commentIds: ['0'] }])
   })
 
+  it('keeps the picture of a text-less section-break paragraph (full-bleed cover)', async () => {
+    const { buildDocx } = await import('./helpers/build-docx')
+    const drawing =
+      '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+      '<wp:extent cx="7559040" cy="10692130"/><wp:docPr id="1" name="Cover"/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic><pic:nvPicPr><pic:cNvPr id="1" name="Cover"/><pic:cNvPicPr/></pic:nvPicPr>' +
+      '<pic:blipFill><a:blip r:embed="rId10"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+      '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="7559040" cy="10692130"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:inline></w:drawing>'
+    const bytes = await buildDocx({
+      withImage: true,
+      bodyXml:
+        '<w:p><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/>' +
+        '<w:pgMar w:top="0" w:right="0" w:bottom="0" w:left="0"/></w:sectPr></w:pPr>' +
+        `<w:r>${drawing}</w:r></w:p>` +
+        '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    const cover = doc.blocks.filter((b) => !b.hidden)[0]
+    expect(cover.type).toBe('paragraph')
+    expect(cover.runs?.[0].image?.dataUrl).toMatch(/^data:image\/png;base64,/)
+    expect(cover.runs?.[0].image?.widthPx).toBe(793.6)
+    // the section break rides along in rawPPr and survives a regeneration
+    expect(cover.rawPPr).toContain('<w:sectPr>')
+  })
+
   it('detects headings by effective outline level, not only Heading1-style paragraphs', async () => {
     const { buildDocx } = await import('./helpers/build-docx')
     const p = (pPr: string, text: string) =>
@@ -120,6 +148,9 @@ describe('parseDocx', () => {
         '<w:style w:type="paragraph" w:styleId="MySub"><w:name w:val="My Sub"/><w:basedOn w:val="Heading2"/></w:style>' +
         // Word's TOCHeading pattern: basedOn Heading1 but outlineLvl 9 = body text
         '<w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Heading1"/>' +
+        '<w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>' +
+        // outline-off root style: no basedOn to resolve, the flag must still be set
+        '<w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="caption"/>' +
         '<w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>',
       bodyXml: [
         p('<w:pStyle w:val="Heading1"/>', 'h1 via built-in style'),
@@ -145,6 +176,49 @@ describe('parseDocx', () => {
       ['paragraph', undefined],
       ['paragraph', undefined],
     ])
+    expect(doc.styles.get('TOCHeading')).toMatchObject({ headingOutlineOff: true })
+    expect(doc.styles.get('TOCHeading')?.headingLevel).toBeUndefined()
+    expect(doc.styles.get('Caption')).toMatchObject({ headingOutlineOff: true })
+    expect(doc.styles.get('Caption')?.headingLevel).toBeUndefined()
+    expect(doc.styles.get('MySub')).toMatchObject({ headingLevel: 2, headingLevelInherited: true })
+  })
+})
+
+describe('style-level pageBreakBefore', () => {
+  it('parses pageBreakBefore into style display, inherited via basedOn, without touching paragraph format', async () => {
+    const bytes = await buildDocx({
+      extraStylesXml:
+        '<w:style w:type="paragraph" w:styleId="ChapterTitle"><w:name w:val="Chapter Title"/>' +
+        '<w:pPr><w:pageBreakBefore/></w:pPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="ChapterSub"><w:name w:val="Chapter Sub"/>' +
+        '<w:basedOn w:val="ChapterTitle"/></w:style>',
+      bodyXml:
+        '<w:p><w:pPr><w:pStyle w:val="ChapterTitle"/></w:pPr><w:r><w:t>ch</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    expect(doc.styles.get('ChapterTitle')?.display?.pageBreakBefore).toBe(true)
+    expect(doc.styles.get('ChapterSub')?.display?.pageBreakBefore).toBe(true)
+    expect(doc.styles.get('Normal')?.display?.pageBreakBefore).toBeUndefined()
+    // style-level value must not leak into paragraph format (would be saved as redundant pPr)
+    expect(doc.blocks[0].format?.pageBreakBefore).toBeUndefined()
+  })
+
+  it('an explicit w:val="0" overrides an inherited true (fdo#45183)', async () => {
+    const bytes = await buildDocx({
+      extraStylesXml:
+        '<w:style w:type="paragraph" w:styleId="ChapterTitle"><w:name w:val="Chapter Title"/>' +
+        '<w:pPr><w:pageBreakBefore/></w:pPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="NoBreak"><w:name w:val="No Break"/>' +
+        '<w:basedOn w:val="ChapterTitle"/><w:pPr><w:pageBreakBefore w:val="0"/></w:pPr></w:style>',
+      bodyXml:
+        '<w:p><w:pPr><w:pStyle w:val="ChapterTitle"/><w:pageBreakBefore w:val="0"/></w:pPr>' +
+        '<w:r><w:t>off</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    expect(doc.styles.get('NoBreak')?.display?.pageBreakBefore).toBe(false)
+    // direct-format off must survive so it can veto the style chain's true
+    expect(doc.blocks[0].format?.pageBreakBefore).toBe(false)
   })
 })
 
@@ -161,5 +235,126 @@ describe('empty paragraph line size', () => {
     expect(doc.blocks[1].runs).toEqual([])
     expect(doc.blocks[1].format?.emptyRunSizeHalfPoints).toBe(2)
     expect(doc.blocks[2].format?.emptyRunSizeHalfPoints).toBe(16)
+  })
+
+  it('records the paragraph-mark w:sz of a list item (Word sizes the marker from it)', async () => {
+    const numberingXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/>' +
+      '<w:numFmt w:val="bullet"/><w:lvlText w:val="\u2022"/></w:lvl></w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+    const numPr = '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>'
+    const mark = '<w:rPr><w:sz w:val="22"/></w:rPr>'
+    const run = '<w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>text</w:t></w:r>'
+    const bodyXml =
+      `<w:p><w:pPr>${numPr}${mark}</w:pPr>${run}</w:p>` +
+      `<w:p><w:pPr>${numPr}</w:pPr>${run}</w:p>` +
+      `<w:p><w:pPr>${mark}</w:pPr>${run}</w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, numberingXml }))
+    expect(doc.blocks[0].format?.markSizeHalfPoints).toBe(22)
+    expect(doc.blocks[0].format?.emptyRunSizeHalfPoints).toBeUndefined()
+    expect(doc.blocks[1].format?.markSizeHalfPoints).toBeUndefined()
+    // plain paragraphs do not carry it
+    expect(doc.blocks[2].format?.markSizeHalfPoints).toBeUndefined()
+  })
+
+  // Word probe 2026-09-11: a space-only paragraph lays out like an empty one,
+  // sized by the paragraph mark; the space run's own size never counts
+  it('a space-only paragraph takes the mark rPr only, never the space run', async () => {
+    const space = '<w:r><w:rPr><w:sz w:val="8"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r>'
+    const bodyXml =
+      `<w:p>${space}</w:p>` +
+      `<w:p><w:pPr><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="8"/></w:rPr></w:pPr>${space}</w:p>` +
+      '<w:p><w:r><w:rPr><w:sz w:val="8"/></w:rPr><w:t xml:space="preserve"> x</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[0]?.runs?.map((r) => r.text)).toEqual([' '])
+    expect(doc.blocks[0].format?.emptyRunSizeHalfPoints).toBeUndefined()
+    expect(doc.blocks[0].format?.emptyRunFontFamily).toBeUndefined()
+    expect(doc.blocks[1].format?.emptyRunSizeHalfPoints).toBe(8)
+    expect(doc.blocks[1].format?.emptyRunFontFamily).toBe('Arial')
+    expect(doc.blocks[2].format?.emptyRunSizeHalfPoints).toBeUndefined()
+  })
+
+  it('a space-only textbox paragraph records its mark w:sz too', async () => {
+    const space = '<w:r><w:rPr><w:sz w:val="8"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r>'
+    const txbx =
+      '<w:p><w:r><w:pict><v:shape id="s1" style="width:100pt;height:40pt"><v:textbox><w:txbxContent>' +
+      `<w:p><w:pPr><w:rPr><w:sz w:val="8"/></w:rPr></w:pPr>${space}</w:p><w:p>${space}</w:p>` +
+      '</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: txbx }))
+    const boxes = doc.blocks.flatMap((b) => b.textboxes ?? [])
+    expect(boxes.length).toBe(1)
+    expect(boxes[0]?.paras[0]?.emptyRunSizeHalfPoints).toBe(8)
+    expect(boxes[0]?.paras[1]?.emptyRunSizeHalfPoints).toBeUndefined()
+  })
+
+  it("a break-only paragraph takes the mark face and size, else the break run's", async () => {
+    const br = '<w:br w:type="page"/>'
+    const bodyXml =
+      `<w:p><w:pPr><w:rPr><w:rFonts w:ascii="Tahoma" w:hAnsi="Tahoma"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Tahoma" w:hAnsi="Tahoma"/></w:rPr>${br}</w:r></w:p>` +
+      `<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial"/><w:sz w:val="24"/></w:rPr>${br}</w:r></w:p>` +
+      `<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial"/></w:rPr><w:t>text</w:t>${br}</w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[0].format?.emptyRunFontFamily).toBe('Tahoma')
+    expect(doc.blocks[0].format?.emptyRunSizeHalfPoints).toBeUndefined()
+    expect(doc.blocks[1].format?.emptyRunFontFamily).toBe('Arial')
+    expect(doc.blocks[1].format?.emptyRunSizeHalfPoints).toBe(24)
+    expect(doc.blocks[2].format?.emptyRunFontFamily).toBeUndefined()
+    expect(doc.blocks[2].format?.emptyRunSizeHalfPoints).toBeUndefined()
+  })
+
+  it('records the w:rFonts that faces a run-less paragraph', async () => {
+    const bodyXml =
+      '<w:p><w:r><w:t>before</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/></w:rPr></w:pPr></w:p>' +
+      // no pPr rPr: falls back to the (dropped) empty run
+      '<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial"/></w:rPr><w:t></w:t></w:r></w:p>' +
+      // East Asian slot only: the inherited Latin face keeps sizing the line
+      // (Word probe 2026-09-05: a DengXian-only mark lays a 12pt line at the
+      // ascii face's 14.6pt, not DengXian's 16.4pt)
+      '<w:p><w:pPr><w:rPr><w:rFonts w:eastAsia="DengXian"/><w:lang w:eastAsia="zh-CN"/></w:rPr></w:pPr></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[0].format?.emptyRunFontFamily).toBeUndefined()
+    expect(doc.blocks[1].format?.emptyRunFontFamily).toBe('Times New Roman')
+    expect(doc.blocks[2].format?.emptyRunFontFamily).toBe('Arial')
+    expect(doc.blocks[3].format?.emptyRunFontFamily).toBeUndefined()
+  })
+})
+
+describe('paragraph-mark w:vanish', () => {
+  it('collapses an empty paragraph with a hidden mark to an invisible marker', async () => {
+    const bodyXml =
+      '<w:p><w:r><w:t>before</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:ind w:left="120"/><w:rPr><w:vanish/></w:rPr></w:pPr></w:p>' +
+      '<w:p><w:r><w:t>after</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[1].invisibleMarker).toBe(true)
+    expect(doc.blocks[1].originalXml).toContain('w:vanish')
+  })
+
+  it('keeps a paragraph with visible runs even when its mark is hidden', async () => {
+    const bodyXml =
+      '<w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:t>shown</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[0].invisibleMarker).toBeUndefined()
+    expect(doc.blocks[0].runs?.[0]?.text).toBe('shown')
+  })
+
+  it('keeps a text-less paragraph whose run carries a page break or note mark', async () => {
+    const bodyXml =
+      '<w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>' +
+      '<w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:footnoteReference w:id="2"/></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[0].invisibleMarker).toBeUndefined()
+    expect(doc.blocks[1].invisibleMarker).toBeUndefined()
+  })
+
+  it('still collapses when only pPr tab stops are present', async () => {
+    const bodyXml =
+      '<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs>' +
+      '<w:rPr><w:vanish/></w:rPr></w:pPr></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[0].invisibleMarker).toBe(true)
   })
 })

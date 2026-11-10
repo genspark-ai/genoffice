@@ -1,0 +1,57 @@
+{
+  "id": "marker-tab-no-hanging",
+  "title": "Numbering marker without a hanging area: the tab runs to the next default 720-twip stop from the text-column edge, the 0 stop included",
+  "section": "word-truths.md#L112",
+  "probe_date": "2026-09-06",
+  "source": "probe (PR #1408): level left=1032 hanging=360 in cells and body, compat 15, measured at 96 dpi: paragraph left=720 firstLine=0 puts the marker at 720 and the text at the next default stop; a marker ending before the edge tabs to 0",
+  "cases": [
+    {
+      "kind": "listMarkerStartTw",
+      "own": 0,
+      "level": {
+        "indentLeft": 1032,
+        "hanging": 360
+      },
+      "left": 720,
+      "expect": 720,
+      "note": "paragraph firstLine=0 replaces the level hanging: marker at 720, not 360"
+    },
+    {
+      "kind": "listMarkerStartTw",
+      "own": null,
+      "level": {
+        "indentLeft": 1032,
+        "hanging": 360
+      },
+      "left": 1032,
+      "expect": 672,
+      "note": "level alone: marker at left - hanging"
+    },
+    {
+      "kind": "markerTab",
+      "args": [720, 160, 720, 720, []],
+      "expect": 720,
+      "note": "marker 720-880 with the text indent at 720: tab to the 1440 default stop (box 720 wide)"
+    },
+    {
+      "kind": "markerTab",
+      "args": [-200, 150, -200, 720, []],
+      "expect": 200,
+      "note": "marker ending before the column edge tabs to the 0 stop"
+    },
+    {
+      "kind": "markerTab",
+      "args": [672, 160, 1032, 720, []],
+      "expect": null,
+      "note": "marker inside the hanging area: text at the hanging indent"
+    },
+    {
+      "kind": "markerTab",
+      "args": [200, 160, 200, 0, []],
+      "expect": 160,
+      "note": "w:defaultTabStop 0: the text follows the marker directly"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

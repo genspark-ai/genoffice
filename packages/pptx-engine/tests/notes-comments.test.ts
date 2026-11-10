@@ -12,11 +12,17 @@ import {
   savePptx,
   setSlideNotes,
 } from '../src/index'
+import { relsPathFor, resolveTarget } from '../src/zip'
+import { unescapeXml } from '../src/notes'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
 
 describe('speaker notes', () => {
+  it('preserves invalid numeric references in imported note text', () => {
+    expect(unescapeXml('a&#x110000;b&#55296;c&#x1F600;')).toBe('a&#x110000;b&#55296;c😀')
+  })
+
   it('creates notesSlide (and notesMaster) on a blank deck and survives save → reopen', async () => {
     const opened = await openPptx(await createBlankPptx())
     expect(getSlideNotes(opened.archive, opened.deck.slides[0]!.path)).toBe('')
@@ -99,5 +105,26 @@ describe('slide comments', () => {
     expect(
       getSlideComments(reopened.archive, reopened.deck.slides[1]!.path).map((c) => c.text),
     ).toEqual(['second slide'])
+  })
+
+  it('removes the empty comment part, slide relationship, and override after the last delete', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const comment = addSlideComment(opened, 0, { author: 'Carol', text: 'Remove me' })!
+    const relationship = [...opened.archive.readRels(slide.path).values()].find((rel) =>
+      rel.type.endsWith('/comments'),
+    )!
+    const partPath = resolveTarget(slide.path, relationship.target)
+
+    expect(opened.archive.entries.has(partPath)).toBe(true)
+    expect(deleteSlideComment(opened, 0, comment)).toBe(true)
+    expect(opened.archive.entries.has(partPath)).toBe(false)
+    expect(opened.archive.readText(relsPathFor(slide.path))).not.toContain(
+      `Id="${relationship.id}"`,
+    )
+    expect(opened.archive.readText('[Content_Types].xml')).not.toContain(`PartName="/${partPath}"`)
+
+    const reopened = await openPptx(await savePptx(opened))
+    expect(getSlideComments(reopened.archive, reopened.deck.slides[0]!.path)).toEqual([])
   })
 })

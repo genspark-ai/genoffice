@@ -1,0 +1,35 @@
+{
+  "id": "keepnext-table-head-chain",
+  "title": "compat 15 never leaves a tblHeader block alone at a page bottom; a keepNext heading demands the header plus the keepNext row chain",
+  "section": "word-truths.md#L215",
+  "probe_date": "2026-09-17",
+  "class": "pure",
+  "source": "row keep policy probe 2026-09-17 (22 cases x compat 14/15) and prod corpus 20261021 sample 006 (PR 2561); heights in px are synthetic model inputs",
+  "cases": [
+    {
+      "kind": "format",
+      "block": 5,
+      "expect": {
+        "keepNext": true
+      }
+    },
+    {
+      "kind": "flags",
+      "expect": {
+        "compatibilityMode": 15
+      }
+    },
+    {
+      "kind": "tableOpenSlices",
+      "heading": 5,
+      "table": 6,
+      "fillerPx": 100,
+      "headingPx": 20,
+      "rowPx": 20,
+      "contentPx": 200,
+      "expect": [0, 100],
+      "note": "header + 3 keepNext rows + anchor row = 100 do not fit the 80 left: heading turns with the table"
+    }
+  ],
+  "docx": "probe.docx"
+}

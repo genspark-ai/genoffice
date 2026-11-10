@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import JSZip from 'jszip'
-import { openPptx, savePptx, reassembleSlideXml } from '../src/index'
+import { openPptx, savePptx, reassembleSlideXml, generateParagraphXml } from '../src/index'
 import { parseSlide } from '../src/parse'
 import { tableRowGridCols } from '../src/table-grid'
-import { parsePlaceholderMap, parseMasterTextStyles } from '../src/placeholder'
+import { parsePlaceholderMap, parseMasterTextStyles, parseLstStyleLevels } from '../src/placeholder'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
@@ -104,6 +104,139 @@ describe('fill / color-mod / background parsing', () => {
       { pos: 1, color: '#00FF00' },
     ])
     expect(el.fill.angle).toBe(2700000)
+    expect(el.fill.scaled).toBeUndefined()
+  })
+
+  it('gradient fill: a:lin scaled="1" surfaces the aspect-stretch flag', () => {
+    const sp =
+      '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"/><a:gradFill><a:gsLst>' +
+      '<a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs>' +
+      '<a:gs pos="100000"><a:srgbClr val="00FF00"/></a:gs>' +
+      '</a:gsLst><a:lin ang="2700000" scaled="1"/></a:gradFill></p:spPr></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    })
+    const el = slide.elements[0] as any
+    expect(el.fill.type).toBe('gradient')
+    expect(el.fill.scaled).toBe(true)
+  })
+
+  it('txBox="1" with prstGeom rect is a text box, not a shape', () => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="2" name="TextBox 1"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/>' +
+      '<a:p><a:r><a:rPr lang="en-US"/><a:t>hi</a:t></a:r></a:p></p:txBody></p:sp>'
+    const el = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    }).elements[0] as any
+    expect(el.type).toBe('text')
+    expect(el.txBox).toBe(true)
+    expect(el.presetGeometry).toBe('rect')
+  })
+
+  it('txBox="1" on a non-rect geometry stays a shape', () => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Oval 1"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="ellipse"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/>' +
+      '<a:p><a:r><a:rPr lang="en-US"/><a:t>hi</a:t></a:r></a:p></p:txBody></p:sp>'
+    const el = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    }).elements[0] as any
+    expect(el.type).toBe('shape')
+  })
+
+  it('rect geometry without txBox is a shape', () => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Rectangle 1"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/>' +
+      '<a:p><a:r><a:rPr lang="en-US"/><a:t>hi</a:t></a:r></a:p></p:txBody></p:sp>'
+    const el = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    }).elements[0] as any
+    expect(el.type).toBe('shape')
+  })
+
+  it('gradFill with no a:lin/a:path defaults to a vertical ramp (PowerPoint-measured)', () => {
+    const sp =
+      '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"/><a:gradFill><a:gsLst>' +
+      '<a:gs pos="0"><a:srgbClr val="FFC000"/></a:gs>' +
+      '<a:gs pos="100000"><a:srgbClr val="FFFFD5"/></a:gs>' +
+      '</a:gsLst></a:gradFill></p:spPr></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    })
+    const el = slide.elements[0] as any
+    expect(el.fill.type).toBe('gradient')
+    expect(el.fill.angle).toBe(5400000)
+    expect(el.fill.path).toBeUndefined()
+  })
+
+  it('an explicit a:lin without ang keeps the schema default 0', () => {
+    const sp =
+      '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"/><a:gradFill><a:gsLst>' +
+      '<a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs>' +
+      '<a:gs pos="100000"><a:srgbClr val="00FF00"/></a:gs>' +
+      '</a:gsLst><a:lin scaled="1"/></a:gradFill></p:spPr></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    })
+    const el = slide.elements[0] as any
+    expect(el.fill.angle).toBe(0)
+  })
+
+  it('circle path: percent-suffixed fillToRect/tileRect (Google Slides corner radial) parse as fractions', () => {
+    const sp =
+      '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"/><a:gradFill><a:gsLst>' +
+      '<a:gs pos="0"><a:srgbClr val="5DE0E6"/></a:gs>' +
+      '<a:gs pos="100000"><a:srgbClr val="004AAD"/></a:gs>' +
+      '</a:gsLst><a:path path="circle"><a:fillToRect b="100%" r="100%"/></a:path>' +
+      '<a:tileRect l="-100%" t="-100%"/></a:gradFill></p:spPr></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    })
+    const el = slide.elements[0] as any
+    expect(el.fill.path).toBe('circle')
+    expect(el.fill.fillTo).toEqual({ l: 0, t: 0, r: 1, b: 1 })
+    expect(el.fill.tileRect).toEqual({ l: -1, t: -1, r: 0, b: 0 })
+  })
+
+  it('circle path: 1/1000 % fillToRect and an empty tileRect keep the centered shape', () => {
+    const sp =
+      '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"/><a:gradFill><a:gsLst>' +
+      '<a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs>' +
+      '<a:gs pos="100000"><a:srgbClr val="00FF00"/></a:gs>' +
+      '</a:gsLst><a:path path="circle"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path>' +
+      '<a:tileRect/></a:gradFill></p:spPr></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    })
+    const el = slide.elements[0] as any
+    expect(el.fill.fillTo).toEqual({ l: 0.5, t: 0.5, r: 0.5, b: 0.5 })
+    expect(el.fill.tileRect).toBeUndefined()
   })
 
   it('themed schemeClr with lumMod/lumOff modifier', () => {
@@ -149,6 +282,37 @@ describe('fill / color-mod / background parsing', () => {
     expect(el.fill).toEqual({ type: 'image', mediaRef: 'ppt/media/image1.png', mode: 'stretch' })
   })
 
+  it('blip duotone → [dark, light] colors on the image fill (tdf123684 theme textures)', () => {
+    const sp =
+      '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="10" cy="10"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"/><a:blipFill><a:blip r:embed="rId5">' +
+      '<a:duotone><a:schemeClr val="accent1"><a:shade val="50000"/></a:schemeClr>' +
+      '<a:schemeClr val="lt1"/></a:duotone>' +
+      '</a:blip></a:blipFill></p:spPr></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme, mediaRels: new Map([['rId5', 'ppt/media/t.png']]) },
+    })
+    // accent1 #0000FF shade 50% (gamma-corrected, matching PowerPoint) → #0000BA
+    expect((slide.elements[0] as any).fill.duotone).toEqual(['#0000BA', '#FFFFFF'])
+  })
+
+  it('duotone with mixed color tags keeps dark endpoint first (standard black + accent)', () => {
+    const sp =
+      '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="10" cy="10"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"/><a:blipFill><a:blip r:embed="rId5">' +
+      '<a:duotone><a:prstClr val="black"/><a:schemeClr val="accent1"/></a:duotone>' +
+      '</a:blip></a:blipFill></p:spPr></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme, mediaRels: new Map([['rId5', 'ppt/media/t.png']]) },
+    })
+    // The parser iterates schemeClr before prstClr; luminance ordering restores black first
+    expect((slide.elements[0] as any).fill.duotone).toEqual(['#000000', '#0000FF'])
+  })
+
   it('slide <p:bg> solid background', () => {
     const bg = '<p:bg><p:bgPr><a:solidFill><a:srgbClr val="112233"/></a:solidFill></p:bgPr></p:bg>'
     const slide = parseSlide({
@@ -157,6 +321,94 @@ describe('fill / color-mod / background parsing', () => {
       ctx: { theme },
     })
     expect(slide.background).toEqual({ type: 'solid', color: '#112233' })
+  })
+
+  it('placeholder inherits layout spPr fill; master noFill stops the fallback (bnc904423)', () => {
+    const layoutXml =
+      '<p:sldLayout xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><p:nvGrpSpPr/><p:grpSpPr/>' +
+      '<p:sp><p:nvSpPr><p:cNvPr id="2"/><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>' +
+      '<p:spPr><a:solidFill><a:srgbClr val="00CC99"/></a:solidFill></p:spPr></p:sp>' +
+      '</p:spTree></p:cSld></p:sldLayout>'
+    const masterXml =
+      '<p:sldMaster xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><p:nvGrpSpPr/><p:grpSpPr/>' +
+      '<p:sp><p:nvSpPr><p:cNvPr id="2"/><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>' +
+      '<p:spPr><a:noFill/></p:spPr></p:sp>' +
+      '<p:sp><p:nvSpPr><p:cNvPr id="3"/><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>' +
+      '<p:spPr><a:solidFill><a:srgbClr val="123456"/></a:solidFill></p:spPr></p:sp>' +
+      '</p:spTree></p:cSld></p:sldMaster>'
+    const title =
+      '<p:sp><p:nvSpPr><p:cNvPr id="2"/><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr/></p:sp>'
+    const body =
+      '<p:sp><p:nvSpPr><p:cNvPr id="3"/><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:spPr/></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(title + body),
+      ctx: {
+        theme,
+        layoutPlaceholders: parsePlaceholderMap(layoutXml),
+        masterPlaceholders: parsePlaceholderMap(masterXml),
+      },
+    })
+    // Title: the layout fill wins over the master noFill
+    expect((slide.elements[0] as any).fill).toEqual({ type: 'solid', color: '#00CC99' })
+    // Body: no layout fill → master's applies
+    expect((slide.elements[1] as any).fill).toEqual({ type: 'solid', color: '#123456' })
+  })
+
+  it('p:style fontRef color beats master txStyles but not explicit run color (bnc904423)', () => {
+    const masterTextStyles: any = {
+      body: { levels: [{ color: '#000000' }] },
+    }
+    const sp = (runs: string) =>
+      '<p:sp><p:nvSpPr><p:cNvPr id="4"/><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm></p:spPr>' +
+      '<p:style><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef>' +
+      '<a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></p:style>' +
+      `<p:txBody><a:bodyPr/><a:lstStyle/><a:p>${runs}</a:p></p:txBody></p:sp>`
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp('<a:r><a:t>inherit</a:t></a:r>')),
+      ctx: { theme, masterTextStyles },
+    })
+    expect((slide.elements[0] as any).text.paragraphs[0].runs[0].color).toBe('#FFFFFF')
+    const explicit = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(
+        sp(
+          '<a:r><a:rPr><a:solidFill><a:srgbClr val="FF00FF"/></a:solidFill></a:rPr><a:t>own</a:t></a:r>',
+        ),
+      ),
+      ctx: { theme, masterTextStyles },
+    })
+    expect((explicit.elements[0] as any).text.paragraphs[0].runs[0].color).toBe('#FF00FF')
+  })
+
+  it('master bgRef blipFill template resolves the blip in the theme part rels', () => {
+    const themed: any = {
+      ...theme,
+      bgFillStyles: [
+        {},
+        {},
+        { 'a:blipFill': { 'a:blip': { '@_r:embed': 'rId2' }, 'a:stretch': {} } },
+      ],
+    }
+    const masterBg =
+      '<p:sldMaster><p:cSld><p:bg><p:bgRef idx="1003"><a:schemeClr val="lt1"/></p:bgRef></p:bg></p:cSld></p:sldMaster>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(''),
+      ctx: {
+        theme: themed,
+        masterBg,
+        masterMediaRels: new Map([['rId2', 'ppt/media/wrong-part.png']]),
+        themeMediaRels: new Map([['rId2', 'ppt/media/image2.jpeg']]),
+      },
+    })
+    expect(slide.background).toEqual({
+      type: 'image',
+      mediaRef: 'ppt/media/image2.jpeg',
+      mode: 'stretch',
+    })
   })
 
   it('background inherits from master when slide has none', () => {
@@ -232,6 +484,28 @@ describe('text body parsing fidelity', () => {
       ctx: {},
     })
     expect(firstText(slide).paragraphs[0].lineExact).toBe(24)
+  })
+
+  it('parses a:pPr rtl: "1"/"true" → true, "0" → false, absent → undefined', () => {
+    const rtlOf = (pPr: string) =>
+      firstText(
+        parseSlide({
+          path: 'ppt/slides/slide1.xml',
+          slideXml: slideWith(spWith(`<a:p>${pPr}<a:r><a:t>x</a:t></a:r></a:p>`)),
+          ctx: {},
+        }),
+      ).paragraphs[0].rtl
+    expect(rtlOf('<a:pPr rtl="1"/>')).toBe(true)
+    expect(rtlOf('<a:pPr rtl="true"/>')).toBe(true)
+    expect(rtlOf('<a:pPr rtl="0"/>')).toBe(false)
+    expect(rtlOf('<a:pPr/>')).toBeUndefined()
+    expect(rtlOf('')).toBeUndefined()
+  })
+
+  it('generateParagraphXml round-trips explicit rtl (true and false)', () => {
+    expect(generateParagraphXml({ runs: [{ text: 'x' }], rtl: true })).toContain('rtl="1"')
+    expect(generateParagraphXml({ runs: [{ text: 'x' }], rtl: false })).toContain('rtl="0"')
+    expect(generateParagraphXml({ runs: [{ text: 'x' }] })).not.toContain('rtl=')
   })
 
   it('bodyPr vert: eaVert/vert/vert270/wordArtVert parsed, horz/absent undefined', () => {
@@ -420,6 +694,28 @@ describe('placeholder text style inheritance', () => {
     expect(run.bold).toBe(false)
   })
 
+  it('explicit srgbClr with modifiers resolves the display color but keeps byte linkage', () => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="8" name="T"/><p:nvSpPr/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr/><p:txBody><a:bodyPr/><a:p>' +
+      '<a:r><a:rPr><a:solidFill><a:srgbClr val="44546A"><a:lumMod val="75000"/></a:srgbClr></a:solidFill></a:rPr><a:t>modded</a:t></a:r>' +
+      '<a:r><a:rPr><a:solidFill><a:srgbClr val="112233"/></a:solidFill></a:rPr><a:t>plain</a:t></a:r>' +
+      '</a:p></p:txBody></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideXmlWith(sp),
+      ctx: { theme },
+    })
+    const runs = (slide.elements[0] as any).text.paragraphs[0].runs
+    // lumMod'ed srgbClr: display value is computed, so a rewrite would bake it in
+    // and drop the modifier — the patch path must keep the original bytes
+    expect(runs[0].colorFollowsTheme).toBe(true)
+    expect(runs[0].color?.toUpperCase()).toBe('#333F50') // 44546A × lumMod 75%
+    // plain srgbClr stays directly patchable
+    expect(runs[1].colorFollowsTheme).toBeUndefined()
+    expect(runs[1].color?.toUpperCase()).toBe('#112233')
+  })
+
   it('placeholder geometry inheritance still works with style-only entries present', () => {
     const sp =
       '<p:sp><p:nvSpPr><p:cNvPr id="5" name="Title"/><p:nvSpPr/><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>' +
@@ -457,6 +753,23 @@ describe('table (p:graphicFrame a:tbl) parsing', () => {
     '<?xml version="1.0"?><p:sld xmlns:p="p" xmlns:a="a"><p:cSld>' +
     `<p:spTree><p:nvGrpSpPr/><p:grpSpPr/>${tableXml}</p:spTree></p:cSld></p:sld>`
 
+  it('drops a zero-width cell border so the table style line shows through', () => {
+    // a real deck: every cell carried lnL/R/T/B w="0" in gold; PowerPoint draws the
+    // default style's white lines, not a gold hairline
+    const zero = tableXml.replace(
+      '<a:lnB w="19050"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:lnB>',
+      '<a:lnB w="0" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:srgbClr val="D4AF37"/></a:solidFill><a:prstDash val="solid"/></a:lnB>' +
+        '<a:lnT w="0"><a:noFill/></a:lnT>',
+    )
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideXml.replace(tableXml, zero),
+      ctx: {},
+    })
+    const c00 = (slide.elements[0] as any).rows[0][0]
+    expect(c00.borders).toBeUndefined()
+  })
+
   it('parses grid, rows, cell text/fill/borders/margins/anchor and merges', () => {
     const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml, ctx: {} })
     const el = slide.elements[0] as any
@@ -477,6 +790,19 @@ describe('table (p:graphicFrame a:tbl) parsing', () => {
     const wide = el.rows[1][0]
     expect(wide.gridSpan).toBe(2)
     expect(el.rows[1][1].merged).toBe(true)
+  })
+
+  it('no tableStyleId and no cell borders → PowerPoint "No Style, Table Grid" dk1 lines', () => {
+    const bare = tableXml.replace(/<a:ln[LRTB][^>]*>.*?<\/a:ln[LRTB]>/gs, '')
+    expect(bare).not.toContain('<a:lnB')
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideXml.replace(tableXml, bare),
+      ctx: {},
+    })
+    const c00 = (slide.elements[0] as any).rows[0][0]
+    expect(c00.borders.b).toEqual({ fill: { type: 'solid', color: '#000000' }, width: 12700 })
+    expect(c00.borders.l).toEqual({ fill: { type: 'solid', color: '#000000' }, width: 12700 })
   })
 
   it('table element keeps byte fidelity (originalXml passthrough on save)', () => {
@@ -546,6 +872,24 @@ describe('group (p:grpSp) parsing', () => {
     expect(c2.transform.offset.x).toBe(2000)
   })
 
+  it('keeps deeply nested groups as byte-preserving passthroughs', () => {
+    let group = '<p:sp><p:nvSpPr/><p:spPr/></p:sp>'
+    for (let i = 0; i < 2_000; i++) {
+      group = `<p:grpSp><p:nvGrpSpPr/><p:grpSpPr/>${group}</p:grpSp>`
+    }
+    const slideXml =
+      '<?xml version="1.0"?><p:sld xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree>' +
+      '<p:nvGrpSpPr/><p:grpSpPr/>' +
+      group +
+      '</p:spTree></p:cSld></p:sld>'
+
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml, ctx: {} })
+
+    expect(slide.elements).toHaveLength(1)
+    expect(slide.elements[0]?.type).toBe('passthrough')
+    expect(reassembleSlideXml(slide)).toBe(slideXml)
+  })
+
   it('group emits original bytes on reassemble (fidelity: no child roundtrip)', () => {
     const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: groupSlideXml, ctx: {} })
     expect(reassembleSlideXml(slide)).toBe(groupSlideXml)
@@ -598,6 +942,18 @@ describe('bullet (buChar/buAutoNum/buNone) and paragraph indent parsing', () => 
     expect(p.indent).toBe(-127000)
   })
 
+  it('keeps invalid numeric bullet references without aborting slide parsing', () => {
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: sldWith('<a:pPr><a:buChar char="&#x110000;"/></a:pPr>'),
+      ctx: {},
+    })
+    expect((slide.elements[0] as any).text.paragraphs[0].bullet).toEqual({
+      type: 'char',
+      char: '&#x110000;',
+    })
+  })
+
   it('buAutoNum / buNone', () => {
     const num = parseSlide({
       path: 'ppt/slides/slide1.xml',
@@ -611,6 +967,69 @@ describe('bullet (buChar/buAutoNum/buNone) and paragraph indent parsing', () => 
       ctx: {},
     })
     expect((none.elements[0] as any).text.paragraphs[0].bullet.type).toBe('none')
+  })
+
+  it('clamps buAutoNum startAt to the spec ceiling on slides and list styles', () => {
+    const huge = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: sldWith(
+        '<a:pPr><a:buAutoNum type="romanLcPeriod" startAt="100000000000000000000"/></a:pPr>',
+      ),
+      ctx: {},
+    })
+    expect((huge.elements[0] as any).text.paragraphs[0].bullet.startAt).toBe(32767)
+    const sane = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: sldWith('<a:pPr><a:buAutoNum type="arabicPeriod" startAt="7"/></a:pPr>'),
+      ctx: {},
+    })
+    expect((sane.elements[0] as any).text.paragraphs[0].bullet.startAt).toBe(7)
+    const lst = parseLstStyleLevels({
+      'a:lvl1pPr': { 'a:buAutoNum': { '@_type': 'alphaLcPeriod', '@_startAt': '1e20' } },
+      'a:lvl2pPr': { 'a:buAutoNum': { '@_type': 'alphaLcPeriod', '@_startAt': '99999' } },
+    })
+    expect(lst?.levels[0]?.bullet?.startAt).toBeUndefined()
+    expect(lst?.levels[1]?.bullet?.startAt).toBe(32767)
+  })
+
+  it('buBlip picture bullet resolves the blip through the slide rels; buSzPts is absolute pt', () => {
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: sldWith(
+        '<a:pPr marL="342900" indent="-342900"><a:buSzPts val="2800"/><a:buBlip><a:blip r:embed="rId6"/></a:buBlip></a:pPr>',
+      ),
+      ctx: { mediaRels: new Map([['rId6', 'ppt/media/image1.png']]) },
+    })
+    const p = (slide.elements[0] as any).text.paragraphs[0]
+    expect(p.bullet).toEqual({
+      type: 'blip',
+      blipEmbedId: 'rId6',
+      mediaRef: 'ppt/media/image1.png',
+      sizePt: 28,
+    })
+  })
+
+  it('buBlip defined on the text body lstStyle level is inherited by plain paragraphs', () => {
+    const slideXml =
+      '<?xml version="1.0"?><p:sld xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><p:nvGrpSpPr/><p:grpSpPr/>' +
+      '<p:sp><p:nvSpPr><p:cNvPr id="2" name="tb"/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/>' +
+      '<a:lstStyle><a:lvl1pPr marL="88900" indent="-88900"><a:buSzPct val="120000"/><a:buBlip><a:blip r:embed="rId6"/></a:buBlip></a:lvl1pPr></a:lstStyle>' +
+      '<a:p><a:r><a:t>KB</a:t></a:r></a:p><a:p><a:pPr><a:buNone/></a:pPr><a:r><a:t>plain</a:t></a:r></a:p>' +
+      '</p:txBody></p:sp></p:spTree></p:cSld></p:sld>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml,
+      ctx: { mediaRels: new Map([['rId6', 'ppt/media/image1.png']]) },
+    })
+    const [a, b] = (slide.elements[0] as any).text.paragraphs
+    expect(a.bullet).toEqual({
+      type: 'blip',
+      blipEmbedId: 'rId6',
+      mediaRef: 'ppt/media/image1.png',
+      sizePct: 120,
+    })
+    expect(a.marL).toBe(88900)
+    expect(b.bullet).toEqual({ type: 'none' })
   })
 })
 
@@ -636,6 +1055,29 @@ describe('slide master bodyStyle bullet/indent inheritance', () => {
     expect(p.bullet).toEqual({ type: 'char', char: '•' })
     expect(p.marL).toBe(342900)
     expect(p.indent).toBe(-342900)
+  })
+
+  it('keeps invalid numeric bullet references in master list styles', () => {
+    const master = parseMasterTextStyles(masterXml.replace('&#x2022;', '&#x110000;'))
+    expect(master.body?.levels[0]?.bullet).toEqual({ type: 'char', char: '&#x110000;' })
+  })
+
+  it('buFontTx on an inheriting paragraph keeps the glyph but drops the chain font', () => {
+    const master =
+      '<?xml version="1.0"?><p:sldMaster xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><p:nvGrpSpPr/><p:grpSpPr/></p:spTree></p:cSld>' +
+      '<p:txStyles><p:bodyStyle>' +
+      '<a:lvl1pPr marL="342900" indent="-342900"><a:buFont typeface="Wingdings"/><a:buChar char="§"/></a:lvl1pPr>' +
+      '</p:bodyStyle></p:txStyles></p:sldMaster>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: sldWith(
+        '<a:p><a:pPr><a:buFontTx/></a:pPr><a:r><a:t>a</a:t></a:r></a:p><a:p><a:r><a:t>b</a:t></a:r></a:p>',
+      ),
+      ctx: { masterTextStyles: parseMasterTextStyles(master) },
+    })
+    const [a, b] = (slide.elements[0] as any).text.paragraphs
+    expect(a.bullet).toEqual({ type: 'char', char: '§' })
+    expect(b.bullet).toEqual({ type: 'char', char: '§', font: 'Wingdings' })
   })
 
   it('explicit buNone overrides master inheritance', () => {

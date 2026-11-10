@@ -9,6 +9,7 @@ const {
   semverNewer,
   assertPromotable,
   releaseUploadDecision,
+  refreshFeedEntries,
 } = require('../../../scripts/update-feed-utils.cjs')
 
 /** Promote-workflow guard: stable may only move forward (unless forced). */
@@ -53,5 +54,67 @@ describe('update-feed-utils', () => {
   it('still rejects equal and older uploads by default', () => {
     expect(releaseUploadDecision('0.5.82', '0.5.82').action).toBe('reject')
     expect(releaseUploadDecision('0.5.81', '0.5.82', { allowExisting: true }).action).toBe('reject')
+  })
+
+  describe('prerelease ordering', () => {
+    const table: Array<[string, string, boolean]> = [
+      ['0.11.0-beta.2', '0.11.0-beta.1', true],
+      ['0.11.0-beta.10', '0.11.0-beta.9', true],
+      ['0.11.0-beta.1', '0.11.0-beta.2', false],
+      ['0.11.0-beta.2', '0.11.0-beta.2', false],
+      ['0.11.0', '0.11.0-beta.9', true],
+      ['0.11.0-beta.9', '0.11.0', false],
+      ['0.11.0-beta', '0.11.0-alpha', true],
+      ['0.11.0-beta', '0.11.0-beta.1', false],
+      ['0.11.0-alpha.beta', '0.11.0-alpha.1', true],
+      ['0.11.0-alpha.1', '0.11.0-alpha.beta', false],
+      ['0.11.0-beta', '0.11.0-alpha.beta', true],
+      ['0.11.0-rc.1', '0.11.0-beta.9', true],
+      ['0.11.1-beta.1', '0.11.0', true],
+      ['0.11.0+build.2', '0.11.0+build.1', false],
+      ['0.11.0+build.2', '0.11.0-beta.1', true],
+    ]
+
+    it.each(table)('semverNewer(%s, %s) === %s', (a, b, expected) => {
+      expect(semverNewer(a, b)).toBe(expected)
+    })
+
+    it('never reports an unparseable version as newer', () => {
+      expect(semverNewer('beta', '0.5.82')).toBe(false)
+      expect(semverNewer('0.5.83', 'not-a-version')).toBe(false)
+    })
+
+    it('uploads a newer prerelease and rejects going backwards', () => {
+      expect(releaseUploadDecision('0.11.0-beta.2', '0.11.0-beta.1')).toEqual({ action: 'upload' })
+      expect(releaseUploadDecision('0.11.0-beta.1', '0.11.0-beta.2').action).toBe('reject')
+      expect(releaseUploadDecision('0.11.0', '0.11.0-beta.2')).toEqual({ action: 'upload' })
+    })
+
+    it('promotes a newer prerelease onto the stable feed', () => {
+      expect(assertPromotable('0.11.0-beta.2', '0.11.0-beta.1', false)).toEqual({ ok: true })
+      expect(assertPromotable('0.11.0', '0.11.0-beta.2', false)).toEqual({ ok: true })
+      expect(assertPromotable('0.11.0-beta.1', '0.11.0-beta.2', false).ok).toBe(false)
+    })
+  })
+
+  it('rewrites only the stapled dmg entries of the feed', () => {
+    const feed = [
+      'version: 0.12.29',
+      'files:',
+      '  - url: GenOffice-0.12.29-mac.zip',
+      '    sha512: ZIP==',
+      '    size: 10',
+      '  - url: GenOffice-0.12.29-arm64.dmg',
+      '    sha512: OLD==',
+      '    size: 1',
+      'path: GenOffice-0.12.29-mac.zip',
+      'sha512: ZIP==',
+    ].join('\n')
+    const out = refreshFeedEntries(feed, {
+      'GenOffice-0.12.29-arm64.dmg': { sha512: 'NEW==', size: 2 },
+    })
+    expect(out).toContain('  - url: GenOffice-0.12.29-arm64.dmg\n    sha512: NEW==\n    size: 2')
+    expect(out).toContain('  - url: GenOffice-0.12.29-mac.zip\n    sha512: ZIP==\n    size: 10')
+    expect(out).toContain('path: GenOffice-0.12.29-mac.zip\nsha512: ZIP==')
   })
 })

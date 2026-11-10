@@ -10,6 +10,7 @@
   --pdf-error-border: rgb(192 57 43 / 45%);
   --pdf-error-bg-hover: rgb(192 57 43 / 8%);
   --pdf-ok: #217346;
+  --pdf-sig-warn: #a05a00;
   --pdf-thumb-border-hover: #a8a6a4;
   --pdf-prop-bg: rgb(0 0 0 / 3%);
   --pdf-focus-ring: rgb(35 36 37 / 20%);
@@ -25,37 +26,43 @@
    * these never follow the theme */
   --pdf-paper: #fff;
   --pdf-on-accent: #fff;
-  --pdf-select: #2b66ff;
-  --pdf-select-glow: rgb(43 102 255 / 90%);
+  --pdf-select: #c43e1c;
+  --pdf-select-glow: rgb(196 62 28 / 90%);
   --pdf-ink-highlight: #ffde59;
+  /* annotation ink previews match MARKUP_COLORS in annotations.ts */
+  --pdf-ink-underline: #2b66ff;
   --pdf-ink-strike: #db3830;
+  --pdf-redaction-stripe-dark: rgba(0, 0, 0, 0.72);
+  --pdf-redaction-stripe-light: rgba(58, 58, 58, 0.78);
+  --pdf-redaction-border: #d93333;
   --pdf-form-border: rgb(60 120 216 / 55%);
   --pdf-form-bg: rgb(235 243 255 / 55%);
   --pdf-form-text: #222;
   --pdf-form-control-border: #333;
   --pdf-form-control-mark: #111;
-  --pdf-sign-drop-bg: rgb(60 120 216 / 6%);
+  --pdf-formdesign-fill: rgb(60 120 216 / 14%);
+  --pdf-formdesign-fill-selected: rgb(60 120 216 / 24%);
+  --pdf-sign-drop-bg: rgb(196 62 28 / 6%);
   --pdf-search-hit-bg: rgb(255 214 0 / 35%);
   --pdf-search-hit-cur-bg: rgb(255 150 50 / 55%);
   --pdf-search-hit-cur-outline: #f08c00;
-  --pdf-link-hover-bg: rgb(60 120 216 / 12%);
-  --pdf-link-hover-ring: rgb(60 120 216 / 35%);
+  --pdf-link-hover-bg: rgb(196 62 28 / 12%);
+  --pdf-link-hover-ring: rgb(196 62 28 / 35%);
   --pdf-text-selection: rgb(56 108 255 / 32%);
   --pdf-page-hover-outline: rgb(0 0 0 / 35%);
   /* text edit overlays sit on the rendered page, so paper/ink stay unthemed like form-text */
   --pdf-textedit-paper: #fff;
   --pdf-textedit-ink: #111;
-  --pdf-textedit-ring: rgb(60 120 216 / 90%);
-  --pdf-textedit-hover-bg: rgb(60 120 216 / 10%);
+  --pdf-textedit-ring: rgb(196 62 28 / 90%);
+  --pdf-textedit-hover-bg: rgb(196 62 28 / 10%);
   --pdf-textblock-ring: rgb(96 99 102 / 40%);
-  --pdf-textblock-ring-hover: rgb(60 120 216 / 65%);
-  --pdf-textblock-hover-bg: rgb(60 120 216 / 5%);
+  --pdf-textblock-ring-hover: rgb(196 62 28 / 65%);
+  --pdf-textblock-hover-bg: rgb(196 62 28 / 5%);
 
   /* image edit overlays also sit on paper; unthemed like the text-edit set */
-  --pdf-imgedit-hover-bg: rgb(60 120 216 / 8%);
+  --pdf-imgedit-hover-bg: rgb(196 62 28 / 8%);
   --pdf-imgedit-veil-bg: rgb(255 255 255 / 62%);
-  --pdf-imgedit-del-line: rgb(219 56 48 / 75%);
-  --pdf-imgedit-ghost-bg: rgb(60 120 216 / 6%);
+  --pdf-imgedit-ghost-bg: rgb(196 62 28 / 6%);
 
   /* dark chrome in both themes */
   --pdf-toast-bg: rgb(32 33 36 / 92%);
@@ -68,10 +75,13 @@
   --pdf-shadow-popup: 0 4px 16px rgb(0 0 0 / 15%);
   --pdf-shadow-toast: 0 4px 16px rgb(0 0 0 / 25%);
   --pdf-shadow-modal: 0 3px 30px rgb(0 0 0 / 8%);
+  --pdf-shadow-modal-gs: 0 12px 40px rgb(0 0 0 / 16%);
+  --pdf-input-focus: #0f7fff;
+  --pdf-input-ring: rgb(15 127 255 / 10%);
+  --pdf-error-ring: rgb(239 68 68 / 10%);
   --pdf-shadow-page: 0 1px 4px rgb(0 0 0 / 18%);
   --pdf-shadow-pin: 0 1px 4px rgb(0 0 0 / 30%);
   --pdf-shadow-drop: 0 6px 20px rgb(0 0 0 / 14%), 0 1px 3px rgb(0 0 0 / 8%);
-  --pdf-shadow-palette: 0 3px 10px rgb(0 0 0 / 14%), 0 1px 2px rgb(0 0 0 / 8%);
   --pdf-shadow-composer: 0 6px 30px rgb(0 0 0 / 8%);
 }
 
@@ -83,6 +93,7 @@
   --pdf-error-border: rgb(229 115 115 / 50%);
   --pdf-error-bg-hover: rgb(229 115 115 / 12%);
   --pdf-ok: #58b380;
+  --pdf-sig-warn: #e0a94f;
   --pdf-thumb-border-hover: #777;
   --pdf-prop-bg: rgb(255 255 255 / 5%);
   --pdf-focus-ring: rgb(255 255 255 / 30%);
@@ -93,6 +104,10 @@
   --pdf-statusbar-hover: rgb(255 255 255 / 10%);
   --pdf-swatch-ring: rgb(255 255 255 / 30%);
   --pdf-scroll-thumb: rgb(255 255 255 / 28%);
+  --pdf-shadow-modal-gs: 0 20px 50px rgb(0 0 0 / 65%);
+  --pdf-input-focus: #4a9eff;
+  --pdf-input-ring: rgb(74 158 255 / 20%);
+  --pdf-error-ring: rgb(242 139 130 / 20%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -104,6 +119,7 @@
     --pdf-error-border: rgb(229 115 115 / 50%);
     --pdf-error-bg-hover: rgb(229 115 115 / 12%);
     --pdf-ok: #58b380;
+    --pdf-sig-warn: #e0a94f;
     --pdf-thumb-border-hover: #777;
     --pdf-prop-bg: rgb(255 255 255 / 5%);
     --pdf-focus-ring: rgb(255 255 255 / 30%);
@@ -114,6 +130,10 @@
     --pdf-statusbar-hover: rgb(255 255 255 / 10%);
     --pdf-swatch-ring: rgb(255 255 255 / 30%);
     --pdf-scroll-thumb: rgb(255 255 255 / 28%);
+    --pdf-shadow-modal-gs: 0 20px 50px rgb(0 0 0 / 65%);
+    --pdf-input-focus: #4a9eff;
+    --pdf-input-ring: rgb(74 158 255 / 20%);
+    --pdf-error-ring: rgb(242 139 130 / 20%);
   }
 }
 
@@ -461,6 +481,77 @@ button {
   background: var(--hover);
 }
 
+/* ---- Compact ribbon (⌥⌘K / Ctrl+Alt+K), docs parity, see #362 ----
+ * The middle density: the band stays and every command stays reachable, it
+ * just drops to icon-only on a shorter band. The band keeps the HARD-fixed
+ * height contract (switching tabs, including the contextual fill/form tabs,
+ * never resizes the row) and the horizontal scroll.
+ */
+.ribbon-compact .ribbon-body {
+  /* same fixed-height contract as the full band, only shorter (docs measured
+     45px as the smallest band that holds every tab unclipped; pdf's tallest
+     compact content is the 26px zoom row, so it fits the same band) */
+  height: 45px;
+  padding-top: 5px;
+  padding-bottom: 1px;
+}
+
+.ribbon-compact .rb-big {
+  /* the label is taken out of flow entirely (below), so the button is just
+     the icon row plus its padding */
+  gap: 0;
+  padding: 2px 5px;
+}
+
+.ribbon-compact .rb-big-icon {
+  min-height: 22px;
+  flex: none;
+  /* the base padding is sized for the full band's taller icon plate */
+  padding: 1px 3px;
+  margin: 0 -2px;
+}
+
+/* Keep the label in the accessibility tree and in the DOM (Playwright's
+ * hasText and getByRole(name) both read it) but take it out of the visual
+ * flow. display: none here would strip the accessible name. */
+.ribbon-compact .rb-big > span:not(.rb-big-icon) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Groups centre on the shorter band. */
+.ribbon-compact .ribbon-group {
+  padding: 0 3px;
+}
+
+/* `.rb-col` stacks two rows (the page-number/zoom block) that cannot fit a
+ * short band — side by side, exactly the docs treatment of .rb-col. */
+.ribbon-compact .rb-col {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+/* the highlight split caret is absolutely placed against the full band's
+ * 30px icon plate; recentre it on the shorter one, and keep the gutter its
+ * padding carved out of the right edge (the compact .rb-big padding above
+ * would otherwise reclaim it) */
+.ribbon-compact .rb-highlight-main {
+  padding-right: 16px;
+}
+
+.ribbon-compact .rb-highlight-caret {
+  top: 2px;
+  height: 22px;
+}
+
 .rb-icon {
   min-width: 27px;
   height: 26px;
@@ -576,6 +667,12 @@ button {
   cursor: default;
 }
 
+.thumb-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+
 /* ── Markup floating bar for selected text ── */
 
 .pdf-sel-popup {
@@ -625,12 +722,13 @@ button {
   font-weight: 700;
 }
 
+/* Background comes inline from the currently selected highlight color */
 .sel-swatch-hl {
   background: var(--pdf-ink-highlight);
 }
 
 .sel-swatch-ul {
-  color: var(--pdf-select);
+  color: var(--pdf-ink-underline);
   text-decoration: underline;
 }
 
@@ -842,8 +940,50 @@ button {
 }
 
 .pdf-form-input.is-required-empty,
-.pdf-form-select.is-required-empty {
+.pdf-form-input.is-invalid,
+.pdf-form-select.is-required-empty .gs-dd-btn {
   border-color: var(--pdf-error);
+}
+
+.pdf-form-date-pick {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.pdf-form-date-pick:hover {
+  color: var(--pdf-select);
+}
+
+.pdf-form-date-pick svg {
+  width: 70%;
+  height: 70%;
+}
+
+.pdf-form-date-native {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pdf-form-date-error {
+  position: absolute;
+  z-index: 2;
+  padding: 2px 6px;
+  border: 1px solid var(--pdf-error);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--pdf-error);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: var(--shadow-menu);
 }
 
 .pdf-form-checkbox.is-required-empty,
@@ -852,15 +992,15 @@ button {
   outline-offset: 1px;
 }
 
-.pdf-form-input.is-active,
-.pdf-form-select.is-active,
-.pdf-form-radio.is-active,
-.pdf-form-signature.is-active {
+.pdf-form-input.is-active:focus-within,
+.pdf-form-select.is-active:focus-within,
+.pdf-form-radio.is-active:focus-within,
+.pdf-form-signature.is-active:focus-within {
   outline: 2px solid var(--pdf-select);
   outline-offset: 1px;
 }
 
-.pdf-form-checkbox.is-active {
+.pdf-form-checkbox.is-active:focus-within {
   outline: 1px dotted var(--pdf-form-control-mark);
   outline-offset: 3px;
 }
@@ -890,18 +1030,29 @@ button {
   color: transparent;
 }
 
+/* Choice widget: shared dropdown (@genoffice/ui gs-dd) sized to the AcroForm
+ * rect — the wrapper carries the absolute position, the trigger the field look */
 .pdf-form-select {
   position: absolute;
   box-sizing: border-box;
+}
+
+.pdf-form-select .gs-dd {
+  width: 100%;
+  height: 100%;
+}
+
+.pdf-form-select .gs-dd-btn {
+  height: 100%;
   border: 1px solid var(--pdf-form-border);
   background: var(--pdf-form-bg);
   border-radius: 2px;
   padding: 0 2px;
-  font-family: inherit;
+  font-size: inherit;
   color: var(--pdf-form-text);
 }
 
-.pdf-form-select:focus {
+.pdf-form-select .gs-dd-btn:focus {
   outline: none;
   border-color: var(--pdf-select);
   background: var(--pdf-paper);
@@ -953,12 +1104,34 @@ button {
 
 .pdf-thumb-box {
   /* fluid: follows the resizable sidebar width (aspect ratio set inline per page) */
+  position: relative;
   width: 100%;
   background: var(--pdf-paper);
   border: 2px solid var(--border-strong);
   border-radius: 4px;
   overflow: hidden;
   line-height: 0;
+}
+
+/* Same live-preview patch as the page canvas, scaled into the thumb (percent coords) */
+.pdf-thumb-livepreview {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Read-only mirror of the canvas pending-edit overlays, scaled into the thumb.
+   Inner layers set pointer-events: auto on themselves, so the kill must reach
+   every descendant or overlay children would eat thumbnail clicks/drags. */
+.pdf-thumb-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
+.pdf-thumb-overlay,
+.pdf-thumb-overlay * {
+  pointer-events: none !important;
 }
 
 .pdf-thumb-box canvas {
@@ -983,17 +1156,23 @@ button {
   font-weight: 600;
 }
 
+/* the page stays ltr under an RTL UI — the chrome mirrors, the content does not */
+
 .pdf-scroll {
+  direction: ltr;
   flex: 1;
   overflow: auto;
   padding: 0 24px;
   background: var(--canvas);
 }
 
-/* One row: one page in single-page mode, two side by side in two-page mode */
+/* One row: one page in single-page mode, two side by side in two-page mode.
+   `safe` keeps the row left-anchored (scrollable) instead of clipping the page's
+   left edge when the comments margin makes the row wider than the viewport. */
 .pdf-row {
   display: flex;
   justify-content: center;
+  justify-content: safe center;
   align-items: flex-start;
   gap: 16px;
   margin-top: 16px;
@@ -1065,15 +1244,94 @@ button {
 /* ── Outline sidebar ── */
 
 .pdf-outline-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 8px 4px;
+}
+
+.pdf-outline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 0 4px 6px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pdf-outline-header .rb-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* All-document comments panel (sidebar pane, same chrome as the outline pane) */
+.pdf-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  overflow-y: auto;
+}
+.pdf-comments-filter {
+  margin-bottom: 4px;
+}
+.pdf-comment-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.pdf-comment-row:hover {
+  background: var(--hover);
+}
+.pdf-comment-page {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.pdf-comment-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pdf-comment-author {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.pdf-comment-text {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdf-comment-replies {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .pdf-outline {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .pdf-outline-item {
+  flex-shrink: 0;
   display: block;
   width: 100%;
   border: none;
@@ -1094,56 +1352,173 @@ button {
   background: var(--hover);
 }
 
+.pdf-outline-note {
+  flex-shrink: 0;
+  padding: 2px 8px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 /* ── Encrypted document password ── */
 
-.pdf-password {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* ---- encrypted-PDF password dialog (Genspark DS form dialog, matching the
+   docs PasswordDialog and mockups/protect-dialogs-genspark.html §1/2) ---- */
+
+/* base .pdf-modal-mask (defined below) top-aligns dialogs; this one centers */
+.pdf-modal-mask.pdf-pwd-mask {
   align-items: center;
 }
 
-.pdf-password-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
+.pdf-modal.pdf-pwd-dialog {
+  margin-top: 0;
+  width: 440px;
+  padding: 24px;
+  gap: 0;
+  border: none;
+  box-shadow: var(--pdf-shadow-modal-gs);
 }
 
-.pdf-password-input {
-  width: 220px;
-  height: 30px;
-  border: 1px solid var(--border-strong);
-  border-radius: 5px;
-  padding: 0 10px;
+.pdf-pwd-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+.pdf-pwd-desc {
+  margin: 0 0 20px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.pdf-pwd-fld {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.pdf-pwd-wrap {
+  position: relative;
+  display: block;
+  margin-top: 6px;
+}
+
+.pdf-pwd-wrap input {
+  display: block;
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  padding: 0 40px 0 12px;
   font-size: 13px;
   background: var(--surface);
-  color: var(--text);
-}
-
-.pdf-password-input:focus {
+  color: var(--color-text-primary);
   outline: none;
-  border-color: var(--accent);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
-.pdf-password-error {
-  font-size: 12px;
-  color: var(--pdf-error);
+.pdf-pwd-wrap input:hover:not(:focus):not(.invalid) {
+  border-color: var(--border-strong);
 }
 
-.pdf-password-btn {
-  height: 30px;
-  padding: 0 22px;
+.pdf-pwd-wrap input:focus {
+  border-color: var(--pdf-input-focus);
+  box-shadow: 0 0 0 3px var(--pdf-input-ring);
+}
+
+.pdf-pwd-wrap input.invalid {
+  border-color: var(--color-error);
+}
+
+.pdf-pwd-wrap input.invalid:focus {
+  box-shadow: 0 0 0 3px var(--pdf-error-ring);
+}
+
+/* wrong password: shake the field */
+.pdf-pwd-fld.has-error .pdf-pwd-wrap {
+  animation: pdf-pwd-shake 0.4s ease;
+}
+
+@keyframes pdf-pwd-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+/* show/hide toggle inside the field */
+.pdf-pwd-eye {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: none;
-  border-radius: 5px;
-  background: var(--accent);
-  color: var(--pdf-on-accent);
-  font-size: 13px;
+  border-radius: 8px;
+  background: none;
+  color: var(--color-text-tertiary);
   cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast);
 }
 
-.pdf-password-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
+.pdf-pwd-eye:hover {
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+}
+
+.pdf-pwd-eye:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--pdf-focus-ring);
+}
+
+.pdf-pwd-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-error);
+}
+
+.pdf-pwd-error svg {
+  flex-shrink: 0;
+}
+
+/* mockup g-actions spec: 36px buttons, 12px gap, 24px above the footer */
+.pdf-pwd-dialog .pdf-modal-actions {
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.pdf-pwd-dialog .pdf-modal-btn {
+  height: 36px;
+  padding: 0 18px;
 }
 
 .tb-readonly {
@@ -1184,6 +1559,83 @@ button {
   color: var(--text);
 }
 
+.pdf-modal-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Label + control rows and check/radio labels in page-operation dialogs */
+.pdf-modal-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.pdf-modal-row > span {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.pdf-modal-row .pdf-modal-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.pdf-print-field > span {
+  flex: 1;
+}
+
+.pdf-print-field select.pdf-modal-input {
+  flex: 1.6;
+  color: var(--text);
+}
+
+.pdf-print-copies {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.pdf-print-copies .pdf-modal-input {
+  width: 64px;
+}
+
+.pdf-print-divider {
+  border-top: 1px solid var(--border);
+  margin: 2px 0;
+}
+
+.pdf-print-empty {
+  color: var(--danger);
+}
+
+.pdf-modal-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.pdf-modal-check input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+/* N-up option buttons fill the row instead of hugging the right edge */
+.pdf-modal-actions.merge-pages-options {
+  justify-content: stretch;
+}
+
+.merge-pages-options .pdf-modal-btn {
+  flex: 1;
+}
+
 .pdf-modal-input {
   height: 28px;
   border: 1px solid var(--border-strong);
@@ -1207,6 +1659,113 @@ button {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* Attachments panel: rows with a pending tag while the edit has not been saved */
+.pdf-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.pdf-attachments-add {
+  align-self: flex-start;
+}
+
+.pdf-attachments-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pdf-attachment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.pdf-attachment:hover {
+  background: var(--hover);
+}
+
+.pdf-attachment.removing {
+  opacity: 0.55;
+}
+
+.pdf-attachment-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.92em;
+}
+
+.pdf-attachment-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--pdf-prop-bg);
+  color: var(--text-secondary);
+  font-size: 0.78em;
+}
+
+.pdf-attachment-size {
+  color: var(--text-secondary);
+  font-size: 0.8em;
+}
+
+/* Label rows inside form dialogs: control left, label beside it, one per line */
+.pdf-perm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.pdf-perm-row > span:first-child {
+  min-width: 150px;
+}
+
+.pdf-perm-row > input[type='text'],
+.pdf-perm-row > input[type='number'],
+.pdf-perm-row > input[type='password'] {
+  flex: 1;
+}
+
+/* Bates preview: a page outline with the number strips where the position puts them */
+.pdf-bates-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.pdf-bates-preview-page {
+  height: 64px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+}
+
+.pdf-bates-preview-strip {
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.pdf-bates-positions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 16px;
 }
 
 /* Genspark DS modal footer buttons: secondary = bg-subtle, primary = black (#232425) */
@@ -1299,6 +1858,16 @@ button {
   white-space: nowrap;
 }
 
+/* Option toggles (Aa / W): same word-style active plate as the selection markup bar */
+.pdf-search-bar .pdf-search-opt {
+  font-size: 12px;
+}
+
+.pdf-search-bar .pdf-search-opt.is-active {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 .pdf-search-layer {
   position: absolute;
   inset: 0;
@@ -1327,6 +1896,288 @@ button {
   z-index: 4;
   pointer-events: none;
   overflow: visible;
+}
+
+.pdf-redaction-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  overflow: visible;
+}
+
+.pdf-formdesign-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  touch-action: none;
+}
+
+.pdf-formdesign-layer.is-drawing {
+  cursor: crosshair;
+}
+
+.pdf-formdesign-field {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed var(--pdf-form-border);
+  background: var(--pdf-formdesign-fill);
+  cursor: move;
+  overflow: visible;
+}
+
+.pdf-formdesign-field.is-selected {
+  border-style: solid;
+  background: var(--pdf-formdesign-fill-selected);
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.pdf-formdesign-field.is-live {
+  pointer-events: none;
+}
+
+.pdf-formdesign-field.is-existing {
+  border-style: dotted;
+}
+
+.pdf-formdesign-layer.is-preview .pdf-formdesign-preview {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.pdf-formdesign-marquee {
+  position: absolute;
+  pointer-events: none;
+  border: 1px dashed var(--accent);
+  background: var(--pdf-formdesign-fill);
+}
+
+.pdf-formdesign-guide {
+  position: absolute;
+  pointer-events: none;
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+.pdf-formdesign-guide.is-v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.pdf-formdesign-guide.is-h {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.pdf-formdesign-field.is-signature {
+  border-style: dashed;
+}
+
+.pdf-formdesign-field:hover,
+.pdf-formdesign-field.is-selected {
+  z-index: 1;
+}
+
+.pdf-formdesign-field.is-live,
+.pdf-formdesign-marquee,
+.pdf-formdesign-guide {
+  z-index: 2;
+}
+
+.pdf-formdesign-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--accent);
+  background: var(--surface);
+  border-radius: 1px;
+}
+
+.pdf-formdesign-handle.is-nw {
+  left: -4px;
+  top: -4px;
+  cursor: nwse-resize;
+}
+
+.pdf-formdesign-handle.is-n,
+.pdf-formdesign-handle.is-s {
+  left: calc(50% - 4px);
+  cursor: ns-resize;
+}
+
+.pdf-formdesign-handle.is-n {
+  top: -4px;
+}
+
+.pdf-formdesign-handle.is-s {
+  bottom: -4px;
+}
+
+.pdf-formdesign-handle.is-e,
+.pdf-formdesign-handle.is-w {
+  top: calc(50% - 4px);
+  cursor: ew-resize;
+}
+
+.pdf-formdesign-handle.is-e {
+  right: -4px;
+}
+
+.pdf-formdesign-handle.is-w {
+  left: -4px;
+}
+
+.pdf-formdesign-handle.is-ne {
+  right: -4px;
+  top: -4px;
+  cursor: nesw-resize;
+}
+
+.pdf-formdesign-handle.is-sw {
+  left: -4px;
+  bottom: -4px;
+  cursor: nesw-resize;
+}
+
+.pdf-formdesign-handle.is-se {
+  right: -4px;
+  bottom: -4px;
+  cursor: nwse-resize;
+}
+
+.pdf-formdesign-props {
+  position: absolute;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: max-content;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--pdf-shadow-popup);
+  font-size: 12px;
+  color: var(--text);
+  cursor: default;
+}
+
+.pdf-formdesign-props label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pdf-formdesign-props label > span {
+  color: var(--text-muted);
+}
+
+.pdf-formdesign-props textarea,
+.pdf-formdesign-props select {
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.pdf-formdesign-props input:not([type='checkbox']) {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.pdf-formdesign-props .pdf-formdesign-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdf-formdesign-props .pdf-formdesign-check > span {
+  color: var(--text);
+}
+
+.pdf-formdesign-props input:disabled {
+  color: var(--text-muted);
+}
+
+.pdf-formdesign-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.pdf-formdesign-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.pdf-formdesign-actions .pdf-formdesign-remove {
+  margin-right: auto;
+}
+
+.pdf-formdesign-actions button {
+  height: 24px;
+  padding: 0 8px;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pdf-formdesign-actions button:hover {
+  background: var(--hover);
+}
+
+.pdf-formdesign-actions .pdf-formdesign-done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--pdf-on-accent);
+}
+
+.pdf-formdesign-remove {
+  align-self: flex-start;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pdf-formdesign-remove:hover {
+  background: var(--hover);
+}
+
+.pdf-redaction-mark {
+  position: absolute;
+  box-sizing: border-box;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--pdf-redaction-stripe-dark),
+    var(--pdf-redaction-stripe-dark) 7px,
+    var(--pdf-redaction-stripe-light) 7px,
+    var(--pdf-redaction-stripe-light) 14px
+  );
+  border: 2px solid var(--pdf-redaction-border);
+  pointer-events: none;
 }
 
 /* With a tool active, take over the pointer and disable text selection so dragging doesn't select text */
@@ -1367,6 +2218,249 @@ button {
   opacity: 0.75;
 }
 
+/* ── WPS-style comments margin: cards beside the page, leader lines to their pins ── */
+
+.pdf-note-margin {
+  position: relative;
+  z-index: 6;
+  flex-shrink: 0;
+  align-self: stretch;
+  /* Only the cards themselves are interactive; the column must not block page clicks */
+  pointer-events: none;
+}
+
+/* 1px viewport with overflow visible: the line draws at negative x, over the page */
+.pdf-note-lead {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+}
+
+.pdf-note-card {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  /* Top stripe carries the annotation color (inline, document data like the pin) */
+  border-top-width: 3px;
+  border-radius: 8px;
+  box-shadow: var(--pdf-shadow-page);
+  font-size: 12.5px;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: top 0.16s ease;
+}
+
+.pdf-note-card:hover {
+  box-shadow: var(--pdf-shadow-popup);
+}
+
+.pdf-note-card-active {
+  cursor: default;
+  border-color: var(--accent);
+  box-shadow: var(--pdf-shadow-popup);
+}
+
+.pdf-note-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px 4px 12px;
+}
+
+.pdf-note-card-title {
+  flex: 1;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pdf-note-card-close {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  align-self: center;
+}
+
+.pdf-note-card-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.pdf-note-card-head .pdf-note-author {
+  flex: 1;
+}
+
+.pdf-note-thread {
+  overflow: hidden;
+  max-height: 150px;
+  padding: 0 0 6px;
+}
+
+.pdf-note-card-active .pdf-note-thread {
+  overflow-y: auto;
+  max-height: 320px;
+}
+
+.pdf-note-draft-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 10px 8px;
+}
+
+/* Inline rewrite of an existing comment; sits inside the comment's own padding */
+.pdf-note-edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.pdf-note-draft-box textarea,
+.pdf-note-edit-box textarea {
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.pdf-note-draft-box textarea:focus,
+.pdf-note-edit-box textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pdf-note-draft-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.pdf-note-pin-ghost {
+  pointer-events: none;
+}
+
+.pdf-note-comment {
+  padding: 6px 12px;
+}
+
+.pdf-note-comment-reply {
+  margin-left: 16px;
+  border-left: 2px solid var(--border);
+}
+
+.pdf-note-comment-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pdf-note-author {
+  font-weight: 600;
+  color: var(--accent);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-note-time {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Edit/delete live here; hidden until the pointer is over the comment (or a button
+   has keyboard focus) so the thread stays readable */
+.pdf-note-comment-actions {
+  display: inline-flex;
+  align-self: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.pdf-note-comment:hover .pdf-note-comment-actions,
+.pdf-note-comment-actions:focus-within {
+  opacity: 1;
+}
+
+.pdf-note-comment-del,
+.pdf-note-comment-edit {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.pdf-note-comment-del:hover {
+  background: var(--hover);
+  color: var(--danger);
+}
+
+.pdf-note-comment-edit:hover {
+  background: var(--hover);
+  color: var(--accent);
+}
+
+.pdf-note-comment-body {
+  margin-top: 2px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pdf-note-reply-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.pdf-note-reply-box textarea {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.pdf-note-reply-box textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pdf-note-reply-send {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
 /* ── Text edit (content-stream replacement) ── */
 
 /* Covers the original run with page background; the saved PDF gets the real rewrite */
@@ -1401,7 +2495,9 @@ button {
   z-index: 4;
   min-width: 2px;
   color: var(--pdf-textedit-ink);
-  cursor: text;
+  /* Draggable to reposition (click selects, double-click edits) */
+  cursor: move;
+  touch-action: none;
 }
 
 .pdf-textinsert-preview:hover,
@@ -1458,6 +2554,64 @@ button {
 }
 .pdf-textblock-box.is-faded {
   opacity: 0.2;
+}
+
+/* Border grips of the hovered block (WPS-style move): the frame itself is
+   pointer-transparent so clicks inside still reach the text layer; only the
+   four edge strips take the pointer and start a drag-to-move */
+.pdf-textblock-frame {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+}
+.pdf-textblock-grip {
+  position: absolute;
+  pointer-events: auto;
+  cursor: move;
+  touch-action: none;
+}
+.pdf-textblock-grip.grip-t {
+  top: -7px;
+  right: -5px;
+  left: -5px;
+  height: 9px;
+}
+.pdf-textblock-grip.grip-b {
+  right: -5px;
+  bottom: -7px;
+  left: -5px;
+  height: 9px;
+}
+.pdf-textblock-grip.grip-l {
+  top: -5px;
+  bottom: -5px;
+  left: -7px;
+  width: 9px;
+}
+.pdf-textblock-grip.grip-r {
+  top: -5px;
+  right: -7px;
+  bottom: -5px;
+  width: 9px;
+}
+
+/* Live ghost while a block is border-dragged: its text lines ride along on a
+   paper backdrop so the block visibly lifts off the page */
+.pdf-textblock-ghost {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  overflow: hidden;
+  background: var(--pdf-textedit-paper);
+  outline: 1px dashed var(--pdf-textblock-ring-hover);
+  outline-offset: 2px;
+}
+.pdf-textblock-ghost-line {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  white-space: pre;
+  color: var(--pdf-textedit-ink);
 }
 
 /* Hover affordance for edit-text mode: one box over the whole merged line
@@ -1548,14 +2702,16 @@ button {
   font-size: 12px;
 }
 
+/* Font picker: shared dropdown (@genoffice/ui gs-dd) sized to the 22px bar row */
 .pdf-textedit-fontsel {
   max-width: 130px;
-  padding: 2px 4px;
-  border: 1px solid var(--border);
+}
+
+.pdf-textedit-fontsel .gs-dd-btn {
+  height: 22px;
+  padding: 0 4px;
+  border-color: var(--border);
   border-radius: 4px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 12px;
 }
 
 .pdf-textedit-toggle {
@@ -1587,6 +2743,20 @@ button {
   color: var(--text);
 }
 
+/* Trash button at the end of the style bar: deletes the whole run */
+.pdf-textedit-trash {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pdf-textedit-trash svg {
+  width: 13px;
+  height: 13px;
+}
+.pdf-textedit-trash:hover {
+  color: var(--danger);
+}
+
 .pdf-text-color-wrap {
   position: relative;
 }
@@ -1601,6 +2771,31 @@ button {
   border-radius: 4px;
   background: var(--surface);
   cursor: pointer;
+}
+
+.pdf-textedit-swatch {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+}
+
+.pdf-textedit-swatch.active {
+  outline: 2px solid var(--pdf-textedit-ring);
+  outline-offset: 1px;
+}
+
+/* Style-bar trigger for the shared color picker */
+.pdf-textedit-colorwrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.pdf-textedit-colorwrap .pdf-color-popover {
+  z-index: 8;
 }
 
 .pdf-color-trigger-compact:hover,
@@ -1643,11 +2838,17 @@ button {
 .pdf-imgedit-img,
 .pdf-imgedit-ghostbox,
 .pdf-imgedit-hit,
-.pdf-imgedit-del,
 .pdf-imgedit-handle,
-.pdf-imgedit-liveghost {
+.pdf-imgedit-liveghost,
+.pdf-imgedit-veil {
   position: absolute;
   box-sizing: border-box;
+}
+
+/* Covers the old spot of a moved/replaced image until the live page patch erases it */
+.pdf-imgedit-veil {
+  background: var(--pdf-imgedit-veil-bg);
+  pointer-events: none;
 }
 
 /* Purely visual copy of an existing image while it is dragged/resized; the
@@ -1659,7 +2860,6 @@ button {
 .pdf-imgedit-img,
 .pdf-imgedit-ghostbox,
 .pdf-imgedit-hit,
-.pdf-imgedit-del,
 .pdf-imgedit-handle {
   pointer-events: auto;
 }
@@ -1668,7 +2868,6 @@ button {
 .pdf-imgedit-passive .pdf-imgedit-img,
 .pdf-imgedit-passive .pdf-imgedit-ghostbox,
 .pdf-imgedit-passive .pdf-imgedit-hit,
-.pdf-imgedit-passive .pdf-imgedit-del,
 .pdf-imgedit-passive .pdf-imgedit-handle {
   pointer-events: none;
 }
@@ -1705,28 +2904,6 @@ button {
 
 .pdf-night .pdf-page-livepreview {
   filter: invert(1) hue-rotate(180deg);
-}
-
-/* Pending deletion: veiled with a cross, click to select/revert */
-.pdf-imgedit-del {
-  cursor: pointer;
-  background:
-    linear-gradient(
-      to top right,
-      transparent 48.8%,
-      var(--pdf-imgedit-del-line) 48.8%,
-      var(--pdf-imgedit-del-line) 51.2%,
-      transparent 51.2%
-    ),
-    linear-gradient(
-      to bottom right,
-      transparent 48.8%,
-      var(--pdf-imgedit-del-line) 48.8%,
-      var(--pdf-imgedit-del-line) 51.2%,
-      transparent 51.2%
-    ),
-    var(--pdf-imgedit-veil-bg);
-  border: 1.5px dashed var(--pdf-imgedit-del-line);
 }
 
 .pdf-imgedit-handle {
@@ -1775,6 +2952,20 @@ button {
 .pdf-field .pdf-modal-input {
   flex: 1;
   min-width: 0;
+}
+
+/* Shared dropdown (@genoffice/ui gs-dd) in modal field rows: matches the
+ * .pdf-modal-input frame (28px, radius 4, 13px) */
+.pdf-field .pdf-modal-dd {
+  flex: 1;
+  min-width: 0;
+}
+
+.pdf-modal-dd .gs-dd-btn {
+  height: 28px;
+  border-radius: 4px;
+  padding: 0 6px 0 8px;
+  font-size: 13px;
 }
 
 .pdf-field input[type='range'] {
@@ -1831,14 +3022,6 @@ button {
   border-radius: 3px;
 }
 
-.pdf-color-picker-popup {
-  padding: 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: var(--pdf-shadow-palette);
-}
-
 .pdf-form-color-popup {
   position: absolute;
   top: calc(100% + 6px);
@@ -1853,15 +3036,23 @@ button {
   z-index: 8;
 }
 
+/* Positioning-only wrapper: the shared @genoffice/ui .gcp-palette inside
+   draws the panel chrome (background, border, radius, shadow). */
+.pdf-color-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 4;
+}
+
 .pdf-wm-preview {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 96px;
-  border: 1px dashed var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   background: var(--pdf-paper);
-  font-size: 26px;
   font-weight: 600;
   overflow: hidden;
 }
@@ -2030,6 +3221,80 @@ button {
   cursor: default;
 }
 
+/* ── Saved signatures (persisted in userData, reusable across documents) ── */
+
+.pdf-sign-saved-label {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.pdf-sign-saved {
+  width: 420px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.pdf-sign-saved-item {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.pdf-sign-saved-pick {
+  width: 120px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--pdf-paper);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.pdf-sign-saved-pick:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.pdf-sign-saved-pick img,
+.pdf-sign-saved-pick svg {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.pdf-sign-saved-del {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pdf-sign-saved-item:hover .pdf-sign-saved-del {
+  display: flex;
+}
+
+.pdf-sign-saved-del:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
 .pdf-draw-handle {
   fill: var(--pdf-paper);
   stroke: var(--accent);
@@ -2122,55 +3387,79 @@ button {
   padding: 8px;
 }
 
-.rb-drop.pdf-color-picker-popup {
-  box-shadow: var(--pdf-shadow-palette);
+/* Plain command list inside a ribbon dropdown (converter menu) */
+.rb-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 148px;
+  padding: 4px;
 }
 
-.pdf-color-picker {
-  display: grid;
-  grid-template-columns: repeat(var(--pdf-color-columns), 22px);
-  gap: 6px;
-  width: max-content;
-}
-
-.pdf-color-swatch {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid var(--border-strong);
+.rb-menu button {
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 12.5px;
+  padding: 6px 10px;
   border-radius: 4px;
   cursor: pointer;
-}
-
-.pdf-color-swatch:hover,
-.pdf-color-swatch.active {
-  border-color: var(--accent);
-  outline: 2px solid var(--accent);
-  outline-offset: 0;
-}
-
-.pdf-color-more {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 3px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border);
-  font-size: 12px;
   color: var(--text);
-  cursor: pointer;
   white-space: nowrap;
 }
 
-.pdf-color-more input[type='color'] {
-  width: 22px;
-  height: 22px;
+.rb-menu button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.rb-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.rb-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+/* Dialog color well (stamp dialog): swatch trigger + the shared picker popover.
+   The popover is fixed + anchored so it escapes the modal's overflow-y clip. */
+.pdf-color-well-wrap {
+  position: relative;
+  anchor-name: --pdf-color-well;
+}
+
+.pdf-color-well {
+  width: 48px;
+  height: 24px;
   padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 4px;
-  background: none;
   cursor: pointer;
+}
+
+.pdf-color-popover.pdf-color-well-pop {
+  position: fixed;
+  position-anchor: --pdf-color-well;
+  top: calc(anchor(bottom) + 6px);
+  left: anchor(left);
+  right: auto;
+  position-try-fallbacks: flip-block, flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 60;
+}
+
+/* Shared color picker anchored to a ribbon trigger: the .rb-drop rules give it
+   the fixed anchor positioning; drop the popover's own right-pin so the two
+   inset systems don't fight (matters in RTL) */
+/* Ribbon-anchored variant: .rb-drop supplies the anchor positioning; strip its
+   panel chrome so only the shared picker's own chrome shows. */
+.rb-drop.pdf-color-popover {
+  right: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
 }
 
 .pdf-modal-textarea {
@@ -2528,7 +3817,14 @@ button {
 }
 
 @media print {
-  .app {
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+  }
+
+  /* Hide the full-height editor root so it cannot reserve a blank sheet. */
+  #root {
     display: none !important;
   }
 
@@ -2539,7 +3835,13 @@ button {
   .pdf-print-root img {
     display: block;
     width: 100%;
-    page-break-after: always;
+    /* Print viewport units use the printable area, including chosen margins. */
+    max-height: 100vh;
+    object-fit: contain;
+  }
+
+  .pdf-print-root img + img {
+    break-before: page;
   }
 }
 
@@ -2558,6 +3860,11 @@ button {
 
 .ai-dock.collapsed {
   width: 34px;
+}
+
+/* "show the AI sidebar" off and panel closed: no rail, no sliver */
+.ai-dock.collapsed.ai-dock-off {
+  width: 0;
 }
 
 /* while dragging the resizer, follow the pointer without easing */
@@ -2591,7 +3898,8 @@ button {
   width: 34px;
   padding: 12px 2px;
   border: none;
-  border-right: 1px solid var(--border);
+  border-left: var(--ai-panel-border-left, 0px) solid var(--border);
+  border-right: var(--ai-panel-border-right, 1px) solid var(--border);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
@@ -2610,7 +3918,8 @@ button {
   flex-shrink: 0;
   min-height: 0;
   overflow: hidden;
-  border-right: 1px solid var(--border);
+  border-left: var(--ai-panel-border-left, 0px) solid var(--border);
+  border-right: var(--ai-panel-border-right, 1px) solid var(--border);
   background: var(--surface);
   font-family: var(--gs-font-sans);
   color: var(--color-text-primary);
@@ -2776,7 +4085,7 @@ button {
 .ai-msg {
   position: relative;
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -2852,7 +4161,235 @@ button {
   color: var(--color-text-secondary);
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 14px;
-} /* Thinking indicator: shimmer label above two grow/shrink dots */
+}
+
+/* in-answer page citations: click scrolls the reading view to the page */
+.ai-md .ai-md-nav {
+  color: var(--accent);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.ai-md .ai-md-nav:hover {
+  text-decoration-style: solid;
+}
+
+/* ---- OCR text layer on scanned pages: invisible but selectable ---- */
+
+.pdf-ocr-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+}
+
+.pdf-ocr-layer span {
+  position: absolute;
+  white-space: pre;
+  color: transparent;
+  cursor: text;
+  transform-origin: 0 0;
+}
+
+/* ---- Ask-AI entry on the markup bar + its anchored popover ---- */
+
+.pdf-sel-popup-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 2px;
+  background: var(--border);
+}
+
+.pdf-sel-popup button.pdf-sel-ask {
+  width: auto;
+  gap: 5px;
+  padding: 0 9px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-ai-action);
+}
+
+.ai-ask-pop {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  background: var(--surface);
+  box-shadow: var(--pdf-shadow-popup);
+}
+
+.ai-ask-pop-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.ai-ask-pop-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ai-ask-pop-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ai-ask-pop-title {
+  padding-right: 24px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-ask-pop-sub {
+  margin-top: -4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-ask-pop-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-page);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.ai-ask-pop-input:focus {
+  border-color: var(--accent);
+}
+
+.ai-ask-pop-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-ask-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ai-ask-chip:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ai-ask-pop-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ai-ask-confirm {
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: var(--color-ai-action);
+  color: var(--color-ai-action-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-ask-confirm:hover:not(:disabled) {
+  background: var(--color-ai-action-hover);
+}
+
+.ai-ask-confirm:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---- selection scope chip in the AI composer header (same look as docs/markdown) ---- */
+
+.ai-scope-row {
+  margin-bottom: 7px;
+}
+
+.ai-scope-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: var(--radius-30);
+  background: var(--accent-soft);
+  font-size: 11.5px;
+  color: var(--accent-dark);
+  font-weight: 500;
+}
+
+.ai-scope-hint::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ai-scope-hint .ai-scope-label,
+.ai-scope-hint .ai-scope-clear {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ai-scope-hint .ai-scope-clear {
+  opacity: 0.65;
+}
+
+.ai-scope-hint .ai-scope-clear:hover {
+  opacity: 1;
+}
+
+.ai-scope-preview {
+  margin-top: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-page);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  max-height: 96px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Thinking indicator: shimmer label above two grow/shrink dots */
 .ai-typing {
   display: flex;
   flex-direction: column;
@@ -3014,7 +4551,7 @@ button {
    * with the content, so clipped lines would sit flush against chips/footer */
   padding: 0 14px;
   margin: 12px 0 4px;
-  font-size: 16px;
+  font-size: 14px;
   font-family: inherit;
   line-height: 24px;
   outline: none;
@@ -3181,6 +4718,39 @@ button {
   background: var(--pdf-error-bg-hover);
 }
 
+/* File-operation confirmation card: ends the stream while the run waits for the user */
+.ai-confirm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  background: var(--color-bg-subtle);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+
+.ai-confirm-title {
+  font-weight: 600;
+}
+
+.ai-confirm-detail {
+  color: var(--color-text-secondary);
+}
+
+.ai-confirm-warning {
+  color: var(--danger);
+}
+
+.ai-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 /* ================= status bar (unified chrome shared with docs/sheets/slides) ================= */
 
 .status-bar {
@@ -3256,4 +4826,269 @@ button {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+}
+
+/* ── Digital signatures: banner, panel, certificate dialog ── */
+
+.pdf-sig-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--pdf-prop-bg);
+  border-bottom: 1px solid var(--border);
+  border-inline-start: 3px solid var(--pdf-ok);
+}
+
+.pdf-sig-banner.warning,
+.pdf-sig-banner.untrusted {
+  border-inline-start-color: var(--pdf-sig-warn);
+}
+
+.pdf-sig-banner.invalid {
+  border-inline-start-color: var(--danger);
+}
+
+.pdf-sig-banner > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-sig-dialog {
+  min-width: 520px;
+  max-width: 640px;
+}
+
+.pdf-sig-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid var(--pdf-ok);
+  border-radius: 8px;
+}
+
+.pdf-sig-card.warning,
+.pdf-sig-card.untrusted {
+  border-inline-start-color: var(--pdf-sig-warn);
+}
+
+.pdf-sig-card.invalid {
+  border-inline-start-color: var(--danger);
+}
+
+.pdf-sig-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.pdf-sig-head > strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-sig-pill {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pdf-ok);
+  border: 1px solid var(--pdf-ok);
+}
+
+.pdf-sig-pill.warning,
+.pdf-sig-pill.untrusted {
+  color: var(--pdf-sig-warn);
+  border-color: var(--pdf-sig-warn);
+}
+
+.pdf-sig-pill.invalid {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.pdf-sig-problems {
+  margin: 0;
+  padding-inline-start: 18px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.pdf-sig-chain {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.pdf-sig-chain > summary {
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+
+.pdf-sig-chain .pdf-prop-table + .pdf-prop-table {
+  margin-top: 6px;
+}
+
+.pdf-cert-dialog {
+  min-width: 500px;
+}
+
+.pdf-cert-file {
+  flex: 1;
+  min-width: 0;
+  font-style: normal;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-cert-page {
+  flex: 0 0 64px;
+}
+
+.pdf-cert-error {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: 6px;
+}
+
+/* Bookmark editing (pending outline tree) */
+.pdf-bookmark-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.pdf-bookmark-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: none;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.pdf-bookmark-actions {
+  display: none;
+  flex-shrink: 0;
+}
+.pdf-bookmark-row:hover .pdf-bookmark-actions {
+  display: inline-flex;
+}
+.pdf-bookmark-add {
+  margin: 4px 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Compare panel: summary, then one tappable row per differing page */
+.pdf-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.pdf-compare-pick {
+  align-self: flex-start;
+}
+
+.pdf-compare-swap {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.85em;
+}
+
+.pdf-compare-other {
+  color: var(--text-muted);
+}
+
+.pdf-compare-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pdf-compare-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  text-align: start;
+  color: inherit;
+  font: inherit;
+}
+
+.pdf-compare-row:hover {
+  background: var(--hover);
+}
+
+.pdf-compare-page {
+  min-width: 72px;
+  font-size: 0.88em;
+}
+
+.pdf-compare-added {
+  color: var(--pdf-ok);
+  font-size: 0.82em;
+}
+
+.pdf-compare-removed {
+  color: var(--pdf-error);
+  font-size: 0.82em;
+}
+
+.pdf-compare-truncated {
+  color: var(--pdf-sig-warn);
+  font-size: 0.82em;
+}
+
+/* a page whose probe failed: same frame as a rendered page, an error line instead of a canvas */
+.pdf-page-broken {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--surface);
+  color: var(--danger);
+  font-size: 12px;
 }

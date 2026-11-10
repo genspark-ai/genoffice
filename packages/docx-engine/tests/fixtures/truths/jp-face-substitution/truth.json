@@ -1,0 +1,78 @@
+{
+  "id": "jp-face-substitution",
+  "title": "Word for Mac face substitution: Meiryo UI 1.65, missing BIZ UDP to Yu Gothic 1.44, MS Gothic 1.3029, Aptos 1.22",
+  "section": "word-truths.md#L41",
+  "probe_date": "2026-09-03",
+  "source": "probe probe.py, 10.5/11/12pt x 5 lines per face, Word for Mac direct PDF, pymupdf rawdict",
+  "cases": [
+    {
+      "kind": "factor",
+      "font": "Meiryo UI",
+      "expect": 1.6505,
+      "note": "Meiryo UI 17.28/18.24/19.8 at 10.5/11/12pt; 1.65 -> 1.6505 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "\u30e1\u30a4\u30ea\u30aa",
+      "expect": 1.9505,
+      "note": "Meiryo by its Japanese name 20.4/21.48/23.4; 1.9429 -> 1.9505 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "BIZ UDP\u30b4\u30b7\u30c3\u30af",
+      "expect": 1.433,
+      "note": "missing BIZ UDP Gothic -> Yu Gothic 15.12/15.78/17.22; 1.44 -> 1.433 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "BIZ UDP\u660e\u671d Medium",
+      "expect": 1.433,
+      "note": "missing BIZ UDP Mincho -> Yu Gothic (sans) too; 1.44 -> 1.433 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "MS Gothic",
+      "expect": 1.3,
+      "note": "real MS Gothic; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "\uff2d\uff33 \u30b4\u30b7\u30c3\u30af",
+      "expect": 1.3,
+      "note": "MS Gothic by its fullwidth Japanese name; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "Aptos",
+      "expect": 1.22,
+      "note": "Aptos 12.72/13.44/14.64 = Calibri pitch"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 19.8,
+      "tol": 0.05,
+      "note": "Meiryo UI 12pt line"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 17.196,
+      "tol": 0.05,
+      "note": "BIZ UDP Gothic 12pt line as Yu Gothic; 1.4330 x 12; the 17.28 reading was one 0.24-grid line"
+    },
+    {
+      "kind": "linePt",
+      "block": 4,
+      "expect": 15.6,
+      "tol": 0.05,
+      "note": "MS Gothic 12pt"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

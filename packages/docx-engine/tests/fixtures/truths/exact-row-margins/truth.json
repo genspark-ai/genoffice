@@ -1,0 +1,35 @@
+{
+  "id": "exact-row-margins",
+  "title": "hRule=exact: only the bottom cell margin adds to the declared height",
+  "section": "word-truths.md#L621",
+  "probe_date": "2026-10-22",
+  "class": "pure",
+  "source": "probe exrow build2.py -> Word for Mac direct PDF, pymupdf horizontal rules",
+  "cases": [
+    {
+      "kind": "rowPt",
+      "block": 1,
+      "row": 0,
+      "expect": 22.0,
+      "tol": 0.05,
+      "note": "H top 100 / bottom 0 -> 22.0 (Word 22.08/21.84)"
+    },
+    {
+      "kind": "rowPt",
+      "block": 3,
+      "row": 0,
+      "expect": 27.0,
+      "tol": 0.05,
+      "note": "I top 0 / bottom 100 -> 27.0"
+    },
+    {
+      "kind": "rowPt",
+      "block": 5,
+      "row": 0,
+      "expect": 27.0,
+      "tol": 0.05,
+      "note": "J top 200 / bottom 100 -> 27.0"
+    }
+  ],
+  "docx": "probe.docx"
+}

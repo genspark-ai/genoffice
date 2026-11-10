@@ -199,8 +199,8 @@ describe('edit tools vs tracked deletions', () => {
       editor,
       {
         id: 't',
-        name: 'apply_commands',
-        input: { commands: [{ deleteBlocks: { target: { blockIndexes: [1, 3] } } }] },
+        name: 'apply_ops',
+        input: { ops: [{ op: 'deleteBlocks', target: { blockIndexes: [1, 3] } }] },
       },
       NUM_IDS,
     )
@@ -215,8 +215,8 @@ describe('edit tools vs tracked deletions', () => {
       editor,
       {
         id: 't',
-        name: 'apply_commands',
-        input: { commands: [{ deleteBlocks: { target: { containsText: 'Old reference' } } }] },
+        name: 'apply_ops',
+        input: { ops: [{ op: 'deleteBlocks', target: { containsText: 'Old reference' } }] },
       },
       NUM_IDS,
     )
@@ -230,9 +230,9 @@ describe('edit tools vs tracked deletions', () => {
       editor,
       {
         id: 't',
-        name: 'apply_commands',
+        name: 'apply_ops',
         input: {
-          commands: [{ replaceAllText: { containsText: 'Old reference 74.', replaceText: '[9]' } }],
+          ops: [{ op: 'findReplace', find: 'Old reference 74.', replace: '[9]' }],
         },
       },
       NUM_IDS,
@@ -248,8 +248,8 @@ describe('edit tools vs tracked deletions', () => {
       editor,
       {
         id: 't',
-        name: 'apply_commands',
-        input: { commands: [{ deleteBlocks: { target: { containsText: 'Keep this' } } }] },
+        name: 'apply_ops',
+        input: { ops: [{ op: 'deleteBlocks', target: { containsText: 'Keep this' } }] },
       },
       NUM_IDS,
     )

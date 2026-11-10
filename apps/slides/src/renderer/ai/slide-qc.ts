@@ -1,8 +1,8 @@
 /**
- * Post-generation layout QC: each cloud-generated page gets one focused vision pass —
- * screenshot + element inventory → a restricted agent fixes objective layout defects
- * with execute_slide_script. Runs in its own AgentLoop per page (fresh context, so the
- * QC cost doesn't ride on the main conversation), orchestrated by AiPanel.
+ * Post-generation layout QC: each generated page gets one focused pass. Vision-capable
+ * models receive screenshot + element inventory; text-only models receive deterministic
+ * geometry evidence only. Runs in its own AgentLoop per page (fresh context, so the QC
+ * cost doesn't ride on the main conversation), orchestrated by AiPanel.
  */
 import {
   AgentLoop,
@@ -10,10 +10,35 @@ import {
   type AgentSkill,
   type AgentTransport,
 } from '@genoffice/agent-core'
-import { auditSlideLayout } from './layout-audit'
+import { endpointSupportsVision, type AiSettings } from '@genoffice/ai-provider/browser'
+import { auditSlideLayout } from '@genoffice/pipelines/slides/layout-audit'
 import { createSlidesSkill, formatSlideDump, type DeckAccess } from './slides-skill'
+import qcVisualPrompt from './prompts/qc-visual.md?raw'
+import qcGeometryPrompt from './prompts/qc-geometry.md?raw'
+import { redactionCount } from './redact-view'
 
 /** Kill switch: localStorage 'ai-slides-qc' = '0' disables the automatic pass */
+/**
+ * Whether a rendered picture of this slide may go to the model.
+ *
+ * A screenshot is the one outbound path no text projection can reach: the
+ * renderer tints a withheld run rather than replacing it, so the words are in
+ * the bitmap. There is no mask for that — a picture has no spans to cover — so
+ * a slide that withholds anything gets no picture at all.
+ */
+export function screenshotAllowed(slide: { nodes: unknown[] }): boolean {
+  return redactionCount(slide as Parameters<typeof redactionCount>[0]) === 0
+}
+
+/**
+ * What to say instead of attaching a picture.
+ *
+ * Said rather than omitted: a model told nothing assumes it is looking at the
+ * rendering, and reasons about text it cannot see.
+ */
+export const NO_SCREENSHOT_NOTE =
+  'No image of this slide: it contains text withheld from you, and a picture is not something the withholding can cover. Work from the element inventory.'
+
 export function isQcEnabled(): boolean {
   return localStorage.getItem('ai-slides-qc') !== '0'
 }
@@ -22,7 +47,28 @@ export function isQcEnabled(): boolean {
 export const QC_MAX_PAGES = 20
 
 /**
- * Pages produced by a generateFromHtml/regenerateSlide call, as 0-based indexes.
+ * Whether a rendered picture of this slide may go to the model.
+ *
+ * A custom endpoint answers from its own declaration (compat.vision, or a
+ * per-model override); everything else keeps the provider capability plus the
+ * shipped text-only model list. Unknown providers are treated as text-only:
+ * omitting an image is safer than a user-visible 400.
+ */
+export function settingsSupportVision(
+  settings: Pick<AiSettings, 'provider' | 'providers'>,
+): boolean {
+  return endpointSupportsVision(settings)
+}
+
+/** Custom/OpenAI-compatible endpoints can still reject images despite optimistic metadata. */
+export function isUnsupportedImageInputError(error: string): boolean {
+  return /(?:does not support|doesn't support|unsupported).{0,40}(?:image|vision)|(?:image|vision).{0,40}(?:not supported|unsupported)/i.test(
+    error,
+  )
+}
+
+/**
+ * Pages produced by a landGeneratedPages/regenerateSlide call, as 0-based indexes.
  * replace lands a whole new deck; append starts at appendedFrom; insert_at/replace_at touch one page.
  */
 export function generatedPageRange(
@@ -72,21 +118,6 @@ export function mergeQcPages(
 /** Only the two tools the QC pass needs: fresh geometry reads + atomic layout scripts */
 const QC_TOOL_ALLOWLIST = new Set(['read_slide', 'execute_slide_script'])
 
-const QC_SYSTEM_PROMPT = `You are a slide layout QA fixer. Each request gives you ONE slide: a rendered screenshot (attached image) and an element inventory (ids, geometry, colors, text — the same ids the tools accept).
-
-Look at the screenshot for OBJECTIVE layout defects only:
-- text overflowing its box, colliding with a neighbor, or clipped by the canvas edge
-- elements overlapping unintentionally (a text block over another text block; content under an image)
-- unreadable contrast (text color too close to what it sits on)
-- obviously ragged alignment or wildly uneven spacing among sibling items (cards, bullets, columns)
-- distorted or badly cropped images
-
-Fix defects with execute_slide_script (batch every change for this page into as few calls as possible; call read_slide first if you need fresher geometry than the inventory). Prefer the minimal change: move/resize/shrink font — keep the page's design.
-
-STRICTLY FORBIDDEN: redesigning the page, changing the color scheme or fonts for taste, rewriting copy, adding or deleting elements, touching elements that look fine. When the screenshot shows no objective defect, make NO tool call.
-
-Final reply: one short line (under 15 words) stating what you fixed, or exactly "OK" if nothing needed fixing.`
-
 export interface QcPageResult {
   /** page still exists and the pass ran */
   ok: boolean
@@ -110,29 +141,42 @@ export interface QcPageOptions {
   signal?: AbortSignal
 }
 
-/** Wrap createSlidesSkill with the QC system prompt and the two-tool allowlist (executor shared) */
-export function createSlideFixSkill(access: DeckAccess): AgentSkill {
+/** Wrap createSlidesSkill with the appropriate QC prompt and two-tool allowlist (executor shared). */
+export function createSlideFixSkill(access: DeckAccess, hasScreenshot = true): AgentSkill {
   const full = createSlidesSkill(access)
   return {
     id: 'slides-qc',
-    systemPrompt: QC_SYSTEM_PROMPT,
+    systemPrompt: hasScreenshot ? qcVisualPrompt : qcGeometryPrompt,
     tools: full.tools.filter((tool) => QC_TOOL_ALLOWLIST.has(tool.name)),
     executeTool: full.executeTool,
   }
 }
 
-function buildQcInstruction(pageIndex: number, dump: string, issues: string[]): string {
+function buildQcInstruction(
+  pageIndex: number,
+  dump: string,
+  issues: string[],
+  hasScreenshot: boolean,
+): string {
   const auditStr = issues.length
-    ? `Deterministic geometry audit already flags:\n${issues.map((s) => `- ${s}`).join('\n')}\n(These are hints — the screenshot is the ground truth; it may show more or reveal a flagged item is fine.)`
+    ? hasScreenshot
+      ? `Deterministic geometry audit already flags:\n${issues.map((s) => `- ${s}`).join('\n')}\n(These are hints — the screenshot is the ground truth; it may show more or reveal a flagged item is fine.)`
+      : `Deterministic geometry audit flags:\n${issues.map((s) => `- ${s}`).join('\n')}\n(Only make changes supported by these findings and the inventory; no screenshot is available.)`
     : 'The deterministic geometry audit found nothing — trust the screenshot for visual defects it cannot measure (contrast, alignment, crowding).'
-  return `Slide ${pageIndex + 1} (slideIndex ${pageIndex}) was just auto-generated. The attached image is its current rendering.
+  const rendering = hasScreenshot
+    ? 'The attached image is its current rendering.'
+    : 'No image is attached; inspect only the inventory and deterministic audit.'
+  const task = hasScreenshot
+    ? 'Inspect the screenshot, fix objective layout defects first, then apply restrained professional polish when clearly beneficial.'
+    : 'Fix only objective geometry defects established by the audit and inventory.'
+  return `Slide ${pageIndex + 1} (slideIndex ${pageIndex}) was just auto-generated. ${rendering}
 
 Element inventory:
 ${dump}
 
 ${auditStr}
 
-Inspect the screenshot and fix objective layout defects now.`
+${task}`
 }
 
 /**
@@ -153,7 +197,23 @@ export function qcSlidePage(opts: QcPageOptions): Promise<QcPageResult> {
     })
   }
   const preIssues = auditSlideLayout(slide)
-  const instruction = buildQcInstruction(pageIndex, formatSlideDump(slide), preIssues)
+  // A text-only model has no additional evidence to inspect when the deterministic
+  // audit is already clean. Avoid an unnecessary request and any chance of speculative edits.
+  if (!screenshot && preIssues.length === 0) {
+    return Promise.resolve({
+      ok: true,
+      edited: false,
+      reply: 'OK',
+      preIssues: 0,
+      postIssues: 0,
+    })
+  }
+  const instruction = buildQcInstruction(
+    pageIndex,
+    formatSlideDump(slide),
+    preIssues,
+    screenshot !== null,
+  )
 
   return new Promise((resolve) => {
     let edited = false
@@ -170,7 +230,7 @@ export function qcSlidePage(opts: QcPageOptions): Promise<QcPageResult> {
     }
     const loop = new AgentLoop({
       transport,
-      skill: createSlideFixSkill(access),
+      skill: createSlideFixSkill(access, screenshot !== null),
       // audit feedback inside execute_slide_script output drives at most a couple of fix rounds
       maxTurns: 6,
       ...(systemSuffix ? { systemSuffix } : {}),
@@ -184,6 +244,6 @@ export function qcSlidePage(opts: QcPageOptions): Promise<QcPageResult> {
     })
     const onAbort = () => loop.cancel()
     signal?.addEventListener('abort', onAbort, { once: true })
-    loop.run(instruction, screenshot ? [screenshot] : [])
+    loop.run(instruction, screenshot ? [screenshot] : undefined)
   })
 }

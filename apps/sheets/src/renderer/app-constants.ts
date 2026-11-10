@@ -3,8 +3,8 @@
  * vocabularies, Univer mutation/command names the edit journal listens to,
  * and the Home → Cell Styles presets. Extracted from App.tsx verbatim.
  */
-import type { CellFormatPatch } from '../domain/workbook-dsl'
-import type { WorkbookSnapshot } from '../domain/workbook.types'
+import type { CellFormatPatch } from '@genoffice/xlsx-gateway/domain/workbook-dsl'
+import type { WorkbookSnapshot } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import type { ChartEditData } from './WorkbookVisuals'
 
 export const CHART_TYPE_COMMANDS = ['column', 'bar', 'line', 'area', 'pie', 'doughnut'] as const
@@ -46,11 +46,41 @@ export const initialSnapshot: WorkbookSnapshot = {
 
 export const FORMULA_MODE_MAX_CELLS = 50_000
 export const SET_RANGE_VALUES_MUTATION = 'sheet.mutation.set-range-values'
+// Command (not mutation) id — the gate where user-typed / facade-set values
+// can still be cancelled before they reach the model and the formula engine.
+export const SET_RANGE_VALUES_COMMAND = 'sheet.command.set-range-values'
 export const SET_NUMFMT_MUTATION = 'sheet.mutation.set.numfmt'
 // Freeze and gridline toggles journal from their mutations so Univer's own
 // undo/redo re-records the restored state (ribbon handlers do not record).
 export const SET_FROZEN_MUTATION = 'sheet.mutation.set-frozen'
 export const TOGGLE_GRIDLINES_MUTATION = 'sheet.mutation.toggle-gridlines'
+export const SET_RIGHT_TO_LEFT_MUTATION = 'sheet.mutation.set-worksheet-right-to-left'
+export const SET_ZOOM_OPERATION = 'sheet.operation.set-zoom-ratio'
+export const SET_ZOOM_COMMAND = 'sheet.command.set-zoom-ratio'
+export const OPEN_FILTER_PANEL_OPERATION = 'sheet.operation.open-filter-panel'
+/// Full-preload offer cap, in stored cells (see load-budget.ts): loading
+/// every cell into the Univer model costs renderer memory. Measured on a
+/// synthetic value-mode book (10 columns, numbers / shared strings / styled
+/// cells): 1M stored cells load in ~4.5 s and settle near 280 MB of JS heap
+/// (800 MB renderer RSS). Above this the filter dialog explains instead of
+/// offering.
+export const FULL_LOAD_MAX_CELLS = 1_000_000
+/// Style-only blanks (a fill brushed over empty rows, a border frame around
+/// the data) are installed too but hold no value; they get their own, looser
+/// ceiling on the total stored count so formatting alone cannot deny the
+/// offer for a workbook whose data is modest (genoffice#1927). Measured:
+/// 868k values + 887k style-only blanks load in 56 s to 575 MB of JS heap.
+export const FULL_LOAD_MAX_STORED_CELLS = 2_000_000
+/// Bounding-box ceiling for the same offer, over the box the value cells
+/// span: block installs write a dense matrix over each block that holds a
+/// cell, so a sparse sheet's empty area still costs about 55 B of heap per
+/// cell (249k stored cells in a 20M box: 11 s, 1.1 GB JS heap; a 280M box
+/// ran out of memory). Each block installs only the box its cells span, so
+/// styled blanks beyond the value extent cost their own column, not the block.
+export const FULL_LOAD_MAX_GRID_CELLS = 10_000_000
+/// Largest range a sort / move snapshot journals cell by cell; the gate
+/// refuses bigger ones up front instead of letting the save drop them.
+export const REORDER_JOURNAL_MAX_CELLS = 200_000
 // Undoing a numfmt set emits the remove mutation; only the ribbon echo cares.
 export const REMOVE_NUMFMT_MUTATION = 'sheet.mutation.remove.numfmt'
 // Row/column inserts/removals and merges are journaled and replayed at save
@@ -73,8 +103,9 @@ export const MERGE_MUTATIONS: Record<string, 'merge-cells' | 'unmerge-cells'> = 
 }
 // Row/column sizing and visibility journal as ordered ops and replay into
 // row/cols attributes at save time. (`set-worksheet-row-auto-height` is
-// derived layout — it fires during rendering and must NOT journal; the user
-// command is `set-worksheet-row-is-auto-height`.)
+// derived layout — it fires during rendering and must NOT journal; the
+// user-intent mutation is `set-worksheet-row-is-auto-height`, dispatched by
+// the `sheet.command.set-row-is-auto-height` command.)
 export const AXIS_ATTR_MUTATIONS: Record<
   string,
   { kind: 'size' | 'hidden' | 'auto-size'; axis: 'row' | 'column'; hidden?: boolean }
@@ -88,10 +119,23 @@ export const AXIS_ATTR_MUTATIONS: Record<
   'sheet.mutation.set-col-visible': { kind: 'hidden', axis: 'column', hidden: false },
 }
 
+/// Max digit width of the workbook's Normal font in px — Excel's column
+/// width unit base. 7 = Calibri 11 (Windows GDI); set per loaded workbook so
+/// both width conversions stay consistent for the session.
+let workbookMdw = 7
+
+export function setWorkbookMdw(mdw: number): void {
+  workbookMdw = Number.isFinite(mdw) && mdw >= 4 && mdw <= 30 ? Math.round(mdw) : 7
+}
+
+export function getWorkbookMdw(): number {
+  return workbookMdw
+}
+
 /// Univer column pixels → OOXML character width (inverse of
 /// characterWidthToPixels), snapped to the format's 1/256 granularity.
 export function pixelsToCharacterWidth(pixels: number): number {
-  return Math.max(Math.round(((pixels - 5) / 7) * 256) / 256, 1 / 256)
+  return Math.max(Math.round((pixels / workbookMdw) * 256) / 256, 1 / 256)
 }
 // Sorting reorders the model in place; the journal snapshots the sorted
 // range afterwards, so the save writes exactly what the screen shows.
@@ -100,6 +144,10 @@ export const REORDER_RANGE_MUTATION = 'sheet.mutation.reorder-range'
 // vacated source and the landing target as plain cell edits.
 export const MOVE_RANGE_MUTATION = 'sheet.mutation.move-range'
 export const MOVE_RANGE_COMMAND = 'sheet.command.move-range'
+// Insert/Delete Cells with a shift decompose into move-range + set-range-values
+// mutations, so they journal like a drag-move and share its load-mode gate.
+export const RANGE_SHIFT_COMMAND_PATTERN =
+  /^sheet\.command\.(insert|delete)-range-move-(left|right|up|down)$/
 export const CF_RULE_COMMAND_PATTERN = /^sheet\.command\.(add|set)-conditional-rule$/
 export const SORT_COMMAND_PATTERN =
   /^sheet\.command\.(sort-range|reorder-range|split-text-to-columns)$/
@@ -150,6 +198,7 @@ export const SHEET_LIFECYCLE_MUTATIONS = new Set([
   'sheet.mutation.set-worksheet-name',
   'sheet.mutation.set-worksheet-order',
   'sheet.mutation.set-worksheet-hidden',
+  'sheet.mutation.set-tab-color',
 ])
 // Whole-row moves persist as a journaled move op (the save relocates the
 // <row> elements, so heights and hidden flags travel for free); column moves
@@ -161,6 +210,18 @@ export const MOVE_ROWS_MUTATION = 'sheet.mutation.move-rows'
 // Sheet duplication clones the worksheet part file-side; the journal records
 // the source so the save seeds the new part from it.
 export const COPY_SHEET_COMMAND = 'sheet.command.copy-sheet'
+
+/// Sheet-structure commands blocked while the workbook structure is locked
+/// (Review > Protect Workbook): add/remove/rename/reorder/duplicate/hide.
+export const STRUCTURE_LOCK_COMMANDS = new Set([
+  'sheet.command.insert-sheet',
+  'sheet.command.remove-sheet',
+  'sheet.command.set-worksheet-name',
+  'sheet.command.set-worksheet-order',
+  'sheet.command.copy-sheet',
+  'sheet.command.set-worksheet-hidden',
+  'sheet.command.set-worksheet-show',
+])
 // Autofill lands as plain value mutations (journal-friendly), but dragging
 // into an unstreamed region would overwrite data the user never saw.
 export const AUTO_FILL_COMMAND = 'sheet.command.auto-fill'

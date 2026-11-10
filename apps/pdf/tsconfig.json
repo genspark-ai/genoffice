@@ -5,5 +5,10 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["src", "electron.vite.config.ts", "vite.renderer.config.ts"]
+  "include": [
+    "src",
+    "electron.vite.config.ts",
+    "vite.renderer.config.ts",
+    "../../packages/pdf2docx/src/bidi-js.d.ts"
+  ]
 }

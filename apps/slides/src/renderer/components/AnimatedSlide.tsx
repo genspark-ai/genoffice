@@ -15,9 +15,11 @@ import type { RenderNode, RenderSlide, ShapeRenderNode } from '@genoffice/pptx-r
 import type { AnimationItem } from '../../shared/ipc'
 import {
   buildSteps,
+  computeMediaCommands,
   computeNodeStates,
   parseParaStateKey,
   type AnimStep,
+  type MediaCommand,
   type NodeAnimState,
 } from '../animation-play'
 import { useI18n } from '../i18n/locale'
@@ -27,6 +29,10 @@ import { StaticNode } from '../NodeBody'
 export interface AnimPlayer {
   /** animStateKey (sourceId or sourceId+paragraph index) → current visual state (targets without animation aren't in the Map) */
   states: Map<string, NodeAnimState>
+  /** Media commands (play/pause/stop) reached so far on this page, in fire order; the media layer applies the tail it has not seen */
+  mediaCmds: MediaCommand[]
+  /** How many of mediaCmds the last load/seek treated as already fired (landing on a played state must not replay them) */
+  mediaBase: number
   /** Whether the current step is playing */
   playing: boolean
   /** Whether there are steps left to play */
@@ -39,8 +45,18 @@ export interface AnimPlayer {
   advance: () => boolean
   /** Load a page's animations; 'fresh' = initial state (auto steps auto-play), 'all' = everything-played state */
   load: (items: AnimationItem[], mode: 'fresh' | 'all') => void
-  /** Jump to an absolute cursor (audience window mirroring the presenter); playing=true plays the current step pointed by played from its start */
-  seek: (items: AnimationItem[], played: number, playing: boolean) => void
+  /**
+   * Jump to an absolute cursor (audience window mirroring the presenter); playing=true plays the
+   * current step pointed by played from its start. media: 'keep' = same page, commands reached
+   * since the last seek still fire; 'fresh' = new page entered forward, everything fires as reached;
+   * 'all' = landed on a played state, nothing fires.
+   */
+  seek: (
+    items: AnimationItem[],
+    played: number,
+    playing: boolean,
+    media?: 'keep' | 'fresh' | 'all',
+  ) => void
 }
 
 export function useAnimPlayer(canvasHpx: number, canvasWpx?: number): AnimPlayer {
@@ -49,7 +65,8 @@ export function useAnimPlayer(canvasHpx: number, canvasWpx?: number): AnimPlayer
     played: number
     startedAt: number | null
     epoch: number
-  }>({ steps: [], played: 0, startedAt: null, epoch: 0 })
+    mediaBase: number
+  }>({ steps: [], played: 0, startedAt: null, epoch: 0, mediaBase: 0 })
   const [elapsed, setElapsed] = useState(0)
   const stateRef = useRef(state)
   stateRef.current = state
@@ -77,29 +94,50 @@ export function useAnimPlayer(canvasHpx: number, canvasWpx?: number): AnimPlayer
     setElapsed(0)
     setState((s) =>
       mode === 'all'
-        ? { steps, played: steps.length, startedAt: null, epoch: s.epoch + 1 }
+        ? {
+            steps,
+            played: steps.length,
+            startedAt: null,
+            epoch: s.epoch + 1,
+            mediaBase: computeMediaCommands(steps, steps.length, null).length,
+          }
         : {
             steps,
             played: 0,
             startedAt: steps[0]?.auto ? performance.now() : null,
             epoch: s.epoch + 1,
+            mediaBase: 0,
           },
     )
   }, [])
 
-  const seek = useCallback((items: AnimationItem[], played: number, playing: boolean) => {
-    const steps = buildSteps(items)
-    setElapsed(0)
-    setState((s) => {
-      const p = Math.max(0, Math.min(played, steps.length))
-      return {
-        steps,
-        played: p,
-        startedAt: playing && p < steps.length ? performance.now() : null,
-        epoch: s.epoch + 1,
-      }
-    })
-  }, [])
+  const seek = useCallback(
+    (
+      items: AnimationItem[],
+      played: number,
+      playing: boolean,
+      media: 'keep' | 'fresh' | 'all' = 'all',
+    ) => {
+      const steps = buildSteps(items)
+      setElapsed(0)
+      setState((s) => {
+        const p = Math.max(0, Math.min(played, steps.length))
+        return {
+          steps,
+          played: p,
+          startedAt: playing && p < steps.length ? performance.now() : null,
+          epoch: s.epoch + 1,
+          mediaBase:
+            media === 'keep'
+              ? s.mediaBase
+              : media === 'fresh'
+                ? 0
+                : computeMediaCommands(steps, p, null).length,
+        }
+      })
+    },
+    [],
+  )
 
   const advance = useCallback((): boolean => {
     const s = stateRef.current
@@ -128,8 +166,15 @@ export function useAnimPlayer(canvasHpx: number, canvasWpx?: number): AnimPlayer
     [state, elapsed, canvasHpx, canvasWpx],
   )
 
+  const mediaCmds = useMemo(
+    () => computeMediaCommands(state.steps, state.played, state.startedAt != null ? elapsed : null),
+    [state, elapsed],
+  )
+
   return {
     states,
+    mediaCmds,
+    mediaBase: state.mediaBase,
     playing: state.startedAt != null,
     pending: state.played < state.steps.length,
     played: state.played,

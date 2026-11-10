@@ -12,8 +12,10 @@
  * Reuses SettingsModal's .modal-backdrop/.modal styles.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useEscOverlay } from '../esc-overlay'
 import { removeBackground, sampleBackgroundColors, type PixelImage, type RGB } from '../cutout'
 import { useI18n, type StringKey } from '../i18n/locale'
+import { setImageSource } from '../image-loader'
 
 /** Longest side of the preview canvas (px) */
 const PREVIEW_MAX = 520
@@ -33,6 +35,7 @@ interface Props {
 }
 
 export function CutoutDialog({ dataUrl, onApply, onCancel }: Props) {
+  useEscOverlay(true)
   const { t } = useI18n()
   const [tolerance, setTolerance] = useState(DEFAULT_TOLERANCE)
   const [loaded, setLoaded] = useState(false)
@@ -82,7 +85,10 @@ export function CutoutDialog({ dataUrl, onApply, onCancel }: Props) {
       }
       const full = grab(w, h)
       const scale = Math.min(1, PREVIEW_MAX / Math.max(w, h))
-      const preview = scale < 1 ? grab(Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale))) : full
+      const preview =
+        scale < 1
+          ? grab(Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale)))
+          : full
       fullRef.current = full
       previewRef.current = preview
       bgColorsRef.current = sampleBackgroundColors(full)
@@ -97,7 +103,7 @@ export function CutoutDialog({ dataUrl, onApply, onCancel }: Props) {
     img.onerror = () => {
       if (!cancelled) setError('paneCutoutLoadFail')
     }
-    img.src = dataUrl
+    setImageSource(img, dataUrl)
     return () => {
       cancelled = true
     }
@@ -154,7 +160,11 @@ export function CutoutDialog({ dataUrl, onApply, onCancel }: Props) {
 
   return (
     <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal" style={{ maxWidth: PREVIEW_MAX + 48 }} onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal"
+        style={{ maxWidth: PREVIEW_MAX + 48 }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2>{t('paneCutoutTitle')}</h2>
         <div
           style={{
@@ -169,14 +179,29 @@ export function CutoutDialog({ dataUrl, onApply, onCancel }: Props) {
           }}
         >
           {error ? (
-            <span style={{ color: '#c33', background: '#fff', padding: '4px 10px', borderRadius: 4 }}>{t(error)}</span>
+            <span
+              style={{
+                color: 'var(--danger)',
+                background: 'var(--surface)',
+                padding: '4px 10px',
+                borderRadius: 4,
+              }}
+            >
+              {t(error)}
+            </span>
           ) : (
             <canvas
               ref={canvasRef}
-              style={{ maxWidth: '100%', maxHeight: PREVIEW_MAX, display: loaded ? 'block' : 'none' }}
+              style={{
+                maxWidth: '100%',
+                maxHeight: PREVIEW_MAX,
+                display: loaded ? 'block' : 'none',
+              }}
             />
           )}
-          {!loaded && !error && <span style={{ color: '#888' }}>{t('paneCutoutLoading')}</span>}
+          {!loaded && !error && (
+            <span style={{ color: 'var(--text-secondary)' }}>{t('paneCutoutLoading')}</span>
+          )}
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
           <span style={{ whiteSpace: 'nowrap' }}>{t('paneCutoutTolerance')}</span>
@@ -192,7 +217,7 @@ export function CutoutDialog({ dataUrl, onApply, onCancel }: Props) {
           />
           <span style={{ width: 32, textAlign: 'right' }}>{tolerance}</span>
         </label>
-        <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
           {t('paneCutoutHint', { pct: removedPct })}
         </div>
         <div className="modal-actions">

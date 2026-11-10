@@ -6,8 +6,13 @@
  */
 import { ILayoutService } from '@univerjs/preset-sheets-core'
 
-import { columnLabel } from '../domain/cell-address'
-import { decodeCsvBuffer, isNumericCell, parseCsv } from '../gateway/csv-import'
+import { columnLabel } from '@genoffice/xlsx-gateway/domain/cell-address'
+import {
+  decodeCsvBuffer,
+  isNumericCell,
+  parseCsv,
+} from '@genoffice/xlsx-gateway/gateway/csv-import'
+import { CSV_IMPORT_DEFAULT_LIMIT_MB } from '@genoffice/xlsx-gateway/gateway/csv-limits'
 import type { AdvancedFilterColumn, AdvancedFilterCriteria } from './AdvancedFilterDialog'
 import {
   buildLabelMatrix,
@@ -19,16 +24,22 @@ import {
   type OutputCell,
 } from './consolidate'
 import { isSheetRemoved, journalSize, recordStructuralOp } from './edit-journal'
+import { clearOutline, toggleOutlineGroup, type OutlineAxis } from './outline-actions'
+import { groupLevelOps, outlineGroups } from './outline-model'
 import { resolveGoToRef, type GoToNameEntry } from './goto'
 import { getLang, t } from './i18n/locale'
 import { appendSymbol } from './SymbolDialog'
+import { inferContinuousRegion } from './table-actions'
 import {
+  a1RangeRef,
+  a1RowRangeRef,
   advancedFilterColumnOptions,
   applyFilterCriteria,
   columnLetter,
   loadVisibleRange,
   sheetOutline,
   univerDefinedNames,
+  revealCellBelowFreeze,
 } from './univer-sync'
 import type { LazyWorkbookState, UniverRuntime, UniverWorksheet } from './univer-state'
 import { applyAiTableAdd } from './workbook-ops'
@@ -64,13 +75,20 @@ export function handleImportCsv(ctx: DataToolsContext): void {
   input.onchange = () => {
     const file = input.files?.[0]
     if (!file) return
-    if (file.size > 32 * 1024 * 1024) {
-      ctx.setMessage(t('appCsvTooLarge'))
-      return
-    }
-    void file.arrayBuffer().then((buffer) => {
+    void (async () => {
+      // the same ceiling the open path uses (the user's setting): one limit
+      // for every way a delimited file comes in
+      // a failed settings IPC falls back to the default, never to no limit
+      const limitMb = await window.desktopApi
+        .getCsvImportLimit()
+        .catch(() => CSV_IMPORT_DEFAULT_LIMIT_MB)
+      if (file.size > limitMb * 1024 * 1024) {
+        ctx.setMessage(t('appCsvTooLarge'))
+        return
+      }
+      const buffer = await file.arrayBuffer()
       importCsvText(ctx, decodeCsvBuffer(new Uint8Array(buffer), CSV_CHARSET_BY_LANG[getLang()]))
-    })
+    })().catch(() => ctx.setMessage(t('appCsvTooLarge')))
   }
   input.click()
 }
@@ -150,7 +168,7 @@ export function goToReference(ctx: DataToolsContext, ref: string): string | null
     const range = worksheet.getRange(resolved)
     const target = workbook.getSheetBySheetId(range.getSheetId()) ?? worksheet
     workbook.setActiveRange(range)
-    target.scrollToCell(range.getRow(), range.getColumn())
+    void revealCellBelowFreeze(target, range.getRow(), range.getColumn())
     // Hand keyboard focus back to the grid (Univer's hidden editor host, the
     // same handoff its own name box does); typing right after a jump then
     // lands in the target cell instead of being dropped on <body>.
@@ -195,8 +213,12 @@ export function handleApplyFormula(ctx: DataToolsContext, formula: string): stri
   if (!workbook || !worksheet || !range) return t('appSelectCellFirst')
   const trimmed = formula.trim()
   if (!trimmed.startsWith('=')) return t('appFormulaStartsEquals')
-  const opens = (trimmed.match(/\(/g) ?? []).length
-  const closes = (trimmed.match(/\)/g) ?? []).length
+  // Count the parens outside literals only: a paren inside "..." or a quoted
+  // sheet name is text, so counting it rejected valid formulas such as
+  // =LEN("a)b"). Same blanking pass cf-formula-fold.ts uses before scanning.
+  const bare = trimmed.replace(/"(?:[^"]|"")*"/g, '""').replace(/'(?:[^']|'')*'!?/g, '')
+  const opens = (bare.match(/\(/g) ?? []).length
+  const closes = (bare.match(/\)/g) ?? []).length
   if (opens !== closes) return t('appUnbalancedParens')
   try {
     worksheet.getRange(range.getRow(), range.getColumn(), 1, 1).setValue({ f: trimmed })
@@ -205,6 +227,100 @@ export function handleApplyFormula(ctx: DataToolsContext, formula: string): stri
   }
   ctx.setMessage(t('appFormulaSet', { cell: activeCellLabel(ctx) }))
   return null
+}
+
+/// A label turned into a legal defined name, Excel-style: illegal characters
+/// become underscores, and anything that could read as a cell reference gets
+/// an underscore prefix.
+function definedNameFromLabel(label: string): string | null {
+  const cleaned = label.trim().replace(/[^\p{L}\p{N}_.]/gu, '_')
+  if (!cleaned || /^\.+$/.test(cleaned)) return null
+  const named = /^[\p{L}_]/u.test(cleaned) ? cleaned : `_${cleaned}`
+  const cellLike = /^[A-Za-z]{1,3}\d+$/.test(named) || /^[Rr]\d*([Cc]\d*)?$/.test(named)
+  return cellLike ? `_${named}` : named
+}
+
+/// Formulas → Create from Selection: one defined name per column (labels in
+/// the selection's top row) or per row (labels in its left column). The
+/// defined-name mutation listener journals each insert.
+export function handleCreateNamesFromSelection(ctx: DataToolsContext, mode: 'top' | 'left'): void {
+  const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
+  const worksheet = workbook?.getActiveSheet()
+  const selection = workbook?.getActiveRange()?.getRange()
+  if (!workbook || !worksheet || !selection) {
+    ctx.setMessage(t('appSelectCellFirst'))
+    return
+  }
+  const { startRow, endRow, startColumn, endColumn } = selection
+  if (mode === 'top' ? endRow <= startRow : endColumn <= startColumn) {
+    ctx.setMessage(t('appCreateNamesNeedsData'))
+    return
+  }
+  const sheetName = worksheet.getSheetName()
+  // Names span the full selection like Excel (empty data rows included),
+  // but labels past the data extent are blank and would be skipped one by
+  // one — stop the label walk there so a whole-column selection doesn't
+  // read a million empty cells. File cells stream into Univer lazily, so
+  // getLastRow/getLastColumn alone can undercount; the file's used range is
+  // the floor.
+  const fileSheet = ctx.lazyWorkbookRef.current?.file.sheets.find(
+    (sheet) => sheet.id === worksheet.getSheetId(),
+  )
+  const labelEndRow = Math.min(
+    endRow,
+    Math.max(worksheet.getLastRow(), (fileSheet?.rowCount ?? 0) - 1),
+  )
+  const labelEndColumn = Math.min(
+    endColumn,
+    Math.max(worksheet.getLastColumn(), (fileSheet?.columnCount ?? 0) - 1),
+  )
+  // Labels come from the formatted display text — a date header must name
+  // like "Jan_2023", not its raw serial.
+  const entries: { label: string; ref: string }[] = []
+  if (mode === 'top') {
+    for (let column = startColumn; column <= labelEndColumn; column += 1) {
+      entries.push({
+        label: worksheet.getRange(startRow, column, 1, 1).getDisplayValue() ?? '',
+        ref: a1RangeRef(sheetName, column, startRow + 1, endRow),
+      })
+    }
+  } else {
+    for (let row = startRow; row <= labelEndRow; row += 1) {
+      entries.push({
+        label: worksheet.getRange(row, startColumn, 1, 1).getDisplayValue() ?? '',
+        ref: a1RowRangeRef(sheetName, row, startColumn + 1, endColumn),
+      })
+    }
+  }
+  // insertDefinedName keys entries by internal id and accepts duplicates
+  // without error; a second entry with the same name fails the next save.
+  // Dedupe here — against existing names and within the batch, both
+  // case-insensitive like Excel.
+  const taken = new Set(
+    univerDefinedNames(ctx.univerRef.current).map((defined) => defined.getName().toLowerCase()),
+  )
+  let created = 0
+  let skipped = 0
+  for (const entry of entries) {
+    const name = definedNameFromLabel(entry.label)
+    if (!name || taken.has(name.toLowerCase())) {
+      skipped += 1
+      continue
+    }
+    try {
+      workbook.insertDefinedName(name, entry.ref)
+      taken.add(name.toLowerCase())
+      created += 1
+    } catch {
+      // Reserved or otherwise rejected name — Excel prompts here; we skip.
+      skipped += 1
+    }
+  }
+  ctx.setMessage(
+    skipped > 0
+      ? t('appNamesCreatedSkipped', { count: created, skipped })
+      : t('appNamesCreated', { count: created }),
+  )
 }
 
 /// The Symbol dialog's click: appends the picked character to the active
@@ -321,11 +437,45 @@ export function handleCreateSubtotal(
     worksheet.insertRowsBefore(lastRowAbs + 1, 1)
     // SUBTOTAL skips the nested per-group subtotal rows inside the span.
     writeTotalRow(lastRowAbs + 1, 'Grand Total', startRow + 1, lastRowAbs)
+    recordSubtotalOutline(ctx, worksheet.getSheetId(), groups, startRow + 1, lastRowAbs)
   } catch (error: unknown) {
     return error instanceof Error ? error.message : t('appSubtotalInsertFailed')
   }
   ctx.setMessage(t('appSubtotalsInserted', { count: groups.length }))
   return null
+}
+
+/// Excel's Subtotal outlines its output: detail rows at level 2 under each
+/// group total (level 1), all under the grand total.
+function recordSubtotalOutline(
+  ctx: DataToolsContext,
+  sheetId: string,
+  groups: readonly { startAbs: number; endAbs: number }[],
+  firstDetail: number,
+  lastGroupTotal: number,
+): void {
+  const state = ctx.lazyWorkbookRef.current
+  if (!state || isSheetRemoved(state.editJournal, sheetId)) return
+  const outline = sheetOutline(state, sheetId)
+  const record = (start: number, end: number, level: number): void => {
+    for (let index = start; index <= end; index += 1) {
+      outline.rows.set(index, { level, collapsed: false })
+    }
+    recordStructuralOp(state.editJournal, sheetId, {
+      kind: 'set-rows-outline',
+      start,
+      end,
+      level,
+    })
+  }
+  record(firstDetail, lastGroupTotal, 1)
+  let shift = 0
+  for (const group of groups) {
+    record(group.startAbs + shift, group.endAbs + shift, 2)
+    shift += 1
+  }
+  outline.version += 1
+  ctx.setPendingEdits(journalSize(state.editJournal))
 }
 
 export function consolidateDefaultReference(ctx: DataToolsContext): string {
@@ -419,8 +569,8 @@ export function handleCreateConsolidate(
 /// normal hidden-rows pipeline plus a collapsed flag on the summary line.
 export function handleOutline(
   ctx: DataToolsContext,
-  action: 'group' | 'ungroup' | 'hide-detail' | 'show-detail',
-  axis: 'rows' | 'cols',
+  action: 'group' | 'ungroup' | 'hide-detail' | 'show-detail' | 'clear',
+  axisChoice: OutlineAxis | 'auto',
 ): void {
   const runtime = ctx.univerRef.current
   if (!runtime) return
@@ -438,6 +588,17 @@ export function handleOutline(
   }
   const sheetId = worksheet.getSheetId()
   if (isSheetRemoved(state.editJournal, sheetId)) return
+  if (action === 'clear') {
+    clearOutline(ctx, range.getRange())
+    return
+  }
+  // Shift+Alt+Arrow: whole columns selected mean columns, anything else rows.
+  const axis: OutlineAxis =
+    axisChoice === 'auto'
+      ? range.getHeight() >= worksheet.getMaxRows() && range.getWidth() < worksheet.getMaxColumns()
+        ? 'cols'
+        : 'rows'
+      : axisChoice
   const start = axis === 'rows' ? range.getRow() : range.getColumn()
   const end = axis === 'rows' ? start + range.getHeight() - 1 : start + range.getWidth() - 1
   const outline = sheetOutline(state, sheetId)
@@ -445,62 +606,36 @@ export function handleOutline(
   const kind = axis === 'rows' ? ('set-rows-outline' as const) : ('set-cols-outline' as const)
 
   if (action === 'hide-detail' || action === 'show-detail') {
-    // The selection is the group's detail span; the summary row/column is
-    // the next one after it (Excel's summaryBelow/summaryRight default).
-    const count = end - start + 1
-    if (action === 'hide-detail') {
-      if (axis === 'rows') worksheet.hideRows(start, count)
-      else worksheet.hideColumns(start, count)
-    } else if (axis === 'rows') {
-      worksheet.showRows(start, count)
-    } else {
-      worksheet.showColumns(start, count)
-    }
-    const summary = end + 1
+    // Excel folds the innermost group containing the selection (any group
+    // whose detail span overlaps it when the selection is the summary line).
     const collapsed = action === 'hide-detail'
-    const summaryLevel = entries.get(summary)?.level ?? 0
-    entries.set(summary, { level: summaryLevel, collapsed })
-    recordStructuralOp(state.editJournal, sheetId, {
-      kind,
-      start: summary,
-      end: summary,
-      level: summaryLevel,
-      collapsed,
-    })
-    ctx.setPendingEdits(journalSize(state.editJournal))
-    ctx.setMessage(collapsed ? t('appDetailHidden') : t('appDetailShown'))
+    const summaryAfter = axis === 'rows' ? outline.summaryBelow : outline.summaryRight
+    const groups = outlineGroups(entries, summaryAfter, () => false)
+    const group = groups
+      .filter(
+        (candidate) =>
+          (candidate.start <= end && candidate.end >= start) ||
+          (candidate.summary >= start && candidate.summary <= end),
+      )
+      .sort((left, right) => right.level - left.level)[0]
+    if (!group) {
+      ctx.setMessage(t('appOutlineSelectFirst'))
+      return
+    }
+    toggleOutlineGroup(ctx, axis, group, collapsed)
     return
   }
 
-  // Group/Ungroup shifts each contiguous run of equal levels by ±1
-  // (levels clamp to 0-7). Runs already at the boundary are skipped.
-  const delta = action === 'group' ? 1 : -1
-  const ops: { start: number; end: number; level: number }[] = []
-  let runStart = start
-  let runLevel = entries.get(start)?.level ?? 0
-  const closeRun = (runEnd: number): void => {
-    const level = Math.min(7, Math.max(0, runLevel + delta))
-    if (level !== runLevel) ops.push({ start: runStart, end: runEnd, level })
-  }
-  for (let index = start + 1; index <= end; index += 1) {
-    const level = entries.get(index)?.level ?? 0
-    if (level !== runLevel) {
-      closeRun(index - 1)
-      runStart = index
-      runLevel = level
-    }
-  }
-  closeRun(end)
+  const ops = groupLevelOps(entries, start, end, action === 'group' ? 1 : -1)
   if (ops.length === 0) {
     ctx.setMessage(action === 'group' ? t('appOutlineMaxLevel') : t('appNothingToUngroup'))
     return
   }
   for (const op of ops) {
     for (let index = op.start; index <= op.end; index += 1) {
-      entries.set(index, {
-        level: op.level,
-        collapsed: entries.get(index)?.collapsed ?? false,
-      })
+      const entry = entries.get(index)
+      if (op.level === 0 && !entry?.collapsed) entries.delete(index)
+      else entries.set(index, { ...entry, level: op.level, collapsed: entry?.collapsed ?? false })
     }
     recordStructuralOp(state.editJournal, sheetId, {
       kind,
@@ -509,6 +644,7 @@ export function handleOutline(
       level: op.level,
     })
   }
+  outline.version += 1
   ctx.setPendingEdits(journalSize(state.editJournal))
   ctx.setMessage(
     action === 'group'
@@ -540,10 +676,20 @@ export function handleFormatAsTable(ctx: DataToolsContext, style: string): void 
   }
   const sheetId = worksheet.getSheetId()
   if (isSheetRemoved(state.editJournal, sheetId)) return
-  const startRow = range.getRow()
-  const startColumn = range.getColumn()
-  const endRow = startRow + range.getHeight() - 1
-  const endColumn = startColumn + range.getWidth() - 1
+  let startRow = range.getRow()
+  let startColumn = range.getColumn()
+  let endRow = startRow + range.getHeight() - 1
+  let endColumn = startColumn + range.getWidth() - 1
+  // fixes #298: single-cell selection → infer continuous region (Excel CurrentRegion)
+  if (range.getHeight() === 1 && range.getWidth() === 1) {
+    const inferred = inferContinuousRegion(worksheet, startRow, startColumn)
+    if (inferred) {
+      startRow = inferred.startRow
+      startColumn = inferred.startColumn
+      endRow = inferred.endRow
+      endColumn = inferred.endColumn
+    }
+  }
   try {
     applyAiTableAdd(runtime, state, {
       op: 'add_table',

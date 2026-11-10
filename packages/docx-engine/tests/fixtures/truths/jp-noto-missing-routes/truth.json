@@ -1,0 +1,81 @@
+{
+  "id": "jp-noto-missing-routes",
+  "title": "Missing Noto CJK JP names: kana/kanji in SimSun 1.3029, Latin in Cambria; U+30FB / U+301C lift the SimSun line to YaHei 1.7143",
+  "section": "word-truths.md#L455",
+  "probe_date": "2026-10-13",
+  "source": "probe build.py -> jpA|jpB|jpC.pdf: kana 13.68 @10.5 line 240 (15.60/15.84 @276), middle-dot lines 18.00 @240 / 20.64 @276; real faces MS Mincho 13.68/15.60, Yu Mincho 15.12/17.28, Yu Gothic Light 15.12/17.28",
+  "cases": [
+    {
+      "kind": "cjkFactor",
+      "font": "Noto Sans CJK JP",
+      "expect": 1.3,
+      "note": "kana/kanji -> SimSun 13.68 @10.5; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "cjkFactor",
+      "font": "Noto Serif CJK JP",
+      "expect": 1.3,
+      "note": "SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "Noto Sans CJK JP",
+      "expect": 1.172,
+      "note": "Latin/digits under the missing name -> Cambria"
+    },
+    {
+      "kind": "simsunGap",
+      "font": "Noto Sans CJK JP",
+      "expect": 1.7157,
+      "note": "U+30FB / U+301C in the SimSun substitute -> Microsoft YaHei line 18.00 @10.5; YaHei hhea 1.3198 x 1.3 = 1.7157 (probed 1.7151)"
+    },
+    {
+      "kind": "simsunGap",
+      "font": "Noto Serif CJK JP",
+      "expect": 1.7157,
+      "note": "YaHei hhea 1.3198 x 1.3 = 1.7157 (probed 1.7151)"
+    },
+    {
+      "kind": "simsunGap",
+      "font": "MS Mincho",
+      "expect": null,
+      "note": "a real face has the glyphs: no lift"
+    },
+    {
+      "kind": "factor",
+      "font": "\uff2d\uff33 \u660e\u671d",
+      "expect": 1.3,
+      "note": "MS Mincho real 13.68/15.60; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "Yu Mincho",
+      "expect": 1.433,
+      "note": "15.12/17.28; 1.44 -> 1.433 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "Yu Gothic Light",
+      "expect": 1.433,
+      "note": "15.12/17.28; 1.44 -> 1.433 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 13.68,
+      "tol": 0.1,
+      "note": "kana line 10.5pt = 1.3029 (13.68 on the 0.24 grid)"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 12.31,
+      "tol": 0.1,
+      "note": "Latin-only line of the missing name = Cambria 1.172 x 10.5"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

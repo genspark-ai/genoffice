@@ -9,14 +9,28 @@ describe('clipboard TSV serialization', () => {
     expect(clipboardField({ v: 0, t: CellValueType.BOOLEAN })).toBe('FALSE')
   })
 
+  it('serializes empty booleans as empty, not FALSE or TRUE', () => {
+    expect(clipboardField({ v: null, t: CellValueType.BOOLEAN })).toBe('')
+    expect(clipboardField({ v: undefined, t: CellValueType.BOOLEAN })).toBe('')
+    expect(clipboardField({ v: '', t: CellValueType.BOOLEAN })).toBe('')
+  })
+
   it('prefers the formatted display text', () => {
     expect(clipboardField({ v: 44614, displayV: '2/22/2022' })).toBe('2/22/2022')
   })
 
   it('quotes fields with embedded newlines and normalizes \\r to \\n', () => {
-    expect(clipboardField({ v: 'greater \r\rthan' })).toBe('"greater \nthan"')
+    expect(clipboardField({ v: 'greater \r\rthan' })).toBe('"greater \n\nthan"')
+    expect(clipboardField({ v: 'a\r\rb' })).toBe('"a\n\nb"')
+    expect(clipboardField({ v: 'a\r\nb' })).toBe('"a\nb"')
     expect(clipboardField({ v: 'a\tb' })).toBe('"a\tb"')
     expect(clipboardField({ v: 'say "hi"' })).toBe('"say ""hi"""')
+    expect(clipboardField({ v: 'plain' })).toBe('plain')
+  })
+
+  it('keeps significant trailing newlines (quoted) instead of stripping them', () => {
+    expect(clipboardField({ v: 'a\n' })).toBe('"a\n"')
+    expect(clipboardField({ v: 'a\r\n' })).toBe('"a\n"')
     expect(clipboardField({ v: 'plain' })).toBe('plain')
   })
 

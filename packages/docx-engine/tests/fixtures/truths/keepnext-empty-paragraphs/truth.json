@@ -1,0 +1,23 @@
+{
+  "id": "keepnext-empty-paragraphs",
+  "title": "Word honours keepNext on empty paragraphs exactly like on text paragraphs",
+  "section": "word-truths.md#L482",
+  "probe_date": "2026-10-14",
+  "source": "probe (PR #2418), A4 72pt margins, Arial 11 filler, Heading1 = keepNext + keepLines before 240 after 80 sz 32: 31 filler lines leave ~306pt; 11 empty Heading1 paragraphs (30.4pt each) + empty + anchor move whole to the next page (anchor baseline 433.2 = the text-heading control)",
+  "cases": [
+    {
+      "kind": "pageStartBlocks",
+      "expect": [0, 1],
+      "note": "the empty keepNext chain (334pt) does not fit the 306pt remainder and opens page 2 with the first heading"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 18.4,
+      "tol": 0.05,
+      "note": "empty Heading1 line 16pt Arial"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

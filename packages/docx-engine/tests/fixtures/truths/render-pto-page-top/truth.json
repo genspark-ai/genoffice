@@ -1,0 +1,15 @@
+{
+  "id": "render-pto-page-top",
+  "title": "Space before at a natural page top, keepNext-pushed heading, page-bottom space-after",
+  "section": "word-truths.md#L548",
+  "probe_date": "2026-10-20",
+  "class": "render",
+  "source": "probe pto build.py (compat 15) -> Word for Mac direct PDF (18 pages), pymupdf baselines",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 18
+    }
+  ],
+  "docx": "probe.docx"
+}

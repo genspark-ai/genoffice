@@ -1,0 +1,39 @@
+/* Block-level markdown in AI chat bubbles (tables, fenced code); inline chips stay per-app */
+.ai-md-table-wrap {
+  overflow-x: auto;
+  margin: 0 0 16px;
+}
+.ai-md-table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+  line-height: 1.45;
+}
+.ai-md-table th,
+.ai-md-table td {
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.ai-md-table th {
+  background: var(--surface-subtle);
+  font-weight: 600;
+}
+.ai-md-pre {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--color-bg-subtle);
+  overflow-x: auto;
+  line-height: 1.5;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+.ai-md .ai-md-pre code {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  white-space: pre;
+}

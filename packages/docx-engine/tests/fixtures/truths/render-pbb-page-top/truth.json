@@ -1,0 +1,58 @@
+{
+  "id": "render-pbb-page-top",
+  "title": "Space before is dropped at a forced page top; an empty pageBreakBefore paragraph after a break is just an empty paragraph",
+  "section": "word-truths.md#L253",
+  "probe_date": "2026-09-23",
+  "class": "render",
+  "source": "pbb_probe.pdf re-measured 2026-10-22: Letter, TNR, docDefaults without w:sz (10pt), 14pt before=400 after=200 headings; glyph tops (baseline - 12.4): p1 A1 72.56, p2 A2 104.0 (72 + 11.51 empty + 20), p3 B2 72.56 (before dropped), p4 C2 104.0 (empty pageBreakBefore paragraph = an empty paragraph), p5 D2 104.0",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 5
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 1,
+      "expect": 72.56,
+      "tol": 0.6,
+      "note": "A1 plain first line"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 2,
+      "expect": 104.0,
+      "tol": 0.6,
+      "note": "A2 after a break-only paragraph + empty paragraph: 72 + 11.51 + 20"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 3,
+      "expect": 72.56,
+      "tol": 0.6,
+      "note": "B2: before=400 dropped at the forced page top"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 4,
+      "expect": 104.0,
+      "tol": 0.6,
+      "note": "C2: empty pageBreakBefore paragraph after a break reserves nothing extra"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 5,
+      "expect": 104.0,
+      "tol": 0.6,
+      "note": "D2: empty pageBreakBefore paragraph as the only break"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 3,
+      "to": 4,
+      "expect": 26.16,
+      "tol": 0.3,
+      "note": "A2 -> A3: 16.1 line + 10 after"
+    }
+  ],
+  "docx": "probe.docx"
+}

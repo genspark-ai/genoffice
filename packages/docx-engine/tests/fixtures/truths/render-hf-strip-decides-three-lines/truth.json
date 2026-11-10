@@ -1,0 +1,43 @@
+{
+  "id": "render-hf-strip-decides-three-lines",
+  "title": "Body top = header distance + the rendered three-line strip, on every page",
+  "section": "word-truths.md#L147",
+  "probe_date": "2026-10-30",
+  "class": "render",
+  "source": "Letter, pgMar top 720, header 1440, three Calibri 11 header lines, page break after the first body line; Word for Mac PDF: header lines 72.05 / 85.49 / 98.93 on both pages, body 112.37 = 72 + 3 x 13.44",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 2
+    },
+    {
+      "kind": "headerTextTopPt",
+      "page": 1,
+      "expect": 72.05,
+      "note": "strip top = header distance; guards the strip page position; gen draws strip text 1.1pt low (strip chrome)",
+      "tol": 1.5
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 1,
+      "expect": 112.37,
+      "note": "72 + three 13.44 lines; gen 114.57: the reserved height carries strip chrome (first page +2.2pt, later pages +1.0pt)",
+      "status": "failing"
+    },
+    {
+      "kind": "headerTextTopPt",
+      "page": 2,
+      "expect": 72.05,
+      "tol": 1.5,
+      "note": "guards the strip page position; gen draws strip text 1.1pt low (strip chrome)"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 2,
+      "expect": 112.37,
+      "status": "failing",
+      "note": "gen 113.36: the reserved height carries strip chrome (first page +2.2pt, later pages +1.0pt)"
+    }
+  ],
+  "docx": "probe.docx"
+}

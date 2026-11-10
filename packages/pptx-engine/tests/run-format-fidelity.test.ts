@@ -384,3 +384,74 @@ describe('complex-script font follows the font change', () => {
     expect(out).not.toContain('<a:cs')
   })
 })
+
+describe('text highlight <a:highlight>', () => {
+  const HL =
+    '<a:r><a:rPr lang="en-US"><a:highlight><a:srgbClr val="FF0000"/></a:highlight></a:rPr>' +
+    '<a:t>marked</a:t></a:r>'
+
+  it('parses the run highlight color', () => {
+    const { el } = parseEl(HL)
+    expect(el.text!.paragraphs[0]!.runs[0]!.highlight).toBe('#FF0000')
+  })
+
+  it('text-only edit keeps the highlight bytes', () => {
+    const { el } = parseEl(HL)
+    el.text!.paragraphs[0]!.runs[0]!.text = 'edited'
+    const out = patchTextElementXml(el, el.anchor.originalXml)
+    expect(out).toContain('<a:highlight><a:srgbClr val="FF0000"/></a:highlight>')
+    expect(out).toContain('edited')
+  })
+
+  it('a structural rebuild rewrites the highlight', () => {
+    const { el } = parseEl(HL)
+    el.text!.paragraphs[0]!.runs.push({ text: ' added' }) // forces the rebuild path
+    const out = patchTextElementXml(el, el.anchor.originalXml)
+    expect(out).toContain('<a:highlight><a:srgbClr val="FF0000"/></a:highlight>')
+  })
+})
+
+describe('recolor replaces non-srgb fills instead of duplicating solidFill', () => {
+  const recolor = (runXml: string) => {
+    const { slide, el } = parseEl(runXml)
+    expect(setElementFont(slide, el.id, { color: '#112233' })).toBe(true)
+    return patchTextElementXml(el, el.anchor.originalXml)
+  }
+
+  it('preset-color run keeps a single solidFill', () => {
+    const out = recolor(
+      '<a:r><a:rPr><a:solidFill><a:prstClr val="red"/></a:solidFill></a:rPr><a:t>x</a:t></a:r>',
+    )
+    expect(out.match(/<a:solidFill>/g)).toHaveLength(1)
+    expect(out).toContain('<a:srgbClr val="112233"/>')
+    expect(out).not.toContain('prstClr')
+  })
+
+  it('system-color run keeps a single solidFill', () => {
+    const out = recolor(
+      '<a:r><a:rPr><a:solidFill><a:sysClr val="windowText"/></a:solidFill></a:rPr><a:t>x</a:t></a:r>',
+    )
+    expect(out.match(/<a:solidFill>/g)).toHaveLength(1)
+    expect(out).toContain('<a:srgbClr val="112233"/>')
+  })
+
+  it('gradient-filled run ends with a single solidFill, not a duplicate pair', () => {
+    const out = recolor(
+      '<a:r><a:rPr><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs></a:gsLst></a:gradFill></a:rPr><a:t>x</a:t></a:r>',
+    )
+    expect(out.match(/<a:solidFill>/g)).toHaveLength(1)
+    expect(out).toContain('<a:srgbClr val="112233"/>')
+    expect(out).not.toContain('gradFill')
+  })
+
+  it('picture/no-fill runs end with a single solidFill', () => {
+    const blip = recolor(
+      '<a:r><a:rPr><a:blipFill><a:blip r:embed="rId2"/></a:blipFill></a:rPr><a:t>x</a:t></a:r>',
+    )
+    expect(blip.match(/<a:solidFill>/g)).toHaveLength(1)
+    expect(blip).not.toContain('blipFill')
+    const nofill = recolor('<a:r><a:rPr><a:noFill/></a:rPr><a:t>x</a:t></a:r>')
+    expect(nofill.match(/<a:solidFill>/g)).toHaveLength(1)
+    expect(nofill).not.toContain('noFill')
+  })
+})

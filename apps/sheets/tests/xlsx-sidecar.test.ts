@@ -1,14 +1,17 @@
+import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 import { z } from 'zod'
 
-import { blankXlsxBuffer } from '../src/gateway/csv-import'
-import { saveWorkbookViaSidecar } from '../src/gateway/xlsx-package-io'
+import { decryptOoxml, encryptOoxml, isEncryptedOoxml } from '@genoffice/electron-utils'
+import { blankXlsxBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import-xlsx'
+import { saveWorkbookViaSidecar } from '@genoffice/xlsx-gateway/gateway/xlsx-package-io'
 import { XlsxSidecarClient } from '../src/main/xlsx-sidecar-client'
 import { workbookRangeResultSchema } from '../src/shared/desktop-api'
 import { buildCompatibilityFixture } from './fixture-builder'
@@ -59,8 +62,164 @@ describe('XLSX Rust sidecar', () => {
         }),
       )
       expect(result.cells).toEqual([
-        { row: 0, column: 0, value: 'Old' },
-        { row: 0, column: 1, value: 10 },
+        { row: 0, column: 0, value: 'Old', styleIndex: 0 },
+        { row: 0, column: 1, value: 10, styleIndex: 0 },
+      ])
+    } finally {
+      if (sessionId) await client.close(sessionId)
+      client.stop()
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  // six agile-encryption key derivations (100k SHA-512 rounds each) in pure JS
+  it('rejects encrypted OOXML and preserves workbook data through host-side password rotation', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xlsx-password-rotation-test-'))
+    const firstEncryptedPath = join(directory, 'first-password.xlsx')
+    const decryptedSnapshotPath = join(directory, 'decrypted-snapshot.xlsx')
+    const updatedEncryptedPath = join(directory, 'updated-password.xlsx')
+    const plainBytes = Buffer.from(await buildCompatibilityFixture())
+    const encryptedBytes = encryptOoxml(plainBytes, 'first-password')
+    expect(isEncryptedOoxml(encryptedBytes)).toBe(true)
+    await writeFile(firstEncryptedPath, encryptedBytes)
+    const client = new XlsxSidecarClient(sidecarBinaryPath())
+    let sessionId: string | null = null
+    try {
+      await expect(client.open(firstEncryptedPath)).rejects.toThrow(/password-protected/)
+      const decryptedBytes = await decryptOoxml(encryptedBytes, 'first-password')
+      expect(isEncryptedOoxml(decryptedBytes)).toBe(false)
+      await expect(decryptOoxml(encryptedBytes, 'incorrect-password')).rejects.toThrow(
+        /password is incorrect/i,
+      )
+
+      await writeFile(decryptedSnapshotPath, decryptedBytes)
+      const opened = openResultSchema.parse(await client.open(decryptedSnapshotPath))
+      sessionId = opened.sessionId
+      const result = workbookRangeResultSchema.parse(
+        await client.readRange({
+          sessionId,
+          sheetId: 'sheet-1',
+          range: {
+            startRow: 0,
+            endRow: 0,
+            startColumn: 0,
+            endColumn: 1,
+          },
+        }),
+      )
+      expect(result.cells).toEqual([
+        { row: 0, column: 0, value: 'Old', styleIndex: 0 },
+        { row: 0, column: 1, value: 10, styleIndex: 0 },
+      ])
+
+      const updatedEncryptedBytes = encryptOoxml(decryptedBytes, 'updated-password')
+      await writeFile(updatedEncryptedPath, updatedEncryptedBytes)
+      const reopenedBytes = await readFile(updatedEncryptedPath)
+      await expect(decryptOoxml(reopenedBytes, 'first-password')).rejects.toThrow(
+        /password is incorrect/i,
+      )
+      expect(await decryptOoxml(reopenedBytes, 'updated-password')).toEqual(decryptedBytes)
+    } finally {
+      if (sessionId) await client.close(sessionId)
+      client.stop()
+      await rm(directory, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('skips a queued request whose out-of-band cancel arrived first', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xlsx-cancel-test-'))
+    const path = join(directory, 'fixture.xlsx')
+    await writeFile(path, await buildCompatibilityFixture())
+    const child = spawn(sidecarBinaryPath(), [], { stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      const lines = createInterface({ input: child.stdout })
+      const replies = new Map<string, { ok: boolean; error?: { code: string } }>()
+      const waiters = new Map<string, () => void>()
+      lines.on('line', (line) => {
+        const reply = JSON.parse(line) as { requestId: string; ok: boolean }
+        replies.set(reply.requestId, reply)
+        waiters.get(reply.requestId)?.()
+      })
+      const replyFor = (requestId: string) =>
+        new Promise<{ ok: boolean; error?: { code: string } }>((resolve) => {
+          const settled = replies.get(requestId)
+          if (settled) return resolve(settled)
+          waiters.set(requestId, () => resolve(replies.get(requestId)!))
+        })
+      const send = (request: Record<string, unknown>) =>
+        child.stdin.write(`${JSON.stringify({ version: 1, ...request })}\n`)
+
+      send({ requestId: 'c1', command: 'cancel', targetRequestId: 'victim' })
+      send({ requestId: 'victim', command: 'open', path })
+      send({ requestId: 'survivor', command: 'open', path })
+
+      expect((await replyFor('c1')).ok).toBe(true)
+      const victim = await replyFor('victim')
+      expect(victim.ok).toBe(false)
+      expect(victim.error?.code).toBe('cancelled')
+      expect((await replyFor('survivor')).ok).toBe(true)
+    } finally {
+      child.kill()
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('normalizes CRLF line breaks in shared and inline strings to LF', async () => {
+    const zip = new JSZip()
+    zip.file(
+      'xl/workbook.xml',
+      `<?xml version="1.0"?>
+      <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+        xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+      </workbook>`,
+    )
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      `<?xml version="1.0"?>
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rId1"
+          Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
+          Target="worksheets/sheet1.xml"/>
+      </Relationships>`,
+    )
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      `<?xml version="1.0"?>
+      <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+        <dimension ref="A1:B1"/>
+        <sheetData><row r="1">
+          <c r="A1" t="s"><v>0</v></c>
+          <c r="B1" t="inlineStr"><is><t xml:space="preserve">Inline\r\nBreak</t></is></c>
+        </row></sheetData>
+      </worksheet>`,
+    )
+    zip.file(
+      'xl/sharedStrings.xml',
+      `<?xml version="1.0"?>
+      <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">
+        <si><t xml:space="preserve">Shared\r\nBreak</t></si>
+      </sst>`,
+    )
+
+    const directory = await mkdtemp(join(tmpdir(), 'xlsx-sidecar-crlf-'))
+    const path = join(directory, 'crlf.xlsx')
+    await writeFile(path, await zip.generateAsync({ type: 'nodebuffer' }))
+    const client = new XlsxSidecarClient(sidecarBinaryPath())
+    let sessionId: string | null = null
+    try {
+      const opened = openResultSchema.parse(await client.open(path))
+      sessionId = opened.sessionId
+      const result = workbookRangeResultSchema.parse(
+        await client.readRange({
+          sessionId,
+          sheetId: 'sheet-1',
+          range: { startRow: 0, endRow: 0, startColumn: 0, endColumn: 1 },
+        }),
+      )
+      expect(result.cells).toEqual([
+        { row: 0, column: 0, value: 'Shared\nBreak', styleIndex: 0 },
+        { row: 0, column: 1, value: 'Inline\nBreak', styleIndex: 0 },
       ])
     } finally {
       if (sessionId) await client.close(sessionId)
@@ -304,6 +463,7 @@ describe('XLSX Rust sidecar', () => {
                     hidden: z.boolean(),
                     outlineLevel: z.number().optional(),
                     collapsed: z.boolean().optional(),
+                    styleIndex: z.number().optional(),
                   }),
                 ),
                 freeze: z
@@ -353,6 +513,7 @@ describe('XLSX Rust sidecar', () => {
         { startColumn: 1, endColumn: 1, width: 0, hidden: true },
         { startColumn: 2, endColumn: 2, width: 24, hidden: false },
         { startColumn: 3, endColumn: 3, hidden: false, outlineLevel: 2, collapsed: true },
+        { startColumn: 4, endColumn: 5, hidden: false, styleIndex: 2 },
       ])
       expect(opened.sheets[0]).toMatchObject({
         hidden: false,
@@ -366,6 +527,7 @@ describe('XLSX Rust sidecar', () => {
         bold: true,
         fontColor: '#9C0006',
         fillColor: '#FFC7CE',
+        numberFormat: '#,##0.0',
       })
       expect(opened.sheets[0]?.tables).toEqual([
         {
@@ -373,10 +535,15 @@ describe('XLSX Rust sidecar', () => {
           headerRowCount: 1,
           showRowStripes: true,
           showColumnStripes: false,
+          filterActive: true,
+          name: 'Table1',
+          columns: ['Item', 'B', 'C', 'D'],
           styleName: 'TableStyleMedium2',
           headerFill: '#4472C4',
           headerFontColor: '#FFFFFF',
           stripeFill: '#DAE3F3',
+          totalRowBorderColor: '#4472C4',
+          totalRowBorderStyle: 'double',
         },
       ])
       expect(opened.styles[1]).toMatchObject({
@@ -393,6 +560,7 @@ describe('XLSX Rust sidecar', () => {
         wrapText: true,
         fontColor: '#4472C4',
         numberFormat: '0%',
+        textRotation: 90,
         borderLeft: { style: 'thin', color: '#FF0000' },
         borderTop: { style: 'medium', color: '#4472C4' },
         borderBottom: { style: 'double' },
@@ -400,6 +568,7 @@ describe('XLSX Rust sidecar', () => {
       expect(opened.styles[2]).toMatchObject({
         fontColor: '#993366',
         fillColor: '#F8CBAD',
+        textRotation: 255,
       })
 
       let result = workbookRangeResultSchema.parse(
@@ -422,7 +591,7 @@ describe('XLSX Rust sidecar', () => {
       expect(result.indexingComplete).toBe(true)
       expect(result.merges).toEqual([{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }])
       expect(result.rows).toEqual([
-        { row: 0, height: 30, hidden: false },
+        { row: 0, height: 30, customHeight: true, hidden: false, styleIndex: 2 },
         { row: 1, hidden: true },
         { row: 2, hidden: false, outlineLevel: 1 },
       ])
@@ -455,14 +624,19 @@ describe('XLSX Rust sidecar', () => {
         formulas: ['6'],
         dxfIndex: 0,
         priority: 1,
+        stopIfTrue: true,
         ranges: [{ startRow: 1, startColumn: 0, endRow: 2, endColumn: 0 }],
       })
       expect(result.conditionalRules[1]).toMatchObject({
         ruleType: 'dataBar',
         priority: 2,
-        cfvos: [{ kind: 'min' }, { kind: 'max' }],
+        // The x14 twin's autoMin/autoMax refine the 2006 min/max cfvos.
+        cfvos: [{ kind: 'autoMin' }, { kind: 'autoMax' }],
         colors: ['#638EC6'],
         showValue: false,
+        negativeColor: '#FF0000',
+        negativeSameAsPositive: false,
+        gradient: false,
       })
       expect(result.conditionalRules[2]).toMatchObject({
         ruleType: 'iconSet',
@@ -596,11 +770,11 @@ async function buildStructureFixture(): Promise<Buffer> {
       </borders>
       <cellXfs count="3">
         <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
-        <xf numFmtId="9" fontId="1" fillId="0" borderId="1"><alignment horizontal="center" wrapText="1"/></xf>
-        <xf numFmtId="0" fontId="2" fillId="2" borderId="0"/>
+        <xf numFmtId="9" fontId="1" fillId="0" borderId="1"><alignment horizontal="center" wrapText="1" textRotation="90"/></xf>
+        <xf numFmtId="0" fontId="2" fillId="2" borderId="0"><alignment textRotation="255"/></xf>
       </cellXfs>
       <dxfs count="1">
-        <dxf><font><b/><color rgb="FF9C0006"/></font><fill><patternFill><bgColor rgb="FFFFC7CE"/></patternFill></fill></dxf>
+        <dxf><font><b/><color rgb="FF9C0006"/></font><numFmt numFmtId="165" formatCode="#,##0.0"/><fill><patternFill><bgColor rgb="FFFFC7CE"/></patternFill></fill></dxf>
       </dxfs>
     </styleSheet>`,
   )
@@ -619,9 +793,10 @@ async function buildStructureFixture(): Promise<Buffer> {
         <col min="2" max="2" width="0" hidden="1" customWidth="1"/>
         <col min="3" max="3" width="24" customWidth="1"/>
         <col min="4" max="4" outlineLevel="2" collapsed="1"/>
+        <col min="5" max="6" style="2"/>
       </cols>
       <sheetData>
-        <row r="1" ht="30" customHeight="1"><c r="A1" t="inlineStr" s="1"><is><t>Merged</t></is></c></row>
+        <row r="1" ht="30" customHeight="1" s="2" customFormat="1"><c r="A1" t="inlineStr" s="1"><is><t>Merged</t></is></c></row>
         <row r="2" hidden="1"><c r="A2"><v>5</v></c></row>
         <row r="3" outlineLevel="1"><c r="A3" s="2"><v>7</v></c><c r="B3" t="s"><v>0</v></c></row>
         <row r="4"><c r="A4" t="inlineStr"><is><t>Link</t></is></c><c r="B4" t="e"><v>#VALUE!</v></c><c r="C4" t="inlineStr"><is><r><rPr><b/></rPr><t>In</t></r><r><t>line</t></r></is></c><c r="D4"><v>not-a-number</v></c></row>
@@ -630,9 +805,11 @@ async function buildStructureFixture(): Promise<Buffer> {
       <autoFilter ref="A1:D4"/>
       <mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells>
       <conditionalFormatting sqref="A2:A3">
-        <cfRule type="cellIs" dxfId="0" priority="1" operator="greaterThan"><formula>6</formula></cfRule>
+        <cfRule type="cellIs" dxfId="0" priority="1" operator="greaterThan" stopIfTrue="1"><formula>6</formula></cfRule>
         <cfRule type="dataBar" priority="2">
           <dataBar showValue="0"><cfvo type="min"/><cfvo type="max"/><color rgb="FF638EC6"/></dataBar>
+          <extLst><ext uri="{B025F937-C7B1-47D3-B67F-A62EFF666E3E}"
+            xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:id>{TEST-DB-1}</x14:id></ext></extLst>
         </cfRule>
         <cfRule type="iconSet" priority="3">
           <iconSet iconSet="3Arrows" showValue="0"><cfvo type="percent" val="0"/><cfvo type="percent" val="33"/><cfvo type="percent" val="67" gte="0"/></iconSet>
@@ -642,6 +819,20 @@ async function buildStructureFixture(): Promise<Buffer> {
         <dataValidation type="list" allowBlank="1" sqref="C2:C3"><formula1>"Yes,No"</formula1></dataValidation>
       </dataValidations>
       <hyperlinks><hyperlink ref="A4" r:id="rId1"/></hyperlinks>
+      <extLst><ext uri="{78C0D931-6437-407d-A8EE-F0AAD7539E65}"
+        xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">
+        <x14:conditionalFormattings>
+          <x14:conditionalFormatting xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">
+            <x14:cfRule type="dataBar" id="{TEST-DB-1}">
+              <x14:dataBar minLength="0" maxLength="100" gradient="0" negativeBarColorSameAsPositive="0">
+                <x14:cfvo type="autoMin"/><x14:cfvo type="autoMax"/>
+                <x14:negativeFillColor rgb="FFFF0000"/><x14:axisColor rgb="FF000000"/>
+              </x14:dataBar>
+            </x14:cfRule>
+            <xm:sqref>A2:A3</xm:sqref>
+          </x14:conditionalFormatting>
+        </x14:conditionalFormattings>
+      </ext></extLst>
     </worksheet>`,
   )
   zip.file(
@@ -664,6 +855,9 @@ async function buildStructureFixture(): Promise<Buffer> {
     `<?xml version="1.0"?>
     <table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
       id="1" name="Table1" displayName="Table1" ref="A1:D4" headerRowCount="1">
+      <autoFilter ref="A1:D4">
+        <filterColumn colId="0"><filters><filter val="x"/></filters></filterColumn>
+      </autoFilter>
       <tableColumns count="4">
         <tableColumn id="1" name="Item"/><tableColumn id="2" name="B"/>
         <tableColumn id="3" name="C"/><tableColumn id="4" name="D"/>
@@ -794,3 +988,21 @@ async function buildVisualFixture(): Promise<Buffer> {
   )
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
+
+// On Windows an unrunnable sidecar binary (corrupt exe, AV-blocked —
+// CreateProcess errors outside Node's delayed-error set) makes spawn() throw
+// synchronously ("spawn UNKNOWN"). An empty binary path reproduces the same
+// synchronous-throw class cross-platform without needing a broken exe.
+describe('XlsxSidecarClient spawn failure', () => {
+  it('start() prewarm swallows synchronous spawn failures instead of crashing the caller', () => {
+    const client = new XlsxSidecarClient('')
+    expect(() => client.start()).not.toThrow()
+  })
+
+  it('requests reject with the binary path when the sidecar cannot spawn', async () => {
+    const client = new XlsxSidecarClient('')
+    await expect(client.open(join(tmpdir(), 'missing.xlsx'))).rejects.toThrow(
+      /XLSX sidecar failed to start/,
+    )
+  })
+})

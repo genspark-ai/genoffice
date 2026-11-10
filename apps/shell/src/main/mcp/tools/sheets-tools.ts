@@ -1,0 +1,319 @@
+import { z } from 'zod'
+import { existsSync } from 'node:fs'
+import { basename, extname, isAbsolute } from 'node:path'
+import { createFileViaCli, sheetLinksViaCli } from '../headless-cli'
+import { resolveOutputPath } from './document-tools'
+import { generateExtension } from './formats'
+import type { FamilyDriver, SessionHost, TargetResolver } from './session-tools'
+import { contentTarget } from './session-tools'
+import type { McpToolDefinition } from '../mcp-server'
+import type { CliRunner } from '../cli-runner'
+
+/**
+ * Sheets (xlsx) tool surface for the MCP server.
+ *
+ * Two paths, mirroring the docx/slides tools:
+ * - headless `create_xlsx`: a row matrix handed to the bundled `genoffice` CLI
+ *   (`create --type xlsx --from`), gated behind the "background generation"
+ *   setting. The CLI writes through the app's xlsx gateway and evaluates
+ *   formulas with the sidecar, so strings starting with "=" become real formula
+ *   cells with cached values — more than the values-only writer this used to
+ *   carry.
+ * - a visible grid session: the tools drive a real sheets tab the user
+ *   watches. The workbook lives in the renderer (Univer), so this needs a
+ *   request/response bridge into the renderer (`sheets-bridge.ts` here, the
+ *   renderer half at `apps/sheets/src/renderer/mcp-bridge.ts`) — the same
+ *   pattern as the docs session.
+ */
+
+export interface SheetsToolDeps {
+  /** directory generated files land in when the caller gives no path */
+  defaultSaveDir: () => string
+  /** expose the headless create_xlsx tool; default true — the shell passes the user's setting */
+  background?: boolean
+  /** visible-grid control; absent in headless/unit runs, which drops the session tools */
+  sheets?: SheetsControl
+  /** the bundled genoffice CLI, used by the headless tool */
+  cli?: CliRunner
+  /**
+   * Resolve a caller-supplied document reference (tab id or path) to the
+   * webContents of that open tab, so the grid tools can edit a workbook the
+   * *user* has open rather than only the session's own blank one. Absent in
+   * headless/unit runs, where a `document` argument is refused.
+   */
+  resolveTarget?: TargetResolver
+}
+
+/**
+ * Visible-grid control implemented in the shell main process
+ * (`apps/shell/src/main/mcp/sheets-bridge.ts`): opens a blank sheets tab and
+ * forwards commands to the renderer that owns the Univer workbook.
+ */
+export interface SheetsControl {
+  /** open a fresh blank sheets tab; resolves to its webContents id once the renderer is ready */
+  openBlankTab: () => Promise<number>
+  /** run one command in that tab and resolve its result */
+  runCommand: (
+    wcId: number,
+    command: 'apply_ops' | 'read_sheet' | 'save_sheet',
+    payload: unknown,
+  ) => Promise<unknown>
+}
+
+const XLSX_EXT = `.${generateExtension('xlsx')}`
+// same ceiling as the built-in AI's read_cells
+const MAX_READ_ADDRESSES = 100
+
+/** the headless tool: a row matrix -> xlsx through the bundled CLI */
+function createHeadlessXlsxTool(deps: SheetsToolDeps): McpToolDefinition {
+  return {
+    name: 'create_xlsx',
+    description:
+      'Create an Excel .xlsx file and save it to disk without opening the app UI. `data` is a 2D ' +
+      'array of rows; numbers become numeric cells, and a string starting with "=" becomes a ' +
+      'formula (the genoffice CLI evaluates it and stores the cached value). Returns the absolute ' +
+      'path of the written file.',
+    inputSchema: {
+      title: z.string().describe('workbook title, used as the file name'),
+      data: z
+        .array(z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])))
+        .describe('rows of cell values; row 0 becomes spreadsheet row 1'),
+      sheetName: z.string().optional().describe('name of the single sheet; default Sheet1'),
+      path: z
+        .string()
+        .optional()
+        .describe('absolute output path; default is a new file in the default save folder'),
+      overwrite: z
+        .boolean()
+        .optional()
+        .describe('allow replacing an existing file at `path`; default false'),
+    },
+    handler: async (args) => {
+      const title = String(args.title ?? '').trim()
+      if (!title) throw new Error('title must not be empty')
+      if (!Array.isArray(args.data)) throw new Error('data must be a 2D array of rows')
+      if (args.data.some((row) => !Array.isArray(row))) {
+        throw new Error('data must be a 2D array of rows')
+      }
+      if (!deps.cli) throw new Error('headless generation is not available in this build')
+      const sheetName =
+        typeof args.sheetName === 'string' && args.sheetName.trim()
+          ? args.sheetName.trim()
+          : 'Sheet1'
+
+      const targetPath = resolveOutputPath({
+        defaultSaveDir: deps.defaultSaveDir,
+        ext: XLSX_EXT,
+        title,
+        requestedPath: typeof args.path === 'string' ? args.path : undefined,
+        overwrite: args.overwrite === true,
+      })
+
+      const rows = (args.data as unknown[][]).map((row) =>
+        row.map((cell) => {
+          if (cell === null || cell === undefined) return ''
+          if (typeof cell === 'number') return Number.isFinite(cell) ? cell : ''
+          return String(cell)
+        }),
+      )
+      const { summary, outputPath } = await createFileViaCli(deps.cli, {
+        type: 'xlsx',
+        input: {
+          name: 'table.json',
+          content: JSON.stringify({ sheets: [{ name: sheetName, rows }] }),
+        },
+        out: targetPath,
+        overwrite: args.overwrite === true,
+      })
+      return { path: outputPath, summary }
+    },
+  }
+}
+
+/**
+ * Headless external-link maintenance through the bundled CLI (`sheet links`):
+ * list is a read and stays available with background generation off; refresh
+ * and break write the workbook, so they demand the same opt-in as create_xlsx.
+ */
+function createSheetLinksTool(deps: SheetsToolDeps): McpToolDefinition {
+  return {
+    name: 'sheet_links',
+    description:
+      "Inspect and maintain an Excel workbook's external links (formulas referencing another " +
+      '.xlsx file) without opening the app. Default action lists every link with its index, ' +
+      'resolved source path and reachability. `update: true` re-reads reachable sources and ' +
+      "writes the computed values as the formulas' cached values (formulas untouched). " +
+      '`break` severs the chosen 1-based links — their formulas keep their current cached ' +
+      'values as literals and the surviving links renumber.',
+    inputSchema: {
+      path: z.string().describe('absolute path to the .xlsx file'),
+      update: z
+        .boolean()
+        .optional()
+        .describe('refresh the formulas’ cached values from the reachable sources'),
+      break: z
+        .array(z.number().int().min(1))
+        .optional()
+        .describe(
+          '1-based link indices (from this tool’s list) to break; formulas become literals',
+        ),
+      out: z
+        .string()
+        .optional()
+        .describe('write the refreshed/broken copy here instead of in place'),
+      overwrite: z.boolean().optional().describe('allow replacing an existing file at `out`'),
+    },
+    handler: async (args) => {
+      const filePath = String(args.path ?? '')
+      if (!isAbsolute(filePath)) throw new Error('path must be absolute')
+      if (extname(filePath).toLowerCase() !== XLSX_EXT)
+        throw new Error('path must point to an .xlsx file')
+      if (!existsSync(filePath)) throw new Error(`file not found: ${filePath}`)
+      if (!deps.cli) throw new Error('external-link tools are not available in this build')
+      const breakIndices = Array.isArray(args.break) ? (args.break as number[]) : undefined
+      if (args.update === true && breakIndices !== undefined) {
+        throw new Error(
+          'update and break cannot combine: an update re-reads the sources, a break severs them',
+        )
+      }
+      // writing the workbook headlessly is opt-in, same rule as create_xlsx
+      if ((args.update === true || breakIndices !== undefined) && deps.background === false) {
+        throw new Error(
+          'refreshing or breaking links is disabled: headless file writes are off in MCP settings',
+        )
+      }
+      const json = await sheetLinksViaCli(deps.cli, {
+        path: filePath,
+        ...(args.update === true ? { update: true } : {}),
+        ...(breakIndices !== undefined ? { break: breakIndices } : {}),
+        ...(typeof args.out === 'string' && args.out ? { out: args.out } : {}),
+        ...(args.overwrite === true ? { overwrite: true } : {}),
+      })
+      return { path: filePath, name: basename(filePath), summary: json.summary, ...json.detail }
+    },
+  }
+}
+
+export function createSheetsTools(deps: SheetsToolDeps, host: SessionHost): McpToolDefinition[] {
+  return [
+    // headless generation is opt-in, same rule as create_docx/create_pptx
+    ...(deps.background === false ? [] : [createHeadlessXlsxTool(deps)]),
+    createSheetLinksTool(deps),
+    ...createGridContentTools(deps, host),
+  ]
+}
+
+/**
+ * The xlsx session lifecycle as seen by the shared create_session / save_session
+ * tools. The content tools below address the tab this driver opened.
+ */
+export function sheetsDriver(sheets: SheetsControl): FamilyDriver {
+  return {
+    family: 'xlsx',
+    openBlankTab: () => sheets.openBlankTab(),
+    save: (wcId, path, overwrite) => sheets.runCommand(wcId, 'save_sheet', { path, overwrite }),
+  }
+}
+
+/**
+ * Visible-grid content tools: fill the spreadsheet the shared session opened, so
+ * the user watches the grid take shape. The ops are the same zod-validated
+ * workbook DSL the built-in AI uses (planFromOps + applyChangePlan), executed by
+ * the tab's renderer.
+ *
+ * Only registered when the shell wired a SheetsControl — headless/unit runs
+ * keep the file-only surface.
+ */
+function createGridContentTools(deps: SheetsToolDeps, host: SessionHost): McpToolDefinition[] {
+  const sheets = deps.sheets
+  if (!sheets) return []
+
+  const target = contentTarget(host, deps.resolveTarget, 'xlsx')
+  const documentField = z
+    .string()
+    .optional()
+    .describe(
+      "tab id or path of an open spreadsheet to edit instead of the session's own tab " +
+        '(from open_documents {action:"list"}); the edit lands in that live document, and a ' +
+        'mutating tool switches the UI to that tab first so the user sees it happen',
+    )
+
+  return [
+    {
+      name: 'read_sheet',
+      description:
+        'Read the visible workbook: sheet names with data extents, and optionally the current ' +
+        'values/formulas of specific cells. Address a worksheet by NAME (the CLI convention, and ' +
+        'stable across sessions) or by the sheetId the overview reports.',
+      inputSchema: {
+        addresses: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'A1 addresses to read (values + formulas, at most 100 per call); omit to get the workbook overview only',
+          ),
+        sheet: z
+          .string()
+          .optional()
+          .describe('worksheet name to read from; default is the active sheet'),
+        sheetId: z
+          .string()
+          .optional()
+          .describe(
+            'worksheet id (from a previous overview) as an alternative to `sheet`; a name is preferred',
+          ),
+        document: documentField,
+      },
+      handler: async (args) => {
+        const wc = await target(args.document)
+        if (Array.isArray(args.addresses) && args.addresses.length > MAX_READ_ADDRESSES) {
+          throw new Error(`read at most ${MAX_READ_ADDRESSES} addresses per call`)
+        }
+        const payload = {
+          ...(Array.isArray(args.addresses) ? { addresses: args.addresses.map(String) } : {}),
+          ...(typeof args.sheet === 'string' ? { sheet: args.sheet } : {}),
+          ...(typeof args.sheetId === 'string' ? { sheetId: args.sheetId } : {}),
+        }
+        return sheets.runCommand(wc, 'read_sheet', payload)
+      },
+    },
+    {
+      name: 'apply_sheet_ops',
+      description:
+        'Apply workbook DSL operations to the visible spreadsheet (the same vocabulary the CLI ' +
+        'and the built-in AI use). Common ops: set_cell, set_formula, clear_cell, set_range, ' +
+        'clear_range, fill_range, copy_range, move_range, convert_to_values, insert_rows, delete_rows, ' +
+        'insert_cols, delete_cols, add_sheet, delete_sheet, add_chart, add_table, set_filter, ' +
+        'set_hyperlink, add_conditional_format, set_data_validation, set_note. Address a worksheet ' +
+        "by NAME with `sheet` (also `sourceSheet`/`targetSheet`) — the CLI's stable vocabulary — " +
+        'or with `sheetId` from read_sheet; a name that is not in the workbook is rejected before ' +
+        'anything applies. The target sheet is brought into view so the user sees the edit. ' +
+        'Addresses are A1. One batch applies as one undo step; a failed batch changes nothing.',
+      inputSchema: {
+        ops: z
+          .array(z.any())
+          .describe(
+            'array of workbook DSL op objects; each op addresses its worksheet with sheet (a name) or sheetId',
+          ),
+        dryRun: z
+          .boolean()
+          .optional()
+          .describe('plan the batch and report what would change, without modifying the grid'),
+        document: documentField,
+      },
+      handler: async (args) => {
+        const wc = await target(args.document, { focus: true })
+        if (!Array.isArray(args.ops)) throw new Error('ops must be an array')
+        const result = (await sheets.runCommand(wc, 'apply_ops', {
+          ops: args.ops,
+          dryRun: args.dryRun === true,
+        })) as { ok?: boolean; reason?: string }
+        // a rejected batch is a tool-level error so the caller reacts to it
+        if (result?.ok === false) {
+          throw new Error(result.reason ?? 'the batch could not be applied')
+        }
+        return result
+      },
+    },
+  ]
+}

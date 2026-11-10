@@ -3,8 +3,8 @@ import { resolve } from 'node:path'
 
 import JSZip from 'jszip'
 
-import { applyPlanToXlsx } from '../src/gateway/xlsx-gateway'
-import type { ChangePlan } from '../src/domain/workbook.types'
+import { applyPlanToXlsx } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
+import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import { buildCompatibilityFixture } from '../tests/fixture-builder'
 
 const ROW_COUNT = 10_000
@@ -15,12 +15,14 @@ async function main(): Promise<void> {
   const plan: ChangePlan = {
     transactionId: 'benchmark',
     baseRevision: 0,
-    cellChanges: [{
-      sheetId: 'sheet-1',
-      address: 'A1',
-      before: { value: 1 },
-      after: { value: 2 },
-    }],
+    cellChanges: [
+      {
+        sheetId: 'sheet-1',
+        address: 'A1',
+        before: { value: 1 },
+        after: { value: 2 },
+      },
+    ],
     sheetRenames: [],
     structuralChanges: [],
     formatChanges: [],

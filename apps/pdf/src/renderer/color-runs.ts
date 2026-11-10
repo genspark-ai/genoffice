@@ -1,14 +1,127 @@
-/** Selection-level text-edit colors, renderer side: a draft keeps one color per code
-    unit of its value ('' = the draft's base color); commits turn that into the compact
-    [start,end) ranges TextEditInput.colorRuns carries. Mapping between text forms
-    (draft value ↔ wrapped/committed newText ↔ reopened blockSource) aligns on
-    non-whitespace chars — wrapping and line joining only rearrange whitespace. */
+/** Selection-level text-edit styles, renderer side: a draft keeps one encoded style
+    key per code unit of its value ('' = the draft's base style); commits turn that
+    into the compact [start,end) ranges TextEditInput.styleRuns carries. The run
+    helpers below treat keys as opaque strings — equality is all they need — so they
+    serve plain colors and full styles alike. Mapping between text forms (draft value
+    ↔ wrapped/committed newText ↔ reopened blockSource) aligns on non-whitespace
+    chars — wrapping and line joining only rearrange whitespace. */
 
 export interface ColorRun {
   start: number
   end: number
-  /** CSS hex like '#d32f2f' */
+  /** Encoded style key (see encodeStyle); historically a bare CSS hex like '#d32f2f' */
   color: string
+}
+
+/** Selection-level style overrides of one char; every field absent = inherit the
+    draft-level value (which in turn inherits the document's original run). */
+export interface CharStyle {
+  /** CSS hex like '#d32f2f' */
+  color?: string
+  /** EDIT_FONTS id */
+  font?: string
+  /** Font size in PDF pt */
+  size?: number
+  /** Explicit on/off; absent = inherit the draft toggle */
+  bold?: boolean
+  italic?: boolean
+}
+
+/** Canonical key: '' = base; else 'color|font|size|bold|italic' with '' fields
+    inheriting and bold/italic '1'/'0' explicit on/off. A bare-color style encodes
+    with trailing '|'s so distinct styles never collide. Fields are validated
+    with the same gates decodeStyle/patchStyle use, so a crafted value passed
+    straight to encode (bypassing patchStyle) can never inject a '|' field
+    separator or a non-decimal size into a stored key. */
+export function encodeStyle(s: CharStyle): string {
+  const tri = (v: boolean | undefined) => (v === undefined ? '' : v ? '1' : '0')
+  const color = typeof s.color === 'string' && /^#[0-9a-f]{6}$/i.test(s.color) ? s.color : ''
+  const font = typeof s.font === 'string' && isStyleFontId(s.font) ? s.font : ''
+  const size =
+    typeof s.size === 'number' &&
+    Number.isFinite(s.size) &&
+    s.size > 0 &&
+    s.size <= MAX_STYLE_FONT_SIZE
+      ? String(s.size)
+      : ''
+  const key = [color, font, size, tri(s.bold), tri(s.italic)].join('|')
+  return key === '||||' ? '' : key
+}
+
+/**
+ * Font ids are EDIT_FONTS entries (see apps/pdf/src/shared/ipc.ts: arial,
+ * times, courier) but the check stays charset-based rather than a closed
+ * allowlist so a future id degrades to inherit instead of needing a lockstep
+ * update here. The charset excludes '|' so a crafted id can never inject an
+ * extra field and shift size/bold/italic on the next decode.
+ */
+export function isStyleFontId(font: string): boolean {
+  return /^[A-Za-z0-9_-]{1,32}$/.test(font)
+}
+
+/** Largest font size the layout path can handle (pt); larger values blow up
+    Math.round(size * 100) to Infinity and break sz attributes. */
+export const MAX_STYLE_FONT_SIZE = 1000
+
+/** Decimal point sizes only: rejects hex (0x10), exponents (1e2), whitespace
+    padding and anything Number() would coerce but Word would never emit. */
+export function parseStyleFontSize(raw: string): number | undefined {
+  const text = raw.trim()
+  if (!/^\d+(\.\d+)?$/.test(text)) return undefined
+  const n = Number(text)
+  if (!Number.isFinite(n) || n <= 0 || n > MAX_STYLE_FONT_SIZE) return undefined
+  return n
+}
+
+export function decodeStyle(key: string): CharStyle {
+  if (!key) return {}
+  const [color = '', font = '', size = '', bold = '', italic = ''] = key.split('|')
+  const out: CharStyle = {}
+  if (/^#[0-9a-f]{6}$/i.test(color)) out.color = color
+  if (font && isStyleFontId(font)) out.font = font
+  if (size) {
+    const n = parseStyleFontSize(size)
+    if (n !== undefined) out.size = n
+  }
+  if (bold === '1') out.bold = true
+  else if (bold === '0') out.bold = false
+  if (italic === '1') out.italic = true
+  else if (italic === '0') out.italic = false
+  return out
+}
+
+/** Merge a partial style into an encoded key: undefined fields keep their value,
+    null clears the field back to inherit. Invalid values (non-hex color,
+    off-charset font, out-of-range size, non-boolean toggle) are ignored so a
+    crafted patch can never inject field separators or Infinity sizes. */
+export function patchStyle(
+  key: string,
+  patch: { [K in keyof CharStyle]?: CharStyle[K] | null },
+): string {
+  const s = decodeStyle(key)
+  for (const k of ['color', 'font', 'size', 'bold', 'italic'] as const) {
+    const v = patch[k]
+    if (v === undefined) continue
+    if (v === null) {
+      delete s[k]
+      continue
+    }
+    if (k === 'color') {
+      if (typeof v !== 'string' || !/^#[0-9a-f]{6}$/i.test(v)) continue
+      s.color = v
+    } else if (k === 'font') {
+      if (typeof v !== 'string' || !isStyleFontId(v)) continue
+      s.font = v
+    } else if (k === 'size') {
+      if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > MAX_STYLE_FONT_SIZE)
+        continue
+      s.size = v
+    } else if (k === 'bold' || k === 'italic') {
+      if (typeof v !== 'boolean') continue
+      s[k] = v
+    }
+  }
+  return encodeStyle(s)
 }
 
 /** Carry per-char colors across a textarea value change: the edit is localized to the

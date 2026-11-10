@@ -18,6 +18,32 @@ interface RawLinkAnnotation {
   action?: string
 }
 
+/** Max link overlays per page: a hostile PDF can carry thousands of annots. */
+export const MAX_PAGE_LINKS = 500
+
+function isFiniteRect(rect: unknown): rect is [number, number, number, number] {
+  return (
+    Array.isArray(rect) &&
+    rect.length === 4 &&
+    rect.every((n) => typeof n === 'number' && Number.isFinite(n))
+  )
+}
+
+/**
+ * Filter raw pdfjs annotations down to renderable links: Link subtype with a
+ * finite rect and a target, capped per page. Exported for tests.
+ */
+export function collectPageLinks(annots: RawLinkAnnotation[]): LinkItem[] {
+  const out: LinkItem[] = []
+  for (const a of annots) {
+    if (out.length >= MAX_PAGE_LINKS) break
+    if (a.subtype !== 'Link' || (!a.url && !a.dest)) continue
+    if (!isFiniteRect(a.rect)) continue
+    out.push({ rect: a.rect, url: a.url, dest: a.dest })
+  }
+  return out
+}
+
 /** Link annot hit areas: external links open a new window (main process routes to shell.openExternal); internal dests jump pages */
 export function LinkLayer({
   doc,
@@ -40,12 +66,7 @@ export function LinkLayer({
       const page = await doc.getPage(pageNo)
       const annots = (await page.getAnnotations()) as RawLinkAnnotation[]
       if (cancelled) return
-      const out: LinkItem[] = []
-      for (const a of annots) {
-        if (a.subtype !== 'Link' || !a.rect || (!a.url && !a.dest)) continue
-        out.push({ rect: a.rect as LinkItem['rect'], url: a.url, dest: a.dest })
-      }
-      setLinks(out)
+      setLinks(collectPageLinks(annots))
     })()
     return () => {
       cancelled = true

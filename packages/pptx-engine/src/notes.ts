@@ -11,7 +11,12 @@
  */
 import type { OpenedPptx } from './index'
 import { relsPathFor, resolveTarget, type PackageArchive } from './zip'
-import { escapeXmlText } from './xml-utils'
+import {
+  decodeNumericCharRefs,
+  escapeXmlText,
+  hasContentTypeOverride,
+  maxRelationshipIdNumber,
+} from './xml-utils'
 
 const XMLDECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
 const NS_A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
@@ -25,7 +30,8 @@ const SLIDE_REL = `${REL_BASE}/slide`
 const THEME_REL = `${REL_BASE}/theme`
 
 const NOTES_SLIDE_CT = 'application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml'
-const NOTES_MASTER_CT = 'application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml'
+const NOTES_MASTER_CT =
+  'application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml'
 
 function setEntry(archive: PackageArchive, path: string, xml: string): void {
   archive.entries.set(path, Buffer.from(xml, 'utf8'))
@@ -33,9 +39,7 @@ function setEntry(archive: PackageArchive, path: string, xml: string): void {
 
 /** Unescape XML text (for reading <a:t>). */
 export function unescapeXml(s: string): string {
-  return s
-    .replace(/&#x([0-9a-fA-F]+);/g, (_m, h: string) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_m, d: string) => String.fromCodePoint(Number(d)))
+  return decodeNumericCharRefs(s)
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
@@ -54,7 +58,8 @@ export function notesPathForSlide(archive: PackageArchive, slidePath: string): s
 /** Find the body placeholder sp block in the notesSlide xml. */
 function findBodySp(xml: string): { xml: string; start: number; end: number } | null {
   for (const m of xml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)) {
-    if (/<p:ph\b[^>]*type="body"/.test(m[0])) {
+    // quote-agnostic: a deck written with type='body' is still a body placeholder
+    if (/<p:ph\b[^>]*\btype=["']body["']/.test(m[0])) {
       return { xml: m[0], start: m.index!, end: m.index! + m[0].length }
     }
   }
@@ -72,7 +77,9 @@ export function getSlideNotes(archive: PackageArchive, slidePath: string): strin
   const tx = /<p:txBody>([\s\S]*?)<\/p:txBody>/.exec(body.xml)?.[1]
   if (!tx) return ''
   const paras = [...tx.matchAll(/<a:p>([\s\S]*?)<\/a:p>/g)].map((p) =>
-    [...p[1]!.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map((t) => unescapeXml(t[1]!)).join(''),
+    [...p[1]!.matchAll(/<a:t(?:\s[^>]*[^/>])?>([\s\S]*?)<\/a:t>/g)]
+      .map((t) => unescapeXml(t[1]!))
+      .join(''),
   )
   // Drop trailing empty paragraphs (PowerPoint templates often carry an empty placeholder paragraph)
   while (paras.length && paras[paras.length - 1] === '') paras.pop()
@@ -82,16 +89,15 @@ export function getSlideNotes(archive: PackageArchive, slidePath: string): strin
 /** text (\n-separated) → notes txBody. */
 function buildNotesTxBody(text: string): string {
   const lines = text.split('\n')
-  const paras =
-    lines.every((l) => l === '')
-      ? '<a:p><a:endParaRPr lang="zh-CN"/></a:p>'
-      : lines
-          .map((line) =>
-            line === ''
-              ? '<a:p><a:endParaRPr lang="zh-CN"/></a:p>'
-              : `<a:p><a:r><a:rPr lang="zh-CN" dirty="0"/><a:t>${escapeXmlText(line)}</a:t></a:r></a:p>`,
-          )
-          .join('')
+  const paras = lines.every((l) => l === '')
+    ? '<a:p><a:endParaRPr lang="zh-CN"/></a:p>'
+    : lines
+        .map((line) =>
+          line === ''
+            ? '<a:p><a:endParaRPr lang="zh-CN"/></a:p>'
+            : `<a:p><a:r><a:rPr lang="zh-CN" dirty="0"/><a:t>${escapeXmlText(line)}</a:t></a:r></a:p>`,
+        )
+        .join('')
   return `<p:txBody><a:bodyPr/><a:lstStyle/>${paras}</p:txBody>`
 }
 
@@ -120,21 +126,28 @@ export function setSlideNotes(opened: OpenedPptx, slideIndex: number, text: stri
     const patched = body.xml.replace(/<p:txBody>[\s\S]*?<\/p:txBody>/, () => txBody)
     next = xml.slice(0, body.start) + patched + xml.slice(body.end)
   } else {
-    next = xml.replace('</p:spTree>', `${NOTES_BODY_SP_OPEN}${txBody}</p:sp></p:spTree>`)
+    next = xml.replace('</p:spTree>', () => `${NOTES_BODY_SP_OPEN}${txBody}</p:sp></p:spTree>`)
   }
   setEntry(archive, notesPath, next)
   return true
 }
 
 /** Add an Override to [Content_Types].xml (skipped if already present). */
-function addContentTypeOverride(archive: PackageArchive, partPath: string, contentType: string): void {
+export function addContentTypeOverride(
+  archive: PackageArchive,
+  partPath: string,
+  contentType: string,
+): void {
   const ctPath = '[Content_Types].xml'
   const ct = archive.readText(ctPath)
-  if (!ct || ct.includes(`PartName="/${partPath}"`)) return
+  if (!ct || hasContentTypeOverride(ct, partPath)) return
   setEntry(
     archive,
     ctPath,
-    ct.replace('</Types>', `<Override PartName="/${partPath}" ContentType="${contentType}"/></Types>`),
+    ct.replace(
+      '</Types>',
+      () => `<Override PartName="/${partPath}" ContentType="${contentType}"/></Types>`,
+    ),
   )
 }
 
@@ -150,8 +163,7 @@ export function appendRelationship(
     archive.readText(relsPath) ??
     XMLDECL +
       '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
-  let maxRid = 0
-  for (const m of xml.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  const maxRid = maxRelationshipIdNumber(xml)
   const rid = `rId${maxRid + 1}`
   xml = xml.replace(
     '</Relationships>',
@@ -186,13 +198,25 @@ function ensureNotesMaster(archive: PackageArchive): string | null {
   // Register notesMasterIdLst in presentation.xml
   const presPath = 'ppt/presentation.xml'
   const pres = archive.readText(presPath)
-  if (pres && !pres.includes('<p:notesMasterIdLst>')) {
-    const rid = appendRelationship(archive, presPath, NOTES_MASTER_REL, 'notesMasters/notesMaster1.xml')
-    const lst = `<p:notesMasterIdLst><p:notesMasterId r:id="${rid}"/></p:notesMasterIdLst>`
-    const next = pres.includes('</p:sldMasterIdLst>')
-      ? pres.replace('</p:sldMasterIdLst>', `</p:sldMasterIdLst>${lst}`)
-      : pres.replace('<p:sldIdLst>', `${lst}<p:sldIdLst>`)
-    setEntry(archive, presPath, next)
+  if (pres) {
+    const existingList = /<p:notesMasterIdLst\b[^>]*(?:\/>|>[\s\S]*?<\/p:notesMasterIdLst>)/.exec(
+      pres,
+    )?.[0]
+    if (!existingList || existingList.endsWith('/>')) {
+      const rid = appendRelationship(
+        archive,
+        presPath,
+        NOTES_MASTER_REL,
+        'notesMasters/notesMaster1.xml',
+      )
+      const list = `<p:notesMasterIdLst><p:notesMasterId r:id="${rid}"/></p:notesMasterIdLst>`
+      const next = existingList
+        ? pres.replace(existingList, () => list)
+        : pres.includes('</p:sldMasterIdLst>')
+          ? pres.replace('</p:sldMasterIdLst>', () => `</p:sldMasterIdLst>${list}`)
+          : pres.replace('<p:sldIdLst>', () => `${list}<p:sldIdLst>`)
+      setEntry(archive, presPath, next)
+    }
   }
   return path
 }
@@ -226,7 +250,9 @@ function createNotesSlide(opened: OpenedPptx, slidePath: string): string | null 
   addContentTypeOverride(archive, notesPath, NOTES_SLIDE_CT)
 
   // notesSlide rels: notesMaster + owning slide
-  const master = [...archive.entries.keys()].find((p) => /^ppt\/notesMasters\/notesMaster\d+\.xml$/.test(p))!
+  const master = [...archive.entries.keys()].find((p) =>
+    /^ppt\/notesMasters\/notesMaster\d+\.xml$/.test(p),
+  )!
   appendRelationship(archive, notesPath, NOTES_MASTER_REL, `../${master.slice(4)}`)
   appendRelationship(archive, notesPath, SLIDE_REL, `../${slidePath.slice(4)}`)
 

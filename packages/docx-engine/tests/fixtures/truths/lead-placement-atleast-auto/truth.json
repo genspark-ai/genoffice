@@ -1,0 +1,92 @@
+{
+  "id": "lead-placement-atleast-auto",
+  "title": "Auto multiples put the extra leading below the glyphs, atLeast puts it above (text bottom-aligned)",
+  "section": "word-truths.md#L296",
+  "probe_date": "2026-09-23",
+  "source": "probe build.py -> lsp_probe_ta.pdf (re-measured 2026-10-22: TNR 14 line 360 first baseline 84.96 = top + 12.96, pitches 24.24/24.00); atLeast 480 baseline top + 20.88 vs the single 12.96 -> glyphs shifted (24 - 16.08) / 2 below the CSS centre",
+  "cases": [
+    {
+      "kind": "leadTopPt",
+      "lineRule": "auto",
+      "lineRawTwips": 360,
+      "lineSpacing": 1.5,
+      "factor": 1.15,
+      "sizePt": 14,
+      "expect": "initial",
+      "note": "auto multiple: the paragraph-level shift applies (extra below)"
+    },
+    {
+      "kind": "leadTopPt",
+      "lineRule": "exact",
+      "lineRawTwips": 480,
+      "factor": 1.15,
+      "sizePt": 14,
+      "expect": "var(--doc-lead-exact, 0px)",
+      "note": "exact: baseline at 0.8 h via the face box"
+    },
+    {
+      "kind": "leadTopPt",
+      "lineRule": "atLeast",
+      "lineRawTwips": 480,
+      "factor": 1.15,
+      "sizePt": 14,
+      "expect": 3.96,
+      "tol": 0.05,
+      "note": "atLeast 480 TNR 14: Word baseline 20.88 - single 12.96 = 7.92 = 2 x the CSS half-leading, so the glyphs move down (24 - 16.1) / 2"
+    },
+    {
+      "kind": "leadTopPt",
+      "lineRule": "atLeast",
+      "lineRawTwips": 360,
+      "factor": 1.22,
+      "sizePt": 11,
+      "expect": 2.29,
+      "tol": 0.05,
+      "note": "atLeast 360 Calibri 11 (wave-4 probe: baseline = single ascent + (18 - 13.44))"
+    },
+    {
+      "kind": "leadTopPt",
+      "lineRule": "atLeast",
+      "lineRawTwips": 0,
+      "factor": 1.15,
+      "sizePt": 14,
+      "expect": "var(--doc-lead-gap, 0px)",
+      "note": "atLeast 0 = natural line, descent on the bottom"
+    },
+    {
+      "kind": "fontBox",
+      "chain": "'Times New Roman', 'Liberation Serif', serif",
+      "expect": ["--doc-font-box:1.1074", "--doc-font-skew:0.6748"],
+      "note": "TNR hhea 0.8911 + 0.2163 (Word 1.1507 extra sits above the glyphs, wave-4 probe)"
+    },
+    {
+      "kind": "fontBox",
+      "chain": "'Zebra Probe Face', serif",
+      "expect": ["--doc-font-box:initial", "--doc-font-skew:initial"],
+      "note": "unknown face: CSS centre"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 24.12,
+      "tol": 0.15,
+      "note": "line 360 pitch 24.24/24.00 = 1.5 x 16.08"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 24,
+      "tol": 0.01,
+      "note": "exact 480"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 24,
+      "tol": 0.01,
+      "note": "atLeast 480"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

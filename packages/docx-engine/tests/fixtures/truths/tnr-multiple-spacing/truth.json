@@ -1,0 +1,53 @@
+{
+  "id": "tnr-multiple-spacing",
+  "title": "Times New Roman multiples and the atLeast floor",
+  "section": "word-truths.md#L157",
+  "probe_date": "2026-09-11",
+  "class": "pure",
+  "source": "TNR Normal probe, compat 15 and 14 identical, Word for Mac PDF, pymupdf baselines",
+  "cases": [
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 13.809,
+      "tol": 0.02,
+      "note": "12pt single"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 20.714,
+      "tol": 0.02,
+      "note": "line=360 auto = 1.5 x single"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 14.56,
+      "tol": 0.02,
+      "note": "11pt line=276"
+    },
+    {
+      "kind": "linePt",
+      "block": 3,
+      "expect": 15,
+      "tol": 0.001,
+      "note": "exact 300 = 15pt whatever the face"
+    },
+    {
+      "kind": "linePt",
+      "block": 4,
+      "expect": 20,
+      "tol": 0.001,
+      "note": "atLeast 400 above natural = 20pt"
+    },
+    {
+      "kind": "linePt",
+      "block": 5,
+      "expect": 13.809,
+      "tol": 0.02,
+      "note": "atLeast 200 below natural keeps the natural line"
+    }
+  ],
+  "docx": "probe.docx"
+}

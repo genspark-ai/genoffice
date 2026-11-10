@@ -1,0 +1,43 @@
+{
+  "id": "cell-direct-indents",
+  "title": "Direct w:ind on cell paragraphs: left/right/firstLine in points, firstLineChars in em of the run size, and a w:bidi paragraph's left indent at the inline start (right edge)",
+  "section": "word-truths.md#L788",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf char origins: left 720 + firstLine 360 puts the first glyph 54 pt inside the cell edge and the wrapped line 36 pt; firstLineChars 200 at sz 24 is 24 pt; the w:bidi paragraph with left 720 ends 36 pt inside the right cell edge",
+  "cases": [
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 0,
+      "expect": {
+        "styles": ["margin-inline-start:36pt", "margin-inline-end:36pt", "text-indent:18pt"]
+      },
+      "note": "read-only cells dropped direct indents entirely; editable cells (blockAttrs) always emitted them"
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 1,
+      "expect": { "styles": ["text-indent:calc(2em)"] },
+      "note": "character-unit indent scales with the run size: 2 em of 12 pt = 24 pt, not 2 em of the 11 pt default"
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 2,
+      "expect": {
+        "styles": ["direction:rtl", "margin-inline-start:36pt"],
+        "notStyles": ["margin-left"]
+      },
+      "note": "logical start margin: under w:bidi the left indent sits at the right cell edge"
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 3,
+      "expect": { "notStyles": ["margin-inline", "text-indent"] }
+    }
+  ],
+  "docx": "probe.docx"
+}

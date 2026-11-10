@@ -34,6 +34,37 @@ describe('visual object schema', () => {
     expect(parsed.drawingIndex).toBe(2)
   })
 
+  it('accepts the sidecar srcRect crop payload', () => {
+    const parsed = visualSchema.parse({
+      id: 'visual-5',
+      sheetId: 'sheet-1',
+      kind: 'image',
+      anchor,
+      mediaPath: 'xl/media/image1.png',
+      crop: { left: 0.22481, top: 0.11008, right: 0.2093, bottom: 0.38139 },
+    })
+    expect(parsed.crop).toEqual({ left: 0.22481, top: 0.11008, right: 0.2093, bottom: 0.38139 })
+  })
+
+  it('accepts the sidecar custGeom path payload', () => {
+    const parsed = visualSchema.parse({
+      id: 'visual-3',
+      sheetId: 'sheet-1',
+      kind: 'shape',
+      anchor,
+      customPath: { width: 715645, height: 5080, d: 'M 715060 0 L 0 0 L 0 4572 Z' },
+    })
+    expect(parsed.customPath?.d).toBe('M 715060 0 L 0 0 L 0 4572 Z')
+    const strokeOnly = visualSchema.parse({
+      id: 'visual-4',
+      sheetId: 'sheet-1',
+      kind: 'shape',
+      anchor,
+      customPath: { width: 233679, height: 1, d: 'M 0 0 L 233171 0', strokeOnly: true },
+    })
+    expect(strokeOnly.customPath?.strokeOnly).toBe(true)
+  })
+
   it('accepts the sidecar chart state fields (legend/dLbls/axis titles/grouping/dPt)', () => {
     const parsed = visualSchema.parse({
       id: 'visual-2',
@@ -50,6 +81,7 @@ describe('visual object schema', () => {
         grouping: 'stacked',
         axisTitles: { category: 'Month' },
         categoryAxisFormat: 'd-mmm',
+        dataLabelStyle: { size: 12, bold: true, color: '#FFFFFF' },
         series: [
           {
             name: 'S1',
@@ -64,8 +96,35 @@ describe('visual object schema', () => {
     expect(parsed.chart?.legend).toBe('bottom')
     expect(parsed.chart?.grouping).toBe('stacked')
     expect(parsed.chart?.categoryAxisFormat).toBe('d-mmm')
+    expect(parsed.chart?.dataLabelStyle).toEqual({ size: 12, bold: true, color: '#FFFFFF' })
     expect(parsed.chart?.series[0]?.categoryFormat).toBe('mmm\\-yy')
     expect(parsed.chart?.series[0]?.pointColors?.[0]).toEqual({ index: 1, color: '#00AA00' })
+  })
+
+  it('accepts the uncached series name reference and the combined label mode', () => {
+    const parsed = visualSchema.parse({
+      id: 'visual-3',
+      sheetId: 'sheet-1',
+      kind: 'chart',
+      anchor,
+      chartPath: 'xl/charts/chart2.xml',
+      chart: {
+        chartTypes: ['pieChart'],
+        title: 'Allocation',
+        dataLabels: 'category-value-percent',
+        series: [
+          {
+            name: 'Series1',
+            nameRef: 'Dashboard!$C$13',
+            categories: [],
+            values: [],
+            valuesRef: 'Dashboard!$C$14:$C$18',
+          },
+        ],
+      },
+    })
+    expect(parsed.chart?.dataLabels).toBe('category-value-percent')
+    expect(parsed.chart?.series[0]?.nameRef).toBe('Dashboard!$C$13')
   })
 
   it('still accepts visuals without a locator and rejects unknown keys', () => {

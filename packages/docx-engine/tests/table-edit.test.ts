@@ -116,6 +116,17 @@ describe('generateTableModelXml', () => {
     expect(model.colWidthsPct?.map(Math.round)).toEqual([25, 35, 40])
   })
 
+  it('emits and round-trips the table left indent (w:tblInd, P17)', async () => {
+    const xml = generateTableModelXml({
+      colWidthsTwips: [2000, 2000],
+      indentTwips: 1300,
+      rows: [[{ paras: ['a'] }, { paras: ['b'] }]],
+    })
+    expect(xml).toContain('<w:tblInd w:w="1300" w:type="dxa"/>')
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(parsed.blocks[0].table!.indentTwips).toBe(1300)
+  })
+
   it('reuses the imported tblPr while regenerating rows and rich runs', async () => {
     const template =
       '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/>' +
@@ -160,6 +171,121 @@ describe('generateTableModelXml', () => {
       font: 'Arial',
       sizeHalfPoints: 30,
     })
+  })
+
+  it('writes w:jc after w:tblW for an explicit alignment and round-trips it', async () => {
+    const xml = generateTableModelXml({
+      align: 'center',
+      rows: [[{ paras: ['a'] }, { paras: ['b'] }]],
+    })
+    expect(xml).toMatch(/<w:tblW[^>]*\/><w:jc w:val="center"\/>/)
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(parsed.blocks[0].table!.align).toBe('center')
+  })
+
+  it("align 'left' strips the original w:jc; undefined keeps it", () => {
+    const template =
+      '<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/><w:jc w:val="right"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:p><w:r><w:t>Old</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const model = { rows: [[{ paras: ['New'] }]] }
+    expect(generateTableModelXml({ ...model, align: 'left' as const }, template)).not.toContain(
+      '<w:jc',
+    )
+    expect(generateTableModelXml(model, template)).toContain('<w:jc w:val="right"/>')
+    expect(generateTableModelXml({ ...model, align: 'center' as const }, template)).toContain(
+      '<w:jc w:val="center"/>',
+    )
+  })
+
+  it('round-trips AutoFit, cell margins, floating position, and table style options', async () => {
+    const xml = generateTableModelXml({
+      rows: [[{ paras: ['a'] }, { paras: ['b'] }]],
+      autoFit: 'window',
+      cellMarTwips: { top: 80, right: 160, bottom: 90, left: 170 },
+      floatSide: 'left',
+      floatPos: {
+        xTwips: 720,
+        yTwips: 360,
+        horzAnchor: 'margin',
+        vertAnchor: 'text',
+        distanceTwips: { top: 60, right: 120, bottom: 70, left: 130 },
+      },
+      tableLook: {
+        firstRow: true,
+        lastRow: true,
+        firstColumn: false,
+        lastColumn: true,
+        bandedRows: false,
+        bandedColumns: true,
+      },
+    })
+    expect(xml).toContain('<w:tblW w:w="5000" w:type="pct"/>')
+    expect(xml).toContain('<w:tblLayout w:type="autofit"/>')
+    expect(xml).toContain('w:tblpX="720"')
+    expect(xml).toContain('w:tblpY="360"')
+    expect(xml).toContain('w:rightFromText="120"')
+    expect(xml).toContain('<w:top w:w="80" w:type="dxa"/>')
+    expect(xml).toContain('w:lastRow="1"')
+    expect(xml).toContain('w:noHBand="1"')
+    expect(xml).toContain('w:noVBand="0"')
+
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const table = parsed.blocks[0].table!
+    expect(table.autoFit).toBe('window')
+    expect(table.cellMarTwips).toEqual({ top: 80, left: 170, bottom: 90, right: 160 })
+    expect(table.floatSide).toBe('left')
+    expect(table.floatPos).toMatchObject({
+      xTwips: 720,
+      yTwips: 360,
+      horzAnchor: 'margin',
+      vertAnchor: 'text',
+      distanceTwips: { top: 60, right: 120, bottom: 70, left: 130 },
+    })
+    expect(table.tableLook).toMatchObject({
+      firstRow: true,
+      lastRow: true,
+      firstColumn: false,
+      lastColumn: true,
+      bandedRows: false,
+      bandedColumns: true,
+    })
+  })
+
+  it('patches imported table properties and repeat-header rows explicitly', () => {
+    const template =
+      '<w:tbl><w:tblPr><w:tblpPr w:tblpXSpec="right"/><w:tblOverlap w:val="overlap"/>' +
+      '<w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/>' +
+      '<w:tblCellMar><w:left w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
+      '<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:r><w:t>Old</w:t></w:r></w:p></w:tc></w:tr>' +
+      '</w:tbl>'
+    const out = generateTableModelXml(
+      {
+        rows: [[{ paras: ['New'] }]],
+        autoFit: 'contents',
+        cellMarTwips: { top: 0, right: 108, bottom: 0, left: 108 },
+        floatSide: null,
+        repeatHeaderRows: [false],
+      },
+      template,
+    )
+    expect(out).toContain('<w:tblW w:w="0" w:type="auto"/>')
+    expect(out).toContain('<w:tblLayout w:type="autofit"/>')
+    expect(out).not.toContain('w:tblpPr')
+    expect(out).not.toContain('w:tblOverlap')
+    expect(out).not.toContain('w:tblHeader')
+    expect(out).toContain('<w:right w:w="108" w:type="dxa"/>')
+  })
+
+  it('writes repeating header rows without disturbing other trPr children', () => {
+    const xml = generateTableModelXml({
+      rows: [[{ paras: ['Header'] }], [{ paras: ['Body'] }]],
+      rawTrPrs: ['<w:trPr><w:cantSplit/></w:trPr>', null],
+      repeatHeaderRows: [true, false],
+    })
+    expect(xml).toContain('<w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>')
+    expect(xml.match(/<w:tblHeader\/>/g)).toHaveLength(1)
   })
 })
 
@@ -351,5 +477,131 @@ describe('trailing empty cell paragraph size survives regeneration', () => {
     const out = generateTableModelXml(doc.blocks[0].table!)
     expect(out.match(/<w:p[\s>]|<w:p\/>/g)).toHaveLength(2)
     expect(out).toContain('<w:pPr><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr>')
+  })
+})
+
+// rich cell paragraph patches: per-run formatting and hyperlinks survive a cell
+// edit; null paragraph entries keep the original bytes untouched
+const LINK_TABLE_XML =
+  '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/></w:tblPr>' +
+  '<w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
+  '<w:tr><w:tc>' +
+  '<w:p><w:r><w:t xml:space="preserve">contact </w:t></w:r>' +
+  '<w:hyperlink r:id="rId7"><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>mail me</w:t></w:r></w:hyperlink></w:p>' +
+  '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>second</w:t></w:r></w:p>' +
+  '</w:tc></w:tr></w:tbl>'
+
+describe('patchTableCellTexts with rich paragraphs', () => {
+  it('keeps the hyperlink wrapper and rId on a real cell edit', () => {
+    const out = patchTableCellTexts(LINK_TABLE_XML, [
+      [
+        [
+          {
+            runs: [
+              { text: 'contactX ' },
+              { text: 'mail me', underline: true, link: { href: 'mailto:x@y.z', rId: 'rId7' } },
+            ],
+          },
+          null,
+        ],
+      ],
+    ])
+    expect(out).toContain('<w:hyperlink r:id="rId7">')
+    expect(out).toContain('<w:t xml:space="preserve">contactX </w:t>')
+    expect(out).toContain('<w:u w:val="single"/>')
+    // the untouched second paragraph keeps its exact original bytes
+    expect(out).toContain(
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>second</w:t></w:r></w:p>',
+    )
+  })
+
+  it('a rebuilt paragraph reuses its own pPr, not the first paragraph’s', () => {
+    const out = patchTableCellTexts(LINK_TABLE_XML, [
+      [[null, { runs: [{ text: 'second edited', italic: true }] }]],
+    ])
+    // first paragraph untouched
+    expect(out).toContain('<w:hyperlink r:id="rId7">')
+    expect(out).toContain('<w:t>mail me</w:t>')
+    // second paragraph keeps centered pPr and italic run
+    expect(out).toMatch(
+      /<w:p><w:pPr><w:jc w:val="center"\/><\/w:pPr><w:r><w:rPr><w:i\/><w:iCs\/><\/w:rPr><w:t xml:space="preserve">second edited<\/w:t><\/w:r><\/w:p>/,
+    )
+  })
+})
+
+describe('rich cell patch drawing carryover', () => {
+  it('does not duplicate an image whose VML fallback shares the rId', () => {
+    const tbl =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:r><w:t>caption</w:t></w:r>' +
+      '<w:r><mc:AlternateContent><mc:Choice Requires="wps">' +
+      '<w:drawing><wp:inline><a:blip r:embed="rId5"/></wp:inline></w:drawing>' +
+      '</mc:Choice><mc:Fallback><w:pict><v:shape><v:imagedata r:id="rId5"/></v:shape></w:pict></mc:Fallback></mc:AlternateContent></w:r>' +
+      '</w:p></w:tc></w:tr></w:tbl>'
+    const out = patchTableCellTexts(tbl, [
+      [
+        [
+          {
+            runs: [
+              { text: 'captionX' },
+              {
+                text: '',
+                image: {
+                  dataUrl: 'data:image/png;base64,x',
+                  xml: '<w:drawing><wp:inline><a:blip r:embed="rId5"/></wp:inline></w:drawing>',
+                },
+              },
+            ],
+          },
+        ],
+      ],
+    ])
+    expect(out.match(/rId5/g)?.length).toBe(1)
+    expect(out).not.toContain('<w:pict')
+    expect(out).toContain('captionX')
+  })
+
+  it('carries a media-less anchored shape over, keeping its textbox content', () => {
+    const tbl =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:r><w:t>label</w:t></w:r>' +
+      '<w:r><w:t>ghost</w:t><w:drawing><wp:anchor><wps:wsp><wps:txbx>' +
+      '<w:txbxContent><w:p><w:r><w:t>inside box</w:t></w:r></w:p></w:txbxContent>' +
+      '</wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r>' +
+      '</w:p></w:tc></w:tr></w:tbl>'
+    const out = patchTableCellTexts(tbl, [[[{ runs: [{ text: 'labelX' }, { text: 'ghost' }] }]]])
+    expect(out.match(/<wp:anchor/g)?.length).toBe(1)
+    // run-level text is not replayed by the carried copy (the rich runs own it) …
+    expect(out.match(/ghost/g)?.length).toBe(1)
+    // … but text nested inside the drawing survives
+    expect(out).toContain('<w:t>inside box</w:t>')
+    expect(out).toContain('labelX')
+  })
+
+  it('keeps a shape whose click-link shares an rId with an emitted hyperlink', () => {
+    const tbl =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:hyperlink r:id="rId7"><w:r><w:t>site</w:t></w:r></w:hyperlink>' +
+      '<w:r><w:drawing><wp:anchor><wps:wsp><a:hlinkClick r:id="rId7"/></wps:wsp></wp:anchor></w:drawing></w:r>' +
+      '</w:p></w:tc></w:tr></w:tbl>'
+    const out = patchTableCellTexts(tbl, [
+      [[{ runs: [{ text: 'siteX', link: { href: 'https://x.y', rId: 'rId7' } }] }]],
+    ])
+    expect(out).toContain('<w:hyperlink r:id="rId7">')
+    // the shape is not a picture twin: relationship reuse must not drop it
+    expect(out.match(/<wp:anchor/g)?.length).toBe(1)
+    expect(out).toContain('<a:hlinkClick r:id="rId7"/>')
+  })
+})
+
+describe('generateTableModelXml with a table wider than the argument limit', () => {
+  it('regenerates 130k rows instead of blowing the stack on a one-argument-per-row spread', () => {
+    // the column count was Math.max(1, …colWidths, ...rows), so a table with more
+    // rows than the engine's argument limit threw RangeError and the whole document
+    // failed to save
+    const rows = Array.from({ length: 130_000 }, () => [{ paras: ['x'] }])
+    const xml = generateTableModelXml({ rows })
+    expect(xml.match(/<w:tr>/g)).toHaveLength(130_000)
+    expect(xml).toContain('<w:gridCol w:w="9360"/>')
   })
 })

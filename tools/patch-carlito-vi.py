@@ -18,7 +18,7 @@ from pathlib import Path
 
 from fontTools.ttLib import TTFont
 
-FONT_DIR = Path(__file__).resolve().parent.parent / "apps/docs/src/renderer/fonts"
+FONT_DIR = Path(__file__).resolve().parent.parent / "packages/ui/src/fonts"
 FACES = ["Regular", "Bold", "Italic", "BoldItalic"]
 DOT_BELOW = 0x0323
 ABOVE_MARKS = {0x0302, 0x0306}  # circumflex, breve

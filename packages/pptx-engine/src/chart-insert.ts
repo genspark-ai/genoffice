@@ -3,15 +3,30 @@
  * Override + slide rels + graphicFrame fragment, going through appendRawElements to
  * reuse the existing chart parsing/rendering.
  *
- * The chartSpace template mirrors docx-engine's buildChartPartXml (data goes through
- * strCache/numCache caches, no embedded workbook attached; PowerPoint renders it
- * fine, but "Edit Data" is unavailable).
+ * The chartSpace template mirrors docx-engine's buildChartPartXml: the data goes through
+ * strCache/numCache caches, and the embedded workbook (chart-workbook.ts) holds the same
+ * data for PowerPoint's "Edit Data".
  */
 import type { EmuRect, Slide } from './types'
-import { escapeXmlAttr, escapeXmlText } from './xml-utils'
-import { relsPathFor } from './zip'
+import {
+  creationIdXml,
+  escapeXmlAttr,
+  escapeXmlText,
+  hasContentTypeOverride,
+  maxRelationshipIdNumber,
+} from './xml-utils'
+import { relsPathFor, resolveTarget } from './zip'
 import { appendRawElements, type OpenedPptx } from './index'
 import { nextCNvPrId } from './insert'
+import {
+  CHART_WORKBOOK_REL_TYPE,
+  XLSX_CONTENT_TYPE,
+  chartWorkbookXlsx,
+  colLetter,
+} from './chart-workbook'
+import { ensureDefaultContentType } from './media-insert'
+import { appendRelationship } from './notes'
+import { removeRelationshipAndCollectOwnedTarget } from './resource-cleanup'
 
 export type NewChartKind =
   | 'bar'
@@ -26,6 +41,10 @@ export type NewChartKind =
   | 'radar'
   /** Combo chart: first N-1 series as clustered columns, last series as a line (on the right secondary value axis) */
   | 'comboBarLine'
+  /** 3-D pie (c:pie3DChart + c:view3D; this app renders the pseudo-3D projection, PowerPoint renders true 3-D) */
+  | 'pie3D'
+  /** 3-D clustered column (c:bar3DChart + c:view3D) */
+  | 'bar3D'
 
 /** Chart element/style toggles (unset = current defaults: legend at bottom, no gridlines, no data labels). */
 export interface ChartStyleOptions {
@@ -51,22 +70,24 @@ export interface NewChartOptions extends ChartStyleOptions {
   barDir?: 'col' | 'bar'
   /** Per-point fills, [seriesIdx][pointIdx] (sparse; written as <c:dPt>, wins over the series color) */
   pointColors?: Array<Array<string | undefined> | undefined>
+  /** Per-series solid colors (#RRGGBB, cycled); line-like series color the stroke, others the fill */
+  colorScheme?: string[]
+  /** Doughnut hole size (percent, c:holeSize, default 50) */
+  holeSizePct?: number
 }
 
-const CHART_CONTENT_TYPE =
-  'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'
-const CHART_REL_TYPE =
-  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
+const CHART_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'
+const CHART_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
 const C_NS = 'http://schemas.openxmlformats.org/drawingml/2006/chart'
 const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main'
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
-const colLetter = (i: number) => String.fromCharCode(66 + i) // B, C, D…
-
 function strCacheXml(values: string[], f: string): string {
   return (
     `<c:strRef><c:f>${escapeXmlText(f)}</c:f><c:strCache><c:ptCount val="${values.length}"/>` +
-    values.map((v, i) => (v === '' ? '' : `<c:pt idx="${i}"><c:v>${escapeXmlText(v)}</c:v></c:pt>`)).join('') +
+    values
+      .map((v, i) => (v === '' ? '' : `<c:pt idx="${i}"><c:v>${escapeXmlText(v)}</c:v></c:pt>`))
+      .join('') +
     '</c:strCache></c:strRef>'
   )
 }
@@ -76,7 +97,9 @@ function numCacheXml(values: (number | null | undefined)[], f: string): string {
     `<c:numRef><c:f>${escapeXmlText(f)}</c:f><c:numCache><c:formatCode>General</c:formatCode>` +
     `<c:ptCount val="${values.length}"/>` +
     values
-      .map((v, i) => (v == null || !Number.isFinite(v) ? '' : `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`))
+      .map((v, i) =>
+        v == null || !Number.isFinite(v) ? '' : `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`,
+      )
       .join('') +
     '</c:numCache></c:numRef>'
   )
@@ -97,14 +120,25 @@ function axTitleXml(text: string, vertical: boolean): string {
   )
 }
 
-/** Full c:chartSpace part XML. */
-export function buildChartSpaceXml(opts: NewChartOptions): string {
+function scatterXValues(categories: string[]): number[] {
+  return categories.map((c, i) => {
+    const v = Number(c)
+    return c.trim() !== '' && Number.isFinite(v) ? v : i + 1
+  })
+}
+
+/**
+ * Full c:chartSpace part XML. `externalDataRId` names the chart's relationship to its
+ * embedded workbook, which PowerPoint opens for "Edit Data".
+ */
+export function buildChartSpaceXml(opts: NewChartOptions, externalDataRId?: string): string {
   const rows = opts.categories.length
   const dLbls = opts.dataLabels ? DLBLS_XML : ''
   const grid = opts.gridlines ? '<c:majorGridlines/>' : ''
   const catTitle = opts.catAxisTitle ? axTitleXml(opts.catAxisTitle, false) : ''
   const valTitle = opts.valAxisTitle ? axTitleXml(opts.valAxisTitle, true) : ''
-  const gapWidth = opts.gapWidthPct != null ? `<c:gapWidth val="${Math.round(opts.gapWidthPct)}"/>` : ''
+  const gapWidth =
+    opts.gapWidthPct != null ? `<c:gapWidth val="${Math.round(opts.gapWidthPct)}"/>` : ''
   // Empty names stay empty: no <c:tx> for an unnamed series, no <c:cat> when every category name is empty
   const txXml = (name: string, i: number) =>
     name === '' ? '' : `<c:tx>${strCacheXml([name], `Sheet1!$${colLetter(i)}$1`)}</c:tx>`
@@ -172,18 +206,30 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
         : '')
   } else if (opts.kind === 'pie') {
     plot = `<c:pieChart><c:varyColors val="1"/>${sers}${dLbls}<c:firstSliceAng val="0"/></c:pieChart>`
+  } else if (opts.kind === 'pie3D') {
+    plot = `<c:pie3DChart><c:varyColors val="1"/>${sers}${dLbls}</c:pie3DChart>`
+  } else if (opts.kind === 'bar3D') {
+    // bar3D takes three axes (category / value / series); the series axis is required by the schema
+    const horizontal = opts.barDir === 'bar'
+    plot =
+      `<c:bar3DChart><c:barDir val="${horizontal ? 'bar' : 'col'}"/><c:grouping val="clustered"/><c:varyColors val="0"/>` +
+      `${sers}${dLbls}${gapWidth}<c:shape val="box"/>` +
+      '<c:axId val="111111111"/><c:axId val="222222222"/><c:axId val="333333333"/></c:bar3DChart>' +
+      '<c:catAx><c:axId val="111111111"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      `<c:delete val="0"/><c:axPos val="${horizontal ? 'l' : 'b'}"/>${catTitle}<c:crossAx val="222222222"/></c:catAx>` +
+      '<c:valAx><c:axId val="222222222"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      `<c:delete val="0"/><c:axPos val="${horizontal ? 'b' : 'l'}"/>${grid}${valTitle}<c:crossAx val="111111111"/></c:valAx>` +
+      '<c:serAx><c:axId val="333333333"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      '<c:delete val="0"/><c:axPos val="b"/><c:crossAx val="222222222"/></c:serAx>'
   } else if (opts.kind === 'doughnut') {
     plot =
       `<c:doughnutChart><c:varyColors val="1"/>${sers}${dLbls}` +
-      '<c:firstSliceAng val="0"/><c:holeSize val="50"/></c:doughnutChart>'
+      `<c:firstSliceAng val="0"/><c:holeSize val="${Math.min(90, Math.max(1, Math.round(opts.holeSizePct ?? 50)))}"/></c:doughnutChart>`
   } else if (opts.kind === 'scatter') {
     // Scatter (XY): x values come from categories (numeric strings use their value,
     // otherwise ordinals 1..n), y values from the series values;
     // series data uses c:xVal/c:yVal, with dual value axes (x axis axPos=b, y axis axPos=l)
-    const xs = opts.categories.map((c, i) => {
-      const v = Number(c)
-      return c.trim() !== '' && Number.isFinite(v) ? v : i + 1
-    })
+    const xs = scatterXValues(opts.categories)
     const scatterSers = opts.series
       .map((ser, i) => {
         const col = colLetter(i)
@@ -205,7 +251,8 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
       `<c:delete val="0"/><c:axPos val="l"/>${grid}${valTitle}<c:crossAx val="111111111"/></c:valAx>`
   } else {
     // Horizontal bar chart (barDir=bar): category axis on the left, value axis at the bottom (matches how PowerPoint writes it)
-    const isBarKind = opts.kind === 'bar' || opts.kind === 'barStacked' || opts.kind === 'barPercentStacked'
+    const isBarKind =
+      opts.kind === 'bar' || opts.kind === 'barStacked' || opts.kind === 'barPercentStacked'
     const horizontal = isBarKind && opts.barDir === 'bar'
     const axes =
       `<c:catAx><c:axId val="111111111"/><c:scaling><c:orientation val="minMax"/></c:scaling>` +
@@ -223,7 +270,11 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
       inner = `<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>${sers}${dLbls}${axIds}</c:areaChart>`
     } else {
       const grouping =
-        opts.kind === 'barPercentStacked' ? 'percentStacked' : opts.kind === 'barStacked' ? 'stacked' : 'clustered'
+        opts.kind === 'barPercentStacked'
+          ? 'percentStacked'
+          : opts.kind === 'barStacked'
+            ? 'stacked'
+            : 'clustered'
       const overlap = grouping === 'clustered' ? '' : '<c:overlap val="100"/>'
       inner =
         `<c:barChart><c:barDir val="${horizontal ? 'bar' : 'col'}"/><c:grouping val="${grouping}"/><c:varyColors val="0"/>` +
@@ -238,18 +289,94 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
       '<c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>'
     : '<c:autoTitleDeleted val="1"/>'
 
+  // 3-D view settings (schema position: after the title block, before plotArea);
+  // rotX/rotY follow PowerPoint's defaults for each type
+  const view3D =
+    opts.kind === 'pie3D'
+      ? '<c:view3D><c:rotX val="30"/><c:rotY val="0"/><c:rAngAx val="0"/><c:perspective val="30"/></c:view3D>'
+      : opts.kind === 'bar3D'
+        ? '<c:view3D><c:rotX val="15"/><c:rotY val="20"/><c:rAngAx val="1"/><c:perspective val="30"/></c:view3D>'
+        : ''
+
   const legendPos = opts.legendPos ?? 'b'
   const legend =
     legendPos === 'none'
       ? ''
       : `<c:legend><c:legendPos val="${legendPos}"/><c:overlay val="0"/></c:legend>`
-  return (
+  const xml =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
     `<c:chartSpace xmlns:c="${C_NS}" xmlns:a="${A_NS}" xmlns:r="${R_NS}">` +
-    `<c:chart>${title}<c:plotArea><c:layout/>${plot}</c:plotArea>` +
+    `<c:chart>${title}${view3D}<c:plotArea><c:layout/>${plot}</c:plotArea>` +
     legend +
     '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart>' +
+    (externalDataRId
+      ? `<c:externalData r:id="${externalDataRId}"><c:autoUpdate val="0"/></c:externalData>`
+      : '') +
     '</c:chartSpace>'
+  return injectSeriesColors(xml, opts)
+}
+
+/**
+ * Per-series <c:spPr> solid colors, inserted at the CT_*Ser schema position
+ * (after c:tx, before c:dPt/c:cat). The last series of a combo chart is the
+ * line: its color goes on an <a:ln> stroke (lines use stroke, bars/pies fill).
+ */
+function injectSeriesColors(xml: string, opts: NewChartOptions): string {
+  const scheme = opts.colorScheme
+  if (!scheme?.length) return xml
+  const lineFamily = opts.kind === 'line' || opts.kind === 'scatter' || opts.kind === 'radar'
+  const comboLineIdx =
+    opts.kind === 'comboBarLine' && opts.series.length >= 2 ? opts.series.length - 1 : -1
+  return xml.replace(
+    /<c:ser><c:idx val="(\d+)"\/><c:order val="\d+"\/>(?:<c:tx>.*?<\/c:tx>)?/gs,
+    (head, idx: string) => {
+      const i = Number(idx)
+      const color = scheme[i % scheme.length]!.replace('#', '').slice(0, 6).toUpperCase()
+      const fill = `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>`
+      const spPr =
+        lineFamily || i === comboLineIdx
+          ? `<c:spPr><a:ln w="28575">${fill}</a:ln></c:spPr>`
+          : `<c:spPr>${fill}</c:spPr>`
+      return head + spPr
+    },
+  )
+}
+
+/**
+ * Writes the chart's embedded workbook from the data in `opts` and returns the relationship
+ * id c:externalData names. The workbook the chart part already points at is overwritten in
+ * place; another data source (a linked file, an OLE object) is dropped, since the chart is
+ * rebuilt from this data.
+ */
+export function writeChartWorkbook(
+  opened: OpenedPptx,
+  chartPath: string,
+  opts: Pick<NewChartOptions, 'kind' | 'categories' | 'series'>,
+): string {
+  const { archive } = opened
+  const bytes = chartWorkbookXlsx({
+    categories: opts.categories,
+    series: opts.series,
+    ...(opts.kind === 'scatter' ? { xValues: scatterXValues(opts.categories) } : {}),
+  })
+  const current = archive.readText(chartPath) ?? ''
+  const linkedId = /<c:externalData\b[^>]*\br:id="([^"]+)"/.exec(current)?.[1]
+  const linked = linkedId ? archive.readRels(chartPath).get(linkedId) : undefined
+  if (linked?.type === CHART_WORKBOOK_REL_TYPE && linked.targetMode !== 'External') {
+    archive.entries.set(resolveTarget(chartPath, linked.target), bytes)
+    return linked.id
+  }
+  if (linkedId) removeRelationshipAndCollectOwnedTarget(archive, chartPath, linkedId)
+
+  let n = 1
+  while (archive.entries.has(`ppt/embeddings/Microsoft_Excel_Worksheet${n}.xlsx`)) n++
+  archive.entries.set(`ppt/embeddings/Microsoft_Excel_Worksheet${n}.xlsx`, bytes)
+  ensureDefaultContentType(opened, 'xlsx', XLSX_CONTENT_TYPE)
+  return appendRelationship(
+    archive,
+    chartPath,
+    CHART_WORKBOOK_REL_TYPE,
+    `../embeddings/Microsoft_Excel_Worksheet${n}.xlsx`,
   )
 }
 
@@ -273,14 +400,21 @@ export function addChart(
     if (m) maxNum = Math.max(maxNum, Number(m[1]))
   }
   const chartPath = `ppt/charts/chart${maxNum + 1}.xml`
-  archive.entries.set(chartPath, Buffer.from(buildChartSpaceXml(opts), 'utf8'))
+  const workbookRId = writeChartWorkbook(opened, chartPath, opts)
+  archive.entries.set(chartPath, Buffer.from(buildChartSpaceXml(opts, workbookRId), 'utf8'))
 
   // 2) [Content_Types].xml Override
   const ctPath = '[Content_Types].xml'
   const ct = archive.readText(ctPath)
-  if (ct && !ct.includes(`PartName="/${chartPath}"`)) {
+  if (ct && !hasContentTypeOverride(ct, chartPath)) {
     const override = `<Override PartName="/${chartPath}" ContentType="${CHART_CONTENT_TYPE}"/>`
-    archive.entries.set(ctPath, Buffer.from(ct.replace('</Types>', `${override}</Types>`), 'utf8'))
+    archive.entries.set(
+      ctPath,
+      Buffer.from(
+        ct.replace('</Types>', () => `${override}</Types>`),
+        'utf8',
+      ),
+    )
   }
 
   // 3) slide rels
@@ -288,11 +422,16 @@ export function addChart(
   const rels =
     archive.readText(relsPath) ??
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
-  let maxRid = 0
-  for (const m of rels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  const maxRid = maxRelationshipIdNumber(rels)
   const rid = `rId${maxRid + 1}`
   const relXml = `<Relationship Id="${rid}" Type="${CHART_REL_TYPE}" Target="../charts/chart${maxNum + 1}.xml"/>`
-  archive.entries.set(relsPath, Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'))
+  archive.entries.set(
+    relsPath,
+    Buffer.from(
+      rels.replace('</Relationships>', () => `${relXml}</Relationships>`),
+      'utf8',
+    ),
+  )
 
   // 4) graphicFrame fragment + append reparse
   const id = nextCNvPrId(slide)
@@ -300,7 +439,7 @@ export function addChart(
   const name = opts.title ? `Chart ${id} - ${opts.title}` : `Chart ${id}`
   // descr="aislides-chart" marks charts created by this app (like the ink marker); recognized as editable charts on reopen
   const frameXml =
-    `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}" descr="aislides-chart"/>` +
+    `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}" descr="aislides-chart">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>' +
     `<p:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></p:xfrm>` +
     `<a:graphic><a:graphicData uri="${C_NS}">` +

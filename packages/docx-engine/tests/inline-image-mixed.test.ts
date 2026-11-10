@@ -4,7 +4,7 @@
  * classification used to drop every text run in the paragraph.
  */
 import { describe, expect, it } from 'vitest'
-import { parseDocx } from '../src/index'
+import { generateParagraphXml, parseDocx, saveDocx, type GenerateContext } from '../src/index'
 import { buildDocx, IMAGE_PARAGRAPH_XML } from './helpers/build-docx'
 
 const INLINE_IMAGE_RUN =
@@ -30,15 +30,145 @@ describe('text + inline image mixed paragraphs', () => {
     expect(imageRun?.image?.widthPx).toBe(96)
   })
 
+  it('a leading page-break run on a picture-only paragraph becomes pageBreakBefore', async () => {
+    const bodyXml = `<w:p><w:r><w:br w:type="page"/></w:r>${INLINE_IMAGE_RUN}</w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    expect(doc.blocks[0].type).toBe('image')
+    expect(doc.blocks[0].format?.pageBreakBefore).toBe(true)
+  })
+
+  it('preserves a single-quoted leading page break on a protected image through save', async () => {
+    const bodyXml = `<w:p><w:r><w:br w:type='page'/></w:r>${INLINE_IMAGE_RUN}</w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('image')
+    expect(block.format?.pageBreakBefore).toBe(true)
+
+    const saved = await saveDocx(doc, [{ kind: 'original', docxIndex: block.docxIndex! }])
+    const reopened = await parseDocx(saved)
+    expect(reopened.blocks[0].format?.pageBreakBefore).toBe(true)
+  })
+
+  it('matches breaks with extra attributes or another attribute order', async () => {
+    const bodyXml = `<w:p><w:r><w:br w:clear="none" w:type="page"/></w:r>${INLINE_IMAGE_RUN}</w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    expect(doc.blocks[0].format?.pageBreakBefore).toBe(true)
+  })
+
+  it('a page-break run after the picture does not set pageBreakBefore', async () => {
+    const bodyXml = `<w:p>${INLINE_IMAGE_RUN}<w:r><w:br w:type="page"/></w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    expect(doc.blocks[0].type).toBe('image')
+    expect(doc.blocks[0].format?.pageBreakBefore).toBeUndefined()
+  })
+
   it('a picture-only paragraph is still an image block', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true }))
     expect(doc.blocks[0].type).toBe('image')
     expect(doc.blocks[0].imageDataUrl).toMatch(/^data:image\/png;base64,/)
   })
 
-  it('an anchored picture with stray text keeps the image-block treatment', async () => {
-    const bodyXml = `<w:p><w:r><w:t>caption</w:t></w:r>${ANCHORED_IMAGE_RUN}</w:p>`
+  it('an anchored picture sharing the paragraph with text keeps the text', async () => {
+    const bodyXml = `<w:p>${ANCHORED_IMAGE_RUN}<w:r><w:t>Lorem ipsum body text</w:t></w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('paragraph')
+    expect(block.runs!.map((r) => r.text).join('')).toBe('Lorem ipsum body text')
+    const imageRun = block.runs!.find((r) => r.image)
+    expect(imageRun?.image?.dataUrl).toMatch(/^data:image\/png;base64,/)
+    // no wrap element on the anchor = in front of text
+    expect(imageRun?.image?.wrap).toBe('front')
+  })
+
+  it('carries the anchor posOffset on the run image', async () => {
+    const anchored = ANCHORED_IMAGE_RUN.replace(
+      '<wp:extent',
+      '<wp:positionH relativeFrom="column"><wp:posOffset>1882747</wp:posOffset></wp:positionH>' +
+        '<wp:positionV relativeFrom="paragraph"><wp:posOffset>-104609</wp:posOffset></wp:positionV>' +
+        '<wp:extent',
+    )
+    const bodyXml = `<w:p>${anchored}<w:r><w:t>wrapped text</w:t></w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const imageRun = doc.blocks[0].runs!.find((r) => r.image)
+    expect(imageRun?.image?.offsetXEmu).toBe(1882747)
+    expect(imageRun?.image?.offsetYEmu).toBe(-104609)
+  })
+
+  it('an anchored picture without text is still an image block', async () => {
+    const bodyXml = `<w:p>${ANCHORED_IMAGE_RUN}</w:p>`
     const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
     expect(doc.blocks[0].type).toBe('image')
+    expect(doc.blocks[0].imageDataUrl).toMatch(/^data:image\/png;base64,/)
+  })
+})
+
+describe('one run carrying several inline drawings', () => {
+  const GEN_CTX: GenerateContext = {
+    headingStyleIds: new Map(),
+    allocateHyperlinkRel: () => 'rId999',
+  }
+
+  const inlineDrawing = (cx: number, cy: number): string =>
+    `<w:drawing><wp:inline><wp:extent cx="${cx}" cy="${cy}"/>` +
+    '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+    '</a:graphicData></a:graphic></wp:inline></w:drawing>'
+
+  it('splits the run so every drawing survives as its own image run', async () => {
+    const bodyXml = `<w:p><w:r><w:rPr></w:rPr>${inlineDrawing(914400, 914400)}${inlineDrawing(457200, 457200)}</w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('paragraph')
+    const imageRuns = block.runs!.filter((r) => r.image)
+    expect(imageRuns).toHaveLength(2)
+    expect(imageRuns.map((r) => r.image?.widthPx)).toEqual([96, 48])
+    // an edit-triggered rebuild must write both pictures back
+    const regen = generateParagraphXml({ type: 'paragraph', runs: block.runs! }, GEN_CTX)
+    expect(regen.match(/<w:drawing>/g)).toHaveLength(2)
+    expect(regen.match(/r:embed="rId10"/g)).toHaveLength(2)
+  })
+
+  it('keeps text between the drawings in document order', async () => {
+    const bodyXml =
+      `<w:p><w:r>${inlineDrawing(914400, 914400)}` +
+      `<w:t>mid</w:t>${inlineDrawing(457200, 457200)}</w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const runs = doc.blocks[0].runs!
+    expect(runs.filter((r) => r.image)).toHaveLength(2)
+    expect(runs.map((r) => r.text).join('')).toBe('mid')
+    const regen = generateParagraphXml({ type: 'paragraph', runs }, GEN_CTX)
+    expect(regen.indexOf('mid')).toBeGreaterThan(regen.indexOf('<w:drawing>'))
+    expect(regen.indexOf('mid')).toBeLessThan(regen.lastIndexOf('<w:drawing>'))
+  })
+})
+
+describe('rotated run pictures', () => {
+  const ROTATED_CELL_PIC =
+    '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr><w:jc w:val="center"/></w:pPr>' +
+    '<w:r><w:drawing><wp:inline><wp:extent cx="1905000" cy="952500"/>' +
+    '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill>' +
+    '<pic:spPr><a:xfrm rot="5400000" flipH="1"><a:off x="0" y="0"/><a:ext cx="1905000" cy="952500"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
+    '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc></w:tr></w:tbl>'
+
+  it('keeps the pic xfrm rotation and flips on a table-cell run image', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: ROTATED_CELL_PIC, withImage: true }))
+    const cell = doc.blocks.find((b) => b.type === 'table')!.table!.rows[0][0]
+    const image = cell.richParas![0].runs[0].image!
+    expect(image.widthPx).toBe(200)
+    expect(image.heightPx).toBe(100)
+    expect(image.rotDeg).toBe(90)
+    expect(image.flipH).toBe(true)
+    expect(image.flipV).toBeUndefined()
+  })
+})
+
+describe('picture-only paragraph with a trailing page break', () => {
+  it('keeps the break as a pageBreak display under the image', async () => {
+    const bodyXml = `<w:p>${INLINE_IMAGE_RUN}<w:r><w:br w:type="page"/></w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    expect(doc.blocks[0].type).toBe('image')
+    expect(doc.blocks[0].format?.pageBreakBefore).toBeUndefined()
+    expect(doc.blocks[0].fieldDisplay).toEqual({ kind: 'pageBreak' })
   })
 })

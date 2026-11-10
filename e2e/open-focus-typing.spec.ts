@@ -1,0 +1,361 @@
+import { test, expect } from '@playwright/test'
+import { copyFile, mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import type { ElectronApplication, Page } from 'playwright-core'
+import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
+
+const DOCX = resolve(__dirname, 'assets/justify-pagegap-fr.docx')
+const XLSX = resolve(__dirname, '../apps/sheets/fixtures/generated/compatibility-basic.xlsx')
+
+/**
+ * A freshly opened document must own the keyboard. The regression had
+ * two layers — the shell never handed webContents focus to a tab activated
+ * from the Home list (the click sits on the chrome webContents), and the docs
+ * editor never focused its body even in a focused view. Both are exercised by
+ * the real flow: land on Home, open a file exactly like the Home list does,
+ * then type without a single click into the document.
+ */
+
+/** the Home-list click that precedes an open leaves keyboard focus on chrome */
+async function openFromHome(app: ElectronApplication, home: Page, file: string): Promise<void> {
+  // Native window activation is asynchronous (especially between app
+  // launches), and a steal can be outright denied when the runner's own
+  // terminal holds OS focus — keep asking until the window reports both
+  // itself and its webContents focused.
+  await expect
+    .poll(
+      async () => {
+        await app.evaluate(({ app: electronApp, BrowserWindow }) => {
+          electronApp.focus({ steal: true })
+          const win = BrowserWindow.getAllWindows()[0]
+          win.focus()
+          win.webContents.focus()
+        })
+        return app.evaluate(({ BrowserWindow }) => {
+          const win = BrowserWindow.getAllWindows()[0]
+          return win.isFocused() && win.webContents.isFocused()
+        })
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true)
+  await home.evaluate(
+    (p) =>
+      (window as unknown as { aiOffice: { openPath(p: string): Promise<void> } }).aiOffice.openPath(
+        p,
+      ),
+    file,
+  )
+}
+
+/** the document's editable surface must hold focus before typing */
+async function waitForEditableFocus(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement.isContentEditable &&
+      // A node detached from the document still reports isContentEditable as
+      // true. A workbook loaded into an already-mounted view rebuilds the
+      // editor DOM, and the stale node left under activeElement then passes
+      // the two checks above while the typed text goes nowhere.
+      document.activeElement.isConnected,
+    null,
+    { timeout: 30_000 },
+  )
+}
+
+/** Playwright's keyboard bypasses Electron-level focus, so the shell layer is
+ *  asserted directly: the opened document's webContents must hold the window's
+ *  keyboard focus (on unfixed code it stays on the Home/chrome webContents). */
+async function expectViewFocused(app: ElectronApplication, urlPart: string): Promise<void> {
+  await expect
+    .poll(() =>
+      app.evaluate(
+        ({ webContents }, part) =>
+          webContents
+            .getAllWebContents()
+            .filter((wc) => wc.isFocused())
+            .map((wc) => wc.getURL())
+            .some((u) => u.includes(part)),
+        urlPart,
+      ),
+    )
+    .toBe(true)
+}
+
+async function cellA1Value(page: Page): Promise<unknown> {
+  return page.evaluate(() => {
+    const api = (
+      window as unknown as {
+        __genofficeDebug: {
+          univerAPI: {
+            getActiveWorkbook(): {
+              getActiveSheet(): { getRange(a: string): { getValue(): unknown } }
+            }
+          }
+        }
+      }
+    ).__genofficeDebug.univerAPI
+    return api.getActiveWorkbook()?.getActiveSheet()?.getRange('A1')?.getValue() ?? null
+  })
+}
+
+/**
+ * Every layer a typed character has to cross, captured as a snapshot.
+ * Diagnostics only: it changes no assertion, so a failure still fails for the
+ * same reason — it just says which layer dropped the text.
+ */
+type TypingState = {
+  editorPresent: boolean
+  editorText: string | null
+  activeIsEditor: boolean
+  activeIsConnected: boolean | null
+  activeTag: string | null
+  activeId: string | null
+  activeClass: string | null
+  activeRange: string | null
+  ariaBusy: string | null
+  canvasPresent: boolean
+}
+
+/** The cell Univer considers active, or null when the sheet has no selection. */
+async function activeRangeNotation(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const api = (
+      window as unknown as {
+        __genofficeDebug?: {
+          univerAPI?: {
+            getActiveWorkbook?: () => {
+              getActiveSheet?: () => {
+                getActiveRange?: () => { getA1Notation?: () => string } | null
+              } | null
+            } | null
+          }
+        }
+      }
+    ).__genofficeDebug?.univerAPI
+    return (
+      api?.getActiveWorkbook?.()?.getActiveSheet?.()?.getActiveRange?.()?.getA1Notation?.() ?? null
+    )
+  })
+}
+
+async function domState(page: Page): Promise<Omit<TypingState, 'activeRange'>> {
+  return page.evaluate(() => {
+    const editor = document.querySelector('#univer-container [contenteditable="true"]')
+    const active = document.activeElement
+    return {
+      editorPresent: editor !== null,
+      editorText: editor?.textContent ?? null,
+      activeIsEditor: editor !== null && active === editor,
+      activeIsConnected: active instanceof HTMLElement ? active.isConnected : null,
+      activeTag: active?.tagName ?? null,
+      activeId: active instanceof HTMLElement ? active.id || null : null,
+      activeClass: active instanceof HTMLElement ? active.getAttribute('class') : null,
+      ariaBusy: document.querySelector('main.app-shell')?.getAttribute('aria-busy') ?? null,
+      canvasPresent: document.querySelector('#univer-container canvas') !== null,
+    }
+  })
+}
+
+/** Observe an initialized hidden spare before opening a workbook. */
+async function waitForSpareViewReady(app: ElectronApplication): Promise<number> {
+  let spareId = 0
+  await expect
+    .poll(
+      async () => {
+        const spare = await app.evaluate(async ({ BrowserWindow, WebContentsView }) => {
+          const view = BrowserWindow.getAllWindows()[0].contentView.children.find(
+            (child): child is Electron.WebContentsView =>
+              child instanceof WebContentsView &&
+              !child.getVisible() &&
+              child.webContents.getURL().includes('://sheets/'),
+          )
+          if (!view || view.getVisible() || view.webContents.isLoading()) return null
+          const mounted = await view.webContents.executeJavaScript(`
+              window.__genofficeSpareViewReady?.() === true &&
+              document.querySelector('#univer-container canvas') !== null &&
+              document.querySelector('#univer-container [contenteditable="true"]') !== null
+            `)
+          return mounted ? view.webContents.id : null
+        })
+        if (spare === null) return false
+        spareId = spare
+        return true
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true)
+
+  return spareId
+}
+
+test('docs: typing works immediately after opening a file from Home', async () => {
+  const scratch = await mkdtemp(join(tmpdir(), 'genoffice-openfocus-e2e-'))
+  const docx = join(scratch, 'open-focus.docx')
+  await copyFile(DOCX, docx)
+
+  const launched = await launchShell({ onboardingSeen: true, videoDir: 'open-focus-docs' })
+  try {
+    await openFromHome(launched.app, launched.page, docx)
+    const docs = await waitForPageWithUrl(launched.app, '://docs/')
+    await docs.waitForSelector('.ProseMirror', { timeout: 30_000 })
+    await expectViewFocused(launched.app, '://docs/')
+    await waitForEditableFocus(docs)
+
+    await docs.keyboard.type('ROW226FOCUS')
+    await expect
+      .poll(() => docs.evaluate(() => document.querySelector('.ProseMirror')?.textContent ?? ''))
+      .toContain('ROW226FOCUS')
+  } finally {
+    await closeAndSaveVideo(launched, 'open-focus-docs')
+  }
+})
+
+test('sheets: typing works when a spare view opens the next workbook', async () => {
+  const scratch = await mkdtemp(join(tmpdir(), 'genoffice-openfocus-e2e-'))
+  const firstXlsx = join(scratch, 'first.xlsx')
+  const secondXlsx = join(scratch, 'second.xlsx')
+  await copyFile(XLSX, firstXlsx)
+  await copyFile(XLSX, secondXlsx)
+
+  const launched = await launchShell({
+    onboardingSeen: true,
+    videoDir: 'open-focus-sheets',
+    // Keep prewarming enabled: the focus bug only shows when a spare is reused.
+    env: { GENOFFICE_DEBUG_HOOKS: '1', GENOFFICE_NO_SPARE_VIEW: '' },
+  })
+  try {
+    await openFromHome(launched.app, launched.page, firstXlsx)
+    const firstSheets = await waitForPageWithUrl(launched.app, '://sheets/')
+    // Prewarming starts only while Sheets is active. Wait for the hidden
+    // replacement to finish initialization before opening the second file.
+    const spareId = await waitForSpareViewReady(launched.app)
+    const sheets = launched.app
+      .windows()
+      .find((page) => page !== firstSheets && page.url().includes('://sheets/'))!
+    await openFromHome(launched.app, launched.page, secondXlsx)
+    await sheets.waitForFunction(
+      () =>
+        (window as unknown as { __genofficeDebug?: { univerAPI?: unknown } }).__genofficeDebug
+          ?.univerAPI,
+      null,
+      { timeout: 60_000 },
+    )
+    // The same hidden webContents must be adopted and receive Electron focus.
+    await expect
+      .poll(() =>
+        launched.app.evaluate(({ BrowserWindow, WebContentsView }, id) => {
+          const win = BrowserWindow.getAllWindows()[0]
+          const view = win.contentView.children.find(
+            (child): child is Electron.WebContentsView =>
+              child instanceof WebContentsView && child.webContents.id === id,
+          )
+          return {
+            visible: view?.getVisible(),
+            focused: view?.webContents.isFocused(),
+            windowFocused: win.isFocused(),
+          }
+        }, spareId),
+      )
+      .toEqual({ visible: true, focused: true, windowFocused: true })
+    // The debug API is published before the file's first range streams in.
+    // Wait for the fixture data and the opening guard before sending keys.
+    await expect.poll(() => cellA1Value(sheets)).toBe('Old')
+    await expect(sheets.locator('main.app-shell')).toHaveAttribute('aria-busy', 'false')
+    await waitForEditableFocus(sheets)
+    // An adopted spare can report an editable focus before Univer has applied
+    // the opened workbook's selection to it, and keys then land on no cell.
+    // The selection is a readiness signal, not a delay: if this view never
+    // settles on A1 the poll fails and names what it settled on instead, so a
+    // broken adoption cannot pass by typing into nothing.
+    await expect.poll(() => activeRangeNotation(sheets), { timeout: 30_000 }).toBe('A1')
+    // A burst of text can still be dropped after every gate passes: the
+    // editor element is focused and connected, but the adopted view's input
+    // pipeline is not wired to Univer yet, so the editor stays empty and the
+    // Enter that follows only moves the cursor down (CI-only, genoffice#1150). A
+    // user would click the cell and type again — retry exactly that, up to
+    // three attempts, and keep every attempt's layer snapshot in the failure
+    // message.
+    const attempts: string[] = []
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      // A previous attempt's commit can land after its short poll gave up;
+      // before typing over A1 again, give the value one more moment to show
+      // up — typing over a committed 4242 would append, not overwrite.
+      if (attempt > 1) {
+        try {
+          await expect.poll(() => cellA1Value(sheets), { timeout: 1_000 }).toBe(4242)
+          break
+        } catch {
+          // A1 still holds the old value — walk the cursor back and retype.
+        }
+        for (let up = 0; up < 5; up += 1) {
+          if ((await activeRangeNotation(sheets)) === 'A1') break
+          await sheets.keyboard.press('ArrowUp')
+        }
+        await expect.poll(() => activeRangeNotation(sheets), { timeout: 30_000 }).toBe('A1')
+      }
+      await waitForEditableFocus(sheets)
+      const before = await domState(sheets)
+      // Two input channels reach a cell, and the CI failures show them failing
+      // independently in an adopted view: the CI-only signature is keydowns
+      // arriving (Enter moves the cursor) while the IME-style text-input
+      // channel (insertText) drops everything — and character-key simulation
+      // can omit input events in the same view (genoffice#1151's original reason for
+      // insertText). So every attempt alternates the channel instead of
+      // repeating the one that just failed: odd attempts open the editor with
+      // a real keydown and commit the rest via insertText; even attempts type
+      // real characters all the way.
+      const channel = attempt % 2 === 1 ? 'hybrid' : 'typed'
+      if (channel === 'hybrid') {
+        await sheets.keyboard.press('4') // a real keydown: opens the cell editor
+        await sheets.keyboard.insertText('242') // text-input channel for the rest
+      } else {
+        await sheets.keyboard.type('4242') // real keydowns for every character
+      }
+      const afterInsert = await domState(sheets)
+      const focusCtx = await sheets.evaluate(() => {
+        const api = (
+          window as unknown as {
+            __genofficeDebug?: { focusContext?: () => Record<string, unknown> }
+          }
+        ).__genofficeDebug
+        return api?.focusContext?.() ?? null
+      })
+      await sheets.keyboard.press('Enter')
+      const afterEnter = await domState(sheets)
+      // A bare Expected/Received says nothing about which layer dropped the
+      // text, and this case only fails on CI, so every layer goes into the
+      // failure message: attach() is not written to disk in this setup.
+      attempts.push(
+        `attempt ${attempt} (${channel}): editor text before insert: ${JSON.stringify(before.editorText)}, ` +
+          `after insert: ${JSON.stringify(afterInsert.editorText)}, ` +
+          `after enter: ${JSON.stringify(afterEnter.editorText)}; ` +
+          `active element is the editor: ${JSON.stringify(afterInsert.activeIsEditor)} ` +
+          `(${JSON.stringify(afterInsert.activeTag)} ${JSON.stringify(afterInsert.activeId)} ` +
+          `${JSON.stringify(afterInsert.activeClass)}, ` +
+          `connected: ${JSON.stringify(afterInsert.activeIsConnected)}); ` +
+          `active range: ${JSON.stringify(await activeRangeNotation(sheets))}; ` +
+          `aria-busy: ${JSON.stringify(afterEnter.ariaBusy)}; ` +
+          `focus context: ${JSON.stringify(focusCtx)}`,
+      )
+      try {
+        await expect.poll(() => cellA1Value(sheets), { timeout: 4_000 }).toBe(4242)
+        break
+      } catch (error) {
+        if (attempt === 3)
+          throw new Error(
+            `typing into the adopted spare never reached A1\n${attempts.join('\n')}`,
+            {
+              cause: error,
+            },
+          )
+        // Leave any half-open editor state before retrying from A1.
+        await sheets.keyboard.press('Escape')
+      }
+    }
+  } finally {
+    await closeAndSaveVideo(launched, 'open-focus-sheets')
+  }
+})

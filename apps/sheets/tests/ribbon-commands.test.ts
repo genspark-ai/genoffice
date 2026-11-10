@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { HorizontalAlign } from '@univerjs/core'
+import { EDITOR_ACTIVATED, HorizontalAlign } from '@univerjs/core'
 
 import {
   handleRibbonCommand,
@@ -130,5 +130,143 @@ describe('handleRibbonCommand number format', () => {
     const { ctx, model } = makeDispatchHarness()
     handleRibbonCommand(ctx, 'format:h:mm:ss AM/PM')
     expect(model.numberFormat).toBe('h:mm:ss AM/PM')
+  })
+})
+
+describe('use-in-formula cell guard', () => {
+  function makeUseInFormulaHarness(cell: { formula?: string; value?: unknown }) {
+    const messages: string[] = []
+    const writes: unknown[] = []
+    const cellRange = {
+      getFormula: () => cell.formula ?? '',
+      getValue: () => (cell.value === undefined ? null : cell.value),
+      setValue: (value: unknown) => {
+        writes.push(value)
+      },
+    }
+    const active = { getRow: () => 0, getColumn: () => 0 }
+    const worksheet = { getRange: () => cellRange }
+    const workbook = { getActiveSheet: () => worksheet, getActiveRange: () => active }
+    const runtime = { univerAPI: { getActiveWorkbook: () => workbook } }
+    const setMessage = (message: string) => {
+      messages.push(message)
+    }
+    const ctx = {
+      univerRef: { current: runtime },
+      setMessage,
+      dataToolsContext: () => ({ univerRef: { current: runtime }, setMessage }),
+    } as unknown as RibbonCommandContext
+    return { ctx, writes, messages }
+  }
+
+  it('refuses to overwrite a cell holding a formula', () => {
+    const { ctx, writes, messages } = makeUseInFormulaHarness({
+      formula: '=SUM(A1:A3)*Rate',
+      value: 42,
+    })
+    handleRibbonCommand(ctx, 'use-in-formula:Revenue')
+    expect(writes).toHaveLength(0)
+    expect(messages).toHaveLength(1)
+  })
+
+  it('refuses to overwrite a header label', () => {
+    const { ctx, writes } = makeUseInFormulaHarness({ value: '销售额' })
+    handleRibbonCommand(ctx, 'use-in-formula:销售额')
+    expect(writes).toHaveLength(0)
+  })
+
+  it('writes the name into an empty cell', () => {
+    const { ctx, writes } = makeUseInFormulaHarness({})
+    handleRibbonCommand(ctx, 'use-in-formula:Revenue')
+    expect(writes).toEqual([{ f: '=Revenue' }])
+  })
+})
+
+describe('in-cell editor inline formatting', () => {
+  function makeEditorHarness(editing: boolean) {
+    const cellWrites: Record<string, unknown[]> = {
+      fontColor: [],
+      fontWeight: [],
+      fontFamily: [],
+      fontSize: [],
+    }
+    const inlineCommands: Array<{ id: string; params: unknown }> = []
+    const range = {
+      getCellStyleData: () => ({}),
+      getFontSize: () => 11,
+      setFontColor: (value: unknown) => cellWrites.fontColor!.push(value),
+      setFontWeight: (value: unknown) => cellWrites.fontWeight!.push(value),
+      setFontFamily: (value: unknown) => cellWrites.fontFamily!.push(value),
+      setFontSize: (value: unknown) => cellWrites.fontSize!.push(value),
+    }
+    const workbook = {
+      getActiveSheet: () => undefined,
+      getActiveRange: () => range,
+    }
+    const contextService = {
+      getContextValue: (key: string) => editing && key === EDITOR_ACTIVATED,
+    }
+    const runtime = {
+      univerAPI: {
+        getActiveWorkbook: () => workbook,
+        executeCommand: (id: string, params?: unknown) => {
+          inlineCommands.push({ id, params })
+          return Promise.resolve(true)
+        },
+      },
+      univer: { __getInjector: () => ({ get: () => contextService }) },
+    }
+    const ctx = {
+      univerRef: { current: runtime },
+      setMessage: () => {},
+    } as unknown as RibbonCommandContext
+    return { ctx, cellWrites, inlineCommands }
+  }
+
+  it('font color goes to the run-level inline command while editing', () => {
+    const { ctx, cellWrites, inlineCommands } = makeEditorHarness(true)
+    handleRibbonCommand(ctx, 'font-color:#C00000')
+    expect(cellWrites.fontColor).toHaveLength(0)
+    expect(inlineCommands).toEqual([
+      { id: 'doc.command.set-inline-format-text-color', params: { value: '#C00000' } },
+    ])
+  })
+
+  it('font color "auto" clears the run color while editing', () => {
+    const { ctx, inlineCommands } = makeEditorHarness(true)
+    handleRibbonCommand(ctx, 'font-color:auto')
+    expect(inlineCommands).toEqual([
+      { id: 'doc.command.set-inline-format-text-color', params: { value: null } },
+    ])
+  })
+
+  it('font color still styles the whole cell when not editing', () => {
+    const { ctx, cellWrites, inlineCommands } = makeEditorHarness(false)
+    handleRibbonCommand(ctx, 'font-color:#C00000')
+    expect(inlineCommands).toHaveLength(0)
+    expect(cellWrites.fontColor).toEqual(['#C00000'])
+  })
+
+  it('bold toggle routes inline while editing, absolute :on stays cell-wide', () => {
+    const { ctx, cellWrites, inlineCommands } = makeEditorHarness(true)
+    handleRibbonCommand(ctx, 'bold')
+    expect(inlineCommands).toEqual([
+      { id: 'doc.command.set-inline-format-bold', params: undefined },
+    ])
+    expect(cellWrites.fontWeight).toHaveLength(0)
+    handleRibbonCommand(ctx, 'bold:on')
+    expect(cellWrites.fontWeight).toEqual(['bold'])
+  })
+
+  it('font family and size route inline with their values while editing', () => {
+    const { ctx, cellWrites, inlineCommands } = makeEditorHarness(true)
+    handleRibbonCommand(ctx, 'font-family:Arial')
+    handleRibbonCommand(ctx, 'font-size:14')
+    expect(inlineCommands).toEqual([
+      { id: 'doc.command.set-inline-format-font-family', params: { value: 'Arial' } },
+      { id: 'doc.command.set-inline-format-fontsize', params: { value: 14 } },
+    ])
+    expect(cellWrites.fontFamily).toHaveLength(0)
+    expect(cellWrites.fontSize).toHaveLength(0)
   })
 })

@@ -3,7 +3,10 @@
 /// referenced precedents) so a large, formula-light workbook can recalculate
 /// live without a full preload.
 
-import { FORMULA_REFERENCE_PATTERN, qualifierMatches } from '../gateway/xlsx-structure'
+import {
+  FORMULA_REFERENCE_PATTERN,
+  qualifierMatches,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-structure'
 import { swapPosition, toSwapSpans } from './edit-journal'
 
 export interface ClosureSheetInput {
@@ -107,19 +110,31 @@ export function parseFormulaReferences(formula: string): FormulaReference[] {
   return references
 }
 
+const EXTERNAL_WORKBOOK_PATTERN = /\[(?:\d+|[^[\]]*\.xl\w*)\]/i
+/// Excel error literals (`=D2*#REF!` after a deleted column). They are values
+/// the engine evaluates, not names; left in place their letters read as a
+/// defined name and the formula is wrongly pinned to its (often absent) cache.
+/// A sheet qualifier (`Sheet1!#REF!`) goes with it, or it would dangle.
+const ERROR_LITERAL_PATTERN =
+  /(?:'(?:[^']|'')*'!|[\p{L}\p{N}_.]+!)?#(?:NULL!|DIV\/0!|VALUE!|REF!|NAME\?|NUM!|N\/A|SPILL!|CALC!|GETTING_DATA)/gu
+
 /// True when the formula uses an identifier that is not a function call —
 /// a defined name or an external reference the closure cannot resolve.
 export function containsUnresolvedNames(formula: string): boolean {
   const segments = formula.split('"')
   for (let index = 0; index < segments.length; index += 2) {
+    // [n]Sheet!ref / '[n]Sheet name'!ref / 'C:\dir\[Book.xlsx]Sheet'!ref is
+    // an external-workbook reference: the reference pattern would swallow it
+    // as an ordinary sheet reference, but the closure can never resolve
+    // another workbook.
+    if (EXTERNAL_WORKBOOK_PATTERN.test(segments[index] ?? '')) return true
     // Strip references (and their qualifiers) so ref letters don't register.
-    const stripped = (segments[index] ?? '').replace(
-      FORMULA_REFERENCE_PATTERN,
-      (_full, lead: string) => `${lead} `,
-    )
-    for (const match of stripped.matchAll(/[A-Za-z_][A-Za-z0-9_.]*/g)) {
+    const stripped = (segments[index] ?? '')
+      .replace(ERROR_LITERAL_PATTERN, ' ')
+      .replace(FORMULA_REFERENCE_PATTERN, (_full, lead: string) => `${lead} `)
+    for (const match of stripped.matchAll(/[\p{L}_][\p{L}\p{N}_.]*/gu)) {
       const before = match.index === 0 ? '' : (stripped[match.index - 1] ?? '')
-      if (/[A-Za-z0-9_.$'!]/.test(before)) continue
+      if (/[\p{L}\p{N}_.$'!]/u.test(before)) continue
       const name = match[0]
       if (name === 'TRUE' || name === 'FALSE') continue
       const rest = stripped.slice(match.index + name.length)

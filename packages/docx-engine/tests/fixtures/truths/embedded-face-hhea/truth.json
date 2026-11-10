@@ -1,0 +1,43 @@
+{
+  "id": "embedded-face-hhea",
+  "title": "Embedded faces lay out with the hhea total; OS/2 typo and win groups and USE_TYPO_METRICS are ignored",
+  "section": "word-truths.md#L347",
+  "probe_date": "2026-09-23",
+  "source": "probe make.py -> embprobe.pdf: Merriweather renamed, hhea 1968/-546/0 over 2000, typo 0.90, win 1.10 -> 15.08 @12pt = 1.257 with and without the bit",
+  "cases": [
+    {
+      "kind": "embeddedFactor",
+      "family": "GoProbeA",
+      "ascent": 0.984,
+      "descent": 0.273,
+      "lineGap": 0,
+      "expect": 1.257,
+      "tol": 0.0005,
+      "note": "hhea 1.257, not typo 0.90 or win 1.10"
+    },
+    {
+      "kind": "embeddedFactor",
+      "family": "GoProbeB",
+      "ascent": 0.984,
+      "descent": 0.273,
+      "lineGap": 0,
+      "expect": 1.257,
+      "tol": 0.0005,
+      "note": "USE_TYPO_METRICS cleared: same"
+    },
+    {
+      "kind": "factor",
+      "font": "Merriweather",
+      "expect": 1.257,
+      "note": "cloud Merriweather control 15.12 @12pt"
+    },
+    {
+      "kind": "factor",
+      "font": "Calibri",
+      "expect": 1.22,
+      "note": "control 14.64 @12pt"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

@@ -1,0 +1,87 @@
+{
+  "id": "wave0930-face-rules",
+  "title": "corpus 2026-09-30 probe wave: empty docDefaults = TNR 10pt, pBdr none sides keep their w:space, missing GB and Tamil names",
+  "section": "word-truths.md#L412",
+  "probe_date": "2026-09-30",
+  "source": "P7_emptydefaults.pdf (re-measured 2026-10-22: TNR 10.08 pitch 11.52), P1_pbdr.pdf, P3_tamil.pdf, P4*_yahei.pdf; numbers in the triage notes 2026-09-30/triage/probes.md",
+  "cases": [
+    {
+      "kind": "docDefaults",
+      "expect": {
+        "asciiFont": "Times New Roman",
+        "sizeHalfPoints": 20
+      },
+      "note": "empty rPrDefault/pPrDefault, no theme, no Normal rFonts"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 11.52,
+      "tol": 0.05,
+      "note": "TNR 10pt pitch 11.52 = 1.152"
+    },
+    {
+      "kind": "format",
+      "block": 1,
+      "expect": {
+        "borderPad": {
+          "t": 30,
+          "b": 30,
+          "l": 31,
+          "r": 31
+        }
+      },
+      "note": "w:val=none sides still pad by w:space"
+    },
+    {
+      "kind": "factor",
+      "font": "\u65b9\u6b63\u5c0f\u6807\u5b8b\u7b80\u4f53",
+      "expect": 1.3,
+      "note": "FZ XiaoBiaoSong missing (altName SimSun) -> SimSun 13.68/15.6/23.28, not YaHei; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "\u9ed1\u4f53",
+      "expect": 1.3,
+      "note": "SimHei 13.68/15.6/23.28 at 10.5/12/18; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "\u5fae\u8f6f\u96c5\u9ed1",
+      "expect": 1.7151,
+      "note": "YaHei installed for Word (DFonts msyh.ttc): 18.0/20.64/30.96; 1.7143 -> 1.7151 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "Latha",
+      "expect": 1.6686,
+      "note": "only Latha keeps its own box 14.88/17.52/19.92 at 9/10.5/12"
+    },
+    {
+      "kind": "factor",
+      "font": "Vijaya",
+      "expect": 1,
+      "note": "Vijaya 9.12/10.56/12.0"
+    },
+    {
+      "kind": "factor",
+      "font": "Noto Sans Tamil",
+      "expect": 1,
+      "note": "missing Tamil name -> cloud Vijaya 1.00"
+    },
+    {
+      "kind": "factor",
+      "font": "TAU-Marutham",
+      "expect": 1
+    },
+    {
+      "kind": "factor",
+      "font": "Times New Roman",
+      "expect": 1.15,
+      "note": "explicit cs=Times New Roman Arabic 12 regular 13.8"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

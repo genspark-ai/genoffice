@@ -13,11 +13,14 @@ export type Lang =
   | 'pt'
   | 'it'
   | 'pl'
+  | 'cs'
   | 'nl'
   | 'ms'
   | 'he'
   | 'hi'
   | 'zh-TW'
+  | 'vi'
+  | 'tr'
 
 export const LANGS: readonly Lang[] = [
   'zh',
@@ -34,11 +37,14 @@ export const LANGS: readonly Lang[] = [
   'pt',
   'it',
   'pl',
+  'cs',
   'nl',
   'ms',
   'he',
   'hi',
   'zh-TW',
+  'vi',
+  'tr',
 ]
 
 export function isLang(value: unknown): value is Lang {
@@ -52,7 +58,8 @@ export function normalizeLang(raw: string | null | undefined): Lang {
   // traditional-script Chinese variants must win over the generic 'zh' prefix
   if (/^zh[-_](tw|hk|mo|hant)/.test(value)) return 'zh-TW'
   for (const lang of LANGS) {
-    if (lang !== 'en' && lang !== 'zh-TW' && value.startsWith(lang)) return lang
+    if (lang === 'en' || lang === 'zh-TW') continue
+    if (value === lang || value.startsWith(`${lang}-`) || value.startsWith(`${lang}_`)) return lang
   }
   // 'in' is the legacy ISO code for Indonesian still reported by some systems
   if (/^in\b/.test(value) || /^in[-_]/.test(value)) return 'id'
@@ -76,16 +83,33 @@ const HTML_LANGS: Record<Lang, string> = {
   pt: 'pt-BR',
   it: 'it-IT',
   pl: 'pl-PL',
+  cs: 'cs-CZ',
   nl: 'nl-NL',
   ms: 'ms-MY',
   he: 'he-IL',
   hi: 'hi-IN',
   'zh-TW': 'zh-TW',
+  vi: 'vi-VN',
+  tr: 'tr-TR',
 }
 
 /** BCP-47 tag for document.documentElement.lang (drives CSS :lang() and Chromium's per-language font fallback) */
 export function htmlLang(lang: Lang): string {
   return HTML_LANGS[lang]
+}
+
+/** Languages whose script reads right-to-left: UI chrome flips direction for them */
+const RTL_LANGS: readonly Lang[] = ['ar', 'he']
+
+/** Whether this UI language lays out right-to-left (drives the renderers' html dir) */
+export function isRtlLang(lang: string | undefined | null): boolean {
+  return (RTL_LANGS as readonly string[]).includes(lang ?? '')
+}
+
+/** The `dir` attribute value for a UI language: every bootstrap and every locale
+ *  setter writes the same expression, so the ternary lives here once. */
+export function htmlDir(lang: string | undefined | null): 'rtl' | 'ltr' {
+  return isRtlLang(lang) ? 'rtl' : 'ltr'
 }
 
 // ---- platform-native shortcut hints ----
@@ -139,11 +163,13 @@ export const platformShortcuts: (text: string) => string = IS_MAC
 
 export type Params = Record<string, string | number>
 
-/** fill {name} placeholders; unknown placeholders are left as-is */
+/** fill {name} placeholders; unknown or nullish ones are left as-is */
 export function format(template: string, params?: Params): string {
   if (!params) return template
   return template.replace(/\{(\w+)\}/g, (match, name: string) =>
-    name in params ? String(params[name]) : match,
+    // hasOwn guards inherited properties; the nullish check keeps an explicitly
+    // undefined param from rendering as the literal text "undefined"
+    Object.hasOwn(params, name) && params[name] != null ? String(params[name]) : match,
   )
 }
 
@@ -189,6 +215,13 @@ export function onUiLangChange(listener: (lang: Lang) => void): () => void {
  * runtime fallback.
  */
 export function createI18n<D extends Record<string, string>>(dicts: LangDicts<D>) {
-  return (lang: Lang, key: keyof D, params?: Params): string =>
-    platformShortcuts(format(dicts[lang][key], params))
+  return (lang: Lang, key: keyof D, params?: Params): string => {
+    // A shard that predates a key must degrade (en, then zh, then the key)
+    // instead of throwing inside format()
+    const text = dicts[lang]?.[key] ?? dicts.en[key] ?? dicts.zh[key] ?? String(key)
+    return format(platformShortcuts(text), params)
+  }
 }
+
+export * from './font-names'
+export * from './common-ribbon'

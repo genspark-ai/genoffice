@@ -57,4 +57,15 @@ describe('home-screen locale tables', () => {
     // a few shared strings (brand names, "PDF", "OK"-style tokens) are fine
     expect(identical.length).toBeLessThan(referenceKeys.length / 4)
   })
+
+  /**
+   * The app is still called AI Markdown. A rename of the app's name was started
+   * in this branch and then dropped: the naming is the maintainers' call, not
+   * this PR's, and README and the docs still say Markdown. Pinned so a stray
+   * locale cannot quietly reintroduce a second name — the quick-create card,
+   * the File > New menu and a new tab's title all have to agree.
+   */
+  it.each(locales)('locale %s calls the app AI Markdown on the quick-create card', (locale) => {
+    expect(strings[locale].newMarkdown).toBe('AI Markdown')
+  })
 })

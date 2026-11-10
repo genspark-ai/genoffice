@@ -1,0 +1,46 @@
+{
+  "id": "charspace-latin-full-delta",
+  "title": "Without balanceSingleByteDoubleByteWidth Latin, digits and spaces take the full charSpace delta",
+  "section": "word-truths.md#L27",
+  "section_title": "2026-08-31 to 09-02 probe batch: docGrid charSpace",
+  "probe_date": "2026-10-22",
+  "class": "pure",
+  "source": "same probe with the flag absent; the 2026-09-02 \"Latin unaffected\" reading was wrong",
+  "cases": [
+    {
+      "kind": "flagsOff",
+      "expect": ["balanceDbcsSpacing"]
+    },
+    {
+      "kind": "charSpacePt",
+      "section": 0,
+      "expect": {
+        "fullWidth": 2.79,
+        "singleByte": 2.79
+      },
+      "tol": 0.01,
+      "note": "charSpace 11417"
+    },
+    {
+      "kind": "charSpacePt",
+      "section": 1,
+      "expect": {
+        "fullWidth": 2.0,
+        "singleByte": 2.0
+      },
+      "tol": 0.001,
+      "note": "charSpace 8192"
+    },
+    {
+      "kind": "charSpacePt",
+      "section": 3,
+      "expect": {
+        "fullWidth": -0.2,
+        "singleByte": -0.2
+      },
+      "tol": 0.001,
+      "note": "charSpace -820"
+    }
+  ],
+  "docx": "probe.docx"
+}

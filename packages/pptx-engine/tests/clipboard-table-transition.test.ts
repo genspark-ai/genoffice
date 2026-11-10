@@ -17,6 +17,7 @@ import {
   openPptx,
   pasteElements,
   reorderElement,
+  setElementLink,
   savePptx,
   setSlideAnimations,
   setSlideTransition,
@@ -33,6 +34,14 @@ const SHIFT = { dx: 152400, dy: 152400 }
 const PNG_1PX = Uint8Array.from(
   Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  ),
+)
+
+// 1x1 blue PNG (distinct bytes from PNG_1PX)
+const PNG_BLUE = Uint8Array.from(
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC',
     'base64',
   ),
 )
@@ -100,6 +109,74 @@ describe('copy/paste elements', () => {
     expect(mediaParts.filter((p) => p === pic.mediaRef).length).toBe(1)
   })
 
+  it('pastes a picture into a different deck (media bytes travel with the clipboard)', async () => {
+    const source = await openPptx(fx('01_standard_business.pptx'))
+    const slide0 = source.deck.slides[0]!
+    const pic = addPicture(source, slide0, { bytes: PNG_1PX, ext: 'png', offset: { ...OFF } })!
+    const clip = copyElementData(source, slide0, pic)
+    expect(clip.parts?.[pic.mediaRef!]).toBeDefined()
+
+    const target = await openPptx(fx('01_standard_business.pptx'))
+    const before = target.deck.slides[0]!.elements.length
+    const r = pasteElements(target, 0, [clip], SHIFT)
+    expect(r).not.toBeNull()
+    expect(r!.slide.elements.length).toBe(before + 1)
+    const pasted = r!.slide.elements.at(-1) as PictureElement
+    expect(pasted.type).toBe('picture')
+    expect(Buffer.from(target.archive.readBytes(pasted.mediaRef!)!)).toEqual(Buffer.from(PNG_1PX))
+
+    const reopened = await openPptx(await savePptx(target))
+    const el2 = reopened.deck.slides[0]!.elements.at(-1) as PictureElement
+    expect(el2.type).toBe('picture')
+    expect(Buffer.from(reopened.archive.readBytes(el2.mediaRef!)!)).toEqual(Buffer.from(PNG_1PX))
+  })
+
+  it('cross-deck paste keeps a different image already at the same media path', async () => {
+    const source = await openPptx(fx('01_standard_business.pptx'))
+    const srcPic = addPicture(source, source.deck.slides[0]!, {
+      bytes: PNG_1PX,
+      ext: 'png',
+      offset: { ...OFF },
+    })!
+    const clip = copyElementData(source, source.deck.slides[0]!, srcPic)
+
+    // The target deck holds different bytes at the very same media path
+    const target = await openPptx(fx('01_standard_business.pptx'))
+    const tgtPic = addPicture(target, target.deck.slides[0]!, {
+      bytes: PNG_BLUE,
+      ext: 'png',
+      offset: { ...OFF },
+    })!
+    expect(tgtPic.mediaRef).toBe(srcPic.mediaRef)
+
+    const r = pasteElements(target, 0, [clip], SHIFT)!
+    const pasted = r.slide.elements.at(-1) as PictureElement
+    expect(pasted.mediaRef).not.toBe(tgtPic.mediaRef)
+    expect(Buffer.from(target.archive.readBytes(pasted.mediaRef!)!)).toEqual(Buffer.from(PNG_1PX))
+    expect(Buffer.from(target.archive.readBytes(tgtPic.mediaRef!)!)).toEqual(Buffer.from(PNG_BLUE))
+  })
+
+  it('slide-jump hyperlink does not drag the target slide graph into the clipboard', async () => {
+    const source = await openPptx(fx('01_standard_business.pptx'))
+    const slide0 = source.deck.slides[0]!
+    const el = addElement(slide0, {
+      kind: 'rect',
+      offset: { ...OFF },
+      paragraphs: [{ runs: [{ text: 'go to 2' }] }],
+    })
+    const linked = setElementLink(source, 0, el.id, { kind: 'slide', slideIndex: 1 })!
+    const clip = copyElementData(source, linked, linked.elements.at(-1)!)
+    expect(clip.rels.some((r) => r.target === source.deck.slides[1]!.path)).toBe(true)
+    expect(Object.keys(clip.parts ?? {})).toEqual([])
+
+    // Cross-deck paste imports nothing extra; the link resolves by path in the target
+    const target = await openPptx(fx('01_standard_business.pptx'))
+    const partsBefore = target.archive.entries.size
+    const r = pasteElements(target, 0, [clip], SHIFT)
+    expect(r).not.toBeNull()
+    expect(target.archive.entries.size).toBe(partsBefore)
+  })
+
   it('pending text edits are baked into the copied xml', async () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     const slide = opened.deck.slides[0]!
@@ -155,9 +232,9 @@ describe('editTableCellText', () => {
     const slide = r.slide
     const tblId = r.elementId
 
-    expect(editTableCellText(slide, tblId, 0, 1, [{ runs: [{ text: 'Header B', bold: true }] }])).toBe(
-      true,
-    )
+    expect(
+      editTableCellText(slide, tblId, 0, 1, [{ runs: [{ text: 'Header B', bold: true }] }]),
+    ).toBe(true)
     expect(editTableCellText(slide, tblId, 1, 0, [{ runs: [{ text: 'data' }] }])).toBe(true)
     // Out of range rejected
     expect(editTableCellText(slide, tblId, 5, 0, [{ runs: [{ text: 'x' }] }])).toBe(false)
@@ -243,6 +320,21 @@ describe('table structure ops', () => {
     const tbl2 = reopened.deck.slides[0]!.elements.at(-1) as TableElement
     expect(tbl2.colWidths[0]).toBe(w0 * 2)
     expect(tbl2.transform.offset.cx).toBe(w0 * 2 + tbl2.colWidths[1]!)
+  })
+
+  it('rtl table: growing a column shifts the origin left (visual-right edge anchored)', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const { slide, elementId } = addTable(opened, 0, { rows: 2, cols: 2, offset: { ...TBL_OFF } })!
+    const tbl = slide.elements.find((e) => e.id === elementId) as TableElement
+    tbl.anchor.originalXml = tbl.anchor.originalXml.replace('<a:tblPr', '<a:tblPr rtl="1"')
+    tbl.rtl = true
+    const w0 = tbl.colWidths[0]!
+    const x0 = tbl.transform.offset.x
+
+    expect(setTableColWidth(slide, elementId, 0, w0 + 91440)).toBe(true)
+    expect(tbl.transform.offset.x).toBe(x0 - 91440)
+    expect(tbl.transform.offset.cx).toBe(w0 + 91440 + tbl.colWidths[1]!)
+    expect(tbl.anchor.originalXml).toContain(`x="${x0 - 91440}"`)
   })
 })
 
@@ -390,5 +482,30 @@ describe('additional transition effects', () => {
     body = patchSlideTransitionXml(body, 'zoom')
     expect(body).not.toContain('<p:cover')
     expect(readSlideTransitionXml(body)).toBe('zoom')
+  })
+})
+
+describe('addPicture media sharing', () => {
+  it('identical bytes reuse one media part, different bytes get their own', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide0 = opened.deck.slides[0]!
+    const slide1 = opened.deck.slides[1]!
+    const before = [...opened.archive.entries.keys()].filter((p) =>
+      p.startsWith('ppt/media/'),
+    ).length
+    const a = addPicture(opened, slide0, { bytes: PNG_1PX, ext: 'png', offset: { ...OFF } })!
+    const b = addPicture(opened, slide1, { bytes: PNG_1PX, ext: 'png', offset: { ...OFF } })!
+    const c = addPicture(opened, slide1, { bytes: PNG_BLUE, ext: 'png', offset: { ...OFF } })!
+    expect(b.mediaRef).toBe(a.mediaRef)
+    expect(c.mediaRef).not.toBe(a.mediaRef)
+    const after = [...opened.archive.entries.keys()].filter((p) =>
+      p.startsWith('ppt/media/'),
+    ).length
+    expect(after).toBe(before + 2)
+    const reopened = await openPptx(await savePptx(opened))
+    const el1 = reopened.deck.slides[1]!.elements.filter(
+      (e) => e.type === 'picture',
+    ) as PictureElement[]
+    expect(el1.map((e) => e.mediaRef)).toContain(a.mediaRef)
   })
 })

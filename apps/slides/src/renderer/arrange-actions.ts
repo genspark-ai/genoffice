@@ -3,17 +3,18 @@
  * ungrouping, align/distribute, z-order, and freehand ink. Functions read the
  * latest App state through ActionCtx.
  */
-import type { GroupRenderNode, RenderNode } from '@genoffice/pptx-render'
+import type { GroupRenderNode, RenderNode, RenderSlide } from '@genoffice/pptx-render'
 import type { ReorderDirection } from '../shared/ipc'
-import type { ActionCtx } from './action-context'
+import type { ActionCtx, UngroupedSet } from './action-context'
 import { FIT_WIDTH } from './app-constants'
 import { inkNodesOf, rasterizeStroke, type InkStroke } from './ink'
 import { t } from './i18n/locale'
 
+const GROUPABLE = new Set(['text', 'shape', 'picture'])
+
 export async function groupSelected(ctx: ActionCtx): Promise<void> {
   const { slide, selectedIds, current } = ctx
   if (!slide || selectedIds.length < 2) return
-  const GROUPABLE = new Set(['text', 'shape', 'picture'])
   const nodes = selectedIds
     .map((id) => slide.nodes.find((n) => n.sourceId === id))
     .filter(Boolean) as RenderNode[]
@@ -46,8 +47,58 @@ export async function ungroupSelected(ctx: ActionCtx): Promise<void> {
     ctx.applySlide(current, updated)
     const newIds = childIds.filter((cid) => updated.nodes.some((n) => n.sourceId === cid))
     ctx.setSelectedIds(newIds.length > 0 ? newIds : [])
+    const slidePath = updated.partPath
+    if (slidePath && newIds.length >= 2) {
+      ctx.setUngroupedSets((sets) => [
+        ...sets.filter(
+          (s) => s.slidePath !== slidePath || !s.sourceIds.some((id) => newIds.includes(id)),
+        ),
+        { slidePath, sourceIds: newIds },
+      ])
+    }
     ctx.setDirty(true)
     ctx.setStatus(t('appStatusUngrouped'))
+  }
+}
+
+/**
+ * Former members of the remembered group any selected id belongs to, restricted to
+ * those still on the slide as groupable top-level elements (PowerPoint regroups
+ * every survivor, not just the selection).
+ */
+export function regroupCandidates(
+  sets: UngroupedSet[],
+  slide: Pick<RenderSlide, 'partPath' | 'nodes'>,
+  selectedIds: string[],
+): string[] | null {
+  if (!slide.partPath) return null
+  const set = sets.find(
+    (s) => s.slidePath === slide.partPath && s.sourceIds.some((id) => selectedIds.includes(id)),
+  )
+  if (!set) return null
+  const memberIds = set.sourceIds.filter((id) => {
+    const n = slide.nodes.find((nn) => nn.sourceId === id)
+    return n && GROUPABLE.has(n.type)
+  })
+  return memberIds.length >= 2 ? memberIds : null
+}
+
+export async function regroupSelected(ctx: ActionCtx): Promise<void> {
+  const { slide, selectedIds, current } = ctx
+  if (!slide) return
+  const memberIds = regroupCandidates(ctx.ungroupedSets, slide, selectedIds)
+  if (!memberIds) return
+  const result = await window.slidesApi.groupElements({
+    slideIndex: current,
+    sourceIds: memberIds,
+  })
+  if (result) {
+    ctx.applySlide(current, result.slide)
+    ctx.setSelectedIds([result.groupId])
+    // The set stays: inside the group it yields no candidates, and undo of this regroup
+    // brings the members (and Regroup) straight back
+    ctx.setDirty(true)
+    ctx.setStatus(t('appStatusGrouped'))
   }
 }
 
@@ -254,37 +305,45 @@ export async function rotateSelected(ctx: ActionCtx, deltaDeg: number): Promise<
     })
   }
   if (!items.length) return
-  // Top-level elements batch into one IPC so a multi-rotate is a single undo step;
-  // in-group children keep the per-element path (the batch op has no group support)
-  if (items.every((it) => !it.groupId)) {
-    const updated = await window.slidesApi.batchEditTransform({
-      slideIndex: ctx.current,
-      fitWidthPx: FIT_WIDTH,
-      items: items.map((it) => ({
-        sourceId: it.sourceId,
-        xPx: it.box.x,
-        yPx: it.box.y,
-        wPx: it.box.w,
-        hPx: it.box.h,
-        rotationDeg: it.box.rotationDeg,
-      })),
-    })
-    if (updated) {
-      ctx.applySlide(ctx.current, updated)
-      ctx.setDirty(true)
-    }
-    return
-  }
-  for (const it of items) {
-    await ctx.onTransform(it.sourceId, it.box, undefined, it.groupId)
+  // One IPC for the whole selection so a multi-rotate is a single undo step; top-level
+  // elements keep the legacy batch semantics, in-group children go through the
+  // editTransform-equivalent multi path (group-local boxes)
+  const updated = items.every((it) => !it.groupId)
+    ? await window.slidesApi.batchEditTransform({
+        slideIndex: ctx.current,
+        fitWidthPx: FIT_WIDTH,
+        items: items.map((it) => ({
+          sourceId: it.sourceId,
+          xPx: it.box.x,
+          yPx: it.box.y,
+          wPx: it.box.w,
+          hPx: it.box.h,
+          rotationDeg: it.box.rotationDeg,
+        })),
+      })
+    : await window.slidesApi.editTransformMulti({
+        slideIndex: ctx.current,
+        fitWidthPx: FIT_WIDTH,
+        items: items.map((it) => ({
+          sourceId: it.sourceId,
+          xPx: it.box.x,
+          yPx: it.box.y,
+          wPx: it.box.w,
+          hPx: it.box.h,
+          rotationDeg: it.box.rotationDeg,
+          ...(it.groupId ? { groupId: it.groupId } : {}),
+        })),
+      })
+  if (updated) {
+    ctx.applySlide(ctx.current, updated)
+    ctx.setDirty(true)
   }
 }
 
 export async function eraseInk(ctx: ActionCtx, sourceIds: string[]): Promise<void> {
-  for (const id of sourceIds) {
-    const updated = await window.slidesApi.deleteElement({ slideIndex: ctx.current, sourceId: id })
-    if (updated) ctx.applySlide(ctx.current, updated)
-  }
+  if (!sourceIds.length) return
+  const updated = await window.slidesApi.deleteElements({ slideIndex: ctx.current, sourceIds })
+  if (updated) ctx.applySlide(ctx.current, updated)
 }
 
 export async function clearInk(ctx: ActionCtx): Promise<void> {

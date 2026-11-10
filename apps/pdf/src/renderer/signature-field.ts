@@ -39,8 +39,12 @@ export function signatureDrawingForField(
     formFieldName: target.fieldName,
     paths: sig.paths.map((path) => {
       const out: number[] = []
-      for (let index = 0; index < path.length; index += 2) {
-        out.push(left + path[index]! * k, top - path[index + 1]! * k)
+      // walk whole pairs only: a trailing odd or non-finite value would emit NaN
+      for (let index = 0; index + 1 < path.length; index += 2) {
+        const x = path[index]!
+        const y = path[index + 1]!
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue
+        out.push(left + x * k, top - y * k)
       }
       return out
     }),

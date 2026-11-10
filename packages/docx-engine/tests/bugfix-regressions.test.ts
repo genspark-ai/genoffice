@@ -16,7 +16,7 @@ import {
   type SaveBlock,
 } from '../src/index'
 import { patchParagraphTexts } from '../src/text-patch'
-import { escapeXmlText } from '../src/xml-utils'
+import { escapeXmlText, textHasComplexScript } from '../src/xml-utils'
 import { buildDocx } from './helpers/build-docx'
 
 const P = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
@@ -87,6 +87,17 @@ describe('escapeXmlText', () => {
   it('strips control characters that are illegal in XML 1.0 but keeps tab/newline', () => {
     expect(escapeXmlText('a\u0000b\u000Bc\td\ne')).toBe('abc\td\ne')
     expect(escapeXmlText('<a & b>')).toBe('&lt;a &amp; b&gt;')
+  })
+})
+
+describe('textHasComplexScript', () => {
+  it('classifies Arabic, Tamil, Devanagari and Thai as cs; Latin/CJK as not', () => {
+    expect(textHasComplexScript('مرحبا')).toBe(true)
+    expect(textHasComplexScript('தமிழ்')).toBe(true)
+    expect(textHasComplexScript('हिन्दी')).toBe(true)
+    expect(textHasComplexScript('ไทย')).toBe(true)
+    expect(textHasComplexScript('hello')).toBe(false)
+    expect(textHasComplexScript('中文한글かな')).toBe(false)
   })
 })
 
@@ -254,9 +265,11 @@ describe('cell-level color needs run consensus (B5)', () => {
     expect(cell.richParas![0].runs[1].color).toBeUndefined()
   })
 
-  it('a uniformly colored cell still gets cell.color', async () => {
+  it('a uniformly colored cell still gets cell.color, but not styleColor', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: CELL(RED + RED) }))
-    expect(doc.blocks[0].table!.rows[0][0].color).toBe('FF0000')
+    const cell = doc.blocks[0].table!.rows[0][0]
+    expect(cell.color).toBe('FF0000')
+    expect(cell.styleColor).toBeUndefined()
   })
 })
 
@@ -278,9 +291,12 @@ describe('table style whole-table rPr and firstCol conditionals (B5b)', () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: TBL, extraStylesXml: STYLE }))
     const rows = doc.blocks[0].table!.rows
     for (const row of rows) for (const cell of row) expect(cell.color).toBe('365F91')
+    for (const row of rows) for (const cell of row) expect(cell.styleColor).toBe('365F91')
     expect(rows[0][0].bold).toBe(true)
     expect(rows[1][0].bold).toBe(true)
+    expect(rows[1][0].styleBold).toBe(true)
     expect(rows[1][1].bold).toBeUndefined()
+    expect(rows[1][1].styleBold).toBeUndefined()
   })
 })
 
@@ -502,5 +518,69 @@ describe('gradFill textbox approximates the average of all stops as a solid fill
       await buildDocx({ bodyXml: BOX('<a:solidFill><a:srgbClr val="00B050"/></a:solidFill>') }),
     )
     expect(doc.blocks[0].textboxes?.[0].fill).toBe('00B050')
+  })
+})
+
+describe('sectionSettingsFromXml single-quote attributes', () => {
+  it('reads w:val/w:restart/w:type spelled with single quotes', () => {
+    const settings = sectionSettingsFromXml(
+      "<w:sectPr><w:footnotePr><w:numFmt w:val='upperRoman'/></w:footnotePr>" +
+        "<w:lnNumType w:restart='continuous' w:start='2'/>" +
+        "<w:pgBorders><w:top w:val='single' w:sz='4' w:space='1' w:color='FF0000'/></w:pgBorders></w:sectPr>",
+    )
+    expect(settings.footnotePr?.numFmt).toBe('upperRoman')
+    expect(settings.lineNumbers?.restart).toBe('continuous')
+    expect(settings.pageBorder).toBe(true)
+    expect(settings.pageBorderProps?.sides?.top?.val).toBe('single')
+  })
+})
+
+describe('single-quoted drawing and table attributes', () => {
+  it('reads image size and table grid regardless of quote style or extent order', async () => {
+    const img =
+      "<w:p><w:r><w:drawing><wp:inline><wp:extent cy='457200' cx='914400'/>" +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      "<pic:pic><pic:blipFill><a:blip r:embed='rId10'/></pic:blipFill></pic:pic>" +
+      '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+    const table =
+      "<w:tbl><w:tblPr><w:tblW w:w='0' w:type='auto'/><w:tblInd w:w='70' w:type='dxa'/></w:tblPr>" +
+      "<w:tblGrid><w:gridCol w:w='3544'/><w:gridCol w:w='4376'/></w:tblGrid>" +
+      '<w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>' +
+      '<w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: img,
+        withImage: true,
+        extraRels:
+          '<Relationship Id="rId60" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+        extraParts: [
+          {
+            path: 'word/header1.xml',
+            xml: `<w:hdr ${w}>${table}<w:p/></w:hdr>`,
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+          },
+          {
+            path: 'word/settings.xml',
+            xml:
+              `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ${w}><w:compat>` +
+              '<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>' +
+              '</w:compat></w:settings>',
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml',
+          },
+        ],
+        sectPrExtra: '<w:headerReference w:type="default" r:id="rId60"/>',
+      }),
+    )
+    const run = doc.blocks[0]
+    expect(run.type).toBe('image')
+    expect(run.imageDataUrl).toMatch(/^data:image\/png;base64,/)
+    expect(run.imageWidthPx).toBe(96) // 914400 EMU / 9525
+    expect(run.imageHeightPx).toBe(48)
+    const [row] = doc.headerParas!.filter((p) => p.cells)
+    expect(row.row).toMatchObject({ indentTwips: 70 })
+    expect(row.cells!.map((c) => c.widthTwips)).toEqual([3544, 4376])
   })
 })

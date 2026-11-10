@@ -1,4 +1,6 @@
-import { BooleanNumber, type IStyleData, WrapStrategy } from '@univerjs/core'
+import { BaselineOffset, BooleanNumber, type IStyleData, WrapStrategy } from '@univerjs/core'
+
+import { isAccountingPattern } from './numfmt-dialog'
 
 /// One OOXML indent step rendered as left cell padding, in px — roughly the
 /// width of three spaces at the default 11pt font.
@@ -23,6 +25,7 @@ export interface SelectionFormat {
   readonly italic: boolean
   readonly underline: boolean
   readonly strike: boolean
+  readonly vertAlign: 'superscript' | 'subscript' | null
   readonly wrap: boolean
   /// Neutral (wire) alignment names, or null when unset.
   readonly horizontalAlignment: string | null
@@ -87,6 +90,12 @@ export function toSelectionFormat(
     italic: style.it === BooleanNumber.TRUE,
     underline: style.ul?.s === BooleanNumber.TRUE,
     strike: style.st?.s === BooleanNumber.TRUE,
+    vertAlign:
+      style.va === BaselineOffset.SUPERSCRIPT
+        ? 'superscript'
+        : style.va === BaselineOffset.SUBSCRIPT
+          ? 'subscript'
+          : null,
     wrap: style.tb === WrapStrategy.WRAP,
     horizontalAlignment: (style.ht != null && HORIZONTAL_NAMES[style.ht]) || null,
     verticalAlignment: (style.vt != null && VERTICAL_NAMES[style.vt]) || null,
@@ -111,6 +120,7 @@ export function selectionFormatEquals(
     a.italic === b.italic &&
     a.underline === b.underline &&
     a.strike === b.strike &&
+    a.vertAlign === b.vertAlign &&
     a.wrap === b.wrap &&
     a.horizontalAlignment === b.horizontalAlignment &&
     a.verticalAlignment === b.verticalAlignment &&
@@ -130,6 +140,7 @@ export function numberFormatLabel(pattern: string): string {
   // detection must not read date/digit letters inside them.
   const bare = pattern.replace(/\[[^\]]*\]/g, '').replace(/"[^"]*"/g, '')
   if (bare.includes('%')) return 'Percentage'
+  if (isAccountingPattern(pattern)) return 'Accounting'
   // Accounting is currency plus the aligning fill/padding tokens (_( and *).
   const quoted = pattern.match(/"[^"]*"/g)?.join('') ?? ''
   const currency = /[$¥€£]/.test(bare + quoted) || /\[\$[^\-\]]/.test(pattern)

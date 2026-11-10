@@ -1,0 +1,22 @@
+{
+  "id": "render-hf-empty-footer-bottom",
+  "title": "An empty footer paragraph lifts a bottom-aligned body by its line",
+  "section": "word-truths.md#L124",
+  "probe_date": "2026-09-06",
+  "class": "render",
+  "source": "F1_empty_ftr_vb.pdf re-measured 2026-10-22: A4, pgMar bottom 720 / footer 851, vAlign bottom body, footer = one empty Arial 12 paragraph; body last line baseline 774.0, first 760.32 (glyph tops 749.46 / 763.14)",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 1,
+      "expect": 749.46,
+      "tol": 0.6,
+      "note": "two body lines bottom-aligned above footer dist 42.55 + 13.8 strip line"
+    }
+  ],
+  "docx": "probe.docx"
+}

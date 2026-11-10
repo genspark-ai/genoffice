@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { createI18n, htmlLang, type Lang, type Params } from '@genoffice/i18n'
+import { createI18n, htmlDir, htmlLang, type Lang, type Params } from '@genoffice/i18n'
 import { strings } from './strings'
 
 const translate = createI18n(strings)
@@ -21,9 +21,16 @@ export function LocaleProvider({ initial, children }: { initial: Lang; children:
     () => ({
       lang,
       setLang: (next) => {
-        setLangState(next)
-        document.documentElement.lang = htmlLang(next)
-        void window.aiOffice.setLanguage(next)
+        // the main process rejects when app-settings.json is unwritable; a language
+        // committed here first would survive only until the next launch
+        window.aiOffice.setLanguage(next).then(
+          () => {
+            setLangState(next)
+            document.documentElement.lang = htmlLang(next)
+            document.documentElement.dir = htmlDir(next)
+          },
+          (err: unknown) => console.warn('language not saved', err),
+        )
       },
     }),
     [lang],
@@ -55,11 +62,14 @@ const DATE_LOCALES: Record<Lang, string> = {
   pt: 'pt-BR',
   it: 'it-IT',
   pl: 'pl-PL',
+  cs: 'cs-CZ',
   nl: 'nl-NL',
   ms: 'ms-MY',
   he: 'he-IL',
   hi: 'hi-IN',
   'zh-TW': 'zh-TW',
+  vi: 'vi-VN',
+  tr: 'tr-TR',
 }
 
 export function useI18n(): I18n {

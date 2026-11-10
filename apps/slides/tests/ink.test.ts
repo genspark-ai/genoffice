@@ -131,4 +131,20 @@ describe('ink stroke → save → reopen (engine path = slides:add-ink handler)'
     const rendered = buildRenderSlide(slide, opened.deck.size, { fitWidthPx: FIT })
     expect(inkNodesOf(rendered)).toHaveLength(0)
   })
+
+  it('rejects hostile descr payloads instead of decoding them', () => {
+    const hostile = (over: object) =>
+      JSON.stringify({ v: 1, tool: 'pen', color: 'C00000', width: 2, points: [[0, 0]], ...over })
+    expect(decodeInkPayload(hostile({ points: [[0, NaN]] }))).toBeNull()
+    expect(decodeInkPayload(hostile({ points: [[Infinity, 0]] }))).toBeNull()
+    expect(decodeInkPayload(hostile({ points: 'oops' }))).toBeNull()
+    expect(
+      decodeInkPayload(hostile({ points: Array.from({ length: 20001 }, () => [0, 0]) })),
+    ).toBeNull()
+    expect(decodeInkPayload(hostile({ width: Infinity }))?.width).toBe(2)
+    expect(decodeInkPayload(hostile({ width: 1e9 }))?.width).toBe(200)
+    expect(decodeInkPayload(hostile({ color: 'red;evil' }))?.color).toBe('000000')
+    // a valid stroke still round-trips
+    expect(decodeInkPayload(encodeInkPayload(stroke))).toMatchObject({ color: 'C00000', width: 2 })
+  })
 })

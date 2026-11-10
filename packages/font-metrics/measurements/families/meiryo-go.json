@@ -1,0 +1,23 @@
+{
+  "family": "Meiryo GO",
+  "source": {
+    "kind": "probe",
+    "date": "2026-09-03",
+    "probe": "Word probe from meiryo.ttc: Latin Verdana-derived at 0.9705x (bold 0.948x)"
+  },
+  "faces": [
+    {
+      "src": "local('Verdana'), local('Hiragino Sans'), local('HiraginoSans-W3')",
+      "sizeAdjust": 97.05,
+      "unicodeRange": "U+0020-007E, U+00A0-024F",
+      "display": null
+    },
+    {
+      "src": "local('Verdana-Bold'), local('Verdana Bold'), local('HiraginoSans-W6')",
+      "sizeAdjust": 94.8,
+      "unicodeRange": "U+0020-007E, U+00A0-024F",
+      "weight": "bold",
+      "display": null
+    }
+  ]
+}

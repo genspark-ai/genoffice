@@ -172,7 +172,32 @@ describe('konva-adapter (thin data mapping)', () => {
       100,
       50,
     )
-    expect(r.fillLinearGradientColorStops).toEqual([0, '#000000', 1, '#FFFFFF'])
+    // Ramps subdivide with linear-sRGB midpoints (PowerPoint blends gradients in
+    // linear light, measured on tdf105739); ends stay exact
+    const stops = r.fillLinearGradientColorStops!
+    expect(stops.slice(0, 2)).toEqual([0, '#000000'])
+    expect(stops.slice(-2)).toEqual([1, '#FFFFFF'])
+    expect(stops[stops.indexOf(0.5) + 1]).toBe('rgb(188,188,188)')
+  })
+
+  it('linear gradient vector spans the box projection, not max(w,h)', () => {
+    // Vertical gradient on a wide box: the ramp must run exactly top edge -> bottom edge
+    const r = fillToKonva(
+      {
+        kind: 'gradient',
+        stops: [
+          { pos: 0, color: '#000000' },
+          { pos: 1, color: '#FFFFFF' },
+        ],
+        angleDeg: 90,
+      },
+      784,
+      128,
+    )
+    expect(r.fillLinearGradientStartPoint!.x).toBeCloseTo(392, 6)
+    expect(r.fillLinearGradientStartPoint!.y).toBeCloseTo(0, 6)
+    expect(r.fillLinearGradientEndPoint!.x).toBeCloseTo(392, 6)
+    expect(r.fillLinearGradientEndPoint!.y).toBeCloseTo(128, 6)
   })
 
   it('8-digit hex → rgba', () => {

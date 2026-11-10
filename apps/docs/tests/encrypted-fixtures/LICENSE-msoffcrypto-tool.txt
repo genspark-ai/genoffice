@@ -1,0 +1,48 @@
+msoffcrypto-tool test fixtures
+
+The four local fixtures are unmodified copies from
+https://github.com/nolze/msoffcrypto-tool:
+
+Upstream revision: 6d9e72c58de2cf7df1ab45ac0d74ebedac8c58e3
+
+- office-agile-password.docx
+  Upstream: tests/inputs/example_password.docx
+  Git blob SHA-1: e36bff91729b1bf720b4b1b6762f6b9d0151e01c
+  https://github.com/nolze/msoffcrypto-tool/blob/6d9e72c58de2cf7df1ab45ac0d74ebedac8c58e3/tests/inputs/example_password.docx
+
+- office-agile-plain.docx
+  Upstream: tests/outputs/example.docx
+  Git blob SHA-1: f3ec419252eb007be00bfa7cc4e0d0b78abaff07
+  https://github.com/nolze/msoffcrypto-tool/blob/6d9e72c58de2cf7df1ab45ac0d74ebedac8c58e3/tests/outputs/example.docx
+
+- office-standard-password.docx
+  Upstream: tests/inputs/ecma376standard_password.docx
+  Git blob SHA-1: 81030b5fc2ff6699056fcf27721bad49b836c7c8
+  https://github.com/nolze/msoffcrypto-tool/blob/6d9e72c58de2cf7df1ab45ac0d74ebedac8c58e3/tests/inputs/ecma376standard_password.docx
+
+- office-standard-plain.docx
+  Upstream: tests/outputs/ecma376standard_password_plain.docx
+  Git blob SHA-1: 4cb088b5c070bcaf7be9a8892fbfe7f37ff7be0a
+  https://github.com/nolze/msoffcrypto-tool/blob/6d9e72c58de2cf7df1ab45ac0d74ebedac8c58e3/tests/outputs/ecma376standard_password_plain.docx
+
+MIT License
+
+Copyright (c) 2015 nolze
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

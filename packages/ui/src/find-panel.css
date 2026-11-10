@@ -1,0 +1,120 @@
+/* Find / replace popover shared by the markdown and html editors. The host
+ * container must be position: relative; colors come from tokens.css and the
+ * app's --accent. */
+
+.find-panel {
+  position: absolute;
+  top: 8px;
+  right: 20px;
+  z-index: 60;
+  -webkit-app-region: no-drag;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: var(--shadow-menu);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.find-input {
+  width: 200px;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+}
+
+.find-input:focus {
+  border-color: var(--accent);
+}
+
+.find-opt {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 3px;
+  font-size: 11px;
+  padding: 2px 6px;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.find-opt.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
+}
+
+.find-count {
+  min-width: 44px;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.find-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.find-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.find-btn:disabled {
+  color: var(--border-strong);
+  cursor: default;
+}
+
+.find-close {
+  font-size: 12px;
+}
+
+.find-action {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.find-action:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.find-action:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.search-hit {
+  background: var(--search-hit-bg);
+  border-radius: 2px;
+}
+
+.search-hit-active {
+  background: var(--search-hit-active-bg);
+  color: var(--search-hit-active-ink);
+}

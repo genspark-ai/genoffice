@@ -1,5 +1,7 @@
 import { numfmt } from '@univerjs/core'
 
+import { getSystemShortDate } from '@genoffice/xlsx-gateway/shared/short-date'
+
 /// Model behind the Format Cells → Number tab: category + sub-options ⇄
 /// OOXML pattern. The ribbon's category dropdown (number-format.ts) derives
 /// its representative patterns from the same builders.
@@ -62,6 +64,13 @@ export const DATE_PATTERNS: readonly string[] = [
   'm"月"d"日"',
   'yyyy-mm-dd hh:mm',
 ]
+
+/// The Date list with the workbook's system short date first, so a pattern
+/// applied by the ribbon's Short Date category classifies as Date.
+export function datePatterns(): readonly string[] {
+  const system = getSystemShortDate()
+  return DATE_PATTERNS.includes(system) ? DATE_PATTERNS : [system, ...DATE_PATTERNS]
+}
 
 export const TIME_PATTERNS: readonly string[] = [
   'h:mm',
@@ -163,13 +172,21 @@ export function numfmtPattern(options: NumfmtOptions): string {
   }
 }
 
+/// Leading `_(<symbol>* #,##0` section shared by Excel's Accounting and
+/// (symbol-less) Comma styles.
+const ACCOUNTING_SECTION = /^_\((?:"([^"]+)"|([^*\s]))?\* #,##0(?:\.(0+))?_\)/
+
+export function isAccountingPattern(pattern: string): boolean {
+  return ACCOUNTING_SECTION.test(pattern)
+}
+
 /// Best-effort reverse of numfmtPattern: extract candidate options, rebuild,
 /// and only accept on an exact round-trip; anything else lands in Custom.
 export function numfmtOptionsOf(pattern: string): NumfmtOptions {
   const defaults = DEFAULT_NUMFMT_OPTIONS
   if (!pattern || pattern === 'General') return { ...defaults, category: 'general' }
   if (pattern === '@') return { ...defaults, category: 'text' }
-  if (DATE_PATTERNS.includes(pattern))
+  if (datePatterns().includes(pattern))
     return { ...defaults, category: 'date', datePattern: pattern }
   if (TIME_PATTERNS.includes(pattern))
     return { ...defaults, category: 'time', timePattern: pattern }
@@ -180,7 +197,7 @@ export function numfmtOptionsOf(pattern: string): NumfmtOptions {
   if (match) return { ...defaults, category: 'percentage', decimals: match[1]?.length ?? 0 }
   match = /^0(?:\.(0+))?E\+00$/.exec(pattern)
   if (match) return { ...defaults, category: 'scientific', decimals: match[1]?.length ?? 0 }
-  match = /^_\((?:"([^"]+)"|([^*\s]))?\* #,##0(?:\.(0+))?_\)/.exec(pattern)
+  match = ACCOUNTING_SECTION.exec(pattern)
   if (match) {
     const candidate: NumfmtOptions = {
       ...defaults,
@@ -188,7 +205,9 @@ export function numfmtOptionsOf(pattern: string): NumfmtOptions {
       symbol: match[1] ?? match[2] ?? '',
       decimals: match[3]?.length ?? 0,
     }
-    if (numfmtPattern(candidate) === pattern) return candidate
+    // Excel's own accounting codes escape the parens and quote the symbol.
+    const canonical = pattern.replace(/\\([()])/g, '$1').replace(/_\("([^"])"\* /g, '_($1* ')
+    if (numfmtPattern(candidate) === canonical) return candidate
   }
   match = /^(?:"([^"]+)"|([^0#".,;[\]_]))?(#,##0|0)(?:\.(0+))?(?:[_;].*)?$/.exec(pattern)
   if (match) {

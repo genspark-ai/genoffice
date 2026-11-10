@@ -175,14 +175,14 @@ export function EquationGallery({
 }) {
   const { t } = useI18n()
   return (
-    <div className="equation-gallery">
+    <div data-rb-panel="" className="equation-gallery">
       {BUILTIN_EQUATIONS.map((eq) => {
         const preview = previewOf(eq.latex)
         return (
           <button
             key={eq.nameKey}
             className="equation-gallery-item"
-            title={t(eq.nameKey)}
+            data-tip={t(eq.nameKey)}
             onClick={() => {
               insertEquationFromLatex(editor, eq.latex)
               onPick()

@@ -1,0 +1,31 @@
+{
+  "id": "render-sectbreak-pitch",
+  "title": "Rendered line pitch across a sectPr-only paragraph (continuous section break)",
+  "section": "word-truths.md#L651",
+  "probe_date": "2026-10-22",
+  "class": "render",
+  "source": "probe sectpitch.docx -> Word for Mac direct PDF (1 page), pymupdf baselines 81.6 / 93.6 / 105.6; the section-break carrier is a zero-height chip the pagination model omits, so the measured paragraphs' DOM nodes are resolved by data-idx",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 0,
+      "to": 2,
+      "expect": 12,
+      "tol": 0.2,
+      "note": "the sectPr-only paragraph between them takes no line"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 2,
+      "to": 3,
+      "expect": 12,
+      "tol": 0.2,
+      "note": "first paragraph of the continuous section keeps the exact pitch"
+    }
+  ],
+  "docx": "probe.docx"
+}

@@ -50,10 +50,14 @@ export function anchoredInkRunXml(
   rId: string,
   docPrId: number,
 ): string {
-  const cx = Math.max(1, Math.round(ink.widthPx * EMU_PER_PX))
-  const cy = Math.max(1, Math.round(ink.heightPx * EMU_PER_PX))
-  const x = Math.round(ink.offsetXPx * EMU_PER_PX)
-  const y = Math.round(ink.offsetYPx * EMU_PER_PX)
+  // Math.max/min propagate NaN, so sanitize first: a non-finite measurement
+  // would otherwise serialize as cx="NaN" corrupt OOXML.
+  const safePx = (v: number, fallback: number): number =>
+    Number.isFinite(v) ? Math.round(v * EMU_PER_PX) : fallback
+  const cx = Math.max(1, safePx(ink.widthPx, 1))
+  const cy = Math.max(1, safePx(ink.heightPx, 1))
+  const x = safePx(ink.offsetXPx, 0)
+  const y = safePx(ink.offsetYPx, 0)
   const name = `${INK_NAME_PREFIX} ${docPrId}`
   const descr = ink.payload ? ` descr="${escapeXmlAttr(ink.payload)}"` : ''
   return (
@@ -108,14 +112,17 @@ export function findInkRuns(paragraphXml: string): InkRunMatch[] {
   const out: InkRunMatch[] = []
   for (const run of paragraphXml.match(ANCHOR_RUN_RE) ?? []) {
     if (!isInkRun(run)) continue
-    const emu = (re: RegExp) => parseInt(re.exec(run)?.[1] ?? '0', 10) || 0
+    const emu = (value: string | undefined) => parseInt(value ?? '0', 10) || 0
     const descr = /<wp:docPr [^>]*descr="([^"]*)"/.exec(run)?.[1]
+    // the extent attributes come in any order and need not start the tag, so read
+    // cx and cy off the matched element instead of pinning one to the other
+    const extent = /<wp:extent[^>]*\/?>/.exec(run)?.[0] ?? ''
     out.push({
       xml: run,
-      offsetXPx: emu(/<wp:positionH[^>]*><wp:posOffset>(-?\d+)/) / EMU_PER_PX,
-      offsetYPx: emu(/<wp:positionV[^>]*><wp:posOffset>(-?\d+)/) / EMU_PER_PX,
-      widthPx: emu(/<wp:extent cx="(\d+)"/) / EMU_PER_PX,
-      heightPx: emu(/<wp:extent cx="\d+" cy="(\d+)"/) / EMU_PER_PX,
+      offsetXPx: emu(/<wp:positionH[^>]*><wp:posOffset>(-?\d+)/.exec(run)?.[1]) / EMU_PER_PX,
+      offsetYPx: emu(/<wp:positionV[^>]*><wp:posOffset>(-?\d+)/.exec(run)?.[1]) / EMU_PER_PX,
+      widthPx: emu(/\bcx="(\d+)"/.exec(extent)?.[1]) / EMU_PER_PX,
+      heightPx: emu(/\bcy="(\d+)"/.exec(extent)?.[1]) / EMU_PER_PX,
       payload: descr ? decodeXmlEntities(descr) : null,
       embedRId: /r:embed="([^"]+)"/.exec(run)?.[1] ?? null,
     })

@@ -30,7 +30,47 @@ describe('speaker notes', () => {
   it('getSlideNotes reads back immediately after setSlideNotes', async () => {
     const opened = await openPptx(await createBlankPptx())
     expect(setSlideNotes(opened, 0, 'first line\nsecond line')).toBe(true)
-    expect(getSlideNotes(opened.archive, opened.deck.slides[0]!.path)).toBe('first line\nsecond line')
+    expect(getSlideNotes(opened.archive, opened.deck.slides[0]!.path)).toBe(
+      'first line\nsecond line',
+    )
+  })
+
+  it('skips self-closing text runs when reading attributed text', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    setSlideNotes(opened, 0, 'placeholder')
+    const slidePath = opened.deck.slides[0]!.path
+    const notesRel = [...opened.archive.readRels(slidePath).values()].find((rel) =>
+      rel.type.endsWith('/notesSlide'),
+    )!
+    const notesPath = `ppt/${notesRel.target.replace(/^\.\.\//, '')}`
+    const xml = opened.archive.readText(notesPath)!
+    opened.archive.entries.set(
+      notesPath,
+      Buffer.from(
+        xml.replace(
+          /<a:p>[\s\S]*?<\/a:p>/,
+          '<a:p><a:r><a:rPr/><a:t/></a:r><a:r><a:rPr/><a:t xml:space="preserve">Hello world </a:t></a:r></a:p>',
+        ),
+      ),
+    )
+    expect(getSlideNotes(opened.archive, slidePath)).toBe('Hello world ')
+  })
+  it('replaces an empty notes-master list instead of duplicating it', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const presentationPath = 'ppt/presentation.xml'
+    const presentation = opened.archive.readText(presentationPath)!
+    opened.archive.entries.set(
+      presentationPath,
+      Buffer.from(
+        presentation.replace('</p:sldMasterIdLst>', '</p:sldMasterIdLst><p:notesMasterIdLst/>'),
+      ),
+    )
+    setSlideNotes(opened, 0, 'note')
+    const updated = opened.archive.readText(presentationPath)!
+    expect(updated.match(/<p:notesMasterIdLst\b/g)).toHaveLength(1)
+    expect(updated).toMatch(
+      /<p:notesMasterIdLst><p:notesMasterId r:id="rId\d+"\/><\/p:notesMasterIdLst>/,
+    )
   })
 
   it('save → reopen persists notes (notesSlide part auto-created)', async () => {
@@ -112,7 +152,9 @@ describe('speaker notes', () => {
     }
 
     // Slide 0 notes were written correctly
-    expect(getSlideNotes(reopened.archive, reopened.deck.slides[0]!.path)).toBe('only slide 0 changed')
+    expect(getSlideNotes(reopened.archive, reopened.deck.slides[0]!.path)).toBe(
+      'only slide 0 changed',
+    )
   })
 
   it('multiple slides: per-slide notes do not interfere', async () => {
@@ -125,5 +167,54 @@ describe('speaker notes', () => {
     const reopened = await openPptx(await savePptx(opened))
     expect(getSlideNotes(reopened.archive, reopened.deck.slides[0]!.path)).toBe('slide 0 notes')
     expect(getSlideNotes(reopened.archive, reopened.deck.slides[1]!.path)).toBe('slide 1 notes')
+  })
+})
+
+/**
+ * The body placeholder was matched with type="body" only, so a deck that
+ * single-quotes its attributes read as having no notes at all and gained a
+ * second body shape on the next write.
+ */
+describe('notes body placeholder matching', () => {
+  const notesPathOf = (opened: Awaited<ReturnType<typeof openPptx>>): string =>
+    [...opened.archive.entries.keys()].find((p) =>
+      /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(p),
+    )!
+
+  it('reads and rewrites a single-quoted body placeholder without adding a shape', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slidePath = opened.deck.slides[0]!.path
+    setSlideNotes(opened, 0, 'first')
+    const notesPath = notesPathOf(opened)
+
+    const original = opened.archive.readText(notesPath)!
+    const singleQuoted = original.replace(
+      '<p:ph type="body" idx="1"/>',
+      `<p:ph type='body' idx='1'/>`,
+    )
+    expect(singleQuoted).not.toBe(original)
+    opened.archive.entries.set(notesPath, Buffer.from(singleQuoted))
+
+    // the existing placeholder is found, so the notes are not reported empty
+    expect(getSlideNotes(opened.archive, slidePath)).toBe('first')
+    expect(setSlideNotes(opened, 0, 'second')).toBe(true)
+    // and the write patched that placeholder instead of appending a second one
+    expect(opened.archive.readText(notesPath)!.match(/type=["']body["']/g)).toHaveLength(1)
+    expect(getSlideNotes(opened.archive, slidePath)).toBe('second')
+  })
+
+  it('adds a body shape only when the notesSlide has no placeholder at all', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slidePath = opened.deck.slides[0]!.path
+    setSlideNotes(opened, 0, 'first')
+    const notesPath = notesPathOf(opened)
+
+    const stripped = opened.archive.readText(notesPath)!.replace(/<p:ph\b[^>]*\/>/g, '')
+    opened.archive.entries.set(notesPath, Buffer.from(stripped))
+    expect(getSlideNotes(opened.archive, slidePath)).toBe('')
+
+    expect(setSlideNotes(opened, 0, 'added')).toBe(true)
+    expect(opened.archive.readText(notesPath)!.match(/type=["']body["']/g)).toHaveLength(1)
+    expect(getSlideNotes(opened.archive, slidePath)).toBe('added')
   })
 })

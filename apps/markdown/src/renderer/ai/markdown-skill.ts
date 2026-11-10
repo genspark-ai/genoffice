@@ -1,13 +1,25 @@
 import type { AgentSkill } from '@genoffice/agent-core'
 import type { Editor } from '@tiptap/core'
-import { AGENT_TOOLS, buildDocContext, executeTool, markDocSeen } from './tools'
+import type { AiDocWriter } from './doc-writer'
+import { redactLabelsOf, placeholderInstruction } from '../editor/redact'
+import {
+  AGENT_TOOLS,
+  buildDocContext,
+  executeTool,
+  markDocSeen,
+  type FrontmatterAccess,
+} from './tools'
 
-const MARKDOWN_RULES = [
-  'All markdown passed to tools must be pure GFM. Rules:',
-  '- Allowed syntax, and nothing else: `#`–`######` headings, paragraphs, `**bold**`, `*italic*`, `~~strikethrough~~`, `` `inline code` ``, `[links](url)`, `![images](path)`, `-` / `1.` lists, `- [ ]` task lists, `>` blockquotes, ``` fenced code blocks, `|` pipe tables, `---` horizontal rules, hard line breaks (two trailing spaces).',
+export const MARKDOWN_RULES = [
+  'All markdown passed to tools must be pure GFM plus math. Rules:',
+  '- Allowed syntax, and nothing else: `#`–`######` headings, paragraphs, `**bold**`, `*italic*`, `~~strikethrough~~`, `` `inline code` ``, `[links](url)`, `![images](path)`, `-` / `1.` lists, `- [ ]` task lists, `>` blockquotes, ``` fenced code blocks, `|` pipe tables, `---` horizontal rules, footnotes (a `[^1]` reference with a matching `[^1]: definition text` line), hard line breaks (two trailing spaces), LaTeX math, ```mermaid diagrams, and ```wavedrom timing diagrams.',
+  '- Math: `$...$` inline and `$$...$$` blocks are rendered with KaTeX. The content of `$...$` must not start or end with whitespace, and the closing `$` must not be followed by a digit (so currency amounts stay text).',
+  '- Diagrams: a fenced code block with the `mermaid` language (flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, gantt, pie, mindmap, timeline) renders as a diagram. Use it when the user asks for a flow, process, architecture, or timeline chart. The syntax must be valid mermaid — an invalid block falls back to showing its source.',
+  "- Timing diagrams: a fenced code block with the `wavedrom` language holding WaveJSON (`{ signal: [{ name: 'clk', wave: 'p....' }, …] }`) renders as a digital timing diagram. Use it only for clock / bus / signal waveforms.",
   '- Never emit raw HTML — no tag of any kind (`<span>`, `<div>`, `<p>`, `<img>`, `<br>`, `<u>`, `<mark>`, …) and no style attributes. The editor forces everything through its GFM-only schema: semantic tags degrade to plain GFM and all other tags and styling are silently dropped.',
-  '- Never emit non-GFM extensions: `==highlight==`, `++underline++`, `:::` fenced divs, footnotes, math, or emoji shortcodes. They are not parsed and end up as literal text in the document.',
-  '- This editor has no colored text, fonts, font sizes, underline, highlight, alignment, or line spacing. If the user asks for such styling, explain that pure markdown cannot express it — never fake it with HTML.',
+  '- Never emit other non-GFM extensions: `++underline++`, `:::` fenced divs, or emoji shortcodes. They are not parsed and end up as literal text in the document. `==highlight==` is fine and renders as text highlighting.',
+  '- Footnotes: a `[^1]` reference needs a `[^1]: definition` line somewhere in the document (usually at the end). Labels hold no whitespace or brackets. Every reference must have a definition, and vice versa.',
+  '- This editor has no colored text, fonts, font sizes, underline, alignment, or line spacing. If the user asks for such styling, explain that pure markdown cannot express it — never fake it with HTML.',
   '- Express emphasis through structure instead: headings for hierarchy, bold for key phrases, blockquotes for callout-style notes, tables for comparisons.',
 ].join('\n')
 
@@ -20,37 +32,90 @@ const AGENT_SYSTEM_PROMPT = [
   '',
   '## Editing rules',
   '- The per-message document state lists every block as `index | type | preview`. Previews are truncated — use read_blocks when you need full text.',
-  '- Prefer replace_blocks for rewrites and formatting changes; insert_content for additions. Batch related edits into as few calls as possible.',
-  '- After a mutating call, block indexes change — refresh with get_document_context before more index-based edits.',
+  '- All edits go through apply_ops: one call carries an ordered batch of ops (the op catalogue is in the tool description). Every index in a batch refers to the document as shown before the call, so batch related edits into one call and list them in any order.',
+  '- When the document state shows a user selection, edit/rewrite-style requests ("polish this", "translate", "make it shorter", "make this a heading") apply to the selected blocks by default — use target "selection"; only widen to the whole document when the user clearly asks for it.',
+  '- Prefer replaceText for small in-place fixes (a word, a number, a phrase): it keeps the block structure and the surrounding formatting. Use setStyle with find for character-level formatting across matches (e.g. bold every "TODO"), setLink to link text.',
+  '- Prefer the structural ops (setBlockType, toggleList, moveBlocks, editTable, insertTable, insertHorizontalRule) over rewriting markdown when the user asks for a formatting or layout change: they keep the existing text untouched. Use replaceBlocks for full rewrites and insertContent for new content.',
+  '- After a call that added, removed or moved blocks, indexes change — refresh with get_document_context before more index-based edits.',
   '- If a tool reports the document changed under you, refresh the context and re-plan instead of retrying blindly.',
   '',
+  '## Images',
+  '- To add a photo or real-world picture, use image_search and pick the best fit, then insert_image. For illustration/diagram-style art that search cannot find, or when the user asks to generate a picture, use generate_image.',
+  '- Both insert paths save the image file next to the document, which requires the document to have been saved at least once; if a tool reports there is no save location, ask the user to save the file first.',
+  '',
+  '## Document properties (frontmatter)',
+  '- read_frontmatter and the setFrontmatter op manage the YAML metadata block at the top of the file (title, tags, date, …). setFrontmatter replaces the whole block — read it first and keep the keys you are not changing.',
+  '- The block is stored as raw text: pass the inner YAML only (no `---` fences) and keep it valid YAML. An empty string removes the block.',
+  '',
+  '## Template filling',
+  '- When the user asks to fill in a template/form, first scan the document for placeholders: [bracketed labels], {{curly names}}, and runs of underscores (____).',
+  "- List every placeholder found (with block indexes). Fill the ones the user's message answers via replaceText ops so the surrounding formatting survives; for the rest, ask for the missing values in one consolidated question — never invent facts to fill a field.",
+  "- Dates follow the user's locale; never change text outside the placeholders.",
+  '',
+  '## Answer citations',
+  '- When an answer draws on specific parts of the document, cite them as markdown links: [heading text or a short label](mdnav://block/N), where N is a block index from the current block list. The user can click these to jump to the passage.',
+  '- Only cite block indexes that exist in the block list — never guess; prefer heading blocks as citation anchors. Whole-document answers may omit citations.',
+  '',
   '## Writing a new document',
-  '- When the document is blank and the user asks for content, write the full document in one insert_content call: start with a single `#` title, use `##` sections, keep paragraphs short.',
-  '- Use tables for comparisons, task lists for actionable items, blockquotes for important notes.',
-  '- Never invent facts or numbers; use web_search when the topic needs current information and attribute sources.',
+  '- Long new content (a whole document, a chapter, a full report/article/translation — anything beyond a few paragraphs) goes through write_document: you pass the plan and the reference material, and the system writer streams the markdown into the document while the user watches; never paste long content into insertContent. When the document is blank and the user asks for content, use write_document.',
+  '- The plan: a single `#` title, `##` sections with the key points of each, tone and target length; tables for comparisons, task lists for actionable items, blockquotes for important notes.',
+  '- Never invent facts or numbers; use web_search when the topic needs current information, put the findings into context, and attribute sources.',
+  '',
+  '## Mind map',
+  '- When the user asks for a mind map / knowledge structure / overview diagram of the document or a topic, call generate_mindmap with the whole tree in one call — never draw it with text and never ask the user to confirm first;',
+  '- The root is the document title (or the focus topic when the user named one — also pass it as `focus`); its children are the main sections/headings, then key concepts, 2-5 per node, 2-4 levels deep;',
+  "- Labels are short phrases (2-8 words) in the document's own language and wording, taken from its headings and key sentences — never invent topics the document does not cover;",
+  "- Cite each node's source with `block` (a block index from the current block list); omit it for nodes that span several blocks. Only cite indexes that exist;",
+  "- generate_mindmap does not modify the document. After it returns, reply with one short sentence (e.g. that the map is ready and branches can be expanded). If the user wants the map inside the document, point at the card's insert button — it writes the map in as an editable mermaid diagram.",
   '',
   '## Conversation',
   '- Answer questions about the document directly, without editing it.',
   '- Keep replies short; the edits themselves are the deliverable. Summarize what you changed in one or two sentences.',
 ].join('\n')
 
-export function createMarkdownSkill(getEditor: () => Editor | null): AgentSkill {
+const IMAGE_GEN_OFF_NOTE =
+  '\n\nNote: generate_image is currently unavailable (no image provider: signed out of Genspark or cloud tools off, and no media API key in Settings). Do not call or promise it; use image_search for imagery.'
+
+export function createMarkdownSkill(
+  getEditor: () => Editor | null,
+  fm?: FrontmatterAccess,
+  /** live predicate (gsk login && cloud-tools toggle, or a BYOK media key); false hides generate_image */
+  imageGenAvailable?: () => boolean,
+  /** streaming long-form writer behind write_document (panel-owned: progress chip, partial keep/discard) */
+  getWriter?: () => AiDocWriter | undefined,
+): AgentSkill {
   return {
     id: 'markdown',
-    systemPrompt: AGENT_SYSTEM_PROMPT,
-    tools: AGENT_TOOLS,
+    // live: the predicate is re-read before every model request
+    get systemPrompt() {
+      const base =
+        imageGenAvailable?.() === false
+          ? AGENT_SYSTEM_PROMPT + IMAGE_GEN_OFF_NOTE
+          : AGENT_SYSTEM_PROMPT
+      // only when the open document actually withholds something, so a
+      // document without spans pays nothing and the model is not told to
+      // look for markers that are not there
+      const editor = getEditor()
+      const labels = editor ? redactLabelsOf(editor.getJSON() as never) : []
+      return labels.length > 0 ? `${base}\n\n${placeholderInstruction(labels)}` : base
+    },
+    get tools() {
+      return imageGenAvailable?.() === false
+        ? AGENT_TOOLS.filter((t) => t.name !== 'generate_image')
+        : AGENT_TOOLS
+    },
     buildContext: () => {
       const editor = getEditor()
       if (!editor) return ''
       markDocSeen(editor)
       return buildDocContext(editor)
     },
-    executeTool: (call) => {
+    executeTool: (call, signal) => {
       const editor = getEditor()
       if (!editor) {
         return { output: 'editor not ready', isError: true, summary: call.name }
       }
-      return executeTool(editor, call)
+      return executeTool(editor, call, signal, fm, getWriter?.())
     },
   }
 }

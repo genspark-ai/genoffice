@@ -2,6 +2,7 @@ import type {
   HomeApi,
   ProjectHomeApi,
   RecentEntry,
+  RecentQuery,
   TimelineEntryItem,
   UiLanguage,
   UiTheme,
@@ -88,8 +89,8 @@ if (typeof window !== 'undefined') {
     for (const fn of tabListeners) fn(mockTabs)
   }
 
-  const mockHomeApi: HomeApi = {
-    async recents(query) {
+  const mockHomeApi = {
+    async recents(query?: RecentQuery) {
       const ext = query?.ext
       const text = query?.query?.trim().toLowerCase()
       const byExt = ext ? mockRecents.filter((r) => r.ext === ext) : mockRecents
@@ -100,7 +101,7 @@ if (typeof window !== 'undefined') {
         totalAll: mockRecents.length,
       }
     },
-    async starred(query) {
+    async starred(query?: RecentQuery) {
       const ext = query?.ext
       const stars = mockRecents.filter((r) => r.starred)
       const text = query?.query?.trim().toLowerCase()
@@ -112,13 +113,13 @@ if (typeof window !== 'undefined') {
         totalAll: stars.length,
       }
     },
-    async statPaths(paths) {
+    async statPaths(paths: string[]) {
       return mockRecents.filter((r) => paths.includes(r.path))
     },
-    async toggleStar(path) {
+    async toggleStar(path: string) {
       mockRecents = mockRecents.map((r) => (r.path === path ? { ...r, starred: !r.starred } : r))
     },
-    async openPath(path) {
+    async openPath(path: string) {
       const entry = mockRecents.find((r) => r.path === path)
       const kind: TabKind =
         entry?.ext === 'xlsx'
@@ -147,18 +148,18 @@ if (typeof window !== 'undefined') {
     async newMarkdown() {
       openTab('markdown', 'Untitled Note.md')
     },
-    async newFile(ext) {
+    async newFile(ext: string) {
       openTab('markdown', `Untitled.${ext}`)
     },
-    async removeRecent(paths) {
+    async removeRecent(paths: string[]) {
       mockRecents = mockRecents.filter((r) => !paths.includes(r.path))
     },
     async revealPath() {},
-    async renameFile(path, newName) {
+    async renameFile(path: string, newName: string) {
       mockRecents = mockRecents.map((r) => (r.path === path ? { ...r, name: newName } : r))
       return { ok: true }
     },
-    async duplicateFile(path) {
+    async duplicateFile(path: string) {
       const found = mockRecents.find((r) => r.path === path)
       if (found) {
         mockRecents.unshift({
@@ -169,7 +170,7 @@ if (typeof window !== 'undefined') {
         })
       }
     },
-    async deleteFiles(paths) {
+    async deleteFiles(paths: string[]) {
       mockRecents = mockRecents.filter((r) => !paths.includes(r.path))
     },
     async openTrash() {
@@ -178,7 +179,7 @@ if (typeof window !== 'undefined') {
     async getLanguage() {
       return currentLang
     },
-    async setLanguage(lang) {
+    async setLanguage(lang: any) {
       currentLang = lang
     },
     async getUpdateChannel() {
@@ -202,7 +203,9 @@ if (typeof window !== 'undefined') {
     async onboardingSeen() {
       return true
     },
-    async setOnboardingSeen() {},
+    async setOnboardingSeen() {
+      return true
+    },
     pathsForFiles(files: File[]) {
       return files.map((f) => f.name)
     },
@@ -212,7 +215,7 @@ if (typeof window !== 'undefined') {
     async getTheme() {
       return currentTheme
     },
-    async setTheme(theme) {
+    async setTheme(theme: UiTheme) {
       currentTheme = theme
       try {
         localStorage.setItem('genoffice-theme', theme)
@@ -225,7 +228,7 @@ if (typeof window !== 'undefined') {
     async pickDefaultSaveDir() {
       return '/workspace'
     },
-    onThemeChanged(handler) {
+    onThemeChanged(handler: (theme: UiTheme) => void) {
       themeListeners.push(handler)
       return () => {
         const i = themeListeners.indexOf(handler)
@@ -241,7 +244,7 @@ if (typeof window !== 'undefined') {
       return { available: true, projects: [], syncedAt: Date.now() }
     },
     async openCloudProject() {},
-  }
+  } as unknown as HomeApi
 
   const mockProjectApi: ProjectHomeApi = {
     async listProjects() {
@@ -270,7 +273,7 @@ if (typeof window !== 'undefined') {
     async listFiles() {
       return mockRecents.slice(0, 2).map((r) => r.path)
     },
-    async createProject(name) {
+    async createProject(name: string) {
       const nowIso = new Date().toISOString()
       return {
         id: `proj-${Date.now()}`,
@@ -285,7 +288,7 @@ if (typeof window !== 'undefined') {
     async renameProject() {},
     async deleteProject() {},
     async moveFile() {},
-    async getTimeline(projectId) {
+    async getTimeline(projectId: string) {
       // a few recorded chats so the conversation picker has something to show in the browser preview
       const day = 86_400_000
       const rows = (
@@ -335,6 +338,24 @@ if (typeof window !== 'undefined') {
     },
     async showMenu() {},
     async showTabMenu() {},
+    async showAppMenu() {},
+    async detach() {},
+    async tearOff() {
+      return false
+    },
+    async dragTornWindow() {},
+    async dockTornWindow(_index: number) {},
+    async endTornDrag() {},
+    onDockPreview(_handler: (preview: { x: number } | null) => void) {
+      return () => {}
+    },
+    reportDockIndex(_index: number) {},
+    onChromePressed(_handler: () => void) {
+      return () => {}
+    },
+    onStartRename(_handler: (id: string) => void) {
+      return () => {}
+    },
     async showNewMenu() {
       await mockHomeApi.newDoc()
     },
@@ -359,8 +380,9 @@ if (typeof window !== 'undefined') {
   if (!window.aiOffice || typeof window.aiOffice.getLanguage !== 'function') {
     window.aiOffice = mockHomeApi
   }
-  if (!window.aiOfficeProject || typeof window.aiOfficeProject.listProjects !== 'function') {
-    window.aiOfficeProject = mockProjectApi
+  const win = window as unknown as { aiOfficeProject?: ProjectHomeApi }
+  if (!win.aiOfficeProject || typeof win.aiOfficeProject.listProjects !== 'function') {
+    win.aiOfficeProject = mockProjectApi
   }
   if (!window.aiOfficeTabs || typeof window.aiOfficeTabs.list !== 'function') {
     window.aiOfficeTabs = mockTabsApi

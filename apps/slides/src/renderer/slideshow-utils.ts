@@ -14,13 +14,16 @@ export interface CustomShow {
  * Compute the playback sequence (array of original indexes).
  * - Default: all slides in order, skipping hidden ones (starting from a hidden slide still plays it)
  * - Non-empty customOrder: play in its order (out-of-range slides filtered; hidden slides still skipped, except the start slide)
- * - Fallback: when the result is empty, at least play the start slide
+ * - Fallback: when the result is empty, play the start slide; an out-of-range start yields []
  */
 export function computePlayOrder(
   slides: ReadonlyArray<{ hidden?: boolean }>,
   startAt: number,
   customOrder?: readonly number[],
 ): number[] {
+  // A stale startAt (e.g. after slide deletions) must not emit an
+  // out-of-range slide: nothing is playable from an invalid start.
+  if (!Number.isInteger(startAt) || startAt < 0 || startAt >= slides.length) return []
   const playable = (i: number) => slides[i] != null && (!slides[i]!.hidden || i === startAt)
   const o =
     customOrder && customOrder.length > 0

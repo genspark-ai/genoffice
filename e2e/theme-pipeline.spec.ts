@@ -48,7 +48,7 @@ test.describe('theme pipeline', () => {
     const { app } = launched
     try {
       const shellPage = await findShellPage(app)
-      const editorPage = await waitForPageWithUrl(app, 'markdown/out')
+      const editorPage = await waitForPageWithUrl(app, '://markdown/')
       await expect(editorPage.locator('.doc-editor')).toBeVisible()
       expect(await themeAttr(shellPage)).toBeNull()
       expect(await themeAttr(editorPage)).toBeNull()

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest'
 import { webSearch, imageSearch } from '../src/index'
+import { searchOptionsFromSettings, testSearchProvider } from '../src/search-tools'
+import { defaultAiSettings } from '@genoffice/ai-provider'
 
 // These cases only test the Serper/DuckDuckGo paths; a local gsk login would take priority, so disable it explicitly
 beforeAll(() => {
@@ -8,11 +10,21 @@ beforeAll(() => {
 
 const realFetch = globalThis.fetch
 afterEach(() => {
+  vi.useRealTimers()
   globalThis.fetch = realFetch
   delete process.env.SERPER_API_KEY
+  delete process.env.SERPLY_API_KEY
+  delete process.env.SEARCHAPI_API_KEY
+  delete process.env.PARALLEL_API_KEY
+  delete process.env.TAVILY_API_KEY
+  delete process.env.EXA_API_KEY
+  delete process.env.FIRECRAWL_API_KEY
+  delete process.env.KEENABLE_API_KEY
 })
 
-function mockFetch(handler: (url: string, init?: RequestInit) => { ok: boolean; json?: any; text?: string }) {
+function mockFetch(
+  handler: (url: string, init?: RequestInit) => { ok: boolean; json?: any; text?: string },
+) {
   globalThis.fetch = vi.fn(async (url: any, init: any) => {
     const r = handler(String(url), init)
     return {
@@ -48,8 +60,129 @@ describe('webSearch (Serper)', () => {
     expect(r.results[0]).toEqual({ title: 'A', url: 'https://a.com', snippet: 'sa' })
   })
 
-  it('falls back to DuckDuckGo when no key', async () => {
+  it('drops non-http(s) links like Serply/Parallel do', async () => {
+    process.env.SERPER_API_KEY = 'serper-key'
+    process.env.TAVILY_API_KEY = 'tavily-key'
     mockFetch((url) => {
+      if (url === 'https://google.serper.dev/search') {
+        return {
+          ok: true,
+          json: {
+            organic: [
+              { title: 'js', link: 'javascript:alert(1)', snippet: 's' },
+              { title: 'ftp', link: 'ftp://files.example.com/a', snippet: 's' },
+              { title: 'ok', link: 'https://ok.com', snippet: 's' },
+            ],
+          },
+        }
+      }
+      return {
+        ok: true,
+        json: {
+          results: [
+            { title: 'ftp', url: 'ftp://files.example.com/b', content: 'c' },
+            { title: 'ok', url: 'https://ok.com/t', content: 'c' },
+          ],
+        },
+      }
+    })
+    const serper = await webSearch('q', 5, { useGsk: false, prefer: 'serper' })
+    expect(serper.method).toBe('serper')
+    expect(serper.results.map((r) => r.title)).toEqual(['ok'])
+    const tavily = await webSearch('q', 5, { useGsk: false, prefer: 'tavily' })
+    expect(tavily.method).toBe('tavily')
+    expect(tavily.results.map((r) => r.title)).toEqual(['ok'])
+  })
+
+  it('treats an unknown prefer as the default instead of throwing', async () => {
+    process.env.SERPER_API_KEY = 'serper-key'
+    mockFetch((url) => {
+      if (url === 'https://google.serper.dev/search') {
+        return {
+          ok: true,
+          json: { organic: [{ title: 'ok', link: 'https://ok.com/t', snippet: 'c' }] },
+        }
+      }
+      return { ok: false, status: 500, json: {} }
+    })
+
+    const r = await webSearch('q', 5, { useGsk: false, prefer: 'bogus' as never })
+    expect(r.method).toBe('serper')
+  })
+
+  it('falls back to DuckDuckGo when no key and the free Parallel MCP is down', async () => {
+    const urls: string[] = []
+    mockFetch((url) => {
+      urls.push(url)
+      if (url === 'https://search.parallel.ai/mcp') return { ok: false }
+      return {
+        ok: true,
+        text: '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fx.com">X Title</a>',
+      }
+    })
+    const r = await webSearch('q', 3)
+    expect(urls[0]).toBe('https://search.parallel.ai/mcp')
+    expect(urls.at(-1)).toContain('duckduckgo.com')
+    expect(r.method).toBe('duckduckgo')
+    expect(r.results[0]?.url).toBe('https://x.com')
+    expect(r.results[0]?.title).toBe('X Title')
+  })
+
+  it('clamps wild maxResults and truncates huge queries at entry', async () => {
+    process.env.SERPER_API_KEY = 'test-key'
+    let seen: { q: string; num: number } | undefined
+    mockFetch((url, init) => {
+      if (url !== 'https://google.serper.dev/search') return { ok: false }
+      seen = JSON.parse(String(init?.body)) as { q: string; num: number }
+      return { ok: true, json: { organic: [] } }
+    })
+    await webSearch('x'.repeat(5000), 1e9)
+    expect(seen!.num).toBeLessThanOrEqual(20)
+    expect(seen!.q.length).toBeLessThanOrEqual(500)
+    await webSearch('normal', NaN)
+    expect(seen!.num).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('webSearch (Tavily)', () => {
+  it('parses results + answer when Serper is unconfigured', async () => {
+    process.env.TAVILY_API_KEY = 'test-key'
+    mockFetch((url, init) => {
+      expect(url).toBe('https://api.tavily.com/search')
+      expect(JSON.parse(String((init as any)?.body ?? '{}')).api_key).toBe('test-key')
+      return {
+        ok: true,
+        json: {
+          answer: '42',
+          results: [
+            { title: 'A', url: 'https://a.com', content: 'sa' },
+            { title: 'B', url: 'https://b.com', content: 'sb' },
+          ],
+        },
+      }
+    })
+    const r = await webSearch('meaning of life', 5)
+    expect(r.method).toBe('tavily')
+    expect(r.answer).toBe('42')
+    expect(r.results).toHaveLength(2)
+    expect(r.results[0]).toEqual({ title: 'A', url: 'https://a.com', snippet: 'sa' })
+  })
+
+  it('prefers Serper over Tavily when both keys are set', async () => {
+    process.env.SERPER_API_KEY = 'serper-key'
+    process.env.TAVILY_API_KEY = 'tavily-key'
+    mockFetch((url) => {
+      expect(url).toBe('https://google.serper.dev/search')
+      return { ok: true, json: { organic: [{ title: 'A', link: 'https://a.com' }] } }
+    })
+    const r = await webSearch('q', 3)
+    expect(r.method).toBe('serper')
+  })
+
+  it('falls back to DuckDuckGo when Tavily returns nothing usable', async () => {
+    process.env.TAVILY_API_KEY = 'test-key'
+    mockFetch((url) => {
+      if (url === 'https://api.tavily.com/search') return { ok: true, json: { results: [] } }
       expect(url).toContain('duckduckgo.com')
       return {
         ok: true,
@@ -58,8 +191,101 @@ describe('webSearch (Serper)', () => {
     })
     const r = await webSearch('q', 3)
     expect(r.method).toBe('duckduckgo')
-    expect(r.results[0]?.url).toBe('https://x.com')
-    expect(r.results[0]?.title).toBe('X Title')
+  })
+})
+
+describe('DuckDuckGo fallback error surfacing', () => {
+  it('web: reports method error when the backend is unreachable', async () => {
+    mockFetch(() => {
+      throw new Error('network down')
+    })
+    const r = await webSearch('q', 3)
+    expect(r.method).toBe('error')
+    expect(r.results).toHaveLength(0)
+    expect(r.error).toContain('duckduckgo')
+  })
+
+  it('web: aborts a stalled response body and falls back', async () => {
+    vi.useFakeTimers()
+    let serperSignal: AbortSignal | undefined
+    let markBodyStarted = (): void => {}
+    const bodyStarted = new Promise<void>((resolve) => {
+      markBodyStarted = resolve
+    })
+    const urls: string[] = []
+    globalThis.fetch = vi.fn(async (url: any, init: any) => {
+      urls.push(String(url))
+      // the keyless Parallel MCP sits between Serper and DuckDuckGo here; take it down
+      if (String(url) === 'https://search.parallel.ai/mcp') {
+        return { ok: false, status: 500, headers: new Map() } as any
+      }
+      if (String(url) === 'https://google.serper.dev/search') {
+        const signal = (serperSignal = init.signal as AbortSignal)
+        return {
+          ok: true,
+          status: 200,
+          headers: new Map(),
+          json: () => {
+            markBodyStarted()
+            return new Promise((_resolve, reject) => {
+              const rejectOnAbort = () => reject(signal.reason)
+              if (signal.aborted) rejectOnAbort()
+              else signal.addEventListener('abort', rejectOnAbort, { once: true })
+            })
+          },
+        } as any
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: new Map(),
+        text: async () => '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fx.com">X</a>',
+      } as any
+    }) as any
+
+    const pending = webSearch('q', 3, { useGsk: false, serperKey: 'test-key' })
+    await bodyStarted
+    expect(serperSignal).toBeInstanceOf(AbortSignal)
+    await vi.advanceTimersByTimeAsync(15000)
+    const result = await pending
+
+    expect(result.method).toBe('duckduckgo')
+    expect(result.results[0]?.url).toBe('https://x.com')
+    // the stalled Serper call is abandoned once, never retried, and the chain ends at DuckDuckGo
+    expect(urls.filter((u) => u === 'https://google.serper.dev/search')).toHaveLength(1)
+    expect(urls.at(-1)).toContain('duckduckgo.com')
+  })
+
+  it('web: stays a plain empty result when the backend responds with nothing', async () => {
+    mockFetch(() => ({ ok: true, text: '<html></html>' }))
+    const r = await webSearch('q', 3)
+    expect(r.method).toBe('duckduckgo')
+    expect(r.results).toHaveLength(0)
+    expect(r.error).toBeUndefined()
+  })
+
+  it('web: keeps the good results when one link has a malformed percent escape', async () => {
+    mockFetch(() => ({
+      ok: true,
+      text: [
+        '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fgood.example">Good</a>',
+        '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fbroken.example%2">Broken</a>',
+      ].join(''),
+    }))
+    const r = await webSearch('q', 3)
+    expect(r.method).toBe('duckduckgo')
+    expect(r.error).toBeUndefined()
+    expect(r.results).toEqual([{ title: 'Good', url: 'https://good.example', snippet: '' }])
+  })
+
+  it('images: reports method error when the backend is unreachable', async () => {
+    mockFetch(() => {
+      throw new Error('network down')
+    })
+    const r = await imageSearch('cats', 8)
+    expect(r.method).toBe('error')
+    expect(r.images).toHaveLength(0)
+    expect(r.error).toContain('duckduckgo')
   })
 })
 
@@ -72,15 +298,405 @@ describe('imageSearch (Serper)', () => {
         ok: true,
         json: {
           images: [
-            { title: 'good', imageUrl: 'https://cdn.example.com/a.jpg', link: 'https://example.com', imageWidth: 800, imageHeight: 600 },
-            { title: 'paid', imageUrl: 'https://gettyimages.com/x.jpg', link: 'https://gettyimages.com' },
+            {
+              title: 'good',
+              imageUrl: 'https://cdn.example.com/a.jpg',
+              link: 'https://example.com',
+              imageWidth: 800,
+              imageHeight: 600,
+            },
+            {
+              title: 'paid',
+              imageUrl: 'https://gettyimages.com/x.jpg',
+              link: 'https://gettyimages.com',
+            },
+            {
+              title: 'review',
+              imageUrl: 'https://cdn.example.com/shutterstock-review.png',
+              link: 'https://example.com/review',
+            },
+            {
+              title: 'subdomain',
+              imageUrl: 'https://media.shutterstock.com/y.jpg',
+              link: 'https://media.shutterstock.com',
+            },
           ],
         },
       }
     })
     const r = await imageSearch('cats', 8)
     expect(r.method).toBe('serper')
-    expect(r.images).toHaveLength(1) // getty is filtered out
-    expect(r.images[0]).toMatchObject({ imageUrl: 'https://cdn.example.com/a.jpg', width: 800, height: 600 })
+    // getty host + shutterstock subdomain filtered out; a mere path
+    // mention of a stock host on an unrelated domain is kept
+    expect(r.images.map((i) => i.title)).toEqual(['good', 'review'])
+    expect(r.images[0]).toMatchObject({
+      imageUrl: 'https://cdn.example.com/a.jpg',
+      width: 800,
+      height: 600,
+    })
+  })
+})
+
+describe('imageSearch (DuckDuckGo)', () => {
+  it('filters copyright hosts over the full list instead of slicing first', async () => {
+    mockFetch((url) => {
+      if (url.includes('duckduckgo.com/?q=')) {
+        return { ok: true, text: '<html><body>vqd="123-456"</body></html>' }
+      }
+      return {
+        ok: true,
+        json: {
+          results: [
+            { image: 'https://media.gettyimages.com/1.jpg', title: 'g1' },
+            { image: 'https://www.shutterstock.com/2.jpg', title: 's1' },
+            { image: 'https://cdn.example.com/3.jpg', title: 'ok1' },
+            { image: 'https://cdn.example.com/4.jpg', title: 'ok2' },
+            { image: 'https://cdn.example.com/5.jpg', title: 'ok3' },
+            { image: 'https://cdn.example.com/6.jpg', title: 'ok4' },
+          ],
+        },
+      }
+    })
+    const r = await imageSearch('cats', 4)
+    expect(r.method).toBe('duckduckgo')
+    expect(r.images.map((i) => i.title)).toEqual(['ok1', 'ok2', 'ok3', 'ok4'])
+  })
+})
+
+describe('webSearch (SearchOptions)', () => {
+  it('uses a caller-supplied Serper key instead of the env var', async () => {
+    const seen: string[] = []
+    mockFetch((url, init) => {
+      seen.push(String((init?.headers as Record<string, string>)['X-API-KEY']))
+      return { ok: true, json: { organic: [{ title: 'A', link: 'https://a.com', snippet: 's' }] } }
+    })
+    const r = await webSearch('q', 3, { useGsk: false, serperKey: 'user-key' })
+    expect(r.method).toBe('serper')
+    expect(seen).toEqual(['user-key'])
+  })
+
+  it('tries Tavily first when preferred and never touches Serper on success', async () => {
+    const urls: string[] = []
+    mockFetch((url) => {
+      urls.push(url)
+      return { ok: true, json: { results: [{ title: 'T', url: 'https://t.com', content: 'c' }] } }
+    })
+    const r = await webSearch('q', 3, {
+      useGsk: false,
+      tavilyKey: 'tv',
+      serperKey: 'sp',
+      prefer: 'tavily',
+    })
+    expect(r.method).toBe('tavily')
+    expect(urls).toEqual(['https://api.tavily.com/search'])
+  })
+})
+
+describe('webSearch (Exa)', () => {
+  it('parses results with the capped text as the snippet', async () => {
+    process.env.EXA_API_KEY = 'exa-key'
+    const urls: string[] = []
+    let body: any
+    mockFetch((url, init) => {
+      urls.push(String(url))
+      body = JSON.parse(String(init?.body))
+      return {
+        ok: true,
+        json: {
+          results: [
+            { title: 'A', url: 'https://a.com', text: 'capped text' },
+            { title: 'B', url: 'https://b.com', summary: 'fallback summary' },
+            { title: 'C', url: 'javascript:alert(1)', text: 'dropped' },
+          ],
+        },
+      }
+    })
+    const r = await webSearch('q', 5, { useGsk: false, exaKey: 'exa-key', prefer: 'exa' })
+    expect(urls).toEqual(['https://api.exa.ai/search'])
+    expect(body).toEqual({ query: 'q', numResults: 5, contents: { text: { maxCharacters: 500 } } })
+    expect(r.method).toBe('exa')
+    expect(r.results).toEqual([
+      { title: 'A', url: 'https://a.com', snippet: 'capped text' },
+      { title: 'B', url: 'https://b.com', snippet: 'fallback summary' },
+    ])
+  })
+
+  it('an exa failure falls through to the next backend', async () => {
+    process.env.EXA_API_KEY = 'exa-key'
+    mockFetch((url) => (url.includes('exa.ai') ? { ok: false } : { ok: false }))
+    const r = await webSearch('q', 2, { useGsk: false, exaKey: 'k', prefer: 'exa' })
+    // every keyed backend refused → the free DuckDuckGo scrape answers (or errors)
+    expect(r.method).not.toBe('exa')
+  })
+})
+
+describe('webSearch (Firecrawl)', () => {
+  it('parses the web list and falls back to news when web is empty', async () => {
+    let body: any
+    mockFetch((url, init) => {
+      expect(String(url)).toBe('https://api.firecrawl.dev/v2/search')
+      body = JSON.parse(String(init?.body))
+      return {
+        ok: true,
+        json: {
+          success: true,
+          data: {
+            web: [],
+            news: [
+              { title: 'N1', url: 'https://n1.com', snippet: 'news snippet' },
+              { title: 'N2', url: 'https://n2.com', description: 'ignored on news' },
+            ],
+          },
+        },
+      }
+    })
+    const r = await webSearch('q', 3, { useGsk: false, firecrawlKey: 'fc-k', prefer: 'firecrawl' })
+    expect(body).toEqual({ query: 'q', limit: 3 })
+    expect(r.method).toBe('firecrawl')
+    expect(r.results).toEqual([
+      { title: 'N1', url: 'https://n1.com', snippet: 'news snippet' },
+      { title: 'N2', url: 'https://n2.com', snippet: 'ignored on news' },
+    ])
+  })
+
+  it('web results use description as the snippet and respect the cap', async () => {
+    mockFetch(() => ({
+      ok: true,
+      json: {
+        success: true,
+        data: {
+          web: [
+            { url: 'https://a.com', title: 'A', description: 'da' },
+            { url: 'https://b.com', title: 'B', description: 'db' },
+            { url: 'https://c.com', title: 'C', description: 'dc' },
+          ],
+        },
+      },
+    }))
+    const r = await webSearch('q', 2, { useGsk: false, firecrawlKey: 'fc-k', prefer: 'firecrawl' })
+    expect(r.method).toBe('firecrawl')
+    expect(r.results).toHaveLength(2)
+    expect(r.results[0]).toEqual({ title: 'A', url: 'https://a.com', snippet: 'da' })
+  })
+})
+
+describe('webSearch (Keenable)', () => {
+  it('calls the free endpoint with the app title when selected without a key', async () => {
+    const urls: string[] = []
+    let init: RequestInit | undefined
+    mockFetch((url, i) => {
+      urls.push(url)
+      init = i
+      return {
+        ok: true,
+        json: {
+          results: [
+            { title: 'A', url: 'https://a.com', description: '', snippet: 'page text '.repeat(80) },
+            { title: '', url: 'https://b.com', description: '', snippet: 'short' },
+            { title: 'C', url: 'javascript:alert(1)', snippet: 'dropped' },
+          ],
+        },
+      }
+    })
+    const r = await webSearch('q', 5, { useGsk: false, keenableKey: '', prefer: 'keenable' })
+    expect(urls).toEqual(['https://api.keenable.ai/v1/search/public'])
+    expect(init?.headers).toEqual({
+      'Content-Type': 'application/json',
+      'X-Keenable-Title': 'GenOffice',
+    })
+    expect(JSON.parse(String(init?.body))).toEqual({ query: 'q', max_results: 5 })
+    expect(r.method).toBe('keenable')
+    expect(r.results).toHaveLength(2)
+    expect(r.results[0]?.snippet).toHaveLength(500)
+    expect(r.results[1]).toEqual({ title: 'https://b.com', url: 'https://b.com', snippet: 'short' })
+  })
+
+  it('sends the key to the keyed endpoint when one is set', async () => {
+    const urls: string[] = []
+    const keys: string[] = []
+    mockFetch((url, init) => {
+      urls.push(url)
+      keys.push(String((init?.headers as Record<string, string>)['X-API-Key']))
+      return { ok: true, json: { results: [{ title: 'A', url: 'https://a.com', snippet: 's' }] } }
+    })
+    const r = await webSearch('q', 3, { useGsk: false, keenableKey: 'kn-1', prefer: 'keenable' })
+    expect(r.method).toBe('keenable')
+    expect(urls).toEqual(['https://api.keenable.ai/v1/search'])
+    expect(keys).toEqual(['kn-1'])
+  })
+
+  it('stays out of the default chain without a key', async () => {
+    const urls: string[] = []
+    mockFetch((url) => {
+      urls.push(url)
+      if (url === 'https://search.parallel.ai/mcp') return { ok: false }
+      return {
+        ok: true,
+        text: '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fx.com">X Title</a>',
+      }
+    })
+    const r = await webSearch('q', 3)
+    expect(r.method).toBe('duckduckgo')
+    expect(urls.some((u) => u.includes('keenable.ai'))).toBe(false)
+  })
+
+  it('a keenable failure falls through to the next backend', async () => {
+    mockFetch(() => ({ ok: false }))
+    const r = await webSearch('q', 2, { useGsk: false, keenableKey: '', prefer: 'keenable' })
+    expect(r.method).not.toBe('keenable')
+  })
+})
+
+describe('search-tools', () => {
+  it('maps the settings block onto SearchOptions', () => {
+    const base = defaultAiSettings()
+    expect(searchOptionsFromSettings(base)).toEqual({ useGsk: true })
+    expect(searchOptionsFromSettings({ ...base, gskToolsEnabled: false })).toEqual({
+      useGsk: false,
+    })
+    const serper = {
+      ...base,
+      search: {
+        provider: 'serper' as const,
+        providers: {
+          serper: { apiKey: 'k' },
+          serply: { apiKey: '' },
+          searchapi: { apiKey: '' },
+          tavily: { apiKey: '' },
+          parallel: { apiKey: '' },
+          exa: { apiKey: '' },
+          firecrawl: { apiKey: '' },
+          keenable: { apiKey: '' },
+        },
+      },
+    }
+    expect(searchOptionsFromSettings(serper)).toEqual({ useGsk: false, serperKey: 'k' })
+    const tavily = {
+      ...base,
+      search: {
+        provider: 'tavily' as const,
+        providers: {
+          serper: { apiKey: '' },
+          serply: { apiKey: '' },
+          searchapi: { apiKey: '' },
+          tavily: { apiKey: 't' },
+          parallel: { apiKey: '' },
+          exa: { apiKey: '' },
+          firecrawl: { apiKey: '' },
+          keenable: { apiKey: '' },
+        },
+      },
+    }
+    expect(searchOptionsFromSettings(tavily)).toEqual({
+      useGsk: false,
+      tavilyKey: 't',
+      prefer: 'tavily',
+    })
+    const exa = {
+      ...base,
+      search: {
+        provider: 'exa' as const,
+        providers: {
+          serper: { apiKey: '' },
+          serply: { apiKey: '' },
+          searchapi: { apiKey: '' },
+          tavily: { apiKey: '' },
+          parallel: { apiKey: '' },
+          exa: { apiKey: 'e' },
+          firecrawl: { apiKey: '' },
+          keenable: { apiKey: '' },
+        },
+      },
+    }
+    expect(searchOptionsFromSettings(exa)).toEqual({ useGsk: false, exaKey: 'e', prefer: 'exa' })
+    const firecrawl = {
+      ...base,
+      search: {
+        provider: 'firecrawl' as const,
+        providers: {
+          serper: { apiKey: '' },
+          serply: { apiKey: '' },
+          searchapi: { apiKey: '' },
+          tavily: { apiKey: '' },
+          parallel: { apiKey: '' },
+          exa: { apiKey: '' },
+          firecrawl: { apiKey: 'fc-1' },
+          keenable: { apiKey: '' },
+        },
+      },
+    }
+    expect(searchOptionsFromSettings(firecrawl)).toEqual({
+      useGsk: false,
+      firecrawlKey: 'fc-1',
+      prefer: 'firecrawl',
+    })
+    // no key → genspark chain
+    const empty = {
+      ...base,
+      search: {
+        provider: 'serper' as const,
+        providers: {
+          serper: { apiKey: '' },
+          serply: { apiKey: '' },
+          searchapi: { apiKey: '' },
+          tavily: { apiKey: '' },
+          parallel: { apiKey: '' },
+          exa: { apiKey: '' },
+          firecrawl: { apiKey: '' },
+          keenable: { apiKey: '' },
+        },
+      },
+    }
+    expect(searchOptionsFromSettings(empty)).toEqual({ useGsk: true })
+    // keenable stays selected without a key (free endpoint)
+    const keenable = {
+      ...base,
+      search: { ...empty.search, provider: 'keenable' as const },
+    }
+    expect(searchOptionsFromSettings(keenable)).toEqual({
+      useGsk: false,
+      keenableKey: '',
+      prefer: 'keenable',
+    })
+  })
+
+  it('reports a rejected key as a failure instead of the silent free fallback', async () => {
+    mockFetch((url) => {
+      if (url.includes('serper')) return { ok: false }
+      return { ok: true, text: '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fx.com">X</a>' }
+    })
+    const bad = await testSearchProvider('serper', 'wrong')
+    expect(bad.ok).toBe(false)
+    expect(bad.error).toMatch(/serper/)
+    mockFetch(() => ({
+      ok: true,
+      json: { organic: [{ title: 'A', link: 'https://a.com', snippet: 's' }] },
+    }))
+    expect(await testSearchProvider('serper', 'right')).toEqual({ ok: true })
+    expect(await testSearchProvider('tavily', '')).toEqual({ ok: false, error: 'API key is empty' })
+    mockFetch((url) =>
+      url.includes('exa.ai')
+        ? { ok: true, json: { results: [{ title: 'A', url: 'https://a.com', text: 't' }] } }
+        : { ok: false },
+    )
+    expect(await testSearchProvider('exa', 'right')).toEqual({ ok: true })
+    mockFetch((url) =>
+      url.includes('firecrawl.dev')
+        ? {
+            ok: true,
+            json: {
+              success: true,
+              data: { web: [{ url: 'https://a.com', title: 'A', description: 'd' }] },
+            },
+          }
+        : { ok: false },
+    )
+    expect(await testSearchProvider('firecrawl', 'right')).toEqual({ ok: true })
+    mockFetch((url) =>
+      url === 'https://api.keenable.ai/v1/search/public'
+        ? { ok: true, json: { results: [{ title: 'A', url: 'https://a.com', snippet: 's' }] } }
+        : { ok: false },
+    )
+    expect(await testSearchProvider('keenable', '')).toEqual({ ok: true })
   })
 })

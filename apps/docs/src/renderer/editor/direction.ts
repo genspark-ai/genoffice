@@ -1,7 +1,9 @@
 import type { Editor } from '@tiptap/core'
+import type { Lang } from '@genoffice/i18n'
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Mapping } from '@tiptap/pm/transform'
+import type { ParaFormat, Run } from '@genoffice/docx-engine'
 
 /** paragraph-like blocks that carry the bidi attribute */
 const DIR_BLOCKS = new Set(['docParagraph', 'docHeading', 'docListItem'])
@@ -25,10 +27,39 @@ export function firstStrongDir(text: string): 'ltr' | 'rtl' | null {
   return null
 }
 
+/** render-only RTL for a paragraph without w:bidi: first strong character, else any w:rtl run */
+export function inferredBidi(format: ParaFormat | undefined, runs: Run[] | undefined): boolean {
+  if (format?.bidi || !runs?.length) return false
+  const strong = firstStrongDir(runs.map((r) => r.text).join(''))
+  if (strong) return strong === 'rtl'
+  return runs.some((r) => r.rtl)
+}
+
+/** effective direction: explicit w:bidi or the render-only inferred flag */
+export function effectiveBidi(attrs: Record<string, unknown>): boolean {
+  return attrs.bidi === true || attrs.bidiInferred === true
+}
+
+/** UI languages whose users get the paragraph direction buttons by default */
+export function isRtlUiLang(lang: Lang): boolean {
+  return lang === 'ar' || lang === 'he'
+}
+
+/** whether any paragraph-like block touched by the selection is RTL */
+export function selectionHasBidi(editor: Editor): boolean {
+  const { from, to } = editor.state.selection
+  let found = false
+  editor.state.doc.nodesBetween(from, to, (node) => {
+    if (DIR_BLOCKS.has(node.type.name) && effectiveBidi(node.attrs)) found = true
+    return !found
+  })
+  return found
+}
+
 /** bidi attr of the paragraph-like node at the cursor (false in textbox sub-editors, which have no bidi) */
 export function activeBidi(editor: Editor): boolean {
   for (const name of ['docHeading', 'docListItem', 'docParagraph']) {
-    if (editor.isActive(name)) return editor.getAttributes(name).bidi === true
+    if (editor.isActive(name)) return effectiveBidi(editor.getAttributes(name))
   }
   return false
 }
@@ -57,7 +88,8 @@ function dirFlipAttrs(attrs: Record<string, unknown>, bidi: boolean): Record<str
   let align = attrs.align as string | null
   if (align === 'left') align = 'right'
   else if (align === 'right') align = 'left'
-  return { ...attrs, bidi, align }
+  // an explicit direction choice supersedes the render-only inference
+  return { ...attrs, bidi, align, bidiInherited: false, bidiInferred: false }
 }
 
 /**
@@ -78,7 +110,7 @@ export function setSelectionAlign(
       let changed = false
       state.doc.nodesBetween(from, to, (node, pos) => {
         if (DIR_BLOCKS.has(node.type.name)) {
-          const value = alignAttrFor(align, node.attrs.bidi === true)
+          const value = alignAttrFor(align, effectiveBidi(node.attrs))
           tr.setNodeMarkup(pos, undefined, { ...node.attrs, align: value })
           changed = true
         } else if (node.type.name === 'docProtected') {
@@ -107,7 +139,7 @@ export function setParagraphDirection(editor: Editor, dir: 'ltr' | 'rtl'): boole
       let changed = false
       state.doc.nodesBetween(from, to, (node, pos) => {
         if (!DIR_BLOCKS.has(node.type.name)) return
-        if (node.attrs.bidi === undefined || node.attrs.bidi === bidi) return
+        if (node.attrs.bidi === undefined || effectiveBidi(node.attrs) === bidi) return
         tr.setNodeMarkup(pos, undefined, dirFlipAttrs(node.attrs, bidi))
         changed = true
       })
@@ -169,7 +201,7 @@ export const AutoDirectionExtension = Extension.create({
           const dir = firstStrongDir(para.textContent)
           if (!dir) return null
           const bidi = dir === 'rtl'
-          if (para.attrs.bidi === bidi) return null
+          if (effectiveBidi(para.attrs) === bidi) return null
 
           // the flip only happens on the paragraph's first strong character:
           // if the pre-change paragraph already had one, leave it alone

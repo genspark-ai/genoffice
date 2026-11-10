@@ -17,6 +17,7 @@ import type {
 // Subpath import: the renderer bundles this package, so pulling the engine's index
 // (Node-only imports like node:crypto) would break the browser build
 import { tableRowGridCols } from '@genoffice/pptx-engine/table-grid'
+import { elementDurableId, groupChildDurableId } from '@genoffice/pptx-engine/identity'
 import { isBackgroundLikeElement } from '@genoffice/pptx-engine/background-promote'
 import { buildChartNode } from './build-chart'
 import type {
@@ -38,9 +39,17 @@ import {
   type PlacedBox,
   type ParentPlacement,
 } from './coords'
-import { resolveFill, resolveStroke, resolveShadow, resolveGlow, type MediaResolver } from './fill'
-import { layoutText } from './text-layout'
+import {
+  resolveFill,
+  resolveStroke,
+  resolveShadow,
+  resolveGlow,
+  resolveReflection,
+  type MediaResolver,
+} from './fill'
+import { layoutText, type TextLayoutInput } from './text-layout'
 import { HeuristicMetrics, type FontMetricsProvider } from './metrics'
+import { bevelFaceColor, buildCellBevel } from './cell-bevel'
 import {
   isConnectorPreset,
   isPillPreset,
@@ -49,6 +58,16 @@ import {
   presetPolygon,
   presetPath,
 } from './preset-geometry'
+import {
+  bevelMaterialFaceColor,
+  buildBevelFaces,
+  buildExtrusion,
+  inPlaneRotationDeg,
+  flatCameraMirror,
+  flattenSvgPath,
+  ellipseRing,
+  roundRectRing,
+} from './scene3d'
 
 export interface BuildOptions {
   /** Target canvas width (px); height follows the slide aspect ratio. */
@@ -62,7 +81,12 @@ export interface BuildOptions {
    * If omitted, the cached text in <a:fld> is used (which may be stale from before slides were moved).
    */
   slideNo?: number
+  /** Line-breaking language for text with no language tag anywhere (unset = no East Asian
+   *  rules; see TextLayoutInput.defaultEaLang). */
+  defaultEaLang?: DefaultEaLang
 }
+
+type DefaultEaLang = TextLayoutInput['defaultEaLang']
 
 /** Refresh slidenum field display to the current slide number (returns a replaced copy; returns the input as-is on no match, never mutates the model). */
 function withSlideNum(el: SlideElement, num: number): SlideElement {
@@ -98,6 +122,18 @@ const CHIP_LABEL: Record<string, string> = {
   unknown: 'Unsupported element',
 }
 
+/** White-DC backing for a metafile picture, after any clrChange keyed to that white. */
+function metafileDcColor(
+  isMetafile: boolean,
+  cc: { from: string; to: string } | undefined,
+): { bgColor: string } | undefined {
+  if (!isMetafile) return undefined
+  if (!cc || !cc.from.toUpperCase().startsWith('#FFFFFF')) return { bgColor: '#FFFFFF' }
+  const alpha = cc.to.length >= 9 ? parseInt(cc.to.slice(7, 9), 16) : 255
+  // Keep the target's alpha: a semi-transparent recolor backs with a translucent panel
+  return alpha > 0 ? { bgColor: cc.to } : undefined
+}
+
 export function buildRenderSlide(
   slide: Slide,
   size: SlideDeck['size'],
@@ -105,14 +141,29 @@ export function buildRenderSlide(
 ): RenderSlide {
   const vp = makeViewport(size, opts.fitWidthPx)
   const metrics = opts.metrics ?? new HeuristicMetrics()
-  const sub =
+  const subNum =
     opts.slideNo != null
       ? (el: SlideElement) => withSlideNum(el, opts.slideNo!)
       : (el: SlideElement) => el
+  // <p:sp useBgFill="1">: painted with the slide's effective background (gradient geometry is
+  // approximated in shape-local coords; such shapes are near-page-sized in practice)
+  const subBg = (e: SlideElement): SlideElement => {
+    if (e.type === 'group') {
+      const g = e as GroupElement
+      const children = g.children.map(subBg)
+      return children.some((c, i) => c !== g.children[i]) ? { ...g, children } : e
+    }
+    return (e.type === 'shape' || e.type === 'text') &&
+      (e as TextElement).useBgFill &&
+      slide.background
+      ? ({ ...e, fill: slide.background } as SlideElement)
+      : e
+  }
+  const sub = (el: SlideElement): SlideElement => subBg(subNum(el))
   const nodes: RenderNode[] = []
   // master/layout decoration layer: drawn at the bottom (above the background, below content), read-only
   for (const el of slide.decorations ?? []) {
-    const node = buildNode(sub(el), vp, metrics, opts.media, { x: 0, y: 0 })
+    const node = buildNode(sub(el), vp, metrics, opts.media, opts.defaultEaLang, { x: 0, y: 0 })
     if (node && node.type !== 'placeholder-chip') {
       node.decoration = true
       nodes.push(node)
@@ -129,10 +180,18 @@ export function buildRenderSlide(
     bgLeading += 1
   }
   for (const [i, el] of slide.elements.entries()) {
-    const node = buildNode(sub(el), vp, metrics, opts.media, { x: 0, y: 0 })
+    const node = buildNode(sub(el), vp, metrics, opts.media, opts.defaultEaLang, { x: 0, y: 0 })
     if (node) {
       if (i < bgLeading) node.background = true
       nodes.push(node)
+    }
+    // chartUserShapes overlays ride on top of their chart, read-only like decorations
+    for (const us of el.type === 'chart' ? ((el as ChartElement).userShapes ?? []) : []) {
+      const n = buildNode(us, vp, metrics, opts.media, opts.defaultEaLang, { x: 0, y: 0 })
+      if (n && n.type !== 'placeholder-chip') {
+        n.decoration = true
+        nodes.push(n)
+      }
     }
   }
   // Hidden-slide flag (<p:sld show="0">). Same logic as the engine's readSlideHiddenXml,
@@ -144,8 +203,11 @@ export function buildRenderSlide(
     heightPx: vp.heightPx,
     scale: vp.scale,
     background: resolveFill(slide.background, vp, opts.media),
+    ...(slide.bgOwn ? { bgOwn: true } : {}),
+    ...(slide.masterSpHidden ? { bgGraphicsHidden: true } : {}),
     nodes,
     ...(hidden ? { hidden: true } : {}),
+    partPath: slide.path,
   }
 }
 
@@ -154,31 +216,79 @@ function buildNode(
   vp: Viewport,
   metrics: FontMetricsProvider,
   media: MediaResolver | undefined,
+  defaultEaLang: DefaultEaLang,
+  parentOffset: ParentPlacement,
+  parentGroup?: SlideElement,
+): RenderNode | null {
+  const node = buildNodeInner(el, vp, metrics, media, defaultEaLang, parentOffset)
+  // Durable id attached centrally so every node kind (charts and placeholder
+  // chips included) carries it — the AI projection prefers it over sourceId.
+  // Group children resolve through the parent's bytes (their creationId lives
+  // there), keeping the id continuous across group/ungroup.
+  if (node) {
+    const durable = parentGroup ? groupChildDurableId(parentGroup, el) : elementDurableId(el)
+    if (durable) node.durableId = durable
+  }
+  return node
+}
+
+function buildNodeInner(
+  el: SlideElement,
+  vp: Viewport,
+  metrics: FontMetricsProvider,
+  media: MediaResolver | undefined,
+  defaultEaLang: DefaultEaLang,
   parentOffset: ParentPlacement,
 ): RenderNode | null {
   const box = placeTransform(el.transform, vp, parentOffset)
   switch (el.type) {
     case 'text':
     case 'shape':
-      return buildShape(el as TextElement, box, vp, metrics, media)
+      return buildShape(el as TextElement, box, vp, metrics, media, defaultEaLang)
     case 'picture':
       return buildPicture(el as PictureElement, box, vp, media)
     case 'group':
-      return buildGroup(el as GroupElement, box, vp, metrics, media)
+      return buildGroup(el as GroupElement, box, vp, metrics, media, defaultEaLang)
     case 'table':
-      return buildTable(el as TableElement, box, vp, metrics, media)
+      return buildTable(el as TableElement, box, vp, metrics, media, defaultEaLang)
     case 'chart': {
       const chartEl = el as ChartElement
       const appCreated = chartEl.descr === 'aislides-chart'
       // Unsupported chart types fall back to a placeholder chip
       const node =
-        buildChartNode(`r_${el.id}`, el.id, chartEl.chart, box, vp, metrics) ??
+        buildChartNode(`r_${el.id}`, el.id, chartEl.chart, box, vp, metrics, media) ??
         chipNode(el.id, box, 'chart', CHIP_LABEL['chart']!)
       if (appCreated && node.type === 'chart') {
         ;(node as import('./render-tree').ChartRenderNode).appCreated = true
       }
       if (node.type === 'chart') {
         ;(node as import('./render-tree').ChartRenderNode).styleInfo = chartStyleInfo(chartEl.chart)
+        if (chartEl.chart.bgFill) {
+          const bg = resolveFill(chartEl.chart.bgFill, vp, media)
+          if (bg.kind !== 'none') (node as import('./render-tree').ChartRenderNode).bgFill = bg
+        }
+        if (chartEl.chart.border) {
+          ;(node as import('./render-tree').ChartRenderNode).border = {
+            color: chartEl.chart.border.color,
+            widthPx: emuToPx(chartEl.chart.border.widthEmu, vp.scale),
+          }
+        }
+        const plotRect = (node as import('./render-tree').ChartRenderNode).plotRect
+        if (plotRect && chartEl.chart.plotFill) {
+          const f = resolveFill(chartEl.chart.plotFill, vp, media)
+          if (f.kind !== 'none') plotRect.fill = f
+        }
+        // chartUserShapes line overlays: fractions of the chart frame, drawn over the plot
+        for (const ul of chartEl.chart.userLines ?? []) {
+          ;(node as import('./render-tree').ChartRenderNode).axisLines.push({
+            x1: ul.x1 * box.w,
+            y1: ul.y1 * box.h,
+            x2: ul.x2 * box.w,
+            y2: ul.y2 * box.h,
+            color: ul.color,
+            widthPx: Math.max(emuToPx(ul.widthEmu, vp.scale), 0.75),
+          })
+        }
       }
       return node
     }
@@ -187,20 +297,55 @@ function buildNode(
       // SmartArt read-only preview: pre-rendered drawing shapes rendered with group semantics
       // (diagram canvas coordinate size = frame ext, equivalent to chOff 0,0 / chExt ext)
       if (pt.previewShapes?.length) {
+        // The drawing part is a generation-time cache: when the frame was resized
+        // afterwards, its shapes keep the old coordinates. PowerPoint re-lays the diagram
+        // out into the frame; approximate that by mapping the child space to the drawing
+        // bounds so the group transform compresses the shapes into the frame.
+        const fx = pt.transform.offset.cx
+        const fy = pt.transform.offset.cy
+        let bx = 0
+        let by = 0
+        for (const sh of pt.previewShapes) {
+          const o = sh.transform?.offset
+          if (!o) continue
+          // rotation-aware visual bounds: a rotated box's raw offset can lie far outside
+          // the frame while the shape itself fits (90deg-rotated boxes swap their extents)
+          const th = (((sh.transform?.rot ?? 0) / 60000) * Math.PI) / 180
+          const hw = Math.abs((o.cx / 2) * Math.cos(th)) + Math.abs((o.cy / 2) * Math.sin(th))
+          const hh = Math.abs((o.cx / 2) * Math.sin(th)) + Math.abs((o.cy / 2) * Math.cos(th))
+          bx = Math.max(bx, o.x + o.cx / 2 + hw)
+          by = Math.max(by, o.y + o.cy / 2 + hh)
+        }
         const pseudo: GroupElement = {
           id: pt.id,
           type: 'group',
           anchor: pt.anchor,
           transform: pt.transform,
           children: pt.previewShapes,
-          childOffset: { x: 0, y: 0, cx: pt.transform.offset.cx, cy: pt.transform.offset.cy },
+          // Small overshoots are intentional bleed (rotated accent lines cross the frame
+          // edge; PowerPoint keeps them) - only a gross overflow marks a stale cache
+          // (tdf-style resized frames overflow 2x+)
+          childOffset: {
+            x: 0,
+            y: 0,
+            cx: bx > fx * 1.2 ? bx : fx,
+            cy: by > fy * 1.2 ? by : fy,
+          },
         }
-        return buildGroup(pseudo, box, vp, metrics, media)
+        return buildGroup(pseudo, box, vp, metrics, media, defaultEaLang)
       }
-      // OLE read-only preview: the embedded preview image stretches to fill the frame (ignoring the pic's own xfrm)
+      // OLE read-only preview: the embedded preview image stretches to fill the frame (ignoring the
+      // pic's own xfrm) over an opaque white canvas (metafile previews are often transparent);
+      // the pic's own spPr fill, when authored, is that canvas (PowerPoint paints it behind the preview)
       if (pt.previewPicture) {
-        return buildPicture({ ...pt.previewPicture, id: pt.id }, box, vp, media)
+        const pic = buildPicture({ ...pt.previewPicture, id: pt.id }, box, vp, media)
+        if (pic?.type === 'picture') {
+          pic.ole = true
+          if (!pic.fill) pic.bgColor = '#FFFFFF'
+        }
+        return pic
       }
+      if (pt.noChip) return null
       return buildChip(pt, box)
     }
     default:
@@ -249,6 +394,7 @@ function buildShape(
   vp: Viewport,
   metrics: FontMetricsProvider,
   media: MediaResolver | undefined,
+  defaultEaLang: DefaultEaLang,
 ): ShapeRenderNode {
   const node: ShapeRenderNode = {
     id: `r_${el.id}`,
@@ -256,9 +402,14 @@ function buildShape(
     box,
     sourceId: el.id,
     fill: resolveFill(el.fill, vp, media),
+    ...(el.fillOverlay ? { fillOverlay: resolveFill(el.fillOverlay, vp, media) } : {}),
     ...(el.placeholder ? { placeholder: el.placeholder } : {}),
+    ...(el.txBox ? { txBox: true } : {}),
     ...(el.presetGeometry ? { presetGeometry: el.presetGeometry } : {}),
+    ...(el.softEdge ? { softEdgePx: emuToPx(el.softEdge, vp.scale) } : {}),
   }
+  // Raw avLst values ride along for the edit layer (yellow adjust handles)
+  if (el.adjust) node.adjust = { ...el.adjust }
   // custGeom: the normalized path is scaled to local px by the element box (mutually exclusive with preset, takes priority)
   if (el.customGeometry) {
     const g = el.customGeometry
@@ -300,12 +451,20 @@ function buildShape(
       }
     }
   }
-  const stroke = resolveStroke(el.stroke, vp)
+  // Parsed spPr with neither <a:prstGeom> nor <a:custGeom> (and no placeholder geometry to
+  // inherit): PowerPoint has nothing to fill or outline and draws the text alone (prod
+  // deck: a generator dropped the geometry of a title bar that PowerPoint leaves
+  // invisible). Editor-built elements without presetGeometry still render as rects.
+  if (el.noGeometry) node.fill = { kind: 'none' }
+  const stroke = el.noGeometry ? undefined : resolveStroke(el.stroke, vp)
   if (stroke) node.stroke = stroke
   const shadow = resolveShadow(el.shadow, vp)
   if (shadow) node.shadow = shadow
   const glow = resolveGlow(el.glow, vp)
   if (glow) node.glow = glow
+  const reflection = resolveReflection(el.reflection, vp)
+  if (reflection) node.reflection = reflection
+  if (el.scene3d) applyScene3D(el, node, vp)
   if (el.text && el.text.paragraphs.length) {
     node.text = layoutText({
       body: el.text,
@@ -313,9 +472,84 @@ function buildShape(
       boxHeightPx: box.h,
       metrics,
       vp,
+      media,
+      defaultEaLang,
     })
   }
   return node
+}
+
+/**
+ * scene3d/sp3d: a camera with only an in-plane revolution spins the flat shape;
+ * anything with a real 3D rotation or extrusion depth gets meshed, projected and
+ * shaded (see scene3d.ts) — depth 0 projects just the tilted front cap.
+ */
+function applyScene3D(el: TextElement, node: ShapeRenderNode, vp: Viewport): void {
+  if (node.line) return // connectors keep their polyline rendering
+  const scene = el.scene3d!
+  const spin = inPlaneRotationDeg(scene)
+  const depthPx = emuToPx(scene.extrusionEmu ?? 0, vp.scale)
+  const box = node.box
+  let rings: number[][] | undefined
+  if (node.pathData ?? node.fillPathData)
+    rings = flattenSvgPath((node.pathData ?? node.fillPathData)!)
+  else if (node.polygonPoints) rings = [node.polygonPoints]
+  else if (node.presetGeometry === 'ellipse' || node.presetGeometry === 'circle')
+    rings = [ellipseRing(box.w, box.h)]
+  else if (node.cornerRadiusPx != null) rings = [roundRectRing(box.w, box.h, node.cornerRadiusPx)]
+  else rings = [[0, 0, box.w, 0, box.w, box.h, 0, box.h]]
+  if (!rings.length) return
+  const fill = node.fill
+  const frontSolid = fill.kind === 'solid' ? fill.color : undefined
+  const gradientMid =
+    fill.kind === 'gradient' && fill.stops.length
+      ? fill.stops[Math.floor(fill.stops.length / 2)]!.color
+      : undefined
+  const frontColor = frontSolid ?? gradientMid ?? '#FFFFFF'
+  if (spin != null) {
+    if (spin !== 0) node.box = { ...node.box, rotationDeg: node.box.rotationDeg + spin }
+    // Straight-on shape with a top bevel and no depth (SmartArt "Polished"/3D styles):
+    // rig-shaded bands around the outline plus the (material-tinted) flat face. The rig
+    // tints the face even when no bands are drawn (no bevel, or a rig without a band
+    // calibration).
+    if (depthPx <= 0 && fill.kind !== 'none') {
+      const bev = scene.bevelTop
+        ? buildBevelFaces({
+            rings,
+            w: box.w,
+            h: box.h,
+            scene,
+            frontColor,
+            bevelPx: emuToPx(scene.bevelTop.wEmu, vp.scale),
+            ...(node.stroke
+              ? { strokeColor: node.stroke.color, strokeWidthPx: node.stroke.widthPx }
+              : {}),
+            ...(fill.kind !== 'solid' ? { frontUsesFill: true } : {}),
+          })
+        : null
+      if (bev) node.extrusion = bev
+      else if (fill.kind === 'solid') {
+        const tinted = bevelMaterialFaceColor(fill.color, scene)
+        if (tinted !== fill.color) node.fill = { ...fill, color: tinted }
+      }
+    }
+    return
+  }
+  // PowerPoint colors the extruded walls with the outline color when one exists, else the fill.
+  const sideColor = scene.extrusionColor ?? node.stroke?.color ?? frontColor
+  const ext = buildExtrusion({
+    rings,
+    w: box.w,
+    h: box.h,
+    depthPx,
+    zPx: emuToPx(scene.zEmu ?? 0, vp.scale),
+    scene,
+    frontColor,
+    sideColor,
+    ...(node.stroke ? { strokeColor: node.stroke.color, strokeWidthPx: node.stroke.widthPx } : {}),
+    ...(fill.kind !== 'solid' ? { frontUsesFill: true } : {}),
+  })
+  if (ext) node.extrusion = ext
 }
 
 /** Picture shape geometry -> three clip channels (same preset implementation as shape geometry). */
@@ -352,7 +586,30 @@ function buildPicture(
   media: MediaResolver | undefined,
 ): PictureRenderNode {
   const dataUrl = el.dataUrl ?? (el.mediaRef ? media?.(el.mediaRef) : undefined)
-  const clip = pictureClip(el.presetGeometry, box, el.adjust)
+  // custGeom picture frame: clip the bitmap to the freeform path (normalized 0..1 → local px)
+  const geomPath = el.customGeometry
+    ? (el.customGeometry.path ?? el.customGeometry.fillPath)
+    : undefined
+  const clip = geomPath
+    ? { pathData: scaleUnitPath(geomPath, box.w, box.h) }
+    : pictureClip(el.presetGeometry, box, el.adjust)
+  // scene3d flat 180° camera: the bitmap content mirrors, so fold it into the container flips
+  if (el.scene3d) {
+    const m = flatCameraMirror(el.scene3d)
+    if (m)
+      box = {
+        ...box,
+        flipH: box.flipH !== m.flipH,
+        flipV: box.flipV !== m.flipV,
+        rotationDeg: box.rotationDeg + m.rotationDeg,
+      }
+  }
+  // GDI metafiles play back on an opaque white DC: PowerPoint shows a white panel for
+  // an EMF/WMF that never paints its background (PlanS academy banner, measured)
+  const isMetafile =
+    typeof dataUrl === 'string' &&
+    (/^data:image\/(x-)?(emf|wmf|emz|wmz)[;,]/.test(dataUrl) ||
+      /^genoffice-slide-media:.*[?&]mime=image%2F(?:x-)?(emf|wmf)(?:&|$)/i.test(dataUrl))
   const node: PictureRenderNode = {
     id: `r_${el.id}`,
     type: 'picture',
@@ -364,8 +621,22 @@ function buildPicture(
     ...(el.opacity != null ? { opacity: el.opacity } : {}),
     ...(el.softEdge ? { softEdgePx: emuToPx(el.softEdge, vp.scale) } : {}),
     ...(el.media ? { media: el.media.kind } : {}),
+    ...(el.model3d ? { model3d: { ...el.model3d.rot } } : {}),
+    ...(el.redact ? { redact: el.redact } : {}),
     ...(el.name ? { name: el.name } : {}),
     ...(el.descr ? { descr: el.descr } : {}),
+    ...(el.fill && el.fill.type !== 'none' ? { fill: resolveFill(el.fill, vp, media) } : {}),
+    // clrChange applies to the metafile playback result including that white DC:
+    // a clrChange keyed to white recolors the backing (an alpha-0 target drops it —
+    // tdf113163's black master bg shows through); other keys leave the DC white
+    // an authored spPr fill is that DC background and is drawn behind the image instead
+    ...(el.fill && el.fill.type !== 'none'
+      ? {}
+      : (metafileDcColor(isMetafile, el.clrChange) ?? {})),
+    ...(el.duotone ? { duotone: el.duotone } : {}),
+    ...(el.lum ? { lum: el.lum } : {}),
+    ...(el.clrChange ? { clrChange: el.clrChange } : {}),
+    ...(el.biLevel != null ? { biLevel: el.biLevel } : {}),
   }
   const stroke = resolveStroke(el.stroke, vp)
   if (stroke) node.stroke = stroke
@@ -373,6 +644,8 @@ function buildPicture(
   if (shadow) node.shadow = shadow
   const glow = resolveGlow(el.glow, vp)
   if (glow) node.glow = glow
+  const reflection = resolveReflection(el.reflection, vp)
+  if (reflection) node.reflection = reflection
   return node
 }
 
@@ -382,6 +655,7 @@ function buildGroup(
   vp: Viewport,
   metrics: FontMetricsProvider,
   media: MediaResolver | undefined,
+  defaultEaLang: DefaultEaLang,
 ): GroupRenderNode {
   // Child coordinate system: child element EMU coords are based on <a:chOff>/<a:chExt>.
   // The size difference between the group box and the child coordinate system (the group
@@ -411,7 +685,7 @@ function buildGroup(
 
   const children: RenderNode[] = []
   for (const child of el.children ?? []) {
-    const c = buildNode(child, vp, metrics, media, parentOffset)
+    const c = buildNode(child, vp, metrics, media, defaultEaLang, parentOffset, el)
     if (c) children.push(c)
   }
   return {
@@ -427,9 +701,9 @@ function buildGroup(
 
 /**
  * Table → TableRenderNode. Cell coordinates are relative to the table's top-left (px).
- * Column widths/row heights are distributed by EMU ratio over the frame's actual px size.
- * Row height is a minimum in PPT: rows whose wrapped cell text needs more space grow to
- * fit it, and the node box grows with the total so nothing is clipped.
+ * Columns and rows render at their EMU sizes (the grid is authoritative; the frame ext
+ * is often stale). Row height is a minimum in PPT: rows whose wrapped cell text needs
+ * more space grow to fit it, and the node box grows with the total so nothing is clipped.
  */
 function buildTable(
   el: TableElement,
@@ -437,14 +711,26 @@ function buildTable(
   vp: Viewport,
   metrics: FontMetricsProvider,
   media: MediaResolver | undefined,
+  defaultEaLang: DefaultEaLang,
 ): TableRenderNode {
-  const sumW = el.colWidths.reduce((a, b) => a + b, 0) || 1
-  const sumH = el.rowHeights.reduce((a, b) => a + b, 0) || 1
-  const colPx = el.colWidths.map((w) => (w / sumW) * box.w)
-  const rowPx = el.rowHeights.map((h) => (h / sumH) * box.h)
+  // a:gridCol w is authoritative in PowerPoint: a stale frame cx (generator tools write
+  // placeholder exts) never squeezes the columns — the table renders at its grid width,
+  // just like rows ignore a stale cy below. Group placement bakes ext/chExt scaling into
+  // the box, so recover that factor from box vs the element's own ext (1 outside groups,
+  // where box comes from the same ext — a stale ext still cancels out).
+  const extWpx = emuToPx(el.transform?.offset.cx ?? 0, vp.scale)
+  const extHpx = emuToPx(el.transform?.offset.cy ?? 0, vp.scale)
+  const groupScaleX = extWpx > 0 ? box.w / extWpx : 1
+  const groupScaleY = extHpx > 0 ? box.h / extHpx : 1
+  const colPx = el.colWidths.map((w) => emuToPx(w, vp.scale) * groupScaleX)
+  // a:tr h is an absolute minimum height (h=0 → size to content); PowerPoint ignores a
+  // stale frame cy and recomputes the table height from the rows
+  const rowPx = el.rowHeights.map((h) => emuToPx(h, vp.scale) * groupScaleY)
   // Prefix sums → start of each column
   const colX: number[] = [0]
   for (const w of colPx) colX.push(colX[colX.length - 1]! + w)
+  const totalW = colX[colX.length - 1]!
+  if (Math.abs(totalW - box.w) > 0.5) box = { ...box, w: totalW }
 
   // Measure pass: grow any row whose cell content wraps taller than the stored height
   // (rowSpan cells are skipped — their height is ambiguous to attribute to one row).
@@ -462,9 +748,44 @@ function buildTable(
         boxHeightPx: rowPx[r] ?? 0,
         metrics,
         vp,
+        media,
+        defaultEaLang,
+        trimEdgeSpacing: true,
       })
-      const needed = probe.contentHeight + probe.insets.t + probe.insets.b
+      // PowerPoint sizes auto rows by the glyph extent (last baseline + descent), not
+      // the line-box sum — with explicit lnSpc the box extends below the ink (18pt probe)
+      const needed = (probe.inkBottom ?? probe.contentHeight) + probe.insets.t + probe.insets.b
       if (needed > (rowPx[r] ?? 0)) rowPx[r] = needed
+    })
+  })
+  el.rows.forEach((row, r) => {
+    const gridCols = tableRowGridCols(row)
+    row.forEach((cell, tcIdx) => {
+      const cIdx = gridCols[tcIdx]!
+      const span = cell.rowSpan ?? 1
+      if (cell.merged || span <= 1) return
+      if (!cell.text || !cell.text.paragraphs.length) return
+      const x = colX[cIdx] ?? 0
+      const w = (colX[Math.min(cIdx + (cell.gridSpan ?? 1), colX.length - 1)] ?? x) - x
+      const count = Math.min(span, rowPx.length - r)
+      if (count <= 0) return
+      let cur = 0
+      for (let i = 0; i < count; i++) cur += rowPx[r + i] ?? 0
+      const probe = layoutText({
+        body: cell.text,
+        boxWidthPx: w,
+        boxHeightPx: cur,
+        metrics,
+        vp,
+        media,
+        defaultEaLang,
+        trimEdgeSpacing: true,
+      })
+      const needed = (probe.inkBottom ?? probe.contentHeight) + probe.insets.t + probe.insets.b
+      if (needed > cur) {
+        const extra = (needed - cur) / count
+        for (let i = 0; i < count; i++) rowPx[r + i] = (rowPx[r + i] ?? 0) + extra
+      }
     })
   })
 
@@ -481,10 +802,13 @@ function buildTable(
       const gridSpan = cell.gridSpan ?? 1
       if (cell.merged) return
       const rowSpan = cell.rowSpan ?? 1
-      const x = colX[cIdx] ?? 0
+      const xLogical = colX[cIdx] ?? 0
       const y = rowY[r] ?? 0
-      const w = (colX[Math.min(cIdx + gridSpan, colX.length - 1)] ?? x) - x
+      const w = (colX[Math.min(cIdx + gridSpan, colX.length - 1)] ?? xLogical) - xLogical
       const h = (rowY[Math.min(r + rowSpan, rowY.length - 1)] ?? y) - y
+      // rtl="1" mirrors the grid: logical column 1 renders rightmost (style banding and
+      // firstCol/lastCol regions stay on logical indices; only geometry flips)
+      const x = el.rtl ? totalW - xLogical - w : xLogical
       const out: TableCellRender = {
         x,
         y,
@@ -494,12 +818,24 @@ function buildTable(
         col: tcIdx,
         ...(gridSpan > 1 ? { gridSpan } : {}),
         ...(rowSpan > 1 ? { rowSpan } : {}),
-        fill: resolveFill(cell.fill, vp, media),
+        // PowerPoint anchors a cell's tiled picture to the table box, not the cell: each
+        // cell shows the part of the picture under it (photo-mosaic layout)
+        fill: resolveFill(cell.fill, vp, media, { x: -x, y: -y, w: totalW, h: totalH }),
+      }
+      // cell3D: PowerPoint darkens the face and shades four bevel bands; only a solid
+      // fill has a base color to shade (picture/gradient cells keep their plain fill)
+      if (cell.bevel && out.fill.kind === 'solid') {
+        const bw = Math.min(emuToPx(cell.bevel.widthEmu, vp.scale), w / 2, h / 2)
+        if (bw >= 0.5) {
+          out.bevel = buildCellBevel(out.fill.color, bw, cell.bevel.preset, cell.bevel.lightDir)
+          out.fill = { kind: 'solid', color: bevelFaceColor(out.fill.color) }
+        }
       }
       const borders: NonNullable<TableCellRender['borders']> = {}
       for (const k of ['l', 'r', 't', 'b'] as const) {
         const s = resolveStroke(cell.borders?.[k], vp)
-        if (s) borders[k] = s
+        // Mirrored geometry puts a cell's logical-left edge on the visual right
+        if (s) borders[el.rtl && k === 'l' ? 'r' : el.rtl && k === 'r' ? 'l' : k] = s
       }
       if (Object.keys(borders).length) out.borders = borders
       if (cell.text && cell.text.paragraphs.length) {
@@ -509,6 +845,9 @@ function buildTable(
           boxHeightPx: h,
           metrics,
           vp,
+          media,
+          defaultEaLang,
+          trimEdgeSpacing: true,
         })
       }
       cells.push(out)
@@ -521,8 +860,10 @@ function buildTable(
     box,
     sourceId: el.id,
     cells,
+    ...(el.bgFill ? { bgFill: resolveFill(el.bgFill, vp, media) } : {}),
     gridX: colX,
     gridY: rowY,
+    ...(el.rtl ? { rtl: true } : {}),
     ...(el.styleFlags ? { styleFlags: el.styleFlags } : {}),
   }
 }
@@ -535,12 +876,18 @@ function chartStyleInfo(m: ChartElement['chart']): import('./render-tree').Chart
         ? 'comboBarLine'
         : m.grouping === 'stacked' || m.grouping === 'percentStacked'
           ? 'barStacked'
-          : 'bar'
+          : m.pseudo3D
+            ? 'bar3D'
+            : 'bar'
       : m.kind === 'pie'
         ? (m.holePct ?? 0) > 0
           ? 'doughnut'
-          : 'pie'
-        : m.kind
+          : m.pseudo3D
+            ? 'pie3D'
+            : 'pie'
+        : m.kind === 'funnel' || m.kind === 'sunburst'
+          ? 'unknown'
+          : m.kind
   return {
     kind,
     legendPos: m.legendPos == null ? 'none' : m.legendPos === 'tr' ? 'r' : m.legendPos,

@@ -1,0 +1,38 @@
+/* Quote block on a user bubble: the document selection the message targeted */
+.ai-msg-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 6px;
+  padding-left: 9px;
+  border-left: 2px solid var(--color-brand-secondary);
+  white-space: normal;
+}
+
+.ai-msg-scope-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--color-brand-secondary);
+}
+
+.ai-msg-scope-label::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ai-msg-scope-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--text-caption);
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+  word-break: break-word;
+}

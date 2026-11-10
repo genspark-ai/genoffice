@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { isLineDrawKind } from '../src/renderer/draw-shape'
 import { CHART_GALLERY, SHAPE_GALLERY, SMARTART_GALLERY } from '../src/renderer/insert-presets'
 import {
   shapePreviewBox,
@@ -13,6 +14,7 @@ import {
   smartArtPreviewShapes,
 } from '../src/renderer/components/gallery-previews'
 import { ChartKindThumb } from '../src/renderer/components/ChartTypeDialog'
+import { ShapeGalleryContent } from '../src/renderer/components/ShapeGalleryPopover'
 
 function expectUnique(ids: Map<string, string>) {
   const seen = new Map<string, string>()
@@ -42,6 +44,15 @@ describe('shape gallery previews', () => {
         }),
       ),
     )
+  })
+
+  it('renders every supported preset in the shared change-shape gallery', () => {
+    const html = renderToStaticMarkup(createElement(ShapeGalleryContent, { onPick: () => {} }))
+    for (const prst of prsts) {
+      const assertion = expect(html)
+      if (isLineDrawKind(prst)) assertion.not.toContain(`data-prst="${prst}"`)
+      else assertion.toContain(`data-prst="${prst}"`)
+    }
   })
 })
 

@@ -17,6 +17,14 @@ export interface TableStyleEdit {
   firstRow?: boolean
   /** Change only the bandRow flag */
   bandRow?: boolean
+  lastRow?: boolean
+  firstCol?: boolean
+  lastCol?: boolean
+  bandCol?: boolean
+  /** Replace a:tableStyleId (a built-in GUID or a custom style id already in tableStyles.xml), keeping the rest of tblPr */
+  styleId?: string
+  /** Right-to-left table (tblPr rtl: mirrored grid); false removes the attribute */
+  rtl?: boolean
   /** Shading color #RRGGBB or 'none' (<a:solidFill> / <a:noFill> per tc) */
   shadingColor?: string | null
   /** Border color + width (all = all borders; none = clear) */
@@ -176,7 +184,7 @@ export function ensureTableStyleXml(
   if (xml.includes(styleId)) return xml
   const sc = /<a:tblStyleLst([^>]*)\/>/.exec(xml)
   if (sc) return xml.replace(sc[0], `<a:tblStyleLst${sc[1]}>${styleDefXml}</a:tblStyleLst>`)
-  return xml.replace('</a:tblStyleLst>', `${styleDefXml}</a:tblStyleLst>`)
+  return xml.replace('</a:tblStyleLst>', () => `${styleDefXml}</a:tblStyleLst>`)
 }
 
 /**
@@ -189,40 +197,39 @@ export function patchTableStyleXml(originalXml: string, edit: TableStyleEdit): s
 
   // ── 1. Replace <a:tblPr> ──────────────────────────────────────────
   if (edit.tblPrXml !== undefined) {
-    // Whole-block replacement
-    xml = replaceTblPr(xml, edit.tblPrXml)
-  } else if (edit.firstRow !== undefined || edit.bandRow !== undefined) {
+    // Whole-block replacement. Presets carry their own firstRow/bandRow but never rtl —
+    // table direction is orthogonal state and survives a style change (PowerPoint behavior)
+    let next = edit.tblPrXml
+    const rtl = /<a:tblPr[^>]*\srtl="([^"]*)"/.exec(xml)?.[1]
+    if ((rtl === '1' || rtl === 'true') && !/\srtl="/.test(next)) {
+      next = next.replace(/^<a:tblPr/, '<a:tblPr rtl="1"')
+    }
+    xml = replaceTblPr(xml, next)
+  } else if (
+    FLAG_ATTRS.some((k) => edit[k] !== undefined) ||
+    edit.rtl !== undefined ||
+    edit.styleId !== undefined
+  ) {
     // Change only the flags, keeping the rest (styleId etc.)
+    if (!/<a:tblPr[\s>/]/.test(xml)) xml = replaceTblPr(xml, '<a:tblPr/>')
     const tblPrMatch = /<a:tblPr(\s[^>]*)?(\/?>)/s.exec(xml)
     if (tblPrMatch) {
-      if (tblPrMatch[2] === '/>') {
-        // Self-closing → expand, then change the flags
-        let attrs = tblPrMatch[1] ?? ''
-        if (edit.firstRow !== undefined)
-          attrs = setAttr(attrs, 'firstRow', edit.firstRow ? '1' : undefined)
-        if (edit.bandRow !== undefined)
-          attrs = setAttr(attrs, 'bandRow', edit.bandRow ? '1' : undefined)
-        // A closing </a:tblPr> for the self-closing form doesn't exist → only rewrite the open tag
-        const newOpen = `<a:tblPr${attrs}>`
-        // Expand <a:tblPr.../> into <a:tblPr...></a:tblPr>
-        xml =
-          xml.slice(0, tblPrMatch.index) +
-          newOpen +
-          '</a:tblPr>' +
-          xml.slice(tblPrMatch.index + tblPrMatch[0].length)
-      } else {
-        let attrs = tblPrMatch[1] ?? ''
-        if (edit.firstRow !== undefined)
-          attrs = setAttr(attrs, 'firstRow', edit.firstRow ? '1' : undefined)
-        if (edit.bandRow !== undefined)
-          attrs = setAttr(attrs, 'bandRow', edit.bandRow ? '1' : undefined)
-        const newOpen = `<a:tblPr${attrs}>`
-        xml =
-          xml.slice(0, tblPrMatch.index) +
-          newOpen +
-          xml.slice(tblPrMatch.index + tblPrMatch[0].length)
+      // With attributes present the greedy [^>]* swallows a trailing "/" into group 1,
+      // so self-closing must be detected on the whole tag and the slash stripped
+      const selfClosing = tblPrMatch[0].endsWith('/>')
+      let attrs = (tblPrMatch[1] ?? '').replace(/\/\s*$/, '')
+      for (const k of FLAG_ATTRS) {
+        if (edit[k] !== undefined) attrs = setAttr(attrs, k, edit[k] ? '1' : undefined)
       }
+      if (edit.rtl !== undefined) attrs = setAttr(attrs, 'rtl', edit.rtl ? '1' : undefined)
+      // Self-closing expands into <a:tblPr...></a:tblPr>
+      xml =
+        xml.slice(0, tblPrMatch.index) +
+        `<a:tblPr${attrs}>` +
+        (selfClosing ? '</a:tblPr>' : '') +
+        xml.slice(tblPrMatch.index + tblPrMatch[0].length)
     }
+    if (edit.styleId !== undefined) xml = setTableStyleId(xml, edit.styleId)
   }
 
   // ── 2. Shading / borders: patch the targeted <a:tcPr> nodes ────────
@@ -235,6 +242,23 @@ export function patchTableStyleXml(originalXml: string, edit: TableStyleEdit): s
   }
 
   return xml
+}
+
+const FLAG_ATTRS = ['firstRow', 'lastRow', 'firstCol', 'lastCol', 'bandRow', 'bandCol'] as const
+
+/** Set a:tableStyleId inside an open/close tblPr (CT_TableProperties: the style id is the last child before extLst). */
+function setTableStyleId(xml: string, styleId: string): string {
+  const m = /<a:tblPr(\s[^>]*)?>([\s\S]*?)<\/a:tblPr>/.exec(xml)
+  if (!m) return xml
+  const tag = `<a:tableStyleId>${escapeXmlAttr(styleId)}</a:tableStyleId>`
+  let inner = m[2]!.replace(/<a:tableStyleId>[^<]*<\/a:tableStyleId>/, '')
+  const ext = inner.indexOf('<a:extLst')
+  inner = ext >= 0 ? inner.slice(0, ext) + tag + inner.slice(ext) : inner + tag
+  return (
+    xml.slice(0, m.index) +
+    `<a:tblPr${m[1] ?? ''}>${inner}</a:tblPr>` +
+    xml.slice(m.index + m[0].length)
+  )
 }
 
 /** Replace <a:tblPr>…</a:tblPr> (or its self-closing form) in the XML with a new value. */
@@ -265,41 +289,70 @@ function setAttr(attrs: string, key: string, value: string | undefined): string 
 }
 
 /** Apply the shading/border/clear parts of an edit to one tcPr's children. */
+/** One ln* element in either form — self-closing or paired (they cannot nest). */
+const LN_ELEMENT_RE =
+  /<a:(lnL|lnR|lnT|lnB|lnTlToBr|lnBlToTr)(?:\s[^>]*)?\/>|<a:(lnL|lnR|lnT|lnB|lnTlToBr|lnBlToTr)(?:\s[^>]*)?>.*?<\/a:\2>/gs
+
+/** Transform only the segments outside ln* elements: a:ln* carry their own
+    solidFill children, so cell-fill edits must not reach inside them. */
+function outsideLns(src: string, fn: (seg: string) => string): string {
+  let out = ''
+  let cursor = 0
+  for (const m of src.matchAll(LN_ELEMENT_RE)) {
+    out += fn(src.slice(cursor, m.index)) + m[0]
+    cursor = m.index + m[0].length
+  }
+  return out + fn(src.slice(cursor))
+}
+
 function applyTcPrEdit(inner: string, edit: TableStyleEdit): string {
   if (edit.clearDirectFormatting) {
-    inner = inner.replace(/<a:(solidFill|gradFill|pattFill|blipFill)>.*?<\/a:\1>/gs, '')
+    inner = inner.replace(/<a:(solidFill|gradFill|pattFill|blipFill)(?:\s[^>]*)?>.*?<\/a:\1>/gs, '')
     inner = inner.replace(/<a:(noFill|grpFill)\/>/g, '')
     inner = inner.replace(/<a:(lnL|lnR|lnT|lnB|lnTlToBr|lnBlToTr)(\s[^>]*)?\/>/g, '')
     inner = inner.replace(/<a:(lnL|lnR|lnT|lnB|lnTlToBr|lnBlToTr)(\s[^>]*)?>.*?<\/a:\1>/gs, '')
   }
-  // Remove existing fill nodes
+  // CT_TableCellProperties is a sequence: ln* → cell3D → fill → headers/extLst.
+  // Misplaced children make the part schema-invalid and PowerPoint offers repair.
+  const insertFill = (fill: string) => {
+    const at = inner.search(/<a:(headers|extLst)[\s>/]/)
+    return at >= 0 ? inner.slice(0, at) + fill + inner.slice(at) : inner + fill
+  }
+  const insertLns = (lns: string) => {
+    const at = inner.search(
+      /<a:(lnTlToBr|lnBlToTr|cell3D|solidFill|gradFill|pattFill|blipFill|noFill|grpFill|headers|extLst)[\s>/]/,
+    )
+    return at >= 0 ? inner.slice(0, at) + lns + inner.slice(at) : inner + lns
+  }
+  // Replace existing cell-level fill nodes (border fills stay untouched)
   if (edit.shadingColor !== undefined) {
-    inner = inner.replace(/<a:solidFill>.*?<\/a:solidFill>/gs, '')
-    inner = inner.replace(/<a:noFill\/>/g, '')
-    inner = inner.replace(/<a:noFill><\/a:noFill>/g, '')
+    inner = outsideLns(inner, (seg) =>
+      seg
+        .replace(/<a:(solidFill|gradFill|pattFill|blipFill)(?:\s[^>]*)?>.*?<\/a:\1>/gs, '')
+        .replace(/<a:(noFill|grpFill)\/>/g, '')
+        .replace(/<a:(noFill|grpFill)><\/a:\1>/g, ''),
+    )
     if (edit.shadingColor === 'none') {
-      inner = '<a:noFill/>' + inner
+      inner = insertFill('<a:noFill/>')
     } else if (edit.shadingColor) {
       const c = edit.shadingColor.replace('#', '').toUpperCase()
-      inner = `<a:solidFill><a:srgbClr val="${c}"/></a:solidFill>` + inner
+      inner = insertFill(`<a:solidFill><a:srgbClr val="${c}"/></a:solidFill>`)
     }
   }
   // Border handling
   if (edit.borderPreset !== undefined) {
-    inner = inner.replace(/<a:lnL[^>]*>.*?<\/a:lnL>/gs, '')
-    inner = inner.replace(/<a:lnR[^>]*>.*?<\/a:lnR>/gs, '')
-    inner = inner.replace(/<a:lnT[^>]*>.*?<\/a:lnT>/gs, '')
-    inner = inner.replace(/<a:lnB[^>]*>.*?<\/a:lnB>/gs, '')
+    inner = inner.replace(/<a:(lnL|lnR|lnT|lnB)(?:\s[^>]*)?\/>/g, '')
+    inner = inner.replace(/<a:(lnL|lnR|lnT|lnB)(?:\s[^>]*)?>.*?<\/a:\1>/gs, '')
     if (edit.borderPreset === 'all' && edit.borderColor) {
       const c = edit.borderColor.replace('#', '').toUpperCase()
       const w = edit.borderWidthEmu ?? 12700
       const lnXml = (tag: string) =>
         `<${tag} w="${w}"><a:solidFill><a:srgbClr val="${c}"/></a:solidFill></${tag}>`
-      inner = inner + lnXml('a:lnL') + lnXml('a:lnR') + lnXml('a:lnT') + lnXml('a:lnB')
+      inner = insertLns(lnXml('a:lnL') + lnXml('a:lnR') + lnXml('a:lnT') + lnXml('a:lnB'))
     } else if (edit.borderPreset === 'none') {
-      inner =
-        inner +
-        '<a:lnL w="0"><a:noFill/></a:lnL><a:lnR w="0"><a:noFill/></a:lnR><a:lnT w="0"><a:noFill/></a:lnT><a:lnB w="0"><a:noFill/></a:lnB>'
+      inner = insertLns(
+        '<a:lnL w="0"><a:noFill/></a:lnL><a:lnR w="0"><a:noFill/></a:lnR><a:lnT w="0"><a:noFill/></a:lnT><a:lnB w="0"><a:noFill/></a:lnB>',
+      )
     }
   }
   return inner
@@ -309,13 +362,15 @@ function applyTcPrEdit(inner: string, edit: TableStyleEdit): string {
 function patchAllTcPr(xml: string, edit: TableStyleEdit): string {
   const out: string[] = []
   let cursor = 0
-  const re = /<a:tcPr([^>]*)>(.*?)<\/a:tcPr>|<a:tcPr([^>]*)\/>/gs
+  // self-closing first: [^>]* in the paired form would also accept the '/' of <a:tcPr/> and run
+  // on to some later cell's </a:tcPr>, swallowing the cells in between
+  const re = /<a:tcPr([^>]*)\/>|<a:tcPr([^>]*)>(.*?)<\/a:tcPr>/gs
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) {
     out.push(xml.slice(cursor, m.index))
     // Existing children (non-self-closing form)
-    const inner = applyTcPrEdit(m[2] ?? '', edit)
-    const attrs = m[1] ?? m[3] ?? ''
+    const inner = applyTcPrEdit(m[3] ?? '', edit)
+    const attrs = m[1] ?? m[2] ?? ''
     out.push(`<a:tcPr${attrs}>${inner}</a:tcPr>`)
     cursor = m.index + m[0].length
   }
@@ -357,10 +412,14 @@ function patchCellsTcPr(xml: string, edit: TableStyleEdit): string {
     const tc = nthSpan(xml, 'a:tc', col, tr.start, tr.end)
     if (!tc) continue
     let tcXml = xml.slice(tc.start, tc.end)
-    const m = /<a:tcPr([^>]*)>(.*?)<\/a:tcPr>|<a:tcPr([^>]*)\/>/s.exec(tcXml)
+    // Self-closing form first, for the same reason as patchAllTcPr above: in the
+    // paired form [^>]* also accepts the '/' of <a:tcPr/>, so the lazy body would run
+    // on to the next </a:tcPr> — the one belonging to a nested table's cell — and the
+    // outer cell's <a:txBody>/<a:tbl> would be swallowed and rewritten.
+    const m = /<a:tcPr([^>]*)\/>|<a:tcPr([^>]*)>(.*?)<\/a:tcPr>/s.exec(tcXml)
     if (m) {
-      const inner = applyTcPrEdit(m[2] ?? '', edit)
-      const attrs = m[1] ?? m[3] ?? ''
+      const inner = applyTcPrEdit(m[3] ?? '', edit)
+      const attrs = m[1] ?? m[2] ?? ''
       tcXml =
         tcXml.slice(0, m.index) +
         `<a:tcPr${attrs}>${inner}</a:tcPr>` +

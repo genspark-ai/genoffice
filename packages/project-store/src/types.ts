@@ -48,6 +48,14 @@ export interface ChatMessage {
   tools?: ToolActivity[]
   /** Attachment metadata of a user message */
   attachments?: ChatAttachment[]
+  /** Document selection a user message targeted */
+  scope?: ChatScope
+}
+
+/** What a user message was scoped to: a caption plus an excerpt of the selected content */
+export interface ChatScope {
+  label: string
+  text?: string
 }
 
 // ────────────────────────────────────────────────────────────
@@ -84,6 +92,8 @@ export interface ChatMeta {
   updatedAt: string
   /** Approximate line count (estimated from file bytes, not exact) */
   approxCount: number
+  /** The first thing asked in the thread, read from the file's head */
+  firstQuestion?: string
 }
 
 // ────────────────────────────────────────────────────────────

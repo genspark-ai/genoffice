@@ -92,10 +92,10 @@ export function syncCloudProjects(storePath: string): Promise<CloudProjectsSnaps
 }
 
 /**
- * Pages are newest-first and ctime is immutable, so when the FIRST page is
- * entirely known (ids + titles) and the API total matches the store size,
- * nothing changed and the store is kept as-is (one request). Any difference
- * triggers a full sweep, which also picks up renames and drops deletions.
+ * One-request fast path: when the whole account fits in a single page and
+ * that page matches the store (ids + titles + total), nothing changed and the
+ * store is kept as-is. Anything else sweeps every page, which also picks up
+ * renames beyond the first page and drops deletions.
  *
  * `owner` is the account the sync was started for. Each page is fetched with
  * the LIVE key, so if the account switches (or logs out) mid-sync the pages
@@ -129,7 +129,7 @@ async function doSync(storePath: string, owner: string): Promise<CloudProjectsSn
       .filter((e) => !seen.has(e.projectId))
     for (const e of entries) seen.add(e.projectId)
     collected.push(...entries)
-    if (offset === 0 && known.size === page.total) {
+    if (offset === 0 && !page.hasMore && known.size === page.total) {
       const unchanged = entries.every((e) => {
         const k = known.get(e.projectId)
         return k && k.title === e.title && k.kind === e.kind

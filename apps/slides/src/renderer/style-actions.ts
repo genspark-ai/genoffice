@@ -4,7 +4,15 @@
  * Functions read the latest App state through ActionCtx.
  */
 import type { ShapeRenderNode } from '@genoffice/pptx-render'
-import type { EditChartOp, EditTableStyleOp, GradientFillSpec } from '../shared/ipc'
+import { mergeSlideUpdate } from '../shared/slide-update'
+import type {
+  EditBackgroundOp,
+  EditChartOp,
+  EditStrokeOp,
+  EditTableStyleOp,
+  GradientFillSpec,
+} from '../shared/ipc'
+import type { FontSizeStep } from '@genoffice/pptx-ops/font-size'
 import type { ActionCtx } from './action-context'
 import { FIT_WIDTH } from './app-constants'
 import {
@@ -54,6 +62,24 @@ export function onFontSize(ctx: ActionCtx, pt: number): void {
       slideIndex: ctx.current,
       sourceIds: ctx.selectedIds,
       fontSizePt: pt,
+      ...(groupId ? { groupId } : {}),
+    })
+    .then((r) => r && ctx.applySlide(ctx.current, r))
+}
+
+// Grow/shrink relative to each run's own size, so a mixed-size shape keeps its contrast
+export function onFontSizeStep(ctx: ActionCtx, step: FontSizeStep): void {
+  if (ctx.editing || ctx.editingCell) {
+    resizeSelectionFont(step.dir, step.mode)
+    return
+  }
+  if (!ctx.selectedIds.length) return
+  const groupId = ctx.groupIdOf(ctx.selectedIds[0]!)
+  void window.slidesApi
+    .setElementFont({
+      slideIndex: ctx.current,
+      sourceIds: ctx.selectedIds,
+      fontSizeStep: step,
       ...(groupId ? { groupId } : {}),
     })
     .then((r) => r && ctx.applySlide(ctx.current, r))
@@ -128,14 +154,19 @@ export function onElementTextColor(ctx: ActionCtx, hex: string): void {
 }
 
 export interface ParagraphFormatPatch {
-  bullet?: 'char' | 'number' | 'none'
+  bullet?: 'char' | 'number' | 'blip' | 'none'
   bulletChar?: string
+  bulletFont?: string
+  numType?: string
+  startAt?: number
+  bulletImage?: { base64: string; ext: string }
   bulletHangEmu?: number
   bulletSizePct?: number
   bulletColor?: string
   lineSpacingPct?: number
   spaceBeforePt?: number
   spaceAfterPt?: number
+  rtl?: boolean
   indentDelta?: 1 | -1
 }
 
@@ -143,9 +174,14 @@ export interface ParagraphFormatPatch {
 const SELECTION_PATCH_KEYS = new Set([
   'bullet',
   'bulletChar',
+  'bulletFont',
+  'numType',
+  'startAt',
+  'bulletImage',
   'lineSpacingPct',
   'spaceBeforePt',
   'spaceAfterPt',
+  'rtl',
 ])
 
 // While editing, bullets/numbering/line spacing/paragraph spacing apply to the paragraphs covered
@@ -153,17 +189,24 @@ const SELECTION_PATCH_KEYS = new Set([
 // they apply element-wide. Clicking the same bullet kind again = turn off (toggle semantics);
 // editing mode judges by the paragraph div's marks, element mode by the render tree's bullet glyphs
 export function onParagraphFormat(ctx: ActionCtx, patch: ParagraphFormatPatch): void {
-  if (ctx.editing && Object.keys(patch).every((k) => SELECTION_PATCH_KEYS.has(k))) {
+  // Cell editing commits regenerate whole paragraphs from the overlay DOM, which round-trips
+  // the rtl mark; the other selection keys keep their historical element-wide semantics there
+  const selectable = ctx.editing
+    ? Object.keys(patch).every((k) => SELECTION_PATCH_KEYS.has(k))
+    : ctx.editingCell != null && Object.keys(patch).every((k) => k === 'rtl')
+  if (selectable) {
     const active = document.activeElement
     if (!(active instanceof HTMLElement && active.isContentEditable)) restoreEditSelection()
     if (applySelectionParagraphFormat(patch)) return
   }
   if (!ctx.selectedIds.length) return
-  // Picking an explicit char always applies (no toggle-off)
+  // Picking an explicit glyph / scheme / picture always applies (no toggle-off)
   if (
     patch.bullet &&
     patch.bullet !== 'none' &&
     !patch.bulletChar &&
+    !patch.numType &&
+    !patch.bulletImage &&
     ctx.selectedIds.length === 1
   ) {
     const node = ctx.findNodeCtx(ctx.selectedIds[0]!)?.node
@@ -172,7 +215,13 @@ export function onParagraphFormat(ctx: ActionCtx, patch: ParagraphFormatPatch): 
         ? (node as ShapeRenderNode).text
         : undefined
     const bulletRun = text?.lines.flatMap((l) => l.runs).find((r) => r.isBullet)
-    const cur = bulletRun ? (/^\d/.test(bulletRun.text) ? 'number' : 'char') : null
+    const cur = bulletRun
+      ? bulletRun.numType
+        ? 'number'
+        : bulletRun.image
+          ? 'blip'
+          : 'char'
+      : null
     if (cur === patch.bullet) patch = { ...patch, bullet: 'none' }
   }
   const groupId = ctx.groupIdOf(ctx.selectedIds[0]!)
@@ -204,7 +253,7 @@ export async function onFill(
 export async function onStroke(
   ctx: ActionCtx,
   sourceId: string,
-  stroke: { color: string; widthPt: number; dash?: string } | null,
+  stroke: EditStrokeOp['stroke'],
 ): Promise<void> {
   const groupId = ctx.groupIdOf(sourceId)
   const updated = await window.slidesApi.editStroke({
@@ -216,21 +265,22 @@ export async function onStroke(
   if (updated) ctx.applySlide(ctx.current, updated)
 }
 
+/** Omit that distributes over union members (plain Omit collapses the EditBackgroundOp union). */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
+
 export async function onBackground(
   ctx: ActionCtx,
-  color: string,
-  allSlides: boolean,
+  op: DistributiveOmit<EditBackgroundOp, 'fitWidthPx'>,
 ): Promise<void> {
   if (!ctx.slide) return
   const r = await window.slidesApi.editBackground({
-    slideIndex: allSlides ? -1 : ctx.current,
-    color,
+    ...op,
     fitWidthPx: FIT_WIDTH,
-  })
+  } as EditBackgroundOp)
   if (r) {
-    ctx.setSlides(r)
+    ctx.setSlides((current) => mergeSlideUpdate(current, r))
     ctx.setDirty(true)
-    ctx.setStatus(allSlides ? t('appStatusBgAppliedAll') : '')
+    ctx.setStatus(op.slideIndex === -1 ? t('appStatusBgAppliedAll') : '')
   }
 }
 

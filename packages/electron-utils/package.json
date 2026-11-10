@@ -6,7 +6,25 @@
   "type": "module",
   "description": "Shared helpers for the Electron main processes (no Electron dependency, pure TS)",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./atomic-write": "./src/atomic-write.ts",
+    "./disk-watch": "./src/disk-watch.ts",
+    "./drop-open": "./src/drop-open.ts",
+    "./font-catalog": "./src/font-catalog.ts",
+    "./font-store": "./src/font-store.ts",
+    "./generated-images": "./src/generated-images.ts",
+    "./headless-export": "./src/headless-export.ts",
+    "./main-proxy": "./src/main-proxy.ts",
+    "./print-cups": "./src/print-cups.ts",
+    "./printer-options": "./src/printer-options.ts",
+    "./print-job": "./src/print-job.ts",
+    "./print-window": "./src/print-window.ts",
+    "./remote-image": "./src/remote-image.ts",
+    "./remote-table": "./src/remote-table.ts",
+    "./renderer-protocol": "./src/renderer-protocol.ts",
+    "./renderer-scheme": "./src/renderer-scheme.ts",
+    "./safe-external-url": "./src/safe-external-url.ts",
+    "./safe-remote-url": "./src/safe-remote-url.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -15,6 +33,11 @@
   },
   "devDependencies": {
     "typescript": "^5.9.3",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.12"
+  },
+  "dependencies": {
+    "officecrypto-tool": "^0.0.19",
+    "parse5": "^8.0.1",
+    "undici": "^6.29.1"
   }
 }

@@ -1,0 +1,71 @@
+{
+  "id": "bidi-level-ind-start-end",
+  "title": "Numbering-level w:ind in bidi lists: w:left is the start indent, w:right the end indent, w:hanging hangs on the start side; an absent w:left is 0",
+  "section": "word-truths.md#L512",
+  "probe_date": "2026-10-20",
+  "source": "probe probe -> word.pdf (A4 pgMar 1200, Arial 10.5): right=360 hanging=360 -> marker 18pt outside the right margin, end indent 18 (physical left); left=360 hanging=360 -> start indent 18; hanging only -> start 0 / end 0; left=720 right=360 hanging=360 -> start 36 end 18",
+  "cases": [
+    {
+      "kind": "numberingLevel",
+      "numId": 1,
+      "ilvl": 0,
+      "expect": {
+        "indentRight": 360,
+        "hanging": 360,
+        "bidi": true
+      },
+      "note": "level pPr w:bidi makes the item a bidi paragraph"
+    },
+    {
+      "kind": "numberingLevel",
+      "numId": 2,
+      "ilvl": 0,
+      "expect": {
+        "indentLeft": 360,
+        "hanging": 360
+      }
+    },
+    {
+      "kind": "numberingLevel",
+      "numId": 3,
+      "ilvl": 0,
+      "expect": {
+        "hanging": 360
+      }
+    },
+    {
+      "kind": "numberingLevel",
+      "numId": 4,
+      "ilvl": 0,
+      "expect": {
+        "indentLeft": 720,
+        "indentRight": 360,
+        "hanging": 360
+      }
+    },
+    {
+      "kind": "listMarkerStartTw",
+      "own": null,
+      "level": {
+        "hanging": 360
+      },
+      "left": 0,
+      "expect": -360,
+      "note": "hanging only: absent w:left = 0, the marker hangs 18pt outside the start margin"
+    },
+    {
+      "kind": "listMarkerStartTw",
+      "own": null,
+      "level": {
+        "indentLeft": 720,
+        "indentRight": 360,
+        "hanging": 360
+      },
+      "left": 720,
+      "expect": 360,
+      "note": "start indent 36pt, marker at 18pt"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

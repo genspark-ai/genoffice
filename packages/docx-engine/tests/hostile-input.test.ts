@@ -1,7 +1,7 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { parseDocx, saveDocx } from '../src/index'
-import { buildDocx } from './helpers/build-docx'
+import { buildDocx, IMAGE_PARAGRAPH_XML } from './helpers/build-docx'
 
 /** overwrite the declared uncompressed size of every central-directory record */
 function patchCentralSizes(bytes: Uint8Array, size: number): Uint8Array {
@@ -21,7 +21,7 @@ describe('zip bomb protection', () => {
   it('rejects a part whose declared uncompressed size exceeds the per-part limit', async () => {
     const bytes = await buildDocx({ bodyXml: PLAIN_PARA })
     const bomb = patchCentralSizes(bytes, 600 * 1024 * 1024)
-    await expect(parseDocx(bomb)).rejects.toThrow(/docx rejected.*uncompressed/)
+    await expect(parseDocx(bomb)).rejects.toThrow(/zip rejected.*uncompressed/)
   })
 
   it('rejects an archive whose total declared uncompressed size exceeds the limit', async () => {
@@ -93,5 +93,23 @@ describe('malformed XML degrades instead of failing the document', () => {
     const doc = await parseDocx(await zip.generateAsync({ type: 'uint8array' }))
     expect(doc.styles.size).toBe(0)
     expect(doc.blocks[0].runs?.[0]?.text).toBe('hello')
+  })
+})
+
+describe('DOCTYPE prologue in a relationships part', () => {
+  it('opens the document and still resolves rels (external entity never fetched)', async () => {
+    const zip = await JSZip.loadAsync(
+      await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML + PLAIN_PARA, withImage: true }),
+    )
+    const rels = await zip.file('word/_rels/document.xml.rels')!.async('string')
+    const poisoned = rels
+      .replace('?>', '?>\n<!DOCTYPE test [\n<!ENTITY test SYSTEM "file:///dev/random">\n]>')
+      .replace('<Relationship Id="rId10"', '&test;<Relationship Id="rId10"')
+    expect(poisoned).toContain('<!DOCTYPE')
+    zip.file('word/_rels/document.xml.rels', poisoned)
+    const doc = await parseDocx(await zip.generateAsync({ type: 'uint8array' }))
+    expect(doc.blocks[0].type).toBe('image')
+    expect(doc.blocks[0].imageDataUrl).toMatch(/^data:image\/png;base64,/)
+    expect(doc.blocks[1].runs?.[0]?.text).toBe('hello')
   })
 })

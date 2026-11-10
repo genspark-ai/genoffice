@@ -4,12 +4,28 @@
  * Phase 1 scope: openPptx (parsing) + savePptx's "no changes = byte identical"
  * path (proving fidelity). Element-level patch regeneration is left for Phase 3.
  */
+import { stripRedactExt, syncRedactExt } from './redaction-xml'
 import JSZip from 'jszip'
-import { PackageArchive, relsPathFor, resolveTarget } from './zip'
-import { parseTheme, type Theme } from './theme'
-import { parseSlide, parseDecorations, sliceGroupChildXmls, type ParseContext } from './parse'
-import { parsePlaceholderMap, parseMasterTextStyles } from './placeholder'
+import { PackageArchive, relsPathFor, resolveTarget, type Relationship } from './zip'
+import { parseClrMap, parseTheme, type Theme } from './theme'
 import {
+  parseSlide,
+  parseDecorations,
+  parseBackground,
+  sliceGroupChildXmls,
+  type ParseContext,
+} from './parse'
+import {
+  parsePlaceholderMap,
+  parseMasterTextStyles,
+  parseDefaultTextStyle,
+  type TextStyleLevels,
+} from './placeholder'
+import { isPresetShapeType } from './preset-shape-types'
+import { custGeomXml, parseCustGeom, validCustGeomPath, type CustGeomPath } from './custgeom'
+import { nextSlideId } from './slide-ids'
+import {
+  alternateContentBranches,
   generateParagraphXml,
   patchElementFill,
   patchElementPPr,
@@ -19,14 +35,19 @@ import {
   patchSlideAdvanceTimeXml,
   patchSlideBackgroundXml,
   patchSlideHiddenXml,
+  patchSlideShowMasterSpXml,
   patchSlideTransitionXml,
   patchTextElementXml,
   rebuildTxBody,
   readSlideAdvanceTimeXml,
   readSlideHiddenXml,
   readSlideTransitionXml,
+  removeSlideBackgroundXml,
+  topLevelChildren,
+  type FillPatch,
   type GradientFillPatch,
   type SlideTransitionKind,
+  type StrokePatch,
 } from './generate'
 import {
   buildTableXml,
@@ -37,11 +58,14 @@ import {
   type NewTableOptions,
 } from './insert'
 import { BLANK_SLIDE_XML } from './blank'
-import { escapeXmlAttr } from './xml-utils'
+import { escapeXmlAttr, hasContentTypeOverride, maxRelationshipIdNumber } from './xml-utils'
 import { elementSpid } from './animation'
+import { stripStaleEmbeddedFonts } from './embedded-fonts'
+import { ensureCreationId, matchesElementRef } from './identity'
 import { listMasterParts, parseMasterPart } from './master-edit'
 import type {
   Paragraph,
+  TextRun,
   PPrDirty,
   SlideDeck,
   Slide,
@@ -50,23 +74,47 @@ import type {
   TextElement,
   ChartElement,
   GroupElement,
-  Transform,
+  Stroke,
+  ShadowEffect,
+  GlowEffect,
+  ReflectionEffect,
 } from './types'
 import { patchTableStyleXml, ensureTableStyleXml, type TableStyleEdit } from './table-edit'
-import { buildChartSpaceXml, type NewChartKind, type NewChartOptions } from './chart-insert'
+import {
+  buildChartSpaceXml,
+  writeChartWorkbook,
+  type NewChartKind,
+  type NewChartOptions,
+} from './chart-insert'
 import { parseLayoutPlaceholders, placeholderSpXml, prepareInsertSlideWithLayout } from './layout'
 import {
   chooseLayout,
+  collectPart,
   collectSlideBundle,
+  importClipboardParts,
   importSourceLayout,
   materializeSlideBundle,
   type SlideBundle,
 } from './slide-transfer'
 import { moveSlide } from './sections'
+import { MODEL3D_REL_TYPE, syncModel3dFrame } from './model3d'
+import { cleanupSupersededSlideResources, removePartWithOwnedResources } from './resource-cleanup'
 
 export * from './types'
 export {
+  REDACT_EXT_URI,
+  hasRedactExtIn,
+  readRedactLabel,
+  redactExtXml,
+  setRedactExt,
+  stripRedactExt,
+  syncRedactExt,
+} from './redaction-xml'
+export { cleanupSupersededSlideResources }
+export type { ResourceCleanupStats } from './resource-cleanup'
+export {
   animClassOf,
+  isMediaEffect,
   buildTimingXml,
   DEFAULT_MOTION_PATH,
   elementSpid,
@@ -75,22 +123,35 @@ export {
   patchSlideTimingXml,
   readSlideTimingXml,
   setSlideAnimations,
+  pruneTimingForSpids,
+  cNvPrIdsInXml,
+  ANIM_EFFECTS,
+  ANIM_TRIGGERS,
+  ANIM_DIRECTIONS,
+  type AnimDirection,
   type AnimClass,
   type AnimEffectKind,
   type AnimTrigger,
   type SlideAnimation,
 } from './animation'
-export { PackageArchive } from './zip'
+export { PackageArchive, PPTX_ZIP_LIMITS, assertZipWithinLimits } from './zip'
+export {
+  listEmbeddedFonts,
+  eotToSfnt,
+  type EmbeddedFontFace,
+  type EmbeddedFontStyle,
+} from './embedded-fonts'
 export { scanSlide, type SlideScan, type SpElement } from './scan'
 export {
   parseSlide,
   parseDecorations,
+  DEFAULT_BODY_INSETS,
   EMU_PER_PT,
   type ParseContext,
   type DecorationOptions,
 } from './parse'
 export { tableRowGridCols } from './table-grid'
-export { parseTheme, type Theme } from './theme'
+export { parseTheme, parseClrMap, resolveSchemeColor, type Theme } from './theme'
 export {
   patchTextElementXml,
   patchElementXfrm,
@@ -103,27 +164,39 @@ export {
   patchSlideAdvanceTimeXml,
   patchSlideBackgroundXml,
   patchSlideHiddenXml,
+  patchSlideShowMasterSpXml,
   patchSlideTransitionXml,
   readSlideAdvanceTimeXml,
   readSlideHiddenXml,
   readSlideTransitionXml,
+  removeSlideBackgroundXml,
   generateParagraphXml,
   generateXfrmXml,
+  isConnectorXml,
+  TRANSITION_KINDS,
   type GradientFillPatch,
+  type BackgroundImagePatch,
   type SlideTransitionKind,
+  type StrokePatch,
 } from './generate'
 export {
   addElement,
   addPicture,
+  addImageMediaAndRel,
   deleteElement,
   buildSpXml,
   buildTableXml,
+  buildTableGridXml,
+  MAX_INSERT_TABLE_DIM,
   buildGrpSpXml,
   calcBoundingBox,
   type NewElementOptions,
+  type NewElementBodyPr,
   type NewPictureOptions,
   type NewShapeKind,
   type NewTableOptions,
+  type NewTableCellSpec,
+  type NewTableGridOptions,
 } from './insert'
 export {
   alignRects,
@@ -133,6 +206,20 @@ export {
   type AlignRect,
 } from './align'
 export { createBlankPptx } from './blank'
+export {
+  BUILTIN_TABLE_STYLES,
+  builtinTableStyleName,
+  resolveBuiltinTableStyleId,
+  type BuiltinTableStyle,
+} from './table-style'
+export {
+  elementCNvPrId,
+  elementDurableId,
+  ensureCreationId,
+  groupChildDurableId,
+  matchesElementRef,
+  slideDurableId,
+} from './identity'
 export { promoteSlideBackground, isBackgroundLikeElement } from './background-promote'
 export {
   applyThemeToArchive,
@@ -144,6 +231,14 @@ export {
   type ThemeSpec,
 } from './theme-apply'
 export { escapeXmlText, escapeXmlAttr } from './xml-utils'
+export {
+  custGeomXml,
+  parseCustGeom,
+  validCustGeomPath,
+  CUST_GEOM_PT_COUNT,
+  type CustGeomPath,
+  type CustGeomPathCmd,
+} from './custgeom'
 export {
   extractFormat,
   applyFormat,
@@ -183,7 +278,9 @@ export {
   type ChartSeries,
   type ChartKind,
   type ChartAxisStyle,
+  type ChartDataTable,
 } from './chart'
+export { parseChartExXml } from './chartex'
 export { getSlideNotes, setSlideNotes, notesPathForSlide, unescapeXml } from './notes'
 export {
   getSlideComments,
@@ -201,12 +298,20 @@ export {
   decodeRunLink,
   type LinkTarget,
 } from './hyperlink'
+export { NAMED_ACTIONS, namedActionOf, type NamedAction } from './named-action'
 export {
   addChart,
   buildChartSpaceXml,
+  writeChartWorkbook,
   type NewChartKind,
   type NewChartOptions,
 } from './chart-insert'
+export {
+  CHART_WORKBOOK_REL_TYPE,
+  chartWorkbookParts,
+  chartWorkbookXlsx,
+  type ChartWorkbookData,
+} from './chart-workbook'
 export {
   addSmartArt,
   buildSmartArtXml,
@@ -214,13 +319,30 @@ export {
   type NewSmartArtOptions,
 } from './smartart'
 export {
+  AM3D_NS,
+  MODEL3D_REL_TYPE,
+  NO_ROTATION,
+  readModel3dRotation,
+  type Model3dRotation,
+} from './model3d'
+export { glbBounds, type GlbBounds } from './glb-bounds'
+export {
   addMedia,
   addModel3d,
+  setModel3dView,
   model3dPartOf,
   solidPng,
   type NewMediaOptions,
   type NewModel3dOptions,
 } from './media-insert'
+export {
+  addNarration,
+  clearNarration,
+  narrationSpids,
+  setShowNarration,
+  NARRATION_NAME,
+  type NarrationAudio,
+} from './narration'
 export { applyHeaderFooter, readHeaderFooter, type HeaderFooterOptions } from './headerfooter'
 export {
   getSections,
@@ -268,29 +390,49 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
 
   const chain = archive.resolveSlideChain(slidePath)
   const ctx: ParseContext = {}
-  if (chain.themePath) {
-    const themeXml = archive.readText(chain.themePath)
-    if (themeXml) ctx.theme = parseTheme(themeXml)
-  }
   // Placeholder geometry + text style inheritance + background inheritance: layout first, master fallback (read-only)
   const layoutXml = (chain.layoutPath ? archive.readText(chain.layoutPath) : undefined) ?? undefined
+  const masterXml = (chain.masterPath ? archive.readText(chain.masterPath) : undefined) ?? undefined
+  if (chain.themePath) {
+    const themeXml = archive.readText(chain.themePath)
+    if (themeXml) {
+      ctx.theme = parseTheme(themeXml)
+      // Dark masters remap schemeClr names (bg1→dk1 …); must be in place before any color resolution below
+      ctx.theme.clrMap = parseClrMap(masterXml, layoutXml, slideXml)
+      ctx.themeMediaRels = partMediaRels(archive, chain.themePath)
+    }
+  }
   if (layoutXml) {
-    ctx.layoutPlaceholders = parsePlaceholderMap(layoutXml, ctx.theme)
+    if (chain.layoutPath) ctx.layoutMediaRels = partMediaRels(archive, chain.layoutPath)
+    ctx.layoutPlaceholders = parsePlaceholderMap(layoutXml, ctx.theme, ctx.layoutMediaRels)
     ctx.layoutBg = layoutXml
   }
-  const masterXml = (chain.masterPath ? archive.readText(chain.masterPath) : undefined) ?? undefined
   if (masterXml) {
-    ctx.masterPlaceholders = parsePlaceholderMap(masterXml, ctx.theme)
-    ctx.masterTextStyles = parseMasterTextStyles(masterXml, ctx.theme)
+    if (chain.masterPath) ctx.masterMediaRels = partMediaRels(archive, chain.masterPath)
+    ctx.masterPlaceholders = parsePlaceholderMap(masterXml, ctx.theme, ctx.masterMediaRels)
+    ctx.masterTextStyles = parseMasterTextStyles(masterXml, ctx.theme, ctx.masterMediaRels)
     ctx.masterBg = masterXml
   }
+  // presentation.xml <p:defaultTextStyle>: base text defaults for non-placeholder shapes
+  const presXml = archive.readText('ppt/presentation.xml')
+  if (presXml) ctx.defaultTextStyle = parseDefaultTextStyle(presXml, ctx.theme)
   // Media rId → zip path; chart rId → chart part content
   const rels = archive.readRels(slidePath)
   const mediaRels = new Map<string, string>()
   const chartXmls = new Map<string, string>()
+  const chartMediaRels = new Map<string, Map<string, string>>()
+  const chartUserShapes = new Map<string, string>()
+  const chartStyleRels = new Set<string>()
+  const chartThemeOverrides = new Map<string, string>()
   const avRels = new Map<string, { target: string; external?: boolean }>()
   const diagramDrawings = new Map<string, string>()
+  const diagramDatas = new Map<string, string>()
+  const diagramMediaRels = new Map<string, Map<string, string>>()
+  const diagramLayouts = new Map<string, string>()
+  const diagramColors = new Map<string, string>()
+  const vmlPreviews = new Map<string, string>()
   const hlinkRels = new Map<string, string>()
+  const model3dRels = new Map<string, string>()
   let slideOrder: string[] | undefined
   for (const rel of rels.values()) {
     if (rel.type.endsWith('/hyperlink')) {
@@ -302,9 +444,26 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
       if (idx >= 0) hlinkRels.set(rel.id, `slide:${idx}`)
     } else if (rel.type.endsWith('/image')) {
       mediaRels.set(rel.id, resolveTarget(slidePath, rel.target))
-    } else if (rel.type.endsWith('/chart')) {
-      const xml = archive.readText(resolveTarget(slidePath, rel.target))
-      if (xml) chartXmls.set(rel.id, xml)
+    } else if (rel.type.endsWith('/chart') || rel.type.endsWith('/chartEx')) {
+      const target = resolveTarget(slidePath, rel.target)
+      const xml = archive.readText(target)
+      if (xml) {
+        chartXmls.set(rel.id, xml)
+        chartMediaRels.set(rel.id, partMediaRels(archive, target))
+        // User-drawn overlays live in a chartUserShapes drawing referenced from the chart part's own rels
+        for (const sub of archive.readRels(target).values()) {
+          if (sub.type.endsWith('/chartUserShapes')) {
+            const usXml = archive.readText(resolveTarget(target, sub.target))
+            if (usXml) chartUserShapes.set(rel.id, usXml)
+          }
+          if (sub.type.endsWith('/chartStyle')) chartStyleRels.add(rel.id)
+          // Chart-local theme (accents remapped per chart): schemeClr must resolve against it
+          if (sub.type.endsWith('/themeOverride')) {
+            const ovXml = archive.readText(resolveTarget(target, sub.target))
+            if (ovXml) chartThemeOverrides.set(rel.id, ovXml)
+          }
+        }
+      }
     } else if (/\/(?:video|audio|media)$/.test(rel.type)) {
       // Audio/video (r:link of a:videoFile/a:audioFile; embedded or external)
       const external = rel.targetMode === 'External'
@@ -312,29 +471,67 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
         target: external ? rel.target : resolveTarget(slidePath, rel.target),
         ...(external ? { external: true } : {}),
       })
+    } else if (rel.type === MODEL3D_REL_TYPE) {
+      model3dRels.set(rel.id, resolveTarget(slidePath, rel.target))
+    } else if (rel.type.endsWith('/vmlDrawing')) {
+      // Legacy OLE previews: v:shape (matched by oleObj spid) → v:imagedata → the VML part's own image rel
+      const vmlPath = resolveTarget(slidePath, rel.target)
+      const vml = archive.readText(vmlPath)
+      if (vml) {
+        const vmlRels = archive.readRels(vmlPath)
+        for (const m of vml.matchAll(/<v:shape\b([^>]*)>([\s\S]*?)<\/v:shape>/g)) {
+          const relid = /<v:imagedata\b[^>]*\bo:relid="([^"]+)"/.exec(m[2]!)?.[1]
+          const imgRel = relid ? vmlRels.get(relid) : undefined
+          if (!imgRel) continue
+          const target = resolveTarget(vmlPath, imgRel.target)
+          for (const key of ['id', 'o:spid']) {
+            const v = new RegExp(`\\b${key}="([^"]+)"`).exec(m[1]!)?.[1]
+            if (v) vmlPreviews.set(v, target)
+          }
+        }
+      }
     } else if (rel.type.endsWith('/diagramData')) {
       // SmartArt prerendered drawing part: the data part's <dsp:dataModelExt relId="…">
       // points at a diagramDrawing relationship in the container part's (slide's) rels; fall back to the data part's own rels
       const dataPath = resolveTarget(slidePath, rel.target)
       const dataXml = archive.readText(dataPath)
+      if (dataXml) diagramDatas.set(rel.id, dataXml)
       const relId = dataXml
         ? /<dsp:dataModelExt\b[^>]*\brelId="([^"]+)"/.exec(dataXml)?.[1]
         : undefined
       if (relId) {
         const drawRel = rels.get(relId) ?? archive.readRels(dataPath).get(relId)
         const basePath = rels.get(relId) ? slidePath : dataPath
-        const drawingXml = drawRel
-          ? archive.readText(resolveTarget(basePath, drawRel.target))
-          : undefined
-        if (drawingXml) diagramDrawings.set(rel.id, drawingXml)
+        const drawingPath = drawRel ? resolveTarget(basePath, drawRel.target) : undefined
+        const drawingXml = drawingPath ? archive.readText(drawingPath) : undefined
+        if (drawingXml && drawingPath) {
+          diagramDrawings.set(rel.id, drawingXml)
+          diagramMediaRels.set(rel.id, partMediaRels(archive, drawingPath))
+        }
       }
+    } else if (rel.type.endsWith('/diagramLayout')) {
+      const xml = archive.readText(resolveTarget(slidePath, rel.target))
+      if (xml) diagramLayouts.set(rel.id, xml)
+    } else if (rel.type.endsWith('/diagramColors')) {
+      const xml = archive.readText(resolveTarget(slidePath, rel.target))
+      if (xml) diagramColors.set(rel.id, xml)
     }
   }
   ctx.mediaRels = mediaRels
   ctx.chartXmls = chartXmls
+  if (chartMediaRels.size) ctx.chartMediaRels = chartMediaRels
+  if (chartUserShapes.size) ctx.chartUserShapes = chartUserShapes
+  if (chartStyleRels.size) ctx.chartStyleRels = chartStyleRels
+  ctx.chartThemeOverrides = chartThemeOverrides
   if (hlinkRels.size) ctx.hlinkRels = hlinkRels
   if (avRels.size) ctx.avRels = avRels
+  if (model3dRels.size) ctx.model3dRels = model3dRels
   if (diagramDrawings.size) ctx.diagramDrawings = diagramDrawings
+  if (diagramDatas.size) ctx.diagramDatas = diagramDatas
+  if (diagramMediaRels.size) ctx.diagramMediaRels = diagramMediaRels
+  if (diagramLayouts.size) ctx.diagramLayouts = diagramLayouts
+  if (diagramColors.size) ctx.diagramColors = diagramColors
+  if (vmlPreviews.size) ctx.vmlPreviews = vmlPreviews
   // Table style definitions (embedded custom styles; built-in styles handled by table-style as fallback)
   ctx.tableStyles = archive.readText('ppt/tableStyles.xml') ?? undefined
 
@@ -353,6 +550,7 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
     theme: ctx.theme,
     masterPlaceholders: ctx.masterPlaceholders,
     masterTextStyles: ctx.masterTextStyles,
+    defaultTextStyle: ctx.defaultTextStyle,
   })
   if (decorations.length) slide.decorations = decorations
 
@@ -407,6 +605,7 @@ function buildDecorations(
     theme?: Theme
     masterPlaceholders?: ReturnType<typeof parsePlaceholderMap>
     masterTextStyles?: ReturnType<typeof parseMasterTextStyles>
+    defaultTextStyle?: TextStyleLevels
   },
 ): SlideElement[] {
   const out: SlideElement[] = []
@@ -435,32 +634,54 @@ function buildDecorations(
   const hasPh = (xml: string | undefined, type: string) =>
     !!xml && new RegExp(`<p:ph\\b[^>]*type="${type}"`).test(xml)
 
+  // Slide-level showMasterSp="0" ("hide background graphics") hides both master and layout
+  // decoration shapes; layout-level only stops the master's from showing through. Footer
+  // placeholders are not background graphics and keep following the <p:hf> toggles.
+  const slideHidesInherited = /<p:sld\b[^>]*showMasterSp=(?:"(?:0|false)"|'(?:0|false)')/.test(
+    slideXml,
+  )
   const masterShown =
-    !/<p:sld\b[^>]*showMasterSp="(?:0|false)"/.test(slideXml) &&
-    !(layoutXml && /<p:sldLayout\b[^>]*showMasterSp="(?:0|false)"/.test(layoutXml))
-
-  if (masterShown && masterXml && parts.masterPath) {
-    const hfTypes = new Set([...enabled].filter((k) => !slidePh.has(k) && !hasPh(layoutXml, k)))
-    const ctx: ParseContext = {
-      theme: parts.theme,
-      mediaRels: partMediaRels(archive, parts.masterPath),
-    }
-    out.push(
-      ...parseDecorations(masterXml, ctx, { hfTypes, ...(slideNum != null ? { slideNum } : {}) }),
+    !slideHidesInherited &&
+    !(
+      layoutXml && /<p:sldLayout\b[^>]*showMasterSp=(?:"(?:0|false)"|'(?:0|false)')/.test(layoutXml)
     )
+
+  if (masterXml && parts.masterPath) {
+    const hfTypes = new Set([...enabled].filter((k) => !slidePh.has(k) && !hasPh(layoutXml, k)))
+    if (masterShown || hfTypes.size) {
+      const ctx: ParseContext = {
+        theme: parts.theme,
+        mediaRels: partMediaRels(archive, parts.masterPath),
+        defaultTextStyle: parts.defaultTextStyle,
+      }
+      out.push(
+        ...parseDecorations(masterXml, ctx, {
+          hfTypes,
+          hideShapes: !masterShown,
+          ...(slideNum != null ? { slideNum } : {}),
+        }),
+      )
+    }
   }
   if (layoutXml && parts.layoutPath) {
     const hfTypes = new Set([...enabled].filter((k) => !slidePh.has(k)))
-    // Layout footer placeholders often omit xfrm/font size, inheriting from the master
-    const ctx: ParseContext = {
-      theme: parts.theme,
-      mediaRels: partMediaRels(archive, parts.layoutPath),
-      masterPlaceholders: parts.masterPlaceholders,
-      masterTextStyles: parts.masterTextStyles,
+    if (!slideHidesInherited || hfTypes.size) {
+      // Layout footer placeholders often omit xfrm/font size, inheriting from the master
+      const ctx: ParseContext = {
+        theme: parts.theme,
+        mediaRels: partMediaRels(archive, parts.layoutPath),
+        masterPlaceholders: parts.masterPlaceholders,
+        masterTextStyles: parts.masterTextStyles,
+        defaultTextStyle: parts.defaultTextStyle,
+      }
+      out.push(
+        ...parseDecorations(layoutXml, ctx, {
+          hfTypes,
+          hideShapes: slideHidesInherited,
+          ...(slideNum != null ? { slideNum } : {}),
+        }),
+      )
     }
-    out.push(
-      ...parseDecorations(layoutXml, ctx, { hfTypes, ...(slideNum != null ? { slideNum } : {}) }),
-    )
   }
   return out
 }
@@ -508,11 +729,18 @@ export function reparseDeck(opened: OpenedPptx): OpenedPptx {
  *   even flagged dirty they use original bytes.
  */
 export async function savePptx(opened: OpenedPptx): Promise<Uint8Array> {
-  return buildZip(opened).generateAsync({
-    type: 'uint8array',
-    compression: 'DEFLATE',
-    compressionOptions: { level: 6 },
-  })
+  try {
+    return await buildZip(opened).generateAsync({
+      type: 'uint8array',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 },
+    })
+  } catch (err) {
+    // A save that never landed cannot vouch for any edit: drop the snapshot so
+    // a later commitSaved bakes the deck instead of clearing it.
+    saveSnapshot.delete(opened)
+    throw err
+  }
 }
 
 /**
@@ -524,6 +752,11 @@ export async function savePptx(opened: OpenedPptx): Promise<Uint8Array> {
  * time. JSZip throws stream errors from inside its own scheduled callbacks, so the
  * stream's 'error' event — not just the returned promise — has to be handled or the
  * throw escapes as an uncaught exception and takes the process down.
+ *
+ * The stream truncates `filePath` before its first chunk lands, so a caller that
+ * replaces an existing deck hands this a sibling temp path and renames it over the
+ * deck once the promise resolves (Slides does so through atomicWriteVia); given the
+ * deck's own path, a save that dies mid-stream leaves it cut off.
  */
 export async function savePptxToFile(opened: OpenedPptx, filePath: string): Promise<void> {
   const { createWriteStream } = await import('node:fs')
@@ -534,8 +767,22 @@ export async function savePptxToFile(opened: OpenedPptx, filePath: string): Prom
     compressionOptions: { level: 6 },
     streamFiles: true,
   })
-  await pipeline(source, createWriteStream(filePath))
+  try {
+    await pipeline(source, createWriteStream(filePath))
+  } catch (err) {
+    saveSnapshot.delete(opened)
+    throw err
+  }
 }
+
+/**
+ * The slide XML each in-flight save pulled into its package, keyed by the
+ * opened deck. buildZip records it before the stream starts, and commitSaved
+ * clears dirty state only for the slides it matches — a slide that was clean
+ * at snapshot time, or whose XML moved afterwards, holds edits the finished
+ * write never contained.
+ */
+const saveSnapshot = new WeakMap<OpenedPptx, Map<string, string>>()
 
 /**
  * Sync the in-memory model with what savePptx/savePptxToFile just wrote, without
@@ -548,14 +795,18 @@ export async function savePptxToFile(opened: OpenedPptx, filePath: string): Prom
  * patchedElementXml pair as buildZip, so memory and disk are byte-identical and
  * the next save's byte slices are safe to reuse.
  *
+ * Only slides the finished save actually carried are cleared, so an edit
+ * committed while the stream was running stays dirty and lands in the next save.
  * Call only after a successful save; on failure keep the dirty state so the next
  * save retries the patches.
  */
 export function commitSaved(opened: OpenedPptx): void {
   const { deck, archive } = opened
+  const snapshot = saveSnapshot.get(opened)
   for (const slide of deck.slides) {
     if (!slideIsDirty(slide)) continue
     const xml = patchSlideXml(slide)
+    if (snapshot && snapshot.get(slide.path) !== xml) continue
     for (const el of slide.elements) {
       el.anchor.originalXml = patchedElementXml(el)
       delete el.dirty
@@ -569,6 +820,7 @@ export function commitSaved(opened: OpenedPptx): void {
     delete slide.structureDirty
     archive.entries.set(slide.path, Buffer.from(xml, 'utf8'))
   }
+  saveSnapshot.delete(opened)
 }
 
 /**
@@ -590,16 +842,18 @@ function slideIsDirty(s: Slide): boolean {
 
 function buildZip(opened: OpenedPptx): JSZip {
   const { deck, archive } = opened
-  const dirtyByPath = new Map<string, Slide>()
+  stripStaleEmbeddedFonts(deck, archive)
+  const patched = new Map<string, string>()
   for (const s of deck.slides) {
-    if (slideIsDirty(s)) dirtyByPath.set(s.path, s)
+    if (slideIsDirty(s)) patched.set(s.path, patchSlideXml(s))
   }
+  saveSnapshot.set(opened, patched)
 
   const zip = new JSZip()
   for (const [path, data] of archive.entries) {
-    const slide = dirtyByPath.get(path)
-    if (slide) {
-      zip.file(path, patchSlideXml(slide))
+    const xml = patched.get(path)
+    if (xml !== undefined) {
+      zip.file(path, xml)
       continue
     }
     const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
@@ -622,54 +876,275 @@ export function patchSlideXml(slide: Slide): string {
   return parts.join('')
 }
 
+/**
+ * Apply a byte patch to an element's own XML. An element anchored to a whole
+ * <mc:AlternateContent> block was modelled from one branch, so the patch lands
+ * inside that branch only; spPr-level patches (`mirror`) also go to sibling
+ * branches of the same tag so PowerPoint, which renders the Choice, shows the
+ * same box/fill/stroke as our Fallback-based renderer. Text patches never
+ * mirror: a Choice body may be math or another vocabulary.
+ */
+function patchAnchorXml(
+  el: SlideElement,
+  xml: string,
+  patch: (xml: string) => string,
+  mirror = false,
+): string {
+  const branches = alternateContentBranches(xml)
+  if (!branches) return patch(xml)
+  const fromFallback = el.type === 'text' || el.type === 'shape' || el.type === 'picture'
+  const own =
+    (fromFallback
+      ? branches.find((b) => b.fallback)
+      : branches.find((b) => !b.fallback && b.tag === 'p:graphicFrame')) ?? branches[0]!
+  let out = ''
+  let cursor = 0
+  for (const b of branches) {
+    if (b !== own && !(mirror && b.tag === own.tag)) continue
+    out += xml.slice(cursor, b.start) + patch(xml.slice(b.start, b.end))
+    cursor = b.end
+  }
+  return out + xml.slice(cursor)
+}
+
 /** One element's current XML slice (dirty elements patch-regenerated, clean elements original bytes). */
 export function patchedElementXml(el: SlideElement): string {
+  // Progressive identity hardening: an element whose bytes are being rewritten
+  // anyway gets a creationId minted into its anchor (idempotent — repeated calls
+  // from commitSaved/buildZip see the same GUID). Clean elements pass through
+  // untouched, so unedited decks stay byte-identical on save.
+  if (
+    el.dirty ||
+    el.dirtyTransform ||
+    el.dirtyFill ||
+    el.dirtyStroke ||
+    el.dirtySrcRect ||
+    el.dirtyPPr
+  ) {
+    ensureCreationId(el)
+  }
   let xml = el.anchor.originalXml
   if (el.dirty && (el.type === 'text' || el.type === 'shape')) {
-    xml = patchTextElementXml(el as TextElement, xml)
+    xml = patchAnchorXml(el, xml, (x) => patchTextElementXml(el as TextElement, x))
   }
   // Surgical paragraph-property patch (run bytes untouched); paragraph count mismatch (rare) falls back to a full rebuild
   if (el.dirtyPPr && (el.type === 'text' || el.type === 'shape') && (el as TextElement).text) {
     const t = el as TextElement
-    xml = patchElementPPr(t, xml, el.dirtyPPr) ?? rebuildTxBody(t, xml)
+    const dirty = el.dirtyPPr
+    xml = patchAnchorXml(el, xml, (x) => patchElementPPr(t, x, dirty) ?? rebuildTxBody(t, x))
   }
   // graphicFrame (table/chart/passthrough) uses the p:xfrm patch, everything else a:xfrm
   if (el.dirtyTransform) {
-    xml = patchElementXfrm(el, xml)
+    xml = patchAnchorXml(el, xml, (x) => patchElementXfrm(el, x), true)
+    // PowerPoint shows a model's Choice, while the editor moves its Fallback picture
+    if (el.type === 'picture' && el.model3d) xml = syncModel3dFrame(xml)
   }
   if (el.dirtyFill && (el.type === 'text' || el.type === 'shape')) {
     const fill = (el as TextElement).fill
-    if (fill?.type === 'solid') xml = patchElementFill(xml, fill.color)
-    else if (fill?.type === 'none') xml = patchElementFill(xml, 'none')
-    else if (fill?.type === 'gradient') {
-      xml = patchElementFill(xml, {
-        stops: fill.stops,
-        ...(fill.angle != null ? { angle: fill.angle } : {}),
-        ...(fill.path ? { radial: true } : {}),
-      })
-    }
+    const patch: FillPatch | null =
+      fill?.type === 'solid'
+        ? fill.color
+        : fill?.type === 'none'
+          ? 'none'
+          : fill?.type === 'gradient'
+            ? {
+                stops: fill.stops,
+                ...(fill.angle != null ? { angle: fill.angle } : {}),
+                ...(fill.path ? { path: fill.path } : {}),
+                ...(fill.path && fill.fillTo ? { fillTo: fill.fillTo } : {}),
+              }
+            : null
+    if (patch !== null) xml = patchAnchorXml(el, xml, (x) => patchElementFill(x, patch), true)
   }
   if (el.dirtyStroke && (el.type === 'text' || el.type === 'shape' || el.type === 'picture')) {
     const stroke = (el as TextElement).stroke
-    xml = patchElementStroke(
-      xml,
-      stroke && stroke.fill.type === 'solid'
-        ? { color: stroke.fill.color, widthEmu: stroke.width, dash: stroke.dash }
-        : null,
-    )
+    const patch = stroke ? modelStrokeToPatch(stroke) : null
+    xml = patchAnchorXml(el, xml, (x) => patchElementStroke(x, patch), true)
   }
   if (el.dirtySrcRect && el.type === 'picture') {
     const pic = el as import('./types').PictureElement
-    xml = patchPictureSrcRect(xml, pic.srcRect ?? null)
+    xml = patchAnchorXml(el, xml, (x) => patchPictureSrcRect(x, pic.srcRect ?? null), true)
   }
   return xml
 }
 
-/** Set a solid slide background: patch the bodyPrefix and sync the model (written back with the whole-slide rebuild on save). */
-export function setSlideBackground(slide: Slide, color: string): void {
-  slide.bodyPrefix = patchSlideBackgroundXml(slide.bodyPrefix, color)
-  slide.background = { type: 'solid', color }
+/**
+ * Set a solid or gradient slide background: patch the bodyPrefix and sync the model
+ * (written back with the whole-slide rebuild on save).
+ */
+export function setSlideBackground(
+  opened: OpenedPptx,
+  slide: Slide,
+  fill: string | GradientFillPatch,
+): void {
+  const previousXml = patchSlideXml(slide)
+  slide.bodyPrefix = patchSlideBackgroundXml(slide.bodyPrefix, fill)
+  slide.background =
+    typeof fill === 'string'
+      ? { type: 'solid', color: fill }
+      : {
+          type: 'gradient',
+          stops: fill.stops.map((s) => ({ pos: s.pos, color: s.color })),
+          ...(fill.radial ? { path: 'circle' as const } : { angle: Math.round(fill.angle ?? 0) }),
+        }
+  slide.bgOwn = true
   slide.structureDirty = true
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
+}
+
+/**
+ * Set a picture slide background. Source is either fresh bytes (lands a new media
+ * part) or an existing media path (e.g. applying one picked image to all slides —
+ * only a rel is added). Returns the media path used, or null for unsupported formats.
+ */
+export function setSlideBackgroundImage(
+  opened: OpenedPptx,
+  slide: Slide,
+  source: { bytes: Uint8Array; ext: string } | { mediaPath: string },
+  tile?: boolean,
+): string | null {
+  let rid: string | undefined
+  let mediaPath: string
+  if ('bytes' in source) {
+    const added = addImageMediaAndRel(opened, slide, source.bytes, source.ext)
+    if (!added) return null
+    rid = added.rid
+    mediaPath = added.mediaPath
+  } else {
+    mediaPath = source.mediaPath
+    if (!opened.archive.entries.has(mediaPath)) return null
+    rid = imageRelFor(opened.archive, slide, mediaPath)
+    if (!rid) return null
+  }
+  const previousXml = patchSlideXml(slide)
+  slide.bodyPrefix = patchSlideBackgroundXml(slide.bodyPrefix, {
+    imageRid: rid,
+    ...(tile ? { tile: true } : {}),
+  })
+  slide.background = { type: 'image', mediaRef: mediaPath, mode: tile ? 'tile' : 'stretch' }
+  slide.bgOwn = true
+  slide.structureDirty = true
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
+  return mediaPath
+}
+
+/** Find the slide's image rel for a media path, adding one when missing. */
+function imageRelFor(archive: PackageArchive, slide: Slide, mediaPath: string): string | undefined {
+  for (const rel of archive.readRels(slide.path).values()) {
+    if (rel.type.endsWith('/image') && resolveTarget(slide.path, rel.target) === mediaPath)
+      return rel.id
+  }
+  const relsPath = relsPathFor(slide.path)
+  const rels =
+    archive.readText(relsPath) ??
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+  const maxRid = maxRelationshipIdNumber(rels)
+  const rid = `rId${maxRid + 1}`
+  // slide parts live in ppt/slides/, media in ppt/media/
+  const target = mediaPath.replace(/^ppt\//, '../')
+  const relXml = `<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${target}"/>`
+  archive.entries.set(
+    relsPath,
+    Buffer.from(
+      rels.replace('</Relationships>', () => `${relXml}</Relationships>`),
+      'utf8',
+    ),
+  )
+  return rid
+}
+
+/**
+ * Remove the slide's own <p:bg> override; the background falls back to the
+ * layout/master definition (recomputed here so rendering updates without a reopen).
+ */
+export function resetSlideBackground(opened: OpenedPptx, slide: Slide): void {
+  const previousXml = patchSlideXml(slide)
+  slide.bodyPrefix = removeSlideBackgroundXml(slide.bodyPrefix)
+  delete slide.bgOwn
+  slide.structureDirty = true
+  const inherit = slideInheritanceCtx(opened.archive, slide.path)
+  const inherited =
+    (inherit.layoutXml
+      ? parseBackground(inherit.layoutXml, {
+          theme: inherit.theme,
+          mediaRels: inherit.layoutMediaRels,
+          themeMediaRels: inherit.themeMediaRels,
+        })
+      : undefined) ??
+    (inherit.masterXml
+      ? parseBackground(inherit.masterXml, {
+          theme: inherit.theme,
+          mediaRels: inherit.masterMediaRels,
+          themeMediaRels: inherit.themeMediaRels,
+        })
+      : undefined)
+  if (inherited) slide.background = inherited
+  else delete slide.background
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
+}
+
+/**
+ * Toggle "hide background graphics" (<p:sld showMasterSp="0">) and rebuild the
+ * slide's decoration layer so rendering reflects the change immediately.
+ */
+export function setSlideBgGraphicsHidden(opened: OpenedPptx, slide: Slide, hidden: boolean): void {
+  slide.bodyPrefix = patchSlideShowMasterSpXml(slide.bodyPrefix, hidden)
+  if (hidden) slide.masterSpHidden = true
+  else delete slide.masterSpHidden
+  slide.structureDirty = true
+  const inherit = slideInheritanceCtx(opened.archive, slide.path)
+  const decorations = buildDecorations(
+    opened.archive,
+    slide.path,
+    slide.bodyPrefix, // carries the fresh showMasterSp attribute
+    slide,
+    inherit.layoutXml,
+    inherit.masterXml,
+    {
+      layoutPath: inherit.layoutPath,
+      masterPath: inherit.masterPath,
+      theme: inherit.theme,
+      masterPlaceholders: inherit.masterPlaceholders,
+      masterTextStyles: inherit.masterTextStyles,
+      defaultTextStyle: inherit.defaultTextStyle,
+    },
+  )
+  if (decorations.length) slide.decorations = decorations
+  else delete slide.decorations
+}
+
+/** Layout/master inheritance bundle for one slide (theme + placeholder maps + part media rels). */
+function slideInheritanceCtx(archive: PackageArchive, slidePath: string) {
+  const chain = archive.resolveSlideChain(slidePath)
+  const layoutXml = (chain.layoutPath ? archive.readText(chain.layoutPath) : undefined) ?? undefined
+  const masterXml = (chain.masterPath ? archive.readText(chain.masterPath) : undefined) ?? undefined
+  let theme: Theme | undefined
+  if (chain.themePath) {
+    const themeXml = archive.readText(chain.themePath)
+    if (themeXml) {
+      theme = parseTheme(themeXml)
+      theme.clrMap = parseClrMap(masterXml, layoutXml, archive.readText(slidePath) ?? undefined)
+    }
+  }
+  const presXml = archive.readText('ppt/presentation.xml')
+  const masterMediaRels = chain.masterPath ? partMediaRels(archive, chain.masterPath) : undefined
+  return {
+    layoutPath: chain.layoutPath,
+    masterPath: chain.masterPath,
+    layoutXml,
+    masterXml,
+    theme,
+    masterPlaceholders: masterXml
+      ? parsePlaceholderMap(masterXml, theme, masterMediaRels)
+      : undefined,
+    masterTextStyles: masterXml
+      ? parseMasterTextStyles(masterXml, theme, masterMediaRels)
+      : undefined,
+    defaultTextStyle: presXml ? parseDefaultTextStyle(presXml, theme) : undefined,
+    layoutMediaRels: chain.layoutPath ? partMediaRels(archive, chain.layoutPath) : undefined,
+    masterMediaRels,
+    themeMediaRels: chain.themePath ? partMediaRels(archive, chain.themePath) : undefined,
+  }
 }
 
 /**
@@ -692,6 +1167,137 @@ export function editPictureSrcRect(
   }
   pic.dirtySrcRect = true
   return true
+}
+
+/**
+ * Change a shape's preset geometry ("Change Shape"): replace <a:prstGeom> (or
+ * <a:custGeom>) with the new preset and a fresh <a:avLst/>, keeping transform,
+ * fill, outline, and text. Byte surgery baked directly into originalXml.
+ */
+export function setShapePresetGeometry(slide: Slide, elementId: string, prst: string): boolean {
+  if (!isPresetShapeType(prst)) return false
+  const el = slide.elements.find((e) => e.id === elementId)
+  if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
+  const xml = swapGeometryXml(patchedElementXml(el), presetGeomXml(prst))
+  if (xml == null) return false
+  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+  el.dirtyPPr = undefined
+  el.anchor.originalXml = xml
+  const shape = el as TextElement
+  shape.presetGeometry = prst
+  delete shape.adjust
+  delete shape.customGeometry
+  slide.structureDirty = true
+  return true
+}
+
+/**
+ * Replace a shape's geometry with a freeform path ("Edit Points"): <a:prstGeom>
+ * or the previous <a:custGeom> becomes a single-path <a:custGeom> whose w/h are
+ * the path space (callers pass the element extents so points are EMU). The
+ * model's customGeometry is re-parsed from the written XML so the render matches
+ * a reopen byte for byte. Byte surgery baked directly into originalXml.
+ */
+export function setShapeCustomGeometry(
+  slide: Slide,
+  elementId: string,
+  geom: CustGeomPath,
+): boolean {
+  if (!validCustGeomPath(geom)) return false
+  const el = slide.elements.find((e) => e.id === elementId)
+  if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
+  const xml = swapGeometryXml(patchedElementXml(el), custGeomXml(geom))
+  if (xml == null) return false
+  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+  el.dirtyPPr = undefined
+  el.anchor.originalXml = xml
+  applyCustomGeometryModel(el as TextElement, xml)
+  slide.structureDirty = true
+  return true
+}
+
+function applyCustomGeometryModel(shape: TextElement, xml: string): void {
+  const { cx, cy } = shape.transform.offset
+  delete shape.presetGeometry
+  delete shape.adjust
+  delete shape.noGeometry
+  shape.customGeometry = parseCustGeom(xml, cx, cy)
+}
+
+/** Serialize adjust values as an <a:avLst> ("val" formulas only). */
+function avLstXml(adjust: Record<string, number>): string {
+  const gds = Object.entries(adjust)
+    .map(([n, v]) => `<a:gd name="${n}" fmla="val ${Math.round(v)}"/>`)
+    .join('')
+  return `<a:avLst>${gds}</a:avLst>`
+}
+
+/** Adjust maps must be non-empty, with safe names and finite values (they go straight into XML). */
+function validAdjust(adjust: Record<string, number>): boolean {
+  const entries = Object.entries(adjust)
+  return (
+    entries.length > 0 && entries.every(([n, v]) => /^[A-Za-z0-9]+$/.test(n) && Number.isFinite(v))
+  )
+}
+
+/** Replace the <a:avLst> inside <a:prstGeom> with the given adjust values; null without a prstGeom. */
+function swapAvLstXml(xml: string, adjust: Record<string, number>): string | null {
+  const open = /<a:prstGeom\b[^>]*?(\/?)>/.exec(xml)
+  if (!open) return null
+  const av = avLstXml(adjust)
+  if (open[1] === '/') {
+    const tag = open[0].slice(0, -2) + '>'
+    return (
+      xml.slice(0, open.index) + tag + av + '</a:prstGeom>' + xml.slice(open.index + open[0].length)
+    )
+  }
+  const end = xml.indexOf('</a:prstGeom>', open.index)
+  if (end < 0) return null
+  const innerStart = open.index + open[0].length
+  const inner = xml.slice(innerStart, end)
+  const avRe = /<a:avLst\b[^>]*\/>|<a:avLst\b[\s\S]*?<\/a:avLst>/
+  const newInner = avRe.test(inner) ? inner.replace(avRe, av) : av + inner
+  return xml.slice(0, innerStart) + newInner + xml.slice(end)
+}
+
+/**
+ * Set a shape's preset-geometry adjust values (the "yellow handle" edit):
+ * rewrite <a:avLst> inside <a:prstGeom>, keeping everything else. Byte surgery
+ * baked directly into originalXml (same contract as setShapePresetGeometry).
+ */
+export function setShapeAdjustValues(
+  slide: Slide,
+  elementId: string,
+  adjust: Record<string, number>,
+): boolean {
+  if (!validAdjust(adjust)) return false
+  const el = slide.elements.find((e) => e.id === elementId)
+  if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
+  const xml = swapAvLstXml(patchedElementXml(el), adjust)
+  if (xml == null) return false
+  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+  el.dirtyPPr = undefined
+  el.anchor.originalXml = xml
+  ;(el as TextElement).adjust = { ...adjust }
+  slide.structureDirty = true
+  return true
+}
+
+const presetGeomXml = (prst: string) => `<a:prstGeom prst="${prst}"><a:avLst/></a:prstGeom>`
+
+/** Replace <a:prstGeom>/<a:custGeom> in a shape's XML with the given geometry; null if no anchor point exists. */
+function swapGeometryXml(xml: string, geomXml: string): string | null {
+  const existing =
+    /<a:prstGeom\b[^>]*\/>|<a:prstGeom\b[\s\S]*?<\/a:prstGeom>|<a:custGeom\b[\s\S]*?<\/a:custGeom>/.exec(
+      xml,
+    )
+  if (existing)
+    return xml.slice(0, existing.index) + geomXml + xml.slice(existing.index + existing[0].length)
+  // No explicit geometry (bare text boxes): insert after </a:xfrm> inside spPr
+  const xfrmClose = /<\/a:xfrm>/.exec(xml)
+  if (!xfrmClose) return null
+  const at = xfrmClose.index + xfrmClose[0].length
+  return xml.slice(0, at) + geomXml + xml.slice(at)
 }
 
 /**
@@ -722,29 +1328,503 @@ export function setElementTextAnchor(
 }
 
 /**
- * Shape image fill: after landing the image in the package (media + rels), the
- * spPr fill node is replaced with a blipFill, byte surgery baked directly into
- * originalXml. Returns the mediaPath (for render-layer decoding), null on failure.
+ * Landing-time normalization for generated pages: the cloud html→pptx converter writes text
+ * boxes without any autofit child, which PowerPoint reads as "do not autofit" — typing past
+ * the frame overflows a box that never grows. Bare txBox bodies get spAutoFit, the default of
+ * a PowerPoint-inserted text box; explicit noAutofit/normAutofit and autoshapes are kept.
+ * Top-level elements only (mirrors the editor's autofit resize).
+ */
+export function autofitGeneratedTextBoxes(slide: Slide): number {
+  let count = 0
+  for (const el of slide.elements) {
+    if ((el.type !== 'text' && el.type !== 'shape') || !el.txBox || !el.text) continue
+    const body = /<a:bodyPr\b[^>]*?\/>|<a:bodyPr\b[^>]*>[\s\S]*?<\/a:bodyPr>/.exec(
+      patchedElementXml(el),
+    )
+    if (!body || /<a:(?:noAutofit|normAutofit|spAutoFit)\b/.test(body[0])) continue
+    if (setElementTextBodyProps(slide, el.id, { autofit: 'resize' })) count++
+  }
+  return count
+}
+
+/** Patch for setElementTextBodyProps; only the provided fields are written. */
+export interface TextBodyPropsPatch {
+  /** Text direction ('horz' clears the vert attribute) */
+  vert?: 'horz' | 'eaVert' | 'vert' | 'vert270' | 'wordArtVert'
+  /** Autofit mode (noAutofit / normAutofit / spAutoFit) */
+  autofit?: 'none' | 'shrink' | 'resize'
+  /** Internal margins (EMU); only the provided sides are written */
+  insets?: Partial<{ l: number; t: number; r: number; b: number }>
+  wrap?: boolean
+}
+
+/**
+ * Text-box body properties (direction/autofit/insets/wrap): <a:bodyPr> byte
+ * surgery baked into originalXml, mirroring setElementTextAnchor.
+ */
+export function setElementTextBodyProps(
+  slide: Slide,
+  elementId: string,
+  patch: TextBodyPropsPatch,
+): boolean {
+  const el = slide.elements.find((e) => e.id === elementId)
+  if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
+  const t = el as TextElement
+  if (!t.text) return false
+  let xml = patchedElementXml(el)
+  const whole = /<a:bodyPr\b[^>]*?\/>|<a:bodyPr\b[^>]*>[\s\S]*?<\/a:bodyPr>/.exec(xml)
+  if (!whole) return false
+  const bodyXml = whole[0]
+  const selfClosing = !bodyXml.includes('</a:bodyPr>')
+  let openTag = selfClosing
+    ? bodyXml.slice(0, -2).trimEnd() + '>'
+    : bodyXml.slice(0, bodyXml.indexOf('>') + 1)
+  let inner = selfClosing
+    ? ''
+    : bodyXml.slice(bodyXml.indexOf('>') + 1, bodyXml.lastIndexOf('</a:bodyPr>'))
+
+  const setAttr = (name: string, value: string | null) => {
+    openTag = openTag.replace(new RegExp(`\\s+${name}="[^"]*"`), '')
+    if (value != null) openTag = openTag.replace(/^<a:bodyPr/, `<a:bodyPr ${name}="${value}"`)
+  }
+
+  if (patch.vert !== undefined) setAttr('vert', patch.vert === 'horz' ? null : patch.vert)
+  if (patch.wrap !== undefined) setAttr('wrap', patch.wrap ? 'square' : 'none')
+  if (patch.insets) {
+    for (const side of ['l', 't', 'r', 'b'] as const) {
+      const v = patch.insets[side]
+      if (v != null) setAttr(`${side}Ins`, String(Math.max(0, Math.round(v))))
+    }
+  }
+  if (patch.autofit) {
+    inner = inner.replace(
+      /<a:(?:noAutofit|normAutofit|spAutoFit)\b[^>]*?\/>|<a:(?:noAutofit|normAutofit|spAutoFit)\b[^>]*>[\s\S]*?<\/a:(?:noAutofit|normAutofit|spAutoFit)>/,
+      '',
+    )
+    const child =
+      patch.autofit === 'none'
+        ? '<a:noAutofit/>'
+        : patch.autofit === 'shrink'
+          ? '<a:normAutofit/>'
+          : '<a:spAutoFit/>'
+    // schema order: the autofit choice sits after <a:prstTxWarp> when present, else first
+    const warp = /<a:prstTxWarp\b(?:[^>]*?\/>|[\s\S]*?<\/a:prstTxWarp>)/.exec(inner)
+    const at = warp ? warp.index + warp[0].length : 0
+    inner = inner.slice(0, at) + child + inner.slice(at)
+  }
+
+  const rebuilt = inner ? `${openTag}${inner}</a:bodyPr>` : `${openTag.slice(0, -1).trimEnd()}/>`
+  xml = xml.slice(0, whole.index) + rebuilt + xml.slice(whole.index + bodyXml.length)
+  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+  el.dirtyPPr = undefined
+  el.anchor.originalXml = xml
+  // Mirror into the parsed model so re-renders see the new values without a reparse
+  if (patch.vert !== undefined) {
+    if (patch.vert === 'horz') delete t.text.vert
+    else t.text.vert = patch.vert
+  }
+  if (patch.wrap !== undefined) t.text.wrap = patch.wrap
+  if (patch.insets) {
+    const base = { l: 91440, t: 45720, r: 91440, b: 45720, ...(t.text.insets ?? {}) }
+    if (patch.insets.l != null) base.l = Math.max(0, Math.round(patch.insets.l))
+    if (patch.insets.t != null) base.t = Math.max(0, Math.round(patch.insets.t))
+    if (patch.insets.r != null) base.r = Math.max(0, Math.round(patch.insets.r))
+    if (patch.insets.b != null) base.b = Math.max(0, Math.round(patch.insets.b))
+    t.text.insets = base
+  }
+  if (patch.autofit) {
+    t.text.autofit = patch.autofit
+    if (patch.autofit !== 'shrink') {
+      delete t.text.fontScale
+      delete t.text.lnSpcReduction
+    }
+  }
+  slide.structureDirty = true
+  return true
+}
+
+/** Patch for setElementEffects; null clears an effect, undefined leaves it untouched. */
+export interface EffectsPatch {
+  /** Shadow (<a:outerShdw>, or <a:innerShdw> when inner); color may carry alpha as #RRGGBBAA.
+   * sx/sy/kxDeg/kyDeg/algn are the outer perspective attributes (scale fraction / skew degrees). */
+  shadow?: {
+    color: string
+    blurRad: number
+    dist: number
+    dirDeg: number
+    inner?: boolean
+    sx?: number
+    sy?: number
+    kxDeg?: number
+    kyDeg?: number
+    algn?: string
+  } | null
+  /** Glow (<a:glow>); radius in EMU */
+  glow?: { color: string; radius: number } | null
+  /** Reflection (<a:reflection>): startA/endPos as 0..1 fractions, blurRad/dist in EMU */
+  reflection?: { blurRad: number; startA: number; endPos: number; dist: number } | null
+  /** Soft-edge feather radius (<a:softEdge rad>, EMU); the renderer honors it on pictures */
+  softEdge?: number | null
+}
+
+/** #RRGGBB / #RRGGBBAA → <a:srgbClr> (alpha channel becomes an <a:alpha> child in 1000ths of a percent). */
+function effectColorXml(hex: string): string {
+  const m = /^#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$/.exec(hex)
+  const val = (m?.[1] ?? '000000').toUpperCase()
+  const alpha = m?.[2] != null ? Math.round((parseInt(m[2], 16) / 255) * 100000) : 100000
+  return alpha < 100000
+    ? `<a:srgbClr val="${val}"><a:alpha val="${alpha}"/></a:srgbClr>`
+    : `<a:srgbClr val="${val}"/>`
+}
+
+/** ECMA-376 effectLst child order (children must be re-emitted in schema order). */
+const EFFECT_ORDER = [
+  'blur',
+  'fillOverlay',
+  'glow',
+  'innerShdw',
+  'outerShdw',
+  'prstShdw',
+  'reflection',
+  'softEdge',
+]
+
+/**
+ * Shape/picture effects (shadow / glow / soft edge): <a:effectLst> byte surgery inside
+ * the element's <p:spPr>, mirroring setElementTextBodyProps. Untouched effectLst children
+ * (fillOverlay, reflection, ...) are preserved and the list is re-emitted in schema order;
+ * an emptied effectLst is removed entirely.
+ */
+export function setElementEffects(slide: Slide, elementId: string, patch: EffectsPatch): boolean {
+  const el = slide.elements.find((e) => e.id === elementId)
+  if (!el || (el.type !== 'text' && el.type !== 'shape' && el.type !== 'picture')) return false
+  let xml = patchedElementXml(el)
+  const spPrM = /<p:spPr\b[^>]*>[\s\S]*?<\/p:spPr>/.exec(xml)
+  if (!spPrM) return false
+  let spPr = spPrM[0]
+
+  // Existing children (whole-element matches), keyed by local name
+  const children = new Map<string, string>()
+  // spPr's OWN children: a:ln / a:blip may carry an effectLst/extLst of their own
+  const spPrInnerStart = spPr.indexOf('>') + 1
+  const spPrInnerEnd = spPr.lastIndexOf('</p:spPr>')
+  const direct = topLevelChildren(spPr, spPrInnerStart, spPrInnerEnd)
+  const lst = direct.find((c) => c.name === 'a:effectLst')
+  const lstInner = lst
+    ? /^<a:effectLst\b[^>]*>([\s\S]*)<\/a:effectLst>$/.exec(spPr.slice(lst.start, lst.end))?.[1]
+    : undefined
+  if (lstInner) {
+    const childRe = /<a:(\w+)\b(?:[^>]*?\/>|[^>]*>[\s\S]*?<\/a:\1>)/g
+    for (let m = childRe.exec(lstInner); m; m = childRe.exec(lstInner)) children.set(m[1]!, m[0])
+  }
+
+  if (patch.shadow !== undefined) {
+    children.delete('outerShdw')
+    children.delete('innerShdw')
+    if (patch.shadow !== null) {
+      const s = patch.shadow
+      const base = [
+        s.blurRad ? ` blurRad="${Math.max(0, Math.round(s.blurRad))}"` : '',
+        s.dist ? ` dist="${Math.max(0, Math.round(s.dist))}"` : '',
+        ` dir="${Math.round((((s.dirDeg % 360) + 360) % 360) * 60000)}"`,
+      ].join('')
+      if (s.inner) {
+        children.set('innerShdw', `<a:innerShdw${base}>${effectColorXml(s.color)}</a:innerShdw>`)
+      } else {
+        // CT_OuterShadowEffect attribute order: blurRad dist dir sx sy kx ky algn rotWithShape
+        const persp = [
+          s.sx != null && s.sx !== 1 ? ` sx="${Math.round(s.sx * 100000)}"` : '',
+          s.sy != null && s.sy !== 1 ? ` sy="${Math.round(s.sy * 100000)}"` : '',
+          s.kxDeg ? ` kx="${Math.round(s.kxDeg * 60000)}"` : '',
+          s.kyDeg ? ` ky="${Math.round(s.kyDeg * 60000)}"` : '',
+          s.algn ? ` algn="${s.algn}"` : '',
+        ].join('')
+        children.set(
+          'outerShdw',
+          `<a:outerShdw${base}${persp} rotWithShape="0">${effectColorXml(s.color)}</a:outerShdw>`,
+        )
+      }
+    }
+  }
+  if (patch.glow !== undefined) {
+    if (patch.glow === null) children.delete('glow')
+    else {
+      const rad = Math.max(0, Math.round(patch.glow.radius))
+      children.set('glow', `<a:glow rad="${rad}">${effectColorXml(patch.glow.color)}</a:glow>`)
+    }
+  }
+  if (patch.reflection !== undefined) {
+    if (patch.reflection === null) children.delete('reflection')
+    else {
+      const r = patch.reflection
+      // CT_ReflectionEffect attr order: blurRad stA … endA endPos dist dir … sy … algn rotWithShape.
+      // sy=-100% is the vertical flip; endA=0.3% matches PowerPoint's presets.
+      const attrs = [
+        r.blurRad ? ` blurRad="${Math.max(0, Math.round(r.blurRad))}"` : '',
+        ` stA="${Math.max(0, Math.min(100000, Math.round(r.startA * 100000)))}"`,
+        ' endA="300"',
+        ` endPos="${Math.max(0, Math.min(100000, Math.round(r.endPos * 100000)))}"`,
+        r.dist ? ` dist="${Math.max(0, Math.round(r.dist))}"` : '',
+        ' dir="5400000" sy="-100000" algn="bl" rotWithShape="0"',
+      ].join('')
+      children.set('reflection', `<a:reflection${attrs}/>`)
+    }
+  }
+  if (patch.softEdge !== undefined) {
+    if (patch.softEdge === null) children.delete('softEdge')
+    else children.set('softEdge', `<a:softEdge rad="${Math.max(0, Math.round(patch.softEdge))}"/>`)
+  }
+
+  const inner = [...children.entries()]
+    .sort(
+      (a, b) =>
+        (EFFECT_ORDER.indexOf(a[0]) + 1 || EFFECT_ORDER.length + 1) -
+        (EFFECT_ORDER.indexOf(b[0]) + 1 || EFFECT_ORDER.length + 1),
+    )
+    .map(([, frag]) => frag)
+    .join('')
+  const rebuilt = inner ? `<a:effectLst>${inner}</a:effectLst>` : ''
+  if (lst) {
+    spPr = spPr.slice(0, lst.start) + rebuilt + spPr.slice(lst.end)
+  } else if (rebuilt) {
+    // schema order: effectLst sits after ln, before scene3d/sp3d/extLst
+    const anchor = direct.find(
+      (c) => c.name === 'a:scene3d' || c.name === 'a:sp3d' || c.name === 'a:extLst',
+    )
+    const at = anchor ? anchor.start : spPrInnerEnd
+    spPr = spPr.slice(0, at) + rebuilt + spPr.slice(at)
+  }
+  xml = xml.slice(0, spPrM.index) + spPr + xml.slice(spPrM.index + spPrM[0].length)
+  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+  el.dirtyPPr = undefined
+  el.anchor.originalXml = xml
+
+  // Mirror into the parsed model so re-renders see the new values without a reparse
+  const eff = el as {
+    shadow?: ShadowEffect
+    glow?: GlowEffect
+    reflection?: ReflectionEffect
+    softEdge?: number
+  }
+  if (patch.shadow !== undefined) {
+    if (patch.shadow === null) delete eff.shadow
+    else {
+      const s = patch.shadow
+      eff.shadow = {
+        color: s.color,
+        blurRad: Math.max(0, Math.round(s.blurRad)),
+        dist: Math.max(0, Math.round(s.dist)),
+        dirDeg: ((s.dirDeg % 360) + 360) % 360,
+        ...(s.inner ? { inner: true } : {}),
+        ...(s.sx != null && s.sx !== 1 && !s.inner ? { sx: s.sx } : {}),
+        ...(s.sy != null && s.sy !== 1 && !s.inner ? { sy: s.sy } : {}),
+        ...(s.kxDeg && !s.inner ? { kxDeg: s.kxDeg } : {}),
+        ...(s.kyDeg && !s.inner ? { kyDeg: s.kyDeg } : {}),
+        ...(s.algn && !s.inner ? { algn: s.algn } : {}),
+      }
+    }
+  }
+  if (patch.glow !== undefined) {
+    if (patch.glow === null) delete eff.glow
+    else eff.glow = { color: patch.glow.color, radius: Math.max(0, Math.round(patch.glow.radius)) }
+  }
+  if (patch.reflection !== undefined) {
+    if (patch.reflection === null) delete eff.reflection
+    else {
+      eff.reflection = {
+        blurRad: Math.max(0, Math.round(patch.reflection.blurRad)),
+        startA: Math.max(0, Math.min(1, patch.reflection.startA)),
+        endPos: Math.max(0, Math.min(1, patch.reflection.endPos)),
+        dist: Math.max(0, Math.round(patch.reflection.dist)),
+      }
+    }
+  }
+  if (patch.softEdge !== undefined) {
+    if (patch.softEdge === null) delete eff.softEdge
+    else eff.softEdge = Math.max(0, Math.round(patch.softEdge))
+  }
+  slide.structureDirty = true
+  return true
+}
+
+/**
+ * Shape fill (top-level or one-level group child). The XML patch is baked into
+ * the owning fragment so a dropped picture fill can immediately release its
+ * obsolete relationship and unshared media.
+ */
+export function setElementFill(
+  opened: OpenedPptx,
+  slide: Slide,
+  elementId: string,
+  fill: string | GradientFillPatch,
+  opts: { groupId?: string } = {},
+): boolean {
+  let grp: GroupElement | undefined
+  let child: SlideElement | undefined
+  let el: SlideElement | undefined
+  if (opts.groupId) {
+    const found = findGroupChild(slide, opts.groupId, elementId)
+    if (
+      !found ||
+      (found.child.type !== 'text' && found.child.type !== 'shape') ||
+      !found.child.nvId
+    )
+      return false
+    ;({ grp, child } = found)
+  } else {
+    el = slide.elements.find((candidate) => candidate.id === elementId)
+    if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
+  }
+
+  const model =
+    typeof fill === 'string'
+      ? fill === 'none'
+        ? { type: 'none' as const }
+        : { type: 'solid' as const, color: fill }
+      : (() => {
+          const path = fill.path ?? (fill.radial ? ('circle' as const) : undefined)
+          return {
+            type: 'gradient' as const,
+            stops: fill.stops,
+            ...(fill.angle != null ? { angle: fill.angle } : {}),
+            ...(path ? { path } : {}),
+            ...(path && fill.fillTo ? { fillTo: fill.fillTo } : {}),
+          }
+        })()
+  const previousXml = patchSlideXml(slide)
+  if (grp && child) {
+    if (!patchGroupChildXml(grp, child, (xml) => patchElementFill(xml, fill))) return false
+    ;(child as TextElement).fill = model
+  } else if (el) {
+    el.anchor.originalXml = patchAnchorXml(
+      el,
+      patchedElementXml(el),
+      (x) => patchElementFill(x, fill),
+      true,
+    )
+    ;(el as TextElement).fill = model
+    el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+    el.dirtyPPr = undefined
+  }
+  slide.structureDirty = true
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
+  return true
+}
+
+/**
+ * Shape picture/texture fill (top-level or one-level group child): lands the
+ * image in the package (media + rels), or reuses an already-landed media path
+ * (applying one pick to many shapes only adds rels), then replaces the spPr
+ * fill node with a blipFill, byte surgery baked directly into originalXml.
+ * tile repeats the image at natural size (texture), stretch maps it onto the
+ * bounds. Returns the mediaPath (render-layer decoding / reuse), null on failure.
  */
 export function setElementImageFill(
   opened: OpenedPptx,
   slide: Slide,
   elementId: string,
-  bytes: Uint8Array,
-  ext: string,
+  source: { bytes: Uint8Array; ext: string } | { mediaPath: string },
+  opts: { tile?: boolean; groupId?: string } = {},
 ): string | null {
-  const el = slide.elements.find((e) => e.id === elementId)
-  if (!el || (el.type !== 'text' && el.type !== 'shape')) return null
-  const added = addImageMediaAndRel(opened, slide, bytes, ext)
-  if (!added) return null
-  const rawFillXml = `<a:blipFill rotWithShape="1"><a:blip r:embed="${added.rid}"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>`
-  const xml = patchElementFill(patchedElementXml(el), { rawFillXml })
-  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
-  el.dirtyPPr = undefined
-  el.anchor.originalXml = xml
-  ;(el as TextElement).fill = { type: 'image', mediaRef: added.mediaPath, mode: 'stretch' }
+  // Resolve the target before touching the package: a failed lookup must not
+  // leave an orphaned media part behind (multi-target fills would grow the
+  // archive on every failed attempt).
+  let grp: GroupElement | undefined
+  let child: SlideElement | undefined
+  let el: SlideElement | undefined
+  if (opts.groupId) {
+    const found = findGroupChild(slide, opts.groupId, elementId)
+    if (
+      !found ||
+      (found.child.type !== 'text' && found.child.type !== 'shape') ||
+      !found.child.nvId
+    )
+      return null
+    ;({ grp, child } = found)
+  } else {
+    el = slide.elements.find((e) => e.id === elementId)
+    if (!el || (el.type !== 'text' && el.type !== 'shape')) return null
+  }
+  const previousXml = patchSlideXml(slide)
+  let rid: string
+  let mediaPath: string
+  if ('bytes' in source) {
+    const added = addImageMediaAndRel(opened, slide, source.bytes, source.ext)
+    if (!added) return null
+    ;({ rid, mediaPath } = added)
+  } else {
+    mediaPath = source.mediaPath
+    if (!opened.archive.entries.has(mediaPath)) return null
+    const existing = imageRelFor(opened.archive, slide, mediaPath)
+    if (!existing) return null
+    rid = existing
+  }
+  const rawFillXml =
+    `<a:blipFill rotWithShape="1"><a:blip r:embed="${rid}"/>` +
+    (opts.tile
+      ? '<a:tile tx="0" ty="0" sx="100000" sy="100000" flip="none" algn="tl"/>'
+      : '<a:stretch><a:fillRect/></a:stretch>') +
+    '</a:blipFill>'
+  const model = {
+    type: 'image' as const,
+    mediaRef: mediaPath,
+    mode: opts.tile ? ('tile' as const) : ('stretch' as const),
+    // mirror what parse restores from the <a:tile> node, so the pre-save
+    // render already tiles at the natural (zoom-scaled) size
+    ...(opts.tile ? { tile: { tx: 0, ty: 0, sx: 1, sy: 1, algn: 'tl' } } : {}),
+  }
+  if (grp && child) {
+    if (!patchGroupChildXml(grp, child, (xml) => patchElementFill(xml, { rawFillXml }))) return null
+    ;(child as TextElement).fill = model
+  } else if (el) {
+    const xml = patchAnchorXml(
+      el,
+      patchedElementXml(el),
+      (x) => patchElementFill(x, { rawFillXml }),
+      true,
+    )
+    el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+    el.dirtyPPr = undefined
+    el.anchor.originalXml = xml
+    ;(el as TextElement).fill = model
+  }
   slide.structureDirty = true
-  return added.mediaPath
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
+  return mediaPath
+}
+
+/**
+ * Withhold a picture, video or audio shape from the model, or stop withholding it
+ * (`label` null/empty clears). A `label` puts `go:redact` in the element's
+ * `<a:spPr><a:extLst>` — the one extension slot a picture has, since `p:nvPicPr`
+ * admits only `cNvPr` + `cNvPicPr` and `cNvPr` takes attributes alone, which the
+ * reader's own alt text already uses.
+ *
+ * The words of a *text* element are withheld through `TextRun.redact` on the edit
+ * path instead, because a run is a finer unit than an element and the text-edit
+ * pipeline already carries run attributes.
+ *
+ * Byte surgery on `originalXml` with no separate dirty flag, exactly as
+ * `setPictureOpacity` does for `a:alphaModFix`: a picture's shape properties are
+ * never regenerated from the model, so this is the only place the mark can live.
+ */
+export function setElementRedaction(slide: Slide, sourceId: string, label: string | null): boolean {
+  const el = slide.elements.find((e) => e.id === sourceId && e.type === 'picture')
+  if (!el) return false
+  const pic = el as import('./types').PictureElement
+  const clean = (label ?? '').trim()
+  const next = clean
+    ? syncRedactExt(patchedElementXml(el), 'p:spPr', clean)
+    : stripRedactExt(patchedElementXml(el))
+  if (next === patchedElementXml(el)) return false
+  if (clean) pic.redact = clean
+  else delete pic.redact
+  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+  el.dirtySrcRect = false
+  el.dirtyPPr = undefined
+  el.anchor.originalXml = next
+  slide.structureDirty = true
+  return true
 }
 
 /**
@@ -801,9 +1881,11 @@ export function replacePictureBytes(
   let xml = patchedElementXml(el)
   const blip = /<a:blip\b[^>]*\/?>/.exec(xml)
   if (!blip) return false
+  const previousXml = patchSlideXml(slide)
   const added = addImageMediaAndRel(opened, slide, bytes, ext)
   if (!added) return false
   let tag = blip[0]
+  const previousRId = /r:embed="([^"]*)"/.exec(tag)?.[1]
   // A coexisting r:link ("insert and link" pictures) would keep refreshing from
   // the old external file, so it is dropped once the embed points at new bytes
   if (/r:embed="/.test(tag))
@@ -811,6 +1893,13 @@ export function replacePictureBytes(
   else if (/r:link="/.test(tag)) tag = tag.replace(/r:link="[^"]*"/, `r:embed="${added.rid}"`)
   else tag = tag.replace(/<a:blip\b/, `<a:blip r:embed="${added.rid}"`)
   xml = xml.slice(0, blip.index) + tag + xml.slice(blip.index + blip[0].length)
+  // A 3D model's Choice caches the same rendering (am3d:raster), which PowerPoint shows
+  if (pic.model3d && previousRId) {
+    xml = xml.replace(
+      new RegExp(`(<am3d:blip\\b[^>]*\\br:embed=")${previousRId}"`),
+      `$1${added.rid}"`,
+    )
+  }
   // The replacement is always raster (IMAGE_MIME gate), and PowerPoint prefers a
   // leftover Office-2016 <asvg:svgBlip> extension over the retargeted r:embed —
   // drop that extension entry (and its wrapper when nothing else remains)
@@ -828,6 +1917,7 @@ export function replacePictureBytes(
   el.dirtyPPr = undefined
   el.anchor.originalXml = xml
   slide.structureDirty = true
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
   return true
 }
 
@@ -861,7 +1951,13 @@ function registerNewSlide(opened: OpenedPptx, sourceIndex: number, newPath: stri
   const ct = archive.readText(ctPath)
   if (ct) {
     const override = `<Override PartName="/${newPath}" ContentType="${SLIDE_CONTENT_TYPE}"/>`
-    archive.entries.set(ctPath, Buffer.from(ct.replace('</Types>', `${override}</Types>`), 'utf8'))
+    archive.entries.set(
+      ctPath,
+      Buffer.from(
+        ct.replace('</Types>', () => `${override}</Types>`),
+        'utf8',
+      ),
+    )
   }
 
   const presRelsPath = 'ppt/_rels/presentation.xml.rels'
@@ -869,20 +1965,18 @@ function registerNewSlide(opened: OpenedPptx, sourceIndex: number, newPath: stri
   const presPath = 'ppt/presentation.xml'
   const pres = archive.readText(presPath)
   if (!presRels || !pres) return null
-  let maxRid = 0
-  for (const m of presRels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  const maxRid = maxRelationshipIdNumber(presRels)
   const newRid = `rId${maxRid + 1}`
   const relXml = `<Relationship Id="${newRid}" Type="${SLIDE_REL_TYPE}" Target="${newPath.slice('ppt/'.length)}"/>`
   archive.entries.set(
     presRelsPath,
-    Buffer.from(presRels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'),
+    Buffer.from(
+      presRels.replace('</Relationships>', () => `${relXml}</Relationships>`),
+      'utf8',
+    ),
   )
 
-  let maxSldId = 255
-  for (const m of pres.matchAll(/<p:sldId\s[^>]*\bid="(\d+)"/g)) {
-    maxSldId = Math.max(maxSldId, Number(m[1]))
-  }
-  const newSldId = `<p:sldId id="${maxSldId + 1}" r:id="${newRid}"/>`
+  const newSldId = `<p:sldId id="${nextSlideId(pres)}" r:id="${newRid}"/>`
   // Insert after the source slide's sldId; append to the end of the list when not found
   const srcRid = [...archive.readRels(presPath).values()].find(
     (r) => resolveTarget(presPath, r.target) === src.path,
@@ -891,8 +1985,8 @@ function registerNewSlide(opened: OpenedPptx, sourceIndex: number, newPath: stri
     ? new RegExp(`<p:sldId\\s[^>]*r:id="${srcRid}"[^>]*/>`).exec(pres)?.[0]
     : undefined
   const nextPres = srcTag
-    ? pres.replace(srcTag, `${srcTag}${newSldId}`)
-    : pres.replace('</p:sldIdLst>', `${newSldId}</p:sldIdLst>`)
+    ? pres.replace(srcTag, () => `${srcTag}${newSldId}`)
+    : pres.replace('</p:sldIdLst>', () => `${newSldId}</p:sldIdLst>`)
   archive.entries.set(presPath, Buffer.from(nextPres, 'utf8'))
 
   const slide = parseSlideFromArchive(archive, newPath)
@@ -1036,10 +2130,18 @@ function ensureDefaultContentType(archive: PackageArchive, ext: string, contentT
   const ct = archive.readText(ctPath)
   if (!ct) return
   if (new RegExp(`<Default\\s[^>]*Extension="${ext}"`, 'i').test(ct)) return
-  // Insert the Default after the root <Types …> open tag (after the first >)
+  // Insert before </Types>. indexOf('>') finds the XML declaration's closing
+  // angle bracket first, so splicing there would put the Default between the
+  // declaration and <Types> — outside the root element — and every OPC reader
+  // would then reject the package (genoffice#1518).
   const def = `<Default Extension="${ext}" ContentType="${contentType}"/>`
-  const at = ct.indexOf('>') + 1
-  archive.entries.set(ctPath, Buffer.from(ct.slice(0, at) + def + ct.slice(at), 'utf8'))
+  archive.entries.set(
+    ctPath,
+    Buffer.from(
+      ct.replace('</Types>', () => `${def}</Types>`),
+      'utf8',
+    ),
+  )
 }
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -1073,19 +2175,74 @@ const MIME_BY_EXT: Record<string, string> = {
 export async function mergeSlideFromPptx(
   target: OpenedPptx,
   sourceBytes: Uint8Array,
+  opts: MergeSlideOptions = {},
 ): Promise<Slide | null> {
-  const { deck, archive } = target
+  const source = await extractMergeSlideSource(sourceBytes)
+  return source ? mergeSlideFromSource(target, source, opts) : null
+}
+
+export interface MergeSlideOptions {
+  /** Target slide whose layout the merged slide takes (default: the last slide) */
+  layoutFrom?: Slide
+}
+
+/**
+ * A single-slide pptx reduced to the plain data the merge needs: slide XML, its
+ * relationships, referenced media bytes, and the source layout chain for the
+ * empty-deck fallback. Fully serializable, so ops and journals can carry it.
+ */
+export interface MergeSlideSource {
+  srcSlidePath: string
+  slideXml: string
+  rels: Relationship[]
+  /** Referenced media bytes keyed by their resolved source path */
+  media: Array<{ path: string; bytes: Uint8Array }>
+  /** Source layout→master→theme chain parts (used only when the target has no layout) */
+  layoutChain: Array<{ path: string; bytes: Uint8Array; rels?: Uint8Array }>
+}
+
+/** Async half of the merge: unzip the source and extract everything the sync half needs. Pure read. */
+export async function extractMergeSlideSource(
+  sourceBytes: Uint8Array,
+): Promise<MergeSlideSource | null> {
   const src = await PackageArchive.open(sourceBytes)
   const { slidePaths } = src.readPresentation()
   const srcSlidePath = slidePaths[0]
   if (!srcSlidePath) return null
-
-  let slideXml = src.readText(srcSlidePath)
+  const slideXml = src.readText(srcSlidePath)
   if (slideXml == null) return null
-  const srcRels = src.readRels(srcSlidePath)
+  const rels = [...src.readRels(srcSlidePath).values()]
+  const media: MergeSlideSource['media'] = []
+  for (const rel of rels) {
+    if (!MEDIA_REL_SUFFIXES.some((s) => rel.type.endsWith(s))) continue
+    const path = resolveTarget(srcSlidePath, rel.target)
+    const bytes = src.readBytes(path)
+    if (bytes) media.push({ path, bytes })
+  }
+  const layoutChain: MergeSlideSource['layoutChain'] = []
+  const chain = src.resolveSlideChain(srcSlidePath)
+  for (const p of [chain.layoutPath, chain.masterPath, chain.themePath]) {
+    if (!p) continue
+    const bytes = src.readBytes(p)
+    if (!bytes) continue
+    const relsBytes = src.readBytes(relsPathFor(p))
+    layoutChain.push({ path: p, bytes, ...(relsBytes ? { rels: relsBytes } : {}) })
+  }
+  return { srcSlidePath, slideXml, rels, media, layoutChain }
+}
 
-  // Relative Target of any existing target slide's slideLayout (the appended slide reuses the same layout)
-  const anchorSlide = deck.slides[deck.slides.length - 1]
+/** Sync half of the merge: land an extracted source into the target deck (appended at the end). */
+export function mergeSlideFromSource(
+  target: OpenedPptx,
+  source: MergeSlideSource,
+  opts: MergeSlideOptions = {},
+): Slide | null {
+  const { deck, archive } = target
+  let slideXml = source.slideXml
+  const mediaByPath = new Map(source.media.map((m) => [m.path, m.bytes]))
+
+  // Relative Target of an existing target slide's slideLayout (the appended slide reuses the same layout)
+  const anchorSlide = opts.layoutFrom ?? deck.slides[deck.slides.length - 1]
   const layoutTarget = anchorSlide
     ? [...archive.readRels(anchorSlide.path).values()].find((r) => r.type.endsWith('/slideLayout'))
         ?.target
@@ -1096,11 +2253,11 @@ export async function mergeSlideFromPptx(
   let ridSeq = 0
   const nextRid = () => `rId${++ridSeq}`
 
-  for (const rel of srcRels.values()) {
+  for (const rel of source.rels) {
     if (MEDIA_REL_SUFFIXES.some((s) => rel.type.endsWith(s))) {
       // Media: move source bytes into the target, assign a non-conflicting path, remap the rId
-      const srcMediaPath = resolveTarget(srcSlidePath, rel.target)
-      const bytes = src.readBytes(srcMediaPath)
+      const srcMediaPath = resolveTarget(source.srcSlidePath, rel.target)
+      const bytes = mediaByPath.get(srcMediaPath)
       if (!bytes) continue
       const ext = (srcMediaPath.split('.').pop() || 'png').toLowerCase()
       const destPath = nextMediaPath(archive, ext)
@@ -1125,7 +2282,7 @@ export async function mergeSlideFromPptx(
         `<Relationship Id="${nextRid()}" Type="${LAYOUT_REL_TYPE}" Target="${escapeXmlAttr(t)}"/>`,
       )
       // With no target layout (rare: empty deck), move the source's whole layout→master→theme chain over
-      if (!layoutTarget) importLayoutChain(src, archive, srcSlidePath)
+      if (!layoutTarget) importLayoutChain(archive, source)
     }
     // notesSlide and others (e.g. comments) are dropped
   }
@@ -1144,19 +2301,11 @@ export async function mergeSlideFromPptx(
 }
 
 /** Starting from an empty deck: move the source single slide's layout→master→theme chain into the target verbatim (rare branch). */
-function importLayoutChain(
-  src: PackageArchive,
-  archive: PackageArchive,
-  srcSlidePath: string,
-): void {
-  const chain = src.resolveSlideChain(srcSlidePath)
-  for (const p of [chain.layoutPath, chain.masterPath, chain.themePath]) {
-    if (!p) continue
-    const b = src.readBytes(p)
-    if (b && !archive.has(p)) archive.entries.set(p, b)
-    const rp = relsPathFor(p)
-    const rb = src.readBytes(rp)
-    if (rb && !archive.has(rp)) archive.entries.set(rp, rb)
+function importLayoutChain(archive: PackageArchive, source: MergeSlideSource): void {
+  for (const part of source.layoutChain) {
+    if (!archive.has(part.path)) archive.entries.set(part.path, part.bytes)
+    const rp = relsPathFor(part.path)
+    if (part.rels && !archive.has(rp)) archive.entries.set(rp, part.rels)
   }
 }
 
@@ -1200,25 +2349,15 @@ export function deleteSlide(opened: OpenedPptx, index: number): boolean {
   )?.id
   if (!rid) return false
 
-  const sldTag = new RegExp(`<p:sldId\\s[^>]*r:id="${rid}"[^>]*/>`).exec(pres)?.[0]
+  const sldTag = new RegExp(`<p:sldId\\s[^>]*r:id=["']${rid}["'][^>]*/>`).exec(pres)?.[0]
   if (!sldTag) return false
   archive.entries.set(presPath, Buffer.from(pres.replace(sldTag, ''), 'utf8'))
-  const relTag = new RegExp(`<Relationship\\s[^>]*Id="${rid}"[^>]*/>`).exec(presRels)?.[0]
+  const relTag = new RegExp(`<Relationship\\s[^>]*Id=["']${rid}["'][^>]*/>`).exec(presRels)?.[0]
   if (relTag) {
     archive.entries.set(presRelsPath, Buffer.from(presRels.replace(relTag, ''), 'utf8'))
   }
 
-  const ctPath = '[Content_Types].xml'
-  const ct = archive.readText(ctPath)
-  if (ct) {
-    const override = new RegExp(
-      `<Override PartName="/${slide.path.replace(/[.\\/]/g, '\\$&')}"[^>]*/>`,
-    ).exec(ct)?.[0]
-    if (override) archive.entries.set(ctPath, Buffer.from(ct.replace(override, ''), 'utf8'))
-  }
-
-  archive.entries.delete(slide.path)
-  archive.entries.delete(relsPathFor(slide.path))
+  removePartWithOwnedResources(archive, slide.path)
   deck.slides.splice(index, 1)
   return true
 }
@@ -1260,27 +2399,60 @@ export function materializeSlide(opened: OpenedPptx, slideIndex: number): Slide 
   archive.entries.set(slide.path, Buffer.from(patchSlideXml(slide), 'utf8'))
   const fresh = parseSlideFromArchive(archive, slide.path)
   if (!fresh) return null
+  // a reparse is not a save: the edits it baked into the XML are still unsaved
+  if (slideIsDirty(slide)) fresh.structureDirty = true
   deck.slides[slideIndex] = fresh
   return fresh
 }
 
 // ── Connector move-following ────────────────────────────────────────────
 
-/** Connection point index → shape edge midpoint (rectangle approximation: 0 top 1 left 2 bottom 3 right, else center). */
-function connectionPoint(t: Transform, idx: number): { x: number; y: number } {
-  const o = t.offset
-  switch (idx) {
-    case 0:
-      return { x: o.x + o.cx / 2, y: o.y }
-    case 1:
-      return { x: o.x, y: o.y + o.cy / 2 }
-    case 2:
-      return { x: o.x + o.cx / 2, y: o.y + o.cy }
-    case 3:
-      return { x: o.x + o.cx, y: o.y + o.cy / 2 }
-    default:
-      return { x: o.x + o.cx / 2, y: o.y + o.cy / 2 }
+export type ConnectionSide = 'top' | 'left' | 'bottom' | 'right'
+
+// presetShapeDefinitions cxnLst order: most presets list the four edge
+// midpoints as top/left/bottom/right; the ellipse interleaves four diagonal
+// sites, so its edge midpoints sit at even indexes
+const ELLIPSE_SIDES: Record<ConnectionSide, number> = { top: 0, left: 2, bottom: 4, right: 6 }
+const RECT_SIDES: Record<ConnectionSide, number> = { top: 0, left: 1, bottom: 2, right: 3 }
+
+/** Connection-site index of a shape edge midpoint for the element's preset geometry. */
+export function connectionSiteForSide(el: SlideElement, side: ConnectionSide): number {
+  const prst = el.type === 'shape' || el.type === 'picture' ? el.presetGeometry : undefined
+  return (prst === 'ellipse' ? ELLIPSE_SIDES : RECT_SIDES)[side]
+}
+
+/** Connection site index → unit-box point (edge sites of the preset geometry, else center). */
+function connectionSiteLocal(el: SlideElement, idx: number): { u: number; v: number } {
+  const prst = el.type === 'shape' || el.type === 'picture' ? el.presetGeometry : undefined
+  const sides = prst === 'ellipse' ? ELLIPSE_SIDES : RECT_SIDES
+  if (idx === sides.top) return { u: 0.5, v: 0 }
+  if (idx === sides.left) return { u: 0, v: 0.5 }
+  if (idx === sides.bottom) return { u: 0.5, v: 1 }
+  if (idx === sides.right) return { u: 1, v: 0.5 }
+  if (prst === 'ellipse' && idx >= 1 && idx <= 7) {
+    // odd ellipse sites are the 45-degree points: inset (1 - 1/sqrt2)/2 of each extent
+    const k = 0.1464
+    const left = idx === 1 || idx === 3
+    const top = idx === 1 || idx === 7
+    return { u: left ? k : 1 - k, v: top ? k : 1 - k }
   }
+  return { u: 0.5, v: 0.5 }
+}
+
+/** Connection point in slide space: site mirrored by the shape flips, then rotated about the box centre. */
+function connectionPoint(el: SlideElement, idx: number): { x: number; y: number } {
+  const t = el.transform
+  const o = t.offset
+  const site = connectionSiteLocal(el, idx)
+  const dx = ((t.flipH ? 1 - site.u : site.u) - 0.5) * o.cx
+  const dy = ((t.flipV ? 1 - site.v : site.v) - 0.5) * o.cy
+  const cxx = o.x + o.cx / 2
+  const cyy = o.y + o.cy / 2
+  const rad = ((t.rot ?? 0) / 60000) * (Math.PI / 180)
+  if (rad === 0) return { x: cxx + dx, y: cyy + dy }
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  return { x: cxx + dx * cos - dy * sin, y: cyy + dx * sin + dy * cos }
 }
 
 /**
@@ -1315,8 +2487,8 @@ export function updateConnectorsForMoved(slide: Slide, movedIds: string[]): numb
     const curEnd = { x: t.flipH ? o.x : o.x + o.cx, y: t.flipV ? o.y : o.y + o.cy }
     const stTarget = cxn.start ? bySpid.get(cxn.start.id) : undefined
     const endTarget = cxn.end ? bySpid.get(cxn.end.id) : undefined
-    const p1 = stTarget ? connectionPoint(stTarget.transform, cxn.start!.idx) : curStart
-    const p2 = endTarget ? connectionPoint(endTarget.transform, cxn.end!.idx) : curEnd
+    const p1 = stTarget ? connectionPoint(stTarget, cxn.start!.idx) : curStart
+    const p2 = endTarget ? connectionPoint(endTarget, cxn.end!.idx) : curEnd
     t.offset = {
       x: Math.round(Math.min(p1.x, p2.x)),
       y: Math.round(Math.min(p1.y, p2.y)),
@@ -1420,8 +2592,7 @@ export function setSlideLayout(
     break
   }
   if (!next) {
-    let maxRid = 0
-    for (const m of rels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+    const maxRid = maxRelationshipIdNumber(rels)
     next = rels.replace(
       '</Relationships>',
       `<Relationship Id="rId${maxRid + 1}" Type="${LAYOUT_REL_TYPE}" Target="${escapeXmlAttr(relTarget)}"/></Relationships>`,
@@ -1439,7 +2610,7 @@ export function setSlideLayout(
     // ftr/sldNum/dt live outside the content-slot namespace (their idx 2/3/4 must not block body slots)
     if (m && !['ftr', 'sldNum', 'dt'].includes(type))
       taken.add(phSlotKey(type, /\bidx="([^"]*)"/.exec(m[1]!)?.[1] ?? ''))
-    for (const idm of xml.matchAll(/<p:cNvPr\s[^>]*\bid="(\d+)"/g))
+    for (const idm of xml.matchAll(/<p:cNvPr\s[^>]*\bid=["'](\d+)["']/g))
       maxId = Math.max(maxId, Number(idm[1]))
   }
   const missing = layoutPhs.filter((ph) => !taken.has(phSlotKey(ph.type, ph.idx)))
@@ -1493,9 +2664,18 @@ export function setSlideSize(opened: OpenedPptx, cx: number, cy: number): boolea
   if (old.cx === cx && old.cy === cy) return false
   const presPath = 'ppt/presentation.xml'
   const pres = archive.readText(presPath)
-  if (!pres || !/<p:sldSz\b[^>]*\/?>/.test(pres)) return false
-  const next = pres.replace(/<p:sldSz\b[^>]*?(\/?)>/, (tag) =>
-    tag.replace(/\bcx="\d+"/, `cx="${cx}"`).replace(/\bcy="\d+"/, `cy="${cy}"`),
+  if (!pres) return false
+  const sldSz = /<p:sldSz\b[^>]*?\/?>/.exec(pres)?.[0]
+  if (!sldSz) return false
+  // re-emit the tag from its parsed attributes: cx=/cy= are rewritten whatever
+  // quote style they were written in, and a tag carrying neither cannot be
+  // resized — reporting success would rescale the model while the saved file
+  // kept the old size
+  const hasCx = /\bcx=["']\d+["']/.test(sldSz)
+  const hasCy = /\bcy=["']\d+["']/.test(sldSz)
+  if (!hasCx && !hasCy) return false
+  const next = pres.replace(sldSz, () =>
+    sldSz.replace(/\bcx=["']\d+["']/, `cx="${cx}"`).replace(/\bcy=["']\d+["']/, `cy="${cy}"`),
   )
   archive.entries.set(presPath, Buffer.from(next, 'utf8'))
   deck.size = { cx, cy }
@@ -1574,6 +2754,30 @@ export function addTable(
 }
 
 // ── Table cell text editing ─────────────────────────────────────────────
+
+/**
+ * All <a:gridCol> spans in document order. gridCol comes in both forms —
+ * self-closing, and paired when it carries children (Google Slides exports
+ * attach an <a:extLst> a16:colId to every column) — so a self-closing-only
+ * regex undercounts columns or, worse, indexes the wrong one on mixed tables.
+ */
+function gridColSpans(xml: string): Array<{ start: number; end: number; open: string }> {
+  const spans: Array<{ start: number; end: number; open: string }> = []
+  const re = /<a:gridCol\b[^>]*?(\/)?>/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(xml)) !== null) {
+    if (m[1]) {
+      spans.push({ start: m.index, end: m.index + m[0].length, open: m[0] })
+    } else {
+      const close = xml.indexOf('</a:gridCol>', re.lastIndex)
+      if (close < 0) break
+      const end = close + '</a:gridCol>'.length
+      spans.push({ start: m.index, end, open: m[0] })
+      re.lastIndex = end
+    }
+  }
+  return spans
+}
 
 /** Locate the nth <tag>…</tag> span in the xml (a:tr/a:tc never self-nest, so a sequential scan suffices). */
 function nthTagSpan(xml: string, tag: string, n: number): { start: number; end: number } | null {
@@ -1675,7 +2879,7 @@ export function ensureTableStylePart(
   if (existing) return
   const ctPath = '[Content_Types].xml'
   const ct = archive.readText(ctPath)
-  if (ct && !ct.includes(`PartName="/${path}"`)) {
+  if (ct && !hasContentTypeOverride(ct, path)) {
     archive.entries.set(
       ctPath,
       Buffer.from(
@@ -1690,8 +2894,7 @@ export function ensureTableStylePart(
   const presRelsPath = 'ppt/_rels/presentation.xml.rels'
   const presRels = archive.readText(presRelsPath)
   if (presRels && !presRels.includes('/relationships/tableStyles"')) {
-    let maxRid = 0
-    for (const m of presRels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+    const maxRid = maxRelationshipIdNumber(presRels)
     const rel = `<Relationship Id="rId${maxRid + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/tableStyles" Target="tableStyles.xml"/>`
     archive.entries.set(
       presRelsPath,
@@ -1725,6 +2928,8 @@ export function editChartElement(
     catAxisTitle?: string
     valAxisTitle?: string
     gapWidthPct?: number
+    /** Doughnut hole size percent (kept from the existing chart when unspecified) */
+    holeSizePct?: number
     /** Swap rows/columns: categories ↔ series (mutually exclusive with categories/series patches, triggered separately in the UI) */
     switchRowCol?: boolean
     /** Per-point fill overrides, seriesIdx → pointIdx → color; null clears back to the series color */
@@ -1745,12 +2950,12 @@ export function editChartElement(
   if (!rels) return false
 
   // Find the r:id in originalXml
-  const rIdInFrame = /r:id="([^"]+)"/.exec(el.anchor.originalXml)
+  const rIdInFrame = /r:id=["']([^"']+)["']/.exec(el.anchor.originalXml)
   if (!rIdInFrame) return false
   const rId = rIdInFrame[1]!
 
   // Find the chart part path in the rels
-  const relRe = new RegExp(`Id="${escapeRegex(rId)}"[^>]*Target="([^"]+)"`)
+  const relRe = new RegExp(`Id=["']${escapeRegex(rId)}["'][^>]*Target=["']([^"']+)["']`)
   const relMatch = relRe.exec(rels)
   if (!relMatch) return false
   const chartPath = resolveTarget(slide.path, relMatch[1]!)
@@ -1772,11 +2977,15 @@ export function editChartElement(
             ? 'barPercentStacked'
             : existing.grouping === 'stacked'
               ? 'barStacked'
-              : 'bar'
+              : existing.pseudo3D // 3-D column survives data/style-only rebuilds (stacked 3-D degrades to 2-D stacked)
+                ? 'bar3D'
+                : 'bar'
           : existing.kind === 'pie'
             ? (existing.holePct ?? 0) > 0
               ? 'doughnut'
-              : 'pie'
+              : existing.pseudo3D
+                ? 'pie3D'
+                : 'pie'
             : (existing.kind as NewChartKind)
   const kind: NewChartKind = patch.kind ?? derivedKind
   // Horizontal bar direction is preserved through rebuilds; an explicit type change resets it unless the patch asks for barDir 'bar' (the gallery's horizontal-bar entry)
@@ -1829,6 +3038,10 @@ export function editChartElement(
   const colorScheme =
     patch.colorScheme ??
     (existingColors.every((c): c is string => !!c) ? existingColors : undefined)
+  // A custom doughnut hole used to reset to the build default on every rebuild.
+  // A plain pie parses as holePct 0 — forwarding that would clamp a pie→doughnut
+  // switch to a 1% hole, so only a real (nonzero) hole is preserved.
+  const holeSizePct = patch.holeSizePct ?? (existing.holePct || undefined)
 
   const opts: NewChartOptions = {
     kind,
@@ -1844,9 +3057,11 @@ export function editChartElement(
     ...(gapWidthPct != null ? { gapWidthPct } : {}),
     ...(barDir ? { barDir } : {}),
     ...(pointColors.some((row) => row?.some((c) => c != null)) ? { pointColors } : {}),
+    ...(colorScheme ? { colorScheme } : {}),
+    ...(holeSizePct != null ? { holeSizePct } : {}),
   }
-  const newXml = buildChartSpaceXmlWithColors(opts, colorScheme)
-  archive.entries.set(chartPath, Buffer.from(newXml, 'utf8'))
+  const workbookRId = writeChartWorkbook(opened, chartPath, opts)
+  archive.entries.set(chartPath, Buffer.from(buildChartSpaceXml(opts, workbookRId), 'utf8'))
   slide.structureDirty = true
   return true
 }
@@ -1873,26 +3088,6 @@ export function markChartEditable(slide: Slide, elementId: string): boolean {
   chartEl.descr = 'aislides-chart'
   slide.structureDirty = true
   return true
-}
-
-/** Chart XML build with colors (spPr solidFill on each series). */
-function buildChartSpaceXmlWithColors(opts: NewChartOptions, colorScheme?: string[]): string {
-  const base = buildChartSpaceXml(opts)
-  if (!colorScheme || !colorScheme.length) return base
-  // The last series of a combo chart is the line: write the color as an <a:ln> stroke (lines use stroke color, bars/pies use fill color)
-  const lineSerIdx =
-    opts.kind === 'comboBarLine' && opts.series.length >= 2 ? opts.series.length - 1 : -1
-  let serIndex = 0
-  return base.replace(/<c:ser>/g, () => {
-    const color = colorScheme[serIndex % colorScheme.length]!.replace('#', '').toUpperCase()
-    const fill = `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>`
-    const spPr =
-      serIndex === lineSerIdx
-        ? `<c:spPr><a:ln w="28575">${fill}</a:ln></c:spPr>`
-        : `<c:spPr>${fill}</c:spPr>`
-    serIndex++
-    return `<c:ser>${spPr}`
-  })
 }
 
 /** Escape RegExp special characters. */
@@ -1942,7 +3137,14 @@ export interface ElementFontPatch {
   color?: string
 }
 
-function applyFontPatch(paragraphs: Paragraph[], patch: ElementFontPatch): void {
+/** Per-run size rewrite (relative grow/shrink); undefined = the run inherits its size. */
+export type FontSizeMap = (pt: number | undefined) => number
+
+function applyFontPatch(
+  paragraphs: Paragraph[],
+  patch: ElementFontPatch,
+  sizeMap?: FontSizeMap,
+): void {
   for (const p of paragraphs) {
     // Empty paragraph (e.g. a blank table cell): leave an empty marker run so the
     // format persists and text typed later inherits it
@@ -1957,34 +3159,58 @@ function applyFontPatch(paragraphs: Paragraph[], patch: ElementFontPatch): void 
         delete r.eaFont
         delete r.csFont
         delete r.fontImplicit
+        delete r.latinFamily
       }
-      if (patch.fontSizePt !== undefined) {
-        r.fontSize = patch.fontSizePt
+      if (patch.fontSizePt !== undefined || sizeMap) {
+        r.fontSize = sizeMap ? sizeMap(r.fontSize) : patch.fontSizePt
         delete r.fontSizeImplicit
       }
       if (patch.strike !== undefined) {
         r.strike = patch.strike
-        if (!patch.strike) delete r.strikeStyle
+        // Explicit off must survive a rebuild as strike="noStrike" (see buildRPrAttrs)
+        if (!patch.strike) {
+          delete r.strikeStyle
+          r.strikeExplicitNone = true
+        } else {
+          delete r.strikeExplicitNone
+        }
       }
-      if (patch.bold !== undefined) r.bold = patch.bold
-      if (patch.italic !== undefined) r.italic = patch.italic
+      if (patch.bold !== undefined) {
+        r.bold = patch.bold
+        delete r.boldImplicit
+      }
+      if (patch.italic !== undefined) {
+        r.italic = patch.italic
+        delete r.italicImplicit
+      }
       if (patch.underline !== undefined) {
         r.underline = patch.underline
-        if (!patch.underline) delete r.underlineStyle
+        if (!patch.underline) {
+          delete r.underlineStyle
+          r.underlineExplicitNone = true
+        } else {
+          delete r.underlineExplicitNone
+        }
       }
       if (patch.color !== undefined) {
         r.color = patch.color
         delete r.colorFollowsTheme
         delete r.colorInherited
+        delete r.colorNodeXml
       }
     }
   }
 }
 
-export function setElementFont(slide: Slide, elementId: string, patch: ElementFontPatch): boolean {
+export function setElementFont(
+  slide: Slide,
+  elementId: string,
+  patch: ElementFontPatch,
+  sizeMap?: FontSizeMap,
+): boolean {
   const el = slide.elements.find((e) => e.id === elementId)
   if (!el) return false
-  const apply = (paragraphs: Paragraph[]) => applyFontPatch(paragraphs, patch)
+  const apply = (paragraphs: Paragraph[]) => applyFontPatch(paragraphs, patch, sizeMap)
   if (el.type === 'text' || el.type === 'shape') {
     const t = el as TextElement
     if (!t.text?.paragraphs.length) return false
@@ -2023,9 +3249,11 @@ export interface ReplaceOptions {
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
- * Deck-wide replace (matches within a run; cross-run matches are not handled —
- * consistent with byte-faithful run-structure patches). Covers text/shape, table
- * cells, and direct group children; dynamic field runs are skipped.
+ * Deck-wide replace (a match may span consecutive runs of a paragraph: the
+ * replacement lands in the run holding its first character and the matched text
+ * is cut from the runs it covers, so untouched text keeps its own rPr). Covers
+ * text/shape, table cells, and direct group children; dynamic field runs are
+ * skipped and no match spans one.
  * Returns the replacement count; elements on changed slides are flagged dirty.
  */
 export function replaceAllInDeck(
@@ -2040,26 +3268,76 @@ export function replaceAllInDeck(
   let count = 0
   const changed = new Set<number>()
 
+  // A field run or an <a:br/> soft-break sentinel is a hard barrier: matches may
+  // only span the consecutive plain runs between them.
+  const isBarrier = (r: TextRun): boolean => !!r.field || r.text === '\n'
+  const segmentsOf = (p: Paragraph): TextRun[][] => {
+    const segments: TextRun[][] = []
+    let current: TextRun[] = []
+    for (const r of p.runs) {
+      if (isBarrier(r)) {
+        if (current.length) segments.push(current)
+        current = []
+      } else if (r.text) current.push(r)
+    }
+    if (current.length) segments.push(current)
+    return segments
+  }
+
   const replaceInParagraphs = (paragraphs: Paragraph[]): boolean => {
     let hit = false
-    for (const p of paragraphs)
-      for (const r of p.runs) {
+    for (const p of paragraphs) {
+      if (budget <= 0) return hit
+      for (const runs of segmentsOf(p)) {
         if (budget <= 0) return hit
-        if (r.field || !r.text) continue
-        re.lastIndex = 0
-        let n = 0
-        const next = r.text.replace(re, (m) => {
-          if (n >= budget) return m
-          n++
-          return replace
-        })
-        if (n > 0) {
-          r.text = next
-          count += n
-          budget -= n
-          hit = true
-        }
+        hit = replaceInRuns(runs) || hit
       }
+    }
+    return hit
+  }
+
+  const replaceInRuns = (runs: TextRun[]): boolean => {
+    let hit = false
+    let full = ''
+    const ends: number[] = []
+    for (const r of runs) {
+      full += r.text
+      ends.push(full.length)
+    }
+    const out = runs.map(() => '')
+    const runAt = (offset: number): number => {
+      for (let k = 0; k < ends.length; k++) if (offset < ends[k]!) return k
+      return ends.length - 1
+    }
+    const keep = (from: number, to: number): void => {
+      let off = from
+      for (let k = 0; k < ends.length && off < to; k++) {
+        const end = ends[k]!
+        if (end <= off) continue
+        const take = Math.min(end, to) - off
+        out[k] += full.slice(off, off + take)
+        off += take
+      }
+    }
+    re.lastIndex = 0
+    let cursor = 0
+    let n = 0
+    let m: RegExpExecArray | null
+    while (budget > 0 && (m = re.exec(full)) !== null) {
+      n++
+      budget--
+      keep(cursor, m.index)
+      out[runAt(m.index)] += replace
+      cursor = m.index + m[0].length
+    }
+    if (n > 0) {
+      keep(cursor, full.length)
+      for (let i = 0; i < runs.length; i++) {
+        if (runs[i]!.text !== out[i]) runs[i]!.text = out[i]!
+      }
+      count += n
+      hit = true
+    }
     return hit
   }
 
@@ -2108,10 +3386,18 @@ export function replaceAllInDeck(
 // ── Paragraph formatting (bullet/line spacing/paragraph spacing/alignment) ──
 
 export interface ParagraphFormatPatch {
-  /** 'char' round bullet / 'number' numbering / 'none' explicitly none */
-  bullet?: 'char' | 'number' | 'none'
+  /** 'char' round bullet / 'number' numbering / 'blip' picture / 'none' explicitly none */
+  bullet?: 'char' | 'number' | 'blip' | 'none'
+  /** buAutoNum scheme (ST_TextAutonumberScheme) with bullet: 'number'; alone it re-schemes numbered paragraphs */
+  numType?: string
+  /** First number of the sequence; alone it only touches numbered paragraphs */
+  startAt?: number
+  /** Picture bullet already landed in the package (media path + slide rId), with bullet: 'blip' */
+  bulletBlip?: { mediaRef: string; blipEmbedId: string }
   /** Custom bullet character (with bullet: 'char'; defaults to '•') */
   bulletChar?: string
+  /** <a:buFont> for the character (PowerPoint's gallery pairs Wingdings/Courier codes with their font) */
+  bulletFont?: string
   /** Bullet hanging indent (EMU); alone it adjusts existing bullets' indent */
   bulletHangEmu?: number
   /** Bullet size (% of text size, 100 = same); alone it only touches bulleted paragraphs */
@@ -2124,14 +3410,25 @@ export interface ParagraphFormatPatch {
   spaceBeforePt?: number
   spaceAfterPt?: number
   align?: Paragraph['align']
+  /** Paragraph base direction (a:pPr rtl); false writes an explicit rtl="0" */
+  rtl?: boolean
   /** Indent level delta (multi-level list Tab/⇧Tab; clamp 0..8) */
   indentDelta?: 1 | -1
 }
 
-/** PowerPoint default bullet hanging indent (0.25in = 228600 EMU) */
-const BULLET_HANG_EMU = 228600
+/** Hanging indent PowerPoint writes when bulleting a plain text box (0.3125in) */
+const BULLET_HANG_EMU = 285750
 
-function applyParagraphFormat(paragraphs: Paragraph[], patch: ParagraphFormatPatch): PPrDirty {
+/**
+ * Apply a paragraph-format patch to model paragraphs in place. Exported for
+ * callers that rebuild a text body themselves (table cell edits) and need the
+ * same bullet/spacing/direction semantics as setElementParagraphFormat without
+ * its element-wide scope.
+ */
+export function applyParagraphFormat(
+  paragraphs: Paragraph[],
+  patch: ParagraphFormatPatch,
+): PPrDirty {
   const dirty: PPrDirty = {}
   for (const p of paragraphs) {
     // Missing pPrExplicit = newly created element (all-explicit semantics); change values only, don't build the flag table
@@ -2148,17 +3445,36 @@ function applyParagraphFormat(paragraphs: Paragraph[], patch: ParagraphFormatPat
         mark('indent')
         dirty.indents = true
       } else {
-        // Keep the existing bullet's color/size/font when only the kind or glyph changes
+        // Keep the existing bullet's color/size when only the kind or glyph changes; the
+        // font follows the glyph (a Wingdings code picked from the gallery brings its font,
+        // a plain character drops a stale symbol font)
         const prev = p.bullet && p.bullet.type !== 'none' ? p.bullet : undefined
         const kept = {
           ...(prev?.color ? { color: prev.color } : {}),
+          ...(prev?.colorNodeXml ? { colorNodeXml: prev.colorNodeXml } : {}),
           ...(prev?.sizePct != null ? { sizePct: prev.sizePct } : {}),
-          ...(prev?.font ? { font: prev.font } : {}),
+          ...(prev?.sizePt != null ? { sizePt: prev.sizePt } : {}),
         }
-        p.bullet =
-          patch.bullet === 'number'
-            ? { type: 'number', numType: 'arabicPeriod', ...kept }
-            : { type: 'char', char: patch.bulletChar ?? '•', ...kept }
+        const font = patch.bulletChar ? patch.bulletFont : (patch.bulletFont ?? prev?.font)
+        if (patch.bullet === 'number') {
+          const prevNum = prev?.type === 'number' ? prev : undefined
+          const startAt = patch.startAt ?? prevNum?.startAt
+          p.bullet = {
+            type: 'number',
+            numType: patch.numType ?? prevNum?.numType ?? 'arabicPeriod',
+            ...(startAt != null ? { startAt } : {}),
+            ...kept,
+          }
+        } else if (patch.bullet === 'blip' && patch.bulletBlip) {
+          p.bullet = { type: 'blip', ...patch.bulletBlip, ...kept }
+        } else {
+          p.bullet = {
+            type: 'char',
+            char: patch.bulletChar ?? '•',
+            ...kept,
+            ...(font ? { font } : {}),
+          }
+        }
         // Add the default hanging indent when absent (stepped by level);
         // an explicit bulletHangEmu always re-applies
         const hang = patch.bulletHangEmu ?? BULLET_HANG_EMU
@@ -2183,11 +3499,27 @@ function applyParagraphFormat(paragraphs: Paragraph[], patch: ParagraphFormatPat
         dirty.indents = true
       }
     }
+    if (!patch.bullet && (patch.numType != null || patch.startAt != null)) {
+      // Standalone scheme / start number: only touches numbered paragraphs
+      if (p.bullet?.type === 'number') {
+        if (patch.numType != null) p.bullet.numType = patch.numType
+        if (patch.startAt != null) p.bullet.startAt = patch.startAt
+        mark('bullet')
+        dirty.bullet = true
+      }
+    }
     if (patch.bulletSizePct != null || patch.bulletColor) {
       // Standalone size/color adjustment: only touches paragraphs that render a bullet
       if (p.bullet && p.bullet.type !== 'none') {
-        if (patch.bulletSizePct != null) p.bullet.sizePct = patch.bulletSizePct
-        if (patch.bulletColor) p.bullet.color = patch.bulletColor
+        if (patch.bulletSizePct != null) {
+          p.bullet.sizePct = patch.bulletSizePct
+          delete p.bullet.sizePt
+        }
+        if (patch.bulletColor) {
+          p.bullet.color = patch.bulletColor
+          // a user color replaces the captured theme node, else generate re-emits the old schemeClr
+          delete p.bullet.colorNodeXml
+        }
         mark('bullet')
         dirty.bullet = true
       }
@@ -2214,6 +3546,10 @@ function applyParagraphFormat(paragraphs: Paragraph[], patch: ParagraphFormatPat
       p.align = patch.align
       mark('align')
       dirty.align = true
+    }
+    if (patch.rtl != null) {
+      p.rtl = patch.rtl
+      dirty.rtl = true
     }
     if (patch.indentDelta) {
       const lvl = Math.max(0, Math.min(8, (p.level ?? 0) + patch.indentDelta))
@@ -2385,8 +3721,7 @@ export function editTableStructure(
     trSpans.push(span)
   }
   const nRows = trSpans.length
-  const gridColRe = /<a:gridCol\s[^>]*\/>/g
-  const gridCols = [...xml.matchAll(gridColRe)]
+  const gridCols = gridColSpans(xml)
   const nCols = gridCols.length
   if (!nRows || !nCols) return null
 
@@ -2410,7 +3745,7 @@ export function editTableStructure(
     const at = op.index
     const refCol = gridCols[at]
     if (!refCol) return null
-    const colW = Number(/\bw="(\d+)"/.exec(refCol[0])?.[1] ?? 0)
+    const colW = Number(/\bw="(\d+)"/.exec(refCol.open)?.[1] ?? 0)
     if (op.kind === 'delete-col' && nCols <= 1) return null
 
     // Process tc row by row (replace back-to-front so offsets stay valid)
@@ -2431,13 +3766,15 @@ export function editTableStructure(
       xml = xml.slice(0, tr.start) + newTr + xml.slice(tr.end)
     }
     // gridCol and frame width
-    const gc = [...xml.matchAll(gridColRe)][at]!
+    const gc = gridColSpans(xml)[at]!
     if (op.kind === 'insert-col') {
-      const insertAt = op.before ? gc.index : gc.index + gc[0].length
-      xml = xml.slice(0, insertAt) + gc[0] + xml.slice(insertAt)
+      // Fresh self-closing clone: copying the full span would duplicate the
+      // reference column's a16:colId, which must stay unique per column
+      const insertAt = op.before ? gc.start : gc.end
+      xml = xml.slice(0, insertAt) + `<a:gridCol w="${colW}"/>` + xml.slice(insertAt)
       xml = bumpFrameExt(xml, 'cx', colW)
     } else {
-      xml = xml.slice(0, gc.index) + xml.slice(gc.index + gc[0].length)
+      xml = xml.slice(0, gc.start) + xml.slice(gc.end)
       xml = bumpFrameExt(xml, 'cx', -colW)
     }
   }
@@ -2599,22 +3936,36 @@ export function setTableColWidth(
   if (!el || el.type !== 'table') return false
   const table = el as TableElement
   if (col < 0 || col >= table.colWidths.length) return false
+  // a non-finite EMU (NaN, 1e308 overflow) would serialize verbatim into w=
+  if (!Number.isFinite(wEmu)) return false
 
   let xml = patchedElementXml(el)
-  const gc = [...xml.matchAll(/<a:gridCol\s[^>]*\/>/g)][col]
+  const gc = gridColSpans(xml)[col]
   if (!gc) return false
   el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
   el.dirtyPPr = undefined
   const w = Math.max(1, Math.round(wEmu))
-  const patched = gc[0].replace(/\bw="-?\d+"/, `w="${w}"`)
-  xml = xml.slice(0, gc.index) + patched + xml.slice(gc.index + gc[0].length)
+  const patched = gc.open.replace(/\bw="-?\d+"/, `w="${w}"`)
+  xml = xml.slice(0, gc.start) + patched + xml.slice(gc.start + gc.open.length)
 
+  const dxRtl = table.rtl ? w - table.colWidths[col]! : 0
   table.colWidths[col] = w
   const sum = table.colWidths.reduce((a, b) => a + b, 0)
   xml = xml.replace(
     /(<p:xfrm[^>]*>[\s\S]*?<a:ext\s[^>]*\bcx=")-?\d+(")/,
     (_a, pre: string, post: string) => `${pre}${sum}${post}`,
   )
+  // rtl mirroring anchors the table's visual-right edge: growing a column extends the
+  // frame leftward, so the origin shifts by the width delta (LTR keeps the origin and
+  // extends rightward)
+  if (dxRtl) {
+    const newX = el.transform.offset.x - dxRtl
+    xml = xml.replace(
+      /(<p:xfrm[^>]*>[\s\S]*?<a:off\s[^>]*\bx=")-?\d+(")/,
+      (_a, pre: string, post: string) => `${pre}${newX}${post}`,
+    )
+    el.transform.offset.x = newX
+  }
   el.anchor.originalXml = xml
   el.transform.offset.cx = sum
   slide.structureDirty = true
@@ -2632,6 +3983,7 @@ export function setTableRowHeight(
   if (!el || el.type !== 'table') return false
   const table = el as TableElement
   if (row < 0 || row >= table.rowHeights.length) return false
+  if (!Number.isFinite(hEmu)) return false
 
   let xml = patchedElementXml(el)
   const tr = nthTagSpan(xml, 'a:tr', row)
@@ -2687,7 +4039,8 @@ export function resizeTable(slide: Slide, elementId: string, cx: number, cy: num
 
   const widths = scaleToSum(table.colWidths, targetCx)
   let ci = 0
-  xml = xml.replace(/<a:gridCol\s[^>]*\/>/g, (m) =>
+  // Opening tags only — paired-form gridCols (extLst children) must scale too
+  xml = xml.replace(/<a:gridCol\b[^>]*>/g, (m) =>
     ci < widths.length ? m.replace(/\bw="-?\d+"/, `w="${widths[ci++]}"`) : m,
   )
 
@@ -2769,6 +4122,10 @@ export interface ElementClipboardItem {
   xml: string
   /** rId referenced by the xml → absolute part path (External relationships keep the target verbatim) */
   rels: Array<{ rid: string; type: string; target: string; external?: boolean }>
+  /** Dependency part bytes (base64, keyed by absolute path), so the paste target can be a different deck */
+  parts?: Readonly<Record<string, string>>
+  /** ContentType per dependency: keyed by lower-case extension or by part path */
+  contentTypes?: Readonly<Record<string, string>>
 }
 
 const RID_ATTR_RE = /\br:(?:embed|link|id)="(rId\d+)"/g
@@ -2782,6 +4139,8 @@ export function copyElementData(
   const xml = patchedElementXml(el)
   const slideRels = opened.archive.readRels(slide.path)
   const rels: ElementClipboardItem['rels'] = []
+  const parts: Record<string, string> = {}
+  const contentTypes: Record<string, string> = {}
   const seen = new Set<string>()
   for (const m of xml.matchAll(RID_ATTR_RE)) {
     const rid = m[1]!
@@ -2790,14 +4149,20 @@ export function copyElementData(
     const rel = slideRels.get(rid)
     if (!rel) continue
     const external = rel.targetMode === 'External'
+    const target = external ? rel.target : resolveTarget(slide.path, rel.target)
+    // Slide-jump hyperlinks reference a whole slide; bundling it would drag in its
+    // layout/master/theme graph, so keep those as path-only references
+    if (!external && !rel.type.endsWith('/slide')) {
+      collectPart(opened.archive, target, parts, contentTypes)
+    }
     rels.push({
       rid,
       type: rel.type,
-      target: external ? rel.target : resolveTarget(slide.path, rel.target),
+      target,
       ...(external ? { external: true } : {}),
     })
   }
-  return { xml, rels }
+  return { xml, rels, ...(Object.keys(parts).length ? { parts, contentTypes } : {}) }
 }
 
 /** 'ppt/media/image1.png' → the relative Target '../media/image1.png' in the slide rels */
@@ -2806,10 +4171,11 @@ function relTargetFromSlide(absTarget: string): string {
 }
 
 /**
- * Paste: rels surgery (reuse the rId when the target slide already has a
- * relationship with the same type+target, otherwise create one pointing at the
- * same part — media bytes are not copied), renumber cNvPr ids, offset the whole
- * thing, append, and reparse.
+ * Paste: land bundled dependency parts (byte-identical ones already in the
+ * target are shared, so a same-deck paste copies no media), rels surgery
+ * (reuse the rId when the target slide already has a relationship with the
+ * same type+target), renumber cNvPr ids, offset the whole thing, append, and
+ * reparse.
  */
 export function pasteElements(
   opened: OpenedPptx,
@@ -2826,8 +4192,7 @@ export function pasteElements(
     archive.readText(relsPath) ??
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
   let relsDirty = false
-  let maxRid = 0
-  for (const m of relsXml.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  let maxRid = maxRelationshipIdNumber(relsXml)
   // The target slide's existing relationships (type+resolved target → rId); ones created during the paste count too
   const byKey = new Map<string, string>()
   for (const rel of archive.readRels(slide.path).values()) {
@@ -2835,19 +4200,37 @@ export function pasteElements(
     byKey.set(`${rel.type} ${abs}`, rel.id)
   }
 
+  // Land dependency parts the target deck is missing (all items at once, so shared media imports once)
+  const bundledParts: Record<string, string> = {}
+  const bundledCT: Record<string, string> = {}
+  for (const item of items) {
+    Object.assign(bundledParts, item.parts ?? {})
+    Object.assign(bundledCT, item.contentTypes ?? {})
+  }
+  const pathMap = Object.keys(bundledParts).length
+    ? importClipboardParts(archive, bundledParts, bundledCT)
+    : null
+
   let nextId = nextCNvPrId(slide)
   const xmls = items.map((item) => {
     let xml = item.xml
     for (const rel of item.rels) {
-      const key = `${rel.type} ${rel.target}`
+      const landed = rel.external ? rel.target : (pathMap?.get(rel.target) ?? rel.target)
+      const key = `${rel.type} ${landed}`
       let rid = byKey.get(key)
       if (!rid) {
         rid = `rId${++maxRid}`
-        const target = rel.external ? rel.target : relTargetFromSlide(rel.target)
+        const target = rel.external ? rel.target : relTargetFromSlide(landed)
         const mode = rel.external ? ' TargetMode="External"' : ''
+        // Replacement must be a function: a string replacement expands $&, $`,
+        // $' and $$, and an external target is a user-supplied URL, so a $& in
+        // it substituted the matched </Relationships> into the middle of the
+        // Target attribute and left the part malformed. Several other
+        // relationship writers here already pass a function.
         relsXml = relsXml.replace(
           '</Relationships>',
-          `<Relationship Id="${rid}" Type="${rel.type}" Target="${escapeXmlAttr(target)}"${mode}/></Relationships>`,
+          () =>
+            `<Relationship Id="${rid}" Type="${rel.type}" Target="${escapeXmlAttr(target)}"${mode}/></Relationships>`,
         )
         relsDirty = true
         byKey.set(key, rid)
@@ -2857,8 +4240,15 @@ export function pasteElements(
       }
     }
     xml = xml.replace(
-      /(<p:cNvPr\s[^>]*\bid=")\d+(")/g,
+      /(<p:cNvPr\s[^>]*\bid=["'])\d+(["'])/g,
       (_a, pre: string, post: string) => `${pre}${nextId++}${post}`,
+    )
+    // Pasted elements are new identities: mint fresh creationIds so durable ids
+    // never collide with their source elements on the same slide
+    xml = xml.replace(
+      /(<a16:creationId[^>]*\bid=")\{?[0-9A-Fa-f-]{36}\}?(")/g,
+      (_a, pre: string, post: string) =>
+        `${pre}{${globalThis.crypto.randomUUID().toUpperCase()}}${post}`,
     )
     // Offset only the outermost xfrm's off (group child coordinate systems stay put)
     xml = xml.replace(/<a:off\b[^>]*\/>/, (tag) =>
@@ -2945,11 +4335,17 @@ export function groupElements(
   const slide = opened.deck.slides[slideIndex]
   if (!slide || sourceIds.length < 2) return null
 
-  // Validate: only text/shape/picture allowed
+  // Validate: only text/shape/picture allowed. Refs resolve like every other
+  // op (parse-time id, durable e_<guid8>, e_<cNvPr id>), deduplicated in case
+  // two forms name the same element.
   const GROUPABLE = new Set(['text', 'shape', 'picture'])
-  const targets = sourceIds
-    .map((id) => slide.elements.find((e) => e.id === id))
-    .filter(Boolean) as SlideElement[]
+  const targets = [
+    ...new Set(
+      sourceIds
+        .map((id) => slide.elements.find((e) => matchesElementRef(e, id)))
+        .filter(Boolean) as SlideElement[],
+    ),
+  ]
   if (targets.length < 2) return null
   if (targets.some((e) => !GROUPABLE.has(e.type))) return null
 
@@ -2963,8 +4359,8 @@ export function groupElements(
   const grpXml = buildGrpSpXml(slide, bbox, childrenXml)
 
   // Remove the selected elements from the current slide
-  const idSet = new Set(sourceIds)
-  slide.elements = slide.elements.filter((e) => !idSet.has(e.id))
+  const grouped = new Set(targets)
+  slide.elements = slide.elements.filter((e) => !grouped.has(e))
 
   // Append the grpSp and reparse
   const result = appendRawElements(opened, slideIndex, [grpXml])
@@ -3122,16 +4518,22 @@ export interface GroupChildSlice {
 /** Direct child slices of the group XML (document order; a nested group's inner elements are not double-counted). */
 export function groupChildSlices(grpXml: string): GroupChildSlice[] {
   // The content region starts after the group's own </p:grpSpPr> (preceded by the group's nv/grpSpPr)
-  const prEnd = grpXml.indexOf('</p:grpSpPr>')
-  let pos = prEnd >= 0 ? prEnd + '</p:grpSpPr>'.length : 0
-  const openRe = /<p:(sp|pic|grpSp|graphicFrame|cxnSp)(?=[\s/>])/g
+  const prM = /<p:grpSpPr\b[^>]*\/>|<\/p:grpSpPr>/.exec(grpXml)
+  let pos = prM ? prM.index + prM[0].length : 0
+  const openRe = /<(p:(?:sp|pic|grpSp|graphicFrame|cxnSp)|mc:AlternateContent)(?=[\s/>])/g
   const slices: GroupChildSlice[] = []
   for (;;) {
     openRe.lastIndex = pos
     const m = openRe.exec(grpXml)
     if (!m) break
-    const end = elementEnd(grpXml, m.index, `p:${m[1]}`)
+    const end = elementEnd(grpXml, m.index, m[1]!)
     if (end < 0) break
+    // a markup-compatibility block is one child modelled from one branch; never edit its
+    // branches as if they were two shapes
+    if (m[1] === 'mc:AlternateContent') {
+      pos = end
+      continue
+    }
     const xml = grpXml.slice(m.index, end)
     const nvId = /<p:cNvPr\b[^>]*\bid="([^"]+)"/.exec(xml)?.[1]
     slices.push({ start: m.index, end, xml, ...(nvId != null ? { nvId } : {}) })
@@ -3204,13 +4606,14 @@ export function setGroupChildFont(
   groupId: string,
   childId: string,
   patch: ElementFontPatch,
+  sizeMap?: FontSizeMap,
 ): boolean {
   const found = findGroupChild(slide, groupId, childId)
   const child = found?.child
   if (!child || (child.type !== 'text' && child.type !== 'shape')) return false
   const t = child as TextElement
   if (!t.text?.paragraphs.length) return false
-  applyFontPatch(t.text.paragraphs, patch)
+  applyFontPatch(t.text.paragraphs, patch, sizeMap)
   return patchGroupChildText(slide, groupId, t)
 }
 
@@ -3229,37 +4632,149 @@ export function editGroupChildFill(
       ? fill === 'none'
         ? { type: 'none' }
         : { type: 'solid', color: fill }
-      : {
-          type: 'gradient',
-          stops: fill.stops,
-          ...(fill.angle != null ? { angle: fill.angle } : {}),
-          ...(fill.radial ? { path: 'circle' as const } : {}),
-        }
+      : (() => {
+          // Mirror the XML patch onto the model (radial is the legacy alias for path: circle),
+          // so the canvas re-render shows the right shading without a reload
+          const path = fill.path ?? (fill.radial ? ('circle' as const) : undefined)
+          return {
+            type: 'gradient' as const,
+            stops: fill.stops,
+            ...(fill.angle != null ? { angle: fill.angle } : {}),
+            ...(path ? { path } : {}),
+            ...(path && fill.fillTo ? { fillTo: fill.fillTo } : {}),
+          }
+        })()
   if (!patchGroupChildXml(found!.grp, child, (xml) => patchElementFill(xml, fill))) return false
   slide.structureDirty = true
   return true
 }
 
 /** Group-child stroke (null = remove the stroke). */
+/** In-memory Stroke → StrokePatch for the save-time XML rewrite (inverse of strokePatchToModel).
+ * null for fills a StrokePatch cannot express (image/pattern), which writes <a:noFill/>. */
+function modelStrokeToPatch(stroke: Stroke): StrokePatch | null {
+  const capMap = { flat: 'flat', round: 'rnd', square: 'sq' } as const
+  const base = {
+    widthEmu: stroke.width,
+    // 'solid' actively clears a stale prstDash left in the original bytes
+    dash: stroke.dash ?? 'solid',
+    ...(stroke.cap ? { cap: capMap[stroke.cap] } : {}),
+    ...(stroke.join ? { join: stroke.join } : {}),
+    ...(stroke.compound ? { compound: stroke.compound } : {}),
+  }
+  if (stroke.fill.type === 'solid') return { color: stroke.fill.color, ...base }
+  if (stroke.fill.type === 'gradient')
+    return {
+      color: stroke.fill.stops[0]?.color ?? '#000000',
+      ...base,
+      gradient: { stops: stroke.fill.stops, angle: stroke.fill.angle ?? 0 },
+    }
+  return null
+}
+
+/** StrokePatch → in-memory Stroke model (mirrors what patchLnXml writes into the XML). */
+export function strokePatchToModel(stroke: StrokePatch): Stroke {
+  const capMap = { flat: 'flat', rnd: 'round', sq: 'square' } as const
+  return {
+    fill: stroke.gradient
+      ? {
+          type: 'gradient',
+          stops: stroke.gradient.stops,
+          angle: Math.round(stroke.gradient.angle),
+        }
+      : { type: 'solid', color: stroke.color },
+    width: stroke.widthEmu,
+    ...(stroke.dash && stroke.dash !== 'solid' ? { dash: stroke.dash } : {}),
+    ...(stroke.cap ? { cap: capMap[stroke.cap] } : {}),
+    ...(stroke.join ? { join: stroke.join } : {}),
+    ...(stroke.compound && stroke.compound !== 'sng' ? { compound: stroke.compound } : {}),
+  }
+}
+
 export function editGroupChildStroke(
   slide: Slide,
   groupId: string,
   childId: string,
-  stroke: { color: string; widthEmu: number; dash?: string } | null,
+  stroke: StrokePatch | null,
 ): boolean {
   const found = findGroupChild(slide, groupId, childId)
   const child = found?.child
   if (!child || (child.type !== 'text' && child.type !== 'shape' && child.type !== 'picture'))
     return false
   const t = child as TextElement
-  t.stroke = stroke
-    ? {
-        fill: { type: 'solid', color: stroke.color },
-        width: stroke.widthEmu,
-        ...(stroke.dash ? { dash: stroke.dash } : {}),
-      }
-    : undefined
+  t.stroke = stroke ? strokePatchToModel(stroke) : undefined
   if (!patchGroupChildXml(found!.grp, child, (xml) => patchElementStroke(xml, stroke))) return false
+  slide.structureDirty = true
+  return true
+}
+
+/** Group-child adjust values (same avLst-swap semantics as setShapeAdjustValues). */
+export function setGroupChildShapeAdjustValues(
+  slide: Slide,
+  groupId: string,
+  childId: string,
+  adjust: Record<string, number>,
+): boolean {
+  if (!validAdjust(adjust)) return false
+  const found = findGroupChild(slide, groupId, childId)
+  const child = found?.child
+  if (!child || (child.type !== 'text' && child.type !== 'shape')) return false
+  let swapped = false
+  const ok = patchGroupChildXml(found!.grp, child, (xml) => {
+    const next = swapAvLstXml(xml, adjust)
+    swapped = next != null
+    return next ?? xml
+  })
+  if (!ok || !swapped) return false
+  ;(child as TextElement).adjust = { ...adjust }
+  slide.structureDirty = true
+  return true
+}
+
+/** Group-child "Change Shape" (same geometry-swap semantics as setShapePresetGeometry). */
+export function setGroupChildShapePresetGeometry(
+  slide: Slide,
+  groupId: string,
+  childId: string,
+  prst: string,
+): boolean {
+  if (!/^[A-Za-z0-9]+$/.test(prst)) return false
+  const found = findGroupChild(slide, groupId, childId)
+  const child = found?.child
+  if (!child || (child.type !== 'text' && child.type !== 'shape')) return false
+  let swapped = false
+  const ok = patchGroupChildXml(found!.grp, child, (xml) => {
+    const next = swapGeometryXml(xml, presetGeomXml(prst))
+    swapped = next != null
+    return next ?? xml
+  })
+  if (!ok || !swapped) return false
+  const shape = child as TextElement
+  shape.presetGeometry = prst
+  delete shape.adjust
+  delete shape.customGeometry
+  slide.structureDirty = true
+  return true
+}
+
+/** Group-child freeform geometry (same semantics as setShapeCustomGeometry). */
+export function setGroupChildShapeCustomGeometry(
+  slide: Slide,
+  groupId: string,
+  childId: string,
+  geom: CustGeomPath,
+): boolean {
+  if (!validCustGeomPath(geom)) return false
+  const found = findGroupChild(slide, groupId, childId)
+  const child = found?.child
+  if (!child || (child.type !== 'text' && child.type !== 'shape')) return false
+  let written: string | null = null
+  const ok = patchGroupChildXml(found!.grp, child, (xml) => {
+    written = swapGeometryXml(xml, custGeomXml(geom))
+    return written ?? xml
+  })
+  if (!ok || written == null) return false
+  applyCustomGeometryModel(child as TextElement, written)
   slide.structureDirty = true
   return true
 }

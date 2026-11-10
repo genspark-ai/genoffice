@@ -172,14 +172,18 @@ const indexOfSub = (hay: string[], needle: string[], from: number): number => {
     non-space offset within the block (from the edited line's position), used to
     prefer the right occurrence when a paragraph repeats itself. Returns null when
     any oldText cannot be found or two edits overlap — the caller then keeps the
-    unfolded behavior. */
+    unfolded behavior. When `outRanges` is given, it receives the [start,end)
+    range each edit's (radical-folded) newText occupies inside the returned
+    string, in input-edit order — callers use this to carry the edits'
+    selection styles onto the folded paragraph. */
 export function spliceBlockText(
   blockText: string,
   edits: { oldText: string; newText: string; hint?: number }[],
+  outRanges?: [number, number][],
 ): string | null {
   const hay = nonSpaceMap(blockText)
-  const ranges: { start: number; end: number; newText: string }[] = []
-  for (const e of edits) {
+  const ranges: { start: number; end: number; newText: string; editIdx: number }[] = []
+  for (const [editIdx, e] of edits.entries()) {
     const needle = nonSpaceMap(e.oldText).chars
     // From the hinted line start first; a crossing-span oldText that begins on the
     // previous line (or a stale hint) falls back to the first occurrence anywhere
@@ -190,6 +194,7 @@ export function spliceBlockText(
       start: hay.idx[at]!,
       end: hay.idx[at + needle.length - 1]! + 1,
       newText: unifyRadicals(e.newText),
+      editIdx,
     })
   }
   ranges.sort((a, b) => a.start - b.start)
@@ -199,7 +204,9 @@ export function spliceBlockText(
   let out = ''
   let pos = 0
   for (const r of ranges) {
-    out += blockText.slice(pos, r.start) + r.newText
+    out += blockText.slice(pos, r.start)
+    if (outRanges) outRanges[r.editIdx] = [out.length, out.length + r.newText.length]
+    out += r.newText
     pos = r.end
   }
   return out + blockText.slice(pos)

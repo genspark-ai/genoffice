@@ -1,31 +1,87 @@
+import {
+  captureMarkdownSource,
+  roundTripMarkdownEnabled,
+  serializeMarkdown,
+  type MarkdownSourceSnapshot,
+} from './markdown/roundtripSerializer'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ImageViewer,
+  aiPanelInitiallyOpen,
+  rememberAiPanelOpen,
+  useAutoSavePref,
+  useAiSidebarEnabled,
+} from '@genoffice/ui'
+import {
+  pollUntilReady,
+  runHeadlessRendererExport,
+} from '@genoffice/electron-utils/headless-export'
 import { EditorContent, useEditor } from '@tiptap/react'
+import { FindPanel, type FindFocusRequest, type FindPanelStrings } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
-import { useI18n } from './i18n/locale'
+import { TextSelection } from '@tiptap/pm/state'
+import { exportImages } from './export/imageExport'
+import type { StringKey } from './i18n/locale'
+import { countWords } from '../../../docs/src/renderer/word-count'
+import { t as translate, useI18n } from './i18n/locale'
 import {
   buildFrontmatterRaw,
   frontmatterInner,
   parseDocText,
-  serializeDocText,
   stripLegacyFencedDivs,
   type DocEnvelope,
 } from './markdown/docText'
+import { buildSourceMap, spliceMarkdown, type SourceMap } from './markdown/sourceSplice'
+import { applySourceText } from './markdown/sourceView'
+import { isSourceMode, textModeForPath, type TextMode } from '../shared/text-mode'
+import { renameAction } from '../shared/rename-mode'
+import { readSourceText, writeSourceText, type SourceTextFormat } from '../shared/source-text'
+import { PlainTextEditor, type PlainTextEditorHandle } from './source/PlainTextEditor'
 import { buildExtensions } from './editor/extensions'
+import { tiptapFindTarget } from './editor/findTarget'
+import { collectOutline, type OutlineItem } from './editor/outline'
 import { buildSlashItems } from './editor/slashCommand'
 import type { SlashController, SlashMenuState } from './editor/slashCommand'
-import { setImageBaseDir } from './editor/localImage'
+import { wikiFragmentPosition, wikiTargetOf } from './editor/wikilink'
+import type { WikiSuggestController, WikiSuggestState } from './editor/wikiSuggest'
+import { invalidateWikiHeads } from './editor/wikiSuggest'
+import { dirOf, setImageBaseDir, VIEW_IMAGE_EVENT } from './editor/localImage'
 import { Ribbon } from './components/Ribbon'
+import { deriveAutoFileName } from './auto-file-name'
+import { modelSaveAsName, proposedSaveName } from './file-naming'
+import type { MarkdownTheme } from '../shared/markdown-theme'
+import { ImageHostDialog } from './components/ImageHostDialog'
+import { RedactMenu } from './components/RedactMenu'
+import { OutlinePane } from './components/OutlinePane'
+import { SourcePane } from './components/SourcePane'
 import { SlashMenu, type SlashMenuHandle } from './components/SlashMenu'
+import { WikiSuggestMenu, type WikiSuggestMenuHandle } from './components/WikiSuggestMenu'
+import { BacklinksPane } from './components/BacklinksPane'
+import { TagsPane } from './components/TagsPane'
+import { GraphView } from './components/GraphView'
+import { ToastHost } from './components/toast'
+import { showToast } from './components/toast-bus'
 import { TableMenu } from './components/TableMenu'
 import { FrontmatterPanel } from './components/FrontmatterPanel'
+import { AiAskPopover } from './components/AiAskPopover'
 import { AiPanel, GensparkMark, type AiPreset, type MarkdownAiDeps } from './ai/AiPanel'
+import { EDIT_QUEUE_MAX, selectionForAnchor, type EditQueueItem } from './ai/edit-queue'
+import { addQueueAnchor, clearQueueAnchors, removeQueueAnchors } from './editor/aiQueueAnchors'
 import { DOCX_MAX_IMAGE_PX, exportDocxBytes } from './export/docxExport'
+import { decodeImageDataUrl, toDocxImage } from './export/exportImage'
 import { buildPrintHtml } from './export/printHtml'
-import { resolveImageSrc } from './editor/localImage'
+import { diagramSvgToPng, renderDiagram } from './editor/diagrams'
+import type { DiagramLanguage } from './editor/diagrams'
 import type { ExportFormat, SaveMode } from '../shared/ipc'
+import { uiOp } from './editor/ops'
 
 type LoadStatus = 'loading' | 'ready' | 'error'
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed'
+
+const MIN_ZOOM = 50
+const MAX_ZOOM = 200
+const ZOOM_STEP = 10
+const SOURCE_APPLY_DEBOUNCE_MS = 150
 
 const EMPTY_ENVELOPE: DocEnvelope = {
   frontmatter: '',
@@ -33,11 +89,6 @@ const EMPTY_ENVELOPE: DocEnvelope = {
   eol: '\n',
   trailingNewline: true,
   bom: false,
-}
-
-function dirOf(path: string): string {
-  const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  return i > 0 ? path.slice(0, i) : path
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -49,50 +100,162 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-/** Measure a document image via the DOM (the editor already displays it) */
-function measureImage(displaySrc: string): Promise<{ width: number; height: number } | null> {
-  return new Promise((resolvePromise) => {
-    const img = new Image()
-    img.onload = () => resolvePromise({ width: img.naturalWidth, height: img.naturalHeight })
-    img.onerror = () => resolvePromise(null)
-    img.src = displaySrc
+function imageSourcesFromEditor(editor: Editor): string[] {
+  const sources: string[] = []
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === 'image' && typeof node.attrs.src === 'string') {
+      sources.push(node.attrs.src)
+    }
   })
+  return sources
 }
 
-/** File name for an AI-generated untitled document: first heading, else first words */
-export function deriveAutoFileName(editor: Editor): string {
-  const doc = editor.state.doc
-  for (let i = 0; i < doc.childCount; i++) {
-    const node = doc.child(i)
-    const text = node.textContent.replace(/\s+/g, ' ').trim()
-    if (!text) continue
-    if (node.type.name === 'heading') return text.slice(0, 60)
-    return text.split(' ').slice(0, 8).join(' ').slice(0, 60)
-  }
-  return ''
+function applyImageRewrites(
+  editor: Editor,
+  rewrites: ReadonlyArray<{ from: string; to: string }>,
+): void {
+  const bySource = new Map(rewrites.map(({ from, to }) => [from, to]))
+  if (bySource.size === 0) return
+  let transaction = editor.state.tr
+  let changed = false
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'image') return
+    const replacement = bySource.get(String(node.attrs.src ?? ''))
+    if (!replacement || replacement === node.attrs.src) return
+    transaction = transaction.setNodeMarkup(pos, undefined, { ...node.attrs, src: replacement })
+    changed = true
+  })
+  if (!changed) return
+  transaction.setMeta('addToHistory', false).setMeta('uiOnly', true)
+  editor.view.dispatch(transaction)
 }
+
+/** Measure a document image via the DOM (the editor already displays it) */
+export { deriveAutoFileName } from './auto-file-name'
 
 export default function App() {
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
   const [status, setStatus] = useState<LoadStatus>('loading')
   const [filePath, setFilePath] = useState<string | null>(null)
+  // a .txt/.json has no block document behind it: it is edited as source so
+  // that saving cannot reinterpret it as markdown
+  const [textMode, setTextMode] = useState<TextMode>('markdown')
+  const sourceRef = useRef<PlainTextEditorHandle | null>(null)
+  const sourceTextRef = useRef('')
+  const sourceFormatRef = useRef<SourceTextFormat>({ bom: false, eol: '\n', trailingNewline: true })
+  const sourceMode = isSourceMode(textMode)
+  // bumped on every CodeMirror doc change so the ribbon's undo/redo state re-renders
+  const [sourceRev, setSourceRev] = useState(0)
+
   const [dirty, setDirty] = useState(false)
   const [saveState, setSaveState] = useState<SaveState>('idle')
+  const exportingImagesRef = useRef(false)
+  const [imageExportStatus, setImageExportStatus] = useState<{
+    key: StringKey
+    params?: Record<string, string | number>
+  } | null>(null)
   const [slashState, setSlashState] = useState<SlashMenuState | null>(null)
+  const [wikiSuggestState, setWikiSuggestState] = useState<WikiSuggestState | null>(null)
   const [fmOpen, setFmOpen] = useState(false)
   const [fmText, setFmText] = useState('')
-  const [aiOpen, setAiOpen] = useState(true)
+  // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
+  const [aiOpen, setAiOpen] = useState(() => aiPanelInitiallyOpen('mdapp.showAi'))
+  // the sidebar switch is a soft hide; it closes the panel when it turns off
+  const aiSidebarEnabled = useAiSidebarEnabled(setAiOpen)
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
-  const [autoSave, setAutoSave] = useState(() => localStorage.getItem('mdapp.autoSave') === '1')
+  const [editQueue, setEditQueue] = useState<EditQueueItem[]>([])
+  const editQueueRef = useRef(editQueue)
+  editQueueRef.current = editQueue
+  const queueSeqRef = useRef(0)
+  const [autoSave, setAutoSave] = useAutoSavePref('mdapp.autoSave', window.markdownApi)
+  const [showFind, setShowFind] = useState(false)
+  const [findFocus, setFindFocus] = useState<FindFocusRequest>({ field: 'find', nonce: 0 })
+  const [outlineOpen, setOutlineOpen] = useState(false)
+  const [outlineWidth, setOutlineWidth] = useState(
+    () => Number(localStorage.getItem('mdapp.outlineWidth')) || undefined,
+  )
+  const [backlinksOpen, setBacklinksOpen] = useState(false)
+  const [tagsOpen, setTagsOpen] = useState(false)
+  const [graphOpen, setGraphOpen] = useState(false)
+  const [sourceViewOpen, setSourceViewOpen] = useState(false)
+  const [sourceText, setSourceText] = useState('')
+  const sourceViewOpenRef = useRef(false)
+  const pendingSourceRef = useRef<string | null>(null)
+  const sourceApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const syncSourceFromEditorRef = useRef<() => void>(() => {})
+  const [spellcheck, setSpellcheck] = useState(
+    () => localStorage.getItem('mdapp.spellcheck') !== '0',
+  )
+  // paper theme (markdown-themes.css scopes the palette on data-markdown-theme)
+  const [mdTheme, setMdTheme] = useState<MarkdownTheme>('default')
+  useEffect(() => {
+    window.markdownApi
+      .getMarkdownTheme?.()
+      .then(setMdTheme)
+      .catch(() => {})
+  }, [])
+  const pickMarkdownTheme = (theme: MarkdownTheme): void => {
+    setMdTheme(theme)
+    // the boot path sets this once; live picks re-scope it here
+    if (theme === 'default') document.documentElement.removeAttribute('data-markdown-theme')
+    else document.documentElement.setAttribute('data-markdown-theme', theme)
+    window.markdownApi.setMarkdownTheme(theme).catch(() => {})
+  }
+  // off by default: it takes over the editor's right-click menu, and a reader
+  // should opt into that rather than discover it
+  const [redactEnabled, setRedactEnabled] = useState(
+    () => localStorage.getItem('mdapp.redact') === '1',
+  )
+  const [viewImage, setViewImage] = useState<string | null>(null)
+  useEffect(() => {
+    const onEvent = (e: Event) => setViewImage((e as CustomEvent<{ src: string }>).detail.src)
+    window.addEventListener(VIEW_IMAGE_EVENT, onEvent)
+    const off = window.markdownApi.onViewImage((src) => setViewImage(src))
+    return () => {
+      window.removeEventListener(VIEW_IMAGE_EVENT, onEvent)
+      off()
+    }
+  }, [])
+  const [outlineItems, setOutlineItems] = useState<OutlineItem[]>([])
+  const [zoom, setZoom] = useState(100)
 
   const statusRef = useRef<LoadStatus>('loading')
   const dirtyRef = useRef(false)
   const savingRef = useRef(false)
+  const [roundTripEnabled] = useState(roundTripMarkdownEnabled)
+  const originalSourceRef = useRef<MarkdownSourceSnapshot | undefined>(undefined)
   const envelopeRef = useRef<DocEnvelope>(EMPTY_ENVELOPE)
   const editorRef = useRef<Editor | null>(null)
+  // blocks of the text on disk paired with the editor's nodes; null until a
+  // file is loaded or saved, and whenever the pairing could not be established
+  const sourceMapRef = useRef<SourceMap | null>(null)
+  /** the body a save writes: unchanged blocks verbatim from disk, edited runs re-serialized */
+  const bodyMarkdown = (current: Editor): string => {
+    const map = sourceMapRef.current
+    return map ? spliceMarkdown(current, current.state.doc, map) : current.getMarkdown()
+  }
   const filePathRef = useRef<string | null>(null)
+  /** text last read from or written to disk; a watcher tick that reads the same text is a touch, not an edit */
+  const diskTextRef = useRef<string | null>(null)
+  const overwriteRef = useRef(false)
+  const [diskNotice, setDiskNoticeState] = useState<'changed' | 'conflict' | null>(null)
+  const diskNoticeRef = useRef<'changed' | 'conflict' | null>(null)
+  const setDiskNotice = (next: 'changed' | 'conflict' | null) => {
+    diskNoticeRef.current = next
+    setDiskNoticeState(next)
+  }
   const slashMenuRef = useRef<SlashMenuHandle>(null)
+  const wikiSuggestMenuRef = useRef<WikiSuggestMenuHandle>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  const zoomOut = useCallback(
+    () => setZoom((value) => Math.max(MIN_ZOOM, Math.round(value) - ZOOM_STEP)),
+    [],
+  )
+  const zoomIn = useCallback(
+    () => setZoom((value) => Math.min(MAX_ZOOM, Math.round(value) + ZOOM_STEP)),
+    [],
+  )
 
   const markDirty = useCallback(() => {
     if (statusRef.current !== 'ready' || dirtyRef.current) return
@@ -102,13 +265,63 @@ export default function App() {
     window.markdownApi.setDirty(true)
   }, [])
 
+  const [imageHostOpen, setImageHostOpen] = useState(false)
+
   const insertImage = useCallback(() => {
     void (async () => {
       const relPath = await window.markdownApi.pickImage()
       const current = editorRef.current
-      if (relPath && current) current.chain().focus().setImage({ src: relPath }).run()
+      if (relPath && current) uiOp(current, { op: 'insertImage', after: 'selection', src: relPath })
     })()
   }, [])
+
+  /**
+   * Land on the heading a wiki link pointed at. The fragment waited in main
+   * for this path — the shell activates an open tab without waking anything —
+   * so it is taken here, once the note is actually on screen.
+   */
+  const jumpToWikiFragment = useCallback((path: string): void => {
+    const current = editorRef.current
+    if (!current) return
+    // The browser test harness stubs markdownApi without the Electron-only
+    // wiki channels; a missing API here means nothing to jump to, not a
+    // failed load.
+    if (typeof window.markdownApi.takeWikiFragment !== 'function') return
+    void window.markdownApi.takeWikiFragment(path).then((fragment) => {
+      if (!fragment || filePathRef.current !== path) return
+      const pos = wikiFragmentPosition(current.state.doc, fragment)
+      if (pos === null) return
+      const selection = TextSelection.near(current.state.doc.resolve(pos))
+      current.view.dispatch(current.state.tr.setSelection(selection).scrollIntoView())
+      current.view.focus()
+    })
+  }, [])
+
+  /**
+   * Close an unresolved `[[link]]` the Obsidian way: create the note it names
+   * and open it. Main decides where the file lands (beside this document, or
+   * under the vault root when the target carries a directory) and never
+   * overwrites; the answer carries the `#fragment`, so opening rides the same
+   * path every resolved link takes and no document text has to change.
+   */
+  const createWikiNoteAndOpen = useCallback(
+    (target: string): void => {
+      // The browser test harness stubs markdownApi without the Electron-only
+      // wiki channels; a missing API leaves the link as written.
+      if (typeof window.markdownApi.createWikiNote !== 'function') return
+      void window.markdownApi.createWikiNote({ target }).then((result) => {
+        if (!result.ok) {
+          showToast(translate('wikiLinkUnresolved', { target }), 'error')
+          return
+        }
+        void window.markdownApi.rememberWikiFragment(result.path, result.fragment)
+        void window.markdownApi.openSourcePath(result.path)
+        // a link into the note already on screen opens no tab; jump here
+        if (filePathRef.current === result.path) jumpToWikiFragment(result.path)
+      })
+    },
+    [jumpToWikiFragment],
+  )
 
   const extensions = useMemo(() => {
     const controller: SlashController = {
@@ -117,29 +330,140 @@ export default function App() {
       onKeyDown: (event) => slashMenuRef.current?.handleKey(event) ?? false,
       onClose: () => setSlashState(null),
     }
+    const wikiSuggestController: WikiSuggestController = {
+      onOpen: setWikiSuggestState,
+      onUpdate: setWikiSuggestState,
+      onKeyDown: (event) => wikiSuggestMenuRef.current?.handleKey(event) ?? false,
+      onClose: () => setWikiSuggestState(null),
+    }
     return buildExtensions({
       slashController: controller,
       slashItems: () =>
         buildSlashItems({ insertImage: filePathRef.current ? insertImage : undefined }),
+      wikiSuggestController,
+      wikiLink: {
+        getDocumentPath: () => filePathRef.current ?? '',
+        onOpen: (path, fragment) => {
+          void window.markdownApi.rememberWikiFragment(path, fragment)
+          void window.markdownApi.openSourcePath(path)
+          // a link into the note already on screen opens no tab; jump here
+          if (filePathRef.current === path) jumpToWikiFragment(path)
+        },
+        // the module-level `t`, not the hook's: this memo holds the closure for
+        // the life of the editor, and the hook's `t` is a new function each render
+        onUnresolved: (target, embed) => {
+          // an embed of a missing file usually names a picture, which an empty
+          // note cannot stand in for; only a link creates its note
+          if (embed) {
+            showToast(translate('wikiLinkUnresolved', { target }), 'error')
+            return
+          }
+          createWikiNoteAndOpen(wikiTargetOf(target))
+        },
+      },
+      blockLink: {
+        getDocumentPath: () => filePathRef.current ?? '',
+        onCopied: (link) => showToast(translate('blockLinkCopied', { link })),
+        onNothing: () => showToast(translate('blockLinkNone'), 'error'),
+      },
     })
-  }, [insertImage])
+  }, [createWikiNoteAndOpen, insertImage, jumpToWikiFragment])
+
+  // status-bar text statistics: Word's CJK counting rule (asian chars count
+  // one by one, non-asian words by whitespace) shared with the docs status bar
+  const [docStats, setDocStats] = useState<{ words: number; chars: number } | null>(null)
+  const statsOf = (text: string) => ({
+    words: countWords(text),
+    chars: Array.from(text).length,
+  })
 
   const editor = useEditor({
     extensions,
     content: '',
     autofocus: true,
-    editorProps: { attributes: { class: 'doc-editor' } },
+    editorProps: { attributes: { class: 'doc-editor', spellcheck: String(spellcheck) } },
     // uiOnly transactions (toggle fold state) never reach the file — not dirty
-    onUpdate: ({ transaction }) => {
+    onUpdate: ({ editor: updated, transaction }) => {
       if (!transaction.getMeta('uiOnly')) markDirty()
+      setOutlineItems(collectOutline(updated))
+      setDocStats(statsOf(updated.getText()))
+      syncSourceFromEditorRef.current()
     },
   })
   editorRef.current = editor
   filePathRef.current = filePath
 
   useEffect(() => {
+    localStorage.setItem('mdapp.spellcheck', spellcheck ? '1' : '0')
+    editor?.setOptions({
+      editorProps: { attributes: { class: 'doc-editor', spellcheck: String(spellcheck) } },
+    })
+  }, [editor, spellcheck])
+
+  useEffect(() => {
+    if (outlineWidth) localStorage.setItem('mdapp.outlineWidth', String(outlineWidth))
+  }, [outlineWidth])
+  const tiptapTarget = useMemo(() => (editor ? tiptapFindTarget(editor) : null), [editor])
+  // source mode searches the buffer the user is actually looking at
+  const findTarget = sourceMode ? (sourceRef.current?.findTarget() ?? null) : tiptapTarget
+
+  useEffect(() => {
     setImageBaseDir(filePath ? dirOf(filePath) : null)
   }, [filePath])
+
+  /**
+   * Read `path` and put it on the surface its extension calls for. Shared by
+   * the initial load and by a rename that crossed surfaces, so a file cannot
+   * end up on one surface because of the path it happened to be renamed to.
+   */
+  const loadFromPath = useCallback(
+    (path: string, raw: string) => {
+      diskTextRef.current = raw
+      overwriteRef.current = false
+      setDiskNotice(null)
+      const mode = textModeForPath(path)
+      setTextMode(mode)
+      if (sourceApplyTimerRef.current) clearTimeout(sourceApplyTimerRef.current)
+      sourceApplyTimerRef.current = null
+      pendingSourceRef.current = null
+      setSourceViewOpen(false)
+      if (isSourceMode(mode)) {
+        // source files keep their own bytes; the block editor never sees them
+        const { text, format } = readSourceText(raw)
+        sourceTextRef.current = text
+        sourceFormatRef.current = format
+        setDocStats(statsOf(text))
+        setFilePath(path)
+        setFmText('')
+        setFmOpen(false)
+        setOutlineItems([])
+        return
+      }
+      const envelope = parseDocText(raw)
+      envelopeRef.current = envelope
+      setImageBaseDir(dirOf(path))
+      // the initial load must not be undoable — Cmd+Z right after opening
+      // would otherwise blank the document (and Cmd+S overwrite the file)
+      const body = stripLegacyFencedDivs(envelope.body)
+      editor
+        ?.chain()
+        .setMeta('addToHistory', false)
+        .setContent(body, { contentType: 'markdown' })
+        .setTextSelection(1)
+        .run()
+      if (editor) {
+        sourceMapRef.current = buildSourceMap(editor, editor.state.doc, body)
+        originalSourceRef.current = roundTripEnabled
+          ? captureMarkdownSource(raw, envelope, editor.state.doc)
+          : undefined
+      }
+      setFilePath(path)
+      const inner = frontmatterInner(envelope.frontmatter)
+      setFmText(inner)
+      setFmOpen(inner !== '')
+    },
+    [editor, roundTripEnabled],
+  )
 
   useEffect(() => {
     if (!editor) return
@@ -151,20 +475,8 @@ export default function App() {
         if (path) {
           const raw = await window.markdownApi.readFile(path)
           if (cancelled) return
-          const envelope = parseDocText(raw)
-          envelopeRef.current = envelope
-          setImageBaseDir(dirOf(path))
-          // the initial load must not be undoable — Cmd+Z right after opening
-          // would otherwise blank the document (and Cmd+S overwrite the file)
-          editor
-            .chain()
-            .setMeta('addToHistory', false)
-            .setContent(stripLegacyFencedDivs(envelope.body), { contentType: 'markdown' })
-            .run()
-          setFilePath(path)
-          const inner = frontmatterInner(envelope.frontmatter)
-          setFmText(inner)
-          if (inner) setFmOpen(true)
+          loadFromPath(path, raw)
+          jumpToWikiFragment(path)
         } else {
           envelopeRef.current = { ...EMPTY_ENVELOPE }
         }
@@ -181,7 +493,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [editor])
+  }, [editor, roundTripEnabled, loadFromPath, jumpToWikiFragment])
 
   const onFrontmatterChange = useCallback(
     (inner: string) => {
@@ -192,31 +504,42 @@ export default function App() {
     [markDirty],
   )
 
-  /** Serialize and write to disk; false when canceled/failed (caller keeps the tab open) */
-  const doSave = useCallback(async (mode: SaveMode, suggestedName?: string): Promise<boolean> => {
-    const current = editorRef.current
-    if (!current || statusRef.current !== 'ready' || savingRef.current) return false
+  /**
+   * Write a source-mode file. The text goes to disk exactly as the editor
+   * holds it, with the file's own BOM and line endings restored — no markdown
+   * serialization, no image extraction, no trailing-newline fixups.
+   */
+  const doSaveSource = useCallback(async (mode: SaveMode): Promise<boolean> => {
+    if (statusRef.current !== 'ready' || savingRef.current) return false
+    if (diskNoticeRef.current && !overwriteRef.current) {
+      // the user has not chosen between the two versions yet; autosave must not pick for them
+      setDiskNotice('conflict')
+      return false
+    }
     savingRef.current = true
     setSaveState('saving')
+    const textAtSave = sourceTextRef.current
     try {
-      // edits landing while the write is in flight (AI streaming, fast typing)
-      // must keep the document dirty — compare doc identity after the await
-      const docAtSave = current.state.doc
-      const fmAtSave = envelopeRef.current.frontmatter
-      const body = current.getMarkdown()
-      const text = serializeDocText(envelopeRef.current, body)
-      const result = await window.markdownApi.save({ text, mode, suggestedName })
+      const written = writeSourceText(textAtSave, sourceFormatRef.current)
+      const result = await window.markdownApi.save({
+        text: written,
+        imageSources: [],
+        mode,
+        overwrite: overwriteRef.current,
+      })
       if (result.ok && 'path' in result) {
+        diskTextRef.current = written
+        overwriteRef.current = false
+        setDiskNotice(null)
+        // an edit that landed mid-write is still unsaved
+        const unchanged = sourceTextRef.current === textAtSave
         setFilePath(result.path)
-        const unchanged =
-          editorRef.current?.state.doc === docAtSave && envelopeRef.current.frontmatter === fmAtSave
         if (unchanged) {
           dirtyRef.current = false
           setDirty(false)
           window.markdownApi.setDirty(false)
           setSaveState('saved')
         } else {
-          // the main process cleared its dirty flag on write — re-assert it
           dirtyRef.current = true
           setDirty(true)
           window.markdownApi.setDirty(true)
@@ -224,6 +547,7 @@ export default function App() {
         }
         return true
       }
+      if (!result.ok && result.conflict) setDiskNotice('conflict')
       setSaveState(result.ok ? 'idle' : 'failed')
       return false
     } catch (err) {
@@ -235,75 +559,642 @@ export default function App() {
     }
   }, [])
 
-  const runExport = useCallback(async (format: ExportFormat) => {
+  /** The exact text a save would write right now; null before the document is ready. */
+  const currentFileText = useCallback((): string | null => {
+    const current = editorRef.current
+    if (!current || statusRef.current !== 'ready') return null
+    return serializeMarkdown(
+      envelopeRef.current,
+      current.state.doc,
+      () => bodyMarkdown(current),
+      originalSourceRef.current,
+    )
+  }, [])
+
+  const openSource = useCallback(() => {
+    const text = currentFileText()
+    if (text === null) return
+    setSourceText(text)
+    // the Find panel drives a selection in the canvas the user can no longer see
+    setShowFind(false)
+    setSourceViewOpen(true)
+  }, [currentFileText])
+
+  /** Push the pane's pending text into the editor now (the keystroke path is debounced). */
+  const flushSource = useCallback(() => {
+    if (sourceApplyTimerRef.current) clearTimeout(sourceApplyTimerRef.current)
+    sourceApplyTimerRef.current = null
+    const text = pendingSourceRef.current
+    if (text === null) return
+    pendingSourceRef.current = null
     const current = editorRef.current
     if (!current || statusRef.current !== 'ready') return
-    const suggestedName =
-      (filePathRef.current
-        ? filePathRef.current.replace(/^.*[/\\]/, '').replace(/\.(md|markdown)$/i, '')
-        : deriveAutoFileName(current)) || 'Untitled'
-    try {
-      if (format === 'pdf') {
-        const html = buildPrintHtml(current.view.dom, suggestedName)
-        const result = await window.markdownApi.exportPdf({ html, suggestedName })
-        if (!result.ok) console.error('[markdown] pdf export failed:', result.error)
-        return
-      }
-      const loadImage = async (src: string) => {
-        const data = await window.markdownApi.readImage(src)
-        if (!data) return null
-        const dims = await measureImage(resolveImageSrc(src))
-        let width = dims?.width || 400
-        let height = dims?.height || 300
-        if (width > DOCX_MAX_IMAGE_PX) {
-          height = Math.round((height * DOCX_MAX_IMAGE_PX) / width)
-          width = DOCX_MAX_IMAGE_PX
-        }
-        return { base64: data.base64, mime: data.mime, widthPx: width, heightPx: height }
-      }
-      const bytes = await exportDocxBytes(current.getJSON(), loadImage)
-      const result = await window.markdownApi.exportDocx({
-        base64: bytesToBase64(bytes),
-        suggestedName,
-        mode: format === 'docs' ? 'openInDocs' : 'dialog',
-      })
-      if (!result.ok) console.error('[markdown] docx export failed:', result.error)
-    } catch (err) {
-      console.error('[markdown] export failed:', err)
-    }
+    const hadFrontmatter = envelopeRef.current.frontmatter !== ''
+    const applied = applySourceText(current, text)
+    envelopeRef.current = applied.envelope
+    sourceMapRef.current = applied.sourceMap
+    const inner = frontmatterInner(applied.envelope.frontmatter)
+    setFmText(inner)
+    // surface a frontmatter block that just appeared, but leave a panel the
+    // user closed on purpose closed
+    if (inner && !hadFrontmatter) setFmOpen(true)
   }, [])
+
+  const closeSource = useCallback(() => {
+    flushSource()
+    setSourceViewOpen(false)
+  }, [flushSource])
+
+  const toggleSource = useCallback(() => {
+    if (sourceViewOpenRef.current) closeSource()
+    else openSource()
+  }, [closeSource, openSource])
+
+  // A keystroke is re-parsed into the editor rather than saved, so save,
+  // autosave, the AI tools and the outline keep reading one document. The
+  // re-parse is debounced; the pane itself updates immediately.
+  const onSourceChange = useCallback(
+    (text: string) => {
+      setSourceText(text)
+      pendingSourceRef.current = text
+      setDocStats(statsOf(text))
+      markDirty()
+      if (sourceApplyTimerRef.current) clearTimeout(sourceApplyTimerRef.current)
+      sourceApplyTimerRef.current = setTimeout(flushSource, SOURCE_APPLY_DEBOUNCE_MS)
+    },
+    [flushSource, markDirty],
+  )
+
+  const onSourceFocusChange = useCallback(() => {
+    flushSource()
+    const text = currentFileText()
+    if (text !== null) setSourceText(text)
+  }, [currentFileText, flushSource])
+
+  // An AI run or external reload landing while the pane is open must show up
+  // there; while the textarea is focused the user's own half-typed text wins.
+  syncSourceFromEditorRef.current = () => {
+    if (!sourceViewOpenRef.current || pendingSourceRef.current !== null) return
+    if (document.activeElement?.classList.contains('source-textarea')) return
+    const text = currentFileText()
+    if (text !== null) setSourceText(text)
+  }
+
+  useEffect(() => {
+    sourceViewOpenRef.current = sourceViewOpen
+  }, [sourceViewOpen])
+
+  useEffect(() => () => clearTimeout(sourceApplyTimerRef.current ?? undefined), [])
+
+  /** Serialize and write to disk; false when canceled/failed (caller keeps the tab open) */
+  const doSave = useCallback(
+    async (mode: SaveMode, suggestedName?: string, proposedName?: string): Promise<boolean> => {
+      if (sourceMode) return doSaveSource(mode)
+      flushSource()
+      const current = editorRef.current
+      if (!current || statusRef.current !== 'ready' || savingRef.current) return false
+      if (diskNoticeRef.current && !overwriteRef.current) {
+        setDiskNotice('conflict')
+        return false
+      }
+      savingRef.current = true
+      setSaveState('saving')
+      try {
+        // edits landing while the write is in flight (AI streaming, fast typing)
+        // must keep the document dirty — compare doc identity after the await
+        const docAtSave = current.state.doc
+        const fmAtSave = envelopeRef.current.frontmatter
+        const sourceAtSave = originalSourceRef.current
+        let body: string | undefined
+        const text = serializeMarkdown(
+          envelopeRef.current,
+          current.state.doc,
+          () => (body = bodyMarkdown(current)),
+          sourceAtSave,
+        )
+        const imageSources = imageSourcesFromEditor(current)
+        // A never-saved document is offered a name derived from its own
+        // content: its first heading, else its first words. It prefills the
+        // save dialog rather than replacing it — the reader still chooses where
+        // the file goes, and a save never waits on a model. A name the caller
+        // proposed outright (the ribbon's "Name with AI") wins over both.
+        const defaultName = await proposedSaveName(current, {
+          filePath: filePathRef.current,
+          suggestedName,
+          proposedName,
+        })
+        const result = await window.markdownApi.save({
+          text,
+          imageSources,
+          mode,
+          suggestedName,
+          overwrite: overwriteRef.current,
+          ...(defaultName ? { defaultName } : {}),
+        })
+        if (result.ok && 'path' in result) {
+          diskTextRef.current = result.writtenText ?? text
+          overwriteRef.current = false
+          setDiskNotice(null)
+          // what this note offers `[[...#` has just changed on disk
+          invalidateWikiHeads()
+          const unchanged =
+            editorRef.current?.state.doc === docAtSave &&
+            envelopeRef.current.frontmatter === fmAtSave
+          // Save As can rewrite sources absent from the visual projection (e.g. HTML).
+          // Never reuse a snapshot containing paths from the previous location.
+          if (result.imageRewrites?.length) originalSourceRef.current = undefined
+          if (result.imageRewrites?.length && editorRef.current) {
+            applyImageRewrites(editorRef.current, result.imageRewrites)
+          }
+          // the next save splices against what is now on disk: after image
+          // rewrites that is writtenText paired with the rewritten document
+          if (result.writtenText === undefined) {
+            sourceMapRef.current = buildSourceMap(
+              current,
+              docAtSave,
+              body ?? stripLegacyFencedDivs(parseDocText(text).body),
+            )
+          } else {
+            sourceMapRef.current =
+              unchanged && editorRef.current
+                ? buildSourceMap(
+                    editorRef.current,
+                    editorRef.current.state.doc,
+                    stripLegacyFencedDivs(parseDocText(result.writtenText).body),
+                  )
+                : null
+          }
+          if (
+            unchanged &&
+            sourceAtSave?.source === text &&
+            result.writtenText !== undefined &&
+            editorRef.current
+          ) {
+            originalSourceRef.current = captureMarkdownSource(
+              result.writtenText,
+              envelopeRef.current,
+              editorRef.current.state.doc,
+            )
+          }
+          setImageBaseDir(dirOf(result.path))
+          setFilePath(result.path)
+          if (unchanged) {
+            dirtyRef.current = false
+            setDirty(false)
+            window.markdownApi.setDirty(false)
+            setSaveState('saved')
+          } else {
+            // the main process cleared its dirty flag on write — re-assert it
+            dirtyRef.current = true
+            setDirty(true)
+            window.markdownApi.setDirty(true)
+            setSaveState('idle')
+          }
+          return true
+        }
+        if (!result.ok && result.conflict) setDiskNotice('conflict')
+        setSaveState(result.ok ? 'idle' : 'failed')
+        return false
+      } catch (err) {
+        console.error('[markdown] save failed:', err)
+        setSaveState('failed')
+        return false
+      } finally {
+        savingRef.current = false
+      }
+    },
+    [flushSource, sourceMode, doSaveSource],
+  )
+
+  /** another program wrote the file: swap the text in, keep caret and scroll, leave undo history alone */
+  const reloadFromDisk = useCallback(
+    (path: string, raw: string) => {
+      const current = editorRef.current
+      const caret = current?.state.selection.from ?? 1
+      const scrollTop = scrollRef.current?.scrollTop ?? 0
+      // loadFromPath replaces the content; with the status parked the resulting update is not an edit
+      statusRef.current = 'loading'
+      try {
+        loadFromPath(path, raw)
+        if (isSourceMode(textModeForPath(path))) sourceRef.current?.setDoc(readSourceText(raw).text)
+      } finally {
+        statusRef.current = 'ready'
+      }
+      if (current && !isSourceMode(textModeForPath(path))) {
+        current
+          .chain()
+          .setMeta('addToHistory', false)
+          .setMeta('uiOnly', true)
+          .setTextSelection(Math.min(caret, current.state.doc.content.size))
+          .run()
+      }
+      requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollTop
+      })
+      dirtyRef.current = false
+      setDirty(false)
+      window.markdownApi.setDirty(false)
+      setSaveState('idle')
+    },
+    [loadFromPath],
+  )
+
+  const reloadNow = useCallback(async () => {
+    const path = filePathRef.current
+    if (!path) return
+    try {
+      window.markdownApi.ackFileChangedOnDisk()
+      reloadFromDisk(path, await window.markdownApi.readFile(path))
+    } catch (err) {
+      console.error('[markdown] reload from disk failed:', err)
+    }
+  }, [reloadFromDisk])
+
+  const keepMine = useCallback(() => {
+    overwriteRef.current = true
+    setDiskNotice(null)
+    window.markdownApi.ackFileChangedOnDisk()
+  }, [])
+
+  const overwriteNow = useCallback(() => {
+    overwriteRef.current = true
+    setDiskNotice(null)
+    void doSave('save')
+  }, [doSave])
+
+  /**
+   * Ask the model to name this document, on request, then open Save As with its
+   * answer prefilled.
+   *
+   * The stem goes into the dialog rather than renaming the file on disk: a file
+   * that may be open elsewhere, referenced from a note, or synced is not
+   * something to move behind the reader's back. A declined or empty answer
+   * leaves the dialog on the document's current name, so this is a no-op
+   * rather than a failure.
+   */
+  const nameWithAi = useCallback(async () => {
+    const current = editorRef.current
+    if (!current || statusRef.current !== 'ready' || savingRef.current) return
+    const stem = await modelSaveAsName(current)
+    if (!stem) return
+    await doSave('saveAs', undefined, stem)
+  }, [doSave])
+
+  /** `outPath` (headless export only) skips the save dialog; resolves true when a file was written. */
+  const runExport = useCallback(
+    async (format: ExportFormat, outPath?: string) => {
+      // a source file has no rendered document to export
+      if (sourceMode) return false
+      const current = editorRef.current
+      if (!current || statusRef.current !== 'ready') return false
+      const suggestedName =
+        (filePathRef.current
+          ? filePathRef.current.replace(/^.*[/\\]/, '').replace(/\.(md|markdown)$/i, '')
+          : deriveAutoFileName(current)) || 'Untitled'
+      if (format === 'png') {
+        if (exportingImagesRef.current) return false
+        exportingImagesRef.current = true
+        setImageExportStatus({ key: 'appExportingImages' })
+        try {
+          await document.fonts.ready
+          await Promise.all(
+            [
+              ...current.view.dom.querySelectorAll<HTMLImageElement>(
+                'img[src]:not(.ProseMirror-separator)',
+              ),
+            ].map((image) => image.decode().catch(() => {})),
+          )
+          const result = await exportImages(
+            buildPrintHtml(current.view.dom, suggestedName),
+            suggestedName,
+            (count) => setImageExportStatus({ key: 'appExportImagesProgress', params: { count } }),
+          )
+          if (!result.ok) throw new Error(result.error)
+          if ('canceled' in result) {
+            setImageExportStatus(null)
+            return false
+          }
+          setImageExportStatus({
+            key: 'appExportImagesDone',
+            params: { count: result.count ?? 0, dir: result.path },
+          })
+          return true
+        } catch (err) {
+          setImageExportStatus({
+            key: 'appExportImagesFailed',
+            params: { error: err instanceof Error ? err.message : String(err) },
+          })
+          return false
+        } finally {
+          exportingImagesRef.current = false
+        }
+      }
+      try {
+        if (format === 'pdf') {
+          const html = buildPrintHtml(current.view.dom, suggestedName)
+          const result = await window.markdownApi.exportPdf({
+            html,
+            suggestedName,
+            ...(outPath ? { outPath } : {}),
+          })
+          if (!result.ok) console.error('[markdown] pdf export failed:', result.error)
+          return result.ok && !('canceled' in result)
+        }
+        const loadImage = async (src: string) => {
+          const data = decodeImageDataUrl(src) ?? (await window.markdownApi.readImage(src))
+          return data ? toDocxImage(data, DOCX_MAX_IMAGE_PX) : null
+        }
+        const rasterizeDiagram = async (source: string, language: DiagramLanguage) => {
+          const result = await renderDiagram(language, source)
+          return result.ok ? diagramSvgToPng(result.svg, DOCX_MAX_IMAGE_PX) : null
+        }
+        const bytes = await exportDocxBytes(current.getJSON(), loadImage, rasterizeDiagram)
+        const result = await window.markdownApi.exportDocx({
+          base64: bytesToBase64(bytes),
+          suggestedName,
+          mode: format === 'docs' ? 'openInDocs' : 'dialog',
+        })
+        if (!result.ok) console.error('[markdown] docx export failed:', result.error)
+        return result.ok && !('canceled' in result)
+      } catch (err) {
+        console.error('[markdown] export failed:', err)
+        return false
+      }
+    },
+    [sourceMode],
+  )
+
+  // Headless export mode (--headless-export): this renderer lives in a hidden
+  // window whose only job is to run the File menu's PDF export against a path
+  // the CLI chose, then report back so the main process can quit.
+  const headlessExportStartedRef = useRef(false)
+  useEffect(() => {
+    if (headlessExportStartedRef.current) return
+    headlessExportStartedRef.current = true
+    void (async () => {
+      const outPath = await window.markdownApi.consumeHeadlessExport()
+      if (!outPath) return
+      const report = await runHeadlessRendererExport(
+        outPath,
+        () =>
+          pollUntilReady(() => {
+            if (statusRef.current === 'error') throw new Error('the input document did not open')
+            return statusRef.current === 'ready'
+          }, 'no document opened'),
+        (target) => runExport('pdf', target),
+      )
+      window.markdownApi.headlessExportDone(report)
+    })()
+  }, [runExport])
+
+  /**
+   * Print through the same self-contained HTML the PDF export uses, loaded into a
+   * hidden same-session iframe (md-asset:// images keep resolving) — printing the
+   * live page would drag the ribbon/panels along, and Electron has no built-in
+   * preview to crop them out.
+   */
+  const sourceHistory = useMemo(
+    () => ({
+      canUndo: sourceRef.current?.canUndo() ?? false,
+      canRedo: sourceRef.current?.canRedo() ?? false,
+      undo: () => {
+        sourceRef.current?.undo()
+        sourceRef.current?.focus()
+      },
+      redo: () => {
+        sourceRef.current?.redo()
+        sourceRef.current?.focus()
+      },
+    }),
+    // sourceRev is the change signal; the ref itself is stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sourceRev, sourceMode],
+  )
+
+  const printingRef = useRef(false)
+  const printDoc = useCallback(async () => {
+    const current = editorRef.current
+    if (!current || statusRef.current !== 'ready' || printingRef.current) return
+    printingRef.current = true
+    const title =
+      (filePathRef.current
+        ? filePathRef.current.replace(/^.*[/\\]/, '').replace(/\.(md|markdown|txt|json)$/i, '')
+        : deriveAutoFileName(current)) || 'Untitled'
+    let printRoot: HTMLElement = current.view.dom
+    if (sourceMode) {
+      printRoot = document.createElement('div')
+      const pre = document.createElement('pre')
+      pre.textContent = sourceTextRef.current
+      printRoot.appendChild(pre)
+    }
+    const frame = document.createElement('iframe')
+    frame.style.position = 'fixed'
+    frame.style.right = '100%'
+    frame.style.bottom = '100%'
+    frame.style.width = '0'
+    frame.style.height = '0'
+    frame.style.border = '0'
+    try {
+      await new Promise<void>((resolve) => {
+        frame.onload = () => resolve()
+        frame.srcdoc = buildPrintHtml(printRoot, title)
+        document.body.appendChild(frame)
+      })
+      const fdoc = frame.contentDocument
+      const fwin = frame.contentWindow
+      if (!fdoc || !fwin) return
+      // the export path passes printToPDF margins instead; the dialog needs @page
+      const pageStyle = fdoc.createElement('style')
+      pageStyle.textContent = '@page { margin: 0.6in; }'
+      fdoc.head.appendChild(pageStyle)
+      await Promise.all([...fdoc.images].map((img) => img.decode().catch(() => {})))
+      // resolve on afterprint so the frame survives until the dialog closes (cancel included)
+      await new Promise<void>((resolve) => {
+        fwin.addEventListener('afterprint', () => resolve())
+        fwin.print()
+      })
+    } catch (err) {
+      console.error('[markdown] print failed:', err)
+    } finally {
+      frame.remove()
+      printingRef.current = false
+    }
+  }, [sourceMode])
 
   useEffect(() => {
     const offExport = window.markdownApi.onExportRequest((format) => void runExport(format))
-    return offExport
-  }, [runExport])
+    const offPrint = window.markdownApi.onPrintRequest(() => void printDoc())
+    return () => {
+      offExport()
+      offPrint()
+    }
+  }, [runExport, printDoc])
+
+  const openFind = useCallback((replace: boolean) => {
+    if (statusRef.current !== 'ready') return
+    setShowFind(true)
+    setFindFocus((f) => ({ field: replace ? 'replace' : 'find', nonce: f.nonce + 1 }))
+  }, [])
 
   useEffect(() => {
-    const offSave = window.markdownApi.onSaveRequest(
-      (mode) => void doSave(mode).then((ok) => window.markdownApi.sendSaveRequestAck(ok)),
-    )
-    const offClose = window.markdownApi.onCloseSaveRequest(() => {
-      void doSave('save').then((ok) => window.markdownApi.sendCloseSaveResult(ok))
+    const offSave = window.markdownApi.onSaveRequest((mode) => {
+      void (async () => {
+        // same as the close-save path: wait out an in-flight autosave instead of
+        // answering false, or an MCP save-and-close during a blur autosave fails
+        while (savingRef.current) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        window.markdownApi.sendSaveRequestAck(await doSave(mode))
+      })()
     })
-    const offRenamed = window.markdownApi.onFileRenamed((newPath) => setFilePath(newPath))
+    // MCP read of this open document: hand back the same serialization a save
+    // would write, so unsaved edits are included. Staying silent while the
+    // editor is still loading keeps the main process retrying its request
+    // instead of failing on a document that is merely not ready yet.
+    const offReadText = window.markdownApi.onReadTextRequest(() => {
+      const current = editorRef.current
+      if (!current || statusRef.current !== 'ready') return
+      try {
+        const text = serializeMarkdown(
+          envelopeRef.current,
+          current.state.doc,
+          () => bodyMarkdown(current),
+          originalSourceRef.current,
+        )
+        window.markdownApi.sendReadTextResult({ text })
+      } catch (err) {
+        window.markdownApi.sendReadTextResult({
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    })
+    const offClose = window.markdownApi.onCloseSaveRequest(() => {
+      void (async () => {
+        // A close-save arriving during an in-flight autosave must wait for it
+        // instead of failing (the old immediate `false` from `savingRef` made
+        // "Save and close" silently give up during a blur autosave — the same
+        // bug the docs app fixed with its save serializer).
+        while (savingRef.current) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        // The in-flight save may have already persisted everything.
+        if (!dirtyRef.current) {
+          window.markdownApi.sendCloseSaveResult(true)
+          return
+        }
+        const ok = await doSave('save')
+        window.markdownApi.sendCloseSaveResult(ok)
+      })()
+    })
+    const offDisk = window.markdownApi.onFileChangedOnDisk((changedPath) => {
+      // the watcher keeps refusing saves until the change is acknowledged; a
+      // change parked behind the bar stays unacknowledged until the user decides
+      let awaitingUser = false
+      void (async () => {
+        try {
+          if (changedPath !== filePathRef.current || statusRef.current !== 'ready') return
+          const raw = await window.markdownApi.readFile(changedPath)
+          if (changedPath !== filePathRef.current || raw === diskTextRef.current) return
+          const dirtyNow = dirtyRef.current || savingRef.current
+          if (dirtyNow) {
+            diskTextRef.current = raw
+            setDiskNotice('changed')
+            awaitingUser = true
+            return
+          }
+          reloadFromDisk(changedPath, raw)
+        } catch (err) {
+          console.error('[markdown] reload after external change failed:', err)
+        } finally {
+          if (!awaitingUser) window.markdownApi.ackFileChangedOnDisk()
+        }
+      })()
+    })
+    const offRenamed = window.markdownApi.onFileRenamed((newPath) => {
+      // A rename that changes the extension changes what the file is, so the
+      // open document has to follow it onto the matching surface. Reloading
+      // throws away unsaved edits, so a dirty document is refused instead —
+      // the file on disk is untouched and the tab stays open.
+      const action = renameAction(filePathRef.current, newPath, dirtyRef.current)
+      if (action === 'keep') {
+        setFilePath(newPath)
+        return
+      }
+      if (action === 'block-dirty') {
+        showToast(t('renameNeedsSave'), 'error')
+        return
+      }
+      void (async () => {
+        try {
+          const raw = await window.markdownApi.readFile(newPath)
+          // loadFromPath replaces the content with addToHistory off, so the
+          // old surface's undo stack cannot walk back into a document that
+          // has a different shape now
+          loadFromPath(newPath, raw)
+        } catch (err) {
+          console.error('[markdown] reload after rename failed:', err)
+        }
+      })()
+    })
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 's') {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return
+      const key = event.key.toLowerCase()
+      if (key === 's') {
         event.preventDefault()
         void doSave(event.shiftKey ? 'saveAs' : 'save')
+      } else if (key === 'p' && !event.shiftKey) {
+        event.preventDefault()
+        void printDoc()
+      } else if (key === 'f' && !event.shiftKey) {
+        event.preventDefault()
+        openFind(false)
+      } else if (key === 'h' && !event.shiftKey) {
+        // Word's replace shortcut: Ctrl+H on Windows/Linux, Control+H on macOS —
+        // its ⌘H belongs to the system Hide role, so the menu keeps that key
+        event.preventDefault()
+        openFind(true)
+      } else if (key === 'e' && !event.shiftKey) {
+        // Obsidian's edit/preview toggle: the source view
+        event.preventDefault()
+        toggleSource()
+      } else if (key === '=' || key === '+') {
+        event.preventDefault()
+        zoomIn()
+      } else if (key === '-' || key === '_') {
+        event.preventDefault()
+        zoomOut()
+      } else if (key === '0') {
+        event.preventDefault()
+        setZoom(100)
       }
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => {
       offSave()
+      offReadText()
       offClose()
+      offDisk()
       offRenamed()
       window.removeEventListener('keydown', onKeyDown, true)
     }
-  }, [doSave])
+  }, [doSave, printDoc, zoomIn, zoomOut, openFind, toggleSource, loadFromPath, reloadFromDisk, t])
+
+  // Chromium reports trackpad pinch as ctrl+wheel. Also support Cmd/Ctrl+scroll
+  // while the pointer is over the document canvas.
+  useEffect(() => {
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return
+      if (!(event.target as HTMLElement | null)?.closest?.('.editor-scroll')) return
+      event.preventDefault()
+      setZoom((value) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value - event.deltaY * 0.6)))
+    }
+    window.addEventListener('wheel', onWheel, { passive: false })
+    return () => window.removeEventListener('wheel', onWheel)
+  }, [])
 
   useEffect(() => {
-    localStorage.setItem('mdapp.autoSave', autoSave ? '1' : '0')
-  }, [autoSave])
+    rememberAiPanelOpen('mdapp.showAi', aiOpen)
+  }, [aiOpen])
 
   // autosave: every 30s and on window blur, silently persist pending changes
   // (same policy as the docs app; untitled documents are skipped — the first
@@ -323,13 +1214,89 @@ export default function App() {
     }
   }, [autoSave, filePath, doSave])
 
+  // ---- selection-scoped AI edit queue (anchors live in the editor as decorations) ----
+  const getQueueItem = useCallback(
+    (qid: string) => editQueueRef.current.find((item) => item.qid === qid),
+    [],
+  )
+  const queueAdd = useCallback((instruction: string): void => {
+    const current = editorRef.current
+    if (!current) return
+    const { from, to, empty } = current.state.selection
+    if (empty || editQueueRef.current.length >= EDIT_QUEUE_MAX) return
+    const qid = `q${++queueSeqRef.current}`
+    addQueueAnchor(current, qid, from, to)
+    const capturedText = current.state.doc
+      .textBetween(from, to, ' ', ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80)
+    setEditQueue((queue) => [...queue, { qid, instruction, capturedText }])
+  }, [])
+  const queueUpdate = useCallback(
+    (qid: string, instruction: string): void =>
+      setEditQueue((queue) => queue.map((i) => (i.qid === qid ? { ...i, instruction } : i))),
+    [],
+  )
+  const queueRemove = useCallback((qid: string): void => {
+    if (editorRef.current) removeQueueAnchors(editorRef.current, [qid])
+    setEditQueue((queue) => queue.filter((i) => i.qid !== qid))
+  }, [])
+  const queueClear = useCallback((): void => {
+    if (editorRef.current) clearQueueAnchors(editorRef.current)
+    setEditQueue([])
+  }, [])
+  /** a submission hands its items to the run and drops them from the queue */
+  const queueConsume = useCallback((qids: string[]): void => {
+    if (editorRef.current) removeQueueAnchors(editorRef.current, qids)
+    setEditQueue((queue) => queue.filter((i) => !qids.includes(i.qid)))
+  }, [])
+  const queueFocus = useCallback((qid: string): void => {
+    const current = editorRef.current
+    if (!current) return
+    const selection = selectionForAnchor(current, qid)
+    if (!selection) return
+    current.view.dispatch(current.state.tr.setSelection(selection).scrollIntoView())
+    current.view.focus()
+  }, [])
+  /** outline click: move the cursor into the heading and scroll it into view */
+  const jumpToOutline = useCallback((pos: number): void => {
+    const current = editorRef.current
+    if (!current) return
+    const selection = TextSelection.near(current.state.doc.resolve(pos))
+    current.view.dispatch(current.state.tr.setSelection(selection).scrollIntoView())
+    current.view.focus()
+  }, [])
+  const askSendNow = useCallback((text: string): void => {
+    setAiOpen(true)
+    setAiPreset((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }))
+  }, [])
+
   const aiDeps: MarkdownAiDeps = {
     getEditor: () => editorRef.current,
-    getSnapshot: () => editorRef.current?.getMarkdown() ?? '',
-    restoreSnapshot: (markdown) => {
+    // envelopeRef, not fmText state: a write-then-read within one AI run must
+    // see the new value before React commits
+    getFrontmatter: () => frontmatterInner(envelopeRef.current.frontmatter),
+    setFrontmatter: (inner) => {
+      onFrontmatterChange(inner)
+      setFmOpen(inner.trim() !== '')
+    },
+    // snapshots carry body + the raw frontmatter block (structured, no
+    // file-text round-trip) so a rollback also reverts set_frontmatter and
+    // an untouched block restores byte-for-byte
+    getSnapshot: () => ({
+      body: editorRef.current ? bodyMarkdown(editorRef.current) : '',
+      frontmatter: envelopeRef.current.frontmatter,
+    }),
+    restoreSnapshot: (snapshot) => {
       const current = editorRef.current
       if (!current) return
-      current.commands.setContent(markdown, { contentType: 'markdown' })
+      envelopeRef.current.frontmatter = snapshot.frontmatter
+      const inner = frontmatterInner(snapshot.frontmatter)
+      setFmText(inner)
+      setFmOpen(inner !== '')
+      current.commands.setContent(snapshot.body, { contentType: 'markdown' })
+      sourceMapRef.current = buildSourceMap(current, current.state.doc, snapshot.body)
       markDirty()
     },
     onRunDone: (mutated) => {
@@ -352,6 +1319,19 @@ export default function App() {
             ? t('savedOk')
             : ''
 
+  const findStrings: FindPanelStrings = {
+    findPlaceholder: t('findPlaceholder'),
+    replacePlaceholder: t('replacePlaceholder'),
+    matchCase: t('matchCase'),
+    wholeWord: t('wholeWord'),
+    noResults: t('noResults'),
+    prevMatch: t('prevMatch'),
+    nextMatch: t('nextMatch'),
+    closeEsc: t('closeEsc'),
+    replace: t('replace'),
+    replaceAll: t('replaceAll'),
+  }
+
   if (status === 'error') {
     return (
       <div className="app">
@@ -367,23 +1347,53 @@ export default function App() {
         disabled={status !== 'ready'}
         dirty={dirty}
         onSave={() => void doSave('save')}
+        onSaveAs={() => void doSave('saveAs')}
+        onNameWithAi={() => void nameWithAi()}
+        onFind={() => openFind(false)}
         autoSave={autoSave}
         onToggleAutoSave={setAutoSave}
         imageEnabled={Boolean(filePath)}
+        mdTheme={mdTheme}
+        onMarkdownTheme={pickMarkdownTheme}
         onInsertImage={insertImage}
+        onImageHost={() => setImageHostOpen(true)}
         frontmatterOpen={fmOpen}
         onToggleFrontmatter={() => setFmOpen((v) => !v)}
+        sourceViewOpen={sourceViewOpen}
+        onToggleSource={toggleSource}
+        outlineOpen={outlineOpen}
+        onToggleOutline={() => setOutlineOpen((v) => !v)}
+        hasOutline={outlineItems.length > 0}
+        backlinksOpen={backlinksOpen}
+        tagsOpen={tagsOpen}
+        onToggleBacklinks={() => setBacklinksOpen((v) => !v)}
+        onToggleTags={() => setTagsOpen((v) => !v)}
+        onOpenGraph={() => setGraphOpen(true)}
+        onCopyBlockLink={() => editor?.commands.copyBlockLink()}
+        spellcheck={spellcheck}
+        onToggleSpellcheck={() => setSpellcheck((v) => !v)}
+        sourceMode={sourceMode}
+        sourceHistory={sourceMode ? sourceHistory : undefined}
         aiOpen={aiOpen}
         onToggleAi={() => setAiOpen((v) => !v)}
         onAiPreset={(text) => {
           setAiOpen(true)
           setAiPreset((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }))
         }}
+        redactEnabled={redactEnabled}
+        onToggleRedact={(on) => {
+          setRedactEnabled(on)
+          localStorage.setItem('mdapp.redact', on ? '1' : '0')
+        }}
       />
       {status === 'loading' && <div className="center-note">{t('loading')}</div>}
       <div className="app-main" style={status === 'ready' ? undefined : { display: 'none' }}>
-        <div className={`ai-dock${aiOpen ? '' : ' collapsed'}`}>
-          {!aiOpen && (
+        <div
+          className={`ai-dock${aiOpen ? '' : ' collapsed'}${
+            !aiSidebarEnabled && !aiOpen ? ' ai-dock-off' : ''
+          }`}
+        >
+          {!aiOpen && aiSidebarEnabled && (
             <button
               className="ai-rail"
               data-tip={t('aiOpenAssistant')}
@@ -400,30 +1410,199 @@ export default function App() {
               filePath={filePath}
               preset={aiPreset}
               onCollapse={() => setAiOpen(false)}
+              editQueue={editQueue}
+              onQueueEditInstruction={queueUpdate}
+              onQueueRemove={queueRemove}
+              onQueueClear={queueClear}
+              onQueueFocus={queueFocus}
+              onQueueConsume={queueConsume}
             />
           )}
         </div>
+        {outlineOpen && !sourceMode && (
+          <OutlinePane
+            items={outlineItems}
+            onJump={jumpToOutline}
+            width={outlineWidth}
+            onResize={setOutlineWidth}
+          />
+        )}
+        {backlinksOpen && !sourceMode && (
+          <BacklinksPane
+            path={filePath}
+            onOpen={(path) => void window.markdownApi.openSourcePath(path)}
+          />
+        )}
+        {tagsOpen && !sourceMode && (
+          <TagsPane onOpen={(path) => void window.markdownApi.openSourcePath(path)} />
+        )}
         <div className="app-content">
-          <div className="editor-scroll" ref={scrollRef}>
-            <div className="doc-page">
-              {fmOpen && <FrontmatterPanel value={fmText} onChange={onFrontmatterChange} />}
-              <EditorContent editor={editor} />
+          {diskNotice && (
+            <div className="disk-notice" role="status">
+              <span>{t(diskNotice === 'changed' ? 'diskChangedMsg' : 'diskConflictMsg')}</span>
+              <button type="button" onClick={() => void reloadNow()}>
+                {t('diskReload')}
+              </button>
+              <button type="button" onClick={diskNotice === 'changed' ? keepMine : overwriteNow}>
+                {t(diskNotice === 'changed' ? 'diskKeepMine' : 'diskOverwrite')}
+              </button>
             </div>
-          </div>
+          )}
+          {showFind && findTarget && (
+            <FindPanel
+              target={findTarget}
+              strings={findStrings}
+              onClose={() => setShowFind(false)}
+              focusRequest={findFocus}
+            />
+          )}
+          {/* Two different things, three branches. A .txt/.json has no block
+              document behind it at all, so its source text replaces the canvas
+              outright. The markdown source view is a different case: there the
+              editor still owns a live ProseMirror view, and unmounting
+              EditorContent tears it down, so the canvas stays mounted and only
+              hidden while SourcePane sits beside it. */}
+          {sourceMode ? (
+            <div className="source-editor">
+              <PlainTextEditor
+                ref={sourceRef}
+                initialText={sourceTextRef.current}
+                mode={textMode === 'json' ? 'json' : 'plain'}
+                spellcheck={spellcheck}
+                onChange={(text) => {
+                  sourceTextRef.current = text
+                  setSourceRev((n) => n + 1)
+                  markDirty()
+                }}
+              />
+            </div>
+          ) : (
+            <>
+              <div
+                className={`editor-scroll${sourceViewOpen ? ' source-off' : ''}`}
+                ref={scrollRef}
+              >
+                <div className="doc-page" style={{ zoom: zoom / 100 }}>
+                  {fmOpen && <FrontmatterPanel value={fmText} onChange={onFrontmatterChange} />}
+                  <EditorContent editor={editor} />
+                </div>
+              </div>
+              {sourceViewOpen && (
+                <SourcePane
+                  value={sourceText}
+                  onChange={onSourceChange}
+                  onFocusChange={onSourceFocusChange}
+                />
+              )}
+            </>
+          )}
           <footer className="status-bar">
             <div className="status-left">
+              {imageExportStatus && (
+                <span className="status-item status-export" role="status">
+                  {t(imageExportStatus.key, imageExportStatus.params)}
+                </span>
+              )}
               {fileName && <span className="status-item status-file">{fileName}</span>}
+              {fileName && docStats && (
+                <span className="status-item status-stats">
+                  {t('statusWords', { n: docStats.words })} ·{' '}
+                  {t('statusChars', {
+                    n: docStats.chars,
+                  })}
+                </span>
+              )}
             </div>
             <div className="status-right">
               {statusText && (
                 <span className={`status-save status-${saveState}`}>{statusText}</span>
               )}
+              <button
+                type="button"
+                className="zoom-btn"
+                aria-label={t('zoomOut')}
+                onClick={zoomOut}
+                disabled={zoom <= MIN_ZOOM}
+              >
+                −
+              </button>
+              <input
+                className="zoom-slider"
+                type="range"
+                min={MIN_ZOOM}
+                max={MAX_ZOOM}
+                step={ZOOM_STEP}
+                value={Math.round(zoom)}
+                aria-label={t('zoom')}
+                onChange={(event) => setZoom(Number(event.target.value))}
+              />
+              <button
+                type="button"
+                className="zoom-btn"
+                aria-label={t('zoomIn')}
+                onClick={zoomIn}
+                disabled={zoom >= MAX_ZOOM}
+              >
+                +
+              </button>
+              <span className="zoom-value">{Math.round(zoom)}%</span>
             </div>
           </footer>
         </div>
       </div>
-      <SlashMenu ref={slashMenuRef} state={slashState} onDismiss={() => setSlashState(null)} />
-      <TableMenu editor={editor} scrollRef={scrollRef} />
+      {!sourceMode && (
+        <SlashMenu ref={slashMenuRef} state={slashState} onDismiss={() => setSlashState(null)} />
+      )}
+      {!sourceMode && (
+        <WikiSuggestMenu
+          ref={wikiSuggestMenuRef}
+          state={wikiSuggestState}
+          onDismiss={() => setWikiSuggestState(null)}
+        />
+      )}
+      <RedactMenu editor={editor} enabled={redactEnabled} />
+      <ToastHost />
+      {graphOpen && (
+        <GraphView
+          current={filePath}
+          onClose={() => setGraphOpen(false)}
+          onOpen={(path) => {
+            setGraphOpen(false)
+            void window.markdownApi.openSourcePath(path)
+          }}
+        />
+      )}
+      {imageHostOpen && (
+        <ImageHostDialog onClose={() => setImageHostOpen(false)} onSaved={() => {}} />
+      )}
+      {viewImage && (
+        <ImageViewer
+          src={viewImage}
+          lang={lang}
+          labels={{
+            zoomIn: t('zoomIn'),
+            zoomOut: t('zoomOut'),
+            actualSize: t('imageActualSize'),
+            fitToWindow: t('imageFitWindow'),
+            save: t('saveImageAs'),
+            close: t('closeEsc'),
+          }}
+          onClose={() => setViewImage(null)}
+          onSave={() => void window.markdownApi.saveImageAs(viewImage)}
+        />
+      )}
+      {!sourceMode && <TableMenu editor={editor} scrollRef={scrollRef} zoom={zoom} />}
+      {editor && !sourceMode && status === 'ready' && (
+        <AiAskPopover
+          editor={editor}
+          queueFull={editQueue.length >= EDIT_QUEUE_MAX}
+          getItem={getQueueItem}
+          onSendNow={askSendNow}
+          onQueueAdd={queueAdd}
+          onQueueUpdate={queueUpdate}
+          onQueueRemove={queueRemove}
+        />
+      )}
     </div>
   )
 }

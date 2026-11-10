@@ -1,0 +1,221 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  isClearSelectionHotkey,
+  isFormulaBarKeyTarget,
+  isGridKeyTarget,
+  shouldInterceptClearSelection,
+  shouldInterceptRedoRepeat,
+  SKIP_HOST_SELECTOR,
+  type ClearSelectionKeyEvent,
+} from '../src/renderer/clear-selection-keyboard'
+
+function keyEvent(
+  key: string,
+  hosts: readonly string[],
+  extra: Partial<ClearSelectionKeyEvent> = {},
+): ClearSelectionKeyEvent {
+  return {
+    key,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    defaultPrevented: false,
+    isComposing: false,
+    target: {
+      closest(selector: string) {
+        return hosts.some((host) => selector === host || selector.includes(host)) ? {} : null
+      },
+    },
+    ...extra,
+  }
+}
+
+describe('isClearSelectionHotkey', () => {
+  it('matches unmodified Delete and Backspace', () => {
+    expect(
+      isClearSelectionHotkey({
+        key: 'Delete',
+        metaKey: false,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+      }),
+    ).toBe(true)
+    expect(
+      isClearSelectionHotkey({
+        key: 'Backspace',
+        metaKey: false,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+      }),
+    ).toBe(true)
+  })
+
+  it('ignores modifiers and other keys', () => {
+    expect(
+      isClearSelectionHotkey({
+        key: 'Backspace',
+        metaKey: false,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: true,
+      }),
+    ).toBe(false)
+    expect(
+      isClearSelectionHotkey({
+        key: 'Delete',
+        metaKey: false,
+        ctrlKey: true,
+        altKey: false,
+        shiftKey: false,
+      }),
+    ).toBe(false)
+    expect(
+      isClearSelectionHotkey({
+        key: 'Enter',
+        metaKey: false,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('shouldInterceptClearSelection', () => {
+  it('intercepts grid-hosted contenteditable (Univer hidden editor)', () => {
+    const hosts = ['[contenteditable="true"]', '#univer-container']
+    expect(shouldInterceptClearSelection(keyEvent('Backspace', hosts), false)).toBe(true)
+    expect(shouldInterceptClearSelection(keyEvent('Delete', hosts), false)).toBe(true)
+  })
+
+  it('does not intercept while a cell is being edited', () => {
+    expect(shouldInterceptClearSelection(keyEvent('Backspace', []), true)).toBe(false)
+  })
+
+  it('does not intercept native inputs, including Univer panel fields', () => {
+    expect(
+      shouldInterceptClearSelection(keyEvent('Backspace', ['input, textarea, select']), false),
+    ).toBe(false)
+    expect(
+      shouldInterceptClearSelection(
+        keyEvent('Backspace', ['[data-u-comp="input"]', '#univer-container']),
+        false,
+      ),
+    ).toBe(false)
+    expect(
+      shouldInterceptClearSelection(
+        keyEvent('Backspace', ['[data-u-comp="panel"]', '#univer-container']),
+        false,
+      ),
+    ).toBe(false)
+  })
+
+  it('does not intercept app chrome contenteditable outside the grid', () => {
+    expect(
+      shouldInterceptClearSelection(keyEvent('Backspace', ['[contenteditable="true"]']), false),
+    ).toBe(false)
+  })
+
+  it('does not intercept the formula bar or a focused visual', () => {
+    expect(
+      shouldInterceptClearSelection(
+        keyEvent('Backspace', ['[data-u-comp="formula-bar"]', '#univer-container']),
+        false,
+      ),
+    ).toBe(false)
+    expect(shouldInterceptClearSelection(keyEvent('Delete', ['.shape-editable']), false)).toBe(
+      false,
+    )
+  })
+
+  it('does not intercept dialog fields', () => {
+    expect(shouldInterceptClearSelection(keyEvent('Backspace', ['[role="dialog"]']), false)).toBe(
+      false,
+    )
+  })
+
+  it('lists Univer chrome hosts in the skip selector', () => {
+    expect(SKIP_HOST_SELECTOR).toContain('[data-u-comp="input"]')
+    expect(SKIP_HOST_SELECTOR).toContain('[data-u-comp="panel"]')
+    expect(SKIP_HOST_SELECTOR).toContain('[data-u-comp="formula-bar"]')
+  })
+
+  it('gates the cell-mutating shortcuts the same way (isGridKeyTarget)', () => {
+    // Shared with ⌘5 / Alt+= / Ctrl+; and PageUp/PageDown in ExcelShell: the
+    // grid's hidden focus host is the only editable that counts as the grid.
+    const grid = keyEvent('5', ['[contenteditable="true"]', '#univer-container']).target
+    expect(isGridKeyTarget(grid)).toBe(true)
+    expect(isGridKeyTarget(null)).toBe(true)
+    // Univer's own find/replace and rule-panel inputs sit INSIDE the Univer
+    // container yet must never be mistaken for the grid.
+    expect(
+      isGridKeyTarget(keyEvent('5', ['input, textarea, select', '#univer-container']).target),
+    ).toBe(false)
+    expect(
+      isGridKeyTarget(keyEvent('5', ['[data-u-comp="input"]', '#univer-container']).target),
+    ).toBe(false)
+    expect(
+      isGridKeyTarget(keyEvent('5', ['[data-u-comp="formula-bar"]', '#univer-container']).target),
+    ).toBe(false)
+    // App fields: AI composer (contenteditable outside the grid), dialogs.
+    expect(isGridKeyTarget(keyEvent('5', ['[contenteditable="true"]']).target)).toBe(false)
+    expect(isGridKeyTarget(keyEvent('5', ['[role="dialog"]']).target)).toBe(false)
+  })
+
+  it('does not intercept the sheet-tab rename editor (r161)', () => {
+    // a contenteditable INSIDE the sheet container — the in-container rule
+    // alone would intercept it, so the tab item must be in the skip list
+    expect(
+      shouldInterceptClearSelection(
+        keyEvent('Backspace', ['[data-u-comp="slide-tab-item"]', '#univer-container']),
+        false,
+      ),
+    ).toBe(false)
+    expect(
+      shouldInterceptClearSelection(
+        keyEvent('Delete', ['[data-u-comp="slide-tab-item"]', '#univer-container']),
+        false,
+      ),
+    ).toBe(false)
+  })
+})
+
+describe('isFormulaBarKeyTarget', () => {
+  it('is true only inside the formula bar', () => {
+    expect(isFormulaBarKeyTarget(keyEvent('u', ['formula-bar']).target)).toBe(true)
+    expect(isFormulaBarKeyTarget(keyEvent('u', ['input']).target)).toBe(false)
+    expect(isFormulaBarKeyTarget(null)).toBe(false)
+  })
+})
+
+describe('shouldInterceptRedoRepeat', () => {
+  const yEvent = (extra: Partial<ClearSelectionKeyEvent> = {}, hosts: readonly string[] = []) => ({
+    ...keyEvent('y', hosts, { ctrlKey: true, ...extra }),
+    code: 'KeyY',
+  })
+
+  it('claims Ctrl/Cmd+Y on the grid', () => {
+    expect(shouldInterceptRedoRepeat(yEvent(), false, false)).toBe(true)
+    expect(shouldInterceptRedoRepeat(yEvent({ ctrlKey: false, metaKey: true }), false, false)).toBe(
+      true,
+    )
+  })
+
+  it('leaves other chords, editing, modals and text fields alone', () => {
+    expect(shouldInterceptRedoRepeat({ ...yEvent(), code: 'KeyZ' }, false, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent({ shiftKey: true }), false, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent({ altKey: true }), false, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent({ ctrlKey: false }), false, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent({ defaultPrevented: true }), false, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent({ isComposing: true }), false, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent(), true, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent(), false, true)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent({}, ['input, textarea, select']), false, false)).toBe(
+      false,
+    )
+  })
+})

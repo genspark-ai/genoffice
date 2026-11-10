@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { RecentEntry, TimelineEntryItem } from '../../shared/home-api'
+import type { ProjectHomeApi, RecentEntry, TimelineEntryItem } from '../../shared/home-api'
 import { FileBadge } from './FileBadge'
 import { useI18n } from './locale'
 import type { StringKey } from './locale'
@@ -82,11 +82,11 @@ export function groupConversations(
 }
 
 async function loadConversations(): Promise<ConversationItem[]> {
-  const api = window.aiOfficeProject
+  const api = (window as unknown as { aiOfficeProject?: ProjectHomeApi }).aiOfficeProject
   if (!api) return []
   const projects = await api.listProjects()
   const lists = await Promise.all(
-    projects.map(async (p) => {
+    projects.map(async (p: { id: string; name: string }) => {
       try {
         return groupConversations(await api.getTimeline(p.id, 300), p.name)
       } catch {

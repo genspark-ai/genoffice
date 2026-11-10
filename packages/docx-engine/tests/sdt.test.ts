@@ -18,6 +18,20 @@ const BLOCK_SDT_P =
   '</w:sdtContent>' +
   '</w:sdt>'
 
+/** Block-level SDT whose w:val attributes are single-quoted (also valid XML) */
+const SINGLE_QUOTED_SDT_P =
+  '<w:sdt>' +
+  '<w:sdtPr>' +
+  "<w:alias w:val='Binder'/>" +
+  "<w:tag w:val='tag1'/>" +
+  '<w:text/>' +
+  '</w:sdtPr>' +
+  '<w:sdtEndPr/>' +
+  '<w:sdtContent>' +
+  '<w:p><w:r><w:t>Jane Doe</w:t></w:r></w:p>' +
+  '</w:sdtContent>' +
+  '</w:sdt>'
+
 /** Block-level SDT with date picker */
 const DATE_SDT_P =
   '<w:sdt>' +
@@ -58,6 +72,14 @@ describe('SDT parsing', () => {
     expect(block.sdtShell!.alias).toBe('Author Name')
     expect(block.sdtShell!.tag).toBe('author')
     expect(block.sdtShell!.controlType).toBe('text')
+  })
+
+  it('reads a single-quoted w:alias and w:tag', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: SINGLE_QUOTED_SDT_P }))
+    const sdtShell = doc.blocks[0].sdtShell
+    expect(sdtShell).toBeDefined()
+    expect(sdtShell!.alias).toBe('Binder')
+    expect(sdtShell!.tag).toBe('tag1')
   })
 
   it('parses date SDT as controlType "date"', async () => {
@@ -253,5 +275,53 @@ describe('multi-paragraph SDT (TOC)', () => {
       visible.map((b) => ({ kind: 'original' as const, docxIndex: b.docxIndex! })),
     )
     expect(Buffer.from(saved).equals(Buffer.from(bytes))).toBe(true)
+  })
+})
+
+describe('nested SDT (Word cover-page building blocks)', () => {
+  // outer docPartObj sdt wrapping several inner field sdts + plain paragraphs
+  const NESTED_SDT =
+    '<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Cover Pages"/></w:docPartObj></w:sdtPr><w:sdtContent>' +
+    '<w:sdt><w:sdtPr><w:alias w:val="Title"/><w:text/></w:sdtPr><w:sdtContent>' +
+    '<w:p><w:r><w:t>Resume Title</w:t></w:r></w:p>' +
+    '</w:sdtContent></w:sdt>' +
+    '<w:p><w:r><w:t>plain between</w:t></w:r></w:p>' +
+    '<w:sdt><w:sdtPr><w:alias w:val="Company"/><w:text/></w:sdtPr><w:sdtContent>' +
+    '<w:p><w:r><w:t>ACME Corp</w:t></w:r></w:p>' +
+    '</w:sdtContent></w:sdt>' +
+    '</w:sdtContent></w:sdt>'
+
+  it('descends nested content controls: every inner paragraph becomes a block', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: NESTED_SDT }))
+    const visible = doc.blocks.filter((b) => !b.hidden)
+    // regression: only "Resume Title" survived; "plain between" and "ACME Corp" were dropped
+    expect(visible.map((b) => b.runs?.map((r) => r.text).join('') ?? b.previewText)).toEqual([
+      'Resume Title',
+      'plain between',
+      'ACME Corp',
+    ])
+  })
+
+  it('untouched nested sdt saves byte-identical', async () => {
+    const bytes = await buildDocx({ bodyXml: NESTED_SDT })
+    const doc = await parseDocx(bytes)
+    const saved = await saveDocx(
+      doc,
+      doc.blocks
+        .filter((b) => !b.hidden)
+        .map((b) => ({ kind: 'original' as const, docxIndex: b.docxIndex! })),
+    )
+    expect(Buffer.from(saved).equals(Buffer.from(bytes))).toBe(true)
+  })
+
+  it('sdtContent without any paragraph keeps its text as previewText', async () => {
+    const RUN_ONLY_SDT =
+      '<w:sdt><w:sdtPr><w:alias w:val="Odd"/></w:sdtPr><w:sdtContent>' +
+      '<w:r><w:t>bare run text</w:t></w:r>' +
+      '</w:sdtContent></w:sdt>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: RUN_ONLY_SDT }))
+    const visible = doc.blocks.filter((b) => !b.hidden)
+    expect(visible[0].type).toBe('passthrough')
+    expect(visible[0].previewText).toContain('bare run text')
   })
 })

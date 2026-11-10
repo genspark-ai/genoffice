@@ -2,7 +2,7 @@
  * #4 Thumbnail content rendering — draws a RenderSlide scaled down into a thumbnail (read-only, no interaction).
  * Shares NodeBody/StaticNode static rendering with the main canvas, keeping thumbnails and the full view identical.
  */
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import { Stage, Layer, Rect } from 'react-konva'
 import type Konva from 'konva'
 import type { RenderSlide } from '@genoffice/pptx-render'
@@ -29,9 +29,22 @@ export const SlideThumb = React.memo(function SlideThumb({
 }) {
   const scale = width / slide.widthPx
   const h = slide.heightPx * scale
+  const innerRef = useRef<Konva.Stage | null>(null)
+  // Late-loading fonts (bundled @font-face, Office-private FontFaces): thumbnails are memoized,
+  // so redraw the layer when a font finishes loading or the first paint uses a fallback face.
+  useEffect(() => {
+    const redraw = () => {
+      for (const l of innerRef.current?.getLayers() ?? []) l.batchDraw()
+    }
+    document.fonts?.addEventListener?.('loadingdone', redraw)
+    return () => document.fonts?.removeEventListener?.('loadingdone', redraw)
+  }, [])
   return (
     <Stage
-      ref={stageRef}
+      ref={(s) => {
+        innerRef.current = s
+        stageRef?.(s)
+      }}
       width={width}
       height={h}
       listening={false}

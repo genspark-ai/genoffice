@@ -4,8 +4,14 @@
  * user's original workbook. The guard must proceed without writing while the app is
  * shutting down — unsaved work is covered by the periodic recovery copy.
  */
-import { describe, expect, it } from 'vitest'
-import { closeGuardDecision } from '../src/main/close-guard'
+import { describe, expect, it, vi } from 'vitest'
+import { closeGuardDecision, ShutdownLatch } from '../src/main/close-guard'
+import {
+  commitActiveCellEditor,
+  pendingEditsForClose,
+  runAfterCellEditorCommit,
+  type ActiveCellEditor,
+} from '../src/renderer/univer-state'
 
 describe('closeGuardDecision', () => {
   it('prompts only when there are pending edits and the app is staying up', () => {
@@ -35,5 +41,110 @@ describe('closeGuardDecision', () => {
         expect(closeGuardDecision({ pendingEdits, destroyed, shuttingDown: true })).toBe('proceed')
       }
     }
+  })
+})
+
+describe('ShutdownLatch', () => {
+  // regression: the latch used to be set-once — after one quit was vetoed
+  // (prevented close that did not proceed), every later interactive close
+  // still read shuttingDown=true and silently discarded unsaved edits.
+  it('prompts again after a vetoed quit resets the latch', () => {
+    const latch = new ShutdownLatch()
+    expect(latch.active).toBe(false)
+    latch.mark()
+    expect(latch.active).toBe(true)
+    // designed quit-time behavior: proceed without prompting
+    expect(
+      closeGuardDecision({ pendingEdits: 3, destroyed: false, shuttingDown: latch.active }),
+    ).toBe('proceed')
+    // quit vetoed (user hit Cancel on a prompt) → later closes are interactive
+    latch.reset()
+    expect(latch.active).toBe(false)
+    expect(
+      closeGuardDecision({ pendingEdits: 3, destroyed: false, shuttingDown: latch.active }),
+    ).toBe('prompt')
+  })
+
+  it('re-arms for the next quit after a reset', () => {
+    const latch = new ShutdownLatch()
+    latch.mark()
+    latch.reset()
+    latch.mark()
+    expect(
+      closeGuardDecision({ pendingEdits: 1, destroyed: false, shuttingDown: latch.active }),
+    ).toBe('proceed')
+  })
+})
+
+describe('pendingEditsForClose', () => {
+  it('counts a dirty in-cell editor even when the journal is empty', () => {
+    expect(pendingEditsForClose(0, true)).toBe(1)
+    expect(pendingEditsForClose(3, true)).toBe(4)
+    expect(pendingEditsForClose(3, false)).toBe(3)
+  })
+})
+
+describe('runAfterCellEditorCommit', () => {
+  it('commits before a save, reopen, or replacement action', async () => {
+    const calls: string[] = []
+    const editor: ActiveCellEditor = {
+      isCellEditing: () => true,
+      endEditingAsync: async () => {
+        calls.push('commit')
+        return true
+      },
+    }
+
+    await expect(
+      runAfterCellEditorCommit(editor, () => {
+        calls.push('transition')
+      }),
+    ).resolves.toBe(true)
+    expect(calls).toEqual(['commit', 'transition'])
+  })
+
+  it('does not run a transition after a failed commit', async () => {
+    const transition = vi.fn()
+    const editor: ActiveCellEditor = {
+      isCellEditing: () => true,
+      endEditingAsync: async () => false,
+    }
+
+    await expect(runAfterCellEditorCommit(editor, transition)).resolves.toBe(false)
+    expect(transition).not.toHaveBeenCalled()
+  })
+})
+
+describe('commitActiveCellEditor', () => {
+  it('commits the active editor before returning', async () => {
+    const endEditingAsync = vi.fn(async () => true)
+    const editor: ActiveCellEditor = {
+      isCellEditing: () => true,
+      endEditingAsync,
+    }
+
+    await expect(commitActiveCellEditor(editor)).resolves.toBe(true)
+    expect(endEditingAsync).toHaveBeenCalledWith(true)
+  })
+
+  it('does nothing when no cell editor is active', async () => {
+    const endEditingAsync = vi.fn(async () => true)
+    const editor: ActiveCellEditor = {
+      isCellEditing: () => false,
+      endEditingAsync,
+    }
+
+    await expect(commitActiveCellEditor(editor)).resolves.toBe(true)
+    await expect(commitActiveCellEditor(null)).resolves.toBe(true)
+    expect(endEditingAsync).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed commit so close cannot continue', async () => {
+    const editor: ActiveCellEditor = {
+      isCellEditing: () => true,
+      endEditingAsync: vi.fn(async () => false),
+    }
+
+    await expect(commitActiveCellEditor(editor)).resolves.toBe(false)
   })
 })

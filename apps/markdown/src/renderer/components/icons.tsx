@@ -9,7 +9,9 @@ import type { ReactNode } from 'react'
 
 export {
   IconBullets,
+  IconCaret,
   IconNumbered,
+  IconOutlineView,
   IconIndentDec,
   IconIndentInc,
   IconTable,
@@ -19,6 +21,9 @@ export {
   IconUndo,
   IconRedo,
   IconCopy,
+  IconSearch,
+  IconEyeOff,
+  IconSpellcheck,
 } from '../../../../docs/src/renderer/components/icons'
 
 interface IconProps {
@@ -70,10 +75,25 @@ export function IconHr(props: IconProps) {
   )
 }
 
+/* raw-text lines with a caret — reads as "the text itself", and stays clear of
+ * the chevron pair IconInlineCode already uses for inline-code formatting */
+export function IconSourceCode(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.2 3.4h11.6M2.2 6.6h7.2M2.2 9.8h11.6M2.2 13h5.4" opacity="0.55" />
+      <path d="M12.4 9.4v3.2" strokeWidth="1.4" />
+    </Svg>
+  )
+}
+
+/* knobs sit at different offsets on purpose: three flush-left lines read as a
+ * hamburger/overflow menu, and left-aligned dots collide with IconBullets */
 export function IconProperties(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M2.5 4.4h11M2.5 8h11M2.5 11.6h6.2" />
+      <path d="M2.2 4.6h11.6M2.2 11.4h11.6" />
+      <circle cx="10.2" cy="4.6" r="1.7" fill="currentColor" stroke="none" />
+      <circle cx="5.6" cy="11.4" r="1.7" fill="currentColor" stroke="none" />
     </Svg>
   )
 }
@@ -174,6 +194,68 @@ export function IconQuoteMark(props: IconProps) {
     <Svg {...props}>
       <path d="M3 4.5v7" />
       <path d="M6.4 5h6.8M6.4 8h6.8M6.4 11h4.4" />
+    </Svg>
+  )
+}
+
+/** cloud with an up arrow: the image host (pasted pictures upload here first) */
+export function IconCloudUpload(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4.4 11.2a3 3 0 0 1 .4-5.9 3.6 3.6 0 0 1 7 0 3 3 0 0 1 .2 5.9" />
+      <path d="M8 7.6v5" />
+      <path d="M6.2 9.4 8 7.6l1.8 1.8" />
+    </Svg>
+  )
+}
+
+export function IconPalette(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8 1.8A6.2 6.2 0 0 0 1.8 8c0 3.4 2.8 5.4 5.2 5.4 1.2 0 1.9-.7 1.9-1.6 0-.8-.6-1.2-.6-2 0-.9.7-1.6 1.7-1.6h1.4c2 0 3.8-1.5 3.8-3.6C14.2 3 11.4 1.8 8 1.8Z" />
+      <circle cx="4.6" cy="6.4" r="0.45" fill="currentColor" stroke="none" />
+      <circle cx="7.4" cy="4.4" r="0.45" fill="currentColor" stroke="none" />
+      <circle cx="10.6" cy="4.8" r="0.45" fill="currentColor" stroke="none" />
+      <circle cx="4.9" cy="9.6" r="0.45" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
+/** A tag: the # glyph */
+export function IconTag(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M10 4v9a3 3 0 0 0 6 0V8a5 5 0 0 0-10 0v6" strokeLinecap="round" />
+    </Svg>
+  )
+}
+export function IconBacklinks(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9.5 3.5h4.2v9H9.5z" />
+      <path d="M1.8 5.5h4.4M6.2 5.5L4.6 3.9M6.2 5.5L4.6 7.1" />
+      <path d="M1.8 10.5h4.4M6.2 10.5L4.6 8.9M6.2 10.5l-1.6 1.6" />
+    </Svg>
+  )
+}
+
+export function IconGraph(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="3.4" r="1.9" />
+      <circle cx="3" cy="12.2" r="1.9" />
+      <circle cx="13" cy="12.2" r="1.9" />
+      <path d="M7.1 5.1L3.9 10.4M8.9 5.1l3.2 5.3M4.9 12.2h6.2" />
+    </Svg>
+  )
+}
+
+/** A block with a link on it: text lines and a chain link */
+export function IconBlockLink(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.5 4h8M2.5 7.5h5.5M2.5 11h4" />
+      <path d="M9.3 12.6h-.8a2.1 2.1 0 0 1 0-4.2h.8M12.2 8.4h.8a2.1 2.1 0 0 1 0 4.2h-.8M9.6 10.5h3.1" />
     </Svg>
   )
 }

@@ -40,6 +40,44 @@ async function saveAndUnzip(editor: Editor, parsed: Awaited<ReturnType<typeof pa
   return { bytes, xml }
 }
 
+function topLevelTable(editor: Editor) {
+  for (let index = 0; index < editor.state.doc.childCount; index++) {
+    const node = editor.state.doc.child(index)
+    if (node.type.name === 'docTable') return node
+  }
+  throw new Error('Expected a top-level table')
+}
+
+describe('new top-level table sizing', () => {
+  it('fills the section content width through save and reload', async () => {
+    const { editor, parsed } = await openBlank()
+    insertTableAt(editor, 2, 2)
+
+    const inserted = topLevelTable(editor)
+    expect(inserted.attrs.tblAutoFit).toBe('window')
+    expect(inserted.attrs.widthPct).toBe(100)
+    expect(inserted.attrs.widthPx).toBeNull()
+
+    const { bytes, xml } = await saveAndUnzip(editor, parsed)
+    expect(xml).toContain('<w:tblW w:w="5000" w:type="pct"/>')
+    expect(xml).toContain('<w:tblLayout w:type="autofit"/>')
+
+    const reparsed = await parseDocx(bytes)
+    const reloaded = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(reparsed.blocks) as never,
+    })
+    const reopened = topLevelTable(reloaded)
+    expect(reopened.attrs.tblAutoFit).toBe('window')
+    expect(reopened.attrs.widthPct).toBe(100)
+    expect(reopened.attrs.widthPx).toBeNull()
+    expect(reopened.attrs.colWidthsPct).toEqual([50, 50])
+    reloaded.destroy()
+    editor.destroy()
+  })
+})
+
 describe('list toggle inside a table cell', () => {
   it('setNode docListItem succeeds in a cell and saves w:numPr into the tc', async () => {
     const { editor, parsed } = await openBlank()

@@ -7,7 +7,8 @@
   "description": "pptx high-fidelity render layer: EMU->px coordinate system, data-driven RenderTree (shapes/pictures/fills/strokes + text layout via opentype.js metrics). Konva adapter is a thin layer on top.",
   "exports": {
     ".": "./src/index.ts",
-    "./preset-geometry": "./src/preset-geometry.ts"
+    "./preset-geometry": "./src/preset-geometry.ts",
+    "./auto-num": "./src/auto-num.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -24,6 +25,6 @@
     "@types/opentype.js": "^1.3.8",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.12"
   }
 }

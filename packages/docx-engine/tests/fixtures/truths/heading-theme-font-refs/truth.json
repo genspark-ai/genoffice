@@ -1,0 +1,39 @@
+{
+  "id": "heading-theme-font-refs",
+  "title": "The theme major font reaches a heading only through asciiTheme/hAnsiTheme; the theme attribute beats a literal w:ascii",
+  "section": "word-truths.md#L360",
+  "probe_date": "2026-09-23",
+  "source": "probe headfont.docx -> fh_headfont.pdf (re-read 2026-10-22: spans Calibri / Georgia / ArialMT / Calibri, body ArialMT)",
+  "cases": [
+    {
+      "kind": "blockFace",
+      "block": 0,
+      "expect": "Calibri",
+      "note": "asciiTheme=majorHAnsi -> theme major Calibri"
+    },
+    {
+      "kind": "blockFace",
+      "block": 1,
+      "expect": "Georgia"
+    },
+    {
+      "kind": "blockFace",
+      "block": 2,
+      "expect": "Arial",
+      "note": "no rFonts: basedOn chain down to docDefaults, never the theme major"
+    },
+    {
+      "kind": "blockFace",
+      "block": 3,
+      "expect": "Calibri",
+      "note": "both literal and theme on one element: the theme attribute supersedes"
+    },
+    {
+      "kind": "blockFace",
+      "block": 4,
+      "expect": "Arial"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

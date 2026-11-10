@@ -1,5 +1,6 @@
 import type {
   AgentStreamRequest,
+  AgentTokenUsage,
   AgentToolCall,
   AgentToolDef,
   AgentTransport,
@@ -13,20 +14,26 @@ import type {
  */
 export interface IpcStreamChunk {
   requestId: string
-  /** 'ping' = wire-level keepalive; re-arms the silence watchdog and carries no payload */
-  type: 'delta' | 'tool-call' | 'done' | 'error' | 'ping'
+  /** 'ping' = wire-level keepalive; re-arms the silence watchdog and carries no payload;
+   * 'reasoning' = model thinking delta (text carries it) */
+  type: 'delta' | 'reasoning' | 'tool-call' | 'usage' | 'done' | 'error' | 'ping'
   text?: string
   toolCall?: AgentToolCall
   error?: string
-  /** machine-readable error cause; maps to the localized timeout/credits message */
-  errorCode?: 'timeout' | 'credits'
+  /** machine-readable error cause; maps to the localized timeout/credits/network/overloaded/region message */
+  errorCode?: 'timeout' | 'credits' | 'network' | 'overloaded' | 'region'
   /** normalized stop reason on 'done' ('max_tokens' = cut off by the token limit) */
   stopReason?: string
+  /** tokens the provider billed for this turn, carried on 'usage' (always sent before 'done') */
+  usage?: AgentTokenUsage
 }
 
 /** The request forwarded to the main process to start one streaming turn. */
 export interface IpcStreamStart<S> {
   requestId: string
+  /** Stable for the lifetime of one renderer-side transport. Providers with
+   * native conversations can reuse it across the tool loop and follow-ups. */
+  sessionId: string
   settings: S
   system: string
   messages: AgentMessage[]
@@ -55,6 +62,12 @@ export interface IpcTransportOptions<S> {
   timeoutErrorText?(): string
   /** localized message for exhausted credits (errorCode 'credits') */
   creditsErrorText?(): string
+  /** localized message for network connectivity failures (errorCode 'network') */
+  networkErrorText?(): string
+  /** localized message for capacity/rate-limit failures (errorCode 'overloaded') */
+  overloadedErrorText?(): string
+  /** localized message when the vendor refuses the request origin (errorCode 'region') */
+  regionErrorText?(): string
 }
 
 /**
@@ -64,6 +77,7 @@ export interface IpcTransportOptions<S> {
  */
 export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTransport {
   const timeoutText = () => options.timeoutErrorText?.() ?? options.unknownErrorText()
+  const sessionId = crypto.randomUUID()
   return {
     stream(request: AgentStreamRequest, cb) {
       const requestId = crypto.randomUUID()
@@ -93,22 +107,37 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
         } else if (chunk.type === 'delta') {
           armSilence()
           cb.onDelta(chunk.text ?? '')
+        } else if (chunk.type === 'reasoning') {
+          armSilence()
+          if (chunk.text) cb.onReasoning?.(chunk.text)
         } else if (chunk.type === 'tool-call') {
           armSilence()
           if (chunk.toolCall) cb.onToolCall(chunk.toolCall)
+        } else if (chunk.type === 'usage') {
+          armSilence()
+          if (chunk.usage) cb.onUsage?.(chunk.usage)
         } else if (chunk.type === 'done') {
           settle()
           if (chunk.stopReason) cb.onStopReason?.(chunk.stopReason)
           cb.onDone()
-        } else {
+        } else if (chunk.type === 'error') {
           settle()
           cb.onError(
             chunk.errorCode === 'timeout'
               ? timeoutText()
               : chunk.errorCode === 'credits'
                 ? (options.creditsErrorText?.() ?? chunk.error ?? options.unknownErrorText())
-                : (chunk.error ?? options.unknownErrorText()),
+                : chunk.errorCode === 'network'
+                  ? (options.networkErrorText?.() ?? chunk.error ?? options.unknownErrorText())
+                  : chunk.errorCode === 'overloaded'
+                    ? (options.overloadedErrorText?.() ?? chunk.error ?? options.unknownErrorText())
+                    : chunk.errorCode === 'region'
+                      ? (options.regionErrorText?.() ?? chunk.error ?? options.unknownErrorText())
+                      : (chunk.error ?? options.unknownErrorText()),
           )
+        } else {
+          // A chunk kind this build predates must not kill the run; traffic proves it is alive.
+          armSilence()
         }
       })
       armSilence()
@@ -117,6 +146,7 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
         Promise.resolve(
           options.start({
             requestId,
+            sessionId,
             settings: options.getSettings(),
             system: request.system,
             messages: request.messages,

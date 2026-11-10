@@ -14,6 +14,8 @@ export interface AgentToolCall {
   inputError?: string | undefined
   /** The argument stream was cut off by the token limit (stop_reason max_tokens); the loop asks the model to split the call instead of "fixing JSON" */
   truncated?: boolean | undefined
+  /** Opaque provider token that must travel back with the call in history (Gemini 3 thoughtSignature; a 400 otherwise) */
+  signature?: string | undefined
 }
 
 export interface AgentToolResult {
@@ -32,21 +34,50 @@ export interface AgentImage {
   mime: string
 }
 
+/** Token usage one model turn was billed (best-effort: providers that do not
+ * report usage simply never fire the callback — absent is "unknown", not zero). */
+export interface AgentTokenUsage {
+  inputTokens?: number
+  outputTokens?: number
+}
+
 export type AgentMessage =
   | { role: 'user'; text: string; images?: AgentImage[] | undefined }
-  | { role: 'assistant'; text: string; toolCalls?: AgentToolCall[] | undefined }
+  /** reasoning: opaque vendor thinking captured during the turn; interleaved-thinking
+   * models (MiniMax M3, DeepSeek V4) degrade in tool loops unless it is echoed back */
+  | {
+      role: 'assistant'
+      text: string
+      toolCalls?: AgentToolCall[] | undefined
+      reasoning?: string | undefined
+    }
   | { role: 'tool'; results: AgentToolResult[] }
 
 /**
+ * One node of a mind map tree (NotebookLM-style interactive diagram). `block`
+ * optionally cites a document block index the node summarizes; the UI turns it
+ * into a jump link. Labels are short phrases, not sentences.
+ */
+export interface MindMapTreeNode {
+  label: string
+  /** 0-based document block index this node draws on (optional) */
+  block?: number
+  children?: MindMapTreeNode[]
+}
+
+/**
  * Side-channel display data: UI-only, never merged into messages sent to the LLM.
- * kind='images' → image grid; kind='links' → link list; kind='text' → extra text.
+ * kind='images' → image grid; kind='links' → link list; kind='text' → extra text;
+ * kind='mindmap' → interactive mind map rendered from `tree`.
  */
 export interface ToolDisplay {
-  kind: 'images' | 'links' | 'text'
+  kind: 'images' | 'links' | 'text' | 'mindmap'
   /** entry list for images / links modes */
   items?: Array<{ url: string; title?: string; thumb?: string }>
   /** extra text for text mode */
   text?: string
+  /** mind map root for the mindmap kind */
+  tree?: MindMapTreeNode
 }
 
 /** outcome of one tool execution */
@@ -91,12 +122,16 @@ export interface AgentStreamRequest {
 
 export interface AgentStreamCallbacks {
   onDelta(text: string): void
+  /** raw model reasoning delta; the loop stores it on the assistant message for interleaved-thinking echo */
+  onReasoning?(text: string): void
   /** complete parsed tool call (arguments finished streaming) */
   onToolCall(call: AgentToolCall): void
   /** Phase changes within the model stream (thinking / responding / tool-input); older transports may omit this */
   onPhase?(phase: AgentPhase): void
   /** normalized stop reason of the turn ('max_tokens' = cut off by the token limit); transports may omit this */
   onStopReason?(reason: string): void
+  /** tokens the provider billed for this turn; transports whose provider does not report usage omit this */
+  onUsage?(usage: AgentTokenUsage): void
   onDone(): void
   onError(error: string): void
 }

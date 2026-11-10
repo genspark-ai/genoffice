@@ -1,29 +1,79 @@
+import type { AiPanelPrefs } from '@genoffice/ui'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { Lang } from '@genoffice/i18n'
 import type { AiStreamChunk } from '@genoffice/ai-provider'
+import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 import { AI_CHANNELS, PDF_CHANNELS } from '../shared/ipc'
 import type { PdfApi, UiTheme } from '../shared/ipc'
 
 const api: PdfApi = {
   consumePending: () => ipcRenderer.invoke(PDF_CHANNELS.consumePending),
+  openSourcePath: (path: string) => ipcRenderer.invoke('home:open-path', path),
   readFile: (path) => ipcRenderer.invoke(PDF_CHANNELS.readFile, path),
+  readFileChunk: (path: string, start: number, end: number) =>
+    ipcRenderer.invoke(PDF_CHANNELS.readFileChunk, path, start, end),
+  decryptPdf: (bytes, password) => ipcRenderer.invoke(PDF_CHANNELS.decryptPdf, bytes, password),
   save: (request) => ipcRenderer.invoke(PDF_CHANNELS.save, request),
+  pickAttachmentFile: () => ipcRenderer.invoke(PDF_CHANNELS.pickAttachmentFile),
+  exportAttachment: (path, name, bytesBase64) =>
+    ipcRenderer.invoke(PDF_CHANNELS.exportAttachment, path, name, bytesBase64),
+  requestRedactionCopy: (path) => ipcRenderer.invoke(PDF_CHANNELS.requestRedactionCopy, path),
+  autoRename: (path, baseName) => ipcRenderer.invoke(PDF_CHANNELS.autoRename, path, baseName),
+  isUntitled: (path) => ipcRenderer.invoke(PDF_CHANNELS.isUntitled, path),
   validateTextEdits: (request) => ipcRenderer.invoke(PDF_CHANNELS.validateTextEdits, request),
   listEditFonts: () => ipcRenderer.invoke(PDF_CHANNELS.listEditFonts),
+  canDrawText: (text, font, bold, italic) =>
+    ipcRenderer.invoke(PDF_CHANNELS.canDrawText, text, font, bold, italic),
   listPageImages: (path) => ipcRenderer.invoke(PDF_CHANNELS.listPageImages, path),
   listStaticFormFills: (path) => ipcRenderer.invoke(PDF_CHANNELS.listStaticFormFills, path),
+  ocrPage: (png) => ipcRenderer.invoke(PDF_CHANNELS.ocrPage, png),
   pageImagePng: (request) => ipcRenderer.invoke(PDF_CHANNELS.pageImagePng, request),
   pagePreviewPng: (request) => ipcRenderer.invoke(PDF_CHANNELS.pagePreviewPng, request),
   extractPages: (request) => ipcRenderer.invoke(PDF_CHANNELS.extractPages, request),
   insertPdf: (request) => ipcRenderer.invoke(PDF_CHANNELS.insertPdf, request),
+  compareReadPdf: () => ipcRenderer.invoke(PDF_CHANNELS.compareReadPdf),
+  compareReadOpen: (path: string, password?: string) =>
+    ipcRenderer.invoke(PDF_CHANNELS.compareReadOpen, path, password),
+  reduceFileSize: (path) => ipcRenderer.invoke(PDF_CHANNELS.reduceFileSize, path),
+  insertBlankPage: (request) => ipcRenderer.invoke(PDF_CHANNELS.insertBlankPage, request),
+  splitPdf: (request) => ipcRenderer.invoke(PDF_CHANNELS.splitPdf, request),
+  mergePdf: (request) => ipcRenderer.invoke(PDF_CHANNELS.mergePdf, request),
+  mergePages: (request) => ipcRenderer.invoke(PDF_CHANNELS.mergePages, request),
+  replacePages: (request) => ipcRenderer.invoke(PDF_CHANNELS.replacePages, request),
+  restoreFile: (request) => ipcRenderer.invoke(PDF_CHANNELS.restoreFile, request),
+  setPageSize: (request) => ipcRenderer.invoke(PDF_CHANNELS.setPageSize, request),
+  splitPages: (request) => ipcRenderer.invoke(PDF_CHANNELS.splitPages, request),
+  cropPages: (request) => ipcRenderer.invoke(PDF_CHANNELS.cropPages, request),
   exportImages: (request) => ipcRenderer.invoke(PDF_CHANNELS.exportImages, request),
+  convertOffice: (format) => ipcRenderer.invoke(PDF_CHANNELS.convertOffice, format),
+  createDocument: (request) => ipcRenderer.invoke(PDF_CHANNELS.createDocument, request),
   imageSearch: (query, maxResults) =>
     ipcRenderer.invoke(AI_CHANNELS.imageSearch, query, maxResults),
   fetchImage: (url) => ipcRenderer.invoke(AI_CHANNELS.fetchImage, url),
   generateImage: (op) => ipcRenderer.invoke(PDF_CHANNELS.generateImage, op),
+  listDigitalSignatures: (path) => ipcRenderer.invoke(PDF_CHANNELS.listDigitalSignatures, path),
+  pickCertificate: () => ipcRenderer.invoke(PDF_CHANNELS.pickCertificate),
+  listSystemCertificates: (storePassword) =>
+    ipcRenderer.invoke(PDF_CHANNELS.listSystemCertificates, storePassword),
+  releaseCertificate: (certId) => ipcRenderer.send(PDF_CHANNELS.releaseCertificate, certId),
+  inspectCertificate: (certId, password, storePassword) =>
+    ipcRenderer.invoke(PDF_CHANNELS.inspectCertificate, certId, password, storePassword),
+  signWithCertificate: (request) => ipcRenderer.invoke(PDF_CHANNELS.signWithCertificate, request),
+  listSavedSignatures: () => ipcRenderer.invoke(PDF_CHANNELS.listSignatures),
+  addSavedSignature: (data) => ipcRenderer.invoke(PDF_CHANNELS.addSignature, data),
+  removeSavedSignature: (id) => ipcRenderer.invoke(PDF_CHANNELS.removeSignature, id),
+  getUsername: () => ipcRenderer.invoke(PDF_CHANNELS.getUsername),
+  onUsernameChanged: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, name: unknown) => {
+      if (typeof name === 'string') handler(name)
+    }
+    ipcRenderer.on(PDF_CHANNELS.authorNameChanged, listener)
+    return () => ipcRenderer.removeListener(PDF_CHANNELS.authorNameChanged, listener)
+  },
   setDirty: (dirty) => ipcRenderer.send(PDF_CHANNELS.dirtyChanged, dirty),
   onCloseSaveRequest: (handler) => {
-    const listener = () => handler()
+    const listener = (_e: unknown, opts?: { flushAll?: boolean }) =>
+      handler({ flushAll: opts?.flushAll === true })
     ipcRenderer.on(PDF_CHANNELS.closeSaveRequest, listener)
     return () => ipcRenderer.removeListener(PDF_CHANNELS.closeSaveRequest, listener)
   },
@@ -39,6 +89,20 @@ const api: PdfApi = {
     ipcRenderer.on(PDF_CHANNELS.saveAsFlow, listener)
     return () => ipcRenderer.removeListener(PDF_CHANNELS.saveAsFlow, listener)
   },
+  print: (job) => ipcRenderer.invoke(PDF_CHANNELS.print, job),
+  printFile: (job) => ipcRenderer.invoke(PDF_CHANNELS.printFile, job),
+  printerOptions: (queue: string) => ipcRenderer.invoke(PDF_CHANNELS.printerOptions, queue),
+  listPrinters: () => ipcRenderer.invoke(PDF_CHANNELS.printers),
+  onPrintRequest: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on(PDF_CHANNELS.printRequest, listener)
+    return () => ipcRenderer.removeListener(PDF_CHANNELS.printRequest, listener)
+  },
+  onFileRenamed: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, newPath: string) => handler(newPath)
+    ipcRenderer.on(PDF_CHANNELS.fileRenamed, listener)
+    return () => ipcRenderer.removeListener(PDF_CHANNELS.fileRenamed, listener)
+  },
   getLanguage: () => ipcRenderer.invoke(PDF_CHANNELS.getLanguage),
   onLanguageChanged: (handler) => {
     const listener = (_e: Electron.IpcRendererEvent, lang: Lang) => handler(lang)
@@ -51,7 +115,30 @@ const api: PdfApi = {
     ipcRenderer.on(PDF_CHANNELS.themeChanged, listener)
     return () => ipcRenderer.removeListener(PDF_CHANNELS.themeChanged, listener)
   },
+  getAiPanelPrefs: () => ipcRenderer.invoke(PDF_CHANNELS.getAiPanelPrefs),
+  setAiPanelPrefs: (patch) => ipcRenderer.invoke('app:set-ai-panel-prefs', patch),
+  onAiPanelPrefsChanged: (handler) => {
+    const listener = (_event: Electron.IpcRendererEvent, prefs: AiPanelPrefs) => handler(prefs)
+    ipcRenderer.on(PDF_CHANNELS.aiPanelPrefsChanged, listener)
+    return () => ipcRenderer.removeListener(PDF_CHANNELS.aiPanelPrefsChanged, listener)
+  },
+  onChromePressed: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on('app:chrome-pressed', listener)
+    return () => ipcRenderer.removeListener('app:chrome-pressed', listener)
+  },
   getAiSettings: () => ipcRenderer.invoke(AI_CHANNELS.getSettings),
+  setAiSettings: (settings) => ipcRenderer.invoke(AI_CHANNELS.setSettings, settings),
+  onAiSettingsChanged: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on(AI_CHANNELS.settingsChanged, listener)
+    return () => ipcRenderer.removeListener(AI_CHANNELS.settingsChanged, listener)
+  },
+  openAiModelSettings: () => ipcRenderer.invoke(AI_CHANNELS.openModelSettings),
+  openSkillsSettings: () => ipcRenderer.invoke(AI_CHANNELS.openSkillsSettings),
+  skillsList: () => ipcRenderer.invoke(AI_CHANNELS.skillsList),
+  skillText: (name: string) => ipcRenderer.invoke(AI_CHANNELS.skillText, name),
+  gskStatus: () => ipcRenderer.invoke(AI_CHANNELS.gskStatus),
   aiStream: (request) => ipcRenderer.invoke(AI_CHANNELS.stream, request),
   aiStreamCancel: (requestId) => ipcRenderer.invoke(AI_CHANNELS.streamCancel, requestId),
   onAiStream: (handler) => {
@@ -61,4 +148,20 @@ const api: PdfApi = {
   },
 }
 
+// Shared project chat store (registered app-wide by the shell's main init):
+// AI PDF conversations persist per file, like Docs/Sheets
+const projectApi = {
+  resolveChat: (args: { filePath: string | null; tempChatId?: string }) =>
+    ipcRenderer.invoke('project:resolveChat', args),
+  appendChat: (args: unknown) => ipcRenderer.invoke('project:appendChat', args),
+  loadChat: (args: { projectId: string; chatId: string; limit?: number }) =>
+    ipcRenderer.invoke('project:loadChat', args),
+  rebindChat: (args: { projectId: string; tempChatId: string; newFilePath: string }) =>
+    ipcRenderer.invoke('project:rebindChat', args),
+}
+
 contextBridge.exposeInMainWorld('pdfApi', api)
+contextBridge.exposeInMainWorld('projectApi', projectApi)
+
+// open documents dragged from the OS onto this tab as a new shell tab
+installDropOpenBridge()

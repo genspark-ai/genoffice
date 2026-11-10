@@ -1,7 +1,7 @@
 /**
  * Minimal WOFF2 reader for advance-width assertions on the bundled KR subsets.
  *
- * Only supports what those files use: CFF flavor (no glyf/loca transform),
+ * Only supports what those files use: untransformed glyf/loca (or CFF),
  * untransformed hmtx, cmap formats 4/12. Avoids adding a woff2 dependency.
  */
 import { readFileSync } from 'node:fs'
@@ -208,4 +208,19 @@ export function advanceEm(font: Woff2Font, cp: number): number {
   const gid = font.cmap.get(cp)
   if (gid === undefined) throw new Error(`U+${cp.toString(16)} not in cmap`)
   return font.advances[gid] / font.unitsPerEm
+}
+
+/** glyf bounding box of a codepoint in em: [xMin, yMin, xMax, yMax] (null for an empty glyph) */
+export function glyphBoundsEm(font: Woff2Font, cp: number): number[] | null {
+  const gid = font.cmap.get(cp)
+  if (gid === undefined) throw new Error(`U+${cp.toString(16)} not in cmap`)
+  const head = font.tables.get('head')
+  const loca = font.tables.get('loca')
+  const glyf = font.tables.get('glyf')
+  if (!head || !loca || !glyf) throw new Error('no glyf outlines')
+  const long = head.readInt16BE(50) === 1
+  const start = long ? loca.readUInt32BE(gid * 4) : loca.readUInt16BE(gid * 2) * 2
+  const end = long ? loca.readUInt32BE(gid * 4 + 4) : loca.readUInt16BE(gid * 2 + 2) * 2
+  if (end <= start) return null
+  return [2, 4, 6, 8].map((o) => glyf.readInt16BE(start + o) / font.unitsPerEm)
 }

@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   createI18n,
   format,
+  htmlDir,
   htmlLang,
   isLang,
+  isRtlLang,
   LANGS,
   macShortcutsToWin,
   normalizeLang,
+  type Params,
 } from '../src/index'
 
 describe('normalizeLang', () => {
@@ -46,6 +49,7 @@ describe('normalizeLang', () => {
     expect(normalizeLang('pt-PT')).toBe('pt')
     expect(normalizeLang('it-IT')).toBe('it')
     expect(normalizeLang('pl-PL')).toBe('pl')
+    expect(normalizeLang('cs-CZ')).toBe('cs')
     expect(normalizeLang('nl-NL')).toBe('nl')
     expect(normalizeLang('ms-MY')).toBe('ms')
     expect(normalizeLang('he-IL')).toBe('he')
@@ -55,10 +59,23 @@ describe('normalizeLang', () => {
 
   it('maps everything else (and missing) to en', () => {
     expect(normalizeLang('en-US')).toBe('en')
+    expect(normalizeLang('en_US')).toBe('en')
     expect(normalizeLang('sv-SE')).toBe('en')
     expect(normalizeLang('')).toBe('en')
     expect(normalizeLang(undefined)).toBe('en')
     expect(normalizeLang(null)).toBe('en')
+  })
+
+  it('requires a BCP-47 boundary after the language code', () => {
+    expect(normalizeLang('deleted')).toBe('en')
+    expect(normalizeLang('french')).toBe('en')
+    expect(normalizeLang('thread')).toBe('en')
+    expect(normalizeLang('italian')).toBe('en')
+    expect(normalizeLang('hebrew')).toBe('en')
+    expect(normalizeLang('de')).toBe('de')
+    expect(normalizeLang('de-DE')).toBe('de')
+    expect(normalizeLang('de_DE')).toBe('de')
+    expect(normalizeLang('es-419')).toBe('es')
   })
 })
 
@@ -78,6 +95,7 @@ describe('isLang', () => {
     expect(isLang('pt')).toBe(true)
     expect(isLang('it')).toBe(true)
     expect(isLang('pl')).toBe(true)
+    expect(isLang('cs')).toBe(true)
     expect(isLang('nl')).toBe(true)
     expect(isLang('ms')).toBe(true)
     expect(isLang('he')).toBe(true)
@@ -104,6 +122,21 @@ describe('format', () => {
     expect(format('已选 {n} 项', { n: 3 })).toBe('已选 3 项')
     expect(format('{a} and {b}', { a: 'x' })).toBe('x and {b}')
     expect(format('no params')).toBe('no params')
+  })
+
+  it('leaves the placeholder in place for a nullish param value', () => {
+    // hasOwn is true for a key explicitly set to undefined/null, and
+    // String(undefined) is the literal text "undefined"
+    expect(format('Deleted {n} files', { n: undefined } as unknown as Params)).toBe(
+      'Deleted {n} files',
+    )
+    expect(format('Deleted {n} files', { n: null } as unknown as Params)).toBe('Deleted {n} files')
+  })
+
+  it('does not leak prototype properties into placeholders', () => {
+    expect(format('{toString}', {})).toBe('{toString}')
+    expect(format('{constructor} and {valueOf}', {})).toBe('{constructor} and {valueOf}')
+    expect(format('{n}', { n: 1 })).toBe('1')
   })
 })
 
@@ -157,6 +190,15 @@ describe('macShortcutsToWin', () => {
   })
 })
 
+describe('shortcut rewrite order', () => {
+  it('rewrites the template before interpolation so values keep their glyphs', () => {
+    const template = 'Saved {name} (⌘S)'
+    const params = { name: 'Plan ⇧Final.xlsx' }
+    expect(format(macShortcutsToWin(template), params)).toBe('Saved Plan ⇧Final.xlsx (Ctrl+S)')
+    expect(macShortcutsToWin(format(template, params))).toBe('Saved Plan Shift+Final.xlsx (Ctrl+S)')
+  })
+})
+
 describe('createI18n', () => {
   const t = createI18n({
     zh: { hello: '你好 {name}', plain: '文件' },
@@ -173,11 +215,14 @@ describe('createI18n', () => {
     pt: { hello: 'Olá {name}', plain: 'Arquivos' },
     it: { hello: 'Ciao {name}', plain: 'File' },
     pl: { hello: 'Cześć {name}', plain: 'Pliki' },
+    cs: { hello: 'Ahoj {name}', plain: 'Soubory' },
     nl: { hello: 'Hallo {name}', plain: 'Bestanden' },
     ms: { hello: 'Helo {name}', plain: 'Fail' },
     he: { hello: 'שלום {name}', plain: 'קבצים' },
     hi: { hello: 'नमस्ते {name}', plain: 'फ़ाइलें' },
     'zh-TW': { hello: '你好 {name}', plain: '檔案' },
+    vi: { hello: 'Xin chao {name}', plain: 'Tep' },
+    tr: { hello: 'Merhaba {name}', plain: 'Dosyalar' },
   })
 
   it('translates per language with interpolation', () => {
@@ -191,6 +236,55 @@ describe('createI18n', () => {
     expect(t('ar', 'plain')).toBe('الملفات')
     expect(t('pt', 'hello', { name: 'mundo' })).toBe('Olá mundo')
     expect(t('he', 'plain')).toBe('קבצים')
+    expect(t('cs', 'plain')).toBe('Soubory')
     expect(t('zh-TW', 'plain')).toBe('檔案')
+  })
+
+  it('falls back en -> zh -> key for a missing entry', () => {
+    const partial = createI18n({
+      zh: { a: 'zh-a', b: 'zh-b', c: 'zh-c' },
+      en: { a: 'en-a', b: 'en-b' },
+      fr: { a: 'fr-a' },
+    } as unknown as Parameters<typeof createI18n>[0])
+    expect(partial('fr', 'a')).toBe('fr-a')
+    expect(partial('fr', 'b')).toBe('en-b')
+    expect(partial('fr', 'c')).toBe('zh-c')
+    expect(partial('fr', 'd' as 'a')).toBe('d')
+    expect(partial('vi', 'a')).toBe('en-a')
+  })
+})
+
+describe('isRtlLang', () => {
+  it('flags the right-to-left UI languages', () => {
+    expect(isRtlLang('ar')).toBe(true)
+    expect(isRtlLang('he')).toBe(true)
+  })
+
+  it('leaves left-to-right languages and junk alone', () => {
+    expect(isRtlLang('zh')).toBe(false)
+    expect(isRtlLang('en')).toBe(false)
+    expect(isRtlLang('zh-TW')).toBe(false)
+    expect(isRtlLang('fa')).toBe(false) // not in LANGS today
+    expect(isRtlLang(undefined)).toBe(false)
+    expect(isRtlLang('')).toBe(false)
+  })
+})
+
+describe('htmlDir', () => {
+  it('agrees with isRtlLang on every shipped language', () => {
+    // the two functions exist so bootstraps write `dir` in one place; if they
+    // ever disagree, a language silently lays out the wrong way in one app
+    for (const lang of LANGS) expect(htmlDir(lang)).toBe(isRtlLang(lang) ? 'rtl' : 'ltr')
+  })
+
+  it('maps the right-to-left languages and nothing else', () => {
+    expect(htmlDir('ar')).toBe('rtl')
+    expect(htmlDir('he')).toBe('rtl')
+    for (const lang of ['en', 'zh', 'zh-TW', 'ja', 'th', 'he'.toUpperCase()]) {
+      expect(htmlDir(lang)).toBe('ltr')
+    }
+    expect(htmlDir(undefined)).toBe('ltr')
+    expect(htmlDir(null)).toBe('ltr')
+    expect(htmlDir('')).toBe('ltr')
   })
 })

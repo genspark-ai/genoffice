@@ -96,6 +96,24 @@ describe('widgetsFromAnnotations', () => {
     expect(invalid?.maxLen).toBeNull()
   })
 
+  it('reads the date format from Acrobat AFDate keystroke scripts', () => {
+    const [date, plain] = widgetsFromAnnotations([
+      {
+        subtype: 'Widget',
+        fieldType: 'Tx',
+        fieldName: 'born',
+        rect,
+        actions: {
+          Keystroke: ['AFDate_KeystrokeEx("dd/mm/yyyy");'],
+          Format: ['AFDate_FormatEx("dd/mm/yyyy");'],
+        },
+      },
+      { subtype: 'Widget', fieldType: 'Tx', fieldName: 'name', rect },
+    ])
+    expect(date?.dateFormat).toBe('dd/mm/yyyy')
+    expect(plain?.dateFormat).toBeNull()
+  })
+
   it('keeps radio export values and choice display labels', () => {
     const widgets = widgetsFromAnnotations([
       {

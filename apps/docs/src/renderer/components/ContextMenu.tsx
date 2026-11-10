@@ -1,23 +1,84 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
+import type { Command } from '@tiptap/pm/state'
+import { NodeSelection, TextSelection } from '@tiptap/pm/state'
+import {
+  addColumnAfter,
+  addColumnBefore,
+  addRowAfter,
+  addRowBefore,
+  deleteRow,
+  deleteTable,
+  mergeCells,
+  splitCell,
+} from '@tiptap/pm/tables'
 import { platformShortcuts } from '@genoffice/i18n'
+import { redactTextBetween, type RedactableNode } from '../ai/redact-view'
+import type { TextboxDisplay } from '@genoffice/docx-engine'
+
 import { useI18n, type StringKey } from '../i18n/locale'
-import { fontFamiliesFor, isEastAsianFontName } from '../font-list'
-import { useSystemFontFamilies } from '../system-fonts'
-import { cssFontFamily } from '../line-metrics'
-import { setParaAttrs, activeParaAttrs } from './ribbon-tabs'
-import { setSelectionAlign } from '../editor/direction'
+import { wordRangeAtCaret } from '../editor/comments'
+import {
+  bringForward,
+  bringToFront,
+  sendBackward,
+  sendToBack,
+  setFloatingWrap,
+  shapeWrapOf,
+} from '../editor/floating-z-order'
+import { pasteFromClipboard } from '../editor/paste-actions'
+import { setTableAutoFit } from '../editor/table-properties'
+import { distributeSelectedColumns } from '../editor/table-sizing'
+import {
+  deleteTableColumn,
+  distributeRowsEvenly,
+  inTableOrSelected,
+  selectTablePart,
+  enterSelectedTable,
+  setCellAlignment,
+  setCellTextDirection,
+  splitTableAtSelection,
+  type CellHAlign,
+  type CellTextDirection,
+  type CellVAlign,
+  type TableSelectKind,
+} from '../editor/table-ops'
+import type { TableDialogKind } from './TableDialogs'
 import { IconSparkle } from './icons'
-import { useModalKeys } from './modal-keys'
+import { IconCellAlign } from './table-icons'
+import { spellcheckEnabled } from '../spellcheck-pref'
+import { applySpellingSuggestion } from '../editor/spell-replace'
+import { linkRangeAt, linkTarget, removeLink } from '../editor/link-actions'
+import { fieldRangeAt, toggleFieldCodes, type FieldRange } from '../editor/field-codes'
+import { hasRedactionIn } from '../editor/redaction'
+import type { SpellLanguages } from '../../shared/ipc'
+import { TRANSLATE_LANGS, appLangKey } from './translate-langs'
+import type { RevisionRange } from '../editor/revisions'
+
+export { FontDialog } from './FontDialog'
 
 /**
  * Editor context menu (right click in the document body):
- * Cut/Copy/Paste · Font… · Paragraph… · Synonyms · Translate · Hyperlink… · New Comment.
+ * Cut/Copy/Paste · Font… · Paragraph… · Synonyms · Translate · Hyperlink (insert or Edit/Open/Copy/Remove) · New Comment.
  */
 
 export interface ContextMenuState {
   x: number
   y: number
+  /** src of the picture under the pointer, when the click landed on one */
+  imageSrc?: string | null
+  /** claim sequence of the right-click this menu answers (pairs it with Chromium's data) */
+  seq?: number
+  /** document position under the click (the caret for a keyboard-invoked menu) */
+  pos?: number | null
+  /** Chromium's misspelling under the pointer, relayed by the main process after the menu opened */
+  spell?: { word: string; suggestions: string[] } | null
+  /** hyperlink under the pointer as rendered (a TOC line counts: Word treats its entries as links) */
+  link?: { href: string; toc?: boolean; tocTitle?: string } | null
+  /** thread of the comment balloon the click landed on */
+  commentId?: string | null
+  /** opened from a margin balloon: `pos` is that item's anchor, not a pointer hit */
+  balloon?: boolean
 }
 
 interface EditorContextMenuProps {
@@ -28,26 +89,68 @@ interface EditorContextMenuProps {
   onParagraphDialog: () => void
   onLink: () => void
   onNewComment: () => void
+  onViewImage: (src: string) => void
+  onSaveImageAs: (src: string) => void
   onAiPreset: (instruction: string) => void
   /** List items: restart numbering / continue numbering (shown when the cursor is on a docListItem) */
   onRestartNumbering?: () => void
   onContinueNumbering?: () => void
+  onSetNumberingValue?: () => void
+  onAdjustListIndents?: () => void
+  onChangeListLevel?: (ilvl: number) => void
   /** F9 update fields (shown when the cursor is on an inline field) */
   onUpdateFields?: () => void
+  /** Edit Field…: open the field-code dialog for that field */
+  onEditField?: (field: FieldRange) => void
+  /** Open Hyperlink: browser for http(s), in-document jump for #bookmark */
+  onOpenLink?: (href: string) => void
+  /** Ask for a label, then withhold the selection from the model */
+  onRedact?: () => void
+  /** Stop withholding a selection that already carries the mark, keeping the text */
+  onUnredact?: () => void
+  /** Word's table dialogs (Split Cells… / Insert Cells… / Delete Cells… / Table Properties…) */
+  onTableDialog?: (kind: TableDialogKind) => void
+  /** section content width the AutoFit / Distribute commands fit the grid into */
+  sectionContentWidthPx?: number
+  /** re-mark existing text after the session dictionary or languages changed */
+  onRespell?: () => void
+  /** tracked changes under the pointer; null while protection disables accept/reject */
+  revisions?: {
+    at: RevisionRange[]
+    any: boolean
+    onRange: (action: 'accept' | 'reject', target: RevisionRange) => void
+    onAll: (action: 'accept' | 'reject') => void
+  } | null
+  /** comment thread under the pointer (Word: Reply / Delete / Resolve stay listed, greyed off a comment) */
+  comment?: {
+    id: string | null
+    onReply: (id: string) => void
+    onDelete: (id: string) => void
+    onResolve: (id: string) => void
+  } | null
+  /** Track Changes toggle; null while protection or a forced lock removes the choice */
+  trackChanges?: { on: boolean; onToggle: () => void } | null
 }
 
-/** target languages mirrored from the Review → Translate dropdown; the localized label also goes into the LLM prompt */
-const TRANSLATE_TARGETS: Array<{ labelKey: StringKey }> = [
-  { labelKey: 'appLangEnglish' },
-  { labelKey: 'appLangSimplifiedChinese' },
-  { labelKey: 'appLangJapanese' },
-  { labelKey: 'appLangKorean' },
-  { labelKey: 'appLangFrench' },
-  { labelKey: 'appLangGerman' },
-  { labelKey: 'appLangSpanish' },
+const MENU_WIDTH = 240
+
+const CTX_CELL_ALIGN: Array<[CellVAlign, CellHAlign, StringKey]> = [
+  ['top', 'left', 'ribbonAlignTopLeft'],
+  ['top', 'center', 'ribbonAlignTopCenter'],
+  ['top', 'right', 'ribbonAlignTopRight'],
+  ['center', 'left', 'ribbonAlignMiddleLeft'],
+  ['center', 'center', 'ribbonAlignMiddleCenter'],
+  ['center', 'right', 'ribbonAlignMiddleRight'],
+  ['bottom', 'left', 'ribbonAlignBottomLeft'],
+  ['bottom', 'center', 'ribbonAlignBottomCenter'],
+  ['bottom', 'right', 'ribbonAlignBottomRight'],
 ]
 
-const MENU_WIDTH = 240
+const CTX_TEXT_DIRECTIONS: Array<[CellTextDirection, StringKey]> = [
+  ['lrTb', 'ribbonTextDirectionHorizontal'],
+  ['tbRl', 'ribbonTextDirectionRotate90'],
+  ['btLr', 'ribbonTextDirectionRotate270'],
+]
 
 export function EditorContextMenu({
   editor,
@@ -57,19 +160,113 @@ export function EditorContextMenu({
   onParagraphDialog,
   onLink,
   onNewComment,
+  onViewImage,
+  onSaveImageAs,
   onAiPreset,
   onRestartNumbering,
   onContinueNumbering,
+  onSetNumberingValue,
+  onAdjustListIndents,
+  onChangeListLevel,
   onUpdateFields,
+  onEditField,
+  onOpenLink,
+  onRedact,
+  onUnredact,
+  onTableDialog,
+  sectionContentWidthPx = 624,
+  onRespell,
+  revisions,
+  comment,
+  trackChanges,
 }: EditorContextMenuProps) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const ref = useRef<HTMLDivElement>(null)
   const [submenu, setSubmenu] = useState<string | null>(null)
 
+  // ---- spelling section (Word: suggestions · Add to Dictionary · Language) ----
+  const spell = spellcheckEnabled() && editor.isEditable ? menu.spell : null
+  const [spellLangs, setSpellLangs] = useState<SpellLanguages | null>(null)
+  useEffect(() => {
+    if (!spell) return
+    let alive = true
+    void window.desktop.spellLanguages?.().then((langs) => {
+      if (alive) setSpellLangs(langs)
+    })
+    return () => {
+      alive = false
+    }
+  }, [spell])
+  const langNames = useMemo(() => {
+    try {
+      return new Intl.DisplayNames([lang], { type: 'language' })
+    } catch {
+      return null
+    }
+  }, [lang])
+  // active dictionaries first, the rest by display name
+  const spellLangOrder = useMemo(() => {
+    if (!spellLangs) return []
+    const name = (code: string) => langNames?.of(code) ?? code
+    const rest = spellLangs.available
+      .filter((code) => !spellLangs.active.includes(code))
+      .sort((a, b) => name(a).localeCompare(name(b), lang))
+    return [...spellLangs.active, ...rest]
+  }, [spellLangs, langNames, lang])
+  const applySuggestion = (replacement: string) => {
+    if (!spell) return
+    applySpellingSuggestion(
+      editor,
+      menu.pos ?? null,
+      spell.word,
+      replacement,
+      window.desktop.spellReplace,
+    )
+  }
+  const addToDictionary = () => {
+    if (spell) void window.desktop.spellAddWord?.(spell.word).then(() => onRespell?.())
+  }
+  const ignoreAll = () => {
+    if (spell) void window.desktop.spellIgnoreWord?.(spell.word).then(() => onRespell?.())
+  }
+  const toggleLanguage = (code: string) => {
+    if (!spellLangs) return
+    const active = spellLangs.active.includes(code)
+      ? spellLangs.active.filter((l) => l !== code)
+      : [...spellLangs.active, code]
+    if (!active.length) return
+    // the respell kick that follows must not run under an open menu (Word closes it too)
+    onClose()
+    void window.desktop.spellSetLanguages?.(active).then(() => onRespell?.())
+  }
+
   const { from, to } = editor.state.selection
   const hasSelection = from !== to
+  const clickPos = menu.pos ?? from
+  // ---- hyperlink / field under the pointer (Word acts on the run, not the selection) ----
+  const linkRange = linkRangeAt(editor.state, clickPos)
+  const linkHref = menu.link?.href ?? linkRange?.href ?? null
+  const onLinkRun = linkHref !== null
+  const linkEditable = !!linkRange && !menu.link?.toc && editor.isEditable
+  const editLink = () => {
+    if (linkRange) editor.commands.setTextSelection({ from: linkRange.from, to: linkRange.to })
+    onLink()
+  }
+  const copyLink = () => {
+    if (linkHref) void navigator.clipboard.writeText(linkHref)
+  }
+  const field = fieldRangeAt(editor.state, clickPos)
+  const canComment = hasSelection || wordRangeAtCaret(editor) !== null
   const canEdit = editor.isEditable
-  const selectedText = hasSelection ? editor.state.doc.textBetween(from, to, ' ').trim() : ''
+  // Whether stopping the withholding is an option here. Decided from the live
+  // selection rather than from a list kept alongside the document, so it cannot
+  // drift from the marks the editor is actually carrying. A bare caret answers
+  // false on its own, so no selection test is needed here either.
+  const isRedactedSelection = hasRedactionIn(editor, from, to)
+  // the presets quote the selection back to the model, so it reads the projection
+  const selectedText = hasSelection
+    ? redactTextBetween(editor.getJSON() as RedactableNode, from, to, ' ').trim()
+    : ''
   // Synonyms targets a word / short phrase, not long selections
   const synonymText = selectedText.length > 0 && selectedText.length <= 20 ? selectedText : ''
 
@@ -96,10 +293,14 @@ export function EditorContextMenu({
     window.addEventListener('mousedown', close)
     window.addEventListener('keydown', onKey)
     window.addEventListener('blur', onClose)
+    // shell tab-strip presses never reach this document; the preload relays
+    // them (app:chrome-pressed) so the menu still dismisses
+    const offChrome = window.desktop?.onChromePressed?.(onClose)
     return () => {
       window.removeEventListener('mousedown', close)
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('blur', onClose)
+      offChrome?.()
     }
   }, [onClose])
 
@@ -108,62 +309,59 @@ export function EditorContextMenu({
     action()
   }
 
-  const protAttrs = editor.getAttributes('docProtected')
+  // ---- table section (shown when the cursor is inside a table, Word parity) ----
+  const inTable = inTableOrSelected(editor.state)
+  /** cell commands can't run on a whole-table NodeSelection: drop the caret into the first cell */
+  const enterFirstCell = () => {
+    const sel = editor.state.selection
+    if (sel instanceof NodeSelection && sel.node.type.name === 'docTable') {
+      editor.view.dispatch(
+        editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(sel.from + 1))),
+      )
+    }
+  }
+  const runTable = (command: Command) => {
+    editor.view.focus()
+    enterFirstCell()
+    command(editor.state, editor.view.dispatch)
+  }
+  /** per-cell formatting: a whole-table selection means every cell, not the first one */
+  const runTableCells = (command: Command) => {
+    editor.view.focus()
+    enterSelectedTable(editor.state, editor.view.dispatch)
+    command(editor.state, editor.view.dispatch)
+  }
+
+  // only the object itself (right-click selects it as a node): a text range
+  // that merely spans a picture keeps the text menu
+  const protAttrs =
+    editor.state.selection instanceof NodeSelection &&
+    editor.state.selection.node.type.name === 'docProtected'
+      ? editor.state.selection.node.attrs
+      : null
   const isImage = protAttrs?.blockType === 'image'
   const isFloating =
     isImage ||
     (Array.isArray(protAttrs?.textboxes) && (protAttrs.textboxes as unknown[]).length > 0)
-  const currentWrap = (protAttrs?.imageWrap as string | null) ?? null
-  const setWrap = (wrap: string | null) =>
-    editor.chain().focus().updateAttributes('docProtected', { imageWrap: wrap }).run()
+  const boxes = protAttrs?.textboxes as TextboxDisplay[] | undefined
+  // a run picture (in line or floating) wraps through its own node
+  const runPicture =
+    editor.state.selection instanceof NodeSelection &&
+    editor.state.selection.node.type.name === 'docInlineImage' &&
+    !editor.state.selection.node.attrs.rule
+      ? editor.state.selection.node
+      : null
+  // Word's picture menu: clipboard, the picture, wrap / arrange, link, comment
+  const onPicture = !!menu.imageSrc || !!runPicture || isImage
+  const currentWrap = runPicture
+    ? ((runPicture.attrs.wrap as string | null) ?? null)
+    : boxes?.length
+      ? shapeWrapOf(boxes[0])
+      : ((protAttrs?.imageWrap as string | null) ?? null)
 
-  /** Plain-text insertion: no HTML parsing (insertContent(string) would treat < > as tags) */
-  const insertPlainText = (text: string) => {
-    const lines = text.replace(/\r/g, '').split('\n')
-    if (lines.length === 1) {
-      editor.chain().focus().insertContent({ type: 'text', text: lines[0] }).run()
-      return
-    }
-    editor
-      .chain()
-      .focus()
-      .insertContent(
-        lines.map((line) => ({
-          type: 'docParagraph',
-          ...(line ? { content: [{ type: 'text', text: line }] } : {}),
-        })),
-      )
-      .run()
-  }
-
-  const clipboard = async (action: 'cut' | 'copy' | 'paste' | 'pastePlain') => {
-    if (action === 'paste') {
-      // rich paste: prefer HTML (parsed by editor paste rules, keeps formatting), otherwise plain text
-      try {
-        const items = await navigator.clipboard.read()
-        for (const item of items) {
-          if (item.types.includes('text/html')) {
-            const html = await (await item.getType('text/html')).text()
-            editor
-              .chain()
-              .focus()
-              .insertContent(html, { parseOptions: { preserveWhitespace: true } })
-              .run()
-            return
-          }
-        }
-      } catch {
-        /* clipboard.read unavailable (permission/format): fall back to plain text */
-      }
-      const text = await navigator.clipboard.readText()
-      if (text) insertPlainText(text)
-    } else if (action === 'pastePlain') {
-      const text = await navigator.clipboard.readText()
-      if (text) insertPlainText(text)
-    } else {
-      editor.commands.focus()
-      document.execCommand(action)
-    }
+  const clipboard = (action: 'cut' | 'copy') => {
+    editor.commands.focus()
+    document.execCommand(action)
   }
 
   const item = (
@@ -179,7 +377,7 @@ export function EditorContextMenu({
     <button
       className="ctx-item"
       disabled={opts.disabled}
-      title={opts.ai ? t('appAiBadgeTip') : undefined}
+      data-tip={opts.ai ? t('appAiBadgeTip') : undefined}
       onMouseEnter={() => setSubmenu(opts.submenuKey ?? null)}
       onClick={opts.submenuKey ? undefined : opts.onClick}
     >
@@ -201,79 +399,391 @@ export function EditorContextMenu({
       style={{ left: pos.left, top: pos.top, minWidth: MENU_WIDTH }}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {spell && (
+        <>
+          {spell.suggestions.length === 0 && item(t('appSpellNoSuggestions'), { disabled: true })}
+          {spell.suggestions.slice(0, 5).map((word) => (
+            <button
+              key={word}
+              className="ctx-item ctx-item-strong"
+              onClick={run(() => applySuggestion(word))}
+            >
+              <span className="ctx-label">{word}</span>
+            </button>
+          ))}
+          <div className="ctx-sep" />
+          {item(t('appSpellIgnoreAll'), { onClick: run(ignoreAll) })}
+          {item(t('appSpellAddToDictionary'), { onClick: run(addToDictionary) })}
+          {spellLangs && spellLangs.available.length > 0 && (
+            <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+              {item(t('appSpellLanguage'), { submenuKey: 'spellLang' })}
+              {submenu === 'spellLang' && (
+                <div className="ctx-submenu ctx-submenu-scroll">
+                  {spellLangOrder.map((code) => (
+                    <button key={code} className="ctx-item" onClick={() => toggleLanguage(code)}>
+                      <span className="ctx-label">
+                        {spellLangs.active.includes(code) ? '✓ ' : ''}
+                        {langNames?.of(code) ?? code}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <div className="ctx-sep" />
+        </>
+      )}
       {item(t('appCut'), {
         key: '⌘X',
         disabled: !hasSelection || !canEdit,
-        onClick: run(() => void clipboard('cut')),
+        onClick: run(() => clipboard('cut')),
       })}
       {item(t('appCopy'), {
         key: '⌘C',
         disabled: !hasSelection,
-        onClick: run(() => void clipboard('copy')),
+        onClick: run(() => clipboard('copy')),
       })}
       {item(t('appPaste'), {
         key: '⌘V',
         disabled: !canEdit,
-        onClick: run(() => void clipboard('paste')),
+        onClick: run(() => void pasteFromClipboard(editor)),
       })}
-      {item(t('appPastePlain'), {
-        disabled: !canEdit,
-        onClick: run(() => void clipboard('pastePlain')),
-      })}
-      <div className="ctx-sep" />
-      {item(t('appFontMenu'), { key: '⌘D', onClick: run(onFontDialog) })}
-      {item(t('appParagraphMenu'), { key: '⌥⌘M', onClick: run(onParagraphDialog) })}
-      {editor.isActive('instrField') && onUpdateFields && (
+      {!onPicture &&
+        item(t('appPastePlain'), {
+          disabled: !canEdit,
+          onClick: run(() => void pasteFromClipboard(editor, 'text')),
+        })}
+      {menu.imageSrc && (
+        <>
+          <div className="ctx-sep" />
+          {item(t('appViewImage'), { onClick: run(() => onViewImage(menu.imageSrc!)) })}
+          {item(t('appSaveImageAs'), { onClick: run(() => onSaveImageAs(menu.imageSrc!)) })}
+        </>
+      )}
+      {!onPicture && (
+        <>
+          <div className="ctx-sep" />
+          {item(t('appFontMenu'), { key: '⌘D', onClick: run(onFontDialog) })}
+          {item(t('appParagraphMenu'), { key: '⌥⌘M', onClick: run(onParagraphDialog) })}
+        </>
+      )}
+      {inTable && !onPicture && (
+        <>
+          <div className="ctx-sep" />
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonInsert'), { submenuKey: 'tableInsert', disabled: !canEdit })}
+            {submenu === 'tableInsert' && canEdit && (
+              <div className="ctx-submenu">
+                {(
+                  [
+                    ['ribbonInsertAbove', addRowBefore],
+                    ['ribbonInsertBelow', addRowAfter],
+                    ['ribbonInsertLeft', addColumnBefore],
+                    ['ribbonInsertRight', addColumnAfter],
+                  ] as Array<[StringKey, Command]>
+                ).map(([labelKey, command]) => (
+                  <button
+                    key={labelKey}
+                    className="ctx-item"
+                    onClick={run(() => runTable(command))}
+                  >
+                    <span className="ctx-label">{t(labelKey)}</span>
+                  </button>
+                ))}
+                {onTableDialog && (
+                  <button className="ctx-item" onClick={run(() => onTableDialog('insertCells'))}>
+                    <span className="ctx-label">{t('ribbonInsertCells')}</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonTableDeleteMenu'), { submenuKey: 'tableDelete', disabled: !canEdit })}
+            {submenu === 'tableDelete' && canEdit && (
+              <div className="ctx-submenu">
+                {(
+                  [
+                    ['ribbonDeleteRow', deleteRow],
+                    ['ribbonDeleteColumn', deleteTableColumn],
+                    ['ribbonDeleteTable', deleteTable],
+                  ] as Array<[StringKey, Command]>
+                ).map(([labelKey, command]) => (
+                  <button
+                    key={labelKey}
+                    className="ctx-item"
+                    onClick={run(() => runTable(command))}
+                  >
+                    <span className="ctx-label">{t(labelKey)}</span>
+                  </button>
+                ))}
+                {onTableDialog && (
+                  <button className="ctx-item" onClick={run(() => onTableDialog('deleteCells'))}>
+                    <span className="ctx-label">{t('ribbonDeleteCells')}</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonSelect'), { submenuKey: 'tableSelect' })}
+            {submenu === 'tableSelect' && (
+              <div className="ctx-submenu">
+                {(
+                  [
+                    ['row', 'ribbonSelectRow'],
+                    ['column', 'ribbonSelectColumn'],
+                    ['table', 'ribbonSelectTable'],
+                    ['cell', 'ribbonSelectCell'],
+                  ] as Array<[TableSelectKind, StringKey]>
+                ).map(([kind, labelKey]) => (
+                  <button
+                    key={kind}
+                    className="ctx-item"
+                    onClick={run(() => runTable(selectTablePart(kind)))}
+                  >
+                    <span className="ctx-label">{t(labelKey)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {item(t('ribbonMergeCells'), {
+            disabled: !canEdit || !mergeCells(editor.state),
+            onClick: run(() => runTable(mergeCells)),
+          })}
+          {item(t('ribbonSplitCellsDialog'), {
+            disabled: !canEdit,
+            onClick: run(() => {
+              enterFirstCell()
+              if (onTableDialog) onTableDialog('splitCells')
+              else runTable(splitCell)
+            }),
+          })}
+          {item(t('ribbonSplitTable'), {
+            disabled: !canEdit || !splitTableAtSelection()(editor.state),
+            onClick: run(() => runTable(splitTableAtSelection())),
+          })}
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonDistribute'), { submenuKey: 'tableDistribute', disabled: !canEdit })}
+            {submenu === 'tableDistribute' && canEdit && (
+              <div className="ctx-submenu">
+                <button
+                  className="ctx-item"
+                  onClick={run(() => {
+                    enterFirstCell()
+                    distributeRowsEvenly(editor.view)
+                  })}
+                >
+                  <span className="ctx-label">{t('ribbonDistributeRows')}</span>
+                </button>
+                <button
+                  className="ctx-item"
+                  onClick={run(() => runTable(distributeSelectedColumns(sectionContentWidthPx)))}
+                >
+                  <span className="ctx-label">{t('ribbonDistributeColumns')}</span>
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonCellAlignment'), { submenuKey: 'tableAlign', disabled: !canEdit })}
+            {submenu === 'tableAlign' && canEdit && (
+              <div className="ctx-submenu">
+                {CTX_CELL_ALIGN.map(([v, h, labelKey]) => (
+                  <button
+                    key={`${v}-${h}`}
+                    className="ctx-item"
+                    onClick={run(() => runTableCells(setCellAlignment(v, h)))}
+                  >
+                    <span className="ctx-ico">
+                      <IconCellAlign v={v} h={h} size={14} />
+                    </span>
+                    <span className="ctx-label">{t(labelKey)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonTextDirection'), { submenuKey: 'tableTextDir', disabled: !canEdit })}
+            {submenu === 'tableTextDir' && canEdit && (
+              <div className="ctx-submenu">
+                {CTX_TEXT_DIRECTIONS.map(([dir, labelKey]) => (
+                  <button
+                    key={dir}
+                    className="ctx-item"
+                    onClick={run(() => runTableCells(setCellTextDirection(dir)))}
+                  >
+                    <span className="ctx-label">{t(labelKey)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonAutoFit'), { submenuKey: 'tableAutoFit', disabled: !canEdit })}
+            {submenu === 'tableAutoFit' && canEdit && (
+              <div className="ctx-submenu">
+                {(
+                  [
+                    ['contents', 'ribbonAutoFitContents'],
+                    ['window', 'ribbonAutoFitWindow'],
+                    ['fixed', 'ribbonFixedColumnWidth'],
+                  ] as Array<['contents' | 'window' | 'fixed', StringKey]>
+                ).map(([mode, labelKey]) => (
+                  <button
+                    key={mode}
+                    className="ctx-item"
+                    onClick={run(() => runTable(setTableAutoFit(mode, sectionContentWidthPx)))}
+                  >
+                    <span className="ctx-label">{t(labelKey)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {onTableDialog &&
+            item(t('ribbonTableProperties'), {
+              disabled: !canEdit,
+              onClick: run(() => {
+                enterFirstCell()
+                onTableDialog('properties')
+              }),
+            })}
+        </>
+      )}
+      {!onPicture && (field || editor.isActive('instrField')) && onUpdateFields && (
         <>
           <div className="ctx-sep" />
           {item(t('appUpdateField'), { key: 'F9', onClick: run(() => onUpdateFields()) })}
+          {field && (
+            <>
+              {item(t('appToggleFieldCodes'), {
+                onClick: run(() => toggleFieldCodes(editor.view, field)),
+              })}
+              {item(t('appEditField'), {
+                disabled: !canEdit || !onEditField,
+                onClick: run(() => onEditField?.(field)),
+              })}
+            </>
+          )}
         </>
       )}
-      {editor.isActive('docListItem') && !!editor.getAttributes('docListItem').numId && (
+      {!onPicture &&
+        editor.isActive('docListItem') &&
+        !!editor.getAttributes('docListItem').numId && (
+          <>
+            <div className="ctx-sep" />
+            {item(t('appRestartNumbering'), {
+              disabled: !onRestartNumbering,
+              onClick: run(() => onRestartNumbering?.()),
+            })}
+            {item(t('appContinueNumbering'), {
+              disabled: !onContinueNumbering,
+              onClick: run(() => onContinueNumbering?.()),
+            })}
+            {item(t('appSetNumberingValue'), {
+              disabled: !onSetNumberingValue || !canEdit,
+              onClick: run(() => onSetNumberingValue?.()),
+            })}
+            {item(t('appAdjustListIndents'), {
+              disabled: !onAdjustListIndents || !canEdit,
+              onClick: run(() => onAdjustListIndents?.()),
+            })}
+            <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+              {item(t('appChangeListLevel'), {
+                disabled: !onChangeListLevel || !canEdit,
+                submenuKey: 'listLevel',
+              })}
+              {submenu === 'listLevel' && onChangeListLevel && canEdit && (
+                <div className="ctx-submenu">
+                  {Array.from({ length: 9 }, (_, i) => (
+                    <button
+                      key={i}
+                      className="ctx-item"
+                      aria-current={
+                        (Number(editor.getAttributes('docListItem').ilvl) || 0) === i
+                          ? 'true'
+                          : undefined
+                      }
+                      onClick={run(() => onChangeListLevel(i))}
+                    >
+                      <span className="ctx-label" style={{ paddingLeft: i * 8 }}>
+                        {t('appParaOutlineLevelN', { n: String(i + 1) })}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      {!onPicture && (
         <>
           <div className="ctx-sep" />
-          {item(t('appRestartNumbering'), {
-            disabled: !onRestartNumbering,
-            onClick: run(() => onRestartNumbering?.()),
+          {item(t('appSynonyms'), {
+            disabled: !synonymText,
+            ai: true,
+            onClick: run(() => onAiPreset(t('appSynonymsPrompt', { text: synonymText }))),
           })}
-          {item(t('appContinueNumbering'), {
-            disabled: !onContinueNumbering,
-            onClick: run(() => onContinueNumbering?.()),
-          })}
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('appTranslate'), {
+              disabled: !hasSelection,
+              submenuKey: 'translate',
+              ai: true,
+            })}
+            {submenu === 'translate' && hasSelection && (
+              <div className="ctx-submenu">
+                {TRANSLATE_LANGS.map(({ code }) => (
+                  <button
+                    key={code}
+                    className="ctx-item"
+                    onClick={run(() =>
+                      onAiPreset(
+                        t('appTranslateSelectionPrompt', {
+                          lang: t(appLangKey(code)),
+                          text: selectedText,
+                        }),
+                      ),
+                    )}
+                  >
+                    <span className="ctx-label">
+                      {t('appTranslateTo', { lang: t(appLangKey(code)) })}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Withholding a span. No AI badge: the item spends the words rather
+          than using the model, and the badge would read "Uses AI".
+          Text only, deliberately. A picture alone in a paragraph is a *block*
+          node (docProtected), which takes no marks at all, and a picture
+          beside text is an inline atom whose mark is dropped by the docx save
+          (convert.ts reads the run's node attrs, never the node's marks) — so
+          offering it for a picture would hide it for one session and then lose
+          the decision on the next save, with nothing to tell the reader. */}
+          {onRedact &&
+            item(t('redactMenuLabel'), {
+              disabled: !canEdit || !hasSelection,
+              onClick: run(onRedact),
+            })}
+          {/* The other half of the item above, and its mirror: offered only when the
+          selection really carries the mark. Without this the sole way to stop
+          withholding a span was to delete the words, which loses the reader's
+          own text to undo a decision they made in the editor. Same reason as
+          the item beside it for no AI badge — this one only moves a mark. */}
+          {onUnredact &&
+            isRedactedSelection &&
+            item(t('redactShowLabel'), {
+              disabled: !canEdit,
+              onClick: run(onUnredact),
+            })}
         </>
       )}
-      <div className="ctx-sep" />
-      {item(t('appSynonyms'), {
-        disabled: !synonymText,
-        ai: true,
-        onClick: run(() => onAiPreset(t('appSynonymsPrompt', { text: synonymText }))),
-      })}
-      <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
-        {item(t('appTranslate'), { disabled: !hasSelection, submenuKey: 'translate', ai: true })}
-        {submenu === 'translate' && hasSelection && (
-          <div className="ctx-submenu">
-            {TRANSLATE_TARGETS.map((target) => (
-              <button
-                key={target.labelKey}
-                className="ctx-item"
-                onClick={run(() =>
-                  onAiPreset(
-                    t('appTranslateSelectionPrompt', {
-                      lang: t(target.labelKey),
-                      text: selectedText,
-                    }),
-                  ),
-                )}
-              >
-                <span className="ctx-label">
-                  {t('appTranslateTo', { lang: t(target.labelKey) })}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-      {isFloating && (
+      {(isFloating || runPicture) && (
         <>
           <div className="ctx-sep" />
           <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
@@ -284,7 +794,7 @@ export function EditorContextMenu({
                   <button
                     key={String(opt.value)}
                     className="ctx-item"
-                    onClick={run(() => setWrap(opt.value))}
+                    onClick={run(() => setFloatingWrap(editor, opt.value))}
                   >
                     <span className="ctx-label">
                       {currentWrap === opt.value ? '✓ ' : ''}
@@ -295,11 +805,91 @@ export function EditorContextMenu({
               </div>
             )}
           </div>
+          {/* stacking ranks live on block anchors and shapes, not on run pictures */}
+          {isFloating && (
+            <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+              {item(t('appArrangeMenu'), { submenuKey: 'arrange' })}
+              {submenu === 'arrange' && (
+                <div className="ctx-submenu">
+                  <button className="ctx-item" onClick={run(() => bringToFront(editor))}>
+                    <span className="ctx-label">{t('appBringToFront')}</span>
+                  </button>
+                  <button className="ctx-item" onClick={run(() => bringForward(editor))}>
+                    <span className="ctx-label">{t('appBringForward')}</span>
+                  </button>
+                  <button className="ctx-item" onClick={run(() => sendBackward(editor))}>
+                    <span className="ctx-label">{t('appSendBackward')}</span>
+                  </button>
+                  <button className="ctx-item" onClick={run(() => sendToBack(editor))}>
+                    <span className="ctx-label">{t('appSendToBack')}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
       <div className="ctx-sep" />
-      {item(t('appHyperlinkMenu'), { key: '⌘K', onClick: run(onLink) })}
-      {item(t('appNewComment'), { disabled: !hasSelection, onClick: run(onNewComment) })}
+      {onLinkRun ? (
+        <>
+          {item(t('appEditHyperlink'), { disabled: !linkEditable, onClick: run(editLink) })}
+          {item(t('appOpenHyperlink'), {
+            disabled: !onOpenLink || !(linkTarget(linkHref) || menu.link?.toc),
+            onClick: run(() => onOpenLink?.(linkHref)),
+          })}
+          {item(t('appCopyHyperlink'), { onClick: run(copyLink) })}
+          {item(t('appRemoveHyperlink'), {
+            disabled: !linkEditable,
+            onClick: run(() => linkRange && removeLink(editor, linkRange)),
+          })}
+        </>
+      ) : (
+        item(t('appHyperlinkMenu'), { key: '⌘K', disabled: !canEdit, onClick: run(onLink) })
+      )}
+      {item(t('appNewComment'), { disabled: !canComment, onClick: run(onNewComment) })}
+      {comment && !onPicture && (
+        <>
+          <div className="ctx-sep" />
+          {item(t('appCtxReplyComment'), {
+            disabled: !comment.id,
+            onClick: run(() => comment.id && comment.onReply(comment.id)),
+          })}
+          {item(t('appCtxDeleteComment'), {
+            disabled: !comment.id,
+            onClick: run(() => comment.id && comment.onDelete(comment.id)),
+          })}
+          {item(t('appCtxResolveComment'), {
+            disabled: !comment.id,
+            onClick: run(() => comment.id && comment.onResolve(comment.id)),
+          })}
+        </>
+      )}
+      {!onPicture && (revisions?.any || trackChanges) && (
+        <>
+          <div className="ctx-sep" />
+          {revisions && revisions.at.length > 0 && (
+            <>
+              {item(t('appCtxAcceptChange'), {
+                onClick: run(() => revisions.onRange('accept', revisions.at[0])),
+              })}
+              {item(t('appCtxRejectChange'), {
+                onClick: run(() => revisions.onRange('reject', revisions.at[0])),
+              })}
+            </>
+          )}
+          {revisions?.any && (
+            <>
+              {item(t('ribbonAcceptAll'), { onClick: run(() => revisions.onAll('accept')) })}
+              {item(t('ribbonRejectAll'), { onClick: run(() => revisions.onAll('reject')) })}
+            </>
+          )}
+          {trackChanges &&
+            item(`${trackChanges.on ? '✓ ' : ''}${t('ribbonTrackChanges')}`, {
+              key: '⇧⌘E',
+              onClick: run(trackChanges.onToggle),
+            })}
+        </>
+      )}
     </div>
   )
 }
@@ -314,389 +904,4 @@ export const WRAP_OPTIONS: Array<{ labelKey: StringKey; value: string | null }> 
   { labelKey: 'appWrapFront', value: 'front' },
 ]
 
-/* ================= Font dialog ================= */
-
-const FONT_SIZES = [9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 28, 36, 48, 72]
-
-const FONT_STYLES: Array<{ key: string; nameKey: StringKey }> = [
-  { key: 'regular', nameKey: 'appFontRegular' },
-  { key: 'italic', nameKey: 'appFontItalic' },
-  { key: 'bold', nameKey: 'appFontBold' },
-  { key: 'boldItalic', nameKey: 'appFontBoldItalic' },
-]
-
-export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () => void }) {
-  const { t, lang } = useI18n()
-  const modalKeys = useModalKeys(onClose)
-  const fontFamilies = fontFamiliesFor(lang)
-  const { families: systemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
-  // the dialog opens from a click, so activation is still live here
-  useEffect(() => loadSystemFonts(), [loadSystemFonts])
-  const textAttrs = editor.getAttributes('docTextStyle')
-  const initialStyle = editor.isActive('bold')
-    ? editor.isActive('italic')
-      ? 'boldItalic'
-      : 'bold'
-    : editor.isActive('italic')
-      ? 'italic'
-      : 'regular'
-
-  const [font, setFont] = useState(
-    (textAttrs.font as string | null) ?? (textAttrs.fontAscii as string | null) ?? '',
-  )
-  const [size, setSize] = useState(
-    textAttrs.sizeHalfPoints ? Number(textAttrs.sizeHalfPoints) / 2 : 11,
-  )
-  const [style, setStyle] = useState<string>(initialStyle)
-  const [color, setColor] = useState(`#${(textAttrs.color as string | null) ?? '000000'}`)
-  const [underline, setUnderline] = useState(editor.isActive('underline'))
-  const [strike, setStrike] = useState(editor.isActive('strike'))
-  const [vertAlign, setVertAlign] = useState<string>((textAttrs.vertAlign as string | null) ?? '')
-
-  const apply = () => {
-    if (!editor.isEditable) {
-      onClose()
-      return
-    }
-    const hex = color.replace('#', '').toUpperCase()
-    let chain = editor
-      .chain()
-      .focus()
-      .setMark('docTextStyle', {
-        color: hex === '000000' ? null : hex,
-        sizeHalfPoints: Math.round(size * 2),
-        // picks target only their script's rFonts slot; the other slot survives
-        ...(!font
-          ? { font: null, fontAscii: null }
-          : isEastAsianFontName(font)
-            ? { font }
-            : { fontAscii: font }),
-        highlight: textAttrs.highlight ?? null,
-        vertAlign: vertAlign || null,
-      })
-    const wantBold = style === 'bold' || style === 'boldItalic'
-    const wantItalic = style === 'italic' || style === 'boldItalic'
-    chain = wantBold ? chain.setMark('bold') : chain.unsetMark('bold')
-    chain = wantItalic ? chain.setMark('italic') : chain.unsetMark('italic')
-    chain = underline ? chain.setMark('underline') : chain.unsetMark('underline')
-    chain = strike ? chain.setMark('strike') : chain.unsetMark('strike')
-    chain.run()
-    onClose()
-  }
-
-  return (
-    <div
-      className="modal-backdrop"
-      ref={modalKeys.ref}
-      onKeyDown={modalKeys.onKeyDown}
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="modal">
-        <h2>{t('appFontDialogTitle')}</h2>
-        <div className="font-dialog-row">
-          <label>
-            {t('appFontFamilyLabel')}
-            <select value={font} onChange={(e) => setFont(e.target.value)}>
-              <option value="">{t('appDefaultBodyFont')}</option>
-              <optgroup label={t('ribbonFontsCommon')}>
-                {fontFamilies.map((f) => (
-                  <option key={f} value={f} style={{ fontFamily: cssFontFamily(f) }}>
-                    {f}
-                  </option>
-                ))}
-              </optgroup>
-              {systemFontFamilies.length > 0 && (
-                <optgroup label={t('ribbonFontsSystem')}>
-                  {systemFontFamilies.map((f) => (
-                    <option key={f} value={f} style={{ fontFamily: cssFontFamily(f) }}>
-                      {f}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {font && !fontFamilies.includes(font) && !systemFontFamilies.includes(font) && (
-                <option value={font}>{font}</option>
-              )}
-            </select>
-          </label>
-          <label>
-            {t('appFontStyleLabel')}
-            <select value={style} onChange={(e) => setStyle(e.target.value)}>
-              {FONT_STYLES.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {t(s.nameKey)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {t('appFontSizeLabel')}
-            <select value={size} onChange={(e) => setSize(Number(e.target.value))}>
-              {!FONT_SIZES.includes(size) && <option value={size}>{size}</option>}
-              {FONT_SIZES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="font-dialog-row">
-          <label>
-            {t('appFontColor')}
-            <input
-              type="color"
-              className="font-color-input"
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
-            />
-          </label>
-          <label className="font-check">
-            <input
-              type="checkbox"
-              checked={underline}
-              onChange={(e) => setUnderline(e.target.checked)}
-            />
-            {t('appUnderline')}
-          </label>
-          <label className="font-check">
-            <input type="checkbox" checked={strike} onChange={(e) => setStrike(e.target.checked)} />
-            {t('appStrikethrough')}
-          </label>
-          <label className="font-check">
-            <input
-              type="checkbox"
-              checked={vertAlign === 'superscript'}
-              onChange={(e) => setVertAlign(e.target.checked ? 'superscript' : '')}
-            />
-            {t('appSuperscript')}
-          </label>
-          <label className="font-check">
-            <input
-              type="checkbox"
-              checked={vertAlign === 'subscript'}
-              onChange={(e) => setVertAlign(e.target.checked ? 'subscript' : '')}
-            />
-            {t('appSubscript')}
-          </label>
-        </div>
-        <div
-          className="font-preview"
-          style={{
-            fontFamily: font ? cssFontFamily(font) : undefined,
-            fontSize: `${Math.min(size, 28)}pt`,
-            fontWeight: style === 'bold' || style === 'boldItalic' ? 600 : 400,
-            fontStyle: style === 'italic' || style === 'boldItalic' ? 'italic' : 'normal',
-            color,
-            textDecoration:
-              [underline ? 'underline' : '', strike ? 'line-through' : ''].join(' ').trim() ||
-              undefined,
-          }}
-        >
-          {t('appFontPreviewSample')}
-        </div>
-        <div className="modal-actions">
-          <button className="btn-ghost" onClick={onClose}>
-            {t('appCancel')}
-          </button>
-          <button className="btn-primary" onClick={apply}>
-            {t('appOk')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ================= Paragraph dialog ================= */
-
-const PT_PER_TWIP = 1 / 20
-
-type AlignValue = 'left' | 'center' | 'right' | 'justify'
-
-/** visual alignment values; setSelectionAlign resolves them per paragraph direction */
-const ALIGN_OPTIONS: Array<{ key: AlignValue; nameKey: StringKey }> = [
-  { key: 'left', nameKey: 'appAlignLeft' },
-  { key: 'center', nameKey: 'appAlignCenter' },
-  { key: 'right', nameKey: 'appAlignRight' },
-  { key: 'justify', nameKey: 'appAlignJustify' },
-]
-
-const LINE_SPACINGS: Array<{ value: number; nameKey: StringKey }> = [
-  { value: 1, nameKey: 'appLineSingle' },
-  { value: 1.15, nameKey: 'appLine115' },
-  { value: 1.5, nameKey: 'appLine15' },
-  { value: 2, nameKey: 'appLineDouble' },
-  { value: 2.5, nameKey: 'appLine25' },
-  { value: 3, nameKey: 'appLineTriple' },
-]
-
-export function ParagraphDialog({ editor, onClose }: { editor: Editor; onClose: () => void }) {
-  const { t } = useI18n()
-  const modalKeys = useModalKeys(onClose)
-  const attrs = activeParaAttrs(editor)
-  // unset align means "start": visually left in LTR, right in RTL (same as the ribbon)
-  const [align, setAlign] = useState<AlignValue>(
-    (attrs.align as AlignValue | null) ?? (attrs.bidi === true ? 'right' : 'left'),
-  )
-  // Line spacing rule: multiples are the preset select values; 'atLeast'/'exact'
-  // take a pt value (w:spacing w:lineRule + w:line, already modeled by parse/save)
-  const rawTwips = Number(attrs.lineRawTwips) || 0
-  const initRule =
-    attrs.lineRule === 'exact' || attrs.lineRule === 'atLeast' ? (attrs.lineRule as string) : ''
-  const initMultiple =
-    Number(attrs.lineSpacing) || (attrs.lineRule === 'auto' && rawTwips ? rawTwips / 240 : 1)
-  const [lineRule, setLineRule] = useState<string>(initRule)
-  const [lineSpacing, setLineSpacing] = useState<number>(Math.round(initMultiple * 100) / 100)
-  const [linePt, setLinePt] = useState<number>(rawTwips ? Math.round(rawTwips / 2) / 10 : 12)
-  const twipsToPt = (v: unknown) => Math.round((Number(v) || 0) * PT_PER_TWIP)
-  const [indentLeft, setIndentLeft] = useState(twipsToPt(attrs.indentLeft))
-  const [indentRight, setIndentRight] = useState(twipsToPt(attrs.indentRight))
-  const [indentFirstLine, setIndentFirstLine] = useState(twipsToPt(attrs.indentFirstLine))
-  const [spaceBefore, setSpaceBefore] = useState(twipsToPt(attrs.spaceBefore))
-  const [spaceAfter, setSpaceAfter] = useState(twipsToPt(attrs.spaceAfter))
-
-  const apply = () => {
-    if (!editor.isEditable) {
-      onClose()
-      return
-    }
-    const ptToTwips = (pt: number) => (pt > 0 ? Math.round(pt / PT_PER_TWIP) : null)
-    const spacing =
-      lineRule === 'exact' || lineRule === 'atLeast'
-        ? { lineSpacing: null, lineRule, lineRawTwips: Math.max(20, Math.round(linePt * 20)) }
-        : {
-            lineSpacing: lineSpacing === 1 ? null : lineSpacing,
-            lineRule: null,
-            lineRawTwips: null,
-          }
-    // align goes through setSelectionAlign so each paragraph resolves the
-    // visual value against its own direction (null = start side)
-    setSelectionAlign(editor, align)
-    setParaAttrs(editor, {
-      ...spacing,
-      indentLeft: ptToTwips(indentLeft),
-      indentRight: ptToTwips(indentRight),
-      indentFirstLine: ptToTwips(indentFirstLine),
-      spaceBefore: ptToTwips(spaceBefore),
-      spaceAfter: ptToTwips(spaceAfter),
-    })
-    onClose()
-  }
-
-  const numInput = (label: string, value: number, set: (v: number) => void) => (
-    <label>
-      {label}
-      <span className="para-num">
-        <input
-          type="number"
-          min={0}
-          max={400}
-          value={value}
-          onChange={(e) => set(Math.max(0, Number(e.target.value) || 0))}
-        />
-        <span className="para-unit">pt</span>
-      </span>
-    </label>
-  )
-
-  return (
-    <div
-      className="modal-backdrop"
-      ref={modalKeys.ref}
-      onKeyDown={modalKeys.onKeyDown}
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="modal">
-        <h2>{t('appParagraph')}</h2>
-        <div className="font-dialog-row">
-          <label>
-            {t('appAlignment')}
-            <select value={align} onChange={(e) => setAlign(e.target.value as AlignValue)}>
-              {ALIGN_OPTIONS.map((o) => (
-                <option key={o.key} value={o.key}>
-                  {t(o.nameKey)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {t('appLineSpacingLabel')}
-            <select
-              value={lineRule || String(lineSpacing)}
-              onChange={(e) => {
-                const v = e.target.value
-                if (v === 'exact' || v === 'atLeast' || v === 'multiple') {
-                  setLineRule(v === 'multiple' ? '' : v)
-                  if (v === 'multiple') setLineSpacing(1.25)
-                } else {
-                  setLineRule('')
-                  setLineSpacing(Number(v))
-                }
-              }}
-            >
-              {!lineRule && !LINE_SPACINGS.some((s) => s.value === lineSpacing) && (
-                <option value={lineSpacing}>{t('appLineMultiple', { n: lineSpacing })}</option>
-              )}
-              {LINE_SPACINGS.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {t(s.nameKey)}
-                </option>
-              ))}
-              <option value="atLeast">{t('appLineAtLeast')}</option>
-              <option value="exact">{t('appLineExactly')}</option>
-            </select>
-          </label>
-          {lineRule === 'exact' || lineRule === 'atLeast' ? (
-            <label>
-              {t('appLineValue')}
-              <span className="para-num">
-                <input
-                  type="number"
-                  min={1}
-                  max={1584}
-                  step={0.5}
-                  value={linePt}
-                  onChange={(e) => setLinePt(Math.max(0, Number(e.target.value) || 0))}
-                />
-                <span className="para-unit">pt</span>
-              </span>
-            </label>
-          ) : (
-            <label>
-              {t('appLineValue')}
-              <span className="para-num">
-                <input
-                  type="number"
-                  min={0.06}
-                  max={132}
-                  step={0.05}
-                  value={lineSpacing}
-                  onChange={(e) => setLineSpacing(Math.max(0.06, Number(e.target.value) || 1))}
-                />
-                <span className="para-unit">×</span>
-              </span>
-            </label>
-          )}
-        </div>
-        <div className="font-dialog-row">
-          {numInput(t('appIndentLeft'), indentLeft, setIndentLeft)}
-          {numInput(t('appIndentRight'), indentRight, setIndentRight)}
-          {numInput(t('appIndentFirstLine'), indentFirstLine, setIndentFirstLine)}
-        </div>
-        <div className="font-dialog-row">
-          {numInput(t('appSpaceBefore'), spaceBefore, setSpaceBefore)}
-          {numInput(t('appSpaceAfter'), spaceAfter, setSpaceAfter)}
-        </div>
-        <div className="modal-actions">
-          <button className="btn-ghost" onClick={onClose}>
-            {t('appCancel')}
-          </button>
-          <button className="btn-primary" onClick={apply}>
-            {t('appOk')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+export { ParagraphDialog } from './ParagraphDialog'

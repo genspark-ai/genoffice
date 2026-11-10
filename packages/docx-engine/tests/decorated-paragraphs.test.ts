@@ -62,6 +62,102 @@ describe('paragraphs with decorative shapes + VML fallbacks', () => {
     expect(block.decorative).toBe(true)
   })
 
+  it('keeps the anchor paragraph line of a floating connector rule with its offset', async () => {
+    const connector =
+      '<w:r><w:drawing><wp:anchor behindDoc="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1" relativeHeight="3">' +
+      '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:posOffset>-300990</wp:posOffset></wp:positionH>' +
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>86360</wp:posOffset></wp:positionV>' +
+      '<wp:extent cx="6398895" cy="0"/><wp:wrapNone/><wp:docPr id="6" name="AutoShape 4"/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+      '<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:cNvCnPr/>' +
+      '<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="6398895" cy="0"/></a:xfrm>' +
+      '<a:prstGeom prst="straightConnector1"><a:avLst/></a:prstGeom><a:ln/></wps:spPr></wps:wsp>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:pPr><w:spacing w:after="0" w:line="360" w:lineRule="auto"/><w:rPr><w:sz w:val="24"/></w:rPr></w:pPr>' +
+          `${connector}</w:p>`,
+      }),
+    )
+    const block = doc.blocks[0]
+    expect(block.type).toBe('passthrough')
+    expect(block.decorative).toBe(true)
+    expect(block.imageOffsetYEmu).toBe(86360)
+    expect(block.anchorLine?.format?.lineSpacing).toBe(1.5)
+    expect(block.anchorLine?.format?.emptyRunSizeHalfPoints).toBe(24)
+  })
+
+  it('keeps the column offset of a floating connector rule', async () => {
+    const connector =
+      '<w:r><w:drawing><wp:anchor behindDoc="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1" relativeHeight="3">' +
+      '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>467360</wp:posOffset></wp:positionH>' +
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>3175</wp:posOffset></wp:positionV>' +
+      '<wp:extent cx="2239010" cy="0"/><wp:wrapNone/><wp:docPr id="4" name="Line 4"/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+      '<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:cNvCnPr/>' +
+      '<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2239010" cy="0"/></a:xfrm>' +
+      '<a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln/></wps:spPr></wps:wsp>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: `<w:p>${connector}</w:p>` }))
+    const block = doc.blocks[0]
+    expect(block.decorative).toBe(true)
+    expect(block.imageOffsetXEmu).toBe(467360)
+    expect(block.imageOffsetYEmu).toBe(3175)
+  })
+
+  it('draws a fill-in line anchored in a text paragraph as a rule overlay', async () => {
+    const line = (x: number, y: number, cx: number) =>
+      '<w:r><w:drawing><wp:anchor behindDoc="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1" relativeHeight="3">' +
+      `<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>${x}</wp:posOffset></wp:positionH>` +
+      `<wp:positionV relativeFrom="paragraph"><wp:posOffset>${y}</wp:posOffset></wp:positionV>` +
+      `<wp:extent cx="${cx}" cy="0"/><wp:wrapNone/><wp:docPr id="4" name="Line 4"/>` +
+      '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+      '<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:cNvCnPr/>' +
+      `<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="0"/></a:xfrm>` +
+      '<a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="19050"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln></wps:spPr></wps:wsp>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:pPr><w:spacing w:before="120" w:line="600" w:lineRule="exact"/><w:ind w:left="300"/></w:pPr>' +
+          `${line(467360, 363220, 2239645)}<w:r><w:t>Party A:</w:t></w:r></w:p>`,
+      }),
+    )
+    const block = doc.blocks[0]
+    expect(block.type).toBe('paragraph')
+    expect(block.runs?.map((r) => r.text).join('')).toBe('Party A:')
+    // column-relative: the paragraph's own indent (300 twips = 20 px) is taken back out
+    expect(block.ruleOverlays).toEqual([
+      {
+        xPx: 29,
+        yPx: 38.13,
+        widthPx: 235,
+        spaceBeforePx: 8,
+        thicknessPx: 2,
+        colorHex: 'FF0000',
+      },
+    ])
+  })
+
+  it('leaves page-anchored lines off the rule overlays of a text paragraph', async () => {
+    const connector =
+      '<w:r><w:drawing><wp:anchor behindDoc="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1" relativeHeight="3">' +
+      '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>467360</wp:posOffset></wp:positionH>' +
+      '<wp:positionV relativeFrom="page"><wp:posOffset>363220</wp:posOffset></wp:positionV>' +
+      '<wp:extent cx="2239645" cy="0"/><wp:wrapNone/><wp:docPr id="4" name="Line 4"/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+      '<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:cNvCnPr/>' +
+      '<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2239645" cy="0"/></a:xfrm>' +
+      '<a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln/></wps:spPr></wps:wsp>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: `<w:p>${connector}<w:r><w:t>Party A:</w:t></w:r></w:p>` }),
+    )
+    expect(doc.blocks[0].type).toBe('paragraph')
+    expect(doc.blocks[0].ruleOverlays).toBeUndefined()
+  })
+
   it('still protects real VML embedded objects (w:pict outside mc:Fallback)', async () => {
     const doc = await parseDocx(
       await buildDocx({
@@ -118,5 +214,28 @@ describe('paragraphs with decorative shapes + VML fallbacks', () => {
     expect(block.type).toBe('paragraph')
     expect(block.originalXml).toContain('<mc:Fallback>')
     expect(block.originalXml).toContain('<w:pict>')
+  })
+})
+
+describe('picture content controls (w:picture in sdtPr, tdf#165359)', () => {
+  it('an sdt-wrapped inline picture with text stays an editable paragraph, not an Embedded object chip', async () => {
+    const drawing =
+      '<w:drawing><wp:inline><wp:extent cx="914400" cy="914400"/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:inline></w:drawing>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:sdt><w:sdtPr><w:picture/></w:sdtPr>' +
+          `<w:sdtContent><w:r>${drawing}</w:r></w:sdtContent></w:sdt>` +
+          '<w:r><w:t>ITEM NUMBER</w:t></w:r></w:p>',
+        withImage: true,
+      }),
+    )
+    const block = doc.blocks[0]
+    expect(block.label).not.toBe('Embedded object')
+    expect(JSON.stringify(block.runs?.map((r) => r.text))).toContain('ITEM NUMBER')
+    expect(block.runs?.some((r) => r.image)).toBe(true)
   })
 })

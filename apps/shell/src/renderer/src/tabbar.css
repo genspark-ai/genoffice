@@ -2,6 +2,16 @@
  * corners + concave "feet" merging into the content area below.
  * Metrics copied from Chrome (macOS, light): 40px strip, 34px tabs that
  * shrink from 240px but never stretch, "+" hugging the last tab. */
+/* Interface scale (issue #1913).
+ *
+ * The shell window is its own webContents and the six editors are
+ * WebContentsViews painted beside it, never inside it — so zooming the shell's
+ * frame cannot reach a document canvas. That is the whole reason this is a
+ * `--ui-scale` variable and not a window zoom: see src/main/ui-scale.ts. */
+.app-frame {
+  zoom: var(--ui-scale);
+}
+
 .tab-bar {
   --tabstrip-bg: #ebebeb;
   --tabstrip-text: #454746;
@@ -19,6 +29,12 @@
   padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
   -webkit-app-region: drag;
   z-index: 10;
+}
+
+/* While a Home popover is open the strip must deliver presses (drag regions
+   swallow them), so outside-press dismissal can see presses on the blank band */
+html.genoffice-popover-open .tab-bar {
+  -webkit-app-region: no-drag;
 }
 
 /* room for the macOS traffic lights (titleBarStyle: hiddenInset) */
@@ -59,6 +75,25 @@
 .tab-menu-btn:focus-visible {
   background: var(--hover);
   color: var(--tabstrip-text-active);
+}
+
+/* desktops that put the window controls on the leading edge (some Linux
+   layouts) report them as titlebar-area-x; keep the menu button clear */
+body.overlay-title-bar .tab-bar-drag-spacer {
+  width: max(8px, env(titlebar-area-x, 0px));
+}
+
+/* Windows/Linux caption buttons are drawn over the strip's right end
+   (titleBarOverlay); the Window Controls Overlay env vars give their width,
+   and resolve to 0 where the overlay is absent */
+.tab-bar-caption-spacer {
+  flex-shrink: 0;
+  width: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+
+.tab-app-menu-btn {
+  margin-right: 2px;
+}
 }
 
 /* scrollable middle section; empty space stays part of the window drag region.
@@ -228,10 +263,37 @@
   z-index: 2;
 }
 
+/* ---- dock target (a detached window dragged over the strip): the strip
+ * tints and a slim bar marks the slot the document will land in ---- */
+
+.tab-strip {
+  position: relative;
+}
+
+.tab-strip.dock-target {
+  background: var(--hover);
+}
+
+.tab-dock-indicator {
+  position: absolute;
+  top: 8px;
+  bottom: 0;
+  width: 3px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 3;
+}
+
 .tab-icon {
   flex-shrink: 0;
   display: flex;
   align-items: center;
+}
+
+.tab-item.tab-dormant .tab-title {
+  opacity: 0.55;
 }
 
 .tab-title {
@@ -285,7 +347,8 @@
 }
 
 .tab-new-btn,
-.tab-overflow-btn {
+.tab-overflow-btn,
+.tab-app-menu-btn {
   -webkit-app-region: no-drag;
   position: relative;
   flex-shrink: 0;
@@ -303,7 +366,8 @@
 }
 
 .tab-new-btn:hover,
-.tab-overflow-btn:hover {
+.tab-overflow-btn:hover,
+.tab-app-menu-btn:hover {
   background: rgba(0, 0, 0, 0.08);
 }
 
@@ -334,7 +398,8 @@
 }
 
 [data-theme='dark'] .tab-new-btn:hover,
-[data-theme='dark'] .tab-overflow-btn:hover {
+[data-theme='dark'] .tab-overflow-btn:hover,
+[data-theme='dark'] .tab-app-menu-btn:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -356,7 +421,8 @@
     background: rgba(255, 255, 255, 0.12);
   }
   :root:not([data-theme='light']):not([data-theme='dark']) .tab-new-btn:hover,
-  :root:not([data-theme='light']):not([data-theme='dark']) .tab-overflow-btn:hover {
+  :root:not([data-theme='light']):not([data-theme='dark']) .tab-overflow-btn:hover,
+  :root:not([data-theme='light']):not([data-theme='dark']) .tab-app-menu-btn:hover {
     background: rgba(255, 255, 255, 0.1);
   }
 }
@@ -373,4 +439,19 @@
 
 :root[data-transparency='off'] .tab-bar {
   --tabstrip-bg: var(--chrome-bg);
+}
+
+.tab-rename-input {
+  min-width: 80px;
+  max-width: 220px;
+  width: 100%;
+  font: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 4px;
+  outline: none;
+}
 }

@@ -4,6 +4,7 @@
  * per-paragraph additions / removals / edits for a side panel.
  */
 import type { Block } from '@genoffice/docx-engine'
+import { inlineToRuns, type PmNode } from './convert'
 
 export interface CompareEntry {
   kind: 'same' | 'removed' | 'added' | 'changed'
@@ -21,6 +22,25 @@ export function blockTexts(blocks: Block[]): string[] {
       if (b.runs) return b.runs.map((r) => r.text).join('')
       return b.previewText ?? ''
     })
+}
+
+/** Comparable text from the live editor, including paragraphs not yet saved to the DOCX. */
+export function editorBlockTexts(doc: PmNode, originalBlocks: Block[]): string[] {
+  const originalByIndex = new Map(
+    originalBlocks
+      .filter((block) => block.docxIndex !== null)
+      .map((block) => [block.docxIndex, block]),
+  )
+  return (doc.content ?? []).map((node) => {
+    if (node.type === 'docProtected') return String(node.attrs?.previewText ?? '')
+    if (node.type === 'docTable') {
+      const original = originalByIndex.get(node.attrs?.docxIndex as number)
+      return original?.previewText ?? ''
+    }
+    return inlineToRuns(node.content ?? [])
+      .map((run) => run.text)
+      .join('')
+  })
 }
 
 /** LCS-based paragraph diff; a removal directly followed by an addition merges into 'changed' */

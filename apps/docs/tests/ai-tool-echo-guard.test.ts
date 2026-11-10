@@ -10,7 +10,7 @@ import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { executeTool } from '../src/renderer/ai/tools'
 
 /**
- * Guard tests for tool-protocol echo (alpha feedback r102): a model that saw
+ * Guard tests for tool-protocol echo: a model that saw
  * gateway-flattened tool results can pass them back as insert/replace html —
  * raw {"index":…} block dumps, literal </tool_response> tags. Those must be
  * rejected with a retryable error instead of landing in the document as text.

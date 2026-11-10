@@ -16,6 +16,35 @@ describe('coerceNullResult', () => {
     expect((result as NumberValueObject).getValue()).toBe(0)
   })
 
+  // `=Sheet2!B3` where B3 holds no value: Excel shows 0 (serial 0 under a
+  // date format renders 1900/1/0), a NullValueObject root left the cell
+  // blank.
+  it('turns a single-cell reference resolving to an empty cell into 0', () => {
+    const reference = {
+      isReferenceObject: () => true,
+      getRangePosition: () => ({ startRow: 2, endRow: 2, startColumn: 1, endColumn: 1 }),
+      getFirstCell: () => NullValueObject.create(),
+    }
+    const result = coerceNullResult(reference)
+    expect(result).toBeInstanceOf(NumberValueObject)
+    expect((result as NumberValueObject).getValue()).toBe(0)
+  })
+
+  it('leaves multi-cell and value-bearing references alone', () => {
+    const multi = {
+      isReferenceObject: () => true,
+      getRangePosition: () => ({ startRow: 0, endRow: 4, startColumn: 1, endColumn: 1 }),
+      getFirstCell: () => NullValueObject.create(),
+    }
+    expect(coerceNullResult(multi)).toBe(multi)
+    const filled = {
+      isReferenceObject: () => true,
+      getRangePosition: () => ({ startRow: 2, endRow: 2, startColumn: 1, endColumn: 1 }),
+      getFirstCell: () => NumberValueObject.create(7),
+    }
+    expect(coerceNullResult(filled)).toBe(filled)
+  })
+
   it('leaves real values, errors, arrays, and references alone', () => {
     const number = NumberValueObject.create(42)
     expect(coerceNullResult(number)).toBe(number)

@@ -17,6 +17,7 @@ import { CommentsPanel } from '../src/renderer/components/CommentsPanel'
 // spy on a function the ribbon home tab calls on every render → precise re-render detector
 vi.mock('../src/renderer/font-list', { spy: true })
 import { fontFamiliesFor } from '../src/renderer/font-list'
+import { ribbonProps } from './helpers/ribbon-props'
 
 function makeEditor(): Editor {
   return new Editor({
@@ -179,90 +180,6 @@ describe('computeFormatState', () => {
 
 const noop = () => {}
 
-function ribbonProps(editor: Editor, formatState: RibbonFormatState) {
-  return {
-    editor,
-    formatState,
-    hasDoc: true,
-    blocks: [],
-    onOpen: noop,
-    onSave: noop,
-    onSaveAs: noop,
-    showAi: false,
-    onToggleAi: noop,
-    section: null,
-    onSection: noop,
-    activeSection: null,
-    onInsertSectionBreak: noop,
-    pageColor: null,
-    onPageColor: noop,
-    watermark: null,
-    onWatermark: noop,
-    themeFonts: null,
-    onThemeFonts: noop,
-    themeColors: null,
-    onThemeColors: noop,
-    inkTool: 'select' as const,
-    onInkTool: noop,
-    inkPen: { color: 'C00000', width: 2 },
-    onInkPen: noop,
-    inkHighlighter: { color: 'FFFF00', width: 10 },
-    onInkHighlighter: noop,
-    inkCount: 0,
-    onInkClearAll: noop,
-    onInsertNote: noop,
-    sources: [],
-    onAddSource: noop,
-    zoom: 100,
-    onZoom: noop,
-    onZoomFit: noop,
-    darkCanvas: false,
-    onDarkCanvas: noop,
-    onAiPreset: noop,
-    header: null,
-    onHeader: noop,
-    onPageNumFormat: noop,
-    onInsertField: noop,
-    footer: null,
-    onFooter: noop,
-    titlePg: false,
-    onTitlePg: noop,
-    evenOddHf: false,
-    onEvenOddHf: noop,
-    showMarks: false,
-    onShowMarks: noop,
-    showRuler: false,
-    onShowRuler: noop,
-    showNav: false,
-    onShowNav: noop,
-    commentCount: 0,
-    onShowComments: noop,
-    canComment: false,
-    onNewComment: noop,
-    trackChanges: false,
-    onTrackChanges: noop,
-    revisionDisplay: 'all' as const,
-    onRevisionDisplay: noop,
-    revisionCount: 0,
-    onAcceptRevision: noop,
-    onRejectRevision: noop,
-    onGotoRevision: noop,
-    isProtected: false,
-    onToggleProtection: noop,
-    onCompare: noop,
-    filePath: null,
-    viewMode: 'print' as const,
-    onViewMode: noop,
-    readMode: false,
-    onReadMode: noop,
-    showGrid: false,
-    onShowGrid: noop,
-    splitView: false,
-    onSplitView: noop,
-    onPagePreview: noop,
-  }
-}
-
 describe('Ribbon render isolation', () => {
   it('is wrapped in React.memo', () => {
     expect((Ribbon as unknown as { $$typeof: symbol }).$$typeof).toBe(Symbol.for('react.memo'))
@@ -323,6 +240,7 @@ describe('CommentsPanel anchor scan', () => {
         composing: false,
         onSubmitNew: noop,
         onReply: noop,
+        onEdit: noop,
         onResolve: noop,
         onCancelNew: noop,
         onDelete: noop,

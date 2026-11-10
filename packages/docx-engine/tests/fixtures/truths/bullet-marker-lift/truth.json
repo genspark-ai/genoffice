@@ -1,0 +1,108 @@
+{
+  "id": "bullet-marker-lift",
+  "title": "A text-font bullet the mark face lacks falls back to Segoe UI Symbol and lifts the first line by its ascent",
+  "section": "word-truths.md#L422",
+  "probe_date": "2026-09-30",
+  "source": "Q1_bullets.pdf re-measured 2026-10-22: Calibri 11 plain 13.44; U+25B8 bullet line 14.88 (SegoeUISymbol span); U+2022 13.44 (Calibri itself); Symbol U+F0B7 13.92; truth bullets: Arial/TNR 11 -> 14.16, Calibri 10 text + 11 marker -> 14.40, Calibri 12 -> 15.12; probe bullet12 (2026-10-22, Calibri docDefaults sz 24, runs 24/22/20) -> t3_bullet12.pdf: 16.08 / 14.88 / 13.44",
+  "cases": [
+    {
+      "kind": "markerFallback",
+      "glyph": "▸",
+      "face": "Calibri",
+      "expect": "Segoe UI Symbol"
+    },
+    {
+      "kind": "markerFallback",
+      "glyph": "▸",
+      "face": "Times New Roman",
+      "expect": "Segoe UI Symbol"
+    },
+    {
+      "kind": "markerFallback",
+      "glyph": "•",
+      "face": "Calibri",
+      "expect": null,
+      "note": "the mark face has the bullet itself"
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Segoe UI Symbol",
+      "markerPt": 11,
+      "textFont": "Calibri",
+      "textPt": 11,
+      "expect": 14.88,
+      "tol": 0.1,
+      "note": "11.87 + 2.95: 13.44 -> 14.88"
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Segoe UI Symbol",
+      "markerPt": 11,
+      "textFont": "Arial",
+      "textPt": 11,
+      "expect": 14.16,
+      "tol": 0.1
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Segoe UI Symbol",
+      "markerPt": 11,
+      "textFont": "Calibri",
+      "textPt": 10,
+      "expect": 14.4,
+      "tol": 0.2,
+      "note": "marker stays 11pt over 10pt text"
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Segoe UI Symbol",
+      "markerPt": 11,
+      "textFont": "Calibri",
+      "textPt": 12,
+      "expect": 15.12,
+      "tol": 0.1,
+      "note": "Q1_bullets sz-24 case re-measured 2026-10-22: the marker span is SegoeUISymbol 11.04 (docDefaults mark size), so 15.12 is a 12pt text + 11pt marker line: 11.87 + 3.22"
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Symbol",
+      "markerPt": 11,
+      "textFont": "Calibri",
+      "textPt": 11,
+      "expect": 13.92,
+      "tol": 0.1,
+      "note": "Symbol F0B7 +0.48"
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Wingdings",
+      "markerPt": 11,
+      "textFont": "Calibri",
+      "textPt": 11,
+      "expect": null,
+      "note": "Wingdings (asc 0.8989) never lifts Latin lines"
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Segoe UI Symbol",
+      "markerPt": 12,
+      "textFont": "Calibri",
+      "textPt": 12,
+      "expect": 16.08,
+      "tol": 0.1,
+      "note": "probe t3_bullet12 2026-10-22: Calibri 12 text and 12pt mark, U+25B8 -> 16.08 (rule 12.95 + 3.22)"
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Segoe UI Symbol",
+      "markerPt": 10,
+      "textFont": "Calibri",
+      "textPt": 10,
+      "expect": 13.44,
+      "tol": 0.1,
+      "note": "probe t3_bullet12: Calibri 10 + 10pt mark -> 13.44"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

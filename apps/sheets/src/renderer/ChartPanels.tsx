@@ -1,8 +1,21 @@
 import { useState } from 'react'
 
-import { transposeChartSeries, type ChartVisualState } from '../domain/chart-visual'
+import { Dropdown } from '@genoffice/ui'
+
+import {
+  comboSeriesSetDefaults,
+  transposeChartSeries,
+  type ChartVisualState,
+} from '@genoffice/xlsx-gateway/domain/chart-visual'
+import { ColorDropdown } from './ColorDropdown'
 import { useI18n, type StringKey, type TFunc } from './i18n/locale'
-import type { ChartEditData, ChartElementRef, ChartVectorRead } from './WorkbookVisuals'
+import {
+  comboLineIndices,
+  type ChartEditData,
+  type ChartElementRef,
+  type ChartVectorRead,
+} from './WorkbookVisuals'
+import { useModalDialog } from './modal-dialog'
 
 const LEGEND_OPTIONS: readonly (readonly [string, StringKey])[] = [
   ['right', 'appLegendRight'],
@@ -159,10 +172,9 @@ export function ChartFormatPane({
           <strong>{element.kind === 'series' ? t('appSeries') : t('appDataPoint')}</strong>
           <label>
             {t('appFillColor')}
-            <input
-              type="color"
-              key={`${element.kind}-${element.seriesIndex}-${element.kind === 'point' ? element.pointIndex : 'ser'}`}
-              defaultValue={
+            <ColorDropdown
+              label={t('appFillColor')}
+              value={
                 (element.kind === 'point'
                   ? chart.series[element.seriesIndex]?.pointColors?.find(
                       (entry) => entry.index === element.pointIndex,
@@ -171,8 +183,8 @@ export function ChartFormatPane({
                 chart.series[element.seriesIndex]?.color ??
                 '#4472c4'
               }
-              onChange={(event) => {
-                const color = event.target.value
+              onPick={(color) => {
+                if (!color) return
                 if (element.kind === 'series') {
                   onEdit({ seriesColors: { [String(element.seriesIndex)]: color } })
                 } else {
@@ -226,58 +238,46 @@ export function ChartFormatPane({
         <strong>{t('appLegendAndLabels')}</strong>
         <label>
           {t('appLegendPosition')}
-          <select
+          <Dropdown
+            ariaLabel={t('appLegendPosition')}
             value={chart.legend ?? 'right'}
-            onChange={(event) =>
-              onEdit({ legend: event.target.value as NonNullable<ChartEditData['legend']> })
-            }
-          >
-            {LEGEND_OPTIONS.map(([value, key]) => (
-              <option key={value} value={value}>
-                {t(key)}
-              </option>
-            ))}
-          </select>
+            options={LEGEND_OPTIONS.map(([value, key]) => ({ value, label: t(key) }))}
+            onPick={(v) => onEdit({ legend: v as NonNullable<ChartEditData['legend']> })}
+          />
         </label>
         <label>
           {t('appDataLabels')}
-          <select
+          <Dropdown
+            ariaLabel={t('appDataLabels')}
             value={chart.dataLabels ?? 'none'}
-            onChange={(event) =>
-              onEdit({ dataLabels: event.target.value as NonNullable<ChartEditData['dataLabels']> })
-            }
-          >
-            {LABEL_OPTIONS.filter(
+            options={LABEL_OPTIONS.filter(
               ([value]) => isPie || (value !== 'percent' && value !== 'category-percent'),
-            ).map(([value, key]) => (
-              <option key={value} value={value}>
-                {t(key)}
-              </option>
-            ))}
-          </select>
+            ).map(([value, key]) => ({ value, label: t(key) }))}
+            onPick={(v) => onEdit({ dataLabels: v as NonNullable<ChartEditData['dataLabels']> })}
+          />
         </label>
         {(isBar || isPie) && chart.dataLabels !== undefined && chart.dataLabels !== 'none' && (
           <label>
             {t('appLabelPosition')}
-            <select
+            {/* '' is the auto placeholder (the old <option> was disabled+hidden):
+                it labels the unset state and is not pickable */}
+            <Dropdown
+              ariaLabel={t('appLabelPosition')}
               value={chart.dataLabelPosition ?? ''}
-              onChange={(event) => {
-                if (event.target.value) {
+              options={[
+                { value: '', label: t('appAuto'), disabled: true },
+                { value: 'outside-end', label: t('appOutsideEnd') },
+                { value: 'inside-end', label: t('appInsideEnd') },
+                { value: 'center', label: t('appCenter') },
+              ]}
+              onPick={(v) => {
+                if (v) {
                   onEdit({
-                    dataLabelPosition: event.target.value as NonNullable<
-                      ChartEditData['dataLabelPosition']
-                    >,
+                    dataLabelPosition: v as NonNullable<ChartEditData['dataLabelPosition']>,
                   })
                 }
               }}
-            >
-              <option value="" disabled hidden>
-                {t('appAuto')}
-              </option>
-              <option value="outside-end">{t('appOutsideEnd')}</option>
-              <option value="inside-end">{t('appInsideEnd')}</option>
-              <option value="center">{t('appCenter')}</option>
-            </select>
+            />
           </label>
         )}
         {chart.dataLabels !== undefined && chart.dataLabels !== 'none' && (
@@ -369,10 +369,16 @@ interface SeriesRow {
   categoriesRange: string
   /// Index into the chart's current series; null for a freshly added row.
   source: number | null
+  /// Combo rows: plot group the series joins (column = barChart family).
+  plot: 'column' | 'line'
+  /// Combo rows: the series rides the secondary value axis.
+  secondary: boolean
 }
 
 /// Excel's Select Data Source: rename / repoint / add / remove / reorder
 /// series, plus switch row-column. Applies as one full series replacement.
+/// On a combo chart every row also picks its plot group and axis set, so the
+/// dialog doubles as Excel's per-series Change Chart Type.
 export function SelectDataDialog({
   chart,
   supported,
@@ -381,19 +387,31 @@ export function SelectDataDialog({
   onClose,
 }: {
   readonly chart: ChartVisualState
-  /// Single-plot chart families only; scatter/combos fail closed at save.
+  /// Fail-closed families only (exotic multi-plot charts, 3D); the save
+  /// pipeline rebuilds single-plot charts and bar+line combos.
   readonly supported: boolean
   readonly readVector?: ((range: string) => Promise<ChartVectorRead>) | undefined
   readonly onApply: (edit: ChartEditData) => void
   readonly onClose: () => void
 }): React.JSX.Element {
   const { t } = useI18n()
+  const isCombo = chart.chartTypes.includes('barChart') && chart.chartTypes.includes('lineChart')
+  // Combo series carry their group in series.plot; a session-added combo has
+  // no tags and renders its last series as a line — start the dropdowns from
+  // what the canvas shows.
+  const lineIndices = isCombo ? comboLineIndices(chart.series) : new Set<number>()
   const [rows, setRows] = useState<SeriesRow[]>(
     chart.series.map((series, index) => ({
       name: series.name,
       valuesRange: '',
       categoriesRange: '',
       source: index,
+      plot: isCombo && (series.plot === 'lineChart' || lineIndices.has(index)) ? 'line' : 'column',
+      secondary:
+        isCombo &&
+        (series.secondaryAxis ??
+          (chart.secondaryYAxis !== undefined &&
+            (series.plot === 'lineChart' || lineIndices.has(index)))),
     })),
   )
   const [error, setError] = useState<string | null>(null)
@@ -450,6 +468,13 @@ export function SelectDataDialog({
         ...(valuesRef === undefined ? {} : { valuesRef }),
         ...(categoriesRef === undefined ? {} : { categoriesRef }),
         ...(original?.color === undefined ? {} : { color: original.color }),
+        // Combo tags: a fully-tagged set re-derives the chart's plot groups.
+        ...(isCombo
+          ? {
+              plot: (row.plot === 'line' ? 'lineChart' : 'barChart') as 'lineChart' | 'barChart',
+              secondaryAxis: row.secondary,
+            }
+          : {}),
       })
     }
     if (entries.length === 0) throw new Error(t('appKeepOneSeries'))
@@ -462,32 +487,51 @@ export function SelectDataDialog({
       setError(t('appNoCategoriesToSwitch'))
       return
     }
-    onApply({ seriesSet })
+    // A transposed combo keeps Insert Chart's shape; an untagged set would
+    // collapse it into plain bars.
+    onApply({ seriesSet: isCombo ? comboSeriesSetDefaults(seriesSet) : seriesSet })
     onClose()
   }
 
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
-        className="format-cells-dialog select-data-dialog"
+        className={
+          isCombo
+            ? 'format-cells-dialog select-data-dialog combo'
+            : 'format-cells-dialog select-data-dialog'
+        }
         role="dialog"
+        {...modal}
         aria-label={t('appSelectDataSource')}
         onClick={(event) => event.stopPropagation()}
       >
         <header>{t('appSelectDataSource')}</header>
         <div className="dialog-body">
-          {!supported && <p>{t('appComboNoSelectData')}</p>}
+          {!supported && <p>{t('appSelectDataUnsupported')}</p>}
           {supported && (
             <>
-              <div className="select-data-row select-data-head">
+              <div
+                className={
+                  isCombo
+                    ? 'select-data-row select-data-head combo'
+                    : 'select-data-row select-data-head'
+                }
+              >
                 <span>{t('appSeriesName')}</span>
                 <span>{t('appValuesRange')}</span>
                 <span>{t('appCategoriesRange')}</span>
+                {isCombo && <span>{t('appSeriesType')}</span>}
+                {isCombo && <span>{t('appSecondaryAxis')}</span>}
                 <span />
               </div>
               <div className="select-data-rows">
                 {rows.map((row, index) => (
-                  <div className="select-data-row" key={index}>
+                  <div
+                    className={isCombo ? 'select-data-row combo' : 'select-data-row'}
+                    key={index}
+                  >
                     <input
                       value={row.name}
                       placeholder={t('appSeriesN', { n: index + 1 })}
@@ -511,6 +555,26 @@ export function SelectDataDialog({
                       }
                       onChange={(event) => patchRow(index, { categoriesRange: event.target.value })}
                     />
+                    {isCombo && (
+                      <select
+                        aria-label={t('appSeriesType')}
+                        value={row.plot}
+                        onChange={(event) =>
+                          patchRow(index, { plot: event.target.value as SeriesRow['plot'] })
+                        }
+                      >
+                        <option value="column">{t('appChartColumn')}</option>
+                        <option value="line">{t('appChartLine')}</option>
+                      </select>
+                    )}
+                    {isCombo && (
+                      <input
+                        type="checkbox"
+                        aria-label={t('appSecondaryAxis')}
+                        checked={row.secondary}
+                        onChange={(event) => patchRow(index, { secondary: event.target.checked })}
+                      />
+                    )}
                     <span>
                       <button
                         data-tip={t('appMoveUp')}
@@ -547,7 +611,14 @@ export function SelectDataDialog({
                   onClick={() =>
                     setRows((previous) => [
                       ...previous,
-                      { name: '', valuesRange: '', categoriesRange: '', source: null },
+                      {
+                        name: '',
+                        valuesRange: '',
+                        categoriesRange: '',
+                        source: null,
+                        plot: 'column',
+                        secondary: false,
+                      },
                     ])
                   }
                 >

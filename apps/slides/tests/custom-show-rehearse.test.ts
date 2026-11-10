@@ -39,7 +39,13 @@ describe('computePlayOrder (playback order)', () => {
 
   it('falls back to the starting slide when the result is empty', () => {
     expect(computePlayOrder([{ hidden: true }], 0, [99])).toEqual([0])
-    expect(computePlayOrder([], 0)).toEqual([0])
+  })
+
+  it('returns no order for an out-of-range start slide', () => {
+    expect(computePlayOrder([], 0)).toEqual([])
+    expect(computePlayOrder([{}, {}], 5)).toEqual([])
+    expect(computePlayOrder([{}, {}], -1)).toEqual([])
+    expect(computePlayOrder([{}, {}], 1)).toEqual([0, 1])
   })
 })
 

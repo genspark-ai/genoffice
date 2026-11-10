@@ -1,0 +1,653 @@
+/// Page Layout writer: merges the user's session changes into the worksheet's
+/// `<printOptions>`, `<pageMargins>`, `<pageSetup>` (and `sheetView` display
+/// attributes), and maintains the sheet-scoped `_xlnm.Print_Area` defined
+/// name in workbook.xml. Untouched attributes and elements stay verbatim.
+
+import { columnIndex, parseRange } from '../domain/cell-address'
+import { parseSheetElements } from './xlsx-sheets'
+
+export class PageSetupError extends Error {}
+
+/// One printed header or footer: Excel's left/center/right sections. Text
+/// carries Excel field codes verbatim (&P page, &N pages, &D date, &T time,
+/// &F file name, &A sheet name, && literal ampersand).
+export interface HeaderFooterParts {
+  readonly left?: string | undefined
+  readonly center?: string | undefined
+  readonly right?: string | undefined
+}
+
+export interface SheetPageSetupState {
+  readonly sheetName: string
+  readonly orientation?: 'portrait' | 'landscape' | undefined
+  readonly paperSize?: number | undefined
+  readonly scale?: number | undefined
+  readonly fitToWidth?: number | undefined
+  readonly fitToHeight?: number | undefined
+  readonly fitToPage?: boolean | undefined
+  readonly margins?: 'normal' | 'wide' | 'narrow' | undefined
+  readonly printGridlines?: boolean | undefined
+  readonly printHeadings?: boolean | undefined
+  readonly showGridlines?: boolean | undefined
+  /// Normal-view zoom percent (10-400); 100 drops the attributes.
+  readonly zoomScale?: number | undefined
+  readonly showFormulas?: boolean | undefined
+  readonly showHeadings?: boolean | undefined
+  /// Mirrored grid (column A at the right edge of the sheet).
+  readonly rightToLeft?: boolean | undefined
+  readonly printArea?: string | null | undefined
+  readonly printTitles?: string | null | undefined
+  readonly frozenRows?: number | undefined
+  readonly frozenColumns?: number | undefined
+  /// Printed header/footer; null clears that half, undefined keeps it.
+  readonly header?: HeaderFooterParts | null | undefined
+  readonly footer?: HeaderFooterParts | null | undefined
+  /// Manual page breaks (0-based index of the row/column after the break).
+  /// Presence replaces the sheet's break set; [] clears all manual breaks.
+  readonly rowBreaks?: readonly number[] | undefined
+  readonly colBreaks?: readonly number[] | undefined
+}
+
+/// Inches, using the standard margin presets.
+const MARGIN_PRESETS = {
+  normal: { left: 0.7, right: 0.7, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 },
+  wide: { left: 1, right: 1, top: 1, bottom: 1, header: 0.5, footer: 0.5 },
+  narrow: { left: 0.25, right: 0.25, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 },
+} as const
+
+/// CT_Worksheet order: elements that may follow printOptions/pageMargins/
+/// pageSetup — inserting before the first of these keeps the schema valid.
+const AFTER_PAGE_SETUP =
+  /<headerFooter\b|<rowBreaks\b|<colBreaks\b|<customProperties\b|<cellWatches\b|<ignoredErrors\b|<smartTags\b|<drawing\b|<legacyDrawing\b|<legacyDrawingHF\b|<picture\b|<oleObjects\b|<controls\b|<webPublishItems\b|<tableParts\b|<extLst\b/
+
+/// CT_Worksheet order: elements that may follow headerFooter.
+const AFTER_HEADER_FOOTER =
+  /<rowBreaks\b|<colBreaks\b|<customProperties\b|<cellWatches\b|<ignoredErrors\b|<smartTags\b|<drawing\b|<legacyDrawing\b|<legacyDrawingHF\b|<picture\b|<oleObjects\b|<controls\b|<webPublishItems\b|<tableParts\b|<extLst\b/
+
+/// CT_Worksheet order: elements that may follow rowBreaks.
+const AFTER_ROW_BREAKS =
+  /<colBreaks\b|<customProperties\b|<cellWatches\b|<ignoredErrors\b|<smartTags\b|<drawing\b|<legacyDrawing\b|<legacyDrawingHF\b|<picture\b|<oleObjects\b|<controls\b|<webPublishItems\b|<tableParts\b|<extLst\b/
+
+/// CT_Worksheet order: elements that may follow colBreaks.
+const AFTER_COL_BREAKS =
+  /<customProperties\b|<cellWatches\b|<ignoredErrors\b|<smartTags\b|<drawing\b|<legacyDrawing\b|<legacyDrawingHF\b|<picture\b|<oleObjects\b|<controls\b|<webPublishItems\b|<tableParts\b|<extLst\b/
+
+function insertWorksheetElement(xml: string, element: string, anchor: RegExp): string {
+  const found = anchor.exec(xml)
+  if (found) return xml.slice(0, found.index) + element + xml.slice(found.index)
+  const end = xml.lastIndexOf('</worksheet>')
+  if (end === -1) throw new PageSetupError('Worksheet has no closing element.')
+  return xml.slice(0, end) + element + xml.slice(end)
+}
+
+/// Sets (or removes, on null) attributes on every match of `tag`, creating
+/// the element when absent and any attribute is set.
+function mergeElementAttrs(
+  xml: string,
+  tag: string,
+  attrs: Record<string, string | null>,
+  insertAnchor: RegExp,
+): string {
+  const entries = Object.entries(attrs)
+  // A sheet may repeat the element; one pass leaves no match half-updated.
+  let matched = false
+  const merged = xml.replace(new RegExp(`<${tag}\\b[^>]*?(/?)>`, 'g'), (element) => {
+    matched = true
+    return mergeAttrs(element, tag, entries)
+  })
+  if (matched) return merged
+  const kept = entries.filter(([, value]) => value !== null)
+  if (kept.length === 0) return xml
+  const body = kept.map(([name, value]) => ` ${name}="${value}"`).join('')
+  return insertWorksheetElement(xml, `<${tag}${body}/>`, insertAnchor)
+}
+
+function mergeAttrs(
+  element: string,
+  tag: string,
+  entries: readonly (readonly [string, string | null])[],
+): string {
+  let merged = element
+  for (const [name, value] of entries) {
+    const attrPattern = new RegExp(` ${name}="[^"]*"`)
+    if (value === null) {
+      merged = merged.replace(attrPattern, '')
+    } else if (attrPattern.test(merged)) {
+      merged = merged.replace(attrPattern, ` ${name}="${value}"`)
+    } else {
+      merged = merged.replace(new RegExp(`<${tag}\\b`), `<${tag} ${name}="${value}"`)
+    }
+  }
+  return merged
+}
+
+/// Fit-to-page lives in `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`,
+/// the first element of CT_Worksheet.
+function setFitToPage(xml: string, enabled: boolean): string {
+  const pageSetUpPr = /<pageSetUpPr\b[^>]*\/?>/.exec(xml)
+  if (pageSetUpPr) {
+    const updated = pageSetUpPr[0].includes(' fitToPage="')
+      ? pageSetUpPr[0].replace(/ fitToPage="[^"]*"/, enabled ? ' fitToPage="1"' : '')
+      : enabled
+        ? pageSetUpPr[0].replace(/<pageSetUpPr\b/, '<pageSetUpPr fitToPage="1"')
+        : pageSetUpPr[0]
+    return xml.replace(pageSetUpPr[0], updated)
+  }
+  if (!enabled) return xml
+  const sheetPr = /<sheetPr\b[^>]*(\/?)>/.exec(xml)
+  if (sheetPr) {
+    if (sheetPr[1] === '/') {
+      const expanded = `${sheetPr[0].slice(0, -2)}><pageSetUpPr fitToPage="1"/></sheetPr>`
+      return xml.replace(sheetPr[0], expanded)
+    }
+    const at = sheetPr.index + sheetPr[0].length
+    return `${xml.slice(0, at)}<pageSetUpPr fitToPage="1"/>${xml.slice(at)}`
+  }
+  const worksheetOpen = /<worksheet\b[^>]*>/.exec(xml)
+  if (!worksheetOpen) throw new PageSetupError('Worksheet has no root element.')
+  const at = worksheetOpen.index + worksheetOpen[0].length
+  return `${xml.slice(0, at)}<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>${xml.slice(at)}`
+}
+
+function setSheetViewAttr(xml: string, name: string, value: string | null): string {
+  const sheetView = /<sheetView\b[^>]*?\/?>/.exec(xml)
+  if (!sheetView) {
+    // No sheetViews section: only a non-default value needs one.
+    if (value === null) return xml
+    const element = `<sheetViews><sheetView workbookViewId="0" ${name}="${value}"/></sheetViews>`
+    const anchor = /<sheetFormatPr\b|<cols\b|<sheetData\b/.exec(xml)
+    if (!anchor) throw new PageSetupError('Worksheet has no sheetData element.')
+    return xml.slice(0, anchor.index) + element + xml.slice(anchor.index)
+  }
+  let element = sheetView[0]
+  const attrPattern = new RegExp(` ${name}="[^"]*"`)
+  if (value === null) {
+    element = element.replace(attrPattern, '')
+  } else if (attrPattern.test(element)) {
+    element = element.replace(attrPattern, ` ${name}="${value}"`)
+  } else {
+    element = element.replace(/<sheetView\b/, `<sheetView ${name}="${value}"`)
+  }
+  return xml.slice(0, sheetView.index) + element + xml.slice(sheetView.index + sheetView[0].length)
+}
+
+/// Column index (0-based) → letters, for the pane's topLeftCell.
+function paneColumnLabel(index: number): string {
+  let label = ''
+  for (let i = index; i >= 0; i = Math.floor(i / 26) - 1) {
+    label = String.fromCharCode(65 + (i % 26)) + label
+  }
+  return label
+}
+
+/// Replaces the first sheetView's frozen `<pane>` (both counts 0 removes it).
+/// Pane-scoped `<selection>` elements are dropped too: they reference panes
+/// that may no longer exist, and Excel restores a default selection anyway.
+function setFrozenPane(xml: string, rows: number, columns: number): string {
+  let result = xml
+  const sheetView = /<sheetView\b[^>]*?(\/?)>/.exec(result)
+  if (!sheetView) {
+    if (rows === 0 && columns === 0) return result
+    const element = '<sheetViews><sheetView workbookViewId="0"/></sheetViews>'
+    const anchor = /<sheetFormatPr\b|<cols\b|<sheetData\b/.exec(result)
+    if (!anchor) throw new PageSetupError('Worksheet has no sheetData element.')
+    result = result.slice(0, anchor.index) + element + result.slice(anchor.index)
+    return setFrozenPane(result, rows, columns)
+  }
+  if (sheetView[1] === '/') {
+    // Self-closing sheetView becomes a container so it can hold the pane.
+    const expanded = `${sheetView[0].slice(0, -2)}></sheetView>`
+    result =
+      result.slice(0, sheetView.index) +
+      expanded +
+      result.slice(sheetView.index + sheetView[0].length)
+  }
+  result = result.replace(/<pane\b[^>]*\/?>(?:[\s\S]*?<\/pane>)?/, '')
+  result = result.replace(/<selection\b[^>]*\bpane="[^"]*"[^>]*\/?>/g, '')
+  if (rows === 0 && columns === 0) return result
+  const activePane = rows > 0 && columns > 0 ? 'bottomRight' : rows > 0 ? 'bottomLeft' : 'topRight'
+  const pane =
+    '<pane' +
+    (columns > 0 ? ` xSplit="${columns}"` : '') +
+    (rows > 0 ? ` ySplit="${rows}"` : '') +
+    ` topLeftCell="${paneColumnLabel(columns)}${rows + 1}"` +
+    ` activePane="${activePane}" state="frozen"/>`
+  const opened = /<sheetView\b[^>]*?>/.exec(result)
+  if (!opened) throw new PageSetupError('Worksheet lost its sheetView element.')
+  const at = opened.index + opened[0].length
+  return result.slice(0, at) + pane + result.slice(at)
+}
+
+/// A lone `&` that does not start an Excel code (`&&` literal, section,
+/// field, formatting, font size, font spec, `&[Page]` named code) is written
+/// as `&&`, the way Excel's own dialog does; anything else stays verbatim.
+function escapeStrayAmpersands(text: string): string {
+  return text.replace(/&&|&(?![LCRPNDTFAGBIUSEXYZOHK0-9"[])/gi, '&&')
+}
+
+/// Left/center/right → Excel's `&L..&C..&R..` code string, empty sections
+/// omitted; the caller XML-escapes the result.
+function encodeHeaderFooterSections(parts: HeaderFooterParts): string {
+  const sections: readonly (readonly [string, string | undefined])[] = [
+    ['&L', parts.left],
+    ['&C', parts.center],
+    ['&R', parts.right],
+  ]
+  return sections
+    .filter(([, text]) => text !== undefined && text !== '')
+    .map(([marker, text]) => marker + escapeStrayAmpersands(text ?? ''))
+    .join('')
+}
+
+/// Assembles `<headerFooter>` from already-XML-escaped odd header/footer
+/// texts; both empty means no element at all ('').
+function assembleHeaderFooterXml(oddHeader: string, oddFooter: string): string {
+  if (oddHeader === '' && oddFooter === '') return ''
+  return (
+    '<headerFooter>' +
+    (oddHeader === '' ? '' : `<oddHeader>${oddHeader}</oddHeader>`) +
+    (oddFooter === '' ? '' : `<oddFooter>${oddFooter}</oddFooter>`) +
+    '</headerFooter>'
+  )
+}
+
+/// Header/footer parts → the worksheet `<headerFooter>` fragment ('' when
+/// both are empty). Field codes and literal ampersands alike XML-escape to
+/// `&amp;` — Excel reads the parsed `&` back as header/footer code.
+export function buildHeaderFooterXml(
+  header: HeaderFooterParts | null | undefined,
+  footer: HeaderFooterParts | null | undefined,
+): string {
+  return assembleHeaderFooterXml(
+    header ? escapeXml(encodeHeaderFooterSections(header)) : '',
+    footer ? escapeXml(encodeHeaderFooterSections(footer)) : '',
+  )
+}
+
+/// One `<tag>…</tag>` (or self-closing) child of headerFooter.
+function headerFooterSectionPattern(tag: string): RegExp {
+  return new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>|<${tag}\\b[^>]*/>`)
+}
+
+/// Rewrites the odd header/footer inside the first `<headerFooter>` (or
+/// inserts the element after pageSetup). An undefined half keeps its
+/// existing odd text verbatim, null (or all-empty parts) clears it. The
+/// element's attributes (differentOddEven, differentFirst, scaleWithDoc,
+/// alignWithMargins) and its even/first-page sections stay byte-identical —
+/// Excel's own dialog edits the odd sections the same way, and the export
+/// honors the variants. The element is removed only when nothing is left.
+function setHeaderFooter(
+  xml: string,
+  header: HeaderFooterParts | null | undefined,
+  footer: HeaderFooterParts | null | undefined,
+): string {
+  const existing = /<headerFooter\b([^>]*?)(?:\/>|>([\s\S]*?)<\/headerFooter>)/.exec(xml)
+  const attributes = existing?.[1] ?? ''
+  let body = existing?.[2] ?? ''
+  const setSection = (tag: 'oddHeader' | 'oddFooter', text: string | undefined): void => {
+    if (text === undefined) return
+    const pattern = headerFooterSectionPattern(tag)
+    const element = text === '' ? '' : `<${tag}>${text}</${tag}>`
+    if (pattern.test(body)) {
+      // function replacer: the element carries user text, and "$'000" / "$&"
+      // in a header would otherwise expand as String.replace patterns
+      body = body.replace(pattern, () => element)
+      return
+    }
+    if (element === '') return
+    // CT_HeaderFooter order: oddHeader, oddFooter, even*, first*.
+    const oddHeader =
+      tag === 'oddFooter' ? headerFooterSectionPattern('oddHeader').exec(body) : null
+    const at = oddHeader ? oddHeader.index + oddHeader[0].length : 0
+    body = body.slice(0, at) + element + body.slice(at)
+  }
+  const encode = (parts: HeaderFooterParts | null | undefined): string | undefined =>
+    parts === undefined
+      ? undefined
+      : parts === null
+        ? ''
+        : escapeXml(encodeHeaderFooterSections(parts))
+  setSection('oddHeader', encode(header))
+  setSection('oddFooter', encode(footer))
+  const element =
+    body.trim() === ''
+      ? attributes.trim() === ''
+        ? ''
+        : `<headerFooter${attributes}/>`
+      : `<headerFooter${attributes}>${body}</headerFooter>`
+  if (existing) {
+    return xml.slice(0, existing.index) + element + xml.slice(existing.index + existing[0].length)
+  }
+  if (element === '') return xml
+  return insertWorksheetElement(xml, element, AFTER_HEADER_FOOTER)
+}
+
+/// Replaces the sheet's manual break set: the whole <rowBreaks>/<colBreaks>
+/// element is rewritten (Excel-cached automatic breaks are dropped — Excel
+/// recomputes them), an empty set removes it.
+function setPageBreaks(
+  xml: string,
+  tag: 'rowBreaks' | 'colBreaks',
+  breaks: readonly number[],
+  anchor: RegExp,
+): string {
+  const existing = new RegExp(`<${tag}\\b[^>]*(?:/>|>[\\s\\S]*?</${tag}>)`).exec(xml)
+  const result = existing
+    ? xml.slice(0, existing.index) + xml.slice(existing.index + existing[0].length)
+    : xml
+  const ids = [...new Set(breaks)].filter((id) => id > 0).sort((a, b) => a - b)
+  if (ids.length === 0) return result
+  // brk@max is the last row/column the break spans across (full-width breaks).
+  const max = tag === 'rowBreaks' ? 16_383 : 1_048_575
+  const body = ids.map((id) => `<brk id="${id}" max="${max}" man="1"/>`).join('')
+  const element =
+    `<${tag} count="${ids.length}" manualBreakCount="${ids.length}">` + body + `</${tag}>`
+  return insertWorksheetElement(result, element, anchor)
+}
+
+export function applyPageSetupState(worksheetXml: string, state: SheetPageSetupState): string {
+  let xml = worksheetXml
+
+  if (state.frozenRows !== undefined || state.frozenColumns !== undefined) {
+    xml = setFrozenPane(xml, state.frozenRows ?? 0, state.frozenColumns ?? 0)
+  }
+
+  if (state.showGridlines !== undefined) {
+    // showGridLines defaults to true; write "0" to hide, drop the attribute
+    // to restore the default.
+    xml = setSheetViewAttr(xml, 'showGridLines', state.showGridlines ? null : '0')
+  }
+
+  if (state.showFormulas !== undefined) {
+    // showFormulas defaults to false; drop the attribute to restore it.
+    xml = setSheetViewAttr(xml, 'showFormulas', state.showFormulas ? '1' : null)
+  }
+  if (state.zoomScale !== undefined) {
+    // 100 is the default — drop the attributes. zoomScaleNormal keeps the
+    // normal-view zoom authoritative for files saved in page-layout /
+    // page-break view (the open path prefers it there).
+    const zoom = state.zoomScale === 100 ? null : String(state.zoomScale)
+    xml = setSheetViewAttr(xml, 'zoomScale', zoom)
+    xml = setSheetViewAttr(xml, 'zoomScaleNormal', zoom)
+  }
+  if (state.showHeadings !== undefined) {
+    // showRowColHeaders defaults to true; write "0" to hide.
+    xml = setSheetViewAttr(xml, 'showRowColHeaders', state.showHeadings ? null : '0')
+  }
+  if (state.rightToLeft !== undefined) {
+    // rightToLeft defaults to false; drop the attribute to restore it.
+    xml = setSheetViewAttr(xml, 'rightToLeft', state.rightToLeft ? '1' : null)
+  }
+
+  const printOptions: Record<string, string | null> = {}
+  if (state.printGridlines !== undefined) {
+    printOptions.gridLines = state.printGridlines ? '1' : null
+  }
+  if (state.printHeadings !== undefined) {
+    printOptions.headings = state.printHeadings ? '1' : null
+  }
+  if (Object.keys(printOptions).length > 0) {
+    xml = mergeElementAttrs(
+      xml,
+      'printOptions',
+      printOptions,
+      /<pageMargins\b|<pageSetup\b|<headerFooter\b|<rowBreaks\b|<colBreaks\b|<drawing\b|<legacyDrawing\b|<picture\b|<oleObjects\b|<tableParts\b|<extLst\b/,
+    )
+  }
+
+  if (state.margins !== undefined) {
+    const preset = MARGIN_PRESETS[state.margins]
+    xml = mergeElementAttrs(
+      xml,
+      'pageMargins',
+      {
+        left: String(preset.left),
+        right: String(preset.right),
+        top: String(preset.top),
+        bottom: String(preset.bottom),
+        header: String(preset.header),
+        footer: String(preset.footer),
+      },
+      /<pageSetup\b|<headerFooter\b|<rowBreaks\b|<colBreaks\b|<drawing\b|<legacyDrawing\b|<picture\b|<oleObjects\b|<tableParts\b|<extLst\b/,
+    )
+  }
+
+  const pageSetup: Record<string, string | null> = {}
+  if (state.orientation !== undefined) pageSetup.orientation = state.orientation
+  if (state.paperSize !== undefined) pageSetup.paperSize = String(state.paperSize)
+  if (state.scale !== undefined) {
+    pageSetup.scale = state.scale === 100 ? null : String(state.scale)
+  }
+  if (state.fitToWidth !== undefined) {
+    pageSetup.fitToWidth = state.fitToWidth === 1 ? null : String(state.fitToWidth)
+  }
+  if (state.fitToHeight !== undefined) {
+    pageSetup.fitToHeight = state.fitToHeight === 1 ? null : String(state.fitToHeight)
+  }
+  if (Object.keys(pageSetup).length > 0) {
+    xml = mergeElementAttrs(xml, 'pageSetup', pageSetup, AFTER_PAGE_SETUP)
+  }
+  if (state.fitToPage !== undefined) {
+    xml = setFitToPage(xml, state.fitToPage)
+  }
+  if (state.header !== undefined || state.footer !== undefined) {
+    xml = setHeaderFooter(xml, state.header, state.footer)
+  }
+  if (state.rowBreaks !== undefined) {
+    xml = setPageBreaks(xml, 'rowBreaks', state.rowBreaks, AFTER_ROW_BREAKS)
+  }
+  if (state.colBreaks !== undefined) {
+    xml = setPageBreaks(xml, 'colBreaks', state.colBreaks, AFTER_COL_BREAKS)
+  }
+  return xml
+}
+
+/// Maintains the sheet-scoped `_xlnm.Print_Area` / `_xlnm.Print_Titles`
+/// names. localSheetId is positional, so entries follow workbook.xml's final
+/// `<sheet>` order.
+export function applyPrintAreas(
+  workbookXml: string,
+  areas: readonly {
+    sheetName: string
+    printArea?: string | null | undefined
+    printTitles?: string | null | undefined
+  }[],
+): string {
+  let xml = workbookXml
+  // Parse elements instead of pattern-matching serialized XML: attribute
+  // order and entity encoding vary by producer.
+  const sheetOrder = parseSheetElements(xml).map((element) => element.name)
+  for (const { sheetName, printArea, printTitles } of areas) {
+    const sheetIndex = sheetOrder.indexOf(sheetName)
+    if (sheetIndex === -1) {
+      throw new PageSetupError(`Sheet "${sheetName}" was not found in the workbook.`)
+    }
+    const quoted = `'${sheetName.replace(/'/g, "''")}'`
+    if (printArea !== undefined) {
+      xml = setSheetScopedName(
+        xml,
+        '_xlnm.Print_Area',
+        sheetIndex,
+        printArea === null ? null : `${quoted}!${toAbsoluteRange(printArea)}`,
+      )
+    }
+    if (printTitles !== undefined) {
+      xml = setSheetScopedName(
+        xml,
+        '_xlnm.Print_Titles',
+        sheetIndex,
+        printTitles === null ? null : titleReference(xml, quoted, sheetIndex, printTitles),
+      )
+    }
+  }
+  // An emptied definedNames section is dropped entirely rather than written empty.
+  return xml.replace(/<definedNames>\s*<\/definedNames>|<definedNames\s*\/>/, '')
+}
+
+function setSheetScopedName(
+  workbookXml: string,
+  name: string,
+  sheetIndex: number,
+  reference: string | null,
+): string {
+  const escapedName = name.replace(/\./g, '\\.')
+  const namePattern = new RegExp(
+    `<definedName[^>]*name="${escapedName}"[^>]*localSheetId="${sheetIndex}"[^>]*>[\\s\\S]*?</definedName>` +
+      `|<definedName[^>]*localSheetId="${sheetIndex}"[^>]*name="${escapedName}"[^>]*>[\\s\\S]*?</definedName>`,
+  )
+  const xml = workbookXml.replace(namePattern, '')
+  if (reference === null) return xml
+  const element =
+    `<definedName name="${name}" localSheetId="${sheetIndex}">` +
+    `${escapeXml(reference)}</definedName>`
+  // Google Sheets exports an empty self-closing `<definedNames/>`.
+  const empty = /<definedNames\b[^>]*\/>/.exec(xml)
+  if (empty) {
+    return (
+      xml.slice(0, empty.index) +
+      `<definedNames>${element}</definedNames>` +
+      xml.slice(empty.index + empty[0].length)
+    )
+  }
+  const section = /<definedNames\b[^>]*>/.exec(xml)
+  if (section) {
+    const at = section.index + section[0].length
+    return xml.slice(0, at) + element + xml.slice(at)
+  }
+  // Schema order: definedNames follows sheets (and functionGroups/externalReferences).
+  const anchor =
+    /<externalReferences\b[^>]*>[\s\S]*?<\/externalReferences>|<externalReferences\b[^>]*\/>/.exec(
+      xml,
+    ) ??
+    /<functionGroups\b[^>]*>[\s\S]*?<\/functionGroups>|<functionGroups\b[^>]*\/>/.exec(xml) ??
+    /<\/sheets>|<sheets\b[^>]*\/>/.exec(xml)
+  if (!anchor) throw new PageSetupError('workbook.xml has no sheets section.')
+  const at = anchor.index + anchor[0].length
+  return `${xml.slice(0, at)}<definedNames>${element}</definedNames>${xml.slice(at)}`
+}
+
+/// "1:3" → "$1:$3" (title rows), "A:B" → "$A:$B" (title columns), or both
+/// comma-separated. Setting one axis keeps the other axis already stored.
+function titleReference(
+  workbookXml: string,
+  quoted: string,
+  sheetIndex: number,
+  titles: string,
+): string {
+  const incoming = parseTitleSpans(titles)
+  const kept = existingTitleSpans(workbookXml, sheetIndex)
+  const rows = incoming.rows ?? kept.rows
+  const cols = incoming.cols ?? kept.cols
+  const spans: string[] = []
+  if (cols !== undefined) spans.push(`${quoted}!${cols}`)
+  if (rows !== undefined) spans.push(`${quoted}!${rows}`)
+  if (spans.length === 0) throw new PageSetupError(`Invalid print titles "${titles}".`)
+  return spans.join(',')
+}
+
+function parseTitleSpans(titles: string): { rows?: string; cols?: string } {
+  const out: { rows?: string; cols?: string } = {}
+  for (const raw of titles.split(',')) {
+    const span = raw.trim()
+    const rows = /^\$?(\d{1,7}):\$?(\d{1,7})$/.exec(span)
+    if (rows) {
+      if (Number(rows[1]) > Number(rows[2]) || out.rows !== undefined) {
+        throw new PageSetupError(`Invalid print titles "${titles}".`)
+      }
+      out.rows = `$${rows[1]}:$${rows[2]}`
+      continue
+    }
+    const cols = /^\$?([A-Za-z]{1,3}):\$?([A-Za-z]{1,3})$/.exec(span)
+    if (cols) {
+      const first = cols[1]!.toUpperCase()
+      const second = cols[2]!.toUpperCase()
+      let ordered: boolean
+      try {
+        ordered = columnIndex(first) <= columnIndex(second)
+      } catch {
+        ordered = false
+      }
+      if (!ordered || out.cols !== undefined) {
+        throw new PageSetupError(`Invalid print titles "${titles}".`)
+      }
+      out.cols = `$${first}:$${second}`
+      continue
+    }
+    throw new PageSetupError(`Invalid print titles "${titles}".`)
+  }
+  return out
+}
+
+function existingTitleSpans(
+  workbookXml: string,
+  sheetIndex: number,
+): { rows?: string; cols?: string } {
+  const pattern = new RegExp(
+    `<definedName[^>]*name="_xlnm\\.Print_Titles"[^>]*localSheetId="${sheetIndex}"[^>]*>([\\s\\S]*?)</definedName>` +
+      `|<definedName[^>]*localSheetId="${sheetIndex}"[^>]*name="_xlnm\\.Print_Titles"[^>]*>([\\s\\S]*?)</definedName>`,
+  )
+  const match = pattern.exec(workbookXml)
+  if (!match) return {}
+  const out: { rows?: string; cols?: string } = {}
+  for (const part of unescapeXml(match[1] ?? match[2] ?? '').split(',')) {
+    const ref = part
+      .slice(part.lastIndexOf('!') + 1)
+      .replace(/\$/g, '')
+      .trim()
+    const rows = /^(\d{1,7}):(\d{1,7})$/.exec(ref)
+    if (rows && Number(rows[1]) <= Number(rows[2]) && out.rows === undefined) {
+      out.rows = `$${rows[1]}:$${rows[2]}`
+      continue
+    }
+    const cols = /^([A-Za-z]{1,3}):([A-Za-z]{1,3})$/.exec(ref)
+    if (cols && out.cols === undefined) {
+      try {
+        if (columnIndex(cols[1]!.toUpperCase()) <= columnIndex(cols[2]!.toUpperCase())) {
+          out.cols = `$${cols[1]!.toUpperCase()}:$${cols[2]!.toUpperCase()}`
+        }
+      } catch {
+        continue
+      }
+    }
+  }
+  return out
+}
+
+/// "A1:C10" → "$A$1:$C$10" (already-absolute refs pass through).
+function toAbsoluteRange(range: string): string {
+  if (!/^[$A-Za-z0-9:]+$/.test(range) || !hasCellRowEnds(range)) {
+    throw new PageSetupError(`Invalid print area "${range}".`)
+  }
+  return range
+    .split(':')
+    .map((part) => part.replace(/^\$?([A-Za-z]{1,3})\$?(\d{1,7})$/, '$$$1$$$2'))
+    .join(':')
+}
+
+/// parseRange needs a row on every endpoint, so whole-column ("A:A") and
+/// half-open ("A1:B") refs — which Excel rejects inside _xlnm.Print_Area —
+/// are refused before the refs are absolutised.
+function hasCellRowEnds(range: string): boolean {
+  try {
+    parseRange(range)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function unescapeXml(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+}

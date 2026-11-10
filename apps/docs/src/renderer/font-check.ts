@@ -1,4 +1,4 @@
-import type { ParsedDoc } from '@genoffice/docx-engine'
+import type { ParsedDoc, TableModel } from '@genoffice/docx-engine'
 import { BUNDLED_FONTS, cssFontFamily, isBundledFont } from './line-metrics'
 
 const GENERIC = new Set(['serif', 'sans-serif', 'monospace'])
@@ -9,16 +9,42 @@ export function collectDocFonts(parsed: ParsedDoc): string[] {
   const add = (font?: string) => {
     if (font) names.add(font)
   }
-  for (const b of parsed.blocks) {
-    for (const r of b.runs ?? []) add(r.font)
-    for (const tb of b.textboxes ?? []) {
-      for (const p of tb.paras) for (const r of p.runs) add(r.font)
+  const addRuns = (runs: readonly { font?: string; fontAscii?: string }[]) => {
+    for (const r of runs) {
+      add(r.font)
+      add(r.fontAscii)
     }
+  }
+  const addTable = (table: TableModel) => {
+    for (const row of table.rows) {
+      for (const cell of row) {
+        for (const p of cell.richParas ?? []) addRuns(p.runs)
+        for (const nt of cell.nestedTables ?? []) addTable(nt)
+      }
+    }
+  }
+  for (const b of parsed.blocks) {
+    addRuns(b.runs ?? [])
+    for (const tb of b.textboxes ?? []) for (const p of tb.paras) addRuns(p.runs)
+    if (b.table) addTable(b.table)
   }
   add(parsed.docDefaults?.asciiFont)
   add(parsed.docDefaults?.eastAsiaFont)
-  for (const s of parsed.styles.values()) add(s.display?.font)
+  for (const s of parsed.styles.values()) {
+    add(s.display?.font)
+    add(s.display?.fontAscii)
+  }
   return [...names]
+}
+
+/**
+ * The document's declared fonts that an alias update covers: the alias map
+ * only matters for a font the open document declares, so an update that
+ * touches no declared font must not reflow it (genoffice#2449).
+ */
+export function docFontsCoveredBy(parsed: ParsedDoc, names: readonly string[]): string[] {
+  const declared = new Set(collectDocFonts(parsed))
+  return names.filter((name) => declared.has(name))
 }
 
 // document.fonts.check is useless here: Chromium answers true for any family

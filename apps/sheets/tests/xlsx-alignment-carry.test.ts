@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { StylesheetEditor } from '../src/gateway/xlsx-styles'
+import { StylesheetEditor } from '@genoffice/xlsx-gateway/gateway/xlsx-styles'
 
 /** An RTL cell as Excel writes it: right-aligned, explicit reading order, shrink to fit. */
 const STYLES = `<?xml version="1.0" encoding="UTF-8"?>
@@ -32,6 +32,18 @@ describe('StylesheetEditor alignment carries', () => {
     // the edit itself still applies, and the modeled attributes still resolve
     expect(xf).toContain('applyFill="1"')
     expect(xf).toContain('horizontal="right"')
+  })
+
+  it('keeps a vertical value the renderer approximates through an unrelated edit', () => {
+    const distributed = STYLES.replace(
+      '<alignment horizontal="right"',
+      '<alignment horizontal="right" vertical="distributed"',
+    )
+    const editor = new StylesheetEditor(distributed)
+    const index = editor.resolveStyle(1, { fillColor: '#FF0000' })
+    const xf = xfAt(editor.serialize(), index)
+    expect(xf).toContain('applyFill="1"')
+    expect(xf).toContain('vertical="distributed"')
   })
 
   it('keeps them when the edit changes alignment itself', () => {

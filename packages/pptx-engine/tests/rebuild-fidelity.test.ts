@@ -65,7 +65,7 @@ describe('rebuild path: explicit paragraph properties written back', () => {
     )
     forceRebuild(el)
     const out = patchTextElementXml(el, el.anchor.originalXml)
-    expect(out).toContain('<a:buAutoNum type="romanLcPeriod"/>')
+    expect(out).toContain('<a:buAutoNum type="romanLcPeriod" startAt="3"/>')
   })
 
   it('buNone preserved (explicitly turning off the inherited bullet)', () => {
@@ -145,6 +145,23 @@ describe('rebuild path: run-level hlinkClick/strike/cs written back', () => {
     const out = patchTextElementXml(el, el.anchor.originalXml)
     expect(out).toContain('strike="dblStrike"')
     expect(out).toContain('<a:cs typeface="Arial"/>')
+  })
+})
+
+describe('rebuild path: run language tags written back', () => {
+  it('a structural edit keeps lang/altLang, which pick the line-breaking rules on reopen', () => {
+    const el = parseEl(
+      '<a:bodyPr/><a:p><a:r><a:rPr lang="ja-JP" altLang="en-US"/><a:t>\u3042\u3044</a:t></a:r></a:p>',
+    )
+    forceRebuild(el)
+    const out = patchTextElementXml(el, el.anchor.originalXml)
+    expect(out).toMatch(/<a:rPr lang="ja-JP" altLang="en-US"\/><a:t>\u3042\u3044<\/a:t>/)
+    const reparsed = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(out),
+      ctx: {},
+    }).elements[0] as TextElement
+    expect(reparsed.text!.paragraphs[0]!.runs[0]!.eaLang).toBe('ja')
   })
 })
 

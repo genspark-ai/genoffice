@@ -1,0 +1,286 @@
+import { Extension } from '@tiptap/core'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import type { EditorView } from '@tiptap/pm/view'
+import { splitFloatStyle } from '../pagination-lines'
+import type { ColumnSplitShape, VerticalBlockSpec } from '../pagination-types'
+import { TopLevelPositions } from './top-level-pos'
+import type { LayoutBatch } from './pagination-gaps'
+import { columnDecoration, mapColumnDecorations } from './column-layout-recovery'
+
+const key = new PluginKey<DecorationSet>('columnLayout')
+
+/**
+ * Mixed-column canvas layout (documents whose sections disagree on column
+ * count/width, so the uniform whole-page CSS multicol path can't apply).
+ *
+ * The engine keeps its 1-D single-flow virtual coordinates; this extension only
+ * *paints* the flow into columns: each block in a multi-column region gets its
+ * section's column width plus a constant per-column translate, and blocks of
+ * later regions on the same page translate up over the space the columns
+ * vacated (the page gap below pulls the next page up by the same amount).
+ * Decorations are visual-only; measurement runs in the `.measuring-columns`
+ * state, whose CSS neutralizes the transforms (widths stay — the engine's line
+ * boxes must reflect column wrapping).
+ *
+ * v1 granularity: a block is placed whole into the column containing its top;
+ * a block the engine split across columns paints overflowing its column bottom.
+ */
+export const ColumnLayoutExtension = Extension.create({
+  name: 'columnLayout',
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<DecorationSet>({
+        key,
+        state: {
+          init: () => DecorationSet.empty,
+          apply(tr, set, oldState) {
+            const next = tr.getMeta(key) as DecorationSet | undefined
+            if (next) return next
+            return mapColumnDecorations(set, tr, oldState.doc)
+          },
+        },
+        props: {
+          decorations(state) {
+            return key.getState(state)
+          },
+        },
+      }),
+    ]
+  },
+})
+
+export interface ColumnBlockSpec {
+  /** top-level block element (same anchoring as page gaps) */
+  el: HTMLElement
+  /** column width (px); absent for single-column regions (natural width) */
+  widthPx?: number
+  /** owning section's content width (--doc-content-w): tables resolve their spill/centering caps against it */
+  contentWPx?: number
+  /** owning section's side margins (--doc-margin-left/right overrides) */
+  marginLeftPx?: number
+  marginRightPx?: number
+  /** owning section's top margin (--doc-margin-top override) in docs whose sections disagree on it */
+  marginTopPx?: number
+  /** owning section's typed docGrid pitch (pt) in mixed-grid docs; 0 = untyped
+   *  section (opts out like snapToGrid=0 via doc-grid-nosnap) */
+  gridPitchPt?: number
+  /** owning section's character-grid letter-spacing delta (pt) in docs whose
+   *  sections disagree on docGrid charSpace (doc-charspace-block) */
+  charSpacePt?: number
+  charSpaceSbPt?: number
+  /** translate; dy < 0 pulls content up over vacated column space */
+  dx: number
+  dy: number
+  /** left edge of the block's page on the shared paper (--page-cx); not undone by page-relative anchors */
+  pageDx?: number
+  /** vertical-text section block (doc-vert-block): writing-mode box, see verticalTextSpecs */
+  vertical?: VerticalBlockSpec
+  /** paragraph straddling two columns of different widths: a leading float
+   *  (doc-col-split-float) rewraps the head or the tail at the narrower width */
+  split?: ColumnSplitShape
+  /** first block of a page-opening section (doc-sect-page-start: clear floats) */
+  sectionPageStart?: true
+}
+
+const SPLIT_CLASS = 'doc-col-split-float'
+
+function splitFloatEl(style: string): HTMLElement {
+  const span = document.createElement('span')
+  span.className = SPLIT_CLASS
+  span.contentEditable = 'false'
+  span.setAttribute('aria-hidden', 'true')
+  span.style.cssText = style
+  return span
+}
+
+const PATCH_PROPS = [
+  '--col-w',
+  '--col-dx',
+  '--col-dy',
+  '--page-cx',
+  '--doc-content-w',
+  '--doc-margin-left',
+  '--doc-margin-right',
+  '--doc-margin-top',
+  '--doc-grid-pitch',
+  '--doc-char-space',
+  '--doc-char-space-sb',
+  '--vert-mb',
+]
+
+const PATCH_CLASSES = [
+  'doc-col-block',
+  'doc-grid-block',
+  'doc-grid-nosnap',
+  'doc-charspace-block',
+  'doc-vert-block',
+  'doc-vert-first',
+  'doc-vert-tbRl',
+  'doc-vert-tbRlV',
+  'doc-vert-btLr',
+  'doc-sect-page-start',
+]
+
+/** pitch/charSpace-only specs get an inert marker class: .doc-col-block's
+ *  width/transform rules must not touch blocks that only carry their section's
+ *  grid pitch or character spacing. Pitch-0 opt-outs use their own class (same
+ *  CSS as doc-nosnap): reusing doc-nosnap would trip sectionGridPitchSpecs'
+ *  own-opt-out skip on the next pass and let patch cleanup strip a node's own
+ *  snapToGrid=0 class. */
+function specClass(spec: ColumnBlockSpec, leading = true): string {
+  const varsOnly =
+    (spec.gridPitchPt !== undefined ||
+      spec.charSpacePt !== undefined ||
+      spec.marginTopPx !== undefined ||
+      spec.sectionPageStart) &&
+    spec.widthPx === undefined &&
+    spec.contentWPx === undefined &&
+    spec.dx === 0 &&
+    spec.dy === 0 &&
+    !spec.pageDx
+  let cls = varsOnly ? 'doc-grid-block' : 'doc-col-block'
+  if (spec.gridPitchPt === 0) cls += ' doc-grid-nosnap'
+  if (spec.charSpacePt !== undefined) cls += ' doc-charspace-block'
+  if (leading && spec.sectionPageStart) cls += ' doc-sect-page-start'
+  if (spec.vertical) {
+    cls += ` doc-vert-block doc-vert-${spec.vertical.mode}`
+    if (leading && spec.vertical.firstOnPage) cls += ' doc-vert-first'
+  }
+  return cls
+}
+
+/** Rebuild the column-layout decorations (an empty list clears them). */
+export function setColumnLayout(
+  view: EditorView,
+  specs: ColumnBlockSpec[],
+  batch?: LayoutBatch,
+): void {
+  const decos: Decoration[] = []
+  const positions = new TopLevelPositions(view)
+  const styleOf = new Map<HTMLElement, { style: string; cls: string }>()
+  const splitOf = new Map<HTMLElement, string>()
+  for (const spec of specs) {
+    if (spec.split)
+      splitOf.set(
+        spec.el,
+        splitFloatStyle(
+          spec.split.floatPx,
+          spec.split.heightPx,
+          spec.split.insetPx,
+          spec.split.rtl,
+        ),
+      )
+    const style =
+      (spec.widthPx !== undefined ? `--col-w:${round2(spec.widthPx)}px;` : '') +
+      (spec.contentWPx !== undefined
+        ? `--doc-content-w:${round2(spec.contentWPx)}px;--doc-margin-left:${round2(spec.marginLeftPx ?? 0)}px;--doc-margin-right:${round2(spec.marginRightPx ?? 0)}px;`
+        : '') +
+      (spec.marginTopPx !== undefined ? `--doc-margin-top:${round2(spec.marginTopPx)}px;` : '') +
+      (spec.gridPitchPt !== undefined
+        ? `--doc-grid-pitch:${spec.gridPitchPt > 0 ? `${round2(spec.gridPitchPt)}pt` : '0.0001px'};`
+        : '') +
+      (spec.charSpacePt !== undefined ? `--doc-char-space:${round4(spec.charSpacePt)}pt;` : '') +
+      (spec.charSpaceSbPt !== undefined
+        ? `--doc-char-space-sb:${round4(spec.charSpaceSbPt)}pt;`
+        : '') +
+      (spec.pageDx ? `--page-cx:${round2(spec.pageDx)}px;` : '') +
+      (spec.vertical ? `--vert-mb:${round2(spec.vertical.marginBottomPx)}px;` : '') +
+      `--col-dx:${round2(spec.dx)}px;--col-dy:${round2(spec.dy)}px`
+    const cls = specClass(spec)
+    styleOf.set(spec.el, { style, cls })
+    const range = positions.of(spec.el)
+    if (!range) continue
+    const { from, to } = range
+    // Vertical placements and split-column floats depend on measured block
+    // extents. Leave them on the existing mapping/pagination path instead of
+    // copying stale coordinates or a float shape onto newly split paragraphs.
+    const continuation =
+      spec.vertical || spec.split ? undefined : { class: specClass(spec, false), style }
+    decos.push(columnDecoration(from, to, { class: cls, style }, continuation))
+    const split = splitOf.get(spec.el)
+    if (split)
+      decos.push(
+        Decoration.widget(from + 1, () => splitFloatEl(split), {
+          side: -1,
+          key: `col-split-${split}`,
+          ignoreSelection: true,
+        }),
+      )
+  }
+  const next = DecorationSet.create(view.state.doc, decos)
+  const prev = key.getState(view.state)
+  if (!prev || !sameCols(prev, next)) {
+    if (batch) batch.set(key, next)
+    else view.dispatch(view.state.tr.setMeta(key, next).setMeta('addToHistory', false))
+  }
+  if (batch) batch.then(() => patchNodeViews(view, styleOf, splitOf))
+  else patchNodeViews(view, styleOf, splitOf)
+}
+
+/**
+ * custom NodeViews (protected blocks etc.) don't apply node decorations — patch
+ * their DOM directly, observer paused so PM never re-parses the mutation (same
+ * technique as the phantom-rowspan sync). Re-applied by every remeasure pass.
+ */
+function patchNodeViews(
+  view: EditorView,
+  styleOf: Map<HTMLElement, { style: string; cls: string }>,
+  splitOf: Map<HTMLElement, string>,
+): void {
+  const obs = (view as unknown as { domObserver?: { stop(): void; start(): void } }).domObserver
+  obs?.stop()
+  try {
+    for (const el of Array.from(
+      view.dom.querySelectorAll<HTMLElement>('[data-col-patch]'),
+    ) as HTMLElement[]) {
+      if (styleOf.has(el)) continue
+      el.removeAttribute('data-col-patch')
+      el.classList.remove(...PATCH_CLASSES)
+      for (const p of PATCH_PROPS) el.style.removeProperty(p)
+    }
+    // split floats the widget decoration could not place (atomic node views)
+    for (const el of Array.from(
+      view.dom.querySelectorAll<HTMLElement>(`[data-col-split-patch] > .${SPLIT_CLASS}`),
+    ) as HTMLElement[]) {
+      const host = el.parentElement as HTMLElement
+      if (splitOf.get(host) === el.style.cssText) continue
+      el.remove()
+      host.removeAttribute('data-col-split-patch')
+    }
+    for (const [el, style] of splitOf) {
+      if (el.querySelector(`:scope > .${SPLIT_CLASS}`)) continue
+      el.setAttribute('data-col-split-patch', '1')
+      el.insertBefore(splitFloatEl(style), el.firstChild)
+    }
+    for (const [el, { style, cls }] of styleOf) {
+      const classes = cls.split(' ')
+      if (classes.every((c) => el.classList.contains(c)) && !el.hasAttribute('data-col-patch'))
+        continue
+      el.setAttribute('data-col-patch', '1')
+      el.classList.add(...classes)
+      const parts = style.split(';')
+      for (const p of PATCH_PROPS) el.style.removeProperty(p)
+      for (const part of parts) {
+        const i = part.indexOf(':')
+        if (i > 0) el.style.setProperty(part.slice(0, i), part.slice(i + 1))
+      }
+    }
+  } finally {
+    obs?.start()
+  }
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+const round4 = (n: number) => Math.round(n * 10000) / 10000
+
+function sameCols(a: DecorationSet, b: DecorationSet): boolean {
+  const fa = a.find()
+  const fb = b.find()
+  if (fa.length !== fb.length) return false
+  const sig = (d: Decoration) => `${d.from}-${d.to}-${(d.spec as { key?: string }).key ?? ''}`
+  const sa = fa.map(sig).sort()
+  const sb = fb.map(sig).sort()
+  return sa.every((s, i) => s === sb[i])
+}

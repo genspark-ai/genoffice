@@ -1,0 +1,63 @@
+{
+  "id": "render-keepnext-tail-split",
+  "title": "A keepNext block that cannot keep and cannot split sends the nearest splittable block's tail ahead of it; a chain that would fit a fresh page still splits",
+  "section": "word-truths.md#L753",
+  "probe_date": "2026-10-28",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), 4 pages: Letter 1440 margins, Arial 12 exact 240 (54 lines), widow control on. p1 = 43 filler + A lines 1-2 (baselines 597.6/609.6), p2 = A lines 3-4 + B + C + anchor (81.6 .. 189.6); p3 = 48 filler + heading + body lines 1-4 (657.6 .. 705.6), p4 = body lines 5-6 + anchor2 (81.6 .. 117.6)",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 4
+    },
+    {
+      "kind": "blockPage",
+      "block": 1,
+      "expect": 1,
+      "note": "A (4 lines) opens on page 1: the chain is not moved whole"
+    },
+    {
+      "kind": "blockPage",
+      "block": 2,
+      "expect": 2,
+      "note": "B (3 lines, keepLines) follows A's tail on page 2"
+    },
+    {
+      "kind": "blockPage",
+      "block": 3,
+      "expect": 2,
+      "note": "C (3 lines, atomic under widow control) cannot keep the anchor on page 1"
+    },
+    {
+      "kind": "blockPage",
+      "block": 4,
+      "expect": 2,
+      "note": "anchor kept with C"
+    },
+    {
+      "kind": "blockPage",
+      "block": 5,
+      "expect": 3,
+      "note": "pageBreakBefore filler opens page 3"
+    },
+    {
+      "kind": "blockPage",
+      "block": 6,
+      "expect": 3,
+      "note": "L720: heading stays on page 3 although heading + body + anchor would fit a fresh page"
+    },
+    {
+      "kind": "blockPage",
+      "block": 7,
+      "expect": 3,
+      "note": "body splits 4 + 2 at the page bottom"
+    },
+    {
+      "kind": "blockPage",
+      "block": 8,
+      "expect": 4,
+      "note": "anchor2 opens page 4 behind the body's last two lines"
+    }
+  ],
+  "docx": "probe.docx"
+}

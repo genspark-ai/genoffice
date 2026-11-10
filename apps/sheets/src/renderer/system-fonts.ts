@@ -1,13 +1,9 @@
 import { useCallback, useState } from 'react'
 
-export const DEFAULT_FONT_FAMILIES: readonly string[] = [
-  'Aptos',
-  'Arial',
-  'Calibri',
-  'Times New Roman',
-  '微软雅黑',
-  '宋体',
-]
+import { BUILTIN_FONT_FAMILIES, partitionFontFamilies } from '@genoffice/ui'
+
+/** Suite-wide font dropdown candidates, kept under the historical sheets-side name. */
+export const DEFAULT_FONT_FAMILIES: readonly string[] = BUILTIN_FONT_FAMILIES
 
 let cached: readonly string[] | null = null
 let pending: Promise<readonly string[]> | null = null
@@ -19,9 +15,7 @@ async function queryFamilies(): Promise<readonly string[]> {
   try {
     const fonts = await query.call(window)
     const families = new Set<string>()
-    for (const font of fonts) {
-      if (font.family && !DEFAULT_FONT_FAMILIES.includes(font.family)) families.add(font.family)
-    }
+    for (const font of fonts) if (font.family) families.add(font.family)
     return [...families].sort((a, b) => a.localeCompare(b))
   } catch {
     return []
@@ -39,7 +33,9 @@ function loadSystemFontFamilies(): Promise<readonly string[]> {
 
 /// Empty until load() runs — call it from the picker's open click so the
 /// Local Font Access API sees user activation; cached for the page lifetime,
-/// and on failure the pickers just keep the default list.
+/// and on failure the pickers just keep the default list. Returns every
+/// family: candidates vs system section is decided per render by
+/// partitionFontFamilies (which also hides candidates the machine lacks).
 export function useSystemFontFamilies(): {
   readonly families: readonly string[]
   readonly load: () => void
@@ -56,10 +52,10 @@ export function fontFamilyGroups(
   systemFamilies: readonly string[],
   echoFamily: string | null | undefined,
 ): { readonly common: readonly string[]; readonly system: readonly string[] } {
-  const known =
-    !echoFamily || DEFAULT_FONT_FAMILIES.includes(echoFamily) || systemFamilies.includes(echoFamily)
+  const { builtin, system } = partitionFontFamilies(DEFAULT_FONT_FAMILIES, systemFamilies)
+  const known = !echoFamily || builtin.includes(echoFamily) || systemFamilies.includes(echoFamily)
   return {
-    common: known ? DEFAULT_FONT_FAMILIES : [echoFamily, ...DEFAULT_FONT_FAMILIES],
-    system: systemFamilies,
+    common: known ? builtin : [echoFamily, ...builtin],
+    system,
   }
 }

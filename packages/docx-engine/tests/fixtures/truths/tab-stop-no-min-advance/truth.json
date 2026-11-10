@@ -1,0 +1,115 @@
+{
+  "id": "tab-stop-no-min-advance",
+  "title": "A tab advances to the next stop strictly greater than x, however close; x exactly on a stop goes to the following stop",
+  "section": "word-truths.md#L540",
+  "probe_date": "2026-10-20",
+  "source": "corpus 2026-10-20 048 Word PDF: \"Phone: 012 345 6789\" ends 0.36pt before a default stop and the tab lands on that stop; consecutive tabs chain stop to stop (162 -> 198 -> 234); probe tabthr (2026-10-22, Letter, Arial 11, leading tab after w:ind firstLine/left of 7900/7919/7920/7921/1430/1439/1440 twips and custom stops 1440/1800) -> t3_tabthr2.pdf + t3_tabthr3.pdf: every stop strictly greater than x is taken, one twip short included",
+  "cases": [
+    {
+      "kind": "tabTargetPt",
+      "xPt": 395.64,
+      "gridPt": 36,
+      "expect": 396,
+      "tol": 0.3,
+      "note": "x 0.36pt before the 396 default stop: Word lands on 396 (rendered as a box of the exact advance)"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 396,
+      "gridPt": 36,
+      "expect": 432,
+      "tol": 0.3,
+      "note": "x exactly on a stop goes to the following stop"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 390,
+      "gridPt": 36,
+      "expect": 396,
+      "tol": 0.3,
+      "note": "6pt short of the stop: lands on it"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 158.8,
+      "stopsPt": [
+        {
+          "pos": 162
+        },
+        {
+          "pos": 198
+        },
+        {
+          "pos": 234
+        }
+      ],
+      "expect": 162,
+      "tol": 0.3,
+      "note": "FOCUS ends 3.2pt before the 162 stop: first tab lands on 162"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 162,
+      "stopsPt": [
+        {
+          "pos": 162
+        },
+        {
+          "pos": 198
+        },
+        {
+          "pos": 234
+        }
+      ],
+      "expect": 198,
+      "tol": 0.3,
+      "note": "second tab chains from the stop reached"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 395.95,
+      "gridPt": 36,
+      "expect": 396,
+      "tol": 0.05,
+      "note": "probe tabthr 2026-10-22: firstLine 7919 twips (one twip short) lands on 396"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 396.05,
+      "gridPt": 36,
+      "expect": 432,
+      "tol": 0.05,
+      "note": "firstLine 7921: one twip past goes to 432"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 71.5,
+      "stopsPt": [
+        {
+          "pos": 72
+        }
+      ],
+      "expect": 72,
+      "tol": 0.05,
+      "note": "custom stop 1440 with left indent 1430: 0.5pt short lands on it"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 71.95,
+      "gridPt": 36,
+      "expect": 72,
+      "tol": 0.05,
+      "note": "firstLine 1439: one twip short of the 72 default stop"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 72,
+      "gridPt": 36,
+      "expect": 108,
+      "tol": 0.05,
+      "note": "firstLine 1440: exactly on the stop goes to 108"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

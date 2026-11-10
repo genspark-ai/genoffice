@@ -42,6 +42,24 @@ function readU32(bytes: Uint8Array, off: number): number {
 interface TrackState {
   handler?: string
   formats: string[]
+  size?: { width: number; height: number }
+}
+
+/** tkhd: width/height are 16.16 fixed; a 90°/270° matrix means the displayed frame is transposed. */
+function readTkhd(bytes: Uint8Array, payload: number, end: number): TrackState['size'] {
+  const version = bytes[payload]!
+  const widthOff = payload + (version === 1 ? 88 : 76)
+  if (widthOff + 8 > end) return undefined
+  const width = readU32(bytes, widthOff) / 65536
+  const height = readU32(bytes, widthOff + 4) / 65536
+  if (!(width > 0 && height > 0)) return undefined
+  const m = widthOff - 36
+  const a = readU32(bytes, m)
+  const b = readU32(bytes, m + 4)
+  const c = readU32(bytes, m + 12)
+  const d = readU32(bytes, m + 16)
+  const rotated = a === 0 && d === 0 && b !== 0 && c !== 0
+  return rotated ? { width: height, height: width } : { width, height }
 }
 
 function walk(
@@ -49,7 +67,8 @@ function walk(
   start: number,
   end: number,
   track: TrackState | null,
-  out: string[][],
+  out: TrackState[],
+  parent = '',
 ): void {
   let off = start
   while (off + 8 <= end) {
@@ -71,11 +90,14 @@ function walk(
     if (type === 'trak') {
       const t: TrackState = { formats: [] }
       walk(bytes, payload, boxEnd, t, out)
-      if (t.handler === 'soun' && t.formats.length) out.push(t.formats)
+      out.push(t)
     } else if (CONTAINER_BOXES.has(type)) {
-      walk(bytes, payload, boxEnd, track, out)
-    } else if (type === 'hdlr' && track) {
-      // FullBox: version/flags(4) + pre_defined(4) + handler_type(4)
+      walk(bytes, payload, boxEnd, track, out, type)
+    } else if (type === 'tkhd' && track) {
+      track.size = readTkhd(bytes, payload, boxEnd)
+    } else if (type === 'hdlr' && track && parent === 'mdia') {
+      // FullBox: version/flags(4) + pre_defined(4) + handler_type(4).
+      // minf carries a second hdlr (data handler, e.g. `url `) that must not win.
       if (payload + 12 <= boxEnd) track.handler = fourcc(bytes, payload + 8)
     } else if (type === 'stsd' && track) {
       // FullBox: version/flags(4) + entry_count(4), then sample entries (size + format)
@@ -94,9 +116,20 @@ function walk(
 
 /** Sample-entry fourccs of every audio (`hdlr` = `soun`) track in the file. */
 export function audioSampleFormats(bytes: Uint8Array): string[] {
-  const out: string[][] = []
+  return tracks(bytes)
+    .filter((t) => t.handler === 'soun')
+    .flatMap((t) => t.formats)
+}
+
+function tracks(bytes: Uint8Array): TrackState[] {
+  const out: TrackState[] = []
   walk(bytes, 0, bytes.length, null, out)
-  return out.flat()
+  return out
+}
+
+/** Displayed frame size of the first video (`hdlr` = `vide`) track, rotation applied. */
+export function mp4VideoSize(bytes: Uint8Array): { width: number; height: number } | null {
+  return tracks(bytes).find((t) => t.handler === 'vide' && t.size)?.size ?? null
 }
 
 /**

@@ -24,6 +24,12 @@ describe('ommlToMathML', () => {
     expect(mathml).toContain('<mi>b</mi>')
   })
 
+  it('renders a hyphen-minus operator as a minus sign', () => {
+    const mathml = ommlToMathML('<m:oMath><m:r><m:t>n-k</m:t></m:r></m:oMath>')
+    expect(mathml).toContain('<mo>\u2212</mo>')
+    expect(mathml).not.toContain('<mo>-</mo>')
+  })
+
   it('converts scripts, radicals and delimiters', () => {
     const omml =
       '<m:oMath>' +
@@ -182,9 +188,13 @@ describe('ommlToLatex', () => {
 
   it('returns null for structures outside the subset', () => {
     expect(
-      ommlToLatex('<m:oMath><m:sPre><m:sub><m:r><m:t>a</m:t></m:r></m:sub><m:e><m:r><m:t>X</m:t></m:r></m:e></m:sPre></m:oMath>'),
+      ommlToLatex(
+        '<m:oMath><m:sPre><m:sub><m:r><m:t>a</m:t></m:r></m:sub><m:e><m:r><m:t>X</m:t></m:r></m:e></m:sPre></m:oMath>',
+      ),
     ).toBeNull()
-    expect(ommlToLatex(`<m:oMath>${latexToOmml('a')}</m:oMath><m:oMath>${latexToOmml('b')}</m:oMath>`)).toBeNull()
+    expect(
+      ommlToLatex(`<m:oMath>${latexToOmml('a')}</m:oMath><m:oMath>${latexToOmml('b')}</m:oMath>`),
+    ).toBeNull()
   })
 
   it('escapes parser-special characters', () => {
@@ -206,7 +216,7 @@ describe('formula parse + save integration', () => {
   })
 
   it('parses paragraphs mixing math and text into editable runs with math runs', async () => {
-    const mixed = `<w:p><w:r><w:t>see </w:t></w:r>${FRACTION_OMATH}<w:r><w:t> here</w:t></w:r></w:p>`
+    const mixed = `<w:p><w:r><w:t xml:space="preserve">see </w:t></w:r>${FRACTION_OMATH}<w:r><w:t xml:space="preserve"> here</w:t></w:r></w:p>`
     const parsed = await parseDocx(await buildDocx({ bodyXml: mixed }))
     const block = parsed.blocks[0]
     expect(block.type).toBe('paragraph')
@@ -215,7 +225,7 @@ describe('formula parse + save integration', () => {
   })
 
   it('a mixed paragraph regenerates with the math run emitted verbatim', async () => {
-    const mixed = `<w:p><w:r><w:t>see </w:t></w:r>${FRACTION_OMATH}</w:p>`
+    const mixed = `<w:p><w:r><w:t xml:space="preserve">see </w:t></w:r>${FRACTION_OMATH}</w:p>`
     const parsed = await parseDocx(await buildDocx({ bodyXml: mixed }))
     const block = parsed.blocks[0]
     const bytes = await saveDocx(parsed, [
@@ -242,7 +252,9 @@ describe('formula parse + save integration', () => {
   })
 
   it('an inserted equation paragraph survives save and reparse', async () => {
-    const parsed = await parseDocx(await buildDocx({ bodyXml: '<w:p><w:r><w:t>hi</w:t></w:r></w:p>' }))
+    const parsed = await parseDocx(
+      await buildDocx({ bodyXml: '<w:p><w:r><w:t>hi</w:t></w:r></w:p>' }),
+    )
     const omml = latexToOmml('a^2 + b^2 = c^2')
     const bytes = await saveDocx(parsed, [
       { kind: 'original', docxIndex: parsed.blocks[0].docxIndex! },
@@ -281,5 +293,68 @@ describe('formula parse + save integration', () => {
     // reparse must still see the formula
     const reparsed = await parseDocx(bytes)
     expect(reparsed.blocks[1].formulaDisplay?.tokens.join('')).toContain('=')
+  })
+})
+
+describe('display equation size and alignment', () => {
+  const RPR = '<w:rPr><w:rFonts w:ascii="Cambria Math"/><w:sz w:val="18"/></w:rPr>'
+  const FRACTION_18 =
+    `<m:oMath><m:f><m:fPr><m:ctrlPr>${RPR}</m:ctrlPr></m:fPr><m:num><m:r>${RPR}<m:t>dy</m:t></m:r></m:num>` +
+    `<m:den><m:r>${RPR}<m:t>dx</m:t></m:r></m:den></m:f></m:oMath>`
+
+  it('carries the maths run w:sz, m:jc and the direct paragraph spacing', async () => {
+    const body =
+      '<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:rPr><w:sz w:val="18"/></w:rPr></w:pPr>' +
+      `<m:oMathPara><m:oMathParaPr><m:jc m:val="left"/></m:oMathParaPr>${FRACTION_18}</m:oMathPara></w:p>`
+    const parsed = await parseDocx(await buildDocx({ bodyXml: body }))
+    const formula = parsed.blocks[0].formulaDisplay
+    expect(formula?.sizeHalfPoints).toBe(18)
+    expect(formula?.align).toBe('left')
+    expect(formula?.spaceAfterTwips).toBe(0)
+    expect(formula?.spaceBeforeTwips).toBeUndefined()
+  })
+
+  it('an oMathPara without m:jc keeps the centred default', async () => {
+    const parsed = await parseDocx(
+      await buildDocx({ bodyXml: `<w:p><m:oMathPara>${FRACTION_18}</m:oMathPara></w:p>` }),
+    )
+    expect(parsed.blocks[0].formulaDisplay?.align).toBe('centerGroup')
+  })
+
+  it('a bare math-only paragraph follows the paragraph w:jc, left by default', async () => {
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          `<w:p>${FRACTION_18}</w:p>` +
+          `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${FRACTION_18}</w:p>`,
+      }),
+    )
+    expect(parsed.blocks[0].formulaDisplay?.align).toBe('left')
+    expect(parsed.blocks[1].formulaDisplay?.align).toBe('center')
+  })
+
+  it('falls back to the paragraph mark, then the style, for size-less maths runs', async () => {
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          `<w:p><w:pPr><w:rPr><w:sz w:val="28"/></w:rPr></w:pPr>${FRACTION_OMATH}</w:p>` +
+          `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>${FRACTION_OMATH}</w:p>`,
+      }),
+    )
+    expect(parsed.blocks[0].formulaDisplay?.sizeHalfPoints).toBe(28)
+    expect(parsed.blocks[0].formulaDisplay?.align).toBe('left')
+    expect(parsed.blocks[1].formulaDisplay?.sizeHalfPoints).toBe(32)
+    expect(parsed.blocks[1].styleId).toBe('Heading1')
+  })
+
+  it('an inline oMath run inside text carries its w:sz', async () => {
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml: `<w:p><w:r><w:t>slope </w:t></w:r>${FRACTION_18}<w:r><w:t> here</w:t></w:r></w:p>`,
+      }),
+    )
+    const math = parsed.blocks[0].runs?.find((r) => r.math)
+    expect(math?.sizeHalfPoints).toBe(18)
+    expect(math?.math?.omml).toBe(FRACTION_18)
   })
 })

@@ -68,6 +68,43 @@ describe('built-in table style Medium Style 2 (PowerPoint default)', () => {
     expect(run.bold).toBe(false)
     expect(run.color).toBe('#000000')
   })
+
+  it('explicit <a:noFill/> on tcPr overrides the style fill (cell stays transparent)', () => {
+    const slide2 = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: tableSlideXml('firstRow="1" bandRow="1"', MEDIUM2_A1).replace(
+        /<a:tcPr\/>/,
+        '<a:tcPr><a:noFill/></a:tcPr>',
+      ),
+      ctx: { theme },
+    })
+    const t2 = slide2.elements[0] as any
+    expect(t2.rows[0][0].fill).toBeUndefined()
+    // Remaining cells keep the style fill
+    expect(t2.rows[0][1].fill).toEqual({ type: 'solid', color: '#4472C4' })
+  })
+
+  it('tblPr "true"/"True" flags enable header and banding like "1"', () => {
+    const slide2 = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: tableSlideXml('firstRow="true" bandRow="True"', MEDIUM2_A1),
+      ctx: { theme },
+    })
+    const t2 = slide2.elements[0] as any
+    expect(t2.rows[0][0].fill).toEqual({ type: 'solid', color: '#4472C4' })
+    expect(t2.rows[1][0].fill.color).toBe('#B4C7E7')
+    expect(t2.rows[2][0].fill.color).toBe('#DAE3F3')
+  })
+
+  it('tblPr rtl="1" is parsed onto the table element', () => {
+    const slide2 = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: tableSlideXml('rtl="1" firstRow="1"', MEDIUM2_A1),
+      ctx: { theme },
+    })
+    expect((slide2.elements[0] as any).rtl).toBe(true)
+    expect((slide.elements[0] as any).rtl).toBeUndefined()
+  })
 })
 
 describe('tableStyles.xml custom styles', () => {
@@ -89,9 +126,75 @@ describe('tableStyles.xml custom styles', () => {
     expect(def.firstRow?.textColor).toBe('#FFFFFF')
   })
 
+  it('tint on a part fill blends in linear gamma (PPT semantics, prod_043 pixel-verified)', () => {
+    const tinted =
+      '<?xml version="1.0"?><a:tblStyleLst xmlns:a="a" def="{T}">' +
+      '<a:tblStyle styleId="{T}" styleName="Tinted">' +
+      '<a:wholeTbl><a:tcStyle><a:fill><a:solidFill>' +
+      '<a:schemeClr val="accent1"><a:tint val="20000"/></a:schemeClr>' +
+      '</a:solidFill></a:fill></a:tcStyle></a:wholeTbl>' +
+      '</a:tblStyle></a:tblStyleLst>'
+    const def = resolveTableStyle('{T}', tinted, theme)!
+    // straight-sRGB mixing would give #DBE3F3; linear gives the lighter #E8EBF5
+    expect(def.wholeTbl?.fill).toEqual({ type: 'solid', color: '#E8EBF5' })
+  })
+
   it('unknown styleId that is not built-in → undefined (stays unstyled)', () => {
     expect(resolveTableStyle('{DEAD-BEEF}', xml, theme)).toBeUndefined()
     expect(resolveTableStyle(undefined, xml, theme)).toBeUndefined()
+  })
+
+  it('a built-in id missing from a populated part still resolves from the gallery', () => {
+    // PowerPoint draws Light Style 1 - Accent 3 banding next to a one-entry part (prod
+    // deck); the earlier "unstyled" reading came from cells with an explicit <a:noFill/>
+    expect(resolveTableStyle(MEDIUM2_A1, xml, theme)?.firstRow?.fill).toEqual({
+      type: 'solid',
+      color: '#4472C4',
+    })
+    const emptyPart = `<?xml version="1.0"?><a:tblStyleLst xmlns:a="a" def="${MEDIUM2_A1}"/>`
+    expect(resolveTableStyle(MEDIUM2_A1, emptyPart, theme)?.firstRow?.fill).toEqual({
+      type: 'solid',
+      color: '#4472C4',
+    })
+    expect(resolveTableStyle(MEDIUM2_A1, undefined, theme)?.firstRow?.fill).toEqual({
+      type: 'solid',
+      color: '#4472C4',
+    })
+  })
+
+  it('tblBg fillRef + alpha band fills + lnRef borders (bnc480256)', () => {
+    const themed = {
+      ...theme,
+      fillStyles: [
+        {},
+        {},
+        { 'a:gradFill': {} }, // placeholder; parse.ts instantiates the ref, table-style only records it
+      ],
+      lnStyles: [
+        { 'a:ln': { '@_w': '25400', 'a:solidFill': { 'a:schemeClr': { '@_val': 'phClr' } } } },
+      ],
+    } as unknown as Theme
+    const bgXml =
+      '<?xml version="1.0"?><a:tblStyleLst xmlns:a="a" def="{Y}">' +
+      '<a:tblStyle styleId="{Y}" styleName="Bg">' +
+      '<a:tblBg><a:fillRef idx="3"><a:schemeClr val="accent1"/></a:fillRef></a:tblBg>' +
+      '<a:wholeTbl><a:tcStyle><a:tcBdr>' +
+      '<a:insideH><a:lnRef idx="1"><a:schemeClr val="accent1"><a:tint val="50000"/></a:schemeClr></a:lnRef></a:insideH>' +
+      '<a:insideV><a:ln><a:noFill/></a:ln></a:insideV>' +
+      '</a:tcBdr><a:fill><a:noFill/></a:fill></a:tcStyle></a:wholeTbl>' +
+      '<a:band1H><a:tcStyle><a:tcBdr/><a:fill><a:solidFill>' +
+      '<a:schemeClr val="lt1"><a:alpha val="20000"/></a:schemeClr>' +
+      '</a:solidFill></a:fill></a:tcStyle></a:band1H>' +
+      '</a:tblStyle></a:tblStyleLst>'
+    const def = resolveTableStyle('{Y}', bgXml, themed)!
+    expect(def.tblBgRef).toEqual({ idx: 3, phClr: '#4472C4' })
+    // alpha 20% → #RRGGBBAA suffix (composites over tblBg at render time)
+    expect(def.band1H?.fill).toEqual({ type: 'solid', color: '#FFFFFF33' })
+    // lnRef: phClr from the ref child (tint 50% of accent1 in linear gamma, PPT semantics),
+    // width from the theme lnStyle template
+    expect(def.insideH).toEqual({ fill: { type: 'solid', color: '#BFC8E4' }, width: 25400 })
+    // explicit <a:ln><a:noFill/> → no inside-vertical line
+    expect(def.insideV).toBeUndefined()
   })
 })
 
@@ -145,5 +248,69 @@ describe('built-in style family expansion (full GUID table)', () => {
     expect(def.lastCol?.textColor).toBe('#FFFFFF')
     expect(def.outer?.t?.fill).toEqual({ type: 'solid', color: '#000000' })
     expect(def.outer?.l).toBeUndefined()
+  })
+})
+
+describe('table-style fontRef drives cell text fonts', () => {
+  const jpTheme = {
+    ...theme,
+    minorFont: 'Arial',
+    minorScriptFonts: { Jpan: '\uff2d\uff33 \uff30\u30b4\u30b7\u30c3\u30af' },
+  } as unknown as Theme
+  const cell = (rPr: string, t: string) =>
+    `<a:tc><a:txBody><a:bodyPr/><a:p><a:r><a:rPr ${rPr}/><a:t>${t}</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>`
+  const slide = parseSlide({
+    path: 'ppt/slides/slide1.xml',
+    slideXml:
+      '<?xml version="1.0"?><p:sld xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><p:nvGrpSpPr/><p:grpSpPr/>' +
+      '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="9" name="T"/></p:nvGraphicFramePr>' +
+      '<p:xfrm><a:off x="0" y="0"/><a:ext cx="3657600" cy="914400"/></p:xfrm>' +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl>' +
+      `<a:tblPr firstRow="1"><a:tableStyleId>${MEDIUM2_A1}</a:tableStyleId></a:tblPr>` +
+      '<a:tblGrid><a:gridCol w="1828800"/><a:gridCol w="1828800"/></a:tblGrid>' +
+      `<a:tr h="914400">${cell('lang="ja-JP" altLang="en-US"', '\u30db\u30eb\u30e2\u30f3')}${cell('lang="en-US"', 'LEP')}</a:tr>` +
+      '</a:tbl></a:graphicData></a:graphic></p:graphicFrame></p:spTree></p:cSld></p:sld>',
+    ctx: {
+      theme: jpTheme,
+      // a Latin <a:ea> default (Google Slides / Mac decks) ranks below the table style
+      defaultTextStyle: { levels: [{ latinFont: 'Georgia', eaFont: 'Arial' }] },
+    },
+  })
+  const runs = (c: number) => (slide.elements[0] as any).rows[0][c].text.paragraphs[0].runs
+
+  it('ja-JP kana re-resolve +mn-ea to the theme Jpan font over the default Latin <a:ea>', () => {
+    expect(runs(0)[0].fontFamily).toBe('\uff2d\uff33 \uff30\u30b4\u30b7\u30c3\u30af')
+  })
+
+  it('Latin text takes the minor Latin font', () => {
+    expect(runs(1)[0].fontFamily).toBe('Arial')
+  })
+
+  it('an explicit <a:font> in a deck-defined tcTxStyle wins over the ref', () => {
+    const xml =
+      '<a:tblStyleLst xmlns:a="a" def="{X}"><a:tblStyle styleId="{X}" styleName="x"><a:wholeTbl>' +
+      '<a:tcTxStyle><a:font><a:latin typeface="Calibri"/><a:ea typeface="Meiryo"/></a:font>' +
+      '<a:fontRef idx="minor"><a:prstClr val="black"/></a:fontRef></a:tcTxStyle></a:wholeTbl></a:tblStyle></a:tblStyleLst>'
+    const def = resolveTableStyle('{X}', xml, jpTheme)
+    expect(def?.wholeTbl).toMatchObject({
+      fontRef: 'minor',
+      font: { latin: 'Calibri', ea: 'Meiryo' },
+    })
+    const s = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml:
+        '<?xml version="1.0"?><p:sld xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><p:nvGrpSpPr/><p:grpSpPr/>' +
+        '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="9" name="T"/></p:nvGraphicFramePr>' +
+        '<p:xfrm><a:off x="0" y="0"/><a:ext cx="3657600" cy="914400"/></p:xfrm>' +
+        '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl>' +
+        '<a:tblPr><a:tableStyleId>{X}</a:tableStyleId></a:tblPr>' +
+        '<a:tblGrid><a:gridCol w="1828800"/><a:gridCol w="1828800"/></a:tblGrid>' +
+        `<a:tr h="914400">${cell('lang="ja-JP" altLang="en-US"', '\u30db\u30eb')}${cell('lang="en-US"', 'LEP')}</a:tr>` +
+        '</a:tbl></a:graphicData></a:graphic></p:graphicFrame></p:spTree></p:cSld></p:sld>',
+      ctx: { theme: jpTheme, tableStyles: xml },
+    })
+    const row = (s.elements[0] as any).rows[0]
+    expect(row[0].text.paragraphs[0].runs[0].fontFamily).toBe('Meiryo')
+    expect(row[1].text.paragraphs[0].runs[0].fontFamily).toBe('Calibri')
   })
 })

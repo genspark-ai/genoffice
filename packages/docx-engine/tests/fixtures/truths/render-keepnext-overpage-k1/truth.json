@@ -1,0 +1,39 @@
+{
+  "id": "render-keepnext-overpage-k1",
+  "title": "An over-page keepNext chain keeps block by block: heading + first block open page 2, the block that cannot fit opens page 3",
+  "section": "word-truths.md#L477",
+  "probe_date": "2026-10-14",
+  "class": "render",
+  "source": "w3b_k1.pdf re-measured 2026-10-22: A4 1440 margins, Calibri 11, 20 filler lines + keepNext HEAD + keepNext exact 315pt + keepNext exact 390pt + caption; p2 = HEAD + BLOCK1, p3 = BLOCK2 + caption",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 3
+    },
+    {
+      "kind": "blockPage",
+      "block": 20,
+      "expect": 2,
+      "note": "HEAD opens page 2 with BLOCK1"
+    },
+    {
+      "kind": "blockPage",
+      "block": 21,
+      "expect": 2,
+      "note": "BLOCK1 on page 2"
+    },
+    {
+      "kind": "blockPage",
+      "block": 22,
+      "expect": 3,
+      "note": "BLOCK2 cannot follow: opens page 3"
+    },
+    {
+      "kind": "blockPage",
+      "block": 23,
+      "expect": 3,
+      "note": "caption kept with BLOCK2"
+    }
+  ],
+  "docx": "probe.docx"
+}

@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { cssRgb } from './DrawLayer'
 import type { TFunc } from './i18n/locale'
+import type { SavedSignature, SignatureData, SignatureStrokes } from '../shared/ipc'
+import { useModalDialog } from './modal-dialog'
+
+export type { SignatureData, SignatureStrokes }
 
 const PAD_W = 420
 const PAD_H = 150
@@ -23,24 +27,6 @@ const SIGN_FONTS: { id: string; family: string; italic?: boolean }[] = [
 
 /** Font size used when rasterizing a typed signature; large so the stamp stays crisp when scaled */
 const TYPE_FONT_PX = 200
-
-/** Signature strokes: pad pixel coords, scaled proportionally and y-flipped when placed on the page */
-export interface SignatureStrokes {
-  paths: number[][]
-  width: number
-  height: number
-}
-
-/** Confirmed signature awaiting placement: hand strokes (Ink) or a bitmap (Stamp) */
-export type SignatureData =
-  | ({ kind: 'strokes' } & SignatureStrokes)
-  | {
-      kind: 'image'
-      /** base64 PNG, without the data: prefix */
-      image: string
-      width: number
-      height: number
-    }
 
 /** Decode + downscale an image file onto a canvas (null if it can't be decoded) */
 export async function fileToCanvas(
@@ -122,6 +108,35 @@ function textToImage(
     : null
 }
 
+/** Stroke-signature thumbnail: scales the pad-coordinate paths into the card via viewBox */
+function StrokesThumb({
+  sig,
+  color,
+}: {
+  sig: SignatureStrokes
+  color: [number, number, number]
+}): ReactElement {
+  return (
+    <svg viewBox={`0 0 ${sig.width} ${sig.height}`} preserveAspectRatio="xMidYMid meet">
+      {sig.paths.map((p, i) => {
+        let d = `M ${p[0]} ${p[1]}`
+        for (let j = 2; j < p.length; j += 2) d += ` L ${p[j]} ${p[j + 1]}`
+        return (
+          <path
+            key={i}
+            d={d}
+            fill="none"
+            stroke={cssRgb(color)}
+            strokeWidth={2.4}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )
+      })}
+    </svg>
+  )
+}
+
 /** Signature dialog: draw on a pad, type text, or upload an image; confirming enters placement mode */
 export function SignatureDialog({
   color,
@@ -139,10 +154,32 @@ export function SignatureDialog({
   const [fontIdx, setFontIdx] = useState(0)
   const [imgCanvas, setImgCanvas] = useState<HTMLCanvasElement | null>(null)
   const [bw, setBw] = useState(false)
+  /** Signatures persisted in userData; picking one skips creation and goes straight to placement */
+  const [saved, setSaved] = useState<SavedSignature[]>([])
+  const [saveForReuse, setSaveForReuse] = useState(true)
   const fileRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useModalDialog(onCancel)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const pathsRef = useRef<number[][]>([])
   const curRef = useRef<number[] | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    window.pdfApi
+      .listSavedSignatures()
+      .then((list) => {
+        if (alive) setSaved(list)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const removeSaved = (id: string) => {
+    setSaved((prev) => prev.filter((s) => s.id !== id))
+    window.pdfApi.removeSavedSignature(id).catch(() => {})
+  }
 
   /** Processed image + preview data URL, recomputed when the source or the B&W toggle changes */
   const processedImg = useMemo(() => {
@@ -203,17 +240,23 @@ export function SignatureDialog({
     redraw()
   }
 
+  /** New signature confirmed: persist it for reuse (unless opted out), then hand off to placement */
+  const finish = (sig: SignatureData) => {
+    if (saveForReuse) window.pdfApi.addSavedSignature(sig).catch(() => {})
+    onConfirm(sig)
+  }
+
   const confirm = () => {
     if (mode === 'draw') {
       const paths = pathsRef.current.filter((p) => p.length >= 4)
-      if (paths.length > 0) onConfirm({ kind: 'strokes', paths, width: PAD_W, height: PAD_H })
+      if (paths.length > 0) finish({ kind: 'strokes', paths, width: PAD_W, height: PAD_H })
       return
     }
     if (mode === 'image') {
       if (!processedImg) return
       const base64 = processedImg.canvas.toDataURL('image/png').split(',')[1]
       if (base64) {
-        onConfirm({
+        finish({
           kind: 'image',
           image: base64,
           width: processedImg.canvas.width,
@@ -225,7 +268,7 @@ export function SignatureDialog({
     const text = typed.trim()
     if (!text) return
     const sig = textToImage(text, SIGN_FONTS[fontIdx] ?? SIGN_FONTS[0]!, color)
-    if (sig) onConfirm(sig)
+    if (sig) finish(sig)
   }
 
   const canConfirm =
@@ -233,8 +276,44 @@ export function SignatureDialog({
 
   return (
     <div className="pdf-modal-mask" onClick={onCancel}>
-      <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="pdf-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('signTitle')}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="pdf-modal-title">{t('signTitle')}</div>
+        {saved.length > 0 && (
+          <>
+            <div className="pdf-sign-saved-label">{t('signSaved')}</div>
+            <div className="pdf-sign-saved">
+              {saved.map((s) => (
+                <div key={s.id} className="pdf-sign-saved-item">
+                  <button
+                    className="pdf-sign-saved-pick"
+                    title={t('signPlace')}
+                    onClick={() => onConfirm(s.data)}
+                  >
+                    {s.data.kind === 'image' ? (
+                      <img src={`data:image/png;base64,${s.data.image}`} alt="" />
+                    ) : (
+                      <StrokesThumb sig={s.data} color={color} />
+                    )}
+                  </button>
+                  <button
+                    className="pdf-sign-saved-del"
+                    title={t('signSavedDelete')}
+                    onClick={() => removeSaved(s.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
         <div className="pdf-sign-tabs">
           <button
             className={`pdf-sign-tab${mode === 'draw' ? ' active' : ''}`}
@@ -305,9 +384,13 @@ export function SignatureDialog({
               onChange={(e) => void pickImage(e)}
             />
             {processedImg ? (
-              <div className="pdf-sign-imgbox" onClick={() => fileRef.current?.click()}>
+              <button
+                className="pdf-sign-imgbox"
+                title={t('signAddImage')}
+                onClick={() => fileRef.current?.click()}
+              >
                 <img className="pdf-sign-img" src={processedImg.url} alt="" />
-              </div>
+              </button>
             ) : (
               <button
                 className="pdf-sign-imgbox pdf-sign-imgbox-empty"
@@ -328,6 +411,14 @@ export function SignatureDialog({
             </label>
           </>
         )}
+        <label className="pdf-sign-bw">
+          <input
+            type="checkbox"
+            checked={saveForReuse}
+            onChange={(e) => setSaveForReuse(e.target.checked)}
+          />
+          {t('signSave')}
+        </label>
         <div className="pdf-modal-actions">
           {mode === 'draw' && (
             <button className="pdf-modal-btn" onClick={clear}>

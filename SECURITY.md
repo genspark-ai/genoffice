@@ -55,7 +55,9 @@ the same command pipeline as manual edits.
    JSON-like, prototype-free data. Errors discard all buffered operations;
    logs are capped.
 5. Execution has statement/expression and call-depth limits to bound runaway
-   loops or recursion.
+   loops or recursion. Regular expressions run on an interpreter-owned matcher
+   with its own step budget (a supported subset; no native backtracking), so a
+   catastrophic pattern cannot stall the renderer past those limits.
 
 The Electron renderer sandbox remains defense in depth, but it is not the
 layout-script security boundary. The interpreter is designed so a layout
@@ -65,13 +67,22 @@ If you find a way for a layout script to reach anything beyond the injected
 primitives (network, storage, IPC channels not reachable by design, or the
 main process), that is a vulnerability — please report it.
 
-## Threat Model: Rendering AI-Generated HTML (slides export)
+## Threat Model: Rendering AI-Generated HTML
 
-The HTML-to-pptx export pipeline renders AI-generated HTML in a hidden
-`BrowserWindow`. That window is treated as hostile content: full renderer
+Three pipelines render AI-generated or untrusted HTML in a hidden
+`BrowserWindow`. Every window is treated as hostile content: full renderer
 lockdown (`sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`),
-no preload script, no IPC surface — the main process drives it exclusively
-through `executeJavaScript` and destroys it under a watchdog timeout.
+no preload script, no IPC surface. The slides hidden windows only load the
+app's own renderer and print HTML (PDF export, print, headless export); the
+AI-HTML-to-pptx conversion runs inside the slides renderer, never in a hidden
+window. The HTML app's DOCX export and the docs altChunk conversion drive their
+windows exclusively through `executeJavaScript` under a watchdog timeout
+(`Promise.race` against a fixed timeout, then `destroy()`), so a page whose
+scripts never yield cannot strand the hidden window. HTML→DOCX
+conversion renders the page with scripts enabled and does not sanitize the
+markup before conversion — the output is a document, not a sandbox escape;
+report it as a vulnerability if you find a way from the converted page into
+the main process.
 
 ## Out of Scope
 

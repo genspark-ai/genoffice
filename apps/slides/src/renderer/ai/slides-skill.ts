@@ -6,10 +6,21 @@ import type {
   RenderSlide,
   ShapeRenderNode,
 } from '@genoffice/pptx-render'
-import type { AddSmartArtOp, AgentToolCall, AgentToolDef, EditParagraph } from '../../shared/ipc'
-import { auditSlideLayout, formatAudit } from './layout-audit'
-import { runLayoutScript, type LayoutScriptElement, type SlideStylePatch } from './layout-script'
+import type { AgentToolCall, AgentToolDef } from '../../shared/ipc'
+import { OP_GROUPS, opGuide, opGuideCatalog, opSignatureIndex } from '@genoffice/pptx-ops/op-docs'
+import { auditSlideLayout, formatAudit } from '@genoffice/pipelines/slides/layout-audit'
+import { runLayoutScript, type LayoutScriptElement } from './layout-script'
+import {
+  extractLayoutSkeleton,
+  formatSkeletonForPrompt,
+  skeletonRole,
+  type LayoutSkeleton,
+} from './layout-skeleton'
 import { t } from '../i18n/locale'
+import systemPrompt from './prompts/system.md?raw'
+import { placeholderInstruction } from './redact'
+import { textForModel, redactLabelsOf } from './redact-view'
+import { redactGuardFor } from './redact-guard'
 
 /**
  * Slides capability as an AgentSkill: deck outline context + three tools (read structure /
@@ -19,6 +30,10 @@ import { t } from '../i18n/locale'
  */
 
 // ── Generation progress events (for the onProgress callback; renderer memory only, never persisted or journaled) ──
+
+/** Upper bound on generate_deck approx_pages; bounds planner round trips and the progress note. */
+export const MAX_APPROX_PAGES = 200
+const MAX_PROGRESS_NOTE_PAGES = 40
 
 /** Per-page progress status */
 export type PageProgressStatus = 'pending' | 'running' | 'done' | 'error'
@@ -59,7 +74,13 @@ export type DeckProgressEvent =
       summary: string
       pages: PageProgressItem[]
     }
-  | { stage: 'done'; total: number; summary: string }
+  | {
+      stage: 'done'
+      total: number
+      summary: string
+      /** absent on success; the card must not read a failed or stopped run as "done" */
+      outcome?: 'failed' | 'cancelled'
+    }
 
 /** Panel/skill access point to the currently open deck (refs provided by App, stay fresh across renders). */
 export interface DeckAccess {
@@ -75,12 +96,12 @@ export interface DeckAccess {
    * memory, never persisted or journaled.
    */
   onProgress?(event: DeckProgressEvent): void
-  /** HTML→PPTX pipeline: several pages of HTML → generate editable native elements and replace/append the current deck. Returns total page count or an error.
-   *  mode="insert_at" inserts a single HTML page at position insertAt (later pages shift) — used to re-insert failed pages at their original position.
+  /** Land generated pages: each pageMarkers entry redeems a one-slide pptx, merged into / replacing the current deck. Returns total page count or an error.
+   *  mode="insert_at" inserts a single page at position insertAt (later pages shift) — used to re-insert failed pages at their original position.
    *  On pipeline failure it automatically falls back to element-level mode; fallbackReason explains why (ok is still true).
    *  deckName = presentation name derived from user input, used as the file name when the new draft is saved (instead of "Untitled-timestamp"). */
-  generateFromHtml?(
-    pagesHtml: string[],
+  landGeneratedPages?(
+    pageMarkers: string[],
     mode?: 'replace' | 'append' | 'insert_at',
     deckName?: string,
     insertAt?: number,
@@ -93,10 +114,10 @@ export interface DeckAccess {
     fallbackReason?: string
     imageFailures?: { page: number; url: string }[]
   }>
-  /** Redo one slide in place: single-page HTML → convert → replace slide slideIndex (other slides untouched; undoable with ⌘Z). */
+  /** Redo one slide in place: land the marker's page as a replacement for slide slideIndex (other slides untouched; undoable with ⌘Z). */
   regenerateSlide?(
     slideIndex: number,
-    html: string,
+    marker: string,
   ): Promise<{ ok: boolean; error?: string; imageFailures?: { page: number; url: string }[] }>
   /** Survey: shows a card with options and waits for the user's choices, returning an answer summary. */
   askClarification?(questions: ClarifyQuestion[]): Promise<{ answers: string; cancelled?: boolean }>
@@ -106,15 +127,16 @@ export interface DeckAccess {
    * On search failure returns an empty array (fail-open; doesn't block the main generation path).
    */
   searchImages?(query: string, maxResults: number): Promise<string[]>
-  /** Whether cloud single-page generation is available (kill switch + gsk login state) */
-  isCloudPageGenEnabled?(): Promise<boolean>
+  /** live predicate (gsk login && cloud-tools toggle, or a BYOK media key); false hides generate_image */
+  imageGenAvailable?(): boolean
+  /** same for analyze_media */
+  mediaAnalysisAvailable?(): boolean
   /**
-   * Cloud single-page generation (gsk slide_generate), used by generate_deck's self-driven
-   * pipeline: given the unified style + this page's brief/layout/images, the cloud service
-   * writes the HTML and converts it to a one-slide pptx. Returns a marker string that goes
-   * into a generateFromHtml pagesHtml slot.
+   * Single-page generation used by generate_deck / regenerate_slide: one LLM request writes a
+   * structured slide spec and the main process builds it directly into a one-slide pptx.
+   * Returns a marker string that goes into a landGeneratedPages pageMarkers slot.
    */
-  generatePageCloud?(args: {
+  generatePageLocal?(args: {
     pageIndex: number
     totalPages: number
     coreHook: string
@@ -127,8 +149,10 @@ export interface DeckAccess {
     topic?: string
     canvasW: number
     canvasH: number
+    /** Formatted template-chrome block (layout-skeleton.ts) for this page's role; absent without a template */
+    skeleton?: string
     signal?: AbortSignal
-  }): Promise<{ ok: boolean; marker?: string; error?: string }>
+  }): Promise<{ ok: boolean; marker?: string; error?: string; imageFailures?: string[] }>
   /**
    * In-tool Style Skill generation:
    * a dedicated LLM call focused on producing a complete structured visual style guide
@@ -169,21 +193,29 @@ export interface DeckAccess {
   saveSidecar?(data: { topic: string; styleSkill: string; createdAt: string }): Promise<void>
   /**
    * Save styleSkill into userData/style-templates/<name>.json for later reuse.
+   * `layout` is the deck's extracted chrome skeleton (title/brand-image slots,
+   * accents, backgrounds) — generation uses it to keep those elements consistent
+   * across pages (see layout-skeleton.ts).
    */
   saveStyleTemplate?(
     name: string,
-    data: { topic: string; styleSkill: string; createdAt: string },
+    data: { topic: string; styleSkill: string; createdAt: string; layout?: LayoutSkeleton },
   ): Promise<{ ok: boolean; error?: string }>
   /**
    * List saved Style templates (name + topic + createdAt).
    */
   listStyleTemplates?(): Promise<Array<{ name: string; topic: string; createdAt: string }>>
   /**
-   * Load the content of a given Style template.
+   * Load the content of a given Style template (styleSkill text plus, for
+   * templates saved by a build with skeleton support, the layout skeleton).
    */
-  loadStyleTemplate?(
-    name: string,
-  ): Promise<{ ok: boolean; styleSkill?: string; topic?: string; error?: string }>
+  loadStyleTemplate?(name: string): Promise<{
+    ok: boolean
+    styleSkill?: string
+    topic?: string
+    layout?: LayoutSkeleton
+    error?: string
+  }>
   fitWidthPx: number
   /** Base retry backoff in ms for single-page generation failures (default 2000; tests pass 0 to disable backoff) */
   retryBackoffMs?: number
@@ -193,6 +225,25 @@ export interface DeckAccess {
    * (decks must be built from attachment content, not generic filler).
    */
   unreadTextAttachments?(): string[]
+  /**
+   * Resolve a user image attachment by file name (an `attachment://` reference in
+   * insert_web_image / replace_image) to its raw bytes, so the original file is
+   * embedded as-is — the model must never recreate an attached image (r182 family).
+   */
+  resolveAttachmentImage?(
+    name: string,
+  ): Promise<{ ok: true; base64: string; ext: string } | { ok: false; error: string }>
+}
+
+/** `attachment://<file name>` → decoded file name, or null when not an attachment reference. */
+export function attachmentRefName(url: string): string | null {
+  if (!url.toLowerCase().startsWith('attachment://')) return null
+  const raw = url.slice('attachment://'.length).trim()
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
 }
 
 /** Single survey question structure (with options). */
@@ -206,139 +257,7 @@ export interface ClarifyQuestion {
   multi?: boolean
 }
 
-const AGENT_SYSTEM_PROMPT = `You are the AI assistant inside GenOffice Slides (a slide editor), helping users improve and generate presentations.
-
-## Most important tool-selection principles (judge the scenario before acting)
-- **Creating a whole new deck (from scratch)** → first gather material (web_search) and images (image_search), then call **generate_deck**. With many pages, prefer **passing topic + approx_pages + context (the real material you found)** and let the system plan internally + generate page by page + display page by page (**you don't hand-write dozens of pages, and no pages get missed / arguments truncated**). For few pages where you already know each page, you may pass core_hook+style+pages directly.
-- **Adding 1 page or a few pages to an existing deck** → generate_deck(pages: briefs for just the new pages, insert_mode:"append"). Write each page's brief in detail (real content/data per region + layout); first look at the existing pages (get_deck_context) and pass a style description matching them so new pages stay consistent. **Even a single new page goes through this cloud generation; don't fall back to native tools and build a crude page**.
-- **Redoing / redesigning an existing page** (user says "redo this page / redesign it / try another layout / make it prettier") → **regenerate_slide**: first read_slide to get the page's original copy, then pass a detailed brief (copy the text/data to keep into the brief verbatim, state what to change and the target layout); the cloud service regenerates the page in place (other pages untouched). Don't dismantle and rebuild the whole page element by element with native tools.
-- **Deleting a page** → delete_slide(slideIndex).
-- **Modifying / fine-tuning existing elements** (position/size/alignment/distribution/relative nudges/text/style/fill/stroke, one or many elements) → always prefer **execute_slide_script** and do it in one script (see "Editing existing elements" below; read-write combined, no read_slide first). Don't blind-fire individual set_element_* calls. Add/delete elements with add_* / delete_element; redo a whole page with regenerate_slide.
-- **Elements inside a group**: direct children of a top-level group (marked "in group <id>" / els groupId) are edited exactly like normal elements — same script primitives and set_element_* tools, absolute coordinates. Only elements nested in a sub-group are read-only: call ungroup_element on the outer group first (ids on the page change afterwards; the result returns the fresh list). To delete a single group member, ungroup first too.
-- **Key constraint**: after cloud generation, do **not** use native tools to "polish/redo" a generated page — the output is the final good-looking result. Only when the user asks for a specific change should you edit the corresponding element with native tools; if they ask to redo the whole page, use regenerate_slide.
-- **When the user attached files (see the "attachment list" in each turn's context)**: first read all text attachments with read_attachment (paginate long files); image attachments were already sent as images with the message, just look at them. Only **then** plan/generate the deck — content should come from the attachments first. When calling generate_deck, put the key content you read into the context argument; no need to web_search information the attachments already cover. **This is enforced: generate_deck refuses to run while any text attachment is still unread.**
-
-Rules:
-- Every user message comes with a deck outline (per-page list of text elements with element ids and text previews). Previews are truncated; read the full text with read_slide before rewriting.
-- Change text with set_element_text: it replaces the element's entire text, so you must pass the complete post-edit paragraph list, not just the changed part.
-- Page numbers are shown to the user starting at 1; the slideIndex tool argument is 0-based.
-- **The user's "page N" always means the current order in this turn's latest <deck outline> (row N is page N)**. The user may add/remove/move/swap pages at any time; page order from history or earlier turns may be stale — locate pages only by this turn's latest outline, never by generation order, content semantics, or old conversation.
-- Canvas coordinate system: pixels, origin top-left, width 1280, height in the outline's first line (720 for 16:9). All element positions/sizes use it.
-- Font size unit is pt: large titles 36–44, subtitles 20–26, body 14–18. Colors are #RRGGBB.
-- Element colors are readable: the outline shows each page's main fills; read_slide and script els expose per-element fill/textColor/strokeColor (hex, read-only — change them with setFill/setStyle/setStroke or set_element_fill/stroke). Picture/chart colors are not readable; don't guess them.
-- For editing existing elements (position/size/text/style/fill/stroke) prefer execute_slide_script; set_element_text/style/transform/fill/stroke are only shortcuts for "one element, one property". Multi-property/multi-element/relative nudges/align-distribute always use a script.
-
-Editing existing elements (user says "move it a bit / align / restyle / fix the layout / it looks messy" etc.):
-**Core: write execute_slide_script directly, don't read_slide first.** At run time the script automatically receives every element's real geometry and text on the page (els, with x/y/w/h/text and read-only fill/textColor/strokeColor); reading and writing happen at execution site — you don't need coordinates in advance, compute from els inside the script (same idea as Google Slides' execute_apps_script).
-Example mappings: "move the title left a bit"→moveBy(titleId, -30, 0); "shift this text right"→moveBy(id, 40, 0); "left-align the subtitle with the title"→const t = els.find(e => e.id === titleId); setBox(subtitleId, { x: t.x }); "make the title blue and bold"→setStyle(id, { color: '#1a73e8', bold: true }); "tidy up this page"→compute equal spacing/columns in the script and batch setBox.
-1. (Optional) Plan the target layout (e.g. three-column cards / top-bottom split), tell the user in a sentence or two;
-2. **Immediately** call execute_slide_script: write JS that finds elements in els by id/text (e.text), computes algorithmically from els' real coordinates (use formulas for spacing/alignment, no hard-coded magic numbers), and writes back with setBox/moveBy/resizeBy/setText/setStyle/setFill/setStroke. One script adjusts the whole page;
-3. Check the <layout-audit> in the tool result: **if there is overlap/out-of-bounds/overflow, immediately write another execute_slide_script in the same turn to fix it** (don't stop to ask the user, don't declare done); at most 2 fix rounds; only an audit ✅ pass counts as done.
-els already contains each element's geometry and full text; editing existing elements generally doesn't need read_slide.
-Forbidden: running read_slide "just to get coordinates" and then stopping, blind-firing dozens of per-element set_element_transform calls, or telling the user "done" while the audit reports problems.
-- Batch changes (e.g. "make all titles blue", "unify the font"): first get_deck_context for the global view, then call the right tool per element; go page by page, element by element, don't miss any.
-- Omit fontFamily by default (inherits the theme, keeps the deck consistent — recommended); only specify it when the user names a font.
-- Keep slide copy concise: punchy titles, bulleted body. Don't rewrite bullets into long sentences unless asked.
-
-Generating a whole deck / adding pages (HTML pipeline first):
-
-[Plan before generating a whole deck — you are a professional deck planner; plan first, then write HTML (this decides the output quality)]
-
-Step 0 Questionnaire (mandatory when creating a whole new deck): first call ask_clarification to show a questionnaire card with 2–4 key trade-off questions for this topic (audience, usage scenario, tone/style, content focus), each with genuinely different options. **The user's choices directly determine the deck's Core Hook and style**; do the planning below only after getting the answers. (Ask only for a whole new deck; adding a few pages or editing needs no questionnaire. The card shows automatically — don't repeat the questions in your reply text.)
-
-Step A Research: when the topic involves facts/attractions/data, run web_search 1–2 times first for real content. **Use real data and facts in the design; no "XX%" or placeholder names**.
-Step B Image strategy: with generate_deck you **don't need image_search in advance** — the system auto-searches internally per page from the planned image_queries keywords and fills real URLs back (each keyword searched once, deduped across pages). **Travel/product/people/brand decks get images by default without the user asking; never fake images with CSS placeholders — slots needing images must be filled with real ones**. Only when redoing a page via regenerate_slide or adding images to existing pages via insert_web_image do you image_search yourself first (English keywords describing a concrete scene like "summer palace kunming lake", not generic words like "park").
-Step C Unified style: first define one design system for the whole deck — primary/secondary colors, title and body font-size scale, content margins, card/corner style (e.g. "teal primary + cream background + sans-serif fresh look"). **Every page's HTML strictly follows the same system; style must be consistent across pages**.
-Step D Generate (call generate_deck): with many pages pass topic + approx_pages + context (feed in the real material from Step A) and let the system plan internally; with few pages you may pass core_hook+style+pages directly (image_queries takes English image-search keywords; **the system auto-searches internally and fills real URLs back**, no image_search needed in advance). The system writes HTML page by page and lands pages as they generate; you don't hand-write HTML.
-Step E Vary layouts per page (avoid sameness): 3 parallel points→three-column cards; a key number→big-number hero; comparison→two columns; sequence→timeline; image+text→left-text-right-image / full-image with text overlay. **Content pages of one deck must not all use the same layout**.
-
-- **generate_deck is the first choice for a whole new deck**: with many pages pass topic+approx_pages+context; the system plans internally (auto-batching over the threshold), **auto-searches images**, writes HTML page by page, and **lands pages onto the canvas as they generate (the user sees them one by one)**. **Neither "only page 1 got generated" nor "arguments were truncated" can happen — the page count is guaranteed by the system loop**.
-- **When adding just 1 page or a few pages (common case)**: also use generate_deck with **pages (briefs for only the new pages) + insert_mode:"append"** (appended at the end, existing pages untouched). **New pages also go through the cloud generation for polish — don't fall back to native tools for a crude page just because it's one page**. Before adding, read_slide/get_deck_context to see the existing pages' style (primary color/layout) and pass a matching style description; write each brief with the real content per region.
-- Briefs should be concrete: what text/data/numbers go in each region, which image goes where, and the layout name — the cloud designer follows your brief; vague briefs produce generic pages.
-- After generation, if the user wants a tweak, edit the corresponding element with the native tools below; don't redo whole pages unprompted "to look better". Use regenerate_slide only when the user explicitly asks to redo a page.
-
-Native tools (only for modifying/refining existing pages, not for generating from scratch):
-- add_slide clones a layout into a new page (layout-preserving blank page); add_text_box lays out text; add_shape makes color blocks/accent bars (kind supports any OOXML preset geometry rect/roundRect/ellipse/star5…).
-- For data display use add_chart (native bar/line/pie charts); for structured comparisons use add_table (cells can pre-fill text; later edit_table_cell edits cells, edit_table_structure adds/removes rows/columns); for flows/cycles/hierarchies/lists use add_smartart.
-- set_slide_background sets a solid background (slideIndex=-1 for all pages); on dark backgrounds remember to lighten the text.
-- Refine page by page, element by element; 2–4 elements per page is enough — fewer beats crowded.
-- Keep replies short, say what you did; don't recite tool results back to the user.
-
-Search and images:
-- Use web_search when you need current information/data/fact-checking; search before writing anything uncertain, don't fabricate. When generating a whole deck, a round of searching for real material first is recommended.
-- **Figure provenance is enforced at the tool layer**: add_chart / edit_chart (with series) and data-dense generate_deck / regenerate_slide briefs refuse to run without a dataSource declaration; 'search' is only accepted after an actual web_search in this conversation. Fabricating precise numbers (¥21.8-style precision) and delivering them as fact is the worst failure mode — when no real data is available, use dataSource:'sample' and tell the user explicitly that the figures are illustrative.
-- image_search for images (English keywords) → get imageUrl. **Two usages**: 1) when redoing a page via regenerate_slide, pass the imageUrl in image_urls; 2) when adding an image to an existing page, use insert_web_image to insert at a position. (generate_deck searches images internally; no advance search needed for a whole new deck.)
-- Travel, product, people, and brand decks get images by default without the user asking; mind whitespace between images and text, no overlap.
-- Editing an EXISTING picture: crop_image (non-destructive srcRect), set_picture_opacity, replace_image (in-place swap keeping frame/z-order/border). For "remove this image's background / upscale / edit this image": run generate_image with referenceImageUrls pointing at a source URL you have (an image_search result or one the user provided — embedded picture bytes are not addressable by URL), then replace_image with the returned URL. Never delete+reinsert a picture to change its content — that loses z-order and effects.
-
-Style templates:
-- When the user says "use last time's style"/"use some template": first call list_style_templates() to see what exists, then pass the style_template name to generate_deck (the system skips Step 0 and uses the template's style).
-- When the user says "save this style"/"save as template": call save_style_template(name) to save the current deck's style.`
-
-/** Paragraph schema (shared by set_element_text / add_text_box / add_shape) */
-const PARAGRAPHS_DEF = {
-  paragraphs: {
-    type: 'array',
-    description: 'Complete paragraph list, one object per paragraph',
-    items: {
-      type: 'object',
-      properties: {
-        text: { type: 'string', description: 'Paragraph plain text' },
-        bold: { type: 'boolean' },
-        italic: { type: 'boolean' },
-        underline: { type: 'boolean' },
-        fontSize: { type: 'number', description: 'Font size (pt)' },
-        fontFamily: {
-          type: 'string',
-          description: 'Font name; omit to inherit the theme font (recommended)',
-        },
-        color: { type: 'string', description: '#RRGGBB' },
-        align: { type: 'string', enum: ['left', 'center', 'right'] },
-      },
-      required: ['text'],
-    },
-  },
-} as const
-
-interface ToolParagraph {
-  text?: unknown
-  bold?: boolean
-  italic?: boolean
-  underline?: boolean
-  fontSize?: number
-  fontFamily?: string
-  color?: string
-  align?: 'left' | 'center' | 'right'
-}
-
-function toEditParagraphs(raw: unknown): EditParagraph[] | null {
-  if (!Array.isArray(raw) || raw.length === 0) return null
-  return raw.map((p) => {
-    const para = p as ToolParagraph
-    return {
-      runs: [
-        {
-          text: String(para.text ?? ''),
-          ...(para.bold ? { bold: true } : {}),
-          ...(para.italic ? { italic: true } : {}),
-          ...(para.underline ? { underline: true } : {}),
-          ...(typeof para.fontSize === 'number' ? { fontSize: para.fontSize } : {}),
-          ...(para.fontFamily ? { fontFamily: para.fontFamily } : {}),
-          ...(para.color ? { color: para.color } : {}),
-        },
-      ],
-      ...(para.align ? { align: para.align } : {}),
-    }
-  })
-}
-
 const TOOLS: AgentToolDef[] = [
-  {
-    name: 'get_deck_context',
-    description:
-      "Get the deck's latest outline: per-page list of text elements (element id | type | text preview). Call to confirm global state after edits.",
-    inputSchema: { type: 'object', properties: {}, required: [] },
-  },
   {
     name: 'read_slide',
     description:
@@ -352,73 +271,19 @@ const TOOLS: AgentToolDef[] = [
     },
   },
   {
-    name: 'set_element_text',
-    description:
-      "Replace a text element's entire content. paragraphs is the complete post-replacement paragraph array, one object per paragraph; whole-paragraph bold/italic etc. use the boolean fields on the paragraph object.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer', description: 'Page number (0-based)' },
-        sourceId: { type: 'string', description: 'Element id (from the outline/read_slide)' },
-        paragraphs: { $ref: '#/definitions/paragraphs' },
-      },
-      required: ['slideIndex', 'sourceId', 'paragraphs'],
-      definitions: PARAGRAPHS_DEF,
-    },
-  },
-  {
-    name: 'set_element_style',
-    description:
-      "Change an element's text formatting without changing the text: font size/color/bold/italic/underline/alignment/font. " +
-      "Pass only the fields to change; others stay as-is. Applies to the element's entire text.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer', description: 'Page number (0-based)' },
-        sourceId: { type: 'string', description: 'Element id' },
-        fontSize: { type: 'number', description: 'Font size (pt)' },
-        color: { type: 'string', description: '#RRGGBB' },
-        bold: { type: 'boolean' },
-        italic: { type: 'boolean' },
-        underline: { type: 'boolean' },
-        fontFamily: { type: 'string', description: 'Font name; usually omit to inherit the theme' },
-        align: { type: 'string', enum: ['left', 'center', 'right'] },
-      },
-      required: ['slideIndex', 'sourceId'],
-    },
-  },
-  {
-    name: 'set_element_transform',
-    description:
-      'Move/resize/rotate an element (pixel coordinates, origin top-left, canvas 1280 wide). Pass only the fields to change; others keep their values.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        sourceId: { type: 'string' },
-        x: { type: 'number', description: 'Top-left x (px)' },
-        y: { type: 'number', description: 'Top-left y (px)' },
-        w: { type: 'number', description: 'Width (px)' },
-        h: { type: 'number', description: 'Height (px)' },
-        rotationDeg: { type: 'number', description: 'Rotation angle (degrees, clockwise)' },
-      },
-      required: ['slideIndex', 'sourceId'],
-    },
-  },
-  {
     name: 'execute_slide_script',
     description:
       "[Preferred tool for editing a slide's existing elements] Runs your JS edit script against one page; a single script covers: position/size/alignment/distribution/relative nudges/text/style/fill/stroke." +
       ' At run time the script automatically receives the real geometry and text of every element on the page (els) — **no read_slide needed first**; read-write combined, compute from els inside the script.' +
-      ' Geometry changes are applied atomically in one batch (undoable as a whole), the rest in script order, and a layout audit (overlap/out-of-bounds/text overflow) is returned at the end.' +
+      ' The whole script is one atomic transaction: geometry in one batch, the rest in script order, one undo step; if any operation fails, everything rolls back and the page is unchanged — fix the script and resend it whole. A layout audit (overlap/out-of-bounds/text overflow) is returned at the end.' +
       ' Far more reliable than individual set_element_* calls — coordinate math happens at execution site, not from memory. If the audit reports problems, call this tool again immediately to fix.\n' +
       'Script environment (constrained synchronous JS-like DSL; no external APIs or ambient globals):\n' +
-      '- els: array, each item {id,type,text,x,y,w,h,rotation,fontSizePt?,fill?,textColor?,strokeColor?,inGroup?,groupId?,locked?} (pixels, origin top-left; fill/textColor/strokeColor are current colors in #RRGGBB, read-only — write via setFill/setStyle/setStroke; inGroup+groupId=directly editable group child (all primitives work, coordinates absolute as shown); inGroup without groupId=nested in a sub-group, read-only — ungroup_element the outer group first; locked=layout decoration, read-only)\n' +
+      '- els: array, each item {id,type,text,x,y,w,h,rotation,fontSizePt?,fill?,textColor?,strokeColor?,inGroup?,groupId?,locked?} (pixels, origin top-left; fill/textColor/strokeColor are current colors in #RRGGBB, read-only — write via setFill/setStyle/setStroke; inGroup+groupId=directly editable group child (all primitives work, coordinates absolute as shown); inGroup without groupId=nested in a sub-group, read-only — apply_ops ungroupElement on the outer group first; locked=layout decoration, read-only)\n' +
       '- canvas: {w,h} canvas size (px)\n' +
       "- setBox(id, {x?,y?,w?,h?,rotation?}): set an element's target box, pass only fields to change\n" +
       '- moveBy(id, dx, dy): relative move (left = negative dx, up = negative dy)\n' +
       '- resizeBy(id, dw, dh): relative resize\n' +
-      "- setText(id, textOrParagraphs): replace text entirely; pass a string (split into paragraphs by \\n) or a paragraph array (same format as set_element_text's paragraphs)\n" +
+      '- setText(id, textOrParagraphs): replace text entirely; pass a string (split into paragraphs by \\n) or a paragraph array (same format as apply_ops setText paragraphs). Plain runs/strings inherit the original size, color and font — do not add fontSize/color/fontFamily unless the user asked to restyle\n' +
       '- setStyle(id, {fontSize?,color?,bold?,italic?,underline?,align?,fontFamily?}): change style without changing text, pass only fields to change\n' +
       "- setFill(id, colorOrNone): solid fill '#RRGGBB' or 'none'\n" +
       '- setStroke(id, {color?,widthPt?} | null): stroke; pass null to remove\n' +
@@ -446,35 +311,6 @@ const TOOLS: AgentToolDef[] = [
         },
       },
       required: ['slideIndex', 'code'],
-    },
-  },
-  {
-    name: 'set_element_fill',
-    description: 'Set an element\'s solid fill. fill=#RRGGBB; pass "none" for no fill.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        sourceId: { type: 'string' },
-        fill: { type: 'string', description: '#RRGGBB or none' },
-      },
-      required: ['slideIndex', 'sourceId', 'fill'],
-    },
-  },
-  {
-    name: 'set_element_stroke',
-    description:
-      "Set an element's stroke. Pass color (#RRGGBB) + widthPt (points); to remove the stroke pass remove=true.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        sourceId: { type: 'string' },
-        color: { type: 'string', description: '#RRGGBB' },
-        widthPt: { type: 'number', description: 'Line width (points), default 1' },
-        remove: { type: 'boolean', description: 'true = remove stroke' },
-      },
-      required: ['slideIndex', 'sourceId'],
     },
   },
   {
@@ -506,7 +342,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'generate_image',
     description:
-      'AI image generation/editing (Genspark). Text-to-image, or pass referenceImageUrls for image editing; returns an image URL. NEW imagery: insert with insert_web_image. Editing an EXISTING slide picture (background removal/upscaling/etc.): swap it in place with replace_image — do not insert a duplicate. Use for custom illustrations/icons/backgrounds, style-consistent imagery; for real photos/screenshots still use image_search.',
+      'AI image generation/editing. Text-to-image, or pass referenceImageUrls for image editing; returns an image URL. NEW imagery: insert with insert_web_image. Editing an EXISTING slide picture (background removal/upscaling/etc.): swap it in place with replace_image — do not insert a duplicate. Use for custom illustrations/icons/backgrounds, style-consistent imagery; for real photos/screenshots still use image_search. NEVER use it to recreate an image the user attached (logo, photo) — embed the original with insert_web_image / replace_image and url=attachment://<file name>. Icons/logos/cutouts that must sit on slide content need transparentBackground:true — asking for a transparent background in the prompt does NOT work (models paint a fake gray checkerboard into the pixels).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -518,7 +354,7 @@ const TOOLS: AgentToolDef[] = [
         model: {
           type: 'string',
           description:
-            'Optional, defaults to the general model. Specify only for special purposes: fal-bria-rmbg=background removal, fal-ai/recraft-clarity-upscale=upscale, flux-pro/outpaint=outpaint, fal-ai/image-editing/text-removal=remove text watermark',
+            'Optional, defaults to the configured model. Genspark only — specify for special purposes: fal-bria-rmbg=background removal, fal-ai/recraft-clarity-upscale=upscale, flux-pro/outpaint=outpaint, fal-ai/image-editing/text-removal=remove text watermark',
         },
         referenceImageUrls: {
           type: 'array',
@@ -529,6 +365,11 @@ const TOOLS: AgentToolDef[] = [
           type: 'string',
           description: 'Aspect ratio: 1:1|4:3|16:9|9:16|3:4|2:3|3:2|auto',
         },
+        transparentBackground: {
+          type: 'boolean',
+          description:
+            'Set true when the result must have a real transparent background (icons, logos, cutouts placed over slide content). The app strips the background automatically after generation; never rely on the prompt for transparency.',
+        },
       },
       required: ['prompt'],
     },
@@ -536,7 +377,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'analyze_media',
     description:
-      'Analyze media content (Genspark): understand images/audio/video. Pass media URLs (or local file paths) and analysis requirements; returns analysis text. Video supports extracting key points, structure, and time ranges — good for turning user material into usable deck content.',
+      'Analyze media content: understand images/audio/video (video and audio need Genspark or Gemini as the media provider). Pass media URLs (or local file paths) and analysis requirements; returns analysis text. Video supports extracting key points, structure, and time ranges — good for turning user material into usable deck content.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -557,12 +398,17 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'insert_web_image',
     description:
-      'Download an image URL obtained from image_search or generate_image and insert it into a page (pixel coordinates).',
+      'Download an image URL obtained from image_search or generate_image and insert it into a page (pixel coordinates). w×h is a layout frame, not a stretch target: the image keeps its aspect ratio, fills the frame, and the overflow is center-cropped (object-fit: cover) — pick the frame for the layout freely. ' +
+      'To place an image the USER ATTACHED (logo, photo, screenshot), pass url=attachment://<file name> (the exact name from the attachment list) — the app embeds the original file bytes as-is. Never recreate an attached image with generate_image and never ask for base64.',
     inputSchema: {
       type: 'object',
       properties: {
         slideIndex: { type: 'integer' },
-        url: { type: 'string', description: 'Direct image link (imageUrl from image_search)' },
+        url: {
+          type: 'string',
+          description:
+            'Direct image link (imageUrl from image_search), or attachment://<file name> to embed a user-attached image as-is',
+        },
         x: { type: 'number' },
         y: { type: 'number' },
         w: { type: 'number' },
@@ -572,40 +418,9 @@ const TOOLS: AgentToolDef[] = [
     },
   },
   {
-    name: 'crop_image',
-    description:
-      'Crop a picture non-destructively (srcRect): l/t/r/b are fractions (0..1) cut from each edge of the source image. The element frame stays where it is; the remaining region stretches to fill it. Pass all zeros to remove an existing crop.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        sourceId: { type: 'string', description: 'Picture element id' },
-        l: { type: 'number', description: 'Fraction cut from the left edge (0..1)' },
-        t: { type: 'number', description: 'Fraction cut from the top edge (0..1)' },
-        r: { type: 'number', description: 'Fraction cut from the right edge (0..1)' },
-        b: { type: 'number', description: 'Fraction cut from the bottom edge (0..1)' },
-      },
-      required: ['slideIndex', 'sourceId', 'l', 't', 'r', 'b'],
-    },
-  },
-  {
-    name: 'set_picture_opacity',
-    description:
-      "Set a picture's whole-image opacity. opacity 0..1; 1 = fully opaque (removes the effect).",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        sourceId: { type: 'string', description: 'Picture element id' },
-        opacity: { type: 'number', description: '0 (invisible) .. 1 (opaque)' },
-      },
-      required: ['slideIndex', 'sourceId', 'opacity'],
-    },
-  },
-  {
     name: 'replace_image',
     description:
-      'Swap a picture\'s source image for a URL (from image_search or generate_image) in place — position, size, z-order, border and effects all survive. This is the tool for "change/AI-edit this image" flows: e.g. run generate_image with referenceImageUrls for background removal/upscaling/editing, then replace_image with the returned URL. keepCrop keeps the existing crop window and is only correct when the new image has the same pixel geometry as the old one (e.g. background removal output).',
+      'Swap a picture\'s source image for a URL (from image_search or generate_image) in place — position, size, z-order, border and effects all survive. This is the tool for "change/AI-edit this image" flows: e.g. run generate_image with referenceImageUrls for background removal/upscaling/editing, then replace_image with the returned URL. A new image with a different aspect ratio is never stretched: it fills the frame and is center-cropped (object-fit: cover). keepCrop keeps the existing crop window and is only correct when the new image has the same pixel geometry as the old one (e.g. background removal output).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -700,12 +515,12 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'regenerate_slide',
     description:
-      '[Redo/redesign an existing page] The cloud service regenerates the page from your brief and replaces it in place (other pages untouched, undoable).' +
+      '[Redo/redesign an existing page] Regenerates the page from your brief and replaces it in place (other pages untouched, undoable).' +
       ' Use when the user says "redo this page / redesign it / try another layout / make it prettier"; don\'t dismantle the page element by element with native tools.' +
-      " Flow: first read_slide to get the page's current content, then check neighboring pages / get_deck_context to grasp the deck's style;" +
+      " Flow: first read_slide to get the page's current content, then check neighboring pages in the deck outline to grasp the deck's style;" +
       ' write a detailed brief — what to keep (copy real text/data into the brief verbatim), what to change, and the target layout; the deck style is applied automatically.' +
       ' If the page needs images, image_search first and pass real URLs in image_urls.' +
-      ' If cloud generation fails, it is usually a temporary service error: do NOT loop retrying — make the concrete changes in place with execute_slide_script instead (or tell the user to try again in a few minutes).',
+      ' If generation fails, it is usually a temporary error: do NOT loop retrying — make the concrete changes in place with execute_slide_script instead (or tell the user to try again in a few minutes).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -733,22 +548,10 @@ const TOOLS: AgentToolDef[] = [
     },
   },
   {
-    name: 'delete_slide',
-    description:
-      "Delete an entire page (not allowed when only one page remains). After deletion, later pages' slideIndex shifts down.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer', description: 'Page number (0-based)' },
-      },
-      required: ['slideIndex'],
-    },
-  },
-  {
     name: 'generate_deck',
     description:
       '[First choice for creating a whole new deck — self-driven pipeline: auto image search, page-by-page generation with live display, no missing pages]' +
-      ' Recommended usage (especially with many pages): pass only topic + approx_pages (+ optional style/context); the system plans the outline internally (auto-batched beyond 12 pages), **auto-searches images** (no advance image_search — the system searches from the planned image_queries keywords internally and fills real URLs back before writing HTML), writes HTML page by page, and lands pages onto the canvas one by one.' +
+      ' Recommended usage (especially with many pages): pass only topic + approx_pages (+ optional style/context); the system plans the outline internally (auto-batched beyond 12 pages), **auto-searches images** (no advance image_search — the system searches from the planned image_queries keywords internally and fills real URLs back before designing pages), designs pages one by one, and lands them onto the canvas as they finish.' +
       ' You don\'t hand-write dozens of pages, and neither "only page 1 got generated" nor "arguments were truncated" can happen — the page count is guaranteed by the system loop.' +
       ' (If you already know each page you may pass core_hook+style+pages directly; pages[].image_queries takes English image-search keywords, searched internally; if you already know real http(s) URLs pass them directly — the system respects existing URLs and does not re-search.)' +
       ' To add a few pages to an existing deck, pass pages (briefs for just the new pages) + insert_mode:"append".',
@@ -762,7 +565,9 @@ const TOOLS: AgentToolDef[] = [
         },
         approx_pages: {
           type: 'integer',
-          description: 'Expected page count (used together with topic)',
+          minimum: 1,
+          maximum: MAX_APPROX_PAGES,
+          description: `Expected page count (used together with topic; at most ${MAX_APPROX_PAGES})`,
         },
         context: {
           type: 'string',
@@ -812,7 +617,7 @@ const TOOLS: AgentToolDef[] = [
         style_template: {
           type: 'string',
           description:
-            "Optional: name of a saved style template (from list_style_templates); when passed, Step 0 is skipped and the template's styleSkill is used directly, no style regeneration",
+            "Optional: name of a saved style template (from list_style_templates); when passed, Step 0 is skipped and the template's styleSkill is used directly, no style regeneration. A template saved from a finished deck also carries its layout skeleton, which pins the title/brand-image geometry on every page for a consistent look",
         },
         dataSource: {
           type: 'string',
@@ -826,7 +631,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'save_style_template',
     description:
-      '[Save the current deck\'s style as a reusable template] Saves the current presentation\'s Style Skill (visual style guide) under the given name; next time you generate a deck, pass the style_template argument to reuse it directly and skip style generation. Call when the user says "save this style" / "save as template".',
+      '[Save the current deck\'s style as a reusable template] Saves the current presentation\'s Style Skill (visual style guide) under the given name, plus the deck\'s layout skeleton (recurring title box, brand-image slot, accent shapes and backgrounds). Next time you generate a deck, pass the style_template argument to reuse both directly and skip style generation. Call when the user says "save this style" / "save as template".',
     inputSchema: {
       type: 'object',
       properties: {
@@ -843,214 +648,6 @@ const TOOLS: AgentToolDef[] = [
     description:
       'List all saved style templates (name + topic + createdAt). When the user says "use last time\'s style" or "use some template", call this first to see what exists, then pass the target template name to generate_deck\'s style_template argument.',
     inputSchema: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'add_slide',
-    description:
-      "Create a new page by cloning the layout (including background) of page sourceIndex, inserted right after it (new page number = sourceIndex+1; pages after it shift back); clearText=true (default) clears text to get a layout-preserving blank page. When building page by page, use the CURRENT LAST page as sourceIndex so new pages append at the end. The return value gives the new page's slideIndex; subsequent content fills MUST use that returned page number.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        sourceIndex: {
-          type: 'integer',
-          description: 'Page to use as the layout template (0-based)',
-        },
-        clearText: {
-          type: 'boolean',
-          description: "Default true; false keeps the template page's text",
-        },
-      },
-      required: ['sourceIndex'],
-    },
-  },
-  {
-    name: 'add_text_box',
-    description: 'Create a new text box on a page (pixel coordinates). Returns the new element id.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        x: { type: 'number' },
-        y: { type: 'number' },
-        w: { type: 'number' },
-        h: { type: 'number' },
-        paragraphs: { $ref: '#/definitions/paragraphs' },
-      },
-      required: ['slideIndex', 'x', 'y', 'w', 'h', 'paragraphs'],
-      definitions: PARAGRAPHS_DEF,
-    },
-  },
-  {
-    name: 'add_shape',
-    description:
-      'Create a new shape on a page (optionally with solid fill and text). kind uses OOXML preset geometry names, common ones: rect/roundRect/ellipse/triangle/diamond/rightArrow/leftArrow/chevron/star5/heart/pie/donut/cloud/wedgeRoundRectCallout. Returns the new element id.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        kind: {
-          type: 'string',
-          description:
-            'OOXML preset geometry name, e.g. rect / roundRect / ellipse / rightArrow / star5',
-        },
-        x: { type: 'number' },
-        y: { type: 'number' },
-        w: { type: 'number' },
-        h: { type: 'number' },
-        fillColor: { type: 'string', description: '#RRGGBB' },
-        paragraphs: { $ref: '#/definitions/paragraphs' },
-      },
-      required: ['slideIndex', 'kind', 'x', 'y', 'w', 'h'],
-      definitions: PARAGRAPHS_DEF,
-    },
-  },
-  {
-    name: 'add_chart',
-    description:
-      "Insert a chart on a page (native pptx chart, still editable in PowerPoint). categories are the x-axis categories; series is each series' name and values (length must match categories). Omit x/y/w/h to center it. dataSource declares where the numbers came from and is enforced — never present invented numbers as real data.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        kind: { type: 'string', enum: ['bar', 'barStacked', 'line', 'area', 'pie', 'doughnut'] },
-        title: { type: 'string', description: 'Chart title (optional)' },
-        categories: { type: 'array', items: { type: 'string' } },
-        series: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              name: { type: 'string' },
-              values: { type: 'array', items: { type: 'number' } },
-            },
-            required: ['name', 'values'],
-          },
-        },
-        dataSource: {
-          type: 'string',
-          enum: ['user', 'document', 'search', 'sample'],
-          description:
-            "Provenance of the values: 'user' = supplied by the user/attachments, 'document' = read from this deck, 'search' = from web_search results in this conversation (run it first), 'sample' = illustrative placeholders you must disclose to the user",
-        },
-        x: { type: 'number' },
-        y: { type: 'number' },
-        w: { type: 'number' },
-        h: { type: 'number' },
-      },
-      required: ['slideIndex', 'kind', 'categories', 'series', 'dataSource'],
-    },
-  },
-  {
-    name: 'add_smartart',
-    description:
-      'Insert a SmartArt-style diagram (shape composition) on a page: list=vertical list, process=process arrows, cycle=cycle, hierarchy=org structure, pyramid=stacked pyramid levels, matrix=2x2 quadrant grid, venn=overlapping circles. items are the node texts. Omit x/y/w/h to center it.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        layout: {
-          type: 'string',
-          enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'],
-        },
-        items: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Node texts (2-8 recommended)',
-        },
-        x: { type: 'number' },
-        y: { type: 'number' },
-        w: { type: 'number' },
-        h: { type: 'number' },
-      },
-      required: ['slideIndex', 'layout', 'items'],
-    },
-  },
-  {
-    name: 'add_table',
-    description:
-      'Insert a native pptx table on a page (with built-in styling, still editable in PowerPoint). cells gives text row by row (optional; ' +
-      'missing rows/columns stay empty). Omit x/y/w/h to center it.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        rows: { type: 'integer', description: 'Row count (including header)' },
-        cols: { type: 'integer', description: 'Column count' },
-        cells: {
-          type: 'array',
-          items: { type: 'array', items: { type: 'string' } },
-          description: 'Cell texts, row by row, e.g. [["Name","Qty"],["A","1"]]',
-        },
-        x: { type: 'number' },
-        y: { type: 'number' },
-        w: { type: 'number' },
-        h: { type: 'number' },
-      },
-      required: ['slideIndex', 'rows', 'cols'],
-    },
-  },
-  {
-    name: 'edit_table_cell',
-    description:
-      "Replace one table cell's text entirely. The table element id comes from the outline/read_slide (type=table); row/col are 0-based.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        sourceId: { type: 'string', description: 'Table element id' },
-        row: { type: 'integer', description: 'Row number (0-based)' },
-        col: { type: 'integer', description: 'Column number (0-based)' },
-        paragraphs: { $ref: '#/definitions/paragraphs' },
-      },
-      required: ['slideIndex', 'sourceId', 'row', 'col', 'paragraphs'],
-      definitions: PARAGRAPHS_DEF,
-    },
-  },
-  {
-    name: 'edit_table_structure',
-    description:
-      'Add/remove table rows/columns: kind=insert-row/delete-row/insert-col/delete-col; index is the row/column number (0-based), insert defaults to after it, before=true inserts before it.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        sourceId: { type: 'string', description: 'Table element id' },
-        kind: { type: 'string', enum: ['insert-row', 'delete-row', 'insert-col', 'delete-col'] },
-        index: { type: 'integer', description: 'Row/column number (0-based)' },
-        before: { type: 'boolean', description: 'For insert, set true to insert before index' },
-      },
-      required: ['slideIndex', 'sourceId', 'kind', 'index'],
-    },
-  },
-  {
-    name: 'edit_table_style',
-    description:
-      'Modify table styling: apply a preset (styleName) or individually change header row/banding/shading/borders. styleName options: none/lightGrid/zebraBlue/zebraGray/headerDarkBlue/headerOrange/noBorder/fullBorder.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        sourceId: { type: 'string', description: 'Table element id' },
-        styleName: {
-          type: 'string',
-          description: 'Preset style name (see description), highest priority',
-        },
-        firstRow: { type: 'boolean', description: 'Enable header row (first-row emphasis)' },
-        bandRow: { type: 'boolean', description: 'Enable banded rows' },
-        shadingColor: {
-          type: 'string',
-          description: 'Shading color #RRGGBB, "none" clears shading',
-        },
-        borderColor: { type: 'string', description: 'Border color #RRGGBB' },
-        borderWidthPt: { type: 'number', description: 'Border width (pt)' },
-        borderPreset: {
-          type: 'string',
-          enum: ['all', 'none'],
-          description: '"all" = full borders, "none" = clear borders',
-        },
-      },
-      required: ['slideIndex', 'sourceId'],
-    },
   },
   {
     name: 'edit_chart',
@@ -1110,40 +707,50 @@ const TOOLS: AgentToolDef[] = [
     },
   },
   {
-    name: 'set_slide_background',
-    description: 'Set a solid page background color. slideIndex=-1 applies to all pages.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer', description: 'Page number (0-based); -1 = all pages' },
-        color: { type: 'string', description: '#RRGGBB' },
-      },
-      required: ['slideIndex', 'color'],
-    },
-  },
-  {
-    name: 'delete_element',
-    description: 'Delete one element from a page.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        sourceId: { type: 'string' },
-      },
-      required: ['slideIndex', 'sourceId'],
-    },
-  },
-  {
-    name: 'ungroup_element',
+    name: 'apply_ops',
     description:
-      'Ungroup a group element: promote its direct children to top-level page elements (positions/sizes preserved). Use when group members must be edited/deleted independently (e.g. elements nested in a sub-group, or deleting a single member). Note: ungrouping rewrites the page, so all element ids on it change — use the fresh ids returned in the result.',
+      '[Canonical edit surface] Apply a list of canonical edit ops as ONE transaction — atomic by default: any failure rolls everything back, nothing is half-applied. Set dry_run:true to validate the plan without touching the deck (rehearse risky batches). This is THE tool for every edit without a dedicated tool (fill, stroke, transform, delete, z-order, grouping, crop, opacity, effects, links, table cells, structure and styling, page background, speaker notes, page delete/move/duplicate, transitions, sections, theme) and for multi-page or many-element batches; a single op is a perfectly fine batch. For one-page layout math prefer execute_slide_script.\n' +
+      'Addressing: every op takes target:{slide, el?} — slide = 0-based index or durable "s_<n>"; el = an element id from the outline/read_slide (e_* ids are durable). Group children: put the child id in target.el and add group:"<group id>".\n' +
+      'Units are document-space EMU. read_slide reports px and its exact "1 px = N EMU" factor — convert with that N (9525 only on a standard 16:9 deck; other page sizes differ). Font sizes are pt. setText on an existing element: runs with only `text` inherit the original run formatting (size, color, font) — leave fontSize/color/fontFamily out unless the user asked to change the style.\n' +
+      'Full op reference (the same executor every editing surface uses), one signature per op; ? marks optional fields:\n' +
+      opSignatureIndex() +
+      '\naddChart additionally takes dataSource:"user"|"document"|"search"|"sample" (figure provenance, checked before the batch runs; "search" needs a web_search in this conversation).' +
+      '\nFor field tables, runnable JSON examples and common mistakes call load_guide with the group name(s) above before a batch you have not done before. ' +
+      "A failing op's error also returns its exact one-line signature, and dry_run rehearses the whole batch without touching the deck. An unknown op name returns the full vocabulary.",
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'integer', description: 'Page number (0-based)' },
-        sourceId: { type: 'string', description: 'Group element id' },
+        ops: {
+          type: 'array',
+          items: { type: 'object' },
+          description: 'The op list, applied in order as one transaction (at most 50)',
+        },
+        dry_run: { type: 'boolean', description: 'Validate the plan only; the deck is untouched' },
+        isolation: {
+          type: 'string',
+          enum: ['atomic', 'per_op'],
+          description: 'atomic (default): all-or-nothing. per_op: independent ops, failures skip.',
+        },
       },
-      required: ['slideIndex', 'sourceId'],
+      required: ['ops'],
+    },
+  },
+  {
+    name: 'load_guide',
+    description:
+      'Load the full documentation of one or more op groups into context: field tables with types and units, runnable JSON examples, common mistakes. Call it before an apply_ops batch that uses ops you have not used in this conversation; several groups can be loaded at once.\n' +
+      'Available groups:\n' +
+      opGuideCatalog(),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        groups: {
+          type: 'array',
+          items: { type: 'string', enum: [...OP_GROUPS] },
+          description: 'Group names to load, e.g. ["element","slide"]',
+        },
+      },
+      required: ['groups'],
     },
   },
 ]
@@ -1152,7 +759,7 @@ const TOOLS: AgentToolDef[] = [
 /** Find one node by id in the node tree (including groups). */
 function findNodeById(nodes: RenderNode[], id: string): RenderNode | undefined {
   for (const n of nodes) {
-    if (n.sourceId === id) return n
+    if (n.sourceId === id || n.durableId === id) return n
     if (n.type === 'group') {
       const hit = findNodeById(n.children, id)
       if (hit) return hit
@@ -1170,11 +777,12 @@ function findNodeById(nodes: RenderNode[], id: string): RenderNode | undefined {
 type EditTarget =
   { node: RenderNode; groupId?: string; groupOrigin?: { x: number; y: number } } | { nested: true }
 function resolveEditTarget(slide: RenderSlide, sourceId: string): EditTarget | null {
+  const matches = (n: RenderNode) => n.sourceId === sourceId || n.durableId === sourceId
   for (const n of slide.nodes) {
-    if (n.sourceId === sourceId) return { node: n }
+    if (matches(n)) return { node: n }
     if (n.type === 'group') {
       const g = n as GroupRenderNode
-      const child = g.children.find((c) => c.sourceId === sourceId)
+      const child = g.children.find(matches)
       if (child)
         return {
           node: child,
@@ -1187,79 +795,47 @@ function resolveEditTarget(slide: RenderSlide, sourceId: string): EditTarget | n
   return null
 }
 
-/** Shared not-found / nested-in-subgroup error text for element-targeting tools. */
-function targetError(target: EditTarget | null, sourceId: string, pageNo: number): string | null {
-  if (!target)
-    return `Element ${sourceId} not found on page ${pageNo} (ids change after regenerate/ungroup/save; call read_slide for fresh ids)`
+/** Editable element ids of a slide (locked layout decorations excluded), with short text hints. */
+function availableIdList(slide: RenderSlide, withText = false): string {
+  return collectNodeInfos(slide.nodes)
+    .filter((n) => !n.locked)
+    .map((n) => (withText && n.text?.trim() ? `${n.id} ("${preview(n.text, 12)}")` : n.id))
+    .join(', ')
+}
+
+/**
+ * Shared not-found / nested-in-subgroup error text for element-targeting tools. Guided: the
+ * not-found branch lists the ids that DO exist — models self-correct from the list, but
+ * blind-retry a bare "not found".
+ */
+function targetError(
+  target: EditTarget | null,
+  sourceId: string,
+  pageNo: number,
+  slide?: RenderSlide,
+): string | null {
+  if (!target) {
+    const avail = slide ? ` Elements on this page: [${availableIdList(slide)}].` : ''
+    return `Element ${sourceId} not found on page ${pageNo}.${avail} (e_* ids are durable across edits/saves; call read_slide when in doubt)`
+  }
   if ('nested' in target)
-    return `Element ${sourceId} is nested inside a sub-group; call ungroup_element on the outer group first, or edit the sub-group as a whole`
+    return `Element ${sourceId} is nested inside a sub-group; ungroup the outer group first (apply_ops ungroupElement), or edit the sub-group as a whole`
   return null
-}
-
-/**
- * Restore a render node's current text into EditParagraph[] (aggregate runs by line, keeping
- * each run's existing formatting). Used by set_element_style: change formatting while keeping
- * the text. fontSize is converted back from px to pt.
- */
-function nodeToParagraphs(node: ShapeRenderNode): EditParagraph[] {
-  const lines = node.text?.lines ?? []
-  return lines.map((line) => ({
-    runs: line.runs.map((r) => ({
-      text: r.text,
-      ...(r.bold ? { bold: true } : {}),
-      ...(r.italic ? { italic: true } : {}),
-      ...(r.underline ? { underline: true } : {}),
-      ...(r.fontSizePx ? { fontSize: Math.round((r.fontSizePx * 72) / 96) } : {}),
-      ...(r.fontFamily ? { fontFamily: r.fontFamily } : {}),
-      ...(r.color ? { color: r.color } : {}),
-    })),
-  }))
-}
-
-/**
- * Merge style-override fields into existing paragraphs: bold/italic/font size/color/font are
- * overridden per run, align is set on the paragraph, fields not passed stay unchanged. Shared
- * by the set_element_style tool and execute_slide_script's setStyle dispatch.
- */
-function mergeStyleIntoParagraphs(cur: EditParagraph[], ov: SlideStylePatch): EditParagraph[] {
-  return cur.map((p) => ({
-    runs: p.runs.map((r) => ({
-      text: r.text,
-      bold: ov.bold ?? r.bold,
-      italic: ov.italic ?? r.italic,
-      underline: ov.underline ?? r.underline,
-      fontSize: typeof ov.fontSize === 'number' ? ov.fontSize : r.fontSize,
-      fontFamily: ov.fontFamily ?? r.fontFamily,
-      color: ov.color ?? r.color,
-    })),
-    align: ov.align ?? p.align,
-  }))
 }
 
 /** Element info shared by outline/read_slide/edit scripts (includes absolute geometry; locked = layout decoration, read-only). */
 type NodeInfo = LayoutScriptElement
 
-function nodeText(n: RenderNode): string {
-  if (n.type === 'shape' || n.type === 'text') {
-    return ((n as ShapeRenderNode).text?.lines ?? [])
-      .map((line) => line.runs.map((r) => r.text).join(''))
-      .join('\n')
-  }
-  if (n.type === 'table') {
-    // Tables join cell text row by row (tab-separated) so the AI can read table content
-    const byRow = new Map<number, string[]>()
-    for (const c of n.cells) {
-      const t = (c.text?.lines ?? []).map((l) => l.runs.map((r) => r.text).join('')).join(' ')
-      const row = byRow.get(c.y) ?? []
-      row.push(t)
-      byRow.set(c.y, row)
-    }
-    return [...byRow.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([, r]) => r.join('\t'))
-      .join('\n')
-  }
-  return ''
+/**
+ * The element's text as the model reads it.
+ *
+ * Delegates to `textForModel`, which substitutes a withheld span for its marker.
+ * `forDisplay` defaults to false, so this whole file gets the redacted view
+ * without having to know withholding exists; the reader's own find-and-replace
+ * asks for the raw words explicitly.
+ */
+function nodeText(n: RenderNode, forDisplay = false): string {
+  return textForModel(n, forDisplay)
 }
 
 /** Max font size of the text (pt, converted back from px); returns undefined when there is no text. */
@@ -1344,7 +920,9 @@ function collectNodeInfos(
       h: Math.round(b.h),
     }
     const base: NodeInfo = {
-      id: n.sourceId,
+      // Durable id when the element's bytes carry one — survives regenerate/
+      // ungroup/save, so the AI can keep addressing across turns
+      id: n.durableId ?? n.sourceId,
       type: n.type,
       text: nodeText(n),
       ...abs,
@@ -1359,7 +937,12 @@ function collectNodeInfos(
     out.push(base)
     if (n.type === 'group') {
       const g = n as GroupRenderNode
-      out.push(...collectNodeInfos(g.children, abs.x, abs.y, { id: n.sourceId, topLevel: !parent }))
+      out.push(
+        ...collectNodeInfos(g.children, abs.x, abs.y, {
+          id: n.durableId ?? n.sourceId,
+          topLevel: !parent,
+        }),
+      )
     }
   }
   return out
@@ -1376,7 +959,14 @@ function buildDeckOutline(slides: RenderSlide[], current: number, selectedIds: s
     `The presentation has ${slides.length} pages; page ${current + 1} is currently shown. ${canvas}`,
     `(Page order is the current actual order and may differ from generation time or earlier conversation; the user's "page N" refers to this outline)`,
   ]
-  if (selectedIds.length > 0) lines.push(`User selected elements: ${selectedIds.join(', ')}`)
+  if (selectedIds.length > 0) {
+    const currentSlide = slides[current]
+    const selectedRefs = selectedIds.map((id) => {
+      const node = currentSlide ? findNodeById(currentSlide.nodes, id) : undefined
+      return node?.durableId ?? node?.sourceId ?? id
+    })
+    lines.push(`User selected elements: ${selectedRefs.join(', ')}`)
+  }
   slides.forEach((slide, i) => {
     lines.push(`Page ${i + 1} (slideIndex=${i}):`)
     const infos = collectNodeInfos(slide.nodes)
@@ -1409,7 +999,7 @@ export function formatSlideDump(slide: RenderSlide): string {
       n.groupId
         ? `in group ${n.groupId} (directly editable)`
         : n.inGroup
-          ? 'nested in a sub-group (read-only; ungroup_element the outer group to edit)'
+          ? 'nested in a sub-group (read-only; apply_ops ungroupElement on the outer group to edit)'
           : '',
       n.locked ? 'layout decoration (read-only)' : '',
     ]
@@ -1438,17 +1028,60 @@ export function formatSlideDump(slide: RenderSlide): string {
   const colorNote = colorlessTypes.length
     ? `\n(${colorlessTypes.join('/')} colors not available)`
     : ''
-  return `Canvas ${slide.widthPx}×${slide.heightPx}px\n${parts.join('\n---\n') || '(no elements on this page)'}${colorNote}`
+  // Report the real px→EMU factor: render px carry the viewport scale, so ×9525 only
+  // holds for decks whose baseline width is exactly the fit width (standard 16:9 at 1280).
+  const pxToEmu = +(9525 / slide.scale).toFixed(2)
+  return `Canvas ${slide.widthPx}×${slide.heightPx}px (1 px = ${pxToEmu} EMU)\n${parts.join('\n---\n') || '(no elements on this page)'}${colorNote}`
+}
+
+/** tools that need a media provider: Genspark login + cloud tools, or a BYOK media key in Settings */
+function hiddenMediaTools(access: DeckAccess): Set<string> {
+  const hidden = new Set<string>()
+  if (access.imageGenAvailable?.() === false) hidden.add('generate_image')
+  if (access.mediaAnalysisAvailable?.() === false) hidden.add('analyze_media')
+  return hidden
+}
+
+function mediaToolsOffNote(hidden: Set<string>): string {
+  if (hidden.size === 0) return ''
+  const plural = hidden.size > 1
+  return `\n\nNote: ${[...hidden].join(' and ')} ${plural ? 'are' : 'is'} currently unavailable (no image/media provider: signed out of Genspark or cloud tools off, and no media API key in Settings). Do not call or promise ${plural ? 'them' : 'it'}; for imagery use image_search + insert_web_image instead.`
 }
 
 export function createSlidesSkill(access: DeckAccess): AgentSkill {
   // The HTML pipeline was already used in this conversation → later calls without an explicit mode default to append.
+  /**
+   * Every label withheld anywhere in the deck, in first-seen order.
+   *
+   * Read from the render tree the tools already use, so the instruction and the
+   * text the model is shown cannot disagree about what is withheld.
+   */
+  function deckRedactLabels(access: DeckAccess): string[] {
+    const seen = new Set<string>()
+    for (const slide of access.getSlides()) {
+      for (const label of redactLabelsOf(slide)) seen.add(label)
+    }
+    return [...seen]
+  }
+
   // Safety net for when the AI ignores the "pass all pages at once" constraint: separate calls no longer overwrite each other (P0-1).
   const state: SkillState = { htmlGenerated: false }
   return {
     id: 'slides',
-    systemPrompt: AGENT_SYSTEM_PROMPT,
-    tools: TOOLS,
+    // live like tools: the off-note overrides the prose that still mentions the hidden tools
+    get systemPrompt() {
+      // spans the reader withheld are named here, from the live deck, so the
+      // model can see the marker exists and write around it. A deck with none
+      // pays nothing and is not told to look for markers that are not there.
+      const labels = deckRedactLabels(access)
+      const redact = labels.length > 0 ? `\n\n${placeholderInstruction(labels)}` : ''
+      return systemPrompt + mediaToolsOffNote(hiddenMediaTools(access)) + redact
+    },
+    // live view: the predicates are re-read before every model request
+    get tools() {
+      const hidden = hiddenMediaTools(access)
+      return hidden.size ? TOOLS.filter((t) => !hidden.has(t.name)) : TOOLS
+    },
     buildContext: () => {
       const outline = `<deck outline>\n${buildDeckOutline(access.getSlides(), access.getCurrent(), access.getSelectedIds())}\n</deck outline>`
       const progress = buildProgressNote(state)
@@ -1476,7 +1109,7 @@ interface SkillState {
 
 /**
  * [Hard constraint against "hand-building from scratch"] Sometimes the AI skips the HTML
- * pipeline and assembles a whole deck element by element with add_text_box/add_shape/add_smartart —
+ * pipeline and assembles a whole deck element by element with addElement/addSmartArt ops —
  * such hand-built pages look crude and the layout falls apart (root cause of screenshot issues).
  * "From-scratch" detection: this session hasn't used the HTML pipeline (!htmlGenerated) AND the
  * deck has almost no real content (≤ 2 non-decoration elements with text, i.e. blank/initial
@@ -1484,7 +1117,7 @@ interface SkillState {
  * existing rich deck / fine-tuning after the HTML pipeline are unaffected.
  */
 function blockScratchBuild(
-  toolName: string,
+  kind: 'element' | 'smartart',
   slides: RenderSlide[],
   state?: SkillState,
 ): { output: string; isError: true; mutated: false; summary: string } | null {
@@ -1496,12 +1129,12 @@ function blockScratchBuild(
     }
   }
   if (contentEls > 2) return null // Deck already has real content; this is a refinement scenario, allow it
-  const label = toolName === 'add_smartart' ? t('aiLabelInsertSmartart') : t('aiFailNewElement')
+  const label = kind === 'smartart' ? t('aiLabelInsertSmartart') : t('aiFailNewElement')
   return {
     output:
-      "For blank/from-scratch scenarios don't hand-assemble pages element by element with add_text_box/add_shape/add_smartart (crude layout). " +
-      'Use cloud generation instead: new whole deck → generate_deck; new pages for an existing deck → generate_deck(pages, insert_mode:"append"). ' +
-      'Write it beautifully in HTML/CSS and the system converts it into editable elements. Use native tools only when the deck already has polished content and one element needs refining.',
+      "For blank/from-scratch scenarios don't hand-assemble pages element by element with addElement/addSmartArt/addTable/addChart ops (crude layout). " +
+      'Use the generation pipeline instead: new whole deck → generate_deck; new pages for an existing deck → generate_deck(pages, insert_mode:"append"). ' +
+      'The pipeline designs each page and builds it into editable elements. Use insert ops only when the deck already has polished content and one element needs refining.',
     isError: true,
     mutated: false,
     summary: t('aiSumFromScratchGuard', { label }),
@@ -1524,9 +1157,14 @@ function buildProgressNote(state?: SkillState): string {
   }
   // Name unfinished pages one by one from pageDone (page numbers stay accurate when a middle page fails)
   const remaining: string[] = []
+  let omitted = 0
   for (let i = 0; i < planned; i++) {
-    if (!flags[i]) remaining.push(`page ${i + 1}${titles[i] ? ` "${titles[i]}"` : ''}`)
+    if (flags[i]) continue
+    if (remaining.length < MAX_PROGRESS_NOTE_PAGES) {
+      remaining.push(`page ${i + 1}${titles[i] ? ` "${titles[i]}"` : ''}`)
+    } else omitted++
   }
+  if (omitted > 0) remaining.push(`and ${omitted} more`)
   return (
     `<generation-progress>\n` +
     `⚠️ Incomplete: ${planned} pages planned, ${done} generated, ${planned - done} still missing.\n` +
@@ -1562,7 +1200,15 @@ function countSpecificFigures(text: string): number {
  * this call carries, null when the call may proceed.
  */
 function dataSourceGateError(call: AgentToolCall, state: SkillState | undefined): string | null {
-  const src = String(call.input.dataSource ?? '')
+  return dataSourceGateErrorForInput(call.input, state)
+}
+
+/** Same gate over a plain argument object (an apply_ops op carries dataSource as an extra field). */
+function dataSourceGateErrorForInput(
+  input: Record<string, unknown>,
+  state: SkillState | undefined,
+): string | null {
+  const src = String(input.dataSource ?? '')
   if (src === 'user' || src === 'document' || src === 'sample') return null
   if (src === 'search') {
     if (state?.webSearched) return null
@@ -1584,39 +1230,146 @@ function dataSourceGateError(call: AgentToolCall, state: SkillState | undefined)
 const SAMPLE_DATA_NOTE =
   '\nNOTE: dataSource is "sample" — you MUST tell the user these figures are illustrative placeholders, not real data, and offer to research real numbers with web_search.'
 
-/** Template placeholder strings that must never survive into a delivered page */
-const PLACEHOLDER_PATTERNS: RegExp[] = [
-  /copy paste fonts\. choose the only option to retain text/i,
-  /click to edit master title style/i,
-  /\btext here\b/i,
-  /supporting text here/i,
-  /lorem ipsum/i,
-]
-
-/**
- * Cheap post-generation audit of one page's HTML: flags leftover template
- * placeholders and near-empty pages so the model is forced to redo them instead of
- * delivering filler as success. Returns a short reason, or null when the page looks fine.
- */
-export function auditPageHtml(html: string): string | null {
-  const text = html
-    .replace(/<(style|script)\b[\s\S]*?<\/\1>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  for (const re of PLACEHOLDER_PATTERNS) {
-    const m = re.exec(text)
-    if (m) return `contains template placeholder text "${m[0]}"`
-  }
-  if (text.length < 10) return 'has almost no text content'
-  return null
-}
-
 /** Append the missing-image report to the tool output: the model learns which pages lack images and how to fix them, instead of silently treating it as success. */
 function imageFailNote(fails?: { page: number; url: string }[]): string {
   if (!fails?.length) return ''
   const detail = fails.map((f) => `page ${f.page} (${f.url})`).join(', ')
   return `\n⚠️ Missing images: ${detail} failed to download/convert; those image slots are blank on the page. Re-run image_search with more generic English keywords, pick a working image, patch it onto the page with insert_web_image (slideIndex = page number - 1), then reply to the user.`
+}
+
+/**
+ * Activity-chip label per op for single-op apply_ops runs, so the panel still
+ * reads "Edit text" / "Move element" instead of a bare count now that the
+ * dedicated tools are gone. Multi-op batches fall back to the count summary.
+ */
+const OP_LABEL_KEYS: Record<string, string> = {
+  setText: 'aiOpEditText',
+  setFont: 'aiOpEditFormat',
+  setParagraphFormat: 'aiOpEditFormat',
+  setTransform: 'aiOpMoveElement',
+  setFill: 'aiOpSetFill',
+  setStroke: 'aiOpSetStroke',
+  deleteElement: 'aiOpDeleteElement',
+  ungroupElement: 'aiOpUngroup',
+  setPictureSrcRect: 'aiOpCropImage',
+  setPictureOpacity: 'aiOpPictureOpacity',
+  setNotes: 'aiOpSpeakerNotes',
+  deleteSlide: 'aiOpDeleteSlide',
+  setBackground: 'aiOpBackground',
+  setTableCell: 'aiOpEditTable',
+  tableStructure: 'aiOpTableStructure',
+  tableMerge: 'aiOpTableStructure',
+  setTableStyle: 'aiOpTableStyle',
+  duplicateSlide: 'aiOpNewSlide',
+  addElement: 'aiOpNewShape',
+  addChart: 'aiOpInsertChart',
+  addSmartArt: 'aiOpInsertSmartart',
+  addTable: 'aiOpInsertTable',
+}
+
+/** Localized summary for an apply_ops run: the op's label when exactly one op ran, else the count. */
+function applyOpsSummary(ops: unknown[], count: number): string {
+  if (count === 1 && ops.length === 1) {
+    const op = ops[0] as { op?: unknown; kind?: unknown } | null
+    const name = typeof op?.op === 'string' ? op.op : ''
+    const key =
+      name === 'addElement' && op?.kind === 'textbox' ? 'aiOpNewTextbox' : OP_LABEL_KEYS[name]
+    if (key) return t(key as Parameters<typeof t>[0])
+  }
+  return t('aiSumApplyOps', { count })
+}
+
+/** Insert ops subject to the anti-scratch-build guard when the deck is still blank. */
+const SCRATCH_GUARDED_OPS = new Set(['addElement', 'addSmartArt', 'addTable', 'addChart'])
+
+interface OpPreflight {
+  /** ops to send over the IPC (AI-layer fields stripped) */
+  ops: unknown[]
+  /** an addChart declared its figures illustrative — the output must say so */
+  sampleData: boolean
+}
+
+/**
+ * apply_ops runs the same policy gates the dedicated tools run before an op
+ * reaches the executor: the anti-scratch-build guard for inserts on a blank
+ * deck, and figure provenance for chart data. `dataSource` is an AI-layer
+ * field the registry does not know; it is checked here and stripped before the
+ * ops cross the IPC. Malformed entries pass through untouched so the executor
+ * returns its own guided error for them.
+ */
+function preflightOps(
+  opsIn: unknown[],
+  slides: RenderSlide[],
+  state: SkillState | undefined,
+): OpPreflight | ReturnType<typeof fail> {
+  const ops: unknown[] = []
+  let sampleData = false
+  for (const [i, raw] of opsIn.entries()) {
+    if (
+      typeof raw !== 'object' ||
+      raw === null ||
+      typeof (raw as { op?: unknown }).op !== 'string'
+    ) {
+      ops.push(raw)
+      continue
+    }
+    const op = { ...(raw as Record<string, unknown>) }
+    const name = op.op as string
+    // A span withheld from the model is a mark over real words, so an edit that
+    // rewrites or drops those words costs the reader data they chose to keep.
+    // Checked here, before anything is dispatched — apply_ops is atomic, so a
+    // refusal leaves the deck exactly as it was.
+    const guard = redactGuardFor(op, slides)
+    if (guard) {
+      return fail(t('aiFailApplyOps'), `ops[${i}] ${name}: ${guard.reason}`)
+    }
+    if (SCRATCH_GUARDED_OPS.has(name)) {
+      const blocked = blockScratchBuild(
+        name === 'addSmartArt' ? 'smartart' : 'element',
+        slides,
+        state,
+      )
+      if (blocked) return { ...blocked, output: `ops[${i}] ${name}: ${blocked.output}` }
+    }
+    if (name === 'addChart') {
+      const gateErr = dataSourceGateErrorForInput(op, state)
+      if (gateErr) return fail(t('aiFailApplyOps'), `ops[${i}] ${name}: ${gateErr}`)
+      if (op.dataSource === 'sample') sampleData = true
+      delete op.dataSource
+    }
+    ops.push(op)
+  }
+  return { ops, sampleData }
+}
+
+/**
+ * Layout audit of the pages a transaction touched (numeric slide prefixes of
+ * the journal echo), capped so a deck-wide batch does not flood the reply.
+ * Empty when every audited page passes.
+ */
+function auditTouchedPages(
+  records: Array<{ target?: string }> | undefined,
+  slides: RenderSlide[],
+): string {
+  const pages = new Set<number>()
+  for (const rec of records ?? []) {
+    const prefix = rec.target?.split('/')[0] ?? ''
+    if (/^\d+$/.test(prefix)) {
+      const idx = Number(prefix)
+      if (slides[idx]) pages.add(idx)
+    }
+    if (pages.size >= 4) break
+  }
+  const failing = [...pages]
+    .sort((a, b) => a - b)
+    .map((idx) => ({ page: idx + 1, issues: auditSlideLayout(slides[idx]!) }))
+    .filter((a) => a.issues.length > 0)
+  if (failing.length === 0) return ''
+  return (
+    `\n<layout-audit>⚠️ Found issue(s) on ${failing.length} page(s):\n` +
+    failing.map((a) => `page ${a.page}:\n${a.issues.map((s) => `- ${s}`).join('\n')}`).join('\n') +
+    '\n→ Fix issues your edit caused before replying: execute_slide_script on the affected page (it reads live geometry) or another apply_ops with setTransform; at most 2 fix rounds. Issues that already existed and that you did not touch are for your judgment only — do not report them to the user, and never quote element ids in the reply.\n</layout-audit>'
+  )
 }
 
 async function executeTool(
@@ -1627,13 +1380,6 @@ async function executeTool(
 ) {
   const slides = access.getSlides()
   switch (call.name) {
-    case 'get_deck_context':
-      return {
-        output: buildDeckOutline(slides, access.getCurrent(), access.getSelectedIds()),
-        mutated: false,
-        summary: t('aiSumDeckContext'),
-      }
-
     case 'read_slide': {
       const idx = Number(call.input.slideIndex)
       const slide = slides[idx]
@@ -1646,129 +1392,6 @@ async function executeTool(
       }
     }
 
-    case 'set_element_text': {
-      const idx = Number(call.input.slideIndex)
-      const sourceId = String(call.input.sourceId ?? '')
-      const slide = slides[idx]
-      if (!slide)
-        return fail(t('aiFailEditText'), `slideIndex out of range (0-${slides.length - 1})`)
-      const paragraphs = toEditParagraphs(call.input.paragraphs)
-      if (!paragraphs) return fail(t('aiFailEditText'), 'paragraphs must be a non-empty array')
-      const target = resolveEditTarget(slide, sourceId)
-      const terr = targetError(target, sourceId, idx + 1)
-      if (terr || !target || 'nested' in target) return fail(t('aiFailEditText'), terr!)
-      const updated = await window.slidesApi.editText({
-        slideIndex: idx,
-        sourceId,
-        paragraphs,
-        ...(target.groupId ? { groupId: target.groupId } : {}),
-      })
-      if (!updated)
-        return fail(
-          t('aiFailEditText'),
-          `Element ${sourceId} (${target.node.type}) does not support text editing` +
-            (target.node.type === 'table'
-              ? '; use edit_table_cell for tables'
-              : target.node.type === 'chart'
-                ? '; use edit_chart for charts'
-                : ''),
-        )
-      access.applySlide(idx, updated)
-      return {
-        output: `Replaced the text of element ${sourceId} on page ${idx + 1} (${paragraphs.length} paragraphs).`,
-        mutated: true,
-        summary: t('aiSumEditText', { n: idx + 1 }),
-      }
-    }
-
-    case 'set_element_style': {
-      const idx = Number(call.input.slideIndex)
-      const sourceId = String(call.input.sourceId ?? '')
-      const slide = slides[idx]
-      if (!slide) return fail(t('aiFailStyle'), `slideIndex out of range (0-${slides.length - 1})`)
-      const target = resolveEditTarget(slide, sourceId)
-      const terr = targetError(target, sourceId, idx + 1)
-      if (terr || !target || 'nested' in target) return fail(t('aiFailStyle'), terr!)
-      const node = target.node
-      if (!(node.type === 'text' || node.type === 'shape')) {
-        return fail(t('aiFailStyle'), `Element ${sourceId} (${node.type}) has no editable text`)
-      }
-      const cur = nodeToParagraphs(node as ShapeRenderNode)
-      if (!cur.length) return fail(t('aiFailStyle'), 'This element has no text to format')
-      const ov = call.input as SlideStylePatch
-      const paragraphs = mergeStyleIntoParagraphs(cur, ov)
-      const updated = await window.slidesApi.editText({
-        slideIndex: idx,
-        sourceId,
-        paragraphs,
-        ...(target.groupId ? { groupId: target.groupId } : {}),
-      })
-      if (!updated)
-        return fail(t('aiFailStyle'), `Element ${sourceId} does not support format editing`)
-      access.applySlide(idx, updated)
-      return {
-        output: `Updated the formatting of element ${sourceId} on page ${idx + 1}.`,
-        mutated: true,
-        summary: t('aiSumStyle', { n: idx + 1 }),
-      }
-    }
-
-    case 'set_element_transform': {
-      const idx = Number(call.input.slideIndex)
-      const sourceId = String(call.input.sourceId ?? '')
-      const slide = slides[idx]
-      if (!slide)
-        return fail(t('aiFailTransform'), `slideIndex out of range (0-${slides.length - 1})`)
-      const target = resolveEditTarget(slide, sourceId)
-      const terr = targetError(target, sourceId, idx + 1)
-      if (terr || !target || 'nested' in target) return fail(t('aiFailTransform'), terr!)
-      const b = target.node.box
-      // Group-child render boxes are group-local; the tool takes absolute px, so convert both ways via the group origin
-      const origin = target.groupOrigin ?? { x: 0, y: 0 }
-      const inp = call.input as {
-        x?: number
-        y?: number
-        w?: number
-        h?: number
-        rotationDeg?: number
-      }
-      const updated = await window.slidesApi.editTransform({
-        slideIndex: idx,
-        sourceId,
-        ...(target.groupId ? { groupId: target.groupId } : {}),
-        xPx: (typeof inp.x === 'number' ? inp.x : origin.x + b.x) - origin.x,
-        yPx: (typeof inp.y === 'number' ? inp.y : origin.y + b.y) - origin.y,
-        wPx: typeof inp.w === 'number' ? inp.w : b.w,
-        hPx: typeof inp.h === 'number' ? inp.h : b.h,
-        rotationDeg: typeof inp.rotationDeg === 'number' ? inp.rotationDeg : b.rotationDeg,
-        fitWidthPx: access.fitWidthPx,
-      })
-      if (!updated) return fail(t('aiFailTransform'), 'Transform failed')
-      access.applySlide(idx, updated)
-      const afterTarget = resolveEditTarget(updated, sourceId)
-      const after = afterTarget && !('nested' in afterTarget) ? afterTarget : null
-      const nb = after
-        ? {
-            ...after.node.box,
-            x: (after.groupOrigin?.x ?? 0) + after.node.box.x,
-            y: (after.groupOrigin?.y ?? 0) + after.node.box.y,
-          }
-        : undefined
-      const boxStr = nb
-        ? `New geometry: pos(${Math.round(nb.x)},${Math.round(nb.y)}) size ${Math.round(nb.w)}×${Math.round(nb.h)}.`
-        : ''
-      const issues = auditSlideLayout(updated)
-      const auditStr = issues.length
-        ? `\n⚠️ The layout audit found ${issues.length} issue(s) on this page:\n${issues.map((s) => `- ${s}`).join('\n')}\nFor multi-element layout adjustments switch to execute_slide_script (it reads every element's real geometry and applies atomically).`
-        : ''
-      return {
-        output: `Adjusted the position/size of element ${sourceId} on page ${idx + 1}. ${boxStr}${auditStr}`,
-        mutated: true,
-        summary: t('aiSumTransform', { n: idx + 1 }),
-      }
-    }
-
-    // execute_layout_script is a legacy alias (avoids breaking existing sessions/prompts); both share the same logic
     case 'execute_layout_script':
     case 'execute_slide_script': {
       const idx = Number(call.input.slideIndex)
@@ -1793,204 +1416,38 @@ async function executeTool(
           summary: t('aiSumScriptNoop', { n: idx + 1 }),
         }
       }
-      // ── Dispatch: geometry applied atomically once via batchEditTransform, the rest serially in script order,
-      //   each step using the returned new slide as the next step's current state. One failure doesn't crash the whole run; report faithfully.
-      // Balanced with the end in the finally below; an unbalanced pair would leave
-      // the session mid-batch, where undo/redo refuse to run
-      const batchOpened = (await window.slidesApi.beginHistoryBatch?.()) === true
-      try {
-        let current = slide
-        const failures: string[] = []
-        let boxApplied = 0
-        const topOps = r.ops.filter((op) => !op.groupId)
-        const grpOps = r.ops.filter((op) => op.groupId)
-        if (topOps.length > 0) {
-          const updated = await window.slidesApi.batchEditTransform({
-            slideIndex: idx,
-            fitWidthPx: access.fitWidthPx,
-            items: topOps.map((op) => ({
-              sourceId: op.id,
-              xPx: op.x,
-              yPx: op.y,
-              wPx: op.w,
-              hPx: op.h,
-              rotationDeg: op.rotation,
-            })),
-          })
-          if (updated) {
-            current = updated
-            access.applySlide(idx, updated)
-            boxApplied = topOps.length
-          } else {
-            failures.push(
-              `Batch geometry apply failed (${topOps.length} items; some elements may no longer exist on this page)`,
-            )
-          }
-        }
-        // Group children go through the per-element in-group transform IPC (abs px → group-local px via the group origin)
-        for (const op of grpOps) {
-          const gnode = findNodeById(current.nodes, op.groupId!)
-          const updated = gnode
-            ? await window.slidesApi.editTransform({
-                slideIndex: idx,
-                sourceId: op.id,
-                groupId: op.groupId!,
-                xPx: op.x - Math.round(gnode.box.x),
-                yPx: op.y - Math.round(gnode.box.y),
-                wPx: op.w,
-                hPx: op.h,
-                rotationDeg: op.rotation,
-                fitWidthPx: access.fitWidthPx,
-              })
-            : null
-          if (!updated) {
-            failures.push(`setBox("${op.id}"): geometry apply inside group ${op.groupId} failed`)
-            continue
-          }
-          current = updated
-          access.applySlide(idx, updated)
-          boxApplied += 1
-        }
-        const counts = { text: 0, style: 0, fill: 0, stroke: 0 }
-        for (const e of r.edits) {
-          const grp = e.groupId ? { groupId: e.groupId } : {}
-          let updated: RenderSlide | null
-          if (e.kind === 'text') {
-            updated = await window.slidesApi.editText({
-              slideIndex: idx,
-              sourceId: e.id,
-              paragraphs: e.paragraphs,
-              ...grp,
-            })
-            if (!updated) {
-              failures.push(
-                `setText("${e.id}"): element not found or does not support text editing`,
-              )
-              continue
-            }
-          } else if (e.kind === 'style') {
-            // Changing style = read current paragraphs (including earlier edit results), merge override fields, write back whole
-            const node = findNodeById(current.nodes, e.id)
-            if (!node || !(node.type === 'text' || node.type === 'shape')) {
-              failures.push(`setStyle("${e.id}"): text element not found`)
-              continue
-            }
-            const cur = nodeToParagraphs(node as ShapeRenderNode)
-            if (!cur.length) {
-              failures.push(`setStyle("${e.id}"): this element has no text to format`)
-              continue
-            }
-            updated = await window.slidesApi.editText({
-              slideIndex: idx,
-              sourceId: e.id,
-              paragraphs: mergeStyleIntoParagraphs(cur, e.style),
-              ...grp,
-            })
-            if (!updated) {
-              failures.push(`setStyle("${e.id}"): element does not support format editing`)
-              continue
-            }
-          } else if (e.kind === 'fill') {
-            updated = await window.slidesApi.editFill({
-              slideIndex: idx,
-              sourceId: e.id,
-              fill: e.fill,
-              ...grp,
-            })
-            if (!updated) {
-              failures.push(`setFill("${e.id}"): element does not support fill`)
-              continue
-            }
-          } else {
-            updated = await window.slidesApi.editStroke({
-              slideIndex: idx,
-              sourceId: e.id,
-              stroke: e.stroke,
-              ...grp,
-            })
-            if (!updated) {
-              failures.push(`setStroke("${e.id}"): element does not support stroke`)
-              continue
-            }
-          }
-          current = updated
-          access.applySlide(idx, updated)
-          counts[e.kind] += 1
-        }
-        const totalApplied = boxApplied + counts.text + counts.style + counts.fill + counts.stroke
-        if (totalApplied === 0) {
-          return fail(
-            t('aiFailScript'),
-            `All operations collected by the script failed to apply:\n${failures.map((f) => `- ${f}`).join('\n')}${returnedStr}${logsStr}`,
-          )
-        }
-        const parts: string[] = []
-        if (boxApplied > 0) parts.push(`layout ${boxApplied} element(s)`)
-        if (counts.text > 0) parts.push(`text ${counts.text} item(s)`)
-        if (counts.style > 0) parts.push(`style ${counts.style} item(s)`)
-        if (counts.fill > 0) parts.push(`fill ${counts.fill} item(s)`)
-        if (counts.stroke > 0) parts.push(`stroke ${counts.stroke} item(s)`)
-        const failStr = failures.length
-          ? `\n⚠️ ${failures.length} operation(s) failed (the rest took effect):\n${failures.map((f) => `- ${f}`).join('\n')}`
-          : ''
-        const issues = auditSlideLayout(current)
-        return {
-          output: `Applied the edit script to page ${idx + 1}: ${parts.join(', ')}.${returnedStr}${logsStr}${failStr}${formatAudit(issues)}`,
-          mutated: true,
-          summary: t('aiSumScript', { n: idx + 1, count: totalApplied }),
-        }
-      } finally {
-        if (batchOpened) await window.slidesApi.endHistoryBatch?.()
-      }
-    }
-
-    case 'set_element_fill': {
-      const idx = Number(call.input.slideIndex)
-      const sourceId = String(call.input.sourceId ?? '')
-      if (!slides[idx])
-        return fail(t('aiFailFill'), `slideIndex out of range (0-${slides.length - 1})`)
-      const target = resolveEditTarget(slides[idx]!, sourceId)
-      const terr = targetError(target, sourceId, idx + 1)
-      if (terr || !target || 'nested' in target) return fail(t('aiFailFill'), terr!)
-      const updated = await window.slidesApi.editFill({
+      // ── Dispatch: the whole script is ONE transaction — the collected primitives go
+      //   to the main process in a single IPC and apply atomically through the op
+      //   executor (any failure rolls the deck back there and returns a guided error).
+      const applied = await window.slidesApi.applyEditScript({
         slideIndex: idx,
-        sourceId,
-        fill: String(call.input.fill),
-        ...(target.groupId ? { groupId: target.groupId } : {}),
+        fitWidthPx: access.fitWidthPx,
+        boxes: r.ops,
+        edits: r.edits,
       })
-      if (!updated) return fail(t('aiFailFill'), `Element ${sourceId} does not support fill`)
-      access.applySlide(idx, updated)
-      return {
-        output: `Set the fill of element ${sourceId} on page ${idx + 1}.`,
-        mutated: true,
-        summary: t('aiSumFill', { n: idx + 1 }),
+      if (!applied || 'error' in applied) {
+        return fail(
+          t('aiFailScript'),
+          `${applied && 'error' in applied ? applied.error : t('aiErrUnknown')}\n` +
+            `The page is unchanged (the script is atomic). Elements on page ${idx + 1}: ` +
+            `[${availableIdList(slide, true)}]. Fix the script and resend it whole.${returnedStr}${logsStr}`,
+        )
       }
-    }
-
-    case 'set_element_stroke': {
-      const idx = Number(call.input.slideIndex)
-      const sourceId = String(call.input.sourceId ?? '')
-      if (!slides[idx])
-        return fail(t('aiFailStroke'), `slideIndex out of range (0-${slides.length - 1})`)
-      const remove = call.input.remove === true
-      const stroke = remove
-        ? null
-        : { color: String(call.input.color ?? '#000000'), widthPt: Number(call.input.widthPt ?? 1) }
-      const target = resolveEditTarget(slides[idx]!, sourceId)
-      const terr = targetError(target, sourceId, idx + 1)
-      if (terr || !target || 'nested' in target) return fail(t('aiFailStroke'), terr!)
-      const updated = await window.slidesApi.editStroke({
-        slideIndex: idx,
-        sourceId,
-        stroke,
-        ...(target.groupId ? { groupId: target.groupId } : {}),
-      })
-      if (!updated) return fail(t('aiFailStroke'), `Element ${sourceId} does not support stroke`)
-      access.applySlide(idx, updated)
+      access.applySlide(idx, applied.slide)
+      const counts = { text: 0, style: 0, fill: 0, stroke: 0 }
+      for (const e of r.edits) counts[e.kind] += 1
+      const parts: string[] = []
+      if (r.ops.length > 0) parts.push(`layout ${r.ops.length} element(s)`)
+      if (counts.text > 0) parts.push(`text ${counts.text} item(s)`)
+      if (counts.style > 0) parts.push(`style ${counts.style} item(s)`)
+      if (counts.fill > 0) parts.push(`fill ${counts.fill} item(s)`)
+      if (counts.stroke > 0) parts.push(`stroke ${counts.stroke} item(s)`)
+      const issues = auditSlideLayout(applied.slide)
+      const notesStr = applied.notes?.length ? `\nNote:\n${applied.notes.join('\n')}` : ''
       return {
-        output: `${remove ? 'Removed' : 'Set'} the stroke of element ${sourceId} on page ${idx + 1}.`,
+        output: `Applied the edit script to page ${idx + 1}: ${parts.join(', ')}.${returnedStr}${logsStr}${notesStr}${formatAudit(issues)}`,
         mutated: true,
-        summary: t('aiSumStroke', { n: idx + 1 }),
+        summary: t('aiSumScript', { n: idx + 1, count: r.ops.length + r.edits.length }),
       }
     }
 
@@ -1998,6 +1455,13 @@ async function executeTool(
       const query = String(call.input.query ?? '').trim()
       if (!query) return fail(t('aiFailWebSearch'), 'query must not be empty')
       const r = await window.slidesApi.webSearch(query, Number(call.input.maxResults) || 6)
+      // a backend failure must not read as "no results" — the model would fabricate conclusions
+      if (r.method === 'error') {
+        return fail(
+          t('aiFailWebSearch'),
+          `web search failed (service error, not an empty result — you may retry): ${r.error ?? 'unknown error'}`,
+        )
+      }
       if (state) state.webSearched = true
       // output for the LLM: title+URL+summary (each summary truncated to 120 chars to stay lean)
       const SNIPPET_MAX = 120
@@ -2025,6 +1489,13 @@ async function executeTool(
       const query = String(call.input.query ?? '').trim()
       if (!query) return fail(t('aiFailImageSearch'), 'query must not be empty')
       const r = await window.slidesApi.imageSearch(query, Number(call.input.maxResults) || 8)
+      // a backend failure must not read as an empty gallery — the model would fabricate image choices
+      if (r.method === 'error') {
+        return fail(
+          t('aiFailImageSearch'),
+          `image search failed (service error, not an empty result — you may retry): ${r.error ?? 'unknown error'}`,
+        )
+      }
       // output for the LLM: keep the existing format (the LLM needs to read URLs into image_queries; format unchanged)
       const lines = r.images.map(
         (im, i) =>
@@ -2054,6 +1525,7 @@ async function executeTool(
         model: call.input.model ? String(call.input.model) : undefined,
         referenceImageUrls: refs,
         aspectRatio: call.input.aspectRatio ? String(call.input.aspectRatio) : undefined,
+        transparentBackground: call.input.transparentBackground === true,
       })
       if (!r.url) return fail(t('aiFailGenImage'), r.error ?? 'Generation failed')
       const display: ToolDisplay = {
@@ -2096,10 +1568,22 @@ async function executeTool(
       if (!slides[idx])
         return fail(t('aiFailInsertImage'), `slideIndex out of range (0-${slides.length - 1})`)
       const url = String(call.input.url ?? '')
-      if (!/^https?:\/\//.test(url)) return fail(t('aiFailInsertImage'), 'Invalid url')
+      const attachmentName = attachmentRefName(url)
+      let payload: { url: string } | { base64: string; ext: string }
+      if (attachmentName != null) {
+        if (!access.resolveAttachmentImage)
+          return fail(t('aiFailInsertImage'), 'Attachment embedding is unavailable here')
+        const resolved = await access.resolveAttachmentImage(attachmentName)
+        if (!resolved.ok) return fail(t('aiFailInsertImage'), resolved.error)
+        payload = { base64: resolved.base64, ext: resolved.ext }
+      } else {
+        // file:// = a BYOK-generated image in the local store (the main process only resolves its own files)
+        if (!/^(https?|file):\/\//.test(url)) return fail(t('aiFailInsertImage'), 'Invalid url')
+        payload = { url }
+      }
       const r = await window.slidesApi.insertImageUrl({
         slideIndex: idx,
-        url,
+        ...payload,
         xPx: Number(call.input.x),
         yPx: Number(call.input.y),
         wPx: Number(call.input.w),
@@ -2119,79 +1603,40 @@ async function executeTool(
       }
     }
 
-    case 'crop_image':
-    case 'set_picture_opacity':
     case 'replace_image': {
       const idx = Number(call.input.slideIndex)
       const sourceId = String(call.input.sourceId ?? '')
-      const failKey =
-        call.name === 'crop_image'
-          ? ('aiFailCropImage' as const)
-          : call.name === 'set_picture_opacity'
-            ? ('aiFailPictureOpacity' as const)
-            : ('aiFailReplaceImage' as const)
+      const failKey = 'aiFailReplaceImage' as const
       const slide = slides[idx]
       if (!slide) return fail(t(failKey), `slideIndex out of range (0-${slides.length - 1})`)
       const target = resolveEditTarget(slide, sourceId)
-      const terr = targetError(target, sourceId, idx + 1)
+      const terr = targetError(target, sourceId, idx + 1, slides[idx])
       if (terr || !target || 'nested' in target) return fail(t(failKey), terr!)
       if (target.node.type !== 'picture')
         return fail(t(failKey), `Element ${sourceId} is not a picture (type: ${target.node.type})`)
       if (target.groupId)
         return fail(
           t(failKey),
-          `Element ${sourceId} is inside a group; this tool only supports top-level pictures — ungroup_element first`,
+          `Element ${sourceId} is inside a group; this tool only supports top-level pictures — ungroup it first (apply_ops ungroupElement)`,
         )
 
-      if (call.name === 'crop_image') {
-        const frac = (v: unknown) => Math.min(1, Math.max(0, Number(v) || 0))
-        const cl = frac(call.input.l)
-        const ct = frac(call.input.t)
-        const cr = frac(call.input.r)
-        const cb = frac(call.input.b)
-        if (cl + cr >= 0.99 || ct + cb >= 0.99)
-          return fail(t(failKey), 'Crop removes the whole image (l+r and t+b must be < 1)')
-        const srcRect = cl || ct || cr || cb ? { l: cl, t: ct, r: cr, b: cb } : null
-        const updated = await window.slidesApi.editPictureSrcRect({
-          slideIndex: idx,
-          sourceId,
-          srcRect,
-        })
-        if (!updated) return fail(t(failKey), 'Crop failed')
-        access.applySlide(idx, updated)
-        return {
-          output: srcRect
-            ? `Cropped picture ${sourceId} on page ${idx + 1} (l=${cl} t=${ct} r=${cr} b=${cb}).`
-            : `Removed the crop of picture ${sourceId} on page ${idx + 1}.`,
-          mutated: true,
-          summary: t('aiSumCropImage', { n: idx + 1 }),
-        }
-      }
-
-      if (call.name === 'set_picture_opacity') {
-        const opacity = Number(call.input.opacity)
-        if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1)
-          return fail(t(failKey), 'opacity must be between 0 and 1')
-        const updated = await window.slidesApi.editPictureOpacity({
-          slideIndex: idx,
-          sourceId,
-          opacity,
-        })
-        if (!updated) return fail(t(failKey), 'Opacity change failed')
-        access.applySlide(idx, updated)
-        return {
-          output: `Set the opacity of picture ${sourceId} on page ${idx + 1} to ${opacity}.`,
-          mutated: true,
-          summary: t('aiSumPictureOpacity', { n: idx + 1 }),
-        }
-      }
-
       const url = String(call.input.url ?? '')
-      if (!/^https?:\/\//.test(url)) return fail(t(failKey), 'Invalid url')
+      const attachmentName = attachmentRefName(url)
+      let payload: { url: string } | { base64: string; ext: string }
+      if (attachmentName != null) {
+        if (!access.resolveAttachmentImage)
+          return fail(t(failKey), 'Attachment embedding is unavailable here')
+        const resolved = await access.resolveAttachmentImage(attachmentName)
+        if (!resolved.ok) return fail(t(failKey), resolved.error)
+        payload = { base64: resolved.base64, ext: resolved.ext }
+      } else {
+        if (!/^(https?|file):\/\//.test(url)) return fail(t(failKey), 'Invalid url')
+        payload = { url }
+      }
       const updated = await window.slidesApi.replacePictureUrl({
         slideIndex: idx,
         sourceId,
-        url,
+        ...payload,
         ...(call.input.keepCrop ? { keepSrcRect: true } : {}),
       })
       if (!updated)
@@ -2280,7 +1725,7 @@ async function executeTool(
       const idx = Number(call.input.slideIndex)
       if (!slides[idx])
         return fail(t('aiFailRegen'), `slideIndex out of range (0-${slides.length - 1})`)
-      if (!access.regenerateSlide || !access.generatePageCloud)
+      if (!access.regenerateSlide || !access.generatePageLocal)
         return fail(
           t('aiFailRegen'),
           'The current environment does not support the page-redo pipeline',
@@ -2295,31 +1740,35 @@ async function executeTool(
       const regenImages = Array.isArray(call.input.image_urls)
         ? (call.input.image_urls as unknown[]).map(String).filter((u) => /^https?:\/\//.test(u))
         : []
-      // Cloud generation, one retry then give up (same semantics as generate_deck pages)
+      // One retry then give up (same semantics as generate_deck pages).
       const backoff = access.retryBackoffMs ?? 2000
       let marker: string | null = null
+      let genImageFails: string[] = []
       let lastErr = ''
+      const regenArgs = {
+        pageIndex: idx + 1,
+        totalPages: slides.length,
+        coreHook: '',
+        style: state?.lastStyleSkill ?? '',
+        title: String(call.input.title ?? ''),
+        brief,
+        layout: String(call.input.layout ?? ''),
+        images: regenImages,
+        canvasW: 1280,
+        canvasH: 720,
+      }
       for (let attempt = 0; attempt < 2 && !marker; attempt++) {
         if (attempt > 0 && backoff > 0) await new Promise((r) => setTimeout(r, backoff))
-        const res = await access.generatePageCloud({
-          pageIndex: idx + 1,
-          totalPages: slides.length,
-          coreHook: '',
-          style: state?.lastStyleSkill ?? '',
-          title: String(call.input.title ?? ''),
-          brief,
-          layout: String(call.input.layout ?? ''),
-          images: regenImages,
-          canvasW: 1280,
-          canvasH: 720,
-        })
-        if (res.ok && res.marker) marker = res.marker
-        else lastErr = res.error ?? t('aiErrUnknown')
+        const res = await access.generatePageLocal(regenArgs)
+        if (res.ok && res.marker) {
+          marker = res.marker
+          if (Array.isArray(res.imageFailures)) genImageFails = res.imageFailures
+        } else lastErr = res.error ?? t('aiErrUnknown')
       }
       if (!marker)
         return fail(
           t('aiFailRegen'),
-          `Cloud page generation failed (2 attempts): ${lastErr}. This is usually a temporary cloud service error — do not keep calling regenerate_slide in a loop. Instead, make the requested changes in place with execute_slide_script / set_element_* (group children are editable too), or tell the user to retry in a few minutes. The page was not modified.`,
+          `Page generation failed (2 attempts): ${lastErr}. This is usually a temporary service error — do not keep calling regenerate_slide in a loop. Instead, make the requested changes in place with execute_slide_script / set_element_* (group children are editable too), or tell the user to retry in a few minutes. The page was not modified.`,
         )
       const r = await access.regenerateSlide(idx, marker)
       if (!r.ok)
@@ -2328,44 +1777,33 @@ async function executeTool(
           `${r.error || 'Redo failed'} (the page was not modified; retry once, or edit it in place with execute_slide_script)`,
         )
       if (state) state.htmlGenerated = true
+      const allImageFails = [
+        ...(r.imageFailures ?? []),
+        ...genImageFails.map((url) => ({ page: idx + 1, url })),
+      ]
       return {
         output:
-          `Redid page ${idx + 1} in place from the brief via cloud generation (other pages untouched; the user can undo). Fine-tune afterwards with execute_slide_script / set_element_* tools.` +
-          imageFailNote(r.imageFailures),
+          `Redid page ${idx + 1} in place from the brief (other pages untouched; the user can undo). Fine-tune afterwards with execute_slide_script / set_element_* tools.` +
+          imageFailNote(allImageFails.length ? allImageFails : undefined),
         mutated: true,
         summary: t('aiSumRegen', { n: idx + 1 }),
-      }
-    }
-
-    case 'delete_slide': {
-      const idx = Number(call.input.slideIndex)
-      if (!slides[idx])
-        return fail(t('aiFailDeleteSlide'), `slideIndex out of range (0-${slides.length - 1})`)
-      if (slides.length <= 1)
-        return fail(t('aiFailDeleteSlide'), 'Only one page remains; cannot delete')
-      const r = await window.slidesApi.deleteSlide(idx)
-      if (!r) return fail(t('aiFailDeleteSlide'), 'Deletion failed')
-      access.applyDeck(r, Math.max(0, Math.min(idx, r.length - 1)))
-      return {
-        output: `Deleted page ${idx + 1}; the deck now has ${r.length} pages. Note that slideIndex of pages after it shifted down by 1.`,
-        mutated: true,
-        summary: t('aiSumDeleteSlide', { n: idx + 1 }),
       }
     }
 
     case 'generate_deck': {
       // ── Self-driven pipeline:
       //   1) Plan: use pages if passed; with topic, the tool plans the outline via LLM (batched recursion over threshold) — fixes missing pages at the input side.
-      //   2) Generate: batched concurrent cloud page generation (gsk slide_generate, one retry per page), **each batch lands immediately → frontend shows pages one by one**.
-      if (!access.generatePageCloud || !(await access.isCloudPageGenEnabled?.().catch(() => false)))
+      //   2) Generate: batched concurrent page generation (one retry per page), **each batch lands immediately → frontend shows pages one by one**.
+      //      The LLM (app AI transport) writes a slide spec that is built directly into a pptx.
+      if (!access.generatePageLocal)
         return fail(
           t('aiFailGenDeck'),
-          'Cloud slide generation is unavailable — sign in to Genspark (gsk) first',
+          'No page generation pipeline is available in this environment',
         )
-      if (!access.generateFromHtml)
+      if (!access.landGeneratedPages)
         return fail(
           t('aiFailGenDeck'),
-          'The current environment does not support the HTML→pptx pipeline',
+          'The current environment does not support the page landing pipeline',
         )
 
       // Hard gate: with unread text attachments present, refuse to generate.
@@ -2420,11 +1858,13 @@ async function executeTool(
       // When full pages+style are passed, respect the user's style (don't regenerate).
       // When style_template is passed, load the template directly and skip Step 0 (no LLM style generation).
       let styleSkill = ''
+      let templateSkeleton: LayoutSkeleton | undefined
       if (styleTemplateName && access.loadStyleTemplate) {
         // Preferred: load from a saved template (fail-open: on load failure continue normal generation)
         try {
           const tr = await access.loadStyleTemplate(styleTemplateName)
           if (tr.ok && tr.styleSkill) styleSkill = tr.styleSkill
+          if (tr.ok && tr.layout) templateSkeleton = tr.layout
         } catch {
           /* fail-open */
         }
@@ -2466,9 +1906,9 @@ async function executeTool(
       if (!styleSkill) styleSkill = style // Fallback: use the user-passed style, or empty
 
       // ── Step 1: plan the outline — without pages, plan in-tool from topic (batched recursion over PLAN_BATCH; layouts chosen per the Style Skill).
-      const approxForProgress = Math.max(
-        1,
-        parseInt(String(call.input.approx_pages ?? '0'), 10) || pages.length || 1,
+      const approxForProgress = Math.min(
+        MAX_APPROX_PAGES,
+        Math.max(1, parseInt(String(call.input.approx_pages ?? '0'), 10) || pages.length || 1),
       )
       if (pages.length === 0) {
         const approx = approxForProgress
@@ -2668,18 +2108,17 @@ async function executeTool(
       const deckName = String(pages[0]?.title ?? '').trim() || topic || coreHook
 
       // ── Step 2: generate page by page + land as we go (frontend shows pages one by one).
-      // The cloud service (gsk slide_generate) writes each page's HTML and converts it to a
-      // one-slide pptx; genOne returns a marker and landing reads the bytes.
+      // Each page (LLM spec → pptx-engine build) is a one-slide pptx temp file; genOne returns
+      // its marker and landing reads the bytes.
       // Land strictly in page order: nextToLand pointer; a page lands only when its marker is ready, keeping page order intact.
-      const htmlByIndex: (string | null)[] = new Array(total).fill(null)
+      const markerByIndex: (string | null)[] = new Array(total).fill(null)
       // Per-page completion flags (aligned with pages; same reference as state.pageDone, used by buildContext progress injection)
       const doneFlags: boolean[] = state?.pageDone ?? new Array(total).fill(false)
-      const genFailed: number[] = [] // Page indexes (0-based) whose HTML generation failed
-      const landFailed: number[] = [] // Page indexes (0-based) whose HTML generated but conversion/landing failed
+      const genFailed: number[] = [] // Page indexes (0-based) whose page generation failed
+      const landFailed: number[] = [] // Page indexes (0-based) whose page generated but landing failed
       const degraded: number[] = [] // Page indexes (0-based) that "landed" via the plain-text fallback — must be reported, otherwise dead pages appear silently
       const deckImageFails: { page: number; url: string }[] = [] // Image download/conversion failures (page numbers are deck-global 1-based)
       const pageErrors: (string | undefined)[] = new Array(total).fill(undefined) // Last failure reason per page
-      const auditWarns: string[] = [] // Content audit findings: placeholder text / near-empty pages
       let landedPages = 0
       let firstDone = false
       let baseOffset = 0 // Number of existing pages before generated page 0 in the deck (>0 in append mode); used to re-insert retries at their original position
@@ -2702,6 +2141,27 @@ async function executeTool(
         pages: [...pageProgressItems],
       })
 
+      type PageGen = NonNullable<DeckAccess['generatePageLocal']>
+      // Up to two attempts; returns the marker or the last error.
+      const tryGenerate = async (
+        pageArgs: Parameters<PageGen>[0],
+        pageIndex: number,
+      ): Promise<{ marker: string | null; err: string }> => {
+        let lastErr = ''
+        for (let attempt = 0; attempt < 2; attempt++) {
+          if (cancelled()) return { marker: null, err: lastErr }
+          if (attempt > 0 && BACKOFF_MS > 0) await new Promise((r) => setTimeout(r, BACKOFF_MS))
+          const res = await access.generatePageLocal!(pageArgs)
+          if (res.ok && res.marker) {
+            if (Array.isArray(res.imageFailures))
+              deckImageFails.push(...res.imageFailures.map((url) => ({ page: pageIndex, url })))
+            return { marker: res.marker, err: '' }
+          }
+          lastErr = res.error ?? t('aiErrUnknown')
+        }
+        return { marker: null, err: lastErr }
+      }
+
       const genOne = async (p: Record<string, unknown>, pageIndex: number) => {
         // Mark as running
         pageProgressItems[pageIndex - 1] = {
@@ -2722,45 +2182,41 @@ async function executeTool(
               .map((x) => String(x))
               .filter((x) => /^https?:\/\//.test(x))
           : []
-        let lastErr = ''
-        // One retry, then the page is skipped (marked failed in the progress card and the
-        // final summary) and the rest of the deck keeps generating.
-        for (let attempt = 0; attempt < 2; attempt++) {
-          if (cancelled()) return null
-          if (attempt > 0 && BACKOFF_MS > 0) await new Promise((r) => setTimeout(r, BACKOFF_MS))
-          const res = await access.generatePageCloud!({
-            pageIndex,
-            totalPages: total,
-            coreHook,
-            style: styleSkill,
-            title: String(p.title ?? ''),
-            brief: String(p.brief ?? ''),
-            layout: String(p.layout ?? ''),
-            images,
-            ...(pageContext ? { context: pageContext } : {}),
-            ...(topic ? { topic } : {}),
-            canvasW,
-            canvasH,
-            ...(signal ? { signal } : {}),
-          })
-          if (res.ok && res.marker) {
-            pageErrors[pageIndex - 1] = undefined
-            return res.marker
-          }
-          lastErr = res.error ?? t('aiErrUnknown')
+        // The template's chrome block for this page's role (cover/content/closing):
+        // the exact boxes every page of the role must reuse for a consistent look
+        const skeleton = templateSkeleton
+          ? formatSkeletonForPrompt(templateSkeleton, skeletonRole(pageIndex - 1, total)) ||
+            undefined
+          : undefined
+        const pageArgs = {
+          pageIndex,
+          totalPages: total,
+          coreHook,
+          style: styleSkill,
+          title: String(p.title ?? ''),
+          brief: String(p.brief ?? ''),
+          layout: String(p.layout ?? ''),
+          images,
+          ...(pageContext ? { context: pageContext } : {}),
+          ...(topic ? { topic } : {}),
+          canvasW,
+          canvasH,
+          ...(skeleton ? { skeleton } : {}),
+          ...(signal ? { signal } : {}),
         }
-        pageErrors[pageIndex - 1] = lastErr
-        return null
+        const res = await tryGenerate(pageArgs, pageIndex)
+        pageErrors[pageIndex - 1] = res.marker ? undefined : res.err
+        return res.marker
       }
 
       // Land in page order: starting from nextToLand, land as many as possible (stop at a gap and wait for it to generate).
       const flushLanded = async () => {
-        while (nextToLand < total && htmlByIndex[nextToLand] !== null) {
+        while (nextToLand < total && markerByIndex[nextToLand] !== null) {
           if (cancelled()) return
-          const html = htmlByIndex[nextToLand] as string
-          if (html.length > 0) {
+          const marker = markerByIndex[nextToLand] as string
+          if (marker.length > 0) {
             const m: 'replace' | 'append' = firstDone ? 'append' : insertMode
-            const r = await access.generateFromHtml!([html], m, deckName)
+            const r = await access.landGeneratedPages!([marker], m, deckName)
             if (r.ok) {
               if (r.fallbackReason) {
                 degraded.push(nextToLand)
@@ -2803,16 +2259,14 @@ async function executeTool(
         const batchIdxs = []
         for (let k = start; k < Math.min(start + GEN_BATCH, total); k++) batchIdxs.push(k)
         const results = await Promise.all(
-          batchIdxs.map(async (idx) => ({ idx, html: await genOne(pages[idx], idx + 1) })),
+          batchIdxs.map(async (idx) => ({ idx, marker: await genOne(pages[idx], idx + 1) })),
         )
         if (cancelled()) break
-        for (const { idx, html } of results) {
-          if (html && html.length > 0) {
-            htmlByIndex[idx] = html
-            const audit = auditPageHtml(html)
-            if (audit) auditWarns.push(`page ${idx + 1} ${audit}`)
+        for (const { idx, marker } of results) {
+          if (marker && marker.length > 0) {
+            markerByIndex[idx] = marker
           } else {
-            htmlByIndex[idx] = '' // Empty-string placeholder; doesn't block subsequent landings
+            markerByIndex[idx] = '' // Empty-string placeholder; doesn't block subsequent landings
             genFailed.push(idx)
             pageProgressItems[idx] = {
               ...pageProgressItems[idx]!,
@@ -2826,21 +2280,29 @@ async function executeTool(
       }
       if (!cancelled()) await flushLanded() // Finalize
 
-      // ── One re-land round for landing-failed pages (their one-slide pptx already exists, so
-      //   landing again is cheap), re-inserted at their original page position with insert_at
-      //   (target position = existing-page offset + pages completed before this one).
-      //   Generation-failed pages already spent their single retry and stay skipped.
+      // ── One retry round for failed pages, re-inserted at their original page position with
+      //   insert_at (target position = existing-page offset + pages completed before this one).
+      //   Landing-failed pages re-land (cheap: the one-slide pptx already exists). Pages whose
+      //   generation failed get one more attempt here (a JSON spec retry is cheap).
       if (!cancelled()) {
-        const retryIdxs = [...new Set(landFailed)].sort((a, b) => a - b)
+        const retryIdxs = [...new Set([...genFailed, ...landFailed])].sort((a, b) => a - b)
         for (const idx of retryIdxs) {
           if (cancelled()) break
-          const html = htmlByIndex[idx]
-          if (!html) continue
+          let marker = markerByIndex[idx]
+          if (!marker) marker = await genOne(pages[idx]!, idx + 1)
+          if (!marker) {
+            pageProgressItems[idx] = {
+              ...pageProgressItems[idx]!,
+              status: 'error',
+              error: pageErrors[idx],
+            }
+            continue
+          }
           const isFirstLand = !firstDone
           const r = isFirstLand
-            ? await access.generateFromHtml!([html], insertMode, deckName)
-            : await access.generateFromHtml!(
-                [html],
+            ? await access.landGeneratedPages!([marker], insertMode, deckName)
+            : await access.landGeneratedPages!(
+                [marker],
                 'insert_at',
                 deckName,
                 baseOffset + doneFlags.slice(0, idx).filter(Boolean).length,
@@ -2887,6 +2349,7 @@ async function executeTool(
           stage: 'done',
           total: landedPages,
           summary: t('aiSumStoppedKept', { n: landedPages }),
+          outcome: 'cancelled',
         })
         return cancelResult(landedPages, total)
       }
@@ -2911,6 +2374,7 @@ async function executeTool(
           stage: 'done',
           total: 0,
           summary: t('aiStageAllFailed', { n: total }),
+          outcome: 'failed',
         })
         return fail(
           t('aiFailGenDeck'),
@@ -2927,11 +2391,11 @@ async function executeTool(
 
       const note = buildProgressNote(state)
       const progressTail = note ? `\n${note}` : ''
-      // Faithfully report all unfinished pages (both HTML generation failures and conversion/landing failures; all already retried once)
+      // Faithfully report all unfinished pages (generation and landing failures; all already retried once)
       const stillFailed: number[] = []
       for (let i = 0; i < total; i++) if (!doneFlags[i]) stillFailed.push(i + 1)
       const briefErr = (s?: string) => (s ? (s.length > 80 ? `${s.slice(0, 80)}…` : s) : '')
-      const okMsg = `Self-driven generation produced ${landedPages}/${total} pages (HTML written page by page, displayed as generated; failed pages were auto-retried).`
+      const okMsg = `Self-driven generation produced ${landedPages}/${total} pages (pages generated one by one and displayed as they land; failed pages were auto-retried).`
       const failDetail = stillFailed
         .map((n) => `page ${n}${pageErrors[n - 1] ? ` (${briefErr(pageErrors[n - 1])})` : ''}`)
         .join(', ')
@@ -2950,329 +2414,10 @@ async function executeTool(
               ', ',
             )} degraded to a plain-text fallback page after conversion failure (all layout and styling lost): immediately redo these pages in place with regenerate_slide following the original brief, then reply to the user.`
         : ''
-      // Content audit: placeholder text / near-empty pages must not be delivered as finished work
-      const auditMsg = auditWarns.length
-        ? ` ⚠️ Content audit: ${auditWarns.join('; ')}. Do not tell the user the deck is done — redo each flagged page in place with regenerate_slide using real content (from the attachments/context), then reply.`
-        : ''
       return {
-        output:
-          okMsg + failMsg + degradedMsg + auditMsg + imageFailNote(deckImageFails) + progressTail,
+        output: okMsg + failMsg + degradedMsg + imageFailNote(deckImageFails) + progressTail,
         mutated: true,
         summary: t('aiSumDeckGenerated', { done: landedPages, total }),
-      }
-    }
-
-    case 'add_slide': {
-      const src = Number(call.input.sourceIndex)
-      if (!slides[src])
-        return fail(t('aiFailNewSlide'), `sourceIndex out of range (0-${slides.length - 1})`)
-      const r = await window.slidesApi.addSlide({
-        sourceIndex: src,
-        clearText: call.input.clearText !== false,
-        fitWidthPx: access.fitWidthPx,
-      })
-      if (!r) return fail(t('aiFailNewSlide'), 'Creation failed')
-      access.applyDeck(r.slides, r.index)
-      return {
-        output: `Created page ${r.index + 1} (${r.slides.length} pages total). ✅ Use slideIndex=${r.index} when filling content into this new page (not 1, unless it happens to be 1). To add another page after it, use sourceIndex=${r.slides.length - 1} (current last page) so it appends at the end.`,
-        mutated: true,
-        summary: t('aiSumNewSlide', { n: r.index + 1 }),
-      }
-    }
-
-    case 'add_text_box':
-    case 'add_shape': {
-      const idx = Number(call.input.slideIndex)
-      if (!slides[idx])
-        return fail(t('aiFailNewElement'), `slideIndex out of range (0-${slides.length - 1})`)
-      const scratchBlock = blockScratchBuild(call.name, slides, state)
-      if (scratchBlock) return scratchBlock
-      const isShape = call.name === 'add_shape'
-      const paragraphs = toEditParagraphs(call.input.paragraphs)
-      if (!isShape && !paragraphs)
-        return fail(t('aiFailNewTextbox'), 'paragraphs must be a non-empty array')
-      const kind = isShape ? String(call.input.kind) : 'textbox'
-      if (isShape && !/^[a-zA-Z][a-zA-Z0-9]*$/.test(kind)) {
-        return fail(t('aiFailNewShape'), `Invalid shape name: ${kind}`)
-      }
-      const r = await window.slidesApi.addElement({
-        slideIndex: idx,
-        kind,
-        xPx: Number(call.input.x),
-        yPx: Number(call.input.y),
-        wPx: Number(call.input.w),
-        hPx: Number(call.input.h),
-        fitWidthPx: access.fitWidthPx,
-        ...(paragraphs ? { paragraphs } : {}),
-        ...(isShape && call.input.fillColor ? { fillColor: String(call.input.fillColor) } : {}),
-      })
-      if (!r) return fail(t('aiFailNewElement'), 'Insertion failed')
-      access.applySlide(idx, r.slide)
-      return {
-        output: `Created a new ${isShape ? 'shape' : 'text box'} on page ${idx + 1}, element id=${r.sourceId}.`,
-        mutated: true,
-        summary: isShape
-          ? t('aiSumNewShape', { n: idx + 1 })
-          : t('aiSumNewTextbox', { n: idx + 1 }),
-      }
-    }
-
-    case 'add_chart': {
-      const idx = Number(call.input.slideIndex)
-      const slide = slides[idx]
-      if (!slide) return fail(t('aiFailChart'), `slideIndex out of range (0-${slides.length - 1})`)
-      const categories = Array.isArray(call.input.categories)
-        ? call.input.categories.map(String)
-        : []
-      const seriesRaw = Array.isArray(call.input.series) ? call.input.series : []
-      const series = seriesRaw
-        .map((s) => ({
-          name: String((s as { name?: unknown }).name ?? ''),
-          values: Array.isArray((s as { values?: unknown }).values)
-            ? ((s as { values: unknown[] }).values.map(Number) as number[])
-            : [],
-        }))
-        .filter((s) => s.values.length > 0)
-      if (categories.length === 0 || series.length === 0) {
-        return fail(t('aiFailChart'), 'Neither categories nor series may be empty')
-      }
-      const gateErr = dataSourceGateError(call, state)
-      if (gateErr) return fail(t('aiFailChart'), gateErr)
-      const defW = Math.round(slide.widthPx * 0.62)
-      const defH = Math.round(slide.heightPx * 0.62)
-      const w = Number(call.input.w) || defW
-      const h = Number(call.input.h) || defH
-      const r = await window.slidesApi.addChart({
-        slideIndex: idx,
-        kind: String(call.input.kind) as
-          'bar' | 'barStacked' | 'line' | 'area' | 'pie' | 'doughnut',
-        ...(call.input.title ? { title: String(call.input.title) } : {}),
-        categories,
-        series,
-        xPx:
-          Number.isFinite(Number(call.input.x)) && call.input.x != null
-            ? Number(call.input.x)
-            : Math.round((slide.widthPx - w) / 2),
-        yPx:
-          Number.isFinite(Number(call.input.y)) && call.input.y != null
-            ? Number(call.input.y)
-            : Math.round((slide.heightPx - h) / 2),
-        wPx: w,
-        hPx: h,
-        fitWidthPx: access.fitWidthPx,
-      })
-      if (!r) return fail(t('aiFailChart'), 'Insertion failed (check kind and data)')
-      access.applySlide(idx, r.slide)
-      const sampleNote = call.input.dataSource === 'sample' ? SAMPLE_DATA_NOTE : ''
-      return {
-        output: `Inserted a ${String(call.input.kind)} chart on page ${idx + 1}, element id=${r.sourceId}.${sampleNote}`,
-        mutated: true,
-        summary: t('aiSumChart', { n: idx + 1 }),
-      }
-    }
-
-    case 'add_smartart': {
-      const scratchBlockSA = blockScratchBuild(call.name, slides, state)
-      if (scratchBlockSA) return scratchBlockSA
-      const idx = Number(call.input.slideIndex)
-      const slide = slides[idx]
-      if (!slide)
-        return fail(t('aiFailSmartart'), `slideIndex out of range (0-${slides.length - 1})`)
-      const items = Array.isArray(call.input.items)
-        ? call.input.items.map(String).filter(Boolean)
-        : []
-      if (items.length < 2) return fail(t('aiFailSmartart'), 'items requires at least 2 entries')
-      const defW = Math.round(slide.widthPx * 0.7)
-      const defH = Math.round(slide.heightPx * 0.5)
-      const w = Number(call.input.w) || defW
-      const h = Number(call.input.h) || defH
-      const r = await window.slidesApi.addSmartArt({
-        slideIndex: idx,
-        layout: String(call.input.layout) as AddSmartArtOp['layout'],
-        items,
-        xPx:
-          Number.isFinite(Number(call.input.x)) && call.input.x != null
-            ? Number(call.input.x)
-            : Math.round((slide.widthPx - w) / 2),
-        yPx:
-          Number.isFinite(Number(call.input.y)) && call.input.y != null
-            ? Number(call.input.y)
-            : Math.round((slide.heightPx - h) / 2),
-        wPx: w,
-        hPx: h,
-        fitWidthPx: access.fitWidthPx,
-      })
-      if (!r) return fail(t('aiFailSmartart'), 'Insertion failed (check layout)')
-      access.applySlide(idx, r.slide)
-      return {
-        output: `Inserted a ${String(call.input.layout)} diagram (${items.length} nodes) on page ${idx + 1}, element id=${r.sourceId}.`,
-        mutated: true,
-        summary: t('aiSumSmartart', { n: idx + 1 }),
-      }
-    }
-
-    case 'add_table': {
-      const idx = Number(call.input.slideIndex)
-      const slide = slides[idx]
-      if (!slide) return fail(t('aiFailTable'), `slideIndex out of range (0-${slides.length - 1})`)
-      const rows = Number(call.input.rows)
-      const cols = Number(call.input.cols)
-      if (
-        !Number.isInteger(rows) ||
-        !Number.isInteger(cols) ||
-        rows < 1 ||
-        cols < 1 ||
-        rows > 30 ||
-        cols > 12
-      ) {
-        return fail(t('aiFailTable'), 'Invalid rows (1-30) / cols (1-12)')
-      }
-      const defW = Math.round(slide.widthPx * 0.7)
-      const defH = Math.round(Math.min(slide.heightPx * 0.6, rows * 40 + 20))
-      const w = Number(call.input.w) || defW
-      const h = Number(call.input.h) || defH
-      const r = await window.slidesApi.addTable({
-        slideIndex: idx,
-        rows,
-        cols,
-        xPx:
-          Number.isFinite(Number(call.input.x)) && call.input.x != null
-            ? Number(call.input.x)
-            : Math.round((slide.widthPx - w) / 2),
-        yPx:
-          Number.isFinite(Number(call.input.y)) && call.input.y != null
-            ? Number(call.input.y)
-            : Math.round((slide.heightPx - h) / 2),
-        wPx: w,
-        hPx: h,
-        fitWidthPx: access.fitWidthPx,
-      })
-      if (!r) return fail(t('aiFailTable'), 'Insertion failed')
-      let updated = r.slide
-      // Fill cells one by one (cells optional; out-of-range parts ignored)
-      const cells = Array.isArray(call.input.cells) ? (call.input.cells as unknown[][]) : []
-      let filled = 0
-      for (let ri = 0; ri < Math.min(cells.length, rows); ri++) {
-        const rowCells = Array.isArray(cells[ri]) ? cells[ri]! : []
-        for (let ci = 0; ci < Math.min(rowCells.length, cols); ci++) {
-          const text = String(rowCells[ci] ?? '')
-          if (!text) continue
-          const u = await window.slidesApi.editTableCell({
-            slideIndex: idx,
-            sourceId: r.sourceId,
-            row: ri,
-            col: ci,
-            paragraphs: [{ runs: [{ text }] }],
-          })
-          if (u) {
-            updated = u
-            filled++
-          }
-        }
-      }
-      access.applySlide(idx, updated)
-      return {
-        output: `Inserted a ${rows}×${cols} table on page ${idx + 1}, element id=${r.sourceId}${filled ? `, filled ${filled} cell(s) with text` : ''}.`,
-        mutated: true,
-        summary: t('aiSumTable', { n: idx + 1 }),
-      }
-    }
-
-    case 'edit_table_cell': {
-      const idx = Number(call.input.slideIndex)
-      const sourceId = String(call.input.sourceId ?? '')
-      if (!slides[idx])
-        return fail(t('aiFailEditTable'), `slideIndex out of range (0-${slides.length - 1})`)
-      const paragraphs = toEditParagraphs(call.input.paragraphs)
-      if (!paragraphs) return fail(t('aiFailEditTable'), 'paragraphs must be a non-empty array')
-      const row = Number(call.input.row)
-      const col = Number(call.input.col)
-      const updated = await window.slidesApi.editTableCell({
-        slideIndex: idx,
-        sourceId,
-        row,
-        col,
-        paragraphs,
-      })
-      if (!updated)
-        return fail(
-          t('aiFailEditTable'),
-          `Table ${sourceId} not found or cell (${row},${col}) out of range`,
-        )
-      access.applySlide(idx, updated)
-      return {
-        output: `Replaced the text of cell (${row},${col}) in table ${sourceId} on page ${idx + 1}.`,
-        mutated: true,
-        summary: t('aiSumTableCell', { n: idx + 1 }),
-      }
-    }
-
-    case 'edit_table_structure': {
-      const idx = Number(call.input.slideIndex)
-      const sourceId = String(call.input.sourceId ?? '')
-      if (!slides[idx])
-        return fail(t('aiFailTableStructure'), `slideIndex out of range (0-${slides.length - 1})`)
-      const kind = String(call.input.kind) as
-        'insert-row' | 'delete-row' | 'insert-col' | 'delete-col'
-      if (!['insert-row', 'delete-row', 'insert-col', 'delete-col'].includes(kind)) {
-        return fail(t('aiFailTableStructure'), 'Invalid kind')
-      }
-      const r = await window.slidesApi.tableStructure({
-        slideIndex: idx,
-        sourceId,
-        kind,
-        index: Number(call.input.index),
-        ...(call.input.before ? { before: true } : {}),
-      })
-      if (!r)
-        return fail(
-          t('aiFailTableStructure'),
-          `Operation failed (table ${sourceId} does not exist, index out of range, or the last row/column cannot be deleted)`,
-        )
-      access.applySlide(idx, r.slide)
-      return {
-        output: `Applied ${kind} (index=${Number(call.input.index)}) to table ${sourceId} on page ${idx + 1}. The table id may have been updated to ${r.sourceId}.`,
-        mutated: true,
-        summary: t('aiSumTableStructure', {
-          n: idx + 1,
-          op: t(
-            kind.startsWith('insert')
-              ? kind.endsWith('row')
-                ? 'aiOpInsertRow'
-                : 'aiOpInsertCol'
-              : kind.endsWith('row')
-                ? 'aiOpDeleteRow'
-                : 'aiOpDeleteCol',
-          ),
-        }),
-      }
-    }
-
-    case 'edit_table_style': {
-      const idx = Number(call.input.slideIndex)
-      const sourceId = String(call.input.sourceId ?? '')
-      if (!slides[idx])
-        return fail(t('aiFailTableStyle'), `slideIndex out of range (0-${slides.length - 1})`)
-      const op: import('../../shared/ipc').EditTableStyleOp = { slideIndex: idx, sourceId }
-      if (call.input.styleName != null) op.styleName = String(call.input.styleName)
-      if (call.input.firstRow != null) op.firstRow = Boolean(call.input.firstRow)
-      if (call.input.bandRow != null) op.bandRow = Boolean(call.input.bandRow)
-      if (call.input.shadingColor != null) op.shadingColor = String(call.input.shadingColor)
-      if (call.input.borderColor != null) op.borderColor = String(call.input.borderColor)
-      if (call.input.borderWidthPt != null) op.borderWidthPt = Number(call.input.borderWidthPt)
-      if (call.input.borderPreset != null)
-        op.borderPreset = String(call.input.borderPreset) as 'all' | 'none'
-      const updated = await window.slidesApi.editTableStyle(op)
-      if (!updated)
-        return fail(
-          t('aiFailTableStyle'),
-          `Operation failed (table ${sourceId} does not exist or is not of type table)`,
-        )
-      access.applySlide(idx, updated.slide)
-      return {
-        output: `Updated the style of table ${sourceId} on page ${idx + 1}.`,
-        mutated: true,
-        summary: t('aiSumTableStyle', { n: idx + 1 }),
       }
     }
 
@@ -3318,88 +2463,75 @@ async function executeTool(
       }
     }
 
-    case 'set_slide_background': {
-      const idx = Number(call.input.slideIndex)
-      const color = String(call.input.color ?? '')
-      if (idx !== -1 && !slides[idx])
-        return fail(t('aiFailBackground'), `slideIndex out of range (0-${slides.length - 1} or -1)`)
-      if (!/^#?[0-9a-fA-F]{6}$/.test(color))
-        return fail(t('aiFailBackground'), 'color must be #RRGGBB')
-      const r = await window.slidesApi.editBackground({
-        slideIndex: idx,
-        color: color.startsWith('#') ? color : `#${color}`,
-        fitWidthPx: access.fitWidthPx,
+    case 'apply_ops': {
+      const opsIn = Array.isArray(call.input.ops) ? (call.input.ops as unknown[]) : null
+      if (!opsIn || opsIn.length === 0)
+        return fail(t('aiFailApplyOps'), 'ops must be a non-empty array')
+      const pre = preflightOps(opsIn, slides, state)
+      if (!('ops' in pre)) return pre
+      const r = await window.slidesApi.applyTxn?.({
+        ops: pre.ops,
+        ...(call.input.dry_run === true ? { dryRun: true } : {}),
+        ...(call.input.isolation === 'per_op' ? { isolation: 'per_op' as const } : {}),
       })
-      if (!r) return fail(t('aiFailBackground'), 'Setting failed')
-      access.applyDeck(r)
+      if (!r) return fail(t('aiFailApplyOps'), 'The transaction could not be executed')
+      const failLines = (r.failures ?? []).map((f) => `- ops[${f.index}]: ${f.error}`).join('\n')
+      if (r.dryRun) {
+        const planStr = (r.plan ?? []).join('\n')
+        return {
+          output:
+            `Dry run — the deck was NOT modified.\n` +
+            (planStr ? `Valid plan:\n${planStr}\n` : '') +
+            (failLines ? `Rejected ops:\n${failLines}\n` : 'All ops validated.\n') +
+            `Resend with dry_run omitted to apply.`,
+          mutated: false,
+          summary: t('aiSumApplyOpsDryRun'),
+        }
+      }
+      if (!r.applied) {
+        return fail(
+          t('aiFailApplyOps'),
+          `Nothing was applied${call.input.isolation === 'per_op' ? '' : ' (atomic)'}:\n${failLines || 'unknown failure'}`,
+        )
+      }
+      // Ops can delete slides — clamp the current index into the rebuilt deck
+      // (page deletion may leave the current index past the end)
+      access.applyDeck(r.slides!, Math.max(0, Math.min(access.getCurrent(), r.slides!.length - 1)))
+      const created = (r.records ?? []).flatMap((rec) => rec.created ?? [])
+      const doneStr = (r.records ?? [])
+        .map((rec) => `${rec.op}${rec.target ? ` @${rec.target}` : ''}`)
+        .join(', ')
+      const notes = (r.records ?? [])
+        .filter((rec) => rec.note)
+        .map((rec) => `${rec.target ?? rec.op}: ${rec.note}`)
       return {
         output:
-          idx === -1
-            ? `Set the background of all ${r.length} pages to ${color}.`
-            : `Set the background of page ${idx + 1} to ${color}.`,
+          `Applied ${r.records?.length ?? 0} op(s): ${doneStr}.` +
+          (created.length ? ` New element ids: ${created.join(', ')}.` : '') +
+          (notes.length ? `\nNote:\n${notes.join('\n')}` : '') +
+          (failLines ? `\nSkipped (per_op):\n${failLines}` : '') +
+          (pre.sampleData ? SAMPLE_DATA_NOTE : '') +
+          auditTouchedPages(r.records, r.slides!),
         mutated: true,
-        summary: idx === -1 ? t('aiSumBackgroundAll') : t('aiSumBackground', { n: idx + 1 }),
+        summary: applyOpsSummary(pre.ops, r.records?.length ?? 0),
       }
     }
 
-    case 'delete_element': {
-      const idx = Number(call.input.slideIndex)
-      const sourceId = String(call.input.sourceId ?? '')
-      if (!slides[idx])
-        return fail(t('aiFailDeleteElement'), `slideIndex out of range (0-${slides.length - 1})`)
-      // Deletion is top-level only: for group members guide to ungroup instead of a misleading "not found"
-      const target = resolveEditTarget(slides[idx]!, sourceId)
-      if (target && ('nested' in target || target.groupId)) {
-        const gid = 'nested' in target ? undefined : target.groupId
+    case 'load_guide': {
+      const raw = Array.isArray(call.input.groups) ? call.input.groups.map(String) : []
+      if (raw.length === 0) return fail(t('aiFailLoadGuide'), 'groups must be a non-empty array')
+      const unknown = raw.filter((g) => !opGuide(g))
+      if (unknown.length > 0) {
         return fail(
-          t('aiFailDeleteElement'),
-          `Element ${sourceId} is inside a group${gid ? ` (${gid})` : ''}; call ungroup_element on the group first and then delete it, or delete the whole group`,
+          t('aiFailLoadGuide'),
+          `Unknown guide group(s): ${unknown.join(', ')}. Available: ${OP_GROUPS.join(', ')}.`,
         )
       }
-      const updated = await window.slidesApi.deleteElement({ slideIndex: idx, sourceId })
-      if (!updated)
-        return fail(
-          t('aiFailDeleteElement'),
-          `Element ${sourceId} not found on page ${idx + 1} (ids change after regenerate/ungroup/save; call read_slide for fresh ids)`,
-        )
-      access.applySlide(idx, updated)
+      const groups = [...new Set(raw)]
       return {
-        output: `Deleted element ${sourceId} from page ${idx + 1}.`,
-        mutated: true,
-        summary: t('aiSumDeleteElement', { n: idx + 1 }),
-      }
-    }
-
-    case 'ungroup_element': {
-      const idx = Number(call.input.slideIndex)
-      const sourceId = String(call.input.sourceId ?? '')
-      const slide = slides[idx]
-      if (!slide)
-        return fail(t('aiFailUngroup'), `slideIndex out of range (0-${slides.length - 1})`)
-      const node = slide.nodes.find((n) => n.sourceId === sourceId)
-      if (!node) {
-        return fail(
-          t('aiFailUngroup'),
-          findNodeById(slide.nodes, sourceId)
-            ? `${sourceId} is inside another group; ungroup the outer group first`
-            : `Element ${sourceId} not found on page ${idx + 1}`,
-        )
-      }
-      if (node.type !== 'group')
-        return fail(t('aiFailUngroup'), `${sourceId} is not a group (type: ${node.type})`)
-      if (node.decoration)
-        return fail(t('aiFailUngroup'), `${sourceId} is a layout decoration, read-only`)
-      const updated = await window.slidesApi.ungroupElement({ slideIndex: idx, sourceId })
-      if (!updated) return fail(t('aiFailUngroup'), 'Ungroup failed')
-      access.applySlide(idx, updated)
-      // Ungrouping rewrites the page and re-ids every element; echo the fresh list so no extra read_slide is needed
-      const fresh = collectNodeInfos(updated.nodes)
-        .map((n) => `${n.id} | ${n.type}${n.text ? ` | ${preview(n.text)}` : ''}`)
-        .join('\n')
-      return {
-        output: `Ungrouped ${sourceId} on page ${idx + 1} into ${node.children.length} top-level elements. All element ids on this page changed; current elements:\n${fresh}`,
-        mutated: true,
-        summary: t('aiSumUngroup', { n: idx + 1 }),
+        output: groups.map((g) => opGuide(g)!).join('\n\n---\n\n'),
+        mutated: false,
+        summary: t('aiSumLoadGuide', { names: groups.join(', ') }),
       }
     }
 
@@ -3418,14 +2550,18 @@ async function executeTool(
           t('aiFailSaveTemplate'),
           'The current deck has no Style Skill to save (generate a presentation with generate_deck first)',
         )
+      // Chrome skeleton from the current deck (title box, brand-image slot, accents,
+      // backgrounds) so pages generated from this template stay geometrically consistent
+      const layout = extractLayoutSkeleton(access.getSlides()) ?? undefined
       const r = await access.saveStyleTemplate(name, {
         topic: topicToSave,
         styleSkill: styleSkillToSave,
         createdAt: new Date().toISOString(),
+        ...(layout ? { layout } : {}),
       })
       if (!r.ok) return fail(t('aiFailSaveTemplate'), r.error ?? 'Save failed')
       return {
-        output: `Saved the style "${name}" as a template; next time pass style_template:"${name}" to reuse it directly.`,
+        output: `Saved the style "${name}" as a template${layout ? ' with its layout skeleton (title/brand-image geometry is pinned for future pages)' : ''}; next time pass style_template:"${name}" to reuse it directly.`,
         mutated: false,
         summary: t('aiSumSaveTemplate', { name }),
       }

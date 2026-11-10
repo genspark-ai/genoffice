@@ -1,12 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { DEFAULT_HEADER_FOOTER, DEFAULT_WATERMARK } from './stamps'
 import type { HeaderFooterConfig, WatermarkConfig } from './stamps'
 import type { TFunc } from './i18n/locale'
-import { ColorPalette } from './ColorPalette'
-
-const WM_COLORS = ['#d0342c', '#8a8a8a', '#2b66ff', '#217346']
-const WM_COLOR_PRESETS = WM_COLORS.map((value) => ({ value }))
+import { ColorPickerPopover } from './ColorPicker'
+import { useModalDialog } from './modal-dialog'
 
 /** Watermark / header-footer config dialog; on confirm App generates stamps and marks unsaved changes */
 export function StampDialog({
@@ -21,6 +19,28 @@ export function StampDialog({
   const [tab, setTab] = useState<'watermark' | 'hf'>('watermark')
   const [wm, setWm] = useState<WatermarkConfig>(DEFAULT_WATERMARK)
   const [hf, setHf] = useState<HeaderFooterConfig>(DEFAULT_HEADER_FOOTER)
+  const [colorOpen, setColorOpen] = useState(false)
+  const colorWrapRef = useRef<HTMLSpanElement>(null)
+  // The color popover handles Escape itself while open
+  const dialogRef = useModalDialog(onCancel, { escape: !colorOpen })
+
+  // outside-click / Escape close for the color popover (no blur close: the
+  // native "More Colors" dialog blurs the window while it is open)
+  useEffect(() => {
+    if (!colorOpen) return
+    const onDown = (event: MouseEvent): void => {
+      if (!colorWrapRef.current?.contains(event.target as Node)) setColorOpen(false)
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setColorOpen(false)
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [colorOpen])
 
   const hfUsed =
     hf.pageNumber ||
@@ -47,7 +67,14 @@ export function StampDialog({
 
   return (
     <div className="pdf-modal-mask" onClick={onCancel}>
-      <div className="pdf-modal pdf-modal-wide" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="pdf-modal pdf-modal-wide"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('stampTitle')}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="pdf-modal-title">{t('stampTitle')}</div>
         <div className="pdf-sign-tabs">
           <button
@@ -72,7 +99,6 @@ export function StampDialog({
                 className="pdf-modal-input"
                 value={wm.text}
                 placeholder={t('watermarkPlaceholder')}
-                autoFocus
                 onChange={(e) => setWm({ ...wm, text: e.target.value })}
               />
             </label>
@@ -111,18 +137,36 @@ export function StampDialog({
             </label>
             <div className="pdf-field">
               <span>{t('drawColor')}</span>
-              <ColorPalette
-                value={wm.color}
-                presets={WM_COLOR_PRESETS}
-                moreColorsLabel={t('moreColors')}
-                onChange={(value) => setWm({ ...wm, color: value })}
-              />
+              <span ref={colorWrapRef} className="pdf-color-well-wrap">
+                <button
+                  type="button"
+                  className="pdf-color-well"
+                  style={{ background: wm.color }}
+                  aria-label={t('drawColor')}
+                  aria-haspopup="dialog"
+                  aria-expanded={colorOpen}
+                  onClick={() => setColorOpen((v) => !v)}
+                />
+                {colorOpen && (
+                  <ColorPickerPopover
+                    className="pdf-color-well-pop"
+                    value={wm.color}
+                    onPick={(hex) => setWm((prev) => ({ ...prev, color: hex }))}
+                    onClose={() => setColorOpen(false)}
+                  />
+                )}
+              </span>
             </div>
             <div
               className="pdf-wm-preview"
               style={{ color: wm.color, opacity: Math.max(wm.opacity, 0.25) }}
             >
-              <span style={{ transform: `rotate(${-wm.angle}deg)` }}>
+              <span
+                style={{
+                  transform: `rotate(${-wm.angle}deg)`,
+                  fontSize: Math.round(wm.sizeRatio * 236),
+                }}
+              >
                 {wm.text || t('watermarkPlaceholder')}
               </span>
             </div>

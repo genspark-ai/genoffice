@@ -11,6 +11,7 @@ const SELECTION: SelectionFormat = {
   italic: false,
   underline: false,
   strike: false,
+  vertAlign: null,
   wrap: false,
   horizontalAlignment: 'left',
   verticalAlignment: 'center',

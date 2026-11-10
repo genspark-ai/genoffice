@@ -1,0 +1,39 @@
+{
+  "id": "br-only-line-size",
+  "title": "A br-only first line is sized by the br run's own rPr, not the mark or the following run",
+  "section": "word-truths.md#L300",
+  "probe_date": "2026-09-23",
+  "source": "probe build2.py -> ta_p2.pdf p1: br run sz 22 -> 12.64pt (11 x 1.15); sz 56 -> 32.2; control sz 28 -> 16.2",
+  "cases": [
+    {
+      "kind": "runProps",
+      "block": 0,
+      "run": 0,
+      "expect": {
+        "text": "\n",
+        "sizeHalfPoints": 22
+      },
+      "note": "the break run keeps its own 11pt size (12.64pt line)"
+    },
+    {
+      "kind": "runProps",
+      "block": 0,
+      "run": 1,
+      "expect": {
+        "sizeHalfPoints": 28
+      }
+    },
+    {
+      "kind": "runProps",
+      "block": 1,
+      "run": 0,
+      "expect": {
+        "text": "\n",
+        "sizeHalfPoints": 56
+      },
+      "note": "28pt br run -> 32.2pt empty line"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

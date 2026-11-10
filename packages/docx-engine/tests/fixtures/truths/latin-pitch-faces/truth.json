@@ -1,0 +1,88 @@
+{
+  "id": "latin-pitch-faces",
+  "title": "Latin single-spacing pitch per face",
+  "section": "word-truths.md#L238",
+  "probe_date": "2026-09-17",
+  "class": "pure",
+  "source": "14 faces x 10/11/12pt 7-line w:br blocks, Word for Mac direct PDF, pymupdf baselines; Word PDF pitches alternate by one 1/300 in step so a 0.1pt tolerance is the measurement grain",
+  "cases": [
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 13.44,
+      "tol": 0.05,
+      "note": "Calibri 11 (1.22)"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 14.64,
+      "tol": 0.01,
+      "note": "Calibri 12"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 13.8,
+      "tol": 0.01,
+      "note": "Arial 12 (1.15)"
+    },
+    {
+      "kind": "linePt",
+      "block": 3,
+      "expect": 11.52,
+      "tol": 0.05,
+      "note": "Arial 10"
+    },
+    {
+      "kind": "linePt",
+      "block": 4,
+      "expect": 13.809,
+      "tol": 0.02,
+      "note": "Times New Roman 12 (1.1507)"
+    },
+    {
+      "kind": "linePt",
+      "block": 5,
+      "expect": 13.68,
+      "tol": 0.05,
+      "note": "Georgia 12 (1.1375)"
+    },
+    {
+      "kind": "linePt",
+      "block": 6,
+      "expect": 14.16,
+      "tol": 0.1,
+      "note": "Cambria 12 (1.172, Word rounds up at 12pt)"
+    },
+    {
+      "kind": "linePt",
+      "block": 7,
+      "expect": 14.04,
+      "tol": 0.05,
+      "note": "Consolas 12 (1.1667)"
+    },
+    {
+      "kind": "linePt",
+      "block": 8,
+      "expect": 13.68,
+      "tol": 0.1,
+      "note": "Courier New 12 (1.1333)"
+    },
+    {
+      "kind": "linePt",
+      "block": 9,
+      "expect": 15.96,
+      "tol": 0.01,
+      "note": "Segoe UI 12 (1.33)"
+    },
+    {
+      "kind": "linePt",
+      "block": 10,
+      "expect": 14.64,
+      "tol": 0.01,
+      "note": "Aptos 12 (1.22)"
+    }
+  ],
+  "docx": "probe.docx"
+}

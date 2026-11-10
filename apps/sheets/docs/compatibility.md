@@ -39,6 +39,11 @@ Any save operation that cannot preserve these parts must fail closed. It must no
 
 The current PoC intentionally supports a narrower write set:
 
+- Password-encrypted `.xlsx` files using Agile or AES Standard encryption: enter
+  the file-open password to open them. Sheets decrypts the package in the
+  Electron main process for the session and encrypts it with the same password
+  when saving, including crash-recovery copies. The Review tab can change the
+  file-open password; worksheet-protection passwords remain separate.
 - Edit, clear, or add cell values and formulas in streamed external workbooks, saved back (or Save As) with a whole-file SHA-256 drift check; only the edited worksheet entries, `xl/styles.xml` (when styles changed), and `xl/workbook.xml` (forced recalculation flag) are rewritten, every other ZIP entry is verified byte-identical or the save fails closed. Cell style indices survive edits; shared-string cells are rewritten as inline strings; new rows and cells are inserted in schema order.
 - Ribbon style edits (bold/italic/underline/strikethrough, font family/size, arbitrary font/fill colors with a full picker, fill clearing, per-edge borders with 13 line styles and a border color, alignment, wrap, number formats) on streamed workbooks, written copy-on-write into `styles.xml`: new deduped cellXfs/fonts/fills/borders derived from each cell's original format (untouched border edges and diagonal attributes survive verbatim), built-in number-format ids mapped, custom ids allocated from 164. Style-only edits leave cell content byte-identical. Pattern-fill editing is deliberately out of scope (no editor model for it).
 - Rename a worksheet (demo workbook DSL flow).
@@ -69,7 +74,7 @@ The current PoC intentionally supports a narrower write set:
 
 - Format Cells dialog (⌘1) covers number format, alignment (horizontal including justify/distributed, vertical, wrap, orientation presets, indent), font, border, fill, and cell protection flags. Indent renders as left cell padding (`pd.l`, `INDENT_STEP_PX` px per step), is undoable, journals through the normal set-range-values channel, saves into the xf's `<alignment indent>`, and reads back from opened files. Locked/hidden protection still has no Univer model: it journals directly and saves into `<protection>` (defaults omitted), but is not rendered on screen, not undoable, and not enforced by the editor — it takes effect when Excel protects the sheet.
 
-- Text rotation (OOXML `textRotation` 0-180 and 255 stacked) and double underline (`<u val="double"/>`) through the same copy-on-write style pipeline. Text to Columns splits a single selected column by comma/semicolon/space/tab (fully-loaded workbooks; the split's cell writes and any inserted columns ride the existing journal). File-side text rotation is write-only for now — existing rotations render unrotated.
+- Text rotation (OOXML `textRotation` 0-180 and 255 stacked) and double underline (`<u val="double"/>`) through the same copy-on-write style pipeline. Text to Columns splits a single selected column by comma/semicolon/space/tab (fully-loaded workbooks; the split's cell writes and any inserted columns ride the existing journal). File-side text rotation round-trips: imported rotations render through the same mapping.
 
 - Table creation (AI `add_table` on imported workbooks): renders as a native Univer table (banded styles, filter dropdowns) and saves as a brand-new `xl/tables/tableN.xml` part with the worksheet `<tableParts>` hookup, relationship, and content-type override. Column names are captured from the on-screen header row at apply time, sanitized to Excel's rules (blank → ColumnN, duplicates suffixed) and written back into the cells so the part and the sheet agree. Fail-closed at save: table/defined-name collisions, overlap with existing tables / the sheet auto-filter / merged cells, blank or duplicate column names, and a same-save row/column shift on the table's sheet. Editing or deleting tables already in the file, structured references in formulas, and rendering of pre-existing table styles remain unsupported.
 

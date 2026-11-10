@@ -1,0 +1,52 @@
+{
+  "id": "empty-mark-ea-hint-ignored",
+  "title": "An empty paragraph mark lays out with its inherited ascii face whatever its hint, lang or eastAsia slot say; only an ascii slot changes the line. Missing EA fonts substitute per script",
+  "section": "word-truths.md#L128",
+  "probe_date": "2026-09-06",
+  "source": "probe build.py, Word for Mac direct PDF: empty marks with hint=eastAsia / lang ko-KR / eastAsia=Batang (+hint) all 13.43pt (Calibri 11); mark ascii/hAnsi=Batang 14.3pt; hangul in missing Noto Sans CJK SC -> Batang 1.3029 (advance 1em)",
+  "cases": [
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 13.43,
+      "tol": 0.05,
+      "note": "hint=eastAsia on the mark: still Calibri"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 13.43,
+      "tol": 0.05,
+      "note": "lang eastAsia ko-KR on the mark: still Calibri"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 13.43,
+      "tol": 0.05,
+      "note": "eastAsia=Batang on the mark: still Calibri (13.43), not Batang 14.33"
+    },
+    {
+      "kind": "linePt",
+      "block": 3,
+      "expect": 13.43,
+      "tol": 0.05,
+      "note": "eastAsia=Batang + hint: still Calibri"
+    },
+    {
+      "kind": "linePt",
+      "block": 4,
+      "expect": 14.33,
+      "tol": 0.05,
+      "note": "ascii/hAnsi=Batang on the mark: Batang line 14.3"
+    },
+    {
+      "kind": "cjkFactor",
+      "font": "Noto Sans CJK SC",
+      "expect": 1.3,
+      "note": "missing Noto SC: CJK text in the SimSun/Batang class; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

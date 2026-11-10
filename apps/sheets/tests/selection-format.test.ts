@@ -31,6 +31,7 @@ describe('toSelectionFormat', () => {
       italic: false,
       underline: true,
       strike: false,
+      vertAlign: null,
       wrap: true,
       horizontalAlignment: null,
       verticalAlignment: null,
@@ -44,10 +45,7 @@ describe('toSelectionFormat', () => {
   })
 
   it('echoes alignment names and the OOXML rotation value', () => {
-    const format = toSelectionFormat(
-      { ht: 4, vt: 1, tr: { a: -45 } },
-      '',
-    )
+    const format = toSelectionFormat({ ht: 4, vt: 1, tr: { a: -45 } }, '')
     expect(format.horizontalAlignment).toBe('justify')
     expect(format.verticalAlignment).toBe('top')
     expect(format.textRotation).toBe(135)
@@ -70,6 +68,7 @@ describe('toSelectionFormat', () => {
       italic: false,
       underline: false,
       strike: false,
+      vertAlign: null,
       wrap: false,
       horizontalAlignment: null,
       verticalAlignment: null,
@@ -120,6 +119,10 @@ describe('numberFormatLabel', () => {
     ['"$"#,##0.00', 'Currency'],
     ['[$USD-409] #,##0.00', 'Currency'],
     ['_($* #,##0.00_);_($* (#,##0.00);_($* "-"??_);_(@_)', 'Accounting'],
+    ['_("$"* #,##0.00_);_("$"* \\(#,##0.00\\);_("$"* "-"??_);_(@_)', 'Accounting'],
+    // Excel's Comma Style: accounting alignment without a symbol; the `@`
+    // text section must not make it read as Text.
+    ['_(* #,##0.00_);_(* \\(#,##0.00\\);_(* "-"??_);_(@_)', 'Accounting'],
     ['0.00E+00', 'Scientific'],
     ['# ?/?', 'Fraction'],
     ['# ??/16', 'Fraction'],

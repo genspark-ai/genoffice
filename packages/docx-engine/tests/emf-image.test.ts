@@ -35,7 +35,10 @@ describe('metafileToDataUrl routing', () => {
         'data:image/png;base64,EMFPNG',
       )
     }
-    expect(convertEmfToDataUrl).toHaveBeenLastCalledWith(expect.any(ArrayBuffer), { dpiScale: 2 })
+    expect(convertEmfToDataUrl).toHaveBeenLastCalledWith(
+      expect.any(ArrayBuffer),
+      expect.objectContaining({ dpiScale: 2 }),
+    )
   })
 
   it('routes wmf mimes to convertWmfToDataUrl', async () => {
@@ -44,7 +47,23 @@ describe('metafileToDataUrl routing', () => {
         'data:image/png;base64,WMFPNG',
       )
     }
-    expect(convertWmfToDataUrl).toHaveBeenLastCalledWith(expect.any(ArrayBuffer), { dpiScale: 2 })
+    expect(convertWmfToDataUrl).toHaveBeenLastCalledWith(
+      expect.any(ArrayBuffer),
+      expect.objectContaining({ dpiScale: 2 }),
+    )
+  })
+
+  it('routes by content signature when it contradicts the mime', async () => {
+    // EMF bytes under a wmf mime (HWP-exported docx)
+    const emf = new Uint8Array(44)
+    const dv = new DataView(emf.buffer)
+    dv.setUint32(0, 1, true)
+    dv.setUint32(40, 0x464d4520, true)
+    expect(await metafileToDataUrl(emf, 'image/wmf')).toBe('data:image/png;base64,EMFPNG')
+    // placeable WMF bytes under an emf mime
+    const wmf = new Uint8Array(18)
+    new DataView(wmf.buffer).setUint32(0, 0x9ac6cdd7, true)
+    expect(await metafileToDataUrl(wmf, 'image/emf')).toBe('data:image/png;base64,WMFPNG')
   })
 })
 
@@ -63,6 +82,27 @@ describe('parseDocx with emf media', () => {
     expect(block.imageDataUrl).toBe('data:image/png;base64,EMFPNG')
     expect(block.imageWidthPx).toBe(96)
     expect(block.imageHeightPx).toBe(48)
+  })
+
+  it('resolves an opaque .bin part via the [Content_Types].xml fallback', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: `<w:p><w:r>${DRAWING_XML}</w:r></w:p>`,
+        extraRels:
+          '<Relationship Id="rId10" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.bin"/>',
+        binaryParts: [
+          {
+            path: 'word/media/image1.bin',
+            base64: EMF_BASE64,
+            extension: 'bin',
+            contentType: 'image/x-emf',
+          },
+        ],
+      }),
+    )
+    const block = doc.blocks[0]
+    expect(block.type).toBe('image')
+    expect(block.imageDataUrl).toBe('data:image/png;base64,EMFPNG')
   })
 
   it('converts an emf picture inside a table cell', async () => {

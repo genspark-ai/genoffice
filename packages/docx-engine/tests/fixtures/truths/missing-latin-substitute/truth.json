@@ -1,0 +1,81 @@
+{
+  "id": "missing-latin-substitute",
+  "title": "Missing Latin-named faces substitute Calibri unless PANOSE serif / no fontTable entry (Cambria)",
+  "section": "word-truths.md#L638",
+  "probe_date": "2026-10-22",
+  "class": "pure",
+  "source": "probe mfm.docx -> Word for Mac direct PDF, pymupdf rawdict, Cyrillic + Latin br-lines, 12pt",
+  "cases": [
+    {
+      "kind": "latinSubstitute",
+      "font": "Mont",
+      "expect": "calibri",
+      "note": "PANOSE 00000700, charset CC"
+    },
+    {
+      "kind": "latinSubstitute",
+      "font": "Mont Probe Zero",
+      "expect": "calibri"
+    },
+    {
+      "kind": "latinSubstitute",
+      "font": "Squirrel Probe Cyr",
+      "expect": "calibri",
+      "note": "no PANOSE, charset CC, auto"
+    },
+    {
+      "kind": "latinSubstitute",
+      "font": "Squirrel Probe Lat",
+      "expect": "calibri"
+    },
+    {
+      "kind": "latinSubstitute",
+      "font": "Zebra Probe Nocharset",
+      "expect": "calibri",
+      "note": "bare fontTable entry"
+    },
+    {
+      "kind": "latinSubstitute",
+      "font": "Zebra Probe Noentry",
+      "expect": null,
+      "note": "no fontTable entry: no substitute hint, the unknown-Latin default (Cambria 1.172) applies"
+    },
+    {
+      "kind": "factor",
+      "font": "Mont",
+      "expect": 1.22
+    },
+    {
+      "kind": "factor",
+      "font": "Zebra Probe Noentry",
+      "expect": 1.172
+    },
+    {
+      "kind": "factor",
+      "font": "Helvetica Neue",
+      "expect": 1.193
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 14.64,
+      "tol": 0.01,
+      "note": "Mont 12 Cyrillic lines = Calibri 1.22"
+    },
+    {
+      "kind": "linePt",
+      "block": 15,
+      "expect": 14.04,
+      "tol": 0.1,
+      "note": "no-entry face = Cambria (Word 14.16/13.92)"
+    },
+    {
+      "kind": "linePt",
+      "block": 18,
+      "expect": 14.28,
+      "tol": 0.13,
+      "note": "Helvetica Neue 12 (Word 14.16/14.40)"
+    }
+  ],
+  "docx": "probe.docx"
+}

@@ -1,8 +1,11 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 
-import { applyCellEditsToXlsx, assertOnlyTouchedEntriesChanged } from '../src/gateway/xlsx-gateway'
-import { relsPathFor, resolveRelTarget } from '../src/gateway/xlsx-drawing-add'
+import {
+  applyCellEditsToXlsx,
+  assertOnlyTouchedEntriesChanged,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
+import { relsPathFor, resolveRelTarget } from '@genoffice/xlsx-gateway/gateway/xlsx-drawing-add'
 import {
   classifyRemovedSheetRels,
   definedNamesUseToken,
@@ -17,7 +20,7 @@ import {
   stripPageSetupRelIds,
   tableDisplayName,
   validateSheetName,
-} from '../src/gateway/xlsx-sheets'
+} from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
 import {
   buildCompatibilityFixture,
   buildSatelliteSheetFixture,
@@ -275,6 +278,14 @@ describe('sheet remove save', () => {
       'xl/comments1.xml',
     )
     expect(resolveRelTarget('xl/charts/chart1.xml', 'colors1.xml')).toBe('xl/charts/colors1.xml')
+    expect(resolveRelTarget('xl/workbook.xml', 'worksheets/sheet%201.xml')).toBe(
+      'xl/worksheets/sheet 1.xml',
+    )
+    expect(resolveRelTarget('xl/worksheets/sheet2.xml', '../media/image%20\u4e00.png')).toBe(
+      'xl/media/image \u4e00.png',
+    )
+    expect(() => resolveRelTarget('xl/workbook.xml', 'worksheets/%ZZ.xml')).toThrow()
+    expect(() => resolveRelTarget('xl/workbook.xml', '../../outside.xml')).toThrow()
     expect(relsPathFor('xl/drawings/drawing1.xml')).toBe('xl/drawings/_rels/drawing1.xml.rels')
     expect(partPathForRels('xl/drawings/_rels/drawing1.xml.rels')).toBe('xl/drawings/drawing1.xml')
     expect(partPathForRels('_rels/.rels')).toBe('')

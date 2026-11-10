@@ -1,0 +1,34 @@
+{
+  "id": "cr-pairs-one-blank-line",
+  "title": "w:cr pairs: Word sometimes collapses them (not derivable); GenOffice keeps the one-blank-line-per-pair model of w:br. Cambria Math lays out at Cambria-like advances",
+  "section": "word-truths.md#L502",
+  "probe_date": "2026-10-14",
+  "source": "probes probe -> *.word.pdf: w:br pairs 13/13 one blank line, w:cr pairs collapse 4/6 (c15) with no width/char rule; Cambria Math bold = 0.984 x Caladea Regular",
+  "cases": [
+    {
+      "kind": "blockText",
+      "block": 0,
+      "expect": "alpha\n\nbravo",
+      "note": "two w:cr = two line breaks (one blank line), the deliberate model"
+    },
+    {
+      "kind": "blockText",
+      "block": 1,
+      "expect": "alpha\n\nbravo",
+      "note": "w:br pair identical"
+    },
+    {
+      "kind": "cssFamilyIncludes",
+      "font": "Cambria Math",
+      "expect": "Caladea",
+      "note": "Cambria-like advances through the Caladea alias, not STIX"
+    },
+    {
+      "kind": "factor",
+      "font": "Cambria Math",
+      "expect": 1.172
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

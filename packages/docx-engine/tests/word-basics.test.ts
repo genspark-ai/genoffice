@@ -41,6 +41,61 @@ describe('paragraph shading and borders', () => {
     expect(doc.blocks[0].format?.shadingFill).toBe('FFF2CC')
     expect(doc.blocks[0].format?.borders).toBe('tb')
   })
+
+  it('borderStyle sets color, thickness and text gap on the border sides', async () => {
+    const xml = generateParagraphXml(
+      {
+        type: 'paragraph',
+        format: {
+          borders: 't',
+          borderStyle: { color: '0A3C61', szEighths: 12, spacePt: 11 },
+        },
+        runs: [{ text: 'ruled title' }],
+      },
+      CTX,
+    )
+    expect(xml).toContain('<w:top w:val="single" w:sz="12" w:space="11" w:color="0A3C61"/>')
+
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].format?.borders).toBe('t')
+  })
+
+  it("borderStyle clamps w:space to Word's 31pt limit and floors w:sz", async () => {
+    const xml = generateParagraphXml(
+      {
+        type: 'paragraph',
+        format: { borders: 'b', borderStyle: { szEighths: 1, spacePt: 99 } },
+        runs: [{ text: 'x' }],
+      },
+      CTX,
+    )
+    expect(xml).toContain('<w:bottom w:val="single" w:sz="2" w:space="31" w:color="auto"/>')
+  })
+
+  it('keeps declared pBdr color and width (w:sz eighth-points -> pt)', async () => {
+    const xml =
+      '<w:p><w:pPr><w:pBdr>' +
+      '<w:top w:val="single" w:sz="4" w:space="1" w:color="auto"/>' +
+      '<w:bottom w:val="single" w:sz="12" w:space="1" w:color="0B5394"/>' +
+      '</w:pBdr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].format?.borders).toBe('tb')
+    expect(doc.blocks[0].format?.borderLines).toEqual({
+      t: { szPt: 0.5, spacePt: 1 },
+      b: { color: '0B5394', szPt: 1.5, spacePt: 1 },
+    })
+  })
+
+  it('a later duplicated w:pBdr overrides a side declared look', async () => {
+    const xml =
+      '<w:p><w:pPr>' +
+      '<w:pBdr><w:bottom w:val="single" w:sz="4" w:color="FF0000"/></w:pBdr>' +
+      '<w:pBdr><w:bottom w:val="single" w:sz="24" w:color="0B5394"/></w:pBdr>' +
+      '</w:pPr><w:r><w:t>x</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].format?.borders).toBe('b')
+    expect(doc.blocks[0].format?.borderLines).toEqual({ b: { color: '0B5394', szPt: 3 } })
+  })
 })
 
 describe('page border and columns (sectPr)', () => {

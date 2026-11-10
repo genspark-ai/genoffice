@@ -1,0 +1,42 @@
+{
+  "id": "keepnext-chain-split-demand",
+  "title": "keepNext chains longer than a page: a paragraph the widow rules may split keeps by splitting, with widow control the 3-line paragraph is atomic",
+  "section": "word-truths.md#L477",
+  "probe_date": "2026-10-14",
+  "source": "probe build.py -> w3b_k5.pdf (widowControl=0: p1 ends \"keep 10 line 3 / keep 11 line 1\", p2 opens \"keep 11 line 2\", no gap) and w3b_k6.pdf (widow on: chain moves to p2 whole, 17 paragraphs per page); A4 1440 margins = 698pt body, Calibri 11 line 240",
+  "cases": [
+    {
+      "kind": "keepDemand",
+      "widowOn": false,
+      "nLines": 3,
+      "expect": 1,
+      "note": "k5: a kept paragraph may leave one line behind"
+    },
+    {
+      "kind": "keepDemand",
+      "widowOn": true,
+      "nLines": 3,
+      "expect": 3,
+      "note": "k6: 1/2 is an orphan, 2/1 a widow -> atomic"
+    },
+    {
+      "kind": "keepDemand",
+      "widowOn": true,
+      "nLines": 2,
+      "expect": 2
+    },
+    {
+      "kind": "keepDemand",
+      "widowOn": true,
+      "nLines": 5,
+      "expect": 2
+    },
+    {
+      "kind": "pageStartBlocks",
+      "expect": [0, 11, 28, 45],
+      "note": "k5: 20 filler lines + 10 kept paragraphs + line 1 of keep 11 fill the 51-line page; the cuts fall inside keep 11, 28 and 45, never a gap (201 lines = 4 pages)"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

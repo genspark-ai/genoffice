@@ -1,0 +1,7 @@
+{
+  "source": "apps/docs/tests/pagination-corpus/docx/fixture-kitchen-sink.docx",
+  "tables": 1,
+  "hashes": ["0322a23d327385d8"],
+  "staticTables": 1,
+  "staticHashes": ["784d293f61e0193f"]
+}

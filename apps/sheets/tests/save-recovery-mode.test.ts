@@ -3,9 +3,12 @@
  * same save pipeline, but recovery mode must never touch the opened file, prompt,
  * or clear the journal — the whole point is that unsaved work survives a crash.
  */
+import JSZip from 'jszip'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { applyCellEditsToXlsx } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 import { handleSave, type SaveContext } from '../src/renderer/save-actions'
 import { createEditJournal, recordSetRangeValues } from '../src/renderer/edit-journal'
+import { buildEditFixture } from './fixture-builder'
 
 const saveWorkbookEdits = vi.fn()
 const writeWorkbookRecovery = vi.fn()
@@ -18,17 +21,29 @@ beforeEach(() => {
   }
 })
 
-function ctxWith(opts: { dirty: boolean; needsSaveAs?: boolean }): {
+function ctxWith(opts: { dirty: boolean; needsSaveAs?: boolean; restoredFromRecovery?: boolean }): {
   ctx: SaveContext
   messages: string[]
+  journal: ReturnType<typeof createEditJournal>
+  overlay: Map<string, Map<string, { v?: string | number | boolean | null }>>
+  externalOverlay: Map<string, Map<string, { v?: string | number | boolean | null }>>
+  incompleteRuns: Set<string>
 } {
   const journal = createEditJournal()
   if (opts.dirty) recordSetRangeValues(journal, 'sheet-1', { 0: { 0: { v: 'edited' } } })
   const messages: string[] = []
+  const overlay = new Map<string, Map<string, { v?: string | number | boolean | null }>>()
+  const externalOverlay = new Map<string, Map<string, { v?: string | number | boolean | null }>>()
+  const incompleteRuns = new Set<string>()
   return {
     messages,
+    journal,
+    overlay,
+    externalOverlay,
+    incompleteRuns,
     ctx: {
       univerRef: { current: null },
+      stashViewRestore: () => {},
       lazyWorkbookRef: {
         current: {
           editJournal: journal,
@@ -37,11 +52,14 @@ function ctxWith(opts: { dirty: boolean; needsSaveAs?: boolean }): {
             generation: 0,
             failed: false,
             formulaCells: new Map(),
-            overlay: new Map(),
+            overlay,
+            externalOverlay,
+            incompleteRuns,
           },
           file: {
             sessionId: '11111111-1111-4111-8111-111111111111',
             needsSaveAs: !!opts.needsSaveAs,
+            restoredFromRecovery: !!opts.restoredFromRecovery,
           },
         },
       } as never,
@@ -81,10 +99,201 @@ describe('handleSave recovery mode', () => {
     expect(messages).toEqual([])
   })
 
-  it('a failed copy is swallowed (best-effort, never surfaces)', async () => {
+  it('a failed copy is swallowed (best-effort, never surfaces; resolves not-ok)', async () => {
     writeWorkbookRecovery.mockRejectedValue(new Error('disk full'))
     const { ctx, messages } = ctxWith({ dirty: true })
-    await expect(handleSave(ctx, 'recovery')).resolves.toBeUndefined()
+    // handleSave now reports an outcome (the MCP bridge reads it); recovery
+    // mode still stays silent on failure
+    await expect(handleSave(ctx, 'recovery')).resolves.toEqual({ ok: false })
     expect(messages).toEqual([])
+  })
+})
+
+describe('handleSave formula cache overlay', () => {
+  it('never pairs an immediately saved replacement formula with the previous cached value', async () => {
+    const { ctx, journal, overlay } = ctxWith({ dirty: false })
+    recordSetRangeValues(journal, 'sheet-1', { 2: { 1: { f: '=2+2' } } })
+    overlay.set(
+      'sheet-1',
+      new Map([
+        // B3 used to be SUM(C1:C2), whose cached value was 5.
+        ['2:1', { v: 5 }],
+        ['0:2', { v: 7 }],
+      ]),
+    )
+    let savedWorksheet = ''
+    saveWorkbookEdits.mockImplementationOnce(async (payload) => {
+      const request = payload as {
+        edits: {
+          row: number
+          column: number
+          writeValue: boolean
+          value: string | number | boolean | null
+          formula?: string
+        }[]
+        formulaValues: {
+          sheetId: string
+          row: number
+          column: number
+          value: string | number | boolean | null
+        }[]
+      }
+      const mutation = await applyCellEditsToXlsx(
+        await buildEditFixture(),
+        request.edits.map((edit) => ({
+          sheetName: 'Data',
+          row: edit.row,
+          column: edit.column,
+          writeValue: edit.writeValue,
+          cell: {
+            value: edit.value,
+            ...(edit.formula === undefined ? {} : { formula: edit.formula }),
+          },
+        })),
+        [],
+        [],
+        undefined,
+        [],
+        [],
+        [],
+        [],
+        [],
+        null,
+        [],
+        [],
+        [
+          {
+            sheetName: 'Data',
+            cells: request.formulaValues.map(({ row, column, value }) => ({
+              row,
+              column,
+              value,
+            })),
+          },
+        ],
+      )
+      const zip = await JSZip.loadAsync(mutation.buffer)
+      savedWorksheet = await zip.file('xl/worksheets/sheet1.xml')!.async('text')
+      return { canceled: true }
+    })
+
+    await handleSave(ctx, 'save')
+
+    const payload = saveWorkbookEdits.mock.calls[0]![0] as {
+      edits: { row: number; column: number; formula?: string }[]
+      formulaValues: { row: number; column: number; value: unknown }[]
+    }
+    expect(payload.edits).toContainEqual(
+      expect.objectContaining({ row: 2, column: 1, formula: '=2+2' }),
+    )
+    expect(payload.formulaValues).toEqual([{ sheetId: 'sheet-1', row: 0, column: 2, value: 7 }])
+    const savedB3 = /<c r="B3"[^>]*>[\s\S]*?<\/c>/.exec(savedWorksheet)?.[0]
+    expect(savedB3).toContain('<f>2+2</f>')
+    expect(savedB3).not.toContain('<v>')
+  })
+
+  it('drops a whole sheet overlay when its run kept any cached value', async () => {
+    const { ctx, journal, overlay, incompleteRuns } = ctxWith({ dirty: false })
+    recordSetRangeValues(journal, 'sheet-1', { 5: { 5: { v: 1 } } })
+    overlay.set(
+      'sheet-1',
+      new Map([
+        // IFERROR(D14/D8,0) laundered to 0 by a SUMPRODUCT gap: must not
+        // replace the file's cached result on save.
+        ['14:3', { v: 0 }],
+        ['7:3', { v: 56 }],
+      ]),
+    )
+    overlay.set('sheet-2', new Map([['0:0', { v: 7 }]]))
+    incompleteRuns.add('sheet-1')
+    await handleSave(ctx, 'save')
+    const payload = saveWorkbookEdits.mock.calls[0]![0] as {
+      formulaValues: { sheetId: string; row: number; column: number; value: unknown }[]
+    }
+    expect(payload.formulaValues).toEqual([{ sheetId: 'sheet-2', row: 0, column: 0, value: 7 }])
+  })
+
+  it("never writes IronCalc's #ERROR! into a cached <v> (issue 235)", async () => {
+    const { ctx, journal, overlay } = ctxWith({ dirty: false })
+    recordSetRangeValues(journal, 'sheet-1', { 5: { 5: { v: 1 } } })
+    overlay.set(
+      'sheet-1',
+      new Map([
+        ['0:0', { v: '#ERROR!' }],
+        ['0:1', { v: '#N/A' }],
+        ['0:2', { v: 7 }],
+      ]),
+    )
+    await handleSave(ctx, 'save')
+    const payload = saveWorkbookEdits.mock.calls[0]![0] as {
+      formulaValues: { row: number; column: number; value: unknown }[]
+    }
+    expect(payload.formulaValues).toEqual([
+      { sheetId: 'sheet-1', row: 0, column: 1, value: '#N/A' },
+      { sheetId: 'sheet-1', row: 0, column: 2, value: 7 },
+    ])
+  })
+})
+
+describe('handleSave external-link overlay', () => {
+  it("a save whose only pending work is the panel's overlay still writes it", async () => {
+    const { ctx, externalOverlay } = ctxWith({ dirty: false })
+    // no journal edits: the values came from the links panel's sidecar update
+    externalOverlay.set(
+      'sheet-1',
+      new Map([
+        ['0:0', { v: 20 }],
+        ['1:0', { v: true }],
+      ]),
+    )
+    await handleSave(ctx, 'save')
+    expect(saveWorkbookEdits).toHaveBeenCalledTimes(1)
+    const payload = saveWorkbookEdits.mock.calls[0]![0] as {
+      formulaValues: { sheetId: string; row: number; column: number; value: unknown }[]
+    }
+    expect(payload.formulaValues).toContainEqual({
+      sheetId: 'sheet-1',
+      row: 0,
+      column: 0,
+      value: 20,
+    })
+    expect(payload.formulaValues).toContainEqual({
+      sheetId: 'sheet-1',
+      row: 1,
+      column: 0,
+      value: true,
+    })
+  })
+
+  it('a clean session with no overlay reports no-edits instead of saving', async () => {
+    const { ctx } = ctxWith({ dirty: false })
+    await expect(handleSave(ctx, 'save')).resolves.toMatchObject({ ok: false, reason: 'no-edits' })
+    expect(saveWorkbookEdits).not.toHaveBeenCalled()
+  })
+})
+
+describe('handleSave restored-recovery write-back', () => {
+  it('a clean restored session still saves: the workbook bytes are the change', async () => {
+    const { ctx } = ctxWith({ dirty: false, restoredFromRecovery: true })
+    await handleSave(ctx, 'save')
+    expect(saveWorkbookEdits).toHaveBeenCalledTimes(1)
+    const payload = saveWorkbookEdits.mock.calls[0]![0] as Record<string, unknown>
+    expect(payload.mode).toBe('save')
+    expect(payload.restoreWriteBack).toBe(true)
+  })
+
+  it('a clean ordinary session still refuses a pointless save', async () => {
+    const { ctx, messages } = ctxWith({ dirty: false })
+    await handleSave(ctx, 'save')
+    expect(saveWorkbookEdits).not.toHaveBeenCalled()
+    expect(messages.length).toBe(1)
+  })
+
+  it('never flags recovery-mode writes as a restore write-back', async () => {
+    const { ctx } = ctxWith({ dirty: true, restoredFromRecovery: true })
+    await handleSave(ctx, 'recovery')
+    expect(writeWorkbookRecovery).toHaveBeenCalledTimes(1)
+    const payload = writeWorkbookRecovery.mock.calls[0]![0] as Record<string, unknown>
+    expect(payload.restoreWriteBack).toBeUndefined()
   })
 })

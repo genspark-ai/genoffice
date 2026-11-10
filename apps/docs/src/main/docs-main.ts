@@ -1,30 +1,84 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { handOffBytes } from './byte-handoff'
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { copyFile, mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
-import { basename, join } from 'node:path'
-import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, net, shell } from 'electron'
 import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, dirname, extname, isAbsolute, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import {
+  BrowserWindow,
+  Menu,
+  WebContentsView,
+  app,
+  clipboard,
+  dialog,
+  ipcMain,
+  nativeImage,
+  net,
+  session,
+  shell,
+  webContents,
+} from 'electron'
+import {
+  abortOnDestroyed,
   appMenuLabels,
+  appMenuTemplate,
+  buildPrintableHtml,
   configuredDefaultSaveDir,
   contextMenuLabels,
   fetchRemoteImage,
   installContextMenu,
+  setContextMenuInterceptor,
   installNavigationGuard,
+  isHeadlessMode,
+  printHtmlToPdf,
   safeExternalUrl,
+  saveAsSuggestion,
+  saveImageFromUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
+  aboutMenuItem,
+  checkUpdatesMenuItem,
   toggleDevToolsItem,
+  settingsMenuItem,
   windowMenuTemplate,
+  type HeadlessExportFormat,
+  type HeadlessExportTarget,
+  installRendererProtocol,
+  registerRendererScheme,
+  rendererUrl,
+  MAX_REMOTE_IMAGE_BYTES,
+  readBodyCapped,
+  writeJsonAtomic,
+  recoveryCopyDiskNewer,
+  readLegacyImportSkip,
+  writeLegacyImportSkip,
 } from '@genoffice/electron-utils'
-import { configureMetricsCache, familyVerticalMetrics } from '@genoffice/font-metrics'
+import {
+  configureMetricsCache,
+  familyAliases,
+  familyVerticalMetrics,
+} from '@genoffice/font-metrics'
 import { createI18n, getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
 import type {
@@ -35,13 +89,31 @@ import type {
   WebContents,
 } from 'electron'
 import { parseFileToText } from '@genoffice/file-parse'
+import { convertLegacyDocToDocx } from '../../../../packages/doc2docx/src'
+import { convertHtmlToDocx } from '../../../../packages/html2docx/src'
+import { ElectronBrowserDriver } from '../../../../packages/html2docx/src/drivers/electron'
+import { convertOdtToDocx } from '../../../../packages/odf2ooxml/src'
+import { convertHwpToDocx } from '../../../../packages/hwp2docx/src'
 import {
   AiCreditsError,
   AiTimeoutError,
+  isAiNetworkError,
+  isAiOverloadedError,
+  isAiRegionBlockedError,
   chatForProvider,
   defaultAiSettings,
+  activeProvider,
+  testMediaProvider,
+  type AiMediaProviderConfig,
+  type AiMediaProviderId,
+  type AiSearchProviderId,
   resolveAiSettings,
+  maxOutputTokensOf,
+  sanitizeAiSettings,
+  sanitizeCliPath,
+  setAiUserAgent,
   setRescueFetch,
+  resolveProfileCredential,
   streamForProvider,
   type AiChatRequest,
   type AiSettings,
@@ -50,28 +122,102 @@ import {
   type GenSparkAccountStatus,
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
+import { listCodexModels, shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
+import { startAiTrace } from '@genoffice/ai-provider/trace'
+import { listCustomModelsForIpc } from '@genoffice/ai-provider/custom-models'
 import {
   ensureGenofficeLogin,
+  noteGskCallFailure,
+  setGenofficeLoginOpener,
   gskApiKey,
+  generateImageTool,
+  testSearchProvider,
   gskLoginInfo,
   hasGskAuth,
-  webSearch,
-  imageSearch,
+  webSearchTool,
+  imageSearchTool,
+  analyzeMediaTool,
+  documentMediaRoots,
 } from '@genoffice/ai-search'
 import type {
+  AiDocContent,
   AttachmentAddResult,
   AttachmentImageResult,
   AttachmentMeta,
   AttachmentReadResult,
+  ContextMenuRequest,
+  CreateDocumentRequest,
+  CreateDocumentResult,
+  DecryptOpenResult,
   DocsTabInfo,
   MenuCommand,
-  OpenFileResult,
+  MergeOutputRequest,
+  OpenDocxResult,
+  SpellLanguages,
 } from '../shared/ipc'
-import { ATTACHMENT_IMAGE_EXTS } from '../shared/ipc'
-import { findDocxPath } from '../shared/open-file'
-import { atomicWriteFile, looksLikeZip } from './atomic-write'
+import { ATTACHMENT_IMAGE_EXTS, MARKDOWN_MEDIA_DIR_TOKEN, type MarkdownImage } from '../shared/ipc'
+import { MERGE_DATA_SOURCE_EXTENSIONS, readMergeDataSource } from './merge-data-source'
+import { mergeOutputFileName, mergeOutputPath } from './merge-output'
+import { ClickClaims } from '../shared/context-menu-claims'
+import {
+  OPENABLE_DOC_EXTENSIONS,
+  docImportKindForPath,
+  findOpenableDocPath,
+  isOpenableDocPath,
+} from '../shared/open-file'
+import { atomicWriteFile } from './atomic-write'
+import {
+  adoptLazyMediaHashes,
+  forgetLazyMediaOwner,
+  materializeLazyDocx,
+  moveLazyMediaSource,
+  openLazyDocx,
+  pointLazyMediaAt,
+  readLazyMedia,
+  registerLazyMediaProtocol,
+} from './lazy-media'
+import { inlineLazyMediaInHtml } from './lazy-media-inline'
+import {
+  commitDocPasswordSave,
+  currentDocPasswordIntentRevision,
+  decryptDocx,
+  decryptRecoveryCopy,
+  discardDocPasswordIntents,
+  DocxDecryptError,
+  docPasswordFor,
+  encryptDocx,
+  forgetDocPasswords,
+  isEncryptedDocx,
+  markDiskEncrypted,
+  prepareRecoveryDocx,
+  rememberDocPassword,
+  renameDocPassword,
+  setDocPassword,
+  snapshotDocPassword,
+} from './docx-encryption'
 import { isExternallyModified, type DiskFileState } from './external-change'
+import { copyImageDisplaySize, validCopyImageDataUrl } from './copy-image-guard'
+import {
+  printJobOptions,
+  printScaleOption,
+  validPrintGeometry,
+  validPrintPaper,
+} from './print-args'
+import { printPdfViaCups } from '@genoffice/electron-utils/print-cups'
+import { printOutcome } from '@genoffice/electron-utils/print-job'
+import { addPdfInternalLinks } from './pdf-links'
+import {
+  assignStarredGroup,
+  dropStarredItems,
+  readStarredItems,
+  renameStarredItem,
+  starredGroupMap,
+  starredGroupNames,
+  toggleStarredItem,
+  writeStarredItems,
+} from './starred-files'
 import { initDocsAutoUpdater } from './updater'
+import { registerZoteroIpc, teardownZoteroIpc } from './zotero-ipc'
 
 /**
  * Docs main-process logic as an embeddable module: no top-level side effects.
@@ -86,6 +232,17 @@ const tMain = createI18n({
   zh: {
     dlgOpenDoc: '打开文档',
     filterWord: 'Word 文档',
+    odtImportMsg: '转换 .{ext} 文档？',
+    odtImportDetail:
+      'GenOffice 只编辑 .docx，不编辑 ODF。正文、标题、列表、表格和图片会转换过来；脚注、批注和文本框不会完整保留。原文件不会被修改，转换出的 .docx 是一份独立副本，之后的保存都写入它。', // public-hygiene: allow
+    hwpImportDetail:
+      'GenOffice 只编辑 .docx，不编辑 HWP。正文、表格、图片、页眉和页脚会转换过来；公式、脚注和嵌入对象不会转换，自动编号会变成普通文本。原文件不会被修改，转换出的 .docx 是一份独立副本，之后的保存都写入它。', // public-hygiene: allow
+    odtImportConvertBtn: '转换并打开',
+    importSkipConfirm: '下次直接转换，不再提示',
+    docImportMsg: '转换 .{ext} 文档？',
+    docImportDetail:
+      'GenOffice 只编辑 .docx，不编辑 Word 97-2003 旧版 .doc。正文、标题、列表、表格和图片会转换过来；脚注、批注和文本框不会完整保留。原文件不会被修改，转换出的 .docx 是一份独立副本，之后的保存都写入它。', // public-hygiene: allow
+    docImportConvertBtn: '转换并打开',
     dlgSaveAs: '另存为',
     closeUnsavedMsg: '此文档有未保存的更改。',
     closeUnsavedDetail: '关闭前是否保存？',
@@ -93,6 +250,7 @@ const tMain = createI18n({
     closeNoReplyDetail: '仍要关闭吗?未保存的更改将丢失。',
     btnCloseAnyway: '仍要关闭',
     autosaveFoundTitle: '发现自动恢复版本',
+    autosaveDiskNewer: '注意：此恢复副本保存后，磁盘上的文件又被修改过。恢复将替换这些较新的更改。',
     autosaveFoundBody: '上次会话有未保存的更改。要恢复自动保存的版本吗?',
     autosaveRestore: '恢复',
     autosaveDiscard: '放弃',
@@ -103,10 +261,15 @@ const tMain = createI18n({
     btnOverwrite: '覆盖',
     dlgInsertImage: '插入图片',
     filterImages: '图片',
+    dlgMergeDataSource: '选择收件人列表',
+    filterMergeDataSource: 'Excel 或 CSV',
     dlgAddAttachment: '添加附件',
     filterSupported: '支持的文件',
     filterAll: '所有文件',
     dlgExportPdf: '导出为 PDF',
+    dlgExportHtml: '导出为 HTML',
+    dlgExportMarkdown: '导出为 Markdown',
+    dlgPickExportDir: '选择导出目录',
     errUnsupportedExt: '暂不支持 .{ext} 类型',
     errNotFile: '不是文件',
     errTooLarge: '超过 {mb}MB 上限',
@@ -118,6 +281,8 @@ const tMain = createI18n({
     errNotImage: '不是支持的图片类型',
     errGskNotLoggedIn: '未登录 Genspark:请点击下方「登录 Genspark」完成登录后重试',
     errNoApiKey: '未配置 {provider} 的 API Key',
+    errAiRegion: '该模型的厂商不向当前地区提供服务，请换一个模型或切换网络',
+    errAiBusy: 'AI 服务当前繁忙，请稍后重试',
     errNoModel: '未配置模型名称',
     menuFile: '文件',
     menuNewDoc: '新建文档',
@@ -130,6 +295,9 @@ const tMain = createI18n({
     menuSaveAs: '另存为…',
     menuPageSetup: '页面设置…',
     menuExportPdf: '导出为 PDF…',
+    menuExportHtml: '导出为 HTML…',
+    menuExportMarkdown: '导出为 Markdown…',
+    menuExportImages: '导出为图片…',
     menuPrint: '打印…',
     menuEdit: '编辑',
     menuUndo: '撤销',
@@ -139,18 +307,21 @@ const tMain = createI18n({
     menuPaste: '粘贴',
     menuPasteMatch: '粘贴并匹配格式',
     menuFindReplace: '查找和替换…',
+    menuGoTo: '定位…',
     menuSelectAll: '全选',
     menuView: '视图',
+    menuZoom: '缩放',
     menuZoomIn: '放大',
     menuZoomOut: '缩小',
     menuZoom100: '实际大小 (100%)',
     menuPageWidth: '页宽',
     menuWholePage: '整页',
+    menuMultiPage: '多页',
     menuAiSidebar: 'AI 侧栏',
     menuDarkMode: '深色模式',
     menuFullscreen: '进入全屏',
     menuInsert: '插入',
-    menuInsertTable: '表格(3×3)',
+    menuInsertTable: '表格…',
     menuInsertImage: '图片…',
     menuInsertPageBreak: '分页符',
     menuInsertLink: '超链接…',
@@ -168,16 +339,57 @@ const tMain = createI18n({
     menuFont: '字体…',
     menuParagraph: '段落…',
     menuTools: '工具',
+    menuTable: '表格',
+    menuTableInsert: '插入',
+    menuTableInsertTable: '表格…',
+    menuTableColsLeft: '在左侧插入列',
+    menuTableColsRight: '在右侧插入列',
+    menuTableRowsAbove: '在上方插入行',
+    menuTableRowsBelow: '在下方插入行',
+    menuTableCells: '单元格…',
+    menuTableDelete: '删除',
+    menuTableDeleteTable: '表格',
+    menuTableDeleteColumns: '列',
+    menuTableDeleteRows: '行',
+    menuTableSelect: '选择',
+    menuTableSelectCell: '单元格',
+    menuTableSelectColumn: '列',
+    menuTableSelectRow: '行',
+    menuTableSelectTable: '表格',
+    menuTableMergeCells: '合并单元格',
+    menuTableSplitCells: '拆分单元格…',
+    menuTableSplitTable: '拆分表格',
+    menuTableAutoFit: '自动调整',
+    menuTableAutoFitContents: '根据内容自动调整表格',
+    menuTableAutoFitWindow: '根据窗口自动调整表格',
+    menuTableFixedWidth: '固定列宽',
+    menuTableDistributeRows: '平均分布各行',
+    menuTableDistributeColumns: '平均分布各列',
+    menuTableRepeatHeader: '重复标题行',
+    menuTableGridlines: '查看网格线',
+    menuTableProperties: '表格属性…',
     menuWordCount: '字数统计…',
-    menuSpelling: '拼写和语法检查',
-    menuMacros: '宏',
+    menuAutoCorrect: '自动更正选项…',
+    menuPreferences: '偏好设置…',
+    menuAiProofread: 'AI 校对',
     menuWindow: '窗口',
     menuHelp: '帮助',
-    menuDocsHelp: 'GenOffice Docs 帮助',
+    menuShortcuts: '键盘快捷键',
   },
   en: {
     dlgOpenDoc: 'Open Document',
     filterWord: 'Word Documents',
+    odtImportMsg: 'Convert this .{ext} document?',
+    odtImportDetail:
+      'GenOffice edits .docx, not ODF. Body text, headings, lists, tables and images carry over; footnotes, comments and text boxes are not fully preserved. The original file is never changed; the converted .docx is a separate copy that later saves write to.',
+    hwpImportDetail:
+      'GenOffice edits .docx, not HWP. Body text, tables, images, headers and footers carry over; equations, footnotes and embedded objects are not converted, and automatic numbering becomes plain text. The original file is never changed; the converted .docx is a separate copy that later saves write to.',
+    odtImportConvertBtn: 'Convert and open',
+    importSkipConfirm: 'Convert without asking next time',
+    docImportMsg: 'Convert this .{ext} document?',
+    docImportDetail:
+      'GenOffice edits .docx, not Word 97-2003 documents. Body text, headings, lists, tables and images carry over; footnotes, comments and text boxes are not fully preserved. The original file is never changed; the converted .docx is a separate copy that later saves write to.',
+    docImportConvertBtn: 'Convert and open',
     dlgSaveAs: 'Save As',
     closeUnsavedMsg: 'This document has unsaved changes.',
     closeUnsavedDetail: 'Do you want to save them before closing?',
@@ -185,6 +397,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Close anyway? Unsaved changes will be lost.',
     btnCloseAnyway: 'Close Anyway',
     autosaveFoundTitle: 'Recovered version found',
+    autosaveDiskNewer:
+      'Note: the file on disk was modified after this recovery copy was saved. Restoring replaces those newer changes.',
     autosaveFoundBody:
       'There are unsaved changes from your last session. Restore the autosaved version?',
     autosaveRestore: 'Restore',
@@ -196,10 +410,15 @@ const tMain = createI18n({
     btnOverwrite: 'Overwrite',
     dlgInsertImage: 'Insert Image',
     filterImages: 'Images',
+    dlgMergeDataSource: 'Select Recipient List',
+    filterMergeDataSource: 'Excel or CSV',
     dlgAddAttachment: 'Add Attachments',
     filterSupported: 'Supported Files',
     filterAll: 'All Files',
     dlgExportPdf: 'Export as PDF',
+    dlgExportHtml: 'Export as HTML',
+    dlgExportMarkdown: 'Export as Markdown',
+    dlgPickExportDir: 'Choose Export Folder',
     errUnsupportedExt: '.{ext} files are not supported',
     errNotFile: 'not a file',
     errTooLarge: 'exceeds the {mb}MB limit',
@@ -212,6 +431,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Not signed in to Genspark: click “Sign in to Genspark” below, sign in, then retry',
     errNoApiKey: 'No API key configured for {provider}',
+    errAiRegion:
+      "This model's provider does not serve your current region — pick another model or change your network",
+    errAiBusy: 'The AI service is busy right now — please try again in a moment',
     errNoModel: 'No model name configured',
     menuFile: 'File',
     menuNewDoc: 'New Document',
@@ -224,6 +446,9 @@ const tMain = createI18n({
     menuSaveAs: 'Save As…',
     menuPageSetup: 'Page Setup…',
     menuExportPdf: 'Export as PDF…',
+    menuExportHtml: 'Export as HTML…',
+    menuExportMarkdown: 'Export as Markdown…',
+    menuExportImages: 'Export as Images…',
     menuPrint: 'Print…',
     menuEdit: 'Edit',
     menuUndo: 'Undo',
@@ -233,18 +458,21 @@ const tMain = createI18n({
     menuPaste: 'Paste',
     menuPasteMatch: 'Paste and Match Style',
     menuFindReplace: 'Find and Replace…',
+    menuGoTo: 'Go To…',
     menuSelectAll: 'Select All',
     menuView: 'View',
+    menuZoom: 'Zoom',
     menuZoomIn: 'Zoom In',
     menuZoomOut: 'Zoom Out',
     menuZoom100: 'Actual Size (100%)',
     menuPageWidth: 'Page Width',
     menuWholePage: 'Whole Page',
+    menuMultiPage: 'Multiple Pages',
     menuAiSidebar: 'AI Sidebar',
     menuDarkMode: 'Dark Mode',
     menuFullscreen: 'Enter Full Screen',
     menuInsert: 'Insert',
-    menuInsertTable: 'Table (3×3)',
+    menuInsertTable: 'Table…',
     menuInsertImage: 'Image…',
     menuInsertPageBreak: 'Page Break',
     menuInsertLink: 'Hyperlink…',
@@ -262,16 +490,360 @@ const tMain = createI18n({
     menuFont: 'Font…',
     menuParagraph: 'Paragraph…',
     menuTools: 'Tools',
+    menuTable: 'Table',
+    menuTableInsert: 'Insert',
+    menuTableInsertTable: 'Table…',
+    menuTableColsLeft: 'Columns to the Left',
+    menuTableColsRight: 'Columns to the Right',
+    menuTableRowsAbove: 'Rows Above',
+    menuTableRowsBelow: 'Rows Below',
+    menuTableCells: 'Cells…',
+    menuTableDelete: 'Delete',
+    menuTableDeleteTable: 'Table',
+    menuTableDeleteColumns: 'Columns',
+    menuTableDeleteRows: 'Rows',
+    menuTableSelect: 'Select',
+    menuTableSelectCell: 'Cell',
+    menuTableSelectColumn: 'Column',
+    menuTableSelectRow: 'Row',
+    menuTableSelectTable: 'Table',
+    menuTableMergeCells: 'Merge Cells',
+    menuTableSplitCells: 'Split Cells…',
+    menuTableSplitTable: 'Split Table',
+    menuTableAutoFit: 'AutoFit and Distribute',
+    menuTableAutoFitContents: 'AutoFit to Contents',
+    menuTableAutoFitWindow: 'AutoFit to Window',
+    menuTableFixedWidth: 'Fixed Column Width',
+    menuTableDistributeRows: 'Distribute Rows Evenly',
+    menuTableDistributeColumns: 'Distribute Columns Evenly',
+    menuTableRepeatHeader: 'Repeat Header Rows',
+    menuTableGridlines: 'View Gridlines',
+    menuTableProperties: 'Table Properties…',
     menuWordCount: 'Word Count…',
-    menuSpelling: 'Spelling and Grammar',
-    menuMacros: 'Macros',
+    menuAutoCorrect: 'AutoCorrect Options…',
+    menuPreferences: 'Preferences…',
+    menuAiProofread: 'AI Proofread',
     menuWindow: 'Window',
     menuHelp: 'Help',
-    menuDocsHelp: 'GenOffice Docs Help',
+    menuShortcuts: 'Keyboard Shortcuts',
+  },
+  vi: {
+    dlgOpenDoc: 'Mở tài liệu',
+    filterWord: 'Tài liệu Word',
+    odtImportMsg: 'Chuyển đổi tài liệu .{ext} này?',
+    odtImportDetail:
+      'GenOffice chỉnh sửa .docx chứ không chỉnh sửa ODF. Nội dung, tiêu đề, danh sách, bảng và hình ảnh được chuyển đổi; chú thích cuối trang, bình luận và hộp văn bản không được giữ đầy đủ. Tệp gốc không bao giờ bị sửa; bản .docx sau chuyển đổi là một bản sao độc lập để tiếp tục chỉnh sửa và lưu.',
+    hwpImportDetail:
+      'GenOffice chỉnh sửa .docx chứ không chỉnh sửa HWP. Nội dung, bảng, hình ảnh, đầu trang và chân trang được chuyển đổi; công thức, chú thích cuối trang và đối tượng nhúng không được chuyển đổi, còn đánh số tự động trở thành văn bản thường. Tệp gốc không bao giờ bị sửa; bản .docx sau chuyển đổi là một bản sao độc lập để tiếp tục chỉnh sửa và lưu.',
+    odtImportConvertBtn: 'Chuyển đổi và mở',
+    importSkipConfirm: 'Lần sau chuyển đổi ngay, không hỏi lại',
+    docImportMsg: 'Chuyển đổi tài liệu .{ext} này?',
+    docImportDetail:
+      'GenOffice chỉnh sửa .docx chứ không chỉnh sửa tài liệu Word 97-2003 (.doc). Nội dung, tiêu đề, danh sách, bảng và hình ảnh được chuyển đổi; chú thích cuối trang, bình luận và hộp văn bản không được giữ đầy đủ. Tệp gốc không bao giờ bị sửa; bản .docx sau chuyển đổi là một bản sao độc lập để tiếp tục chỉnh sửa và lưu.',
+    docImportConvertBtn: 'Chuyển đổi và mở',
+    dlgSaveAs: 'Lưu dưới dạng',
+    closeUnsavedMsg: 'Tài liệu này có những thay đổi chưa được lưu.',
+    closeUnsavedDetail: 'Bạn có muốn lưu các thay đổi trước khi đóng không?',
+    closeNoReplyMsg: 'Tài liệu không phản hồi và có thể có những thay đổi chưa được lưu.',
+    closeNoReplyDetail: 'Vẫn đóng? Các thay đổi chưa lưu sẽ bị mất.',
+    btnCloseAnyway: 'Vẫn đóng',
+    autosaveFoundTitle: 'Tìm thấy phiên bản khôi phục',
+    autosaveDiskNewer:
+      'Lưu ý: tệp trên đĩa đã được sửa đổi sau khi bản sao khôi phục này được lưu. Khôi phục sẽ thay thế những thay đổi mới hơn đó.',
+    autosaveFoundBody:
+      'Có những thay đổi chưa được lưu từ phiên làm việc trước của bạn. Khôi phục phiên bản đã lưu tự động?',
+    autosaveRestore: 'Khôi phục',
+    autosaveDiscard: 'Bỏ qua',
+    btnDontSave: 'Không lưu',
+    btnCancel: 'Hủy',
+    extModifiedMsg: 'Tệp đã được sửa đổi bởi một chương trình khác.',
+    extModifiedDetail: 'Vẫn lưu và ghi đè các thay đổi trên ổ đĩa?',
+    btnOverwrite: 'Ghi đè',
+    dlgInsertImage: 'Chèn hình ảnh',
+    filterImages: 'Hình ảnh',
+    dlgMergeDataSource: 'Chọn danh sách người nhận',
+    filterMergeDataSource: 'Excel hoặc CSV',
+    dlgAddAttachment: 'Thêm tệp đính kèm',
+    filterSupported: 'Các tệp được hỗ trợ',
+    filterAll: 'Tất cả các tệp',
+    dlgExportPdf: 'Xuất dưới dạng PDF',
+    dlgExportHtml: 'Xuất dưới dạng HTML',
+    dlgExportMarkdown: 'Xuất dưới dạng Markdown',
+    dlgPickExportDir: 'Chọn thư mục xuất',
+    errUnsupportedExt: 'Tệp .{ext} không được hỗ trợ',
+    errNotFile: 'không phải là tệp',
+    errTooLarge: 'vượt quá giới hạn {mb}MB',
+    errImageTooLarge: 'hình ảnh vượt quá giới hạn 5MB',
+    errUnreadable: 'không thể đọc được',
+    errFileTooLarge: 'Tệp vượt quá giới hạn kích thước',
+    errParseFailed: 'Không thể phân tích tệp',
+    errImageNoText:
+      'Tệp đính kèm hình ảnh không có văn bản; hình ảnh được gửi cùng với tin nhắn của người dùng',
+    errNotImage: 'loại hình ảnh không được hỗ trợ',
+    errGskNotLoggedIn:
+      'Chưa đăng nhập vào Genspark: nhấp vào “Đăng nhập vào Genspark” bên dưới, đăng nhập, sau đó thử lại',
+    errNoApiKey: 'Chưa cấu hình khóa API cho {provider}',
+    errAiRegion:
+      'Nhà cung cấp của mô hình này không phục vụ khu vực hiện tại của bạn — hãy chọn mô hình khác hoặc đổi mạng',
+    errAiBusy: 'Dịch vụ AI hiện đang bận — vui lòng thử lại sau giây lát',
+    errNoModel: 'Chưa cấu hình tên mô hình',
+    menuFile: 'Tệp',
+    menuNewDoc: 'Tài liệu mới',
+    menuNewWindow: 'Cửa sổ mới',
+    menuOpen: 'Mở…',
+    menuOpenRecent: 'Mở gần đây',
+    menuNoRecent: 'Không có tài liệu gần đây',
+    menuClose: 'Đóng',
+    menuSave: 'Lưu',
+    menuSaveAs: 'Lưu dưới dạng…',
+    menuPageSetup: 'Thiết lập trang…',
+    menuExportPdf: 'Xuất dưới dạng PDF…',
+    menuExportHtml: 'Xuất dưới dạng HTML…',
+    menuExportMarkdown: 'Xuất dưới dạng Markdown…',
+    menuExportImages: 'Xuất dưới dạng hình ảnh…',
+    menuPrint: 'In…',
+    menuEdit: 'Chỉnh sửa',
+    menuUndo: 'Hoàn tác',
+    menuRedo: 'Làm lại',
+    menuCut: 'Cắt',
+    menuCopy: 'Sao chép',
+    menuPaste: 'Dán',
+    menuPasteMatch: 'Dán và khớp kiểu định dạng',
+    menuFindReplace: 'Tìm kiếm và thay thế…',
+    menuGoTo: 'Đi tới…',
+    menuSelectAll: 'Chọn tất cả',
+    menuView: 'Xem',
+    menuZoom: 'Thu phóng',
+    menuZoomIn: 'Phóng to',
+    menuZoomOut: 'Thu nhỏ',
+    menuZoom100: 'Kích thước thực tế (100%)',
+    menuPageWidth: 'Chiều rộng trang',
+    menuWholePage: 'Toàn bộ trang',
+    menuMultiPage: 'Nhiều trang',
+    menuAiSidebar: 'Thanh bên AI',
+    menuDarkMode: 'Chế độ tối',
+    menuFullscreen: 'Vào chế độ toàn màn hình',
+    menuInsert: 'Chèn',
+    menuInsertTable: 'Bảng…',
+    menuInsertImage: 'Hình ảnh…',
+    menuInsertPageBreak: 'Ngắt trang',
+    menuInsertLink: 'Siêu liên kết…',
+    menuInsertEquation: 'Phương trình…',
+    menuComment: 'Bình luận',
+    menuFormat: 'Định dạng',
+    menuBold: 'In đậm',
+    menuItalic: 'In nghiêng',
+    menuUnderline: 'Gạch chân',
+    menuAlign: 'Căn chỉnh',
+    menuAlignLeft: 'Căn trái',
+    menuAlignCenter: 'Căn giữa',
+    menuAlignRight: 'Căn phải',
+    menuAlignJustify: 'Căn đều',
+    menuFont: 'Phông chữ…',
+    menuParagraph: 'Đoạn văn…',
+    menuTools: 'Công cụ',
+    menuTable: 'Bảng',
+    menuTableInsert: 'Chèn',
+    menuTableInsertTable: 'Bảng…',
+    menuTableColsLeft: 'Chèn cột bên trái',
+    menuTableColsRight: 'Chèn cột bên phải',
+    menuTableRowsAbove: 'Chèn hàng phía trên',
+    menuTableRowsBelow: 'Chèn hàng phía dưới',
+    menuTableCells: 'Ô…',
+    menuTableDelete: 'Xóa',
+    menuTableDeleteTable: 'Bảng',
+    menuTableDeleteColumns: 'Cột',
+    menuTableDeleteRows: 'Hàng',
+    menuTableSelect: 'Chọn',
+    menuTableSelectCell: 'Ô',
+    menuTableSelectColumn: 'Cột',
+    menuTableSelectRow: 'Hàng',
+    menuTableSelectTable: 'Bảng',
+    menuTableMergeCells: 'Hợp nhất các ô',
+    menuTableSplitCells: 'Tách ô…',
+    menuTableSplitTable: 'Tách bảng',
+    menuTableAutoFit: 'Tự động điều chỉnh',
+    menuTableAutoFitContents: 'Tự động điều chỉnh theo nội dung',
+    menuTableAutoFitWindow: 'Tự động điều chỉnh theo cửa sổ',
+    menuTableFixedWidth: 'Chiều rộng cột cố định',
+    menuTableDistributeRows: 'Phân bố hàng đều nhau',
+    menuTableDistributeColumns: 'Phân bố cột đều nhau',
+    menuTableRepeatHeader: 'Lặp lại hàng tiêu đề',
+    menuTableGridlines: 'Xem đường lưới',
+    menuTableProperties: 'Thuộc tính bảng…',
+    menuWordCount: 'Đếm từ…',
+    menuAutoCorrect: 'Tùy chọn tự sửa lỗi…',
+    menuPreferences: 'Tùy chọn…',
+    menuAiProofread: 'Hiệu đính bằng AI',
+    menuWindow: 'Cửa sổ',
+    menuHelp: 'Trợ giúp',
+    menuShortcuts: 'Phím tắt bàn phím',
+  },
+  tr: {
+    dlgOpenDoc: 'Belge Aç',
+    filterWord: 'Word Belgeleri',
+    odtImportMsg: 'Bu .{ext} belgesi dönüştürülsün mü?',
+    odtImportDetail:
+      'GenOffice ODF değil .docx düzenler. Gövde metni, başlıklar, listeler, tablolar ve resimler aktarılır; dipnotlar, açıklamalar ve metin kutuları tam olarak korunmaz. Özgün dosya hiçbir zaman değiştirilmez; dönüştürülen .docx, sonraki kaydetmelerin yazıldığı ayrı bir kopyadır.',
+    hwpImportDetail:
+      'GenOffice HWP değil .docx düzenler. Gövde metni, tablolar, resimler, üst bilgiler ve alt bilgiler aktarılır; denklemler, dipnotlar ve gömülü nesneler dönüştürülmez, otomatik numaralandırma düz metne dönüşür. Özgün dosya hiçbir zaman değiştirilmez; dönüştürülen .docx, sonraki kaydetmelerin yazıldığı ayrı bir kopyadır.',
+    odtImportConvertBtn: 'Dönüştür ve aç',
+    importSkipConfirm: 'Bir dahaki sefere sormadan dönüştür',
+    docImportMsg: 'Bu .{ext} belgesi dönüştürülsün mü?',
+    docImportDetail:
+      'GenOffice Word 97-2003 (.doc) belgelerini değil .docx düzenler. Gövde metni, başlıklar, listeler, tablolar ve resimler aktarılır; dipnotlar, açıklamalar ve metin kutuları tam olarak korunmaz. Özgün dosya hiçbir zaman değiştirilmez; dönüştürülen .docx, sonraki kaydetmelerin yazıldığı ayrı bir kopyadır.',
+    docImportConvertBtn: 'Dönüştür ve aç',
+    dlgSaveAs: 'Farklı Kaydet',
+    closeUnsavedMsg: 'Bu belgede kaydedilmemiş değişiklikler var.',
+    closeUnsavedDetail: 'Kapatmadan önce kaydetmek ister misiniz?',
+    closeNoReplyMsg: 'Belge yanıt vermiyor ve kaydedilmemiş değişiklikler içeriyor olabilir.',
+    closeNoReplyDetail: 'Yine de kapatılsın mı? Kaydedilmemiş değişiklikler kaybolacak.',
+    btnCloseAnyway: 'Yine de Kapat',
+    autosaveFoundTitle: 'Kurtarılan sürüm bulundu',
+    autosaveDiskNewer:
+      'Not: diskteki dosya bu kurtarma kopyası kaydedildikten sonra değiştirilmiş. Geri yüklemek bu daha yeni değişikliklerin yerini alır.',
+    autosaveFoundBody:
+      'Son oturumunuzdan kaydedilmemiş değişiklikler var. Otomatik kaydedilen sürüm geri yüklensin mi?',
+    autosaveRestore: 'Geri Yükle',
+    autosaveDiscard: 'At',
+    btnDontSave: 'Kaydetme',
+    btnCancel: 'İptal',
+    extModifiedMsg: 'Dosya başka bir program tarafından değiştirildi.',
+    extModifiedDetail: 'Yine de kaydedilip diskteki değişikliklerin üzerine yazılsın mı?',
+    btnOverwrite: 'Üzerine Yaz',
+    dlgInsertImage: 'Resim Ekle',
+    filterImages: 'Resimler',
+    dlgMergeDataSource: 'Alıcı Listesi Seç',
+    filterMergeDataSource: 'Excel veya CSV',
+    dlgAddAttachment: 'Ek Ekle',
+    filterSupported: 'Desteklenen Dosyalar',
+    filterAll: 'Tüm Dosyalar',
+    dlgExportPdf: 'PDF Olarak Dışa Aktar',
+    dlgExportHtml: 'HTML Olarak Dışa Aktar',
+    dlgExportMarkdown: 'Markdown Olarak Dışa Aktar',
+    dlgPickExportDir: 'Dışa Aktarma Klasörünü Seç',
+    errUnsupportedExt: '.{ext} dosyaları desteklenmiyor',
+    errNotFile: 'bir dosya değil',
+    errTooLarge: '{mb}MB sınırını aşıyor',
+    errImageTooLarge: 'resim 5MB sınırını aşıyor',
+    errUnreadable: 'okunamıyor',
+    errFileTooLarge: 'Dosya boyut sınırını aşıyor',
+    errParseFailed: 'Dosya ayrıştırılamadı',
+    errImageNoText: 'Resim eklerinde metin yok; resim kullanıcı iletisiyle birlikte gönderilir',
+    errNotImage: 'desteklenen bir resim türü değil',
+    errGskNotLoggedIn:
+      "Genspark'a giriş yapılmadı: aşağıdaki “Genspark'a giriş yap” düğmesine tıklayın, giriş yapın ve yeniden deneyin",
+    errNoApiKey: '{provider} için API anahtarı yapılandırılmamış',
+    errAiRegion:
+      'Bu modelin sağlayıcısı bulunduğunuz bölgeye hizmet vermiyor — başka bir model seçin veya ağınızı değiştirin',
+    errAiBusy: 'AI hizmeti şu anda yoğun — lütfen biraz sonra yeniden deneyin',
+    errNoModel: 'Model adı yapılandırılmamış',
+    menuFile: 'Dosya',
+    menuNewDoc: 'Yeni Belge',
+    menuNewWindow: 'Yeni Pencere',
+    menuOpen: 'Aç…',
+    menuOpenRecent: 'Son Kullanılanları Aç',
+    menuNoRecent: 'Son Kullanılan Belge Yok',
+    menuClose: 'Kapat',
+    menuSave: 'Kaydet',
+    menuSaveAs: 'Farklı Kaydet…',
+    menuPageSetup: 'Sayfa Yapısı…',
+    menuExportPdf: 'PDF Olarak Dışa Aktar…',
+    menuExportHtml: 'HTML Olarak Dışa Aktar…',
+    menuExportMarkdown: 'Markdown Olarak Dışa Aktar…',
+    menuExportImages: 'Resim Olarak Dışa Aktar…',
+    menuPrint: 'Yazdır…',
+    menuEdit: 'Düzenle',
+    menuUndo: 'Geri Al',
+    menuRedo: 'Yinele',
+    menuCut: 'Kes',
+    menuCopy: 'Kopyala',
+    menuPaste: 'Yapıştır',
+    menuPasteMatch: 'Stili Eşleştirerek Yapıştır',
+    menuFindReplace: 'Bul ve Değiştir…',
+    menuGoTo: 'Git…',
+    menuSelectAll: 'Tümünü Seç',
+    menuView: 'Görünüm',
+    menuZoom: 'Yakınlaştır',
+    menuZoomIn: 'Yakınlaştır',
+    menuZoomOut: 'Uzaklaştır',
+    menuZoom100: 'Gerçek Boyut (%100)',
+    menuPageWidth: 'Sayfa Genişliği',
+    menuWholePage: 'Tüm Sayfa',
+    menuMultiPage: 'Birden Çok Sayfa',
+    menuAiSidebar: 'AI Kenar Çubuğu',
+    menuDarkMode: 'Koyu Mod',
+    menuFullscreen: 'Tam Ekrana Geç',
+    menuInsert: 'Ekle',
+    menuInsertTable: 'Tablo…',
+    menuInsertImage: 'Resim…',
+    menuInsertPageBreak: 'Sayfa Sonu',
+    menuInsertLink: 'Köprü…',
+    menuInsertEquation: 'Denklem…',
+    menuComment: 'Açıklama',
+    menuFormat: 'Biçim',
+    menuBold: 'Kalın',
+    menuItalic: 'İtalik',
+    menuUnderline: 'Altı Çizili',
+    menuAlign: 'Hizala',
+    menuAlignLeft: 'Sola Hizala',
+    menuAlignCenter: 'Ortala',
+    menuAlignRight: 'Sağa Hizala',
+    menuAlignJustify: 'İki Yana Yasla',
+    menuFont: 'Yazı Tipi…',
+    menuParagraph: 'Paragraf…',
+    menuTools: 'Araçlar',
+    menuTable: 'Tablo',
+    menuTableInsert: 'Ekle',
+    menuTableInsertTable: 'Tablo…',
+    menuTableColsLeft: 'Sola Sütun',
+    menuTableColsRight: 'Sağa Sütun',
+    menuTableRowsAbove: 'Üste Satır',
+    menuTableRowsBelow: 'Alta Satır',
+    menuTableCells: 'Hücreler…',
+    menuTableDelete: 'Sil',
+    menuTableDeleteTable: 'Tablo',
+    menuTableDeleteColumns: 'Sütunlar',
+    menuTableDeleteRows: 'Satırlar',
+    menuTableSelect: 'Seç',
+    menuTableSelectCell: 'Hücre',
+    menuTableSelectColumn: 'Sütun',
+    menuTableSelectRow: 'Satır',
+    menuTableSelectTable: 'Tablo',
+    menuTableMergeCells: 'Hücreleri Birleştir',
+    menuTableSplitCells: 'Hücreleri Böl…',
+    menuTableSplitTable: 'Tabloyu Böl',
+    menuTableAutoFit: 'Otomatik Sığdır ve Dağıt',
+    menuTableAutoFitContents: 'İçeriğe Otomatik Sığdır',
+    menuTableAutoFitWindow: 'Pencereye Otomatik Sığdır',
+    menuTableFixedWidth: 'Sabit Sütun Genişliği',
+    menuTableDistributeRows: 'Satırları Eşit Dağıt',
+    menuTableDistributeColumns: 'Sütunları Eşit Dağıt',
+    menuTableRepeatHeader: 'Başlık Satırlarını Yinele',
+    menuTableGridlines: 'Kılavuz Çizgilerini Göster',
+    menuTableProperties: 'Tablo Özellikleri…',
+    menuWordCount: 'Sözcük Sayısı…',
+    menuAutoCorrect: 'Otomatik Düzelt Seçenekleri…',
+    menuPreferences: 'Tercihler…',
+    menuAiProofread: 'AI Düzeltme Okuması',
+    menuWindow: 'Pencere',
+    menuHelp: 'Yardım',
+    menuShortcuts: 'Klavye Kısayolları',
   },
   ja: {
     dlgOpenDoc: '文書を開く',
     filterWord: 'Word 文書',
+    odtImportMsg: 'この .{ext} 文書を変換しますか？',
+    odtImportDetail:
+      'GenOffice は ODF ではなく .docx を編集します。本文・見出し・リスト・表・画像は変換されますが、脚注・コメント・テキストボックスは完全には保持されません。元のファイルは変更されず、変換後の .docx は独立したコピーとして以後の保存先になります。',
+    hwpImportDetail:
+      'GenOffice は HWP ではなく .docx を編集します。本文・表・画像・ヘッダー・フッターは変換されますが、数式・脚注・埋め込みオブジェクトは変換されず、自動番号は通常のテキストになります。元のファイルは変更されず、変換後の .docx は独立したコピーとして以後の保存先になります。',
+    odtImportConvertBtn: '変換して開く',
+    importSkipConfirm: '次回から確認せずに変換する',
+    docImportMsg: 'この .{ext} 文書を変換しますか？',
+    docImportDetail:
+      'GenOffice は Word 97-2003 形式（.doc）ではなく .docx を編集します。本文・見出し・リスト・表・画像は変換されますが、脚注・コメント・テキストボックスは完全には保持されません。元のファイルは変更されず、変換後の .docx は独立したコピーとして以後の保存先になります。',
+    docImportConvertBtn: '変換して開く',
     dlgSaveAs: '名前を付けて保存',
     closeUnsavedMsg: 'このドキュメントに未保存の変更があります。',
     closeUnsavedDetail: '閉じる前に保存しますか？',
@@ -279,6 +851,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'それでも閉じますか?未保存の変更は失われます。',
     btnCloseAnyway: '閉じる',
     autosaveFoundTitle: '自動回復バージョンがあります',
+    autosaveDiskNewer:
+      '注意: この回復コピーの保存後にディスク上のファイルが変更されています。復元するとその新しい変更は置き換えられます。',
     autosaveFoundBody: '前回のセッションに未保存の変更があります。自動保存版を復元しますか?',
     autosaveRestore: '復元',
     autosaveDiscard: '破棄',
@@ -289,10 +863,15 @@ const tMain = createI18n({
     btnOverwrite: '上書き',
     dlgInsertImage: '画像の挿入',
     filterImages: '画像',
+    dlgMergeDataSource: '受信者リストを選択',
+    filterMergeDataSource: 'Excel または CSV',
     dlgAddAttachment: '添付ファイルの追加',
     filterSupported: 'サポートされているファイル',
     filterAll: 'すべてのファイル',
     dlgExportPdf: 'PDF としてエクスポート',
+    dlgExportHtml: 'HTML としてエクスポート',
+    dlgExportMarkdown: 'Markdown としてエクスポート',
+    dlgPickExportDir: 'エクスポート先フォルダーの選択',
     errUnsupportedExt: '.{ext} 形式には対応していません',
     errNotFile: 'ファイルではありません',
     errTooLarge: '{mb}MB の上限を超えています',
@@ -306,6 +885,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Genspark にサインインしていません。下の「Genspark にサインイン」からサインインして再試行してください',
     errNoApiKey: '{provider} の API キーが設定されていません',
+    errAiRegion:
+      'このモデルの提供元は現在の地域ではサービスを提供していません。別のモデルを選ぶか、ネットワークを切り替えてください',
+    errAiBusy: 'AI サービスが混み合っています。しばらくしてからもう一度お試しください',
     errNoModel: 'モデル名が設定されていません',
     menuFile: 'ファイル',
     menuNewDoc: '新規文書',
@@ -318,6 +900,9 @@ const tMain = createI18n({
     menuSaveAs: '名前を付けて保存…',
     menuPageSetup: 'ページ設定…',
     menuExportPdf: 'PDF としてエクスポート…',
+    menuExportHtml: 'HTML としてエクスポート…',
+    menuExportMarkdown: 'Markdown としてエクスポート…',
+    menuExportImages: '画像としてエクスポート…',
     menuPrint: '印刷…',
     menuEdit: '編集',
     menuUndo: '元に戻す',
@@ -327,18 +912,21 @@ const tMain = createI18n({
     menuPaste: '貼り付け',
     menuPasteMatch: '貼り付けて書式を合わせる',
     menuFindReplace: '検索と置換…',
+    menuGoTo: 'ジャンプ…',
     menuSelectAll: 'すべて選択',
     menuView: '表示',
+    menuZoom: 'ズーム',
     menuZoomIn: '拡大',
     menuZoomOut: '縮小',
     menuZoom100: '実際のサイズ (100%)',
     menuPageWidth: 'ページ幅',
     menuWholePage: 'ページ全体',
+    menuMultiPage: '複数ページ',
     menuAiSidebar: 'AI サイドバー',
     menuDarkMode: 'ダークモード',
     menuFullscreen: 'フルスクリーンにする',
     menuInsert: '挿入',
-    menuInsertTable: '表 (3×3)',
+    menuInsertTable: '表…',
     menuInsertImage: '画像…',
     menuInsertPageBreak: '改ページ',
     menuInsertLink: 'ハイパーリンク…',
@@ -356,16 +944,57 @@ const tMain = createI18n({
     menuFont: 'フォント…',
     menuParagraph: '段落…',
     menuTools: 'ツール',
+    menuTable: '表',
+    menuTableInsert: '挿入',
+    menuTableInsertTable: '表…',
+    menuTableColsLeft: '左に列',
+    menuTableColsRight: '右に列',
+    menuTableRowsAbove: '上に行',
+    menuTableRowsBelow: '下に行',
+    menuTableCells: 'セル…',
+    menuTableDelete: '削除',
+    menuTableDeleteTable: '表',
+    menuTableDeleteColumns: '列',
+    menuTableDeleteRows: '行',
+    menuTableSelect: '選択',
+    menuTableSelectCell: 'セル',
+    menuTableSelectColumn: '列',
+    menuTableSelectRow: '行',
+    menuTableSelectTable: '表',
+    menuTableMergeCells: 'セルの結合',
+    menuTableSplitCells: 'セルの分割…',
+    menuTableSplitTable: '表の分割',
+    menuTableAutoFit: '自動調整',
+    menuTableAutoFitContents: '文字列の幅に自動調整',
+    menuTableAutoFitWindow: 'ウィンドウ幅に自動調整',
+    menuTableFixedWidth: '列の幅を固定する',
+    menuTableDistributeRows: '行の高さを揃える',
+    menuTableDistributeColumns: '列の幅を揃える',
+    menuTableRepeatHeader: 'タイトル行の繰り返し',
+    menuTableGridlines: 'グリッド線の表示',
+    menuTableProperties: '表のプロパティ…',
     menuWordCount: '文字カウント…',
-    menuSpelling: 'スペルチェックと文章校正',
-    menuMacros: 'マクロ',
+    menuAutoCorrect: 'オートコレクトのオプション…',
+    menuPreferences: '環境設定…',
+    menuAiProofread: 'AI 校正',
     menuWindow: 'ウィンドウ',
     menuHelp: 'ヘルプ',
-    menuDocsHelp: 'GenOffice Docs ヘルプ',
+    menuShortcuts: 'キーボードショートカット',
   },
   ko: {
     dlgOpenDoc: '문서 열기',
     filterWord: 'Word 문서',
+    odtImportMsg: '이 .{ext} 문서를 변환할까요?',
+    odtImportDetail:
+      'GenOffice은 ODF가 아니라 .docx를 편집합니다. 본문, 제목, 목록, 표, 이미지는 변환되지만 각주, 메모, 텍스트 상자는 완전히 유지되지 않습니다. 원본 파일은 변경되지 않으며, 변환된 .docx는 이후 저장이 기록되는 독립적인 사본입니다.',
+    hwpImportDetail:
+      'GenOffice은 HWP가 아니라 .docx를 편집합니다. 본문, 표, 그림, 머리말, 꼬리말은 변환되지만 수식, 각주, 삽입 개체는 변환되지 않으며 자동 번호는 일반 텍스트로 바뀝니다. 원본 파일은 변경되지 않으며, 변환된 .docx는 이후 저장이 기록되는 독립적인 사본입니다.',
+    odtImportConvertBtn: '변환 후 열기',
+    importSkipConfirm: '다음부터 묻지 않고 변환',
+    docImportMsg: '이 .{ext} 문서를 변환할까요?',
+    docImportDetail:
+      'GenOffice은 Word 97-2003(.doc) 문서가 아니라 .docx를 편집합니다. 본문, 제목, 목록, 표, 이미지는 변환되지만 각주, 메모, 텍스트 상자는 완전히 유지되지 않습니다. 원본 파일은 변경되지 않으며, 변환된 .docx는 이후 저장이 기록되는 독립적인 사본입니다.',
+    docImportConvertBtn: '변환 후 열기',
     dlgSaveAs: '다른 이름으로 저장',
     closeUnsavedMsg: '이 문서에 저장하지 않은 변경 사항이 있습니다.',
     closeUnsavedDetail: '닫기 전에 저장하시겠습니까?',
@@ -373,6 +1002,8 @@ const tMain = createI18n({
     closeNoReplyDetail: '그래도 닫을까요? 저장하지 않은 변경 사항은 사라집니다.',
     btnCloseAnyway: '닫기',
     autosaveFoundTitle: '자동 복구 버전 발견',
+    autosaveDiskNewer:
+      '참고: 이 복구 사본이 저장된 후 디스크의 파일이 수정되었습니다. 복원하면 그 최신 변경 내용이 대체됩니다.',
     autosaveFoundBody:
       '마지막 세션에 저장되지 않은 변경 내용이 있습니다. 자동 저장 버전을 복원할까요?',
     autosaveRestore: '복원',
@@ -384,10 +1015,15 @@ const tMain = createI18n({
     btnOverwrite: '덮어쓰기',
     dlgInsertImage: '그림 삽입',
     filterImages: '그림',
+    dlgMergeDataSource: '받는 사람 목록 선택',
+    filterMergeDataSource: 'Excel 또는 CSV',
     dlgAddAttachment: '첨부 파일 추가',
     filterSupported: '지원되는 파일',
     filterAll: '모든 파일',
     dlgExportPdf: 'PDF로 내보내기',
+    dlgExportHtml: 'HTML로 내보내기',
+    dlgExportMarkdown: 'Markdown로 내보내기',
+    dlgPickExportDir: '내보낼 폴더 선택',
     errUnsupportedExt: '.{ext} 형식은 지원되지 않습니다',
     errNotFile: '파일이 아닙니다',
     errTooLarge: '{mb}MB 제한을 초과했습니다',
@@ -401,6 +1037,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Genspark에 로그인되어 있지 않습니다. 아래 "Genspark 로그인"을 눌러 로그인한 뒤 다시 시도하세요',
     errNoApiKey: '{provider}의 API 키가 설정되지 않았습니다',
+    errAiRegion:
+      '이 모델의 제공업체는 현재 지역에서 서비스를 제공하지 않습니다. 다른 모델을 선택하거나 네트워크를 변경하세요',
+    errAiBusy: 'AI 서비스가 혼잡합니다. 잠시 후 다시 시도해 주세요',
     errNoModel: '모델 이름이 설정되지 않았습니다',
     menuFile: '파일',
     menuNewDoc: '새 문서',
@@ -413,6 +1052,9 @@ const tMain = createI18n({
     menuSaveAs: '다른 이름으로 저장…',
     menuPageSetup: '페이지 설정…',
     menuExportPdf: 'PDF로 내보내기…',
+    menuExportHtml: 'HTML로 내보내기…',
+    menuExportMarkdown: 'Markdown로 내보내기…',
+    menuExportImages: '이미지로 내보내기…',
     menuPrint: '인쇄…',
     menuEdit: '편집',
     menuUndo: '실행 취소',
@@ -422,18 +1064,21 @@ const tMain = createI18n({
     menuPaste: '붙여넣기',
     menuPasteMatch: '서식 맞춰 붙여넣기',
     menuFindReplace: '찾기 및 바꾸기…',
+    menuGoTo: '이동…',
     menuSelectAll: '모두 선택',
     menuView: '보기',
+    menuZoom: '확대/축소',
     menuZoomIn: '확대',
     menuZoomOut: '축소',
     menuZoom100: '실제 크기(100%)',
     menuPageWidth: '페이지 너비',
     menuWholePage: '전체 페이지',
+    menuMultiPage: '여러 페이지',
     menuAiSidebar: 'AI 사이드바',
     menuDarkMode: '다크 모드',
     menuFullscreen: '전체 화면 시작',
     menuInsert: '삽입',
-    menuInsertTable: '표(3×3)',
+    menuInsertTable: '표…',
     menuInsertImage: '그림…',
     menuInsertPageBreak: '페이지 나누기',
     menuInsertLink: '하이퍼링크…',
@@ -451,16 +1096,57 @@ const tMain = createI18n({
     menuFont: '글꼴…',
     menuParagraph: '단락…',
     menuTools: '도구',
+    menuTable: '표',
+    menuTableInsert: '삽입',
+    menuTableInsertTable: '표…',
+    menuTableColsLeft: '왼쪽에 열',
+    menuTableColsRight: '오른쪽에 열',
+    menuTableRowsAbove: '위에 행',
+    menuTableRowsBelow: '아래에 행',
+    menuTableCells: '셀…',
+    menuTableDelete: '삭제',
+    menuTableDeleteTable: '표',
+    menuTableDeleteColumns: '열',
+    menuTableDeleteRows: '행',
+    menuTableSelect: '선택',
+    menuTableSelectCell: '셀',
+    menuTableSelectColumn: '열',
+    menuTableSelectRow: '행',
+    menuTableSelectTable: '표',
+    menuTableMergeCells: '셀 병합',
+    menuTableSplitCells: '셀 분할…',
+    menuTableSplitTable: '표 분할',
+    menuTableAutoFit: '자동 맞춤 및 분배',
+    menuTableAutoFitContents: '내용에 자동 맞춤',
+    menuTableAutoFitWindow: '창에 자동 맞춤',
+    menuTableFixedWidth: '열 너비 고정',
+    menuTableDistributeRows: '행 균등 분배',
+    menuTableDistributeColumns: '열 균등 분배',
+    menuTableRepeatHeader: '머리글 행 반복',
+    menuTableGridlines: '눈금선 보기',
+    menuTableProperties: '표 속성…',
     menuWordCount: '단어 개수…',
-    menuSpelling: '맞춤법 및 문법 검사',
-    menuMacros: '매크로',
+    menuAutoCorrect: '자동 고침 옵션…',
+    menuPreferences: '기본 설정…',
+    menuAiProofread: 'AI 교정',
     menuWindow: '창',
     menuHelp: '도움말',
-    menuDocsHelp: 'GenOffice Docs 도움말',
+    menuShortcuts: '키보드 바로 가기',
   },
   fr: {
     dlgOpenDoc: 'Ouvrir un document',
     filterWord: 'Documents Word',
+    odtImportMsg: 'Convertir ce document .{ext} ?',
+    odtImportDetail:
+      'GenOffice modifie des .docx, pas de l’ODF. Le texte, les titres, les listes, les tableaux et les images sont convertis ; les notes de bas de page, les commentaires et les zones de texte ne sont pas entièrement conservés. Le fichier d’origine n’est jamais modifié ; le .docx converti est une copie distincte où s’effectuent les enregistrements suivants.',
+    hwpImportDetail:
+      'GenOffice modifie des .docx, pas des fichiers HWP. Le texte, les tableaux, les images, les en-têtes et les pieds de page sont convertis ; les équations, les notes de bas de page et les objets incorporés ne le sont pas, et la numérotation automatique devient du texte simple. Le fichier d’origine n’est jamais modifié ; le .docx converti est une copie distincte où s’effectuent les enregistrements suivants.',
+    odtImportConvertBtn: 'Convertir et ouvrir',
+    importSkipConfirm: 'La prochaine fois, convertir sans demander',
+    docImportMsg: 'Convertir ce document .{ext} ?',
+    docImportDetail:
+      'GenOffice modifie des .docx, pas de documents Word 97-2003 (.doc). Le texte, les titres, les listes, les tableaux et les images sont convertis ; les notes de bas de page, les commentaires et les zones de texte ne sont pas entièrement conservés. Le fichier d’origine n’est jamais modifié ; le .docx converti est une copie distincte où s’effectuent les enregistrements suivants.',
+    docImportConvertBtn: 'Convertir et ouvrir',
     dlgSaveAs: 'Enregistrer sous',
     closeUnsavedMsg: 'Ce document contient des modifications non enregistrées.',
     closeUnsavedDetail: 'Voulez-vous les enregistrer avant de fermer ?',
@@ -469,6 +1155,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Fermer quand même ? Les modifications non enregistrées seront perdues.',
     btnCloseAnyway: 'Fermer quand même',
     autosaveFoundTitle: 'Version récupérée trouvée',
+    autosaveDiskNewer:
+      'Remarque : le fichier sur le disque a été modifié après l’enregistrement de cette copie de récupération. La restauration remplacera ces modifications plus récentes.',
     autosaveFoundBody:
       'Des modifications non enregistrées existent. Restaurer la version auto-enregistrée ?',
     autosaveRestore: 'Restaurer',
@@ -480,10 +1168,15 @@ const tMain = createI18n({
     btnOverwrite: 'Écraser',
     dlgInsertImage: 'Insérer une image',
     filterImages: 'Images',
+    dlgMergeDataSource: 'Sélectionner une liste de destinataires',
+    filterMergeDataSource: 'Excel ou CSV',
     dlgAddAttachment: 'Ajouter des pièces jointes',
     filterSupported: 'Fichiers pris en charge',
     filterAll: 'Tous les fichiers',
     dlgExportPdf: 'Exporter au format PDF',
+    dlgExportHtml: 'Exporter au format HTML',
+    dlgExportMarkdown: 'Exporter au format Markdown',
+    dlgPickExportDir: "Choisir le dossier d'exportation",
     errUnsupportedExt: 'les fichiers .{ext} ne sont pas pris en charge',
     errNotFile: "n'est pas un fichier",
     errTooLarge: 'dépasse la limite de {mb} Mo',
@@ -497,6 +1190,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Non connecté à Genspark : cliquez sur « Se connecter à Genspark » ci-dessous, connectez-vous puis réessayez',
     errNoApiKey: 'Aucune clé API configurée pour {provider}',
+    errAiRegion:
+      'Le fournisseur de ce modèle ne dessert pas votre région actuelle — choisissez un autre modèle ou changez de réseau',
+    errAiBusy: "Le service d'IA est actuellement surchargé — réessayez dans un instant",
     errNoModel: 'Aucun nom de modèle configuré',
     menuFile: 'Fichier',
     menuNewDoc: 'Nouveau document',
@@ -509,6 +1205,9 @@ const tMain = createI18n({
     menuSaveAs: 'Enregistrer sous…',
     menuPageSetup: 'Mise en page…',
     menuExportPdf: 'Exporter au format PDF…',
+    menuExportHtml: 'Exporter au format HTML…',
+    menuExportMarkdown: 'Exporter au format Markdown…',
+    menuExportImages: 'Exporter en images…',
     menuPrint: 'Imprimer…',
     menuEdit: 'Édition',
     menuUndo: 'Annuler',
@@ -518,18 +1217,21 @@ const tMain = createI18n({
     menuPaste: 'Coller',
     menuPasteMatch: 'Coller et adapter le style',
     menuFindReplace: 'Rechercher et remplacer…',
+    menuGoTo: 'Atteindre…',
     menuSelectAll: 'Tout sélectionner',
     menuView: 'Affichage',
+    menuZoom: 'Zoom',
     menuZoomIn: 'Zoom avant',
     menuZoomOut: 'Zoom arrière',
     menuZoom100: 'Taille réelle (100 %)',
     menuPageWidth: 'Largeur de page',
     menuWholePage: 'Page entière',
+    menuMultiPage: 'Plusieurs pages',
     menuAiSidebar: 'Volet IA',
     menuDarkMode: 'Mode sombre',
     menuFullscreen: 'Activer le mode plein écran',
     menuInsert: 'Insertion',
-    menuInsertTable: 'Tableau (3×3)',
+    menuInsertTable: 'Tableau…',
     menuInsertImage: 'Image…',
     menuInsertPageBreak: 'Saut de page',
     menuInsertLink: 'Lien hypertexte…',
@@ -547,16 +1249,57 @@ const tMain = createI18n({
     menuFont: 'Police…',
     menuParagraph: 'Paragraphe…',
     menuTools: 'Outils',
+    menuTable: 'Tableau',
+    menuTableInsert: 'Insérer',
+    menuTableInsertTable: 'Tableau…',
+    menuTableColsLeft: 'Colonnes à gauche',
+    menuTableColsRight: 'Colonnes à droite',
+    menuTableRowsAbove: 'Lignes au-dessus',
+    menuTableRowsBelow: 'Lignes en dessous',
+    menuTableCells: 'Cellules…',
+    menuTableDelete: 'Supprimer',
+    menuTableDeleteTable: 'Tableau',
+    menuTableDeleteColumns: 'Colonnes',
+    menuTableDeleteRows: 'Lignes',
+    menuTableSelect: 'Sélectionner',
+    menuTableSelectCell: 'Cellule',
+    menuTableSelectColumn: 'Colonne',
+    menuTableSelectRow: 'Ligne',
+    menuTableSelectTable: 'Tableau',
+    menuTableMergeCells: 'Fusionner les cellules',
+    menuTableSplitCells: 'Fractionner les cellules…',
+    menuTableSplitTable: 'Fractionner le tableau',
+    menuTableAutoFit: 'Ajustement automatique',
+    menuTableAutoFitContents: 'Ajuster au contenu',
+    menuTableAutoFitWindow: 'Ajuster à la fenêtre',
+    menuTableFixedWidth: 'Largeur de colonne fixe',
+    menuTableDistributeRows: 'Uniformiser la hauteur des lignes',
+    menuTableDistributeColumns: 'Uniformiser la largeur des colonnes',
+    menuTableRepeatHeader: 'Répéter les lignes d’en-tête',
+    menuTableGridlines: 'Afficher le quadrillage',
+    menuTableProperties: 'Propriétés du tableau…',
     menuWordCount: 'Statistiques…',
-    menuSpelling: 'Grammaire et orthographe',
-    menuMacros: 'Macros',
+    menuAutoCorrect: 'Options de correction automatique…',
+    menuPreferences: 'Préférences…',
+    menuAiProofread: 'Relecture IA',
     menuWindow: 'Fenêtre',
     menuHelp: 'Aide',
-    menuDocsHelp: 'Aide GenOffice Docs',
+    menuShortcuts: 'Raccourcis clavier',
   },
   de: {
     dlgOpenDoc: 'Dokument öffnen',
     filterWord: 'Word-Dokumente',
+    odtImportMsg: 'Dieses .{ext}-Dokument konvertieren?',
+    odtImportDetail:
+      'GenOffice bearbeitet .docx, nicht ODF. Text, Überschriften, Listen, Tabellen und Bilder werden übernommen; Fußnoten, Kommentare und Textfelder werden nicht vollständig bewahrt. Die Originaldatei bleibt unverändert; die konvertierte .docx-Kopie ist eigenständig, und spätere Speicherungen landen in ihr.',
+    hwpImportDetail:
+      'GenOffice bearbeitet .docx, nicht HWP. Text, Tabellen, Bilder sowie Kopf- und Fußzeilen werden übernommen; Formeln, Fußnoten und eingebettete Objekte werden nicht konvertiert, und automatische Nummerierung wird zu normalem Text. Die Originaldatei bleibt unverändert; die konvertierte .docx-Kopie ist eigenständig, und spätere Speicherungen landen in ihr.',
+    odtImportConvertBtn: 'Konvertieren und öffnen',
+    importSkipConfirm: 'Nächstes Mal ohne Nachfrage konvertieren',
+    docImportMsg: 'Dieses .{ext}-Dokument konvertieren?',
+    docImportDetail:
+      'GenOffice bearbeitet .docx, nicht Word 97-2003-Dokumente (.doc). Text, Überschriften, Listen, Tabellen und Bilder werden übernommen; Fußnoten, Kommentare und Textfelder werden nicht vollständig bewahrt. Die Originaldatei bleibt unverändert; die konvertierte .docx-Kopie ist eigenständig, und spätere Speicherungen landen in ihr.',
+    docImportConvertBtn: 'Konvertieren und öffnen',
     dlgSaveAs: 'Speichern unter',
     closeUnsavedMsg: 'Dieses Dokument enthält ungespeicherte Änderungen.',
     closeUnsavedDetail: 'Vor dem Schließen speichern?',
@@ -565,6 +1308,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Trotzdem schließen? Ungespeicherte Änderungen gehen verloren.',
     btnCloseAnyway: 'Trotzdem schließen',
     autosaveFoundTitle: 'Wiederhergestellte Version gefunden',
+    autosaveDiskNewer:
+      'Hinweis: Die Datei auf dem Datenträger wurde nach dem Speichern dieser Wiederherstellungskopie geändert. Beim Wiederherstellen werden diese neueren Änderungen ersetzt.',
     autosaveFoundBody:
       'Es gibt ungespeicherte Änderungen. Automatisch gespeicherte Version wiederherstellen?',
     autosaveRestore: 'Wiederherstellen',
@@ -576,10 +1321,15 @@ const tMain = createI18n({
     btnOverwrite: 'Überschreiben',
     dlgInsertImage: 'Bild einfügen',
     filterImages: 'Bilder',
+    dlgMergeDataSource: 'Empfängerliste auswählen',
+    filterMergeDataSource: 'Excel oder CSV',
     dlgAddAttachment: 'Anlagen hinzufügen',
     filterSupported: 'Unterstützte Dateien',
     filterAll: 'Alle Dateien',
     dlgExportPdf: 'Als PDF exportieren',
+    dlgExportHtml: 'Als HTML exportieren',
+    dlgExportMarkdown: 'Als Markdown exportieren',
+    dlgPickExportDir: 'Exportordner auswählen',
     errUnsupportedExt: '.{ext}-Dateien werden nicht unterstützt',
     errNotFile: 'keine Datei',
     errTooLarge: 'überschreitet das Limit von {mb} MB',
@@ -593,6 +1343,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Nicht bei Genspark angemeldet: Klicken Sie unten auf „Bei Genspark anmelden“, melden Sie sich an und versuchen Sie es erneut',
     errNoApiKey: 'Kein API-Schlüssel für {provider} konfiguriert',
+    errAiRegion:
+      'Der Anbieter dieses Modells bedient Ihre aktuelle Region nicht — wählen Sie ein anderes Modell oder wechseln Sie das Netzwerk',
+    errAiBusy: 'Der KI-Dienst ist derzeit überlastet — bitte gleich erneut versuchen',
     errNoModel: 'Kein Modellname konfiguriert',
     menuFile: 'Datei',
     menuNewDoc: 'Neues Dokument',
@@ -605,6 +1358,9 @@ const tMain = createI18n({
     menuSaveAs: 'Speichern unter…',
     menuPageSetup: 'Seite einrichten…',
     menuExportPdf: 'Als PDF exportieren…',
+    menuExportHtml: 'Als HTML exportieren…',
+    menuExportMarkdown: 'Als Markdown exportieren…',
+    menuExportImages: 'Als Bilder exportieren…',
     menuPrint: 'Drucken…',
     menuEdit: 'Bearbeiten',
     menuUndo: 'Rückgängig',
@@ -614,18 +1370,21 @@ const tMain = createI18n({
     menuPaste: 'Einfügen',
     menuPasteMatch: 'Einfügen und Stil anpassen',
     menuFindReplace: 'Suchen und Ersetzen…',
+    menuGoTo: 'Gehe zu…',
     menuSelectAll: 'Alles auswählen',
     menuView: 'Ansicht',
+    menuZoom: 'Zoom',
     menuZoomIn: 'Vergrößern',
     menuZoomOut: 'Verkleinern',
     menuZoom100: 'Originalgröße (100 %)',
     menuPageWidth: 'Seitenbreite',
     menuWholePage: 'Ganze Seite',
+    menuMultiPage: 'Mehrere Seiten',
     menuAiSidebar: 'KI-Seitenleiste',
     menuDarkMode: 'Dunkelmodus',
     menuFullscreen: 'Vollbild ein',
     menuInsert: 'Einfügen',
-    menuInsertTable: 'Tabelle (3×3)',
+    menuInsertTable: 'Tabelle…',
     menuInsertImage: 'Bild…',
     menuInsertPageBreak: 'Seitenumbruch',
     menuInsertLink: 'Hyperlink…',
@@ -643,16 +1402,57 @@ const tMain = createI18n({
     menuFont: 'Schriftart…',
     menuParagraph: 'Absatz…',
     menuTools: 'Extras',
+    menuTable: 'Tabelle',
+    menuTableInsert: 'Einfügen',
+    menuTableInsertTable: 'Tabelle…',
+    menuTableColsLeft: 'Spalten links',
+    menuTableColsRight: 'Spalten rechts',
+    menuTableRowsAbove: 'Zeilen oberhalb',
+    menuTableRowsBelow: 'Zeilen unterhalb',
+    menuTableCells: 'Zellen…',
+    menuTableDelete: 'Löschen',
+    menuTableDeleteTable: 'Tabelle',
+    menuTableDeleteColumns: 'Spalten',
+    menuTableDeleteRows: 'Zeilen',
+    menuTableSelect: 'Auswählen',
+    menuTableSelectCell: 'Zelle',
+    menuTableSelectColumn: 'Spalte',
+    menuTableSelectRow: 'Zeile',
+    menuTableSelectTable: 'Tabelle',
+    menuTableMergeCells: 'Zellen verbinden',
+    menuTableSplitCells: 'Zellen teilen…',
+    menuTableSplitTable: 'Tabelle teilen',
+    menuTableAutoFit: 'AutoAnpassen und Verteilen',
+    menuTableAutoFitContents: 'An Inhalt anpassen',
+    menuTableAutoFitWindow: 'An Fenster anpassen',
+    menuTableFixedWidth: 'Feste Spaltenbreite',
+    menuTableDistributeRows: 'Zeilen gleichmäßig verteilen',
+    menuTableDistributeColumns: 'Spalten gleichmäßig verteilen',
+    menuTableRepeatHeader: 'Überschriftenzeilen wiederholen',
+    menuTableGridlines: 'Gitternetzlinien anzeigen',
+    menuTableProperties: 'Tabelleneigenschaften…',
     menuWordCount: 'Wörter zählen…',
-    menuSpelling: 'Rechtschreibung und Grammatik',
-    menuMacros: 'Makros',
+    menuAutoCorrect: 'AutoKorrektur-Optionen…',
+    menuPreferences: 'Einstellungen…',
+    menuAiProofread: 'KI-Korrektur',
     menuWindow: 'Fenster',
     menuHelp: 'Hilfe',
-    menuDocsHelp: 'GenOffice Docs-Hilfe',
+    menuShortcuts: 'Tastenkombinationen',
   },
   es: {
     dlgOpenDoc: 'Abrir documento',
     filterWord: 'Documentos de Word',
+    odtImportMsg: '¿Convertir este documento .{ext}?',
+    odtImportDetail:
+      'GenOffice edita .docx, no ODF. El texto, los títulos, las listas, las tablas y las imágenes se convierten; las notas al pie, los comentarios y los cuadros de texto no se conservan por completo. El archivo original nunca se modifica; el .docx convertido es una copia independiente en la que se guardan los cambios posteriores.',
+    hwpImportDetail:
+      'GenOffice edita .docx, no HWP. El texto, las tablas, las imágenes, los encabezados y los pies de página se convierten; las ecuaciones, las notas al pie y los objetos incrustados no, y la numeración automática pasa a ser texto normal. El archivo original nunca se modifica; el .docx convertido es una copia independiente en la que se guardan los cambios posteriores.',
+    odtImportConvertBtn: 'Convertir y abrir',
+    importSkipConfirm: 'La próxima vez, convertir sin preguntar',
+    docImportMsg: '¿Convertir este documento .{ext}?',
+    docImportDetail:
+      'GenOffice edita .docx, no documentos de Word 97-2003 (.doc). El texto, los títulos, las listas, las tablas y las imágenes se convierten; las notas al pie, los comentarios y los cuadros de texto no se conservan por completo. El archivo original nunca se modifica; el .docx convertido es una copia independiente en la que se guardan los cambios posteriores.',
+    docImportConvertBtn: 'Convertir y abrir',
     dlgSaveAs: 'Guardar como',
     closeUnsavedMsg: 'Este documento tiene cambios sin guardar.',
     closeUnsavedDetail: '¿Desea guardarlos antes de cerrar?',
@@ -660,6 +1460,8 @@ const tMain = createI18n({
     closeNoReplyDetail: '¿Cerrar de todos modos? Los cambios sin guardar se perderán.',
     btnCloseAnyway: 'Cerrar de todos modos',
     autosaveFoundTitle: 'Se encontró una versión recuperada',
+    autosaveDiskNewer:
+      'Nota: el archivo en disco se modificó después de guardar esta copia de recuperación. Restaurar reemplazará esos cambios más recientes.',
     autosaveFoundBody:
       'Hay cambios sin guardar de la última sesión. ¿Restaurar la versión autoguardada?',
     autosaveRestore: 'Restaurar',
@@ -671,10 +1473,15 @@ const tMain = createI18n({
     btnOverwrite: 'Sobrescribir',
     dlgInsertImage: 'Insertar imagen',
     filterImages: 'Imágenes',
+    dlgMergeDataSource: 'Seleccionar lista de destinatarios',
+    filterMergeDataSource: 'Excel o CSV',
     dlgAddAttachment: 'Agregar datos adjuntos',
     filterSupported: 'Archivos compatibles',
     filterAll: 'Todos los archivos',
     dlgExportPdf: 'Exportar como PDF',
+    dlgExportHtml: 'Exportar como HTML',
+    dlgExportMarkdown: 'Exportar como Markdown',
+    dlgPickExportDir: 'Elegir carpeta de exportación',
     errUnsupportedExt: 'los archivos .{ext} no son compatibles',
     errNotFile: 'no es un archivo',
     errTooLarge: 'supera el límite de {mb} MB',
@@ -688,6 +1495,10 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'No has iniciado sesión en Genspark: pulsa «Iniciar sesión en Genspark» abajo, inicia sesión y vuelve a intentarlo',
     errNoApiKey: 'No hay clave de API configurada para {provider}',
+    errAiRegion:
+      'El proveedor de este modelo no da servicio en tu región actual — elige otro modelo o cambia de red',
+    errAiBusy:
+      'El servicio de IA está saturado en este momento; inténtalo de nuevo en unos instantes',
     errNoModel: 'No se ha configurado el nombre del modelo',
     menuFile: 'Archivo',
     menuNewDoc: 'Nuevo documento',
@@ -700,6 +1511,9 @@ const tMain = createI18n({
     menuSaveAs: 'Guardar como…',
     menuPageSetup: 'Configurar página…',
     menuExportPdf: 'Exportar como PDF…',
+    menuExportHtml: 'Exportar como HTML…',
+    menuExportMarkdown: 'Exportar como Markdown…',
+    menuExportImages: 'Exportar como imágenes…',
     menuPrint: 'Imprimir…',
     menuEdit: 'Edición',
     menuUndo: 'Deshacer',
@@ -709,18 +1523,21 @@ const tMain = createI18n({
     menuPaste: 'Pegar',
     menuPasteMatch: 'Pegar con el mismo estilo',
     menuFindReplace: 'Buscar y reemplazar…',
+    menuGoTo: 'Ir a…',
     menuSelectAll: 'Seleccionar todo',
     menuView: 'Ver',
+    menuZoom: 'Zoom',
     menuZoomIn: 'Acercar',
     menuZoomOut: 'Alejar',
     menuZoom100: 'Tamaño real (100 %)',
     menuPageWidth: 'Ancho de página',
     menuWholePage: 'Página completa',
+    menuMultiPage: 'Varias páginas',
     menuAiSidebar: 'Barra lateral de IA',
     menuDarkMode: 'Modo oscuro',
     menuFullscreen: 'Usar pantalla completa',
     menuInsert: 'Insertar',
-    menuInsertTable: 'Tabla (3×3)',
+    menuInsertTable: 'Tabla…',
     menuInsertImage: 'Imagen…',
     menuInsertPageBreak: 'Salto de página',
     menuInsertLink: 'Hipervínculo…',
@@ -738,16 +1555,57 @@ const tMain = createI18n({
     menuFont: 'Fuente…',
     menuParagraph: 'Párrafo…',
     menuTools: 'Herramientas',
+    menuTable: 'Tabla',
+    menuTableInsert: 'Insertar',
+    menuTableInsertTable: 'Tabla…',
+    menuTableColsLeft: 'Columnas a la izquierda',
+    menuTableColsRight: 'Columnas a la derecha',
+    menuTableRowsAbove: 'Filas arriba',
+    menuTableRowsBelow: 'Filas abajo',
+    menuTableCells: 'Celdas…',
+    menuTableDelete: 'Eliminar',
+    menuTableDeleteTable: 'Tabla',
+    menuTableDeleteColumns: 'Columnas',
+    menuTableDeleteRows: 'Filas',
+    menuTableSelect: 'Seleccionar',
+    menuTableSelectCell: 'Celda',
+    menuTableSelectColumn: 'Columna',
+    menuTableSelectRow: 'Fila',
+    menuTableSelectTable: 'Tabla',
+    menuTableMergeCells: 'Combinar celdas',
+    menuTableSplitCells: 'Dividir celdas…',
+    menuTableSplitTable: 'Dividir tabla',
+    menuTableAutoFit: 'Autoajustar y distribuir',
+    menuTableAutoFitContents: 'Autoajustar al contenido',
+    menuTableAutoFitWindow: 'Autoajustar a la ventana',
+    menuTableFixedWidth: 'Ancho de columna fijo',
+    menuTableDistributeRows: 'Distribuir filas uniformemente',
+    menuTableDistributeColumns: 'Distribuir columnas uniformemente',
+    menuTableRepeatHeader: 'Repetir filas de encabezado',
+    menuTableGridlines: 'Ver líneas de cuadrícula',
+    menuTableProperties: 'Propiedades de tabla…',
     menuWordCount: 'Contar palabras…',
-    menuSpelling: 'Ortografía y gramática',
-    menuMacros: 'Macros',
+    menuAutoCorrect: 'Opciones de autocorrección…',
+    menuPreferences: 'Preferencias…',
+    menuAiProofread: 'Corrección con IA',
     menuWindow: 'Ventana',
     menuHelp: 'Ayuda',
-    menuDocsHelp: 'Ayuda de GenOffice Docs',
+    menuShortcuts: 'Atajos de teclado',
   },
   th: {
     dlgOpenDoc: 'เปิดเอกสาร',
     filterWord: 'เอกสาร Word',
+    odtImportMsg: 'แปลงเอกสาร .{ext} นี้ไหม?',
+    odtImportDetail:
+      'GenOffice แก้ไข .docx ไม่ใช่ ODF ข้อความ หัวข้อ รายการ ตาราง และรูปภาพจะถูกแปลง ส่วนเชิงอรรถ ความคิดเห็น และกล่องข้อความจะไม่ถูกเก็บไว้ทั้งหมด ไฟล์ต้นทางจะไม่ถูกแก้ไข และไฟล์ .docx ที่แปลงแล้วเป็นสำเนาแยกต่างหากที่การบันทึกครั้งต่อไปจะเขียนลง',
+    hwpImportDetail:
+      'GenOffice แก้ไข .docx ไม่ใช่ HWP ข้อความ ตาราง รูปภาพ หัวกระดาษ และท้ายกระดาษจะถูกแปลง ส่วนสมการ เชิงอรรถ และวัตถุที่ฝังไว้จะไม่ถูกแปลง และลำดับเลขอัตโนมัติจะกลายเป็นข้อความธรรมดา ไฟล์ต้นทางจะไม่ถูกแก้ไข และไฟล์ .docx ที่แปลงแล้วเป็นสำเนาแยกต่างหากที่การบันทึกครั้งต่อไปจะเขียนลง',
+    odtImportConvertBtn: 'แปลงแล้วเปิด',
+    importSkipConfirm: 'ครั้งถัดไปแปลงทันทีโดยไม่ต้องถาม',
+    docImportMsg: 'แปลงเอกสาร .{ext} นี้ไหม?',
+    docImportDetail:
+      'GenOffice แก้ไข .docx ไม่ใช่เอกสาร Word 97-2003 (.doc) ข้อความ หัวข้อ รายการ ตาราง และรูปภาพจะถูกแปลง ส่วนเชิงอรรถ ความคิดเห็น และกล่องข้อความจะไม่ถูกเก็บไว้ทั้งหมด ไฟล์ต้นทางจะไม่ถูกแก้ไข และไฟล์ .docx ที่แปลงแล้วเป็นสำเนาแยกต่างหากที่การบันทึกครั้งต่อไปจะเขียนลง',
+    docImportConvertBtn: 'แปลงแล้วเปิด',
     dlgSaveAs: 'บันทึกเป็น',
     closeUnsavedMsg: 'เอกสารนี้มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก',
     closeUnsavedDetail: 'ต้องการบันทึกก่อนปิดหรือไม่?',
@@ -755,6 +1613,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'ปิดต่อไปหรือไม่ การเปลี่ยนแปลงที่ยังไม่ได้บันทึกจะหายไป',
     btnCloseAnyway: 'ปิดต่อไป',
     autosaveFoundTitle: 'พบเวอร์ชันกู้คืนอัตโนมัติ',
+    autosaveDiskNewer:
+      'หมายเหตุ: ไฟล์บนดิสก์ถูกแก้ไขหลังจากบันทึกสำเนากู้คืนนี้ การกู้คืนจะแทนที่การเปลี่ยนแปลงที่ใหม่กว่าเหล่านั้น',
     autosaveFoundBody: 'มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึกจากครั้งก่อน ต้องการกู้คืนหรือไม่?',
     autosaveRestore: 'กู้คืน',
     autosaveDiscard: 'ละทิ้ง',
@@ -765,10 +1625,15 @@ const tMain = createI18n({
     btnOverwrite: 'เขียนทับ',
     dlgInsertImage: 'แทรกรูปภาพ',
     filterImages: 'รูปภาพ',
+    dlgMergeDataSource: 'เลือกรายชื่อผู้รับ',
+    filterMergeDataSource: 'Excel หรือ CSV',
     dlgAddAttachment: 'เพิ่มสิ่งที่แนบ',
     filterSupported: 'ไฟล์ที่รองรับ',
     filterAll: 'ไฟล์ทั้งหมด',
     dlgExportPdf: 'ส่งออกเป็น PDF',
+    dlgExportHtml: 'ส่งออกเป็น HTML',
+    dlgExportMarkdown: 'ส่งออกเป็น Markdown',
+    dlgPickExportDir: 'เลือกโฟลเดอร์ส่งออก',
     errUnsupportedExt: 'ไม่รองรับไฟล์ .{ext}',
     errNotFile: 'ไม่ใช่ไฟล์',
     errTooLarge: 'เกินขีดจำกัด {mb}MB',
@@ -782,6 +1647,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'ยังไม่ได้ลงชื่อเข้าใช้ Genspark: แตะ “ลงชื่อเข้าใช้ Genspark” ด้านล่าง แล้วลองอีกครั้ง',
     errNoApiKey: 'ยังไม่ได้ตั้งค่า API Key ของ {provider}',
+    errAiRegion:
+      'ผู้ให้บริการของโมเดลนี้ไม่ให้บริการในภูมิภาคปัจจุบันของคุณ — โปรดเลือกโมเดลอื่นหรือเปลี่ยนเครือข่าย',
+    errAiBusy: 'บริการ AI มีผู้ใช้งานจำนวนมากในขณะนี้ โปรดลองอีกครั้งในอีกสักครู่',
     errNoModel: 'ยังไม่ได้ตั้งค่าชื่อโมเดล',
     menuFile: 'ไฟล์',
     menuNewDoc: 'เอกสารใหม่',
@@ -794,6 +1662,9 @@ const tMain = createI18n({
     menuSaveAs: 'บันทึกเป็น…',
     menuPageSetup: 'ตั้งค่าหน้ากระดาษ…',
     menuExportPdf: 'ส่งออกเป็น PDF…',
+    menuExportHtml: 'ส่งออกเป็น HTML…',
+    menuExportMarkdown: 'ส่งออกเป็น Markdown…',
+    menuExportImages: 'ส่งออกเป็นรูปภาพ…',
     menuPrint: 'พิมพ์…',
     menuEdit: 'แก้ไข',
     menuUndo: 'เลิกทำ',
@@ -803,18 +1674,21 @@ const tMain = createI18n({
     menuPaste: 'วาง',
     menuPasteMatch: 'วางแบบจับคู่ลักษณะ',
     menuFindReplace: 'ค้นหาและแทนที่…',
+    menuGoTo: 'ไปที่…',
     menuSelectAll: 'เลือกทั้งหมด',
     menuView: 'มุมมอง',
+    menuZoom: 'ซูม',
     menuZoomIn: 'ขยาย',
     menuZoomOut: 'ย่อ',
     menuZoom100: 'ขนาดจริง (100%)',
     menuPageWidth: 'ความกว้างของหน้า',
     menuWholePage: 'ทั้งหน้า',
+    menuMultiPage: 'หลายหน้า',
     menuAiSidebar: 'แถบข้าง AI',
     menuDarkMode: 'โหมดมืด',
     menuFullscreen: 'เข้าสู่โหมดเต็มหน้าจอ',
     menuInsert: 'แทรก',
-    menuInsertTable: 'ตาราง (3×3)',
+    menuInsertTable: 'ตาราง…',
     menuInsertImage: 'รูปภาพ…',
     menuInsertPageBreak: 'ตัวแบ่งหน้า',
     menuInsertLink: 'ไฮเปอร์ลิงก์…',
@@ -832,16 +1706,57 @@ const tMain = createI18n({
     menuFont: 'ฟอนต์…',
     menuParagraph: 'ย่อหน้า…',
     menuTools: 'เครื่องมือ',
+    menuTable: 'ตาราง',
+    menuTableInsert: 'แทรก',
+    menuTableInsertTable: 'ตาราง…',
+    menuTableColsLeft: 'คอลัมน์ทางซ้าย',
+    menuTableColsRight: 'คอลัมน์ทางขวา',
+    menuTableRowsAbove: 'แถวด้านบน',
+    menuTableRowsBelow: 'แถวด้านล่าง',
+    menuTableCells: 'เซลล์…',
+    menuTableDelete: 'ลบ',
+    menuTableDeleteTable: 'ตาราง',
+    menuTableDeleteColumns: 'คอลัมน์',
+    menuTableDeleteRows: 'แถว',
+    menuTableSelect: 'เลือก',
+    menuTableSelectCell: 'เซลล์',
+    menuTableSelectColumn: 'คอลัมน์',
+    menuTableSelectRow: 'แถว',
+    menuTableSelectTable: 'ตาราง',
+    menuTableMergeCells: 'ผสานเซลล์',
+    menuTableSplitCells: 'แยกเซลล์…',
+    menuTableSplitTable: 'แยกตาราง',
+    menuTableAutoFit: 'ปรับพอดีอัตโนมัติ',
+    menuTableAutoFitContents: 'ปรับพอดีกับเนื้อหา',
+    menuTableAutoFitWindow: 'ปรับพอดีกับหน้าต่าง',
+    menuTableFixedWidth: 'ความกว้างคอลัมน์คงที่',
+    menuTableDistributeRows: 'กระจายแถวเท่ากัน',
+    menuTableDistributeColumns: 'กระจายคอลัมน์เท่ากัน',
+    menuTableRepeatHeader: 'ทำซ้ำแถวส่วนหัว',
+    menuTableGridlines: 'แสดงเส้นตาราง',
+    menuTableProperties: 'คุณสมบัติตาราง…',
     menuWordCount: 'นับจำนวนคำ…',
-    menuSpelling: 'การสะกดและไวยากรณ์',
-    menuMacros: 'แมโคร',
+    menuAutoCorrect: 'ตัวเลือกการแก้ไขอัตโนมัติ…',
+    menuPreferences: 'การตั้งค่า…',
+    menuAiProofread: 'พิสูจน์อักษรด้วย AI',
     menuWindow: 'หน้าต่าง',
     menuHelp: 'วิธีใช้',
-    menuDocsHelp: 'วิธีใช้ GenOffice Docs',
+    menuShortcuts: 'แป้นพิมพ์ลัด',
   },
   id: {
     dlgOpenDoc: 'Buka Dokumen',
     filterWord: 'Dokumen Word',
+    odtImportMsg: 'Konversi dokumen .{ext} ini?',
+    odtImportDetail:
+      'GenOffice mengedit .docx, bukan ODF. Teks isi, judul, daftar, tabel, dan gambar ikut dikonversi; catatan kaki, komentar, dan kotak teks tidak sepenuhnya dipertahankan. File asli tidak pernah diubah; salinan .docx hasil konversi berdiri sendiri dan penyimpanan berikutnya ditulis ke sana.',
+    hwpImportDetail:
+      'GenOffice mengedit .docx, bukan HWP. Teks isi, tabel, gambar, header, dan footer ikut dikonversi; persamaan, catatan kaki, dan objek tersemat tidak dikonversi, dan penomoran otomatis menjadi teks biasa. File asli tidak pernah diubah; salinan .docx hasil konversi berdiri sendiri dan penyimpanan berikutnya ditulis ke sana.',
+    odtImportConvertBtn: 'Konversi dan buka',
+    importSkipConfirm: 'Lain kali langsung konversi tanpa bertanya',
+    docImportMsg: 'Konversi dokumen .{ext} ini?',
+    docImportDetail:
+      'GenOffice mengedit .docx, bukan dokumen Word 97-2003 (.doc). Teks isi, judul, daftar, tabel, dan gambar ikut dikonversi; catatan kaki, komentar, dan kotak teks tidak sepenuhnya dipertahankan. File asli tidak pernah diubah; salinan .docx hasil konversi berdiri sendiri dan penyimpanan berikutnya ditulis ke sana.',
+    docImportConvertBtn: 'Konversi dan buka',
     dlgSaveAs: 'Simpan Sebagai',
     closeUnsavedMsg: 'Dokumen ini memiliki perubahan yang belum disimpan.',
     closeUnsavedDetail: 'Simpan sebelum menutup?',
@@ -849,6 +1764,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Tetap tutup? Perubahan yang belum disimpan akan hilang.',
     btnCloseAnyway: 'Tetap Tutup',
     autosaveFoundTitle: 'Versi pemulihan ditemukan',
+    autosaveDiskNewer:
+      'Catatan: file di disk diubah setelah salinan pemulihan ini disimpan. Memulihkan akan menggantikan perubahan yang lebih baru tersebut.',
     autosaveFoundBody:
       'Ada perubahan yang belum disimpan dari sesi terakhir. Pulihkan versi tersimpan otomatis?',
     autosaveRestore: 'Pulihkan',
@@ -860,10 +1777,15 @@ const tMain = createI18n({
     btnOverwrite: 'Timpa',
     dlgInsertImage: 'Sisipkan Gambar',
     filterImages: 'Gambar',
+    dlgMergeDataSource: 'Pilih daftar penerima',
+    filterMergeDataSource: 'Excel atau CSV',
     dlgAddAttachment: 'Tambahkan Lampiran',
     filterSupported: 'File yang Didukung',
     filterAll: 'Semua File',
     dlgExportPdf: 'Ekspor sebagai PDF',
+    dlgExportHtml: 'Ekspor sebagai HTML',
+    dlgExportMarkdown: 'Ekspor sebagai Markdown',
+    dlgPickExportDir: 'Pilih Folder Ekspor',
     errUnsupportedExt: 'file .{ext} tidak didukung',
     errNotFile: 'bukan file',
     errTooLarge: 'melebihi batas {mb}MB',
@@ -876,6 +1798,9 @@ const tMain = createI18n({
     errNotImage: 'bukan jenis gambar yang didukung',
     errGskNotLoggedIn: 'Belum masuk ke Genspark: klik “Masuk ke Genspark” di bawah, lalu coba lagi',
     errNoApiKey: 'API Key untuk {provider} belum dikonfigurasi',
+    errAiRegion:
+      'Penyedia model ini tidak melayani wilayah Anda saat ini — pilih model lain atau ganti jaringan',
+    errAiBusy: 'Layanan AI sedang sibuk — silakan coba lagi sebentar lagi',
     errNoModel: 'Nama model belum dikonfigurasi',
     menuFile: 'File',
     menuNewDoc: 'Dokumen Baru',
@@ -888,6 +1813,9 @@ const tMain = createI18n({
     menuSaveAs: 'Simpan Sebagai…',
     menuPageSetup: 'Penyetelan Halaman…',
     menuExportPdf: 'Ekspor sebagai PDF…',
+    menuExportHtml: 'Ekspor sebagai HTML…',
+    menuExportMarkdown: 'Ekspor sebagai Markdown…',
+    menuExportImages: 'Ekspor sebagai gambar…',
     menuPrint: 'Cetak…',
     menuEdit: 'Edit',
     menuUndo: 'Urungkan',
@@ -897,18 +1825,21 @@ const tMain = createI18n({
     menuPaste: 'Tempel',
     menuPasteMatch: 'Tempel dan Samakan Gaya',
     menuFindReplace: 'Temukan dan Ganti…',
+    menuGoTo: 'Pergi ke…',
     menuSelectAll: 'Pilih Semua',
     menuView: 'Tampilan',
+    menuZoom: 'Zoom',
     menuZoomIn: 'Perbesar',
     menuZoomOut: 'Perkecil',
     menuZoom100: 'Ukuran Sebenarnya (100%)',
     menuPageWidth: 'Lebar Halaman',
     menuWholePage: 'Seluruh Halaman',
+    menuMultiPage: 'Beberapa halaman',
     menuAiSidebar: 'Bilah Samping AI',
     menuDarkMode: 'Mode Gelap',
     menuFullscreen: 'Masuk Layar Penuh',
     menuInsert: 'Sisipkan',
-    menuInsertTable: 'Tabel (3×3)',
+    menuInsertTable: 'Tabel…',
     menuInsertImage: 'Gambar…',
     menuInsertPageBreak: 'Pemisah Halaman',
     menuInsertLink: 'Hyperlink…',
@@ -926,16 +1857,57 @@ const tMain = createI18n({
     menuFont: 'Font…',
     menuParagraph: 'Paragraf…',
     menuTools: 'Alat',
+    menuTable: 'Tabel',
+    menuTableInsert: 'Sisipkan',
+    menuTableInsertTable: 'Tabel…',
+    menuTableColsLeft: 'Kolom di Kiri',
+    menuTableColsRight: 'Kolom di Kanan',
+    menuTableRowsAbove: 'Baris di Atas',
+    menuTableRowsBelow: 'Baris di Bawah',
+    menuTableCells: 'Sel…',
+    menuTableDelete: 'Hapus',
+    menuTableDeleteTable: 'Tabel',
+    menuTableDeleteColumns: 'Kolom',
+    menuTableDeleteRows: 'Baris',
+    menuTableSelect: 'Pilih',
+    menuTableSelectCell: 'Sel',
+    menuTableSelectColumn: 'Kolom',
+    menuTableSelectRow: 'Baris',
+    menuTableSelectTable: 'Tabel',
+    menuTableMergeCells: 'Gabungkan Sel',
+    menuTableSplitCells: 'Pisahkan Sel…',
+    menuTableSplitTable: 'Pisahkan Tabel',
+    menuTableAutoFit: 'Paskan Otomatis',
+    menuTableAutoFitContents: 'Paskan ke Konten',
+    menuTableAutoFitWindow: 'Paskan ke Jendela',
+    menuTableFixedWidth: 'Lebar Kolom Tetap',
+    menuTableDistributeRows: 'Distribusikan Baris Merata',
+    menuTableDistributeColumns: 'Distribusikan Kolom Merata',
+    menuTableRepeatHeader: 'Ulangi Baris Header',
+    menuTableGridlines: 'Lihat Garis Kisi',
+    menuTableProperties: 'Properti Tabel…',
     menuWordCount: 'Hitungan Kata…',
-    menuSpelling: 'Ejaan dan Tata Bahasa',
-    menuMacros: 'Makro',
+    menuAutoCorrect: 'Opsi Koreksi Otomatis…',
+    menuPreferences: 'Preferensi…',
+    menuAiProofread: 'Koreksi AI',
     menuWindow: 'Jendela',
     menuHelp: 'Bantuan',
-    menuDocsHelp: 'Bantuan GenOffice Docs',
+    menuShortcuts: 'Pintasan Papan Ketik',
   },
   ru: {
     dlgOpenDoc: 'Открыть документ',
     filterWord: 'Документы Word',
+    odtImportMsg: 'Преобразовать этот документ .{ext}?',
+    odtImportDetail:
+      'GenOffice редактирует .docx, а не ODF. Текст, заголовки, списки, таблицы и изображения переносятся; сноски, примечания и надписи сохраняются не полностью. Исходный файл никогда не изменяется; преобразованный .docx — отдельная копия, в которую записывается дальнейшее сохранение.',
+    hwpImportDetail:
+      'GenOffice редактирует .docx, а не HWP. Текст, таблицы, изображения и колонтитулы переносятся; формулы, сноски и внедрённые объекты не преобразуются, а автоматическая нумерация становится обычным текстом. Исходный файл никогда не изменяется; преобразованный .docx — отдельная копия, в которую записывается дальнейшее сохранение.',
+    odtImportConvertBtn: 'Преобразовать и открыть',
+    importSkipConfirm: 'В следующий раз конвертировать без запроса',
+    docImportMsg: 'Преобразовать этот документ .{ext}?',
+    docImportDetail:
+      'GenOffice редактирует .docx, а не документы Word 97-2003 (.doc). Текст, заголовки, списки, таблицы и изображения переносятся; сноски, примечания и надписи сохраняются не полностью. Исходный файл никогда не изменяется; преобразованный .docx — отдельная копия, в которую записывается дальнейшее сохранение.',
+    docImportConvertBtn: 'Преобразовать и открыть',
     dlgSaveAs: 'Сохранить как',
     closeUnsavedMsg: 'В этом документе есть несохранённые изменения.',
     closeUnsavedDetail: 'Сохранить их перед закрытием?',
@@ -943,6 +1915,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Всё равно закрыть? Несохранённые изменения будут потеряны.',
     btnCloseAnyway: 'Закрыть всё равно',
     autosaveFoundTitle: 'Найдена восстановленная версия',
+    autosaveDiskNewer:
+      'Внимание: файл на диске был изменён после сохранения этой копии восстановления. Восстановление заменит эти более новые изменения.',
     autosaveFoundBody:
       'Есть несохранённые изменения из прошлого сеанса. Восстановить автосохранённую версию?',
     autosaveRestore: 'Восстановить',
@@ -954,10 +1928,15 @@ const tMain = createI18n({
     btnOverwrite: 'Перезаписать',
     dlgInsertImage: 'Вставить рисунок',
     filterImages: 'Изображения',
+    dlgMergeDataSource: 'Выбрать список получателей',
+    filterMergeDataSource: 'Excel или CSV',
     dlgAddAttachment: 'Добавить вложения',
     filterSupported: 'Поддерживаемые файлы',
     filterAll: 'Все файлы',
     dlgExportPdf: 'Экспорт в PDF',
+    dlgExportHtml: 'Экспорт в HTML',
+    dlgExportMarkdown: 'Экспорт в Markdown',
+    dlgPickExportDir: 'Выбор папки для экспорта',
     errUnsupportedExt: 'файлы .{ext} не поддерживаются',
     errNotFile: 'не является файлом',
     errTooLarge: 'превышает лимит {mb} МБ',
@@ -971,6 +1950,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Вы не вошли в Genspark: нажмите «Войти в Genspark» ниже, войдите и повторите попытку',
     errNoApiKey: 'API-ключ для {provider} не настроен',
+    errAiRegion:
+      'Поставщик этой модели не обслуживает ваш текущий регион — выберите другую модель или смените сеть',
+    errAiBusy: 'Сервис ИИ сейчас перегружен — повторите попытку чуть позже',
     errNoModel: 'Не указано имя модели',
     menuFile: 'Файл',
     menuNewDoc: 'Создать документ',
@@ -983,6 +1965,9 @@ const tMain = createI18n({
     menuSaveAs: 'Сохранить как…',
     menuPageSetup: 'Параметры страницы…',
     menuExportPdf: 'Экспорт в PDF…',
+    menuExportHtml: 'Экспорт в HTML…',
+    menuExportMarkdown: 'Экспорт в Markdown…',
+    menuExportImages: 'Экспорт в изображения…',
     menuPrint: 'Печать…',
     menuEdit: 'Правка',
     menuUndo: 'Отменить',
@@ -992,18 +1977,21 @@ const tMain = createI18n({
     menuPaste: 'Вставить',
     menuPasteMatch: 'Вставить и согласовать стиль',
     menuFindReplace: 'Найти и заменить…',
+    menuGoTo: 'Перейти…',
     menuSelectAll: 'Выделить все',
     menuView: 'Вид',
+    menuZoom: 'Масштаб',
     menuZoomIn: 'Увеличить',
     menuZoomOut: 'Уменьшить',
     menuZoom100: 'Фактический размер (100%)',
     menuPageWidth: 'По ширине страницы',
     menuWholePage: 'Страница целиком',
+    menuMultiPage: 'Несколько страниц',
     menuAiSidebar: 'Боковая панель ИИ',
     menuDarkMode: 'Темный режим',
     menuFullscreen: 'Перейти в полноэкранный режим',
     menuInsert: 'Вставка',
-    menuInsertTable: 'Таблица (3×3)',
+    menuInsertTable: 'Таблица…',
     menuInsertImage: 'Рисунок…',
     menuInsertPageBreak: 'Разрыв страницы',
     menuInsertLink: 'Гиперссылка…',
@@ -1021,16 +2009,57 @@ const tMain = createI18n({
     menuFont: 'Шрифт…',
     menuParagraph: 'Абзац…',
     menuTools: 'Сервис',
+    menuTable: 'Таблица',
+    menuTableInsert: 'Вставить',
+    menuTableInsertTable: 'Таблица…',
+    menuTableColsLeft: 'Столбцы слева',
+    menuTableColsRight: 'Столбцы справа',
+    menuTableRowsAbove: 'Строки выше',
+    menuTableRowsBelow: 'Строки ниже',
+    menuTableCells: 'Ячейки…',
+    menuTableDelete: 'Удалить',
+    menuTableDeleteTable: 'Таблицу',
+    menuTableDeleteColumns: 'Столбцы',
+    menuTableDeleteRows: 'Строки',
+    menuTableSelect: 'Выделить',
+    menuTableSelectCell: 'Ячейку',
+    menuTableSelectColumn: 'Столбец',
+    menuTableSelectRow: 'Строку',
+    menuTableSelectTable: 'Таблицу',
+    menuTableMergeCells: 'Объединить ячейки',
+    menuTableSplitCells: 'Разделить ячейки…',
+    menuTableSplitTable: 'Разделить таблицу',
+    menuTableAutoFit: 'Автоподбор',
+    menuTableAutoFitContents: 'По содержимому',
+    menuTableAutoFitWindow: 'По ширине окна',
+    menuTableFixedWidth: 'Фиксированная ширина столбца',
+    menuTableDistributeRows: 'Выровнять высоту строк',
+    menuTableDistributeColumns: 'Выровнять ширину столбцов',
+    menuTableRepeatHeader: 'Повторять строки заголовков',
+    menuTableGridlines: 'Отображать сетку',
+    menuTableProperties: 'Свойства таблицы…',
     menuWordCount: 'Статистика…',
-    menuSpelling: 'Правописание',
-    menuMacros: 'Макросы',
+    menuAutoCorrect: 'Параметры автозамены…',
+    menuPreferences: 'Параметры…',
+    menuAiProofread: 'ИИ-корректура',
     menuWindow: 'Окно',
     menuHelp: 'Справка',
-    menuDocsHelp: 'Справка GenOffice Docs',
+    menuShortcuts: 'Сочетания клавиш',
   },
   ar: {
     dlgOpenDoc: 'فتح مستند',
     filterWord: 'مستندات Word',
+    odtImportMsg: 'تحويل مستند .{ext} هذا؟',
+    odtImportDetail:
+      'يحرّر GenOffice ملفات ‎.docx ولا يحرّر ODF. يُحوَّل النص والعناوين والقوائم والجداول والصور؛ أما الحواشي السفلية والتعليقات ومربعات النص فلا تُحفظ بالكامل. لا يتغيّر الملف الأصلي أبدًا؛ والملف ‎.docx المحوَّل نسخة مستقلة تُكتب فيها عمليات الحفظ اللاحقة.',
+    hwpImportDetail:
+      'يحرّر GenOffice ملفات ‎.docx ولا يحرّر HWP. يُحوَّل النص والجداول والصور والرؤوس والتذييلات؛ أما المعادلات والحواشي السفلية والكائنات المضمّنة فلا تُحوَّل، ويصبح الترقيم التلقائي نصًا عاديًا. لا يتغيّر الملف الأصلي أبدًا؛ والملف ‎.docx المحوَّل نسخة مستقلة تُكتب فيها عمليات الحفظ اللاحقة.',
+    odtImportConvertBtn: 'تحويل وفتح',
+    importSkipConfirm: 'في المرة القادمة، حوّل دون سؤال',
+    docImportMsg: 'تحويل مستند .{ext} هذا؟',
+    docImportDetail:
+      'يحرّر GenOffice ملفات ‎.docx ولا يحرّر مستندات Word 97-2003 (‎.doc). يُحوَّل النص والعناوين والقوائم والجداول والصور؛ أما الحواشي السفلية والتعليقات ومربعات النص فلا تُحفظ بالكامل. لا يتغيّر الملف الأصلي أبدًا؛ والملف ‎.docx المحوَّل نسخة مستقلة تُكتب فيها عمليات الحفظ اللاحقة.',
+    docImportConvertBtn: 'تحويل وفتح',
     dlgSaveAs: 'حفظ باسم',
     closeUnsavedMsg: 'يحتوي هذا المستند على تغييرات غير محفوظة.',
     closeUnsavedDetail: 'هل تريد حفظها قبل الإغلاق؟',
@@ -1038,6 +2067,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'هل تريد الإغلاق رغم ذلك؟ ستفقد التغييرات غير المحفوظة.',
     btnCloseAnyway: 'إغلاق على أي حال',
     autosaveFoundTitle: 'تم العثور على نسخة مستردة',
+    autosaveDiskNewer:
+      'ملاحظة: تم تعديل الملف على القرص بعد حفظ نسخة الاسترداد هذه. ستؤدي الاستعادة إلى استبدال تلك التغييرات الأحدث.',
     autosaveFoundBody:
       'توجد تغييرات غير محفوظة من الجلسة الأخيرة. هل تريد استعادة النسخة المحفوظة تلقائيًا؟',
     autosaveRestore: 'استعادة',
@@ -1049,10 +2080,15 @@ const tMain = createI18n({
     btnOverwrite: 'استبدال',
     dlgInsertImage: 'إدراج صورة',
     filterImages: 'الصور',
+    dlgMergeDataSource: 'اختيار قائمة المستلمين',
+    filterMergeDataSource: 'Excel أو CSV',
     dlgAddAttachment: 'إضافة مرفقات',
     filterSupported: 'الملفات المدعومة',
     filterAll: 'كل الملفات',
     dlgExportPdf: 'تصدير بتنسيق PDF',
+    dlgExportHtml: 'تصدير بتنسيق HTML',
+    dlgExportMarkdown: 'تصدير بتنسيق Markdown',
+    dlgPickExportDir: 'اختيار مجلد التصدير',
     errUnsupportedExt: 'ملفات .{ext} غير مدعومة',
     errNotFile: 'ليس ملفًا',
     errTooLarge: 'يتجاوز الحد {mb}MB',
@@ -1066,6 +2102,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'لم تسجّل الدخول إلى Genspark: انقر على «تسجيل الدخول إلى Genspark» أدناه ثم أعد المحاولة',
     errNoApiKey: 'لم يتم تكوين مفتاح API لـ {provider}',
+    errAiRegion:
+      'مزوّد هذا النموذج لا يقدم الخدمة في منطقتك الحالية — اختر نموذجًا آخر أو غيّر الشبكة',
+    errAiBusy: 'خدمة الذكاء الاصطناعي مشغولة حاليًا — يرجى المحاولة مرة أخرى بعد قليل',
     errNoModel: 'لم يتم تكوين اسم النموذج',
     menuFile: 'ملف',
     menuNewDoc: 'مستند جديد',
@@ -1078,6 +2117,9 @@ const tMain = createI18n({
     menuSaveAs: 'حفظ باسم…',
     menuPageSetup: 'إعداد الصفحة…',
     menuExportPdf: 'تصدير بتنسيق PDF…',
+    menuExportHtml: 'تصدير بتنسيق HTML…',
+    menuExportMarkdown: 'تصدير بتنسيق Markdown…',
+    menuExportImages: 'تصدير كصور…',
     menuPrint: 'طباعة…',
     menuEdit: 'تحرير',
     menuUndo: 'تراجع',
@@ -1087,18 +2129,21 @@ const tMain = createI18n({
     menuPaste: 'لصق',
     menuPasteMatch: 'لصق مع مطابقة النمط',
     menuFindReplace: 'بحث واستبدال…',
+    menuGoTo: 'الانتقال إلى…',
     menuSelectAll: 'تحديد الكل',
     menuView: 'عرض',
+    menuZoom: 'تكبير/تصغير',
     menuZoomIn: 'تكبير',
     menuZoomOut: 'تصغير',
     menuZoom100: 'الحجم الفعلي (100%)',
     menuPageWidth: 'عرض الصفحة',
     menuWholePage: 'صفحة كاملة',
+    menuMultiPage: 'صفحات متعددة',
     menuAiSidebar: 'الشريط الجانبي للذكاء الاصطناعي',
     menuDarkMode: 'الوضع الداكن',
     menuFullscreen: 'الدخول إلى ملء الشاشة',
     menuInsert: 'إدراج',
-    menuInsertTable: 'جدول (3×3)',
+    menuInsertTable: 'جدول…',
     menuInsertImage: 'صورة…',
     menuInsertPageBreak: 'فاصل صفحات',
     menuInsertLink: 'ارتباط تشعبي…',
@@ -1116,16 +2161,57 @@ const tMain = createI18n({
     menuFont: 'الخط…',
     menuParagraph: 'فقرة…',
     menuTools: 'أدوات',
+    menuTable: 'جدول',
+    menuTableInsert: 'إدراج',
+    menuTableInsertTable: 'جدول…',
+    menuTableColsLeft: 'أعمدة إلى اليسار',
+    menuTableColsRight: 'أعمدة إلى اليمين',
+    menuTableRowsAbove: 'صفوف أعلى',
+    menuTableRowsBelow: 'صفوف أسفل',
+    menuTableCells: 'خلايا…',
+    menuTableDelete: 'حذف',
+    menuTableDeleteTable: 'الجدول',
+    menuTableDeleteColumns: 'الأعمدة',
+    menuTableDeleteRows: 'الصفوف',
+    menuTableSelect: 'تحديد',
+    menuTableSelectCell: 'الخلية',
+    menuTableSelectColumn: 'العمود',
+    menuTableSelectRow: 'الصف',
+    menuTableSelectTable: 'الجدول',
+    menuTableMergeCells: 'دمج الخلايا',
+    menuTableSplitCells: 'تقسيم الخلايا…',
+    menuTableSplitTable: 'تقسيم الجدول',
+    menuTableAutoFit: 'احتواء تلقائي',
+    menuTableAutoFitContents: 'احتواء تلقائي للمحتويات',
+    menuTableAutoFitWindow: 'احتواء تلقائي للنافذة',
+    menuTableFixedWidth: 'عرض عمود ثابت',
+    menuTableDistributeRows: 'توزيع الصفوف بالتساوي',
+    menuTableDistributeColumns: 'توزيع الأعمدة بالتساوي',
+    menuTableRepeatHeader: 'تكرار صفوف الرأس',
+    menuTableGridlines: 'عرض خطوط الشبكة',
+    menuTableProperties: 'خصائص الجدول…',
     menuWordCount: 'عدد الكلمات…',
-    menuSpelling: 'تدقيق إملائي ونحوي',
-    menuMacros: 'وحدات الماكرو',
+    menuAutoCorrect: 'خيارات التصحيح التلقائي…',
+    menuPreferences: 'التفضيلات…',
+    menuAiProofread: 'تدقيق بالذكاء الاصطناعي',
     menuWindow: 'نافذة',
     menuHelp: 'تعليمات',
-    menuDocsHelp: 'تعليمات GenOffice Docs',
+    menuShortcuts: 'اختصارات لوحة المفاتيح',
   },
   pt: {
     dlgOpenDoc: 'Abrir Documento',
     filterWord: 'Documentos do Word',
+    odtImportMsg: 'Converter este documento .{ext}?',
+    odtImportDetail:
+      'O GenOffice edita .docx, não ODF. Texto, títulos, listas, tabelas e imagens são convertidos; notas de rodapé, comentários e caixas de texto não são preservados por completo. O arquivo original nunca é alterado; o .docx convertido é uma cópia independente em que os salvamentos seguintes são gravados.',
+    hwpImportDetail:
+      'O GenOffice edita .docx, não HWP. Texto, tabelas, imagens, cabeçalhos e rodapés são convertidos; equações, notas de rodapé e objetos incorporados não são, e a numeração automática vira texto comum. O arquivo original nunca é alterado; o .docx convertido é uma cópia independente em que os salvamentos seguintes são gravados.',
+    odtImportConvertBtn: 'Converter e abrir',
+    importSkipConfirm: 'Da próxima vez, converter sem perguntar',
+    docImportMsg: 'Converter este documento .{ext}?',
+    docImportDetail:
+      'O GenOffice edita .docx, não documentos do Word 97-2003 (.doc). Texto, títulos, listas, tabelas e imagens são convertidos; notas de rodapé, comentários e caixas de texto não são preservados por completo. O arquivo original nunca é alterado; o .docx convertido é uma cópia independente em que os salvamentos seguintes são gravados.',
+    docImportConvertBtn: 'Converter e abrir',
     dlgSaveAs: 'Salvar Como',
     closeUnsavedMsg: 'Este documento tem alterações não salvas.',
     closeUnsavedDetail: 'Deseja salvá-las antes de fechar?',
@@ -1133,6 +2219,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Fechar mesmo assim? As alterações não salvas serão perdidas.',
     btnCloseAnyway: 'Fechar mesmo assim',
     autosaveFoundTitle: 'Versão recuperada encontrada',
+    autosaveDiskNewer:
+      'Nota: o arquivo no disco foi modificado depois que esta cópia de recuperação foi salva. Restaurar substituirá essas alterações mais recentes.',
     autosaveFoundBody:
       'Há alterações não salvas da sua última sessão. Restaurar a versão salva automaticamente?',
     autosaveRestore: 'Restaurar',
@@ -1144,10 +2232,15 @@ const tMain = createI18n({
     btnOverwrite: 'Sobrescrever',
     dlgInsertImage: 'Inserir Imagem',
     filterImages: 'Imagens',
+    dlgMergeDataSource: 'Selecionar lista de destinatários',
+    filterMergeDataSource: 'Excel ou CSV',
     dlgAddAttachment: 'Adicionar Anexos',
     filterSupported: 'Arquivos Compatíveis',
     filterAll: 'Todos os Arquivos',
     dlgExportPdf: 'Exportar como PDF',
+    dlgExportHtml: 'Exportar como HTML',
+    dlgExportMarkdown: 'Exportar como Markdown',
+    dlgPickExportDir: 'Escolher Pasta de Exportação',
     errUnsupportedExt: 'arquivos .{ext} não são suportados',
     errNotFile: 'não é um arquivo',
     errTooLarge: 'excede o limite de {mb}MB',
@@ -1161,6 +2254,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Não conectado ao Genspark: clique em “Entrar no Genspark” abaixo, entre e tente novamente',
     errNoApiKey: 'Nenhuma chave de API configurada para {provider}',
+    errAiRegion:
+      'O fornecedor deste modelo não atende à sua região atual — escolha outro modelo ou mude de rede',
+    errAiBusy: 'O serviço de IA está sobrecarregado no momento — tente novamente em instantes',
     errNoModel: 'Nenhum nome de modelo configurado',
     menuFile: 'Arquivo',
     menuNewDoc: 'Novo Documento',
@@ -1173,6 +2269,9 @@ const tMain = createI18n({
     menuSaveAs: 'Salvar Como…',
     menuPageSetup: 'Configurar Página…',
     menuExportPdf: 'Exportar como PDF…',
+    menuExportHtml: 'Exportar como HTML…',
+    menuExportMarkdown: 'Exportar como Markdown…',
+    menuExportImages: 'Exportar como imagens…',
     menuPrint: 'Imprimir…',
     menuEdit: 'Editar',
     menuUndo: 'Desfazer',
@@ -1182,18 +2281,21 @@ const tMain = createI18n({
     menuPaste: 'Colar',
     menuPasteMatch: 'Colar com a Mesma Formatação',
     menuFindReplace: 'Localizar e Substituir…',
+    menuGoTo: 'Ir para…',
     menuSelectAll: 'Selecionar Tudo',
     menuView: 'Exibir',
+    menuZoom: 'Zoom',
     menuZoomIn: 'Ampliar',
     menuZoomOut: 'Reduzir',
     menuZoom100: 'Tamanho Real (100%)',
     menuPageWidth: 'Largura da Página',
     menuWholePage: 'Página Inteira',
+    menuMultiPage: 'Várias páginas',
     menuAiSidebar: 'Barra Lateral de IA',
     menuDarkMode: 'Modo Escuro',
     menuFullscreen: 'Entrar em Tela Cheia',
     menuInsert: 'Inserir',
-    menuInsertTable: 'Tabela (3×3)',
+    menuInsertTable: 'Tabela…',
     menuInsertImage: 'Imagem…',
     menuInsertPageBreak: 'Quebra de Página',
     menuInsertLink: 'Hiperlink…',
@@ -1211,16 +2313,57 @@ const tMain = createI18n({
     menuFont: 'Fonte…',
     menuParagraph: 'Parágrafo…',
     menuTools: 'Ferramentas',
+    menuTable: 'Tabela',
+    menuTableInsert: 'Inserir',
+    menuTableInsertTable: 'Tabela…',
+    menuTableColsLeft: 'Colunas à esquerda',
+    menuTableColsRight: 'Colunas à direita',
+    menuTableRowsAbove: 'Linhas acima',
+    menuTableRowsBelow: 'Linhas abaixo',
+    menuTableCells: 'Células…',
+    menuTableDelete: 'Excluir',
+    menuTableDeleteTable: 'Tabela',
+    menuTableDeleteColumns: 'Colunas',
+    menuTableDeleteRows: 'Linhas',
+    menuTableSelect: 'Selecionar',
+    menuTableSelectCell: 'Célula',
+    menuTableSelectColumn: 'Coluna',
+    menuTableSelectRow: 'Linha',
+    menuTableSelectTable: 'Tabela',
+    menuTableMergeCells: 'Mesclar células',
+    menuTableSplitCells: 'Dividir células…',
+    menuTableSplitTable: 'Dividir tabela',
+    menuTableAutoFit: 'AutoAjuste',
+    menuTableAutoFitContents: 'AutoAjustar ao conteúdo',
+    menuTableAutoFitWindow: 'AutoAjustar à janela',
+    menuTableFixedWidth: 'Largura de coluna fixa',
+    menuTableDistributeRows: 'Distribuir linhas uniformemente',
+    menuTableDistributeColumns: 'Distribuir colunas uniformemente',
+    menuTableRepeatHeader: 'Repetir linhas de cabeçalho',
+    menuTableGridlines: 'Ver linhas de grade',
+    menuTableProperties: 'Propriedades da tabela…',
     menuWordCount: 'Contagem de Palavras…',
-    menuSpelling: 'Ortografia e Gramática',
-    menuMacros: 'Macros',
+    menuAutoCorrect: 'Opções de Correção Automática…',
+    menuPreferences: 'Preferências…',
+    menuAiProofread: 'Revisão com IA',
     menuWindow: 'Janela',
     menuHelp: 'Ajuda',
-    menuDocsHelp: 'Ajuda do GenOffice Docs',
+    menuShortcuts: 'Atalhos de Teclado',
   },
   it: {
     dlgOpenDoc: 'Apri documento',
     filterWord: 'Documenti Word',
+    odtImportMsg: 'Convertire questo documento .{ext}?',
+    odtImportDetail:
+      'GenOffice modifica .docx, non ODF. Testo, titoli, elenchi, tabelle e immagini vengono convertiti; note a piè di pagina, commenti e caselle di testo non sono conservati completamente. Il file originale non viene mai modificato; il .docx convertito è una copia indipendente su cui vengono salvate le modifiche successive.',
+    hwpImportDetail:
+      'GenOffice modifica .docx, non HWP. Testo, tabelle, immagini, intestazioni e piè di pagina vengono convertiti; equazioni, note a piè di pagina e oggetti incorporati no, e la numerazione automatica diventa testo semplice. Il file originale non viene mai modificato; il .docx convertito è una copia indipendente su cui vengono salvate le modifiche successive.',
+    odtImportConvertBtn: 'Converti e apri',
+    importSkipConfirm: 'La prossima volta converti senza chiedere',
+    docImportMsg: 'Convertire questo documento .{ext}?',
+    docImportDetail:
+      'GenOffice modifica .docx, non documenti Word 97-2003 (.doc). Testo, titoli, elenchi, tabelle e immagini vengono convertiti; note a piè di pagina, commenti e caselle di testo non sono conservati completamente. Il file originale non viene mai modificato; il .docx convertito è una copia indipendente su cui vengono salvate le modifiche successive.',
+    docImportConvertBtn: 'Converti e apri',
     dlgSaveAs: 'Salva con nome',
     closeUnsavedMsg: 'Questo documento contiene modifiche non salvate.',
     closeUnsavedDetail: 'Salvarle prima di chiudere?',
@@ -1228,6 +2371,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Chiudere comunque? Le modifiche non salvate andranno perse.',
     btnCloseAnyway: 'Chiudi comunque',
     autosaveFoundTitle: 'Trovata versione recuperata',
+    autosaveDiskNewer:
+      'Nota: il file su disco è stato modificato dopo il salvataggio di questa copia di ripristino. Il ripristino sostituirà tali modifiche più recenti.',
     autosaveFoundBody:
       "Ci sono modifiche non salvate dall'ultima sessione. Ripristinare la versione salvata automaticamente?",
     autosaveRestore: 'Ripristina',
@@ -1239,10 +2384,15 @@ const tMain = createI18n({
     btnOverwrite: 'Sovrascrivi',
     dlgInsertImage: 'Inserisci immagine',
     filterImages: 'Immagini',
+    dlgMergeDataSource: 'Seleziona elenco destinatari',
+    filterMergeDataSource: 'Excel o CSV',
     dlgAddAttachment: 'Aggiungi allegati',
     filterSupported: 'File supportati',
     filterAll: 'Tutti i file',
     dlgExportPdf: 'Esporta come PDF',
+    dlgExportHtml: 'Esporta come HTML',
+    dlgExportMarkdown: 'Esporta come Markdown',
+    dlgPickExportDir: 'Scegli la cartella di esportazione',
     errUnsupportedExt: 'i file .{ext} non sono supportati',
     errNotFile: 'non è un file',
     errTooLarge: 'supera il limite di {mb} MB',
@@ -1256,6 +2406,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Accesso a Genspark non effettuato: fai clic su “Accedi a Genspark” qui sotto, accedi e riprova',
     errNoApiKey: 'Nessuna chiave API configurata per {provider}',
+    errAiRegion:
+      'Il fornitore di questo modello non serve la tua regione attuale — scegli un altro modello o cambia rete',
+    errAiBusy: 'Il servizio IA è momentaneamente sovraccarico — riprova tra poco',
     errNoModel: 'Nessun nome di modello configurato',
     menuFile: 'File',
     menuNewDoc: 'Nuovo documento',
@@ -1268,6 +2421,9 @@ const tMain = createI18n({
     menuSaveAs: 'Salva con nome…',
     menuPageSetup: 'Imposta pagina…',
     menuExportPdf: 'Esporta come PDF…',
+    menuExportHtml: 'Esporta come HTML…',
+    menuExportMarkdown: 'Esporta come Markdown…',
+    menuExportImages: 'Esporta come immagini…',
     menuPrint: 'Stampa…',
     menuEdit: 'Modifica',
     menuUndo: 'Annulla',
@@ -1277,18 +2433,21 @@ const tMain = createI18n({
     menuPaste: 'Incolla',
     menuPasteMatch: 'Incolla e adatta lo stile',
     menuFindReplace: 'Trova e sostituisci…',
+    menuGoTo: 'Vai a…',
     menuSelectAll: 'Seleziona tutto',
     menuView: 'Visualizza',
+    menuZoom: 'Zoom',
     menuZoomIn: 'Ingrandisci',
     menuZoomOut: 'Riduci',
     menuZoom100: 'Dimensioni effettive (100%)',
     menuPageWidth: 'Larghezza pagina',
     menuWholePage: 'Pagina intera',
+    menuMultiPage: 'Più pagine',
     menuAiSidebar: 'Barra laterale IA',
     menuDarkMode: 'Modalità scura',
     menuFullscreen: 'Attiva schermo intero',
     menuInsert: 'Inserisci',
-    menuInsertTable: 'Tabella (3×3)',
+    menuInsertTable: 'Tabella…',
     menuInsertImage: 'Immagine…',
     menuInsertPageBreak: 'Interruzione di pagina',
     menuInsertLink: 'Collegamento ipertestuale…',
@@ -1306,16 +2465,57 @@ const tMain = createI18n({
     menuFont: 'Carattere…',
     menuParagraph: 'Paragrafo…',
     menuTools: 'Strumenti',
+    menuTable: 'Tabella',
+    menuTableInsert: 'Inserisci',
+    menuTableInsertTable: 'Tabella…',
+    menuTableColsLeft: 'Colonne a sinistra',
+    menuTableColsRight: 'Colonne a destra',
+    menuTableRowsAbove: 'Righe sopra',
+    menuTableRowsBelow: 'Righe sotto',
+    menuTableCells: 'Celle…',
+    menuTableDelete: 'Elimina',
+    menuTableDeleteTable: 'Tabella',
+    menuTableDeleteColumns: 'Colonne',
+    menuTableDeleteRows: 'Righe',
+    menuTableSelect: 'Seleziona',
+    menuTableSelectCell: 'Cella',
+    menuTableSelectColumn: 'Colonna',
+    menuTableSelectRow: 'Riga',
+    menuTableSelectTable: 'Tabella',
+    menuTableMergeCells: 'Unisci celle',
+    menuTableSplitCells: 'Dividi celle…',
+    menuTableSplitTable: 'Dividi tabella',
+    menuTableAutoFit: 'Adatta e distribuisci',
+    menuTableAutoFitContents: 'Adatta al contenuto',
+    menuTableAutoFitWindow: 'Adatta alla finestra',
+    menuTableFixedWidth: 'Larghezza colonna fissa',
+    menuTableDistributeRows: 'Distribuisci righe uniformemente',
+    menuTableDistributeColumns: 'Distribuisci colonne uniformemente',
+    menuTableRepeatHeader: 'Ripeti righe di intestazione',
+    menuTableGridlines: 'Mostra griglia',
+    menuTableProperties: 'Proprietà tabella…',
     menuWordCount: 'Conteggio parole…',
-    menuSpelling: 'Ortografia e grammatica',
-    menuMacros: 'Macro',
+    menuAutoCorrect: 'Opzioni correzione automatica…',
+    menuPreferences: 'Preferenze…',
+    menuAiProofread: 'Correzione IA',
     menuWindow: 'Finestra',
     menuHelp: 'Aiuto',
-    menuDocsHelp: 'Guida di GenOffice Docs',
+    menuShortcuts: 'Scelte rapide da tastiera',
   },
   pl: {
     dlgOpenDoc: 'Otwórz dokument',
     filterWord: 'Dokumenty programu Word',
+    odtImportMsg: 'Skonwertować ten dokument .{ext}?',
+    odtImportDetail:
+      'GenOffice edytuje .docx, a nie ODF. Tekst, nagłówki, listy, tabele i obrazy są konwertowane; przypisy, komentarze i pola tekstowe nie są zachowywane w całości. Plik oryginalny nigdy nie jest zmieniany; skonwertowany .docx to niezależna kopia, do której trafiają kolejne zapisy.',
+    hwpImportDetail:
+      'GenOffice edytuje .docx, a nie HWP. Tekst, tabele, obrazy, nagłówki i stopki są konwertowane; równania, przypisy i obiekty osadzone nie są, a automatyczna numeracja staje się zwykłym tekstem. Plik oryginalny nigdy nie jest zmieniany; skonwertowany .docx to niezależna kopia, do której trafiają kolejne zapisy.',
+    odtImportConvertBtn: 'Konwertuj i otwórz',
+    importSkipConfirm: 'Następnym razem konwertuj bez pytania',
+    docImportMsg: 'Skonwertować ten dokument .{ext}?',
+    docImportDetail:
+      'GenOffice edytuje .docx, a nie dokumenty Word 97-2003 (.doc). Tekst, nagłówki, listy, tabele i obrazy są konwertowane; przypisy, komentarze i pola tekstowe nie są zachowywane w całości. Plik oryginalny nigdy nie jest zmieniany; skonwertowany .docx to niezależna kopia, do której trafiają kolejne zapisy.',
+    docImportConvertBtn: 'Konwertuj i otwórz',
     dlgSaveAs: 'Zapisz jako',
     closeUnsavedMsg: 'Ten dokument zawiera niezapisane zmiany.',
     closeUnsavedDetail: 'Czy zapisać je przed zamknięciem?',
@@ -1323,6 +2523,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Zamknąć mimo to? Niezapisane zmiany zostaną utracone.',
     btnCloseAnyway: 'Zamknij mimo to',
     autosaveFoundTitle: 'Znaleziono odzyskaną wersję',
+    autosaveDiskNewer:
+      'Uwaga: plik na dysku został zmodyfikowany po zapisaniu tej kopii odzyskiwania. Przywrócenie zastąpi te nowsze zmiany.',
     autosaveFoundBody:
       'Istnieją niezapisane zmiany z ostatniej sesji. Przywrócić wersję zapisaną automatycznie?',
     autosaveRestore: 'Przywróć',
@@ -1334,10 +2536,15 @@ const tMain = createI18n({
     btnOverwrite: 'Nadpisz',
     dlgInsertImage: 'Wstaw obraz',
     filterImages: 'Obrazy',
+    dlgMergeDataSource: 'Wybierz listę odbiorców',
+    filterMergeDataSource: 'Excel lub CSV',
     dlgAddAttachment: 'Dodaj załączniki',
     filterSupported: 'Obsługiwane pliki',
     filterAll: 'Wszystkie pliki',
     dlgExportPdf: 'Eksportuj jako PDF',
+    dlgExportHtml: 'Eksportuj jako HTML',
+    dlgExportMarkdown: 'Eksportuj jako Markdown',
+    dlgPickExportDir: 'Wybierz folder eksportu',
     errUnsupportedExt: 'pliki .{ext} nie są obsługiwane',
     errNotFile: 'to nie jest plik',
     errTooLarge: 'przekracza limit {mb} MB',
@@ -1351,6 +2558,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Nie zalogowano do Genspark: kliknij „Zaloguj się do Genspark” poniżej, zaloguj się i spróbuj ponownie',
     errNoApiKey: 'Nie skonfigurowano klucza API dla {provider}',
+    errAiRegion:
+      'Dostawca tego modelu nie obsługuje Twojego obecnego regionu — wybierz inny model lub zmień sieć',
+    errAiBusy: 'Usługa AI jest obecnie przeciążona — spróbuj ponownie za chwilę',
     errNoModel: 'Nie skonfigurowano nazwy modelu',
     menuFile: 'Plik',
     menuNewDoc: 'Nowy dokument',
@@ -1363,6 +2573,9 @@ const tMain = createI18n({
     menuSaveAs: 'Zapisz jako…',
     menuPageSetup: 'Ustawienia strony…',
     menuExportPdf: 'Eksportuj jako PDF…',
+    menuExportHtml: 'Eksportuj jako HTML…',
+    menuExportMarkdown: 'Eksportuj jako Markdown…',
+    menuExportImages: 'Eksportuj jako obrazy…',
     menuPrint: 'Drukuj…',
     menuEdit: 'Edycja',
     menuUndo: 'Cofnij',
@@ -1372,18 +2585,21 @@ const tMain = createI18n({
     menuPaste: 'Wklej',
     menuPasteMatch: 'Wklej i dopasuj styl',
     menuFindReplace: 'Znajdź i zamień…',
+    menuGoTo: 'Przejdź do…',
     menuSelectAll: 'Zaznacz wszystko',
     menuView: 'Widok',
+    menuZoom: 'Powiększenie',
     menuZoomIn: 'Powiększ',
     menuZoomOut: 'Pomniejsz',
     menuZoom100: 'Rzeczywisty rozmiar (100%)',
     menuPageWidth: 'Szerokość strony',
     menuWholePage: 'Cała strona',
+    menuMultiPage: 'Wiele stron',
     menuAiSidebar: 'Pasek boczny AI',
     menuDarkMode: 'Tryb ciemny',
     menuFullscreen: 'Przejdź do pełnego ekranu',
     menuInsert: 'Wstaw',
-    menuInsertTable: 'Tabela (3×3)',
+    menuInsertTable: 'Tabela…',
     menuInsertImage: 'Obraz…',
     menuInsertPageBreak: 'Podział strony',
     menuInsertLink: 'Hiperłącze…',
@@ -1401,16 +2617,209 @@ const tMain = createI18n({
     menuFont: 'Czcionka…',
     menuParagraph: 'Akapit…',
     menuTools: 'Narzędzia',
+    menuTable: 'Tabela',
+    menuTableInsert: 'Wstaw',
+    menuTableInsertTable: 'Tabela…',
+    menuTableColsLeft: 'Kolumny z lewej',
+    menuTableColsRight: 'Kolumny z prawej',
+    menuTableRowsAbove: 'Wiersze powyżej',
+    menuTableRowsBelow: 'Wiersze poniżej',
+    menuTableCells: 'Komórki…',
+    menuTableDelete: 'Usuń',
+    menuTableDeleteTable: 'Tabela',
+    menuTableDeleteColumns: 'Kolumny',
+    menuTableDeleteRows: 'Wiersze',
+    menuTableSelect: 'Zaznacz',
+    menuTableSelectCell: 'Komórka',
+    menuTableSelectColumn: 'Kolumna',
+    menuTableSelectRow: 'Wiersz',
+    menuTableSelectTable: 'Tabela',
+    menuTableMergeCells: 'Scal komórki',
+    menuTableSplitCells: 'Podziel komórki…',
+    menuTableSplitTable: 'Podziel tabelę',
+    menuTableAutoFit: 'Autodopasowanie',
+    menuTableAutoFitContents: 'Dopasuj do zawartości',
+    menuTableAutoFitWindow: 'Dopasuj do okna',
+    menuTableFixedWidth: 'Stała szerokość kolumny',
+    menuTableDistributeRows: 'Rozłóż wiersze równomiernie',
+    menuTableDistributeColumns: 'Rozłóż kolumny równomiernie',
+    menuTableRepeatHeader: 'Powtórz wiersze nagłówka',
+    menuTableGridlines: 'Wyświetl linie siatki',
+    menuTableProperties: 'Właściwości tabeli…',
     menuWordCount: 'Statystyka wyrazów…',
-    menuSpelling: 'Pisownia i gramatyka',
-    menuMacros: 'Makra',
+    menuAutoCorrect: 'Opcje Autokorekty…',
+    menuPreferences: 'Preferencje…',
+    menuAiProofread: 'Korekta AI',
     menuWindow: 'Okno',
     menuHelp: 'Pomoc',
-    menuDocsHelp: 'Pomoc GenOffice Docs',
+    menuShortcuts: 'Skróty klawiaturowe',
+  },
+  cs: {
+    dlgOpenDoc: 'Otevřít dokument',
+    filterWord: 'Dokumenty Wordu',
+    odtImportMsg: 'Převést tento dokument .{ext}?',
+    odtImportDetail:
+      'GenOffice upravuje .docx, nikoli ODF. Text, nadpisy, seznamy, tabulky a obrázky se převedou; poznámky pod čarou, komentáře a textová pole se nepřevezmou úplně. Původní soubor se nikdy nemění; převedený .docx je samostatná kopie, do níž se dalším ukládáním zapisuje.',
+    hwpImportDetail:
+      'GenOffice upravuje .docx, nikoli HWP. Text, tabulky, obrázky, záhlaví a zápatí se převedou; rovnice, poznámky pod čarou a vložené objekty se nepřevedou a automatické číslování se změní na prostý text. Původní soubor se nikdy nemění; převedený .docx je samostatná kopie, do níž se dalším ukládáním zapisuje.',
+    odtImportConvertBtn: 'Převést a otevřít',
+    importSkipConfirm: 'Příště převést bez ptaní',
+    docImportMsg: 'Převést tento dokument .{ext}?',
+    docImportDetail:
+      'GenOffice upravuje .docx, nikoli dokumenty Word 97-2003 (.doc). Text, nadpisy, seznamy, tabulky a obrázky se převedou; poznámky pod čarou, komentáře a textová pole se nepřevezmou úplně. Původní soubor se nikdy nemění; převedený .docx je samostatná kopie, do níž se dalším ukládáním zapisuje.',
+    docImportConvertBtn: 'Převést a otevřít',
+    dlgSaveAs: 'Uložit jako',
+    closeUnsavedMsg: 'Tento dokument obsahuje neuložené změny.',
+    closeUnsavedDetail: 'Chcete je před zavřením uložit?',
+    closeNoReplyMsg: 'Dokument neodpovídá a může obsahovat neuložené změny.',
+    closeNoReplyDetail: 'Přesto zavřít? Neuložené změny budou ztraceny.',
+    btnCloseAnyway: 'Přesto zavřít',
+    autosaveFoundTitle: 'Nalezena obnovená verze',
+    autosaveDiskNewer:
+      'Poznámka: soubor na disku byl změněn po uložení této kopie pro obnovení. Obnovení tyto novější změny nahradí.',
+    autosaveFoundBody:
+      'Z poslední relace existují neuložené změny. Obnovit automaticky uloženou verzi?',
+    autosaveRestore: 'Obnovit',
+    autosaveDiscard: 'Zahodit',
+    btnDontSave: 'Neukládat',
+    btnCancel: 'Zrušit',
+    extModifiedMsg: 'Soubor byl změněn jiným programem.',
+    extModifiedDetail: 'Přesto uložit a přepsat změny na disku?',
+    btnOverwrite: 'Přepsat',
+    dlgInsertImage: 'Vložit obrázek',
+    filterImages: 'Obrázky',
+    dlgMergeDataSource: 'Vybrat seznam příjemců',
+    filterMergeDataSource: 'Excel nebo CSV',
+    dlgAddAttachment: 'Přidat přílohy',
+    filterSupported: 'Podporované soubory',
+    filterAll: 'Všechny soubory',
+    dlgExportPdf: 'Exportovat jako PDF',
+    dlgExportHtml: 'Exportovat jako HTML',
+    dlgExportMarkdown: 'Exportovat jako Markdown',
+    dlgPickExportDir: 'Zvolte složku pro export',
+    errUnsupportedExt: 'soubory .{ext} nejsou podporovány',
+    errNotFile: 'není soubor',
+    errTooLarge: 'překračuje limit {mb} MB',
+    errImageTooLarge: 'obrázek překračuje limit 5 MB',
+    errUnreadable: 'nelze přečíst',
+    errFileTooLarge: 'Soubor překračuje limit velikosti',
+    errParseFailed: 'Soubor se nepodařilo zpracovat',
+    errImageNoText:
+      'Obrázkové přílohy neobsahují text; obrázek se odesílá spolu se zprávou uživatele',
+    errNotImage: 'nepodporovaný typ obrázku',
+    errGskNotLoggedIn:
+      'Nejste přihlášeni do Genspark: klikněte níže na „Přihlásit se do Genspark“, přihlaste se a zkuste to znovu',
+    errNoApiKey: 'Pro {provider} není nakonfigurován žádný klíč API',
+    errAiRegion:
+      'Poskytovatel tohoto modelu neposkytuje služby ve vaší aktuální oblasti — vyberte jiný model nebo změňte síť',
+    errAiBusy: 'Služba AI je právě zaneprázdněna — zkuste to prosím za chvíli znovu',
+    errNoModel: 'Není nakonfigurován název modelu',
+    menuFile: 'Soubor',
+    menuNewDoc: 'Nový dokument',
+    menuNewWindow: 'Nové okno',
+    menuOpen: 'Otevřít…',
+    menuOpenRecent: 'Otevřít poslední',
+    menuNoRecent: 'Žádné poslední dokumenty',
+    menuClose: 'Zavřít',
+    menuSave: 'Uložit',
+    menuSaveAs: 'Uložit jako…',
+    menuPageSetup: 'Vzhled stránky…',
+    menuExportPdf: 'Exportovat jako PDF…',
+    menuExportHtml: 'Exportovat jako HTML…',
+    menuExportMarkdown: 'Exportovat jako Markdown…',
+    menuExportImages: 'Exportovat jako obrázky…',
+    menuPrint: 'Tisk…',
+    menuEdit: 'Úpravy',
+    menuUndo: 'Zpět',
+    menuRedo: 'Znovu',
+    menuCut: 'Vyjmout',
+    menuCopy: 'Kopírovat',
+    menuPaste: 'Vložit',
+    menuPasteMatch: 'Vložit a přizpůsobit styl',
+    menuFindReplace: 'Najít a nahradit…',
+    menuGoTo: 'Přejít na…',
+    menuSelectAll: 'Vybrat vše',
+    menuView: 'Zobrazení',
+    menuZoom: 'Lupa',
+    menuZoomIn: 'Zvětšit',
+    menuZoomOut: 'Zmenšit',
+    menuZoom100: 'Skutečná velikost (100 %)',
+    menuPageWidth: 'Šířka stránky',
+    menuWholePage: 'Celá stránka',
+    menuMultiPage: 'Více stránek',
+    menuAiSidebar: 'Boční panel AI',
+    menuDarkMode: 'Tmavý režim',
+    menuFullscreen: 'Přejít na celou obrazovku',
+    menuInsert: 'Vložení',
+    menuInsertTable: 'Tabulka…',
+    menuInsertImage: 'Obrázek…',
+    menuInsertPageBreak: 'Konec stránky',
+    menuInsertLink: 'Hypertextový odkaz…',
+    menuInsertEquation: 'Rovnice…',
+    menuComment: 'Komentář',
+    menuFormat: 'Formát',
+    menuBold: 'Tučné',
+    menuItalic: 'Kurzíva',
+    menuUnderline: 'Podtržení',
+    menuAlign: 'Zarovnat',
+    menuAlignLeft: 'Zarovnat vlevo',
+    menuAlignCenter: 'Zarovnat na střed',
+    menuAlignRight: 'Zarovnat vpravo',
+    menuAlignJustify: 'Zarovnat do bloku',
+    menuFont: 'Písmo…',
+    menuParagraph: 'Odstavec…',
+    menuTools: 'Nástroje',
+    menuTable: 'Tabulka',
+    menuTableInsert: 'Vložit',
+    menuTableInsertTable: 'Tabulka…',
+    menuTableColsLeft: 'Sloupce vlevo',
+    menuTableColsRight: 'Sloupce vpravo',
+    menuTableRowsAbove: 'Řádky nad',
+    menuTableRowsBelow: 'Řádky pod',
+    menuTableCells: 'Buňky…',
+    menuTableDelete: 'Odstranit',
+    menuTableDeleteTable: 'Tabulka',
+    menuTableDeleteColumns: 'Sloupce',
+    menuTableDeleteRows: 'Řádky',
+    menuTableSelect: 'Vybrat',
+    menuTableSelectCell: 'Buňka',
+    menuTableSelectColumn: 'Sloupec',
+    menuTableSelectRow: 'Řádek',
+    menuTableSelectTable: 'Tabulka',
+    menuTableMergeCells: 'Sloučit buňky',
+    menuTableSplitCells: 'Rozdělit buňky…',
+    menuTableSplitTable: 'Rozdělit tabulku',
+    menuTableAutoFit: 'Přizpůsobit',
+    menuTableAutoFitContents: 'Přizpůsobit obsahu',
+    menuTableAutoFitWindow: 'Přizpůsobit oknu',
+    menuTableFixedWidth: 'Pevná šířka sloupce',
+    menuTableDistributeRows: 'Rozdělit řádky rovnoměrně',
+    menuTableDistributeColumns: 'Rozdělit sloupce rovnoměrně',
+    menuTableRepeatHeader: 'Opakovat řádky záhlaví',
+    menuTableGridlines: 'Zobrazit mřížku',
+    menuTableProperties: 'Vlastnosti tabulky…',
+    menuWordCount: 'Počet slov…',
+    menuAutoCorrect: 'Možnosti automatických oprav…',
+    menuPreferences: 'Předvolby…',
+    menuAiProofread: 'Korektura AI',
+    menuWindow: 'Okno',
+    menuHelp: 'Nápověda',
+    menuShortcuts: 'Klávesové zkratky',
   },
   nl: {
     dlgOpenDoc: 'Document openen',
     filterWord: 'Word-documenten',
+    odtImportMsg: 'Dit .{ext}-document converteren?',
+    odtImportDetail:
+      'GenOffice bewerkt .docx, niet ODF. Tekst, koppen, lijsten, tabellen en afbeeldingen worden omgezet; voetnoten, opmerkingen en tekstvakken niet volledig. Het oorspronkelijke bestand wordt nooit gewijzigd; de omgezette .docx is een zelfstandige kopie waarin volgende opslaan-acties terechtkomen.',
+    hwpImportDetail:
+      'GenOffice bewerkt .docx, niet HWP. Tekst, tabellen, afbeeldingen, kop- en voetteksten worden omgezet; vergelijkingen, voetnoten en ingesloten objecten niet, en automatische nummering wordt gewone tekst. Het oorspronkelijke bestand wordt nooit gewijzigd; de omgezette .docx is een zelfstandige kopie waarin volgende opslaan-acties terechtkomen.',
+    odtImportConvertBtn: 'Converteren en openen',
+    importSkipConfirm: 'Volgende keer converteren zonder te vragen',
+    docImportMsg: 'Dit .{ext}-document converteren?',
+    docImportDetail:
+      'GenOffice bewerkt .docx, geen Word 97-2003-documenten (.doc). Tekst, koppen, lijsten, tabellen en afbeeldingen worden omgezet; voetnoten, opmerkingen en tekstvakken niet volledig. Het oorspronkelijke bestand wordt nooit gewijzigd; de omgezette .docx is een zelfstandige kopie waarin volgende opslaan-acties terechtkomen.',
+    docImportConvertBtn: 'Converteren en openen',
     dlgSaveAs: 'Opslaan als',
     closeUnsavedMsg: 'Dit document bevat niet-opgeslagen wijzigingen.',
     closeUnsavedDetail: 'Wilt u ze opslaan voordat u sluit?',
@@ -1418,6 +2827,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Toch sluiten? Niet-opgeslagen wijzigingen gaan verloren.',
     btnCloseAnyway: 'Toch sluiten',
     autosaveFoundTitle: 'Herstelde versie gevonden',
+    autosaveDiskNewer:
+      'Let op: het bestand op schijf is gewijzigd nadat deze herstelkopie is opgeslagen. Herstellen vervangt die nieuwere wijzigingen.',
     autosaveFoundBody:
       'Er zijn niet-opgeslagen wijzigingen van uw laatste sessie. De automatisch opgeslagen versie herstellen?',
     autosaveRestore: 'Herstellen',
@@ -1429,10 +2840,15 @@ const tMain = createI18n({
     btnOverwrite: 'Overschrijven',
     dlgInsertImage: 'Afbeelding invoegen',
     filterImages: 'Afbeeldingen',
+    dlgMergeDataSource: 'Ontvangerslijst selecteren',
+    filterMergeDataSource: 'Excel of CSV',
     dlgAddAttachment: 'Bijlagen toevoegen',
     filterSupported: 'Ondersteunde bestanden',
     filterAll: 'Alle bestanden',
     dlgExportPdf: 'Exporteren als PDF',
+    dlgExportHtml: 'Exporteren als HTML',
+    dlgExportMarkdown: 'Exporteren als Markdown',
+    dlgPickExportDir: 'Exportmap kiezen',
     errUnsupportedExt: '.{ext}-bestanden worden niet ondersteund',
     errNotFile: 'geen bestand',
     errTooLarge: 'overschrijdt de limiet van {mb} MB',
@@ -1446,6 +2862,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Niet aangemeld bij Genspark: klik hieronder op “Aanmelden bij Genspark”, meld u aan en probeer het opnieuw',
     errNoApiKey: 'Geen API-sleutel geconfigureerd voor {provider}',
+    errAiRegion:
+      'De aanbieder van dit model bedient uw huidige regio niet — kies een ander model of wissel van netwerk',
+    errAiBusy: 'De AI-service is momenteel overbelast — probeer het zo opnieuw',
     errNoModel: 'Geen modelnaam geconfigureerd',
     menuFile: 'Bestand',
     menuNewDoc: 'Nieuw document',
@@ -1458,6 +2877,9 @@ const tMain = createI18n({
     menuSaveAs: 'Opslaan als…',
     menuPageSetup: 'Pagina-instelling…',
     menuExportPdf: 'Exporteren als PDF…',
+    menuExportHtml: 'Exporteren als HTML…',
+    menuExportMarkdown: 'Exporteren als Markdown…',
+    menuExportImages: 'Exporteren als afbeeldingen…',
     menuPrint: 'Afdrukken…',
     menuEdit: 'Bewerken',
     menuUndo: 'Ongedaan maken',
@@ -1467,18 +2889,21 @@ const tMain = createI18n({
     menuPaste: 'Plakken',
     menuPasteMatch: 'Plakken met dezelfde stijl',
     menuFindReplace: 'Zoeken en vervangen…',
+    menuGoTo: 'Ga naar…',
     menuSelectAll: 'Alles selecteren',
     menuView: 'Beeld',
+    menuZoom: 'Zoomen',
     menuZoomIn: 'Inzoomen',
     menuZoomOut: 'Uitzoomen',
     menuZoom100: 'Ware grootte (100%)',
     menuPageWidth: 'Paginabreedte',
     menuWholePage: 'Hele pagina',
+    menuMultiPage: "Meerdere pagina's",
     menuAiSidebar: 'AI-zijbalk',
     menuDarkMode: 'Donkere modus',
     menuFullscreen: 'Schermvullende weergave',
     menuInsert: 'Invoegen',
-    menuInsertTable: 'Tabel (3×3)',
+    menuInsertTable: 'Tabel…',
     menuInsertImage: 'Afbeelding…',
     menuInsertPageBreak: 'Pagina-einde',
     menuInsertLink: 'Hyperlink…',
@@ -1496,16 +2921,57 @@ const tMain = createI18n({
     menuFont: 'Lettertype…',
     menuParagraph: 'Alinea…',
     menuTools: 'Extra',
+    menuTable: 'Tabel',
+    menuTableInsert: 'Invoegen',
+    menuTableInsertTable: 'Tabel…',
+    menuTableColsLeft: 'Kolommen links',
+    menuTableColsRight: 'Kolommen rechts',
+    menuTableRowsAbove: 'Rijen boven',
+    menuTableRowsBelow: 'Rijen onder',
+    menuTableCells: 'Cellen…',
+    menuTableDelete: 'Verwijderen',
+    menuTableDeleteTable: 'Tabel',
+    menuTableDeleteColumns: 'Kolommen',
+    menuTableDeleteRows: 'Rijen',
+    menuTableSelect: 'Selecteren',
+    menuTableSelectCell: 'Cel',
+    menuTableSelectColumn: 'Kolom',
+    menuTableSelectRow: 'Rij',
+    menuTableSelectTable: 'Tabel',
+    menuTableMergeCells: 'Cellen samenvoegen',
+    menuTableSplitCells: 'Cellen splitsen…',
+    menuTableSplitTable: 'Tabel splitsen',
+    menuTableAutoFit: 'AutoAanpassen',
+    menuTableAutoFitContents: 'Aanpassen aan inhoud',
+    menuTableAutoFitWindow: 'Aanpassen aan venster',
+    menuTableFixedWidth: 'Vaste kolombreedte',
+    menuTableDistributeRows: 'Rijen gelijkmatig verdelen',
+    menuTableDistributeColumns: 'Kolommen gelijkmatig verdelen',
+    menuTableRepeatHeader: 'Koprijen herhalen',
+    menuTableGridlines: 'Rasterlijnen weergeven',
+    menuTableProperties: 'Tabeleigenschappen…',
     menuWordCount: 'Woorden tellen…',
-    menuSpelling: 'Spelling en grammatica',
-    menuMacros: "Macro's",
+    menuAutoCorrect: 'AutoCorrectie-opties…',
+    menuPreferences: 'Voorkeuren…',
+    menuAiProofread: 'AI-proeflezen',
     menuWindow: 'Venster',
     menuHelp: 'Help',
-    menuDocsHelp: 'GenOffice Docs Help',
+    menuShortcuts: 'Sneltoetsen',
   },
   ms: {
     dlgOpenDoc: 'Buka Dokumen',
     filterWord: 'Dokumen Word',
+    odtImportMsg: 'Tukar dokumen .{ext} ini?',
+    odtImportDetail:
+      'GenOffice menyunting .docx, bukan ODF. Teks kandungan, tajuk, senarai, jadual dan imej ditukar; nota kaki, komen dan kotak teks tidak dikekalkan sepenuhnya. Fail asal tidak pernah diubah; salinan .docx yang ditukar ialah salinan berasingan tempat simpanan seterusnya ditulis.',
+    hwpImportDetail:
+      'GenOffice menyunting .docx, bukan HWP. Teks kandungan, jadual, imej, pengepala dan pengaki ditukar; persamaan, nota kaki dan objek terbenam tidak ditukar, dan penomboran automatik menjadi teks biasa. Fail asal tidak pernah diubah; salinan .docx yang ditukar ialah salinan berasingan tempat simpanan seterusnya ditulis.',
+    odtImportConvertBtn: 'Tukar dan buka',
+    importSkipConfirm: 'Lain kali terus tukar tanpa bertanya',
+    docImportMsg: 'Tukar dokumen .{ext} ini?',
+    docImportDetail:
+      'GenOffice menyunting .docx, bukan dokumen Word 97-2003 (.doc). Teks kandungan, tajuk, senarai, jadual dan imej ditukar; nota kaki, komen dan kotak teks tidak dikekalkan sepenuhnya. Fail asal tidak pernah diubah; salinan .docx yang ditukar ialah salinan berasingan tempat simpanan seterusnya ditulis.',
+    docImportConvertBtn: 'Tukar dan buka',
     dlgSaveAs: 'Simpan Sebagai',
     closeUnsavedMsg: 'Dokumen ini mempunyai perubahan yang belum disimpan.',
     closeUnsavedDetail: 'Adakah anda mahu menyimpannya sebelum menutup?',
@@ -1513,6 +2979,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Tutup juga? Perubahan yang belum disimpan akan hilang.',
     btnCloseAnyway: 'Tutup Juga',
     autosaveFoundTitle: 'Versi pulihan ditemui',
+    autosaveDiskNewer:
+      'Nota: fail pada cakera telah diubah suai selepas salinan pemulihan ini disimpan. Memulihkan akan menggantikan perubahan yang lebih baharu itu.',
     autosaveFoundBody:
       'Terdapat perubahan yang belum disimpan daripada sesi terakhir anda. Pulihkan versi yang disimpan secara automatik?',
     autosaveRestore: 'Pulihkan',
@@ -1524,10 +2992,15 @@ const tMain = createI18n({
     btnOverwrite: 'Tulis Ganti',
     dlgInsertImage: 'Sisipkan Imej',
     filterImages: 'Imej',
+    dlgMergeDataSource: 'Pilih senarai penerima',
+    filterMergeDataSource: 'Excel atau CSV',
     dlgAddAttachment: 'Tambah Lampiran',
     filterSupported: 'Fail yang Disokong',
     filterAll: 'Semua Fail',
     dlgExportPdf: 'Eksport sebagai PDF',
+    dlgExportHtml: 'Eksport sebagai HTML',
+    dlgExportMarkdown: 'Eksport sebagai Markdown',
+    dlgPickExportDir: 'Pilih Folder Eksport',
     errUnsupportedExt: 'fail .{ext} tidak disokong',
     errNotFile: 'bukan fail',
     errTooLarge: 'melebihi had {mb}MB',
@@ -1541,6 +3014,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Belum log masuk ke Genspark: klik “Log masuk ke Genspark” di bawah, kemudian cuba lagi',
     errNoApiKey: 'Kunci API untuk {provider} belum dikonfigurasikan',
+    errAiRegion:
+      'Penyedia model ini tidak memberi perkhidmatan di rantau semasa anda — pilih model lain atau tukar rangkaian',
+    errAiBusy: 'Perkhidmatan AI sedang sibuk — sila cuba lagi sebentar lagi',
     errNoModel: 'Nama model belum dikonfigurasikan',
     menuFile: 'Fail',
     menuNewDoc: 'Dokumen Baharu',
@@ -1553,6 +3029,9 @@ const tMain = createI18n({
     menuSaveAs: 'Simpan Sebagai…',
     menuPageSetup: 'Persediaan Halaman…',
     menuExportPdf: 'Eksport sebagai PDF…',
+    menuExportHtml: 'Eksport sebagai HTML…',
+    menuExportMarkdown: 'Eksport sebagai Markdown…',
+    menuExportImages: 'Eksport sebagai imej…',
     menuPrint: 'Cetak…',
     menuEdit: 'Edit',
     menuUndo: 'Buat Asal',
@@ -1562,18 +3041,21 @@ const tMain = createI18n({
     menuPaste: 'Tampal',
     menuPasteMatch: 'Tampal dan Padankan Gaya',
     menuFindReplace: 'Cari dan Ganti…',
+    menuGoTo: 'Pergi ke…',
     menuSelectAll: 'Pilih Semua',
     menuView: 'Lihat',
+    menuZoom: 'Zum',
     menuZoomIn: 'Zum Masuk',
     menuZoomOut: 'Zum Keluar',
     menuZoom100: 'Saiz Sebenar (100%)',
     menuPageWidth: 'Lebar Halaman',
     menuWholePage: 'Seluruh Halaman',
+    menuMultiPage: 'Beberapa halaman',
     menuAiSidebar: 'Bar Sisi AI',
     menuDarkMode: 'Mod Gelap',
     menuFullscreen: 'Masuk Skrin Penuh',
     menuInsert: 'Sisip',
-    menuInsertTable: 'Jadual (3×3)',
+    menuInsertTable: 'Jadual…',
     menuInsertImage: 'Imej…',
     menuInsertPageBreak: 'Pemisah Halaman',
     menuInsertLink: 'Hiperpautan…',
@@ -1591,16 +3073,57 @@ const tMain = createI18n({
     menuFont: 'Fon…',
     menuParagraph: 'Perenggan…',
     menuTools: 'Alat',
+    menuTable: 'Jadual',
+    menuTableInsert: 'Sisipkan',
+    menuTableInsertTable: 'Jadual…',
+    menuTableColsLeft: 'Lajur di Kiri',
+    menuTableColsRight: 'Lajur di Kanan',
+    menuTableRowsAbove: 'Baris di Atas',
+    menuTableRowsBelow: 'Baris di Bawah',
+    menuTableCells: 'Sel…',
+    menuTableDelete: 'Padam',
+    menuTableDeleteTable: 'Jadual',
+    menuTableDeleteColumns: 'Lajur',
+    menuTableDeleteRows: 'Baris',
+    menuTableSelect: 'Pilih',
+    menuTableSelectCell: 'Sel',
+    menuTableSelectColumn: 'Lajur',
+    menuTableSelectRow: 'Baris',
+    menuTableSelectTable: 'Jadual',
+    menuTableMergeCells: 'Cantum Sel',
+    menuTableSplitCells: 'Pisahkan Sel…',
+    menuTableSplitTable: 'Pisahkan Jadual',
+    menuTableAutoFit: 'Autopadan',
+    menuTableAutoFitContents: 'Padan kepada Kandungan',
+    menuTableAutoFitWindow: 'Padan kepada Tetingkap',
+    menuTableFixedWidth: 'Lebar Lajur Tetap',
+    menuTableDistributeRows: 'Agihkan Baris Sama Rata',
+    menuTableDistributeColumns: 'Agihkan Lajur Sama Rata',
+    menuTableRepeatHeader: 'Ulang Baris Pengepala',
+    menuTableGridlines: 'Lihat Garis Grid',
+    menuTableProperties: 'Sifat Jadual…',
     menuWordCount: 'Kiraan Perkataan…',
-    menuSpelling: 'Ejaan dan Tatabahasa',
-    menuMacros: 'Makro',
+    menuAutoCorrect: 'Pilihan AutoBetul…',
+    menuPreferences: 'Keutamaan…',
+    menuAiProofread: 'Pembacaan Pruf AI',
     menuWindow: 'Tetingkap',
     menuHelp: 'Bantuan',
-    menuDocsHelp: 'Bantuan GenOffice Docs',
+    menuShortcuts: 'Pintasan Papan Kekunci',
   },
   he: {
     dlgOpenDoc: 'פתיחת מסמך',
     filterWord: 'מסמכי Word',
+    odtImportMsg: 'להמיר את מסמך ה‑.{ext} הזה?',
+    odtImportDetail:
+      'GenOffice עורך קבצי ‎.docx ולא ODF. טקסט, כותרות, רשימות, טבלאות ותמונות מומרים; הערות שוליים, תגובות ותיבות טקסט לא נשמרים במלואם. קובץ המקור לעולם אינו משתנה; קובץ ה‑.docx שהומר הוא עותק נפרד שאליו נכתבות השמירות הבאות.',
+    hwpImportDetail:
+      'GenOffice עורך קבצי ‎.docx ולא HWP. טקסט, טבלאות, תמונות, כותרות עליונות ותחתונות מומרים; משוואות, הערות שוליים ואובייקטים מוטמעים אינם מומרים, ומספור אוטומטי הופך לטקסט רגיל. קובץ המקור לעולם אינו משתנה; קובץ ה‑.docx שהומר הוא עותק נפרד שאליו נכתבות השמירות הבאות.',
+    odtImportConvertBtn: 'המר ופתח',
+    importSkipConfirm: 'בפעם הבאה להמיר בלי לשאול',
+    docImportMsg: 'להמיר את מסמך ה‑.{ext} הזה?',
+    docImportDetail:
+      'GenOffice עורך קבצי ‎.docx ולא מסמכי Word 97-2003 (‎.doc). טקסט, כותרות, רשימות, טבלאות ותמונות מומרים; הערות שוליים, תגובות ותיבות טקסט לא נשמרים במלואם. קובץ המקור לעולם אינו משתנה; קובץ ה‑.docx שהומר הוא עותק נפרד שאליו נכתבות השמירות הבאות.',
+    docImportConvertBtn: 'המר ופתח',
     dlgSaveAs: 'שמירה בשם',
     closeUnsavedMsg: 'במסמך זה יש שינויים שלא נשמרו.',
     closeUnsavedDetail: 'האם לשמור אותם לפני הסגירה?',
@@ -1608,6 +3131,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'לסגור בכל זאת? שינויים שלא נשמרו יאבדו.',
     btnCloseAnyway: 'סגור בכל זאת',
     autosaveFoundTitle: 'נמצאה גרסה משוחזרת',
+    autosaveDiskNewer:
+      'שים לב: הקובץ בדיסק שונה לאחר שמירת עותק השחזור הזה. שחזור יחליף את השינויים החדשים יותר.',
     autosaveFoundBody: 'קיימים שינויים שלא נשמרו מהפעלה הקודמת. לשחזר את הגרסה שנשמרה אוטומטית?',
     autosaveRestore: 'שחזר',
     autosaveDiscard: 'התעלם',
@@ -1618,10 +3143,15 @@ const tMain = createI18n({
     btnOverwrite: 'דרוס',
     dlgInsertImage: 'הוספת תמונה',
     filterImages: 'תמונות',
+    dlgMergeDataSource: 'בחירת רשימת נמענים',
+    filterMergeDataSource: 'Excel או CSV',
     dlgAddAttachment: 'הוספת קבצים מצורפים',
     filterSupported: 'קבצים נתמכים',
     filterAll: 'כל הקבצים',
     dlgExportPdf: 'ייצוא כ-PDF',
+    dlgExportHtml: 'ייצוא כ-HTML',
+    dlgExportMarkdown: 'ייצוא כ-Markdown',
+    dlgPickExportDir: 'בחירת תיקיית ייצוא',
     errUnsupportedExt: 'קובצי .{ext} אינם נתמכים',
     errNotFile: 'אינו קובץ',
     errTooLarge: 'חורג מהמגבלה של {mb}MB',
@@ -1634,6 +3164,8 @@ const tMain = createI18n({
     errNotImage: 'סוג תמונה שאינו נתמך',
     errGskNotLoggedIn: 'לא מחובר ל-Genspark: לחץ על "התחבר ל-Genspark" למטה, התחבר ונסה שוב',
     errNoApiKey: 'לא הוגדר מפתח API עבור {provider}',
+    errAiRegion: 'ספק המודל הזה אינו פועל באזור הנוכחי שלך — בחרו מודל אחר או החליפו רשת',
+    errAiBusy: 'שירות ה-AI עמוס כרגע — נסו שוב בעוד רגע',
     errNoModel: 'לא הוגדר שם מודל',
     menuFile: 'קובץ',
     menuNewDoc: 'מסמך חדש',
@@ -1646,6 +3178,9 @@ const tMain = createI18n({
     menuSaveAs: 'שמירה בשם…',
     menuPageSetup: 'הגדרת עמוד…',
     menuExportPdf: 'ייצוא כ-PDF…',
+    menuExportHtml: 'ייצוא כ-HTML…',
+    menuExportMarkdown: 'ייצוא כ-Markdown…',
+    menuExportImages: 'ייצוא כתמונות…',
     menuPrint: 'הדפסה…',
     menuEdit: 'עריכה',
     menuUndo: 'בטל',
@@ -1655,18 +3190,21 @@ const tMain = createI18n({
     menuPaste: 'הדבק',
     menuPasteMatch: 'הדבק והתאם סגנון',
     menuFindReplace: 'חיפוש והחלפה…',
+    menuGoTo: 'עבור אל…',
     menuSelectAll: 'בחר הכול',
     menuView: 'תצוגה',
+    menuZoom: 'זום',
     menuZoomIn: 'התקרבות',
     menuZoomOut: 'התרחקות',
     menuZoom100: 'גודל אמיתי (100%)',
     menuPageWidth: 'רוחב עמוד',
     menuWholePage: 'עמוד שלם',
+    menuMultiPage: 'עמודים מרובים',
     menuAiSidebar: 'סרגל צד AI',
     menuDarkMode: 'מצב כהה',
     menuFullscreen: 'מעבר למסך מלא',
     menuInsert: 'הוספה',
-    menuInsertTable: 'טבלה (3×3)',
+    menuInsertTable: 'טבלה…',
     menuInsertImage: 'תמונה…',
     menuInsertPageBreak: 'מעבר עמוד',
     menuInsertLink: 'היפר-קישור…',
@@ -1684,16 +3222,57 @@ const tMain = createI18n({
     menuFont: 'גופן…',
     menuParagraph: 'פסקה…',
     menuTools: 'כלים',
+    menuTable: 'טבלה',
+    menuTableInsert: 'הוסף',
+    menuTableInsertTable: 'טבלה…',
+    menuTableColsLeft: 'עמודות משמאל',
+    menuTableColsRight: 'עמודות מימין',
+    menuTableRowsAbove: 'שורות מעל',
+    menuTableRowsBelow: 'שורות מתחת',
+    menuTableCells: 'תאים…',
+    menuTableDelete: 'מחק',
+    menuTableDeleteTable: 'טבלה',
+    menuTableDeleteColumns: 'עמודות',
+    menuTableDeleteRows: 'שורות',
+    menuTableSelect: 'בחר',
+    menuTableSelectCell: 'תא',
+    menuTableSelectColumn: 'עמודה',
+    menuTableSelectRow: 'שורה',
+    menuTableSelectTable: 'טבלה',
+    menuTableMergeCells: 'מזג תאים',
+    menuTableSplitCells: 'פצל תאים…',
+    menuTableSplitTable: 'פצל טבלה',
+    menuTableAutoFit: 'התאמה אוטומטית',
+    menuTableAutoFitContents: 'התאם לתוכן',
+    menuTableAutoFitWindow: 'התאם לחלון',
+    menuTableFixedWidth: 'רוחב עמודה קבוע',
+    menuTableDistributeRows: 'פזר שורות באופן שווה',
+    menuTableDistributeColumns: 'פזר עמודות באופן שווה',
+    menuTableRepeatHeader: 'חזור על שורות כותרת',
+    menuTableGridlines: 'הצג קווי רשת',
+    menuTableProperties: 'מאפייני טבלה…',
     menuWordCount: 'ספירת מילים…',
-    menuSpelling: 'איות ודקדוק',
-    menuMacros: 'פקודות מאקרו',
+    menuAutoCorrect: 'אפשרויות תיקון אוטומטי…',
+    menuPreferences: 'העדפות…',
+    menuAiProofread: 'הגהת AI',
     menuWindow: 'חלון',
     menuHelp: 'עזרה',
-    menuDocsHelp: 'עזרה של GenOffice Docs',
+    menuShortcuts: 'קיצורי מקלדת',
   },
   hi: {
     dlgOpenDoc: 'दस्तावेज़ खोलें',
     filterWord: 'Word दस्तावेज़',
+    odtImportMsg: 'इस .{ext} दस्तावेज़ को बदलें?',
+    odtImportDetail:
+      'GenOffice .docx संपादित करता है, ODF नहीं। मुख्य पाठ, शीर्षक, सूचियाँ, तालिकाएँ और चित्र बदल दिए जाते हैं; फुटनोट, टिप्पणियाँ और टेक्स्ट बॉक्स पूरी तरह नहीं रखे जाते। मूल फ़ाइल कभी नहीं बदलती; बदली हुई .docx एक स्वतंत्र प्रति है जिसमें आगे के सेव लिखे जाते हैं।',
+    hwpImportDetail:
+      'GenOffice .docx संपादित करता है, HWP नहीं। मुख्य पाठ, तालिकाएँ, चित्र, हेडर और फुटर बदल दिए जाते हैं; समीकरण, फुटनोट और एम्बेड किए गए ऑब्जेक्ट नहीं बदले जाते, और स्वचालित क्रमांकन सामान्य पाठ बन जाता है। मूल फ़ाइल कभी नहीं बदलती; बदली हुई .docx एक स्वतंत्र प्रति है जिसमें आगे के सेव लिखे जाते हैं।',
+    odtImportConvertBtn: 'बदलकर खोलें',
+    importSkipConfirm: 'अगली बार बिना पूछे बदलें',
+    docImportMsg: 'इस .{ext} दस्तावेज़ को बदलें?',
+    docImportDetail:
+      'GenOffice Word 97-2003 (.doc) दस्तावेज़ नहीं, .docx संपादित करता है। मुख्य पाठ, शीर्षक, सूचियाँ, तालिकाएँ और चित्र बदल दिए जाते हैं; फुटनोट, टिप्पणियाँ और टेक्स्ट बॉक्स पूरी तरह नहीं रखे जाते। मूल फ़ाइल कभी नहीं बदलती; बदली हुई .docx एक स्वतंत्र प्रति है जिसमें आगे के सेव लिखे जाते हैं।',
+    docImportConvertBtn: 'बदलकर खोलें',
     dlgSaveAs: 'इस रूप में सहेजें',
     closeUnsavedMsg: 'इस दस्तावेज़ में सहेजे नहीं गए परिवर्तन हैं।',
     closeUnsavedDetail: 'क्या आप बंद करने से पहले उन्हें सहेजना चाहते हैं?',
@@ -1701,6 +3280,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'फिर भी बंद करें? सहेजे न गए बदलाव खो जाएँगे।',
     btnCloseAnyway: 'फिर भी बंद करें',
     autosaveFoundTitle: 'पुनर्प्राप्त संस्करण मिला',
+    autosaveDiskNewer:
+      'ध्यान दें: यह पुनर्प्राप्ति प्रति सहेजे जाने के बाद डिस्क पर फ़ाइल में बदलाव किया गया है। पुनर्स्थापित करने पर वे नए बदलाव बदल दिए जाएँगे।',
     autosaveFoundBody:
       'आपके पिछले सत्र से सहेजे नहीं गए परिवर्तन हैं। स्वतः सहेजा गया संस्करण पुनर्स्थापित करें?',
     autosaveRestore: 'पुनर्स्थापित करें',
@@ -1712,10 +3293,15 @@ const tMain = createI18n({
     btnOverwrite: 'अधिलेखित करें',
     dlgInsertImage: 'छवि सम्मिलित करें',
     filterImages: 'छवियाँ',
+    dlgMergeDataSource: 'प्राप्तकर्ता सूची चुनें',
+    filterMergeDataSource: 'Excel या CSV',
     dlgAddAttachment: 'अनुलग्नक जोड़ें',
     filterSupported: 'समर्थित फ़ाइलें',
     filterAll: 'सभी फ़ाइलें',
     dlgExportPdf: 'PDF के रूप में निर्यात करें',
+    dlgExportHtml: 'HTML के रूप में निर्यात करें',
+    dlgExportMarkdown: 'Markdown के रूप में निर्यात करें',
+    dlgPickExportDir: 'निर्यात फ़ोल्डर चुनें',
     errUnsupportedExt: '.{ext} फ़ाइलें समर्थित नहीं हैं',
     errNotFile: 'फ़ाइल नहीं है',
     errTooLarge: '{mb}MB की सीमा से अधिक है',
@@ -1729,6 +3315,9 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Genspark में साइन इन नहीं है: नीचे “Genspark में साइन इन करें” पर क्लिक करें, साइन इन करें और फिर से कोशिश करें',
     errNoApiKey: '{provider} के लिए कोई API कुंजी कॉन्फ़िगर नहीं है',
+    errAiRegion:
+      'इस मॉडल का प्रदाता आपके वर्तमान क्षेत्र में सेवा नहीं देता — कोई दूसरा मॉडल चुनें या नेटवर्क बदलें',
+    errAiBusy: 'AI सेवा अभी व्यस्त है — कृपया थोड़ी देर बाद फिर से प्रयास करें',
     errNoModel: 'कोई मॉडल नाम कॉन्फ़िगर नहीं है',
     menuFile: 'फ़ाइल',
     menuNewDoc: 'नया दस्तावेज़',
@@ -1741,6 +3330,9 @@ const tMain = createI18n({
     menuSaveAs: 'इस रूप में सहेजें…',
     menuPageSetup: 'पृष्ठ सेटअप…',
     menuExportPdf: 'PDF के रूप में निर्यात करें…',
+    menuExportHtml: 'HTML के रूप में निर्यात करें…',
+    menuExportMarkdown: 'Markdown के रूप में निर्यात करें…',
+    menuExportImages: 'छवियों के रूप में निर्यात…',
     menuPrint: 'प्रिंट करें…',
     menuEdit: 'संपादन',
     menuUndo: 'पूर्ववत करें',
@@ -1750,18 +3342,21 @@ const tMain = createI18n({
     menuPaste: 'चिपकाएँ',
     menuPasteMatch: 'चिपकाएँ और शैली मिलाएँ',
     menuFindReplace: 'ढूँढें और बदलें…',
+    menuGoTo: 'यहाँ जाएँ…',
     menuSelectAll: 'सभी चुनें',
     menuView: 'दृश्य',
+    menuZoom: 'ज़ूम',
     menuZoomIn: 'ज़ूम इन',
     menuZoomOut: 'ज़ूम आउट',
     menuZoom100: 'वास्तविक आकार (100%)',
     menuPageWidth: 'पृष्ठ चौड़ाई',
     menuWholePage: 'पूरा पृष्ठ',
+    menuMultiPage: 'एकाधिक पृष्ठ',
     menuAiSidebar: 'AI साइडबार',
     menuDarkMode: 'डार्क मोड',
     menuFullscreen: 'पूर्ण स्क्रीन में जाएँ',
     menuInsert: 'सम्मिलित करें',
-    menuInsertTable: 'तालिका (3×3)',
+    menuInsertTable: 'तालिका…',
     menuInsertImage: 'छवि…',
     menuInsertPageBreak: 'पृष्ठ विराम',
     menuInsertLink: 'हाइपरलिंक…',
@@ -1779,16 +3374,57 @@ const tMain = createI18n({
     menuFont: 'फ़ॉन्ट…',
     menuParagraph: 'अनुच्छेद…',
     menuTools: 'उपकरण',
+    menuTable: 'तालिका',
+    menuTableInsert: 'सम्मिलित करें',
+    menuTableInsertTable: 'तालिका…',
+    menuTableColsLeft: 'बाईं ओर स्तंभ',
+    menuTableColsRight: 'दाईं ओर स्तंभ',
+    menuTableRowsAbove: 'ऊपर पंक्तियाँ',
+    menuTableRowsBelow: 'नीचे पंक्तियाँ',
+    menuTableCells: 'कक्ष…',
+    menuTableDelete: 'हटाएँ',
+    menuTableDeleteTable: 'तालिका',
+    menuTableDeleteColumns: 'स्तंभ',
+    menuTableDeleteRows: 'पंक्तियाँ',
+    menuTableSelect: 'चुनें',
+    menuTableSelectCell: 'कक्ष',
+    menuTableSelectColumn: 'स्तंभ',
+    menuTableSelectRow: 'पंक्ति',
+    menuTableSelectTable: 'तालिका',
+    menuTableMergeCells: 'कक्ष मर्ज करें',
+    menuTableSplitCells: 'कक्ष विभाजित करें…',
+    menuTableSplitTable: 'तालिका विभाजित करें',
+    menuTableAutoFit: 'स्वतः फ़िट',
+    menuTableAutoFitContents: 'सामग्री के अनुसार फ़िट',
+    menuTableAutoFitWindow: 'विंडो के अनुसार फ़िट',
+    menuTableFixedWidth: 'निश्चित स्तंभ चौड़ाई',
+    menuTableDistributeRows: 'पंक्तियाँ समान रूप से बाँटें',
+    menuTableDistributeColumns: 'स्तंभ समान रूप से बाँटें',
+    menuTableRepeatHeader: 'शीर्ष पंक्तियाँ दोहराएँ',
+    menuTableGridlines: 'ग्रिडलाइन देखें',
+    menuTableProperties: 'तालिका गुण…',
     menuWordCount: 'शब्द गणना…',
-    menuSpelling: 'वर्तनी और व्याकरण',
-    menuMacros: 'मैक्रो',
+    menuAutoCorrect: 'स्वतः सुधार विकल्प…',
+    menuPreferences: 'प्राथमिकताएँ…',
+    menuAiProofread: 'AI प्रूफ़रीडिंग',
     menuWindow: 'विंडो',
     menuHelp: 'सहायता',
-    menuDocsHelp: 'GenOffice Docs सहायता',
+    menuShortcuts: 'कीबोर्ड शॉर्टकट',
   },
   'zh-TW': {
     dlgOpenDoc: '開啟文件',
     filterWord: 'Word 文件',
+    odtImportMsg: '轉換這個 .{ext} 文件？',
+    odtImportDetail:
+      'GenOffice 只編輯 .docx，不編輯 ODF。內文、標題、清單、表格與圖片會轉換過來；註腳、註解與文字方塊不會完整保留。原始檔案不會被修改，轉換後的 .docx 是獨立副本，之後的儲存都寫入它。', // public-hygiene: allow
+    hwpImportDetail:
+      'GenOffice 只編輯 .docx，不編輯 HWP。內文、表格、圖片、頁首與頁尾會轉換過來；方程式、註腳與內嵌物件不會轉換，自動編號會變成一般文字。原始檔案不會被修改，轉換後的 .docx 是獨立副本，之後的儲存都寫入它。', // public-hygiene: allow
+    odtImportConvertBtn: '轉換並開啟',
+    importSkipConfirm: '下次直接轉換，不再提示',
+    docImportMsg: '轉換這個 .{ext} 文件？',
+    docImportDetail:
+      'GenOffice 只編輯 .docx，不編輯 Word 97-2003 舊版 .doc。內文、標題、清單、表格與圖片會轉換過來；註腳、註解與文字方塊不會完整保留。原始檔案不會被修改，轉換後的 .docx 是獨立副本，之後的儲存都寫入它。', // public-hygiene: allow
+    docImportConvertBtn: '轉換並開啟',
     dlgSaveAs: '另存新檔',
     closeUnsavedMsg: '此文件有未儲存的變更。',
     closeUnsavedDetail: '關閉前是否要儲存？',
@@ -1796,6 +3432,7 @@ const tMain = createI18n({
     closeNoReplyDetail: '仍要關閉嗎?未儲存的變更將遺失。',
     btnCloseAnyway: '仍要關閉',
     autosaveFoundTitle: '發現自動復原版本',
+    autosaveDiskNewer: '注意：此復原副本儲存後，磁碟上的檔案又被修改過。復原將取代這些較新的變更。',
     autosaveFoundBody: '上次工作階段有未儲存的變更。要復原自動儲存的版本嗎?',
     autosaveRestore: '復原',
     autosaveDiscard: '放棄',
@@ -1806,10 +3443,15 @@ const tMain = createI18n({
     btnOverwrite: '覆寫',
     dlgInsertImage: '插入圖片',
     filterImages: '圖片',
+    dlgMergeDataSource: '選擇收件人清單',
+    filterMergeDataSource: 'Excel 或 CSV',
     dlgAddAttachment: '新增附件',
     filterSupported: '支援的檔案',
     filterAll: '所有檔案',
     dlgExportPdf: '匯出為 PDF',
+    dlgExportHtml: '匯出為 HTML',
+    dlgExportMarkdown: '匯出為 Markdown',
+    dlgPickExportDir: '選擇匯出目錄',
     errUnsupportedExt: '暫不支援 .{ext} 類型',
     errNotFile: '不是檔案',
     errTooLarge: '超過 {mb}MB 上限',
@@ -1821,6 +3463,8 @@ const tMain = createI18n({
     errNotImage: '不是支援的圖片類型',
     errGskNotLoggedIn: '未登入 Genspark:請點擊下方「登入 Genspark」完成登入後重試',
     errNoApiKey: '未設定 {provider} 的 API Key',
+    errAiRegion: '該模型的廠商不向目前地區提供服務，請換一個模型或切換網路',
+    errAiBusy: 'AI 服務目前繁忙，請稍後重試',
     errNoModel: '未設定模型名稱',
     menuFile: '檔案',
     menuNewDoc: '新增文件',
@@ -1833,6 +3477,9 @@ const tMain = createI18n({
     menuSaveAs: '另存新檔…',
     menuPageSetup: '版面設定…',
     menuExportPdf: '匯出為 PDF…',
+    menuExportHtml: '匯出為 HTML…',
+    menuExportMarkdown: '匯出為 Markdown…',
+    menuExportImages: '匯出為圖片…',
     menuPrint: '列印…',
     menuEdit: '編輯',
     menuUndo: '復原',
@@ -1842,18 +3489,21 @@ const tMain = createI18n({
     menuPaste: '貼上',
     menuPasteMatch: '貼上並符合格式',
     menuFindReplace: '尋找與取代…',
+    menuGoTo: '定位…',
     menuSelectAll: '全選',
     menuView: '檢視',
+    menuZoom: '縮放',
     menuZoomIn: '放大',
     menuZoomOut: '縮小',
     menuZoom100: '實際大小 (100%)',
     menuPageWidth: '頁面寬度',
     menuWholePage: '整頁',
+    menuMultiPage: '多頁',
     menuAiSidebar: 'AI 側邊欄',
     menuDarkMode: '深色模式',
     menuFullscreen: '進入全螢幕',
     menuInsert: '插入',
-    menuInsertTable: '表格(3×3)',
+    menuInsertTable: '表格…',
     menuInsertImage: '圖片…',
     menuInsertPageBreak: '分頁符號',
     menuInsertLink: '超連結…',
@@ -1871,12 +3521,42 @@ const tMain = createI18n({
     menuFont: '字型…',
     menuParagraph: '段落…',
     menuTools: '工具',
+    menuTable: '表格',
+    menuTableInsert: '插入',
+    menuTableInsertTable: '表格…',
+    menuTableColsLeft: '在左側插入欄',
+    menuTableColsRight: '在右側插入欄',
+    menuTableRowsAbove: '在上方插入列',
+    menuTableRowsBelow: '在下方插入列',
+    menuTableCells: '儲存格…',
+    menuTableDelete: '刪除',
+    menuTableDeleteTable: '表格',
+    menuTableDeleteColumns: '欄',
+    menuTableDeleteRows: '列',
+    menuTableSelect: '選取',
+    menuTableSelectCell: '儲存格',
+    menuTableSelectColumn: '欄',
+    menuTableSelectRow: '列',
+    menuTableSelectTable: '表格',
+    menuTableMergeCells: '合併儲存格',
+    menuTableSplitCells: '分割儲存格…',
+    menuTableSplitTable: '拆分表格',
+    menuTableAutoFit: '自動調整',
+    menuTableAutoFitContents: '根據內容自動調整',
+    menuTableAutoFitWindow: '根據視窗自動調整',
+    menuTableFixedWidth: '固定欄寬',
+    menuTableDistributeRows: '平均分佈各列',
+    menuTableDistributeColumns: '平均分佈各欄',
+    menuTableRepeatHeader: '重複標題列',
+    menuTableGridlines: '檢視格線',
+    menuTableProperties: '表格屬性…',
     menuWordCount: '字數統計…',
-    menuSpelling: '拼字及文法檢查',
-    menuMacros: '巨集',
+    menuAutoCorrect: '自動校正選項…',
+    menuPreferences: '偏好設定…',
+    menuAiProofread: 'AI 校對',
     menuWindow: '視窗',
     menuHelp: '說明',
-    menuDocsHelp: 'GenOffice Docs 說明',
+    menuShortcuts: '鍵盤快速鍵',
   },
 })
 const tm = (key: Parameters<typeof tMain>[1], params?: Parameters<typeof tMain>[2]) =>
@@ -1909,7 +3589,7 @@ export function configureDocsRuntime(config: DocsRuntimeConfig): void {
 
 let mainWindow: BrowserWindow | null = null
 let rendererReady = false
-let pendingOpenPath = findDocxPath(process.argv)
+let pendingOpenPath = findOpenableDocPath(process.argv)
 /** documents queued for windows/tabs spawned via New Tab, keyed by webContents id */
 const pendingWindowOpens = new Map<number, string>()
 /** webContents ids that should open as a new blank doc instead of the start screen */
@@ -1920,10 +3600,33 @@ export function markDocsNewBlank(wcId: number): void {
   pendingNewBlankIds.add(wcId)
 }
 
+/** AI-authored content waiting for its create_document tab, keyed by webContents id */
+const pendingAiDocContents = new Map<number, AiDocContent>()
+
+/** queue AI content for a fresh blank docs tab (called by the shell right after creating the view) */
+export function queueDocsAiContent(wcId: number, content: AiDocContent): void {
+  pendingAiDocContents.set(wcId, content)
+}
+
 /** the single real BrowserWindow hosting the tab strip, used as dialog parent in tab mode */
 let docsShellWindow: BrowserWindow | null = null
 export function setDocsShellWindow(win: BrowserWindow | null): void {
   docsShellWindow = win
+}
+
+/** the window hosting a tab's WebContentsView when BrowserWindow.fromWebContents
+ *  cannot tell (detached "Open in New Window" editors) */
+let hostWindowHook: ((wc: WebContents) => BrowserWindow | undefined) | null = null
+export function setDocsHostWindowHook(
+  fn: ((wc: WebContents) => BrowserWindow | undefined) | null,
+): void {
+  hostWindowHook = fn
+}
+
+function hostWindowFor(wc: WebContents | null | undefined): BrowserWindow | undefined {
+  const own = wc && (hostWindowHook?.(wc) ?? BrowserWindow.fromWebContents(wc))
+  if (own && !own.isDestroyed()) return own
+  return docsShellWindow && !docsShellWindow.isDestroyed() ? docsShellWindow : undefined
 }
 
 /** injected by the shell in tab mode: resolves the webContents of the currently active docs tab,
@@ -1938,9 +3641,10 @@ function activeDocsWebContents(): WebContents | null {
   return BrowserWindow.getFocusedWindow()?.webContents ?? mainWindow?.webContents ?? null
 }
 
-/** dialog parent for the calling tab (standalone mode falls back to its own BrowserWindow) */
+/** dialog parent for the calling tab: the sender's own window when it has one
+ *  (standalone mode, detached "Open in New Window" editors), else the shell window */
 function dialogParent(event: IpcMainInvokeEvent): BrowserWindow | undefined {
-  return docsShellWindow ?? BrowserWindow.fromWebContents(event.sender) ?? undefined
+  return hostWindowFor(event.sender)
 }
 
 async function openDialog(event: IpcMainInvokeEvent, options: OpenDialogOptions) {
@@ -1950,7 +3654,7 @@ async function openDialog(event: IpcMainInvokeEvent, options: OpenDialogOptions)
 async function saveDialog(event: IpcMainInvokeEvent, options: SaveDialogOptions) {
   // before any pick is remembered, bare-name suggestions anchor in the
   // configurable default save folder instead of Electron's Downloads pin
-  return showSaveDialogWithMemory(dialog, dialogParent(event), options, defaultSaveDir())
+  return showSaveDialogWithMemory(dialog, dialogParent(event), options, defaultSaveDir)
 }
 
 /** default folder where new files land on their first (silent) save; shared with the other editors via shell. User-configurable (app-settings.json), falls back to <Documents>/GenOffice. */
@@ -1968,14 +3672,45 @@ export function uniquePathIn(dir: string, fileName: string): string {
   return candidate
 }
 
+/**
+ * An encrypted file the window holds no password for does not become a
+ * document yet: loadDocx hands back a password marker with no side effects and
+ * the renderer runs the replace guard once the password decrypted it
+ * (submitDocPwd). Guarding here as well would prompt twice, and a Don't Save
+ * answer would drop the recovery copy before anything replaced the document.
+ */
+async function opensAsPasswordPrompt(filePath: string, wcId: number): Promise<boolean> {
+  if (docPasswordFor(wcId, filePath)) return false
+  try {
+    return isEncryptedDocx(await readFile(filePath))
+  } catch {
+    return false
+  }
+}
+
 export function openExternalDocx(filePath: string | null): void {
-  if (!filePath || !/\.docx$/i.test(filePath)) return
+  if (!filePath) return
+  // .odt/.ott and legacy Word .doc/.dot join the flow as an import (converted
+  // .docx copy), like the shell route
+  if (!isOpenableDocPath(filePath)) return
   const win = BrowserWindow.getFocusedWindow() ?? mainWindow
   if (!rendererReady || !win) {
     pendingOpenPath = filePath
     return
   }
-  void loadDocx(filePath, win.webContents.id)
+  void (async () => {
+    const wcId = win.webContents.id
+    const prepared = await prepareDocumentForOpen(filePath, win)
+    if (!prepared) return null
+    if (
+      rendererReady &&
+      !(await opensAsPasswordPrompt(prepared, wcId)) &&
+      !(await requestDocsClose(win.webContents, win))
+    ) {
+      return
+    }
+    return loadDocx(prepared, wcId)
+  })()
     .then((result) => {
       if (!result || win.isDestroyed()) return
       if (win.isMinimized()) win.restore()
@@ -1999,14 +3734,10 @@ function readJson<T>(path: string, fallback: T): T {
   return fallback
 }
 
-function writeJson(path: string, value: unknown): void {
-  mkdirSync(join(path, '..'), { recursive: true })
-  writeFileSync(path, JSON.stringify(value, null, 2))
-}
-
 // ---- recent files ----
 
 const RECENT_PATH = () => userDataPath('recent.json')
+const APP_SETTINGS_PATH = () => join(app.getPath('userData'), 'app-settings.json')
 
 // the home screen lists all of these; the File menu shows only the first few
 const RECENT_LIMIT = 100
@@ -2017,13 +3748,20 @@ function pushRecent(filePath: string): void {
   // rebuild when the file is already at the head of the list
   if (recent[0] === filePath) return
   const next = [filePath, ...recent.filter((p) => p !== filePath)].slice(0, RECENT_LIMIT)
-  writeJson(RECENT_PATH(), next)
+  try {
+    writeJsonAtomic(RECENT_PATH(), next)
+  } catch (err) {
+    // the document itself is already saved; a lost recents entry must not fail the save
+    console.warn('[docs] recent.json write failed:', err)
+  }
   buildDocsMenu() // keep File > Open Recent in sync
 }
 
-/** unified recents for the shell home screen (paths only; type = extension) */
+/** unified recents for the shell home screen (paths only; type = extension).
+ *  No existence filter: a transiently unavailable path (disconnected drive,
+ *  pending mount) must stay listed — the stat layer flags it instead (r158) */
 export function readRecentFiles(): string[] {
-  return readJson<string[]>(RECENT_PATH(), []).filter((p) => existsSync(p))
+  return readJson<string[]>(RECENT_PATH(), [])
 }
 
 export function recordRecentFile(filePath: string): void {
@@ -2033,7 +3771,7 @@ export function recordRecentFile(filePath: string): void {
 export function removeRecentFiles(filePaths: string[]): void {
   const drop = new Set(filePaths)
   const recent = readJson<string[]>(RECENT_PATH(), [])
-  writeJson(
+  writeJsonAtomic(
     RECENT_PATH(),
     recent.filter((p) => !drop.has(p)),
   )
@@ -2047,58 +3785,85 @@ export function docsFileRenamed(wc: WebContents, oldPath: string, newPath: strin
   // keep the save allowlist in sync so docs:save accepts the renamed path
   docWritablePaths.get(wc.id)?.delete(oldPath)
   allowDocWrite(wc.id, newPath)
+  rememberOpenDoc(wc.id, newPath)
   const states = docDiskStates.get(wc.id)
   const recorded = states?.get(oldPath)
   if (states && recorded) {
     states.delete(oldPath)
     states.set(newPath, recorded)
   }
+  // an encrypted document's password must follow the path, or the next save
+  // finds no password under the new name and silently writes plaintext
+  renameDocPassword(wc.id, oldPath, newPath)
+  moveLazyMediaSource(oldPath, newPath)
   wc.send('docs:renamed', { oldPath, newPath })
 }
 
 /** keep a renamed file at its old position in the recent/starred lists */
 export function replaceRecentFile(oldPath: string, newPath: string): void {
   const recent = readJson<string[]>(RECENT_PATH(), [])
-  writeJson(
+  writeJsonAtomic(
     RECENT_PATH(),
     recent.map((p) => (p === oldPath ? newPath : p)),
   )
-  const starred = readJson<string[]>(STARRED_PATH(), [])
-  if (starred.includes(oldPath)) {
-    writeJson(
-      STARRED_PATH(),
-      starred.map((p) => (p === oldPath ? newPath : p)),
-    )
-  }
+  const renamed = renameStarredItem(readStarredItems(STARRED_PATH()), oldPath, newPath)
+  if (renamed) writeStarredItems(STARRED_PATH(), renamed)
   buildDocsMenu()
 }
 
 // ---- starred files (home screen favorites) ----
+// the store lives in starred-files.ts (pure, unit-tested); legacy flat
+// string[] files migrate to the versioned shape on the first write
 
 const STARRED_PATH = () => userDataPath('starred.json')
 
+/** No existence filter, same rationale as readRecentFiles: a transiently
+ *  unavailable starred file must keep its star and its Starred-view row —
+ *  filtering here also desynced the star state shown on recents rows (r158) */
 export function readStarredFiles(): string[] {
-  return readJson<string[]>(STARRED_PATH(), []).filter((p) => existsSync(p))
+  return readStarredItems(STARRED_PATH()).map((item) => item.path)
 }
 
 export function toggleStarredFile(filePath: string): void {
-  const starred = readJson<string[]>(STARRED_PATH(), [])
-  const next = starred.includes(filePath)
-    ? starred.filter((p) => p !== filePath)
-    : [...starred, filePath]
-  writeJson(STARRED_PATH(), next)
+  writeStarredItems(STARRED_PATH(), toggleStarredItem(readStarredItems(STARRED_PATH()), filePath))
+}
+
+/** Bulk unstar (in-app delete, bulk unfollow from the Starred view, or
+ *  removing an unavailable entry from the recents list): the star must not
+ *  outlive the row it pointed at (r158) */
+export function removeStarredFiles(filePaths: string[]): void {
+  const next = dropStarredItems(readStarredItems(STARRED_PATH()), filePaths)
+  if (next) writeStarredItems(STARRED_PATH(), next)
+}
+
+/** put each starred path into `group` (null = back to ungrouped). Groups have
+ *  no separate list: a group exists while an entry carries its name, so
+ *  creating one is assigning its first file and emptying one is implicit. */
+export function setStarredGroup(filePaths: string[], group: string | null): void {
+  const next = assignStarredGroup(readStarredItems(STARRED_PATH()), filePaths, group)
+  if (next) writeStarredItems(STARRED_PATH(), next)
+}
+
+/** group names that currently have at least one starred file, first-seen order */
+export function readStarredGroups(): string[] {
+  return starredGroupNames(readStarredItems(STARRED_PATH()))
+}
+
+/** starred path → its group (ungrouped paths absent); feeds the home IPC entries */
+export function readStarredGroupMap(): Map<string, string> {
+  return starredGroupMap(readStarredItems(STARRED_PATH()))
 }
 
 // ---- original archive (pass-through base: original file archived by content hash) ----
 
-async function archiveOriginal(filePath: string, bytes: Buffer): Promise<string> {
-  const hash = sha256Hex(bytes)
+async function archiveOriginal(filePath: string, hash: string, size: number): Promise<void> {
+  // a copy larger than the whole cap would only evict every other original
+  if (size > ORIGINALS_MAX_BYTES) return
   const dir = userDataPath('originals')
   await mkdir(dir, { recursive: true })
   const target = join(dir, `${hash}.docx`)
   if (!existsSync(target)) await copyFile(filePath, target)
   void pruneOriginals(dir)
-  return hash
 }
 
 const ORIGINALS_MAX_BYTES = 500 * 1024 * 1024
@@ -2142,10 +3907,26 @@ const docWritablePaths = new Map<number, Set<string>>()
 const pdfWritablePaths = new Map<number, Set<string>>()
 const tornDownWcIds = new Set<number>()
 
+// per renderer, kept current on open/save/save-as/rename; only the local-media allowlist reads it
+const openDocByWc = new Map<number, string>()
+
+function rememberOpenDoc(wcId: number, filePath: string): void {
+  openDocByWc.set(wcId, filePath)
+}
+
+function docsMediaRoots(wcId: number): string[] {
+  return documentMediaRoots(openDocByWc.get(wcId), join(app.getPath('temp'), 'genoffice-pasted'))
+}
+
 function allowDocWrite(wcId: number, filePath: string): void {
   const set = docWritablePaths.get(wcId) ?? new Set<string>()
   set.add(filePath)
   docWritablePaths.set(wcId, set)
+}
+
+/** MCP save_session: the shell resolved this path for the tab, so docs:save-to may write it */
+export function authorizeMcpDocWrite(wcId: number, filePath: string): void {
+  allowDocWrite(wcId, filePath)
 }
 
 function canDocWrite(wcId: number, filePath: string): boolean {
@@ -2168,10 +3949,45 @@ function canPdfWrite(wcId: number, filePath: string): boolean {
   return pdfWritablePaths.get(wcId)?.has(filePath) === true
 }
 
+// Export as images runs the regular PDF export against a temp file: that file must
+// not be revealed like a user export, and only the tab that asked may read it back
+// (or write PNGs into the folder it picked).
+const imageExportTemps = new Map<number, Set<string>>()
+const imageExportDirs = new Map<number, Set<string>>()
+
+function isImageExportTemp(wcId: number, filePath: string): boolean {
+  return imageExportTemps.get(wcId)?.has(filePath) === true
+}
+
+// Word's Ignore All lasts for the document session. Chromium has no
+// per-document skip list, so the word sits in the custom dictionary while a
+// renderer holds it and leaves when the last holder goes; the journal pulls
+// crash-orphaned words back out on the next start.
+const SPELL_IGNORED_PATH = () => userDataPath('spell-ignored.json')
+const spellIgnored = new Map<string, Set<number>>()
+const journalIgnoredWords = () => writeJsonAtomic(SPELL_IGNORED_PATH(), [...spellIgnored.keys()])
+
+function releaseSpellIgnores(wcId: number): void {
+  let changed = false
+  for (const [word, holders] of spellIgnored) {
+    if (!holders.delete(wcId) || holders.size > 0) continue
+    spellIgnored.delete(word)
+    session.defaultSession.removeWordFromSpellCheckerDictionary(word)
+    changed = true
+  }
+  if (changed) journalIgnoredWords()
+}
+
 function dropDocWriter(wcId: number): void {
+  releaseSpellIgnores(wcId)
   docWritablePaths.delete(wcId)
   pdfWritablePaths.delete(wcId)
+  openDocByWc.delete(wcId)
+  for (const p of imageExportTemps.get(wcId) ?? []) void rm(p, { force: true })
+  imageExportTemps.delete(wcId)
+  imageExportDirs.delete(wcId)
   docDiskStates.delete(wcId)
+  forgetLazyMediaOwner(wcId)
   // Destroyed renderers count as torn down too: window-close paths never run
   // teardownDocsRenderer, but an in-flight save handler resuming after the
   // destruction must still fail its re-check (wcIds are never reused, so the
@@ -2185,11 +4001,11 @@ const docDiskStates = new Map<number, Map<string, DiskFileState>>()
 
 const sha256Hex = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
 
-async function rememberDiskState(wcId: number, filePath: string, bytes: Buffer): Promise<void> {
+async function rememberDiskState(wcId: number, filePath: string, hash: string): Promise<void> {
   try {
     const s = await stat(filePath)
     const states = docDiskStates.get(wcId) ?? new Map<string, DiskFileState>()
-    states.set(filePath, { mtimeMs: s.mtimeMs, size: s.size, hash: sha256Hex(bytes) })
+    states.set(filePath, { mtimeMs: s.mtimeMs, size: s.size, hash })
     docDiskStates.set(wcId, states)
   } catch {
     /* unstatable target: skip tracking; the next save simply won't flag a conflict */
@@ -2216,7 +4032,10 @@ async function diskChangedExternally(wcId: number, filePath: string): Promise<bo
  * workaround), so the orphan must lose write access and stop its timers — otherwise
  * its 30s recovery loop resurrects content the user already discarded. */
 export function teardownDocsRenderer(contents: WebContents): void {
+  teardownZoteroIpc(contents)
   tornDownWcIds.add(contents.id)
+  releaseSpellIgnores(contents.id)
+  forgetLazyMediaOwner(contents.id)
   // Sweep recovery copies for this renderer's documents: every non-crash close
   // either saved (docs:save already cleared it) or explicitly discarded, so a
   // copy still on disk here is a leftover from an in-flight recovery write.
@@ -2226,6 +4045,7 @@ export function teardownDocsRenderer(contents: WebContents): void {
   docWritablePaths.delete(contents.id)
   pdfWritablePaths.delete(contents.id)
   docDiskStates.delete(contents.id)
+  forgetDocPasswords(contents.id)
   if (!contents.isDestroyed()) contents.send('docs:teardown')
 }
 
@@ -2248,21 +4068,25 @@ function clearRecoveryCopy(filePath: string): void {
   }
 }
 
-/** On open, if a recovery copy newer than the original exists, ask whether to restore
- * (still points at the original path; only save persists it). */
-async function maybeRecoverDocBytes(filePath: string, original: Buffer): Promise<Buffer> {
+interface MaybeRecoveredDocBytes {
+  bytes: Buffer
+  recovered: boolean
+}
+
+/** On open, if a recovery copy exists, ask whether to restore (still points at the
+ * original path; only save persists it). A newer original does not discard the copy:
+ * it may hold the only pre-crash edits, so the prompt just says the disk file is newer. */
+async function maybeRecoverDocBytes(
+  filePath: string,
+  original: Buffer,
+): Promise<MaybeRecoveredDocBytes> {
   const asPath = recoveryPathFor(filePath)
+  let diskNewer: boolean
   try {
-    if (!existsSync(asPath)) return original
-    if (statSync(asPath).mtimeMs <= statSync(filePath).mtimeMs) {
-      // a crashed partial write bumps mtime yet corrupts the file — keep the copy then
-      if (looksLikeZip(original)) {
-        unlinkSync(asPath)
-        return original
-      }
-    }
+    if (!existsSync(asPath)) return { bytes: original, recovered: false }
+    diskNewer = recoveryCopyDiskNewer(statSync(asPath).mtimeMs, statSync(filePath).mtimeMs)
   } catch {
-    return original
+    return { bytes: original, recovered: false }
   }
   const options = {
     type: 'question' as const,
@@ -2270,7 +4094,9 @@ async function maybeRecoverDocBytes(filePath: string, original: Buffer): Promise
     defaultId: 0,
     cancelId: 1,
     message: tm('autosaveFoundTitle'),
-    detail: tm('autosaveFoundBody'),
+    detail: diskNewer
+      ? `${tm('autosaveFoundBody')}\n\n${tm('autosaveDiskNewer')}`
+      : tm('autosaveFoundBody'),
   }
   const parent = BrowserWindow.getFocusedWindow() ?? mainWindow
   const r =
@@ -2279,30 +4105,163 @@ async function maybeRecoverDocBytes(filePath: string, original: Buffer): Promise
       : await dialog.showMessageBox(options)
   if (r.response === 0) {
     try {
-      return await readFile(asPath)
+      return { bytes: await readFile(asPath), recovered: true }
     } catch {
-      return original
+      return { bytes: original, recovered: false }
     }
   }
   clearRecoveryCopy(filePath)
-  return original
+  return { bytes: original, recovered: false }
 }
 
-async function loadDocx(filePath: string, wcId: number): Promise<OpenFileResult | null> {
+// Word's own .docx ceiling
+const MAX_OPEN_BYTES = 512 * 1024 * 1024
+
+async function showOpenError(wcId: number, detail: string): Promise<void> {
+  const parent = hostWindowFor(webContents.fromId(wcId)) ?? mainWindow
+  const options = { type: 'error' as const, message: tm('dlgOpenDoc'), detail }
+  if (parent && !parent.isDestroyed()) await dialog.showMessageBox(parent, options)
+  else await dialog.showMessageBox(options)
+}
+
+/**
+ * An .odt/.ott, a legacy Word .doc/.dot or an .hwp/.hwpx opens only as a
+ * converted .docx copy: confirm the lossy import, pick the destination (the
+ * sibling .docx by default), convert, write the file and open it — the
+ * explicit-destination flow the PDF "Export as Word" path already uses, so
+ * every later Save lands in the copy the user chose and the original is never
+ * written. Anything that is not an import format passes through unchanged;
+ * null cancels the open.
+ */
+async function prepareDocumentForOpen(
+  filePath: string,
+  parent?: BrowserWindow | undefined,
+): Promise<string | null> {
+  const importKind = docImportKindForPath(filePath)
+  if (!importKind) return filePath
+  const extension = filePath.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? ''
+  // .hwp and .hwpx route by content: sites serve each under the other's name
+  const isHwp = importKind === 'hwp'
+  const word97 = importKind === 'word97'
+  const skipKind = word97 ? 'word97' : isHwp ? 'hwp' : 'odt'
+  if (!readLegacyImportSkip(APP_SETTINGS_PATH(), skipKind)) {
+    const options = {
+      type: 'warning' as const,
+      message: tm(word97 ? 'docImportMsg' : 'odtImportMsg', { ext: extension }),
+      detail: tm(word97 ? 'docImportDetail' : isHwp ? 'hwpImportDetail' : 'odtImportDetail'),
+      buttons: [tm(word97 ? 'docImportConvertBtn' : 'odtImportConvertBtn'), tm('btnCancel')],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+      checkboxLabel: tm('importSkipConfirm'),
+    }
+    const { response, checkboxChecked } = parent
+      ? await dialog.showMessageBox(parent, options)
+      : await dialog.showMessageBox(options)
+    if (response !== 0) return null
+    if (checkboxChecked) {
+      try {
+        writeLegacyImportSkip(APP_SETTINGS_PATH(), skipKind, true)
+      } catch {
+        /* unwritable settings: ask again next time */
+      }
+    }
+  }
+  const picked = await showSaveDialogWithMemory(
+    dialog,
+    parent,
+    {
+      title: tm('dlgSaveAs'),
+      defaultPath: join(
+        dirname(filePath),
+        basename(filePath).replace(/\.(odt|ott|hwpx?|doc|dot)$/i, '.docx'),
+      ),
+      filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
+    },
+    defaultSaveDir(),
+  )
+  if (picked.canceled || !picked.filePath) return null
+  try {
+    const source = new Uint8Array(await readFile(filePath))
+    const result = word97
+      ? await convertLegacyDocToDocx(source)
+      : isHwp
+        ? await convertHwpToDocx(source)
+        : await convertOdtToDocx(source)
+    await atomicWriteFile(picked.filePath, Buffer.from(result.docx))
+  } catch {
+    if (parent && !parent.isDestroyed()) {
+      await dialog.showMessageBox(parent, {
+        type: 'error',
+        message: tm('dlgOpenDoc'),
+        detail: `${basename(filePath)}: ${tm('errUnreadable')}`,
+      })
+    }
+    return null
+  }
+  return picked.filePath
+}
+
+async function loadDocx(
+  filePath: string,
+  wcId: number,
+  password?: string,
+): Promise<OpenDocxResult> {
   if (typeof filePath !== 'string' || !/\.docx$/i.test(filePath)) return null
   if (!existsSync(filePath)) return null
-  const original = await readFile(filePath)
-  const hash = await archiveOriginal(filePath, original)
-  const bytes = await maybeRecoverDocBytes(filePath, original)
+  const size = (await stat(filePath)).size
+  const lazy = await openLazyDocx(filePath, wcId)
+  if ((lazy?.bytes.length ?? size) > MAX_OPEN_BYTES) {
+    const mb = MAX_OPEN_BYTES / 1024 / 1024
+    await showOpenError(wcId, `${basename(filePath)}: ${tm('errTooLarge', { mb })}`)
+    return null
+  }
+  const original = lazy?.bytes ?? (await readFile(filePath))
+  // Password-protected docx (ECMA-376 CFB container): without a password, hand
+  // back a marker — the renderer prompts and retries via docs:open-decrypt.
+  // No side effects (recents/write grant) until the password checks out.
+  let plainBytes: Buffer = original
+  const encrypted = isEncryptedDocx(original)
+  if (encrypted) {
+    const pwd = password ?? docPasswordFor(wcId, filePath)
+    if (!pwd) return { needsPassword: true, path: filePath, name: basename(filePath) }
+    plainBytes = await decryptDocx(original, pwd) // throws DocxDecryptError
+    rememberDocPassword(wcId, filePath, pwd)
+  } else {
+    rememberDocPassword(wcId, filePath, null)
+  }
+  // the archive keeps the on-disk original as-is (encrypted ones included: they
+  // reopen with the user's password), so a bad save never loses the source file
+  const hash = lazy?.hash ?? sha256Hex(original)
+  await archiveOriginal(filePath, hash, size)
+  const recovery = await maybeRecoverDocBytes(filePath, plainBytes)
+  let bytes = recovery.bytes
+  let recovered = recovery.recovered
+  // recovery copies of a protected document are themselves encrypted (see
+  // docs:write-recovery); an unreadable copy falls back to the original
+  if (encrypted && isEncryptedDocx(bytes)) {
+    try {
+      bytes = await decryptRecoveryCopy(wcId, filePath, bytes)
+    } catch {
+      bytes = plainBytes
+      recovered = false
+    }
+  }
+  if (recovered) await adoptLazyMediaHashes(bytes, filePath, wcId)
   pushRecent(filePath)
   allowDocWrite(wcId, filePath)
+  rememberOpenDoc(wcId, filePath)
+  if (fileOpenedHook) fileOpenedHook(wcId, filePath)
+  markDiskEncrypted(wcId, filePath, encrypted)
   // record the on-disk file, not the recovery copy: what matters is what save would overwrite
-  await rememberDiskState(wcId, filePath, original)
+  await rememberDiskState(wcId, filePath, hash)
   return {
     path: filePath,
     name: basename(filePath),
-    data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+    dataUrl: handOffBytes(bytes),
     hash,
+    encrypted,
+    recovered: recovered || undefined,
   }
 }
 
@@ -2351,11 +4310,13 @@ const TEXT_EXTS = new Set([
 /** office/pdf formats get text extracted via @genoffice/file-parse; images skip extraction and go multimodal (files:read-image) */
 const ATTACHMENT_EXTS = new Set([
   ...TEXT_EXTS,
+  'doc',
   'docx',
   'pdf',
   'pptx',
   'ppt',
   'xlsx',
+  'xlsm',
   'xls',
   ...ATTACHMENT_IMAGE_EXTS,
 ])
@@ -2478,17 +4439,34 @@ const SETTINGS_PATH = () => userDataPath('ai-settings.json')
 
 const activeAiStreams = new Map<string, AbortController>()
 
+/** every renderer (tabs, home) re-reads ai-settings.json — the composer chip and
+ *  the settings page edit the same file from different windows */
+function broadcastAiSettingsChanged(): void {
+  for (const wc of webContents.getAllWebContents())
+    if (!wc.isDestroyed()) wc.send('ai:settings-changed')
+}
+
 /**
  * AI settings + chat/stream proxy handlers. Split out so the shell can
  * register them exactly once for all window types (docs, sheets, home) —
  * sheets' standalone AI handlers use the same channel names.
  */
 export function registerAiIpc(): void {
-  ipcMain.handle('ai:get-settings', (): AiSettings => {
+  app.once('before-quit', shutdownCodexAppServers)
+  ipcMain.handle('ai:get-settings', async (): Promise<AiSettings> => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
+    // pre-lock legacy file: genspark selected with cloud tools opted out. The
+    // settings UI locks the tools switch on with genspark and apps read this
+    // file live, so heal the stored flag once. Judged on the *stored* provider
+    // — never the activeProvider fallback below, which must not leak into the
+    // file and clobber a saved (half-configured) BYOK selection.
+    if ((stored.provider ?? 'genspark') === 'genspark' && stored.gskToolsEnabled === false) {
+      stored.gskToolsEnabled = true
+      writeJsonAtomic(SETTINGS_PATH(), stored)
+    }
     const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings with another provider are reset
-    settings.provider = 'genspark'
+    // a stored BYOK provider is honored when usable; half-filled configs fall back to genspark
+    settings.provider = activeProvider(settings)
     return settings
   })
 
@@ -2503,28 +4481,65 @@ export function registerAiIpc(): void {
     },
   )
 
+  // a 401 on the gsk key opens the device-code login once (genoffice-auth recovery)
+  setGenofficeLoginOpener((url) => void shell.openExternal(url))
+
   ipcMain.handle('ai:gsk-login', () => {
     ensureGenofficeLogin((url) => void shell.openExternal(url))
   })
 
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
-    writeJson(SETTINGS_PATH(), settings)
+    // SECURITY.md: payloads are schema-checked in the main process. The settings
+    // file feeds cliPath into spawn() and baseUrl receives the gsk bearer token,
+    // so the renderer's copy is sanitized before it touches disk.
+    const sanitized = sanitizeAiSettings(settings)
+    if (!sanitized) {
+      console.warn('[ai] rejected invalid ai:set-settings payload')
+      return
+    }
+    writeJsonAtomic(SETTINGS_PATH(), sanitized)
+    broadcastAiSettingsChanged()
   })
 
+  ipcMain.handle('ai:codex-models', async (_event, cliPath: unknown) => {
+    // the probe spawns the path directly, so it gets the same metacharacter and
+    // existence check as the stored setting (anything else: auto-detect)
+    return listCodexModels(sanitizeCliPath(cliPath))
+  })
+
+  ipcMain.handle('ai:custom-models', (_event, input: unknown) => listCustomModelsForIpc(input))
+
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
-    const { requestId, settings, system, messages } = request
+    // per-request settings get the same schema check as the persisted ones: a
+    // compromised renderer could otherwise hand cliPath/baseUrl straight to
+    // the provider layer without ever touching the settings file
+    const settings = sanitizeAiSettings(request.settings)
+    if (!settings) {
+      event.sender.send('ai:stream-chunk', {
+        requestId: request.requestId,
+        type: 'error',
+        error: 'invalid AI settings payload',
+      } satisfies AiStreamChunk)
+      return
+    }
+    const { requestId, system, messages } = request
     const tools = request.tools ?? []
-    const maxTokens = request.maxTokens ?? 8192
+    const maxTokens = request.maxTokens ?? maxOutputTokensOf(settings)
     const provider = settings.provider
     let config = settings.providers?.[provider]
     // the genspark key never enters the settings file; requests take it from the gsk login state
+    // set only when the gsk key was injected: a 401 then means that key expired
+    let gskKey = ''
     if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
+      gskKey = gskApiKey()
+      config = { ...config, apiKey: gskKey }
     }
+    // a custom endpoint may name an environment variable instead of storing a key
+    config = config ? resolveProfileCredential(config) : config
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    if (!config || (provider !== 'codex' && !config.apiKey)) {
       send({
         requestId,
         type: 'error',
@@ -2532,12 +4547,13 @@ export function registerAiIpc(): void {
       })
       return
     }
-    if (!config.model) {
+    if (provider !== 'codex' && !config.model) {
       send({ requestId, type: 'error', error: tm('errNoModel') })
       return
     }
     const controller = new AbortController()
     activeAiStreams.set(requestId, controller)
+    const unwatchSender = abortOnDestroyed(event.sender, controller)
     // wire-activity keepalive: lets the renderer's silence watchdog tell a slow turn from a dead one
     let lastPing = 0
     const ping = () => {
@@ -2546,22 +4562,55 @@ export function registerAiIpc(): void {
       lastPing = now
       send({ requestId, type: 'ping' })
     }
+    const trace = startAiTrace({
+      requestId,
+      sessionId: request.sessionId,
+      source: event.sender.getURL(),
+      provider,
+      model: config.model,
+      maxTokens,
+      system,
+      messages,
+      tools,
+    })
     try {
       let stopReason: string | undefined
       await streamForProvider(provider, config, system, messages, tools, maxTokens, {
+        ...(request.sessionId ? { sessionId: request.sessionId } : {}),
         signal: controller.signal,
-        onDelta: (text) => send({ requestId, type: 'delta', text }),
-        onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
+        onDelta: (text) => {
+          trace?.onDelta(text)
+          send({ requestId, type: 'delta', text })
+        },
+        onReasoningDelta: (text) => {
+          trace?.onReasoningDelta(text)
+          send({ requestId, type: 'reasoning', text })
+        },
+        onToolCall: (toolCall) => {
+          trace?.onToolCall(toolCall)
+          send({ requestId, type: 'tool-call', toolCall })
+        },
         onActivity: ping,
         onStopReason: (reason) => {
           stopReason = reason
+          trace?.onStopReason(reason)
+        },
+        onUsage: (usage) => {
+          trace?.onUsage(usage)
+          send({ requestId, type: 'usage', usage })
         },
       })
+      trace?.finish()
       send({ requestId, type: 'done', stopReason })
     } catch (err) {
+      trace?.finish(
+        controller.signal.aborted ? 'aborted' : err instanceof Error ? err.message : String(err),
+      )
       if (controller.signal.aborted) {
         send({ requestId, type: 'done' })
       } else {
+        // an expired/revoked key drops to signed-out so the inline sign-in button shows
+        noteGskCallFailure(gskKey, err)
         send({
           requestId,
           type: 'error',
@@ -2570,10 +4619,17 @@ export function registerAiIpc(): void {
             ? { errorCode: 'timeout' as const }
             : err instanceof AiCreditsError
               ? { errorCode: 'credits' as const }
-              : {}),
+              : isAiNetworkError(err)
+                ? { errorCode: 'network' as const }
+                : isAiOverloadedError(err)
+                  ? { errorCode: 'overloaded' as const }
+                  : isAiRegionBlockedError(err)
+                    ? { errorCode: 'region' as const }
+                    : {}),
         })
       }
     } finally {
+      unwatchSender()
       activeAiStreams.delete(requestId)
     }
   })
@@ -2585,18 +4641,51 @@ export function registerAiIpc(): void {
   // shared search tools (content + images): Serper with DuckDuckGo fallback (same source as slides/sheets)
   ipcMain.handle('ai:web-search', async (_event, query: string, maxResults?: number) => {
     try {
-      return await webSearch(String(query), typeof maxResults === 'number' ? maxResults : 6)
+      return await webSearchTool(
+        SETTINGS_PATH(),
+        String(query),
+        typeof maxResults === 'number' ? maxResults : 6,
+      )
     } catch (err) {
       return { results: [], method: 'error', error: String(err) }
     }
   })
   ipcMain.handle('ai:image-search', async (_event, query: string, maxResults?: number) => {
     try {
-      return await imageSearch(String(query), typeof maxResults === 'number' ? maxResults : 8)
+      return await imageSearchTool(
+        SETTINGS_PATH(),
+        String(query),
+        typeof maxResults === 'number' ? maxResults : 8,
+      )
     } catch (err) {
       return { images: [], method: 'error', error: String(err) }
     }
   })
+
+  // media understanding (pictures in the document, attachments, local files): BYOK media
+  // provider when one is configured, otherwise the Genspark CLI behind its login gate.
+  // docs-prefixed: slides registers its own ai:analyze-media in the same shell process.
+  ipcMain.handle(
+    'docs:analyze-media',
+    async (event, op: { mediaUrls: string[]; requirements: string }) => {
+      const mediaUrls = (op.mediaUrls ?? []).map(String).filter(Boolean)
+      // a picture opened lazily from a large docx is only addressable by its main-process
+      // store; hand its bytes over as a data URL so the loader can read them like any other
+      const resolved: string[] = []
+      for (const url of mediaUrls) {
+        const lazy = await readLazyMedia(url).catch(() => null)
+        resolved.push(lazy ? `data:${lazy.mime};base64,${lazy.body.toString('base64')}` : url)
+      }
+      return analyzeMediaTool(
+        SETTINGS_PATH(),
+        {
+          mediaUrls: resolved,
+          requirements: String(op.requirements ?? ''),
+        },
+        { mediaRoots: docsMediaRoots(event.sender.id) },
+      )
+    },
+  )
 
   // download image from URL → base64+mime (download in the main process avoids CORS; the renderer builds the image node and measures size itself)
   ipcMain.handle(
@@ -2609,7 +4698,7 @@ export function registerAiIpc(): void {
         // fetchRemoteImage adds CDN-friendly headers and transient-error retries.
         const resp = await fetchRemoteImage(String(url))
         if (!resp || !resp.ok) return null
-        const buf = Buffer.from(await resp.arrayBuffer())
+        const buf = Buffer.from(await readBodyCapped(resp, MAX_REMOTE_IMAGE_BYTES))
         const ct = resp.headers.get('content-type') ?? ''
         const mime = ct.includes('png')
           ? 'image/png'
@@ -2623,24 +4712,87 @@ export function registerAiIpc(): void {
     },
   )
 
+  // docs-owned (like pdf:generate-image): slides' ai:generate-image is only
+  // registered once a slides view exists, so docs needs its own channel
+  ipcMain.handle(
+    'docs:ai-generate-image',
+    (event, op: { prompt?: unknown; aspectRatio?: unknown }) =>
+      generateImageTool(
+        SETTINGS_PATH(),
+        {
+          prompt: String(op?.prompt ?? ''),
+          aspectRatio: op?.aspectRatio ? String(op.aspectRatio) : undefined,
+        },
+        { mediaRoots: docsMediaRoots(event.sender.id) },
+      ),
+  )
+
+  ipcMain.handle('ai:search-test', (_event, input: unknown) => {
+    const { provider, apiKey } = (input ?? {}) as { provider?: AiSearchProviderId; apiKey?: string }
+    if (!provider || provider === 'genspark') {
+      return hasGskAuth() ? { ok: true } : { ok: false, error: tm('errGskNotLoggedIn') }
+    }
+    return testSearchProvider(provider, String(apiKey ?? ''))
+  })
+
+  // settings-UI connection test for the media provider (genspark = the gsk login state)
+  ipcMain.handle('ai:media-test', (_event, input: unknown) => {
+    const { provider, config } = (input ?? {}) as {
+      provider?: AiMediaProviderId
+      config?: AiMediaProviderConfig
+    }
+    if (!provider || provider === 'genspark') {
+      return hasGskAuth() ? { ok: true } : { ok: false, error: tm('errGskNotLoggedIn') }
+    }
+    if (!config) return { ok: false, error: 'No media provider configuration' }
+    return testMediaProvider(provider, config)
+  })
+
   ipcMain.handle('ai:chat', async (_event, request: AiChatRequest) => {
-    const { settings, system, user } = request
+    // same schema check as ai:stream: one-shot requests would otherwise act on
+    // the renderer's settings copy verbatim
+    const settings = sanitizeAiSettings(request.settings)
+    if (!settings) return { ok: false, error: 'invalid AI settings payload' }
+    const { system, user } = request
     const provider = settings.provider
     let config = settings.providers?.[provider]
+    // set only when the gsk key was injected: a 401 then means that key expired
+    let gskKey = ''
     if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
+      gskKey = gskApiKey()
+      config = { ...config, apiKey: gskKey }
     }
-    if (!config?.apiKey) {
+    // a custom endpoint may name an environment variable instead of storing a key
+    config = config ? resolveProfileCredential(config) : config
+    if (!config || (provider !== 'codex' && !config.apiKey)) {
       return {
         ok: false,
         error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
       }
     }
-    if (!config.model) return { ok: false, error: tm('errNoModel') }
+    if (provider !== 'codex' && !config.model) return { ok: false, error: tm('errNoModel') }
     try {
-      return await chatForProvider(provider, config, system, user)
+      const result = await chatForProvider(provider, config, system, user)
+      // the one-shot path reports HTTP failures as ok:false with the raw body —
+      // replace capacity/rate-limit dumps with the localized "busy" message
+      if (!result.ok && isAiOverloadedError(result.error)) {
+        return { ok: false, error: tm('errAiBusy') }
+      }
+      if (!result.ok && isAiRegionBlockedError(result.error)) {
+        return { ok: false, error: tm('errAiRegion') }
+      }
+      if (!result.ok) noteGskCallFailure(gskKey, result.error)
+      return result
     } catch (err) {
-      return { ok: false, error: String(err) }
+      noteGskCallFailure(gskKey, err)
+      return {
+        ok: false,
+        error: isAiOverloadedError(err)
+          ? tm('errAiBusy')
+          : isAiRegionBlockedError(err)
+            ? tm('errAiRegion')
+            : String(err),
+      }
     }
   })
 }
@@ -2659,15 +4811,32 @@ function getProjectStore(): ProjectStore {
  * Fired when a save lands on a new path (save-as / first silent save). The shell
  * uses it to sync the tab title/path, record recents and apply a pending project —
  * same contract as the sheets/slides opened hooks. Never called standalone.
+ * Returns the final path when the shell filed the new file into a Home folder.
  */
-let fileSavedHook: ((wc: WebContents, filePath: string) => void) | null = null
+let fileSavedHook: ((wc: WebContents, filePath: string) => string | void) | null = null
 
-export function setDocsFileSavedHook(hook: (wc: WebContents, filePath: string) => void): void {
+export function setDocsFileSavedHook(
+  hook: (wc: WebContents, filePath: string) => string | void,
+): void {
   fileSavedHook = hook
 }
 
-function notifyFileSaved(wc: WebContents, filePath: string): void {
-  if (fileSavedHook) fileSavedHook(wc, filePath)
+function notifyFileSaved(wc: WebContents, filePath: string): string {
+  const moved = fileSavedHook ? fileSavedHook(wc, filePath) : undefined
+  return typeof moved === 'string' && moved ? moved : filePath
+}
+
+/**
+ * Fired when a docx is opened INSIDE an existing tab (File > Open dialog or an
+ * explicit path open). Sheets and slides have had this hook from the start;
+ * docs only synced the tab on save-as/first-save, so a file opened into an
+ * untitled tab kept the "Untitled Document" tab title until a save landed on a
+ * NEW path — which a plain Ctrl+S to the original file never does (r115).
+ */
+let fileOpenedHook: ((wcId: number, filePath: string) => void) | null = null
+
+export function setDocsFileOpenedHook(hook: (wcId: number, filePath: string) => void): void {
+  fileOpenedHook = hook
 }
 
 /**
@@ -2684,6 +4853,14 @@ export function setSessionPathResolver(
 }
 
 /** After a file is renamed/moved on disk, sync project-store (fileMap/chatIdByPath re-key accordingly; history follows the file). */
+export function projectFilePaths(): string[] {
+  try {
+    return getProjectStore().knownFilePaths()
+  } catch {
+    return []
+  }
+}
+
 export function projectFileRenamed(oldPath: string, newPath: string): void {
   try {
     getProjectStore().fileRenamed(oldPath, newPath)
@@ -2738,8 +4915,19 @@ export function registerProjectIpc(): void {
           output?: string
         }>
         attachments?: Array<{ name: string; path?: string; ext?: string; sizeBytes?: number }>
+        scope?: { label: string; text?: string }
       },
     ) => {
+      if (args.role !== 'user' && args.role !== 'assistant') {
+        throw new Error(`Invalid chat role: ${String(args.role)}`)
+      }
+      if (typeof args.text !== 'string' || args.text.length > 200_000) {
+        throw new Error('Invalid chat text: must be a string up to 200000 chars')
+      }
+      if (args.tools && !Array.isArray(args.tools)) throw new Error('Invalid chat tools')
+      if (args.attachments && !Array.isArray(args.attachments)) {
+        throw new Error('Invalid chat attachments')
+      }
       const store = getProjectStore()
       const msg: Parameters<ProjectStore['appendChatMessage']>[2] = {
         role: args.role,
@@ -2747,6 +4935,8 @@ export function registerProjectIpc(): void {
       }
       if (args.tools) msg.tools = args.tools
       if (args.attachments) msg.attachments = args.attachments
+      if (args.scope) msg.scope = args.scope
+
       store.appendChatMessage(args.projectId, args.chatId, msg)
     },
   )
@@ -2766,6 +4956,18 @@ export function registerProjectIpc(): void {
       return store.loadChat(args.projectId, args.chatId, args.limit ?? 200)
     },
   )
+
+  /** Lists the conversations in a project, newest first. */
+  ipcMain.handle('project:listChats', (_event, args: { projectId: string }) => {
+    const store = getProjectStore()
+    return store.listChats(args.projectId)
+  })
+
+  /** Deletes one conversation. A file-less chat is the home screen's ask panel. */
+  ipcMain.handle('project:deleteChat', (_event, args: { projectId: string; chatId: string }) => {
+    const store = getProjectStore()
+    store.deleteChat(args.projectId, args.chatId)
+  })
 
   /** rebind chat (called after a file first hits disk): newFilePath/sessionId take priority; the main process computes chatId and records fileMap */
   ipcMain.handle(
@@ -2792,88 +4994,198 @@ export function registerProjectIpc(): void {
       return { projectId: args.projectId, chatId: args.newChatId ?? args.tempChatId }
     },
   )
-
-  // ── P1 extension IPC ─────────────────────────────────────
-
-  /** List all projects (with file count + last-active time) */
-  ipcMain.handle('project:list', () => {
-    return getProjectStore().listProjectsSummary()
-  })
-
-  /** List existing files belonging to one project */
-  ipcMain.handle('project:files', (_event, args: { projectId: string }) => {
-    return getProjectStore().listProjectFiles(args.projectId)
-  })
-
-  /** Create a project */
-  ipcMain.handle('project:create', (_event, args: { name: string }) => {
-    const store = getProjectStore()
-    const data = store.createProject(args.name)
-    // returns ProjectSummary shape
-    return store.listProjectsSummary().find((s) => s.id === data.id) ?? data
-  })
-
-  /** Rename a project */
-  ipcMain.handle('project:rename', (_event, args: { id: string; name: string }) => {
-    getProjectStore().renameProject(args.id, args.name)
-  })
-
-  /** Soft-delete a project */
-  ipcMain.handle('project:delete', (_event, args: { id: string }) => {
-    getProjectStore().deleteProject(args.id)
-  })
-
-  /** Move a file into the given project */
-  ipcMain.handle('project:moveFile', (_event, args: { filePath: string; projectId: string }) => {
-    getProjectStore().moveFileToProject(args.filePath, args.projectId)
-  })
-
-  /** Get the project timeline */
-  ipcMain.handle('project:timeline', (_event, args: { projectId: string; limit?: number }) => {
-    return getProjectStore().getProjectTimeline(args.projectId, args.limit ?? 20)
-  })
 }
+
+/** A4 at 96dpi, as the HTML app exports */
+const ALT_CHUNK_VIEWPORT = { width: 794, height: 1123, deviceScaleFactor: 2 }
+const ALT_CHUNK_HTML_MAX_CHARS = 64 * 1024 * 1024
+// An AI-generated page whose scripts never yield must not strand the hidden
+// conversion window; the slides export path uses the same shape.
+const ALT_CHUNK_TIMEOUT_MS = 120_000
+
+/** an encrypted save leaves no plain file to serve lazy pictures from: the
+ *  renderer takes the materialized document back and leaves lazy mode */
+const reissuedDoc = (
+  encrypted: boolean,
+  hashes: Set<string>,
+  plain: Buffer,
+): { dataUrl?: string } => (encrypted && hashes.size > 0 ? { dataUrl: handOffBytes(plain) } : {})
 
 /** document/attachment/window IPC (everything except the AI proxy above) */
 export function registerDocsIpc(): void {
+  registerZoteroIpc()
+  void app.whenReady().then(registerLazyMediaProtocol)
   // Node fetch (undici) direct connections get reset under VPN/tun setups; retry over Chromium's stack
   setRescueFetch((url, init) => net.fetch(url, init))
+  setAiUserAgent(`GenOffice/${app.getVersion()}`)
 
   // shared with the other editor modules — last (identical) registration wins
   ipcMain.removeHandler('app:get-language')
   ipcMain.handle('app:get-language', () => getUiLang())
+  ipcMain.handle('docs:confirm-document-replace', (event) =>
+    requestDocsClose(event.sender, dialogParent(event)),
+  )
+  ipcMain.handle('docs:system-locale', () => app.getSystemLocale())
 
   configureMetricsCache(userDataPath('font-metrics'))
   ipcMain.handle('docs:font-metrics', (_event, family: string) =>
     typeof family === 'string' ? familyVerticalMetrics(family) : null,
   )
+  // the other spellings of the installed faces behind these names: a document
+  // that declares a CJK font by its localized name needs the English spelling
+  // the browser resolves (genoffice#2449). The renderer is not trusted, but
+  // the answer is only font names.
+  ipcMain.handle('docs:font-aliases', (_event, names: unknown) => {
+    if (!Array.isArray(names)) return {}
+    const out: Record<string, readonly string[]> = {}
+    for (const raw of names.slice(0, 512)) {
+      if (typeof raw !== 'string' || raw.length === 0 || raw.length > 256) continue
+      const aliases = familyAliases(raw)
+      if (aliases.length) out[raw] = aliases
+    }
+    return out
+  })
 
   ipcMain.handle('docs:open', async (event) => {
     const result = await openDialog(event, {
       title: tm('dlgOpenDoc'),
       filters: [
-        { name: tm('filterWord'), extensions: ['docx'] },
+        { name: tm('filterWord'), extensions: [...OPENABLE_DOC_EXTENSIONS] },
         { name: 'All Files (*.*)', extensions: ['*'] },
       ],
       properties: ['openFile'],
     })
     if (result.canceled || result.filePaths.length === 0) return null
-    return loadDocx(result.filePaths[0], event.sender.id)
+    const prepared = await prepareDocumentForOpen(result.filePaths[0], dialogParent(event))
+    if (!prepared) return null
+    return loadDocx(prepared, event.sender.id)
   })
 
-  ipcMain.handle('docs:open-path', (event, filePath: string) => loadDocx(filePath, event.sender.id))
+  ipcMain.handle('docs:open-path', async (event, filePath: string) => {
+    const prepared = await prepareDocumentForOpen(filePath, dialogParent(event))
+    if (!prepared) return null
+    return loadDocx(prepared, event.sender.id)
+  })
 
-  ipcMain.handle('docs:consume-pending-open', (event) => {
+  // w:altChunk HTML: the same html2docx chain as the HTML app's export, in a
+  // hidden window; the renderer parses the result and shows its blocks
+  ipcMain.handle('docs:altchunk-html-to-docx', async (_event, html: unknown) => {
+    if (typeof html !== 'string' || !html.trim() || html.length > ALT_CHUNK_HTML_MAX_CHARS) {
+      return null
+    }
+    const workDir = await mkdtemp(join(tmpdir(), 'genoffice-altchunk-'))
+    let driver: ElectronBrowserDriver | null = null
+    try {
+      const htmlPath = join(workDir, 'chunk.html')
+      // the BOM outranks a stale <meta charset> left in the decoded markup
+      await writeFile(htmlPath, `\ufeff${html}`, 'utf8')
+      driver = await ElectronBrowserDriver.create(ALT_CHUNK_VIEWPORT)
+      // The markup is an unsanitised AI artifact: a script that never yields
+      // would otherwise keep executeJavaScript pending forever, and the
+      // finally below would never run (the hidden window and workDir leak for
+      // good). Race a watchdog and destroy the window on timeout, matching
+      // the slides export guard.
+      const conversion = convertHtmlToDocx({ url: pathToFileURL(htmlPath).href }, driver, {
+        naturalTableWidth: true,
+      }).then(({ docx }) => docx)
+      let watchdog: ReturnType<typeof setTimeout> | undefined
+      const docx = await Promise.race([
+        conversion,
+        new Promise<null>((resolve) => {
+          watchdog = setTimeout(() => {
+            if (driver && !driver.isWindowDestroyed()) driver.destroyNow()
+            driver = null
+            console.warn('[docs] altChunk conversion timed out; window destroyed')
+            resolve(null)
+          }, ALT_CHUNK_TIMEOUT_MS)
+        }),
+      ]).finally(() => clearTimeout(watchdog))
+      return docx
+    } catch (err) {
+      console.warn('[docs] altChunk conversion failed:', err)
+      return null
+    } finally {
+      await driver?.close()
+      await rm(workDir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
+  // Review > Protect > Encrypt with Password: set/clear the open password.
+  // Takes effect on the next save (docs:save / save-as / save-new all consult the store).
+  ipcMain.handle(
+    'docs:set-password',
+    (event, filePath: string | null, password: string | null): { ok: boolean } => {
+      if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+      if (filePath !== null && typeof filePath !== 'string') return { ok: false }
+      if (password !== null && (typeof password !== 'string' || password.length === 0)) {
+        return { ok: false }
+      }
+      // only the document this renderer legitimately has open (same grant as saving)
+      if (filePath && !canDocWrite(event.sender.id, filePath)) return { ok: false }
+      setDocPassword(event.sender.id, filePath, password)
+      return { ok: true }
+    },
+  )
+
+  ipcMain.handle('docs:password-intent-revision', (event): number => {
+    if (tornDownWcIds.has(event.sender.id)) return -1
+    return currentDocPasswordIntentRevision()
+  })
+
+  ipcMain.handle(
+    'docs:discard-password-intents',
+    (event, throughRevision: unknown): { ok: boolean } => {
+      if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+      if (
+        typeof throughRevision !== 'number' ||
+        !Number.isSafeInteger(throughRevision) ||
+        throughRevision < 0
+      ) {
+        return { ok: false }
+      }
+      discardDocPasswordIntents(event.sender.id, throughRevision)
+      return { ok: true }
+    },
+  )
+
+  // decrypt-and-open a password-protected docx; wrong-password keeps the renderer's prompt open
+  ipcMain.handle(
+    'docs:open-decrypt',
+    async (event, filePath: string, password: string): Promise<DecryptOpenResult> => {
+      if (typeof filePath !== 'string' || typeof password !== 'string' || password.length === 0) {
+        return { ok: false, reason: 'error', error: 'invalid arguments' }
+      }
+      try {
+        const result = await loadDocx(filePath, event.sender.id, password)
+        if (!result) return { ok: false, reason: 'error', error: 'file not found' }
+        // the file was swapped for a plain docx between prompt and submit — still an open
+        if ('needsPassword' in result) return { ok: false, reason: 'error', error: 'not encrypted' }
+        return { ok: true, result }
+      } catch (err) {
+        if (err instanceof DocxDecryptError) {
+          return { ok: false, reason: err.reason, error: err.message }
+        }
+        return { ok: false, reason: 'error', error: String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle('docs:consume-pending-open', async (event) => {
     rendererReady = true
     // a tab spawned via New Tab loads the document queued for it specifically
     const queued = pendingWindowOpens.get(event.sender.id)
     if (queued) {
       pendingWindowOpens.delete(event.sender.id)
-      return loadDocx(queued, event.sender.id)
+      const prepared = await prepareDocumentForOpen(queued, dialogParent(event))
+      if (!prepared) return null
+      return loadDocx(prepared, event.sender.id)
     }
     const filePath = pendingOpenPath
     pendingOpenPath = null
-    return filePath ? loadDocx(filePath, event.sender.id) : null
+    if (!filePath) return null
+    const prepared = await prepareDocumentForOpen(filePath, dialogParent(event))
+    if (!prepared) return null
+    return loadDocx(prepared, event.sender.id)
   })
 
   /** returns true when this tab was opened via "New Document" and should start blank */
@@ -2884,6 +5196,32 @@ export function registerDocsIpc(): void {
       return true
     }
     return false
+  })
+
+  /** one-shot AI content queued by create_document for this tab; null when none */
+  ipcMain.handle('docs:consume-ai-doc-content', (event): AiDocContent | null => {
+    const content = pendingAiDocContents.get(event.sender.id) ?? null
+    pendingAiDocContents.delete(event.sender.id)
+    return content
+  })
+
+  // ---- headless export mode (--headless-export) ----
+
+  ipcMain.handle('docs:consume-headless-export', (event): HeadlessExportTarget | null => {
+    const target = headlessExportTargets.get(event.sender.id) ?? null
+    headlessExportTargets.delete(event.sender.id)
+    return target
+  })
+
+  ipcMain.on('docs:headless-export-done', (event, result: unknown) => {
+    const settle = headlessExportWaiters.get(event.sender.id)
+    if (!settle) return
+    headlessExportWaiters.delete(event.sender.id)
+    const state = result as { ok?: unknown; error?: unknown } | null
+    settle({
+      ok: state?.ok === true,
+      ...(typeof state?.error === 'string' ? { error: state.error } : {}),
+    })
   })
 
   ipcMain.handle(
@@ -2920,12 +5258,41 @@ export function registerDocsIpc(): void {
         if (tornDownWcIds.has(event.sender.id) || !canDocWrite(event.sender.id, filePath)) {
           return { ok: false, error: 'save target is not an opened document' }
         }
-        const bytes = Buffer.from(data)
+        // Snapshot desired state: the disk password remains unchanged until the
+        // atomic write succeeds, and a newer ribbon intent survives this save.
+        const passwordState = snapshotDocPassword(event.sender.id, filePath)
+        const { bytes: plain, hashes } = await materializeLazyDocx(Buffer.from(data))
+        const bytes = passwordState.password ? encryptDocx(plain, passwordState.password) : plain
         await atomicWriteFile(filePath, bytes)
-        await rememberDiskState(event.sender.id, filePath, bytes)
+        // Teardown may have cleared all in-memory secrets while the atomic
+        // write was pending. Never resurrect state for an orphaned renderer.
+        if (tornDownWcIds.has(event.sender.id)) {
+          return { ok: false, error: 'save target is not an opened document' }
+        }
+        await rememberDiskState(event.sender.id, filePath, sha256Hex(bytes))
+        if (tornDownWcIds.has(event.sender.id)) {
+          return { ok: false, error: 'save target is not an opened document' }
+        }
+        pointLazyMediaAt(
+          hashes,
+          filePath,
+          event.sender.id,
+          passwordState.password ? plain : undefined,
+        )
+        // Commit immediately after the final await: intents received during
+        // post-write bookkeeping are included, with no later async race.
+        const passwordIntentPending = commitDocPasswordSave(
+          event.sender.id,
+          passwordState,
+          filePath,
+        )
         clearRecoveryCopy(filePath)
         pushRecent(filePath)
-        return { ok: true }
+        return {
+          ok: true,
+          passwordIntentPending,
+          ...reissuedDoc(!!passwordState.password, hashes, plain),
+        }
       } catch (err) {
         return { ok: false, error: String(err) }
       }
@@ -2942,7 +5309,12 @@ export function registerDocsIpc(): void {
       // copy while this write is in flight bumps the epoch and invalidates it
       const epoch = recoveryClearEpochs.get(filePath) ?? 0
       await mkdir(recoveryDir(), { recursive: true })
-      await atomicWriteFile(recoveryPathFor(filePath), Buffer.from(data))
+      // Recovery follows the current disk state, never the desired next-save
+      // password. Missing state for an encrypted disk file skips the tick so
+      // plaintext can never be written as its recovery copy.
+      const bytes = prepareRecoveryDocx(event.sender.id, filePath, Buffer.from(data))
+      if (!bytes) return { ok: false }
+      await atomicWriteFile(recoveryPathFor(filePath), bytes)
       // The tab may have been closed ("Don't Save" clears the copy, teardown
       // revokes access) or the document saved (docs:save clears the copy) while
       // the write was in flight. A write that lost either race would offer
@@ -2961,33 +5333,185 @@ export function registerDocsIpc(): void {
     }
   })
 
-  ipcMain.handle('docs:save-as', async (event, defaultName: string, data: ArrayBuffer) => {
-    // an orphaned (closed-tab) renderer must not open dialogs or land new files
-    if (tornDownWcIds.has(event.sender.id)) return { ok: false }
-    const result = await saveDialog(event, {
-      title: tm('dlgSaveAs'),
-      defaultPath: defaultName,
-      filters: [
-        { name: tm('filterWord'), extensions: ['docx'] },
-        { name: 'All Files (*.*)', extensions: ['*'] },
-      ],
-    })
-    if (result.canceled || !result.filePath) return { ok: false }
-    // the tab may have been closed while the dialog was open; checked before the
-    // write because Save As may overwrite an existing file (no safe rollback)
-    if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+  // Blink only respells an editable as a consequence of real (trusted) typing
+  // of a word-committing character inside it: attribute flips, focus cycles,
+  // script selection moves, execCommand edits, fresh DOM nodes, synthetic
+  // clicks/arrow keys — and even a typed zero-width space — all leave existing
+  // typos unmarked (each verified pixel-by-pixel).
+  // Type one trusted space; the RENDERER removes it again by script (a
+  // trusted Backspace would work too, but its deletion re-suppresses the
+  // caret paragraph and that line stays unmarked) with ProseMirror's DOM
+  // observer paused, so the round trip never becomes a transaction.
+  // spell-diag trace (intermittent squiggle loss, platform-bound
+  // and unreproducible on demand) — a tiny always-on log support can ask for.
+  // Size-capped: over 256KB the file restarts from its last half.
+  ipcMain.on('docs:spell-diag', (_event, line: unknown) => {
+    if (typeof line !== 'string' || line.length > 500) return
     try {
-      const bytes = Buffer.from(data)
-      await atomicWriteFile(result.filePath, bytes)
-      allowDocWrite(event.sender.id, result.filePath)
-      await rememberDiskState(event.sender.id, result.filePath, bytes)
-      pushRecent(result.filePath)
-      notifyFileSaved(event.sender, result.filePath)
-      return { ok: true, path: result.filePath }
-    } catch (err) {
-      return { ok: false, error: String(err) }
+      const path = userDataPath('spell-diag.log')
+      if (existsSync(path) && statSync(path).size > 256 * 1024) {
+        const tail = readFileSync(path, 'utf-8').slice(-128 * 1024)
+        writeFileSync(path, tail.slice(tail.indexOf('\n') + 1))
+      }
+      appendFileSync(path, `${new Date().toISOString()} ${line}\n`)
+    } catch {
+      // diagnostics must never break the app
     }
   })
+
+  // The document body draws its own React context menu, but Chromium's
+  // misspelling + suggestions for the clicked word only surface in the main
+  // process `context-menu` event. The renderer claims each body right-click
+  // synchronously from its DOM handler, i.e. before Blink requests the menu,
+  // so claims and events arrive in the same order: a claimed click gets its
+  // data forwarded and no native menu, anything else (header/footer surfaces,
+  // inputs) pops the native menu as before.
+  const ctxMenuClaims = new Map<number, ClickClaims>()
+  ipcMain.on('docs:context-menu-claim', (event, seq: unknown) => {
+    event.returnValue = true
+    if (typeof seq !== 'number') return
+    let claims = ctxMenuClaims.get(event.sender.id)
+    if (!claims) {
+      claims = new ClickClaims()
+      ctxMenuClaims.set(event.sender.id, claims)
+    }
+    claims.claim(seq, Date.now())
+  })
+  ipcMain.on('docs:context-menu-arm', (event) => {
+    const wc = event.sender
+    setContextMenuInterceptor(app, wc, (contents, params) => {
+      if (contents.isDestroyed() || tornDownWcIds.has(contents.id)) return Promise.resolve(false)
+      const seq = ctxMenuClaims.get(contents.id)?.take(Date.now()) ?? null
+      if (seq !== null) {
+        const request: ContextMenuRequest = {
+          seq,
+          misspelledWord: params.misspelledWord,
+          suggestions: params.dictionarySuggestions,
+        }
+        contents.send('docs:context-menu', request)
+      }
+      return Promise.resolve(seq !== null)
+    })
+    wc.once('destroyed', () => {
+      setContextMenuInterceptor(app, wc, null)
+      ctxMenuClaims.delete(wc.id)
+    })
+  })
+  void app.whenReady().then(() => {
+    const orphans = readJson<string[]>(SPELL_IGNORED_PATH(), [])
+    for (const w of orphans) session.defaultSession.removeWordFromSpellCheckerDictionary(w)
+    if (orphans.length) journalIgnoredWords()
+  })
+  ipcMain.handle('docs:spell-ignore-word', (event, word: unknown) => {
+    if (typeof word !== 'string' || !word.trim()) return false
+    const w = word.trim()
+    let holders = spellIgnored.get(w)
+    if (!holders) {
+      holders = new Set()
+      spellIgnored.set(w, holders)
+      journalIgnoredWords()
+    }
+    holders.add(event.sender.id)
+    return event.sender.session.addWordToSpellCheckerDictionary(w)
+  })
+  ipcMain.handle('docs:spell-add-word', (event, word: unknown) => {
+    if (typeof word !== 'string' || !word.trim()) return false
+    const w = word.trim()
+    if (spellIgnored.delete(w)) journalIgnoredWords()
+    return event.sender.session.addWordToSpellCheckerDictionary(w)
+  })
+  ipcMain.handle('docs:spell-replace', (event, word: unknown) => {
+    if (typeof word === 'string' && word) event.sender.replaceMisspelling(word)
+  })
+  ipcMain.handle('docs:spell-languages', (event): SpellLanguages => {
+    const session = event.sender.session
+    return {
+      active: session.getSpellCheckerLanguages(),
+      available: session.availableSpellCheckerLanguages,
+    }
+  })
+  ipcMain.handle('docs:spell-set-languages', (event, langs: unknown): SpellLanguages => {
+    const session = event.sender.session
+    const available = new Set(session.availableSpellCheckerLanguages)
+    const next = Array.isArray(langs)
+      ? langs.filter((l): l is string => typeof l === 'string' && available.has(l))
+      : []
+    if (next.length) session.setSpellCheckerLanguages(next)
+    return { active: session.getSpellCheckerLanguages(), available: [...available] }
+  })
+
+  ipcMain.handle('docs:respell-kick', async (event) => {
+    const wc = event.sender
+    if (tornDownWcIds.has(wc.id) || wc.isDestroyed()) return
+    wc.focus()
+    // Blink only respells after a user activation, and only a keydown grants one
+    wc.sendInputEvent({ type: 'keyDown', keyCode: 'Space' })
+    wc.sendInputEvent({ type: 'char', keyCode: ' ' })
+    wc.sendInputEvent({ type: 'keyUp', keyCode: 'Space' })
+    // resolve only after the input pipeline has delivered the keystroke, so
+    // the caller can scrub the space it produced
+    await new Promise((r) => setTimeout(r, 120))
+  })
+
+  ipcMain.handle(
+    'docs:save-as',
+    async (event, defaultName: string, data: ArrayBuffer, sourcePath?: string | null) => {
+      // an orphaned (closed-tab) renderer must not open dialogs or land new files
+      if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+      const result = await saveDialog(event, {
+        title: tm('dlgSaveAs'),
+        defaultPath: saveAsSuggestion(
+          typeof sourcePath === 'string' ? sourcePath : null,
+          defaultName,
+        ),
+        filters: [
+          { name: tm('filterWord'), extensions: ['docx'] },
+          { name: 'All Files (*.*)', extensions: ['*'] },
+        ],
+      })
+      if (result.canceled || !result.filePath) return { ok: false }
+      // the tab may have been closed while the dialog was open; checked before the
+      // write because Save As may overwrite an existing file (no safe rollback)
+      if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+      try {
+        const passwordState = snapshotDocPassword(
+          event.sender.id,
+          typeof sourcePath === 'string' && sourcePath ? sourcePath : null,
+        )
+        const { bytes: plain, hashes } = await materializeLazyDocx(Buffer.from(data))
+        const bytes = passwordState.password ? encryptDocx(plain, passwordState.password) : plain
+        await atomicWriteFile(result.filePath, bytes)
+        if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+        allowDocWrite(event.sender.id, result.filePath)
+        rememberOpenDoc(event.sender.id, result.filePath)
+        await rememberDiskState(event.sender.id, result.filePath, sha256Hex(bytes))
+        pointLazyMediaAt(
+          hashes,
+          result.filePath,
+          event.sender.id,
+          passwordState.password ? plain : undefined,
+        )
+        if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+        const passwordIntentPending = commitDocPasswordSave(
+          event.sender.id,
+          passwordState,
+          result.filePath,
+        )
+        pushRecent(result.filePath)
+        // the renderer has no path yet to match a rename notification against,
+        // so the reply must carry the path it may save to next
+        const savedPath = notifyFileSaved(event.sender, result.filePath)
+        return {
+          ok: true,
+          path: savedPath,
+          passwordIntentPending,
+          ...reissuedDoc(!!passwordState.password, hashes, plain),
+        }
+      } catch (err) {
+        return { ok: false, error: String(err) }
+      }
+    },
+  )
 
   ipcMain.handle('docs:save-new', async (event, defaultName: string, data: ArrayBuffer) => {
     try {
@@ -2995,7 +5519,9 @@ export function registerDocsIpc(): void {
       // itself to the default folder after the user chose Don't Save
       if (tornDownWcIds.has(event.sender.id)) return { ok: false }
       const filePath = uniquePathIn(defaultSaveDir(), defaultName)
-      const bytes = Buffer.from(data)
+      const passwordState = snapshotDocPassword(event.sender.id, null)
+      const { bytes: plain, hashes } = await materializeLazyDocx(Buffer.from(data))
+      const bytes = passwordState.password ? encryptDocx(plain, passwordState.password) : plain
       await atomicWriteFile(filePath, bytes)
       // teardown may have happened while the write was in flight — the path is
       // freshly created, so rolling it back is safe (mirrors docs:write-recovery)
@@ -3004,18 +5530,105 @@ export function registerDocsIpc(): void {
         return { ok: false }
       }
       allowDocWrite(event.sender.id, filePath)
-      await rememberDiskState(event.sender.id, filePath, bytes)
+      rememberOpenDoc(event.sender.id, filePath)
+      await rememberDiskState(event.sender.id, filePath, sha256Hex(bytes))
+      pointLazyMediaAt(
+        hashes,
+        filePath,
+        event.sender.id,
+        passwordState.password ? plain : undefined,
+      )
+      if (tornDownWcIds.has(event.sender.id)) {
+        await unlink(filePath).catch(() => {})
+        return { ok: false }
+      }
+      const passwordIntentPending = commitDocPasswordSave(event.sender.id, passwordState, filePath)
       pushRecent(filePath)
-      notifyFileSaved(event.sender, filePath)
-      return { ok: true, path: filePath }
+      const savedPath = notifyFileSaved(event.sender, filePath)
+      return {
+        ok: true,
+        path: savedPath,
+        passwordIntentPending,
+        ...reissuedDoc(!!passwordState.password, hashes, plain),
+      }
     } catch (err) {
       return { ok: false, error: String(err) }
     }
   })
 
-  ipcMain.handle('docs:recent', () =>
-    readJson<string[]>(RECENT_PATH(), []).filter((p) => existsSync(p)),
+  ipcMain.handle(
+    'docs:create-document',
+    (_event, request: CreateDocumentRequest): Promise<CreateDocumentResult> =>
+      createAiDocument(request),
   )
+
+  // MCP-driven output: write the live document to an explicit absolute path with
+  // no dialog. Mirrors docs:save-new's bookkeeping (write allowlist, disk state,
+  // recents, tab-title sync) but targets a caller-chosen path and refuses to
+  // clobber an existing file unless the caller asked for overwrite.
+  ipcMain.handle(
+    'docs:save-to',
+    async (event, filePath: string, data: ArrayBuffer, overwrite: boolean) => {
+      try {
+        if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+        if (typeof filePath !== 'string' || !isAbsolute(filePath)) {
+          return { ok: false, error: 'path must be absolute' }
+        }
+        if (extname(filePath).toLowerCase() !== '.docx') {
+          return { ok: false, error: 'path must point to a .docx file' }
+        }
+        // only a target the MCP layer resolved for this tab may be written
+        if (!canDocWrite(event.sender.id, filePath)) {
+          return { ok: false, error: 'save target was not authorized' }
+        }
+        const existed = existsSync(filePath)
+        if (!overwrite && existed) {
+          return {
+            ok: false,
+            error: `file already exists: ${filePath} (pass overwrite:true to replace it)`,
+          }
+        }
+        await mkdir(dirname(filePath), { recursive: true })
+        const passwordState = snapshotDocPassword(event.sender.id, null)
+        const { bytes: plain, hashes } = await materializeLazyDocx(Buffer.from(data))
+        const bytes = passwordState.password ? encryptDocx(plain, passwordState.password) : plain
+        await atomicWriteFile(filePath, bytes)
+        // teardown may have happened while the write was in flight — only a file
+        // this handler created is safe to roll back; an overwritten one stays
+        const rollback = async (): Promise<{ ok: false }> => {
+          if (!existed) await unlink(filePath).catch(() => {})
+          return { ok: false }
+        }
+        if (tornDownWcIds.has(event.sender.id)) return rollback()
+        await rememberDiskState(event.sender.id, filePath, sha256Hex(bytes))
+        pointLazyMediaAt(
+          hashes,
+          filePath,
+          event.sender.id,
+          passwordState.password ? plain : undefined,
+        )
+        if (tornDownWcIds.has(event.sender.id)) return rollback()
+        const passwordIntentPending = commitDocPasswordSave(
+          event.sender.id,
+          passwordState,
+          filePath,
+        )
+        pushRecent(filePath)
+        rememberOpenDoc(event.sender.id, filePath)
+        notifyFileSaved(event.sender, filePath)
+        return {
+          ok: true,
+          path: filePath,
+          passwordIntentPending,
+          ...reissuedDoc(!!passwordState.password, hashes, plain),
+        }
+      } catch (err) {
+        return { ok: false, error: String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle('docs:recent', () => readJson<string[]>(RECENT_PATH(), []))
 
   ipcMain.handle('docs:pick-image', async (event) => {
     const result = await openDialog(event, {
@@ -3032,6 +5645,71 @@ export function registerDocsIpc(): void {
       base64: readFileSync(filePath).toString('base64'),
       mime,
       name: basename(filePath),
+    }
+  })
+
+  // Mailings tab: pick a local recipient list and read it as a data source.
+  // The file is read here, in the main process, where the file system is.
+  ipcMain.handle('docs:merge-data-source', async (event) => {
+    const result = await openDialog(event, {
+      title: tm('dlgMergeDataSource'),
+      filters: [
+        {
+          name: tm('filterMergeDataSource'),
+          extensions: [...MERGE_DATA_SOURCE_EXTENSIONS],
+        },
+      ],
+      properties: ['openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    try {
+      return { ok: true, source: await readMergeDataSource(result.filePaths[0]) }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // Mailings tab: write the merged documents. One file for the whole merge
+  // goes where the user says; one file per record goes into a folder they
+  // pick, every name kept unique so two records of the same name do not
+  // overwrite each other. The bytes carry the document's lazily served
+  // pictures, so they are materialized first — the merged file is a document
+  // of its own, not a view of the open one.
+  ipcMain.handle('docs:merge-output', async (event, request: MergeOutputRequest) => {
+    const files = Array.isArray(request?.files) ? request.files : []
+    if (files.length === 0) return { ok: false, error: 'nothing to write' }
+    const write = async (path: string, data: ArrayBuffer): Promise<void> => {
+      const { bytes } = await materializeLazyDocx(Buffer.from(data))
+      await writeFile(path, bytes)
+    }
+    try {
+      if (request.mode === 'single' || request.mode === 'labels') {
+        const file = files[0]!
+        const name = mergeOutputFileName(file.name)
+        const result = await saveDialog(event, {
+          title: tm('dlgSaveAs'),
+          defaultPath: name,
+          filters: [
+          { name: tm('filterWord'), extensions: ['docx'] },
+          { name: 'All Files (*.*)', extensions: ['*'] },
+        ],
+        })
+        if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+        await write(result.filePath, file.data)
+        return { ok: true, path: result.filePath, count: 1 }
+      }
+      const result = await openDialog(event, {
+        title: tm('dlgPickExportDir'),
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true }
+      const folder = result.filePaths[0]!
+      for (const file of files) {
+        await write(mergeOutputPath(folder, file.name), file.data)
+      }
+      return { ok: true, folder, count: files.length }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
 
@@ -3109,9 +5787,111 @@ export function registerDocsIpc(): void {
     },
   )
 
-  ipcMain.handle('docs:print', (event) => {
-    // print the calling tab's own content; zero margins — the docx page padding provides them
-    event.sender.print({ margins: { marginType: 'none' } })
+  // r136: copying an embedded picture must yield a real bitmap for external
+  // apps (Gmail pasted blank) plus plain <img> html for cross-document paste
+  // (the protected wrapper round-tripped as a "protected content" shell).
+  ipcMain.handle(
+    'docs:copy-image-to-clipboard',
+    async (_event, dataUrl: unknown, meta: unknown): Promise<boolean> => {
+      // Renderer-supplied bitmap: validate before base64 decode + nativeImage
+      // (a huge data URL would OOM the main process). Non-data URLs are
+      // lazy-media ids resolved below.
+      if (!validCopyImageDataUrl(dataUrl)) return false
+      let bytes: Buffer
+      let htmlSrc = dataUrl
+      if (dataUrl.startsWith('data:image/')) {
+        bytes = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64')
+      } else {
+        const media = await readLazyMedia(dataUrl)
+        if (!media) return false
+        bytes = media.body
+        // another document cannot resolve this document's lazy URL; inline the bytes
+        htmlSrc = `data:${media.mime};base64,${bytes.toString('base64')}`
+      }
+      // createFromBuffer, not createFromDataURL — the latter returns an empty
+      // image for valid PNGs in this Electron
+      const image = nativeImage.createFromBuffer(bytes)
+      if (image.isEmpty()) return false
+      // the html flavor carries the DISPLAY size + layout meta so an in-app
+      // paste keeps size/align/wrap instead of falling back to bitmap pixels
+      let width = image.getSize().width
+      let height = image.getSize().height
+      let metaAttr = ''
+      if (typeof meta === 'string' && meta.length <= 2048) {
+        try {
+          const parsed = copyImageDisplaySize(meta)
+          if (parsed.width !== undefined) width = parsed.width
+          if (parsed.height !== undefined) height = parsed.height
+          const escaped = meta.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+          metaAttr = ` data-image-meta="${escaped}"`
+        } catch {
+          /* malformed payload: plain img */
+        }
+      }
+      clipboard.write({
+        image,
+        html: `<img src="${htmlSrc}" width="${width}" height="${height}"${metaAttr}>`,
+      })
+      return true
+    },
+  )
+
+  // renderer print scale (inverse of the preview's print zoom, see print-zoom.ts)
+  // Infinity passes a `> 0` check, so require finiteness before handing it to Chromium.
+  const pdfScale = (scale?: number) => printScaleOption(scale)
+  const withInternalLinks = async (data: Buffer, links: unknown): Promise<Buffer> => {
+    if (!Array.isArray(links) || links.length === 0) return data
+    const { PDFDocument } = await import('pdf-lib')
+    const pdf = await PDFDocument.load(data)
+    if (addPdfInternalLinks(pdf, links) === 0) return data
+    return Buffer.from(await pdf.save())
+  }
+  const printScale = (scale?: number) =>
+    typeof scale === 'number' && Number.isFinite(scale) && scale > 0 && scale !== 1
+      ? { scaleFactor: Math.round(scale * 100) }
+      : {}
+
+  ipcMain.handle('docs:printers', async (event) => {
+    const printers = await event.sender.getPrintersAsync()
+    return printers.map((p) => ({ name: p.name, displayName: p.displayName || p.name }))
+  })
+
+  ipcMain.handle('docs:print', async (event, scale?: number, job?: unknown, paper?: unknown) => {
+    // print the calling tab's own content; zero margins — the docx page padding provides them.
+    // Resolves when the system dialog is dismissed (or the silent job is queued); the print
+    // dialog stays open on cancel (ok=false without error) and surfaces real failures.
+    const printOpts = {
+      margins: { marginType: 'none' as const },
+      ...printScale(scale),
+      ...printJobOptions(job),
+    }
+    // A named printer prints silently, and Chromium's silent print on macOS
+    // can drop the job outright — no queue entry, no callback error
+    // (genoffice#2347). Route those jobs through CUPS instead: printToPDF
+    // bakes the pages at the document's own paper size, and lp spools a
+    // real job whose queue state and failures are diagnosable.
+    if (process.platform === 'darwin' && printOpts.silent) {
+      const geometry = validPrintPaper(paper)
+      const printed = await event.sender.printToPDF({
+        printBackground: true,
+        margins: { top: 0, bottom: 0, left: 0, right: 0 },
+        ...(geometry
+          ? {
+              pageSize: {
+                width: geometry.widthTwips / TWIPS_PER_INCH,
+                height: geometry.heightTwips / TWIPS_PER_INCH,
+              },
+            }
+          : {}),
+        ...printScaleOption(scale),
+      })
+      return printPdfViaCups(printed, printOpts)
+    }
+    return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      event.sender.print(printOpts, (success, failureReason) => {
+        resolve(printOutcome(success, failureReason, printOpts.silent))
+      })
+    })
   })
 
   ipcMain.handle(
@@ -3122,7 +5902,16 @@ export function registerDocsIpc(): void {
       pageWidthTwips: number,
       pageHeightTwips: number,
       outPath?: string,
+      scale?: number,
+      links?: unknown,
     ) => {
+      // Renderer-supplied page geometry reaches Chromium printToPDF verbatim:
+      // reject non-finite/out-of-range sizes (0.1in..50in) and scales (0.1..5),
+      // same guard as docs:print-pdf-buffer (a malformed w:pgSz in a doc would
+      // otherwise hand Chromium a page thousands of inches wide).
+      if (!validPrintGeometry(pageWidthTwips, pageHeightTwips, scale)) {
+        return { ok: false, error: 'invalid page size or scale' }
+      }
       // renderer-supplied outPath is only honored when a save dialog authorized it before
       let filePath = outPath ?? null
       if (filePath && !canPdfWrite(event.sender.id, filePath)) {
@@ -3139,7 +5928,7 @@ export function registerDocsIpc(): void {
         allowPdfWrite(event.sender.id, filePath)
       }
       try {
-        const data = await event.sender.printToPDF({
+        const printed = await event.sender.printToPDF({
           printBackground: true,
           // custom pageSize is in inches; the docx page padding provides the margins
           pageSize: {
@@ -3147,8 +5936,77 @@ export function registerDocsIpc(): void {
             height: pageHeightTwips / TWIPS_PER_INCH,
           },
           margins: { top: 0, bottom: 0, left: 0, right: 0 },
+          ...pdfScale(scale),
         })
-        writeFileSync(filePath, data)
+        const data = await withInternalLinks(printed, links)
+        await atomicWriteFile(filePath, data)
+        if (!isImageExportTemp(event.sender.id, filePath)) openGeneratedFile(filePath)
+        return { ok: true, path: filePath }
+      } catch (err) {
+        // path is already authorized, so the renderer can retry chunked to the same target
+        return { ok: false, error: String(err), path: filePath }
+      }
+    },
+  )
+
+  ipcMain.handle('docs:save-image-as', async (event, src: unknown) => {
+    if (tornDownWcIds.has(event.sender.id) || typeof src !== 'string') return { ok: false }
+    return saveImageFromUrl(dialogParent(event), src, {
+      title: tm('dlgSaveAs'),
+      fallbackDir: defaultSaveDir(),
+    })
+  })
+
+  ipcMain.handle('docs:pick-export-images-target', async (event) => {
+    let dir = testExportDir
+    if (!dir) {
+      const r = await openDialog(event, {
+        title: tm('dlgPickExportDir'),
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      dir = r.canceled ? null : (r.filePaths[0] ?? null)
+    }
+    if (!dir) return null
+    const wcId = event.sender.id
+    const pdfPath = join(tmpdir(), `genoffice-docs-images-${randomUUID()}.pdf`)
+    allowPdfWrite(wcId, pdfPath)
+    imageExportTemps.set(wcId, (imageExportTemps.get(wcId) ?? new Set()).add(pdfPath))
+    imageExportDirs.set(wcId, (imageExportDirs.get(wcId) ?? new Set()).add(dir))
+    return { dir, pdfPath }
+  })
+
+  ipcMain.handle('docs:take-export-pdf', async (event, pdfPath: string) => {
+    const temps = imageExportTemps.get(event.sender.id)
+    if (typeof pdfPath !== 'string' || !temps?.has(pdfPath)) {
+      return { ok: false, error: 'not an image-export temp file' }
+    }
+    temps.delete(pdfPath)
+    try {
+      const data = await readFile(pdfPath)
+      return { ok: true, base64: data.toString('base64') }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    } finally {
+      await rm(pdfPath, { force: true })
+    }
+  })
+
+  ipcMain.handle(
+    'docs:write-export-image',
+    async (event, dir: string, fileName: string, pngBase64: string) => {
+      if (typeof dir !== 'string' || !imageExportDirs.get(event.sender.id)?.has(dir)) {
+        return { ok: false, error: 'export target is not an authorized folder' }
+      }
+      if (
+        typeof fileName !== 'string' ||
+        fileName !== basename(fileName) ||
+        !/^[^/\\]+\.png$/.test(fileName)
+      ) {
+        return { ok: false, error: 'invalid image file name' }
+      }
+      try {
+        const filePath = join(dir, fileName)
+        await atomicWriteFile(filePath, Buffer.from(String(pngBase64), 'base64'))
         return { ok: true, path: filePath }
       } catch (err) {
         return { ok: false, error: String(err) }
@@ -3156,10 +6014,89 @@ export function registerDocsIpc(): void {
     },
   )
 
+  ipcMain.handle(
+    'docs:export-html',
+    async (event, defaultName: string, html: string, outPath?: string) => {
+      if (typeof html !== 'string' || !html) return { ok: false, error: 'empty document' }
+      let filePath = outPath ?? null
+      if (filePath && !canPdfWrite(event.sender.id, filePath)) {
+        return { ok: false, error: 'export target is not an authorized path' }
+      }
+      if (!filePath) {
+        const result = await saveDialog(event, {
+          title: tm('dlgExportHtml'),
+          defaultPath: defaultName.replace(/\.docx$/i, '') + '.html',
+          filters: [{ name: 'HTML', extensions: ['html'] }],
+        })
+        if (result.canceled || !result.filePath) return { ok: false }
+        filePath = result.filePath
+        allowPdfWrite(event.sender.id, filePath)
+      }
+      try {
+        await atomicWriteFile(
+          filePath,
+          Buffer.from(await inlineLazyMediaInHtml(html, readLazyMedia), 'utf8'),
+        )
+        openGeneratedFile(filePath)
+        return { ok: true, path: filePath }
+      } catch (err) {
+        return { ok: false, error: String(err), path: filePath }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    'docs:export-markdown',
+    async (
+      event,
+      defaultName: string,
+      markdown: string,
+      images: MarkdownImage[],
+      outPath?: string,
+    ) => {
+      if (typeof markdown !== 'string' || !markdown) return { ok: false, error: 'empty document' }
+      if (!Array.isArray(images)) return { ok: false, error: 'bad image list' }
+      let filePath = outPath ?? null
+      if (filePath && !canPdfWrite(event.sender.id, filePath)) {
+        return { ok: false, error: 'export target is not an authorized path' }
+      }
+      if (!filePath) {
+        const result = await saveDialog(event, {
+          title: tm('dlgExportMarkdown'),
+          defaultPath: defaultName.replace(/\.docx$/i, '') + '.md',
+          filters: [{ name: 'Markdown', extensions: ['md'] }],
+        })
+        if (result.canceled || !result.filePath) return { ok: false }
+        filePath = result.filePath
+        allowPdfWrite(event.sender.id, filePath)
+      }
+      try {
+        const written = await writeMarkdownMedia(filePath, images)
+        // the Markdown destination was escaped before the swap: parentheses must not survive it
+        const mediaDir = encodeURIComponent(
+          basename(filePath).replace(/\.md$/i, '') + '_files',
+        ).replace(/[()]/g, (c) => (c === '(' ? '%28' : '%29'))
+        await atomicWriteFile(
+          filePath,
+          Buffer.from(markdown.split(`${MARKDOWN_MEDIA_DIR_TOKEN}/`).join(`${mediaDir}/`), 'utf8'),
+        )
+        openGeneratedFile(filePath)
+        return { ok: true, path: filePath, imagesDropped: images.length - written }
+      } catch (err) {
+        return { ok: false, error: String(err), path: filePath }
+      }
+    },
+  )
+
   // mixed paper-size export: the renderer prints group by group per size (other pages hidden via CSS); this produces one group's bytes
   ipcMain.handle(
     'docs:print-pdf-buffer',
-    async (event, pageWidthTwips: number, pageHeightTwips: number) => {
+    async (event, pageWidthTwips: number, pageHeightTwips: number, scale?: number) => {
+      // Renderer-supplied page geometry reaches Chromium printToPDF verbatim:
+      // reject non-finite/out-of-range sizes (0.5in..50in) and scales (0.1..5).
+      if (!validPrintGeometry(pageWidthTwips, pageHeightTwips, scale)) {
+        return { ok: false, error: 'invalid page size or scale' }
+      }
       try {
         const data = await event.sender.printToPDF({
           printBackground: true,
@@ -3168,6 +6105,7 @@ export function registerDocsIpc(): void {
             height: pageHeightTwips / TWIPS_PER_INCH,
           },
           margins: { top: 0, bottom: 0, left: 0, right: 0 },
+          ...pdfScale(scale),
         })
         return { ok: true, base64: data.toString('base64') }
       } catch (err) {
@@ -3179,7 +6117,13 @@ export function registerDocsIpc(): void {
   // merge grouped PDF fragments into one file in page order (pdf-lib)
   ipcMain.handle(
     'docs:save-merged-pdf',
-    async (event, defaultName: string, base64Parts: string[], outPath?: string) => {
+    async (
+      event,
+      defaultName: string,
+      base64Parts: string[],
+      outPath?: string,
+      links?: unknown,
+    ) => {
       let filePath = outPath ?? null
       if (filePath && !canPdfWrite(event.sender.id, filePath)) {
         return { ok: false, error: 'export target is not an authorized path' }
@@ -3202,7 +6146,9 @@ export function registerDocsIpc(): void {
           const pages = await merged.copyPages(part, part.getPageIndices())
           for (const page of pages) merged.addPage(page)
         }
-        writeFileSync(filePath, Buffer.from(await merged.save()))
+        if (Array.isArray(links) && links.length > 0) addPdfInternalLinks(merged, links)
+        await atomicWriteFile(filePath, Buffer.from(await merged.save()))
+        if (!isImageExportTemp(event.sender.id, filePath)) openGeneratedFile(filePath)
         return { ok: true, path: filePath }
       } catch (err) {
         return { ok: false, error: String(err) }
@@ -3246,14 +6192,117 @@ export function registerDocsIpc(): void {
  * and falls back to real multi-BrowserWindow behavior. */
 interface DocsShellHooks {
   openTab(openPath?: string, options?: { newBlank?: boolean }): void
+  /** open a blank docs tab that consumes the queued AI content on boot (create_document) */
+  openAiDocTab?(content: AiDocContent): void
   listTabs(): DocsTabInfo[]
   focusTab(id: string): void
   /** closes the calling tab instead of the whole shell window (Cmd+W / role:'close') */
   closeActiveTab(): void
+  /** Shell router used to open exported PDFs in a new GenOffice tab. */
+  openGeneratedPath?(path: string): boolean
 }
 let shellHooks: DocsShellHooks | null = null
 export function setDocsShellHooks(hooks: DocsShellHooks | null): void {
   shellHooks = hooks
+}
+
+/** After writing an exported/AI-generated file: open it in the right tab
+ * (shell) or reveal it in the folder (standalone). Tab-opening failure must
+ * not report the write itself as failed — the file is already persisted. */
+/**
+ * Pictures of a Markdown export land in `<file>_files/` next to it, like a
+ * browser's "save page" folder. Returns how many were written; unreadable
+ * sources are skipped and the reference in the Markdown dangles.
+ */
+async function writeMarkdownMedia(mdPath: string, images: MarkdownImage[]): Promise<number> {
+  if (images.length === 0) return 0
+  const dir = join(dirname(mdPath), basename(mdPath).replace(/\.md$/i, '') + '_files')
+  let written = 0
+  for (const img of images) {
+    if (typeof img?.name !== 'string' || !/^image\d+\.\w+$/.test(img.name)) continue
+    if (typeof img.src !== 'string') continue
+    const data = /^data:image\/[\w.+-]+;base64,(.*)$/s.exec(img.src)
+    const body = data
+      ? Buffer.from(data[1], 'base64')
+      : ((await readLazyMedia(img.src).catch(() => null))?.body ?? null)
+    if (!body || body.length === 0) continue
+    if (written === 0) await mkdir(dir, { recursive: true })
+    await atomicWriteFile(join(dir, img.name), body)
+    written++
+  }
+  return written
+}
+
+function openGeneratedFile(path: string): void {
+  // Headless export has no tab strip and no user: revealing the file in Finder
+  // would be the only visible effect of a run that must stay silent.
+  if (isHeadlessMode()) return
+  try {
+    if (shellHooks?.openGeneratedPath?.(path)) return
+  } catch (err) {
+    console.warn('[docs] Failed to open generated file:', err)
+  }
+  shell.showItemInFolder(path)
+}
+
+/** Pick a safe file-name stem for an AI-created document. */
+export function sanitizeAiDocFileBase(title: string): string {
+  // Control characters are intentionally rejected from generated file names.
+  const cleaned = String(title ?? '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[/\\:*?"<>|\u0000-\u001f]/g, '_')
+    .trim()
+    .slice(0, 80)
+    .trim()
+  return cleaned && cleaned !== '.' && cleaned !== '..' ? cleaned : 'Untitled'
+}
+
+/**
+ * AI create_document: build a new standalone file in the default folder and
+ * open it in a new tab. docx routes through a fresh blank docs tab that
+ * inserts the queued content on boot and saves itself (the full-fidelity
+ * HTML → docx conversion lives in the docs renderer); pdf and md are written
+ * directly here. Also called by other apps' mains via shell-wired hooks.
+ */
+export async function createAiDocument(
+  request: CreateDocumentRequest,
+): Promise<CreateDocumentResult> {
+  const type = request?.type
+  const title = sanitizeAiDocFileBase(request?.title)
+  const content = String(request?.content ?? '')
+  if (!content.trim()) return { ok: false, error: 'content must not be empty' }
+  try {
+    if (type === 'docx') {
+      const payload: AiDocContent = { title, html: content }
+      if (shellHooks?.openAiDocTab) shellHooks.openAiDocTab(payload)
+      else {
+        const win = createDocsWindow(undefined)
+        markDocsNewBlank(win.webContents.id)
+        queueDocsAiContent(win.webContents.id, payload)
+      }
+      return { ok: true }
+    }
+    if (type === 'pdf') {
+      const bytes = await printHtmlToPdf(
+        buildPrintableHtml(title, content),
+        () =>
+          new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } }),
+      )
+      const filePath = uniquePathIn(defaultSaveDir(), `${title}.pdf`)
+      await writeFile(filePath, bytes)
+      openGeneratedFile(filePath)
+      return { ok: true, path: filePath }
+    }
+    if (type === 'md' || type === 'html') {
+      const filePath = uniquePathIn(defaultSaveDir(), `${title}.${type}`)
+      await writeFile(filePath, content, 'utf8')
+      openGeneratedFile(filePath)
+      return { ok: true, path: filePath }
+    }
+    return { ok: false, error: `unsupported document type: ${String(type)}` }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 // ---- application menu ----
@@ -3303,9 +6352,8 @@ export function setDocsMenuGate(gate: () => boolean): void {
 export function buildDocsMenu(): void {
   if (docsMenuGate && !docsMenuGate()) return
   const isMac = process.platform === 'darwin'
-  const recent = readJson<string[]>(RECENT_PATH(), [])
-    .filter((p) => existsSync(p))
-    .slice(0, 10)
+  // Opening a menu must not trigger an automount; validate when the user opens a file.
+  const recent = readJson<string[]>(RECENT_PATH(), []).slice(0, 10)
 
   const recentSubmenu: MenuItemConstructorOptions[] =
     recent.length > 0
@@ -3317,25 +6365,13 @@ export function buildDocsMenu(): void {
         }))
       : [{ label: tm('menuNoRecent'), enabled: false }]
 
+  const labels = appMenuLabels(getUiLang())
+  const appMenu = appMenuTemplate(process.platform, labels, {
+    appLabel: app.name,
+    extra: [settingsMenuItem(labels, () => sendCommand('preferences'))],
+  })
   const template: MenuItemConstructorOptions[] = [
-    ...(isMac
-      ? [
-          {
-            label: app.name,
-            submenu: [
-              { role: 'about' as const },
-              { type: 'separator' as const },
-              { role: 'services' as const },
-              { type: 'separator' as const },
-              { role: 'hide' as const },
-              { role: 'hideOthers' as const },
-              { role: 'unhide' as const },
-              { type: 'separator' as const },
-              { role: 'quit' as const },
-            ],
-          },
-        ]
-      : []),
+    ...(appMenu ? [appMenu] : []),
     {
       label: tm('menuFile'),
       submenu: [
@@ -3367,13 +6403,21 @@ export function buildDocsMenu(): void {
           accelerator: 'Shift+CmdOrCtrl+S',
           click: () => sendCommand('save-as'),
         },
+        // also in the native File menu, the only entry on macOS: the ribbon's
+        // File tab is Windows/Linux-only
+        { label: labels.nameWithAi, click: () => sendCommand('name-with-ai') },
         { type: 'separator' },
         { label: tm('menuPageSetup'), click: () => sendCommand('page-setup') },
         { label: tm('menuExportPdf'), click: () => sendCommand('export-pdf') },
+        { label: tm('menuExportHtml'), click: () => sendCommand('export-html') },
+        { label: tm('menuExportMarkdown'), click: () => sendCommand('export-markdown') },
+        { label: tm('menuExportImages'), click: () => sendCommand('export-images') },
         {
           label: tm('menuPrint'),
           accelerator: 'CmdOrCtrl+P',
-          click: () => activeDocsWebContents()?.print({}),
+          // routed through the renderer: it opens the pagination preview first so each
+          // printed sheet is exactly one editor page (WYSIWYG), then invokes docs:print
+          click: () => sendCommand('print'),
         },
       ],
     },
@@ -3397,6 +6441,11 @@ export function buildDocsMenu(): void {
           accelerator: 'CmdOrCtrl+F',
           click: () => sendCommand('find'),
         },
+        {
+          label: tm('menuGoTo'),
+          accelerator: isMac ? 'Alt+Cmd+G' : 'Ctrl+G',
+          click: () => sendCommand('goto'),
+        },
         { type: 'separator' },
         { role: 'selectAll', label: tm('menuSelectAll') },
       ],
@@ -3419,8 +6468,18 @@ export function buildDocsMenu(): void {
           accelerator: 'CmdOrCtrl+0',
           click: () => sendCommand('zoom-100'),
         },
-        { label: tm('menuPageWidth'), click: () => sendCommand('zoom-page-width') },
-        { label: tm('menuWholePage'), click: () => sendCommand('zoom-whole-page') },
+        {
+          label: tm('menuZoom'),
+          submenu: [
+            ...[500, 200, 150, 125, 100, 75, 50, 25, 10].map((pct) => ({
+              label: `${pct}%`,
+              click: () => sendCommand('zoom-set', String(pct)),
+            })),
+            { label: tm('menuPageWidth'), click: () => sendCommand('zoom-page-width') },
+            { label: tm('menuWholePage'), click: () => sendCommand('zoom-whole-page') },
+            { label: tm('menuMultiPage'), click: () => sendCommand('zoom-multi-page') },
+          ],
+        },
         { type: 'separator' },
         {
           id: 'docs-menu-ai-sidebar',
@@ -3446,6 +6505,9 @@ export function buildDocsMenu(): void {
       submenu: [
         { label: tm('menuInsertTable'), click: () => sendCommand('insert-table') },
         { label: tm('menuInsertImage'), click: () => sendCommand('insert-image') },
+        // no CmdOrCtrl+Enter accelerator: a menu accelerator would intercept
+        // the key before renderer inputs (comments panel / prompt modal use
+        // Cmd+Enter to submit); the editor keymap handles it instead
         { label: tm('menuInsertPageBreak'), click: () => sendCommand('insert-page-break') },
         {
           label: tm('menuInsertLink'),
@@ -3491,24 +6553,182 @@ export function buildDocsMenu(): void {
       ],
     },
     {
+      // Word's Table menu; the renderer answers with a hint when the caret is outside a table
+      label: tm('menuTable'),
+      submenu: [
+        {
+          label: tm('menuTableInsert'),
+          submenu: [
+            { label: tm('menuTableInsertTable'), click: () => sendCommand('insert-table') },
+            { label: tm('menuTableColsLeft'), click: () => sendCommand('table-insert-cols-left') },
+            {
+              label: tm('menuTableColsRight'),
+              click: () => sendCommand('table-insert-cols-right'),
+            },
+            {
+              label: tm('menuTableRowsAbove'),
+              click: () => sendCommand('table-insert-rows-above'),
+            },
+            {
+              label: tm('menuTableRowsBelow'),
+              click: () => sendCommand('table-insert-rows-below'),
+            },
+            { label: tm('menuTableCells'), click: () => sendCommand('table-insert-cells') },
+          ],
+        },
+        {
+          label: tm('menuTableDelete'),
+          submenu: [
+            { label: tm('menuTableDeleteTable'), click: () => sendCommand('table-delete-table') },
+            {
+              label: tm('menuTableDeleteColumns'),
+              click: () => sendCommand('table-delete-columns'),
+            },
+            { label: tm('menuTableDeleteRows'), click: () => sendCommand('table-delete-rows') },
+            { label: tm('menuTableCells'), click: () => sendCommand('table-delete-cells') },
+          ],
+        },
+        {
+          label: tm('menuTableSelect'),
+          submenu: [
+            { label: tm('menuTableSelectTable'), click: () => sendCommand('table-select-table') },
+            { label: tm('menuTableSelectColumn'), click: () => sendCommand('table-select-column') },
+            { label: tm('menuTableSelectRow'), click: () => sendCommand('table-select-row') },
+            { label: tm('menuTableSelectCell'), click: () => sendCommand('table-select-cell') },
+          ],
+        },
+        { type: 'separator' },
+        { label: tm('menuTableMergeCells'), click: () => sendCommand('table-merge-cells') },
+        { label: tm('menuTableSplitCells'), click: () => sendCommand('table-split-cells') },
+        { label: tm('menuTableSplitTable'), click: () => sendCommand('table-split-table') },
+        { type: 'separator' },
+        {
+          label: tm('menuTableAutoFit'),
+          submenu: [
+            {
+              label: tm('menuTableAutoFitContents'),
+              click: () => sendCommand('table-autofit-contents'),
+            },
+            {
+              label: tm('menuTableAutoFitWindow'),
+              click: () => sendCommand('table-autofit-window'),
+            },
+            { label: tm('menuTableFixedWidth'), click: () => sendCommand('table-autofit-fixed') },
+            { type: 'separator' },
+            {
+              label: tm('menuTableDistributeRows'),
+              click: () => sendCommand('table-distribute-rows'),
+            },
+            {
+              label: tm('menuTableDistributeColumns'),
+              click: () => sendCommand('table-distribute-columns'),
+            },
+          ],
+        },
+        { label: tm('menuTableRepeatHeader'), click: () => sendCommand('table-repeat-header') },
+        { type: 'separator' },
+        { label: tm('menuTableGridlines'), click: () => sendCommand('table-gridlines') },
+        { label: tm('menuTableProperties'), click: () => sendCommand('table-properties') },
+      ],
+    },
+    {
       // Word for Mac keeps Word Count in the Tools menu, not on the ribbon
       label: tm('menuTools'),
       submenu: [
         { label: tm('menuWordCount'), click: () => sendCommand('word-count') },
+        { label: tm('menuAutoCorrect'), click: () => sendCommand('autocorrect-options') },
+        // Word for Mac keeps Settings in the application menu
+        ...(isMac ? [] : [settingsMenuItem(labels, () => sendCommand('preferences'))]),
         { type: 'separator' },
-        { label: tm('menuSpelling'), enabled: false },
-        { label: tm('menuMacros'), enabled: false },
+        // Runs the same AI proofread as Review > Editor (renderer shows the one-time ack)
+        { label: tm('menuAiProofread'), click: () => sendCommand('ai-proofread') },
       ],
     },
     windowMenuTemplate(process.platform, appMenuLabels(getUiLang())),
     {
       label: tm('menuHelp'),
       role: 'help',
-      submenu: [{ label: tm('menuDocsHelp'), enabled: false }],
+      submenu: [
+        {
+          label: tm('menuShortcuts'),
+          accelerator: 'CmdOrCtrl+/',
+          click: () => sendCommand('shortcuts'),
+        },
+        { type: 'separator' },
+        checkUpdatesMenuItem(appMenuLabels(getUiLang())),
+        aboutMenuItem(appMenuLabels(getUiLang())),
+      ],
     },
   ]
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+// ---- headless export ----
+
+/** hidden export windows: webContents id -> what the renderer must write */
+const headlessExportTargets = new Map<number, HeadlessExportTarget>()
+/** settled by 'docs:headless-export-done' (or by the renderer dying) */
+const headlessExportWaiters = new Map<number, (result: HeadlessExportReport) => void>()
+
+interface HeadlessExportReport {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * Render `input` to `outPath` (as PDF or standalone HTML) with no visible window.
+ *
+ * The window is wired exactly like createDocsWindow's (same preload, sandbox
+ * and `backgroundThrottling: false`) and the document rides the normal
+ * pending-open queue, so the renderer runs its usual load -> paginate ->
+ * export pipeline; only the save dialog is skipped, by pre-authorizing
+ * `outPath` the way a dialog would. Rejects with the renderer's reason when
+ * the export fails or the deadline passes.
+ */
+export async function exportDocsHeadless(
+  input: string,
+  outPath: string,
+  format: HeadlessExportFormat = 'pdf',
+  timeoutMs = 300_000,
+): Promise<void> {
+  const win = new BrowserWindow({
+    show: false,
+    width: 1360,
+    height: 900,
+    webPreferences: {
+      preload: runtime.preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  })
+  const wcId = win.webContents.id
+  pendingWindowOpens.set(wcId, input)
+  headlessExportTargets.set(wcId, { outPath, format })
+  allowPdfWrite(wcId, outPath)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const report = await new Promise<HeadlessExportReport>((resolve) => {
+      headlessExportWaiters.set(wcId, resolve)
+      win.webContents.on('render-process-gone', (_event, details) =>
+        resolve({ ok: false, error: `docs renderer stopped (${details.reason})` }),
+      )
+      timer = setTimeout(
+        () => resolve({ ok: false, error: `docs export timed out after ${timeoutMs}ms` }),
+        timeoutMs,
+      )
+      void win.webContents.loadURL(rendererUrl(runtime.rendererUrl, 'docs'))
+    })
+    if (!report.ok) throw new Error(report.error ?? 'docs export failed')
+  } finally {
+    if (timer) clearTimeout(timer)
+    headlessExportWaiters.delete(wcId)
+    headlessExportTargets.delete(wcId)
+    pendingWindowOpens.delete(wcId)
+    if (!win.isDestroyed()) win.destroy()
+  }
 }
 
 // ---- window ----
@@ -3517,8 +6737,8 @@ export function createDocsWindow(openPath?: string): BrowserWindow {
   const win = new BrowserWindow({
     width: 1360,
     height: 900,
-    minWidth: 980,
-    minHeight: 600,
+    minWidth: 720,
+    minHeight: 550,
     title: 'GenOffice Docs',
     // Word-like custom title bar (document name centered, quick-access buttons)
     ...(process.platform === 'darwin'
@@ -3554,11 +6774,7 @@ export function createDocsWindow(openPath?: string): BrowserWindow {
     return { action: 'deny' }
   })
 
-  if (runtime.rendererUrl) {
-    void win.loadURL(runtime.rendererUrl)
-  } else {
-    void win.loadFile(runtime.rendererFile)
-  }
+  void win.loadURL(rendererUrl(runtime.rendererUrl, 'docs'))
   // close guard for standalone-window mode (tab mode goes through the same flow via the shell's tab-manager/window-close path)
   let closeConfirmed = false
   win.on('close', (event) => {
@@ -3777,14 +6993,7 @@ export function createDocsView(openPath?: string): WebContentsView {
 
   // mode=tab: the shell's tab strip owns the traffic lights / caption buttons,
   // so the ribbon must not reserve space for them
-  if (runtime.rendererUrl) {
-    // append via URL so a dev URL that already carries query params stays valid
-    const devUrl = new URL(runtime.rendererUrl)
-    devUrl.searchParams.set('mode', 'tab')
-    void view.webContents.loadURL(devUrl.toString())
-  } else {
-    void view.webContents.loadFile(runtime.rendererFile, { query: { mode: 'tab' } })
-  }
+  void view.webContents.loadURL(rendererUrl(runtime.rendererUrl, 'docs', { mode: 'tab' }))
   // view.webContents becomes undefined after destroy, so grab the id beforehand
   const wcId = view.webContents.id
   view.webContents.once('destroyed', () => {
@@ -3806,12 +7015,33 @@ export function hasDocsWindow(): boolean {
 // ---- standalone lifecycle (apps/docs running on its own) ----
 
 export function startDocsStandalone(): void {
+  registerRendererScheme()
   installNavigationGuard(app)
   installContextMenu(app, () => contextMenuLabels(getUiLang()))
   // dev runs must not share the packaged app's userData (recent files, AI settings)
   // or its single-instance lock — otherwise `npm run dev` silently quits whenever
   // the installed GenOffice Docs is open and forwards its argv there instead.
-  if (isDev) app.setPath('userData', join(app.getPath('appData'), 'GenOffice Docs Dev'))
+  // AI_OFFICE_USER_DATA: E2E/screenshot runs isolate userData (and the
+  // single-instance lock) so parallel automation sessions don't evict each other
+  if (process.env.AI_OFFICE_USER_DATA) app.setPath('userData', process.env.AI_OFFICE_USER_DATA)
+  else if (isDev) {
+    // "GenOffice Docs Dev" carried a space, against the XDG one-token
+    // convention (genoffice#1817); move the old profile once, as the shell does.
+    const appData = app.getPath('appData')
+    const devDir = join(appData, 'GenOffice-Docs-Dev')
+    const oldDevDir = join(appData, 'GenOffice Docs Dev')
+    let userData = devDir
+    if (existsSync(oldDevDir) && !existsSync(devDir)) {
+      try {
+        renameSync(oldDevDir, devDir)
+      } catch {
+        // another dev instance holds the directory: keep using the old one so
+        // the profile is not lost and the move is retried on the next launch
+        userData = oldDevDir
+      }
+    }
+    app.setPath('userData', userData)
+  }
 
   const hasSingleInstanceLock = app.requestSingleInstanceLock()
   if (!hasSingleInstanceLock) {
@@ -3825,7 +7055,7 @@ export function startDocsStandalone(): void {
   })
 
   app.on('second-instance', (_event, argv) => {
-    openExternalDocx(findDocxPath(argv))
+    openExternalDocx(findOpenableDocPath(argv))
     mainWindow?.show()
     mainWindow?.focus()
   })
@@ -3835,6 +7065,7 @@ export function startDocsStandalone(): void {
   registerDocsIpc()
 
   app.whenReady().then(() => {
+    installRendererProtocol({ docs: join(__dirname, '../renderer') })
     setUiLang(normalizeLang(process.env.GENOFFICE_LANG ?? app.getLocale()))
     // packaged builds get the Dock icon from icon.icns; dev shows Electron's default
     if (isDev && process.platform === 'darwin') {

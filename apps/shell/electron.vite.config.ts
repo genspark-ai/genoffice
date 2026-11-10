@@ -6,7 +6,10 @@ export default defineConfig({
   // Bundle everything into the shell main (same policy as apps/docs): the
   // imported docs/sheets main modules are TS source with no build artifacts,
   // so externalizing them would break Node ESM resolution at runtime.
-  main: {},
+  main: {
+    // node:sqlite is a Node 22+ builtin the bundler's builtin list may predate
+    build: { rollupOptions: { external: ['node:sqlite'] } },
+  },
   preload: {
     build: {
       rollupOptions: {
@@ -14,6 +17,8 @@ export default defineConfig({
           index: resolve(__dirname, 'src/preload/index.ts'),
           // dedicated preload for the auto-update window
           update: resolve(__dirname, 'src/preload/update.ts'),
+          // dedicated preload for the PDF password prompt window
+          'pdf-password': resolve(__dirname, 'src/preload/pdf-password.ts'),
         },
       },
     },
@@ -26,6 +31,8 @@ export default defineConfig({
           index: resolve(__dirname, 'src/renderer/index.html'),
           // strong-guidance update window (see src/main/update-window.ts)
           update: resolve(__dirname, 'src/renderer/update.html'),
+          // PDF password prompt window (see src/main/pdf-password-dialog.ts)
+          'pdf-password': resolve(__dirname, 'src/renderer/pdf-password.html'),
         },
       },
     },

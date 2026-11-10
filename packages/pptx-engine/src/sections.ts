@@ -135,11 +135,11 @@ export function setSections(opened: OpenedPptx, sections: SectionInfo[]): void {
       .join('')
     const ext = `<p:ext uri="${SECTION_EXT_URI}"><p14:sectionLst xmlns:p14="${P14_NS}">${secXml}</p14:sectionLst></p:ext>`
     if (/<\/p:extLst>/.test(next)) {
-      next = next.replace('</p:extLst>', `${ext}</p:extLst>`)
+      next = next.replace('</p:extLst>', () => `${ext}</p:extLst>`)
     } else if (/<p:extLst\/>/.test(next)) {
-      next = next.replace('<p:extLst/>', `<p:extLst>${ext}</p:extLst>`)
+      next = next.replace('<p:extLst/>', () => `<p:extLst>${ext}</p:extLst>`)
     } else {
-      next = next.replace('</p:presentation>', `<p:extLst>${ext}</p:extLst></p:presentation>`)
+      next = next.replace('</p:presentation>', () => `<p:extLst>${ext}</p:extLst></p:presentation>`)
     }
   }
   archive.entries.set(PRES_PATH, Buffer.from(next, 'utf8'))
@@ -159,9 +159,9 @@ export function normalizeSections(
   const starts = new Array<number>(sections.length)
   let nextStart = total
   for (let i = sections.length - 1; i >= 0; i--) {
-    const own = sections[i]!.slideIndices.length
-      ? Math.min(...sections[i]!.slideIndices)
-      : nextStart
+    const indices = sections[i]!.slideIndices
+    let own = nextStart
+    for (let k = 0; k < indices.length; k++) own = Math.min(own, indices[k]!)
     starts[i] = Math.min(own, nextStart)
     nextStart = starts[i]!
   }
@@ -296,7 +296,10 @@ export function moveSlide(opened: OpenedPptx, fromIndex: number, toIndex: number
   tags.splice(to, 0, tag!)
   archive.entries.set(
     PRES_PATH,
-    Buffer.from(pres.replace(m[0], `<p:sldIdLst>${tags.join('')}</p:sldIdLst>`), 'utf8'),
+    Buffer.from(
+      pres.replace(m[0], () => `<p:sldIdLst>${tags.join('')}</p:sldIdLst>`),
+      'utf8',
+    ),
   )
 
   // Sync deck.slides
@@ -351,7 +354,10 @@ export function moveSection(
   const newInner = newOldOrder.map((i) => tags[i]!).join('')
   archive.entries.set(
     PRES_PATH,
-    Buffer.from(pres.replace(m[0], `<p:sldIdLst>${newInner}</p:sldIdLst>`), 'utf8'),
+    Buffer.from(
+      pres.replace(m[0], () => `<p:sldIdLst>${newInner}</p:sldIdLst>`),
+      'utf8',
+    ),
   )
 
   // Sync deck.slides order

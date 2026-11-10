@@ -1,0 +1,272 @@
+/* Composer "+" menu (add file / skills) and attached-skill chips. Chrome tokens
+ * only; each app imports this next to its other @genoffice/ui sheets. */
+
+.ai-plus {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.ai-plus-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-30);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.ai-plus-btn:hover,
+.ai-plus-btn.open {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ai-plus-btn.has-skills {
+  color: var(--accent);
+}
+
+.ai-plus-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ai-plus-pop {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  max-height: min(420px, 70vh);
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-8);
+  box-shadow: var(--shadow-menu);
+  font-size: 12px;
+}
+
+.ai-plus-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius-6);
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-plus-item:hover {
+  background: var(--hover);
+}
+
+.ai-plus-item-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-plus-chevron {
+  color: var(--text-secondary);
+}
+
+.ai-plus-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-subtle);
+}
+
+.ai-plus-search-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+}
+
+.ai-plus-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-6);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ai-plus-back:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ai-plus-search {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-6);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.ai-plus-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ai-plus-list {
+  flex: 1;
+  min-height: 0;
+  margin-top: 4px;
+  overflow-y: auto;
+}
+
+.ai-plus-empty {
+  padding: 12px 8px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.ai-plus-skill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-6);
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-plus-skill:hover {
+  background: var(--hover);
+}
+
+.ai-plus-skill.on {
+  background: var(--accent-soft);
+}
+
+.ai-plus-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--hover);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ai-plus-skill-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ai-plus-skill-name {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-plus-skill-desc {
+  color: var(--text-secondary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-plus-check {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.ai-plus-manage {
+  flex-shrink: 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0 0 var(--radius-6) var(--radius-6);
+  color: var(--text-secondary);
+}
+
+.ai-skill-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 8px 0;
+}
+
+.ai-skill-chips-sent {
+  padding: 0 0 6px;
+}
+
+.ai-skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  max-width: 220px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-30);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.ai-skill-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-skill-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ai-skill-chip-remove:hover {
+  background: var(--hover);
+  color: var(--text);
+}

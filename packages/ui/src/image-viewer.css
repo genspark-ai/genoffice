@@ -1,0 +1,83 @@
+.gs-imgview-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--color-bg-overlay);
+  -webkit-app-region: no-drag;
+}
+
+.gs-imgview-img {
+  flex: none;
+  max-width: none;
+  transform-origin: center center;
+  cursor: grab;
+  user-select: none;
+  box-shadow: var(--shadow-menu);
+}
+
+.gs-imgview-img.dragging {
+  cursor: grabbing;
+}
+
+.gs-imgview-bar {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-menu);
+}
+
+.gs-imgview-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.gs-imgview-btn:hover {
+  background: var(--hover);
+}
+
+.gs-imgview-btn.active {
+  color: var(--accent);
+}
+
+.gs-imgview-11 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.gs-imgview-zoom {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.gs-imgview-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border);
+}

@@ -5,6 +5,7 @@
  */
 import { useState } from 'react'
 import { useI18n } from '../i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 export interface ChartDataInit {
   categories: string[]
@@ -19,6 +20,7 @@ interface Props {
 
 export function ChartDataDialog({ init, onConfirm, onClose }: Props) {
   const { t } = useI18n()
+  const { titleId, dialogProps } = useModalDialog(onClose)
   const [cats, setCats] = useState<string[]>(() =>
     init.categories.length ? [...init.categories] : [t('paneChartCategoryN', { n: 1 })],
   )
@@ -70,8 +72,8 @@ export function ChartDataDialog({ init, onConfirm, onClose }: Props) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal chart-data-modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{t('paneChartEditTitle')}</h2>
+      <div className="modal chart-data-modal" {...dialogProps} onClick={(e) => e.stopPropagation()}>
+        <h2 id={titleId}>{t('paneChartEditTitle')}</h2>
         <div className="chart-data-scroll">
           <table className="chart-data-grid">
             <thead>

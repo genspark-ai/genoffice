@@ -24,6 +24,9 @@ export interface FaceVerticalMetrics {
   winDescent: number | null
   /** OS/2 fsSelection bit 7 (USE_TYPO_METRICS) */
   useTypoMetrics: boolean
+  xAvgCharWidth: number | null
+  /** OS/2 ulCodePageRange1; bits 17-21 flag the East Asian code pages */
+  codePageRange1: number | null
 }
 
 function parseFaceMetrics(fd: number, offset: number): FaceVerticalMetrics | null {
@@ -49,6 +52,8 @@ function parseFaceMetrics(fd: number, offset: number): FaceVerticalMetrics | nul
     winAscent: hasWin ? os2.readUInt16BE(74) : null,
     winDescent: hasWin ? os2.readUInt16BE(76) : null,
     useTypoMetrics: !!os2 && os2.length >= 64 && (os2.readUInt16BE(62) & 0x80) !== 0,
+    xAvgCharWidth: os2 && os2.length >= 4 ? os2.readInt16BE(2) : null,
+    codePageRange1: os2 && os2.length >= 82 ? os2.readUInt32BE(78) : null,
   }
 }
 
@@ -97,6 +102,8 @@ function saveCache(): void {
 }
 
 function cacheValid(entry: CacheEntry): boolean {
+  // entries written before the OS/2 fields were read lack them
+  if (entry.m && !('codePageRange1' in entry.m)) return false
   try {
     const st = statSync(entry.path)
     return st.mtimeMs === entry.mtimeMs && st.size === entry.size

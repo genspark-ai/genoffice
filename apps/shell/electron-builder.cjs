@@ -12,13 +12,47 @@
  * When the variable is unset (forks, PR smoke builds, plain local packaging)
  * the publish config is omitted: electron-builder then bakes no
  * app-update.yml into the app and in-app auto-update stays disabled.
+ *
+ * GENOFFICE_GA4_MEASUREMENT_ID / GENOFFICE_GA4_API_SECRET — GA4 Measurement
+ * Protocol credentials for anonymous usage analytics, injected the same way
+ * (CI secrets, or apps/shell/electron-builder.env locally). They are written
+ * into the packaged app's package.json via extraMetadata and read back by
+ * src/main/analytics.ts. When either is unset — every source/fork build —
+ * nothing is injected and the app runs with analytics fully disabled.
+ *
+ * GENOFFICE_FONT_CDN_URL — base URL for the curated downloadable-font catalog.
+ * Official release jobs inject it through extraMetadata so the endpoint stays
+ * out of source. Without it, font download prompts/catalog entries are hidden;
+ * users can still install local font files.
  */
 
+// Buffer comes from node:buffer, not the global: this file is evaluated
+// inside a vm sandbox (the packaging tests) that has no Buffer global.
+const { Buffer } = require('node:buffer')
 const { execFileSync } = require('node:child_process')
-const { existsSync } = require('node:fs')
+const { closeSync, existsSync, openSync, readFileSync, readSync, rmSync } = require('node:fs')
 const { join } = require('node:path')
 
+function normalizeHttpsBaseUrl(name, value) {
+  if (!value || !value.trim()) return null
+  try {
+    const url = new URL(value.trim())
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
+      throw new Error('invalid')
+    }
+    return `${url.origin}${url.pathname.replace(/\/+$/, '')}`
+  } catch {
+    throw new Error(`${name} must be an HTTPS base URL without credentials, query, or fragment`)
+  }
+}
+
 const updateUrl = process.env.GENOFFICE_UPDATE_URL
+const ga4MeasurementId = process.env.GENOFFICE_GA4_MEASUREMENT_ID
+const ga4ApiSecret = process.env.GENOFFICE_GA4_API_SECRET
+const fontCdnUrl = normalizeHttpsBaseUrl(
+  'GENOFFICE_FONT_CDN_URL',
+  process.env.GENOFFICE_FONT_CDN_URL,
+)
 
 // GENOFFICE_MAC_X64=1 — opt into packaging the Intel (x64) dmg/zip alongside
 // arm64. Off by default: Intel packages must only ever ship signed with the
@@ -29,27 +63,184 @@ const updateUrl = process.env.GENOFFICE_UPDATE_URL
 // switch.
 const includeMacX64 = process.env.GENOFFICE_MAC_X64 === '1'
 
-// The gsk CLI tree below is copied verbatim from node_modules, and the
-// nested commander path depends on npm's current hoisting layout — fail the
-// build with a clear message if an install ever changes it, instead of
-// shipping an installer with a broken gsk runtime.
-// LICENSES.chromium.html only exists after the Electron binary download —
-// since Electron 42 that no longer happens during `npm ci` (the postinstall
-// script was replaced by the lazy `install-electron` bin), and electron-builder
-// exits 0 on a missing extraResources source, so without this check the
-// installer would silently ship without the Chromium license.
-for (const rel of [
-  '../../node_modules/@genspark/cli',
-  '../../node_modules/@genspark/cli/node_modules/commander',
-  '../../node_modules/ws',
-  '../../node_modules/electron/dist/LICENSES.chromium.html',
-  '../../node_modules/@embedpdf/pdfium/dist/pdfium.wasm',
-  '../pdf/node_modules/harfbuzzjs/hb-subset.wasm',
-]) {
-  if (!existsSync(join(__dirname, rel))) {
-    throw new Error(
-      `electron-builder extraResources source missing: ${rel} (npm hoisting changed?)`,
-    )
+// GENOFFICE_WIN_ARM64=1 — package the Windows ARM64 installer instead of x64.
+// CI runs it as a second electron-builder pass (own BUILD_DIR) after the
+// unchanged x64 pass, so the two never share an output dir or a sidecar path:
+// the sidecar comes from the matching cargo target dir and is checked to
+// exist at beforePack because electron-builder exits 0 on a missing
+// extraResources source (Sheets would ship dead on every ARM install).
+const winArm64 = process.env.GENOFFICE_WIN_ARM64 === '1'
+// 7-Zip packs ARM64 executables with its ARM64 branch filter, which the NSIS
+// install-time extractor (Nsis7z) cannot decode: it silently skips
+// GenOffice.exe and every dll (electron-builder#9983). BCJ it can decode.
+if (winArm64 && !process.env.ELECTRON_BUILDER_7Z_FILTER) {
+  process.env.ELECTRON_BUILDER_7Z_FILTER = 'BCJ'
+}
+const winArch = winArm64 ? 'arm64' : 'x64'
+const winSidecarTarget = winArm64 ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-gnu'
+// Where the release pipeline puts the sidecar: an explicit cross-compilation
+// triple (CI builds it that way). A Windows contributor's plain
+// `npm run build:all` instead leaves it in cargo's host-native target/release
+// (MSVC, statically linked per native/xlsx-engine/.cargo/config.toml), so that
+// output is accepted too — but only when the host arch really matches the
+// packaged one: an x64 host build must never be shipped inside an arm64
+// installer, which has to come from a cross build.
+const winSidecarCandidates = [
+  `../sheets/native/xlsx-engine/target/${winSidecarTarget}/release/xlsx-sidecar.exe`,
+  ...(process.platform === 'win32' && (process.arch === 'arm64') === winArm64
+    ? ['../sheets/native/xlsx-engine/target/release/xlsx-sidecar.exe']
+    : []),
+]
+const WIN_SIDECAR =
+  winSidecarCandidates.find((rel) => existsSync(join(__dirname, rel))) ?? winSidecarCandidates[0]
+
+// GENOFFICE_LINUX_ARM64=1 — package the arm64 Linux artifacts instead of x64.
+// Config support only: no CI job runs a second Linux pass yet, and whether
+// Linux arm64 joins the release matrix is decided on the maintainers' side.
+// With the flag set the AppImage/deb/rpm targets switch to arm64, and the
+// sidecar has to be an aarch64 build — cargo's host-native target/release when
+// the build host is arm64 Linux itself (a native ubuntu-arm64 runner needs no
+// cross toolchain), or an explicit cross-compilation triple otherwise.
+// beforePack checks the ELF machine type either way, because
+// electron-builder exits 0 on a missing/odd extraResources source and would
+// otherwise ship Sheets dead on every install.
+const linuxArm64 = process.env.GENOFFICE_LINUX_ARM64 === '1'
+const linuxSidecarTarget = linuxArm64 ? 'aarch64-unknown-linux-gnu' : 'x86_64-unknown-linux-gnu'
+// Mirrors the Windows candidate list above: the explicit triple first, then
+// cargo's plain host-native output — but only when the host really is the
+// packaged architecture, so an arm64 host can never hand its native sidecar
+// to an x64 package (and the other way round). The x64 pass therefore keeps
+// the historical host-native source on an x64 Linux host.
+const linuxSidecarCandidates = [
+  `../sheets/native/xlsx-engine/target/${linuxSidecarTarget}/release/xlsx-sidecar`,
+  ...(process.platform === 'linux' && (process.arch === 'arm64') === linuxArm64
+    ? ['../sheets/native/xlsx-engine/target/release/xlsx-sidecar']
+    : []),
+]
+const LINUX_SIDECAR =
+  linuxSidecarCandidates.find((rel) => existsSync(join(__dirname, rel))) ??
+  linuxSidecarCandidates[0]
+
+function assertExtraResourceSources() {
+  for (const rel of [
+    '../../node_modules/@genspark/cli',
+    '../../node_modules/@genspark/cli/node_modules/commander',
+    '../../node_modules/ws',
+    '../../node_modules/electron/dist/LICENSES.chromium.html',
+    '../../node_modules/@embedpdf/pdfium/dist/pdfium.wasm',
+    '../pdf/node_modules/harfbuzzjs/hb-subset.wasm',
+    '../../node_modules/@rhwp/core/rhwp_bg.wasm',
+  ]) {
+    if (!existsSync(join(__dirname, rel))) {
+      throw new Error(
+        `electron-builder extraResources source missing: ${rel} (npm hoisting changed?)`,
+      )
+    }
+  }
+}
+
+/** ELF e_machine check (little-endian header): refuse a sidecar whose
+ *  architecture does not match the package being built. 0x3E = EM_X86_64,
+ *  0xB7 = EM_AARCH64. */
+function assertLinuxSidecarArch(sidecarPath, wantArm64) {
+  const fd = openSync(sidecarPath, 'r')
+  try {
+    const header = Buffer.alloc(20)
+    if (
+      readSync(fd, header, 0, 20, 0) < 20 ||
+      header.subarray(0, 4).toString('latin1') !== '\x7fELF'
+    ) {
+      throw new Error(`not an ELF binary: ${sidecarPath}`)
+    }
+    const machine = header.readUInt16LE(18)
+    const got = machine === 0xb7 ? 'aarch64' : machine === 0x3e ? 'x86_64' : `e_machine=${machine}`
+    const want = wantArm64 ? 'aarch64' : 'x86_64'
+    if (got !== want) {
+      throw new Error(
+        `linux sidecar is ${got} but this package ships ${want}: ${sidecarPath} — ` +
+          (wantArm64
+            ? 'cross-build it (cargo zigbuild --target aarch64-unknown-linux-gnu) or build natively on an arm64 host'
+            : 'rebuild it for x64'),
+      )
+    }
+  } finally {
+    closeSync(fd)
+  }
+}
+
+// macOS local-OCR helper (scanned-page text recovery): a swiftc output, not
+// an npm artifact — compiled here on demand so CI runners and fresh checkouts
+// need no manual step. Universal (arm64 + x86_64) when both targets compile,
+// host-arch otherwise; mac installers must not silently ship without it.
+const VISION_OCR_HELPER = '../../packages/pdf2docx/ocr-helper/vision-ocr'
+
+// Compile the helper. universalOnly=true has NO host-arch fallback: dual-arch
+// packaging must fail loudly rather than ship a host-arch binary to both dmgs.
+function compileVisionOcr({ universalOnly } = { universalOnly: false }) {
+  const src = join(__dirname, `${VISION_OCR_HELPER}.swift`)
+  const out = join(__dirname, VISION_OCR_HELPER)
+  try {
+    try {
+      const slices = ['arm64', 'x86_64'].map((arch) => {
+        const slice = `${out}.${arch}`
+        execFileSync('swiftc', ['-O', src, '-target', `${arch}-apple-macos12`, '-o', slice], {
+          stdio: 'inherit',
+        })
+        return slice
+      })
+      execFileSync('lipo', ['-create', ...slices, '-output', out], { stdio: 'inherit' })
+      for (const slice of slices) rmSync(slice, { force: true })
+    } catch (err) {
+      if (universalOnly) throw err
+      // cross-target SDK unavailable — a host-arch helper still serves this build
+      execFileSync('swiftc', ['-O', src, '-o', out], { stdio: 'inherit' })
+    }
+  } catch (err) {
+    throw new Error(`vision-ocr helper compile failed: ${err}`, { cause: err })
+  }
+}
+
+const WIN_OCR_HELPER = '../../packages/pdf2docx/ocr-helper/win-ocr.exe'
+
+function ensurePlatformHelpers() {
+  if (process.platform === 'darwin' && !existsSync(join(__dirname, VISION_OCR_HELPER))) {
+    compileVisionOcr()
+  }
+  if (process.platform === 'win32' && !existsSync(join(__dirname, WIN_OCR_HELPER))) {
+    try {
+      execFileSync(
+        process.execPath,
+        [join(__dirname, '../../packages/pdf2docx/ocr-helper/build-win.mjs')],
+        { stdio: 'inherit' },
+      )
+    } catch (err) {
+      throw new Error(`win-ocr helper compile failed: ${err}`, { cause: err })
+    }
+  }
+}
+
+// Dual-arch packs share one extraResources path, so the shipped helper must be
+// a lipo fat binary. A stale host-arch build (dev path above) is rebuilt in
+// place; if a universal build cannot be produced, packaging aborts — otherwise
+// the other arch's OCR silently fails and every scanned page ships as bitmap.
+function assertUniversalVisionOcr() {
+  const helper = join(__dirname, VISION_OCR_HELPER)
+  const wanted = ['x86_64', 'arm64']
+  const archsOf = () =>
+    existsSync(helper)
+      ? execFileSync('lipo', ['-archs', helper], { encoding: 'utf8' }).trim().split(/\s+/)
+      : []
+  if (!wanted.every((w) => archsOf().includes(w))) {
+    rmSync(helper, { force: true })
+    compileVisionOcr({ universalOnly: true })
+  }
+  const archs = archsOf()
+  for (const want of wanted) {
+    if (!archs.includes(want)) {
+      throw new Error(
+        `vision-ocr helper is [${archs.join(', ')}] but both mac arch packages ship it`,
+      )
+    }
   }
 }
 
@@ -93,6 +284,9 @@ function assertModuleTreesPresent() {
     '../slides/out',
     '../pdf/out',
     '../markdown/out',
+    '../html/out',
+    '../../packages/cli/dist/genoffice.cjs',
+    '../../packages/cli/dist/node_modules/jsdom',
   ]) {
     if (!existsSync(join(__dirname, rel))) {
       throw new Error(
@@ -102,7 +296,269 @@ function assertModuleTreesPresent() {
   }
 }
 
+const CLI_BUNDLE_REL = '../../packages/cli/dist/genoffice.cjs'
+const CLI_BUILD_REL = '../../packages/cli/build.mjs'
+const CLI_VERSION_ENV = 'GENOFFICE_APP_VERSION'
+const CLI_VERSION_BANNER = /^const __cliAppVersion = ("(?:[^"\\]|\\.)*");$/m
+
+/**
+ * The version the packaged app reports: CI's -c.extraMetadata.version deep-merges
+ * into the block below, and without it electron-builder ships apps/shell/package.json.
+ */
+function packagedAppVersion() {
+  const injected = config.extraMetadata && config.extraMetadata.version
+  if (typeof injected === 'string' && injected.trim()) return injected.trim()
+  return require('./package.json').version
+}
+
+function bundledCliVersion(bundlePath) {
+  const baked = CLI_VERSION_BANNER.exec(readFileSync(bundlePath, 'utf-8'))
+  if (!baked) return null
+  try {
+    return JSON.parse(baked[1])
+  } catch {
+    return null
+  }
+}
+
+/**
+ * `genoffice --version` is baked into the CLI bundle, which is built before
+ * electron-builder runs and therefore before a release version is known. Rebuild
+ * it here with the app version whenever the two disagree, so the packaged
+ * command line can never answer with the workspace CLI version.
+ */
+function ensureCliBundleCarriesAppVersion() {
+  const bundlePath = join(__dirname, CLI_BUNDLE_REL)
+  const appVersion = packagedAppVersion()
+  if (bundledCliVersion(bundlePath) === appVersion) return
+  execFileSync(process.execPath, [join(__dirname, CLI_BUILD_REL)], {
+    stdio: 'inherit',
+    env: { ...process.env, [CLI_VERSION_ENV]: appVersion },
+  })
+  const baked = bundledCliVersion(bundlePath)
+  if (baked !== appVersion) {
+    throw new Error(
+      `packaged genoffice CLI reports ${baked ?? 'no version'} but the app ships ${appVersion} ` +
+        `(rebuild it with ${CLI_VERSION_ENV}=${appVersion})`,
+    )
+  }
+}
+
+const NOTICE_PATH = join(__dirname, 'build/THIRD-PARTY-NOTICES.txt')
+const PDFIUM_NOTICE_TERMS = ['@embedpdf/pdfium', 'Copyright 2014 PDFium Authors', 'Apache License']
+
+function hasValidThirdPartyNotice() {
+  if (!existsSync(NOTICE_PATH)) return false
+  try {
+    const text = readFileSync(NOTICE_PATH, 'utf8')
+    return PDFIUM_NOTICE_TERMS.every((term) => text.includes(term))
+  } catch {
+    return false
+  }
+}
+
+function ensureThirdPartyNotices() {
+  if (!hasValidThirdPartyNotice()) {
+    execFileSync(process.execPath, [join(__dirname, '../../tools/gen-third-party-notices.mjs')], {
+      stdio: 'inherit',
+    })
+  }
+  if (!hasValidThirdPartyNotice()) {
+    throw new Error('third-party notice missing PDFium redistribution terms')
+  }
+}
+
 /** @type {import('electron-builder').Configuration} */
+// NSIS makes every declared ProgId the extension's default opener; for the
+// office types that is the point, for plain text/JSON and the legacy Word
+// 97-2003 .doc/.dot it would hijack the system editor, so Windows leaves those
+// out (mac/Linux still declare them for Open With). GenOffice opens .doc/.dot
+// through its own Open dialog on every platform.
+const WIN_OPEN_WITH_ONLY_EXTS = new Set(['txt', 'json', 'doc', 'dot'])
+const FILE_ASSOCIATIONS = [
+  {
+    ext: 'docx',
+    name: 'Word Document',
+    description: 'Word Document',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  },
+  {
+    // import-only: opens as a converted .docx copy, GenOffice never writes .doc
+    ext: 'doc',
+    name: 'Word 97-2003 Document',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/msword',
+  },
+  {
+    // import-only: the template opens as a converted .docx copy
+    ext: 'dot',
+    name: 'Word 97-2003 Template',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/msword',
+  },
+  {
+    ext: 'xlsx',
+    name: 'Excel Workbook',
+    description: 'Excel Workbook',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  },
+  {
+    ext: 'xlsm',
+    name: 'Excel Macro-Enabled Workbook',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'application/vnd.ms-excel.sheet.macroEnabled.12',
+  },
+  {
+    ext: 'pptx',
+    name: 'PowerPoint Presentation',
+    description: 'PowerPoint Presentation',
+    role: 'Editor',
+    icon: 'pptx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  },
+  {
+    ext: 'xls',
+    name: 'Excel 97-2003 Workbook',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'application/vnd.ms-excel',
+  },
+  {
+    ext: 'csv',
+    name: 'CSV Document',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'text/csv',
+  },
+  {
+    // opens as a converted copy and saves as .xlsx (genoffice#1146)
+    ext: 'tsv',
+    name: 'TSV Document',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'text/tab-separated-values',
+  },
+  {
+    // import-only: opens as a converted .xlsx copy, GenOffice never writes ODF
+    ext: 'ods',
+    name: 'OpenDocument Spreadsheet',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'application/vnd.oasis.opendocument.spreadsheet',
+  },
+  {
+    ext: 'ots',
+    name: 'OpenDocument Spreadsheet Template',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'application/vnd.oasis.opendocument.spreadsheet-template',
+  },
+  {
+    // import-only: opens as a converted .docx copy, GenOffice never writes ODF
+    ext: 'odt',
+    name: 'OpenDocument Text',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/vnd.oasis.opendocument.text',
+  },
+  {
+    ext: 'ott',
+    name: 'OpenDocument Text Template',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/vnd.oasis.opendocument.text-template',
+  },
+  {
+    // import-only: opens as a converted .docx copy, GenOffice never writes HWPX
+    ext: 'hwpx',
+    name: 'Hancom HWPX Document',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/hwp+zip',
+  },
+  {
+    // import-only, like .hwpx: HWP binaries are read through rhwp into HWPX first
+    ext: 'hwp',
+    name: 'Hancom HWP Document',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/x-hwp',
+  },
+  {
+    // import-only: opens as a converted .pptx copy, GenOffice never writes ODF
+    ext: 'odp',
+    name: 'OpenDocument Presentation',
+    role: 'Editor',
+    icon: 'pptx',
+    mimeType: 'application/vnd.oasis.opendocument.presentation',
+  },
+  {
+    ext: 'otp',
+    name: 'OpenDocument Presentation Template',
+    role: 'Editor',
+    icon: 'pptx',
+    mimeType: 'application/vnd.oasis.opendocument.presentation-template',
+  },
+  {
+    ext: 'pdf',
+    name: 'PDF Document',
+    role: 'Editor',
+    icon: 'pdf',
+    mimeType: 'application/pdf',
+  },
+  {
+    ext: 'md',
+    name: 'Markdown Document',
+    role: 'Editor',
+    icon: 'md',
+    mimeType: 'text/markdown',
+  },
+  {
+    ext: 'markdown',
+    name: 'Markdown Document',
+    role: 'Editor',
+    icon: 'md',
+    mimeType: 'text/markdown',
+  },
+  {
+    ext: 'txt',
+    name: 'Text Document',
+    description: 'Text Document',
+    role: 'Editor',
+    icon: 'txt',
+    mimeType: 'text/plain',
+  },
+  {
+    ext: 'json',
+    name: 'JSON Document',
+    description: 'JSON Document',
+    role: 'Editor',
+    icon: 'json',
+    mimeType: 'application/json',
+  },
+  {
+    ext: 'html',
+    name: 'HTML Document',
+    role: 'Editor',
+    icon: 'html',
+    mimeType: 'text/html',
+  },
+  {
+    ext: 'htm',
+    name: 'HTML Document',
+    role: 'Editor',
+    icon: 'html',
+    mimeType: 'text/html',
+  },
+]
+
 const config = {
   appId: 'com.genoffice.app',
   productName: 'GenOffice',
@@ -111,7 +567,7 @@ const config = {
   // the old runtime).
   electronVersion: require('electron/package.json').version,
   directories: {
-    output: 'release',
+    output: process.env.BUILD_DIR || 'release',
   },
   files: ['out/**'],
   extraResources: [
@@ -143,6 +599,10 @@ const config = {
       from: '../markdown/out',
       to: 'modules/markdown',
     },
+    {
+      from: '../html/out',
+      to: 'modules/html',
+    },
     // PDF text editing engines: the bundled main resolves these under
     // Resources/wasm when node_modules is absent (apps/pdf/src/main/wasm-path.ts)
     {
@@ -153,9 +613,61 @@ const config = {
       from: '../pdf/node_modules/harfbuzzjs/hb-subset.wasm',
       to: 'wasm/hb-subset.wasm',
     },
+    // .hwp import (packages/hwp2docx/src/hwp.ts): rhwp reads HWP binaries into HWPX
+    {
+      from: '../../node_modules/@rhwp/core/rhwp_bg.wasm',
+      to: 'wasm/rhwp_bg.wasm',
+    },
+    // platform system-OCR helpers for scanned-page recovery (each exists only
+    // on its own build platform; electron-builder skips absent sources and the
+    // engine resolver degrades to the bitmap fallback when missing)
+    {
+      from: '../../packages/pdf2docx/ocr-helper/vision-ocr',
+      to: 'ocr/vision-ocr',
+    },
+    {
+      from: '../../packages/pdf2docx/ocr-helper/win-ocr.exe',
+      to: 'ocr/win-ocr.exe',
+    },
     {
       from: '../../node_modules/@genspark/cli',
       to: 'gsk/node_modules/@genspark/cli',
+    },
+    // genoffice command line: runs on the app binary with ELECTRON_RUN_AS_NODE (as
+    // the gsk CLI above already does), so the RunAsNode fuse must stay enabled.
+    // Layout (Resources/cli next to wasm/, native/, ocr/) is what
+    // packages/cli/src/resources.ts expects.
+    {
+      from: '../../packages/cli/dist/genoffice.cjs',
+      to: 'cli/genoffice.cjs',
+    },
+    {
+      from: '../../packages/cli/bin/genoffice',
+      to: 'cli/genoffice',
+    },
+    {
+      from: '../../packages/cli/bin/genoffice.cmd',
+      to: 'cli/genoffice.cmd',
+    },
+    // the CLI's version (Settings → Integrations shows it) and the agent skill
+    // the same pane installs into Claude Code / Codex / …; bytes identical to the repo file
+    {
+      from: '../../packages/cli/package.json',
+      to: 'cli/package.json',
+    },
+    {
+      from: '../../skills/genoffice/SKILL.md',
+      to: 'cli/skills/genoffice/SKILL.md',
+    },
+    {
+      from: '../../skills/recommended',
+      to: 'cli/skills/recommended',
+    },
+    // runtime deps the genoffice bundle leaves external (jsdom for the Word/Markdown
+    // paths); collected by packages/cli/collect-deps.mjs during its build
+    {
+      from: '../../packages/cli/dist/node_modules',
+      to: 'cli/node_modules',
     },
     {
       from: '../../node_modules/@genspark/cli/node_modules/commander',
@@ -193,113 +705,15 @@ const config = {
   // `mimeType` is read only by the Linux target, where it becomes the
   // desktop entry's MimeType= list; associations without it are dropped
   // there. macOS and Windows ignore the field and key off `ext`.
-  fileAssociations: [
-    {
-      ext: 'docx',
-      name: 'Word Document',
-      role: 'Editor',
-      icon: 'build/docx.ico',
-      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    },
-    {
-      ext: 'xlsx',
-      name: 'Excel Workbook',
-      role: 'Editor',
-      icon: 'build/xlsx.ico',
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    },
-    {
-      ext: 'pptx',
-      name: 'PowerPoint Presentation',
-      role: 'Editor',
-      icon: 'build/pptx.ico',
-      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    },
-    {
-      ext: 'xls',
-      name: 'Excel 97-2003 Workbook',
-      role: 'Editor',
-      icon: 'build/xlsx.ico',
-      mimeType: 'application/vnd.ms-excel',
-    },
-    {
-      ext: 'csv',
-      name: 'CSV Document',
-      role: 'Editor',
-      icon: 'build/csv.ico',
-      mimeType: 'text/csv',
-    },
-    {
-      ext: 'tsv',
-      name: 'TSV Document',
-      role: 'Editor',
-      icon: 'build/tsv.ico',
-      mimeType: 'text/tab-separated-values',
-    },
-    {
-      ext: 'json',
-      name: 'JSON Document',
-      role: 'Editor',
-      icon: 'build/json.ico',
-      mimeType: 'application/json',
-    },
-    {
-      ext: 'xml',
-      name: 'XML Document',
-      role: 'Editor',
-      icon: 'build/xml.ico',
-      mimeType: 'application/xml',
-    },
-    {
-      ext: 'yaml',
-      name: 'YAML Document',
-      role: 'Editor',
-      icon: 'build/yaml.ico',
-      mimeType: 'text/yaml',
-    },
-    {
-      ext: 'yml',
-      name: 'YAML Document',
-      role: 'Editor',
-      icon: 'build/yaml.ico',
-      mimeType: 'text/yaml',
-    },
-    {
-      ext: 'sql',
-      name: 'SQL Document',
-      role: 'Editor',
-      icon: 'build/sql.ico',
-      mimeType: 'application/sql',
-    },
-    {
-      ext: 'txt',
-      name: 'Text Document',
-      role: 'Editor',
-      icon: 'build/txt.ico',
-      mimeType: 'text/plain',
-    },
-    {
-      ext: 'pdf',
-      name: 'PDF Document',
-      role: 'Editor',
-      icon: 'build/pdf.ico',
-      mimeType: 'application/pdf',
-    },
-    {
-      ext: 'md',
-      name: 'Markdown Document',
-      role: 'Editor',
-      icon: 'build/md.ico',
-      mimeType: 'text/markdown',
-    },
-    {
-      ext: 'markdown',
-      name: 'Markdown Document',
-      role: 'Editor',
-      icon: 'build/md.ico',
-      mimeType: 'text/markdown',
-    },
-  ],
+  //
+  // `icon` is extension-less on purpose: electron-builder resolves it against
+  // build/ as <icon>.icns for the mac CFBundleDocumentTypes entry and
+  // <icon>.ico for the NSIS DefaultIcon registry value. Without it both
+  // platforms fall back to the app icon, so every associated file shows the
+  // bare GenOffice logo instead of a per-type document icon. The icns/ico
+  // pairs are generated from the shell renderer's file-type tiles by
+  // tools/gen-file-association-icons.mjs.
+  fileAssociations: FILE_ASSOCIATIONS,
   npmRebuild: false,
   mac: {
     // Two separate arch packages (NOT universal): arm64 keeps the exact
@@ -318,6 +732,12 @@ const config = {
     gatekeeperAssess: false,
     entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.plist',
+    // Slides' Slide Show > Record: the hardened runtime refuses the microphone without the
+    // audio-input entitlement, and macOS asks for it with this text
+    extendInfo: {
+      NSMicrophoneUsageDescription:
+        'GenOffice records your narration when you record a slide show.',
+    },
     notarize: true,
     extraResources: [
       {
@@ -330,33 +750,43 @@ const config = {
     target: [
       {
         target: 'nsis',
-        arch: ['x64'],
+        arch: [winArch],
       },
     ],
+    fileAssociations: FILE_ASSOCIATIONS.filter((a) => !WIN_OPEN_WITH_ONLY_EXTS.has(a.ext)),
     extraResources: [
       {
-        from: '../sheets/native/xlsx-engine/target/x86_64-pc-windows-gnu/release/xlsx-sidecar.exe',
+        from: WIN_SIDECAR,
         to: 'native/xlsx-sidecar.exe',
+      },
+      {
+        from: 'build/shell-new',
+        to: 'shell-new',
+        filter: ['*.docx', '*.xlsx', '*.pptx'],
       },
     ],
   },
   // Unlike win (which cross-compiles the sidecar to an explicit target
   // triple), linux takes it from cargo's host-native target/release/ — the
-  // same source mac uses. So no `arch` is pinned here: electron-builder
-  // defaults to the build host's architecture, which is the only one the
-  // sidecar was actually built for. Packaging arm64 on an x64 host, or the
-  // reverse, needs a matching `cargo build --target` first.
+  // same source mac uses. So no `arch` is pinned here beyond the flag below:
+  // electron-builder defaults to the build host's architecture, which is the
+  // only one the sidecar was actually built for — and GENOFFICE_LINUX_ARM64=1
+  // switches every target to arm64, where the sidecar must come from a native
+  // arm64 host or an explicit cross build (see linuxSidecarCandidates and the
+  // ELF check). That flag is config support only: no second Linux pass runs
+  // anywhere yet, so the arm64 artifacts are not produced by this repo.
   linux: {
     // AppImage (self-contained, any distro) + deb (apt install, pulls in the
     // GTK/NSS runtime deps) + rpm (dnf/zypper install on Fedora / RHEL /
     // openSUSE). Default artifact names are kept on purpose —
     // GenOffice-<v>.AppImage / genoffice_<v>_amd64.deb — because the public
     // README download links and the already-published linux-v0.5.149 release
-    // use them.
+    // use them. The arm64 targets reuse the ${arch}-templated deb/rpm names
+    // (genoffice_<v>_arm64.deb).
     target: [
-      { target: 'AppImage', arch: ['x64'] },
-      { target: 'deb', arch: ['x64'] },
-      { target: 'rpm', arch: ['x64'] },
+      { target: 'AppImage', arch: [linuxArm64 ? 'arm64' : 'x64'] },
+      { target: 'deb', arch: [linuxArm64 ? 'arm64' : 'x64'] },
+      { target: 'rpm', arch: [linuxArm64 ? 'arm64' : 'x64'] },
     ],
     // deb control metadata; values match the manually published 0.5.149 deb
     // so apt sees the new packages as the same lineage. Homepage comes from
@@ -365,7 +795,12 @@ const config = {
     maintainer: 'Mainfunc, Inc. <team@genspark.ai>',
     vendor: 'Mainfunc, Inc. <team@genspark.ai>',
     category: 'Office',
-    icon: 'build/icon.png',
+    // Icon SET directory, not the single 1024px png: electron-builder does
+    // not resize a lone png, so deb/rpm would install only
+    // hicolor/1024x1024/apps/genoffice.png — a size absent from the hicolor
+    // theme index, leaving GNOME/KDE launchers on the generic fallback icon
+    // (genspark-ai/genoffice#90). The set ships every standard raster size.
+    icon: 'build/icons',
     // mac and win name the binary from productName; linux instead derives it
     // from package.json "name", and "@genoffice/shell" sanitizes to the
     // invalid "@genofficeshell". Setting it explicitly also makes the
@@ -382,8 +817,18 @@ const config = {
     syncDesktopName: true,
     extraResources: [
       {
-        from: '../sheets/native/xlsx-engine/target/release/xlsx-sidecar',
+        from: LINUX_SIDECAR,
         to: 'native/xlsx-sidecar',
+      },
+      // Same blank templates the Windows installer registers for Explorer's
+      // "New" menu. The deb/rpm post-install step copies them into
+      // /usr/share/templates, which KDE Plasma's Dolphin "Create New" menu
+      // scans (genoffice#2384). AppImage gets the payload too but runs no
+      // install script, so it adds no templates.
+      {
+        from: 'build/shell-new',
+        to: 'shell-new',
+        filter: ['*.docx', '*.xlsx', '*.pptx'],
       },
     ],
   },
@@ -398,6 +843,9 @@ const config = {
   deb: {
     artifactName: 'genoffice_${version}_${arch}.deb',
     packageName: 'genoffice',
+    // expose the genoffice command line shipped inside the app
+    afterInstall: 'build/linux-after-install.sh',
+    afterRemove: 'build/linux-after-remove.sh',
   },
   // Same "@genoffice/shell" naming problem as deb: spell the artifact name
   // out (${arch} expands to the rpm arch string, x86_64) and pin the rpm
@@ -414,19 +862,90 @@ const config = {
     artifactName: 'genoffice-${version}.${arch}.rpm',
     packageName: 'genoffice',
     publish: null,
+    afterInstall: 'build/linux-after-install.sh',
+    afterRemove: 'build/linux-after-remove.sh',
+    // rpmbuild links every packaged ELF file into /usr/lib/.build-id/<hash>.
+    // Two Electron apps built on the same Electron release ship identical
+    // binaries, so the links are identical too and dnf refuses the install
+    // with a file conflict against the other app (genoffice#1145). The links exist only
+    // to locate detached debuginfo, which this package does not ship, so turn
+    // them off. rpm-level `fpm` (not linux-level) keeps it away from the deb.
+    fpm: ['--rpm-rpmbuild-define=_build_id_links none'],
   },
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
   },
   beforePack: async (context) => {
+    ensurePlatformHelpers()
+    assertExtraResourceSources()
+    ensureThirdPartyNotices()
     assertModuleTreesPresent()
-    if (context.electronPlatformName === 'darwin' && includeMacX64) assertUniversalSidecar()
+    ensureCliBundleCarriesAppVersion()
+    if (context.electronPlatformName === 'darwin' && includeMacX64) {
+      assertUniversalSidecar()
+      assertUniversalVisionOcr()
+    }
+    if (context.electronPlatformName === 'win32' && !existsSync(join(__dirname, WIN_SIDECAR))) {
+      throw new Error(
+        `win extraResources source missing: ${winSidecarCandidates.join(' or ')} ` +
+          `(run "npm run native:build -w @genoffice/sheets", or cargo build --target ${winSidecarTarget})`,
+      )
+    }
+    if (context.electronPlatformName === 'linux') {
+      const sidecar = join(__dirname, LINUX_SIDECAR)
+      if (!existsSync(sidecar)) {
+        // The candidate list is picked by the flag, so the x64 pass never
+        // points at an aarch64 build (and the arm64 pass never at an x64 one).
+        const hint = linuxArm64
+          ? 'cross-build with "cargo zigbuild --release --target aarch64-unknown-linux-gnu", ' +
+            'or build natively on an arm64 Linux host'
+          : 'run "npm run native:build -w @genoffice/sheets" on an x64 Linux host, ' +
+            'or cross-build with "cargo zigbuild --release --target x86_64-unknown-linux-gnu"'
+        throw new Error(
+          `linux extraResources source missing: ${linuxSidecarCandidates.join(' or ')} (${hint})`,
+        )
+      }
+      assertLinuxSidecarArch(sidecar, linuxArm64)
+    }
   },
   dmg: {
     sign: true,
   },
   afterAllArtifactBuild: 'build/notarize-dmg.js',
+}
+
+// Windows in-package code signing. Security features that judge every PE
+// individually (Smart App Control, WDAC/AppLocker, AV heuristics) block
+// unsigned child processes — the unsigned xlsx-sidecar.exe died with
+// "spawn UNKNOWN" on such machines even though the installer itself was
+// signed. When CI exports GENOFFICE_WIN_SIGN_MODE ("test" = alpha
+// self-signed PFX, "production" = DigiCert KeyLocker — the two modes of
+// scripts/win-sign.cjs, whose env-var contract applies here too), every
+// binary electron-builder signs for win (GenOffice.exe, the NSIS
+// uninstaller, and the installer) goes through that script. The static
+// extraResources binaries (xlsx-sidecar.exe, win-ocr.exe) are signed by the
+// workflow before packaging since electron-builder does not sign
+// extraResources. Unset (local / fork builds) keeps the old behavior:
+// electron-builder has no signing config and packages everything unsigned.
+const winSignMode = process.env.GENOFFICE_WIN_SIGN_MODE
+if (winSignMode) {
+  if (winSignMode !== 'test' && winSignMode !== 'production') {
+    throw new Error(`GENOFFICE_WIN_SIGN_MODE must be "test" or "production", got "${winSignMode}"`)
+  }
+  config.win.signtoolOptions = {
+    // Single pass per file: the sha1+sha256 dual-signing default is a
+    // pre-Win8 relic and would invoke the hook twice per binary.
+    signingHashAlgorithms: ['sha256'],
+    sign: (configuration) => {
+      execFileSync(
+        process.execPath,
+        [join(__dirname, '../../scripts/win-sign.cjs'), winSignMode, configuration.path],
+        { stdio: 'inherit' },
+      )
+      return Promise.resolve()
+    },
+  }
 }
 
 if (updateUrl) {
@@ -438,5 +957,17 @@ if (updateUrl) {
     },
   ]
 }
+
+// CI's "-c.extraMetadata.version=..." CLI override deep-merges with this block,
+// so the version and all injected feature settings survive together.
+const extraMetadata = {}
+if (ga4MeasurementId && ga4ApiSecret) {
+  extraMetadata.genofficeAnalytics = {
+    measurementId: ga4MeasurementId,
+    apiSecret: ga4ApiSecret,
+  }
+}
+if (fontCdnUrl) extraMetadata.genofficeFontCdn = { baseUrl: fontCdnUrl }
+if (Object.keys(extraMetadata).length) config.extraMetadata = extraMetadata
 
 module.exports = config

@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+ http://schemas.microsoft.com/office/drawing/2017/model3d (am3d), from [MS-ODRAWXML]
+ 5.29. GenOffice amendments: the drawingml/2006/main imports point at dml-main.xsd;
+ the 2016/11/main and 2018/animation/model3d imports are dropped, and with them the
+ optional am3d:attrSrcUrl element, the only use of either.
+-->
+<xsd:schema targetNamespace="http://schemas.microsoft.com/office/drawing/2017/model3d" elementFormDefault="qualified" attributeFormDefault="unqualified" xmlns="http://schemas.microsoft.com/office/drawing/2017/model3d" xmlns:am3d="http://schemas.microsoft.com/office/drawing/2017/model3d" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <xsd:import schemaLocation="dml-main.xsd" namespace="http://schemas.openxmlformats.org/drawingml/2006/main"/>
+  <xsd:complexType name="CT_PositiveRatio">
+    <xsd:attribute name="n" type="xsd:unsignedLong" use="required"/>
+    <xsd:attribute name="d" type="xsd:unsignedLong" use="required"/>
+  </xsd:complexType>
+  <xsd:complexType name="CT_Rotate3D">
+    <xsd:attribute name="ax" type="a:ST_Angle" use="optional" default="0"/>
+    <xsd:attribute name="ay" type="a:ST_Angle" use="optional" default="0"/>
+    <xsd:attribute name="az" type="a:ST_Angle" use="optional" default="0"/>
+  </xsd:complexType>
+  <xsd:complexType name="CT_Scale3D">
+    <xsd:sequence>
+      <xsd:element name="sx" type="a:CT_Ratio" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="sy" type="a:CT_Ratio" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="sz" type="a:CT_Ratio" minOccurs="1" maxOccurs="1"/>
+    </xsd:sequence>
+  </xsd:complexType>
+  <xsd:complexType name="CT_Model3DTransform">
+    <xsd:sequence>
+      <xsd:element name="meterPerModelUnit" type="CT_PositiveRatio" minOccurs="0" maxOccurs="1"/>
+      <xsd:element name="preTrans" type="a:CT_Vector3D" minOccurs="0" maxOccurs="1"/>
+      <xsd:element name="scale" type="CT_Scale3D" minOccurs="0" maxOccurs="1"/>
+      <xsd:element name="rot" type="CT_Rotate3D" minOccurs="0" maxOccurs="1"/>
+      <xsd:element name="postTrans" type="a:CT_Vector3D" minOccurs="0" maxOccurs="1"/>
+      <xsd:element name="extLst" type="a:CT_OfficeArtExtensionList" minOccurs="0" maxOccurs="1"/>
+    </xsd:sequence>
+  </xsd:complexType>
+  <xsd:complexType name="CT_OrthographicProjection">
+    <xsd:sequence>
+      <xsd:element name="sz" type="CT_PositiveRatio" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="extLst" type="a:CT_OfficeArtExtensionList" minOccurs="0" maxOccurs="1"/>
+    </xsd:sequence>
+  </xsd:complexType>
+  <xsd:complexType name="CT_PerspectiveProjection">
+    <xsd:sequence>
+      <xsd:element name="extLst" type="a:CT_OfficeArtExtensionList" minOccurs="0" maxOccurs="1"/>
+    </xsd:sequence>
+    <xsd:attribute name="fov" type="a:ST_FOVAngle" use="required"/>
+  </xsd:complexType>
+  <xsd:complexType name="CT_Model3DCamera">
+    <xsd:sequence>
+      <xsd:element name="pos" type="a:CT_Point3D" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="up" type="a:CT_Vector3D" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="lookAt" type="a:CT_Point3D" minOccurs="1" maxOccurs="1"/>
+      <xsd:choice minOccurs="1" maxOccurs="1">
+        <xsd:element name="orthographic" type="CT_OrthographicProjection"/>
+        <xsd:element name="perspective" type="CT_PerspectiveProjection"/>
+      </xsd:choice>
+      <xsd:element name="extLst" type="a:CT_OfficeArtExtensionList" minOccurs="0" maxOccurs="1"/>
+    </xsd:sequence>
+  </xsd:complexType>
+  <xsd:complexType name="CT_Model3DRaster">
+    <xsd:sequence>
+      <xsd:element name="blip" type="a:CT_Blip" minOccurs="0" maxOccurs="1"/>
+    </xsd:sequence>
+    <xsd:attribute name="rName" type="xsd:string" use="required"/>
+    <xsd:attribute name="rVer" type="xsd:string" use="required"/>
+  </xsd:complexType>
+  <xsd:complexType name="CT_ObjectViewport">
+    <xsd:sequence>
+      <xsd:element name="extLst" type="a:CT_OfficeArtExtensionList" minOccurs="0" maxOccurs="1"/>
+    </xsd:sequence>
+    <xsd:attribute name="viewportSz" type="a:ST_PositiveCoordinate" use="required"/>
+  </xsd:complexType>
+  <xsd:complexType name="CT_WindowViewport">
+    <xsd:sequence>
+      <xsd:element name="extLst" type="a:CT_OfficeArtExtensionList" minOccurs="0" maxOccurs="1"/>
+    </xsd:sequence>
+  </xsd:complexType>
+  <xsd:complexType name="CT_AmbientLight">
+    <xsd:sequence>
+      <xsd:element name="clr" type="a:CT_Color" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="illuminance" type="CT_PositiveRatio" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="extLst" type="a:CT_OfficeArtExtensionList" minOccurs="0" maxOccurs="1"/>
+    </xsd:sequence>
+    <xsd:attribute name="enabled" type="xsd:boolean" use="optional" default="true"/>
+  </xsd:complexType>
+  <xsd:complexType name="CT_PointLight">
+    <xsd:sequence>
+      <xsd:element name="clr" type="a:CT_Color" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="intensity" type="CT_PositiveRatio" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="pos" type="a:CT_Point3D" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="extLst" type="a:CT_OfficeArtExtensionList" minOccurs="0" maxOccurs="1"/>
+    </xsd:sequence>
+    <xsd:attribute name="enabled" type="xsd:boolean" use="optional" default="true"/>
+    <xsd:attribute name="rad" type="a:ST_PositiveCoordinate" use="required"/>
+  </xsd:complexType>
+  <xsd:complexType name="CT_SpotLight">
+    <xsd:sequence>
+      <xsd:element name="clr" type="a:CT_Color" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="intensity" type="CT_PositiveRatio" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="pos" type="a:CT_Point3D" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="lookAt" type="a:CT_Point3D" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="extLst" type="a:CT_OfficeArtExtensionList" minOccurs="0" maxOccurs="1"/>
+    </xsd:sequence>
+    <xsd:attribute name="enabled" type="xsd:boolean" use="optional" default="true"/>
+    <xsd:attribute name="rad" type="a:ST_PositiveCoordinate" use="required"/>
+    <xsd:attribute name="spotAng" type="a:ST_FOVAngle" use="required"/>
+  </xsd:complexType>
+  <xsd:simpleType name="ST_AngularRadius">
+    <xsd:restriction base="a:ST_Angle">
+      <xsd:minInclusive value="0"/>
+      <xsd:maxInclusive value="5400000"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+  <xsd:complexType name="CT_DirectionalLight">
+    <xsd:sequence>
+      <xsd:element name="clr" type="a:CT_Color" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="illuminance" type="CT_PositiveRatio" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="pos" type="a:CT_Point3D" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="lookAt" type="a:CT_Point3D" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="extLst" type="a:CT_OfficeArtExtensionList" minOccurs="0" maxOccurs="1"/>
+    </xsd:sequence>
+    <xsd:attribute name="enabled" type="xsd:boolean" use="optional" default="true"/>
+    <xsd:attribute name="angularRad" type="ST_AngularRadius" use="required"/>
+  </xsd:complexType>
+  <xsd:complexType name="CT_UnknownLight"/>
+  <xsd:complexType name="CT_Model3D">
+    <xsd:sequence>
+      <xsd:element name="spPr" type="a:CT_ShapeProperties" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="camera" type="CT_Model3DCamera" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="trans" type="CT_Model3DTransform" minOccurs="1" maxOccurs="1"/>
+      <xsd:element name="raster" type="CT_Model3DRaster" minOccurs="0" maxOccurs="1"/>
+      <xsd:element name="extLst" type="a:CT_OfficeArtExtensionList" minOccurs="0" maxOccurs="1"/>
+      <xsd:choice minOccurs="1" maxOccurs="1">
+        <xsd:element name="objViewport" type="CT_ObjectViewport"/>
+        <xsd:element name="winViewport" type="CT_WindowViewport"/>
+      </xsd:choice>
+      <xsd:element name="ambientLight" type="CT_AmbientLight" minOccurs="0" maxOccurs="1"/>
+      <xsd:choice minOccurs="0" maxOccurs="unbounded">
+        <xsd:element name="ptLight" type="CT_PointLight"/>
+        <xsd:element name="spotLight" type="CT_SpotLight"/>
+        <xsd:element name="dirLight" type="CT_DirectionalLight"/>
+        <xsd:element name="unkLight" type="CT_UnknownLight"/>
+      </xsd:choice>
+    </xsd:sequence>
+    <xsd:attributeGroup ref="a:AG_Blob"/>
+  </xsd:complexType>
+  <xsd:element name="model3d" type="CT_Model3D"/>
+</xsd:schema>
+

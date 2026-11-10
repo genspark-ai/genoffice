@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  MAX_EXPANDED_CELL_OPS,
   expandToPrimitiveOps,
   structuralOpLabel,
   workbookCommandBatchSchema,
   workbookOperationSchema,
-} from '../src/domain/workbook-dsl'
-import { columnIndex, columnLabel, parseRange, rangeCellCount } from '../src/domain/cell-address'
+} from '@genoffice/xlsx-gateway/domain/workbook-dsl'
+import {
+  columnIndex,
+  columnLabel,
+  parseRange,
+  rangeCellCount,
+} from '@genoffice/xlsx-gateway/domain/cell-address'
 
 describe('cell-address helpers', () => {
   it('round-trips column labels', () => {
@@ -61,7 +65,7 @@ describe('expandToPrimitiveOps', () => {
           values: [['Q', 'A', 'note'], ['Q only']],
         },
       ]),
-    ).toThrow(/rectangular.*row 1 has 3 cell\(s\) but row 2 has 1/)
+    ).toThrow(/rectangular.*values\[0\] has 3 cell\(s\) but values\[1\] has 1/)
   })
 
   it('accepts range as an alias for start when its size matches values', () => {
@@ -165,9 +169,22 @@ describe('expandToPrimitiveOps', () => {
   })
 
   it('rejects batches that expand past the cell-op ceiling', () => {
+    // clear_range above the ceiling stays range-level (covered by
+    // fill-range.test.ts); set_range still expands per cell and must reject.
     expect(() =>
       expandToPrimitiveOps([
-        { op: 'clear_range', sheetId: 's', range: `A1:C${MAX_EXPANDED_CELL_OPS}` },
+        {
+          op: 'set_range',
+          sheetId: 's',
+          start: 'A1',
+          values: Array.from({ length: 500 }, () => Array.from({ length: 100 }, () => 1)),
+        },
+        {
+          op: 'set_range',
+          sheetId: 's',
+          start: 'A501',
+          values: Array.from({ length: 500 }, () => Array.from({ length: 100 }, () => 1)),
+        },
       ]),
     ).toThrow(/2000/)
   })
@@ -238,6 +255,12 @@ describe('extended operations', () => {
       { op: 'edit_shape', visualId: 'added-shape-abc-1', text: 'New text', fillColor: '#DDEBF7' },
       { op: 'edit_shape', visualId: 'added-shape-abc-1', anchorCell: 'H4' },
       { op: 'add_image', sheetId: 's', path: '~/logo.png', anchorCell: 'B2' },
+      {
+        op: 'add_image',
+        sheetId: 's',
+        path: 'https://cdn.example.com/gen/img-1',
+        anchorCell: 'B9',
+      },
       { op: 'add_table', sheetId: 's', range: 'A1:D10' },
       {
         op: 'add_table',
@@ -591,6 +614,23 @@ describe('find_replace expansion', () => {
     expect(wholeOps).toEqual([{ op: 'set_cell', sheetId: 's', address: 'A1', value: 'pear' }])
   })
 
+  it('wholeCell ignores surrounding spaces like the find dialog', () => {
+    const ops = expandToPrimitiveOps(
+      [
+        {
+          op: 'find_replace',
+          sheetId: 's',
+          range: 'A1:A2',
+          find: 'apple',
+          replace: 'pear',
+          wholeCell: true,
+        },
+      ],
+      reader({ A1: '  apple  ', A2: 'apple pie' }),
+    )
+    expect(ops).toEqual([{ op: 'set_cell', sheetId: 's', address: 'A1', value: 'pear' }])
+  })
+
   it('keeps a literal $ in the replacement and skips formula cells', () => {
     const ops = expandToPrimitiveOps(
       [
@@ -619,13 +659,27 @@ describe('find_replace expansion', () => {
         },
       ]),
     ).toThrow(/needs the current cell contents/)
+    // Above the per-cell expansion cap the op passes through range-level
+    // (the executor scans loaded chunks itself, no reader needed) …
+    const rangeLevel = expandToPrimitiveOps([
+      {
+        op: 'find_replace',
+        sheetId: 's',
+        range: 'A1:Z1000',
+        find: 'a',
+        replace: 'b',
+      },
+    ])
+    expect(rangeLevel).toHaveLength(1)
+    expect(rangeLevel[0]?.op).toBe('find_replace')
+    // … up to the range-op cap.
     expect(() =>
       expandToPrimitiveOps(
         [
           {
             op: 'find_replace',
             sheetId: 's',
-            range: 'A1:Z1000',
+            range: 'A1:C100000',
             find: 'a',
             replace: 'b',
           },

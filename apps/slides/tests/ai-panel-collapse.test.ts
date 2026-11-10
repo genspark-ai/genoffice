@@ -26,6 +26,7 @@ vi.mock('react-konva', () => {
 
 import { AiPanel } from '../src/renderer/ai/AiPanel'
 import { AI_PROVIDERS, type AiSettings } from '../src/shared/ipc'
+import { applyAiPanelPrefs } from '@genoffice/ui'
 
 const settings: AiSettings = {
   provider: 'anthropic',
@@ -119,5 +120,20 @@ describe('AiPanel collapse (slides)', () => {
     expect(onExpand).toHaveBeenCalledTimes(1)
 
     cleanup()
+  })
+
+  it('reflects the shared spellcheck pref on the composer (issue #249)', () => {
+    applyAiPanelPrefs({ fontSize: 'default', customFontSize: 14, spellcheck: false })
+    try {
+      const { container, cleanup } = mount(createElement(AiPanel, panelProps()))
+      const textarea = container.querySelector<HTMLTextAreaElement>(
+        'textarea[data-slides-ai-input]',
+      )
+      expect(textarea).not.toBeNull()
+      expect(textarea!.getAttribute('spellcheck')).toBe('false')
+      cleanup()
+    } finally {
+      applyAiPanelPrefs({ fontSize: 'default', customFontSize: 14, spellcheck: true })
+    }
   })
 })

@@ -6,6 +6,8 @@
  * resolved into a twoCellAnchor by walking real row/column sizes from the
  * viewport's top-left cell.
  */
+import { BooleanNumber } from '@univerjs/core'
+import { IRenderManagerService, SHEET_VIEWPORT_KEY } from '@univerjs/engine-render'
 import { shapeClipCss } from '@genoffice/ui'
 import type { UniverRuntime } from './univer-state'
 import { EMU_PER_PIXEL, walkMarker, type AnchorMarker } from './WorkbookVisuals'
@@ -67,7 +69,29 @@ function anchorFromMarkers(
 }
 
 /**
- * Screen rectangle → twoCellAnchor. The viewport's top-left visible cell gives
+ * One axis of the screen→anchor mapping. `originPx` is the visual position of
+ * the origin marker: the reference cell's left edge, or its right edge on an
+ * RTL sheet, where the logical column axis runs leftward on screen and the
+ * `from` marker is the rectangle's visual right edge.
+ */
+export function anchorAxisMarkers(
+  origin: AnchorMarker,
+  originPx: number,
+  rectStart: number,
+  rectSize: number,
+  zoom: number,
+  rtl: boolean,
+  sizeOf: (index: number) => number,
+  maxIndex: number,
+): { from: AnchorMarker; to: AnchorMarker } {
+  const delta = rtl ? originPx - (rectStart + rectSize) : rectStart - originPx
+  const from = walkMarker(origin, delta / zoom, sizeOf, maxIndex)
+  const to = walkMarker(from, Math.max(rectSize, 1) / zoom, sizeOf, maxIndex)
+  return { from, to }
+}
+
+/**
+ * Screen rectangle → twoCellAnchor. The viewport's first visible cell gives
  * an on-screen reference (its DOMRect already reflects partial scroll and
  * frozen panes); real row/column sizes are walked from there.
  */
@@ -88,19 +112,33 @@ export function rectToAnchor(
     if (!surface || r.width * r.height > surface.width * surface.height) surface = r
   }
   if (!surface) return null
+  // getCellRect is scene-space (it never reflects scroll — the home position
+  // just happens to coincide), so subtract the main viewport's scroll. An RTL
+  // sheet's home is the MAX horizontal scroll, so this is load-bearing there.
+  const viewMain = runtime.univer
+    .__getInjector()
+    .get(IRenderManagerService)
+    .getRenderById(workbook.getId())
+    ?.scene?.getViewport(SHEET_VIEWPORT_KEY.VIEW_MAIN)
+  const scrollX = viewMain?.viewportScrollX ?? 0
+  const scrollY = viewMain?.viewportScrollY ?? 0
+  const zoom = worksheet.getZoom() || 1
   let visible: { startRow: number; startColumn: number } | null
   let cellX: number
+  let cellRight: number
   let cellY: number
   try {
     visible = worksheet.getVisibleRange()
     if (!visible) return null
     const cellRect = worksheet.getRange(visible.startRow, visible.startColumn, 1, 1).getCellRect()
-    cellX = surface.x + cellRect.x
-    cellY = surface.y + cellRect.y
+    // Scene units scale by zoom on screen, so scroll-adjust in scene space
+    // first and convert the result.
+    cellX = surface.x + (cellRect.x - scrollX) * zoom
+    cellRight = surface.x + (cellRect.right - scrollX) * zoom
+    cellY = surface.y + (cellRect.y - scrollY) * zoom
   } catch {
     return null
   }
-  const zoom = worksheet.getZoom() || 1
   const config = worksheet.getSheet().getConfig()
   const gridColumns = worksheet.getMaxColumns()
   const gridRows = worksheet.getMaxRows()
@@ -112,13 +150,29 @@ export function rectToAnchor(
     index < gridRows
       ? Math.max(worksheet.getRowHeight(index), 1)
       : Math.max(config.defaultRowHeight, 1)
+  const rtl = config.rightToLeft === BooleanNumber.TRUE
   const originX: AnchorMarker = { index: visible.startColumn, offset: 0 }
   const originY: AnchorMarker = { index: visible.startRow, offset: 0 }
-  const fromX = walkMarker(originX, (rect.x - cellX) / zoom, columnWidth, XLSX_MAX_COLUMN)
-  const fromY = walkMarker(originY, (rect.y - cellY) / zoom, rowHeight, XLSX_MAX_ROW)
-  const toX = walkMarker(fromX, Math.max(rect.w, 1) / zoom, columnWidth, XLSX_MAX_COLUMN)
-  const toY = walkMarker(fromY, Math.max(rect.h, 1) / zoom, rowHeight, XLSX_MAX_ROW)
-  return anchorFromMarkers(fromX, fromY, toX, toY)
+  const x = anchorAxisMarkers(
+    originX,
+    rtl ? cellRight : cellX,
+    rect.x,
+    rect.w,
+    zoom,
+    rtl,
+    columnWidth,
+    XLSX_MAX_COLUMN,
+  )
+  const y = anchorAxisMarkers(originY, cellY, rect.y, rect.h, zoom, false, rowHeight, XLSX_MAX_ROW)
+  return anchorFromMarkers(x.from, y.from, x.to, y.to)
+}
+
+/** The predefined single-click insert box; it grows leftward on RTL sheets. */
+function clickInsertRect(runtime: UniverRuntime, x: number, y: number): DrawRectPx {
+  const rtl =
+    runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheet().getConfig().rightToLeft ===
+    BooleanNumber.TRUE
+  return { x: rtl ? x - DEFAULT_SHAPE_PX : x, y, w: DEFAULT_SHAPE_PX, h: DEFAULT_SHAPE_PX }
 }
 
 /**
@@ -192,7 +246,7 @@ export function startSheetShapeDraw(
     const s = start
     const isClick = Math.hypot(e.clientX - s.x, e.clientY - s.y) <= CLICK_THRESHOLD_PX
     const rect = isClick
-      ? { x: s.x, y: s.y, w: DEFAULT_SHAPE_PX, h: DEFAULT_SHAPE_PX }
+      ? clickInsertRect(runtime, s.x, s.y)
       : resolveDrawRect(s.x, s.y, e.clientX, e.clientY, e.shiftKey)
     cleanup()
     const anchor = rectToAnchor(runtime, rect)

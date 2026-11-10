@@ -1,0 +1,30 @@
+{
+  "id": "kr-middot-nobreak",
+  "title": "Korean word-wrap gives no break opportunity at a middle dot between hangul syllables; a Latin-only footer line paces Calibri",
+  "section": "word-truths.md#L496",
+  "probe_date": "2026-10-14",
+  "source": "corpus 2026-10-13 W3G Word PDFs (8pt cell line kept the whole dotted compound 71pt on the next line; footer Page N of M Calibri 11 line 259 pitches 13.44 between its two lines)",
+  "cases": [
+    {
+      "kind": "krNoBreakIncludes",
+      "text": "\uc811\uc218\u00b7\uac80\ud1a0\u00b7\ubcf4\uc644\u00b7\ud68c\uc2e0,",
+      "expect": [2, 3, 5, 6, 8, 9],
+      "note": "both seams of every middle dot are unbreakable"
+    },
+    {
+      "kind": "latinLineFactor",
+      "font": "Calibri",
+      "expect": 1.22,
+      "note": "Latin-only strip line: Calibri 13.44 (x line 259 in the strip), not the hangul 1.7305"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 14.47,
+      "tol": 0.05,
+      "note": "Page N of M line: 11 x 1.22 x 259/240 = 14.47 (Word footer 13.44 between lines at line 240 pitch; the strip multiple applies separately)"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

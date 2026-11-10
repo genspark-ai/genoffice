@@ -1,0 +1,47 @@
+{
+  "id": "autospace-switches-marker-tab",
+  "title": "autoSpaceDE and autoSpaceDN are independent switches; a custom stop inside the hanging area catches the numbering tab",
+  "section": "word-truths.md#L491",
+  "probe_date": "2026-10-14",
+  "source": "corpus 2026-10-13 W3I (FangSong 16pt, compat 14): autoSpaceDE=0 only -> no CJK/letter gap, CJK/digit gap kept; Arial bold 14 heading, level left=720 hanging=720, marker ends ~160 twips, paragraph stops 450/1350/3060 -> text at the 450 stop",
+  "cases": [
+    {
+      "kind": "autospaceMode",
+      "block": 0,
+      "expect": "digits",
+      "note": "DE off: only the CJK/digit gap survives"
+    },
+    {
+      "kind": "autospaceMode",
+      "block": 1,
+      "expect": "latin",
+      "note": "DN off: only the CJK/letter gap survives"
+    },
+    {
+      "kind": "autospaceMode",
+      "block": 2,
+      "expect": null,
+      "note": "both off"
+    },
+    {
+      "kind": "autospaceMode",
+      "block": 3,
+      "expect": true,
+      "note": "Word default both on"
+    },
+    {
+      "kind": "markerTab",
+      "args": [0, 160, 720, 720, [450, 1350, 3060]],
+      "expect": 450,
+      "note": "the explicit 450 stop between the marker end and the 720 hanging indent catches the tab"
+    },
+    {
+      "kind": "markerTab",
+      "args": [0, 160, 720, 720, []],
+      "expect": null,
+      "note": "no custom stop: the text starts at the hanging indent"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

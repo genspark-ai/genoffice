@@ -13,7 +13,12 @@
  */
 
 import type { EditParagraph } from '../../shared/ipc'
+import { FONT_SIZE_PT_MIN, FONT_SIZE_PT_MAX } from '@genoffice/pptx-ops/font-size'
 import { interpretLayoutScript } from './layout-script-interpreter'
+import { boundedJsonStringify, truncateString } from './bounded-json'
+// Debug output that flows into the next model request, per script run.
+const LOG_MAX_TOTAL_CHARS = 20_000
+const LOG_MAX_ENTRY_CHARS = 4_000
 
 export interface LayoutScriptElement {
   id: string
@@ -115,7 +120,7 @@ export function runLayoutScript(
     if (!el) throw new Error(`${fn}: element "${key}" does not exist (see the ids in els)`)
     if (el.inGroup && !el.groupId)
       throw new Error(
-        `${fn}: "${key}" is nested inside a sub-group (read-only); ungroup_element the outer group first, or operate on the sub-group as a whole`,
+        `${fn}: "${key}" is nested inside a sub-group (read-only); ungroup the outer group first (apply_ops ungroupElement), or operate on the sub-group as a whole`,
       )
     if (el.locked)
       throw new Error(`${fn}: "${key}" is a layout decoration element, read-only and unmodifiable`)
@@ -224,7 +229,7 @@ export function runLayoutScript(
     })
   }
 
-  /** Replace an element's text wholesale: string or paragraph array (same format as set_element_text's paragraphs) */
+  /** Replace an element's text wholesale: string or paragraph array (same format as apply_ops setText paragraphs) */
   const setText = (id: unknown, textOrParagraphs: unknown) => {
     const key = String(id)
     const el = guard('setText', id)
@@ -244,7 +249,11 @@ export function runLayoutScript(
     const style: SlideStylePatch = {}
     if (p.fontSize !== undefined) {
       const n = reqNum(`setStyle("${key}")`, 'fontSize', p.fontSize)
-      if (n <= 0) throw new Error(`setStyle("${key}"): fontSize must be > 0`)
+      if (n < FONT_SIZE_PT_MIN || n > FONT_SIZE_PT_MAX) {
+        throw new Error(
+          `setStyle("${key}"): fontSize must be ${FONT_SIZE_PT_MIN}..${FONT_SIZE_PT_MAX} (points)`,
+        )
+      }
       style.fontSize = n
     }
     if (p.color !== undefined) {
@@ -306,9 +315,23 @@ export function runLayoutScript(
     edits.push({ kind: 'stroke', id: key, stroke: { color: hex, widthPt }, ...grp })
   }
 
+  // Entries are count-capped AND byte-capped: 50 entries of unbounded size
+  // let a script push 100+ MB of text into the next model request. The
+  // serializer is size-bounded: it stops at the entry cap instead of
+  // materializing the full JSON first (a {x:o, y:o} doubling chain made
+  // JSON.stringify build a ~25 MB string before the slice ran).
+  let logChars = 0
   const log = (...args: unknown[]) => {
-    if (logs.length >= 50) return
-    logs.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '))
+    if (logs.length >= 50 || logChars >= LOG_MAX_TOTAL_CHARS) return
+    const entry = args
+      .map((a) =>
+        typeof a === 'string'
+          ? truncateString(a, LOG_MAX_ENTRY_CHARS)
+          : (boundedJsonStringify(a, LOG_MAX_ENTRY_CHARS) ?? ''),
+      )
+      .join(' ')
+    logs.push(entry)
+    logChars += entry.length
   }
 
   let returned: unknown
@@ -326,14 +349,18 @@ export function runLayoutScript(
       log,
     })
   } catch (err) {
+    // Errors echo back to the model too — keep them inside the same per-entry cap
     const msg = err instanceof Error ? err.message : String(err)
-    return { ops: [], edits: [], logs, error: msg }
+    return { ops: [], edits: [], logs, error: truncateString(msg, LOG_MAX_ENTRY_CHARS) }
   }
 
   let returnedStr: string | undefined
   if (returned !== undefined) {
     try {
-      returnedStr = typeof returned === 'string' ? returned : JSON.stringify(returned)
+      returnedStr =
+        typeof returned === 'string'
+          ? truncateString(returned, LOG_MAX_ENTRY_CHARS)
+          : (boundedJsonStringify(returned, LOG_MAX_ENTRY_CHARS) ?? '')
     } catch {
       returnedStr = String(returned)
     }

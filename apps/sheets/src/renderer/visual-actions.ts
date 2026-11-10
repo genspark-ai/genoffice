@@ -3,23 +3,25 @@
  * the App component passes a VisualActionContext built fresh per call so
  * refs and state never go stale.
  */
-import { columnLabel, parseAddress, parseRange } from '../domain/cell-address'
+import { columnLabel, parseAddress, parseRange } from '@genoffice/xlsx-gateway/domain/cell-address'
 import {
   hasNumericYearAxis,
   recommendCharts,
   type ChartRecommendations,
-} from '../domain/chart-recommend'
-import { buildChartVisual, chartDataFromValues } from '../domain/chart-visual'
-import type { InMemoryWorkbookAdapter } from '../domain/in-memory-workbook'
-import { buildPivotChartData } from '../domain/pivot-chart'
+} from '@genoffice/xlsx-gateway/domain/chart-recommend'
+import { buildChartVisual, chartDataFromValues } from '@genoffice/xlsx-gateway/domain/chart-visual'
+import type { InMemoryWorkbookAdapter } from '@genoffice/xlsx-gateway/domain/in-memory-workbook'
+import { buildPivotChartData } from '@genoffice/xlsx-gateway/domain/pivot-chart'
 import type {
   AddChartOperation,
   AddImageOperation,
   AddShapeOperation,
   EditChartOperation,
   EditShapeOperation,
-} from '../domain/workbook-dsl'
-import type { ChangePlan } from '../domain/workbook.types'
+} from '@genoffice/xlsx-gateway/domain/workbook-dsl'
+import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
+import { IRenderManagerService, Vector2 } from '@univerjs/engine-render'
+import { SheetSkeletonManagerService } from '@univerjs/preset-sheets-core'
 import type { WorkbookVisualObject } from '../shared/desktop-api'
 import {
   isSheetRemoved,
@@ -29,7 +31,14 @@ import {
   updateVisualAdd,
 } from './edit-journal'
 import { t } from './i18n/locale'
-import { findPivotAtSelection, type PivotActionContext } from './pivot-actions'
+import { filePivotAtSelection, type PivotActionContext } from './pivot-actions'
+import {
+  fitPictureFrame,
+  pictureFileProblem,
+  pictureMediaType,
+  pointInRect,
+  type PictureAnchor,
+} from './picture-paste'
 import { startSheetShapeDraw } from './shape-draw'
 import {
   a1RangeRef,
@@ -62,21 +71,16 @@ export interface VisualActionContext {
   setPreview: (plan: ChangePlan | null) => void
   setPendingEdits: (count: number) => void
   pivotContext: () => PivotActionContext
-  queueDemoVisualInstall: (runtime: UniverRuntime, sheetId: string) => void
+  queueDemoVisualInstall: (runtime: UniverRuntime) => void
   refreshLazyVisuals: (state: LazyWorkbookState) => void
 }
 
-function queueCtxVisualInstall(
-  ctx: VisualActionContext,
-  runtime: UniverRuntime,
-  sheetId: string,
-): void {
+function queueCtxVisualInstall(ctx: VisualActionContext, runtime: UniverRuntime): void {
   queueVisualInstall(
     runtime,
     ctx.lazyWorkbookRef,
     ctx.visualDisposablesRef,
     ctx.visualInstallTimerRef,
-    sheetId,
     ctx.chartEditRef,
     ctx.chartVectorRef,
     ctx.shapeEditRef,
@@ -156,7 +160,7 @@ function insertDemoChartFromSelection(
     const receipt = ctx.adapterRef.current.apply(plan)
     ctx.setRevision(receipt.revision)
     ctx.setPreview(null)
-    ctx.queueDemoVisualInstall(runtime, worksheet.getSheetId())
+    ctx.queueDemoVisualInstall(runtime)
     ctx.setMessage(t('appChartInsertedDemo'))
   } catch (error: unknown) {
     ctx.setMessage(error instanceof Error ? error.message : t('appChartInsertFailed'))
@@ -284,14 +288,15 @@ export async function handleInsertChart(
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
-  queueCtxVisualInstall(ctx, runtime, sheetId)
+  queueCtxVisualInstall(ctx, runtime)
   ctx.setMessage(t('appChartInserted'))
 }
 
 /// PivotChart: creates a chart from the output area of the pivot under the
 /// cursor. series/cat reference output-area cells, so the chart follows the
-/// references after refresh write-back (chartSpace pivotSource wiring: see the
-/// TODO in pivot-chart).
+/// references after refresh write-back, and the visual carries the pivot
+/// table's part path so the save writes chartSpace <c:pivotSource> — Excel
+/// then recognizes the chart as a PivotChart (field buttons, layout sync).
 export async function handleInsertPivotChart(
   ctx: VisualActionContext,
   chartKind: string,
@@ -306,15 +311,8 @@ export async function handleInsertPivotChart(
   const workbook = runtime.univerAPI.getActiveWorkbook()
   const worksheet = workbook?.getActiveSheet()
   if (!workbook || !worksheet) return
-  const found = findPivotAtSelection(ctx.pivotContext())
-  if (!found) {
-    ctx.setMessage(t('appCursorNotInPivot'))
-    return
-  }
-  if (!found.definition) {
-    ctx.setMessage(t('appPivotDefNotLoaded'))
-    return
-  }
+  const found = filePivotAtSelection(ctx.pivotContext())
+  if (!found) return
   if (isSheetRemoved(state.editJournal, found.sheetId)) return
   const bounds = parseRange(found.pivot.outputRef)
   let outputValues: (string | number | boolean | null | undefined)[][]
@@ -365,6 +363,9 @@ export async function handleInsertPivotChart(
         ? { barDirection: chartKind === 'bar' ? 'bar' : 'col' }
         : {}),
       title: chartData.title,
+      // Binds the saved chart to the pivot's table part; the gateway resolves
+      // the pivotTableDefinition name and writes <c:pivotSource> from it.
+      pivotTablePath: found.pivot.path,
       series: chartData.series.map((series) => ({
         name: series.name,
         categories: [...series.categories],
@@ -376,7 +377,7 @@ export async function handleInsertPivotChart(
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
-  queueCtxVisualInstall(ctx, runtime, found.sheetId)
+  queueCtxVisualInstall(ctx, runtime)
   ctx.setMessage(
     chartData.truncated ? t('appPivotChartInsertedTruncated') : t('appPivotChartInserted'),
   )
@@ -419,7 +420,7 @@ export function insertShapeAtAnchor(
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
-  queueCtxVisualInstall(ctx, runtime, sheetId)
+  queueCtxVisualInstall(ctx, runtime)
   ctx.setMessage(t('appShapeInserted'))
 }
 
@@ -467,7 +468,7 @@ export function handleInsertShape(
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
-  queueCtxVisualInstall(ctx, runtime, sheetId)
+  queueCtxVisualInstall(ctx, runtime)
   ctx.setMessage(isTextBox ? t('appTextBoxInserted') : t('appShapeInserted'))
 }
 
@@ -564,7 +565,7 @@ export function insertAiImageVisual(
     name: op.path.split('/').pop() ?? 'image',
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
-  queueCtxVisualInstall(ctx, runtime, op.sheetId)
+  queueCtxVisualInstall(ctx, runtime)
 }
 
 /// AI edit_shape: in-place journal update of a session-added shape,
@@ -595,7 +596,7 @@ export function applyAiShapeEdit(
     ...(op.text === undefined ? {} : { text: op.text }),
     ...(op.fillColor === undefined ? {} : { fillColor: op.fillColor }),
   })
-  queueCtxVisualInstall(ctx, runtime, visual.sheetId)
+  queueCtxVisualInstall(ctx, runtime)
 }
 
 /// AI add_chart: same visual-add pipeline as the ribbon's Insert Chart,
@@ -619,10 +620,11 @@ export async function insertAiChartVisual(
     dataRange: op.dataRange,
     title: op.title,
     anchorCell: op.anchorCell,
+    columns: op.columns,
     values,
   })
   pushVisualAddUndo(ctx, runtime, state, visual)
-  queueCtxVisualInstall(ctx, runtime, op.sheetId)
+  queueCtxVisualInstall(ctx, runtime)
 }
 
 export function insertAiShapeVisual(
@@ -658,50 +660,97 @@ export function insertAiShapeVisual(
         }),
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
-  queueCtxVisualInstall(ctx, runtime, op.sheetId)
+  queueCtxVisualInstall(ctx, runtime)
 }
 
 export function handleInsertPicture(ctx: VisualActionContext): void {
-  if (!ctx.univerRef.current) return
-  if (!ctx.lazyWorkbookRef.current) {
-    ctx.setMessage(t('appPictureNeedsFile'))
-    return
-  }
+  if (!pictureTargetReady(ctx)) return
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = 'image/png,image/jpeg,image/gif'
   input.onchange = () => {
     const file = input.files?.[0]
-    if (!file) return
-    if (file.size > 20 * 1024 * 1024) {
-      ctx.setMessage(t('appPictureTooLarge'))
-      return
-    }
-    const mediaType = file.type === 'image/jpg' ? 'image/jpeg' : file.type
-    if (!['image/png', 'image/jpeg', 'image/gif'].includes(mediaType)) {
-      ctx.setMessage(t('appPictureBadType'))
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === 'string' ? reader.result : null
-      if (!dataUrl) return
-      const image = new Image()
-      image.onload = () =>
-        insertPictureVisual(
-          ctx,
-          dataUrl,
-          mediaType,
-          file.name,
-          image.naturalWidth,
-          image.naturalHeight,
-        )
-      image.onerror = () => insertPictureVisual(ctx, dataUrl, mediaType, file.name, 480, 320)
-      image.src = dataUrl
-    }
-    reader.readAsDataURL(file)
+    if (file) handleInsertPictureFile(ctx, file)
   }
   input.click()
+}
+
+function pictureTargetReady(ctx: VisualActionContext): boolean {
+  if (!ctx.univerRef.current) return false
+  if (!ctx.lazyWorkbookRef.current) {
+    ctx.setMessage(t('appPictureNeedsFile'))
+    return false
+  }
+  return true
+}
+
+/// Shared by the file picker, clipboard paste and drag-and-drop: validates
+/// the file, measures it and anchors the picture at `anchor` (or the active
+/// cell).
+export function handleInsertPictureFile(
+  ctx: VisualActionContext,
+  file: File,
+  anchor: PictureAnchor | null = null,
+): void {
+  if (!pictureTargetReady(ctx)) return
+  const problem = pictureFileProblem(file)
+  if (problem) {
+    ctx.setMessage(t(problem === 'too-large' ? 'appPictureTooLarge' : 'appPictureBadType'))
+    return
+  }
+  const mediaType = pictureMediaType(file.type)
+  const reader = new FileReader()
+  reader.onload = () => {
+    const dataUrl = typeof reader.result === 'string' ? reader.result : null
+    if (!dataUrl) return
+    const image = new Image()
+    image.onload = () =>
+      insertPictureVisual(
+        ctx,
+        dataUrl,
+        mediaType,
+        file.name,
+        image.naturalWidth,
+        image.naturalHeight,
+        anchor,
+      )
+    image.onerror = () => insertPictureVisual(ctx, dataUrl, mediaType, file.name, 480, 320, anchor)
+    image.src = dataUrl
+  }
+  reader.readAsDataURL(file)
+}
+
+/// Grid cell under a viewport point (drop target), mirroring Univer's own
+/// pointer hit-test; null off the sheet canvas.
+export function cellAtClientPoint(
+  runtime: UniverRuntime,
+  clientX: number,
+  clientY: number,
+): PictureAnchor | null {
+  const workbook = runtime.univerAPI.getActiveWorkbook()
+  if (!workbook) return null
+  const render = runtime.univer
+    .__getInjector()
+    .get(IRenderManagerService)
+    .getRenderById(workbook.getId())
+  const skeleton = render?.with(SheetSkeletonManagerService).getCurrentSkeleton()
+  if (!render || !skeleton) return null
+  const bounds = render.engine.getCanvasElement().getBoundingClientRect()
+  if (!pointInRect(clientX, clientY, bounds)) return null
+  const scene = render.scene
+  const relative = scene.getCoordRelativeToViewport(
+    Vector2.FromArray([clientX - bounds.left, clientY - bounds.top]),
+  )
+  const scrollXY = scene.getScrollXYInfoByViewport(relative)
+  const { scaleX, scaleY } = scene.getAncestorScale()
+  const { row, column } = skeleton.getCellIndexByOffset(
+    relative.x,
+    relative.y,
+    scaleX,
+    scaleY,
+    scrollXY,
+  )
+  return row < 0 || column < 0 ? null : { row, column }
 }
 
 /// Reads the selection the same way handleInsertChart does and ranks chart
@@ -780,6 +829,7 @@ function insertPictureVisual(
   fileName: string,
   naturalWidth: number,
   naturalHeight: number,
+  anchor: PictureAnchor | null = null,
 ): void {
   const runtime = ctx.univerRef.current
   const state = ctx.lazyWorkbookRef.current
@@ -793,12 +843,9 @@ function insertPictureVisual(
   }
   const sheetId = worksheet.getSheetId()
   if (isSheetRemoved(state.editJournal, sheetId)) return
-  // ~80px per column, ~22px per row; scale down to a ≤480px-wide frame.
-  const scale = Math.min(1, 480 / Math.max(1, naturalWidth))
-  const columns = Math.min(16, Math.max(2, Math.round((naturalWidth * scale) / 80)))
-  const rows = Math.min(40, Math.max(2, Math.round((naturalHeight * scale) / 22)))
-  const row = range.getRow()
-  const column = range.getColumn()
+  const { columns, rows } = fitPictureFrame(naturalWidth, naturalHeight)
+  const row = anchor?.row ?? range.getRow()
+  const column = anchor?.column ?? range.getColumn()
   const visual: WorkbookVisualObject = {
     id: `added-image-${Date.now().toString(36)}-${state.editJournal.visualAdds.length + 1}`,
     sheetId,
@@ -819,6 +866,6 @@ function insertPictureVisual(
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
-  queueCtxVisualInstall(ctx, runtime, sheetId)
+  queueCtxVisualInstall(ctx, runtime)
   ctx.setMessage(t('appPictureInserted'))
 }

@@ -1,53 +1,181 @@
 import type { AnyExtension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
-import { Markdown } from '@tiptap/markdown'
-import { TableKit } from '@tiptap/extension-table'
-import { TaskItem, TaskList } from '@tiptap/extension-list'
+import { Table, TableKit } from '@tiptap/extension-table'
+import { OrderedList, TaskList } from '@tiptap/extension-list'
+import { LooseBulletList, LooseOrderedList, LooseTaskList } from './looseLists'
 import { CodeBlock } from '@tiptap/extension-code-block'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
 import { CodeBlockView } from './CodeBlockView'
-import { LocalImage } from './localImage'
+import { ImageAwareLink, LocalImage } from './localImage'
 import { BlockDragHandle } from './blockDragHandle'
 import { BlockKeymap } from './blockKeymap'
 import { AiHighlight } from './aiHighlight'
+import { AiQueueAnchors } from './aiQueueAnchors'
+import { InactiveSelection } from './inactiveSelection'
+import { Highlight } from './highlight'
+import { SearchHighlight } from './searchHighlight'
+import { buildMathExtensions } from './math'
+import { Redaction } from './Redaction'
+import {
+  BlockStartEscapedParagraph,
+  SelectiveEscapeMarkdown,
+  withTableRendering,
+} from './markdownEscape'
 import { SlashCommand } from './slashCommand'
+import {
+  CodeSpan,
+  renderFencedCode,
+  StyledBold,
+  StyledHardBreak,
+  StyledHeading,
+  StyledHorizontalRule,
+  StyledItalic,
+  StyledListItem,
+  StyledTaskItem,
+  renderTable,
+} from './markdownStyleRenderers'
+import { boundOrderedList, boundTable, boundTaskList } from './boundedTokenizers'
+import { WikiLink, WikiLinkResolve, WikiAliasDisplay } from './wikilink'
+import type { WikiLinkOptions } from './wikilink'
 import type { SlashController, SlashItem } from './slashCommand'
+import { WikiSuggest } from './wikiSuggest'
+import type { WikiSuggestController } from './wikiSuggest'
+import { WikiEmbed } from './wikiEmbed'
+import { BlockLink } from './blockId'
+import type { BlockLinkOptions } from './blockId'
+import { WikiPasteLive } from './wikiPaste'
+import { FootnoteDefinition, FootnoteNav, FootnoteReference } from './footnote'
 import { t } from '../i18n/locale'
 
 export interface BuildExtensionsOptions {
   slashController: SlashController
   slashItems: () => SlashItem[]
+  /**
+   * The `[[` suggester. Omitted in tests and headless paths: the plugin then
+   * runs with no menu sink, so nothing intercepts the keys around a `[[`.
+   */
+  wikiSuggestController?: WikiSuggestController
+  /**
+   * Wiki-link navigation. Omitted in tests and headless paths: the resolver is
+   * then left on its default, which reports every link unresolved rather than
+   * reaching for the filesystem.
+   */
+  wikiLink?: Partial<WikiLinkOptions>
+  /**
+   * Copy-link-to-block. Omitted in tests and headless paths: the command then
+   * reports to no one and writes to whatever clipboard the environment has.
+   */
+  blockLink?: Partial<BlockLinkOptions>
 }
 
 export function buildExtensions(options: BuildExtensionsOptions): AnyExtension[] {
   return [
     StarterKit.configure({
-      // LocalImage replaces the plain image; links open externally via main-process guard
-      link: { openOnClick: false },
+      // re-added below: the image is inline, the link parser knows about it and the
+      // paragraph wraps lone images and escapes block-start syntax
+      link: false,
+      paragraph: false,
       // replaced by the NodeView-enhanced variant below (language picker + copy)
       codeBlock: false,
       // underline would serialize as `++text++` — not part of GFM
       underline: false,
+      // re-added below with a linear-time markdown tokenizer and a `loose` attribute
+      orderedList: false,
+      bulletList: false,
+      // re-added below with renderers that follow the document's own conventions
+      bold: false,
+      italic: false,
+      heading: false,
+      horizontalRule: false,
+      hardBreak: false,
+      listItem: false,
+      // re-added below: code after the other marks so it serializes innermost
+      code: false,
+    }),
+    BlockStartEscapedParagraph,
+    StyledBold,
+    StyledItalic,
+    CodeSpan,
+    StyledHeading,
+    StyledHorizontalRule,
+    StyledHardBreak,
+    StyledListItem,
+    LooseBulletList,
+    LooseOrderedList.extend({
+      markdownTokenizer: boundOrderedList(OrderedList.config.markdownTokenizer!),
     }),
     CodeBlock.extend({
       addNodeView() {
         return ReactNodeViewRenderer(CodeBlockView)
       },
+      // the stock handler only takes a fence at column 0; CommonMark allows 1-3 spaces
+      parseMarkdown: (token, h) => {
+        if (
+          !/^ {0,3}(?:`{3,}|~{3,})/.test(String(token.raw ?? '')) &&
+          token.codeBlockStyle !== 'indented'
+        ) {
+          return []
+        }
+        return h.createNode(
+          'codeBlock',
+          { language: token.lang || null },
+          token.text ? [h.createTextNode(String(token.text))] : [],
+        )
+      },
+      renderMarkdown: (node, h) =>
+        renderFencedCode(
+          String(node.attrs?.language ?? ''),
+          node.content ? h.renderChildren(node.content) : null,
+        ),
     }),
-    // 4-space nesting: the default 2 spaces is below the content column of
-    // ordered items ("1. " = 3), so strict CommonMark parsers (GitHub) would
-    // flatten sub-lists in the saved file. 4 is safe for every marker width.
-    Markdown.configure({ indentation: { style: 'space', size: 4 } }),
+    SelectiveEscapeMarkdown,
     // column widths are not expressible in GFM tables — no resizable columns;
     // the wrapper div gives wide tables a horizontal scrollbar
-    TableKit.configure({ table: { resizable: false, renderWrapper: true } }),
-    TaskList,
-    TaskItem.configure({ nested: true }),
+    TableKit.configure({ table: false }),
+    Table.extend({
+      markdownTokenizer: boundTable(Table.config.markdownTokenizer!),
+      renderMarkdown: (node, h, ctx) => withTableRendering(() => renderTable(node, h, ctx)),
+    }).configure({
+      resizable: false,
+      renderWrapper: true,
+    }),
+    LooseTaskList.extend({ markdownTokenizer: boundTaskList(TaskList.config.markdownTokenizer!) }),
+    StyledTaskItem.configure({ nested: true }),
+    // KaTeX-rendered $...$ / $$...$$ formulas (issue #100)
+    ...buildMathExtensions(),
+    // ==highlight== (Obsidian's text highlight)
+    Highlight,
+    // text the reader withholds from the model: the words stay in the document
+    // and in the file, and only the model-facing view replaces them
+    Redaction,
     LocalImage,
+    // links open externally via main-process guard
+    ImageAwareLink.configure({ openOnClick: false }),
+    WikiLink,
+    WikiEmbed,
+    // GFM footnotes: `[^1]` references and `[^1]: text` definitions (see footnote.ts)
+    FootnoteDefinition,
+    FootnoteReference,
+    FootnoteNav,
+    WikiLinkResolve.configure(options.wikiLink ?? {}),
+    // an aliased link reads as its alias: the syntax is hidden in the view only
+    WikiAliasDisplay,
+    // `^id` block markers: written on demand, dimmed in the view, plain text in the file
+    BlockLink.configure(options.blockLink ?? {}),
+    // pasted `[[links]]` and `![[embeds]]` take their live shape at once
+    WikiPasteLive,
+    WikiSuggest.configure({
+      controller: options.wikiSuggestController,
+      // keys the fragment cache: the same note asked from another document is another question
+      getDocumentPath: options.wikiLink?.getDocumentPath,
+    }),
     BlockDragHandle,
     BlockKeymap,
     AiHighlight,
+    AiQueueAnchors,
+    InactiveSelection,
+    SearchHighlight,
     Placeholder.configure({ placeholder: () => t('placeholder') }),
     SlashCommand.configure({
       controller: options.slashController,

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { groupValue } from '../src/domain/pivot-grouping'
-import { growPivotDefinition, recomputePivotData } from '../src/domain/pivot-engine'
-import { parsePivotDefinition } from '../src/gateway/xlsx-pivot'
+import { groupValue } from '@genoffice/xlsx-gateway/domain/pivot-grouping'
+import {
+  growPivotDefinition,
+  recomputePivotData,
+} from '@genoffice/xlsx-gateway/domain/pivot-engine'
+import { parsePivotDefinition } from '@genoffice/xlsx-gateway/gateway/xlsx-pivot'
 
 describe('groupValue', () => {
   it('groups dates by year / quarter / month from ISO strings', () => {
@@ -37,6 +40,51 @@ describe('groupValue', () => {
     expect(groupValue({ kind: 'range', rangeStep: 50, rangeStart: 25 }, 60).label).toBe('25-75')
     // Numbers in string form get grouped too.
     expect(groupValue(rule, '150').label).toBe('100-200')
+  })
+
+  it('places an exact range boundary in its own bucket', () => {
+    const boundaries: readonly [number, number, string][] = [
+      [0.1, 0.1, '0.1-0.2'],
+      [0.1, 0.3, '0.3-0.4'],
+      [0.1, 0.7, '0.7-0.8'],
+      [0.1, 1.1, '1.1-1.2'],
+      [0.1, 2.7, '2.7-2.8'],
+      [0.1, 3.3, '3.3-3.4'],
+      [0.2, 0.6, '0.6-0.8'],
+      [0.25, 0.75, '0.75-1'],
+      [0.3, 2.7, '2.7-3'],
+      [0.5, 1.5, '1.5-2'],
+      [0.5, 2.5, '2.5-3'],
+      [1.5, 4.5, '4.5-6'],
+      [2.5, 7.5, '7.5-10'],
+    ]
+    for (const [rangeStep, value, label] of boundaries) {
+      expect(groupValue({ kind: 'range', rangeStep }, value).label).toBe(label)
+    }
+  })
+
+  it('places an exact boundary in its own bucket with a non-zero range start', () => {
+    const cases: readonly [number, number, number, string][] = [
+      [100, 0.1, 95.1, '95.1-95.2'],
+      [100, 0.1, 100.3, '100.3-100.4'],
+      [25, 0.5, 27.5, '27.5-28'],
+      [1000, 0.3, 1000.9, '1000.9-1001.2'],
+      [-7, 0.7, -5.6, '-5.6--4.9'],
+    ]
+    for (const [rangeStart, rangeStep, value, label] of cases) {
+      expect(groupValue({ kind: 'range', rangeStep, rangeStart }, value).label).toBe(label)
+    }
+    expect(groupValue({ kind: 'range', rangeStep: 0.1, rangeStart: 100 }, 95.15).label).toBe(
+      '95.1-95.2',
+    )
+  })
+
+  it('keeps a value short of a boundary in the lower bucket', () => {
+    expect(groupValue({ kind: 'range', rangeStep: 0.1 }, 0.25).label).toBe('0.2-0.3')
+    expect(groupValue({ kind: 'range', rangeStep: 0.1 }, 0.29999).label).toBe('0.2-0.3')
+    expect(groupValue({ kind: 'range', rangeStep: 0.1 }, 0.35).label).toBe('0.3-0.4')
+    expect(groupValue({ kind: 'range', rangeStep: 100 }, 250).label).toBe('200-300')
+    expect(groupValue({ kind: 'range', rangeStep: 100 }, -1).label).toBe('-100-0')
   })
 
   it('passes blanks and unparseable values through', () => {

@@ -8,6 +8,7 @@
  */
 import type { Paragraph, Slide, TextElement } from './types'
 import { generateParagraphXml } from './generate'
+import { cNvPrIdsInXml, pruneTimingForSpids } from './animation'
 import { materializeSlide, type OpenedPptx } from './index'
 import { nextCNvPrId } from './insert'
 
@@ -71,11 +72,19 @@ export function applyHeaderFooter(
     const slide = deck.slides[i]
     if (!slide) continue
 
-    // 1) Remove existing footer-family placeholders
+    // 1) Remove existing footer-family placeholders (and their animations —
+    // slide-number placeholders animated by templates would leave dangling
+    // <p:spTgt spid> refs behind)
     const before = slide.elements.length
+    const removed = slide.elements.filter((el) => el.placeholder && HF_TYPES.has(el.placeholder))
     slide.elements = slide.elements.filter(
       (el) => !(el.placeholder && HF_TYPES.has(el.placeholder)),
     )
+    const removedIds = new Set<number>()
+    for (const el of removed) {
+      for (const id of cNvPrIdsInXml(el.anchor.originalXml)) removedIds.add(id)
+    }
+    pruneTimingForSpids(slide, removedIds)
     let dirty = slide.elements.length !== before
 
     // 2) Append enabled placeholders (order: dt left → ftr center → sldNum right)

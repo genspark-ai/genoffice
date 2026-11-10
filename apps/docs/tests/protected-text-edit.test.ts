@@ -40,6 +40,7 @@ describe('protected field and formula editing', () => {
     expect(title.getAttribute('contenteditable')).toBe('true')
     title.textContent = 'New & title'
     page.textContent = '12'
+    title.dispatchEvent(new Event('input', { bubbles: true }))
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
 
     const formula = editor.view.dom.querySelector('.doc-protected-formula') as HTMLElement
@@ -49,6 +50,7 @@ describe('protected field and formula editing', () => {
     expect(tokens[0].getAttribute('contenteditable')).toBe('true')
     tokens[0].textContent = 'x'
     tokens[1].textContent = 'y + 1'
+    tokens[0].dispatchEvent(new Event('input', { bubbles: true }))
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
 
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
@@ -76,6 +78,36 @@ describe('protected field and formula editing', () => {
     expect(plan.changedCount).toBe(0)
     const saved = await saveDocx(parsed, plan.saveBlocks)
     expect(saved).toEqual(source)
+    editor.destroy()
+  })
+
+  it('text-field passthrough carries run face/size and preserves spaces (public issue #118)', async () => {
+    const rpr =
+      '<w:rPr><w:rFonts w:ascii="\u5b8b\u4f53" w:eastAsia="\u5b8b\u4f53"/><w:sz w:val="24"/></w:rPr>'
+    const bodyXml =
+      `<w:p><w:pPr><w:jc w:val="left"/>${rpr}</w:pPr>` +
+      `<w:r>${rpr}<w:t>\u9636\u8d70\u5230\u6cb3</w:t></w:r>` +
+      `<w:r>${rpr}<w:t xml:space="preserve">     </w:t></w:r>` +
+      `<w:r>${rpr}<w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r>${rpr}<w:instrText xml:space="preserve"> INCLUDEPICTURE "/tmp/x.jpeg" \\* MERGEFORMATINET </w:instrText></w:r>` +
+      `<w:r>${rpr}<w:fldChar w:fldCharType="end"/></w:r>` +
+      `<w:r>${rpr}<w:t>\u5cb8\u8fb9</w:t></w:r></w:p>`
+    const parsed = await parseDocx(await buildDocx({ bodyXml }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    const el = editor.view.dom.querySelector<HTMLElement>('.doc-field-text')!
+    expect(el).toBeTruthy()
+    // mid-paragraph space run must survive into the DOM (pre-wrap keeps it)
+    expect(el.textContent).toContain('\u6cb3     \u5cb8')
+    expect(el.style.fontSize).toBe('12pt')
+    expect(el.style.getPropertyValue('--doc-line-factor')).toBe('1.3')
+    expect(el.style.lineHeight).toContain('--doc-line-grid')
+    expect(el.style.textAlign).toBe('left')
+    // inline: prosemirror-view injects a higher-specificity white-space:normal
+    expect(el.style.whiteSpace).toBe('pre-wrap')
     editor.destroy()
   })
 })

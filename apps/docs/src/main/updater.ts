@@ -36,6 +36,22 @@ const tUpd = createI18n({
     updInstall: 'Restart & Install',
     updLater: 'Remind me later',
   },
+  vi: {
+    updTitle: 'Cập nhật phần mềm',
+    updHeadline: 'Đã có phiên bản mới',
+    updDesc:
+      'Bản cập nhật này bao gồm các cải tiến hiệu suất và sửa lỗi. Chúng tôi khuyên bạn nên cập nhật ngay bây giờ.',
+    updInstall: 'Khởi động lại & Cài đặt',
+    updLater: 'Nhắc tôi sau',
+  },
+  tr: {
+    updTitle: 'Yazılım Güncellemesi',
+    updHeadline: 'Yeni bir sürüm var',
+    updDesc:
+      'Bu güncelleme performans iyileştirmeleri ve hata düzeltmeleri içerir. Şimdi güncellemenizi öneririz.',
+    updInstall: 'Yeniden Başlat ve Yükle',
+    updLater: 'Daha sonra hatırlat',
+  },
   ja: {
     updTitle: 'ソフトウェアアップデート',
     updHeadline: '新しいバージョンがあります',
@@ -129,6 +145,14 @@ const tUpd = createI18n({
       'Ta aktualizacja zawiera ulepszenia wydajności i poprawki błędów. Zalecamy aktualizację teraz.',
     updInstall: 'Uruchom ponownie i zainstaluj',
     updLater: 'Przypomnij później',
+  },
+  cs: {
+    updTitle: 'Aktualizace softwaru',
+    updHeadline: 'Je k dispozici nová verze',
+    updDesc:
+      'Tato aktualizace obsahuje vylepšení výkonu a opravy chyb. Doporučujeme aktualizovat nyní.',
+    updInstall: 'Restartovat a nainstalovat',
+    updLater: 'Připomenout později',
   },
   nl: {
     updTitle: 'Software-update',

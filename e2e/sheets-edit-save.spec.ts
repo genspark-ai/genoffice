@@ -56,12 +56,12 @@ test.describe('sheets: edit and save an external workbook', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(first.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(first.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       const a1 = await cellA1(sheets)
       await sheets.mouse.click(a1.x, a1.y)
-      await expect(sheets.locator('.name-box')).toHaveValue('A1')
+      await expect(sheets.locator('[data-u-comp="defined-name"] input')).toHaveValue('A1')
 
       await sheets.keyboard.type('Hello', { delay: 50 })
       await sheets.keyboard.press('Enter')
@@ -74,7 +74,7 @@ test.describe('sheets: edit and save an external workbook', () => {
 
       // File > Save, routed to the sheets view the same way the app menu does it
       await first.app.evaluate(({ webContents }) => {
-        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
         wc?.send('menu:action', 'save')
       })
       await expect(() => {
@@ -93,12 +93,12 @@ test.describe('sheets: edit and save an external workbook', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(second.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(second.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       const a1 = await cellA1(sheets)
       await sheets.mouse.click(a1.x, a1.y)
-      await expect(sheets.locator('.name-box')).toHaveValue('A1')
+      await expect(sheets.locator('[data-u-comp="defined-name"] input')).toHaveValue('A1')
       if (canReadClipboard) {
         expect(await copyActiveCell(sheets)).toBe('Hello')
       }

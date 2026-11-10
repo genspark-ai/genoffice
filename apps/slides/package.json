@@ -24,6 +24,7 @@
     "@genoffice/file-parse": "*",
     "@genoffice/i18n": "*",
     "@genoffice/pptx-engine": "*",
+    "@genoffice/pptx-ops": "*",
     "@genoffice/pptx-render": "*",
     "@genoffice/project-store": "*",
     "@genoffice/ui": "*",
@@ -31,8 +32,9 @@
     "@types/pngjs": "^6.0.5",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^5.0.4",
-    "electron": "^43.3.0",
+    "electron": "^43.8.3",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
     "jsdom": "^28.0.0",
@@ -41,9 +43,10 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-konva": "^19.0.10",
+    "three": "^0.186.1",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
-    "vitest": "^4.1.0"
+    "vite": "^7.3.7",
+    "vitest": "^4.1.12"
   },
   "author": "GenOffice",
   "build": {
@@ -91,6 +94,7 @@
     "acorn": "^8.18.0",
     "harfbuzzjs": "^1.4.0",
     "pngjs": "^7.0.0",
-    "utif2": "^4.1.0"
+    "utif2": "^4.1.0",
+    "@genoffice/agent-core": "*"
   }
 }

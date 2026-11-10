@@ -1,0 +1,445 @@
+/**
+ * Content-bearing add ops: every additive op carries its full content and
+ * style in one op (the generation subset of the vocabulary). New element ids
+ * are reported via the record's `created` — additive ops are how identity is
+ * born, so the journal always knows what a transaction minted.
+ */
+import {
+  addChart,
+  addElement,
+  addMedia,
+  addModel3d,
+  addNarration,
+  addPicture,
+  addSmartArt,
+  addTable,
+  clearNarration,
+  MAX_INSERT_TABLE_DIM,
+  pasteElements,
+  replacePictureBytes,
+  setModel3dView,
+  setShowNarration,
+  type NewChartKind,
+  type NewChartOptions,
+  type NewElementOptions,
+  type NewTableOptions,
+  type Paragraph,
+} from '@genoffice/pptx-engine'
+import {
+  coerceBytes,
+  dataUrlExt,
+  GuidedError,
+  register,
+  requireFinite,
+  requireHexColor,
+  resolveElement,
+  resolveSlide,
+  type Op,
+  type OpRecord,
+} from './registry'
+
+function reqRect(op: Op): { x: number; y: number; cx: number; cy: number } {
+  const b = op.offset as { x?: unknown; y?: unknown; cx?: unknown; cy?: unknown } | undefined
+  if (
+    !b ||
+    typeof b.x !== 'number' ||
+    typeof b.y !== 'number' ||
+    typeof b.cx !== 'number' ||
+    typeof b.cy !== 'number'
+  ) {
+    throw new GuidedError(`op "${op.op}" needs "offset": an EMU rect {x, y, cx, cy}.`)
+  }
+  for (const k of ['x', 'y', 'cx', 'cy'] as const)
+    requireFinite(b[k], op.op as string, `offset.${k}`)
+  if (b.cx < 0 || b.cy < 0) {
+    throw new GuidedError(`op "${op.op}": "offset.cx/cy" must be >= 0 (EMU).`)
+  }
+  return { x: b.x, y: b.y, cx: b.cx, cy: b.cy }
+}
+
+function reqBytes(op: Op, field = 'bytes'): Uint8Array {
+  // JSON surfaces send base64/data URLs; decode once and write back so the
+  // repeated validate/apply passes reuse the decoded bytes
+  const coerced = coerceBytes(op[field], op.op, field)
+  op[field] = coerced
+  return coerced
+}
+
+/** Derive a missing ext from a data URL's mime before the bytes get decoded. */
+function fillExtFromDataUrl(op: Op, field = 'bytes'): void {
+  if (typeof op.ext !== 'string' || !op.ext) {
+    const hint = dataUrlExt(op[field])
+    if (hint) op.ext = hint
+  }
+}
+
+// ── addElement (textbox / preset shape / line) ──────────────────────────
+register({
+  name: 'addElement',
+  validate(op, ctx) {
+    // allowPart: the master edit view inserts text boxes and shapes onto
+    // master/layout parts through the same op (their spTree is slide-shaped)
+    resolveSlide(ctx, op, { allowPart: true })
+    reqRect(op)
+    if (typeof op.kind !== 'string' || !op.kind) {
+      throw new GuidedError('op "addElement" needs "kind": "textbox" or a preset geometry name.')
+    }
+    if (op.adjustments !== undefined) {
+      if (
+        typeof op.adjustments !== 'object' ||
+        op.adjustments === null ||
+        Object.values(op.adjustments).some((v) => typeof v !== 'number' || !Number.isFinite(v))
+      ) {
+        throw new GuidedError(
+          'op "addElement": "adjustments" must map avLst guide names to finite numbers, e.g. {adj: 25000} for roundRect corner radius.',
+        )
+      }
+    }
+    const autoFit = (op.bodyPr as { autoFit?: unknown } | undefined)?.autoFit
+    if (autoFit !== undefined && autoFit !== 'shrink' && autoFit !== 'resize') {
+      throw new GuidedError(
+        'op "addElement": "bodyPr.autoFit" must be "shrink" (fit text on overflow) or "resize" (grow the shape).',
+      )
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { slide } = resolveSlide(ctx, op, { allowPart: true })
+    const el = addElement(slide, {
+      kind: String(op.kind),
+      offset: reqRect(op),
+      ...(Array.isArray(op.paragraphs) && op.paragraphs.length
+        ? { paragraphs: op.paragraphs as Paragraph[] }
+        : {}),
+      ...(typeof op.fill === 'string' ? { fillColor: op.fill } : {}),
+      ...(op.stroke ? { stroke: op.stroke as NewElementOptions['stroke'] } : {}),
+      ...(op.bodyPr ? { bodyPr: op.bodyPr as NewElementOptions['bodyPr'] } : {}),
+      ...(op.adjustments
+        ? { adjustments: op.adjustments as NewElementOptions['adjustments'] }
+        : {}),
+    })
+    return { op, created: [el.id] }
+  },
+})
+
+// ── addPicture (also serves ink strokes: name/descr carry the ink payload) ──
+register({
+  name: 'addPicture',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    reqRect(op)
+    fillExtFromDataUrl(op)
+    reqBytes(op)
+    if (typeof op.ext !== 'string' || !op.ext) {
+      throw new GuidedError('op "addPicture" needs "ext": the image extension (png/jpg/…).')
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { slide } = resolveSlide(ctx, op)
+    const el = addPicture(ctx.opened, slide, {
+      bytes: reqBytes(op),
+      ext: String(op.ext),
+      offset: reqRect(op),
+      ...(typeof op.name === 'string' && op.name ? { name: op.name } : {}),
+      ...(typeof op.descr === 'string' && op.descr ? { descr: op.descr } : {}),
+    })
+    if (!el) {
+      throw new GuidedError(
+        `op "addPicture": unsupported image format ".${String(op.ext)}" (png/jpg/jpeg/gif/bmp/webp/tif supported).`,
+      )
+    }
+    return { op, created: [el.id] }
+  },
+})
+
+// ── replacePicture ──────────────────────────────────────────────────────
+register({
+  name: 'replacePicture',
+  validate(op, ctx) {
+    resolveElement(ctx, op)
+    fillExtFromDataUrl(op)
+    reqBytes(op)
+    if (typeof op.ext !== 'string' || !op.ext) {
+      throw new GuidedError('op "replacePicture" needs "ext": the image extension.')
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { slide, el } = resolveElement(ctx, op)
+    const ok = replacePictureBytes(
+      ctx.opened,
+      slide,
+      el.id,
+      reqBytes(op),
+      String(op.ext),
+      op.keepSrcRect === true ? { keepSrcRect: true } : undefined,
+    )
+    if (!ok) {
+      throw new GuidedError(
+        `op "replacePicture": element "${el.id}" is not a picture or the format ".${String(op.ext)}" is unsupported.`,
+      )
+    }
+    return { op }
+  },
+})
+
+// ── addTable / addChart / addSmartArt ───────────────────────────────────
+register({
+  name: 'addTable',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    reqRect(op)
+    const dimOk = (n: unknown): n is number =>
+      Number.isInteger(n) && (n as number) >= 1 && (n as number) <= MAX_INSERT_TABLE_DIM
+    if (!dimOk(op.rows) || !dimOk(op.cols)) {
+      throw new GuidedError(
+        `op "addTable" needs integer "rows" and "cols" (1..${MAX_INSERT_TABLE_DIM}).`,
+      )
+    }
+    const reqEmuList = (key: 'colWidthsEmu' | 'rowHeightsEmu', count: number, dim: string) => {
+      const v = op[key]
+      if (v === undefined) return
+      if (
+        !Array.isArray(v) ||
+        v.length !== count ||
+        v.some((n) => typeof n !== 'number' || !Number.isFinite(n) || n <= 0)
+      ) {
+        throw new GuidedError(
+          `op "addTable": "${key}" must list exactly ${count} positive EMU values (one per ${dim}).`,
+        )
+      }
+    }
+    reqEmuList('colWidthsEmu', Math.floor(op.cols), 'column')
+    reqEmuList('rowHeightsEmu', Math.floor(op.rows), 'row')
+    if (op.cellProps !== undefined && !Array.isArray(op.cellProps)) {
+      throw new GuidedError(
+        'op "addTable": "cellProps" must be a row-major array of per-cell {gridSpan?,rowSpan?,hMerge?,vMerge?,anchor?}.',
+      )
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    const r = addTable(ctx.opened, index, {
+      rows: op.rows as number,
+      cols: op.cols as number,
+      offset: reqRect(op),
+      ...(op.colWidthsEmu ? { colWidthsEmu: op.colWidthsEmu as number[] } : {}),
+      ...(op.rowHeightsEmu ? { rowHeightsEmu: op.rowHeightsEmu as number[] } : {}),
+      ...(op.cellProps ? { cellProps: op.cellProps as NewTableOptions['cellProps'] } : {}),
+    })
+    if (!r) throw new GuidedError('op "addTable": the table could not be inserted.')
+    return { op, created: [r.elementId] }
+  },
+})
+
+register({
+  name: 'addChart',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    reqRect(op)
+    if (typeof op.kind !== 'string') throw new GuidedError('op "addChart" needs "kind".')
+    // The engine returns null on empty data, which reads as a generic
+    // "could not be inserted" — reject with the actual reason instead
+    if (!Array.isArray(op.categories) || op.categories.length === 0) {
+      throw new GuidedError('op "addChart" needs "categories": at least one category label.')
+    }
+    if (
+      !Array.isArray(op.series) ||
+      op.series.length === 0 ||
+      (op.series as Array<{ values?: unknown }>).some((s) => !Array.isArray(s?.values))
+    ) {
+      throw new GuidedError('op "addChart" needs "series": at least one {name, values[]}.')
+    }
+    if (op.colorScheme !== undefined) {
+      if (!Array.isArray(op.colorScheme) || op.colorScheme.length === 0) {
+        throw new GuidedError(
+          'op "addChart": "colorScheme" must be a non-empty array of "#RRGGBB" series colors (cycled over the series).',
+        )
+      }
+      for (const c of op.colorScheme) requireHexColor(c, 'addChart', 'colorScheme[]')
+    }
+    if (op.holeSizePct !== undefined) {
+      requireFinite(op.holeSizePct, 'addChart', 'holeSizePct')
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    const r = addChart(ctx.opened, index, {
+      kind: op.kind as NewChartKind,
+      ...(op.barDir ? { barDir: op.barDir as 'bar' } : {}),
+      ...(typeof op.title === 'string' && op.title ? { title: op.title } : {}),
+      categories: op.categories as string[],
+      series: op.series as NewChartOptions['series'],
+      offset: reqRect(op),
+      ...(op.colorScheme ? { colorScheme: op.colorScheme as string[] } : {}),
+      ...(typeof op.holeSizePct === 'number' ? { holeSizePct: op.holeSizePct } : {}),
+    })
+    if (!r) throw new GuidedError('op "addChart": the chart could not be inserted.')
+    return { op, created: [r.elementId] }
+  },
+})
+
+register({
+  name: 'addSmartArt',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    reqRect(op)
+    if (typeof op.layout !== 'string' || !Array.isArray(op.items)) {
+      throw new GuidedError('op "addSmartArt" needs "layout" and "items".')
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    const r = addSmartArt(ctx.opened, index, {
+      layout: op.layout as Parameters<typeof addSmartArt>[2]['layout'],
+      items: op.items as Parameters<typeof addSmartArt>[2]['items'],
+      offset: reqRect(op),
+    })
+    if (!r) throw new GuidedError('op "addSmartArt": the diagram could not be inserted.')
+    return { op, created: [r.elementId] }
+  },
+})
+
+// ── addMedia / addModel3d ───────────────────────────────────────────────
+register({
+  name: 'addMedia',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    reqRect(op)
+    fillExtFromDataUrl(op)
+    reqBytes(op)
+    if (op.kind !== 'video' && op.kind !== 'audio') {
+      throw new GuidedError('op "addMedia" needs "kind": "video" or "audio".')
+    }
+    if (typeof op.ext !== 'string' || !op.ext) throw new GuidedError('op "addMedia" needs "ext".')
+    const poster = op.poster as { bytes?: unknown; ext?: unknown } | undefined
+    if (poster) {
+      if (typeof poster.ext !== 'string' || !poster.ext) {
+        const hint = dataUrlExt(poster.bytes)
+        if (hint) poster.ext = hint
+      }
+      poster.bytes = coerceBytes(poster.bytes, 'addMedia', 'poster.bytes')
+      if (typeof poster.ext !== 'string' || !poster.ext) {
+        throw new GuidedError('op "addMedia" needs "poster.ext" when a poster is given.')
+      }
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    const added = addMedia(ctx.opened, index, {
+      kind: op.kind as 'video' | 'audio',
+      bytes: reqBytes(op),
+      ext: String(op.ext),
+      offset: reqRect(op),
+      ...(typeof op.name === 'string' && op.name ? { name: op.name } : {}),
+      ...(op.poster ? { poster: op.poster as { bytes: Uint8Array; ext: string } } : {}),
+    })
+    if (!added) throw new GuidedError('op "addMedia": the media could not be embedded.')
+    return { op, created: [added.elementId] }
+  },
+})
+
+// ── addNarration / clearNarration (Slide Show > Record) ─────────────────
+register({
+  name: 'addNarration',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    reqBytes(op)
+    if (typeof op.ext !== 'string' || !op.ext)
+      throw new GuidedError('op "addNarration" needs "ext".')
+    requireFinite(op.durationMs, 'addNarration', 'durationMs')
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    const added = addNarration(ctx.opened, index, {
+      bytes: reqBytes(op),
+      ext: String(op.ext),
+      durationMs: Number(op.durationMs),
+    })
+    if (!added) throw new GuidedError('op "addNarration": the narration could not be embedded.')
+    setShowNarration(ctx.opened)
+    return { op, created: [added.elementId] }
+  },
+})
+
+register({
+  name: 'clearNarration',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+  },
+  apply(op, ctx): OpRecord {
+    clearNarration(ctx.opened, resolveSlide(ctx, op).index)
+    return { op }
+  },
+})
+
+register({
+  name: 'addModel3d',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    reqRect(op)
+    reqBytes(op)
+    if (typeof op.ext !== 'string' || !op.ext) throw new GuidedError('op "addModel3d" needs "ext".')
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    const added = addModel3d(ctx.opened, index, {
+      bytes: reqBytes(op),
+      ext: String(op.ext),
+      ...(op.poster ? { poster: op.poster as { bytes: Uint8Array; ext: string } } : {}),
+      offset: reqRect(op),
+      ...(typeof op.name === 'string' && op.name ? { name: op.name } : {}),
+    })
+    if (!added) throw new GuidedError('op "addModel3d": the model could not be embedded.')
+    return { op, created: [added.elementId] }
+  },
+})
+
+register({
+  name: 'setModel3dView',
+  validate(op, ctx) {
+    const { el } = resolveElement(ctx, op)
+    if (el.type !== 'picture' || !el.model3d) {
+      throw new GuidedError(`op "setModel3dView": element "${el.id}" is not a 3D model.`)
+    }
+    for (const axis of ['ax', 'ay', 'az']) requireFinite(op[axis], 'setModel3dView', axis)
+    if (op.poster !== undefined) {
+      reqBytes(op, 'poster')
+      if (typeof op.posterExt !== 'string' || !op.posterExt) {
+        throw new GuidedError('op "setModel3dView" needs "posterExt" with "poster".')
+      }
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { slide, el } = resolveElement(ctx, op)
+    const ok = setModel3dView(ctx.opened, slide, el.id, {
+      rot: { ax: Number(op.ax), ay: Number(op.ay), az: Number(op.az) },
+      ...(op.poster !== undefined
+        ? { poster: { bytes: reqBytes(op, 'poster'), ext: String(op.posterExt) } }
+        : {}),
+    })
+    if (!ok) throw new GuidedError(`op "setModel3dView": element "${el.id}" could not be turned.`)
+    return { op }
+  },
+})
+
+// ── pasteElements (paste / duplicate-in-place share the same core) ──────
+register({
+  name: 'pasteElements',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    if (!Array.isArray(op.items) || op.items.length === 0) {
+      throw new GuidedError('op "pasteElements" needs "items": copied element data.')
+    }
+    if (typeof op.dx !== 'number' || typeof op.dy !== 'number') {
+      throw new GuidedError('op "pasteElements" needs "dx"/"dy" (EMU offsets).')
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    const r = pasteElements(ctx.opened, index, op.items as Parameters<typeof pasteElements>[2], {
+      dx: op.dx as number,
+      dy: op.dy as number,
+    })
+    if (!r) throw new GuidedError('op "pasteElements": the clipboard items could not be pasted.')
+    return { op, created: r.elementIds }
+  },
+})

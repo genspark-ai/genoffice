@@ -5,7 +5,7 @@ import {
   applyPrintAreas,
   buildHeaderFooterXml,
   PageSetupError,
-} from '../src/gateway/xlsx-page-setup'
+} from '@genoffice/xlsx-gateway/gateway/xlsx-page-setup'
 
 const BARE = '<worksheet><sheetData/></worksheet>'
 const WITH_VIEW =
@@ -63,6 +63,12 @@ describe('applyPageSetupState', () => {
     expect(patched).toContain('<printOptions headings="1"/>')
   })
 
+  it('applies the change to every printOptions match, not just the first', () => {
+    const xml = '<worksheet><sheetData/><printOptions headings="1"/><printOptions/></worksheet>'
+    const patched = applyPageSetupState(xml, { sheetName: 'S', printGridlines: true })
+    expect(patched.match(/<printOptions gridLines="1"/g)).toHaveLength(2)
+  })
+
   it('writes fit-to-page: pageSetUpPr plus fitToWidth/fitToHeight', () => {
     const xml = applyPageSetupState(BARE, {
       sheetName: 'S',
@@ -95,6 +101,22 @@ describe('applyPageSetupState', () => {
     expect(created).toContain(
       '<sheetViews><sheetView workbookViewId="0" showFormulas="1"/></sheetViews>',
     )
+  })
+
+  it('writes zoomScale and zoomScaleNormal, dropping both at 100% (r165)', () => {
+    const zoomed = applyPageSetupState(WITH_VIEW, { sheetName: 'S', zoomScale: 85 })
+    expect(zoomed).toContain('zoomScale="85"')
+    expect(zoomed).toContain('zoomScaleNormal="85"')
+    const reset = applyPageSetupState(zoomed, { sheetName: 'S', zoomScale: 100 })
+    expect(reset).not.toContain('zoomScale')
+    expect(reset).not.toContain('zoomScaleNormal')
+  })
+
+  it('creates sheetViews for a non-default zoom when missing', () => {
+    const xml = applyPageSetupState(BARE, { sheetName: 'S', zoomScale: 130 })
+    expect(xml).toContain('<sheetViews><sheetView ')
+    expect(xml).toContain('zoomScale="130"')
+    expect(xml).toContain('zoomScaleNormal="130"')
   })
 
   it('toggles sheetView@showGridLines, creating sheetViews when missing', () => {
@@ -144,6 +166,22 @@ describe('buildHeaderFooterXml', () => {
         '</headerFooter>',
     )
   })
+
+  it('writes a stray ampersand as the && literal code and keeps real codes', () => {
+    expect(buildHeaderFooterXml({ center: 'R & D' }, null)).toBe(
+      '<headerFooter><oddHeader>&amp;CR &amp;&amp; D</oddHeader></headerFooter>',
+    )
+    expect(
+      buildHeaderFooterXml(
+        { left: 'A && B &', right: 'Tom&Jerry &P/&N &[Page] &"Arial,Bold"&12x' },
+        null,
+      ),
+    ).toBe(
+      '<headerFooter><oddHeader>&amp;LA &amp;&amp; B &amp;&amp;' +
+        '&amp;RTom&amp;&amp;Jerry &amp;P/&amp;N &amp;[Page] &amp;&quot;Arial,Bold&quot;&amp;12x</oddHeader>' +
+        '</headerFooter>',
+    )
+  })
 })
 
 describe('applyPageSetupState headerFooter', () => {
@@ -170,6 +208,20 @@ describe('applyPageSetupState headerFooter', () => {
     expect(patched).not.toContain('Old')
   })
 
+  it('keeps "$" sequences in header text literal when overwriting an existing element', () => {
+    const xml =
+      '<worksheet><sheetData/><headerFooter>' +
+      '<oddHeader>&amp;LOld</oddHeader></headerFooter></worksheet>'
+    const patched = applyPageSetupState(xml, {
+      sheetName: 'S',
+      header: { left: "Revenue $'000", right: 'Ref $& $1 $$' },
+    })
+    expect(patched).toContain(
+      "<oddHeader>&amp;LRevenue $'000&amp;RRef $&amp;&amp; $1 $$</oddHeader>",
+    )
+    expect(patched).not.toContain('Old')
+  })
+
   it('removes the element when header and footer both clear', () => {
     const xml =
       '<worksheet><sheetData/>' +
@@ -178,6 +230,67 @@ describe('applyPageSetupState headerFooter', () => {
     expect(cleared).toBe('<worksheet><sheetData/></worksheet>')
     // No element to remove is a no-op, not an insertion of an empty one.
     expect(applyPageSetupState(BARE, { sheetName: 'S', header: null, footer: null })).toBe(BARE)
+  })
+
+  const VARIANTS =
+    '<headerFooter differentOddEven="1" differentFirst="1" scaleWithDoc="0" alignWithMargins="0">' +
+    '<oddHeader>&amp;L&amp;G&amp;COdd</oddHeader><oddFooter>&amp;P</oddFooter>' +
+    '<evenHeader>&amp;CEven</evenHeader><evenFooter>&amp;R&amp;G</evenFooter>' +
+    '<firstHeader>&amp;CFirst</firstHeader><firstFooter>&amp;L&amp;D</firstFooter>' +
+    '</headerFooter>'
+
+  it('leaves an untouched headerFooter with variants byte-identical', () => {
+    const xml = `<worksheet><sheetData/><pageSetup paperSize="1"/>${VARIANTS}</worksheet>`
+    const patched = applyPageSetupState(xml, {
+      sheetName: 'S',
+      orientation: 'landscape',
+      fitToWidth: 1,
+      fitToHeight: 0,
+      fitToPage: true,
+    })
+    expect(patched).toContain(VARIANTS)
+    expect(patched).toContain('<pageSetup fitToHeight="0" orientation="landscape" paperSize="1"/>')
+  })
+
+  it('rewrites only the odd sections, keeping flags and even/first variants', () => {
+    const xml = `<worksheet><sheetData/>${VARIANTS}</worksheet>`
+    const patched = applyPageSetupState(xml, {
+      sheetName: 'S',
+      header: { center: 'New odd' },
+      footer: null,
+    })
+    expect(patched).toBe(
+      '<worksheet><sheetData/>' +
+        '<headerFooter differentOddEven="1" differentFirst="1" scaleWithDoc="0" alignWithMargins="0">' +
+        '<oddHeader>&amp;CNew odd</oddHeader>' +
+        '<evenHeader>&amp;CEven</evenHeader><evenFooter>&amp;R&amp;G</evenFooter>' +
+        '<firstHeader>&amp;CFirst</firstHeader><firstFooter>&amp;L&amp;D</firstFooter>' +
+        '</headerFooter></worksheet>',
+    )
+  })
+
+  it('inserts missing odd sections ahead of the variants in schema order', () => {
+    const xml =
+      '<worksheet><sheetData/><headerFooter differentFirst="1">' +
+      '<firstHeader>&amp;CFirst</firstHeader></headerFooter></worksheet>'
+    const patched = applyPageSetupState(xml, {
+      sheetName: 'S',
+      header: { left: 'H' },
+      footer: { right: 'F' },
+    })
+    expect(patched).toBe(
+      '<worksheet><sheetData/><headerFooter differentFirst="1">' +
+        '<oddHeader>&amp;LH</oddHeader><oddFooter>&amp;RF</oddFooter>' +
+        '<firstHeader>&amp;CFirst</firstHeader></headerFooter></worksheet>',
+    )
+  })
+
+  it('keeps the flags on an element whose odd sections were cleared', () => {
+    const xml =
+      '<worksheet><sheetData/><headerFooter differentOddEven="1">' +
+      '<oddHeader>&amp;COdd</oddHeader></headerFooter></worksheet>'
+    const patched = applyPageSetupState(xml, { sheetName: 'S', header: null })
+    expect(patched).toBe('<worksheet><sheetData/><headerFooter differentOddEven="1"/></worksheet>')
   })
 })
 
@@ -193,6 +306,35 @@ describe('applyPrintAreas', () => {
     expect(xml).toContain(
       '<definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">' +
         "'Sheet1'!$A$1:$C$10</definedName></definedNames>",
+    )
+  })
+
+  it('fills a self-closing <definedNames/> (Google Sheets export) instead of appending after it', () => {
+    const exported =
+      '<workbook><workbookPr/><sheets>' +
+      '<sheet state="visible" name="Form Responses 1" sheetId="1" r:id="rId5"/>' +
+      '</sheets><definedNames/><calcPr fullCalcOnLoad="1"/></workbook>'
+    const xml = applyPrintAreas(exported, [{ sheetName: 'Form Responses 1', printArea: 'A1:B2' }])
+    expect(xml.match(/<definedNames\b/g)).toHaveLength(1)
+    expect(xml).not.toContain('<definedNames/>')
+    expect(xml).toContain(
+      '</sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">' +
+        "'Form Responses 1'!$A$1:$B$2</definedName></definedNames><calcPr",
+    )
+    const cleared = applyPrintAreas(xml, [{ sheetName: 'Form Responses 1', printArea: null }])
+    expect(cleared).toBe(exported.replace('<definedNames/>', ''))
+  })
+
+  it('creates the container after externalReferences and before calcPr when absent', () => {
+    const workbook =
+      '<workbook><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>' +
+      '<externalReferences><externalReference r:id="rId2"/></externalReferences>' +
+      '<calcPr/></workbook>'
+    const xml = applyPrintAreas(workbook, [{ sheetName: 'Sheet1', printArea: 'A1:B2' }])
+    expect(xml.match(/<definedNames\b/g)).toHaveLength(1)
+    expect(xml).toContain(
+      '</externalReferences><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">' +
+        "'Sheet1'!$A$1:$B$2</definedName></definedNames><calcPr/>",
     )
   })
 
@@ -229,6 +371,15 @@ describe('applyPrintAreas', () => {
     )
   })
 
+  it('rejects a print area without a row-bounded range (our reader and schema only accept A1:B2 forms)', () => {
+    expect(() => applyPrintAreas(WORKBOOK, [{ sheetName: 'Sheet1', printArea: 'A:A' }])).toThrow(
+      PageSetupError,
+    )
+    expect(() => applyPrintAreas(WORKBOOK, [{ sheetName: 'Sheet1', printArea: 'A1:B' }])).toThrow(
+      'Invalid print area "A1:B".',
+    )
+  })
+
   it('writes and clears _xlnm.Print_Titles as absolute row spans', () => {
     const xml = applyPrintAreas(WORKBOOK, [{ sheetName: 'Sheet1', printTitles: '1:2' }])
     expect(xml).toContain(
@@ -249,6 +400,73 @@ describe('applyPrintAreas', () => {
     expect(titlesOnly).toContain("'Sheet1'!$1:$1")
     expect(() => applyPrintAreas(WORKBOOK, [{ sheetName: 'Sheet1', printTitles: '3:1' }])).toThrow(
       PageSetupError,
+    )
+  })
+})
+
+describe('applyPageSetupState page breaks', () => {
+  it('writes sorted deduped manual breaks after headerFooter, rowBreaks first', () => {
+    const xml = applyPageSetupState(
+      '<worksheet><sheetData/><headerFooter><oddHeader>x</oddHeader></headerFooter>' +
+        '<tableParts count="1"/></worksheet>',
+      { sheetName: 'S', rowBreaks: [20, 10, 20], colBreaks: [3] },
+    )
+    expect(xml).toContain(
+      '<rowBreaks count="2" manualBreakCount="2">' +
+        '<brk id="10" max="16383" man="1"/><brk id="20" max="16383" man="1"/></rowBreaks>' +
+        '<colBreaks count="1" manualBreakCount="1">' +
+        '<brk id="3" max="1048575" man="1"/></colBreaks>',
+    )
+    expect(xml.indexOf('</headerFooter>')).toBeLessThan(xml.indexOf('<rowBreaks'))
+    expect(xml.indexOf('</colBreaks>')).toBeLessThan(xml.indexOf('<tableParts'))
+  })
+
+  it('replaces existing break elements and removes them on empty sets', () => {
+    const xml =
+      '<worksheet><sheetData/>' +
+      '<rowBreaks count="1" manualBreakCount="1"><brk id="5" max="16383" man="1"/></rowBreaks>' +
+      '<colBreaks count="1" manualBreakCount="1"><brk id="2" max="1048575" man="1"/></colBreaks>' +
+      '</worksheet>'
+    const replaced = applyPageSetupState(xml, { sheetName: 'S', rowBreaks: [7] })
+    expect(replaced).toContain('<brk id="7" max="16383" man="1"/>')
+    expect(replaced).not.toContain('id="5"')
+    expect(replaced).toContain('<colBreaks count="1"')
+    const cleared = applyPageSetupState(xml, { sheetName: 'S', rowBreaks: [], colBreaks: [] })
+    expect(cleared).toBe('<worksheet><sheetData/></worksheet>')
+  })
+
+  it('drops a zero break id instead of writing an invalid brk', () => {
+    const xml = applyPageSetupState(BARE, { sheetName: 'S', rowBreaks: [0] })
+    expect(xml).toBe(BARE)
+  })
+})
+
+describe('applyPageSetupState rightToLeft', () => {
+  it('writes rightToLeft="1" onto the sheetView and keeps the other attributes', () => {
+    const xml = applyPageSetupState(WITH_VIEW, { sheetName: 'S', rightToLeft: true })
+    expect(xml).toContain('<sheetView rightToLeft="1" workbookViewId="0"/>')
+    const headed = applyPageSetupState(
+      '<worksheet><sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews><sheetData/></worksheet>',
+      { sheetName: 'S', rightToLeft: true },
+    )
+    expect(headed).toContain('showGridLines="0"')
+    expect(headed).toContain('rightToLeft="1"')
+  })
+
+  it('drops the attribute on false and leaves a sheet without one unchanged', () => {
+    const rtl =
+      '<worksheet><sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews><sheetData/></worksheet>'
+    expect(applyPageSetupState(rtl, { sheetName: 'S', rightToLeft: false })).toBe(
+      '<worksheet><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetData/></worksheet>',
+    )
+    expect(applyPageSetupState(WITH_VIEW, { sheetName: 'S', rightToLeft: false })).toBe(WITH_VIEW)
+  })
+
+  it('creates a sheetViews section on a bare worksheet when mirrored', () => {
+    const xml = applyPageSetupState(BARE, { sheetName: 'S', rightToLeft: true })
+    expect(xml).toBe(
+      '<worksheet><sheetViews><sheetView workbookViewId="0" rightToLeft="1"/></sheetViews>' +
+        '<sheetData/></worksheet>',
     )
   })
 })

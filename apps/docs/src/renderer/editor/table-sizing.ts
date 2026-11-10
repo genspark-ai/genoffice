@@ -91,7 +91,7 @@ function targetFromCellPos(state: EditorState, cellPos: number): GridTarget | nu
 }
 
 function tableGridWidths(
-  state: EditorState,
+  state: { doc: PmNode },
   target: GridTarget,
   maxWidth: number,
 ): number[] | null {
@@ -113,7 +113,7 @@ function tableGridWidths(
 }
 
 function writeGridWidths(
-  state: EditorState,
+  state: { doc: PmNode },
   tr: Transaction,
   target: GridTarget,
   widths: number[],
@@ -136,8 +136,13 @@ function writeGridWidths(
     }
   }
   const total = widths.reduce((sum, width) => sum + width, 0)
+  // Word turns an AutoFit table into a fixed grid the moment a border is
+  // dragged; leaving 'window' would keep rendering it at the full content width
+  const autoFit =
+    table.attrs.tblAutoFit === 'fixed' ? {} : { tblAutoFit: 'fixed', tblAutoFitEdited: true }
   tr = tr.setNodeMarkup(tableStart - 1, undefined, {
     ...table.attrs,
+    ...autoFit,
     widthPx: total,
     widthPct: null,
     colWidthsPct: widths.map((width) => (width / total) * 100),
@@ -182,4 +187,78 @@ export function constrainSelectedTableWidth(maxWidthPx: number): Command {
 export function constrainTableWidthAtCell(cellPos: number, maxWidthPx: number): Command {
   return (state, dispatch) =>
     resizeColumns(state, dispatch, null, maxWidthPx, targetFromCellPos(state, cellPos))
+}
+
+/** Distribute Columns Evenly: the selected columns (or all) share their total width equally */
+export function distributeSelectedColumns(maxWidthPx: number): Command {
+  return (state, dispatch) => {
+    const target = targetFromSelection(state)
+    if (!target) return false
+    const current = tableGridWidths(state, target, maxWidthPx)
+    if (!current) return false
+    const multi = target.right - target.left > 1
+    const from = multi ? target.left : 0
+    const to = multi ? target.right : current.length
+    const avg = current.slice(from, to).reduce((sum, w) => sum + w, 0) / Math.max(1, to - from)
+    const requested = new Map<number, number>()
+    for (let col = from; col < to; col++) requested.set(col, avg)
+    dispatch?.(
+      writeGridWidths(state, state.tr, target, fitColumnWidths(current, requested, maxWidthPx)),
+    )
+    return true
+  }
+}
+
+/** Column grid of the table around a resize handle's cell, as the drag starts from it. */
+export interface TableGridAtCell {
+  /** model px per grid column */
+  widths: number[]
+  /** grid column whose right edge the handle sits on */
+  col: number
+}
+
+/**
+ * Model grid for a border drag. Columns follow the rendered colgroup percentages
+ * when they describe the whole grid (that is what the user sees), scaled to the
+ * table's model width, so the drag starts from exactly the displayed layout.
+ */
+export function tableGridAtCell(
+  state: EditorState,
+  cellPos: number,
+  maxWidthPx: number,
+): TableGridAtCell | null {
+  const target = targetFromCellPos(state, cellPos)
+  if (!target) return null
+  const current = tableGridWidths(state, target, maxWidthPx)
+  if (!current) return null
+  const cell = state.doc.nodeAt(cellPos)
+  if (!cell) return null
+  const col =
+    target.map.colCount(cellPos - target.tableStart) + (Number(cell.attrs.colspan) || 1) - 1
+  const attrs = target.table.attrs
+  const declaredTotal = current.reduce((sum, width) => sum + width, 0)
+  const total =
+    finiteWidth(attrs.widthPx, 0) ||
+    (attrs.widthPct ? (Number(attrs.widthPct) / 100) * maxWidthPx : 0) ||
+    declaredTotal
+  const pct = attrs.colWidthsPct as number[] | null
+  const shares =
+    pct && pct.length === current.length && pct.every((p) => Number.isFinite(p) && p > 0)
+      ? pct
+      : current
+  const shareTotal = shares.reduce((sum, share) => sum + share, 0)
+  if (!(shareTotal > 0) || !(total > 0)) return null
+  return { widths: shares.map((share) => (share / shareTotal) * total), col }
+}
+
+/** Commit a dragged grid: every cell gets its slice, the table its new total and percentages. */
+export function setTableGridAtCell(cellPos: number, widths: number[]): Command {
+  return (state, dispatch) => {
+    const target = targetFromCellPos(state, cellPos)
+    if (!target || widths.length !== target.map.width) return false
+    if (!widths.every((width) => Number.isFinite(width) && width > 0)) return false
+    const rounded = widths.map((width) => Math.max(1, Math.round(width * 100) / 100))
+    dispatch?.(writeGridWidths(state, state.tr, target, rounded))
+    return true
+  }
 }

@@ -8,11 +8,13 @@
  * Both change the spTree structure, driving a full-slide rebuild via
  * slide.structureDirty.
  */
+import { cNvPrIdsInXml, pruneTimingForSpids } from './animation'
 import type { EmuRect, Paragraph, PictureElement, Slide, SlideElement, TextElement } from './types'
-import { generateParagraphXml, generateXfrmXml } from './generate'
-import { escapeXmlAttr } from './xml-utils'
+import { clampPosEmu, generateParagraphXml, generateXfrmXml } from './generate'
+import { creationIdXml, escapeXmlAttr, hasDefaultFor, maxRelationshipIdNumber } from './xml-utils'
 import { relsPathFor } from './zip'
 import type { OpenedPptx } from './index'
+import { cleanupDeletedElementResources } from './resource-cleanup'
 
 /**
  * 'textbox' is a special value (plain text box without prstGeom); anything else is
@@ -22,14 +24,86 @@ import type { OpenedPptx } from './index'
  */
 export type NewShapeKind = 'textbox' | (string & {})
 
+/**
+ * Text-body geometry overrides for generated boxes (pdf2pptx P25): imported
+ * absolutely-positioned text must not inherit PowerPoint's default insets
+ * (0.1in/0.05in) or wrap defaults, or every box drifts off its measured spot.
+ */
+export interface NewElementBodyPr {
+  /** wrap="none" lets a measured line overflow instead of re-wrapping */
+  wrap?: 'square' | 'none'
+  /** vertical anchor (default top) */
+  anchor?: 't' | 'ctr' | 'b'
+  /** lIns/tIns/rIns/bIns (EMU); absent keeps PowerPoint defaults */
+  insetsEmu?: { l: number; t: number; r: number; b: number }
+  /** <a:normAutofit/> (shrink text on overflow) or <a:spAutoFit/> (grow the shape) */
+  autoFit?: 'shrink' | 'resize'
+}
+
 export interface NewElementOptions {
   kind: NewShapeKind
   offset: EmuRect
   paragraphs?: Paragraph[]
-  /** Solid shape fill (#RRGGBB); textbox has no fill by default */
+  /** Solid shape fill (#RRGGBB, or #RRGGBBAA for translucency); textbox has no fill by default */
   fillColor?: string
   /** Shape stroke (solid color, width in EMU) */
   stroke?: { color: string; widthEmu: number }
+  /** body geometry overrides; absent = `wrap="square" rtlCol="0"` as before */
+  bodyPr?: NewElementBodyPr
+  /** prstGeom adjustment values (<a:avLst><a:gd name fmla="val N"/>), e.g. {adj: 25000} for roundRect radius */
+  adjustments?: Record<string, number>
+  /** Mirror horizontally (a:xfrm flipH="1") — a rightArrow points left */
+  flipH?: boolean
+  /** Mirror vertically (a:xfrm flipV="1") — a line runs bottom-left to top-right */
+  flipV?: boolean
+}
+
+/**
+ * #RRGGBB or #RRGGBBAA → <a:srgbClr>, translucency as an <a:alpha> child
+ * (pdf2pptx scrims: an opaque slab where the source painted a wash reads as a
+ * black bar). Alpha is the LAST byte pair, 00 = transparent, FF = opaque.
+ */
+function srgbClrXml(color: string): string {
+  const hex = color.replace(/^#/, '').toUpperCase()
+  const rgb = hex.slice(0, 6)
+  if (hex.length >= 8) {
+    const alpha = Math.round((parseInt(hex.slice(6, 8), 16) / 255) * 100000)
+    if (alpha < 100000) return `<a:srgbClr val="${rgb}"><a:alpha val="${alpha}"/></a:srgbClr>`
+  }
+  return `<a:srgbClr val="${rgb}"/>`
+}
+
+/**
+ * Effective autofit: a text box defaults to spAutoFit like PowerPoint's own ("resize shape to
+ * fit text"), otherwise typing past the frame overflows a box that never grows; preset shapes
+ * keep PowerPoint's "do not autofit" default.
+ */
+function effectiveAutoFit(
+  bodyPr: NewElementBodyPr | undefined,
+  isTextbox: boolean,
+): NewElementBodyPr['autoFit'] {
+  return bodyPr?.autoFit ?? (isTextbox ? 'resize' : undefined)
+}
+
+/** <a:bodyPr> for generated sp fragments (defaults match the historical output). */
+function buildBodyPrXml(bodyPr: NewElementBodyPr | undefined, isTextbox: boolean): string {
+  const ins = bodyPr?.insetsEmu
+  const attrs =
+    `<a:bodyPr wrap="${bodyPr?.wrap ?? 'square'}" rtlCol="0"` +
+    (ins
+      ? ` lIns="${Math.round(ins.l)}" tIns="${Math.round(ins.t)}" rIns="${Math.round(ins.r)}" bIns="${Math.round(ins.b)}"`
+      : '') +
+    (bodyPr?.anchor ? ` anchor="${bodyPr.anchor}"` : '')
+  const autoFit = effectiveAutoFit(bodyPr, isTextbox)
+  if (!autoFit) return attrs + '/>'
+  return attrs + `>${autoFit === 'shrink' ? '<a:normAutofit/>' : '<a:spAutoFit/>'}</a:bodyPr>`
+}
+
+function buildAvLstXml(adjustments: Record<string, number> | undefined): string {
+  if (!adjustments) return '<a:avLst/>'
+  return `<a:avLst>${Object.entries(adjustments)
+    .map(([n, v]) => `<a:gd name="${escapeXmlAttr(n)}" fmla="val ${Math.round(v)}"/>`)
+    .join('')}</a:avLst>`
 }
 
 let insertCounter = 1
@@ -51,6 +125,8 @@ export function isLineKind(kind: string): boolean {
 
 const DEFAULT_LINE_STROKE = { color: '#000000', widthEmu: 12700 }
 
+/** a:xfrm flip attributes for generated fragments; empty when neither flag is set */
+
 function buildCxnSpXml(
   slide: Slide,
   opts: NewElementOptions,
@@ -70,10 +146,10 @@ function buildCxnSpXml(
   const head = def.head ? '<a:headEnd type="triangle" w="med" len="med"/>' : ''
   const tail = def.tail ? '<a:tailEnd type="triangle" w="med" len="med"/>' : ''
   return (
-    `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}"/>` +
+    `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>' +
-    `<p:spPr><a:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>` +
-    `<a:prstGeom prst="${def.prst}"><a:avLst/></a:prstGeom>` +
+    `<p:spPr>${generateXfrmXml({ offset: o, rot: 0, flipH: opts.flipH === true, flipV: opts.flipV === true })}` +
+    `<a:prstGeom prst="${def.prst}">${buildAvLstXml(opts.adjustments)}</a:prstGeom>` +
     `<a:ln w="${Math.round(stroke.widthEmu)}" cap="flat">` +
     `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>${head}${tail}</a:ln>` +
     '</p:spPr></p:cxnSp>'
@@ -84,7 +160,8 @@ function buildCxnSpXml(
 export function nextCNvPrId(slide: Slide): number {
   let max = 1
   const scan = (xml: string) => {
-    for (const m of xml.matchAll(/<p:cNvPr\s[^>]*\bid="(\d+)"/g)) {
+    // quote-agnostic: a writer that single-quotes its attributes still owns those ids
+    for (const m of xml.matchAll(/<p:cNvPr\s[^>]*\bid=["'](\d+)["']/g)) {
       max = Math.max(max, Number(m[1]))
     }
   }
@@ -98,25 +175,28 @@ export function buildSpXml(slide: Slide, opts: NewElementOptions): string {
   const isTextbox = opts.kind === 'textbox'
   const name = isTextbox ? `TextBox ${id}` : `Shape ${id}`
   const o = opts.offset
-  const xfrm = `<a:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>`
-  // Parser convention: has txBody and no prstGeom → 'text'; textbox omits prstGeom
+  const xfrm = generateXfrmXml({
+    offset: o,
+    rot: 0,
+    flipH: opts.flipH === true,
+    flipV: opts.flipV === true,
+  })
+  // txBox="1" + prstGeom rect is PowerPoint's own text-box shape; the parser keys on txBox
   const geom = isTextbox
-    ? ''
-    : `<a:prstGeom prst="${escapeXmlAttr(opts.kind)}"><a:avLst/></a:prstGeom>`
-  const fill = opts.fillColor
-    ? `<a:solidFill><a:srgbClr val="${opts.fillColor.replace(/^#/, '').slice(0, 6).toUpperCase()}"/></a:solidFill>`
-    : ''
+    ? '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+    : `<a:prstGeom prst="${escapeXmlAttr(opts.kind)}">${buildAvLstXml(opts.adjustments)}</a:prstGeom>`
+  const fill = opts.fillColor ? `<a:solidFill>${srgbClrXml(opts.fillColor)}</a:solidFill>` : ''
   const ln = opts.stroke
-    ? `<a:ln w="${Math.round(opts.stroke.widthEmu)}"><a:solidFill><a:srgbClr val="${opts.stroke.color.replace(/^#/, '').slice(0, 6).toUpperCase()}"/></a:solidFill></a:ln>`
+    ? `<a:ln w="${Math.round(opts.stroke.widthEmu)}"><a:solidFill>${srgbClrXml(opts.stroke.color)}</a:solidFill></a:ln>`
     : ''
   const paras = (opts.paragraphs?.length ? opts.paragraphs : [{ runs: [{ text: '' }] }])
     .map((p) => generateParagraphXml(p))
     .join('')
   return (
-    `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}"/>` +
+    `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}">${creationIdXml()}</p:cNvPr>` +
     `<p:cNvSpPr${isTextbox ? ' txBox="1"' : ''}/><p:nvPr/></p:nvSpPr>` +
     `<p:spPr>${xfrm}${geom}${fill}${ln}</p:spPr>` +
-    `<p:txBody><a:bodyPr wrap="square" rtlCol="0"/><a:lstStyle/>${paras}</p:txBody></p:sp>`
+    `<p:txBody>${buildBodyPrXml(opts.bodyPr, isTextbox)}<a:lstStyle/>${paras}</p:txBody></p:sp>`
   )
 }
 
@@ -133,8 +213,14 @@ export function addElement(slide: Slide, opts: NewElementOptions): TextElement {
         originalXml: buildCxnSpXml(slide, opts, lineDef),
         range: [0, 0],
       },
-      transform: { offset: { ...opts.offset }, rot: 0, flipH: false, flipV: false },
+      transform: {
+        offset: { ...opts.offset },
+        rot: 0,
+        flipH: opts.flipH === true,
+        flipV: opts.flipV === true,
+      },
       presetGeometry: lineDef.prst,
+      ...(opts.adjustments ? { adjust: { ...opts.adjustments } } : {}),
       fill: { type: 'none' },
       stroke: {
         fill: { type: 'solid', color: stroke.color },
@@ -148,12 +234,19 @@ export function addElement(slide: Slide, opts: NewElementOptions): TextElement {
     return el
   }
   const xml = buildSpXml(slide, opts)
+  const autoFit = effectiveAutoFit(opts.bodyPr, opts.kind === 'textbox')
   const el: TextElement = {
     id: `spnew_${(insertCounter++).toString(36)}_${Date.now().toString(36)}`,
     type: opts.kind === 'textbox' ? 'text' : 'shape',
     anchor: { spIndex: slide.elements.length, originalXml: xml, range: [0, 0] },
-    transform: { offset: { ...opts.offset }, rot: 0, flipH: false, flipV: false },
+    transform: {
+      offset: { ...opts.offset },
+      rot: 0,
+      flipH: opts.flipH === true,
+      flipV: opts.flipV === true,
+    },
     ...(opts.kind !== 'textbox' ? { presetGeometry: opts.kind } : {}),
+    ...(opts.kind !== 'textbox' && opts.adjustments ? { adjust: { ...opts.adjustments } } : {}),
     ...(opts.fillColor ? { fill: { type: 'solid' as const, color: opts.fillColor } } : {}),
     ...(opts.stroke
       ? {
@@ -163,7 +256,11 @@ export function addElement(slide: Slide, opts: NewElementOptions): TextElement {
           },
         }
       : {}),
-    text: { paragraphs: opts.paragraphs?.length ? opts.paragraphs : [{ runs: [{ text: '' }] }] },
+    text: {
+      paragraphs: opts.paragraphs?.length ? opts.paragraphs : [{ runs: [{ text: '' }] }],
+      ...(autoFit ? { autofit: autoFit } : {}),
+      ...(opts.bodyPr?.wrap === 'none' ? { wrap: false } : {}),
+    },
   }
   slide.elements.push(el)
   slide.structureDirty = true
@@ -172,14 +269,37 @@ export function addElement(slide: Slide, opts: NewElementOptions): TextElement {
 
 // ── Table insertion (graphicFrame + a:tbl) ─────────────────────────────
 
+/** Per-cell structural attributes for buildTableXml (merges + vertical anchor). */
+export interface NewTableCellProps {
+  gridSpan?: number
+  rowSpan?: number
+  hMerge?: boolean
+  vMerge?: boolean
+  anchor?: 't' | 'ctr' | 'b'
+}
+
 export interface NewTableOptions {
   rows: number
   cols: number
   offset: EmuRect
+  /** explicit column widths / row heights (EMU); a length-matched list overrides the equal split */
+  colWidthsEmu?: number[]
+  rowHeightsEmu?: number[]
+  /** row-major per-cell attributes; absent entries = plain cell */
+  cellProps?: Array<Array<NewTableCellProps | undefined>>
 }
 
 /** PowerPoint's default style for new tables (Medium Style 2 - Accent 1, built-in fallback in the render layer) */
 const DEFAULT_TABLE_STYLE_ID = '{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}'
+
+/** Largest row/column count an inserted table may have (PowerPoint's Insert Table limit). */
+export const MAX_INSERT_TABLE_DIM = 75
+
+/** Finite integer clamp with a safe fallback (NaN/Infinity land on `fallback`). */
+function clampInt(v: number, min: number, max: number, fallback = min): number {
+  if (!Number.isFinite(v)) return fallback
+  return Math.min(Math.max(min, Math.floor(v)), max)
+}
 
 /**
  * Build the table graphicFrame fragment (equal-width columns / equal-height rows,
@@ -188,23 +308,176 @@ const DEFAULT_TABLE_STYLE_ID = '{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}'
  */
 export function buildTableXml(slide: Slide, opts: NewTableOptions): string {
   const id = nextCNvPrId(slide)
-  const rows = Math.max(1, Math.floor(opts.rows))
-  const cols = Math.max(1, Math.floor(opts.cols))
-  const colW = Math.max(1, Math.floor(opts.offset.cx / cols))
-  const rowH = Math.max(1, Math.floor(opts.offset.cy / rows))
-  const grid = Array.from({ length: cols }, () => `<a:gridCol w="${colW}"/>`).join('')
-  const cell = '<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p/></a:txBody><a:tcPr/></a:tc>'
-  const trs = Array.from(
-    { length: rows },
-    () => `<a:tr h="${rowH}">${cell.repeat(cols)}</a:tr>`,
-  ).join('')
+  // Hostile op JSON can carry NaN/Infinity rows/cols (Math.max passes them
+  // through, Array.from({length: Infinity}) throws) and Infinity spans
+  // (w="Infinity" is Word-unopenable): clamp everything up front.
+  const rows = clampInt(opts.rows, 1, MAX_INSERT_TABLE_DIM)
+  const cols = clampInt(opts.cols, 1, MAX_INSERT_TABLE_DIM)
+  // the frame ext is written through the ST_Coordinate clamp, so size the grid
+  // from the same bounds (Math.max alone leaves NaN/1e+30 in w= and h=)
+  const gridEmu = (v: number) => Math.max(1, Math.round(clampPosEmu(v)))
+  const colW = gridEmu(Math.floor(clampPosEmu(opts.offset.cx) / cols))
+  const rowH = gridEmu(Math.floor(clampPosEmu(opts.offset.cy) / rows))
+  const colWs =
+    opts.colWidthsEmu?.length === cols
+      ? opts.colWidthsEmu.map(gridEmu)
+      : Array.from({ length: cols }, () => colW)
+  const rowHs =
+    opts.rowHeightsEmu?.length === rows
+      ? opts.rowHeightsEmu.map(gridEmu)
+      : Array.from({ length: rows }, () => rowH)
+  const grid = colWs.map((w) => `<a:gridCol w="${w}"/>`).join('')
+  const cellXml = (r: number, c: number): string => {
+    const p = opts.cellProps?.[r]?.[c]
+    const attrs: string[] = []
+    const gridSpan = p?.gridSpan !== undefined ? clampInt(p.gridSpan, 1, cols - c) : 1
+    const rowSpan = p?.rowSpan !== undefined ? clampInt(p.rowSpan, 1, rows - r) : 1
+    if (gridSpan > 1) attrs.push(`gridSpan="${gridSpan}"`)
+    if (rowSpan > 1) attrs.push(`rowSpan="${rowSpan}"`)
+    if (p?.hMerge) attrs.push('hMerge="1"')
+    if (p?.vMerge) attrs.push('vMerge="1"')
+    const tcPr = p?.anchor && p.anchor !== 't' ? `<a:tcPr anchor="${p.anchor}"/>` : '<a:tcPr/>'
+    return `<a:tc${attrs.length ? ` ${attrs.join(' ')}` : ''}><a:txBody><a:bodyPr/><a:lstStyle/><a:p/></a:txBody>${tcPr}</a:tc>`
+  }
+  const trs = rowHs
+    .map(
+      (h, r) =>
+        `<a:tr h="${h}">${Array.from({ length: cols }, (_, c) => cellXml(r, c)).join('')}</a:tr>`,
+    )
+    .join('')
   return (
-    `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Table ${id}"/>` +
+    `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Table ${id}">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>' +
-    `<p:xfrm><a:off x="${opts.offset.x}" y="${opts.offset.y}"/><a:ext cx="${opts.offset.cx}" cy="${opts.offset.cy}"/></p:xfrm>` +
+    `${generateXfrmXml({ offset: opts.offset, rot: 0, flipH: false, flipV: false }, 'p:xfrm')}` +
     '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">' +
     `<a:tbl><a:tblPr firstRow="1" bandRow="1"><a:tableStyleId>${DEFAULT_TABLE_STYLE_ID}</a:tableStyleId></a:tblPr>` +
     `<a:tblGrid>${grid}</a:tblGrid>${trs}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`
+  )
+}
+
+// ── Grid table insertion (pdf2pptx P25): explicit widths/heights/merges ──
+
+/** One grid cell of buildTableGridXml. Covered cells (hMerge/vMerge) must still be listed. */
+export interface NewTableCellSpec {
+  paragraphs?: Paragraph[]
+  /** columns this cell spans (a:tc gridSpan), default 1 */
+  gridSpan?: number
+  /** rows this cell spans (a:tc rowSpan), default 1 */
+  rowSpan?: number
+  /** covered by a gridSpan cell to the left */
+  hMerge?: boolean
+  /** covered by a rowSpan cell above */
+  vMerge?: boolean
+  /** solid cell shading (#RRGGBB) */
+  fillColor?: string
+  /** vertical content alignment (a:tcPr anchor), default top */
+  anchor?: 't' | 'ctr' | 'b'
+  /** cell margins (EMU); absent keeps PowerPoint defaults */
+  marginsEmu?: { l: number; t: number; r: number; b: number }
+}
+
+export interface NewTableGridOptions {
+  offset: EmuRect
+  colWidthsEmu: number[]
+  rowHeightsEmu: number[]
+  /** row-major; every row lists one entry per GRID column (merged-covered cells flagged) */
+  cells: NewTableCellSpec[][]
+  /**
+   * uniform cell borders; scope 'all' rules every edge, 'insideV' only the
+   * verticals between columns (rule-separated zones); absent = borderless
+   */
+  border?: { color: string; widthEmu: number; scope?: 'all' | 'insideV' }
+}
+
+function tableCellXml(
+  cell: NewTableCellSpec,
+  colIdx: number,
+  border: NewTableGridOptions['border'],
+  maxGridSpan: number,
+  maxRowSpan: number,
+): string {
+  const attrs: string[] = []
+  // cap a span at the cells remaining right of / below it, as buildTableXml
+  // does: Math.floor alone emits gridSpan="Infinity" for a hostile payload
+  const gridSpan = cell.gridSpan !== undefined ? clampInt(cell.gridSpan, 1, maxGridSpan) : 1
+  const rowSpan = cell.rowSpan !== undefined ? clampInt(cell.rowSpan, 1, maxRowSpan) : 1
+  if (gridSpan > 1) attrs.push(`gridSpan="${gridSpan}"`)
+  if (rowSpan > 1) attrs.push(`rowSpan="${rowSpan}"`)
+  if (cell.hMerge) attrs.push('hMerge="1"')
+  if (cell.vMerge) attrs.push('vMerge="1"')
+  const tcAttrs = attrs.length ? ` ${attrs.join(' ')}` : ''
+
+  const tcPrAttrs: string[] = []
+  const m = cell.marginsEmu
+  if (m) {
+    tcPrAttrs.push(
+      `marL="${Math.round(m.l)}"`,
+      `marR="${Math.round(m.r)}"`,
+      `marT="${Math.round(m.t)}"`,
+      `marB="${Math.round(m.b)}"`,
+    )
+  }
+  if (cell.anchor && cell.anchor !== 't') tcPrAttrs.push(`anchor="${cell.anchor}"`)
+
+  // CT_TableCellProperties child order: lnL lnR lnT lnB … fill
+  let lines = ''
+  if (border) {
+    const color = border.color.replace(/^#/, '').slice(0, 6).toUpperCase()
+    const w = Math.max(1, Math.round(border.widthEmu))
+    const ln = (tag: string) =>
+      `<a:${tag} w="${w}" cap="flat"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></a:${tag}>`
+    if ((border.scope ?? 'all') === 'all') {
+      lines = ln('lnL') + ln('lnR') + ln('lnT') + ln('lnB')
+    } else if (colIdx > 0 && !cell.hMerge) {
+      // insideV: only the left edge of non-first columns carries the rule
+      lines = ln('lnL')
+    }
+  }
+  const fill = cell.fillColor
+    ? `<a:solidFill><a:srgbClr val="${cell.fillColor.replace(/^#/, '').slice(0, 6).toUpperCase()}"/></a:solidFill>`
+    : ''
+  const inner = lines + fill
+  const tcPr = `<a:tcPr${tcPrAttrs.length ? ` ${tcPrAttrs.join(' ')}` : ''}${inner ? `>${inner}</a:tcPr>` : '/>'}`
+
+  const paras = (
+    cell.paragraphs?.length ? cell.paragraphs : [{ runs: [{ text: '' }] } as Paragraph]
+  )
+    .map((p) => generateParagraphXml(p))
+    .join('')
+  return `<a:tc${tcAttrs}><a:txBody><a:bodyPr/><a:lstStyle/>${paras}</a:txBody>${tcPr}</a:tc>`
+}
+
+/**
+ * Build a table graphicFrame with explicit column widths, row heights, merged
+ * cells, per-cell shading/anchor/margins and uniform borders — what a measured
+ * PDF table needs (buildTableXml only makes uniform empty grids). No
+ * tableStyleId on purpose: styling is fully explicit, so the deck's theme
+ * cannot repaint the imported table. Insert via appendRawElements.
+ */
+export function buildTableGridXml(slide: Slide, opts: NewTableGridOptions): string {
+  const id = nextCNvPrId(slide)
+  const cols = opts.colWidthsEmu.length
+  const grid = opts.colWidthsEmu
+    .map((w) => `<a:gridCol w="${Math.max(1, Math.round(clampPosEmu(w)))}"/>`)
+    .join('')
+  const trs = opts.cells
+    .map((row, r) => {
+      const h = Math.max(1, Math.round(clampPosEmu(opts.rowHeightsEmu[r] ?? 1)))
+      // one <a:tc> per grid column (covered columns keep their own hMerge tc)
+      const tcs = row
+        .map((cell, colIdx) =>
+          tableCellXml(cell, colIdx, opts.border, cols - colIdx, opts.cells.length - r),
+        )
+        .join('')
+      return `<a:tr h="${h}">${tcs}</a:tr>`
+    })
+    .join('')
+  return (
+    `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Table ${id}">${creationIdXml()}</p:cNvPr>` +
+    '<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>' +
+    `${generateXfrmXml({ offset: opts.offset, rot: 0, flipH: false, flipV: false }, 'p:xfrm')}` +
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">' +
+    `<a:tbl><a:tblPr/><a:tblGrid>${grid}</a:tblGrid>${trs}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`
   )
 }
 
@@ -245,6 +518,12 @@ export interface NewPictureOptions {
  * Returns the new relationship id and media path (shared by picture insertion /
  * shape picture fill).
  */
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.byteLength !== b.byteLength) return false
+  for (let i = 0; i < a.byteLength; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
 export function addImageMediaAndRel(
   opened: OpenedPptx,
   slide: Slide,
@@ -256,21 +535,36 @@ export function addImageMediaAndRel(
   const mime = IMAGE_MIME[ext]
   if (!mime) return null
 
-  // 1) media part: number = current max + 1
+  // 1) media part: identical bytes already in the package (a logo on every
+  // slide, a converter re-embedding one scan twice) share the part; otherwise
+  // number = current max + 1
   let maxNum = 0
-  for (const path of archive.entries.keys()) {
+  let mediaPath: string | undefined
+  for (const [path, existing] of archive.entries) {
     const m = /^ppt\/media\/image(\d+)\./.exec(path)
-    if (m) maxNum = Math.max(maxNum, Number(m[1]))
+    if (!m) continue
+    maxNum = Math.max(maxNum, Number(m[1]))
+    if (mediaPath === undefined && path.endsWith(`.${ext}`) && sameBytes(existing, bytes)) {
+      mediaPath = path
+    }
   }
-  const mediaPath = `ppt/media/image${maxNum + 1}.${ext}`
-  archive.entries.set(mediaPath, bytes)
+  if (mediaPath === undefined) {
+    mediaPath = `ppt/media/image${maxNum + 1}.${ext}`
+    archive.entries.set(mediaPath, bytes)
+  }
 
   // 2) [Content_Types] Default (added the first time this extension appears)
   const ctPath = '[Content_Types].xml'
   const ct = archive.readText(ctPath)
-  if (ct && !new RegExp(`<Default Extension="${ext}"`).test(ct)) {
+  if (ct && !hasDefaultFor(ct, ext)) {
     const dflt = `<Default Extension="${ext}" ContentType="${mime}"/>`
-    archive.entries.set(ctPath, Buffer.from(ct.replace('</Types>', `${dflt}</Types>`), 'utf8'))
+    archive.entries.set(
+      ctPath,
+      Buffer.from(
+        ct.replace('</Types>', () => `${dflt}</Types>`),
+        'utf8',
+      ),
+    )
   }
 
   // 3) slide rels: new rId (the rels file may not exist)
@@ -278,13 +572,15 @@ export function addImageMediaAndRel(
   const rels =
     archive.readText(relsPath) ??
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
-  let maxRid = 0
-  for (const m of rels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  const maxRid = maxRelationshipIdNumber(rels)
   const rid = `rId${maxRid + 1}`
-  const relXml = `<Relationship Id="${rid}" Type="${IMAGE_REL_TYPE}" Target="../media/image${maxNum + 1}.${ext}"/>`
+  const relXml = `<Relationship Id="${rid}" Type="${IMAGE_REL_TYPE}" Target="../media/${mediaPath.slice('ppt/media/'.length)}"/>`
   archive.entries.set(
     relsPath,
-    Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'),
+    Buffer.from(
+      rels.replace('</Relationships>', () => `${relXml}</Relationships>`),
+      'utf8',
+    ),
   )
   return { rid, mediaPath }
 }
@@ -303,7 +599,7 @@ export function addPicture(
   const name = opts.name ?? `Picture ${id}`
   const descrAttr = opts.descr ? ` descr="${escapeXmlAttr(opts.descr)}"` : ''
   const xml =
-    `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}"${descrAttr}/>` +
+    `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}"${descrAttr}>${creationIdXml()}</p:cNvPr>` +
     '<p:cNvPicPr/><p:nvPr/></p:nvPicPr>' +
     `<p:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
     `<p:spPr>${generateXfrmXml({ offset: opts.offset, rot: 0, flipH: false, flipV: false })}` +
@@ -323,12 +619,21 @@ export function addPicture(
   return el
 }
 
-/** Delete by element id; returns whether anything was removed. */
-export function deleteElement(slide: Slide, elementId: string): boolean {
+/**
+ * Delete by element id and collect relationships/resources no longer used by any
+ * retained package part. The OpenedPptx context is required because media may be
+ * shared by other objects or slides.
+ */
+export function deleteElement(opened: OpenedPptx, slide: Slide, elementId: string): boolean {
   const idx = slide.elements.findIndex((e) => e.id === elementId)
   if (idx < 0) return false
+  const removedXml = slide.elements[idx]!.anchor.originalXml
   slide.elements.splice(idx, 1)
   slide.structureDirty = true
+  cleanupDeletedElementResources(opened, slide, removedXml)
+  // Animations targeting the removed shape (or its group children) would
+  // otherwise keep dangling <p:spTgt spid> refs
+  pruneTimingForSpids(slide, cNvPrIdsInXml(removedXml))
   return true
 }
 
@@ -377,7 +682,7 @@ export function buildGrpSpXml(slide: Slide, bbox: EmuRect, childrenXml: string):
     `</a:xfrm>`
   return (
     `<p:grpSp>` +
-    `<p:nvGrpSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}"/>` +
+    `<p:nvGrpSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}">${creationIdXml()}</p:cNvPr>` +
     `<p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>` +
     `<p:grpSpPr>${grpXfrm}</p:grpSpPr>` +
     childrenXml +

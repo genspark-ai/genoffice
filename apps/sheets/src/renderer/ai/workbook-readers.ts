@@ -5,19 +5,33 @@
  * WorkbookReadContext closing over its refs.
  */
 import type { IRange } from '@univerjs/core'
-import { columnLabel, parseAddress } from '../../domain/cell-address'
-import type { InMemoryWorkbookAdapter } from '../../domain/in-memory-workbook'
-import type { CellFormatState, CellScalar } from '../../domain/workbook.types'
+import { columnLabel, parseAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
+import { MAX_PATCH_ENTRY_BYTES } from '../../shared/desktop-api'
+import type { InMemoryWorkbookAdapter } from '@genoffice/xlsx-gateway/domain/in-memory-workbook'
+import type { CellFormatState, CellScalar } from '@genoffice/xlsx-gateway/domain/workbook.types'
+import { planFileTableRegistrations } from '../file-tables'
 import { toSelectionFormat } from '../selection-format'
 import { lazyCellReader } from '../univer-sync'
-import type { LazyWorkbookState, UniverRuntime } from '../univer-state'
-import type { ActiveSheetInfo } from './tools'
+import { lazySheetScreenExtent, type LazyWorkbookState, type UniverRuntime } from '../univer-state'
+import type { ActiveSheetInfo, FrozenSelection } from './tools'
+import { NO_REDACTIONS, placeholderSource, type RedactionIndex } from './redact'
 
 /** The App refs the readers need; passed per call so they never go stale. */
 export interface WorkbookReadContext {
   univerRef: { readonly current: UniverRuntime | null }
   lazyWorkbookRef: { readonly current: LazyWorkbookState | null }
   adapterRef: { readonly current: InMemoryWorkbookAdapter }
+  /**
+   * The cells the reader withheld from the model. Optional so a workbook that
+   * hides nothing costs nothing: `redactionsOf` falls back to NO_REDACTIONS and
+   * every reader below behaves exactly as it did before the feature existed.
+   */
+  redactionIndexRef?: { readonly current: RedactionIndex | null } | undefined
+}
+
+/// The workbook's withheld cells, or the shared "nothing withheld" index.
+export function redactionsOf(ctx: WorkbookReadContext): RedactionIndex {
+  return ctx.redactionIndexRef?.current ?? NO_REDACTIONS
 }
 
 /// Feature-state report for the AI: what already exists before it edits.
@@ -31,6 +45,7 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
       : workbook.getSheetBySheetId(sheetIdInput)
   if (!worksheet) return `Unknown sheet: ${sheetIdInput}`
   const sheetId = worksheet.getSheetId()
+  const redactions = redactionsOf(ctx)
   const state = ctx.lazyWorkbookRef.current
   const a1 = (range: IRange): string =>
     `${columnLabel(range.startColumn)}${range.startRow + 1}:${columnLabel(range.endColumn)}${range.endRow + 1}`
@@ -42,7 +57,10 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
     state?.editJournal.sheetProtection.get(sheetId) ??
     state?.sheetProtections.get(sheetId)?.protected ??
     false
-  const status = [hidden ? 'hidden' : 'visible', isProtected ? 'protected' : 'unprotected']
+  const status = [
+    fileMeta?.veryHidden ? 'veryHidden (cannot be unhidden)' : hidden ? 'hidden' : 'visible',
+    isProtected ? 'protected' : 'unprotected',
+  ]
   try {
     const freeze = worksheet.getFreeze()
     if (freeze.ySplit > 0 || freeze.xSplit > 0) {
@@ -52,6 +70,36 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
     // freeze state unavailable
   }
   lines.push(`Status: ${status.join(', ')}`)
+
+  // AutoFilter/DV install from the file only once the sheet finishes
+  // indexing (captureSheetFileState marks that by filling sheetProtections),
+  // so until then the grid-backed sections below under-report.
+  if (fileMeta && state && !state.sheetProtections.has(sheetId)) {
+    lines.push(
+      '⚠️ This sheet is still indexing: the AutoFilter / conditional formatting / data validation ' +
+        'sections below may be missing rules that exist in the file. Do NOT modify or clear those ' +
+        'features based on this read — retry after indexing completes.',
+    )
+  }
+
+  const tableLines: string[] = []
+  if (state) {
+    for (const table of planFileTableRegistrations(state.file.sheets)) {
+      if (table.sheetId !== sheetId) continue
+      tableLines.push(
+        `- ${table.tableName}: ${a1(table.range)} columns[${(table.columns ?? []).join(', ')}] (from file; structure read-only)`,
+      )
+    }
+    for (const table of state.editJournal.tableAdds) {
+      if (table.sheetId !== sheetId) continue
+      tableLines.push(
+        `- ${table.name}: ${a1(table.area)} columns[${table.columnNames.join(', ')}] (added this session)`,
+      )
+    }
+  }
+  if (tableLines.length > 0) {
+    lines.push('Tables (formulas may use TableName[Column] with this exact casing):', ...tableLines)
+  }
 
   if (fileMeta && fileMeta.pivotTables.length > 0) {
     lines.push(
@@ -140,15 +188,35 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
     } else {
       lines.push(`Data validation: ${validations.length} rule(s):`)
       for (const validation of validations.slice(0, 20)) {
-        const ranges = validation
-          .getRanges()
-          .map((range) => range.getA1Notation())
-          .join(',')
+        const rangeList = validation.getRanges()
+        const ranges = rangeList.map((range) => range.getA1Notation()).join(',')
         const rule = validation.rule
+        // A validation formula can carry the value itself — `cellIs equal
+        // "13800138000"` is a rule that stores the secret. The rule still has
+        // to be reported (the model must not break it), but on a range holding
+        // withheld cells the formulas are dropped: their shape is the only part
+        // that is not the reader's data.
+        const covered = redactions.isEmpty
+          ? false
+          : rangeList.some((range) =>
+              redactions
+                .marksFor(sheetId)
+                .some(
+                  (mark) =>
+                    mark.startRow <= range.getLastRow() &&
+                    mark.endRow >= range.getRow() &&
+                    mark.startColumn <= range.getLastColumn() &&
+                    mark.endColumn >= range.getColumn(),
+                ),
+            )
         const parts = [rule.type, rule.operator, rule.formula1, rule.formula2].filter(
           (part) => part !== undefined && part !== '',
         )
-        lines.push(`- ${ranges}: ${parts.join(' ')}`)
+        lines.push(
+          covered
+            ? `- ${ranges}: ${[rule.type, rule.operator, '(withheld)'].filter(Boolean).join(' ')}`
+            : `- ${ranges}: ${parts.join(' ')}`,
+        )
       }
     }
   } catch {
@@ -174,7 +242,16 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
     if (notes.length > 0) {
       lines.push(`Notes: ${notes.length}:`)
       for (const note of notes.slice(0, 20)) {
-        const text = note.note.length > 80 ? `${note.note.slice(0, 80)}…` : note.note
+        // A note is cell-attached content, exactly like the cell's value, and
+        // readers routinely write the same secret in both. Withholding the cell
+        // without withholding its note would leak through the side door.
+        const withheld = redactions.labelAt(sheetId, note.row, note.col)
+        const text =
+          withheld !== null
+            ? placeholderSource(withheld)
+            : note.note.length > 80
+              ? `${note.note.slice(0, 80)}…`
+              : note.note
         lines.push(`- ${columnLabel(note.col)}${note.row + 1}: ${text.replace(/\n/g, ' ')}`)
       }
     }
@@ -194,8 +271,16 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
           : visual.id.startsWith('added-')
             ? 'added this session'
             : 'came with the file, not modifiable by the AI'
+        const label =
+          visual.kind === 'image'
+            ? 'image'
+            : visual.kind === 'ole'
+              ? `embedded object ${visual.progId ?? ''}`
+              : visual.kind === 'slicer'
+                ? 'slicer'
+                : `shape ${visual.shapeType ?? ''}`
         lines.push(
-          `- ${visual.kind === 'image' ? 'image' : `shape ${visual.shapeType ?? ''}`} @ ` +
+          `- ${label} @ ` +
             `${columnLabel(visual.anchor.fromColumn)}${visual.anchor.fromRow + 1}` +
             `${visual.text ? ` text "${visual.text}"` : ''} (${origin})`,
         )
@@ -214,8 +299,11 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
 export function readFormats(
   ctx: WorkbookReadContext,
   addresses: readonly string[],
+  sheetId?: string,
 ): Record<string, CellFormatState> {
-  const worksheet = ctx.univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveSheet()
+  const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
+  const worksheet =
+    sheetId === undefined ? workbook?.getActiveSheet() : workbook?.getSheetBySheetId(sheetId)
   if (!worksheet) return {}
   const result: Record<string, CellFormatState> = {}
   for (const address of addresses) {
@@ -258,9 +346,31 @@ export function readFormats(
   return result
 }
 
-export function getActiveSheetInfo(ctx: WorkbookReadContext): ActiveSheetInfo {
+/**
+ * `frozen` is the selection scope of the run in flight: `undefined` when no run
+ * owns one (report the live grid selection), `null` when the user dropped the
+ * scope off the composer chip, otherwise the send-time snapshot.
+ */
+export function getActiveSheetInfo(
+  ctx: WorkbookReadContext,
+  frozen?: FrozenSelection | null,
+): ActiveSheetInfo {
   const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
-  const selection = workbook?.getActiveRange()?.getA1Notation() ?? undefined
+  const live = workbook?.getActiveRange()?.getA1Notation() ?? undefined
+  // A frozen snapshot taken on another sheet has to carry its sheet name, or
+  // the model reads a bare A1 as an address on whatever sheet is active now.
+  const frozenLabel = frozen
+    ? frozen.sheetId === workbook?.getActiveSheet()?.getSheetId()
+      ? frozen.a1
+      : `${workbook?.getSheetBySheetId(frozen.sheetId)?.getSheetName() ?? frozen.sheetId}!${frozen.a1}`
+    : undefined
+  const selection = frozen === undefined ? live : frozenLabel
+  const frozenFields = frozenLabel
+    ? {
+        selectionFrozen: true,
+        ...(frozen?.columns?.length ? { selectionColumns: frozen.columns } : {}),
+      }
+    : {}
   const state = ctx.lazyWorkbookRef.current
   if (state) {
     const worksheet = workbook?.getActiveSheet()
@@ -274,19 +384,24 @@ export function getActiveSheetInfo(ctx: WorkbookReadContext): ActiveSheetInfo {
       : undefined
     return {
       mode: 'lazy',
+      streaming: !state.formulaMode,
       sheetId,
       sheetName: worksheet.getSheetName(),
       knownAddresses: [],
       loadedRange,
       sheets: workbook.getSheets().map((sheet) => {
-        const meta = state.file.sheets.find((entry) => entry.id === sheet.getSheetId())
+        const extent = lazySheetScreenExtent(state, sheet.getSheetId())
+        const meta = state.file.sheets.find((candidate) => candidate.id === sheet.getSheetId())
+        const oversized = (meta?.sourceXmlBytes ?? 0) > MAX_PATCH_ENTRY_BYTES
         return {
           id: sheet.getSheetId(),
           name: sheet.getSheetName(),
-          ...(meta ? { rows: meta.rowCount, columns: meta.columnCount } : {}),
+          ...(extent ? { rows: extent.rows, columns: extent.columns } : {}),
+          ...(oversized ? { readOnlyOversized: true } : {}),
         }
       }),
       selection,
+      ...frozenFields,
       merges: worksheet.getMergedRanges().map((range) => range.getA1Notation()),
       // Session-added charts have no chart part yet; their visual id
       // doubles as the edit_chart path.
@@ -301,7 +416,10 @@ export function getActiveSheetInfo(ctx: WorkbookReadContext): ActiveSheetInfo {
     }
   }
   const snapshot = ctx.adapterRef.current.getSnapshot()
-  const sheet = snapshot.sheets[0]
+  // The adapter has no active-sheet notion — resolve it from the grid (demo
+  // Univer sheets reuse the snapshot ids), falling back to the first sheet.
+  const activeId = workbook?.getActiveSheet()?.getSheetId()
+  const sheet = snapshot.sheets.find((entry) => entry.id === activeId) ?? snapshot.sheets[0]
   if (!sheet) return { mode: 'none', sheetId: '', sheetName: '', knownAddresses: [], sheets: [] }
   return {
     mode: 'demo',
@@ -324,6 +442,7 @@ export function getActiveSheetInfo(ctx: WorkbookReadContext): ActiveSheetInfo {
       }
     }),
     selection,
+    ...frozenFields,
     merges: sheet.merges ?? [],
     charts: snapshot.sheets.flatMap((entry) =>
       (entry.visuals ?? []).map((visual) => ({
@@ -339,27 +458,60 @@ export function getActiveSheetInfo(ctx: WorkbookReadContext): ActiveSheetInfo {
 export function readCells(
   ctx: WorkbookReadContext,
   addresses: readonly string[],
-): Record<string, { value: CellScalar; formula?: string }> {
-  const result: Record<string, { value: CellScalar; formula?: string }> = {}
+  sheetId?: string,
+): Record<string, { value: CellScalar; formula?: string; rawValue?: CellScalar | undefined }> {
+  const result: Record<
+    string,
+    { value: CellScalar; formula?: string; rawValue?: CellScalar | undefined }
+  > = {}
+  const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
   const state = ctx.lazyWorkbookRef.current
+  const redactions = redactionsOf(ctx)
   if (state) {
-    const worksheet = ctx.univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveSheet()
+    const worksheet =
+      sheetId === undefined ? workbook?.getActiveSheet() : workbook?.getSheetBySheetId(sheetId)
     if (!worksheet) return result
+    const targetId = sheetId ?? worksheet.getSheetId()
     const reader = lazyCellReader(worksheet)
     for (const address of addresses) {
+      // All three fields, not just the rendered value: `formula` is the cell's
+      // own text and `rawValue` the model value behind it, so projecting only
+      // `value` would hand over the very number the reader hid.
+      const withheld = redactions.labelAt(
+        targetId,
+        parseAddress(address).row,
+        parseAddress(address).column,
+      )
+      if (withheld !== null) {
+        result[address] = { value: placeholderSource(withheld) }
+        continue
+      }
       const cell = reader(address)
+      // `value` is the rendered text and `rawValue` the model value behind it;
+      // machine-facing callers (the MCP bridge, the save pipeline) need the
+      // latter — see modelCellValue in univer-sync.ts.
       result[address] = cell.formula
-        ? { value: cell.value, formula: cell.formula }
-        : { value: cell.value }
+        ? { value: cell.value, formula: cell.formula, rawValue: cell.rawValue }
+        : { value: cell.value, rawValue: cell.rawValue }
     }
     return result
   }
-  const sheet = ctx.adapterRef.current.getSnapshot().sheets[0]
+  const sheets = ctx.adapterRef.current.getSnapshot().sheets
+  const targetId = sheetId ?? workbook?.getActiveSheet()?.getSheetId()
+  const sheet =
+    sheets.find((s) => s.id === targetId) ?? (sheetId === undefined ? sheets[0] : undefined)
   if (!sheet) return result
   // The in-memory model stores only value:null for formula cells; computed
   // values live in Univer's formula engine, backfilled by reading the grid
-  const worksheet = ctx.univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveSheet()
+  const worksheet =
+    sheetId === undefined ? workbook?.getActiveSheet() : workbook?.getSheetBySheetId(sheetId)
   for (const address of addresses) {
+    const position = parseAddress(address)
+    const withheld = redactions.labelAt(sheet.id, position.row, position.column)
+    if (withheld !== null) {
+      result[address] = { value: placeholderSource(withheld) }
+      continue
+    }
     const cell = sheet.cells[address] ?? { value: null }
     if (cell.formula) {
       let computed = cell.value

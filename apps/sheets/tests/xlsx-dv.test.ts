@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { applyDvRules, DvEditError } from '../src/gateway/xlsx-dv'
+import { applyDvRules, DvEditError } from '@genoffice/xlsx-gateway/gateway/xlsx-dv'
 
 const SHEET =
   '<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>' +
@@ -12,6 +12,61 @@ const SHEET =
 const range = { startRow: 0, endRow: 4, startColumn: 0, endColumn: 0 }
 
 describe('applyDvRules', () => {
+  it('appends into the existing section, replacing the rule on the same range and dropping removed ones', () => {
+    const b1 = { startRow: 0, endRow: 0, startColumn: 1, endColumn: 1 }
+    const added = applyDvRules(
+      SHEET,
+      [
+        {
+          ranges: [range],
+          rule: { type: 'decimal', operator: 'greaterThan', formula1: '3', allowBlank: true },
+        },
+      ],
+      { append: true },
+    )
+    expect(added).toContain('<dataValidations count="2"><dataValidation type="whole"')
+    expect(added).toMatch(
+      /sqref="A1:A5"><formula1>3<\/formula1><\/dataValidation><\/dataValidations><hyperlinks/,
+    )
+    const replaced = applyDvRules(
+      SHEET,
+      [
+        {
+          ranges: [b1],
+          rule: { type: 'decimal', operator: 'greaterThan', formula1: '3', allowBlank: true },
+        },
+      ],
+      { append: true },
+    )
+    expect(replaced).not.toContain('type="whole"')
+    expect(replaced).toContain('<dataValidations count="1"><dataValidation type="decimal"')
+    const selfClosing = SHEET.replace(
+      '<dataValidations count="1">',
+      '<dataValidations count="2"><dataValidation type="list" sqref="C1"/>',
+    )
+    const afterSelfClosing = applyDvRules(
+      selfClosing,
+      [
+        {
+          ranges: [range],
+          rule: { type: 'decimal', operator: 'greaterThan', formula1: '3', allowBlank: true },
+        },
+      ],
+      { append: true },
+    )
+    expect(afterSelfClosing).toContain('<dataValidations count="3">')
+    expect(afterSelfClosing).toContain('sqref="C1"/>')
+    expect(afterSelfClosing).toContain('type="whole"')
+    const multi = SHEET.replace('sqref="B1"', 'sqref="B1:B1 D1:D3"')
+    const trimmed = applyDvRules(multi, [], { append: true, remove: [b1] })
+    expect(trimmed).toContain('<dataValidations count="1">')
+    expect(trimmed).toContain('sqref="D1:D3"')
+    expect(trimmed).not.toContain('B1')
+    const removed = applyDvRules(SHEET, [], { append: true, remove: [b1] })
+    expect(removed).not.toContain('dataValidations')
+    expect(removed).toContain('<hyperlinks>')
+  })
+
   it('replaces the existing section with the snapshot, before hyperlinks', () => {
     const xml = applyDvRules(SHEET, [
       {
@@ -38,7 +93,7 @@ describe('applyDvRules', () => {
     expect(xml).toContain('<hyperlinks>')
   })
 
-  it('quotes list literals and strips = from list references', () => {
+  it('quotes list literals and routes sheet-qualified list sources to x14', () => {
     const xml = applyDvRules(SHEET, [
       { ranges: [range], rule: { type: 'list', formula1: 'Yes,No', showDropDown: true } },
       {
@@ -47,10 +102,15 @@ describe('applyDvRules', () => {
       },
     ])
     expect(xml).toContain('<formula1>"Yes,No"</formula1>')
-    expect(xml).toContain("<formula1>'My Sheet'!$D$1:$D$9</formula1>")
-    // OOXML showDropDown="1" means "suppress the dropdown" — only the
+    // A sheet-qualified source is the one shape legacy dataValidation cannot
+    // hold: it rides in the x14 extension with no legacy twin (Excel's own
+    // fallback shape for those rules).
+    expect(xml).not.toContain("<formula1>'My Sheet'!$D$1:$D$9</formula1>")
+    expect(xml).toContain("<xm:f>'My Sheet'!$D$1:$D$9</xm:f>")
+    expect(xml).toContain('<xm:sqref>B1:B5</xm:sqref>')
+    // OOXML showDropDown="1" SUPPRESSES the in-cell dropdown — only the
     // dropdown-off rule carries it.
-    expect(xml).toContain('<dataValidation type="list" showDropDown="1" sqref="B1:B5">')
+    expect(xml).toContain('<x14:dataValidation type="list" showDropDown="1">')
     expect(xml).toContain('<dataValidation type="list" sqref="A1:A5">')
   })
 
@@ -159,17 +219,30 @@ describe('applyDvRules', () => {
     ).toThrow(/Multi-select/)
   })
 
-  it('fails closed on x14 extended validations', () => {
+  it('rewrites the rules of a sheet carrying x14 validations instead of failing', () => {
     const x14Sheet = SHEET.replace(
       '<pageMargins left="0.7"/>',
-      '<extLst><ext><x14:dataValidations count="1"><x14:dataValidation type="list"/>' +
-        '</x14:dataValidations></ext></extLst>',
+      '<pageMargins left="0.7"/><extLst><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"' +
+        ' xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
+        '<x14:dataValidations xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main" count="1">' +
+        '<x14:dataValidation type="list"><x14:formula1><xm:f>Other!$A$1</xm:f></x14:formula1>' +
+        '<xm:sqref>C1:C9</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst>',
     )
-    expect(() =>
-      applyDvRules(x14Sheet, [
-        { ranges: [range], rule: { type: 'whole', operator: 'equal', formula1: '1' } },
-      ]),
-    ).toThrow(/x14/)
+    // The snapshot's legacy rule replaces the legacy section; the file's x14
+    // rule (not in the snapshot) is dropped along with its emptied extension.
+    const xml = applyDvRules(x14Sheet, [
+      { ranges: [range], rule: { type: 'whole', operator: 'equal', formula1: '1' } },
+    ])
+    expect(xml).toContain('<dataValidations count="1"><dataValidation type="whole"')
+    expect(xml).not.toContain('Other!$A$1')
+    expect(xml).not.toContain('<extLst')
+    // A cross-sheet source in the snapshot itself rides in the x14 block.
+    const withX14Rule = applyDvRules(SHEET, [
+      { ranges: [range], rule: { type: 'list', formula1: '=Sheet2!$A$1:$A$4' } },
+    ])
+    expect(withX14Rule).not.toContain('<dataValidations ')
+    expect(withX14Rule).toContain('<x14:formula1><xm:f>Sheet2!$A$1:$A$4</xm:f></x14:formula1>')
+    expect(withX14Rule).toContain('<xm:sqref>A1:A5</xm:sqref>')
   })
 
   it('appends before </worksheet> when no later section exists', () => {

@@ -5,10 +5,13 @@
  * exposes each extracted action as a stable `useCallback(() => impl(ctxRef.current, ...))`
  * wrapper, so module functions always see the latest state without stale closures.
  */
+import type { NarrationTake } from './narration/use-recording'
+import type { PathCmd } from './edit-points'
 import type React from 'react'
 import type { GroupRenderNode, RenderNode, RenderSlide } from '@genoffice/pptx-render'
 import type {
   AnimationItem,
+  GetLayoutsResult,
   LinkTargetOp,
   MasterPartItem,
   PasteSlideMode,
@@ -16,17 +19,30 @@ import type {
   TransitionKind,
 } from '../shared/ipc'
 import type { BrushFormat } from './format-brush'
+import type { InkTool } from './ink'
+import type { SlidesViewMode } from './components/ribbon-shared'
 import type { CustomShow } from './slideshow-utils'
 
 type Set<T> = React.Dispatch<React.SetStateAction<T>>
 
 // ── State payload types shared between App useState declarations and the ctx ──
 
+/** Viewport point the caret lands on when editing starts; select: 'word' picks the word there (double-click). */
+export interface EditCaret {
+  x: number
+  y: number
+  select?: 'word'
+}
+
 export interface EditingState {
   sourceId: string
-  caret?: { x: number; y: number }
+  caret?: EditCaret
   groupId?: string
   replaceWith?: string
+  /** Open with the whole text selected (F2, WordArt placeholder) */
+  selectAll?: boolean
+  /** Fresh click-to-type text box: leaving it without typing deletes it (PowerPoint) */
+  discardIfEmpty?: boolean
 }
 
 export interface EditingCellState {
@@ -39,13 +55,20 @@ export interface SlideShowState {
   startAt: number
   customOrder?: number[]
   rehearse?: boolean
+  /** Slide Show > Record: the show records the narration of each slide */
+  record?: boolean
 }
 
 export type CtxMenuState =
   | { kind: 'element'; x: number; y: number; targetId: string; cell?: { row: number; col: number } }
   | { kind: 'canvas'; x: number; y: number }
+  /** Inside the text edit overlay; collapsed = caret only (nothing to cut/copy) */
+  | { kind: 'text'; x: number; y: number; collapsed: boolean }
   | { kind: 'thumb'; x: number; y: number; index: number }
-  | { kind: 'section'; x: number; y: number; sectionId: string }
+  /** Blank space of the thumbnail rail / sorter: pos = insertion point, 0..slides.length */
+  | { kind: 'gap'; x: number; y: number; pos: number }
+  /** Section header; sectionId null = the unsectioned lead group */
+  | { kind: 'section'; x: number; y: number; sectionId: string | null }
   | null
 
 export interface CropTargetState {
@@ -60,6 +83,14 @@ export interface CropTargetState {
   dataUrl?: string
 }
 
+/** Edit Points mode on one top-level shape; vertex = index into vertices(shapeToEditablePath(node)) */
+export interface EditPointsState {
+  sourceId: string
+  vertex: number | null
+  /** A vertex/control drag is in progress: its release commit would resurrect a deleted vertex */
+  dragging?: boolean
+}
+
 export interface CutoutTargetState {
   sourceId: string
   dataUrl: string
@@ -71,6 +102,30 @@ export interface LinkDialogState {
   initial: LinkTargetOp | null
   /** Apply to the text-edit selection instead of an element (run-level link) */
   run?: boolean
+}
+
+/**
+ * Withholding a span from the model. Opened by the context-menu item in its two
+ * gestures: a picture/video/audio shape (`sourceId` set, applied through the
+ * `setRedaction` op) or a text selection (`run`, applied by marking the editor DOM
+ * so the overlay's own commit carries it).
+ */
+export interface RedactDialogState {
+  /** Element to mark (element mode); null in run mode */
+  sourceId: string | null
+  /** Run-level mark on the saved text-edit selection */
+  run: boolean
+  /** Starting label: the shape's name, or the text the selection covers */
+  seed: string
+}
+
+/**
+ * Former members of an ungrouped group; Regroup re-creates it from whichever still exist.
+ * Keyed by the slide part path, not the index: element ids are only unique within a slide.
+ */
+export interface UngroupedSet {
+  slidePath: string
+  sourceIds: string[]
 }
 
 export interface HfDialogState {
@@ -93,6 +148,9 @@ export interface ActionCtx {
   setSlides: Set<RenderSlide[]>
   current: number
   setCurrent: Set<number>
+  /** Thumbnail rail multi-selection: ascending, always contains current (the anchor shown on the canvas) */
+  selectedSlides: number[]
+  setSelectedSlides: Set<number[]>
   /** slides[current] */
   slide: RenderSlide | undefined
   path: string | null
@@ -112,6 +170,8 @@ export interface ActionCtx {
   setEnteredGroupId: Set<string | null>
   enteredGroupNode: GroupRenderNode | null
   selectedNode: RenderNode | null
+  ungroupedSets: UngroupedSet[]
+  setUngroupedSets: Set<UngroupedSet[]>
 
   // Clipboard / format painter
   setHasClipboard: Set<boolean>
@@ -125,6 +185,10 @@ export interface ActionCtx {
   setBrushFormat: Set<BrushFormat | null>
   brushMode: 'once' | 'continuous' | null
   setBrushMode: Set<'once' | 'continuous' | null>
+  /** Freehand ink tool ('select' = not drawing); Esc drops back to select */
+  inkTool: InkTool
+  setInkTool: Set<InkTool>
+  viewMode: SlidesViewMode
 
   // Animations / transition
   animations: AnimationItem[]
@@ -145,30 +209,57 @@ export interface ActionCtx {
   setCustomShowDlgOpen: Set<boolean>
   pendingRehearse: number[] | null
   setPendingRehearse: Set<number[] | null>
+  /** A recorded show awaiting "keep the recording?" */
+  pendingRecording: NarrationTake | null
+  setPendingRecording: Set<NarrationTake | null>
 
   // Sections
   sections: SectionInfo[]
   setSections: Set<SectionInfo[]>
   renamingSec: { id: string; value: string } | null
   setRenamingSec: Set<{ id: string; value: string } | null>
+  setCollapsedSecs: Set<globalThis.Set<string>>
 
   // Menus / dialogs / overlays
   ctxMenu: CtxMenuState
   setCtxMenu: Set<CtxMenuState>
   cropTarget: CropTargetState | null
   setCropTarget: Set<CropTargetState | null>
+  /** Some overlay (menu, dialog, popover, crop, media, draw mode) owns Escape */
+  overlayOpen: boolean
   cutoutTarget: CutoutTargetState | null
   setCutoutTarget: Set<CutoutTargetState | null>
+  editPointsTarget: EditPointsState | null
+  setEditPointsTarget: Set<EditPointsState | null>
+  /** Edit Points commit (box-local px path); preview follows the adjust-handle gesture semantics */
+  commitEditPoints: (
+    sourceId: string,
+    path: { w: number; h: number; cmds: PathCmd[] },
+    preview: boolean,
+  ) => void
   linkDialog: LinkDialogState | null
   setLinkDialog: Set<LinkDialogState | null>
+  redactDialog: RedactDialogState | null
+  setRedactDialog: Set<RedactDialogState | null>
   setHfDialog: Set<HfDialogState | null>
   setEqDialogOpen: Set<boolean>
   setChartDataDialogInit: Set<ChartDataDialogInit | null>
   setChartDataDialogOpen: Set<boolean>
   setFindOpen: Set<boolean>
   setPrintDlgOpen: Set<boolean>
+  /** Open the AI annotation popover on the current selection (no-op when nothing is selected) */
+  openAskPopover: () => void
+  zoom: number
   setZoom: Set<number>
   masterItems: MasterPartItem[] | null
+  /** slideLayout list of the open deck (null until fetched) */
+  layouts: GetLayoutsResult['layouts'] | null
+  showRuler: boolean
+  showGrid: boolean
+  showGuides: boolean
+  toggleRuler: () => void
+  toggleGrid: () => void
+  toggleGuides: () => void
 
   // Screen recording
   recorderRef: { current: { rec: MediaRecorder; stream: MediaStream } | null }
@@ -179,6 +270,8 @@ export interface ActionCtx {
 
   // App-retained helpers (stable or latest-bound in App)
   applySlide: (slideIndex: number, updated: RenderSlide) => void
+  /** Replace the whole deck from a rebuilt result (an op transaction may touch any slide) */
+  applyDeck: (all: RenderSlide[], goTo?: number) => void
   flushNotes: () => Promise<void>
   findNodeCtx: (id: string) => { node: RenderNode; groupId?: string } | null
   groupIdOf: (id: string) => string | undefined
@@ -191,4 +284,12 @@ export interface ActionCtx {
     preview?: boolean,
     groupId?: string,
   ) => Promise<void>
+  /** Open the format-background pane (canvas context menu entry) */
+  openBgFormat: () => void
+  /** Open the format pane for the selection; 'size' lands on its Size & Properties tab */
+  openFormat: (section?: 'size') => void
+  /** Open the comments pane with the composer focused */
+  newComment: () => void
+  /** Open the "Change Shape" gallery popover for a shape (context menu entry) */
+  openChangeShape: (targetId: string, x: number, y: number) => void
 }

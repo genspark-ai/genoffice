@@ -131,6 +131,53 @@ describe('cloud projects sync account isolation', () => {
     expect(readCloudProjectsStore(storePath)?.projects[0]?.title).toBe('Deck A')
   })
 
+  it('refreshes later pages when the first page is unchanged', async () => {
+    const projects = Array.from({ length: 150 }, (_, index) => ({
+      projectId: `id-${index}`,
+      type: 'slides_agent_git',
+      title: `Deck ${index}`,
+      ctime: '2026-08-01T00:00:00',
+      projectUrl: `/agents?id=id-${index}`,
+    }))
+    writeFileSync(
+      storePath,
+      JSON.stringify({
+        available: true,
+        projects: projects.map((project) => ({
+          projectId: project.projectId,
+          title: project.title,
+          kind: 'slides',
+          ctimeMs: 1_700_000_000_000,
+          projectUrl: project.projectUrl,
+        })),
+        syncedAt: 123,
+        owner: cloudStoreOwner(),
+      }),
+    )
+    const secondPage = projects
+      .slice(100)
+      .map((project) =>
+        project.projectId === 'id-100' ? { ...project, title: 'Renamed Deck' } : project,
+      )
+    listMock.mockImplementation(async ({ offset }) => ({
+      projects: offset === 0 ? projects.slice(0, 100) : secondPage,
+      total: projects.length,
+      hasMore: offset === 0,
+    }))
+
+    const snap = await syncCloudProjects(storePath)
+
+    expect(listMock).toHaveBeenCalledTimes(2)
+    expect(listMock.mock.calls[1]?.[0]).toMatchObject({ offset: 100 })
+    expect(snap.projects.find((project) => project.projectId === 'id-100')?.title).toBe(
+      'Renamed Deck',
+    )
+    expect(
+      readCloudProjectsStore(storePath)?.projects.find((project) => project.projectId === 'id-100')
+        ?.title,
+    ).toBe('Renamed Deck')
+  })
+
   it('aborts without touching the store when the account switches mid-sync', async () => {
     listMock.mockImplementation(async () => {
       // the page comes back after the user has switched accounts

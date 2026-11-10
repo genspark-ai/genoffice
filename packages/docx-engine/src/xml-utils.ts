@@ -3,14 +3,23 @@ import { XMLParser } from 'fast-xml-parser'
 /** preserveOrder node shape from fast-xml-parser */
 export type XNode = Record<string, unknown>
 
-export const xmlParser = new XMLParser({
+const parserOptions = {
   preserveOrder: true,
   ignoreAttributes: false,
   attributeNamePrefix: '',
   trimValues: false,
   parseTagValue: false,
   parseAttributeValue: false,
-})
+} as const
+
+export const xmlParser = new XMLParser(parserOptions)
+
+/**
+ * Table XML only: deep nesting is legitimate there (POI stress files nest 5000 table
+ * levels, far past the default 100-tag cap). fxp parses iteratively, but callers must
+ * cap their own recursion when walking the result.
+ */
+export const deepXmlParser = new XMLParser({ ...parserOptions, maxNestedTags: 100_000 })
 
 export function nameOf(node: XNode): string | undefined {
   return Object.keys(node).find((k) => k !== ':@' && k !== '#text')
@@ -121,9 +130,9 @@ export function escapeXmlAttr(text: string): string {
   return escapeXmlText(text).replace(/"/g, '&quot;')
 }
 
-/** Text contains complex-script characters (Arabic/Hebrew/Syriac/Thaana/NKo), i.e. the w:*Cs run properties apply */
+/** Text contains complex-script characters (Arabic/Hebrew/Syriac/Thaana/NKo/Indic/Thai), i.e. the w:*Cs run properties apply */
 export function textHasComplexScript(text: string): boolean {
-  return /[\u0590-\u05FF\u0600-\u077F\u0780-\u07FF\u08A0-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/.test(
+  return /[\u0590-\u05FF\u0600-\u077F\u0780-\u07FF\u08A0-\u08FF\u0900-\u0DFF\u0E00-\u0E7F\uFB1D-\uFDFF\uFE70-\uFEFF]/.test(
     text,
   )
 }

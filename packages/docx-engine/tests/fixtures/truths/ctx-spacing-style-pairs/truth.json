@@ -1,0 +1,73 @@
+{
+  "id": "ctx-spacing-style-pairs",
+  "title": "Contextual spacing compares paragraph styles: a ctx list item after a Normal paragraph with a direct outlineLvl is tight (13.44) like after a plain Normal paragraph, after a Heading1-styled heading it keeps its 12 pt (25.44); a direct w:contextualSpacing on ListParagraph items suppresses between them (13.44) while the first keeps 12 pt after a Normal body and the body after the last keeps the 8 pt after (21.60)",
+  "section": "word-truths.md#L862",
+  "probe_date": "2026-10-30",
+  "class": "pure",
+  "docx": "probe.docx",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-30), pymupdf span baselines, Letter, Calibri 11 docDefaults after=0 line=240, single pitch 13.44 / 13.20: outline heading -> item 13.44, styled heading -> item 25.44, plain Normal -> item 13.20, body -> lp item one 25.44, lp one -> lp two 13.44, lp two -> body 21.60, ctx para -> outline heading 13.44, ctx para -> styled heading 25.44. gen before the fix: the unstyled stylesheet rule paired p / .doc-li only (the outline heading kept the item's 12 pt) and the plan excluded the direct source for styled paragraphs (12 reported where the page showed 0)",
+  "cases": [
+    {
+      "kind": "bodyParaDom",
+      "block": 2,
+      "expect": {
+        "classes": ["doc-outline-only"]
+      },
+      "note": "Normal + w:outlineLvl renders as h1.doc-outline-only without data-style"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 3,
+      "expect": {
+        "classes": ["doc-li", "ctx-sp"]
+      }
+    },
+    {
+      "kind": "planSpaceBeforePt",
+      "block": 3,
+      "expect": 0,
+      "tol": 0.05,
+      "note": "item after the outline-only heading: both Normal"
+    },
+    {
+      "kind": "planSpaceBeforePt",
+      "block": 6,
+      "expect": 12,
+      "tol": 0.05,
+      "note": "item after the Heading1-styled heading"
+    },
+    {
+      "kind": "planSpaceBeforePt",
+      "block": 9,
+      "expect": 0,
+      "tol": 0.05,
+      "note": "item after a plain Normal paragraph"
+    },
+    {
+      "kind": "planSpaceBeforePt",
+      "block": 11,
+      "expect": 12,
+      "tol": 0.05,
+      "note": "ListParagraph item after a Normal body keeps its before"
+    },
+    {
+      "kind": "planSpaceBeforePt",
+      "block": 12,
+      "expect": 0,
+      "tol": 0.05,
+      "note": "second ListParagraph item: direct ctx, same style"
+    },
+    {
+      "kind": "stylesheetRule",
+      "selector": ".doc-page\n  :is(p, .doc-li, .doc-outline-only):not([data-style])\n  + :is(p, .doc-li, .doc-outline-only).ctx-sp:not([data-style])",
+      "expect": "margin-top: 0 !important",
+      "note": "the unstyled pair rule takes outline-only headings on either side"
+    },
+    {
+      "kind": "stylesheetRule",
+      "selector": ".doc-page\n  :is(p, .doc-li, .doc-outline-only).ctx-sp:not([data-style]):has(\n    + :is(p, .doc-li, .doc-outline-only):not([data-style])\n  )",
+      "expect": "margin-bottom: 0 !important",
+      "note": "a ctx paragraph before an outline-only heading drops its space after (13.44), before a styled heading it keeps it (25.44)"
+    }
+  ]
+}

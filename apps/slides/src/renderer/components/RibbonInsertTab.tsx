@@ -1,5 +1,6 @@
 /** Insert tab of the slides ribbon. Extracted from Ribbon.tsx. */
 import type { InsertKind } from '../../shared/ipc'
+import { platformShortcuts } from '@genoffice/i18n'
 import { WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
 import {
   CHART_GALLERY,
@@ -10,6 +11,7 @@ import {
 } from '../insert-presets'
 import type { StringKey } from '../i18n/locale'
 import { ChartKindThumb } from './ChartTypeDialog'
+import { TableInsertDialog } from './InsertDialogs'
 import { ShapePreview, SmartArtPreview } from './gallery-previews'
 import {
   Icon3d,
@@ -43,10 +45,18 @@ import {
   type RibbonTabCtx,
 } from './ribbon-shared'
 
+/** The New Slide screentip shows the platform's real chord: ⇧⌘N on mac, Ctrl+M elsewhere. */
+const IS_MAC = navigator.platform.toLowerCase().includes('mac')
+
+const ZOOM_LABEL = {
+  summary: 'ribbonZoomSummary',
+  section: 'ribbonZoomSection',
+  slide: 'ribbonZoomSlide',
+} as const
+
 export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
   const {
     closePanels,
-    currentSlide,
     editing,
     hasDoc,
     hasSelection,
@@ -54,7 +64,6 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
     layoutSize,
     onAddSlide,
     onAddSlideWithLayout,
-    onInsert,
     onPickShape,
     onInsertChart,
     onInsertField,
@@ -65,25 +74,25 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
     onInsertSmartArt,
     onInsertTable,
     onInsertWordArt,
-    onInsertZoom,
+    onOpenZoom,
+    hasSections,
     onNewComment,
     onOpenEquation,
     onOpenHeaderFooter,
     onOpenLink,
     onToggleScreenRecord,
     recording,
-    slideCount,
     dropBig,
     iconColor,
     layoutOpen,
     setIconColor,
     setInsertDrop,
     setLayoutOpen,
-    setTableCustom,
+    setTableDialogOpen,
     setTableHover,
     setTableOpen,
     t,
-    tableCustom,
+    tableDialogOpen,
     tableHover,
     tableOpen,
   } = rb
@@ -92,13 +101,16 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
       <Group label={t('ribbonGroupSlides')}>
         <div className="rb-drop-wrap">
           <button
-            className="rb-big"
+            className="rb-big rb-split"
             disabled={!hasDoc}
             onClick={onAddSlide}
-            data-tip={t('ribbonNewSlideTip')}
+            data-tip={platformShortcuts(t('ribbonNewSlideTip'))}
+            data-tip-kbd={IS_MAC ? '⇧⌘N' : 'Ctrl+M'}
           >
             <span className="rb-big-icon">
-              <IconNewSlide size={BIG} />
+              <span className="rb-split-main">
+                <IconNewSlide size={BIG} />
+              </span>
               <span
                 className={`rb-caret-hit${layoutOpen ? ' active' : ''}`}
                 data-tip={t('ribbonChooseLayoutNew')}
@@ -146,6 +158,7 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
           >
             <span className="rb-big-icon">
               <IconTable size={BIG} />
+              <RbCaret />
             </span>
             <span>{t('ribbonGroupTable')}</span>
           </button>
@@ -171,43 +184,25 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
                   )),
                 )}
               </div>
-              <div className="rb-table-custom">
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={tableCustom.r}
-                  onChange={(e) =>
-                    setTableCustom((v) => ({
-                      ...v,
-                      r: Math.max(1, Math.min(50, Number(e.target.value) || 1)),
-                    }))
-                  }
-                />
-                <span>×</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={tableCustom.c}
-                  onChange={(e) =>
-                    setTableCustom((v) => ({
-                      ...v,
-                      c: Math.max(1, Math.min(50, Number(e.target.value) || 1)),
-                    }))
-                  }
-                />
-                <button
-                  className="rb-table-custom-ok"
-                  onClick={() => {
-                    setTableOpen(false)
-                    onInsertTable(tableCustom.r, tableCustom.c)
-                  }}
-                >
-                  {t('paneOk')}
-                </button>
-              </div>
+              <button
+                className="rb-table-custom"
+                onClick={() => {
+                  setTableOpen(false)
+                  setTableDialogOpen(true)
+                }}
+              >
+                {t('ribbonTableInsertDialog')}
+              </button>
             </div>
+          )}
+          {tableDialogOpen && (
+            <TableInsertDialog
+              onInsert={(rows, cols) => {
+                setTableDialogOpen(false)
+                onInsertTable(rows, cols)
+              }}
+              onClose={() => setTableDialogOpen(false)}
+            />
           )}
         </div>
       </Group>
@@ -384,18 +379,17 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
           <IconZoomJump size={BIG} />,
           t('ribbonZoomJump'),
           t('ribbonZoomJumpTip'),
-          <div className="rb-menu rb-menu-scroll">
-            {Array.from({ length: slideCount }, (_, i) => (
+          <div className="rb-menu">
+            {(['summary', 'section', 'slide'] as const).map((mode) => (
               <button
-                key={i}
-                disabled={i === currentSlide}
+                key={mode}
+                disabled={mode === 'section' && !hasSections}
                 onClick={() => {
                   setInsertDrop(null)
-                  onInsertZoom(i)
+                  onOpenZoom(mode)
                 }}
               >
-                {t('ribbonZoomJumpItem', { n: i + 1 })}
-                {i === currentSlide ? t('ribbonCurrentSlideSuffix') : ''}
+                {t(ZOOM_LABEL[mode])}
               </button>
             ))}
           </div>,
@@ -420,7 +414,7 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
         <button
           className="rb-big"
           disabled={!hasDoc}
-          onClick={() => onInsert('textbox')}
+          onClick={() => onPickShape('textbox')}
           data-tip={t('ribbonInsertTextBoxTip')}
         >
           <span className="rb-big-icon">

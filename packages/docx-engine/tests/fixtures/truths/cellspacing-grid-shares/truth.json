@@ -1,0 +1,41 @@
+{
+  "id": "cellspacing-grid-shares",
+  "title": "w:tblCellSpacing: cell box = gridCol - 2s, minus s more on the two outer columns",
+  "section": "word-truths.md#L321",
+  "probe_date": "2026-09-23",
+  "source": "probes build.py + build2.py -> cellsp_probe.pdf, cellsp_auto.pdf: n=2 s=15 45/45, n=4 45/30/30/45, n=5 45/30/30/30/45, n=3 s=60 180/120/180, n=1 s=15 60",
+  "cases": [
+    {
+      "kind": "cellSpacingShares",
+      "cols": 2,
+      "spacing": 15,
+      "expect": [45, 45]
+    },
+    {
+      "kind": "cellSpacingShares",
+      "cols": 4,
+      "spacing": 15,
+      "expect": [45, 30, 30, 45]
+    },
+    {
+      "kind": "cellSpacingShares",
+      "cols": 5,
+      "spacing": 15,
+      "expect": [45, 30, 30, 30, 45]
+    },
+    {
+      "kind": "cellSpacingShares",
+      "cols": 3,
+      "spacing": 60,
+      "expect": [180, 120, 180]
+    },
+    {
+      "kind": "cellSpacingShares",
+      "cols": 1,
+      "spacing": 15,
+      "expect": [60]
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

@@ -12,20 +12,27 @@
  */
 
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, unwatchFile, watchFile, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import {
-  COPYRIGHT_HOSTS,
   asRecord,
   firstItem,
   gskProxyUrl,
+  isCopyrightHost,
   safeHost,
   type ImageSearchResult,
   type WebSearchResult,
 } from './shared'
-import { genofficeApiKey } from './genoffice-auth'
+import {
+  genofficeApiKey,
+  genofficeAuthPath,
+  recoverFromRejectedGskKey,
+  reloadGenofficeAuth,
+  type GskRecoveryOutcome,
+} from './genoffice-auth'
+// deep import: the package root re-exports Electron-bound modules, and this file also runs in the genoffice CLI
 
 const SEARCH_TIMEOUT_MS = 60_000
 const GENERATE_TIMEOUT_MS = 600_000
@@ -80,20 +87,111 @@ function electronCompatArgs(): string[] {
 
 /**
  * API key for Genspark LLM proxy / tool_cli auth; '' when not logged in.
- * Priority: GSK_API_KEY env → GenOffice's own key (bills to us via its
- * key_name) → shared gsk CLI login (bills to the Claw bucket).
+ * Priority: explicit GSK_API_KEY env → GenOffice's own login.
+ * Never borrow the shared CLI login: it can belong to another app or account,
+ * and must not silently undo GenOffice sign-out.
  */
 export function gskApiKey(): string {
-  if (process.env.GSK_API_KEY) return process.env.GSK_API_KEY
+  const env = process.env.GSK_API_KEY
+  if (env && !rejectedKeys.has(env)) return env
   const own = genofficeApiKey()
-  if (own) return own
+  return own && !rejectedKeys.has(own) ? own : ''
+}
+
+// ── Rejected keys (401) ─────────────────────────────────────────────
+
+/**
+ * Keys the server answered 401 for (expired / revoked). GenOffice's own key
+ * is also deleted from disk; env keys are only skipped for the rest of this
+ * process because GenOffice does not own their source.
+ */
+const rejectedKeys = new Set<string>()
+
+/** Thrown when a gsk-key call is refused with 401 and no fresh key could be minted. */
+export class GskAuthError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'GskAuthError'
+  }
+}
+
+/** Whether an error text reports an HTTP 401 (gsk CLI, tool_cli, LLM proxy shapes). */
+export function isGskUnauthorizedText(text: unknown): boolean {
+  return /\bHTTP 401\b|\b401 Unauthorized\b/i.test(String(text ?? ''))
+}
+
+/**
+ * Records that `key` was refused with 401: it stops being offered (so
+ * hasGskAuth() / ai:gsk-status report signed-out and the existing sign-in UI
+ * appears) and the re-mint / re-login recovery starts. The invalidation is
+ * synchronous, before the first await, so a caller can report the failure
+ * right after this returns.
+ */
+export function noteGskKeyRejected(
+  key: string,
+  options: { allowLogin?: boolean } = {},
+): Promise<GskRecoveryOutcome> {
+  if (key) rejectedKeys.add(key)
+  return recoverFromRejectedGskKey(key, options)
+}
+
+/**
+ * For callers that used the gsk key outside this module (the Genspark LLM
+ * proxy chat/stream): when `error` reports a 401, drop the key and start the
+ * recovery in the background. Returns whether it was an auth failure.
+ */
+export function noteGskCallFailure(key: string, error: unknown): boolean {
+  if (!key) return false
+  const text = error instanceof Error ? error.message : String(error ?? '')
+  if (!isGskUnauthorizedText(text)) return false
+  void noteGskKeyRejected(key).catch(() => {})
+  return true
+}
+
+/**
+ * Runs `call` with the current key; on a 401 drops the key and, when the
+ * stored session minted a replacement, retries exactly once with it.
+ */
+async function withKeyRecovery<T>(
+  call: (key: string) => Promise<T>,
+  options: { allowLogin?: boolean } = {},
+): Promise<T> {
+  const key = gskApiKey()
   try {
-    const configPath = join(homedir(), '.genspark-tool-cli', 'config.json')
-    if (!existsSync(configPath)) return ''
-    const config = JSON.parse(readFileSync(configPath, 'utf-8')) as { api_key?: string }
-    return config.api_key ?? ''
-  } catch {
-    return ''
+    return await call(key)
+  } catch (err) {
+    if (!(err instanceof GskAuthError)) throw err
+    const outcome = await noteGskKeyRejected(key, options)
+    const next = gskApiKey()
+    if (outcome !== 'reminted' || !next || next === key) throw err
+    return call(next)
+  }
+}
+
+/** Test hook: forget rejected keys. */
+export function resetGskRejectedKeys(): void {
+  rejectedKeys.clear()
+}
+
+/**
+ * Fires when the effective gsk key changes on disk — another GenOffice-family
+ * app re-logging in mints a new key and revokes the one this process holds.
+ * Polls by path (watchFile): auth.json is replaced whole, and fs.watch misses
+ * events for a moment after it is armed.
+ */
+export function watchGskApiKey(onChange: (key: string) => void, intervalMs = 2000): () => void {
+  let last = gskApiKey()
+  const check = (): void => {
+    reloadGenofficeAuth()
+    const key = gskApiKey()
+    if (key === last) return
+    last = key
+    onChange(key)
+  }
+  const files = [genofficeAuthPath()]
+  for (const f of files) watchFile(f, { persistent: false, interval: intervalMs }, check)
+  return () => {
+    for (const f of files) unwatchFile(f, check)
   }
 }
 
@@ -146,35 +244,142 @@ export function gskChildEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proce
 // ── Low-level execution ─────────────────────────────────────────────
 
 /**
- * gsk output may have [INFO] log lines mixed in before the JSON; scan from the
- * end for the first line starting with { or [ and parse from there.
+ * gsk failures can arrive as a full HTML error page (a gateway or CDN
+ * answering for an unavailable service) in the message or on stderr. That text
+ * otherwise lands verbatim in CLI output, logs and agent context, so distill
+ * it to one readable line: the HTTP status plus the page's visible text for an
+ * HTML page, the [ERROR] lines for gsk's own multi-line logs, a plain clip
+ * otherwise. Exported for tests.
+ */
+export function summarizeGskFailure(raw: unknown, fallback = 'unknown error'): string {
+  const text = (typeof raw === 'string' ? raw : raw == null ? '' : String(raw)).trim()
+  if (!text) return fallback
+  const isHtml = /<!doctype|<html[\s>]|<\/html>|<body[\s>]/i.test(text)
+  if (!isHtml) {
+    // gsk logs mix [INFO] progress chatter, [ERROR] failures and crash noise;
+    // prefer the [ERROR] lines, drop [INFO] ones, and keep it to one line
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+    const errors = lines.filter((l) => /^\[ERROR\]/i.test(l))
+    const kept = errors.length ? errors : lines.filter((l) => !/^\[INFO\]/i.test(l))
+    const joined = (kept.length ? kept : lines).join(' ')
+    return joined.length > 300 ? `${joined.slice(0, 300)}…` : joined
+  }
+  const plain = text
+    .replace(/<head[\s\S]*?<\/head>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<form[\s\S]*?<\/form>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&(?:[a-z][a-z0-9]*|#\d+|#x[0-9a-f]+);/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^HTTP\s+\d{3}\s*:?\s*/i, '')
+    .trim()
+  const head = /HTTP\s+(\d{3})/.exec(text)?.[1]
+  const label = head ? `HTTP ${head} (HTML error page)` : 'an HTML error page'
+  if (!plain) return label
+  return `${label}: ${plain.length > 200 ? `${plain.slice(0, 200)}…` : plain}`
+}
+
+/**
+ * The balanced `{...}` / `[...]` block that starts at `start`, or null when it
+ * never closes. String-aware, so braces and quotes inside string values do not
+ * change the depth, and a block ends at its own closer rather than at the end
+ * of the output (trailing log lines are left out).
+ * `budget` is shared across candidates: each restarts at its own offset, so
+ * without it the recovery pass is quadratic in the number of candidate lines.
+ */
+function jsonBlockAt(text: string, start: number, budget: ScanBudget): string | null {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < text.length; i++) {
+    if (budget.chars <= 0) return null
+    budget.chars--
+    const c = text[i]!
+    if (inString) {
+      if (escaped) escaped = false
+      else if (c === '\\') escaped = true
+      else if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') inString = true
+    else if (c === '{' || c === '[') depth++
+    else if (c === '}' || c === ']') {
+      depth--
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
+interface ScanBudget {
+  chars: number
+}
+
+// the output is model-controlled (bounded only by MAX_BUFFER), so the recovery
+// scan gets a fixed total budget across all candidate openers
+const MAX_RECOVERY_SCAN_CHARS = 4 * 1024 * 1024
+
+/**
+ * gsk output may have [INFO] log lines mixed in before or after the JSON;
+ * find the first line that opens a JSON block and take that block, so a
+ * pretty-printed payload is located in one linear scan instead of by reparsing
+ * every line-bounded prefix.
  */
 export function parseGskOutput(stdout: string): unknown {
   const trimmed = stdout.trim()
   try {
     return JSON.parse(trimmed)
   } catch {
-    /* fall through to line-by-line scan */
+    /* fall through to the recovery scan */
   }
-  const lines = trimmed.split('\n')
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.trim()
-    if (line.startsWith('{') || line.startsWith('[')) {
-      try {
-        return JSON.parse(lines.slice(i).join('\n'))
-      } catch {
-        continue
+  let offset = 0
+  const budget: ScanBudget = { chars: MAX_RECOVERY_SCAN_CHARS }
+  for (const line of trimmed.split('\n')) {
+    if (budget.chars <= 0) break
+    const opener = line.trimStart()[0]
+    if (opener === '{' || opener === '[') {
+      const block = jsonBlockAt(trimmed, offset + line.indexOf(opener), budget)
+      if (block) {
+        try {
+          return JSON.parse(block)
+        } catch {
+          /* a log line that only looks like JSON; try the next opener */
+        }
       }
     }
+    offset += line.length + 1
   }
-  throw new Error(`No JSON found in gsk output: ${stdout.slice(0, 300)}`)
+  throw new Error(`No JSON found in gsk output: ${summarizeGskFailure(stdout, '')}`)
 }
 
-function runGsk(args: string[], timeoutMs: number, signal?: AbortSignal): Promise<unknown> {
+/** `passive`: a status/background call — a rejected key is dropped but no browser login opens */
+function runGsk(
+  args: string[],
+  timeoutMs: number,
+  signal?: AbortSignal,
+  passive = false,
+): Promise<unknown> {
   const entry = resolveGskEntry()
   if (!entry) return Promise.reject(new Error('@genspark/cli is not installed'))
+  return withKeyRecovery((key) => runGskOnce(entry, key, args, timeoutMs, signal), {
+    allowLogin: !passive,
+  })
+}
+
+function runGskOnce(
+  entry: string,
+  key: string,
+  args: string[],
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  // With no injected key the CLI would independently load its shared login.
+  if (!key) return Promise.reject(new GskAuthError('Sign in to GenOffice to use Genspark'))
   // inject the resolved key so the CLI bills the same identity as our direct HTTP calls
-  const key = gskApiKey()
   return new Promise((resolve, reject) => {
     execFile(
       process.execPath,
@@ -184,22 +389,35 @@ function runGsk(args: string[], timeoutMs: number, signal?: AbortSignal): Promis
         maxBuffer: MAX_BUFFER,
         env: {
           ...gskChildEnv(),
-          ...(key ? { GSK_API_KEY: key } : {}),
+          GSK_API_KEY: key,
         },
         ...(signal ? { signal } : {}),
       },
       (err, stdout, stderr) => {
         if (err) {
-          // gsk's real failure reason (auth/network/quota) is in stderr; append it to ease debugging
-          const errText = (stderr || '').toString().trim().slice(0, 500)
-          reject(errText ? new Error(`${err.message} | stderr: ${errText}`) : err)
+          // stderr carries gsk's real reason ([ERROR] lines, or a whole HTML
+          // page); err.message only repeats the command line, so use it alone
+          // when stderr has nothing
+          const stderrText = summarizeGskFailure(stderr, '')
+          const message = stderrText
+            ? `gsk failed: ${stderrText}`
+            : summarizeGskFailure((err as Error).message, 'gsk failed')
+          // the CLI prints a refused call's {status:'error', message:'HTTP 401…'} on stdout
+          const unauthorized =
+            !!key && (isGskUnauthorizedText(stdout) || isGskUnauthorizedText(stderr))
+          reject(unauthorized ? new GskAuthError(message) : new Error(message))
           return
         }
         try {
           const result = parseGskOutput(String(stdout))
           const rec = asRecord(result)
           if (rec.status && rec.status !== 'ok') {
-            reject(new Error(`gsk returned an error: ${rec.message ?? rec.status}`))
+            const message = `gsk returned an error: ${summarizeGskFailure(rec.message ?? rec.status)}`
+            reject(
+              key && isGskUnauthorizedText(rec.message)
+                ? new GskAuthError(message)
+                : new Error(message),
+            )
             return
           }
           resolve(result)
@@ -213,22 +431,42 @@ function runGsk(args: string[], timeoutMs: number, signal?: AbortSignal): Promis
 
 // ── Search ──────────────────────────────────────────────────────────
 
+/** Max search results kept; longest snippet/title chars (prevents MB fields blowing context). */
+export const MAX_GSK_RESULTS = 20
+export const MAX_GSK_SNIPPET_CHARS = 2_000
+const MAX_GSK_URL_CHARS = 8_192
+
+function normalizeMaxResults(n: number): number {
+  if (!Number.isFinite(n)) return 6
+  return Math.min(20, Math.max(1, Math.floor(n)))
+}
+
+function clipField(v: unknown, max = MAX_GSK_SNIPPET_CHARS): string {
+  const s = String(v ?? '')
+  return s.length > max ? s.slice(0, max) : s
+}
+
 /** Parses the `gsk search` response shape data.organic_results[{title,link,snippet}] (exported for tests) */
 export function parseGskWebSearch(
   raw: unknown,
   maxResults: number,
 ): { results: WebSearchResult[]; answer?: string } {
+  const bounded = normalizeMaxResults(maxResults)
   const data = asRecord(asRecord(raw).data ?? raw)
   const organic: unknown[] = Array.isArray(data.organic_results) ? data.organic_results : []
-  const results: WebSearchResult[] = organic.slice(0, maxResults).map((item) => {
+  const results: WebSearchResult[] = organic.slice(0, bounded).map((item) => {
     const o = asRecord(item)
     return {
-      title: String(o.title ?? ''),
-      url: String(o.link ?? ''),
-      snippet: String(o.snippet ?? ''),
+      title: clipField(o.title),
+      url: clipField(o.link, MAX_GSK_URL_CHARS),
+      snippet: clipField(o.snippet),
     }
   })
-  const answer = typeof data.answer === 'string' && data.answer ? data.answer : undefined
+  const answerRaw = typeof data.answer === 'string' && data.answer ? data.answer : undefined
+  const answer =
+    answerRaw !== undefined && answerRaw.length > MAX_GSK_SNIPPET_CHARS
+      ? `${answerRaw.slice(0, MAX_GSK_SNIPPET_CHARS)}…`
+      : answerRaw
   return answer !== undefined ? { results, answer } : { results }
 }
 
@@ -242,6 +480,7 @@ export async function gskWebSearch(
 
 /** Parses the `gsk img-search` response shape data[{image_url,title,source,link,width,height}] (exported for tests) */
 export function parseGskImageSearch(raw: unknown, maxResults: number): ImageSearchResult[] {
+  const bounded = normalizeMaxResults(maxResults)
   const dataRaw = asRecord(raw).data
   const data: unknown[] = Array.isArray(dataRaw) ? dataRaw : []
   const images: ImageSearchResult[] = []
@@ -249,7 +488,7 @@ export function parseGskImageSearch(raw: unknown, maxResults: number): ImageSear
     const img = asRecord(item)
     const imageUrl = String(img.image_url ?? img.imageUrl ?? '')
     if (!imageUrl) continue
-    if (COPYRIGHT_HOSTS.some((d) => imageUrl.toLowerCase().includes(d))) continue
+    if (isCopyrightHost(imageUrl)) continue
     const width = Number(img.width)
     const height = Number(img.height)
     const entry: ImageSearchResult = {
@@ -261,7 +500,7 @@ export function parseGskImageSearch(raw: unknown, maxResults: number): ImageSear
     if (Number.isFinite(width) && width > 0) entry.width = width
     if (Number.isFinite(height) && height > 0) entry.height = height
     images.push(entry)
-    if (images.length >= maxResults) break
+    if (images.length >= bounded) break
   }
   return images
 }
@@ -336,149 +575,6 @@ export async function gskResolveDownloadUrl(url: string): Promise<string> {
   }
 }
 
-// ── Cloud single-slide generation (Genspark slide_generate) ─────────
-
-/**
- * Calls the tool_cli HTTP endpoint directly so structured params
- * (deck_context/images) are sent as JSON rather than through the CLI's
- * string-based argument passing.
- */
-const GSK_TOOL_CLI_BASE = 'https://www.genspark.ai/api/tool_cli'
-const SLIDE_GENERATE_TIMEOUT_MS = 240_000
-
-export interface GskSlideGenerateOptions {
-  /** Content and layout brief for this page */
-  brief: string
-  title?: string
-  /** Deck-level visual system / typography / palette rules (Style Skill text) */
-  styleSkill?: string
-  /** Deck topic, page index, total pages, neighboring-page context */
-  deckContext?: Record<string, unknown>
-  /** HTTPS image candidates for this page */
-  images?: { url: string; caption?: string }[]
-  width?: number
-  height?: number
-  /** Slides model tier: ultra = opus-class model, standard (server default) = lighter model */
-  tier?: 'standard' | 'ultra'
-  signal?: AbortSignal
-}
-
-/** Final NDJSON line = the result; heartbeat lines have no status field */
-export function parseToolCliNdjson(text: string): Record<string, unknown> {
-  const lines = text.trim().split('\n')
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.trim()
-    if (!line.startsWith('{')) continue
-    try {
-      const obj: unknown = JSON.parse(line)
-      if (obj && typeof obj === 'object' && 'status' in obj) return obj as Record<string, unknown>
-    } catch {
-      continue
-    }
-  }
-  throw new Error(`No result line in tool_cli response: ${text.slice(0, 300)}`)
-}
-
-async function toolCliPost(
-  path: string,
-  body: unknown,
-  timeoutMs: number,
-  signal?: AbortSignal,
-): Promise<unknown> {
-  const key = gskApiKey()
-  if (!key) throw new Error('Not logged in to Genspark (gsk login)')
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  const onAbort = () => controller.abort()
-  signal?.addEventListener('abort', onAbort, { once: true })
-  try {
-    const resp = await fetch(`${GSK_TOOL_CLI_BASE}${path}`, {
-      method: 'POST',
-      // X-Agent-Type splits GenOffice usage out of the proxy's "Claw" billing bucket
-      headers: {
-        'X-Api-Key': key,
-        'Content-Type': 'application/json',
-        'X-Agent-Type': 'genoffice',
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
-    const text = await resp.text()
-    if (!resp.ok) throw new Error(`tool_cli ${path} HTTP ${resp.status}: ${text.slice(0, 200)}`)
-    const result = parseToolCliNdjson(text)
-    if (result.status !== 'ok') {
-      throw new Error(`tool_cli ${path} failed: ${result.message ?? result.status}`)
-    }
-    return result.data
-  } finally {
-    clearTimeout(timer)
-    signal?.removeEventListener('abort', onAbort)
-  }
-}
-
-/**
- * Generates one editable slide in the cloud (brief → HTML → one-slide PPTX)
- * and returns the downloaded PPTX bytes plus the model that produced it.
- */
-export async function gskSlideGenerate(
-  options: GskSlideGenerateOptions,
-): Promise<{ bytes: Uint8Array; model: string }> {
-  const { signal } = options
-  const body: Record<string, unknown> = { brief: options.brief }
-  if (options.title) body.title = options.title
-  if (options.styleSkill) body.style_skill = options.styleSkill
-  if (options.deckContext) body.deck_context = options.deckContext
-  if (options.images?.length) body.images = options.images
-  if (options.width) body.width = options.width
-  if (options.height) body.height = options.height
-  if (options.tier) body.tier = options.tier
-  const data = asRecord(
-    await toolCliPost('/slide_generate', body, SLIDE_GENERATE_TIMEOUT_MS, signal),
-  )
-  const pptxUrl = data.pptx_url
-  if (!pptxUrl)
-    throw new Error(`slide_generate returned no pptx_url: ${JSON.stringify(data).slice(0, 200)}`)
-  // The bare file-wrapper URL 403s on plain GET; swap for a signed direct link first
-  const dl = asRecord(
-    await toolCliPost('/file/download', { file_wrapper_url: pptxUrl }, SEARCH_TIMEOUT_MS, signal),
-  )
-  const downloadUrl = dl.download_url
-  if (!downloadUrl) throw new Error('file/download returned no download_url')
-  const resp = await fetch(String(downloadUrl), signal ? { signal } : undefined)
-  if (!resp.ok) throw new Error(`PPTX download failed: HTTP ${resp.status}`)
-  return { bytes: new Uint8Array(await resp.arrayBuffer()), model: String(data.model ?? '') }
-}
-
-// ── File conversion (PDF → DOCX) ────────────────────────────────────
-
-/** Extracts the download link from file_convert's markdown result text (exported for tests) */
-export function parseGskConvertResult(raw: unknown): string {
-  const data = asRecord(asRecord(raw).data ?? raw)
-  const text = typeof data.result === 'string' ? data.result : ''
-  const url = /\((https?:\/\/[^)\s]+)\)/.exec(text)?.[1] ?? /https?:\/\/\S+/.exec(text)?.[0]
-  if (!url) {
-    throw new Error(`file_convert returned no link: ${JSON.stringify(raw).slice(0, 200)}`)
-  }
-  return url
-}
-
-/**
- * Uploads a local PDF and converts it to DOCX in the cloud (`gsk convert`,
- * costs 5 credits); returns the DOCX bytes.
- */
-export async function gskConvertPdfToDocx(
-  filePath: string,
-  signal?: AbortSignal,
-): Promise<Uint8Array> {
-  const wrapperUrl = await gskUpload(filePath)
-  const raw = await runGsk(['convert', wrapperUrl], GENERATE_TIMEOUT_MS, signal)
-  const link = parseGskConvertResult(raw)
-  const downloadUrl = await gskResolveDownloadUrl(link)
-  const resp = await fetch(downloadUrl, signal ? { signal } : undefined)
-  if (!resp.ok) throw new Error(`DOCX download failed: HTTP ${resp.status}`)
-  return new Uint8Array(await resp.arrayBuffer())
-}
-
 // ── Media analysis / transcription ──────────────────────────────────
 
 /** Best-effort text extraction from gsk analysis-type command output (shape varies by task, so be lenient; exported for tests) */
@@ -542,17 +638,6 @@ export async function gskTranscribe(
   if (options.model) args.push('-m', options.model)
   const raw = await runGsk(args, GENERATE_TIMEOUT_MS, signal)
   return extractGskText(raw)
-}
-
-// ── File upload / login ─────────────────────────────────────────────
-
-/** Uploads a local file and returns a file wrapper URL (usable as input to other gsk commands) */
-export async function gskUpload(filePath: string): Promise<string> {
-  const raw = asRecord(await runGsk(['upload', filePath], GENERATE_TIMEOUT_MS))
-  const dataRec = asRecord(raw.data)
-  const url = dataRec.file_wrapper_url ?? raw.url ?? dataRec.url
-  if (!url) throw new Error(`gsk upload did not return a URL: ${JSON.stringify(raw).slice(0, 200)}`)
-  return String(url)
 }
 
 // ── Past projects (Genspark web) ────────────────────────────────────
@@ -631,7 +716,8 @@ export async function gskListPastProjects(
   if (options.artifactTypes?.length) args.push('--artifact_types', ...options.artifactTypes)
   if (options.limit !== undefined) args.push('--limit', String(options.limit))
   if (options.offset) args.push('--offset', String(options.offset))
-  const raw = await runGsk(args, SEARCH_TIMEOUT_MS, options.signal)
+  // background sync: never the reason a browser window opens
+  const raw = await runGsk(args, SEARCH_TIMEOUT_MS, options.signal, true)
   return parseGskPastProjects(raw)
 }
 
@@ -644,7 +730,7 @@ export interface GskLoginInfo {
 /** Current login info; null when not logged in */
 export async function gskLoginInfo(): Promise<GskLoginInfo | null> {
   try {
-    const raw = await runGsk(['login-info'], SEARCH_TIMEOUT_MS)
+    const raw = await runGsk(['login-info'], SEARCH_TIMEOUT_MS, undefined, true)
     const d = asRecord(asRecord(raw).data ?? raw)
     if (!d.email) return null
     const info: GskLoginInfo = {

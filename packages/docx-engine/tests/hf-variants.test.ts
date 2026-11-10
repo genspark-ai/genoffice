@@ -1,6 +1,6 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
-import { PAGE_MARK, parseDocx, saveDocx } from '../src/index'
+import { PAGE_MARK, parseDocx, saveDocx, type HfParagraph } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const BODY = '<w:p><w:r><w:t>正文</w:t></w:r></w:p>'
@@ -98,6 +98,49 @@ describe('first-page / even-page headers & footers', () => {
     expect(await zipText(off, 'word/document.xml')).not.toContain('<w:titlePg/>')
   })
 
+  it('parses even-header table cells with one line per cell paragraph (same as default)', async () => {
+    const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
+    const hdrXml = (tblCells: string) =>
+      XML_DECL +
+      '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"' +
+      ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="500"/><w:gridCol w:w="7500"/></w:tblGrid>' +
+      `<w:tr>${tblCells}</w:tr></w:tbl></w:hdr>`
+    const cells =
+      '<w:tc><w:tcPr><w:tcW w:w="500" w:type="dxa"/><w:shd w:val="clear" w:fill="C00000"/></w:tcPr><w:p/></w:tc>' +
+      '<w:tc><w:tcPr><w:tcW w:w="7500" w:type="dxa"/></w:tcPr>' +
+      '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Title line</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:t>Subtitle line</w:t></w:r></w:p></w:tc>'
+    const headerType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml'
+    const bytes = await buildDocx({
+      bodyXml: BODY,
+      extraRels:
+        '<Relationship Id="rId60" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>' +
+        '<Relationship Id="rId61" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/>',
+      extraParts: [
+        { path: 'word/header1.xml', xml: hdrXml(cells), contentType: headerType },
+        { path: 'word/header2.xml', xml: hdrXml(cells), contentType: headerType },
+      ],
+      sectPrExtra:
+        '<w:headerReference w:type="default" r:id="rId60"/>' +
+        '<w:headerReference w:type="even" r:id="rId61"/>',
+    })
+    const parsed = await parseDocx(bytes)
+    const cellShape = (row: HfParagraph) =>
+      row.cells!.map((c) => ({
+        fill: c.fill,
+        texts: c.paras.map((rs) => rs.map((r) => r.text).join('')),
+      }))
+    const evenRow = parsed.headerEven!.paras[0]
+    expect(cellShape(evenRow)).toEqual([
+      { fill: 'C00000', texts: [''] },
+      { fill: undefined, texts: ['Title line', 'Subtitle line'] },
+    ])
+    expect(cellShape(evenRow)).toEqual(cellShape(parsed.headerParas![0]))
+    expect(evenRow.cells![1].paras[0][0]).toMatchObject({ text: 'Title line', bold: true })
+  })
+
   it('keeps titlePg before w:docGrid in schema order', async () => {
     const source = await buildDocx({ bodyXml: BODY })
     // inject a docGrid into the trailing sectPr
@@ -112,5 +155,253 @@ describe('first-page / even-page headers & footers', () => {
     const out = (await zipText(saved, 'word/document.xml'))!
     expect(out.indexOf('<w:titlePg/>')).toBeGreaterThan(-1)
     expect(out.indexOf('<w:titlePg/>')).toBeLessThan(out.indexOf('<w:docGrid'))
+  })
+})
+
+describe('hfAllSections (P17)', () => {
+  it('injects new header/footer references into every ref-less body sectPr', async () => {
+    const midSect =
+      '<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/>' +
+      '<w:pgSz w:w="11906" w:h="16838"/>' +
+      '<w:pgMar w:top="975" w:right="1051" w:bottom="400" w:left="982" w:header="708" w:footer="708" w:gutter="0"/>' +
+      '</w:sectPr></w:pPr></w:p>'
+    const source = await buildDocx({ bodyXml: BODY + midSect + BODY })
+    const parsed = await parseDocx(source)
+    const saved = await saveDocx(
+      parsed,
+      parsed.blocks
+        .filter((b) => !b.hidden && b.docxIndex !== null)
+        .map((b) => ({ kind: 'original' as const, docxIndex: b.docxIndex! })),
+      { header: { text: '重复页眉' }, hfAllSections: true },
+    )
+    const docXml = (await zipText(saved, 'word/document.xml'))!
+    const refs = docXml.match(/<w:headerReference[^>]*\/>/g) ?? []
+    expect(refs.length).toBe(2) // mid-body sectPr + trailing sectPr
+    // both point at the same part
+    const ids = refs.map((r) => /r:id="([^"]+)"/.exec(r)![1])
+    expect(new Set(ids).size).toBe(1)
+  })
+})
+
+const HEADER_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml'
+const FOOTER_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml'
+const SETTINGS_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml'
+const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+const W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+
+const hdrPart = (inner: string) => `${XML_DECL}<w:hdr ${W_NS}>${inner}</w:hdr>`
+const ftrPart = (inner: string) => `${XML_DECL}<w:ftr ${W_NS}>${inner}</w:ftr>`
+const settingsPart = (inner: string) => `${XML_DECL}<w:settings ${W_NS}>${inner}</w:settings>`
+
+describe('non-schema and non-self-closing variants (POI corpus)', () => {
+  it('treats w:type="odd" header/footer references as the default part', async () => {
+    const bytes = await buildDocx({
+      bodyXml: BODY,
+      extraRels:
+        '<Relationship Id="rId70" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>' +
+        '<Relationship Id="rId71" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/>',
+      extraParts: [
+        {
+          path: 'word/header1.xml',
+          xml: hdrPart('<w:p><w:r><w:t>EVEN_PAGE_HEADER</w:t></w:r></w:p>'),
+          contentType: HEADER_TYPE,
+        },
+        {
+          path: 'word/header2.xml',
+          xml: hdrPart('<w:p><w:r><w:t>ODD_PAGE_HEADER</w:t></w:r></w:p>'),
+          contentType: HEADER_TYPE,
+        },
+      ],
+      sectPrExtra:
+        '<w:headerReference w:type="even" r:id="rId70"/>' +
+        '<w:headerReference w:type="odd" r:id="rId71"/>',
+    })
+    const parsed = await parseDocx(bytes)
+    expect(parsed.headerText).toBe('ODD_PAGE_HEADER')
+    expect(parsed.headerEven?.text).toBe('EVEN_PAGE_HEADER')
+
+    // editing the default header rewrites the odd part instead of adding a duplicate reference
+    const saved = await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], {
+      header: { text: 'EDITED_DEFAULT' },
+    })
+    expect((await zipText(saved, 'word/document.xml'))!.match(/<w:headerReference/g)).toHaveLength(
+      2,
+    )
+    expect(await zipText(saved, 'word/header2.xml')).toContain('EDITED_DEFAULT')
+    expect((await parseDocx(saved)).headerText).toBe('EDITED_DEFAULT')
+  })
+
+  it('reads evenAndOddHeaders and titlePg written as paired tags or with w:val', async () => {
+    const build = (settingsXml: string, titlePgTag: string) =>
+      buildDocx({
+        bodyXml: BODY,
+        sectPrExtra: titlePgTag,
+        extraParts: [
+          { path: 'word/settings.xml', xml: settingsPart(settingsXml), contentType: SETTINGS_TYPE },
+        ],
+      })
+    const on = await parseDocx(
+      await build(
+        '<w:evenAndOddHeaders></w:evenAndOddHeaders>',
+        '<w:titlePg w:val="true"></w:titlePg>',
+      ),
+    )
+    expect(on.evenAndOddHeaders).toBe(true)
+    expect(on.titlePg).toBe(true)
+    const off = await parseDocx(
+      await build('<w:evenAndOddHeaders w:val="false"/>', '<w:titlePg w:val="0"/>'),
+    )
+    expect(off.evenAndOddHeaders).toBe(false)
+    expect(off.titlePg).toBe(false)
+  })
+
+  it('flattens nested layout tables into their cell (banner shading and text kept)', async () => {
+    // banner header: outer cell holds a nested single-cell table carrying the
+    // fill and the centered title, followed by the mandatory empty paragraph
+    const footerXml = ftrPart(
+      '<w:tbl><w:tblGrid><w:gridCol w:w="8000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>' +
+        '<w:tc><w:tcPr><w:tcW w:w="8000" w:type="dxa"/></w:tcPr>' +
+        '<w:tbl><w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid><w:tr>' +
+        '<w:tc><w:tcPr><w:tcW w:w="8000" w:type="dxa"/><w:shd w:val="clear" w:fill="000066"/></w:tcPr>' +
+        '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Banner title</w:t></w:r></w:p>' +
+        '</w:tc></w:tr></w:tbl><w:p/></w:tc>' +
+        '<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p/></w:tc>' +
+        '</w:tr></w:tbl>',
+    )
+    const bytes = await buildDocx({
+      bodyXml: BODY,
+      extraRels:
+        '<Relationship Id="rId72" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>',
+      extraParts: [{ path: 'word/footer1.xml', xml: footerXml, contentType: FOOTER_TYPE }],
+      sectPrExtra: '<w:footerReference w:type="default" r:id="rId72"/>',
+    })
+    const parsed = await parseDocx(bytes)
+    const row = parsed.footerParas![0]
+    expect(row.cells![0]).toMatchObject({ fill: '000066', align: 'center' })
+    // nested cell text kept; the trailing empty paragraph after the nested table is trimmed
+    expect(row.cells![0].paras.map((rs) => rs.map((r) => r.text).join(''))).toEqual([
+      'Banner title',
+    ])
+    expect(parsed.footerText).toBe('Banner title')
+  })
+
+  it('emits a floating table (w:tblpPr) after its anchor paragraph, matching Word order', async () => {
+    const footerXml = ftrPart(
+      '<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="text" w:tblpY="1"/></w:tblPr>' +
+        '<w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr>' +
+        '<w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>' +
+        '<w:p><w:r><w:t>Page band</w:t></w:r></w:p></w:tc>' +
+        '</w:tr></w:tbl>' +
+        '<w:p><w:r><w:t>Simple footer text</w:t></w:r></w:p>',
+    )
+    const bytes = await buildDocx({
+      bodyXml: BODY,
+      extraRels:
+        '<Relationship Id="rId73" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>',
+      extraParts: [{ path: 'word/footer1.xml', xml: footerXml, contentType: FOOTER_TYPE }],
+      sectPrExtra: '<w:footerReference w:type="default" r:id="rId73"/>',
+    })
+    const parsed = await parseDocx(bytes)
+    const paras = parsed.footerParas!
+    expect(paras[0].runs.map((r) => r.text).join('')).toBe('Simple footer text')
+    expect(paras[1].cells![0].paras[0][0].text).toBe('Page band')
+  })
+})
+
+describe('page-anchored header tables and empty-mark faces', () => {
+  const FLOAT_TABLE =
+    '<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="page" w:horzAnchor="page" w:tblpX="464" w:tblpY="346"/>' +
+    '<w:tblW w:w="11058" w:type="dxa"/></w:tblPr>' +
+    '<w:tblGrid><w:gridCol w:w="2368"/><w:gridCol w:w="8690"/></w:tblGrid><w:tr>' +
+    '<w:tc><w:tcPr><w:tcW w:w="2368" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Logo</w:t></w:r></w:p></w:tc>' +
+    '<w:tc><w:tcPr><w:tcW w:w="8690" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Title band</w:t></w:r></w:p></w:tc>' +
+    '</w:tr></w:tbl>'
+  const FLOW_TABLE =
+    '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:jc w:val="center"/></w:tblPr>' +
+    '<w:tblGrid><w:gridCol w:w="6520"/><w:gridCol w:w="2665"/></w:tblGrid><w:tr>' +
+    '<w:tc><w:tcPr><w:tcW w:w="6520" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Steps</w:t></w:r></w:p></w:tc>' +
+    '<w:tc><w:tcPr><w:tcW w:w="2665" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Party</w:t></w:r></w:p></w:tc>' +
+    '</w:tr></w:tbl>'
+
+  async function parseHeader(inner: string) {
+    const bytes = await buildDocx({
+      bodyXml: BODY,
+      extraRels:
+        '<Relationship Id="rId81" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+      extraParts: [{ path: 'word/header1.xml', xml: hdrPart(inner), contentType: HEADER_TYPE }],
+      sectPrExtra: '<w:headerReference w:type="default" r:id="rId81"/>',
+    })
+    return (await parseDocx(bytes)).headerParas!
+  }
+
+  it('a page-anchored table keeps markup order and carries its placement, width and w:jc', async () => {
+    const paras = await parseHeader(FLOAT_TABLE + FLOW_TABLE + '<w:p/>')
+    expect(paras[0].cells![1].paras[0][0].text).toBe('Title band')
+    expect(paras[0].row).toMatchObject({
+      widthTwips: 11058,
+      float: { xTwips: 464, yTwips: 346, horzAnchor: 'page', vertAnchor: 'page' },
+    })
+    expect(paras[0].row!.align).toBeUndefined()
+    expect(paras[1].cells![0].paras[0][0].text).toBe('Steps')
+    expect(paras[1].row).toMatchObject({ align: 'center', widthTwips: 9185 })
+    expect(paras[1].row!.float).toBeUndefined()
+  })
+
+  it('an empty mark is sized by its East Asian face only under the hint and an East Asian w:lang, else its own Latin face', async () => {
+    const mark = (rFonts: string, lang = '') =>
+      `<w:p><w:pPr><w:rPr><w:rFonts ${rFonts}/>${lang}</w:rPr></w:pPr></w:p>`
+    const paras = await parseHeader(
+      mark(
+        'w:ascii="Calibri" w:eastAsia="SimSun" w:hint="eastAsia"',
+        '<w:lang w:eastAsia="zh-CN"/>',
+      ) +
+        mark(
+          'w:ascii="Calibri" w:eastAsia="SimSun" w:hint="eastAsia"',
+          '<w:lang w:eastAsia="en-US"/>',
+        ) +
+        mark('w:ascii="Calibri" w:eastAsia="SimSun"', '<w:lang w:eastAsia="zh-CN"/>') +
+        mark('w:ascii="Malgun Gothic" w:eastAsia="Malgun Gothic"') +
+        mark('w:hint="eastAsia"') +
+        '<w:p/>',
+    )
+    expect(paras.map((p) => p.emptyRunFont)).toEqual([
+      'SimSun',
+      'Calibri',
+      'Calibri',
+      'Malgun Gothic',
+      undefined,
+      undefined,
+    ])
+  })
+})
+
+describe('header style-inherited rtl', () => {
+  it('hf runs pick the Cs property set when their paragraph style sets w:rtl', async () => {
+    const headerXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:p><w:pPr><w:pStyle w:val="HeaderAr"/></w:pPr>' +
+      '<w:r><w:rPr><w:bCs/><w:szCs w:val="36"/><w:sz w:val="20"/></w:rPr><w:t>مرحبا</w:t></w:r>' +
+      '</w:p></w:hdr>'
+    const source = await buildDocx({
+      bodyXml: BODY,
+      extraStylesXml:
+        '<w:style w:type="paragraph" w:styleId="HeaderAr"><w:name w:val="Header Ar"/>' +
+        '<w:basedOn w:val="Normal"/><w:rPr><w:rtl/></w:rPr></w:style>',
+      extraRels:
+        '<Relationship Id="rId21" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+      sectPrExtra: '<w:headerReference w:type="default" r:id="rId21"/>',
+      extraParts: [
+        {
+          path: 'word/header1.xml',
+          xml: headerXml,
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+        },
+      ],
+    })
+    const parsed = await parseDocx(source)
+    const run = parsed.headerParas![0].runs[0]
+    // style rtl reaches hf runs: szCs/bCs win over sz (cs property set)
+    expect(run).toMatchObject({ text: 'مرحبا', cs: true, bold: true, sizeHalfPoints: 36 })
   })
 })

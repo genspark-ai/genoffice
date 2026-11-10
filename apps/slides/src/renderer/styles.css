@@ -1,3 +1,66 @@
+/* Bundled metric substitutes for fonts most decks assume but macOS/Linux lack:
+ * Carlito ↔ Calibri (document content rendering — the canvas font chains in
+ * konva-adapter.ts list Carlito right after Calibri). The files are the suite's
+ * shared copy (@genoffice/ui/fonts); their internal family name is "Carlito GO"
+ * (docs' Vietnamese-diacritics rebuild), which is what the main-process metrics
+ * report as the draw family — declare both names. */
+@font-face {
+  font-family: 'Carlito';
+  src: url('@genoffice/ui/fonts/Carlito-Regular.ttf');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Carlito';
+  src: url('@genoffice/ui/fonts/Carlito-Bold.ttf');
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Carlito';
+  src: url('@genoffice/ui/fonts/Carlito-Italic.ttf');
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Carlito';
+  src: url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf');
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Carlito GO';
+  src: url('@genoffice/ui/fonts/Carlito-Regular.ttf');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Carlito GO';
+  src: url('@genoffice/ui/fonts/Carlito-Bold.ttf');
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Carlito GO';
+  src: url('@genoffice/ui/fonts/Carlito-Italic.ttf');
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Carlito GO';
+  src: url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf');
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+
 /* Per-app accent (powerpoint-orange family) + slides-only tokens.
  * Chrome tokens (surface/text/border/…, AI panel --color-*) come from
  * @genoffice/ui/tokens.css; nothing here may shadow those names. */
@@ -11,19 +74,22 @@
   --slides-rail-bg: #ececec;
   --slides-statusbar-border: #e1e4e8;
   --slides-statusbar-hover: rgb(0 0 0 / 8%);
+  /* same relative darkening as the ribbon's --active-bg selected gray on white */
+  --slides-statusbar-active: rgb(0 0 0 / 8%);
   --slides-ctl-border: #8a8886;
+  --slides-thumb-shadow: 0 0 1px rgb(0 0 0 / 28%), 0 1px 4px rgb(0 0 0 / 30%);
   --slides-text-disabled: #b0b0b0;
-  --slides-hover-wash: rgb(16 110 190 / 10%);
-  --slides-hover-wash-soft: rgb(16 110 190 / 8%);
+  --slides-hover-wash: color-mix(in srgb, var(--accent) 10%, transparent);
+  --slides-hover-wash-soft: color-mix(in srgb, var(--accent) 8%, transparent);
   --slides-stagebar-ink: #374151;
   --slides-comment-bg: #fffdfa;
   --slides-chip-bg: #f6f8fc;
   --slides-att-bg: #fafafa;
   --slides-att-border: #ececee;
-  --slides-select-border: #0070c0;
-  --slides-select-hover-bg: #f0f7ff;
-  --slides-select-active-bg: #e5f1fb;
-  --slides-cell-focus-bg: #eef5fd;
+  --slides-select-border: var(--accent);
+  --slides-select-hover-bg: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  --slides-select-active-bg: var(--accent-soft);
+  --slides-cell-focus-bg: color-mix(in srgb, var(--accent) 8%, var(--surface));
   --slides-ok: #2e9e44;
   --slides-error: #ef4444;
   --slides-error-bg: #fdecec;
@@ -46,6 +112,7 @@
   --slides-anim-emph: #c28e00;
   --slides-anim-exit: #c43e1c;
   --slides-anim-path: #2b7cd3;
+  --slides-anim-media: #7a5cc4;
   --slides-choice-check: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2.5 6.5l2.5 2.5 4.5-5' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 
   /* content-side constants: thumbnails/sorter/master previews and layout
@@ -79,6 +146,7 @@
   /* black playback chrome (slideshow / presenter / reading view) holds in
    * both themes; numeric suffix = white alpha % */
   --slides-show-black: #000;
+  --slides-show-white: #fff;
   --slides-show-ink: #fff;
   --slides-show-ink-88: rgb(255 255 255 / 88%);
   --slides-show-ink-85: rgb(255 255 255 / 85%);
@@ -141,19 +209,21 @@
   --slides-rail-bg: #252525;
   --slides-statusbar-border: #3a3a3a;
   --slides-statusbar-hover: rgb(255 255 255 / 10%);
+  --slides-statusbar-active: rgb(255 255 255 / 12%);
   --slides-ctl-border: #777;
+  --slides-thumb-shadow: 0 0 1px rgb(0 0 0 / 55%), 0 1px 4px rgb(0 0 0 / 60%);
   --slides-text-disabled: #666;
-  --slides-hover-wash: rgb(90 160 232 / 15%);
-  --slides-hover-wash-soft: rgb(90 160 232 / 12%);
+  --slides-hover-wash: color-mix(in srgb, var(--accent) 15%, transparent);
+  --slides-hover-wash-soft: color-mix(in srgb, var(--accent) 12%, transparent);
   --slides-stagebar-ink: #d0d0d0;
   --slides-comment-bg: #2b2a26;
   --slides-chip-bg: #2a2f36;
   --slides-att-bg: #2a2a2a;
   --slides-att-border: #3a3a3a;
-  --slides-select-border: #4a9eff;
-  --slides-select-hover-bg: #22303f;
-  --slides-select-active-bg: #2a3a4d;
-  --slides-cell-focus-bg: #223247;
+  --slides-select-border: var(--accent);
+  --slides-select-hover-bg: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  --slides-select-active-bg: var(--accent-soft);
+  --slides-cell-focus-bg: color-mix(in srgb, var(--accent) 14%, var(--surface));
   --slides-ok: #58b380;
   --slides-error: #e57373;
   --slides-error-bg: rgb(229 115 115 / 12%);
@@ -175,6 +245,7 @@
   --slides-anim-emph: #d9a834;
   --slides-anim-exit: #e8663f;
   --slides-anim-path: #5aa0e8;
+  --slides-anim-media: #a58cf0;
   --slides-choice-check: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2.5 6.5l2.5 2.5 4.5-5' fill='none' stroke='%231e1e1e' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
@@ -187,19 +258,21 @@
     --slides-rail-bg: #252525;
     --slides-statusbar-border: #3a3a3a;
     --slides-statusbar-hover: rgb(255 255 255 / 10%);
+    --slides-statusbar-active: rgb(255 255 255 / 12%);
     --slides-ctl-border: #777;
+    --slides-thumb-shadow: 0 0 1px rgb(0 0 0 / 55%), 0 1px 4px rgb(0 0 0 / 60%);
     --slides-text-disabled: #666;
-    --slides-hover-wash: rgb(90 160 232 / 15%);
-    --slides-hover-wash-soft: rgb(90 160 232 / 12%);
+    --slides-hover-wash: color-mix(in srgb, var(--accent) 15%, transparent);
+    --slides-hover-wash-soft: color-mix(in srgb, var(--accent) 12%, transparent);
     --slides-stagebar-ink: #d0d0d0;
     --slides-comment-bg: #2b2a26;
     --slides-chip-bg: #2a2f36;
     --slides-att-bg: #2a2a2a;
     --slides-att-border: #3a3a3a;
-    --slides-select-border: #4a9eff;
-    --slides-select-hover-bg: #22303f;
-    --slides-select-active-bg: #2a3a4d;
-    --slides-cell-focus-bg: #223247;
+    --slides-select-border: var(--accent);
+    --slides-select-hover-bg: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    --slides-select-active-bg: var(--accent-soft);
+    --slides-cell-focus-bg: color-mix(in srgb, var(--accent) 14%, var(--surface));
     --slides-ok: #58b380;
     --slides-error: #e57373;
     --slides-error-bg: rgb(229 115 115 / 12%);
@@ -221,6 +294,7 @@
     --slides-anim-emph: #d9a834;
     --slides-anim-exit: #e8663f;
     --slides-anim-path: #5aa0e8;
+    --slides-anim-media: #a58cf0;
     --slides-choice-check: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2.5 6.5l2.5 2.5 4.5-5' fill='none' stroke='%231e1e1e' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   }
 }
@@ -386,6 +460,12 @@ button {
 .ribbon-tabs .file-tab-wrap,
 .ribbon-tabs .autosave-toggle,
 .ribbon-tabs .qa-btn {
+  -webkit-app-region: no-drag;
+}
+
+/* While a ribbon popup is open the row must deliver mousedown (drag regions
+   swallow it), so outside-press dismissal can see presses on the blank band */
+.ribbon-tabs.ribbon-tabs-nodrag {
   -webkit-app-region: no-drag;
 }
 
@@ -799,6 +879,179 @@ button {
   padding: 0 4px;
 }
 
+/* PowerPoint-style combined slides group: big new-slide button + stacked
+   small labeled rows (layout / add section). The column stretches to the big
+   button's height; 4px top tracks .rb-big's icon row, and the 1px bottom
+   (rather than the geometric 3px) offsets the row's centered line box so the
+   add-section text bottom-aligns with the new-slide label (measured) */
+.rb-slides-col {
+  align-items: stretch;
+  align-self: stretch;
+  justify-content: space-between;
+  gap: 0;
+  padding: 4px 0 1px;
+}
+/* these rows pair with a big button, so their glyphs use the 20px inline-row
+   size (not the 14px .rb-small default); 1.8 × 20/24 paints the standard
+   1.5px stroke at 20px */
+.rb-slides-col .rb-small svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.8;
+}
+.rb-slides-col .rb-small .rb-caret {
+  width: 10px;
+  height: 10px;
+}
+
+/* ---- Compact ribbon (⌥⌘K / Ctrl+Alt+K), docs parity, see #362 ----
+ * The middle density: the band stays and every command stays reachable, it
+ * just drops to icon-only on a shorter band. The band keeps the HARD-fixed
+ * height contract (switching tabs never resizes the row) and the horizontal
+ * scroll, so a narrow window still scrolls instead of wrapping.
+ */
+.ribbon-compact .ribbon-body {
+  /* same fixed-height contract as the full band, only shorter (docs measured
+     45px as the smallest that holds its tabs unclipped; slides' tallest
+     compact content is the 28px font combos, so it fits the same band) */
+  height: 45px;
+  padding-top: 5px;
+  padding-bottom: 1px;
+}
+
+.ribbon-compact .rb-big {
+  /* the label is taken out of flow entirely (below), so the button is just
+     the icon row plus its padding */
+  gap: 0;
+  padding: 2px 5px;
+}
+
+.ribbon-compact .rb-big-icon {
+  min-height: 22px;
+  flex: none;
+}
+
+/* Keep the label in the accessibility tree and in the DOM (Playwright's
+ * hasText and getByRole(name) both read it) but take it out of the visual
+ * flow. display: none here would strip the accessible name. */
+.ribbon-compact .rb-big > span:not(.rb-big-icon) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* the icon row is the whole button now, so let the hover/open paint cover it */
+.ribbon-compact .rb-big .rb-big-icon {
+  align-self: stretch;
+  padding: 1px 3px;
+  margin: 0 -2px;
+}
+
+/* Split buttons (paste dropdown, color pickers) paint their hover in two
+ * inner zones that stretch to the icon row — the extra padding above would
+ * stack on the zones' own, putting the pair 4px over every plain button. */
+.ribbon-compact .rb-split .rb-big-icon {
+  padding: 0;
+}
+
+.ribbon-compact .rb-split .rb-split-main,
+.ribbon-compact .rb-split .rb-caret-hit {
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+
+/* Groups centre on the shorter band. */
+.ribbon-compact .ribbon-group {
+  padding: 0 3px;
+}
+
+/* `.rb-col` stacks rows that cannot fit a short band side by side — the font
+ * group's two 28px combo rows, the zoom stack, the clipboard mini-column —
+ * exactly the docs treatment of .rb-col/.rb-font-group. */
+.ribbon-compact .rb-col {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+/* the slides group's stacked rows pair with the big New Slide button; in
+ * compact there is no pairing height to track anymore */
+.ribbon-compact .rb-slides-col {
+  align-items: center;
+  align-self: auto;
+  justify-content: center;
+  padding: 0;
+}
+
+/* Pen slots stack a 28px glyph over the stroke bar: 58px in a 40px band. */
+.ribbon-compact .ink-pen-slot {
+  flex-direction: row;
+  width: auto;
+  height: 32px;
+  padding: 1px 4px;
+  gap: 4px;
+}
+
+.ribbon-compact .ink-pen-bar {
+  width: 14px;
+}
+
+.ribbon-compact .ink-pen-slot > .rb-caret {
+  position: static;
+}
+
+/* Animations' Timing block stacks three 22px rows (trigger / duration /
+ * delay = 70px); side by side like the docs compact band. */
+.ribbon-compact .rb-anim-timing {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+/* View tab's Show group is a 3-row checkbox grid (68px); compact flattens it
+ * to one row and lets the band's horizontal scroll carry the width. */
+.ribbon-compact .rb-check-grid {
+  grid-template-rows: none;
+  column-gap: 10px;
+}
+
+/* Design tab theme cards: 62px preview cards shrink like the docs style
+ * gallery — the name line goes away and the swatch row carries the card. */
+.ribbon-compact .theme-card {
+  width: 46px;
+  height: 30px;
+  padding: 2px 4px;
+}
+
+.ribbon-compact .theme-card-aa {
+  font-size: 12px;
+}
+
+.ribbon-compact .theme-card-dot {
+  width: 6px;
+  height: 6px;
+}
+
+/* same visually-hidden treatment as the rb-big labels: the name stays in the
+ * accessibility tree (the card's data-tip is the translated theme name) */
+.ribbon-compact .theme-card-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 .rb-small {
   display: flex;
   align-items: center;
@@ -841,9 +1094,16 @@ button {
   cursor: default;
 }
 
-/* Checkbox rows (View tab's Show group) */
-.rb-check-col {
-  align-items: stretch;
+/* Checkbox rows (View tab's Show group): one column-flow grid so the second
+   column's rows sit level with the first's (notes ↔ ruler, thumbnail pane ↔
+   gridlines) instead of each column centering independently */
+.rb-check-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(3, auto);
+  align-content: center;
+  column-gap: 2px;
+  row-gap: 4px;
 }
 
 .rb-check {
@@ -1021,6 +1281,11 @@ body.vib .slide-list {
   box-shadow: 0 7px 0 -2.5px var(--accent);
 }
 
+.thumb.selected {
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
 .thumb.active {
   border-color: var(--accent);
 }
@@ -1128,7 +1393,10 @@ body.vib .slide-list {
   outline: none;
 }
 
+/* the stage stays ltr under an RTL UI: Konva Text inherits this direction */
+
 .stage-wrap {
+  direction: ltr;
   flex: 1;
   overflow: auto;
   /* 48px top: headroom for the .stage-ai-bar overhanging the slide card, so it
@@ -1326,10 +1594,31 @@ body.vib .slide-list {
   background: var(--slides-statusbar-hover);
 }
 
+/* Same self-drawn treatment as the format-pane sliders (.fp-slider): quiet
+ * two-tone track, white knob with the shared contact-ring shadow. The thumb
+ * stays at the native 16px so only its color/shadow changes. */
 .zoom-slider {
+  appearance: none;
   width: 110px;
-  accent-color: var(--slides-ctl-border);
   height: 3px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--slides-ctl-border) var(--zoom-pct, 0%),
+    var(--slides-swatch-ring) var(--zoom-pct, 0%)
+  );
+}
+
+.zoom-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--slides-thumb-shadow);
 }
 
 .zoom-value {
@@ -1339,11 +1628,17 @@ body.vib .slide-list {
 
 /* Status-bar quick toggle button for notes */
 .status-notes-btn {
-  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
   background: none;
   color: inherit;
   font-size: 11px;
-  padding: 1px 6px;
+  /* 20px tall in the 24px status bar: the active/hover block keeps 2px of
+   * air above and below instead of touching the bar edges */
+  height: 20px;
+  padding: 0 5px;
   border-radius: 3px;
   cursor: pointer;
   margin-right: 8px;
@@ -1353,13 +1648,31 @@ body.vib .slide-list {
 }
 
 .status-notes-btn:hover {
-  background: var(--hover);
+  background: var(--slides-statusbar-hover);
 }
 
+/* Active = neutral pressed gray, not accent (PPT's Notes button stays plain);
+ * translucent wash so the shade matches the ribbon's selected gray on the
+ * darker statusbar background */
 .status-notes-btn.on {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: var(--accent);
+  background: var(--slides-statusbar-active);
+}
+
+/* Start-show-from-current-slide (PowerPoint keeps this next to the zoom slider) */
+.status-play-btn {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: none;
+  color: inherit;
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.status-play-btn:hover {
+  background: var(--hover);
 }
 
 /* ================= AI panel (Copilot-style pane, isomorphic to docs) ================= */
@@ -1371,7 +1684,8 @@ body.vib .slide-list {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border-right: 1px solid var(--border);
+  border-left: var(--ai-panel-border-left, 0px) solid var(--border);
+  border-right: var(--ai-panel-border-right, 1px) solid var(--border);
   box-shadow: var(--slides-shadow-copilot);
   font-family: var(--gs-font-sans);
   color: var(--color-text-primary);
@@ -1462,7 +1776,8 @@ body.vib .slide-list {
   width: 34px;
   padding: 12px 2px;
   border: none;
-  border-right: 1px solid var(--border);
+  border-left: var(--ai-panel-border-left, 0px) solid var(--border);
+  border-right: var(--ai-panel-border-right, 1px) solid var(--border);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
@@ -1560,7 +1875,7 @@ body.vib .slide-list {
 .ai-msg {
   position: relative;
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
@@ -2312,7 +2627,7 @@ body.vib .slide-list {
    * with the content, so clipped lines would sit flush against chips/footer */
   padding: 0 14px;
   margin: 12px 0 4px;
-  font-size: 16px;
+  font-size: 14px;
   font-family: inherit;
   line-height: 24px;
   outline: none;
@@ -2609,6 +2924,353 @@ body.vib .slide-list {
   color: var(--slides-ai-error);
 }
 
+/* ── AI element edit queue ─────────────────────────────────────────────── */
+
+/* Anchored annotation popover: fixed-size, mounted at the app root so the
+ * canvas zoom transform never scales it */
+.ai-ask-trigger {
+  position: fixed;
+  z-index: 59;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--color-ai-action);
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: var(--slides-shadow-popup);
+  cursor: pointer;
+}
+
+.ai-ask-trigger:hover {
+  background: var(--hover);
+}
+
+.ai-ask-pop {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  background: var(--surface);
+  box-shadow: var(--slides-shadow-popup);
+}
+
+.ai-ask-pop-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.ai-ask-pop-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ai-ask-pop-title {
+  padding-right: 24px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-ask-pop-sub {
+  margin-top: -4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-ask-pop-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-page);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.ai-ask-pop-input:focus {
+  border-color: var(--accent);
+}
+
+.ai-ask-pop-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-ask-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ai-ask-chip:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ai-ask-pop-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ai-ask-cancel,
+.ai-ask-confirm {
+  padding: 5px 12px;
+  border-radius: var(--radius-6);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-ask-cancel {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.ai-ask-cancel:hover {
+  background: var(--hover);
+}
+
+.ai-ask-confirm {
+  border: 1px solid transparent;
+  background: var(--color-ai-action);
+  color: var(--color-ai-action-text);
+}
+
+.ai-ask-confirm:hover:not(:disabled) {
+  background: var(--color-ai-action-hover);
+}
+
+.ai-ask-confirm:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Queue card above the composer */
+.ai-queue {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  background: var(--surface-subtle);
+  overflow: hidden;
+}
+
+.ai-queue-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.ai-queue-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-queue-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ai-queue-fold {
+  margin-left: auto;
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+.ai-queue-fold.folded {
+  transform: rotate(-90deg);
+}
+
+.ai-queue-hint {
+  padding: 0 10px 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ai-queue-list {
+  margin: 0;
+  padding: 0 6px 4px;
+  list-style: none;
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.ai-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 6px;
+  border-radius: var(--radius-6);
+  font-size: 12px;
+  color: var(--text);
+  cursor: default;
+}
+
+.ai-queue-row:hover {
+  background: var(--hover);
+}
+
+.ai-queue-row.stale {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.ai-queue-ord {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.ai-queue-page {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--active-bg);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+.ai-queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-queue-target {
+  margin-right: 5px;
+  color: var(--text-muted);
+}
+
+.ai-queue-target::after {
+  content: ' ·';
+}
+
+.ai-queue-edit-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-6);
+  background: var(--color-bg-page);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.ai-queue-row-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.ai-queue-row:hover .ai-queue-row-actions {
+  opacity: 1;
+}
+
+.ai-queue-row-btn {
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ai-queue-row-btn:hover {
+  background: var(--active-bg);
+  color: var(--text);
+}
+
+.ai-queue-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 8px;
+}
+
+.ai-queue-confirm {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.ai-queue-discard {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ai-queue-discard:hover {
+  background: var(--hover);
+}
+
+.ai-queue-send {
+  margin-left: auto;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: var(--accent);
+  color: var(--slides-on-accent);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ai-queue-send:disabled,
+.ai-queue-discard:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* whole-panel drop target highlight */
 .ai-panel-dragover {
   outline: 2px dashed var(--accent);
@@ -2701,6 +3363,35 @@ body.vib .slide-list {
   font-size: 12px;
   color: var(--text-dim);
   margin-bottom: 12px;
+}
+
+/* Explanatory sentence under a dialog heading, above its controls */
+.modal-note {
+  margin: -6px 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* The `{{label}}` the model will read in place of the words, shown as it is typed */
+.redact-preview {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  user-select: all;
+}
+
+/* A withheld run while editing: the underline the mark stands for, plus a tint so a long
+   withheld span reads as one thing. The canvas draws the underline from the model. */
+.slide-text-editor [data-redact] {
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border-strong);
 }
 
 .modal input,
@@ -2854,10 +3545,84 @@ body.vib .slide-list {
   overflow-y: auto;
 }
 
-.fp-section-title {
+/* First section heading in the body: tightened subtabs → content gap
+ * (10px body pad + 5.6px margin ≈ 15.6px instead of 10 + 14 = 24) */
+.fp-body > .fp-sec:first-child,
+.fp-body > .fp-section:first-child {
+  margin-top: 5.6px;
+}
+
+/* 形状选项 / 文本选项 primary tabs under the pane header (Genspark style:
+   left-aligned text tabs, active = bold + text-colored underline) */
+.fp-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 18px;
+  padding: 2px 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fp-tab {
+  min-width: 0;
+  padding: 7px 1px 8px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  color: var(--text-dim);
   font-size: 13px;
   font-weight: 600;
-  margin-bottom: 4px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.fp-tab:hover {
+  color: var(--text);
+}
+
+.fp-tab.active {
+  color: var(--accent);
+  font-weight: 700;
+  border-bottom-color: var(--accent);
+}
+
+/* Second-level tabs (填充与线条 / 效果 / 大小与属性 …): Genspark segmented pill track —
+   pills sit in one rounded gray track; active = accent-filled pill. Long locales
+   (fr/de/es labels exceed the 260px pane) wrap onto a second row instead of
+   clipping at the pane edge; 16px ≈ the stadium radius at single-row height. */
+.fp-subtabs {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 2px;
+  width: fit-content;
+  max-width: calc(100% - 12px);
+  margin: 10px 6px 0;
+  padding: 3px;
+  border-radius: 16px;
+  background: var(--hover);
+}
+
+.fp-subtab {
+  padding: 4px 14px;
+  white-space: nowrap;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.fp-subtab:hover:not(.active) {
+  background: var(--active-bg);
+}
+
+.fp-subtab.active {
+  background: var(--accent);
+  color: var(--slides-on-accent);
 }
 
 .fp-section {
@@ -2869,29 +3634,624 @@ body.vib .slide-list {
   border-bottom: 1px solid var(--border);
 }
 
-.fp-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px 10px;
-  margin-bottom: 6px;
-}
-
-.fp-field {
+/* Collapsible PPT-style section header (填充 / 线条): chevron + label over a divider */
+.fp-sec {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
+  margin: 27.8px 0 6px;
+  padding: 0 0 3px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fp-sec:hover {
+  color: var(--accent);
+}
+
+.fp-sec-caret {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* PPT-style fill/line mode radio list */
+.fp-radios {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 6px 0 10px;
+}
+
+.fp-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.fp-radio input {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.fp-btnrow {
+  display: flex;
+  gap: 6px;
+}
+
+/* PPT-style checkbox option row (锁定纵横比 / 相对于图片原始尺寸 …); one per line,
+   unlike the inline .fp-check used by the background pane */
+.fp-checkrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.fp-checkrow input {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.fp-checkrow:has(input:disabled) {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.fp-checkrow input:disabled {
+  cursor: default;
+}
+
+/* 预设渐变 tiles (gradients themselves are document fill previews, painted inline) */
+.fp-gpreset {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.fp-gpreset:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.fp-gpreset.sel {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 角度 row: rotation dial + −/value°/+ stepper (PPT Mac style) */
+.fp-angle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fp-angle.off {
+  opacity: 0.45;
+}
+
+.fp-dial {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.fp-dial:disabled {
+  cursor: default;
+}
+
+/* hollow ring indicator orbiting the dial center at the current angle */
+.fp-dial-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border: 1.5px solid var(--text);
+  border-radius: 50%;
+  background: none;
+  pointer-events: none;
+}
+
+/* one seamless rounded box: − | value° (centered) | + */
+.fp-stepper {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  min-width: 128px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.fp-stepper button {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.fp-stepper button:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.fp-stepper button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+/* beat the generic .fp-prow input box (declared later in this file) */
+.fp-prow .fp-stepper input {
+  width: 5ch; /* fallback; the component sets width to fit the value */
+  height: auto;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: right;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.fp-stepper input::-webkit-outer-spin-button,
+.fp-stepper input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.fp-stepper-deg {
+  margin-right: auto;
+  padding: 3px 0 0 2px;
+  align-self: flex-start;
+  color: var(--text);
+  font-size: 10px;
+}
+
+/* Value + trailing unit + stacked ▴▾ spinner (PPT-style "0.75 pt ↕" width box; same size as the % boxes) */
+.fp-prow .fp-unitstep {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 74px;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+/* beat the generic .fp-prow input box (declared later in this file).
+   The value hugs its content; 1:3 flex spacers around the value+unit group
+   pin it to a fixed 5px left inset. */
+.fp-prow .fp-unitstep::before {
+  content: '';
+  /* fixed left inset: the value group pins left, spare space goes right */
+  flex: none;
+  width: 5px;
+}
+
+.fp-prow .fp-unitstep::after {
+  content: '';
+  flex: 1;
+  order: 0;
+}
+
+.fp-prow .fp-unitstep .fp-unitstep-btns {
+  order: 1;
+}
+
+.fp-prow .fp-unitstep input {
+  flex: 0 1 auto;
+  field-sizing: content;
+  min-width: 2ch;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+
+.fp-unitstep input::-webkit-outer-spin-button,
+.fp-unitstep input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Over-limit balloon above the width box, in the shared ScreenTip visual language */
+.fp-limit-tip {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  width: max-content;
+  max-width: 200px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: var(--shadow-modal-strong);
+  pointer-events: none;
+}
+
+/* right pad 1.5px: chevron glyph right edge lands 6px from the box's outer
+ * edge (1px border + 1.5px + 3.5px glyph inset), on the shared caret line */
+.fp-unitstep-btns {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  justify-content: center;
+  gap: 1px;
+  padding: 2px 1.5px 2px 0;
+}
+
+.fp-unitstep-btns button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 10px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.fp-unitstep-btns button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.fp-unitstep-btns button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* Focus popover, anchored under the 射线/矩形 style tile */
+.fp-dirwrap {
+  position: relative;
+}
+
+.fp-dir-pop {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--slides-shadow-popup);
+}
+
+/* 渐变光圈 stop strip: gradient bar + selectable stop markers straddling its bottom edge */
+.fp-gstops {
+  position: relative;
+  margin: 8px 0 16px;
+  padding-bottom: 8px;
+}
+
+.fp-gstops-bar {
+  height: 22px;
+  border: 1px solid var(--border-strong);
+}
+
+.fp-gstop {
+  position: absolute;
+  top: 15px;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  transform: translateX(-50%);
+  cursor: pointer;
+  /* draggable along the bar: keep pointermove events, don't let the browser pan */
+  touch-action: none;
+}
+
+.fp-gstop.sel {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Per-stop transparency slider */
+.fp-slider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* narrower % box with the same track length: the whole control shifts right */
+  width: 163px;
+}
+
+/* thin custom slider: accent-filled elapsed track (--fp-pct set inline by
+   PctControl), quiet gray remainder and thumb (the generic .fp-prow input box
+   rules would otherwise inflate the native thumb to 26px) */
+.fp-prow .fp-slider input[type='range'] {
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  height: 3px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fp-pct, 0%),
+    var(--slides-swatch-ring) var(--fp-pct, 0%)
+  );
+}
+
+.fp-prow .fp-slider input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface);
+  /* crisp 1px contact ring + short drop so the knob pops off the light pane */
+  box-shadow: var(--slides-thumb-shadow);
+}
+
+/* Shared dropdown (@genoffice/ui gs-dd) app sizing: format-pane rows, the
+ * ribbon animation-timing group, and modal dialogs */
+.fp-prow .gs-dd {
+  width: 120px;
+  flex-shrink: 0;
+}
+
+/* position "From" pickers: same width as the value spinners above them (fp-unitstep) */
+.fp-prow .gs-dd.fp-dd-narrow {
+  width: 74px;
+}
+
+/* PPT-style shadow preset gallery: thumbnail trigger + grouped grid of live shadow tiles */
+.fp-shadowgal {
+  position: relative;
+  display: inline-flex;
+  anchor-name: --fp-shadowgal;
+  anchor-scope: --fp-shadowgal;
+}
+
+.fp-shadowgal-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 5px 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.fp-shadowgal-btn:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* fixed + anchored (same technique as gs-dd-pop) so pane scroll overflow never clips it;
+ * right-aligned to the trigger because the pane hugs the window's right edge */
+.fp-shadowgal-pop {
+  position: fixed;
+  position-anchor: --fp-shadowgal;
+  top: calc(anchor(bottom) + 2px);
+  right: anchor(right);
+  position-try-fallbacks: flip-block;
+  position-visibility: anchors-visible;
+  z-index: 80;
+  box-sizing: border-box;
+  width: 176px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: var(--shadow-menu);
+}
+
+.fp-shadowgal-group {
+  margin: 4px 2px 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.fp-shadowgal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.fp-galopt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+
+.fp-galopt:hover {
+  background: var(--hover);
+}
+
+.fp-galopt.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* tile face: a miniature preview of the document effect, deliberately theme-static */
+.fp-galtile {
+  --fp-gal-face: #f4f4f4;
+  --fp-gal-edge: #b9b9b9;
+  --fp-gal-shadow: rgba(0, 0, 0, 0.45);
+  display: block;
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  background: var(--fp-gal-face);
+  border: 1px solid var(--fp-gal-edge);
+}
+
+.fp-galtile-cur {
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  /* fixed "shadow" glyph (PPT-style): a white tile casting a small bottom-right shadow */
+  --fp-gal-face: #ffffff;
+  box-shadow: 1.5px 1.5px 2.5px var(--fp-gal-shadow);
+}
+
+/* reflection tiles: face + a fading mirrored bar below it */
+.fp-refltile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.fp-refltile .fp-refltile-face {
+  width: 22px;
+  height: 16px;
+}
+
+.fp-refltile-fade {
+  /* preview of a document effect, deliberately theme-static */
+  --fp-refl-fade-from: rgba(0, 0, 0, 0.35);
+  display: block;
+  width: 22px;
+  border-radius: 2px;
+  background: linear-gradient(var(--fp-refl-fade-from), transparent);
+}
+
+.fp-refltile-cur .fp-refltile-face {
+  --fp-gal-face: #ffffff;
+  width: 15px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.fp-refltile-cur .fp-refltile-fade {
+  width: 15px;
+}
+
+/* text-direction options: PPT-style direction glyph + label in the list; the
+ * 120px trigger can't fit the glyph next to the long rotate labels, so it
+ * stays text-only (matching PowerPoint's pane field) */
+.fp-dd-textdir .gs-dd-value .fp-dirico {
+  display: none;
+}
+
+.gs-dd-item .fp-dirico {
+  flex-shrink: 0;
+  margin-right: 8px;
+  color: var(--text-dim);
+}
+
+/* line previews inside dropdown triggers/options (compound + dash pickers) */
+.fp-line-preview {
+  width: 100%;
+  height: 14px;
+  display: block;
+}
+
+.rb-anim-timing .gs-dd {
+  width: 110px;
+}
+
+.rb-anim-timing .gs-dd-btn {
+  height: 22px;
+}
+
+.modal .gs-dd {
+  display: flex;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.modal .gs-dd-btn {
+  height: 34px;
+  border-radius: 4px;
+  padding: 0 6px 0 10px;
+  font-size: 13px;
+}
+
+/* the numeric % box beside a transparency slider (narrower than the width box;
+   44px is the floor that still fits "100 %" plus the chevron column) */
+.fp-prow .fp-slider .fp-unitstep.fp-unitstep-pct {
+  width: 74px;
+  flex-shrink: 0;
+}
+
+/* PPT-style property row: label on the left, control right-aligned */
+.fp-prow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
   font-size: 12px;
   color: var(--text-dim);
 }
 
-.fp-field span {
-  width: 30px;
+.fp-prow > span {
   flex-shrink: 0;
-  text-align: right;
+  text-align: left;
+  white-space: nowrap;
 }
 
-.fp-field input {
-  width: 100%;
+/* label-less rows (button clusters, gradient directions) hug the right edge */
+.fp-prow-end {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.fp-prow input,
+.fp-prow select {
+  box-sizing: border-box;
+  width: 120px;
   min-width: 0;
   height: 26px;
   border: 1px solid var(--border-strong);
@@ -2902,7 +4262,8 @@ body.vib .slide-list {
   outline: none;
 }
 
-.fp-field input:focus {
+.fp-prow input:focus,
+.fp-prow select:focus {
   border-color: var(--accent);
 }
 
@@ -2912,13 +4273,9 @@ body.vib .slide-list {
   gap: 8px;
 }
 
-.fp-link-target {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--text-secondary);
+/* breathing room between stacked rows in one section (fill swatches ↔ 透明度, stroke ↔ 虚线样式) */
+.fp-row + .fp-row {
+  margin-top: 10px;
 }
 
 .fp-chart-series {
@@ -2939,14 +4296,85 @@ body.vib .slide-list {
   font-size: 12px;
 }
 
-.fp-color {
-  width: 44px;
-  height: 28px;
-  padding: 2px;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
+/* Color well trigger + shared palette popover in the format pane. The popover
+   is fixed + anchored so it escapes the pane's scroll clip; it right-aligns to
+   the well and opens leftwards (the pane hugs the window's right edge). */
+.fp-color-well-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  anchor-name: --fp-color-well;
+  anchor-scope: --fp-color-well;
+}
+
+/* Framed like the % box beside the transparency slider (74×26, same border):
+ * stretched swatch + dropdown caret, PPT color-well style */
+.fp-color-well {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 74px;
+  height: 26px;
+  padding: 0 5px 0 3px;
   background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
   cursor: pointer;
+}
+
+.fp-color-well-swatch {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  /* 18px + 1px borders = 20px box in the 24px inner height → exactly 2px top/bottom */
+  height: 18px;
+  border: 1px solid var(--slides-swatch-ring);
+  border-radius: 2px;
+}
+
+.fp-color-well-caret {
+  flex-shrink: 0;
+  display: flex;
+  color: var(--text-dim);
+}
+
+.fp-color-pop {
+  position: fixed;
+  position-anchor: --fp-color-well;
+  top: calc(anchor(bottom) + 4px);
+  right: anchor(right);
+  position-try-fallbacks: flip-block;
+  position-visibility: anchors-visible;
+  z-index: 80;
+}
+
+/* Format-background pane: fill-type buttons wrap their two-word labels */
+.fp-btn.fp-btn-wrap {
+  flex: 1;
+  height: auto;
+  min-height: 26px;
+  padding: 4px 8px;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+/* Format-background pane: hide-background-graphics checkbox + picture preview */
+.fp-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.fp-bg-preview {
+  max-width: 100%;
+  max-height: 90px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  object-fit: contain;
 }
 
 .fp-btn {
@@ -2969,11 +4397,6 @@ body.vib .slide-list {
   border-color: var(--accent);
   background: var(--active-bg);
   color: var(--accent);
-}
-
-.fp-btn.fp-danger:hover {
-  border-color: var(--slides-ai-error);
-  color: var(--slides-ai-error);
 }
 
 /* Color strip on ribbon large buttons (colored buttons such as background fill) */
@@ -3049,15 +4472,33 @@ body.vib .slide-list {
 }
 
 .rb-menu-input input {
+  box-sizing: border-box;
   width: 52px;
   height: 22px;
-  padding: 0 5px;
+  /* uniform swatch inset on all four sides */
+  padding: 2px;
   border: 1px solid var(--border-strong);
   border-radius: 4px;
   background: var(--surface);
   color: inherit;
   font: inherit;
   font-size: 12px;
+}
+
+.rb-menu-input input::-webkit-color-swatch-wrapper {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+}
+
+.rb-menu-input input::-webkit-color-swatch {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--slides-swatch-ring);
+  border-radius: 2px;
 }
 
 .rb-menu button:hover:not(:disabled) {
@@ -3084,8 +4525,12 @@ body.vib .slide-list {
   top: calc(anchor(bottom) + 6px);
   left: anchor(left);
   /* near the right window edge, right-align to the trigger instead of
-     spilling past the (now clipped) viewport */
-  position-try-fallbacks: flip-inline;
+     spilling past the (now clipped) viewport; near the bottom edge (e.g. a
+     collapsed-group flyout on a short window), open above the trigger */
+  position-try-fallbacks:
+    flip-inline,
+    flip-block,
+    flip-block flip-inline;
   /* trigger scrolled out of the ribbon → hide the panel with it */
   position-visibility: anchors-visible;
   z-index: 60;
@@ -3243,15 +4688,6 @@ body.vib .slide-list {
     --ribbon-accent-warm: #f0a05c;
   }
 }
-.rb-icon .rb-accent {
-  color: var(--ribbon-accent);
-}
-.rb-icon sup,
-.rb-icon sub {
-  font-size: 9px;
-  line-height: 1;
-}
-
 /* collapsed Paragraph group (MS-style): big button opens a two-row tool panel */
 .rb-para-drop {
   padding: 12px 14px;
@@ -3295,6 +4731,64 @@ body.vib .slide-list {
   cursor: default;
 }
 
+.rb-font-download {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rb-font-download-tag {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.rb-font-install-local {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  color: var(--accent);
+}
+
+.font-missing-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  background: var(--accent-soft);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.font-missing-banner .fmb-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.font-missing-banner .fmb-fonts {
+  margin-left: 6px;
+  color: var(--text-secondary);
+}
+.font-missing-banner button {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.font-missing-banner button:hover {
+  background: var(--hover);
+}
+.font-missing-banner .fmb-download {
+  color: var(--accent);
+  font-weight: 600;
+}
+.font-missing-banner .fmb-download:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .rb-color-underbar {
   position: absolute;
   left: -1px;
@@ -3304,15 +4798,21 @@ body.vib .slide-list {
   border-radius: 1px;
 }
 
-.rb-color-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 18px);
-  gap: 5px;
+/* Anchor positioning for the shared Word-style color panel (@genoffice/ui
+   .gcp-palette draws the chrome; this wrapper only places it under the trigger). */
+.rb-color-pop {
+  position: fixed;
+  position-anchor: --rb-drop-wrap;
+  top: calc(anchor(bottom) + 6px);
+  left: anchor(left);
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 60;
 }
 
 .rb-swatch {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border: 1px solid var(--border-strong);
   border-radius: 3px;
   cursor: pointer;
@@ -3353,56 +4853,38 @@ body.vib .slide-list {
   font-size: 12px;
   color: var(--text-dim);
   margin-bottom: 6px;
+  text-align: center;
   white-space: nowrap;
 }
 
 .rb-table-grid {
   display: grid;
-  grid-template-columns: repeat(10, 16px);
+  grid-template-columns: repeat(10, 18px);
   gap: 3px;
 }
 
+/* "Insert Table…" entry under the hover grid (opens the rows/cols dialog) */
 .rb-table-custom {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  display: block;
+  width: 100%;
   margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-strong);
-}
-
-.rb-table-custom input {
-  width: 46px;
-  padding: 2px 4px;
+  padding: 5px 6px;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+  background: none;
+  color: var(--text);
   font-size: 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 3px;
-  background: var(--surface);
-  color: inherit;
-}
-
-.rb-table-custom span {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.rb-table-custom-ok {
-  margin-left: auto;
-  padding: 2px 10px;
-  font-size: 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 3px;
-  background: var(--surface);
+  text-align: left;
   cursor: pointer;
 }
 
-.rb-table-custom-ok:hover {
-  background: var(--active-bg);
-  border-color: var(--accent);
+.rb-table-custom:hover {
+  background: var(--hover);
 }
 
 .rb-table-cell {
-  width: 16px;
+  width: 18px;
   height: 16px;
   border: 1px solid var(--border-strong);
   border-radius: 2px;
@@ -3518,6 +5000,59 @@ body.vib .slide-list {
   background: var(--surface);
 }
 
+/* Extra symbols + custom character + picture bullet */
+.rb-bullet-custom {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  max-width: 236px;
+}
+
+.rb-bullet-sym {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.rb-bullet-sym:hover:not(:disabled),
+.rb-bullet-sym.on,
+.rb-bullet-hang.on {
+  background: var(--active-bg);
+  border-color: var(--accent);
+}
+
+.rb-bullet-sym:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.rb-bullet-sym-input,
+.rb-bullet-start-input {
+  width: 72px;
+  cursor: text;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+
+.rb-bullet-sym-input {
+  width: 108px;
+}
+
+/* Numbering tiles: "1." / "II." / "iii." samples are wider than a bullet glyph */
+.rb-bullet-tile-num {
+  width: auto;
+  min-width: 10px;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
 /* Bullet color row: swatches + "More colors" on its own line */
 .rb-bullet-colors {
   flex-wrap: wrap;
@@ -3562,6 +5097,10 @@ body.vib .slide-list {
 
 .rb-anim-path {
   color: var(--slides-anim-path);
+}
+
+.rb-anim-media {
+  color: var(--slides-anim-media);
 }
 
 .rb-anim-menu {
@@ -3647,6 +5186,10 @@ body.vib .slide-list {
 
 .anim-row.anim-path {
   border-left-color: var(--slides-anim-path);
+}
+
+.anim-row.anim-media {
+  border-left-color: var(--slides-anim-media);
 }
 
 .anim-row-no {
@@ -3737,6 +5280,14 @@ body.vib .slide-list {
   border-radius: 6px;
   box-shadow: var(--slides-shadow-menu);
   padding: 4px;
+  /* Never taller than the viewport: the body scrolls instead (flyouts are fixed-positioned
+     in ContextMenu.tsx so this scroll box cannot clip them) */
+  max-height: calc(100vh - 8px);
+  overflow-y: auto;
+}
+
+.shape-gallery-pop {
+  padding: 8px;
 }
 
 .ctx-item {
@@ -3780,6 +5331,29 @@ body.vib .slide-list {
   margin: 4px 6px;
 }
 
+.ctx-item.ctx-checked > span:first-child::before {
+  content: '✓\00a0';
+}
+
+.ctx-sub-host {
+  position: relative;
+}
+
+.ctx-item.ctx-sub-open {
+  background: var(--hover);
+}
+
+/* First-frame placement only; the layout effect re-anchors the flyout as position: fixed */
+.ctx-menu.ctx-submenu {
+  position: absolute;
+  left: 100%;
+  top: -5px;
+  margin-left: 2px;
+  /* A wheel over the flyout must not chain into the parent scroll box, whose onScroll
+     would dismiss this flyout while the pointer is still over it */
+  overscroll-behavior: contain;
+}
+
 .ctx-swatches {
   padding: 6px 10px;
 }
@@ -3817,6 +5391,207 @@ body.vib .slide-list {
   background: var(--surface);
 }
 
+/* Shape style preset grid (fill+stroke combos; colors are document data, set
+ * inline) — used by the Shape Tools ribbon gallery. The cell selector carries
+ * the button tag to outrank the generic .rb-menu button rule (its padding
+ * otherwise stretches the swatches into wide pills). */
+.ctx-style-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 22px);
+  /* hover outline (2px + 1px offset) extends 3px per side — keep clearance */
+  gap: 10px;
+}
+
+.rb-menu button.ctx-style-cell,
+.ctx-style-cell {
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid;
+  border-radius: 3px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.ctx-style-cell:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* PowerPoint-style shape fill popup (Shape Tools > Fill): color sections reuse
+   the shared gcp-* picker styles (the root carries .gcp-palette) at their
+   default compact scale; the action rows below (more colors / picture /
+   texture) are full-bleed menu rows. */
+.gcp-palette.rb-fill-menu {
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+}
+
+.rb-fill-menu .rbf-actions {
+  margin: 10px -12px 0;
+  padding: 3px 0;
+}
+
+/* inset separator above each action block (same look as .rb-menu-sep, not full-bleed) */
+.rb-fill-menu .rbf-actions::before {
+  content: '';
+  display: block;
+  height: 1px;
+  margin: 0 12px 3px;
+  background: var(--border);
+}
+
+.rb-fill-menu .rbf-actions + .gcp-section-title {
+  margin-top: 8px;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  height: auto;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 400;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-row:hover {
+  background: var(--hover);
+}
+
+.rb-fill-menu .rbf-row input[type='color'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Gradient 变体 tiles (light/dark rows × 3 directions + radial); the gradients
+   themselves are document fill previews, painted inline. */
+.rb-fill-menu .rbf-gradients {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-gradient-tile {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 26px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-gradient-tile:hover {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Bundled texture preset tiles (the texture bitmaps are document fill data, referenced inline) */
+.rb-fill-menu .rbf-textures {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-texture-tile {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 26px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-texture-tile:hover {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* the menu's bottom action block bleeds into the panel's rounded bottom */
+.rb-fill-menu > .rbf-actions {
+  margin-bottom: -10px;
+  padding-bottom: 6px;
+  border-radius: 0 0 8px 8px;
+  overflow: hidden;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-row-sub {
+  justify-content: space-between;
+}
+
+.rbf-sub-caret {
+  color: var(--text-dim);
+}
+
+/* Gradient/texture hover flyout: fixed so it escapes the menu's overflow clip */
+.rb-fill-menu .rbf-flyout {
+  position: fixed;
+  z-index: 70;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--slides-shadow-popup);
+}
+
+.rb-fill-menu .rbf-flyout .rbf-textures {
+  grid-template-columns: repeat(4, 56px);
+}
+
+/* PowerPoint's variant gallery uses square tiles */
+.rb-fill-menu .rbf-flyout .rbf-gradients {
+  grid-template-columns: repeat(4, 32px);
+}
+
+.rb-fill-menu .rbf-flyout .rbf-gradient-tile {
+  height: 32px;
+}
+
+.rb-fill-menu .rbf-flyout .rbf-actions {
+  margin: 8px -10px -10px;
+  padding: 3px 0 4px;
+}
+
+.rb-fill-menu .rbf-flyout .rbf-actions::before {
+  margin: 0 10px 3px;
+}
+
+/* flyout's leading row (无渐变): bleeds to the top rounding, no separator line */
+.rb-fill-menu .rbf-flyout .rbf-actions-top {
+  margin: -10px -10px 0;
+  padding: 4px 0 3px;
+  border-radius: 8px 8px 0 0;
+  overflow: hidden;
+}
+
+.rb-fill-menu .rbf-flyout .rbf-actions-top::before {
+  display: none;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-flyout .rbf-row {
+  padding: 6px 12px;
+}
+
 /* ---- Draw (freehand ink) ---- */
 
 .ink-overlay {
@@ -3829,9 +5604,11 @@ body.vib .slide-list {
 .ink-overlay.ink-active {
   pointer-events: auto;
   touch-action: none;
+  user-select: none;
 }
 
 .ink-tool-pen,
+.ink-tool-pencil,
 .ink-tool-highlighter {
   cursor: crosshair;
 }
@@ -3852,77 +5629,140 @@ body.vib .slide-list {
   overflow: visible;
 }
 
-.ink-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  justify-content: center;
-}
+/* ===== Draw tab: pen gallery (one slot per remembered pen, PowerPoint style) ===== */
 
-/* ===== Draw tab: pen tray ===== */
-
-.pen-tray {
-  display: flex;
-  align-items: flex-start;
+.ink-pens {
   gap: 2px;
-  align-self: stretch;
-  padding: 0 10px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  overflow: hidden;
 }
 
-/* pens hang from the tray top; the held pen slides down */
-.pen-btn {
-  border: none;
+.ink-pen-slot {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  width: 44px;
+  height: 58px;
+  padding: 4px 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
   background: none;
-  padding: 0 3px;
   cursor: pointer;
-  transform: translateY(-12px);
-  transition: transform 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-dim);
 }
 
-.pen-btn svg {
-  display: block;
+.ink-pen-slot:not(:disabled):hover {
+  background: var(--hover);
 }
 
-.pen-btn:hover:not(:disabled) {
-  transform: translateY(-6px);
+.ink-pen-slot.active {
+  background: var(--hover);
+  border-color: var(--accent);
 }
 
-.pen-btn.down {
-  transform: translateY(0);
-}
-
-.pen-btn:disabled {
-  opacity: 0.55;
+.ink-pen-slot:disabled {
+  opacity: 0.45;
   cursor: default;
 }
 
-/* color/width flyout for the held pen */
-.pen-flyout-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
+.ink-pen-glyph {
+  display: inline-flex;
 }
 
-.pen-flyout {
-  position: fixed;
-  z-index: 81;
+.ink-pen-bar {
+  width: 28px;
+  border-radius: 2px;
+}
+
+.ink-pen-slot > .rb-caret {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+}
+
+.ink-pen-pop {
+  min-width: 190px;
+  padding: 8px;
+}
+
+.ink-pen-preview {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  box-shadow: var(--slides-shadow-popup);
+  align-items: center;
+  height: 36px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
 }
 
+.ink-pen-preview > span {
+  display: block;
+  width: 100%;
+  border-radius: 2px;
+}
+
+.ink-pen-section {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 6px 0 4px;
+}
+
+.ink-pen-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 20px);
+  gap: 6px;
+  padding: 2px;
+}
+
+.ink-pen-grid .ink-swatch {
+  width: 20px;
+  height: 20px;
+}
+
+.ink-pen-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 7px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  position: relative;
+}
+
+.ink-pen-item:not(:disabled):hover {
+  background: var(--hover);
+}
+
+.ink-pen-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ink-pen-more {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+}
+
+.ink-pen-color-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 6px so the active swatch's outline (2px + 1px offset) keeps clear air */
 .ink-swatches {
   display: flex;
-  gap: 3px;
+  gap: 6px;
 }
 
 .ink-swatch {
@@ -4001,13 +5841,21 @@ body.vib .slide-list {
   z-index: 5;
   display: inline-flex;
   align-items: center;
+  /* Deck-wide presets and the selection-scoped entry sit in separate pills, so
+   * the gap itself tells them apart — they act on different things */
+  gap: 8px;
   margin-bottom: 6px;
+  white-space: nowrap;
+}
+
+.stage-ai-group {
+  display: inline-flex;
+  align-items: center;
   padding: 3px 5px;
   background: var(--surface);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   box-shadow: var(--slides-shadow-toolbar);
-  white-space: nowrap;
 }
 
 .stage-ai-btn {
@@ -4062,8 +5910,10 @@ body.vib .slide-list {
 .notes-pane {
   flex-shrink: 0;
   height: 118px;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
+  /* stage gray, not card white: the bar reads as part of the work area;
+   * the divider needs --border-strong to stay visible on that gray */
+  background: var(--canvas);
+  border-top: 1px solid var(--border-strong);
   display: flex;
   flex-direction: column;
   padding: 0 14px 10px;
@@ -4074,20 +5924,7 @@ body.vib .slide-list {
   flex-shrink: 0;
   cursor: ns-resize;
   background: transparent;
-  border-top: 1px solid var(--border);
   margin: 0 -14px 4px;
-  transition: background 0.1s;
-}
-
-.notes-resize-handle:hover {
-  background: var(--slides-hover-wash);
-}
-
-.notes-label {
-  font-size: 11px;
-  color: var(--text-dim);
-  margin-bottom: 4px;
-  user-select: none;
 }
 
 .notes-pane textarea {
@@ -4103,12 +5940,179 @@ body.vib .slide-list {
   background: transparent;
 }
 
-/* Ruler: inside .stage-scale, scales with zoom and stays aligned with the slide */
-.ruler-row {
-  display: flex;
+.notes-pane textarea::placeholder {
+  color: var(--text-tertiary);
 }
 
-.ruler-body {
+/* Long notes must stay readable at any pane height: native wheel scrolling
+ * plus a slim scrollbar (PowerPoint/WPS keep the notes pane scrollable even
+ * when it's dragged down to a single line) */
+.notes-pane textarea::-webkit-scrollbar {
+  width: 5px;
+}
+
+.notes-pane textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.notes-pane textarea::-webkit-scrollbar-thumb {
+  border-radius: 2.5px;
+  background: var(--slides-scroll-thumb);
+}
+
+/* Hidden pane: an invisible strip stays along the bottom edge so the splitter
+ * remains grabbable — drag up to pull the notes pane back out (PPT behavior) */
+.notes-pull-zone {
+  flex-shrink: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+/* Thin state (PowerPoint-style): dragged down to a one-line bar that stays
+ * directly editable — click and type in place, or drag the handle back up.
+ * The handle overlays the top edge (absolute) so the textarea gets the full
+ * bar height and its line-height centers the single line vertically.
+ * Scrolling stays enabled (textarea default overflow) so multi-line notes
+ * remain reachable with the wheel even in the one-line bar. */
+.notes-pane.notes-thin {
+  position: relative;
+  padding-bottom: 0;
+}
+
+.notes-pane.notes-thin .notes-resize-handle {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+}
+
+.notes-pane.notes-thin textarea {
+  line-height: 30px;
+}
+
+/* ── Transitions tab: one-shot canvas preview played when an effect is clicked.
+   push/cover enter from top/left only — down/right transforms extend the
+   scroll area and can flash scrollbars / retrigger the fit logic. ── */
+.stage-rel[class*=' tp-'] {
+  pointer-events: none;
+}
+
+.tp-morph {
+  animation: tp-morph 400ms ease-out;
+}
+@keyframes tp-morph {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.tp-fade {
+  animation: tp-fade 500ms ease-out;
+}
+@keyframes tp-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.tp-push {
+  animation: tp-push 500ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes tp-push {
+  from {
+    transform: translateY(-100%);
+  }
+}
+
+.tp-wipe {
+  animation: tp-wipe 500ms ease-out;
+}
+@keyframes tp-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tp-split {
+  animation: tp-split 500ms ease-out;
+}
+@keyframes tp-split {
+  from {
+    clip-path: inset(0 50%);
+  }
+  to {
+    clip-path: inset(0 0);
+  }
+}
+
+.tp-circle {
+  animation: tp-circle 550ms ease-out;
+}
+@keyframes tp-circle {
+  from {
+    clip-path: circle(0% at 50% 50%);
+  }
+  to {
+    clip-path: circle(75% at 50% 50%);
+  }
+}
+
+.tp-cover {
+  animation: tp-cover 500ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes tp-cover {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+.tp-pull {
+  animation: tp-pull 500ms ease-out;
+}
+@keyframes tp-pull {
+  from {
+    clip-path: inset(0 0 0 100%);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tp-dissolve {
+  animation: tp-dissolve 600ms steps(9);
+}
+@keyframes tp-dissolve {
+  from {
+    opacity: 0;
+  }
+}
+
+.tp-zoom {
+  animation: tp-zoom 450ms cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+@keyframes tp-zoom {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+}
+
+/* Ruler: inside .stage-scale, scales with zoom and stays aligned with the slide */
+/* Stage rulers are fixed chrome OUTSIDE the zoomed canvas (PowerPoint-style):
+ * constant type size at any zoom, 0 at the slide center, ticks across the
+ * whole work area. Press-drag on a strip pulls out a guide. */
+.ruler-row {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.ruler-track {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
 }
 
@@ -4117,63 +6121,101 @@ body.vib .slide-list {
   height: 20px;
   flex-shrink: 0;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-right: none;
-  border-bottom: none;
+  border-right: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
 }
 
 .ruler {
   position: relative;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
   overflow: hidden;
   user-select: none;
+  touch-action: none;
 }
 
+/* Guides pull out PARALLEL to their ruler (Photoshop/Keynote convention):
+ * drag down from the top strip → horizontal guide, right from the left
+ * strip → vertical guide; cursors point along the pull direction */
 .ruler-h {
+  flex: 1;
   height: 20px;
-  border-bottom: none;
-  /* A small tick every 1/2 inch */
-  background-image: repeating-linear-gradient(
-    to right,
-    var(--border-strong) 0 1px,
-    transparent 1px 48px
-  );
-  background-position: 0 bottom;
-  background-size: 100% 6px;
-  background-repeat: repeat-x;
+  border-bottom: 1px solid var(--border-strong);
+  cursor: row-resize;
 }
 
 .ruler-v {
   width: 20px;
   flex-shrink: 0;
-  border-right: none;
-  border-top: none;
-  background-image: repeating-linear-gradient(
-    to bottom,
-    var(--border-strong) 0 1px,
-    transparent 1px 48px
-  );
-  background-position: right 0;
-  background-size: 6px 100%;
-  background-repeat: repeat-y;
+  border-right: 1px solid var(--border-strong);
+  cursor: col-resize;
 }
 
-.ruler-tick {
+.ruler-num {
   position: absolute;
   font-size: 9px;
   color: var(--text-dim);
   line-height: 1;
 }
 
+.ruler-h .ruler-num {
+  top: 5px;
+  transform: translateX(-50%);
+}
+
+.ruler-v .ruler-num {
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.ruler-tick {
+  position: absolute;
+  background: var(--border-strong);
+}
+
 .ruler-h .ruler-tick {
-  top: 3px;
-  transform: translateX(2px);
+  bottom: 0;
+  width: 1px;
+  height: 5px;
 }
 
 .ruler-v .ruler-tick {
-  left: 3px;
-  transform: translateY(2px);
+  right: 0;
+  height: 1px;
+  width: 5px;
+}
+
+/* Pointer-position hairline while dragging on the stage */
+.ruler-indicator {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+  background: var(--accent);
+}
+
+.ruler-h .ruler-indicator {
+  inset: 0 auto 0 0;
+  width: 1px;
+}
+
+.ruler-v .ruler-indicator {
+  inset: 0 0 auto;
+  height: 1px;
+}
+
+/* Coordinate readout while dragging a guide (distance from slide center) */
+.ruler-bubble {
+  position: fixed;
+  z-index: 1000;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: var(--slides-shadow-popup);
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 /* Grid line / guide overlay (doesn't intercept the mouse) */
@@ -4320,6 +6362,11 @@ body.vib .slide-list {
 
 .sorter-item:hover {
   border-color: var(--text-dim);
+}
+
+.sorter-item.selected {
+  border-color: var(--accent);
+  border-style: dashed;
 }
 
 .sorter-item.active {
@@ -4593,6 +6640,17 @@ body.vib .slide-list {
 
 /* ── Slide show (full-screen black playback) ──────────────────────── */
 
+/* Click-time curtain: dropped synchronously when a show is requested so the very
+   next frame is already black; the mount + window snap happen behind it. Sits
+   just under .slideshow, which takes over once revealed. */
+body.show-curtain::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 399;
+  background: var(--slides-show-black);
+}
+
 .slideshow {
   position: fixed;
   inset: 0;
@@ -4700,11 +6758,61 @@ body.vib .slide-list {
   line-height: 0;
 }
 
-.slideshow .ss-black {
+.slideshow .ss-black,
+.slideshow .ss-white {
   position: fixed;
   inset: 0;
   background: var(--slides-show-black);
   z-index: 10;
+}
+
+.slideshow .ss-white {
+  background: var(--slides-show-white);
+}
+
+/* "See All Slides" overlay: numbered thumbnails of the play order, click to jump */
+.slideshow .ss-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 18px;
+  padding: 28px;
+  background: var(--slides-show-black);
+}
+
+.slideshow .ss-grid-item {
+  position: relative;
+  flex: none;
+  line-height: 0;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  overflow: hidden;
+  background: none;
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.slideshow .ss-grid-item:hover,
+.slideshow .ss-grid-item.ss-grid-cur {
+  opacity: 1;
+  border-color: var(--slides-show-ink-75);
+}
+
+.slideshow .ss-grid-num {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--slides-show-ink);
+  background: var(--slides-show-pill-bg);
+  border-radius: 4px;
+  padding: 3px 7px;
 }
 
 /* Show ink overlay (presenter pen/laser pointer, mirrored for the audience) */
@@ -4945,6 +7053,12 @@ body.vib .slide-list {
   user-select: none;
 }
 
+/* Until the fullscreen snap settles only the black root shows — the windowed
+   layout still computes, but never paints (same guard as the show's covered gate) */
+.presenter.pv-uncovered > * {
+  visibility: hidden;
+}
+
 .presenter .pv-top {
   height: 44px;
   flex: none;
@@ -5062,10 +7176,15 @@ body.vib .slide-list {
   cursor: none;
 }
 
-.presenter .pv-black {
+.presenter .pv-black,
+.presenter .pv-white {
   position: absolute;
   inset: 0;
   background: var(--slides-show-black);
+}
+
+.presenter .pv-white {
+  background: var(--slides-show-white);
 }
 
 .presenter .pv-end {
@@ -5422,10 +7541,95 @@ body.vib .slide-list {
   max-width: 90vw;
 }
 
+.modal.zoom-dlg {
+  width: 720px;
+  max-width: 90vw;
+}
+
+.zoom-dlg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 164px);
+  justify-content: center;
+  gap: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.zoom-dlg-item {
+  padding: 0;
+  border: 2px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--slides-paper);
+  overflow: hidden;
+  line-height: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.zoom-dlg-item:hover:not(:disabled) {
+  border-color: var(--text-dim);
+}
+
+.zoom-dlg-item.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.zoom-dlg-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.zoom-dlg-caption {
+  display: block;
+  padding: 4px 6px;
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--text-dim);
+  background: var(--surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zoom-dlg-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.zoom-dlg-footer .modal-actions {
+  margin-top: 0;
+}
+
+.zoom-dlg-count {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
 .dlg-radio-row {
   display: flex;
   gap: 18px;
   margin-bottom: 12px;
+}
+
+.dlg-two-col {
+  display: flex;
+  gap: 12px;
+}
+
+.dlg-two-col > label {
+  flex: 1;
+  min-width: 0;
+}
+
+/* a validation hint under a dialog's fields (Custom Slide Size) */
+.modal .dlg-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--danger);
 }
 
 /* Override .modal label / .modal input full-row styles: checkbox/radio rows lay out inline */
@@ -5650,12 +7854,36 @@ body.vib .slide-list {
   }
 }
 
+.ai-clarify-question-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
 .ai-clarify-label {
+  flex: 1;
+  min-width: 0;
   font-size: 16px;
   font-weight: 600;
   color: var(--color-text-primary);
-  margin: 0 0 8px;
+  margin: 0;
   line-height: 1.4;
+}
+
+.ai-clarify-multi-badge {
+  flex-shrink: 0;
+  margin-top: 2px;
+  padding: 2px 7px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .ai-clarify-desc {
@@ -5823,24 +8051,34 @@ body.vib .slide-list {
   margin-left: auto;
 }
 
-/* 32px filled advance arrow */
+/* Explicit multi-select advance action: text avoids looking like an unlabeled pager. */
 .ai-clarify-next {
-  width: 32px;
-  height: 32px;
+  min-width: 82px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  gap: 6px;
+  padding: 0 14px;
+  font-family: inherit;
   background: var(--color-btn-primary);
   color: var(--color-btn-primary-text);
   border: none;
   border-radius: 8px;
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.ai-clarify-next:hover {
+.ai-clarify-next-arrow {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.ai-clarify-next:hover:not(:disabled) {
   opacity: 0.85;
 }
 
@@ -5849,9 +8087,14 @@ body.vib .slide-list {
   box-shadow: 0 0 0 3px var(--slides-focus-ring-soft);
 }
 
+.ai-clarify-next:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
 .ai-clarify-skip {
-  height: 29px;
-  padding: 0 16px;
+  height: 36px;
+  padding: 0 14px;
   font-family: inherit;
   font-size: 14px;
   font-weight: 500;
@@ -5859,6 +8102,7 @@ body.vib .slide-list {
   background: transparent;
   border: 1px solid var(--color-border-default);
   border-radius: 8px;
+  white-space: nowrap;
   cursor: pointer;
   transition:
     border-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -5871,7 +8115,7 @@ body.vib .slide-list {
 }
 
 .ai-clarify-submit {
-  height: 29px;
+  height: 36px;
   padding: 0 16px;
   font-family: inherit;
   font-size: 14px;
@@ -5880,17 +8124,23 @@ body.vib .slide-list {
   background: var(--color-btn-primary);
   border: 1px solid transparent;
   border-radius: 8px;
+  white-space: nowrap;
   cursor: pointer;
   transition: filter 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.ai-clarify-submit:hover {
+.ai-clarify-submit:hover:not(:disabled) {
   filter: brightness(0.92);
 }
 
-.ai-clarify-submit:active {
+.ai-clarify-submit:active:not(:disabled) {
   filter: brightness(0.88);
   transform: scale(0.98);
+}
+
+.ai-clarify-submit:disabled {
+  opacity: 0.38;
+  cursor: default;
 }
 
 .ai-clarify-skip:focus-visible,
@@ -6075,7 +8325,8 @@ body.vib .slide-list {
   flex-shrink: 0;
 }
 
-.deck-progress-icon.done {
+.deck-progress-icon.done,
+.deck-progress-icon.stopped {
   color: var(--color-text-secondary);
 }
 .deck-progress-icon.error {
@@ -6278,13 +8529,14 @@ body.vib .slide-list {
   padding: 1px;
   cursor: pointer;
 }
-.rb-select-sm {
+/* Table border-weight dropdown: compact trigger, sized to "2.25pt" */
+.rb-border-weight-dd {
+  width: 74px;
+}
+
+.rb-border-weight-dd .gs-dd-btn {
+  height: 22px;
   font-size: 11px;
-  padding: 2px 4px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--surface);
-  color: var(--text);
 }
 
 /* Chart color scheme cards */
@@ -6575,21 +8827,43 @@ body.vib .slide-list {
     crosshair !important;
 }
 
-/* ── Split button (new slide + layout dropdown) ─────────────────────── */
-/* one-piece dropdown-capable big button (New Slide): looks identical to the
- * Layout button — icon + inline caret — where the caret glyph is a small
- * secondary hit area opening the layout gallery */
+/* ── Split button (main action + caret dropdown) ─────────────────────── */
+/* Two hit zones tiling one big button (PowerPoint split button, measured
+ * from PPT: non-hovered half light, hovered half a step darker, the halves
+ * seamlessly forming one rounded block) — the zones replace the icon-row
+ * wash instead of floating inside it */
+.rb-split .rb-big-icon {
+  gap: 0;
+  padding: 0;
+}
+/* 3px vertical padding lives in the zones (not the row) so the pill height
+   matches the plain buttons' icon-row wash exactly */
+.rb-split .rb-split-main {
+  display: inline-flex;
+  align-items: center;
+  align-self: stretch;
+  padding: 3px 4px 3px 6px;
+  border-radius: 4px 0 0 4px;
+}
 .rb-caret-hit {
   display: inline-flex;
   align-items: center;
-  padding: 3px 2px;
-  margin-left: 1px;
-  border-radius: 3px;
+  align-self: stretch;
+  padding: 3px 5px 3px 2px;
+  border-radius: 0 4px 4px 0;
 }
-
-/* The caret is only a hit area — hover/open always highlight the whole
- * icon block as one unit (PowerPoint reads the button as one piece) */
-.rb-big:has(.rb-caret-hit.active) .rb-big-icon {
+/* the two zones paint the hover themselves, edge to edge */
+.rb-split:hover:not(:disabled) .rb-big-icon {
+  background: none;
+}
+.rb-split:hover:not(:disabled) .rb-split-main,
+.rb-split:hover:not(:disabled) .rb-caret-hit {
+  background: var(--hover);
+}
+/* the half under the pointer (or with its dropdown open) darkens a step */
+.rb-split:not(:disabled) .rb-split-main:hover,
+.rb-split:not(:disabled) .rb-caret-hit:hover,
+.rb-split .rb-caret-hit.active {
   background: var(--active-bg);
 }
 
@@ -6801,6 +9075,46 @@ body.vib .slide-list {
 .master-close-btn:hover {
   background: var(--slides-on-accent-hover);
 }
+/* Insert controls (text box / shapes gallery) in the master bar; the accent
+ * background needs its own on-accent tokens, same as the close button */
+.master-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.master-tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--slides-on-accent);
+  cursor: pointer;
+}
+.master-tool:hover,
+.master-tool.active {
+  background: var(--slides-on-accent-hover);
+}
+.master-tool-anchor {
+  position: relative;
+  display: flex;
+}
+.master-tool-drop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--slides-shadow-drop);
+  color: var(--text);
+}
 .master-body {
   flex: 1;
   display: flex;
@@ -6881,27 +9195,133 @@ body.vib .slide-list {
   }
 }
 
-/* Print layout selection */
-.print-layouts {
+/* Print dialog (PowerPoint-style: preview pane + options column) */
+.modal.print-dialog {
+  width: min(880px, calc(100vw - 64px));
+}
+.print-dialog-body {
+  display: flex;
+  gap: 18px;
+  height: min(560px, calc(100vh - 220px));
+}
+.print-preview-pane {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--hover);
+  overflow: hidden;
+}
+.print-preview-pane iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.print-preview-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.print-options {
+  width: 240px;
+  flex-shrink: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 12px 0;
+  gap: 12px;
 }
-.print-layouts button {
-  padding: 8px 12px;
-  text-align: left;
+.print-options fieldset {
+  margin: 0;
+  padding: 8px 10px 6px;
   border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--surface);
+  border-radius: 8px;
+}
+.print-options legend {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.print-options .print-radio {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 7px;
+  font-size: 13px;
+  color: var(--text);
   cursor: pointer;
 }
-.print-layouts button:hover {
-  background: var(--hover);
+.print-options .print-radio input {
+  display: inline-block;
+  width: auto;
+  height: auto;
+  margin: 0;
+  accent-color: var(--accent);
 }
-
-.ruler-clickable {
-  cursor: crosshair;
+.print-options .print-radio:has(input:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+.print-options .print-range-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 28px;
+  margin: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 8px;
+  font-size: 12px;
+  outline: none;
+  background: var(--surface);
+}
+.print-options .print-range-input:focus {
+  border-color: var(--accent);
+}
+.print-options .print-range-input.invalid {
+  border-color: var(--danger);
+}
+.print-options .print-select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 28px;
+  margin: 2px 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  outline: none;
+  background: var(--surface);
+  color: inherit;
+}
+.print-options .print-select:focus {
+  border-color: var(--accent);
+}
+.print-options .print-copies-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.print-options .print-copies-row label:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+.print-options .print-copies-row .print-range-input {
+  width: 64px;
+}
+.print-page-count {
+  margin-top: auto;
+  padding: 2px 2px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: right;
 }
 
 /* Sliding AI dock: one persistent wrapper animates between the panel width and
@@ -6918,6 +9338,11 @@ body.vib .slide-list {
 
 .ai-dock.collapsed {
   width: 34px;
+}
+
+/* "show the AI sidebar" off and panel closed: no rail, no sliver */
+.ai-dock.collapsed.ai-dock-off {
+  width: 0;
 }
 
 /* while dragging the resizer, follow the pointer without easing */
@@ -6940,29 +9365,6 @@ body.vib .slide-list {
   .slideshow [class*='ss-anim-'] {
     animation-duration: 0.01ms !important;
   }
-}
-
-.ai-msg-undelivered {
-  margin-top: 6px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--slides-ai-error);
-}
-
-.ai-retry-btn {
-  border: 1px solid var(--slides-ai-error-border);
-  border-radius: 4px;
-  background: none;
-  padding: 1px 8px;
-  font-size: 12px;
-  color: var(--slides-ai-error);
-  cursor: pointer;
-}
-
-.ai-retry-btn:hover {
-  background: var(--slides-ai-error-bg);
 }
 
 .ai-login-btn {
@@ -7036,8 +9438,145 @@ body.vib .slide-list {
 }
 
 .app-content {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
+}
+
+/* Editing overlay bullets: the canvas hides the edited node's text, so each paragraph div
+ * draws its bullet as a ::before filling the hanging indent (set by TextEditOverlay) */
+.slide-text-editor > div[data-bullet-text]::before {
+  content: attr(data-bullet-text);
+  display: inline-block;
+  /* hangs into the left margin like the canvas bullet; the width past the hang pushes the text */
+  margin-left: calc(-1 * var(--bullet-hang));
+  width: var(--bullet-w);
+  /* zero line box: a glyph larger than the text keeps the baseline without growing the line */
+  line-height: 0;
+  font-family: var(--bullet-font, inherit);
+  font-size: var(--bullet-size, inherit);
+  font-weight: var(--bullet-weight, normal);
+  color: var(--bullet-color, inherit);
+  white-space: pre;
+  user-select: none;
+  pointer-events: none;
+}
+.slide-text-editor > div[data-bullet-img] {
+  position: relative;
+}
+/* Picture bullet: the ::before (an invisible glyph) reserves the hanging indent, the ::after paints the image */
+.slide-text-editor > div[data-bullet-img]::after {
+  content: '';
+  position: absolute;
+  left: var(--bullet-x);
+  top: var(--bullet-y);
+  width: var(--bullet-img-w);
+  height: var(--bullet-h);
+  background: var(--bullet-img) center / contain no-repeat;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ── Slide Show > Record: the recording bar ─────────────────────── */
+
+.slideshow .ss-record {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--slides-show-pill-bg);
+  border: 1px solid var(--slides-show-line-15);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--slides-show-ink);
+  z-index: 2;
+}
+
+.slideshow .ss-record-failed {
+  pointer-events: none;
+}
+
+.slideshow .ss-record-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--slides-show-ink-60);
+}
+
+.slideshow .ss-record-dot.on {
+  background: var(--danger);
+}
+
+.slideshow .ss-record-state {
+  font-size: 13px;
+}
+
+.slideshow .ss-record-cur {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.slideshow .ss-record-total {
+  color: var(--slides-show-ink-60);
+  font-size: 12px;
+}
+
+.slideshow .ss-record-btn {
+  font: inherit;
+  font-size: 12px;
+  color: var(--slides-show-ink);
+  background: transparent;
+  border: 1px solid var(--slides-show-line-15);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+/* ── 3D models: the rotation handle and the live model while it turns ── */
+
+.m3d-turn {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.m3d-turn canvas {
+  width: 100%;
+  height: 100%;
+  visibility: hidden;
+}
+
+.m3d-turn.turning canvas {
+  visibility: visible;
+}
+
+.m3d-turn-handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--slides-shadow-badge);
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.m3d-turn.turning .m3d-turn-handle {
+  cursor: grabbing;
 }

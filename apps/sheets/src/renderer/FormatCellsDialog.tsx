@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 
+import { Dropdown } from '@genoffice/ui'
+
+import { ColorDropdown } from './ColorDropdown'
 import { draftFromSelection, formatCellsCommands, type FormatCellsDraft } from './format-cells'
 import { useI18n, type StringKey } from './i18n/locale'
 import {
   clampDecimals,
   CURRENCY_SYMBOLS,
-  DATE_PATTERNS,
+  datePatterns,
   FRACTION_PATTERNS,
   NEGATIVE_STYLES,
   NUMFMT_CATEGORIES,
@@ -21,6 +24,7 @@ import {
 
 import type { SelectionFormat } from './selection-format'
 import { fontFamilyGroups, useSystemFontFamilies } from './system-fonts'
+import { useModalDialog } from './modal-dialog'
 
 /// Excel's Format Cells dialog (⌘1), scoped to what the save pipeline can
 /// persist today: number format, alignment, font, border, fill, and
@@ -134,13 +138,6 @@ export function FormatCellsDialog({
 }): React.JSX.Element {
   const { t } = useI18n()
   const [tab, setTab] = useState<Tab>('Number')
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
   // The selection format at open time is the change baseline; the live echo
   // must not move it while the dialog is up.
   const initialRef = useRef(draftFromSelection(selectionFormat))
@@ -180,11 +177,13 @@ export function FormatCellsDialog({
     onClose()
   }
 
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('dlgFcTitle')}
         onClick={(event) => event.stopPropagation()}
       >
@@ -243,17 +242,18 @@ export function FormatCellsDialog({
                       numOptions.category === 'accounting') && (
                       <label className="numfmt-field">
                         {t('dlgFcCurrencySymbol')}
-                        <select
+                        <Dropdown
+                          ariaLabel={t('dlgFcCurrencySymbol')}
                           value={numOptions.symbol}
-                          onChange={(e) => updateNumfmt({ symbol: e.target.value })}
-                        >
-                          <option value="">{t('dlgFcSymbolNone')}</option>
-                          {CURRENCY_SYMBOLS.map((symbol) => (
-                            <option key={symbol} value={symbol}>
-                              {symbol}
-                            </option>
-                          ))}
-                        </select>
+                          options={[
+                            { value: '', label: t('dlgFcSymbolNone') },
+                            ...CURRENCY_SYMBOLS.map((symbol) => ({
+                              value: symbol,
+                              label: symbol,
+                            })),
+                          ]}
+                          onPick={(v) => updateNumfmt({ symbol: v })}
+                        />
                       </label>
                     )}
                   </div>
@@ -295,7 +295,7 @@ export function FormatCellsDialog({
                   <div className="numfmt-field">
                     {t('dlgFcTypeLabel')}
                     <div className="numfmt-list" role="listbox" aria-label={t('dlgFcTypeLabel')}>
-                      {(numOptions.category === 'date' ? DATE_PATTERNS : TIME_PATTERNS).map(
+                      {(numOptions.category === 'date' ? datePatterns() : TIME_PATTERNS).map(
                         (candidate) => {
                           const key = numOptions.category === 'date' ? 'datePattern' : 'timePattern'
                           return (
@@ -358,47 +358,52 @@ export function FormatCellsDialog({
             <div className="dialog-grid">
               <label>
                 {t('dlgFcHorizontal')}
-                <select value={draft.hAlign} onChange={(e) => set('hAlign', e.target.value)}>
-                  <option value="">{t('dlgFcUnchanged')}</option>
-                  {H_ALIGNMENTS.map((h) => (
-                    <option key={h} value={h}>
-                      {t(H_ALIGN_LABELS[h])}
-                    </option>
-                  ))}
-                </select>
+                <Dropdown
+                  ariaLabel={t('dlgFcHorizontal')}
+                  value={draft.hAlign}
+                  options={[
+                    { value: '', label: t('dlgFcUnchanged') },
+                    ...H_ALIGNMENTS.map((h) => ({ value: h, label: t(H_ALIGN_LABELS[h]) })),
+                  ]}
+                  onPick={(v) => set('hAlign', v)}
+                />
               </label>
               <label>
                 {t('dlgFcVertical')}
-                <select value={draft.vAlign} onChange={(e) => set('vAlign', e.target.value)}>
-                  <option value="">{t('dlgFcUnchanged')}</option>
-                  {V_ALIGNMENTS.map((v) => (
-                    <option key={v} value={v}>
-                      {t(V_ALIGN_LABELS[v])}
-                    </option>
-                  ))}
-                </select>
+                <Dropdown
+                  ariaLabel={t('dlgFcVertical')}
+                  value={draft.vAlign}
+                  options={[
+                    { value: '', label: t('dlgFcUnchanged') },
+                    ...V_ALIGNMENTS.map((v) => ({ value: v, label: t(V_ALIGN_LABELS[v]) })),
+                  ]}
+                  onPick={(v) => set('vAlign', v)}
+                />
               </label>
               <label>
                 {t('dlgFcWrapText')}
-                <select
+                <Dropdown
+                  ariaLabel={t('dlgFcWrapText')}
                   value={draft.wrapText}
-                  onChange={(e) => set('wrapText', e.target.value as FormatCellsDraft['wrapText'])}
-                >
-                  <option value="">{t('dlgFcUnchanged')}</option>
-                  <option value="on">{t('dlgFcOn')}</option>
-                  <option value="off">{t('dlgFcOff')}</option>
-                </select>
+                  options={[
+                    { value: '', label: t('dlgFcUnchanged') },
+                    { value: 'on', label: t('dlgFcOn') },
+                    { value: 'off', label: t('dlgFcOff') },
+                  ]}
+                  onPick={(v) => set('wrapText', v as FormatCellsDraft['wrapText'])}
+                />
               </label>
               <label>
                 {t('dlgFcOrientation')}
-                <select value={draft.rotation} onChange={(e) => set('rotation', e.target.value)}>
-                  <option value="">{t('dlgFcUnchanged')}</option>
-                  {ROTATIONS.map((r) => (
-                    <option key={r.value} value={r.value}>
-                      {t(r.labelKey)}
-                    </option>
-                  ))}
-                </select>
+                <Dropdown
+                  ariaLabel={t('dlgFcOrientation')}
+                  value={draft.rotation}
+                  options={[
+                    { value: '', label: t('dlgFcUnchanged') },
+                    ...ROTATIONS.map((r) => ({ value: r.value, label: t(r.labelKey) })),
+                  ]}
+                  onPick={(v) => set('rotation', v)}
+                />
               </label>
               <label>
                 {t('dlgFcIndent')}
@@ -417,30 +422,32 @@ export function FormatCellsDialog({
             <div className="dialog-grid">
               <label>
                 {t('dlgFcFont')}
-                <select value={draft.family} onChange={(e) => set('family', e.target.value)}>
-                  <option value="">{t('dlgFcUnchanged')}</option>
-                  <optgroup label={t('dlgFcFontsCommon')}>
-                    {fontGroups.common.map((f) => (
-                      <option key={f}>{f}</option>
-                    ))}
-                  </optgroup>
-                  {fontGroups.system.length > 0 && (
-                    <optgroup label={t('dlgFcFontsSystem')}>
-                      {fontGroups.system.map((f) => (
-                        <option key={f}>{f}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
+                {/* optgroups flattened in order: common families, then system ones
+                    (deduped — the echoed family may appear in both groups) */}
+                <Dropdown
+                  ariaLabel={t('dlgFcFont')}
+                  value={draft.family}
+                  options={[
+                    { value: '', label: t('dlgFcUnchanged') },
+                    ...[
+                      ...fontGroups.common,
+                      ...fontGroups.system.filter((f) => !fontGroups.common.includes(f)),
+                    ].map((f) => ({ value: f, label: f })),
+                  ]}
+                  onPick={(v) => set('family', v)}
+                />
               </label>
               <label>
                 {t('dlgFcSize')}
-                <select value={draft.size} onChange={(e) => set('size', e.target.value)}>
-                  <option value="">{t('dlgFcUnchanged')}</option>
-                  {sizeOptions.map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
+                <Dropdown
+                  ariaLabel={t('dlgFcSize')}
+                  value={draft.size}
+                  options={[
+                    { value: '', label: t('dlgFcUnchanged') },
+                    ...sizeOptions.map((s) => ({ value: s, label: s })),
+                  ]}
+                  onPick={(v) => set('size', v)}
+                />
               </label>
               {(
                 [
@@ -452,22 +459,26 @@ export function FormatCellsDialog({
               ).map(([labelKey, key]) => (
                 <label key={key}>
                   {t(labelKey)}
-                  <select
+                  <Dropdown
+                    ariaLabel={t(labelKey)}
                     value={draft[key]}
-                    onChange={(e) => set(key, e.target.value as FormatCellsDraft[typeof key])}
-                  >
-                    <option value="">{t('dlgFcUnchanged')}</option>
-                    <option value="on">{t('dlgFcOn')}</option>
-                    <option value="off">{t('dlgFcOff')}</option>
-                  </select>
+                    options={[
+                      { value: '', label: t('dlgFcUnchanged') },
+                      { value: 'on', label: t('dlgFcOn') },
+                      { value: 'off', label: t('dlgFcOff') },
+                    ]}
+                    onPick={(v) => set(key, v as FormatCellsDraft[typeof key])}
+                  />
                 </label>
               ))}
               <label>
                 {t('dlgFcColor')}
-                <input
-                  type="color"
+                <ColorDropdown
+                  label={t('dlgFcColor')}
                   value={draft.fontColor || '#000000'}
-                  onChange={(e) => set('fontColor', e.target.value)}
+                  onPick={(hex) => {
+                    if (hex) set('fontColor', hex)
+                  }}
                 />
               </label>
             </div>
@@ -476,34 +487,39 @@ export function FormatCellsDialog({
             <div className="dialog-grid">
               <label>
                 {t('dlgFcBorderPresets')}
-                <select value={draft.border} onChange={(e) => set('border', e.target.value)}>
-                  <option value="">{t('dlgFcUnchanged')}</option>
-                  {BORDER_PRESETS.map((preset) => (
-                    <option key={preset.value} value={preset.value}>
-                      {t(preset.labelKey)}
-                    </option>
-                  ))}
-                </select>
+                <Dropdown
+                  ariaLabel={t('dlgFcBorderPresets')}
+                  value={draft.border}
+                  options={[
+                    { value: '', label: t('dlgFcUnchanged') },
+                    ...BORDER_PRESETS.map((preset) => ({
+                      value: preset.value,
+                      label: t(preset.labelKey),
+                    })),
+                  ]}
+                  onPick={(v) => set('border', v)}
+                />
               </label>
               <label>
                 {t('dlgFcBorderStyle')}
-                <select
+                <Dropdown
+                  ariaLabel={t('dlgFcBorderStyle')}
                   value={draft.borderStyle}
-                  onChange={(e) => set('borderStyle', e.target.value)}
-                >
-                  {BORDER_LINE_STYLES.map((style) => (
-                    <option key={style.value} value={style.value}>
-                      {t(style.labelKey)}
-                    </option>
-                  ))}
-                </select>
+                  options={BORDER_LINE_STYLES.map((style) => ({
+                    value: style.value,
+                    label: t(style.labelKey),
+                  }))}
+                  onPick={(v) => set('borderStyle', v)}
+                />
               </label>
               <label>
                 {t('dlgFcColor')}
-                <input
-                  type="color"
+                <ColorDropdown
+                  label={t('dlgFcColor')}
                   value={draft.borderColor}
-                  onChange={(e) => set('borderColor', e.target.value)}
+                  onPick={(hex) => {
+                    if (hex) set('borderColor', hex)
+                  }}
                 />
               </label>
             </div>
@@ -512,18 +528,13 @@ export function FormatCellsDialog({
             <div className="dialog-grid">
               <label>
                 {t('dlgFcBackground')}
-                <input
-                  type="color"
+                <ColorDropdown
+                  label={t('dlgFcBackground')}
                   value={draft.fill || '#ffffff'}
                   disabled={draft.noFill}
-                  // An unset fill already displays as white, so picking white
-                  // never fires a change event. Seed the draft when the user
-                  // opens the picker: that turns the displayed white into an
-                  // explicit choice, distinguishable from "no fill".
-                  onClick={() => {
-                    if (!draft.fill) set('fill', '#ffffff')
+                  onPick={(hex) => {
+                    if (hex) set('fill', hex)
                   }}
-                  onChange={(e) => set('fill', e.target.value)}
                 />
               </label>
               <label className="dialog-check">
@@ -540,25 +551,29 @@ export function FormatCellsDialog({
             <div className="dialog-grid">
               <label>
                 {t('dlgFcLocked')}
-                <select
+                <Dropdown
+                  ariaLabel={t('dlgFcLocked')}
                   value={draft.locked}
-                  onChange={(e) => set('locked', e.target.value as FormatCellsDraft['locked'])}
-                >
-                  <option value="">{t('dlgFcUnchanged')}</option>
-                  <option value="on">{t('dlgFcOn')}</option>
-                  <option value="off">{t('dlgFcOff')}</option>
-                </select>
+                  options={[
+                    { value: '', label: t('dlgFcUnchanged') },
+                    { value: 'on', label: t('dlgFcOn') },
+                    { value: 'off', label: t('dlgFcOff') },
+                  ]}
+                  onPick={(v) => set('locked', v as FormatCellsDraft['locked'])}
+                />
               </label>
               <label>
                 {t('dlgFcHidden')}
-                <select
+                <Dropdown
+                  ariaLabel={t('dlgFcHidden')}
                   value={draft.hidden}
-                  onChange={(e) => set('hidden', e.target.value as FormatCellsDraft['hidden'])}
-                >
-                  <option value="">{t('dlgFcUnchanged')}</option>
-                  <option value="on">{t('dlgFcOn')}</option>
-                  <option value="off">{t('dlgFcOff')}</option>
-                </select>
+                  options={[
+                    { value: '', label: t('dlgFcUnchanged') },
+                    { value: 'on', label: t('dlgFcOn') },
+                    { value: 'off', label: t('dlgFcOff') },
+                  ]}
+                  onPick={(v) => set('hidden', v as FormatCellsDraft['hidden'])}
+                />
               </label>
               <p className="dialog-note">{t('dlgFcProtectionNote')}</p>
             </div>

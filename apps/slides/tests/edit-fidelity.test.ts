@@ -20,7 +20,7 @@ import {
   releaseFragmentsAtEdit,
   applySelectionParagraphFormat,
 } from '../src/renderer/TextEditOverlay'
-import { applyEditParagraphs, collectParagraphFormatPatches } from '../src/main/edit-text'
+import { applyEditParagraphs, collectParagraphFormatPatches } from '@genoffice/pptx-ops'
 
 const vp = makeViewport({ cx: 12192000, cy: 6858000 }, 1280) // scale = 1
 const metrics = new HeuristicMetrics()
@@ -83,8 +83,33 @@ describe('run fragmentation: layout fragments merge back into original runs by s
     expect(fragments.some((fragment) => fragment.style.width !== '')).toBe(true)
     releaseEditorLayoutConstraints(div)
     expect(
-      fragments.every((fragment) => fragment.style.width === '' && fragment.style.display === ''),
+      fragments.every(
+        (fragment) =>
+          fragment.style.width === '' &&
+          fragment.style.display === '' &&
+          fragment.style.whiteSpace === '',
+      ),
     ).toBe(true)
+  })
+
+  it('fixed-width cells never wrap inside themselves (contentEditable defaults to break-word)', () => {
+    const div = document.createElement('div')
+    populateEditorDom(
+      div,
+      layout([{ runs: [{ text: 'AI \u539f\u751f APP \u65ad\u5c42\u7b2c\u4e00', bold: true }] }])
+        .lines,
+    )
+    const cells = [...div.querySelectorAll<HTMLElement>('[data-layout-fragment]')].filter(
+      (f) => f.style.width !== '',
+    )
+    expect(cells.map((f) => f.textContent)).toContain('APP')
+    expect(cells.every((f) => f.style.whiteSpace === 'pre')).toBe(true)
+    const caret = document.createRange()
+    const app = cells.find((f) => f.textContent === 'APP')!
+    caret.setStart(app.firstChild!, 1)
+    caret.collapse(true)
+    releaseFragmentsAtEdit(div, [caret])
+    expect(app.style.whiteSpace).toBe('')
   })
 
   it('a collapsed-caret edit releases only the touched fragment and its neighbors', () => {
@@ -149,6 +174,28 @@ describe('run fragmentation: layout fragments merge back into original runs by s
     expect(out[0]!.runs[0]!.text).toBe('Hello World Again')
   })
 
+  it('restored wrap-swallowed spaces flow naturally, never inside a fixed-width fragment (words glued after reflow)', () => {
+    // The engine strips the space at each wrap point before measuring, so no fixed fragment
+    // advance accounts for it. A restored space baked into a fixed-width fragment renders
+    // zero-width once an edit reflows it mid-line ("scriptautant", "quevous").
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+    populateEditorDom(
+      div,
+      layout([{ runs: [{ text: 'Hello World Again', fontSize: 18 }] }], 90).lines,
+    )
+    const fragments = [...div.querySelectorAll<HTMLElement>('[data-layout-fragment]')]
+    const restored = fragments.filter((f) => /^\s+$/.test(f.textContent ?? ''))
+    expect(restored.length).toBeGreaterThan(0) // the narrow box wrapped at least once
+    for (const f of restored) {
+      expect(f.style.width).toBe('')
+      expect(f.style.display).toBe('')
+    }
+    // and the text still round-trips losslessly through extraction
+    expect(extractParagraphs(div, 1)[0]!.runs[0]!.text).toBe('Hello World Again')
+    div.remove()
+  })
+
   it('hard-wrapped long URL no longer gets spaces injected (historical bug: URL rewritten after one edit round-trip)', () => {
     const url = 'https://example.com/aaaa/bbbb'
     const paras: Paragraph[] = [{ runs: [{ text: url, fontSize: 18 }] }]
@@ -211,6 +258,127 @@ describe('applyEditParagraphs: srcPara/srcRun tracing + unedited fields preserve
     expect(out[0]!.runs[1]!.field).toBe('slidenum')
   })
 
+  it('untraced paragraphs past the end continue the last paragraph (AI tools send plain paragraphs)', () => {
+    const oldParas: Paragraph[] = [
+      { runs: [{ text: 'Title', bold: true, fontSize: 24 }] },
+      { runs: [{ text: 'One', fontSize: 14 }], bullet: { type: 'char', char: '•' }, level: 1 },
+    ]
+    const out = applyEditParagraphs(oldParas, [
+      { runs: [{ text: 'New title' }] },
+      { runs: [{ text: 'First' }] },
+      { runs: [{ text: 'Second' }] },
+      { runs: [{ text: 'Third' }] },
+    ])
+    expect(out[0]!.runs[0]).toMatchObject({ text: 'New title', bold: true, fontSize: 24 })
+    for (const [i, text] of [
+      [1, 'First'],
+      [2, 'Second'],
+      [3, 'Third'],
+    ] as const) {
+      expect(out[i]!.bullet).toEqual({ type: 'char', char: '•' })
+      expect(out[i]!.level).toBe(1)
+      expect(out[i]!.runs[0]).toMatchObject({ text, fontSize: 14 })
+      expect(out[i]!.runs[0]!.bold).toBeUndefined()
+    }
+    // a traced paragraph never falls back: an out-of-range source stays unformatted
+    expect(
+      applyEditParagraphs(oldParas, [{ runs: [{ text: 'x' }], srcPara: 7 }])[0]!.bullet,
+    ).toBeUndefined()
+  })
+
+  it('an untraced single run over a mixed paragraph takes the dominant run, not the label run', () => {
+    const oldParas: Paragraph[] = [
+      {
+        runs: [
+          { text: 'Revenue: ', bold: true, fontSize: 14 },
+          { text: 'up 5% year over year on strong demand', fontSize: 14, color: '595959' },
+        ],
+      },
+    ]
+    const [rewritten] = applyEditParagraphs(oldParas, [{ runs: [{ text: 'Revenue grew 5%' }] }])
+    expect(rewritten!.runs).toHaveLength(1)
+    expect(rewritten!.runs[0]).toMatchObject({
+      text: 'Revenue grew 5%',
+      fontSize: 14,
+      color: '595959',
+    })
+    expect(rewritten!.runs[0]!.bold).toBeUndefined()
+    // traced (editor) and positional multi-run edits keep the first run's formatting
+    const [traced] = applyEditParagraphs(oldParas, [{ runs: [{ text: 'Revenue', srcRun: 0 }] }])
+    expect(traced!.runs[0]!.bold).toBe(true)
+    const [twoRuns] = applyEditParagraphs(oldParas, [
+      { runs: [{ text: 'Sales: ' }, { text: 'flat' }] },
+    ])
+    expect(twoRuns!.runs[0]!.bold).toBe(true)
+    expect(twoRuns!.runs[1]!.bold).toBeUndefined()
+  })
+
+  it('the dominant run is never a field or a link: plain replacement text stays plain text', () => {
+    // the longest run is a datetime field — a rewrite must not become a field
+    // PowerPoint overwrites on open
+    const [dated] = applyEditParagraphs(
+      [
+        {
+          runs: [
+            { text: 'As of ', fontSize: 12, color: '595959' },
+            { text: 'September 2, 2026', field: 'datetime1', fontSize: 12, bold: true },
+          ],
+        },
+      ],
+      [{ runs: [{ text: 'Updated quarterly' }] }],
+    )
+    expect(dated!.runs[0]).toMatchObject({
+      text: 'Updated quarterly',
+      fontSize: 12,
+      color: '595959',
+    })
+    expect(dated!.runs[0]!.field).toBeUndefined()
+    expect(dated!.runs[0]!.bold).toBeUndefined()
+
+    // the longest run is a hyperlink — the rewrite keeps the trailing plain run's look
+    const [linked] = applyEditParagraphs(
+      [
+        {
+          runs: [
+            {
+              text: 'Read the full report',
+              hyperlink: 'https://a.com/report',
+              hyperlinkRId: 'rId7',
+              underline: true,
+              underlineImplicit: true,
+              fontSize: 12,
+            },
+            { text: ' (PDF)', fontSize: 12, color: '595959' },
+          ],
+        },
+      ],
+      [{ runs: [{ text: 'Summary attached' }] }],
+    )
+    expect(linked!.runs[0]).toMatchObject({
+      text: 'Summary attached',
+      fontSize: 12,
+      color: '595959',
+    })
+    expect(linked!.runs[0]!.hyperlink).toBeUndefined()
+    expect(linked!.runs[0]!.hyperlinkRId).toBeUndefined()
+    expect(linked!.runs[0]!.underline).toBeUndefined()
+
+    // a short plain run next to a field still wins over the field
+    const [footer] = applyEditParagraphs(
+      [
+        {
+          runs: [
+            { text: 'p', fontSize: 9 },
+            { text: '12', field: 'slidenum', fontSize: 11 },
+          ],
+        },
+      ],
+      [{ runs: [{ text: 'Page 12' }] }],
+    )
+    expect(footer!.runs[0]).toMatchObject({ text: 'Page 12', fontSize: 9 })
+    expect(footer!.runs[0]!.field).toBeUndefined()
+  })
+
   it('explicit bold:false is not overridden by the old value via ?? fallback (unbolding must take effect)', () => {
     const oldParas: Paragraph[] = [{ runs: [{ text: 'x', bold: true }] }]
     const out = applyEditParagraphs(oldParas, [
@@ -220,6 +388,123 @@ describe('applyEditParagraphs: srcPara/srcRun tracing + unedited fields preserve
       },
     ])
     expect(out[0]!.runs[0]!.bold).toBe(false)
+  })
+
+  it('editor un-underline/un-strike sets the explicit-none markers so rebuilds keep the override', () => {
+    const oldParas: Paragraph[] = [
+      {
+        runs: [
+          {
+            text: 'u',
+            underline: true,
+            underlineStyle: 'dbl',
+            strike: true,
+            strikeStyle: 'sngStrike',
+          },
+        ],
+      },
+    ]
+    const out = applyEditParagraphs(oldParas, [
+      {
+        runs: [
+          { text: 'u', srcRun: 0, bold: false, italic: false, underline: false, strike: false },
+        ],
+        srcPara: 0,
+      },
+    ])
+    const r = out[0]!.runs[0]!
+    expect(r.underline).toBe(false)
+    expect(r.underlineExplicitNone).toBe(true)
+    expect(r.strikeExplicitNone).toBe(true)
+    // unchanged resolved-false values must NOT bake an override in
+    const out2 = applyEditParagraphs(
+      [{ runs: [{ text: 'p' }] }],
+      [
+        {
+          runs: [
+            { text: 'p', srcRun: 0, bold: false, italic: false, underline: false, strike: false },
+          ],
+          srcPara: 0,
+        },
+      ],
+    )
+    expect(out2[0]!.runs[0]!.underlineExplicitNone).toBeUndefined()
+    expect(out2[0]!.runs[0]!.strikeExplicitNone).toBeUndefined()
+    // link-derived underline (underlineImplicit): dropping it via unlink keeps
+    // omitting u — no explicit none baked in
+    const out3 = applyEditParagraphs(
+      [
+        {
+          runs: [
+            { text: 'l', underline: true, underlineImplicit: true, hyperlink: 'https://a.com' },
+          ],
+        },
+      ],
+      [
+        {
+          runs: [
+            { text: 'l', srcRun: 0, bold: false, italic: false, underline: false, link: null },
+          ],
+          srcPara: 0,
+        },
+      ],
+    )
+    expect(out3[0]!.runs[0]!.underline).toBe(false)
+    expect(out3[0]!.runs[0]!.underlineExplicitNone).toBeUndefined()
+    // un-underlining a run that KEEPS its link must bake the explicit none in,
+    // or the reparse re-derives the link underline and the removal never sticks
+    const out4 = applyEditParagraphs(
+      [
+        {
+          runs: [
+            { text: 'l', underline: true, underlineImplicit: true, hyperlink: 'https://a.com' },
+          ],
+        },
+      ],
+      [
+        {
+          runs: [{ text: 'l', srcRun: 0, bold: false, italic: false, underline: false }],
+          srcPara: 0,
+        },
+      ],
+    )
+    expect(out4[0]!.runs[0]!.underline).toBe(false)
+    expect(out4[0]!.runs[0]!.underlineExplicitNone).toBe(true)
+    expect(out4[0]!.runs[0]!.underlineImplicit).toBeUndefined()
+    expect(out4[0]!.runs[0]!.hyperlink).toBe('https://a.com')
+    // same when the edit re-states the link explicitly (link kept, not removed)
+    const out5 = applyEditParagraphs(
+      [
+        {
+          runs: [
+            {
+              text: 'l',
+              underline: true,
+              underlineImplicit: true,
+              hyperlink: 'https://a.com',
+              hyperlinkRId: 'rId3',
+            },
+          ],
+        },
+      ],
+      [
+        {
+          runs: [
+            {
+              text: 'l',
+              srcRun: 0,
+              bold: false,
+              italic: false,
+              underline: false,
+              link: { kind: 'url', url: 'https://a.com' },
+            },
+          ],
+          srcPara: 0,
+        },
+      ],
+    )
+    expect(out5[0]!.runs[0]!.underline).toBe(false)
+    expect(out5[0]!.runs[0]!.underlineExplicitNone).toBe(true)
   })
 
   it('no srcPara/srcRun (newly typed paragraph) falls back to position without crashing', () => {
@@ -350,6 +635,66 @@ describe('theme colors: schemeClr is not needlessly baked into srgbClr by edits'
   })
 })
 
+describe('implicit bold/italic/color: inherited values are not stamped into rewritten runs', () => {
+  // Model shape after parse of <a:r><a:rPr sz="1800"/>…</a:r> under a bold master style:
+  // resolved booleans plus the implicit markers, color resolved with colorInherited
+  const INHERIT_XML =
+    '<p:sp><p:nvSpPr><p:cNvPr id="7" name="T"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr/>' +
+    '<p:txBody><a:bodyPr/><a:lstStyle/>' +
+    '<a:p><a:r><a:rPr lang="en-US" sz="1800"/><a:t>inherited style</a:t></a:r></a:p>' +
+    '</p:txBody></p:sp>'
+  const inheritParas: Paragraph[] = [
+    {
+      runs: [
+        {
+          text: 'inherited style',
+          bold: true,
+          boldImplicit: true,
+          italic: false,
+          italicImplicit: true,
+          fontSize: 18,
+          color: '#FFFFFF',
+          colorFollowsTheme: true,
+          colorInherited: true,
+        },
+      ],
+    },
+  ]
+
+  function patch(paras: Paragraph[]): string {
+    const el = { id: 'e7', type: 'text', text: { paragraphs: paras } } as unknown as TextElement
+    return patchTextElementXml(el, INHERIT_XML)
+  }
+
+  it('identity rewrite keeps b/i/solidFill out of the rPr (master linkage intact)', () => {
+    const out = patch(
+      applyEditParagraphs(inheritParas, [
+        { runs: [{ text: 'inherited style', srcRun: 0, bold: true, italic: false }], srcPara: 0 },
+      ]),
+    )
+    expect(out).not.toContain(' b="')
+    expect(out).not.toContain(' i="')
+    expect(out).not.toContain('solidFill')
+  })
+
+  it('a real bold/italic toggle clears the markers and writes explicit overrides', () => {
+    const out = patch(
+      applyEditParagraphs(inheritParas, [
+        { runs: [{ text: 'inherited style', srcRun: 0, bold: false, italic: true }], srcPara: 0 },
+      ]),
+    )
+    expect(out).toContain(' b="0"')
+    expect(out).toContain(' i="1"')
+  })
+
+  it('generateParagraphXml (rebuild path) also omits implicit b/i', () => {
+    const xml = generateParagraphXml(inheritParas[0]!)
+    expect(xml).not.toContain(' b="')
+    expect(xml).not.toContain(' i="')
+    expect(xml).not.toContain('solidFill')
+  })
+})
+
 describe('normAutofit fontScale: files already shrunk by PowerPoint render at the stored scale', () => {
   it('stored fontScale is used as-is (no scaling back up even if content fits)', () => {
     const body = {
@@ -360,11 +705,11 @@ describe('normAutofit fontScale: files already shrunk by PowerPoint render at th
     }
     const out = layoutText({ body, boxWidthPx: 800, boxHeightPx: 400, metrics, vp })
     expect(out.fontScale).toBeCloseTo(0.625, 3)
-    // 20pt × 96/72 × 0.625 ≈ 16.67px
-    expect(out.lines[0]!.runs[0]!.fontSizePx).toBeCloseTo(20 * (96 / 72) * 0.625, 1)
+    // 20pt × 0.625 = 12.5pt → PPT quantizes autofit sizes to whole points (13pt = 17.33px)
+    expect(out.lines[0]!.runs[0]!.fontSizePx).toBeCloseTo(13 * (96 / 72), 1)
   })
 
-  it('content still overflows at the stored scale: keep bisecting downward, never exceed the stored scale', () => {
+  it('stored scale renders as-is; refitAutofit (edit flow) bisects downward below it', () => {
     const body = {
       paragraphs: Array.from({ length: 20 }, () => ({
         runs: [{ text: '很长的一行文字内容', fontSize: 20 }],
@@ -373,8 +718,18 @@ describe('normAutofit fontScale: files already shrunk by PowerPoint render at th
       autofit: 'shrink' as const,
       fontScale: 0.8,
     }
-    const out = layoutText({ body, boxWidthPx: 400, boxHeightPx: 120, metrics, vp })
-    expect(out.fontScale).toBeLessThan(0.8)
+    // Probe-measured: PowerPoint renders the cached ratio as-is on open and overflows
+    const plain = layoutText({ body, boxWidthPx: 400, boxHeightPx: 120, metrics, vp })
+    expect(plain.fontScale).toBe(0.8)
+    const refit = layoutText({
+      body,
+      boxWidthPx: 400,
+      boxHeightPx: 120,
+      metrics,
+      vp,
+      refitAutofit: true,
+    })
+    expect(refit.fontScale).toBeLessThan(0.8)
   })
 
   it('lnSpcReduction compresses line spacing (fixed lineExact unaffected)', () => {
@@ -422,14 +777,14 @@ describe('edit-mode vertical metrics: line/paragraph spacing derived back from l
     div.remove()
   })
 
-  it('first paragraph spcBef also applies (measured from root padding)', () => {
+  it('first paragraph spcBef is dropped (PowerPoint ignores it at the frame top)', () => {
     const paras: Paragraph[] = [{ runs: [{ text: 'x', fontSize: 20 }], spaceBefore: 9 }]
     const out = layout(paras)
     const div = document.createElement('div')
     document.body.appendChild(div)
     populateEditorDom(div, out.lines)
-    expect(parseFloat((div.firstElementChild as HTMLElement).style.marginTop)).toBeCloseTo(12, 1)
-    expect(out.lines[0]!.top).toBeCloseTo(12, 1)
+    expect((div.firstElementChild as HTMLElement).style.marginTop || '0').toBe('0')
+    expect(out.lines[0]!.top).toBe(0)
     div.remove()
   })
 
@@ -793,6 +1148,23 @@ describe('per-paragraph format on the editing selection', () => {
       { index: 2, patch: { bullet: 'none', spaceAfterPt: 6 } },
     ])
   })
+
+  it('numbering scheme / start number / picture source travel with the marks', () => {
+    const img = { base64: 'AAAA', ext: 'png' }
+    const out = collectParagraphFormatPatches([
+      { runs: [{ text: 'a' }], bullet: 'number', numType: 'romanUcPeriod', startAt: 3 },
+      { runs: [{ text: 'b' }], numType: 'alphaLcParenR' },
+      { runs: [{ text: 'c' }], bullet: 'blip', bulletImage: img },
+      // a char pick never carries a stale scheme
+      { runs: [{ text: 'd' }], bullet: 'char', bulletChar: '★', numType: 'arabicPeriod' },
+    ])
+    expect(out).toEqual([
+      { index: 0, patch: { bullet: 'number', numType: 'romanUcPeriod', startAt: 3 } },
+      { index: 1, patch: { numType: 'alphaLcParenR' } },
+      { index: 2, patch: { bullet: 'blip', bulletImage: img } },
+      { index: 3, patch: { bullet: 'char', bulletChar: '★' } },
+    ])
+  })
 })
 
 describe('run hyperlinks: overlay round-trip + merge semantics', () => {
@@ -875,5 +1247,163 @@ describe('run hyperlinks: overlay round-trip + merge semantics', () => {
       { runs: [{ text: 'x edited', srcRun: 0, link: null }], srcPara: 0 },
     ])
     expect(out[0]!.runs[0]!.hyperlinkRId).toBe('rId9')
+  })
+})
+
+describe('vertical text editing (bodyPr vert)', () => {
+  const vertLayout = (paragraphs: Paragraph[]) =>
+    layoutText({
+      body: { paragraphs, insets: NO_INSETS, vert: 'vert' },
+      boxWidthPx: 96,
+      boxHeightPx: 104,
+      metrics,
+      vp,
+    })
+
+  it('column fragments round-trip back to the source paragraph text', () => {
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+    const text = '上建设潇洒历史'
+    const lines = vertLayout([{ runs: [{ text }] }]).lines
+    expect(lines.length).toBeGreaterThan(1) // the narrow box splits the paragraph into columns
+    populateEditorDom(div, lines, 0, undefined, true)
+    // One DOM paragraph per source paragraph, not one per layout column
+    expect(div.children.length).toBe(1)
+    const out = extractParagraphs(div, 1)
+    expect(out.map((p) => p.runs.map((r) => r.text).join('')).join('\n')).toBe(text)
+    div.remove()
+  })
+
+  it('eaVert cells carry the engine pitch as letter-spacing (CSS advances 1em, the canvas by the line box)', () => {
+    // CJK-like face: ascent+descent = 1.2em, so each upright cell must gain 0.2em after it;
+    // its ink drops by ascent − 0.88em (the canvas draws at the cell baseline)
+    const cjkMetrics: typeof metrics = Object.assign(Object.create(metrics), {
+      metrics: (st: { fontSizePx: number }) => ({
+        ascent: st.fontSizePx * 1.0,
+        descent: st.fontSizePx * 0.2,
+        lineHeight: st.fontSizePx * 1.2,
+      }),
+    })
+    const lines = layoutText({
+      body: {
+        paragraphs: [{ runs: [{ text: '\u5149\u74f6\u9152 2024', fontSize: 30 }] }],
+        insets: NO_INSETS,
+        vert: 'eaVert',
+      },
+      boxWidthPx: 400,
+      boxHeightPx: 400,
+      metrics: cjkMetrics,
+      vp,
+    }).lines
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+    populateEditorDom(div, lines, 0, undefined, true)
+    const frags = [...div.querySelectorAll<HTMLElement>('[data-layout-fragment]')]
+    const px = lines[0]!.runs[0]!.fontSizePx
+    const cjk = frags.filter((f) => /[\u4e00-\u9fff]/.test(f.textContent ?? ''))
+    expect(cjk).toHaveLength(3)
+    for (const f of cjk) {
+      expect(parseFloat(f.style.letterSpacing)).toBeCloseTo(px * 0.2, 3)
+      expect(f.style.position).toBe('relative')
+      expect(parseFloat(f.style.top)).toBeCloseTo(px * 0.12, 3)
+    }
+    // the rotated Latin word advances by its own width on both sides: no spacing, no drop
+    const latin = frags.find((f) => f.textContent === '2024')!
+    expect(latin.style.letterSpacing).toBe('')
+    expect(latin.style.top).toBe('')
+    // mixed sizes in one column: each cell's pitch is its own line box, not the baseline delta
+    populateEditorDom(
+      div,
+      layoutText({
+        body: {
+          paragraphs: [
+            {
+              runs: [
+                { text: '\u5149', fontSize: 30 },
+                { text: '\u74f6\u9152', fontSize: 15 },
+              ],
+            },
+          ],
+          insets: NO_INSETS,
+          vert: 'eaVert',
+        },
+        boxWidthPx: 400,
+        boxHeightPx: 400,
+        metrics: cjkMetrics,
+        vp,
+      }).lines,
+      0,
+      undefined,
+      true,
+    )
+    const mixed = [...div.querySelectorAll<HTMLElement>('[data-layout-fragment]')].map((f) =>
+      parseFloat(f.style.letterSpacing),
+    )
+    expect(mixed[0]).toBeCloseTo(px * 0.2, 3)
+    expect(mixed[1]).toBeCloseTo((px / 2) * 0.2, 3)
+    expect(mixed[2]).toBeCloseTo((px / 2) * 0.2, 3)
+    // the horizontal editor never gets the synthetic spacing
+    populateEditorDom(div, layout([{ runs: [{ text: '\u5149\u74f6\u9152', fontSize: 30 }] }]).lines)
+    expect(
+      [...div.querySelectorAll<HTMLElement>('[data-layout-fragment]')].every(
+        (f) => f.style.letterSpacing === '',
+      ),
+    ).toBe(true)
+    div.remove()
+  })
+
+  it('skips horizontal-flow metric baking (line-height, gaps, fixed advances)', () => {
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+    populateEditorDom(
+      div,
+      vertLayout([{ runs: [{ text: '上建设潇洒历史' }] }]).lines,
+      0,
+      undefined,
+      true,
+    )
+    const p = div.firstElementChild as HTMLElement
+    expect(p.style.lineHeight).toBe('')
+    expect(p.style.marginTop).toBe('')
+    const fragments = [...div.querySelectorAll<HTMLElement>('[data-layout-fragment]')]
+    expect(fragments.length).toBeGreaterThan(0)
+    expect(fragments.every((f) => f.style.width === '' && f.style.display === '')).toBe(true)
+    div.remove()
+  })
+})
+
+describe('paragraph direction rtl: overlay marks + patch collection', () => {
+  it('populateEditorDom sets explicit dir only when the effective base disagrees with inference', () => {
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+    populateEditorDom(
+      div,
+      layout([
+        { runs: [{ text: 'plain latin' }] }, // inferred LTR, effective LTR
+        { runs: [{ text: 'forced rtl' }], rtl: true }, // inferred LTR, explicit RTL base
+        { runs: [{ text: 'שלום' }], rtl: false }, // inferred RTL, explicit LTR base
+      ]).lines,
+    )
+    const blocks = Array.from(div.children) as HTMLElement[]
+    expect(blocks.map((b) => b.getAttribute('dir'))).toEqual(['auto', 'rtl', 'ltr'])
+    div.remove()
+  })
+
+  it('untoggled paragraphs commit no rtl; a data-rtl mark reaches the format patch', () => {
+    const clean = roundTrip([{ runs: [{ text: 'hello' }] }, { runs: [{ text: 'שלום' }] }])
+    expect(clean.every((p) => p.rtl === undefined)).toBe(true)
+    expect(collectParagraphFormatPatches(clean)).toEqual([])
+
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+    populateEditorDom(div, layout([{ runs: [{ text: 'a' }] }, { runs: [{ text: 'b' }] }]).lines)
+    const second = div.children[1] as HTMLElement
+    second.dataset.rtl = '1'
+    second.dir = 'rtl'
+    const out = extractParagraphs(div, 1)
+    div.remove()
+    expect(out[0]!.rtl).toBeUndefined()
+    expect(out[1]!.rtl).toBe(true)
+    expect(collectParagraphFormatPatches(out)).toEqual([{ index: 1, patch: { rtl: true } }])
   })
 })

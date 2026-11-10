@@ -55,13 +55,32 @@ export function isStraightLineKind(prst: string | undefined): boolean {
   return prst === 'line' || prst === 'lineArrow' || prst === 'lineArrowDouble'
 }
 
-/** Level line at the box's vertical center (the in-document rendering). */
-function straightLinePaths(prst: string, w: number, h: number): ShapePaths {
-  const y = h / 2
-  const parts = [`M 0 ${R(y)} L ${R(w)} ${R(y)}`]
-  const len = Math.min(16, Math.max(7, w * 0.09))
-  if (prst !== 'line') parts.push(arrowHeadD(0, y, w, y, len))
-  if (prst === 'lineArrowDouble') parts.push(arrowHeadD(w, y, 0, y, len))
+/** Diagonal / flip state of a straight connector with a real vertical extent. */
+export interface LineRenderOpts {
+  diag?: boolean
+  flipH?: boolean
+  flipV?: boolean
+}
+
+/**
+ * Straight connector inside its box: level at the vertical center by default;
+ * corner-to-corner when the shape has a real vertical extent (flips pick the
+ * diagonal — flipV runs bottom-left → top-right). flipH also reverses level
+ * lines so a head-only arrow (drawn at the path end) points the right way.
+ */
+function straightLinePaths(prst: string, w: number, h: number, line?: LineRenderOpts): ShapePaths {
+  const x1 = line?.flipH ? w : 0
+  const x2 = w - x1
+  let y1 = h / 2
+  let y2 = y1
+  if (line?.diag) {
+    y1 = line.flipV ? h : 0
+    y2 = h - y1
+  }
+  const parts = [`M ${R(x1)} ${R(y1)} L ${R(x2)} ${R(y2)}`]
+  const len = Math.min(16, Math.max(7, Math.hypot(x2 - x1, y2 - y1) * 0.09))
+  if (prst !== 'line') parts.push(arrowHeadD(x1, y1, x2, y2, len))
+  if (prst === 'lineArrowDouble') parts.push(arrowHeadD(x2, y2, x1, y1, len))
   return { strokeOnly: parts.join(' ') }
 }
 
@@ -122,27 +141,94 @@ export function shapeBackgroundImage(
   h: number,
   fillHex?: string,
   borderHex?: string,
+  line?: LineRenderOpts,
+  strokeWidthPx?: number,
 ): string | null {
   const paths = isStraightLineKind(prst)
-    ? straightLinePaths(prst, Math.max(8, w - 2), Math.max(8, h - 2))
+    ? straightLinePaths(prst, Math.max(8, w - 2), Math.max(8, h - 2), line)
     : shapePaths(prst, Math.max(8, w - 2), Math.max(8, h - 2))
   if (!paths) return null
+  return pathsBackgroundImage(paths, w, h, fillHex, borderHex, strokeWidthPx)
+}
+
+function pathsBackgroundImage(
+  paths: ShapePaths,
+  w: number,
+  h: number,
+  fillHex?: string,
+  borderHex?: string,
+  strokeWidthPx?: number,
+): string {
   const fill = fillHex ? `#${fillHex}` : 'none'
   const stroke = borderHex ? `#${borderHex}` : 'none'
+  // authored outline width (a:ln w in px); absent keeps the historical 2 / 2.5
+  const strokeWidth = strokeWidthPx === undefined ? undefined : R(Math.max(0.5, strokeWidthPx))
   const parts: string[] = []
   if (paths.main)
-    parts.push(`<path d="${paths.main}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`)
+    parts.push(
+      `<path d="${paths.main}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth ?? 2}"/>`,
+    )
   if (paths.fillOnly) parts.push(`<path d="${paths.fillOnly}" fill="${fill}" stroke="none"/>`)
   if (paths.strokeOnly)
     parts.push(
       `<path d="${paths.strokeOnly}" fill="none" ` +
-        `stroke="${stroke === 'none' ? fill : stroke}" stroke-width="2.5"/>`,
+        `stroke="${stroke === 'none' ? fill : stroke}" stroke-width="${strokeWidth ?? 2.5}"/>`,
     )
+  // a wide stroke needs more than the historical 1px inset, or the SVG viewport
+  // clips it at the edges of the box: grow the viewBox symmetrically around it
+  const inset = strokeWidth === undefined ? 1 : Math.max(1, R(strokeWidth / 2 + 0.5))
+  const viewW = strokeWidth === undefined ? w : R(w + 2 * (inset - 1))
+  const viewH = strokeWidth === undefined ? h : R(h + 2 * (inset - 1))
+  // printToPDF honors the intrinsic ratio over background-size 100% 100%: a
+  // box whose live height differs from the measured one shrank uniformly
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="-1 -1 ${w} ${h}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${-inset} ${-inset} ${viewW} ${viewH}" preserveAspectRatio="none">` +
     parts.join('') +
     '</svg>'
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
+}
+
+/** Normalized a:custGeom path channels (TextboxDisplay.pathData, coords 0..1). */
+export interface CustGeomPathData {
+  path?: string
+  fillPath?: string
+  strokePath?: string
+}
+
+/** Scale a normalized path string ("M x y L x y … Z") into a w×h pixel box. */
+function scaleNormPathD(d: string, w: number, h: number): string {
+  let axis = 0
+  return d
+    .split(' ')
+    .map((tok) => {
+      const n = Number(tok)
+      if (!Number.isFinite(n)) {
+        axis = 0
+        return tok
+      }
+      return String(R(n * (axis++ % 2 === 0 ? w : h)))
+    })
+    .join(' ')
+}
+
+/** custGeom visual as full CSS background properties (same pipeline as presets). */
+export function custGeomBackgroundCss(
+  geom: CustGeomPathData,
+  w: number,
+  h: number,
+  fillHex?: string,
+  borderHex?: string,
+  strokeWidthPx?: number,
+): string {
+  const sw = Math.max(8, w - 2)
+  const sh = Math.max(8, h - 2)
+  const paths: ShapePaths = {
+    main: geom.path ? scaleNormPathD(geom.path, sw, sh) : undefined,
+    fillOnly: geom.fillPath ? scaleNormPathD(geom.fillPath, sw, sh) : undefined,
+    strokeOnly: geom.strokePath ? scaleNormPathD(geom.strokePath, sw, sh) : undefined,
+  }
+  const image = pathsBackgroundImage(paths, w, h, fillHex, borderHex, strokeWidthPx)
+  return `background-image:${image};background-size:100% 100%;background-repeat:no-repeat`
 }
 
 /** Same visual as full CSS background properties (for style strings). */
@@ -152,8 +238,39 @@ export function shapeBackgroundCss(
   h: number,
   fillHex?: string,
   borderHex?: string,
+  line?: LineRenderOpts,
+  strokeWidthPx?: number,
 ): string | null {
-  const image = shapeBackgroundImage(prst, w, h, fillHex, borderHex)
+  const image = shapeBackgroundImage(prst, w, h, fillHex, borderHex, line, strokeWidthPx)
   if (!image) return null
   return `background-image:${image};background-size:100% 100%;background-repeat:no-repeat`
+}
+
+/** Geometry text-rect insets (px) inside a w×h preset shape; Word keeps the
+ *  text inside this rect, bodyPr insets apply within it. Approximates the
+ *  OOXML presetShapeDefinitions text rectangles; extend per preset as needed.
+ *  Document geometry, not chrome — never themed. */
+export function shapeTextInsetsPx(
+  prst: string,
+  w: number,
+  h: number,
+): { l: number; t: number; r: number; b: number } | null {
+  // inscribed rect of the ellipse: (1 - 1/√2) / 2 per side
+  const k = (1 - Math.SQRT1_2) / 2
+  switch (prst) {
+    case 'ellipse':
+      return { l: w * k, t: h * k, r: w * k, b: h * k }
+    case 'triangle':
+      return { l: w / 4, t: h / 2, r: w / 4, b: 0 }
+    case 'diamond':
+      return { l: w / 4, t: h / 4, r: w / 4, b: h / 4 }
+    case 'rightArrow':
+      return { l: 0, t: h / 4, r: Math.min(w, h) / 2, b: h / 4 }
+    case 'leftArrow':
+      return { l: Math.min(w, h) / 2, t: h / 4, r: 0, b: h / 4 }
+    case 'star5':
+      return { l: w * 0.19, t: h * 0.31, r: w * 0.19, b: h * 0.29 }
+    default:
+      return null
+  }
 }

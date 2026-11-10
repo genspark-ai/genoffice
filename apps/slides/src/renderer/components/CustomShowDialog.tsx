@@ -14,6 +14,11 @@ function newShowId(): string {
   return `cs-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`
 }
 
+/** A show entry index is displayable only inside the live page range. */
+export function isShowSlideIndex(i: unknown, slideCount: number): i is number {
+  return typeof i === 'number' && Number.isInteger(i) && i >= 0 && i < slideCount
+}
+
 export function CustomShowDialog({
   shows,
   slideCount,
@@ -32,7 +37,7 @@ export function CustomShowDialog({
   const [selId, setSelId] = useState<string | null>(shows[0]?.id ?? null)
   const sel = shows.find((s) => s.id === selId) ?? null
   // Out-of-range indexes left over after page deletion aren't shown (the show entry filters them too)
-  const selIndices = sel ? sel.slideIndices.filter((i) => i >= 0 && i < slideCount) : []
+  const selIndices = sel ? sel.slideIndices.filter((i) => isShowSlideIndex(i, slideCount)) : []
 
   const patchSel = (patch: Partial<CustomShow>) => {
     if (sel) onChange(shows.map((s) => (s.id === sel.id ? { ...s, ...patch } : s)))
@@ -74,22 +79,46 @@ export function CustomShowDialog({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal csd" onClick={(e) => e.stopPropagation()}>
-        <h2>{t('paneCsdTitle')}</h2>
+      <div
+        className="modal csd"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="csd-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="csd-title">{t('paneCsdTitle')}</h2>
         <div className="csd-body">
           <div className="csd-shows">
-            <div className="csd-list" role="listbox">
+            <div
+              className="csd-list"
+              role="listbox"
+              aria-label={t('paneCsdTitle')}
+              onKeyDown={(e) => {
+                // Arrow-key selection for the show list (buttons stay natively activatable)
+                if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+                e.preventDefault()
+                const ids = shows.map((s) => s.id)
+                const at = ids.indexOf(selId ?? '')
+                const next = e.key === 'ArrowDown' ? at + 1 : at - 1
+                if (next < 0 || next >= ids.length) return
+                setSelId(ids[next]!)
+                const options = e.currentTarget.querySelectorAll<HTMLElement>('[role="option"]')
+                options[next]?.focus()
+              }}
+            >
               {shows.length === 0 && <div className="csd-empty">{t('paneCsdEmpty')}</div>}
               {shows.map((s) => (
                 <button
                   key={s.id}
+                  role="option"
+                  aria-selected={s.id === selId}
                   className={`csd-item${s.id === selId ? ' active' : ''}`}
                   onClick={() => setSelId(s.id)}
                 >
                   {s.name}
                   <span className="csd-item-count">
                     {t('paneCsdPageCount', {
-                      n: s.slideIndices.filter((i) => i < slideCount).length,
+                      n: s.slideIndices.filter((i) => isShowSlideIndex(i, slideCount)).length,
                     })}
                   </span>
                 </button>

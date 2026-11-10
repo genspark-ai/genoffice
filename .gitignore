@@ -33,3 +33,11 @@ electron-builder.env
 __pycache__/
 /notes/
 /MEMORY.md
+
+# Local fidelity-run scratch space: production repro documents and pack caches.
+# Never committable — a stray `git add -A` would push user files public.
+/working_dir/
+
+# One-off verification tests kept while chasing a fix; promote to a real test
+# file (or delete) instead of committing them under this name.
+_scratch-*

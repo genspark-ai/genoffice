@@ -1,0 +1,105 @@
+# Sheets : tableurs
+
+Sheets est l’éditeur de tableurs analogue à Excel ; le calcul s’exécute dans un processus séparé, un moteur Rust (une panne à cet endroit n’entraîne jamais l’arrêt de l’application). Il ouvre et enregistre de vrais .xlsx ; .csv et .tsv s’ouvrent comme des tables.
+
+## L’interface
+
+- **Ruban** : huit onglets, présentés un par un ci-dessous.
+- **Barre de formule** : affiche et modifie la formule de la cellule active ; les fonctions courantes sont prises en charge.
+- **Onglets de feuille** (en bas) : ajouter / renommer / supprimer / déplacer des feuilles.
+- **Édition des cellules** : double-clic ou simple saisie ; Entrée confirme et descend, Tab va à droite, Échap annule (les habitudes d’Excel).
+- **Raccourcis** : alignés sur la famille Excel (ctrl+C/V/X, ctrl+Z/Y, ctrl+F, …).
+
+## Onglets du ruban
+
+- **Accueil** : police, remplissage, bordures, formats de nombre (devise/pourcentage/milliers, décimales à la hausse ou à la baisse), alignement, fusion, insertion et dimension des lignes et colonnes, mise en forme conditionnelle, mise sous forme de tableau, styles de cellule, presse-papiers et copier la mise en forme, trier et filtrer.
+- **Insertion** : images, formes, zones de texte, liens, commentaires, case à cocher, en-tête et pied de page, symboles, équations ; **neuf types de graphiques** (histogramme, barres, courbes, aires, secteurs, nuage de points, radar, anneau, et histogramme + courbe) plus **Graphiques recommandés**, qui classe les types pour la sélection et les présente en aperçu ; **Graphique croisé dynamique** depuis la cellule où vous vous trouvez ; **Graphiques sparkline** (ligne, colonne, gain/perte) ; **Segment** et **Chronologie** pour filtrer un tableau croisé dynamique.
+  - Les graphiques, les graphiques croisés dynamiques et les graphiques sparkline sont de véritables objets dans le classeur enregistré.
+  - **Segment** et **Chronologie** sont des commandes de session : le filtrage qu’elles effectuent est enregistré et Excel affiche le même tableau croisé dynamique filtré, mais le bouton de segment lui-même ne fait pas partie du fichier.
+- **Mise en page** : couleurs et polices du thème, interrupteurs d’impression du quadrillage et des en-têtes, aperçu des sauts de page.
+- **Formules** : Somme automatique et insertion de fonction, définir les noms (aussi depuis la sélection), repérer les antécédents et les dépendants, Fenêtre Espion, recalculer la feuille ou le classeur.
+- **Données** : trier et filtrer (y compris filtre avancé, effacer le filtre), convertir, fusionner des classeurs, tout actualiser.
+- **Révision** : parcourir les commentaires (afficher, précédent/suivant), traduire, et un groupe **Protection** — **Protéger la feuille**, **Protéger le classeur** et **Permettre la modification des plages**.
+  - La protection est écrite dans le .xlsx et ce que cette application applique ne porte aucun mot de passe : le même bouton devient **Ôter la protection…** et l’annule. Une protection provenant d’un autre programme qui _porte_ un mot de passe ne peut pas être retirée d’ici.
+  - Les deux boutons de protection s’appliquent immédiatement — aucune boîte de dialogue à annuler, seulement une note dans la barre d’état indiquant que l’écriture aura lieu à l’enregistrement.
+  - **Permettre la modification des plages** marque les cellules qui restent modifiables pendant que le reste de la feuille est verrouillé.
+- **Affichage** : interrupteurs quadrillage, **barre de formule**, en-têtes et surlignage de la ligne et de la colonne actives ; zoom ; **Normal** et **Aperçu des sauts de page**. Le quadrillage et les en-têtes sont enregistrés avec la feuille ; le surlignage est une préférence qui vous est propre.
+- **Création de graphique** : apparaît lorsqu’un graphique est sélectionné — type de graphique, styles et couleurs, modification de la plage de données.
+
+L’onglet Données, bouton par bouton (de gauche à droite sur l’image) :
+
+![L’onglet Données](img/sheets-data.png)
+
+- **Tableau croisé dynamique** : construit un tableau croisé à partir de la plage courante ; faites glisser les champs pour agréger.
+- **Actualiser** : recalcule les données du tableau croisé courant.
+- **À partir de texte/CSV** : importe un .csv/.txt comme nouvelle feuille, en le séparant selon un délimiteur.
+- **Fusionner des classeurs** : amène les feuilles d’autres fichiers .xlsx dans celui-ci.
+- **Actualiser tout** : recalcule tous les tableaux croisés et jeux de données externes.
+- **Trier** (menu déroulant) : croissant / décroissant / tri personnalisé (règles sur plusieurs colonnes).
+- **Filtrer** : ajoute des menus ▼ à la ligne d’en-tête ; cochez les valeurs à conserver.
+- Les petits boutons empilés à côté : **Effacer** (revenir à toutes les lignes), **Réappliquer** (relancer le filtre courant), **Avancé** (filtrer avec une plage de critères).
+- **Texte en colonnes** (menu déroulant) : scinde une colonne en plusieurs selon un délimiteur ou une largeur fixe.
+- **Remplissage instantané** : donnez un exemple et le reste de la colonne se remplit sur le modèle (ctrl+E).
+- **Supprimer les doublons** : retire les lignes en double d’après les colonnes sélectionnées.
+- **Validation des données** (menu déroulant) : règles de saisie pour la sélection (listes déroulantes, plages de nombres…).
+- **Consolider** : agrège plusieurs plages en un seul endroit par catégorie.
+- **Analyse de scénarios** (menu déroulant) : valeur cible — résout une cellule d’entrée pour qu’une cellule de formule atteigne la valeur cible.
+- **Grouper / Dissocier** (menu déroulant) : groupes de lignes ou de colonnes avec repli et développement.
+- **Sous-total** : insère des lignes de sous-total par catégorie.
+
+L’onglet Formules, bouton par bouton :
+
+![L’onglet Formules](img/sheets-formulas.png)
+
+- **Insérer une fonction** (fx) : recherche des fonctions avec un assistant d’arguments.
+- **Somme automatique** (menu déroulant) : SOMME en un clic, plus moyenne/compte/max/min.
+- **Fonctions récentes / Financières / Logiques / Texte / Date et heure / Recherche et référence / Maths et trigonométrie / Plus** : parcourez et insérez les fonctions par catégorie.
+- **Gestionnaire de noms** : afficher, créer et supprimer des plages nommées.
+- **Définir un nom** (menu déroulant) : nomme la sélection ; **Utiliser dans la formule** insère un nom existant ; **Créer à partir de la sélection** nomme des plages d’après leur ligne ou colonne d’en-tête.
+- **Repérer les antécédents / Repérer les dépendants** : des flèches bleues montrent d’où viennent les données d’une formule et où elles alimentent ; **Supprimer les flèches** les efface.
+- **Afficher les formules** : les cellules montrent la formule elle-même au lieu du résultat.
+- **Vérification des erreurs** : localise et explique les erreurs de formule.
+- **Fenêtre Espion** : épinglez les cellules qui vous intéressent et suivez leurs valeurs en direct.
+- **Options de calcul** (menu déroulant) : recalcul automatique ou manuel ; en mode manuel, **Calculer maintenant** et **Calculer la feuille** déclenchent le recalcul à la main.
+
+## Nombres et formats
+
+- Formats de nombre : standard, nombre, devise, pourcentage, date/heure, fraction, scientifique et plus encore.
+- Alignement, retour à la ligne, cellules fusionnées, bordures et remplissages.
+- Hauteurs de lignes et largeurs de colonnes par glissement ; double-cliquez sur une bordure pour ajuster automatiquement.
+
+## Données
+
+**Trier et filtrer** (par exemple, par ordre décroissant sur une colonne) :
+
+1. Cliquez sur **n’importe quelle cellule de cette colonne** (inutile de sélectionner toute la colonne).
+2. Onglet Accueil ▸ **Trier et filtrer** ▸ **Décroissant** ; les lignes entières se réordonnent ensemble (la zone est triée comme un tout).
+3. Pour des règles personnalisées (plusieurs colonnes, par couleur) : même chemin, **Tri personnalisé**.
+4. Filtrage : sélectionnez la ligne d’en-tête et cliquez sur **Trier et filtrer ▸ Filtrer** — chaque en-tête reçoit un menu ▼ où vous cochez les valeurs à garder ; effacer le filtre ramène tout.
+
+- Trier et filtrer.
+- Figer les volets.
+- .csv / .tsv : s’ouvrent directement comme une table (un tsv séparé par des tabulations est analysé comme une seule table) ; l’enregistrement réécrit au format d’origine.
+
+## Menus contextuels
+
+- **Dans la grille** : le menu propre à l’éditeur (Univer) — couper/copier/coller, insérer et supprimer lignes/colonnes, masquer, fusionner des cellules, figer les volets et autres items du quotidien.
+- **Sur la barre d’état du bas** : choisissez les statistiques affichées dans la barre d’état (moyenne / nombre / somme, …) ; le choix est conservé.
+- **Sur un onglet de feuille en bas** : ajouter / renommer / supprimer / colorer / masquer des feuilles (menu d’onglet d’Univer).
+- Le menu contextuel de la barre d’onglets en haut est traité dans [Onglets et gestion des fenêtres](help://tabs-and-windows).
+
+## IA
+
+- Le panneau IA latéral : sélectionnez une plage et donnez votre instruction en langage naturel (reformater, générer des données, écrire des formules).
+- Joignez des fichiers à une invite avec le bouton 📎, ou faites-les glisser sur le panneau ; ils accompagnent la question et les images reviennent sous forme de vignettes.
+- Une réponse peut citer une cellule — cliquez sur la référence et la grille s’y rend.
+- Les modifications de l’IA peuvent être annulées depuis le panneau.
+
+## Enregistrement et export
+
+- Enregistre du .xlsx (formules et formats préservés) ; Enregistrer sous ; l’export PDF suit la pagination d’impression.
+- L’enregistrement automatique suit la règle globale (activé après la première sauvegarde manuelle).
+
+## Stabilité
+
+- Le moteur de calcul est isolé de l’interface au niveau du processus : si des données extrêmes le tuent, vous obtenez un message et une tentative de récupération de session — pas un plantage de l’application.

@@ -12,6 +12,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { removeBackground, sampleBackgroundColors, type PixelImage, type RGB } from '../cutout'
 import { useI18n, type StringKey } from '../i18n/locale'
+import { useModalKeys } from './modal-keys'
 
 /** Longest side of the preview canvas (px) */
 const PREVIEW_MAX = 520
@@ -132,16 +133,8 @@ export function CutoutDialog({ dataUrl, onApply, onCancel }: CutoutProps) {
     [],
   )
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onCancel()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onCancel])
+  // Esc/Tab/focus handled by useModalKeys on the backdrop (single handler).
+  const modalKeys = useModalKeys(onCancel)
 
   const apply = () => {
     const full = fullRef.current
@@ -164,13 +157,21 @@ export function CutoutDialog({ dataUrl, onApply, onCancel }: CutoutProps) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
+    <div
+      className="modal-backdrop"
+      ref={modalKeys.ref}
+      onKeyDown={modalKeys.onKeyDown}
+      onClick={onCancel}
+    >
       <div
         className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cutout-title"
         style={{ maxWidth: PREVIEW_MAX + 48 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2>{t('ribbonRemoveBg')}</h2>
+        <h2 id="cutout-title">{t('ribbonRemoveBg')}</h2>
         <div
           style={{
             ...CHECKERBOARD,
@@ -338,20 +339,19 @@ export function CropDialog({ dataUrl, onApply, onCancel }: CropProps) {
     }
   }, [crop, dataUrl, onApply])
 
-  // Esc cancels / Enter applies
+  // Enter applies (Esc/Tab/focus come from useModalKeys on the backdrop).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onCancel()
-      } else if (e.key === 'Enter' && loaded && !error) {
+      if (e.key === 'Enter' && loaded && !error) {
         e.preventDefault()
         apply()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onCancel, apply, loaded, error])
+  }, [apply, loaded, error])
+
+  const modalKeys = useModalKeys(onCancel)
 
   const startDrag = (handle: CropHandle) => (e: React.MouseEvent) => {
     e.preventDefault()
@@ -437,9 +437,17 @@ export function CropDialog({ dataUrl, onApply, onCancel }: CropProps) {
   const HANDLES: CropHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
+    <div
+      className="modal-backdrop"
+      ref={modalKeys.ref}
+      onKeyDown={modalKeys.onKeyDown}
+      onClick={onCancel}
+    >
       <div
         className="modal crop-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="crop-title"
         style={{
           width: PREVIEW_MAX + 48 + CROP_HANDLE_GUTTER * 2,
           maxWidth: 'calc(100vw - 32px)',
@@ -449,7 +457,7 @@ export function CropDialog({ dataUrl, onApply, onCancel }: CropProps) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2>{t('ribbonCrop')}</h2>
+        <h2 id="crop-title">{t('ribbonCrop')}</h2>
         <div
           style={{
             ...CHECKERBOARD,

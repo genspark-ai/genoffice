@@ -1,30 +1,62 @@
-import { readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import {
   PDFArray,
   PDFBool,
+  PDFDict,
   PDFDocument,
   PDFDropdown,
   PDFHexString,
   PDFName,
+  PDFNumber,
   PDFOptionList,
+  PDFRadioGroup,
+  PDFRef,
+  PDFSignature,
+  PDFString,
+  StandardFonts,
+  TextAlignment,
   degrees,
+  rgb,
 } from 'pdf-lib'
-import type { PDFDict, PDFPage, PDFRef } from 'pdf-lib'
+import type { PDFPage } from 'pdf-lib'
 import { VISUAL_SIGNATURE_CONTENT_PREFIX } from '../shared/ipc'
+import {
+  decryptDocument,
+  encryptDocument,
+  encryptDocumentWithOriginalProtection,
+  type OriginalProtection,
+} from './pdf-crypt'
+import { applyAttachments } from './pdf-attachments'
 import type {
+  BlankPageInput,
   DrawingInput,
+  OutlineEntryInput,
+  FormFieldInput,
+  FormWidgetEditInput,
   FormValueInput,
   ImageEditFailure,
   MarkupInput,
   MetadataInput,
+  NoteReplyTarget,
+  PdfEncryptionInput,
   SavePdfRequest,
   StaticFormFillRecord,
   TextEditFailure,
   TextInsertFailure,
 } from '../shared/ipc'
+import { writePdfAtomically } from './atomic-write'
+import { redactPdf } from './redaction'
 
 const num = (v: number) => Math.round(v * 100) / 100
 const STATIC_FORM_FILLS_KEY = PDFName.of('GenOfficeStaticFormFills')
+/** /T of a new annotation when the request names no author */
+const DEFAULT_ANNOT_AUTHOR = 'GenOffice'
+
+const rectsIntersect = (a: readonly number[], b: readonly number[]): boolean =>
+  Math.min(a[0]!, a[2]!) < Math.max(b[0]!, b[2]!) &&
+  Math.max(a[0]!, a[2]!) > Math.min(b[0]!, b[2]!) &&
+  Math.min(a[1]!, a[3]!) < Math.max(b[1]!, b[3]!) &&
+  Math.max(a[1]!, a[3]!) > Math.min(b[1]!, b[3]!)
 
 function validStaticFormFill(value: unknown): value is StaticFormFillRecord {
   if (!value || typeof value !== 'object') return false
@@ -64,6 +96,15 @@ function resultingStaticFormFills(
     )
   const newPageIndex = new Map(remaining.map((oldPageIndex, index) => [oldPageIndex, index]))
   return request.staticFormFills.flatMap((record) => {
+    // This private JSON cache can contain form text even after its painted image is
+    // removed. Drop cache records that native area redaction covers.
+    if (
+      request.redactions?.some(
+        (redaction) =>
+          redaction.pageIndex === record.pageIndex && rectsIntersect(redaction.rect, record.rect),
+      )
+    )
+      return []
     const pageIndex = newPageIndex.get(record.pageIndex)
     return pageIndex === undefined ? [] : [{ ...record, pageIndex }]
   })
@@ -89,7 +130,8 @@ const quadBounds = (q: number[]) => {
  * Acrobat/Preview/pdfjs all render from AP for consistent results.
  * Highlight uses Multiply blending to mimic a highlighter; underline/strikeout are stroked
  * segments drawn along the "visual bottom edge" (pageRot is the page's final /Rotate;
- * at 90/270 line height runs along the x axis).
+ * at 90/270 line height runs along the x axis); squiggly is a repeating wave on the
+ * same edge.
  */
 function markupAppearance(
   pdfDoc: PDFDocument,
@@ -104,6 +146,24 @@ function markupAppearance(
     for (const q of m.quads) {
       const [x1, y1, x2, y2] = quadBounds(q)
       ops.push(`${num(x1)} ${num(y1)} ${num(x2 - x1)} ${num(y2 - y1)} re f`)
+    }
+  } else if (m.type === 'squiggly') {
+    const t = 0.08 // same visual bottom-edge offset as underline
+    ops.push(`${r} ${g} ${b} RG`)
+    for (const q of m.quads) {
+      const [x1, y1, x2, y2] = quadBounds(q)
+      const h = pageRot % 180 === 0 ? y2 - y1 : x2 - x1
+      ops.push(`${Math.max(0.8, num(h * 0.06))} w`)
+      // The perpendicular points the way the wave bulges: from the visual bottom
+      // edge into the text, which is -x at rot 90 and -y at rot 180
+      if (pageRot === 90) {
+        squigglyOps(ops, x2 - h * t, y1, 0, 1, -1, 0, y2 - y1)
+      } else if (pageRot === 270) {
+        squigglyOps(ops, x1 + h * t, y1, 0, 1, 1, 0, y2 - y1)
+      } else {
+        const y = pageRot === 180 ? y2 - h * t : y1 + h * t
+        squigglyOps(ops, x1, y, 1, 0, 0, pageRot === 180 ? -1 : 1, x2 - x1)
+      }
     }
   } else {
     const t = m.type === 'underline' ? 0.08 : 0.46
@@ -139,9 +199,29 @@ const SUBTYPE: Record<MarkupInput['type'], string> = {
   highlight: 'Highlight',
   underline: 'Underline',
   strikeout: 'StrikeOut',
+  squiggly: 'Squiggly',
 }
 
-function addMarkup(pdfDoc: PDFDocument, page: PDFPage, m: MarkupInput): void {
+/**
+ * Markup inputs arrive from the renderer/AI layer: reject colors outside 0-1,
+ * empty quad lists, and non-finite quad coordinates before they reach the
+ * appearance stream (Math.min(...[]) is Infinity, NaN poisons BBox/Rect).
+ */
+function validMarkup(m: MarkupInput): boolean {
+  if (!Array.isArray(m.color) || m.color.length !== 3) return false
+  if (!m.color.every((c) => typeof c === 'number' && Number.isFinite(c) && c >= 0 && c <= 1)) {
+    return false
+  }
+  if (!Array.isArray(m.quads) || m.quads.length === 0) return false
+  return m.quads.every(
+    (q) =>
+      Array.isArray(q) &&
+      q.length === 8 &&
+      q.every((v) => typeof v === 'number' && Number.isFinite(v)),
+  )
+}
+
+function addMarkup(pdfDoc: PDFDocument, page: PDFPage, m: MarkupInput, author: string): void {
   const xs = m.quads.flatMap((q) => [q[0]!, q[2]!, q[4]!, q[6]!])
   const ys = m.quads.flatMap((q) => [q[1]!, q[3]!, q[5]!, q[7]!])
   const rect = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
@@ -154,7 +234,7 @@ function addMarkup(pdfDoc: PDFDocument, page: PDFPage, m: MarkupInput): void {
     QuadPoints: m.quads.flat(),
     C: m.color,
     F: 4, // print
-    T: 'GenOffice',
+    T: PDFHexString.fromText(author),
     P: page.ref,
     AP: { N: apRef },
   })
@@ -168,6 +248,46 @@ function appendAnnot(pdfDoc: PDFDocument, page: PDFPage, annotRef: PDFRef): void
   } else {
     page.node.set(PDFName.of('Annots'), pdfDoc.context.obj([annotRef]))
   }
+}
+
+/**
+ * One squiggly (wavy underline) stroke: repeating quadratic Bezier humps along a
+ * baseline, started and ended on the wave's midline — period ≈ 4 user units,
+ * amplitude ≈ 1.5. The midline sits one amplitude above the underline position so
+ * troughs stay inside the quad (the /AP BBox clips). (dx,dy) walks the line, (px,py)
+ * is its unit perpendicular.
+ */
+function squigglyOps(
+  ops: string[],
+  ax: number,
+  ay: number,
+  dx: number,
+  dy: number,
+  px: number,
+  py: number,
+  length: number,
+): void {
+  const half = 2 // half period
+  const amp = 1.5
+  const at = (d: number, off: number) =>
+    `${num(ax + dx * d + px * off)} ${num(ay + dy * d + py * off)}`
+  ops.push(`${at(0, amp)} m`)
+  let side = 1
+  let from = 0
+  while (from < length) {
+    const to = Math.min(from + half, length)
+    // The quadratic hump PDF has no operator for, written as the cubic that
+    // reproduces it: control points at 1/3 and 2/3 of the segment, 4/3 of the
+    // apex above the midline (a symmetric cubic peaks at 3/4 of its control
+    // height). A single 'v' control point skewed the hump and pushed the
+    // troughs below the midline.
+    const ctrl = amp + (side * 4 * amp) / 3
+    const third = (to - from) / 3
+    ops.push(`${at(from + third, ctrl)} ${at(from + 2 * third, ctrl)} ${at(to, amp)} c`)
+    from = to
+    side = -side
+  }
+  ops.push('S')
 }
 
 /** 4-segment Bezier approximation of an ellipse */
@@ -197,6 +317,7 @@ async function addImageStamp(
   pdfDoc: PDFDocument,
   page: PDFPage,
   d: Extract<DrawingInput, { kind: 'image' }>,
+  author: string,
 ): Promise<void> {
   const png = await pdfDoc.embedPng(d.image)
   const [x1, y1, x2, y2] = d.rect
@@ -226,29 +347,391 @@ async function addImageStamp(
     P: page.ref,
     AP: { N: pdfDoc.context.register(ap) },
   })
-  annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
+  annot.set(PDFName.of('T'), PDFHexString.fromText(author))
   setVisualSignatureMetadata(annot, d.formFieldName)
   appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
 }
 
-/** Drawing annots: hand-written AP for Ink/Square/Circle/Line; notes are standard Text annots (viewer draws the icon) */
-function addDrawing(pdfDoc: PDFDocument, page: PDFPage, d: DrawingInput): void {
+/**
+ * Full /Outlines replacement from an edited bookmark tree. Every entry
+ * carries an explicit page target (validated up front — a page index beyond
+ * the document aborts the whole replacement before anything is registered),
+ * so the graph is rebuilt deterministically: /First//Last//Next//Prev
+ * pointers, /Count as each item's visible-descendant tally, and /Dest
+ * [page /XYZ 0 top null] (top null keeps the viewer's zoom). The root dict
+ * replaces the catalog's /Outlines wholesale — untouched documents never
+ * reach this path (the request omits `outline`), so existing bookmarks stay
+ * byte-identical unless the user edited the tree.
+ *
+ * `deleted` is the set of pages the same save removes. A bookmark on a page
+ * that is leaving the document would carry a /Dest to a page no longer in the
+ * page tree, so that entry goes with the page — and so do its children, which
+ * hang off it. The /Dest itself is a page *reference*, not an index, so the
+ * entries that survive a deletion elsewhere still point at the right page.
+ */
+function applyOutline(
+  pdfDoc: PDFDocument,
+  entries: readonly OutlineEntryInput[],
+  deleted: ReadonlySet<number>,
+): void {
+  /** The tree without the entries whose page is being deleted. */
+  const prune = (list: readonly OutlineEntryInput[]): OutlineEntryInput[] =>
+    list
+      .filter((entry) => !deleted.has(entry.pageIndex))
+      .map((entry) => ({
+        ...entry,
+        children: entry.children?.length ? prune(entry.children) : undefined,
+      }))
+
+  const kept = prune(entries)
+  // Every entry went with a deleted page: the edit has nothing left to say,
+  // so the file's own /Outlines stay as they are rather than being replaced by
+  // an empty graph. An empty tree the reader made is a different thing — that
+  // is a deliberate "no bookmarks", and it is written.
+  if (entries.length > 0 && kept.length === 0) return
+
+  const verify = (list: readonly OutlineEntryInput[]): void => {
+    for (const entry of list) {
+      const title = typeof entry.title === 'string' ? entry.title.trim() : ''
+      if (title === '') throw new Error('Outline entries need a non-empty title.')
+      if (
+        !Number.isInteger(entry.pageIndex) ||
+        entry.pageIndex < 0 ||
+        entry.pageIndex >= pdfDoc.getPageCount()
+      ) {
+        throw new Error(`Outline entry "${title}" points at page ${entry.pageIndex}.`)
+      }
+      if (entry.children?.length) verify(entry.children)
+    }
+  }
+  verify(kept)
+
+  const pages = pdfDoc.getPages()
+  const rootRef = pdfDoc.context.register(pdfDoc.context.obj({ Type: 'Outlines' }))
+
+  /** Registers the list's items under parentRef; returns first/last refs and
+      the subtree's total item count (each item's /Count is set from its own
+      children's return). */
+  const build = (
+    list: readonly OutlineEntryInput[],
+    parentRef: PDFRef,
+  ): { first: PDFRef | null; last: PDFRef | null; total: number } => {
+    let first: PDFRef | null = null
+    let previous: PDFRef | null = null
+    let count = 0
+    for (const entry of list) {
+      const page = pages[entry.pageIndex]!
+      const dict = pdfDoc.context.obj({
+        Title: PDFHexString.fromText(entry.title.trim()),
+        Parent: parentRef,
+        Dest: pdfDoc.context.obj([
+          page.ref,
+          PDFName.of('XYZ'),
+          0,
+          typeof entry.top === 'number' ? num(entry.top) : null,
+          null,
+        ]),
+      })
+      const ref = pdfDoc.context.register(dict)
+      count += 1
+      if (previous !== null) {
+        ;(pdfDoc.context.lookup(previous, PDFDict) as PDFDict).set(PDFName.of('Next'), ref)
+        dict.set(PDFName.of('Prev'), previous)
+      }
+      if (first === null) first = ref
+      previous = ref
+      if (entry.children?.length) {
+        const child = build(entry.children, ref)
+        if (child.first) dict.set(PDFName.of('First'), child.first)
+        if (child.last) dict.set(PDFName.of('Last'), child.last)
+        dict.set(PDFName.of('Count'), PDFNumber.of(child.total))
+        count += child.total
+      }
+    }
+    return { first, last: previous, total: count }
+  }
+
+  const top = build(kept, rootRef)
+  const root = pdfDoc.context.lookup(rootRef, PDFDict) as PDFDict
+  // An empty tree is a valid outline root: no /First means no entries.
+  if (top.first) root.set(PDFName.of('First'), top.first)
+  if (top.last) root.set(PDFName.of('Last'), top.last)
+  root.set(PDFName.of('Count'), PDFNumber.of(top.total))
+  pdfDoc.catalog.set(PDFName.of('Outlines'), rootRef)
+}
+
+/**
+ * Hyperlink annotation: /A /URI for web targets, /Dest [page /XYZ null null null]
+ * for in-document jumps (nulls keep the viewer's current zoom/position). No
+ * appearance stream — every viewer draws its own hover affordance from /Rect,
+ * which is also what the read path (pdf.js getAnnotations) keys on.
+ */
+function addLinkAnnot(
+  pdfDoc: PDFDocument,
+  pages: PDFPage[],
+  page: PDFPage,
+  d: Extract<DrawingInput, { kind: 'link' }>,
+): void {
+  const annot = pdfDoc.context.obj({
+    Type: 'Annot',
+    Subtype: 'Link',
+    Rect: [num(d.rect[0]), num(d.rect[1]), num(d.rect[2]), num(d.rect[3])],
+    F: 4, // print
+    P: page.ref,
+  })
+  if (d.url) {
+    annot.set(
+      PDFName.of('A'),
+      pdfDoc.context.obj({ Type: 'Action', S: 'URI', URI: PDFString.of(d.url) }),
+    )
+  } else {
+    const target = pages[(d.destPage ?? 1) - 1]
+    if (!target) return
+    annot.set(
+      PDFName.of('Dest'),
+      pdfDoc.context.obj([target.ref, PDFName.of('XYZ'), null, null, null]),
+    )
+  }
+  appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
+}
+
+/** Epoch ms → PDF date string, e.g. D:20260812175959+08'00' */
+function pdfDateString(ms: number): string {
+  const d = new Date(ms)
+  const p = (n: number) => String(n).padStart(2, '0')
+  const off = -d.getTimezoneOffset()
+  const sign = off >= 0 ? '+' : '-'
+  const abs = Math.abs(off)
+  return (
+    `D:${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}` +
+    `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}` +
+    `${sign}${p(Math.floor(abs / 60))}'${p(abs % 60)}'`
+  )
+}
+
+const NOTE_RECT_TOL = 2
+
+/** Top-left anchors within tolerance — the only note identity that survives pdf.js
+    resizing AP-less Text annot rects to its default icon size */
+const noteRectsClose = (a: readonly number[], b: readonly number[]): boolean =>
+  Math.abs(Math.min(a[0]!, a[2]!) - Math.min(b[0]!, b[2]!)) <= NOTE_RECT_TOL &&
+  Math.abs(Math.max(a[1]!, a[3]!) - Math.max(b[1]!, b[3]!)) <= NOTE_RECT_TOL
+
+/** Locate the saved Text annotation a reply points at (/IRT target). Earlier pdfium
+    stages may have renumbered objects, so candidates match by rect + contents; the
+    object-number hint only breaks ties between identical-looking notes. */
+function findNoteAnnotRef(
+  pdfDoc: PDFDocument,
+  page: PDFPage,
+  target: NoteReplyTarget,
+): PDFRef | null {
+  const annots = page.node.lookupMaybe(PDFName.of('Annots'), PDFArray)
+  if (!annots) return null
+  const matches: PDFRef[] = []
+  for (let i = 0; i < annots.size(); i++) {
+    const ref = annots.get(i)
+    if (!(ref instanceof PDFRef)) continue
+    const dict = pdfDoc.context.lookupMaybe(ref, PDFDict)
+    if (!dict || dict.lookupMaybe(PDFName.of('Subtype'), PDFName) !== PDFName.of('Text')) continue
+    const rectArr = dict.lookupMaybe(PDFName.of('Rect'), PDFArray)
+    if (!rectArr || rectArr.size() !== 4) continue
+    const rect: number[] = []
+    for (let j = 0; j < rectArr.size(); j++) {
+      const v = rectArr.lookupMaybe(j, PDFNumber)
+      if (v) rect.push(v.asNumber())
+    }
+    if (rect.length !== 4 || !noteRectsClose(rect, target.rect)) continue
+    const contents = dict.lookup(PDFName.of('Contents'))
+    const text =
+      contents instanceof PDFString || contents instanceof PDFHexString ? contents.decodeText() : ''
+    if (text !== target.contents) continue
+    if (ref.objectNumber === target.objNum) return ref
+    matches.push(ref)
+  }
+  return matches[0] ?? null
+}
+
+/** A note icon: the familiar rounded speech bubble with a tail and a few text
+ *  rules, so it reads as a comment rather than as a bare swatch. Geometry is in
+ *  the annotation rect (inset by half the stroke so the border stays inside).
+ *
+ *  The appearance form needs its own /Resources dictionary. A Form XObject with
+ *  no /Resources key at all leaves Quartz drawing this note dark grey
+ *  (`1 0.9 0.3 rg` read as the single value 0.3) while Poppler draws it yellow,
+ *  so the note shows up in one viewer and not the other. markupAppearance never
+ *  hit this because it always passes a Resources object; naming the colour
+ *  space as well keeps the result independent of the page's default. */
+function noteAppearance(
+  pdfDoc: PDFDocument,
+  rect: number[],
+  color: [number, number, number],
+): ReturnType<typeof pdfDoc.context.stream> {
+  const [x0, y0, x1, y1] = rect as [number, number, number, number]
+  const [r, g, b] = color
+  const w = x1 - x0
+  const h = y1 - y0
+  // the layout below is authored against a 20x18 icon, scaled to the actual rect
+  const sx = w / 20
+  const sy = h / 18
+  const p = (vx: number, vy: number) => `${num(x0 + vx * sx)} ${num(y0 + vy * sy)}`
+  const line = 0.75 * Math.min(sx, sy)
+  const dark = (f: number) => `${num(r * f)} ${num(g * f)} ${num(b * f)}`
+
+  // bubble body, with the tail notched into the bottom-left corner
+  const body = [
+    `${p(1, 4.5)} m`,
+    `${p(1, 0.5)} l`,
+    `${p(6, 4.5)} l`,
+    `${p(17.5, 4.5)} l`,
+    `${p(20, 8)} l`,
+    `${p(20, 15.5)} l`,
+    `${p(17.5, 18)} l`,
+    `${p(2.5, 18)} l`,
+    `${p(0, 15.5)} l`,
+    `${p(0, 8)} l`,
+    `${p(1, 4.5)} l`,
+    'B',
+  ].join('\n')
+
+  const rules = [5.5, 9, 12.5]
+    .map((y, i) => `${p(3.5, y)} m ${p(i === 1 ? 13 : 16.5, y)} l S`)
+    .join('\n')
+
+  const ops = [
+    '/NoteRGB CS',
+    `${dark(0.62)} SCN`,
+    `${num(line)} w`,
+    '/NoteRGB cs',
+    `${num(r)} ${num(g)} ${num(b)} scn`,
+    body,
+    `${dark(0.62)} SCN`,
+    `${num(line * 0.7)} w`,
+    rules,
+  ]
+  return pdfDoc.context.stream(ops.join('\n'), {
+    Type: 'XObject',
+    Subtype: 'Form',
+    BBox: rect,
+    Resources: { ColorSpace: { NoteRGB: 'DeviceRGB' } },
+  })
+}
+
+/** The caret wedge: the insertion point is the tip, the arms reach half a box out
+ *  and two thirds of it down — the renderer's chevron, filled. */
+const CARET_HALF_WIDTH = 8
+const CARET_DEPTH = 6
+
+/** Drawing annots: hand-written AP for every shape (Ink/Square/Circle/Line, Caret,
+ *  Polygon); notes get an AP icon so Preview (Quartz) draws them instead of nothing.
+ *  The AP is what makes a saved shape visible: pdf.js has no default appearance for
+ *  a Caret and pdfium's generator covers neither Caret nor Polygon, so both would
+ *  come back blank in GenOffice, Preview, Chrome or Edge. */
+function addDrawing(
+  pdfDoc: PDFDocument,
+  page: PDFPage,
+  d: DrawingInput,
+  /** localId → registered ref of notes written earlier in this request (reply parenting) */
+  noteRefs?: Map<string, PDFRef>,
+  /** the label font's ref for measure drawings (their appearance names /F1) */
+  measureFontRef?: PDFRef,
+  author = DEFAULT_ANNOT_AUTHOR,
+): void {
   if (d.kind === 'image') return // handled by addImageStamp (needs async embed)
+  if (d.kind === 'link') return // handled by addLinkAnnot (needs the page list)
   const [r, g, b] = d.color
 
   if (d.kind === 'note') {
     const [x, y] = d.at
+    const rect: [number, number, number, number] = [x, y - 18, x + 20, y]
     const annot = pdfDoc.context.obj({
       Type: 'Annot',
       Subtype: 'Text',
-      Rect: [num(x), num(y - 18), num(x + 20), num(y)],
+      Rect: rect.map(num),
       Name: 'Comment',
       C: d.color,
       F: 4,
       P: page.ref,
+      AP: { N: pdfDoc.context.register(noteAppearance(pdfDoc, rect, d.color)) },
     })
     annot.set(PDFName.of('Contents'), PDFHexString.fromText(d.contents))
-    annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
+    annot.set(PDFName.of('T'), PDFHexString.fromText(d.author || author))
+    const when = pdfDateString(d.createdMs ?? Date.now())
+    annot.set(PDFName.of('CreationDate'), PDFString.of(when))
+    annot.set(PDFName.of('M'), PDFString.of(when))
+    // Reply → standard /IRT chain (WPS/Acrobat comment threads). An unresolvable
+    // parent degrades the reply to a root note instead of dropping the content.
+    const parentRef = d.replyToLocalId
+      ? (noteRefs?.get(d.replyToLocalId) ?? null)
+      : d.replyToSaved
+        ? findNoteAnnotRef(pdfDoc, page, d.replyToSaved)
+        : null
+    if (parentRef) {
+      annot.set(PDFName.of('IRT'), parentRef)
+      annot.set(PDFName.of('RT'), PDFName.of('R'))
+    }
+    const ref = pdfDoc.context.register(annot)
+    if (d.localId) noteRefs?.set(d.localId, ref)
+    appendAnnot(pdfDoc, page, ref)
+    return
+  }
+
+  if (d.kind === 'caret') {
+    const [x, y] = d.point
+    const rect = [num(x - 10), num(y - 10), num(x + 10), num(y + 10)]
+    // The wedge as a filled path: the tip is the insertion point, the arms open
+    // downwards. The AP BBox is the annotation rect — a viewer maps BBox → /Rect,
+    // so the two must match or the mark is scaled.
+    const ops = [
+      `${r} ${g} ${b} rg`,
+      `${num(x)} ${num(y)} m ${num(x - CARET_HALF_WIDTH)} ${num(y - CARET_DEPTH)} l ${num(x + CARET_HALF_WIDTH)} ${num(y - CARET_DEPTH)} l f`,
+    ]
+    const ap = pdfDoc.context.stream(ops.join('\n'), {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: rect,
+    })
+    const annot = pdfDoc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Caret',
+      Rect: rect,
+      F: 4,
+      P: page.ref,
+      C: d.color,
+      AP: { N: pdfDoc.context.register(ap) },
+    })
+    annot.set(PDFName.of('T'), PDFHexString.fromText(author))
+    appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
+    return
+  }
+
+  if (d.kind === 'polygon') {
+    const xs = d.vertices.map((v) => v[0])
+    const ys = d.vertices.map((v) => v[1])
+    const rect = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map(num)
+    // The vertices as a closed stroked path, like Ink/Line: round caps and joins
+    // match the renderer's preview, and the stroke is the annotation's own color.
+    const ops = [`${num(d.width)} w 1 J 1 j ${r} ${g} ${b} RG`]
+    d.vertices.forEach(([vx, vy], i) => {
+      ops.push(`${num(vx)} ${num(vy)} ${i === 0 ? 'm' : 'l'}`)
+    })
+    ops.push('h S')
+    const ap = pdfDoc.context.stream(ops.join('\n'), {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: rect,
+    })
+    const annot = pdfDoc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Polygon',
+      Rect: rect,
+      Vertices: d.vertices.flat().map(num),
+      F: 4,
+      P: page.ref,
+      C: d.color,
+      BS: { W: d.width },
+      AP: { N: pdfDoc.context.register(ap) },
+    })
+    annot.set(PDFName.of('T'), PDFHexString.fromText(author))
     appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
     return
   }
@@ -284,6 +767,28 @@ function addDrawing(pdfDoc: PDFDocument, page: PDFPage, d: DrawingInput): void {
     ops.push(`${num(fx)} ${num(fy)} m ${num(tx)} ${num(ty)} l S`)
     xs = [fx, tx]
     ys = [fy, ty]
+    if (d.kind === 'measure') {
+      // the label rides the line's own angle at its midpoint, flipped into
+      // left-to-right when the line runs right-to-left; the whole appearance
+      // rotates with the page like any other annotation's. The label takes the
+      // drawing's own colour, matching the on-screen preview.
+      const mx = (fx + tx) / 2
+      const my = (fy + ty) / 2
+      const ang = Math.atan2(ty - fy, tx - fx)
+      const flip = Math.abs(ang) > Math.PI / 2
+      const tilt = flip ? ang + Math.PI : ang
+      ops.push(`BT ${r} ${g} ${b} rg /F1 9 Tf`)
+      ops.push(
+        `${num(Math.cos(tilt))} ${num(Math.sin(tilt))} ${num(-Math.sin(tilt))} ${num(Math.cos(tilt))} ${num(mx)} ${num(my + 6)} Tm`,
+      )
+      const esc = d.label.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+      ops.push(`(${esc}) Tj ET`)
+      // Helvetica 9pt averages ~4.5pt per glyph, and the extent follows the
+      // label's tilt — an axis-aligned half-width clipped steep lines
+      const halfW = (d.label.length * 4.5) / 2
+      xs.push(mx + Math.cos(tilt) * halfW, mx - Math.cos(tilt) * halfW)
+      ys.push(my + 6 + Math.sin(tilt) * halfW, my + 6 - Math.sin(tilt) * halfW)
+    }
     if (d.kind === 'arrow') {
       const ang = Math.atan2(ty - fy, tx - fx)
       const len = Math.max(9, d.width * 4.5)
@@ -304,7 +809,16 @@ function addDrawing(pdfDoc: PDFDocument, page: PDFPage, d: DrawingInput): void {
     Math.max(...xs) + pad,
     Math.max(...ys) + pad,
   ]
-  const ap = pdfDoc.context.stream(ops.join('\n'), { Type: 'XObject', Subtype: 'Form', BBox: rect })
+  // Preview and Acrobat synthesize nothing for an unresolvable font reference:
+  // the label's /F1 must be reachable through the form's /Resources
+  const ap = pdfDoc.context.stream(ops.join('\n'), {
+    Type: 'XObject',
+    Subtype: 'Form',
+    BBox: rect,
+    ...(d.kind === 'measure' && measureFontRef
+      ? { Resources: { Font: { F1: measureFontRef } } }
+      : {}),
+  })
   const annot = pdfDoc.context.obj({
     Type: 'Annot',
     Subtype: subtype,
@@ -319,7 +833,11 @@ function addDrawing(pdfDoc: PDFDocument, page: PDFPage, d: DrawingInput): void {
   if (d.kind === 'line' || d.kind === 'arrow') {
     annot.set(PDFName.of('L'), pdfDoc.context.obj([...d.from, ...d.to]))
   }
-  annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
+  if (d.kind === 'measure') {
+    annot.set(PDFName.of('L'), pdfDoc.context.obj([...d.from, ...d.to]))
+    annot.set(PDFName.of('Contents'), PDFHexString.fromText(d.label))
+  }
+  annot.set(PDFName.of('T'), PDFHexString.fromText(author))
   if (d.kind === 'ink') setVisualSignatureMetadata(annot, d.formFieldName)
   appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
 }
@@ -347,6 +865,211 @@ function applyFormValues(pdfDoc: PDFDocument, values: FormValueInput[]): void {
   }
 }
 
+const FIELD_BORDER = rgb(0.45, 0.45, 0.45)
+const FIELD_BORDER_WIDTH = 1
+
+/** The box pdf-lib's addToPage pads by the border and rotates about (x, y), chosen so the final /Rect equals `rect` on a page rotated by `rot`. */
+function widgetBox(
+  rect: FormFieldInput['rect'],
+  rot: number,
+): { x: number; y: number; width: number; height: number } {
+  const x1 = Math.min(rect[0], rect[2])
+  const y1 = Math.min(rect[1], rect[3])
+  const w = Math.abs(rect[2] - rect[0])
+  const h = Math.abs(rect[3] - rect[1])
+  const bw = FIELD_BORDER_WIDTH
+  const b = bw / 2
+  switch (((rot % 360) + 360) % 360) {
+    case 90:
+      return { x: x1 + w - b, y: y1 + b, width: h - bw, height: w - bw }
+    case 180:
+      return { x: x1 + w - b, y: y1 + h - b, width: w - bw, height: h - bw }
+    case 270:
+      return { x: x1 + b, y: y1 + h - b, width: h - bw, height: w - bw }
+    default:
+      return { x: x1 + b, y: y1 + b, width: w - bw, height: h - bw }
+  }
+}
+
+function addSignatureField(pdfDoc: PDFDocument, page: PDFPage, f: FormFieldInput): void {
+  const form = pdfDoc.getForm()
+  const rect = [
+    Math.min(f.rect[0], f.rect[2]),
+    Math.min(f.rect[1], f.rect[3]),
+    Math.max(f.rect[0], f.rect[2]),
+    Math.max(f.rect[1], f.rect[3]),
+  ]
+  const dict = pdfDoc.context.obj({
+    Type: 'Annot',
+    Subtype: 'Widget',
+    FT: 'Sig',
+    T: PDFHexString.fromText(f.name),
+    Ff: f.required ? 2 : 0,
+    F: 4,
+    Rect: rect.map(num),
+    P: page.ref,
+    MK: { BC: [0.45, 0.45, 0.45] },
+  })
+  const ref = pdfDoc.context.register(dict)
+  form.acroForm.addField(ref)
+  appendAnnot(pdfDoc, page, ref)
+}
+
+const ALIGNMENT = {
+  left: TextAlignment.Left,
+  center: TextAlignment.Center,
+  right: TextAlignment.Right,
+} as const
+
+/** Acrobat's AFDate_* viewer scripts: format on display, validate on keystroke (what WPS/Acrobat write for date fields) */
+function installDateActions(pdfDoc: PDFDocument, widget: PDFDict, format: string): void {
+  const fmt = format.replace(/["\\]/g, '')
+  const js = (code: string) => pdfDoc.context.obj({ S: 'JavaScript', JS: PDFString.of(code) })
+  widget.set(
+    PDFName.of('AA'),
+    pdfDoc.context.obj({
+      F: js(`AFDate_FormatEx("${fmt}");`),
+      K: js(`AFDate_KeystrokeEx("${fmt}");`),
+    }),
+  )
+}
+
+/** Create the authored AcroForm fields as real widgets; pages are addressed by index after rotations. */
+export function applyFormFields(pdfDoc: PDFDocument, fields: FormFieldInput[]): void {
+  const form = pdfDoc.getForm()
+  const pages = pdfDoc.getPages()
+  for (const f of fields) {
+    const page = pages[f.pageIndex]
+    if (!page) continue
+    const existing = f.name ? form.getFieldMaybe(f.name) : undefined
+    if (!f.name || (existing && !(f.kind === 'radio' && existing instanceof PDFRadioGroup))) {
+      throw new Error(`A form field named "${f.name}" already exists`)
+    }
+    if (!existing && form.getFields().some((x) => x.getName().startsWith(`${f.name}.`))) {
+      throw new Error(`A form field group named "${f.name}" already exists`)
+    }
+    if (f.kind === 'signature') {
+      addSignatureField(pdfDoc, page, f)
+      continue
+    }
+    const rot = page.getRotation().angle
+    const box = widgetBox(f.rect, rot)
+    const common = {
+      ...box,
+      borderWidth: FIELD_BORDER_WIDTH,
+      borderColor: FIELD_BORDER,
+      backgroundColor: undefined,
+      rotate: degrees(rot),
+    }
+    if (f.kind === 'checkbox') {
+      const cb = form.createCheckBox(f.name)
+      if (f.required) cb.enableRequired()
+      cb.addToPage(page, common)
+      if (f.checked) cb.check()
+      continue
+    }
+    if (f.kind === 'radio') {
+      const group = existing instanceof PDFRadioGroup ? existing : form.createRadioGroup(f.name)
+      if (f.required) group.enableRequired()
+      const option = f.exportValue || `option_${group.getOptions().length + 1}`
+      group.addOptionToPage(option, page, common)
+      if (f.checked) group.select(option)
+      continue
+    }
+    if (f.kind === 'choice') {
+      const dd = form.createDropdown(f.name)
+      if (f.required) dd.enableRequired()
+      const options = (f.options ?? []).map((o) => o.trim()).filter(Boolean)
+      dd.addOptions(options)
+      if (f.value && options.includes(f.value)) dd.select(f.value)
+      dd.addToPage(page, common)
+      continue
+    }
+    const tf = form.createTextField(f.name)
+    if (f.required) tf.enableRequired()
+    if (f.multiLine) tf.enableMultiline()
+    if (f.maxLen && f.maxLen > 0) tf.setMaxLength(Math.floor(f.maxLen))
+    tf.setAlignment(ALIGNMENT[f.textAlignment ?? 'left'])
+    tf.addToPage(page, common)
+    // Value and size after placement: addToPage draws the appearance eagerly with Helvetica, which
+    // throws on non-WinAnsi text; set afterwards they only mark the field dirty for refreshFieldAppearances
+    if (f.value) tf.setText(f.value)
+    if (f.fontSize && f.fontSize > 0) tf.setFontSize(f.fontSize)
+    if (f.dateFormat) {
+      // pdf-lib keeps field and widget as separate objects; viewers look for /AA on either
+      installDateActions(pdfDoc, tf.acroField.dict, f.dateFormat)
+      const widget = tf.acroField.getWidgets().at(-1)
+      if (widget) installDateActions(pdfDoc, widget.dict, f.dateFormat)
+    }
+  }
+}
+
+/** pdf.js widget ids are the annotation's object ref: "12R" or "12R3" */
+function widgetRef(id: string): PDFRef | null {
+  const m = /^(\d+)R(\d*)$/.exec(id)
+  return m ? PDFRef.of(Number(m[1]), m[2] ? Number(m[2]) : 0) : null
+}
+
+function detachAnnot(pdfDoc: PDFDocument, ref: PDFRef): void {
+  for (const page of pdfDoc.getPages()) {
+    const annots = page.node.lookupMaybe(PDFName.of('Annots'), PDFArray)
+    if (!annots) continue
+    for (let i = annots.size() - 1; i >= 0; i--) {
+      if (annots.get(i) === ref) annots.remove(i)
+    }
+  }
+}
+
+/** Move, re-flag or remove widgets that already exist in the file (Form Design on a saved form). */
+export function applyFormWidgetEdits(pdfDoc: PDFDocument, edits: FormWidgetEditInput[]): void {
+  const form = pdfDoc.getForm()
+  for (const e of edits) {
+    const field = form.getFieldMaybe(e.fieldName)
+    const widgets = field?.acroField.getWidgets() ?? []
+    const ref = widgetRef(e.widgetId)
+    const byRef = ref ? pdfDoc.context.lookupMaybe(ref, PDFDict) : undefined
+    // Earlier pdfium rewrites in the same save can renumber objects: the id must still resolve to one
+    // of this field's widgets, else fall back to its only widget, else leave the file alone
+    const found = widgets.findIndex((w) => w.dict === byRef)
+    const idx = found >= 0 ? found : widgets.length === 1 ? 0 : -1
+    if (!field || idx < 0) {
+      console.warn(
+        `[pdf] form widget edit skipped: ${e.widgetId} is not a widget of "${e.fieldName}"`,
+      )
+      continue
+    }
+    const dict = widgets[idx]!.dict
+    const kids = field.acroField.Kids()
+    const annotRef = kids && kids.size() > 0 ? (kids.get(idx) as PDFRef) : field.ref
+    if (e.remove) {
+      if (widgets.length <= 1) {
+        form.removeField(field)
+      } else {
+        field.acroField.removeWidget(idx)
+        detachAnnot(pdfDoc, annotRef)
+      }
+      continue
+    }
+    if (e.rect) {
+      const r = [
+        Math.min(e.rect[0], e.rect[2]),
+        Math.min(e.rect[1], e.rect[3]),
+        Math.max(e.rect[0], e.rect[2]),
+        Math.max(e.rect[1], e.rect[3]),
+      ]
+      dict.set(PDFName.of('Rect'), pdfDoc.context.obj(r.map(num)))
+      // A resized appearance stream would be stretched into the new box; regenerate it on save
+      if (!(field instanceof PDFSignature)) {
+        ;(field as unknown as { markAsDirty(): void }).markAsDirty()
+      }
+    }
+    if (e.required !== undefined) {
+      if (e.required) field.enableRequired()
+      else field.disableRequired()
+    }
+  }
+}
+
 /** Extract the given pages (original indices) into bytes of a new PDF */
 export async function extractPagesBytes(bytes: Uint8Array, pages: number[]): Promise<Uint8Array> {
   const src = await PDFDocument.load(bytes, { updateMetadata: false })
@@ -369,6 +1092,319 @@ export async function insertPdfBytes(
   let at = Math.min(Math.max(afterPageIndex + 1, 0), dst.getPageCount())
   for (const p of copied) dst.insertPage(at++, p)
   return { merged: await dst.save({ useObjectStreams: false }), count: copied.length }
+}
+
+/** Insert a blank page after afterPageIndex (-1 = front), sized like the neighboring page */
+export async function insertBlankPageBytes(
+  bytes: Uint8Array,
+  afterPageIndex: number,
+): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false })
+  const at = Math.min(Math.max(afterPageIndex + 1, 0), doc.getPageCount())
+  const ref = doc.getPage(Math.min(Math.max(afterPageIndex, 0), doc.getPageCount() - 1))
+  const page = doc.insertPage(at, [ref.getWidth(), ref.getHeight()])
+  // Match the neighbor's /Rotate too, or the blank page displays sideways next to it
+  page.setRotation(ref.getRotation())
+  return doc.save({ useObjectStreams: false })
+}
+
+/** Split into consecutive chunks of chunkSize pages, each becoming its own PDF (in page order) */
+export async function splitPdfBytes(bytes: Uint8Array, chunkSize: number): Promise<Uint8Array[]> {
+  const src = await PDFDocument.load(bytes, { updateMetadata: false })
+  const total = src.getPageCount()
+  const size = Math.max(1, Math.floor(chunkSize))
+  const out: Uint8Array[] = []
+  for (let start = 0; start < total; start += size) {
+    const part = await PDFDocument.create()
+    const count = Math.min(size, total - start)
+    const copied = await part.copyPages(
+      src,
+      Array.from({ length: count }, (_, i) => start + i),
+    )
+    for (const p of copied) part.addPage(p)
+    out.push(await part.save({ useObjectStreams: false }))
+  }
+  return out
+}
+
+export interface MergePagesOptions {
+  /** Pages per sheet, 2-16 (WPS-style free count) */
+  perSheet: number
+  /** Fill order: horizontal = left→right then down, vertical = top→bottom then right */
+  direction: 'horizontal' | 'vertical'
+  /** Draw hairline separators on the internal cell boundaries */
+  separator: boolean
+}
+
+/** Grid shape for an N-up sheet: 2-up is a side-by-side pair, otherwise near-square */
+export function mergeGrid(perSheet: number): { cols: number; rows: number } {
+  const n = Math.min(Math.max(Math.floor(perSheet), 2), 16)
+  if (n === 2) return { cols: 2, rows: 1 }
+  const cols = Math.ceil(Math.sqrt(n))
+  return { cols, rows: Math.ceil(n / cols) }
+}
+
+/**
+ * N-up imposition: place every perSheet consecutive pages onto one sheet, each
+ * scaled to fit its cell and centered. The sheet matches the first page's size;
+ * 2-up swaps width/height so two portrait pages sit side by side.
+ */
+export async function mergePagesBytes(
+  bytes: Uint8Array,
+  options: MergePagesOptions,
+): Promise<Uint8Array> {
+  const perSheet = Math.min(Math.max(Math.floor(options.perSheet), 2), 16)
+  const src = await PDFDocument.load(bytes, { updateMetadata: false })
+  const out = await PDFDocument.create()
+  const total = src.getPageCount()
+  const first = src.getPage(0)
+  const { cols, rows } = mergeGrid(perSheet)
+  const normalizeRotation = (angle: number): number =>
+    (((Math.round(angle / 90) * 90) % 360) + 360) % 360
+  const firstRotation = normalizeRotation(first.getRotation().angle)
+  const firstTurns = firstRotation === 90 || firstRotation === 270
+  const firstDisplayW = firstTurns ? first.getHeight() : first.getWidth()
+  const firstDisplayH = firstTurns ? first.getWidth() : first.getHeight()
+  const sheetW = perSheet === 2 ? firstDisplayH : firstDisplayW
+  const sheetH = perSheet === 2 ? firstDisplayW : firstDisplayH
+  // embedPages throws on pages without a content stream (e.g. our own inserted
+  // blank pages) — give those an empty stream so they embed as empty cells
+  for (const p of src.getPages()) {
+    if (!p.node.Contents()) {
+      p.node.set(PDFName.of('Contents'), src.context.register(src.context.stream('')))
+    }
+  }
+  const embedded = await out.embedPages(src.getPages())
+  const cellW = sheetW / cols
+  const cellH = sheetH / rows
+  for (let start = 0; start < total; start += perSheet) {
+    const sheet = out.addPage([sheetW, sheetH])
+    for (let i = 0; i < perSheet && start + i < total; i++) {
+      const ep = embedded[start + i]!
+      const sourcePage = src.getPage(start + i)
+      const rotation = normalizeRotation(sourcePage.getRotation().angle)
+      const turns = rotation === 90 || rotation === 270
+      const displayW = turns ? ep.height : ep.width
+      const displayH = turns ? ep.width : ep.height
+      const scale = Math.min(cellW / displayW, cellH / displayH)
+      const w = ep.width * scale
+      const h = ep.height * scale
+      const col = options.direction === 'vertical' ? Math.floor(i / rows) : i % cols
+      const row = options.direction === 'vertical' ? i % rows : Math.floor(i / cols)
+      const cellX = col * cellW
+      const cellY = sheetH - (row + 1) * cellH
+      const x =
+        rotation === 90
+          ? cellX + (cellW - h) / 2
+          : rotation === 180
+            ? cellX + (cellW + w) / 2
+            : rotation === 270
+              ? cellX + (cellW + h) / 2
+              : cellX + (cellW - w) / 2
+      const y =
+        rotation === 90
+          ? cellY + (cellH + w) / 2
+          : rotation === 180
+            ? cellY + (cellH + h) / 2
+            : rotation === 270
+              ? cellY + (cellH - w) / 2
+              : cellY + (cellH - h) / 2
+      sheet.drawPage(ep, {
+        x,
+        y,
+        xScale: scale,
+        yScale: scale,
+        rotate: degrees((360 - rotation) % 360),
+      })
+    }
+    if (options.separator) {
+      // Document content (not UI chrome) — a fixed light gray like WPS's segment line
+      const line = { thickness: 0.75, color: rgb(0.62, 0.62, 0.62) }
+      for (let c = 1; c < cols; c++) {
+        sheet.drawLine({
+          start: { x: c * cellW, y: 0 },
+          end: { x: c * cellW, y: sheetH },
+          ...line,
+        })
+      }
+      for (let r = 1; r < rows; r++) {
+        sheet.drawLine({
+          start: { x: 0, y: r * cellH },
+          end: { x: sheetW, y: r * cellH },
+          ...line,
+        })
+      }
+    }
+  }
+  return out.save({ useObjectStreams: false })
+}
+
+/**
+ * Replace the given pages (original indices) with all pages of another PDF,
+ * inserted at the position of the first replaced page.
+ */
+export async function replacePagesBytes(
+  bytes: Uint8Array,
+  otherBytes: Uint8Array,
+  pages: number[],
+): Promise<{ merged: Uint8Array; removed: number; inserted: number }> {
+  const dst = await PDFDocument.load(bytes, { updateMetadata: false })
+  const src = await PDFDocument.load(otherBytes, { updateMetadata: false })
+  const valid = [...new Set(pages.filter((p) => p >= 0 && p < dst.getPageCount()))].sort(
+    (a, b) => a - b,
+  )
+  if (valid.length === 0) throw new Error('replacePages: no valid pages to replace')
+  const at = valid[0]!
+  for (const p of [...valid].reverse()) dst.removePage(p)
+  const copied = await dst.copyPages(src, src.getPageIndices())
+  let i = Math.min(at, dst.getPageCount())
+  for (const p of copied) dst.insertPage(i++, p)
+  return {
+    merged: await dst.save({ useObjectStreams: false }),
+    removed: valid.length,
+    inserted: copied.length,
+  }
+}
+
+/**
+ * Resize every page to the target paper size (points): content and annotations
+ * scale uniformly to fit. Centering is done by shifting the MediaBox origin
+ * instead of translating the content, so annotations stay aligned with the
+ * content they belong to. Pages displayed sideways (/Rotate 90 or 270) get the
+ * swapped target so their displayed size matches the chosen paper.
+ */
+export async function setPageSizeBytes(
+  bytes: Uint8Array,
+  targetW: number,
+  targetH: number,
+): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false })
+  for (const page of doc.getPages()) {
+    const rot = ((page.getRotation().angle % 360) + 360) % 360
+    const tw = rot === 90 || rot === 270 ? targetH : targetW
+    const th = rot === 90 || rot === 270 ? targetW : targetH
+    const { x, y, width: w, height: h } = page.getMediaBox()
+    if (w === tw && h === th) continue
+    const k = Math.min(tw / w, th / h)
+    page.scaleContent(k, k)
+    page.scaleAnnotations(k, k)
+    // Both scale about the user-space origin; frame the scaled region centered
+    const bx = x * k - (tw - w * k) / 2
+    const by = y * k - (th - h * k) / 2
+    page.setMediaBox(bx, by, tw, th)
+    page.setCropBox(bx, by, tw, th)
+  }
+  return doc.save({ useObjectStreams: false })
+}
+
+/** Map a fractional rect of the displayed page (after /Rotate, y down from the top) to user space */
+function displayFracToUserRect(
+  rot: number,
+  box: { x: number; y: number; width: number; height: number },
+  l: number,
+  t: number,
+  r: number,
+  b: number,
+): { x: number; y: number; w: number; h: number } {
+  const { x: x0, y: y0, width: W, height: H } = box
+  if (rot === 90) {
+    // display x runs along user +y, display y along user +x
+    return { x: x0 + t * W, y: y0 + l * H, w: (b - t) * W, h: (r - l) * H }
+  }
+  if (rot === 180) {
+    return { x: x0 + (1 - r) * W, y: y0 + t * H, w: (r - l) * W, h: (b - t) * H }
+  }
+  if (rot === 270) {
+    return { x: x0 + (1 - b) * W, y: y0 + (1 - r) * H, w: (b - t) * W, h: (r - l) * H }
+  }
+  return { x: x0 + l * W, y: y0 + (1 - b) * H, w: (r - l) * W, h: (b - t) * H }
+}
+
+/**
+ * Split every page into a perPage grid of pages (left→right, top→bottom as
+ * displayed), the inverse of mergePagesBytes: each cell becomes its own page via
+ * a copy with a tightened MediaBox/CropBox, so content is preserved losslessly.
+ * The grid is laid out on the displayed page, then mapped through /Rotate.
+ */
+export async function splitPagesBytes(bytes: Uint8Array, perPage: 2 | 4 | 9): Promise<Uint8Array> {
+  const src = await PDFDocument.load(bytes, { updateMetadata: false })
+  const out = await PDFDocument.create()
+  const { cols, rows } = mergeGrid(perPage)
+  const total = src.getPageCount()
+  for (let i = 0; i < total; i++) {
+    const copies = await out.copyPages(
+      src,
+      Array.from({ length: perPage }, () => i),
+    )
+    for (let c = 0; c < perPage; c++) {
+      const page = copies[c]!
+      const rot = ((page.getRotation().angle % 360) + 360) % 360
+      const col = c % cols
+      const row = Math.floor(c / cols)
+      const rect = displayFracToUserRect(
+        rot,
+        page.getCropBox(),
+        col / cols,
+        row / rows,
+        (col + 1) / cols,
+        (row + 1) / rows,
+      )
+      page.setMediaBox(rect.x, rect.y, rect.w, rect.h)
+      page.setCropBox(rect.x, rect.y, rect.w, rect.h)
+      out.addPage(page)
+    }
+  }
+  return out.save({ useObjectStreams: false })
+}
+
+/** Crop rectangle as fractions of the displayed page (after /Rotate), y down from the top */
+export interface CropFractionsRect {
+  l: number
+  t: number
+  r: number
+  b: number
+}
+
+/**
+ * Shrink the CropBox of the given pages to the fractional rect. The fractions are
+ * relative to the page as displayed (rotation applied, y down), so the same rect
+ * lands on the same visual region regardless of each page's /Rotate value.
+ */
+export async function cropPagesBytes(
+  bytes: Uint8Array,
+  pages: number[],
+  frac: CropFractionsRect,
+): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false })
+  const l = Math.min(Math.max(frac.l, 0), 1)
+  const t = Math.min(Math.max(frac.t, 0), 1)
+  const r = Math.min(Math.max(frac.r, l), 1)
+  const b = Math.min(Math.max(frac.b, t), 1)
+  if (r - l <= 0 || b - t <= 0) throw new Error('cropPages: empty crop rect')
+  for (const idx of pages) {
+    if (idx < 0 || idx >= doc.getPageCount()) continue
+    const page = doc.getPage(idx)
+    const rot = ((page.getRotation().angle % 360) + 360) % 360
+    const rect = displayFracToUserRect(rot, page.getCropBox(), l, t, r, b)
+    page.setCropBox(rect.x, rect.y, rect.w, rect.h)
+  }
+  return doc.save({ useObjectStreams: false })
+}
+
+/** Append all pages of the other PDFs (in the given order) to the first; returns combined bytes and appended page count */
+export async function mergePdfBytes(
+  first: Uint8Array,
+  others: Uint8Array[],
+): Promise<{ merged: Uint8Array; appended: number }> {
+  const dst = await PDFDocument.load(first, { updateMetadata: false })
+  let appended = 0
+  for (const otherBytes of others) {
+    const src = await PDFDocument.load(otherBytes, { updateMetadata: false })
+    const copied = await dst.copyPages(src, src.getPageIndices())
+    for (const p of copied) dst.addPage(p)
+    appended += copied.length
+  }
+  return { merged: await dst.save({ useObjectStreams: false }), appended }
 }
 
 function applyMetadata(pdfDoc: PDFDocument, meta: MetadataInput): void {
@@ -412,6 +1448,14 @@ function finalPageIndex(request: SavePdfRequest, p: number): number | null {
   return p - del.filter((d) => d < p).length
 }
 
+/** password the saved output accepts, for the read-back verification of content edits */
+function savedOutputPassword(request: SavePdfRequest): string | undefined {
+  // an unchanged protection keeps the password the source file already had; a
+  // protection change writes the new user password; a plain save has none
+  if (request.protectionDirty === false) return request.decryption?.userPassword
+  return request.encryption?.userPassword
+}
+
 /**
  * Read-back verification of applied content-stream edits against the final bytes.
  * Anything that fails here would have been silent data loss; the caller aborts the
@@ -433,7 +1477,7 @@ async function verifyContentEdits(
       const pageIndex = finalPageIndex(request, e.pageIndex)
       return pageIndex === null ? [] : [{ pageIndex, newText: e.newText }]
     })
-    failures.push(...(await verifyTextEdits(bytes, remapped)))
+    failures.push(...(await verifyTextEdits(bytes, remapped, savedOutputPassword(request))))
   }
   const appliedInserts = (request.textInserts ?? []).filter(
     (_insert, editIndex) =>
@@ -445,7 +1489,7 @@ async function verifyContentEdits(
       const pageIndex = finalPageIndex(request, insert.pageIndex)
       return pageIndex === null ? [] : [{ pageIndex, newText: insert.text }]
     })
-    failures.push(...(await verifyTextEdits(bytes, remapped)))
+    failures.push(...(await verifyTextEdits(bytes, remapped, savedOutputPassword(request))))
   }
   const appliedImages = (request.imageEdits ?? []).filter(
     (e, i) => e.kind !== 'deleteImage' && !skips.skippedImageEdits.some((s) => s.editIndex === i),
@@ -456,7 +1500,7 @@ async function verifyContentEdits(
       const pageIndex = finalPageIndex(request, e.pageIndex)
       return pageIndex === null || e.kind === 'deleteImage' ? [] : [{ pageIndex, rect: e.rect }]
     })
-    failures.push(...(await verifyImageEdits(bytes, remapped)))
+    failures.push(...(await verifyImageEdits(bytes, remapped, savedOutputPassword(request))))
   }
   if (failures.length > 0) {
     const pages = [...new Set(failures.map((f) => f.pageIndex + 1))].sort((a, b) => a - b)
@@ -477,14 +1521,7 @@ export async function savePdfToPath(
     request,
   )
   await verifyContentEdits(bytes, request, skips)
-  const tmp = `${targetPath}.gensave-${process.pid}.tmp`
-  try {
-    await writeFile(tmp, bytes)
-    await rename(tmp, targetPath)
-  } catch (err) {
-    await rm(tmp, { force: true })
-    throw err
-  }
+  await writePdfAtomically(targetPath, bytes)
   return skips
 }
 
@@ -497,11 +1534,49 @@ export interface AppliedSaveRequest {
   skippedImageEdits: ImageEditFailure[]
 }
 
+async function appendBlankPages(bytes: Uint8Array, blanks: BlankPageInput[]): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false })
+  for (const blank of [...blanks].sort((a, b) => a.pageIndex - b.pageIndex)) {
+    if (blank.pageIndex !== doc.getPageCount()) {
+      throw new Error(
+        `Blank page index ${blank.pageIndex} does not follow the document (${doc.getPageCount()} pages)`,
+      )
+    }
+    if (!(blank.width > 0) || !(blank.height > 0))
+      throw new Error('Blank page needs a positive size')
+    doc.addPage([blank.width, blank.height])
+  }
+  return doc.save({ useObjectStreams: false })
+}
+
 /** Apply markups + form values + page ops, returning new bytes. Original objects are not reordered (pdf-lib keeps untouched objects). */
 export async function applySaveRequest(
   bytes: Uint8Array,
   request: SavePdfRequest,
 ): Promise<AppliedSaveRequest> {
+  // A protected session works on the document's plain form: the bytes on disk are
+  // the protected output of the previous save, and the session's edits only make
+  // sense against the plaintext (a failure here means the file changed underneath
+  // the session — surfaced to the user as a save error).
+  const sourcePassword = request.decryption?.userPassword ?? request.encryption?.userPassword
+  let originalProtection: OriginalProtection | null = null
+  if (sourcePassword !== undefined) {
+    const opened = await decryptDocument(bytes, sourcePassword)
+    bytes = opened.bytes
+    originalProtection = opened.protection ?? null
+  }
+  // A save that does not change protection re-protects under the source's own
+  // entries and file key: deriving fresh entries would replace both passwords
+  // with the one password this session knows. Only a dialog save sets
+  // protectionDirty, and only that one may write new entries.
+  const preserved = request.protectionDirty === false ? originalProtection : null
+  const protection: { preserved: OriginalProtection } | { fresh: PdfEncryptionInput } | null =
+    preserved !== null ? { preserved } : request.encryption ? { fresh: request.encryption } : null
+  const protect = (doc: PDFDocument): void => {
+    if (protection === null) return
+    if ('preserved' in protection) encryptDocumentWithOriginalProtection(doc, protection.preserved)
+    else encryptDocument(doc, protection.fresh)
+  }
   let skippedTextEdits: TextEditFailure[] = []
   let skippedTextInserts: TextInsertFailure[] = []
   let skippedImageEdits: ImageEditFailure[] = []
@@ -511,6 +1586,11 @@ export async function applySaveRequest(
     const { applyAnnotDeletes } = await import('./annot-delete')
     bytes = await applyAnnotDeletes(bytes, request.annotDeletes)
   }
+  if (request.blankPages && request.blankPages.length > 0) {
+    // Blank pages exist before any stage that addresses pages, so edits made on them
+    // in the session (text, drawings, fields) land like on any other page
+    bytes = await appendBlankPages(bytes, request.blankPages)
+  }
   if (request.textEdits && request.textEdits.length > 0) {
     // Content-stream rewrite must land before pdf-lib touches the bytes: everything
     // below annotates on top of whatever the pages now say
@@ -518,12 +1598,18 @@ export async function applySaveRequest(
     const applied = await applyTextEdits(bytes, request.textEdits)
     bytes = applied.bytes
     skippedTextEdits = applied.skipped
+    for (const s of skippedTextEdits) {
+      console.warn(`[pdf] text edit skipped on page ${s.pageIndex + 1}: ${s.reason}`)
+    }
   }
   if (request.textInserts && request.textInserts.length > 0) {
     const { applyTextInserts } = await import('./text-edit')
     const applied = await applyTextInserts(bytes, request.textInserts)
     bytes = applied.bytes
     skippedTextInserts = applied.skipped
+    for (const s of skippedTextInserts) {
+      console.warn(`[pdf] text insert skipped on page ${s.pageIndex + 1}: ${s.reason}`)
+    }
   }
   if (request.imageEdits && request.imageEdits.length > 0) {
     const { applyImageEdits } = await import('./image-edit')
@@ -539,15 +1625,47 @@ export async function applySaveRequest(
     const page = pages[r.pageIndex]
     if (page) page.setRotation(degrees((page.getRotation().angle + r.delta) % 360))
   }
+  if (request.formWidgetEdits && request.formWidgetEdits.length > 0) {
+    applyFormWidgetEdits(pdfDoc, request.formWidgetEdits)
+  }
+  if (request.formFields && request.formFields.length > 0) {
+    applyFormFields(pdfDoc, request.formFields)
+  }
+  const author = request.annotationAuthor || DEFAULT_ANNOT_AUTHOR
   for (const m of request.markups) {
     const page = pages[m.pageIndex]
-    if (page) addMarkup(pdfDoc, page, m)
+    if (page && validMarkup(m)) addMarkup(pdfDoc, page, m, author)
   }
-  for (const d of request.drawings ?? []) {
+  const noteRefs = new Map<string, PDFRef>()
+  // the measure label's font: standard-14 Helvetica, no bytes to embed — but
+  // only when a measure drawing is actually written, so saves without one
+  // leave the document's font dict untouched
+  const drawings = request.drawings ?? []
+  const measureFontRef = drawings.some((d) => d.kind === 'measure')
+    ? (await pdfDoc.embedFont(StandardFonts.Helvetica)).ref
+    : undefined
+  for (const d of drawings) {
     const page = pages[d.pageIndex]
     if (!page) continue
-    if (d.kind === 'image') await addImageStamp(pdfDoc, page, d)
-    else addDrawing(pdfDoc, page, d)
+    if (d.kind === 'image') await addImageStamp(pdfDoc, page, d, author)
+    else if (d.kind === 'link') addLinkAnnot(pdfDoc, pages, page, d)
+    else addDrawing(pdfDoc, page, d, noteRefs, measureFontRef, author)
+  }
+  // Note content edits go after the drawings: replies added above locate their /IRT
+  // parent by its old contents, which an earlier in-place rewrite would break. An
+  // unmatched edit is a silent no-op (same degradation as an unresolvable reply).
+  for (const e of request.noteEdits ?? []) {
+    const page = pages[e.pageIndex]
+    if (!page) continue
+    const ref = findNoteAnnotRef(pdfDoc, page, {
+      objNum: e.objNum,
+      rect: e.rect,
+      contents: e.oldContents,
+    })
+    const dict = ref ? pdfDoc.context.lookupMaybe(ref, PDFDict) : null
+    if (!dict) continue
+    dict.set(PDFName.of('Contents'), PDFHexString.fromText(e.contents))
+    dict.set(PDFName.of('M'), PDFString.of(pdfDateString(Date.now())))
   }
   for (const s of request.stamps ?? []) {
     const page = pages[s.pageIndex]
@@ -563,6 +1681,20 @@ export async function applySaveRequest(
     })
   }
   if (request.metadata) applyMetadata(pdfDoc, request.metadata)
+  if (request.outline !== undefined && request.outline !== null) {
+    // A bookmark on a page this save removes cannot be written as a /Dest —
+    // that page is leaving the page tree — so those entries go with it.
+    applyOutline(pdfDoc, request.outline, new Set(request.deletedPages ?? []))
+  }
+  // Page thumbnails and producer piece-info can retain a pre-redaction rendering of
+  // the same page. They are page-local derived data, so remove them for every affected
+  // page before the native final serialization.
+  for (const redaction of request.redactions ?? []) {
+    const page = pages[redaction.pageIndex]
+    if (!page) continue
+    page.node.delete(PDFName.of('Thumb'))
+    page.node.delete(PDFName.of('PieceInfo'))
+  }
   // Deletions go last, in descending order; earlier ops all address original page indices
   for (const idx of [...(request.deletedPages ?? [])].sort((a, b) => b - a)) {
     if (idx >= 0 && idx < pdfDoc.getPageCount() && pdfDoc.getPageCount() > 1) pdfDoc.removePage(idx)
@@ -591,23 +1723,59 @@ export async function applySaveRequest(
         PDFHexString.fromText(JSON.stringify(staticFormFills)),
       )
   }
-  try {
-    return {
-      bytes: await pdfDoc.save({ useObjectStreams: false }),
-      skippedTextEdits,
-      skippedTextInserts,
-      skippedImageEdits,
-    }
-  } catch (err) {
-    // Form values beyond WinAnsi (e.g. CJK) make pdf-lib's appearance generation fail:
-    // skip it and set NeedAppearances so viewers rebuild them (Acrobat/pdfjs both support this)
-    if (request.formValues.length === 0) throw err
-    pdfDoc.getForm().acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True)
-    return {
-      bytes: await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false }),
-      skippedTextEdits,
-      skippedTextInserts,
-      skippedImageEdits,
+  if (request.attachments) applyAttachments(pdfDoc, request.attachments)
+  refreshFieldAppearances(pdfDoc)
+  // Protection serializes with the document: strings and streams are encrypted in
+  // place, so no object/xref stream may be created after this point (all saves here
+  // already run with useObjectStreams off). Redaction below re-serializes a cleaned
+  // graph, which would drop the trailer entry — protect that output instead.
+  // Redaction is a PDFium pass and cannot read an encrypted file, so with
+  // redactions the protection is written after the reload below instead.
+  if (protection !== null && !request.redactions?.length) {
+    // flush first: pdf-lib embeds fonts and images only at save/flush time, and
+    // a payload created after this pass would land in the file as plaintext
+    // inside a document declared encrypted
+    await pdfDoc.flush()
+    protect(pdfDoc)
+  }
+  let saved = await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false })
+  // Redaction is the final serializer. EmbedPDF's full SaveAsCopy writes only the
+  // reachable cleaned object graph; no subsequent pdf-lib pass can revive old streams.
+  if (request.redactions?.length) {
+    saved = await redactPdf(saved, request.redactions)
+    if (protection !== null) {
+      const cleaned = await PDFDocument.load(saved, { updateMetadata: false })
+      await cleaned.flush()
+      protect(cleaned)
+      saved = await cleaned.save({ useObjectStreams: false })
     }
   }
+  return {
+    bytes: saved,
+    skippedTextEdits,
+    skippedTextInserts,
+    skippedImageEdits,
+  }
+}
+
+/**
+ * pdf-lib's save-time appearance pass aborts on the first field whose text Helvetica cannot encode
+ * (CJK values), leaving every other dirty field without /AP. Regenerate per field instead and
+ * only set NeedAppearances for the ones that fail, so viewers rebuild those alone.
+ */
+function refreshFieldAppearances(pdfDoc: PDFDocument): void {
+  if (!pdfDoc.catalog.has(PDFName.of('AcroForm'))) return
+  const form = pdfDoc.getForm()
+  const font = form.getDefaultFont()
+  let needAppearances = false
+  for (const field of form.getFields()) {
+    if (!field.needsAppearancesUpdate()) continue
+    // Same per-type dispatch pdf-lib's own save pass uses (check boxes and radios ignore the font)
+    try {
+      field.defaultUpdateAppearances(font)
+    } catch {
+      needAppearances = true
+    }
+  }
+  if (needAppearances) form.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True)
 }

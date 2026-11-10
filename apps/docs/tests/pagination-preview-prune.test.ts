@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { prunedCloneHtml, type CloneChild } from '../src/renderer/components/PaginationPreview'
+import {
+  prunedCloneHtml,
+  shouldPruneClones,
+  type CloneChild,
+} from '../src/renderer/components/PaginationPreview'
 
 const kid = (partial: Partial<CloneChild> & Pick<CloneChild, 'html' | 'vTop' | 'vBottom'>) => ({
   mt: 0,
@@ -65,5 +69,20 @@ describe('prunedCloneHtml', () => {
     // flow position (3000), not from the pre-marker base — the buggy stale
     // base would re-add the 3000px already consumed and shift B a page down
     expect(spacerHeights(out)).toEqual([3000, 9000 - 20 - 3000])
+  })
+})
+
+describe('shouldPruneClones', () => {
+  it('keeps full clones for a document that fits both budgets', () => {
+    expect(shouldPruneClones(20, 500, 20_000)).toBe(false)
+  })
+
+  it('prunes once pages x blocks passes the block budget', () => {
+    expect(shouldPruneClones(300, 500, 1_000)).toBe(true)
+  })
+
+  it('prunes a page-heavy document whose few blocks carry a huge DOM', () => {
+    // under the block budget (112 x 869), 9.7 M elements over the element one
+    expect(shouldPruneClones(112, 869, 87_039)).toBe(true)
   })
 })

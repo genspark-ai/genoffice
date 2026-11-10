@@ -1,5 +1,6 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { VISUAL_SIGNATURE_CONTENT_PREFIX } from '../shared/ipc'
+import { dateFormatFromActions } from './date-format'
 
 export type FormWidgetKind = 'text' | 'checkbox' | 'radio' | 'choice' | 'signature'
 
@@ -12,6 +13,8 @@ export interface FormWidget {
   value: string
   checked: boolean
   multiLine: boolean
+  /** text: AFDate format the field validates against (Acrobat date field) */
+  dateFormat: string | null
   readOnly: boolean
   required: boolean
   maxLen: number | null
@@ -41,6 +44,8 @@ export interface FormCatalog {
   widgets: FormWidget[]
   fields: Map<string, FormField>
   byPage: Map<number, FormWidget[]>
+  /** Names of AcroForm fields with no editable widget (push buttons, widget-less data fields): still taken */
+  otherFieldNames: Set<string>
 }
 
 /** Editable widgets in the user's current visible page order. */
@@ -83,6 +88,7 @@ export interface RawFormAnnotation {
   contents?: string
   contentsObj?: { str?: string }
   genOfficeFormField?: string
+  actions?: unknown
 }
 
 function fieldValueStr(value: unknown): string {
@@ -112,6 +118,7 @@ export function widgetsFromAnnotations(annots: RawFormAnnotation[], pageIndex = 
       rect: annotation.rect as FormWidget['rect'],
       checked: false,
       multiLine: false,
+      dateFormat: null,
       readOnly: !!annotation.readOnly,
       required: !!annotation.required,
       maxLen:
@@ -133,6 +140,7 @@ export function widgetsFromAnnotations(annots: RawFormAnnotation[], pageIndex = 
         kind: 'text',
         value: fieldValueStr(annotation.fieldValue),
         multiLine: !!annotation.multiLine,
+        dateFormat: dateFormatFromActions(annotation.actions),
       })
     } else if (annotation.fieldType === 'Btn' && annotation.checkBox) {
       out.push({
@@ -254,7 +262,13 @@ export async function buildFormCatalog(doc: PDFDocumentProxy): Promise<FormCatal
     }
   }
 
-  return { widgets, fields, byPage }
+  const allNames = await (
+    doc as { getFieldObjects?: () => Promise<Record<string, unknown> | null> }
+  )
+    .getFieldObjects?.()
+    .catch(() => null)
+  const otherFieldNames = new Set(Object.keys(allNames ?? {}).filter((n) => !fields.has(n)))
+  return { widgets, fields, byPage, otherFieldNames }
 }
 
 function visualSignatureFieldName(annotation: RawFormAnnotation): string | null {
@@ -284,11 +298,32 @@ function rectsSubstantiallyOverlap(a: number[], b: number[]): boolean {
 /** Lightweight pre-parse warning for XFA or mixed AcroForm/XFA documents. */
 export function hasXfaMarker(bytes: Uint8Array): boolean {
   const marker = [0x2f, 0x58, 0x46, 0x41] // /XFA
+  // `/` is itself a PDF delimiter, so any regular byte may precede a name token
+  // (`]/XFA`, `R/XFA`); only what follows tells `/XFA` from `/XFAfoo`: EOF,
+  // whitespace or one of the delimiters ( ) < > [ ] { } / %
+  const endsToken = (b: number): boolean =>
+    b === 0 ||
+    b === 9 ||
+    b === 10 ||
+    b === 12 ||
+    b === 13 ||
+    b === 32 ||
+    b === 0x28 ||
+    b === 0x29 ||
+    b === 0x3c ||
+    b === 0x3e ||
+    b === 0x5b ||
+    b === 0x5d ||
+    b === 0x7b ||
+    b === 0x7d ||
+    b === 0x2f ||
+    b === 0x25
   outer: for (let index = 0; index <= bytes.length - marker.length; index++) {
     for (let offset = 0; offset < marker.length; offset++) {
       if (bytes[index + offset] !== marker[offset]) continue outer
     }
-    return true
+    const after = index + marker.length
+    if (after === bytes.length || endsToken(bytes[after]!)) return true
   }
   return false
 }

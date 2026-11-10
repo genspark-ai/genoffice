@@ -2,10 +2,11 @@
  * Find/replace floating panel (⌘F) — modeled on PowerPoint "Home → Find/Replace".
  * Find works on render-tree text (element-granularity hits, page jump + select); replace goes
  * through the main-process model layer (in-run matching, byte-faithful patches), and on success
- * the whole RenderSlide set refreshes.
+ * changed slides refresh.
  */
 import React, { useEffect, useRef, useState } from 'react'
 import { useI18n } from '../i18n/locale'
+import type { SlideUpdate } from '../../shared/ipc'
 import type {
   GroupRenderNode,
   RenderNode,
@@ -31,12 +32,19 @@ function layoutText(text?: RenderTextLayout): string {
       .filter((r) => !r.isBullet)
       .map((r) => r.text)
       .join('')
-    if (l.trailingSpace) out += ' '
+    if (l.trailingSpace) out += l.trailingText ?? ' '
   })
   return out
 }
 
-/** Searchable text aggregated from a node (including group children/table cells). */
+/**
+ * Searchable text aggregated from a node (including group children/table cells).
+ *
+ * Deliberately the **raw** view, unlike the model's read path: a span withheld
+ * from a model is the reader's own text, and their find-and-replace has to
+ * reach it. This is the reader acting as the owner, not the model being handed
+ * something it was not shown.
+ */
 function nodeText(n: RenderNode): string {
   if (n.type === 'text' || n.type === 'shape') return layoutText((n as ShapeRenderNode).text)
   if (n.type === 'table')
@@ -79,7 +87,7 @@ export function FindReplaceDialog({
 }: {
   slides: RenderSlide[]
   onNavigate: (slideIndex: number, sourceId: string) => void
-  onReplaced: (slides: RenderSlide[]) => void
+  onReplaced: (update: SlideUpdate) => void
   onClose: () => void
 }) {
   const { t } = useI18n()
@@ -121,11 +129,11 @@ export function FindReplaceDialog({
       matchCase,
       ...(all ? {} : { firstOnly: true, slideIndex: cur!.slideIndex, elementId: cur!.sourceId }),
     })
-    if (!r || !r.count || !r.slides) {
+    if (!r || !r.count || !r.update) {
       setStatus(t('paneFrNotFound'))
       return
     }
-    onReplaced(r.slides)
+    onReplaced(r.update)
     setStatus(t('paneFrReplaced', { n: String(r.count) }))
     if (!all) setCursor(cursor - 1) // The current item is consumed; the next findNext lands on the following one
   }
@@ -134,7 +142,12 @@ export function FindReplaceDialog({
     <div className="find-panel" onKeyDown={(e) => e.key === 'Escape' && onClose()}>
       <div className="find-panel-head">
         <span>{t('paneFrTitle')}</span>
-        <button className="find-panel-close" onClick={onClose} data-tip="Esc" aria-label="Esc">
+        <button
+          className="find-panel-close"
+          onClick={onClose}
+          data-tip="Esc"
+          aria-label={t('paneCsdClose')}
+        >
           ×
         </button>
       </div>
@@ -142,6 +155,7 @@ export function FindReplaceDialog({
         <input
           ref={findRef}
           placeholder={t('paneFrFind')}
+          aria-label={t('paneFrFind')}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
@@ -154,6 +168,7 @@ export function FindReplaceDialog({
       <div className="find-panel-row">
         <input
           placeholder={t('paneFrReplaceWith')}
+          aria-label={t('paneFrReplaceWith')}
           value={replaceText}
           onChange={(e) => setReplaceText(e.target.value)}
         />

@@ -6,10 +6,11 @@
  * get-transition…) works naturally, and it sees the in-memory document
  * (including unsaved changes) without re-reading from disk.
  */
+import { rendererUrl } from '@genoffice/electron-utils'
 import { BrowserWindow, ipcMain, screen } from 'electron'
 import type { WebContents } from 'electron'
 import type { AudienceNavAction, ShowInkEvent, ShowSyncState } from '../shared/ipc'
-import { runtime, sessions, windowRefs } from './session-state'
+import { runtime, sessions, viewerWcIds, windowRefs } from './session-state'
 
 interface PresenterShow {
   presenterWc: WebContents
@@ -84,22 +85,19 @@ export function registerPresenterIpc(): void {
     sessions.set(win.webContents.id, session)
     audiencePresenter.set(win.webContents.id, e.sender.id)
     const audienceWcId = win.webContents.id
+    viewerWcIds.add(audienceWcId)
     win.once('ready-to-show', () => {
       win.show()
       fullScreenOnDisplay(win, external.bounds)
     })
     win.on('closed', () => {
       sessions.delete(audienceWcId)
+      viewerWcIds.delete(audienceWcId)
       audiencePresenter.delete(audienceWcId)
       const s = presenterShows.get(e.sender.id)
       if (s?.audienceWin === win) s.audienceWin = null
     })
-    if (runtime.rendererDevUrl) {
-      const sep = runtime.rendererDevUrl.includes('?') ? '&' : '?'
-      void win.loadURL(`${runtime.rendererDevUrl}${sep}mode=audience`)
-    } else if (runtime.rendererFilePath) {
-      void win.loadFile(runtime.rendererFilePath, { query: { mode: 'audience' } })
-    }
+    void win.loadURL(rendererUrl(runtime.rendererDevUrl, 'slides', { mode: 'audience' }))
     return { audience: true }
   })
 

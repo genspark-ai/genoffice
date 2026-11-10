@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# GenOffice headless batch conversion (packaging/docker, genoffice#1808's
+# batch slice). Walks /data for convertible documents and drives the app's
+# own --headless-export entry point once per file, so every conversion is
+# exactly what the File menu's export produces (same pipeline, no drift).
+#
+# Environment knobs (all optional):
+#   GENOFFICE_INPUT_DIR   input volume, default /data
+#   GENOFFICE_OUTPUT_DIR  output volume, default /output
+#   GENOFFICE_TO          export target, default pdf (pdf is the only target
+#                         the upstream --headless-export entry ships today)
+#   GENOFFICE_PARALLEL    concurrent conversions, default 1 (each is its own
+#                         Electron process; 2-4 helps on big hosts)
+#   GENOFFICE_INCLUDE     optional grep -E filter on /data-relative paths
+#   GENOFFICE_EXCLUDE     optional grep -E filter (applied after INCLUDE)
+#   GENOFFICE_FLAGS       extra flags passed through to --headless-export
+#   GENOFFICE_XVFB        set to 0 when the display is already provided
+#                         (e.g. you wrap with xvfb-run yourself)
+#
+# Output: one "==> <file>" block per file whose JSON line is the upstream
+# --headless-export --json envelope verbatim, then one summary JSON line.
+#
+# Exit codes: 0 every file converted; 1 usage; 2 no convertible input found;
+# 3 one or more files failed (their JSON lines carry the reasons).
+set -u -o pipefail
+
+INPUT_DIR="${GENOFFICE_INPUT_DIR:-/data}"
+OUTPUT_DIR="${GENOFFICE_OUTPUT_DIR:-/output}"
+TARGET="${GENOFFICE_TO:-pdf}"
+PARALLEL="${GENOFFICE_PARALLEL:-1}"
+INCLUDE="${GENOFFICE_INCLUDE:-}"
+EXCLUDE="${GENOFFICE_EXCLUDE:-}"
+XVFB="${GENOFFICE_XVFB:-1}"
+APP="${GENOFFICE_BIN:-/opt/GenOffice/genoffice}"
+
+if [ ! -x "$APP" ]; then
+  echo "batch-convert: $APP is not executable — is the deb installed?" >&2
+  exit 1
+fi
+case "$TARGET" in
+  pdf) ;;
+  *)
+    # upstream exit code 1 means the same thing for a single --headless-export
+    echo "batch-convert: --to $TARGET is not shipped by upstream headless-export yet (pdf only)" >&2
+    exit 1
+    ;;
+esac
+case "$PARALLEL" in
+  ''|*[!0-9]*|0)
+    echo "batch-convert: GENOFFICE_PARALLEL must be a positive integer" >&2
+    exit 1
+    ;;
+esac
+if [ ! -d "$INPUT_DIR" ]; then
+  echo "batch-convert: input dir $INPUT_DIR is not a mounted directory" >&2
+  exit 1
+fi
+mkdir -p "$OUTPUT_DIR" || exit 1
+
+XVFB_PID=
+if [ "$XVFB" = 1 ] && [ -z "${DISPLAY:-}" ]; then
+  Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/dev/null 2>&1 &
+  XVFB_PID=$!
+  DISPLAY=:99
+  export DISPLAY
+  for _ in $(seq 1 50); do
+    [ -S /tmp/.X11-unix/X99 ] && break
+    sleep 0.1
+  done
+  if [ ! -S /tmp/.X11-unix/X99 ]; then
+    echo "batch-convert: Xvfb did not come up on :99" >&2
+    exit 1
+  fi
+fi
+RESULTS="$(mktemp -d)"
+cleanup() {
+  rm -rf "$RESULTS"
+  [ -n "$XVFB_PID" ] && kill "$XVFB_PID" 2>/dev/null
+}
+trap cleanup EXIT
+
+# The convertible extensions are exactly the headless-export input table
+# (docs/headless-pdf-export.md). The pdf target is excluded from the search so
+# a previous run's output is never re-ingested.
+mapfile -t FILES < <(
+  cd "$INPUT_DIR" && find . -type f \
+    \( -iname '*.docx' -o -iname '*.xlsx' -o -iname '*.xlsm' -o -iname '*.xls' \
+       -o -iname '*.csv' -o -iname '*.tsv' -o -iname '*.pptx' \
+       -o -iname '*.md' -o -iname '*.markdown' -o -iname '*.html' -o -iname '*.htm' \) \
+    | sed 's|^\./||' | sort
+)
+
+if [ -n "$INCLUDE" ]; then
+  mapfile -t FILES < <(printf '%s\n' "${FILES[@]}" | grep -E -- "$INCLUDE" || true)
+fi
+if [ -n "$EXCLUDE" ]; then
+  mapfile -t FILES < <(printf '%s\n' "${FILES[@]}" | grep -Ev -- "$EXCLUDE" || true)
+fi
+
+TOTAL=${#FILES[@]}
+if [ "$TOTAL" -eq 0 ]; then
+  echo "batch-convert: no convertible document under $INPUT_DIR (docx/xlsx/xlsm/xls/csv/tsv/pptx/md/markdown/html/htm)" >&2
+  exit 2
+fi
+echo "batch-convert: $TOTAL file(s) to convert to $TARGET (parallel=$PARALLEL)"
+
+# Output paths mirror the /data tree with the extension swapped to the
+# target's. Two sources can collide on one target (a.md and a.docx both want
+# a.pdf), so every second claimant of an already-claimed path gets the source
+# extension woven in: a.md.pdf.
+declare -A CLAIMED=()
+declare -A OUT_OF=()
+for f in "${FILES[@]}"; do
+  out="$OUTPUT_DIR/${f%.*}.$TARGET"
+  if [ -n "${CLAIMED[$out]:-}" ]; then
+    out="$OUTPUT_DIR/${f%.*}.${f##*.}.$TARGET"
+  fi
+  CLAIMED[$out]=1
+  OUT_OF[$f]=$out
+done
+
+# One file per Electron process. GENOFFICE_FLAGS is intentionally unquoted:
+# it is a word-split list of extra headless-export flags. --no-sandbox is
+# required (the setuid chrome-sandbox helper cannot work in image layers),
+# --disable-gpu/--disable-dev-shm-usage are the standard container flags.
+# Each worker records its own verdict marker; per-file log blocks are built
+# in one variable and appended with a single write so parallel workers never
+# interleave inside a block.
+convert_one() {
+  local rel="$1"
+  local out="${OUT_OF[$rel]}"
+  local res="$RESULTS/$(printf '%s' "$rel" | md5sum | cut -d' ' -f1)"
+  local block code
+  mkdir -p "$(dirname "$out")"
+  "$APP" --headless-export "$INPUT_DIR/$rel" --to "$TARGET" --out "$out" --json \
+    --no-sandbox --disable-gpu --disable-dev-shm-usage ${GENOFFICE_FLAGS:-} \
+    >"$res" 2>"$res.err"
+  code=$?
+  if [ $code -eq 0 ] && grep -q '"status":"ok"' "$res"; then
+    block=$(printf '==> %s\n%s' "$rel" "$(cat "$res")")
+  else
+    block=$(printf '==> %s (failed, exit %d)\n%s' "$rel" "$code" \
+      "$(cat "$res" "$res.err" 2>/dev/null | tr '\n' ' ')")
+    : >"$res.code"
+  fi
+  rm -f "$res.err"
+  printf '%s\n' "$block" >>"$RESULTS/log"
+  return 0
+}
+
+# wait -n reaps workers as they finish, keeping at most $PARALLEL conversions
+# in flight; with PARALLEL=1 the loop degenerates to plain serial execution.
+# The final wait deliberately targets the conversion pids only — a bare
+# `wait` would also block on the Xvfb job, which never exits by design.
+running=0
+pids=()
+for f in "${FILES[@]}"; do
+  convert_one "$f" &
+  pids+=($!)
+  running=$((running + 1))
+  if [ "$running" -ge "$PARALLEL" ]; then
+    wait -n || true
+    running=$((running - 1))
+  fi
+done
+for pid in "${pids[@]}"; do
+  wait "$pid" 2>/dev/null || true
+done
+
+# the verdict markers, not job reaping, decide the batch outcome
+FAILED=$(find "$RESULTS" -name '*.code' | wc -l | tr -d ' ')
+cat "$RESULTS/log" 2>/dev/null
+
+if [ "$FAILED" -eq 0 ]; then
+  printf '{"status":"ok","total":%d,"converted":%d,"failed":0}\n' "$TOTAL" "$TOTAL"
+  exit 0
+fi
+printf '{"status":"partial","total":%d,"converted":%d,"failed":%d}\n' "$TOTAL" "$((TOTAL - FAILED))" "$FAILED"
+exit 3

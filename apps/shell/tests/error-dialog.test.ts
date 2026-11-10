@@ -7,7 +7,7 @@ import type { BrowserWindow } from 'electron'
  * Windows (parentless TaskDialog): with the box unnoticed behind the shell
  * window, main-process JS stays parked in its nested pump, so every click,
  * native menu item and the window close button die with no "(Not Responding)"
- * — the alpha row-51 full-UI wedge. These tests simulate that scenario: an
+ * — a full-UI wedge seen in the field. These tests simulate that scenario: an
  * error dialog nobody ever dismisses while failures keep coming.
  */
 

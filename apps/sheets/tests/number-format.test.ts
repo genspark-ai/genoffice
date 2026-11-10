@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { categoryOptionForPattern, NUMBER_FORMAT_CATEGORIES } from '../src/renderer/number-format'
+import { categoryOptionForPattern, numberFormatCategories } from '../src/renderer/number-format'
 
-describe('NUMBER_FORMAT_CATEGORIES', () => {
+describe('numberFormatCategories', () => {
   it('every category pattern echoes back as its own dropdown option', () => {
-    for (const category of NUMBER_FORMAT_CATEGORIES) {
+    for (const category of numberFormatCategories()) {
       expect(categoryOptionForPattern(category.pattern)).toBe(category.label)
     }
   })

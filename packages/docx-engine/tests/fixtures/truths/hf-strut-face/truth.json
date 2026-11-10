@@ -1,0 +1,62 @@
+{
+  "id": "hf-strut-face",
+  "title": "Letterhead strip lines of Times New Roman 8 pt under a Cambria 11 Normal pitch 9.2 each (the run face, never the body face): six lines push the body to 91.27; the same six in Calibri 8 pt pitch 9.76",
+  "section": "word-truths.md#L802",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf: Letter 1440 margins, header 720, docDefaults Cambria 11 after=0 line=240; TNR 8 pt baselines 43.44 / 52.56 / 61.92 / 71.04 / 80.16 / 89.52 (pitch 9.12-9.36, mean 9.22), body top 91.27 = 36 + 6 x 9.2; Calibri 8 pt pitch 9.60-9.84 (mean 9.74), body 94.63; one TNR line baseline 43.44; empty TNR sz 16 mark paragraph; Cambria 11 control baseline 46.56. Synthetic twin of the 2026-10-20 corpus truth. gen kept the strip's inherited (Cambria) face as the strut face, so each line unioned a Cambria strut box with the TNR run box (+0.5 pt per line)",
+  "cases": [
+    {
+      "kind": "hfLineBox",
+      "part": 0,
+      "para": 0,
+      "expect": {
+        "stylesStartWith": [
+          "font-family:'Times New Roman'",
+          "--doc-grid-strut-tail:'Times New Roman'",
+          "--doc-font-box:"
+        ],
+        "styles": ["--doc-line-factor:1.15", "--doc-strut:8pt", "font-size:var(--doc-strut)"]
+      },
+      "note": "strut face and factor follow the Times New Roman runs"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 0,
+      "para": 5,
+      "expect": {
+        "stylesStartWith": ["font-family:'Times New Roman'"],
+        "styles": ["--doc-line-factor:1.15"]
+      }
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 1,
+      "para": 0,
+      "expect": {
+        "stylesStartWith": ["font-family:'Calibri'"],
+        "styles": ["--doc-line-factor:1.22", "--doc-strut:8pt"]
+      }
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 3,
+      "para": 0,
+      "expect": {
+        "stylesStartWith": ["font-family:'Times New Roman'", "--doc-font-box:"],
+        "styles": ["--doc-line-factor:1.15", "font-size:8pt"]
+      },
+      "note": "empty paragraph: the mark's face is the strut face too"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 4,
+      "para": 0,
+      "expect": {
+        "stylesStartWith": ["font-family:'Cambria'"],
+        "styles": ["--doc-line-factor:1.172"]
+      }
+    }
+  ],
+  "docx": "probe.docx"
+}

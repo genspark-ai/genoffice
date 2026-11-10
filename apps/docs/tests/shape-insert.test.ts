@@ -13,6 +13,7 @@ import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import {
   buildShapeParagraphXml,
+  buildTextboxParagraphXml,
   parseDocx,
   saveDocx,
   type TextboxDisplay,
@@ -20,6 +21,7 @@ import {
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { insertShapeAt } from '../src/renderer/components/ribbon-tabs'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
+import { textboxBoxStyle } from '../src/renderer/editor/protected-render'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 
 const WIDTH_EMU = 1800000
@@ -99,6 +101,54 @@ describe('shape insertion', () => {
     )
     // mc:Fallback should NOT have xmlns:mc (to allow stripping by parse.ts)
     expect(xml).not.toContain('mc:Fallback xmlns:mc=')
+  })
+
+  // Word centers autoshape text both ways and takes its color from the style's
+  // fontRef (lt1 → white on the accent fill), writing no color on the runs.
+  it('an inserted shape centers its text and defers the color to the style', async () => {
+    const xml = buildShapeParagraphXml({ prst: 'rect', id: 1, withTextbox: true })
+    expect(xml).toContain('<wps:bodyPr anchor="ctr"/>')
+    expect(xml).toContain('<w:jc w:val="center"/>')
+    expect(xml).toContain('<a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef>')
+    expect(xml).not.toContain('<w:color')
+    // the VML twin renders instead on older Word builds, so it centers too
+    expect(xml).toContain('v-text-anchor:middle')
+
+    const box = (await parseDocx(await buildDocx({ bodyXml: xml }))).blocks[0].textboxes?.[0]
+    expect(box?.vAlign).toBe('center')
+    expect(box?.textColor).toBe('FFFFFF')
+    expect(box?.paras[0]?.align).toBe('center')
+  })
+
+  // The XML above is only half of it: the editor renders from the display model
+  // handed to the node, so if that model is not centered too, a fresh shape reads
+  // top-left and black until the file is saved and reopened.
+  it('the shape shown right after inserting is centered, not just the saved bytes', async () => {
+    const { editor } = await openBlankDoc()
+    insertShapeAt(editor, 'rect')
+    let box: TextboxDisplay | undefined
+    editor.state.doc.descendants((node) => {
+      const boxes = node.attrs?.textboxes as TextboxDisplay[] | null
+      if (boxes?.length) box = boxes[0]
+      return true
+    })
+    expect(box).toBeTruthy()
+    expect(box!.vAlign).toBe('center')
+    expect(box!.textColor).toBe('FFFFFF')
+    expect(box!.paras[0]?.align).toBe('center')
+
+    const css = textboxBoxStyle(box!)
+    expect(css).toContain('justify-content:safe center')
+    expect(css).toContain('color:#FFFFFF')
+    editor.destroy()
+  })
+
+  // The two builders are deliberately asymmetric: Insert > Text Box stays top-left
+  it('an inserted text box is not centered', () => {
+    const xml = buildTextboxParagraphXml({ id: 1 })
+    expect(xml).toContain('<wps:bodyPr/>')
+    expect(xml).not.toContain('anchor="ctr"')
+    expect(xml).not.toContain('<w:jc')
   })
 
   it('shape without a text box does not generate wps:txbx', () => {

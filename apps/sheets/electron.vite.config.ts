@@ -17,13 +17,16 @@ export default defineConfig({
           '@genoffice/file-parse',
           '@genoffice/electron-utils',
           '@genoffice/i18n',
+          '@genoffice/pptx-render',
+          '@genoffice/xlsx-gateway',
         ],
       }),
     ],
   },
   preload: {
-    // Sandboxed preload scripts cannot require arbitrary npm packages at runtime.
-    plugins: [],
+    // Sandboxed preload scripts cannot require arbitrary npm packages at
+    // runtime, so the drop-open bridge must be bundled, not externalized.
+    plugins: [externalizeDepsPlugin({ exclude: ['@genoffice/electron-utils'] })],
   },
   renderer: {
     plugins: [react()],

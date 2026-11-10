@@ -84,6 +84,34 @@ describe('cross-references (REF fields)', () => {
     expect(runs[0].refField).toBeUndefined()
   })
 
+  it('folds a fldSimple REF too, so a numbered item keeps its list and marker', async () => {
+    const xml =
+      '<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+      '<w:r><w:t xml:space="preserve">see (\u00a7</w:t></w:r>' +
+      '<w:fldSimple w:instr="REF book6d60 \\r \\h"><w:r><w:rPr><w:b/></w:rPr><w:t>5.1.4</w:t></w:r></w:fldSimple>' +
+      '<w:r><w:t>)</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withNumbering: true }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('listItem')
+    expect(block.list).toBeDefined()
+    expect(block.runs!.map((r) => r.text)).toEqual(['see (\u00a7', '5.1.4', ')'])
+    expect(block.runs![1]).toMatchObject({
+      refField: 'book6d60',
+      refInstr: ' REF book6d60 \\r \\h ',
+      bold: true,
+    })
+    const out = generateParagraphXml({ type: 'paragraph', runs: block.runs! }, GEN_CTX)
+    expect(out).toContain('<w:instrText xml:space="preserve"> REF book6d60 \\r \\h </w:instrText>')
+  })
+
+  it('folds a fldSimple XE into an invisible index marker run', async () => {
+    const xml =
+      '<w:p><w:r><w:t>Undo</w:t></w:r><w:fldSimple w:instr=" XE &quot;Undo&quot; "/></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].type).toBe('paragraph')
+    expect(doc.blocks[0].runs).toEqual([{ text: 'Undo' }, { text: '', xeTerm: 'Undo' }])
+  })
+
   it('regenerates the full REF field with cached display text', () => {
     const xml = generateParagraphXml(
       {
@@ -140,6 +168,28 @@ describe('REF field switch preservation', () => {
     const docXml = await zip.file('word/document.xml')!.async('string')
     expect(docXml).toContain(
       '<w:instrText xml:space="preserve"> REF _Ref12345 \\r \\h </w:instrText>',
+    )
+  })
+
+  it('keeps w:dirty on a folded REF field through parse and save', async () => {
+    const para =
+      '<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> REF _Ref1 \\p </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:t>above</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: para }))
+    expect(doc.blocks[0].runs![0]).toMatchObject({ refField: '_Ref1', fldDirty: true })
+    const saved = await saveDocx(doc, [
+      {
+        kind: 'generated',
+        block: { type: 'paragraph', runs: [{ text: 'x' }, ...doc.blocks[0].runs!] },
+      },
+    ])
+    const zip = await (await import('jszip')).default.loadAsync(saved)
+    expect(await zip.file('word/document.xml')!.async('string')).toContain(
+      '<w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>' +
+        '<w:r><w:instrText xml:space="preserve"> REF _Ref1 \\p </w:instrText>',
     )
   })
 

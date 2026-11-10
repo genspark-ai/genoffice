@@ -3,13 +3,18 @@ import { describe, expect, it } from 'vitest'
 import {
   applyChartStateEdit,
   chartCategoryFormat,
+  chartSupportsSeriesReplace,
+  comboSeriesSetDefaults,
   formatCategoryLabel,
+  isComboChartTypes,
   refIntersects,
   scatterAxisBounds,
   splitSheetRef,
+  transposeChartSeries,
   withDefaultBarLabels,
   type ChartVisualState,
-} from '../src/domain/chart-visual'
+  valueAxisScale,
+} from '@genoffice/xlsx-gateway/domain/chart-visual'
 
 const base = (): ChartVisualState => ({
   chartTypes: ['barChart'],
@@ -65,6 +70,28 @@ describe('applyChartStateEdit', () => {
     expect(next.series[0]?.categories).toEqual(['a', 'b'])
   })
 
+  it('drops the parsed outer-level groups when an edit replaces the categories', () => {
+    const chart = base()
+    const first = chart.series[0]
+    if (first) first.categoryGroups = [{ label: '2008', start: 0, end: 2 }]
+    const kept = applyChartStateEdit(chart, { series: [{ index: 0, values: [5, 6] }] })
+    expect(kept.series[0]?.categoryGroups).toEqual([{ label: '2008', start: 0, end: 2 }])
+    const replaced = applyChartStateEdit(chart, {
+      series: [{ index: 0, categories: ['x', 'y'] }],
+    })
+    expect(replaced.series[0]?.categoryGroups).toBeUndefined()
+  })
+
+  it('drops stale blank markers when an edit replaces the values', () => {
+    const chart = base()
+    const first = chart.series[0]
+    if (first) first.blanks = [1]
+    const kept = applyChartStateEdit(chart, { series: [{ index: 0, name: 'R' }] })
+    expect(kept.series[0]?.blanks).toEqual([1])
+    const replaced = applyChartStateEdit(chart, { series: [{ index: 0, values: [5, 6] }] })
+    expect(replaced.series[0]?.blanks).toBeUndefined()
+  })
+
   it('merges slice explosions per point over the series default', () => {
     const pie = applyChartStateEdit(base(), { chartType: 'pie', explosionPct: 10 })
     expect(pie.chartTypes).toEqual(['pieChart'])
@@ -90,14 +117,101 @@ describe('applyChartStateEdit', () => {
   })
 })
 
+const comboBase = (): ChartVisualState => ({
+  chartTypes: ['barChart', 'lineChart'],
+  barDirection: 'col',
+  title: 'Combo',
+  secondaryYAxis: { majorGridlines: false, hidden: false, reversed: false },
+  series: [
+    { name: 'Bars', categories: ['a', 'b'], values: [1, 2], plot: 'barChart' },
+    { name: 'Line', categories: ['a', 'b'], values: [3, 4], plot: 'lineChart' },
+  ],
+})
+
+describe('applyChartStateEdit combo series sets', () => {
+  it('carries plot and axis tags and keeps a mixed set a combo', () => {
+    const next = applyChartStateEdit(comboBase(), {
+      seriesSet: [
+        { name: 'B1', values: [9, 8], plot: 'barChart' },
+        { name: 'L1', values: [7, 6], plot: 'lineChart', secondaryAxis: true },
+      ],
+    })
+    expect(next.chartTypes).toEqual(['barChart', 'lineChart'])
+    expect(next.series[0]).toMatchObject({ name: 'B1', plot: 'barChart' })
+    expect(next.series[0]?.secondaryAxis).toBeUndefined()
+    expect(next.series[1]).toMatchObject({
+      name: 'L1',
+      plot: 'lineChart',
+      secondaryAxis: true,
+    })
+  })
+
+  it('collapses the combo when every tag lands on one family', () => {
+    const next = applyChartStateEdit(comboBase(), {
+      seriesSet: [
+        { name: 'L1', values: [9, 8], plot: 'lineChart' },
+        { name: 'L2', values: [7, 6], plot: 'lineChart' },
+      ],
+    })
+    expect(next.chartTypes).toEqual(['lineChart'])
+    expect(next.series.every((series) => series.plot === 'lineChart')).toBe(true)
+  })
+
+  it('keeps chartTypes when the set carries no tags (single-chart path)', () => {
+    const next = applyChartStateEdit(base(), { seriesSet: [{ name: 'N1', values: [9, 8] }] })
+    expect(next.chartTypes).toEqual(['barChart'])
+  })
+
+  it('strips combo tags when a type conversion lands on one family', () => {
+    const next = applyChartStateEdit(comboBase(), { chartType: 'line' })
+    expect(next.chartTypes).toEqual(['lineChart'])
+    expect(next.series.every((series) => series.plot === undefined)).toBe(true)
+    expect(next.series.every((series) => series.secondaryAxis === undefined)).toBe(true)
+  })
+
+  it('tags a transposed set with Insert Chart combo shape', () => {
+    const transposed = transposeChartSeries(comboBase().series, (n) => `Series ${n}`)
+    expect(transposed).not.toBeNull()
+    const tagged = comboSeriesSetDefaults(transposed ?? [])
+    expect(tagged.map((entry) => [entry.plot, entry.secondaryAxis])).toEqual([
+      ['barChart', false],
+      ['lineChart', true],
+    ])
+    const three = comboSeriesSetDefaults([
+      { name: 'A', values: [1] },
+      { name: 'B', values: [2] },
+      { name: 'C', values: [3] },
+    ])
+    expect(three.map((entry) => [entry.plot, entry.secondaryAxis])).toEqual([
+      ['barChart', false],
+      ['barChart', false],
+      ['lineChart', true],
+    ])
+  })
+})
+
+describe('combo support flags', () => {
+  it('accepts exactly bar+line combos as replaceable and convertible', () => {
+    expect(chartSupportsSeriesReplace(['barChart'])).toBe(true)
+    expect(chartSupportsSeriesReplace(['barChart', 'lineChart'])).toBe(true)
+    expect(chartSupportsSeriesReplace(['lineChart', 'barChart'])).toBe(true)
+    expect(chartSupportsSeriesReplace(['barChart', 'lineChart', 'areaChart'])).toBe(false)
+    expect(chartSupportsSeriesReplace(['barChart', 'scatterChart'])).toBe(false)
+    expect(isComboChartTypes(['barChart', 'lineChart'])).toBe(true)
+    expect(isComboChartTypes(['lineChart', 'barChart'])).toBe(true)
+    expect(isComboChartTypes(['barChart'])).toBe(false)
+  })
+})
+
 describe('withDefaultBarLabels', () => {
   const single = (): ChartVisualState => {
     const chart = base()
     return { ...chart, series: chart.series.slice(0, 1) }
   }
 
-  it('upgrades a single-series bar chart with labels off or unset', () => {
-    expect(withDefaultBarLabels({ ...single(), dataLabels: 'none' }).dataLabels).toBe('value')
+  it('upgrades a single-series bar chart only when the file has no dLbls', () => {
+    // Explicit showVal="0" must stay off — fidelity beats the product default.
+    expect(withDefaultBarLabels({ ...single(), dataLabels: 'none' }).dataLabels).toBe('none')
     expect(withDefaultBarLabels(single()).dataLabels).toBe('value')
   })
 
@@ -152,7 +266,7 @@ describe('chart data-sync ref helpers', () => {
 
 describe('chartDataFromValues orientation and header detection', () => {
   it('wide cross-tab: rows become series, numeric year headers become categories', async () => {
-    const { chartDataFromValues } = await import('../src/domain/chart-visual')
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
     const parsed = chartDataFromValues([
       ['', 2020, 2021, 2022],
       ['Division 1', 225, 210, 211.5],
@@ -169,7 +283,7 @@ describe('chartDataFromValues orientation and header detection', () => {
   })
 
   it('wide month table: one series per salesperson, months as categories', async () => {
-    const { chartDataFromValues } = await import('../src/domain/chart-visual')
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
     const parsed = chartDataFromValues([
       ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
       ['Ann', 1, 2, 3, 4, 5, 6],
@@ -184,7 +298,7 @@ describe('chartDataFromValues orientation and header detection', () => {
   })
 
   it('tall two-column data keeps the column orientation (pie shape)', async () => {
-    const { chartDataFromValues } = await import('../src/domain/chart-visual')
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
     const parsed = chartDataFromValues([
       ['Apples', 10],
       ['Pears', 20],
@@ -196,7 +310,7 @@ describe('chartDataFromValues orientation and header detection', () => {
   })
 
   it('keeps an all-numeric block header-less', async () => {
-    const { chartDataFromValues } = await import('../src/domain/chart-visual')
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
     const parsed = chartDataFromValues([
       [1, 2],
       [3, 4],
@@ -204,11 +318,65 @@ describe('chartDataFromValues orientation and header detection', () => {
     expect(parsed?.hasHeaderRow).toBe(false)
     expect(parsed?.series).toHaveLength(2)
   })
+
+  it('charts a mixed first column when every other column is text', async () => {
+    // Numbered checklists: the only numeric column doubles as the row-label
+    // column, so claiming it for the category axis left zero series.
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
+    const parsed = chartDataFromValues([
+      ['Monitoring checklist', null],
+      [null, null],
+      ['No.', 'Task'],
+      [1, 'cart'],
+      [2, 'cart'],
+      [3, 'carousel'],
+    ])
+    expect(parsed?.hasCategoryColumn).toBe(false)
+    expect(parsed?.series).toHaveLength(1)
+    expect(parsed?.series[0]?.column).toBe(0)
+    expect(parsed?.series[0]?.values).toEqual([0, 0, 0, 1, 2, 3])
+  })
+
+  it('charts a sparse numeric first column between blank filler rows', async () => {
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
+    const parsed = chartDataFromValues([
+      [null, null],
+      ['id', 'employee'],
+      [1, 'Alice'],
+      [2, 'Bob'],
+      ['total', null],
+      [null, null],
+    ])
+    expect(parsed?.series).toHaveLength(1)
+    expect(parsed?.series[0]?.column).toBe(0)
+  })
+
+  it('keeps a mixed later column as a series despite text notes', async () => {
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
+    const parsed = chartDataFromValues([
+      ['label', 'value'],
+      ['a', 1],
+      ['b', 'n/a'],
+      ['c', 3],
+    ])
+    expect(parsed?.hasCategoryColumn).toBe(true)
+    expect(parsed?.series[0]?.values).toEqual([1, 0, 3])
+  })
+
+  it('still rejects a range with no numeric cells anywhere', async () => {
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
+    const parsed = chartDataFromValues([
+      ['question', 'answer'],
+      ['agree', 'agree'],
+      ['disagree', 'agree'],
+    ])
+    expect(parsed).toBeNull()
+  })
 })
 
 describe('transposeChartSeries', () => {
   it('pivots categories into series and series names into categories', async () => {
-    const { transposeChartSeries } = await import('../src/domain/chart-visual')
+    const { transposeChartSeries } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
     const seriesSet = transposeChartSeries(
       [
         { name: 'Grinsley', categories: ['Jan', 'Feb'], values: [1, 2] },
@@ -223,7 +391,7 @@ describe('transposeChartSeries', () => {
   })
 
   it('returns null when there are no categories to pivot on', async () => {
-    const { transposeChartSeries } = await import('../src/domain/chart-visual')
+    const { transposeChartSeries } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
     expect(
       transposeChartSeries([{ name: 'S1', categories: [], values: [1] }], (n) => `${n}`),
     ).toBeNull()
@@ -231,7 +399,7 @@ describe('transposeChartSeries', () => {
   })
 
   it('fills gaps with zeros and labels blank names', async () => {
-    const { transposeChartSeries } = await import('../src/domain/chart-visual')
+    const { transposeChartSeries } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
     const seriesSet = transposeChartSeries(
       [{ name: '', categories: ['', 'B'], values: [5] }],
       (n) => `Series ${n}`,
@@ -246,6 +414,7 @@ describe('transposeChartSeries', () => {
 describe('formatCategoryLabel', () => {
   it('formats numeric category text through its number format', () => {
     expect(formatCategoryLabel('44562', 'mmm\\-yy')).toBe('Jan-22')
+    expect(formatCategoryLabel('41387', 'mmm\\ yyyy')).toBe('Apr 2013')
     expect(formatCategoryLabel('0.152', '0.0%')).toBe('15.2%')
   })
 
@@ -309,7 +478,7 @@ describe('scatterAxisBounds', () => {
 
 describe('chartDataFromValues scatter X column', () => {
   it('routes a numeric first column into categories for scatter', async () => {
-    const { chartDataFromValues } = await import('../src/domain/chart-visual')
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
     const parsed = chartDataFromValues(
       [
         ['Sales', 'EBIT'],
@@ -325,7 +494,7 @@ describe('chartDataFromValues scatter X column', () => {
   })
 
   it('by-row selections pivot the first data row into X', async () => {
-    const { chartDataFromValues } = await import('../src/domain/chart-visual')
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
     // 2 rows × 4 cols with a label column: row 1 = X, row 2 = Y (corpus shape)
     const parsed = chartDataFromValues(
       [
@@ -342,7 +511,7 @@ describe('chartDataFromValues scatter X column', () => {
   })
 
   it('non-scatter parsing is unchanged (each numeric column a series)', async () => {
-    const { chartDataFromValues } = await import('../src/domain/chart-visual')
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
     const parsed = chartDataFromValues([
       ['Sales', 'EBIT'],
       [0.0626, 0.152],
@@ -350,5 +519,61 @@ describe('chartDataFromValues scatter X column', () => {
     ])
     expect(parsed?.hasCategoryColumn).toBe(false)
     expect(parsed?.series).toHaveLength(2)
+  })
+})
+
+describe('valueAxisScale', () => {
+  it('scales flat data 0..1 in 0.2 steps like Excel', () => {
+    expect(valueAxisScale(0)).toEqual({ min: 0, max: 1, ticks: [0, 0.2, 0.4, 0.6, 0.8, 1] })
+  })
+
+  it('matches Excel defaults on the run5 corpus', () => {
+    // 60509: data max 11162 → 0..12000 step 2000
+    expect(valueAxisScale(11162)).toEqual({
+      min: 0,
+      max: 12000,
+      ticks: [0, 2000, 4000, 6000, 8000, 10000, 12000],
+    })
+    // budget: 3750 → 0..4000 step 500
+    expect(valueAxisScale(3750).max).toBe(4000)
+    expect(valueAxisScale(3750).ticks).toHaveLength(9)
+    // 57362: 13 → 0..14 step 2
+    expect(valueAxisScale(13)).toEqual({ min: 0, max: 14, ticks: [0, 2, 4, 6, 8, 10, 12, 14] })
+    // prod_055: 877 → 0..1000 step 100 (the earlier 900 reading came from a
+    // page-clipped ref; the plot area runs past the 900 gridline).
+    expect(valueAxisScale(877).max).toBe(1000)
+    expect(valueAxisScale(877).ticks).toHaveLength(11)
+  })
+
+  it('leaves Excel 5% auto-max headroom, calibrated on the real-run1 refs', () => {
+    // aspose_sample1 pivot chart: 18 → 0..20 step 2
+    expect(valueAxisScale(18)).toEqual({
+      min: 0,
+      max: 20,
+      ticks: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20],
+    })
+    // aspose_sampleModifyLineChart: 148 → 0..160 step 20
+    expect(valueAxisScale(148).max).toBe(160)
+    expect(valueAxisScale(148).ticks[1]).toBe(20)
+    // aspose_sampleGetFonts stacked: 289753.76 → 0..350000 step 50000
+    expect(valueAxisScale(289753.76).max).toBe(350000)
+    expect(valueAxisScale(289753.76).ticks[1]).toBe(50000)
+    // aspose_sampleDisableTextWrappingForDataLabels: 1000 → 0..1200 step
+    // 200 (the 5% bump makes 11 intervals of 100, pushing the unit to 200)
+    expect(valueAxisScale(1000).max).toBe(1200)
+    expect(valueAxisScale(1000).ticks[1]).toBe(200)
+    // phpss_32readwriteLineChartNoPointMarkers1: 3490 → 0..4000 step 500
+    expect(valueAxisScale(3490).max).toBe(4000)
+    expect(valueAxisScale(3490).ticks[1]).toBe(500)
+  })
+
+  it('honours explicit bounds and unit', () => {
+    expect(valueAxisScale(999, { min: -180, max: 180, majorUnit: 60 }).ticks).toEqual([
+      -180, -120, -60, 0, 60, 120, 180,
+    ])
+  })
+
+  it('survives degenerate spans', () => {
+    expect(valueAxisScale(0).max).toBeGreaterThan(0)
   })
 })

@@ -1,0 +1,13 @@
+{
+  "source": "apps/docs/tests/pagination-corpus/docx/simple.docx",
+  "paragraphs": 3,
+  "hashes": ["dc1b742e356a368c", "d5545e7180a5ad69", "679c55ae7cbd8a57"],
+  "cellParagraphs": 0,
+  "cellHashes": [],
+  "boxParagraphs": 0,
+  "boxHashes": [],
+  "hfParagraphs": 0,
+  "hfHashes": [],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

@@ -9,6 +9,10 @@ export const UPDATE_CHANNELS = {
   later: 'update:later',
   openDownload: 'update:open-download',
   changed: 'update:changed',
+  /** pushed to the shell window so Settings → About can offer the update */
+  stateChanged: 'update:state-changed',
+  /** Settings → About "update to vX": re-open the (minimized) dialog and act */
+  openForUpdate: 'update:open-for-update',
 } as const
 
 /** 'manual' = automatic updating is not working for this version (repeated
@@ -40,6 +44,14 @@ export interface UpdateUiState {
   /** BCP-47 tag for documentElement.lang (drives CJK font selection) */
   lang: string
   strings: UpdateUiStrings
+}
+
+/** Settings → About reads the update state and re-opens the dialog on demand */
+export interface UpdateSettingsApi {
+  getUpdateState(): Promise<UpdateUiState | null>
+  onUpdateStateChanged(handler: (state: UpdateUiState) => void): () => void
+  /** re-open the update dialog; a download that has not started also starts */
+  openUpdateDialog(): Promise<boolean>
 }
 
 export interface UpdateWindowApi {

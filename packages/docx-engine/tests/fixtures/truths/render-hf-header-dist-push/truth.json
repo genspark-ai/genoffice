@@ -1,0 +1,22 @@
+{
+  "id": "render-hf-header-dist-push",
+  "title": "Body top = max(top margin, header distance + strip height)",
+  "section": "word-truths.md#L124",
+  "probe_date": "2026-09-06",
+  "class": "render",
+  "source": "A8_empty_plain_hd1440.pdf re-measured 2026-10-22: A4, pgMar top 720, header dist 1440 (72pt), one empty Arial 12 header paragraph -> first body baseline 101.52 (glyph top 90.66) = 72 + 13.8 strip + 15.72 ascent/leading",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 1,
+      "expect": 90.66,
+      "tol": 0.6,
+      "note": "72 header dist + 13.8 empty strip line, then the body line"
+    }
+  ],
+  "docx": "probe.docx"
+}

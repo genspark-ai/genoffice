@@ -1,13 +1,17 @@
 import './browser-mock'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { htmlLang } from '@genoffice/i18n'
+import { htmlDir, htmlLang } from '@genoffice/i18n'
 import { AppFrame } from './AppFrame'
 import { LocaleProvider } from './locale'
 import { ToastProvider } from './toast'
 import { startAppearance } from './appearance'
 import '@genoffice/ui/tokens.css'
 import '@genoffice/ui/screentip.css'
+import '@genoffice/ui/dropdown.css'
+import '@genoffice/ui/ai-model-picker.css'
+import '@genoffice/ui/ai-usage.css'
+import '@genoffice/ui/ai-skills.css'
 import './home.css'
 import './tabbar.css'
 import './toast.css'
@@ -18,15 +22,11 @@ installScreenTips()
 // user appearance choices (accent, font, transparency) before first paint
 startAppearance(document.documentElement)
 
-// macOS shell window is created with vibrancy (Windows 11 with Mica, see
-// windowMaterialActive below); a transparent body lets the sidebar, tab strip
-// and the editor views' translucent regions show the material behind them
-const platform = navigator.platform.toLowerCase()
-if (platform.includes('mac')) document.body.classList.add('vib', 'plat-mac')
-else if (platform.includes('win')) document.body.classList.add('plat-win')
+const IS_MAC = navigator.platform.toLowerCase().includes('mac')
+if (IS_MAC) document.body.classList.add('vib', 'plat-mac')
+else if (navigator.platform.toLowerCase().includes('win')) document.body.classList.add('plat-win')
+document.body.classList.add(IS_MAC ? 'mac' : 'overlay-title-bar')
 
-// resolve the persisted language, first-run flag, and theme before first paint
-// so the UI never flashes (home showing briefly before the onboarding overlay)
 const langPromise =
   typeof window.aiOffice?.getLanguage === 'function'
     ? window.aiOffice.getLanguage().catch(() => 'en' as const)
@@ -37,8 +37,6 @@ const onboardingPromise =
     ? window.aiOffice.onboardingSeen().catch(() => true)
     : Promise.resolve(true)
 
-// Windows 11: the main process created the window with Mica — go transparent
-// before first paint, otherwise the body's in-app wallpaper would cover it
 const materialPromise =
   typeof window.aiOffice?.windowMaterialActive === 'function'
     ? window.aiOffice.windowMaterialActive().catch(() => false)
@@ -53,6 +51,7 @@ void Promise.all([langPromise, onboardingPromise, themePromise, materialPromise]
   ([lang, onboardingSeen, theme, material]) => {
     if (material) document.body.classList.add('vib')
     document.documentElement.lang = htmlLang(lang)
+    document.documentElement.dir = htmlDir(lang)
     // apply theme attribute before first paint to avoid flash
     if (theme !== 'system') {
       document.documentElement.setAttribute('data-theme', theme)
@@ -63,11 +62,23 @@ void Promise.all([langPromise, onboardingPromise, themePromise, materialPromise]
         else document.documentElement.setAttribute('data-theme', next)
       })
     }
+
+    const isHelp = new URLSearchParams(location.search).get('mode') === 'help'
+    const HelpScreen = React.lazy(() =>
+      import('./i18n/help/HelpScreen').then((m) => ({ default: m.HelpScreen })),
+    )
+
     createRoot(document.getElementById('root')!).render(
       <React.StrictMode>
         <LocaleProvider initial={lang}>
           <ToastProvider>
-            <AppFrame initialOnboardingSeen={onboardingSeen} />
+            {isHelp ? (
+              <React.Suspense fallback={<div className="boot" />}>
+                <HelpScreen />
+              </React.Suspense>
+            ) : (
+              <AppFrame initialOnboardingSeen={onboardingSeen} />
+            )}
           </ToastProvider>
         </LocaleProvider>
       </React.StrictMode>,

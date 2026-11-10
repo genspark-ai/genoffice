@@ -1,35 +1,254 @@
+import type { AiPanelPrefs } from '@genoffice/ui'
 import type { Lang } from '@genoffice/i18n'
-import type { AiSettings, AiStreamChunk, AiStreamRequest } from '@genoffice/ai-provider'
+import type {
+  AiSettings,
+  AiStreamChunk,
+  AiStreamRequest,
+  GenSparkAccountStatus,
+} from '@genoffice/ai-provider'
+import type { ExportImageMime } from './export-image-mime'
+
+export const MAX_PASTED_IMAGE_BYTES = 50 * 1024 * 1024
 
 export const MARKDOWN_CHANNELS = {
   consumePending: 'markdown:consume-pending',
   readFile: 'markdown:read-file',
+  resolveWikiLinks: 'markdown:resolve-wiki-links',
+  /** remember the `#fragment` of a wiki link, so the note opens on its heading */
+  rememberWikiFragment: 'markdown:remember-wiki-fragment',
+  /** take the fragment remembered for a path, '' when there is none */
+  takeWikiFragment: 'markdown:take-wiki-fragment',
+  /** list the vault's notes for the `[[` suggester, breadth-first from the root */
+  listWikiNotes: 'markdown:list-wiki-notes',
+  /** create the note an unresolved `[[wiki link]]` names (never overwrites) */
+  createWikiNote: 'markdown:create-wiki-note',
+  /** what `[[Note#` offers: the target note's headings and block ids */
+  wikiHeads: 'markdown:wiki-heads',
+  /** notes whose links land on the given path (the backlinks panel) */
+  wikiBacklinks: 'markdown:wiki-backlinks',
+  wikiTags: 'markdown:wiki-tags',
+  /** the vault's link graph (nodes + resolved edges, the graph view) */
+  wikiGraph: 'markdown:wiki-graph',
   save: 'markdown:save',
   saveRequest: 'markdown:save-request',
   saveRequestAck: 'markdown:save-request-ack',
+  readTextRequest: 'markdown:read-text-request',
+  readTextResult: 'markdown:read-text-result',
   dirtyChanged: 'markdown:dirty-changed',
   closeSaveRequest: 'markdown:close-save-request',
   closeSaveResult: 'markdown:close-save-result',
   fileRenamed: 'markdown:file-renamed',
+  fileChangedOnDisk: 'markdown:file-changed-on-disk',
+  ackFileChangedOnDisk: 'markdown:ack-file-changed-on-disk',
   pickImage: 'markdown:pick-image',
   saveImage: 'markdown:save-image',
   readImage: 'markdown:read-image',
+  saveImageAs: 'markdown:save-image-as',
+  getImageHost: 'markdown:get-image-host',
+  setImageHost: 'markdown:set-image-host',
+  getMarkdownTheme: 'markdown:get-theme',
+  setMarkdownTheme: 'markdown:set-theme',
+  uploadImage: 'markdown:upload-image',
+  viewImage: 'genoffice:view-image',
   exportRequest: 'markdown:export-request',
   exportDocx: 'markdown:export-docx',
   exportPdf: 'markdown:export-pdf',
+  prepareImageExport: 'markdown:prepare-image-export',
+  writeExportImage: 'markdown:write-export-image',
+  finishImageExport: 'markdown:finish-image-export',
+  consumeHeadlessExport: 'markdown:consume-headless-export',
+  headlessExportDone: 'markdown:headless-export-done',
+  printRequest: 'markdown:print-request',
+  aiGenerateImage: 'markdown:ai-generate-image',
   getLanguage: 'app:get-language',
   languageChanged: 'app:language-changed',
   getTheme: 'app:get-theme',
   themeChanged: 'app:theme-changed',
+  getDocumentTheme: 'app:get-document-theme',
+  documentThemeChanged: 'app:document-theme-changed',
+  getAutoSaveDefault: 'app:get-auto-save-default',
+  autoSaveDefaultChanged: 'app:auto-save-default-changed',
+  getAiPanelPrefs: 'app:get-ai-panel-prefs',
+  aiPanelPrefsChanged: 'app:ai-panel-prefs-changed',
 } as const
 
+/** the raw text between `[[ ]]`, verbatim, as the editor holds it */
+export interface WikiLinkResolveRequest {
+  /** absolute path of the document holding the links; '' when untitled */
+  fromPath: string
+  targets: string[]
+}
+export interface WikiLinkResolved {
+  /** absolute path, '' when unresolved (or a same-file link on an untitled doc) */
+  path: string
+  /** the `#Heading` / `#^block` part, '' when there was none */
+  fragment: string
+  found: boolean
+}
+
+/** one vault note offered by the `[[` suggester, in the resolver's own order */
+export interface WikiNoteEntry {
+  /** absolute path, the shape `resolveWikiLinks` answers with */
+  path: string
+  /** file name with extension, as `[[Figure 1.png]]` addresses it */
+  file: string
+  /** stem without extension, as a bare `[[Figure 1]]` addresses it */
+  name: string
+  /** path relative to the walk root, shown under the name in the menu */
+  relPath: string
+}
+
+export interface WikiCreateNoteRequest {
+  /**
+   * The link's target as written, alias dropped: `Note`, `folder/Note`,
+   * `Note#Heading`. The fragment rides back on the answer for the caller to
+   * open on; the file part is what gets created.
+   */
+  target: string
+}
+
+/** a heading of the note `[[Note#` lists */
+export interface WikiHeadingEntry {
+  kind: 'heading'
+  /** heading text as the fragment addresses it, marker stripped */
+  text: string
+  level: number
+}
+
+/** a block id the note already carries, offered by `[[Note#^` */
+export interface WikiBlockIdEntry {
+  kind: 'block'
+  /** the id without the caret, as the completion adds its own */
+  id: string
+  /** the line's text before the marker, '' for a lone marker line */
+  text: string
+}
+
+export type WikiHeadEntry = WikiHeadingEntry | WikiBlockIdEntry
+
+export interface WikiHeadsRequest {
+  /** the link's file part as typed: `Note`, `folder/Note` */
+  target: string
+  /** absolute path of the open document, '' while untitled */
+  fromPath: string
+}
+
+export type WikiCreateNoteResult =
+  | {
+      ok: true
+      /** absolute path of the note, created or already there */
+      path: string
+      /** the spelling a link resolves by: sanitized stem, directories kept (`folder/Note`) */
+      target: string
+      /** the `#Heading` part of the target, '' when there was none */
+      fragment: string
+      /** false when a file already occupied the path and nothing was written */
+      created: boolean
+    }
+  | { ok: false }
+
+/** a note whose link lands on the asked-for path */
+export interface WikiBacklink {
+  /** absolute path of the note carrying the link */
+  source: string
+  /** the target as written there (`Note`, `Note#Heading`) */
+  target: string
+}
+
+export interface WikiGraphNode {
+  /** absolute path */
+  path: string
+  /** stem, the label a node carries */
+  name: string
+  /** path relative to the vault root, the label's smaller half */
+  relPath: string
+}
+
+export interface WikiGraphEdge {
+  /** absolute path of the linking note */
+  from: string
+  /** absolute path of the linked note */
+  to: string
+}
+
+export interface WikiGraph {
+  nodes: WikiGraphNode[]
+  edges: WikiGraphEdge[]
+  /**
+   * the vault held more notes than the node cap, so this is a slice: the nodes
+   * are the first `MAX_GRAPH_NODES` in walk order and the edges only those among
+   * them. Callers say so rather than presenting a cut graph as the whole vault.
+   */
+  truncated: boolean
+  /** how many notes the walk found in total (never below nodes.length) */
+  totalNotes: number
+}
+
 export type UiTheme = 'light' | 'dark' | 'system'
+
+/**
+ * Document page theme preference (genoffice#1811): what the editors' canvas/paper does
+ * relative to the UI theme. 'follow' keeps the previous single-theme behavior.
+ */
+export type DocTheme = 'follow' | 'light' | 'dark'
+
+/**
+ * Bring-your-own image host for pasted/dropped pictures in Markdown
+ * (genoffice#388). Keys are stored plaintext in the user's own settings file,
+ * like every other credential in the app. The local assets/ copy stays the
+ * fallback whenever the host is disabled, unconfigured or the upload fails.
+ */
+export type ImageHostKind = 's3' | 'smms' | 'github'
+
+export interface ImageHostConfig {
+  kind: ImageHostKind
+  /** SM.MS and GitHub take a bearer token; S3 uses the key pair below */
+  token?: string
+  /** s3: endpoint base, path-style (`https://<account>.r2.cloudflarestorage.com`, `https://oss-<region>.aliyuncs.com`, …) */
+  endpoint?: string
+  /** s3 */
+  region?: string
+  /** s3 */
+  bucket?: string
+  /** s3 */
+  accessKeyId?: string
+  /** s3 */
+  secretAccessKey?: string
+  /** s3: optional key prefix inside the bucket (e.g. `notes/`) */
+  prefix?: string
+  /** s3: public base the bucket is served from when it differs from the API endpoint (R2 custom domain, CDN); URLs become `<publicBase>/<key>` */
+  publicBase?: string
+  /** github: repository coordinates of the image branch */
+  owner?: string
+  /** github */
+  repo?: string
+  /** github: branch to commit to (default `main`) */
+  branch?: string
+  /** github: directory inside the repo (default `images/`) */
+  dir?: string
+  /** github: serve URLs from this base instead of the API's download_url (e.g. a jsDelivr CDN) */
+  urlPrefix?: string
+}
+
+export interface ImageUploadResult {
+  ok: boolean
+  url?: string
+  error?: string
+}
+
+/** shell-wide AutoSave default; updatedAt is 0 until the user has ever set it */
+export interface AutoSaveDefault {
+  on: boolean
+  updatedAt: number
+}
 
 export type SaveMode = 'save' | 'saveAs'
 
 export interface SaveMarkdownRequest {
   /** full document text (frontmatter included) */
   text: string
+  /** Authored image paths in document order; the main process validates every path. */
+  imageSources: string[]
   mode: SaveMode
   /**
    * Silent first save for an untitled document (AI auto-naming): saves to a
@@ -37,33 +256,67 @@ export interface SaveMarkdownRequest {
    * Ignored when the document already has a path.
    */
   suggestedName?: string
+  /**
+   * Name offered in the Save As dialog for a document that has never been
+   * saved. A plain ⌘S on an untitled document still asks where the file goes —
+   * the model-proposed name (or the first heading) prefills that dialog rather
+   * than replacing it, so the reader still chooses the location.
+   */
+  defaultName?: string
+  /** write even though the file changed on disk since it was loaded or last saved */
+  overwrite?: boolean
 }
 
 export type SaveMarkdownResult =
-  { ok: true; path: string } | { ok: true; canceled: true } | { ok: false; error: string }
+  | {
+      ok: true
+      path: string
+      /** Save As may relocate local images into the new document's assets directory. */
+      imageRewrites?: Array<{ from: string; to: string }>
+      /** Actual persisted source after Save As image rewrites. */
+      writtenText?: string
+    }
+  | { ok: true; canceled: true }
+  | { ok: false; error: string; conflict?: true }
 
 /** AI channels are app-wide shared ipcMain handlers (shell registers via docs-main registerAiIpc); pass-through only */
 export const AI_CHANNELS = {
   getSettings: 'ai:get-settings',
+  setSettings: 'ai:set-settings',
+  settingsChanged: 'ai:settings-changed',
+  openModelSettings: 'ai:open-model-settings',
+  gskStatus: 'ai:gsk-status',
   stream: 'ai:stream',
   streamChunk: 'ai:stream-chunk',
   streamCancel: 'ai:stream-cancel',
   webSearch: 'ai:web-search',
+  imageSearch: 'ai:image-search',
+  fetchImage: 'ai:fetch-image',
 } as const
 
 export interface WebSearchResult {
   answer?: string
   results: Array<{ title: string; url: string; snippet: string }>
+  method: string
+  /** failure reason when method === 'error' */
+  error?: string
 }
 
-export type ExportFormat = 'pdf' | 'docx' | 'docs'
+export interface ImageSearchResult {
+  images: Array<{ title?: string; imageUrl: string; width?: number; height?: number }>
+  method: string
+  /** failure reason when method === 'error' */
+  error?: string
+}
+
+export type ExportFormat = 'pdf' | 'docx' | 'docs' | 'png'
 
 export interface ExportDocxRequest {
   /** .docx bytes, base64 */
   base64: string
   /** file name (no extension) suggested in the dialog / used for the silent convert */
   suggestedName: string
-  /** 'dialog' = save dialog; 'openInDocs' = silent save next to the .md, then open in AI Docs */
+  /** 'dialog' = save dialog; 'openInDocs' = app-managed temporary copy opened in AI Docs */
   mode: 'dialog' | 'openInDocs'
 }
 
@@ -71,20 +324,76 @@ export interface ExportPdfRequest {
   /** self-contained print HTML */
   html: string
   suggestedName: string
+  /** headless export mode only: write here instead of opening the save dialog */
+  outPath?: string
 }
+
+export type ImageExportPreparation =
+  | { ok: true; id: string; pdfBase64: string }
+  | { ok: true; canceled: true }
+  | { ok: false; error: string }
 
 export type ExportResult =
   { ok: true; path: string } | { ok: true; canceled: true } | { ok: false; error: string }
 
 export interface ImageData {
   base64: string
-  mime: 'image/png' | 'image/jpeg' | 'image/gif'
+  mime: ExportImageMime
 }
 
 /** API exposed by preload to the renderer (window.markdownApi) */
+import type { MarkdownTheme } from './markdown-theme'
 export interface MarkdownApi {
   /** Take the md path pending for this view (queued at tab creation); null = new untitled document */
   consumePending(): Promise<string | null>
+  /** open any shell-routed document path (an AI answer's filenav citation) */
+  openSourcePath(path: string): Promise<void>
+  /**
+   * Resolve every `[[target]]` in this document to a file. One walk for the
+   * whole batch: a fifty-link document would otherwise pay fifty root
+   * traversals, and the renderer needs the answer for the unresolved ones too
+   * (to mark them), not just the one that was clicked.
+   */
+  resolveWikiLinks(request: WikiLinkResolveRequest): Promise<Record<string, WikiLinkResolved>>
+  /**
+   * Remember where a wiki link pointed before asking the shell to open the
+   * note. The shell activates an open tab without waking its renderer, so the
+   * `#fragment` cannot ride on the open request itself; whichever renderer
+   * loads the path takes it with {@link takeWikiFragment} and lands on the
+   * heading. An empty fragment clears any earlier one for that path.
+   */
+  rememberWikiFragment(path: string, fragment: string): Promise<void>
+  /** Take the fragment remembered for `path`; '' when there is none (it is consumed) */
+  takeWikiFragment(path: string): Promise<string>
+  /**
+   * List the vault's notes for the `[[` suggester: the resolution root walked
+   * breadth-first (the order the resolver matches in), capped so a huge
+   * library cannot stall the popup.
+   */
+  listWikiNotes(): Promise<WikiNoteEntry[]>
+  /**
+   * Create the note an unresolved `[[target]]` names — Obsidian's "create new
+   * note". A target with a directory lands under the vault root, a bare name
+   * beside the open document (both decided in main, where the open paths
+   * live). An existing file is opened, never overwritten. `ok: false` when
+   * the target cannot name a note at all.
+   */
+  createWikiNote(request: WikiCreateNoteRequest): Promise<WikiCreateNoteResult>
+  /**
+   * What `[[Note#` offers: resolve the typed target the way the resolver does
+   * and list that note's headings and block ids. Read-only — the suggester
+   * lists what is there, it never writes an id into another file.
+   */
+  wikiHeads(request: WikiHeadsRequest): Promise<WikiHeadEntry[]>
+  /** Notes whose links resolve to `path` (the backlinks panel); '' answers []. */
+  wikiBacklinks(path: string): Promise<WikiBacklink[]>
+  wikiTags(): Promise<{ tag: string; files: string[] }[]>
+  /** The vault's link graph, notes as nodes and resolved links as edges. */
+  wikiGraph(): Promise<WikiGraph>
+  /** Headless export mode: the PDF path this hidden renderer must export to, null in normal use */
+  consumeHeadlessExport(): Promise<string | null>
+  /** Headless export mode: report the export outcome so the main process can quit */
+  headlessExportDone(result: { ok: boolean; error?: string }): void
   /** Read the file as UTF-8 text. Only paths granted to this view are allowed */
   readFile(path: string): Promise<string>
   /**
@@ -99,11 +408,21 @@ export interface MarkdownApi {
   onSaveRequest(handler: (mode: SaveMode) => void): () => void
   /** Resolves a menu-save waiter when doSave exits without ever invoking save() (busy/loading) */
   sendSaveRequestAck(ok: boolean): void
+  /**
+   * Main process asks for the live document text — the MCP read of an open
+   * document, unsaved edits included; reply through sendReadTextResult.
+   */
+  onReadTextRequest(handler: () => void): () => void
+  sendReadTextResult(result: { text: string } | { error: string }): void
   /** Main process picked "Save" in the close prompt → renderer saves and replies via sendCloseSaveResult */
   onCloseSaveRequest(handler: () => void): () => void
   sendCloseSaveResult(ok: boolean): void
   /** The file was renamed on disk (Home list rename) — renderer syncs its display path */
   onFileRenamed(handler: (newPath: string) => void): () => void
+  /** Another program wrote the open file; the renderer re-reads and decides whether to reload */
+  onFileChangedOnDisk(handler: (path: string) => void): () => void
+  /** the renderer has read the changed file and decided; a later save is checked against this version */
+  ackFileChangedOnDisk(): void
   /**
    * Pick an image file and copy it into `assets/` next to the open document;
    * returns the relative path to author into the markdown, or null when the
@@ -116,22 +435,95 @@ export interface MarkdownApi {
    */
   saveImage(data: { base64: string; ext: string }): Promise<string | null>
   /**
+   * The configured image host (genoffice#388), or null when none was ever
+   * saved. Pasted/dropped images upload here first and fall back to the
+   * local `assets/` copy when the upload fails or the host is disabled.
+   */
+  /** Paper theme for the editor (default = the light/dark document theme) */
+  getMarkdownTheme(): Promise<MarkdownTheme>
+  setMarkdownTheme(theme: MarkdownTheme): Promise<MarkdownTheme>
+  getImageHost(): Promise<ImageHostConfig | null>
+  /** Validate and persist the image host configuration; returns null on invalid input */
+  setImageHost(config: ImageHostConfig | null): Promise<ImageHostConfig | null>
+  /**
+   * Upload one image through the configured host. Returns the public URL on
+   * success; ok=false with a message when the host rejected the upload or is
+   * not configured (the renderer then keeps the local-copy fallback).
+   */
+  uploadImage(data: { base64: string; ext: string; name?: string }): Promise<{
+    ok: boolean
+    url?: string
+    error?: string
+  }>
+  /**
    * Read an image referenced by the document for DOCX embedding. Only paths
    * inside the document's directory are allowed; anything else returns null.
    */
   readImage(src: string): Promise<ImageData | null>
+  /** Save a displayed image (md-asset://, data: or remote URL) through a Save dialog */
+  saveImageAs(src: string): Promise<{ ok: boolean; path?: string; error?: string }>
+  /** Native context menu "View Image" → renderer opens the viewer */
+  onViewImage(handler: (src: string) => void): () => void
   /** Shell menu export → renderer serializes and calls exportDocx/exportPdf */
   onExportRequest(handler: (format: ExportFormat) => void): () => void
+  /** Shell menu Print → renderer builds the print HTML and opens the system print dialog */
+  onPrintRequest(handler: () => void): () => void
   exportDocx(request: ExportDocxRequest): Promise<ExportResult>
   exportPdf(request: ExportPdfRequest): Promise<ExportResult>
+  prepareImageExport(request: Omit<ExportPdfRequest, 'outPath'>): Promise<ImageExportPreparation>
+  writeExportImage(
+    id: string,
+    page: number,
+    pngBase64: string,
+  ): Promise<{ ok: boolean; error?: string }>
+  finishImageExport(id: string, success: boolean): Promise<ExportResult>
   getLanguage(): Promise<Lang>
   onLanguageChanged(handler: (lang: Lang) => void): () => void
   getTheme(): Promise<UiTheme>
   onThemeChanged(handler: (theme: UiTheme) => void): () => void
+  getDocumentTheme(): Promise<DocTheme>
+  onDocumentThemeChanged(handler: (theme: DocTheme) => void): () => void
+  getAutoSaveDefault(): Promise<AutoSaveDefault>
+  onAutoSaveDefaultChanged(handler: (value: AutoSaveDefault) => void): () => void
+  /** AI panel text size + chat-input spellcheck (Settings → General in the shell) */
+  getAiPanelPrefs(): Promise<AiPanelPrefs>
+  setAiPanelPrefs(patch: Partial<AiPanelPrefs>): Promise<AiPanelPrefs>
+  onAiPanelPrefsChanged(handler: (prefs: AiPanelPrefs) => void): () => void
+  /** press on the shell chrome (tab strip is a sibling WebContentsView whose
+   *  clicks produce no DOM event here) — dismiss open popovers */
+  onChromePressed(handler: () => void): () => void
   getAiSettings(): Promise<AiSettings>
+  setAiSettings(settings: AiSettings): Promise<void>
+  /** ai-settings.json was rewritten by any renderer; re-read it */
+  onAiSettingsChanged(handler: () => void): () => void
+  /** shell only: switch to Home and open Settings › AI Model (rejects in standalone) */
+  openAiModelSettings(): Promise<void>
+  /** shell only: switch to Home and open Settings › Integrations (the skills list) */
+  openSkillsSettings(): Promise<void>
+  /** the skills the user installed into GenOffice (userData/skills) */
+  skillsList(): Promise<UserSkillEntry[]>
+  /** the body of one installed skill, by name — the main process resolves the path */
+  skillText(name: string): Promise<string>
+  /** Genspark login state (shell-registered ai:gsk-status) — gates generate_image with the cloud-tools toggle */
+  aiGskStatus(): Promise<GenSparkAccountStatus>
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
   /** Main-process web search (Serper/DuckDuckGo via the shared ai:web-search handler) */
   webSearch(query: string, maxResults?: number): Promise<WebSearchResult>
+  /** Main-process image search (shared ai:image-search handler) */
+  imageSearch(query: string, maxResults?: number): Promise<ImageSearchResult>
+  /** Download an image URL in the main process (CORS-free, scheme/target validated) */
+  fetchImage(url: string): Promise<{ base64: string; mime: string } | null>
+  /** Genspark cloud image generation (markdown-owned channel, gsk login required) */
+  aiGenerateImage(op: { prompt: string; aspectRatio?: string }): Promise<{
+    url?: string
+    error?: string
+  }>
+}
+
+export interface UserSkillEntry {
+  name: string
+  description: string
+  relevant: boolean
 }

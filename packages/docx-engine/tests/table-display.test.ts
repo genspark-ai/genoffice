@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDocx } from '../src/index'
+import { parseDocx, saveDocx, type SaveBlock } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const STYLED_TABLE_XML =
@@ -115,6 +115,18 @@ describe('table display model', () => {
     expect(table.rows[0][1].textDirection).toBe('btLr')
   })
 
+  it('parses w:hideMark on the cell', async () => {
+    const xml =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="76"/></w:tblGrid><w:tr>' +
+      '<w:tc><w:tcPr><w:tcW w:w="0" w:type="auto"/><w:hideMark/></w:tcPr><w:p/></w:tc>' +
+      '<w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>' +
+      '</w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const row = doc.blocks[0].table!.rows[0]
+    expect(row[0].hideMark).toBe(true)
+    expect(row[1].hideMark).toBeUndefined()
+  })
+
   it('merges legacy w:hMerge continue cells into the restart cell', async () => {
     const xml =
       '<w:tbl><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>' +
@@ -178,5 +190,229 @@ describe('cell alignment aggregation and trailing empty paragraphs', () => {
     expect(cell.paras).toEqual(['内容', ''])
     expect(cell.richParas?.[1].emptyRunSizeHalfPoints).toBe(2)
     expect(cell.richParas?.[1].runs).toEqual([])
+  })
+})
+
+describe('fixed-layout grid vs tcW arbitration', () => {
+  const fixedTable = (tblLayout: string) =>
+    `<w:tbl><w:tblPr><w:tblW w:type="auto" w:w="0"/>${tblLayout}<w:tblInd w:w="1450" w:type="dxa"/></w:tblPr>` +
+    '<w:tblGrid><w:gridCol w:w="6120"/><w:gridCol w:w="6120"/></w:tblGrid>' +
+    '<w:tr>' +
+    '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="4680"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>' +
+    '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="4680"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc>' +
+    '</w:tr></w:tbl>'
+
+  it('fixed layout takes tcW even when the grid has the same ratio (stale wider grid)', async () => {
+    // regression sample 30: grid 12240 total pushed the table + 1450 indent off paper,
+    // Word lays the same table out from the 9360-total first-row tcW
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: fixedTable('<w:tblLayout w:type="fixed"/>') }),
+    )
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual([4680, 4680])
+  })
+
+  it('auto layout with no declared width takes tcW as well (Word probe 2026-09-16)', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: fixedTable('') }))
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual([4680, 4680])
+  })
+
+  it('auto layout keeps an unequal grid over disagreeing tcW; fixed layout takes tcW', async () => {
+    const table = (layout: string) =>
+      `<w:tbl><w:tblPr><w:tblW w:w="3372" w:type="dxa"/>${layout}</w:tblPr>` +
+      '<w:tblGrid><w:gridCol w:w="571"/><w:gridCol w:w="999"/><w:gridCol w:w="766"/><w:gridCol w:w="1036"/></w:tblGrid>' +
+      '<w:tr>' +
+      [542, 1038, 719, 966]
+        .map(
+          (w) =>
+            `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>`,
+        )
+        .join('') +
+      '</w:tr></w:tbl>'
+    const auto = await parseDocx(await buildDocx({ bodyXml: table('') }))
+    expect(auto.blocks[0].table!.colWidthsTwips).toEqual([571, 999, 766, 1036])
+    const fixed = await parseDocx(
+      await buildDocx({ bodyXml: table('<w:tblLayout w:type="fixed"/>') }),
+    )
+    expect(fixed.blocks[0].table!.colWidthsTwips).toEqual([542, 1038, 719, 966])
+  })
+
+  // Word draws the gridCol rules of a fixed table whose grid and tcW total the
+  // same width but split it differently (production rubric, measured 2026-10-27)
+  it('fixed layout keeps an unequal grid that totals the tcW width', async () => {
+    const grid = [522, 2683, 2677, 1965, 1545]
+    const tcw = [522, 2860, 2853, 1577, 1580]
+    const xml =
+      '<w:tbl><w:tblPr><w:tblW w:w="9392" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>' +
+      `<w:tblGrid>${grid.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>` +
+      '<w:tr>' +
+      tcw
+        .map(
+          (w) =>
+            `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>`,
+        )
+        .join('') +
+      '</w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual(grid)
+  })
+
+  // Word PDF of a fixed table with w:tblCellSpacing 15: column pitches follow the
+  // saved grid (tcW + 45 each), the table spans Sigma(grid) past the right margin
+  it('fixed layout with cell spacing keeps a grid that is tcW plus the spacing gaps', async () => {
+    const table = (spacing: string, grid: number[]) =>
+      `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${spacing}<w:tblLayout w:type="fixed"/></w:tblPr>` +
+      `<w:tblGrid>${grid.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>` +
+      '<w:tr>' +
+      [2401, 2650, 2066, 1454, 1766]
+        .map(
+          (w) =>
+            `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>`,
+        )
+        .join('') +
+      '</w:tr></w:tbl>'
+    const spacing = '<w:tblCellSpacing w:w="15" w:type="dxa"/>'
+    const grid = [2446, 2695, 2111, 1499, 1811]
+    const spaced = await parseDocx(await buildDocx({ bodyXml: table(spacing, grid) }))
+    expect(spaced.blocks[0].table!.colWidthsTwips).toEqual(grid)
+    expect(spaced.blocks[0].table!.cellSpacingTwips).toBe(15)
+    const plain = await parseDocx(await buildDocx({ bodyXml: table('', grid) }))
+    expect(plain.blocks[0].table!.colWidthsTwips).toEqual([2401, 2650, 2066, 1454, 1766])
+    const stale = grid.map((w) => w * 2)
+    const staleSpaced = await parseDocx(await buildDocx({ bodyXml: table(spacing, stale) }))
+    expect(staleSpaced.blocks[0].table!.colWidthsTwips).toEqual([2401, 2650, 2066, 1454, 1766])
+  })
+
+  it('garbage over-wide grid widths stay raw in the model (clamping is render-side only)', async () => {
+    const xml =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="1871"/><w:gridCol w:w="130618601"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>' +
+      '<w:tc><w:p><w:r><w:t>y</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual([1871, 130618601])
+  })
+
+  it('tcW column widths take the max across rows, not the first row (Word widens to fit)', async () => {
+    const xml =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="5000"/><w:gridCol w:w="5000"/></w:tblGrid>' +
+      '<w:tr>' +
+      '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="2000"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>' +
+      '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="6000"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc>' +
+      '</w:tr><w:tr>' +
+      '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="4000"/></w:tcPr><w:p><w:r><w:t>c</w:t></w:r></w:p></w:tc>' +
+      '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="6000"/></w:tcPr><w:p><w:r><w:t>d</w:t></w:r></w:p></w:tc>' +
+      '</w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual([4000, 6000])
+  })
+
+  it('tcW preference never touches saved bytes: roundtrip keeps the original tblGrid', async () => {
+    const bytes = await buildDocx({ bodyXml: fixedTable('<w:tblLayout w:type="fixed"/>') })
+    const doc = await parseDocx(bytes)
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual([4680, 4680])
+    const saved = await saveDocx(
+      doc,
+      doc.blocks
+        .filter((b) => !b.hidden)
+        .map((b): SaveBlock => ({ kind: 'original', docxIndex: b.docxIndex! })),
+    )
+    expect(saved).toBe(bytes)
+    expect(doc.blocks[0].originalXml).toContain(
+      '<w:tblGrid><w:gridCol w:w="6120"/><w:gridCol w:w="6120"/></w:tblGrid>',
+    )
+  })
+})
+
+describe('duplicated border containers merge per side, later wins', () => {
+  it('a second w:tcBorders overrides the sides of an all-nil first one', async () => {
+    const xml =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr>' +
+      '<w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>' +
+      '<w:tcBorders><w:bottom w:val="single" w:sz="4" w:color="000000"/></w:tcBorders>' +
+      '</w:tcPr><w:p><w:r><w:t>签名</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const cell = doc.blocks[0].table!.rows[0][0]
+    expect(cell.borders?.bottom).toEqual({ style: 'single', szEighths: 4, color: '000000' })
+    expect(cell.borders?.top).toEqual({ style: 'nil' })
+  })
+
+  it('w:tblpPr marks a floating table with its wrap side (tdf#97090)', async () => {
+    const wrap = (tblpPr: string) =>
+      `<w:tbl><w:tblPr>${tblpPr}</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>` +
+      '<w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const right = await parseDocx(
+      await buildDocx({
+        bodyXml: wrap('<w:tblpPr w:horzAnchor="margin" w:tblpXSpec="right" w:vertAnchor="text"/>'),
+      }),
+    )
+    expect(right.blocks[0].table!.floatSide).toBe('right')
+    const farX = await parseDocx(
+      await buildDocx({
+        bodyXml: wrap('<w:tblpPr w:vertAnchor="text" w:horzAnchor="page" w:tblpX="7523"/>'),
+      }),
+    )
+    expect(farX.blocks[0].table!.floatSide).toBe('right')
+    const nearX = await parseDocx(
+      await buildDocx({
+        bodyXml: wrap('<w:tblpPr w:vertAnchor="text" w:tblpX="100" w:tblpY="10"/>'),
+      }),
+    )
+    expect(nearX.blocks[0].table!.floatSide).toBe('left')
+    const plain = await parseDocx(await buildDocx({ bodyXml: wrap('') }))
+    expect(plain.blocks[0].table!.floatSide).toBeUndefined()
+  })
+
+  it('a second w:tblBorders overrides the sides of the first one', async () => {
+    const xml =
+      '<w:tbl><w:tblPr>' +
+      '<w:tblBorders><w:top w:val="nil"/><w:bottom w:val="nil"/></w:tblBorders>' +
+      '<w:tblBorders><w:bottom w:val="single" w:sz="8"/></w:tblBorders>' +
+      '</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const borders = doc.blocks[0].table!.borders
+    expect(borders?.bottom).toEqual({ style: 'single', szEighths: 8 })
+    expect(borders?.top).toEqual({ style: 'nil' })
+  })
+})
+
+describe('w:tblpPr alignment keywords', () => {
+  const wrap = (tblpPr: string) =>
+    `<w:tbl><w:tblPr>${tblpPr}</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>` +
+    '<w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+
+  it('records tblpXSpec/tblpYSpec and anchors a keyword Y to the margin when vertAnchor is omitted', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: wrap(
+          '<w:tblpPr w:horzAnchor="margin" w:tblpXSpec="center" w:tblpYSpec="bottom"/>',
+        ),
+      }),
+    )
+    expect(doc.blocks[0].table!.floatPos).toMatchObject({
+      horzAnchor: 'margin',
+      vertAnchor: 'margin',
+      xSpec: 'center',
+      ySpec: 'bottom',
+    })
+    const numeric = await parseDocx(
+      await buildDocx({ bodyXml: wrap('<w:tblpPr w:horzAnchor="margin" w:tblpY="200"/>') }),
+    )
+    expect(numeric.blocks[0].table!.floatPos?.vertAnchor).toBeUndefined()
+    expect(numeric.blocks[0].table!.floatPos?.ySpec).toBeUndefined()
+  })
+
+  it('keeps an explicit page anchor with a top keyword', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: wrap('<w:tblpPr w:vertAnchor="page" w:horzAnchor="page" w:tblpYSpec="top"/>'),
+      }),
+    )
+    expect(doc.blocks[0].table!.floatPos).toMatchObject({
+      xTwips: 0,
+      yTwips: 0,
+      horzAnchor: 'page',
+      vertAnchor: 'page',
+      ySpec: 'top',
+    })
   })
 })

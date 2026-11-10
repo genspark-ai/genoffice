@@ -1,0 +1,56 @@
+{
+  "id": "malgun-rebaseline-1-7305",
+  "title": "Malgun Gothic single spacing is hhea 1.3301 x 1.3 = 1.7305, not 1.7371; hideMark rows collapse to trHeight",
+  "section": "word-truths.md#L565",
+  "probe_date": "2026-10-20",
+  "source": "prod corpus 20261020 sample 049 Word PDF: 11pt body 19.05 mean over 26 steps, 10.5pt empty rows 18.17 inner; hideMark cells with one empty paragraph -> row = trHeight 216 = 10.80 inner, without hideMark 18.17",
+  "cases": [
+    {
+      "kind": "factor",
+      "font": "Malgun Gothic",
+      "expect": 1.7292,
+      "tol": 0.001,
+      "note": "1.7305 -> 1.7292 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "\ub9d1\uc740 \uace0\ub515",
+      "expect": 1.7292,
+      "note": "by its Korean name; 1.7305 -> 1.7292 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 19.02,
+      "tol": 0.02,
+      "note": "11pt hangul body line (1.7371 would give 19.11); 1.7292 x 11 after the 2026-10-22 probe"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 18.17,
+      "tol": 0.02,
+      "note": "10.5pt empty mark line in Malgun"
+    },
+    {
+      "kind": "cellProps",
+      "block": 2,
+      "row": 0,
+      "cell": 0,
+      "expect": {
+        "hideMark": true
+      },
+      "note": "the end-of-cell mark does not count: row = 216 twips"
+    },
+    {
+      "kind": "tableProps",
+      "block": 2,
+      "expect": {
+        "rowHeightsTwips": [216]
+      }
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

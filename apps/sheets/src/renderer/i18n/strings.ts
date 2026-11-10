@@ -17,9 +17,13 @@ export const strings = {
   pt: { ...appStrings.pt, ...dialogStrings.pt, ...aiStrings.pt },
   it: { ...appStrings.it, ...dialogStrings.it, ...aiStrings.it },
   pl: { ...appStrings.pl, ...dialogStrings.pl, ...aiStrings.pl },
+  cs: { ...appStrings.cs, ...dialogStrings.cs, ...aiStrings.cs },
   nl: { ...appStrings.nl, ...dialogStrings.nl, ...aiStrings.nl },
   ms: { ...appStrings.ms, ...dialogStrings.ms, ...aiStrings.ms },
   he: { ...appStrings.he, ...dialogStrings.he, ...aiStrings.he },
   hi: { ...appStrings.hi, ...dialogStrings.hi, ...aiStrings.hi },
+
+  vi: { ...appStrings.vi, ...dialogStrings.vi, ...aiStrings.vi },
+  tr: { ...appStrings.tr, ...dialogStrings.tr, ...aiStrings.tr },
   'zh-TW': { ...appStrings['zh-TW'], ...dialogStrings['zh-TW'], ...aiStrings['zh-TW'] },
 }

@@ -1,11 +1,15 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Editor } from '@tiptap/core'
-import { describe, expect, it } from 'vitest'
-import { parseDocx, saveDocx, type NumberingDef } from '@genoffice/docx-engine'
+import { afterAll, describe, expect, it, vi } from 'vitest'
+import { parseDocx, saveDocx, type NumberingDef, type StyleInfo } from '@genoffice/docx-engine'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
-  bulletMarkerScale,
+  substituteBullet,
+  markerFallbackFace,
   computeListMarkerInfos,
   computeListMarkers,
   formatNumber,
@@ -57,6 +61,22 @@ describe('computeListMarkers', () => {
       defs(DECIMAL_3LVL),
     )
     expect(markers).toEqual(['1.', '1.1', '1.2', 'a)', '2.', '2.1'])
+  })
+
+  it('a sub-level item instantiates untouched shallower levels at their start', () => {
+    // Word: "1.1"-style items before any level-0 item consume the level-0
+    // start value, so the first explicit level-0 item numbers as 2.
+    const markers = computeListMarkers(
+      [
+        { numId: '1', ilvl: 1 },
+        { numId: '1', ilvl: 1 },
+        { numId: '1', ilvl: 0 },
+        { numId: '1', ilvl: 1 },
+        { numId: '1', ilvl: 0 },
+      ],
+      defs(DECIMAL_3LVL),
+    )
+    expect(markers).toEqual(['1.1', '1.2', '2.', '2.1', '3.'])
   })
 
   it('continues numbering across interleaved plain paragraphs', () => {
@@ -168,6 +188,140 @@ describe('computeListMarkers', () => {
     editor.destroy()
   })
 
+  it('decorates picture-bullet items with the image instead of the placeholder glyph', async () => {
+    const numberingXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' +
+      'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:v="urn:schemas-microsoft-com:vml">' +
+      '<w:numPicBullet w:numPicBulletId="0"><w:pict><v:shape><v:imagedata r:id="rId1"/></v:shape></w:pict></w:numPicBullet>' +
+      '<w:abstractNum w:abstractNumId="0">' +
+      '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="\uF0B7"/><w:lvlPicBulletId w:val="0"/></w:lvl>' +
+      '<w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="\uF0B7"/><w:lvlPicBulletId w:val="9"/></w:lvl>' +
+      '<w:lvl w:ilvl="2"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:suff w:val="space"/><w:lvlText w:val="\uF0B7"/><w:lvlPicBulletId w:val="0"/></w:lvl>' +
+      '</w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+      '</w:numbering>'
+    const li = (ilvl: number, text: string) =>
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`
+    const source = await buildDocx({
+      bodyXml: li(0, 'picture') + li(1, 'unresolved') + li(2, 'spaced'),
+      numberingXml,
+      extraParts: [
+        {
+          path: 'word/_rels/numbering.xml.rels',
+          xml:
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>' +
+            '</Relationships>',
+          contentType: 'application/vnd.openxmlformats-package.relationships+xml',
+        },
+      ],
+      withImage: true,
+    })
+    const parsed = await parseDocx(source)
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const items = Array.from(editor.view.dom.querySelectorAll<HTMLElement>('.doc-li'))
+    expect(items.map((el) => el.getAttribute('data-marker'))).toEqual(['', '\u2022', ''])
+    expect(items[0].hasAttribute('data-marker-pic')).toBe(true)
+    expect(items[0].style.getPropertyValue('--li-marker-pic')).toMatch(
+      /^url\("data:image\/png;base64,/,
+    )
+    expect(items[1].hasAttribute('data-marker-pic')).toBe(false)
+    // w:suff space on a picture level: the flags the margin-gap CSS rule keys on
+    expect(items[2].hasAttribute('data-marker-pic')).toBe(true)
+    expect(items[2].getAttribute('data-suff')).toBe('space')
+    editor.destroy()
+  })
+
+  it('counts a numbered textbox anchor paragraph in the sequence and marks its stray line', async () => {
+    const numberingXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0">' +
+      '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="(%1)"/>' +
+      '<w:pPr><w:ind w:left="564" w:right="120" w:hanging="328"/></w:pPr></w:lvl>' +
+      '</w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+      '</w:numbering>'
+    const numPr = '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>'
+    const li = (text: string) => `<w:p><w:pPr>${numPr}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`
+    const host =
+      `<w:p><w:pPr>${numPr}<w:ind w:left="537" w:right="200" w:hanging="301"/></w:pPr>` +
+      '<w:r><w:pict><v:shape xmlns:v="urn:schemas-microsoft-com:vml" id="s1" type="#_x0000_t202" ' +
+      'style="position:absolute;margin-left:300pt;margin-top:1pt;width:77pt;height:15pt">' +
+      '<v:textbox><w:txbxContent><w:p><w:r><w:t>$918,600</w:t></w:r></w:p></w:txbxContent></v:textbox>' +
+      '</v:shape></w:pict></w:r><w:r><w:t>Total Amount Requested:</w:t></w:r></w:p>'
+    const parsed = await parseDocx(
+      await buildDocx({ bodyXml: li('Duration') + host + li('Nature'), numberingXml }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const markers = Array.from(editor.view.dom.querySelectorAll('.doc-li')).map((el) =>
+      el.getAttribute('data-marker'),
+    )
+    expect(markers).toEqual(['(a)', '(c)'])
+    const wrapper = editor.view.dom.querySelector<HTMLElement>('[data-stray-marker]')
+    expect(wrapper?.style.getPropertyValue('--li-marker')).toBe('"(b)"')
+    const stray = wrapper?.querySelector<HTMLElement>('.doc-textbox-stray')
+    expect(stray?.classList.contains('doc-li-stray')).toBe(true)
+    expect(stray?.style.getPropertyValue('--li-left')).toBe('26.85pt')
+    expect(stray?.style.getPropertyValue('--li-hang')).toBe('15.05pt')
+    // the anchor paragraph's own w:ind right beats the level's end indent
+    expect(stray?.style.getPropertyValue('margin-right')).toBe('10pt')
+    expect(stray?.style.getPropertyValue('margin-inline-end')).toBe('')
+    expect(wrapper?.style.getPropertyValue('margin-inline-end')).toBe('')
+    editor.destroy()
+  })
+
+  it('the stray marker honors the wrapper flags a .doc-li marker honors (suff, clip, marker line height)', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../src/renderer/styles.css'),
+      'utf8',
+    )
+    const marker = /\[data-stray-marker\] \.doc-li-stray::before \{([^}]*)\}/.exec(css)!
+    expect(marker[1]).toContain('line-height: var(--li-marker-lh, inherit)')
+    expect(marker[1]).toContain('color: var(--li-marker-color, inherit)')
+    expect(css).toMatch(
+      /\[data-stray-marker\]\[data-marker-clip\] \.doc-li-stray::before \{\s*visibility: hidden;/,
+    )
+    expect(css).toMatch(
+      /\[data-stray-marker\]\[data-suff\] \.doc-li-stray::before \{\s*min-width: 0;/,
+    )
+    expect(css).toMatch(
+      /\[data-stray-marker\]\[data-suff='space'\]:not\(\[data-marker-pic\]\) \.doc-li-stray::before \{\s*content: var\(--li-marker\) '\\00a0';/,
+    )
+  })
+
+  it('picture bullets keep logical geometry and beat the space-suffix text rule', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../src/renderer/styles.css'),
+      'utf8',
+    )
+    const picRules = [
+      /\.doc-page \.doc-li\[data-marker-pic\]::before,\n[^{]*\{([^}]*)\}/,
+      /\.doc-page \.doc-li\[data-marker-pic\]::before \{([^}]*)\}/,
+      /\.doc-textbox-para\[data-marker-pic\]::before \{([^}]*)\}/,
+    ].map((re) => re.exec(css)![1])
+    // RTL lists mirror through margin-inline-end; no physical side anywhere
+    expect(picRules[1]).toContain('margin-inline-end: max(')
+    expect(picRules[2]).toContain('margin-inline-end: max(')
+    for (const body of picRules) expect(body).not.toMatch(/\bleft\b|\bright\b/)
+    // the nbsp content rules step aside for picture levels, whose gap is a margin
+    expect(css).toMatch(/\[data-suff='space'\]\[data-marker\]:not\(\[data-marker-pic\]\)::before/)
+    expect(css).toMatch(
+      /\.doc-li\[data-suff='space'\]\[data-marker-pic\]::before,\n[^{]*\{\s*margin-inline-end: 0\.25em;/,
+    )
+  })
+
   it('decodes decimal and hexadecimal numeric references without changing source OOXML', async () => {
     const numberingXml =
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -227,19 +381,19 @@ describe('computeListMarkers', () => {
       [
         { numId: '1', ilvl: 0 }, // Wingdings 'l' = ●
         { numId: '2', ilvl: 0 }, // Wingdings PUA F0A7 = ▪
-        { numId: '3', ilvl: 0 }, // Webdings has no mapping table → default
-        { numId: '4', ilvl: 0 }, // glyph not in the Wingdings table → default
+        { numId: '3', ilvl: 0 }, // Webdings decodes by its own table
+        { numId: '4', ilvl: 0 }, // 0x7F is a hole in every Wingdings table → default
         { numId: '5', ilvl: 0 }, // PUA without a font → legacy font-agnostic mapping
       ],
       defs(
         mk('1', 'l', 'Wingdings'),
         mk('2', '', 'Wingdings'),
         mk('3', '', 'Webdings'),
-        mk('4', 'e', 'Wingdings'),
+        mk('4', '\uF07F', 'Wingdings'),
         mk('5', ''),
       ),
     )
-    expect(markers).toEqual(['●', '▪', '•', '•', '•'])
+    expect(markers).toEqual(['●', '▪', '🚍', '•', '•'])
   })
 
   it('bullet infos carry the original glyph (U+F0xx form) and the declared symbol font', () => {
@@ -259,26 +413,26 @@ describe('computeListMarkers', () => {
       defs(
         mk('1', '\uF0B7', 'Symbol'),
         mk('2', 'l', 'Wingdings'), // raw byte normalized to U+F0xx
-        mk('3', '\uF0C1', 'Symbol'), // undecodable → default text, glyph still kept
+        mk('3', '\uF07F', 'Symbol'), // undecodable → default text, glyph still kept
         mk('4', '\uF0B7'), // no symbol font → plain substitute
         def({ numId: '5', levels: DECIMAL_3LVL.levels }),
       ),
     )
     expect(infos[0]).toEqual({ text: '•', symbolChar: '\uF0B7', symbolFont: 'Symbol' })
     expect(infos[1]).toEqual({ text: '●', symbolChar: '\uF06C', symbolFont: 'Wingdings' })
-    expect(infos[2]).toEqual({ text: '•', symbolChar: '\uF0C1', symbolFont: 'Symbol' })
+    expect(infos[2]).toEqual({ text: '•', symbolChar: '\uF07F', symbolFont: 'Symbol' })
     expect(infos[3]).toEqual({ text: '•' })
-    expect(infos[4]).toEqual({ text: '1.' })
+    expect(infos[4]).toEqual({ text: '1.', value: 1 })
   })
 
-  it('upscales only solid round substitute glyphs', () => {
-    expect(bulletMarkerScale('•')).toBe(1.25)
-    expect(bulletMarkerScale('●')).toBe(1.35)
-    expect(bulletMarkerScale('▪')).toBe(1)
-    expect(bulletMarkerScale('1.')).toBe(1)
+  it('routes only solid round substitute glyphs through the size-adjusted aliases', () => {
+    expect(substituteBullet('•')).toEqual({ glyph: '\u25cf', face: 'Symbol Bullet GO' })
+    expect(substituteBullet('●')).toEqual({ glyph: '\u25cf', face: 'Wingdings Bullet GO' })
+    expect(substituteBullet('▪')).toBeNull()
+    expect(substituteBullet('1.')).toBeNull()
   })
 
-  it('substitutes uncovered symbol bullets with a pinned font + scale and follows the first run size', async () => {
+  it('substitutes uncovered symbol bullets with the alias glyph at the declared size and follows the paragraph mark size', async () => {
     const numberingXml =
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
       '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
@@ -289,7 +443,7 @@ describe('computeListMarkers', () => {
       '</w:numbering>'
     const source = await buildDocx({
       bodyXml:
-        '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+        '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:rPr><w:sz w:val="24"/></w:rPr></w:pPr>' +
         '<w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>item</w:t></w:r></w:p>',
       numberingXml,
     })
@@ -302,12 +456,730 @@ describe('computeListMarkers', () => {
     editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
     const el = editor.view.dom.querySelector('.doc-li')!
     // no canvas in the test DOM → coverage probe fails → substitution path
-    expect(el.getAttribute('data-marker')).toBe('•')
+    expect(el.getAttribute('data-marker')).toBe('\u25cf')
     const style = el.getAttribute('style') ?? ''
-    expect(style).toContain("--li-marker-font: Arial,'Helvetica Neue',sans-serif")
-    expect(style).toContain('--li-marker-scale: 1.25')
-    expect(style).toContain('--li-marker-lh: 0')
+    expect(style).toContain("--li-marker-font: 'Symbol Bullet GO'")
+    expect(style).not.toContain('--li-marker-scale')
+    // Symbol's ascent tops the 12pt Calibri text: the bullet box carries Word's
+    // max-ascent + max-descent line (1.0054 + 0.2686 em) and sits on the bottom;
+    // a line multiple adds (m - 1) x the text face's single line, not m x the lift
+    // (Word: Arial 12 + Symbol 12 at line=360 is 21.5pt, TNR 12 at line=480 28.5pt)
+    expect(style).toContain(
+      '--li-marker-lh: calc(15.288pt + (var(--doc-line-mult,1) - 1) * var(--doc-line-factor,1.2) * 12pt)',
+    )
+    expect(style).toContain('--li-marker-va: bottom')
     expect(style).toContain('--li-marker-size: 12pt')
     editor.destroy()
+  })
+
+  it('names Segoe UI Symbol for bullet glyphs the Word text face lacks', () => {
+    expect(markerFallbackFace('▸', 'Calibri')).toBe('Segoe UI Symbol')
+    expect(markerFallbackFace('▸', 'Times New Roman')).toBe('Segoe UI Symbol')
+    expect(markerFallbackFace('➢', 'Roboto')).toBe('Segoe UI Symbol')
+    expect(markerFallbackFace('■', 'Calibri')).toBe('Segoe UI Symbol')
+    expect(markerFallbackFace('■', 'Arial')).toBeNull()
+    expect(markerFallbackFace('●', 'Cambria')).toBe('Segoe UI Symbol')
+    expect(markerFallbackFace('•', 'Calibri')).toBeNull()
+    expect(markerFallbackFace('●', 'Calibri')).toBeNull()
+    expect(markerFallbackFace('▸', 'Segoe UI Symbol')).toBeNull()
+    expect(markerFallbackFace('', 'Symbol')).toBeNull()
+    expect(markerFallbackFace('1.', 'Calibri')).toBeNull()
+  })
+
+  // Word probe: Calibri 11 paragraphs, lvlText U+25B8 with no level rFonts draw the
+  // marker in Segoe UI Symbol and the first line grows 13.44 -> 14.88pt (its hhea
+  // ascent 1.0791em over Calibri's 0.952); U+2022 stays in Calibri at 13.44
+  it('lifts the first line by the Segoe UI Symbol fallback of a glyph the mark face lacks', async () => {
+    const lvl = (id: string, glyph: string, rPr = '') =>
+      `<w:abstractNum w:abstractNumId="${id}"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/>` +
+      `<w:lvlText w:val="${glyph}"/>${rPr}<w:pPr><w:ind w:left="460" w:hanging="260"/></w:pPr></w:lvl></w:abstractNum>`
+    const numberingXml =
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      lvl('0', '▸') +
+      lvl('1', '•') +
+      lvl(
+        '2',
+        '▸',
+        '<w:rPr><w:rFonts w:ascii="Segoe UI Symbol" w:hAnsi="Segoe UI Symbol"/></w:rPr>',
+      ) +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+      '<w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>' +
+      '<w:num w:numId="3"><w:abstractNumId w:val="2"/></w:num></w:numbering>'
+    const item = (numId: string) =>
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr></w:pPr>` +
+      '<w:r><w:t>item</w:t></w:r></w:p>'
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml: item('1') + item('2') + item('3'),
+        numberingXml,
+        stylesXml:
+          '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+          '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/>' +
+          '<w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>',
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.storage.listNumbering.styles = parsed.styles
+    editor.storage.listNumbering.docDefaults = parsed.docDefaults
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const items = [...editor.view.dom.querySelectorAll('.doc-li')]
+    const [tri, dot, seg] = items.map((el) => el.getAttribute('style') ?? '')
+    expect(items[0].getAttribute('data-marker')).toBe('▸')
+    expect(tri).toContain("--li-marker-font: 'Segoe UI Symbol GO',")
+    expect(tri).toContain('--li-marker-size: 11pt')
+    expect(tri).toContain(
+      '--li-marker-lh: calc(14.825pt + (var(--doc-line-mult,1) - 1) * var(--doc-line-factor,1.2) * 11pt)',
+    )
+    expect(tri).toContain('--li-marker-va: bottom')
+    expect(dot).not.toContain('--li-marker-lh')
+    expect(dot).not.toContain('Segoe')
+    expect(seg).toContain('--li-marker-font: "Segoe UI Symbol"')
+    expect(seg).not.toContain('--li-marker-lh: 0')
+    expect(seg).toContain(
+      '--li-marker-lh: calc(14.825pt + (var(--doc-line-mult,1) - 1) * var(--doc-line-factor,1.2) * 11pt)',
+    )
+    editor.destroy()
+  })
+
+  it('pins a substitute bullet box flat when the text face is taller than the Symbol line', async () => {
+    const numberingXml =
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/>' +
+      '<w:lvlText w:val="\uF0B7"/><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/><w:sz w:val="20"/></w:rPr>' +
+      '</w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+    const rPr =
+      '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="24"/></w:rPr>'
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>${rPr}</w:pPr>` +
+          `<w:r>${rPr}<w:t>item</w:t></w:r></w:p>`,
+        numberingXml,
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const style = editor.view.dom.querySelector('.doc-li')!.getAttribute('style') ?? ''
+    // Symbol 10pt ascent + Times descent (12.65pt) stays under the 13.8pt text line
+    expect(style).toContain("--li-marker-font: 'Symbol Bullet GO'")
+    expect(style).toContain('--li-marker-lh: 0')
+    expect(style).not.toContain('--li-marker-va')
+    editor.destroy()
+  })
+
+  // Word draws the bullet with the paragraph mark's run properties: a resume
+  // whose 9pt items carry no mark rPr under an 11pt Normal shows an 11pt
+  // bullet and a taller first line (15.93pt against 14.79pt text lines)
+  it('sizes a text bullet from the paragraph mark, else the style, never the first run', async () => {
+    const numberingXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0">' +
+      '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="\u2022"/>' +
+      '<w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl>' +
+      '</w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+      '</w:numbering>'
+    const numPr = '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>'
+    const run = '<w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>item</w:t></w:r>'
+    const source = await buildDocx({
+      bodyXml:
+        `<w:p><w:pPr>${numPr}</w:pPr>${run}</w:p>` +
+        `<w:p><w:pPr>${numPr}<w:rPr><w:sz w:val="28"/></w:rPr></w:pPr>${run}</w:p>` +
+        `<w:p><w:pPr>${numPr}<w:rPr><w:sz w:val="18"/></w:rPr></w:pPr>${run}</w:p>`,
+      numberingXml,
+    })
+    const parsed = await parseDocx(source)
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const [noMark, bigMark, sameMark] = Array.from(
+      editor.view.dom.querySelectorAll('.doc-li'),
+      (el) => el.getAttribute('style') ?? '',
+    )
+    // no mark rPr: the style chain (docDefaults 10pt here), not the 9pt run
+    expect(noMark).toContain('--li-marker-size: 10pt')
+    expect(noMark).toContain('--li-marker-lh: calc(')
+    expect(bigMark).toContain('--li-marker-size: 14pt')
+    expect(bigMark).toContain('--li-marker-lh: calc(')
+    expect(sameMark).toContain('--li-marker-size: 9pt')
+    expect(sameMark).not.toContain('--li-marker-lh')
+    editor.destroy()
+  })
+
+  it('keeps the bullet box flat on exact lines, direct or style-level', async () => {
+    const numberingXml =
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/>' +
+      '<w:lvlText w:val="\uF0B7"/><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr>' +
+      '<w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+    const item = (pPr: string) =>
+      `<w:p><w:pPr>${pPr}<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:rPr><w:sz w:val="24"/></w:rPr></w:pPr>` +
+      '<w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>item</w:t></w:r></w:p>'
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          item('<w:spacing w:line="240" w:lineRule="exact"/>') +
+          item('<w:pStyle w:val="Tight"/>') +
+          item('<w:pStyle w:val="Tight"/><w:spacing w:line="276" w:lineRule="auto"/>') +
+          item(''),
+        numberingXml,
+        extraStylesXml:
+          '<w:style w:type="paragraph" w:styleId="Tight"><w:name w:val="Tight"/>' +
+          '<w:pPr><w:spacing w:line="240" w:lineRule="exact"/></w:pPr></w:style>',
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.storage.listNumbering.styles = parsed.styles
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const styles = [...editor.view.dom.querySelectorAll('.doc-li')].map(
+      (el) => el.getAttribute('style') ?? '',
+    )
+    expect(styles[0]).not.toContain('--li-marker-lh')
+    expect(styles[0]).not.toContain('--li-marker-va')
+    expect(styles[1]).not.toContain('--li-marker-lh')
+    expect(styles[1]).not.toContain('--li-marker-va')
+    // a direct auto rule overrides the style's exact one
+    expect(styles[2]).toContain('--li-marker-va: bottom')
+    expect(styles[3]).toContain('--li-marker-va: bottom')
+    editor.destroy()
+  })
+
+  it('an East Asian marker face keeps its leading out of exact lines', async () => {
+    const numberingXml =
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/>' +
+      '<w:lvlText w:val="\u2022"/><w:rPr><w:rFonts w:ascii="Malgun Gothic" w:eastAsia="Malgun Gothic" w:hAnsi="Malgun Gothic"/></w:rPr>' +
+      '<w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+    const rPr =
+      '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/></w:rPr>'
+    const item = (pPr: string) =>
+      `<w:p><w:pPr>${pPr}<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>${rPr}</w:pPr>` +
+      `<w:r>${rPr}<w:t>item</w:t></w:r></w:p>`
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml: item('<w:spacing w:line="320" w:lineRule="exact"/>') + item(''),
+        numberingXml,
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const [exact, auto] = [...editor.view.dom.querySelectorAll('.doc-li')].map(
+      (el) => el.getAttribute('style') ?? '',
+    )
+    expect(exact).toContain('--li-marker-lh: 0')
+    expect(exact).not.toContain('--li-marker-va')
+    expect(auto).toContain('--li-marker-lh: calc(16.546pt')
+    expect(auto).toContain('--li-marker-va: bottom')
+    editor.destroy()
+  })
+})
+
+describe('list marker decorations', () => {
+  const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
+  const numberingXml = (lvl: string) =>
+    XML_DECL +
+    '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    `<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">${lvl}</w:lvl></w:abstractNum>` +
+    '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+    '</w:numbering>'
+  const li =
+    '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+    '<w:r><w:t>item</w:t></w:r></w:p>'
+
+  async function renderLi(
+    lvlXml: string,
+    styles?: Map<string, StyleInfo>,
+  ): Promise<{ el: Element; destroy: () => void }> {
+    const parsed = await parseDocx(
+      await buildDocx({ bodyXml: li, numberingXml: numberingXml(lvlXml) }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    if (styles) editor.storage.listNumbering.styles = styles
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    return { el: editor.view.dom.querySelector('.doc-li')!, destroy: () => editor.destroy() }
+  }
+
+  // 8px per char: predictable widths for the tab-advance assertions;
+  // measuredFonts records the ctx font of each measurement
+  const measuredFonts: string[] = []
+  const fakeCtx = {
+    font: '',
+    measureText(s: string) {
+      measuredFonts.push(this.font)
+      return { width: s.length * 8 }
+    },
+  }
+  const measureStub = vi
+    .spyOn(HTMLCanvasElement.prototype, 'getContext')
+    .mockReturnValue(fakeCtx as never)
+  afterAll(() => measureStub.mockRestore())
+
+  it('flags markers hanging left of a table cell text area as clipped (Word clips there)', async () => {
+    const lvl =
+      '<w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="&#xF0B7;"/>' +
+      '<w:pPr><w:ind w:left="360" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr>'
+    const item = (ind: string, text: string) =>
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>${ind}</w:pPr>` +
+      `<w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${text}</w:t></w:r></w:p>`
+    const cell = (paras: string) =>
+      '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>' +
+      `<w:tr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr>${paras}</w:tc></w:tr></w:tbl>`
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          item('<w:ind w:left="195"/>', 'body: marker in the margin stays visible') +
+          cell(
+            item('<w:ind w:left="195"/>', 'cell: marker box ends 3pt left of the text area') +
+              item('<w:ind w:left="300"/>', 'cell: marker still reaches into the text area') +
+              item('<w:ind w:left="720" w:hanging="360"/>', 'cell: marker inside') +
+              item(
+                '<w:ind w:left="-186" w:firstLine="366"/>',
+                'cell: first line pushes the marker in',
+              ) +
+              item(
+                '<w:bidi/><w:ind w:left="-186" w:firstLine="0"/>',
+                'cell: RTL start indent past the text area clips too',
+              ) +
+              item(
+                '<w:ind w:left="195" w:firstLine="0"/>',
+                'cell: explicit zero cancels the level hanging',
+              ),
+          ),
+        numberingXml: numberingXml(lvl),
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const items = Array.from(editor.view.dom.querySelectorAll('.doc-li'))
+    expect(items.map((el) => el.getAttribute('data-marker'))).toEqual(Array(7).fill('\u25cf'))
+    expect(items.map((el) => el.hasAttribute('data-marker-clip'))).toEqual([
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+    ])
+    editor.destroy()
+  })
+
+  it('numFmt "none" emits an empty data-marker (suppresses the CSS counter fallback)', async () => {
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="none"/><w:suff w:val="nothing"/><w:lvlText w:val=""/>' +
+        '<w:pPr><w:ind w:left="432" w:hanging="432"/></w:pPr>',
+    )
+    expect(el.getAttribute('data-marker')).toBe('')
+    expect(el.getAttribute('data-suff')).toBe('nothing')
+    destroy()
+  })
+
+  it('a level with only a left indent has no hanging area: its cell marker is not clipped', async () => {
+    const lvl =
+      '<w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="&#xF0B7;"/>' +
+      '<w:pPr><w:ind w:left="195"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr>'
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>' +
+          '<w:tr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr>' +
+          '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+          '<w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>marker at the first-line position</w:t></w:r></w:p>' +
+          '</w:tc></w:tr></w:tbl>',
+        numberingXml: numberingXml(lvl),
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const item = editor.view.dom.querySelector('.doc-li') as HTMLElement
+    expect(item.getAttribute('style')).toContain('--li-hang: 0pt')
+    expect(item.hasAttribute('data-marker-clip')).toBe(false)
+    editor.destroy()
+  })
+
+  it('markers overflowing the hanging area advance to the next default tab stop', async () => {
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="NEW-%1-FORMAT"/>' +
+        '<w:pPr><w:ind w:left="360" w:hanging="360"/></w:pPr>',
+    )
+    expect(el.getAttribute('data-marker')).toBe('NEW-1-FORMAT')
+    // 12 chars * 8px = 96px = 1440 twips from marker start 0 -> stop 2160 twips
+    expect(el.getAttribute('style')).toContain('--li-tab: 108pt')
+    destroy()
+  })
+
+  it('doNotUseIndentAsNumberingTabStop: the marker tab runs to the next tab stop, never to the hanging indent', async () => {
+    const render = async (
+      lvlTabs: string,
+      flags: { indentNotTabStop?: boolean; defaultTabTwips?: number },
+      ind = '<w:ind w:left="300" w:hanging="360"/>',
+    ) => {
+      const parsed = await parseDocx(
+        await buildDocx({
+          bodyXml:
+            '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>' +
+            `${ind}</w:pPr><w:r><w:t>list text</w:t></w:r></w:p>`,
+          numberingXml: numberingXml(
+            '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>' +
+              `<w:pPr>${lvlTabs}<w:ind w:left="720" w:hanging="360"/></w:pPr>`,
+          ),
+        }),
+      )
+      const editor = new Editor({
+        element: document.createElement('div'),
+        extensions: editorExtensions,
+      })
+      Object.assign(editor.storage.listNumbering, flags)
+      editor.storage.listNumbering.defs = parsed.numbering
+      editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+      const style = editor.view.dom.querySelector('.doc-li')!.getAttribute('style') ?? ''
+      editor.destroy()
+      return style
+    }
+    const levelTab = '<w:tabs><w:tab w:val="num" w:pos="1080"/></w:tabs>'
+    // "1." = 2 chars * 8px = 240 twips from -60: fits the hanging area, so the indent is the stop
+    expect(await render(levelTab, {})).not.toContain('--li-tab')
+    // flag on: the level's own tab stop (1080) is the next stop past the marker end (180)
+    expect(await render(levelTab, { indentNotTabStop: true })).toContain('--li-tab: 57pt')
+    // no custom stop (Word probe 2026-11-03): the hanging indent still stops the
+    // tab when it comes before the next default grid stop (300 < 420 / 720)...
+    expect(await render('', { indentNotTabStop: true, defaultTabTwips: 420 })).not.toContain(
+      '--li-tab',
+    )
+    expect(await render('', { indentNotTabStop: true })).not.toContain('--li-tab')
+    // ...and the default grid wins when it comes first (marker 360-600, grid 720, indent 1440)
+    const wide = '<w:ind w:left="1440" w:hanging="1080"/>'
+    expect(await render('', { indentNotTabStop: true }, wide)).toContain('--li-tab: 18pt')
+    expect(await render('', {}, wide)).not.toContain('--li-tab')
+  })
+
+  it('level positive firstLine shifts the marker right of the text indent', async () => {
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="upperLetter"/><w:lvlText w:val="%1"/>' +
+        '<w:pPr><w:ind w:left="432" w:firstLine="135"/></w:pPr>',
+    )
+    expect(el.getAttribute('data-marker')).toBe('A')
+    const style = el.getAttribute('style') ?? ''
+    // marker at 432+135=567, width 120 twips -> stop 720: no hang, box 7.65pt
+    expect(style).toContain('--li-hang: 0pt')
+    expect(style).toContain('text-indent: 6.75pt')
+    expect(style).toContain('--li-tab: 7.65pt')
+    destroy()
+  })
+
+  it('a paragraph firstLine (0 included) cancels the level hanging: marker at the first-line position, tab to the next default stop', async () => {
+    const lvl =
+      '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>' +
+      '<w:pPr><w:ind w:left="1032" w:hanging="360"/></w:pPr>'
+    const item = (pPr: string) =>
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>${pPr}</w:pPr>` +
+      '<w:r><w:rPr><w:rtl w:val="0"/></w:rPr></w:r></w:p>'
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w="780" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="780"/></w:tblGrid>' +
+          '<w:tr><w:tc><w:tcPr><w:tcW w:w="780" w:type="dxa"/></w:tcPr>' +
+          item(
+            '<w:bidi/><w:ind w:left="-186" w:right="-390" w:firstLine="0"/><w:jc w:val="right"/>',
+          ) +
+          item(
+            '<w:bidi/><w:ind w:left="-186" w:right="-390" w:firstLine="366"/><w:jc w:val="center"/>',
+          ) +
+          item('<w:ind w:left="720" w:firstLine="0"/>') +
+          '</w:tc></w:tr></w:tbl>',
+        numberingXml: numberingXml(lvl),
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const styles = Array.from(editor.view.dom.querySelectorAll('.doc-li')).map((el) => ({
+      style: el.getAttribute('style') ?? '',
+      clip: el.hasAttribute('data-marker-clip'),
+    }))
+    // RTL end-aligned "1." (16px = 240 twips) from -186 ends at 54 -> stop 720: box 906 twips,
+    // no default hang; the negative start indent moves the box instead of a padding
+    expect(styles[0].style).toContain('margin-inline-start: -9.3pt')
+    expect(styles[0].style).toContain('--li-hang: 0pt')
+    expect(styles[0].style).toContain('--li-tab: 45.3pt')
+    expect(styles[0].style).not.toContain('--li-hang: 18pt')
+    expect(styles[0].clip).toBe(false)
+    // centered with firstLine 366: marker at 180, ends 420 -> stop 720
+    expect(styles[1].style).toContain('text-indent: 18.3pt')
+    expect(styles[1].style).toContain('--li-tab: 27pt')
+    // LTR explicit zero: marker at 720, ends 960 -> stop 1440
+    expect(styles[2].style).toContain('--li-hang: 0pt')
+    expect(styles[2].style).toContain('--li-tab: 36pt')
+    editor.destroy()
+  })
+
+  it('measures with the font the ::before inherits (Normal style chain, not Calibri 11pt)', async () => {
+    const styles = new Map<string, StyleInfo>([
+      [
+        'Normal',
+        {
+          styleId: 'Normal',
+          name: 'Normal',
+          type: 'paragraph',
+          isDefault: true,
+          display: { font: 'Times New Roman', fontAscii: 'Times New Roman', sizeHalfPoints: 24 },
+        },
+      ],
+    ])
+    measuredFonts.length = 0
+    const { destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="NEW-%1-FORMAT"/>' +
+        '<w:pPr><w:ind w:left="360" w:hanging="360"/></w:pPr>',
+      styles,
+    )
+    // 12pt Normal -> 16px, family from the default paragraph style
+    expect(measuredFonts[0]).toBe('16px "Times New Roman", Calibri, sans-serif')
+    destroy()
+  })
+
+  it('a level with left="0" firstLine="0" puts the marker at the margin and tabs to the next default stop', async () => {
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="upperRoman"/><w:lvlText w:val="Article %1."/>' +
+        '<w:pPr><w:ind w:left="0" w:firstLine="0"/></w:pPr>',
+    )
+    expect(el.getAttribute('data-marker')).toBe('Article I.')
+    const style = el.getAttribute('style') ?? ''
+    // 10 chars * 8px = 1200 twips from 0 -> stop 1440
+    expect(style).toContain('--li-left: 0pt')
+    expect(style).toContain('--li-hang: 0pt')
+    expect(style).toContain('--li-tab: 72pt')
+    destroy()
+  })
+
+  it('the marker tab lands on the paragraph custom tab stop, not the default grid', async () => {
+    const lvl =
+      '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>' +
+      '<w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>'
+    const item = (pPr: string) =>
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>${pPr}</w:pPr>` +
+      '<w:r><w:t>item</w:t></w:r></w:p>'
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          item(
+            '<w:tabs><w:tab w:val="left" w:pos="4320"/></w:tabs><w:ind w:left="360" w:firstLine="360"/>',
+          ) +
+          item(
+            '<w:tabs><w:tab w:val="left" w:pos="1080"/></w:tabs><w:ind w:left="360" w:firstLine="0"/>',
+          ) +
+          item('<w:tabs><w:tab w:val="left" w:pos="4320"/></w:tabs>'),
+        numberingXml: numberingXml(lvl),
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const styles = Array.from(editor.view.dom.querySelectorAll('.doc-li')).map(
+      (el) => el.getAttribute('style') ?? '',
+    )
+    // marker at 720 ends 960: the 4320 stop, not 1440
+    expect(styles[0]).toContain('--li-tab: 180pt')
+    // marker at 360 ends 600: the 1080 stop replaces the cleared 720 default
+    expect(styles[1]).toContain('--li-tab: 36pt')
+    // level hanging fits the marker: text at the hanging edge, no tab box
+    expect(styles[2]).not.toContain('--li-tab')
+    editor.destroy()
+  })
+
+  it('a level with only left="0" has no hanging area: marker at the margin, tab to the next stop', async () => {
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>' +
+        '<w:pPr><w:ind w:left="0"/></w:pPr>',
+    )
+    const style = el.getAttribute('style') ?? ''
+    expect(style).toContain('--li-left: 0pt')
+    expect(style).toContain('--li-hang: 0pt')
+    // 2 chars * 8px = 240 twips -> stop 720
+    expect(style).toContain('--li-tab: 36pt')
+    destroy()
+  })
+
+  it('a level with only w:left keeps the Normal style firstLine: marker at the first-line position (Word)', async () => {
+    const styles = new Map<string, StyleInfo>([
+      [
+        'Normal',
+        {
+          styleId: 'Normal',
+          name: 'Normal',
+          type: 'paragraph',
+          isDefault: true,
+          display: { indentRightTwips: 142, indentFirstLineTwips: 700 },
+        },
+      ],
+    ])
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>' +
+        '<w:pPr><w:ind w:left="0"/></w:pPr>',
+      styles,
+    )
+    const style = el.getAttribute('style') ?? ''
+    expect(style).toContain('--li-left: 0pt')
+    expect(style).toContain('--li-hang: 0pt')
+    expect(style).toContain('text-indent: 35pt')
+    // marker 700..940 twips -> tab to the 1440 stop
+    expect(style).toContain('--li-tab: 37pt')
+    destroy()
+  })
+
+  it('a style hanging survives a level w:ind that declares only w:left', async () => {
+    const styles = new Map<string, StyleInfo>([
+      [
+        'Normal',
+        {
+          styleId: 'Normal',
+          name: 'Normal',
+          type: 'paragraph',
+          isDefault: true,
+          display: { indentLeftTwips: 0, indentFirstLineTwips: -400 },
+        },
+      ],
+    ])
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>' +
+        '<w:pPr><w:ind w:left="720"/></w:pPr>',
+      styles,
+    )
+    const style = el.getAttribute('style') ?? ''
+    expect(style).toContain('--li-left: 36pt')
+    expect(style).toContain('--li-hang: 20pt')
+    expect(style).not.toContain('text-indent')
+    destroy()
+  })
+
+  it('a level hanging beats the style firstLine; an oversized marker adds its extra ascent outside the line multiple', async () => {
+    const styles = new Map<string, StyleInfo>([
+      [
+        'Normal',
+        {
+          styleId: 'Normal',
+          name: 'Normal',
+          type: 'paragraph',
+          isDefault: true,
+          display: {
+            font: 'Times New Roman',
+            fontAscii: 'Times New Roman',
+            sizeHalfPoints: 24,
+            indentFirstLineTwips: 700,
+          },
+        },
+      ],
+    ])
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>' +
+        '<w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr><w:rPr><w:sz w:val="28"/></w:rPr>',
+      styles,
+    )
+    const style = el.getAttribute('style') ?? ''
+    expect(style).toContain('--li-hang: 18pt')
+    expect(style).not.toContain('text-indent')
+    // TNR 14pt number over 12pt text: (14 - 12) x (1.15 - 0.2163) = 1.867pt (Word +1.8)
+    expect(style).toContain(
+      '--li-marker-lh: calc(var(--doc-line-factor,1.2) * 12pt * var(--doc-line-mult,1) + 1.867pt)',
+    )
+    destroy()
+  })
+
+  it('a right-aligned marker without a hanging area still tabs to the next stop', async () => {
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlJc w:val="right"/><w:lvlText w:val="%1."/>' +
+        '<w:pPr><w:ind w:left="720" w:firstLine="0"/></w:pPr>',
+    )
+    const style = el.getAttribute('style') ?? ''
+    // marker ends at 720 (box 480..720), text at the 1440 stop: box 960 twips
+    expect(style).toContain('--li-hang: 12pt')
+    expect(style).toContain('--li-tab: 48pt')
+    destroy()
+  })
+
+  it('lvlJc right hangs the marker so its end sits at the marker position', async () => {
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlJc w:val="right"/><w:lvlText w:val="%1.%1.%1"/>' +
+        '<w:pPr><w:ind w:left="2160" w:hanging="180"/></w:pPr>',
+    )
+    expect(el.getAttribute('data-marker')).toBe('1.1.1')
+    const style = el.getAttribute('style') ?? ''
+    // 5 chars * 8px = 600 twips: hang 180 + 600
+    expect(style).toContain('--li-hang: 39pt')
+    expect(style).not.toContain('--li-tab')
+    destroy()
+  })
+
+  it('the level rPr color and a text-font bullet reach the marker as custom properties', async () => {
+    const colored = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="ordinalText"/><w:lvlText w:val="%1."/>' +
+        '<w:pPr><w:ind w:left="132" w:hanging="132"/></w:pPr><w:rPr><w:color w:val="FFC000"/><w:sz w:val="52"/></w:rPr>',
+    )
+    expect(colored.el.getAttribute('data-marker')).toBe('First.')
+    const style = colored.el.getAttribute('style') ?? ''
+    expect(style).toContain('--li-marker-color: #FFC000')
+    expect(style).toContain('--dk-li-mc:')
+    expect(style).toContain('--li-marker-size: 26pt')
+    expect(style).toContain('--li-marker-lh: calc(')
+    colored.destroy()
+
+    const bullet = await renderLi(
+      '<w:numFmt w:val="bullet"/><w:lvlText w:val="o"/>' +
+        '<w:pPr><w:ind w:left="1440" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/></w:rPr>',
+    )
+    expect(bullet.el.getAttribute('data-marker')).toBe('o')
+    expect(bullet.el.getAttribute('style')).toContain('--li-marker-font: "Courier New"')
+    expect(bullet.el.getAttribute('style')).toContain('--li-marker-lh: 0')
+    bullet.destroy()
+  })
+
+  it('the level rPr bold and italic reach the marker as custom properties', async () => {
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="lowerRoman"/><w:lvlText w:val="%1)"/>' +
+        '<w:pPr><w:ind w:left="1440" w:hanging="720"/></w:pPr><w:rPr><w:b/><w:bCs/><w:i/></w:rPr>',
+    )
+    expect(el.getAttribute('data-marker')).toBe('i)')
+    const style = el.getAttribute('style') ?? ''
+    expect(style).toContain('--li-marker-weight: bold')
+    expect(style).toContain('--li-marker-style: italic')
+    destroy()
   })
 })

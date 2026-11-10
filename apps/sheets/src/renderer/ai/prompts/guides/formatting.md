@@ -16,7 +16,7 @@
 - `indent`: indent level 0–250 (0 clears), rendered on screen as left padding and written into the file
 - `border`: {type:"all"|"top"|"bottom"|"left"|"right"|"none", color?:"#RRGGBB"} — **per-cell edge** semantics (every cell in the range gets that edge); "none" clears all borders
 
-One operation per range; when you need to "reuse the format from somewhere", read the current state with read_formats first.
+One operation per range (range-level, up to 200,000 cells — formatting a whole data column of a large file is fine); when you need to "reuse the format from somewhere", read the current state with read_formats first.
 
 ## Number formats
 

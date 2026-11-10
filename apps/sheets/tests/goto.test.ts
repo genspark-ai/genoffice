@@ -27,6 +27,24 @@ describe('isA1Reference', () => {
     expect(isA1Reference('A1,B2')).toBe(false)
     expect(isA1Reference('')).toBe(false)
   })
+
+  it('rejects shape-valid refs outside the grid', () => {
+    // Row 0, over-long columns, and over-max rows/cols used to pass the
+    // shape regexes and leak into getRange as NaN/out-of-bounds.
+    expect(isA1Reference('A0')).toBe(false)
+    expect(isA1Reference('0:5')).toBe(false)
+    expect(isA1Reference('ZZZ1')).toBe(false)
+    expect(isA1Reference('A1048577')).toBe(false)
+    expect(isA1Reference('A1:ZZZ2')).toBe(false)
+    expect(isA1Reference('Sheet1!A0')).toBe(false)
+  })
+
+  it('accepts grid-boundary refs', () => {
+    expect(isA1Reference('XFD1048576')).toBe(true)
+    expect(isA1Reference('$XFD$1048576')).toBe(true)
+    expect(isA1Reference('A:A')).toBe(true)
+    expect(isA1Reference('1048576:1048576')).toBe(true)
+  })
 })
 
 describe('resolveGoToRef', () => {

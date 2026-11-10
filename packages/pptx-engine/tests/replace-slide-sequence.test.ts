@@ -1,7 +1,7 @@
 /**
  * Verifies the core replace_at sequence (redo one slide in place):
  * mergeSlideFromPptx (new slide appended at the end) → moveSlide (into position) → deleteSlide (remove old slide).
- * This is the engine-level equivalent of the replace_at branch in slides-main 'slides:html-to-pptx';
+ * This is the engine-level equivalent of the replace_at branch in slides-main 'slides:land-generated-pages';
  * no Electron dependency — runs the real openPptx → operations → savePptx → openPptx chain.
  */
 import { describe, it, expect } from 'vitest'

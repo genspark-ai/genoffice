@@ -13,6 +13,8 @@ interface FakeSettings {
 function setup(
   startImpl?: (request: IpcStreamStart<FakeSettings>) => void | Promise<unknown>,
   creditsErrorText?: () => string,
+  networkErrorText?: () => string,
+  overloadedErrorText?: () => string,
 ) {
   let listener: ((chunk: IpcStreamChunk) => void) | undefined
   const unsubscribe = vi.fn(() => {
@@ -34,11 +36,15 @@ function setup(
     unknownErrorText: () => 'unknown error',
     timeoutErrorText: () => 'timed out',
     ...(creditsErrorText ? { creditsErrorText } : {}),
+    ...(networkErrorText ? { networkErrorText } : {}),
+    ...(overloadedErrorText ? { overloadedErrorText } : {}),
   })
   const cb = {
     onDelta: vi.fn(),
+    onReasoning: vi.fn(),
     onToolCall: vi.fn(),
     onStopReason: vi.fn(),
+    onUsage: vi.fn(),
     onDone: vi.fn(),
     onError: vi.fn(),
   }
@@ -61,6 +67,15 @@ describe('createIpcTransport', () => {
     expect(cb.onDelta).toHaveBeenNthCalledWith(1, 'hi')
     expect(cb.onDelta).toHaveBeenNthCalledWith(2, '')
     expect(cb.onToolCall).toHaveBeenCalledWith({ id: 'c1', name: 'read', input: {} })
+  })
+
+  it('forwards reasoning chunks separately from text deltas', () => {
+    const { cb, emit } = setup()
+    emit({ type: 'reasoning', text: 'thinking…' })
+    emit({ type: 'reasoning' }) // payload-less chunk carries nothing
+    expect(cb.onReasoning).toHaveBeenCalledTimes(1)
+    expect(cb.onReasoning).toHaveBeenCalledWith('thinking…')
+    expect(cb.onDelta).not.toHaveBeenCalled()
   })
 
   it('ignores chunks for other requestIds', () => {
@@ -91,6 +106,17 @@ describe('createIpcTransport', () => {
     expect(unsubscribe).toHaveBeenCalledTimes(1)
   })
 
+  it('ignores an unknown future chunk type instead of failing the run', () => {
+    const { cb, emit, unsubscribe } = setup()
+    emit({ type: 'progress' } as never)
+    expect(cb.onError).not.toHaveBeenCalled()
+    expect(cb.onDone).not.toHaveBeenCalled()
+    expect(unsubscribe).not.toHaveBeenCalled()
+    // the run survived rather than merely going quiet
+    emit({ type: 'done' })
+    expect(cb.onDone).toHaveBeenCalledTimes(1)
+  })
+
   it('cancel forwards the requestId to the bridge', () => {
     const { started, cancelled, handle } = setup()
     handle.cancel()
@@ -113,6 +139,26 @@ describe('createIpcTransport', () => {
     expect(cb.onError).toHaveBeenCalledWith('credits used up')
   })
 
+  it('maps a network error code to the localized network message', () => {
+    const { cb, emit } = setup(undefined, undefined, () => 'network problem')
+    emit({
+      type: 'error',
+      error: 'Claude fetch failed: fetch failed cause=ECONNRESET',
+      errorCode: 'network',
+    })
+    expect(cb.onError).toHaveBeenCalledWith('network problem')
+  })
+
+  it('a network error code without networkErrorText falls back to the carried text', () => {
+    const { cb, emit } = setup()
+    emit({
+      type: 'error',
+      error: 'Claude fetch failed: fetch failed cause=ECONNRESET',
+      errorCode: 'network',
+    })
+    expect(cb.onError).toHaveBeenCalledWith('Claude fetch failed: fetch failed cause=ECONNRESET')
+  })
+
   it('a credits error code without creditsErrorText falls back to the carried text', () => {
     const { cb, emit } = setup()
     emit({
@@ -121,6 +167,26 @@ describe('createIpcTransport', () => {
       errorCode: 'credits',
     })
     expect(cb.onError).toHaveBeenCalledWith('Your Genspark credits have been exhausted.')
+  })
+
+  it('maps an overloaded error code to the localized busy message', () => {
+    const { cb, emit } = setup(undefined, undefined, undefined, () => 'service busy')
+    emit({
+      type: 'error',
+      error: 'HTTP 429: {"error":{"type":"engine_overloaded_error"}}',
+      errorCode: 'overloaded',
+    })
+    expect(cb.onError).toHaveBeenCalledWith('service busy')
+  })
+
+  it('an overloaded error code without overloadedErrorText falls back to the carried text', () => {
+    const { cb, emit } = setup()
+    emit({
+      type: 'error',
+      error: 'HTTP 429: engine overloaded',
+      errorCode: 'overloaded',
+    })
+    expect(cb.onError).toHaveBeenCalledWith('HTTP 429: engine overloaded')
   })
 
   it('fails the run after prolonged silence; pings re-arm the watchdog', () => {
@@ -158,5 +224,22 @@ describe('createIpcTransport', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(cb.onError).toHaveBeenCalledWith('no handler registered')
     expect(cb.onDone).not.toHaveBeenCalled()
+  })
+})
+
+describe('createIpcTransport usage', () => {
+  it('forwards a usage chunk to onUsage before done', () => {
+    const { cb, emit } = setup()
+    emit({ type: 'usage', usage: { inputTokens: 12, outputTokens: 3 } })
+    emit({ type: 'done' })
+    expect(cb.onUsage).toHaveBeenCalledWith({ inputTokens: 12, outputTokens: 3 })
+    expect(cb.onUsage).toHaveBeenCalledTimes(1)
+    expect(cb.onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores a usage chunk with no payload', () => {
+    const { cb, emit } = setup()
+    emit({ type: 'usage' })
+    expect(cb.onUsage).not.toHaveBeenCalled()
   })
 })

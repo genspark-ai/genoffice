@@ -1,5 +1,14 @@
+import katexCss from 'katex/dist/katex.min.css?inline'
+
+/** `[[target|alias]]` as one whole literal; mirrors the editor's link regex */
+const WIKI_ALIAS_RE = /^\[\[[^[\]|\n]+\|([^[\]\n]+)\]\]$/
+
 /** Print-theme CSS: mirrors the editor typography so the PDF matches the canvas */
 const PRINT_CSS = `
+@page {
+  margin: 2cm;
+  size: auto;
+}
 * { box-sizing: border-box; }
 body {
   margin: 0;
@@ -24,15 +33,29 @@ pre code { background: none; padding: 0; font-size: 0.85em; line-height: 1.6; }
 hr { border: none; border-top: 2px solid #e4e7eb; margin: 1.6em 0; }
 a { color: #0a69da; }
 img { max-width: 100%; height: auto; }
+.md-diagram-preview { margin: 0.8em 0; text-align: center; break-inside: avoid; }
+.md-diagram-preview svg { max-width: 100%; height: auto; }
 .tableWrapper { margin: 0.8em 0; }
-table { border-collapse: collapse; width: 100%; margin: 0; break-inside: avoid; }
-th, td { border: 1px solid #d0d5db; padding: 6px 10px; vertical-align: top; text-align: start; }
+table { border-collapse: collapse; width: 100%; margin: 0; }
+tr { break-inside: avoid; }
+th, td { border: 1px solid #d0d5db; padding: 6px 10px; vertical-align: top; text-align: start; overflow-wrap: anywhere; }
 th > p, td > p { margin: 0; }
 th { background: #f6f8fa; font-weight: 600; }
 ul[data-type='taskList'] { list-style: none; padding-left: 0.4em; }
 ul[data-type='taskList'] li { display: flex; gap: 8px; }
 ul[data-type='taskList'] li > label { flex: 0 0 auto; margin-top: 0.3em; }
 ul[data-type='taskList'] li[data-checked='true'] > div { color: #8b929b; text-decoration: line-through; }
+sup.md-footnote-ref { color: #0a69da; font-size: 0.78em; }
+.md-footnote-def { display: grid; grid-template-columns: max-content 1fr; column-gap: 6px; font-size: 0.92em; color: #57606a; margin: 0.3em 0; }
+.md-footnote-def-label { white-space: pre; }
+.md-footnote-def-body > p { margin: 0.15em 0; }
+.md-footnote-def + .md-footnote-def { margin-top: 0.2em; }
+@media print {
+  /* High-quality rendering for text */
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  pre, blockquote, tr { break-inside: avoid; }
+  img { max-width: 100% !important; page-break-inside: avoid; }
+}
 `
 
 /**
@@ -47,15 +70,33 @@ export function buildPrintHtml(editorRoot: HTMLElement, title: string): string {
     el.removeAttribute('contenteditable')
 
   // editor-only code block chrome (language picker + copy button) must not print
-  for (const bar of clone.querySelectorAll('.md-codeblock-bar')) bar.remove()
+  for (const bar of clone.querySelectorAll(
+    '.md-codeblock-bar, .md-diagram-error, .ProseMirror-separator',
+  ))
+    bar.remove()
+  // an aliased wiki link prints as its alias, from the literal rather than the
+  // view's hidden spans: a link under the caret has none, as it shows its syntax
+  for (const link of clone.querySelectorAll('a.wiki-link')) {
+    // a literal an inline mark splits stays visible on the canvas too
+    if ([...link.children].some((el) => el.tagName !== 'SPAN')) continue
+    const alias = WIKI_ALIAS_RE.exec(link.textContent ?? '')?.[1]
+    if (alias) link.textContent = alias
+  }
+  // a rendered diagram block prints as its picture; an unrendered one keeps its source
+  for (const block of clone.querySelectorAll('[data-diagram="rendered"] pre')) block.remove()
 
   const escapedTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  // <base> lets the inlined KaTeX CSS resolve its relative font URLs from the
+  // print iframe (which otherwise has no document URL to resolve against)
+  const escapedBase = document.baseURI.replace(/"/g, '&quot;')
   return [
     '<!doctype html>',
     '<html>',
     '<head>',
     '<meta charset="utf-8">',
+    `<base href="${escapedBase}">`,
     `<title>${escapedTitle}</title>`,
+    `<style>${katexCss}</style>`,
     `<style>${PRINT_CSS}</style>`,
     '</head>',
     `<body>${clone.innerHTML}</body>`,

@@ -31,12 +31,12 @@ async function deckWithGap(): Promise<Buffer> {
 }
 
 describe('non-shape spTree children preserved', () => {
-  it('scan records the gap; rebuild without edits == original bytes', async () => {
+  it('AlternateContent becomes an element anchored to its full bytes; rebuild without edits == original bytes', async () => {
     const opened = await openPptx(await deckWithGap())
     const slide = opened.deck.slides[0]!
-    expect(slide.elements.some((e) => e.anchor.gapAfter?.includes('mc:AlternateContent'))).toBe(
-      true,
-    )
+    expect(
+      slide.elements.some((e) => e.anchor.originalXml.startsWith('<mc:AlternateContent')),
+    ).toBe(true)
     expect(patchSlideXml(slide)).toBe(slide.originalXml)
   })
 

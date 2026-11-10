@@ -12,17 +12,21 @@ export interface SafeExternalUrlOptions {
 const DEFAULT_PROTOCOLS: readonly string[] = ['http:', 'https:']
 
 /**
- * Returns the URL string when it parses and its protocol is on the allowlist,
- * otherwise null. Callers must not fall back to opening the raw input.
+ * Returns the trimmed URL string when it parses and its protocol is on the
+ * allowlist, otherwise null. Callers must not fall back to opening the raw
+ * input. Trims because the WHATWG parser silently strips surrounding
+ * whitespace, so validating the raw input but returning it verbatim would
+ * hand `shell.openExternal` a URL that fails there.
  */
 export function safeExternalUrl(url: unknown, options?: SafeExternalUrlOptions): string | null {
   if (typeof url !== 'string') return null
+  const text = url.trim()
   let parsed: URL
   try {
-    parsed = new URL(url)
+    parsed = new URL(text)
   } catch {
     return null
   }
   const allowed = options?.allowedProtocols ?? DEFAULT_PROTOCOLS
-  return allowed.includes(parsed.protocol) ? url : null
+  return allowed.includes(parsed.protocol) ? text : null
 }

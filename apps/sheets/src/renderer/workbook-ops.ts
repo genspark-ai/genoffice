@@ -5,6 +5,8 @@
  * helpers applied against the live Univer runtime. Extracted from App.tsx;
  * every function receives its runtime and state explicitly.
  */
+import { isDefaultFormat, numfmt } from '@univerjs/core'
+import { DATE_1904_OFFSET, isCalendarDatePattern } from './numfmt-fix'
 import type {
   AddPivotOperation,
   AddTableColumnOperation,
@@ -12,17 +14,25 @@ import type {
   AddTableRowOperation,
   DeleteTableColumnOperation,
   DeleteTableRowOperation,
-} from '../domain/workbook-dsl'
-import { columnLabel, parseAddress, parseRange } from '../domain/cell-address'
-import { renameRefSheet } from '../domain/chart-visual'
+} from '@genoffice/xlsx-gateway/domain/workbook-dsl'
+import { columnLabel, parseAddress, parseRange } from '@genoffice/xlsx-gateway/domain/cell-address'
+import { renameRefSheet } from '@genoffice/xlsx-gateway/domain/chart-visual'
 import {
-  allowedByValueFilter,
-  matchesLabelFilter,
-  type PivotFilterDef,
-} from '../domain/pivot-filters'
-import { evaluatePivotFormula, parsePivotFormula } from '../domain/pivot-formula'
-import { groupValue, type PivotFieldGrouping } from '../domain/pivot-grouping'
-import type { WorkbookVisualObject } from '../shared/desktop-api'
+  areasOverlap,
+  buildPivotLayout,
+  PIVOT_SOURCE_COL_LIMIT,
+  PIVOT_SOURCE_ROW_LIMIT,
+  PivotLayoutError,
+  pivotOutputArea,
+  type PivotArea,
+  type PivotLayout,
+  type PivotLayoutErrorCode,
+} from '@genoffice/xlsx-gateway/domain/pivot-layout'
+import type {
+  WorkbookPivotAdd,
+  WorkbookTableAdd,
+  WorkbookVisualObject,
+} from '../shared/desktop-api'
 import {
   recordPivotAdd,
   recordPivotCacheRefresh,
@@ -30,15 +40,13 @@ import {
   recordTableAdd,
   updateTableAdd,
 } from './edit-journal'
+import { planFileTableRegistrations } from './file-tables'
+import { areasIntersect, fileTableArea, liveFileTables, optionsOfTableAdd } from './table-design'
+import { DEFAULT_TABLE_STYLE, builtinTablePalette, tableThemeJson } from './table-styles'
 import { t } from './i18n/locale'
 import type { OoXmlPivotConfig, PivotField } from './PivotDialog'
-import type { PivotDefinition } from '../gateway/xlsx-pivot'
-import {
-  AGG_CAPTIONS,
-  applyFormatPatchToRange,
-  nextSessionPivotName,
-  nextSessionTableName,
-} from './univer-sync'
+import type { PivotDefinition } from '@genoffice/xlsx-gateway/gateway/xlsx-pivot'
+import { applyFormatPatchToRange, nextSessionPivotName, nextSessionTableName } from './univer-sync'
 import type { LazyWorkbookState, UniverRuntime, UniverWorksheet } from './univer-state'
 
 export function applyAiTableAdd(
@@ -54,21 +62,26 @@ export function applyAiTableAdd(
   }
   const width = bounds.endColumn - bounds.startColumn + 1
   if (width > 1_000) throw new Error(t('appTableTooWide'))
-  const name = op.name ?? nextSessionTableName(state.editJournal)
+  const fileTableNames = planFileTableRegistrations(state.file.sheets).map(
+    (table) => table.tableName,
+  )
+  const name = op.name ?? nextSessionTableName(state.editJournal, fileTableNames)
   if (
     state.editJournal.tableAdds.some((table) => table.name.toLowerCase() === name.toLowerCase())
   ) {
     throw new Error(t('appTableNameUsed', { name }))
   }
+  if (fileTableNames.some((table) => table.toLowerCase() === name.toLowerCase())) {
+    throw new Error(t('appTableNameInFile', { name }))
+  }
   for (const table of state.editJournal.tableAdds) {
-    if (table.sheetId !== op.sheetId) continue
-    const apart =
-      bounds.endRow < table.area.startRow ||
-      table.area.endRow < bounds.startRow ||
-      bounds.endColumn < table.area.startColumn ||
-      table.area.endColumn < bounds.startColumn
-    if (!apart) {
+    if (table.sheetId === op.sheetId && areasIntersect(bounds, table.area)) {
       throw new Error(t('appTableOverlapsSession', { name: table.name }))
+    }
+  }
+  for (const { table, originalName } of liveFileTables(state, op.sheetId)) {
+    if (areasIntersect(bounds, fileTableArea(table))) {
+      throw new Error(t('appTableOverlapsFile', { name: table.name ?? originalName }))
     }
   }
   const headerValues =
@@ -90,19 +103,7 @@ export function applyAiTableAdd(
       worksheet.getRange(bounds.startRow, bounds.startColumn + index).setValue(candidate)
     }
   }
-  // Rendering is best-effort (the facade call is async); the journal entry
-  // below is what the save writes, and the gateway re-checks conflicts.
-  void worksheet.addTable(
-    name,
-    {
-      startRow: bounds.startRow,
-      startColumn: bounds.startColumn,
-      endRow: bounds.endRow,
-      endColumn: bounds.endColumn,
-    },
-    `ai-table-${state.editJournal.tableAdds.length + 1}-${Date.now().toString(36)}`,
-  )
-  recordTableAdd(state.editJournal, {
+  const entry: WorkbookTableAdd = {
     sheetId: op.sheetId,
     area: {
       startRow: bounds.startRow,
@@ -114,7 +115,32 @@ export function applyAiTableAdd(
     columnNames,
     ...(op.style === undefined ? {} : { style: op.style }),
     bandedRows: op.bandedRows ?? true,
-  })
+  }
+  // Rendering is best-effort (the facade call is async); the journal entry
+  // is what the save writes, and the gateway re-checks conflicts.
+  const tableId = `ai-table-${state.editJournal.tableAdds.length + 1}-${Date.now().toString(36)}`
+  void Promise.resolve(worksheet.addTable(name, entry.area, tableId))
+    .then(() => applySessionTableTheme(worksheet, tableId, entry, state.file.themeColors))
+    .catch(() => undefined)
+  recordTableAdd(state.editJournal, entry)
+}
+
+/// Paints the Excel built-in style over Univer's default table theme.
+export function applySessionTableTheme(
+  worksheet: UniverWorksheet,
+  tableId: string,
+  add: WorkbookTableAdd,
+  themeColors: readonly string[] | undefined,
+): void {
+  const theme = tableThemeJson(
+    `${tableId}-${Date.now().toString(36)}`,
+    builtinTablePalette(add.style ?? DEFAULT_TABLE_STYLE, themeColors),
+    optionsOfTableAdd(add),
+  )
+  const api = worksheet as unknown as {
+    addTableTheme(id: string, theme: unknown): Promise<boolean>
+  }
+  void Promise.resolve(api.addTableTheme(tableId, theme)).catch(() => undefined)
 }
 
 /// AI add_table_row: inserts one or more rows into a session-added table.
@@ -221,21 +247,106 @@ export function applyAiTableColumnAdd(
   })
 }
 
+/// Width-independent pivot source read. getValues() goes through the view
+/// interceptors, which clip numbers to the column width (#### fill,
+/// budget-limited General) — lies that must not become pivot labels,
+/// aggregates, saved sharedItems, or recompute keys (a date column displayed
+/// as #### broke timeline binding and slicer recompute). Re-format raw
+/// values through each cell's own pattern instead; General numbers stay
+/// numeric.
+export function readPivotSourceGrid(
+  range: {
+    getRawValues(): unknown[][]
+    getNumberFormats(): string[][]
+    getFormulas(): string[][]
+  },
+  date1904: boolean,
+  valueFields: readonly string[] = [],
+): (string | number | boolean | null)[][] {
+  const rawValues = range.getRawValues() as (string | number | boolean | null)[][]
+  const valueColumns = new Set(
+    (rawValues[0] ?? []).flatMap((header, index) =>
+      valueFields.includes(String(header ?? '').trim()) ? [index] : [],
+    ),
+  )
+  const patterns = range.getNumberFormats()
+  // 1904 workbooks: file-loaded static serials count from 1904-01-01, but
+  // formula results come from the 1900-based engine — same rule as the
+  // display interceptor's calendar-date shift.
+  const formulas = date1904 ? range.getFormulas() : null
+  return rawValues.map((row, rowOffset) =>
+    row.map((value, columnOffset) => {
+      if (typeof value !== 'number') return value
+      // Measures must remain numeric; currency display strings aggregate as blanks.
+      if (rowOffset > 0 && valueColumns.has(columnOffset)) return value
+      const pattern = patterns[rowOffset]?.[columnOffset] ?? ''
+      if (pattern === '' || isDefaultFormat(pattern)) return value
+      const shift =
+        formulas !== null &&
+        isCalendarDatePattern(pattern) &&
+        (formulas[rowOffset]?.[columnOffset] ?? '') === ''
+          ? DATE_1904_OFFSET
+          : 0
+      try {
+        return numfmt.format(pattern, value + shift, { nbsp: true, throws: false })
+      } catch {
+        return value
+      }
+    }),
+  )
+}
+
+const LAYOUT_ERROR_KEYS = {
+  sourceNeedsRows: 'appPivotSourceNeedsRows',
+  sourceRowLimit: 'appPivotSourceRowLimit',
+  sourceColLimit: 'appPivotSourceColLimit',
+  headerBlank: 'appPivotHeaderBlank',
+  headerDuplicate: 'appPivotHeaderDuplicate',
+  fieldNotHeader: 'appPivotFieldNotHeader',
+  calcFieldNameClash: 'appCalcFieldNameClash',
+  calcFieldNameDuplicate: 'appCalcFieldNameDuplicate',
+  valueFilterFieldMissing: 'appValueFilterFieldMissing',
+  tooManyRowItems: 'appPivotTooManyRowItems',
+  tooManyColItems: 'appPivotTooManyColItems',
+  tooManyColLines: 'appPivotTooManyColLines',
+  tooManyRowLines: 'appPivotTooManyRowLines',
+  needsValues: 'appPivotNeedsValues',
+  pageItemMissing: 'appPivotPageItemMissing',
+  baseFieldMissing: 'appPivotBaseFieldMissing',
+  baseFieldNotAxis: 'appPivotBaseFieldNotAxis',
+  baseItemMissing: 'appPivotBaseItemMissing',
+} satisfies Record<PivotLayoutErrorCode, Parameters<typeof t>[0]>
+
+/// Rows the report-filter block occupies above the table body: one per page
+/// field plus Excel's blank separator row.
+export function pivotPageRows(pageFieldCount: number): number {
+  return pageFieldCount > 0 ? pageFieldCount + 1 : 0
+}
+
+/// Relayout of an existing pivot: a file pivot (parts rewritten on save) or a
+/// pivot created this session (its journal entry is replaced).
+export interface PivotRelayoutTarget {
+  readonly target:
+    { readonly pivotPath: string; readonly cachePath: string } | { readonly sessionName: string }
+  /// Current table body (location ref) and the report-filter rows above it.
+  readonly oldBounds: {
+    startRow: number
+    startColumn: number
+    endRow: number
+    endColumn: number
+  }
+  readonly oldPageRows: number
+}
+
+const ALL_ITEMS_CAPTION = '(All)'
+
+/// Returns the body (location) area of the written pivot.
 export function applyAiPivotAdd(
   runtime: UniverRuntime,
   state: LazyWorkbookState,
   op: AddPivotOperation,
-  relayout?: {
-    readonly pivotPath: string
-    readonly cachePath: string
-    readonly oldBounds: {
-      startRow: number
-      startColumn: number
-      endRow: number
-      endColumn: number
-    }
-  },
-): void {
+  relayout?: PivotRelayoutTarget,
+): { readonly location: PivotArea; readonly pageRows: number } {
   const workbook = runtime.univerAPI.getActiveWorkbook()
   const sourceSheet = workbook?.getSheetBySheetId(op.sheetId)
   const targetSheetId = op.targetSheetId ?? op.sheetId
@@ -252,474 +363,57 @@ export function applyAiPivotAdd(
   const sourceRows = source.endRow - source.startRow + 1
   const sourceColumns = source.endColumn - source.startColumn + 1
   if (sourceRows < 2) throw new Error(t('appPivotSourceNeedsRows'))
-  if (sourceRows > 10_001) throw new Error(t('appPivotSourceRowLimit'))
-  if (sourceColumns > 200) throw new Error(t('appPivotSourceColLimit'))
+  if (sourceRows > PIVOT_SOURCE_ROW_LIMIT) throw new Error(t('appPivotSourceRowLimit'))
+  if (sourceColumns > PIVOT_SOURCE_COL_LIMIT) throw new Error(t('appPivotSourceColLimit'))
 
-  // Univer's Nullable<CellValue> narrows to the scalar union we aggregate
-  // over; undefined behaves like an empty cell throughout.
-  const grid = sourceSheet
-    .getRange(source.startRow, source.startColumn, sourceRows, sourceColumns)
-    .getValues() as (string | number | boolean | null)[][]
-  const fieldNames = (grid[0] ?? []).map((value) => String(value ?? '').trim())
-  if (fieldNames.some((name) => name.length === 0)) {
-    throw new Error(t('appPivotHeaderBlank'))
-  }
-  if (new Set(fieldNames.map((name) => name.toLowerCase())).size !== fieldNames.length) {
-    throw new Error(t('appPivotHeaderDuplicate'))
-  }
-  const fieldIndex = (label: string): number => {
-    const index = fieldNames.indexOf(label)
-    if (index < 0) throw new Error(t('appPivotFieldNotHeader', { label }))
-    return index
-  }
-  // rowFields is normalized to an array by the DSL expander
-  const rowFieldsArray = Array.isArray(op.rowFields) ? op.rowFields : [op.rowFields]
-  const rowFieldIndices = rowFieldsArray.map(fieldIndex)
-  const levels = rowFieldIndices.length
-  // Column dimensions mirror rows: 0-8 levels, outer first (single level
-  // accepts a bare string).
-  const columnFieldsArray =
-    op.columnField === undefined
-      ? []
-      : Array.isArray(op.columnField)
-        ? op.columnField
-        : [op.columnField]
-  const columnFieldIndices = columnFieldsArray.map(fieldIndex)
-  const colLevels = columnFieldIndices.length
-  const pageFieldIndices = (op.pageFields ?? []).map(fieldIndex)
-  // Dimension-field grouping (date/numeric ranges): member collection and
-  // bucketing both use group labels; on save the rule (fieldIndex form) goes
-  // into the journal → OOXML extLst.
-  const groupings = (op.groupings ?? []).map(({ field, ...rule }) => ({
-    fieldIndex: fieldIndex(field),
-    ...rule,
-  }))
-  const groupingByField = new Map<number, PivotFieldGrouping>()
-  for (const { fieldIndex: groupedField, ...rule } of groupings) {
-    groupingByField.set(groupedField, rule)
-  }
-  // Dimension value → member label (grouped fields group first; sort orders
-  // the group labels for display).
-  const dimGroupValue = (
-    fieldIdx: number,
-    row: readonly (string | number | boolean | null)[],
-  ): { label: string; sort: number | null } => {
-    const grouping = groupingByField.get(fieldIdx)
-    if (!grouping) return { label: String(row[fieldIdx] ?? ''), sort: null }
-    return groupValue(grouping, row[fieldIdx])
-  }
-  const dimValue = (fieldIdx: number, row: readonly (string | number | boolean | null)[]): string =>
-    dimGroupValue(fieldIdx, row).label
-  // Calculated fields: field is the new data-field name (must not clash with
-  // source headers); the formula is parsed once (a failed reference check
-  // throws, with the message surfaced to the dialog/DSL caller).
-  const valueSpecs = op.values.map((value) => {
-    const isCalc = value.formula !== undefined
-    if (
-      isCalc &&
-      fieldNames.some((name) => name.toLowerCase() === value.field.trim().toLowerCase())
-    ) {
-      throw new Error(t('appCalcFieldNameClash', { name: value.field }))
-    }
-    return {
-      fieldIndex: isCalc ? -1 : fieldIndex(value.field),
-      agg: value.agg,
-      // Percent display modes default to 0.00% when no format is given,
-      // matching dataField numFmtId=10.
-      numFmt: value.numFmt ?? (value.showDataAs !== undefined ? '0.00%' : undefined),
-      showDataAs: value.showDataAs,
-      ...(isCalc ? { formula: value.formula, calcName: value.field } : {}),
-      caption: `${AGG_CAPTIONS[value.agg]} of ${value.field}`,
-      ast: isCalc ? parsePivotFormula(value.formula!, fieldNames) : null,
-    }
-  })
-  const calcNameKeys = valueSpecs
-    .filter((spec) => spec.calcName !== undefined)
-    .map((spec) => spec.calcName!.trim().toLowerCase())
-  if (new Set(calcNameKeys).size !== calcNameKeys.length) {
-    throw new Error(t('appCalcFieldNameDuplicate'))
-  }
-
-  // Per-level member collection: one globally deduplicated list per row/column
-  // level (first-seen order, i.e. each level's sharedItems order on save); the
-  // combination set enumerates branches that actually exist in the hierarchy —
-  // expansion order is the same under every parent group,
-  // rather than first-seen within each parent.
-  const levelItems: string[][] = rowFieldIndices.map(() => [])
-  const comboKeys = new Set<string>()
-  const colLevelItems: string[][] = columnFieldIndices.map(() => [])
-  const colComboKeys = new Set<string>()
-  // Sort keys for grouped-field labels (label → bucket order; pass-through
-  // values are null and keep first-seen order).
-  const levelSortKeys: Map<string, number | null>[] = rowFieldIndices.map(() => new Map())
-  const colLevelSortKeys: Map<string, number | null>[] = columnFieldIndices.map(() => new Map())
-  const joinPath = (path: readonly string[]): string => path.join('\u0000')
-  // The first pass only collects members (all data rows, including ones later
-  // filtered out — they must enter sharedItems and be marked hidden); the
-  // combination set is enumerated over rows visible after filtering.
-  for (const row of grid.slice(1)) {
-    rowFieldIndices.forEach((fieldIdx, level) => {
-      const { label: key, sort } = dimGroupValue(fieldIdx, row)
-      if (!levelItems[level]!.includes(key)) {
-        levelItems[level]!.push(key)
-        levelSortKeys[level]!.set(key, sort)
-      }
-    })
-    columnFieldIndices.forEach((fieldIdx, level) => {
-      const { label: key, sort } = dimGroupValue(fieldIdx, row)
-      if (!colLevelItems[level]!.includes(key)) {
-        colLevelItems[level]!.push(key)
-        colLevelSortKeys[level]!.set(key, sort)
-      }
-    })
-  }
-  // Grouped levels display members in ascending bucket order (e.g. months
-  // Jan…Dec, intervals small to large); pass-through values sort last keeping
-  // first-seen order; ungrouped levels keep first-seen order untouched.
-  const sortGroupedLevel = (
-    items: string[],
-    fieldIdx: number,
-    sortKeys: Map<string, number | null>,
-  ): void => {
-    if (!groupingByField.has(fieldIdx)) return
-    items.sort((a, b) => {
-      const sortA = sortKeys.get(a) ?? null
-      const sortB = sortKeys.get(b) ?? null
-      if (sortA !== null && sortB !== null) return sortA - sortB
-      if (sortA !== null) return -1
-      if (sortB !== null) return 1
-      return 0
-    })
-  }
-  rowFieldIndices.forEach((fieldIdx, level) =>
-    sortGroupedLevel(levelItems[level]!, fieldIdx, levelSortKeys[level]!),
+  const grid = readPivotSourceGrid(
+    sourceSheet.getRange(source.startRow, source.startColumn, sourceRows, sourceColumns),
+    state.file.date1904 === true,
+    op.values.filter((value) => value.formula === undefined).map((value) => value.field),
   )
-  columnFieldIndices.forEach((fieldIdx, level) =>
-    sortGroupedLevel(colLevelItems[level]!, fieldIdx, colLevelSortKeys[level]!),
+  let layout: PivotLayout
+  try {
+    layout = buildPivotLayout(grid, op, {
+      subtotal: t('appPivotSubtotal'),
+      grandTotal: 'Grand Total',
+    })
+  } catch (err) {
+    if (err instanceof PivotLayoutError) {
+      throw new Error(t(LAYOUT_ERROR_KEYS[err.code], err.params), { cause: err })
+    }
+    throw err
+  }
+  const { width, height } = layout
+  // Report filters render above the body like Excel: "Field | (All)" rows and
+  // a blank separator; the location ref stays the body only.
+  const pageRows = pivotPageRows(layout.definition.pageFieldIndices?.length ?? 0)
+  const pageMatrix: (string | number | null)[][] = (layout.definition.pageFieldIndices ?? []).map(
+    (fieldIndex, page) => {
+      const item = layout.definition.pageItems?.[page] ?? null
+      const label =
+        item === null ? ALL_ITEMS_CAPTION : (layout.definition.pageLevelItems?.[page]?.[item] ?? '')
+      const line: (string | number | null)[] = new Array(width).fill(null)
+      line[0] = layout.definition.fieldNames[fieldIndex] ?? ''
+      line[1] = label
+      return line
+    },
   )
-  // rowItems for journal/save = outermost members (alias of rowLevelItems[0])
-  const rowItems = levelItems[0] ?? []
-  if (levelItems.some((items) => items.length > 10_000)) {
-    throw new Error(t('appPivotTooManyRowItems'))
-  }
-  if (colLevelItems.some((items) => items.length > 1_000)) {
-    throw new Error(t('appPivotTooManyColItems'))
-  }
+  if (pageRows > 0) pageMatrix.push(new Array(width).fill(null))
+  const matrix = [...pageMatrix, ...layout.matrix]
+  const blockHeight = pageRows + height
 
-  const aggregate = (
-    rows: readonly (readonly (string | number | boolean | null)[])[],
-    spec: (typeof valueSpecs)[number],
-  ): number | null => {
-    // Calculated fields: each group sums the formula's referenced source
-    // fields first (empty groups count as 0), then evaluates the formula —
-    // same criteria as the recompute engine's recomputePivotData.
-    if (spec.ast) {
-      return evaluatePivotFormula(spec.ast, (name) => {
-        const refIndex = fieldIndex(name)
-        return rows
-          .map((row) => row[refIndex])
-          .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
-          .reduce((total, value) => total + value, 0)
-      })
-    }
-    if (spec.agg === 'count') {
-      return rows.filter((row) => row[spec.fieldIndex] != null && row[spec.fieldIndex] !== '')
-        .length
-    }
-    const numbers = rows
-      .map((row) => row[spec.fieldIndex])
-      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
-    if (numbers.length === 0) return null
-    switch (spec.agg) {
-      case 'sum':
-        return numbers.reduce((total, value) => total + value, 0)
-      case 'average':
-        return numbers.reduce((total, value) => total + value, 0) / numbers.length
-      case 'max':
-        return Math.max(...numbers)
-      case 'min':
-        return Math.min(...numbers)
-    }
-  }
-
-  // Value/label filters: field caption → source column index; value filters
-  // reference a values entry index.
-  const filterEntries: PivotFilterDef[] = (op.filters ?? []).map((filter) =>
-    filter.kind === 'label'
-      ? { kind: 'label', field: fieldIndex(filter.field), op: filter.op, value: filter.value }
-      : {
-          kind: 'value',
-          field: fieldIndex(filter.field),
-          dataField: filter.valueIndex,
-          op: filter.op,
-          ...(filter.count !== undefined ? { count: filter.count } : {}),
-          ...(filter.from !== undefined ? { from: filter.from } : {}),
-          ...(filter.to !== undefined ? { to: filter.to } : {}),
-        },
-  )
-  // Label filters pick candidates by member label first; value filters then
-  // aggregate each candidate over the label-filtered rows before filtering
-  // (same criteria as the refresh engine's reapplyPivotFilters). Filtered-out
-  // members stay in the member table (sharedItems) — they are only dropped
-  // from layout and aggregation.
-  const membersOfField = (fieldIdx: number): string[] => {
-    const rowLevel = rowFieldIndices.indexOf(fieldIdx)
-    if (rowLevel >= 0) return levelItems[rowLevel]!
-    const colLevel = columnFieldIndices.indexOf(fieldIdx)
-    return colLevel >= 0 ? colLevelItems[colLevel]! : []
-  }
-  const hiddenByField = new Map<number, Set<string>>()
-  for (const filter of filterEntries) {
-    if (filter.kind !== 'label') continue
-    const hidden = hiddenByField.get(filter.field) ?? new Set<string>()
-    for (const member of membersOfField(filter.field)) {
-      if (!matchesLabelFilter(filter, member)) hidden.add(member)
-    }
-    hiddenByField.set(filter.field, hidden)
-  }
-  const rowVisible = (row: readonly (string | number | boolean | null)[]): boolean => {
-    for (const [fieldIdx, hidden] of hiddenByField) {
-      if (hidden.has(dimValue(fieldIdx, row))) return false
-    }
-    return true
-  }
-  for (const filter of filterEntries) {
-    if (filter.kind !== 'value') continue
-    const spec = valueSpecs[filter.dataField]
-    if (!spec) throw new Error(t('appValueFilterFieldMissing', { index: filter.dataField + 1 }))
-    const labelRows = grid.slice(1).filter(rowVisible)
-    const hidden = hiddenByField.get(filter.field) ?? new Set<string>()
-    const candidates = membersOfField(filter.field).filter((member) => !hidden.has(member))
-    const totals = candidates.map((member) => ({
-      key: member,
-      total: aggregate(
-        labelRows.filter((row) => dimValue(filter.field, row) === member),
-        spec,
-      ),
-    }))
-    const kept = allowedByValueFilter(filter, totals)
-    for (const member of candidates) {
-      if (!kept.has(member)) hidden.add(member)
-    }
-    hiddenByField.set(filter.field, hidden)
-  }
-  const visibleRows = grid.slice(1).filter(rowVisible)
-  // Hidden member indices per level (member-table order), written as pivotField
-  // hidden entries on save.
-  const hiddenIndexesOf = (
-    fieldIndices: readonly number[],
-    items: readonly (readonly string[])[],
-  ): number[][] =>
-    fieldIndices.map((fieldIdx, level) => {
-      const hidden = hiddenByField.get(fieldIdx)
-      if (!hidden) return []
-      return (items[level] ?? []).flatMap((member, index) => (hidden.has(member) ? [index] : []))
-    })
-  const rowHiddenItems = hiddenIndexesOf(rowFieldIndices, levelItems)
-  const colHiddenItems = hiddenIndexesOf(columnFieldIndices, colLevelItems)
-
-  // The combination set is enumerated over visible rows: combinations of
-  // filtered-out members naturally never enter the layout.
-  for (const row of visibleRows) {
-    const path: string[] = []
-    rowFieldIndices.forEach((fieldIdx) => {
-      path.push(dimValue(fieldIdx, row))
-      comboKeys.add(joinPath(path))
-    })
-    const colPath: string[] = []
-    columnFieldIndices.forEach((fieldIdx) => {
-      colPath.push(dimValue(fieldIdx, row))
-      colComboKeys.add(joinPath(colPath))
-    })
-  }
-
-  // Column layout lines (excluding the trailing grand-total column): data
-  // columns cover all levels, with a subtotal column appended after each
-  // non-leaf member; each line also records its member-label path for value
-  // lookup and header baking.
-  const colLines: { t: 'data' | 'default'; members: number[] }[] = []
-  const colLinePaths: string[][] = []
-  const emitColLevel = (path: string[], indices: number[], depth: number): void => {
-    colLevelItems[depth]!.forEach((member, memberIndex) => {
-      if (!colComboKeys.has(joinPath([...path, member]))) return
-      if (depth === colLevels - 1) {
-        colLines.push({ t: 'data', members: [...indices, memberIndex] })
-        colLinePaths.push([...path, member])
-      } else {
-        emitColLevel([...path, member], [...indices, memberIndex], depth + 1)
-        colLines.push({ t: 'default', members: [...indices, memberIndex] })
-        colLinePaths.push([...path, member])
-      }
-    })
-  }
-  if (colLevels > 0) emitColLevel([], [], 0)
-  if (colLines.length > 1_000) {
-    throw new Error(t('appPivotTooManyColLines'))
-  }
-
-  // Collect data rows matching (row-member prefix × column-member prefix); an
-  // empty prefix array = unbounded (i.e. the various grand totals; column
-  // subtotals map to shorter column prefixes). Filtered-out rows join no
-  // aggregation.
-  const bucketRows = (
-    prefix: readonly string[],
-    colPrefix: readonly string[],
-  ): (string | number | boolean | null)[][] =>
-    visibleRows.filter((row) => {
-      for (let level = 0; level < prefix.length; level += 1) {
-        if (dimValue(rowFieldIndices[level]!, row) !== prefix[level]) return false
-      }
-      for (let level = 0; level < colPrefix.length; level += 1) {
-        if (dimValue(columnFieldIndices[level]!, row) !== colPrefix[level]) return false
-      }
-      return true
-    })
-
-  // Second-pass normalization for "show values as" (percent) modes: the
-  // denominator re-aggregates by row prefix/column members, same criteria as
-  // the recompute engine's recomputePivotData (grand-total/subtotal cells
-  // included).
-  const applyShowDataAs = (
-    raw: number | null,
-    spec: (typeof valueSpecs)[number],
-    prefix: readonly string[],
-    colPrefix: readonly string[],
-  ): number | null => {
-    if (spec.showDataAs === undefined || raw === null) return raw
-    const base =
-      spec.showDataAs === 'percentOfTotal'
-        ? aggregate(bucketRows([], []), spec)
-        : spec.showDataAs === 'percentOfRow'
-          ? aggregate(bucketRows(prefix, []), spec)
-          : aggregate(bucketRows([], colPrefix), spec)
-    // Blank when the denominator is empty or 0 (Excel shows #DIV/0!; baking
-    // chooses to blank it).
-    return base === null || base === 0 ? null : raw / base
-  }
-
-  // One row's value cells: no column dimension = one column per data field;
-  // with column dimensions = one column per column line (data/subtotal) + the
-  // row grand-total column (the DSL guarantees a single data field here).
-  const valueCells = (prefix: readonly string[]): (number | null)[] => {
-    if (colLevels === 0) {
-      return valueSpecs.map((spec) =>
-        applyShowDataAs(aggregate(bucketRows(prefix, []), spec), spec, prefix, []),
-      )
-    }
-    const spec = valueSpecs[0]
-    if (!spec) throw new Error(t('appPivotNeedsValues'))
-    return [
-      ...colLinePaths.map((colPrefix) =>
-        applyShowDataAs(aggregate(bucketRows(prefix, colPrefix), spec), spec, prefix, colPrefix),
-      ),
-      applyShowDataAs(aggregate(bucketRows(prefix, []), spec), spec, prefix, []),
-    ]
-  }
-
-  // Bake the output grid: tabular layout, one column per row level; with
-  // multiple levels, non-leaf levels expand recursively with a subtotal row
-  // appended after their children. rowLines map one-to-one to data rows and
-  // are converted to <rowItems> by xlsx-pivot-add on save.
-  // Headers: 1 row without column dimensions; with them, one row per column
-  // level (row-field names go in the last row's label columns), and data
-  // columns write members level by level — the common prefix shared with the
-  // previous data column stays blank (mirroring colItems' r encoding), subtotal
-  // columns write the subtotal label on the next level's row, and the
-  // grand-total column writes on the first row.
-  const matrix: (string | number | null)[][] = []
-  if (colLevels === 0) {
-    matrix.push([...rowFieldsArray, ...valueSpecs.map((spec) => spec.caption)])
-  } else {
-    const totalWidth = levels + colLines.length + 1
-    const headers: (string | number | null)[][] = Array.from({ length: colLevels }, () =>
-      new Array<string | number | null>(totalWidth).fill(null),
-    )
-    rowFieldsArray.forEach((name, level) => {
-      headers[colLevels - 1]![level] = name
-    })
-    let previousColPath: readonly string[] | null = null
-    colLines.forEach((line, index) => {
-      const colOffset = levels + index
-      const path = colLinePaths[index]!
-      if (line.t === 'default') {
-        // Subtotal columns: write all fixed members, with the subtotal label on
-        // the next level's row.
-        path.forEach((member, level) => {
-          headers[level]![colOffset] = member
-        })
-        if (path.length < colLevels) headers[path.length]![colOffset] = t('appPivotSubtotal')
-        previousColPath = null
-      } else {
-        path.forEach((member, level) => {
-          if (previousColPath !== null && level < path.length - 1) {
-            let samePrefix = true
-            for (let k = 0; k <= level; k += 1) {
-              if (previousColPath[k] !== path[k]) {
-                samePrefix = false
-                break
-              }
-            }
-            if (samePrefix) return
-          }
-          headers[level]![colOffset] = member
-        })
-        previousColPath = path
-      }
-    })
-    headers[0]![levels + colLines.length] = 'Grand Total'
-    matrix.push(...headers)
-  }
-  const rowLines: { t: 'data' | 'default'; members: number[] }[] = []
-  // After entering a non-leaf member, its label shows on the first following
-  // leaf row.
-  const pendingLabels: (string | null)[] = new Array(Math.max(0, levels - 1)).fill(null)
-  const emitLevel = (path: string[], indices: number[], depth: number): void => {
-    levelItems[depth]!.forEach((member, memberIndex) => {
-      if (!comboKeys.has(joinPath([...path, member]))) return
-      if (depth === levels - 1) {
-        const labels: (string | null)[] = [...pendingLabels, member]
-        pendingLabels.fill(null)
-        matrix.push([...labels, ...valueCells([...path, member])])
-        rowLines.push({ t: 'data', members: [...indices, memberIndex] })
-      } else {
-        pendingLabels[depth] = member
-        emitLevel([...path, member], [...indices, memberIndex], depth + 1)
-        // Subtotal rows: fix the first depth+1 levels' members and write the
-        // subtotal label in the next label column.
-        const subtotalLabels: (string | null)[] = new Array(levels).fill(null)
-        for (let level = 0; level < depth; level += 1) subtotalLabels[level] = path[level]!
-        subtotalLabels[depth] = member
-        subtotalLabels[depth + 1] = '\u5c0f\u8ba1'
-        matrix.push([...subtotalLabels, ...valueCells([...path, member])])
-        rowLines.push({ t: 'default', members: [...indices, memberIndex] })
-      }
-    })
-  }
-  emitLevel([], [], 0)
-  if (rowLines.length > 20_000) {
-    throw new Error(t('appPivotTooManyRowLines'))
-  }
-  matrix.push([...rowFieldsArray.map((_, i) => (i === 0 ? 'Grand Total' : '')), ...valueCells([])])
-
-  const anchor = parseAddress(op.targetCell)
-  const height = matrix.length
-  const width = matrix[0]?.length ?? 0
-  const location = {
-    startRow: anchor.row,
-    startColumn: anchor.column,
-    endRow: anchor.row + height - 1,
-    endColumn: anchor.column + width - 1,
-  }
-  if (
-    targetSheetId === op.sheetId &&
-    location.startRow <= source.endRow &&
-    source.startRow <= location.endRow &&
-    location.startColumn <= source.endColumn &&
-    source.startColumn <= location.endColumn
-  ) {
+  const blockAnchor = parseAddress(op.targetCell)
+  const anchor = { row: blockAnchor.row + pageRows, column: blockAnchor.column }
+  const location = pivotOutputArea(anchor, layout)
+  const block = { ...location, startRow: blockAnchor.row }
+  if (targetSheetId === op.sheetId && areasOverlap(block, source)) {
     throw new Error(t('appPivotOverlapSource'))
   }
   const targetMeta = state.file.sheets.find((sheet) => sheet.id === targetSheetId)
+  const sessionTarget =
+    relayout !== undefined && 'sessionName' in relayout.target ? relayout.target.sessionName : null
+  const fileTarget =
+    relayout !== undefined && 'pivotPath' in relayout.target ? relayout.target : null
   for (const existing of targetMeta?.pivotRanges ?? []) {
     // When editing itself, overlapping the old output area is expected.
     if (
@@ -731,30 +425,20 @@ export function applyAiPivotAdd(
     ) {
       continue
     }
-    if (
-      location.startRow <= existing.endRow &&
-      existing.startRow <= location.endRow &&
-      location.startColumn <= existing.endColumn &&
-      existing.startColumn <= location.endColumn
-    ) {
-      throw new Error(t('appPivotOverlapExisting'))
-    }
+    if (areasOverlap(block, existing)) throw new Error(t('appPivotOverlapExisting'))
   }
   for (const pivot of state.editJournal.pivotAdds) {
-    if (pivot.sheetId !== targetSheetId) continue
-    if (
-      location.startRow <= pivot.location.endRow &&
-      pivot.location.startRow <= location.endRow &&
-      location.startColumn <= pivot.location.endColumn &&
-      pivot.location.startColumn <= location.endColumn
-    ) {
+    if (pivot.sheetId !== targetSheetId || pivot.name === sessionTarget) continue
+    if (areasOverlap(block, pivot.location)) {
       throw new Error(t('appPivotOverlapSession', { name: pivot.name }))
     }
   }
 
-  // When editing an existing pivot, name is just a placeholder — the saver
-  // keeps the original name from the file.
-  const name = relayout ? 'PivotEdit' : (op.name ?? nextSessionPivotName(state.editJournal))
+  // When editing a file pivot, name is just a placeholder — the saver keeps
+  // the original name from the file.
+  const name =
+    sessionTarget ??
+    (fileTarget ? 'PivotEdit' : (op.name ?? nextSessionPivotName(state.editJournal)))
   if (
     !relayout &&
     state.editJournal.pivotAdds.some((pivot) => pivot.name.toLowerCase() === name.toLowerCase())
@@ -763,7 +447,12 @@ export function applyAiPivotAdd(
   }
 
   if (relayout) {
-    const old = relayout.oldBounds
+    // The old block = report-filter rows + body; cleared and rewritten as one
+    // union so shrunken parts blank out.
+    const old = {
+      ...relayout.oldBounds,
+      startRow: relayout.oldBounds.startRow - relayout.oldPageRows,
+    }
     // Grown parts must be empty (same criteria as refresh growth); shrunken
     // parts are cleared via the union write.
     const assertEmpty = (row: number, column: number, rows: number, columns: number): void => {
@@ -779,48 +468,43 @@ export function applyAiPivotAdd(
         throw new Error(t('appPivotRelayoutOverlap'))
       }
     }
-    assertEmpty(old.endRow + 1, old.startColumn, location.endRow - old.endRow, width)
+    assertEmpty(old.endRow + 1, old.startColumn, block.endRow - old.endRow, width)
     assertEmpty(
       old.startRow,
       old.endColumn + 1,
-      Math.min(old.endRow, location.endRow) - old.startRow + 1,
-      location.endColumn - old.endColumn,
+      Math.min(old.endRow, block.endRow) - old.startRow + 1,
+      block.endColumn - old.endColumn,
     )
-    const totalRows = Math.max(height, old.endRow - old.startRow + 1)
+    const totalRows = Math.max(blockHeight, old.endRow - old.startRow + 1)
     const totalColumns = Math.max(width, old.endColumn - old.startColumn + 1)
     const padded = Array.from({ length: totalRows }, (_, rowIndex) => {
       const row = matrix[rowIndex] ?? []
       return Array.from({ length: totalColumns }, (_, colIndex) => row[colIndex] ?? null)
     })
     targetSheet
-      .getRange(anchor.row, anchor.column, totalRows, totalColumns)
+      .getRange(blockAnchor.row, blockAnchor.column, totalRows, totalColumns)
       .setValues(
         padded as unknown as Parameters<ReturnType<UniverWorksheet['getRange']>['setValues']>[0],
       )
   } else {
     targetSheet
-      .getRange(anchor.row, anchor.column, height, width)
+      .getRange(blockAnchor.row, blockAnchor.column, blockHeight, width)
       .setValues(
         matrix as unknown as Parameters<ReturnType<UniverWorksheet['getRange']>['setValues']>[0],
       )
   }
 
-  // Apply numFmt to value columns (data rows, skip header and grand total).
-  // Only applicable when there is no column field.
-  if (colLevels === 0) {
-    for (let vi = 0; vi < valueSpecs.length; vi += 1) {
-      const fmt = valueSpecs[vi]?.numFmt
-      if (!fmt) continue
-      const dataHeight = height - 2 // exclude header row and grand total row
-      if (dataHeight <= 0) continue
-      const colIdx = anchor.column + levels + vi
-      const startR = anchor.row + 1
-      const rangeStr = `${columnLabel(colIdx)}${startR + 1}:${columnLabel(colIdx)}${startR + dataHeight}`
-      applyFormatPatchToRange(targetSheet.getRange(rangeStr), { numberFormat: fmt })
-    }
+  // value columns' numFmt covers the data rows only (no header, no grand total)
+  const dataHeight = height - 2
+  for (const { columnOffset, format } of layout.numberFormats) {
+    if (dataHeight <= 0) break
+    const colIdx = anchor.column + columnOffset
+    const startR = anchor.row + 1
+    const rangeStr = `${columnLabel(colIdx)}${startR + 1}:${columnLabel(colIdx)}${startR + dataHeight}`
+    applyFormatPatchToRange(targetSheet.getRange(rangeStr), { numberFormat: format })
   }
 
-  const additionPayload: Parameters<typeof recordPivotAdd>[1] = {
+  const additionPayload: WorkbookPivotAdd = {
     sheetId: targetSheetId,
     sourceSheetId: op.sheetId,
     sourceArea: {
@@ -831,44 +515,31 @@ export function applyAiPivotAdd(
     },
     location,
     name,
-    fieldNames,
-    rowFieldIndices,
-    // Single-level columns keep the legacy columnFieldIndex/columnItems form;
-    // multi-level columns record columnFieldIndices + per-level members +
-    // column layout lines (symmetric with the row axis).
-    ...(colLevels === 1 ? { columnFieldIndex: columnFieldIndices[0]! } : {}),
-    ...(pageFieldIndices.length > 0 ? { pageFieldIndices } : {}),
-    rowItems,
-    rowLevelItems: levelItems,
-    rowLines,
-    ...(colLevels === 1 ? { columnItems: colLevelItems[0]! } : {}),
-    ...(colLevels >= 2 ? { columnFieldIndices, colLevelItems, colLines } : {}),
-    ...(groupings.length > 0 ? { groupings } : {}),
-    ...(filterEntries.length > 0 ? { filters: filterEntries, rowHiddenItems, colHiddenItems } : {}),
-    values: valueSpecs.map((spec) => ({
-      fieldIndex: spec.fieldIndex,
-      agg: spec.agg,
-      ...(spec.numFmt ? { numFmt: spec.numFmt } : {}),
-      ...(spec.showDataAs ? { showDataAs: spec.showDataAs } : {}),
-      ...(spec.formula !== undefined ? { formula: spec.formula, calcName: spec.calcName! } : {}),
-    })),
+    ...layout.definition,
   }
-  if (relayout) {
+  if (sessionTarget !== null) {
+    const at = state.editJournal.pivotAdds.findIndex((pivot) => pivot.name === sessionTarget)
+    if (at < 0) throw new Error(t('appSlicerPivotStale'))
+    state.editJournal.pivotAdds.splice(at, 1, additionPayload)
+    return { location, pageRows }
+  }
+  if (fileTarget !== null && relayout) {
     const newOutputRef =
       `${columnLabel(location.startColumn)}${location.startRow + 1}` +
       `:${columnLabel(location.endColumn)}${location.endRow + 1}`
-    recordPivotCacheRefresh(state.editJournal, relayout.cachePath)
+    recordPivotCacheRefresh(state.editJournal, fileTarget.cachePath)
     recordPivotRefreshUpdate(
       state.editJournal,
-      relayout.cachePath,
+      fileTarget.cachePath,
       targetSheetId,
       newOutputRef,
       additionPayload,
     )
     // The old in-memory definition is stale: after deletion, refresh/slicers
     // are disabled for it until save-and-reopen; saving reopens the session and
-    // re-parses the newly written definition.
-    state.pivotDefinitions.delete(relayout.pivotPath)
+    // re-parses the newly written definition. The pane keeps editing from the
+    // journaled relayout payload.
+    state.pivotDefinitions.delete(fileTarget.pivotPath)
     const staleRange = targetMeta?.pivotRanges.find(
       (range) =>
         range.startRow === relayout.oldBounds.startRow &&
@@ -880,11 +551,12 @@ export function applyAiPivotAdd(
       staleRange.endRow = location.endRow
       staleRange.endColumn = location.endColumn
     }
-    const pivotMeta = targetMeta?.pivotTables.find((entry) => entry.path === relayout.pivotPath)
+    const pivotMeta = targetMeta?.pivotTables.find((entry) => entry.path === fileTarget.pivotPath)
     if (pivotMeta) pivotMeta.outputRef = newOutputRef
-    return
+    return { location, pageRows }
   }
   recordPivotAdd(state.editJournal, additionPayload)
+  return { location, pageRows }
 }
 
 export function pivotConfigToOpParts(
@@ -892,7 +564,10 @@ export function pivotConfigToOpParts(
   fields: readonly PivotField[],
 ):
   | string
-  | Pick<AddPivotOperation, 'rowFields' | 'columnField' | 'groupings' | 'filters' | 'values'> {
+  | Pick<
+      AddPivotOperation,
+      'rowFields' | 'columnField' | 'pageFields' | 'groupings' | 'filters' | 'values'
+    > {
   // Multi-level rows: mapped to field captions in the dialog's order (outer
   // first).
   const rowFieldLabels: string[] = []
@@ -909,6 +584,12 @@ export function pivotConfigToOpParts(
     const label = fields[colFieldIndex]?.label
     if (!label) return t('appInvalidColumnField')
     columnFieldLabels.push(label)
+  }
+  const pageFields: NonNullable<AddPivotOperation['pageFields']> = []
+  for (const page of config.pageFields) {
+    const label = fields[page.fieldIndex]?.label
+    if (!label) return t('appInvalidPageField')
+    pageFields.push(page.item === null ? label : { field: label, item: page.item })
   }
   // Grouping modes: field index → field caption (DSL groupings reference
   // fields by caption).
@@ -952,14 +633,31 @@ export function pivotConfigToOpParts(
           agg: 'sum' as const,
           formula: v.formula.trim(),
           ...(v.showDataAs !== undefined ? { showDataAs: v.showDataAs } : {}),
+          ...(v.name?.trim() ? { name: v.name.trim() } : {}),
         }
       }
       const label = fields[v.fieldIndex]?.label
       if (!label) throw new Error(t('appInvalidValueFieldIndex', { index: v.fieldIndex }))
+      // "Show values as" base fields travel as header names; the base field
+      // must sit on rows or columns for the engine to resolve it.
+      let baseField: string | undefined
+      let baseItem: string | undefined
+      if (v.baseFieldIndex !== undefined) {
+        baseField = fields[v.baseFieldIndex]?.label
+        if (!baseField) throw new Error(t('appInvalidPivotBaseField'))
+        if (!rowFieldLabels.includes(baseField) && !columnFieldLabels.includes(baseField)) {
+          throw new Error(t('appInvalidPivotBaseField'))
+        }
+      }
+      if (baseField === undefined) baseItem = undefined
+      else if (v.baseItem !== undefined) baseItem = v.baseItem
       return {
         field: label,
         agg: v.agg,
         ...(v.showDataAs !== undefined ? { showDataAs: v.showDataAs } : {}),
+        ...(baseField !== undefined ? { baseField } : {}),
+        ...(baseItem !== undefined ? { baseItem } : {}),
+        ...(v.name?.trim() ? { name: v.name.trim() } : {}),
       }
     })
   } catch (error) {
@@ -968,6 +666,7 @@ export function pivotConfigToOpParts(
   return {
     rowFields: rowFieldLabels,
     ...(columnFieldLabels.length > 0 ? { columnField: columnFieldLabels } : {}),
+    ...(pageFields.length > 0 ? { pageFields } : {}),
     ...(groupingEntries.length > 0 ? { groupings: groupingEntries } : {}),
     ...(filterOps.length > 0 ? { filters: filterOps } : {}),
     values: valueFields,

@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { delimiter, join } from 'node:path'
+import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const args = process.argv.slice(2)
@@ -78,23 +78,14 @@ if (changedFiles.length === 0) {
   process.exit(0)
 }
 
-const prettierExecutable = join(
-  repoRoot,
-  'node_modules',
-  '.bin',
-  process.platform === 'win32' ? 'prettier.cmd' : 'prettier',
-)
+const prettierEntry = join(repoRoot, 'node_modules', 'prettier', 'bin', 'prettier.cjs')
 const prettierMode = mode === '--write' ? '--write' : '--check'
 const result = spawnSync(
-  prettierExecutable,
-  [prettierMode, '--ignore-unknown', '--', ...changedFiles],
+  process.execPath,
+  [prettierEntry, prettierMode, '--ignore-unknown', '--', ...changedFiles],
   {
     cwd: repoRoot,
     stdio: 'inherit',
-    env: {
-      ...process.env,
-      PATH: `${join(repoRoot, 'node_modules', '.bin')}${delimiter}${process.env.PATH}`,
-    },
   },
 )
 

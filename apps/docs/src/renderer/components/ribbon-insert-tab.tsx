@@ -1,19 +1,24 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
+import { getMarkRange } from '@tiptap/core'
 import type { Editor } from '@tiptap/core'
 import { ShapePreview, WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
-import type { ChartDisplay, HeaderFooter, NewChart } from '@genoffice/docx-engine'
-import { hfHasPageField, hfWithoutPageMarks } from '../editor/hf-dom'
+import type { ChartDisplay, NewChart } from '@genoffice/docx-engine'
+import { hfHasPageField, hfPageNumberOnly, hfWithoutPageMarks } from '../editor/hf-dom'
 import { EquationGallery, EquationModal } from './EquationModal'
-import { COVER_PRESETS, insertCoverPage, type CoverPreset } from '../editor/cover-pages'
+import {
+  COVER_PRESETS,
+  coverPageRange,
+  insertCoverPage,
+  removeCoverPage,
+  type CoverPreset,
+} from '../editor/cover-pages'
 import { startShapeDrawMode } from '../editor/shape-draw'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { useModalKeys } from './modal-keys'
 import {
   IconBook,
   IconCaret,
-  IconCheckbox,
-  IconCheckboxChecked,
   IconClose,
   IconComment,
   IconDoc,
@@ -44,8 +49,13 @@ import {
   insertShapeAt,
   insertTableAt,
   insertTextboxAt,
+  focusTextboxEditorAt,
+  TEXTBOX_WIDTH_EMU,
+  TEXTBOX_HEIGHT_EMU,
   insertTopLevelBlockAtSelection,
   insertWordArtAt,
+  MAX_TABLE_COLS,
+  MAX_TABLE_ROWS,
   setParaAttrs,
   toggleDropdown,
 } from './ribbon-tabs'
@@ -102,51 +112,6 @@ const SYMBOLS = [
   '⑨',
   '⑩',
 ]
-
-/** small dropdown editor for header/footer text */
-function HfEditor({
-  label,
-  current,
-  onApply,
-  onClose,
-}: {
-  label: string
-  current: string
-  onApply: (text: string) => void
-  onClose: () => void
-}) {
-  const { t } = useI18n()
-  const [text, setText] = useState(current)
-  return (
-    <div className="hf-menu">
-      <div className="hf-menu-title">{label}</div>
-      <input
-        autoFocus
-        value={text}
-        placeholder={t('ribbonHfPlaceholder', { label })}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            onApply(text.trim())
-            onClose()
-          }
-        }}
-      />
-      <div className="hf-menu-actions">
-        <button
-          className="btn-primary"
-          onClick={() => {
-            onApply(text.trim())
-            onClose()
-          }}
-        >
-          {t('ribbonOk')}
-        </button>
-        <button onClick={onClose}>{t('ribbonCancel')}</button>
-      </div>
-    </div>
-  )
-}
 
 /** all bookmarks in document order: name + owning node position + preview text */
 function collectBookmarks(editor: Editor): Array<{ name: string; pos: number; preview: string }> {
@@ -256,13 +221,14 @@ export function BookmarkModal({ editor, onClose }: { editor: Editor; onClose: ()
           )}
           {bookmarks.map((b) => (
             <div key={`${b.name}-${b.pos}`} className="bookmark-row">
-              <button className="bookmark-name" title={b.preview} onClick={() => jumpTo(b.pos)}>
+              <button className="bookmark-name" data-tip={b.preview} onClick={() => jumpTo(b.pos)}>
                 {b.name}
               </button>
               <span className="bookmark-preview">{b.preview}</span>
               <button
                 className="bookmark-del"
-                title={t('ribbonBookmarkDeleteTip')}
+                data-tip={t('ribbonBookmarkDeleteTip')}
+                aria-label={t('ribbonBookmarkDeleteTip')}
                 onClick={() => removeBookmark(b)}
               >
                 <IconClose size={12} />
@@ -461,21 +427,172 @@ export function ChartInsertModal({ editor, onClose }: { editor: Editor; onClose:
   )
 }
 
+/** Word's Insert Table dialog: explicit row/column counts beyond the hover grid's reach */
+export function TableInsertModal({
+  editor,
+  onClose,
+  onInserted,
+}: {
+  editor: Editor
+  onClose: () => void
+  onInserted?: () => void
+}) {
+  const { t } = useI18n()
+  const modalKeys = useModalKeys(onClose)
+  const [cols, setCols] = useState(5)
+  const [rows, setRows] = useState(2)
+
+  const insert = () => {
+    if (!editor.isEditable) return
+    insertTableAt(editor, rows, cols)
+    onInserted?.()
+    onClose()
+  }
+
+  const countInput = (label: string, value: number, max: number, set: (v: number) => void) => (
+    <label>
+      {label}
+      <input
+        type="number"
+        min={1}
+        max={max}
+        value={value}
+        onChange={(e) => {
+          const v = Math.round(Number(e.target.value))
+          set(Number.isFinite(v) ? Math.min(max, Math.max(1, v)) : 1)
+        }}
+        onKeyDown={(e) => e.key === 'Enter' && insert()}
+      />
+    </label>
+  )
+
+  return (
+    <div
+      className="modal-backdrop"
+      ref={modalKeys.ref}
+      onKeyDown={modalKeys.onKeyDown}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="modal">
+        <h2>{t('ribbonTableInsertDialog')}</h2>
+        <div className="font-dialog-row">
+          {countInput(t('ribbonTableColsLabel'), cols, MAX_TABLE_COLS, setCols)}
+          {countInput(t('ribbonTableRowsLabel'), rows, MAX_TABLE_ROWS, setRows)}
+        </div>
+        <div className="modal-actions">
+          <button className="btn-ghost" onClick={onClose}>
+            {t('ribbonCancel')}
+          </button>
+          <button className="btn-primary" onClick={insert}>
+            {t('ribbonOk')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** Insert Hyperlink dialog, shared by the ribbon and the native application menu */
 export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
   const { t } = useI18n()
   const modalKeys = useModalKeys(onClose)
-  const [linkText, setLinkText] = useState('')
-  const [linkUrl, setLinkUrl] = useState('')
+  // Word parity: with the caret on an existing hyperlink the dialog EDITS it
+  // — text and address pre-filled, plus Remove Link. Imported links carry the
+  // same mark as in-app ones, but there was no way to view, change, or
+  // remove any link after creation.
+  const [linkAtOpen] = useState(() => {
+    const { $from, empty } = editor.state.selection
+    const markType = editor.state.schema.marks.link
+    if (!markType) return null
+    const range = getMarkRange($from, markType)
+    if (!range) return null
+    // A non-empty selection reaching outside the link is a fresh insert over
+    // that selection, not an edit of the link under its endpoint.
+    const { from, to } = editor.state.selection
+    if (!empty && (from < range.from || to > range.to)) return null
+    // Read attrs from the run itself, not the selection: at the link's
+    // trailing edge $head.marks() drops inclusive:false marks, so
+    // getAttributes('link') comes back empty for a real link.
+    const attrs = editor.state.doc
+      .nodeAt(range.from)
+      ?.marks.find((mark) => mark.type === markType)?.attrs
+    if (!attrs) return null
+    return {
+      from: range.from,
+      to: range.to,
+      text: editor.state.doc.textBetween(range.from, range.to, ' '),
+      href: typeof attrs.href === 'string' ? attrs.href : '',
+      tooltip: typeof attrs.tooltip === 'string' ? attrs.tooltip : null,
+    }
+  })
+  // Word parity: selected text pre-populates the display-text field, so a
+  // select-then-link flow only needs the address.
+  const [selectionAtOpen] = useState(() => {
+    const { from, to } = editor.state.selection
+    return { from, to, text: from === to ? '' : editor.state.doc.textBetween(from, to, ' ') }
+  })
+  const [linkText, setLinkText] = useState(linkAtOpen ? linkAtOpen.text : selectionAtOpen.text)
+  const [linkUrl, setLinkUrl] = useState(linkAtOpen ? linkAtOpen.href : '')
 
   const insertLink = () => {
     const href = linkUrl.trim()
     const text = linkText.trim() || href
     if (!href || !editor.isEditable) return
+    if (linkAtOpen) {
+      if (text === linkAtOpen.text.trim()) {
+        // address-only change: re-mark the existing run so character
+        // formatting, comments and inline objects survive; the stored
+        // ScreenTip stays (Word keeps it on an address edit)
+        editor
+          .chain()
+          .focus()
+          .setTextSelection({ from: linkAtOpen.from, to: linkAtOpen.to })
+          .setMark('link', { href, rId: null, tooltip: linkAtOpen.tooltip })
+          .run()
+      } else {
+        editor
+          .chain()
+          .focus()
+          .deleteRange({ from: linkAtOpen.from, to: linkAtOpen.to })
+          .insertContentAt(linkAtOpen.from, {
+            type: 'text',
+            text,
+            marks: [{ type: 'link', attrs: { href, rId: null, tooltip: linkAtOpen.tooltip } }],
+          })
+          .run()
+      }
+    } else if (selectionAtOpen.text && text === selectionAtOpen.text.trim()) {
+      // untouched display text: mark the ORIGINAL selection instead of
+      // re-inserting plain text — character formatting, comments and inline
+      // objects in the selection survive
+      editor
+        .chain()
+        .focus()
+        .setTextSelection({ from: selectionAtOpen.from, to: selectionAtOpen.to })
+        .setMark('link', { href, rId: null })
+        .run()
+    } else {
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: 'text',
+          text,
+          marks: [{ type: 'link', attrs: { href, rId: null } }],
+        })
+        .run()
+    }
+    onClose()
+  }
+
+  const removeLink = () => {
+    if (!linkAtOpen || !editor.isEditable) return
+    // Word's Remove Hyperlink: the text stays, only the link goes.
     editor
       .chain()
       .focus()
-      .insertContent({ type: 'text', text, marks: [{ type: 'link', attrs: { href, rId: null } }] })
+      .setTextSelection({ from: linkAtOpen.from, to: linkAtOpen.to })
+      .unsetMark('link')
       .run()
     onClose()
   }
@@ -488,7 +605,7 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="modal">
-        <h2>{t('ribbonLinkInsertTitle')}</h2>
+        <h2>{t(linkAtOpen ? 'ribbonLinkEditTitle' : 'ribbonLinkInsertTitle')}</h2>
         <label>
           {t('ribbonLinkText')}
           <input
@@ -507,11 +624,16 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
           />
         </label>
         <div className="modal-actions">
+          {linkAtOpen && (
+            <button className="btn-ghost" onClick={removeLink}>
+              {t('ribbonLinkRemove')}
+            </button>
+          )}
           <button className="btn-ghost" onClick={onClose}>
             {t('ribbonCancel')}
           </button>
           <button className="btn-primary" disabled={!linkUrl.trim()} onClick={insertLink}>
-            {t('ribbonInsert')}
+            {t(linkAtOpen ? 'ribbonApply' : 'ribbonInsert')}
           </button>
         </div>
       </div>
@@ -564,15 +686,16 @@ export function InsertTab({
   onFooter,
   onPageNumFormat,
   onInsertField,
-  titlePg,
-  onTitlePg,
-  evenOddHf,
-  onEvenOddHf,
-  commentCount,
-  onShowComments,
+  onHfEdit,
+  canComment,
+  onNewComment,
+  isProtected,
+  commentsAllowed,
+  onTableInserted,
 }: InsertTabProps) {
   const { t } = useI18n()
   const [grid, setGrid] = useState<{ r: number; c: number }>({ r: 0, c: 0 })
+  const [tableDialogOpen, setTableDialogOpen] = useState(false)
   const [linkOpen, setLinkOpen] = useState(false)
   const [equationOpen, setEquationOpen] = useState(false)
   const [bookmarkOpen, setBookmarkOpen] = useState(false)
@@ -582,6 +705,7 @@ export function InsertTab({
   const insertTable = (rows: number, cols: number) => {
     insertTableAt(editor, rows, cols)
     setDropdown(() => null)
+    onTableInserted()
   }
 
   return (
@@ -593,7 +717,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonCoverPageTip')}
+              data-tip={t('ribbonCoverPageTip')}
               onClick={() => toggleDropdown(setDropdown, 'cover')}
             >
               <span className="rb-big-icon">
@@ -603,12 +727,12 @@ export function InsertTab({
               <span>{t('ribbonCoverPage')}</span>
             </button>
             {dropdown === 'cover' && (
-              <div className="cover-gallery">
+              <div data-rb-panel="" className="cover-gallery">
                 {COVER_PRESETS.map((preset) => (
                   <button
                     key={preset.id}
                     className="cover-card"
-                    title={t('ribbonInsertCoverTip', { name: preset.name })}
+                    data-tip={t('ribbonInsertCoverTip', { name: preset.name })}
                     onClick={() => {
                       insertCoverPage(editor, preset)
                       setDropdown(() => null)
@@ -618,13 +742,23 @@ export function InsertTab({
                     <span className="cover-card-name">{preset.name}</span>
                   </button>
                 ))}
+                <button
+                  className="cover-gallery-remove"
+                  disabled={!coverPageRange(editor.state.doc)}
+                  onClick={() => {
+                    removeCoverPage(editor)
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonRemoveCoverPage')}
+                </button>
               </div>
             )}
           </div>
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonBlankPageTip')}
+            data-tip={t('ribbonBlankPageTip')}
             onClick={() => insertBlankPageAt(editor)}
           >
             <span className="rb-big-icon">
@@ -635,7 +769,7 @@ export function InsertTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonPageBreakTip')}
+            data-tip={t('ribbonPageBreakTip')}
             onClick={() => insertPageBreakAt(editor)}
           >
             <span className="rb-big-icon">
@@ -655,7 +789,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonTableTip')}
+              data-tip={t('ribbonTableTip')}
               onClick={() => toggleDropdown(setDropdown, 'table')}
             >
               <span className="rb-big-icon">
@@ -665,15 +799,19 @@ export function InsertTab({
               <span>{t('ribbonTable')}</span>
             </button>
             {dropdown === 'table' && (
-              <div className="table-picker" onMouseLeave={() => setGrid({ r: 0, c: 0 })}>
+              <div
+                data-rb-panel=""
+                className="table-picker"
+                onMouseLeave={() => setGrid({ r: 0, c: 0 })}
+              >
                 <div className="table-picker-title">
                   {grid.r > 0
                     ? t('ribbonTableSize', { r: grid.r, c: grid.c })
                     : t('ribbonTablePickSize')}
                 </div>
                 <div className="table-picker-grid">
-                  {Array.from({ length: 6 }, (_, ri) =>
-                    Array.from({ length: 8 }, (_, ci) => (
+                  {Array.from({ length: 8 }, (_, ri) =>
+                    Array.from({ length: 10 }, (_, ci) => (
                       <button
                         key={`${ri}-${ci}`}
                         className={`table-cell ${ri < grid.r && ci < grid.c ? 'hot' : ''}`}
@@ -683,6 +821,15 @@ export function InsertTab({
                     )),
                   )}
                 </div>
+                <button
+                  className="table-picker-custom"
+                  onClick={() => {
+                    setDropdown(() => null)
+                    setTableDialogOpen(true)
+                  }}
+                >
+                  {t('ribbonTableInsertDialog')}
+                </button>
               </div>
             )}
           </div>
@@ -697,7 +844,7 @@ export function InsertTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonPictureTip')}
+            data-tip={t('ribbonPictureTip')}
             onClick={() => void insertImageViaDialog(editor)}
           >
             <span className="rb-big-icon">
@@ -708,7 +855,7 @@ export function InsertTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonChartTip')}
+            data-tip={t('ribbonChartTip')}
             onClick={() => setChartOpen(true)}
           >
             <span className="rb-big-icon">
@@ -720,7 +867,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonShapesTip')}
+              data-tip={t('ribbonShapesTip')}
               onClick={() => toggleDropdown(setDropdown, 'shape')}
             >
               <span className="rb-big-icon">
@@ -730,7 +877,7 @@ export function InsertTab({
               <span>{t('ribbonShapes')}</span>
             </button>
             {dropdown === 'shape' && (
-              <div className="shape-palette rb-shape-gallery">
+              <div data-rb-panel="" className="shape-palette rb-shape-gallery">
                 {DOC_SHAPE_GROUPS.map((group) => (
                   <div key={group.groupKey}>
                     <div className="rb-drop-title">{t(group.groupKey as StringKey)}</div>
@@ -739,7 +886,8 @@ export function InsertTab({
                         <button
                           key={s.prst}
                           className="rb-shape-cell"
-                          title={t(s.labelKey as StringKey)}
+                          data-tip={t(s.labelKey as StringKey)}
+                          aria-label={t(s.labelKey as StringKey)}
                           onClick={() => {
                             // Word parity: arm crosshair draw mode (click = default 1in
                             // square, drag = custom size, Shift = square, Esc = cancel)
@@ -767,22 +915,52 @@ export function InsertTab({
       {/* Text group: text box + WordArt + drop cap */}
       <div className="ribbon-group">
         <div className="ribbon-group-items">
-          <button
-            className="rb-big"
-            disabled={!hasDoc}
-            title={t('ribbonTextBoxTip')}
-            onClick={() => insertTextboxAt(editor)}
-          >
-            <span className="rb-big-icon">
-              <IconTextBox size={BIG} />
-            </span>
-            <span>{t('ribbonTextBox')}</span>
-          </button>
           <div className="rb-split-wrap">
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonWordArtTip')}
+              data-tip={t('ribbonTextBoxTip')}
+              onClick={() => toggleDropdown(setDropdown, 'textBox')}
+            >
+              <span className="rb-big-icon">
+                <IconTextBox size={BIG} />
+                <IconCaret />
+              </span>
+              <span>{t('ribbonTextBox')}</span>
+            </button>
+            {dropdown === 'textBox' && (
+              <div data-rb-panel="" className="layout-menu rb-textbox-menu">
+                <button
+                  onClick={() => {
+                    setDropdown(() => null)
+                    startShapeDrawMode(editor, 'rect', (opts) => insertTextboxAt(editor, opts), {
+                      clickSize: { widthEmu: TEXTBOX_WIDTH_EMU, heightEmu: TEXTBOX_HEIGHT_EMU },
+                      ghost: { fill: 'rgba(255,255,255,0.6)', border: '#000000' },
+                      onInserted: (pos) => focusTextboxEditorAt(editor, pos),
+                    })
+                  }}
+                >
+                  {t('ribbonTextBoxDraw')}
+                </button>
+                <button
+                  onClick={() => {
+                    setDropdown(() => null)
+                    const pos = insertTextboxAt(editor)
+                    if (pos != null) {
+                      requestAnimationFrame(() => focusTextboxEditorAt(editor, pos))
+                    }
+                  }}
+                >
+                  {t('ribbonTextBoxSimple')}
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="rb-split-wrap">
+            <button
+              className="rb-big"
+              disabled={!hasDoc}
+              data-tip={t('ribbonWordArtTip')}
               onClick={() => toggleDropdown(setDropdown, 'wordArt')}
             >
               <span className="rb-big-icon">
@@ -792,12 +970,12 @@ export function InsertTab({
               <span>{t('ribbonWordArt')}</span>
             </button>
             {dropdown === 'wordArt' && (
-              <div className="wordart-palette">
+              <div data-rb-panel="" className="wordart-palette">
                 {WORDART_PRESETS.map((p) => (
                   <button
                     key={p.id}
                     className="wordart-cell"
-                    title={t(p.nameKey as StringKey)}
+                    data-tip={t(p.nameKey as StringKey)}
                     style={{
                       color: p.fill,
                       WebkitTextStroke: p.outline
@@ -821,7 +999,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonDropCap')}
+              data-tip={t('ribbonDropCap')}
               onClick={() => toggleDropdown(setDropdown, 'dropCap')}
             >
               <span
@@ -834,7 +1012,7 @@ export function InsertTab({
               <span>{t('ribbonDropCap')}</span>
             </button>
             {dropdown === 'dropCap' && (
-              <div className="dropcap-menu">
+              <div data-rb-panel="" className="dropcap-menu">
                 {(
                   [
                     { val: null, label: t('ribbonNone'), desc: t('ribbonDropCapNoneDesc') },
@@ -853,7 +1031,7 @@ export function InsertTab({
                   <button
                     key={opt.label}
                     className="dropcap-option"
-                    title={opt.desc}
+                    data-tip={opt.desc}
                     onClick={() => {
                       setDropdown(() => null)
                       const newDropCap = opt.val
@@ -873,7 +1051,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonFieldTip')}
+              data-tip={t('ribbonFieldTip')}
               onClick={() => toggleDropdown(setDropdown, 'field')}
             >
               <span className="rb-big-icon" style={{ fontSize: 15, lineHeight: 1.2 }}>
@@ -883,7 +1061,7 @@ export function InsertTab({
               <span>{t('ribbonField')}</span>
             </button>
             {dropdown === 'field' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {(
                   [
                     ['DATE', t('ribbonFieldDate')],
@@ -919,7 +1097,7 @@ export function InsertTab({
             <button
               className="rb-small"
               disabled={!hasDoc}
-              title={t('ribbonLinkTip')}
+              data-tip={t('ribbonLinkTip')}
               onClick={() => setLinkOpen(true)}
             >
               <IconLink size={14} /> {t('ribbonLink')}
@@ -927,7 +1105,7 @@ export function InsertTab({
             <button
               className="rb-small"
               disabled={!hasDoc}
-              title={t('ribbonBookmarkTip')}
+              data-tip={t('ribbonBookmarkTip')}
               onClick={() => setBookmarkOpen(true)}
             >
               <IconBook size={14} /> {t('ribbonBookmark')}
@@ -935,7 +1113,7 @@ export function InsertTab({
             <button
               className="rb-small"
               disabled={!hasDoc}
-              title={t('ribbonCrossRefTip')}
+              data-tip={t('ribbonCrossRefTip')}
               onClick={() => setCrossRefOpen(true)}
             >
               <IconRefresh size={14} /> {t('ribbonCrossRef')}
@@ -949,15 +1127,15 @@ export function InsertTab({
 
       <div className="ribbon-group">
         <div className="ribbon-group-items">
+          {/* Word: Insert → Comment starts a new comment; the pane toggle stays on Review.
+              Deliberately not gated on this tab's hasDoc (= canEdit): under the comments-only
+              restriction the body is read-only yet commenting stays allowed, matching the
+              Review tab's New Comment. Without a document canComment is false anyway. */}
           <button
             className="rb-big"
-            disabled={!hasDoc}
-            title={
-              commentCount > 0
-                ? t('ribbonViewCommentsTip', { count: commentCount })
-                : t('ribbonViewCommentsNoneTip')
-            }
-            onClick={onShowComments}
+            disabled={!canComment || (isProtected && !commentsAllowed)}
+            data-tip={canComment ? t('ribbonNewCommentTip') : t('ribbonNewCommentSelectTip')}
+            onClick={onNewComment}
           >
             <span className="rb-big-icon">
               <IconComment size={BIG} />
@@ -976,7 +1154,7 @@ export function InsertTab({
             <button
               className={`rb-big ${header?.text ? 'active' : ''}`}
               disabled={!hasDoc}
-              title={t('ribbonHeaderTip')}
+              data-tip={t('ribbonHeaderTip')}
               onClick={() => toggleDropdown(setDropdown, 'header')}
             >
               <span className="rb-big-icon">
@@ -986,19 +1164,31 @@ export function InsertTab({
               <span>{t('ribbonHeader')}</span>
             </button>
             {dropdown === 'header' && (
-              <HfEditor
-                label={t('ribbonHeader')}
-                current={header?.text ?? ''}
-                onApply={(text) => onHeader({ text })}
-                onClose={() => setDropdown(() => null)}
-              />
+              <div data-rb-panel="" className="layout-menu">
+                <button
+                  onClick={() => {
+                    onHfEdit('header')
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonHfEditHeader')}
+                </button>
+                <button
+                  onClick={() => {
+                    onHeader({ text: '' })
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonHfRemoveHeader')}
+                </button>
+              </div>
             )}
           </div>
           <div className="rb-split-wrap">
             <button
               className={`rb-big ${footer?.text ? 'active' : ''}`}
               disabled={!hasDoc}
-              title={t('ribbonFooterTip')}
+              data-tip={t('ribbonFooterTip')}
               onClick={() => toggleDropdown(setDropdown, 'footer')}
             >
               <span className="rb-big-icon">
@@ -1008,19 +1198,31 @@ export function InsertTab({
               <span>{t('ribbonFooter')}</span>
             </button>
             {dropdown === 'footer' && (
-              <HfEditor
-                label={t('ribbonFooter')}
-                current={footer?.text ?? ''}
-                onApply={(text) => onFooter({ text, pageNumber: footer?.pageNumber ?? false })}
-                onClose={() => setDropdown(() => null)}
-              />
+              <div data-rb-panel="" className="layout-menu">
+                <button
+                  onClick={() => {
+                    onHfEdit('footer')
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonHfEditFooter')}
+                </button>
+                <button
+                  onClick={() => {
+                    onFooter({ text: '' })
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonHfRemoveFooter')}
+                </button>
+              </div>
             )}
           </div>
           <div className="rb-split-wrap">
             <button
               className={`rb-big ${footer?.pageNumber ? 'active' : ''}`}
               disabled={!hasDoc}
-              title={t('ribbonPageNumber')}
+              data-tip={t('ribbonPageNumber')}
               onClick={() => toggleDropdown(setDropdown, 'pagenum')}
             >
               <span className="rb-big-icon">
@@ -1030,7 +1232,7 @@ export function InsertTab({
               <span>{t('ribbonPageNumber')}</span>
             </button>
             {dropdown === 'pagenum' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {(
                   [
                     [t('ribbonPnTopLeft'), 'header', 'left'],
@@ -1044,13 +1246,7 @@ export function InsertTab({
                   <button
                     key={label}
                     onClick={() => {
-                      // Word gallery semantics: replace the area's content with a single page-number paragraph
-                      const hf: HeaderFooter = {
-                        text: '#',
-                        pageNumber: true,
-                        paras: [{ align, runs: [{ text: '#' }] }],
-                      }
-                      ;(kind === 'header' ? onHeader : onFooter)(hf)
+                      ;(kind === 'header' ? onHeader : onFooter)(hfPageNumberOnly(align))
                       setDropdown(() => null)
                     }}
                   >
@@ -1077,24 +1273,6 @@ export function InsertTab({
               </div>
             )}
           </div>
-          <div className="rb-col">
-            <button
-              className={`rb-small ${titlePg ? 'active' : ''}`}
-              disabled={!hasDoc}
-              title={t('ribbonDiffFirstPageTip')}
-              onClick={() => onTitlePg(!titlePg)}
-            >
-              {titlePg ? <IconCheckboxChecked /> : <IconCheckbox />} {t('ribbonDiffFirstPage')}
-            </button>
-            <button
-              className={`rb-small ${evenOddHf ? 'active' : ''}`}
-              disabled={!hasDoc}
-              title={t('ribbonDiffOddEvenTip')}
-              onClick={() => onEvenOddHf(!evenOddHf)}
-            >
-              {evenOddHf ? <IconCheckboxChecked /> : <IconCheckbox />} {t('ribbonDiffOddEven')}
-            </button>
-          </div>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupHeaderFooter')}</div>
       </div>
@@ -1107,7 +1285,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonSymbolTip')}
+              data-tip={t('ribbonSymbolTip')}
               onClick={() => toggleDropdown(setDropdown, 'symbol')}
             >
               <span className="rb-big-icon">
@@ -1117,7 +1295,7 @@ export function InsertTab({
               <span>{t('ribbonSymbol')}</span>
             </button>
             {dropdown === 'symbol' && (
-              <div className="symbol-palette">
+              <div data-rb-panel="" className="symbol-palette">
                 {SYMBOLS.map((s) => (
                   <button
                     key={s}
@@ -1137,7 +1315,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonEquationTip')}
+              data-tip={t('ribbonEquationTip')}
               onClick={() => toggleDropdown(setDropdown, 'equation')}
             >
               <span className="rb-big-icon">
@@ -1161,6 +1339,13 @@ export function InsertTab({
         <div className="ribbon-group-label">{t('ribbonGroupSymbols')}</div>
       </div>
 
+      {tableDialogOpen && (
+        <TableInsertModal
+          editor={editor}
+          onClose={() => setTableDialogOpen(false)}
+          onInserted={onTableInserted}
+        />
+      )}
       {linkOpen && <LinkInsertModal editor={editor} onClose={() => setLinkOpen(false)} />}
       {equationOpen && <EquationModal editor={editor} onClose={() => setEquationOpen(false)} />}
       {bookmarkOpen && <BookmarkModal editor={editor} onClose={() => setBookmarkOpen(false)} />}

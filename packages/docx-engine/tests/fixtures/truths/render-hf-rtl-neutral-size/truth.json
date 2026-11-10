@@ -1,0 +1,40 @@
+{
+  "id": "render-hf-rtl-neutral-size",
+  "title": "A header run of only neutral characters under w:rtl in a style with sz 32 szCs 22 is drawn at szCs (dashes in the cs face, the digit in the ascii face, both 11pt) and the strip is one 11pt line; without w:rtl the same run is 16pt",
+  "section": "word-truths.md#L743",
+  "probe_date": "2026-10-28",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf: margins 720, header 720, docDefaults Calibri 12, style basedOn Normal sz 32 szCs 22 cs Times New Roman. Page 1 (w:rtl run): em dashes TimesNewRomanPSMT 11.04, digit Calibri 11.04, baseline 46.56, body glyph top 49.54; page 2 (no w:rtl): Calibri 16.08, baseline 51.12, body 55.54. Variants probed the same day gave the same 11pt strip: PAGE field runs under w:rtl, a run with w:cs + w:rtl, cs Traditional Arabic (cloud face, rendered real) with and without w:bidi on the paragraph. This contradicts the corpus reading that such a run keeps the sz size",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 2
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 2,
+      "expect": 55.54,
+      "tol": 0.6,
+      "note": "control: no w:rtl, 16pt Calibri line; gen 57.96pt: the 16pt Calibri strip is 2.4pt taller than Word's 19.5",
+      "status": "failing"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 1,
+      "expect": 49.54,
+      "tol": 0.6,
+      "note": "w:rtl neutral run sized by szCs: an 11pt strip; gen 53.08pt: gen keeps the strip default size for the neutral rtl run (the corpus rule); Word probes size it by szCs",
+      "status": "failing"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 1,
+      "control": 2,
+      "expect": -6.0,
+      "tol": 0.6,
+      "status": "failing",
+      "note": "gen -4.88pt vs Word -6.0"
+    }
+  ],
+  "docx": "probe.docx"
+}

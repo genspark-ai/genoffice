@@ -9,6 +9,8 @@ export interface BuildDocxOptions {
   bodyXml: string
   /** extra <w:style> entries appended to the default styles.xml */
   extraStylesXml?: string
+  /** full word/styles.xml content, replacing the default (extraStylesXml ignored) */
+  stylesXml?: string
   withNumbering?: boolean
   /** full word/numbering.xml content (implies withNumbering) */
   numberingXml?: string
@@ -21,6 +23,24 @@ export interface BuildDocxOptions {
   binaryParts?: Array<{ path: string; base64: string; extension: string; contentType: string }>
   /** extra sectPr children inserted first (headerReference/footerReference…) */
   sectPrExtra?: string
+  /** full replacement <w:sectPr>…</w:sectPr> for the body (pgSz/pgMar and any
+   *  section property, e.g. landscape or columns); header/footer references
+   *  are injected at the front when headerXml/footerXml are set. Ignoring
+   *  sectPrExtra, which only ever prepends children to the default sectPr. */
+  sectPrXml?: string
+  /** inner XML of word/header1.xml (a <w:hdr> wrapper, its relationship, the
+   *  content-type override and the sectPr headerReference are all automatic) */
+  headerXml?: string
+  /** inner XML of word/footer1.xml, wired the same way as headerXml */
+  footerXml?: string
+  /** inner XML of word/_rels/header1.xml.rels (a Relationships wrapper is added
+   *  automatically); only meaningful together with headerXml — a header image
+   *  wires its media relationship through this */
+  headerRelsXml?: string
+  /** inner XML of word/_rels/footer1.xml.rels, wired the same way as headerRelsXml */
+  footerRelsXml?: string
+  /** extra attributes on the <w:document> root (e.g. xml:space="preserve") */
+  docRootExtraAttrs?: string
 }
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
@@ -64,15 +84,24 @@ export async function buildDocx(options: BuildDocxOptions): Promise<Uint8Array> 
     options.withImage ? '<Default Extension="png" ContentType="image/png"/>' : '',
     '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>',
     '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>',
+    options.headerXml !== undefined
+      ? '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
+      : '',
+    options.footerXml !== undefined
+      ? '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
+      : '',
     withNumbering
       ? '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>'
       : '',
-    ...(options.extraParts ?? []).map(
-      (p) => `<Override PartName="/${p.path}" ContentType="${p.contentType}"/>`,
-    ),
-    ...(options.binaryParts ?? []).map(
-      (p) => `<Default Extension="${p.extension}" ContentType="${p.contentType}"/>`,
-    ),
+    ...(options.extraParts ?? [])
+      // a .rels part (e.g. word/_rels/comments.xml.rels) is covered by the
+      // Default "rels" extension; an Override on it would be invalid
+      .filter((p) => !p.path.endsWith('.rels'))
+      .map((p) => `<Override PartName="/${p.path}" ContentType="${p.contentType}"/>`),
+    ...(options.binaryParts ?? [])
+      // withImage already adds the png Default; never emit a duplicate
+      .filter((p) => !(options.withImage && p.extension === 'png'))
+      .map((p) => `<Default Extension="${p.extension}" ContentType="${p.contentType}"/>`),
   ].join('')
   zip.file(
     '[Content_Types].xml',
@@ -95,25 +124,53 @@ export async function buildDocx(options: BuildDocxOptions): Promise<Uint8Array> 
       ? '<Relationship Id="rId10" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>'
       : '',
     options.extraRels ?? '',
+    options.headerXml !== undefined
+      ? '<Relationship Id="rIdH1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>'
+      : '',
+    options.footerXml !== undefined
+      ? '<Relationship Id="rIdF1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>'
+      : '',
   ].join('')
   zip.file(
     'word/_rels/document.xml.rels',
     `${XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${docRels}</Relationships>`,
   )
 
-  zip.file('word/styles.xml', `${STYLES_XML_OPEN}${options.extraStylesXml ?? ''}</w:styles>`)
+  zip.file(
+    'word/styles.xml',
+    options.stylesXml ?? `${STYLES_XML_OPEN}${options.extraStylesXml ?? ''}</w:styles>`,
+  )
   if (withNumbering) zip.file('word/numbering.xml', options.numberingXml ?? NUMBERING_XML)
+  if (options.headerXml !== undefined)
+    zip.file('word/header1.xml', `${XML_DECL}<w:hdr ${DOC_NS}>${options.headerXml}</w:hdr>`)
+  if (options.footerXml !== undefined)
+    zip.file('word/footer1.xml', `${XML_DECL}<w:ftr ${DOC_NS}>${options.footerXml}</w:ftr>`)
+  if (options.headerRelsXml !== undefined)
+    zip.file(
+      'word/_rels/header1.xml.rels',
+      `${XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${options.headerRelsXml}</Relationships>`,
+    )
+  if (options.footerRelsXml !== undefined)
+    zip.file(
+      'word/_rels/footer1.xml.rels',
+      `${XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${options.footerRelsXml}</Relationships>`,
+    )
   if (options.withImage) zip.file('word/media/image1.png', TINY_PNG_BASE64, { base64: true })
   for (const part of options.extraParts ?? []) zip.file(part.path, part.xml)
   for (const part of options.binaryParts ?? []) zip.file(part.path, part.base64, { base64: true })
 
-  const sectPr =
+  const baseSectPr =
+    options.sectPrXml ??
     `<w:sectPr>${options.sectPrExtra ?? ''}<w:pgSz w:w="11906" w:h="16838"/>` +
-    '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>' +
-    '</w:sectPr>'
+      '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>' +
+      '</w:sectPr>'
+  const hfRefs =
+    (options.headerXml !== undefined ? '<w:headerReference w:type="default" r:id="rIdH1"/>' : '') +
+    (options.footerXml !== undefined ? '<w:footerReference w:type="default" r:id="rIdF1"/>' : '')
+  const sectPr = hfRefs ? baseSectPr.replace('<w:sectPr>', `<w:sectPr>${hfRefs}`) : baseSectPr
   zip.file(
     'word/document.xml',
-    `${XML_DECL}<w:document ${DOC_NS}><w:body>${options.bodyXml}${sectPr}</w:body></w:document>`,
+    `${XML_DECL}<w:document ${DOC_NS}${options.docRootExtraAttrs ? ` ${options.docRootExtraAttrs}` : ''}><w:body>${options.bodyXml}${sectPr}</w:body></w:document>`,
   )
 
   // Pin zip entry mtimes (JSZip defaults them to "now") so regenerating the
@@ -239,6 +296,28 @@ export const REVISION_TABLE_XML =
   '<w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:del w:id="14" w:author="Alice" w:date="2026-01-01T00:00:00Z"><w:r><w:delText>B2del</w:delText></w:r></w:del></w:p></w:tc></w:tr>' +
   '<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/><w:cellIns w:id="15" w:author="Alice" w:date="2026-01-01T00:00:00Z"/></w:tcPr><w:p><w:r><w:t>A3</w:t></w:r></w:p></w:tc>' +
   '<w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>B3</w:t></w:r></w:p></w:tc></w:tr>' +
+  '</w:tbl>'
+
+export const PROP_REVISION_AT = 'w:author="Alice" w:date="2026-01-01T00:00:00Z"'
+const propCell = (text: string, tcPrExtra = '') =>
+  `<w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/>${tcPrExtra}</w:tcPr><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc>`
+
+/** every table-level property revision: tblPrChange, tblGridChange, tblPrExChange, trPrChange, tcPrChange, cellMerge */
+export const PROP_REVISION_TABLE_XML =
+  '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:jc w:val="center"/>' +
+  `<w:tblPrChange w:id="21" ${PROP_REVISION_AT}><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:jc w:val="left"/></w:tblPr></w:tblPrChange></w:tblPr>` +
+  '<w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/>' +
+  '<w:tblGridChange w:id="22"><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="5000"/></w:tblGrid></w:tblGridChange></w:tblGrid>' +
+  `<w:tr><w:tblPrEx><w:tblCellMar><w:left w:w="200" w:type="dxa"/></w:tblCellMar><w:tblPrExChange w:id="23" ${PROP_REVISION_AT}><w:tblPrEx/></w:tblPrExChange></w:tblPrEx>` +
+  `<w:trPr><w:trHeight w:val="600"/><w:trPrChange w:id="24" ${PROP_REVISION_AT}><w:trPr><w:trHeight w:val="300"/></w:trPr></w:trPrChange></w:trPr>` +
+  propCell(
+    'A1',
+    `<w:shd w:val="clear" w:color="auto" w:fill="FF0000"/><w:tcPrChange w:id="25" ${PROP_REVISION_AT}><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr></w:tcPrChange>`,
+  ) +
+  propCell('B1') +
+  '</w:tr>' +
+  `<w:tr>${propCell('A2', '<w:vMerge w:val="restart"/>')}${propCell('B2')}</w:tr>` +
+  `<w:tr>${propCell('', `<w:vMerge/><w:cellMerge w:id="26" ${PROP_REVISION_AT} w:vMerge="cont"/>`)}${propCell('B3')}</w:tr>` +
   '</w:tbl>'
 
 /** outer 1x2 table, cell A contains a 2x1 nested table (InnerA/InnerB) + trailing empty paragraph */

@@ -11,6 +11,7 @@ const target = {
   value: '',
   checked: false,
   multiLine: false,
+  dateFormat: null,
   readOnly: false,
   required: false,
   maxLen: null,
@@ -55,5 +56,32 @@ describe('signatureDrawingForField', () => {
     expect(startY).toBeGreaterThan(endY)
     expect(drawing.color).toEqual([0.1, 0.2, 0.3])
     expect(drawing.formFieldName).toBe('signature')
+  })
+
+  it('never writes NaN into a stroke path from a ragged or non-finite payload', () => {
+    // An odd-length path pairs its last coordinate with undefined; NaN here would
+    // reach the saved InkList, the annotation Rect and the form XObject BBox.
+    const drawing = signatureDrawingForField(
+      {
+        kind: 'strokes',
+        width: 100,
+        height: 50,
+        paths: [
+          [0, 0, 100, 50, 7],
+          [10, NaN, 20, 30],
+        ],
+      },
+      target,
+      [0, 0, 0],
+    )
+
+    expect(drawing.kind).toBe('ink')
+    if (drawing.kind !== 'ink') return
+    expect(drawing.paths[0]).toHaveLength(4)
+    expect(drawing.paths[1]).toEqual([expect.any(Number), expect.any(Number)])
+    for (const path of drawing.paths) {
+      expect(path.length % 2).toBe(0)
+      expect(path.every((n) => Number.isFinite(n))).toBe(true)
+    }
   })
 })

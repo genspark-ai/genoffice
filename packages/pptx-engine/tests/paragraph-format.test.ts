@@ -4,7 +4,9 @@
  */
 import { describe, it, expect } from 'vitest'
 import { parseSlide } from '../src/parse'
+import { generateParagraphXml } from '../src/generate'
 import { patchedElementXml, setElementParagraphFormat } from '../src/index'
+import { parseMasterTextStyles } from '../src/placeholder'
 import type { TextElement } from '../src/types'
 
 const slideWith = (sp: string) =>
@@ -32,9 +34,59 @@ describe('setElementParagraphFormat', () => {
     expect(setElementParagraphFormat(slide, el.id, { bullet: 'char' })).toBe(true)
     const out = patchedElementXml(el)
     expect(out.match(/<a:buChar char="•"\/>/g)!.length).toBe(2)
-    expect(out).toContain('marL="228600"')
-    expect(out).toContain('indent="-228600"')
+    expect(out).toContain('marL="285750"')
+    expect(out).toContain('indent="-285750"')
     expect(out).toContain(RUN) // original run bytes fully preserved
+  })
+
+  it('gallery preset: buFont written before buChar; a plain character drops the symbol font', () => {
+    const { slide, el } = parseOne('<a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r></a:p>')
+    setElementParagraphFormat(slide, el.id, {
+      bullet: 'char',
+      bulletChar: '§',
+      bulletFont: 'Wingdings',
+    })
+    expect(patchedElementXml(el)).toContain('<a:buFont typeface="Wingdings"/><a:buChar char="§"/>')
+    setElementParagraphFormat(slide, el.id, { bullet: 'char', bulletChar: '•' })
+    const out = patchedElementXml(el)
+    expect(out).not.toContain('buFont')
+    expect(out).toContain('<a:buChar char="•"/>')
+  })
+
+  it('picture bullet keeps its blip relationship through a size change', () => {
+    const { slide, el } = parseOne(
+      '<a:bodyPr/><a:p><a:pPr marL="342900" indent="-342900"><a:buBlip><a:blip r:embed="rId6"/></a:buBlip></a:pPr><a:r><a:t>x</a:t></a:r></a:p>',
+    )
+    setElementParagraphFormat(slide, el.id, { bulletSizePct: 150 })
+    const out = patchedElementXml(el)
+    expect(out).toContain('<a:buSzPct val="150000"/><a:buBlip><a:blip r:embed="rId6"/></a:buBlip>')
+    expect(out.match(/<a:buBlip>/g)!.length).toBe(1) // the original element is lifted, not duplicated
+  })
+
+  it('picture bullet inherited from the master: a size change writes no glyph, the picture keeps inheriting', () => {
+    const master =
+      '<?xml version="1.0"?><p:sldMaster xmlns:p="p" xmlns:a="a" xmlns:r="r"><p:cSld><p:spTree><p:nvGrpSpPr/><p:grpSpPr/></p:spTree></p:cSld>' +
+      '<p:txStyles><p:bodyStyle><a:lvl1pPr marL="342900" indent="-342900"><a:buBlip><a:blip r:embed="rId9"/></a:buBlip></a:lvl1pPr></p:bodyStyle></p:txStyles></p:sldMaster>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(
+        '<p:sp><p:nvSpPr><p:cNvPr id="3" name="Body"/><p:nvSpPr/><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>' +
+          '<p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r></a:p></p:txBody></p:sp>',
+      ),
+      ctx: {
+        masterTextStyles: parseMasterTextStyles(
+          master,
+          undefined,
+          new Map([['rId9', 'ppt/media/m.png']]),
+        ),
+      },
+    })
+    const el = slide.elements[0] as TextElement
+    expect(el.text!.paragraphs[0]!.bullet).toEqual({ type: 'blip', mediaRef: 'ppt/media/m.png' })
+    setElementParagraphFormat(slide, el.id, { bulletSizePct: 150 })
+    const out = patchedElementXml(el)
+    expect(out).toContain('<a:buSzPct val="150000"/>')
+    expect(out).not.toMatch(/buBlip|buChar|rId9/)
   })
 
   it('custom bullet character written as buChar', () => {
@@ -86,6 +138,28 @@ describe('setElementParagraphFormat', () => {
     expect(el.text!.paragraphs[1]!.bullet).toBeUndefined()
   })
 
+  it('a new bullet color replaces a captured theme buClr node (no stale schemeClr)', () => {
+    const theme = { colors: { accent1: '4472C4', dk1: '000000', lt1: 'FFFFFF' } } as any
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(
+        spWith(
+          '<a:bodyPr/><a:p><a:pPr marL="228600" indent="-228600">' +
+            '<a:buClr><a:schemeClr val="accent1"><a:lumMod val="75000"/></a:schemeClr></a:buClr>' +
+            '<a:buChar char="•"/></a:pPr><a:r><a:t>x</a:t></a:r></a:p>',
+        ),
+      ),
+      ctx: { theme },
+    })
+    const el = slide.elements[0] as TextElement
+    expect(el.text!.paragraphs[0]!.bullet!.colorNodeXml).toContain('schemeClr')
+    setElementParagraphFormat(slide, el.id, { bulletColor: '#0070C0' })
+    expect(el.text!.paragraphs[0]!.bullet!.colorNodeXml).toBeUndefined()
+    const out = patchedElementXml(el)
+    expect(out).toContain('<a:buClr><a:srgbClr val="0070C0"/></a:buClr>')
+    expect(out).not.toContain('schemeClr')
+  })
+
   it('changing the bullet glyph keeps existing color/size', () => {
     const { slide, el } = parseOne('<a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r></a:p>')
     setElementParagraphFormat(slide, el.id, { bullet: 'char' })
@@ -101,6 +175,42 @@ describe('setElementParagraphFormat', () => {
     const { slide, el } = parseOne('<a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r></a:p>')
     setElementParagraphFormat(slide, el.id, { bullet: 'number' })
     expect(patchedElementXml(el)).toContain('<a:buAutoNum type="arabicPeriod"/>')
+  })
+
+  it('numbering scheme and start number written on buAutoNum; a scheme change alone re-schemes numbered paragraphs only', () => {
+    const { slide, el } = parseOne(
+      '<a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r></a:p><a:p><a:r><a:t>y</a:t></a:r></a:p>',
+    )
+    setElementParagraphFormat(
+      slide,
+      el.id,
+      { bullet: 'number', numType: 'romanUcPeriod', startAt: 4 },
+      [0],
+    )
+    setElementParagraphFormat(slide, el.id, { bullet: 'char' }, [1])
+    expect(patchedElementXml(el)).toContain('<a:buAutoNum type="romanUcPeriod" startAt="4"/>')
+    setElementParagraphFormat(slide, el.id, { numType: 'alphaLcParenR' })
+    const out = patchedElementXml(el)
+    expect(out).toContain('<a:buAutoNum type="alphaLcParenR" startAt="4"/>')
+    expect(out.match(/<a:buChar char="•"\/>/g)!.length).toBe(1)
+    // Re-applying plain numbering keeps the scheme and start
+    setElementParagraphFormat(slide, el.id, { bullet: 'number' }, [0])
+    expect(patchedElementXml(el)).toContain('<a:buAutoNum type="alphaLcParenR" startAt="4"/>')
+  })
+
+  it('picture bullet: a landed media rel is written as buBlip with the hanging indent', () => {
+    const { slide, el } = parseOne('<a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r></a:p>')
+    setElementParagraphFormat(slide, el.id, {
+      bullet: 'blip',
+      bulletBlip: { mediaRef: 'ppt/media/image7.png', blipEmbedId: 'rId9' },
+    })
+    const out = patchedElementXml(el)
+    expect(out).toContain('<a:buBlip><a:blip r:embed="rId9"/></a:buBlip>')
+    expect(out).toContain('indent="-285750"')
+    expect(el.text!.paragraphs[0]!.bullet).toMatchObject({
+      type: 'blip',
+      mediaRef: 'ppt/media/image7.png',
+    })
   })
 
   it('remove bullet: buNone + indent reset to zero; existing explicit buChar replaced', () => {
@@ -151,18 +261,52 @@ describe('setElementParagraphFormat', () => {
   })
 })
 
+describe('paragraph direction rtl', () => {
+  it('rtl=true injects rtl="1" on pPr, run bytes untouched', () => {
+    const RUN = '<a:r><a:rPr sz="1800"/><a:t>Hi</a:t></a:r>'
+    const { slide, el } = parseOne(`<a:bodyPr/><a:p>${RUN}</a:p>`)
+    expect(setElementParagraphFormat(slide, el.id, { rtl: true })).toBe(true)
+    const out = patchedElementXml(el)
+    expect(out).toContain('rtl="1"')
+    expect(out).toContain(RUN)
+    expect(el.text!.paragraphs[0]!.rtl).toBe(true)
+  })
+
+  it('rtl=false rewrites an existing rtl="1" to rtl="0" (explicit LTR base)', () => {
+    const { slide, el } = parseOne(
+      '<a:bodyPr/><a:p><a:pPr rtl="1" algn="r"/><a:r><a:t>x</a:t></a:r></a:p>',
+    )
+    setElementParagraphFormat(slide, el.id, { rtl: false })
+    const out = patchedElementXml(el)
+    expect(out).toContain('rtl="0"')
+    expect(out).not.toContain('rtl="1"')
+    expect(out).toContain('algn="r"') // untouched sibling attribute
+    expect(el.text!.paragraphs[0]!.rtl).toBe(false)
+  })
+})
+
 describe('multi-level indentation indentDelta', () => {
+  it('bounds imported paragraph levels before numbering layout', () => {
+    const { el } = parseOne(
+      '<a:bodyPr/>' +
+        '<a:p><a:pPr lvl="20000000"><a:buAutoNum type="arabicPeriod"/></a:pPr><a:r><a:t>huge</a:t></a:r></a:p>' +
+        '<a:p><a:pPr lvl="-4"/><a:r><a:t>negative</a:t></a:r></a:p>' +
+        '<a:p><a:r><a:t>normal</a:t></a:r></a:p>',
+    )
+    expect(el.text!.paragraphs.map((p) => p.level)).toEqual([8, 0, undefined])
+  })
+
   it('increasing level writes lvl, own bullet hanging indent grows with the level', () => {
     const { slide, el } = parseOne('<a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r></a:p>')
     setElementParagraphFormat(slide, el.id, { bullet: 'char' })
     setElementParagraphFormat(slide, el.id, { indentDelta: 1 })
     const out = patchedElementXml(el)
     expect(out).toContain('lvl="1"')
-    expect(out).toContain('marL="457200"') // 228600 * (1+1)
+    expect(out).toContain('marL="571500"') // 285750 * (1+1)
     setElementParagraphFormat(slide, el.id, { indentDelta: -1 })
     const out2 = patchedElementXml(el)
     expect(out2).not.toContain('lvl=')
-    expect(out2).toContain('marL="228600"')
+    expect(out2).toContain('marL="285750"')
   })
 
   it('level clamped between 0 and 8', () => {
@@ -211,5 +355,140 @@ describe('per-paragraph paraIndices (editing-mode selection)', () => {
     const { slide, el } = parseOne(TWO_PARAS)
     expect(setElementParagraphFormat(slide, el.id, { bullet: 'char' }, [9])).toBe(false)
     expect(el.dirtyPPr).toBeUndefined()
+  })
+})
+
+describe('empty paragraph endParaRPr', () => {
+  it('empty paragraph takes its line style from endParaRPr (marker run)', () => {
+    const { el } = parseOne(
+      '<a:bodyPr/><a:p><a:r><a:rPr sz="2000"/><a:t>X</a:t></a:r></a:p>' +
+        '<a:p><a:endParaRPr sz="8000" b="1"/></a:p>',
+    )
+    const p = el.text!.paragraphs[1]!
+    expect(p.runs.length).toBe(1)
+    expect(p.runs[0]!.text).toBe('')
+    expect(p.runs[0]!.fontSize).toBe(80)
+    expect(p.runs[0]!.bold).toBe(true)
+  })
+
+  it("endParaRPr overrides an empty run's own rPr (probe-measured PowerPoint rule)", () => {
+    const { el } = parseOne(
+      '<a:bodyPr/><a:p><a:r><a:rPr sz="1400"/><a:t></a:t></a:r>' +
+        '<a:endParaRPr sz="8000"/></a:p>',
+    )
+    const p = el.text!.paragraphs[0]!
+    expect(p.runs.length).toBe(1)
+    expect(p.runs[0]!.fontSize).toBe(80)
+  })
+
+  it('a paragraph with real text keeps its runs (endParaRPr ignored)', () => {
+    const { el } = parseOne(
+      '<a:bodyPr/><a:p><a:r><a:rPr sz="2000"/><a:t>Hello</a:t></a:r>' +
+        '<a:endParaRPr sz="8000"/></a:p>',
+    )
+    const p = el.text!.paragraphs[0]!
+    expect(p.runs[0]!.text).toBe('Hello')
+    expect(p.runs[0]!.fontSize).toBe(20)
+  })
+})
+
+describe('East Asian language tag (line-breaking rules)', () => {
+  const runs = (txBodyInner: string) => parseOne(txBodyInner).el.text!.paragraphs[0]!.runs
+  const eaLang = (txBodyInner: string) => runs(txBodyInner).map((r) => r.eaLang ?? null)
+
+  it('lang or altLang picks the language; en-US is "none"; no tag at all leaves it unset', () => {
+    expect(
+      eaLang(
+        '<a:bodyPr/><a:p>' +
+          '<a:r><a:rPr lang="ko-KR"/><a:t>\uac00</a:t></a:r>' +
+          '<a:r><a:rPr lang="en-US" altLang="ko-KR"/><a:t>\ub098</a:t></a:r>' +
+          '<a:r><a:rPr/><a:t>\ub2e4</a:t></a:r>' +
+          '<a:r><a:rPr lang="en-US"/><a:t>\ub77c</a:t></a:r>' +
+          '<a:r><a:rPr lang="ja-JP" altLang="en-US"/><a:t>\u3042</a:t></a:r>' +
+          '<a:r><a:rPr lang="zh-CN"/><a:t>\u4e2d</a:t></a:r>' +
+          '<a:r><a:rPr lang="zh-TW"/><a:t>\u4e2d</a:t></a:r>' +
+          '</a:p>',
+      ),
+    ).toEqual(['ko', 'ko', null, 'none', 'ja', 'sc', 'tc'])
+  })
+
+  it('an inherited lstStyle lang counts, en-US included; an explicit run lang overrides it', () => {
+    const KO_LEVEL = '<a:lstStyle><a:lvl1pPr><a:defRPr lang="ko-KR"/></a:lvl1pPr></a:lstStyle>'
+    const EN_LEVEL = '<a:lstStyle><a:lvl1pPr><a:defRPr lang="en-US"/></a:lvl1pPr></a:lstStyle>'
+    expect(
+      eaLang(
+        `<a:bodyPr/>${KO_LEVEL}<a:p>` +
+          '<a:r><a:rPr/><a:t>\uac00</a:t></a:r>' +
+          '<a:r><a:rPr lang="en-US"/><a:t>\ub098</a:t></a:r>' +
+          '</a:p>',
+      ),
+    ).toEqual(['ko', 'none'])
+    // an inherited en-US is still a tag: the default editing language does not apply
+    expect(eaLang(`<a:bodyPr/>${EN_LEVEL}<a:p><a:r><a:rPr/><a:t>\u3042</a:t></a:r></a:p>`)).toEqual(
+      ['none'],
+    )
+  })
+
+  it('the run keeps its own lang/altLang, and a regenerated run writes them back', () => {
+    const [run] = runs(
+      '<a:bodyPr/><a:p><a:r><a:rPr lang="ja-JP" altLang="en-US" sz="1800"/><a:t>\u3042</a:t></a:r></a:p>',
+    )
+    expect(run).toMatchObject({ lang: 'ja-JP', altLang: 'en-US', eaLang: 'ja' })
+    const { el } = parseOne(
+      '<a:bodyPr/><a:p><a:r><a:rPr lang="ja-JP" altLang="en-US"/><a:t>\u3042</a:t></a:r></a:p>',
+    )
+    const out = generateParagraphXml(el.text!.paragraphs[0]!)
+    expect(out).toContain('lang="ja-JP"')
+    expect(out).toContain('altLang="en-US"')
+  })
+})
+
+describe('East Asian wrap flags', () => {
+  it('eaLnBrk/latinLnBrk/hangingPunct parse from pPr and are written back by the generator', () => {
+    const { el } = parseOne(
+      '<a:bodyPr/><a:p><a:pPr eaLnBrk="0" latinLnBrk="1" hangingPunct="0"/><a:r><a:t>Hi</a:t></a:r></a:p>',
+    )
+    const p = el.text!.paragraphs[0]!
+    expect(p.eaLnBrk).toBe(false)
+    expect(p.latinLnBrk).toBe(true)
+    expect(p.hangingPunct).toBe(false)
+    const out = generateParagraphXml(p)
+    expect(out).toContain('eaLnBrk="0"')
+    expect(out).toContain('latinLnBrk="1"')
+    expect(out).toContain('hangingPunct="0"')
+    // defaults stay implicit
+    expect(generateParagraphXml({ runs: [{ text: 'a' }] })).not.toMatch(
+      /eaLnBrk|latinLnBrk|hangingPunct/,
+    )
+  })
+
+  it('hangingPunct="0" on the master bodyStyle level reaches a body placeholder paragraph; the rebuild path keeps it inherited', () => {
+    const master =
+      '<?xml version="1.0"?><p:sldMaster xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><p:nvGrpSpPr/><p:grpSpPr/></p:spTree></p:cSld>' +
+      '<p:txStyles><p:bodyStyle><a:lvl1pPr hangingPunct="0" eaLnBrk="0"/><a:lvl2pPr hangingPunct="1"/></p:bodyStyle></p:txStyles></p:sldMaster>'
+    const body = (inner: string) =>
+      '<p:sp><p:nvSpPr><p:cNvPr id="3" name="Body"/><p:nvSpPr/><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>' +
+      `<p:spPr/><p:txBody><a:bodyPr/>${inner}</p:txBody></p:sp>`
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(
+        body(
+          '<a:p><a:r><a:t>a</a:t></a:r></a:p>' +
+            '<a:p><a:pPr lvl="1"/><a:r><a:t>b</a:t></a:r></a:p>' +
+            '<a:p><a:pPr hangingPunct="1"/><a:r><a:t>c</a:t></a:r></a:p>',
+        ),
+      ),
+      ctx: { masterTextStyles: parseMasterTextStyles(master, undefined, new Map()) },
+    })
+    const [a, b, c] = (slide.elements[0] as TextElement).text!.paragraphs
+    expect(a!.hangingPunct).toBe(false)
+    expect(a!.eaLnBrk).toBe(false)
+    expect(b!.hangingPunct).toBe(true)
+    expect(c!.hangingPunct).toBe(true)
+    // inherited values stay implicit; the explicit override over the master's 0 survives
+    expect(generateParagraphXml(a!)).not.toMatch(/hangingPunct|eaLnBrk/)
+    expect(generateParagraphXml(b!)).not.toMatch(/hangingPunct/)
+    expect(generateParagraphXml(c!)).toContain('hangingPunct="1"')
+    expect(generateParagraphXml(c!)).not.toMatch(/eaLnBrk/)
   })
 })

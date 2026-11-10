@@ -33,6 +33,8 @@ const ALLOWED = new Set([
  * verified manually against the LICENSE file shipped in the package. */
 const EXCEPTIONS = {
   '@univerjs/telemetry': 'Apache-2.0',
+  // mermaid dependency; ships an MIT `license` file but no package.json field
+  khroma: 'MIT',
 }
 
 /** Minimal SPDX expression check: OR passes if any branch is allowed,
