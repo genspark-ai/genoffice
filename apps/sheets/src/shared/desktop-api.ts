@@ -2114,6 +2114,41 @@ export const externalLinkOpsSchema = z
   .strict()
 export type ExternalLinkOps = z.infer<typeof externalLinkOpsSchema>
 
+/// A copied range as the Windows clipboard helper consumes it: displayed text
+/// plus per-cell alignment, geometry in the grid's pixel units (genoffice#1985
+/// stage 1 — the helper turns this into an EMF so CAD paste dialogs offer a
+/// "Picture (Enhanced Metafile)" entry).
+export const copyEmfRequestSchema = z
+  .object({
+    colWidths: z.array(z.number().finite().min(0)).min(1).max(16_384),
+    rowHeights: z.array(z.number().finite().min(0)).min(1).max(1_048_576),
+    cells: z
+      .array(
+        z
+          .array(
+            z.object({
+              v: z.string().max(32_000),
+              a: z.enum(['l', 'r', 'c']),
+            }),
+          )
+          .max(16_384),
+      )
+      .min(1)
+      .max(1_048_576),
+    merges: z
+      .array(
+        z.object({
+          r: z.number().int().min(0),
+          c: z.number().int().min(0),
+          rs: z.number().int().min(1),
+          cs: z.number().int().min(1),
+        }),
+      )
+      .max(2_000),
+  })
+  .strict()
+export type CopyEmfRequest = z.infer<typeof copyEmfRequestSchema>
+
 export const workbookSaveRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
@@ -3585,6 +3620,11 @@ export interface DesktopApi {
   /// Persists a clipboard-pasted image (no local path) to a temp file and adds it
   /// as an attachment
   addPastedImage(data: ArrayBuffer, ext: string): Promise<AttachmentAddResult>
+  /// Appends the copied range's EMF rendering to the Windows clipboard, so
+  /// CAD paste dialogs offer it as a picture. A no-op off Windows and a
+  /// silent failure without the helper: the EMF is an extra clipboard format,
+  /// never a required one.
+  appendCopyEmf(request: CopyEmfRequest): Promise<{ ok: boolean }>
   /// Reads one chunk of an attachment's extracted text
   readAttachment(path: string, offset: number, maxChars: number): Promise<AttachmentReadResult>
   /// Reads an image attachment as base64 for multimodal input (≤5MB)

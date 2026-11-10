@@ -17,6 +17,7 @@ import { ISheetClipboardService } from '@univerjs/sheets-ui'
 import { formatAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
 import { FULL_LOAD_MAX_CELLS } from './app-constants'
 import { clipboardField } from './clipboard-tsv'
+import { emitCopyEmf } from './copy-emf'
 import { t } from './i18n/locale'
 import { ensureLazyRangeLoaded, readCopySourceDirect, type RawCopyCell } from './univer-sync'
 import {
@@ -150,7 +151,13 @@ export function installCopyMaterialize(
   const originalCut = clipboardService.cut.bind(clipboardService)
   clipboardService.copy = async (options?: unknown) => {
     const outcome = await materializeSelection(runtime, lazyWorkbookRef, setMessage, 'copy')
-    return outcome === 'grid' ? originalCopy(options) : outcome === 'done'
+    if (outcome !== 'grid') return outcome === 'done'
+    const result = await originalCopy(options)
+    // The clipboard now carries the text/html formats; append the EMF beside
+    // them so CAD paste dialogs offer the selection as a picture (silent on
+    // any failure, and a no-op off Windows).
+    emitCopyEmf(runtime)
+    return result
   }
   clipboardService.cut = async () => {
     const outcome = await materializeSelection(runtime, lazyWorkbookRef, setMessage, 'cut')
