@@ -9,7 +9,11 @@ const W_TRANS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 const W_STRICT = 'http://purl.oclc.org/ooxml/wordprocessingml/main'
 const R_STRICT = 'http://purl.oclc.org/ooxml/officeDocument/relationships'
 
-async function buildDocxBytes(documentXml: string, relsXml?: string): Promise<Uint8Array> {
+async function buildDocxBytes(
+  documentXml: string,
+  relsXml?: string,
+  stylesXml?: string,
+): Promise<Uint8Array> {
   const zip = new JSZip()
   zip.file(
     '[Content_Types].xml',
@@ -26,6 +30,7 @@ async function buildDocxBytes(documentXml: string, relsXml?: string): Promise<Ui
       '</Relationships>',
   )
   if (relsXml) zip.file('word/_rels/document.xml.rels', relsXml)
+  if (stylesXml) zip.file('word/styles.xml', stylesXml)
   zip.file('word/document.xml', documentXml)
   return zip.generateAsync({ type: 'uint8array' })
 }
@@ -35,6 +40,19 @@ describe('needsOoxmlNormalization', () => {
     expect(needsOoxmlNormalization(`<w:document xmlns:w="${W_TRANS}"><w:body/></w:document>`)).toBe(
       false,
     )
+  })
+
+  it('detects universal measures on w: attributes of a transitional part', () => {
+    expect(
+      needsOoxmlNormalization(
+        `<w:document xmlns:w="${W_TRANS}"><w:body><w:p><w:r><w:rPr><w:sz w:val="4.3mm"/></w:rPr></w:r></w:p></w:body></w:document>`,
+      ),
+    ).toBe(true)
+    expect(
+      needsOoxmlNormalization(
+        `<w:document xmlns:w="${W_TRANS}" xmlns:v="urn:schemas-microsoft-com:vml"><v:shape strokeweight="1pt"/></w:document>`,
+      ),
+    ).toBe(false)
   })
 
   it('detects strict URIs and non-canonical prefixes', () => {
@@ -252,5 +270,43 @@ describe('parseDocx over normalized packages', () => {
     const normalized = await zip.file('word/document.xml')!.async('string')
     expect(normalized).toContain('<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>')
     expect(normalized).not.toContain('conformance')
+  })
+  it('reads the universal measures of a transitional document, as Teams transcripts write them', async () => {
+    const run = (size: string, text: string) =>
+      `<w:p><w:r><w:rPr><w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr><w:t>${text}</w:t></w:r></w:p>`
+    const bytes = await buildDocxBytes(
+      `${XML_DECL}<w:document xmlns:w="${W_TRANS}"><w:body>` +
+        run('6mm', 'Title') +
+        run('3mm', 'Date') +
+        run('4.3mm', 'Speaker') +
+        '<w:sectPr><w:pgMar w:top="1.5in" w:right="1in" w:bottom="1in" w:left="2cm" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>' +
+        '</w:body></w:document>',
+    )
+    const doc = await parseDocx(bytes)
+    const sizes = Object.fromEntries(
+      doc.blocks.flatMap((b) => b.runs ?? []).map((r) => [r.text, r.sizeHalfPoints]),
+    )
+    expect(sizes).toEqual({ Title: 34, Date: 17, Speaker: 24 })
+    const zip = await loadDocxZip(bytes)
+    const normalized = await zip.file('word/document.xml')!.async('string')
+    expect(normalized).toContain(
+      '<w:pgMar w:top="2160" w:right="1440" w:bottom="1440" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/>',
+    )
+  })
+
+  it('reads a universal measure that only the styles part carries', async () => {
+    const bytes = await buildDocxBytes(
+      `${XML_DECL}<w:document xmlns:w="${W_TRANS}"><w:body>` +
+        '<w:p><w:r><w:t>Default size</w:t></w:r></w:p>' +
+        '</w:body></w:document>',
+      `${XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+        '</Relationships>',
+      `${XML_DECL}<w:styles xmlns:w="${W_TRANS}"><w:docDefaults><w:rPrDefault><w:rPr>` +
+        '<w:sz w:val="14pt"/><w:szCs w:val="14pt"/>' +
+        '</w:rPr></w:rPrDefault></w:docDefaults></w:styles>',
+    )
+    const zip = await loadDocxZip(bytes)
+    expect(await zip.file('word/styles.xml')!.async('string')).toContain('<w:sz w:val="28"/>')
   })
 })
