@@ -363,6 +363,7 @@ import {
   IconFitPage,
   IconOutline,
   IconComments,
+  IconEye,
   IconDrawColor,
   RbCaret,
   IconSearch,
@@ -2534,8 +2535,11 @@ export default function App() {
       keeps the toast's Stop working on the resumed pass. A signal torn down in
       between (the document or its page count changed) is already aborted and
       would cancel the pass on its first check, so a fresh one replaces it. */
+  // showNotice is defined further down; the manual-OCR notice goes through the
+  // ref so the pass callback can sit above it
+  const showNoticeRef = useRef<(msg: string) => void>(() => undefined)
   const startOcrPass = useCallback(
-    (pending: number[] | null, doneBefore = 0) => {
+    (pending: number[] | null, doneBefore = 0, manualLimit?: number) => {
       if (!doc) return
       const live = ocrAbortRef.current
       const controller = live && !live.signal.aborted ? live : new AbortController()
@@ -2554,6 +2558,7 @@ export default function App() {
             cache: searchIndexCache,
             fromPage: () => currentOrigIdxRef.current,
             ...(pending === null ? {} : { pending }),
+            ...(manualLimit === undefined ? {} : { limit: manualLimit }),
             signal: controller.signal,
             geom: (origIdx) => pageGeomRef.current(origIdx),
             render: renderPageForOcr,
@@ -2566,6 +2571,11 @@ export default function App() {
           // the document is gone or unreadable: nothing left to recognize
         }
         if (ocrAbortRef.current !== controller) return // a newer pass took over
+        // A manual trigger over a document with nothing left to recognize says so
+        if (manualLimit !== undefined && result && result.total === 0) {
+          showNoticeRef.current(t('ocrNothing'))
+          return
+        }
         // A finished pass and a platform without an OCR engine are not worth a
         // toast; a cap or a user cancel is, and it says how far the pass got
         setOcrRun(
@@ -3728,9 +3738,11 @@ export default function App() {
       d.font === undefined &&
       d.bold === undefined &&
       d.italic === undefined &&
+      !d.reveal &&
       keyRuns.length === 0
     ) {
-      // Reverted back to the original — the pending edit(s) are moot
+      // Reverted back to the original — the pending edit(s) are moot. An active
+      // reveal is itself a change: invisible -> visible is the edit.
       return dropFolded(edits.filter((e) => e.id !== d.editId))
     }
     if (overflowed) return 'overflow'
@@ -3746,6 +3758,7 @@ export default function App() {
       newFont: d.font,
       newBold: d.bold,
       newItalic: d.italic,
+      ...(d.reveal ? { reveal: true } : {}),
       origin,
       lineLeading,
       lineXOffsets,
@@ -4554,6 +4567,7 @@ export default function App() {
     setNotice(msg)
     noticeTimerRef.current = window.setTimeout(() => setNotice(null), 8000)
   }
+  showNoticeRef.current = showNotice
 
   useEffect(() => {
     if (!formHasXfa || !filePath || warnedXfaPathRef.current === filePath) return
@@ -9159,6 +9173,22 @@ export default function App() {
             <>
               {viewNavGroup}
               <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className="rb-big"
+                    disabled={status !== 'ready'}
+                    data-tip={t('ocrRecognizeTip')}
+                    onClick={() => startOcrPass(null, 0, Number.POSITIVE_INFINITY)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconEye />
+                    </span>
+                    <span>{t('ocrRecognize')}</span>
+                  </button>
+                </div>
+              </div>
+              <div className="ribbon-sep" />
               {pageZoomGroup}
             </>
           )}
@@ -10294,6 +10324,28 @@ export default function App() {
                                               />
                                             )}
                                           </span>
+                                          {ocrPages.has(textDraft.origIdx) && (
+                                            <button
+                                              className={`pdf-textedit-toggle${
+                                                textDraft.reveal ? ' active' : ''
+                                              }`}
+                                              data-tip={t('texteditReveal')}
+                                              aria-label={t('texteditReveal')}
+                                              aria-pressed={!!textDraft.reveal}
+                                              onClick={() =>
+                                                applyDraftStyle(
+                                                  () => ({}),
+                                                  (d) => ({
+                                                    ...d,
+                                                    reveal: d.reveal ? undefined : true,
+                                                  }),
+                                                  true,
+                                                )
+                                              }
+                                            >
+                                              <IconEye />
+                                            </button>
+                                          )}
                                           <button
                                             className="pdf-textedit-toggle pdf-textedit-trash"
                                             data-tip={t('texteditDeleteRun')}

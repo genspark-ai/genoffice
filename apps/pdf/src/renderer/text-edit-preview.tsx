@@ -501,6 +501,9 @@ export interface TextDraft {
   /** Style toggles; true = on, undefined = off (resolved via font variants at save) */
   bold?: true
   italic?: true
+  /** Rebuild the replaced run as visible text (scanned-page OCR bake layer only;
+      see TextEditInput.reveal). Off = keep the run's invisible rendering. */
+  reveal?: true
   editId?: string
   /** Further pending edits folded into this block draft (besides editId); the
       commit replaces editId and removes these — they would overlap the block

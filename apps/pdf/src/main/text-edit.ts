@@ -88,6 +88,7 @@ export interface Pdfium {
   _FPDFPath_SetDrawMode(path: number, fillMode: number, stroke: number): number
   _FPDFTextObj_GetTextRenderMode(obj: number): number
   _FPDFTextObj_SetTextRenderMode(obj: number, mode: number): number
+  _FPDFTextObj_GetTextRenderMode(obj: number): number
   _FPDFPageObj_CreateTextObj(doc: number, font: number, size: number): number
   _FPDFTextObj_GetText(obj: number, textPage: number, buf: number, len: number): number
   _FPDFTextObj_GetFont(obj: number): number
@@ -1706,6 +1707,9 @@ async function rebuildRun(
   textPage: number,
 ): Promise<boolean> {
   const anchor = matches.reduce((a, b) => (b.bounds[0] < a.bounds[0] ? b : a))
+  // An invisible anchor (the OCR bake layer) must not reappear as white glyphs
+  // after an edit: the redraw keeps its render mode unless the edit reveals.
+  const anchorRenderMode = m._FPDFTextObj_GetTextRenderMode(anchor.obj)
   const matPtr = m._malloc(24)
   const sizePtr = m._malloc(4)
   const colPtr = m._malloc(16)
@@ -1733,11 +1737,20 @@ async function rebuildRun(
       colPtr + 8,
       colPtr + 12,
     )
+    // An invisible run's stored fill is white (the bake picks it to survive grey
+    // paper and photos); revealing without an explicit color reads as black
     const color: readonly [number, number, number, number] = edit.newColor
       ? [edit.newColor[0], edit.newColor[1], edit.newColor[2], 255]
-      : hasColor
-        ? ([0, 4, 8, 12].map((off) => m.HEAPU8[colPtr + off]!) as [number, number, number, number])
-        : [0, 0, 0, 255]
+      : edit.reveal === true
+        ? [0, 0, 0, 255]
+        : hasColor
+          ? ([0, 4, 8, 12].map((off) => m.HEAPU8[colPtr + off]!) as [
+              number,
+              number,
+              number,
+              number,
+            ])
+          : [0, 0, 0, 255]
     // Some producers (Chrome print) leave the object's fill alpha reading as 0 while
     // the glyphs render opaque (the RGB part reads fine). Inheriting that raw 0 drew
     // the rebuilt run fully transparent — visible text must never become invisible.
@@ -1745,15 +1758,22 @@ async function rebuildRun(
 
     // Colors already in the matched run survive underneath the user's selection
     // styles; an explicit whole-edit newColor means "repaint uniformly" and wins.
-    const keepColors = edit.newColor ? null : matchCharColors(m, matches, newText)
+    const keepColors =
+      edit.newColor || edit.reveal === true ? null : matchCharColors(m, matches, newText)
     const charStyles = overlayStyles(keepColors, plannedCharStyles(edit, newText), newText)
 
     // Object-preserving mode. Whole-edit face/size/style overrides mean "restyle
     // everything" and take the full-redraw path; so does a rotated/skewed matrix
     // (the cursor walk below only models horizontal text). Selection-level style
     // runs are fine: buildKeepPlan redraws any object their ranges touch.
+    // A reveal edit rebuilds as visible text, so it always takes the redraw path
+    // (the keep plan would translate the original invisible objects as they are)
     const styleOverride =
-      edit.newFontSize !== undefined || edit.newFont !== undefined || edit.newBold || edit.newItalic
+      edit.reveal === true ||
+      edit.newFontSize !== undefined ||
+      edit.newFont !== undefined ||
+      edit.newBold ||
+      edit.newItalic
     const axisAligned =
       Math.abs(matrix[1]!) < 1e-4 && Math.abs(matrix[2]!) < 1e-4 && matrix[0]! > 0 && matrix[3]! > 0
     const keeps =
@@ -1899,6 +1919,11 @@ async function rebuildRun(
         ? [style.color[0], style.color[1], style.color[2], 255]
         : color
       m._FPDFPageObj_SetFillColor(newObj, c[0], c[1], c[2], c[3])
+      if (edit.reveal === true) {
+        // explicit reveal: the rebuilt run draws (mode 0 is the default)
+      } else if (anchorRenderMode === 3) {
+        m._FPDFTextObj_SetTextRenderMode(newObj, 3)
+      }
       const emPt = sizeOf(style) * Math.hypot(matrix[0]!, matrix[1]!)
       if (synthFor(style)) strokeObject(m, newObj, c, syntheticBoldWidth(emPt))
       else if (inherited?.sameAsFill)
