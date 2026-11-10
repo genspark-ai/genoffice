@@ -89,9 +89,8 @@ export async function atomicWriteFile(filePath: string, data: Buffer): Promise<v
   }
   // The in-place fallback is the last chance to land the bytes; if it fails
   // too the error propagates and the target keeps whatever it had. The temp is
-  // removed either way: a leftover carries a random hex name with no
-  // extension, so a user can neither recognize nor open it, and a persistently
-  // locked target would leave one behind on every retry (genoffice#2567).
+  // removed either way: a persistently locked target would otherwise leave one
+  // behind on every retry (genoffice#2567).
   try {
     await writeFile(filePath, data)
   } finally {

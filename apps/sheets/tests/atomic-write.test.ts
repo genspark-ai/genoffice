@@ -62,7 +62,7 @@ describe('atomicWriteFile', () => {
     expect(readdirSync(dir)).toEqual(['data.csv'])
   })
 
-  it('preserves the completed temp file when the fallback write fails', async () => {
+  it('removes the temp when the fallback write fails too, keeping the old bytes', async () => {
     dir = mkdtempSync(join(tmpdir(), 'sheets-aw-'))
     const target = join(dir, 'data.csv')
     writeFileSync(target, 'old')
@@ -79,11 +79,9 @@ describe('atomicWriteFile', () => {
       'fallback write failed',
     )
 
-    const files = readdirSync(dir)
-    expect(files).toContain('data.csv')
-    const temp = files.find((file) => file !== 'data.csv')
-    expect(temp).toBeDefined()
-    expect(readFileSync(join(dir, temp!), 'utf8')).toBe('new')
+    // the same no-leftover contract the electron-utils and pdf suites pin
+    expect(readdirSync(dir)).toEqual(['data.csv'])
+    expect(readFileSync(target, 'utf8')).toBe('old')
   })
 
   it('uses distinct temp files for concurrent writes to one target', async () => {
