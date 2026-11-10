@@ -3,7 +3,7 @@ import { handlePdfControl, type ControlRequest } from './control'
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 // legacy build: the modern build relies on new APIs like Math.sumPrecise that the current
 // Electron V8 lacks, making embedded font parsing fail and whole pages render as garbled raw char codes
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { AiPanel, GensparkMark } from './ai/AiPanel'
@@ -69,8 +69,6 @@ type Arrange =
   | 'sameSize'
 
 const PASTE_OFFSET_PTS = 12
-// macOS's print sheet already carries copies/duplex, so it stays the default there
-const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 /** Auto-detect stops here so a long scanned form cannot flood the document with fields */
 const DETECT_FIELD_CAP = 300
 
