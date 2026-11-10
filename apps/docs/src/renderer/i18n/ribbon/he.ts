@@ -786,6 +786,8 @@ export const he = {
   ribbonWebLayoutTip: 'פריסת אינטרנט: מילוי רוחב החלון, ללא מעברי עמוד',
   ribbonOutlineView: 'חלוקה לרמות',
   ribbonOutlineViewTip: 'תצוגת חלוקה לרמות: הצג רק את היררכיית הכותרות; הכותרות ניתנות לעריכה',
+  ribbonStoryView: 'סיפור',
+  ribbonStoryViewTip: 'סיפור: כתיבה ללא עיצוב המסמך',
   ribbonReadMode: 'מצב קריאה',
   ribbonReadModeTip: 'מצב קריאה: הסתר את רצועת הכלים לקריאה ממוקדת, הקש Esc ליציאה',
   ribbonPagePreview: 'תצוגה מקדימה של עמודים',

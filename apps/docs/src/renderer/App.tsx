@@ -350,6 +350,7 @@ import {
 import { computeFormatState } from './components/ribbon-format-state'
 import {
   IconOutlineView,
+  IconStoryView,
   IconPrintLayout,
   IconReadMode,
   IconRedo,
@@ -2136,6 +2137,14 @@ export function App() {
   useEffect(() => {
     if (!editor) return
     editor.commands.setOutlineViewActive(viewMode === 'outline')
+  }, [editor, viewMode])
+
+  // story view (View ▸ Story View): the plugin draws the margin markers and
+  // keeps typed text off the document's hidden formatting, only while the view
+  // mode is story
+  useEffect(() => {
+    if (!editor) return
+    editor.commands.setStoryViewActive(viewMode === 'story')
   }, [editor, viewMode])
 
   // window title follows the document, so the OS window list and Switch Window show file names
@@ -8834,6 +8843,14 @@ export function App() {
                     onClick={() => setViewMode('outline')}
                   >
                     <IconOutlineView size={14} />
+                  </button>
+                  <button
+                    className={`status-view-btn${viewMode === 'story' ? ' on' : ''}`}
+                    data-tip={t('ribbonStoryView')}
+                    aria-label={t('ribbonStoryView')}
+                    onClick={() => setViewMode('story')}
+                  >
+                    <IconStoryView size={14} />
                   </button>
                   <button
                     className={`status-view-btn${readMode ? ' on' : ''}`}
