@@ -51,9 +51,9 @@ const mouse = (type: string, init: MouseEventInit = {}) =>
 
 /** a fake non-collapsed browser selection, or an empty one. ProseMirror's
  *  selectionToDOM uses these methods after a dispatch, so provide real no-ops. */
-function mockSelection(text: string) {
+function mockSelection(text: string, node: Node = document.body) {
   const range = document.createRange()
-  range.selectNodeContents(document.body)
+  range.selectNodeContents(node)
   const addRange = vi.fn()
   const removeAllRanges = vi.fn()
   const spy = vi.spyOn(window, 'getSelection').mockReturnValue({
@@ -128,13 +128,52 @@ describe('selecting text inside an embedded object', () => {
     label.dispatchEvent(mouse('mousedown'))
     document.dispatchEvent(mouse('mouseup'))
 
-    // Copy and Delete must act on the dragged characters, not on the atom.
+    // Copy must use the dragged characters, not the whole atom.
     expect(editor.state.selection.empty).toBe(true)
     expect(editor.state.selection instanceof NodeSelection).toBe(false)
     // The dispatch's selectionToDOM must not wipe the visible character range.
     expect(drag.removeAllRanges).toHaveBeenCalled()
     expect(drag.addRange).toHaveBeenCalled()
     expect(owner.draggable).toBe(true)
+    drag.mockRestore()
+    editor.destroy()
+  })
+
+  it('editing keys during a live character drag do not delete the object', () => {
+    const editor = makeEditor()
+    const label = editor.view.dom.querySelector('.doc-protected-label') as HTMLElement
+    let pos = -1
+    editor.state.doc.descendants((node, nodePos) => {
+      if (node.type.name === 'docProtected' && node.attrs.blockType === 'passthrough') {
+        pos = nodePos
+      }
+    })
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)))
+    // The highlighted range lives inside the atom, as it does in the browser.
+    const drag = mockSelection('Excel workshee', label)
+    label.dispatchEvent(mouse('mousedown'))
+    document.dispatchEvent(mouse('mouseup'))
+
+    const atoms = () => editor.view.dom.querySelectorAll('.doc-protected').length
+    expect(atoms()).toBe(2)
+    const events: KeyboardEvent[] = []
+    for (const key of ['Backspace', 'Delete', 'Enter', 'x']) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      events.push(event)
+      editor.view.dom.dispatchEvent(event)
+      expect(atoms(), `${key} must not remove the atom`).toBe(2)
+    }
+    expect(events.every((event) => event.defaultPrevented)).toBe(true)
+
+    // A new press ends the drag: normal editing keys are no longer swallowed.
+    document.dispatchEvent(mouse('mousedown'))
+    const next = new KeyboardEvent('keydown', {
+      key: 'Backspace',
+      bubbles: true,
+      cancelable: true,
+    })
+    editor.view.dom.dispatchEvent(next)
+    expect(next.defaultPrevented).toBe(false)
     drag.mockRestore()
     editor.destroy()
   })

@@ -5317,6 +5317,47 @@ function wireProtectedInteractionMode(
    *  swallow every drag into a whole-object NodeSelection, so copying a few
    *  characters out of an embedded frame was impossible. */
   let textPress = false
+  /** A live browser character selection inside this read-only atom. The caret
+   *  parked beside the atom would let Backspace/Delete remove the whole object
+   *  and printable keys type into the document, so editing keys are swallowed
+   *  until the reader starts a new gesture or the selection leaves the atom. */
+  let textDragActive = false
+  const selectionInsideDom = (): boolean => {
+    const sel = typeof window === 'undefined' ? null : window.getSelection()
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false
+    const range = sel.getRangeAt(0)
+    return dom.contains(range.startContainer) && dom.contains(range.endContainer)
+  }
+  const onSelectionChange = () => {
+    if (textDragActive && !selectionInsideDom()) textDragActive = false
+  }
+  const onViewKeyDown = (event: KeyboardEvent) => {
+    if (!textDragActive || event.isComposing) return
+    if (!selectionInsideDom()) {
+      textDragActive = false
+      return
+    }
+    const editingKey =
+      event.key === 'Backspace' ||
+      event.key === 'Delete' ||
+      event.key === 'Enter' ||
+      (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey)
+    if (!editingKey) return
+    // The highlighted content is read-only: let the browser copy it, but do
+    // not let ProseMirror turn the key into a document edit. No transaction is
+    // dispatched here, so the visible DOM range needs no re-application.
+    event.preventDefault()
+    event.stopPropagation()
+    event.stopImmediatePropagation()
+  }
+  // `view.dom` is not reachable while the node view is constructed, so attach
+  // the guard lazily on the first text drag (by then the view is mounted).
+  let keyGuardRoot: HTMLElement | null = null
+  const attachKeyDownGuard = () => {
+    if (keyGuardRoot) return
+    keyGuardRoot = view.dom
+    keyGuardRoot.addEventListener('keydown', onViewKeyDown, true)
+  }
   const onMouseDown = (event: MouseEvent) => {
     if (event.button !== 0) return
     const target = event.target as HTMLElement | null
@@ -5359,6 +5400,10 @@ function wireProtectedInteractionMode(
       return
     }
     clearSelectionForTextDrag()
+    // The read-only character selection is live. Keep editing keys away from
+    // the editor until the next press or a selection change leaves the atom.
+    textDragActive = true
+    attachKeyDownGuard()
   }
   const onDragStart = (event: DragEvent) => {
     if (textPress) event.preventDefault()
@@ -5371,6 +5416,8 @@ function wireProtectedInteractionMode(
     setEditing(true)
   }
   const onDocumentMouseDown = (event: MouseEvent) => {
+    // Any new gesture ends the previous read-only character selection.
+    textDragActive = false
     const target = event.target
     if (
       target instanceof HTMLElement &&
@@ -5394,6 +5441,7 @@ function wireProtectedInteractionMode(
   dom.addEventListener('dblclick', onDoubleClick, true)
   document.addEventListener('mousedown', onDocumentMouseDown, true)
   dom.addEventListener('keydown', onKeyDown, true)
+  document.addEventListener('selectionchange', onSelectionChange)
   return () => {
     dom.removeEventListener('mousedown', onMouseDown, true)
     document.removeEventListener('mouseup', onMouseUp, true)
@@ -5401,6 +5449,8 @@ function wireProtectedInteractionMode(
     dom.removeEventListener('dblclick', onDoubleClick, true)
     document.removeEventListener('mousedown', onDocumentMouseDown, true)
     dom.removeEventListener('keydown', onKeyDown, true)
+    keyGuardRoot?.removeEventListener('keydown', onViewKeyDown, true)
+    document.removeEventListener('selectionchange', onSelectionChange)
   }
 }
 
