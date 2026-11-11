@@ -11,7 +11,12 @@ import {
 import type { AiFontSize, AiPanelPrefs, AiPanelSide } from '@genoffice/ui'
 import { getProviderAdapter, thinkingShapeFor } from '@genoffice/ai-provider/browser'
 import type { DecisionEndpoint, DefaultAppStatus, FileSearchSettings } from '../../shared/home-api'
-import { AUTHOR_NAME_MAX, isCloudflareEndpoint } from '../../shared/home-api'
+import {
+  AUTHOR_NAME_MAX,
+  CSV_IMPORT_DEFAULT_LIMIT_MB,
+  CSV_IMPORT_LIMIT_CHOICES_MB,
+  isCloudflareEndpoint,
+} from '../../shared/home-api'
 import type { UpdateUiState } from '../../shared/update-api'
 import {
   DEFAULT_MAX_OUTPUT_TOKENS,
@@ -1808,6 +1813,7 @@ export function SettingsModal({
   }, [target])
   const [theme, setTheme] = useState<UiTheme>('system')
   const [docTheme, setDocTheme] = useState<DocTheme>('follow')
+  const [csvLimitMb, setCsvLimitMb] = useState(CSV_IMPORT_DEFAULT_LIMIT_MB)
   const [saveDir, setSaveDir] = useState('')
   const [analyticsOn, setAnalyticsOn] = useState(true)
   const [analyticsSaving, setAnalyticsSaving] = useState(false)
@@ -1846,6 +1852,9 @@ export function SettingsModal({
     })
     void window.aiOffice.getTabSleepEnabled?.().then((on) => {
       if (alive) setTabSleepOn(on)
+    })
+    void window.aiOffice.getCsvImportLimit?.().then((mb) => {
+      if (alive && mb > 0) setCsvLimitMb(mb)
     })
     void window.aiOffice.getRestoreLastSession?.().then((on) => {
       if (alive) setRestoreSessionOn(on)
@@ -2105,6 +2114,26 @@ export function SettingsModal({
                       label: t(opt.labelKey),
                     }))}
                     onPick={(v) => applyDocumentTheme(v as DocTheme)}
+                  />
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <label className="set-field-label">{t('csvImportLimit')}</label>
+                  </div>
+                  <Dropdown
+                    className="set-dd"
+                    value={String(csvLimitMb)}
+                    ariaLabel={t('csvImportLimit')}
+                    options={CSV_IMPORT_LIMIT_CHOICES_MB.map((mb) => ({
+                      value: String(mb),
+                      label: `${mb} MB`,
+                    }))}
+                    onPick={(v) => {
+                      const mb = Number(v)
+                      if (!Number.isInteger(mb)) return
+                      setCsvLimitMb(mb)
+                      void window.aiOffice.setCsvImportLimit?.(mb)
+                    }}
                   />
                 </div>
                 <div className="set-field">

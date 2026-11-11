@@ -2,7 +2,7 @@
 name: genoffice
 description: Create, convert, read and edit Office documents locally with GenOffice's command line. Build a new presentation (pptx) from a brief through a checked outline, per-page spec and render pipeline, a new spreadsheet (xlsx) from CSV or JSON data with formulas, a new Word document (docx) from Markdown or HTML, or a PDF; convert between pdf, docx, xlsx, pptx, md, html and csv; read the structure and text of an existing file (including the user's own docx / xlsx / pptx as source material) and apply structured edits to it. Use whenever the user asks for a slide deck, presentation, spreadsheet, workbook, report, Word document or any real Office file, a format conversion, a rewrite of part of an existing document, or wants the result opened in the GenOffice editor. Documents are processed locally; only search, image and media send the query or the referenced file to the provider configured in GenOffice.
 metadata:
-  version: 2.69.0
+  version: 2.70.0
   cli: '>=0.9.0'
 ---
 
@@ -50,7 +50,7 @@ Always add `--json` when a program reads the output: one JSON object on stdout, 
 - The op references are resources: `genoffice://guide/docs`, `…/sheets`, `…/slides`, `…/slides/design`, `…/slides/spec`.
 - `ops`, `cells` and `data` carry the per-op schema of `guide <domain> --json` (one variant per op: `op`, fields, required); `mcp --compact-schemas` (or `GENOFFICE_MCP_COMPACT_SCHEMAS=1`) advertises plain arrays for clients with a small context budget.
 - `--http`: files travel with the calls (`PUT /files/<name>` uploads one and returns a URL, every path parameter also takes an http(s) URL, `out` omitted returns the file as a download URL).
-- The GenOffice app runs its own MCP server on `127.0.0.1:3093` (Settings → Integrations) whose tools (`create_session`, `read_document`, `apply_ops`, `apply_slide_ops`, `apply_sheet_ops`, `read_pdf`, `read_docx_properties`, `open_documents`) edit the documents already open in the visible editor (`sheet_links` instead maintains an on-disk workbook's external links); `genoffice mcp` works on files on disk.
+- The GenOffice app runs its own MCP server on `127.0.0.1:3093` (Settings → Integrations) whose tools (`create_session`, `read_document`, `apply_ops`, `apply_slide_ops`, `apply_sheet_ops`, `read_pdf`, `read_docx_properties`, `check_document`, `open_documents`) edit the documents already open in the visible editor (`sheet_links` instead maintains an on-disk workbook's external links, `check_document` quality-checks a .docx on disk, and the opt-in generation group adds `convert_document` alongside `create_docx` / `create_pptx` / `create_xlsx` / `fill_template`); `genoffice mcp` works on files on disk.
 
 ## Which command
 

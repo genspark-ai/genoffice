@@ -42,6 +42,8 @@ export interface FakeCli {
   setDocProperties(properties: Record<string, unknown>): void
   /** reply for `merge` commands: the result's `detail` object */
   setMergeDetail(detail: Record<string, unknown>): void
+  /** reply for `docs check` commands: the result's `detail` object */
+  setCheckDetail(detail: Record<string, unknown>): void
   /** reply for `sheet links` commands: the result's `detail` object */
   setSheetLinksDetail(detail: Record<string, unknown>): void
   /** make the next run fail with this CLI error message */
@@ -53,6 +55,7 @@ export function fakeCli(): FakeCli {
   let readItems: Array<Record<string, unknown>> = []
   let docProperties: Record<string, unknown> | undefined
   let mergeDetail: Record<string, unknown> | undefined
+  let checkDetail: Record<string, unknown> | undefined
   let sheetLinksDetail: Record<string, unknown> | undefined
   let nextError: string | undefined
 
@@ -84,8 +87,17 @@ export function fakeCli(): FakeCli {
           stderr: '',
         }
       }
-      // `docs read`: hand back the scripted block items (and properties when set)
+      // `docs check`: the scripted quality report; `docs read`: the block items
       if (args[0] === 'docs') {
+        if (args[1] === 'check') {
+          const json = {
+            status: 'ok' as const,
+            command: 'docs',
+            summary: 'check',
+            detail: checkDetail ?? {},
+          }
+          return { ok: true, code: 0, json, stdout: JSON.stringify(json), stderr: '' }
+        }
         const json = {
           status: 'ok' as const,
           command: 'docs',
@@ -153,6 +165,9 @@ export function fakeCli(): FakeCli {
     },
     setMergeDetail: (detail) => {
       mergeDetail = detail
+    },
+    setCheckDetail: (detail) => {
+      checkDetail = detail
     },
     setSheetLinksDetail: (detail) => {
       sheetLinksDetail = detail

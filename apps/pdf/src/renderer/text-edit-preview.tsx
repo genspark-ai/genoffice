@@ -531,6 +531,17 @@ export interface TextDraft {
   moveBy?: [number, number]
 }
 
+export const draftOwnedEditIds = (
+  d: Pick<TextDraft, 'editId' | 'foldedIds'> | null,
+): ReadonlySet<string> =>
+  new Set(d ? [d.editId, ...(d.foldedIds ?? [])].filter((id) => id !== undefined) : [])
+
+export const previewsTextEdit = (
+  te: LocalTextEdit,
+  pageIndex: number,
+  draftOwned: ReadonlySet<string>,
+): boolean => te.input.pageIndex === pageIndex && !draftOwned.has(te.id)
+
 /** Seed a fresh draft's colors from the open probe's report of what the document
     already draws: the run's base ink (display-only) plus earlier saved selection
     colors. Selection colors only while the draft is pristine — the runs are offsets

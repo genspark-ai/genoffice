@@ -107,6 +107,7 @@ const desktopApi: DesktopApi = {
     return () => ipcRenderer.removeListener('app:document-theme-changed', listener)
   },
   getAutoSaveDefault: () => ipcRenderer.invoke('app:get-auto-save-default'),
+  getCsvImportLimit: () => ipcRenderer.invoke('app:get-csv-import-limit'),
   onImportProgress(listener) {
     const wrapped = (_event: unknown, progress: unknown): void => {
       // null means the import is over: the bar must go with it, or the next

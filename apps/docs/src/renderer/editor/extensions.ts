@@ -23,6 +23,7 @@ import {
   NodeSelection,
   Plugin,
   PluginKey,
+  Selection,
   TextSelection,
   type EditorState,
   type Transaction,
@@ -3007,6 +3008,82 @@ export function cellPadCss(
 
 export { rtlStartMarginCss } from './table-geometry'
 
+/**
+ * Keep a character selection inside a single table cell.
+ *
+ * ProseMirror's tableEditing upgrades a drag that crosses a cell boundary into
+ * a CellSelection. A tall row that carries an in-row page-gap widget can hit
+ * such a boundary after only a few lines, so dragging a short passage suddenly
+ * selects the whole cell: the browser shows a small highlight while the status
+ * bar and the AI panel report hundreds of selected characters.
+ *
+ * Only a live mouse gesture that started and stayed in one cell is protected.
+ * Real multi-cell drags, single clicks on a cell edge and commands that select
+ * a row/column keep their CellSelection.
+ */
+export function shouldBlockCellSelection(
+  activeCell: Element | null,
+  startCell: Element | null,
+  endCell: Element | null,
+  hasDomSelection: boolean,
+): boolean {
+  if (!activeCell || !hasDomSelection) return false
+  if (startCell !== activeCell) return false
+  // Crossing into another cell is a genuine table selection. A null endCell
+  // means the range ended on a page-gap widget or a bare text node inside the
+  // starting cell, NOT that the drag left the table: prosemirror-tables already
+  // returns early when cellUnderMouse is null, so that case is harmless here.
+  if (endCell && endCell !== activeCell) return false
+  return true
+}
+
+export function tableTextDragPlugin(): Plugin {
+  let activeCell: Element | null = null
+  // `Node` in this module is Tiptap's extension class, so use the DOM
+  // constructors rather than the shadowed global type.
+  const cellOf = (node: EventTarget | null): Element | null => {
+    const el = node instanceof HTMLElement ? node : node instanceof Text ? node.parentElement : null
+    return el?.closest?.('td, th') ?? null
+  }
+  return new Plugin({
+    view() {
+      const clear = () => {
+        activeCell = null
+      }
+      document.addEventListener('mouseup', clear, true)
+      document.addEventListener('dragstart', clear, true)
+      return {
+        destroy() {
+          document.removeEventListener('mouseup', clear, true)
+          document.removeEventListener('dragstart', clear, true)
+        },
+      }
+    },
+    props: {
+      handleDOMEvents: {
+        mousedown: (_view, event) => {
+          const target = event.target as HTMLElement | null
+          activeCell = event.button === 0 ? cellOf(target) : null
+          return false
+        },
+      },
+    },
+    filterTransaction: (tr) => {
+      if (tr.docChanged || !(tr.selection instanceof CellSelection)) return true
+      const sel = typeof window === 'undefined' ? null : window.getSelection()
+      const has = !!sel && sel.rangeCount > 0 && !sel.isCollapsed
+      const range = has ? sel!.getRangeAt(0) : null
+      const block = shouldBlockCellSelection(
+        activeCell,
+        range ? cellOf(range.startContainer) : null,
+        range ? cellOf(range.endContainer) : null,
+        has,
+      )
+      return !block
+    },
+  })
+}
+
 export const DocTable = Node.create({
   name: 'docTable',
   group: 'block',
@@ -3605,6 +3682,7 @@ export const NativeTableSupport = Extension.create({
       tableRowDrag(),
       columnResizing({ View: null, cellMinWidth: 40, lastColumnResizable: true }),
       tableEditing({ allowTableNodeSelection: true }),
+      tableTextDragPlugin(),
       // Word never ends a body with a table: without a paragraph below it the
       // caret can never leave the table (public issue #266)
       new Plugin({
@@ -4017,9 +4095,20 @@ export const DocProtected = Node.create({
             return false
           }
           const contentTarget = target?.closest?.(EDITABLE_PROTECTED_SELECTOR)
-          return (
+          if (
             !!contentTarget &&
             (event.type === 'mousedown' || dom.classList.contains('doc-content-editing'))
+          ) {
+            return true
+          }
+          // A press on the object's read-only text belongs to the browser: let
+          // the drag paint a character selection instead of ProseMirror turning
+          // the atom into a NodeSelection. A click with no drag is resolved on
+          // mouseup (wireProtectedInteractionMode).
+          return (
+            event.type === 'mousedown' &&
+            !!target?.closest?.(TEXT_SELECTABLE_SELECTOR) &&
+            !dom.classList.contains('doc-content-editing')
           )
         },
         destroy: () => cleanups.forEach((c) => c?.()),
@@ -5149,7 +5238,19 @@ const EDITABLE_PROTECTED_SELECTOR =
   'td, .doc-textbox, .doc-toc-title, .doc-toc-page, .doc-field-text, .doc-formula-token, ' +
   '.doc-formula-math, .doc-chart-title, .doc-chart-cell'
 
-/** Object mode (single click/drag) and text mode (double click). */
+/** Text a reader may select inside a protected object for copying, even when
+ *  the object is not in text-edit mode. Extends the editable islands with the
+ *  read-only captions and previews of embedded objects (OLE/Excel frames). */
+export const TEXT_SELECTABLE_SELECTOR =
+  EDITABLE_PROTECTED_SELECTOR + ', .doc-protected-label, .doc-protected-preview'
+
+/** Did the browser build a real, non-collapsed text selection during the drag? */
+export function hasTextSelection(): boolean {
+  const sel = typeof window === 'undefined' ? null : window.getSelection()
+  return !!sel && !sel.isCollapsed && sel.toString().trim().length > 0
+}
+
+/** Object mode (single click) and text mode (drag selection / double click). */
 function wireProtectedInteractionMode(
   dom: HTMLElement,
   getPos: () => number | undefined,
@@ -5157,42 +5258,156 @@ function wireProtectedInteractionMode(
   contentEditor: ProtectedContentEditor | null,
 ): (() => void) | null {
   const handle = dom.querySelector('.doc-move-handle') as HTMLElement | null
-  if (!handle && !contentEditor) return null
+  // Read-only objects (an OLE/Excel preview and its caption) have no editing
+  // island and no move handle, but their text still has to be selectable.
+  if (!handle && !contentEditor && !dom.querySelector(TEXT_SELECTABLE_SELECTOR)) return null
 
+  /** Objects with an editing island are dragged by their move handle only;
+   *  pure read-only objects keep ProseMirror's whole-object drag. */
+  const draggableFor = (editing: boolean) => (contentEditor ? !!handle && !editing : true)
   const selectObject = () => {
     const pos = getPos()
     if (typeof pos !== 'number') return
     view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)))
   }
+  const restoreDraggable = () => {
+    dom.draggable = draggableFor(dom.classList.contains('doc-content-editing'))
+  }
+  /** The node view ignores DOM mutations, so a text drag inside the atom leaves
+   *  ProseMirror holding the selection from before the gesture — commonly a
+   *  NodeSelection of the whole object. Its copy handler would serialise the
+   *  object and Delete would remove it, even though the reader highlighted only
+   *  a few characters. Park a collapsed selection just past the atom instead. */
+  const clearSelectionForTextDrag = () => {
+    // A collapsed editor selection already lets the browser's own copy/delete
+    // act on the highlighted characters; no dispatch (and no DOM rewrite) then.
+    if (view.state.selection.empty) return
+    const pos = getPos()
+    if (typeof pos !== 'number') return
+    const { state } = view
+    const after = Math.min(pos + (state.doc.nodeAt(pos)?.nodeSize ?? 1), state.doc.content.size)
+    // findFrom(..., true) only returns a text selection; near() would fall back
+    // to a NodeSelection when the atom is the last block in the document.
+    const $after = state.doc.resolve(after)
+    const caret = Selection.findFrom($after, 1, true) ?? Selection.findFrom($after, -1, true)
+    if (!caret?.empty) return
+    // The dispatch runs selectionToDOM, which would overwrite the visible
+    // character range. Save it and put it back once ProseMirror has updated.
+    const sel = typeof window === 'undefined' ? null : window.getSelection()
+    const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
+    view.dispatch(state.tr.setSelection(caret))
+    if (range && sel) {
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
+  }
   const setEditing = (editing: boolean) => {
     if (!contentEditor) editing = false
     if (editing === dom.classList.contains('doc-content-editing')) {
       contentEditor?.setEditable(editing)
-      dom.draggable = !!handle && !editing
+      dom.draggable = draggableFor(editing)
       return
     }
     if (!editing) contentEditor?.commit()
     contentEditor?.setEditable(editing)
     dom.classList.toggle('doc-content-editing', editing)
-    dom.draggable = !!handle && !editing
+    dom.draggable = draggableFor(editing)
+  }
+  /** A press that started on the object's text. The browser owns that gesture
+   *  until mouseup: selecting the object immediately on mousedown used to
+   *  swallow every drag into a whole-object NodeSelection, so copying a few
+   *  characters out of an embedded frame was impossible. */
+  let textPress = false
+  /** A live browser character selection inside this read-only atom. The caret
+   *  parked beside the atom would let Backspace/Delete remove the whole object
+   *  and printable keys type into the document, so editing keys are swallowed
+   *  until the reader starts a new gesture or the selection leaves the atom. */
+  let textDragActive = false
+  const selectionInsideDom = (): boolean => {
+    const sel = typeof window === 'undefined' ? null : window.getSelection()
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false
+    const range = sel.getRangeAt(0)
+    return dom.contains(range.startContainer) && dom.contains(range.endContainer)
+  }
+  const onSelectionChange = () => {
+    if (textDragActive && !selectionInsideDom()) textDragActive = false
+  }
+  const onViewKeyDown = (event: KeyboardEvent) => {
+    if (!textDragActive || event.isComposing) return
+    if (!selectionInsideDom()) {
+      textDragActive = false
+      return
+    }
+    const editingKey =
+      event.key === 'Backspace' ||
+      event.key === 'Delete' ||
+      event.key === 'Enter' ||
+      (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey)
+    if (!editingKey) return
+    // The highlighted content is read-only: let the browser copy it, but do
+    // not let ProseMirror turn the key into a document edit. No transaction is
+    // dispatched here, so the visible DOM range needs no re-application.
+    event.preventDefault()
+    event.stopPropagation()
+    event.stopImmediatePropagation()
+  }
+  // `view.dom` is not reachable while the node view is constructed, so attach
+  // the guard lazily on the first text drag (by then the view is mounted).
+  let keyGuardRoot: HTMLElement | null = null
+  const attachKeyDownGuard = () => {
+    if (keyGuardRoot) return
+    keyGuardRoot = view.dom
+    keyGuardRoot.addEventListener('keydown', onViewKeyDown, true)
   }
   const onMouseDown = (event: MouseEvent) => {
     if (event.button !== 0) return
     const target = event.target as HTMLElement | null
     if (!target) return
     if (target.closest('.doc-move-handle')) {
+      textPress = false
       setEditing(false)
       selectObject()
       return
     }
     const content = target.closest(EDITABLE_PROTECTED_SELECTOR)
     if (content && dom.contains(content)) {
-      if (!dom.classList.contains('doc-content-editing')) selectObject()
-      dom.draggable = !!handle && !dom.classList.contains('doc-content-editing')
+      if (dom.classList.contains('doc-content-editing')) {
+        dom.draggable = false
+        return
+      }
+      textPress = true
+      dom.draggable = false
       return
     }
+    if (target.closest(TEXT_SELECTABLE_SELECTOR) && dom.contains(target)) {
+      textPress = true
+      dom.draggable = false
+      return
+    }
+    textPress = false
     if (dom.classList.contains('doc-content-editing')) setEditing(false)
     selectObject()
+    restoreDraggable()
+  }
+  const onMouseUp = () => {
+    if (!textPress) return
+    textPress = false
+    restoreDraggable()
+    // A plain click (no characters selected) still selects the whole object.
+    // A drag keeps the reader's character selection, but the editor state must
+    // be told about it or copy/delete would still act on the whole object.
+    if (!hasTextSelection()) {
+      selectObject()
+      return
+    }
+    clearSelectionForTextDrag()
+    // The read-only character selection is live. Keep editing keys away from
+    // the editor until the next press or a selection change leaves the atom.
+    textDragActive = true
+    attachKeyDownGuard()
+  }
+  const onDragStart = (event: DragEvent) => {
+    if (textPress) event.preventDefault()
   }
   const onDoubleClick = (event: MouseEvent) => {
     if (!contentEditor) return
@@ -5202,6 +5417,8 @@ function wireProtectedInteractionMode(
     setEditing(true)
   }
   const onDocumentMouseDown = (event: MouseEvent) => {
+    // Any new gesture ends the previous read-only character selection.
+    textDragActive = false
     const target = event.target
     if (
       target instanceof HTMLElement &&
@@ -5220,14 +5437,21 @@ function wireProtectedInteractionMode(
 
   setEditing(false)
   dom.addEventListener('mousedown', onMouseDown, true)
+  document.addEventListener('mouseup', onMouseUp, true)
+  dom.addEventListener('dragstart', onDragStart, true)
   dom.addEventListener('dblclick', onDoubleClick, true)
   document.addEventListener('mousedown', onDocumentMouseDown, true)
   dom.addEventListener('keydown', onKeyDown, true)
+  document.addEventListener('selectionchange', onSelectionChange)
   return () => {
     dom.removeEventListener('mousedown', onMouseDown, true)
+    document.removeEventListener('mouseup', onMouseUp, true)
+    dom.removeEventListener('dragstart', onDragStart, true)
     dom.removeEventListener('dblclick', onDoubleClick, true)
     document.removeEventListener('mousedown', onDocumentMouseDown, true)
     dom.removeEventListener('keydown', onKeyDown, true)
+    keyGuardRoot?.removeEventListener('keydown', onViewKeyDown, true)
+    document.removeEventListener('selectionchange', onSelectionChange)
   }
 }
 

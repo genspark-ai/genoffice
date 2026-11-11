@@ -42,7 +42,14 @@ function verifyInteractionModes(
   expect(wrapper.draggable).toBe(true)
   expect(editableElement.getAttribute('contenteditable')).toBe('false')
 
+  // A press on the textbox body now belongs to the browser until mouseup: it
+  // must not start an HTML5 whole-object drag, or the reader could not paint a
+  // character selection inside the protected object.
   textTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+  expect(wrapper.draggable).toBe(false)
+
+  // Releasing without selected characters is still a plain click on the object.
+  document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }))
   expect(wrapper.draggable).toBe(true)
   expect(editor.state.selection).toBeInstanceOf(NodeSelection)
 

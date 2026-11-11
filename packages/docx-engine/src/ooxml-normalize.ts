@@ -179,9 +179,16 @@ function mapUriValue(value: string): string {
 
 const XMLNS_DECL_RE = /xmlns(?::([A-Za-z_][\w.-]*))?\s*=\s*(["'])([^"']*)\2/g
 
+const W_UNIVERSAL_MEASURE_RE = /\sw:[A-Za-z]+="-?\d+(?:\.\d+)?(?:mm|cm|in|pt|pc|pi)"/
+
+export function hasUniversalMeasures(xml: string): boolean {
+  return W_UNIVERSAL_MEASURE_RE.test(xml)
+}
+
 /** Cheap pre-check; normalizeOoxmlXml is only worth calling when this is true. */
 export function needsOoxmlNormalization(xml: string): boolean {
   if (xml.includes(S)) return true
+  if (hasUniversalMeasures(xml)) return true
   XMLNS_DECL_RE.lastIndex = 0
   let m: RegExpExecArray | null
   while ((m = XMLNS_DECL_RE.exec(xml)) !== null) {

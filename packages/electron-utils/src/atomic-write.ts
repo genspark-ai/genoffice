@@ -32,6 +32,44 @@ const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuf
 const tempPathBeside = (filePath: string) =>
   join(dirname(filePath), `${basename(filePath)}.${randomBytes(6).toString('hex')}.tmp`)
 
+/**
+ * Where a failed save parks the new bytes: beside the target, under ONE
+ * stable name.
+ *
+ * The staging temp carries a random suffix — two writers of the same target
+ * must not share it — but the rescue copy must not: a save that keeps
+ * failing (the document is open in another program, and the autosave retries
+ * it every 30 s) would otherwise leave a new file beside the document on
+ * every attempt, and the user's folder fills with them (genoffice#2567).
+ */
+const rescuePathFor = (filePath: string) =>
+  join(dirname(filePath), `${basename(filePath)}.unsaved.tmp`)
+
+/**
+ * Park the new bytes beside the target, replacing the copy an earlier failed
+ * attempt left. copyFile (not rename) because the destination may already
+ * exist — the previous attempt's copy — and a rename onto an existing file is
+ * refused on Windows. It stays in the kernel, so a multi-hundred-MB file is
+ * never read into RAM.
+ *
+ * If the copy does not land, the staging temp still holds the bytes: they
+ * are on disk either way.
+ */
+async function keepRescueCopy(filePath: string, tmp: string): Promise<void> {
+  try {
+    await copyFile(tmp, rescuePathFor(filePath))
+  } catch {
+    /* the staging temp still holds the bytes */
+    return
+  }
+  await unlink(tmp).catch(() => {})
+}
+
+/** The save landed: an earlier attempt's rescue copy is stale. */
+async function clearRescueCopy(filePath: string): Promise<void> {
+  await unlink(rescuePathFor(filePath)).catch(() => {})
+}
+
 async function syncFileBestEffort(path: string): Promise<void> {
   let handle
   try {
@@ -83,14 +121,24 @@ export async function atomicWriteFile(filePath: string, data: Buffer): Promise<v
   }
   try {
     await renameWithRetry(tmp, filePath)
+    await clearRescueCopy(filePath)
     return
   } catch {
     // fall through to the in-place write
   }
   // Keep the completed temp until the fallback lands: if that write fails
   // or the process dies, the new bytes still exist somewhere on disk.
-  await writeFile(filePath, data)
+  try {
+    await writeFile(filePath, data)
+  } catch (error) {
+    // The target could not be written at all: park the new bytes beside it
+    // under one stable name, so a save that keeps failing replaces the same
+    // file instead of leaving a new one on every attempt (genoffice#2567).
+    await keepRescueCopy(filePath, tmp)
+    throw error
+  }
   await unlink(tmp).catch(() => {})
+  await clearRescueCopy(filePath)
 }
 
 async function renameWithRetry(tmp: string, filePath: string): Promise<void> {
@@ -117,13 +165,20 @@ export async function atomicCopyFile(source: string, filePath: string): Promise<
   }
   try {
     await renameWithRetry(tmp, filePath)
+    await clearRescueCopy(filePath)
     return
   } catch {
     // fall through to the in-place write
   }
   // Keep the completed temp until the fallback lands, as atomicWriteFile does.
-  await copyFile(source, filePath)
+  try {
+    await copyFile(source, filePath)
+  } catch (error) {
+    await keepRescueCopy(filePath, tmp)
+    throw error
+  }
   await unlink(tmp).catch(() => {})
+  await clearRescueCopy(filePath)
 }
 
 /**
@@ -149,13 +204,20 @@ export async function atomicWriteVia(
   }
   try {
     await renameWithRetry(tmp, filePath)
+    await clearRescueCopy(filePath)
     return
   } catch {
     // fall through to the in-place copy
   }
   // Keep the completed temp until the fallback lands, as atomicWriteFile does.
-  await copyFile(tmp, filePath)
+  try {
+    await copyFile(tmp, filePath)
+  } catch (error) {
+    await keepRescueCopy(filePath, tmp)
+    throw error
+  }
   await unlink(tmp).catch(() => {})
+  await clearRescueCopy(filePath)
 }
 
 /**
