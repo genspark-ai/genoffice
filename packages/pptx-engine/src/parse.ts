@@ -4258,8 +4258,12 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
           : dflt?.src?.csFont
     return [themeFontSource(ref), layer ?? 'inherited'].filter(Boolean).join(' via ')
   }
+  // sz/spc are integer hundredths. `?? dflt` does not catch NaN, so one malformed
+  // attribute used to put NaN into every downstream glyph size and line height.
+  const ownFontSize = hundredthsOr(rPr['@_sz'], undefined)
+  const ownLetterSpacing = hundredthsOr(rPr['@_spc'], undefined)
   const styleSrc: RunStyleSource = {
-    fontSize: rPr['@_sz'] ? 'run' : inherited('fontSize', dflt?.fontSize != null),
+    fontSize: ownFontSize != null ? 'run' : inherited('fontSize', dflt?.fontSize != null),
     bold: bAttr != null ? 'run' : inherited('bold', dflt?.bold != null),
     italic: iAttr != null ? 'run' : inherited('italic', dflt?.italic != null),
     color:
@@ -4295,9 +4299,9 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     ...(eaRaw ? { eaFont: String(eaRaw) } : {}),
     ...(csRaw ? { csFont: String(csRaw) } : {}),
     ...(!latinRaw && !eaRaw ? { fontImplicit: true } : {}),
-    fontSize: rPr['@_sz'] ? parseInt(rPr['@_sz'], 10) / 100 : dflt?.fontSize,
-    ...(rPr['@_sz'] ? {} : { fontSizeImplicit: true }),
-    ...(rPr['@_spc'] ? { letterSpacing: parseInt(rPr['@_spc'], 10) / 100 } : {}),
+    fontSize: ownFontSize ?? dflt?.fontSize,
+    ...(ownFontSize != null ? {} : { fontSizeImplicit: true }),
+    ...(ownLetterSpacing != null ? { letterSpacing: ownLetterSpacing } : {}),
     ...(rPr['@_kern'] != null ? { kern: (parseInt(rPr['@_kern'], 10) || 0) / 100 } : {}),
     ...(rPr['@_baseline'] ? { baseline: parseInt(rPr['@_baseline'], 10) / 1000 } : {}),
     fontFamily,
@@ -4404,6 +4408,13 @@ function intOr(v: any, dflt: number): number {
   if (v === undefined || v === null) return dflt
   const n = parseInt(v, 10)
   return Number.isNaN(n) ? dflt : n
+}
+
+/** `sz`/`spc` are integer hundredths of a point; a malformed value falls back rather than poisoning layout with NaN. */
+function hundredthsOr(v: any, dflt: number | undefined): number | undefined {
+  if (v === undefined || v === null) return dflt
+  const n = parseInt(v, 10)
+  return Number.isNaN(n) ? dflt : n / 100
 }
 
 export { EMU_PER_PT }
