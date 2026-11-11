@@ -6,15 +6,18 @@ import {
   citationText,
   generateCaptionXml,
   generateIndexFieldXml,
-  generateTocFieldXml,
   type Block,
   type SourceInfo,
-  type TocEntry,
 } from '@genoffice/docx-engine'
 import { Dropdown } from '@genoffice/ui'
 import { PromptModal } from './PromptModal'
-import { collectHeadings } from '../editor/headings'
-import { t, useI18n, type StringKey } from '../i18n/locale'
+import {
+  collectTocEntriesWithPages,
+  tocFieldNodes,
+  updateTocField,
+  xmlOfNode,
+} from '../editor/toc-update'
+import { useI18n, type StringKey } from '../i18n/locale'
 import {
   IconBook,
   IconCaption,
@@ -29,122 +32,6 @@ import {
 
 /** icon size for the big icon-over-label ribbon buttons (slides ribbon parity) */
 import { BIG, TabProps, toggleDropdown } from './ribbon-tabs'
-
-function collectTocEntries(editor: Editor): TocEntry[] {
-  return collectHeadings(editor.state.doc, editor.storage.listNumbering?.styles).map(
-    ({ level, text }) => ({ level, text }),
-  )
-}
-
-/** Heading entries + real page numbers (headingPages and collectTocEntries share document order) */
-function collectTocEntriesWithPages(
-  editor: Editor,
-  headingPages?: () => number[] | null,
-): TocEntry[] {
-  const entries = collectTocEntries(editor)
-  const pages = headingPages?.()
-  if (pages && pages.length === entries.length) {
-    return entries.map((e, i) => ({ ...e, pageNo: pages[i] }))
-  }
-  return entries
-}
-
-/** PM nodes for a freshly generated TOC field (one docProtected per line) */
-function tocFieldNodes(entries: TocEntry[]): Array<Record<string, unknown>> {
-  return generateTocFieldXml(entries).map((xml, i) => ({
-    type: 'docProtected',
-    attrs: {
-      docxIndex: null,
-      blockType: 'passthrough',
-      label: t('ribbonTocFieldLabel'),
-      genXml: xml,
-      fieldDisplay: {
-        kind: 'tocLine',
-        left: entries[i].text,
-        right: entries[i].pageNo !== undefined ? String(entries[i].pageNo) : '',
-        level: entries[i].level,
-      },
-    },
-  }))
-}
-
-const PAGE_BREAK_PARAGRAPH_XML = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
-
-/** OOXML of a top-level PM node: editor-generated fragment or original slice */
-function xmlOfNode(node: { attrs: Record<string, unknown> }, blocks: Block[]): string {
-  if (node.attrs.genXml) return String(node.attrs.genXml)
-  const idx = node.attrs.docxIndex
-  if (idx === null || idx === undefined) return ''
-  return blocks.find((b) => b.docxIndex === idx)?.originalXml ?? ''
-}
-
-/**
- * Find the TOC field region (field begin ... matching end, tracked by fldChar
- * depth across top-level blocks) and replace it with a regenerated dirty TOC
- * field built from the current headings.
- */
-function updateTocField(
-  editor: Editor,
-  blocks: Block[],
-  headingPages?: () => number[] | null,
-): void {
-  const entries = collectTocEntriesWithPages(editor, headingPages)
-  if (entries.length === 0) {
-    window.alert(t('ribbonTocNoHeadings'))
-    return
-  }
-
-  const doc = editor.state.doc
-  let from = -1
-  let to = -1
-  let keepPageBreak = false
-  let depth = 0
-  let found = false
-  doc.forEach((node, offset) => {
-    if (found) return
-    const xml = xmlOfNode(node as never, blocks)
-    if (from === -1) {
-      if (/<w:instrText[^>]*>\s*TOC[\s\\]/.test(xml)) {
-        from = offset
-        depth = 0
-      } else {
-        return
-      }
-    }
-    depth += (xml.match(/w:fldCharType="begin"/g) ?? []).length
-    depth -= (xml.match(/w:fldCharType="end"/g) ?? []).length
-    if (depth <= 0) {
-      to = offset + node.nodeSize
-      keepPageBreak = /<w:br\s[^>]*w:type="page"/.test(xml)
-      found = true
-    }
-  })
-
-  const nodes = tocFieldNodes(entries)
-  if (keepPageBreak) {
-    nodes.push({
-      type: 'docProtected',
-      attrs: {
-        docxIndex: null,
-        blockType: 'passthrough',
-        label: t('ribbonPageBreak'),
-        genXml: PAGE_BREAK_PARAGRAPH_XML,
-        fieldDisplay: { kind: 'pageBreak' },
-      },
-    })
-  }
-
-  if (from === -1 || !found) {
-    window.alert(t('ribbonTocNotFound'))
-    return
-  }
-  editor
-    .chain()
-    .focus()
-    .deleteRange({ from, to })
-    .insertContentAt(from, nodes as never)
-    .run()
-}
 
 const CAPTION_LABEL_KEYS = [
   'ribbonCaptionFigure',

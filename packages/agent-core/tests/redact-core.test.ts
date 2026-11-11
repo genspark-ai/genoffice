@@ -43,6 +43,18 @@ describe('a label', () => {
     expect(sanitizeLabel('a*b/c')).toBe('a*b/c')
   })
 
+  it('does not cut a surrogate pair in half at the cap', () => {
+    // The label rides into the document's XML: a lone high surrogate is a
+    // character XML 1.0 cannot carry.
+    const straddling = `${'x'.repeat(MAX_LABEL_LENGTH - 1)}\u{1F600}`
+    const label = sanitizeLabel(straddling)
+    expect(label).toHaveLength(MAX_LABEL_LENGTH - 1)
+    expect(label.charCodeAt(label.length - 1)).toBeLessThan(0xd800)
+    // a pair that fits inside the cap is untouched
+    const inside = `${'x'.repeat(MAX_LABEL_LENGTH - 2)}\u{1F600}`
+    expect(sanitizeLabel(inside)).toBe(inside)
+  })
+
   it('becomes the marker the model reads', () => {
     expect(placeholderSource('client phone')).toBe('{{client phone}}')
     // an empty label still produces a marker rather than empty braces

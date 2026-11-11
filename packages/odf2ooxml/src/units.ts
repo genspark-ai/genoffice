@@ -20,6 +20,14 @@ const EMU_PER_UNIT: Record<string, number> = {
 }
 
 /**
+ * Paper stops at 1e9 EMU (about 27.8 m), past any page, column or image a
+ * document can hold. A larger length rounds into exponent notation
+ * (`1.13e+21`), which no ST_TwipsMeasure accepts, so it is treated as
+ * unprovable and callers fall back.
+ */
+const MAX_EMU = 1_000_000_000
+
+/**
  * `"2.5cm"`, `"0.5in"`, `"10mm"`, `"12pt"`, `"2pc"` → EMU. Percentages and
  * bare non-zero numbers have no provable unit and return null; a bare `0` is
  * accepted (producers write it for a zero length).
@@ -32,7 +40,8 @@ export function odfLengthToEmu(text: string | undefined): number | null {
   if (!Number.isFinite(value)) return null
   const unit = match[2]
   if (!unit) return value === 0 ? 0 : null
-  return Math.round(value * EMU_PER_UNIT[unit])
+  const emu = Math.round(value * EMU_PER_UNIT[unit])
+  return Math.abs(emu) > MAX_EMU ? null : emu
 }
 
 export const emuToPt = (emu: number): number => emu / EMU_PER_PT

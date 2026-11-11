@@ -99,6 +99,16 @@ describe('convertOdtToDocx', () => {
     expect(document).toContain('c   d')
   })
 
+  it('treats a negative space count as a single space instead of throwing', async () => {
+    const body = '<text:p>a<text:s text:c="-5"/>b</text:p>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    const text = [...document.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)]
+      .map((match) => match[1])
+      .join('')
+    expect(text).toBe('a b')
+  })
+
   it('keeps an ordinary line-height percentage but ignores one beyond 1000%', async () => {
     const automatic =
       '<style:style style:name="P1" style:family="paragraph"><style:paragraph-properties fo:line-height="200%"/></style:style>' +
@@ -154,6 +164,21 @@ describe('convertOdtToDocx', () => {
     )
   })
 
+  it('bounds a row span to the rows that exist', async () => {
+    // table:number-rows-spanned is producer-controlled: an unclamped 200000
+    // allocated that many empty rows, and Infinity never returned.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-row><table:table-cell table:number-rows-spanned="200000"><text:p>tall</text:p></table:table-cell></table:table-row>' +
+      '<table:table-row><table:table-cell><text:p>next</text:p></table:table-cell></table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect((document.match(/<w:tr>/g) ?? []).length).toBe(2)
+    expect(document).toContain('<w:vMerge w:val="restart"/>')
+    expect(document).toContain('<w:vMerge/>')
+  })
+
   it('carries the page geometry into the section properties', async () => {
     const body = '<text:p>page</text:p>'
     const result = await convertOdtToDocx(await buildOdt(contentXml(body), stylesXml('', PAGE_A4)))
@@ -175,6 +200,17 @@ describe('convertOdtToDocx', () => {
     expect(await docxHasMedia(result.docx, '.png')).toBe(true)
     const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
     expect(document).toContain('<w:drawing>')
+  })
+
+  it('drops an inline image whose base64 payload is not decodable', async () => {
+    const body =
+      '<text:p>before<draw:frame svg:width="2cm" svg:height="2cm"><draw:image><office:binary-data>not-base64!!!</office:binary-data></draw:image></draw:frame>after</text:p>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    expect(result.dropped).toContainEqual({ what: 'images', count: 1 })
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document).toContain('before')
+    expect(document).toContain('after')
+    expect(document).not.toContain('<w:drawing>')
   })
 
   it('does not blame the first table for an image a paragraph already emitted', async () => {
