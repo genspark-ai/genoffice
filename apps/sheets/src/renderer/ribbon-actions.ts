@@ -46,6 +46,7 @@ import {
 } from '@genoffice/xlsx-gateway/domain/chart-visual'
 import {
   applyFlashFillTemplate,
+  flashFillFirstSource,
   inferFlashFillTemplate,
 } from '@genoffice/xlsx-gateway/domain/flash-fill'
 import type {
@@ -2107,7 +2108,13 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
           ctx.setMessage(t('appFlashFillNeedsRows'))
           return
         }
-        const firstSource = Math.max(0, targetColumn - 6)
+        const firstSource = flashFillFirstSource(targetColumn, (column) =>
+          (
+            worksheet.getRange(startRow, column, rowCount, 1).getValues() as (
+              string | number | boolean | null | undefined
+            )[][]
+          ).some(([value]) => String(value ?? '').trim() !== ''),
+        )
         const grid = worksheet
           .getRange(startRow, firstSource, rowCount, targetColumn - firstSource + 1)
           .getValues() as (string | number | boolean | null | undefined)[][]

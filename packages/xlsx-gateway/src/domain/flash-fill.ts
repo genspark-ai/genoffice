@@ -64,3 +64,14 @@ export function applyFlashFillTemplate(
     .map((token) => (token.kind === 'literal' ? token.text : (source[token.index] ?? '').trim()))
     .join('')
 }
+
+/// The leftmost source column for a fill into `targetColumn`: the data block to its left, up to
+/// the first empty column. A narrower window turned a column it missed into literal text.
+export function flashFillFirstSource(
+  targetColumn: number,
+  hasValues: (column: number) => boolean,
+): number {
+  let first = targetColumn - 1
+  while (first > 0 && hasValues(first - 1)) first -= 1
+  return first
+}

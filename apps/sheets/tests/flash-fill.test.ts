@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   applyFlashFillTemplate,
+  flashFillFirstSource,
   inferFlashFillTemplate,
 } from '@genoffice/xlsx-gateway/domain/flash-fill'
 
@@ -48,5 +49,24 @@ describe('inferFlashFillTemplate', () => {
     ])
     expect(template).not.toBeNull()
     expect(applyFlashFillTemplate(template!, ['Mary', '13911111111'])).toBe('Mary: 13911111111')
+  })
+})
+
+describe('flashFillFirstSource', () => {
+  const filled =
+    (...columns: number[]) =>
+    (column: number) =>
+      columns.includes(column)
+
+  it('reaches the first column of a wide list, not only the six nearest', () => {
+    expect(flashFillFirstSource(9, filled(0, 1, 2, 3, 4, 5, 6, 7, 8))).toBe(0)
+  })
+
+  it('stops at the first empty column', () => {
+    expect(flashFillFirstSource(6, filled(0, 1, 3, 4, 5))).toBe(3)
+  })
+
+  it('reads across an empty column right before the filled one', () => {
+    expect(flashFillFirstSource(5, filled(1, 2, 3))).toBe(1)
   })
 })
