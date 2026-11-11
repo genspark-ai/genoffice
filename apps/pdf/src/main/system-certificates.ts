@@ -4,7 +4,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { decodeCommandOutput } from '@genoffice/electron-utils'
+import { decodeUtf8 } from '@genoffice/electron-utils'
 import type { CertificateErrorCode } from '../shared/ipc'
 import type { ExternalSigner } from './pdf-sign'
 import { describeCertificate } from './pdf-signatures'
@@ -93,8 +93,8 @@ export const runCommand: Runner = (file, args, options) =>
         const failure = error as (NodeJS.ErrnoException & { code?: unknown }) | null
         resolve({
           code: !failure ? 0 : typeof failure.code === 'number' ? failure.code : 1,
-          stdout: decodeCommandOutput(stdout ?? ''),
-          stderr: decodeCommandOutput(stderr ?? ''),
+          stdout: decodeUtf8(stdout ?? ''),
+          stderr: decodeUtf8(stderr ?? ''),
           missing: failure?.code === 'ENOENT',
         })
       },

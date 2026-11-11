@@ -5,8 +5,6 @@ import { dirname, join } from 'node:path'
 import { decodeCommandOutput } from '@genoffice/electron-utils'
 import type { DefaultAppStatus } from '../shared/home-api'
 
-export { decodeCommandOutput } from '@genoffice/electron-utils'
-
 // macOS writes the LaunchServices user choice via osascript (no helper binary to
 // ship), Linux via xdg-mime; Windows apps cannot set defaults, only open the page.
 
@@ -202,9 +200,7 @@ export function createDefaultAppService(deps: DefaultAppDeps): DefaultAppService
   const macBundle = deps.platform === 'darwin' ? macAppBundlePath(deps.exePath) : null
 
   async function status(): Promise<DefaultAppStatus> {
-    // Probing the current handler is read-only, so dev builds report it too.
-    // Hiding the setting entirely made it impossible to inspect (or verify the
-    // decoding of) the current owner while running from source.
+    if (!deps.packaged) return UNSUPPORTED
     try {
       if (deps.platform === 'darwin') {
         if (!macBundle) return UNSUPPORTED
@@ -265,9 +261,7 @@ export function createDefaultAppService(deps: DefaultAppDeps): DefaultAppService
   }
 
   async function set(): Promise<DefaultAppStatus> {
-    // Claiming associations from a dev build would point them at Electron.app;
-    // stay read-only there and just re-probe so the setting stays visible.
-    if (!deps.packaged) return status()
+    if (!deps.packaged) return UNSUPPORTED
     try {
       if (deps.platform === 'darwin' && macBundle) {
         await deps.run('osascript', ['-l', 'JavaScript', '-e', MAC_SET_SCRIPT, macBundle, ...utis])

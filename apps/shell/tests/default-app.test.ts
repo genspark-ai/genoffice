@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   OFFICE_TYPES,
   createDefaultAppService,
-  decodeCommandOutput,
   macAppBundlePath,
   parseMacStatus,
   parseRegValue,
@@ -82,45 +81,9 @@ describe('parseRegValue', () => {
     ].join('\r\n')
     expect(parseRegValue(out)).toBe('Word.Document.12')
     expect(parseRegValue('    (Default)    REG_SZ    Word Document\r\n')).toBe('Word Document')
-    expect(parseRegValue('    (Default)    REG_SZ    Microsoft Excel 工作表\r\n')).toBe(
-      'Microsoft Excel 工作表',
-    )
     expect(
       parseRegValue('ERROR: The system was unable to find the specified registry key'),
     ).toBeNull()
-  })
-})
-
-describe('decodeCommandOutput', () => {
-  // A Chinese display name in GBK, the code page reg.exe uses on a Chinese Windows install.
-  const gbkName = Buffer.concat([
-    Buffer.from('Microsoft Excel ', 'ascii'),
-    Buffer.from([0xb9, 0xa4, 0xd7, 0xf7, 0xb1, 0xed]),
-  ])
-
-  it('recovers the localised ProgId name instead of mojibake on Windows', () => {
-    expect(gbkName.toString('utf8')).toContain('\uFFFD') // the old behaviour
-    expect(decodeCommandOutput(gbkName, 'win32')).toBe('Microsoft Excel 工作表')
-  })
-
-  it('leaves ASCII output untouched on Windows', () => {
-    const ascii = Buffer.from('    (Default)    REG_SZ    Word.Document.12\r\n', 'ascii')
-    expect(decodeCommandOutput(ascii, 'win32')).toBe(ascii.toString('utf8'))
-  })
-
-  it('keeps genuine UTF-8 output on Windows', () => {
-    const utf8 = Buffer.from('Microsoft PowerPoint 演示文稿', 'utf8')
-    expect(decodeCommandOutput(utf8, 'win32')).toBe('Microsoft PowerPoint 演示文稿')
-  })
-
-  it('uses UTF-8 on macOS and Linux', () => {
-    const utf8 = Buffer.from('WPS Office — 表格', 'utf8')
-    expect(decodeCommandOutput(utf8, 'linux')).toBe('WPS Office — 表格')
-    expect(decodeCommandOutput(utf8, 'darwin')).toBe('WPS Office — 表格')
-  })
-
-  it('passes through an already-decoded string', () => {
-    expect(decodeCommandOutput('Word Document', 'win32')).toBe('Word Document')
   })
 })
 
@@ -131,20 +94,12 @@ describe('createDefaultAppService', () => {
     openExternal: vi.fn(async () => {}),
   }
 
-  it('probes read-only in dev builds but never claims the types', async () => {
-    const calls: string[][] = []
-    const run = vi.fn<RunCommand>(async (cmd, args) => {
-      calls.push([cmd, ...args])
-      return macStatusJson(() => WPS)
-    })
+  it('is unsupported in dev builds and never runs a command', async () => {
+    const run = vi.fn<RunCommand>()
     const svc = createDefaultAppService({ ...base, platform: 'darwin', packaged: false, run })
-    expect((await svc.status()).state).toBe('other')
-    // set() re-probes instead of writing, so the settings entry stays visible.
-    expect((await svc.set()).state).toBe('other')
-    expect(calls).toHaveLength(2)
-    expect(
-      calls.some((c) => c.some((a) => a.includes('LSSetDefaultRoleHandlerForContentType'))),
-    ).toBe(false)
+    expect((await svc.status()).state).toBe('unsupported')
+    expect((await svc.set()).state).toBe('unsupported')
+    expect(run).not.toHaveBeenCalled()
   })
 
   it('mac: claims every UTI through osascript and re-reads the status', async () => {

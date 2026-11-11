@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { decodeChunks } from '@genoffice/electron-utils'
+import { decodeChunksUtf8 } from '@genoffice/electron-utils'
 
 /**
  * Shell-main half of the MCP → `genoffice` CLI delegation.
@@ -106,8 +106,8 @@ export function createCliRunner(paths: CliRunnerPaths): CliRunner {
         let outBytes = 0
         let errBytes = 0
         const snapshot = (): { stdout: string; stderr: string } => ({
-          stdout: decodeChunks(outChunks),
-          stderr: decodeChunks(errChunks),
+          stdout: decodeChunksUtf8(outChunks),
+          stderr: decodeChunksUtf8(errChunks),
         })
         let settled = false
         let truncated = false
