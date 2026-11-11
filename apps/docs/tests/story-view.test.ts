@@ -233,6 +233,21 @@ describe('story view: typing takes the paragraph style', () => {
     editor.destroy()
   })
 
+  // With Track Changes on, the mark removal on freshly typed text is part of
+  // the insertion: an untagged transaction would have the plugin record a
+  // formatting edit on top of it, and every typed character would show a
+  // "Formatted" bubble in the review pane.
+  it('records a typed character as an insertion, not a formatting change', () => {
+    const editor = makeEditor(STYLED_RUN)
+    editor.storage.trackChanges.enabled = true
+    editor.storage.trackChanges.trackFormatting = true
+    editor.commands.setStoryViewActive(true)
+    typeText(editor, 'q')
+    const texts = textsOf(editor)
+    expect(texts[texts.length - 1]).toEqual({ text: 'q', marks: ['ins'] })
+    editor.destroy()
+  })
+
   it('a paste keeps the formatting it carries', () => {
     const editor = makeEditor(STYLED_RUN)
     editor.commands.setStoryViewActive(true)

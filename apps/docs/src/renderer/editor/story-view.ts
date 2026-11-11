@@ -28,6 +28,7 @@ import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/p
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { ReplaceStep } from '@tiptap/pm/transform'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { TRACK_IGNORE } from './revisions'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -153,7 +154,11 @@ export function stripHiddenMarksFromTypedText(
 ): Transaction | null {
   const markType = newState.schema.marks[STORY_HIDDEN_MARK]
   if (!markType) return null
-  const tr = newState.tr
+  // The mark removal on freshly typed text belongs to the insertion, not to a
+  // formatting change: with Track Changes on, an untagged transaction would
+  // have the plugin record a formatting edit on top of the insertion, and every
+  // typed character would show a "Formatted" bubble in the review pane.
+  const tr = newState.tr.setMeta(TRACK_IGNORE, true)
   let changed = false
   for (const t of transactions) {
     if (!t.docChanged) continue
