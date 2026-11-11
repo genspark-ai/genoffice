@@ -252,6 +252,9 @@ export const strings = {
       '关闭后，编辑器会隐藏 AI 侧栏和侧边按钮；功能区或菜单里的 AI 操作仍会打开面板，新文档也不会自动打开。',
     setAiOpenInNewDocs: '新文档中打开 AI 面板',
     setAiOpenInNewDocsDesc: '关闭后，新打开的文档默认收起 AI 面板；需要时点一下即可展开。',
+    setAiShowAskTrigger: '选中文字时显示「AI 修改」浮窗',
+    setAiShowAskTriggerDesc:
+      '关闭后，跟随文本选区出现的「AI 修改」快捷按钮将不再显示；AI 面板仍可正常使用。',
     setAuthorName: '用户名',
     setAuthorNameDesc:
       '作为批注和修订的作者显示在 Docs、Sheets、Slides、PDF 中。留空则使用电脑账户名。',
@@ -777,6 +780,9 @@ export const strings = {
     setAiOpenInNewDocs: 'Open the AI panel in new documents',
     setAiOpenInNewDocsDesc:
       'When off, newly opened documents start with the AI panel collapsed; it is one click away when needed.',
+    setAiShowAskTrigger: 'Show the "AI 修改" chip on selection',
+    setAiShowAskTriggerDesc:
+      'When off, the floating "AI 修改" button that follows your selection no longer appears. The AI panel stays available.',
     setAuthorName: 'User name',
     setAuthorNameDesc:
       'Shown as the author of comments and tracked changes in Docs, Sheets, Slides and PDF. Leave blank to use your computer account name.',
@@ -1315,6 +1321,9 @@ export const strings = {
     setAiOpenInNewDocs: 'Mở bảng AI trong tài liệu mới',
     setAiOpenInNewDocsDesc:
       'Khi tắt, tài liệu mới mở sẽ thu gọn bảng AI; chỉ cần một lần bấm để mở lại khi cần.',
+    setAiShowAskTrigger: 'Hiện chip «AI 修改» khi chọn',
+    setAiShowAskTriggerDesc:
+      'Khi tắt, nút nổi «AI 修改» theo vùng chọn sẽ không còn hiện. Bảng AI vẫn dùng được.',
     setAuthorName: 'Tên người dùng',
     setAuthorNameDesc:
       'Hiển thị là tác giả của nhận xét và thay đổi được theo dõi trong Docs, Sheets, Slides và PDF. Để trống để dùng tên tài khoản máy tính.',
@@ -1858,6 +1867,9 @@ export const strings = {
     setAiOpenInNewDocs: 'Yeni belgelerde AI panelini aç',
     setAiOpenInNewDocsDesc:
       'Kapalıyken yeni açılan belgeler AI paneli daraltılmış olarak başlar; gerektiğinde tek tıkla açılır.',
+    setAiShowAskTrigger: 'Seçimde «AI 修改» çipini göster',
+    setAiShowAskTriggerDesc:
+      'Kapalıyken, seçimi takip eden «AI 修改» yüzen düğmesi artık görünmez. AI paneli kullanılmaya devam eder.',
     setAuthorName: 'Kullanıcı adı',
     setAuthorNameDesc:
       'Docs, Sheets, Slides ve PDF’de açıklamaların ve izlenen değişikliklerin yazarı olarak gösterilir. Bilgisayar hesabınızın adını kullanmak için boş bırakın.',
@@ -2414,6 +2426,9 @@ export const strings = {
     setAiOpenInNewDocs: '新しいドキュメントで AI パネルを開く',
     setAiOpenInNewDocsDesc:
       'オフにすると、新しく開いたドキュメントは AI パネルを折りたたんだ状態で始まります。必要なときはワンクリックで開けます。',
+    setAiShowAskTrigger: '選択時に「AI 修改」チップを表示',
+    setAiShowAskTriggerDesc:
+      'オフにすると、テキスト選択に追従する「AI 修改」ボタンが表示されなくなります。AI パネルは引き続き利用できます。',
     setAuthorName: 'ユーザー名',
     setAuthorNameDesc:
       'Docs、Sheets、Slides、PDF でコメントと変更履歴の作成者として表示されます。空欄の場合はパソコンのアカウント名を使います。',
@@ -2962,6 +2977,9 @@ export const strings = {
     setAiOpenInNewDocs: '새 문서에서 AI 패널 열기',
     setAiOpenInNewDocsDesc:
       '끄면 새로 여는 문서는 AI 패널이 접힌 상태로 시작합니다. 필요할 때 한 번 클릭하면 열립니다.',
+    setAiShowAskTrigger: '선택 시 「AI 修改」칩 표시',
+    setAiShowAskTriggerDesc:
+      '끄면 텍스트 선택을 따라가는 「AI 修改」버튼이 더 이상 표시되지 않습니다. AI 패널은 계속 사용할 수 있습니다.',
     setAuthorName: '사용자 이름',
     setAuthorNameDesc:
       'Docs, Sheets, Slides, PDF에서 메모와 변경 내용 추적의 작성자로 표시됩니다. 비워 두면 컴퓨터 계정 이름을 사용합니다.',
@@ -3515,6 +3533,9 @@ export const strings = {
     setAiOpenInNewDocsDesc:
       "Désactivé : les documents nouvellement ouverts démarrent avec le panneau IA replié ; un clic suffit pour l'afficher.",
     setAuthorName: 'Nom d’utilisateur',
+    setAiShowAskTrigger: 'Afficher la puce « AI 修改 » sur sélection',
+    setAiShowAskTriggerDesc:
+      'Désactivée, le bouton flottant « AI 修改 » qui suit la sélection n’apparaît plus. Le panneau IA reste disponible.',
     setAuthorNameDesc:
       'Affiché comme auteur des commentaires et des modifications suivies dans Docs, Sheets, Slides et PDF. Laissez vide pour utiliser le nom de votre compte.',
     settings: 'Paramètres',
@@ -4082,6 +4103,9 @@ export const strings = {
     setAiOpenInNewDocs: 'KI-Panel in neuen Dokumenten öffnen',
     setAiOpenInNewDocsDesc:
       'Wenn aus, starten neu geöffnete Dokumente mit eingeklapptem KI-Panel; ein Klick genügt, um es zu öffnen.',
+    setAiShowAskTrigger: '„AI 修改“-Chip bei Auswahl anzeigen',
+    setAiShowAskTriggerDesc:
+      'Ist die Option aus, erscheint der schwebende „AI 修改“-Knopf nicht mehr bei der Textauswahl. Das KI-Panel bleibt verfügbar.',
     setAuthorName: 'Benutzername',
     setAuthorNameDesc:
       'Wird in Docs, Sheets, Slides und PDF als Autor von Kommentaren und nachverfolgten Änderungen angezeigt. Leer lassen, um den Kontonamen des Computers zu verwenden.',
@@ -4642,6 +4666,9 @@ export const strings = {
     setAiOpenInNewDocs: 'Abrir el panel de IA en documentos nuevos',
     setAiOpenInNewDocsDesc:
       'Si está desactivado, los documentos recién abiertos empiezan con el panel de IA plegado; se abre con un clic cuando lo necesites.',
+    setAiShowAskTrigger: 'Mostrar la ficha «AI 修改» al seleccionar',
+    setAiShowAskTriggerDesc:
+      'Al desactivarla, el botón flotante «AI 修改» que sigue la selección ya no aparece. El panel de IA sigue disponible.',
     setAuthorName: 'Nombre de usuario',
     setAuthorNameDesc:
       'Se muestra como autor de los comentarios y los cambios con seguimiento en Docs, Sheets, Slides y PDF. Déjalo vacío para usar el nombre de tu cuenta.',
@@ -5193,6 +5220,9 @@ export const strings = {
     setAiOpenInNewDocs: 'เปิดแผง AI ในเอกสารใหม่',
     setAiOpenInNewDocsDesc:
       'เมื่อปิด เอกสารที่เปิดใหม่จะเริ่มโดยพับแผง AI ไว้ คลิกครั้งเดียวเพื่อเปิดเมื่อต้องการ',
+    setAiShowAskTrigger: 'แสดงชิป «AI 修改» เมื่อเลือกข้อความ',
+    setAiShowAskTriggerDesc:
+      'เมื่อปิด ปุ่มลอย «AI 修改» ที่ตามการเลือกข้อความจะไม่แสดงอีกต่อไป แผง AI ยังใช้งานได้',
     setAuthorName: 'ชื่อผู้ใช้',
     setAuthorNameDesc:
       'แสดงเป็นผู้เขียนความคิดเห็นและการติดตามการเปลี่ยนแปลงใน Docs, Sheets, Slides และ PDF เว้นว่างไว้เพื่อใช้ชื่อบัญชีคอมพิวเตอร์',
@@ -5738,6 +5768,9 @@ export const strings = {
     setAiOpenInNewDocs: 'Buka panel AI di dokumen baru',
     setAiOpenInNewDocsDesc:
       'Jika nonaktif, dokumen yang baru dibuka dimulai dengan panel AI terlipat; cukup satu klik saat dibutuhkan.',
+    setAiShowAskTrigger: 'Tampilkan chip "AI 修改" saat memilih',
+    setAiShowAskTriggerDesc:
+      'Jika dimatikan, tombol mengambang "AI 修改" yang mengikuti pilihan tidak lagi muncul. Panel AI tetap tersedia.',
     setAuthorName: 'Nama pengguna',
     setAuthorNameDesc:
       'Ditampilkan sebagai penulis komentar dan perubahan terlacak di Docs, Sheets, Slides, dan PDF. Kosongkan untuk memakai nama akun komputer.',
@@ -6288,6 +6321,9 @@ export const strings = {
     setAiOpenInNewDocs: 'Открывать панель ИИ в новых документах',
     setAiOpenInNewDocsDesc:
       'Если выключено, новые документы открываются со свёрнутой панелью ИИ; она доступна в один клик.',
+    setAiShowAskTrigger: 'Показывать чип «AI 修改» при выделении',
+    setAiShowAskTriggerDesc:
+      'При отключении плавающая кнопка «AI 修改», следующая за выделением, больше не появляется. Панель ИИ остаётся доступной.',
     setAuthorName: 'Имя пользователя',
     setAuthorNameDesc:
       'Отображается как автор примечаний и исправлений в Docs, Sheets, Slides и PDF. Оставьте пустым, чтобы использовать имя учётной записи компьютера.',
@@ -6840,6 +6876,9 @@ export const strings = {
     setAiOpenInNewDocs: 'فتح لوحة الذكاء الاصطناعي في المستندات الجديدة',
     setAiOpenInNewDocsDesc:
       'عند الإيقاف، تبدأ المستندات المفتوحة حديثًا بلوحة الذكاء الاصطناعي مطوية؛ تكفي نقرة واحدة لفتحها عند الحاجة.',
+    setAiShowAskTrigger: 'إظهار شريحة «AI 修改» عند التحديد',
+    setAiShowAskTriggerDesc:
+      'عند الإيقاف، لا يظهر الزر العائم «AI 修改» الذي يتبع التحديد. تبقى لوحة الذكاء الاصطناعي متاحة.',
     setAuthorName: 'اسم المستخدم',
     setAuthorNameDesc:
       'يظهر كمؤلف التعليقات والتغييرات المتعقبة في Docs وSheets وSlides وPDF. اتركه فارغًا لاستخدام اسم حساب الكمبيوتر.',
@@ -7381,6 +7420,9 @@ export const strings = {
     setAiOpenInNewDocs: 'Abrir o painel de IA em novos documentos',
     setAiOpenInNewDocsDesc:
       'Quando desativado, os documentos recém-abertos começam com o painel de IA recolhido; basta um clique quando precisar.',
+    setAiShowAskTrigger: 'Mostrar o chip «AI 修改» na seleção',
+    setAiShowAskTriggerDesc:
+      'Quando desativado, o botão flutuante «AI 修改» que segue a seleção não aparece mais. O painel de IA continua disponível.',
     setAuthorName: 'Nome de usuário',
     setAuthorNameDesc:
       'Exibido como autor dos comentários e das alterações controladas no Docs, Sheets, Slides e PDF. Deixe em branco para usar o nome da conta do computador.',
@@ -7929,6 +7971,9 @@ export const strings = {
     setAiOpenInNewDocs: 'Apri il pannello IA nei nuovi documenti',
     setAiOpenInNewDocsDesc:
       'Se disattivato, i documenti appena aperti iniziano con il pannello IA ridotto; basta un clic quando serve.',
+    setAiShowAskTrigger: 'Mostra la scheda «AI 修改» sulla selezione',
+    setAiShowAskTriggerDesc:
+      'Disattivata, il pulsante fluttuante «AI 修改» che segue la selezione non appare più. Il pannello IA resta disponibile.',
     setAuthorName: 'Nome utente',
     setAuthorNameDesc:
       'Mostrato come autore di commenti e revisioni in Docs, Sheets, Slides e PDF. Lascia vuoto per usare il nome dell’account del computer.',
@@ -8476,6 +8521,9 @@ export const strings = {
     setAiOpenInNewDocs: 'Otwieraj panel AI w nowych dokumentach',
     setAiOpenInNewDocsDesc:
       'Gdy wyłączone, nowo otwarte dokumenty zaczynają ze zwiniętym panelem AI; wystarczy jedno kliknięcie, gdy jest potrzebny.',
+    setAiShowAskTrigger: 'Pokaż chip „AI 修改” przy zaznaczeniu',
+    setAiShowAskTriggerDesc:
+      'Po wyłączeniu pływający przycisk „AI 修改” podążający za zaznaczeniem nie będzie się pojawiać. Panel AI pozostaje dostępny.',
     setAuthorName: 'Nazwa użytkownika',
     setAuthorNameDesc:
       'Wyświetlana jako autor komentarzy i śledzonych zmian w Docs, Sheets, Slides i PDF. Pozostaw puste, aby użyć nazwy konta komputera.',
@@ -9235,6 +9283,9 @@ export const strings = {
     setAiOpenInNewDocs: 'Otevírat panel AI v nových dokumentech',
     setAiOpenInNewDocsDesc:
       'Když je vypnuto, nově otevřené dokumenty začínají se sbaleným panelem AI; v případě potřeby stačí jedno kliknutí.',
+    setAiShowAskTrigger: 'Zobrazit chip „AI 修改” při výběru',
+    setAiShowAskTriggerDesc:
+      'Když je vypnuto, plovoucí tlačítko „AI 修改” následující výběr se již nezobrazuje. Panel AI zůstává dostupný.',
     intgSkillsDesc:
       'GenOffice používá pouze dovednosti ze své vlastní složky. Import složky nebo zipu zkopíruje celou dovednost; při importu se nic nespouští.',
     intgSkillsEmpty: 'Zatím nejsou nainstalovány žádné dovednosti.',
@@ -9561,6 +9612,9 @@ export const strings = {
     setAiOpenInNewDocs: 'AI-paneel openen in nieuwe documenten',
     setAiOpenInNewDocsDesc:
       'Indien uit, starten nieuw geopende documenten met een ingeklapt AI-paneel; één klik volstaat wanneer je het nodig hebt.',
+    setAiShowAskTrigger: 'Toon de «AI 修改»-chip bij selectie',
+    setAiShowAskTriggerDesc:
+      'Als dit uit staat, verschijnt de zwevende «AI 修改»-knop bij de selectie niet meer. Het AI-paneel blijft beschikbaar.',
     setAuthorName: 'Gebruikersnaam',
     setAuthorNameDesc:
       'Wordt weergegeven als auteur van opmerkingen en bijgehouden wijzigingen in Docs, Sheets, Slides en PDF. Laat leeg om de accountnaam van je computer te gebruiken.',
@@ -10106,6 +10160,9 @@ export const strings = {
     setAiOpenInNewDocs: 'Buka panel AI dalam dokumen baharu',
     setAiOpenInNewDocsDesc:
       'Jika dimatikan, dokumen yang baru dibuka bermula dengan panel AI dilipat; cukup satu klik apabila diperlukan.',
+    setAiShowAskTrigger: 'Papar cip "AI 修改" semasa pilihan',
+    setAiShowAskTriggerDesc:
+      'Apabila dimatikan, butang terapung "AI 修改" yang mengikut pilihan tidak lagi muncul. Panel AI masih tersedia.',
     setAuthorName: 'Nama pengguna',
     setAuthorNameDesc:
       'Dipaparkan sebagai pengarang komen dan perubahan dijejak dalam Docs, Sheets, Slides dan PDF. Biarkan kosong untuk menggunakan nama akaun komputer.',
@@ -10647,6 +10704,9 @@ export const strings = {
     setAiOpenInNewDocs: 'פתיחת לוח ה-AI במסמכים חדשים',
     setAiOpenInNewDocsDesc:
       'כאשר כבוי, מסמכים שנפתחו זה עתה מתחילים עם לוח ה-AI מקופל; לחיצה אחת מספיקה כשצריך.',
+    setAiShowAskTrigger: 'הצג את השבב «AI 修改» בעת בחירה',
+    setAiShowAskTriggerDesc:
+      'כשהאפשרות כבויה, הכפתור הצף «AI 修改» שעוקב אחר הבחירה לא יופיע עוד. לוח ה-AI נשאר זמין.',
     setAuthorName: 'שם משתמש',
     setAuthorNameDesc:
       'מוצג כמחבר ההערות והשינויים במעקב ב‑Docs, Sheets, Slides ו‑PDF. השאירו ריק כדי להשתמש בשם חשבון המחשב.',
@@ -11181,6 +11241,9 @@ export const strings = {
     setAiOpenInNewDocs: 'नए दस्तावेज़ों में AI पैनल खोलें',
     setAiOpenInNewDocsDesc:
       'बंद होने पर, नए खोले गए दस्तावेज़ AI पैनल संक्षिप्त अवस्था में शुरू होते हैं; ज़रूरत पड़ने पर एक क्लिक में खुल जाता है।',
+    setAiShowAskTrigger: 'चयन पर «AI 修改» चिप दिखाएँ',
+    setAiShowAskTriggerDesc:
+      'बंद करने पर, चयन का अनुसरण करने वाला «AI 修改» फ़्लोटिंग बटन अब नहीं दिखता। AI पैनल उपलब्ध रहता है।',
     setAuthorName: 'उपयोगकर्ता नाम',
     setAuthorNameDesc:
       'Docs, Sheets, Slides और PDF में टिप्पणियों और ट्रैक किए गए परिवर्तनों के लेखक के रूप में दिखाया जाता है। कंप्यूटर खाता नाम उपयोग करने के लिए खाली छोड़ें।',
@@ -11712,6 +11775,9 @@ export const strings = {
       '關閉後，編輯器會隱藏 AI 側欄和側邊按鈕；功能區或選單中的 AI 操作仍可開啟面板，新文件也不會自動開啟。',
     setAiOpenInNewDocs: '在新文件中開啟 AI 面板',
     setAiOpenInNewDocsDesc: '關閉後，新開啟的文件預設收合 AI 面板；需要時點一下即可展開。',
+    setAiShowAskTrigger: '選取文字時顯示「AI 修改」浮窗',
+    setAiShowAskTriggerDesc:
+      '關閉後，跟隨文字選取範圍出現的「AI 修改」快捷按鈕將不再顯示；AI 面板仍可正常使用。',
     setAuthorName: '使用者名稱',
     setAuthorNameDesc:
       '作為註解和追蹤修訂的作者顯示在 Docs、Sheets、Slides、PDF 中。留空則使用電腦帳戶名稱。',

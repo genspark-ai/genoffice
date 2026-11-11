@@ -28,6 +28,10 @@ export interface AiPanelPrefs {
    * turning the switch off closes one that was already open (for users who want
    * a plain editor without a broken Ask-AI) */
   readonly showAiSidebar: boolean
+  /** Off: the floating AI-edit chip that follows the text selection is hidden.
+   * The chip is a quick Ask-AI entry; users who find it in the way can turn it
+   * off here without losing the ribbon/context-menu Ask-AI paths. */
+  readonly showAiAskTrigger: boolean
 }
 
 export const DEFAULT_AI_PANEL_PREFS: AiPanelPrefs = {
@@ -37,6 +41,7 @@ export const DEFAULT_AI_PANEL_PREFS: AiPanelPrefs = {
   spellcheck: true,
   openInNewDocs: true,
   showAiSidebar: true,
+  showAiAskTrigger: true,
 }
 
 export function isAiFontSize(value: unknown): value is AiFontSize {
@@ -70,7 +75,8 @@ export function sameAiPanelPrefs(a: AiPanelPrefs, b: AiPanelPrefs): boolean {
     a.customFontSize === b.customFontSize &&
     a.spellcheck === b.spellcheck &&
     a.openInNewDocs === b.openInNewDocs &&
-    a.showAiSidebar === b.showAiSidebar
+    a.showAiSidebar === b.showAiSidebar &&
+    a.showAiAskTrigger === b.showAiAskTrigger
   )
 }
 
@@ -92,5 +98,9 @@ export function normalizeAiPanelPrefs(raw: unknown): AiPanelPrefs {
       typeof obj.showAiSidebar === 'boolean'
         ? obj.showAiSidebar
         : DEFAULT_AI_PANEL_PREFS.showAiSidebar,
+    showAiAskTrigger:
+      typeof obj.showAiAskTrigger === 'boolean'
+        ? obj.showAiAskTrigger
+        : DEFAULT_AI_PANEL_PREFS.showAiAskTrigger,
   }
 }

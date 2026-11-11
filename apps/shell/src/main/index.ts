@@ -709,6 +709,7 @@ function currentAiPanelPrefs(): AiPanelPrefs {
     spellcheck: saved.aiPanelSpellcheck,
     openInNewDocs: saved.aiPanelOpenInNewDocs,
     showAiSidebar: saved.aiPanelShowSidebar,
+    showAiAskTrigger: saved.aiPanelShowAskTrigger,
   })
   return cachedAiPanelPrefs
 }
@@ -5423,6 +5424,7 @@ function registerHomeIpc(): void {
       spellcheck: 'spellcheck' in raw ? raw.spellcheck : prev.spellcheck,
       openInNewDocs: 'openInNewDocs' in raw ? raw.openInNewDocs : prev.openInNewDocs,
       showAiSidebar: 'showAiSidebar' in raw ? raw.showAiSidebar : prev.showAiSidebar,
+      showAiAskTrigger: 'showAiAskTrigger' in raw ? raw.showAiAskTrigger : prev.showAiAskTrigger,
     })
     if (sameAiPanelPrefs(next, prev)) return prev
     cachedAiPanelPrefs = next
@@ -5433,6 +5435,7 @@ function registerHomeIpc(): void {
       aiPanelSpellcheck: next.spellcheck,
       aiPanelOpenInNewDocs: next.openInNewDocs,
       aiPanelShowSidebar: next.showAiSidebar,
+      aiPanelShowAskTrigger: next.showAiAskTrigger,
     })
     for (const wc of webContents.getAllWebContents()) wc.send('app:ai-panel-prefs-changed', next)
     return next

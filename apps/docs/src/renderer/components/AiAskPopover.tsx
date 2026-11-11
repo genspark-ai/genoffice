@@ -16,6 +16,7 @@ import { CellSelection } from '@tiptap/pm/tables'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { AI_QUEUE_ANCHOR_CLICK, queueAnchorRange } from '../editor/ai-queue-anchors'
 import { setInactiveSelectionShown } from '../editor/inactive-selection'
+import { useAiPanelPrefs } from '@genoffice/ui'
 import {
   EDIT_INSTRUCTION_MAX,
   EDIT_QUEUE_MAX,
@@ -102,6 +103,7 @@ export function AiAskPopover({
   onQueueRemove,
 }: Props): React.JSX.Element | null {
   const { t } = useI18n()
+  const showAskTrigger = useAiPanelPrefs().showAiAskTrigger
   const [trigger, setTrigger] = useState<{ left: number; top: number } | null>(null)
   const [open, setOpen] = useState<OpenState | null>(null)
   const [kind, setKind] = useState<SelectionKind>('text')
@@ -136,6 +138,10 @@ export function AiAskPopover({
         setTrigger(null)
         return
       }
+      if (!showAskTrigger) {
+        setTrigger(null)
+        return
+      }
       const { empty, to } = editor.state.selection
       if (empty || !editor.isFocused) {
         setTrigger(null)
@@ -155,6 +161,10 @@ export function AiAskPopover({
     const scroller = document.querySelector('.editor-scroll')
     scroller?.addEventListener('scroll', update, { passive: true })
     window.addEventListener('resize', update)
+    // Recompute on every re-subscribe, in particular when the setting is
+    // toggled: turning it off clears a stale position, and turning it back on
+    // must not resurrect that position without a fresh selection event.
+    update()
     return () => {
       editor.off('selectionUpdate', update)
       editor.off('focus', update)
@@ -162,7 +172,7 @@ export function AiAskPopover({
       scroller?.removeEventListener('scroll', update)
       window.removeEventListener('resize', update)
     }
-  }, [editor])
+  }, [editor, showAskTrigger])
 
   // clicking a queued anchor in the document re-opens the popover on that item
   useEffect(() => {
@@ -204,6 +214,12 @@ export function AiAskPopover({
     setText('')
     setInactiveSelectionShown(editor, false)
   }, [editor])
+
+  // Turning the switch off also dismisses a popover opened from the chip.
+  // Editing an existing queue anchor is a separate, explicit action and stays open.
+  useEffect(() => {
+    if (!showAskTrigger && openRef.current?.mode === 'new') close()
+  }, [showAskTrigger, close])
 
   /** outside click keeps whatever was typed: a new note lands in the queue, an edit is saved */
   const commitOrClose = useCallback(() => {
@@ -394,7 +410,7 @@ export function AiAskPopover({
 
   return (
     <>
-      {trigger && !open && (
+      {trigger && !open && showAskTrigger && (
         <button
           ref={triggerRef}
           className="ai-ask-trigger"
