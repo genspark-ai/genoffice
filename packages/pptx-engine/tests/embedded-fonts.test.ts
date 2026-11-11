@@ -57,6 +57,14 @@ describe('eotToSfnt', () => {
     expect(eotToSfnt(new Uint8Array(8))).toBeNull()
   })
 
+  it('rejects a payload too short to hold a magic instead of throwing', () => {
+    // FontDataSize 1 satisfies the header checks, and the DataView used to read
+    // the magic over a 1-byte buffer: RangeError: Length out of range of buffer.
+    expect(() => eotToSfnt(eotWrap(new Uint8Array(1), 0))).not.toThrow()
+    expect(eotToSfnt(eotWrap(new Uint8Array(1), 0))).toBeNull()
+    expect(eotToSfnt(eotWrap(new Uint8Array(3), 0))).toBeNull()
+  })
+
   it('passes through a bare sfnt without an EOT wrapper (LibreOffice-style fntdata)', () => {
     const sfnt = fakeSfnt()
     expect(eotToSfnt(sfnt)).toBe(sfnt)
