@@ -144,7 +144,7 @@ function styleTextProp(spec: ShapeSpec, charCount: number): Uint8Array {
     if (run.color !== undefined) fields.push(u8(...run.color, 0)) // ColorIndexStruct
     characters.push(...fields)
   }
-  return record(0x0fa5, concat([...paragraph, ...characters]), charCount)
+  return record(0x0fa1, concat([...paragraph, ...characters]), charCount)
 }
 
 /** OfficeArtClientTextbox with a Reference to the slide's outline text entry. */

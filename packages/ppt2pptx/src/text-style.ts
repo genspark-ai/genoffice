@@ -1,4 +1,4 @@
-/** MS-PPT StyleTextPropAtom (RT_StyleTextPropAtom, 0x0FA5) run tables.
+/** MS-PPT StyleTextPropAtom (RT_StyleTextPropAtom, 0x0FA1) run tables.
  *
  *  Layout (MS-PPT 2.9): zero or more TextPFRun records covering the text's
  *  characters, then zero or more TextCFRun records covering them again. Each

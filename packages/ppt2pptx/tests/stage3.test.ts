@@ -200,3 +200,29 @@ describe('stage 3: hostile bytes stay bounded', () => {
     expect(healthy.slideCount).toBe(1)
   })
 })
+
+/** The type code RT_StyleTextPropAtom is 0x0FA1 (0x0FA5 is
+ *  TextPFExceptionAtom). A synthetic builder can share a wrong code with the
+ *  reader and still pass every test, so the real deck is the only oracle. */
+describe('a real PowerPoint-authored deck: style atoms', () => {
+  it('reads the sample StyleTextPropAtom run tables', async () => {
+    const { readFile } = await import('node:fs/promises')
+    const { fileURLToPath } = await import('node:url')
+    const CFB = await import('cfb')
+    const sample = fileURLToPath(
+      new URL('../../file-parse/tests/fixtures/legacy-sample.ppt', import.meta.url),
+    )
+    const cfb = CFB.read(await readFile(sample), { type: 'buffer' })
+    const read = (name: string): Uint8Array => {
+      const content = CFB.find(cfb, name)?.content as ArrayLike<number> | undefined
+      return content ? Uint8Array.from(Array.from(content)) : new Uint8Array(0)
+    }
+    const presentation = parsePptPresentation(read('PowerPoint Document'), read('Current User'))
+    const styles = presentation.slides.flatMap((slide) =>
+      slide.shapes.flatMap((shape) => (shape.text ? [shape.text.style] : [])),
+    )
+    expect(styles.length).toBeGreaterThan(0)
+    expect(styles.reduce((n, style) => n + style.characters.length, 0)).toBeGreaterThan(0)
+    expect(styles.reduce((n, style) => n + style.paragraphs.length, 0)).toBeGreaterThan(0)
+  })
+})

@@ -32,7 +32,7 @@ export const PPT_TYPES = {
   textHeaderAtom: 0x0f9f,
   textCharsAtom: 0x0fa0,
   textBytesAtom: 0x0fa8,
-  styleTextPropAtom: 0x0fa5,
+  styleTextPropAtom: 0x0fa1,
   slideListWithText: 0x0ff0,
   userEditAtom: 0x0ff5,
   currentUserAtom: 0x0ff6,

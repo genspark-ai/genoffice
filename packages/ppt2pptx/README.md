@@ -19,7 +19,7 @@ Legacy PowerPoint 97-2003 import: parse `.ppt` (OLE2/CFB + MS-PPT records) and r
   flips, and the shape's OPT table supplies fill/line colors and line width.
   A shape with no anchor still takes the stage-1 stacked fallback, so no text
   is lost.
-- **StyleTextProp formatting**: `StyleTextPropAtom` (0x0FA5) paragraph and
+- **StyleTextProp formatting**: `StyleTextPropAtom` (0x0FA1) paragraph and
   character run tables are decoded per the MS-PPT masks and mapped to
   `<a:pPr algn>` and `<a:rPr>` (bold, italic, underline, point size, RGB
   color). Outline-referenced text boxes receive their SlideListWithText text.
