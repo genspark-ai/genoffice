@@ -433,7 +433,6 @@ interface RibbonProps {
   onPagePreview: () => void
 }
 
-
 // Format painter was extracted to ./ribbon-painter to keep Ribbon.tsx from carrying a second feature;
 // Painter types stay re-exported so existing importers keep working.
 import {
