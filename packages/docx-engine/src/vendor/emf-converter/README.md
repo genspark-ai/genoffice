@@ -114,3 +114,16 @@ Local modifications to `index.mjs` (2026-08, GenOffice):
   convert Point/Inch/Document/Millimeter units per axis instead of a fixed 96 DPI.
   World, unknown units and non-positive scales are ignored, as GDI+ ignores them
   (upstream emf-converter 311bfa6; genoffice#2601)
+- The EMF+ drawing records the vendored 2.0.2 skipped are implemented: FillRegion,
+  FillClosedCurve, DrawClosedCurve, DrawCurve and DrawBeziers, plus the rect form of
+  BeginContainer. Splines become the cubic Bezier segments GDI+ converts them to
+  (tangent i = tension/3 × (P[i+1] − P[i−1]); a segment runs P[i], P[i]+T[i],
+  P[i+1]−T[i+1], P[i+1]; a closed one wraps round), points read in all three
+  encodings (float32, C-flag 16-bit, P-flag relative EmfPlusPointR — GDI+'s one-byte
+  top-bit-set form, not the swapped one MS-EMFPLUS 2.2.2.21/22 states), FillRegion
+  paints the region object's flattened shapes through the clip, and BeginContainer
+  composes the src→dest rect mapping (unit from the flags, converted at the header
+  DPI) onto the world transform, starting the container at the Display page unit;
+  Save/Restore and NoParams containers now bracket the page unit with the transform
+  (genoffice#2601 follow-up; spline and container semantics ported from upstream
+  emf-converter)
