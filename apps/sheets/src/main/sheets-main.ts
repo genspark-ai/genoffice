@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { spawn } from 'node:child_process'
 import {
   createReadStream,
   existsSync,
@@ -21,6 +20,7 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises'
+import { runCopyEmfHelper } from './copy-emf-helper'
 import { refreshCsvDigest } from './csv-digest'
 import { ImportRegistry } from './import-registry'
 import { createServer } from 'node:http'
@@ -5715,34 +5715,7 @@ async function appendCopyEmfToClipboard(request: unknown): Promise<{ ok: boolean
   const helper = resolveClipboardHelperPath()
   if (!helper || !existsSync(helper)) return { ok: false }
   const payload = JSON.stringify(copyEmfRequestSchema.parse(request))
-  return await new Promise((resolve) => {
-    const child = spawn(helper, [], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
-    const timer = setTimeout(() => {
-      child.kill()
-      resolve({ ok: false })
-    }, 5_000)
-    child.on('error', () => {
-      clearTimeout(timer)
-      resolve({ ok: false })
-    })
-    let output = ''
-    child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => {
-      output += chunk
-    })
-    child.on('close', () => {
-      clearTimeout(timer)
-      try {
-        const line = output.trim().split('\n').pop() ?? ''
-        const result = JSON.parse(line) as { ok?: boolean }
-        resolve({ ok: result.ok === true })
-      } catch {
-        resolve({ ok: false })
-      }
-    })
-    child.stdin.write(payload)
-    child.stdin.end()
-  })
+  return await runCopyEmfHelper(helper, payload)
 }
 
 async function sha256File(path: string): Promise<string> {

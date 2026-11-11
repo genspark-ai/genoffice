@@ -17,6 +17,18 @@ import type { UniverRuntime } from './univer-state'
 
 /// The same resident-selection budget the grid copy uses (COPY_MATERIALIZE_MAX_CELLS);
 /// imported from its source to keep the two rules one constant without a cycle.
+/** The helper's canvas limit (win-clipboard-helper MAX_EDGE_PIXELS): a selection
+ * wider or taller than this is refused, so the renderer skips it. */
+const COPY_EMF_MAX_EDGE_PIXELS = 100_000
+
+/** Whether the helper would refuse this canvas: it caps the total width and
+ * the total height at its own MAX_EDGE_PIXELS. */
+export function copyEmfCanvasTooLarge(colWidths: number[], rowHeights: number[]): boolean {
+  const totalWidth = colWidths.reduce((sum, width) => sum + width, 0)
+  const totalHeight = rowHeights.reduce((sum, height) => sum + height, 0)
+  return totalWidth > COPY_EMF_MAX_EDGE_PIXELS || totalHeight > COPY_EMF_MAX_EDGE_PIXELS
+}
+
 const COPY_EMF_MAX_CELLS = FULL_LOAD_MAX_CELLS
 
 /// The worksheet surface copy-emf reads; structural methods mirror the facade
@@ -116,6 +128,9 @@ export function buildCopyEmfPayload(runtime: UniverRuntime): CopyEmfRequest | nu
     const height = worksheet.getRowVisible(row) ? worksheet.getRowHeight(row) : 0
     rowHeights.push(Math.max(height, 0))
   }
+  // The helper refuses a canvas wider or taller than this, so a selection that
+  // is out of range must not cost a matrix walk and a multi-MB payload.
+  if (copyEmfCanvasTooLarge(colWidths, rowHeights)) return null
 
   const cells: CopyEmfRequest['cells'] = []
   for (let r = 0; r < rows; r += 1) {

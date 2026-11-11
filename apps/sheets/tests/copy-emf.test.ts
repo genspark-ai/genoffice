@@ -1,3 +1,4 @@
+/** @vitest-environment jsdom */
 import { CellValueType, type ICellData } from '@univerjs/core'
 import { describe, expect, it } from 'vitest'
 
@@ -77,7 +78,6 @@ describe('clippedCopyEmfMerge', () => {
   })
 })
 
-/** @vitest-environment jsdom */
 describe('emitCopyEmf gating', () => {
   it('asks for the helper once, then skips the payload build off Windows', async () => {
     const { emitCopyEmf } = await import('../src/renderer/copy-emf')

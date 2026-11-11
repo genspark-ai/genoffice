@@ -188,12 +188,34 @@ fn merge_layout(
 
 #[cfg(windows)]
 fn render_and_append(request: &EmfRequest) -> Result<(i32, i32), String> {
+    use windows_sys::Win32::Graphics::Gdi::DeleteEnhMetaFile;
+
+    // The clipboard the copy produced. The helper starts right after that
+    // copy, so this is the sequence number the copy wrote; if it moves while
+    // the metafile is rendered, the clipboard belongs to someone else now and
+    // the picture must not be appended to it.
+    let sequence = clipboard_sequence();
     let metrics = table_metrics(request)?;
     let metafile = render_metafile(request, &metrics)?;
+    if clipboard_sequence() != sequence {
+        // Another copy (ours or another application's) owns the clipboard now:
+        // drop the picture rather than putting a stale one beside it.
+        unsafe { DeleteEnhMetaFile(metafile) };
+        return Ok((metrics.width_px, metrics.height_px));
+    }
     match append_to_clipboard(metafile) {
         Ok(()) => Ok((metrics.width_px, metrics.height_px)),
         Err(error) => Err(error),
     }
+}
+
+/// The clipboard's sequence number: it moves whenever the clipboard is
+/// written, so a helper can tell whether the clipboard it was started for is
+/// still the one it is about to append to.
+#[cfg(windows)]
+fn clipboard_sequence() -> u32 {
+    use windows_sys::Win32::System::DataExchange::GetClipboardSequenceNumber;
+    unsafe { GetClipboardSequenceNumber() }
 }
 
 #[cfg(windows)]
@@ -266,15 +288,19 @@ unsafe fn paint_table(
         let pen = CreatePen(PS_SOLID, 1, GRID_COLOR);
         let old_pen = SelectObject(hdc, pen);
         Rectangle(hdc, 0, 0, metrics.width_px, metrics.height_px);
-        DeleteObject(SelectObject(hdc, old_pen));
-        SelectObject(hdc, old_brush);
-        DeleteObject(ground);
     }
 
     let (anchors, covered) = merge_layout(request);
     unsafe {
+        // The grey pen stays selected for the interior grid lines: restoring it
+        // here would leave the default (black) pen for them, and the table would
+        // come out with a grey frame and black inner lines.
         draw_grid_lines(hdc, metrics, &anchors);
+        // The text keeps the default pen, as it did before.
+        DeleteObject(SelectObject(hdc, old_pen));
         draw_cell_text(hdc, request, metrics, &anchors, &covered);
+        SelectObject(hdc, old_brush);
+        DeleteObject(ground);
     }
     Ok(())
 }
