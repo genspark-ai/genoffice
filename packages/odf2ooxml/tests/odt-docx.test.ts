@@ -140,6 +140,21 @@ describe('convertOdtToDocx', () => {
     )
   })
 
+  it('bounds a row span to the rows that exist', async () => {
+    // table:number-rows-spanned is producer-controlled: an unclamped 200000
+    // allocated that many empty rows, and Infinity never returned.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-row><table:table-cell table:number-rows-spanned="200000"><text:p>tall</text:p></table:table-cell></table:table-row>' +
+      '<table:table-row><table:table-cell><text:p>next</text:p></table:table-cell></table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect((document.match(/<w:tr>/g) ?? []).length).toBe(2)
+    expect(document).toContain('<w:vMerge w:val="restart"/>')
+    expect(document).toContain('<w:vMerge/>')
+  })
+
   it('carries the page geometry into the section properties', async () => {
     const body = '<text:p>page</text:p>'
     const result = await convertOdtToDocx(await buildOdt(contentXml(body), stylesXml('', PAGE_A4)))
