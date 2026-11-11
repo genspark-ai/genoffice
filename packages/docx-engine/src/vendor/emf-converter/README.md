@@ -101,3 +101,16 @@ Local modifications to `index.mjs` (2026-08, GenOffice):
   from a non-ASCII facename (CJK MathType previews write GBK bytes for both
   the face and the text under charset 0); the per-byte Dx array is folded to
   one advance per decoded glyph
+- Dual-mode EMF+ files: the suppressed fallback's SaveDC/RestoreDC no longer touch the
+  canvas — they snapshot and restore the DC alone (drawing state plus window/viewport
+  mapping) in a dedicated stack, so a mapping a fallback block sets inside its own
+  bracket does not reach the GetDC run after it, and the brackets can no longer pop or
+  interleave with the clip saves the EMF+ stream owns. Prism-style charts (dozens of
+  GetDC runs between EMF+ comments) accumulated stale clips and lost most content
+  (genoffice#2601; ported from upstream emf-converter 67ecf34)
+- EmfPlusSetPageTransform outlives the EMR_COMMENT it arrived in (page unit and scale
+  persist in the shared EMF+ state, like the transform and clip already did), and the
+  header's LogicalDpiX/Y are read as the UInt32 pair they are (MS-EMFPLUS 2.3.2.1) to
+  convert Point/Inch/Document/Millimeter units per axis instead of a fixed 96 DPI.
+  World, unknown units and non-positive scales are ignored, as GDI+ ignores them
+  (upstream emf-converter 311bfa6; genoffice#2601)

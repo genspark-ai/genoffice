@@ -2870,6 +2870,13 @@ function createEmfPlusState() {
     saveIdMap: /* @__PURE__ */ new Map(),
     clipRegion: null,
     clipSaveDepth: 0,
+    // SetPageTransform outlives the EMR_COMMENT it arrived in: real files interleave GDI
+    // records between many comments (one per GetDC run), and GDI+ keeps the unit for the
+    // whole stream (upstream emf-converter 311bfa6)
+    pageUnit: 2,
+    pageScale: 1,
+    dpiX: 96,
+    dpiY: 96,
     // EMF+ dual-mode files carry a full GDI fallback too; GDI drawing records are only
     // meant to run right after an EmfPlusGetDC, until the next EMF+ record (MS-EMFPLUS 2.3.1.3)
     dualMode: false,
@@ -2888,6 +2895,36 @@ function createEmfPlusState() {
   };
 }
 
+/** EMR_SAVEDC in the skipped fallback of a dual-mode file: snapshots the DC only. */
+function saveSkippedDc(rCtx) {
+  rCtx.skippedDcStack ?? (rCtx.skippedDcStack = []);
+  rCtx.skippedDcStack.push({
+    state: cloneState(rCtx.state),
+    mapping: {
+      windowOrg: { ...rCtx.windowOrg },
+      windowExt: { ...rCtx.windowExt },
+      viewportOrg: { ...rCtx.viewportOrg },
+      viewportExt: { ...rCtx.viewportExt },
+      useMappingMode: rCtx.useMappingMode
+    }
+  });
+}
+/**
+ * EMR_RESTOREDC in the skipped fallback of a dual-mode file: restores the DC saved by
+ * saveSkippedDc at that level (negative = relative to the newest); a level with no such
+ * save is ignored, as GDI fails it.
+ */
+function restoreSkippedDc(rCtx, level) {
+  const stack = rCtx.skippedDcStack ?? [];
+  const at = level < 0 ? stack.length + level : level - 1;
+  if (at < 0 || at >= stack.length) {
+    return;
+  }
+  const saved = stack[at];
+  stack.length = at;
+  Object.assign(rCtx.state, saved.state);
+  Object.assign(rCtx, saved.mapping);
+}
 // src/emf-gdi-state-handlers.ts
 function handleEmfGdiStateRecord(rCtx, recType, _offset, dataOff, recSize) {
   if (handleEmfTransformRecord(rCtx, recType, dataOff, recSize)) {
@@ -3198,8 +3235,8 @@ function resolveBrushPaint(rCtx, flags, brushIdOrColor) {
   }
   return "rgba(0,0,0,1)";
 }
-function getPageUnitMultiplier(pageUnit, pageScale) {
-  const DPI = 96;
+function getPageUnitMultiplier(pageUnit, pageScale, dpi) {
+  const DPI = dpi || 96;
   let unitToPixel;
   switch (pageUnit) {
     case 3:
@@ -3230,19 +3267,20 @@ function getPageUnitMultiplier(pageUnit, pageScale) {
 // without a device map (nested metafiles) fall back to the plain dpi scale.
 function plusDeviceMatrix(rCtx) {
   const wt = rCtx.worldTransform;
-  const m = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale);
+  const mX = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale, rCtx.dpiX);
+  const mY = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale, rCtx.dpiY);
   const dm = rCtx.deviceMap;
   if (!dm) {
     const d = rCtx.dpiScale;
-    return [wt[0] * m * d, wt[1] * m * d, wt[2] * m * d, wt[3] * m * d, wt[4] * m * d, wt[5] * m * d];
+    return [wt[0] * mX * d, wt[1] * mY * d, wt[2] * mX * d, wt[3] * mY * d, wt[4] * mX * d, wt[5] * mY * d];
   }
   return [
-    wt[0] * m * dm.sx,
-    wt[1] * m * dm.sy,
-    wt[2] * m * dm.sx,
-    wt[3] * m * dm.sy,
-    (wt[4] * m - dm.left) * dm.sx,
-    (wt[5] * m - dm.top) * dm.sy
+    wt[0] * mX * dm.sx,
+    wt[1] * mY * dm.sy,
+    wt[2] * mX * dm.sx,
+    wt[3] * mY * dm.sy,
+    (wt[4] * mX - dm.left) * dm.sx,
+    (wt[5] * mY - dm.top) * dm.sy
   ];
 }
 // Pass 2 of the two-pass replay: the bitmap decoded from pass 1's deferred entry with the
@@ -3521,6 +3559,11 @@ function handleEmfPlusStateRecord(rCtx, recType, recFlags, dataOff, recDataSize)
     case EMFPLUS_SETPAGETRANSFORM: {
       const pageUnit = recFlags & 255;
       const pageScale = recDataSize >= 4 ? view.getFloat32(dataOff, true) : 1;
+      // World (0) carries no unit and GDI+ rejects unknown units and non-positive
+      // scales: the record is ignored and the current unit stays
+      if (pageUnit === 0 || pageUnit > 6 || !(pageScale > 0) || !Number.isFinite(pageScale)) {
+        return true;
+      }
       rCtx.pageUnit = pageUnit;
       rCtx.pageScale = pageScale;
       return true;
@@ -4773,8 +4816,10 @@ function replayEmfPlusRecords(view, offset, length, ctx, _canvasW, _canvasH, sta
     totalDrawImageCalls: 0,
     clipSaveDepth: s.clipSaveDepth,
     clipRegion: s.clipRegion,
-    pageUnit: 2,
-    pageScale: 1,
+    pageUnit: s.pageUnit,
+    pageScale: s.pageScale,
+    dpiX: s.dpiX,
+    dpiY: s.dpiY,
     continuationBuffer: s.continuation.buffer,
     continuationObjectId: s.continuation.objectId,
     continuationObjectType: s.continuation.objectType,
@@ -4812,8 +4857,10 @@ function replayEmfPlusRecords(view, offset, length, ctx, _canvasW, _canvasH, sta
     switch (recType) {
       case EMFPLUS_HEADER: {
         if (recDataSize >= 16) {
-          view.getFloat32(dataOff + 8, true);
-          view.getFloat32(dataOff + 12, true);
+          // LogicalDpiX/Y are UInt32, one per axis (MS-EMFPLUS 2.3.2.1) — page units
+          // convert at this DPI, not a fixed 96 (upstream emf-converter 311bfa6)
+          rCtx.dpiX = view.getUint32(dataOff + 8, true) || 96;
+          rCtx.dpiY = view.getUint32(dataOff + 12, true) || 96;
         }
         break;
       }
@@ -4920,6 +4967,10 @@ function replayEmfPlusRecords(view, offset, length, ctx, _canvasW, _canvasH, sta
     state.saveIdMap = rCtx.saveIdMap;
     state.clipRegion = rCtx.clipRegion ?? null;
     state.clipSaveDepth = rCtx.clipSaveDepth;
+    state.pageUnit = rCtx.pageUnit;
+    state.pageScale = rCtx.pageScale;
+    state.dpiX = rCtx.dpiX;
+    state.dpiY = rCtx.dpiY;
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   return rCtx.deferredImages;
@@ -5064,8 +5115,19 @@ function replayEmfRecords(view, ctx, bounds, canvasW, canvasH, dpiScale = 1, rep
     }
     if (emfPlusState.dualMode && !emfPlusState.gdiEnabled) {
       // dual mode outside a GetDC window: keep GDI state in sync, draw nothing (the EMF+
-      // records already painted it)
-      handleEmfGdiStateRecord(rCtx, recType, offset, dataOff, recSize);
+      // records already painted it). SaveDC/RestoreDC bracket the DC alone — the canvas
+      // state belongs to the EMF+ stream — so the mapping a fallback block sets inside
+      // its own SaveDC/RestoreDC bracket does not reach the GetDC run after it
+      // (ported from upstream emf-converter 67ecf34).
+      if (recType === EMR_SAVEDC) {
+        saveSkippedDc(rCtx);
+      } else if (recType === EMR_RESTOREDC) {
+        if (recSize >= 12) {
+          restoreSkippedDc(rCtx, view.getInt32(dataOff, true));
+        }
+      } else {
+        handleEmfGdiStateRecord(rCtx, recType, offset, dataOff, recSize);
+      }
       offset += recSize;
       continue;
     }

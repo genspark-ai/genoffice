@@ -1454,3 +1454,231 @@ describe('GDI TA_TOP text uses the Windows ascent of known faces', () => {
     expect(glyphs[0].args[2]).toBe(40)
   })
 })
+
+// ---------- genoffice#2601: interleaved dual-mode EMF+ state machine ----------
+// A Prism-style chart metafile interleaves GDI records (axis labels drawn through an
+// HDC) with EMF+ records (bars, axes, legends) across dozens of EMR_COMMENT runs.
+// Two state-machine defects turned that shape into "most content disappears":
+// the suppressed fallback's SaveDC/RestoreDC touched the shared canvas stack, and
+// the page unit reset at every comment boundary. Both fixes are ports of upstream
+// emf-converter commits (67ecf34, 311bfa6).
+
+function emfSaveDc(): Uint8Array {
+  const rec = new Uint8Array(8)
+  const v = new DataView(rec.buffer)
+  v.setUint32(0, 33, true) // EMR_SAVEDC
+  v.setUint32(4, 8, true)
+  return rec
+}
+
+function emfRestoreDc(level: number): Uint8Array {
+  const rec = new Uint8Array(12)
+  const v = new DataView(rec.buffer)
+  v.setUint32(0, 34, true) // EMR_RESTOREDC
+  v.setUint32(4, 12, true)
+  v.setInt32(8, level, true)
+  return rec
+}
+
+function emfSetWindowExt(cx: number, cy: number): Uint8Array {
+  const rec = new Uint8Array(16)
+  const v = new DataView(rec.buffer)
+  v.setUint32(0, 9, true) // EMR_SETWINDOWEXTEX
+  v.setUint32(4, 16, true)
+  v.setInt32(8, cx, true)
+  v.setInt32(12, cy, true)
+  return rec
+}
+
+/** EmfPlusHeader with explicit LogicalDpi and the video-display flag (like screen recordings). */
+function plusHeaderDpi(dual: boolean, dpi: number): Uint8Array {
+  const payload = new Uint8Array(16)
+  const v = new DataView(payload.buffer)
+  v.setUint32(0, 0xdbc01002, true)
+  v.setUint32(4, 1, true) // EmfPlusFlags: video display
+  v.setUint32(8, dpi, true)
+  v.setUint32(12, dpi, true)
+  return plusRecord(0x4001, dual ? 1 : 0, payload)
+}
+
+function plusSetPageTransform(unit: number, scale: number): Uint8Array {
+  const payload = new Uint8Array(4)
+  new DataView(payload.buffer).setFloat32(0, scale, true)
+  return plusRecord(0x4030, unit, payload)
+}
+
+function plusSetClipRect(x: number, y: number, w: number, h: number): Uint8Array {
+  const payload = new Uint8Array(16)
+  const v = new DataView(payload.buffer)
+  v.setFloat32(0, x, true)
+  v.setFloat32(4, y, true)
+  v.setFloat32(8, w, true)
+  v.setFloat32(12, h, true)
+  return plusRecord(0x4032, 0, payload) // CombineModeReplace
+}
+
+function plusResetClip(): Uint8Array {
+  return plusRecord(0x4031, 0, new Uint8Array(0))
+}
+
+/** Solid-color brush object (version, BrushTypeSolidColor, ARGB). */
+function plusSolidBrush(id: number, argb: number): Uint8Array {
+  const payload = new Uint8Array(12)
+  const v = new DataView(payload.buffer)
+  v.setUint32(0, 0xdbc01002, true)
+  v.setUint32(4, 0, true)
+  v.setUint32(8, argb, true)
+  return plusRecord(0x4008, (1 << 8) | id, payload) // ObjectTypeBrush
+}
+
+/** FillRects naming a solid brush object (flags low byte), float32 rects. */
+function plusFillRects(rects: Array<[number, number, number, number]>, brushId = 1): Uint8Array {
+  const payload = new Uint8Array(8 + rects.length * 16)
+  const v = new DataView(payload.buffer)
+  v.setUint32(0, brushId, true)
+  v.setUint32(4, rects.length, true)
+  rects.forEach(([x, y, w, h], i) => {
+    v.setFloat32(8 + i * 16, x, true)
+    v.setFloat32(12 + i * 16, y, true)
+    v.setFloat32(16 + i * 16, w, true)
+    v.setFloat32(20 + i * 16, h, true)
+  })
+  return plusRecord(0x400a, brushId, payload)
+}
+
+function canvasOps(): string[] {
+  return calls
+    .filter((c) => !c.method.startsWith('set:') && c.method !== 'measureText')
+    .map(
+      (c) =>
+        `${c.method}(${c.args
+          .map((a) => (typeof a === 'number' ? Math.round(a * 100) / 100 : typeof a))
+          .join(',')})`,
+    )
+}
+
+describe('dual-mode fallback SaveDC/RestoreDC (Prism-style interleaves)', () => {
+  it('the suppressed fallbacks SaveDC/RestoreDC are transparent to the canvas', async () => {
+    // The same dual-mode file with and without SAVEDC/RESTOREDC brackets in the
+    // suppressed fallback segments must replay to identical canvas calls: the
+    // brackets own the DC, the canvas belongs to the EMF+ stream.
+    const body = (withBrackets: boolean) => [
+      emfPlusComment(plusHeader(true)),
+      emfPlusComment(plusSolidBrush(1, 0xffcc2222)),
+      emfPlusComment(plusSetClipRect(20, 20, 160, 60)),
+      ...(withBrackets ? [emfSaveDc(), emfSaveDc()] : []),
+      emfRectangle(0, 0, 50, 50), // suppressed GDI twin of an EMF+ fill
+      emfPlusComment(plusSetClipRect(40, 30, 100, 40)),
+      ...(withBrackets ? [emfRestoreDc(-1)] : []),
+      emfPlusComment(plusResetClip()),
+      emfPlusComment(plusFillRects([[0, 0, 200, 100]])),
+    ]
+    reset()
+    await convertEmfToDataUrl(assembleEmf(body(false)), { dpiScale: 2 })
+    const plain = canvasOps()
+    reset()
+    await convertEmfToDataUrl(assembleEmf(body(true)), { dpiScale: 2 })
+    expect(canvasOps()).toEqual(plain)
+  })
+
+  it('a mapping set inside the fallbacks own SaveDC bracket does not reach the GetDC run', async () => {
+    // The fallback's SETWINDOWEXTEX updates the DC (a later GetDC run sees its
+    // objects and mapping), but its RestoreDC must put the mapping back: the
+    // GetDC text after the bracket draws at the outer scale, not the bracketed one.
+    const body = (withBlock: boolean) => [
+      emfPlusComment(plusHeader(true)),
+      ...(withBlock ? [emfSaveDc(), emfSetWindowExt(400, 200), emfRestoreDc(-1)] : []),
+      emfPlusComment(plusGetDC()),
+      emfTextOut('N'),
+      emfPlusComment(plusRecord(0x4002, 0, new Uint8Array(4))),
+    ]
+    reset()
+    await convertEmfToDataUrl(assembleEmf(body(false)), { dpiScale: 2 })
+    const plain = calls.filter((c) => c.method === 'fillText').map((c) => c.args.slice(1))
+    reset()
+    await convertEmfToDataUrl(assembleEmf(body(true)), { dpiScale: 2 })
+    const blocked = calls.filter((c) => c.method === 'fillText').map((c) => c.args.slice(1))
+    expect(blocked).toEqual(plain)
+    expect(blocked[0]).toEqual([20, 40])
+  })
+})
+
+describe('EMF+ page transform (SetPageTransform)', () => {
+  it('persists across EMR_COMMENT records and converts at the header LogicalDpi', async () => {
+    // A UnitPoint page unit at LogicalDpi 144 is 2 device px per point; the
+    // canvas scale doubles that: one device-matrix unit of 4. The fill lives in
+    // a later comment than the transform, as in files that break the EMF+ stream
+    // around every GetDC run.
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeaderDpi(false, 144), plusSetPageTransform(3, 1)), // UnitPoint
+        emfPlusComment(plusSolidBrush(1, 0xffcc2222)),
+        emfPlusComment(plusFillRects([[10, 10, 20, 20]])),
+      ]),
+      { dpiScale: 2 },
+    )
+    const scale = calls.filter((c) => c.method === 'setTransform').map((c) => c.args[0])
+    expect(scale).toContainEqual(expect.closeTo(4, 3))
+  })
+
+  it('ignores a World unit, an unknown unit and a non-positive scale', async () => {
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeaderDpi(false, 144), plusSetPageTransform(3, 1)), // UnitPoint: valid
+        emfPlusComment(plusSetPageTransform(0, 2)), // UnitWorld: ignored
+        emfPlusComment(plusSetPageTransform(9, 2)), // unknown: ignored
+        emfPlusComment(plusSetPageTransform(4, 0)), // zero scale: ignored
+        emfPlusComment(plusSolidBrush(1, 0xffcc2222)),
+        emfPlusComment(plusFillRects([[10, 10, 20, 20]])),
+      ]),
+      { dpiScale: 2 },
+    )
+    // the invalid records did not knock the Point unit out: the fill still draws at
+    // 144/72 × dpiScale = 4, not at the plain dpi scale (2)
+    const scale = calls.filter((c) => c.method === 'setTransform').map((c) => c.args[0])
+    expect(scale).toContainEqual(expect.closeTo(4, 3))
+    expect(scale).not.toContainEqual(expect.closeTo(2, 3))
+  })
+})
+
+describe('Prism-style census interleave (dual mode)', () => {
+  it('paints bars, axes, GetDC-window GDI labels and DriverString across many comment runs', async () => {
+    // The record census from genoffice#2601: EmfPlusGetDC windows with EMR_EXTTEXTOUTW
+    // text between EMF+ FillRects bars, DrawLines axes and DrawDriverString legends.
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeader(true)),
+        emfPlusComment(plusSolidBrush(1, 0xffcc2222)),
+        emfPlusComment(
+          plusFillRects([
+            [40, 60, 20, 40],
+            [70, 50, 20, 50],
+            [100, 40, 20, 60],
+          ]),
+        ),
+        emfPlusComment(plusGetDC()),
+        emfTextOut('N=6'),
+        emfPlusComment(plusFillRects([[130, 70, 20, 30]])), // the next EMF+ record closes the window
+        emfPlusComment(plusFontObject(5, 'Arial', 12)),
+        emfPlusComment(plusDrawDriverString(5, 'a', [[150, 30]])),
+        emfPlusComment(plusFillRects([[160, 30, 15, 20]])),
+      ]),
+      { dpiScale: 2 },
+    )
+    const fills = calls.filter((c) => c.method === 'fillRect').map((c) => c.args)
+    const texts = calls.filter((c) => c.method === 'fillText').map((c) => c.args[0])
+    // every bar landed in page coordinates: none swallowed by a stale clip
+    expect(fills).toEqual([
+      [40, 60, 20, 40],
+      [70, 50, 20, 50],
+      [100, 40, 20, 60],
+      [130, 70, 20, 30],
+      [160, 30, 15, 20],
+    ])
+    // the GetDC-window GDI label and the EMF+ DriverString glyph both painted
+    expect(texts).toEqual(['N=6', 'a'])
+  })
+})
