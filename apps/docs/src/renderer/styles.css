@@ -12871,12 +12871,7 @@ body.docs-crop-active
 }
 
 /* all headings share one look; markers hang in the margin */
-.view-story .doc-page h1,
-.view-story .doc-page h2,
-.view-story .doc-page h3,
-.view-story .doc-page h4,
-.view-story .doc-page h5,
-.view-story .doc-page h6 {
+.view-story .doc-page :is(h1, h2, h3, h4, h5, h6) {
   font-size: 18px !important;
   line-height: 1.4 !important;
   font-weight: 700 !important;
