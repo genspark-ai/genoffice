@@ -141,6 +141,23 @@ describe('convertOdpToPptx', () => {
     )
   })
 
+  it('drops an inline image whose base64 payload is not decodable', async () => {
+    const body =
+      '<draw:page draw:name="p">' +
+      frame(
+        '3cm',
+        '3cm',
+        '6cm',
+        '4cm',
+        '<draw:image><office:binary-data>not-base64!!!</office:binary-data></draw:image>',
+      ) +
+      '</draw:page>'
+    const result = await convertOdpToPptx(await buildOdp(body))
+    expect(result.dropped).toContainEqual({ what: 'images', count: 1 })
+    const slide1 = (await readPptxEntry(result.pptx, 'ppt/slides/slide1.xml')) ?? ''
+    expect(slide1).not.toContain('<p:pic>')
+  })
+
   it('gives title-class frames a default box when coordinates are missing', async () => {
     const body =
       '<draw:page draw:name="p">' +

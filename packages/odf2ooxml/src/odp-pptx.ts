@@ -255,7 +255,13 @@ async function addImage(
   let bytes: Uint8Array | null = null
   let path = ''
   if (ref.base64) {
-    bytes = Uint8Array.from(atob(ref.base64), (character) => character.charCodeAt(0))
+    try {
+      bytes = Uint8Array.from(atob(ref.base64), (character) => character.charCodeAt(0))
+    } catch {
+      // a payload that is not valid base64 is unrepresentable, not fatal
+      ctx.drops.add('images')
+      return
+    }
   } else if (ref.href) {
     path = ref.href
     bytes = await pack.read(ref.href)
