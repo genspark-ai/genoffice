@@ -504,6 +504,10 @@ export interface TextDraft {
   /** Rebuild the replaced run as visible text (scanned-page OCR bake layer only;
       see TextEditInput.reveal). Off = keep the run's invisible rendering. */
   reveal?: true
+  /** The matched run draws nothing (render mode 3) — the OCR bake layer's
+      invisible form, from the open probe. It gates the reveal toggle: a scan
+      that was recognized, saved and reopened still carries the layer. */
+  invisible?: true
   editId?: string
   /** Further pending edits folded into this block draft (besides editId); the
       commit replaces editId and removes these — they would overlap the block

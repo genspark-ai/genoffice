@@ -1844,6 +1844,62 @@ describe('reveal edits on the OCR bake layer (#2549)', () => {
     expect(fillColors(out)).toContainEqual([0, 0, 0])
   })
 
+  // The reveal toggle follows the data: the validation reports the matched run
+  // as invisible, so a scan that was recognized, saved and reopened still
+  // offers the eye.
+  it('the validation reports the matched run as invisible', async () => {
+    const f = await scanFixture()
+    const check = await validateTextEdits(f.bytes, [
+      {
+        pageIndex: 0,
+        rect: f.rect,
+        oldText: 'Scanned words',
+        newText: 'Scanned words',
+        fontSize: 14,
+      },
+    ])
+    expect(check[0]?.reason).toBeNull()
+    expect(check[0]?.invisible).toBe(true)
+  })
+
+  // The reveal must not take the in-place path: that one only rewrites the
+  // glyphs, so a run whose text does not change would keep its invisible
+  // rendering (mode 3, white fill) and the reveal would show nothing.
+  it('reveal draws the run even when the text does not change', async () => {
+    const f = await scanFixture()
+    const out = await applyAll(f.bytes, [
+      {
+        pageIndex: 0,
+        rect: f.rect,
+        oldText: 'Scanned words',
+        newText: 'Scanned words',
+        fontSize: 14,
+        reveal: true,
+      },
+    ])
+    expect(strokeOps(out).renderModes).not.toContain(3)
+    expect(fillColors(out)).toContainEqual([0, 0, 0])
+  })
+
+  // A stroke puts the run in fill+stroke (mode 2) and surfaces the bake
+  // layer's white glyphs on the scanned page — the very regression the reveal
+  // removes. Without a reveal the run stays invisible.
+  it('bold without a reveal keeps the bake layer invisible', async () => {
+    const f = await scanFixture()
+    const out = await applyAll(f.bytes, [
+      {
+        pageIndex: 0,
+        rect: f.rect,
+        oldText: 'Scanned words',
+        newText: 'Edited words',
+        fontSize: 14,
+        newBold: true,
+      },
+    ])
+    expect(strokeOps(out).renderModes).toContain(3)
+    expect(strokeOps(out).renderModes).not.toContain(2)
+  })
+
   it('reveal with an explicit color keeps the caller color', async () => {
     const f = await scanFixture()
     const out = await applyAll(f.bytes, [

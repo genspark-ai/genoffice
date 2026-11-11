@@ -29,6 +29,8 @@ const FPDF_FONT_TYPE1 = 1
 const FPDF_FONT_TRUETYPE = 2
 const FPDF_TEXTRENDERMODE_FILL_STROKE = 2
 const FPDF_TEXTRENDERMODE_FILL_STROKE_CLIP = 6
+/** render mode 3: the run draws nothing (the OCR bake layer's invisible form) */
+const FPDF_TEXTRENDERMODE_INVISIBLE = 3
 const FPDF_LINEJOIN_ROUND = 1
 
 /** Emscripten module surface we call into (raw FPDF_* exports + heap access) */
@@ -88,7 +90,6 @@ export interface Pdfium {
   _FPDFPath_SetDrawMode(path: number, fillMode: number, stroke: number): number
   _FPDFTextObj_GetTextRenderMode(obj: number): number
   _FPDFTextObj_SetTextRenderMode(obj: number, mode: number): number
-  _FPDFTextObj_GetTextRenderMode(obj: number): number
   _FPDFPageObj_CreateTextObj(doc: number, font: number, size: number): number
   _FPDFTextObj_GetText(obj: number, textPage: number, buf: number, len: number): number
   _FPDFTextObj_GetFont(obj: number): number
@@ -750,6 +751,10 @@ function canReuseFont(
   whole: boolean,
 ): boolean {
   if (matches.length !== 1) return false
+  // A reveal rebuilds the run as visible text: the in-place path only rewrites
+  // the glyphs, so the run would keep its invisible rendering (mode 3, white
+  // fill) and the reveal would show nothing.
+  if (edit.reveal === true) return false
   if (edit.newFontSize !== undefined || edit.newColor !== undefined || edit.newFont !== undefined)
     return false
   // Selection-level styles split the line into several objects: always rebuild
@@ -1919,16 +1924,24 @@ async function rebuildRun(
         ? [style.color[0], style.color[1], style.color[2], 255]
         : color
       m._FPDFPageObj_SetFillColor(newObj, c[0], c[1], c[2], c[3])
+      // An invisible anchor stays invisible unless the edit reveals it: a stroke
+      // would put the run in fill+stroke (mode 2) and surface the bake layer's
+      // white glyphs on the scanned page.
+      const invisibleAnchor =
+        anchorRenderMode === FPDF_TEXTRENDERMODE_INVISIBLE && edit.reveal !== true
       if (edit.reveal === true) {
         // explicit reveal: the rebuilt run draws (mode 0 is the default)
-      } else if (anchorRenderMode === 3) {
-        m._FPDFTextObj_SetTextRenderMode(newObj, 3)
+      } else if (invisibleAnchor) {
+        m._FPDFTextObj_SetTextRenderMode(newObj, FPDF_TEXTRENDERMODE_INVISIBLE)
       }
       const emPt = sizeOf(style) * Math.hypot(matrix[0]!, matrix[1]!)
-      if (synthFor(style)) strokeObject(m, newObj, c, syntheticBoldWidth(emPt))
-      else if (inherited?.sameAsFill)
-        strokeObject(m, newObj, c, syntheticBoldWidth(emPt), inherited.mode)
-      else if (inherited) strokeObject(m, newObj, inherited.color, inherited.width, inherited.mode)
+      if (!invisibleAnchor) {
+        if (synthFor(style)) strokeObject(m, newObj, c, syntheticBoldWidth(emPt))
+        else if (inherited?.sameAsFill)
+          strokeObject(m, newObj, c, syntheticBoldWidth(emPt), inherited.mode)
+        else if (inherited)
+          strokeObject(m, newObj, inherited.color, inherited.width, inherited.mode)
+      }
       newObjs.push(newObj)
       segAnchors.push(lastKeptObj)
     }
@@ -2517,7 +2530,10 @@ async function applyPageEdits(
         const ok = m._FPDFText_SetText(obj, textPtr)
         m._free(textPtr)
         if (!ok) throw new Error('FPDFText_SetText failed')
-        if (eff.newBold && !faceIsBold(m, matches[0]!.font) && !readStroke(m, obj)) {
+        // A stroke turns an invisible run (render mode 3) into fill+stroke, which
+        // surfaces the bake layer's white glyphs on the scanned page.
+        const invisible = m._FPDFTextObj_GetTextRenderMode(obj) === FPDF_TEXTRENDERMODE_INVISIBLE
+        if (eff.newBold && !faceIsBold(m, matches[0]!.font) && !readStroke(m, obj) && !invisible) {
           strokeObject(m, obj, fillColorOf(m, obj), syntheticBoldWidth(renderedEm(m, obj)))
         }
       } else {
@@ -2714,6 +2730,12 @@ async function validateTextEditsInner(
                   }))
                 : undefined,
             baseColor,
+            // The matched run draws nothing (render mode 3): the OCR bake layer's
+            // invisible form. The reveal toggle follows this, not the session:
+            // a scan that was recognized, saved and reopened carries the layer.
+            invisible: res.matches.some(
+              (t) => m._FPDFTextObj_GetTextRenderMode(t.obj) === FPDF_TEXTRENDERMODE_INVISIBLE,
+            ),
           }
         }
       } finally {

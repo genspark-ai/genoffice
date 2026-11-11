@@ -538,6 +538,10 @@ export interface TextEditValidation {
   /** Base fill color of the matched run (its first object in reading order), for
       display while editing — a uniformly colored run has no colorRuns to seed from */
   baseColor?: [number, number, number]
+  /** The matched run draws nothing (render mode 3): the OCR bake layer's
+      invisible form. The reveal toggle follows the data, so a scan that was
+      recognized, saved and reopened still offers it. */
+  invisible?: boolean
 }
 
 /** Curated fonts selectable for rebuilt text runs. Single-face .ttf on every platform we

@@ -1174,6 +1174,9 @@ export default function App() {
   /** Auto-OCR progress: `stop: null` while the pass runs (the toast offers Stop),
       then the reason it ended, for the cap and a user cancel alike. `pending` is
       the queue a capped pass can be continued over. */
+  /** A pass is in flight: the Recognize command must not start a second one
+      over the same controller. */
+  const [ocrRunning, setOcrRunning] = useState(false)
   const [ocrRun, setOcrRun] = useState<{
     done: number
     total: number
@@ -2544,6 +2547,7 @@ export default function App() {
       const live = ocrAbortRef.current
       const controller = live && !live.signal.aborted ? live : new AbortController()
       ocrAbortRef.current = controller
+      setOcrRunning(true)
       setOcrRun((prev) => ({
         done: doneBefore,
         total: prev?.total ?? 0,
@@ -2577,6 +2581,7 @@ export default function App() {
           return
         }
         // A finished pass and a platform without an OCR engine are not worth a
+        setOcrRunning(false)
         // toast; a cap or a user cancel is, and it says how far the pass got
         setOcrRun(
           result && (result.stop === 'cap' || result.stop === 'cancelled')
@@ -3527,6 +3532,10 @@ export default function App() {
             if (!d || d.editId || d.origIdx !== origIdx || d.rect !== rect) return d
             let next = d
             if (v.bounds) next = { ...next, cover: v.bounds }
+            // The run draws nothing (the OCR bake layer): the reveal toggle
+            // follows the data, so a scan that was recognized, saved and
+            // reopened still offers it.
+            if (v.invisible) next = { ...next, invisible: true }
             next = seedDraftColors(next, v)
             return next
           })
@@ -9177,7 +9186,7 @@ export default function App() {
                 <div className="ribbon-group-items">
                   <button
                     className="rb-big"
-                    disabled={status !== 'ready'}
+                    disabled={status !== 'ready' || ocrRunning}
                     data-tip={t('ocrRecognizeTip')}
                     onClick={() => startOcrPass(null, 0, Number.POSITIVE_INFINITY)}
                   >
@@ -10324,7 +10333,8 @@ export default function App() {
                                               />
                                             )}
                                           </span>
-                                          {ocrPages.has(textDraft.origIdx) && (
+                                          {(textDraft.invisible ||
+                                            ocrPages.has(textDraft.origIdx)) && (
                                             <button
                                               className={`pdf-textedit-toggle${
                                                 textDraft.reveal ? ' active' : ''
