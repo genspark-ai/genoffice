@@ -226,3 +226,101 @@ describe('a real PowerPoint-authored deck: style atoms', () => {
     expect(styles.reduce((n, style) => n + style.paragraphs.length, 0)).toBeGreaterThan(0)
   })
 })
+
+describe('stage 3b: rotation, groups, placeholders, deck defaults and metafiles', () => {
+  it('carries OPT rotation as a DrawingML rot value', async () => {
+    const slides: SlideSpec[] = [
+      { textSequences: [], shapes: [{ rect: [0, 0, 1000, 1000], text: 'Turned', rotation: 45 }] },
+    ]
+    const xml = await slideXml(pptBytes(slides))
+    expect(xml).toContain('rot="2700000"') // 45 degrees x 60000
+  })
+
+  it('maps a grouped shape anchor from group coordinates to the slide', async () => {
+    const slides: SlideSpec[] = [
+      {
+        textSequences: [],
+        shapes: [
+          {
+            group: {
+              bounds: [0, 0, 1000, 1000],
+              rect: [1000, 1000, 3000, 3000],
+              children: [{ rect: [0, 0, 500, 500], text: 'Inside group' }],
+            },
+          },
+        ],
+      },
+    ]
+    const xml = await slideXml(pptBytes(slides))
+    // child [0,0,500,500] x 2 through outer [1000,1000,3000,3000]
+    expect(xml).toContain('<a:off x="1587500" y="1587500"/>')
+    expect(xml).toContain('<a:ext cx="1587500" cy="1587500"/>')
+    expect(xml).toContain('<a:t>Inside group</a:t>')
+    expect(xml).not.toContain('name="group"')
+  })
+
+  it('writes the OEPlaceholderAtom id as a DrawingML placeholder', async () => {
+    const slides: SlideSpec[] = [
+      {
+        textSequences: [],
+        shapes: [
+          { rect: [0, 0, 2000, 500], text: 'Title', placeholderId: 13 },
+          { rect: [0, 600, 2000, 1500], text: 'Body', placeholderId: 14 },
+        ],
+      },
+    ]
+    const xml = await slideXml(pptBytes(slides))
+    expect(xml).toContain('<p:ph type="title"/>')
+    expect(xml).toContain('<p:ph type="body"/>')
+  })
+
+  it('inherits the master default size and the FontCollection typeface', async () => {
+    const slides: SlideSpec[] = [
+      { textSequences: [], shapes: [{ rect: [0, 0, 2000, 500], text: 'Plain text' }] },
+    ]
+    const xml = await slideXml(
+      pptBytes(slides, {
+        fonts: ['Calibri'],
+        textMasterStyles: [{ textType: 1, sizePt: 28, fontRef: 0 }],
+      }),
+    )
+    expect(xml).toContain('sz="2800"')
+    expect(xml).toContain('<a:latin typeface="Calibri"/>')
+  })
+
+  it('writes an embedded EMF blip as a picture part', async () => {
+    const emf = new Uint8Array([1, 0, 0, 0, 0x20, 0x45, 0x4d, 0x46, 0, 0])
+    const slides: SlideSpec[] = [
+      { textSequences: [], shapes: [{ rect: [0, 0, 2000, 1000], shapeType: 75, blipIndex: 1 }] },
+    ]
+    const bytes = pptBytes(slides, { metafiles: [{ kind: 'emf', data: emf }] })
+    const zip = await parts(bytes)
+    const media = zip.file('ppt/media/image1.emf')!
+    expect(media).not.toBeNull()
+    expect(new Uint8Array(await media.async('uint8array'))).toEqual(emf)
+    expect(await slideXml(bytes)).toContain('<p:pic>')
+    const types = await zip.file('[Content_Types].xml')!.async('string')
+    expect(types).toContain('<Default Extension="emf" ContentType="image/x-emf"/>')
+  })
+})
+
+describe('a real PowerPoint-authored deck: deck-wide defaults', () => {
+  it('reads the FontCollection and TextMasterStyleAtom levels', async () => {
+    const { readFile } = await import('node:fs/promises')
+    const { fileURLToPath } = await import('node:url')
+    const CFB = await import('cfb')
+    const sample = fileURLToPath(
+      new URL('../../file-parse/tests/fixtures/legacy-sample.ppt', import.meta.url),
+    )
+    const cfb = CFB.read(await readFile(sample), { type: 'buffer' })
+    const read = (name: string): Uint8Array => {
+      const content = CFB.find(cfb, name)?.content as ArrayLike<number> | undefined
+      return content ? Uint8Array.from(Array.from(content)) : new Uint8Array(0)
+    }
+    const presentation = parsePptPresentation(read('PowerPoint Document'), read('Current User'))
+    expect(presentation.masterStyles.typefaces.length).toBeGreaterThan(0)
+    expect(presentation.masterStyles.levels.length).toBeGreaterThan(0)
+    const xml = await slideXml(new Uint8Array(await readFile(sample)))
+    expect(xml).toContain('<a:latin typeface=')
+  })
+})

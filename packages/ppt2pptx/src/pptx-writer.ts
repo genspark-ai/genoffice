@@ -33,6 +33,52 @@ function escapeXml(text: string): string {
 
 const TITLE_KINDS = new Set([0, 6]) // 5 is the subtitle
 
+/** OEPlaceholderAtom.placeholderId -> DrawingML placeholder type (MS-PPT spec) */
+const PLACEHOLDER_TYPES: Record<number, string> = {
+  1: 'title',
+  3: 'ctrTitle',
+  13: 'title',
+  15: 'ctrTitle',
+  2: 'body',
+  14: 'body',
+  18: 'body',
+  4: 'subTitle',
+  16: 'subTitle',
+  7: 'dt',
+  8: 'sldNum',
+  9: 'ftr',
+  10: 'hdr',
+  5: 'sldImg',
+  11: 'sldImg',
+  12: 'body',
+  19: 'obj',
+  20: 'obj',
+  21: 'obj',
+  22: 'obj',
+  23: 'obj',
+  24: 'obj',
+}
+
+interface TextDefaults {
+  sizePt: number | null
+  titleSizePt: number | null
+  typeface: string | null
+}
+
+function textDefaultsOf(presentation: PptPresentation): TextDefaults {
+  const levels = presentation.masterStyles.levels
+  const withSize = levels.filter((level) => level.sizePt !== null)
+  const title = withSize.find((level) => level.textType === 0) ?? withSize[0]
+  const body = withSize.find((level) => level.textType === 1) ?? withSize[0]
+  const fontRef = title?.fontRef ?? body?.fontRef ?? null
+  const typefaces = presentation.masterStyles.typefaces
+  return {
+    sizePt: body?.sizePt ?? null,
+    titleSizePt: title?.sizePt ?? null,
+    typeface: (fontRef !== null ? typefaces[fontRef] : undefined) ?? typefaces[0] ?? null,
+  }
+}
+
 interface Box {
   x: number
   y: number
@@ -70,7 +116,9 @@ function colorHex(value: number | undefined): string | null {
 function xfrmXml(box: Box, shape: PptShape): string {
   const flipH = (shape.flags & FSP.flipH) !== 0 ? ' flipH="1"' : ''
   const flipV = (shape.flags & FSP.flipV) !== 0 ? ' flipV="1"' : ''
-  return `<a:xfrm${flipH}${flipV}><a:off x="${box.x}" y="${box.y}"/><a:ext cx="${box.cx}" cy="${box.cy}"/></a:xfrm>`
+  // DrawingML rot is in 1/60000 of a degree, clockwise
+  const rot = shape.rotation !== 0 ? ` rot="${Math.round(shape.rotation * 60000)}"` : ''
+  return `<a:xfrm${rot}${flipH}${flipV}><a:off x="${box.x}" y="${box.y}"/><a:ext cx="${box.cx}" cy="${box.cy}"/></a:xfrm>`
 }
 
 function shapeFillXml(shape: PptShape): string {
@@ -90,8 +138,14 @@ function shapeLineXml(shape: PptShape): string {
   )
 }
 
-function runXml(text: string, format: TextCharFormat | null, isTitle: boolean): string {
-  const size = format?.sizePt ? format.sizePt * 100 : isTitle ? 3200 : 1800
+function runXml(
+  text: string,
+  format: TextCharFormat | null,
+  isTitle: boolean,
+  defaults: TextDefaults,
+): string {
+  const fallbackPt = isTitle ? (defaults.titleSizePt ?? 32) : (defaults.sizePt ?? 18)
+  const size = (format?.sizePt ?? fallbackPt) * 100
   const attrs = [
     'lang="en-US"',
     `sz="${size}"`,
@@ -100,7 +154,8 @@ function runXml(text: string, format: TextCharFormat | null, isTitle: boolean): 
     ...(format?.underline ? ['u="sng"'] : []),
   ].join(' ')
   const fill = format?.color ? `<a:solidFill><a:srgbClr val="${format.color}"/></a:solidFill>` : ''
-  return `<a:r><a:rPr ${attrs}>${fill}</a:rPr><a:t>${escapeXml(text)}</a:t></a:r>`
+  const latin = defaults.typeface ? `<a:latin typeface="${escapeXml(defaults.typeface)}"/>` : ''
+  return `<a:r><a:rPr ${attrs}>${fill}${latin}</a:rPr><a:t>${escapeXml(text)}</a:t></a:r>`
 }
 
 /** Split text into paragraphs, keeping each character run's formatting. */
@@ -109,6 +164,7 @@ function paragraphsXml(
   style: TextStyle,
   isTitle: boolean,
   align: 'l' | 'ctr' | 'r' | 'just' | null,
+  defaults: TextDefaults,
 ): string {
   const runs = applyCharacterRuns(text, style.characters)
   const paragraphs: Array<Array<{ text: string; format: TextCharFormat | null }>> = [[]]
@@ -123,7 +179,7 @@ function paragraphsXml(
   return paragraphs
     .map(
       (paragraph) =>
-        `<a:p>${pPr}${paragraph.map((r) => runXml(r.text, r.format, isTitle)).join('')}</a:p>`,
+        `<a:p>${pPr}${paragraph.map((r) => runXml(r.text, r.format, isTitle, defaults)).join('')}</a:p>`,
     )
     .join('')
 }
@@ -135,17 +191,30 @@ interface ShapeText {
   align: 'l' | 'ctr' | 'r' | 'just' | null
 }
 
-function spXml(shape: PptShape, text: ShapeText | null, box: Box, id: number): string {
+function spXml(
+  shape: PptShape,
+  text: ShapeText | null,
+  box: Box,
+  id: number,
+  defaults: TextDefaults,
+): string {
   const isTitle = text !== null && TITLE_KINDS.has(text.kind)
   const preset = SHAPE_PRESETS[shape.shapeType] ?? 'rect'
-  const body = text ? paragraphsXml(text.text, text.style, isTitle, text.align) : '<a:p/>'
+  const body = text ? paragraphsXml(text.text, text.style, isTitle, text.align, defaults) : '<a:p/>'
   return (
     '<p:sp>' +
     '<p:nvSpPr>' +
     `<p:cNvPr id="${id}" name=""/>` +
-    (isTitle
-      ? '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr>'
-      : '<p:cNvSpPr/><p:nvPr/>') +
+    (() => {
+      const phType = shape.placeholderId
+        ? (PLACEHOLDER_TYPES[shape.placeholderId] ?? (isTitle ? 'title' : null))
+        : isTitle
+          ? 'title'
+          : null
+      return phType
+        ? `<p:cNvSpPr>${isTitle ? '<a:spLocks noGrp="1"/>' : ''}</p:cNvSpPr><p:nvPr><p:ph type="${phType}"/></p:nvPr>`
+        : '<p:cNvSpPr/><p:nvPr/>'
+    })() +
     '</p:nvSpPr>' +
     `<p:spPr>${xfrmXml(box, shape)}<a:prstGeom prst="${preset}"><a:avLst/></a:prstGeom>` +
     shapeFillXml(shape) +
@@ -174,6 +243,7 @@ function slideShapes(
   slide: PptSlide,
   slideWidthEmu: number,
   images: Array<PptImage | null>,
+  defaults: TextDefaults,
 ): { xml: string; rels: Array<{ id: string; imageIndex: number }> } {
   const rels: Array<{ id: string; imageIndex: number }> = []
   const parts: string[] = []
@@ -188,6 +258,9 @@ function slideShapes(
         spXml(
           {
             spid: 0,
+            rotation: 0,
+            placeholderId: null,
+            groupBounds: null,
             shapeType: 202,
             flags: 0,
             rect: null,
@@ -198,6 +271,7 @@ function slideShapes(
           { kind: sequence.kind, text: sequence.text, style: EMPTY_STYLE, align: null },
           stackedBox(slideWidthEmu, slot++, slots),
           id++,
+          defaults,
         ),
       )
     }
@@ -218,7 +292,7 @@ function slideShapes(
       rels.push({ id: relId, imageIndex: shape.blipIndex! - 1 })
       parts.push(picXml(shape, box, id++, relId))
     } else {
-      parts.push(spXml(shape, text, box, id++))
+      parts.push(spXml(shape, text, box, id++, defaults))
     }
   }
 
@@ -238,6 +312,9 @@ function slideShapes(
     emit(
       {
         spid: 0,
+        rotation: 0,
+        placeholderId: null,
+        groupBounds: null,
         shapeType: 202,
         flags: 0,
         rect: null,
@@ -268,8 +345,9 @@ export async function writePptxPresentation(presentation: PptPresentation): Prom
   })
 
   const slideRels: string[] = []
+  const defaults = textDefaultsOf(presentation)
   const slideXmls = presentation.slides.map((slide, index) => {
-    const { xml: shapes, rels } = slideShapes(slide, slideWidthEmu, images)
+    const { xml: shapes, rels } = slideShapes(slide, slideWidthEmu, images, defaults)
     const relations =
       '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>' +
       rels
@@ -296,11 +374,17 @@ export async function writePptxPresentation(presentation: PptPresentation): Prom
   const imageDefaults = [
     ...new Set(images.filter((i): i is PptImage => i !== null).map((i) => i.ext)),
   ]
-    .map((ext) =>
-      ext === 'png'
-        ? '<Default Extension="png" ContentType="image/png"/>'
-        : '<Default Extension="jpg" ContentType="image/jpeg"/>',
-    )
+    .map((ext) => {
+      const type =
+        ext === 'png'
+          ? 'image/png'
+          : ext === 'emf'
+            ? 'image/x-emf'
+            : ext === 'wmf'
+              ? 'image/x-wmf'
+              : 'image/jpeg'
+      return `<Default Extension="${ext}" ContentType="${type}"/>`
+    })
     .join('')
   const contentTypes =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -359,7 +443,7 @@ export async function writePptxPresentation(presentation: PptPresentation): Prom
   // the main master's anchored shapes are inherited by every slide
   const masterShapes = (presentation.master?.shapes ?? [])
     .filter((shape) => shape.rect !== null && shape.blipIndex === null)
-    .map((shape, index) => spXml(shape, shape.text, boxOf(shape.rect!), index + 2))
+    .map((shape, index) => spXml(shape, shape.text, boxOf(shape.rect!), index + 2, defaults))
     .join('')
   zip.file(
     'ppt/slideMasters/slideMaster1.xml',

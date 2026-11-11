@@ -34,6 +34,7 @@ export async function convertPptToPptx(bytes: Uint8Array): Promise<PptConversion
   const warnings: string[] = []
   const unreadable = presentation.images.filter((image) => image === null).length
   if (unreadable > 0) warnings.push(`${unreadable} picture(s) use a format stage 3 does not carry`)
-  warnings.push('shape rotation and metafile pictures are not carried')
+  warnings.push('unsupported blip kinds (DIB/TIFF/PICT) are omitted')
+  warnings.push('bullets, tab stops, notes and full placeholder inheritance are not carried')
   return { bytes: out, slideCount: presentation.slides.length, warnings }
 }

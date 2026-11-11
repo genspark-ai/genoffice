@@ -7,6 +7,7 @@ import {
   type PptMaster,
   type PptShape,
 } from './escher'
+import { masterStylesOf, type PptMasterStyles } from './master-style'
 import {
   PPT_TYPES,
   type PptRecord,
@@ -60,6 +61,8 @@ export interface PptPresentation {
   images: Array<PptImage | null>
   /** stage 3: the main master's shapes, inherited by every slide */
   master: PptMaster | null
+  /** deck-wide typefaces and master text styles, used as run defaults */
+  masterStyles: PptMasterStyles
 }
 
 /**
@@ -307,6 +310,7 @@ export function parsePptPresentation(
       documentRecord.offset,
       documentRecord.offset + documentRecord.length,
     ),
+    masterStyles: masterStylesOf(document),
   }
 }
 

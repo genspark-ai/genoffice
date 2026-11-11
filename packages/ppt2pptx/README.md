@@ -29,6 +29,11 @@ Legacy PowerPoint 97-2003 import: parse `.ppt` (OLE2/CFB + MS-PPT records) and r
   Unsupported kinds are omitted with a warning.
 - **Masters**: the `MainMasterContainer`'s anchored shapes are reproduced in
   `slideMaster1.xml`, so every slide's layout inherits them.
+- **Stage 3b**: shape rotation (OPT pid `0x0004`, 16.16 degrees), grouped
+  shape coordinates (FSPGR bounds mapped into the group's anchor),
+  `OEPlaceholderAtom` ids as `<p:ph type>`, deck-wide `FontCollection`
+  typefaces and `TextMasterStyleAtom` default sizes, and embedded EMF/WMF
+  metafile blips as picture parts.
 
 The parse model (`PptPresentation`, `parsePptPresentation`) now exposes
 `slides[].shapes`, `images` and `master` for callers; the third argument of
@@ -37,7 +42,7 @@ and the hostile-input fuzz are unaffected.
 
 ## Not carried yet
 
-Shape rotation, metafile/EMF/WMF/TIFF/DIB/PICT blips, font-face resolution
-from the FontCollection, bullets and numbering, tab stops, grouped shapes,
-placeholder inheritance semantics and notes. Stage 3 keeps the geometry and
-formatting it can prove from the bytes; the rest remains stacked text.
+TIFF/DIB/PICT blips, per-run font-face refs, bullets and numbering, tab stops,
+nested group transforms, full placeholder inheritance semantics and notes.
+Stage 3 keeps the geometry and formatting it can prove from the bytes; the rest
+remains stacked text.

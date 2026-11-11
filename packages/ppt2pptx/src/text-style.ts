@@ -219,3 +219,161 @@ export function applyCharacterRuns(
   if (at < units.length) out.push({ text: units.slice(at).join(''), format: null })
   return out
 }
+
+/** One TextPFException: masks (4 bytes) then its optional fields in structure
+ *  order. Returns the offset just past it, or null at a truncated tail. */
+export function readPfException(
+  view: DataView,
+  at: number,
+): { end: number; align: TextParagraphFormat['align'] } | null {
+  if (at + 4 > view.byteLength) return null
+  const mask = view.getUint32(at, true)
+  let cursor = at + 4
+  let align: TextParagraphFormat['align'] = null
+  const has = (bit: number): boolean => (mask & bit) !== 0
+  const step = (bytes: number, read?: (offset: number) => void): void => {
+    if (cursor + bytes > view.byteLength) return
+    read?.(cursor)
+    cursor += bytes
+  }
+  if (has(PF_BULLET_FLAGS)) step(2)
+  if (has(PF_BULLET_CHAR)) step(2)
+  if (has(PF_BULLET_FONT)) step(2)
+  if (has(PF_BULLET_SIZE)) step(2)
+  if (has(PF_BULLET_COLOR)) step(4)
+  if (has(PF_ALIGN))
+    step(2, (o) => {
+      align = ALIGNMENTS[view.getUint16(o, true)] ?? null
+    })
+  if (has(PF_LINE_SPACING)) step(2)
+  if (has(PF_SPACE_BEFORE)) step(2)
+  if (has(PF_SPACE_AFTER)) step(2)
+  if (has(PF_LEFT_MARGIN)) step(2)
+  if (has(PF_INDENT)) step(2)
+  if (has(PF_DEFAULT_TAB)) step(2)
+  if (has(PF_TAB_STOPS)) return { end: view.byteLength, align } // variable-sized tail
+  if (has(PF_FONT_ALIGN)) step(2)
+  if (has(PF_WRAP_FLAGS)) step(2)
+  if (has(PF_TEXT_DIRECTION)) step(2)
+  return { end: cursor, align }
+}
+
+export interface CfFields {
+  end: number
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  sizePt: number | null
+  color: string | null
+  /** ansiFontRef / typeface index into the FontCollection */
+  fontRef: number | null
+}
+
+/** One TextCFException: masks (4 bytes) then its optional fields in structure
+ *  order (MS-PPT 2.9.14). pp10ext / newEATypeface / csTypeface / pp11ext MUST
+ *  be zero, so they are not read. */
+export function readCfException(view: DataView, at: number): CfFields | null {
+  if (at + 4 > view.byteLength) return null
+  const mask = view.getUint32(at, true)
+  let cursor = at + 4
+  const out: CfFields = {
+    end: cursor,
+    bold: false,
+    italic: false,
+    underline: false,
+    sizePt: null,
+    color: null,
+    fontRef: null,
+  }
+  const has = (bit: number): boolean => (mask & bit) !== 0
+  const step = (bytes: number, read?: (offset: number) => void): void => {
+    if (cursor + bytes > view.byteLength) return
+    read?.(cursor)
+    cursor += bytes
+  }
+  if (
+    has(
+      CF_BOLD |
+        CF_ITALIC |
+        CF_UNDERLINE |
+        CF_SHADOW |
+        CF_FEHINT |
+        CF_KUMI |
+        CF_EMBOSS |
+        CF_HAS_STYLE,
+    )
+  ) {
+    step(2, (o) => {
+      const style = view.getUint16(o, true)
+      out.bold = (style & 0x01) !== 0
+      out.italic = (style & 0x02) !== 0
+      out.underline = (style & 0x04) !== 0
+    })
+  }
+  if (has(CF_TYPEFACE))
+    step(2, (o) => {
+      out.fontRef = view.getUint16(o, true)
+    })
+  if (has(1 << 21)) step(2)
+  if (has(CF_ANSI))
+    step(2, (o) => {
+      out.fontRef = view.getUint16(o, true)
+    })
+  if (has(CF_SYMBOL)) step(2)
+  if (has(CF_SIZE))
+    step(2, (o) => {
+      const size = view.getUint16(o, true)
+      if (size >= 1 && size <= 4000) out.sizePt = size
+    })
+  if (has(CF_COLOR))
+    step(4, (o) => {
+      out.color = colorOf(view, o)
+    })
+  if (has(CF_POSITION)) step(2)
+  out.end = cursor
+  return out
+}
+
+export interface MasterStyleLevel {
+  /** TextTypeEnum of the owning TextMasterStyleAtom (0 title, 1 body, ...) */
+  textType: number
+  level: number
+  sizePt: number | null
+  fontRef: number | null
+  align: TextParagraphFormat['align']
+}
+
+/** TextMasterStyleAtom: cLevels (u16) then one TextMasterStyleLevel per level.
+ *  A level optionally starts with a 2-byte level number when recInstance >= 5. */
+export function readTextMasterStyleAtom(
+  payload: Uint8Array,
+  recInstance: number,
+): MasterStyleLevel[] {
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
+  if (view.byteLength < 2) return []
+  const cLevels = Math.min(view.getUint16(0, true), 5)
+  let cursor = 2
+  const out: MasterStyleLevel[] = []
+  for (let index = 0; index < cLevels; index++) {
+    let level = index
+    if (recInstance >= 5) {
+      if (cursor + 2 > view.byteLength) break
+      level = view.getUint16(cursor, true)
+      cursor += 2
+    }
+    const pf = readPfException(view, cursor)
+    if (!pf) break
+    cursor = pf.end
+    const cf = readCfException(view, cursor)
+    if (!cf) break
+    cursor = cf.end
+    out.push({
+      textType: recInstance,
+      level,
+      sizePt: cf.sizePt,
+      fontRef: cf.fontRef,
+      align: pf.align,
+    })
+  }
+  return out
+}

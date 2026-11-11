@@ -3,6 +3,7 @@
  *  header as MS-PPT but live inside PPDrawing; this reader is deliberately
  *  tolerant (a malformed child ends that shape's parse, not the conversion). */
 
+import { inflateSync } from 'node:zlib'
 import type { TextStyle } from './text-style'
 import { parseStyleTextProp } from './text-style'
 import { decodeTextBytes, decodeTextChars, PPT_TYPES } from './records'
@@ -20,11 +21,14 @@ export const ESCHER = {
   clientTextbox: 0xf00d,
   childAnchor: 0xf00f,
   clientAnchor: 0xf010,
+  clientData: 0xf011,
   secondaryOpt: 0xf121,
   tertiaryOpt: 0xf122,
 } as const
 
 export const OPT = {
+  /** MS-ODRAW 2.3.18.5: opid MUST be 0x0004, FixedPoint 16.16 degrees */
+  rotation: 0x0004,
   pib: 0x0104,
   fillColor: 0x0181,
   lineColor: 0x01c0,
@@ -62,6 +66,12 @@ export interface PptShapeText {
 
 export interface PptShape {
   spid: number
+  /** clockwise degrees from OPT.rotation */
+  rotation: number
+  /** OEPlaceholderAtom.placeholderId (0 = none), or null */
+  placeholderId: number | null
+  /** OfficeArtFSPGR coordinate space of a group shape */
+  groupBounds: EscherRect | null
   shapeType: number
   flags: number
   /** master units (576/inch); null means the shape had no anchor */
@@ -74,9 +84,10 @@ export interface PptShape {
 
 export interface PptImage {
   bytes: Uint8Array
-  ext: 'png' | 'jpg'
-  contentType: 'image/png' | 'image/jpeg'
+  ext: 'png' | 'jpg' | 'emf' | 'wmf'
+  contentType: 'image/png' | 'image/jpeg' | 'image/x-emf' | 'image/x-wmf'
 }
+const PLACEHOLDER_ATOM = 0x0bc3
 
 export interface PptMaster {
   shapes: PptShape[]
@@ -173,6 +184,9 @@ function shapeTextOf(bytes: Uint8Array, record: EscherRecord): PptShapeText | nu
 function parseShape(bytes: Uint8Array, record: EscherRecord): PptShape {
   const shape: PptShape = {
     spid: 0,
+    rotation: 0,
+    placeholderId: null,
+    groupBounds: null,
     shapeType: 0,
     flags: 0,
     rect: null,
@@ -186,6 +200,14 @@ function parseShape(bytes: Uint8Array, record: EscherRecord): PptShape {
       shape.spid = dv.getUint32(child.start, true)
       shape.flags = dv.getUint32(child.start + 4, true)
       shape.shapeType = child.instance
+    } else if (child.type === ESCHER.fspgr) {
+      shape.groupBounds = rectOf(bytes, child)
+    } else if (child.type === ESCHER.clientData) {
+      for (const atom of children(bytes, child.start, child.end)) {
+        if (atom.type === PLACEHOLDER_ATOM && atom.end - atom.start >= 5) {
+          shape.placeholderId = bytes[atom.start + 4] ?? 0
+        }
+      }
     } else if (child.type === ESCHER.childAnchor || child.type === ESCHER.clientAnchor) {
       shape.rect = rectOf(bytes, child) ?? shape.rect
     } else if (
@@ -203,6 +225,7 @@ function parseShape(bytes: Uint8Array, record: EscherRecord): PptShape {
         const pid = entry & 0x3fff
         const value = dv.getUint32(at + 2, true)
         shape.props.set(pid, value)
+        if (pid === OPT.rotation) shape.rotation = (value | 0) / 65536
         if (pid === OPT.pib) shape.blipIndex = value
       }
     } else if (child.type === ESCHER.clientTextbox) {
@@ -213,14 +236,57 @@ function parseShape(bytes: Uint8Array, record: EscherRecord): PptShape {
 }
 
 /** Every leaf SpContainer under a drawing, with its groups flattened away. */
+function mapRect(child: EscherRect, bounds: EscherRect, outer: EscherRect): EscherRect {
+  const boundsWidth = bounds.right - bounds.left
+  const boundsHeight = bounds.bottom - bounds.top
+  if (boundsWidth <= 0 || boundsHeight <= 0) return child
+  const scaleX = (outer.right - outer.left) / boundsWidth
+  const scaleY = (outer.bottom - outer.top) / boundsHeight
+  return {
+    left: Math.round(outer.left + (child.left - bounds.left) * scaleX),
+    top: Math.round(outer.top + (child.top - bounds.top) * scaleY),
+    right: Math.round(outer.left + (child.right - bounds.left) * scaleX),
+    bottom: Math.round(outer.top + (child.bottom - bounds.top) * scaleY),
+  }
+}
+
+/** Every leaf SpContainer under a drawing. A group's first shape is the group
+ *  itself: its FSPGR bounds describe the child coordinate space and its anchor
+ *  the outer rectangle, so member anchors are mapped into slide coordinates. */
 export function shapesOf(bytes: Uint8Array, from: number, to: number): PptShape[] {
   const out: PptShape[] = []
+  const emit = (
+    record: EscherRecord,
+    bounds: EscherRect | null,
+    outer: EscherRect | null,
+  ): void => {
+    if (out.length >= MAX_SHAPES) return
+    const shape = parseShape(bytes, record)
+    if (shape.rect && bounds && outer) shape.rect = mapRect(shape.rect, bounds, outer)
+    if ((shape.flags & (FSP.group | FSP.patriarch | FSP.deleted)) === 0) out.push(shape)
+  }
   const walk = (start: number, end: number, depth: number): void => {
-    if (depth > MAX_DEPTH || out.length >= MAX_SHAPES) return
+    if (depth > MAX_DEPTH) return
     for (const record of children(bytes, start, end)) {
+      if (record.type === ESCHER.spgrContainer) {
+        const nested = [...children(bytes, record.start, record.end)]
+        const members = nested.filter((r) => r.type === ESCHER.spContainer)
+        const [first, ...rest] = members
+        const group = first ? parseShape(bytes, first) : null
+        // A real group's first shape is the group itself (FSP group/patriarch
+        // flag); without that flag every SpContainer is an ordinary shape.
+        const isGroup = group !== null && (group.flags & (FSP.group | FSP.patriarch)) !== 0
+        const bounds = isGroup ? group.groupBounds : null
+        const outer = isGroup ? group.rect : null
+        const childrenShapes = isGroup ? rest : members
+        for (const member of childrenShapes) emit(member, bounds, outer)
+        for (const child of nested.filter((r) => r.type === ESCHER.spgrContainer)) {
+          walk(child.start, child.end, depth + 1)
+        }
+        continue
+      }
       if (record.type === ESCHER.spContainer) {
-        const shape = parseShape(bytes, record)
-        if ((shape.flags & (FSP.group | FSP.patriarch | FSP.deleted)) === 0) out.push(shape)
+        emit(record, null, null)
         continue
       }
       if (record.version === 0xf) walk(record.start, record.end, depth + 1)
@@ -233,6 +299,8 @@ export function shapesOf(bytes: Uint8Array, from: number, to: number): PptShape[
 /* OfficeArtBlip record types (MS-ODRAW 2.2.23-2.2.30) */
 const BLIP_PNG = 0xf01e
 const BLIP_JPEG = new Set([0xf01d, 0xf02a])
+const BLIP_EMF = 0xf01a
+const BLIP_WMF = 0xf01b
 const TWO_UID_INSTANCES: Record<number, number[]> = {
   [BLIP_PNG]: [0x6e1],
   0xf01d: [0x46b, 0x6e3],
@@ -243,6 +311,32 @@ const TWO_UID_INSTANCES: Record<number, number[]> = {
 function readBlip(bytes: Uint8Array, offset: number, limit: number): PptImage | null {
   const record = recordAt(bytes, offset, limit)
   if (!record) return null
+  if (record.type === BLIP_EMF || record.type === BLIP_WMF) {
+    // OfficeArtBlipEMF/WMF: UID (32 bytes for the two-UID instances), then a
+    // 34-byte metafile header whose cbSave names the decompressed size.
+    const twoUid =
+      (record.type === BLIP_EMF && record.instance === 0x3d5) ||
+      (record.type === BLIP_WMF && record.instance === 0x217)
+    let dataStart = record.start + (twoUid ? 32 : 16)
+    if (dataStart + 34 > record.end) return null
+    const dv = viewOf(bytes)
+    const cbSave = dv.getUint32(dataStart + 28, true)
+    const compression = bytes[dataStart + 32] ?? 0
+    dataStart += 34
+    const available = Math.min(cbSave, record.end - dataStart)
+    let payload = bytes.slice(dataStart, dataStart + available)
+    if (compression === 0) {
+      try {
+        payload = new Uint8Array(inflateSync(payload))
+      } catch {
+        return null
+      }
+    }
+    if (payload.length === 0) return null
+    return record.type === BLIP_EMF
+      ? { bytes: payload, ext: 'emf', contentType: 'image/x-emf' }
+      : { bytes: payload, ext: 'wmf', contentType: 'image/x-wmf' }
+  }
   let image: PptImage
   if (record.type === BLIP_PNG) {
     image = { bytes: new Uint8Array(0), ext: 'png', contentType: 'image/png' }

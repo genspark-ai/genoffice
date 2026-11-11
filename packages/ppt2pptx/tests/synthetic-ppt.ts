@@ -34,6 +34,20 @@ export interface ShapeSpec {
   charRuns?: CharRunSpec[]
   /** TextAlignmentEnum: 0 left, 1 center, 2 right, 3 justify */
   paragraphAlign?: number
+  /** clockwise degrees, written as OPT pid 0x0004 (16.16 fixed point) */
+  rotation?: number
+  /** OEPlaceholderAtom.placeholderId; 1 = master title, 13 = title, 14 = body */
+  placeholderId?: number
+  /** emit as a real Escher group with mapped child coordinates */
+  group?: GroupSpec
+}
+
+export interface GroupSpec {
+  /** FSPGR child coordinate space [left, top, right, bottom] */
+  bounds: [number, number, number, number]
+  /** the group's own anchor on the slide */
+  rect: [number, number, number, number]
+  children: ShapeSpec[]
 }
 
 export interface MasterSpec {
@@ -63,6 +77,12 @@ export interface BuildOptions {
   images?: Uint8Array[]
   /** a MainMasterContainer whose anchored shapes the deck inherits */
   master?: MasterSpec
+  /** FontCollection typeface names, in font-ref order */
+  fonts?: string[]
+  /** TextMasterStyleAtom defaults, one level per entry */
+  textMasterStyles?: Array<{ textType: number; sizePt: number; fontRef?: number }>
+  /** embedded metafile blips (uncompressed), one per 1-based blip index */
+  metafiles?: Array<{ kind: 'emf' | 'wmf'; data: Uint8Array }>
 }
 
 const record = (type: number, payload: Uint8Array, instance = 0, version = 0): Uint8Array => {
@@ -179,6 +199,8 @@ function shapeContainer(spec: ShapeSpec, index: number): Uint8Array {
   children.push(escher(0xf00a, concat([u32(index + 2), u32(flags)]), shapeType))
   if (spec.rect) children.push(escher(0xf00f, concat(spec.rect.map(i32))))
   const opt: Uint8Array[] = []
+  if (spec.rotation !== undefined)
+    opt.push(optEntry(0x0004, Math.round(spec.rotation * 65536) >>> 0))
   if (spec.blipIndex !== undefined) opt.push(optEntry(0x0104, spec.blipIndex))
   if (spec.fillColor !== undefined) opt.push(optEntry(0x0181, spec.fillColor))
   if (spec.lineColor !== undefined) opt.push(optEntry(0x01c0, spec.lineColor))
@@ -194,23 +216,42 @@ function shapeContainer(spec: ShapeSpec, index: number): Uint8Array {
     }
     children.push(escher(0xf00d, concat(atoms)))
   }
+  if (spec.placeholderId !== undefined) {
+    const placeholder = record(0x0bc3, concat([u32(0), u8(spec.placeholderId, 0), u16(0)]))
+    children.push(escherContainer(0xf011, [placeholder]))
+  }
   return escherContainer(0xf004, children)
+}
+
+/** A real Escher group: first SpContainer is the group (FSPGR + anchor), the
+ *  rest are members whose anchors live in the group's coordinate space. */
+function groupContainer(group: GroupSpec, index: number): Uint8Array {
+  const self = escherContainer(0xf004, [
+    escher(0xf00a, concat([u32(index + 1000), u32(0x5)]), 0), // group | patriarch
+    escher(0xf009, concat(group.bounds.map(i32))),
+    escher(0xf00f, concat(group.rect.map(i32))),
+  ])
+  // flat, like a real PowerPoint spgrContainer: the group shape is its first
+  // SpContainer and the members follow it
+  return concat([self, ...group.children.map(shapeContainer)])
 }
 
 /** A slide's PPDrawing: DgContainer -> SpgrContainer -> SpContainers. */
 function drawing(spec: SlideSpec, outlineTexts: boolean): Uint8Array {
-  const shapes = spec.shapes
-    ? spec.shapes.map(shapeContainer)
-    : spec.textSequences.map((sequence, index) => {
-        const atoms: Uint8Array[] = [textHeader(sequence.kind)]
-        if (outlineTexts) atoms.push(outlineTextRef(index))
-        else
-          atoms.push(
-            sequence.atom === 'bytes' ? textBytes(sequence.text) : textChars(sequence.text),
-          )
-        const textbox = escher(0xf00d, concat(atoms))
-        return escherContainer(0xf004, [textbox])
-      })
+  const shapes: Uint8Array[] = []
+  if (spec.shapes) {
+    for (const [index, shape] of spec.shapes.entries()) {
+      shapes.push(shape.group ? groupContainer(shape.group, index) : shapeContainer(shape, index))
+    }
+  } else {
+    for (const [index, sequence] of spec.textSequences.entries()) {
+      const atoms: Uint8Array[] = [textHeader(sequence.kind)]
+      if (outlineTexts) atoms.push(outlineTextRef(index))
+      else
+        atoms.push(sequence.atom === 'bytes' ? textBytes(sequence.text) : textChars(sequence.text))
+      shapes.push(escherContainer(0xf004, [escher(0xf00d, concat(atoms))]))
+    }
+  }
   const spgr = escherContainer(0xf003, shapes)
   const dg = escherContainer(0xf002, [spgr])
   return escherContainer(0x040c, [dg])
@@ -221,10 +262,26 @@ function embeddedPng(png: Uint8Array): Uint8Array {
   return escher(0xf01e, concat([new Uint8Array(16), u8(0), png]))
 }
 
+/** An uncompressed OfficeArtBlipEMF/WMF: UID, 34-byte metafile header, data. */
+function embeddedMetafile(kind: 'emf' | 'wmf', data: Uint8Array): Uint8Array {
+  const header = concat([
+    new Uint8Array(28),
+    u32(data.length), // cbSave
+    u8(1, 0), // compression = uncompressed, filter
+  ])
+  return escher(kind === 'emf' ? 0xf01a : 0xf01b, concat([new Uint8Array(16), header, data]))
+}
+
 /** OfficeArtDggContainer with a BStore of FBSE entries carrying embedded blips. */
-function drawingGroup(images: Uint8Array[]): Uint8Array {
-  const entries = images.map((png) => {
-    const blip = embeddedPng(png)
+function drawingGroup(
+  images: Uint8Array[],
+  metafiles: Array<{ kind: 'emf' | 'wmf'; data: Uint8Array }>,
+): Uint8Array {
+  const blips = [
+    ...images.map(embeddedPng),
+    ...metafiles.map((m) => embeddedMetafile(m.kind, m.data)),
+  ]
+  const entries = blips.map((blip) => {
     const header = concat([
       u8(0, 0), // btWin32, btMacOS
       new Uint8Array(16), // rgbUid
@@ -241,6 +298,33 @@ function drawingGroup(images: Uint8Array[]): Uint8Array {
 
 function slideContainer(spec: SlideSpec, outlineTexts: boolean): Uint8Array {
   return record(0x03ee, concat([slideAtom(), drawing(spec, outlineTexts)]), 0, 0xf)
+}
+
+/** FontCollection: FontEntityAtom (0x0FB7) with a 64-byte UTF-16 lfFaceName. */
+function fontCollection(fonts: string[]): Uint8Array {
+  return record(
+    0x07d5,
+    concat(
+      fonts.map((name) => {
+        const face = new Uint8Array(64)
+        const units = Buffer.from(name.slice(0, 31), 'utf16le')
+        face.set(units.subarray(0, 62))
+        return record(0x0fb7, concat([face, u8(0, 0, 0, 0)]))
+      }),
+    ),
+    0,
+    0xf,
+  )
+}
+
+/** TextMasterStyleAtom: one level whose CF exception sets size and font ref. */
+function textMasterStyle(spec: { textType: number; sizePt: number; fontRef?: number }): Uint8Array {
+  const withFont = spec.fontRef !== undefined
+  const mask = (1 << 17) | (withFont ? 1 << 22 : 0)
+  const fields: Uint8Array[] = [u32(0), u32(mask)] // PFMasks=0, CFMasks
+  if (withFont) fields.push(u16(spec.fontRef!)) // ansiFontRef precedes fontSize
+  fields.push(u16(spec.sizePt))
+  return record(0x0fa3, concat([u16(1), ...fields]), spec.textType)
 }
 
 /** MainMasterContainer: the master's own PPDrawing, inherited by every slide. */
@@ -310,6 +394,8 @@ export function buildPptStreams(
         0x03e8,
         concat([
           documentAtom(slideSize[0], slideSize[1]),
+          ...(options.fonts ? [fontCollection(options.fonts)] : []),
+          ...(options.textMasterStyles ?? []).map(textMasterStyle),
           ...(options.master ? [masterContainer(options.master)] : []),
           record(0x0ff0, concat(listParts), 0, 0xf),
           record(0x03ea, new Uint8Array(0)),
@@ -352,7 +438,8 @@ export function buildPptStreams(
 
   // the global drawing group is a top-level record; the reader scans for its
   // BStore independently of the change directory
-  if (images.length > 0) push(drawingGroup(images))
+  const metafiles = options.metafiles ?? []
+  if (images.length > 0 || metafiles.length > 0) push(drawingGroup(images, metafiles))
 
   const currentUser = record(
     0x0ff6,
