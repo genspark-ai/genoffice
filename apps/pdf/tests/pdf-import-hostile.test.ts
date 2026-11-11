@@ -15,24 +15,32 @@ import { buildFuzzPdf, PDF_CORRUPTIONS, rng } from './helpers/fuzz-pdf'
 
 const SEEDS = Math.max(1, Number(process.env.HOSTILE_PDF_SEEDS ?? 8))
 const LOAD_TIMEOUT_MS = 8000
+const LOAD_TIMED_OUT = 'pdf.js load timed out'
+
+/** The outcome of a failed load: a parse error is a clean refusal, a load that
+ *  never settles is a timeout and has to be visible as one. */
+export function outcomeOf(error: unknown): 'refused' | 'timed-out' {
+  return error instanceof Error && error.message === LOAD_TIMED_OUT ? 'timed-out' : 'refused'
+}
 
 type PDFDocumentLoadingTask = ReturnType<typeof getDocument>
 
 /** pdf.js owns the buffer, so pass a copy. A timed-out load is destroyed so a
  *  worker cannot leak into the next case; every outcome is caught upstream. */
-async function attemptLoad(bytes: Uint8Array): Promise<'opened' | 'refused'> {
+async function attemptLoad(
+  bytes: Uint8Array,
+  load: (bytes: Uint8Array) => PDFDocumentLoadingTask = (b) =>
+    getDocument({ data: b.slice(), verbosity: 0, useSystemFonts: true }),
+  timeoutMs: number = LOAD_TIMEOUT_MS,
+): Promise<'opened' | 'refused' | 'timed-out'> {
   let task: PDFDocumentLoadingTask | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    task = getDocument({
-      data: bytes.slice(),
-      verbosity: 0,
-      useSystemFonts: true,
-    })
+    task = load(bytes)
     const doc = await Promise.race([
       task.promise,
       new Promise<never>((_reject, reject) => {
-        timer = setTimeout(() => reject(new Error('pdf.js load timed out')), LOAD_TIMEOUT_MS)
+        timer = setTimeout(() => reject(new Error(LOAD_TIMED_OUT)), timeoutMs)
       }),
     ])
     // Walking the first page is what a thumbnail/render pass does immediately
@@ -45,8 +53,10 @@ async function attemptLoad(bytes: Uint8Array): Promise<'opened' | 'refused'> {
     // pdf.js v6 removed PDFDocumentProxy.destroy(); the loading task owns the
     // worker and is destroyed in the finally block below.
     return 'opened'
-  } catch {
-    return 'refused'
+  } catch (error) {
+    // A load that never settles is not a clean refusal. It has to be its own
+    // outcome, or a hang passes as "refuses cleanly ... never hangs".
+    return outcomeOf(error)
   } finally {
     if (timer !== undefined) clearTimeout(timer)
     if (task !== undefined) void task.destroy().catch(() => undefined)
@@ -58,6 +68,17 @@ async function healthyOpens(seed: number): Promise<void> {
 }
 
 describe('hostile PDF import fuzz', () => {
+  it('reports a load that never settles as a timeout, not a clean refusal', async () => {
+    // A hang must not pass as "refuses cleanly ... never hangs": only the
+    // suite's own budget ends the load, and the case has to show that.
+    const outcome = await attemptLoad(
+      new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+      () => ({ promise: new Promise(() => {}), destroy: async () => undefined }) as never,
+      50,
+    )
+    expect(outcome).toBe('timed-out')
+  })
+
   it('the generator produces documents pdf.js accepts', async () => {
     for (let seed = 1; seed <= 5; seed++) await healthyOpens(seed)
   })

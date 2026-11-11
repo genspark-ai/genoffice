@@ -1,20 +1,27 @@
-/** Fourth fidelity-fuzz axis, second half: the docx -> printable HTML -> PDF
- *  -> read-back round trip. The docs suite's roundtrip-fuzz.test.ts proves
- *  byte fidelity inside DOCX; this one proves the *printed* surface keeps the
- *  document's text across the format boundary.
+/** Fourth fidelity-fuzz axis, second half: the docx -> editor text ->
+ *  printable-HTML sanitizer path.
  *
- *  The Chromium rendering itself needs Electron, so printHtmlToPdf's window is
- *  injected: loadFile receives the real sanitized HTML the print path writes,
- *  and printToPDF lays its visible text out with pdf-lib. The read-back is the
- *  independent reader (pdf.js), not the printer's own input. Corrupt DOCX
- *  packages are fed through the same chain and must refuse cleanly or
- *  succeed — never hang — with a healthy seed still round-tripping after them.
+ *  The docs suite's roundtrip-fuzz.test.ts proves byte fidelity inside DOCX;
+ *  this one proves the text survives the format boundary on the way to the
+ *  printable page — the helper the AI create-document command uses to turn
+ *  model-written HTML into a printable document. It is NOT the path a .docx
+ *  takes when the user prints or exports to PDF: that path renders the
+ *  pagination preview's sheets in Chromium, which needs Electron.
+ *
+ *  The Chromium rendering is stubbed: loadFile receives the real sanitized HTML
+ *  the helper writes, and printToPDF lays its visible text out with pdf-lib.
+ *  The read-back is the independent reader (pdf.js), not the printer's own
+ *  input.
+ *
+ *  The corruption half of the original draft duplicated
+ *  roundtrip-hostile.test.ts (on the default seeds every refusal comes out of
+ *  parseDocx, which that suite already covers), so it is gone: this axis is the
+ *  printable-HTML fidelity, not the parse.
  *
  *  Corruption is seeded. CI runs PRINT_FUZZ_SEEDS; a failing seed reproduces
  *  exactly via buildFuzzDocx(seed). */
 import { readFileSync } from 'node:fs'
 import { Editor } from '@tiptap/core'
-import JSZip from 'jszip'
 import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { parseDocx } from '@genoffice/docx-engine'
@@ -27,19 +34,6 @@ import {
   type PrintWindow,
 } from '../../../packages/electron-utils/src/print-html-pdf'
 import { buildFuzzDocx } from './helpers/fuzz-docx'
-
-/** Seeded PRNG, kept local so the docs suite does not import a sibling app's
- *  test helper. Same construction as the other hostile-fuzz suites. */
-function rng(seed: number): () => number {
-  let a = seed >>> 0
-  return () => {
-    a |= 0
-    a = (a + 0x6d2b79f5) | 0
-    let t = Math.imul(a ^ (a >>> 15), 1 | a)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 const SEEDS = Math.max(1, Number(process.env.PRINT_FUZZ_SEEDS ?? 8))
 const LOAD_TIMEOUT_MS = 8000
@@ -109,7 +103,10 @@ async function renderHtmlToPdf(html: string): Promise<Buffer> {
   return Buffer.from(await doc.save())
 }
 
-async function roundTrip(docx: Uint8Array, title: string): Promise<{ html: string; text: string }> {
+async function roundTrip(
+  docx: Uint8Array,
+  title: string,
+): Promise<{ html: string; text: string; source: string[] }> {
   const paragraphs = await printedTextOf(docx)
   const body = paragraphs.map((text) => `<p>${escapeHtml(text)}</p>`).join('\n')
   const html = buildPrintableHtml(title, body)
@@ -143,7 +140,9 @@ async function roundTrip(docx: Uint8Array, title: string): Promise<{ html: strin
       chunks.push(...content.items.map((item) => ('str' in item ? item.str : '')))
       await page.cleanup()
     }
-    return { html: loaded, text: chunks.join(' ').replace(/\s+/g, ' ') }
+    // The source paragraphs travel with the result: the HTML is compared with
+    // what the editor produced, never with itself.
+    return { html: loaded, text: chunks.join(' ').replace(/\s+/g, ' '), source: paragraphs }
   } finally {
     if (timer !== undefined) clearTimeout(timer)
     void task.destroy().catch(() => undefined)
@@ -152,50 +151,24 @@ async function roundTrip(docx: Uint8Array, title: string): Promise<{ html: strin
 
 const normalise = (text: string): string => text.replace(/\s+/g, ' ').trim()
 
-type Corrupt = (bytes: Uint8Array, r: () => number) => Promise<Uint8Array>
-
-const truncate: Corrupt = async (bytes, r) =>
-  bytes.slice(0, 16 + Math.floor(r() * Math.max(1, bytes.length - 16)))
-
-const entryDrop: Corrupt = async (bytes, r) => {
-  const zip = await JSZip.loadAsync(bytes)
-  const names = Object.keys(zip.files).filter((name) => !zip.files[name]?.dir)
-  if (names.length === 0) return bytes
-  zip.remove(names[Math.floor(r() * names.length)]!)
-  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
-}
-
-const xmlGarbage: Corrupt = async (bytes, r) => {
-  const zip = await JSZip.loadAsync(bytes)
-  const junk = new Uint8Array(64 + Math.floor(r() * 512))
-  for (let i = 0; i < junk.length; i++) junk[i] = Math.floor(r() * 256)
-  zip.file('word/document.xml', junk)
-  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
-}
-
-const CORRUPTIONS: Array<[string, Corrupt]> = [
-  ['truncate', truncate],
-  ['entrydrop', entryDrop],
-  ['xmlgarbage', xmlGarbage],
-]
-
-describe('seeded docx -> printed PDF round-trip fuzz', () => {
-  it('a healthy document keeps its anchor and visible text through the print path', async () => {
+describe('seeded docx -> editor text -> printable HTML fuzz', () => {
+  it('a healthy document keeps its anchor and visible text through the sanitizer', async () => {
     for (let seed = 1; seed <= SEEDS; seed++) {
-      const { html, text } = await roundTrip(await buildFuzzDocx(seed), `seed ${seed}`)
+      const { html, text, source } = await roundTrip(await buildFuzzDocx(seed), `seed ${seed}`)
       expect(text, `seed ${seed} anchor in PDF`).toContain(anchorText(seed))
-      const paragraphs = bodyTextOf(html)
       // Guard against an empty generator turning the fidelity checks into no-ops.
-      expect(paragraphs.length, `seed ${seed} printed paragraphs`).toBeGreaterThan(3)
-      // The sanitizer keeps every paragraph's text, including CJK literals.
-      for (const paragraph of paragraphs.slice(0, 20)) {
+      expect(source.length, `seed ${seed} source paragraphs`).toBeGreaterThan(3)
+      // The sanitizer keeps every paragraph's text, including CJK literals. The
+      // comparison is with the editor's own text: comparing the printed HTML
+      // with the HTML it was decoded from could never fail.
+      for (const paragraph of source.slice(0, 20)) {
         const probe = paragraph.slice(0, 24)
         if (probe.length < 4) continue
         expect(html, `seed ${seed} sanitized HTML`).toContain(escapeHtml(probe))
       }
       // ASCII prose is what a WinAnsi PDF font can carry; assert a sample of it
       // survived the PDF boundary as well.
-      const ascii = paragraphs
+      const ascii = source
         .map((line) => line.replace(/[^\x20-\x7e]/g, ' '))
         .map(normalise)
         .filter((line) => /^[A-Za-z0-9 ,.:_-]{12,}$/.test(line))
@@ -205,25 +178,4 @@ describe('seeded docx -> printed PDF round-trip fuzz', () => {
       }
     }
   }, 60000)
-
-  for (const [mode, corrupt] of CORRUPTIONS) {
-    for (let seed = 1; seed <= SEEDS; seed++) {
-      it(`seed ${seed} ${mode}: the chain refuses cleanly or succeeds, never hangs`, async () => {
-        const valid = await buildFuzzDocx(seed)
-        const bytes = await corrupt(valid, rng(seed * 104729 + 17))
-        const outcome = await roundTrip(bytes, `hostile ${seed} ${mode}`).then(
-          () => 'succeeded' as const,
-          () => 'refused' as const,
-        )
-        // Either outcome is legitimate; a hang fails the case's timeout and an
-        // escape from the boundary fails the type of `outcome` itself.
-        expect(['succeeded', 'refused']).toContain(outcome)
-      }, 30000)
-    }
-
-    it(`a healthy document still round-trips after the ${mode} batch`, async () => {
-      const { text } = await roundTrip(await buildFuzzDocx(202), 'healthy after hostile')
-      expect(text).toContain(anchorText(202))
-    }, 30000)
-  }
 })
