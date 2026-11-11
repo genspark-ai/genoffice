@@ -12792,12 +12792,12 @@ body.docs-crop-active
 }
 
 /* ---- Story view: plain column, document formatting hidden, structure kept ----
-   Follows the InDesign Story Editor model (issue #2277): one typeface, a
-   centered column at a fixed line length, heading markers hanging in the
-   margin. Display only — no document state changes, so hidden formatting
-   round-trips through save untouched. Bold/italic/underline/strikethrough,
-   links and list markers still show; fonts, sizes, colors, highlights,
-   indents and spacing are hidden. */
+ * Follows the InDesign Story Editor model (issue #2277): one typeface, a
+ * centered column at a fixed line length, heading markers hanging in the
+ * margin. Display only — no document state changes, so hidden formatting
+ * round-trips through save untouched. Bold/italic/underline/strikethrough,
+ * links and list markers still show; fonts, sizes, colors, highlights,
+ * indents and spacing are hidden. */
 .view-story {
   width: 100%;
 }
