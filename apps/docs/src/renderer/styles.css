@@ -6314,6 +6314,29 @@ th[data-rev-fmt] {
   user-select: none;
 }
 
+/* A reader must be able to copy a short passage out of an embedded object
+   (an OLE/Excel frame, a protected table, a text box) without double-clicking
+   into edit mode. The frame itself stays unselectable so dragging the object
+   never paints a selection, but the object's text content is selectable.
+   Word: a click selects the object, a drag across its text selects characters. */
+.doc-protected
+  :is(
+    td,
+    .doc-textbox,
+    .doc-protected-label,
+    .doc-protected-preview,
+    .doc-chart-title,
+    .doc-chart-cell,
+    .doc-toc-title,
+    .doc-toc-page,
+    .doc-field-text,
+    .doc-formula-token,
+    .doc-formula-math
+  ) {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .doc-move-handle {
   position: absolute;
   z-index: 4;
@@ -7275,9 +7298,7 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 
 .doc-protected-textboxes:not(.doc-content-editing) .doc-textbox,
 .doc-protected[data-doc-protected='table']:not(.doc-content-editing) td {
-  cursor: move;
-  user-select: none;
-  -webkit-user-select: none;
+  cursor: text;
 }
 
 .doc-content-editing > .doc-move-handle {

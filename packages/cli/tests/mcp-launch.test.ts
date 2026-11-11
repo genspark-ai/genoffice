@@ -2,7 +2,12 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { isGenofficeLauncher, mcpSnippet, readMcpEntry, writeMcpEntry } from '../src/agent-mcp'
-import { mcpLaunch, mcpLaunchFromLauncher, type McpLaunch } from '../src/mcp-launch'
+import {
+  mcpLaunch,
+  mcpLaunchFromLauncher,
+  withCompactSchemas,
+  type McpLaunch,
+} from '../src/mcp-launch'
 import { tempDir } from './helpers'
 
 const WIN_DIR = 'C:\\Users\\Jane Doe\\AppData\\Local\\Programs\\GenOffice\\resources\\cli'
@@ -121,6 +126,61 @@ describe('mcp launch entry', () => {
       ).toBe('stale')
     }
     expect(mcpSnippet('codex', WIN_APP)).toContain('[mcp_servers.genoffice.env]')
+  })
+
+  it('recognises an entry that asks for compact schemas as registered, not stale', () => {
+    const home = tempDir()
+    const compact = withCompactSchemas(WIN_APP)
+    expect(compact.env).toEqual({
+      ELECTRON_RUN_AS_NODE: '1',
+      GENOFFICE_MCP_COMPACT_SCHEMAS: '1',
+    })
+    const exists = (p: string) => p === `${WIN_DIR}\\..\\..\\GenOffice.exe`
+    expect(
+      mcpLaunch({ status: 'present', launcherDir: WIN_DIR }, { compactSchemas: true }),
+    ).toEqual(compact)
+    expect(
+      mcpLaunchFromLauncher(`${WIN_DIR}\\genoffice.cmd`, { exists, compactSchemas: true }),
+    ).toEqual(compact)
+    expect(
+      mcpLaunchFromLauncher('/Applications/GenOffice.app/Contents/Resources/cli/genoffice', {
+        compactSchemas: true,
+      }),
+    ).toEqual({
+      command: '/Applications/GenOffice.app/Contents/Resources/cli/genoffice',
+      args: ['mcp'],
+      env: { GENOFFICE_MCP_COMPACT_SCHEMAS: '1' },
+    })
+
+    const cursor = join(home, 'mcp.json')
+    writeMcpEntry('cursor', cursor, compact)
+    expect(readMcpEntry('cursor', cursor, WIN_APP)).toEqual({
+      status: 'registered',
+      command: compact.command,
+      compactSchemas: true,
+    })
+    // the plain form is registered without the flag
+    writeMcpEntry('cursor', cursor, WIN_APP)
+    expect(readMcpEntry('cursor', cursor, WIN_APP)).toEqual({
+      status: 'registered',
+      command: WIN_APP.command,
+    })
+
+    const dsh = join(home, 'cordis.patch.yml')
+    writeMcpEntry('dsh', dsh, compact)
+    expect(readFileSync(dsh, 'utf-8')).toContain("GENOFFICE_MCP_COMPACT_SCHEMAS: '1'")
+    expect(readMcpEntry('dsh', dsh, WIN_APP)).toMatchObject({
+      status: 'registered',
+      compactSchemas: true,
+    })
+
+    const codex = join(home, 'config.toml')
+    writeMcpEntry('codex', codex, compact)
+    expect(readFileSync(codex, 'utf-8')).toContain('GENOFFICE_MCP_COMPACT_SCHEMAS = "1"')
+    expect(readMcpEntry('codex', codex, WIN_APP)).toMatchObject({
+      status: 'registered',
+      compactSchemas: true,
+    })
   })
 
   it('treats the app snippet entry (GenOffice.exe on genoffice.cjs) as ours, not occupied', () => {
