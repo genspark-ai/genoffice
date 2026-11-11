@@ -75,18 +75,39 @@ export function projectedNodeText(node: RedactableNode): string {
   return typeof node.text === 'string' ? node.text : ''
 }
 
-/** The text of a document as the model may read it. */
-export function modelTextOf(node: RedactableNode): string {
+/**
+ * The text of a document as the model may read it.
+ *
+ * `limit` stops the walk once roughly that many characters are collected —
+ * the naming caller reads this on the UI thread and the shell truncates the
+ * answer to 4000 characters anyway, so a long document should not pay for
+ * its whole walk. Without a limit the walk covers the document whole.
+ */
+export function modelTextOf(node: RedactableNode, limit?: { maxChars: number }): string {
+  return modelTextWalk(node, limit ? { chars: limit.maxChars } : null)
+}
+
+/** What is left of a `modelTextOf` limit while the walk collects. */
+interface TextBudget {
+  chars: number
+}
+
+function modelTextWalk(node: RedactableNode, budget: TextBudget | null): string {
+  if (budget !== null && budget.chars <= 0) return ''
   if (isWithheld(node)) return placeholderSource(labelOf(node))
-  if (typeof node.text === 'string') return node.text
+  if (typeof node.text === 'string') {
+    if (budget !== null) budget.chars -= node.text.length
+    return node.text
+  }
   const children = node.content
   if (!Array.isArray(children)) return ''
   let out = ''
   for (const child of children) {
-    out += modelTextOf(child)
+    out += modelTextWalk(child, budget)
     // a block boundary is a line break, but not a trailing one: the caller
     // joins this with other text and a stray newline reads as a blank line
     if (Array.isArray(child.content) && child !== children[children.length - 1]) out += '\n'
+    if (budget !== null && budget.chars <= 0) break
   }
   return out
 }

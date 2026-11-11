@@ -33,6 +33,27 @@ describe('shape wrap/rank patching', () => {
     expect(out.replace('relativeHeight="251658238"', 'relativeHeight="251658240"')).toBe(SHAPE_XML)
   })
 
+  it('addresses a photo drawing by its pic:cNvPr id, leaving the textbox drawing alone', () => {
+    const photo =
+      `<w:r><w:drawing><wp:anchor behindDoc="1" relativeHeight="251659264"><wp:simplePos x="0" y="0"/>` +
+      `<wp:positionH relativeFrom="column"><wp:posOffset>-1</wp:posOffset></wp:positionH>` +
+      `<wp:positionV relativeFrom="paragraph"><wp:posOffset>-2</wp:posOffset></wp:positionV>` +
+      `<wp:extent cx="10" cy="10"/><wp:wrapNone/><wp:docPr id="9" name="Picture 9"/>` +
+      `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+      `<pic:pic><pic:nvPicPr><pic:cNvPr id="9" name="Picture 9"/><pic:cNvPicPr/></pic:nvPicPr>` +
+      `<pic:blipFill><a:blip r:embed="rId4"/></pic:blipFill><pic:spPr/></pic:pic>` +
+      `</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`
+    const para = SHAPE_XML.replace(/<\/w:p>$/, `${photo}</w:p>`)
+    const out = applyShapeWrapAt(para, { shapeId: '9', boxIndex: 1 }, 'front', 5)
+    const photoOut = out.slice(
+      out.indexOf('<wp:docPr id="9"') - 400,
+      out.indexOf('<wp:docPr id="9"'),
+    )
+    expect(photoOut).toContain('behindDoc="0"')
+    expect(photoOut).toContain('relativeHeight="251658245"')
+    expect(out.startsWith(SHAPE_XML.replace(/<\/w:p>$/, ''))).toBe(true)
+  })
+
   it('converts an anchored shape to inline', () => {
     const out = applyShapeWrapAt(SHAPE_XML, { boxIndex: 0 }, null)
     expect(out).toContain('<wp:inline')

@@ -1,6 +1,8 @@
 import type { Run } from '@genoffice/docx-engine'
+import { latinLineFactor } from '../line-metrics'
 
-export type InlineRule = NonNullable<NonNullable<Run['image']>['rule']>
+/** engine rule plus the run's Latin face: the rule line is one line of that face */
+export type InlineRule = NonNullable<NonNullable<Run['image']>['rule']> & { fontAscii?: string }
 
 export const INLINE_RULE_CLASS = 'doc-inline-rule'
 
@@ -11,6 +13,7 @@ export function inlineRuleDecls(rule: InlineRule): string[] {
     rule.colorHex ? `--doc-rule-color:#${rule.colorHex}` : '',
     rule.thicknessPx ? `--doc-rule-h:${rule.thicknessPx}px` : '',
     rule.sizeHalfPoints ? `font-size:${rule.sizeHalfPoints / 2}pt` : '',
+    rule.fontAscii ? `--doc-line-factor-latin:${latinLineFactor(rule.fontAscii)}` : '',
     rule.widthPx ? `width:${rule.widthPx}px;max-width:100%` : '',
     rule.widthPx && rule.align ? 'margin-left:auto' : '',
     rule.widthPx && rule.align === 'center' ? 'margin-right:auto' : '',
@@ -23,6 +26,7 @@ export function inlineRuleStyle(rule: InlineRule): Record<string, string> {
   if (rule.colorHex) out['--doc-rule-color'] = `#${rule.colorHex}`
   if (rule.thicknessPx) out['--doc-rule-h'] = `${rule.thicknessPx}px`
   if (rule.sizeHalfPoints) out.fontSize = `${rule.sizeHalfPoints / 2}pt`
+  if (rule.fontAscii) out['--doc-line-factor-latin'] = String(latinLineFactor(rule.fontAscii))
   if (rule.widthPx) {
     out.width = `${rule.widthPx}px`
     out.maxWidth = '100%'
@@ -39,7 +43,13 @@ export function parseInlineRuleEl(el: HTMLElement): Record<string, unknown> | fa
   if (!raw || !xml) return false
   try {
     const rule = JSON.parse(raw) as InlineRule
-    return { dataUrl: '', xml, rule, leadRule: el.hasAttribute('data-lead-rule') }
+    return {
+      dataUrl: '',
+      xml,
+      rule,
+      leadRule: el.hasAttribute('data-lead-rule'),
+      leadRuleFull: el.hasAttribute('data-lead-rule-full'),
+    }
   } catch {
     return false
   }

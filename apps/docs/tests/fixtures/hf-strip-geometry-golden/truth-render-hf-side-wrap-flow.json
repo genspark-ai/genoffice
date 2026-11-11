@@ -1,0 +1,57 @@
+[
+  {
+    "section": 0,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 71.6,
+    "floorPx": 0,
+    "floats": [],
+    "disagree": []
+  },
+  {
+    "section": 1,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 71.6,
+    "floorPx": 61,
+    "floats": ["square@page:page"],
+    "disagree": []
+  },
+  {
+    "section": 2,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 71.6,
+    "floorPx": 0,
+    "floats": ["square@page:page"],
+    "disagree": []
+  },
+  {
+    "section": 3,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 71.6,
+    "floorPx": 61,
+    "floats": ["square@page:paragraph"],
+    "disagree": []
+  },
+  {
+    "section": 4,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 71.6,
+    "floorPx": 0,
+    "floats": ["square@page:page"],
+    "disagree": []
+  }
+]

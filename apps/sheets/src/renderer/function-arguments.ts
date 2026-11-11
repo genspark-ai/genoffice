@@ -306,7 +306,7 @@ export interface PickedRange {
   readonly startColumn: number
   readonly endColumn: number
   /// 1 = whole rows, 2 = whole columns (Univer's RANGE_TYPE).
-  readonly rangeType?: number
+  readonly rangeType?: number | undefined
 }
 
 /// Relative A1 text for a picked range, sheet-qualified only when the pick

@@ -19,7 +19,7 @@ Word, Excel, PowerPoint और PDF फ़ाइलें, आपके और �
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub stars"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <b>हिन्दी</b> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <b>हिन्दी</b> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center">
   <a href="#download"><b>डाउनलोड</b></a> ·
@@ -70,7 +70,7 @@ GenOffice, macOS, Windows और Linux के लिए Microsoft Office का 
 </tr>
 <tr>
 <td><b>बनाएँ</b> — एक ही वाक्य से एजेंट रीजन और कैटेगरी के हिसाब से असली <code>SUMIF</code> के साथ एक Summary शीट जोड़ता है, एक कॉलम चार्ट डालता है, और 43 बदलावों को एक ही अंडूएबल बैच के रूप में लागू करता है।</td>
-<td><b>पूछें</b> — वर्कबुक से जुड़े सवालों का जवाब रीज़निंग के साथ आता है, और जिन सेल्स का इस्तेमाल किया गया वे क्लिकेबल साइटेशन के रूप में मिलते हैं। पीछे: एक इन-हाउस Rust <code>.xlsx</code> इंजन, पिवट टेबल, स्लाइसर, कंडीशनल फ़ॉर्मैटिंग, फ़ॉर्मूला ट्रेसिंग, और Excel के नेटिव rich value के रूप में सेल्स में एम्बेड की गई तस्वीरें — Excel उन्हें दोबारा खोलने पर भी उसी सेल में पाता है।</td>
+<td><b>पूछें</b> — वर्कबुक से जुड़े सवालों का जवाब रीज़निंग के साथ आता है, और जिन सेल्स का इस्तेमाल किया गया वे क्लिकेबल साइटेशन के रूप में मिलते हैं। पीछे: एक इन-हाउस Rust <code>.xlsx</code> इंजन, पिवट टेबल, स्लाइसर, कंडीशनल फ़ॉर्मैटिंग, फ़ॉर्मूला ट्रेसिंग, और Excel के नेटिव rich value के रूप में सेल्स में एम्बेड की गई तस्वीरें — Excel उन्हें दोबारा खोलने पर भी उसी सेल में पाता है।सेल नोट में चित्र हो सकता है, जो नोट के पॉपअप के नीचे दिखता है।</td>
 </tr>
 </table>
 
@@ -212,7 +212,7 @@ skill इंस्टॉल करने की ज़रूरत, न को�
 
 **Genspark से साइन इन करें** और कुछ भी कॉन्फ़िगर करने की ज़रूरत नहीं: मॉडल कॉल्स Genspark प्रॉक्सी (Claude, GPT और Gemini फ़ैमिली) के ज़रिए रूट होती हैं, और एजेंट्स को वेब व इमेज सर्च, इमेज जनरेशन, और इमेज/ऑडियो/वीडियो एनालिसिस मिलता है।
 
-**या अपनी खुद की key लाएँ।** Settings → AI में Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty और OpenCode Zen/Go लिस्ट किए गए हैं, साथ ही किसी भी OpenAI-compatible endpoint (base URL + key) के लिए एक कस्टम स्लॉट है, जिसमें लोकल मॉडल सर्वर भी शामिल हैं। सर्च और मीडिया के अपने अलग, हर-कैपेबिलिटी प्रोवाइडर **AI Media & Search** के तहत हैं: वेब सर्च के लिए Serper, Serply, Tavily, Parallel, Keenable, Exa या Firecrawl — जिनमें Keenable भी बिना-key चलता है, key सिर्फ़ रेट लिमिट बढ़ा देती है — और इमेज जनरेशन व इमेज/वीडियो एनालिसिस के लिए OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax या कोई भी OpenAI-compatible images endpoint।
+**या अपनी खुद की key लाएँ।** Settings → AI में Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code और OpenCode Zen/Go लिस्ट किए गए हैं, साथ ही किसी भी OpenAI-compatible endpoint (base URL + key) के लिए एक कस्टम स्लॉट है, जिसमें लोकल मॉडल सर्वर भी शामिल हैं। सर्च और मीडिया के अपने अलग, हर-कैपेबिलिटी प्रोवाइडर **AI Media & Search** के तहत हैं: वेब सर्च के लिए Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa या Firecrawl — जिनमें Keenable भी बिना-key चलता है, key सिर्फ़ रेट लिमिट बढ़ा देती है — और इमेज जनरेशन व इमेज/वीडियो एनालिसिस के लिए OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX या कोई भी OpenAI-compatible images endpoint।
 
 पूरा सूट लाइट, डार्क और सिस्टम थीम के साथ आता है। थीम सिर्फ़ स्क्रीन पर दिखने वाली चीज़ बदलती है: एक्सपोर्ट, प्रिंट और सेव की गई फ़ाइलें हमेशा डॉक्यूमेंट के अपने असली रंग बरकरार रखती हैं।
 
@@ -223,7 +223,7 @@ skill इंस्टॉल करने की ज़रूरत, न को�
 Skill एक `SKILL.md` फ़ाइल है जो AI को बताती है कि एक काम अच्छे से कैसे करना है: साप्ताहिक रिपोर्ट, NDA, पाठ योजना।
 GenOffice में skills का एक सेट शामिल है और यह आपकी अपनी skills भी स्वीकार करता है, उसी प्रारूप में जो कोडिंग एजेंट उपयोग करते हैं।
 
-- **सेटिंग्स → Skills।** कोई अनुशंसित skill **इंस्टॉल** करें, या कोई फ़ोल्डर, zip या एक `SKILL.md` **इम्पोर्ट** करें। इम्पोर्ट पर कुछ भी चलता नहीं।
+- **सेटिंग्स → Skills।** कोई अनुशंसित skill **इंस्टॉल** करें, या कोई फ़ोल्डर, zip या एक `SKILL.md` **इम्पोर्ट** करें। इम्पोर्ट पर कुछ भी चलता नहीं। **सभी** टैब पूरे अनुशंसित कैटलॉग को एक जगह दिखाता है, जिसके विवरण ऐप की भाषा में होते हैं।
 - **चैट में।** किसी भी AI पैनल में टेक्स्ट बॉक्स के पास **+** मेनू खोलें, **Skills** चुनें, एक पर टिक करें और भेजें। Skill सिर्फ़ उसी संदेश के साथ जाती है।
 
 ---
@@ -262,7 +262,7 @@ OpenCode और Windsurf के साथ बिना किसी अतिर
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -396,6 +396,8 @@ AppImage उसी जगह चलती है: FUSE 2 रनटाइम इ�
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+Chromebook पर ये ही पैकेज Linux वातावरण (Crostini) में चलते हैं — विवरण [docs/platforms/chromeos.md](../platforms/chromeos.md) में है।
 
 </details>
 

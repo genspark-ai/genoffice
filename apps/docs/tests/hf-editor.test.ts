@@ -9,6 +9,7 @@ import {
   type HeaderFooter,
   type SaveBlock,
 } from '@genoffice/docx-engine'
+import { hfPageNumberOnly } from '../src/renderer/editor/hf-dom'
 import {
   atHfCellEdge,
   hfDocJson,
@@ -287,6 +288,32 @@ describe('mountHfEditor', () => {
     expect(editor.isDestroyed).toBe(true)
   })
 
+  it('keeps tracked header runs through an edit instead of resurrecting deleted text', () => {
+    const rev = { author: 'Ann', date: '2026-09-29T12:23:00Z' }
+    const value: HeaderFooter = {
+      text: 'Kept goneadded',
+      paras: [
+        {
+          runs: [{ text: 'Kept ' }, { text: 'gone', del: rev }, { text: 'added', ins: rev }],
+        },
+      ],
+    }
+    const commits: HeaderFooter[] = []
+    const { host, handle, editor } = mount(value, (next) => commits.push(next))
+    expect(host.querySelector('.doc-del')?.textContent).toBe('gone')
+    expect(host.querySelector('.doc-ins')?.textContent).toBe('added')
+    editor.commands.focus('end')
+    editor.commands.insertContent('!')
+    handle.exit()
+    expect(commits[0].paras![0].runs.map((r) => [r.text, !!r.del, !!r.ins])).toEqual([
+      ['Kept ', false, false],
+      ['gone', true, false],
+      ['added', false, true],
+      ['!', false, false],
+    ])
+    expect(commits[0].paras![0].runs[1].del).toMatchObject(rev)
+  })
+
   it('does not commit when nothing changed', () => {
     let commits = 0
     const { handle } = mount(RICH, () => commits++)
@@ -324,12 +351,17 @@ describe('mountHfEditor', () => {
   })
 })
 
+async function blankDocument() {
+  const parsed = await parseDocx(await buildBlankDocx())
+  const saveBlocks: SaveBlock[] = parsed.blocks
+    .filter((b) => !b.hidden && b.docxIndex !== null)
+    .map((b) => ({ kind: 'original', docxIndex: b.docxIndex! }))
+  return { parsed, saveBlocks }
+}
+
 describe('edited header saves with its formatting', () => {
   it('bold run, tab, PAGE and NUMPAGES fields survive save and reparse', async () => {
-    const parsed = await parseDocx(await buildBlankDocx())
-    const saveBlocks: SaveBlock[] = parsed.blocks
-      .filter((b) => !b.hidden && b.docxIndex !== null)
-      .map((b) => ({ kind: 'original', docxIndex: b.docxIndex! }))
+    const { parsed, saveBlocks } = await blankDocument()
     let committed: HeaderFooter | null = null
     const { handle, editor } = mount({ text: '' }, (next) => (committed = next))
     editor.commands.focus('end')
@@ -348,5 +380,21 @@ describe('edited header saves with its formatting', () => {
     const reparsed = await parseDocx(saved)
     expect(reparsed.headerParas![0].runs[0]).toMatchObject({ text: 'Title', bold: true })
     expect(reparsed.headerHasPageNumber).toBe(true)
+  })
+
+  it('a gallery page number edited in the strip saves the PAGE field, not its placeholder', async () => {
+    const { parsed, saveBlocks } = await blankDocument()
+    let committed: HeaderFooter | null = null
+    const { handle, editor } = mount(hfPageNumberOnly('center'), (next) => (committed = next))
+    editor.commands.focus('start')
+    editor.commands.insertContent('Page ')
+    handle.exit()
+    expect(committed!.pageNumber).toBe(true)
+    const saved = await saveDocx(parsed, saveBlocks, { footer: committed! })
+    const zip = await (await import('jszip')).default.loadAsync(saved)
+    const ftr = await zip.file('word/footer1.xml')!.async('string')
+    expect(ftr).toContain('<w:instrText xml:space="preserve"> PAGE </w:instrText>')
+    expect(ftr).not.toContain('#')
+    expect((await parseDocx(saved)).footerHasPageNumber).toBe(true)
   })
 })

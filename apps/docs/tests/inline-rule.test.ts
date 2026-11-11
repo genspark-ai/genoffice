@@ -73,9 +73,87 @@ describe('VML horizontal rule sharing a text paragraph', () => {
     editor.destroy()
   })
 
+  it('hides the trailing break behind a rule run wrapped in bold / size marks (Word: one line, probe 2026-11-02)', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docParagraph',
+            attrs: { docxIndex: 0 },
+            content: [
+              {
+                type: 'docInlineImage',
+                attrs: { dataUrl: '', xml: HR_XML, rule: { ...RULE, sizeHalfPoints: 28 } },
+                marks: [{ type: 'bold' }, { type: 'docTextStyle', attrs: { sizeHalfPoints: 28 } }],
+              },
+            ],
+          },
+        ],
+      },
+    })
+    const p = editor.view.dom.querySelector('p') as HTMLElement
+    expect(p.querySelector('strong > span > .doc-inline-rule')).not.toBeNull()
+    const hidden =
+      '.doc-page :is(span, strong, em, u, s):has(.doc-inline-rule:last-of-type) + .ProseMirror-trailingBreak'
+    expect(p.querySelector(hidden.replace('.doc-page ', ''))).not.toBeNull()
+    const css = readFileSync(join(__dirname, '../src/renderer/styles.css'), 'utf8')
+    expect(css.replace(/\s+/g, ' ')).toContain(hidden)
+    editor.destroy()
+  })
+
+  it('the rule line takes the run face: --doc-line-factor-latin of its ascii font (Georgia 14 -> 18.24pt in Word, not the Calibri body factor)', () => {
+    const hr = { text: '', image: { dataUrl: '', xml: HR_XML, rule: RULE } }
+    const [node] = runsToInline([{ ...hr, fontAscii: 'Georgia', sizeHalfPoints: 28, bold: true }])
+    expect(node.attrs?.rule).toMatchObject({ fontAscii: 'Georgia', sizeHalfPoints: 28 })
+    const decls = inlineRuleDecls(node.attrs?.rule as never)
+    expect(decls).toContain('--doc-line-factor-latin:1.1375')
+    expect(decls).toContain('font-size:14pt')
+    expect(inlineRuleStyle(node.attrs?.rule as never)['--doc-line-factor-latin']).toBe('1.1375')
+    expect(inlineRuleDecls(RULE)).not.toContainEqual(
+      expect.stringContaining('--doc-line-factor-latin'),
+    )
+  })
+
+  it('a lead rule no smaller than its text keeps a full line of the paragraph font', () => {
+    const hr = { text: '', image: { dataUrl: '', xml: HR_XML, rule: RULE } }
+    // both inherit the heading size: full line (18pt heading, 21.3pt band measured)
+    const inherited = runsToInline([hr, { text: 'Worksheet 1', bold: true }])
+    expect(inherited[0].attrs?.leadRule).toBeUndefined()
+    expect(inherited[0].attrs?.leadRuleFull).toBe(true)
+    // rule run as large as the text: full line too
+    const same = runsToInline([
+      { ...hr, sizeHalfPoints: 28 },
+      { text: 'T', sizeHalfPoints: 28 },
+    ])
+    expect(same[0].attrs?.leadRuleFull).toBe(true)
+    // text set larger than the rule run: compact band (probe 2026-09-05)
+    const smaller = runsToInline([
+      { ...hr, sizeHalfPoints: 22 },
+      { text: 'T', sizeHalfPoints: 28 },
+    ])
+    expect(smaller[0].attrs?.leadRule).toBe(true)
+    expect(smaller[0].attrs?.leadRuleFull).toBeUndefined()
+
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [{ type: 'docParagraph', attrs: { docxIndex: 0 }, content: inherited }],
+      },
+    })
+    const rule = editor.view.dom.querySelector<HTMLElement>('.doc-inline-rule')!
+    expect(rule.hasAttribute('data-lead-rule-full')).toBe(true)
+    expect(rule.hasAttribute('data-lead-rule')).toBe(false)
+    editor.destroy()
+  })
+
   it('flags only a rule that opens a paragraph continuing with text as the lead rule', () => {
     const hr = { text: '', image: { dataUrl: '', xml: HR_XML, rule: RULE } }
-    const lead = runsToInline([hr, { text: 'Title', bold: true }, hr])
+    const lead = runsToInline([hr, { text: 'Title', bold: true, sizeHalfPoints: 28 }, hr])
     expect(lead[0].attrs?.leadRule).toBe(true)
     expect(lead[2].attrs?.leadRule).toBeUndefined()
     expect(runsToInline([hr])[0].attrs?.leadRule).toBeUndefined()

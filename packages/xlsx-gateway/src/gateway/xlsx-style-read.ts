@@ -1,5 +1,6 @@
 import type { FillSpec, PatternType, StyleColor } from '../domain/style-color'
 import { PATTERN_TYPES } from '../domain/style-color'
+import { resolvedStyleEntries } from './xlsx-style-entries'
 
 /// Read-only view of xl/styles.xml for echoing colors back the way they are
 /// stored (theme slot + tint, pattern, gradient) — the sidecar only reports
@@ -92,10 +93,10 @@ function sectionInner(xml: string, tag: string): string {
   return new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`).exec(xml)?.[1] ?? ''
 }
 
+/// entries as the sidecar indexes them: an mc:AlternateContent block is one
+/// entry, read through its Fallback
 function elements(inner: string, tag: string): string[] {
-  return [
-    ...inner.matchAll(new RegExp(`<${tag}\\b[^>]*/>|<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`, 'g')),
-  ].map((match) => match[0])
+  return resolvedStyleEntries(inner, tag)
 }
 
 function attribute(element: string, name: string): string | undefined {

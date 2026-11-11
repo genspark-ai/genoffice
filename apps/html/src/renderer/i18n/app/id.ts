@@ -68,6 +68,7 @@ export const id = {
   openExternal: 'Tautan dibuka di browser',
   save: 'Simpan (⌘S)',
   saveAs: 'Simpan Sebagai…',
+  aiNameFile: 'Beri nama dengan AI…',
   ribbonCollapse: 'Ciutkan Pita',
   ribbonExpand: 'Perluas Pita',
   ribbonGroupInsert: 'Sisipkan',

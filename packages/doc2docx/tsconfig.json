@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    // resolve the sibling source package by path (worktree-safe: a linked
+    // node_modules would otherwise typecheck against another checkout)
+    "paths": {
+      "@genoffice/compound-file": ["../compound-file/src/index.ts"],
+      "@genoffice/docx-engine": ["../docx-engine/src/index.ts"]
+    }
+  },
+  "include": ["src", "tests"]
+}

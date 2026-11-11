@@ -23,11 +23,22 @@ const lastUsedDirectoryByDialog = new WeakMap<Dialog, string>()
 function withRememberedDirectory<T extends OpenDialogOptions | SaveDialogOptions>(
   dialog: Dialog,
   options: T,
-  fallbackDir?: string,
+  fallbackDir?: string | (() => string),
 ): T {
   // No pick confirmed yet this session: anchor in the caller's fallback (the
   // configurable default save folder) instead of Electron's Downloads pin.
-  const lastDir = lastUsedDirectoryByDialog.get(dialog) ?? fallbackDir
+  if (options.defaultPath !== undefined && basename(options.defaultPath) !== options.defaultPath) {
+    return options
+  }
+  let lastDir = lastUsedDirectoryByDialog.get(dialog)
+  if (!lastDir) {
+    try {
+      lastDir = typeof fallbackDir === 'function' ? fallbackDir() : fallbackDir
+    } catch {
+      // This is only a dialog suggestion. An unavailable default folder must
+      // not prevent the user from picking another location explicitly.
+    }
+  }
   if (!lastDir) return options
   if (options.defaultPath === undefined) return { ...options, defaultPath: lastDir }
   // A bare file name is a Save As suggestion: anchor it in the remembered
@@ -76,7 +87,7 @@ export async function showSaveDialogWithMemory(
   dialog: Dialog,
   parent: BrowserWindow | null | undefined,
   options: SaveDialogOptions,
-  fallbackDir?: string,
+  fallbackDir?: string | (() => string),
 ): Promise<SaveDialogReturnValue> {
   const withDir = withRememberedDirectory(dialog, options, fallbackDir)
   const result = parent

@@ -24,7 +24,7 @@ import type {
 } from '../../shared/home-api'
 import type { IntegrationsApi } from '../../shared/integrations-api'
 import { markText } from '../../shared/text-marks'
-import { useDismissablePopover } from '@genoffice/ui'
+import { useDismissablePopover, useEscapeToClose } from '@genoffice/ui'
 import { fileCountLabel, visiblePageCount } from './counts'
 import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
@@ -61,7 +61,7 @@ const GREET_ASK_KEYS = [
    width, so it ellipsizes and a hover ScreenTip carries the full list. Keep in
    sync with the main-process open-dialog filter (OPEN_DIALOG_EXTENSIONS). */
 const OPEN_LOCAL_EXTENSIONS =
-  '.docx / .odt / .ott / .xlsx / .xlsm / .xls / .csv / .tsv / .ods / .ots / .pptx / .odp / .otp / .pdf / .md / .html'
+  '.docx / .doc / .dot / .odt / .ott / .hwpx / .hwp / .xlsx / .xlsm / .xls / .csv / .tsv / .ods / .ots / .pptx / .odp / .otp / .pdf / .md / .html'
 
 /** drag payload of home file/folder rows (JSON array of absolute paths) */
 const DRAG_PATHS_MIME = 'application/x-genoffice-paths'
@@ -232,7 +232,7 @@ const FILTERS: { key: string; label: StringKey }[] = [
 
 /** sidebar filter keys that stand for a family of extensions (mirrors recent-files.ts) */
 const FILTER_FAMILY: Record<string, readonly string[]> = {
-  docx: ['docx', 'doc', 'odt', 'ott'],
+  docx: ['docx', 'doc', 'dot', 'odt', 'ott', 'hwpx', 'hwp'],
   xlsx: ['xlsx', 'xlsm', 'xls', 'csv', 'tsv', 'ods', 'ots'],
   pptx: ['pptx', 'ppt', 'odp', 'otp'],
   md: ['md', 'markdown', 'txt', 'json'],
@@ -407,13 +407,7 @@ function FolderPicker({
     for (const dir of expanded) load(dir)
   }, [expanded, load])
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onCancel])
+  useEscapeToClose(true, onCancel)
 
   const disabledDir = (dir: string) =>
     currentDirs.has(dir) ||
@@ -627,13 +621,7 @@ interface ConflictPromptProps {
 
 function ConflictPrompt({ names, onChoose }: ConflictPromptProps) {
   const { t } = useI18n()
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onChoose('skip')
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onChoose])
+  useEscapeToClose(true, () => onChoose('skip'))
   return (
     <div className="modal-overlay" onClick={() => onChoose('skip')}>
       <div
@@ -696,13 +684,7 @@ function GroupPicker({ groups, count, onCancel, onPick, onCreate, onRemove }: Gr
   const { t } = useI18n()
   const [name, setName] = useState('')
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onCancel])
+  useEscapeToClose(true, onCancel)
 
   const create = () => {
     const trimmed = name.trim()
@@ -1865,27 +1847,20 @@ export function Home() {
   }, [folderMenu])
 
   // Escape closes the row menu and the confirm dialogs
-  useEffect(() => {
-    if (
-      rowMenu === null &&
-      folderMenu === null &&
-      confirmDelete === null &&
-      confirmMissing === null &&
-      confirmDeleteFolder === null
-    )
-      return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setRowMenu(null)
-        setFolderMenu(null)
-        setConfirmDelete(null)
-        setConfirmMissing(null)
-        setConfirmDeleteFolder(null)
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [rowMenu, folderMenu, confirmDelete, confirmMissing, confirmDeleteFolder])
+  useEscapeToClose(
+    rowMenu !== null ||
+      folderMenu !== null ||
+      confirmDelete !== null ||
+      confirmMissing !== null ||
+      confirmDeleteFolder !== null,
+    () => {
+      setRowMenu(null)
+      setFolderMenu(null)
+      setConfirmDelete(null)
+      setConfirmMissing(null)
+      setConfirmDeleteFolder(null)
+    },
+  )
 
   // WPS-style sortable "modified" column header, shared by both file tables
   const renderModifiedHeader = () => (

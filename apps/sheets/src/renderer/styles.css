@@ -1723,6 +1723,37 @@ button.check-item:hover {
   font-size: 14px;
 }
 
+.workbook-opening-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 240px;
+}
+
+.workbook-opening-bar {
+  width: 240px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  overflow: hidden;
+}
+
+.workbook-opening-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+.workbook-opening-percent {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.workbook-opening-cancel {
+  margin-top: 4px;
+}
+
 .csv-empty-notice {
   position: absolute;
   z-index: 20;
@@ -1795,6 +1826,20 @@ button.check-item:hover {
   opacity: 0.85;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Formula view (sheetView/@showFormulas) is a per-sheet state that a save
+ * persists, so a sheet can open showing formulas instead of values. The flag
+ * keeps saying so for as long as the sheet is in that mode: the one-off toast
+ * that announced the switch is gone long before anyone notices. */
+.status-flag {
+  flex: none;
+  padding: 0 6px;
+  border-radius: var(--radius-small);
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--sheets-chip-bg);
   white-space: nowrap;
 }
 
@@ -3101,6 +3146,11 @@ textarea:focus {
   width: 560px;
 }
 
+/* Combo mode: two extra columns (series type, secondary axis). */
+.select-data-dialog.combo {
+  width: 720px;
+}
+
 .select-data-rows {
   display: flex;
   max-height: 300px;
@@ -3114,6 +3164,10 @@ textarea:focus {
   align-items: center;
   grid-template-columns: 1.1fr 1.4fr 1.4fr auto;
   gap: 6px;
+}
+
+.select-data-row.combo {
+  grid-template-columns: 1fr 1.15fr 1.15fr 0.75fr auto auto;
 }
 
 .select-data-head {
@@ -3143,6 +3197,31 @@ textarea:focus {
 .select-data-row input::placeholder {
   color: var(--text-muted);
   opacity: 0.7;
+}
+
+.select-data-row select {
+  min-width: 0;
+  height: 26px;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.select-data-row select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.select-data-row input[type='checkbox'] {
+  justify-self: center;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  accent-color: var(--accent);
 }
 
 .select-data-row > span:last-child {
@@ -5754,6 +5833,22 @@ textarea:focus {
   color-scheme: dark;
 }
 
+/* The right-click menu must never be taller than the window (genoffice#2603).
+ * Univer caps its panel with an inline `max-height` that React writes once,
+ * and a second hook (`useScrollYOverContainer`) erases that inline value the
+ * first time any menu fits — a row/column header menu, or the cell menu in a
+ * tall window. React never writes it back, so the next long cell menu renders
+ * at full height: pinned to the top edge, running off the bottom, with nothing
+ * to scroll. Holding the cap in the stylesheet makes it independent of that
+ * inline value; `!important` also outranks the hook's own fallback, which
+ * measures against the workbook area instead of the window the popup is
+ * positioned in. The panel already scrolls (`overflow-y: auto`) once capped,
+ * and Univer places the popup from the capped height, so it stays on screen.
+ * 16px matches Univer's own 8px viewport padding on each side. */
+.univer-popup > section > .univer-overflow-y-auto {
+  max-height: calc(100vh - 16px) !important;
+}
+
 .ai-msg-undelivered {
   margin-top: 6px;
   display: flex;
@@ -6251,6 +6346,63 @@ textarea:focus {
 .find-replace-panel .fr-results-count {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* Spelling panel (F7 / Review ▸ Proofing) rides the find-replace panel chrome;
+   these only add its note line, selected row and the suggestion chips. */
+
+.find-replace-panel .spell-note {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.find-replace-panel .fr-results tbody tr.spell-selected {
+  background: var(--accent-soft);
+}
+
+.find-replace-panel .spell-detail {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.find-replace-panel .spell-detail-text {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.find-replace-panel .spell-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.find-replace-panel .spell-suggestion {
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--accent-dark);
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.find-replace-panel .spell-suggestion:hover {
+  background: var(--hover);
+}
+
+.find-replace-panel .spell-no-suggestion {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.find-replace-panel .spell-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 /* The stock Univer find dialog is replaced by .find-replace-panel; it still
@@ -7325,12 +7477,14 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
   color: var(--accent);
 }
 
-.note-pictures-pane .np-author {
+.note-pictures-pane .np-author,
+.note-hover-card .np-author {
   color: var(--text-muted);
   font-size: 12px;
 }
 
-.note-pictures-pane .np-remove {
+.note-pictures-pane .np-remove,
+.note-hover-card .np-remove {
   margin-left: auto;
   border: 0;
   background: transparent;
@@ -7342,19 +7496,22 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
   cursor: pointer;
 }
 
-.note-pictures-pane .np-remove:hover {
+.note-pictures-pane .np-remove:hover,
+.note-hover-card .np-remove:hover {
   background: var(--hover);
   color: var(--text);
 }
 
-.note-pictures-pane .np-image {
+.note-pictures-pane .np-image,
+.note-hover-card .np-image {
   display: block;
   width: 100%;
   height: auto;
   border-radius: 6px;
 }
 
-.note-pictures-pane .np-image-missing {
+.note-pictures-pane .np-image-missing,
+.note-hover-card .np-image-missing {
   margin: 0;
   padding: 10px;
   border: 1px dashed var(--border);
@@ -7364,10 +7521,36 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
   text-align: center;
 }
 
-.note-pictures-pane .np-text {
+.note-pictures-pane .np-text,
+.note-hover-card .np-text {
   margin: 0;
   color: var(--text-muted);
   font-size: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* The card under Univer's note popup for a note that carries a picture: it
+   hangs below the popup's own box so author, picture and text read as one
+   note. Reuses the pane's np-* pieces above. */
+.note-hover-card {
+  position: fixed;
+  z-index: 130;
+  width: 260px;
+  max-height: 50vh;
+  overflow: hidden;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-modal);
+}
+
+.note-hover-card > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }

@@ -437,11 +437,12 @@ const BG_WHITE_MIN = 0xf7
 
 /** all RGB channels near 255 — the default page color, not a background */
 export function isNearWhite(hex: string): boolean {
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return false
+  const v = (hex ?? '').trim()
+  if (!/^[0-9a-fA-F]{6}$/.test(v)) return false
   return (
-    parseInt(hex.slice(0, 2), 16) >= BG_WHITE_MIN &&
-    parseInt(hex.slice(2, 4), 16) >= BG_WHITE_MIN &&
-    parseInt(hex.slice(4, 6), 16) >= BG_WHITE_MIN
+    parseInt(v.slice(0, 2), 16) >= BG_WHITE_MIN &&
+    parseInt(v.slice(2, 4), 16) >= BG_WHITE_MIN &&
+    parseInt(v.slice(4, 6), 16) >= BG_WHITE_MIN
   )
 }
 
@@ -665,10 +666,11 @@ const PLATE_CARD_MAX_SHARE = 0.85
 
 /** relative luminance of a RRGGBB hex, 0 (black) – 1 (white) */
 export function hexLuminance(hex: string): number {
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return 0
-  const r = parseInt(hex.slice(0, 2), 16)
-  const g = parseInt(hex.slice(2, 4), 16)
-  const b = parseInt(hex.slice(4, 6), 16)
+  const v = (hex ?? '').trim()
+  if (!/^[0-9a-fA-F]{6}$/.test(v)) return 0
+  const r = parseInt(v.slice(0, 2), 16)
+  const g = parseInt(v.slice(2, 4), 16)
+  const b = parseInt(v.slice(4, 6), 16)
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255
 }
 

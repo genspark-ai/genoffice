@@ -68,6 +68,7 @@ export const en = {
   openExternal: 'Link opened in your browser',
   save: 'Save (⌘S)',
   saveAs: 'Save As…',
+  aiNameFile: 'Name with AI…',
   ribbonCollapse: 'Collapse the Ribbon',
   ribbonExpand: 'Expand the Ribbon',
   ribbonGroupInsert: 'Insert',

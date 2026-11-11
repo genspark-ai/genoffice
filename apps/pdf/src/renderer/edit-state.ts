@@ -11,6 +11,7 @@ import type {
   FormValueInput,
   MarkupType,
   MetadataInput,
+  OutlineEntryInput,
   PageImageRef,
 } from '../shared/ipc'
 
@@ -18,6 +19,7 @@ import type {
 export const MARKUP_TYPE_BY_ANNOT: Record<number, MarkupType> = {
   9: 'highlight',
   10: 'underline',
+  11: 'squiggly',
   12: 'strikeout',
 }
 
@@ -111,6 +113,8 @@ export interface SavedSnapshot {
   blankPageIds: Set<string>
   rotations: Map<number, number>
   metadata: MetadataInput | null
+  /** The edited bookmark tree this save wrote (same object the pending edit holds), or null */
+  outline: OutlineEntryInput[] | null
   /** Old original page index → its index in the saved file (saved deletions/reorder applied) */
   pageMap: Map<number, number>
 }

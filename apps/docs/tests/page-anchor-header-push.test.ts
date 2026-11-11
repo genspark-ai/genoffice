@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { renderTextboxSpec } from '../src/renderer/editor/protected-render'
 import { syncFloatShifts } from '../src/renderer/editor/pagination-gaps'
+import { applyGapLedger, buildPageCuts, learnGapFlowTops } from '../src/renderer/pagination-cuts'
 
 const box = {
   paras: [{ runs: [{ text: 'band' }] }],
@@ -96,15 +97,34 @@ describe('page-edge V anchors ignore the header push of the body top (Word)', ()
   it('a later page gap with a zero push clears the earlier page push', () => {
     const pm = document.createElement('div')
     document.body.appendChild(pm)
-    const gap = document.createElement('div')
-    gap.className = 'page-gap'
-    gap.dataset.boundaryY = '500'
-    gap.dataset.topPush = '0.0'
-    gap.getBoundingClientRect = () => ({ top: 500, height: 40 }) as DOMRect
-    pm.appendChild(gap)
     const pageEl = document.createElement('div')
     pageEl.getBoundingClientRect = () => ({ top: 0 }) as DOMRect
     pm.appendChild(pageEl)
+    const cuts = buildPageCuts(
+      [
+        { top: 0, height: 500, el: document.createElement('p') },
+        { top: 500, height: 400, el: document.createElement('p') },
+      ],
+      [
+        { start: 0, end: 500, section: 0 },
+        { start: 500, end: 900, section: 0 },
+      ],
+      [{ contentHeight: 500, forceBreak: false }],
+      [{ headerPx: 0, footerPx: 0 }],
+    )
+    applyGapLedger(cuts, [
+      {
+        page: 1,
+        kind: 'block',
+        heightPx: 40,
+        marginBottomPx: 6,
+        marginTopPx: 6,
+        marginLeftPx: 0,
+        topPushPx: 0,
+        pullUpPx: 0,
+        repeatHeaderPx: 0,
+      },
+    ])
     // anchor on page 2 (virtual 600), box 100 below it; first page was pushed 26
     syncFloatShifts(
       pm,
@@ -121,8 +141,55 @@ describe('page-edge V anchors ignore the header push of the body top (Word)', ()
       0,
       1,
       26,
+      { cuts, carries: [] },
     )
     // page start 500 + rel 100 + gap height 40, no push subtracted
+    expect(parseFloat(pageEl.style.getPropertyValue('--page-float-dy'))).toBeCloseTo(640, 1)
+    pm.remove()
+  })
+
+  it('an anchor leading the page the widget opens still counts that gap once the widget top is learned', () => {
+    const pm = document.createElement('div')
+    document.body.appendChild(pm)
+    const pageEl = document.createElement('div')
+    pageEl.getBoundingClientRect = () => ({ top: 0 }) as DOMRect
+    pm.appendChild(pageEl)
+    const cuts = buildPageCuts(
+      [
+        { top: 0, height: 500, el: document.createElement('p') },
+        { top: 510, height: 400, el: document.createElement('p') },
+      ],
+      [
+        { start: 0, end: 500, section: 0 },
+        { start: 500, end: 910, section: 0 },
+      ],
+      [{ contentHeight: 500, forceBreak: false }],
+      [{ headerPx: 0, footerPx: 0 }],
+    )
+    applyGapLedger(cuts, [
+      {
+        page: 1,
+        kind: 'block',
+        heightPx: 40,
+        marginBottomPx: 6,
+        marginTopPx: 6,
+        marginLeftPx: 0,
+        topPushPx: 0,
+        pullUpPx: 0,
+        repeatHeaderPx: 0,
+      },
+    ])
+    // the widget landed 10 px under the boundary (the previous block's space
+    // after): the lead block's virtual top is the widget's bottom edge
+    learnGapFlowTops(cuts, [510])
+    syncFloatShifts(
+      pm,
+      [{ top: 610, anchorTop: 510, pinned: false, pageRelV: true, el: pageEl }],
+      0,
+      1,
+      0,
+      { cuts, carries: [] },
+    )
     expect(parseFloat(pageEl.style.getPropertyValue('--page-float-dy'))).toBeCloseTo(640, 1)
     pm.remove()
   })

@@ -71,7 +71,8 @@ import { compileOps, type HtmlOp, type OpError } from './document/ops'
 import { injectBrief, parseBrief, type Brief } from './document/brief'
 import { applyPatches } from './document/patch'
 import { adoptImageRewrites } from './document/image-rewrites'
-import { deriveAutoFileName, deriveNameFromPrompt, derivePageTitleName } from './document/auto-name'
+import { deriveAutoFileName, deriveNameFromPrompt } from './document/auto-name'
+import { localFileName, modelSaveAsName } from './file-naming'
 import { runGuardedPrint } from './print-guard'
 import type { ExportFormat, SaveMode } from '../shared/ipc'
 
@@ -1188,7 +1189,7 @@ export default function App() {
   }
 
   const doSave = useCallback(
-    async (mode: SaveMode, suggestedName?: string): Promise<boolean> => {
+    async (mode: SaveMode, suggestedName?: string, proposedName?: string): Promise<boolean> => {
       if (statusRef.current !== 'ready') return false
       if (diskNoticeRef.current && !overwriteRef.current) {
         // the user has not chosen between the two versions yet; autosave must not pick for them
@@ -1205,12 +1206,26 @@ export default function App() {
       try {
         const textAtSave = textRef.current
         const serialized = serializeDocText({ text: textAtSave, envelope: envelopeRef.current })
+        // A page that has never been saved is offered a name derived from its
+        // own content: the model's, when the reader asked for one, and the
+        // page's own title otherwise. It prefills the save dialog rather than
+        // replacing it — the reader still chooses where the file goes. A plain
+        // Save of a page that already has a path needs no name at all, and a
+        // Save As of one opens on the file's own name: a name the reader asked
+        // for arrives as `proposedName`, before the save begins, and a prompt
+        // left over from an earlier request is nobody's default.
+        const untitled = !pathRef.current
+        const defaultName = proposedName
+          ? proposedName
+          : untitled
+            ? localFileName(textAtSave, provisionalNameRef.current)
+            : undefined
         const result = await window.htmlApi.save({
           text: serialized,
           imageSources: [],
           mode,
           suggestedName,
-          defaultName: provisionalNameRef.current ?? undefined,
+          defaultName,
           overwrite: overwriteRef.current,
         })
         if (result.ok && 'path' in result) {
@@ -1288,6 +1303,23 @@ export default function App() {
     setDiskNotice(null)
     void doSave('save')
   }, [doSave])
+
+  /**
+   * Ask the model to name this page, on request, then open Save As with its
+   * answer prefilled.
+   *
+   * The stem goes into the dialog rather than renaming the file on disk: a file
+   * that may be open elsewhere, referenced from a note, or synced is not
+   * something to move behind the reader's back. A declined or empty answer
+   * leaves the dialog on the page's current name, so this is a no-op rather
+   * than a failure.
+   */
+  const nameWithAi = useCallback(async () => {
+    if (statusRef.current !== 'ready') return
+    const stem = await modelSaveAsName(textRef.current, getMap())
+    if (!stem) return
+    await doSave('saveAs', undefined, stem)
+  }, [doSave, getMap])
 
   const zoomIn = useCallback(() => setZoom((z) => clampZoom(Math.round(z) + ZOOM_STEP)), [])
   const zoomOut = useCallback(() => setZoom((z) => clampZoom(Math.round(z) - ZOOM_STEP)), [])
@@ -1589,8 +1621,7 @@ export default function App() {
       // falling back to the name of the request that started it
       if (!mutated || pathRef.current) return
       const text = textRef.current
-      const name =
-        derivePageTitleName(text) || provisionalNameRef.current || deriveAutoFileName(text)
+      const name = localFileName(text, provisionalNameRef.current)
       if (name) void doSave('save', name)
     },
     clearHighlights: () => editorRef.current?.clearHighlights(),
@@ -1657,6 +1688,7 @@ export default function App() {
         dirty={dirty}
         onSave={() => void doSave('save')}
         onSaveAs={() => void doSave('saveAs')}
+        onNameWithAi={() => void nameWithAi()}
         onFind={() => openFind(false)}
         canUndo={historyState.undo}
         canRedo={historyState.redo}

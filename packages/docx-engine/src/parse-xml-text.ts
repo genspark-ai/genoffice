@@ -12,7 +12,8 @@ export interface RelInfo {
 
 /** hex color value tolerance: Word/LO accept a leading '#' (tdf#57589) */
 export function stripHash(v: string): string {
-  return v.startsWith('#') ? v.slice(1) : v
+  const t = (v ?? '').trim()
+  return t.startsWith('#') ? t.slice(1) : t
 }
 
 /** Word reads a fractional w:line (Google Docs exports) and truncates it; garbage stays NaN */

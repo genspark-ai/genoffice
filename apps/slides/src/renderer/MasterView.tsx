@@ -18,6 +18,7 @@ import { isLineDrawKind, type DrawRect } from './draw-shape'
 import { textBoxInsertSpec } from './textbox-insert'
 import type { EditParagraph, MasterPartItem } from '../shared/ipc'
 import { t } from './i18n/locale'
+import { setImageSource } from './image-loader'
 
 interface Props {
   initialItems: MasterPartItem[]
@@ -74,7 +75,7 @@ export function MasterView({ initialItems, onClose }: Props) {
       if (images.has(u)) return
       const img = new Image()
       img.onload = () => setImages((prev) => new Map(prev).set(u, img))
-      img.src = u
+      setImageSource(img, u)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items])

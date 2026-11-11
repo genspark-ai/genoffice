@@ -31,3 +31,35 @@ describe('recent colors', () => {
     expect(colors[0]).toBe(stored[0])
   })
 })
+
+describe('recent color session (gendesk #279)', () => {
+  it('a native-picker drag records only the final color, on close', async () => {
+    const { createRecentColorSession } = await import('../src/renderer/recent-colors')
+    pushRecentColor('#00FF00') // the user's earlier green must survive the drag
+    const session = createRecentColorSession()
+    // macOS panel drag: one change event per movement across the blues
+    for (const hex of ['#000011', '#000033', '#000066', '#0000aa', '#0000ff']) {
+      session.preview(hex)
+    }
+    expect(getRecentColors()).toEqual(['#00FF00']) // nothing recorded mid-drag
+    session.close()
+    expect(getRecentColors()).toEqual(['#0000FF', '#00FF00'])
+    session.close() // closing twice never double-records
+    expect(getRecentColors()).toEqual(['#0000FF', '#00FF00'])
+  })
+
+  it('a swatch click records immediately and drops the staged preview', async () => {
+    const { createRecentColorSession } = await import('../src/renderer/recent-colors')
+    const session = createRecentColorSession()
+    session.preview('#123456') // transient drag the user abandoned
+    session.commit('#C00000') // then a deliberate standard-color click
+    session.close()
+    expect(getRecentColors()).toEqual(['#C00000'])
+  })
+
+  it('closing with no preview records nothing', async () => {
+    const { createRecentColorSession } = await import('../src/renderer/recent-colors')
+    createRecentColorSession().close()
+    expect(getRecentColors()).toEqual([])
+  })
+})

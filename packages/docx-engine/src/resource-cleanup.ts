@@ -137,7 +137,7 @@ function isOwnedPart(path: string): boolean {
  * discovered from namespace declarations so strict OOXML and non-"r" prefixes
  * remain safe. A missing declaration still gets the conventional "r" fallback.
  */
-function referencedRelationshipIds(xml: string): Set<string> {
+export function referencedRelationshipIds(xml: string): Set<string> {
   const prefixes = new Set(['r'])
   const namespaceRe =
     /\bxmlns:([A-Za-z_][\w.-]*)\s*=\s*(?:"([^"]*\/relationships)"|'([^']*\/relationships)')/g
@@ -174,13 +174,15 @@ function liveDiagramDrawingParts(
   relsXml: string,
   documentPath: string,
   referencedIds: Set<string>,
+  keptIds?: ReadonlySet<string>,
 ): Set<string> {
   const live = new Set<string>()
   for (const tag of relsXml.match(RELATIONSHIP_TAG_RE) ?? []) {
     const id = xmlAttr(tag, 'Id')
     const type = xmlAttr(tag, 'Type')
     const target = xmlAttr(tag, 'Target')
-    if (!id || !type || !target || !referencedIds.has(id)) continue
+    // a data twin the save keeps as a pre-existing orphan keeps its drawing too
+    if (!id || !type || !target || !(referencedIds.has(id) || keptIds?.has(id))) continue
     if (relationshipTypeName(type) !== 'diagramdata') continue
     const path = resolveTargetPath(documentPath, target)
     const twin = path ? DIAGRAM_TWIN_RE.exec(path) : null
@@ -226,13 +228,22 @@ function addReachableOwnedParts(
 /**
  * Prune resources made unreachable by the final main-document XML.
  *
+ * Only what this save broke is pruned: `sourceReferencedIds` carries the
+ * relationship ids the source document referenced, and a relationship the
+ * source already did not reference is a pre-existing orphan — Word keeps
+ * those, so the save does too.
+ *
  * The pass is intentionally narrow:
  * - only known drawing/hyperlink relationship kinds are pruned at the document root;
  * - only owned Word resource directories are recursively removed;
  * - inbound references from any surviving part retain a shared target and its dependencies;
  * - unknown/custom parts are never selected for deletion.
  */
-export async function cleanupDocxOwnedResources(zip: JSZip, documentPath: string): Promise<void> {
+export async function cleanupDocxOwnedResources(
+  zip: JSZip,
+  documentPath: string,
+  sourceReferencedIds?: ReadonlySet<string>,
+): Promise<void> {
   const documentFile = zip.file(documentPath)
   const relsPath = relationshipPartPath(documentPath)
   const relsFile = zip.file(relsPath)
@@ -242,7 +253,26 @@ export async function cleanupDocxOwnedResources(zip: JSZip, documentPath: string
   const referencedIds = referencedRelationshipIds(documentXml)
   const candidateRoots = new Set<string>()
   const relsXml = await relsFile.async('string')
-  const liveDrawings = liveDiagramDrawingParts(relsXml, documentPath, referencedIds)
+  // The pre-existing orphans this save must keep. A diagram drawing twin is
+  // excluded: it is linked only by relationship type and lives and dies with
+  // its data twin, so its own unreferenced state says nothing.
+  const sourceOrphansKept = new Set<string>()
+  if (sourceReferencedIds) {
+    for (const tag of relsXml.match(RELATIONSHIP_TAG_RE) ?? []) {
+      const id = xmlAttr(tag, 'Id')
+      const type = xmlAttr(tag, 'Type')
+      if (!id || !type || referencedIds.has(id)) continue
+      if (relationshipTypeName(type) === 'diagramdrawing') continue
+      if (!DOCUMENT_OWNED_REL_TYPES.has(relationshipTypeName(type))) continue
+      if (!sourceReferencedIds.has(id)) sourceOrphansKept.add(id)
+    }
+  }
+  const liveDrawings = liveDiagramDrawingParts(
+    relsXml,
+    documentPath,
+    referencedIds,
+    sourceOrphansKept,
+  )
   const cleanedRelsXml = relsXml.replace(RELATIONSHIP_TAG_RE, (tag) => {
     const id = xmlAttr(tag, 'Id')
     const type = xmlAttr(tag, 'Type')
@@ -254,6 +284,9 @@ export async function cleanupDocxOwnedResources(zip: JSZip, documentPath: string
     ) {
       return tag
     }
+    // a relationship the source already did not reference is a pre-existing
+    // orphan, not something this save broke: Word keeps those
+    if (sourceOrphansKept.has(id)) return tag
     const external = xmlAttr(tag, 'TargetMode')?.toLowerCase() === 'external'
     const target = xmlAttr(tag, 'Target')
     const targetPath = !external && target ? resolveTargetPath(documentPath, target) : null

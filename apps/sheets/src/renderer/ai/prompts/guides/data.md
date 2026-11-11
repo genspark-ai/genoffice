@@ -54,7 +54,7 @@ format: `{fillColor?, fontColor?, bold?, italic?}` with at least one property. H
 
 ## Pivot tables
 
-- `{op:"add_pivot", sheetId, sourceRange, targetCell, rowFields, columnField?, values:[{field, agg, showDataAs?}]}` — **creates a native pivot table** (real OOXML, interactive and refreshable when opened in Excel); rowFields supports 1–8 levels of row grouping, showDataAs supports percent-of-total/row/column. Usage and limits in the `pivot` guide (load_guide).
+- `{op:"add_pivot", sheetId, sourceRange, targetCell, rowFields, columnField?, values:[{field, agg, showDataAs?}]}` — **creates a native pivot table** (real OOXML, interactive and refreshable when opened in Excel); rowFields supports 1–8 levels of row grouping, showDataAs supports the percent, difference, running-total and rank display modes. Usage and limits in the `pivot` guide (load_guide).
 - `{op:"refresh_pivot", sheetId}` — **recomputes all pivot tables on the sheet**: using the layout recorded in the file, recomputes the data area from current source data and writes it back (on save it also makes Excel rebuild the cache when the file is opened). Use it after the source data has changed to bring pivot results up to date.
 - If refresh finds **new category members** in the source data, the layout grows automatically (new members appended, output region expanded — the growth area must be empty); moved field columns, renamed headers, or pivots using calculated fields/grouping/value filters still fail with an explicit error (suggest the user refresh in Excel in that case).
 - read_sheet_features lists each pivot table's row/column/value fields, source range, and whether it is recomputable.

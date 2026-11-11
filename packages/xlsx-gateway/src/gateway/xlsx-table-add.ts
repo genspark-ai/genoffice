@@ -11,6 +11,7 @@ import {
   type MutablePackage,
 } from './xlsx-drawing-add'
 import { ensureRelationshipNamespace } from './xlsx-namespace'
+import { rootTail } from './xlsx-root-tail'
 
 /// Persists tables (ListObjects) created in the editor as brand-new OOXML
 /// parts: xl/tables/tableN.xml, the worksheet's <tableParts> element, the
@@ -282,11 +283,16 @@ function appendTablePart(worksheetXml: string, relId: string): string {
     return xml.replace(opener, reopened).replace('</tableParts>', `${part}</tableParts>`)
   }
   const element = `<tableParts count="1">${part}</tableParts>`
-  const extLstAt = xml.search(/<extLst\b/)
-  if (extLstAt >= 0) return xml.slice(0, extLstAt) + element + xml.slice(extLstAt)
-  const closeAt = xml.lastIndexOf('</worksheet>')
-  if (closeAt < 0) throw new TableAddError('The worksheet part is malformed.')
-  return xml.slice(0, closeAt) + element + xml.slice(closeAt)
+  const anchor = worksheetTailOffset(xml)
+  return xml.slice(0, anchor) + element + xml.slice(anchor)
+}
+
+/// Locate only the worksheet's own extension list or closing tag. A linked
+/// conditional-formatting rule may carry an earlier, nested extLst.
+function worksheetTailOffset(xml: string): number {
+  const tail = rootTail(xml, 'worksheet')
+  if (tail === null) throw new TableAddError('The worksheet part is malformed.')
+  return tail.extLst === null ? tail.rootClose : tail.extLst.open
 }
 
 export function areaToRef(area: TableArea): string {

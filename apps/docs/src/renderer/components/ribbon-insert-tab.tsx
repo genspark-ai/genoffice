@@ -3,8 +3,8 @@ import type { CSSProperties } from 'react'
 import { getMarkRange } from '@tiptap/core'
 import type { Editor } from '@tiptap/core'
 import { ShapePreview, WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
-import type { ChartDisplay, HeaderFooter, NewChart } from '@genoffice/docx-engine'
-import { hfHasPageField, hfWithoutPageMarks } from '../editor/hf-dom'
+import type { ChartDisplay, NewChart } from '@genoffice/docx-engine'
+import { hfHasPageField, hfPageNumberOnly, hfWithoutPageMarks } from '../editor/hf-dom'
 import { EquationGallery, EquationModal } from './EquationModal'
 import {
   COVER_PRESETS,
@@ -1246,13 +1246,7 @@ export function InsertTab({
                   <button
                     key={label}
                     onClick={() => {
-                      // Word gallery semantics: replace the area's content with a single page-number paragraph
-                      const hf: HeaderFooter = {
-                        text: '#',
-                        pageNumber: true,
-                        paras: [{ align, runs: [{ text: '#' }] }],
-                      }
-                      ;(kind === 'header' ? onHeader : onFooter)(hf)
+                      ;(kind === 'header' ? onHeader : onFooter)(hfPageNumberOnly(align))
                       setDropdown(() => null)
                     }}
                   >

@@ -73,13 +73,38 @@ describe('provider registry', () => {
   })
 
   it('marks the GPT-5/GPT-6 families as fixed-sampling (reject any non-default temperature)', () => {
-    for (const model of ['gpt-6-astra', 'gpt-5.6', 'gpt-5.6-terra', 'gpt-5.5', 'gpt-5.4-mini']) {
+    for (const model of ['gpt-5.2', 'gpt-5.1', 'gpt-5']) {
       expect(AI_PROVIDER_ADAPTERS.openai.resolveEndpoint(config(model))).toEqual({
         protocol: 'openai-compatible',
         baseUrl: 'https://api.openai.com/v1',
         omitTemperature: true,
         useMaxCompletionTokens: true,
       })
+    }
+  })
+
+  it('routes GPT-5.4+ and GPT-6 to the Responses API and older ids to Chat Completions', () => {
+    for (const model of [
+      'gpt-6.1-terra',
+      'gpt-6.1-sol',
+      'gpt-6-astra',
+      'gpt-6-luna',
+      'gpt-5.6-terra',
+      'gpt-5.5',
+      'gpt-5.4-mini',
+    ]) {
+      expect(AI_PROVIDER_ADAPTERS.openai.resolveEndpoint(config(model))).toEqual({
+        protocol: 'openai-responses',
+        baseUrl: 'https://api.openai.com/v1',
+      })
+    }
+    expect(
+      AI_PROVIDER_ADAPTERS.openai.resolveEndpoint(config('gpt-6-sol', 'https://proxy.example/v1/')),
+    ).toEqual({ protocol: 'openai-responses', baseUrl: 'https://proxy.example/v1/' })
+    for (const model of ['gpt-5.2', 'gpt-4.1-mini', 'o3', 'gpt-5.3-codex']) {
+      expect(AI_PROVIDER_ADAPTERS.openai.resolveEndpoint(config(model)).protocol).toBe(
+        'openai-compatible',
+      )
     }
   })
 
@@ -133,6 +158,7 @@ describe('provider registry', () => {
       ['opper', 'claude-sonnet-4-6', 'https://api.opper.ai/v3/compat'],
       ['cheaperinference', 'claude-sonnet-5', 'https://api.cheaperinference.com/v1'],
       ['atlascloud', 'deepseek-ai/deepseek-v4-pro', 'https://api.atlascloud.ai/v1'],
+      ['runcrate', 'deepseek-ai/DeepSeek-V4.1-Flash', 'https://api.runcrate.ai/v1'],
     ]
     for (const [id, model, baseUrl] of cases) {
       expect(AI_PROVIDER_ADAPTERS[id].resolveEndpoint(config(model))).toEqual({
@@ -140,6 +166,22 @@ describe('provider registry', () => {
         baseUrl,
       })
     }
+  })
+
+  it('resolves CloudGPU to its chat-completions endpoint', () => {
+    expect(AI_PROVIDER_ADAPTERS.cloudgpu.resolveEndpoint(config('deepseek-v4.1-flash'))).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://cloudgpu.app/v1',
+    })
+  })
+
+  it('resolves SiliconFlow and PPIO to their chat-completions endpoints', () => {
+    expect(
+      AI_PROVIDER_ADAPTERS.siliconflow.resolveEndpoint(config('deepseek-ai/DeepSeek-V4-Pro')),
+    ).toEqual({ protocol: 'openai-compatible', baseUrl: 'https://api.siliconflow.cn/v1' })
+    expect(
+      AI_PROVIDER_ADAPTERS.ppio.resolveEndpoint(config('deepseek/deepseek-v4.1-flash')),
+    ).toEqual({ protocol: 'openai-compatible', baseUrl: 'https://api.ppio.com/openai/v1' })
   })
 
   it('pins the Spark host, model id and key prefix to the iFlytek product guide', () => {
@@ -286,6 +328,35 @@ describe('provider registry', () => {
     })
     // Go has no Gemini route
     expect(resolve('gemini-3.7-flash').protocol).toBe('openai-compatible')
+  })
+
+  it('routes Command Code Claude ids onto Messages and the rest onto chat-completions', () => {
+    const resolve = (model: string) =>
+      AI_PROVIDER_ADAPTERS.commandcode.resolveEndpoint(config(model))
+    expect(resolve('claude-sonnet-5-5')).toEqual({
+      protocol: 'anthropic',
+      baseUrl: 'https://api.commandcode.ai/provider',
+    })
+    for (const model of ['zai-org/GLM-5.3', 'deepseek/deepseek-v4-pro', 'tencent/hy3-paid']) {
+      expect(resolve(model)).toEqual({
+        protocol: 'openai-compatible',
+        baseUrl: 'https://api.commandcode.ai/provider/v1',
+      })
+    }
+    // lab-prefixed Kimi ids fix sampling like the bare ones, K2 line included
+    for (const model of ['moonshotai/Kimi-K2.7-Code', 'moonshotai/Kimi-K3']) {
+      expect(resolve(model)).toEqual({
+        protocol: 'openai-compatible',
+        baseUrl: 'https://api.commandcode.ai/provider/v1',
+        omitTemperature: true,
+      })
+    }
+    // the Gemini 3 family keeps Google's default sampling behind the prefix too
+    expect(resolve('google/gemini-3.8-flash')).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://api.commandcode.ai/provider/v1',
+      omitTemperature: true,
+    })
   })
 
   it('does not crash the opencode route on a missing model id', () => {
@@ -473,6 +544,24 @@ describe('modelLacksVision', () => {
     expect(modelLacksVision('MiniMax-M3')).toBe(false)
   })
 
+  it('holds back the text-only Runcrate ids but not its multimodal ones', () => {
+    expect(modelLacksVision('zai-org/GLM-5.3')).toBe(true)
+    expect(modelLacksVision('Qwen/Qwen3.8-Flash')).toBe(true)
+    expect(modelLacksVision('openai/gpt-oss-120b')).toBe(true)
+    expect(modelLacksVision('deepseek-ai/DeepSeek-V4.1-Flash')).toBe(false)
+    expect(modelLacksVision('deepseek-ai/DeepSeek-V4.1-Flash-1017')).toBe(false)
+    expect(modelLacksVision('zai-org/GLM-5.3-Flash')).toBe(false)
+    expect(modelLacksVision('moonshotai/Kimi-K2.6')).toBe(false)
+  })
+
+  it('records the existing vision heuristics for the CloudGPU ids', () => {
+    expect(modelLacksVision('deepseek-v4.1-flash')).toBe(false)
+    expect(modelLacksVision('deepseek-v4-pro')).toBe(true)
+    expect(modelLacksVision('glm-5.3-flash')).toBe(false)
+    expect(modelLacksVision('kimi-k2.6')).toBe(false)
+    expect(modelLacksVision('minimax-m3')).toBe(false)
+  })
+
   it('matches case-insensitively like its sibling matchers', () => {
     expect(modelLacksVision('DeepSeek-V4-Pro')).toBe(true)
     expect(modelLacksVision('DEEPSEEK-V4-FLASH')).toBe(true)
@@ -537,6 +626,7 @@ describe('modelHasFixedSampling case handling', () => {
     expect(modelHasFixedSampling('GPT-5.6-sol')).toBe(true)
     expect(modelHasFixedSampling('KIMI-K3')).toBe(true)
     expect(modelHasFixedSampling('Gemini-3.7-flash')).toBe(true)
+    expect(modelHasFixedSampling('gemini-4-argon')).toBe(true)
     expect(modelHasFixedSampling('O1-mini')).toBe(true)
     expect(modelHasFixedSampling('gpt-4o-mini')).toBe(false)
   })

@@ -405,7 +405,7 @@ describe('applyCfRules with x14 extensions', () => {
     expect(xml.split('<conditionalFormatting sqref="C1:C5">')).toHaveLength(2)
   })
 
-  it('rejects modifying, retyping, or deleting the x14-linked data bar rule', () => {
+  it('rejects modifying or retyping the x14-linked data bar rule', () => {
     const sheet = X14_SHEET.replace('<pageMargins', `${LINKED_BAR}<pageMargins`)
     const recolored = {
       ...barRule,
@@ -417,10 +417,39 @@ describe('applyCfRules with x14 extensions', () => {
     expect(() => applyCfRules(sheet, [highlight([barRange])], new FakeDxfs())).toThrow(
       /data-bar extension format/,
     )
-    expect(() => applyCfRules(sheet, [highlight([range])], new FakeDxfs())).toThrow(
-      /data-bar extension format/,
-    )
-    expect(() => applyCfRules(sheet, [], new FakeDxfs())).toThrow(/data-bar extension format/)
+  })
+
+  it('allows deleting the x14-linked data bar and keeps unrelated x14', () => {
+    const sheet = X14_SHEET.replace('<pageMargins', `${LINKED_BAR}<pageMargins`)
+    // A snapshot that no longer carries C1:C5 has deleted the bar: the base
+    // block goes, the unrelated x14 icon-set extension stays verbatim.
+    const cleared = applyCfRules(sheet, [], new FakeDxfs())
+    expect(cleared).not.toContain(LINKED_BAR)
+    expect(cleared).not.toContain('sqref="C1:C5"')
+    expect(cleared).toContain(X14_EXT)
+    const replaced = applyCfRules(sheet, [highlight([range])], new FakeDxfs())
+    expect(replaced).not.toContain(LINKED_BAR)
+    expect(replaced).toContain(X14_EXT)
+    expect(replaced).toContain('operator="greaterThan"')
+  })
+
+  it('removes the twin when a linked bar is deleted (issue #2510)', () => {
+    const twin =
+      '<extLst><ext uri="{78C0D931-6437-407d-A8EE-F0AAD7539E65}"' +
+      ' xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
+      '<x14:conditionalFormattings><x14:conditionalFormatting' +
+      ' xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">' +
+      '<x14:cfRule type="dataBar" id="{DATA-BAR-GUID}"><x14:dataBar minLength="0" maxLength="100">' +
+      '<x14:cfvo type="autoMin"/><x14:cfvo type="autoMax"/></x14:dataBar></x14:cfRule>' +
+      '<xm:sqref>C1:C5</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst>'
+    const linkedSheet =
+      '<worksheet><sheetData/>' + LINKED_BAR + '<pageMargins left="0.7"/>' + twin + '</worksheet>'
+    const cleared = applyCfRules(linkedSheet, [], new FakeDxfs())
+    expect(cleared).not.toContain(LINKED_BAR)
+    expect(cleared).not.toContain('{DATA-BAR-GUID}')
+    expect(cleared).not.toContain('78C0D931')
+    expect(cleared).not.toContain('<extLst')
+    expect(cleared).toContain('<sheetData/>')
   })
 
   it('appends new dxfs without disturbing entries x14 rules may reference', () => {

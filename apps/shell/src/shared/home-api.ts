@@ -98,6 +98,16 @@ export interface AutoSaveDefault {
   updatedAt: number
 }
 
+/**
+ * The ceilings a delimited import (a .csv/.tsv opened as a workbook) may
+ * reach, in megabytes. The core owns them (the gateway's csv-limits); the
+ * shell offers them as a setting.
+ */
+export {
+  CSV_IMPORT_DEFAULT_LIMIT_MB,
+  CSV_IMPORT_LIMIT_CHOICES_MB,
+} from '@genoffice/xlsx-gateway/gateway/csv-limits'
+
 /** local MCP server state (persisted in userData/app-settings.json) */
 export interface McpStatus {
   running: boolean
@@ -380,6 +390,9 @@ export interface HomeApi {
   /** whether the launch and periodic background update checks run (default on) */
   getAutoUpdateCheck(): Promise<boolean>
   setAutoUpdateCheck(on: boolean): Promise<void>
+  /** background checks download quietly and install on quit instead of showing the card (default off) */
+  getSilentInstallUpdate(): Promise<boolean>
+  setSilentInstallUpdate(on: boolean): Promise<void>
   /** Genspark account status (gsk login state; to be upgraded to a signup/account system later) */
   accountStatus(): Promise<AccountStatus>
   /** start Genspark login (opens the browser; accountStatus flips to logged-in on completion); returns whether the launch succeeded */
@@ -415,6 +428,10 @@ export interface HomeApi {
   getAutoSaveDefault(): Promise<AutoSaveDefault>
   /** persist the AutoSave default; broadcasts 'app:auto-save-default-changed' to all web contents */
   setAutoSaveDefault(on: boolean): Promise<void>
+  /** the ceiling a delimited import (a .csv/.tsv opened as a workbook) may reach, in MB */
+  getCsvImportLimit(): Promise<number>
+  /** persist that ceiling; the editors take it at once */
+  setCsvImportLimit(mb: number): Promise<void>
   /** whether long-idle background tabs release their renderer once many are open (default on) */
   getTabSleepEnabled(): Promise<boolean>
   setTabSleepEnabled(on: boolean): Promise<void>
@@ -442,6 +459,8 @@ export interface HomeApi {
   setAnalyticsEnabled(enabled: boolean): Promise<boolean>
   /** name on comments and tracked changes; `value` is the stored override ('' = use `fallback`, the OS account) */
   getAuthorName(): Promise<AuthorNameSetting>
+  getLegacyImportPrompt(): Promise<boolean>
+  setLegacyImportPrompt(prompt: boolean): Promise<boolean>
   /** persist; broadcasts 'app:author-name-changed' (the effective name) to all web contents */
   setAuthorName(value: string): Promise<AuthorNameSetting>
   /** AI panel text size + chat-input spellcheck (persisted in userData/app-settings.json) */
@@ -682,6 +701,8 @@ export const HOME_CHANNELS = {
   setUpdateChannel: 'home:set-update-channel',
   getAutoUpdateCheck: 'home:get-auto-update-check',
   setAutoUpdateCheck: 'home:set-auto-update-check',
+  getSilentInstallUpdate: 'home:get-silent-install-update',
+  setSilentInstallUpdate: 'home:set-silent-install-update',
   accountStatus: 'home:account-status',
   accountLogin: 'home:account-login',
   accountLoginEvent: 'home:account-login-event',
@@ -697,6 +718,8 @@ export const HOME_CHANNELS = {
   setDocumentTheme: 'home:set-document-theme',
   getAutoSaveDefault: 'home:get-auto-save-default',
   setAutoSaveDefault: 'home:set-auto-save-default',
+  getCsvImportLimit: 'home:get-csv-import-limit',
+  setCsvImportLimit: 'home:set-csv-import-limit',
   getTabSleepEnabled: 'home:get-tab-sleep-enabled',
   setTabSleepEnabled: 'home:set-tab-sleep-enabled',
   getRestoreLastSession: 'home:get-restore-last-session',
@@ -709,6 +732,8 @@ export const HOME_CHANNELS = {
   getAnalyticsEnabled: 'home:get-analytics-enabled',
   setAnalyticsEnabled: 'home:set-analytics-enabled',
   getAuthorName: 'home:get-author-name',
+  getLegacyImportPrompt: 'home:get-legacy-import-prompt',
+  setLegacyImportPrompt: 'home:set-legacy-import-prompt',
   setAuthorName: 'home:set-author-name',
   getAiPanelPrefs: 'home:get-ai-panel-prefs',
   setAiPanelPrefs: 'home:set-ai-panel-prefs',

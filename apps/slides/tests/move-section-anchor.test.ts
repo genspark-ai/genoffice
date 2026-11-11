@@ -14,11 +14,12 @@ const before = [slide('s1'), slide('s2'), slide('s3'), slide('s4')]
 const after = [slide('s1'), slide('s3'), slide('s4'), slide('s2')]
 
 type SectionInfo = { id: string; name: string; slideIndices: number[] }
-type MoveSectionResult = { slides: RenderSlide[]; sections: SectionInfo[] }
+type MoveSectionResult = { order: string[]; slides: RenderSlide[]; sections: SectionInfo[] }
 
 const api = {
   moveSection: vi.fn(async (): Promise<MoveSectionResult | null> => ({
-    slides: after,
+    order: after.map((s) => s.partPath!),
+    slides: [],
     sections: [{ id: 'B', name: 'Body', slideIndices: [1, 2] }],
   })),
 }
@@ -50,7 +51,7 @@ describe('moveSectionDir keeps current on the same slide', () => {
     // slide 3 ('s4') ends up at index 2 after B moves above it
     const ctx = makeCtx(3)
     await moveSectionDir(ctx, 'B', 'up')
-    expect(ctx.setSlides).toHaveBeenCalledWith(after)
+    expect(vi.mocked(ctx.setSlides).mock.calls[0]![0]).toEqual(expect.any(Function))
     expect(ctx.setCurrent).toHaveBeenCalledWith(2)
   })
 
@@ -72,7 +73,7 @@ describe('moveSectionDir keeps current on the same slide', () => {
     const ctx = makeCtx(3)
     ;(ctx.slides as RenderSlide[])[3] = { nodes: [] } as unknown as RenderSlide
     await moveSectionDir(ctx, 'B', 'up')
-    expect(ctx.setSlides).toHaveBeenCalledWith(after)
+    expect(vi.mocked(ctx.setSlides).mock.calls[0]![0]).toEqual(expect.any(Function))
     expect(ctx.setCurrent).not.toHaveBeenCalled()
   })
 

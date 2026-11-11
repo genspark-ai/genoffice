@@ -25,7 +25,7 @@ describe('genoffice mcp list', () => {
     expect(r.json().detail.launcher).toBe(LAUNCHER)
     const agents = r.json().detail.agents as Array<Record<string, unknown>>
     expect(agents.map((a) => a.agent).sort()).toEqual(
-      ['claude-code', 'codex', 'copilot', 'cursor', 'gemini', 'opencode', 'windsurf'].sort(),
+      ['claude-code', 'codex', 'copilot', 'cursor', 'dsh', 'gemini', 'opencode', 'windsurf'].sort(),
     )
     expect(agents.find((a) => a.agent === 'cursor')).toMatchObject({
       detected: true,
@@ -75,6 +75,73 @@ describe('genoffice mcp install', () => {
     expect(again.code).toBe(0)
     expect(again.json().detail.agents[0].status).toBe('unchanged')
     expect(readFileSync(file, 'utf-8')).toBe(text)
+  })
+
+  it('records compact schemas with --compact-schemas and lists that entry as registered', async () => {
+    const m = fakeMachine(['.cursor'])
+    const file = join(m.home, '.cursor', 'mcp.json')
+    const compact = await run(['mcp', 'install', 'cursor', '--compact-schemas', '--json'], {
+      env: m.env,
+    })
+    expect(compact.code).toBe(0)
+    expect(compact.json().detail.agents[0]).toMatchObject({
+      status: 'installed',
+      registered: true,
+      compactSchemas: true,
+    })
+    expect(readJson(file).mcpServers.genoffice.env).toMatchObject({
+      GENOFFICE_MCP_COMPACT_SCHEMAS: '1',
+    })
+
+    const listed = await run(['mcp', 'list', '--json'], { env: m.env })
+    expect(listed.json().detail.agents.find((a: any) => a.agent === 'cursor')).toMatchObject({
+      status: 'registered',
+      registered: true,
+      compactSchemas: true,
+    })
+    expect(listed.json().summary).toContain('cursor registered (compact)')
+    const rejected = await run(['mcp', 'list', '--compact-schemas', '--json'], { env: m.env })
+    expect(rejected.code).toBe(1)
+    expect(rejected.json().message).toContain('does not combine with `mcp list`')
+
+    const again = await run(['mcp', 'install', 'cursor', '--compact-schemas', '--json'], {
+      env: m.env,
+    })
+    expect(again.json().detail.agents[0].status).toBe('unchanged')
+    // asking for the plain form writes it back
+    const plain = await run(['mcp', 'install', 'cursor', '--json'], { env: m.env })
+    expect(plain.json().detail.agents[0]).toMatchObject({
+      status: 'updated',
+      compactSchemas: false,
+    })
+    expect(readJson(file).mcpServers.genoffice.env?.GENOFFICE_MCP_COMPACT_SCHEMAS).toBeUndefined()
+  })
+
+  it('lists a Cordis entry that asks for compact schemas as registered', async () => {
+    const m = fakeMachine(['.dsh'])
+    const file = join(m.home, '.dsh', 'cordis.patch.yml')
+    const first = await run(['mcp', 'install', 'dsh', '--json'], { env: m.env })
+    expect(first.code).toBe(0)
+    const compact = await run(['mcp', 'install', 'dsh', '--compact-schemas', '--json'], {
+      env: m.env,
+    })
+    expect(compact.code).toBe(0)
+    expect(compact.json().detail.agents[0]).toMatchObject({
+      status: 'updated',
+      compactSchemas: true,
+    })
+    expect(readFileSync(file, 'utf-8')).toContain("GENOFFICE_MCP_COMPACT_SCHEMAS: '1'")
+    const listed = await run(['mcp', 'list', '--json'], { env: m.env })
+    expect(listed.json().detail.agents.find((a: any) => a.agent === 'dsh')).toMatchObject({
+      status: 'registered',
+      registered: true,
+      compactSchemas: true,
+    })
+    expect(listed.json().summary).toContain('dsh registered (compact)')
+    const again = await run(['mcp', 'install', 'dsh', '--compact-schemas', '--json'], {
+      env: m.env,
+    })
+    expect(again.json().detail.agents[0].status).toBe('unchanged')
   })
 
   it('creates the file when the agent has none', async () => {
@@ -174,7 +241,7 @@ describe('genoffice mcp install', () => {
         .map((a: any) => a.agent)
         .sort(),
     ).toEqual(['copilot', 'gemini', 'opencode'])
-    expect(rows.filter((a: any) => a.status === 'not_detected').length).toBe(4)
+    expect(rows.filter((a: any) => a.status === 'not_detected').length).toBe(5)
     expect(readJson(join(m.home, '.copilot', 'mcp-config.json')).mcpServers.genoffice).toEqual({
       type: 'local',
       command: LAUNCHER,
@@ -194,6 +261,24 @@ describe('genoffice mcp install', () => {
     const forced = await run(['mcp', 'install', 'cursor', '--force', '--json'], { env: m.env })
     expect(forced.code).toBe(0)
     expect(existsSync(join(m.home, '.cursor', 'mcp.json'))).toBe(true)
+  })
+
+  it('finds dsh in its dotfolder and writes the Cordis patch', async () => {
+    const m = fakeMachine(['.dsh'])
+    const listed = await run(['mcp', 'list', '--json'], { env: m.env })
+    expect(listed.code).toBe(0)
+    expect(listed.json().detail.agents.find((a: any) => a.agent === 'dsh')).toMatchObject({
+      detected: true,
+      config: join(m.home, '.dsh', 'cordis.patch.yml'),
+    })
+
+    const r = await run(['mcp', 'install', 'dsh', '--json'], { env: m.env })
+    expect(r.code).toBe(0)
+    expect(r.json().detail.agents[0].status).toBe('installed')
+    const patch = readFileSync(join(m.home, '.dsh', 'cordis.patch.yml'), 'utf-8')
+    expect(patch).toContain('id: mcp-genoffice')
+    expect(patch).toContain("name: '@deepseek-ai/dsh-mcp-client'")
+    expect(patch).toContain(`command: ${LAUNCHER}`)
   })
 
   it('writes Claude Code user scope into .claude.json at the top level, honouring CLAUDE_CONFIG_DIR', async () => {
@@ -267,12 +352,12 @@ describe('genoffice mcp install summaries', () => {
     const r = await run(['mcp', 'install', 'all', '--json'], { env: m.env })
     expect(r.code).toBe(0)
     expect(r.json().summary).toBe(
-      'nothing registered: 5 agent(s) not detected, 2 agent(s) left alone (see warnings)',
+      'nothing registered: 6 agent(s) not detected, 2 agent(s) left alone (see warnings)',
     )
     expect(r.json().warnings).toHaveLength(2)
     const u = await run(['mcp', 'uninstall', 'all', '--json'], { env: m.env })
     expect(u.json().summary).toBe(
-      'nothing removed: 5 agent(s) not detected, 2 agent(s) left alone (see warnings)',
+      'nothing removed: 6 agent(s) not detected, 2 agent(s) left alone (see warnings)',
     )
   })
 

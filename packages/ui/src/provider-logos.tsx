@@ -9,7 +9,7 @@ import type { AiProviderId } from '@genoffice/ai-provider/browser'
 // Brand-colored logos keep their official colors in both themes (brand
 // assets, not chrome — see CLAUDE.md theming rules); monochrome marks
 // (OpenAI, Kimi, Grok, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas
-// Cloud, OpenCode,
+// Cloud, Runcrate, OpenCode,
 // Genspark, Custom) use currentColor so they stay legible in dark mode.
 //
 // Gradient-filled marks (Gemini, Qwen, MiniMax) are components so useId can
@@ -110,6 +110,14 @@ const opencodeLogo = (
   <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <path fillRule="evenodd" d="M6 4.5h12v15H6v-15zm3 3v9h6v-9H9z" />
     <path d="M9 10.5h6v6H9z" opacity=".45" />
+  </svg>
+)
+
+// Original mark: a terminal prompt chevron over a command cursor, 24-unit frame
+const commandcodeLogo = (
+  <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+    <path d="M4 4.8h2.7l6.6 7.2-6.6 7.2H4l6.6-7.2L4 4.8Z" />
+    <path d="M14 16.6h6v2.6h-6z" />
   </svg>
 )
 
@@ -251,8 +259,33 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
       <path d="M13.4447 0L0 25.9887C6.22692 23.5227 11.249 23.1623 15.7643 23.3763L13.7037 18.8159C12.8029 18.7258 10.1905 18.7258 8.9519 19.0523L13.4447 9.06451C13.4447 9.06451 20.2009 23.7366 20.2121 23.7366C21.5183 23.9393 24.9977 25.1104 26.8895 25.9887L13.4447 0Z" />
     </svg>
   ),
+  // Runcrate's mark (runcrate.ai): a rounded square with a terminal prompt, 24-unit frame
+  runcrate: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6ZM5.793 9.207A1 1 0 0 1 7.207 7.793L11.414 12 7.207 16.207A1 1 0 0 1 5.793 14.793L8.586 12ZM13 14.5h4.5a1 1 0 0 1 0 2H13a1 1 0 0 1 0-2Z" />
+    </svg>
+  ),
+  // Original mark: three stacked flow lines for layered GPU serving, 24-unit frame
+  siliconflow: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M3 7.5h13a4 4 0 0 1 0 8h-1.1l1.3-2.2a1.8 1.8 0 0 0-1.55-2.7H6.5A1.25 1.25 0 0 1 6.5 8h9.15a4 4 0 0 1 0 5.5H6.5a3.45 3.45 0 0 1 0-6Zm1.5 6.5h12a1.25 1.25 0 0 1 0 2.5H7.65a4 4 0 0 1-3.15-2.5ZM3.9 5.5A4 4 0 0 1 7.5 3H16a1.25 1.25 0 0 1 0 2.5H7.5c-.9 0-1.7.5-2.1 1.25A4 4 0 0 0 3.9 5.5Z" />
+    </svg>
+  ),
+  // Original mark: a bolt inside a rounded square, for the accelerate cloud, 24-unit frame
+  ppio: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6Zm6.53 4.5h-4.1L7.2 12.1h2.9l-1.1 6.4 5.7-7.9h-3l2.83-5.1Z" />
+    </svg>
+  ),
+  // Original mark: a rounded square with a chip motif, 24-unit frame
+  cloudgpu: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6ZM8 9.2a1.2 1.2 0 0 1 1.2-1.2h5.6a1.2 1.2 0 0 1 1.2 1.2v5.6a1.2 1.2 0 0 1-1.2 1.2H9.2A1.2 1.2 0 0 1 8 14.8ZM5.5 9.25h2.5v1.5H5.5Zm0 4h2.5v1.5H5.5ZM16 9.25h2.5v1.5H16Zm0 4h2.5v1.5H16ZM9.25 5.5h1.5V8h-1.5Zm4 0h1.5V8h-1.5ZM9.25 16h1.5v2.5h-1.5Zm4 0h1.5v2.5h-1.5ZM10.75 10.75h2.5v2.5h-2.5Z" />
+    </svg>
+  ),
   'opencode-zen': opencodeLogo,
   'opencode-go': opencodeLogo,
+  commandcode: commandcodeLogo,
   mimo: (
     <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
       <path d="M.958 15.936a.459.459 0 01.459.44v2.729a.46.46 0 01-.918 0v-2.729a.459.459 0 01.459-.44zm4.814-2.035a.46.46 0 01.553.45v4.754a.458.458 0 11-.918 0V15.48L3.74 17.202a.462.462 0 01-.655.016.462.462 0 01-.065-.082L.628 14.67a.459.459 0 01.658-.637l2.124 2.187 2.127-2.188a.46.46 0 01.235-.13zm2.068.004a.46.46 0 01.458.445v4.755a.46.46 0 01-.458.458.459.459 0 01-.458-.458V14.35a.459.459 0 01.458-.445zm1.973 2.014a.46.46 0 01.46.457v2.729a.46.46 0 01-.784.324.46.46 0 01-.134-.324v-2.729a.46.46 0 01.458-.458zm.002-2.045a.458.458 0 01.328.157l2.127 2.19 2.125-2.19a.459.459 0 01.784.318v4.756a.46.46 0 01-.455.458.46.46 0 01-.458-.458V15.48l-1.667 1.723a.46.46 0 01-.65.008l-.005-.005c0-.002-.002-.002-.004-.003l-2.455-2.534a.46.46 0 01-.008-.667.461.461 0 01.338-.128zm6.797 1.206a.46.46 0 01.53.651A1.966 1.966 0 0019.81 18.4a.462.462 0 01.623.18.46.46 0 01-.181.624 2.863 2.863 0 01-1.38.353l-.142-.004a2.88 2.88 0 01-2.393-4.263.461.461 0 01.274-.21zm.864-.931a2.884 2.884 0 013.915 3.914.46.46 0 01-.402.24l-.057-.004a.458.458 0 01-.164-.055.46.46 0 01-.182-.622 1.967 1.967 0 00-2.669-2.67.459.459 0 11-.441-.803zM9.59 6.368c1.481 0 1.696 1.202 1.696 1.654v2.648h-.917v-.432c-.26.346-.792.535-1.36.535-.133 0-1.289-.03-1.384-1.136-.082-.932.675-1.61 2.053-1.61h.691c0-.563-.367-.886-.983-.886-.44.013-.864.174-1.2.458l-.36-.664c.484-.379 1.012-.567 1.764-.567zm4.427.1c1.263 0 2.082.97 2.083 2.15 0 1.181-.824 2.154-2.083 2.154-1.26 0-2.084-.972-2.084-2.152 0-1.18.82-2.153 2.084-2.153zm6.801.015c.68 0 1.202.465 1.197 1.548v2.642H21.1V8.29c0-.312-.002-.98-.63-.98s-.628.667-.628.838v2.524h-.89V8.148c0-.17-.001-.838-.63-.838-.628 0-.628.668-.628.98v2.383h-.917v-4.03h.917V7a1.22 1.22 0 01.947-.516c.398 0 .76.193.982.686a1.321 1.321 0 011.195-.686zm-18.093.872l1.457-1.772H5.32L3.311 8.07l2.14 2.602H4.24L2.725 8.796 1.21 10.672H0L2.138 8.07.13 5.583h1.138l1.458 1.772zm4.149 3.317h-.916V6.644h.916v4.028zm16.99 0h-.916V6.644h.916v4.028zM9.925 8.71c-1.055 0-1.359.412-1.326.742.032.329.324.537.757.537a1.013 1.013 0 001.014-.968l.002-.31h-.447zM14.018 7.3c-.663 0-1.184.487-1.184 1.32 0 .832.52 1.32 1.184 1.32.662 0 1.182-.49 1.182-1.32 0-.832-.52-1.32-1.182-1.32zM6.417 5.001a.568.568 0 01.587.582.588.588 0 01-1.175 0A.57.57 0 016.417 5zm16.991 0a.57.57 0 01.592.582.588.588 0 01-1.174 0 .57.57 0 01.357-.542.572.572 0 01.225-.04z" />
@@ -302,6 +335,31 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
 }
 
 /** Inline brand mark sized by the surrounding container (default `.gs-provider-logo`). */
+/** image-only provider ids that have no LLM counterpart; consulted before the custom fallback */
+const MEDIA_LOGOS: Partial<Record<'stability' | 'bfl' | 'microsoft', ReactNode>> = {
+  // Original mark: a layered frame, for layered image pipelines, 24-unit frame
+  stability: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M4 3h16a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2h-6.38l2.2-2.2a1 1 0 0 0-1.42-1.42l-3.91 3.91a1 1 0 0 0 0 1.42l3.91 3.91a1 1 0 0 0 1.42-1.42l-2.2-2.2H20a4 4 0 0 0 4-4V5a4 4 0 0 0-4-4H4a4 4 0 0 0-4 4v6.5a4 4 0 0 0 4 4h6.38l-2.2 2.2a1 1 0 0 0 1.42 1.42l3.91-3.91a1 1 0 0 0 0-1.42L9.6 10.88a1 1 0 0 0-1.42 1.42l2.2 2.2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+    </svg>
+  ),
+  // Original mark: a spark bolt over a horizon line, for generative flux, 24-unit frame
+  bfl: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M13.4 2 6 13h4.4l-1.8 9L16 10.5h-4.2L13.4 2ZM3 19.5h18v2H3v-2Z" />
+    </svg>
+  ),
+  // Original mark: the four-square flag, 21-unit frame
+  microsoft: (
+    <svg viewBox="0 0 21 21" fillRule="evenodd" aria-hidden="true">
+      <rect x="0" y="0" width="10" height="10" fill="#f25022" />
+      <rect x="11" y="0" width="10" height="10" fill="#7fba00" />
+      <rect x="0" y="11" width="10" height="10" fill="#00a4ef" />
+      <rect x="11" y="11" width="10" height="10" fill="#ffb900" />
+    </svg>
+  ),
+}
+
 export function ProviderLogo({
   id,
   className = 'gs-provider-logo',
@@ -311,7 +369,9 @@ export function ProviderLogo({
 }) {
   return (
     <span className={className} aria-hidden="true">
-      {LOGOS[id as AiProviderId] ?? LOGOS.custom}
+      {LOGOS[id as AiProviderId] ??
+        MEDIA_LOGOS[id as 'stability' | 'bfl' | 'microsoft'] ??
+        LOGOS.custom}
     </span>
   )
 }

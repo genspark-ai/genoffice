@@ -162,6 +162,25 @@ describe('resolveTabTarget', () => {
     expect(r.target).toBe(PARA_W - 1 - 100)
     expect(r.glue).toBe(false)
   })
+
+  // corpus 2026-10-21/28: a default stop landing past the right edge with only
+  // spaces behind the tab opens a second, blank line in Word (the trailing
+  // tabs + spaces of a paragraph); packing it flush right loses that line
+  it('wraps a left stop past the edge when only whitespace follows', () => {
+    const input = { ...base, x: 600, stops: [], segWidth: 300, restWidth: 300, restBlank: true }
+    const r = resolveTabTarget(input)
+    expect(r.wrap).toBe(true)
+    expect(r.collapsed).toBe(false)
+    // text behind the tab keeps the flush-right pin (here past x: collapsed)
+    expect(resolveTabTarget({ ...input, restBlank: false })).toMatchObject({
+      wrap: false,
+      collapsed: true,
+    })
+    // a stop still inside the column never wraps
+    expect(resolveTabTarget({ ...input, x: 500 })).toMatchObject({ wrap: false, target: 528 })
+    // right stops are unaffected
+    expect(resolveTabTarget({ ...input, stops: [{ x: 700, val: 'right' }] }).wrap).toBe(false)
+  })
 })
 
 // Word: on the first line of a hanging indent the left indent is an implicit

@@ -4,7 +4,24 @@ import {
   comboBarIndices,
   comboCategorySeries,
   comboLineIndices,
+  convertibleType,
 } from '../src/renderer/WorkbookVisuals'
+
+describe('convertibleType', () => {
+  const chartOf = (chartTypes: string[]): Parameters<typeof convertibleType>[0] =>
+    ({ chartTypes, title: 'T', series: [] }) as Parameters<typeof convertibleType>[0]
+
+  it('marks a bar+line combo convertible (whole-chart conversion)', () => {
+    expect(convertibleType(chartOf(['barChart', 'lineChart']))).toBe('combo')
+    expect(convertibleType(chartOf(['lineChart', 'barChart']))).toBe('combo')
+  })
+
+  it('still fails closed on richer combos and single exotic plots', () => {
+    expect(convertibleType(chartOf(['barChart', 'lineChart', 'areaChart']))).toBeNull()
+    expect(convertibleType(chartOf(['barChart', 'scatterChart']))).toBeNull()
+    expect(convertibleType(chartOf(['scatterChart']))).toBeNull()
+  })
+})
 
 describe('comboLineIndices', () => {
   it('draws every lineChart-tagged series as a line regardless of position', () => {

@@ -116,10 +116,13 @@ describe('rotated pictures', () => {
       'img.doc-inline-img--wrap-tight-right',
     )!
     expect(img.style.transform).toBe('rotate(90deg)')
-    expect(img.style.marginRight).toMatch(/calc\(100% - 296(\.0)?px\)/)
-    expect(img.style.marginLeft).toBe('-38px')
-    expect(img.style.marginTop).toBe('0px')
-    expect(img.style.marginBottom).toBe('50px')
+    // jsdom folds the margins into a shorthand it cannot split again once a
+    // var() fallback is inside: top / right / bottom / left
+    expect(img.getAttribute('style')).toMatch(
+      new RegExp(
+        String.raw`margin: 0\.0px max\(100% - calc\(296(\.0)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) calc\(50\.0px \+ clamp\(.*\) min\(-38\.0px, calc\(`,
+      ),
+    )
     editor.destroy()
   })
 
@@ -133,7 +136,7 @@ describe('rotated pictures', () => {
       '.doc-inline-img-anchor > img.doc-inline-img',
     )!
     expect(img.style.transform).toBe(
-      'translate(96.0px, calc(0.0px - var(--anchor-before,0px))) rotate(90deg)',
+      'translate(calc(96.0px - var(--anchor-ind,0px)), calc(0.0px - var(--anchor-before,0px))) rotate(90deg)',
     )
     expect(img.style.marginTop).toBe('')
     editor.destroy()
@@ -151,7 +154,8 @@ describe('rotated pictures', () => {
     expect(img.style.transform).toBe('rotate(90deg)')
     expect(img.style.marginTop).toBe('52px')
     expect(img.style.marginBottom).toBe('52px')
-    expect(img.style.marginLeft).toBe('')
+    // the posOffset X places the extent box (no quarter-turn inset on a wrapped picture)
+    expect(img.style.marginLeft).toBe('0px')
     editor.destroy()
   })
 
@@ -167,8 +171,11 @@ describe('rotated pictures', () => {
     const img = editor.view.dom.querySelector<HTMLImageElement>(
       'img.doc-inline-img--wrap-tight-right',
     )!
-    expect(img.style.marginRight).toMatch(/calc\(100% - 140(\.0)?px\)/)
-    expect(img.style.marginLeft).toBe('20px')
+    expect(img.getAttribute('style')).toMatch(
+      new RegExp(
+        String.raw`margin: 0\.0px max\(100% - calc\(140(\.0)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) calc\(10\.0px \+ clamp\(.*\) 20\.0px`,
+      ),
+    )
     editor.destroy()
   })
 

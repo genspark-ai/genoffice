@@ -138,6 +138,14 @@ export interface AnthropicRequestOptions {
   headers?: Record<string, string> | undefined
   /** stream idle budget override for slow local servers */
   idleTimeoutMs?: number | undefined
+  /** adaptive-thinking record for the families that take an effort (4.6+);
+   * absent = no thinking block, the vendor's own default. The record carries
+   * no level: an `effort` key inside `thinking` is rejected as an invalid
+   * request. */
+  thinking?: { type: 'adaptive' } | undefined
+  /** the level, as the top-level `output_config.effort` that accompanies the
+   * adaptive record; absent = the vendor default */
+  effort?: string | undefined
 }
 
 export async function streamAnthropic(
@@ -192,6 +200,8 @@ async function anthropicTurn(
       body: JSON.stringify({
         model: config.model,
         max_tokens: maxTokens,
+        ...(options.thinking ? { thinking: options.thinking } : {}),
+        ...(options.effort ? { output_config: { effort: options.effort } } : {}),
         system,
         messages: anthropicMessages(messages),
         ...(tools.length > 0
@@ -362,6 +372,8 @@ export async function chatAnthropic(
     body: JSON.stringify({
       model: config.model,
       max_tokens: 8192,
+      ...(options.thinking ? { thinking: options.thinking } : {}),
+      ...(options.effort ? { output_config: { effort: options.effort } } : {}),
       system,
       messages: [{ role: 'user', content: user }],
     }),

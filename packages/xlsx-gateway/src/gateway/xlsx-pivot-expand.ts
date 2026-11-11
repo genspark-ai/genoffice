@@ -6,6 +6,11 @@
 /// which cells belong to the pivot.
 
 import { columnIndex, columnLabel } from '../domain/cell-address'
+import {
+  PIVOT_SHOW_DATA_AS_BASE_FIELD,
+  PIVOT_SHOW_DATA_AS_BASE_ITEM,
+  showDataAsToOoxml,
+} from '../domain/pivot-value-modes'
 import { resolveRelTarget, type MutablePackage } from './xlsx-drawing-add'
 import { buildCacheDefinitionXml, buildPivotTableXml, type PivotAddition } from './xlsx-pivot-add'
 
@@ -399,6 +404,12 @@ const MODELLED_ELEMENTS: Readonly<Record<string, { attrs: string; children: stri
 /// the model does not carry.
 const MODELLED_PIVOT_STYLE = 'PivotStyleLight16'
 
+/// File spellings of the "show values as" modes that reference base fields /
+/// base items; only these keep non-zero dataField@baseField/baseItem.
+const BASE_FIELD_MODE_OOXML: readonly string[] =
+  PIVOT_SHOW_DATA_AS_BASE_FIELD.map(showDataAsToOoxml)
+const BASE_ITEM_MODE_OOXML: readonly string[] = PIVOT_SHOW_DATA_AS_BASE_ITEM.map(showDataAsToOoxml)
+
 /// Every element start tag with its attribute names, without namespace
 /// declarations (which the builder always rewrites verbatim).
 function scanTags(xml: string): ScannedTag[] {
@@ -458,11 +469,22 @@ function assertOnlyModelledContent(xml: string, part: string): void {
         throw unmodelled(`the pivot table style "${style}"`)
       }
     }
+    // dataField@baseField/baseItem are modelled only through a supported
+    // base-field "show values as" mode; stray non-zero values the model would
+    // rewrite to 0 stay fail-closed.
     if (tag.name === 'dataField') {
-      for (const base of ['baseField', 'baseItem']) {
-        const value = attributeValue(tag, base)
-        if (value !== undefined && value !== '0') {
-          throw unmodelled(`a dataField ${base}`)
+      const mode = attributeValue(tag, 'showDataAs')
+      const carriesBase = (spellings: readonly string[]): boolean =>
+        mode !== undefined && spellings.includes(mode)
+      const baseFieldModes = carriesBase(BASE_FIELD_MODE_OOXML)
+      const baseItemModes = carriesBase(BASE_ITEM_MODE_OOXML)
+      for (const [attribute, modelled] of [
+        ['baseField', baseFieldModes],
+        ['baseItem', baseItemModes],
+      ] as const) {
+        const value = attributeValue(tag, attribute)
+        if (value !== undefined && value !== '0' && !modelled) {
+          throw unmodelled(`a dataField ${attribute}`)
         }
       }
     }

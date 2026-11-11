@@ -39,6 +39,7 @@ function renderRibbon(sourceMode: boolean, sourceViewOpen = false) {
         dirty: false,
         onSave: vi.fn(),
         onSaveAs: vi.fn(),
+        onNameWithAi: vi.fn(),
         onFind: vi.fn(),
         autoSave: false,
         onToggleAutoSave: vi.fn(),
@@ -95,8 +96,8 @@ describe('Ribbon source mode', () => {
     // use for it), plus the image-host button, which is not a formatting
     // control and so renders in either mode, plus the paper-theme picker and
     // the backlinks and graph buttons, which are markdown-only views like the
-    // source-view toggle.
-    expect(markdown.iconButtons).toBe(21)
+    // source-view toggle, plus the copy-block-link button beside the link one.
+    expect(markdown.iconButtons).toBe(23)
     // source mode keeps exactly two: the spellcheck toggle (the withhold
     // toggle gates the block editor's marks, which source mode does not carry)
     // and the paper-theme picker, disabled there (source text sits outside
@@ -108,8 +109,9 @@ describe('Ribbon source mode', () => {
 
   it('keeps the actions that still apply to source text', () => {
     const container = renderRibbon(true)
-    // the quick-access row is untouched: save, save-as, undo, redo, find
-    expect(container.querySelectorAll('.ribbon-tabs .qa-btn').length).toBe(5)
+    // the quick-access row is untouched: save, save-as, name-with-ai, undo,
+    // redo, find
+    expect(container.querySelectorAll('.ribbon-tabs .qa-btn').length).toBe(6)
     expect(container.querySelector('.autosave-toggle')).not.toBeNull()
   })
 
@@ -135,17 +137,19 @@ describe('Ribbon source mode', () => {
   })
 
   it('keeps Save As live in both modes and Find live only outside the source view', () => {
-    const quick = (container: HTMLElement) =>
-      Array.from(container.querySelectorAll<HTMLButtonElement>('.ribbon-tabs .qa-btn'))
-    const [, saveAsPlain, , , findPlain] = quick(renderRibbon(false))
-    const [, saveAsSource, , , findSource] = quick(renderRibbon(true))
-    const [, saveAsView, , , findView] = quick(renderRibbon(false, true))
-    expect(saveAsPlain!.disabled).toBe(false)
-    expect(saveAsSource!.disabled).toBe(false)
-    expect(saveAsView!.disabled).toBe(false)
-    expect(findPlain!.disabled).toBe(false)
-    expect(findSource!.disabled).toBe(false)
-    expect(findView!.disabled).toBe(true)
+    // By class, not by position: the quick-access row grew a "Name with AI"
+    // button, and a positional lookup would silently start pointing at the
+    // wrong control the next time one is added.
+    const button = (container: HTMLElement, cls: string) =>
+      container.querySelector<HTMLButtonElement>(`.ribbon-tabs .${cls}`)
+    const saveAs = (container: HTMLElement) => button(container, 'qa-save-as')!
+    const find = (container: HTMLElement) => button(container, 'qa-find')!
+    expect(saveAs(renderRibbon(false)).disabled).toBe(false)
+    expect(saveAs(renderRibbon(true)).disabled).toBe(false)
+    expect(saveAs(renderRibbon(false, true)).disabled).toBe(false)
+    expect(find(renderRibbon(false)).disabled).toBe(false)
+    expect(find(renderRibbon(true)).disabled).toBe(false)
+    expect(find(renderRibbon(false, true)).disabled).toBe(true)
   })
 
   it('shows the formatting controls again for a markdown file', () => {
@@ -154,6 +158,6 @@ describe('Ribbon source mode', () => {
     // 20 here too: the source-view toggle is present here and absent above,
     // the withhold toggle, the image-host button, the paper-theme picker and
     // the backlinks and graph buttons are present in both
-    expect(iconButtons).toBe(21)
+    expect(iconButtons).toBe(23)
   })
 })

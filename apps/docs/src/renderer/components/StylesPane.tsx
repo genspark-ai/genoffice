@@ -1,5 +1,6 @@
 import { useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import type { Editor } from '@tiptap/core'
+import { TextSelection } from '@tiptap/pm/state'
 import {
   pendingHeadingLevel,
   type DocDefaults,
@@ -10,20 +11,28 @@ import { useI18n } from '../i18n/locale'
 import {
   activeStyleKey,
   allStyleEntries,
+  collectAllUsedStyleIds,
   collectUsedStyleIds,
   defaultParagraphStyleId,
   quickStyleEntries,
+  styleInstanceRanges,
   styleKeyOf,
   styleLabel,
   stylePreviewCss,
   type StyleMap,
 } from '../style-gallery'
-import { IconClose } from './icons'
+import { addMultiSelectRanges, clearMultiSelect } from '../editor/multi-select'
+import { IconClearFormat, IconClose } from './icons'
 import type { RibbonFormatState } from './ribbon-format-state'
-import { activeParaAttrs, applyGalleryStyle, applyParagraphStyleId } from './ribbon-tabs'
+import {
+  activeParaAttrs,
+  applyGalleryStyle,
+  applyParagraphStyleId,
+  clearAllFormatting,
+} from './ribbon-tabs'
 import { StyleDialog, formValuesOf, upsertFromForm, type StyleFormValues } from './StyleDialog'
 
-type Show = 'recommended' | 'all'
+type Show = 'recommended' | 'all' | 'inUse'
 
 const FORMAT_FIELDS = new Set<keyof StyleFormValues>([
   'font',
@@ -93,7 +102,11 @@ interface Props {
   onClose: () => void
 }
 
-/** Word for Mac's Styles pane: every style as a card, search, Recommended / All, right-click to modify */
+/**
+ * Word for Mac's Styles pane: the current style, New Style / Select All, the
+ * style list (Clear Formatting first) filtered by Recommended / All / In use,
+ * right-click to modify, update from the selection or select every instance.
+ */
 export function StylesPane({
   editor,
   styles,
@@ -115,10 +128,13 @@ export function StylesPane({
   } | null>(null)
   const map = useMemo<StyleMap>(() => styles ?? new Map(), [styles])
   const used = useMemo(() => collectUsedStyleIds(fs.doc, map), [fs.doc, map])
-  const entries = useMemo(
-    () => (show === 'all' ? allStyleEntries(map) : quickStyleEntries(map, used)),
-    [map, show, used],
-  )
+  const entries = useMemo(() => {
+    if (show === 'recommended') return quickStyleEntries(map, used)
+    const all = allStyleEntries(map)
+    if (show === 'all') return all
+    const inUse = collectAllUsedStyleIds(fs.doc, map)
+    return all.filter((s) => inUse.has(s.styleId))
+  }, [map, show, used, fs.doc])
   const needle = query.trim().toLowerCase()
   const shown = needle
     ? entries.filter(
@@ -129,6 +145,36 @@ export function StylesPane({
       )
     : entries
   const active = activeStyleKey(fs, styles)
+  const current = useMemo(
+    () => [...map.values()].find((s) => styleKeyOf(s) === active) ?? null,
+    [map, active],
+  )
+  const kindGlyph = (info: StyleInfo) => (info.type === 'character' ? 'a' : '¶')
+
+  /** Word's Select All: the live selection takes the first instance, the rest join as added ranges */
+  const selectInstances = (info: StyleInfo) => {
+    const ranges = fs.sub ? [] : styleInstanceRanges(editor.state.doc, info, map)
+    if (ranges.length === 0) {
+      onNotice(t('appStyleNoInstances', { name: styleLabel(info, t) }))
+      return
+    }
+    const { view } = editor
+    clearMultiSelect(view)
+    view.dispatch(
+      view.state.tr.setSelection(
+        TextSelection.create(view.state.doc, ranges[0].from, ranges[0].to),
+      ),
+    )
+    addMultiSelectRanges(view, ranges.slice(1))
+    view.focus()
+    onNotice(
+      t('appStyleInstancesSelected', { count: String(ranges.length), name: styleLabel(info, t) }),
+    )
+  }
+  const instanceCount = (info: StyleInfo) =>
+    fs.sub ? 0 : styleInstanceRanges(editor.state.doc, info, map).length
+
+  const clearFormatting = () => clearAllFormatting(editor, fs.sub, map)
 
   const openMenu = (e: ReactMouseEvent, info: StyleInfo) => {
     e.preventDefault()
@@ -182,6 +228,40 @@ export function StylesPane({
           <IconClose size={14} />
         </button>
       </div>
+      <div className="styles-pane-section">{t('ribbonStylesCurrent')}</div>
+      <div className="style-card style-pane-row styles-pane-current" aria-live="polite">
+        {current ? (
+          <>
+            <span className="style-card-preview" style={stylePreviewCss(current, docDefaults)}>
+              {styleLabel(current, t)}
+            </span>
+            <span className="style-pane-kind" aria-hidden="true">
+              {kindGlyph(current)}
+            </span>
+          </>
+        ) : (
+          <span className="style-card-preview">{active.slice(active.indexOf(':') + 1)}</span>
+        )}
+      </div>
+      <div className="styles-pane-actions">
+        <button
+          className="styles-pane-new"
+          disabled={!canEdit || !!fs.sub}
+          onClick={() =>
+            setDialog({ target: null, initial: selectionFormValues(editor, fs, map, 'paragraph') })
+          }
+        >
+          {t('ribbonStyleNew')}
+        </button>
+        <button
+          className="styles-pane-new"
+          disabled={!canEdit || !!fs.sub || !current}
+          onClick={() => current && selectInstances(current)}
+        >
+          {t('ribbonSelectAll')}
+        </button>
+      </div>
+      <div className="styles-pane-section">{t('ribbonStylesApply')}</div>
       <input
         className="styles-pane-search"
         type="search"
@@ -191,6 +271,21 @@ export function StylesPane({
         onChange={(e) => setQuery(e.target.value)}
       />
       <div className="styles-pane-list" role="listbox" aria-label={t('appStylesTitle')}>
+        {!needle && (
+          <button
+            role="option"
+            aria-selected={false}
+            className="style-card style-pane-row styles-pane-clear"
+            disabled={!canEdit}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={clearFormatting}
+          >
+            <span className="style-card-preview">{t('ribbonClearFormatting')}</span>
+            <span className="style-pane-kind" aria-hidden="true">
+              <IconClearFormat size={14} />
+            </span>
+          </button>
+        )}
         {shown.map((info) => {
           const key = styleKeyOf(info)
           const label = styleLabel(info, t)
@@ -210,7 +305,7 @@ export function StylesPane({
                 {label}
               </span>
               <span className="style-pane-kind" aria-hidden="true">
-                {info.type === 'character' ? 'a' : '¶'}
+                {kindGlyph(info)}
               </span>
             </button>
           )
@@ -219,21 +314,13 @@ export function StylesPane({
       </div>
       <div className="styles-pane-foot">
         <label>
-          {t('ribbonStylesShow')}
+          {t('ribbonStylesList')}
           <select value={show} onChange={(e) => setShow(e.target.value as Show)}>
             <option value="recommended">{t('ribbonStylesShowRecommended')}</option>
             <option value="all">{t('ribbonStylesShowAll')}</option>
+            <option value="inUse">{t('ribbonStylesShowInUse')}</option>
           </select>
         </label>
-        <button
-          className="styles-pane-new"
-          disabled={!canEdit || !!fs.sub}
-          onClick={() =>
-            setDialog({ target: null, initial: selectionFormValues(editor, fs, map, 'paragraph') })
-          }
-        >
-          {t('ribbonStyleNew')}
-        </button>
       </div>
       {menu && (
         <div
@@ -267,6 +354,19 @@ export function StylesPane({
             >
               <span className="ctx-label">{t('ribbonStyleUpdateFromSelection')}</span>
             </button>
+            <button
+              className="ctx-item"
+              disabled={!!fs.sub}
+              onClick={() => {
+                setMenu(null)
+                selectInstances(menu.info)
+              }}
+            >
+              <span className="ctx-label">
+                {t('ribbonStyleSelectAllInstances', { count: String(instanceCount(menu.info)) })}
+              </span>
+            </button>
+            <div className="ctx-sep" />
             <button
               className="ctx-item"
               onClick={() => {

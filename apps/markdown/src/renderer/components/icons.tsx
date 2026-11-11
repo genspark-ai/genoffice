@@ -221,6 +221,14 @@ export function IconPalette(props: IconProps) {
   )
 }
 
+/** A tag: the # glyph */
+export function IconTag(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M10 4v9a3 3 0 0 0 6 0V8a5 5 0 0 0-10 0v6" strokeLinecap="round" />
+    </Svg>
+  )
+}
 export function IconBacklinks(props: IconProps) {
   return (
     <Svg {...props}>
@@ -238,6 +246,16 @@ export function IconGraph(props: IconProps) {
       <circle cx="3" cy="12.2" r="1.9" />
       <circle cx="13" cy="12.2" r="1.9" />
       <path d="M7.1 5.1L3.9 10.4M8.9 5.1l3.2 5.3M4.9 12.2h6.2" />
+    </Svg>
+  )
+}
+
+/** A block with a link on it: text lines and a chain link */
+export function IconBlockLink(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.5 4h8M2.5 7.5h5.5M2.5 11h4" />
+      <path d="M9.3 12.6h-.8a2.1 2.1 0 0 1 0-4.2h.8M12.2 8.4h.8a2.1 2.1 0 0 1 0 4.2h-.8M9.6 10.5h3.1" />
     </Svg>
   )
 }

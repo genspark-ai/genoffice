@@ -66,6 +66,7 @@ export const he = {
   openExternal: 'הקישור נפתח בדפדפן',
   save: 'שמירה (⌘S)',
   saveAs: 'שמירה בשם…',
+  aiNameFile: 'מתן שם באמצעות AI…',
   ribbonCollapse: 'כווץ את רצועת הכלים',
   ribbonExpand: 'הרחב את רצועת הכלים',
   ribbonGroupInsert: 'הוספה',

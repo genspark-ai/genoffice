@@ -101,7 +101,8 @@ async function bundle() {
     jsx: 'automatic',
     // jsdom reads its own stylesheet from disk and cannot be inlined; it ships beside the bundle
     // mermaid is only reached by the markdown editor's lazy diagram renderer, which never runs headless
-    external: ['electron', 'jsdom', 'mermaid'],
+    // rhwp reads its .wasm beside its own module (packages/hwp2docx/src/hwp.ts)
+    external: ['electron', 'jsdom', 'mermaid', '@rhwp/core'],
     loader: {
       '.css': 'empty',
       '.ttf': 'empty',

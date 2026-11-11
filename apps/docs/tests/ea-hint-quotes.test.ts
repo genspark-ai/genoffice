@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { eaHintQuoteRanges } from '../src/renderer/editor/decoration-extensions'
+import { eaHintQuoteRanges } from '../src/renderer/text-layout/inline-segments'
 
 const hinted = '<w:rPr><w:rFonts w:hint="eastAsia"/><w:color w:val="000000"/></w:rPr>'
 

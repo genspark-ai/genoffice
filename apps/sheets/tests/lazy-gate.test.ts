@@ -243,7 +243,7 @@ describe('lazyGateError', () => {
     expect(lazyGateError(state, { op: 'set_filter', sheetId: 'new1', range: 'A1:B5' })).toBeNull()
   })
 
-  it('blocks filter edits on table-owned filters', () => {
+  it('allows filter edits on table-owned filters — the save routes them into the table part', () => {
     const state = lazyState({
       filterOrigins: new Map([
         [
@@ -259,7 +259,7 @@ describe('lazyGateError', () => {
         column: 'A',
         values: ['x'],
       }),
-    ).toContain('table')
+    ).toBeNull()
   })
 
   it('blocks set_data_validation until the sheet is indexed', () => {
@@ -519,6 +519,67 @@ describe('proposeOperations: gate rejection (lazy workbook)', () => {
     })
     expect(outcome.ok).toBe(false)
     if (!outcome.ok) expect(outcome.error).toContain('numeric column')
+  })
+
+  it('rejects add_chart columns naming a column outside the dataRange', () => {
+    const outcome = proposeOperations(
+      lazyContext(lazyState(), [['Item', 'Units', 'Price', 'Revenue']]),
+      [
+        {
+          op: 'add_chart',
+          sheetId: 'sh1',
+          chartType: 'column',
+          dataRange: 'A1:D4',
+          columns: ['A', 'E'],
+        },
+      ],
+      'test',
+    )
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.error).toContain('E lies outside the dataRange')
+  })
+
+  it('refuses a named columns series column with no numbers', () => {
+    const outcome = proposeOperations(
+      lazyContext(lazyState(), [
+        ['Item', 'Units'],
+        ['Widgets', 'ten'],
+        ['Gadgets', 'four'],
+      ]),
+      [
+        {
+          op: 'add_chart',
+          sheetId: 'sh1',
+          chartType: 'column',
+          dataRange: 'A1:B3',
+          columns: ['A', 'B'],
+        },
+      ],
+      'test',
+    )
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.error).toContain('has no numbers to chart')
+  })
+
+  it('accepts add_chart columns over non-adjacent numeric columns', () => {
+    const outcome = proposeOperations(
+      lazyContext(lazyState(), [
+        ['Item', 'Units', 'Price', 'Revenue'],
+        ['Widgets', 10, 2.5, 25],
+        ['Gadgets', 4, 9, 36],
+      ]),
+      [
+        {
+          op: 'add_chart',
+          sheetId: 'sh1',
+          chartType: 'column',
+          dataRange: 'A1:D3',
+          columns: ['A', 'D'],
+        },
+      ],
+      'test',
+    )
+    expect(outcome.ok).toBe(true)
   })
 })
 

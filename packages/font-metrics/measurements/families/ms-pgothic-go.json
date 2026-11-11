@@ -1,0 +1,29 @@
+{
+  "family": "MS PGothic GO",
+  "source": {
+    "kind": "probe",
+    "date": "2026-09-03",
+    "probe": "advances from Word msgothic.ttc confirmed by a Word probe: Arial-class Latin at 0.9137x (space 1.0967x)"
+  },
+  "faces": [
+    {
+      "src": "url('./LiberationSans-Regular.ttf') format('truetype')",
+      "sizeAdjust": 91.37,
+      "unicodeRange": "U+0021-007E, U+00A1-00A6, U+00A8-00AF, U+00B2-00D6, U+00D8-00F6, U+00F8-00FF"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf') format('truetype')",
+      "sizeAdjust": 109.67,
+      "unicodeRange": "U+0020, U+00A0"
+    },
+    {
+      "src": "url('./NotoSansCJKsc-Regular-subset.woff2') format('woff2')",
+      "unicodeRange": "U+00A7, U+00B1, U+00D7, U+00F7"
+    },
+    {
+      "src": "url('./LiberationMono-Regular.ttf') format('truetype')",
+      "sizeAdjust": 166.667,
+      "unicodeRange": "U+00B0"
+    }
+  ]
+}

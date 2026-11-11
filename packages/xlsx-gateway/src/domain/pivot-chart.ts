@@ -9,10 +9,10 @@
 ///  - Cell references are only written when the data rows are contiguous in the
 ///    output area, otherwise we fall back to literal data (multi-level layouts
 ///    with interleaved subtotal rows cannot be expressed as one range reference);
-///  - TODO(OOXML): wiring chartSpace <c:pivotSource> + pivotFmts (so Excel
-///    recognizes the chart as a PivotChart and shows field buttons) is heavy;
-///    for now we ship a regular chart + output-area references, which still
-///    follows refreshes when opened in Excel.
+///  - Excel recognition as a PivotChart comes from chartSpace <c:pivotSource>
+///    (see resolveChartPivotSource in gateway/xlsx-drawing-add), which the
+///    renderer binds via the visual's pivotTablePath; this module only shapes
+///    the plotted data, which Excel's own PivotCharts also cache as plain c:ser.
 
 import { columnLabel } from './cell-address'
 import type { PivotDefinition, PivotLayoutLine } from '../gateway/xlsx-pivot'

@@ -11,6 +11,7 @@
  *   pagination-lines     DOM line-box sampling, line cuts and anchors
  */
 
+export * from './pagination-cuts'
 export * from './pagination-hf'
 export * from './pagination-lines'
 export * from './pagination-measure'

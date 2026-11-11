@@ -35,7 +35,7 @@ function partitionIr(ir) {
 // Anything else (short forms, color names, empty, '#'-prefixed) must not
 // become a black full-page float: callers skip the float and w:background.
 export function parsePageBgColor(color) {
-  return typeof color === 'string' && /^[0-9a-fA-F]{6}$/.test(color) ? color : null
+  return typeof color === 'string' && /^[0-9a-fA-F]{6}$/.test(color.trim()) ? color.trim() : null
 }
 
 // Word ignores <w:background> when printing / exporting PDF, so a plain

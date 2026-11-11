@@ -1,28 +1,16 @@
 import { test, expect } from '@playwright/test'
-import { launchShell, closeAndSaveVideo } from './helpers'
+import { launchShell, closeAndSaveVideo, freeMcpPort } from './helpers'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PDFDocument, StandardFonts } from 'pdf-lib'
-import http, { createServer } from 'node:http'
+import http from 'node:http'
 
 /**
  * MCP read_pdf against the real built app: proves the bundled main process
  * loads the pdfium wasm and extracts text over the actual HTTP transport.
  * Session-free by design — no tabs open, nothing to watch, just a read.
  */
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.on('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      const port = typeof address === 'object' && address ? address.port : 0
-      server.close(() => resolve(port))
-    })
-  })
-}
 
 function postMcp(
   port: number,
@@ -54,7 +42,7 @@ function postMcp(
 test.describe('MCP read_pdf', () => {
   test('extracts pdf text through the real app server', async () => {
     test.setTimeout(60_000)
-    const port = await freePort()
+    const port = await freeMcpPort()
     const outDir = await mkdtemp(join(tmpdir(), 'genoffice-mcp-pdf-'))
     const pdfPath = join(outDir, 'handout.pdf')
     const doc = await PDFDocument.create()

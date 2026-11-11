@@ -7,12 +7,13 @@
 
 ## Creating a pivot table (add_pivot)
 
-`{op:"add_pivot", sheetId, sourceRange:"A1:F1000", targetCell:"H1", targetSheetId?, rowFields, columnField?, pageFields?, values:[{field, agg, showDataAs?, name?}], name?}`
+`{op:"add_pivot", sheetId, sourceRange:"A1:F1000", targetCell:"H1", targetSheetId?, rowFields, columnField?, pageFields?, values:[{field, agg, showDataAs?, baseField?, baseItem?, name?}], name?}`
 
 - **The first row of sourceRange must be headers** (non-empty and mutually unique); rowFields/columnField/values.field all use the header text.
 - rowFields: row dimensions, 1–8 (string or array, **outermost first**); with multiple levels, rows group hierarchically and per-level subtotal rows are added automatically. columnField: column dimension (optional, at most 1; **when columnField is given, values may only have 1 entry**).
-- values: `{field:"Amount", agg:"sum"|"count"|"average"|"max"|"min"|"product"|"countNums", showDataAs?, name?}`, 1–8 entries; a values field cannot also be a row/column/page dimension; `name` overrides the "Sum of Amount" caption.
-- showDataAs (value display mode, optional): `"percentOfTotal"` (% of grand total) | `"percentOfRow"` (% of row total) | `"percentOfCol"` (% of column total) | `"percentOfParentRow"` | `"percentOfParentCol"` (% of the next level up) | `"index"`; percent modes display with the 0.00% format by default.
+- values: `{field:"Amount", agg:"sum"|"count"|"average"|"max"|"min"|"product"|"countNums", showDataAs?, baseField?, baseItem?, name?}`, 1–8 entries; a values field cannot also be a row/column/page dimension; `name` overrides the "Sum of Amount" caption.
+- showDataAs (value display mode, optional): `"percentOfTotal"` (% of grand total) | `"percentOfRow"` | `"percentOfCol"` (% of row/column total) | `"percentOfParentRow"` | `"percentOfParentCol"` (% of the next level up) | "percentOfParent" (% of the base field's parent-level total; `baseField` names a row/column field) | `"difference"` (value − base item; blank on the base item and totals) | `"percentDiff"` ((value−base)/base) | `"percentOf"` (value/base) | "runTotal" (running total along the base field's items, restarting per outer member / other-axis group) | `"percentOfRunningTotal"` | `"rankAscending"` / `"rankDescending"` (RANK.EQ-style, ties share the smaller rank) | `"index"`; percent modes display with the 0.00% format by default.
+- baseField/baseItem (needed by the base-field showDataAs modes): `baseField` must be a row/column dimension header (e.g. a rowFields entry); `baseItem` is a member label of that field, required by difference / percentDiff / percentOf.
 - pageFields (report filters, optional, ≤4): header names or `{field, item}`; they render as "Field | (All)" rows above the table (plus a blank row) and a chosen `item` restricts the whole report to matching source rows.
 - targetCell: top-left of the output region, **must not overlap the source region** (put it in blank space right of the source, or use targetSheetId to place it on a summary sheet).
 - How it takes effect: on apply, aggregated results (including subtotal and Grand Total rows/columns) are written directly to the target cells and are immediately visible; on save, native pivot parts are written (refreshOnLoad), so **the file opens in Excel as a live interactive pivot table**.

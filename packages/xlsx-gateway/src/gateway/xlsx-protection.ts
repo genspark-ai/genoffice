@@ -257,6 +257,11 @@ export function applyWorkbookProtection(workbookXml: string, lockStructure: bool
 export interface ProtectedRangeState {
   readonly name: string
   readonly sqref: string
+  /// Optional per-range password (Excel's own legacy/spi hash), already hashed
+  /// by the caller via hashSheetPassword. Files whose existing ranges carry a
+  /// password still fail closed below — the read side does not return hashes,
+  /// so a rewrite cannot preserve them.
+  readonly password?: SheetPasswordHash | null | undefined
 }
 
 const PROTECTED_RANGES_PATTERN =
@@ -292,10 +297,14 @@ export function applyProtectedRanges(
     : worksheetXml
   if (ranges.length === 0) return stripped
   const body = ranges
-    .map(
-      (range) =>
-        `<protectedRange sqref="${escapeAttr(range.sqref)}" name="${escapeAttr(range.name)}"/>`,
-    )
+    .map((range) => {
+      const passwordAttrs = range.password
+        ? 'legacy' in range.password
+          ? ` password="${range.password.legacy}"`
+          : ` algorithmName="${escapeAttr(range.password.algorithmName)}" hashValue="${escapeAttr(range.password.hashValue)}" saltValue="${escapeAttr(range.password.saltValue)}" spinCount="${range.password.spinCount}"`
+        : ''
+      return `<protectedRange sqref="${escapeAttr(range.sqref)}" name="${escapeAttr(range.name)}"${passwordAttrs}/>`
+    })
     .join('')
   const element = `<protectedRanges>${body}</protectedRanges>`
   // Schema order: protectedRanges follows sheetProtection (or sheetCalcPr/

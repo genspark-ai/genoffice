@@ -1,6 +1,7 @@
 /**
  * Word's Simple Markup review view: a document carrying tracked changes opens
- * with final text (deletions hidden, insertions plain), a red changed-line bar
+ * in All Markup (balloons with the author line); switched to Simple Markup it
+ * shows final text (deletions hidden, insertions plain), a red changed-line bar
  * in the left margin for every changed line and a balloon glyph per comment in
  * the right margin. Clicking a bar switches to All Markup at that change;
  * clicking a glyph focuses the thread in the Comments panel.
@@ -78,7 +79,7 @@ test.describe('docs Simple Markup view', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  test('opens in Simple Markup with change bars and balloons; a bar click shows All Markup', async () => {
+  test('opens in All Markup; Simple Markup shows change bars and balloons; a bar click shows All Markup', async () => {
     test.setTimeout(180_000)
     const launched = await launchShell({
       onboardingSeen: true,
@@ -90,8 +91,21 @@ test.describe('docs Simple Markup view', () => {
       const page = await waitForPageWithUrl(app, '://docs/')
       await page.locator('.doc-page p', { hasText: 'Alpha opens' }).first().waitFor()
 
-      // default view for a document with w:ins / w:del
+      // default view: All Markup; Word's default balloon mode keeps the deletion
+      // inline, "Show Revisions in Balloons" moves it to an authored balloon
       const root = page.locator('.app')
+      await expect(root).not.toHaveClass(/rev-display-/)
+      await expect(page.locator('.doc-del', { hasText: 'removed words' })).toBeVisible()
+      await page.locator('.ribbon-tab', { hasText: /^Review$/ }).click()
+      const markup = page.getByRole('button', { name: 'Markup', exact: true })
+      await markup.click()
+      await page.locator('.layout-menu button', { hasText: 'Show Revisions in Balloons' }).click()
+      const delBubble = page.locator('.rev-bubble-del', { hasText: 'removed words' })
+      await expect(delBubble).toBeVisible({ timeout: 20_000 })
+      await expect(delBubble.locator('.rev-bubble-author')).toHaveText('Ann')
+
+      await markup.click()
+      await page.locator('.layout-menu button', { hasText: 'Simple Markup' }).click()
       await expect(root).toHaveClass(/rev-display-simple/)
       const bars = page.locator('.change-bar')
       await expect(bars.first()).toBeVisible({ timeout: 20_000 })
@@ -137,32 +151,57 @@ test.describe('docs Simple Markup view', () => {
         .toBe('ok')
 
       // Markup menu in Word's order with the current view ticked
-      await page.locator('.ribbon-tab', { hasText: /^Review$/ }).click()
-      const markup = page.getByRole('button', { name: 'Markup', exact: true })
       await markup.click()
       await expect(page.locator('.layout-menu button')).toHaveText([
         'Simple Markup ✓',
         'All Markup',
         'No Markup',
         'Original',
+        'Insertions and Deletions ✓',
+        'Formatting ✓',
+        'Ann ✓',
+        'Show Revisions in Balloons ✓',
+        'Show All Revisions Inline',
+        'Show Only Comments and Formatting in Balloons',
+        'Track Changes Options…',
       ])
       await markup.click()
       await expect(page.locator('.layout-menu')).toHaveCount(0)
 
-      // balloon glyph -> Comments panel focused on the thread
+      // balloon glyph -> the thread pops up beside the page (no card host in Simple Markup);
+      // the glyph fills while selected, Escape dismisses the popup
       await balloon.click()
-      await expect(page.locator('.comments-pane')).toBeVisible()
-      await expect(page.locator('.comments-pane [data-comment-id="0"] .comment-card')).toHaveClass(
-        /active/,
-      )
+      const popup = page.locator('.comment-bubble.comment-popup')
+      await expect(popup).toBeVisible()
+      await expect(popup).toContainText('Ann')
+      await expect(balloon).toHaveClass(/\bon\b/)
+      await page.keyboard.press('Escape')
+      await expect(popup).toHaveCount(0)
+      await expect(page.locator('.comments-pane')).toHaveCount(0)
 
       // changed-line bar of the deletion -> All Markup: the deletion is back as
       // a "Deleted:" margin balloon (print layout) and comments regain their bubbles
       await bars.nth(1).click()
       await expect(root).not.toHaveClass(/rev-display-/)
       await expect(page.locator('.rev-bubble-del', { hasText: 'removed words' })).toBeVisible()
-      await expect(page.locator('.comment-balloon')).toHaveCount(0)
-      await expect(page.locator('.comment-bubble:not(.rev-bubble)')).toHaveCount(1)
+      // Show Comments (Contextual, on by default) puts the card back in its own column
+      // right of the markup strip; the anchor glyph stays in the page margin (Word)
+      await expect(page.locator('.comment-balloon')).toHaveCount(1)
+      await expect(page.locator('.markup-strip').first()).toBeVisible()
+      const card = page.locator('.comment-bubble:not(.rev-bubble)')
+      await expect(card).toHaveCount(1)
+      // selecting the card shows Word's Reply box and head actions; a reply lands as a thread entry
+      await expect(card.locator('.comment-reply-input')).toBeHidden()
+      await card.click()
+      await expect(card).toHaveClass(/\bactive\b/)
+      const replyBox = card.locator('.comment-reply-input')
+      await expect(replyBox).toBeVisible()
+      await expect(card.locator('.comment-resolve')).toBeVisible()
+      await replyBox.fill('Done, thanks')
+      await replyBox.press('Enter')
+      await expect(card.locator('.comment-reply .comment-text')).toHaveText('Done, thanks')
+      await page.screenshot({ path: 'test-results/margin-card-reply.png' })
+      await expect(replyBox).toHaveValue('')
 
       // back in Simple Markup, Next lands on the visible insertion and stays;
       // the following Next reaches the hidden deletion and falls back to All Markup

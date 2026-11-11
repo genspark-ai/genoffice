@@ -91,6 +91,8 @@ describe('runsToInline image runs', () => {
           offsetYEmu: null,
           relV: null,
           relH: null,
+          posH: null,
+          posV: null,
           wrapDistTopEmu: null,
           wrapDistBottomEmu: null,
           wrapDistLeftEmu: null,
@@ -100,6 +102,7 @@ describe('runsToInline image runs', () => {
           rotDeg: null,
           flipH: false,
           flipV: false,
+          layers: null,
           rule: null,
           rawRPr: null,
         },
@@ -138,6 +141,8 @@ describe('runsToInline image runs', () => {
           offsetYEmu: null,
           relV: null,
           relH: null,
+          posH: null,
+          posV: null,
           wrapDistTopEmu: null,
           wrapDistBottomEmu: null,
           wrapDistLeftEmu: null,
@@ -147,6 +152,7 @@ describe('runsToInline image runs', () => {
           rotDeg: null,
           flipH: false,
           flipV: false,
+          layers: null,
           rule: null,
           rawRPr: null,
         },
@@ -183,6 +189,25 @@ describe('paragraph format signatures', () => {
     const ltr = signatureOfBlock(base)
     const rtl = signatureOfBlock({ ...base, format: { bidi: true } })
     expect(ltr).not.toBe(rtl)
+  })
+
+  it('keeps a bare <w:br/> run between formatted runs its own run (genoffice#524)', () => {
+    const runs = [
+      { text: 'First line', bold: true },
+      { text: '\n' },
+      { text: 'Second line', bold: true },
+    ]
+    const roundtripped = inlineToRuns(runsToInline(runs))
+    expect(roundtripped).toEqual(runs)
+    expect(signatureOfGenerated({ type: 'paragraph', runs: roundtripped })).toBe(
+      signatureOfBlock({ ...base, runs }),
+    )
+  })
+
+  it('still folds a bare break into a plain neighbour', () => {
+    expect(inlineToRuns(runsToInline([{ text: 'a' }, { text: '\n' }, { text: 'b' }]))).toEqual([
+      { text: 'a\nb' },
+    ])
   })
 })
 
@@ -366,6 +391,52 @@ describe('oversize floating tables (w:tblpPr) lose the float', () => {
     const node = tableModelToPmNode(model, null, null, null, 10390, 10390, 11910)
     expect(node.attrs!.tblFloat).toBeNull()
     expect(node.attrs!.tblFloatSuppressed).toBe(true)
+  })
+
+  it('a narrow-room text-anchored float stays wrapped when nothing beside it has words', () => {
+    const model: TableModel = {
+      rows: [row],
+      colWidthsTwips: [9074],
+      floatSide: 'left',
+      floatPos: { xTwips: 0, yTwips: -27, horzAnchor: 'margin', vertAnchor: 'text' },
+    }
+    const para = (text: string): Block => ({
+      id: 'p',
+      type: 'paragraph',
+      docxIndex: 1,
+      originalXml: '<w:p/>',
+      runs: [{ text }],
+    })
+    const picture = (imageWidthPx: number): Block => ({
+      id: 'i',
+      type: 'image',
+      docxIndex: 2,
+      originalXml: '<w:p/>',
+      imageWidthPx,
+    })
+    const nextTable: Block = { id: 't', type: 'table', docxIndex: 3, originalXml: '<w:tbl/>' }
+    const floating: Block = {
+      ...nextTable,
+      table: {
+        rows: [row],
+        floatSide: 'left',
+        floatPos: { xTwips: 0, yTwips: 7840, vertAnchor: 'page' },
+      },
+    }
+    const convert = (followers: Block[]) =>
+      tableModelToPmNode(model, null, null, null, 10390, 10390, 11910, false, undefined, followers)
+    // blank lines and a 15px icon fit the 1316-twip room up to the next table
+    expect(convert([para(''), para(' '), picture(15), nextTable]).attrs!.tblFloat).toBe('left')
+    // a floating table in between is no flow stop (the icon still wraps)
+    expect(convert([para(''), floating, para(''), picture(15), nextTable]).attrs!.tblFloat).toBe(
+      'left',
+    )
+    // a word or a wide picture beside it flows the table inline as before,
+    // and so do blank lines alone (nothing visible sits beside the float)
+    expect(convert([para(''), para('text'), picture(15), nextTable]).attrs!.tblFloat).toBeNull()
+    expect(convert([picture(200), nextTable]).attrs!.tblFloat).toBeNull()
+    expect(convert([para(''), para(' '), nextTable]).attrs!.tblFloat).toBeNull()
+    expect(convert([]).attrs!.tblFloat).toBeNull()
   })
 
   it('a text-anchored float with at least 1in beside it keeps floating', () => {

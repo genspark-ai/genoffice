@@ -94,7 +94,14 @@ pub(crate) fn convert_to_xlsx(source: &Path, target: &Path) -> Result<ConvertRes
         ));
     }
 
-    write_package(target, &sheets, &defined_names(root), &sheet_xmls)?;
+    write_package(
+        target,
+        &sheets,
+        &defined_names(root),
+        &sheet_xmls,
+        &[],
+        crate::xlsx_package::STYLES_XML,
+    )?;
     Ok(ConvertResult {
         sheets: sheets.len(),
         cells,

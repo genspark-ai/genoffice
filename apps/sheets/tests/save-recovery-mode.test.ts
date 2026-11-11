@@ -26,17 +26,20 @@ function ctxWith(opts: { dirty: boolean; needsSaveAs?: boolean; restoredFromReco
   messages: string[]
   journal: ReturnType<typeof createEditJournal>
   overlay: Map<string, Map<string, { v?: string | number | boolean | null }>>
+  externalOverlay: Map<string, Map<string, { v?: string | number | boolean | null }>>
   incompleteRuns: Set<string>
 } {
   const journal = createEditJournal()
   if (opts.dirty) recordSetRangeValues(journal, 'sheet-1', { 0: { 0: { v: 'edited' } } })
   const messages: string[] = []
   const overlay = new Map<string, Map<string, { v?: string | number | boolean | null }>>()
+  const externalOverlay = new Map<string, Map<string, { v?: string | number | boolean | null }>>()
   const incompleteRuns = new Set<string>()
   return {
     messages,
     journal,
     overlay,
+    externalOverlay,
     incompleteRuns,
     ctx: {
       univerRef: { current: null },
@@ -50,6 +53,7 @@ function ctxWith(opts: { dirty: boolean; needsSaveAs?: boolean; restoredFromReco
             failed: false,
             formulaCells: new Map(),
             overlay,
+            externalOverlay,
             incompleteRuns,
           },
           file: {
@@ -228,6 +232,43 @@ describe('handleSave formula cache overlay', () => {
       { sheetId: 'sheet-1', row: 0, column: 1, value: '#N/A' },
       { sheetId: 'sheet-1', row: 0, column: 2, value: 7 },
     ])
+  })
+})
+
+describe('handleSave external-link overlay', () => {
+  it("a save whose only pending work is the panel's overlay still writes it", async () => {
+    const { ctx, externalOverlay } = ctxWith({ dirty: false })
+    // no journal edits: the values came from the links panel's sidecar update
+    externalOverlay.set(
+      'sheet-1',
+      new Map([
+        ['0:0', { v: 20 }],
+        ['1:0', { v: true }],
+      ]),
+    )
+    await handleSave(ctx, 'save')
+    expect(saveWorkbookEdits).toHaveBeenCalledTimes(1)
+    const payload = saveWorkbookEdits.mock.calls[0]![0] as {
+      formulaValues: { sheetId: string; row: number; column: number; value: unknown }[]
+    }
+    expect(payload.formulaValues).toContainEqual({
+      sheetId: 'sheet-1',
+      row: 0,
+      column: 0,
+      value: 20,
+    })
+    expect(payload.formulaValues).toContainEqual({
+      sheetId: 'sheet-1',
+      row: 1,
+      column: 0,
+      value: true,
+    })
+  })
+
+  it('a clean session with no overlay reports no-edits instead of saving', async () => {
+    const { ctx } = ctxWith({ dirty: false })
+    await expect(handleSave(ctx, 'save')).resolves.toMatchObject({ ok: false, reason: 'no-edits' })
+    expect(saveWorkbookEdits).not.toHaveBeenCalled()
   })
 })
 

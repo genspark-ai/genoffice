@@ -100,6 +100,11 @@ export const id = {
     'Lacak perubahan aktif: perubahan konten AI ditandai sebagai revisi (sisipan digarisbawahi, penghapusan dicoret); terima atau tolak di Tinjau',
   aiTrackOffTitle:
     'Lacak perubahan nonaktif: perubahan AI langsung diterapkan (masih dapat dikembalikan melalui snapshot versi)',
+  aiRevisionBarTitle: 'Revisi',
+  aiRevisionCount: '{count} perubahan tertunda',
+  aiRevisionRejectAll: 'Tolak semua',
+  aiRevisionAcceptAll: 'Terima semua',
+  aiRevisionPara: 'Paragraf {n}',
   aiTurnLimit:
     '(Batas putaran pemanggilan alat untuk permintaan ini tercapai; jawaban di atas berdasarkan langkah yang telah selesai dan mungkin tidak lengkap.)',
   aiStopped: '(Dihentikan)',
@@ -196,7 +201,12 @@ export const id = {
   aiMindMapAskPrompt: 'Jelaskan tentang "{label}" dalam dokumen ini',
   aiMindMapJump: 'Lompat ke bagian yang dikutip',
   aiMindMapExport: 'Ekspor PNG',
+  aiMindMapExportSvg: 'Ekspor SVG',
+  aiMindMapInsert: 'Sisipkan ke dokumen',
   aiMindMapReset: 'Setel ulang tampilan',
   aiMindMapExpand: 'Bentangkan cabang',
   aiMindMapCollapse: 'Lipat cabang',
+  aiMindMapToggleLayout: 'Ganti tata letak',
+  aiMindMapLayoutTopDown: 'Beralih ke tata letak atas ke bawah',
+  aiMindMapLayoutLeftRight: 'Beralih ke tata letak kiri ke kanan',
 } satisfies Record<keyof typeof zh, string>

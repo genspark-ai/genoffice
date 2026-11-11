@@ -1,24 +1,30 @@
 # Ligar um agente de programação
 
-O GenOffice fala o Model Context Protocol, por isso um agente de programação consegue ler, escrever e renderizar os seus documentos através dos mesmos motores que a aplicação usa. O agente não está a adivinhar um formato de ficheiro: recebe os esquemas tipados das operações a partir das mesmas definições contra as quais o executor valida.
+O GenOffice fala o Model Context Protocol, por isso um agente de programação consegue ler, escrever e renderizar os seus documentos através dos mesmos motores que o aplicativo usa. O agente não está a adivinhar um formato de arquivo: recebe os esquemas tipados das operações a partir das mesmas definições contra as quais o executor valida.
 
-## Registá-lo a partir da aplicação
+## Registrá-lo a partir do aplicativo
 
 É em **Configurações ▸ Integrações** que isto se faz. O painel tem duas metades, e pode usar uma ou as duas.
 
 **A skill.** Uma linha por cada agente de programação encontrado nesta máquina — Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, OpenCode, Windsurf —, cada uma com **Instalar**, **Atualizar** e **Desinstalar**, a que se juntam **Instalar em outra pasta…**, **Baixar skill (zip)** e **Copiar caminho**. Se o seu assistente não estiver na lista, indique ao GenOffice uma pasta de onde ele lê o `SKILL.md`, ou grave o zip e deixe o assistente instalá-lo. A skill e o MCP podem andar lado a lado: o assistente escolhe um dos dois, e fazem exatamente as mesmas coisas.
 
-**MCP.** São oferecidas duas vias: **Iniciado pelo assistente (recomendado)**, em que acrescenta a configuração apresentada ao seu cliente e o assistente arranca o servidor sozinho, e o **Servidor HTTP local**, que a aplicação executa por si. De qualquer forma, o assistente acaba a falar com o GenOffice e nunca escreve um comando.
+**MCP.** São oferecidas duas vias: **Iniciado pelo assistente (recomendado)**, em que acrescenta a configuração apresentada ao seu cliente e o assistente arranca o servidor sozinho, e o **Servidor HTTP local**, que o aplicativo executa por si. De qualquer forma, o assistente acaba a falar com o GenOffice e nunca escreve um comando.
 
-## Registá-lo a partir da linha de comando
+**Experimente** Abra um chat novo no seu assistente e peça com suas palavras, por exemplo:
 
-A mesma coisa a partir de um terminal — esta é a via avançada, e a que deve usar quando o agente está num sítio onde o painel o não consegue encontrar:
+- “Transforme ~/Downloads/report.md em um documento Word”
+- “Monte uma apresentação de 6 slides sobre nossos resultados do 3º trimestre”
+- “Converta budget.xlsx para PDF e abra no GenOffice”
+
+## Registrá-lo a partir da linha de comando
+
+A mesma coisa a partir de um terminal — esta é a via avançada, e a que deve usar quando o agente está em um local onde o painel o não consegue encontrar:
 
 ```sh
 genoffice mcp install all
 ```
 
-Encontra os agentes de programação desta máquina e escreve a entrada do servidor stdio na configuração de cada um deles, deixando o resto desse ficheiro como o encontrou.
+Encontra os agentes de programação desta máquina e escreve a entrada do servidor stdio na configuração de cada um deles, deixando o resto desse arquivo como o encontrou.
 
 ```sh
 genoffice mcp list             # where each agent stands
@@ -26,9 +32,9 @@ genoffice mcp install cursor    # just one
 genoffice mcp uninstall cursor  # take it back out
 ```
 
-Um agente instalado num sítio fora do comum precisa de `--dir <path>`; e `--force` reescreve uma entrada que já lá está.
+Um agente instalado em um local fora do comum precisa de `--dir <path>`; e `--force` reescreve uma entrada que já lá está.
 
-Tudo aquilo que o servidor aceita cabe num ecrã — as formas de instalar, remover e listar, a publicação por HTTP e as duas opções de esquema:
+Tudo aquilo que o servidor aceita cabe em uma tela — as formas de instalar, remover e listar, a publicação por HTTP e as duas opções de esquema:
 
 ![A saída real de genoffice mcp --help: as formas install, uninstall e list, com as opções --http, --host, --token, --compact-schemas, --dir e --force](img/mcp.png)
 
@@ -42,17 +48,17 @@ genoffice mcp --http 8765 --token <secret>
 
 `--host <addr>` muda o endereço onde escuta. Passe o mesmo token ao cliente.
 
-Por HTTP os ficheiros também viajam: `PUT /files/<name>` envia um, todas as ferramentas aceitam um URL `http(s)` no lugar de um caminho, e os resultados voltam como URLs de transferência — e, quando são pequenos o suficiente, como recursos incorporados. As operações, especificações e Markdown passam sempre embutidos.
+Por HTTP os arquivos também viajam: `PUT /files/<name>` envia um, todas as ferramentas aceitam um URL `http(s)` no lugar de um caminho, e os resultados voltam como URLs de transferência — e, quando são pequenos o suficiente, como recursos incorporados. As operações, especificações e Markdown passam sempre embutidos.
 
 ## O que o agente recebe
 
 Cada comando é uma ferramenta. As interessantes:
 
-- **`docs`, `sheet`, `slides`** — leem e editam um ficheiro pelo caminho de escrita da própria aplicação, uma **operação** (op) de cada vez. Uma apresentação nova segue `deck_start`, `deck_page`, `deck_build`.
-- **`render`** — um PNG por página, disposto pelo renderizador da aplicação, para que o agente possa olhar para um slide em vez de adivinhar.
-- **`pdf`** — a camada de texto de um PDF, página a página, sem qualquer processo da aplicação.
-- **`info`** — metadados e um resumo da estrutura, normalmente a primeira chamada mais barata para um ficheiro desconhecido.
-- **`search`, `image`, `media`** — os fornecedores configurados na aplicação, por isso o agente não precisa das suas próprias chaves.
+- **`docs`, `sheet`, `slides`** — leem e editam um arquivo pelo caminho de escrita do próprio aplicativo, uma **operação** (op) de cada vez. Uma apresentação nova segue `deck_start`, `deck_page`, `deck_build`.
+- **`render`** — um PNG por página, disposto pelo renderizador do aplicativo, para que o agente possa olhar para um slide em vez de adivinhar.
+- **`pdf`** — a camada de texto de um PDF, página a página, sem qualquer processo do aplicativo.
+- **`info`** — metadados e um resumo da estrutura, normalmente a primeira chamada mais barata para um arquivo desconhecido.
+- **`search`, `image`, `media`** — os fornecedores configurados no aplicativo, por isso o agente não precisa das suas próprias chaves.
 - **`merge`** — preencher um modelo `{{key}}`.
 
 ## Esquemas, e um orçamento mais pequeno
@@ -68,16 +74,16 @@ GENOFFICE_MCP_COMPACT_SCHEMAS=1 genoffice mcp
 
 Um agente que não conhece o vocabulário das operações vai adivinhar. A skill traz a referência e os guias de design — o mesmo material que o `genoffice guide` imprime —, de modo que o assistente escreve operações cuja especificação leu mesmo. Instale-a a partir do painel acima, ou com `genoffice skill` a partir de um terminal.
 
-## O que consegue alcançar na aplicação
+## O que consegue alcançar no aplicativo
 
-O servidor não se limita aos ficheiros em disco. Enquanto o GenOffice estiver a correr, o agente também pode trabalhar através da janela:
+O servidor não se limita aos arquivos em disco. Enquanto o GenOffice estiver em execução, o agente também pode trabalhar através da janela:
 
-- **`open_in_genoffice`** abre um ficheiro num separador e dá-lhe o foco.
-- **`open_documents`** lista todos os documentos que tem abertos — id, tipo, caminho e se têm alterações por guardar —, e depois lê o conteúdo atual de um deles, guarda-o no próprio sítio ou fecha-o, guardando primeiro, a não ser que lhe peça para descartar.
-- **As ferramentas de conteúdo** recebem esse id (ou o caminho) como argumento `document`, pelo que uma alteração aterra no separador que já tem aberto e a janela muda para o mostrar.
+- **`open_in_genoffice`** abre um arquivo em uma guia e coloca o foco nela.
+- **`open_documents`** lista todos os documentos que tem abertos — id, tipo, caminho e se têm alterações não salvas —, e depois lê o conteúdo atual de um deles, salva-o no próprio local ou fecha-o, salvando primeiro, a não ser que lhe peça para descartar.
+- **As ferramentas de conteúdo** recebem esse id (ou o caminho) como argumento `document`, por isso uma alteração aterra na guia que você já tem aberta e a janela muda para o mostrar.
 
-Ficam fora do alcance duas coisas: não existe painel de IA, e a janela de atualização da aplicação não se aplica.
+Ficam fora do alcance duas coisas: não existe painel de IA, e a janela de atualização do aplicativo não se aplica.
 
 ## O painel Servidor HTTP local
 
-Em **Servidor HTTP local**, a aplicação executa o servidor por si própria em vez de o deixar ao assistente: um interruptor de ativação, um campo **Porta**, um indicador **Em execução / Parado** e a **Geração em segundo plano** (escrever os documentos diretamente num caminho sem abrir a interface), mais o **Exemplo de configuração do cliente** para copiar. Abrir **Avançado** acrescenta os dois URLs de ligação — Streamable HTTP e o mais antigo, de SSE —, um URL de **Verificação de integridade** e um interruptor de **Registo** que anota a atividade do servidor e das ferramentas num ficheiro local que pode **Abrir**, **Atualizar** ou **Limpar** a partir daí. Escuta apenas em localhost.
+Em **Servidor HTTP local**, o aplicativo executa o servidor por conta própria em vez de o deixar ao assistente: um interruptor de ativação, um campo **Porta**, um indicador **Em execução / Parado** e a **Geração em segundo plano** (escrever os documentos diretamente em um caminho sem abrir a interface), mais o **Exemplo de configuração do cliente** para copiar. Abrir **Avançado** acrescenta os dois URLs de ligação — Streamable HTTP e o mais antigo, de SSE —, um URL de **Verificação de integridade** e um interruptor de **Registro** que anota a atividade do servidor e das ferramentas em um arquivo local que pode **Abrir**, **Atualizar** ou **Limpar** a partir daí. Escuta apenas em localhost.

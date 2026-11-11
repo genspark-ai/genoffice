@@ -119,9 +119,11 @@ export const nl = {
   appChartNoRepoint: 'Deze grafiek ondersteunt het opnieuw toewijzen van gegevensbereiken niet.',
   appKeepOneSeries: 'Behoud ten minste één reeks.',
   appNoCategoriesToSwitch: 'Geen categorieën om te wisselen.',
-  appComboNoSelectData:
-    'Het wijzigen van de gegevensbron van een combinatiegrafiek wordt nog niet ondersteund.',
+  appSelectDataUnsupported:
+    'Het wijzigen van de gegevensbron van dit diagramtype wordt niet ondersteund.',
   appSeriesName: 'Reeksnaam',
+  appSeriesType: 'Serietype',
+  appSecondaryAxis: 'Secundaire as',
   appValuesRange: 'Waardenbereik',
   appCategoriesRange: 'Categoriebereik',
   appKeepUnchanged: 'Ongewijzigd laten',
@@ -207,6 +209,13 @@ export const nl = {
   appInvalidGroupField: 'Ongeldig groeperingsveld.',
   appInvalidPageField: 'Ongeldig rapportfilterveld.',
   appPivotPageItemMissing: 'Rapportfilteritem "{item}" is geen lid van veld "{label}".',
+  appInvalidPivotBaseField:
+    'Het basisveld van "Waarden weergeven als" moet in rijen of kolommen staan.',
+  appPivotBaseFieldMissing:
+    'De modus "Waarden weergeven als" van een waardeveld heeft een basisveld nodig.',
+  appPivotBaseFieldNotAxis:
+    'Basisveld "{label}" moet in de rijen of kolommen van de draaitabel staan.',
+  appPivotBaseItemMissing: 'Basisitem "{item}" is geen lid van veld "{label}".',
   appInvalidLabelFilterField: 'Het veld van het labelfilter is ongeldig.',
   appInvalidValueFieldIndex: 'Waardeveldindex {index} is ongeldig.',
   appInvalidValueField: 'Ongeldig waardeveld.',
@@ -350,8 +359,8 @@ export const nl = {
     'Dit werkblad bevat een draaitabel — bereiken verplaatsen wordt nog niet ondersteund.',
   appMergeOverTable:
     'De selectie overlapt een Excel-tabel — cellen samenvoegen in een tabel wordt nog niet ondersteund.',
-  appTableFilterNoEdit:
-    'Het filter van dit werkblad hoort bij een Excel-tabel — de bewerking kan nog niet worden opgeslagen.',
+  appFilterToggleFailed:
+    'Het filter is niet toegepast — selecteer eerst het bereik met uw gegevens.',
   appAutofillStreaming:
     'Automatisch doorvoeren naar een gebied dat nog streamend wordt geladen, is nog niet toegestaan.',
   appDvNeedsIndexed:
@@ -408,6 +417,9 @@ export const nl = {
   appTableNameUsed: 'Tabelnaam "{name}" is in deze sessie al gebruikt.',
   appTableNameInFile: 'Tabelnaam "{name}" wordt al gebruikt door een tabel in het bestand.',
   appTableOverlapsSession: 'Het bereik overlapt tabel "{name}" die in deze sessie is gemaakt.',
+  appTableOverlapsFile: 'Het bereik overlapt tabel "{name}" in het bestand.',
+  appTableAlreadyInTable:
+    'De selectie staat al in tabel "{name}" — wijzig de stijl via Tabelontwerp.',
   appTablesNeedFile: 'Open eerst een XLSX-bestand — tabellen worden in het bestand geschreven.',
   appTableSelectRange: 'Selecteer eerst het gegevensbereik — veldnamen in de eerste rij.',
   appTableCreated: 'Tabel gemaakt — sla op met ⌘S.',
@@ -493,6 +505,7 @@ export const nl = {
   appGridlinesHidden: 'Rasterlijnen verborgen.',
   appGridlinesShown: 'Rasterlijnen weergegeven.',
   appShowingFormulas: 'Formules worden weergegeven — schakel opnieuw voor waarden.',
+  appShowingFormulasActive: 'Formules worden weergegeven',
   appShowingValues: 'Berekende waarden worden weergegeven.',
   appTraceNoFormula: 'Broncellen aanwijzen: de actieve cel bevat geen formule.',
   appTraceNoRefs: 'Broncellen aanwijzen: deze formule bevat geen celverwijzingen.',
@@ -541,6 +554,7 @@ export const nl = {
   appBridgeUnavailable:
     'De bestandsbridge van de desktop is niet beschikbaar. Start de Electron-app opnieuw.',
   appOpenCanceled: 'Werkmapselectie geannuleerd.',
+  appImportCanceled: 'Import geannuleerd.',
   appOpeningWorkbook: 'Werkmap openen…',
   appOpened: '{name} geopend — celbewerkingen slaat u terug op met ⌘S.',
   appOpenFailed: 'Kan de werkmap niet openen.',
@@ -608,8 +622,6 @@ export const nl = {
   appSaveFailed: 'Kan de werkmap niet opslaan.',
   appCfRuleUnsaveable:
     'Deze regel voor voorwaardelijke opmaak kan niet in xlsx worden opgeslagen — gebruik een ander regeltype.',
-  appSaveErrX14Dv:
-    'Dit blad heeft uitgebreide (x14) gegevensvalidatie; het bewerken van de validatieregels wordt nog niet ondersteund.',
   appSaveErrMultiSelectList:
     'Validatie met een meerkeuzelijst kan niet in xlsx worden opgeslagen — verwijder de regel voordat u opslaat.',
   appSaveErrX14Cf:
@@ -740,6 +752,7 @@ export const nl = {
   appExportPdfTitle: 'Exporteren als PDF',
   appSaveTitle: 'Opslaan (⌘S)',
   appSaveAs: 'Opslaan als',
+  aiNameFile: 'Naam geven met AI…',
   appUndo: 'Ongedaan maken',
   appRedo: 'Opnieuw',
   appUnsavedEditOne: '● {count} niet-opgeslagen bewerking',
@@ -1186,6 +1199,20 @@ export const nl = {
   appWatchCell: 'Cel',
   appWatchValue: 'Waarde',
   appWatchFormula: 'Formule',
+  appLinksPanel: 'Externe koppelingen',
+  appLinksPanelDetail: 'Koppelingen naar andere werkmappen tonen, bijwerken en verbreken',
+  appLinksUpdate: 'Waarden bijwerken',
+  appLinksNone: 'Deze werkmap heeft geen koppelingen naar andere werkmappen.',
+  appLinksUnsaved: 'Sla deze werkmap op voordat u de externe koppelingen toont.',
+  appLinksSource: 'Bron',
+  appLinksStatus: 'Status',
+  appLinksSheets: 'Bladen',
+  appLinksLocate: 'Bronbestand tonen',
+  appLinksReachable: 'Beschikbaar',
+  appLinksBroken: 'Niet beschikbaar',
+  appLinksBreak: 'Koppeling verbreken',
+  appLinksBreakConfirm: 'Verbreken bevestigen',
+  appLinksChangeSource: 'Bron wijzigen',
   appGroupCalculation: 'Berekening',
   appCalculationOptions: 'Berekeningsopties',
   appCalculationOptionsTitle: 'Automatisch of handmatig herberekenen',
@@ -1202,8 +1229,16 @@ export const nl = {
   appGroupGetData: 'Gegevens ophalen',
   appFromTextCsv: 'Uit tekst/CSV',
   appRefreshAll: 'Alles vernieuwen',
+  appRefreshQuery: 'Query vernieuwen',
+  appQueryConnectionsTitle: 'Werkmapquery’s vernieuwen',
+  appQueryRefreshing: '{name} wordt vernieuwd…',
+  appQueryRefreshed: '{name} vernieuwd ({rows} rijen)',
+  appQueryRefreshedClipped: '{name} vernieuwd ({rows} rijen, {dropped} pasten niet in het bereik)',
+  appQueryRefreshFailed: 'Kan {name} niet vernieuwen',
   appWorkbookNoPivot: 'Geen draaitabellen in deze werkmap.',
   appRefreshAllTitle: 'Alle draaitabellen vernieuwen',
+  appQueriesConnections: 'Query’s en verbindingen',
+  appQueriesConnectionsTitle: 'De query’s en gegevensverbindingen van de werkmap weergeven',
   appErrorCheckingDetail: 'Blad scannen op foutwaarden',
   appErrorsFound: '{count} fouten — bij {cell}: {value}',
   appCheckingErrors: 'Het hele werkblad wordt op fouten gecontroleerd…',
@@ -1238,6 +1273,7 @@ export const nl = {
   appGroupForecast: 'Prognose',
   appWhatIfAnalysis: 'Wat-als-analyse',
   appGoalSeek: 'Doelzoeken',
+  appDataTable: 'Gegevenstabel',
   appWhatIfTitle: 'Invoer bepalen voor een doelwaarde',
   appGoalSeekNeedsFormula: 'De cel moet een formule bevatten.',
   appGoalSeekByCellNotNumber: 'De te wijzigen cel moet een getal bevatten of leeg zijn.',
@@ -1599,4 +1635,29 @@ export const nl = {
   appVisualFlipV: 'Verticaal spiegelen',
   appVisualFlipH: 'Horizontaal spiegelen',
   appCtxPasteVisual: 'Afbeelding of vorm plakken',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Spelling',
+  appSpellBtnDetail: 'Bladtekst controleren (F7)',
+  appSpellToggle: 'Spelling controleren',
+  appSpellToggleTip:
+    'Zet de spellingcontrole aan (F7 en de Review-knop); uitgeschakeld tonen commentaarvakken geen golflijnen meer',
+  appSpellOn: 'Spellingcontrole ingeschakeld.',
+  appSpellOff: 'Spellingcontrole staat uit. Schakel deze in bij Controleren ▸ Controle.',
+  appSpellRecheck: 'Opnieuw controleren',
+  appSpellNone: 'Geen verdachte spelfouten gevonden.',
+  appSpellFindings: '{count} verdachte fouten. Klik op een rij om erheen te springen.',
+  appSpellTruncated: 'Te veel tekstcellen; alleen de eerste zijn gecontroleerd.',
+  appSpellColWord: 'Verdacht',
+  appSpellIgnore: 'Negeren',
+  appSpellIgnoreAll: 'Alles negeren',
+  appSpellLearn: 'Toevoegen aan woordenlijst',
+  appSpellNoSuggestions: 'Geen suggesties',
+  appSpellIgnoredAll: '"{word}" wordt in deze sessie niet meer gemarkeerd.',
+  appSpellLearned: '"{word}" is toegevoegd aan de woordenlijst.',
+  appSpellChanged: '{address} gecorrigeerd.',
+  appSpellChangeFailed: 'Kan {address} niet corrigeren.',
+  appSpellUnavailable: 'Spellingcontrole is niet beschikbaar in dit venster.',
+  appSpellReplaceAll: 'Alle vervangen door "{suggestion}"',
+  appSpellChangedAll: '{count} cellen met "{word}" gecorrigeerd.',
 } satisfies Record<keyof typeof zh, string>

@@ -389,6 +389,22 @@ html[data-doc-theme='light'] .doc-page {
   color: var(--text-muted);
 }
 
+/* An aliased link shows only its display text: the `[[target|` prefix and the
+ * closing `]]` are covered by the alias display pass's inline decorations and
+ * taken out of the flow. The words underneath are document text; only the view
+ * hides them. */
+.wiki-alias-hidden {
+  display: none;
+}
+
+/* A `^id` block marker is document text that other notes link to; it reads as
+ * an address, not as prose, so the view dims it the way Obsidian does. */
+.md-block-id {
+  color: var(--text-muted);
+  font-size: 0.82em;
+  opacity: 0.8;
+}
+
 /* GFM footnotes. The reference shows the label as written and jumps to its
  * definition; the definition keeps its label in a fixed slot beside the body
  * column. A separator opens the first definition of a run, echoing GitHub's
@@ -530,6 +546,9 @@ html[data-doc-theme='light'] .doc-page {
   padding: 6px 10px;
   vertical-align: top;
   text-align: start;
+  /* break-word does not lower a cell's min-content width, so one long inline
+     code token would pin its column and push the table past the page */
+  overflow-wrap: anywhere;
 }
 
 /* cells hold paragraph nodes — the document paragraph margin would bloat rows */
@@ -571,6 +590,13 @@ html[data-doc-theme='light'] .doc-page {
 /* While a popover is open the row must deliver presses (drag regions swallow
    them), so outside-press dismissal can see presses on the blank band */
 html.genoffice-popover-open .ribbon-tabs {
+  -webkit-app-region: no-drag;
+}
+
+/* Same for the wiki graph: its header (close button included) covers the
+   strip, so while the overlay is up the row has to yield or the press is
+   taken for a window drag and the graph cannot be closed */
+html.markdown-graph-open .ribbon-tabs {
   -webkit-app-region: no-drag;
 }
 
@@ -631,6 +657,13 @@ html.genoffice-popover-open .ribbon-tabs {
 }
 
 .qa-save-as {
+  width: auto;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+/* a labelled button in an icon-only row: wide enough for any locale's text */
+.qa-name-with-ai {
   width: auto;
   padding: 0 8px;
   white-space: nowrap;
@@ -3770,6 +3803,14 @@ div.tiptap-mathematics-render {
   white-space: nowrap;
   font-size: 11.5px;
   color: var(--text-muted);
+}
+
+/* a tag's notes hang under the tag row: indent + a hairline rail, no bullets */
+.md-tags-notes {
+  list-style: none;
+  margin: 0 0 4px 10px;
+  padding: 0 0 0 8px;
+  border-left: 1px solid var(--border);
 }
 
 /* ---- graph view ---- */

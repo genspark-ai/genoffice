@@ -3,8 +3,10 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 import {
   buildHeadingOutline,
   collectLines,
+  destTop,
   outlineFromLines,
   remapOutlinePages,
+  remapOutlineTree,
   type TextLine,
 } from '../src/renderer/heading-outline'
 
@@ -177,5 +179,77 @@ describe('remapOutlinePages', () => {
       { title: 'B', dest: [0, { name: 'XYZ' }, null, 700, null] },
       { title: 'Bookmark', dest: 'named-dest' },
     ])
+  })
+})
+
+describe('remapOutlineTree', () => {
+  it('follows the save page map and drops the entries whose page is gone', () => {
+    const tree = [
+      { title: 'A', pageIndex: 0, children: [{ title: 'A.1', pageIndex: 1 }] },
+      { title: 'B', pageIndex: 2 },
+    ]
+    // Page 0 deleted, pages 1 and 2 swapped
+    const out = remapOutlineTree(
+      tree,
+      new Map([
+        [1, 1],
+        [2, 0],
+      ]),
+    )
+    // A went with its page, and with the child that hung off it
+    expect(out).toEqual([{ title: 'B', pageIndex: 0, children: undefined }])
+  })
+
+  it('keeps a surviving entry on the page it named, under the index that page has now', () => {
+    const out = remapOutlineTree(
+      [
+        { title: 'Cover', pageIndex: 0 },
+        { title: 'Back', pageIndex: 2, children: [{ title: 'Back.1', pageIndex: 2 }] },
+      ],
+      new Map([
+        [0, 0],
+        [2, 1],
+      ]),
+    )
+    expect(out).toEqual([
+      { title: 'Cover', pageIndex: 0, children: undefined },
+      {
+        title: 'Back',
+        pageIndex: 1,
+        children: [{ title: 'Back.1', pageIndex: 1, children: undefined }],
+      },
+    ])
+  })
+})
+
+describe('destTop', () => {
+  const page = { num: 7, gen: 0 }
+  it('reads top from the slot its fit type puts it in', () => {
+    // [page /XYZ left top zoom]: index 2 is left
+    expect(destTop([page, { name: 'XYZ' }, 72, 700, null])).toBe(700)
+    expect(destTop([page, { name: 'XYZ' }, null, 650.5, 1.25])).toBe(650.5)
+    // [page /FitH top] and [page /FitBH top]
+    expect(destTop([page, { name: 'FitH' }, 500])).toBe(500)
+    expect(destTop([page, { name: 'FitBH' }, 480])).toBe(480)
+    // pdf.js may hand the fit type over as a plain string too
+    expect(destTop([page, 'XYZ', 0, 300, 0])).toBe(300)
+  })
+
+  it('carries no top for fits that only know a left offset or none at all', () => {
+    // [page /FitV left] / [page /FitBV left]: index 2 is left, not top
+    expect(destTop([page, { name: 'FitV' }, 72])).toBeNull()
+    expect(destTop([page, { name: 'FitBV' }, 72])).toBeNull()
+    expect(destTop([page, { name: 'Fit' }])).toBeNull()
+    expect(destTop([page, { name: 'FitB' }])).toBeNull()
+    expect(destTop([page, { name: 'FitR' }, 0, 0, 200, 300])).toBeNull()
+  })
+
+  it('treats a missing, null or non-numeric slot as no offset', () => {
+    expect(destTop([page, { name: 'XYZ' }, 0, null, null])).toBeNull()
+    expect(destTop([page, { name: 'XYZ' }, 0])).toBeNull()
+    expect(destTop([page, { name: 'XYZ' }, 0, '700', null])).toBeNull()
+    expect(destTop([page, { name: 'FitH' }, Number.NaN])).toBeNull()
+    expect(destTop([page])).toBeNull()
+    expect(destTop([page, null, 0, 700])).toBeNull()
   })
 })

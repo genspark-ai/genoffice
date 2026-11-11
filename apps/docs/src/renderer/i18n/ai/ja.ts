@@ -99,6 +99,11 @@ export const ja = {
     '変更履歴オン:AI による内容の変更は変更履歴として記録されます(挿入は下線、削除は取り消し線)。校閲で承諾または元に戻せます',
   aiTrackOffTitle:
     '変更履歴オフ:AI の変更はすぐに反映されます(バージョンスナップショットからロールバック可能)',
+  aiRevisionBarTitle: '変更履歴',
+  aiRevisionCount: '{count} 件の変更',
+  aiRevisionRejectAll: 'すべて元に戻す',
+  aiRevisionAcceptAll: 'すべて承諾',
+  aiRevisionPara: '段落 {n}',
   aiTurnLimit:
     '（1 回のリクエストのツール呼び出し上限に達したため、ここまでに完了した内容に基づく回答です。不完全な場合があります。）',
   aiStopped: '(停止しました)',
@@ -198,7 +203,12 @@ export const ja = {
   aiMindMapAskPrompt: 'このドキュメントの「{label}」について教えて',
   aiMindMapJump: '該当段落へジャンプ',
   aiMindMapExport: 'PNG で書き出す',
+  aiMindMapExportSvg: 'SVG で書き出す',
+  aiMindMapInsert: 'ドキュメントに挿入',
   aiMindMapReset: '表示をリセット',
   aiMindMapExpand: 'ブランチを展開',
   aiMindMapCollapse: 'ブランチを折りたたむ',
+  aiMindMapToggleLayout: 'レイアウトを切り替え',
+  aiMindMapLayoutTopDown: '上から下のレイアウトに切り替える',
+  aiMindMapLayoutLeftRight: '左右のレイアウトに切り替える',
 } satisfies Record<keyof typeof zh, string>

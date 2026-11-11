@@ -463,9 +463,8 @@ export function computeListMarkerInfos(
       if (level.isLgl && !ARABIC_FORMATS.has(fmt)) return String(value)
       return formatNumber(value, fmt, refDef?.customFormat)
     })
-    // numFmt "none": an explicit empty marker (Word shows nothing) so renderer
-    // counter fallbacks don't kick in on the null
-    if (!marker && level.numFmt !== 'none') return null
+    // numFmt "none" or an empty lvlText: an explicit empty marker (Word shows
+    // nothing) so renderer counter fallbacks don't kick in on the null
     return { text: marker, value: c[lvl] }
   })
 }

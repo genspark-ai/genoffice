@@ -49,6 +49,39 @@ describe('sheet check', () => {
     expect(r.json().summary).toContain('no issues found')
   })
 
+  it('reports ### when an earlier format batch added an xf with a child element', async () => {
+    const dir = tempDir()
+    const table = join(dir, 't.json')
+    writeFileSync(
+      table,
+      JSON.stringify([
+        ['a', 'b', 'c'],
+        [1, 2, 14262.5],
+      ]),
+    )
+    const out = join(dir, 'aligned.xlsx')
+    expect((await run(['create', '--type', 'xlsx', '--from', table, '--out', out])).code).toBe(0)
+    // horizontalAlign leaves an <alignment> child on the header xf, so <cellXfs>
+    // mixes self-closing and child-bearing entries before the currency format lands.
+    const formats = join(dir, 'formats.json')
+    writeFileSync(
+      formats,
+      JSON.stringify([
+        { op: 'format_range', range: 'A1:C1', format: { bold: true, horizontalAlign: 'center' } },
+        { op: 'format_range', range: 'C2:C2', format: { numberFormat: '$#,##0.00' } },
+      ]),
+    )
+    expect((await run(['sheet', 'apply', out, '--ops', formats])).code).toBe(0)
+    const widths = join(dir, 'widths.json')
+    writeFileSync(widths, JSON.stringify([{ op: 'set_col_width', column: 'C', widthPx: 40 }]))
+    expect((await run(['sheet', 'apply', out, '--ops', widths])).code).toBe(0)
+    const r = await run(['sheet', 'check', out, '--json'])
+    expect(r.code).toBe(0)
+    const overflow = (r.json().detail.issues as { code: string }[]).find(
+      (i) => i.code === 'number_overflow',
+    )
+    expect(overflow).toBeDefined()
+  })
   it('finds formula errors, missing sheets, broken names, ### columns and placeholders', async () => {
     const dir = tempDir()
     const table = join(dir, 't.json')

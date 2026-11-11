@@ -1,12 +1,6 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type DragEvent,
-  type PointerEvent as ReactPointerEvent,
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useDismissablePopover } from '@genoffice/ui'
+import type { PageCut } from '../pagination-cuts'
 import type { Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { TextSelection, type Transaction } from '@tiptap/pm/state'
@@ -40,6 +34,7 @@ import {
 import { useI18n } from '../i18n/locale'
 import { NavPageThumbs } from './NavPageThumbs'
 import { IconClose, IconSearch } from './icons'
+import { usePaneWidth } from './pane-width'
 
 export type NavTab = 'headings' | 'pages' | 'results'
 
@@ -71,11 +66,6 @@ const MAX_WIDTH = 560
 const DEFAULT_WIDTH = 232
 const SCAN_DEBOUNCE_MS = 150
 const SEARCH_OPTIONS: FindOptions = { matchCase: false, wholeWord: false, mode: 'literal' }
-
-const readWidth = (): number => {
-  const n = Number(localStorage.getItem(WIDTH_KEY))
-  return n >= MIN_WIDTH && n <= MAX_WIDTH ? n : DEFAULT_WIDTH
-}
 
 /**
  * Pane preferences that outlive the document: which sub-view was last used and
@@ -147,12 +137,15 @@ export function NavPane({
   zoom,
   pageInfo,
   onClose,
+  cuts,
 }: {
   editor: Editor
   doc: PmNode
   /** canvas zoom factor (1 = 100%) */
   zoom: number
   pageInfo: { current: number; total: number }
+  /** the current pass's page cuts for the thumbnails (page edges) */
+  cuts?: () => readonly PageCut[] | undefined
   onClose: () => void
 }) {
   const { t } = useI18n()
@@ -168,7 +161,7 @@ export function NavPane({
   const [matches, setMatches] = useState<FindMatch[]>([])
   const [index, setIndex] = useState(0)
   const [scanning, setScanning] = useState(false)
-  const [width, setWidth] = useState(readWidth)
+  const { width, onResizeStart } = usePaneWidth(WIDTH_KEY, DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH)
   const [caret, setCaret] = useState(() => editor.state.selection.from)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [drag, setDrag] = useState<{ index: number; where: 'before' | 'after' } | null>(null)
@@ -468,25 +461,6 @@ export function NavPane({
   }
 
   // ---- resize ----
-  const onResizeStart = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const startX = e.clientX
-    const startW = width
-    const el = e.currentTarget
-    el.setPointerCapture(e.pointerId)
-    let next = startW
-    const move = (ev: PointerEvent) => {
-      next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startW + ev.clientX - startX))
-      setWidth(next)
-    }
-    const up = () => {
-      el.removeEventListener('pointermove', move)
-      el.removeEventListener('pointerup', up)
-      localStorage.setItem(WIDTH_KEY, String(next))
-    }
-    el.addEventListener('pointermove', move)
-    el.addEventListener('pointerup', up)
-  }
-
   const [layoutVersion, setLayoutVersion] = useState(0)
   useEffect(() => setLayoutVersion((v) => v + 1), [doc, pageInfo.total])
 
@@ -631,6 +605,7 @@ export function NavPane({
             width={width}
             layoutVersion={layoutVersion}
             currentPage={pageInfo.current}
+            cuts={cuts}
             hitPositions={hitPositions}
           />
         )}
@@ -746,22 +721,11 @@ function NavMenu({
     setPos({ left, top })
   }, [menu])
 
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose()
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('mousedown', close)
-    window.addEventListener('keydown', onKey)
-    window.addEventListener('blur', onClose)
-    return () => {
-      window.removeEventListener('mousedown', close)
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('blur', onClose)
-    }
-  }, [onClose])
+  // unified dismissal: outside press, Escape, window blur
+  useDismissablePopover(heading != null, onClose, {
+    inside: () => [ref.current],
+    escape: true,
+  })
 
   if (!heading) return null
   const item = (label: string, onClick: () => void, disabled = false) => (

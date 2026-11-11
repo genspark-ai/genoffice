@@ -1,11 +1,11 @@
 import JSZip from 'jszip'
 import * as numfmt from 'numfmt'
 import {
-  blankXlsxBuffer,
   decodeCsvBuffer,
   isNumericCell,
   parseCsv,
 } from '@genoffice/xlsx-gateway/gateway/csv-import'
+import { blankXlsxBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import-xlsx'
 import { columnLabel, parseAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
 import {
   assembleWithJsZip,
@@ -13,12 +13,15 @@ import {
   planCellEditsToXlsx,
   toA1Address,
   type CellEdit,
+  type FormulaCachedValue,
   type SheetFormulaValues,
   type SheetStructuralOps,
   type XlsxMutation,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 import {
   nextFreeRelationshipId,
+  parseRelationships,
+  parseSheetElements,
   type SheetEditPlan,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
 import { EMPTY_PAYLOADS, type GatewayPayloads } from './xlsx-gateway-ops'
@@ -36,9 +39,11 @@ import {
   parseStylesheetFormats,
   type StylesheetFormats,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-style-read'
-import { readFile } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
+import { z } from 'zod'
 import { atomicWriteFile } from '../../../../apps/sheets/src/main/atomic-write'
 import { XlsxSidecarClient } from '../../../../apps/sheets/src/main/xlsx-sidecar-client'
+import { planExternalLinkBreak } from '@genoffice/xlsx-gateway/gateway/xlsx-external-links'
 import { CliError, EXIT } from '../result'
 import { sheetNotFoundHints } from '../suggest'
 import { xlsxSidecarPath } from '../resources'
@@ -171,15 +176,38 @@ function pickSheet(wb: OpenedWorkbook, name: string | undefined): SheetMeta {
   return meta
 }
 
+interface RecalcCell {
+  sheet: string
+  row: number
+  column: number
+  formatted: string
+  number?: number
+  boolean?: boolean
+  isError?: boolean
+}
+
+/** Why the engine skipped a requested stale-cache audit (recalc.rs `AuditSkipReason`). */
+type RecalcAuditSkip = 'date1904'
+
 interface RecalcResult {
-  cells: {
-    sheet: string
-    row: number
-    column: number
-    formatted: string
-    number?: number
-    isError?: boolean
-  }[]
+  cells: RecalcCell[]
+  /** formula cells whose cached `<v>` disagreed with the engine (reportStale) */
+  stale?: RecalcCell[]
+  /**
+   * Array-formula spill cells whose cached `<v>` disagreed with the engine.
+   * They carry no formula of their own, so the cached-value save cannot
+   * rewrite them; the caller reports them instead of claiming success.
+   */
+  staleSpillCells?: RecalcCell[]
+  /**
+   * Cells whose cache the audit kept although the engine now computes an
+   * error (a changed input turned the dependent into `#DIV/0!`, or the engine
+   * errs where Excel does not). They were not refreshed, so they must be
+   * reported rather than counted as current.
+   */
+  staleUnrefreshed?: RecalcCell[]
+  /** set when the engine declined the audit; `stale` is then absent */
+  auditSkipped?: RecalcAuditSkip
 }
 
 /** One short-lived sidecar process per call; the CLI has no session to keep alive. */
@@ -485,7 +513,7 @@ export async function readSheet(path: string, opts: ReadOptions): Promise<SheetR
     // formulas written without a cached value (e.g. by genoffice itself) are evaluated on the fly
     if (pending.length) {
       const box = boundingBox(pending)
-      const cells = await recalcRange(client, path, meta.name, box)
+      const { cells } = await recalcRange(client, path, meta.name, box)
       for (const cell of cells) {
         const r = cell.row - bounds.startRow
         const k = cell.column - bounds.startColumn
@@ -868,7 +896,8 @@ export async function sheetToCsv(path: string, opts: { sheet?: string }): Promis
           grid[c.row - band.startRow]![c.column] = displayText(c.value, format, date1904)
         }
         if (pending.length) {
-          for (const cell of await recalcRange(client, path, meta.name, boundingBox(pending))) {
+          const evaluated = await recalcRange(client, path, meta.name, boundingBox(pending))
+          for (const cell of evaluated.cells) {
             const row = grid[cell.row - band.startRow]
             if (row && row[cell.column] === '') row[cell.column] = cell.formatted
           }
@@ -1114,6 +1143,12 @@ export interface WriteOutcome {
   warning?: string
   /** formulas the engine could not parse — reported apart from `warning`, which is about missing functions */
   formulaError?: string
+  /**
+   * Formula cells that depend on the edited cells and whose cached value the
+   * engine could not refresh; they keep their previous cache and recalculate
+   * when the file opens in Excel.
+   */
+  dependentsWarning?: string
   /** side effects a program should know about that are not formula related */
   notes?: { code: string; message: string }[]
 }
@@ -1136,6 +1171,8 @@ export async function writeWorkbook(
     renames?: Record<string, string>
     /** the declarative save payloads of the DSL ops the in-memory workbook cannot hold */
     gateway?: GatewayPayloads
+    /** cached formula results to write as `<v>` (formulas untouched) */
+    formulaValues?: readonly SheetFormulaValues[]
   } = {},
 ): Promise<WriteOutcome> {
   const { plan, structuralOps = [], renames = {}, gateway = EMPTY_PAYLOADS } = opts
@@ -1177,7 +1214,7 @@ export async function writeWorkbook(
   }
   let first: XlsxMutation
   try {
-    first = await save([])
+    first = await save(opts.formulaValues ?? [])
   } catch (err) {
     // the gateway fails closed with a sentence about the file (x14 rules, name clashes, table overlaps)
     throw new CliError(
@@ -1194,52 +1231,325 @@ export async function writeWorkbook(
     formulas: formulaCells.length,
     ...(notes.length ? { notes } : {}),
   }
-  if (formulaCells.length === 0) return { ...base, cachedValues: true }
+  // Style-only edits (and the other value-free payloads) cannot make a
+  // formula cache stale; do not start the engine for them.
+  const changesCellValues = edits.some((e) => e.writeValue) || structuralOps.length > 0
+  if (!changesCellValues) return { ...base, cachedValues: true }
   if (!xlsxSidecarPath()) {
+    // Without the engine a value-only edit cannot refresh formula caches.
+    // Only a workbook that has formulas carries caches that can go stale;
+    // claiming `cached_values: true` unseen would be a guess.
+    if (formulaCells.length === 0 && !(await workbookHasFormulas(first.buffer))) {
+      return { ...base, cachedValues: true }
+    }
     return {
       ...base,
       cachedValues: false,
-      warning: 'xlsx engine not found; formulas recalculate on open',
+      ...(formulaCells.length === 0
+        ? { dependentsWarning: DEPENDENTS_WITHOUT_ENGINE }
+        : { warning: 'xlsx engine not found; formulas recalculate on open' }),
     }
   }
   try {
-    const { values, uncached, unparsed } = await evaluateFormulas(outputPath, formulaCells, renames)
+    const { values, uncached, unparsed, dependents, batchValues, auditSkipped } =
+      await evaluateFormulas(outputPath, formulaCells, renames)
     if (values.length) {
       const second = await save(values)
       await atomicWriteFile(outputPath, second.buffer)
-      if (uncached.length === 0 && unparsed.length === 0) return { ...base, cachedValues: true }
-      const skipped = uncached.length + unparsed.length
+    }
+    // A skipped audit (the engine has no 1904 date system support) means no
+    // cache was compared, so no cache may be claimed current.
+    const dependentsWarning = auditSkipped
+      ? DEPENDENTS_NOT_AUDITED_1904
+      : dependents.length
+        ? `${dependents.length} formula(s) that depend on the edited cells could not be recalculated (${list(dependents)}); they keep their previous cached values and recalculate on open`
+        : undefined
+    if (formulaCells.length === 0) {
       return {
         ...base,
-        cachedValues: skipped < formulaCells.length,
-        ...(uncached.length ? { uncached } : {}),
-        ...(unparsed.length ? { unparsed } : {}),
-        ...(uncached.length
-          ? {
-              warning: `${uncached.length} formula(s) use functions the local engine does not evaluate (${list(uncached)}); they have no cached value and recalculate on open`,
-            }
-          : {}),
-        ...(unparsed.length
-          ? {
-              formulaError: `${unparsed.length} formula(s) the local engine could not parse (${list(unparsed)}); check their references — they have no cached value and recalculate on open`,
-            }
-          : {}),
+        cachedValues: !auditSkipped && dependents.length === 0,
+        ...(dependentsWarning ? { dependentsWarning } : {}),
       }
     }
+    if (batchValues === 0) {
+      return {
+        ...base,
+        cachedValues: false,
+        warning:
+          'the engine returned no results for the written formulas; the file recalculates on open',
+        ...(dependentsWarning ? { dependentsWarning } : {}),
+      }
+    }
+    if (
+      !auditSkipped &&
+      uncached.length === 0 &&
+      unparsed.length === 0 &&
+      dependents.length === 0
+    ) {
+      return { ...base, cachedValues: true }
+    }
+    const skipped = uncached.length + unparsed.length
     return {
       ...base,
-      cachedValues: false,
-      warning:
-        'the engine returned no results for the written formulas; the file recalculates on open',
+      cachedValues: !auditSkipped && skipped < formulaCells.length && dependents.length === 0,
+      ...(uncached.length ? { uncached } : {}),
+      ...(unparsed.length ? { unparsed } : {}),
+      ...(uncached.length
+        ? {
+            warning: `${uncached.length} formula(s) use functions the local engine does not evaluate (${list(uncached)}); they have no cached value and recalculate on open`,
+          }
+        : {}),
+      ...(unparsed.length
+        ? {
+            formulaError: `${unparsed.length} formula(s) the local engine could not parse (${list(unparsed)}); check their references — they have no cached value and recalculate on open`,
+          }
+        : {}),
+      ...(dependentsWarning ? { dependentsWarning } : {}),
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
+    if (formulaCells.length > 0) {
+      return {
+        ...base,
+        cachedValues: false,
+        warning: `formula results not cached (${message}); the file is complete and recalculates on open`,
+      }
+    }
+    // A value-only edit can still leave formula caches stale; without the
+    // engine's answer that is only knowable from the saved package.
+    if (!(await workbookHasFormulas(first.buffer))) return { ...base, cachedValues: true }
     return {
       ...base,
       cachedValues: false,
-      warning: `formula results not cached (${message}); the file is complete and recalculates on open`,
+      dependentsWarning: `formula caches were not refreshed (${message}); formula cells that depend on the edited cells keep their previous cached values and recalculate on open`,
     }
   }
+}
+
+// ── external links (genoffice#2109) ────────────────────────────────────
+
+export interface ExternalLinkInfo {
+  index: number
+  rawTarget: string
+  source: string | null
+  reachable: boolean
+  sheetNames: string[]
+}
+
+/** A worksheet relationship target resolved to a package part path. */
+function worksheetPartPath(target: string): string {
+  return target.startsWith('/') ? target.slice(1) : 'xl/' + target
+}
+
+/** The cached <v> of one formula cell: its type attribute and raw (still escaped) text. */
+interface CachedFormulaValue {
+  type: string | undefined
+  text: string | undefined
+}
+
+/** Decodes the entity spelling of an XML text node so cached text compares like display text. */
+function decodeXmlText(text: string): string {
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(
+      /&#(?:x([0-9a-fA-F]+)|(\d+));/g,
+      (match, hex: string | undefined, dec: string | undefined) => {
+        const code = hex === undefined ? Number(dec) : parseInt(hex, 16)
+        return code <= 0x10ffff && (code < 0xd800 || code > 0xdfff)
+          ? String.fromCodePoint(code)
+          : match
+      },
+    )
+}
+
+/**
+ * The cached <v> type and text of the formula cells an update report names,
+ * keyed sheet|row|column. The report carries display text only, so the file's
+ * own cached type is what tells a boolean result from the text "TRUE".
+ */
+async function cachedFormulaValues(
+  source: Buffer,
+  cells: readonly { sheet: string; row: number; column: number }[],
+): Promise<Map<string, CachedFormulaValue>> {
+  const out = new Map<string, CachedFormulaValue>()
+  if (cells.length === 0) return out
+  const wantedBySheet = new Map<string, Map<string, string>>()
+  for (const cell of cells) {
+    const wanted = wantedBySheet.get(cell.sheet) ?? new Map<string, string>()
+    wanted.set(toA1Address(cell.row, cell.column), cell.sheet + '|' + cell.row + '|' + cell.column)
+    wantedBySheet.set(cell.sheet, wanted)
+  }
+  const zip = await JSZip.loadAsync(source)
+  const workbook = (await zip.file('xl/workbook.xml')?.async('string')) ?? ''
+  const relationships = (await zip.file('xl/_rels/workbook.xml.rels')?.async('string')) ?? ''
+  const targets = new Map(
+    parseRelationships(relationships)
+      .filter((rel) => rel.id !== undefined && !rel.external)
+      .map((rel) => [rel.id!, worksheetPartPath(rel.target)]),
+  )
+  const partBySheet = new Map<string, string>()
+  for (const element of parseSheetElements(workbook)) {
+    const target = element.relationshipId ? targets.get(element.relationshipId) : undefined
+    if (target !== undefined) partBySheet.set(element.name, target)
+  }
+  const cellPattern = /<c\b[^>]*?(?:\/>|>(?:(?!<\/c>)[\s\S])*<\/c>)/g
+  for (const [sheet, wanted] of wantedBySheet) {
+    const part = partBySheet.get(sheet)
+    if (part === undefined) continue
+    const xml = (await zip.file(part)?.async('string')) ?? ''
+    for (const match of xml.matchAll(cellPattern)) {
+      const opening = /^<c\b([^>]*)>/.exec(match[0])?.[1] ?? ''
+      const address = /\br="([^"]+)"/.exec(opening)?.[1]
+      const key = address === undefined ? undefined : wanted.get(address)
+      if (key === undefined) continue
+      out.set(key, {
+        type: /\bt="(\w+)"/.exec(opening)?.[1],
+        text: /<v\b[^>]*>([\s\S]*?)<\/v>/.exec(match[0])?.[1],
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * The value the update report wants cached: its number when it has one, else
+ * text, except where the file's cached type says the formula produced a
+ * boolean or an error (display text alone cannot tell those from string
+ * results that happen to spell TRUE or #N/A).
+ */
+function reportCacheValue(
+  cell: { formatted: string; number?: number | null },
+  existing: CachedFormulaValue | undefined,
+): FormulaCachedValue {
+  if (cell.number !== undefined && cell.number !== null) return cell.number
+  if (existing?.type === 'b' && /^(true|false)$/i.test(cell.formatted)) {
+    return /^true$/i.test(cell.formatted)
+  }
+  if (existing?.type === 'e') return { error: cell.formatted }
+  // an empty string is a real result: writing it clears a stale non-empty cache
+  return cell.formatted
+}
+
+/** True when the file already caches exactly what the report computed. */
+function cacheMatches(
+  value: FormulaCachedValue,
+  existing: CachedFormulaValue | undefined,
+): boolean {
+  if (existing === undefined || existing.text === undefined) return false
+  if (typeof value === 'number') {
+    if (existing.type !== undefined && existing.type !== 'n') return false
+    const previous = Number(existing.text)
+    // the engine and Excel agree to the precision a cached <v> carries; do not
+    // rewrite a cell over the last bits of a double
+    return (
+      Number.isFinite(previous) &&
+      Math.abs(previous - value) <= Math.max(Math.abs(previous), Math.abs(value), 1) * 1e-13
+    )
+  }
+  if (typeof value === 'boolean') return existing.type === 'b' && (existing.text === '1') === value
+  if (value !== null && typeof value === 'object') {
+    return existing.type === 'e' && decodeXmlText(existing.text) === value.error
+  }
+  return existing.type === 'str' && decodeXmlText(existing.text) === value
+}
+
+/** The workbook's external links, as the file stores them: index (the [n]
+ * formulas use), the stored source path, the resolved local path, whether
+ * that file exists, and the source's sheet names. No source is opened. */
+export async function readExternalLinks(path: string): Promise<ExternalLinkInfo[]> {
+  // only the existence gate is local: the sidecar reads the package
+  await access(path)
+  return withSidecar(async (client) => {
+    // the sidecar's read command answers the link array itself (the update
+    // command is the one that wraps its cells in a report object)
+    return (await client.readExternalLinks({ path })) as ExternalLinkInfo[]
+  })
+}
+
+const updateReportSchema = z.object({
+  links: z.array(
+    z.object({
+      index: z.number(),
+      reachable: z.boolean(),
+    }),
+  ),
+  cells: z.array(
+    z.object({
+      sheet: z.string(),
+      row: z.number(),
+      column: z.number(),
+      formatted: z.string(),
+      number: z.number().nullable().optional(),
+      formula: z.string(),
+    }),
+  ),
+})
+
+/** Re-reads every reachable source and writes the computed values as the
+ * formulas' cached <v> — formula text untouched, unreachable links keep their
+ * cache. Returns what changed and what stayed behind. */
+export async function updateExternalLinkCaches(
+  path: string,
+  outputPath: string,
+): Promise<{
+  updated: number
+  kept: number
+  reachable: number
+  broken: number
+}> {
+  const source = await readFile(path)
+  const report = await withSidecar(async (client) =>
+    updateReportSchema.parse(await client.updateExternalLinks({ path })),
+  )
+  const cached = await cachedFormulaValues(source, report.cells)
+  const bySheet = new Map<string, { row: number; column: number; value: FormulaCachedValue }[]>()
+  let kept = 0
+  for (const cell of report.cells) {
+    const existing = cached.get(cell.sheet + '|' + cell.row + '|' + cell.column)
+    const value = reportCacheValue(cell, existing)
+    // an update only rewrites what actually changed; a live value equal to the
+    // cache, and a value that could not go live, both leave the cell alone
+    if (cacheMatches(value, existing)) {
+      kept += 1
+      continue
+    }
+    const list = bySheet.get(cell.sheet) ?? []
+    list.push({ row: cell.row, column: cell.column, value })
+    bySheet.set(cell.sheet, list)
+  }
+  const formulaValues = [...bySheet].map(([sheetName, cells]) => ({ sheetName, cells }))
+  if (formulaValues.length > 0) {
+    await writeWorkbook(source, [], outputPath, { formulaValues })
+  } else if (outputPath !== path) {
+    // --out still gets a copy; there is just nothing to recompute in it
+    await atomicWriteFile(outputPath, source)
+  }
+  return {
+    updated: report.cells.length - kept,
+    kept,
+    reachable: report.links.filter((link) => link.reachable).length,
+    broken: report.links.filter((link) => !link.reachable).length,
+  }
+}
+
+/** Breaks the given 1-based link indices: every formula referencing them
+ * becomes the literal its cached value holds, the links' parts disappear,
+ * and the surviving [m] indices renumber. */
+export async function breakExternalLinks(
+  path: string,
+  outputPath: string,
+  rawIndices: readonly number[],
+): Promise<{ removedLinks: number }> {
+  // --break 1,1 is one link, not two
+  const indices = [...new Set(rawIndices)]
+  const source = await readFile(path)
+  const mutation = await planExternalLinkBreak(await createBufferEntrySource(source), indices)
+  const result = await assembleWithJsZip(source, mutation)
+  await atomicWriteFile(outputPath, result.buffer)
+  return { removedLinks: indices.length }
 }
 
 /**
@@ -1252,13 +1562,57 @@ export async function writeWorkbook(
 const UNKNOWN_FUNCTION_RESULT = '#NAME?'
 /** The engine could not parse the formula at all — a reference it cannot read, not a missing function. */
 const UNPARSED_RESULT = '#ERROR!'
+/** Value edit without the engine: formula caches it depends on stay as they are. */
+const DEPENDENTS_WITHOUT_ENGINE =
+  'the xlsx engine was not found, so formula cells that depend on the edited cells keep their previous cached values; they recalculate when the file opens in Excel'
+/**
+ * The engine has no 1904 date system support, so it cannot tell whether this
+ * workbook's caches are stale: the audit is skipped and nothing is claimed.
+ */
+const DEPENDENTS_NOT_AUDITED_1904 =
+  'this workbook uses the 1904 date system, which the local formula engine does not implement, so it cannot tell which formula caches the edits left stale; cells that depend on the edited cells keep their previous cached values and recalculate when the file opens in Excel'
 const list = (cells: readonly string[]) =>
   cells.slice(0, 3).join(', ') + (cells.length > 3 ? ', …' : '')
+
+interface FormulaEvaluation {
+  /** cached values to write back: the batch's formulas plus stale dependents */
+  values: SheetFormulaValues[]
+  uncached: string[]
+  unparsed: string[]
+  /** `Sheet!A1` of formula cells whose stale cache the engine could not refresh */
+  dependents: string[]
+  /** how many of the formulas written in this batch produced a value */
+  batchValues: number
+  /** set when the engine declined the stale-cache audit (see RecalcResult) */
+  auditSkipped?: RecalcAuditSkip
+}
+
+/**
+ * The cached value a cell's result becomes in the `<v>` patch: typed when the
+ * engine typed the result (error → `t="e"`, boolean → `t="b"` with the
+ * numeric 0/1, number as is), the display string otherwise. A boolean typed
+ * as text would cache `TRUE`/`FALSE` as `t="str"`, which Excel shows
+ * left-aligned until it recalculates.
+ */
+function cachedValueFor(cell: RecalcCell): FormulaCachedValue {
+  if (cell.isError) return { error: cell.formatted }
+  if (cell.boolean !== undefined) return cell.boolean
+  return cell.number ?? (cell.formatted === '' ? null : cell.formatted)
+}
+
+/**
+ * One sidecar process per call: read the batch formulas' results and, from the
+ * same import, every other formula cell whose cached `<v>` the edits left
+ * stale. The engine evaluates the whole workbook, so dependents are found
+ * without walking a reference graph — indirect and cross-sheet references
+ * included. Cells whose result the engine cannot express (#NAME?/#ERROR!),
+ * exactly like the batch path, keep the file's cached value.
+ */
 async function evaluateFormulas(
   path: string,
   formulaCells: readonly CellEdit[],
   renames: Record<string, string>,
-): Promise<{ values: SheetFormulaValues[]; uncached: string[]; unparsed: string[] }> {
+): Promise<FormulaEvaluation> {
   const bySheet = new Map<string, CellEdit[]>()
   for (const e of formulaCells) bySheet.set(e.sheetName, [...(bySheet.get(e.sheetName) ?? []), e])
   // edits carry the file's original sheet names; the written file has the renamed ones
@@ -1269,35 +1623,106 @@ async function evaluateFormulas(
     const out: SheetFormulaValues[] = []
     const uncached: string[] = []
     const unparsed: string[] = []
-    for (const [sheet, cells] of bySheet) {
-      const evaluated = await recalcRange(client, path, renames[sheet] ?? sheet, boundingBox(cells))
-      const values = evaluated
-        .filter((cell) => wanted.has(`${originalName(cell.sheet)} ${cell.row} ${cell.column}`))
-        .map((cell) => {
-          // Both leave the cell without a cached value — the file is correct
-          // and Excel recomputes on open — but they have different causes and
-          // the caller reports them apart.
-          if (cell.formatted === UNKNOWN_FUNCTION_RESULT) {
-            uncached.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
-            return { row: cell.row, column: cell.column, value: null }
-          }
-          if (cell.formatted === UNPARSED_RESULT) {
-            unparsed.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
-            return { row: cell.row, column: cell.column, value: null }
-          }
-          if (cell.isError) {
-            return { row: cell.row, column: cell.column, value: { error: cell.formatted } }
-          }
-          return {
-            row: cell.row,
-            column: cell.column,
-            value: (cell.number ?? (cell.formatted === '' ? null : cell.formatted)) as Scalar,
-          }
-        })
-      // the refresh is keyed like the edits, by the file's original sheet name
-      if (values.length) out.push({ sheetName: sheet, cells: values })
+    const dependents: string[] = []
+    let stale: RecalcCell[] | undefined
+    let staleSpillCells: RecalcCell[] | undefined
+    let staleUnrefreshed: RecalcCell[] | undefined
+    let auditSkipped: RecalcAuditSkip | undefined
+    let batchValues = 0
+    if (bySheet.size === 0) {
+      // value-only edits: nothing to read, just audit the written file
+      const r = (await client.recalcCells({
+        path,
+        edits: [],
+        reads: [],
+        reportStale: true,
+      })) as RecalcResult
+      stale = r.stale
+      staleSpillCells = r.staleSpillCells
+      staleUnrefreshed = r.staleUnrefreshed
+      auditSkipped = r.auditSkipped
+    } else {
+      let first = true
+      for (const [sheet, cells] of bySheet) {
+        const evaluated = await recalcRange(
+          client,
+          path,
+          renames[sheet] ?? sheet,
+          boundingBox(cells),
+          first,
+        )
+        first = false
+        // only the first request carries the audit; keep what it answered
+        if (evaluated.stale !== undefined) stale = evaluated.stale
+        if (evaluated.staleSpillCells !== undefined) staleSpillCells = evaluated.staleSpillCells
+        if (evaluated.staleUnrefreshed !== undefined) {
+          staleUnrefreshed = evaluated.staleUnrefreshed
+        }
+        if (evaluated.auditSkipped) auditSkipped = evaluated.auditSkipped
+        const values = evaluated.cells
+          .filter((cell) => wanted.has(`${originalName(cell.sheet)} ${cell.row} ${cell.column}`))
+          .map((cell) => {
+            // Both leave the cell without a cached value — the file is correct
+            // and Excel recomputes on open — but they have different causes and
+            // the caller reports them apart.
+            if (cell.formatted === UNKNOWN_FUNCTION_RESULT) {
+              uncached.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
+              return { row: cell.row, column: cell.column, value: null }
+            }
+            if (cell.formatted === UNPARSED_RESULT) {
+              unparsed.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
+              return { row: cell.row, column: cell.column, value: null }
+            }
+            return { row: cell.row, column: cell.column, value: cachedValueFor(cell) }
+          })
+        // the refresh is keyed like the edits, by the file's original sheet name
+        if (values.length) {
+          out.push({ sheetName: sheet, cells: values })
+          batchValues += values.length
+        }
+      }
     }
-    return { values: out, uncached, unparsed }
+    // A skipped audit is a normal answer — the engine cannot judge this
+    // workbook (a date system it does not implement) — while a missing answer
+    // after asking for one is a contract violation.
+    if (auditSkipped) {
+      return { values: out, uncached, unparsed, dependents, batchValues, auditSkipped }
+    }
+    if (stale === undefined) throw new Error('the xlsx engine did not report stale formulas')
+    // Every other formula cell the import found stale is a dependent of the
+    // edit. Refresh the ones with a usable result; report the rest honestly.
+    const dependentsBySheet = new Map<string, SheetFormulaValues['cells'][number][]>()
+    for (const cell of stale) {
+      const sheet = originalName(cell.sheet)
+      if (wanted.has(`${sheet} ${cell.row} ${cell.column}`)) continue
+      if (cell.formatted === UNKNOWN_FUNCTION_RESULT || cell.formatted === UNPARSED_RESULT) {
+        dependents.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
+        continue
+      }
+      const value: FormulaCachedValue = cachedValueFor(cell)
+      const cells = dependentsBySheet.get(sheet) ?? []
+      cells.push({ row: cell.row, column: cell.column, value })
+      dependentsBySheet.set(sheet, cells)
+    }
+    for (const [sheet, cells] of dependentsBySheet) out.push({ sheetName: sheet, cells })
+    // Spill cells belong to an array formula but carry no formula of their
+    // own, so the cached-value patch cannot rewrite them. Report them through
+    // the same path as the other unrefreshable dependents.
+    for (const cell of staleSpillCells ?? []) {
+      const sheet = originalName(cell.sheet)
+      if (wanted.has(`${sheet} ${cell.row} ${cell.column}`)) continue
+      dependents.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
+    }
+    // The audit kept these caches against an engine error (never downgrade a
+    // usable cache), so they were not refreshed: a changed input legitimately
+    // turns a dependent into #DIV/0!/#N/A. Report them like the other
+    // unrefreshable dependents instead of claiming the caches are current.
+    for (const cell of staleUnrefreshed ?? []) {
+      const sheet = originalName(cell.sheet)
+      if (wanted.has(`${sheet} ${cell.row} ${cell.column}`)) continue
+      dependents.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
+    }
+    return { values: out, uncached, unparsed, dependents, batchValues }
   })
 }
 
@@ -1343,23 +1768,57 @@ export function recalcBands(bounds: Bounds, cap = RECALC_CELL_CAP): Bounds[] {
   return bands
 }
 
+interface RecalcRangeResult {
+  cells: RecalcCell[]
+  stale?: RecalcCell[]
+  staleSpillCells?: RecalcCell[]
+  staleUnrefreshed?: RecalcCell[]
+  auditSkipped?: RecalcAuditSkip
+}
+
 async function recalcRange(
   client: XlsxSidecarClient,
   path: string,
   sheet: string,
   bounds: Bounds,
-): Promise<RecalcResult['cells']> {
-  const cells: RecalcResult['cells'] = []
+  reportStale = false,
+): Promise<RecalcRangeResult> {
+  const result: RecalcRangeResult = { cells: [] }
   // one band per request: the recalc worker is single-flight
   for (const range of recalcBands(bounds)) {
     const r = (await client.recalcCells({
       path,
       edits: [],
       reads: [{ sheet, range }],
+      // the audit compares against the caches a fresh import staged, so only
+      // the first request of the sidecar process can carry it
+      ...(reportStale && result.stale === undefined && !result.auditSkipped
+        ? { reportStale: true }
+        : {}),
     })) as RecalcResult
-    cells.push(...r.cells)
+    result.cells.push(...r.cells)
+    if (r.stale !== undefined) result.stale = r.stale
+    if (r.staleSpillCells !== undefined) result.staleSpillCells = r.staleSpillCells
+    if (r.staleUnrefreshed !== undefined) result.staleUnrefreshed = r.staleUnrefreshed
+    if (r.auditSkipped) result.auditSkipped = r.auditSkipped
   }
-  return cells
+  return result
+}
+
+/**
+ * Whether the saved package carries any formula at all. Used only when the
+ * engine is missing or failed: without it a value-only edit cannot know
+ * whether dependent caches may be stale. JSZip is already the writer, so this
+ * decompresses the worksheet parts rather than trusting a guess.
+ */
+async function workbookHasFormulas(buffer: Buffer): Promise<boolean> {
+  const zip = await JSZip.loadAsync(buffer)
+  for (const name of Object.keys(zip.files)) {
+    if (!name.startsWith('xl/worksheets/') || !name.endsWith('.xml')) continue
+    const part = zip.file(name)
+    if (part && /<f[\s/>]/.test(await part.async('string'))) return true
+  }
+  return false
 }
 
 /** What the workbook engine computes for a range of the file on disk, keyed `row|column` (0-based). */
@@ -1370,7 +1829,8 @@ export async function computedValues(
 ): Promise<Map<string, { value: Scalar; isError: boolean }>> {
   const out = new Map<string, { value: Scalar; isError: boolean }>()
   await withSidecar(async (client) => {
-    for (const cell of await recalcRange(client, path, sheet, bounds)) {
+    const { cells } = await recalcRange(client, path, sheet, bounds)
+    for (const cell of cells) {
       out.set(`${cell.row}|${cell.column}`, {
         value: cell.number ?? (cell.formatted === '' ? null : cell.formatted),
         isError: cell.isError === true,

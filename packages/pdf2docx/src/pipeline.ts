@@ -6,7 +6,7 @@
  */
 import { analyzePage, PAGE_CONFIDENCE_MIN } from './analyze'
 import { classifyPages } from './analyze/canvas'
-import { detectFurniture, type FurnitureHf } from './analyze/furniture'
+import { detectFurniture, type FurnitureHf, type FurnitureResult } from './analyze/furniture'
 import type { ListSeq } from './analyze/lists'
 import {
   extractPage,
@@ -105,11 +105,12 @@ const GRAPHICS_GUARD_EMIT_SHARE = 0.35
 const GUARD_WHITE_MIN = 0xf2
 
 function isNearWhiteHex(hex: string): boolean {
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return false
+  const v = (hex ?? '').trim()
+  if (!/^[0-9a-fA-F]{6}$/.test(v)) return false
   return (
-    parseInt(hex.slice(0, 2), 16) >= GUARD_WHITE_MIN &&
-    parseInt(hex.slice(2, 4), 16) >= GUARD_WHITE_MIN &&
-    parseInt(hex.slice(4, 6), 16) >= GUARD_WHITE_MIN
+    parseInt(v.slice(0, 2), 16) >= GUARD_WHITE_MIN &&
+    parseInt(v.slice(2, 4), 16) >= GUARD_WHITE_MIN &&
+    parseInt(v.slice(4, 6), 16) >= GUARD_WHITE_MIN
   )
 }
 
@@ -323,18 +324,22 @@ export function extractIrDocument(pdf: Uint8Array, opts: ConvertOptions): IrDocu
 
       // P6: the source document renders its headers/footers/page numbers onto
       // every page — detected across pages and dropped (first occurrence kept)
-      // so they do not repeat through the rebuilt body text
-      const furniture = detectFurniture(
-        extractedPages.map((p) => ({
-          index: p.index,
-          heightPt: p.heightPt,
-          chars: p.chars,
-          skip: p.scanned || p.degraded,
-        })),
-        // cell-data: repeated lines with no header/footer seat keep every
-        // occurrence — deleting data breaks the xlsx promise
-        { keepUnemitted: opts.cellData === true },
-      )
+      // so they do not repeat through the rebuilt body text. Absolute layout
+      // has no body flow: each slide is its page, so a repeated line stays on
+      // every slide.
+      const furniture: FurnitureResult = opts.absoluteLayout
+        ? { drop: extractedPages.map(() => new Set()), droppedLines: 0, hf: [] }
+        : detectFurniture(
+            extractedPages.map((p) => ({
+              index: p.index,
+              heightPt: p.heightPt,
+              chars: p.chars,
+              skip: p.scanned || p.degraded,
+            })),
+            // cell-data: repeated lines with no header/footer seat keep every
+            // occurrence — deleting data breaks the xlsx promise
+            { keepUnemitted: opts.cellData === true },
+          )
       if (furniture.droppedLines > 0) {
         warnings.push(
           `headers/footers: ${furniture.droppedLines} repeated line(s) detected across pages and deduplicated`,
@@ -529,9 +534,10 @@ export function extractIrDocument(pdf: Uint8Array, opts: ConvertOptions): IrDocu
       // by design — document priors only lower the page gate, borderline pages
       // stay flow.
       classifyPages(irPages, readDocMetadata(m, doc))
-      // cell-data (xlsx) promises page ↔ sheet: stitching would move a page's
-      // continuation paragraph onto the previous sheet and leave its own empty
-      if (!opts.cellData) stitchCrossPageParagraphs(irPages)
+      // cell-data (xlsx) and absolute layout (pptx) promise page ↔ sheet/slide:
+      // stitching would move a page's continuation paragraph onto the previous
+      // one and leave its own empty
+      if (!opts.cellData && !opts.absoluteLayout) stitchCrossPageParagraphs(irPages)
     },
     opts.password,
   )

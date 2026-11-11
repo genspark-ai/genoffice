@@ -40,7 +40,7 @@ export const pt = {
   aiChipTableEdit: 'Ajustar linhas/colunas',
   aiQueueTitle: 'Alterações na fila',
   aiQueueHint:
-    'Clique numa linha para localizar o trecho; o envio aplica todas as alterações numa única solicitação',
+    'Clique em uma linha para localizar o trecho; o envio aplica todas as alterações em uma única solicitação',
   aiQueueSend: 'Enviar {count} alterações',
   aiQueueDiscard: 'Limpar',
   aiQueueDiscardConfirm: 'Limpar as {count} alterações na fila?',
@@ -101,6 +101,11 @@ export const pt = {
     'Controle de alterações ativado: as edições de conteúdo da IA são marcadas como revisões (inserções sublinhadas, exclusões tachadas); aceite ou rejeite em Revisão',
   aiTrackOffTitle:
     'Controle de alterações desativado: as edições da IA são aplicadas imediatamente (ainda é possível reverter pelos instantâneos de versão)',
+  aiRevisionBarTitle: 'Revisões',
+  aiRevisionCount: '{count} alterações pendentes',
+  aiRevisionRejectAll: 'Rejeitar tudo',
+  aiRevisionAcceptAll: 'Aceitar tudo',
+  aiRevisionPara: 'Parágrafo {n}',
   aiTurnLimit:
     '(Limite de chamadas de ferramentas desta solicitação atingido; a resposta acima reflete as etapas concluídas até agora e pode estar incompleta.)',
   aiStopped: '(Interrompido)',
@@ -201,7 +206,12 @@ export const pt = {
   aiMindMapAskPrompt: 'Fale sobre "{label}" neste documento',
   aiMindMapJump: 'Ir para o trecho citado',
   aiMindMapExport: 'Exportar PNG',
+  aiMindMapExportSvg: 'Exportar SVG',
+  aiMindMapInsert: 'Inserir no documento',
   aiMindMapReset: 'Redefinir visualização',
   aiMindMapExpand: 'Expandir ramo',
   aiMindMapCollapse: 'Recolher ramo',
+  aiMindMapToggleLayout: 'Mudar layout',
+  aiMindMapLayoutTopDown: 'Mudar para o layout de cima para baixo',
+  aiMindMapLayoutLeftRight: 'Mudar para o layout da esquerda para a direita',
 } satisfies Record<keyof typeof zh, string>

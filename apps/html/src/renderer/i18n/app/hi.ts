@@ -69,6 +69,7 @@ export const hi = {
   openExternal: 'लिंक ब्राउज़र में खोला गया',
   save: 'सहेजें (⌘S)',
   saveAs: 'इस रूप में सहेजें…',
+  aiNameFile: 'AI से नाम दें…',
   ribbonCollapse: 'रिबन संक्षिप्त करें',
   ribbonExpand: 'रिबन विस्तृत करें',
   ribbonGroupInsert: 'सम्मिलित करें',

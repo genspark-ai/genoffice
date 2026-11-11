@@ -70,6 +70,14 @@ export function lineBoxOf(shape: XNode, theme?: ThemeColors | null): TextboxDisp
     if (xfrmAttrs['flipH'] === '1' || xfrmAttrs['flipH'] === 'true') box.flipH = true
     if (xfrmAttrs['flipV'] === '1' || xfrmAttrs['flipV'] === 'true') box.flipV = true
   }
+  // a:xfrm rot (60000ths of a degree) and a:ln w (EMU) round-trip on lines the
+  // same way they do on text-bearing shapes, so a rotated/resized connector
+  // keeps its transform across save and reload
+  const rot = parseInt(xfrmAttrs['rot'] ?? '', 10)
+  if (Number.isFinite(rot) && rot !== 0) box.rotDeg = Math.round(rot / 60000)
+  const lnW = parseInt(ln ? (attrsOf(ln)['w'] ?? '') : '', 10)
+  if (Number.isFinite(lnW) && lnW > 0)
+    box.borderWidthPx = Math.round((lnW / EMU_PER_PX) * 100) / 100
   if (Number.isFinite(cy) && cy > 0) {
     box.heightPx = Math.round(cy / EMU_PER_PX)
     box.minHeightPx = box.heightPx
@@ -151,8 +159,9 @@ function gradStopRgb(gs: XNode, theme?: ThemeColors | null): number[] | null {
     if (!slot) return null
     base = (theme?.[slot] as string | undefined) ?? DEFAULT_THEME_COLORS[slot]
   }
-  if (!base || !/^[0-9A-Fa-f]{6}$/.test(base)) return null
-  let rgb = [0, 2, 4].map((i) => parseInt(base!.slice(i, i + 2), 16))
+  const baseTrimmed = (base ?? '').trim()
+  if (!baseTrimmed || !/^[0-9A-Fa-f]{6}$/.test(baseTrimmed)) return null
+  let rgb = [0, 2, 4].map((i) => parseInt(baseTrimmed.slice(i, i + 2), 16))
   if (scheme) {
     const pct = (name: string): number | null => {
       const v = parseInt(attrsOf(findChild(scheme, name) ?? {})['val'] ?? '', 10)
@@ -379,10 +388,8 @@ export function resolveAnchorPagePos(
   if (relH !== 'page' && relH !== 'margin') return null
   if (meta.pctH === undefined && meta.alignH === undefined) return null
   const pageW = sect.pageWidth * EMU_PER_TWIP
-  const pageH = sect.pageHeight * EMU_PER_TWIP
   const marL = sect.marginLeft * EMU_PER_TWIP
   const marR = sect.marginRight * EMU_PER_TWIP
-  const marT = sect.marginTop * EMU_PER_TWIP
   const w = meta.extentXEmu ?? 0
   const refW = relH === 'page' ? pageW : pageW - marL - marR
   const relX =
@@ -398,24 +405,37 @@ export function resolveAnchorPagePos(
     xEmu: pageX - marL,
     outsideColumn: pageX + w <= marL || pageX >= pageW - marR,
   }
-  if (
-    (meta.relV === 'page' || meta.relV === 'margin') &&
-    (meta.pctV !== undefined || meta.alignV !== undefined)
-  ) {
-    const marB = sect.marginBottom * EMU_PER_TWIP
-    const h = meta.extentYEmu ?? 0
-    const refH = meta.relV === 'page' ? pageH : pageH - marT - marB
-    const relY =
-      meta.pctV !== undefined
-        ? Math.round((refH * meta.pctV) / 100000)
-        : meta.alignV === 'center'
-          ? Math.round((refH - h) / 2)
-          : meta.alignV === 'bottom' || meta.alignV === 'outside'
-            ? refH - h
-            : 0
-    pos.yEmu = (meta.relV === 'page' ? relY : marT + relY) - marT
-  }
+  const yEmu = resolveAnchorPageYEmu(meta, sect)
+  if (yEmu !== undefined) pos.yEmu = yEmu
   return pos
+}
+
+/**
+ * Page/margin-relative V placement (wp14:pctPosVOffset or wp:align) as an EMU
+ * offset from the body top, independent of how X is anchored. Undefined for
+ * plain posOffset or paragraph/line-relative anchors.
+ */
+export function resolveAnchorPageYEmu(
+  meta: DrawingAnchorMeta,
+  sect: SectionSettings | undefined,
+): number | undefined {
+  if (!sect) return undefined
+  if (meta.relV !== 'page' && meta.relV !== 'margin') return undefined
+  if (meta.pctV === undefined && meta.alignV === undefined) return undefined
+  const pageH = sect.pageHeight * EMU_PER_TWIP
+  const marT = sect.marginTop * EMU_PER_TWIP
+  const marB = sect.marginBottom * EMU_PER_TWIP
+  const h = meta.extentYEmu ?? 0
+  const refH = meta.relV === 'page' ? pageH : pageH - marT - marB
+  const relY =
+    meta.pctV !== undefined
+      ? Math.round((refH * meta.pctV) / 100000)
+      : meta.alignV === 'center'
+        ? Math.round((refH - h) / 2)
+        : meta.alignV === 'bottom' || meta.alignV === 'outside'
+          ? refH - h
+          : 0
+  return (meta.relV === 'page' ? relY : marT + relY) - marT
 }
 
 /**
@@ -465,8 +485,9 @@ function w14ColorRgb(node: XNode, theme?: ThemeColors | null): number[] | null {
     if (!slot) return null
     base = (theme?.[slot] as string | undefined) ?? DEFAULT_THEME_COLORS[slot]
   }
-  if (!base || !/^[0-9A-Fa-f]{6}$/.test(base)) return null
-  let rgb = [0, 2, 4].map((i) => parseInt(base!.slice(i, i + 2), 16))
+  const baseTrimmed = (base ?? '').trim()
+  if (!baseTrimmed || !/^[0-9A-Fa-f]{6}$/.test(baseTrimmed)) return null
+  let rgb = [0, 2, 4].map((i) => parseInt(baseTrimmed.slice(i, i + 2), 16))
   const pct = (name: string): number | null => {
     const v = parseInt(attrsOf(findChild(colorNode, name) ?? {})['w14:val'] ?? '', 10)
     return Number.isFinite(v) && v >= 0 ? v / 100000 : null

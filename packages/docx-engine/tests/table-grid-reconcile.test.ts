@@ -121,13 +121,14 @@ describe('grid reconciliation from tcW boundaries', () => {
         `<w:tr>${cell}</w:tr></w:tbl>`,
     )
     expect(declared.colWidthsTwips).toEqual([10469])
-    // a percent width is declared too: the grid stays authoritative
+    // a percent width: a grid that does not sum to the pct width is not Word's
+    // layout, the cells' preferred widths win (probe 2026-10-29)
     const pct = await tableOf(
       '<w:tbl><w:tblPr><w:tblW w:w="100%" w:type="pct"/></w:tblPr>' +
         gridXml([10469]) +
         `<w:tr>${cell}</w:tr></w:tbl>`,
     )
-    expect(pct.colWidthsTwips).toEqual([10469])
+    expect(pct.colWidthsTwips).toEqual([6480])
   })
 
   it('keeps the grid of an undeclared-width table whose preferred widths overflow the column', async () => {

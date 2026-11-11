@@ -19,7 +19,7 @@ Fichiers Word, Excel, PowerPoint et PDF, modifiés par vous et votre IA, enregis
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub stars"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <b>Français</b> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <b>Français</b> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center">
   <a href="#download"><b>Télécharger</b></a> ·
@@ -101,7 +101,7 @@ macOS, avec l'IA pilotée par le prompt que vous pouvez lire dans le panneau.
 </tr>
 <tr>
 <td><b>Construisez-la</b> — à partir d'une seule phrase, l'agent ajoute une feuille Summary avec de vraies formules <code>SUMIF</code> par région et par catégorie, insère un graphique en colonnes, et applique les 43 modifications sous forme d'un seul lot annulable.</td>
-<td><b>Interrogez-la</b> — les questions sur le classeur reviennent avec le raisonnement et les cellules exactes utilisées, présentées comme des citations cliquables. En arrière-plan : un moteur `.xlsx` Rust maison, des tableaux croisés dynamiques, des segments, une mise en forme conditionnelle, le traçage des formules, et des images intégrées dans les cellules sous forme de valeurs enrichies natives d'Excel — Excel les rouvre toujours dans leur cellule.</td>
+<td><b>Interrogez-la</b> — les questions sur le classeur reviennent avec le raisonnement et les cellules exactes utilisées, présentées comme des citations cliquables. En arrière-plan : un moteur `.xlsx` Rust maison, des tableaux croisés dynamiques, des segments, une mise en forme conditionnelle, le traçage des formules, et des images intégrées dans les cellules sous forme de valeurs enrichies natives d'Excel — Excel les rouvre toujours dans leur cellule.Les notes de cellule peuvent comporter une image, affichée sous la fenêtre de la note.</td>
 </tr>
 </table>
 
@@ -264,14 +264,14 @@ les agents ont accès à la recherche web et d'images, à la génération
 d'images, et à l'analyse d'images, d'audio et de vidéo.
 
 **Ou utilisez votre propre clé.** Paramètres → IA propose Claude, OpenAI,
-Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty
+Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code
 et OpenCode Zen/Go, ainsi qu'un emplacement personnalisé pour tout point de
 terminaison compatible OpenAI (URL de base + clé), y compris les serveurs de
 modèles locaux. La recherche et les médias disposent de leurs propres
 fournisseurs par fonctionnalité sous **IA Médias et Recherche** : Serper,
-Serply, Tavily, Parallel, Keenable, Exa ou Firecrawl pour la recherche web —
+Serply, SearchApi, Tavily, Parallel, Keenable, Exa ou Firecrawl pour la recherche web —
 Keenable fonctionne lui aussi sans clé, une clé ne fait qu'élever les limites
-de débit — et OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax ou
+de débit — et OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX ou
 tout point de terminaison d'images compatible OpenAI pour la génération
 d'images et l'analyse d'images/vidéos.
 
@@ -287,7 +287,7 @@ document.
 Un skill est un `SKILL.md` qui explique à l’IA comment bien faire une tâche : un rapport hebdomadaire, un NDA, un plan de cours.
 GenOffice en fournit une sélection et accepte les vôtres, au même format que celui des agents de codage.
 
-- **Réglages → Skills.** **Installer** un skill recommandé, ou **Importer** un dossier, un zip ou un seul `SKILL.md`. Rien n’est exécuté à l’import.
+- **Réglages → Skills.** **Installer** un skill recommandé, ou **Importer** un dossier, un zip ou un seul `SKILL.md`. Rien n’est exécuté à l’import. L’onglet **Tout** liste tout le catalogue recommandé au même endroit, avec des descriptions dans la langue de l’application.
 - **Dans une conversation.** Ouvrez le menu **+** à côté du champ de saisie d’un panneau IA, choisissez **Skills**, cochez-en un, envoyez. Le skill n’accompagne que ce message.
 
 ---
@@ -327,7 +327,7 @@ de le modifier, et comment vérifier son propre travail.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -472,6 +472,8 @@ L'AppImage s'exécute sur place : installez le runtime FUSE 2
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+Sur un Chromebook, les mêmes paquets s’exécutent dans l’environnement Linux (Crostini) — les détails sont dans [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

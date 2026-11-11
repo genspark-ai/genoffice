@@ -1,0 +1,63 @@
+{
+  "id": "kr-installed-face-factor",
+  "title": "An installed Latin-named face under a charset-81 fontTable entry lays out for real at hhea (ascent + descent) x 1.3, not the Malgun route",
+  "section": "word-truths.md#L959",
+  "section_title": "2026-11-03 Installed Latin-named Korean face (fontTable charset 81) lays out for real at hhea x 1.3",
+  "probe_date": "2026-11-03",
+  "class": "pure",
+  "source": "corpus 2026-11-03, two Korean documents declaring the face in every rFonts slot, fontTable charset 81 family auto, the face installed in the user font folder; Word for Mac direct PDF spans name the face itself, pymupdf baselines: 11 pt line=276 19.44/19.68, line=360 25.44/25.68, 10 pt table rows 15.84/16.08 = (1950 + 494) / 2048 x 1.3 = 1.5514",
+  "installed": [
+    {
+      "family": "Pretendard",
+      "unitsPerEm": 2048,
+      "hheaAscender": 1950,
+      "hheaDescender": -494,
+      "hheaLineGap": 0,
+      "xAvgCharWidth": 1100,
+      "codePageRange1": 537395615
+    }
+  ],
+  "cases": [
+    {
+      "kind": "krRoute",
+      "font": "Pretendard",
+      "expect": null,
+      "note": "the charset-81 Malgun route is for a face Word cannot find"
+    },
+    {
+      "kind": "factor",
+      "font": "Pretendard",
+      "expect": 1.5514,
+      "tol": 0.0005,
+      "note": "hhea 1.1934 x 1.3; Word 19.44/19.68 at 11 pt line=276 = 19.63"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 17.07,
+      "tol": 0.05,
+      "note": "hangul line 240: 11 x 1.5514"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 17.07,
+      "tol": 0.05,
+      "note": "Latin-only line in the same face paces the same (Word: Latin and hangul lines alike)"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 19.63,
+      "tol": 0.15,
+      "note": "line 276: Word 19.44/19.68"
+    },
+    {
+      "kind": "linePt",
+      "block": 3,
+      "expect": 25.6,
+      "tol": 0.15,
+      "note": "line 360 TOC entries: Word 25.44/25.68"
+    }
+  ]
+}

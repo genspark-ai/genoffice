@@ -8,6 +8,10 @@ import type {
   PivotAggregation,
   PivotShowDataAs,
 } from '@genoffice/xlsx-gateway/domain/pivot-value-modes'
+import {
+  showDataAsNeedsBaseField,
+  showDataAsNeedsBaseItem,
+} from '@genoffice/xlsx-gateway/domain/pivot-value-modes'
 
 export interface PivotField {
   readonly label: string
@@ -41,6 +45,11 @@ export interface PivotValueSpec {
   readonly fieldIndex: number
   readonly agg: PivotAggregation
   readonly showDataAs?: PivotShowDataAs | undefined
+  /// "Show values as" base field (index into PivotField[]); only set while the
+  /// field sits on Rows or Columns.
+  readonly baseFieldIndex?: number | undefined
+  /// Base item label within the base field ("" = blank member).
+  readonly baseItem?: string | undefined
   /// Custom caption; undefined = "Sum of <field>".
   readonly name?: string | undefined
   readonly calcName?: string | undefined
@@ -427,7 +436,25 @@ export function modelToConfig(
     valueFilters: model.values.flatMap((value, valueIndex) =>
       value.filter === undefined ? [] : [{ valueIndex, rule: value.filter }],
     ),
-    values: model.values.map(({ filter: _filter, ...value }) => value),
+    // Base field/item only travel with the modes that use them, so a stale
+    // picker choice cannot survive a mode switch.
+    values: model.values.map(({ filter: _filter, baseFieldIndex, baseItem, ...value }) => ({
+      ...value,
+      ...(showAsUsesBaseField(value.showDataAs) && baseFieldIndex !== undefined
+        ? { baseFieldIndex }
+        : {}),
+      ...(showAsUsesBaseItem(value.showDataAs) && baseItem !== undefined ? { baseItem } : {}),
+    })),
     targetCell,
   }
+}
+
+/// Whether a "show values as" mode opens the base-field picker (and, for the
+/// difference family, the base-item picker).
+export function showAsUsesBaseField(mode: PivotShowDataAs | undefined): boolean {
+  return mode !== undefined && showDataAsNeedsBaseField(mode)
+}
+
+export function showAsUsesBaseItem(mode: PivotShowDataAs | undefined): boolean {
+  return mode !== undefined && showDataAsNeedsBaseItem(mode)
 }

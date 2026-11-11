@@ -58,7 +58,7 @@ describe('the ODF import route in the Slides main module', () => {
   it('writes the converted copy atomically, as the Docs and shell routes do', () => {
     // a plain writeFile leaves a half-written .pptx where the user expects a
     // deck when the process dies mid-write
-    expect(source).toContain('await atomicWriteFile(r.filePath, Buffer.from(result.pptx))')
+    expect(source).toContain('await atomicWriteFile(r.filePath, Buffer.from(out))')
     expect(source).toContain(
       "import { atomicWriteFile, atomicWriteVia } from '@genoffice/electron-utils/atomic-write'",
     )

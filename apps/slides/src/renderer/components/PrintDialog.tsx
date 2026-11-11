@@ -14,11 +14,18 @@ import {
   parsePrintRange,
   printPageCount,
   type PrintLayout,
+  type PrintOrder,
   type PrintOrientation,
 } from '../../shared/print-html'
 import { renderSlidesToPngBase64 } from '../export-render'
+import type { PrintDuplex, PrinterInfo, PrinterOption } from '../../shared/ipc'
 
 type RangeMode = 'all' | 'current' | 'custom'
+
+const IS_MAC = navigator.platform.toLowerCase().includes('mac')
+/** the escape hatch: hand the job to the OS print dialog instead of printing here */
+const PRINT_SYSTEM_DIALOG = '\u0000system-dialog'
+const PRINT_DUPLEX_MODES: PrintDuplex[] = ['simplex', 'longEdge', 'shortEdge']
 
 export function PrintDialog({
   slides,
@@ -43,10 +50,22 @@ export function PrintDialog({
   const [rangeMode, setRangeMode] = useState<RangeMode>('all')
   const [customRange, setCustomRange] = useState('')
   const [orientation, setOrientation] = useState<PrintOrientation>('portrait')
+  const [order, setOrder] = useState<PrintOrder>('horizontal')
   const [frame, setFrame] = useState(false)
   const [includeHidden, setIncludeHidden] = useState(false)
   const [printing, setPrinting] = useState(false)
+  // the printer section: '' = the OS default, a name = that queue, SYSTEM = the OS dialog
+  const [printers, setPrinters] = useState<PrinterInfo[]>([])
+  const [printDevice, setPrintDevice] = useState(IS_MAC ? PRINT_SYSTEM_DIALOG : '')
+  const [printCopies, setPrintCopies] = useState(1)
+  const [printCollate, setPrintCollate] = useState(true)
+  const [printDuplex, setPrintDuplex] = useState<PrintDuplex>('simplex')
+  const [driverOptions, setDriverOptions] = useState<PrinterOption[]>([])
+  const [driverChoices, setDriverChoices] = useState<Record<string, string>>({})
   const blobUrlsRef = useRef<string[]>([])
+  // Only the newest printer-options request may fill the dropdowns: a slow
+  // answer for an earlier queue must not land after a later selection's.
+  const driverOptionsRequest = useRef(0)
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const paneRef = useRef<HTMLDivElement | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -103,6 +122,19 @@ export function PrintDialog({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [onClose])
 
+  useEffect(() => {
+    let alive = true
+    window.slidesApi
+      .listPrinters()
+      .then((list) => {
+        if (alive) setPrinters(list)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+
   /** 0-based deck indices selected by the range options (before the hidden filter) */
   const rangeIndices = useMemo<number[] | null>(() => {
     if (rangeMode === 'all') return slides.map((_s, i) => i)
@@ -126,10 +158,11 @@ export function PrintDialog({
       layout,
       notes: selected.map((i) => notes[i] ?? ''),
       orientation,
+      order,
       frame,
       preview: true,
     })
-  }, [pngs, selected, slides, layout, notes, orientation, frame])
+  }, [pngs, selected, slides, layout, notes, orientation, order, frame])
 
   /** Scale the preview document so one page fits the pane width (iframe body zoom) */
   const applyZoom = useCallback(() => {
@@ -155,6 +188,21 @@ export function PrintDialog({
     setPrinting(true)
     try {
       const first = slides[selected[0]]
+      const job =
+        printDevice === PRINT_SYSTEM_DIALOG
+          ? undefined
+          : {
+              deviceName: printDevice,
+              copies: printCopies,
+              collate: printCollate,
+              duplex: printDuplex,
+              driverOptions: driverOptions
+                .filter(
+                  (g) =>
+                    driverChoices[g.name] !== undefined && driverChoices[g.name] !== g.defaultValue,
+                )
+                .map((g) => ({ name: g.name, value: driverChoices[g.name]! })),
+            }
       const r = await window.slidesApi.printSlides({
         pngsBase64: selected.map((i) => pngs[i]),
         widthPx: first.widthPx,
@@ -162,7 +210,9 @@ export function PrintDialog({
         layout,
         ...(layout === 'notes' ? { notes: selected.map((i) => notes[i] ?? '') } : {}),
         ...(layout !== 'full' ? { orientation } : {}),
+        ...(layout !== 'full' && layout !== 'notes' ? { order } : {}),
         ...(frame && layout === 'full' ? { frame: true } : {}),
+        ...(job ? { job } : {}),
       })
       if (r.ok) onClose()
       else if (r.error) setStatus(t('appPrintFailed', { error: r.error }))
@@ -176,9 +226,13 @@ export function PrintDialog({
     ['full', t('appPrintLayoutFull')],
     ['handout2', t('appPrintLayoutHandout2')],
     ['handout3', t('appPrintLayoutHandout3')],
+    ['handout4', t('appPrintLayoutHandout4')],
     ['handout6', t('appPrintLayoutHandout6')],
+    ['handout9', t('appPrintLayoutHandout9')],
     ['notes', t('appPrintLayoutNotes')],
   ]
+  // A single column (or no grid at all) leaves the order option nothing to swap
+  const orderMatters = layout !== 'full' && layout !== 'notes' && layout !== 'handout3'
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -262,6 +316,29 @@ export function PrintDialog({
               ))}
             </fieldset>
             <fieldset>
+              <legend>{t('appPrintOrderGroup')}</legend>
+              <label className="print-radio">
+                <input
+                  type="radio"
+                  name="print-order"
+                  disabled={!orderMatters}
+                  checked={order === 'horizontal'}
+                  onChange={() => setOrder('horizontal')}
+                />
+                {t('appPrintOrderHorizontal')}
+              </label>
+              <label className="print-radio">
+                <input
+                  type="radio"
+                  name="print-order"
+                  disabled={!orderMatters}
+                  checked={order === 'vertical'}
+                  onChange={() => setOrder('vertical')}
+                />
+                {t('appPrintOrderVertical')}
+              </label>
+            </fieldset>
+            <fieldset>
               <legend>{t('appPrintOrientation')}</legend>
               <label className="print-radio">
                 <input
@@ -302,6 +379,109 @@ export function PrintDialog({
                 />
                 {t('appPrintHidden')}
               </label>
+            </fieldset>
+            <fieldset>
+              <legend>{t('appPrintPrinter')}</legend>
+              <select
+                className="print-select"
+                value={printDevice}
+                onChange={(e) => {
+                  const device = e.target.value
+                  setPrintDevice(device)
+                  setDriverChoices({})
+                  setDriverOptions([])
+                  // Bumped on every switch (including the system-dialog entry),
+                  // so a pending request for an earlier queue can never fill the
+                  // groups of the queue selected now.
+                  const request = ++driverOptionsRequest.current
+                  if (device && device !== PRINT_SYSTEM_DIALOG && IS_MAC) {
+                    void window.slidesApi
+                      .printerOptions(device)
+                      .then((groups) => {
+                        if (request === driverOptionsRequest.current) setDriverOptions(groups)
+                      })
+                      .catch(() => {
+                        if (request === driverOptionsRequest.current) setDriverOptions([])
+                      })
+                  }
+                }}
+              >
+                <option value="">{t('appPrintDefaultPrinter')}</option>
+                {printers.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.displayName}
+                  </option>
+                ))}
+                <option value={PRINT_SYSTEM_DIALOG}>{t('appPrintSystemDialog')}</option>
+              </select>
+              {printDevice !== PRINT_SYSTEM_DIALOG && (
+                <>
+                  <div className="print-copies-row">
+                    <label>
+                      {t('appPrintCopies')}
+                      <input
+                        type="number"
+                        className="print-range-input"
+                        min={1}
+                        max={999}
+                        value={printCopies}
+                        onChange={(e) =>
+                          setPrintCopies(
+                            Math.min(999, Math.max(1, Math.round(Number(e.target.value)) || 1)),
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="print-radio">
+                      <input
+                        type="checkbox"
+                        checked={printCollate}
+                        disabled={printCopies < 2}
+                        onChange={(e) => setPrintCollate(e.target.checked)}
+                      />
+                      {t('appPrintCollate')}
+                    </label>
+                  </div>
+                  <label className="print-radio">
+                    {t('appPrintDuplex')}
+                    <select
+                      className="print-select"
+                      value={printDuplex}
+                      onChange={(e) => setPrintDuplex(e.target.value as PrintDuplex)}
+                    >
+                      {PRINT_DUPLEX_MODES.map((m) => (
+                        <option key={m} value={m}>
+                          {t(
+                            m === 'simplex'
+                              ? 'appPrintDuplexOff'
+                              : m === 'longEdge'
+                                ? 'appPrintDuplexLong'
+                                : 'appPrintDuplexShort',
+                          )}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {driverOptions.map((group) => (
+                    <label key={group.name} className="print-radio">
+                      {group.translation}
+                      <select
+                        className="print-select"
+                        value={driverChoices[group.name] ?? group.defaultValue ?? group.values[0]}
+                        onChange={(e) =>
+                          setDriverChoices((c) => ({ ...c, [group.name]: e.target.value }))
+                        }
+                      >
+                        {group.values.map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </>
+              )}
             </fieldset>
             <div className="print-page-count">
               {selected.length > 0 ? t('appPrintPageCount', { n: pageCount }) : ''}

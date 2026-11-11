@@ -19,7 +19,7 @@ File Word, Excel, PowerPoint, dan PDF, diedit oleh Anda dan AI Anda, disimpan ke
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub stars"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <b>Bahasa Indonesia</b> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <b>Bahasa Indonesia</b> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center">
   <a href="#download"><b>Unduh</b></a> ·
@@ -100,7 +100,7 @@ dari prompt yang bisa Anda baca di panel.
 </tr>
 <tr>
 <td><b>Bangun sheet-nya</b> — dari satu kalimat, agen menambahkan sheet Summary dengan rumus <code>SUMIF</code> yang sebenarnya per wilayah dan kategori, menyisipkan grafik kolom, dan menerapkan 43 perubahan sebagai satu batch yang bisa dibatalkan sekaligus.</td>
-<td><b>Tanyakan langsung</b> — pertanyaan tentang workbook dijawab lengkap dengan penalarannya, dan sel yang dipakai muncul sebagai kutipan yang bisa diklik. Di baliknya: mesin `.xlsx` Rust buatan sendiri, pivot table, slicer, pemformatan bersyarat, penelusuran rumus, serta gambar yang disematkan ke dalam sel sebagai rich value native Excel — saat dibuka lagi di Excel, gambarnya tetap berada di sel.</td>
+<td><b>Tanyakan langsung</b> — pertanyaan tentang workbook dijawab lengkap dengan penalarannya, dan sel yang dipakai muncul sebagai kutipan yang bisa diklik. Di baliknya: mesin `.xlsx` Rust buatan sendiri, pivot table, slicer, pemformatan bersyarat, penelusuran rumus, serta gambar yang disematkan ke dalam sel sebagai rich value native Excel — saat dibuka lagi di Excel, gambarnya tetap berada di sel.Catatan sel dapat memuat gambar, yang ditampilkan di bawah popup catatan.</td>
 </tr>
 </table>
 
@@ -260,13 +260,13 @@ agen mendapatkan akses pencarian web dan gambar, generasi gambar, serta
 analisis gambar/audio/video.
 
 **Atau bawa kunci Anda sendiri.** Settings → AI menampilkan Claude, OpenAI,
-Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty,
+Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code,
 dan OpenCode Zen/Go, plus slot khusus untuk endpoint apa pun yang kompatibel
 dengan OpenAI (base URL + kunci), termasuk server model lokal. Pencarian dan
 media memiliki penyedia tersendiri per kemampuan di bawah **AI Media &
-Search**: Serper, Serply, Tavily, Parallel, Keenable, Exa, atau Firecrawl
+Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa, atau Firecrawl
 untuk pencarian web — Keenable juga tanpa kunci; kunci hanya menaikkan batas
-lajunya — dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, atau
+lajunya — dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX, atau
 endpoint apa pun yang kompatibel dengan OpenAI untuk generasi gambar serta
 analisis gambar/video.
 
@@ -281,7 +281,7 @@ mempertahankan warna asli dokumen.
 Skill adalah berkas `SKILL.md` yang memberi tahu AI cara mengerjakan satu tugas dengan baik: laporan mingguan, NDA, rencana pelajaran.
 GenOffice menyertakan sekumpulan skill dan menerima skill buatan Anda, dalam format yang sama dengan yang dipakai agen pemrograman.
 
-- **Pengaturan → Skill.** **Pasang** skill yang direkomendasikan, atau **Impor** folder, zip, atau satu berkas `SKILL.md`. Tidak ada yang dijalankan saat impor.
+- **Pengaturan → Skill.** **Pasang** skill yang direkomendasikan, atau **Impor** folder, zip, atau satu berkas `SKILL.md`. Tidak ada yang dijalankan saat impor. Tab **Semua** menampilkan seluruh katalog yang direkomendasikan di satu tempat, dengan deskripsi mengikuti bahasa aplikasi.
 - **Di obrolan.** Buka menu **+** di samping kotak pesan panel AI mana pun, pilih **Skill**, centang satu, lalu kirim. Skill hanya ikut dengan pesan itu.
 
 ---
@@ -321,7 +321,7 @@ dan bagaimana memeriksa hasil kerjanya sendiri.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -461,6 +461,8 @@ AppImage berjalan langsung di tempat: pasang runtime FUSE 2
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+Di Chromebook, paket yang sama berjalan di dalam lingkungan Linux (Crostini) — detailnya ada di [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

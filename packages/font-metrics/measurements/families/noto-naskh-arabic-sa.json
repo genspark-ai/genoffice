@@ -1,0 +1,15 @@
+{
+  "family": "Noto Naskh Arabic SA",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-11",
+    "fonts": ["Simplified Arabic (M365 cloud)", "NotoNaskhArabic-Regular-subset.woff2"],
+    "probe": "hb-shape width of a long Arabic body, 0.924 (bold 0.916)"
+  },
+  "faces": [
+    {
+      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
+      "sizeAdjust": 92.4
+    }
+  ]
+}

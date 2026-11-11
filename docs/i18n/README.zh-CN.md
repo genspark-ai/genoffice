@@ -19,7 +19,7 @@ Word、Excel、PowerPoint 和 PDF 文件，由你与你的 AI 共同编辑，并
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub Star 数"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <b>简体中文</b> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <b>简体中文</b> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center">
   <a href="#download"><b>下载</b></a> ·
@@ -90,7 +90,7 @@ OOXML 副本形式打开；这类导入是「仅打开」式的 —— 保存时
 </tr>
 <tr>
 <td><b>让它来做</b> —— 只需一句话，智能体就会新增一张「汇总」工作表，按地区和类别写入真正的 <code>SUMIF</code> 公式，插入柱状图，并把这 43 项更改作为一个可撤销的批次一次应用。</td>
-<td><b>向它提问</b> —— 关于工作簿的问题会连同推理过程一起返回，所用的具体单元格以可点击的引用形式给出。底层是自研的 Rust <code>.xlsx</code> 引擎，支持数据透视表、切片器、条件格式、公式追踪，以及以 Excel 原生富值（rich value）形式嵌入单元格的图片 —— Excel 重新打开时，图片仍然在单元格中。</td>
+<td><b>向它提问</b> —— 关于工作簿的问题会连同推理过程一起返回，所用的具体单元格以可点击的引用形式给出。底层是自研的 Rust <code>.xlsx</code> 引擎，支持数据透视表、切片器、条件格式、公式追踪，以及以 Excel 原生富值（rich value）形式嵌入单元格的图片 —— Excel 重新打开时，图片仍然在单元格中。单元格备注可以带图片，显示在备注弹窗的下方。</td>
 </tr>
 </table>
 
@@ -235,12 +235,12 @@ Word 文档，供你实时查看。
 解析能力。
 
 **或者自带密钥。** 设置 → AI 中列出了 Claude、OpenAI、Gemini、DeepSeek、Kimi、
-GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty 和 OpenCode Zen/Go，另有
+GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty、Opper、Cheaper Inference、Atlas Cloud、SiliconFlow、PPIO、Command Code 和 OpenCode Zen/Go，另有
 一个自定义槽位可接入任何 OpenAI 兼容端点（Base URL + 密钥），包括本地模型服务。
 搜索和媒体能力在 **AI 媒体与搜索** 下按能力分别配置服务商：网页搜索可选 Serper、
-Serply、Tavily、Parallel、Keenable、Exa 或 Firecrawl —— 其中 Keenable 同样免密钥，
+Serply、SearchApi、Tavily、Parallel、Keenable、Exa 或 Firecrawl —— 其中 Keenable 同样免密钥，
 配置密钥只会提高速率限额；图片生成和图片/视频解析可选 OpenAI、Gemini、
-Doubao/Seedream、GLM、Grok、Qwen、MiniMax 或任何 OpenAI 兼容的图片端点。
+Doubao/Seedream、GLM、Grok、Qwen、MiniMax、Stability、FLUX 或任何 OpenAI 兼容的图片端点。
 
 整个套件提供浅色、深色和跟随系统三种主题。主题只改变屏幕上的显示：导出、打印
 和保存的文件始终保留文档自身的颜色。
@@ -252,7 +252,7 @@ Doubao/Seedream、GLM、Grok、Qwen、MiniMax 或任何 OpenAI 兼容的图片�
 Skill 是一份 `SKILL.md`，告诉 AI 怎样把一件事做好：周报、保密协议、教案。
 GenOffice 内置了一批，也接受你自己的，格式与编程智能体所用的相同。
 
-- **设置 → Skills。** **安装**推荐的 skill，或**导入**文件夹、zip 或单个 `SKILL.md`。导入不会运行任何东西。
+- **设置 → Skills。** **安装**推荐的 skill，或**导入**文件夹、zip 或单个 `SKILL.md`。导入不会运行任何东西。 **全部**标签页把整个推荐目录列在一处，描述随应用语言显示。
 - **在聊天中。** 打开任意 AI 面板输入框旁的 **+** 菜单，选 **Skills**，勾选一个，发送。Skill 只随这一条消息送出。
 
 ---
@@ -287,7 +287,7 @@ GenOffice 内置了一批，也接受你自己的，格式与编程智能体所�
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -415,6 +415,8 @@ AppImage 无需安装即可运行：先安装 FUSE 2 运行时
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+在 Chromebook 上，同样的安装包可以在 Linux 环境（Crostini）中运行——详见 [docs/platforms/chromeos.md](../platforms/chromeos.md)。
 
 </details>
 

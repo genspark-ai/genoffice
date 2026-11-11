@@ -5,6 +5,7 @@ import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-doc
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { pinParagraphRelVPictures } from '../src/renderer/editor/pagination-gaps'
+import type { BlockPlan } from '../src/renderer/pagination-plan'
 
 const PIC =
   '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
@@ -41,7 +42,9 @@ describe('run-level wrapNone pictures with a paragraph-relative Y', () => {
     const { editor, relV } = await render(anchor('paragraph', 2532380))
     expect(relV).toBeUndefined()
     const img = editor.view.dom.querySelector<HTMLImageElement>('.doc-inline-img-anchor > img')!
-    expect(img.style.transform).toBe('translate(96.0px, calc(265.9px - var(--anchor-before,0px)))')
+    expect(img.style.transform).toBe(
+      'translate(calc(96.0px - var(--anchor-ind,0px)), calc(265.9px - var(--anchor-before,0px)))',
+    )
     const host = img.closest<HTMLElement>('.doc-anchor-origin')!
     expect(host.style.marginTop).toBe('7.5pt')
     host.style.marginTop = '10px'
@@ -50,11 +53,24 @@ describe('run-level wrapNone pictures with a paragraph-relative Y', () => {
     editor.destroy()
   })
 
+  it('takes the planned space before over the computed margin, 0 where the page lead dropped it', async () => {
+    const { editor } = await render(anchor('paragraph', 0))
+    const img = editor.view.dom.querySelector<HTMLImageElement>('.doc-inline-img-anchor > img')!
+    const host = img.closest<HTMLElement>('.doc-anchor-origin')!
+    host.style.marginTop = '10px'
+    const plan = { kind: 'para', spaceBeforePt: 12 } as unknown as BlockPlan
+    pinParagraphRelVPictures(editor.view.dom, (el) => (el === host ? plan : undefined))
+    expect(img.style.getPropertyValue('--anchor-before')).toBe('16.0px')
+    pinParagraphRelVPictures(editor.view.dom, () => plan, new Set([host]))
+    expect(img.style.getPropertyValue('--anchor-before')).toBe('0.0px')
+    editor.destroy()
+  })
+
   it('keeps a line-relative offset on the line top', async () => {
     const { editor, relV } = await render(anchor('line', 95250))
     expect(relV).toBe('line')
     const img = editor.view.dom.querySelector<HTMLImageElement>('.doc-inline-img-anchor > img')!
-    expect(img.style.transform).toBe('translate(96.0px, 10.0px)')
+    expect(img.style.transform).toBe('translate(calc(96.0px - var(--anchor-ind,0px)), 10.0px)')
     editor.destroy()
   })
 })

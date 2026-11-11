@@ -188,3 +188,110 @@ describe('absolute layout keeps same-row units apart', () => {
     expect(texts).toHaveLength(1)
   })
 })
+
+describe('repeated page furniture in absolute layout', () => {
+  /** four pages, each with the same header, a page-number footer and its own body */
+  async function reportPdf(): Promise<Uint8Array> {
+    const { PDFDocument, StandardFonts } = await import('pdf-lib')
+    const doc = await PDFDocument.create()
+    const font = await doc.embedFont(StandardFonts.Helvetica)
+    for (let i = 0; i < 4; i += 1) {
+      const page = doc.addPage([612, 792])
+      page.drawText('ACME QUARTERLY REPORT', { x: 72, y: 750, size: 12, font })
+      page.drawText(`Body of page ${i + 1}, which is different on every page.`, {
+        x: 72,
+        y: 500,
+        size: 12,
+        font,
+      })
+      page.drawText(`Page ${i + 1} of 4`, { x: 280, y: 40, size: 10, font })
+    }
+    return doc.save()
+  }
+
+  it('keeps the header and page number on every slide; docx still lifts them out', async () => {
+    const pdfium = await loadPdfium()
+    const pdf = await reportPdf()
+
+    const docx = await convertPdfToDocx(pdf, { pdfium })
+    expect(docx.warnings.some((w) => w.startsWith('headers/footers:'))).toBe(true)
+
+    const result = await convertPdfToPptx(pdf, { pdfium })
+    expect(result.warnings.some((w) => w.startsWith('headers/footers:'))).toBe(false)
+    const opened = await openPptx(result.pptx)
+    expect(opened.deck.slides).toHaveLength(4)
+    opened.deck.slides.forEach((slide, i) => {
+      const text = JSON.stringify(slide.elements)
+      expect(text).toContain('ACME QUARTERLY REPORT')
+      expect(text).toContain(`Page ${i + 1} of 4`)
+    })
+  })
+})
+
+describe('cross-page paragraph stitching in absolute layout', () => {
+  const PAGES = 4
+  const LINES = 44
+  const letter = (n: number) => String.fromCharCode(97 + n)
+  const marker = (page: number, line: number) =>
+    `pg${letter(page - 1).toUpperCase()}ln${letter(Math.floor((line - 1) / 26))}${letter((line - 1) % 26)}`
+
+  async function runningTextPdf(): Promise<Uint8Array> {
+    const { PDFDocument, StandardFonts } = await import('pdf-lib')
+    const doc = await PDFDocument.create()
+    const font = await doc.embedFont(StandardFonts.Helvetica)
+    const words = 'lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod'.split(' ')
+    for (let p = 1; p <= PAGES; p += 1) {
+      const page = doc.addPage([612, 792])
+      for (let l = 1; l <= LINES; l += 1) {
+        let text = marker(p, l)
+        for (let w = 0; ; w += 1) {
+          const next = `${text} ${words[w % words.length]}`
+          if (font.widthOfTextAtSize(next, 11) > 468) break
+          text = next
+        }
+        page.drawText(text, { x: 72, y: 720 - (l - 1) * 14.5, size: 11, font })
+      }
+    }
+    return doc.save()
+  }
+
+  it('no page flows from the previous one and no block takes in the next page', async () => {
+    const pdfium = await loadPdfium()
+    const { irPages } = extractIrDocument(await runningTextPdf(), { pdfium, absoluteLayout: true })
+    expect(irPages).toHaveLength(PAGES)
+    expect(irPages.filter((page) => page.flowsFromPrev)).toEqual([])
+    const stitched = irPages.flatMap((page) =>
+      page.blocks.filter((b) => b.kind === 'text' && b.stitchedFromLine !== undefined),
+    )
+    expect(stitched).toEqual([])
+  })
+
+  it('each slide holds its own page first and last lines', async () => {
+    const pdfium = await loadPdfium()
+    const result = await convertPdfToPptx(await runningTextPdf(), { pdfium })
+    const opened = await openPptx(result.pptx)
+    expect(opened.deck.slides).toHaveLength(PAGES)
+    opened.deck.slides.forEach((slide, i) => {
+      const text = JSON.stringify(slide.elements)
+      expect(text).toContain(marker(i + 1, 1))
+      expect(text).toContain(marker(i + 1, LINES))
+      const pages = new Set([...text.matchAll(/pg([A-Z])ln[a-z]{2}/g)].map((m) => m[1]))
+      expect([...pages]).toEqual([letter(i).toUpperCase()])
+    })
+  })
+
+  it('docx still joins the paragraph across the page boundary', async () => {
+    const pdfium = await loadPdfium()
+    const docx = await convertPdfToDocx(await runningTextPdf(), { pdfium })
+    const JSZip = (await import('jszip')).default
+    const zip = await JSZip.loadAsync(docx.docx)
+    const xml = await zip.file('word/document.xml')!.async('string')
+    const paragraphs = (xml.match(/<w:p[ >][\s\S]*?<\/w:p>/g) ?? []).map((p) =>
+      p.replace(/<[^>]+>/g, ''),
+    )
+    const joined = paragraphs.filter(
+      (p) => p.includes(marker(1, LINES)) && p.includes(marker(2, 1)),
+    )
+    expect(joined).toHaveLength(1)
+  })
+})

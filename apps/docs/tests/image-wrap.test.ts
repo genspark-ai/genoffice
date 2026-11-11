@@ -1,4 +1,5 @@
 import { Editor } from '@tiptap/core'
+import type { Node as ProseNode } from '@tiptap/pm/model'
 import { NodeSelection } from '@tiptap/pm/state'
 import { parseDocx, saveDocx } from '@genoffice/docx-engine'
 import JSZip from 'jszip'
@@ -125,6 +126,59 @@ describe('image wrap in the editor', () => {
       'image',
       'paragraph',
     ])
+    editor.destroy()
+  })
+
+  it('drops an in-line picture where it was let go, measured without its own line', async () => {
+    const paragraph = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
+    const { editor } = await openImageDoc(
+      paragraph('A') + IMAGE_PARAGRAPH_XML + paragraph('B') + paragraph('C') + paragraph('D'),
+    )
+    let imagePos = -1
+    const paragraphPositions: number[] = []
+    editor.state.doc.forEach((node, pos) => {
+      if (node.type.name === 'docProtected') imagePos = pos
+      else if (node.type.name === 'docParagraph') paragraphPositions.push(pos)
+    })
+    expect(editor.state.doc.nodeAt(imagePos)?.attrs.imageWrap).toBeNull()
+
+    const rect = (left: number, top: number, width: number, height: number) =>
+      new DOMRect(left, top, width, height)
+    const wrapper = editor.view.nodeDOM(imagePos) as HTMLElement
+    // the picture's 200px line pushes B..D down; once the drop takes it out of
+    // the flow they move up (D sits after a 40px gap)
+    const shownTops = [40, 300, 360, 460]
+    const flowTops = [40, 100, 160, 260]
+    paragraphPositions.forEach((pos, index) => {
+      const dom = editor.view.nodeDOM(pos) as HTMLElement
+      dom.getBoundingClientRect = () =>
+        rect(100, (wrapper.style.display === 'none' ? flowTops : shownTops)[index], 500, 60)
+    })
+    wrapper.getBoundingClientRect = () => rect(100, 100, 500, 200)
+    const imageBox = wrapper.querySelector<HTMLElement>('.doc-img-wrap')!
+    imageBox.getBoundingClientRect = () => rect(200, 100, 100, 200)
+
+    imageBox.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 250, clientY: 150 }),
+    )
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 250, clientY: 300 }))
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 250, clientY: 300 }))
+
+    // the top lands at 250: C (160..220) is the nearest paragraph above it —
+    // not D below, which would need a negative offset lifting it over C
+    expect(editor.state.doc.content.content.map((node) => node.type.name)).toEqual([
+      'docParagraph',
+      'docParagraph',
+      'docProtected',
+      'docParagraph',
+      'docParagraph',
+    ])
+    expect(editor.state.doc.child(3).textContent).toBe('C')
+    const moved = editor.state.selection instanceof NodeSelection && editor.state.selection.node
+    expect(moved && moved.attrs.imageWrap).toBe('square-left')
+    expect(moved && moved.attrs.imageOffsetXEmu).toBe(100 * 9525)
+    expect(moved && moved.attrs.imageOffsetYEmu).toBe((250 - 160) * 9525)
+    expect(wrapper.style.display).toBe('')
     editor.destroy()
   })
 
@@ -658,7 +712,9 @@ describe('image wrap in the editor', () => {
     const right = editor.view.dom.querySelector<HTMLElement>(
       '.doc-protected.img-wrap-square-right',
     )!
-    expect(right.style.marginRight).toMatch(/calc\(100% - 216(\.0)?px\)/)
+    expect(right.style.marginRight).toMatch(
+      /max\(100% - 216(\.0)?px, -1 \* var\(--doc-margin-right,0px\)\)/,
+    )
     editor.destroy()
   })
 
@@ -709,11 +765,15 @@ describe('image wrap in the editor', () => {
     )!
     expect(img).toBeTruthy()
     // colW − x − width from the right edge: x=2407073 EMU ≈ 252.7px, w ≈ 299px
-    expect(img.style.marginRight).toMatch(/calc\(100% - 55[12](\.\d)?px\)/)
+    // jsdom folds the margins into a shorthand it cannot split again once a
+    // var() fallback is inside: top / right / bottom / left (bottom and left
+    // carry the cell-only terms, inert outside a td)
+    expect(img.getAttribute('style')).toMatch(
+      new RegExp(
+        String.raw`margin: 0\.0px max\(100% - calc\(55[12](\.\d)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) calc\(0\.0px \+ clamp\(.*\) min\(12\.0px, calc\(100% - 299\.3px - max\(`,
+      ),
+    )
     expect(img.style.maxWidth).toBe('none')
-    expect(img.style.marginTop).toBe('0px')
-    expect(img.style.marginBottom).toBe('0px')
-    expect(img.style.marginLeft).toBe('12px')
     editor.destroy()
   })
 
@@ -871,7 +931,7 @@ describe('side-wrapped pictures that leave no room for text', () => {
         `<w:r><w:t>Heading</w:t></w:r></w:p>`,
     )
     const img = editor.view.dom.querySelector<HTMLElement>('img.doc-inline-img--wrap-tight-right')!
-    expect(img.style.marginTop).toBe('37.7px')
+    expect(img.getAttribute('style')).toMatch(/margin: 37\.7px /)
     editor.destroy()
   })
 
@@ -913,6 +973,64 @@ describe('side-wrapped pictures that leave no room for text', () => {
     expect(free['data-cell-lift']).toBeUndefined()
   })
 
+  it('keeps a layoutInCell side wrap inside its cell and grows the row by the empty line (genoffice#2480)', async () => {
+    const cell = (body: string) =>
+      '<w:tbl><w:tblPr><w:tblW w:w="3402" w:type="dxa"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="3402"/></w:tblGrid><w:tr><w:tc>' +
+      `<w:tcPr><w:tcW w:w="3402" w:type="dxa"/></w:tcPr><w:p>${body}</w:p></w:tc></w:tr></w:tbl>`
+    const renderedImg = async (body: string) => {
+      const { editor } = await openImageDoc(cell(body))
+      let attrs: Record<string, string> | undefined
+      editor.state.doc.descendants((node) => {
+        if (node.type.name === 'docInlineImage') {
+          const spec = editor.schema.nodes.docInlineImage.spec.toDOM!(node) as [
+            string,
+            typeof attrs,
+          ]
+          attrs = spec[1]
+        }
+      })
+      const cellClip = editor.view.dom.querySelector('td')?.getAttribute('data-cell-clip')
+      editor.destroy()
+      return { ...attrs!, cellClip: cellClip ?? '' } as Record<string, string>
+    }
+    // 8.5 cm picture centred on the margin band inside a 6 cm cell
+    const centred = anchoredPicture(0, 60000, 3060000, 1764000).replace(
+      /<wp:positionH relativeFrom="column"><wp:posOffset>0<\/wp:posOffset><\/wp:positionH>/,
+      '<wp:positionH relativeFrom="margin"><wp:align>center</wp:align></wp:positionH>',
+    )
+    const inCell = await renderedImg(centred)
+    expect(inCell['data-cell-pic']).toBe('1')
+    expect(inCell.cellClip).toBe('1')
+    // the band X clamps to the paper edge (0 in a cell), the far margin caps the
+    // margin box at the cell width and the row grows by the line it displaces
+    expect(inCell.style).toContain(
+      'margin-left:max(-1 * var(--doc-margin-left,0px), calc(50% - 160.6px',
+    )
+    expect(inCell.style).toMatch(/margin-right:min\(12\.0px, calc\(100% - 321\.3px - max\(/)
+    expect(inCell.style).toMatch(
+      /margin-bottom:calc\(0\.0px \+ clamp\(0px, .* \* 1000, var\(--cell-line,0px\)\)\)/,
+    )
+
+    const free = await renderedImg(centred.replace('layoutInCell="1"', 'layoutInCell="0"'))
+    expect(free['data-cell-pic']).toBeUndefined()
+    expect(free.cellClip).toBe('')
+    expect(free.style).toContain('margin-right:12.0px')
+    expect(free.style).not.toContain('--cell-line')
+
+    // page-relative Y: Word measures it from the cell top
+    const pageRel = await renderedImg(
+      centred.replace(
+        '<wp:positionV relativeFrom="paragraph">',
+        '<wp:positionV relativeFrom="page">',
+      ),
+    )
+    expect(pageRel.style).toContain('--cell-y:6.3px')
+    expect(pageRel.style).toMatch(
+      /margin-top:calc\(min\(0px, calc\(6\.3px - var\(--doc-margin-top,0px\)\)\) \+ var\(--cell-page-y,0px\)\)/,
+    )
+  })
+
   it('composes the posOffset Y of a quarter-turned run-level float with its footprint inset', async () => {
     // 157x100 turned 90deg sticks out (157-100)/2 = 28.5px above the extent box
     const turned = anchoredPicture(5156200, 359410, 1498600, 952500).replace(
@@ -923,7 +1041,7 @@ describe('side-wrapped pictures that leave no room for text', () => {
     const img = editor.view.dom.querySelector<HTMLElement>('img.doc-inline-img--wrap-tight-right')!
     // Word places the extent box at the offset and turns it about its centre,
     // so the img box top stays at 37.7px and the visual reaches 9.2px above it
-    expect(img.style.marginTop).toBe('37.7px')
+    expect(img.getAttribute('style')).toMatch(/margin: 37\.7px /)
     expect(img.style.transform).toContain('rotate(90deg)')
     editor.destroy()
   })
@@ -951,6 +1069,77 @@ describe('quarter-turned block pictures', () => {
     const block = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-tight-left')!
     expect(block.style.marginTop).toBe('14.4px')
     expect(block.querySelector<HTMLElement>('.doc-img-wrap')!.style.marginTop).toBe('')
+    editor.destroy()
+  })
+})
+
+// jsdom's CSSOM drops max(), var() and shape-outside: read the rendered spec
+function renderedImageStyle(editor: Editor): string {
+  let node: ProseNode | undefined
+  editor.state.doc.descendants((n) => {
+    if (n.type.name === 'docInlineImage') node = n
+  })
+  const spec = editor.schema.nodes.docInlineImage.spec.toDOM!(node!) as [string, { style: string }]
+  return spec[1].style
+}
+
+describe('wrapTopAndBottom placed below its anchor paragraph top', () => {
+  const topBottom = (y: number) =>
+    anchoredPicture(788972, y, 4425950, 2807970).replace(TIGHT_WRAP, '<wp:wrapTopAndBottom/>')
+
+  it('floats the picture at the paragraph-relative offset so the anchor line flows first', async () => {
+    const { editor } = await openImageDoc(
+      `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${topBottom(308610)}<w:r><w:t>Faculty</w:t></w:r></w:p>`,
+    )
+    const img = editor.view.dom.querySelector<HTMLImageElement>(
+      'img.doc-inline-img--wrap-topBottom',
+    )!
+    expect(img.classList.contains('doc-inline-img--band-offset')).toBe(true)
+    expect(editor.view.dom.querySelector('p.doc-anchor-host.doc-band-host')).not.toBeNull()
+    const style = renderedImageStyle(editor)
+    expect(style).toContain('margin-top:32.4px')
+    expect(style).toContain('margin-bottom:0.0px')
+    expect(style).toContain(
+      'margin-left:calc(82.8px - var(--anchor-ind,0px) - var(--anchor-pad,0px))',
+    )
+    expect(style).toContain(
+      'margin-right:max(0px, calc(100% - 464.7px - calc(82.8px - var(--anchor-ind,0px) - var(--anchor-pad,0px))))',
+    )
+    expect(style).toContain('shape-outside:inset(32.4px 0 0 0)')
+    editor.destroy()
+  })
+
+  it('subtracts the anchor paragraph start indent from the column-relative X', async () => {
+    const { editor } = await openImageDoc(
+      `<w:p><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>${topBottom(308610)}<w:r><w:t>Faculty</w:t></w:r></w:p>`,
+    )
+    const host = editor.view.dom.querySelector<HTMLElement>('p.doc-anchor-host')!
+    expect(host.style.marginInlineStart).toBe('36pt')
+    expect(host.style.getPropertyValue('--anchor-ind')).toBe('36pt')
+    expect(renderedImageStyle(editor)).toContain(
+      'margin-left:calc(82.8px - var(--anchor-ind,0px) - var(--anchor-pad,0px))',
+    )
+    editor.destroy()
+  })
+
+  it('marks a heading host so the float stays contained', async () => {
+    const { editor } = await openImageDoc(
+      `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>${topBottom(308610)}<w:r><w:t>Faculty</w:t></w:r></w:p>`,
+    )
+    expect(
+      editor.view.dom.querySelector('h1.doc-anchor-host img.doc-inline-img--band-offset'),
+    ).not.toBeNull()
+    editor.destroy()
+  })
+
+  it('keeps the plain block line for an offset at or above the paragraph top', async () => {
+    const { editor } = await openImageDoc(`<w:p>${topBottom(0)}<w:r><w:t>Faculty</w:t></w:r></w:p>`)
+    const img = editor.view.dom.querySelector<HTMLImageElement>(
+      'img.doc-inline-img--wrap-topBottom',
+    )!
+    expect(img.classList.contains('doc-inline-img--band-offset')).toBe(false)
+    expect(img.style.shapeOutside).toBe('')
+    expect(editor.view.dom.querySelector('.doc-band-host')).toBeNull()
     editor.destroy()
   })
 })

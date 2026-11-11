@@ -4,6 +4,7 @@ import {
   currentRangeIndices,
   normalizePrintRatio,
   parsePrintRange,
+  printPageSizeIn,
   printPageCount,
 } from '../src/shared/print-html'
 
@@ -49,7 +50,9 @@ describe('printPageCount', () => {
     expect(printPageCount(7, 'notes')).toBe(7)
     expect(printPageCount(7, 'handout2')).toBe(4)
     expect(printPageCount(7, 'handout3')).toBe(3)
+    expect(printPageCount(7, 'handout4')).toBe(2)
     expect(printPageCount(7, 'handout6')).toBe(2)
+    expect(printPageCount(10, 'handout9')).toBe(2)
   })
 })
 
@@ -92,6 +95,63 @@ describe('buildPrintDocumentHtml', () => {
     })
     expect(landscape).toContain('@page { size: 11.69in 8.27in; margin: 0; }')
     expect(landscape).toContain('grid-template-columns: 1fr 1fr 1fr;')
+  })
+
+  it('handout4 lays a 2×2 grid and handout9 a 3×3 grid', () => {
+    const four = buildPrintDocumentHtml({ srcs: srcs(5), ratio: 16 / 9, layout: 'handout4' })
+    expect(four).toContain(
+      '.page.handout.h4 { display: grid; grid-auto-flow: row; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }',
+    )
+    expect(four.match(/class="page handout h4"/g)).toHaveLength(2)
+    expect(four.match(/class="cell"/g)).toHaveLength(5)
+
+    const nine = buildPrintDocumentHtml({ srcs: srcs(10), ratio: 16 / 9, layout: 'handout9' })
+    expect(nine).toContain(
+      '.page.handout.h9 { display: grid; grid-auto-flow: row; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; }',
+    )
+    expect(nine.match(/class="page handout h9"/g)).toHaveLength(2)
+    expect(nine.match(/class="cell"/g)).toHaveLength(10)
+  })
+
+  it('vertical order flows the grid down each column and stacks the landscape pair', () => {
+    const sixVertical = buildPrintDocumentHtml({
+      srcs: srcs(6),
+      ratio: 16 / 9,
+      layout: 'handout6',
+      order: 'vertical',
+    })
+    expect(sixVertical).toContain('grid-auto-flow: column;')
+    expect(sixVertical).toContain('grid-template-columns: 1fr 1fr;')
+
+    const pairHorizontal = buildPrintDocumentHtml({
+      srcs: srcs(2),
+      ratio: 16 / 9,
+      layout: 'handout2',
+      orientation: 'landscape',
+    })
+    expect(pairHorizontal).toContain('grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }')
+    const pairVertical = buildPrintDocumentHtml({
+      srcs: srcs(2),
+      ratio: 16 / 9,
+      layout: 'handout2',
+      orientation: 'landscape',
+      order: 'vertical',
+    })
+    expect(pairVertical).toContain('grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }')
+  })
+
+  it('handout3 keeps its flex column of slide + ruled lines in both orientations', () => {
+    for (const orientation of [undefined, 'landscape'] as const) {
+      const html = buildPrintDocumentHtml({
+        srcs: srcs(4),
+        ratio: 16 / 9,
+        layout: 'handout3',
+        ...(orientation ? { orientation } : {}),
+      })
+      expect(html).toContain('.page.handout.h3 { display: flex; flex-direction: column; }')
+      expect(html.match(/class="rules"/g)).toHaveLength(4)
+      expect(html).not.toContain('grid-auto-flow')
+    }
   })
 
   it('notes layout escapes note text and pairs it with each slide', () => {
@@ -156,5 +216,34 @@ describe('normalizePrintRatio', () => {
     expect(tiny).toContain('@page { size: 1.5in 7.5in; margin: 0; }')
     const huge = buildPrintDocumentHtml({ srcs: srcs(1), ratio: 100, layout: 'full' })
     expect(huge).toContain('@page { size: 37.5in 7.5in; margin: 0; }')
+  })
+})
+
+describe('printPageSizeIn', () => {
+  it('the full layout follows the slide ratio at 7.5in tall', () => {
+    expect(printPageSizeIn('full', 'portrait', 16 / 9)).toEqual({ width: 13.333, height: 7.5 })
+    expect(printPageSizeIn('full', 'landscape', 16 / 9)).toEqual({ width: 13.333, height: 7.5 })
+  })
+
+  it('handout and notes sheets are A4 in the chosen orientation', () => {
+    for (const layout of [
+      'handout2',
+      'handout3',
+      'handout4',
+      'handout6',
+      'handout9',
+      'notes',
+    ] as const) {
+      expect(printPageSizeIn(layout, 'portrait', 16 / 9)).toEqual({ width: 8.27, height: 11.69 })
+      expect(printPageSizeIn(layout, 'landscape', 16 / 9)).toEqual({ width: 11.69, height: 8.27 })
+    }
+  })
+
+  it('a corrupt ratio clamps like the page rule does (same source of truth)', () => {
+    expect(printPageSizeIn('full', 'portrait', NaN)).toEqual({ width: 13.333, height: 7.5 })
+    expect(printPageSizeIn('full', 'portrait', 100)).toEqual({ width: 37.5, height: 7.5 })
+    // and the HTML builder agrees with the helper byte for byte
+    const html = buildPrintDocumentHtml({ srcs: srcs(1), ratio: 16 / 9, layout: 'full' })
+    expect(html).toContain('@page { size: 13.333in 7.5in; margin: 0; }')
   })
 })

@@ -100,6 +100,11 @@ export const ru = {
     'Запись исправлений включена: изменения содержимого от ИИ помечаются как исправления (вставки подчеркнуты, удаления зачеркнуты); примите или отклоните их в разделе «Рецензирование»',
   aiTrackOffTitle:
     'Запись исправлений выключена: изменения ИИ применяются сразу (откат по-прежнему возможен через снимки версий)',
+  aiRevisionBarTitle: 'Исправления',
+  aiRevisionCount: 'Изменений: {count}',
+  aiRevisionRejectAll: 'Отклонить все',
+  aiRevisionAcceptAll: 'Принять все',
+  aiRevisionPara: 'Абзац {n}',
   aiTurnLimit:
     '(Достигнут лимит вызовов инструментов для этого запроса; ответ выше основан на уже выполненных шагах и может быть неполным.)',
   aiStopped: '(Остановлено)',
@@ -198,7 +203,12 @@ export const ru = {
   aiMindMapAskPrompt: 'Расскажи про «{label}» в этом документе',
   aiMindMapJump: 'Перейти к цитируемому фрагменту',
   aiMindMapExport: 'Экспорт PNG',
+  aiMindMapExportSvg: 'Экспорт SVG',
+  aiMindMapInsert: 'Вставить в документ',
   aiMindMapReset: 'Сбросить вид',
   aiMindMapExpand: 'Развернуть ветку',
   aiMindMapCollapse: 'Свернуть ветку',
+  aiMindMapToggleLayout: 'Сменить макет',
+  aiMindMapLayoutTopDown: 'Переключиться на макет сверху вниз',
+  aiMindMapLayoutLeftRight: 'Переключиться на макет слева направо',
 } satisfies Record<keyof typeof zh, string>

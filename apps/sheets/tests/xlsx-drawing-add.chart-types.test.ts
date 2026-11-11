@@ -68,6 +68,58 @@ describe('buildChartXml chart types', () => {
     expect(xml.match(/<c:valAx>/g)).toHaveLength(1)
   })
 
+  it('combo tags route each series to its own family and axis set', () => {
+    const xml = buildChartXml({
+      chartType: 'combo',
+      title: 'Combo',
+      series: [
+        { name: 'Bars', categories: ['a', 'b'], values: [10, 20], plot: 'barChart' },
+        { name: 'LineP', categories: ['a', 'b'], values: [1, 2], plot: 'lineChart' },
+        {
+          name: 'LineS',
+          categories: ['a', 'b'],
+          values: [3, 4],
+          plot: 'lineChart',
+          secondaryAxis: true,
+        },
+      ],
+    })
+    // One bar group on the primary pair, the line split by axis set: three
+    // groups in one plotArea.
+    expect(xml.match(/<c:barChart>/g)).toHaveLength(1)
+    expect(xml.match(/<c:lineChart>/g)).toHaveLength(2)
+    expect(xml.match(/<c:catAx>/g)).toHaveLength(2)
+    expect(xml.match(/<c:valAx>/g)).toHaveLength(2)
+    const groups = [...xml.matchAll(/<c:(?:bar|line)Chart>[\s\S]*?<\/c:(?:bar|line)Chart>/g)].map(
+      (match) => match[0],
+    )
+    expect(groups[0]).toContain('<c:axId val="100000001"/><c:axId val="100000002"/>')
+    expect(groups[0]).toContain('<c:idx val="0"/>')
+    expect(groups[1]).toContain('<c:axId val="100000001"/><c:axId val="100000002"/>')
+    expect(groups[1]).toContain('<c:idx val="1"/>')
+    expect(groups[2]).toContain('<c:axId val="100000003"/><c:axId val="100000004"/>')
+    expect(groups[2]).toContain('<c:idx val="2"/>')
+    expect(xml).toContain('<c:axPos val="r"/>')
+    expect(xml).toContain('<c:crosses val="max"/>')
+  })
+
+  it('combo tags with no secondary series write no secondary axes', () => {
+    const xml = buildChartXml({
+      chartType: 'combo',
+      title: 'Combo',
+      series: [
+        { name: 'Bars', categories: ['a', 'b'], values: [10, 20], plot: 'barChart' },
+        { name: 'Line', categories: ['a', 'b'], values: [1, 2], plot: 'lineChart' },
+      ],
+    })
+    expect(xml.match(/<c:barChart>/g)).toHaveLength(1)
+    expect(xml.match(/<c:lineChart>/g)).toHaveLength(1)
+    expect(xml.match(/<c:catAx>/g)).toHaveLength(1)
+    expect(xml.match(/<c:valAx>/g)).toHaveLength(1)
+    const line = /<c:lineChart>[\s\S]*?<\/c:lineChart>/.exec(xml)?.[0] ?? ''
+    expect(line).toContain('<c:axId val="100000001"/><c:axId val="100000002"/>')
+  })
+
   it('radar keeps the category + value axis pair', () => {
     const xml = buildChartXml(chart('radar', ['a', 'b', 'c']))
     expect(xml).toContain('<c:radarChart>')

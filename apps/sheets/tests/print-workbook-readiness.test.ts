@@ -23,6 +23,22 @@ vi.mock('../src/renderer/univer-sync', async (importOriginal) => {
 
 type FileSheet = LazyWorkbookState['file']['sheets'][number]
 
+/// A complete WorkbookRangeResult for a sheet whose file state was never
+/// captured: the print paths answer ensureSheetFileState's read with it.
+function fileStateResult(pageSetup: unknown = null, indexingComplete = true) {
+  return {
+    cells: [],
+    rows: [],
+    indexingComplete,
+    indexedThroughRow: 1,
+    sheetProtection: null,
+    rowBreaks: [],
+    colBreaks: [],
+    pageSetup,
+    protectedRanges: [],
+  }
+}
+
 /// Behaves like the real preloadEntireWorkbook as far as the callers can see:
 /// flags the workbook running, finishes after `ms`, then flags it complete.
 function fakePreload(ms: number) {
@@ -52,6 +68,7 @@ describe('print and PDF workbook readiness coordination', () => {
       desktopApi: {
         printWorkbook: printWorkbookMock,
         exportPdf: exportPdfMock,
+        readWorkbookRange: vi.fn().mockResolvedValue(fileStateResult()),
       },
     })
   })
@@ -80,6 +97,8 @@ describe('print and PDF workbook readiness coordination', () => {
       editJournal: createEditJournal(),
       sheetFilePageSetups: new Map(),
       sheetPageBreaks: new Map(),
+      sheetProtections: new Map(),
+      sheetProtectedRanges: new Map(),
     } as unknown as LazyWorkbookState
   }
 
@@ -106,6 +125,7 @@ describe('print and PDF workbook readiness coordination', () => {
       getActiveRange: () => null,
       getSheets: () => [worksheet],
       getSheetBySheetId: () => worksheet,
+      getSnapshot: () => ({ sheets: {} }),
     }
     const runtime = {
       univerAPI: { getActiveWorkbook: () => workbook },
@@ -295,5 +315,223 @@ describe('print and PDF workbook readiness coordination', () => {
     expect(pdfOk).toBe(true)
     expect(preloadEntireWorkbook).toHaveBeenCalledTimes(1)
     expect(exportPdfMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('headless export (outPath): every sheet, formulas settled', () => {
+  let messages: string[] = []
+  let exportPdfMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    vi.mocked(preloadEntireWorkbook).mockReset()
+    setModuleLang('en')
+    messages = []
+    exportPdfMock = vi.fn().mockResolvedValue({ canceled: false, path: 'D:/book.pdf' })
+    vi.stubGlobal('window', {
+      desktopApi: {
+        printWorkbook: vi.fn().mockResolvedValue({ ok: true }),
+        exportPdf: exportPdfMock,
+        readWorkbookRange: vi.fn().mockResolvedValue(fileStateResult()),
+      },
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** a worksheet mock whose identity answers through `id`; layout reads the same values as the old mock */
+  function mockSheet(id: string, name: string, hidden = false) {
+    return {
+      getSheetId: () => id,
+      getSheetName: () => name,
+      getLastRow: () => 1,
+      getLastColumn: () => 1,
+      getRowHeight: () => 20,
+      getColumnWidth: () => 100,
+      getMergedRanges: () => [],
+      getRange: () => ({
+        getValues: () => [['A1']],
+        getDisplayValues: () => [['A1']],
+        getCellStyleData: () => null,
+      }),
+      getMaxRows: () => 10,
+      getMaxColumns: () => 10,
+      isSheetHidden: () => hidden,
+      activate: vi.fn(),
+    }
+  }
+
+  function headlessContext(sheetCells: Record<string, unknown> = {}) {
+    const sheet1 = mockSheet('sheet-1', 'Data')
+    const sheet2 = mockSheet('sheet-2', 'Charts')
+    const hidden = mockSheet('sheet-3', 'Hidden', true)
+    let snapshot: unknown = {
+      sheets: {
+        'sheet-1': { name: 'Data', cellData: { 0: { 0: sheetCells } } },
+        'sheet-2': { name: 'Charts', cellData: {} },
+      },
+    }
+    const calculate = vi.fn()
+    let calculationEnd: ((state: number) => void) | null = null
+    const workbook = {
+      getActiveSheet: () => sheet1,
+      getActiveRange: () => null,
+      getSheets: () => [sheet1, sheet2, hidden],
+      getSheetBySheetId: (id: string) =>
+        id === 'sheet-1' ? sheet1 : id === 'sheet-2' ? sheet2 : hidden,
+      getSnapshot: () => snapshot,
+    }
+    const runtime = {
+      univerAPI: {
+        getActiveWorkbook: () => workbook,
+        getFormula: () => ({
+          executeCalculation: calculate,
+          calculationEnd: (cb: (state: number) => void) => {
+            calculationEnd = cb
+            return { dispose: () => undefined }
+          },
+        }),
+      },
+    } as unknown as UniverRuntime
+    const state = {
+      file: {
+        name: 'book.xlsx',
+        sessionId: 'session-123',
+        sheets: [
+          { id: 'sheet-1', name: 'Data', rowCount: 10, columnCount: 10 },
+          { id: 'sheet-2', name: 'Charts', rowCount: 10, columnCount: 10 },
+          { id: 'sheet-3', name: 'Hidden', rowCount: 10, columnCount: 10 },
+        ],
+        visuals: [],
+      },
+      flags: { preloadComplete: true, preloadRunning: false },
+      editJournal: createEditJournal(),
+      sheetFilePageSetups: new Map(),
+      sheetPageBreaks: new Map(),
+      sheetProtections: new Map(),
+      sheetProtectedRanges: new Map(),
+    } as unknown as LazyWorkbookState
+    return {
+      ctx: {
+        univerRef: { current: runtime },
+        lazyWorkbookRef: { current: state },
+        setMessage: (message: string) => messages.push(message),
+        setPendingEdits: vi.fn(),
+        requestVisualInstall: vi.fn(),
+        runOps: () => Promise.reject(new Error('not used')),
+      } as PageLayoutContext,
+      sheet1,
+      sheet2,
+      calculate,
+      formulasComputed: () => {
+        snapshot = {
+          sheets: {
+            'sheet-1': { name: 'Data', cellData: { 0: { 0: { ...sheetCells, v: 42 } } } },
+            'sheet-2': { name: 'Charts', cellData: {} },
+          },
+        }
+      },
+      fireCalculationEnd: () => calculationEnd?.(1),
+    }
+  }
+
+  it('prints every visible sheet, each activated for its visuals, and restores the active one', async () => {
+    const h = headlessContext()
+    expect(await handleExportPdf(h.ctx, 'D:/book.pdf')).toBe(true)
+    const request = exportPdfMock.mock.calls[0]?.[0]
+    expect(request.fileName).toBe('book.pdf')
+    // one page block per sheet: the hidden third sheet is not in the file
+    const pages = request.html.match(/<div class="page /g) ?? []
+    expect(pages).toHaveLength(2)
+    // the non-active sheet was activated before its layout; the active one
+    // is re-activated once at the end (the restore), never inside the loop
+    expect(h.sheet2.activate).toHaveBeenCalledTimes(1)
+    expect(h.sheet1.activate).toHaveBeenCalledTimes(1)
+    expect(messages).toContain('Exported D:/book.pdf.')
+  })
+
+  it('the ribbon export still prints the active sheet only', async () => {
+    const h = headlessContext()
+    expect(await handleExportPdf(h.ctx)).toBe(true)
+    const request = exportPdfMock.mock.calls[0]?.[0]
+    expect(request.html.match(/<div class="page /g) ?? []).toHaveLength(1)
+    expect(h.calculate).not.toHaveBeenCalled()
+  })
+
+  it('forces a calculation pass and waits for the values before printing', async () => {
+    const h = headlessContext({ f: '=B2*C2' })
+    const pdf = handleExportPdf(h.ctx, 'D:/book.pdf')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(h.calculate).toHaveBeenCalled()
+    // the engine finishes: values land, calculationEnd fires
+    h.formulasComputed()
+    h.fireCalculationEnd()
+    expect(await pdf).toBe(true)
+    expect(exportPdfMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('a formula engine that never settles still exports after the bound', async () => {
+    vi.useFakeTimers()
+    const h = headlessContext({ f: '=B2*C2' })
+    const pdf = handleExportPdf(h.ctx, 'D:/book.pdf')
+    await vi.advanceTimersByTimeAsync(61_000)
+    expect(await pdf).toBe(true)
+    expect(h.calculate).toHaveBeenCalled()
+    expect(exportPdfMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('an unvisited sheet prints with its file page setup, not the defaults', async () => {
+    const h = headlessContext()
+    const readWorkbookRange = vi
+      .fn()
+      .mockImplementation(async (request: { sheetId: string }) =>
+        request.sheetId === 'sheet-2'
+          ? fileStateResult({ orientation: 'landscape' })
+          : fileStateResult(),
+      )
+    ;(window.desktopApi as unknown as Record<string, unknown>).readWorkbookRange = readWorkbookRange
+
+    expect(await handleExportPdf(h.ctx, 'D:/book.pdf')).toBe(true)
+    const html = (exportPdfMock.mock.calls[0]?.[0] as { html: string }).html
+    // One page block per sheet, in sheet order; the second (never visited)
+    // sheet's landscape A4 swaps the page's inline width and height.
+    const pages = html.match(/<div class="page p\d+" style="width:[\d.]+in;height:[\d.]+in"/g) ?? []
+    expect(pages).toHaveLength(2)
+    expect(pages[1]).toContain('width:11.69in;height:8.27in')
+  })
+
+  it('a sheet with captured file state prints without re-reading the file', async () => {
+    const h = headlessContext()
+    const state = h.ctx.lazyWorkbookRef.current!
+    for (const id of ['sheet-1', 'sheet-2']) {
+      state.sheetProtections.set(id, {
+        protected: false,
+        hasPassword: false,
+        allow: {} as never,
+        password: null,
+      })
+    }
+    const readWorkbookRange = vi.fn()
+    ;(window.desktopApi as unknown as Record<string, unknown>).readWorkbookRange = readWorkbookRange
+
+    expect(await handleExportPdf(h.ctx, 'D:/book.pdf')).toBe(true)
+    expect(readWorkbookRange).not.toHaveBeenCalled()
+  })
+
+  it('an unvisited sheet whose indexing never completes still prints with the defaults', async () => {
+    vi.useFakeTimers()
+    const h = headlessContext()
+    const readWorkbookRange = vi.fn().mockResolvedValue(fileStateResult(null, false))
+    ;(window.desktopApi as unknown as Record<string, unknown>).readWorkbookRange = readWorkbookRange
+
+    const pdf = handleExportPdf(h.ctx, 'D:/book.pdf')
+    // Both sheets poll for the full ensureSheetFileState bound.
+    await vi.advanceTimersByTimeAsync(21_000)
+    expect(await pdf).toBe(true)
+    const html = (exportPdfMock.mock.calls[0]?.[0] as { html: string }).html
+    const pages = html.match(/<div class="page p\d+" style="width:[\d.]+in;height:[\d.]+in"/g) ?? []
+    expect(pages).toHaveLength(2)
+    expect(pages[1]).toContain('width:8.27in;height:11.69in')
   })
 })

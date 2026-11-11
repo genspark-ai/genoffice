@@ -294,8 +294,9 @@ export async function handleInsertChart(
 
 /// PivotChart: creates a chart from the output area of the pivot under the
 /// cursor. series/cat reference output-area cells, so the chart follows the
-/// references after refresh write-back (chartSpace pivotSource wiring: see the
-/// TODO in pivot-chart).
+/// references after refresh write-back, and the visual carries the pivot
+/// table's part path so the save writes chartSpace <c:pivotSource> — Excel
+/// then recognizes the chart as a PivotChart (field buttons, layout sync).
 export async function handleInsertPivotChart(
   ctx: VisualActionContext,
   chartKind: string,
@@ -362,6 +363,9 @@ export async function handleInsertPivotChart(
         ? { barDirection: chartKind === 'bar' ? 'bar' : 'col' }
         : {}),
       title: chartData.title,
+      // Binds the saved chart to the pivot's table part; the gateway resolves
+      // the pivotTableDefinition name and writes <c:pivotSource> from it.
+      pivotTablePath: found.pivot.path,
       series: chartData.series.map((series) => ({
         name: series.name,
         categories: [...series.categories],
@@ -616,6 +620,7 @@ export async function insertAiChartVisual(
     dataRange: op.dataRange,
     title: op.title,
     anchorCell: op.anchorCell,
+    columns: op.columns,
     values,
   })
   pushVisualAddUndo(ctx, runtime, state, visual)

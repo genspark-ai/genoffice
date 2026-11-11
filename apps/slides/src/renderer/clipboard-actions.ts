@@ -6,6 +6,7 @@
 import type { ActionCtx } from './action-context'
 import type { PasteSlideMode, PasteSlideResult } from '../shared/ipc'
 import { rangeSelection } from '../shared/slide-selection'
+import { mergeSlideUpdate } from '../shared/slide-update'
 import { FIT_WIDTH } from './app-constants'
 import { renderSlidesToPngBase64 } from './export-render'
 import { renderSelectionToPngBase64 } from './selection-image'
@@ -115,7 +116,7 @@ export async function copySlides(ctx: ActionCtx, indexes: number[]): Promise<voi
 }
 
 function applySlidePaste(ctx: ActionCtx, r: PasteSlideResult, mode: PasteSlideMode): void {
-  ctx.setSlides(r.slides)
+  ctx.setSlides((slides) => mergeSlideUpdate(slides, r))
   ctx.setCurrent(r.index)
   ctx.setSelectedSlides(rangeSelection(r.index, r.index + Math.max(r.count - 1, 0)))
   ctx.setSelectedIds(r.sourceIds ?? [])

@@ -205,11 +205,12 @@ describe('shape context menu (PowerPoint order)', () => {
   const shapeCtx = () =>
     makeCtx({ ctxMenu: { kind: 'element', x: 0, y: 0, targetId: 's1' }, selectedIds: ['s1'] })
 
-  it('follows PowerPoint up to Format, then keeps rotate/flip, align, comment and delete', () => {
+  it('keeps Delete in the clipboard group, follows PowerPoint up to Format, then rotate/align flyouts and comment', () => {
     expect(labels(buildCtxItems(shapeCtx()))).toEqual([
       t('appCtxCut'),
       t('appCtxCopy'),
       t('appCtxPaste'),
+      t('appCtxDelete'),
       '|',
       t('appCtxEditText'),
       t('appCtxChangeShape'),
@@ -223,12 +224,38 @@ describe('shape context menu (PowerPoint order)', () => {
       t('appCtxSizePosition'),
       t('paneFormatTitleTyped', { type: t('paneFormatShape') }),
       '|',
+      t('appCtxRotate'),
+      t('ribbonAlignMenu'),
+      '|',
+      t('ribbonNewComment'),
+    ])
+  })
+
+  it('rotate and align flyouts hold the rotate/flip and align/distribute items', () => {
+    const items = buildCtxItems(shapeCtx())
+    expect(labels(find(items, t('appCtxRotate'))!.sub!)).toEqual([
       t('appCtxRotateLeft90'),
       t('appCtxRotateRight90'),
       '|',
       t('appCtxFlipH'),
       t('appCtxFlipV'),
-      '|',
+    ])
+    expect(labels(find(items, t('ribbonAlignMenu'))!.sub!)).toEqual([
+      t('appCtxAlignLeft'),
+      t('appCtxAlignCenterH'),
+      t('appCtxAlignRight'),
+      t('appCtxAlignTop'),
+      t('appCtxAlignCenterV'),
+      t('appCtxAlignBottom'),
+    ])
+    // Distribute joins the align flyout from three selected elements up
+    const three = buildCtxItems(
+      makeCtx({
+        ctxMenu: { kind: 'element', x: 0, y: 0, targetId: 's1' },
+        selectedIds: ['s1', 'p1', 'c1'],
+      }),
+    )
+    expect(labels(find(three, t('ribbonAlignMenu'))!.sub!)).toEqual([
       t('appCtxAlignLeft'),
       t('appCtxAlignCenterH'),
       t('appCtxAlignRight'),
@@ -236,9 +263,8 @@ describe('shape context menu (PowerPoint order)', () => {
       t('appCtxAlignCenterV'),
       t('appCtxAlignBottom'),
       '|',
-      t('ribbonNewComment'),
-      '|',
-      t('appCtxDelete'),
+      t('appCtxDistributeH'),
+      t('appCtxDistributeV'),
     ])
   })
 
@@ -382,7 +408,7 @@ describe('shape context menu (PowerPoint order)', () => {
     )
     expect(find(items, t('appCtxChangeShape'))).toBeUndefined()
     expect(find(items, t('appCtxSetDefaultShape'))).toBeUndefined()
-    expect(find(items, t('appCtxRotateLeft90'))).toBeUndefined()
+    expect(find(items, t('appCtxRotate'))).toBeUndefined()
   })
 })
 
@@ -396,7 +422,8 @@ describe('picture context menu', () => {
     })
     const items = buildCtxItems(ctx)
     const l = labels(items)
-    expect(l.slice(l.indexOf(t('appCtxHyperlink')), l.indexOf('|', 4))).toEqual([
+    const start = l.indexOf(t('appCtxHyperlink'))
+    expect(l.slice(start, l.indexOf('|', start))).toEqual([
       t('appCtxHyperlink'),
       t('ribbonReplacePicture'),
       t('appCtxCropPicture'),

@@ -3,6 +3,7 @@
 import type { SectionInfo, SectionSettings, TextFlowDirection } from '@genoffice/docx-engine'
 
 import { mirrorShiftPx } from './page-margins'
+import { hfHasVariant, hfVariantReservedPx, type HfVariant } from './pagination-hf'
 import { columnLineSplits } from './pagination-slices'
 import type {
   BlockBox,
@@ -71,6 +72,39 @@ export function effectiveBottomPx(set: SectionSettings, footerPx: number): numbe
   if (set.marginBottomFixed) return twipsToPx(set.marginBottom)
   const dist = twipsToPx(set.footerDist ?? 720)
   return Math.max(twipsToPx(set.marginBottom), footerPx > 0 ? dist + footerPx : 0)
+}
+
+/** Single-section slicing geometry of the first-page / even-page variants: the
+ *  page renders the variant's strips (pageHfOf), so its capacity must follow
+ *  their push-down. An even capacity equal to the default one is omitted. */
+export function singleVariantGeomOf(
+  set: SectionSettings,
+  hf: SectionHfHeights,
+): Pick<
+  SectionGeom,
+  | 'firstContentHeight'
+  | 'evenContentHeight'
+  | 'marginBottomPx'
+  | 'firstMarginBottomPx'
+  | 'evenMarginBottomPx'
+> {
+  const bottom = (variant: HfVariant) =>
+    effectiveBottomPx(set, hfVariantReservedPx(hf, variant).footerPx)
+  const capacity = (variant: HfVariant) =>
+    twipsToPx(set.pageHeight) -
+    effectiveTopPx(set, hfVariantReservedPx(hf, variant).headerPx) -
+    bottom(variant)
+  const base = capacity('default')
+  const even = hfHasVariant(hf, 'even') ? capacity('even') : undefined
+  return {
+    marginBottomPx: bottom('default'),
+    ...(hfHasVariant(hf, 'first')
+      ? { firstContentHeight: capacity('first'), firstMarginBottomPx: bottom('first') }
+      : {}),
+    ...(even !== undefined && Math.abs(even - base) > 0.01
+      ? { evenContentHeight: even, evenMarginBottomPx: bottom('even') }
+      : {}),
+  }
 }
 
 /** Typed line-grid pitch (pt) of one section (w:docGrid lines/linesAndChars), else null */
@@ -555,6 +589,50 @@ export function sectionTopMarginSpecs(
 }
 
 /**
+ * Blocks that open a new page by instruction: the first block of every section
+ * that starts one (nextPage/evenPage/oddPage) and the block after an explicit
+ * page break (a trailing w:br page or the block's own pageBreakBefore / leading
+ * w:br). A w:tblpPr table floated at the bottom of the closing page is a CSS
+ * float whose box reaches past the break in the DOM: a table opening the next
+ * section was pushed below it and the band charged to the new page; a heading
+ * after a break-only paragraph sat inside the band and the page turn, clamped
+ * below the float, left it on the closing page above the table (prod holdout
+ * 040). Word never carries a float across a page, so the opener clears it (the
+ * cleared position is the page boundary).
+ */
+export function sectionPageStartSpecs(
+  blocks: BlockBox[],
+  sections: SectionInfo[],
+): ColumnBlockPlacement[] {
+  const openers = new Set<HTMLElement>()
+  for (let i = 1; i < sections.length; i++) {
+    const s = sections[i]
+    if (s.startType === 'continuous' || s.startType === 'nextColumn') continue
+    const first = blocks.find((b) => b.docxIndex === s.firstBlockIndex && b.el)
+    if (first?.el) openers.add(first.el)
+  }
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i]
+    if (!b.el || b.floated) continue
+    const prev = i > 0 ? blocks[i - 1] : undefined
+    if (b.breakBefore || prev?.breakAfter) openers.add(b.el)
+  }
+  return [...openers].map((el) => ({ el, dx: 0, dy: 0, sectionPageStart: true }))
+}
+
+/** edge-triggered: the pass whose wrap widths or section-start clears differ
+ *  from the last pass's follows up once with them in the DOM */
+export function wrapWidthSig(specs: ColumnBlockPlacement[]): string {
+  return specs
+    .map((s) =>
+      s.sectionPageStart
+        ? `clear:${s.el.dataset.idx ?? '?'}`
+        : `${Math.round(s.widthPx ?? -1)}:${Math.round(s.contentWPx ?? -1)}`,
+    )
+    .join(',')
+}
+
+/**
  * Per-block docGrid pitch for documents whose sections disagree on the typed
  * line grid (mixed pitches, or typed + untyped): each block carries its own
  * section's pitch through the layout decoration channel. Uniform docs get no
@@ -804,25 +882,40 @@ export function sectionGeoms(
     const set = s.settings
     const hf = hfHeights?.[i]
     const vertical = sectionVertical(set)
-    const firstContentHeight =
-      !vertical && (hf?.firstHeaderPx !== undefined || hf?.firstFooterPx !== undefined)
-        ? twipsToPx(set.pageHeight) -
-          effectiveTopPx(set, hf.firstHeaderPx ?? 0) -
-          effectiveBottomPx(set, hf.firstFooterPx ?? 0)
-        : undefined
-    const bodyH =
-      twipsToPx(set.pageHeight) -
-      effectiveTopPx(set, hf?.headerPx ?? 0) -
-      effectiveBottomPx(set, hf?.footerPx ?? 0)
+    const hfOf = (variant: HfVariant) =>
+      hf ? hfVariantReservedPx(hf, variant) : { headerPx: 0, footerPx: 0 }
+    const bodyHOf = (variant: HfVariant) => {
+      const { headerPx, footerPx } = hfOf(variant)
+      return (
+        twipsToPx(set.pageHeight) - effectiveTopPx(set, headerPx) - effectiveBottomPx(set, footerPx)
+      )
+    }
+    const firstBodyH = hf && hfHasVariant(hf, 'first') ? bodyHOf('first') : undefined
+    const firstContentHeight = vertical ? undefined : firstBodyH
+    const bodyH = bodyHOf('default')
+    const evenBodyH = hf && hfHasVariant(hf, 'even') ? bodyHOf('even') : undefined
     const bodyW = twipsToPx(set.pageWidth - set.marginLeft - set.marginRight)
     return {
       // vertical text fills the page sideways: lines are bodyH long and stack across bodyW
       contentHeight: vertical ? bodyW : bodyH,
       ...(firstContentHeight !== undefined ? { firstContentHeight } : {}),
+      ...(!vertical && evenBodyH !== undefined && Math.abs(evenBodyH - bodyH) > 0.01
+        ? { evenContentHeight: evenBodyH }
+        : {}),
+      ...(vertical && firstBodyH !== undefined ? { firstBodyHeight: firstBodyH } : {}),
+      ...(vertical && evenBodyH !== undefined ? { evenBodyHeight: evenBodyH } : {}),
+      ...(s.pageNumberStart !== undefined ? { pageNumberStart: s.pageNumberStart } : {}),
       contentWidth: vertical ? bodyH : bodyW,
       ...(vertical ? { vertical } : {}),
-      topPx: effectiveTopPx(set, hf?.headerPx ?? 0),
+      topPx: effectiveTopPx(set, hfOf('default').headerPx),
       pageHeightPx: twipsToPx(set.pageHeight),
+      marginBottomPx: effectiveBottomPx(set, hfOf('default').footerPx),
+      ...(hf && hfHasVariant(hf, 'first')
+        ? { firstMarginBottomPx: effectiveBottomPx(set, hfOf('first').footerPx) }
+        : {}),
+      ...(hf && hfHasVariant(hf, 'even')
+        ? { evenMarginBottomPx: effectiveBottomPx(set, hfOf('even').footerPx) }
+        : {}),
       forceBreak,
       startType: s.startType,
       ...(numberingParity ? { numberingParity } : {}),
@@ -921,7 +1014,8 @@ export function foldSectionStartSpaceBefore(blocks: BlockBox[], geoms: SectionGe
     const sec = block.section ?? 0
     if (!block.el || sec === (prev.section ?? sec) || !geoms[sec]?.forceBreak) continue
     const after = prev.spaceAfterPx ?? 0
-    const sb = Math.min(parseFloat(getComputedStyle(block.el).marginTop) || 0, after)
+    const margin = block.marginBeforePx ?? (parseFloat(getComputedStyle(block.el).marginTop) || 0)
+    const sb = Math.min(margin, after)
     if (sb <= 0.5) continue
     prev.spaceAfterPx = after - sb
     prev.height -= sb

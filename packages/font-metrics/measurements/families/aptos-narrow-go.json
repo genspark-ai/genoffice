@@ -1,0 +1,99 @@
+{
+  "family": "Aptos Narrow GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-10-31",
+    "fonts": [
+      "Aptos-Narrow.ttf, Aptos-Narrow-Bold.ttf, Aptos-Narrow-Italic.ttf, Aptos-Narrow-Bold-Italic.ttf (Word DFonts)",
+      "Carlito-Regular/Bold/Italic/BoldItalic.ttf"
+    ],
+    "probe": "Aptos Narrow hmtx x the corpus pair-kerning factor baked into an advance-matched Carlito derivative (tools/build-metric-fonts.py); general face corpus-weighted, box = Carlito hhea x the general size-adjust undone"
+  },
+  "refit": {
+    "method": "advance-matched",
+    "kern": {
+      "normal/normal": 0.995846,
+      "bold/normal": 0.996682,
+      "normal/italic": 0.995988,
+      "bold/italic": 0.996621
+    },
+    "range": "U+0020-007E, U+00A0-024F, U+1E00-1EFF, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+    "cuts": {
+      "normal/normal": {
+        "word": "dfonts:Aptos-Narrow.ttf",
+        "base": "repo:packages/ui/src/fonts/Carlito-Regular.ttf",
+        "out": "apps/docs/src/renderer/fonts/AptosNarrowGO-Regular.ttf"
+      },
+      "bold/normal": {
+        "word": "dfonts:Aptos-Narrow-Bold.ttf",
+        "base": "repo:packages/ui/src/fonts/Carlito-Bold.ttf",
+        "out": "apps/docs/src/renderer/fonts/AptosNarrowGO-Bold.ttf"
+      },
+      "normal/italic": {
+        "word": "dfonts:Aptos-Narrow-Italic.ttf",
+        "base": "repo:packages/ui/src/fonts/Carlito-Italic.ttf",
+        "out": "apps/docs/src/renderer/fonts/AptosNarrowGO-Italic.ttf"
+      },
+      "bold/italic": {
+        "word": "dfonts:Aptos-Narrow-Bold-Italic.ttf",
+        "base": "repo:packages/ui/src/fonts/Carlito-BoldItalic.ttf",
+        "out": "apps/docs/src/renderer/fonts/AptosNarrowGO-BoldItalic.ttf"
+      }
+    }
+  },
+  "note": "Aptos Narrow: Word DFonts (letters -2% of Carlito, space -17%).\n\n2026-10-31: the bucket faces made letters of one word differ in height (size-adjust\nscales both axes; 'aCronymS' in sample 019). The ranged faces are replaced by one\nadvance-matched derivative per cut (AptosNarrowGO-*.ttf): Carlito outlines scaled\nhorizontally to each Word advance x the kerning factor, one vertical factor (H/x ink\nratio), hmtx = Word advances, GPOS/kern dropped, U+00A0 mapped to the space glyph.\nhhea/OS2 carry the general face's line box so the pagination model is unchanged.",
+  "faces": [
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 97.7,
+      "ascentOverride": 76.76,
+      "descentOverride": 25.59,
+      "lineGapOverride": 22.59
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 99.8,
+      "ascentOverride": 75.15,
+      "descentOverride": 25.05,
+      "lineGapOverride": 22.11,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 97.7,
+      "ascentOverride": 76.77,
+      "descentOverride": 25.59,
+      "lineGapOverride": 22.59,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 98.8,
+      "ascentOverride": 75.87,
+      "descentOverride": 25.29,
+      "lineGapOverride": 22.33,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./AptosNarrowGO-Regular.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-00AC, U+00AE-017F, U+0181, U+0186, U+0189-018A, U+018E-0192, U+0194, U+0198-0199, U+01A0-01A1, U+01AF-01B0, U+01B2-01B4, U+01B7, U+01DD, U+01E6-01E7, U+01EA-01EB, U+01F8-01FF, U+0218-021B, U+0232-0233, U+0237, U+1E62-1E63, U+1E80-1E85, U+1E9E, U+1EA0-1EF9, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122"
+    },
+    {
+      "src": "url('./AptosNarrowGO-Bold.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-00AC, U+00AE-017F, U+0181, U+0186, U+0189-018A, U+018E-0192, U+0194, U+0198-0199, U+01A0-01A1, U+01AF-01B0, U+01B2-01B4, U+01B7, U+01DD, U+01E6-01E7, U+01EA-01EB, U+01F8-01FF, U+0218-021B, U+0232-0233, U+0237, U+1E62-1E63, U+1E80-1E85, U+1E9E, U+1EA0-1EF9, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./AptosNarrowGO-Italic.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-00AC, U+00AE-017F, U+0181, U+0186, U+0189-018A, U+018E-0192, U+0194, U+0198-0199, U+01A0-01A1, U+01AF-01B0, U+01B2-01B4, U+01B7, U+01DD, U+01E6-01E7, U+01EA-01EB, U+01F8-01FF, U+0218-021B, U+0232-0233, U+0237, U+1E62-1E63, U+1E80-1E85, U+1E9E, U+1EA0-1EF9, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+      "style": "italic"
+    },
+    {
+      "src": "url('./AptosNarrowGO-BoldItalic.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-00AC, U+00AE-017F, U+0181, U+0186, U+0189-018A, U+018E-0192, U+0194, U+0198-0199, U+01A0-01A1, U+01AF-01B0, U+01B2-01B4, U+01B7, U+01DD, U+01E6-01E7, U+01EA-01EB, U+01F8-01FF, U+0218-021B, U+0232-0233, U+0237, U+1E62-1E63, U+1E80-1E85, U+1E9E, U+1EA0-1EF9, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+      "weight": "bold",
+      "style": "italic"
+    }
+  ]
+}

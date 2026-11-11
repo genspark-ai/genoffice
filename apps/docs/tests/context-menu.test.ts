@@ -278,7 +278,12 @@ describe('EditorContextMenu picture items', () => {
       ),
     )
     const names = labels(container)
-    expect(names.slice(0, 2)).toEqual(['View Image', 'Save Image As…'])
+    // Word's picture menu: the clipboard trio first, then the picture items,
+    // and none of the text-only entries
+    expect(names.slice(0, 5)).toEqual(['Cut', 'Copy', 'Paste', 'View Image', 'Save Image As…'])
+    for (const gone of ['Paste as Plain Text', 'Font…', 'Paragraph…', 'Synonyms', 'Translate']) {
+      expect(names).not.toContain(gone)
+    }
     const byLabel = (label: string) =>
       [...container.querySelectorAll<HTMLButtonElement>('.ctx-item')].find(
         (b) => b.querySelector('.ctx-label')?.textContent === label,

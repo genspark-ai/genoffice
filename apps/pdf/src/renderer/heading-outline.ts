@@ -1,5 +1,6 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { OutlineNode } from './OutlinePanel'
+import type { OutlineEntryInput } from '../shared/ipc'
 
 /**
  * Fallback navigation for PDFs without embedded bookmarks: text lines set
@@ -20,6 +21,26 @@ export interface TextLine {
   size: number
   /** Baseline in PDF user space */
   y: number
+}
+
+/**
+ * The vertical offset an explicit destination array carries, by its fit type
+ * (PDF 32000-1 table 151): `[page /XYZ left top zoom]` keeps it at index 3,
+ * `[page /FitH top]` and `[page /FitBH top]` at index 2; `/FitV` and `/FitBV`
+ * carry a *left* offset at index 2 instead, and `/Fit`, `/FitB`, `/FitR` carry
+ * no top at all. pdf.js hands the fit type over as a Name object ({ name }).
+ */
+export function destTop(dest: readonly unknown[]): number | null {
+  const fit = dest[1]
+  const name =
+    typeof fit === 'string'
+      ? fit
+      : fit !== null && typeof fit === 'object'
+        ? (fit as { name?: unknown }).name
+        : undefined
+  const index = name === 'XYZ' ? 3 : name === 'FitH' || name === 'FitBH' ? 2 : -1
+  const value = index >= 0 ? dest[index] : undefined
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 const MAX_PAGES = 400
@@ -212,5 +233,26 @@ export function remapOutlinePages(
     const page = pageMap.get(dest[0])
     if (page === undefined) return items ?? []
     return [{ ...node, dest: [page, ...dest.slice(1)], ...(items ? { items } : {}) }]
+  })
+}
+
+/**
+ * Re-point an edited bookmark tree after a save that deleted or reordered
+ * pages (`pageMap`: old index → new index).
+ *
+ * A page the file no longer has takes its bookmark with it — the same entries
+ * the writer drops, so what the pane still shows and what the file holds
+ * agree. A bookmark whose page survived keeps pointing at it, under the index
+ * that page now has.
+ */
+export function remapOutlineTree(
+  entries: readonly OutlineEntryInput[],
+  pageMap: ReadonlyMap<number, number>,
+): OutlineEntryInput[] {
+  return entries.flatMap((entry) => {
+    const page = pageMap.get(entry.pageIndex)
+    if (page === undefined) return []
+    const children = entry.children?.length ? remapOutlineTree(entry.children, pageMap) : undefined
+    return [{ ...entry, pageIndex: page, children }]
   })
 }

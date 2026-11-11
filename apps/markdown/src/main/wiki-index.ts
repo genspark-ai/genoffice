@@ -86,11 +86,57 @@ export function extractWikiTargets(text: string): string[] {
 
 const WIKI_TARGET_RE = /!?\[\[([^[|\n]+?)(?:\|[^[|\n]*)?\]\]/g
 
+/**
+ * `#tag` as Obsidian reads it: `#` followed by a letter (any script), then
+ * letters/digits/`-`/`_`/`/`. Not a heading (`#` needs a space after to be
+ * one), not inside a fence or inline code — the same stripping walk
+ * extractWikiTargets uses — and not the fragment of a link destination or a
+ * URL (`[x](#heading)`, `https://a.b/#top`), which are anchors, not tags.
+ */
+const TAG_RE = /(^|[^\w#/])#(\p{L}[\p{L}\p{N}/_-]*)/gu
+
+export function extractTags(text: string): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  let inFence = false
+  let fence = ''
+  for (const line of text.split('\n')) {
+    const opens = /^\s{0,3}(```|~~~)/.exec(line)
+    if (opens) {
+      const marker = opens[1]!
+      if (!inFence) {
+        inFence = true
+        fence = marker
+      } else if (marker === fence) {
+        inFence = false
+        fence = ''
+      }
+      continue
+    }
+    if (inFence) continue
+    const clean = line
+      .replace(/`[^`\n]*`/g, ' ')
+      .replace(/\]\([^)\n]*\)/g, ']')
+      .replace(/<[a-z][a-z0-9+.-]*:[^>\s]*>/gi, ' ')
+      .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, ' ')
+    for (const match of clean.matchAll(TAG_RE)) {
+      const tag = match[2]!
+      if (!seen.has(tag)) {
+        seen.add(tag)
+        out.push(tag)
+      }
+    }
+  }
+  return out
+}
+
 export interface VaultFileEntry {
   path: string
   mtimeMs: number
   /** the targets this file's links carry, deduplicated in order */
   targets: string[]
+  /** the #tags this file carries, deduplicated in order */
+  tags: string[]
 }
 
 interface IndexState {
@@ -101,8 +147,8 @@ interface IndexState {
 
 const indexes = new Map<string, IndexState>()
 
-/** in-flight builds per root, chained — see refreshEdges */
-const building = new Map<string, Promise<Map<string, { target: string; path: string }[]>>>()
+/** in-flight builds per root, chained — see chained() */
+const building = new Map<string, Promise<unknown>>()
 
 function indexFor(root: string): IndexState {
   let state = indexes.get(root)
@@ -147,12 +193,15 @@ function refreshFiles(root: string, fs: VaultFs): Promise<IndexState> {
           const known = state.files.get(path)
           if (known && known.mtimeMs === mtimeMs) continue
           let targets: string[]
+          let tags: string[]
           try {
-            targets = extractWikiTargets(await fs.read(path))
+            const text = await fs.read(path)
+            targets = extractWikiTargets(text)
+            tags = extractTags(text)
           } catch {
             continue // unreadable this round; the next one retries
           }
-          state.files.set(path, { path, mtimeMs, targets })
+          state.files.set(path, { path, mtimeMs, targets, tags })
           state.edges.delete(path)
         }
         if (seen.size >= MAX_INDEX_FILES || depth + 1 > MAX_DEPTH) continue
@@ -188,47 +237,49 @@ function refreshFiles(root: string, fs: VaultFs): Promise<IndexState> {
 }
 
 /**
- * Resolved outgoing edges for every indexed file, computing what is missing.
- *
- * Chained per root. The panel and the graph usually open together, and each
- * builds walks the tree and writes one shared IndexState — left unchained they
- * interleave across their awaits and read a half-written file set. The second
- * caller waits and then finds the memo warm.
+ * Every walk over one root runs after the one before it. The panel, the graph
+ * and the tags pane usually open together, and each build walks the tree and
+ * writes one shared IndexState — left unchained they interleave across their
+ * awaits and read a half-written file set. The second caller waits and then
+ * finds the memo warm.
  */
+function chained<T>(root: string, work: () => Promise<T>): Promise<T> {
+  const previous = building.get(root) ?? Promise.resolve()
+  const next = previous.catch(() => undefined).then(work)
+  building.set(root, next)
+  return next.finally(() => {
+    if (building.get(root) === next) building.delete(root)
+  })
+}
+
+/** Resolve every link in the vault to the note it lands on, memoised per file mtime. */
 function refreshEdges(
   root: string,
   fs: VaultFs,
 ): Promise<Map<string, { target: string; path: string }[]>> {
-  const previous = building.get(root) ?? Promise.resolve(new Map())
-  const next = previous
-    .catch(() => new Map())
-    .then(async () => {
-      const state = await refreshFiles(root, fs)
-      const out = new Map<string, { target: string; path: string }[]>()
-      for (const [path, entry] of state.files) {
-        const done = state.edges.get(path)
-        if (done && done.mtimeMs === entry.mtimeMs) {
-          out.set(path, done.to)
-          continue
-        }
-        const answers =
-          entry.targets.length > 0
-            ? await resolveWikiLinks(entry.targets, { fromPath: path, root }, fs)
-            : new Map()
-        const to: { target: string; path: string }[] = []
-        for (const [target, answer] of answers) {
-          if (answer.found && answer.path && answer.path !== path) {
-            to.push({ target, path: answer.path })
-          }
-        }
-        state.edges.set(path, { mtimeMs: entry.mtimeMs, to })
-        out.set(path, to)
+  return chained(root, async () => {
+    const state = await refreshFiles(root, fs)
+    const out = new Map<string, { target: string; path: string }[]>()
+    for (const [path, entry] of state.files) {
+      const done = state.edges.get(path)
+      if (done && done.mtimeMs === entry.mtimeMs) {
+        out.set(path, done.to)
+        continue
       }
-      return out
-    })
-  building.set(root, next)
-  return next.finally(() => {
-    if (building.get(root) === next) building.delete(root)
+      const answers =
+        entry.targets.length > 0
+          ? await resolveWikiLinks(entry.targets, { fromPath: path, root }, fs)
+          : new Map()
+      const to: { target: string; path: string }[] = []
+      for (const [target, answer] of answers) {
+        if (answer.found && answer.path && answer.path !== path) {
+          to.push({ target, path: answer.path })
+        }
+      }
+      state.edges.set(path, { mtimeMs: entry.mtimeMs, to })
+      out.set(path, to)
+    }
+    return out
   })
 }
 
@@ -263,6 +314,31 @@ export async function wikiBacklinks(
     }
   }
   return out
+}
+
+export interface WikiTagEntry {
+  tag: string
+  /** absolute paths of notes carrying the tag, sorted */
+  files: string[]
+}
+
+/**
+ * Every #tag in the vault with the notes that carry it, most-used first.
+ * Falls out of the same index the backlinks and graph read — no second walk.
+ */
+export async function wikiTags(root: string, fs: VaultFs): Promise<WikiTagEntry[]> {
+  const state = await chained(root, () => refreshFiles(root, fs))
+  const byTag = new Map<string, string[]>()
+  for (const [path, entry] of state.files) {
+    for (const tag of entry.tags) {
+      const list = byTag.get(tag)
+      if (list) list.push(path)
+      else byTag.set(tag, [path])
+    }
+  }
+  return [...byTag.entries()]
+    .map(([tag, files]) => ({ tag, files: files.sort() }))
+    .sort((a, b) => b.files.length - a.files.length || (a.tag < b.tag ? -1 : 1))
 }
 
 export interface WikiGraphNode {

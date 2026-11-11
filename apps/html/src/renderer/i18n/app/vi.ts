@@ -69,6 +69,7 @@ export const vi = {
   openExternal: 'Đã mở liên kết trong trình duyệt của bạn',
   save: 'Lưu (⌘S)',
   saveAs: 'Lưu dưới dạng…',
+  aiNameFile: 'Đặt tên bằng AI…',
   ribbonCollapse: 'Thu gọn dải băng',
   ribbonExpand: 'Mở rộng dải băng',
   ribbonGroupInsert: 'Chèn',

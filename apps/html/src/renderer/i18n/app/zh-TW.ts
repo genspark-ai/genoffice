@@ -66,6 +66,7 @@ export const zhTW = {
   openExternal: '已在瀏覽器中開啟連結',
   save: '儲存 (⌘S)',
   saveAs: '另存新檔…',
+  aiNameFile: '用 AI 命名…',
   ribbonCollapse: '摺疊功能區',
   ribbonExpand: '展開功能區',
   ribbonGroupInsert: '插入',

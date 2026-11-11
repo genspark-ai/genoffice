@@ -3,10 +3,14 @@ import { describe, expect, it } from 'vitest'
 import {
   applyChartStateEdit,
   chartCategoryFormat,
+  chartSupportsSeriesReplace,
+  comboSeriesSetDefaults,
   formatCategoryLabel,
+  isComboChartTypes,
   refIntersects,
   scatterAxisBounds,
   splitSheetRef,
+  transposeChartSeries,
   withDefaultBarLabels,
   type ChartVisualState,
   valueAxisScale,
@@ -110,6 +114,92 @@ describe('applyChartStateEdit', () => {
     expect(next.gridlines).toBe(false)
     expect(next.gapWidthPct).toBe(60)
     expect(next.holeSizePct).toBe(70)
+  })
+})
+
+const comboBase = (): ChartVisualState => ({
+  chartTypes: ['barChart', 'lineChart'],
+  barDirection: 'col',
+  title: 'Combo',
+  secondaryYAxis: { majorGridlines: false, hidden: false, reversed: false },
+  series: [
+    { name: 'Bars', categories: ['a', 'b'], values: [1, 2], plot: 'barChart' },
+    { name: 'Line', categories: ['a', 'b'], values: [3, 4], plot: 'lineChart' },
+  ],
+})
+
+describe('applyChartStateEdit combo series sets', () => {
+  it('carries plot and axis tags and keeps a mixed set a combo', () => {
+    const next = applyChartStateEdit(comboBase(), {
+      seriesSet: [
+        { name: 'B1', values: [9, 8], plot: 'barChart' },
+        { name: 'L1', values: [7, 6], plot: 'lineChart', secondaryAxis: true },
+      ],
+    })
+    expect(next.chartTypes).toEqual(['barChart', 'lineChart'])
+    expect(next.series[0]).toMatchObject({ name: 'B1', plot: 'barChart' })
+    expect(next.series[0]?.secondaryAxis).toBeUndefined()
+    expect(next.series[1]).toMatchObject({
+      name: 'L1',
+      plot: 'lineChart',
+      secondaryAxis: true,
+    })
+  })
+
+  it('collapses the combo when every tag lands on one family', () => {
+    const next = applyChartStateEdit(comboBase(), {
+      seriesSet: [
+        { name: 'L1', values: [9, 8], plot: 'lineChart' },
+        { name: 'L2', values: [7, 6], plot: 'lineChart' },
+      ],
+    })
+    expect(next.chartTypes).toEqual(['lineChart'])
+    expect(next.series.every((series) => series.plot === 'lineChart')).toBe(true)
+  })
+
+  it('keeps chartTypes when the set carries no tags (single-chart path)', () => {
+    const next = applyChartStateEdit(base(), { seriesSet: [{ name: 'N1', values: [9, 8] }] })
+    expect(next.chartTypes).toEqual(['barChart'])
+  })
+
+  it('strips combo tags when a type conversion lands on one family', () => {
+    const next = applyChartStateEdit(comboBase(), { chartType: 'line' })
+    expect(next.chartTypes).toEqual(['lineChart'])
+    expect(next.series.every((series) => series.plot === undefined)).toBe(true)
+    expect(next.series.every((series) => series.secondaryAxis === undefined)).toBe(true)
+  })
+
+  it('tags a transposed set with Insert Chart combo shape', () => {
+    const transposed = transposeChartSeries(comboBase().series, (n) => `Series ${n}`)
+    expect(transposed).not.toBeNull()
+    const tagged = comboSeriesSetDefaults(transposed ?? [])
+    expect(tagged.map((entry) => [entry.plot, entry.secondaryAxis])).toEqual([
+      ['barChart', false],
+      ['lineChart', true],
+    ])
+    const three = comboSeriesSetDefaults([
+      { name: 'A', values: [1] },
+      { name: 'B', values: [2] },
+      { name: 'C', values: [3] },
+    ])
+    expect(three.map((entry) => [entry.plot, entry.secondaryAxis])).toEqual([
+      ['barChart', false],
+      ['barChart', false],
+      ['lineChart', true],
+    ])
+  })
+})
+
+describe('combo support flags', () => {
+  it('accepts exactly bar+line combos as replaceable and convertible', () => {
+    expect(chartSupportsSeriesReplace(['barChart'])).toBe(true)
+    expect(chartSupportsSeriesReplace(['barChart', 'lineChart'])).toBe(true)
+    expect(chartSupportsSeriesReplace(['lineChart', 'barChart'])).toBe(true)
+    expect(chartSupportsSeriesReplace(['barChart', 'lineChart', 'areaChart'])).toBe(false)
+    expect(chartSupportsSeriesReplace(['barChart', 'scatterChart'])).toBe(false)
+    expect(isComboChartTypes(['barChart', 'lineChart'])).toBe(true)
+    expect(isComboChartTypes(['lineChart', 'barChart'])).toBe(true)
+    expect(isComboChartTypes(['barChart'])).toBe(false)
   })
 })
 

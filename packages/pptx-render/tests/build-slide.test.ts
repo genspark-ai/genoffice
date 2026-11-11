@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { openPptx } from '@genoffice/pptx-engine'
-import { buildRenderSlide } from '../src/index'
+import { buildRenderSlide, type ShapeRenderNode } from '../src/index'
+import type { TextElement } from '@genoffice/pptx-engine'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const enginePptx = (name: string) =>
@@ -1016,15 +1017,22 @@ describe('metafile pictures get an opaque white backdrop (PlanS academy banner)'
     const rs = buildRenderSlide(
       {
         ...slide,
-        elements: [mk('data:image/x-emf;base64,AAAA'), mk('data:image/png;base64,AAAA')],
+        elements: [
+          mk('data:image/x-emf;base64,AAAA'),
+          mk('data:image/png;base64,AAAA'),
+          mk('genoffice-slide-media://archive/emf?mime=image%2Fx-emf'),
+          mk('genoffice-slide-media://archive/png?mime=image%2Fpng'),
+        ],
         decorations: [],
       },
       deck.size,
       { fitWidthPx: 1280 },
     )
-    const [emf, png] = rs.nodes as any[]
+    const [emf, png, lazyEmf, lazyPng] = rs.nodes as any[]
     expect(emf.bgColor).toBe('#FFFFFF')
     expect(png.bgColor).toBeUndefined()
+    expect(lazyEmf.bgColor).toBe('#FFFFFF')
+    expect(lazyPng.bgColor).toBeUndefined()
   })
 
   it('a clrChange metafile drops the white DC backing (the recolor sees through it)', async () => {
@@ -1164,5 +1172,37 @@ describe('table cell3D bevel', () => {
       }),
     )
     expect(grad.cells[0].bevel).toBeUndefined()
+  })
+})
+
+describe('buildRenderSlide passes the default editing language to text layout', () => {
+  it('untagged Hangul words stay whole only when the default language is Korean', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const el = slide.elements.find((e) => e.type === 'text' || e.type === 'shape') as TextElement
+    const word = '가나다라마바사'
+    const text = Array.from({ length: 40 }, () => word).join(' ')
+    const probe: TextElement = {
+      ...el,
+      text: { ...el.text!, autofit: undefined, paragraphs: [{ runs: [{ text, fontSize: 24 }] }] },
+    }
+    /** Every space-delimited piece on every line: whole words only when no word was split. */
+    const pieces = (defaultEaLang?: 'ko') => {
+      const rs = buildRenderSlide({ ...slide, elements: [probe], decorations: [] }, deck.size, {
+        fitWidthPx: 1280,
+        ...(defaultEaLang ? { defaultEaLang } : {}),
+      })
+      const node = rs.nodes.find((n) => n.sourceId === probe.id) as ShapeRenderNode
+      const lines = node.text!.lines.map((l) =>
+        l.runs
+          .map((r) => r.text)
+          .join('')
+          .trim(),
+      )
+      expect(lines.length).toBeGreaterThan(2)
+      return lines.flatMap((l) => l.split(' ')).filter(Boolean)
+    }
+    expect(pieces('ko').every((p) => p === word)).toBe(true)
+    expect(pieces().some((p) => p !== word)).toBe(true)
   })
 })

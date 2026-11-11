@@ -2,7 +2,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync } from 'no
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { agentConfigDir, type AgentId } from './agent-skills'
 import { realizedPath, writeOutput } from './fs'
-import type { McpLaunch } from './mcp-launch'
+import { withCompactSchemas, type McpLaunch } from './mcp-launch'
 
 /**
  * Registering `genoffice mcp` (stdio) in each coding agent's MCP config, the
@@ -29,6 +29,11 @@ export interface McpEntryState {
   status: McpEntryStatus
   /** the program the existing entry starts, when readable */
   command: string | null
+  /**
+   * Set when a registered entry asks for compact tool schemas (`mcp install
+   * --compact-schemas`): the same launcher plus one env toggle, not a stale entry.
+   */
+  compactSchemas?: boolean
 }
 
 interface JsonShape {
@@ -44,11 +49,18 @@ interface TomlShape {
   kind: 'toml'
 }
 
+/** The DSH Cordis profile patch: a YAML array of `{ insert: [...] }` blocks,
+    each insert carrying a server entry with its own id and transport config.
+    A scalar union won't do — the file has no top-level key to hang a map on. */
+interface YamlShape {
+  kind: 'yaml-cordis'
+}
+
 interface McpAgentDef {
   id: AgentId
   /** config file, relative to the agent's dotfolder unless the agent keeps it elsewhere */
   file: (configDir: string, home: string, explicit: boolean) => string
-  shape: JsonShape | TomlShape
+  shape: JsonShape | TomlShape | YamlShape
 }
 
 const strings = (v: unknown): string[] =>
@@ -123,6 +135,12 @@ const MCP_AGENTS: readonly McpAgentDef[] = [
     },
   },
   { id: 'windsurf', file: (dir) => join(dir, 'mcp_config.json'), shape: bareEntry },
+  {
+    id: 'dsh',
+    // DSH_HOME (default ~/.dsh): the home-level patch outranks every profile
+    file: (dir) => join(dir, 'cordis.patch.yml'),
+    shape: { kind: 'yaml-cordis' },
+  },
 ]
 
 export function mcpAgentIds(): AgentId[] {
@@ -156,6 +174,7 @@ function homeOf(env: NodeJS.ProcessEnv): string {
 export function mcpSnippet(id: AgentId, launch: McpLaunch): string {
   const def = MCP_AGENTS.find((a) => a.id === id)!
   if (def.shape.kind === 'toml') return tomlTable(launch)
+  if (def.shape.kind === 'yaml-cordis') return cordisSnippet(launch)
   return JSON.stringify(
     { [def.shape.key]: { [MCP_SERVER_NAME]: def.shape.entry(launch) } },
     null,
@@ -172,6 +191,7 @@ export function readMcpEntry(id: AgentId, file: string, launch: McpLaunch): McpE
   }
   const text = readFileSync(file, 'utf-8')
   if (def.shape.kind === 'toml') return tomlState(text, launch)
+  if (def.shape.kind === 'yaml-cordis') return cordisState(text, launch)
   if (!text.trim()) return { status: 'absent', command: null }
   const doc = parseJsonObject(text)
   if (!doc) return { status: 'manual', command: null }
@@ -181,8 +201,16 @@ export function readMcpEntry(id: AgentId, file: string, launch: McpLaunch): McpE
   const entry = map[MCP_SERVER_NAME]
   if (entry === undefined) return { status: 'absent', command: null }
   const { command, args } = def.shape.launchOf(entry)
-  if (JSON.stringify(entry) === JSON.stringify(def.shape.entry(launch))) {
-    return { status: 'registered', command }
+  // an entry written with --compact-schemas is the same launch plus one env toggle
+  for (const [compactSchemas, candidate] of [
+    [false, launch],
+    [true, withCompactSchemas(launch)],
+  ] as const) {
+    if (JSON.stringify(entry) === JSON.stringify(def.shape.entry(candidate))) {
+      return compactSchemas
+        ? { status: 'registered', command, compactSchemas: true }
+        : { status: 'registered', command }
+    }
   }
   return { status: isGenofficeLauncher(command, args) ? 'stale' : 'occupied', command }
 }
@@ -195,6 +223,10 @@ export function writeMcpEntry(id: AgentId, file: string, launch: McpLaunch): voi
     const stripped = removeTomlTable(text)
     const body = stripped.length && !stripped.endsWith('\n') ? `${stripped}\n` : stripped
     save(file, `${body}${body.trim().length ? '\n' : ''}${tomlTable(launch)}`)
+    return
+  }
+  if (def.shape.kind === 'yaml-cordis') {
+    save(file, cordisUpsert(text, launch))
     return
   }
   const doc = text.trim() ? parseJsonObject(text) : {}
@@ -215,6 +247,12 @@ export function removeMcpEntry(id: AgentId, file: string): boolean {
     save(file, next)
     return true
   }
+  if (def.shape.kind === 'yaml-cordis') {
+    const next = cordisRemove(text)
+    if (next === text) return false
+    save(file, next)
+    return true
+  }
   if (!text.trim()) return false
   const doc = parseJsonObject(text)
   if (!doc) throw new Error(`${file} is not a JSON object`)
@@ -224,6 +262,196 @@ export function removeMcpEntry(id: AgentId, file: string): boolean {
   doc[def.shape.key] = rest
   save(file, `${JSON.stringify(doc, null, 2)}\n`)
   return true
+}
+
+// ---- the DSH Cordis patch (yaml-cordis shape) ----
+// The file is a YAML array of `{ insert: [...] }` blocks; this converter only
+// owns the block whose insert carries `id: mcp-genoffice`. Hand-rolled line
+// walker, not a YAML parser: the format DSH reads is a strict subset of YAML
+// (one nesting shape, no anchors, no multi-line scalars in practice), and a
+// targeted line edit can never reorder or reformat entries the way a full
+// parse-serialize round trip would.
+
+/** YAML indentation depth of a non-empty, non-comment line (0-based, 2-space steps). */
+function yamlIndent(line: string): number {
+  const trimmed = line.trimStart()
+  return line.length - trimmed.length === 0 ? 0 : Math.floor((line.length - trimmed.length) / 2)
+}
+
+/** A single-quoted YAML scalar: a quote inside it is escaped by doubling. */
+function yamlScalar(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`
+}
+
+/** A Windows path in the patch: DSH reads the forward-slash form. */
+function yamlPath(value: string): string {
+  return value.replace(/\\/g, '/')
+}
+
+/**
+ * The top-level blocks of the patch: each starts at indent 0 with `- `, with
+ * the line range it spans. A block ends before the next one starts, and the
+ * blank lines and comments after its last line belong to the file, not to the
+ * block — so splicing one out leaves the rest of the file byte for byte.
+ */
+function cordisBlockRanges(lines: string[]): Array<[number, number]> {
+  const starts: number[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!
+    if (line.trim() === '' || line.trim().startsWith('#')) continue
+    if (yamlIndent(line) === 0 && line.trimStart().startsWith('- ')) starts.push(i)
+  }
+  return starts.map((start, k) => {
+    const limit = k + 1 < starts.length ? starts[k + 1]! : lines.length
+    let end = limit
+    while (end > start) {
+      const last = lines[end - 1]!.trim()
+      if (last !== '' && !last.startsWith('#')) break
+      end--
+    }
+    return [start, end] as [number, number]
+  })
+}
+
+/** The flow-style empty sequence DSH initialises the patch with. */
+function cordisIsEmptyFlowSequence(lines: string[]): boolean {
+  const content = lines.filter((line) => line.trim() !== '' && !line.trim().startsWith('#'))
+  return content.length === 1 && content[0]!.trim() === '[]'
+}
+
+/**
+ * The patch is a top-level YAML sequence of insert blocks (block style, or
+ * the empty `[]`). Anything else (a top-level mapping, say) we do not edit:
+ * appending an insert block to it would not be YAML, so the file is reported
+ * for a manual edit instead.
+ */
+function cordisIsSequence(lines: string[]): boolean {
+  if (cordisIsEmptyFlowSequence(lines)) return true
+  for (const line of lines) {
+    if (line.trim() === '' || line.trim().startsWith('#')) continue
+    return yamlIndent(line) === 0 && line.trimStart().startsWith('- ')
+  }
+  return true
+}
+
+/** The `id:` and `serverName:` values inside one insert block. */
+function cordisBlockInfo(block: string[]): { id: string | null; serverName: string | null } {
+  let id: string | null = null
+  let serverName: string | null = null
+  for (const line of block) {
+    const idMatch = /^\s*-?\s*id:\s*(.+)$/.exec(line)
+    if (idMatch && id === null) id = idMatch[1]!.trim().replace(/^['"]|['"]$/g, '')
+    const nameMatch = /^\s*serverName:\s*(.+)$/.exec(line)
+    if (nameMatch && serverName === null)
+      serverName = nameMatch[1]!.trim().replace(/^['"]|['"]$/g, '')
+  }
+  return { id, serverName }
+}
+
+function isGenofficeCordisBlock(block: string[]): boolean {
+  const { id, serverName } = cordisBlockInfo(block)
+  return id === 'mcp-genoffice' || serverName === MCP_SERVER_NAME
+}
+
+/** The line range of the block this app owns, or null when there is none. */
+function cordisOwnRange(lines: string[]): [number, number] | null {
+  for (const [start, end] of cordisBlockRanges(lines)) {
+    if (isGenofficeCordisBlock(lines.slice(start, end))) return [start, end]
+  }
+  return null
+}
+
+/** The `command:` and `args:` of one insert block. */
+function cordisLaunchOf(block: string[]): { command: string | null; args: string[] } {
+  const commandLine = block.find((l) => /^\s*command:\s*/.test(l))
+  const command = commandLine
+    ? commandLine
+        .replace(/^\s*command:\s*/, '')
+        .trim()
+        .replace(/^['"]|['"]$/g, '')
+    : null
+  const argsLine = block.find((l) => /^\s*args:\s*/.test(l))
+  const args: string[] = []
+  if (argsLine) {
+    const raw = argsLine.replace(/^\s*args:\s*/, '').trim()
+    const inner = raw.startsWith('[') && raw.endsWith(']') ? raw.slice(1, -1) : ''
+    for (const part of inner.split(',')) {
+      const value = part.trim().replace(/^['"]|['"]$/g, '')
+      if (value) args.push(value)
+    }
+  }
+  return { command, args }
+}
+
+function cordisState(text: string, launch: McpLaunch): McpEntryState {
+  const lines = text.split('\n')
+  if (!cordisIsSequence(lines)) return { status: 'manual', command: null }
+  const own = cordisOwnRange(lines)
+  if (!own) return { status: 'absent', command: null }
+  const block = lines.slice(own[0], own[1])
+  const { command, args } = cordisLaunchOf(block)
+  // the block is ours by id: registered when it says exactly what we would write
+  const written = block.join('\n').trim()
+  const entryText = (l: McpLaunch) => cordisEntryLines(l).join('\n').trim()
+  if (written === entryText(launch)) return { status: 'registered', command }
+  // ... including the env toggle `mcp install --compact-schemas` writes
+  if (written === entryText(withCompactSchemas(launch)))
+    return { status: 'registered', command, compactSchemas: true }
+  // ours, but written for another install path: stale, and ours to update.
+  // A foreign command under our id is occupied — not ours to overwrite.
+  return { status: isGenofficeLauncher(command, args) ? 'stale' : 'occupied', command }
+}
+
+function cordisEntryLines(launch: McpLaunch): string[] {
+  const command = yamlPath(launch.command)
+  const args = launch.args.map((a) => yamlScalar(yamlPath(a))).join(', ')
+  const env = Object.entries(launch.env ?? {})
+  return [
+    '- insert:',
+    '  - id: mcp-genoffice',
+    "    name: '@deepseek-ai/dsh-mcp-client'",
+    '    config:',
+    '      serverName: genoffice',
+    '      transport: stdio',
+    `      command: ${command}`,
+    `      args: [${args}]`,
+    // the packaged Windows app runs as Node; without the env DSH would start
+    // the GUI instead of the MCP server
+    ...(env.length ? ['      env:', ...env.map(([k, v]) => `        ${k}: ${yamlScalar(v)}`)] : []),
+    '      toolCallTimeoutMs: 180000',
+    '      failOnStartupError: false',
+  ]
+}
+
+function cordisSnippet(launch: McpLaunch): string {
+  return cordisEntryLines(launch).join('\n')
+}
+
+/** Splice our block into the patch, leaving every other line byte for byte. */
+function cordisUpsert(text: string, launch: McpLaunch): string {
+  const lines = text.split('\n')
+  if (!cordisIsSequence(lines)) return text
+  const ours = cordisEntryLines(launch)
+  const own = cordisOwnRange(lines)
+  if (!own) {
+    // `[]` cannot take a block item appended to it: the item replaces it.
+    if (cordisIsEmptyFlowSequence(lines)) {
+      const comments = lines.filter((line) => line.trim().startsWith('#'))
+      return [...comments, ...ours].join('\n') + '\n'
+    }
+    const head = text.length === 0 || text.endsWith('\n') ? text : `${text}\n`
+    return `${head}${ours.join('\n')}\n`
+  }
+  return [...lines.slice(0, own[0]), ...ours, ...lines.slice(own[1])].join('\n')
+}
+
+/** Drop our block; every other line keeps its bytes. */
+function cordisRemove(text: string): string {
+  const lines = text.split('\n')
+  if (!cordisIsSequence(lines)) return text
+  const own = cordisOwnRange(lines)
+  if (!own) return text
+  return [...lines.slice(0, own[0]), ...lines.slice(own[1])].join('\n')
 }
 
 const LAUNCHER_NAMES = new Set(['genoffice', 'genoffice.cmd', 'genoffice.exe'])
@@ -322,10 +550,12 @@ function tomlState(text: string, launch: McpLaunch): McpEntryState {
   const own = ranges.find(([start]) => !TOML_HEADER.exec(lines[start]!)?.[1])
   const block = own ? lines.slice(own[0], own[1]) : []
   const command = tomlString(block, 'command')
-  const written = ranges.flatMap(([s, e]) => meaningful(lines.slice(s, e)))
-  if (written.join('\n') === meaningful(tomlTable(launch).split('\n')).join('\n')) {
-    return { status: 'registered', command }
-  }
+  const written = ranges.flatMap(([s, e]) => meaningful(lines.slice(s, e))).join('\n')
+  const tableText = (l: McpLaunch) => meaningful(tomlTable(l).split('\n')).join('\n')
+  // an entry written with --compact-schemas adds one env row; it is still ours
+  if (written === tableText(launch)) return { status: 'registered', command }
+  if (written === tableText(withCompactSchemas(launch)))
+    return { status: 'registered', command, compactSchemas: true }
   const args = tomlStrings(block, 'args')
   return { status: isGenofficeLauncher(command, args) ? 'stale' : 'occupied', command }
 }

@@ -119,9 +119,11 @@ export const it = {
   appChartNoRepoint: 'Questo grafico non supporta la ridefinizione degli intervalli di dati.',
   appKeepOneSeries: 'Mantieni almeno una serie.',
   appNoCategoriesToSwitch: 'Nessuna categoria da scambiare.',
-  appComboNoSelectData:
-    "La modifica dell'origine dati di un grafico combinato non è ancora supportata.",
+  appSelectDataUnsupported:
+    "La modifica dell'origine dati di questo tipo di grafico non è supportata.",
   appSeriesName: 'Nome serie',
+  appSeriesType: 'Tipo di serie',
+  appSecondaryAxis: 'Asse secondario',
   appValuesRange: 'Intervallo valori',
   appCategoriesRange: 'Intervallo categorie',
   appKeepUnchanged: 'Mantieni invariato',
@@ -206,6 +208,13 @@ export const it = {
   appInvalidGroupField: 'Campo di raggruppamento non valido.',
   appInvalidPageField: 'Campo del filtro rapporto non valido.',
   appPivotPageItemMissing: 'L\'elemento del filtro "{item}" non appartiene al campo "{label}".',
+  appInvalidPivotBaseField:
+    'Il campo base di "Mostra valori come" deve trovarsi in righe o colonne.',
+  appPivotBaseFieldMissing:
+    'La modalità "Mostra valori come" di un campo valore richiede un campo base.',
+  appPivotBaseFieldNotAxis:
+    'Il campo base "{label}" deve trovarsi nelle righe o nelle colonne della tabella pivot.',
+  appPivotBaseItemMissing: 'L\'elemento base "{item}" non appartiene al campo "{label}".',
   appInvalidLabelFilterField: 'Il campo del filtro etichette non è valido.',
   appInvalidValueFieldIndex: "L'indice del campo valori {index} non è valido.",
   appInvalidValueField: 'Campo valori non valido.',
@@ -358,8 +367,8 @@ export const it = {
     'Questo foglio contiene una tabella pivot — lo spostamento di intervalli non è ancora supportato.',
   appMergeOverTable:
     'La selezione si sovrappone a una tabella di Excel — l’unione di celle in una tabella non è ancora supportata.',
-  appTableFilterNoEdit:
-    'Il filtro di questo foglio appartiene a una tabella di Excel — la modifica non può ancora essere salvata.',
+  appFilterToggleFailed:
+    'Il filtro non è stato applicato — seleziona prima l’intervallo con i tuoi dati.',
   appAutofillStreaming:
     "Il riempimento automatico in un'area ancora in streaming non è ancora consentito.",
   appDvNeedsIndexed:
@@ -412,6 +421,9 @@ export const it = {
   appTableNameInFile: 'Il nome di tabella "{name}" è già usato da una tabella nel file.',
   appTableOverlapsSession:
     'L\'intervallo si sovrappone alla tabella "{name}" creata in questa sessione.',
+  appTableOverlapsFile: 'L\'intervallo si sovrappone alla tabella "{name}" del file.',
+  appTableAlreadyInTable:
+    'La selezione è già nella tabella "{name}": cambia lo stile da Progettazione tabella.',
   appTablesNeedFile: 'Apri prima un file XLSX — le tabelle vengono scritte nel file.',
   appTableSelectRange: "Seleziona prima l'intervallo di dati — intestazioni nella prima riga.",
   appTableCreated: 'Tabella creata — salva con ⌘S.',
@@ -497,6 +509,7 @@ export const it = {
   appGridlinesHidden: 'Griglia nascosta.',
   appGridlinesShown: 'Griglia visualizzata.',
   appShowingFormulas: 'Formule visualizzate — attiva/disattiva di nuovo per i valori.',
+  appShowingFormulasActive: 'Formule visualizzate',
   appShowingValues: 'Valori calcolati visualizzati.',
   appTraceNoFormula: 'Individua precedenti: la cella attiva non contiene una formula.',
   appTraceNoRefs: 'Individua precedenti: questa formula non ha riferimenti di cella.',
@@ -542,6 +555,7 @@ export const it = {
   appColumnLabel: 'Colonna {col}',
   appBridgeUnavailable: "Il bridge dei file desktop non è disponibile. Riavvia l'app Electron.",
   appOpenCanceled: 'Selezione della cartella di lavoro annullata.',
+  appImportCanceled: 'Importazione annullata.',
   appOpeningWorkbook: 'Apertura della cartella di lavoro…',
   appOpened: '{name} aperto — le modifiche alle celle si salvano nel file con ⌘S.',
   appOpenFailed: 'Impossibile aprire la cartella di lavoro.',
@@ -608,8 +622,6 @@ export const it = {
   appSaveFailed: 'Impossibile salvare la cartella di lavoro.',
   appCfRuleUnsaveable:
     'Questa regola di formattazione condizionale non può essere salvata in xlsx — usa un altro tipo di regola.',
-  appSaveErrX14Dv:
-    'Questo foglio ha una convalida dati estesa (x14); la modifica delle sue regole di convalida non è ancora supportata.',
   appSaveErrMultiSelectList:
     'La convalida con elenco a selezione multipla non può essere salvata in xlsx — elimina la regola prima di salvare.',
   appSaveErrX14Cf:
@@ -740,6 +752,7 @@ export const it = {
   appExportPdfTitle: 'Esporta come PDF',
   appSaveTitle: 'Salva (⌘S)',
   appSaveAs: 'Salva con nome',
+  aiNameFile: 'Assegna un nome con IA…',
   appUndo: 'Annulla',
   appRedo: 'Ripeti',
   appUnsavedEditOne: '● {count} modifica non salvata',
@@ -1188,6 +1201,20 @@ export const it = {
   appWatchCell: 'Cella',
   appWatchValue: 'Valore',
   appWatchFormula: 'Formula',
+  appLinksPanel: 'Collegamenti esterni',
+  appLinksPanelDetail: 'Elenca, aggiorna e interrompe i collegamenti ad altre cartelle di lavoro',
+  appLinksUpdate: 'Aggiorna valori',
+  appLinksNone: 'Questa cartella di lavoro non contiene collegamenti ad altre cartelle di lavoro.',
+  appLinksUnsaved: 'Salva questa cartella di lavoro prima di elencare i suoi collegamenti esterni.',
+  appLinksSource: 'Origine',
+  appLinksStatus: 'Stato',
+  appLinksSheets: 'Fogli',
+  appLinksLocate: 'Mostra file di origine',
+  appLinksReachable: 'Disponibile',
+  appLinksBroken: 'Non disponibile',
+  appLinksBreak: 'Interrompi collegamento',
+  appLinksBreakConfirm: 'Conferma interruzione',
+  appLinksChangeSource: 'Modifica origine',
   appGroupCalculation: 'Calcolo',
   appCalculationOptions: 'Opzioni di calcolo',
   appCalculationOptionsTitle: 'Ricalcolo automatico o manuale',
@@ -1204,8 +1231,16 @@ export const it = {
   appGroupGetData: 'Recupera dati',
   appFromTextCsv: 'Da testo/CSV',
   appRefreshAll: 'Aggiorna tutti',
+  appRefreshQuery: 'Aggiorna query',
+  appQueryConnectionsTitle: 'Aggiorna le query della cartella di lavoro',
+  appQueryRefreshing: 'Aggiornamento di {name}…',
+  appQueryRefreshed: '{name} aggiornato ({rows} righe)',
+  appQueryRefreshedClipped: "{name} aggiornato ({rows} righe, {dropped} oltre l'intervallo)",
+  appQueryRefreshFailed: 'Impossibile aggiornare {name}',
   appWorkbookNoPivot: 'Nessuna tabella pivot in questa cartella.',
   appRefreshAllTitle: 'Aggiorna tutte le tabelle pivot',
+  appQueriesConnections: 'Query e connessioni',
+  appQueriesConnectionsTitle: 'Elenca le query e le connessioni dati della cartella di lavoro',
   appErrorCheckingDetail: 'Cerca valori di errore nel foglio',
   appErrorsFound: '{count} errori — in {cell}: {value}',
   appCheckingErrors: 'Ricerca errori in corso su tutto il foglio…',
@@ -1241,6 +1276,7 @@ export const it = {
   appGroupForecast: 'Previsione',
   appWhatIfAnalysis: 'Analisi di simulazione',
   appGoalSeek: 'Ricerca obiettivo',
+  appDataTable: 'Tabella dati',
   appWhatIfTitle: 'Trova un input per un valore obiettivo',
   appGoalSeekNeedsFormula: 'La cella deve contenere una formula.',
   appGoalSeekByCellNotNumber: 'La cella da cambiare deve contenere un numero o essere vuota.',
@@ -1601,4 +1637,29 @@ export const it = {
   appVisualFlipV: 'Capovolgi verticalmente',
   appVisualFlipH: 'Capovolgi orizzontalmente',
   appCtxPasteVisual: 'Incolla immagine o forma',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Ortografia',
+  appSpellBtnDetail: 'Controlla il testo del foglio (F7)',
+  appSpellToggle: 'Controllo ortografia',
+  appSpellToggleTip:
+    'Attiva il controllo ortografico (F7 e il pulsante Revisione); disattivato, le caselle dei commenti non mostrano più le sottolineature',
+  appSpellOn: 'Controllo ortografico attivato.',
+  appSpellOff: 'Il controllo ortografico è disattivato. Attivalo in Revisione ▸ Correzione.',
+  appSpellRecheck: 'Ricontrolla',
+  appSpellNone: 'Nessun errore ortografico sospetto trovato.',
+  appSpellFindings: '{count} errori sospetti. Fai clic su una riga per individuarlo.',
+  appSpellTruncated: 'Troppe celle di testo; sono state controllate solo le prime.',
+  appSpellColWord: 'Sospetto',
+  appSpellIgnore: 'Ignora',
+  appSpellIgnoreAll: 'Ignora tutti',
+  appSpellLearn: 'Aggiungi al dizionario',
+  appSpellNoSuggestions: 'Nessun suggerimento',
+  appSpellIgnoredAll: '"{word}" non verrà più segnalato in questa sessione.',
+  appSpellLearned: '"{word}" è stato aggiunto al dizionario.',
+  appSpellChanged: '{address} corretto.',
+  appSpellChangeFailed: 'Impossibile correggere {address}.',
+  appSpellUnavailable: 'Il controllo ortografico non è disponibile in questa finestra.',
+  appSpellReplaceAll: 'Sostituisci tutto con «{suggestion}»',
+  appSpellChangedAll: 'Corrette {count} celle di «{word}».',
 } satisfies Record<keyof typeof zh, string>

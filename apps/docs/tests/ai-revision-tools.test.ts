@@ -118,6 +118,30 @@ describe('revision entries', () => {
 })
 
 describe('accept_changes / reject_changes tools', () => {
+  it('refuses under protection that enforces tracked changes, leaving every revision pending', async () => {
+    const editor = createEditor()
+    const before = collectRevisions(editor.state.doc).length
+    for (const name of ['accept_changes', 'reject_changes'] as const) {
+      const r = await executeTool(
+        editor,
+        { id: 't', name, input: { all: true } },
+        NUM_IDS,
+        undefined,
+        undefined,
+        null,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { revisionsLocked: true },
+      )
+      expect(r.isError).toBe(true)
+      expect(r.mutated).toBeFalsy()
+      expect(r.output).toContain('protection')
+    }
+    expect(collectRevisions(editor.state.doc)).toHaveLength(before)
+  })
+
   it('accepts everything', async () => {
     const editor = createEditor()
     const r = await executeTool(

@@ -85,27 +85,33 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'anthropic',
     label: 'Claude',
-    // current-generation ids per platform.claude.com models overview (2026-10-09).
-    // Fable needs data retention enabled on the org, otherwise the API answers
-    // model_not_available; every other id is served to any key.
+    // current lineup per platform.claude.com models overview (2026-10-27):
+    // Sonnet 5.5 (2026-09-28) replaces Sonnet 5 as the speed/intelligence
+    // default; it accepts only tool_choice auto/none, which is all this
+    // adapter sends. Fable needs data retention enabled on the org, otherwise
+    // the API answers model_not_available; every other id is served to any key.
     models: [
       'claude-opus-5-5',
-      'claude-sonnet-5',
+      'claude-sonnet-5-5',
       'claude-fable-5-1',
+      'claude-haiku-5-5',
+      'claude-sonnet-5',
       'claude-opus-5',
       'claude-fable-5',
       'claude-sonnet-4-6',
-      'claude-haiku-5-5',
     ],
-    defaultModel: 'claude-sonnet-5',
+    defaultModel: 'claude-sonnet-5-5',
     keyPlaceholder: 'sk-ant-api03-...',
   },
   {
     id: 'gemini',
     label: 'Gemini',
-    // 3.x lineup per ai.google.dev/gemini-api/docs/models (2026-09-23). 3.8 Flash
-    // is the current stable Flash Google recommends; 3.1 Pro is still preview-only.
+    // Lineup per ai.google.dev/gemini-api/docs/models (2026-10-27). 4 Argon is
+    // the stable flagship (1M context, image/video/audio/PDF input); 3.8 Flash
+    // stays default as the model Google recommends for new projects; 3.1 Pro
+    // is still preview-only.
     models: [
+      'gemini-4-argon',
       'gemini-3.8-flash',
       'gemini-3.7-flash',
       'gemini-3.1-pro-preview',
@@ -133,14 +139,26 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'openai',
     label: 'OpenAI',
-    // GPT-5.6 naming: sol is the flagship (the bare `gpt-5.6` alias resolves to
-    // it, but spell it out so the picker says which tier it is), terra balances
-    // cost/intelligence, luna is the high-volume tier (2026-08). The GPT-6
-    // family (astra, sol, luna) is deliberately absent: Chat Completions
-    // supports its function calling only with reasoning_effort none, full
-    // tool use needs the Responses API, which has no protocol here (2026-09-24)
-    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
-    defaultModel: 'gpt-5.6-terra',
+    // Tier names: astra/sol = flagship, terra = balanced cost/intelligence,
+    // luna = high-volume. GPT-5.4+ and GPT-6 run on the Responses API (see
+    // modelUsesResponsesApi), which is the only route where they call tools
+    // with reasoning on (live-verified 2026-10-27). 6.1 Terra (2026-10-26,
+    // $1/$5) is the default: cheaper than 5.6 Terra, and the 5.6 tiers have
+    // left OpenAI's models page.
+    models: [
+      'gpt-6.1-terra',
+      'gpt-6.1-sol',
+      'gpt-6-astra',
+      'gpt-6-sol',
+      'gpt-6-luna',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+      'gpt-5.5',
+      'gpt-5.4',
+      'gpt-5.4-mini',
+    ],
+    defaultModel: 'gpt-6.1-terra',
     keyPlaceholder: 'sk-...',
   },
   {
@@ -371,6 +389,79 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'apikey-...',
   },
   {
+    id: 'runcrate',
+    label: 'Runcrate',
+    // Lab-namespaced ids exactly as GET api.runcrate.ai/v1/models lists them
+    // (2026-10-25, public endpoint, no key needed); the rest of the catalog
+    // works as-is when typed in. Chat, streaming and tool calls are
+    // live-verified; image support follows each id's catalog input_modalities,
+    // and the text-only ids (GLM-5.3, Qwen3.8 Flash, gpt-oss 120B) are covered
+    // by modelLacksVision().
+    models: [
+      'deepseek-ai/DeepSeek-V4.1-Flash',
+      'deepseek-ai/DeepSeek-V4.1-Flash-1017',
+      'zai-org/GLM-5.3',
+      'zai-org/GLM-5.3-Flash',
+      'moonshotai/Kimi-K2.6',
+      'Qwen/Qwen3.8-Flash',
+      'openai/gpt-oss-120b',
+    ],
+    defaultModel: 'deepseek-ai/DeepSeek-V4.1-Flash',
+    keyPlaceholder: 'rc_live_...',
+  },
+  {
+    id: 'cloudgpu',
+    label: 'CloudGPU',
+    // Bare model ids exactly as GET https://cloudgpu.app/v1/models lists them
+    // (2026-10-29, public endpoint, no key needed); the rest of the catalog
+    // works as-is when typed in. Docs: https://cloudgpu.app/api/docs.
+    // The catalog does not report input modalities, so vision follows the
+    // existing modelLacksVision() rules.
+    models: ['deepseek-v4.1-flash', 'deepseek-v4-pro', 'glm-5.3-flash', 'kimi-k2.6', 'minimax-m3'],
+    defaultModel: 'deepseek-v4.1-flash',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    id: 'siliconflow',
+    label: 'SiliconFlow',
+    // Lab-namespaced ids exactly as the pricing page and GET
+    // api.siliconflow.cn/v1/models (type=text&sub_type=chat) list them
+    // (2026-11-02); the rest of the catalog works as-is when typed in, and a
+    // Pro/<id> prefix selects the accelerated serving. OpenAI-compatible
+    // /chat/completions; docs: https://api-docs.siliconflow.cn. The CN and
+    // global platforms (api.siliconflow.com) do not share keys or base URLs.
+    models: [
+      'deepseek-ai/DeepSeek-V4.1-Flash',
+      'deepseek-ai/DeepSeek-V4-Pro',
+      'deepseek-ai/DeepSeek-V3.2',
+      'zai-org/GLM-5.3',
+      'zai-org/GLM-5.3-Flash',
+      'moonshotai/Kimi-K2.7-Code',
+      'Qwen/Qwen3.8-27B',
+    ],
+    defaultModel: 'deepseek-ai/DeepSeek-V4-Pro',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    id: 'ppio',
+    label: 'PPIO',
+    // Lowercase lab-namespaced ids exactly as GET <base>/models lists them for
+    // the OpenAI-compatible endpoint (2026-11-02); the rest of the catalog
+    // works as-is when typed in. Docs: https://ppio.com/docs/model/llm — the
+    // official SDK base_url is https://api.ppio.com/openai, so the chat
+    // endpoint rides /openai/v1.
+    models: [
+      'deepseek/deepseek-v4.1-flash',
+      'deepseek/deepseek-v4-pro',
+      'moonshotai/kimi-k3',
+      'zai-org/glm-5.3',
+      'qwen/qwen3.8-max',
+      'minimax/minimax-m3.1-flash',
+    ],
+    defaultModel: 'deepseek/deepseek-v4.1-flash',
+    keyPlaceholder: 'sk-...',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET
@@ -427,6 +518,37 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     ],
     defaultModel: 'kimi-k2.7-code',
     keyPlaceholder: 'API Key',
+  },
+  {
+    id: 'commandcode',
+    label: 'Command Code',
+    // Coding-plan gateway (commandcode.ai/docs/provider): one key serves
+    // OpenAI Chat Completions and Anthropic Messages at
+    // api.commandcode.ai/provider/v1; every plan except the $1 Go tier has
+    // API access (GOAT = $10/month). Vendor-prefixed ids exactly as the CLI
+    // model reference lists them (2026-11-03); the rest of the catalog works
+    // as-is when typed in. Claude ids answer only on /v1/messages, so they
+    // ride the Anthropic route. GPT-5.4+/6 call tools only over the Responses
+    // API, which this route does not take, so GPT and Grok stay out as on the
+    // OpenCode tiers.
+    models: [
+      'zai-org/GLM-5.3',
+      'zai-org/GLM-5.2',
+      'deepseek/deepseek-v4-pro',
+      'deepseek/deepseek-v4.1-flash',
+      'deepseek/deepseek-v4-flash',
+      'moonshotai/Kimi-K2.7-Code',
+      'moonshotai/Kimi-K3',
+      'Qwen/Qwen3.8-Max',
+      'Qwen/Qwen3.8-27B',
+      'MiniMaxAI/MiniMax-M3',
+      'minimax/minimax-m3.1-flash',
+      'tencent/hy3-paid',
+      'google/gemini-3.8-flash',
+      'google/gemini-3.7-flash',
+    ],
+    defaultModel: 'zai-org/GLM-5.3',
+    keyPlaceholder: 'CMD API key',
   },
   {
     id: 'custom',

@@ -17,7 +17,7 @@ describe('saveOnce caret-mark wiring', () => {
     const src = fileActions()
     const rewrite = src.indexOf('if (!unchanged) {', src.indexOf('async function saveOnce('))
     const snapshot = src.indexOf('const caretMarks = caretMarksSnapshot(editor)', rewrite)
-    const setContent = src.indexOf('editor.commands.setContent(rebasedPm', rewrite)
+    const setContent = src.indexOf('.setContent(rebasedPm', rewrite)
     expect(snapshot).toBeGreaterThan(rewrite)
     // taken after the save awaited, so a font picked during the save is the
     // one that comes back — and before the replacement that would drop it
@@ -39,7 +39,7 @@ describe('saveOnce caret-mark wiring', () => {
   it('restores the marks after setContent, inside the rewrite branch only', () => {
     const src = fileActions()
     const rewrite = src.indexOf('if (!unchanged) {')
-    const setContent = src.indexOf('editor.commands.setContent(rebasedPm', rewrite)
+    const setContent = src.indexOf('.setContent(rebasedPm', rewrite)
     const restore = src.indexOf('restoreMarksAfterDocRewrite(editor, caretMarks)', rewrite)
     expect(rewrite).toBeGreaterThan(-1)
     expect(setContent).toBeGreaterThan(rewrite)

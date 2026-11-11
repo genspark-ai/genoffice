@@ -60,6 +60,7 @@ export interface Pdfium {
   _FPDFText_GetLooseCharBox(textPage: number, index: number, rect: number): number
   _FPDFText_GetCharOrigin(textPage: number, index: number, x: number, y: number): number
   _FPDFText_LoadFont(doc: number, data: number, size: number, fontType: number, cid: number): number
+  _FPDFText_LoadStandardFont(doc: number, fontName: number): number
   _FPDFText_SetText(textObj: number, text: number): number
   _FPDFPage_CountObjects(page: number): number
   _FPDFPage_GetObject(page: number, index: number): number
@@ -1031,6 +1032,54 @@ function fontString(m: Pdfium, read: (buf: number, len: number) => number): stri
   }
 }
 
+const STANDARD_LATIN_FONTS = new Set([
+  'Helvetica',
+  'Helvetica-Bold',
+  'Helvetica-Oblique',
+  'Helvetica-BoldOblique',
+  'Times-Roman',
+  'Times-Bold',
+  'Times-Italic',
+  'Times-BoldItalic',
+  'Courier',
+  'Courier-Bold',
+  'Courier-Oblique',
+  'Courier-BoldOblique',
+])
+
+const WIN_ANSI_HIGH = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ'
+
+export function winAnsiCovers(text: string): boolean {
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!
+    if ((cp >= 0x20 && cp <= 0x7e) || (cp >= 0xa0 && cp <= 0xff)) continue
+    if (!WIN_ANSI_HIGH.includes(ch)) return false
+  }
+  return true
+}
+
+export function keptStandardFont(
+  name: string,
+  embedded: boolean,
+  edit: Pick<TextEditInput, 'newFont' | 'newItalic'>,
+  drawn: string,
+): string | null {
+  if (embedded || edit.newFont || edit.newItalic) return null
+  if (!STANDARD_LATIN_FONTS.has(name)) return null
+  return winAnsiCovers(drawn) ? name : null
+}
+
+function loadStandardFont(m: Pdfium, doc: number, name: string): number {
+  const ptr = m._malloc(name.length + 1)
+  try {
+    for (let i = 0; i < name.length; i++) m.HEAPU8[ptr + i] = name.charCodeAt(i)
+    m.HEAPU8[ptr + name.length] = 0
+    return m._FPDFText_LoadStandardFont(doc, ptr)
+  } finally {
+    m._free(ptr)
+  }
+}
+
 /** Rebuild font plus whether bold must be synthesized by stroking. A bold toggle on
     "keep original" never swaps the face: the same glyphs with a thin same-color
     stroke keep every advance, so the surrounding layout survives (a bold face file
@@ -1732,6 +1781,19 @@ async function rebuildRun(
       styleEdit: TextEditInput,
       text: string,
     ): Promise<{ font: number; synth: boolean }> => {
+      const standard = anchor.font
+        ? keptStandardFont(
+            fontString(m, (b, l) => m._FPDFFont_GetBaseFontName(anchor.font, b, l)),
+            !!m._FPDFFont_GetIsEmbedded(anchor.font),
+            styleEdit,
+            (text.trim() ? text : 'x').replace(/\n/g, ''),
+          )
+        : null
+      if (standard) {
+        const f = loadStandardFont(m, doc, standard)
+        if (!f) throw new Error('FPDFText_LoadStandardFont failed')
+        return { font: f, synth: !!styleEdit.newBold && !faceIsBold(m, anchor.font) }
+      }
       const { bytes: fontBytes, syntheticBold } = await resolveRebuildFont(
         m,
         anchor.font,
@@ -2137,6 +2199,64 @@ export function applyTextInserts(
         }
         byPage.set(input.pageIndex, [...(byPage.get(input.pageIndex) ?? []), { input, editIndex }])
       })
+      // One resolved face per (font, bold, italic) across the request: the OCR
+      // bake sends hundreds of same-face lines, and resolving per insert
+      // subsetted and loaded a font per line — a 40-page scan wrote on the
+      // order of 2000 font objects. The subset covers the merged text of every
+      // line sharing the face, so each line still has its glyphs.
+      const faceKeyOf = (input: TextInsertInput): string =>
+        `${input.font ?? ''}|${input.bold ? 1 : 0}|${input.italic ? 1 : 0}`
+      const faces = new Map<string, { input: TextInsertInput; editIndex: number }[]>()
+      for (const pageInserts of byPage.values())
+        for (const entry of pageInserts) {
+          const key = faceKeyOf(entry.input)
+          faces.set(key, [...(faces.get(key) ?? []), entry])
+        }
+      const faceCache = new Map<
+        string,
+        { font: number; truetype: boolean; syntheticBold: boolean; failed?: string }
+      >()
+      for (const [key, group] of faces) {
+        const first = group[0]!.input
+        const merged = group.map(({ input }) => input.text.replace(/\n/g, '')).join('')
+        const pseudoEdit: TextEditInput = {
+          pageIndex: 0,
+          rect: [0, 0, 0, 0],
+          oldText: '',
+          newText: merged,
+          fontSize: first.fontSize,
+          newFontSize: first.fontSize,
+          newColor: first.color,
+          newFont: first.font,
+          newBold: first.bold,
+          newItalic: first.italic,
+        }
+        try {
+          const { bytes: fontBytes, syntheticBold } = await resolveRebuildFont(
+            m,
+            0,
+            pseudoEdit,
+            merged,
+          )
+          const fontPtr = m._malloc(fontBytes.length)
+          m.HEAPU8.set(fontBytes, fontPtr)
+          const font = m._FPDFText_LoadFont(
+            doc,
+            fontPtr,
+            fontBytes.length,
+            isTruetype(fontBytes) ? FPDF_FONT_TRUETYPE : FPDF_FONT_TYPE1,
+            1,
+          )
+          m._free(fontPtr)
+          if (!font) throw new Error('FPDFText_LoadFont failed')
+          faceCache.set(key, { font, truetype: isTruetype(fontBytes), syntheticBold })
+        } catch (err) {
+          const reason = errMsg(err)
+          faceCache.set(key, { font: 0, truetype: true, syntheticBold: false, failed: reason })
+          for (const { input, editIndex } of group)
+            skipped.push({ editIndex, pageIndex: input.pageIndex, reason })
+        }
+      }
       for (const [pageIndex, pageInserts] of byPage) {
         const page = m._FPDF_LoadPage(doc, pageIndex)
         if (!page) throw new Error(`could not load page ${pageIndex + 1}`)
@@ -2148,38 +2268,11 @@ export function applyTextInserts(
               skipped.push({ editIndex, pageIndex, reason: 'empty inserted text' })
               continue
             }
-            const pseudoEdit: TextEditInput = {
-              pageIndex,
-              rect: [input.origin[0], input.origin[1], input.origin[0], input.origin[1]],
-              oldText: '',
-              newText: input.text,
-              fontSize: input.fontSize,
-              newFontSize: input.fontSize,
-              newColor: input.color,
-              newFont: input.font,
-              newBold: input.bold,
-              newItalic: input.italic,
-            }
+            const face = faceCache.get(faceKeyOf(input))
+            if (!face || face.failed) continue // recorded as skipped with the face
             const created: number[] = []
-            let font = 0
             try {
-              const { bytes: fontBytes, syntheticBold } = await resolveRebuildFont(
-                m,
-                0,
-                pseudoEdit,
-                input.text,
-              )
-              const fontPtr = m._malloc(fontBytes.length)
-              m.HEAPU8.set(fontBytes, fontPtr)
-              font = m._FPDFText_LoadFont(
-                doc,
-                fontPtr,
-                fontBytes.length,
-                isTruetype(fontBytes) ? FPDF_FONT_TRUETYPE : FPDF_FONT_TYPE1,
-                1,
-              )
-              m._free(fontPtr)
-              if (!font) throw new Error('FPDFText_LoadFont failed')
+              const font = face.font
               const matrixPtr = m._malloc(24)
               try {
                 const leading = input.lineLeading ?? input.fontSize * LINE_GAP
@@ -2215,7 +2308,13 @@ export function applyTextInserts(
                     input.color[2],
                     255,
                   )
-                  if (syntheticBold)
+                  if (input.invisible) {
+                    // render mode 3 (invisible): the standard OCR-layer form.
+                    // White fill still shows on grey paper, photos and dark
+                    // headers, and lights up under selection.
+                    m._FPDFTextObj_SetTextRenderMode(obj, 3)
+                  }
+                  if (face.syntheticBold && !input.invisible)
                     strokeObject(
                       m,
                       obj,
@@ -2228,7 +2327,7 @@ export function applyTextInserts(
                 m._free(matrixPtr)
               }
               for (const obj of created) m._FPDFPage_InsertObject(page, obj)
-              embeddedCff = !isTruetype(fontBytes) || embeddedCff
+              if (!face.truetype) embeddedCff = true
               applied++
             } catch (err) {
               for (const obj of created) m._FPDFPageObj_Destroy(obj)
@@ -2263,10 +2362,19 @@ export async function withDocument<T>(
   m: Pdfium,
   bytes: Uint8Array,
   fn: (doc: number) => Promise<T>,
+  password?: string,
 ): Promise<T> {
   const docPtr = m._malloc(bytes.length)
   m.HEAPU8.set(bytes, docPtr)
-  const doc = m._FPDF_LoadMemDocument(docPtr, bytes.length, 0)
+  let pwPtr = 0
+  if (password) {
+    const pw = Buffer.from(password, 'utf8')
+    pwPtr = m._malloc(pw.length + 1)
+    m.HEAPU8.set(pw, pwPtr)
+    m.HEAPU8[pwPtr + pw.length] = 0
+  }
+  const doc = m._FPDF_LoadMemDocument(docPtr, bytes.length, pwPtr)
+  if (pwPtr) m._free(pwPtr)
   if (!doc) {
     m._free(docPtr)
     throw new Error('PDFium could not load the document')
@@ -2603,10 +2711,15 @@ async function validateTextEditsInner(
 export function verifyTextEdits(
   bytes: Uint8Array,
   edits: { pageIndex: number; newText: string }[],
+  /** the password when the saved output is encrypted again */
+  password?: string,
 ): Promise<{ pageIndex: number; reason: string }[]> {
   return chainPdfium(async () => {
     const m = await loadPdfium()
-    return withDocument(m, bytes, async (doc) => {
+    // the saved output carries its protection again: verification opens it with
+    // the same password the save just wrote, or every edit reads as missing
+    const open = <T>(fn: (doc: number) => Promise<T>) => withDocument(m, bytes, fn, password)
+    return open(async (doc) => {
       const failures: { pageIndex: number; reason: string }[] = []
       const pageCount = m._FPDF_GetPageCount(doc)
       const byPage = new Map<number, string[]>()

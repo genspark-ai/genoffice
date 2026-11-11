@@ -49,6 +49,7 @@ import {
   reconcileOwnedAssets,
   renameOwnedAssetDocument,
   resolveSafeRelativeImagePath,
+  resolveSafeVaultImagePath,
   resolveSourcePendingAfterSaveAs,
   rollbackPreparedSaveAsAssets,
   writeImageIntoOwnedAssets,
@@ -62,6 +63,8 @@ import type {
   WikiCreateNoteRequest,
   WikiCreateNoteResult,
   WikiGraph,
+  WikiHeadEntry,
+  WikiHeadsRequest,
   WikiLinkResolveRequest,
   WikiLinkResolved,
   WikiNoteEntry,
@@ -69,7 +72,8 @@ import type {
 import { nodeFs, resolveWikiLinks } from './wiki-resolve'
 import { listWikiNotes } from './wiki-notes'
 import { createWikiNote } from './wiki-create'
-import { nodeVaultFs, warmWikiIndex, wikiBacklinks, wikiGraph } from './wiki-index'
+import { wikiHeads } from './wiki-heads'
+import { nodeVaultFs, warmWikiIndex, wikiBacklinks, wikiGraph, wikiTags } from './wiki-index'
 import { rememberWikiFragment, takeWikiFragment } from './wiki-fragment'
 import { isImageHostUsable, normalizeImageHostConfig, uploadImageToHost } from './image-host'
 import {
@@ -670,19 +674,32 @@ async function writeTextAtomic(path: string, text: string): Promise<void> {
   await atomicWriteFile(path, Buffer.from(text, 'utf8'))
 }
 
+/**
+ * A file-name stem from an untrusted source (a model's answer, or a heading).
+ *
+ * The answer is a bare string from outside the app, so it goes through the same
+ * filter whichever name it is destined for: a stem carrying a separator, a
+ * control character, or a trailing dot would otherwise become a path the save
+ * refuses, or worse, writes somewhere else. Empty when nothing usable is left.
+ */
+function fileNameStem(raw: string | undefined): string {
+  return (raw ?? '')
+    .replace(/[/\\:*?"<>|]/g, '_')
+    .slice(0, 80)
+    .trim()
+}
+
 async function resolveSaveTarget(
   e: Electron.IpcMainInvokeEvent,
   mode: SaveMode,
   suggestedName?: string,
+  defaultName?: string,
 ): Promise<string | null | 'canceled'> {
   const current = savePathByWc.get(e.sender.id)
   if (mode === 'save' && current) return current
   // AI auto-naming: silent first save of an untitled document
   if (mode === 'save' && !current && suggestedName) {
-    const base = suggestedName
-      .replace(/[/\\:*?"<>|]/g, '_')
-      .slice(0, 80)
-      .trim()
+    const base = fileNameStem(suggestedName)
     if (base) {
       const dir = configuredDefaultSaveDir(app)
       let target = join(dir, `${base}.md`)
@@ -692,9 +709,21 @@ async function resolveSaveTarget(
   }
   const win =
     BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
-  const defaultPath = current
-    ? join(dirname(current), basename(current))
-    : join(configuredDefaultSaveDir(app), `${tm('untitledFile')}.md`)
+  // A name proposed by the model (or the document's first heading) prefills the
+  // dialog rather than replacing it: the reader still chooses the location, and
+  // cancelling still cancels. Without one, the dialog opens on the file's own
+  // name, or on the untitled default for a document that has never been saved.
+  const proposed = fileNameStem(defaultName)
+  const defaultPath = proposed
+    ? // keep the open file's extension: a .md proposal must not offer to
+      // rewrite an opened .markdown (or .txt) file as a different format
+      join(
+        current ? dirname(current) : configuredDefaultSaveDir(app),
+        `${proposed}${current ? extname(current) : '.md'}`,
+      )
+    : current
+      ? join(dirname(current), basename(current))
+      : join(configuredDefaultSaveDir(app), `${tm('untitledFile')}.md`)
   const picked = await showSaveDialogWithMemory(dialog, win, {
     title: tm('dlgSaveTitle'),
     defaultPath,
@@ -743,19 +772,27 @@ function registerImageProtocol(): void {
     if (!DISPLAY_IMAGE_EXTS.has(extname(target).toLowerCase()) || !existsSync(target)) {
       return new Response(null, { status: 404 })
     }
-    let inDocDir = false
+    let served: string | null = null
     for (const doc of new Set([...openPathByWc.values(), ...savePathByWc.values()])) {
       const dir = resolve(dirname(doc))
       // isInDocDir handles filesystem-root docs ("/", "C:\") whose dir
       // already ends in a separator — dir + sep would 403 every sibling.
       if (!isInDocDir(target, dir)) continue
-      if (await resolveSafeRelativeImagePath(doc, relative(dir, target))) {
-        inDocDir = true
+      const safe = await resolveSafeRelativeImagePath(doc, relative(dir, target))
+      if (safe) {
+        served = safe
         break
       }
     }
-    if (!inDocDir) return new Response(null, { status: 403 })
-    return net.fetch(pathToFileURL(target).toString())
+    if (!served) {
+      // a cross-folder embed resolves through the vault root the wiki resolver
+      // walks, so the picture next to the note (vault attachments/ from a
+      // nested note, the Obsidian layout) renders too: the same root decides,
+      // realpath-resolved so a symlink escape is refused
+      served = await resolveSafeVaultImagePath(configuredDefaultSaveDir(app), target)
+    }
+    if (!served) return new Response(null, { status: 403 })
+    return net.fetch(pathToFileURL(served).toString())
   })
 }
 
@@ -839,6 +876,15 @@ function registerMarkdownIpc(): void {
   )
 
   ipcMain.handle(
+    MARKDOWN_CHANNELS.wikiHeads,
+    async (_e, request: WikiHeadsRequest): Promise<WikiHeadEntry[]> => {
+      const target = typeof request?.target === 'string' ? request.target : ''
+      const fromPath = typeof request?.fromPath === 'string' ? request.fromPath : ''
+      return wikiHeads(target, fromPath, configuredDefaultSaveDir(app))
+    },
+  )
+
+  ipcMain.handle(
     MARKDOWN_CHANNELS.createWikiNote,
     async (e, request: WikiCreateNoteRequest): Promise<WikiCreateNoteResult> => {
       const target = typeof request?.target === 'string' ? request.target : ''
@@ -862,6 +908,10 @@ function registerMarkdownIpc(): void {
 
   ipcMain.handle(MARKDOWN_CHANNELS.wikiGraph, (): Promise<WikiGraph> =>
     wikiGraph(configuredDefaultSaveDir(app), nodeVaultFs()),
+  )
+
+  ipcMain.handle(MARKDOWN_CHANNELS.wikiTags, (): Promise<{ tag: string; files: string[] }[]> =>
+    wikiTags(configuredDefaultSaveDir(app), nodeVaultFs()),
   )
 
   ipcMain.handle(
@@ -891,7 +941,9 @@ function registerMarkdownIpc(): void {
       try {
         const suggestedName =
           typeof request.suggestedName === 'string' ? request.suggestedName : undefined
-        const target = await resolveSaveTarget(e, mode, suggestedName)
+        const defaultName =
+          typeof request.defaultName === 'string' ? request.defaultName : undefined
+        const target = await resolveSaveTarget(e, mode, suggestedName, defaultName)
         if (target === 'canceled') return done({ ok: true, canceled: true })
         if (!target) return done({ ok: false, error: 'markdown: no save target' })
         const currentPath = pathAtRequest

@@ -1,9 +1,16 @@
 import { chatAnthropic } from './protocols/anthropic'
 import { chatGemini } from './protocols/gemini'
 import { chatOpenAiCompatible } from './protocols/openai-compatible'
+import { chatOpenAiResponses } from './protocols/openai-responses'
 import { ResponseBodyTooLargeError } from './protocols/shared'
 import { chatCodexAppServer } from './codex-app-server'
 import { getProviderAdapter, type ResolvedEndpoint } from './registry'
+import {
+  anthropicThinkingFields,
+  geminiThinkingLevelFor,
+  openAiEffortFor,
+  toggleThinkingBodyFor,
+} from './thinking-effort'
 import type { AiChatResponse, AiProviderConfig, AiProviderId } from './types'
 import { AI_CHAT_RESPONSE_TIMEOUT_MS, createStreamWatchdog } from './watchdog'
 
@@ -36,17 +43,27 @@ export async function chatForProvider(
       case 'anthropic':
         return chatAnthropic(wd, config, system, user, endpoint.baseUrl, {
           headers: endpoint.headers,
+          ...anthropicThinkingFields(config),
         })
       case 'gemini':
         return chatGemini(wd, config, system, user, endpoint.baseUrl, {
           omitTemperature: endpoint.omitTemperature,
           headers: endpoint.headers,
+          thinkingLevel: geminiThinkingLevelFor(config),
         })
       case 'openai-compatible':
         return chatOpenAiCompatible(wd, endpoint.baseUrl, config, system, user, {
           omitTemperature: endpoint.omitTemperature,
+          // a stored pick outranks the profile's own body extras
+          bodyExtras: { ...endpoint.bodyExtras, ...toggleThinkingBodyFor(config) },
+          headers: endpoint.headers,
+          reasoningEffort: openAiEffortFor(config, endpoint.protocol),
+        })
+      case 'openai-responses':
+        return chatOpenAiResponses(wd, endpoint.baseUrl, config, system, user, {
           bodyExtras: endpoint.bodyExtras,
           headers: endpoint.headers,
+          reasoningEffort: openAiEffortFor(config, endpoint.protocol),
         })
     }
   })

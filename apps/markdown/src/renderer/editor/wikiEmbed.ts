@@ -10,7 +10,7 @@ import { Node } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 
 /** the literal a wiki embed node carries: `![[Note#Heading]]` */
-const WIKI_EMBED_RE = /^!\[\[([^[\]|\n]+?)(?:\|([^[\]\n]+))?\]\]/
+export const WIKI_EMBED_RE = /^!\[\[([^[\]|\n]+?)(?:\|([^[\]\n]+))?\]\]/
 
 /**
  * Index of the first `![[`. One position before a wiki link's own `[[`, so

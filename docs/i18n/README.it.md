@@ -19,7 +19,7 @@ File Word, Excel, PowerPoint e PDF, modificati da te e dalla tua AI, salvati neg
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub stars"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <b>Italiano</b> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <b>Italiano</b> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center">
   <a href="#download"><b>Download</b></a> ·
@@ -99,7 +99,7 @@ prompt che puoi leggere nel pannello.
 </tr>
 <tr>
 <td><b>Costruiscilo</b> — da una singola frase l'agente aggiunge un foglio Summary con vere <code>SUMIF</code> per area e categoria, inserisce un grafico a colonne e applica le 43 modifiche come un unico batch annullabile.</td>
-<td><b>Interrogalo</b> — le domande sulla cartella di lavoro ottengono risposta con il ragionamento e le celle esatte usate come citazioni cliccabili. Dietro le quinte: un motore <code>.xlsx</code> Rust proprietario, tabelle pivot, filtri dati, formattazione condizionale, tracciamento delle formule e immagini incorporate nelle celle come rich value nativi di Excel — Excel le riapre ancora nella cella.</td>
+<td><b>Interrogalo</b> — le domande sulla cartella di lavoro ottengono risposta con il ragionamento e le celle esatte usate come citazioni cliccabili. Dietro le quinte: un motore <code>.xlsx</code> Rust proprietario, tabelle pivot, filtri dati, formattazione condizionale, tracciamento delle formule e immagini incorporate nelle celle come rich value nativi di Excel — Excel le riapre ancora nella cella.Le note di cella possono contenere un’immagine, mostrata sotto il popup della nota.</td>
 </tr>
 </table>
 
@@ -259,13 +259,13 @@ e gli agenti hanno accesso a ricerca web e per immagini, generazione di
 immagini e analisi di immagini/audio/video.
 
 **Oppure usa la tua chiave.** In Settings → AI trovi Claude, OpenAI, Gemini,
-DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty e
+DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code e
 OpenCode Zen/Go, più uno slot personalizzato per qualsiasi endpoint
 compatibile con OpenAI (base URL + chiave), inclusi i server con modelli
 locali. Ricerca e media hanno i propri provider per singola funzionalità
-sotto **AI Media & Search**: Serper, Serply, Tavily, Parallel, Keenable, Exa o
+sotto **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa o
 Firecrawl per la ricerca web, e OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
-Qwen, MiniMax o qualsiasi endpoint di immagini compatibile con OpenAI per la
+Qwen, MiniMax, Stability, FLUX o qualsiasi endpoint di immagini compatibile con OpenAI per la
 generazione di immagini e l'analisi di immagini/video.
 
 L'intera suite include i temi chiaro, scuro e di sistema. I temi cambiano
@@ -279,7 +279,7 @@ sempre i colori originali del documento.
 Uno skill è un `SKILL.md` che spiega all’IA come svolgere bene un compito: un report settimanale, un NDA, un piano di lezione.
 GenOffice ne include una raccolta e accetta i tuoi, nello stesso formato usato dagli agenti di codifica.
 
-- **Impostazioni → Skills.** **Installa** uno skill consigliato oppure **Importa** una cartella, uno zip o un singolo `SKILL.md`. All’importazione non viene eseguito nulla.
+- **Impostazioni → Skills.** **Installa** uno skill consigliato oppure **Importa** una cartella, uno zip o un singolo `SKILL.md`. All’importazione non viene eseguito nulla. La scheda **Tutto** elenca l’intero catalogo consigliato in un unico posto, con descrizioni nella lingua dell’app.
 - **In chat.** Apri il menu **+** accanto alla casella di testo di un pannello IA, scegli **Skills**, spuntane uno e invia. Lo skill accompagna solo quel messaggio.
 
 ---
@@ -319,7 +319,7 @@ come controllare il proprio lavoro.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -463,6 +463,8 @@ rendi il file eseguibile, poi eseguilo:
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+Su un Chromebook, gli stessi pacchetti girano nell’ambiente Linux (Crostini) — i dettagli sono in [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

@@ -4,6 +4,7 @@
  * Used by both the App component (App.tsx) and the module-level sync
  * helpers (univer-sync.ts).
  */
+import type { SheetPasswordHash } from '@genoffice/xlsx-gateway/gateway/xlsx-protection-hash'
 import type { SheetProtectionInfo } from './sheet-protection'
 import { BorderType, LocalUndoRedoService, Worksheet, type IRange } from '@univerjs/core'
 import { SheetInterceptorService } from '@univerjs/sheets'
@@ -102,13 +103,20 @@ export interface LazyWorkbookState {
   /// File-side allow-edit ranges, known once a sheet finishes indexing.
   readonly sheetProtectedRanges: Map<
     string,
-    { name: string; sqref: string; hasPassword: boolean }[]
+    {
+      name: string
+      sqref: string
+      hasPassword: boolean
+      password?: SheetPasswordHash
+    }[]
   >
   /// Defined names the Univer engine rejected at install — preserved verbatim
   /// by the declarative defined-names save.
   readonly uninstalledDefinedNames: Set<string>
   readonly hyperlinkTargets: Map<string, Map<string, string>>
   readonly frozenStripKeys: Map<string, string>
+  /// Same bookkeeping for the frozen ROW strip (loadFrozenRowStrip).
+  readonly frozenRowStripKeys: Map<string, string>
   /// Where each sheet's filter button came from: the worksheet's own
   /// autoFilter (saveable) or a table part (whose filter lives in the table
   /// XML — editing it is blocked).
@@ -183,6 +191,10 @@ export interface LazyWorkbookState {
     /// the gap is suspect): the save must not refresh cached <v>s from such
     /// an overlay — the file's own results are Excel's and stay authoritative.
     readonly incompleteRuns: Set<string>
+    /// Values the external-links panel applied: a fresh sidecar computation,
+    /// not engine output. Kept out of `overlay` so an incomplete engine run
+    /// cannot release them, and a save counts them as pending work.
+    readonly externalOverlay: Map<string, Map<string, PinnedClosureCell>>
     /// per-sheet: viewport row the last SUCCESSFUL overlay window was
     /// anchored at and whether it covered every formula band; a partial
     /// window re-anchors when the user scrolls far from it. Written only

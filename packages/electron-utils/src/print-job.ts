@@ -1,3 +1,5 @@
+import { isValidOptionName, isValidOptionValue } from './printer-options'
+
 export type PrintDuplex = 'simplex' | 'longEdge' | 'shortEdge'
 
 /** per-job options chosen in an in-app print dialog; deviceName null = system dialog */
@@ -6,6 +8,15 @@ export interface PrintJobOptions {
   copies?: number
   collate?: boolean
   duplex?: PrintDuplex
+  /** the document's own paper in inches (the pdf renderer's measured first
+   * page): the CUPS print route sizes printToPDF's pages with it instead of
+   * Chromium's Letter default. The same paper reaches webContents.print as
+   * `pageSize`, in the microns Electron takes. Out of range = dropped, never
+   * clamped. */
+  pageSizeIn?: { readonly width: number; readonly height: number }
+  /** driver options picked from the queue's advertised groups (quality,
+   * color, media type) — charset-guarded before they become lp arguments */
+  driverOptions?: readonly { readonly name: string; readonly value: string }[]
 }
 
 export interface PrinterInfo {
@@ -14,6 +25,9 @@ export interface PrinterInfo {
 }
 
 const DUPLEX_MODES: ReadonlySet<string> = new Set(['simplex', 'longEdge', 'shortEdge'])
+
+/** Electron's print() takes a custom paper in microns (an inch is 25400 of them). */
+const MICRONS_PER_INCH = 25_400
 
 /** webContents.print fields for the dialog's job options. A named printer ('' =
  * OS default) prints silently; null/omitted keeps the system dialog, which then
@@ -24,11 +38,42 @@ export function printJobOptions(raw: unknown): {
   copies?: number
   collate?: boolean
   duplexMode?: PrintDuplex
+  pageSizeIn?: { readonly width: number; readonly height: number }
+  pageSize?: { readonly width: number; readonly height: number }
+  driverOptions?: { readonly name: string; readonly value: string }[]
 } {
   if (typeof raw !== 'object' || raw === null) return { silent: false }
   const job = raw as Record<string, unknown>
   const silent = typeof job.deviceName === 'string'
   const out: ReturnType<typeof printJobOptions> = { silent }
+  // The paper is not the dialog's business: Chromium prints on Letter unless
+  // the job states one, and that holds on the system-dialog route too — the
+  // dialog opens on Letter rather than on the document's sheet.
+  const size = job.pageSizeIn as Record<string, unknown> | undefined
+  if (
+    typeof size === 'object' &&
+    size !== null &&
+    typeof size.width === 'number' &&
+    Number.isFinite(size.width) &&
+    size.width > 0 &&
+    size.width <= 200 &&
+    typeof size.height === 'number' &&
+    Number.isFinite(size.height) &&
+    size.height > 0 &&
+    size.height <= 200
+  ) {
+    out.pageSizeIn = { width: size.width, height: size.height }
+    // Chromium's own default paper is Letter, and webContents.print only falls
+    // back to the printer's default when asked to (usePrinterDefaultPageSize
+    // defaults to false): a document with its own sheet has to state it, or an
+    // A4 page prints on Letter. The sheet is then taller than the paper and
+    // Chromium splits it in two, so the printed page loses its bottom and the
+    // page order goes with it (genoffice#2563).
+    out.pageSize = {
+      width: Math.round(size.width * MICRONS_PER_INCH),
+      height: Math.round(size.height * MICRONS_PER_INCH),
+    }
+  }
   if (!silent) return out
   if (job.deviceName !== '') out.deviceName = job.deviceName as string
   if (
@@ -43,5 +88,34 @@ export function printJobOptions(raw: unknown): {
   if (typeof job.duplex === 'string' && DUPLEX_MODES.has(job.duplex)) {
     out.duplexMode = job.duplex as PrintDuplex
   }
+  const driver = job.driverOptions
+  if (Array.isArray(driver) && driver.length > 0) {
+    const clean = driver
+      .slice(0, 16)
+      .filter(
+        (o): o is { name: string; value: string } =>
+          typeof o === 'object' &&
+          o !== null &&
+          isValidOptionName((o as Record<string, unknown>).name) &&
+          isValidOptionValue((o as Record<string, unknown>).value),
+      )
+    if (clean.length > 0) out.driverOptions = clean
+  }
   return out
+}
+
+/** The IPC answer for one `webContents.print` callback: success passes, and
+ * a cancel the user chose in the interactive dialog is not an error (the
+ * caller keeps the dialog open). Anything else the print system reports is
+ * an error — including "Print job canceled" on a silent job, where no
+ * dialog exists to have canceled anything, so a driver-level failure must
+ * surface instead of vanishing. */
+export function printOutcome(
+  success: boolean,
+  failureReason: string | undefined,
+  silent: boolean,
+): { ok: boolean; error?: string } {
+  if (success) return { ok: true }
+  if (!silent && failureReason && /cancel/i.test(failureReason)) return { ok: false }
+  return { ok: false, ...(failureReason ? { error: failureReason } : {}) }
 }

@@ -335,7 +335,10 @@ const editChartSchema = z.object({
 
 // Creates a NEW chart from a data range (imported workbooks only). The range
 // may include a header row and a leading category column — both are detected
-// from the data, matching the ribbon's Insert Chart.
+// from the data, matching the ribbon's Insert Chart. `columns` names the
+// columns of the range to chart instead: first the labels, then one series
+// each, so non-adjacent columns chart without copying data around and the
+// header/direction guesses are settled by the caller.
 const addChartSchema = z.object({
   op: z.literal('add_chart'),
   sheetId: z.string().min(1),
@@ -351,6 +354,12 @@ const addChartSchema = z.object({
     'combo',
   ]),
   dataRange: cellRangeSchema,
+  /** a label column plus up to MAX_CHART_SERIES series columns, within the range */
+  columns: z
+    .array(z.string().regex(/^[A-Za-z]{1,3}$/, 'a column letter like "A" or "XFD"'))
+    .min(2)
+    .max(13)
+    .optional(),
   title: z.string().max(255).optional(),
   /** top-left cell of the chart frame; default: two columns right of the data */
   anchorCell: cellAddressSchema.optional(),
@@ -519,10 +528,26 @@ const addPivotSchema = z.object({
          * "Show values as" mode: percentOfTotal / percentOfRow / percentOfCol
          * divide by the grand, row, or column total; percentOfParentRow /
          * percentOfParentCol divide by the parent level's total; index =
-         * (cell × grand total) / (row total × column total). Defaults to the
-         * plain aggregate value.
+         * (cell × grand total) / (row total × column total); difference /
+         * percentDiff compare against a base item of a base field (value−base,
+         * (value−base)/base); percentOf = value/base; percentOfParent divides
+         * by the base field's parent-level subtotal; runTotal /
+         * percentOfRunningTotal accumulate along the base field's items;
+         * rankAscending / rankDescending rank the cell among the base field's
+         * items. Defaults to the plain aggregate value.
          */
         showDataAs: z.enum(PIVOT_SHOW_DATA_AS).optional(),
+        /**
+         * Base field of the showDataAs calculation (a row/column dimension
+         * header). Required by the base-field modes above; ignored otherwise.
+         */
+        baseField: z.string().min(1).max(255).optional(),
+        /**
+         * Base item of the showDataAs calculation: a member label of the base
+         * field. Required by difference / percentDiff / percentOf; ignored
+         * otherwise.
+         */
+        baseItem: z.string().max(255).optional(),
         /** Custom caption for the data field; default "Sum of <field>" */
         name: z.string().min(1).max(255).optional(),
         /**

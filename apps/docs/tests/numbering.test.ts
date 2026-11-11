@@ -461,8 +461,12 @@ describe('computeListMarkers', () => {
     expect(style).toContain("--li-marker-font: 'Symbol Bullet GO'")
     expect(style).not.toContain('--li-marker-scale')
     // Symbol's ascent tops the 12pt Calibri text: the bullet box carries Word's
-    // max-ascent + max-descent line (1.0054 + 0.2686 em) and sits on the bottom
-    expect(style).toContain('--li-marker-lh: calc(15.288pt * var(--doc-line-mult,1))')
+    // max-ascent + max-descent line (1.0054 + 0.2686 em) and sits on the bottom;
+    // a line multiple adds (m - 1) x the text face's single line, not m x the lift
+    // (Word: Arial 12 + Symbol 12 at line=360 is 21.5pt, TNR 12 at line=480 28.5pt)
+    expect(style).toContain(
+      '--li-marker-lh: calc(15.288pt + (var(--doc-line-mult,1) - 1) * var(--doc-line-factor,1.2) * 12pt)',
+    )
     expect(style).toContain('--li-marker-va: bottom')
     expect(style).toContain('--li-marker-size: 12pt')
     editor.destroy()
@@ -527,13 +531,17 @@ describe('computeListMarkers', () => {
     expect(items[0].getAttribute('data-marker')).toBe('▸')
     expect(tri).toContain("--li-marker-font: 'Segoe UI Symbol GO',")
     expect(tri).toContain('--li-marker-size: 11pt')
-    expect(tri).toContain('--li-marker-lh: calc(14.825pt * var(--doc-line-mult,1))')
+    expect(tri).toContain(
+      '--li-marker-lh: calc(14.825pt + (var(--doc-line-mult,1) - 1) * var(--doc-line-factor,1.2) * 11pt)',
+    )
     expect(tri).toContain('--li-marker-va: bottom')
     expect(dot).not.toContain('--li-marker-lh')
     expect(dot).not.toContain('Segoe')
     expect(seg).toContain('--li-marker-font: "Segoe UI Symbol"')
     expect(seg).not.toContain('--li-marker-lh: 0')
-    expect(seg).toContain('--li-marker-lh: calc(14.825pt * var(--doc-line-mult,1))')
+    expect(seg).toContain(
+      '--li-marker-lh: calc(14.825pt + (var(--doc-line-mult,1) - 1) * var(--doc-line-factor,1.2) * 11pt)',
+    )
     editor.destroy()
   })
 
@@ -649,6 +657,40 @@ describe('computeListMarkers', () => {
     // a direct auto rule overrides the style's exact one
     expect(styles[2]).toContain('--li-marker-va: bottom')
     expect(styles[3]).toContain('--li-marker-va: bottom')
+    editor.destroy()
+  })
+
+  it('an East Asian marker face keeps its leading out of exact lines', async () => {
+    const numberingXml =
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/>' +
+      '<w:lvlText w:val="\u2022"/><w:rPr><w:rFonts w:ascii="Malgun Gothic" w:eastAsia="Malgun Gothic" w:hAnsi="Malgun Gothic"/></w:rPr>' +
+      '<w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+    const rPr =
+      '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/></w:rPr>'
+    const item = (pPr: string) =>
+      `<w:p><w:pPr>${pPr}<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>${rPr}</w:pPr>` +
+      `<w:r>${rPr}<w:t>item</w:t></w:r></w:p>`
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml: item('<w:spacing w:line="320" w:lineRule="exact"/>') + item(''),
+        numberingXml,
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const [exact, auto] = [...editor.view.dom.querySelectorAll('.doc-li')].map(
+      (el) => el.getAttribute('style') ?? '',
+    )
+    expect(exact).toContain('--li-marker-lh: 0')
+    expect(exact).not.toContain('--li-marker-va')
+    expect(auto).toContain('--li-marker-lh: calc(16.546pt')
+    expect(auto).toContain('--li-marker-va: bottom')
     editor.destroy()
   })
 })
@@ -803,12 +845,13 @@ describe('list marker decorations', () => {
     const render = async (
       lvlTabs: string,
       flags: { indentNotTabStop?: boolean; defaultTabTwips?: number },
+      ind = '<w:ind w:left="300" w:hanging="360"/>',
     ) => {
       const parsed = await parseDocx(
         await buildDocx({
           bodyXml:
             '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>' +
-            '<w:ind w:left="300" w:hanging="360"/></w:pPr><w:r><w:t>list text</w:t></w:r></w:p>',
+            `${ind}</w:pPr><w:r><w:t>list text</w:t></w:r></w:p>`,
           numberingXml: numberingXml(
             '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>' +
               `<w:pPr>${lvlTabs}<w:ind w:left="720" w:hanging="360"/></w:pPr>`,
@@ -831,11 +874,16 @@ describe('list marker decorations', () => {
     expect(await render(levelTab, {})).not.toContain('--li-tab')
     // flag on: the level's own tab stop (1080) is the next stop past the marker end (180)
     expect(await render(levelTab, { indentNotTabStop: true })).toContain('--li-tab: 57pt')
-    // no custom stop: the document default grid (420 twips) supplies it
-    expect(await render('', { indentNotTabStop: true, defaultTabTwips: 420 })).toContain(
-      '--li-tab: 24pt',
+    // no custom stop (Word probe 2026-11-03): the hanging indent still stops the
+    // tab when it comes before the next default grid stop (300 < 420 / 720)...
+    expect(await render('', { indentNotTabStop: true, defaultTabTwips: 420 })).not.toContain(
+      '--li-tab',
     )
-    expect(await render('', { indentNotTabStop: true })).toContain('--li-tab: 39pt')
+    expect(await render('', { indentNotTabStop: true })).not.toContain('--li-tab')
+    // ...and the default grid wins when it comes first (marker 360-600, grid 720, indent 1440)
+    const wide = '<w:ind w:left="1440" w:hanging="1080"/>'
+    expect(await render('', { indentNotTabStop: true }, wide)).toContain('--li-tab: 18pt')
+    expect(await render('', {}, wide)).not.toContain('--li-tab')
   })
 
   it('level positive firstLine shifts the marker right of the text indent', async () => {
@@ -1121,5 +1169,17 @@ describe('list marker decorations', () => {
     expect(bullet.el.getAttribute('style')).toContain('--li-marker-font: "Courier New"')
     expect(bullet.el.getAttribute('style')).toContain('--li-marker-lh: 0')
     bullet.destroy()
+  })
+
+  it('the level rPr bold and italic reach the marker as custom properties', async () => {
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="lowerRoman"/><w:lvlText w:val="%1)"/>' +
+        '<w:pPr><w:ind w:left="1440" w:hanging="720"/></w:pPr><w:rPr><w:b/><w:bCs/><w:i/></w:rPr>',
+    )
+    expect(el.getAttribute('data-marker')).toBe('i)')
+    const style = el.getAttribute('style') ?? ''
+    expect(style).toContain('--li-marker-weight: bold')
+    expect(style).toContain('--li-marker-style: italic')
+    destroy()
   })
 })

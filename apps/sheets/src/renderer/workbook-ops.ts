@@ -41,7 +41,7 @@ import {
   updateTableAdd,
 } from './edit-journal'
 import { planFileTableRegistrations } from './file-tables'
-import { optionsOfTableAdd } from './table-design'
+import { areasIntersect, fileTableArea, liveFileTables, optionsOfTableAdd } from './table-design'
 import { DEFAULT_TABLE_STYLE, builtinTablePalette, tableThemeJson } from './table-styles'
 import { t } from './i18n/locale'
 import type { OoXmlPivotConfig, PivotField } from './PivotDialog'
@@ -75,14 +75,13 @@ export function applyAiTableAdd(
     throw new Error(t('appTableNameInFile', { name }))
   }
   for (const table of state.editJournal.tableAdds) {
-    if (table.sheetId !== op.sheetId) continue
-    const apart =
-      bounds.endRow < table.area.startRow ||
-      table.area.endRow < bounds.startRow ||
-      bounds.endColumn < table.area.startColumn ||
-      table.area.endColumn < bounds.startColumn
-    if (!apart) {
+    if (table.sheetId === op.sheetId && areasIntersect(bounds, table.area)) {
       throw new Error(t('appTableOverlapsSession', { name: table.name }))
+    }
+  }
+  for (const { table, originalName } of liveFileTables(state, op.sheetId)) {
+    if (areasIntersect(bounds, fileTableArea(table))) {
+      throw new Error(t('appTableOverlapsFile', { name: table.name ?? originalName }))
     }
   }
   const headerValues =
@@ -313,6 +312,9 @@ const LAYOUT_ERROR_KEYS = {
   tooManyRowLines: 'appPivotTooManyRowLines',
   needsValues: 'appPivotNeedsValues',
   pageItemMissing: 'appPivotPageItemMissing',
+  baseFieldMissing: 'appPivotBaseFieldMissing',
+  baseFieldNotAxis: 'appPivotBaseFieldNotAxis',
+  baseItemMissing: 'appPivotBaseItemMissing',
 } satisfies Record<PivotLayoutErrorCode, Parameters<typeof t>[0]>
 
 /// Rows the report-filter block occupies above the table body: one per page
@@ -636,10 +638,25 @@ export function pivotConfigToOpParts(
       }
       const label = fields[v.fieldIndex]?.label
       if (!label) throw new Error(t('appInvalidValueFieldIndex', { index: v.fieldIndex }))
+      // "Show values as" base fields travel as header names; the base field
+      // must sit on rows or columns for the engine to resolve it.
+      let baseField: string | undefined
+      let baseItem: string | undefined
+      if (v.baseFieldIndex !== undefined) {
+        baseField = fields[v.baseFieldIndex]?.label
+        if (!baseField) throw new Error(t('appInvalidPivotBaseField'))
+        if (!rowFieldLabels.includes(baseField) && !columnFieldLabels.includes(baseField)) {
+          throw new Error(t('appInvalidPivotBaseField'))
+        }
+      }
+      if (baseField === undefined) baseItem = undefined
+      else if (v.baseItem !== undefined) baseItem = v.baseItem
       return {
         field: label,
         agg: v.agg,
         ...(v.showDataAs !== undefined ? { showDataAs: v.showDataAs } : {}),
+        ...(baseField !== undefined ? { baseField } : {}),
+        ...(baseItem !== undefined ? { baseItem } : {}),
         ...(v.name?.trim() ? { name: v.name.trim() } : {}),
       }
     })

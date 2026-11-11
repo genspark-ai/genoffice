@@ -56,6 +56,7 @@ export const cs = {
   openExternal: 'Odkaz byl otevřen v prohlížeči',
   save: 'Uložit (⌘S)',
   saveAs: 'Uložit jako…',
+  aiNameFile: 'Pojmenovat pomocí AI…',
   ribbonCollapse: 'Sbalit pás karet',
   ribbonExpand: 'Rozbalit pás karet',
   ribbonGroupInsert: 'Vložit',

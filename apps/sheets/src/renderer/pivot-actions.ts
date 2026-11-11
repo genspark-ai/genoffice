@@ -18,7 +18,12 @@ import {
   defaultDataFieldCaption,
   isPivotAggregation,
 } from '@genoffice/xlsx-gateway/domain/pivot-value-modes'
-import type { WorkbookFile, WorkbookPivotAdd, WorkbookPivotDefinition } from '../shared/desktop-api'
+import type {
+  WorkbookFile,
+  WorkbookPivotAdd,
+  WorkbookPivotDefinition,
+  WorkbookSlicerPart,
+} from '../shared/desktop-api'
 import { journalSize, recordPivotCacheRefresh, recordPivotRefreshUpdate } from './edit-journal'
 import { t } from './i18n/locale'
 import { isCalendarDatePattern } from './numfmt-fix'
@@ -96,6 +101,10 @@ export interface PivotActionContext {
     update: (current: readonly TimelineUiState[]) => readonly TimelineUiState[],
   ) => void
   setTimelinePicker: (value: TimelinePickerState | null) => void
+  /** Marks the slicer state dirty so the next save persists it (timelines are session-only). */
+  markSlicersChanged: () => void
+  /** Records a file-restored slicer's part identity for save-time cleanup. */
+  recordSlicerRemoval: (control: SlicerUiState) => void
   setMessage: (message: string) => void
   setPendingEdits: (count: number) => void
 }
@@ -400,12 +409,27 @@ function topLeftOf(area: { startRow: number; startColumn: number }, rowsAbove: n
 function modelOfPivotAdd(add: WorkbookPivotAdd): PivotLayoutModel {
   const columns =
     add.columnFieldIndices ?? (add.columnFieldIndex === undefined ? [] : [add.columnFieldIndex])
+  const columnFieldIndices = add.columnFieldIndices ?? columns
+  // "Show values as" base item: index into the base field's member list.
+  const baseItemLabelOf = (value: WorkbookPivotAdd['values'][number]): string | undefined => {
+    if (value.baseFieldIndex === undefined || value.baseItemIndex === undefined) return undefined
+    const rowLevel = add.rowFieldIndices.indexOf(value.baseFieldIndex)
+    const items =
+      rowLevel >= 0
+        ? (add.rowLevelItems?.[rowLevel] ?? add.rowItems)
+        : (add.colLevelItems?.[columnFieldIndices.indexOf(value.baseFieldIndex)] ??
+          add.columnItems ??
+          [])
+    return items[value.baseItemIndex]
+  }
   const values: PivotValueSpec[] = add.values.map((value, index) => {
     const filter = add.filters?.find((entry) => entry.kind === 'value' && entry.dataField === index)
     return {
       fieldIndex: value.fieldIndex,
       agg: value.agg,
       ...(value.showDataAs !== undefined ? { showDataAs: value.showDataAs } : {}),
+      ...(value.baseFieldIndex !== undefined ? { baseFieldIndex: value.baseFieldIndex } : {}),
+      ...(value.baseItemIndex !== undefined ? { baseItem: baseItemLabelOf(value) ?? '' } : {}),
       ...(value.name !== undefined ? { name: value.name } : {}),
       ...(value.formula !== undefined ? { formula: value.formula, calcName: value.calcName } : {}),
       ...(filter !== undefined && filter.kind === 'value'
@@ -475,10 +499,23 @@ function modelOfDefinition(
     const filter = definition.filters.find(
       (entry) => entry.kind === 'value' && entry.dataField === index,
     )
+    // "Show values as" base item: a fieldItems index of the base field; the
+    // model stores its label for the picker.
+    const baseItemLabel = (() => {
+      if (dataField.baseField === undefined || dataField.baseItem === undefined) return undefined
+      const sharedIndex = definition.fieldItems[dataField.baseField]?.[dataField.baseItem]?.x
+      const shared =
+        sharedIndex === null || sharedIndex === undefined
+          ? undefined
+          : definition.fields[dataField.baseField]?.sharedItems[sharedIndex]
+      return shared === undefined || shared === null ? '' : String(shared)
+    })()
     return {
       fieldIndex: isCalc ? -1 : dataField.field,
       agg,
       ...(dataField.showDataAs !== undefined ? { showDataAs: dataField.showDataAs } : {}),
+      ...(dataField.baseField !== undefined ? { baseFieldIndex: dataField.baseField } : {}),
+      ...(baseItemLabel !== undefined ? { baseItem: baseItemLabel } : {}),
       ...(dataField.name !== defaultName && !isCalc ? { name: dataField.name } : {}),
       ...(isCalc ? { formula: source.formula, calcName: source.name } : {}),
       ...(filter !== undefined && filter.kind === 'value'
@@ -830,6 +867,7 @@ export function handleCreateSlicer(ctx: PivotActionContext, field: number): stri
     const shared = definition.fields[field]?.sharedItems[item.x]
     members.push({
       member,
+      x: item.x,
       label:
         shared === null || shared === undefined || shared === '' ? t('appBlank') : String(shared),
     })
@@ -846,6 +884,7 @@ export function handleCreateSlicer(ctx: PivotActionContext, field: number): stri
     selected,
   }
   ctx.setSlicers((current) => [...current, slicer])
+  ctx.markSlicersChanged()
   ctx.setMessage(t('appSlicerCreated', { name: slicer.fieldName }))
   return null
 }
@@ -942,6 +981,7 @@ export function handleSlicerToggle(
   ctx.setSlicers((current) =>
     current.map((entry) => (entry.id === slicerId ? { ...entry, selected: next } : entry)),
   )
+  ctx.markSlicersChanged()
   ctx.setMessage(t('appSlicerApplied', { name: slicer.fieldName }))
 }
 
@@ -960,6 +1000,7 @@ export function handleSlicerSelectAll(ctx: PivotActionContext, slicerId: string)
         : entry,
     ),
   )
+  ctx.markSlicersChanged()
   ctx.setMessage(t('appSlicerCleared', { name: slicer.fieldName }))
 }
 
@@ -972,6 +1013,8 @@ export function handleRemoveSlicer(ctx: PivotActionContext, slicerId: string): v
     return
   }
   ctx.setSlicers((current) => current.filter((entry) => entry.id !== slicerId))
+  ctx.recordSlicerRemoval(slicer)
+  ctx.markSlicersChanged()
   ctx.setMessage(t('appSlicerRemoved', { name: slicer.fieldName }))
 }
 
@@ -1081,4 +1124,76 @@ export function handleRemoveTimeline(ctx: PivotActionContext, timelineId: string
   }
   ctx.setTimelines((current) => current.filter((entry) => entry.id !== timelineId))
   ctx.setMessage(t('appTimelineRemoved', { name: timeline.fieldName }))
+}
+
+/// Restores slicer panels from the file's x14 parts after the pivot
+/// definitions have loaded (open flow). Best effort: an entry whose pivot,
+/// field, or member list cannot be resolved is skipped — its parts stay in
+/// the file untouched (and invisible) rather than blocking the open.
+export function restoreSlicerPanels(
+  state: LazyWorkbookState,
+  entries: readonly WorkbookSlicerPart[],
+): SlicerUiState[] {
+  const slicers: SlicerUiState[] = []
+  for (const entry of entries) {
+    if (entry.pivotCacheDefinitionPath === null) continue
+    // The panel binds to the first pivot on that cache with a loaded
+    // definition (the session model holds one pivot per control).
+    const host = state.file.sheets
+      .map((sheet) => ({
+        sheet,
+        pivot: sheet.pivotTables.find(
+          (pivot) => pivot.cachePath === entry.pivotCacheDefinitionPath,
+        ),
+      }))
+      .find((found) => found.pivot !== undefined)
+    if (!host || !host.pivot) continue
+    const definition = state.pivotDefinitions.get(host.pivot.path)
+    if (!definition) continue
+    const field = definition.fields.findIndex((meta) => meta.name === entry.sourceName)
+    if (field < 0) continue
+    const fieldName = definition.fields[field]?.name || t('appFieldN', { n: field + 1 })
+    const members: SlicerMember[] = []
+    definition.fieldItems[field]?.forEach((item, member) => {
+      if (item.x === null) return
+      const shared = definition.fields[field]?.sharedItems[item.x]
+      members.push({
+        member,
+        x: item.x,
+        label:
+          shared === null || shared === undefined || shared === '' ? t('appBlank') : String(shared),
+      })
+    })
+    if (members.length === 0) continue
+    const selectedX = entry.selectedItems
+    const selected =
+      selectedX === null
+        ? members.map((item) => item.member)
+        : members.filter((item) => selectedX.includes(item.x)).map((item) => item.member)
+    // The control lives on the sheet its worksheet rel names, which for
+    // dashboard files is not the pivot's sheet. Saving uses this id to wire
+    // the rel/ext/frame; the pivot's sheet would strand the original control
+    // and leave one slicer part referenced from two sheets.
+    const panelSheetId =
+      entry.sheetId !== '' && state.file.sheets.some((sheet) => sheet.id === entry.sheetId)
+        ? entry.sheetId
+        : host.sheet.id
+    slicers.push({
+      id: `slicer-${Date.now().toString(36)}-${slicers.length + 1}`,
+      sheetId: panelSheetId,
+      pivotPath: host.pivot.path,
+      field,
+      fieldName,
+      caption: entry.caption,
+      members,
+      // A cache with no readable selection (or an all-empty one) restores
+      // unfiltered rather than hiding everything.
+      selected: selected.length === 0 ? members.map((item) => item.member) : selected,
+      name: entry.name,
+      partPath: entry.partPath,
+      cachePath: entry.cachePath,
+      cacheName: entry.cacheName,
+    })
+  }
+  return slicers
 }

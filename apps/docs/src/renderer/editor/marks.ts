@@ -1,22 +1,17 @@
 import { Extension, Mark, combineTransactionSteps, getChangedRanges } from '@tiptap/core'
+import { runFaceDecls } from '../text-layout/run-faces'
 import type { Mark as PmMark } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import {} from '@tiptap/pm/tables'
-import {
-  cssCsFontFamily,
-  cssRunFontFamily,
-  cssFontFamily,
-  cutAdjustedAlias,
-  lineHeightFactor,
-} from '../line-metrics'
+import { cssRunFontFamily, wordSlotFaces } from '../line-metrics'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
 import { dkBackground } from './dark-page'
 import { runBorderDecls } from './run-border'
 import { fillInk } from './shading-ink'
 import { textColorDecls } from './text-color'
-import type { RevisionDisplayMode } from './revision-view'
+import { DEFAULT_BALLOON_MODE, type BalloonMode, type RevisionDisplayMode } from './revision-view'
 import { parseTextOutlineAttr, textOutlineDecl } from './text-outline'
 import {
   charScaleXDecls,
@@ -191,18 +186,20 @@ export const InsMark = Mark.create({
       date: { default: null as string | null },
       dateUtc: { default: null as string | null },
       id: { default: null as string | null },
+      move: { default: null as string | null },
     }
   },
   parseHTML() {
     return [{ tag: 'span[data-ins-author]' }]
   },
   renderHTML({ mark }) {
+    const moved = !!mark.attrs.move
     return [
       'span',
       {
         'data-ins-author': mark.attrs.author,
-        class: 'doc-ins',
-        title: `${t('editorInsertedBy', { author: String(mark.attrs.author) })}${mark.attrs.date ? ` · ${String(mark.attrs.date).slice(0, 10)}` : ''}`,
+        class: moved ? 'doc-ins doc-move-to' : 'doc-ins',
+        title: `${t(moved ? 'editorMovedBy' : 'editorInsertedBy', { author: String(mark.attrs.author) })}${mark.attrs.date ? ` · ${String(mark.attrs.date).slice(0, 10)}` : ''}`,
       },
       0,
     ]
@@ -219,18 +216,20 @@ export const DelMark = Mark.create({
       date: { default: null as string | null },
       dateUtc: { default: null as string | null },
       id: { default: null as string | null },
+      move: { default: null as string | null },
     }
   },
   parseHTML() {
     return [{ tag: 'span[data-del-author]' }]
   },
   renderHTML({ mark }) {
+    const moved = !!mark.attrs.move
     return [
       'span',
       {
         'data-del-author': mark.attrs.author,
-        class: 'doc-del',
-        title: `${t('editorDeletedBy', { author: String(mark.attrs.author) })}${mark.attrs.date ? ` · ${String(mark.attrs.date).slice(0, 10)}` : ''}`,
+        class: moved ? 'doc-del doc-move-from' : 'doc-del',
+        title: `${t(moved ? 'editorMovedBy' : 'editorDeletedBy', { author: String(mark.attrs.author) })}${mark.attrs.date ? ` · ${String(mark.attrs.date).slice(0, 10)}` : ''}`,
       },
       0,
     ]
@@ -315,7 +314,12 @@ export const SymMark = Mark.create({
 })
 
 /** Revision display mode (synced by App; in original mode the extension below restores old formatting via decorations) */
-export const revisionDisplayState = { mode: 'all' as RevisionDisplayMode }
+export const revisionDisplayState = {
+  mode: 'all' as RevisionDisplayMode,
+  balloons: DEFAULT_BALLOON_MODE as BalloonMode,
+  /** balloons exist on screen (All Markup, print layout) — the root carries data-balloons */
+  balloonsActive: false,
+}
 
 const revisionOriginalKey = new PluginKey('revisionOriginal')
 
@@ -371,6 +375,8 @@ export const RprChangeMark = Mark.create({
       dateUtc: { default: null as string | null },
       id: { default: null as string | null },
       old: { default: null as Record<string, unknown> | null, rendered: false },
+      /** the recorded previous w:rPr's inner XML; reject writes it back verbatim */
+      oldRPr: { default: null as string | null, rendered: false },
     }
   },
   parseHTML() {
@@ -381,6 +387,7 @@ export const RprChangeMark = Mark.create({
       'span',
       {
         'data-rpr-change': '1',
+        'data-rpr-author': mark.attrs.author,
         class: 'has-rpr-change',
         title: t('editorFormatChangeBy', {
           author: String(mark.attrs.author || t('editorUnknownAuthor')),
@@ -672,7 +679,8 @@ export const TextStyleMark = Mark.create({
       // Cs size an rtl run inherits from its style chain: the paragraph strut reads it
       // (markSizeHalfPoints); the paint comes from the .doc-cs style CSS. Never saved
       csSize: { default: null as number | null, rendered: false },
-      // Run.effective bold / italic of an rtl run: painted as doc-cs-(n)b / doc-cs-(n)i
+      // Run.effective bold / italic of an rtl run, or of a run whose character style
+      // toggle XORs against the paragraph style: painted as doc-cs-(n)b / doc-cs-(n)i
       // classes (styles.css) so a user strong/em wrapper still shows. Never saved
       csBold: { default: null as boolean | null, rendered: false },
       csItalic: { default: null as boolean | null, rendered: false },
@@ -712,27 +720,12 @@ export const TextStyleMark = Mark.create({
       if (half <= 2) styles.push('line-height:0')
     }
     if (mark.attrs.font || mark.attrs.fontAscii || mark.attrs.csFont) {
-      const ea = mark.attrs.font ? String(mark.attrs.font) : null
-      const ascii = mark.attrs.fontAscii ? String(mark.attrs.fontAscii) : null
-      const cs = mark.attrs.csFont ? String(mark.attrs.csFont) : null
-      // a Latin-only chain fills both slots (fontAttrsFromFamilyChain), so an
-      // unparsed run's font only names an East Asian face when the slots differ
-      const explicitEa = mark.attrs.eastAsiaFont ?? (!mark.attrs.rawRPr && ea !== ascii ? ea : null)
-      if (explicitEa && !mark.attrs.eaSlotEmpty)
-        styles.push(`--doc-east-asian-font:${cssFontFamily(String(explicitEa))}`)
-      const family = cs
-        ? cssCsFontFamily(cs, ascii ?? undefined, ea ?? undefined)
-        : cssRunFontFamily(ascii, ea)
-      // --doc-run-ff: doc-style-css re-heads the chain with the strut face in
-      // mixed paragraphs (.doc-grid-strut); font-family stays for DOM readers
-      styles.push(`font-family:${family}`, `--doc-run-ff:${family}`)
-      cutAdjusted = cutAdjustedAlias(family)
-      // own-face line factor for cell paragraphs mixing faces (styles.css .doc-mixed-face)
-      const lh = Math.max(...[cs, ascii ?? ea].filter(Boolean).map((f) => lineHeightFactor(f!)))
-      styles.push(`--doc-run-lh:${lh}`)
+      const face = runFaceDecls(mark.attrs, mark.attrs.csFont ? String(mark.attrs.csFont) : null)
+      styles.push(...face.decls)
+      cutAdjusted = face.cutAdjusted
     }
     if (!mark.attrs.font && !mark.attrs.fontAscii && !mark.attrs.csFont && tbl?.fontAscii) {
-      const family = cssRunFontFamily(tbl.fontAscii, null)
+      const family = cssRunFontFamily(wordSlotFaces(tbl.fontAscii, null).ascii, null)
       styles.push(`font-family:${family}`, `--doc-run-ff:${family}`)
     }
     const charSpacingTwips = mark.attrs.charSpacingTwips ?? tbl?.charSpacingTwips
@@ -807,12 +800,11 @@ export const TextStyleMark = Mark.create({
     // rtl run: the .doc-cs gate in doc-style-css paints the Cs size of its style
     // chain; weight and style come resolved from the engine (includes the table
     // style layer the paragraph-style CSS cannot see)
-    if (mark.attrs.cs) {
-      const cls = ['doc-cs']
-      if (mark.attrs.csBold != null) cls.push(mark.attrs.csBold ? 'doc-cs-b' : 'doc-cs-nb')
-      if (mark.attrs.csItalic != null) cls.push(mark.attrs.csItalic ? 'doc-cs-i' : 'doc-cs-ni')
-      attrs['class'] = cls.join(' ')
-    }
+    const cls: string[] = []
+    if (mark.attrs.cs) cls.push('doc-cs')
+    if (mark.attrs.csBold != null) cls.push(mark.attrs.csBold ? 'doc-cs-b' : 'doc-cs-nb')
+    if (mark.attrs.csItalic != null) cls.push(mark.attrs.csItalic ? 'doc-cs-i' : 'doc-cs-ni')
+    if (cls.length > 0) attrs['class'] = cls.join(' ')
     // cs-slot run: styles.css .doc-cs-mixed collapses its line box
     if (mark.attrs.csFont) attrs['data-cs'] = ''
     // bold/italic cut of a per-cut size-adjusted alias: styles.css .doc-cut-adjusted collapses its line box

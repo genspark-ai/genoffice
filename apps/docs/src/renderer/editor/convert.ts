@@ -3,6 +3,8 @@ import {
   parseLazyMediaUrl,
   setPPrChange,
   stripPPrChange,
+  paraMarkRevisionXml,
+  setParaMarkRevision,
   stripParaMarkRevision,
   resolveParaMarkRPrChange,
   paraMarkColor,
@@ -25,8 +27,10 @@ import {
   type TextboxSizePatch,
   patchTextboxParas,
   generateTableModelXml,
+  resolvePropChangeXml,
   inlinePictureDrawingXml,
-  resizeInlinePictureXml,
+  patchRunPictureXml,
+  type RunPictureGeometry,
   NEW_PICTURE_TOKEN_PREFIX,
   symbolGlyph,
   symbolPuaChar,
@@ -42,6 +46,7 @@ import {
   type NewChart,
   type NewImage,
   type ParaFormat,
+  type PropChangeInfo,
   type Run,
   type SaveBlock,
   type SdtShell,
@@ -67,7 +72,7 @@ import {
   type FontMetricsProvider,
   wordKerns,
 } from '../line-metrics'
-import { firstStrongDir } from './direction'
+import { inferredBidi } from './direction'
 import { splitCellBoxGroup } from './protected-render'
 import { inlineMathML } from './equation'
 import { isStraightLineKind } from './shape-svg'
@@ -76,6 +81,11 @@ import { parseRunBorderAttr } from './run-border'
 import { parseTextOutlineAttr } from './text-outline'
 import { charScaleXAttr, parseGlowAttr, parseTextEffectAttr } from './text-effects'
 import { SHAPE_INLINE_WRAP, shapeWrapOf } from './floating-z-order'
+import { holdsDeclaredWidth, resolveTableWidth } from './table-geometry'
+import type { PictureLayer } from './image-rotation'
+import { tableFloatSideRoom } from './anchor-geometry'
+
+export { holdsDeclaredWidth }
 
 /** minimal ProseMirror JSON shapes */
 export interface PmMark {
@@ -141,7 +151,7 @@ export function blocksToPmDoc(
   options: PmDocOptions = {},
 ): PmNode {
   const content: PmNode[] = []
-  for (const block of blocks) {
+  for (const [i, block] of blocks.entries()) {
     if (block.hidden) continue
     content.push(
       blockToPmNode(
@@ -149,9 +159,21 @@ export function blocksToPmDoc(
         sectionRowCapTwips(sections, block.docxIndex),
         sectionWidthBudget(sections, block.docxIndex),
         options,
+        block.type === 'table' ? blocks.slice(i + 1) : [],
       ),
     )
   }
+  // the trailing sectPr has no node of its own: its tracked change rides on the last
+  // paragraph that carries no section record itself (none → the record stays pending)
+  const trailingChange = blocks.find((b) => b.hidden && b.sectPrChange)?.sectPrChange
+  const host = trailingChange
+    ? [...content].reverse().find((n) => n.type !== 'docTable' && n.attrs && !n.attrs.sectPrChange)
+    : undefined
+  if (host)
+    host.attrs = {
+      ...host.attrs,
+      sectPrChange: JSON.stringify({ ...trailingChange, trailing: true }),
+    }
   if (content.length === 0) {
     content.push({
       type: 'docParagraph',
@@ -159,17 +181,6 @@ export function blocksToPmDoc(
     })
   }
   return { type: 'doc', content }
-}
-
-/** Word lays out RTL-script / run-rtl paragraphs with an RTL base direction even
- * without w:bidi (HTML-converted docs omit it). The first strong character wins
- * (dir=auto semantics); run w:rtl only decides weak-only text. Render-only: never
- * written back, and never subject to the explicit-bidi jc left/right swap. */
-export function inferredBidi(format: ParaFormat | undefined, runs: Run[] | undefined): boolean {
-  if (format?.bidi || !runs?.length) return false
-  const strong = firstStrongDir(runs.map((r) => r.text).join(''))
-  if (strong) return strong === 'rtl'
-  return runs.some((r) => r.rtl)
 }
 
 /** Display-only: the cell-paragraph properties the table style (whole table or a
@@ -237,7 +248,8 @@ function formatAttrs(format: ParaFormat | undefined, runs?: Run[]): Record<strin
     frameBox: format?.frameBox ? JSON.stringify(format.frameBox) : null,
     textDirection: format?.textDirection ?? null,
     bidi: format?.bidi ?? false,
-    bidiInferred: inferredBidi(format, runs),
+    bidiInherited: format?.bidiInherited ?? false,
+    bidiInferred: inferredBidi(format, runs) || format?.bidiInherited === true,
     autoSpace: format?.autoSpace ?? null,
     wordWrap: format?.wordWrap ?? null,
     overflowPunct: format?.overflowPunct ?? null,
@@ -288,7 +300,7 @@ function sectionWidthBudget(
 }
 
 /** centered tables (w:jc or w:tblpXSpec) spill both margins, so their growth bound is the paper width */
-function budgetAvail(model: TableModel, budget: TableWidthBudget): number {
+export function budgetAvail(model: TableModel, budget: TableWidthBudget): number {
   return model.align === 'center' || model.floatPos?.xSpec === 'center'
     ? budget.paper
     : budget.avail
@@ -500,22 +512,6 @@ export function cellSpacingBorderPx(colCount: number, borders: TableModel['borde
   )
 }
 
-/** a left-aligned explicit dxa w:tblW without w:tblLayout fixed is drawn at its declared
- * widths even past the paper edge (Word clips there); centred and right-aligned ones
- * still compress to the paper */
-export function holdsDeclaredWidth(model: TableModel): boolean {
-  return (
-    model.dxaWidth === true &&
-    !model.autoLayout &&
-    !model.widthPct &&
-    !model.floatSide &&
-    !model.bidiVisual &&
-    model.align !== 'center' &&
-    model.align !== 'right' &&
-    !!model.colWidthsTwips?.length
-  )
-}
-
 /** side cell margins of a table's own cells (twips) */
 function sideMarginTwips(model: TableModel): number {
   const mar = model.cellMarTwips
@@ -537,7 +533,10 @@ function nestedTableMinTwips(
   if (!widths?.length || nt.widthPct) return 0
   const indent = tableIndentTwips(nt)
   const border = ((borderTotalPt(nt.borders?.left) + borderTotalPt(nt.borders?.right)) / 2) * 20
-  if (nt.fixedLayout) return widths.reduce((a, b) => a + b, 0) + indent + border
+  // a nested dxa table keeps its declared width too: the parent column grows to
+  // it and the other columns give the growth back (probe 2026-10-29: nested dxa
+  // 6000 in a 5000 column -> 6226 = 6000 + 216 + border, siblings 2000/3000 -> 1536/2237)
+  if (nt.fixedLayout || nt.dxaWidth) return widths.reduce((a, b) => a + b, 0) + indent + border
   const mins = minContentColTwips(nt, widths.length, metrics, false, defaults)
   return (
     mins.reduce((sum, m, i) => sum + nestedFloorTwips(widths[i], m, sideMarginTwips(nt)), 0) +
@@ -808,10 +807,14 @@ export function expandAutofitColWidths(
         : sideMar
     const box = fit - (leftAligned ? (model.indentTwips ?? 0) : 0) + legacyHang
     const hang = leftAligned ? Math.min(model.indentTwips ?? 0, 0) : 0
+    // an explicit dxa tblW keeps its declared total whatever the jc: a centred
+    // 12000/13000-twip table on a 9360 column is centred on the margin box and
+    // clipped by the paper, a right-aligned one pins its right edge to the
+    // margin and runs off the paper on the left (probe 2026-10-29)
     const explicitDxa =
       !model.autoLayout &&
       !nested &&
-      ((model.dxaWidth && leftAligned && !model.floatSide) || declared + hang <= budget)
+      ((model.dxaWidth && !model.floatSide) || declared + hang <= budget)
     const kept =
       resolvedPct || nested
         ? target
@@ -886,21 +889,11 @@ function displayTable(
 ): TableModel | null {
   if (!table) return null
   let t = table
-  if (options.legacyTableIndent) t = legacyIndentTable(t)
   if (rowCapTwips != null) t = capTableRowHeights(t, rowCapTwips)
-  if (budget != null) {
-    t = expandAutofitColWidths(
-      t,
-      budgetAvail(t, budget),
-      budget.fit,
-      undefined,
-      false,
-      options.legacyTableIndent ?? false,
-      options.defaultRun,
-    )
-    if (!holdsDeclaredWidth(t)) t = clampTableColWidths(t, budget.paper)
-  }
-  return t
+  return resolveTableWidth(t, budget, {
+    legacyIndent: options.legacyTableIndent ?? false,
+    defaults: options.defaultRun,
+  }).model
 }
 
 function blockToPmNode(
@@ -908,6 +901,7 @@ function blockToPmNode(
   rowCapTwips: number | null = null,
   budget: TableWidthBudget | null = null,
   options: PmDocOptions = {},
+  followers: Block[] = [],
 ): PmNode {
   if (block.altChunk && options.legacyTableIndent)
     options = { ...options, legacyTableIndent: false }
@@ -931,6 +925,8 @@ function blockToPmNode(
           paraMarkRPrChange: block.paraMarkRPrChange
             ? JSON.stringify(block.paraMarkRPrChange)
             : null,
+          numberingChange: block.numberingChange ? JSON.stringify(block.numberingChange) : null,
+          sectPrChange: block.sectPrChange ? JSON.stringify(block.sectPrChange) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format, block.runs),
         },
@@ -956,6 +952,8 @@ function blockToPmNode(
           paraMarkRPrChange: block.paraMarkRPrChange
             ? JSON.stringify(block.paraMarkRPrChange)
             : null,
+          numberingChange: block.numberingChange ? JSON.stringify(block.numberingChange) : null,
+          sectPrChange: block.sectPrChange ? JSON.stringify(block.sectPrChange) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format, block.runs),
         },
@@ -980,7 +978,10 @@ function blockToPmNode(
           paraMarkRPrChange: block.paraMarkRPrChange
             ? JSON.stringify(block.paraMarkRPrChange)
             : null,
+          numberingChange: block.numberingChange ? JSON.stringify(block.numberingChange) : null,
+          sectPrChange: block.sectPrChange ? JSON.stringify(block.sectPrChange) : null,
           blockRevision: block.blockRevision ?? null,
+          ruleOverlays: block.ruleOverlays ?? null,
           ...formatAttrs(block.format, block.runs),
         },
         content: runsToInline(block.runs ?? []),
@@ -997,6 +998,7 @@ function blockToPmNode(
         budget?.paper ?? null,
         options.legacyTableIndent ?? false,
         options.defaultRun,
+        followers,
       )
       // content-control member tables need the shell for chrome hit-testing
       if (block.sdtShell) node.attrs = { ...node.attrs, sdtShell: JSON.stringify(block.sdtShell) }
@@ -1009,6 +1011,7 @@ function blockToPmNode(
         attrs: {
           docxIndex: block.docxIndex,
           blockRevision: block.blockRevision ?? null,
+          sectPrChange: block.sectPrChange ? JSON.stringify(block.sectPrChange) : null,
           blockType: block.type,
           styleId: block.styleId ?? null,
           pageBreakBefore: block.format?.pageBreakBefore ?? false,
@@ -1144,6 +1147,39 @@ export function cellClipTwips(
 /** free side beside a text-anchored float below which Word's side text is only word fragments */
 const FLOAT_SIDE_MIN_TWIPS = 1440
 
+/** Word's per-line "next word fits" test beside a float (truths L858) passes
+ *  trivially when the flow up to the next table has no words — blank or
+ *  whitespace paragraphs and pictures narrower than the room — so the float
+ *  keeps wrapping them; the 1in minimum only approximates the word test.
+ *  Blank lines alone do not qualify: nothing visible sits beside the float and
+ *  the inline flow places the next table where Word does (corpus gate) */
+function floatSideWordless(followers: Block[], roomTwips: number): boolean {
+  const fits = (widthPx: number | undefined) => (widthPx ?? Infinity) * 15 <= roomTwips
+  let picture = false
+  for (const b of followers) {
+    if (b.hidden) continue
+    if (b.type === 'table') {
+      // a floating table is no flow stop: the paragraphs after it still wrap
+      if (b.table?.floatPos) continue
+      return picture
+    }
+    if (b.type === 'image') {
+      if (!fits(b.imageWidthPx)) return false
+      picture = true
+      continue
+    }
+    if (b.type === 'passthrough') return false
+    for (const r of b.runs ?? []) {
+      if (r.text.trim() !== '') return false
+      if (r.image && !r.image.rule) {
+        if (!fits(r.image.widthPx)) return false
+        picture = true
+      }
+    }
+  }
+  return picture
+}
+
 export function tableModelToPmNode(
   model: TableModel,
   docxIndex: number | null = null,
@@ -1154,21 +1190,17 @@ export function tableModelToPmNode(
   paperTwips: number | null = null,
   legacyIndent = false,
   defaults?: RunDefaults,
+  followers: Block[] = [],
 ): PmNode {
-  if (legacyIndent) model = legacyIndentTable(model)
   if (rowCapTwips != null) model = capTableRowHeights(model, rowCapTwips)
-  if (availTwips != null) {
-    model = expandAutofitColWidths(
-      model,
-      availTwips,
-      fitTwips ?? availTwips,
-      undefined,
-      false,
-      legacyIndent,
-      defaults,
-    )
-    if (!holdsDeclaredWidth(model)) model = clampTableColWidths(model, paperTwips ?? availTwips)
-  }
+  const resolved = resolveTableWidth(
+    model,
+    availTwips != null
+      ? { avail: availTwips, fit: fitTwips ?? availTwips, paper: paperTwips ?? availTwips }
+      : null,
+    { legacyIndent, defaults },
+  )
+  model = resolved.model
   const positions = model.rows.map((row) => {
     let column = 0
     return row.map((cell) => {
@@ -1177,6 +1209,33 @@ export function tableModelToPmNode(
       return at
     })
   })
+  // The restart cells' rowspans occupy their columns in the rows below; a
+  // merged-away cell a rowspan already accounts for needs no node (the
+  // rowspan stands in for it), while any other merged-away cell is a grid
+  // hole the editor's table plugin would otherwise "repair" by appending a
+  // cell — shifting every later cell of the row. Those holes become inert
+  // placeholders instead (see the cell emission below).
+  const rowSpans = model.rows.map((row, rowIndex) =>
+    row.map((_, cellIndex) => cellRowSpan(model, rowIndex, cellIndex, positions)),
+  )
+  const rowspanCovered = model.rows.map(() => new Set<number>())
+  model.rows.forEach((row, rowIndex) => {
+    row.forEach((cell, cellIndex) => {
+      const span = rowSpans[rowIndex]![cellIndex]!
+      if (span <= 1) return
+      const start = positions[rowIndex]![cellIndex]!
+      const width = cell.colSpan ?? 1
+      for (let below = rowIndex + 1; below < rowIndex + span; below++) {
+        for (let column = start; column < start + width; column++) {
+          rowspanCovered[below]?.add(column)
+        }
+      }
+    })
+  })
+  // Every merged-away cell's own model, so pmTableToModel can rebuild it
+  // instead of inheriting the restart cell's style (which lost its rawTcPr,
+  // textDirection and hidden text)
+  const continuationRecords: Array<{ row: number; column: number; cell: TableCell }> = []
   // 1 px = 15 twips (96dpi); use real values when absolute grid widths exist, fall back to percentage approximation otherwise.
   // No px floor on real grids: form grids hold dozens of sliver columns that only sit inside spanned cells
   const widthPx = model.colWidthsTwips
@@ -1205,21 +1264,22 @@ export function tableModelToPmNode(
   // (within ~1in of the paper edge for page anchors, at the margin otherwise):
   // inline flow reproduces its geometry, while a mid-page X keeps the
   // clamped-float rendering (#1111 cap-table corpus).
-  const floatX = model.floatPos?.xTwips ?? 0
-  const floatSpan =
-    (model.floatPos?.horzAnchor === 'page' ? 0 : floatX) +
-    (model.colWidthsTwips?.reduce((a, b) => a + b, 0) ?? 0) +
-    (model.floatPos?.distanceTwips?.right ?? 0)
+  const sideRoom = tableFloatSideRoom(
+    model.floatPos,
+    model.colWidthsTwips?.reduce((a, b) => a + b, 0) ?? 0,
+    fitTwips,
+  )
   // a short table hung a positive w:tblpY below its anchor keeps floating: Word
   // fills that band with the anchor paragraph's lines, which only the float
   // (shape-outside inset) reproduces
   const bandFloat = (model.floatPos?.yTwips ?? 0) > 0 && minHeightTwips <= 6480
   const floatNoSideRoom =
     (model.floatPos?.vertAnchor ?? 'text') === 'text' &&
-    (model.floatPos?.horzAnchor === 'page' ? floatX <= 1440 : floatX <= 720) &&
-    fitTwips != null &&
-    floatSpan > fitTwips - FLOAT_SIDE_MIN_TWIPS &&
-    !bandFloat
+    sideRoom != null &&
+    sideRoom.leftEdge &&
+    sideRoom.roomTwips < FLOAT_SIDE_MIN_TWIPS &&
+    !bandFloat &&
+    !floatSideWordless(followers, sideRoom.roomTwips)
   const tblFloatSuppressed = tblFloatSource !== null && (minHeightTwips > 12960 || floatNoSideRoom)
   const tblFloat = tblFloatSuppressed ? null : tblFloatSource
   const table: PmNode = {
@@ -1261,6 +1321,7 @@ export function tableModelToPmNode(
       tblAutoFitEdited: false,
       tblFixedLayout: model.fixedLayout ?? false,
       tblDxaWidth: model.dxaWidth ?? false,
+      tblOverWide: resolved.overWide,
       // w:tblpPr supersedes w:tblInd: a float keeps only the legacy cell-margin hang
       indentTwips:
         tblFloat && !(legacyIndent && marginHungFloat(model)) ? null : (model.indentTwips ?? null),
@@ -1271,8 +1332,13 @@ export function tableModelToPmNode(
       tblCaption: model.caption ?? null,
       tblDescription: model.description ?? null,
       tblAltEdited: false,
+      tblPrChange: model.tblPrChange ?? null,
+      tblGridChange: model.tblGridChange ?? null,
       originalStructure: null,
       originalFormatting: null,
+      // merged-away (vMerge continue) cells have no node of their own: their
+      // own tcPr bytes and hidden text ride here, keyed row:column
+      continuationCells: null,
     },
     content: model.rows.map((row, rowIndex) => ({
       type: 'docTableRow',
@@ -1285,10 +1351,36 @@ export function tableModelToPmNode(
         cantSplitEdited: false,
         rawTrPr: model.rawTrPrs?.[rowIndex] ?? null,
         rowRevision: model.rowRevisions?.[rowIndex] ?? null,
+        trPrChange: model.rowPrChanges?.[rowIndex] ?? null,
+        rawTblPrEx: model.rawTblPrExs?.[rowIndex] ?? null,
+        tblPrExChange: model.rowTblPrExChanges?.[rowIndex] ?? null,
       },
-      content: row.flatMap((cell, cellIndex) => {
-        if (cell.vMerge === 'continue') return []
+      content: row.flatMap((cell, cellIndex): PmNode[] => {
         const start = positions[rowIndex][cellIndex]
+        if (cell.vMerge === 'continue') {
+          continuationRecords.push({ row: rowIndex, column: start, cell })
+          // a rowspan already stands in for this column: no node needed
+          if (rowspanCovered[rowIndex]?.has(start)) return []
+          // the grid hole needs an inert placeholder so the editor's table
+          // plugin keeps the row's columns aligned instead of appending a
+          // cell at the row's end and regenerating the table
+          return [
+            {
+              type: hasHeaderRow && rowIndex === 0 ? 'docTableHeader' : 'docTableCell',
+              attrs: {
+                colspan: cell.colSpan ?? 1,
+                rowspan: 1,
+                // the column-resize plugin fills a missing colwidth from the
+                // rendered grid, so the build must spell it the same way or the
+                // signature never matches after load
+                colwidth: widthPx ? widthPx.slice(start, start + (cell.colSpan ?? 1)) : null,
+                mergeGap: true,
+                gridGap: true,
+              },
+              content: cellContentNodes({ ...cell, paras: [''], richParas: undefined }),
+            },
+          ]
+        }
         const colspan = cell.colSpan ?? 1
         const rowspan = cellRowSpan(model, rowIndex, cellIndex, positions)
         return [
@@ -1314,6 +1406,9 @@ export function tableModelToPmNode(
               collapsedBw: collapsedCellBw(row, cellIndex),
               rawTcPr: cell.rawTcPr ?? null,
               cellRevision: cell.cellRevision ?? null,
+              tcPrChange: cell.tcPrChange ?? null,
+              // a merged-away cell has no node: its merge record moves up to the restart cell
+              cellMerge: cell.cellMerge ?? mergedAwayRecord(model, rowIndex, cellIndex, positions),
             },
             content: cellContentNodes(cell),
           },
@@ -1321,6 +1416,8 @@ export function tableModelToPmNode(
       }),
     })),
   }
+  table.attrs!.continuationCells =
+    continuationRecords.length > 0 ? JSON.stringify(continuationRecords) : null
   table.attrs!.originalStructure = tableStructureSignature(table)
   table.attrs!.originalFormatting = tableFormattingSignature(table)
   return table
@@ -1412,6 +1509,8 @@ export function tableStructureSignature(table: PmNode): string {
     tblCaption: table.attrs?.tblCaption ?? null,
     tblDescription: table.attrs?.tblDescription ?? null,
     tblAltEdited: table.attrs?.tblAltEdited ?? false,
+    tblPrChange: table.attrs?.tblPrChange ?? null,
+    tblGridChange: table.attrs?.tblGridChange ?? null,
     rows: (table.content ?? []).map((row) => [
       row.attrs?.heightTwips ?? null,
       row.attrs?.heightRule ?? null,
@@ -1422,6 +1521,9 @@ export function tableStructureSignature(table: PmNode): string {
       // accepting/rejecting revisions strips records from trPr/tcPr: include them in the signature to trigger regeneration (works for empty rows too)
       row.attrs?.rawTrPr ?? null,
       row.attrs?.rowRevision ?? null,
+      row.attrs?.trPrChange ?? null,
+      row.attrs?.rawTblPrEx ?? null,
+      row.attrs?.tblPrExChange ?? null,
       ...(row.content ?? []).map((cell) => [
         cell.type,
         cell.attrs?.colspan ?? 1,
@@ -1435,6 +1537,8 @@ export function tableStructureSignature(table: PmNode): string {
         cell.attrs?.borders ?? null,
         cell.attrs?.rawTcPr ?? null,
         cell.attrs?.cellRevision ?? null,
+        cell.attrs?.tcPrChange ?? null,
+        cell.attrs?.cellMerge ?? null,
         cell.attrs?.textDirection ?? null,
         cell.attrs?.cellMar ?? null,
         cell.attrs?.noWrap ?? null,
@@ -1500,18 +1604,60 @@ export function pmTableToModel(table: PmNode): TableModel {
     remaining: number
     span: number
     cell: Omit<TableModel['rows'][number][number], 'paras'>
+    // tracked-change records live on the restart cell (the merged-away cells
+    // have no node the editor could accept or reject)
+    trackedCellMerge: unknown
+    trackedTcPrChange: unknown
+    // the hoisted merge record is written once, on the first merged-away cell
+    first: boolean
   }
   let active = new Map<number, ActiveSpan>()
   const rows: TableModel['rows'] = []
   let maximumColumns = 0
 
+  // the merged-away cells the build carried (row:column -> their own model):
+  // rebuilding them from the restart cell's style lost their tcPr bytes,
+  // textDirection and hidden text
+  const continuationCells = new Map<string, TableCell>()
+  const serializedContinuations = table.attrs?.continuationCells
+  if (typeof serializedContinuations === 'string') {
+    try {
+      const records = JSON.parse(serializedContinuations) as Array<{
+        row?: unknown
+        column?: unknown
+        cell?: unknown
+      }>
+      for (const record of records) {
+        if (
+          typeof record?.row === 'number' &&
+          typeof record.column === 'number' &&
+          record.cell &&
+          typeof record.cell === 'object'
+        ) {
+          continuationCells.set(record.row + ':' + record.column, record.cell as TableCell)
+        }
+      }
+    } catch {
+      // a malformed record only costs the continuation styles, not the table
+    }
+  }
+  // A structural edit makes the row/column positions the records are keyed by
+  // stale: rebuild the merged-away cells the old way (restart-cell style) rather
+  // than injecting one into a row the edit moved it out of.
+  const layoutUntouched =
+    typeof table.attrs?.originalStructure !== 'string' ||
+    table.attrs.originalStructure === tableStructureSignature(table)
+  if (!layoutUntouched) continuationCells.clear()
   const rowHeightsTwips: Array<number | null> = []
   const rowHeightRules: NonNullable<TableModel['rowHeightRules']> = []
   const repeatHeaderRows: Array<boolean | null> = []
   const rowCantSplit: Array<boolean | null> = []
   const rawTrPrs: Array<string | null> = []
   const rowRevisions: TableModel['rowRevisions'] = []
-  for (const rowNode of table.content ?? []) {
+  const rowPrChanges: Array<PropChangeInfo | null> = []
+  const rawTblPrExs: Array<string | null> = []
+  const rowTblPrExChanges: Array<PropChangeInfo | null> = []
+  for (const [rowIndex, rowNode] of (table.content ?? []).entries()) {
     rowHeightsTwips.push((rowNode.attrs?.heightTwips as number | null) ?? null)
     rowHeightRules.push(
       (rowNode.attrs?.heightRule as NonNullable<TableModel['rowHeightRules']>[number]) ?? null,
@@ -1530,14 +1676,39 @@ export function pmTableToModel(table: PmNode): TableModel {
     rowRevisions.push(
       (rowNode.attrs?.rowRevision as NonNullable<TableModel['rowRevisions']>[number]) ?? null,
     )
+    rowPrChanges.push((rowNode.attrs?.trPrChange as PropChangeInfo | null) ?? null)
+    rawTblPrExs.push((rowNode.attrs?.rawTblPrEx as string | null) ?? null)
+    rowTblPrExChanges.push((rowNode.attrs?.tblPrExChange as PropChangeInfo | null) ?? null)
     const entries: Array<{ column: number; cell: TableModel['rows'][number][number] }> = []
     const occupied = new Set<number>()
     for (const [column, span] of active) {
+      const original = continuationCells.get(rowIndex + ':' + column)
+      const merged = original && (original.colSpan ?? 1) === span.span ? original : undefined
+      // null = the editor accepted (strip the record), an object = still pending;
+      // only an absent attr leaves the build-time record in place
+      const tracked = (value: unknown, fallback: unknown): unknown =>
+        value === null ? null : value !== undefined ? value : fallback
       entries.push({
         column,
         cell: {
-          ...span.cell,
-          paras: [''],
+          ...(merged ?? span.cell),
+          paras: merged?.paras?.length ? merged.paras : [''],
+          ...(merged?.richParas?.length ? { richParas: merged.richParas } : {}),
+          // tracked-change records of a merged-away cell live on the restart
+          // cell (it is the only one with a node the editor can accept or
+          // reject): follow the restart cell's current state, never the
+          // build-time snapshot
+          ...(merged
+            ? {
+                cellMerge: (span.first
+                  ? tracked(span.trackedCellMerge, merged.cellMerge)
+                  : null) as TableCell['cellMerge'],
+                tcPrChange: tracked(
+                  span.trackedTcPrChange,
+                  merged.tcPrChange,
+                ) as TableCell['tcPrChange'],
+              }
+            : {}),
           colSpan: span.span > 1 ? span.span : undefined,
           vMerge: 'continue',
         },
@@ -1548,6 +1719,31 @@ export function pmTableToModel(table: PmNode): TableModel {
     const added = new Map<number, ActiveSpan>()
     let cursor = 0
     for (const cellNode of rowNode.content ?? []) {
+      if (cellNode.attrs?.mergeGap) {
+        // the inert stand-in for a merged-away cell: emit its column as a
+        // vMerge continuation so a formatting edit (which clears the positional
+        // records, see layoutUntouched) can never make the row lose a column
+        // and shift the cells after it. On an untouched layout the original
+        // record restores the orphan's own tcPr and hidden text; after an edit
+        // the empty cell keeps the grid width, as Word keeps the row.
+        while (occupied.has(cursor)) cursor++
+        const gap = Math.max(1, Number(cellNode.attrs?.colspan) || 1)
+        const record = continuationCells.get(rowIndex + ':' + cursor)
+        const merged = record && (record.colSpan ?? 1) === gap ? record : undefined
+        entries.push({
+          column: cursor,
+          cell: {
+            ...(merged ?? {}),
+            paras: merged?.paras?.length ? merged.paras : [''],
+            ...(merged?.richParas?.length ? { richParas: merged.richParas } : {}),
+            colSpan: gap > 1 ? gap : undefined,
+            vMerge: 'continue',
+          },
+        })
+        for (let i = 0; i < gap; i++) occupied.add(cursor + i)
+        cursor += gap
+        continue
+      }
       while (occupied.has(cursor)) cursor++
       const colspan = Math.max(1, Number(cellNode.attrs?.colspan) || 1)
       const rowspan = Math.max(1, Number(cellNode.attrs?.rowspan) || 1)
@@ -1559,6 +1755,17 @@ export function pmTableToModel(table: PmNode): TableModel {
         vAlign: (cellNode.attrs?.vAlign as TableCell['vAlign'] | null) ?? undefined,
         borders: (cellNode.attrs?.borders as TableCell['borders'] | null) ?? undefined,
         rawTcPr: (cellNode.attrs?.rawTcPr as string | null) ?? undefined,
+        // null reaches the writer only while the raw bytes still carry the record (= accepted)
+        tcPrChange: propChangeField(
+          cellNode.attrs?.tcPrChange,
+          cellNode.attrs?.rawTcPr,
+          'w:tcPrChange',
+        ),
+        cellMerge: propChangeField(
+          cellNode.attrs?.cellMerge,
+          cellNode.attrs?.rawTcPr,
+          'w:cellMerge',
+        ),
         gridGap: cellNode.attrs?.gridGap ? true : undefined,
         // edited tcPr groups are written from the attrs; a null direction / margin
         // set means "explicitly horizontal" / "same as the table" (element removed)
@@ -1621,16 +1828,49 @@ export function pmTableToModel(table: PmNode): TableModel {
           vMerge: rowspan > 1 ? 'restart' : undefined,
         },
       })
-      if (rowspan > 1) added.set(cursor, { remaining: rowspan - 1, span: colspan, cell: style })
+      if (rowspan > 1)
+        added.set(cursor, {
+          remaining: rowspan - 1,
+          span: colspan,
+          cell: style,
+          trackedCellMerge: cellNode.attrs?.cellMerge,
+          trackedTcPrChange: cellNode.attrs?.tcPrChange,
+          first: true,
+        })
       for (let i = 0; i < colspan; i++) occupied.add(cursor + i)
       cursor += colspan
+    }
+    // a merged-away cell a rowspan did not stand in for (an orphan
+    // continuation) has no node of its own: rebuild it from the record
+    for (const [key, cell] of continuationCells) {
+      const [recordRow, recordColumn] = key.split(':').map(Number)
+      if (recordRow !== rowIndex || recordColumn === undefined) continue
+      if (entries.some((entry) => entry.column === recordColumn)) continue
+      entries.push({
+        column: recordColumn,
+        cell: {
+          ...cell,
+          paras: cell.paras?.length ? cell.paras : [''],
+          ...(cell.richParas?.length ? { richParas: cell.richParas } : {}),
+          colSpan: (cell.colSpan ?? 1) > 1 ? cell.colSpan : undefined,
+          vMerge: 'continue',
+        },
+      })
+      for (let i = 0; i < (cell.colSpan ?? 1); i++) occupied.add(recordColumn + i)
     }
     maximumColumns = Math.max(maximumColumns, occupied.size)
     rows.push(entries.sort((a, b) => a.column - b.column).map((entry) => entry.cell))
 
     const next = new Map<number, ActiveSpan>()
     for (const [column, span] of active) {
-      if (span.remaining > 1) next.set(column, { ...span, remaining: span.remaining - 1 })
+      // the hoisted merge record is written once, on the first merged-away cell
+      if (span.remaining > 1)
+        next.set(column, {
+          ...span,
+          remaining: span.remaining - 1,
+          cell: { ...span.cell, cellMerge: undefined },
+          first: false,
+        })
     }
     for (const [column, span] of added) next.set(column, span)
     active = next
@@ -1701,6 +1941,20 @@ export function pmTableToModel(table: PmNode): TableModel {
     ...(rowCantSplit.some((value) => value !== null) ? { rowCantSplit } : {}),
     ...(rawTrPrs.some((r) => r !== null) ? { rawTrPrs } : {}),
     ...(rowRevisions.some((revision) => revision !== null) ? { rowRevisions } : {}),
+    // the arrays travel whenever a row still carries a record: null entries tell the writer to strip it
+    ...(rowPrChanges.some(Boolean) || rawTrPrs.some((r) => r?.includes('<w:trPrChange'))
+      ? { rowPrChanges }
+      : {}),
+    ...(rawTblPrExs.some((r) => r !== null) ? { rawTblPrExs } : {}),
+    ...(rowTblPrExChanges.some(Boolean) || rawTblPrExs.some((r) => r?.includes('<w:tblPrExChange'))
+      ? { rowTblPrExChanges }
+      : {}),
+    ...(table.attrs?.tblPrChange !== undefined
+      ? { tblPrChange: table.attrs.tblPrChange as PropChangeInfo | null }
+      : {}),
+    ...(table.attrs?.tblGridChange !== undefined
+      ? { tblGridChange: table.attrs.tblGridChange as PropChangeInfo | null }
+      : {}),
     // null (cleared) → '' removes explicitly; undefined leaves it alone
     ...(tblStyleAttr !== undefined ? { tblStyleId: tblStyleAttr ?? '' } : {}),
     // explicit only when set ('left' = remove w:jc); null leaves the original
@@ -1740,13 +1994,15 @@ export function runsToInline(runs: Run[]): PmNode[] {
         ...atomMarks,
         attrs: {
           omml: run.math.omml,
-          mathml: inlineMathML(run.math.omml),
+          mathml: inlineMathML(run.math.omml, !!run.math.display),
+          display: !!run.math.display,
           // recovered LaTeX makes parsed formulas re-editable; null = atom only
           latex: ommlToLatex(run.math.omml),
           text: run.text,
           sizeHalfPoints: run.sizeHalfPoints ?? null,
         },
       })
+      if (run.math.breakAfter) nodes.push({ type: 'hardBreak', attrs: { mathBreak: true } })
       continue
     }
     if (run.ruby) {
@@ -1801,6 +2057,8 @@ export function runsToInline(runs: Run[]): PmNode[] {
           offsetYEmu: run.image.offsetYEmu ?? null,
           relV: run.image.relV ?? null,
           relH: run.image.relH ?? null,
+          posH: run.image.posH ?? null,
+          posV: run.image.posV ?? null,
           wrapDistTopEmu: run.image.wrapDistTopEmu ?? null,
           wrapDistBottomEmu: run.image.wrapDistBottomEmu ?? null,
           wrapDistLeftEmu: run.image.wrapDistLeftEmu ?? null,
@@ -1810,10 +2068,12 @@ export function runsToInline(runs: Run[]): PmNode[] {
           rotDeg: run.image.rotDeg ?? null,
           flipH: run.image.flipH ?? false,
           flipV: run.image.flipV ?? false,
+          layers: run.image.layers ?? null,
           rule: run.image.rule
             ? {
                 ...run.image.rule,
                 ...(run.sizeHalfPoints ? { sizeHalfPoints: run.sizeHalfPoints } : {}),
+                ...((run.fontAscii ?? run.font) ? { fontAscii: run.fontAscii ?? run.font } : {}),
               }
             : null,
           rawRPr: run.rawRPr ?? null,
@@ -1830,15 +2090,32 @@ export function runsToInline(runs: Run[]): PmNode[] {
 
 const isRuleNode = (n: PmNode): boolean => n.type === 'docInlineImage' && !!n.attrs?.rule
 
-/** a rule opening a paragraph that goes on with content sits on a compact line in
- *  Word (rule height + ~5.5pt), unlike a rule alone or after text (a full line) */
+const textSizeOf = (n: PmNode): number | null =>
+  (n.marks?.find((m) => m.type === 'docTextStyle')?.attrs?.sizeHalfPoints as number | null) ?? null
+
+/** a rule opening a paragraph that goes on with content: Word tucks it on a
+ *  compact line (rule height + ~5.5pt) when the following text is set larger
+ *  than the rule run (probe 2026-09-05: 11pt rule, 14pt text); a rule run at
+ *  least as large as its text keeps a full line of the paragraph's font with
+ *  the stroke on the baseline (18pt heading, rule and text both inherit) */
 function markLeadRule(nodes: PmNode[]): void {
   const first = nodes[0]
   if (!first || !isRuleNode(first)) return
-  if (nodes.slice(1).some((n) => !isRuleNode(n))) first.attrs = { ...first.attrs, leadRule: true }
+  const rest = nodes.slice(1).filter((n) => !isRuleNode(n))
+  if (rest.length === 0) return
+  const ruleSize = (first.attrs?.rule as { sizeHalfPoints?: number } | null)?.sizeHalfPoints
+  const textSize = rest.map(textSizeOf).find((v) => v != null) ?? null
+  const compact = textSize != null && (ruleSize ?? 0) < textSize
+  first.attrs = { ...first.attrs, ...(compact ? { leadRule: true } : { leadRuleFull: true }) }
 }
 
 let nextZoteroFieldId = 1
+
+/** ECMA-376 17.7.3: a toggle both style layers set is off; the CSS cascade cannot see that */
+function styleXorValue(run: Run, key: 'bold' | 'italic'): boolean | null {
+  const eff = run.effective
+  return eff?.styleXor?.includes(key) ? eff[key] : null
+}
 
 function runMarks(run: Run): PmMark[] {
   const marks: PmMark[] = []
@@ -1897,6 +2174,7 @@ function runMarks(run: Run): PmMark[] {
         date: run.ins.date ?? null,
         dateUtc: run.ins.dateUtc ?? null,
         id: run.ins.id ?? null,
+        move: run.ins.move ?? null,
       },
     })
   }
@@ -1908,6 +2186,7 @@ function runMarks(run: Run): PmMark[] {
         date: run.del.date ?? null,
         dateUtc: run.del.dateUtc ?? null,
         id: run.del.id ?? null,
+        move: run.del.move ?? null,
       },
     })
   }
@@ -1920,6 +2199,7 @@ function runMarks(run: Run): PmMark[] {
         dateUtc: run.rPrChange.dateUtc ?? null,
         id: run.rPrChange.id ?? null,
         old: run.rPrChange.old ?? null,
+        oldRPr: run.rPrChange.oldRPr ?? null,
       },
     })
   }
@@ -1950,7 +2230,8 @@ function runMarks(run: Run): PmMark[] {
     run.cs ||
     run.rtl !== undefined ||
     run.styleId ||
-    run.rawRPr
+    run.rawRPr ||
+    run.effective?.styleXor?.length
   ) {
     // an inline-block cannot wrap and drops inherited underlines: only
     // whitespace-free, undecorated runs get the real glyph compression
@@ -1980,8 +2261,8 @@ function runMarks(run: Run): PmMark[] {
         eaSlotEmpty: run.eaSlotEmpty ?? null,
         fontAscii: run.fontAscii ?? null,
         eastAsiaFont: run.eastAsiaFont ?? null,
-        // cs chain only kicks in for complex-script text (Word's w:cs semantics)
-        csFont: run.csFont && textHasComplexScript(run.text) ? run.csFont : null,
+        // the cs chain sizes complex-script text, and every character of an rtl run
+        csFont: run.csFont && (run.cs || textHasComplexScript(run.text)) ? run.csFont : null,
         charSpacingTwips: run.charSpacingTwips ?? null,
         charScaleEm: run.charScalePct && !scaleX ? charScaleEm(run.text, run.charScalePct) : null,
         charScaleX: scaleX,
@@ -2013,9 +2294,10 @@ function runMarks(run: Run): PmMark[] {
         themeColor: run.themeColor ?? null,
         // the Cs size an rtl run inherits (strut input only; the .doc-cs style CSS paints it)
         csSize: cs && run.sizeHalfPoints === undefined ? cs.sizeHalfPoints : null,
-        // the resolved weight / style of an rtl run (table style, Cs twins, XOR), display only
-        csBold: cs && run.bold === undefined ? cs.bold : null,
-        csItalic: cs && run.italic === undefined ? cs.italic : null,
+        // the resolved weight / style of an rtl run (table style, Cs twins, XOR) or of a
+        // run whose character style toggle XORs against the paragraph style, display only
+        csBold: run.bold === undefined ? (cs?.bold ?? styleXorValue(run, 'bold')) : null,
+        csItalic: run.italic === undefined ? (cs?.italic ?? styleXorValue(run, 'italic')) : null,
         tblRun: tableStyleRunAttr(run.effective),
       },
     })
@@ -2045,6 +2327,8 @@ export interface SavePlan {
   totalOriginal: number
   /** cell pictures inserted by the editor, for SaveOptions.newPictures */
   newPictures: Record<string, { base64: string; mime: NewImage['mime'] }>
+  /** the trailing sectPr's tracked change was accepted / rejected in the editor */
+  trailingSectPrChange?: 'accept' | 'reject'
 }
 
 const ZOTERO_FIELD_INSTR_RE = /^\s*(?:ADDIN\s+)?(?:ZOTERO_|CSL_)/i
@@ -2361,6 +2645,17 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           pushBlock({ kind: 'xml', xml: unwrapBlockRevisionXml(original.originalXml) })
           continue
         }
+        const sectMode = original.sectPrChange
+          ? sectPrChangeMode(node.attrs?.sectPrChange as string | null | undefined)
+          : null
+        if (sectMode && original.originalXml) {
+          changedCount++
+          pushBlock({
+            kind: 'xml',
+            xml: resolvePropChangeXml(original.originalXml, 'w:sectPrChange', sectMode),
+          })
+          continue
+        }
         const imagePatch = imagePatchOf(node, original)
         const tableTexts = tableTextsPatch(node, original)
         const textboxTexts = textboxParasPatch(node, original)
@@ -2602,7 +2897,13 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
         }
         if (genBox) {
           xml = patchShapeStyles(xml, [
-            { fillHex: genBox.fill ?? null, borderHex: genBox.borderColor ?? null },
+            {
+              fillHex: genBox.fill ?? null,
+              borderHex: genBox.borderColor ?? null,
+              // undefined keeps the generated XML untouched when never edited
+              rotDeg: genBox.rotDeg ?? undefined,
+              borderWidthPx: genBox.borderWidthPx ?? undefined,
+            },
           ])
         }
         // apply wrap changes for floating textboxes/shapes
@@ -2708,6 +3009,8 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
         // A split twin inherits the source node's attrs, but pPrChange and
         // bookmark/comment anchors belong only to the anchored original.
         delete generated.pPrChange
+        delete generated.numberingChange
+        delete generated.sectPrChange
         delete generated.bookmarks
         delete generated.hiddenBookmarks
         delete generated.commentStarts
@@ -2806,6 +3109,17 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
   }
 
   const deletedCount = [...originalByIndex.keys()].filter((i) => !usedIndexes.has(i)).length
+  // the trailing sectPr's record rides on a paragraph (blocksToPmDoc); a verdict there resolves the hidden block
+  let trailingSectPrChange: SavePlan['trailingSectPrChange']
+  // a host that was never attached or was deleted leaves the record pending in the file
+  if (originalBlocks.some((b) => b.hidden && b.sectPrChange)) {
+    for (const node of doc.content ?? []) {
+      const raw = node.attrs?.sectPrChange as string | null | undefined
+      if (!raw?.includes('"trailing":true')) continue
+      if (raw.includes('"resolved":"reject"')) trailingSectPrChange = 'reject'
+      else if (raw.includes('"resolved":"accept"')) trailingSectPrChange = 'accept'
+    }
+  }
   return {
     saveBlocks,
     chartPatches,
@@ -2814,6 +3128,7 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
     changedCount,
     deletedCount,
     totalOriginal: originalByIndex.size,
+    ...(trailingSectPrChange ? { trailingSectPrChange } : {}),
   }
 }
 
@@ -3234,9 +3549,23 @@ function textboxStylesPatch(node: PmNode, original: Block): (ShapeStylePatch | n
       (box.borderColor ?? null) !== (initial[index].borderColor ?? null)
         ? (box.borderColor ?? null)
         : undefined
-    if (fillHex === undefined && borderHex === undefined) return null
+    // rotation 0 is the cleared state: patch@rot is removed (null/0), so an
+    // absent attribute and rotDeg 0 compare equal
+    const rotDeg =
+      (box.rotDeg ?? 0) !== (initial[index].rotDeg ?? 0) ? (box.rotDeg ?? 0) : undefined
+    const borderWidthPx =
+      (box.borderWidthPx ?? null) !== (initial[index].borderWidthPx ?? null)
+        ? (box.borderWidthPx ?? null)
+        : undefined
+    if (
+      fillHex === undefined &&
+      borderHex === undefined &&
+      rotDeg === undefined &&
+      borderWidthPx === undefined
+    )
+      return null
     changed = true
-    return { fillHex, borderHex }
+    return { fillHex, borderHex, rotDeg, borderWidthPx }
   })
   return changed ? styles : null
 }
@@ -3344,12 +3673,22 @@ function applyRawPPr(generated: GeneratedBlock, original: Block): void {
   }
   if (generated.paraMarkDel === null && original.paraMarkDel)
     rawPPr = stripParaMarkRevision(rawPPr, 'del')
+  else if (generated.paraMarkDel && !original.paraMarkDel)
+    rawPPr = setParaMarkRevision(rawPPr, paraMarkRevisionXml('del', generated.paraMarkDel))
   if (generated.paraMarkIns === null && original.paraMarkIns)
     rawPPr = stripParaMarkRevision(rawPPr, 'ins')
+  else if (generated.paraMarkIns && !original.paraMarkIns)
+    rawPPr = setParaMarkRevision(rawPPr, paraMarkRevisionXml('ins', generated.paraMarkIns))
   if (original.paraMarkRPrChange) {
     if (generated.paraMarkRPrChange === null) rawPPr = resolveParaMarkRPrChange(rawPPr, 'accept')
     else if (generated.paraMarkRPrChange?.includes('"resolved":"reject"'))
       rawPPr = resolveParaMarkRPrChange(rawPPr, 'reject')
+  }
+  if (original.numberingChange && generated.numberingChange === null)
+    rawPPr = resolvePropChangeXml(rawPPr, 'w:numberingChange', 'accept')
+  if (original.sectPrChange) {
+    const mode = sectPrChangeMode(generated.sectPrChange)
+    if (mode) rawPPr = resolvePropChangeXml(rawPPr, 'w:sectPrChange', mode)
   }
   const markColor = paraMarkColor(rawPPr)
   if (markColor && generated.runs.some((r) => r.text)) {
@@ -3407,6 +3746,7 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
     if (node.attrs?.[key] != null) format[key] = node.attrs[key] as boolean
   if (node.attrs?.pageBreakBefore) format.pageBreakBefore = true
   if (node.attrs?.bidi) format.bidi = true
+  else if (node.attrs?.bidiInherited) format.bidiInherited = true
   if (node.attrs?.autoSpace != null) format.autoSpace = node.attrs.autoSpace as AutoSpace
   if (node.attrs?.wordWrap != null) format.wordWrap = node.attrs.wordWrap as boolean
   if (node.attrs?.overflowPunct != null) {
@@ -3555,12 +3895,56 @@ export function pmNodeToGeneratedBlock(node: PmNode): GeneratedBlock {
 /** null = no pending paragraph-mark revision; applyRawPPr strips the record the original carried */
 function paraMarkRevisions(
   node: PmNode,
-): Pick<GeneratedBlock, 'paraMarkDel' | 'paraMarkIns' | 'paraMarkRPrChange'> {
+): Pick<
+  GeneratedBlock,
+  'paraMarkDel' | 'paraMarkIns' | 'paraMarkRPrChange' | 'numberingChange' | 'sectPrChange'
+> {
   return {
     paraMarkDel: (node.attrs?.paraMarkDel as string | null | undefined) ?? null,
     paraMarkIns: (node.attrs?.paraMarkIns as string | null | undefined) ?? null,
     paraMarkRPrChange: (node.attrs?.paraMarkRPrChange as string | null | undefined) ?? null,
+    numberingChange: (node.attrs?.numberingChange as string | null | undefined) ?? null,
+    // the trailing sectPr's record is not this paragraph's own (see pmDocToSavePlan)
+    sectPrChange: trailingRecord(node.attrs?.sectPrChange)
+      ? null
+      : ((node.attrs?.sectPrChange as string | null | undefined) ?? null),
   }
+}
+
+const trailingRecord = (raw: unknown): boolean =>
+  typeof raw === 'string' && raw.includes('"trailing":true')
+
+function propChangeField(
+  attr: unknown,
+  raw: unknown,
+  tag: string,
+): PropChangeInfo | null | undefined {
+  if (attr && typeof attr === 'object') return attr as PropChangeInfo
+  return typeof raw === 'string' && raw.includes(`<${tag}`) ? null : undefined
+}
+
+/** the save verdict a sectPrChange attr carries: null = accepted, resolved:'reject' = rejected, else pending */
+function sectPrChangeMode(attr: string | null | undefined): 'accept' | 'reject' | null {
+  if (attr === null) return 'accept'
+  return attr?.includes('"resolved":"reject"') ? 'reject' : null
+}
+
+/** the cellMerge record of the merged-away cells below a restart cell (they have no node of their own) */
+function mergedAwayRecord(
+  model: TableModel,
+  rowIndex: number,
+  cellIndex: number,
+  positions: number[][],
+): PropChangeInfo | null {
+  const cell = model.rows[rowIndex][cellIndex]
+  if (cell.vMerge !== 'restart') return null
+  const column = positions[rowIndex][cellIndex]
+  for (let r = rowIndex + 1; r < model.rows.length; r++) {
+    const below = model.rows[r].find((_, i) => positions[r][i] === column)
+    if (!below || below.vMerge !== 'continue') break
+    if (below.cellMerge) return below.cellMerge
+  }
+  return null
 }
 
 function nodeBookmarks(
@@ -3610,6 +3994,8 @@ export function inlineToRuns(content: PmNode[]): Run[] {
   const runs: Run[] = []
   for (const node of content) {
     if (node.type === 'hardBreak') {
+      // the break lives inside the preceding m:oMath fragment, which saves verbatim
+      if (node.attrs?.mathBreak) continue
       const ch = node.attrs?.pageBreak
         ? '\f'
         : node.attrs?.colBreak
@@ -3627,7 +4013,9 @@ export function inlineToRuns(content: PmNode[]): Run[] {
           prev.ruby ||
           prev.image)
       if (node.marks?.length) runs.push(runFromMarks(ch, node.marks))
-      else if (prev && !prevAtomic) prev.text += ch
+      // an unformatted break joins a plain run only: folding it into a
+      // formatted neighbour re-authors a bare <w:br/> run as bold (genoffice#524)
+      else if (prev && !prevAtomic && runStyleKey(prev) === PLAIN_RUN_KEY) prev.text += ch
       else runs.push({ text: ch })
       continue
     }
@@ -3651,7 +4039,11 @@ export function inlineToRuns(content: PmNode[]): Run[] {
     if (node.type === 'docInlineMath') {
       const omml = String(node.attrs?.omml ?? '')
       if (omml)
-        runs.push({ ...atomBase(node), text: String(node.attrs?.text ?? ''), math: { omml } })
+        runs.push({
+          ...atomBase(node),
+          text: String(node.attrs?.text ?? ''),
+          math: { omml, ...(node.attrs?.display ? { display: true } : {}) },
+        })
       continue
     }
     if (node.type === 'docRuby') {
@@ -3672,7 +4064,20 @@ export function inlineToRuns(content: PmNode[]): Run[] {
       const w = Number(node.attrs?.widthPx)
       const h = Number(node.attrs?.heightPx)
       let xml = String(node.attrs?.xml ?? '') || (rule ? '' : newPictureXml(node))
-      if (xml && !rule && w > 0 && h > 0) xml = resizeInlinePictureXml(xml, w, h)
+      // size, wrap and position edits; untouched geometry keeps the bytes
+      if (xml && !rule) {
+        const a = node.attrs ?? {}
+        xml = patchRunPictureXml(xml, {
+          widthPx: w > 0 ? w : null,
+          heightPx: h > 0 ? h : null,
+          wrap: (a.wrap as ImageWrap | null) ?? null,
+          offsetXEmu: (a.offsetXEmu as number | null) ?? null,
+          offsetYEmu: (a.offsetYEmu as number | null) ?? null,
+          relH: (a.relH as RunPictureGeometry['relH']) ?? null,
+          relV: (a.relV as RunPictureGeometry['relV']) ?? null,
+          lineCenterV: !!a.lineCenterV,
+        })
+      }
       if ((dataUrl || rule) && xml) {
         runs.push({
           ...atomBase(node),
@@ -3687,6 +4092,7 @@ export function inlineToRuns(content: PmNode[]): Run[] {
             ...(node.attrs?.rotDeg ? { rotDeg: Number(node.attrs.rotDeg) } : {}),
             ...(node.attrs?.flipH ? { flipH: true } : {}),
             ...(node.attrs?.flipV ? { flipV: true } : {}),
+            ...(node.attrs?.layers ? { layers: node.attrs.layers as PictureLayer[] } : {}),
           },
         })
       }
@@ -3782,6 +4188,7 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
       if (mark.attrs?.date) info.date = String(mark.attrs.date)
       if (mark.attrs?.dateUtc) info.dateUtc = String(mark.attrs.dateUtc)
       if (mark.attrs?.id) info.id = String(mark.attrs.id)
+      if (mark.attrs?.move) info.move = String(mark.attrs.move)
       if (mark.type === 'ins') run.ins = info
       else run.del = info
     } else if (mark.type === 'docTextStyle') {
@@ -3837,6 +4244,7 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
         ...(mark.attrs?.dateUtc ? { dateUtc: String(mark.attrs.dateUtc) } : {}),
         ...(mark.attrs?.id ? { id: String(mark.attrs.id) } : {}),
         ...(mark.attrs?.old ? { old: mark.attrs.old as NonNullable<Run['rPrChange']>['old'] } : {}),
+        ...(mark.attrs?.oldRPr != null ? { oldRPr: String(mark.attrs.oldRPr) } : {}),
       }
     }
   }
@@ -3920,6 +4328,8 @@ function runStyleKey(run: Run): string {
   ])
 }
 
+const PLAIN_RUN_KEY = runStyleKey({ text: '' })
+
 function revisionKey(run: Run): string | null {
   if (!run.ins && !run.del) return null
   return JSON.stringify([
@@ -3927,10 +4337,12 @@ function revisionKey(run: Run): string | null {
     run.ins?.date ?? null,
     run.ins?.dateUtc ?? null,
     run.ins?.id ?? null,
+    run.ins?.move ?? null,
     run.del?.author ?? null,
     run.del?.date ?? null,
     run.del?.dateUtc ?? null,
     run.del?.id ?? null,
+    run.del?.move ?? null,
   ])
 }
 
@@ -4050,6 +4462,8 @@ export function signatureOfBlock(block: Block): string {
     paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
     paraMarkIns: block.paraMarkIns ? JSON.stringify(block.paraMarkIns) : null,
     paraMarkRPrChange: block.paraMarkRPrChange ? JSON.stringify(block.paraMarkRPrChange) : null,
+    numberingChange: block.numberingChange ? JSON.stringify(block.numberingChange) : null,
+    sectPrChange: block.sectPrChange ? JSON.stringify(block.sectPrChange) : null,
     blockRevision: block.blockRevision ?? null,
   })
 }
@@ -4071,6 +4485,8 @@ export function signatureOfGenerated(block: GeneratedBlock): string {
     paraMarkDel: block.paraMarkDel ?? null,
     paraMarkIns: block.paraMarkIns ?? null,
     paraMarkRPrChange: block.paraMarkRPrChange ?? null,
+    numberingChange: block.numberingChange ?? null,
+    sectPrChange: block.sectPrChange ?? null,
     blockRevision: block.blockRevision ?? null,
   })
 }

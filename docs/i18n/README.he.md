@@ -19,7 +19,7 @@
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub stars"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <b>עברית</b> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <b>עברית</b> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center" dir="rtl">
   <a href="#download"><b>הורדה</b></a> ·
@@ -94,7 +94,7 @@ Windows ו-Linux. היא פותחת ושומרת קבצי `.docx`,‏ `.xlsx` ו
 </tr>
 <tr>
 <td dir="rtl"><b>בנו אותו</b> — ממשפט אחד הסוכן מוסיף גיליון Summary עם נוסחאות <code>SUMIF</code> אמיתיות לפי אזור וקטגוריה, מוסיף תרשים עמודות, ומחיל את 43 השינויים כאצווה אחת שאפשר לבטל.</td>
-<td dir="rtl"><b>שאלו אותו</b> — שאלות על חוברת העבודה מקבלות מענה עם ההיגיון שמאחורי התשובה והתאים המדויקים שבהם נעשה שימוש, כציטוטים שאפשר ללחוץ עליהם. מתחת למכסה המנוע: מנוע `.xlsx` פנימי הכתוב ב-Rust, טבלאות פיבוט, מגזרים (slicers), עיצוב מותנה, מעקב אחר נוסחאות, ותמונות המוטבעות בתאים כערכים עשירים (rich values) מקוריים של Excel — Excel פותח אותן מחדש והן נשארות בתוך התא.</td>
+<td dir="rtl"><b>שאלו אותו</b> — שאלות על חוברת העבודה מקבלות מענה עם ההיגיון שמאחורי התשובה והתאים המדויקים שבהם נעשה שימוש, כציטוטים שאפשר ללחוץ עליהם. מתחת למכסה המנוע: מנוע `.xlsx` פנימי הכתוב ב-Rust, טבלאות פיבוט, מגזרים (slicers), עיצוב מותנה, מעקב אחר נוסחאות, ותמונות המוטבעות בתאים כערכים עשירים (rich values) מקוריים של Excel — Excel פותח אותן מחדש והן נשארות בתוך התא.הערת תא יכולה לשאת תמונה, המוצגת מתחת לחלונית ההערה.</td>
 </tr>
 </table>
 
@@ -248,11 +248,17 @@ skill ובלי לפתוח חלון, ולקבל 29 כלים בתוספת מדרי
 
 **או הביאו מפתח משלכם.** בתפריט Settings → AI מופיעים Claude,‏ OpenAI,‏
 Gemini,‏ DeepSeek,‏ Kimi,‏ GLM,‏ Qwen,‏ Doubao,‏ MiniMax,‏ Grok,‏ Mistral,‏
-OpenRouter,‏ Requesty ו-OpenCode Zen/Go, ובנוסף שדה מותאם אישית לכל endpoint
+OpenRouter,‏ Requesty,‏
+Opper,‏
+Cheaper Inference,‏
+Atlas Cloud,‏
+SiliconFlow,‏
+PPIO,‏
+Command Code ו-OpenCode Zen/Go, ובנוסף שדה מותאם אישית לכל endpoint
 תואם-OpenAI (כתובת בסיס + מפתח), כולל שרתי מודלים מקומיים. לחיפוש ולמדיה יש
-ספקים נפרדים לפי יכולת תחת **AI Media & Search**: Serper,‏ Serply,‏ Tavily,‏
+ספקים נפרדים לפי יכולת תחת **AI Media & Search**: Serper,‏ Serply,‏ SearchApi,‏ Tavily,‏
 Parallel,‏ Keenable,‏ Exa או Firecrawl לחיפוש
-ברשת, ו-OpenAI,‏ Gemini,‏ Doubao/Seedream,‏ GLM,‏ Grok,‏ Qwen,‏ MiniMax או
+ברשת, ו-OpenAI,‏ Gemini,‏ Doubao/Seedream,‏ GLM,‏ Grok,‏ Qwen,‏ MiniMax,‏ Stability,‏ FLUX או
 כל endpoint תואם-OpenAI ליצירת תמונות ולניתוח תמונה/וידאו.
 
 כל החבילה מגיעה עם ערכות עיצוב בהיר, כהה ומצב מערכת. ערכות העיצוב משנות רק
@@ -266,7 +272,7 @@ Parallel,‏ Keenable,‏ Exa או Firecrawl לחיפוש
 Skill הוא קובץ `SKILL.md` שמסביר ל-AI איך לבצע היטב משימה אחת: דוח שבועי, NDA, מערך שיעור.
 GenOffice מגיע עם אוסף כזה ומקבל גם skills משלך, באותו פורמט שבו משתמשים סוכני הקוד.
 
-- **הגדרות ← Skills.** **התקן** skill מומלץ, או **ייבא** תיקייה, zip או `SKILL.md` יחיד. בייבוא לא מורץ דבר.
+- **הגדרות ← Skills.** **התקן** skill מומלץ, או **ייבא** תיקייה, zip או `SKILL.md` יחיד. בייבוא לא מורץ דבר. לשונית **הכול** מציגה את כל הקטלוג המומלץ במקום אחד, עם תיאורים בשפת האפליקציה.
 - **בשיחה.** פתח את תפריט **+** ליד תיבת ההקלדה בכל חלונית AI, בחר **Skills**, סמן אחד ושלח. ה-skill מצורף להודעה הזו בלבד.
 
 ---
@@ -303,7 +309,7 @@ OpenCode ו-Windsurf ישר מהקופסה, עם כל סוכן אחר שקורא
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -438,6 +444,8 @@ sudo zypper install ./genoffice-<version>.x86_64.rpm  # openSUSE
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+ב-Chromebook, החבילות האלה רצות בתוך סביבת הלינוקס (Crostini) — הפרטים ב-[docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

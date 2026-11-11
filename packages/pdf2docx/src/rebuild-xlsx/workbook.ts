@@ -203,8 +203,9 @@ export class StylePool {
         if (font.bold) parts.push('<b/>')
         if (font.italic) parts.push('<i/>')
         parts.push(`<sz val="${font.sizePt ?? 11}"/>`)
-        if (font.color && /^[0-9a-fA-F]{6}$/.test(font.color)) {
-          parts.push(`<color rgb="FF${font.color.toUpperCase()}"/>`)
+        const color = (font.color ?? '').trim()
+        if (color && /^[0-9a-fA-F]{6}$/.test(color)) {
+          parts.push(`<color rgb="FF${color.toUpperCase()}"/>`)
         }
         parts.push(`<name val="${escapeXml(font.name ?? 'Calibri')}"/>`)
         return `<font>${parts.join('')}</font>`

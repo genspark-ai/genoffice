@@ -11,6 +11,7 @@ import type {
   MenuCommand,
   AutoSaveDefault,
   PrintJobOptions,
+  PrintPaper,
   ContextMenuRequest,
   DocTheme,
   UiTheme,
@@ -159,7 +160,9 @@ const api: DesktopApi = {
   writeMergeOutput: (request: MergeOutputRequest) =>
     ipcRenderer.invoke('docs:merge-output', request),
   fontMetrics: (family: string) => ipcRenderer.invoke('docs:font-metrics', family),
-  print: (scale?: number, job?: PrintJobOptions) => ipcRenderer.invoke('docs:print', scale, job),
+  fontAliases: (names: readonly string[]) => ipcRenderer.invoke('docs:font-aliases', names),
+  print: (scale?: number, job?: PrintJobOptions, paper?: PrintPaper) =>
+    ipcRenderer.invoke('docs:print', scale, job, paper),
   listPrinters: () => ipcRenderer.invoke('docs:printers'),
   exportPdf: (
     defaultName: string,
@@ -291,7 +294,28 @@ const projectApi: ProjectApi = {
   deleteChat: (args) => ipcRenderer.invoke('project:deleteChat', args),
 }
 
+/**
+ * Model file naming: the transport half of `suggestFileName`.
+ *
+ * Inlined rather than imported — a preload entry must stay a single-file bundle,
+ * or the sandbox drops every global it exposed. The `ai:` channel is registered
+ * app-wide by the shell rather than by this app, the same arrangement the
+ * `project:*` bridge below already depends on.
+ *
+ * `content` crosses this bridge verbatim and the main process cannot see what
+ * this editor withheld, so what the caller hands over is exactly what the model
+ * sees. A caller that passed raw document text would undo its own redactions.
+ *
+ * The global is `aiNamingApi`, not `aiOffice`: `aiOffice` is the shell's home
+ * API, and a partial one in an editor window would shadow it there.
+ */
+const aiNamingApi = {
+  suggestFileName: (input: { content: string }) =>
+    ipcRenderer.invoke('ai:suggest-file-name', input),
+}
+
 contextBridge.exposeInMainWorld('desktop', api)
+contextBridge.exposeInMainWorld('aiNamingApi', aiNamingApi)
 contextBridge.exposeInMainWorld('projectApi', projectApi)
 
 // open documents dragged from the OS onto this tab as a new shell tab

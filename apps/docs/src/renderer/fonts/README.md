@@ -5,17 +5,19 @@ freely redistributable with the app. Licenses: Carlito and Liberation are
 **SIL Open Font License 1.1** (see `LICENSE-OFL.txt`); Caladea is
 **Apache License 2.0** (copyright Huerta Tipografica).
 
-| Font             | License    | Metric-compatible Word counterpart |
-| ---------------- | ---------- | ---------------------------------- |
-| Carlito GO       | OFL 1.1    | Calibri (Word's default body font) |
-| Caladea          | Apache-2.0 | Cambria                            |
-| Cambria Math GO  | Apache-2.0 | Cambria Math (Caladea, adjusted)   |
-| Liberation Serif | OFL 1.1    | Times New Roman                    |
-| Liberation Sans  | OFL 1.1    | Arial                              |
-| Liberation Mono  | OFL 1.1    | Courier New                        |
-| Aptos GO         | OFL 1.1    | Aptos (Carlito, size-adjusted)     |
-| Aptos Display GO | OFL 1.1    | Aptos Display (Carlito, adjusted)  |
-| Aptos Narrow GO  | OFL 1.1    | Aptos Narrow (Carlito, adjusted)   |
+| Font                 | License    | Metric-compatible Word counterpart        |
+| -------------------- | ---------- | ----------------------------------------- |
+| Carlito GO           | OFL 1.1    | Calibri (Word's default body font)        |
+| Caladea              | Apache-2.0 | Cambria                                   |
+| Cambria Math GO      | Apache-2.0 | Cambria Math (Caladea, adjusted)          |
+| Liberation Serif     | OFL 1.1    | Times New Roman                           |
+| Liberation Sans      | OFL 1.1    | Arial                                     |
+| Liberation Mono      | OFL 1.1    | Courier New                               |
+| Aptos GO             | OFL 1.1    | Aptos (Carlito, advance-matched)          |
+| Aptos Display GO     | OFL 1.1    | Aptos Display (Carlito, adjusted)         |
+| Aptos Narrow GO      | OFL 1.1    | Aptos Narrow (Carlito, adv.-matched)      |
+| Bookman Old Style GO | Apache-2.0 | Bookman Old Style (Caladea, adv.-matched) |
+| Century Gothic GO    | OFL 1.1    | Century Gothic (Liberation Sans, adv.-m.) |
 
 "Carlito GO" (`Carlito-*.ttf`) is a derivative of Carlito 1.103: a build-time patch
 (`tools/patch-carlito-vi.py`) rebuilds Vietnamese precomposed glyphs whose above mark
@@ -32,17 +34,27 @@ pagination model (`tests/helpers/lo-fonts.ts` measures the same set of files).
 
 Registration lives in `fonts.css`; family-name mapping in `cssFontFamily()` of `line-metrics.ts`.
 
-"Aptos GO" / "Aptos Display GO" / "Aptos Narrow GO" are not separate files: they
-are `size-adjust`ed views of the Carlito faces. Aptos is not a scale of Carlito
-(per glyph the ratio spans 0.87 to 1.22), so each face declares the
-corpus-weighted letter scale as its general rule plus one range-limited face per
-1.5% advance bucket of the ASCII letters, digits, space and common punctuation;
-later faces win inside their unicode-range. The ratios are Aptos hmtx (Word's
-bundled DFonts / cloud-font cache, which Word PDF char origins reproduce
-exactly) over Carlito hmtx; the block is generated from the font files, refit
-rather than hand-edit it. Pitch stays Calibri's 1.22 (`lineHeightFactor`).
+"Aptos GO", "Aptos Narrow GO", "Bookman Old Style GO" and "Century Gothic GO" are
+advance-matched derivatives built by `tools/build-metric-fonts.py` (`AptosGO-*.ttf`,
+`AptosNarrowGO-*.ttf` from Carlito, `BookmanOldStyleGO-*.ttf` from Caladea,
+`CenturyGothicGO-*.ttf` from Liberation Sans;
+manifest `refit.method: advance-matched`). The Word faces are not a scale of
+their stand-ins (per glyph Aptos/Carlito spans 0.87 to 1.22, Bookman/Caladea
+1.0 to 1.96), and a size-adjusted face per advance bucket drew letters of one
+word at different heights. Each derivative subsets the base to the Latin
+repertoire shared with the Word font, scales every outline horizontally to the
+Word hmtx advance (times the corpus pair-kerning factor for Aptos, since the
+renderer does not kern unless w:kern is on), applies one uniform vertical
+factor (mean H/x ink ratio), and takes the general face's line box into
+hhea/OS2; GPOS/GSUB/kern and hinting are dropped. The rangeless Carlito /
+Caladea face stays as the non-Latin fallback. Carlito-based files are renamed
+per OFL 1.1 §2. "Aptos Display GO" still uses size-adjust buckets (its source
+lives only in Word's cloud-font cache). Pitch stays Calibri's 1.22 for Aptos
+(`lineHeightFactor`), the hhea 1.1738 for Bookman and the probed 1.226 for Century
+Gothic.
 `tests/aptos-alias-metrics.test.ts` holds the Word-probed sentence widths
-(2026-09-03, 2026-10-20).
+(2026-09-03, 2026-10-20); the Bookman widths live in the
+`font-bookman-old-style-alias` truth fixture.
 
 ## CJK fallback
 
@@ -197,6 +209,30 @@ Tamil-letter ratio (`tools/build-tamil-font.py`; shaped sentence R vs Latha
 (upstream Noto Sans Tamil has none); Latin falls through the chain. Renamed
 per OFL ("Noto" is a Reserved Font Name; advances are modified).
 
+## Thai fallback
+
+| Font                                   | Role                                                    |
+| -------------------------------------- | ------------------------------------------------------- |
+| GenOffice Cordia (Regular/Bold woff2)  | Cordia New-metric stand-in for Thai families Word lacks |
+| GenOffice Sarabun (Regular/Bold woff2) | TH SarabunPSK-metric stand-in (Word ships that face)    |
+
+Word for Mac ships Cordia New and TH SarabunPSK in its DFonts and substitutes
+Cordia New for every other Thai family (TH SarabunIT9, Angsana New, the UPC
+faces...; probe 2026-11-03, doc2docx sample 059: 16pt text paces 18.4pt =
+Cordia New hhea 1.147). macOS has neither, and Chromium's Thonburi fallback
+advances ~1.75x wider at a 1em design size, so Thai documents wrapped early and
+overflowed pages. `tools/build-thai-font.py` takes Noto Sans Thai Regular/Bold
+(OFL) and fits each glyph to the Word face: outlines scaled horizontally to the
+Word advance of their code point (variants and ligatures follow the code points
+in their glyph names, marks the median letter factor), one vertical factor
+(median consonant ink height, ~0.72) down to the small Thai design size, GPOS
+mark/mkmk anchors moved with their glyph, `kern` and hinting dropped, advances
+and vertical metrics from the Word face. The Latin repertoire is Liberation Sans
+size-adjusted to the Word face's Latin advances (family manifests
+`genoffice-cordia.json` / `genoffice-sarabun.json`). Renamed per OFL 1.1 ("Noto"
+is a Reserved Font Name). `tests/thai-font-metrics.test.ts` holds the advance
+and ink contract; the line factors (1.147 / 1.31) live in `line-factors.json`.
+
 ## Bengali fallback
 
 | Font                      | Role                                         |
@@ -246,3 +282,24 @@ tofu boxes for AI-residue PUA tokens, while Word — and chains headed by the
 bundled CJK subsets, whose subsetted `.notdef` is blank — show nothing. This
 face sits in the Aptos chain and behind the range-limited `Noto Sans/Serif
 CJK GO` aliases so PUA stays invisible there too.
+
+## Outline format
+
+Every bundled face carries TrueType (glyf) outlines. Chromium's PDF backend
+(Skia, `printToPDF`) cannot embed CFF-flavoured faces: each glyph drawn with
+one lands in the exported PDF as a Type3 path procedure instead of an embedded
+font (no font name in the viewer, unreliable text selection and search).
+Noto Sans/Serif CJK SC and the three Noto-derived KR faces (GenOffice Sans KR,
+GenOffice Serif KR, GenOffice Che Latin KR) come from CFF sources, so the last
+build step for them is `tools/convert-cff-to-glyf.py`: cu2qu at 1 font unit,
+glyph order, cmap, advances, OS/2, hhea/vhea, name and layout tables carried
+over byte for byte (the script asserts it), VORG dropped with each vertical
+origin kept in vmtx. Only outlines change, so the OFL Reserved Font Name
+"Source" (not part of any shipped family name) stays unused.
+
+`tools/scale-kr-sans-latin-ink.py` and `tools/build-kr-che-latin-font.py`
+edit CFF charstrings: run them on a CFF build, then convert. Those charstrings
+also carried their own widths, which no longer matched the normalized hmtx
+(hangul 0.92em, `A` 1.275em in GenOffice Sans KR). Chromium on Windows
+measured the CFF faces with those widths (probe 2026-10-31) while macOS used
+hmtx; glyf has no widths of its own, so hmtx now holds on every platform.

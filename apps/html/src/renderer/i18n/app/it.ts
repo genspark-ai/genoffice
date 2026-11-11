@@ -72,6 +72,7 @@ export const it = {
   openExternal: 'Link aperto nel browser',
   save: 'Salva (⌘S)',
   saveAs: 'Salva con nome…',
+  aiNameFile: 'Assegna un nome con IA…',
   ribbonCollapse: 'Riduci a icona la barra multifunzione',
   ribbonExpand: 'Espandi la barra multifunzione',
   ribbonGroupInsert: 'Inserisci',

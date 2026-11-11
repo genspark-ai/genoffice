@@ -10,10 +10,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::archive::{
-    EntryContent, archive_manifest, read_entries_to_dir, save_archive, scan_entries_for_text,
+    EntryContent, StreamPatchEntry, archive_manifest, read_entries_to_dir, save_archive,
+    scan_entries_for_text,
 };
 use crate::find::FindCellsRequest;
-use crate::recalc::{RecalcCache, RecalcEdit, RecalcRead, recalc_cells};
+use crate::recalc::{RecalcCache, RecalcEdit, RecalcRead, recalc_cells_reporting};
 use crate::{CellRange, SidecarError, THREADS, WorkbookSessions};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -96,12 +97,40 @@ pub enum Command {
         replacements: Vec<EntryContent>,
         removals: Vec<String>,
         additions: Vec<EntryContent>,
+        /// Oversized entries rewritten by the streaming cell-upsert pass.
+        #[serde(default)]
+        stream_patches: Vec<StreamPatchEntry>,
     },
     #[serde(rename_all = "camelCase")]
     RecalcCells {
         path: PathBuf,
+        #[serde(default)]
         edits: Vec<RecalcEdit>,
+        #[serde(default)]
         reads: Vec<RecalcRead>,
+        /// Also report formula cells whose cached `<v>` disagrees with the
+        /// engine's computed value (the host refreshes them on save), plus
+        /// array spill cells it cannot refresh. Omitted from the answer when
+        /// the engine skips the audit (a `date1904` workbook): the result then
+        /// carries `auditSkipped` with the reason instead.
+        #[serde(default)]
+        report_stale: bool,
+    },
+    #[serde(rename_all = "camelCase")]
+    UpdateExternalLinks {
+        path: PathBuf,
+    },
+    #[serde(rename_all = "camelCase")]
+    ReadExternalLinks {
+        path: PathBuf,
+    },
+    #[serde(rename_all = "camelCase")]
+    ListExternalLinks {
+        path: PathBuf,
+    },
+    #[serde(rename_all = "camelCase")]
+    ReadExternalLinkUsage {
+        path: PathBuf,
     },
 }
 
@@ -222,13 +251,16 @@ impl RecalcWorker {
         path: &PathBuf,
         edits: &[RecalcEdit],
         reads: &[RecalcRead],
+        report_stale: bool,
     ) -> Response {
         let mut cache = self
             .cache
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         self.drain_purges(&mut cache);
-        let response = match recalc_cells(&mut cache, path, edits, reads).and_then(to_json_value) {
+        let response = match recalc_cells_reporting(&mut cache, path, edits, reads, report_stale)
+            .and_then(to_json_value)
+        {
             Ok(value) => Response::success(request_id, value),
             Err(error) => Response::from_error(request_id, error),
         };
@@ -249,10 +281,11 @@ impl RecalcWorker {
         path: PathBuf,
         edits: Vec<RecalcEdit>,
         reads: Vec<RecalcRead>,
+        report_stale: bool,
         output: &SharedOutput,
     ) -> Option<Response> {
         if !THREADS {
-            return Some(self.run(request_id, &path, &edits, &reads));
+            return Some(self.run(request_id, &path, &edits, &reads, report_stale));
         }
         if self
             .busy
@@ -276,7 +309,7 @@ impl RecalcWorker {
             .name("xlsx-recalc".into())
             .spawn(move || {
                 let reset = BusyReset(Arc::clone(&worker.busy));
-                let response = worker.run(request_id, &path, &edits, &reads);
+                let response = worker.run(request_id, &path, &edits, &reads, report_stale);
                 // Clear busy before replying: a sequential caller issues its
                 // next recalc the moment the response lands, and hitting the
                 // still-set flag bounced it with recalc_busy.
@@ -593,6 +626,7 @@ pub fn handle_request(
             replacements,
             removals,
             additions,
+            stream_patches,
         } => {
             // The saved bytes supersede any resident formula model for the
             // target. The source is only read, so its warm model stays valid;
@@ -607,11 +641,30 @@ pub fn handle_request(
                 &replacements,
                 &removals,
                 &additions,
+                &stream_patches,
             )
             .and_then(to_json_value)
         }
-        Command::RecalcCells { path, edits, reads } => {
-            return recalc.dispatch(request_id, path, edits, reads, output);
+        Command::RecalcCells {
+            path,
+            edits,
+            reads,
+            report_stale,
+        } => {
+            return recalc.dispatch(request_id, path, edits, reads, report_stale, output);
+        }
+        Command::UpdateExternalLinks { path } => {
+            crate::external_links::update_external_link_values(&path).and_then(to_json_value)
+        }
+        Command::ReadExternalLinks { path } => {
+            crate::external_links::read_external_link_statuses(&path).and_then(to_json_value)
+        }
+        Command::ListExternalLinks { path } => {
+            crate::external_links::list_external_link_statuses(&path).and_then(to_json_value)
+        }
+        Command::ReadExternalLinkUsage { path } => {
+            crate::external_links::read_external_link_usage(&path)
+                .and_then(|links| to_json_value(serde_json::json!({ "links": links })))
         }
     };
     Some(match result {
@@ -702,7 +755,7 @@ mod tests {
         let in_flight = InFlightRequest::new();
         let output: SharedOutput = Arc::new(Mutex::new(BufWriter::new(io::stdout())));
 
-        let first = expect_ok(recalc.run("r".into(), &source, &[], &recalc_reads()));
+        let first = expect_ok(recalc.run("r".into(), &source, &[], &recalc_reads(), false));
         assert_eq!(first["cached"], serde_json::json!(false));
 
         let save = serde_json::json!({
@@ -727,8 +780,41 @@ mod tests {
             .unwrap(),
         );
 
-        let second = expect_ok(recalc.run("r2".into(), &source, &[], &recalc_reads()));
+        let second = expect_ok(recalc.run("r2".into(), &source, &[], &recalc_reads(), false));
         assert_eq!(second["cached"], serde_json::json!(true));
+    }
+
+    /// The usage scan answers in the listing's `{ links }` envelope the
+    /// preload parser expects.
+    #[test]
+    fn external_link_usage_response_wraps_the_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.xlsx");
+        crate::external_links::tests::write_dependent_fixture(&path, "gone.xlsx");
+        let mut sessions = WorkbookSessions::new();
+        let recalc = RecalcWorker::new();
+        let in_flight = InFlightRequest::new();
+        let output: SharedOutput = Arc::new(Mutex::new(BufWriter::new(io::stdout())));
+        let request = serde_json::json!({
+            "version": 1,
+            "requestId": "u",
+            "command": "read_external_link_usage",
+            "path": path,
+        });
+        let result = expect_ok(
+            handle_line(
+                &request.to_string(),
+                &mut sessions,
+                &recalc,
+                &CancelledRequests::new(),
+                &in_flight,
+                &output,
+            )
+            .unwrap(),
+        );
+        let links = result["links"].as_array().unwrap();
+        assert_eq!(links[0]["index"], serde_json::json!(1));
+        assert_eq!(links[0]["cells"][0]["sheet"], serde_json::json!("Sheet1"));
     }
 
     /// A cancel marks its target; the target is then skipped unexecuted, and
@@ -875,9 +961,9 @@ mod tests {
         write_workbook(&source);
         let recalc = RecalcWorker::new();
 
-        expect_ok(recalc.run("r".into(), &source, &[], &recalc_reads()));
+        expect_ok(recalc.run("r".into(), &source, &[], &recalc_reads(), false));
         recalc.queue_purge(&source);
-        let second = expect_ok(recalc.run("r2".into(), &source, &[], &recalc_reads()));
+        let second = expect_ok(recalc.run("r2".into(), &source, &[], &recalc_reads(), false));
         assert_eq!(second["cached"], serde_json::json!(false));
     }
 
@@ -890,10 +976,10 @@ mod tests {
         write_workbook(&source);
         let recalc = RecalcWorker::new();
 
-        expect_ok(recalc.run("r".into(), &source, &[], &recalc_reads()));
+        expect_ok(recalc.run("r".into(), &source, &[], &recalc_reads(), false));
         recalc.purge_now_or_queue(&source);
         assert!(recalc.pending_purges.lock().unwrap().is_empty());
-        let second = expect_ok(recalc.run("r2".into(), &source, &[], &recalc_reads()));
+        let second = expect_ok(recalc.run("r2".into(), &source, &[], &recalc_reads(), false));
         assert_eq!(second["cached"], serde_json::json!(false));
     }
 
@@ -928,7 +1014,14 @@ mod tests {
 
         recalc.busy.store(true, Ordering::Release);
         let response = recalc
-            .dispatch("r".into(), source, Vec::new(), recalc_reads(), &output)
+            .dispatch(
+                "r".into(),
+                source,
+                Vec::new(),
+                recalc_reads(),
+                false,
+                &output,
+            )
             .unwrap();
         assert!(!response.ok);
         assert_eq!(response.error.unwrap().code, "recalc_busy");

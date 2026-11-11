@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/table-style-ppr-spacing/probe.docx",
+  "tables": 1,
+  "hashes": ["0aa006bfaac6d2a7"],
+  "staticTables": 1,
+  "staticHashes": ["c11267c0703b3fb8"]
+}
