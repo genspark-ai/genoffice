@@ -1,16 +1,20 @@
 import JSZip from 'jszip'
-import type { PptPresentation, PptSlideText } from './ppt'
+import type { PptPresentation, PptSlide, PptSlideText } from './ppt'
+import { FSP, OPT, SHAPE_PRESETS, type EscherRect, type PptImage, type PptShape } from './escher'
+import { applyCharacterRuns, type TextCharFormat, type TextStyle } from './text-style'
 
 /**
- * The minimal OOXML presentation the conversion lands in: one slide per
- * PPT slide, each text sequence as its own editable text box stacked down
- * the slide (stage 1 carries editable text, not the original geometry —
- * the Escher anchors are a later stage), with the master/layout skeleton
- * PowerPoint requires before it opens anything.
+ * The OOXML presentation the conversion lands in. Stage 1 stacked every text
+ * sequence down the slide; stage 3 uses the Escher anchors when a drawing
+ * carries them, applies StyleTextProp runs to the text, emits embedded PNG /
+ * JPEG blips as <p:pic> shapes and reproduces the main master's shapes. A deck
+ * without anchors still takes the stage-1 fallback, so no text is ever lost.
  */
 
 /** PowerPoint measures the slide surface in 1/576-inch master units. */
 const EMU_PER_MASTER_UNIT = 914400 / 576
+
+const EMPTY_STYLE: TextStyle = { paragraphs: [], characters: [] }
 
 function xmlLegal(ch: string): boolean {
   const c = ch.codePointAt(0)!
@@ -29,34 +33,112 @@ function escapeXml(text: string): string {
 
 const TITLE_KINDS = new Set([0, 6]) // 5 is the subtitle
 
-/**
- * one text sequence → a text box stacked down the slide. `id` is the shape's
- * cNvPr id: unique per spTree (the group shape itself is 1).
- */
-function textShape(
-  sequence: PptSlideText,
-  slideWidthEmu: number,
-  slot: number,
-  slots: number,
-  id: number,
-): string {
-  const isTitle = TITLE_KINDS.has(sequence.kind)
+interface Box {
+  x: number
+  y: number
+  cx: number
+  cy: number
+}
+
+function boxOf(rect: EscherRect): Box {
+  const x = Math.round(rect.left * EMU_PER_MASTER_UNIT)
+  const y = Math.round(rect.top * EMU_PER_MASTER_UNIT)
+  return {
+    x,
+    y,
+    cx: Math.max(1, Math.round((rect.right - rect.left) * EMU_PER_MASTER_UNIT)),
+    cy: Math.max(1, Math.round((rect.bottom - rect.top) * EMU_PER_MASTER_UNIT)),
+  }
+}
+
+/** stage-1 fallback for text with no anchor */
+function stackedBox(slideWidthEmu: number, slot: number, slots: number): Box {
   const margin = 457200 // 0.5 in
-  const boxWidth = slideWidthEmu - margin * 2
-  const boxHeight = Math.max(
+  const height = Math.max(
     600000,
     Math.floor((slideWidthEmu - margin * 2) / Math.max(slots, 1) / 1.6),
   )
-  const top = margin + slot * boxHeight
-  const paragraphs = sequence.text
-    .split('\n')
+  return { x: margin, y: margin + slot * height, cx: slideWidthEmu - margin * 2, cy: height }
+}
+
+function colorHex(value: number | undefined): string | null {
+  if (value === undefined || (value & 0x19000000) !== 0) return null
+  const channel = (shift: number): string => ((value >> shift) & 0xff).toString(16).padStart(2, '0')
+  return (channel(0) + channel(8) + channel(16)).toUpperCase()
+}
+
+function xfrmXml(box: Box, shape: PptShape): string {
+  const flipH = (shape.flags & FSP.flipH) !== 0 ? ' flipH="1"' : ''
+  const flipV = (shape.flags & FSP.flipV) !== 0 ? ' flipV="1"' : ''
+  return `<a:xfrm${flipH}${flipV}><a:off x="${box.x}" y="${box.y}"/><a:ext cx="${box.cx}" cy="${box.cy}"/></a:xfrm>`
+}
+
+function shapeFillXml(shape: PptShape): string {
+  const fill = colorHex(shape.props.get(OPT.fillColor))
+  if (!fill) return ''
+  return `<a:solidFill><a:srgbClr val="${fill}"/></a:solidFill>`
+}
+
+function shapeLineXml(shape: PptShape): string {
+  const line = colorHex(shape.props.get(OPT.lineColor))
+  const width = shape.props.get(OPT.lineWidth)
+  if (!line && width === undefined) return ''
+  return (
+    `<a:ln${width !== undefined ? ` w="${Math.max(0, Math.min(width, 1_000_000))}"` : ''}>` +
+    (line ? `<a:solidFill><a:srgbClr val="${line}"/></a:solidFill>` : '') +
+    '</a:ln>'
+  )
+}
+
+function runXml(text: string, format: TextCharFormat | null, isTitle: boolean): string {
+  const size = format?.sizePt ? format.sizePt * 100 : isTitle ? 3200 : 1800
+  const attrs = [
+    'lang="en-US"',
+    `sz="${size}"`,
+    ...(format?.bold ? ['b="1"'] : []),
+    ...(format?.italic ? ['i="1"'] : []),
+    ...(format?.underline ? ['u="sng"'] : []),
+  ].join(' ')
+  const fill = format?.color ? `<a:solidFill><a:srgbClr val="${format.color}"/></a:solidFill>` : ''
+  return `<a:r><a:rPr ${attrs}>${fill}</a:rPr><a:t>${escapeXml(text)}</a:t></a:r>`
+}
+
+/** Split text into paragraphs, keeping each character run's formatting. */
+function paragraphsXml(
+  text: string,
+  style: TextStyle,
+  isTitle: boolean,
+  align: 'l' | 'ctr' | 'r' | 'just' | null,
+): string {
+  const runs = applyCharacterRuns(text, style.characters)
+  const paragraphs: Array<Array<{ text: string; format: TextCharFormat | null }>> = [[]]
+  for (const run of runs) {
+    const parts = run.text.split('\n')
+    parts.forEach((part, index) => {
+      if (index > 0) paragraphs.push([])
+      if (part !== '') paragraphs[paragraphs.length - 1]!.push({ text: part, format: run.format })
+    })
+  }
+  const pPr = `<a:pPr algn="${align ?? 'l'}"/>`
+  return paragraphs
     .map(
-      (line) =>
-        '<a:p><a:pPr algn="l"/>' +
-        `<a:r><a:rPr lang="en-US" sz="${isTitle ? 3200 : 1800}"${isTitle ? ' b="1"' : ''}/>` +
-        `<a:t>${escapeXml(line)}</a:t></a:r></a:p>`,
+      (paragraph) =>
+        `<a:p>${pPr}${paragraph.map((r) => runXml(r.text, r.format, isTitle)).join('')}</a:p>`,
     )
     .join('')
+}
+
+interface ShapeText {
+  kind: number
+  text: string
+  style: TextStyle
+  align: 'l' | 'ctr' | 'r' | 'just' | null
+}
+
+function spXml(shape: PptShape, text: ShapeText | null, box: Box, id: number): string {
+  const isTitle = text !== null && TITLE_KINDS.has(text.kind)
+  const preset = SHAPE_PRESETS[shape.shapeType] ?? 'rect'
+  const body = text ? paragraphsXml(text.text, text.style, isTitle, text.align) : '<a:p/>'
   return (
     '<p:sp>' +
     '<p:nvSpPr>' +
@@ -65,45 +147,167 @@ function textShape(
       ? '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr>'
       : '<p:cNvSpPr/><p:nvPr/>') +
     '</p:nvSpPr>' +
-    '<p:spPr>' +
-    `<a:xfrm><a:off x="${margin}" y="${top}"/><a:ext cx="${boxWidth}" cy="${boxHeight}"/></a:xfrm>` +
-    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>' +
+    `<p:spPr>${xfrmXml(box, shape)}<a:prstGeom prst="${preset}"><a:avLst/></a:prstGeom>` +
+    shapeFillXml(shape) +
+    shapeLineXml(shape) +
     '</p:spPr>' +
-    `<p:txBody><a:bodyPr/><a:lstStyle/>${paragraphs}</p:txBody>` +
+    `<p:txBody><a:bodyPr/><a:lstStyle/>${body}</p:txBody>` +
     '</p:sp>'
   )
 }
+
+function picXml(shape: PptShape, box: Box, id: number, relId: string): string {
+  return (
+    '<p:pic>' +
+    '<p:nvPicPr>' +
+    `<p:cNvPr id="${id}" name=""/>` +
+    '<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/>' +
+    '</p:nvPicPr>' +
+    `<p:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
+    `<p:spPr>${xfrmXml(box, shape)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>` +
+    '</p:pic>'
+  )
+}
+
+/** One slide's spTree shapes plus its image relationships. */
+function slideShapes(
+  slide: PptSlide,
+  slideWidthEmu: number,
+  images: Array<PptImage | null>,
+): { xml: string; rels: Array<{ id: string; imageIndex: number }> } {
+  const rels: Array<{ id: string; imageIndex: number }> = []
+  const parts: string[] = []
+  let id = 2 // the spTree's group shape is 1
+  let slot = 0
+
+  const shapes = slide.shapes
+  if (shapes.length === 0) {
+    const slots = Math.max(slide.textSequences.length, 1)
+    for (const sequence of slide.textSequences) {
+      parts.push(
+        spXml(
+          {
+            spid: 0,
+            shapeType: 202,
+            flags: 0,
+            rect: null,
+            props: new Map(),
+            text: null,
+            blipIndex: null,
+          },
+          { kind: sequence.kind, text: sequence.text, style: EMPTY_STYLE, align: null },
+          stackedBox(slideWidthEmu, slot++, slots),
+          id++,
+        ),
+      )
+    }
+    return { xml: parts.join(''), rels }
+  }
+
+  // Outline text (SlideListWithText) has no atom inside its ClientTextbox;
+  // give those shapes their text in outline order, then stack any remainder.
+  const used = new Set(
+    shapes.map((shape) => shape.text?.text).filter((text): text is string => !!text),
+  )
+  const leftover = slide.textSequences.filter((sequence) => !used.has(sequence.text))
+  let outlineAt = 0
+  const emit = (shape: PptShape, text: ShapeText | null, box: Box): void => {
+    const image = shape.blipIndex === null ? null : (images[shape.blipIndex - 1] ?? null)
+    if (image) {
+      const relId = `rId${rels.length + 2}`
+      rels.push({ id: relId, imageIndex: shape.blipIndex! - 1 })
+      parts.push(picXml(shape, box, id++, relId))
+    } else {
+      parts.push(spXml(shape, text, box, id++))
+    }
+  }
+
+  for (const shape of shapes) {
+    let text: ShapeText | null = shape.text
+    if (!text && outlineAt < leftover.length) {
+      const sequence: PptSlideText = leftover[outlineAt++]!
+      text = { kind: sequence.kind, text: sequence.text, style: EMPTY_STYLE, align: null }
+    }
+    const box = shape.rect
+      ? boxOf(shape.rect)
+      : stackedBox(slideWidthEmu, slot++, Math.max(shapes.length, 1))
+    emit(shape, text, box)
+  }
+  while (outlineAt < leftover.length) {
+    const sequence = leftover[outlineAt++]!
+    emit(
+      {
+        spid: 0,
+        shapeType: 202,
+        flags: 0,
+        rect: null,
+        props: new Map(),
+        text: null,
+        blipIndex: null,
+      },
+      { kind: sequence.kind, text: sequence.text, style: EMPTY_STYLE, align: null },
+      stackedBox(slideWidthEmu, slot++, Math.max(shapes.length + leftover.length, 1)),
+    )
+  }
+  return { xml: parts.join(''), rels }
+}
+
+const spTreeHead =
+  '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>' +
+  '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
 
 export async function writePptxPresentation(presentation: PptPresentation): Promise<Uint8Array> {
   const zip = new JSZip()
   const slideWidthEmu = Math.round(presentation.slideWidth * EMU_PER_MASTER_UNIT)
   const slideHeightEmu = Math.round(presentation.slideHeight * EMU_PER_MASTER_UNIT)
+  const images = presentation.images
 
-  const slideXmls = presentation.slides.map((slide) => {
-    const shapes = slide.textSequences
-      .map((sequence, slot) =>
-        // ids start at 2: the spTree's own group shape is 1 and ids must be unique
-        textShape(sequence, slideWidthEmu, slot, Math.max(slide.textSequences.length, 1), slot + 2),
-      )
-      .join('')
+  // Media parts, named by their 1-based blip index
+  images.forEach((image, index) => {
+    if (image) zip.file(`ppt/media/image${index + 1}.${image.ext}`, image.bytes)
+  })
+
+  const slideRels: string[] = []
+  const slideXmls = presentation.slides.map((slide, index) => {
+    const { xml: shapes, rels } = slideShapes(slide, slideWidthEmu, images)
+    const relations =
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>' +
+      rels
+        .map(
+          (rel) =>
+            `<Relationship Id="${rel.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${rel.imageIndex + 1}.${images[rel.imageIndex]!.ext}"/>`,
+        )
+        .join('')
+    slideRels[index] =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      relations +
+      '</Relationships>'
     return (
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
       'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
       'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">' +
-      '<p:cSld><p:spTree>' +
-      '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>' +
-      '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>' +
-      shapes +
-      '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>'
+      `<p:cSld><p:spTree>${spTreeHead}${shapes}</p:spTree></p:cSld>` +
+      '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>'
     )
   })
 
+  const imageDefaults = [
+    ...new Set(images.filter((i): i is PptImage => i !== null).map((i) => i.ext)),
+  ]
+    .map((ext) =>
+      ext === 'png'
+        ? '<Default Extension="png" ContentType="image/png"/>'
+        : '<Default Extension="jpg" ContentType="image/jpeg"/>',
+    )
+    .join('')
   const contentTypes =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
     '<Default Extension="xml" ContentType="application/xml"/>' +
+    imageDefaults +
     '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>' +
     slideXmls
       .map(
@@ -150,24 +354,20 @@ export async function writePptxPresentation(presentation: PptPresentation): Prom
       .join('') +
     '</Relationships>'
   zip.file('ppt/_rels/presentation.xml.rels', presentationRels)
+  slideRels.forEach((rels, i) => zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, rels))
 
-  const slideRels = (): string =>
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>` +
-    '</Relationships>'
-  slideXmls.forEach((_s, i) => zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, slideRels()))
-
-  // the master and layout skeletons: a blank master with the title/body
-  // placeholder tree, one layout pointing back
+  // the main master's anchored shapes are inherited by every slide
+  const masterShapes = (presentation.master?.shapes ?? [])
+    .filter((shape) => shape.rect !== null && shape.blipIndex === null)
+    .map((shape, index) => spXml(shape, shape.text, boxOf(shape.rect!), index + 2))
+    .join('')
   zip.file(
     'ppt/slideMasters/slideMaster1.xml',
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
       'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
       'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">' +
-      '<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>' +
-      '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld>' +
+      `<p:cSld><p:spTree>${spTreeHead}${masterShapes}</p:spTree></p:cSld>` +
       '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>' +
       '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>' +
       '</p:sldMaster>',
@@ -197,6 +397,6 @@ export async function writePptxPresentation(presentation: PptPresentation): Prom
       '</Relationships>',
   )
 
-  slideXmls.forEach((_s, i) => zip.file(`ppt/slides/slide${i + 1}.xml`, slideXmls[i]!))
+  slideXmls.forEach((xml, i) => zip.file(`ppt/slides/slide${i + 1}.xml`, xml))
   return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
 }

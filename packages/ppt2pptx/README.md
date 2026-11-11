@@ -11,6 +11,33 @@ Legacy PowerPoint 97-2003 import: parse `.ppt` (OLE2/CFB + MS-PPT records) and r
 - an explicit error model (`LegacyPptError`, stable codes, including `encrypted`)
 - a regression test on the in-repo real deck `packages/file-parse/tests/fixtures/legacy-sample.ppt` (plus the byte builder for the change-directory cases)
 
+## Stage 3 carries
+
+- **Escher geometry**: `OfficeArtChildAnchor` / `OfficeArtClientAnchor` rects
+  (master units, 576/inch) become real `<a:xfrm>` offsets and extents, FSP
+  shape types become DrawingML presets, FSP flags carry horizontal/vertical
+  flips, and the shape's OPT table supplies fill/line colors and line width.
+  A shape with no anchor still takes the stage-1 stacked fallback, so no text
+  is lost.
+- **StyleTextProp formatting**: `StyleTextPropAtom` (0x0FA5) paragraph and
+  character run tables are decoded per the MS-PPT masks and mapped to
+  `<a:pPr algn>` and `<a:rPr>` (bold, italic, underline, point size, RGB
+  color). Outline-referenced text boxes receive their SlideListWithText text.
+- **Pictures**: embedded PNG/JPEG blips from the global BStore's FBSE entries
+  (or the `Pictures` stream when `foDelay` points there) are written as
+  `ppt/media/imageN.*` with `<p:pic>`, slide relationships and content types.
+  Unsupported kinds are omitted with a warning.
+- **Masters**: the `MainMasterContainer`'s anchored shapes are reproduced in
+  `slideMaster1.xml`, so every slide's layout inherits them.
+
+The parse model (`PptPresentation`, `parsePptPresentation`) now exposes
+`slides[].shapes`, `images` and `master` for callers; the third argument of
+`parsePptPresentation` (the Pictures stream) is optional, so stage-1 callers
+and the hostile-input fuzz are unaffected.
+
 ## Not carried yet
 
-shape geometry (the Escher anchors), text run formatting (StyleTextProp), images, masters, notes. Stage 1 stacks each slide's text boxes down the surface — editable and complete in words, not in layout.
+Shape rotation, metafile/EMF/WMF/TIFF/DIB/PICT blips, font-face resolution
+from the FontCollection, bullets and numbering, tab stops, grouped shapes,
+placeholder inheritance semantics and notes. Stage 3 keeps the geometry and
+formatting it can prove from the bytes; the rest remains stacked text.

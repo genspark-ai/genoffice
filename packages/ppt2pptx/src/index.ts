@@ -4,6 +4,8 @@ import { writePptxPresentation } from './pptx-writer'
 
 export { LegacyPptError, LEGACY_PPT_ERROR_CODES, type LegacyPptErrorCode } from './errors'
 export type { PptPresentation, PptSlide, PptSlideText } from './ppt'
+export type { PptShape, PptImage, PptMaster, EscherRect } from './escher'
+export type { TextCharFormat, TextParagraphFormat, TextStyle } from './text-style'
 export { parsePptPresentation } from './ppt'
 
 export interface PptConversionResult {
@@ -15,19 +17,23 @@ export interface PptConversionResult {
 }
 
 /**
- * Legacy .ppt → .pptx, stage 1: editable text. Every slide's text sequences
- * (titles, bodies, notes-flagged others) become real text boxes on a real
- * slide, in the deck's order and slide size. Geometry (the Escher anchors),
- * formatting (StyleTextProp), images and masters are later stages; stage 1
- * stacks each slide's text boxes down the surface. The foundation the CLI
- * and the Slides open flow wire up in the following stages.
+ * Legacy .ppt → .pptx. Stage 1 made every text sequence editable; stage 3
+ * carries the Escher anchors (shape position/size, type and flips),
+ * StyleTextProp character/paragraph runs, embedded PNG/JPEG pictures and
+ * the main master's shapes. Text with no anchor still uses the stage-1
+ * stacked layout, so a deck without a drawing keeps its old output.
  */
 export async function convertPptToPptx(bytes: Uint8Array): Promise<PptConversionResult> {
   const container = openPptContainer(bytes)
-  const presentation = parsePptPresentation(container.document, container.currentUser)
+  const presentation = parsePptPresentation(
+    container.document,
+    container.currentUser,
+    container.pictures,
+  )
   const out = await writePptxPresentation(presentation)
   const warnings: string[] = []
-  warnings.push('shapes land as stacked text boxes; the original geometry is a later stage')
-  warnings.push('text formatting (runs, indents, autofit) is a later stage')
+  const unreadable = presentation.images.filter((image) => image === null).length
+  if (unreadable > 0) warnings.push(`${unreadable} picture(s) use a format stage 3 does not carry`)
+  warnings.push('shape rotation and metafile pictures are not carried')
   return { bytes: out, slideCount: presentation.slides.length, warnings }
 }

@@ -1,5 +1,13 @@
 import { LegacyPptError } from './errors'
 import {
+  imagesOf,
+  masterOf,
+  shapesOf,
+  type PptImage,
+  type PptMaster,
+  type PptShape,
+} from './escher'
+import {
   PPT_TYPES,
   type PptRecord,
   decodeTextBytes,
@@ -39,6 +47,8 @@ export interface PptSlideText {
 
 export interface PptSlide {
   textSequences: PptSlideText[]
+  /** stage 3: the Escher shapes with their anchors, styling and blip refs */
+  shapes: PptShape[]
 }
 
 export interface PptPresentation {
@@ -46,6 +56,10 @@ export interface PptPresentation {
   /** slide surface in master units (576 per inch) */
   slideWidth: number
   slideHeight: number
+  /** stage 3: embedded pictures, indexed by OPT_PIB (1-based) */
+  images: Array<PptImage | null>
+  /** stage 3: the main master's shapes, inherited by every slide */
+  master: PptMaster | null
 }
 
 /**
@@ -170,6 +184,8 @@ function readPersistDirectory(
 export function parsePptPresentation(
   document: Uint8Array,
   currentUser: Uint8Array | null,
+  /** the Pictures stream, when the deck has one (optional for callers) */
+  pictures: Uint8Array | null = null,
 ): PptPresentation {
   const { directory, docPersistId } = buildPersistChain(document, currentUser)
   const chained = directory.size > 0
@@ -281,7 +297,17 @@ export function parsePptPresentation(
       slides.push(parseSlide(document, record, outline))
     }
   }
-  return { slides, slideWidth, slideHeight }
+  return {
+    slides,
+    slideWidth,
+    slideHeight,
+    images: imagesOf(document, pictures),
+    master: masterOf(
+      document,
+      documentRecord.offset,
+      documentRecord.offset + documentRecord.length,
+    ),
+  }
 }
 
 /** One slide's text: its outline entries first (title/body), then its own text boxes. */
@@ -303,7 +329,10 @@ function parseSlide(
   }
   for (const sequence of outline) push(sequence)
   for (const sequence of textBoxesOf(document, slideRecord)) push(sequence)
-  return { textSequences }
+  return {
+    textSequences,
+    shapes: shapesOf(document, slideRecord.offset, slideRecord.offset + slideRecord.length),
+  }
 }
 
 /**

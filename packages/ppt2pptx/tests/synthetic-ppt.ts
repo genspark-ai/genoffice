@@ -8,8 +8,42 @@ import * as CFB from 'cfb'
  * exercise the reader against bytes whose content is known exactly.
  */
 
+export interface CharRunSpec {
+  count: number
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  size?: number
+  color?: [number, number, number]
+}
+
+export interface ShapeSpec {
+  /** [left, top, right, bottom] in master units; absent = no anchor */
+  rect?: [number, number, number, number]
+  /** msospt* shape type (1 rect, 3 ellipse, 75 picture, 202 text box) */
+  shapeType?: number
+  text?: string
+  kind?: number
+  atom?: 'chars' | 'bytes'
+  /** text lives in SlideListWithText; the shape carries an OutlineTextRefAtom */
+  outlineRef?: boolean
+  blipIndex?: number
+  fillColor?: number
+  lineColor?: number
+  flags?: number
+  charRuns?: CharRunSpec[]
+  /** TextAlignmentEnum: 0 left, 1 center, 2 right, 3 justify */
+  paragraphAlign?: number
+}
+
+export interface MasterSpec {
+  shapes: ShapeSpec[]
+}
+
 export interface SlideSpec {
   textSequences: Array<{ kind: number; text: string; atom?: 'chars' | 'bytes' }>
+  /** stage 3: explicit Escher shapes; absent = stage-1 text boxes */
+  shapes?: ShapeSpec[]
 }
 
 export interface BuildOptions {
@@ -25,6 +59,10 @@ export interface BuildOptions {
   outlineTexts?: boolean
   /** write the password-protected CurrentUserAtom headerToken (0xF3D1C4DF) */
   encrypted?: boolean
+  /** PNG bytes, one per 1-based blip index, embedded in a global BStore */
+  images?: Uint8Array[]
+  /** a MainMasterContainer whose anchored shapes the deck inherits */
+  master?: MasterSpec
 }
 
 const record = (type: number, payload: Uint8Array, instance = 0, version = 0): Uint8Array => {
@@ -68,6 +106,47 @@ const textBytes = (text: string): Uint8Array =>
 
 const textHeader = (kind: number): Uint8Array => record(0x0f9f, u32(kind))
 
+const i32 = (value: number): Uint8Array => {
+  const out = new Uint8Array(4)
+  new DataView(out.buffer).setInt32(0, value, true)
+  return out
+}
+
+const u8 = (...values: number[]): Uint8Array => new Uint8Array(values)
+
+/** one OfficeArtFOPTE: pid (u16, complex bit clear) + value (u32) */
+const optEntry = (pid: number, value: number): Uint8Array => {
+  const out = new Uint8Array(6)
+  const v = new DataView(out.buffer)
+  v.setUint16(0, pid, true)
+  v.setUint32(2, value, true)
+  return out
+}
+
+/** StyleTextPropAtom: one paragraph run (optional alignment) + character runs. */
+function styleTextProp(spec: ShapeSpec, charCount: number): Uint8Array {
+  const paragraph: Uint8Array[] = [u32(charCount), u16(0)]
+  if (spec.paragraphAlign === undefined) {
+    paragraph.push(u32(0)) // PFMasks: no optional fields
+  } else {
+    paragraph.push(u32(1 << 11), u16(spec.paragraphAlign)) // PFMasks.align + textAlignment
+  }
+  const characters: Uint8Array[] = []
+  for (const run of spec.charRuns ?? []) {
+    const style = (run.bold ? 1 : 0) | (run.italic ? 2 : 0) | (run.underline ? 4 : 0)
+    let mask = 0
+    if (style !== 0) mask |= 0x07 // bold / italic / underline -> fontStyle exists
+    if (run.size !== undefined) mask |= 1 << 17
+    if (run.color !== undefined) mask |= 1 << 18
+    const fields: Uint8Array[] = [u32(run.count), u32(mask)]
+    if (style !== 0) fields.push(u16(style))
+    if (run.size !== undefined) fields.push(u16(run.size))
+    if (run.color !== undefined) fields.push(u8(...run.color, 0)) // ColorIndexStruct
+    characters.push(...fields)
+  }
+  return record(0x0fa5, concat([...paragraph, ...characters]), charCount)
+}
+
 /** OfficeArtClientTextbox with a Reference to the slide's outline text entry. */
 const outlineTextRef = (index: number): Uint8Array => record(0x0f9e, u32(index))
 
@@ -93,21 +172,83 @@ const escherContainer = (type: number, children: Uint8Array[]): Uint8Array =>
  * its text (five levels under the slide container), so the reader's deep walk
  * is what moves these bytes.
  */
+function shapeContainer(spec: ShapeSpec, index: number): Uint8Array {
+  const children: Uint8Array[] = []
+  const shapeType = spec.shapeType ?? 202
+  const flags = spec.flags ?? 0
+  children.push(escher(0xf00a, concat([u32(index + 2), u32(flags)]), shapeType))
+  if (spec.rect) children.push(escher(0xf00f, concat(spec.rect.map(i32))))
+  const opt: Uint8Array[] = []
+  if (spec.blipIndex !== undefined) opt.push(optEntry(0x0104, spec.blipIndex))
+  if (spec.fillColor !== undefined) opt.push(optEntry(0x0181, spec.fillColor))
+  if (spec.lineColor !== undefined) opt.push(optEntry(0x01c0, spec.lineColor))
+  if (opt.length > 0) children.push(escher(0xf00b, concat(opt), opt.length))
+  if (spec.text !== undefined) {
+    const atoms: Uint8Array[] = [textHeader(spec.kind ?? 4)]
+    if (spec.outlineRef) atoms.push(outlineTextRef(index))
+    else {
+      atoms.push(spec.atom === 'bytes' ? textBytes(spec.text) : textChars(spec.text))
+      if (spec.charRuns || spec.paragraphAlign !== undefined) {
+        atoms.push(styleTextProp(spec, [...spec.text].length))
+      }
+    }
+    children.push(escher(0xf00d, concat(atoms)))
+  }
+  return escherContainer(0xf004, children)
+}
+
+/** A slide's PPDrawing: DgContainer -> SpgrContainer -> SpContainers. */
 function drawing(spec: SlideSpec, outlineTexts: boolean): Uint8Array {
-  const shapes = spec.textSequences.map((sequence, index) => {
-    const atoms: Uint8Array[] = [textHeader(sequence.kind)]
-    if (outlineTexts) atoms.push(outlineTextRef(index))
-    else atoms.push(sequence.atom === 'bytes' ? textBytes(sequence.text) : textChars(sequence.text))
-    const textbox = escher(0xf00d, concat(atoms))
-    return escherContainer(0xf004, [textbox])
-  })
+  const shapes = spec.shapes
+    ? spec.shapes.map(shapeContainer)
+    : spec.textSequences.map((sequence, index) => {
+        const atoms: Uint8Array[] = [textHeader(sequence.kind)]
+        if (outlineTexts) atoms.push(outlineTextRef(index))
+        else
+          atoms.push(
+            sequence.atom === 'bytes' ? textBytes(sequence.text) : textChars(sequence.text),
+          )
+        const textbox = escher(0xf00d, concat(atoms))
+        return escherContainer(0xf004, [textbox])
+      })
   const spgr = escherContainer(0xf003, shapes)
   const dg = escherContainer(0xf002, [spgr])
   return escherContainer(0x040c, [dg])
 }
 
+/** One embedded OfficeArtBlipPNG: 16-byte UID, a tag byte, then the PNG data. */
+function embeddedPng(png: Uint8Array): Uint8Array {
+  return escher(0xf01e, concat([new Uint8Array(16), u8(0), png]))
+}
+
+/** OfficeArtDggContainer with a BStore of FBSE entries carrying embedded blips. */
+function drawingGroup(images: Uint8Array[]): Uint8Array {
+  const entries = images.map((png) => {
+    const blip = embeddedPng(png)
+    const header = concat([
+      u8(0, 0), // btWin32, btMacOS
+      new Uint8Array(16), // rgbUid
+      u16(0), // tag
+      u32(blip.length), // size
+      u32(1), // cRef
+      u32(0), // foDelay (no Pictures stream)
+      u8(0, 0, 0, 0), // unused1, cbName, unused2, unused3
+    ])
+    return escher(0xf007, concat([header, blip]))
+  })
+  return escherContainer(0xf000, [escherContainer(0xf001, entries)])
+}
+
 function slideContainer(spec: SlideSpec, outlineTexts: boolean): Uint8Array {
   return record(0x03ee, concat([slideAtom(), drawing(spec, outlineTexts)]), 0, 0xf)
+}
+
+/** MainMasterContainer: the master's own PPDrawing, inherited by every slide. */
+function masterContainer(master: MasterSpec): Uint8Array {
+  const shapes = master.shapes.map(shapeContainer)
+  const spgr = escherContainer(0xf003, shapes)
+  const dg = escherContainer(0xf002, [spgr])
+  return record(0x03f8, concat([slideAtom(), escherContainer(0x040c, [dg])]), 0, 0xf)
 }
 
 /** The outline text pairs SlideListWithText carries for one slide. */
@@ -127,6 +268,7 @@ export function buildPptStreams(
 ): { document: Uint8Array; currentUser: Uint8Array } {
   const slideSize = options.slideSize ?? [5760, 4320]
   const outlineTexts = options.outlineTexts === true
+  const images = options.images ?? []
   const generations: SlideSpec[][] = options.secondGeneration
     ? [slideSpecs, options.secondGeneration]
     : [slideSpecs]
@@ -168,6 +310,7 @@ export function buildPptStreams(
         0x03e8,
         concat([
           documentAtom(slideSize[0], slideSize[1]),
+          ...(options.master ? [masterContainer(options.master)] : []),
           record(0x0ff0, concat(listParts), 0, 0xf),
           record(0x03ea, new Uint8Array(0)),
         ]),
@@ -206,6 +349,10 @@ export function buildPptStreams(
     )
     lastUserEditOffset = editStart
   }
+
+  // the global drawing group is a top-level record; the reader scans for its
+  // BStore independently of the change directory
+  if (images.length > 0) push(drawingGroup(images))
 
   const currentUser = record(
     0x0ff6,
