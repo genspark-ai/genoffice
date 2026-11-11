@@ -115,6 +115,12 @@ const CIRCLED_HANGUL_JAMO = '㉠㉡㉢㉣㉤㉥㉦㉧㉨㉩㉪㉫㉬㉭'
 const HANJA_DIGITS = '一二三四五六七八九十' // public-hygiene: allow
 
 function roman(n: number): string {
+  // The roman system tops out at 3999 by construction. A paragraph head's
+  // `start` is producer-controlled (hh:paraHead/@start), and the loop below
+  // runs once per 1000 of the value: a head starting at 1e9 builds a
+  // megabyte-long numeral, 1e15 never finishes (the same guard as
+  // pptx-render's a:buAutoNum roman).
+  if (!Number.isFinite(n) || n > 3999) return String(Math.max(0, Math.trunc(n)) || 0)
   const table: Array<[number, string]> = [
     [1000, 'M'],
     [900, 'CM'],
