@@ -2,15 +2,17 @@ import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockSpawn = vi.fn()
-const mockExecFile = vi.fn()
+const mockGetPath = vi.fn()
 const mockOpenPath = vi.fn()
 
 vi.mock('node:child_process', () => ({
   spawn: (...args: unknown[]) => mockSpawn(...args),
-  execFile: (...args: unknown[]) => mockExecFile(...args),
 }))
 
 vi.mock('electron', () => ({
+  app: {
+    getPath: (...args: unknown[]) => mockGetPath(...args),
+  },
   shell: {
     openPath: (...args: unknown[]) => mockOpenPath(...args),
   },
@@ -21,6 +23,7 @@ import { openTrash } from '../src/main/trash'
 describe('openTrash', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGetPath.mockReturnValue('/Users/test')
   })
 
   describe('Windows (win32)', () => {
@@ -57,29 +60,17 @@ describe('openTrash', () => {
   })
 
   describe('macOS (darwin)', () => {
-    it('uses AppleScript via osascript to ask Finder to open and activate trash', async () => {
-      mockExecFile.mockImplementation((_cmd, _args, callback) => {
-        callback(null, '', '')
-      })
+    it('opens ~/.Trash using shell.openPath', async () => {
+      mockOpenPath.mockResolvedValue('')
 
       const result = await openTrash('darwin')
       expect(result).toBe(true)
-      expect(mockExecFile).toHaveBeenCalledWith(
-        'osascript',
-        [
-          '-e',
-          'tell application "Finder" to open trash',
-          '-e',
-          'tell application "Finder" to activate',
-        ],
-        expect.any(Function),
-      )
+      expect(mockGetPath).toHaveBeenCalledWith('home')
+      expect(mockOpenPath).toHaveBeenCalledWith(expect.stringMatching(/[\\/]\.Trash$/))
     })
 
-    it('returns false when osascript encounters an error', async () => {
-      mockExecFile.mockImplementation((_cmd, _args, callback) => {
-        callback(new Error('osascript failure'), '', '')
-      })
+    it('returns false when shell.openPath returns an error string', async () => {
+      mockOpenPath.mockResolvedValue('Failed to open directory')
 
       const result = await openTrash('darwin')
       expect(result).toBe(false)
@@ -87,28 +78,35 @@ describe('openTrash', () => {
   })
 
   describe('Linux (linux)', () => {
-    it('opens trash via xdg-open trash:/// when available', async () => {
-      mockExecFile.mockImplementation((cmd, args, callback) => {
-        if (cmd === 'xdg-open' && args[0] === 'trash:///') {
-          callback(null, '', '')
-        }
+    it('spawns xdg-open with trash:/// detached and returns true on spawn', async () => {
+      const fakeChild = new EventEmitter() as EventEmitter & { unref: ReturnType<typeof vi.fn> }
+      fakeChild.unref = vi.fn()
+
+      mockSpawn.mockImplementation(() => {
+        queueMicrotask(() => fakeChild.emit('spawn'))
+        return fakeChild
       })
 
       const result = await openTrash('linux')
       expect(result).toBe(true)
-      expect(mockExecFile).toHaveBeenCalledWith('xdg-open', ['trash:///'], expect.any(Function))
-      expect(mockOpenPath).not.toHaveBeenCalled()
+      expect(mockSpawn).toHaveBeenCalledWith('xdg-open', ['trash:///'], {
+        detached: true,
+        stdio: 'ignore',
+      })
+      expect(fakeChild.unref).toHaveBeenCalled()
     })
 
-    it('falls back to shell.openPath with XDG_DATA_HOME/Trash/files if xdg-open fails', async () => {
-      mockExecFile.mockImplementation((_cmd, _args, callback) => {
-        callback(new Error('xdg-open failed'), '', '')
+    it('returns false when xdg-open fails to spawn', async () => {
+      const fakeChild = new EventEmitter() as EventEmitter & { unref: ReturnType<typeof vi.fn> }
+      fakeChild.unref = vi.fn()
+
+      mockSpawn.mockImplementation(() => {
+        queueMicrotask(() => fakeChild.emit('error', new Error('spawn failed')))
+        return fakeChild
       })
-      mockOpenPath.mockResolvedValue('')
 
       const result = await openTrash('linux')
-      expect(result).toBe(true)
-      expect(mockOpenPath).toHaveBeenCalledWith(expect.stringContaining('Trash'))
+      expect(result).toBe(false)
     })
   })
 })
