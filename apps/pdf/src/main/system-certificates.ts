@@ -4,6 +4,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { decodeCommandOutput } from '@genoffice/electron-utils'
 import type { CertificateErrorCode } from '../shared/ipc'
 import type { ExternalSigner } from './pdf-sign'
 import { describeCertificate } from './pdf-signatures'
@@ -85,15 +86,15 @@ export const runCommand: Runner = (file, args, options) =>
         timeout: COMMAND_TIMEOUT_MS,
         maxBuffer: 16 * 1024 * 1024,
         windowsHide: true,
-        encoding: 'utf8',
+        encoding: 'buffer',
         env: { ...process.env, ...options?.env },
       },
       (error, stdout, stderr) => {
         const failure = error as (NodeJS.ErrnoException & { code?: unknown }) | null
         resolve({
           code: !failure ? 0 : typeof failure.code === 'number' ? failure.code : 1,
-          stdout: String(stdout ?? ''),
-          stderr: String(stderr ?? ''),
+          stdout: decodeCommandOutput(stdout ?? ''),
+          stderr: decodeCommandOutput(stderr ?? ''),
           missing: failure?.code === 'ENOENT',
         })
       },

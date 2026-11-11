@@ -64,6 +64,7 @@ export {
   type PathProvider,
 } from './default-save-dir'
 export { installNavigationGuard } from './navigation-guard'
+export { decodeChunks, decodeCommandOutput } from './console-output'
 export {
   DROP_OPEN_CHANNEL,
   droppableFilePaths,

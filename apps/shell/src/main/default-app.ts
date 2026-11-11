@@ -2,7 +2,10 @@ import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { decodeCommandOutput } from '@genoffice/electron-utils'
 import type { DefaultAppStatus } from '../shared/home-api'
+
+export { decodeCommandOutput } from '@genoffice/electron-utils'
 
 // macOS writes the LaunchServices user choice via osascript (no helper binary to
 // ship), Linux via xdg-mime; Windows apps cannot set defaults, only open the page.
@@ -73,10 +76,15 @@ const UNSUPPORTED: DefaultAppStatus = { state: 'unsupported', others: [], manual
 
 export function execFileRunner(cmd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: 15_000, windowsHide: true }, (err, stdout) => {
-      if (err) reject(err)
-      else resolve(String(stdout))
-    })
+    execFile(
+      cmd,
+      args,
+      { timeout: 15_000, windowsHide: true, encoding: 'buffer' },
+      (err, stdout) => {
+        if (err) reject(err)
+        else resolve(decodeCommandOutput(stdout))
+      },
+    )
   })
 }
 
@@ -194,7 +202,9 @@ export function createDefaultAppService(deps: DefaultAppDeps): DefaultAppService
   const macBundle = deps.platform === 'darwin' ? macAppBundlePath(deps.exePath) : null
 
   async function status(): Promise<DefaultAppStatus> {
-    if (!deps.packaged) return UNSUPPORTED
+    // Probing the current handler is read-only, so dev builds report it too.
+    // Hiding the setting entirely made it impossible to inspect (or verify the
+    // decoding of) the current owner while running from source.
     try {
       if (deps.platform === 'darwin') {
         if (!macBundle) return UNSUPPORTED
@@ -244,14 +254,20 @@ export function createDefaultAppService(deps: DefaultAppDeps): DefaultAppService
 
   async function windowsProgIdName(progId: string): Promise<string> {
     try {
-      return parseRegValue(await deps.run('reg', ['query', `HKCR\\${progId}`, '/ve'])) ?? progId
+      const name =
+        parseRegValue(await deps.run('reg', ['query', `HKCR\\${progId}`, '/ve'])) ?? progId
+      // A code page we still cannot decode would surface as replacement
+      // characters. The ProgId is ASCII and stays readable, so prefer it.
+      return name.includes('\uFFFD') ? progId : name
     } catch {
       return progId
     }
   }
 
   async function set(): Promise<DefaultAppStatus> {
-    if (!deps.packaged) return UNSUPPORTED
+    // Claiming associations from a dev build would point them at Electron.app;
+    // stay read-only there and just re-probe so the setting stays visible.
+    if (!deps.packaged) return status()
     try {
       if (deps.platform === 'darwin' && macBundle) {
         await deps.run('osascript', ['-l', 'JavaScript', '-e', MAC_SET_SCRIPT, macBundle, ...utis])
