@@ -2,7 +2,9 @@ import { existsSync } from 'node:fs'
 import { basename, extname, isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import {
+  convertViaCli,
   createFileViaCli,
+  docsCheckViaCli,
   mergeTemplateViaCli,
   readDocxTextViaCli,
   readDocxPropertiesViaCli,
@@ -257,13 +259,118 @@ function createFillTemplateTool(deps: DocToolDeps): McpToolDefinition {
   }
 }
 
+/** Headless document conversion through the bundled CLI's `convert` command:
+ *  one file, one target format, written to disk. Rides the same opt-in as the
+ *  the other file-writing tools (create_docx, fill_template). The route table lives in
+ *  the CLI — an unsupported pair errors with `detail.supported` naming every
+ *  target the source format can reach, so the tool does not duplicate it. */
+function createConvertDocumentTool(deps: DocToolDeps): McpToolDefinition {
+  return {
+    name: 'convert_document',
+    description:
+      'Convert a document to another format with the GenOffice engines and write the result to ' +
+      'disk without opening the app: pdf → docx/pptx/xlsx/md, legacy .doc/.ppt → modern Open ' +
+      'XML, odt/ods/ots → xlsx/docx, hwp/hwpx → docx, md → docx/html, docx → md, xlsx → csv. ' +
+      'An unsupported pair is refused with the list of targets the source format supports. ' +
+      'Returns the absolute path of the written file and which engine ran.',
+    inputSchema: {
+      path: z.string().describe('absolute path to the source document'),
+      to: z
+        .string()
+        .describe(
+          'target format extension, e.g. "docx", "pptx", "xlsx", "md", "html" or "csv" (pdf → docx/pptx/xlsx/md; md → docx/html; docx → md; xlsx → csv)',
+        ),
+      out: z
+        .string()
+        .optional()
+        .describe(
+          'absolute output path; default is a new file named after the source in the default save folder',
+        ),
+      overwrite: z.boolean().optional().describe('allow replacing an existing file; default false'),
+      password: z.string().optional().describe('password when the source is an encrypted PDF'),
+      sheet: z
+        .string()
+        .optional()
+        .describe('xlsx → csv: the worksheet to export (default: the active one)'),
+    },
+    handler: async (args) => {
+      const sourcePath = String(args.path ?? '')
+      if (!isAbsolute(sourcePath)) throw new Error('path must be absolute')
+      const to = String(args.to ?? '')
+        .trim()
+        .toLowerCase()
+      if (!/^[a-z0-9]+$/.test(to)) throw new Error('to must be a format extension like "docx"')
+      if (!existsSync(sourcePath)) throw new Error(`file not found: ${sourcePath}`)
+      if (!deps.cli) throw new Error('headless generation is not available in this build')
+
+      // default output: the source's stem in the save folder, target extension
+      const stem = basename(sourcePath, extname(sourcePath))
+      const targetPath = resolveOutputPath({
+        defaultSaveDir: deps.defaultSaveDir,
+        ext: `.${to}`,
+        title: stem,
+        requestedPath: typeof args.out === 'string' && args.out.trim() ? args.out : undefined,
+        overwrite: args.overwrite === true,
+      })
+      const json = await convertViaCli(deps.cli, {
+        path: sourcePath,
+        to,
+        out: targetPath,
+        overwrite: args.overwrite === true,
+        ...(typeof args.password === 'string' && args.password ? { password: args.password } : {}),
+        ...(typeof args.sheet === 'string' && args.sheet ? { sheet: args.sheet } : {}),
+      })
+      const detail = json.detail ?? {}
+      return {
+        path: (json as { output_path?: string }).output_path ?? targetPath,
+        summary: json.summary,
+        ...detail,
+      }
+    },
+  }
+}
+
+/** `docs check`, read-only: the document-quality report an agent wants before
+ *  handing a file over — fields without results, broken references, a stale
+ *  TOC, missing images, empty charts or headings, level skips, leftover
+ *  placeholder text, pending tracked changes and open comments. No file is
+ *  written, so like read_docx it is always registered. */
+function createCheckDocumentTool(deps: DocToolDeps): McpToolDefinition {
+  return {
+    name: 'check_document',
+    description:
+      'Run the document-quality checks on a .docx without changing it: fields without results, ' +
+      'references to missing bookmarks, a TOC that no longer matches the headings, missing ' +
+      'images, empty charts, empty headings, list level skips, leftover placeholder text, ' +
+      'pending tracked changes and open comments. Each finding carries its severity and ' +
+      'location; an issue-free document says so explicitly.',
+    inputSchema: {
+      path: z.string().describe('absolute path to a .docx file'),
+    },
+    handler: async (args) => {
+      const filePath = String(args.path ?? '')
+      if (!isAbsolute(filePath)) throw new Error('path must be absolute')
+      if (!existsSync(filePath)) throw new Error(`file not found: ${filePath}`)
+      if (!deps.cli) throw new Error('headless generation is not available in this build')
+      const json = await docsCheckViaCli(deps.cli, filePath)
+      const detail = json.detail ?? {}
+      return { summary: json.summary, ...detail }
+    },
+  }
+}
+
 export function createDocumentTools(deps: DocToolDeps, host: SessionHost): McpToolDefinition[] {
   return [
     // headless generation is opt-in: when background is off (the default),
     // clients only see the visible document session
     ...(deps.background === false
       ? []
-      : [createHeadlessDocxTool(deps), createFillTemplateTool(deps)]),
+      : [
+          createHeadlessDocxTool(deps),
+          createFillTemplateTool(deps),
+          createConvertDocumentTool(deps),
+        ]),
+    createCheckDocumentTool(deps),
     {
       name: 'read_docx',
       description: 'Read a Word .docx file and return its visible text (one paragraph per line).',

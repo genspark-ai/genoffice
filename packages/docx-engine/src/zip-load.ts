@@ -3,6 +3,7 @@ import { assertDeclaredSizesWithinLimits, assertZipInflatesWithinLimits } from '
 import {
   dedupeStyleRefs,
   hasDuplicateStyleRefs,
+  hasUniversalMeasures,
   needsOoxmlNormalization,
   normalizeOoxmlXml,
 } from './ooxml-normalize'
@@ -87,6 +88,8 @@ export function assertZipWithinLimits(zip: JSZip): void {
 }
 
 /** parts holding paragraphs whose duplicate style refs get collapsed (last wins) */
+const WORD_PART_RE = /^word\/[^/]+\.xml$/i
+
 const STORY_PART_RE =
   /^word\/(?:document|header\d*|footer\d*|footnotes|endnotes|comments\w*|glossary\/document)\.xml$/i
 
@@ -112,10 +115,13 @@ async function normalizeOoxmlParts(zip: JSZip): Promise<void> {
   for (const file of Object.values(zip.files)) {
     if (file.dir) continue
     const story = STORY_PART_RE.test(file.name)
-    if (!story && (!needed || !/\.(xml|rels)$/i.test(file.name))) continue
+    const wordPart = WORD_PART_RE.test(file.name)
+    if (!story && !wordPart && (!needed || !/\.(xml|rels)$/i.test(file.name))) continue
     let xml = await file.async('string')
     const original = xml
-    if (needed && needsOoxmlNormalization(xml)) xml = normalizeOoxmlXml(xml)
+    if ((needed || hasUniversalMeasures(xml)) && needsOoxmlNormalization(xml)) {
+      xml = normalizeOoxmlXml(xml)
+    }
     if (story && hasDuplicateStyleRefs(xml)) xml = dedupeStyleRefs(xml)
     if (xml !== original) zip.file(file.name, xml)
   }

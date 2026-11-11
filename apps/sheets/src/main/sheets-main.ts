@@ -109,6 +109,7 @@ import {
 import { shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
 import { decodeCsvBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import'
 import type { CsvImportProgress } from '@genoffice/xlsx-gateway/gateway/csv-import'
+import { delimitedImportLimit } from './csv-import-limit'
 import {
   csvToXlsxBufferForOpen,
   sheetCsvToXlsxBuffer,
@@ -1977,8 +1978,8 @@ interface SheetsTabSession {
  * tab (or a closed-then-reopened tab) registered and overwrote the previous closure. */
 /// Same ceiling as local add_image (readLocalImage's 20MB check)
 const MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024
-/** Max .csv/.tsv bytes converted on open: stops a 500MB text file OOMing main before sidecar limits. */
-const MAX_DELIMITED_IMPORT_BYTES = 32 * 1024 * 1024
+// the .csv/.tsv ceiling lives with the numbers it describes (the gateway's
+// csv-limits, exposed through csv-import-limit)
 
 /**
  * The delimited import (a .csv/.tsv opened as a workbook) that is running for
@@ -5433,7 +5434,12 @@ async function prepareWorkbookForOpen(
   try {
     if (extension === 'csv' || extension === 'tsv') {
       const csvStat = await stat(path)
-      if (csvStat.size > MAX_DELIMITED_IMPORT_BYTES) throw new Error(tm('errFileTooLarge'))
+      const limitBytes = delimitedImportLimit()
+      if (csvStat.size > limitBytes) {
+        const limitMb = Math.round(limitBytes / 1024 / 1024)
+        const sizeMb = (csvStat.size / 1024 / 1024).toFixed(1)
+        throw new Error(`${tm('errTooLarge', { mb: limitMb })} (${sizeMb} MB)`)
+      }
       const converted = await csvToXlsxBufferForOpen(
         decodeCsvBuffer(await readFile(path), legacyCsvCharset()),
         'Sheet1',

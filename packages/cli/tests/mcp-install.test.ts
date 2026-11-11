@@ -77,6 +77,73 @@ describe('genoffice mcp install', () => {
     expect(readFileSync(file, 'utf-8')).toBe(text)
   })
 
+  it('records compact schemas with --compact-schemas and lists that entry as registered', async () => {
+    const m = fakeMachine(['.cursor'])
+    const file = join(m.home, '.cursor', 'mcp.json')
+    const compact = await run(['mcp', 'install', 'cursor', '--compact-schemas', '--json'], {
+      env: m.env,
+    })
+    expect(compact.code).toBe(0)
+    expect(compact.json().detail.agents[0]).toMatchObject({
+      status: 'installed',
+      registered: true,
+      compactSchemas: true,
+    })
+    expect(readJson(file).mcpServers.genoffice.env).toMatchObject({
+      GENOFFICE_MCP_COMPACT_SCHEMAS: '1',
+    })
+
+    const listed = await run(['mcp', 'list', '--json'], { env: m.env })
+    expect(listed.json().detail.agents.find((a: any) => a.agent === 'cursor')).toMatchObject({
+      status: 'registered',
+      registered: true,
+      compactSchemas: true,
+    })
+    expect(listed.json().summary).toContain('cursor registered (compact)')
+    const rejected = await run(['mcp', 'list', '--compact-schemas', '--json'], { env: m.env })
+    expect(rejected.code).toBe(1)
+    expect(rejected.json().message).toContain('does not combine with `mcp list`')
+
+    const again = await run(['mcp', 'install', 'cursor', '--compact-schemas', '--json'], {
+      env: m.env,
+    })
+    expect(again.json().detail.agents[0].status).toBe('unchanged')
+    // asking for the plain form writes it back
+    const plain = await run(['mcp', 'install', 'cursor', '--json'], { env: m.env })
+    expect(plain.json().detail.agents[0]).toMatchObject({
+      status: 'updated',
+      compactSchemas: false,
+    })
+    expect(readJson(file).mcpServers.genoffice.env?.GENOFFICE_MCP_COMPACT_SCHEMAS).toBeUndefined()
+  })
+
+  it('lists a Cordis entry that asks for compact schemas as registered', async () => {
+    const m = fakeMachine(['.dsh'])
+    const file = join(m.home, '.dsh', 'cordis.patch.yml')
+    const first = await run(['mcp', 'install', 'dsh', '--json'], { env: m.env })
+    expect(first.code).toBe(0)
+    const compact = await run(['mcp', 'install', 'dsh', '--compact-schemas', '--json'], {
+      env: m.env,
+    })
+    expect(compact.code).toBe(0)
+    expect(compact.json().detail.agents[0]).toMatchObject({
+      status: 'updated',
+      compactSchemas: true,
+    })
+    expect(readFileSync(file, 'utf-8')).toContain("GENOFFICE_MCP_COMPACT_SCHEMAS: '1'")
+    const listed = await run(['mcp', 'list', '--json'], { env: m.env })
+    expect(listed.json().detail.agents.find((a: any) => a.agent === 'dsh')).toMatchObject({
+      status: 'registered',
+      registered: true,
+      compactSchemas: true,
+    })
+    expect(listed.json().summary).toContain('dsh registered (compact)')
+    const again = await run(['mcp', 'install', 'dsh', '--compact-schemas', '--json'], {
+      env: m.env,
+    })
+    expect(again.json().detail.agents[0].status).toBe('unchanged')
+  })
+
   it('creates the file when the agent has none', async () => {
     const m = fakeMachine(['.codeium/windsurf'])
     const r = await run(['mcp', 'install', 'windsurf', '--json'], { env: m.env })

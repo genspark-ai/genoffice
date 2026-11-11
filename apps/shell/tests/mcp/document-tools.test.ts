@@ -82,6 +82,8 @@ describe('M3 docx tools', () => {
   it('exposes exactly the phase-1 tools', async () => {
     const { tools } = await client!.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual([
+      'check_document',
+      'convert_document',
       'create_docx',
       'fill_template',
       'get_app_info',
@@ -342,6 +344,8 @@ describe('M6 visible-editing tools (docs control wired)', () => {
     const { tools } = await client2!.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual([
       'apply_ops',
+      'check_document',
+      'convert_document',
       'create_docx',
       'create_session',
       'fill_template',
@@ -617,5 +621,125 @@ describe('headless fill_template / read_docx_properties', () => {
     })
     expect(missing.isError).toBe(true)
     expect(text(missing.content)).toMatch(/file not found/)
+  })
+})
+
+describe('headless convert_document / check_document', () => {
+  it('convert_document runs the CLI and maps the output path back', async () => {
+    const source = join(dir, 'scan.pdf')
+    await writeFile(source, 'pdf bytes')
+    const result = await client!.callTool({
+      name: 'convert_document',
+      arguments: { path: source, to: 'docx' },
+    })
+    expect(result.isError).toBeFalsy()
+    const payload = JSON.parse(text(result.content)) as { path: string; summary: string }
+    expect(payload.path).toMatch(/scan(-\d+)?\.docx$/)
+    expect(payload.summary).toContain('created')
+
+    // the CLI call carries the source, the target and the resolved --out
+    expect(cli.last()).toEqual([
+      'convert',
+      source,
+      '--to',
+      'docx',
+      '--out',
+      expect.any(String),
+      '--json',
+    ])
+    expect(existsSync(cli.last()![5]!)).toBe(true)
+  })
+
+  it('convert_document passes out/overwrite/password/sheet through', async () => {
+    const source = join(dir, 'book.xlsx')
+    await writeFile(source, 'xlsx bytes')
+    const out = join(dir, 'export.csv')
+    await client!.callTool({
+      name: 'convert_document',
+      arguments: { path: source, to: 'csv', out, overwrite: true, sheet: 'Q3' },
+    })
+    expect(cli.last()).toEqual([
+      'convert',
+      source,
+      '--to',
+      'csv',
+      '--out',
+      out,
+      '--force',
+      '--sheet',
+      'Q3',
+      '--json',
+    ])
+  })
+
+  it('convert_document validates the path and the format shape', async () => {
+    const relative = await client!.callTool({
+      name: 'convert_document',
+      arguments: { path: 'rel.pdf', to: 'docx' },
+    })
+    expect(relative.isError).toBe(true)
+    expect(text(relative.content)).toMatch(/absolute/)
+
+    const missing = await client!.callTool({
+      name: 'convert_document',
+      arguments: { path: join(dir, 'nope.pdf'), to: 'docx' },
+    })
+    expect(missing.isError).toBe(true)
+    expect(text(missing.content)).toMatch(/file not found/)
+
+    const badFormat = await client!.callTool({
+      name: 'convert_document',
+      arguments: { path: join(dir, 'scan.pdf'), to: 'not a format!' },
+    })
+    expect(badFormat.isError).toBe(true)
+    expect(text(badFormat.content)).toMatch(/format extension/)
+  })
+
+  it('check_document returns the quality report without writing', async () => {
+    cli.setCheckDetail({
+      issues: [
+        { id: 'W1', level: 'warning', check: 'field_not_evaluated', detail: 'PAGE has no result' },
+      ],
+      counts: { error: 0, warning: 1, info: 0 },
+      checks: ['field_not_evaluated', 'broken_ref', 'toc_stale'],
+    })
+    const doc = join(dir, 'report.docx')
+    await writeFile(doc, 'docx bytes')
+    const result = await client!.callTool({
+      name: 'check_document',
+      arguments: { path: doc },
+    })
+    expect(result.isError).toBeFalsy()
+    const payload = JSON.parse(text(result.content)) as {
+      issues: Array<{ check: string }>
+      counts: { warning: number }
+      checks: string[]
+    }
+    expect(payload.counts.warning).toBe(1)
+    expect(payload.checks).toContain('field_not_evaluated')
+    expect(cli.last()).toEqual(['docs', 'check', doc, '--json'])
+  })
+
+  it('check_document validates the path and surfaces CLI errors', async () => {
+    const relative = await client!.callTool({
+      name: 'check_document',
+      arguments: { path: 'rel.docx' },
+    })
+    expect(relative.isError).toBe(true)
+    expect(text(relative.content)).toMatch(/absolute/)
+
+    const missing = await client!.callTool({
+      name: 'check_document',
+      arguments: { path: join(dir, 'nope.docx') },
+    })
+    expect(missing.isError).toBe(true)
+    expect(text(missing.content)).toMatch(/file not found/)
+
+    cli.failNext('docs check: cannot open document')
+    const broken = join(dir, 'broken.docx')
+    await writeFile(broken, 'x')
+    const failed = await client!.callTool({ name: 'check_document', arguments: { path: broken } })
+    expect(failed.isError).toBe(true)
+    expect(text(failed.content)).toContain('cannot open document')
   })
 })

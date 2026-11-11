@@ -74,7 +74,11 @@ import {
   readLegacyImportSkip,
   writeLegacyImportSkip,
 } from '@genoffice/electron-utils'
-import { configureMetricsCache, familyVerticalMetrics } from '@genoffice/font-metrics'
+import {
+  configureMetricsCache,
+  familyAliases,
+  familyVerticalMetrics,
+} from '@genoffice/font-metrics'
 import { createI18n, getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
 import type {
@@ -195,6 +199,7 @@ import { isExternallyModified, type DiskFileState } from './external-change'
 import { copyImageDisplaySize, validCopyImageDataUrl } from './copy-image-guard'
 import {
   printJobOptions,
+  printPaperOption,
   printScaleOption,
   validPrintGeometry,
   validPrintPaper,
@@ -5027,6 +5032,20 @@ export function registerDocsIpc(): void {
   ipcMain.handle('docs:font-metrics', (_event, family: string) =>
     typeof family === 'string' ? familyVerticalMetrics(family) : null,
   )
+  // the other spellings of the installed faces behind these names: a document
+  // that declares a CJK font by its localized name needs the English spelling
+  // the browser resolves (genoffice#2449). The renderer is not trusted, but
+  // the answer is only font names.
+  ipcMain.handle('docs:font-aliases', (_event, names: unknown) => {
+    if (!Array.isArray(names)) return {}
+    const out: Record<string, readonly string[]> = {}
+    for (const raw of names.slice(0, 512)) {
+      if (typeof raw !== 'string' || raw.length === 0 || raw.length > 256) continue
+      const aliases = familyAliases(raw)
+      if (aliases.length) out[raw] = aliases
+    }
+    return out
+  })
 
   ipcMain.handle('docs:open', async (event) => {
     const result = await openDialog(event, {
@@ -5837,6 +5856,10 @@ export function registerDocsIpc(): void {
       margins: { marginType: 'none' as const },
       ...printScale(scale),
       ...printJobOptions(job),
+      // the document's own paper: Chromium prints on Letter unless the job
+      // states one, and an A4 sheet on Letter is taller than the paper — it
+      // splits in two, so the printed page loses its bottom (genoffice#2563)
+      ...printPaperOption(paper),
     }
     // A named printer prints silently, and Chromium's silent print on macOS
     // can drop the job outright — no queue entry, no callback error
