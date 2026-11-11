@@ -163,6 +163,17 @@ describe('convertOdtToDocx', () => {
     expect(document).toContain('<w:drawing>')
   })
 
+  it('drops an inline image whose base64 payload is not decodable', async () => {
+    const body =
+      '<text:p>before<draw:frame svg:width="2cm" svg:height="2cm"><draw:image><office:binary-data>not-base64!!!</office:binary-data></draw:image></draw:frame>after</text:p>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    expect(result.dropped).toContainEqual({ what: 'images', count: 1 })
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document).toContain('before')
+    expect(document).toContain('after')
+    expect(document).not.toContain('<w:drawing>')
+  })
+
   it('does not blame the first table for an image a paragraph already emitted', async () => {
     // The paragraph's inline image is collected in the shared walk context; a
     // table cell only has its own images to account for, so a leftover from

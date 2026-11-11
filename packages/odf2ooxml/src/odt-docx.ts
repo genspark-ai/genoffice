@@ -646,7 +646,12 @@ async function resolveImage(ref: InlineImageRef, pack: OdfPackage): Promise<NewI
   let bytes: Uint8Array | null = null
   let path = ''
   if (ref.base64) {
-    bytes = Uint8Array.from(atob(ref.base64), (character) => character.charCodeAt(0))
+    try {
+      bytes = Uint8Array.from(atob(ref.base64), (character) => character.charCodeAt(0))
+    } catch {
+      // a payload that is not valid base64 is unrepresentable, not fatal
+      return null
+    }
   } else if (ref.href) {
     path = ref.href
     bytes = await pack.read(ref.href)
