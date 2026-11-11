@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useAiPanelPrefs } from '@genoffice/ui'
 import { useI18n } from '../i18n/locale'
 import {
   selectionAskPosition,
@@ -20,8 +21,14 @@ const EST_HEIGHT = 166
 const MAX_INSTRUCTION = 2000
 
 /** Grid-selection Ask AI trigger and its send-now popover. */
-export function AiSelectionAsk({ anchor, range, onSend, onDismiss }: Props): React.JSX.Element {
+export function AiSelectionAsk({
+  anchor,
+  range,
+  onSend,
+  onDismiss,
+}: Props): React.JSX.Element | null {
   const { t } = useI18n()
+  const showAskTrigger = useAiPanelPrefs().showAiAskTrigger
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [triggerPlacement, setTriggerPlacement] = useState<{
@@ -56,6 +63,7 @@ export function AiSelectionAsk({ anchor, range, onSend, onDismiss }: Props): Rea
   }, [onDismiss, open])
 
   if (!open) {
+    if (!showAskTrigger) return null
     return (
       <button
         ref={triggerRef}

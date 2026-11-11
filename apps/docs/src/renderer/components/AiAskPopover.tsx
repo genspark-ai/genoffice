@@ -215,12 +215,6 @@ export function AiAskPopover({
     setInactiveSelectionShown(editor, false)
   }, [editor])
 
-  // Turning the switch off also dismisses a popover opened from the chip.
-  // Editing an existing queue anchor is a separate, explicit action and stays open.
-  useEffect(() => {
-    if (!showAskTrigger && openRef.current?.mode === 'new') close()
-  }, [showAskTrigger, close])
-
   /** outside click keeps whatever was typed: a new note lands in the queue, an edit is saved */
   const commitOrClose = useCallback(() => {
     const state = openRef.current
@@ -231,6 +225,13 @@ export function AiAskPopover({
     }
     close()
   }, [onQueueAdd, onQueueUpdate, close])
+
+  // Turning the switch off also dismisses a popover opened from the chip, but
+  // keeps whatever was typed (same as an outside click). Editing an existing
+  // queue anchor is a separate, explicit action and stays open.
+  useEffect(() => {
+    if (!showAskTrigger && openRef.current?.mode === 'new') commitOrClose()
+  }, [showAskTrigger, commitOrClose])
 
   useEffect(() => {
     if (!open) return

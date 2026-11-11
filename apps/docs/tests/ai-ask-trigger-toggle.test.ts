@@ -20,7 +20,7 @@ function makeEditor(): Editor {
   tr.setMeta = () => tr
   const state = {
     selection: { empty: false, from: 1, to: 5 },
-    doc: { textBetween: () => '机IF改' },
+    doc: { textBetween: () => '\u673aIF\u6539' },
     tr,
   }
   const listenersMap = listeners

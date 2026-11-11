@@ -30,7 +30,7 @@ export interface AiPanelPrefs {
   readonly showAiSidebar: boolean
   /** Off: the floating AI-edit chip that follows the text selection is hidden.
    * The chip is a quick Ask-AI entry; users who find it in the way can turn it
-   * off here without losing the ribbon/context-menu Ask-AI paths. */
+   * off here without losing the AI panel itself. */
   readonly showAiAskTrigger: boolean
 }
 
