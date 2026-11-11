@@ -323,10 +323,10 @@ export function applyColorMods(hex: string, mods: XmlNode | undefined): string {
       .toUpperCase()
   const alpha = last('a:alpha')
   if (alpha != null && alpha < 1) {
-    out += Math.round(alpha * 255)
-      .toString(16)
-      .padStart(2, '0')
-      .toUpperCase()
+    // Broken input can carry a negative (or non-finite) alpha; clamping keeps the
+    // suffix two hex digits, where Math.round(-2.5 * 255) used to write "-27D".
+    const byte = Math.max(0, Math.min(255, Math.round(alpha * 255)))
+    out += byte.toString(16).padStart(2, '0').toUpperCase()
   }
   return out
 }
