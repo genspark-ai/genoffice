@@ -74,7 +74,10 @@ export function xmlOfNode(node: { attrs: Record<string, unknown> }, blocks: Bloc
 }
 
 /** the w:sdt opening bytes a top-level node carries (live attr, else the original block) */
-function sdtOpenOf(node: { attrs: Record<string, unknown> }, blocks: Block[]): {
+function sdtOpenOf(
+  node: { attrs: Record<string, unknown> },
+  blocks: Block[],
+): {
   open: string
   group: number | undefined
 } {
