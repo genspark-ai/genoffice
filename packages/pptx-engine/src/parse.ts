@@ -72,7 +72,7 @@ import {
   type TablePartStyle,
   type TableStyleFlags,
 } from './table-style'
-import { decodeNumericCharRefs } from './xml-utils'
+import { decodeNumericCharRefs, percentFraction } from './xml-utils'
 import { readRedactLabel } from './redaction-xml'
 
 const parser = new XMLParser({
@@ -3565,7 +3565,7 @@ function parseGradFill(grad: any, ctx: ParseContext): Fill | undefined {
   const list = gsLst ? (Array.isArray(gsLst) ? gsLst : [gsLst]) : []
   const stops = list
     .map((gs: any) => {
-      const pos = (parseInt(gs['@_pos'], 10) || 0) / 100000 // 0..100000 → 0..1
+      const pos = percentFraction(gs['@_pos']) ?? 0 // 0..100000 → 0..1
       const color = resolveColorNode(gs, ctx)
       return color ? { pos, color } : null
     })
@@ -3582,13 +3582,7 @@ function parseGradFill(grad: any, ctx: ParseContext): Fill | undefined {
   const scaled = lin != null && (lin['@_scaled'] === '1' || lin['@_scaled'] === 'true')
   const ftr = grad['a:path']?.['a:fillToRect']
   // Omitted fillToRect attributes default to 0 (whole tile rect), not to a centered inset.
-  // ST_Percentage is either 1/1000 % ("50000") or the suffixed form Google Slides writes ("50%")
-  const frac = (v: unknown) => {
-    if (v == null) return 0
-    const str = String(v)
-    const n = parseFloat(str) || 0
-    return str.trim().endsWith('%') ? n / 100 : n / 100000
-  }
+  const frac = (v: unknown) => percentFraction(v) ?? 0
   const tr = grad['a:tileRect']
   const tileRect =
     tr != null && typeof tr === 'object'
@@ -3711,8 +3705,8 @@ function parseTextBody(
   const naf = bodyPr['a:normAutofit']
   const nafAttr = (k: string): number | undefined => {
     const v = naf && typeof naf === 'object' ? naf[k] : undefined
-    const n = v != null ? parseInt(String(v), 10) : NaN
-    return Number.isFinite(n) && n > 0 ? n / 100000 : undefined
+    const ratio = percentFraction(v)
+    return ratio != null && ratio > 0 ? ratio : undefined
   }
   const fontScale = nafAttr('@_fontScale')
   const lnSpcReduction = nafAttr('@_lnSpcReduction')
@@ -3782,10 +3776,10 @@ function parseTextBody(
   }
 }
 
-/** <a:spcPct val="150000"/> → 150 (%). */
+/** <a:spcPct val="150000"/> or val="150%" → 150 (%). */
 function spcPct(node: any): number | undefined {
-  const v = node?.['a:spcPct']?.['@_val']
-  return v != null ? (parseInt(v, 10) || 0) / 1000 : undefined
+  const ratio = percentFraction(node?.['a:spcPct']?.['@_val'])
+  return ratio != null ? ratio * 100 : undefined
 }
 
 /** <a:spcPts val="2400"/> → 24 (pt). */
@@ -4303,7 +4297,7 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     ...(ownFontSize != null ? {} : { fontSizeImplicit: true }),
     ...(ownLetterSpacing != null ? { letterSpacing: ownLetterSpacing } : {}),
     ...(rPr['@_kern'] != null ? { kern: (parseInt(rPr['@_kern'], 10) || 0) / 100 } : {}),
-    ...(rPr['@_baseline'] ? { baseline: parseInt(rPr['@_baseline'], 10) / 1000 } : {}),
+    ...(rPr['@_baseline'] ? { baseline: (percentFraction(rPr['@_baseline']) ?? 0) * 100 } : {}),
     fontFamily,
     ...(latinFamily ? { latinFamily } : {}),
     ...(fontScriptHint != null ? { fontScriptHint } : {}),
