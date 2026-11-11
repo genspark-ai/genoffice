@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Command } from '@tiptap/pm/state'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
@@ -153,6 +153,36 @@ const CTX_TEXT_DIRECTIONS: Array<[CellTextDirection, StringKey]> = [
   ['tbRl', 'ribbonTextDirectionRotate90'],
   ['btLr', 'ribbonTextDirectionRotate270'],
 ]
+
+/** A context-menu submenu that stays inside the window: opened from an item near
+ * the bottom edge it shifts up; one too tall for the whole window anchors to the
+ * top edge and scrolls the rest (the Translate menu's twenty languages were
+ * unreachable on a laptop). */
+function CtxSubmenu({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [fit, setFit] = useState<{ top: number; maxHeight?: number } | null>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const limit = window.innerHeight - 8
+    if (rect.bottom <= limit) return
+    // current top sits at -5px inside the item wrap: viewport top = rect.top
+    const shifted = limit - rect.height - rect.top - 5
+    const raised = 3 - rect.top // do not rise above the window's top margin
+    if (shifted >= raised) setFit({ top: shifted })
+    else setFit({ top: raised, maxHeight: limit - 8 })
+  }, [])
+  return (
+    <div
+      ref={ref}
+      className="ctx-submenu ctx-submenu-scroll"
+      style={fit ? { top: fit.top, maxHeight: fit.maxHeight } : undefined}
+    >
+      {children}
+    </div>
+  )
+}
 
 export function EditorContextMenu({
   editor,
@@ -421,7 +451,7 @@ export function EditorContextMenu({
             <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
               {item(t('appSpellLanguage'), { submenuKey: 'spellLang' })}
               {submenu === 'spellLang' && (
-                <div className="ctx-submenu ctx-submenu-scroll">
+                <CtxSubmenu>
                   {spellLangOrder.map((code) => (
                     <button key={code} className="ctx-item" onClick={() => toggleLanguage(code)}>
                       <span className="ctx-label">
@@ -430,7 +460,7 @@ export function EditorContextMenu({
                       </span>
                     </button>
                   ))}
-                </div>
+                </CtxSubmenu>
               )}
             </div>
           )}
@@ -486,7 +516,7 @@ export function EditorContextMenu({
           <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
             {item(t('ribbonInsert'), { submenuKey: 'tableInsert', disabled: !canEdit })}
             {submenu === 'tableInsert' && canEdit && (
-              <div className="ctx-submenu">
+              <CtxSubmenu>
                 {(
                   [
                     ['ribbonInsertAbove', addRowBefore],
@@ -508,13 +538,13 @@ export function EditorContextMenu({
                     <span className="ctx-label">{t('ribbonInsertCells')}</span>
                   </button>
                 )}
-              </div>
+              </CtxSubmenu>
             )}
           </div>
           <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
             {item(t('ribbonTableDeleteMenu'), { submenuKey: 'tableDelete', disabled: !canEdit })}
             {submenu === 'tableDelete' && canEdit && (
-              <div className="ctx-submenu">
+              <CtxSubmenu>
                 {(
                   [
                     ['ribbonDeleteRow', deleteRow],
@@ -535,13 +565,13 @@ export function EditorContextMenu({
                     <span className="ctx-label">{t('ribbonDeleteCells')}</span>
                   </button>
                 )}
-              </div>
+              </CtxSubmenu>
             )}
           </div>
           <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
             {item(t('ribbonSelect'), { submenuKey: 'tableSelect' })}
             {submenu === 'tableSelect' && (
-              <div className="ctx-submenu">
+              <CtxSubmenu>
                 {(
                   [
                     ['row', 'ribbonSelectRow'],
@@ -558,7 +588,7 @@ export function EditorContextMenu({
                     <span className="ctx-label">{t(labelKey)}</span>
                   </button>
                 ))}
-              </div>
+              </CtxSubmenu>
             )}
           </div>
           {item(t('ribbonMergeCells'), {
@@ -580,7 +610,7 @@ export function EditorContextMenu({
           <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
             {item(t('ribbonDistribute'), { submenuKey: 'tableDistribute', disabled: !canEdit })}
             {submenu === 'tableDistribute' && canEdit && (
-              <div className="ctx-submenu">
+              <CtxSubmenu>
                 <button
                   className="ctx-item"
                   onClick={run(() => {
@@ -596,13 +626,13 @@ export function EditorContextMenu({
                 >
                   <span className="ctx-label">{t('ribbonDistributeColumns')}</span>
                 </button>
-              </div>
+              </CtxSubmenu>
             )}
           </div>
           <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
             {item(t('ribbonCellAlignment'), { submenuKey: 'tableAlign', disabled: !canEdit })}
             {submenu === 'tableAlign' && canEdit && (
-              <div className="ctx-submenu">
+              <CtxSubmenu>
                 {CTX_CELL_ALIGN.map(([v, h, labelKey]) => (
                   <button
                     key={`${v}-${h}`}
@@ -615,13 +645,13 @@ export function EditorContextMenu({
                     <span className="ctx-label">{t(labelKey)}</span>
                   </button>
                 ))}
-              </div>
+              </CtxSubmenu>
             )}
           </div>
           <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
             {item(t('ribbonTextDirection'), { submenuKey: 'tableTextDir', disabled: !canEdit })}
             {submenu === 'tableTextDir' && canEdit && (
-              <div className="ctx-submenu">
+              <CtxSubmenu>
                 {CTX_TEXT_DIRECTIONS.map(([dir, labelKey]) => (
                   <button
                     key={dir}
@@ -631,13 +661,13 @@ export function EditorContextMenu({
                     <span className="ctx-label">{t(labelKey)}</span>
                   </button>
                 ))}
-              </div>
+              </CtxSubmenu>
             )}
           </div>
           <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
             {item(t('ribbonAutoFit'), { submenuKey: 'tableAutoFit', disabled: !canEdit })}
             {submenu === 'tableAutoFit' && canEdit && (
-              <div className="ctx-submenu">
+              <CtxSubmenu>
                 {(
                   [
                     ['contents', 'ribbonAutoFitContents'],
@@ -653,7 +683,7 @@ export function EditorContextMenu({
                     <span className="ctx-label">{t(labelKey)}</span>
                   </button>
                 ))}
-              </div>
+              </CtxSubmenu>
             )}
           </div>
           {onTableDialog &&
@@ -710,7 +740,7 @@ export function EditorContextMenu({
                 submenuKey: 'listLevel',
               })}
               {submenu === 'listLevel' && onChangeListLevel && canEdit && (
-                <div className="ctx-submenu">
+                <CtxSubmenu>
                   {Array.from({ length: 9 }, (_, i) => (
                     <button
                       key={i}
@@ -727,7 +757,7 @@ export function EditorContextMenu({
                       </span>
                     </button>
                   ))}
-                </div>
+                </CtxSubmenu>
               )}
             </div>
           </>
@@ -747,7 +777,7 @@ export function EditorContextMenu({
               ai: true,
             })}
             {submenu === 'translate' && hasSelection && (
-              <div className="ctx-submenu">
+              <CtxSubmenu>
                 {TRANSLATE_LANGS.map(({ code }) => (
                   <button
                     key={code}
@@ -766,7 +796,7 @@ export function EditorContextMenu({
                     </span>
                   </button>
                 ))}
-              </div>
+              </CtxSubmenu>
             )}
           </div>
           {/* Withholding a span. No AI badge: the item spends the words rather
@@ -801,7 +831,7 @@ export function EditorContextMenu({
           <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
             {item(t('appWrapTextMenu'), { submenuKey: 'wrap' })}
             {submenu === 'wrap' && (
-              <div className="ctx-submenu">
+              <CtxSubmenu>
                 {WRAP_OPTIONS.map((opt) => (
                   <button
                     key={String(opt.value)}
@@ -814,7 +844,7 @@ export function EditorContextMenu({
                     </span>
                   </button>
                 ))}
-              </div>
+              </CtxSubmenu>
             )}
           </div>
           {/* stacking ranks live on block anchors and shapes, not on run pictures */}
@@ -822,7 +852,7 @@ export function EditorContextMenu({
             <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
               {item(t('appArrangeMenu'), { submenuKey: 'arrange' })}
               {submenu === 'arrange' && (
-                <div className="ctx-submenu">
+                <CtxSubmenu>
                   <button className="ctx-item" onClick={run(() => bringToFront(editor))}>
                     <span className="ctx-label">{t('appBringToFront')}</span>
                   </button>
@@ -835,7 +865,7 @@ export function EditorContextMenu({
                   <button className="ctx-item" onClick={run(() => sendToBack(editor))}>
                     <span className="ctx-label">{t('appSendToBack')}</span>
                   </button>
-                </div>
+                </CtxSubmenu>
               )}
             </div>
           )}
