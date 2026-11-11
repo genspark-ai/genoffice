@@ -232,6 +232,22 @@ describe('docxToText (XML scan)', () => {
     expect(text).toBe('elsewhere')
   })
 
+  it('percent-decodes the main part target from the package rels', async () => {
+    const zip = new JSZip()
+    zip.file(
+      '_rels/.rels',
+      '<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/my%20doc.xml"/></Relationships>',
+    )
+    zip.file(
+      'word/my doc.xml',
+      `<?xml version="1.0"?><w:document ${W}><w:body>${p('Encoded main part')}</w:body></w:document>`,
+    )
+    zip.file('word/styles.xml', `<w:styles ${W}/>`)
+    expect(await docxToText(await zip.generateAsync({ type: 'uint8array' }))).toBe(
+      'Encoded main part',
+    )
+  })
+
   it('rejects a package without a main document part', async () => {
     const zip = new JSZip()
     zip.file('_rels/.rels', '<Relationships/>')
