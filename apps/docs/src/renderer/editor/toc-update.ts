@@ -5,7 +5,7 @@ import { collectHeadings } from './headings'
 import { t } from '../i18n/locale'
 
 /**
- * Table-of-contents (目录) detection + regeneration, shared by the
+ * Table-of-contents detection + regeneration, shared by the
  * References ribbon tab and the TOC context menu.
  *
  * Two shapes exist in the wild:

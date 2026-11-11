@@ -1,5 +1,5 @@
 /**
- * Table-of-contents update (目录): References → Update Directory and the TOC
+ * Table-of-contents update: References → Update Directory and the TOC
  * context menu share findTocRange/updateTocField. The update must
  * regenerate the entries from the live headings for both TOC shapes:
  * the GenOffice TOC field and Word's automatic TOC (a w:sdt gallery
