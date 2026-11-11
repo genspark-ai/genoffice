@@ -5833,6 +5833,22 @@ textarea:focus {
   color-scheme: dark;
 }
 
+/* The right-click menu must never be taller than the window (genoffice#2603).
+ * Univer caps its panel with an inline `max-height` that React writes once,
+ * and a second hook (`useScrollYOverContainer`) erases that inline value the
+ * first time any menu fits — a row/column header menu, or the cell menu in a
+ * tall window. React never writes it back, so the next long cell menu renders
+ * at full height: pinned to the top edge, running off the bottom, with nothing
+ * to scroll. Holding the cap in the stylesheet makes it independent of that
+ * inline value; `!important` also outranks the hook's own fallback, which
+ * measures against the workbook area instead of the window the popup is
+ * positioned in. The panel already scrolls (`overflow-y: auto`) once capped,
+ * and Univer places the popup from the capped height, so it stays on screen.
+ * 16px matches Univer's own 8px viewport padding on each side. */
+.univer-popup > section > .univer-overflow-y-auto {
+  max-height: calc(100vh - 16px) !important;
+}
+
 .ai-msg-undelivered {
   margin-top: 6px;
   display: flex;
