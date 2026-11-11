@@ -503,7 +503,12 @@ function placeCells(
       while (column < columnCount && slotRow[column]) column++
       if (column >= columnCount) break
       const colSpan = Math.max(1, Math.min(cell.colSpan, columnCount - column))
-      for (let dr = 0; dr < cell.rowSpan; dr++) {
+      // spans are the file's word, but they cannot reach past the rows that
+      // exist: one cell claiming 200000 rows allocated that many empty ones
+      // (13.8 s), and "Infinity" never ended — a quarter-megabyte file could
+      // hang the import
+      const rowSpan = Math.max(1, Math.min(cell.rowSpan, rows.length - rowIndex))
+      for (let dr = 0; dr < rowSpan; dr++) {
         while (occupancy.length <= rowIndex + dr) occupancy.push(new Array(columnCount).fill(null))
         const slot = occupancy[rowIndex + dr]
         for (let dc = 0; dc < colSpan; dc++) slot[column + dc] = cell
@@ -511,6 +516,7 @@ function placeCells(
       cell.row = rowIndex
       cell.column = column
       cell.colSpan = colSpan
+      cell.rowSpan = rowSpan
       column += colSpan
     }
     rowIndex++
