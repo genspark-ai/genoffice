@@ -52,7 +52,7 @@ describe('story view styles', () => {
   })
 
   it('hangs markdown-style markers in the margin', () => {
-    expect(STYLES).toContain(".view-story .doc-page h1::before")
+    expect(STYLES).toContain('.view-story .doc-page h1::before')
     expect(STYLES).toContain("content: '#'")
     expect(STYLES).toContain("content: '##'")
     expect(STYLES).toContain("content: '###'")

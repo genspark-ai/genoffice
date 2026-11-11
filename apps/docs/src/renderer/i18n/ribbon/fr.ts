@@ -807,7 +807,8 @@ export const fr = {
   ribbonOutlineViewTip:
     'Mode Plan : afficher uniquement la hiérarchie des titres ; les titres restent modifiables',
   ribbonStoryView: 'Story View',
-  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
+  ribbonStoryViewTip:
+    'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: 'Mode Lecture',
   ribbonReadModeTip:
     'Mode Lecture : masquer le ruban pour une lecture concentrée, appuyez sur Échap pour quitter',

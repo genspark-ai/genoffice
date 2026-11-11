@@ -794,7 +794,8 @@ export const ar = {
   ribbonOutlineViewTip:
     'عرض المخطط التفصيلي: إظهار التسلسل الهرمي للعناوين فقط؛ وتبقى العناوين قابلة للتحرير',
   ribbonStoryView: 'Story View',
-  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
+  ribbonStoryViewTip:
+    'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: 'وضع القراءة',
   ribbonReadModeTip: 'وضع القراءة: إخفاء الشريط للتركيز على القراءة، اضغط Esc للخروج',
   ribbonPagePreview: 'معاينة الصفحات',

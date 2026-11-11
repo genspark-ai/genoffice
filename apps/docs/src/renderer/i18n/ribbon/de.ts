@@ -805,7 +805,8 @@ export const de = {
   ribbonOutlineViewTip:
     'Gliederungsansicht: nur die Überschriftenhierarchie anzeigen; Überschriften bleiben bearbeitbar',
   ribbonStoryView: 'Story View',
-  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
+  ribbonStoryViewTip:
+    'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: 'Lesemodus',
   ribbonReadModeTip: 'Lesemodus: Menüband für konzentriertes Lesen ausblenden, Beenden mit Esc',
   ribbonPagePreview: 'Seitenvorschau',

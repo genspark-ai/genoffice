@@ -801,7 +801,8 @@ export const pl = {
   ribbonOutlineViewTip:
     'Widok konspektu: pokaż tylko hierarchię nagłówków; nagłówki pozostają edytowalne',
   ribbonStoryView: 'Story View',
-  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
+  ribbonStoryViewTip:
+    'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: 'Tryb czytania',
   ribbonReadModeTip:
     'Tryb czytania: ukryj wstążkę, aby skupić się na czytaniu; naciśnij Esc, aby wyjść',

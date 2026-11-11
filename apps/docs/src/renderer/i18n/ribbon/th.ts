@@ -789,7 +789,8 @@ export const th = {
   ribbonOutlineView: 'เค้าร่าง',
   ribbonOutlineViewTip: 'มุมมองเค้าร่าง: แสดงเฉพาะลำดับชั้นหัวเรื่อง และแก้ไขหัวเรื่องได้โดยตรง',
   ribbonStoryView: 'Story View',
-  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
+  ribbonStoryViewTip:
+    'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: 'โหมดการอ่าน',
   ribbonReadModeTip: 'โหมดการอ่าน: ซ่อน Ribbon เพื่ออ่านอย่างมีสมาธิ กด Esc เพื่อออก',
   ribbonPagePreview: 'แสดงตัวอย่างหน้า',

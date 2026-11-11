@@ -812,7 +812,8 @@ export const ko = {
   ribbonOutlineView: '개요',
   ribbonOutlineViewTip: '개요 보기: 제목 수준만 표시하며 제목을 직접 편집 가능',
   ribbonStoryView: 'Story View',
-  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
+  ribbonStoryViewTip:
+    'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: '읽기 모드',
   ribbonReadModeTip: '읽기 모드: 리본을 숨기고 읽기에 집중, Esc 키로 종료',
   ribbonPagePreview: '페이지 미리 보기',

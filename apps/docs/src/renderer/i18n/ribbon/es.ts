@@ -805,7 +805,8 @@ export const es = {
   ribbonOutlineViewTip:
     'Vista Esquema: mostrar solo la jerarquía de títulos; los títulos siguen siendo editables',
   ribbonStoryView: 'Story View',
-  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
+  ribbonStoryViewTip:
+    'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: 'Modo de lectura',
   ribbonReadModeTip:
     'Modo de lectura: ocultar la cinta para leer sin distracciones; presione Esc para salir',

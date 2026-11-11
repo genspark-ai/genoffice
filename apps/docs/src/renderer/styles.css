@@ -12788,7 +12788,8 @@ body.docs-crop-active
   column-count: auto;
   column-gap: 0;
   padding: 48px 56px 120px;
-  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-family:
+    ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   font-size: 15px;
   line-height: 1.7;
   color: var(--docs-paper-ink);

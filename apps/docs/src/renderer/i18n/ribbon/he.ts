@@ -787,7 +787,8 @@ export const he = {
   ribbonOutlineView: 'חלוקה לרמות',
   ribbonOutlineViewTip: 'תצוגת חלוקה לרמות: הצג רק את היררכיית הכותרות; הכותרות ניתנות לעריכה',
   ribbonStoryView: 'Story View',
-  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
+  ribbonStoryViewTip:
+    'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: 'מצב קריאה',
   ribbonReadModeTip: 'מצב קריאה: הסתר את רצועת הכלים לקריאה ממוקדת, הקש Esc ליציאה',
   ribbonPagePreview: 'תצוגה מקדימה של עמודים',

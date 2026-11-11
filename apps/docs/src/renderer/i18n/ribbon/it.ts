@@ -807,7 +807,8 @@ export const it = {
   ribbonOutlineViewTip:
     'Visualizzazione struttura: mostra solo la gerarchia dei titoli; i titoli restano modificabili',
   ribbonStoryView: 'Story View',
-  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
+  ribbonStoryViewTip:
+    'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: 'Modalità di lettura',
   ribbonReadModeTip:
     'Modalità di lettura: nascondi la barra multifunzione per una lettura concentrata, premi Esc per uscire',
