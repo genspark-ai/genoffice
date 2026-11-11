@@ -99,6 +99,16 @@ describe('convertOdtToDocx', () => {
     expect(document).toContain('c   d')
   })
 
+  it('treats a negative space count as a single space instead of throwing', async () => {
+    const body = '<text:p>a<text:s text:c="-5"/>b</text:p>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    const text = [...document.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)]
+      .map((match) => match[1])
+      .join('')
+    expect(text).toBe('a b')
+  })
+
   it('imports lists with per-level bullet and number formats', async () => {
     const body =
       '<text:list text:style-name="L1"><text:list-item><text:p>first</text:p>' +
