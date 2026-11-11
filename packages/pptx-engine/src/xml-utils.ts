@@ -29,6 +29,20 @@ export function decodeNumericCharRefs(text: string): string {
   })
 }
 
+/**
+ * An ST_Percentage as a fraction of one. The schema's own form is an integer
+ * in 1/1000 % ("50000"), and Google Slides writes the suffixed form ("50%").
+ * Reading the suffix as a bare integer turns every such value into a
+ * thousandth of what the file meant, so both forms are accepted here.
+ */
+export function percentFraction(raw: unknown): number | undefined {
+  if (raw == null) return undefined
+  const text = String(raw).trim()
+  const n = Number.parseFloat(text)
+  if (!Number.isFinite(n)) return undefined
+  return text.endsWith('%') ? n / 100 : n / 100000
+}
+
 /** XML 1.0 forbids C0 controls (minus tab/LF/CR), U+FFFE/FFFF and lone
     surrogates even when escaped — one such byte makes the whole part
     unparseable and PowerPoint offers repair. VT/FF (common in PDF-extracted

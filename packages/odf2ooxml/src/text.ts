@@ -113,7 +113,8 @@ function runsFromChildren(
           push({ text: '\n', ...base(props), ...(href ? { href } : {}) })
           break
         case 'text:s': {
-          const count = Math.min(Number(attr(node, 'text:c') ?? '1') || 1, 1000)
+          const raw = Number(attr(node, 'text:c') ?? '1') || 1
+          const count = Math.max(1, Math.min(raw, 1000))
           push({ text: ' '.repeat(count), ...base(props), ...(href ? { href } : {}) })
           break
         }

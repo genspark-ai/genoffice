@@ -19,7 +19,13 @@ import { XMLParser } from 'fast-xml-parser'
 import type { Transform, TextAlign } from './types'
 import { type EaScript, type Theme, eaScriptOfLang, resolveFontRef } from './theme'
 import { resolveColorNode } from './color'
-import { asXmlNode, decodeNumericCharRefs, xmlArray, type XmlNode } from './xml-utils'
+import {
+  asXmlNode,
+  decodeNumericCharRefs,
+  percentFraction,
+  xmlArray,
+  type XmlNode,
+} from './xml-utils'
 
 /** Spec (and PowerPoint UI) ceiling for <a:buAutoNum startAt>. */
 export const MAX_AUTO_NUM_START = 32767
@@ -282,10 +288,10 @@ const ALIGN_MAP: Record<string, TextAlign> = {
   just: 'justify',
 }
 
-/** <a:spcPct val="150000"/> → 150 (%). */
+/** <a:spcPct val="150000"/> or val="150%" → 150 (%). */
 function spcPctVal(node: unknown): number | undefined {
-  const v = asXmlNode(asXmlNode(node)['a:spcPct'])['@_val']
-  return v != null ? parseInt(String(v), 10) / 1000 : undefined
+  const ratio = percentFraction(asXmlNode(asXmlNode(node)['a:spcPct'])['@_val'])
+  return ratio != null ? ratio * 100 : undefined
 }
 
 /** <a:spcPts val="2400"/> → 24 (pt). */
