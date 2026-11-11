@@ -4,7 +4,7 @@
  * placeholder (lstStyle defRPr default colors) to avoid a circular dependency.
  */
 import { type Theme, resolveSchemeColor, sysColorHex } from './theme'
-import { asXmlNode, xmlArray, type XmlNode } from './xml-utils'
+import { asXmlNode, srgbHexValue, xmlArray, type XmlNode } from './xml-utils'
 
 /**
  * Resolve a color node + modifiers: srgbClr/schemeClr/sysClr, supporting alpha
@@ -23,9 +23,9 @@ export function resolveColorNode(
     mods = asXmlNode(n['a:srgbClr'])
     // A missing val must stay unresolved: '#' + String(undefined) is the truthy string
     // '#UNDEFINED', which hexToRgb then reinterprets as an authored colour (an empty
-    // val yields '#000000'). Unresolvable is what the sibling branches already return.
-    const raw = String(mods['@_val'] ?? '')
-    if (raw) base = '#' + raw.toUpperCase()
+    // val yields '#000000'). A val that is not six hex digits is the same trap.
+    // Unresolvable is what the sibling branches already return.
+    base = srgbHexValue(mods['@_val'])
   } else if (n['a:schemeClr']) {
     mods = asXmlNode(n['a:schemeClr'])
     base = resolveSchemeColor(String(mods['@_val']), theme, phClr)
