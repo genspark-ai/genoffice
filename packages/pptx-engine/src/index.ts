@@ -1484,7 +1484,8 @@ export interface EffectsPatch {
 
 /** #RRGGBB / #RRGGBBAA → <a:srgbClr> (alpha channel becomes an <a:alpha> child in 1000ths of a percent). */
 function effectColorXml(hex: string): string {
-  const m = /^#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$/.exec(hex)
+  const t = (hex ?? '').trim()
+  const m = /^#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$/.exec(t)
   const val = (m?.[1] ?? '000000').toUpperCase()
   const alpha = m?.[2] != null ? Math.round((parseInt(m[2], 16) / 255) * 100000) : 100000
   return alpha < 100000
