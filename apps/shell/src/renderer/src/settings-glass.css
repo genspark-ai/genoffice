@@ -1,0 +1,1695 @@
+/* Settings glass redesign — appended layer, tokens only (theme/contrast/accent aware).
+   Flat surfaces, hairline borders, translucent glass, no decorative shadows. */
+.set-dialog,
+.set-dialog * {
+  --sg-card: var(--surface-subtle);
+  --sg-field: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  --sg-r: 14px;
+}
+.set-overlay {
+  background: var(--color-bg-overlay);
+  backdrop-filter: none;
+}
+/* flat, opaque dialog: sidebar + content on one surface, no glass */
+.set-dialog {
+  position: relative;
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: none;
+}
+/* the title moves into the sidebar; only the close button stays, top-right */
+.set-header {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  padding: 0;
+  border: 0;
+}
+.set-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.set-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+.set-nav {
+  width: 228px;
+  padding: 18px 8px 12px;
+  border-right: 1px solid var(--border);
+  background: var(--surface-subtle);
+}
+.set-nav-label {
+  padding: 2px 12px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.set-nav-item {
+  border: 0;
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.set-nav-item:hover:not(.active) {
+  background: var(--hover);
+}
+.set-nav-item.active {
+  background: var(--hover);
+  font-weight: 500;
+}
+.set-pane {
+  padding-inline: 28px;
+}
+.set-pane-title {
+  letter-spacing: -0.01em;
+}
+.set-pane-title {
+  margin-top: 22px;
+  font-size: 24px;
+  font-weight: 600;
+}
+.ap-sub {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.set-pane-subtitle,
+.ap-group-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-primary);
+}
+
+/* ── cards: every grouped surface is the same slight glass ── */
+.set-pane > .set-field,
+.set-config-block,
+.set-intg-row,
+.set-intg-hero,
+.set-intg-option,
+.set-intg-confirm,
+.set-intg-details,
+.set-mode-card,
+.ap-card,
+.sc-row {
+  border: 1px solid var(--border);
+  border-radius: var(--sg-r);
+  background: var(--sg-card);
+  box-shadow: none;
+}
+.set-pane > .set-field {
+  padding: 14px 16px;
+  margin-bottom: 8px;
+}
+.set-intg-row,
+.set-intg-option,
+.set-intg-confirm {
+  padding: 14px 16px;
+  margin-bottom: 8px;
+}
+.set-intg-row .set-field {
+  padding: 0;
+  border: 0;
+  background: none;
+  backdrop-filter: none;
+}
+.ap-card {
+  overflow: hidden;
+}
+.ap-row + .ap-row {
+  border-top: 1px solid var(--border);
+}
+
+/* ── inputs ── */
+.set-input,
+.set-num-input,
+.set-hex,
+.ap-color,
+.sc-search,
+.set-input-multiline {
+  border: 0;
+  border-radius: 999px;
+  background: var(--sg-field);
+  color: var(--text-primary);
+  transition:
+    border-color 0.12s,
+    background 0.12s;
+}
+.set-input:hover,
+.set-hex:hover {
+  border-color: var(--border-hover);
+}
+.set-input:focus,
+.set-input:focus-within,
+.set-hex:focus-within,
+.sc-search:focus-within,
+.set-input-multiline:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* ── buttons ── */
+.set-btn {
+  min-height: 32px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--sg-field);
+  box-shadow: none;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.set-btn:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--border-hover);
+}
+.set-btn.primary {
+  border-color: transparent;
+}
+.set-btn:disabled {
+  opacity: 0.5;
+}
+
+/* ── ONE picker look: gs-dd (set-dd), GlassSelect, and the old native select ── */
+.set-dd .gs-dd-btn,
+.set-select-wrap,
+.gsel-trigger,
+.ap-pill {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--sg-field);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.set-select-wrap,
+.gsel-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+}
+.set-ai-endpoint-row .gsel-trigger {
+  flex: 1;
+  min-width: 0;
+}
+.set-dd .gs-dd-btn:hover,
+.set-dd .gs-dd-btn:focus-visible,
+.set-select-wrap:hover,
+.gsel-trigger[aria-expanded='true'] {
+  background: var(--hover);
+  border-color: var(--border-hover);
+}
+.gs-dd-pop.gs-dd-pop {
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+:root[data-transparency='off'] .gs-dd-pop.gs-dd-pop {
+  background: var(--surface);
+  backdrop-filter: none;
+}
+.gs-dd-item,
+.gsel-option {
+  border-radius: 8px;
+}
+.gs-dd-item:hover,
+.gsel-option:hover {
+  background: var(--hover);
+}
+
+/* ── Scrollbars in settings ── */
+.gsel-menu {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-primary, currentColor) 22%, transparent)
+    transparent;
+}
+.set-dialog ::-webkit-scrollbar,
+.set-pane::-webkit-scrollbar,
+.gsel-menu::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.set-dialog ::-webkit-scrollbar-track,
+.set-pane::-webkit-scrollbar-track,
+.gsel-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+.set-dialog ::-webkit-scrollbar-thumb,
+.set-pane::-webkit-scrollbar-thumb,
+.gsel-menu::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-primary) 22%, transparent);
+  border-radius: 9999px;
+}
+.set-dialog ::-webkit-scrollbar-thumb:hover,
+.set-pane::-webkit-scrollbar-thumb:hover,
+.gsel-menu::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-primary) 38%, transparent);
+}
+
+/* ── Integrations ── */
+.set-intg-hero {
+  position: relative;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, transparent), transparent 62%),
+    var(--sg-card);
+}
+.set-intg-hero-title {
+  font-size: 16px;
+  font-weight: 650;
+  margin-bottom: 4px;
+}
+.set-intg-hero-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: sg;
+}
+.set-intg-hero-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--sg-field);
+  font-size: 12.5px;
+  counter-increment: sg;
+}
+.set-intg-hero-steps li::before {
+  content: counter(sg);
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.set-intg-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.set-intg-step-no {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+.set-intg-version {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+.set-intg-part + .set-intg-part {
+  margin-top: 22px;
+}
+.set-intg-row .set-field {
+  align-items: center;
+  gap: 14px;
+}
+.set-intg-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.set-intg-row[data-state='installed'] {
+  border-color: color-mix(in srgb, var(--success) 38%, var(--border));
+}
+.set-intg-row[data-state='installed'] .set-intg-state::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.set-intg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.set-intg-notice,
+.set-intg-warn {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--sg-field);
+}
+.set-intg-details {
+  padding: 4px 16px;
+}
+.set-intg-details > summary {
+  padding: 10px 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+.set-intg-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.set-intg-option-letter {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.set-intg-code,
+.set-intg-code-block,
+.set-code,
+.set-log {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
+.set-intg-example {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--sg-field);
+}
+
+/* ── Skills: segmented glass tabs + 2-column card grid ── */
+.set-intg-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--sg-field);
+}
+.set-intg-tab,
+.set-intg-seg {
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.set-intg-tab:hover,
+.set-intg-seg:hover {
+  color: var(--text-primary);
+}
+.set-intg-tab.active,
+.set-intg-seg.active {
+  background: var(--hover);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.set-intg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+}
+.set-intg-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 8px;
+}
+.set-intg-list > .set-intg-tabs,
+.set-intg-list > :not(.set-intg-row):not(.set-intg-skill) {
+  grid-column: 1 / -1;
+}
+.set-intg-skill {
+  margin: 0;
+  min-width: 0;
+}
+.set-intg-skill .set-field-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.set-intg-skill .set-field-label::before {
+  content: '';
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  opacity: 0.9;
+}
+.set-intg-skill .set-field-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding-left: 38px;
+}
+
+/* ── Appearance / Shortcuts ── */
+.ap-seg {
+  padding: 3px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--sg-field);
+}
+.ap-seg-btn {
+  border-radius: 999px;
+}
+.ap-seg-btn.on {
+  background: var(--hover);
+  box-shadow: none;
+}
+.set-mode-card.active {
+  border-color: var(--accent);
+}
+.sc-keycap,
+.set-keys kbd {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--sg-field);
+  box-shadow: none;
+}
+.sc-keycap.recording {
+  border-color: var(--accent);
+}
+
+/* ── Reference layout: sidebar panel + flat content, filled pill controls ── */
+.set-dialog {
+  --sg-field: color-mix(in srgb, var(--text-primary) 9%, transparent);
+  --sg-field-hover: color-mix(in srgb, var(--text-primary) 13%, transparent);
+  --sg-side: color-mix(in srgb, var(--text-primary) 4%, var(--surface));
+  width: min(1080px, 100%);
+  height: min(760px, 92vh);
+  border-radius: 16px;
+}
+.set-dialog .set-nav {
+  width: 200px;
+  padding: 16px 8px 10px;
+  gap: 1px;
+  background: var(--sg-side);
+  border-right: 1px solid var(--border);
+}
+.set-dialog .set-nav-label {
+  padding: 0 10px 6px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.set-dialog .set-nav-item {
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.set-dialog .set-nav-item.active {
+  background: var(--sg-field);
+  font-weight: 500;
+}
+.set-dialog .set-nav-item:hover:not(.active) {
+  background: var(--hover);
+}
+.set-nav-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% + 16px);
+  margin: auto -8px -10px;
+  padding: 12px 16px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.set-nav-account:hover {
+  background: var(--hover);
+}
+.set-nav-avatar {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+}
+.set-nav-account-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.set-nav-account-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+.set-nav-account-email {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* content column */
+.set-dialog .set-pane {
+  padding: 0 48px 32px 40px;
+}
+.set-dialog .set-pane-title {
+  margin: 28px 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.set-dialog .set-pane-head .set-pane-title {
+  margin-bottom: 4px;
+}
+.set-dialog .ap-sub,
+.set-dialog .set-pane-desc {
+  margin: 0 0 22px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+.set-dialog .set-pane-subtitle,
+.set-dialog .ap-group-title {
+  margin: 22px 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.set-dialog .ap-group {
+  margin: 0;
+}
+
+/* grouped cards: hairline border, same surface as the pane */
+.set-dialog .ap-card,
+.set-dialog .set-config-block,
+.set-dialog .sc-row,
+.set-dialog .set-pane > .set-field {
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: none;
+}
+.set-dialog .ap-row {
+  min-height: 52px;
+  padding: 10px 14px;
+}
+.set-dialog .ap-row + .ap-row {
+  border-top: 1px solid var(--border-strong);
+}
+.set-dialog .ap-row-label,
+.set-dialog .set-field-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.set-dialog .ap-row-hint,
+.set-dialog .set-field-desc {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* filled pill controls, no outlines */
+.set-dialog .set-dd .gs-dd-btn,
+.set-dialog .set-select-wrap,
+.set-dialog .gsel-trigger,
+.set-dialog .ap-pill,
+.set-dialog .set-btn,
+.set-dialog .ap-seg,
+.set-dialog .ap-color,
+.set-dialog .set-hex,
+.set-dialog .set-input,
+.set-dialog .sc-search,
+.set-dialog .sc-keycap,
+.set-dialog .set-keys kbd {
+  border: 0;
+  border-radius: 999px;
+  background: var(--sg-field);
+  box-shadow: none;
+}
+.set-dialog .set-dd .gs-dd-btn,
+.set-dialog .set-select-wrap,
+.set-dialog .gsel-trigger,
+.set-dialog .ap-pill {
+  min-width: 140px;
+  min-height: 30px;
+  padding: 0 12px 0 14px;
+  font-size: 14px;
+}
+.set-dialog .set-btn {
+  min-height: 30px;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.set-dialog .set-dd .gs-dd-btn:hover,
+.set-dialog .set-select-wrap:hover,
+.set-dialog .gsel-trigger:hover,
+.set-dialog .gsel-trigger[aria-expanded='true'],
+.set-dialog .ap-pill:hover,
+.set-dialog .set-btn:hover:not(:disabled) {
+  background: var(--sg-field-hover);
+}
+.set-dialog .set-btn.primary {
+  background: var(--accent);
+}
+.set-dialog .ap-seg {
+  padding: 2px;
+}
+.set-dialog .ap-seg-btn {
+  border-radius: 999px;
+  color: var(--text-muted);
+}
+.set-dialog .ap-seg-btn.on {
+  background: var(--sg-field-hover);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+.set-dialog .set-input:focus,
+.set-dialog .sc-search:focus-within,
+.set-dialog .set-hex:focus-within,
+.set-dialog .ap-color:focus-within {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.set-dialog .set-input-multiline {
+  border-radius: 12px;
+}
+
+/* option cards (e.g. Interface Layout): selected = accent edge + tint */
+.set-dialog .set-mode-card {
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: none;
+}
+.set-dialog .set-mode-card.active {
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+/* overlay scrollbar: thin thumb, no track, no arrow buttons */
+.set-dialog .set-pane::-webkit-scrollbar {
+  width: 8px;
+}
+.set-dialog .set-pane::-webkit-scrollbar-button {
+  display: none;
+}
+.set-dialog .set-pane::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* ── Borders only in Appearance: every other pane is a flat list with dividers ── */
+.set-dialog {
+  --sg-tile: color-mix(in srgb, var(--text-primary) 4.5%, transparent);
+}
+.set-dialog .set-pane > .set-field,
+.set-dialog .sc-row {
+  min-height: 56px;
+  margin: 0;
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+}
+.set-dialog .set-pane > .set-field:last-child,
+.set-dialog .sc-row:last-child {
+  border-bottom: 0;
+}
+.set-dialog .set-pane > .set-pane-title + .set-field,
+.set-dialog .set-pane > .set-pane-head + .set-field {
+  margin-top: 10px;
+}
+.set-dialog .set-config-block {
+  padding: 4px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--sg-tile);
+}
+.set-dialog .set-config-block .set-field:last-child {
+  border-bottom: 0;
+}
+
+/* nav icons + no click outline */
+.set-dialog .set-nav-item svg {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+.set-dialog .set-nav-item.active svg {
+  color: var(--text-primary);
+}
+.set-dialog .set-nav-item:focus {
+  outline: none;
+}
+.set-dialog .set-nav-item:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+/* ── Integrations: borderless tiles ── */
+.set-dialog .set-intg-hero {
+  padding: 22px 24px;
+  border: 0;
+  border-radius: 16px;
+  background:
+    radial-gradient(
+      120% 140% at 0% 0%,
+      color-mix(in srgb, var(--accent) 22%, transparent),
+      transparent 60%
+    ),
+    var(--sg-tile);
+}
+.set-dialog .set-intg-hero-title {
+  font-size: 17px;
+}
+.set-dialog .set-intg-hero-steps li {
+  border: 0;
+  background: var(--sg-field);
+}
+.set-dialog .set-intg-part {
+  margin-top: 28px;
+}
+.set-dialog .set-intg-sub {
+  margin: 18px 0 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.set-dialog .set-intg-lead {
+  margin-bottom: 12px;
+}
+.set-dialog .set-intg-row,
+.set-dialog .set-intg-option,
+.set-dialog .set-intg-details,
+.set-dialog .set-intg-example,
+.set-dialog .set-intg-notice,
+.set-dialog .set-intg-warn {
+  border: 0;
+  border-radius: 12px;
+  background: var(--sg-tile);
+  backdrop-filter: none;
+}
+.set-dialog .set-intg-row {
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  transition: background 0.12s;
+}
+.set-dialog .set-intg-row:hover {
+  background: var(--sg-field);
+}
+.set-dialog .set-intg-row .set-field {
+  min-height: 0;
+  gap: 12px;
+  border: 0;
+}
+.set-dialog .set-intg-row .set-field-text {
+  flex: 1;
+}
+.set-intg-avatar {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+}
+.set-dialog .set-intg-row[data-state='installed'] .set-intg-state {
+  color: var(--success);
+}
+.set-dialog .set-intg-row[data-state='installed'] .set-intg-state::before {
+  background: var(--success);
+}
+.set-dialog .set-intg-confirm {
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.set-dialog .set-intg-option {
+  margin-bottom: 8px;
+  padding: 14px;
+}
+.set-dialog .set-intg-option-letter,
+.set-dialog .set-intg-version {
+  border: 0;
+  background: var(--sg-field);
+}
+.set-dialog .set-intg-details {
+  margin-top: 12px;
+  padding: 2px 16px 10px;
+}
+.set-dialog .set-intg-code,
+.set-dialog .set-intg-code-block,
+.set-dialog .set-code,
+.set-dialog .set-log {
+  border: 0;
+  background: color-mix(in srgb, var(--text-primary) 6%, var(--surface));
+}
+.set-dialog .set-intg-warn {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+/* ── Skills: toolbar + card grid ── */
+.set-dialog .set-intg-head {
+  flex-wrap: wrap;
+  margin: 6px 0 16px;
+}
+.set-dialog .set-intg-tabs {
+  border: 0;
+  background: var(--sg-field);
+}
+.set-dialog .set-intg-seg.active,
+.set-dialog .set-intg-tab.active {
+  background: var(--sg-field-hover);
+  box-shadow: none;
+}
+.set-skill-browse {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.set-dialog .set-skill-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 2px;
+  overflow-x: auto;
+  border-radius: 0;
+  background: none;
+  scrollbar-width: none;
+}
+.set-dialog .set-skill-chips .set-intg-tab {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  background: var(--sg-tile);
+}
+.set-dialog .set-skill-chips .set-intg-tab:hover {
+  background: var(--sg-field);
+}
+.set-dialog .set-skill-chips .set-intg-tab.active {
+  background: var(--text-primary);
+  color: var(--surface);
+}
+.set-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.set-skill-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--sg-tile);
+  transition: background 0.12s;
+}
+.set-skill-card:hover {
+  background: var(--sg-field);
+}
+.set-skill-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.set-skill-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 700;
+}
+.set-skill-text {
+  flex: 1;
+  min-width: 0;
+}
+.set-skill-name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-skill-desc {
+  display: -webkit-box;
+  margin-top: 3px;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.set-skill-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+}
+.set-skill-details-btn {
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.set-skill-details-btn:hover,
+.set-skill-details-btn:focus-visible {
+  color: var(--text-primary);
+  outline: none;
+  text-decoration: underline;
+}
+.set-skill-action .set-btn {
+  min-height: 28px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+.set-skill-action .set-intg-state {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* ── Sidebar spacing ── */
+.set-dialog .set-nav {
+  width: 216px;
+  padding: 20px 12px 12px;
+  gap: 3px;
+}
+.set-dialog .set-nav-label {
+  padding: 0 12px 10px;
+}
+.set-dialog .set-nav > .set-nav-item {
+  gap: 11px;
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 9px;
+}
+.set-dialog .set-nav > .fx-indicator {
+  border-radius: 9px;
+}
+.set-dialog .set-nav-account {
+  width: calc(100% + 24px);
+  margin: auto -12px -12px;
+  padding: 14px 20px;
+}
+.set-dialog .set-pane {
+  padding: 0 56px 36px 48px;
+}
+
+/* ── Rounded grey-bordered cards on every section ──
+   transparent border + two background layers: the fill on padding-box over a
+   gradient on border-box. Rows in a run share one horizontal gradient, so the
+   stacked segments read as a single card. */
+.set-dialog {
+  --ring: linear-gradient(var(--border-strong), var(--border-strong));
+  --ring-h: linear-gradient(var(--border-strong), var(--border-strong));
+  --ring-fill: var(--surface);
+  --ring-r: 14px;
+}
+
+/* consecutive settings rows → one card, divided */
+.set-dialog .set-pane > .set-field {
+  min-height: 56px;
+  margin-block: 0;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  border-top-width: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--ring-h) border-box;
+}
+.set-dialog .set-pane > .set-field:first-child,
+.set-dialog .set-pane > :not(.set-field) + .set-field {
+  margin-top: 14px;
+  border-top-width: 1px;
+  border-top-left-radius: var(--ring-r);
+  border-top-right-radius: var(--ring-r);
+}
+.set-dialog .set-pane > .set-field:last-child,
+.set-dialog .set-pane > .set-field:not(:has(+ .set-field)) {
+  margin-bottom: 18px;
+  border-bottom-left-radius: var(--ring-r);
+  border-bottom-right-radius: var(--ring-r);
+}
+
+/* grouped cards (Appearance, Shortcuts, config blocks) */
+.set-dialog .ap-card,
+.set-dialog .set-pane .ap-card,
+.set-dialog .set-config-block {
+  border: 1px solid transparent;
+  border-radius: var(--ring-r);
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--ring) border-box;
+  overflow: hidden;
+}
+.set-dialog .set-config-block {
+  padding: 4px 16px;
+}
+.set-dialog .ap-card > .ap-row + .ap-row,
+.set-dialog .ap-card > .sc-row + .sc-row {
+  border-top: 1px solid var(--border);
+}
+.set-dialog .ap-card > .sc-row,
+.set-dialog .set-pane .ap-card > .sc-row {
+  min-height: 46px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.set-dialog .ap-card > .sc-row + .sc-row {
+  border-top: 1px solid var(--border);
+}
+.set-dialog .ap-group + .ap-group {
+  margin-top: 6px;
+}
+
+/* tiles: same ring, tinted fill (hover keeps the ring) */
+.set-dialog
+  :is(.set-skill-card, .set-intg-row, .set-intg-option, .set-intg-details, .set-mode-card) {
+  --ring-fill: var(--sg-tile);
+  border: 1px solid transparent;
+  border-radius: var(--ring-r);
+  background:
+    linear-gradient(var(--ring-fill), var(--ring-fill)) padding-box,
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--ring) border-box;
+}
+.set-dialog
+  :is(.set-skill-card, .set-intg-row, .set-intg-option, .set-intg-details, .set-mode-card):hover {
+  --ring-fill: var(--sg-field);
+  background:
+    linear-gradient(var(--ring-fill), var(--ring-fill)) padding-box,
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--ring) border-box;
+}
+.set-dialog .set-mode-card.active,
+.set-dialog .set-mode-card.active:hover {
+  --ring: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 35%, var(--border-strong))
+  );
+  --ring-fill: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.set-dialog .set-intg-hero {
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background:
+    radial-gradient(
+        120% 140% at 0% 0%,
+        color-mix(in srgb, var(--accent) 22%, transparent),
+        transparent 60%
+      )
+      padding-box,
+    linear-gradient(var(--sg-tile), var(--sg-tile)) padding-box,
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--ring) border-box;
+}
+
+/* ══ Reference skin (final layer) ══════════════════════════════════════════
+   Proportions, palette and pills matched to the reference settings panel:
+   1024 × 80vh dialog, 200px sidebar, a 624px content column centred in the
+   pane, regular-weight labels, quiet hairline cards and filled grey pills.
+   Every colour is derived from the theme tokens (surface / text / accent),
+   so light, dark and custom Appearance themes all follow. */
+.set-dialog {
+  --st-bg: var(--surface);
+  --st-side: color-mix(in srgb, var(--text-primary) 5%, var(--surface));
+  --st-line: color-mix(in srgb, var(--text-primary) 12%, var(--surface));
+  --st-text: color-mix(in srgb, var(--text-primary) 90%, var(--surface));
+  --st-muted: color-mix(in srgb, var(--text-primary) 58%, var(--surface));
+  --st-seg: color-mix(in srgb, var(--text-primary) 4%, var(--surface));
+  --st-seg-on: color-mix(in srgb, var(--text-primary) 17%, var(--surface));
+  --st-pill: color-mix(in srgb, var(--text-primary) 14%, var(--surface));
+  --st-pill-hover: color-mix(in srgb, var(--text-primary) 19%, var(--surface));
+  --st-nav-on: color-mix(in srgb, var(--text-primary) 13%, var(--surface));
+  --st-field: color-mix(in srgb, var(--text-primary) 5%, var(--surface));
+  --st-key: color-mix(in srgb, var(--text-primary) 22%, var(--surface));
+  /* feed the earlier layers the same palette */
+  --sg-field: var(--st-pill);
+  --sg-field-hover: var(--st-pill-hover);
+  --sg-tile: transparent;
+  --sg-side: var(--st-side);
+  --ring: linear-gradient(var(--st-line), var(--st-line));
+  --ring-h: linear-gradient(var(--st-line), var(--st-line));
+  --ring-r: 12px;
+
+  width: min(1024px, calc(100vw - 48px));
+  height: min(80vh, 820px);
+  min-height: min(520px, 90vh);
+  border: 1px solid var(--st-line);
+  border-radius: 16px;
+  background: var(--st-bg);
+  color: var(--st-text);
+}
+.set-dialog .set-body {
+  container-type: inline-size;
+}
+
+/* close: alone in the corner */
+.set-dialog .set-header {
+  top: 16px;
+  right: 16px;
+}
+.set-dialog .set-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--st-muted);
+}
+.set-dialog .set-close:hover {
+  background: var(--st-seg);
+  color: var(--text-primary);
+}
+
+/* ── sidebar ── */
+.set-dialog .set-nav {
+  width: 200px;
+  padding: 16px 8px 8px;
+  gap: 2px;
+  border-right: 0;
+  background: var(--st-side);
+}
+.set-dialog .set-nav-label {
+  padding: 0 8px 6px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--st-muted);
+}
+.set-dialog .set-nav > .set-nav-item {
+  gap: 10px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 14.5px;
+  font-weight: 400;
+  line-height: 20px;
+  color: var(--st-text);
+}
+.set-dialog .set-nav > .set-nav-item svg {
+  width: 15px;
+  height: 15px;
+  color: var(--st-muted);
+}
+.set-dialog .set-nav > .set-nav-item.active svg {
+  color: var(--text-primary);
+}
+.set-dialog .set-nav > .set-nav-item:hover:not(.active) {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+.set-dialog .set-nav > .set-nav-item:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--st-line);
+}
+.set-dialog .set-nav > .set-nav-item.active:focus-visible {
+  box-shadow: none;
+}
+.set-dialog .set-nav > .fx-indicator {
+  border-radius: 6px;
+  background: var(--st-nav-on);
+}
+.set-dialog .set-nav-account {
+  gap: 10px;
+  width: calc(100% + 16px);
+  margin: auto -8px -8px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--st-line);
+}
+.set-dialog .set-nav-account:hover {
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+.set-dialog .set-nav-account-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.set-dialog .set-nav-account-email {
+  font-size: 12.5px;
+  color: var(--st-muted);
+}
+
+/* ── content column: 624px, centred in the pane ── */
+.set-dialog .set-pane {
+  padding: 0 max(32px, calc((100cqw - 200px - 624px) / 2)) 40px;
+  color: var(--st-text);
+}
+.set-dialog .set-pane-title,
+.set-dialog .set-pane .ap-title {
+  margin: 26px 0 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 30px;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+.set-dialog .set-pane-head {
+  margin: 0;
+  padding: 26px 0 0;
+  border-bottom: 0;
+  background: var(--st-bg);
+}
+.set-dialog .set-pane-head .set-pane-title {
+  margin: 0;
+}
+.set-dialog .set-pane-desc,
+.set-dialog .set-pane .ap-sub,
+.set-dialog .set-pane-title + .set-intg-lead {
+  margin: 4px 0 0;
+  font-size: 14.5px;
+  line-height: 20px;
+  color: var(--st-muted);
+}
+.set-dialog .set-pane-subtitle,
+.set-dialog .set-pane .ap-group-title {
+  margin: 24px 0 10px;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-primary);
+}
+.set-dialog .set-pane .ap-group,
+.set-dialog .set-pane .ap-group + .ap-group {
+  margin: 0;
+}
+
+/* ── cards: hairline, 12px radius, rows divided ── */
+.set-dialog .set-pane > .set-field {
+  min-height: 46px;
+  padding: 10px 13px;
+  gap: 16px;
+}
+.set-dialog .set-pane > .set-field:first-child,
+.set-dialog .set-pane > :not(.set-field) + .set-field {
+  margin-top: 0;
+}
+.set-dialog .set-pane > :is(.set-pane-title, .set-pane-desc, .set-pane-head) + .set-field,
+.set-dialog .set-pane > .set-field-desc + .set-field {
+  margin-top: 20px;
+}
+.set-dialog .set-pane > .set-field:last-child,
+.set-dialog .set-pane > .set-field:not(:has(+ .set-field)) {
+  margin-bottom: 0;
+}
+.set-dialog .set-pane > .set-field + .set-field-desc {
+  margin: 8px 2px 0;
+  font-size: 13px;
+  color: var(--st-muted);
+}
+.set-dialog .set-pane > .set-field + :is(.set-pane-footer, .set-btn-row) {
+  margin-top: 16px;
+}
+.set-dialog .ap-card .ap-row {
+  min-height: 46px;
+  padding: 10px 13px;
+}
+.set-dialog .set-pane .ap-card > .sc-row {
+  min-height: 45px;
+  padding: 8px 13px;
+}
+.set-dialog .ap-card > .ap-row + .ap-row,
+.set-dialog .ap-card > .sc-row + .sc-row {
+  border-top: 1px solid var(--st-line);
+}
+
+/* row text */
+.set-dialog .set-field-label,
+.set-dialog .ap-row-label,
+.set-dialog .sc-row > :first-child {
+  font-size: 14.5px;
+  font-weight: 400;
+  line-height: 20px;
+  color: var(--st-text);
+}
+.set-dialog .set-field-desc,
+.set-dialog .ap-row-hint {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--st-muted);
+}
+.set-dialog .set-field-value {
+  font-size: 14px;
+  color: var(--st-muted);
+}
+
+/* tiles (skills, integrations, options): bordered, no fill */
+.set-dialog
+  :is(.set-skill-card, .set-intg-row, .set-intg-option, .set-intg-details, .set-mode-card):hover {
+  --ring-fill: var(--st-seg);
+}
+
+/* ── pills ── */
+.set-dialog .set-btn {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--st-pill);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.set-dialog .set-btn:hover:not(:disabled) {
+  background: var(--st-pill-hover);
+}
+.set-dialog .set-btn.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.set-dialog .set-btn.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, var(--text-primary));
+}
+.set-dialog .set-btn.danger {
+  color: var(--danger);
+}
+
+/* selects */
+.set-dialog .set-dd .gs-dd-btn,
+.set-dialog .set-select-wrap,
+.set-dialog .gsel-trigger,
+.set-dialog .ap-pill {
+  min-width: 120px;
+  min-height: 28px;
+  padding: 0 10px 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--st-pill);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 400;
+}
+.set-dialog .set-dd .gs-dd-btn:hover,
+.set-dialog .set-select-wrap:hover,
+.set-dialog .gsel-trigger:hover,
+.set-dialog .gsel-trigger[aria-expanded='true'],
+.set-dialog .ap-pill:hover {
+  background: var(--st-pill-hover);
+}
+
+/* segmented: outlined track, filled active segment */
+.set-dialog .ap-seg,
+.set-dialog .set-intg-tabs.set-intg-sections {
+  padding: 2px;
+  border: 1px solid var(--st-line);
+  border-radius: 999px;
+  background: var(--st-seg);
+}
+.set-dialog .ap-seg-btn,
+.set-dialog .set-intg-sections > .set-intg-seg {
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--st-text);
+  font-size: 14px;
+  font-weight: 400;
+}
+.set-dialog .fx-seg > .fx-indicator,
+.set-dialog .set-intg-sections > .fx-indicator {
+  background: var(--st-seg-on);
+}
+
+/* inputs and search: soft field, 8px radius */
+.set-dialog .set-input,
+.set-dialog .set-hex,
+.set-dialog .ap-color,
+.set-dialog .sc-search {
+  min-height: 30px;
+  border: 1px solid var(--st-line);
+  border-radius: 8px;
+  background: var(--st-field);
+  color: var(--text-primary);
+  font-size: 13.5px;
+}
+.set-dialog .set-num-input {
+  width: 160px;
+  flex: 0 0 auto;
+}
+.set-dialog .sc-search {
+  min-height: 32px;
+  margin-top: 20px;
+}
+.set-dialog .set-input:focus,
+.set-dialog .sc-search:focus-within,
+.set-dialog .set-hex:focus-within,
+.set-dialog .ap-color:focus-within {
+  border-color: var(--accent);
+  box-shadow: none;
+}
+
+/* shortcut keycaps: outlined pills */
+.set-dialog .sc-keycap,
+.set-dialog .set-keys kbd {
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--st-key);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--st-text);
+  font-size: 12.5px;
+  box-shadow: none;
+}
+.set-dialog .sc-icon-btn {
+  color: var(--st-muted);
+}
+.set-dialog .sc-icon-btn:hover {
+  color: var(--text-primary);
+}
+
+/* switch: accent track, white knob */
+.set-dialog .set-switch {
+  background: var(--st-key);
+}
+.set-dialog .set-switch::after {
+  background: var(--accent-text);
+}
+.set-dialog .set-switch[aria-checked='true'],
+.set-dialog .set-switch:checked {
+  background: var(--accent);
+}
+
+/* ── glass controls: translucent fills with a hairline edge and a faint top
+   highlight on buttons only; rows and cards stay flat. Tighter insets. ── */
+.set-dialog {
+  --gl-btn: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  --gl-btn-hover: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  --gl-btn-on: color-mix(in srgb, var(--text-primary) 13%, transparent);
+  --gl-line: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  --gl-hi: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  --gl-blur: blur(14px) saturate(150%);
+}
+.set-dialog .ap-pill,
+.set-dialog .gsel-trigger,
+.set-dialog .set-select-wrap,
+.set-dialog .set-btn:not(.primary),
+.set-dialog .ap-color {
+  border: 1px solid var(--gl-line);
+  background: var(--gl-btn);
+  -webkit-backdrop-filter: var(--gl-blur);
+  backdrop-filter: var(--gl-blur);
+  box-shadow: inset 0 1px 0 var(--gl-hi);
+}
+.set-dialog .ap-pill:hover,
+.set-dialog .gsel-trigger:hover,
+.set-dialog .gsel-trigger[aria-expanded='true'],
+.set-dialog .set-select-wrap:hover,
+.set-dialog .set-btn:not(.primary):hover {
+  background: var(--gl-btn-hover);
+}
+.set-dialog .ap-pill,
+.set-dialog .gsel-trigger {
+  min-height: 28px;
+  padding: 0 8px 0 10px;
+}
+
+/* segmented: clear track, glass thumb */
+.set-dialog .ap-seg,
+.set-dialog .set-intg-tabs.set-intg-sections {
+  gap: 0;
+  padding: 2px;
+  border: 1px solid var(--gl-line);
+  background: transparent;
+}
+.set-dialog .ap-seg-btn,
+.set-dialog .set-intg-sections > .set-intg-seg {
+  min-height: 24px;
+  padding: 0 9px;
+}
+.set-dialog .ap-seg-btn.on,
+.set-dialog .fx-seg > .fx-indicator,
+.set-dialog .set-intg-sections > .fx-indicator {
+  background: var(--gl-btn-on);
+  box-shadow: inset 0 1px 0 var(--gl-hi);
+}
+.set-dialog .fx-seg > .ap-seg-btn.on {
+  background: none;
+  box-shadow: none;
+}
+.set-dialog .ap-seg-btn:focus-visible,
+.set-dialog .set-intg-seg:focus-visible {
+  outline: 1px solid var(--border-strong);
+  outline-offset: 0;
+}
+
+/* color field: swatch, hash and hex sit close together */
+.set-dialog .ap-color {
+  gap: 4px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 10px 0 6px;
+  border-radius: 999px;
+}
+.set-dialog .ap-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+.set-dialog .ap-hex {
+  width: 58px;
+}
+.set-dialog .ap-color:focus-within {
+  border-color: var(--border-strong);
+  box-shadow: inset 0 1px 0 var(--gl-hi);
+}
+
+/* ── heavier hairlines: cards, row dividers and glass controls at 1.5px ── */
+.set-dialog {
+  --bw: 1.5px;
+}
+.set-dialog .set-pane > .set-field,
+.set-dialog .set-pane > section > .set-field {
+  border-width: 0 var(--bw) var(--bw);
+}
+.set-dialog .set-pane > .set-field:first-child,
+.set-dialog .set-pane > :not(.set-field) + .set-field {
+  border-top-width: var(--bw);
+}
+.set-dialog .ap-card,
+.set-dialog .set-pane .ap-card,
+.set-dialog .set-config-block {
+  border-width: var(--bw);
+}
+.set-dialog .ap-card > .ap-row + .ap-row,
+.set-dialog .ap-card > .sc-row + .sc-row {
+  border-top-width: var(--bw);
+}
+.set-dialog .ap-pill,
+.set-dialog .gsel-trigger,
+.set-dialog .set-select-wrap,
+.set-dialog .set-btn:not(.primary),
+.set-dialog .ap-color,
+.set-dialog .ap-seg,
+.set-dialog .set-intg-tabs.set-intg-sections {
+  border-width: var(--bw);
+}
+
+/* AI Media & Search: rows inside each capability section join into a card */
+.set-dialog .set-pane > section > .set-field {
+  min-height: 46px;
+  margin-block: 0;
+  padding: 10px 13px;
+  gap: 16px;
+  border-style: solid;
+  border-color: transparent;
+  border-radius: 0;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--ring-h) border-box;
+}
+.set-dialog .set-pane > section > .set-field:first-child,
+.set-dialog .set-pane > section > :not(.set-field) + .set-field {
+  margin-top: 10px;
+  border-top-width: var(--bw);
+  border-top-left-radius: var(--ring-r);
+  border-top-right-radius: var(--ring-r);
+}
+.set-dialog .set-pane > section > .set-field:not(:has(+ .set-field)) {
+  margin-bottom: 0;
+  border-bottom-left-radius: var(--ring-r);
+  border-bottom-right-radius: var(--ring-r);
+}
+.set-dialog .set-pane > section > .set-field + .set-field-desc {
+  margin: 8px 2px 0;
+  font-size: 13px;
+  color: var(--st-muted);
+}

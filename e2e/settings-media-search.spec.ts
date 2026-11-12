@@ -38,6 +38,7 @@ test('Jev reranking lives in the AI Media & Search pane, saves with it, and repo
 
     await block.locator('#set-search-jev-key').fill('ts-key')
     await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await page.locator('.cd-card').getByRole('button', { name: 'Save', exact: true }).click()
     await expect(page.locator('.set-pane-actions .set-ai-status.ok')).toHaveText('Saved')
     await expect
       .poll(async () => {

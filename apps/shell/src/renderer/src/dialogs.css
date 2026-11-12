@@ -1,0 +1,213 @@
+/* Confirm prompt and skill detail: glass cards over a dimmed backdrop, above
+   the Settings dialog (z-index 1000). Theme tokens only. */
+
+.cd-overlay,
+.sd-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--color-bg-overlay);
+}
+
+.cd-card,
+.sd-card {
+  border: 1.5px solid var(--border-strong);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  backdrop-filter: blur(28px) saturate(160%);
+  box-shadow: var(--shadow-menu);
+  color: var(--text-primary);
+}
+
+/* ── confirm ── */
+.cd-card {
+  width: min(400px, 100%);
+  padding: 20px 20px 16px;
+}
+.cd-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.cd-body {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.cd-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.cd-btn {
+  min-height: 30px;
+  padding: 0 14px;
+  border: 1.5px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.cd-btn:hover {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+.cd-btn.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.cd-btn.danger {
+  border-color: transparent;
+  background: var(--danger);
+  color: var(--accent-text);
+}
+.cd-btn.primary:hover,
+.cd-btn.danger:hover {
+  filter: brightness(1.08);
+}
+.cd-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── skill detail ── */
+.sd-card {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  max-height: min(760px, 100%);
+  padding: 20px 22px 16px;
+}
+.sd-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sd-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 600;
+}
+.sd-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.sd-close:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+.sd-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 14px 0 6px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.sd-tag {
+  color: var(--text-tertiary);
+  font-size: 15px;
+  font-weight: 400;
+}
+.sd-desc {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.sd-body {
+  position: relative;
+  flex: 1;
+  min-height: 120px;
+  margin-top: 16px;
+  overflow: auto;
+  padding: 14px 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+  font-size: 13.5px;
+}
+.sd-body .ai-md {
+  font-size: 13.5px;
+}
+.sd-empty {
+  color: var(--text-tertiary);
+}
+.sd-copy {
+  position: sticky;
+  top: 0;
+  float: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: -4px -6px 0 8px;
+  padding: 0 10px;
+  border: 1.5px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.sd-copy:hover {
+  color: var(--text-primary);
+}
+.sd-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+/* the card's Install / Update / Remove action, rendered outside .set-dialog */
+.sd-foot .set-btn {
+  min-height: 32px;
+  padding: 0 16px;
+  border: 1.5px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.sd-foot .set-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+.sd-foot .set-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sd-foot .set-intg-state {
+  color: var(--text-secondary);
+  font-size: 13px;
+}

@@ -12,7 +12,6 @@
   background: var(--surface);
   color: var(--text-primary);
   font: 12px/1.45 var(--gs-font-sans);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 18%);
   pointer-events: none;
   visibility: hidden;
   /* some tips carry embedded newlines (e.g. pdf note pins: contents + hint) */

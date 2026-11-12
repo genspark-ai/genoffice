@@ -15,7 +15,7 @@ function surfaceIn(selector: string): string | undefined {
 
 describe('shellWindowBackground', () => {
   it('picks the dark or light surface', () => {
-    expect(shellWindowBackground(true)).toBe('#1e1e1e')
+    expect(shellWindowBackground(true)).toBe('#0b0b0b')
     expect(shellWindowBackground(false)).toBe('#ffffff')
   })
 

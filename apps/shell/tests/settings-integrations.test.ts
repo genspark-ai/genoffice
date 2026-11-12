@@ -54,7 +54,10 @@ async function click(el: Element | null | undefined): Promise<void> {
   await flush()
 }
 
-function buttonWithText(text: string, scope: ParentNode = host): HTMLButtonElement | undefined {
+function buttonWithText(
+  text: string,
+  scope: ParentNode = document.body,
+): HTMLButtonElement | undefined {
   return [...scope.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)
 }
 
@@ -137,7 +140,7 @@ async function openIntegrations(
 describe('Settings → Integrations', () => {
   it('lists detected agents with their state and offers the matching actions', async () => {
     await openIntegrations({ status: async () => baseStatus(), copyText: async () => {} })
-    const rows = [...host.querySelectorAll('.set-intg-row')]
+    const rows = [...document.body.querySelectorAll('.set-intg-row')]
     expect(rows.map((r) => r.getAttribute('data-agent'))).toEqual([
       'claude-code',
       'codex',
@@ -152,23 +155,25 @@ describe('Settings → Integrations', () => {
     expect(rows[2]!.textContent).toContain('Installed 2.1.0 (not by this app)')
     expect(rows[2]!.querySelectorAll('button')).toHaveLength(0)
     // CLI block: launcher path, PATH state in plain words, the manual command as copyable code
-    expect(host.textContent).toContain('/Applications/GenOffice.app/Contents/Resources/cli')
-    expect(host.textContent).toContain("not on your terminal's PATH")
-    expect(host.querySelector('.set-intg-cli code')?.textContent).toContain('sudo ln -sf')
-    expect(host.textContent).toContain('skill 2.1.0')
+    expect(document.body.textContent).toContain(
+      '/Applications/GenOffice.app/Contents/Resources/cli',
+    )
+    expect(document.body.textContent).toContain("not on your terminal's PATH")
+    expect(document.body.querySelector('.set-intg-cli code')?.textContent).toContain('sudo ln -sf')
+    expect(document.body.textContent).toContain('skill 2.1.0')
     // guidance: hero steps, one-of-three note, npx command shown inline
-    expect(host.querySelectorAll('.set-intg-hero-steps li')).toHaveLength(3)
-    expect(host.textContent).toContain('Pick any one of these three ways')
+    expect(document.body.querySelectorAll('.set-intg-hero-steps li')).toHaveLength(3)
+    expect(document.body.textContent).toContain('Pick any one of these three ways')
     // one "try it" block after both routes: its heading, the three prompt rows
     // (each copyable) and the closing note that names both routes
-    expect(host.textContent).toContain('Try it')
-    const examples = [...host.querySelectorAll('.set-intg-example')]
+    expect(document.body.textContent).toContain('Try it')
+    const examples = [...document.body.querySelectorAll('.set-intg-example')]
     expect(examples).toHaveLength(3)
     expect(examples.every((row) => row.querySelector('button'))).toBe(true)
-    expect(host.textContent).toContain('through the command line or MCP')
-    expect(host.textContent).toContain('npx skills add genspark-ai/genoffice')
+    expect(document.body.textContent).toContain('through the command line or MCP')
+    expect(document.body.textContent).toContain('npx skills add genspark-ai/genoffice')
     // MCP block: the launcher itself while genoffice is not on the PATH, as a command and as JSON
-    const mcp = [...host.querySelectorAll('.set-intg-mcp code')].map((c) => c.textContent)
+    const mcp = [...document.body.querySelectorAll('.set-intg-mcp code')].map((c) => c.textContent)
     expect(mcp[0]).toBe(
       'claude mcp add --transport stdio genoffice -- /Applications/GenOffice.app/Contents/Resources/cli/genoffice mcp',
     )
@@ -180,7 +185,7 @@ describe('Settings → Integrations', () => {
         },
       },
     })
-    expect(host.textContent).toContain('assistant picks one')
+    expect(document.body.textContent).toContain('assistant picks one')
   })
 
   it('shows the copies the shared row replaced and removes them on request', async () => {
@@ -203,7 +208,7 @@ describe('Settings → Integrations', () => {
         return { removed: status.legacy, kept: [] }
       },
     })
-    const legacyRow = host.querySelector('.set-intg-row[data-agent="legacy"]')
+    const legacyRow = document.body.querySelector('.set-intg-row[data-agent="legacy"]')
     expect(legacyRow).toBeTruthy()
     expect(legacyRow!.textContent).toContain('/home/u/.codex/skills/genoffice/SKILL.md')
     await click(buttonWithText('Remove old copies', legacyRow!))
@@ -247,7 +252,7 @@ describe('Settings → Integrations', () => {
       status: async () => status,
       installSkill: install as IntegrationsApi['installSkill'],
     })
-    const row = host.querySelector('[data-agent="claude-code"]')!
+    const row = document.body.querySelector('[data-agent="claude-code"]')!
     await click(buttonWithText('Install', row))
     expect(install).not.toHaveBeenCalled()
     expect(row.textContent).toContain('Will write: /home/u/.claude/skills/genoffice/SKILL.md')
@@ -259,7 +264,7 @@ describe('Settings → Integrations', () => {
     await click(buttonWithText('Install', row))
     await click(buttonWithText('Confirm', row))
     expect(install).toHaveBeenCalledWith({ agentId: 'claude-code' })
-    const after = host.querySelector('[data-agent="claude-code"]')!
+    const after = document.body.querySelector('[data-agent="claude-code"]')!
     expect(after.getAttribute('data-state')).toBe('installed')
     expect(after.textContent).toContain('Skill 2.1.0 installed · ready in your next chat')
     expect(buttonWithText('Uninstall', after)).toBeTruthy()
@@ -279,13 +284,15 @@ describe('Settings → Integrations', () => {
       saveSkillZip: saveZip,
     })
     await click(buttonWithText('Install into another folder…'))
-    expect(host.textContent).toContain('Will write: /x/genoffice/SKILL.md')
+    expect(document.body.textContent).toContain('Will write: /x/genoffice/SKILL.md')
     await click(buttonWithText('Confirm'))
     expect(install).toHaveBeenCalledWith({ dir: '/x' })
 
     await click(buttonWithText('Download skill (zip)'))
     expect(saveZip).toHaveBeenCalledWith('Save skill')
-    expect(host.textContent).toContain('Saved to /Users/u/Downloads/genoffice-skill-2.1.0.zip')
+    expect(document.body.textContent).toContain(
+      'Saved to /Users/u/Downloads/genoffice-skill-2.1.0.zip',
+    )
   })
 
   it('marks the Integrations entry while a detected assistant holds an older skill', async () => {

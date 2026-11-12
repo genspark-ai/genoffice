@@ -61,7 +61,7 @@ export function capStatPaths(paths: readonly string[]): string[] {
 
 export function normalizeRecentQuery(
   raw: unknown,
-): Required<Omit<RecentQuery, 'ext' | 'group'>> & { ext?: string } {
+): Required<Omit<RecentQuery, 'ext' | 'group' | 'query'>> & { ext?: string; query?: string } {
   const query = (raw ?? {}) as RecentQuery
   // offset/limit cross the preload boundary, so an IPC caller may send "10" rather
   // than 10; without coercion every page silently restarted at the first page.
@@ -77,7 +77,8 @@ export function normalizeRecentQuery(
   const rawExt =
     typeof query.ext === 'string' ? query.ext.trim().toLowerCase().replace(/^\.+/, '') : ''
   const ext = rawExt ? rawExt : undefined
-  return { offset, limit, ext }
+  const text = typeof query.query === 'string' ? query.query.trim().toLowerCase() : ''
+  return { offset, limit, ext, query: text || undefined }
 }
 
 /** sidebar filter keys that stand for a family of extensions, not one exact ext */
@@ -108,11 +109,14 @@ export async function pageRecentPaths(
   raw: unknown,
   starredPaths: ReadonlySet<string>,
 ): Promise<RecentPage> {
-  const { offset, limit, ext } = normalizeRecentQuery(raw)
+  const { offset, limit, ext, query } = normalizeRecentQuery(raw)
   // Probe only the returned page, without blocking main on unavailable mounts.
-  const filtered = ext
+  let filtered = ext
     ? paths.filter((p) => matchesExtFamily(extname(p).slice(1).toLowerCase(), ext))
     : paths
+  if (query) {
+    filtered = filtered.filter((p) => p.toLowerCase().includes(query))
+  }
   const page = limit === 0 ? [] : filtered.slice(offset, offset + limit)
   return {
     entries: await statPathEntriesAsync(page, starredPaths),

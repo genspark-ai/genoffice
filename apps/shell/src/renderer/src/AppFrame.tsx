@@ -3,6 +3,7 @@ import { Home } from './Home'
 import { Onboarding } from './Onboarding'
 import { StarPromptCard } from './StarPromptCard'
 import { TabBar } from './TabBar'
+import { useGlobalShortcuts } from './use-global-shortcuts'
 
 interface AppFrameProps {
   /** resolved before first paint (main.tsx) so home never flashes under the overlay */
@@ -13,6 +14,7 @@ export function AppFrame({ initialOnboardingSeen }: AppFrameProps) {
   const [homeActive, setHomeActive] = useState(true)
   const [showOnboarding, setShowOnboarding] = useState(!initialOnboardingSeen)
   const [starPromptDocOpens, setStarPromptDocOpens] = useState<number | null>(null)
+  useGlobalShortcuts()
 
   useEffect(() => {
     const applyTabs = (tabs: Awaited<ReturnType<typeof window.aiOfficeTabs.list>>) => {

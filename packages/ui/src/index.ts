@@ -115,6 +115,8 @@ export {
   type ShapeGalleryGroup,
   type ShapeGalleryShape,
 } from './shape-gallery'
+export { useConversationSteps, readConversationSteps } from './conversation-steps'
+export type { ConversationSteps } from './conversation-steps'
 export {
   CropDialog,
   CutoutDialog,

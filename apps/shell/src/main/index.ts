@@ -375,6 +375,9 @@ import { homeCliContext, runHomeCli, type HomeCliDeps } from './home-cli'
 import { sanitizeFileBase } from './mcp/tools/document-tools'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
 import { TabManager } from './tab-manager'
+import { initShortcutForwarding } from './shortcut-forwarding'
+import { winMaterialSupported } from './window-material'
+import { CHROME_CHANNELS } from '../shared/chrome-api'
 import { tabMenuTemplate, type TabMenuActions, isProgramFile } from './tab-menu'
 import { runTabDocumentAction, type TabDocumentAction } from './tab-document-actions'
 import { duplicateDocumentFile } from './tab-duplicate'
@@ -3977,7 +3980,22 @@ function withUserGuide(): void {
   if (separator?.type === 'separator') submenu.insert(1, separator)
 }
 
+/** top-level application menu entries drawn in the tab strip on Windows */
+function chromeMenuItems(): Electron.MenuItem[] {
+  if (process.platform !== 'win32') return []
+  return (Menu.getApplicationMenu()?.items ?? []).filter((i) => i.visible && i.submenu)
+}
+
+function chromeMenuLabels(): string[] {
+  return chromeMenuItems().map((i) => i.label.replace(/&/g, ''))
+}
+
 function applyMenuFor(kind: TabKind): void {
+  applyMenuForKind(kind)
+  shellWindow?.webContents.send(CHROME_CHANNELS.menuChanged, chromeMenuLabels())
+}
+
+function applyMenuForKind(kind: TabKind): void {
   switch (kind) {
     case 'docs':
       buildDocsMenu()
@@ -4096,7 +4114,9 @@ function installUiScale(): void {
 
 function refreshTitleBarOverlay(): void {
   if (process.platform === 'darwin' || !shellWindow || shellWindow.isDestroyed()) return
-  shellWindow.setTitleBarOverlay(tabStripOverlay(nativeTheme.shouldUseDarkColors, currentUiScale))
+  shellWindow.setTitleBarOverlay(
+    tabStripOverlay(nativeTheme.shouldUseDarkColors, currentUiScale, winMaterialSupported()),
+  )
 }
 
 function createShellWindow(): void {
@@ -4132,9 +4152,16 @@ function createShellWindow(): void {
           // stays registered for its accelerators and opens from the strip's
           // menu button (Alt still reveals the native bar where one exists)
           titleBarStyle: 'hidden' as const,
-          titleBarOverlay: tabStripOverlay(nativeTheme.shouldUseDarkColors, currentUiScale),
+          titleBarOverlay: tabStripOverlay(
+            nativeTheme.shouldUseDarkColors,
+            currentUiScale,
+            winMaterialSupported(),
+          ),
           autoHideMenuBar: true,
         }),
+    ...(winMaterialSupported()
+      ? { backgroundMaterial: 'mica' as const, backgroundColor: '#00000000' }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -4146,6 +4173,9 @@ function createShellWindow(): void {
   // reopens maximized instead of as a screen-sized ordinary window
   if (restored?.maximized) win.maximize()
   shellWindow = win
+  if (process.platform === 'win32') {
+    win.setMenuBarVisibility(false)
+  }
   nativeTheme.on('updated', refreshTitleBarOverlay)
   win.once('closed', () => nativeTheme.off('updated', refreshTitleBarOverlay))
   // dragging the window by the tab strip's blank (draggable) area produces no
@@ -4413,6 +4443,10 @@ const OPEN_DIALOG_EXTENSIONS = [
   'markdown',
   'txt',
   'json',
+  'xml',
+  'yaml',
+  'yml',
+  'sql',
   'html',
   'htm',
 ]
@@ -5189,6 +5223,7 @@ function registerHomeIpc(): void {
     removeStarredFiles(list)
   })
 
+  initShortcutForwarding()
   ipcMain.handle(HOME_CHANNELS.openTrash, async () => {
     await openTrash()
   })
@@ -5248,6 +5283,14 @@ function registerHomeIpc(): void {
   })
 
   ipcMain.handle(HOME_CHANNELS.getTheme, (): UiTheme => currentTheme())
+  ipcMain.handle(HOME_CHANNELS.windowMaterialActive, (): boolean => winMaterialSupported())
+  ipcMain.handle(CHROME_CHANNELS.menuLabels, (): string[] => chromeMenuLabels())
+  ipcMain.handle(CHROME_CHANNELS.menuPopup, (_event, index: unknown, x: unknown, y: unknown) => {
+    if (typeof index !== 'number' || typeof x !== 'number' || typeof y !== 'number') return
+    const item = chromeMenuItems()[index]
+    if (!item?.submenu || !shellWindow) return
+    item.submenu.popup({ window: shellWindow, x: Math.round(x), y: Math.round(y) })
+  })
   // editor tabs ask via the app-wide channel (symmetric with app:get-language)
   ipcMain.handle('app:get-theme', (): UiTheme => currentTheme())
 

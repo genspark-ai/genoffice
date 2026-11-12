@@ -156,6 +156,8 @@ export interface RecentQuery {
   limit?: number
   /** restrict to one extension ('docx' | 'xlsx' | 'pptx'); omit for all */
   ext?: string
+  /** case-insensitive substring match on file name or folder; omit for no text filter */
+  query?: string
   /** starred() only: restrict to one starred group; omit for all */
   group?: string
 }
@@ -359,8 +361,8 @@ export interface HomeApi {
   duplicateFile(path: string): Promise<void>
   /** move files to the trash and drop them from the recent list */
   deleteFiles(paths: string[]): Promise<void>
-  /** open the OS trash, where deleted files can be restored */
-  openTrash(): Promise<void>
+  /** open the OS Recycle Bin / Trash, where deleted files can be restored */
+  openTrash(): Promise<boolean | void>
   /** the tree roots: the default save folder first, then the folders the user added */
   folderRoots(): Promise<FolderRoot[]>
   /** directory picker; the chosen folder joins the tree in place (nothing is copied or moved) */
@@ -422,6 +424,10 @@ export interface HomeApi {
   setOnboardingSeen(): Promise<boolean>
   /** current UI theme preference (persisted in userData/app-settings.json) */
   getTheme(): Promise<UiTheme>
+  /** whether the shell window sits on a Windows OS material (Mica), so the page should paint transparent regions */
+  windowMaterialActive(): Promise<boolean>
+  /** absolute filesystem paths of files dropped on the window (empty for non-file drags) */
+  pathsForFiles(files: File[]): string[]
   /** switch + persist the UI theme; broadcasts 'app:theme-changed' to all web contents */
   setTheme(theme: UiTheme): Promise<void>
   /** current document page theme preference (genoffice#1811, persisted in userData/app-settings.json) */
@@ -664,6 +670,43 @@ export interface MoveResult {
   failed: Array<{ path: string; error: string }>
 }
 
+export interface ProjectSummaryEntry {
+  id: string
+  name: string
+  createdAt: string
+  updatedAt: string
+  fileCount: number
+  lastActiveAt: string
+  isDefault: boolean
+}
+
+export interface TimelineEntryItem {
+  filePath: string
+  fileName: string
+  chatId: string
+  ts: string
+  role: 'user' | 'assistant'
+  preview: string
+  seq: number
+}
+
+export interface ProjectHomeApi {
+  /** list all projects (with file count + last-active time) */
+  listProjects(): Promise<ProjectSummaryEntry[]>
+  /** list existing files currently belonging to a project */
+  listFiles(projectId: string): Promise<string[]>
+  /** create a project */
+  createProject(name: string): Promise<ProjectSummaryEntry>
+  /** rename a project */
+  renameProject(id: string, name: string): Promise<void>
+  /** soft-delete a project */
+  deleteProject(id: string): Promise<void>
+  /** move a file into the given project */
+  moveFile(filePath: string, projectId: string): Promise<void>
+  /** fetch the project timeline */
+  getTimeline(projectId: string, limit?: number): Promise<TimelineEntryItem[]>
+}
+
 export const HOME_CHANNELS = {
   openHelp: 'home:open-help',
   recents: 'home:recents',
@@ -720,6 +763,7 @@ export const HOME_CHANNELS = {
   onboardingSeen: 'home:onboarding-seen',
   setOnboardingSeen: 'home:set-onboarding-seen',
   getTheme: 'home:get-theme',
+  windowMaterialActive: 'home:window-material-active',
   setTheme: 'home:set-theme',
   getDocumentTheme: 'home:get-document-theme',
   setDocumentTheme: 'home:set-document-theme',

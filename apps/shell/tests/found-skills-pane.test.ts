@@ -101,12 +101,12 @@ async function click(el: Element | null | undefined): Promise<void> {
 const buttonWithText = (text: string): HTMLButtonElement | undefined =>
   [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)
 
-/** the Read disclosure inside the row that names this skill */
-const disclosureFor = (name: string): HTMLDetailsElement | undefined => {
-  const row = [...host.querySelectorAll('.set-intg-row')].find((r) =>
-    r.querySelector('.set-field-label')?.textContent?.includes(name),
+/** the Details button inside the row that names this skill */
+const detailsButtonFor = (name: string): HTMLButtonElement | undefined => {
+  const row = [...host.querySelectorAll('.set-skill-card')].find((r) =>
+    r.querySelector('.set-skill-name')?.textContent?.includes(name),
   )
-  return row?.querySelector('details') ?? undefined
+  return row?.querySelector<HTMLButtonElement>('.set-skill-details-btn') ?? undefined
 }
 
 describe('FoundSkills', () => {
@@ -181,7 +181,7 @@ describe('FoundSkills', () => {
     expect(buttonWithText('Import folder…')).toBeTruthy()
   })
 
-  it('fetches a body only when its disclosure is opened', async () => {
+  it('fetches a body only when its detail page is opened', async () => {
     mountApi([skill({})])
     const body = vi.fn(async () => 'Do the thing.\n')
     window.aiOfficeIntegrations = {
@@ -191,16 +191,17 @@ describe('FoundSkills', () => {
     await render()
     expect(body).not.toHaveBeenCalled()
 
-    const details = disclosureFor('pptx-builder')
+    const details = detailsButtonFor('pptx-builder')
     expect(details).toBeTruthy()
     await act(async () => {
-      details!.open = true
-      details!.dispatchEvent(new Event('toggle'))
+      details!.click()
       await Promise.resolve()
       await Promise.resolve()
     })
     expect(body).toHaveBeenCalledWith('/app/skills/pptx-builder/SKILL.md')
-    expect(host.textContent).toContain('Do the thing.')
+    const page = document.body.querySelector('.sd-card')
+    expect(page?.textContent).toContain('pptx-builder')
+    expect(page?.textContent).toContain('Do the thing.')
   })
 
   it('offers shipped skills with Install, Update or an installed tag, and installs by name', async () => {

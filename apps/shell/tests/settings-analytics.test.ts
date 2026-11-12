@@ -75,13 +75,13 @@ describe('Settings analytics consent', () => {
       await Promise.resolve()
     })
 
-    const general = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-nav-item')).find(
-      (button) => button.textContent?.includes('General'),
-    )
+    const general = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('.set-nav-item'),
+    ).find((button) => button.textContent?.includes('General'))
     expect(general).toBeDefined()
     await click(general!)
 
-    const consent = host.querySelector<HTMLButtonElement>(
+    const consent = document.body.querySelector<HTMLButtonElement>(
       '.set-switch[aria-label="Send anonymous usage statistics"]',
     )
     expect(consent?.getAttribute('aria-checked')).toBe('true')
@@ -132,12 +132,12 @@ describe('Settings AutoSave default', () => {
       await Promise.resolve()
     })
 
-    const general = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-nav-item')).find(
-      (button) => button.textContent?.includes('General'),
-    )
+    const general = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('.set-nav-item'),
+    ).find((button) => button.textContent?.includes('General'))
     await click(general!)
 
-    const toggle = host.querySelector<HTMLButtonElement>(
+    const toggle = document.body.querySelector<HTMLButtonElement>(
       '.set-switch[aria-label="Auto-save all documents"]',
     )
     expect(toggle?.getAttribute('aria-checked')).toBe('true')

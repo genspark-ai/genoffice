@@ -45,6 +45,7 @@ import {
   setActiveSlidesWebContents,
   slidesIsDirty,
 } from '../../../slides/src/main/slides-main'
+import { forwardShortcuts } from './shortcut-forwarding'
 import { rendererUrl, safeExternalUrl } from '@genoffice/electron-utils'
 import type { DocumentTabKind, OpenDocumentTab, TabKind, TabSummary } from '../shared/tabs-api'
 import { isSettledRect, tabStripHeight } from '../shared/tab-drag-geometry'
@@ -268,6 +269,11 @@ export class TabManager {
     return this.tabs.flatMap((t) => (t.filePath ? [t.filePath] : []))
   }
 
+  /** file behind a document tab; undefined for Home and unsaved tabs */
+  filePathOf(id: string): string | undefined {
+    return this.tabs.find((t) => t.id === id)?.filePath
+  }
+
   list(): TabSummary[] {
     return this.tabs.map((t) => ({
       id: t.id,
@@ -364,6 +370,9 @@ export class TabManager {
     options?: { newBlank?: boolean; aiContent?: AiDocContent },
   ): string {
     const view = createDocsView(openPath)
+    forwardShortcuts(view.webContents, () =>
+      this.shellWindow.isDestroyed() ? null : this.shellWindow.webContents,
+    )
     const id = `t${this.nextId++}`
     if (options?.newBlank) markDocsNewBlank(view.webContents.id)
     if (options?.aiContent) queueDocsAiContent(view.webContents.id, options.aiContent)
@@ -387,6 +396,9 @@ export class TabManager {
     const spare = this.takeSpareSheetsView()
     const view =
       spare ?? createSheetsView({ includeAiHandlers: false, openingWorkbook: Boolean(openPath) })
+    forwardShortcuts(view.webContents, () =>
+      this.shellWindow.isDestroyed() ? null : this.shellWindow.webContents,
+    )
     // bind the path to this tab's webContents: a multi-select Open creates
     // several sheets tabs in one loop, so a single global path would be
     // overwritten before the earlier tabs consume it
@@ -414,6 +426,9 @@ export class TabManager {
 
   openSlidesTab(openPath?: string): string {
     const view = createSlidesView(openPath)
+    forwardShortcuts(view.webContents, () =>
+      this.shellWindow.isDestroyed() ? null : this.shellWindow.webContents,
+    )
     const id = `t${this.nextId++}`
     this.shellWindow.contentView.addChildView(view)
     view.setVisible(false)
@@ -432,6 +447,9 @@ export class TabManager {
 
   openPdfTab(openPath: string): string {
     const view = createPdfView(openPath)
+    forwardShortcuts(view.webContents, () =>
+      this.shellWindow.isDestroyed() ? null : this.shellWindow.webContents,
+    )
     const id = `t${this.nextId++}`
     this.shellWindow.contentView.addChildView(view)
     view.setVisible(false)
@@ -459,6 +477,9 @@ export class TabManager {
 
   openMarkdownTab(openPath?: string): string {
     const view = createMarkdownView(openPath)
+    forwardShortcuts(view.webContents, () =>
+      this.shellWindow.isDestroyed() ? null : this.shellWindow.webContents,
+    )
     const id = `t${this.nextId++}`
     this.shellWindow.contentView.addChildView(view)
     view.setVisible(false)

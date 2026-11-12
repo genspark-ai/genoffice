@@ -1,0 +1,124 @@
+/* Settings motion layer (settings-fx.tsx): sliding
+   indicators, springy switch, entrance animations. Patterns after React Bits
+   and 21st.dev, rebuilt on theme tokens only. */
+
+/* ── sliding indicator (nav + segmented controls) ── */
+.fx-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: 8px;
+  background: var(--sg-field);
+  opacity: 0;
+  pointer-events: none;
+}
+.fx-indicator[data-ready] {
+  transition:
+    transform 0.32s cubic-bezier(0.3, 0.75, 0.2, 1),
+    width 0.32s cubic-bezier(0.3, 0.75, 0.2, 1),
+    height 0.32s cubic-bezier(0.3, 0.75, 0.2, 1),
+    opacity 0.15s ease;
+}
+.set-dialog .set-nav {
+  position: relative;
+}
+.set-dialog .set-nav > .set-nav-item {
+  position: relative;
+  z-index: 1;
+}
+.set-dialog .set-nav > .set-nav-item.active {
+  background: none;
+}
+.fx-seg,
+.set-dialog .set-intg-sections {
+  position: relative;
+  isolation: isolate;
+}
+.fx-seg > .fx-indicator,
+.set-intg-sections > .fx-indicator {
+  border-radius: 999px;
+  background: var(--sg-field-hover);
+}
+.set-dialog .fx-seg > .ap-seg-btn,
+.set-dialog .set-intg-sections > .set-intg-seg {
+  position: relative;
+  z-index: 1;
+  transition: color 0.2s ease;
+}
+.set-dialog .fx-seg > .ap-seg-btn.on,
+.set-dialog .set-intg-sections > .set-intg-seg.active {
+  background: none;
+}
+
+/* ── springy switch ── */
+.set-dialog .set-switch {
+  transition: background 0.2s ease;
+}
+.set-dialog .set-switch::after {
+  border: 0;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--text-primary) 22%, transparent);
+  transition:
+    left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+    width 0.2s ease;
+}
+.set-dialog .set-switch[aria-checked='true'],
+.set-dialog .set-switch:checked {
+  background: var(--accent);
+}
+.set-dialog .set-switch:active::after {
+  width: 22px;
+}
+
+/* ── count-up figure ── */
+.fx-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── entrances (FadeContent / AnimatedList style) ── */
+@media (prefers-reduced-motion: no-preference) {
+  .set-overlay {
+    animation: fx-fade 0.2s ease-out both;
+  }
+  .set-dialog {
+    animation: fx-pop 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .set-dialog .set-pane > * {
+    animation: fx-rise 0.34s cubic-bezier(0.2, 0.75, 0.2, 1) both;
+  }
+  .set-dialog .set-pane > :nth-child(2) {
+    animation-delay: 25ms;
+  }
+  .set-dialog .set-pane > :nth-child(3) {
+    animation-delay: 50ms;
+  }
+  .set-dialog .set-pane > :nth-child(4) {
+    animation-delay: 75ms;
+  }
+  .set-dialog .set-pane > :nth-child(n + 5) {
+    animation-delay: 100ms;
+  }
+  .set-skill-card,
+  .set-dialog .set-intg-row {
+    animation: fx-rise 0.38s cubic-bezier(0.2, 0.75, 0.2, 1) both;
+    animation-delay: calc(min(var(--i, 0), 12) * 30ms + 60ms);
+  }
+}
+@keyframes fx-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fx-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+@keyframes fx-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}

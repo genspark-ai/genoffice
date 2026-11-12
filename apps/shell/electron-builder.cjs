@@ -685,6 +685,30 @@ const config = {
       from: '../../node_modules/ws',
       to: 'gsk/node_modules/ws',
     },
+    {
+      from: 'build/docx.ico',
+      to: 'docx.ico',
+    },
+    {
+      from: 'build/xlsx.ico',
+      to: 'xlsx.ico',
+    },
+    {
+      from: 'build/pptx.ico',
+      to: 'pptx.ico',
+    },
+    {
+      from: 'build/pdf.ico',
+      to: 'pdf.ico',
+    },
+    {
+      from: 'build/md.ico',
+      to: 'md.ico',
+    },
+    {
+      from: 'build/html.ico',
+      to: 'html.ico',
+    },
   ],
   // `mimeType` is read only by the Linux target, where it becomes the
   // desktop entry's MimeType= list; associations without it are dropped

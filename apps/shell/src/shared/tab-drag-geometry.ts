@@ -5,7 +5,7 @@
  */
 
 /** rendered height of the shell's tab strip (apps/shell/src/renderer/src/tabbar.css) */
-export const TAB_STRIP_HEIGHT = 40
+export const TAB_STRIP_HEIGHT = 44
 
 /**
  * The strip's rendered height at an interface scale.

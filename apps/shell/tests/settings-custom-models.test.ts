@@ -131,8 +131,8 @@ async function openAiPane(): Promise<void> {
     )
     await Promise.resolve()
   })
-  const nav = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-nav-item')).find((button) =>
-    button.textContent?.includes('AI Model'),
+  const nav = Array.from(document.body.querySelectorAll<HTMLButtonElement>('.set-nav-item')).find(
+    (button) => button.textContent?.includes('AI Model'),
   )
   await click(nav!)
 }
@@ -174,22 +174,24 @@ async function type(input: HTMLInputElement, value: string): Promise<void> {
 }
 
 function field(id: string): HTMLInputElement {
-  return host.querySelector<HTMLInputElement>(`#${id}`)!
+  return document.body.querySelector<HTMLInputElement>(`#${id}`)!
 }
 
 function modelBox(): HTMLInputElement | null {
-  return host.querySelector<HTMLInputElement>('#set-ai-model')
+  return document.body.querySelector<HTMLInputElement>('#set-ai-model')
 }
 
 function picker(label: string): HTMLButtonElement | null {
-  return host.querySelector<HTMLButtonElement>(`.gs-dd-btn[aria-label="${label}"]`)
+  return document.body.querySelector<HTMLButtonElement>(`.gsel-trigger[aria-label="${label}"]`)
 }
 
 /** the model ids the picker offers, in order */
 async function modelOptions(): Promise<string[]> {
   const trigger = picker('Model')!
   await click(trigger)
-  const options = Array.from(host.querySelectorAll<HTMLButtonElement>('.gs-dd-pop [role="option"]'))
+  const options = Array.from(
+    document.body.querySelectorAll<HTMLButtonElement>('.gsel-menu [role="option"]'),
+  )
   const labels = options.map((option) => option.getAttribute('aria-label') ?? option.textContent!)
   await click(trigger)
   return labels
@@ -198,7 +200,7 @@ async function modelOptions(): Promise<string[]> {
 async function pickModel(model: string): Promise<void> {
   await click(picker('Model')!)
   const option = Array.from(
-    host.querySelectorAll<HTMLButtonElement>('.gs-dd-pop [role="option"]'),
+    document.body.querySelectorAll<HTMLButtonElement>('.gsel-menu [role="option"]'),
   ).find((button) => button.textContent === model)
   await click(option!)
 }
@@ -206,7 +208,7 @@ async function pickModel(model: string): Promise<void> {
 async function pickProvider(label: string): Promise<void> {
   await click(picker('Provider')!)
   const option = Array.from(
-    host.querySelectorAll<HTMLButtonElement>('.gs-dd-pop [role="option"]'),
+    document.body.querySelectorAll<HTMLButtonElement>('.gsel-menu [role="option"]'),
   ).find((button) => button.textContent?.includes(label))
   await click(option!)
 }
@@ -275,7 +277,7 @@ describe('the refresh touches the catalog and nothing else', () => {
     await answer(0, ['text-embedding-nomic-embed-text-v1.5', 'chat'])
     // an embedding model must never be silently adopted as the chat model
     expect(picker('Model')!.textContent).toBe('')
-    expect(host.textContent).not.toContain('text-embedding-nomic-embed-text-v1.5')
+    expect(document.body.textContent).not.toContain('text-embedding-nomic-embed-text-v1.5')
   })
 })
 
@@ -300,10 +302,12 @@ describe('saving a refreshed probe cache', () => {
 
   async function saveDraft(): Promise<AiSettings> {
     await type(field('set-ai-endpoint-name'), 'Updated endpoint')
-    const save = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+    const save = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(
       (button) => button.textContent === 'Save',
     )!
     await click(save)
+    // Save asks first; confirm in the prompt
+    await click(document.body.querySelector<HTMLButtonElement>('.cd-card .cd-btn.primary')!)
     return setAiSettings.mock.calls[0]![0] as AiSettings
   }
 

@@ -70,15 +70,15 @@ async function openGeneral(api: Partial<HomeApi>): Promise<void> {
     )
     await Promise.resolve()
   })
-  const general = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-nav-item')).find(
-    (button) => button.textContent?.includes('General'),
-  )
+  const general = Array.from(
+    document.body.querySelectorAll<HTMLButtonElement>('.set-nav-item'),
+  ).find((button) => button.textContent?.includes('General'))
   await click(general!)
 }
 
 function row(): HTMLElement | null {
   return (
-    Array.from(host.querySelectorAll<HTMLElement>('.set-field')).find((el) =>
+    Array.from(document.body.querySelectorAll<HTMLElement>('.set-field')).find((el) =>
       el.textContent?.includes('Default app for Office documents'),
     ) ?? null
   )

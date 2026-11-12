@@ -52,9 +52,7 @@
   max-height: calc(100vh - 48px);
   border-radius: 20px;
   background: #fff;
-  box-shadow:
-    0 24px 64px rgba(35, 36, 37, 0.22),
-    0 2px 8px rgba(35, 36, 37, 0.08);
+  box-shadow: none;
   padding: 41px 32px 25px;
 }
 
@@ -290,7 +288,7 @@
   background: #fff;
   border: 1.5px solid var(--onb-brand);
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(15, 127, 255, 0.18);
+  box-shadow: none;
   cursor: pointer;
   transition: all var(--onb-transition);
 }
@@ -432,10 +430,9 @@
 }
 
 [data-theme='dark'] .onb-card {
-  background: #2a2a2a;
-  box-shadow:
-    0 24px 64px rgba(0, 0, 0, 0.5),
-    0 2px 8px rgba(0, 0, 0, 0.3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: none;
 }
 
 [data-theme='dark'] .onb-join,
@@ -457,10 +454,9 @@
     --onb-border-strong: #555;
   }
   :root:not([data-theme='light']):not([data-theme='dark']) .onb-card {
-    background: #2a2a2a;
-    box-shadow:
-      0 24px 64px rgba(0, 0, 0, 0.5),
-      0 2px 8px rgba(0, 0, 0, 0.3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: none;
   }
   :root:not([data-theme='light']):not([data-theme='dark']) .onb-join,
   :root:not([data-theme='light']):not([data-theme='dark']) .onb-star-btn {

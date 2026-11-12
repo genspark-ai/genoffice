@@ -77,6 +77,7 @@ test('a custom endpoint carries a full declarative profile through save and rela
     await page.screenshot({ path: screenshotPath('settings-endpoint-profile-pane') })
 
     await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await page.locator('.cd-card').getByRole('button', { name: 'Save', exact: true }).click()
     await expect(page.locator('.set-pane-actions .set-ai-status.ok')).toBeVisible()
 
     // ── the saved file carries the whole profile ──

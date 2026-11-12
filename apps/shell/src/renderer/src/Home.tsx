@@ -6,8 +6,16 @@ import type {
 } from 'react'
 import logoLockup from './assets/genoffice-logo.svg'
 import { KbAskPanel } from './KbAskPanel'
-import { FileBadge } from './file-badge'
+import { FileBadge } from './FileBadge'
 import { placeFolderMenu } from './folder-menu-position'
+import { SearchPalette } from './SearchPalette'
+import type { PaletteMode } from './SearchPalette'
+import { onShortcut } from './shortcuts'
+import { useShortcutHint } from './use-shortcut-hint'
+import { useConfirm } from './ConfirmDialog'
+import { useToast } from './toast'
+import iconFolder from './assets/file-folder.svg'
+
 import type {
   AccountStatus,
   CloudProjectKind,
@@ -764,11 +772,13 @@ function AccountEntry({
   onStatusChange,
   onFileSearchSettingsChange,
   openRequest,
+  onSettingsClose,
 }: {
   onStatusChange?: (status: AccountStatus | null) => void
   onFileSearchSettingsChange?: () => void
   /** a fresh object per request: the home list asks to open the modal on a given block */
   openRequest?: SettingsTarget | null
+  onSettingsClose?: () => void
 }) {
   const { t } = useI18n()
   const [status, setStatus] = useState<AccountStatus | null>(null)
@@ -920,13 +930,102 @@ function AccountEntry({
     setTarget(to)
     setSettingsOpen(true)
   }, [])
-  const handleClick = () => openSettings(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [confirmDialog, askConfirm] = useConfirm(t('cancel'))
+  const requestLogout = () =>
+    askConfirm({
+      title: t('confirmSignOutTitle'),
+      body: t('confirmSignOutBody'),
+      confirmLabel: t('logout'),
+      danger: true,
+      onConfirm: doLogout,
+    })
+  const settingsHint = useShortcutHint('openSettings') || 'Ctrl+,'
+  const handleClick = () => setMenuOpen((open) => !open)
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
   useEffect(() => {
     if (openRequest) openSettings(openRequest)
   }, [openRequest, openSettings])
 
   return (
-    <div className="account-entry">
+    <div className="account-entry" ref={menuRef}>
+      {confirmDialog}
+      {menuOpen && (
+        <div className="account-menu" role="menu" aria-label={t('setSecAccount')}>
+          <div className="account-menu-head">
+            <span className={`account-avatar${loggedIn ? ' logged-in' : ''}`}>{initial}</span>
+            <span className="account-menu-who">
+              <span className="account-menu-name">
+                {loggedIn ? (email ? email.split('@')[0] : t('loggedIn')) : t('setNotLoggedIn')}
+              </span>
+              {loggedIn && email && <span className="account-menu-email">{email}</span>}
+            </span>
+          </div>
+          <div className="account-menu-sep" role="separator" />
+          <button
+            type="button"
+            role="menuitem"
+            className="account-menu-item"
+            onClick={() => {
+              setMenuOpen(false)
+              openSettings(null)
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.2" />
+              <path
+                d="M6.8 1.5h2.4l.3 1.4a5.5 5.5 0 0 1 1.3.7l1.3-.6 1.7 1.7-.6 1.3c.3.4.5.9.7 1.3l1.4.3v2.4l-1.4.3a5.5 5.5 0 0 1-.7 1.3l.6 1.3-1.7 1.7-1.3-.6a5.5 5.5 0 0 1-1.3.7l-.3 1.4H6.8l-.3-1.4a5.5 5.5 0 0 1-1.3-.7l-1.3.6-1.7-1.7.6-1.3a5.5 5.5 0 0 1-.7-1.3l-1.4-.3V6.8l1.4-.3a5.5 5.5 0 0 1 .7-1.3l-.6-1.3 1.7-1.7 1.3.6a5.5 5.5 0 0 1 1.3-.7l.3-1.4z"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="account-menu-label">{t('settings')}</span>
+            <kbd className="account-menu-kbd">{settingsHint}</kbd>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="account-menu-item"
+            disabled={loggingOut || waiting}
+            onClick={() => {
+              setMenuOpen(false)
+              if (loggedIn) requestLogout()
+              else startLogin()
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d={
+                  loggedIn
+                    ? 'M6 2.5H4A1.5 1.5 0 0 0 2.5 4v8A1.5 1.5 0 0 0 4 13.5h2M10.5 11 13.5 8l-3-3M13.5 8H6'
+                    : 'M10 2.5h2A1.5 1.5 0 0 1 13.5 4v8a1.5 1.5 0 0 1-1.5 1.5h-2M6.5 11l3-3-3-3M9.5 8h-7'
+                }
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="account-menu-label">{loggedIn ? t('logout') : t('login')}</span>
+          </button>
+        </div>
+      )}
       {settingsOpen && (
         <SettingsModal
           status={status}
@@ -936,13 +1035,16 @@ function AccountEntry({
           urlCopied={urlCopied}
           onOpenLoginUrl={openLoginUrl}
           onCopyLoginUrl={copyLoginUrl}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => {
+            setSettingsOpen(false)
+            onSettingsClose?.()
+          }}
           onFileSearchChange={onFileSearchSettingsChange}
           onLogin={() => {
             setSettingsOpen(false)
             startLogin()
           }}
-          onLogout={doLogout}
+          onLogout={requestLogout}
           skillUpdateDue={skillUpdate}
           onSkillUpdateDue={setSkillUpdate}
           target={target}
@@ -997,8 +1099,8 @@ function AccountEntry({
       <button
         className="account-btn"
         onClick={handleClick}
-        aria-haspopup="dialog"
-        aria-expanded={settingsOpen}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
         data-tip={
           loggedIn
             ? email || t('loggedInGenspark')
@@ -1006,7 +1108,7 @@ function AccountEntry({
               ? t('waitingLogin')
               : (errorText ?? t('loginGenspark'))
         }
-        aria-label={t('settings')}
+        aria-label={t('setSecAccount')}
       >
         <span
           className={`account-avatar${loggedIn ? ' logged-in' : ''}${waiting ? ' waiting' : ''}`}
@@ -1494,6 +1596,62 @@ export function Home() {
   // bumped when the Jev settings change so the current results are judged again (or the order dropped)
   const [rerankSettingsTick, setRerankSettingsTick] = useState(0)
   const [settingsRequest, setSettingsRequest] = useState<SettingsTarget | null>(null)
+  const toast = useToast()
+  const [palette, setPalette] = useState<PaletteMode | null>(null)
+  const [newMenuOpen, setNewMenuOpen] = useState(false)
+  const newMenuRef = useRef<HTMLDivElement>(null)
+
+  const openRecycleBin = () => {
+    window.aiOffice.openTrash?.().catch(() => {
+      toast.show({ message: t('toastTrashFailed'), durationMs: 4000 })
+    })
+  }
+  // the shortcut listener below registers once; read the latest handler through a ref
+  const openRecycleBinRef = useRef(openRecycleBin)
+  openRecycleBinRef.current = openRecycleBin
+
+  const openSettings = () => {
+    setSettingsRequest({ section: 'general' })
+  }
+
+  useEffect(() => {
+    return onShortcut((id) => {
+      if (id === 'openFileSearch') {
+        setPalette('files')
+        return true
+      }
+      if (id === 'openConversationPicker') {
+        setPalette('conversations')
+        return true
+      }
+      if (id === 'openSettings') {
+        setSettingsRequest({ section: 'general' })
+        return true
+      }
+      if (id === 'openRecycleBin') {
+        openRecycleBinRef.current()
+        return true
+      }
+      return false
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!newMenuOpen) return
+    const onDown = (e: PointerEvent) => {
+      if (!newMenuRef.current?.contains(e.target as Node)) setNewMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setNewMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [newMenuOpen])
+
   useEffect(
     () =>
       window.aiOffice.onOpenSettings?.((target) =>
@@ -3436,272 +3594,415 @@ export function Home() {
   }
 
   return (
-    <div className="home">
-      <aside
-        className="sidebar"
-        ref={sidebarRef}
-        style={sidebarWidth === null ? undefined : { width: sidebarWidth }}
-      >
-        <div className="sidebar-logo">
-          <img className="logo-lockup" src={logoLockup} alt="GenOffice" />
-        </div>
-        <nav className="sidebar-nav">
+    <>
+      <div className="rail">
+        <nav className="rail-nav" aria-label={t('navRecent')}>
           <button
-            className={`nav-item${activeNav === 'recent' ? ' active' : ''}`}
+            className={`rail-btn${activeNav === 'recent' ? ' active' : ''}`}
+            title={t('navHome')}
+            aria-label={t('navHome')}
             aria-current={activeNav === 'recent' ? 'page' : undefined}
-            onClick={() => changeView('recent')}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.3" />
-              <path
-                d="M8 4.8V8l2.2 1.6"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinecap="round"
-              />
-            </svg>
-            <span className="nav-label">{t('navRecent')}</span>
-            <span className="nav-count">{navCounts.recent}</span>
-          </button>
-          <button
-            className={`nav-item${activeNav === 'starred' ? ' active' : ''}`}
-            aria-current={activeNav === 'starred' ? 'page' : undefined}
-            onClick={() => changeView('starred')}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M8 1.9l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.6l-3.8 2 .72-4.23-3.07-3 4.25-.62z"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span className="nav-label">{t('navStarred')}</span>
-            <span className="nav-count">{navCounts.starred}</span>
-          </button>
-          <button
-            className={`nav-item${activeNav === 'ask' ? ' active' : ''}`}
-            aria-current={activeNav === 'ask' ? 'page' : undefined}
             onClick={() => {
-              setAskMode(true)
-              setSelectedFolder(null)
-              setCloudMode(false)
-              setSelected(new Set())
-              setRowMenu(null)
+              changeView('recent')
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
-                d="M14 10.5c0 .9-.7 1.6-1.6 1.6H5.4L2 14.5V3.6C2 2.7 2.7 2 3.6 2h8.8c.9 0 1.6.7 1.6 1.6z"
+                d="M2.5 6.5L8 2.2l5.5 4.3V13a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V6.5z"
                 stroke="currentColor"
-                strokeWidth="1.3"
+                strokeWidth="1.2"
+                strokeLinecap="round"
                 strokeLinejoin="round"
               />
+            </svg>
+          </button>
+
+          <button
+            className="rail-btn"
+            title={`${t('scaOpenFileSearch')} (${useShortcutHint('openFileSearch') || 'Ctrl+P'})`}
+            aria-label={t('scaOpenFileSearch')}
+            onClick={() => {
+              setPalette('files')
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.6" stroke="currentColor" strokeWidth="1.3" />
               <path
-                d="M5 6.2h6M5 8.6h4"
+                d="M10.5 10.5L14 14"
                 stroke="currentColor"
                 strokeWidth="1.3"
                 strokeLinecap="round"
               />
             </svg>
-            <span className="nav-label">{t('navAsk')}</span>
           </button>
-          {loggedIn && (
+
+          <button
+            className="rail-btn"
+            title={`${t('settings')} (${useShortcutHint('openSettings') || 'Ctrl+,'})`}
+            aria-label={t('settings')}
+            onClick={openSettings}
+          >
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.2" />
+              <path
+                d="M6.8 1.5h2.4l.3 1.4a5.5 5.5 0 0 1 1.3.7l1.3-.6 1.7 1.7-.6 1.3c.3.4.5.9.7 1.3l1.4.3v2.4l-1.4.3a5.5 5.5 0 0 1-.7 1.3l.6 1.3-1.7 1.7-1.3-.6a5.5 5.5 0 0 1-1.3.7l-.3 1.4H6.8l-.3-1.4a5.5 5.5 0 0 1-1.3-.7l-1.3.6-1.7-1.7.6-1.3a5.5 5.5 0 0 1-.7-1.3l-1.4-.3V6.8l1.4-.3a5.5 5.5 0 0 1 .7-1.3l-.6-1.3 1.7-1.7 1.3.6a5.5 5.5 0 0 1 1.3-.7l.3-1.4z"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </nav>
+
+        <AccountEntry
+          onStatusChange={handleAccountStatus}
+          onFileSearchSettingsChange={() => setRerankSettingsTick((n) => n + 1)}
+          openRequest={settingsRequest}
+          onSettingsClose={() => setSettingsRequest(null)}
+        />
+      </div>
+
+      <div className="home">
+        <aside
+          className="sidebar"
+          ref={sidebarRef}
+          style={sidebarWidth === null ? undefined : { width: sidebarWidth }}
+        >
+          <div className="sidebar-logo">
+            <img className="logo-lockup" src={logoLockup} alt="GenOffice" />
+          </div>
+
+          <div className="new-wrap" ref={newMenuRef}>
             <button
-              className={`nav-item${cloudMode && !selectedFolder ? ' active' : ''}`}
+              className="new-btn"
+              aria-haspopup="menu"
+              aria-expanded={newMenuOpen}
+              onClick={() => setNewMenuOpen((o) => !o)}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M8 3v10M3 8h10"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+              {t('newButton')}
+            </button>
+            {newMenuOpen && (
+              <div className="new-menu" role="menu">
+                {NEW_ITEMS.map((item) => (
+                  <button
+                    key={item.ext}
+                    role="menuitem"
+                    onClick={() => {
+                      setNewMenuOpen(false)
+                      void item.action()
+                    }}
+                  >
+                    <FileBadge ext={item.ext} size={18} />
+                    <span>{item.title}</span>
+                    <span className="new-menu-sub">{item.sub}</span>
+                  </button>
+                ))}
+                <div className="new-menu-sep" />
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setNewMenuOpen(false)
+                    void window.aiOffice.browse()
+                  }}
+                >
+                  <img
+                    src={iconFolder}
+                    width={18}
+                    height={18}
+                    alt=""
+                    aria-hidden="true"
+                    style={{ objectFit: 'contain' }}
+                  />
+                  <span>{t('openLocal')}</span>
+                </button>
+              </div>
+            )}
+          </div>
+          <nav className="sidebar-nav">
+            <button
+              className={`nav-item${activeNav === 'recent' ? ' active' : ''}`}
+              aria-current={activeNav === 'recent' ? 'page' : undefined}
+              onClick={() => changeView('recent')}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.3" />
+                <path
+                  d="M8 4.8V8l2.2 1.6"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="nav-label">{t('navRecent')}</span>
+              <span className="nav-count">{navCounts.recent}</span>
+            </button>
+            <button
+              className={`nav-item${activeNav === 'starred' ? ' active' : ''}`}
+              aria-current={activeNav === 'starred' ? 'page' : undefined}
+              onClick={() => changeView('starred')}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M8 1.9l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.6l-3.8 2 .72-4.23-3.07-3 4.25-.62z"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span className="nav-label">{t('navStarred')}</span>
+              <span className="nav-count">{navCounts.starred}</span>
+            </button>
+            <button
+              className={`nav-item${activeNav === 'ask' ? ' active' : ''}`}
+              aria-current={activeNav === 'ask' ? 'page' : undefined}
               onClick={() => {
-                setCloudMode(true)
-                setAskMode(false)
+                setAskMode(true)
                 setSelectedFolder(null)
+                setCloudMode(false)
                 setSelected(new Set())
                 setRowMenu(null)
               }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path
-                  d="M8 1.8l1.55 4.65L14.2 8l-4.65 1.55L8 14.2 6.45 9.55 1.8 8l4.65-1.55z"
+                  d="M14 10.5c0 .9-.7 1.6-1.6 1.6H5.4L2 14.5V3.6C2 2.7 2.7 2 3.6 2h8.8c.9 0 1.6.7 1.6 1.6z"
                   stroke="currentColor"
                   strokeWidth="1.3"
                   strokeLinejoin="round"
                 />
-              </svg>
-              <span className="nav-label">{t('navCloud')}</span>
-              <svg
-                className="nav-external"
-                width="13"
-                height="13"
-                viewBox="0 0 16 16"
-                fill="none"
-                aria-hidden="true"
-              >
                 <path
-                  d="M6.5 3.5H4a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 4 13.5h7A1.5 1.5 0 0 0 12.5 12V9.5M9.5 2.5h4v4M13 3l-5.5 5.5"
+                  d="M5 6.2h6M5 8.6h4"
                   stroke="currentColor"
                   strokeWidth="1.3"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="nav-label">{t('navAsk')}</span>
+            </button>
+            {loggedIn && (
+              <button
+                className={`nav-item${cloudMode && !selectedFolder ? ' active' : ''}`}
+                onClick={() => {
+                  setCloudMode(true)
+                  setAskMode(false)
+                  setSelectedFolder(null)
+                  setSelected(new Set())
+                  setRowMenu(null)
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path
+                    d="M8 1.8l1.55 4.65L14.2 8l-4.65 1.55L8 14.2 6.45 9.55 1.8 8l4.65-1.55z"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span className="nav-label">{t('navCloud')}</span>
+                <svg
+                  className="nav-external"
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M6.5 3.5H4a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 4 13.5h7A1.5 1.5 0 0 0 12.5 12V9.5M9.5 2.5h4v4M13 3l-5.5 5.5"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            )}
+          </nav>
+          <div className="sidebar-divider" />
+          {renderFolderPanel()}
+          <div className="sidebar-footer">
+            <button
+              className="nav-item nav-trash"
+              title={t('navRecycleBinTip')}
+              aria-label={t('navRecycleBin')}
+              onClick={openRecycleBin}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M3 4.5h10M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M4 4.5l.7 8.4A1.5 1.5 0 0 0 6.2 14.4h3.6a1.5 1.5 0 0 0 1.5-1.5l.7-8.4"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
               </svg>
+              <span className="nav-label">{t('navRecycleBin')}</span>
             </button>
-          )}
-        </nav>
-        <div className="sidebar-divider" />
-        {renderFolderPanel()}
-        <AccountEntry
-          onStatusChange={handleAccountStatus}
-          onFileSearchSettingsChange={() => setRerankSettingsTick((n) => n + 1)}
-          openRequest={settingsRequest}
-        />
-      </aside>
-      <div className="sidebar-resizer" onPointerDown={onSidebarResizeStart} />
-      {selectedFolder && rootOf(selectedFolder, roots)?.readable ? (
-        renderFolderContent()
-      ) : askMode ? (
-        <KbAskPanel
-          onOpenPath={(path) => void window.aiOffice.openPath(path)}
-          onGoToRecents={() => changeView('recent')}
-          onOpenModelSettings={() => setSettingsRequest({ section: 'aiModel' })}
-        />
-      ) : cloudMode ? (
-        <CloudProjectsView />
-      ) : (
-        renderGlobalContent()
-      )}
-      {confirmDelete && (
-        <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
-          <div
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t('deleteModalTitle')}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h3>{t('deleteModalTitle')}</h3>
-            <p>
-              {confirmDelete.length === 1
-                ? t('deleteConfirmOne', { name: fileName(confirmDelete[0]) })
-                : t('deleteConfirmMany', { n: confirmDelete.length })}
-            </p>
-            {confirmDelete.length > 1 && (
-              <ul className="modal-file-list">
-                {confirmDelete.slice(0, 6).map((p) => (
-                  <li key={p}>{fileName(p)}</li>
-                ))}
-                {confirmDelete.length > 6 && (
-                  <li>{t('deleteMoreCount', { n: confirmDelete.length })}</li>
-                )}
-              </ul>
-            )}
-            <div className="modal-buttons">
-              <button
-                className="btn btn-secondary"
-                autoFocus
-                onClick={() => setConfirmDelete(null)}
-              >
-                {t('cancel')}
-              </button>
-              <button className="btn btn-danger" onClick={confirmDeleteNow}>
-                {t('delete')}
-              </button>
+          </div>
+        </aside>
+        <div className="sidebar-resizer" onPointerDown={onSidebarResizeStart} />
+        {selectedFolder && rootOf(selectedFolder, roots)?.readable ? (
+          renderFolderContent()
+        ) : askMode ? (
+          <KbAskPanel
+            onOpenPath={(path) => void window.aiOffice.openPath(path)}
+            onGoToRecents={() => changeView('recent')}
+            onOpenModelSettings={() => setSettingsRequest({ section: 'aiModel' })}
+          />
+        ) : cloudMode ? (
+          <CloudProjectsView />
+        ) : (
+          renderGlobalContent()
+        )}
+        {confirmDelete && (
+          <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
+            <div
+              className="modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label={t('deleteModalTitle')}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h3>{t('deleteModalTitle')}</h3>
+              <p>
+                {confirmDelete.length === 1
+                  ? t('deleteConfirmOne', { name: fileName(confirmDelete[0]) })
+                  : t('deleteConfirmMany', { n: confirmDelete.length })}
+              </p>
+              {confirmDelete.length > 1 && (
+                <ul className="modal-file-list">
+                  {confirmDelete.slice(0, 6).map((p) => (
+                    <li key={p}>{fileName(p)}</li>
+                  ))}
+                  {confirmDelete.length > 6 && (
+                    <li>{t('deleteMoreCount', { n: confirmDelete.length })}</li>
+                  )}
+                </ul>
+              )}
+              <div className="modal-buttons">
+                <button
+                  className="btn btn-secondary"
+                  autoFocus
+                  onClick={() => setConfirmDelete(null)}
+                >
+                  {t('cancel')}
+                </button>
+                <button className="btn btn-danger" onClick={confirmDeleteNow}>
+                  {t('delete')}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {confirmDeleteFolder && (
-        <div className="modal-overlay" onClick={() => setConfirmDeleteFolder(null)}>
-          <div
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t('deleteFolderTitle')}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h3>{t('deleteFolderTitle')}</h3>
-            <p>{t('deleteFolderConfirm', { name: fileName(confirmDeleteFolder) })}</p>
-            <div className="modal-buttons">
-              <button
-                className="btn btn-secondary"
-                autoFocus
-                onClick={() => setConfirmDeleteFolder(null)}
-              >
-                {t('cancel')}
-              </button>
-              <button className="btn btn-danger" onClick={() => void confirmDeleteFolderNow()}>
-                {t('delete')}
-              </button>
+        {confirmDeleteFolder && (
+          <div className="modal-overlay" onClick={() => setConfirmDeleteFolder(null)}>
+            <div
+              className="modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label={t('deleteFolderTitle')}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h3>{t('deleteFolderTitle')}</h3>
+              <p>{t('deleteFolderConfirm', { name: fileName(confirmDeleteFolder) })}</p>
+              <div className="modal-buttons">
+                <button
+                  className="btn btn-secondary"
+                  autoFocus
+                  onClick={() => setConfirmDeleteFolder(null)}
+                >
+                  {t('cancel')}
+                </button>
+                <button className="btn btn-danger" onClick={() => void confirmDeleteFolderNow()}>
+                  {t('delete')}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {confirmMissing && (
-        <div className="modal-overlay" onClick={() => setConfirmMissing(null)}>
-          <div
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t('missingFileTitle')}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h3>{t('missingFileTitle')}</h3>
-            <p>{t('missingFileBody', { name: confirmMissing.name })}</p>
-            <div className="modal-buttons">
-              <button
-                className="btn btn-secondary"
-                autoFocus
-                onClick={() => setConfirmMissing(null)}
-              >
-                {t('cancel')}
-              </button>
-              <button
-                className="btn btn-danger"
-                onClick={() => {
-                  // main drops the star of an unavailable entry with the row
-                  removeRecent([confirmMissing.path])
-                  setConfirmMissing(null)
-                }}
-              >
-                {t('removeFromList')}
-              </button>
+        {confirmMissing && (
+          <div className="modal-overlay" onClick={() => setConfirmMissing(null)}>
+            <div
+              className="modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label={t('missingFileTitle')}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h3>{t('missingFileTitle')}</h3>
+              <p>{t('missingFileBody', { name: confirmMissing.name })}</p>
+              <div className="modal-buttons">
+                <button
+                  className="btn btn-secondary"
+                  autoFocus
+                  onClick={() => setConfirmMissing(null)}
+                >
+                  {t('cancel')}
+                </button>
+                <button
+                  className="btn btn-danger"
+                  onClick={() => {
+                    // main drops the star of an unavailable entry with the row
+                    removeRecent([confirmMissing.path])
+                    setConfirmMissing(null)
+                  }}
+                >
+                  {t('removeFromList')}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {movePicker && canMove && (
-        <FolderPicker
-          roots={roots}
-          currentDirs={new Set(movePicker.map(dirOf))}
-          movingDirs={movingDirs(movePicker)}
-          count={movePicker.length}
-          onCancel={() => setMovePicker(null)}
-          onPick={(dir) => void doMove(movePicker, dir, 'ask')}
-        />
-      )}
+        {movePicker && canMove && (
+          <FolderPicker
+            roots={roots}
+            currentDirs={new Set(movePicker.map(dirOf))}
+            movingDirs={movingDirs(movePicker)}
+            count={movePicker.length}
+            onCancel={() => setMovePicker(null)}
+            onPick={(dir) => void doMove(movePicker, dir, 'ask')}
+          />
+        )}
 
-      {groupPicker && (
-        <GroupPicker
-          groups={starredGroups}
-          count={groupPicker.length}
-          onCancel={() => setGroupPicker(null)}
-          onPick={(group) => assignGroup(groupPicker, group)}
-          onCreate={(name) => assignGroup(groupPicker, name)}
-          onRemove={() => assignGroup(groupPicker, null)}
-        />
-      )}
+        {groupPicker && (
+          <GroupPicker
+            groups={starredGroups}
+            count={groupPicker.length}
+            onCancel={() => setGroupPicker(null)}
+            onPick={(group) => assignGroup(groupPicker, group)}
+            onCreate={(name) => assignGroup(groupPicker, name)}
+            onRemove={() => assignGroup(groupPicker, null)}
+          />
+        )}
 
-      {conflict && (
-        <ConflictPrompt
-          names={conflict.paths.map(fileName)}
-          onChoose={(policy) => {
-            if (policy === 'skip') setConflict(null)
-            else void doMove(conflict.paths, conflict.targetDir, policy)
-          }}
-        />
-      )}
+        {conflict && (
+          <ConflictPrompt
+            names={conflict.paths.map(fileName)}
+            onChoose={(policy) => {
+              if (policy === 'skip') setConflict(null)
+              else void doMove(conflict.paths, conflict.targetDir, policy)
+            }}
+          />
+        )}
 
-      <DropToOpenOverlay />
-    </div>
+        <DropToOpenOverlay />
+      </div>
+
+      {palette && (
+        <SearchPalette mode={palette} onModeChange={setPalette} onClose={() => setPalette(null)} />
+      )}
+    </>
   )
 }

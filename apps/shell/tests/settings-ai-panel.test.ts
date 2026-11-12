@@ -82,21 +82,21 @@ describe('Settings AI panel preferences', () => {
       await Promise.resolve()
     })
 
-    const general = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-nav-item')).find(
-      (button) => button.textContent?.includes('General'),
-    )
+    const general = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('.set-nav-item'),
+    ).find((button) => button.textContent?.includes('General'))
     await click(general!)
 
-    const spellcheck = host.querySelector<HTMLButtonElement>(
+    const spellcheck = document.body.querySelector<HTMLButtonElement>(
       '.set-switch[aria-label="Spell check in AI chat"]',
     )
     expect(spellcheck?.getAttribute('aria-checked')).toBe('false')
-    expect(host.textContent).toContain('Large')
+    expect(document.body.textContent).toContain('Large')
 
     await click(spellcheck!)
     expect(setAiPanelPrefs).toHaveBeenLastCalledWith({ spellcheck: true })
     expect(spellcheck?.getAttribute('aria-checked')).toBe('true')
-    expect(host.querySelector('.set-num-input')).toBeNull()
+    expect(document.body.querySelector('.set-num-input')).toBeNull()
   })
 
   it('shows the saved panel side and persists switching sides independently', async () => {
@@ -144,12 +144,14 @@ describe('Settings AI panel preferences', () => {
       await Promise.resolve()
     })
 
-    const general = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-nav-item')).find(
-      (button) => button.textContent?.includes('General'),
-    )
+    const general = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('.set-nav-item'),
+    ).find((button) => button.textContent?.includes('General'))
     await click(general!)
 
-    const side = host.querySelector<HTMLButtonElement>('[aria-label="AI sidebar position"]')
+    const side = document.body.querySelector<HTMLButtonElement>(
+      '[aria-label="AI sidebar position"]',
+    )
     expect(side).not.toBeNull()
     expect(side?.textContent).toContain('Right')
     await click(side!)
@@ -208,14 +210,14 @@ describe('Settings AI panel preferences', () => {
       )
       await Promise.resolve()
     })
-    const general = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-nav-item')).find(
-      (button) => button.textContent?.includes('General'),
-    )
+    const general = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('.set-nav-item'),
+    ).find((button) => button.textContent?.includes('General'))
     await click(general!)
 
-    const input = host.querySelector<HTMLInputElement>('.set-num-input')
+    const input = document.body.querySelector<HTMLInputElement>('.set-num-input')
     expect(input?.value).toBe('20')
-    expect(host.textContent).toContain('Custom')
+    expect(document.body.textContent).toContain('Custom')
 
     const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
     const type = async (text: string) => {
@@ -290,14 +292,14 @@ describe('Settings AI panel preferences', () => {
       await Promise.resolve()
     })
 
-    const general = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-nav-item')).find(
-      (button) => button.textContent?.includes('General'),
-    )
+    const general = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('.set-nav-item'),
+    ).find((button) => button.textContent?.includes('General'))
     await click(general!)
 
-    const chipSwitch = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-switch')).find(
-      (button) => button.getAttribute('aria-label')?.includes('chip on selection'),
-    )
+    const chipSwitch = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('.set-switch'),
+    ).find((button) => button.getAttribute('aria-label')?.includes('chip on selection'))
     expect(chipSwitch).toBeDefined()
     expect(chipSwitch!.getAttribute('aria-checked')).toBe('true')
 

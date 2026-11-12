@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
+import { CHROME_CHANNELS, type ChromeApi } from '../shared/chrome-api'
 import {
   AI_MEDIA_PROVIDERS,
   AI_PROVIDERS,
@@ -40,6 +41,8 @@ import type {
 import type { FoundSkill, RecommendedSkill } from '../shared/found-skill'
 import type { TabsApi, TabSummary } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
+import { SHORTCUT_CHANNELS } from '../shared/shortcuts-api'
+import type { ShortcutId, ShortcutsApi } from '../shared/shortcuts-api'
 
 const UI_LANGUAGES: readonly UiLanguage[] = [
   'zh',
@@ -319,7 +322,9 @@ const homeApi: HomeApi = {
     return () => ipcRenderer.removeListener(HOME_CHANNELS.folderChanged, listener)
   },
   async openTrash() {
-    await ipcRenderer.invoke(HOME_CHANNELS.openTrash)
+    // older main handlers resolve with nothing: only an explicit false means failure
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.openTrash)
+    return result !== false
   },
   async getLanguage() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getLanguage)
@@ -405,6 +410,13 @@ const homeApi: HomeApi = {
   },
   async setOnboardingSeen() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.setOnboardingSeen)
+    return result === true
+  },
+  pathsForFiles(files) {
+    return files.map((file) => webUtils.getPathForFile(file)).filter((p) => p.length > 0)
+  },
+  async windowMaterialActive() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.windowMaterialActive)
     return result === true
   },
   async getTheme() {
@@ -881,6 +893,40 @@ const tabsApi: TabsApi = {
 }
 
 contextBridge.exposeInMainWorld('aiOfficeTabs', tabsApi)
+
+const chromeApi: ChromeApi = {
+  async menuLabels() {
+    const result: unknown = await ipcRenderer.invoke(CHROME_CHANNELS.menuLabels)
+    return Array.isArray(result) ? result.filter((s): s is string => typeof s === 'string') : []
+  },
+  async popupMenu(index, x, y) {
+    await ipcRenderer.invoke(CHROME_CHANNELS.menuPopup, index, x, y)
+  },
+  onMenuChanged(handler) {
+    const listener = (_event: Electron.IpcRendererEvent, labels: unknown) => {
+      if (Array.isArray(labels)) handler(labels.filter((s): s is string => typeof s === 'string'))
+    }
+    ipcRenderer.on(CHROME_CHANNELS.menuChanged, listener)
+    return () => ipcRenderer.removeListener(CHROME_CHANNELS.menuChanged, listener)
+  },
+}
+
+contextBridge.exposeInMainWorld('aiOfficeChrome', chromeApi)
+
+const shortcutsApi: ShortcutsApi = {
+  onInvoke(handler) {
+    const listener = (_event: Electron.IpcRendererEvent, id: unknown) => {
+      if (typeof id === 'string') handler(id as ShortcutId)
+    }
+    ipcRenderer.on(SHORTCUT_CHANNELS.invoke, listener)
+    return () => ipcRenderer.removeListener(SHORTCUT_CHANNELS.invoke, listener)
+  },
+  syncBindings(map) {
+    ipcRenderer.send(SHORTCUT_CHANNELS.sync, map)
+  },
+}
+
+contextBridge.exposeInMainWorld('aiOfficeShortcuts', shortcutsApi)
 
 // open documents dragged from the OS anywhere over Home or the tab strip
 installDropOpenBridge()

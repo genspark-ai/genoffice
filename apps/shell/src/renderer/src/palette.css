@@ -1,0 +1,252 @@
+/* Search palette: rail search button, Ctrl+P (files) and Ctrl+K (conversations).
+   Tokens only — it follows the active theme, contrast and accent settings. */
+
+.pal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 11vh 24px 24px;
+  background: var(--color-bg-overlay);
+}
+
+.pal-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  max-height: min(520px, 76vh);
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text-primary);
+  overflow: hidden;
+  animation: pal-in 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes pal-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pal-panel {
+    animation: none;
+  }
+}
+
+.pal-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pal-mode-wrap {
+  position: relative;
+  flex: none;
+}
+
+.pal-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--bg-hover-strong);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pal-mode:hover {
+  background: var(--bg-hover-accent);
+}
+
+.pal-mode-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 2;
+  min-width: 168px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.pal-mode-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pal-mode-item:hover,
+.pal-mode-item.on {
+  background: var(--bg-hover);
+}
+
+.pal-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 4px;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 15px;
+}
+
+.pal-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.pal-sort {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.pal-sort:hover,
+.pal-sort[aria-pressed='true'] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.pal-mode:focus-visible,
+.pal-mode-item:focus-visible,
+.pal-sort:focus-visible,
+.pal-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.pal-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 8px 8px;
+}
+
+.pal-section {
+  padding: 8px 10px 6px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.pal-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pal-row.active {
+  background: var(--bg-hover-strong);
+}
+
+.pal-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pal-meta,
+.pal-project,
+.pal-age {
+  flex: none;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.pal-meta {
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pal-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 34%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pal-project img {
+  flex: none;
+  opacity: 0.7;
+}
+
+.pal-age {
+  min-width: 28px;
+  text-align: right;
+}
+
+.pal-more {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pal-more:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.pal-empty {
+  padding: 22px 10px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
