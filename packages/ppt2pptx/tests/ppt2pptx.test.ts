@@ -78,6 +78,20 @@ describe('convertPptToPptx: editable text', () => {
     )
   })
 
+  it('decodes the whole cp1252 punctuation block of a TextBytesAtom', async () => {
+    const specs: SlideSpec[] = [
+      {
+        textSequences: [
+          { kind: 4, atom: 'bytes', text: '\u0080 price \u0085 \u0087 \u0099' },
+          { kind: 4, atom: 'bytes', text: 'caf\u00e9 \u009cuvre' },
+        ],
+      },
+    ]
+    const texts = await slideTextsOf(pptBytesOf(buildPptStreams(specs)))
+    // 0x80 0x85 0x87 0x99 0x9C are C1 controls in latin1, punctuation in cp1252
+    expect(texts[0]).toEqual(['\u20ac price \u2026 \u2021 \u2122', 'caf\u00e9 \u0153uvre'])
+  })
+
   it('reads the slide size from the DocumentAtom (576 master units per inch)', async () => {
     const specs: SlideSpec[] = [{ textSequences: [{ kind: 4, text: 'widescreen' }] }]
     const streams = buildPptStreams(specs, { slideSize: [7680, 4320] })
