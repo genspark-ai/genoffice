@@ -26,13 +26,12 @@ describe('readLastSessionDocuments', () => {
 describe('launchPathsWithLastSession', () => {
   const saved = { lastSessionDocuments: ['/a.docx', '/gone.pptx', '/b.xlsx'] }
 
-  it('opens only the launch paths once switched off', () => {
-    const settings = { ...saved, restoreLastSession: false }
-    expect(launchPathsWithLastSession(settings, ['/c.pdf'], all)).toEqual(['/c.pdf'])
+  it('opens only the launch paths while the setting is off', () => {
+    expect(launchPathsWithLastSession(saved, ['/c.pdf'], all)).toEqual(['/c.pdf'])
   })
 
-  it('restores by default: existing documents first, then the launch paths, without duplicates', () => {
-    const settings = saved
+  it('restores existing documents first, then the launch paths, without duplicates', () => {
+    const settings = { ...saved, restoreLastSession: true }
     const exists = (p: string) => p !== '/gone.pptx'
     expect(launchPathsWithLastSession(settings, ['/b.xlsx', '/c.pdf'], exists)).toEqual([
       '/a.docx',

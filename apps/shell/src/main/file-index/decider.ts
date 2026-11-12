@@ -18,14 +18,6 @@
  * average of level indices, so the three System One criteria map onto levels
  * 0/1/2 and the calibrated 0–2 score carries over unchanged; prepare and
  * validate translate both directions.
- *
- * Google's Decisions API (Gemini Developer API v1beta, 2026-11-11) is the same
- * idea again: shared `input`, questions as a keyed map like System One but with
- * a plain `criteria` array (no `state`, no `levels`), `answers` keyed by the
- * question name with the probabilities under the level's stringified index,
- * and usage under `total_input_tokens`. It authenticates with the
- * `x-goog-api-key` header rather than a bearer token. The score is the same
- * probability-weighted level average, so the 0–2 rubric carries over.
  */
 
 /** The endpoint list lives in the shared settings contract: this file used to
@@ -70,10 +62,6 @@ const ENDPOINTS: Record<Exclude<DecisionEndpoint, 'custom'>, EndpointSpec> = {
   liquid: { url: 'https://api.liquid.ai/decisions/v1/systemone', model: 'd1' },
   'liquid-ultra': { url: 'https://api.liquid.ai/decisions/v1/systemone', model: 'd1-ultra' },
   openai: { url: 'https://api.openai.com/v1/decisions', model: 'gpt-6-luna' },
-  gemini: {
-    url: 'https://generativelanguage.googleapis.com/v1beta/decisions',
-    model: 'gemini-decision-1',
-  },
   cloudflare: { url: '', model: '@cf/cloudflare/clef' },
   'cloudflare-flash': { url: '', model: '@cf/cloudflare/clef-flash' },
   kev: { url: KEV_URL, model: 'kev-latest', local: true },
@@ -119,9 +107,6 @@ export function endpointUrl(opts: DecisionCallOptions): string {
 /**
  * Rejects a custom base URL that is not https, or http on this machine: the
  * request carries up to 20 local excerpts and should not cross a plain channel.
- * Embedded credentials are refused as well, matching the chat side's
- * `normalizeBaseUrl` rule: they would end up in request logs and error messages,
- * and the endpoint's key field is the supported place for them.
  */
 function assertCustomUrl(base: string): string {
   let u: URL
@@ -130,7 +115,6 @@ function assertCustomUrl(base: string): string {
   } catch {
     throw new Error('bad-url')
   }
-  if (u.username || u.password) throw new Error('embedded-credentials')
   if (u.protocol === 'https:') return base
   if (u.protocol === 'http:' && LOOPBACK_HOST.test(u.host)) return base
   throw new Error('insecure-url')
@@ -179,15 +163,11 @@ export interface JevResponse {
   body: string
 }
 
-/** how the transport carries the credential: bearer by default, Google's header on its route */
-export type JevAuth = 'bearer' | 'google-api-key'
-
 export type JevTransport = (
   url: string,
   body: string,
   key: string,
   signal: AbortSignal,
-  auth?: JevAuth,
 ) => Promise<JevResponse>
 
 const clip = (s: string, n: number) => Array.from(s).slice(0, n).join('')
@@ -249,21 +229,6 @@ export function prepare(
         })),
       })
     }
-    if (opts.endpoint === 'gemini') {
-      // Google's sibling: shared `input` like OpenAI, but the questions come
-      // back to a keyed map and carry the System One criteria array — no
-      // `state`, no per-question `name`, no `levels`
-      return JSON.stringify({
-        model: bodyModel(opts),
-        input: openaiInput(clip(query, MAX_QUERY_CHARS), documents),
-        questions: Object.fromEntries(
-          documents.map((_, i) => [
-            `d${i}`,
-            { type: 'score', instructions: openaiInstructions(i), criteria: CRITERIA },
-          ]),
-        ),
-      })
-    }
     const state = { query: clip(query, MAX_QUERY_CHARS), documents }
     const questions = Object.fromEntries(
       documents.map((_, i) => [
@@ -316,7 +281,7 @@ function unwrap(raw: unknown, endpoint: DecisionEndpoint): unknown {
   return 'result' in r ? r.result : r
 }
 
-/** usage, when the server reports it; OpenAI has no per-call cost field, Google names the count `total_input_tokens` */
+/** usage, when the server reports it; OpenAI has no per-call cost field */
 function readUsage(r: Record<string, unknown>): {
   inputTokens: number | null
   cost: number | null
@@ -327,10 +292,6 @@ function readUsage(r: Record<string, unknown>): {
     const usage = obj(r.usage)
     if (usage.input_tokens !== undefined) {
       inputTokens = num(usage.input_tokens, 0, Number.MAX_SAFE_INTEGER)
-      if (!Number.isInteger(inputTokens)) throw new Error('invalid-response')
-    }
-    if (usage.total_input_tokens !== undefined) {
-      inputTokens = num(usage.total_input_tokens, 0, Number.MAX_SAFE_INTEGER)
       if (!Number.isInteger(inputTokens)) throw new Error('invalid-response')
     }
     if (usage.cost !== undefined) cost = num(usage.cost, 0, Number.MAX_SAFE_INTEGER)
@@ -382,8 +343,7 @@ export function validate(raw: unknown, count: number, endpoint: DecisionEndpoint
   const r = obj(unwrap(raw, endpoint))
   if (endpoint === 'openai') return validateOpenai(r, count)
   // only the two hosted Jev routes echo a model we can pin; self-hosted and
-  // third-party servers name their models freely, and Google does not echo one
-  // at all — its answers ride the same keyed map below
+  // third-party servers name their models freely
   if (endpoint === 'direct') {
     if (r.model !== ENDPOINTS.direct.model) throw new Error('model-mismatch')
   } else if (endpoint === 'openrouter') {
@@ -410,13 +370,10 @@ export function validate(raw: unknown, count: number, endpoint: DecisionEndpoint
   return { scores, ...readUsage(r) }
 }
 
-export const fetchTransport: JevTransport = async (url, body, key, signal, auth = 'bearer') => {
+export const fetchTransport: JevTransport = async (url, body, key, signal) => {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   // local and unauthenticated servers reject or ignore the header; empty key = none
-  if (key.trim()) {
-    if (auth === 'google-api-key') headers['x-goog-api-key'] = key.trim()
-    else headers.Authorization = `Bearer ${key.trim()}`
-  }
+  if (key.trim()) headers.Authorization = `Bearer ${key.trim()}`
   const res = await fetch(url, {
     method: 'POST',
     headers,
@@ -460,13 +417,7 @@ export async function evaluate(
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const r = await send(
-        url,
-        body,
-        opts.key,
-        controller.signal,
-        opts.endpoint === 'gemini' ? 'google-api-key' : 'bearer',
-      )
+      const r = await send(url, body, opts.key, controller.signal)
       if ((r.status === 429 || r.status === 529) && attempt === 0) {
         const seconds = Number(r.retryAfter)
         const wait = r.retryAfter

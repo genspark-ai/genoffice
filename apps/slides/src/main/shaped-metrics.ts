@@ -332,7 +332,6 @@ export async function refineComplexWidths(wc: {
       const registered = new Set()
       document.fonts.forEach((x) => registered.add(x.family))
       const ctx = document.createElement('canvas').getContext('2d')
-      ctx.fontKerning = 'normal'
       // The renderer's own drawing stack (konva-adapter displayFontFamily): glyphs the face
       // lacks fall back per family (Korean-named faces to Malgun/Apple SD Gothic Neo, …), and
       // measuring them in any other fallback font would shift every following glyph

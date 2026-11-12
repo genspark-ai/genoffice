@@ -1,15 +1,6 @@
 # @genoffice/ppt2pptx
 
-Legacy PowerPoint 97-2003 import: parse `.ppt` (OLE2/CFB + MS-PPT records) and rebuild it as `.pptx`. Staged like `@genoffice/doc2docx`: stage 1 laid the editable-text foundation, stage 2 adds the drawing layer. The CLI and the Slides open flow convert through `convertPptToPptx`.
-
-## Stage 2 carries
-
-- the **Escher shape tree** of every slide and master (`escher.ts`): autoshapes at their anchors with the msosp type mapped onto the DrawingML preset, groups flattened through their coordinate spaces, freeforms as custom paths (`pVertices` / `pSegmentInfo`, including the arrays whose declared length leaves out the 6-byte header), rotation and flips, hidden and deleted shapes dropped
-- **fills and lines** from the property table: solid, gradient (`fillShadeColors` or the colour pair with focus), picture and texture fills, opacity; OfficeArt colours resolved against the slide's or master's colour scheme, with PowerPoint's scheme-slot defaults (fill → slot 4, line → slot 1)
-- **pictures** from the `Pictures` stream (PNG/JPEG/EMF/WMF/DIB/TIFF blips, zlib metafiles, DIB → BMP), indexed through the drawing group's FBSE list with a stream-order fallback, cropped as the shape says
-- **text formatting** (`text-style.ts`): the StyleTextPropAtom paragraph and character runs over the master's `TxMasterStyleAtom` per-level defaults — size, bold/italic/underline, colour, font (through the FontCollection), alignment, bullets, spacing, indents — plus the body's insets, anchor, wrap, autofit and vertical flow
-- **placeholders** inherit anchor and properties from the master placeholder of their type (boolean property sets merged bit by bit); a title/body text shape without a placeholder atom matches by text type; date / slide-number placeholders holding only a field marker are dropped
-- the **slide background** (own or master's, per the SlideAtom flags) and the master's decorations when the slide follows them
+Legacy PowerPoint 97-2003 import: parse `.ppt` (OLE2/CFB + MS-PPT records) and rebuild it as `.pptx`. Staged like `@genoffice/doc2docx` — stage 1 is the internal editable-text foundation (not user-visible yet); the CLI and the Slides open flow wire it up in the following stages.
 
 ## Stage 1 carries
 
@@ -22,4 +13,4 @@ Legacy PowerPoint 97-2003 import: parse `.ppt` (OLE2/CFB + MS-PPT records) and r
 
 ## Not carried yet
 
-notes, animations and transitions, hyperlinks, shadows and 3-D, line dashes and arrowheads, pattern fills (drawn solid), OLE objects beyond their preview picture, tables beyond their cell shapes, headers/footers text fields.
+shape geometry (the Escher anchors), text run formatting (StyleTextProp), images, masters, notes. Stage 1 stacks each slide's text boxes down the surface — editable and complete in words, not in layout.

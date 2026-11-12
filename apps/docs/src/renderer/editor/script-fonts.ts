@@ -1,4 +1,3 @@
-import { HALFWIDTH_FORM_RE } from '../text-layout/script-rules'
 import { Extension } from '@tiptap/core'
 import { charClass, isEastAsianChar } from '@genoffice/docx-engine'
 import type { Node as PmNode } from '@tiptap/pm/model'
@@ -10,13 +9,14 @@ import { touchedTopLevelBlocks } from './touched-blocks'
 // Decorations keep the text/runs intact, including undo, copying and DOCX export.
 // Halfwidth kana/hangul/symbols share the East Asian face but count as
 // single-byte text for the balanced character grid (Word probe 2026-10-22).
+const halfwidthForm = /[\uff61-\uffdc\uffe8-\uffee]/u
 
 const EAST_ASIAN_CLASS = 'doc-east-asian-font'
 const HALFWIDTH_CLASS = 'doc-east-asian-halfwidth'
 const FONT_STYLE = 'font-family:var(--doc-east-asian-font, inherit)'
 
 const classFor = (text: string): string =>
-  HALFWIDTH_FORM_RE.test(text) ? `${EAST_ASIAN_CLASS} ${HALFWIDTH_CLASS}` : EAST_ASIAN_CLASS
+  halfwidthForm.test(text) ? `${EAST_ASIAN_CLASS} ${HALFWIDTH_CLASS}` : EAST_ASIAN_CLASS
 
 /** East Asian runs in `text`, split so each piece is uniformly half- or full-width */
 export function eastAsianSegments(text: string): { index: number; text: string }[] {
@@ -49,7 +49,6 @@ function decorationsIn(doc: PmNode, from: number, to: number): Decoration[] {
     if (!node.isText) return
     for (const seg of eastAsianSegments(node.text!)) {
       ranges.push(
-        // inline-rules: allow — maps each East Asian segment to its script-font span
         Decoration.inline(pos + seg.index, pos + seg.index + seg.text.length, {
           class: classFor(seg.text),
           style: FONT_STYLE,

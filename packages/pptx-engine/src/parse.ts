@@ -72,7 +72,7 @@ import {
   type TablePartStyle,
   type TableStyleFlags,
 } from './table-style'
-import { decodeNumericCharRefs, percentFraction, percentPoints } from './xml-utils'
+import { decodeNumericCharRefs, percentFraction } from './xml-utils'
 import { readRedactLabel } from './redaction-xml'
 
 const parser = new XMLParser({
@@ -492,11 +492,6 @@ function parseSpShape(
       ? parseCustGeom(rawXml || anchor.originalXml, transform.offset.cx, transform.offset.cy)
       : undefined
   let fill = parseFill(spPr, ctx)
-  // PowerPoint paints an explicit spPr fill over useBgFill="1" (Designer writes both; the
-  // slide-background fill only applies when spPr carries no fill of its own)
-  const useBgFill =
-    (node['@_useBgFill'] === '1' || node['@_useBgFill'] === 'true') &&
-    (fill === undefined || fill.type === 'none')
   const txBody = node['p:txBody']
   // Text style inheritance chain: placeholders inherit font size/color/font defaults from
   // layout/master; every other shape (text box or autoshape, on the slide, layout or master)
@@ -631,7 +626,7 @@ function parseSpShape(
     ...(customGeometry ? { customGeometry } : {}),
     ...(!presetGeometry && !customGeometry && !ph ? { noGeometry: true as const } : {}),
     fill,
-    ...(useBgFill ? { useBgFill: true } : {}),
+    ...(node['@_useBgFill'] === '1' || node['@_useBgFill'] === 'true' ? { useBgFill: true } : {}),
     ...(fillOverlay && fillOverlay.type !== 'none' ? { fillOverlay } : {}),
     ...(stroke ? { stroke } : {}),
     ...(shadow ? { shadow } : {}),
@@ -3783,7 +3778,8 @@ function parseTextBody(
 
 /** <a:spcPct val="150000"/> or val="150%" → 150 (%). */
 function spcPct(node: any): number | undefined {
-  return percentPoints(node?.['a:spcPct']?.['@_val'])
+  const ratio = percentFraction(node?.['a:spcPct']?.['@_val'])
+  return ratio != null ? ratio * 100 : undefined
 }
 
 /** <a:spcPts val="2400"/> → 24 (pt). */
@@ -4301,7 +4297,7 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     ...(ownFontSize != null ? {} : { fontSizeImplicit: true }),
     ...(ownLetterSpacing != null ? { letterSpacing: ownLetterSpacing } : {}),
     ...(rPr['@_kern'] != null ? { kern: (parseInt(rPr['@_kern'], 10) || 0) / 100 } : {}),
-    ...(rPr['@_baseline'] ? { baseline: percentPoints(rPr['@_baseline']) ?? 0 } : {}),
+    ...(rPr['@_baseline'] ? { baseline: (percentFraction(rPr['@_baseline']) ?? 0) * 100 } : {}),
     fontFamily,
     ...(latinFamily ? { latinFamily } : {}),
     ...(fontScriptHint != null ? { fontScriptHint } : {}),

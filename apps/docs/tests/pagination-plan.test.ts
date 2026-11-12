@@ -263,57 +263,6 @@ describe('buildBlockPlan: P2 space before', () => {
     expect(b.dropAtPageTop).toBe(true)
   })
 
-  it("a style's autospacing survives a bare direct literal; an explicit off wins", () => {
-    const eff = {
-      spacing: { before: 100, after: 100, beforeAuto: true, afterAuto: true },
-      source: {},
-    } as unknown as NonNullable<ReturnType<PlanProps['paraEffective']>>
-    const [, a, b, c] = plansOf(
-      [
-        para([text('n')]),
-        para([text('literal')], { docxIndex: 1, styleId: 'NW', spaceBefore: 0, spaceAfter: 0 }),
-        para([text('off')], {
-          docxIndex: 2,
-          styleId: 'NW',
-          spaceBefore: 0,
-          spaceBeforeAuto: false,
-        }),
-        para([text('big')], { docxIndex: 3, styleId: 'NW', spaceBefore: 400 }),
-      ],
-      { ...PROPS, paraEffective: () => eff },
-    )
-    expect(a.spaceBeforePt).toBe(14)
-    expect(b.spaceBeforePt).toBe(0)
-    expect(c.spaceBeforePt).toBe(14)
-  })
-
-  it('the first paragraph of a forced section start keeps the excess over the previous after', () => {
-    const eff = {
-      spacing: { before: 0, after: 200, beforeAuto: false, afterAuto: false },
-      source: {},
-    } as unknown as NonNullable<ReturnType<PlanProps['paraEffective']>>
-    const props = {
-      ...PROPS,
-      paraEffective: () => eff,
-      forcedSectionStarts: new Set([1, 3, 5]),
-    }
-    const [, a, , b, , c] = plansOf(
-      [
-        para([text('cover')], { docxIndex: 0 }),
-        para([text('h')], { docxIndex: 1, spaceBefore: 480 }),
-        para([text('x')], { docxIndex: 2, spaceAfter: 600 }),
-        para([text('h')], { docxIndex: 3, spaceBefore: 480 }),
-        para([text('x')], { docxIndex: 4, spaceAfter: 0 }),
-        para([text('h')], { docxIndex: 5, spaceBefore: 480 }),
-      ],
-      props,
-    )
-    expect(a.sectionLeadSpacePt).toBe(14)
-    expect(b.sectionLeadSpacePt).toBe(0)
-    expect(c.sectionLeadSpacePt).toBe(24)
-    expect(a.forcedLeadSpacePt).toBeUndefined()
-  })
-
   it('contextual spacing compares styles: outline-only headings pair with Normal, the built-in heading look does not', () => {
     const heading = (attrs: Record<string, unknown>) => ({
       type: 'docHeading',

@@ -15,7 +15,7 @@ import {
   lineHeightFactor,
   runSlotFaces,
   wordSlotFaces,
-} from './font-rules'
+} from '../line-metrics'
 
 /** paragraph styleId -> inherited face (null = none declared on the chain) */
 export type FaceOf = (styleId: unknown) => string | null

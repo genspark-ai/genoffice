@@ -1,7 +1,5 @@
 {
   "family": "Yu Mincho GO",
-  "standsInFor": "Yu Mincho",
-  "standInChain": { "tail": "ja-serif", "companions": ["Yu Mincho Serif GO"] },
   "source": {
     "kind": "hmtx",
     "date": "2026-09-30",

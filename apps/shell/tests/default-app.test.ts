@@ -134,8 +134,8 @@ describe('createDefaultAppService', () => {
       platform: 'linux',
       run,
       readFile: (p) => {
-        // path.join uses backslashes on Windows, so match the file name only.
-        if (p.includes('wps-office-et.desktop')) return '[Desktop Entry]\nName=WPS Spreadsheets\n'
+        if (p.endsWith('/usr/share/applications/wps-office-et.desktop'))
+          return '[Desktop Entry]\nName=WPS Spreadsheets\n'
         throw new Error('ENOENT')
       },
     })
@@ -176,23 +176,6 @@ describe('createDefaultAppService', () => {
     })
     await svc.set()
     expect(openExternal).toHaveBeenCalledWith('ms-settings:defaultapps')
-  })
-
-  it('windows: falls back to the ProgId when a name still has replacement characters', async () => {
-    const run = vi.fn<RunCommand>(async (_cmd, args) => {
-      const key = args[1]
-      if (key.includes('UserChoice')) return '    ProgId    REG_SZ    Excel.Sheet.12\r\n'
-      if (key === 'HKCR\\Excel.Sheet.12')
-        return '    (Default)    REG_SZ    Microsoft Excel \uFFFD\uFFFD\uFFFD\r\n'
-      throw new Error('missing')
-    })
-    const svc = createDefaultAppService({
-      ...base,
-      platform: 'win32',
-      run,
-      openExternal: vi.fn(async () => {}),
-    })
-    expect((await svc.status()).others).toEqual(['Excel.Sheet.12'])
   })
 
   it('reports unknown instead of throwing when the probe fails', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addTokenUsage, cacheHitPercent, formatTokenCount } from '../src/AiUsageChip'
+import { addTokenUsage, formatTokenCount } from '../src/AiUsageChip'
 import { AI_USAGE_LABELS } from '../src/strings-ai-usage'
 
 describe('formatTokenCount', () => {
@@ -47,28 +47,6 @@ describe('AI_USAGE_LABELS', () => {
     for (const [lang, labels] of Object.entries(AI_USAGE_LABELS)) {
       expect(labels.runTitle.length, lang).toBeGreaterThan(0)
       expect(labels.sessionTitle.length, lang).toBeGreaterThan(0)
-      expect(labels.cacheHit, lang).toContain('{pct}')
     }
-  })
-})
-
-describe('cacheHitPercent', () => {
-  it('is the cached share of the input', () => {
-    expect(cacheHitPercent({ inputTokens: 1000, cacheReadTokens: 820 })).toBe(82)
-    expect(cacheHitPercent({ inputTokens: 1000, cacheReadTokens: 0 })).toBe(0)
-  })
-
-  it('is unknown when the provider reports no cache figure', () => {
-    expect(cacheHitPercent({ inputTokens: 1000 })).toBeNull()
-    expect(cacheHitPercent({ cacheReadTokens: 5 })).toBeNull()
-  })
-
-  it('sums cache figures across turns', () => {
-    expect(
-      addTokenUsage(
-        { inputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 90 },
-        { inputTokens: 120, cacheReadTokens: 90 },
-      ),
-    ).toEqual({ inputTokens: 220, cacheReadTokens: 90, cacheWriteTokens: 90 })
   })
 })

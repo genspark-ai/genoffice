@@ -26,8 +26,7 @@
     {
       "kind": "factor",
       "font": "Cambria Math",
-      "expect": 1.1724,
-      "note": "Cambria hhea"
+      "expect": 1.172
     }
   ],
   "class": "pure",

@@ -228,12 +228,6 @@ editortabblad terwijl je toekijkt.
 </tr>
 </table>
 
-### 9 · Oude bestanden — ook `.doc`, `.xls` en `.ppt` uit de jaren 2000 gaan open
-
-Een Word 97–2003-bestand `.doc`, een Excel-bestand `.xls` of een PowerPoint-bestand `.ppt` opent als geconverteerde `.docx`-, `.xlsx`- of `.pptx`-kopie die op je eigen computer wordt gemaakt; het originele bestand wordt nooit gewijzigd. Afbeeldingen, tabellen, formules, getalnotaties, opvullingen en opmaak blijven behouden.
-
-<img src="../assets/readme/legacy-formats-motion.webp" alt="Timelapse van GenOffice dat de .ppt-, .doc- en .xls-bestanden van een fictief jaarverslag 2004 opent, daarna één dia in PowerPoint naast de geconverteerde presentatie in GenOffice" width="100%">
-
 ## Waarom GenOffice
 
 - **Open source**, Apache-2.0, in het openbaar ontwikkeld op GitHub.

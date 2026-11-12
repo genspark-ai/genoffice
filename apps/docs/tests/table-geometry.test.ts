@@ -115,21 +115,6 @@ describe('table-geometry: fixed-layout grids past the paper', () => {
     expect(geom.overWide).toBe(true)
   })
 
-  it('noWrap columns pinned past the text column flag overWide (Word shrinks them and wraps)', () => {
-    const letter = { avail: 10800, fit: 9360, paper: 12240 }
-    const auto: TableModel = {
-      rows: [[cell('c0'), cell('c1')]],
-      autoLayout: true,
-      colWidthsTwips: [975, 8051],
-      colWidthsPct: [10.8, 89.2],
-    }
-    expect(resolveTableWidth(auto, letter, { legacyIndent: false }).overWide).toBe(false)
-    const over = { ...auto, noWrapPinnedTwips: 14445 }
-    expect(resolveTableWidth(over, letter, { legacyIndent: false }).overWide).toBe(true)
-    const fits = { ...auto, noWrapPinnedTwips: 8530 }
-    expect(resolveTableWidth(fits, letter, { legacyIndent: false }).overWide).toBe(false)
-  })
-
   it('still clamps a garbage grid wider than two papers', () => {
     const garbage = { ...fixed, colWidthsTwips: [6236, 130620472, 100, 100] }
     const geom = resolveTableWidth(garbage, letter, { legacyIndent: false })

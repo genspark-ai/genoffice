@@ -228,12 +228,6 @@ Word w widocznej karcie edytora, podczas gdy Ty patrzysz.
 </tr>
 </table>
 
-### 9 · Starsze pliki — otwierają się także `.doc`, `.xls` i `.ppt` z lat 2000
-
-Plik `.doc` programu Word 97–2003, `.xls` programu Excel lub `.ppt` programu PowerPoint otwiera się jako przekonwertowana kopia `.docx`, `.xlsx` lub `.pptx` utworzona na Twoim komputerze; oryginalny plik nigdy nie jest zmieniany. Obrazy, tabele, formuły, formaty liczb, wypełnienia i układ są zachowane.
-
-<img src="../assets/readme/legacy-formats-motion.webp" alt="Film poklatkowy: GenOffice otwiera pliki .ppt, .doc i .xls fikcyjnego raportu rocznego za 2004 rok, a następnie jeden slajd pokazany w PowerPoincie obok przekonwertowanej prezentacji w GenOffice" width="100%">
-
 ## Dlaczego GenOffice
 
 - **Otwarty kod źródłowy**, Apache-2.0, tworzony w pełni otwarcie na GitHubie.

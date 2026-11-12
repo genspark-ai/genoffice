@@ -5,12 +5,6 @@
  * fresh per call (wrapped in useCallback with the original dependency lists)
  * so state never goes stale.
  */
-import {
-  appRootEl,
-  previewIsOpen,
-  previewPageEls,
-  sectionContentWidthPx,
-} from './preview-canvas-snapshot'
 import type { Editor } from '@tiptap/core'
 import { history } from '@tiptap/pm/history'
 import { suggestFileName } from '@genoffice/ui'
@@ -69,7 +63,6 @@ import { docTextLength, docWeight, openTierFor } from './large-document'
 import { documentToMarkdown } from './export-markdown'
 import { docStyleCss } from './doc-style-css'
 import { documentTextContext } from './text-layout/document-context'
-import { setOpenDocumentText } from './text-layout/open-document'
 import { setNoteNumFmts } from './note-format'
 import type { CompareEntry } from './editor/compare'
 import { blocksToPmDoc, pmDocOptions, pmDocToSavePlan, type PmNode } from './editor/convert'
@@ -98,16 +91,22 @@ import { pruneUnreferencedNumbering } from './numbering-actions'
 import { applySectPrRewrites, type SectPrRewrite } from './sectpr-rewrite'
 import { createSaveSerializer } from './save-until-persisted'
 import { checkMissingFonts, collectDocFonts } from './font-check'
-import { loadBundledStandIns } from './line-metrics'
-import { isBundledFont, isFontAvailable, setDocFontTable } from './text-layout/font-rules'
 import { loadSystemFontFamilies, resolveFontAliases } from './system-fonts'
+import {
+  isBundledFont,
+  isFontAvailable,
+  loadBundledStandIns,
+  setAdditiveParagraphSpacing,
+  setDocFontTable,
+  setBalancedSpaceWidening,
+  setLatinViaEastAsiaSlot,
+} from './line-metrics'
 import { adoptEmbeddedFonts } from './embedded-fonts'
 import { prefetchFaces } from './font-resolve'
 import { defaultEastAsiaFontFor } from './font-list'
 import { clearPrintZoom, setPrintZoom } from './print-zoom'
 import { collectPdfInternalLinks } from './pdf-internal-links'
 import type { PdfInternalLink } from '../shared/ipc'
-import type { SaveAsExportFormat } from '../shared/save-as-format'
 import { showToast } from './components/toast-bus'
 import { buildStandaloneHtml } from './html-export'
 import { aiPanelInitiallyOpen } from '@genoffice/ui'
@@ -373,11 +372,14 @@ function applyDocLayoutSettings(editor: Editor, parsed: ParsedDocFull): void {
   // Word stretches a justified line that ends in a line break (w:br / w:cr)
   // unless the document opts out with doNotExpandShiftReturn
   editor.storage.justifyShrink.expandBreakLines = parsed.doNotExpandShiftReturn !== true
+  setAdditiveParagraphSpacing(parsed.doNotUseHTMLParagraphAutoSpacing === true)
   editor.storage.cjkPunctShrink.enabled = parsed.compressPunctuation === true
   editor.storage.cjkPunctShrink.hangPunct = parsed.compressPunctuation !== true
   editor.storage.cjkPunctShrink.legacyLayout = (parsed.compatibilityMode ?? 0) < 15
   editor.storage.cjkPunctShrink.docEastAsiaLang = parsed.docDefaults?.eastAsiaLang ?? null
-  setOpenDocumentText(documentTextContext(parsed))
+  const textCtx = documentTextContext(parsed)
+  setBalancedSpaceWidening(textCtx.balancedSpaces)
+  setLatinViaEastAsiaSlot(textCtx.latinViaEaSlot, textCtx.bodyEaSlot)
   setStaticAsciiResolver(() => editor.storage.listNumbering)
   // Chromium only hyphenates under an explicit lang (the app shell is zh-CN);
   // scoped to autoHyphenation docs so CJK font fallback is untouched elsewhere
@@ -913,8 +915,7 @@ export async function buildDocBytes(
     const rewrites = new Map<number, SectPrRewrite>()
     for (const si of dirtySectionIdxs) {
       const sec = ctx.sections[si]
-      // an unsaved break's sectPr is edited in its own generated paragraph
-      if (!sec || sec.pendingBreak || si === ctx.sections.length - 1) continue
+      if (!sec || si === ctx.sections.length - 1) continue
       const blk = doc.parsed.blocks.find((b) => b.docxIndex === sec.lastBlockIndex)
       if (!blk?.originalXml || !sec.sectPrXml) continue
       let sectPr = applySectionSettings(sec.sectPrXml, sec.settings)
@@ -1088,36 +1089,15 @@ export function save(
   // saveOnce resolves a stale pathless snapshot via pathlessDocSavedPath, so
   // the retry can no longer create a duplicate file.
   const generation = docGeneration
-  const exportRequest: SaveAsExportRequest = {}
   return runSerializedSave(
     async () => {
       const settled = ctx.settleFontSettings ? await ctx.settleFontSettings() : ctx
       if (docGeneration !== generation) return false
-      return saveOnce(settled, saveAs, auto, newDocName, explicitTarget, exportRequest)
+      return saveOnce(settled, saveAs, auto, newDocName, explicitTarget)
     },
     // an explicit MCP target must always write, never reuse an earlier pass
     () => !saveAs && !explicitTarget && !ctx.saveIncompleteRef.current && !isDocDirty(ctx),
-  ).then(async (saved) => {
-    const { target } = exportRequest
-    if (!target || docGeneration !== generation) return saved
-    // The dialog's blur queued an autosave: let it land first, its reload must not
-    // run under the export. The export itself stays outside the queue, a PDF one
-    // may park until the page preview mounts.
-    await runSerializedSave(
-      async () => false,
-      () => false,
-    )
-    if (docGeneration !== generation) return false
-    const exportTo =
-      target.format === 'html' ? exportHtml : target.format === 'md' ? exportMarkdown : exportPdf
-    await exportTo(ctx, target.path)
-    return false // an exported copy: the document itself was not saved
-  })
-}
-
-/** filled by a Save As pass whose dialog picked an export format instead of .docx */
-interface SaveAsExportRequest {
-  target?: { format: SaveAsExportFormat; path: string }
+  )
 }
 
 /** an MCP-driven explicit output target: write to this absolute path, no dialog */
@@ -1192,7 +1172,6 @@ async function saveOnce(
   auto: boolean,
   newDocName?: string,
   explicitTarget?: ExplicitSaveTarget,
-  exportRequest?: SaveAsExportRequest,
 ): Promise<boolean> {
   const { doc, editor } = ctx
   if (!doc || !editor) return false
@@ -1268,10 +1247,7 @@ async function saveOnce(
             buffer,
           )
       if (!result.ok) {
-        const exportAs = (result as Awaited<ReturnType<typeof window.desktop.saveDocxAs>>).exportAs
-        if (exportAs && result.path && exportRequest) {
-          exportRequest.target = { format: exportAs, path: result.path }
-        } else if (result.error) {
+        if (result.error) {
           ctx.setStatus(t('appSaveFailed', { error: result.error }))
           if (!auto) showToast(t('appSaveFailed', { error: result.error }), 'error')
         }
@@ -1464,7 +1440,7 @@ export function printDoc(ctx: FileActionContext): void {
     void waitForFullContent().then(() => printDoc(ctx))
     return
   }
-  if (!previewIsOpen()) {
+  if (!document.querySelector('.pagination-preview')) {
     ctx.printAutoOpenedPreviewRef.current = true
     ctx.setShowPagePreview(true)
   }
@@ -1497,7 +1473,7 @@ async function printGroupsMerged(
   // pv-exporting parks the covered editor's subtree layout for the export's
   // duration so each flip only relays out the group's own pages (hundreds of
   // table-heavy pages otherwise stall Chromium's print for minutes per chunk)
-  const appRoot = appRootEl()
+  const appRoot = document.querySelector('.app')
   appRoot?.classList.add('pv-exporting')
   try {
     const queue = [...groups]
@@ -1543,7 +1519,7 @@ async function printGroupsMerged(
 /** Park the export until the preview mounts; the App effect re-runs it and settles the promise. */
 function deferExportToPreview(ctx: FileActionContext, outPath?: string): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
-    const closePreview = !previewIsOpen()
+    const closePreview = !document.querySelector('.pagination-preview')
     ctx.pendingMixedExportRef.current = { outPath, resolve, closePreview }
     ctx.setShowPagePreview(true)
     ctx.bumpPendingExportTick()
@@ -1573,7 +1549,7 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
     // with the pagination preview open: group by actual pv-page size. Mixed paper →
     // print group by group (other pages hidden for printing), then merge in page order
     // with pdf-lib; each page keeps its section's paper size
-    const pvPages = previewPageEls()
+    const pvPages = [...document.querySelectorAll('.pv-page')] as HTMLElement[]
     if (pvPages.length > 0) {
       // measured before the print zoom: fractions of each page box
       const links = collectPdfInternalLinks(pvPages, doc.parsed.blocks)
@@ -1737,7 +1713,9 @@ export async function exportHtml(ctx: FileActionContext, outPath?: string): Prom
   await waitForFullContent()
   ctx.setStatus(t('appExportingHtml'))
   const root = editor.view.dom as HTMLElement
-  const textWidthPx = sectionContentWidthPx(root)
+  const textWidthPx = Number.parseFloat(
+    getComputedStyle(root).getPropertyValue('--section-content-w'),
+  )
   const html = buildStandaloneHtml(root, {
     title: doc.fileName.replace(/\.docx$/i, ''),
     lang: getLang(),

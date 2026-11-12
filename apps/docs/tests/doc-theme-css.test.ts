@@ -118,8 +118,8 @@ describe('docLineFactor — CJK factor source', () => {
     ;(globalThis as { CSS?: unknown }).CSS ??= { escape: (s: string) => s }
     const parsed = parsedWith({ font: 'Aptos', eastAsiaFont: 'Aptos' }, 'SimSun')
     ;(parsed.docDefaults as { asciiFont?: string }).asciiFont = 'Times New Roman'
-    expect(docLineFactor(parsed, false)).toBe(1.1499)
-    expect(docStyleCss(parsed)).toContain('--doc-line-factor-latin:1.1499')
+    expect(docLineFactor(parsed, false)).toBe(1.15)
+    expect(docStyleCss(parsed)).toContain('--doc-line-factor-latin:1.15')
   })
 
   it('a same-slot Korean Normal (Malgun in both slots) still wins for the kr factor', () => {

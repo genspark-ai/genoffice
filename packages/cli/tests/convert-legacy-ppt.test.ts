@@ -15,7 +15,7 @@ describe('genoffice convert legacy .ppt → .pptx', () => {
     const result = await run(['convert', PPT_FIXTURE, '--to', 'pptx', '--out', out, '--json'])
     expect(result.code).toBe(0)
     expect(result.json().detail.slides).toBeGreaterThan(0)
-    expect(Array.isArray(result.json().detail.warnings)).toBe(true)
+    expect(result.json().detail.warnings.length).toBeGreaterThan(0)
 
     // the output must be a real pptx package with slides
     const zip = await JSZip.loadAsync(

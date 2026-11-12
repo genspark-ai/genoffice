@@ -303,7 +303,6 @@ describe('MCP surface over Streamable HTTP (/mcp)', () => {
         'pptx',
         'odp',
         'otp',
-        'ppt',
       ])
 
       // ── 3. read_docx error paths ──────────────────────────────────────────

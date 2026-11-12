@@ -11,32 +11,12 @@ describe('useBgFill (tdf93868)', () => {
     const sp =
       '<p:sp useBgFill="1"><p:nvSpPr><p:cNvPr id="2" name="R"/></p:nvSpPr>' +
       '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
-      '<a:prstGeom prst="roundRect"/></p:spPr>' +
-      '<p:style><a:fillRef idx="1"><a:srgbClr val="FFFFFF"/></a:fillRef></p:style></p:sp>'
+      '<a:prstGeom prst="roundRect"/><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></p:spPr></p:sp>'
     const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(sp), ctx: {} })
     const el = slide.elements[0] as any
     expect(el.useBgFill).toBe(true)
-    // the style fill is kept only as a fallback
+    // spPr fill is kept only as a fallback
     expect(el.fill).toEqual({ type: 'solid', color: '#FFFFFF' })
-  })
-
-  it('an explicit spPr fill wins over useBgFill (PowerPoint paints Designer black bands black)', () => {
-    const sp =
-      '<p:sp useBgFill="1"><p:nvSpPr><p:cNvPr id="2" name="R"/></p:nvSpPr>' +
-      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
-      '<a:prstGeom prst="rect"/><a:solidFill><a:srgbClr val="000000"/></a:solidFill></p:spPr></p:sp>'
-    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(sp), ctx: {} })
-    const el = slide.elements[0] as any
-    expect(el.useBgFill).toBeUndefined()
-    expect(el.fill).toEqual({ type: 'solid', color: '#000000' })
-  })
-
-  it('an explicit <a:noFill/> still defers to the slide background', () => {
-    const sp =
-      '<p:sp useBgFill="1"><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
-      '<a:prstGeom prst="rect"/><a:noFill/></p:spPr></p:sp>'
-    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(sp), ctx: {} })
-    expect((slide.elements[0] as any).useBgFill).toBe(true)
   })
 
   it('leaves plain shapes unflagged', () => {

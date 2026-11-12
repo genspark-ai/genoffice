@@ -1,19 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  AUTO_FULL_LOAD_MAX_GRID_CELLS,
-  AUTO_FULL_LOAD_MAX_STORED_CELLS,
   FORMULA_MODE_MAX_CELLS,
   FULL_LOAD_MAX_CELLS,
   FULL_LOAD_MAX_GRID_CELLS,
   FULL_LOAD_MAX_STORED_CELLS,
 } from '../src/renderer/app-constants'
-import {
-  autoFullLoadsAtOpen,
-  fitsFullLoad,
-  opensInFormulaMode,
-  workbookCellCounts,
-} from '../src/renderer/load-budget'
+import { fitsFullLoad, opensInFormulaMode, workbookCellCounts } from '../src/renderer/load-budget'
 
 describe('workbookCellCounts', () => {
   it('sums the bounding box and the stored count separately', () => {
@@ -147,41 +140,5 @@ describe('load decisions', () => {
       { rowCount: 1, columnCount: 1, storedCellCount: half },
     ])
     expect(fitsFullLoad(counts)).toBe(false)
-  })
-})
-
-describe('autoFullLoadsAtOpen', () => {
-  it('a border-heavy streamed book over the formula cap loads itself (reported shape: 1200×105)', () => {
-    const counts = workbookCellCounts([
-      { rowCount: 1_200, columnCount: 105, storedCellCount: 126_000 },
-    ])
-    expect(opensInFormulaMode(counts)).toBe(false)
-    expect(autoFullLoadsAtOpen(counts)).toBe(true)
-  })
-
-  it('stays within the unprompted budget, not the Full Load offer budget', () => {
-    const stored = AUTO_FULL_LOAD_MAX_STORED_CELLS + 1
-    const counts = workbookCellCounts([
-      { rowCount: 10_000, columnCount: 100, storedCellCount: stored },
-    ])
-    expect(fitsFullLoad(counts)).toBe(true)
-    expect(autoFullLoadsAtOpen(counts)).toBe(false)
-  })
-
-  it('a sparse box past the auto dense-install ceiling keeps the explicit offer', () => {
-    const counts = workbookCellCounts([
-      { rowCount: 30_000, columnCount: 100, storedCellCount: 100_000 },
-    ])
-    expect(counts.gridCells).toBeGreaterThan(AUTO_FULL_LOAD_MAX_GRID_CELLS)
-    expect(fitsFullLoad(counts)).toBe(true)
-    expect(autoFullLoadsAtOpen(counts)).toBe(false)
-  })
-
-  it('never widens fitsFullLoad', () => {
-    const counts = workbookCellCounts([
-      { rowCount: 2_000, columnCount: 600, storedCellCount: FULL_LOAD_MAX_CELLS + 1 },
-    ])
-    expect(fitsFullLoad(counts)).toBe(false)
-    expect(autoFullLoadsAtOpen(counts)).toBe(false)
   })
 })

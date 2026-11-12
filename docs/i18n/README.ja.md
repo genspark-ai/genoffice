@@ -185,12 +185,6 @@ Word ドキュメントを組み立てる様子を見守ることもできます
 </tr>
 </table>
 
-### 9 · 旧形式ファイル — 2000 年代の `.doc`、`.xls`、`.ppt` も開けます
-
-Word 97–2003 の `.doc`、Excel の `.xls`、PowerPoint の `.ppt` は、お使いのマシン上で変換された `.docx`、`.xlsx`、`.pptx` のコピーとして開きます。元のファイルは変更されません。画像、表、数式、表示形式、塗りつぶし、レイアウトが引き継がれます。
-
-<img src="../assets/readme/legacy-formats-motion.webp" alt="GenOffice が架空の 2004 年度年次報告書の .ppt、.doc、.xls を開くタイムラプス。最後に、PowerPoint で表示した元のスライドと GenOffice で変換したスライドを並べて表示" width="100%">
-
 ## GenOffice を選ぶ理由
 
 - **オープンソース**。Apache-2.0 ライセンスで、GitHub 上で公開開発。

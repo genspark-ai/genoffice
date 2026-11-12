@@ -1,5 +1,4 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useAiPanelPrefs, useImeEnterGuard } from '@genoffice/ui'
 import { useI18n } from '../i18n/locale'
 import {
   selectionAskPosition,
@@ -21,14 +20,8 @@ const EST_HEIGHT = 166
 const MAX_INSTRUCTION = 2000
 
 /** Grid-selection Ask AI trigger and its send-now popover. */
-export function AiSelectionAsk({
-  anchor,
-  range,
-  onSend,
-  onDismiss,
-}: Props): React.JSX.Element | null {
+export function AiSelectionAsk({ anchor, range, onSend, onDismiss }: Props): React.JSX.Element {
   const { t } = useI18n()
-  const showAskTrigger = useAiPanelPrefs().showAiAskTrigger
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [triggerPlacement, setTriggerPlacement] = useState<{
@@ -39,7 +32,6 @@ export function AiSelectionAsk({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const boxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const ime = useImeEnterGuard()
   const askLabel = t('aiAskBtn')
 
   useLayoutEffect(() => {
@@ -51,7 +43,7 @@ export function AiSelectionAsk({
       width,
       height,
     })
-  }, [anchor, askLabel, open, showAskTrigger])
+  }, [anchor, askLabel, open])
 
   useEffect(() => {
     if (!open) return
@@ -64,7 +56,6 @@ export function AiSelectionAsk({
   }, [onDismiss, open])
 
   if (!open) {
-    if (!showAskTrigger) return null
     return (
       <button
         ref={triggerRef}
@@ -136,10 +127,8 @@ export function AiSelectionAsk({
         maxLength={MAX_INSTRUCTION}
         placeholder={t('aiComposerPlaceholder')}
         onChange={(event) => setText(event.target.value)}
-        onCompositionStart={ime.handleCompositionStart}
-        onCompositionEnd={ime.handleCompositionEnd}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && !ime.isImeConfirm(event.nativeEvent)) {
+          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
             event.preventDefault()
             submit()
           }

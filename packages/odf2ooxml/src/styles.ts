@@ -202,10 +202,7 @@ export class OdfStyles {
     if (lineHeight) {
       const percent = /^(\d+(?:\.\d+)?)%$/.exec(lineHeight.trim())
       if (percent) {
-        const multiple = Number(percent[1]) / 100
-        // 1000% is already beyond what a consumer honors; anything larger is
-        // malformed input and would render as exponent notation in w:line
-        if (multiple <= 10) out.lineSpacing = multiple
+        out.lineSpacing = Number(percent[1]) / 100
       } else {
         const fixed = odfLengthToEmu(lineHeight)
         if (fixed !== null) out.lineAtLeastTw = emuToTwips(fixed)

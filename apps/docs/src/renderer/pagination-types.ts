@@ -54,8 +54,6 @@ export interface BlockBox {
   docxIndex?: number
   /** owning section index (filled by assignSections) */
   section?: number
-  /** section-break paragraphs inserted this session (no docxIndex yet) right before this block */
-  unsavedSectBreaksBefore?: number
   /** horizontal margin/padding/border total read while measuring (vertical-text
    *  blocks: their writing-mode decoration would remap those margins later) */
   inlineExtraPx?: number
@@ -115,11 +113,6 @@ export interface BlockBox {
   floatPicture?: true
   /** painted offset of a floatPicture's box below its measured slot (px) */
   anchorDyPx?: number
-  /** the block paints off its flow slot (data-anchor-dy): the preview keeps
-   *  its boxes on the page its slot lands on (PageCut.anchored) */
-  anchorShifted?: true
-  /** applied page-relative shift taken out of `top` (the DOM box sits at top + shiftAppliedPx) */
-  shiftAppliedPx?: number
   /** in-block line boundaries (relative to block top, ascending, each = a line's starting Y): used to split page-crossing blocks by line */
   lineOffsets?: number[]
   /** min lines kept on each side of a split (widow/orphan control): paragraphs 2, table rows 1 (default) */
@@ -165,9 +158,6 @@ export interface BlockBox {
   /** BlockPlan.forcedLeadSpacePt (px): the space before an explicit break of
    *  this block keeps at the page top */
   forcedLeadSpacePx?: number
-  /** BlockPlan.sectionLeadSpacePt (px): what the first paragraph of a forced
-   *  section start keeps of its collapsed margin at the page top */
-  sectionLeadSpacePx?: number
   /** forcedLeadSpacePx folded into spaceBeforePx (foldForcedLeadSpaceBefore):
    *  the margin the lead's DOM shows below the gap */
   leadMtPx?: number

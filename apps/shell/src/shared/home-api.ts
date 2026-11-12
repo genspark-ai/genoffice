@@ -86,9 +86,6 @@ export type DocTheme = 'follow' | 'light' | 'dark'
 /** mirrors AUTHOR_NAME_MAX in @genoffice/electron-utils (the renderer cannot import it) */
 export const AUTHOR_NAME_MAX = 120
 
-/** mirrors PDF_DEFAULT_ZOOMS in electron-utils; kept literal so the renderer never pulls node code */
-export type PdfDefaultZoom = 'width' | 'page' | 'last'
-
 export interface AuthorNameSetting {
   /** stored override; '' means "use fallback" */
   value: string
@@ -205,7 +202,6 @@ export type DecisionEndpoint =
   | 'liquid'
   | 'liquid-ultra'
   | 'openai'
-  | 'gemini'
   | 'cloudflare'
   | 'cloudflare-flash'
   | 'kev'
@@ -465,9 +461,6 @@ export interface HomeApi {
   getAuthorName(): Promise<AuthorNameSetting>
   getLegacyImportPrompt(): Promise<boolean>
   setLegacyImportPrompt(prompt: boolean): Promise<boolean>
-  /** Settings → General default zoom for PDFs without a remembered position */
-  getPdfDefaultZoom(): Promise<PdfDefaultZoom>
-  setPdfDefaultZoom(zoom: PdfDefaultZoom): Promise<PdfDefaultZoom>
   /** persist; broadcasts 'app:author-name-changed' (the effective name) to all web contents */
   setAuthorName(value: string): Promise<AuthorNameSetting>
   /** AI panel text size + chat-input spellcheck (persisted in userData/app-settings.json) */
@@ -741,8 +734,6 @@ export const HOME_CHANNELS = {
   getAuthorName: 'home:get-author-name',
   getLegacyImportPrompt: 'home:get-legacy-import-prompt',
   setLegacyImportPrompt: 'home:set-legacy-import-prompt',
-  getPdfDefaultZoom: 'home:get-pdf-default-zoom',
-  setPdfDefaultZoom: 'home:set-pdf-default-zoom',
   setAuthorName: 'home:set-author-name',
   getAiPanelPrefs: 'home:get-ai-panel-prefs',
   setAiPanelPrefs: 'home:set-ai-panel-prefs',

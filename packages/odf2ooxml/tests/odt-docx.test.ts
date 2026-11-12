@@ -109,20 +109,6 @@ describe('convertOdtToDocx', () => {
     expect(text).toBe('a b')
   })
 
-  it('keeps an ordinary line-height percentage but ignores one beyond 1000%', async () => {
-    const automatic =
-      '<style:style style:name="P1" style:family="paragraph"><style:paragraph-properties fo:line-height="200%"/></style:style>' +
-      '<style:style style:name="P2" style:family="paragraph"><style:paragraph-properties fo:line-height="999999999999999999999%"/></style:style>'
-    const body =
-      '<text:p text:style-name="P1">normal</text:p><text:p text:style-name="P2">huge</text:p>'
-    const result = await convertOdtToDocx(await buildOdt(contentXml(body, automatic)))
-    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
-    const lines = [...document.matchAll(/w:line="([^"]*)"/g)].map((match) => match[1])
-    expect(lines).toContain('480')
-    // OOXML w:line is an integer, so no value may come out in exponent notation
-    expect(lines.every((value) => /^\d+$/.test(value))).toBe(true)
-  })
-
   it('imports lists with per-level bullet and number formats', async () => {
     const body =
       '<text:list text:style-name="L1"><text:list-item><text:p>first</text:p>' +

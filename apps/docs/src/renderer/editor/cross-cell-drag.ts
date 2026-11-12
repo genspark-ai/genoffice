@@ -111,9 +111,6 @@ export function deleteCrossCellSelection(view: EditorView): boolean {
   return true
 }
 
-const escapeHtml = (text: string): string =>
-  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-
 const dragKey = new PluginKey('crossCellDrag')
 
 export const CrossCellDrag = Extension.create({
@@ -200,54 +197,6 @@ export const CrossCellDrag = Extension.create({
               // so the composition starts on a collapsed caret like any other
               deleteCrossCellSelection(view)
               return false
-            },
-            // the default paste replaces the whole range as one slice, which
-            // takes the cells between the ends with it; collapse per cell
-            // first and let the paste land at the caret. Only when there is
-            // something to paste: an empty clipboard must not clear the cells.
-            paste: (view, event) => {
-              if (!view.editable) return false
-              const data = event.clipboardData
-              if (!data) return false
-              const hasContent =
-                data.files.length > 0 || !!(data.getData('text/html') || data.getData('text/plain'))
-              if (!hasContent) return false
-              deleteCrossCellSelection(view)
-              return false
-            },
-            // DOM handlers run before every plugin's handleKeyDown, so the
-            // keymap's Enter splits a collapsed caret, not a range across cells
-            keydown: (view, event) => {
-              if (event.key === 'Enter' && !event.isComposing) deleteCrossCellSelection(view)
-              return false
-            },
-            // Word puts the covered text on the clipboard, one paragraph per
-            // cell span, not the rows and cells the slice would carry; a paste
-            // of it then restores text, not a nested table
-            cut: (view, event) => {
-              const { state } = view
-              if (!view.editable) return false
-              if (!(state.selection instanceof TextSelection) || state.selection.empty) return false
-              const { from, to } = state.selection
-              if (!selectionCrossesCellBoundary(state.doc, from, to)) return false
-              const data = event.clipboardData
-              if (!data) return false
-              // a hard break counts as a line break, so Shift+Enter inside a
-              // spanned cell survives the trip through the clipboard
-              const lines = cellDeletionSpans(state.doc, from, to).map((span) =>
-                state.doc.textBetween(span.from, span.to, '\n', (leaf) =>
-                  leaf.type.name === 'hardBreak' ? '\n' : '',
-                ),
-              )
-              event.preventDefault()
-              data.clearData()
-              data.setData('text/plain', lines.join('\n'))
-              data.setData(
-                'text/html',
-                lines.map((line) => `<p>${escapeHtml(line).split('\n').join('<br>')}</p>`).join(''),
-              )
-              view.dispatch(clearSpansTr(state, from, to, '').setMeta('uiEvent', 'cut'))
-              return true
             },
           },
           handleKeyDown: (view, event) => {

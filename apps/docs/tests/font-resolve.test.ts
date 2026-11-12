@@ -12,7 +12,7 @@ import {
   lineHeightFactor,
   setDocFontTable,
   tableLineHeightFactor,
-} from '../src/renderer/text-layout/font-rules'
+} from '../src/renderer/line-metrics'
 
 beforeEach(() => {
   setDocFontTable(null)
@@ -51,17 +51,17 @@ describe('Latin cutover', () => {
 
   it('lays out a face Word ships that the table never probed for real', () => {
     setDocFontTable([{ name: 'Mangal', panose: '00000400000000000000' }])
-    expect(tableLineHeightFactor('Mangal')).toBe(1.2207)
+    expect(tableLineHeightFactor('Mangal')).toBe(1.22)
     expect(lineHeightFactor('Mangal')).toBe(1.6797)
     expect(lineHeightFactor('Garamond')).toBe(1.125)
   })
 
-  it('keeps a pinned table value the resolver disagrees with and records the diff', () => {
-    // probe 2026-11-09: Georgia follows the resolver, Helvetica stays pinned at 1.2 (macOS hhea 1.0)
-    expect(lineHeightFactor('Georgia')).toBe(1.1362)
+  it('keeps a probed table value the resolver disagrees with and records the diff', () => {
+    expect(lineHeightFactor('Georgia')).toBe(1.1375)
     expect(lineHeightFactor('Helvetica')).toBe(1.2)
     expect(globalThis.__fontResolveDiff).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ name: 'Georgia', legacy: 1.1375, resolver: 1.1362 }),
         expect.objectContaining({ name: 'Helvetica', legacy: 1.2, resolver: 1 }),
       ]),
     )
@@ -72,7 +72,7 @@ describe('Latin cutover', () => {
     expect(lineHeightFactor('SimSun')).toBe(1.3)
     expect(lineHeightFactor('Arial Unicode MS')).toBe(1.7417)
     setDocFontTable([{ name: 'Mont', panose: '00000700' }])
-    expect(lineHeightFactor('Mont')).toBe(1.2207)
+    expect(lineHeightFactor('Mont')).toBe(1.22)
     expect(resolveDeclaredFace('Mont')?.substituted).toBe(true)
   })
 
@@ -107,14 +107,10 @@ describe('installed index failures', () => {
     setFontMetricsProvider(ipc)
     expect(lineHeightFactor('Helvetica Neue')).toBe(1.193) // snapshot stands in while in flight
     await flush()
-    // once the index says "not installed" the name is missing: Word's Helvetica* -> Arial
-    // prefix row (probe 2026-11-08) answers, not the snapshot and not the Calibri table
-    expect(tableLineHeightFactor('Helvetica Neue')).not.toBe(1.193)
-    for (let i = 0; i < 3; i++) expect(lineHeightFactor('Helvetica Neue')).toBe(1.1499)
-    expect(resolveDeclaredFace('Helvetica Neue')).toMatchObject({
-      family: 'Arial',
-      substituted: true,
-    })
+    const legacy = tableLineHeightFactor('Helvetica Neue')
+    expect(legacy).not.toBe(1.193)
+    for (let i = 0; i < 3; i++) expect(lineHeightFactor('Helvetica Neue')).toBe(legacy)
+    expect(resolveDeclaredFace('Helvetica Neue')?.substituted).toBe(true)
     await prefetchFaces(['Helvetica Neue'])
     expect(ipc.mock.calls.filter(([f]) => f === 'helvetica neue')).toHaveLength(1)
   })

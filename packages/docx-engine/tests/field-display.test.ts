@@ -217,48 +217,6 @@ describe('field paragraph display model', () => {
     expect(del.blocks[0].fieldDisplay?.eaFontFamily).toBeUndefined()
   })
 
-  it('records the page number face when it differs from the title face (Word probe 2026-11-07)', async () => {
-    const entry = (rPr: string, pageRPr = '') =>
-      '<w:p><w:pPr><w:pStyle w:val="TOC1"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9214"/></w:tabs></w:pPr>' +
-      '<w:hyperlink w:anchor="_Toc1">' +
-      `<w:r>${rPr}<w:t>Article 1 : Objet</w:t></w:r>` +
-      '<w:r><w:tab/></w:r>' +
-      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
-      '<w:r><w:instrText xml:space="preserve"> PAGEREF _Toc1 \\h </w:instrText></w:r>' +
-      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
-      `<w:r>${pageRPr}<w:t>5</w:t></w:r>` +
-      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
-      '</w:hyperlink></w:p>'
-    const cg = '<w:rPr><w:rFonts w:ascii="Century Gothic" w:hAnsi="Century Gothic"/></w:rPr>'
-    const stylesXml =
-      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-      '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
-      '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults>' +
-      '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>' +
-      '<w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/><w:basedOn w:val="Normal"/><w:rPr><w:sz w:val="20"/></w:rPr></w:style>' +
-      '</w:styles>'
-    const doc = await parseDocx(
-      await buildDocx({
-        stylesXml,
-        bodyXml:
-          entry(cg) +
-          entry(cg, cg) +
-          entry(cg, '<w:rPr><w:rFonts w:ascii="Georgia" w:hAnsi="Georgia"/></w:rPr>') +
-          entry(''),
-      }),
-    )
-    // the page run inherits the document face (Calibri) behind a Century Gothic title
-    expect(doc.blocks[0].fieldDisplay).toMatchObject({
-      fontFamily: 'Century Gothic',
-      pageFontFamily: 'Calibri',
-    })
-    // same face on both runs: nothing to union
-    expect(doc.blocks[1].fieldDisplay?.pageFontFamily).toBeUndefined()
-    expect(doc.blocks[2].fieldDisplay?.pageFontFamily).toBe('Georgia')
-    // a style-only title face has no run face to differ from
-    expect(doc.blocks[3].fieldDisplay?.pageFontFamily).toBeUndefined()
-  })
-
   it('TOC bold respects off/none/case variants (onOff parity)', async () => {
     const offEntry = (b: string) =>
       '<w:p><w:pPr><w:pStyle w:val="TOC2"/><w:tabs><w:tab w:val="right" w:pos="8786"/></w:tabs>' +

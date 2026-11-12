@@ -65,14 +65,6 @@ export {
 } from './default-save-dir'
 export { installNavigationGuard } from './navigation-guard'
 export {
-  decodeChunks,
-  decodeChunksUtf8,
-  decodeCommandOutput,
-  decodeUtf8,
-  windowsOemCodePage,
-  type DecodeCommandOptions,
-} from './console-output'
-export {
   DROP_OPEN_CHANNEL,
   droppableFilePaths,
   installDropOpenBridge,
@@ -164,11 +156,3 @@ export {
   writeLegacyImportSkip,
   type LegacyImportKind,
 } from './legacy-import-prefs'
-export {
-  PDF_DEFAULT_ZOOM_KEY,
-  PDF_DEFAULT_ZOOMS,
-  readPdfDefaultZoom,
-  sanitizePdfDefaultZoom,
-  writePdfDefaultZoom,
-  type PdfDefaultZoom,
-} from './pdf-zoom-prefs'

@@ -230,12 +230,6 @@ aufbauen, während du zusiehst.
 </tr>
 </table>
 
-### 9 · Alte Dateien — auch `.doc`, `.xls` und `.ppt` aus den 2000ern lassen sich öffnen
-
-Eine Word-97–2003-Datei `.doc`, eine Excel-Datei `.xls` oder eine PowerPoint-Datei `.ppt` öffnet sich als konvertierte `.docx`-, `.xlsx`- oder `.pptx`-Kopie, die auf Ihrem Rechner entsteht; die Originaldatei wird nie verändert. Bilder, Tabellen, Formeln, Zahlenformate, Füllungen und Layout bleiben erhalten.
-
-<img src="../assets/readme/legacy-formats-motion.webp" alt="Zeitraffer: GenOffice öffnet die .ppt-, .doc- und .xls-Dateien eines fiktiven Geschäftsberichts 2004, danach eine Folie in PowerPoint neben der konvertierten Präsentation in GenOffice" width="100%">
-
 ## Warum GenOffice
 
 - **Open Source**, Apache-2.0, offen entwickelt auf GitHub.

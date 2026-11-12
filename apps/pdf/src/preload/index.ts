@@ -63,7 +63,6 @@ const api: PdfApi = {
   addSavedSignature: (data) => ipcRenderer.invoke(PDF_CHANNELS.addSignature, data),
   removeSavedSignature: (id) => ipcRenderer.invoke(PDF_CHANNELS.removeSignature, id),
   getUsername: () => ipcRenderer.invoke(PDF_CHANNELS.getUsername),
-  getDefaultZoom: () => ipcRenderer.invoke(PDF_CHANNELS.getDefaultZoom),
   onUsernameChanged: (handler) => {
     const listener = (_e: Electron.IpcRendererEvent, name: unknown) => {
       if (typeof name === 'string') handler(name)

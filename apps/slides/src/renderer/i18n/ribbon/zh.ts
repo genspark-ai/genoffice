@@ -54,7 +54,6 @@ export const zh = {
   ribbonFilePrint: '打印…',
   ribbonFileExportImages: '导出为 PNG…',
   ribbonFileExportImagesJpg: '导出为 JPG…',
-  ribbonFileExportVideo: '导出为视频 (MP4)…',
   ribbonUnsavedSuffix: ' — 未保存',
   ribbonSaveTip: '保存 (⌘S)',
   ribbonAutoSave: '自动保存',

@@ -54,7 +54,6 @@ export const tr = {
   ribbonFilePrint: 'Yazdır…',
   ribbonFileExportImages: 'PNG Olarak Dışa Aktar…',
   ribbonFileExportImagesJpg: 'JPG Olarak Dışa Aktar…',
-  ribbonFileExportVideo: 'Video Olarak Dışa Aktar (MP4)…',
   ribbonUnsavedSuffix: ' — Kaydedilmedi',
   ribbonSaveTip: 'Kaydet (⌘S)',
   ribbonAutoSave: 'Otomatik Kaydet',

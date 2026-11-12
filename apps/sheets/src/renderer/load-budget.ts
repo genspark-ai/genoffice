@@ -1,6 +1,4 @@
 import {
-  AUTO_FULL_LOAD_MAX_GRID_CELLS,
-  AUTO_FULL_LOAD_MAX_STORED_CELLS,
   FORMULA_MODE_MAX_CELLS,
   FULL_LOAD_MAX_CELLS,
   FULL_LOAD_MAX_GRID_CELLS,
@@ -55,18 +53,5 @@ export function fitsFullLoad(counts: WorkbookCellCounts): boolean {
     counts.valueCells <= FULL_LOAD_MAX_CELLS &&
     counts.storedCells <= FULL_LOAD_MAX_STORED_CELLS &&
     counts.gridCells <= FULL_LOAD_MAX_GRID_CELLS
-  )
-}
-
-/// Streamed books over the formula-mode cap but cheap enough to make
-/// resident load themselves fully shortly after open (the silent path Print
-/// takes), so scrolling stops waiting on per-viewport sidecar round-trips.
-/// Deliberately tighter than the Full Load offer: the user never asked for
-/// this load, so it must stay a few seconds and a modest slice of memory.
-export function autoFullLoadsAtOpen(counts: WorkbookCellCounts): boolean {
-  return (
-    fitsFullLoad(counts) &&
-    counts.storedCells <= AUTO_FULL_LOAD_MAX_STORED_CELLS &&
-    counts.gridCells <= AUTO_FULL_LOAD_MAX_GRID_CELLS
   )
 }

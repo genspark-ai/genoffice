@@ -487,19 +487,6 @@ fn ignores_worksheets_without_sparkline_ext() {
 }
 
 #[test]
-fn open_reports_sparklines_that_follow_the_cells() {
-    let xml = sparkline_ext(
-        r#"<x14:sparklineGroup>
-<x14:sparklines><x14:sparkline><xm:f>S!A1:A1</xm:f><xm:sqref>B1</xm:sqref></x14:sparkline></x14:sparklines>
-</x14:sparklineGroup>"#,
-    );
-    let metadata = open_single_sheet(&xml);
-    assert_eq!(metadata.sheets[0].sparklines.len(), 1);
-    assert_eq!(metadata.sheets[0].sparklines[0].cells[0].cell, "B1");
-    assert_eq!(metadata.sheets[0].sparklines[0].cells[0].source_ref, "S!A1:A1");
-}
-
-#[test]
 fn omits_empty_sparklines_field_from_metadata_json() {
     let sheet = SheetMetadata {
         id: "sheet-1".into(),

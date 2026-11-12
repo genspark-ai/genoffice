@@ -10,7 +10,6 @@ import {
   serializeActiveSheetCsv,
   sheetHasFormulas,
 } from '../csv-export'
-import { settleFormulas } from '../formula-settle'
 import type { LazyWorkbookState, UniverRuntime } from '../univer-state'
 import type { CreateDocumentToolOutcome, CreateDocumentToolRequest } from './tools'
 
@@ -62,10 +61,6 @@ export async function createAiDocument(
     }
   }
   const runtime = ctx.univerRef.current
-  await settleFormulas(runtime)
-  if (ctx.lazyWorkbookRef.current !== state) {
-    return { ok: false, error: 'The workbook changed while its formulas were computing — retry.' }
-  }
   const content = serializeActiveSheetCsv(
     sheet,
     state,

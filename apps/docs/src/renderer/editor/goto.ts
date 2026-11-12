@@ -8,12 +8,8 @@ import type { Node as PmNode } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import { BlockIndex } from '../pagination-index'
 import type { FlowCarry, PageCut } from '../pagination-cuts'
-import type { PreparedFlow } from '../pagination-pass'
 import type {
   BlockBox,
-  FloatBox,
-  FloatVShiftPatch,
-  PageNoteItem,
   PageSlice,
   RowSplitPatch,
   SectionGeom,
@@ -49,8 +45,6 @@ export interface GoToItem {
 }
 
 export interface PageLayout {
-  /** pass counter of this layout (a preview printing it reports the generation it saw) */
-  passGen: number
   blocks: BlockBox[]
   slices: PageSlice[]
   sections: Array<{ firstBlockIndex: number }>
@@ -61,14 +55,6 @@ export interface PageLayout {
   rowSplits: RowSplitPatch[]
   /** float-carry spacers of split floating tables (flow displacement, flowOffsetAt) */
   carries: FlowCarry[]
-  /** the measured floating boxes the cuts index (`PageCut.boxes`) */
-  floats: FloatBox[]
-  /** anchor paragraphs whose side-wrapped drawings the slicer pulled up (sliceFlow applied them to the pass's floats) */
-  floatPullUps: FloatVShiftPatch[]
-  /** the prepared flow the pass sliced (sections, endnotes, spill, geometry) */
-  flow?: PreparedFlow
-  /** each page's footnote entries, placed once by the pass (the preview prints them as is) */
-  pageNotes: PageNoteItem[][]
 }
 
 /** structural targets in document order (bookmarks carry their name as label) */

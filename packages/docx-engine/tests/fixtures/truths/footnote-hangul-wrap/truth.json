@@ -21,7 +21,7 @@
       "note_index": 1,
       "expect": {
         "stylesStartWith": ["font-family:'Calibri'"],
-        "styles": ["--doc-line-factor:1.2207"]
+        "styles": ["--doc-line-factor:1.22"]
       }
     },
     {
@@ -29,7 +29,7 @@
       "note_index": 2,
       "expect": {
         "stylesStartWith": ["font-family:'Times New Roman'"],
-        "styles": ["--doc-line-factor:1.1499"]
+        "styles": ["--doc-line-factor:1.15"]
       }
     }
   ],

@@ -10,8 +10,7 @@ export const FORMULA_SETTLE_TIMEOUT_MS = 30_000
 
 export async function settleFormulas(runtime: UniverRuntime | null): Promise<void> {
   const workbook = runtime?.univerAPI.getActiveWorkbook()
-  // a workbook facade without a snapshot (test doubles) has nothing to settle
-  if (!runtime || !workbook || typeof workbook.getSnapshot !== 'function') return
+  if (!runtime || !workbook) return
   /** formula cells of the whole workbook whose computed value has not landed */
   const pendingFormulas = (): number => {
     const snapshot = workbook.getSnapshot() as unknown as {

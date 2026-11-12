@@ -16,7 +16,7 @@ import { XMLParser } from 'fast-xml-parser'
 import { applyColorMods } from './color'
 import { resolveSchemeColor, type Theme } from './theme'
 import type { Fill, Stroke } from './types'
-import { asXmlNode, srgbHexValue, xmlArray, type XmlNode } from './xml-utils'
+import { asXmlNode, xmlArray, type XmlNode } from './xml-utils'
 
 /** Style for one table region (whole table / banding / first row, etc.). */
 export interface TablePartStyle {
@@ -528,8 +528,7 @@ function readColor(node: unknown, theme: Theme | undefined): string | undefined 
   // as an #RRGGBBAA suffix so banded fills composite over <a:tblBg>
   if (n['a:srgbClr']) {
     const srgb = asXmlNode(n['a:srgbClr'])
-    const base = srgbHexValue(srgb['@_val'])
-    return base ? applyColorMods(base, srgb) : undefined
+    return applyColorMods('#' + String(srgb['@_val']).toUpperCase(), srgb)
   }
   if (n['a:schemeClr']) {
     const scheme = asXmlNode(n['a:schemeClr'])

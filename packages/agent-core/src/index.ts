@@ -13,7 +13,6 @@ export type {
   ToolDisplay,
   ToolExecution,
 } from './types'
-export { addTokenUsage } from './types'
 export { composeSkills } from './skill'
 export { withAttachedSkills, type AttachedSkill } from './attached-skills'
 export { createKnowledgeBaseSkill, formatKbSize } from './knowledge-base-skill'
@@ -52,8 +51,6 @@ export { classifySkill, parseSkillFrontmatter, SKILL_FORMAT_TOKENS } from './imp
 export {
   AgentLoop,
   COMPLETED_VIA_TOOLS_TEXT,
-  CONTEXT_OMITTED_NOTE,
-  CONTEXT_SUPERSEDES_NOTE,
   DEFAULT_MAX_TURNS,
   TOOL_ABORTED_OUTPUT,
   coerceArgumentFields,

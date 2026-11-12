@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { evictOldestEntry } from '../src/advance'
-import { advanceWidths, fileAdvanceWidths, isFamilyInstalled } from '../src/index'
+import { advanceWidths, isFamilyInstalled } from '../src/index'
 
 const darwin = process.platform === 'darwin'
 const hasHelvetica = darwin && existsSync('/System/Library/Fonts/Helvetica.ttc')
@@ -46,22 +46,6 @@ describe('advanceWidths', () => {
     const w = advanceWidths('Helvetica', '\u{10FFF0}x', 12)!
     expect(Number.isNaN(w[0]!)).toBe(true)
     expect(w[1]!).toBeGreaterThan(0)
-  })
-})
-
-describe('fileAdvanceWidths', () => {
-  const carlito = new URL('../../ui/src/fonts/Carlito-Regular.ttf', import.meta.url).pathname
-
-  it('reads the bundled Carlito: m is 0.799 em (the Calibri 11 probe advance 175.7 twips)', () => {
-    const w = fileAdvanceWidths(carlito, 'm \u{10FFF0}', 11)!
-    expect(w).toHaveLength(3)
-    expect(w[0]!).toBeCloseTo(175.7, 0)
-    expect(w[1]!).toBeCloseTo(49.7, 0)
-    expect(Number.isNaN(w[2]!)).toBe(true)
-  })
-
-  it('returns null for a missing file', () => {
-    expect(fileAdvanceWidths('/no/such/font.ttf', 'x', 12)).toBeNull()
   })
 })
 

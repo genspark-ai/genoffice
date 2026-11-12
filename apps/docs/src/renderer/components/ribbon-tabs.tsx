@@ -53,7 +53,6 @@ import {
   IconMoon,
   IconNavPane,
   IconOutlineView,
-  IconStoryView,
   IconPageWidth,
   IconGridlines,
   IconNewWindow,
@@ -1360,7 +1359,7 @@ export function ReviewTab({
 /* ================= View ================= */
 
 /** document rendering modes: Print Layout / Web Layout / Outline */
-export type ViewMode = 'print' | 'web' | 'outline' | 'story'
+export type ViewMode = 'print' | 'web' | 'outline'
 
 interface ViewTabProps {
   hasDoc: boolean
@@ -1466,17 +1465,6 @@ export function ViewTab({
               <IconOutlineView size={BIG} />
             </span>
             <span>{t('ribbonOutlineView')}</span>
-          </button>
-          <button
-            className={`rb-big ${viewMode === 'story' ? 'active' : ''}`}
-            disabled={!hasDoc}
-            data-tip={t('ribbonStoryViewTip')}
-            onClick={() => onViewMode(viewMode === 'story' ? 'print' : 'story')}
-          >
-            <span className="rb-big-icon">
-              <IconStoryView size={BIG} />
-            </span>
-            <span>{t('ribbonStoryView')}</span>
           </button>
           <button
             className={`rb-big ${readMode ? 'active' : ''}`}

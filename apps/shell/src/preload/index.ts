@@ -542,8 +542,6 @@ const homeApi: HomeApi = {
   async setLegacyImportPrompt(prompt) {
     return (await ipcRenderer.invoke(HOME_CHANNELS.setLegacyImportPrompt, prompt)) !== false
   },
-  getPdfDefaultZoom: () => ipcRenderer.invoke(HOME_CHANNELS.getPdfDefaultZoom),
-  setPdfDefaultZoom: (zoom) => ipcRenderer.invoke(HOME_CHANNELS.setPdfDefaultZoom, zoom),
   async getAuthorName() {
     return normalizeAuthorNameSetting(await ipcRenderer.invoke(HOME_CHANNELS.getAuthorName))
   },

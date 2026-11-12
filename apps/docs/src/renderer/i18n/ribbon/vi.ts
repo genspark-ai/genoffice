@@ -794,8 +794,6 @@ export const vi = {
   ribbonOutlineView: 'Dàn bài',
   ribbonOutlineViewTip:
     'Chế độ xem dàn bài: chỉ hiển thị phân cấp tiêu đề; các tiêu đề vẫn có thể chỉnh sửa',
-  ribbonStoryView: 'Câu chuyện',
-  ribbonStoryViewTip: 'Câu chuyện: viết mà không có định dạng của tài liệu',
   ribbonReadMode: 'Chế độ đọc',
   ribbonReadModeTip: 'Chế độ đọc: ẩn dải băng để tập trung đọc, nhấn Esc để thoát',
   ribbonPagePreview: 'Xem trước trang',

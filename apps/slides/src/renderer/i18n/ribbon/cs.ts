@@ -54,7 +54,6 @@ export const cs = {
   ribbonFilePrint: 'Tisk…',
   ribbonFileExportImages: 'Exportovat jako PNG…',
   ribbonFileExportImagesJpg: 'Exportovat jako JPG…',
-  ribbonFileExportVideo: 'Exportovat jako video (MP4)…',
   ribbonUnsavedSuffix: ' — Neuloženo',
   ribbonSaveTip: 'Uložit (⌘S)',
   ribbonAutoSave: 'Automatické ukládání',

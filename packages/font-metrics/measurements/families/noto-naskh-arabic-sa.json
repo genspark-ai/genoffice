@@ -2,106 +2,14 @@
   "family": "Noto Naskh Arabic SA",
   "source": {
     "kind": "hmtx",
-    "date": "2026-11-08",
-    "fonts": [
-      "Simplified Arabic (M365 cloud)",
-      "NotoNaskhArabic-Regular-subset.woff2",
-      "LiberationSans-Regular.ttf"
-    ],
-    "probe": "hb-shape widths per class of two production Arabic bodies, cloud cut over the stand-in; Word PDF of 8 single lines = hb within 0.1%; box = hhea 2416/979 over 2048"
+    "date": "2026-09-11",
+    "fonts": ["Simplified Arabic (M365 cloud)", "NotoNaskhArabic-Regular-subset.woff2"],
+    "probe": "hb-shape width of a long Arabic body, 0.924 (bold 0.916)"
   },
-  "note": "Simplified Arabic (M365 cloud face Word renders real) is a compact naskh. Class scales are harfbuzz shaped widths of the cloud cut over the stand-in, measured over two production Arabic bodies (57k letters, 2026-11-08) and checked against a Word for Mac PDF of 8 single-line sentences (Word = harfbuzz within 0.1%): Arabic letters 0.858 of the Noto Naskh subset (bold cut 0.880; weight-normal only so Blink synthesizes bold and bold runs keep the regular ratio), Arabic-Indic digits, Arabic punctuation (incl. the U+066A-066D separators) and the ornate brackets each on their own ratio; tatweel, ZWNJ and ZWJ stay in the letter face because Blink shapes each unicode-range face as its own run and a split joiner would break the cursive connection (the cloud tatweel is far narrower, 0.26 / 0.34, an accepted drift), and vs Liberation Sans/Helvetica: ASCII digits, Latin letters (mixed-case English prose, 0.922; the Noto subset has no Latin so the letters would otherwise leave the alias), space, dots, brackets, other punctuation, guillemets, dashes. The earlier single 0.800 / 0.924 ratio (2026-09-11 pangram) ran 6-13% wide on real text. Every face pins the Word hhea box.",
   "faces": [
     {
       "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
-      "sizeAdjust": 85.8,
-      "unicodeRange": "U+0600-060B, U+060D-061A, U+061C-061E, U+0620-065F, U+066E-06EF, U+06FA-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FD3D, U+FD40-FDFF, U+FE70-FEFF, U+200C-200D",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
-    },
-    {
-      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
-      "sizeAdjust": 117.15,
-      "unicodeRange": "U+0660-0669, U+06F0-06F9",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
-    },
-    {
-      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
-      "sizeAdjust": 117.1,
-      "unicodeRange": "U+060C, U+061B, U+061F, U+066A-066D",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
-    },
-    {
-      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
-      "sizeAdjust": 110.8,
-      "unicodeRange": "U+FD3E-FD3F",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
-    },
-    {
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "sizeAdjust": 94.6,
-      "unicodeRange": "U+0030-0039",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
-    },
-    {
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "sizeAdjust": 92.25,
-      "unicodeRange": "U+0041-005A, U+0061-007A",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
-    },
-    {
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "sizeAdjust": 114.03,
-      "unicodeRange": "U+0020, U+00A0",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
-    },
-    {
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "sizeAdjust": 114.7,
-      "unicodeRange": "U+002C, U+002E, U+003A, U+003B",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
-    },
-    {
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "sizeAdjust": 95.1,
-      "unicodeRange": "U+0028-0029, U+005B, U+005D, U+007B, U+007D",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
-    },
-    {
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "sizeAdjust": 94.0,
-      "unicodeRange": "U+0021-0027, U+002A-002B, U+002D, U+002F, U+003C-0040, U+005C, U+005E-0060, U+007C, U+007E",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
-    },
-    {
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "sizeAdjust": 84.4,
-      "unicodeRange": "U+00AB, U+00BB",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
-    },
-    {
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "sizeAdjust": 90,
-      "unicodeRange": "U+2010-2015",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
-    },
-    {
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "sizeAdjust": 90,
-      "unicodeRange": "U+2022, U+2026",
-      "ascentOverride": 117.97,
-      "descentOverride": 47.8
+      "sizeAdjust": 92.4
     }
   ]
 }

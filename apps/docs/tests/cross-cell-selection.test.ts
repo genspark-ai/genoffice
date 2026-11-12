@@ -4,7 +4,7 @@
  * deletion spans, and the delete/type paths that clear the covered text while
  * every cell the selection crossed survives.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import { parseDocx } from '@genoffice/docx-engine'
@@ -184,119 +184,5 @@ describe('an IME starting over a cross-cell selection', () => {
     editor.view.dom.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
     expect(cellTexts(editor)).toEqual(['Al', '', '', 'lta'])
     expect(editor.state.selection.from).toBe(from)
-  })
-})
-
-describe('Enter, Cut and Paste over a cross-cell selection', () => {
-  async function crossCellSelection(): Promise<{ editor: Editor; from: number }> {
-    const editor = await openTable()
-    const s = textStarts(editor)
-    const from = s.get('Alpha')! + 2
-    const to = s.get('Delta')! + 2
-    editor.view.dispatch(
-      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, from, to)),
-    )
-    return { editor, from }
-  }
-
-  // A paste nothing handles falls through to ProseMirror's capturePaste, which
-  // re-focuses the view from a 50ms timer; run it here so it cannot fire after
-  // jsdom is torn down.
-  function paste(editor: Editor, data: DataTransfer): void {
-    const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
-      clipboardData: DataTransfer
-    }
-    event.clipboardData = data
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      editor.view.dom.dispatchEvent(event)
-      vi.runOnlyPendingTimers()
-    } finally {
-      vi.useRealTimers()
-    }
-  }
-
-  function clipboard(): DataTransfer {
-    const store = new Map<string, string>()
-    return {
-      getData: (type: string) => store.get(type) ?? '',
-      setData: (type: string, value: string) => void store.set(type, value),
-      clearData: () => store.clear(),
-      types: [],
-      files: [],
-      items: [],
-    } as unknown as DataTransfer
-  }
-
-  it('Enter splits the paragraph at the collapsed caret instead of joining the cells', async () => {
-    const { editor, from } = await crossCellSelection()
-    editor.view.dom.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
-    )
-    expect(cellTexts(editor)).toEqual(['Al', '', '', 'lta'])
-    expect(editor.state.selection.from).toBeGreaterThanOrEqual(from)
-    expect(cellTexts(editor)).toHaveLength(4)
-  })
-
-  it('Cut copies the covered text and clears it per cell', async () => {
-    const { editor, from } = await crossCellSelection()
-    const data = clipboard()
-    const event = new Event('cut', { bubbles: true, cancelable: true }) as Event & {
-      clipboardData: DataTransfer
-    }
-    event.clipboardData = data
-    editor.view.dom.dispatchEvent(event)
-    expect(data.getData('text/plain')).toBe('pha\nBravo\nCharlie\nDe')
-    expect(data.getData('text/html')).toBe('<p>pha</p><p>Bravo</p><p>Charlie</p><p>De</p>')
-    expect(cellTexts(editor)).toEqual(['Al', '', '', 'lta'])
-    expect(editor.state.selection.from).toBe(from)
-  })
-
-  it('Cut keeps a hard break inside a spanned cell', async () => {
-    const { editor, from } = await crossCellSelection()
-    const s = textStarts(editor)
-    // Bra|vo -> Bra<br>vo, then reselect Al|pha .. De|lta
-    editor.view.dispatch(
-      editor.state.tr.insert(s.get('Bravo')! + 3, editor.schema.nodes.hardBreak.create()),
-    )
-    const s2 = textStarts(editor)
-    editor.view.dispatch(
-      editor.state.tr.setSelection(
-        TextSelection.create(editor.state.doc, from, s2.get('Delta')! + 2),
-      ),
-    )
-    const data = clipboard()
-    const event = new Event('cut', { bubbles: true, cancelable: true }) as Event & {
-      clipboardData: DataTransfer
-    }
-    event.clipboardData = data
-    editor.view.dom.dispatchEvent(event)
-    expect(data.getData('text/plain')).toBe('pha\nBra\nvo\nCharlie\nDe')
-    expect(data.getData('text/html')).toBe('<p>pha</p><p>Bra<br>vo</p><p>Charlie</p><p>De</p>')
-    expect(cellTexts(editor)).toEqual(['Al', '', '', 'lta'])
-  })
-
-  it('an image-only paste still collapses the range per cell', async () => {
-    const { editor, from } = await crossCellSelection()
-    const data = clipboard()
-    ;(data as unknown as { files: unknown[] }).files = [{ type: 'image/png' }]
-    paste(editor, data)
-    expect(cellTexts(editor)).toEqual(['Al', '', '', 'lta'])
-    expect(editor.state.selection.from).toBe(from)
-  })
-
-  it('an empty clipboard paste leaves the cells alone', async () => {
-    const { editor } = await crossCellSelection()
-    paste(editor, clipboard())
-    expect(cellTexts(editor)).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta'])
-  })
-
-  it('Paste lands at the start of the selection and keeps every cell', async () => {
-    const { editor, from } = await crossCellSelection()
-    const data = clipboard()
-    data.setData('text/plain', 'XY')
-    paste(editor, data)
-    expect(cellTexts(editor)).toEqual(['AlXY', '', '', 'lta'])
-    expect(editor.state.selection.from).toBe(from + 2)
   })
 })

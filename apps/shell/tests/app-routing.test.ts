@@ -18,7 +18,6 @@ describe('appForPath', () => {
     expect(appForPath('/x/notes.odt')).toBe('docs')
     expect(appForPath('/x/a.xlsx')).toBe('sheets')
     expect(appForPath('/x/a.pptx')).toBe('slides')
-    expect(appForPath('/x/legacy.ppt')).toBe('slides')
     expect(appForPath('/x/a.pdf')).toBe('pdf')
     expect(appForPath('/x/a.html')).toBe('html')
   })

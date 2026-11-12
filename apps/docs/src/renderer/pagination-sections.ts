@@ -995,10 +995,6 @@ export function assignSections(blocks: BlockBox[], sections: SectionInfo[]): voi
     if (block.docxIndex !== undefined) {
       const i = ends.findIndex((end) => block.docxIndex! <= end)
       s = i >= 0 ? i : ends.length - 1
-    } else {
-      // typed after an unsaved break: the break closed its section
-      for (let n = block.unsavedSectBreaksBefore ?? 0; n > 0 && sections[s]?.pendingBreak; n--)
-        s = Math.min(s + 1, sections.length - 1)
     }
     block.section = s
     prev = s
@@ -1009,9 +1005,7 @@ export function assignSections(blocks: BlockBox[], sections: SectionInfo[]): voi
 /**
  * Word keeps a paragraph's space-before when it opens a forced section start
  * (unlike a paragraph that merely flowed to a page top, where the margin is
- * folded into the previous block's space-after and dropped with it). Planned
- * blocks keep only the excess over the previous paragraph's space after
- * (sectionLeadSpacePx); the DOM margin is trimmed to it below the gap (leadMtPx).
+ * folded into the previous block's space-after and dropped with it).
  */
 export function foldSectionStartSpaceBefore(blocks: BlockBox[], geoms: SectionGeom[]): void {
   for (let i = 1; i < blocks.length; i++) {
@@ -1019,12 +1013,9 @@ export function foldSectionStartSpaceBefore(blocks: BlockBox[], geoms: SectionGe
     const prev = blocks[i - 1]
     const sec = block.section ?? 0
     if (!block.el || sec === (prev.section ?? sec) || !geoms[sec]?.forceBreak) continue
-    if (block.leadMtPx !== undefined) continue
     const after = prev.spaceAfterPx ?? 0
     const margin = block.marginBeforePx ?? (parseFloat(getComputedStyle(block.el).marginTop) || 0)
-    const cap = block.sectionLeadSpacePx
-    const sb = Math.min(margin, after, cap ?? Infinity)
-    if (cap !== undefined && sb < margin - 0.5) block.leadMtPx = Math.max(0, sb)
+    const sb = Math.min(margin, after)
     if (sb <= 0.5) continue
     prev.spaceAfterPx = after - sb
     prev.height -= sb

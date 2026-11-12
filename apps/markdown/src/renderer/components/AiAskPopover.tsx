@@ -12,11 +12,9 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { useImeEnterGuard } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
-import { useAiPanelPrefs } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { AI_QUEUE_ANCHOR_CLICK, queueAnchorRange } from '../editor/aiQueueAnchors'
 import { setInactiveSelectionShown } from '../editor/inactiveSelection'
@@ -107,7 +105,6 @@ export function AiAskPopover({
   onQueueRemove,
 }: Props): ReactElement | null {
   const { t } = useI18n()
-  const showAskTrigger = useAiPanelPrefs().showAiAskTrigger
   const [trigger, setTrigger] = useState<{ left: number; top: number } | null>(null)
   const [open, setOpen] = useState<OpenState | null>(null)
   const [kind, setKind] = useState<SelectionKind>('text')
@@ -115,7 +112,6 @@ export function AiAskPopover({
   const [rect, setRect] = useState<AnchorRect | null>(null)
   const boxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const ime = useImeEnterGuard()
 
   const openRef = useRef(open)
   openRef.current = open
@@ -138,10 +134,6 @@ export function AiAskPopover({
   // floating trigger follows the live selection while the editor is focused
   useEffect(() => {
     const update = () => {
-      if (!showAskTrigger) {
-        setTrigger(null)
-        return
-      }
       if (openRef.current) {
         setTrigger(null)
         return
@@ -165,7 +157,6 @@ export function AiAskPopover({
     const scroller = document.querySelector('.editor-scroll')
     scroller?.addEventListener('scroll', update, { passive: true })
     window.addEventListener('resize', update)
-    update()
     return () => {
       editor.off('selectionUpdate', update)
       editor.off('focus', update)
@@ -173,7 +164,7 @@ export function AiAskPopover({
       scroller?.removeEventListener('scroll', update)
       window.removeEventListener('resize', update)
     }
-  }, [editor, showAskTrigger])
+  }, [editor])
 
   // clicking a queued anchor in the document re-opens the popover on that item
   useEffect(() => {
@@ -226,11 +217,6 @@ export function AiAskPopover({
     }
     close()
   }, [onQueueAdd, onQueueUpdate, close])
-
-  // switching the chip off dismisses a popover it opened; an edit of a queued anchor stays
-  useEffect(() => {
-    if (!showAskTrigger && openRef.current?.mode === 'new') commitOrClose()
-  }, [showAskTrigger, commitOrClose])
 
   useEffect(() => {
     if (!open) return
@@ -324,10 +310,8 @@ export function AiAskPopover({
           maxLength={EDIT_INSTRUCTION_MAX}
           placeholder={t('aiAskPlaceholder')}
           onChange={(e) => setText(e.target.value)}
-          onCompositionStart={ime.handleCompositionStart}
-          onCompositionEnd={ime.handleCompositionEnd}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !ime.isImeConfirm(e.nativeEvent)) {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
               e.preventDefault()
               if (!canSubmit) return
               if (open.mode === 'edit') {
@@ -412,7 +396,7 @@ export function AiAskPopover({
 
   return (
     <>
-      {trigger && !open && showAskTrigger && (
+      {trigger && !open && (
         <button
           className="ai-ask-trigger"
           style={{ left: trigger.left, top: trigger.top }}

@@ -3,8 +3,8 @@ import { DOMSerializer } from '@tiptap/pm/model'
 import type { ParsedDocFull, StyleInfo, TableModel } from '@genoffice/docx-engine'
 import { afterEach, describe, expect, it } from 'vitest'
 import { docStyleCss } from '../src/renderer/doc-style-css'
+import { setAdditiveParagraphSpacing } from '../src/renderer/line-metrics'
 import { renderTableSpec } from '../src/renderer/editor/protected-render'
-import { setOpenDocumentText } from '../src/renderer/text-layout/open-document'
 
 ;(globalThis as { CSS?: unknown }).CSS ??= { escape: (s: string) => s }
 
@@ -53,10 +53,10 @@ describe('nested-table cell paragraph spacing', () => {
   })
 
   describe('additive documents (doNotUseHTMLParagraphAutoSpacing)', () => {
-    afterEach(() => setOpenDocumentText({ additiveSpacing: false }))
+    afterEach(() => setAdditiveParagraphSpacing(false))
 
     it('inlines the direct before as padding-top so it replaces the stylesheet default', () => {
-      setOpenDocumentText({ additiveSpacing: true })
+      setAdditiveParagraphSpacing(true)
       const parsed = {
         styles: new Map(),
         docDefaults: { spaceBeforeTwips: 200 },

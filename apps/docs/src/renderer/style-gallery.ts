@@ -2,7 +2,7 @@ import type { Node as PmNode } from '@tiptap/pm/model'
 import type { CSSProperties } from 'react'
 import type { DocDefaults, StyleInfo } from '@genoffice/docx-engine'
 import type { StringKey, TFunc } from './i18n/locale'
-import { cssFontFamily } from './text-layout/font-rules'
+import { cssFontFamily } from './line-metrics'
 
 export type StyleMap = ReadonlyMap<string, StyleInfo>
 

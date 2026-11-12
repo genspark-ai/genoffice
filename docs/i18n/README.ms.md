@@ -230,12 +230,6 @@ tab editor yang kelihatan sementara anda memerhati.
 </tr>
 </table>
 
-### 9 · Fail lama — `.doc`, `.xls` dan `.ppt` dari era 2000-an juga boleh dibuka
-
-Fail `.doc` Word 97–2003, `.xls` Excel atau `.ppt` PowerPoint dibuka sebagai salinan `.docx`, `.xlsx` atau `.pptx` yang ditukar pada komputer anda; fail asal tidak pernah diubah. Imej, jadual, formula, format nombor, isian dan susun atur dibawa bersama.
-
-<img src="../assets/readme/legacy-formats-motion.webp" alt="Selang masa GenOffice membuka fail .ppt, .doc dan .xls bagi laporan tahunan rekaan 2004, kemudian satu slaid dipaparkan dalam PowerPoint di sebelah dek yang ditukar dalam GenOffice" width="100%">
-
 ## Mengapa GenOffice
 
 - **Sumber terbuka**, Apache-2.0, dibangunkan secara terbuka di GitHub.

@@ -12,8 +12,8 @@
       "row": 0,
       "expect": {
         "styles": [
-          "--doc-line-factor:1.1499",
-          "font-family:'Arial','Arial Arabic GO','Calibri','Carlito GO','Noto Sans CJK SC','Liberation Sans','Calibri Arabic GO',sans-serif",
+          "--doc-line-factor:1.15",
+          "font-family:'Arial','Arial Arabic GO','Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC','Liberation Sans',sans-serif",
           "--doc-strut:12pt"
         ]
       },
@@ -26,7 +26,7 @@
       "expect": {
         "styles": [
           "--doc-line-factor:1.3965",
-          "font-family:'Sakkal Majalla','Sakkal Majalla GO','Calibri','Carlito GO','Noto Sans CJK SC','Sakkal Majalla Latin GO','Geeza Pro','Al Bayan','Calibri Arabic GO',sans-serif",
+          "font-family:'Sakkal Majalla','Sakkal Majalla GO','Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC','Sakkal Majalla Latin GO','Geeza Pro','Al Bayan',sans-serif",
           "--doc-strut:14pt"
         ]
       }
@@ -37,7 +37,7 @@
       "row": 2,
       "expect": {
         "styles": [
-          "--doc-line-factor:1.2207",
+          "--doc-line-factor:1.22",
           "font-family:'Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC',sans-serif"
         ]
       },

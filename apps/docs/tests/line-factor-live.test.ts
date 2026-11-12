@@ -6,7 +6,7 @@
 import { Editor } from '@tiptap/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { lineHeightFactor, setDocFontTable } from '../src/renderer/text-layout/font-rules'
+import { lineHeightFactor, setDocFontTable } from '../src/renderer/line-metrics'
 
 const factorOf = (editor: Editor, index = 0): string => {
   const p = editor.view.dom.querySelectorAll('p')[index] as HTMLElement
@@ -188,7 +188,7 @@ describe('declared run fonts drive the Latin factor and the paragraph face', () 
       extensions: editorExtensions,
       content: fontParagraph([{ text: 'declared', font: 'Calibri' }]),
     })
-    expect(factorOf(editor)).toBe('1.2207')
+    expect(factorOf(editor)).toBe('1.22')
     const p = editor.view.dom.querySelector('p') as HTMLElement
     expect(p.style.fontFamily).toContain('Calibri')
     editor.destroy()
@@ -200,7 +200,7 @@ describe('declared run fonts drive the Latin factor and the paragraph face', () 
       extensions: editorExtensions,
       content: fontParagraph([{ text: 'declared ', font: 'Calibri' }, { text: 'inherited' }]),
     })
-    expect(factorOf(editor)).toBe('max(var(--doc-line-factor-latin,1.2), 1.2207)')
+    expect(factorOf(editor)).toBe('max(var(--doc-line-factor-latin,1.2), 1.22)')
     const p = editor.view.dom.querySelector('p') as HTMLElement
     expect(p.style.fontFamily).toBe('')
     editor.destroy()
@@ -265,7 +265,7 @@ describe('declared run fonts drive the Latin factor and the paragraph face', () 
       extensions: editorExtensions,
       content: fontParagraph([{ text: 'declared', font: 'Calibri' }]),
     })
-    expect(factorOf(editor)).toBe('1.2207')
+    expect(factorOf(editor)).toBe('1.22')
 
     editor.commands.setTextSelection({ from: 1, to: 9 })
     editor.commands.unsetMark('docTextStyle')
@@ -504,7 +504,7 @@ describe('empty paragraph line size (emptyRunSize attr)', () => {
       } as never,
     })
     const [tnr, malgun, simsun] = Array.from(editor.view.dom.querySelectorAll('p')) as HTMLElement[]
-    expect(tnr.style.getPropertyValue('--doc-line-factor')).toBe('1.1499')
+    expect(tnr.style.getPropertyValue('--doc-line-factor')).toBe('1.15')
     expect(tnr.style.fontFamily).toContain('Times New Roman')
     // empty-line probe 2026-08-25: CJK marks size by their own face too
     expect(malgun.style.getPropertyValue('--doc-line-factor')).toBe('1.7291')
@@ -570,10 +570,10 @@ describe('empty paragraph line size (emptyRunSize attr)', () => {
     const [spaced, bare, softBreak] = Array.from(
       editor.view.dom.querySelectorAll('p'),
     ) as HTMLElement[]
-    expect(spaced.style.getPropertyValue('--doc-line-factor')).toBe('1.1499')
+    expect(spaced.style.getPropertyValue('--doc-line-factor')).toBe('1.15')
     expect(spaced.style.fontFamily).toContain('Times New Roman')
     expect(spaced.style.fontSize).toBe('11pt')
-    expect(bare.style.getPropertyValue('--doc-line-factor')).toBe('1.1499')
+    expect(bare.style.getPropertyValue('--doc-line-factor')).toBe('1.15')
     // a soft line break is content: the paragraph keeps the content path
     expect(softBreak.style.fontFamily).not.toContain('Times New Roman')
     editor.destroy()

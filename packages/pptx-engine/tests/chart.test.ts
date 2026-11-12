@@ -1582,14 +1582,3 @@ describe('parseChartXml: data table and value cache format', () => {
     ).toBeUndefined()
   })
 })
-
-describe('seriesless chart', () => {
-  it('keeps a plot with no c:ser as a chart model (title survives, no series)', () => {
-    const m = parseChartXml(
-      `<c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:title><c:tx><c:rich><a:p><a:r><a:t>Orders</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:barChart><c:barDir val="col"/><c:axId val="1"/><c:axId val="2"/></c:barChart><c:catAx><c:axId val="1"/><c:delete val="1"/></c:catAx><c:valAx><c:axId val="2"/><c:delete val="1"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`,
-    )
-    expect(m).not.toBeNull()
-    expect(m!.series).toEqual([])
-    expect(m!.title).toBe('Orders')
-  })
-})

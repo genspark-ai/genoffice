@@ -2,8 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   AgentLoop,
   COMPLETED_VIA_TOOLS_TEXT,
-  CONTEXT_OMITTED_NOTE,
-  CONTEXT_SUPERSEDES_NOTE,
   TOOL_ABORTED_OUTPUT,
   composeSkills,
   coerceArgumentFields,
@@ -104,94 +102,6 @@ describe('AgentLoop', () => {
     // user message carries the skill context
     expect(loop.messages[0]).toEqual({ role: 'user', text: 'question\n\nCTX' })
     expect(loop.messages[1]).toEqual({ role: 'assistant', text: 'Hello, world' })
-  })
-
-  it('keeps earlier context snapshots while the prompt cache is warm', async () => {
-    const transport = scriptedTransport([(cb) => cb.onDone(), (cb) => cb.onDone()])
-    let now = 1_000_000
-    const loop = new AgentLoop({ transport, skill: makeSkill(), now: () => now })
-    loop.run('first')
-    await flush()
-    now += 60_000
-    loop.run('second')
-    await flush()
-    // history stays append-only: the second request extends the first one's prefix
-    expect(loop.messages[0]).toEqual({ role: 'user', text: 'first\n\nCTX' })
-    expect(loop.messages[2]).toEqual({
-      role: 'user',
-      text: `second\n\n${CONTEXT_SUPERSEDES_NOTE}\nCTX`,
-    })
-  })
-
-  it('folds every stale context snapshot once the prompt cache has gone cold', async () => {
-    const transport = scriptedTransport([
-      (cb) => cb.onDone(),
-      (cb) => cb.onDone(),
-      (cb) => cb.onDone(),
-    ])
-    let now = 1_000_000
-    const loop = new AgentLoop({ transport, skill: makeSkill(), now: () => now })
-    loop.run('first')
-    await flush()
-    now += 60_000
-    loop.run('second')
-    await flush()
-    now += 5 * 60_000
-    loop.run('third')
-    await flush()
-    expect(loop.messages[0]).toEqual({ role: 'user', text: `first\n\n${CONTEXT_OMITTED_NOTE}` })
-    expect(loop.messages[2]).toEqual({ role: 'user', text: `second\n\n${CONTEXT_OMITTED_NOTE}` })
-    expect(loop.messages[4]).toEqual({ role: 'user', text: 'third\n\nCTX' })
-  })
-
-  it('folds stale context snapshots in a warm history once they outgrow their allowance', async () => {
-    const transport = scriptedTransport([
-      (cb) => cb.onDone(),
-      (cb) => cb.onDone(),
-      (cb) => cb.onDone(),
-    ])
-    const big = 'x'.repeat(30 * 1024)
-    const loop = new AgentLoop({
-      transport,
-      skill: { ...makeSkill(), buildContext: () => big },
-      now: () => 1_000_000,
-    })
-    loop.run('first')
-    await flush()
-    loop.run('second')
-    await flush()
-    expect(loop.messages[0]).toEqual({ role: 'user', text: `first\n\n${big}` })
-    loop.run('third')
-    await flush()
-    expect(loop.messages[0]).toEqual({ role: 'user', text: `first\n\n${CONTEXT_OMITTED_NOTE}` })
-    expect(loop.messages[2]).toEqual({ role: 'user', text: `second\n\n${CONTEXT_OMITTED_NOTE}` })
-  })
-
-  it('folds stale snapshots in a warm history when the new run carries no context', async () => {
-    const transport = scriptedTransport([(cb) => cb.onDone(), (cb) => cb.onDone()])
-    let ctx = 'CTX'
-    const loop = new AgentLoop({
-      transport,
-      skill: { ...makeSkill(), buildContext: () => ctx },
-      now: () => 1_000_000,
-    })
-    loop.run('first')
-    await flush()
-    ctx = ''
-    loop.run('second')
-    await flush()
-    expect(loop.messages[0]).toEqual({ role: 'user', text: `first\n\n${CONTEXT_OMITTED_NOTE}` })
-    expect(loop.messages[2]).toEqual({ role: 'user', text: 'second' })
-  })
-
-  it('leaves a context-free user message alone on the next run', async () => {
-    const transport = scriptedTransport([(cb) => cb.onDone(), (cb) => cb.onDone()])
-    const loop = new AgentLoop({ transport, skill: { ...makeSkill(), buildContext: () => '' } })
-    loop.run('first')
-    await flush()
-    loop.run('second')
-    await flush()
-    expect(loop.messages[0]).toEqual({ role: 'user', text: 'first' })
   })
 
   it('attaches images to the user message (and omits the field without any)', async () => {
@@ -850,7 +760,6 @@ describe('AgentLoop', () => {
       transport,
       skill: makeSkill(),
       maxTurns: 30,
-      maxHistory: 40,
       compaction: false,
       events: { onDone, onError },
     })

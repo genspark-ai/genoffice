@@ -47,7 +47,7 @@ describe('complex-script paragraph strut', () => {
     const p = para(editor)
     expect(p.style.fontFamily).toMatch(/^"?Arial/)
     expect(p.style.getPropertyValue('--doc-font-box')).toBe('1.1172')
-    expect(p.style.getPropertyValue('--doc-line-factor')).toBe('1.1499')
+    expect(p.style.getPropertyValue('--doc-line-factor')).toBe('1.15')
     expect(p.classList.contains('doc-cs-mixed')).toBe(false)
     editor.destroy()
   })
@@ -78,7 +78,7 @@ describe('mixed Latin + complex-script paragraphs', () => {
     const p = para(editor)
     expect(p.classList.contains('doc-cs-mixed')).toBe(true)
     expect(p.style.fontFamily).toMatch(/^"?Calibri/)
-    expect(p.style.getPropertyValue('--doc-line-factor')).toBe('1.2207')
+    expect(p.style.getPropertyValue('--doc-line-factor')).toBe('1.22')
     const spans = [...p.querySelectorAll('span[data-doc-style]')] as HTMLElement[]
     expect(spans.map((s) => s.hasAttribute('data-cs'))).toEqual([true, false])
     editor.destroy()

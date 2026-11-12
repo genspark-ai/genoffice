@@ -73,27 +73,6 @@ describe('bodyEastAsianFace', () => {
     expect(eaFaceForGridStrut(documentTextContext(ddCalibri))).toBeUndefined()
   })
 
-  it('an empty theme slot on Normal keeps the docDefaults East Asian face as the grid strut', () => {
-    const theme = { eaLang: 'zh-CN', minorEastAsiaScripts: { Hans: '\u5b8b\u4f53' } }
-    const declared = documentTextContext(
-      parsedWith(
-        { fontAscii: 'Calibri', eaSlotEmpty: true },
-        { asciiFont: 'Times New Roman', eastAsiaFont: '\u5b8b\u4f53' },
-        theme,
-      ),
-    )
-    expect(declared.bodyEaFace.source).toBe('emptySlot')
-    expect(eaFaceForGridStrut(declared)).toBe('\u5b8b\u4f53')
-    const latin = documentTextContext(
-      parsedWith(
-        { fontAscii: 'Calibri', eaSlotEmpty: true },
-        { asciiFont: 'Calibri', eastAsiaFont: 'Calibri' },
-        theme,
-      ),
-    )
-    expect(eaFaceForGridStrut(latin)).toBeUndefined()
-  })
-
   it('a Latin-only Normal inherits the docDefaults slot', () => {
     const f = face(
       parsedWith(

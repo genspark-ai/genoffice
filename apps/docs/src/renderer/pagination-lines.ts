@@ -1,7 +1,7 @@
 // DOM line-box sampling for page-crossing blocks (cached per element), the
 // line-split re-slice, table row cut positions and line anchors.
 import { rangeSlot } from './dom-range'
-import { applyBlockMeta, blockGapRects, lineLeadPx, unshiftRunRect } from './pagination-measure'
+import { applyBlockMeta, lineLeadPx, unshiftRunRect } from './pagination-measure'
 import { CapacityWindows, SortedYs } from './pagination-index'
 import { blockInlineExtraPx } from './pagination-sections'
 import {
@@ -702,17 +702,8 @@ function replacedSoleLine(el: HTMLElement): boolean {
 }
 
 /** Boundary list (excluding 0) → line boxes tiling the block height (heights are adjacent-boundary diffs; the first box starts at 0) */
-export function tileBoxes(boundaries: number[], blockHeight: number): LineBox[] {
-  let tops = [0, ...boundaries.filter((b) => b > 0.5 && b < blockHeight)]
-  // Blink floors the half-leading above each inline box, so rect-midpoint
-  // boundaries sit a fraction high: the first line measures short and the last
-  // long by the same amount. Recentre them (sub-pixel only, so a paragraph with
-  // genuinely unequal first/last lines is left alone) — the page-bottom text
-  // fit of a cut block otherwise over-counts its tail by that fraction.
-  if (tops.length > 1) {
-    const delta = (blockHeight - tops[tops.length - 1] - tops[1]) / 2
-    if (Math.abs(delta) <= 1) tops = tops.map((t, i) => (i === 0 ? 0 : t + delta))
-  }
+function tileBoxes(boundaries: number[], blockHeight: number): LineBox[] {
+  const tops = [0, ...boundaries.filter((b) => b > 0.5 && b < blockHeight)]
   return tops.map((top, i) => ({
     offsetInBlock: top,
     height: (i + 1 < tops.length ? tops[i + 1] : blockHeight) - top,
@@ -829,7 +820,9 @@ export function indexedRowBoxes(rowTops: number[], blockHeight: number): LineBox
 }
 
 function domTableRows(el: HTMLElement, blockHeight: number, zoomFactor: number): TableRowBox[] {
-  const gaps = blockGapRects(el)
+  const gaps = Array.from(el.querySelectorAll('.page-gap-inline')).map((g) =>
+    g.getBoundingClientRect(),
+  )
   const gapAbove = (top: number) => gaps.reduce((s, g) => (g.top <= top ? s + g.height : s), 0)
   const elTop = el.getBoundingClientRect().top
   const trs = outerTableRows(el)
@@ -1275,16 +1268,6 @@ function domLineRects(el: HTMLElement, zoomFactor: number): DomLineRect[] {
     if (!inFlowWithin(im, (im.closest(PARA_SELECTOR) as HTMLElement | null) ?? el)) continue
     const r = im.getBoundingClientRect()
     if (r.height > 0 && r.width > 0) rects.push({ r, node: im })
-  }
-  // a <br> is the only box on a text-less row; without it a run of soft breaks
-  // is one ink gap whose midpoint boundary cuts the page half empty
-  for (const br of roots.flatMap((root) => Array.from(root.querySelectorAll('br')))) {
-    // a page / column break has no line of its own (innerBreaks cuts there)
-    if (br.classList.contains('doc-page-br') || br.classList.contains('doc-col-br')) continue
-    if (br.closest('.page-gap, .page-float-host')) continue
-    if (!inFlowWithin(br, (br.closest(PARA_SELECTOR) as HTMLElement | null) ?? el)) continue
-    const r = br.getBoundingClientRect()
-    if (r.height > 0) rects.push({ r, node: br })
   }
   rects.sort((a, b) => a.r.top - b.r.top)
   const elTop = el.getBoundingClientRect().top

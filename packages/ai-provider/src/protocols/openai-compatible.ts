@@ -16,21 +16,10 @@ import {
   throwIfCreditsNotice,
   throwIfToolCountOverBudget,
   throwIfToolJsonOverBudget,
-  openAiUsage,
+  usageCount,
   type StreamCallbacks,
 } from './shared'
 import type { AiTokenUsage } from '../types'
-
-interface ChatUsage {
-  prompt_tokens?: unknown
-  completion_tokens?: unknown
-  prompt_tokens_details?: { cached_tokens?: unknown } | null
-}
-
-function chatUsage(raw: ChatUsage | undefined): AiTokenUsage | undefined {
-  if (!raw) return undefined
-  return openAiUsage(raw.prompt_tokens, raw.completion_tokens, raw.prompt_tokens_details)
-}
 
 function openAiMessages(
   system: string,
@@ -98,7 +87,7 @@ function emitOpenAiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
       }
       finish_reason?: string | null
     }>
-    usage?: ChatUsage
+    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown }
     error?: { message?: string } | string
   }
   try {
@@ -143,8 +132,16 @@ function emitOpenAiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
   for (const call of toolCalls) cb.onToolCall(call)
   if (!emitted) throw new Error(`The model returned no content: ${httpBodyDetail(bodyText)}`)
   if (choice?.finish_reason === 'length') cb.onStopReason?.('max_tokens')
-  const usage = chatUsage(msg.usage as ChatUsage | undefined)
-  if (usage) cb.onUsage?.(usage)
+  const jsonUsage = msg.usage as
+    { prompt_tokens?: unknown; completion_tokens?: unknown } | undefined
+  if (jsonUsage) {
+    const usage: AiTokenUsage = {}
+    const input = usageCount(jsonUsage.prompt_tokens)
+    const output = usageCount(jsonUsage.completion_tokens)
+    if (input !== undefined) usage.inputTokens = input
+    if (output !== undefined) usage.outputTokens = output
+    if (usage.inputTokens !== undefined || usage.outputTokens !== undefined) cb.onUsage?.(usage)
+  }
 }
 
 /** Per-endpoint request shaping resolved from the provider registry. */
@@ -322,13 +319,22 @@ async function openAiCompatibleTurn(
         finish_reason?: string | null
       }>
       /** usage chunk (requested via stream_options): empty choices + the counts */
-      usage?: ChatUsage
+      usage?: { prompt_tokens?: unknown; completion_tokens?: unknown }
       error?: { message?: string } | string
     }
     if (event.error) throw new Error(sseErrorText(event.error, 'Model stream error'))
     // The usage chunk arrives with empty choices right before [DONE]; some
     // providers (DeepSeek et al) attach usage to the last content chunk instead.
-    turnUsage = chatUsage(event.usage) ?? turnUsage
+    if (event.usage) {
+      const usage: AiTokenUsage = {}
+      const input = usageCount(event.usage.prompt_tokens)
+      const output = usageCount(event.usage.completion_tokens)
+      if (input !== undefined) usage.inputTokens = input
+      if (output !== undefined) usage.outputTokens = output
+      if (usage.inputTokens !== undefined || usage.outputTokens !== undefined) {
+        turnUsage = usage
+      }
+    }
     const choice = event.choices?.[0]
     if (!choice) continue
     const reasoning = choice.delta?.reasoning_content ?? choice.delta?.reasoning

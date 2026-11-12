@@ -1,7 +1,7 @@
 import { Editor } from '@tiptap/core'
 import { describe, expect, it } from 'vitest'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { applyPainterFormat, type PainterFormat } from '../src/renderer/components/ribbon-painter'
+import { applyPainterFormat, type PainterFormat } from '../src/renderer/components/Ribbon'
 
 const para = (text: string) => ({
   type: 'docParagraph',

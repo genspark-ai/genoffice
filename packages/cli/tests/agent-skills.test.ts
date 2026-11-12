@@ -38,16 +38,9 @@ describe('detectAgents', () => {
     expect(found.map((a) => a.id)).toEqual(['claude-code', 'agents'])
     expect(found[0]!.skillsDir).toBe(join(h, '.claude', 'skills'))
     expect(found[1]!.skillsDir).toBe(join(h, '.agents', 'skills'))
-    expect(found[1]!.label).toBe('.agents')
-    expect(found[1]!.readers).toEqual([
-      'Codex',
-      'Cursor',
-      'Gemini CLI',
-      'GitHub Copilot',
-      'OpenCode',
-      'DeepSeek Harness (dsh)',
-    ])
-    expect(found[0]!.readers).toBeUndefined()
+    expect(found[1]!.label).toBe(
+      '.agents (Codex / Cursor / Gemini CLI / Copilot / OpenCode / dsh …)',
+    )
     expect(agentTarget('windsurf', {}, h)!.skillsDir).toBe(
       join(h, '.codeium', 'windsurf', 'skills'),
     )

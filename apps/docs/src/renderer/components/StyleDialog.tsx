@@ -2,7 +2,7 @@ import { useMemo, useState, type CSSProperties } from 'react'
 import type { StyleInfo, StyleParaProps, StyleRunProps, StyleUpsert } from '@genoffice/docx-engine'
 import { useI18n } from '../i18n/locale'
 import { fontFamiliesFor } from '../font-list'
-import { cssFontFamily } from '../text-layout/font-rules'
+import { cssFontFamily } from '../line-metrics'
 import { styleLabel, type StyleMap } from '../style-gallery'
 import { useModalKeys } from './modal-keys'
 

@@ -1,5 +1,3 @@
-import { isEastAsianLeadingFont } from '../text-layout/script-rules'
-import { SEGOE_SYMBOL_CSS } from '../text-layout/font-rules/face-classes'
 import { ScriptFonts } from './script-fonts'
 import {
   asciiFamilyResolver,
@@ -8,7 +6,6 @@ import {
   type FaceOf,
 } from '../text-layout/run-faces'
 import { textParaLineBox } from '../text-layout/para-line-box'
-import { planStrayTab } from '../text-layout/stray-tab-stop'
 import { inlineSegments, type InlineRun, type InlineSegments } from '../text-layout/inline-segments'
 import { MultiSelect } from './multi-select'
 import { CrossCellDrag } from './cross-cell-drag'
@@ -49,28 +46,23 @@ import {
 } from '@tiptap/pm/tables'
 import {
   autospaceMode,
+  cjkDeclaredLineFactor,
   cssAutoLineMult,
+  cssFontFamily,
   balancedSpaceWideningOn,
-  docEastAsiaLang,
   cssLeadTop,
   cssLineHeight,
   cssExactLineCap,
-  fallbackGlyphLineFactor,
-  textInkIsEmoji,
+  isCjkFontName,
+  isEaLayoutFace,
+  lineHeightFactor,
   symbolBulletLinePt,
   markerFaceLifts,
   oversizedMarkerExtraPt,
+  SIMSUN_GAP_CHAR_RE,
   cssSimsunGapLineExpr,
   spaceBeforeProp,
-  inlineLiftLineMultiple,
 } from '../line-metrics'
-import {
-  cjkDeclaredLineFactor,
-  cssFontFamily,
-  isEaLayoutFace,
-  lineHeightFactor,
-  SIMSUN_GAP_CHAR_RE,
-} from '../text-layout/font-rules'
 import { textAlignDecl } from './text-effects'
 import { noteMarkText } from '../note-format'
 import { t } from '../i18n/locale'
@@ -123,7 +115,6 @@ import {
   isSpaceOnlyParagraph,
   layoutParaOf,
   markSizeHalfPoints,
-  paraDeclaredFontFamily,
   perLineFactors,
   pictureMarkLineFactor,
   toAttrs,
@@ -135,7 +126,6 @@ import {
 installProseMirrorPerf()
 
 export { borderLineCss }
-import { blankRowBreaks } from '../text-layout/blank-row-breaks'
 import {
   INLINE_RULE_CLASS,
   inlineRuleDecls,
@@ -256,7 +246,6 @@ import { AiQueueAnchorsExtension } from './ai-queue-anchors'
 import { CheckboxToggleExtension } from './checkbox-toggle'
 import { DoubleClickWordExtension } from './dblclick-word'
 import { OutlineViewExtension } from './outline-view'
-import { StoryViewExtension } from './story-view'
 import { PageGapNavExtension } from './page-gap-nav'
 import { TrailingTableExitExtension } from './trailing-table-exit'
 import { moveBlocks } from './move-block'
@@ -323,10 +312,6 @@ const anchorAttrs = {
       the literal; false = explicit "0" overriding a style-chain auto */
   spaceBeforeAuto: { default: null as boolean | null },
   spaceAfterAuto: { default: null as boolean | null },
-  /** the style chain's autospacing under a bare direct literal: Word resolves the
-   *  attribute on its own, so the literal is inert (display only, never written back) */
-  styleSpaceBeforeAuto: { default: null as boolean | null },
-  styleSpaceAfterAuto: { default: null as boolean | null },
   /** w:contextualSpacing on the pPr itself; false = explicit off overriding the style */
   contextualSpacing: { default: null as boolean | null },
   /** anchored thin lines drawn over the paragraph (display only, RuleOverlayExtension) */
@@ -1572,8 +1557,7 @@ export function paragraphInlineSegments(
   const inheritedAscii = asciiOf(node.attrs.styleId)
   const inheritedEa = eaOf(node.attrs.styleId)
   const balanced = balancedSpaceWideningOn()
-  const eaLang = (node.attrs.eaLang as string | null) ?? docEastAsiaLang()
-  const key = `${inheritedAscii}|${inheritedEa}|${balanced}|${eaLang}`
+  const key = `${inheritedAscii}|${inheritedEa}|${balanced}`
   const cached = inlineSegmentsCache.get(node)
   if (cached && cached.key === key) return cached.result
   const runs: InlineRun[] = []
@@ -1593,8 +1577,6 @@ export function paragraphInlineSegments(
               eastAsiaFont: a.eastAsiaFont as string | null,
               eaSlotEmpty: a.eaSlotEmpty as boolean | null,
               rawRPr: a.rawRPr as string | null,
-              csFont: a.csFont as string | null,
-              eaLang: a.eaLang as string | null,
             }
           : null,
       })
@@ -1604,32 +1586,26 @@ export function paragraphInlineSegments(
   const text = node.textContent
   // ・/〜 in SimSun-substituted runs lift the whole line to the YaHei factor
   // (probe 2026-08-13); exact lineRule pins the line, so no lift there
-  const lineMultiple = inlineLiftLineMultiple(
-    node.attrs.lineRule,
-    Number(node.attrs.lineRawTwips) || null,
-    Number(node.attrs.lineSpacing) || null,
-  )
-  const simsunGapLineHeight =
-    lineMultiple !== null && SIMSUN_GAP_CHAR_RE.test(text)
-      ? cssSimsunGapLineExpr(lineMultiple)
-      : null
+  let simsunGapLineHeight: string | null = null
+  if (node.attrs.lineRule !== 'exact' && SIMSUN_GAP_CHAR_RE.test(text)) {
+    const m =
+      Number(node.attrs.lineSpacing) ||
+      (node.attrs.lineRule === 'auto' && node.attrs.lineRawTwips
+        ? Number(node.attrs.lineRawTwips) / 240
+        : node.attrs.lineRule || node.attrs.lineRawTwips
+          ? 1
+          : 'inherited')
+    simsunGapLineHeight = cssSimsunGapLineExpr(m)
+  }
   const result = inlineSegments({
     runs,
     autospace: autospaceMode(node.attrs.autoSpace),
     inheritedAscii,
     inheritedEa,
     wordWrap: node.attrs.wordWrap !== false,
-    eaLang,
     balancedSpaces: balanced,
     justified: node.attrs.align === 'justify' || node.attrs.align === 'distribute',
     simsunGapLineHeight,
-    exactLine: node.attrs.lineRule === 'exact',
-    fixedLineHeight: cssLineHeight(
-      (node.attrs.lineRule as 'auto' | 'atLeast' | 'exact' | null) ?? undefined,
-      node.attrs.lineRawTwips != null ? Number(node.attrs.lineRawTwips) : undefined,
-      node.attrs.lineSpacing ? Number(node.attrs.lineSpacing) : undefined,
-    ),
-    lineMultiple,
   })
   inlineSegmentsCache.set(node, { key, result })
   return result
@@ -1766,10 +1742,18 @@ function updateLineFactorDecos(
   return decos.length ? set.add(doc, decos) : set
 }
 
-/** first-line indent (twips) the stylesheet gives a block: its own style's,
- *  and on a body paragraph (`p` is the only element Normal / docDefaults'
- *  text-indent rule reaches) the document baseline under it */
-let styleFirstLineIndent: (styleId: string | null, body: boolean) => number = () => 0
+/** content offsets of the leading soft breaks that carry their own run size */
+function leadingSizedBreaks(node: PmNode): number[] {
+  const offsets: number[] = []
+  for (let i = 0, off = 0; i < node.childCount; i++) {
+    const child = node.child(i)
+    if (child.type.name !== 'hardBreak' || child.attrs.pageBreak || child.attrs.colBreak) break
+    if (child.marks.some((m) => m.type.name === 'docTextStyle' && m.attrs.sizeHalfPoints != null))
+      offsets.push(off)
+    off += child.nodeSize
+  }
+  return offsets
+}
 
 /** decorations of one node; returns whether to descend into its children */
 function pushLineFactorDecos(
@@ -1782,28 +1766,11 @@ function pushLineFactorDecos(
   if (!LINE_FACTOR_BLOCKS.has(node.type.name)) return true
   // Word sizes a line holding only a w:br by the break run; a block wrapper
   // keeps the paragraph strut (and shared enclosing marks) off that line
-  const breakRows = blankRowBreaks(node)
-  const brLine = (off: number, cls: string) =>
-    // inline-rules: allow
-    decos.push(Decoration.inline(pos + 1 + off, pos + 2 + off, { nodeName: 'span', class: cls }))
-  // a block wrapper splits the paragraph into anonymous blocks that re-apply
-  // text-indent, so mid-paragraph rows stay inline when the first line is indented
-  // a direct w:firstLine (an explicit 0 cancels the style's) wins over the style
-  // chain; list lines take no style text-indent (their geometry is --li-left/--li-hang)
-  const kind = node.type.name
-  const firstLine =
-    (node.attrs.indentFirstLineChars as number | null) ||
-    ((node.attrs.indentFirstLine as number | null) ??
-      (kind === 'docListItem'
-        ? 0
-        : styleFirstLineIndent(
-            (node.attrs.styleId as string | null) ?? null,
-            kind === 'docParagraph',
-          )))
-  // a list item's hanging indent is the marker area (--li-hang), not text-indent
-  const indented = kind === 'docListItem' ? firstLine > 0 : firstLine !== 0
-  const wraps = (off: number) => !indented || off < breakRows.leadingEnd
-  for (const off of breakRows.sized) if (wraps(off)) brLine(off, 'doc-br-line')
+  for (const off of leadingSizedBreaks(node)) {
+    decos.push(
+      Decoration.inline(pos + 1 + off, pos + 2 + off, { nodeName: 'span', class: 'doc-br-line' }),
+    )
+  }
   // a class decoration instead of a stylesheet :has(): Blink's :has()
   // invalidation crashed the renderer (OOM) on long picture-heavy documents
   const group = wrapGroupDecos(node)
@@ -1814,11 +1781,6 @@ function pushLineFactorDecos(
     decos.push(Decoration.node(pos + 1 + g.offset, pos + 1 + g.offset + 1, { style: g.style }))
   }
   const para = layoutParaOf(node)
-  // the strut took the runs' declared face: a break run without one is the
-  // inherited face in Word, so its row is that face's line, not the strut's
-  if (breakRows.inherited.length > 0 && paraDeclaredFontFamily(para)) {
-    for (const off of breakRows.inherited) if (wraps(off)) brLine(off, 'doc-br-line doc-br-inherit')
-  }
   if (node.textContent && !isSpaceOnlyParagraph(para)) {
     let cached = lineFactorCache.get(node)
     if (cached === undefined) {
@@ -1838,7 +1800,6 @@ function pushLineFactorDecos(
     if (cached.runs) {
       for (const r of cached.runs) {
         decos.push(
-          // inline-rules: allow — maps the cached line-factor runs to their class
           Decoration.inline(pos + 1 + r.from, pos + 1 + r.to, {
             class: 'doc-run-lf',
             style: r.style,
@@ -1872,16 +1833,6 @@ export const LineFactorExtension = Extension.create({
     const getStorage = () => editor?.storage?.listNumbering as ListNumberingStorage | undefined
     const eaOf: EaFamilyOf = eaFamilyResolver(getStorage)
     const asciiOf = asciiFamilyResolver(getStorage)
-    styleFirstLineIndent = (styleId, body) => {
-      const st = getStorage()
-      const own = styleId ? st?.styles?.get(styleId)?.display?.indentFirstLineTwips : undefined
-      if (own != null || !body) return own ?? 0
-      return (
-        st?.styles?.get('Normal')?.display?.indentFirstLineTwips ??
-        st?.docDefaults?.indentFirstLineTwips ??
-        0
-      )
-    }
     return [
       new Plugin<DecorationSet>({
         key,
@@ -2162,21 +2113,10 @@ function strayLineCss(spec: DomSpec, strayAttrs: Record<string, string>): string
 function strayRunSpecs(run: Run): DomSpec[] {
   const specs = runSpanSpecs(run)
   const family = run.fontAscii ?? run.font
-  const fallback = run.text ? fallbackGlyphLineFactor(run.text, family) : null
-  if ((!family && fallback === null) || !run.text || specs[0]?.[0] !== 'span') return specs
-  // inline-rules: allow
-  const eaFace = !!family && isEaLayoutFace(family)
-  const faceFactor = !family
-    ? 0
-    : eaFace
-      ? (cjkDeclaredLineFactor(family) ?? lineHeightFactor(family))
-      : lineHeightFactor(family)
-  const factor =
-    fallback === null
-      ? faceFactor
-      : textInkIsEmoji(run.text)
-        ? fallback
-        : Math.max(faceFactor, fallback)
+  if (!family || !run.text || specs[0]?.[0] !== 'span') return specs
+  const factor = isEaLayoutFace(family)
+    ? (cjkDeclaredLineFactor(family) ?? lineHeightFactor(family))
+    : lineHeightFactor(family)
   const [tag, a, ...rest] = specs[0] as [string, Record<string, string>, ...unknown[]]
   const lifted: DomSpec = [
     tag,
@@ -2190,50 +2130,25 @@ function strayRunSpecs(run: Run): DomSpec[] {
   return [lifted, ...specs.slice(1)]
 }
 
-function strayTabStops(line: Record<string, unknown>): TabStop[] {
-  if (typeof line.tabStops !== 'string') return []
-  try {
-    const parsed: unknown = JSON.parse(line.tabStops)
-    return Array.isArray(parsed) ? (parsed as TabStop[]) : []
-  } catch {
-    return []
-  }
-}
-
-/** the stray line's tab: a Chromium tab-size grid, or (one right stop) the
- *  runs after the tab boxed flush to the stop (planStrayTab); the box width
- *  counts from the line's indent and is clamped at the column edge like Word */
-function strayTabSpecs(
-  runs: Run[],
-  line: Record<string, unknown>,
-  ind: StrayIndent | null,
-  listed: boolean,
-): { css: string; specs: DomSpec[] } {
-  const left = ind?.leftTwips ?? (typeof line.indentLeft === 'number' ? line.indentLeft : 0)
-  const tabCount = runs.reduce((n, r) => n + (r.text.match(/\t/g)?.length ?? 0), 0)
-  const plan = planStrayTab(strayTabStops(line), left, tabCount)
-  const at = runs.findIndex((r) => r.text.includes('\t'))
-  if (plan.kind === 'grid' || runs[at].image || runs.some((r) => r.text.includes('\n')))
-    return {
-      css: `white-space:pre-wrap;tab-size:${(plan.kind === 'grid' ? plan.tabSizeTwips : plan.stopTwips - left) / 20}pt`,
-      specs: runs.flatMap((run) => strayRunSpecs(run)),
+/** Chromium expands a tab to the next multiple of tab-size from the content
+ *  edge, so the first custom stop past the indent sizes that grid: exact for the
+ *  one-stop operator rows PDF converters emit, a plain grid beyond it */
+function strayTabCss(line: Record<string, unknown>, ind: StrayIndent | null): string {
+  let stops: TabStop[] = []
+  if (typeof line.tabStops === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(line.tabStops)
+      if (Array.isArray(parsed)) stops = parsed as TabStop[]
+    } catch {
+      /* malformed attr: default grid */
     }
-  const i = runs[at].text.indexOf('\t')
-  const before = [...runs.slice(0, at), { ...runs[at], text: runs[at].text.slice(0, i) }]
-  const after = [{ ...runs[at], text: runs[at].text.slice(i + 1) }, ...runs.slice(at + 1)]
-  // a listed line keeps the indent as padding, so the box origin is the column edge
-  const widthPt = (plan.stopTwips - (listed ? 0 : left)) / 20
-  return {
-    css: 'white-space:pre-wrap',
-    specs: [
-      ...before.filter((r) => r.text || r.image).flatMap((run) => strayRunSpecs(run)),
-      [
-        'span',
-        { class: 'doc-stray-rtab', style: `width:min(${widthPt}pt,100%)` },
-        ...after.filter((r) => r.text || r.image).flatMap((run) => strayRunSpecs(run)),
-      ],
-    ],
   }
+  const left = ind?.leftTwips ?? (typeof line.indentLeft === 'number' ? line.indentLeft : 0)
+  const next = stops
+    .filter((s) => s.val !== 'clear' && s.val !== 'bar' && !s.rel && s.pos > left)
+    .map((s) => s.pos)
+    .sort((a, b) => a - b)[0]
+  return `white-space:pre-wrap;tab-size:${((next ?? left + 720) - left) / 20}pt`
 }
 
 export function anchorLineSpec(line: Record<string, unknown>): DomSpec {
@@ -2481,7 +2396,7 @@ export const ListNumberingExtension = Extension.create<object, ListNumberingStor
               : null)
           const exact = effectiveLineRule(nodeAttrs, storage) === 'exact'
           if (fallbackFace) {
-            styles.push(`--li-marker-font:${SEGOE_SYMBOL_CSS},${cssFontFamily(markerFace!)}`)
+            styles.push(`--li-marker-font:'Segoe UI Symbol GO',${cssFontFamily(markerFace!)}`)
           } else if (marker.font) {
             // its own face without letting that face's leading stretch the line
             // (an oversized w:sz below overrides the 0); an exact rule never lifts
@@ -3179,7 +3094,6 @@ export const DocTable = Node.create({
   addAttributes() {
     return {
       docxIndex: { default: null as number | null },
-      // table-layout: allow — attribute declaration
       colWidthsPct: { default: null as number[] | null },
       widthPx: { default: null as number | null },
       widthPct: { default: null as number | null },
@@ -3916,67 +3830,6 @@ export const ImageCopyExtension = Extension.create({
   },
 })
 
-/** the paragraph spacing, indents and auto-multiple of an in-line drawing's
- *  host paragraph as inline declarations (the protected node carries no
- *  data-style, so the chain's values travel on the node): pictures and in-flow
- *  text boxes alike */
-function inlineDrawingParagraphLayout(
-  node: PmNode,
-  opts: { skipFirstLineIndent?: boolean; indents?: boolean } = {},
-): string[] {
-  const { skipFirstLineIndent = false, indents = true } = opts
-  // the picture line's auto multiple (Word probe: (m - 1) x the mark's
-  // single line below the picture, styles.css pads it from these vars);
-  // a direct fixed rule or explicit single overrides an inherited multiple
-  const lineRule = node.attrs.imageParagraphLineRule as 'auto' | 'atLeast' | 'exact' | null
-  const lineTwips =
-    node.attrs.imageParagraphLineTwips != null ? Number(node.attrs.imageParagraphLineTwips) : null
-  const lineMult =
-    lineRule === 'exact' || lineRule === 'atLeast'
-      ? 1
-      : lineTwips
-        ? cssAutoLineMult('auto', lineTwips, undefined)
-        : undefined
-  const markFactor = pictureMarkLineFactor(
-    node.attrs.imageMarkFont ? String(node.attrs.imageMarkFont) : null,
-    node.attrs.imageMarkFontEastAsia ? String(node.attrs.imageMarkFontEastAsia) : null,
-  )
-  const paragraphLayout = [
-    // a direct rule also unpins a style-level exact/atLeast (--doc-line-fixed)
-    lineMult ? `--doc-line-mult:${lineMult};--doc-line-fixed:0` : '',
-    markFactor ? `--doc-line-factor:${markFactor}` : '',
-    node.attrs.imageMarkSizeHalfPoints
-      ? `font-size:${Number(node.attrs.imageMarkSizeHalfPoints) / 2}pt`
-      : '',
-    ...effectivePPrCss({
-      spaceBeforeTwips: node.attrs.imageParagraphSpaceBefore as number | null,
-      spaceAfterTwips: node.attrs.imageParagraphSpaceAfter as number | null,
-      spaceBeforeAuto: node.attrs.imageParagraphSpaceBeforeAuto as boolean | null,
-      spaceAfterAuto: node.attrs.imageParagraphSpaceAfterAuto as boolean | null,
-      additiveSpacing: node.attrs.imageParagraphAdditiveSpacing as boolean | null,
-      indentLeftTwips: indents
-        ? (node.attrs.imageParagraphIndentLeft as number | null) || null
-        : null,
-      indentRightTwips: indents
-        ? (node.attrs.imageParagraphIndentRight as number | null) || null
-        : null,
-      indentFirstLineTwips:
-        indents && !skipFirstLineIndent
-          ? (node.attrs.imageParagraphIndentFirstLine as number | null) || null
-          : null,
-    }),
-    // effectExtent (shadow/glow room) is part of the picture line in Word;
-    // passed as vars so the typed-grid whole-cell padding rule still wins
-    node.attrs.imageEffectExtentTopPx
-      ? `--doc-pic-effect-t:${Number(node.attrs.imageEffectExtentTopPx)}px`
-      : '',
-    node.attrs.imageEffectExtentBottomPx
-      ? `--doc-pic-effect-b:${Number(node.attrs.imageEffectExtentBottomPx)}px`
-      : '',
-  ].filter(Boolean)
-  return paragraphLayout
-}
-
 export const DocProtected = Node.create({
   name: 'docProtected',
   group: 'block',
@@ -4549,23 +4402,6 @@ function protectedDomSpec(node: PmNode): DomSpec {
     if (!anyFloating && indentTwips && boxAlign !== 'center' && boxAlign !== 'right') {
       attrs.style = `margin-left:${indentTwips / 20}pt`
     }
-    // an in-flow box is its paragraph's only line: Word adds the paragraph's
-    // spacing and, under an auto multiple, (m - 1) x single below the shape
-    // like a picture-only line (probe 2026-11-05)
-    if (!anyFloating) {
-      attrs.class += ' doc-img-para'
-      // no indents: the box keeps its margin-left from imageIndentLeftTwips
-      // above. The line vars take box-only names: the box's own paragraphs
-      // must not inherit the host paragraph's multiple, factor or mark size
-      const layout = inlineDrawingParagraphLayout(node, { indents: false }).map((d) =>
-        d
-          .replace(/^--doc-line-mult:/, '--doc-tb-mult:')
-          .replace(/;--doc-line-fixed:0$/, ';--doc-tb-fixed:0')
-          .replace(/^--doc-line-factor:/, '--doc-tb-lf:')
-          .replace(/^font-size:/, '--doc-tb-em:'),
-      )
-      if (layout.length) attrs.style = `${attrs.style ? `${attrs.style};` : ''}${layout.join(';')}`
-    }
     if (anyFloating) {
       attrs.class += ' doc-protected-floating'
       // behindDoc anchors paint under the body text (Word z-order); mirrors
@@ -4676,14 +4512,12 @@ function protectedDomSpec(node: PmNode): DomSpec {
         lineCss = lineDecls.join(';')
         attrs.style = attrs.style ? `${attrs.style};${mb}` : mb
       }
-      const tab =
-        line && strayRuns.some((r) => r.text.includes('\t'))
-          ? strayTabSpecs(strayRuns, line, ind, listed)
-          : { css: '', specs: strayRuns.flatMap((run) => strayRunSpecs(run)) }
-      const strayCss = [lineCss, tab.css, strayStyle, indCss, alignCss].filter(Boolean).join(';')
+      const tabCss =
+        line && strayRuns.some((r) => r.text.includes('\t')) ? strayTabCss(line, ind) : ''
+      const strayCss = [lineCss, tabCss, strayStyle, indCss, alignCss].filter(Boolean).join(';')
       if (strayCss) strayAttrs.style = strayCss
       if (node.attrs.strayStyleId) strayAttrs['data-style'] = String(node.attrs.strayStyleId)
-      const stray: DomSpec = ['div', strayAttrs, ...tab.specs]
+      const stray: DomSpec = ['div', strayAttrs, ...strayRuns.flatMap((run) => strayRunSpecs(run))]
       // a float shortens only the lines laid out after it
       if (sideBox) children.push(stray)
       else children.unshift(stray)
@@ -4722,7 +4556,6 @@ function protectedDomSpec(node: PmNode): DomSpec {
   // shows nothing here, so render a near-invisible strip (hover reveals it)
   if (label === 'Section break paragraph' && !previewText) {
     attrs.class += ' doc-protected-sectbreak'
-    attrs['data-sect-break'] = '1'
     return ['div', attrs, ['span', { class: 'doc-sectbreak-label' }, t('editorSectionBreak')]]
   }
   // TOC field boundary paragraphs (fldChar begin + instruction / lone fldChar
@@ -4778,13 +4611,56 @@ function protectedDomSpec(node: PmNode): DomSpec {
       !imageWrap &&
       /^[ ]+$/.test(imageLeadingText) &&
       !!node.attrs.imageLeadingFont &&
-      isEastAsianLeadingFont(String(node.attrs.imageLeadingFont))
+      isCjkFontName(String(node.attrs.imageLeadingFont))
     // paragraph indents place the picture like its (possibly empty) first line;
     // anchored pictures position from the column instead and ignore them
     if (!imageWrap) {
-      const paragraphLayout = inlineDrawingParagraphLayout(node, {
-        skipFirstLineIndent: cjkFixedLeadingSpaces,
-      })
+      // the picture line's auto multiple (Word probe: (m - 1) x the mark's
+      // single line below the picture, styles.css pads it from these vars);
+      // a direct fixed rule or explicit single overrides an inherited multiple
+      const lineRule = node.attrs.imageParagraphLineRule as 'auto' | 'atLeast' | 'exact' | null
+      const lineTwips =
+        node.attrs.imageParagraphLineTwips != null
+          ? Number(node.attrs.imageParagraphLineTwips)
+          : null
+      const lineMult =
+        lineRule === 'exact' || lineRule === 'atLeast'
+          ? 1
+          : lineTwips
+            ? cssAutoLineMult('auto', lineTwips, undefined)
+            : undefined
+      const markFactor = pictureMarkLineFactor(
+        node.attrs.imageMarkFont ? String(node.attrs.imageMarkFont) : null,
+        node.attrs.imageMarkFontEastAsia ? String(node.attrs.imageMarkFontEastAsia) : null,
+      )
+      const paragraphLayout = [
+        // a direct rule also unpins a style-level exact/atLeast (--doc-line-fixed)
+        lineMult ? `--doc-line-mult:${lineMult};--doc-line-fixed:0` : '',
+        markFactor ? `--doc-line-factor:${markFactor}` : '',
+        node.attrs.imageMarkSizeHalfPoints
+          ? `font-size:${Number(node.attrs.imageMarkSizeHalfPoints) / 2}pt`
+          : '',
+        ...effectivePPrCss({
+          spaceBeforeTwips: node.attrs.imageParagraphSpaceBefore as number | null,
+          spaceAfterTwips: node.attrs.imageParagraphSpaceAfter as number | null,
+          spaceBeforeAuto: node.attrs.imageParagraphSpaceBeforeAuto as boolean | null,
+          spaceAfterAuto: node.attrs.imageParagraphSpaceAfterAuto as boolean | null,
+          additiveSpacing: node.attrs.imageParagraphAdditiveSpacing as boolean | null,
+          indentLeftTwips: (node.attrs.imageParagraphIndentLeft as number | null) || null,
+          indentRightTwips: (node.attrs.imageParagraphIndentRight as number | null) || null,
+          indentFirstLineTwips: cjkFixedLeadingSpaces
+            ? null
+            : (node.attrs.imageParagraphIndentFirstLine as number | null) || null,
+        }),
+        // effectExtent (shadow/glow room) is part of the picture line in Word;
+        // passed as vars so the typed-grid whole-cell padding rule still wins
+        node.attrs.imageEffectExtentTopPx
+          ? `--doc-pic-effect-t:${Number(node.attrs.imageEffectExtentTopPx)}px`
+          : '',
+        node.attrs.imageEffectExtentBottomPx
+          ? `--doc-pic-effect-b:${Number(node.attrs.imageEffectExtentBottomPx)}px`
+          : '',
+      ].filter(Boolean)
       if (paragraphLayout.length) {
         attrs.style = `${attrs.style ? `${attrs.style};` : ''}${paragraphLayout.join(';')}`
       }
@@ -5475,19 +5351,6 @@ function wireProtectedInteractionMode(
     event.stopPropagation()
     event.stopImmediatePropagation()
   }
-  // Paste, cut and IME composition reach the parked caret without an editing
-  // keydown (modifier shortcuts, `isComposing`); stop them at the input level.
-  const onViewInput = (event: Event) => {
-    if (!textDragActive) return
-    if (!selectionInsideDom()) {
-      textDragActive = false
-      return
-    }
-    event.preventDefault()
-    event.stopPropagation()
-    event.stopImmediatePropagation()
-  }
-  const INPUT_GUARD_EVENTS = ['beforeinput', 'paste', 'cut', 'compositionstart'] as const
   // `view.dom` is not reachable while the node view is constructed, so attach
   // the guard lazily on the first text drag (by then the view is mounted).
   let keyGuardRoot: HTMLElement | null = null
@@ -5495,7 +5358,6 @@ function wireProtectedInteractionMode(
     if (keyGuardRoot) return
     keyGuardRoot = view.dom
     keyGuardRoot.addEventListener('keydown', onViewKeyDown, true)
-    for (const type of INPUT_GUARD_EVENTS) keyGuardRoot.addEventListener(type, onViewInput, true)
   }
   const onMouseDown = (event: MouseEvent) => {
     if (event.button !== 0) return
@@ -5589,9 +5451,6 @@ function wireProtectedInteractionMode(
     document.removeEventListener('mousedown', onDocumentMouseDown, true)
     dom.removeEventListener('keydown', onKeyDown, true)
     keyGuardRoot?.removeEventListener('keydown', onViewKeyDown, true)
-    for (const type of INPUT_GUARD_EVENTS) {
-      keyGuardRoot?.removeEventListener(type, onViewInput, true)
-    }
     document.removeEventListener('selectionchange', onSelectionChange)
   }
 }
@@ -7473,7 +7332,7 @@ export const TextboxParagraph = Node.create({
     const fontStyles: string[] = []
     const para = layoutParaOf(node)
     if (node.textContent && !isSpaceOnlyParagraph(para)) {
-      const box = textParaLineBox(para)
+      const box = textParaLineBox(para, { fontBox: true, leadGapZero: true, struts: false })
       fontStyles.push(...box.styles)
       for (const extra of box.classes) attrs.class += ` ${extra}`
     } else if (node.textContent) {
@@ -7795,5 +7654,4 @@ export const editorExtensions = [
   RevisionOriginalExtension,
   BalloonMarkersExtension,
   AutoDirectionExtension,
-  StoryViewExtension,
 ]

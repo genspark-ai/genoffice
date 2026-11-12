@@ -6,7 +6,7 @@ import {
   setEmbeddedLineMetrics,
   simsunGapLineFactor,
   standInFontFamily,
-} from '../src/renderer/text-layout/font-rules'
+} from '../src/renderer/line-metrics'
 import { resolveDeclaredFace } from '../src/renderer/font-resolve'
 
 /**
@@ -93,7 +93,7 @@ describe('East Asian line factors follow hhea (ascent + descent) x 1.3', () => {
     expect(lineHeightFactor('STXihei')).toBe(1.79)
     expect(lineHeightFactor('NanumGothic')).toBe(1.495)
     expect(lineHeightFactor('Noto Sans CJK JP')).toBe(1.172)
-    expect(lineHeightFactor('Simplified Arabic')).toBe(1.6577)
+    expect(lineHeightFactor('Simplified Arabic')).toBe(1.66)
   })
 })
 

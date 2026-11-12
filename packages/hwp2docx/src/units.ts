@@ -32,33 +32,15 @@ export function sniffImage(
   return null
 }
 
-/** A producer-controlled image header must not hand zero or a 32-bit maximum
-    to an OOXML drawing extent. Nothing is decoded here, so the bound is per
-    side (the largest that still fits an EMU extent), not a pixel budget. */
-const MAX_IMAGE_SIDE = 200_000
-
-function saneSize(width: number, height: number): { width: number; height: number } | null {
-  if (
-    !Number.isInteger(width) ||
-    !Number.isInteger(height) ||
-    width < 1 ||
-    height < 1 ||
-    width > MAX_IMAGE_SIDE ||
-    height > MAX_IMAGE_SIDE
-  )
-    return null
-  return { width, height }
-}
-
 /** intrinsic pixel size for png / jpeg / gif headers */
 export function intrinsicSize(bytes: Uint8Array): { width: number; height: number } | null {
   const kind = sniffImage(bytes)
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   if (kind === 'png' && bytes.length >= 24) {
-    return saneSize(view.getUint32(16), view.getUint32(20))
+    return { width: view.getUint32(16), height: view.getUint32(20) }
   }
   if (kind === 'gif' && bytes.length >= 10) {
-    return saneSize(view.getUint16(6, true), view.getUint16(8, true))
+    return { width: view.getUint16(6, true), height: view.getUint16(8, true) }
   }
   if (kind === 'jpeg') {
     let offset = 2
@@ -73,7 +55,7 @@ export function intrinsicSize(bytes: Uint8Array): { width: number; height: numbe
         marker !== 0xc8 &&
         marker !== 0xcc
       ) {
-        return saneSize(view.getUint16(offset + 7), view.getUint16(offset + 5))
+        return { width: view.getUint16(offset + 7), height: view.getUint16(offset + 5) }
       }
       offset += 2 + length
     }

@@ -15,41 +15,34 @@ import {
   type ParsedDocFull,
   type SectionInfo,
   type SectionSettings,
-  type TabStop,
 } from '@genoffice/docx-engine'
 import {
   autoSpacingPt,
   autospaceMode,
+  cjkDeclaredLineFactor,
   computeLineHeight,
+  cssFontFamily,
   cssLeadTop,
   fontBoxCss,
-  krNoBreakOffsets,
-  oversizedMarkerExtraPt,
-  symbolBulletLinePt,
-  mixedLatinLineFactor,
-  isCjk,
-} from '../src/renderer/line-metrics'
-import {
-  cjkDeclaredLineFactor,
-  cssFontFamily,
   krCharsetRoute,
+  krNoBreakOffsets,
   latinAutospaceGapEm,
   latinLineFactor,
   lineHeightFactor,
   missingLatinSubstitute,
+  oversizedMarkerExtraPt,
   setDocFontTable,
   setEmbeddedLineMetrics,
   simsunGapLineFactor,
+  symbolBulletLinePt,
   wordMetricAliasFace,
   wordSlotFaces,
   latinViaEastAsiaSlotFor,
-} from '../src/renderer/text-layout/font-rules'
-import { setOpenDocumentText } from '../src/renderer/text-layout/open-document'
-import { docBodyEaFont, docBodyFont } from '../src/renderer/doc-style-css'
-import { inlineRunsOf, inlineSegments } from '../src/renderer/text-layout/inline-segments'
+  setLatinViaEastAsiaSlot,
+} from '../src/renderer/line-metrics'
+import { docBodyEaFont } from '../src/renderer/doc-style-css'
 import { listFirstLineTw, rowHeightCss, tableRowEatCss } from '../src/renderer/editor/extensions'
 import { resolveTabTarget } from '../src/renderer/editor/decoration-extensions'
-import { planStrayTab } from '../src/renderer/text-layout/stray-tab-stop'
 import {
   prefetchFaces,
   resolveDeclaredFace,
@@ -75,10 +68,8 @@ import {
   fromNoteRuns,
   fromRuns,
   layoutParaOfRuns,
-  paraLineFactor,
   type LineBoxSpec,
 } from '../src/renderer/editor/para-layout-spec'
-import { textParaLineBox } from '../src/renderer/text-layout/para-line-box'
 import {
   blocksToPmDoc,
   cellSpacingGridSharesTwips,
@@ -86,7 +77,6 @@ import {
   expandAutofitColWidths,
   pmDocOptions,
 } from '../src/renderer/editor/convert'
-import { layoutTableColumns, textMeasureOf, type TextMeasure } from '../src/renderer/table-layout'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
   sectionCharSpacePt,
@@ -197,25 +187,6 @@ async function load(dir: string, docx = 'probe.docx'): Promise<Resolved> {
     return sections[i === -1 ? sections.length - 1 : i]
   }
   return { parsed, sections, sectionOfBlock }
-}
-
-/** a TextMeasure from per-character em advances (`advancesEm`, `boldAdvancesEm`): the probe
- * face's real widths under the renderer's own tokenizer, so a Word column width can be
- * asserted to the twip; East Asian characters without an entry are 1 em, others 0.5 em */
-function advanceMeasure(c: TruthCase): TextMeasure {
-  const regular = c.advancesEm as Record<string, number>
-  const bold = { ...regular, ...((c.boldAdvancesEm as Record<string, number> | undefined) ?? {}) }
-  return textMeasureOf({
-    metrics: (style) => ({ ascent: 0, descent: 0, lineHeight: style.fontSizePx }),
-    measure: (text, style) =>
-      [...text].reduce(
-        (sum, ch) =>
-          sum +
-          ((style.bold ? bold : regular)[ch] ?? (isCjk(ch.codePointAt(0) ?? 0) ? 1 : 0.5)) *
-            style.fontSizePx,
-        0,
-      ),
-  })
 }
 
 function blockAt(parsed: ParsedDoc, i: number): Block {
@@ -830,10 +801,10 @@ function withEditor<T>(res: Resolved, fn: (editor: Editor) => T): T {
     extensions: editorExtensions,
   })
   // the document-language font-slot rule file-actions applies at load time
-  setOpenDocumentText({
-    latinViaEaSlot: latinViaEastAsiaSlotFor(res.parsed),
-    bodyEaSlot: docBodyEaFont(res.parsed as ParsedDocFull),
-  })
+  setLatinViaEastAsiaSlot(
+    latinViaEastAsiaSlotFor(res.parsed),
+    docBodyEaFont(res.parsed as ParsedDocFull),
+  )
   try {
     editor.storage.listNumbering.defs = res.parsed.numbering
     editor.storage.listNumbering.styles = res.parsed.styles
@@ -844,7 +815,7 @@ function withEditor<T>(res: Resolved, fn: (editor: Editor) => T): T {
     return fn(editor)
   } finally {
     editor.destroy()
-    setOpenDocumentText(null)
+    setLatinViaEastAsiaSlot(false)
   }
 }
 
@@ -858,8 +829,7 @@ function planSpaceBeforePt(res: Resolved, block: number): number {
   })
 }
 
-/** classes/styles of a body paragraph's DOM, or of its fallback-glyph spans (.doc-run-lf / .doc-sym-fb) */
-function bodyParaDom(res: Resolved, block: number, runs = false): LineBoxSpec {
+function bodyParaDom(res: Resolved, block: number): LineBoxSpec {
   return withEditor(res, (editor) => {
     let el: HTMLElement | null = null
     editor.state.doc.descendants((node, pos) => {
@@ -868,19 +838,13 @@ function bodyParaDom(res: Resolved, block: number, runs = false): LineBoxSpec {
       return false
     })
     if (!el) throw new Error(`no rendered block with docxIndex ${block}`)
-    const doms = runs
-      ? [...(el as HTMLElement).querySelectorAll<HTMLElement>('.doc-run-lf, .doc-sym-fb')]
-      : [el as HTMLElement]
+    const dom = el as HTMLElement
     return {
-      classes: doms.flatMap((dom) =>
-        (dom.getAttribute('class') ?? '').split(/\s+/).filter(Boolean),
-      ),
-      styles: doms.flatMap((dom) =>
-        (dom.getAttribute('style') ?? '')
-          .split(';')
-          .map((d) => d.trim())
-          .filter(Boolean),
-      ),
+      classes: (dom.getAttribute('class') ?? '').split(/\s+/).filter(Boolean),
+      styles: (dom.getAttribute('style') ?? '')
+        .split(';')
+        .map((d) => d.trim())
+        .filter(Boolean),
     }
   })
 }
@@ -1012,16 +976,6 @@ describe('executable Word truths (pure formulas over parsed props)', () => {
               case 'latinLineFactor':
                 expect(latinLineFactor(c.font!)).toBeCloseToPt(c.expect as number, c.tol ?? 0.0001)
                 break
-              case 'paraFactor': {
-                const b = blockAt(res.parsed, c.block!)
-                const text = (b.runs ?? []).map((r) => r.text).join('')
-                expect(
-                  paraLineFactor(
-                    layoutParaOfRuns(b.runs ?? null, text, b.format?.lineRule ?? null),
-                  ),
-                ).toBe(c.expect)
-                break
-              }
               case 'aliasFace':
                 expect(wordMetricAliasFace(c.font!)).toBe(c.expect)
                 break
@@ -1062,12 +1016,6 @@ describe('executable Word truths (pure formulas over parsed props)', () => {
                 ).toBeCloseToPt(c.expect as number, tol)
                 break
               }
-              case 'mixedLatinLineFactor':
-                expect(mixedLatinLineFactor(c.fonts as string[])).toBeCloseToPt(
-                  c.expect as number,
-                  tol,
-                )
-                break
               case 'oversizedMarkerExtraPt': {
                 const p = c as TruthCase & { markerFont: string; markerPt: number; textPt: number }
                 const got = oversizedMarkerExtraPt(p.markerFont, p.markerPt, p.textPt)
@@ -1106,14 +1054,7 @@ describe('executable Word truths (pure formulas over parsed props)', () => {
                 const model = blockAt(res.parsed, c.block!).table!
                 const avail = c.availTwips as number
                 const fit = (c.fitTwips as number | undefined) ?? avail
-                const legacy = c.legacy === true
-                const got = c.advancesEm
-                  ? (layoutTableColumns(model, { avail, fit }, advanceMeasure(c), {
-                      legacy,
-                      defaults: pmDocOptions(res.parsed).defaultRun,
-                    }).widths ?? [])
-                  : (expandAutofitColWidths(model, avail, fit, null, false, legacy)
-                      .colWidthsTwips ?? [])
+                const got = expandAutofitColWidths(model, avail, fit, null).colWidthsTwips ?? []
                 const want = c.expect as number[] | { sum: number }
                 if (Array.isArray(want)) {
                   expect(got.length).toBe(want.length)
@@ -1166,25 +1107,13 @@ describe('executable Word truths (pure formulas over parsed props)', () => {
               case 'tabWrap':
                 expect(tabResolve(c).wrap).toBe(c.expect)
                 break
-              case 'strayTabPlan': {
-                const p = c as TruthCase & {
-                  stops: TabStop[]
-                  leftTwips: number
-                  tabCount: number
-                }
-                expect(planStrayTab(p.stops, p.leftTwips, p.tabCount)).toEqual(c.expect)
-                break
-              }
               case 'cellLineBox':
               case 'boxLineBox':
               case 'hfLineBox':
               case 'noteLineBox':
-              case 'bodyParaDom':
-              case 'bodyRunDom': {
+              case 'bodyParaDom': {
                 const spec =
-                  c.kind === 'bodyParaDom' || c.kind === 'bodyRunDom'
-                    ? bodyParaDom(res, c.block!, c.kind === 'bodyRunDom')
-                    : lineBoxOf(res, c)
+                  c.kind === 'bodyParaDom' ? bodyParaDom(res, c.block!) : lineBoxOf(res, c)
                 const want = c.expect as {
                   classes?: string[]
                   styles?: string[]
@@ -1224,39 +1153,6 @@ describe('executable Word truths (pure formulas over parsed props)', () => {
                     (c.style as string | undefined) ?? 'normal',
                   ),
                 ).toBeCloseToPt(c.expect as number, tol)
-                break
-              case 'bodyLineBox':
-                {
-                  // the live paragraph's line box (textParaLineBox over the block's runs):
-                  // --doc-line-factor, --doc-strut and font-family, as the decoration emits them
-                  const runs = blockAt(res.parsed, c.block!).runs ?? []
-                  const text = runs.map((r) => r.text).join('')
-                  const box = textParaLineBox(layoutParaOfRuns(runs, text, null))
-                  const styles = Object.fromEntries(
-                    box.styles.map((d) => {
-                      const i = d.indexOf(':')
-                      return [d.slice(0, i), d.slice(i + 1)]
-                    }),
-                  )
-                  expect({ ...styles, classes: box.classes }).toMatchObject(c.expect as object)
-                }
-                break
-              case 'inlineClasses':
-                {
-                  // classes the text-layout inline rules put on the block's runs
-                  const runs = blockAt(res.parsed, c.block!).runs ?? []
-                  const segs = inlineSegments({
-                    runs: inlineRunsOf(runs).runs,
-                    autospace: null,
-                    inheritedAscii: null,
-                    inheritedEa: null,
-                    wordWrap: true,
-                    balancedSpaces: false,
-                    justified: false,
-                    simsunGapLineHeight: null,
-                  })
-                  expect(segs.segments.map((s) => s.cls ?? '').sort()).toEqual(c.expect)
-                }
                 break
               case 'strutClass':
                 {
@@ -1317,25 +1213,6 @@ describe('executable Word truths (pure formulas over parsed props)', () => {
                   c.expect,
                 )
                 break
-              case 'csAsciiDigits': {
-                const runs = blockAt(res.parsed, c.block!).runs ?? []
-                const text = runs.map((r) => r.text).join('')
-                const segs = inlineSegments({
-                  runs: inlineRunsOf(runs).runs,
-                  autospace: null,
-                  inheritedAscii: docBodyFont(res.parsed as ParsedDocFull) ?? null,
-                  inheritedEa: null,
-                  wordWrap: true,
-                  balancedSpaces: false,
-                  justified: false,
-                  simsunGapLineHeight: null,
-                  lineMultiple: 'inherited',
-                }).segments.filter((s) => s.cls === 'doc-cs-ascii')
-                expect(segs.map((s) => text.slice(s.from, s.to))).toEqual(c.expect)
-                if (c.lift !== undefined)
-                  for (const s of segs) expect(s.style?.includes('line-height:')).toBe(c.lift)
-                break
-              }
               case 'pageStartBlocks':
                 expect(pageStartBlocks(res, c)).toEqual(c.expect)
                 break

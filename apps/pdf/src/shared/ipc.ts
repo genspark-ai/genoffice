@@ -9,8 +9,6 @@ export type { PrinterOption }
 /** largest slice readFileChunk hands over IPC; the renderer loops over them */
 export const PDF_READ_CHUNK_BYTES = 8 * 1024 * 1024
 
-export type PdfDefaultZoom = 'width' | 'page' | 'last'
-
 export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
   readFile: 'pdf:read-file',
@@ -58,7 +56,6 @@ export const PDF_CHANNELS = {
   addSignature: 'pdf:add-signature',
   removeSignature: 'pdf:remove-signature',
   getUsername: 'pdf:get-username',
-  getDefaultZoom: 'pdf:get-default-zoom',
   dirtyChanged: 'pdf:dirty-changed',
   closeSaveRequest: 'pdf:close-save-request',
   closeSaveResult: 'pdf:close-save-result',
@@ -624,9 +621,6 @@ export interface StaticFormFillRecord {
 }
 
 /** A pending area selected for permanent native PDF redaction. PDF user space, y up. */
-/** Max redaction rects per request: prevents 100k-rect DoS on native redact. */
-export const MAX_REDACTION_REGIONS = 500
-
 export interface RedactionInput {
   pageIndex: number
   rect: [number, number, number, number]
@@ -1209,8 +1203,6 @@ export interface PdfApi {
   /** Settings → General user name (the OS account name when unset), used as the default author of new note comments */
   getUsername(): Promise<string>
   onUsernameChanged(handler: (name: string) => void): () => void
-  /** Settings → General default zoom, applied to files without a remembered reading position */
-  getDefaultZoom(): Promise<PdfDefaultZoom>
   /** Mirror unsaved-changes state to the main process; drives the save prompt before closing a tab/window */
   setDirty(dirty: boolean): void
   /** Main process asks for a save (close prompt, menu Save, export flows) and waits for sendCloseSaveResult.

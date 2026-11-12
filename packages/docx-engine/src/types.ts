@@ -1185,12 +1185,6 @@ export interface NoteInfo {
   revisionsResolved?: RevisionResolution[]
 }
 
-/** the notes part's separator paragraph (w:type="separator"): its style and resolved spacing size the separator row */
-export interface NoteSeparator {
-  styleId?: string
-  spacing?: NoteInfo['spacing']
-}
-
 /** display-only run of a field result: the Run subset the passthrough renderer paints */
 export type FieldRun = Pick<
   Run,
@@ -1234,9 +1228,6 @@ export interface FieldDisplay {
   /** tocLine: eastAsia face of the first result run with CJK ink when the leading run is Latin;
    *  Word sizes the line by the tallest face on it */
   eaFontFamily?: string
-  /** tocLine: effective ascii face of the page-number run when it differs from fontFamily;
-   *  Word sizes the line by the max ascent plus the max descent of both faces */
-  pageFontFamily?: string
   /** tocLine whose leading result run is bold */
   bold?: boolean
   /** character style (w:rStyle) of the tocLine's leading result run */
@@ -1579,9 +1570,6 @@ export interface TableModel {
   /** literal w:tblLayout type="fixed": Word keeps the declared column widths even when the
    * table runs past the paper edge (content clips there), so display must never narrow them */
   fixedLayout?: boolean
-  /** sum of the column widths w:noWrap cells pin at their w:tcW (twips): over the text column,
-   *  Word shrinks every pinned column proportionally and the noWrap cells wrap after all */
-  noWrapPinnedTwips?: number
   /** table-level default cell margins (w:tblCellMar) */
   cellMarTwips?: CellMargins
   /** w:tblCellSpacing (twips, half the gap between adjacent cells); cells render boxed with gaps */
@@ -2652,9 +2640,6 @@ export interface ParsedDoc {
   footnotes: NoteInfo[]
   /** endnotes from word/endnotes.xml (separators excluded), file order */
   endnotes: NoteInfo[]
-  /** separator paragraphs of the notes parts (absent when a part has none) */
-  footnoteSeparator?: NoteSeparator
-  endnoteSeparator?: NoteSeparator
   /** effective document-wide footnote properties (settings.xml overlaid by the final sectPr) */
   footnoteProps?: NoteProps
   /** effective document-wide endnote properties (settings.xml overlaid by the final sectPr) */
@@ -2727,9 +2712,6 @@ export interface ParsedDoc {
   /** settings.xml w:compat <w:doNotUseHTMLParagraphAutoSpacing/> — adjacent paragraphs' space-after and
    *  space-before add up instead of merging to the larger one, and HTML auto spacing counts as 0 */
   doNotUseHTMLParagraphAutoSpacing?: boolean
-  /** settings.xml compatSetting overrideTableStyleFontSizeAndJustification (Word 2013+ documents):
-   *  the default paragraph style's own font size and justification outrank the table style's */
-  overrideTableStyleFontSizeAndJustification?: boolean
   /** settings.xml w:defaultTabStop in twips (absent = Word's 720); 0 = zero-width default tabs */
   defaultTabStopTwips?: number
   /** first-page header/footer parts (w:type="first"), null when absent */

@@ -362,12 +362,6 @@ trình soạn thảo Word hiện rõ. Cả hai được mô tả ở
 </tr>
 </table>
 
-### 11 · Tệp cũ — `.doc`, `.xls` và `.ppt` từ những năm 2000 cũng mở được
-
-Tệp `.doc` của Word 97–2003, `.xls` của Excel hoặc `.ppt` của PowerPoint được mở dưới dạng bản sao `.docx`, `.xlsx` hoặc `.pptx` đã chuyển đổi ngay trên máy của bạn; tệp gốc không bao giờ bị thay đổi. Hình ảnh, bảng, công thức, định dạng số, màu tô và bố cục đều được giữ lại.
-
-<img src="../assets/readme/legacy-formats-motion.webp" alt="Video tua nhanh GenOffice mở các tệp .ppt, .doc và .xls của một báo cáo thường niên giả định năm 2004, sau đó là một slide hiển thị trong PowerPoint bên cạnh bản trình bày đã chuyển đổi trong GenOffice" width="100%">
-
 ## Vì sao chọn GenOffice
 
 - **Mã nguồn mở**, Apache-2.0, xây công khai trên GitHub.

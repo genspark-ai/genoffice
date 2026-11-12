@@ -779,8 +779,6 @@ export const zhTW = {
   ribbonWebLayoutTip: 'Web 版面配置：文件填滿視窗寬度，不分頁',
   ribbonOutlineView: '大綱模式',
   ribbonOutlineViewTip: '大綱模式：只顯示標題階層，可直接編輯標題',
-  ribbonStoryView: '故事模式',
-  ribbonStoryViewTip: '故事模式：不帶文件格式，專注寫字',
   ribbonReadMode: '閱讀模式',
   ribbonReadModeTip: '閱讀模式：隱藏功能區專注閱讀，按 Esc 離開',
   ribbonPagePreview: '分頁預覽',

@@ -20,22 +20,17 @@ import {
 
 export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 
-interface GeminiUsage {
-  promptTokenCount?: unknown
-  candidatesTokenCount?: unknown
-  cachedContentTokenCount?: unknown
-}
-
 /** Merge a Gemini usageMetadata object into an accumulator (every stream chunk carries
  * one; the last chunk's counts are the turn's totals). */
-function mergeGeminiUsage(target: AiTokenUsage, usage: GeminiUsage | undefined): void {
+function mergeGeminiUsage(
+  target: AiTokenUsage,
+  usage: { promptTokenCount?: unknown; candidatesTokenCount?: unknown } | undefined,
+): void {
   if (!usage) return
   const input = usageCount(usage.promptTokenCount)
   const output = usageCount(usage.candidatesTokenCount)
-  const cached = usageCount(usage.cachedContentTokenCount)
   if (input !== undefined) target.inputTokens = input
   if (output !== undefined) target.outputTokens = output
-  if (cached !== undefined) target.cacheReadTokens = cached
 }
 
 // Gemini 3 rejects a model turn whose first functionCall lacks its thoughtSignature;
@@ -122,7 +117,7 @@ function emitGeminiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
       finishReason?: string
     }>
     promptFeedback?: { blockReason?: string }
-    usageMetadata?: GeminiUsage
+    usageMetadata?: { promptTokenCount?: unknown; candidatesTokenCount?: unknown }
     error?: { message?: string } | string
   }>
   let emitted = false
@@ -278,7 +273,7 @@ async function geminiTurn(
         finishReason?: string
       }>
       promptFeedback?: { blockReason?: string }
-      usageMetadata?: GeminiUsage
+      usageMetadata?: { promptTokenCount?: unknown; candidatesTokenCount?: unknown }
       error?: { message?: string } | string
     }
     if (event.error) throw new Error(sseErrorText(event.error, 'Gemini stream error'))

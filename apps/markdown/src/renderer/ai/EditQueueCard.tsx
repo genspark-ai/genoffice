@@ -5,7 +5,6 @@
  */
 import { useState } from 'react'
 import type { ReactElement } from 'react'
-import { useImeEnterGuard } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
 import { useI18n } from '../i18n/locale'
 import {
@@ -45,7 +44,6 @@ export function EditQueueCard({
   /** null = follow the length-based default; set once the user clicks the chevron */
   const [manualFold, setManualFold] = useState<boolean | null>(null)
   const [editingQid, setEditingQid] = useState<string | null>(null)
-  const ime = useImeEnterGuard()
   const [draft, setDraft] = useState('')
   const [confirmDiscard, setConfirmDiscard] = useState(false)
 
@@ -101,15 +99,13 @@ export function EditQueueCard({
                       autoFocus
                       maxLength={EDIT_INSTRUCTION_MAX}
                       onChange={(e) => setDraft(e.target.value)}
-                      onCompositionStart={ime.handleCompositionStart}
-                      onCompositionEnd={ime.handleCompositionEnd}
                       onBlur={() => {
                         const next = draft.trim()
                         if (next) onEditInstruction(item.qid, next)
                         setEditingQid(null)
                       }}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !ime.isImeConfirm(e.nativeEvent)) {
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                           e.preventDefault()
                           e.currentTarget.blur()
                         } else if (e.key === 'Escape') {

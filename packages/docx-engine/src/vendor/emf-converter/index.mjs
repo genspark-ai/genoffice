@@ -183,13 +183,7 @@ var EMFPLUS_RESETCLIP = 16433;
 var EMFPLUS_SETCLIPRECT = 16434;
 var EMFPLUS_SETCLIPPATH = 16435;
 var EMFPLUS_SETCLIPREGION = 16436;
-var EMFPLUS_FILLREGION = 16403;
-var EMFPLUS_FILLCLOSEDCURVE = 16406;
-var EMFPLUS_DRAWCLOSEDCURVE = 16407;
-var EMFPLUS_DRAWCURVE = 16408;
-var EMFPLUS_DRAWBEZIERS = 16409;
 var EMFPLUS_DRAWDRIVERSTRING = 16438;
-var EMFPLUS_BEGINCONTAINER = 16423;
 var EMFPLUS_OFFSETCLIP = 16437;
 var EMFPLUS_OBJECTTYPE_BRUSH = 1;
 var EMFPLUS_OBJECTTYPE_PEN = 2;
@@ -2876,13 +2870,6 @@ function createEmfPlusState() {
     saveIdMap: /* @__PURE__ */ new Map(),
     clipRegion: null,
     clipSaveDepth: 0,
-    // SetPageTransform outlives the EMR_COMMENT it arrived in: real files interleave GDI
-    // records between many comments (one per GetDC run), and GDI+ keeps the unit for the
-    // whole stream (upstream emf-converter 311bfa6)
-    pageUnit: 2,
-    pageScale: 1,
-    dpiX: 96,
-    dpiY: 96,
     // EMF+ dual-mode files carry a full GDI fallback too; GDI drawing records are only
     // meant to run right after an EmfPlusGetDC, until the next EMF+ record (MS-EMFPLUS 2.3.1.3)
     dualMode: false,
@@ -2901,36 +2888,6 @@ function createEmfPlusState() {
   };
 }
 
-/** EMR_SAVEDC in the skipped fallback of a dual-mode file: snapshots the DC only. */
-function saveSkippedDc(rCtx) {
-  rCtx.skippedDcStack ?? (rCtx.skippedDcStack = []);
-  rCtx.skippedDcStack.push({
-    state: cloneState(rCtx.state),
-    mapping: {
-      windowOrg: { ...rCtx.windowOrg },
-      windowExt: { ...rCtx.windowExt },
-      viewportOrg: { ...rCtx.viewportOrg },
-      viewportExt: { ...rCtx.viewportExt },
-      useMappingMode: rCtx.useMappingMode
-    }
-  });
-}
-/**
- * EMR_RESTOREDC in the skipped fallback of a dual-mode file: restores the DC saved by
- * saveSkippedDc at that level (negative = relative to the newest); a level with no such
- * save is ignored, as GDI fails it.
- */
-function restoreSkippedDc(rCtx, level) {
-  const stack = rCtx.skippedDcStack ?? [];
-  const at = level < 0 ? stack.length + level : level - 1;
-  if (at < 0 || at >= stack.length) {
-    return;
-  }
-  const saved = stack[at];
-  stack.length = at;
-  Object.assign(rCtx.state, saved.state);
-  Object.assign(rCtx, saved.mapping);
-}
 // src/emf-gdi-state-handlers.ts
 function handleEmfGdiStateRecord(rCtx, recType, _offset, dataOff, recSize) {
   if (handleEmfTransformRecord(rCtx, recType, dataOff, recSize)) {
@@ -3241,8 +3198,8 @@ function resolveBrushPaint(rCtx, flags, brushIdOrColor) {
   }
   return "rgba(0,0,0,1)";
 }
-function getPageUnitMultiplier(pageUnit, pageScale, dpi) {
-  const DPI = dpi || 96;
+function getPageUnitMultiplier(pageUnit, pageScale) {
+  const DPI = 96;
   let unitToPixel;
   switch (pageUnit) {
     case 3:
@@ -3273,20 +3230,19 @@ function getPageUnitMultiplier(pageUnit, pageScale, dpi) {
 // without a device map (nested metafiles) fall back to the plain dpi scale.
 function plusDeviceMatrix(rCtx) {
   const wt = rCtx.worldTransform;
-  const mX = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale, rCtx.dpiX);
-  const mY = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale, rCtx.dpiY);
+  const m = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale);
   const dm = rCtx.deviceMap;
   if (!dm) {
     const d = rCtx.dpiScale;
-    return [wt[0] * mX * d, wt[1] * mY * d, wt[2] * mX * d, wt[3] * mY * d, wt[4] * mX * d, wt[5] * mY * d];
+    return [wt[0] * m * d, wt[1] * m * d, wt[2] * m * d, wt[3] * m * d, wt[4] * m * d, wt[5] * m * d];
   }
   return [
-    wt[0] * mX * dm.sx,
-    wt[1] * mY * dm.sy,
-    wt[2] * mX * dm.sx,
-    wt[3] * mY * dm.sy,
-    (wt[4] * mX - dm.left) * dm.sx,
-    (wt[5] * mY - dm.top) * dm.sy
+    wt[0] * m * dm.sx,
+    wt[1] * m * dm.sy,
+    wt[2] * m * dm.sx,
+    wt[3] * m * dm.sy,
+    (wt[4] * m - dm.left) * dm.sx,
+    (wt[5] * m - dm.top) * dm.sy
   ];
 }
 // Pass 2 of the two-pass replay: the bitmap decoded from pass 1's deferred entry with the
@@ -3308,21 +3264,14 @@ function applyPlusWorldTransform(rCtx) {
 }
 function pushState(rCtx, stackId) {
   rCtx.saveStack.push({
-    transform: [...rCtx.worldTransform],
-    pageUnit: rCtx.pageUnit,
-    pageScale: rCtx.pageScale
+    transform: [...rCtx.worldTransform]
   });
   rCtx.saveIdMap.set(stackId, rCtx.saveStack.length - 1);
 }
 function popState(rCtx, stackId) {
   const idx = rCtx.saveIdMap.get(stackId);
   if (idx !== void 0 && idx < rCtx.saveStack.length) {
-    const restored = rCtx.saveStack[idx];
-    rCtx.worldTransform = [...restored.transform];
-    if (restored.pageUnit !== undefined) {
-      rCtx.pageUnit = restored.pageUnit;
-      rCtx.pageScale = restored.pageScale;
-    }
+    rCtx.worldTransform = [...rCtx.saveStack[idx].transform];
     rCtx.saveStack.length = idx;
     const newMap = /* @__PURE__ */ new Map();
     for (const [k, v] of rCtx.saveIdMap) {
@@ -3568,40 +3517,10 @@ function handleEmfPlusStateRecord(rCtx, recType, recFlags, dataOff, recDataSize)
       }
       return true;
     }
-    case EMFPLUS_BEGINCONTAINER: {
-      // DestRect, SrcRect (RectF each), StackIndex; the source unit in the flags' low
-      // byte (layout read back through upstream emf-converter, measured against GDI+).
-      // The whole graphics state is saved; inside, the rect mapping
-      // composes onto the enclosing world transform and the page unit starts over at
-      // Display. The enclosing clip keeps bounding every drawing (our clip model has
-      // one canvas clip; GDI+'s container clip reset is not modelled).
-      if (recDataSize >= 36) {
-        const f = (k) => view.getFloat32(dataOff + k, true);
-        const rectTransform = plusContainerRectTransform(
-          { x: f(0), y: f(4), w: f(8), h: f(12) },
-          { x: f(16), y: f(20), w: f(24), h: f(28) },
-          recFlags & 255,
-          rCtx.dpiX,
-          rCtx.dpiY
-        );
-        pushState(rCtx, view.getUint32(dataOff + 32, true));
-        if (rectTransform) {
-          rCtx.worldTransform = multiplyAffine(rCtx.worldTransform, rectTransform);
-          rCtx.pageUnit = 2;
-          rCtx.pageScale = 1;
-        }
-      }
-      return true;
-    }
     // ---- page transform ----
     case EMFPLUS_SETPAGETRANSFORM: {
       const pageUnit = recFlags & 255;
       const pageScale = recDataSize >= 4 ? view.getFloat32(dataOff, true) : 1;
-      // World (0) carries no unit and GDI+ rejects unknown units and non-positive
-      // scales: the record is ignored and the current unit stays
-      if (pageUnit === 0 || pageUnit > 6 || !(pageScale > 0) || !Number.isFinite(pageScale)) {
-        return true;
-      }
       rCtx.pageUnit = pageUnit;
       rCtx.pageScale = pageScale;
       return true;
@@ -3644,149 +3563,6 @@ function applyEmfPlusPen(ctx, pen) {
       ctx.setLineDash([]);
       break;
   }
-}
-/** Composes two [a,b,c,d,e,f] matrices: the returned matrix applies n first, then m. */
-function multiplyAffine(m, n) {
-  return [
-    m[0] * n[0] + m[2] * n[1],
-    m[1] * n[0] + m[3] * n[1],
-    m[0] * n[2] + m[2] * n[3],
-    m[1] * n[2] + m[3] * n[3],
-    m[0] * n[4] + m[2] * n[5] + m[4],
-    m[1] * n[4] + m[3] * n[5] + m[5]
-  ];
-}
-function invertAffine(m) {
-  const det = m[0] * m[3] - m[1] * m[2];
-  if (!det || !Number.isFinite(det)) {
-    return null;
-  }
-  const a = m[3] / det;
-  const b = -m[1] / det;
-  const c = -m[2] / det;
-  const d = m[0] / det;
-  return [a, b, c, d, -(a * m[4] + c * m[5]), -(b * m[4] + d * m[5])];
-}
-/** One EmfPlusPointR coordinate: ONE byte, top bit set, holding a 7-bit signed value,
- * else TWO big-endian bytes holding a 15-bit signed value (GDI+'s decoding; the
- * MS-EMFPLUS 2.2.2.21/22 statement of the top bit is the other way round). */
-function readPointRCoord(view, offset, end) {
-  if (offset >= end) {
-    return null;
-  }
-  const b0 = view.getUint8(offset);
-  if (b0 & 128) {
-    const v = b0 & 127;
-    return { value: v & 64 ? v - 128 : v, size: 1 };
-  }
-  if (offset + 2 > end) {
-    return null;
-  }
-  const v = (b0 << 8) | view.getUint8(offset + 1);
-  return { value: v & 16384 ? v - 32768 : v, size: 2 };
-}
-/** Reads a drawing record's points in the encoding its flags select: relative
- * EmfPlusPointR deltas (flag P 0x0800, each point relative to the previous one, the
- * first to (0,0)), 16-bit integers (flag C 0x4000) or 32-bit floats. Returns null
- * when the data ends before count points (GDI+ draws nothing for that record). */
-function readPlusPoints(view, offset, end, count, flags) {
-  if (!(count >= 0) || count > 1e6) {
-    return null;
-  }
-  const pts = [];
-  if (flags & 2048) {
-    let o = offset;
-    let x = 0;
-    let y = 0;
-    for (let i = 0; i < count; i++) {
-      const dx = readPointRCoord(view, o, end);
-      if (!dx) {
-        return null;
-      }
-      o += dx.size;
-      const dy = readPointRCoord(view, o, end);
-      if (!dy) {
-        return null;
-      }
-      o += dy.size;
-      x += dx.value;
-      y += dy.value;
-      pts.push({ x, y });
-    }
-  } else {
-    const compressed = (flags & 16384) !== 0;
-    const size = compressed ? 4 : 8;
-    for (let i = 0; i < count; i++) {
-      if (offset + i * size + size > end) {
-        return null;
-      }
-      pts.push(readPointFromView(view, offset + i * size, compressed));
-    }
-  }
-  return pts;
-}
-/** A cardinal spline through pts as the cubic Bezier points GDI+ converts it to:
- * the tangent at point i is k*(P[i+1]-P[i-1]) with k = tension/3 (end points of an
- * open spline use their one neighbour; a closed one wraps round and gains the
- * segment back to its start); a segment runs P[i], P[i]+T[i], P[i+1]-T[i+1],
- * P[i+1] (ported from upstream emf-converter emf-plus-spline.ts). */
-function plusCardinalBeziers(pts, tension, closed, offset = 0, segments) {
-  const n = pts.length;
-  if (n < (closed ? 3 : 2)) {
-    return [];
-  }
-  const k = (Number.isFinite(tension) ? tension : 0) / 3;
-  const tangent = (i) => {
-    const a = closed ? pts[(i - 1 + n) % n] : pts[Math.max(0, i - 1)];
-    const b = closed ? pts[(i + 1) % n] : pts[Math.min(n - 1, i + 1)];
-    return { x: k * (b.x - a.x), y: k * (b.y - a.y) };
-  };
-  const total = closed ? n : n - 1;
-  const first = closed ? 0 : Math.max(0, Math.floor(offset));
-  const count = closed ? total : Math.min(total - first, segments === undefined ? total : Math.floor(segments));
-  if (!(count > 0)) {
-    return [];
-  }
-  const out = [{ x: pts[first].x, y: pts[first].y }];
-  for (let s = first; s < first + count; s++) {
-    const p = pts[s];
-    const q = pts[(s + 1) % n];
-    const tp = tangent(s);
-    const tq = tangent((s + 1) % n);
-    out.push({ x: p.x + tp.x, y: p.y + tp.y }, { x: q.x - tq.x, y: q.y - tq.y }, { x: q.x, y: q.y });
-  }
-  return out;
-}
-/** One figure out of Bezier points (a start point, then three per segment). */
-function plusBezierFigure(ctx, bez, closed) {
-  ctx.beginPath();
-  ctx.moveTo(bez[0].x, bez[0].y);
-  for (let i = 1; i + 2 < bez.length; i += 3) {
-    ctx.bezierCurveTo(bez[i].x, bez[i].y, bez[i + 1].x, bez[i + 1].y, bez[i + 2].x, bez[i + 2].y);
-  }
-  if (closed) {
-    ctx.closePath();
-  }
-}
-function plusSelectedPen(rCtx, flags) {
-  const pen = rCtx.objectTable.get(flags & 255);
-  return pen && pen.kind === "plus-pen" ? pen : null;
-}
-/** The transform an EmfPlusBeginContainer's rectangles define: the source rect, in
- * `unit` (converted at the header DPI; World is 1/100 inch for both devices), maps
- * onto the destination rect in the enclosing world space (ported from upstream
- * emf-converter containerRectTransform). */
-function plusContainerRectTransform(dst, src, unit, dpiX, dpiY) {
-  const ux = unit === 0 ? (dpiX || 96) / 100 : getPageUnitMultiplier(unit, 1, dpiX);
-  const uy = unit === 0 ? (dpiY || 96) / 100 : getPageUnitMultiplier(unit, 1, dpiY);
-  const sw = src.w * ux;
-  const sh = src.h * uy;
-  if (!(Math.abs(sw) > 0 && Math.abs(sh) > 0) || ![dst.x, dst.y, dst.w, dst.h, sw, sh].every(Number.isFinite)) {
-    return null;
-  }
-  const a = dst.w / sw;
-  const d = dst.h / sh;
-  return [a, 0, 0, d, dst.x - src.x * ux * a, dst.y - src.y * uy * d];
 }
 function handleEmfPlusDrawRecord(rCtx, recType, recFlags, dataOff, recDataSize) {
   const { ctx, view, objectTable } = rCtx;
@@ -3989,126 +3765,6 @@ function handleEmfPlusDrawRecord(rCtx, recType, recFlags, dataOff, recDataSize) 
         }
         ctx.closePath();
         ctx.fill();
-      }
-      return true;
-    }
-    // ---- curves (genoffice#2601 follow-up): a cardinal spline becomes the cubic
-    // Bezier segments GDI+ converts it to, so the path is the one GDI+ itself strokes ----
-    case EMFPLUS_DRAWBEZIERS: {
-      if (recDataSize >= 4) {
-        const count = view.getUint32(dataOff, true);
-        const pts = readPlusPoints(view, dataOff + 4, dataOff + recDataSize, count, recFlags);
-        // a start point and three points per curve (GDI+ rejects any other count)
-        if (pts && pts.length >= 4 && (pts.length - 1) % 3 === 0) {
-          const pen = plusSelectedPen(rCtx, recFlags);
-          if (pen) {
-            applyEmfPlusPen(ctx, pen);
-          }
-          applyPlusWorldTransform(rCtx);
-          plusBezierFigure(ctx, pts, false);
-          ctx.stroke();
-        }
-      }
-      return true;
-    }
-    case EMFPLUS_DRAWCURVE: {
-      if (recDataSize >= 16) {
-        const tension = view.getFloat32(dataOff, true);
-        const offset = view.getUint32(dataOff + 4, true);
-        const segments = view.getUint32(dataOff + 8, true);
-        const count = view.getUint32(dataOff + 12, true);
-        // DrawCurve has no relative form: only the C flag selects the encoding
-        const pts = readPlusPoints(view, dataOff + 16, dataOff + recDataSize, count, recFlags & 16384);
-        const bez = pts ? plusCardinalBeziers(pts, tension, false, offset, segments) : [];
-        if (bez.length >= 4) {
-          const pen = plusSelectedPen(rCtx, recFlags);
-          if (pen) {
-            applyEmfPlusPen(ctx, pen);
-          }
-          applyPlusWorldTransform(rCtx);
-          plusBezierFigure(ctx, bez, false);
-          ctx.stroke();
-        }
-      }
-      return true;
-    }
-    case EMFPLUS_DRAWCLOSEDCURVE: {
-      if (recDataSize >= 8) {
-        const tension = view.getFloat32(dataOff, true);
-        const count = view.getUint32(dataOff + 4, true);
-        const pts = readPlusPoints(view, dataOff + 8, dataOff + recDataSize, count, recFlags);
-        const bez = pts ? plusCardinalBeziers(pts, tension, true) : [];
-        if (bez.length >= 4) {
-          const pen = plusSelectedPen(rCtx, recFlags);
-          if (pen) {
-            applyEmfPlusPen(ctx, pen);
-          }
-          applyPlusWorldTransform(rCtx);
-          plusBezierFigure(ctx, bez, true);
-          ctx.stroke();
-        }
-      }
-      return true;
-    }
-    case EMFPLUS_FILLCLOSEDCURVE: {
-      if (recDataSize >= 12) {
-        const brushVal = view.getUint32(dataOff, true);
-        const tension = view.getFloat32(dataOff + 4, true);
-        const count = view.getUint32(dataOff + 8, true);
-        const pts = readPlusPoints(view, dataOff + 12, dataOff + recDataSize, count, recFlags);
-        const bez = pts ? plusCardinalBeziers(pts, tension, true) : [];
-        if (bez.length >= 4) {
-          ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
-          applyPlusWorldTransform(rCtx);
-          plusBezierFigure(ctx, bez, true);
-          // flag W (0x2000): a winding fill; clear is alternate
-          ctx.fill(recFlags & 8192 ? "nonzero" : "evenodd");
-        }
-      }
-      return true;
-    }
-    case EMFPLUS_FILLREGION: {
-      if (recDataSize >= 4) {
-        const brushVal = view.getUint32(dataOff, true);
-        const regionObj = objectTable.get(recFlags & 255);
-        if (regionObj && regionObj.kind === "plus-region" && regionObj.nodes.length > 0) {
-          const flattened = flattenRegionNode(regionObj.nodes[0], plusDeviceMatrix(rCtx));
-          const shapes = flattened.region ?? [];
-          const canvas = ctx.canvas;
-          ctx.save();
-          // the flattened shapes are device pixels: intersect them through the clip,
-          // then paint the brush (world-space gradient) over a world-space quad —
-          // the pre-image of the device canvas under the transform
-          ctx.setTransform(1, 0, 0, 1, 0, 0);
-          for (const shape of shapes) {
-            ctx.beginPath();
-            replayClipCmds(ctx, shape.cmds);
-            try {
-              ctx.clip(shape.fillRule);
-            } catch {
-            }
-          }
-          const inv = invertAffine(plusDeviceMatrix(rCtx));
-          if (inv && shapes.length > 0) {
-            ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
-            applyPlusWorldTransform(rCtx);
-            const w = canvas ? canvas.width : 1e6;
-            const h = canvas ? canvas.height : 1e6;
-            const corner = (x, y) => ({ x: inv[0] * x + inv[2] * y + inv[4], y: inv[1] * x + inv[3] * y + inv[5] });
-            const c0 = corner(0, 0);
-            const c1 = corner(w, 0);
-            const c2 = corner(w, h);
-            const c3 = corner(0, h);
-            ctx.beginPath();
-            ctx.moveTo(c0.x, c0.y);
-            ctx.lineTo(c1.x, c1.y);
-            ctx.lineTo(c2.x, c2.y);
-            ctx.lineTo(c3.x, c3.y);
-            ctx.closePath();
-            ctx.fill();
-          }
-          ctx.restore();
-        }
       }
       return true;
     }
@@ -5073,13 +4729,7 @@ var EMFPLUS_REC_NAMES = {
   16410: "DrawImage",
   16411: "DrawImagePoints",
   16412: "DrawString",
-  16403: "FillRegion",
-  16406: "FillClosedCurve",
-  16407: "DrawClosedCurve",
-  16408: "DrawCurve",
-  16409: "DrawBeziers",
   16438: "DrawDriverString",
-  16423: "BeginContainer",
   16414: "SetAntiAliasMode",
   16426: "SetWorldTransform",
   16427: "ResetWorldTransform",
@@ -5123,10 +4773,8 @@ function replayEmfPlusRecords(view, offset, length, ctx, _canvasW, _canvasH, sta
     totalDrawImageCalls: 0,
     clipSaveDepth: s.clipSaveDepth,
     clipRegion: s.clipRegion,
-    pageUnit: s.pageUnit,
-    pageScale: s.pageScale,
-    dpiX: s.dpiX,
-    dpiY: s.dpiY,
+    pageUnit: 2,
+    pageScale: 1,
     continuationBuffer: s.continuation.buffer,
     continuationObjectId: s.continuation.objectId,
     continuationObjectType: s.continuation.objectType,
@@ -5146,10 +4794,10 @@ function replayEmfPlusRecords(view, offset, length, ctx, _canvasW, _canvasH, sta
     const recType = view.getUint16(offset, true);
     const recFlags = view.getUint16(offset + 2, true);
     const recSize = view.getUint32(offset + 4, true);
+    const recDataSize = view.getUint32(offset + 8, true);
     if (recSize < 12 || offset + recSize > end) {
       break;
     }
-    const recDataSize = Math.min(view.getUint32(offset + 8, true), recSize - 12);
     recordCount++;
     emfPlusRecordTypes.set(recType, (emfPlusRecordTypes.get(recType) ?? 0) + 1);
     const dataOff = offset + 12;
@@ -5164,10 +4812,8 @@ function replayEmfPlusRecords(view, offset, length, ctx, _canvasW, _canvasH, sta
     switch (recType) {
       case EMFPLUS_HEADER: {
         if (recDataSize >= 16) {
-          // LogicalDpiX/Y are UInt32, one per axis (MS-EMFPLUS 2.3.2.1) — page units
-          // convert at this DPI, not a fixed 96 (upstream emf-converter 311bfa6)
-          rCtx.dpiX = view.getUint32(dataOff + 8, true) || 96;
-          rCtx.dpiY = view.getUint32(dataOff + 12, true) || 96;
+          view.getFloat32(dataOff + 8, true);
+          view.getFloat32(dataOff + 12, true);
         }
         break;
       }
@@ -5274,10 +4920,6 @@ function replayEmfPlusRecords(view, offset, length, ctx, _canvasW, _canvasH, sta
     state.saveIdMap = rCtx.saveIdMap;
     state.clipRegion = rCtx.clipRegion ?? null;
     state.clipSaveDepth = rCtx.clipSaveDepth;
-    state.pageUnit = rCtx.pageUnit;
-    state.pageScale = rCtx.pageScale;
-    state.dpiX = rCtx.dpiX;
-    state.dpiY = rCtx.dpiY;
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   return rCtx.deferredImages;
@@ -5422,19 +5064,8 @@ function replayEmfRecords(view, ctx, bounds, canvasW, canvasH, dpiScale = 1, rep
     }
     if (emfPlusState.dualMode && !emfPlusState.gdiEnabled) {
       // dual mode outside a GetDC window: keep GDI state in sync, draw nothing (the EMF+
-      // records already painted it). SaveDC/RestoreDC bracket the DC alone — the canvas
-      // state belongs to the EMF+ stream — so the mapping a fallback block sets inside
-      // its own SaveDC/RestoreDC bracket does not reach the GetDC run after it
-      // (ported from upstream emf-converter 67ecf34).
-      if (recType === EMR_SAVEDC) {
-        saveSkippedDc(rCtx);
-      } else if (recType === EMR_RESTOREDC) {
-        if (recSize >= 12) {
-          restoreSkippedDc(rCtx, view.getInt32(dataOff, true));
-        }
-      } else {
-        handleEmfGdiStateRecord(rCtx, recType, offset, dataOff, recSize);
-      }
+      // records already painted it)
+      handleEmfGdiStateRecord(rCtx, recType, offset, dataOff, recSize);
       offset += recSize;
       continue;
     }
@@ -5869,13 +5500,6 @@ function replayWmfRecords(view, ctx, header, canvasW, canvasH, replayOptions = {
   const windowOrg = { x: header.boundsLeft, y: header.boundsTop };
   const windowExt = { cx: logicalW, cy: logicalH };
   const coord = createWmfCoord(windowOrg, windowExt, canvasW, canvasH);
-  // Pen widths are logical units too, so they follow the same window->canvas scale
-  const syncDevScale = () => {
-    state.devScale = Math.min(
-      canvasW / Math.abs(windowExt.cx || 1),
-      canvasH / Math.abs(windowExt.cy || 1)
-    );
-  };
   const objectTable = /* @__PURE__ */ new Map();
   const allocObjectSlot = () => {
     let slot = 0;
@@ -5885,7 +5509,6 @@ function replayWmfRecords(view, ctx, header, canvasW, canvasH, replayOptions = {
     return slot;
   };
   const state = { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap, symbolTextMap: replayOptions.symbolTextMap };
-  syncDevScale();
   const stateStack = [];
   const wCtx = { view, ctx, state, coord };
   let offset = header.headerSize;
@@ -5919,7 +5542,6 @@ function replayWmfRecords(view, ctx, header, canvasW, canvasH, replayOptions = {
         if (recSize >= 10) {
           windowExt.cy = view.getInt16(dataOff, true);
           windowExt.cx = view.getInt16(dataOff + 2, true);
-          syncDevScale();
         }
         break;
       case META_SAVEDC:

@@ -75,13 +75,6 @@ describe('a percentage written with a % suffix', () => {
     expect(run.baseline).toBe(50)
   })
 
-  it('keeps a whole percent exact in the integer form', () => {
-    const paragraph = first(
-      shapeWithText('', '<a:pPr><a:lnSpc><a:spcPct val="110000"/></a:lnSpc></a:pPr>'),
-    ).text.paragraphs[0]
-    expect(paragraph.lineHeight).toBe(110)
-  })
-
   it('applies colour modifiers that use it', () => {
     // 75% lumMod is the same as 75000, which already rendered #2F5496
     expect(applyColorMods('#4472C4', { 'a:lumMod': { '@_val': '75%' } } as any)).toBe(

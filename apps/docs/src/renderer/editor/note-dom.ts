@@ -5,13 +5,7 @@ import { t } from '../i18n/locale'
 import { textColorValue } from './text-color'
 import { textOutlineCssValue } from './text-outline'
 import { setDkColor } from './dark-page'
-import {
-  noteLineHeightPx,
-  noteSeparatorPx,
-  noteSeparatorRulePx,
-  type NoteStyleOpts,
-} from '../line-metrics'
-import { cssFontFamily } from '../text-layout/font-rules'
+import { cssFontFamily, noteLineHeightPx, type NoteStyleOpts } from '../line-metrics'
 import { fromNoteRuns, toStyleRecord } from './para-layout-spec'
 
 /** classes and inline style of one note row: the first paragraph's line box
@@ -153,8 +147,6 @@ export function makeGapNotesEl(
   wrap.dataset.paperX = leftPx.toFixed(1)
   wrap.style.width = `${widthPx}px`
   wrap.style.height = `${heightPx}px`
-  wrap.style.setProperty('--note-sep-h', `${noteSeparatorPx('footnote')}px`)
-  wrap.style.setProperty('--note-sep-rule', `${noteSeparatorRulePx('footnote')}px`)
   // same line height as the reservation model; min-height keeps rows at the
   // reserved size while letting long entries overflow instead of clipping
   wrap.style.lineHeight = `${lineHeightPx}px`

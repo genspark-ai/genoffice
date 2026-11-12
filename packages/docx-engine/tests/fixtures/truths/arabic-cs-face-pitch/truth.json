@@ -41,8 +41,8 @@
       "kind": "linePt",
       "block": 1,
       "expect": 23.28,
-      "tol": 0.12,
-      "note": "Simplified Arabic 14 (cloud hhea 1.6577 / 1.4946; Word quantises to the 0.24-pt grid)",
+      "tol": 0.05,
+      "note": "Simplified Arabic 14",
       "font": "Simplified Arabic"
     },
     {
@@ -57,8 +57,8 @@
       "kind": "linePt",
       "block": 0,
       "expect": 18.0,
-      "tol": 0.12,
-      "note": "Traditional Arabic 12 (cloud hhea 1.6577 / 1.4946; Word quantises to the 0.24-pt grid)",
+      "tol": 0.05,
+      "note": "Traditional Arabic 12",
       "font": "Traditional Arabic"
     },
     {
@@ -113,14 +113,12 @@
     {
       "kind": "factor",
       "font": "Simplified Arabic",
-      "expect": 1.6577,
-      "note": "probe 19.92/23.28 quantised; cloud hhea"
+      "expect": 1.66
     },
     {
       "kind": "factor",
       "font": "Traditional Arabic",
-      "expect": 1.4946,
-      "note": "probe 18.00/20.88 quantised; cloud hhea"
+      "expect": 1.5
     },
     {
       "kind": "factor",

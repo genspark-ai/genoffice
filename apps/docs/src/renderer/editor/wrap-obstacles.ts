@@ -212,9 +212,10 @@ export function syncWrapObstacles(
   planOf?: PlanOf,
   /** I9 shadow sink: the model obstacles against the rendered boxes */
   shadow?: ObstacleShadow,
-  /** blocks that open a page in the previous pass's cuts (pageLeadsOf) with
-   *  their page index; the obstacle set is cleared in front of them */
-  pageLeads: ReadonlyMap<Element, number> = new Map(),
+  /** blocks that open a page in the previous pass's cuts (block leads) with
+   *  their page index; the obstacle set is cleared in front of them. Without
+   *  it the gap widgets of that pass mark the turns */
+  pageLeads?: ReadonlyMap<Element, number>,
   /** header drawings reaching into each page's body: seeded at every page start */
   headerObstaclesOf?: HeaderObstaclesOf,
 ): boolean {
@@ -246,26 +247,21 @@ export function syncWrapObstacles(
       })
     }
   }
-  const gapBottom = (el: Element | null): number | undefined => {
-    if (!el) return undefined
-    if (isPageTurn(el)) return rel(el.getBoundingClientRect()).bottom
-    // a row / cell / line lead: the turn widget sits inside the straddling block
-    const inner = Array.from(el.querySelectorAll('.page-gap-inline')).filter(isPageTurn).pop()
-    return inner ? rel(inner.getBoundingClientRect()).bottom : undefined
-  }
+  const gapBottom = (el: Element | null): number | undefined =>
+    el && isPageTurn(el) ? rel(el.getBoundingClientRect()).bottom : undefined
   seedHeader(0, pmCs ? parseFloat(pmCs.paddingTop) || 0 : 0)
   // a float-carry spacer (page-gap-carry) is flow space on the last portion's
   // page, not a turn: it keeps the obstacles like any other spacer
   let domTurns = 0
   let cutTurns = 0
-  // turns inside the previous block reset in front of this one (once, like pageLeadsOf)
-  let innerTurnBefore = false
   for (const el of Array.from(pm.children) as HTMLElement[]) {
     if (el.classList.contains('page-gap')) {
       if (isPageTurn(el) && !insideFloatTable(el)) {
         domTurns++
-        // the gap's lead is the same block the inner turn would reset: one entry
-        innerTurnBefore = false
+        if (!pageLeads) {
+          rects = []
+          seedHeader(domTurns, gapBottom(el) ?? 0)
+        }
       }
       continue
     }
@@ -276,11 +272,7 @@ export function syncWrapObstacles(
     ) {
       continue
     }
-    if (innerTurnBefore) domTurns++
-    innerTurnBefore = Array.from(el.querySelectorAll('.page-gap-inline')).some(
-      (g) => isPageTurn(g) && !insideFloatTable(g),
-    )
-    const leadPage = pageLeads.get(el)
+    const leadPage = pageLeads?.get(el)
     if (leadPage !== undefined) {
       cutTurns++
       rects = []
@@ -303,7 +295,7 @@ export function syncWrapObstacles(
     if (!placeParagraph(el, rel, rects, paras, lineFloats, factor, imgs, floats))
       recordFloats(imgs, rel, floats)
   }
-  if (pageReaderShadow.enabled && domTurns !== cutTurns)
+  if (pageLeads && pageReaderShadow.enabled && domTurns !== cutTurns)
     pageReaderShadow.report('obstacleTurns', domTurns, cutTurns)
   let changed = false
   for (const w of writes) {

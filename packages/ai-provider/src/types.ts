@@ -337,10 +337,6 @@ export interface AiStreamRequest {
 export interface AiTokenUsage {
   inputTokens?: number
   outputTokens?: number
-  /** share of inputTokens served from the provider's prompt cache */
-  cacheReadTokens?: number
-  /** share of inputTokens written to the prompt cache this turn (Anthropic bills it at a premium) */
-  cacheWriteTokens?: number
 }
 
 export interface AiStreamChunk {

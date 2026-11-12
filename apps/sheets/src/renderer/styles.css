@@ -5934,10 +5934,6 @@ textarea:focus {
   color: var(--sheets-toast-ok);
 }
 
-.app-toast.info .app-toast-icon {
-  color: var(--accent);
-}
-
 /* Shape gallery dropdown (slides/docs parity: grouped, outline-icon grid) */
 .menu-select-drop.rb-shape-gallery {
   width: 264px;

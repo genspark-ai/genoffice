@@ -53,7 +53,6 @@ export const he = {
   ribbonFilePrint: 'הדפסה…',
   ribbonFileExportImages: 'ייצוא כ-PNG…',
   ribbonFileExportImagesJpg: 'ייצוא כ-JPG…',
-  ribbonFileExportVideo: 'ייצוא כווידאו (MP4)…',
   ribbonUnsavedSuffix: ' — לא נשמר',
   ribbonSaveTip: 'שמירה (⌘S)',
   ribbonAutoSave: 'שמירה אוטומטית',

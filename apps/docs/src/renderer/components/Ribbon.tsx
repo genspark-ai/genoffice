@@ -44,15 +44,6 @@ import type {
   WatermarkSpec,
 } from '@genoffice/docx-engine'
 import {
-  PAINTER_BLOCK_EXTRA,
-  PAINTER_MARK_TYPES,
-  PAINTER_PARA_KEYS,
-  applyPainterFormat,
-  painterWordRangeAt,
-  type PainterFormat,
-  type PainterState,
-} from './ribbon-painter'
-import {
   Dropdown,
   isSymbolFontFamily,
   useDismissablePopover,
@@ -157,7 +148,7 @@ import {
   stepFontSize as stepSizeInList,
 } from '../font-sizes'
 import { useSystemFontFamilies } from '../system-fonts'
-import { cssFontFamily } from '../text-layout/font-rules'
+import { cssFontFamily } from '../line-metrics'
 import type { RevisionFilter, RevisionScope } from '../editor/revision-filters'
 import {
   DesignTab,
@@ -442,6 +433,19 @@ interface RibbonProps {
   onPagePreview: () => void
 }
 
+// Format painter was extracted to ./ribbon-painter to keep Ribbon.tsx from carrying a second feature;
+// Painter types stay re-exported so existing importers keep working.
+import {
+  PAINTER_BLOCK_EXTRA,
+  PAINTER_MARK_TYPES,
+  PAINTER_PARA_KEYS,
+  applyPainterFormat,
+  painterWordRangeAt,
+  type PainterFormat,
+  type PainterState,
+} from './ribbon-painter'
+export { applyPainterFormat } from './ribbon-painter'
+export type { PainterFormat } from './ribbon-painter'
 // Word for Mac has no File ribbon tab: file actions live in the native menu
 // bar (which we provide). Windows Word does have one, so keep it there.
 const IS_MAC = navigator.platform.toLowerCase().includes('mac')

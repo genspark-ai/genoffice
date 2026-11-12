@@ -170,12 +170,8 @@ export function directParaGeometry(
   return {
     ...(direct('spaceBefore') ? { spaceBeforeTwips: eff.spacing.before } : {}),
     ...(direct('spaceAfter') ? { spaceAfterTwips: eff.spacing.after } : {}),
-    ...((direct('spaceBeforeAuto') || direct('spaceBefore')) && eff.spacing.beforeAuto
-      ? { spaceBeforeAuto: true }
-      : {}),
-    ...((direct('spaceAfterAuto') || direct('spaceAfter')) && eff.spacing.afterAuto
-      ? { spaceAfterAuto: true }
-      : {}),
+    ...(direct('spaceBeforeAuto') && eff.spacing.beforeAuto ? { spaceBeforeAuto: true } : {}),
+    ...(direct('spaceAfterAuto') && eff.spacing.afterAuto ? { spaceAfterAuto: true } : {}),
     ...(direct('indentLeft') ? { indentLeftTwips: eff.indent.left } : {}),
     ...(direct('indentRight') ? { indentRightTwips: eff.indent.right } : {}),
     ...(direct('indentFirstLine') ? { indentFirstLineTwips: eff.indent.firstLine } : {}),
@@ -294,12 +290,10 @@ export function fieldDisplayOf(
     // it spaced (<w:tab />) or paired (<w:tab></w:tab>): match those too, while
     // still excluding tab-stop definitions (<w:tab w:val=…/> in w:tabs).
     const re =
-      /<w:(?:t|delText)(?:\s[^>]*)?>([\s\S]*?)<[/]w:(?:t|delText)>|<w:(noBreakHyphen|softHyphen)\s*[/]>|<w:tab\s*[/]>|<w:tab>\s*<[/]w:tab>/g
+      /<w:(?:t|delText)(?:\s[^>]*)?>([\s\S]*?)<[/]w:(?:t|delText)>|<w:tab\s*[/]>|<w:tab>\s*<[/]w:tab>/g
     let m: RegExpExecArray | null
     while ((m = re.exec(deleted ? xml : live)) !== null) {
-      if (m[2] !== undefined)
-        segs[segs.length - 1] += m[2] === 'noBreakHyphen' ? '\u2011' : '\u00ad'
-      else if (m[1] === undefined) segs.push('')
+      if (m[1] === undefined) segs.push('')
       else segs[segs.length - 1] += m[1]
     }
     const right = segs.length > 1 ? segs.pop()! : ''
@@ -342,9 +336,6 @@ export function fieldDisplayOf(
     const runStyleId = lead?.run.styleId
     let eaFont = runs.map((r) => cjkRunFont(r.run, r.text)).find((f) => f !== undefined)
     if (eaFont === font) eaFont = undefined
-    // the page number's own (often inherited) face: a Calibri page under a
-    // Century Gothic title deepens the line by Calibri's descent (Word probe)
-    const pageFont = right && runs.length > 1 ? runs[runs.length - 1].run.fonts.ascii : undefined
     return {
       kind: 'tocLine',
       left,
@@ -360,7 +351,6 @@ export function fieldDisplayOf(
       ...(sz > 0 ? { szHalfPoints: sz } : {}),
       ...(font ? { fontFamily: font } : {}),
       ...(font && eaFont ? { eaFontFamily: eaFont } : {}),
-      ...(font && pageFont && pageFont !== font ? { pageFontFamily: pageFont } : {}),
       ...(bold ? { bold } : {}),
       ...(runStyleId ? { runStyleId } : {}),
       ...(leader ? { leader } : {}),

@@ -68,9 +68,6 @@ describe('thinkingShapeFor', () => {
       levels: ['low', 'medium', 'high', 'xhigh', 'max'],
     })
     expect(thinkingShapeFor('claude-sonnet-4-6').levels).toEqual(['low', 'medium', 'high'])
-    for (const id of ['claude-fable-5-2', 'anthropic/claude-fable-5.2']) {
-      expect(thinkingShapeFor(id).levels).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
-    }
     // 4.5 and older reject `{ type: 'adaptive' }`: no knob at all
     expect(thinkingShapeFor('claude-sonnet-4-5').levels).toEqual([])
     expect(thinkingShapeFor('claude-opus-4-5').levels).toEqual([])

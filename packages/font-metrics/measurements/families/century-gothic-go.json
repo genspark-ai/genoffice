@@ -1,7 +1,5 @@
 {
   "family": "Century Gothic GO",
-  "standsInFor": "Century Gothic",
-  "standInChain": { "tail": "latin-sans" },
   "source": {
     "kind": "hmtx",
     "date": "2026-11-03",

@@ -273,22 +273,6 @@ export function usageCount(value: unknown): number | undefined {
   return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : undefined
 }
 
-/** OpenAI-shaped usage (Chat Completions and Responses name the same figures differently). */
-export function openAiUsage(
-  input: unknown,
-  output: unknown,
-  details: { cached_tokens?: unknown } | null | undefined,
-): AiTokenUsage | undefined {
-  const usage: AiTokenUsage = {}
-  const inputTokens = usageCount(input)
-  const outputTokens = usageCount(output)
-  const cached = usageCount(details?.cached_tokens)
-  if (inputTokens !== undefined) usage.inputTokens = inputTokens
-  if (outputTokens !== undefined) usage.outputTokens = outputTokens
-  if (cached !== undefined) usage.cacheReadTokens = cached
-  return inputTokens !== undefined || outputTokens !== undefined ? usage : undefined
-}
-
 /**
  * Models occasionally emit unescaped " inside string values (e.g. English quotes in Chinese copy).
  * Single-pass scan: a " inside a string whose next non-whitespace char is not structural gets escaped.

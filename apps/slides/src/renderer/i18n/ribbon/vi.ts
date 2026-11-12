@@ -54,7 +54,6 @@ export const vi = {
   ribbonFilePrint: 'In…',
   ribbonFileExportImages: 'Xuất dưới dạng PNG…',
   ribbonFileExportImagesJpg: 'Xuất dưới dạng JPG…',
-  ribbonFileExportVideo: 'Xuất dưới dạng video (MP4)…',
   ribbonUnsavedSuffix: ' — Chưa lưu',
   ribbonSaveTip: 'Lưu (⌘S)',
   ribbonAutoSave: 'Tự động lưu',

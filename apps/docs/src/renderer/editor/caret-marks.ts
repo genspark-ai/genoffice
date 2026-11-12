@@ -68,8 +68,6 @@ export const PARA_FORMAT_ATTRS = [
   'spaceAfter',
   'spaceBeforeAuto',
   'spaceAfterAuto',
-  'styleSpaceBeforeAuto',
-  'styleSpaceAfterAuto',
   'contextualSpacing',
   'bidi',
   'autoSpace',

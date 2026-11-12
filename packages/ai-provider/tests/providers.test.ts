@@ -188,8 +188,6 @@ describe('provider model catalog', () => {
     const anthropic = AI_PROVIDERS.find((provider) => provider.id === 'anthropic')!
     expect(anthropic.models.slice(0, 2)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
     expect(anthropic.defaultModel).toBe('claude-sonnet-5-5')
-    expect(anthropic.models.indexOf('claude-fable-5-2')).toBe(2)
-    expect(anthropic.models).toContain('claude-fable-5-1')
     const gemini = AI_PROVIDERS.find((provider) => provider.id === 'gemini')!
     expect(gemini.models.slice(0, 2)).toEqual(['gemini-4-argon', 'gemini-3.8-flash'])
     expect(gemini.defaultModel).toBe('gemini-3.8-flash')

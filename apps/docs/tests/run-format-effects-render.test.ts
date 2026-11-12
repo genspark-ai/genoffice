@@ -139,20 +139,4 @@ describe('Hyperlink style rendering', () => {
     ).dom as HTMLElement
     expect(dom.querySelector('.doc-toc-title')?.getAttribute('data-style')).toBe('Hyperlink')
   })
-
-  it('sizes a TOC line by the union of the title and page faces (Word probe 2026-11-07)', () => {
-    const render = (pageFontFamily?: string) =>
-      DOMSerializer.renderSpec(
-        document,
-        renderFieldSpec({
-          kind: 'tocLine',
-          left: 'Article 1',
-          right: '5',
-          fontFamily: 'Century Gothic',
-          ...(pageFontFamily ? { pageFontFamily } : {}),
-        }) as never,
-      ).dom as HTMLElement
-    expect(render('Calibri').style.getPropertyValue('--doc-line-factor')).toBe('1.2745')
-    expect(render().style.getPropertyValue('--doc-line-factor')).toBe('1.2261')
-  })
 })

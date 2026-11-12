@@ -174,7 +174,7 @@ describe('applyTextEdits translate (block move)', () => {
 describe('standard fonts on rebuild', () => {
   it('covers French text, the euro sign and the oe ligature in WinAnsi, not CJK', () => {
     expect(winAnsiCovers('Ligne réécrite, ŒUVRE à 5 € — « fin »')).toBe(true)
-    expect(winAnsiCovers('\u5e94\u4ed8')).toBe(false)
+    expect(winAnsiCovers('应付')).toBe(false)
     expect(winAnsiCovers('Ā')).toBe(false)
   })
 
@@ -184,7 +184,7 @@ describe('standard fonts on rebuild', () => {
     expect(keptStandardFont('Helvetica', true, {}, 'abc')).toBeNull()
     expect(keptStandardFont('Helvetica', false, { newFont: 'arial' }, 'abc')).toBeNull()
     expect(keptStandardFont('Helvetica', false, { newItalic: true }, 'abc')).toBeNull()
-    expect(keptStandardFont('Helvetica', false, {}, '\u5e94\u4ed8')).toBeNull()
+    expect(keptStandardFont('Helvetica', false, {}, '应付')).toBeNull()
     expect(keptStandardFont('ArialMT', false, {}, 'abc')).toBeNull()
     expect(keptStandardFont('Symbol', false, {}, 'abc')).toBeNull()
   })

@@ -5,7 +5,6 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { useImeEnterGuard } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { EDIT_INSTRUCTION_MAX, EDIT_QUEUE_MAX, truncate } from '../ai/edit-queue'
 
@@ -98,7 +97,6 @@ export function AiAskPopover({
   const [rect, setRect] = useState<AnchorRect | null>(() => getAnchorRect())
   const boxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const ime = useImeEnterGuard()
   const textRef = useRef(text)
   textRef.current = text
 
@@ -211,10 +209,8 @@ export function AiAskPopover({
         maxLength={EDIT_INSTRUCTION_MAX}
         placeholder={t('aiAskPlaceholder')}
         onChange={(e) => setText(e.target.value)}
-        onCompositionStart={ime.handleCompositionStart}
-        onCompositionEnd={ime.handleCompositionEnd}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !ime.isImeConfirm(e.nativeEvent)) {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
             e.preventDefault()
             if (!canSubmit) return
             if (queueBlocked) onSendNow(text.trim())

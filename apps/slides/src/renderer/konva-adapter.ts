@@ -1093,9 +1093,8 @@ export function clrChangeImage(
     const [fr, fg, fb] = [hex(f, 0), hex(f, 2), hex(f, 4)]
     const [tr, tg, tb] = [hex(t, 0), hex(t, 2), hex(t, 4)]
     const ta = t.length >= 8 ? hex(t, 6) : 255
-    // PowerPoint keys JPEG ringing around the transparent colour too; 8 leaves
-    // visible 8x8 blocks, 16 matches its output on a scanned stamp
-    const TOL = 16
+    // small per-channel tolerance absorbs rasterizer rounding (metafile conversions)
+    const TOL = 4
     try {
       const data = ctx.getImageData(0, 0, c.width, c.height)
       const px = data.data
@@ -1534,14 +1533,6 @@ const FONT_STACK: Record<string, string> = {
   simhei: "SimHei, 'Heiti SC', sans-serif",
   楷体: "KaiTi, 'Kaiti SC', serif",
   仿宋: "FangSong, 'Songti SC', serif",
-  '\u534e\u6587\u6977\u4f53': "STKaiti, 'Kaiti SC', KaiTi, serif",
-  stkaiti: "STKaiti, 'Kaiti SC', KaiTi, serif",
-  '\u534e\u6587\u5b8b\u4f53': "STSong, 'Songti SC', SimSun, serif",
-  stsong: "STSong, 'Songti SC', SimSun, serif",
-  '\u534e\u6587\u4e2d\u5b8b': "STZhongsong, STSong, 'Songti SC', SimSun, serif",
-  '\u534e\u6587\u884c\u6977': "STXingkai, 'Xingkai SC', KaiTi, serif",
-  '\u534e\u6587\u4eff\u5b8b': "STFangsong, FangSong, 'Songti SC', serif",
-  '\u534e\u6587\u9ed1\u4f53': "STHeiti, SimHei, 'Heiti SC', sans-serif",
   等线: "DengXian, 'Microsoft YaHei', 'PingFang SC', sans-serif",
   dengxian: "DengXian, 'Microsoft YaHei', 'PingFang SC', sans-serif",
   // Western: consistent with the main-process metrics alias chain (calibri→Carlito→Arial etc.),

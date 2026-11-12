@@ -1,4 +1,4 @@
-/// The add_chart `columns` parameter (genoffice#2528): named columns of the dataRange —
+/// The add_chart `columns` parameter (#2528): named columns of the dataRange —
 /// first the labels, then one series each — so non-adjacent columns chart
 /// without copying data around, and the header/direction guesses are settled
 /// by the caller instead of detected from the data.

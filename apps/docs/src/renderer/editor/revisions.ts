@@ -227,15 +227,7 @@ function rejectedTextStyleAttrs(
   const size = old.sizeHalfPoints as number | undefined
   next.kern = wordKerns(kern ?? undefined, size ?? undefined) ?? null
   const scale = old.charScalePct as number | undefined
-  next.charScaleEm = scale
-    ? charScaleEm(text, scale, {
-        fontAscii: old.fontAscii as string | null,
-        font: old.font as string | null,
-        sizeHalfPoints: size ?? null,
-        bold: old.bold as boolean | null,
-        italic: old.italic as boolean | null,
-      })
-    : null
+  next.charScaleEm = scale ? charScaleEm(text, scale) : null
   return next
 }
 

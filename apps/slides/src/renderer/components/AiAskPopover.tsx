@@ -7,7 +7,6 @@
  * coordinates and refreshed while the canvas scrolls or zooms.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useAiPanelPrefs, useImeEnterGuard } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
 import {
   EDIT_INSTRUCTION_MAX,
@@ -66,7 +65,6 @@ interface TriggerProps {
 /** Floating Ask AI chip that follows the selected element(s), matching Docs. */
 export function AiAskTrigger({ getAnchorRect, onOpen }: TriggerProps): React.JSX.Element | null {
   const { t } = useI18n()
-  const showAskTrigger = useAiPanelPrefs().showAiAskTrigger
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const pointerDownRef = useRef(false)
@@ -109,9 +107,9 @@ export function AiAskTrigger({ getAnchorRect, onOpen }: TriggerProps): React.JSX
       document.removeEventListener('pointerup', onPointerUp, true)
       document.removeEventListener('pointercancel', onPointerUp, true)
     }
-  }, [getAnchorRect, showAskTrigger])
+  }, [getAnchorRect])
 
-  if (!pos || !showAskTrigger) return null
+  if (!pos) return null
   return (
     <button
       ref={btnRef}
@@ -165,7 +163,6 @@ export function AiAskPopover({
   const [rect, setRect] = useState<AnchorRect | null>(() => getAnchorRect())
   const boxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const ime = useImeEnterGuard()
 
   // Latest text without re-subscribing the outside-click listener on every keystroke
   const textRef = useRef(text)
@@ -282,10 +279,8 @@ export function AiAskPopover({
         maxLength={EDIT_INSTRUCTION_MAX}
         placeholder={t('aiAskPlaceholder')}
         onChange={(e) => setText(e.target.value)}
-        onCompositionStart={ime.handleCompositionStart}
-        onCompositionEnd={ime.handleCompositionEnd}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !ime.isImeConfirm(e.nativeEvent)) {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
             e.preventDefault()
             if (!canSubmit) return
             if (queueBlocked) onSendNow?.(text.trim())

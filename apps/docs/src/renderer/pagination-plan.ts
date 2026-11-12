@@ -54,10 +54,6 @@ export interface BlockPlan {
    *  top: the part its margin adds beyond the previous paragraph's space after
    *  (Word probe 2026-11-02: compat 14 after=200 -> before=400 keeps 10 pt) */
   forcedLeadSpacePt?: number
-  /** space before (pt) the first paragraph of a forced section start keeps at the
-   *  page top: the same excess over the previous paragraph's space after (Word
-   *  probe 2026-11-08, every compat mode); 0 trims the margin away */
-  sectionLeadSpacePt?: number
   /** w:tblpPr geometry of a table block (the data-tblp-* twins) */
   tableGeom?: PlanFloatGeom
   /** anchored-drawing geometry of a picture / text-box block */
@@ -360,7 +356,7 @@ function paraSpaceBeforePt(
   props: PlanProps,
 ): number | undefined {
   const a = node.attrs
-  const auto = a.spaceBeforeAuto ?? eff?.spacing.beforeAuto ?? !!a.styleSpaceBeforeAuto
+  const auto = a.spaceBeforeAuto ?? (a.spaceBefore == null && eff?.spacing.beforeAuto) ?? false
   let pt: number | undefined
   if (auto) pt = props.autoSpacingPt
   else if (a.spaceBefore != null) pt = Number(a.spaceBefore) / 20
@@ -394,7 +390,7 @@ function prevSpaceAfterPt(prev: PmNode | undefined, props: PlanProps): number {
   const a = prev.attrs
   const idx = typeof a.docxIndex === 'number' ? (a.docxIndex as number) : undefined
   const eff = idx === undefined ? undefined : props.paraEffective(idx)
-  const auto = a.spaceAfterAuto ?? eff?.spacing.afterAuto ?? !!a.styleSpaceAfterAuto
+  const auto = a.spaceAfterAuto ?? (a.spaceAfter == null && eff?.spacing.afterAuto) ?? false
   if (auto) return props.autoSpacingPt
   if (a.spaceAfter != null) return Number(a.spaceAfter) / 20
   return (eff?.spacing.after ?? 0) / 20
@@ -465,15 +461,10 @@ export function buildBlockPlan(
       const pageBreakBefore = direct || inheritedFlag(eff, 'pageBreakBefore')
       const leadingBr = c.hasText && c.leading > 0 && !c.leadingCut
       const spaceBeforePt = paraSpaceBeforePt(node, eff, prev, index, props)
-      const sectionFirst = docxIndex !== undefined && !!props.forcedSectionStarts?.has(docxIndex)
-      const leadExcessPt =
-        index > 0 && spaceBeforePt
+      const forcedLeadSpacePt =
+        pageBreakBefore && props.pageBreakBeforeKeepsSpace && index > 0 && spaceBeforePt
           ? Math.max(0, Math.round((spaceBeforePt - prevSpaceAfterPt(prev, props)) * 10) / 10)
           : undefined
-      const forcedLeadSpacePt =
-        pageBreakBefore && props.pageBreakBeforeKeepsSpace ? leadExcessPt : undefined
-      const sectionLeadSpacePt =
-        sectionFirst && !forcedLeadSpacePt && leadExcessPt !== undefined ? leadExcessPt : undefined
       plan = {
         ...base,
         kind: 'para',
@@ -497,7 +488,6 @@ export function buildBlockPlan(
           (docxIndex !== undefined && props.forcedSectionStarts?.has(docxIndex))
         ),
         ...(forcedLeadSpacePt !== undefined ? { forcedLeadSpacePt } : {}),
-        ...(sectionLeadSpacePt !== undefined ? { sectionLeadSpacePt } : {}),
       }
     } else {
       const field = node.attrs.fieldDisplay as { kind?: string } | null

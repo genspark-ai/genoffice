@@ -67,45 +67,6 @@ describe('table styles in the editor', () => {
     expect(css).toMatch(/td p[^{]*\{[^}]*margin-bottom:0/)
   })
 
-  it('overrideTableStyleFontSizeAndJustification: a size Normal declares outranks the whole-table rPr size', async () => {
-    const SETTINGS_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
-    const URI = 'w:uri="http://schemas.microsoft.com/office/word"'
-    const stylesXml =
-      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-      '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
-      '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/>' +
-      '<w:rPr><w:sz w:val="22"/></w:rPr></w:style>' +
-      '<w:style w:type="table" w:styleId="LightList"><w:name w:val="Light List"/>' +
-      '<w:rPr><w:sz w:val="20"/></w:rPr></w:style>' +
-      '</w:styles>'
-    const table =
-      '<w:tbl><w:tblPr><w:tblStyle w:val="LightList"/></w:tblPr>' +
-      '<w:tr><w:tc><w:p><w:r><w:t>REQ</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
-    const settings = (compat: string) => ({
-      path: 'word/settings.xml',
-      xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ${SETTINGS_NS}><w:compat>${compat}</w:compat></w:settings>`,
-      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml',
-    })
-    const sel = '.doc-page table[data-tbl-style="LightList"]'
-    const cssOf = async (compat: string) =>
-      docStyleCss(
-        (await parseDocx(
-          await buildDocx({ bodyXml: table, stylesXml, extraParts: [settings(compat)] }),
-        )) as never,
-      )
-    // Word 2013+ document: Normal's 11pt lays the cell lines (corpus rows 24.5pt = 11 x 1.149 x 1.15 + 10)
-    expect(
-      await cssOf(
-        `<w:compatSetting w:name="compatibilityMode" ${URI} w:val="15"/>` +
-          `<w:compatSetting w:name="overrideTableStyleFontSizeAndJustification" ${URI} w:val="1"/>`,
-      ),
-    ).not.toContain(`${sel} td, ${sel} th { font-size:10pt`)
-    // legacy document: the table style's size still beats Normal
-    expect(
-      await cssOf(`<w:compatSetting w:name="compatibilityMode" ${URI} w:val="14"/>`),
-    ).toContain(`${sel} td, ${sel} th { font-size:10pt;--doc-base-fs:10pt }`)
-  })
-
   it('conditional tblStylePr pPr paints inline on the cell paragraph (display only, save untouched)', async () => {
     const style =
       '<w:style w:type="table" w:styleId="Cond"><w:name w:val="Cond"/>' +

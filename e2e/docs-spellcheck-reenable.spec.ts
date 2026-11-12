@@ -10,25 +10,8 @@ import { PNG } from 'pngjs'
 import type { Page } from '@playwright/test'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
 
-/**
- * Clipped to the window on purpose: the page is taller than the window, and
- * for an element screenshot Playwright resizes the viewport to fit it. The
- * editor answers a resize with a zoom re-fit, and on a slow machine that
- * lands mid-capture and the markers are gone from every later capture.
- */
 async function redCount(page: Page): Promise<number> {
-  const clip = await page.evaluate(() => {
-    const r = document.querySelector('.doc-page')!.getBoundingClientRect()
-    const x = Math.max(0, r.left)
-    const y = Math.max(0, r.top)
-    return {
-      x,
-      y,
-      width: Math.min(window.innerWidth, r.right) - x,
-      height: Math.min(window.innerHeight, r.bottom) - y,
-    }
-  })
-  const buf = await page.screenshot({ clip })
+  const buf = await page.locator('.doc-page').screenshot()
   const png = PNG.sync.read(buf)
   let n = 0
   for (let i = 0; i < png.data.length; i += 4) {

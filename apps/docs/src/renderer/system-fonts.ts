@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { setFontAliasLookup } from './text-layout/font-rules'
+import { setFontAliasLookup } from './line-metrics'
 
 let cached: readonly string[] | null = null
 let pending: Promise<readonly string[]> | null = null
@@ -52,19 +52,7 @@ async function queryAliases(names: readonly string[]): Promise<void> {
     covered.push(name)
   }
   if (!covered.length) return
-  for (const name of covered) answeredNames.add(name)
-  answerSeq++
   for (const listener of [...aliasListeners]) listener(covered)
-}
-
-const answeredNames = new Set<string>()
-let answerSeq = 0
-
-/** every name answered so far and the count of answers: a subscriber that
-    mounts after an answer landed replays it (the open fires the request before
-    the layout effect subscribes) */
-export function fontAliasAnswers(): { seq: number; names: readonly string[] } {
-  return { seq: answerSeq, names: [...answeredNames] }
 }
 
 /**

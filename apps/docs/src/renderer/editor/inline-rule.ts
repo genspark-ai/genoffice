@@ -1,5 +1,5 @@
 import type { Run } from '@genoffice/docx-engine'
-import { latinLineFactor } from '../text-layout/font-rules'
+import { latinLineFactor } from '../line-metrics'
 
 /** engine rule plus the run's Latin face: the rule line is one line of that face */
 export type InlineRule = NonNullable<NonNullable<Run['image']>['rule']> & { fontAscii?: string }

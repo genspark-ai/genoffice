@@ -1,14 +1,10 @@
 /**
- * Word pair-kerns Latin text only under w:kern (and only from its half-point size
+ * Word pair-kerns text only under w:kern (and only from its half-point size
  * threshold up); Chromium kerns every run by default. Document text therefore
- * renders with font-kerning:none unless the document, style or run asks;
- * complex-script runs keep the face's features (Word shapes them in full)
+ * renders with font-kerning:none unless the document, style or run asks
  * (SAS batch 2: unkerned Calibri lines 0.7-1.9px over a cell width wrapped in
  * Word but not in GenOffice).
  */
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { DOMSerializer } from '@tiptap/pm/model'
 import type { ParsedDocFull, StyleDisplay, StyleInfo, TextboxDisplay } from '@genoffice/docx-engine'
@@ -135,19 +131,5 @@ describe('run-level kerning', () => {
     expect(spans[0].style.fontKerning).toBe('normal')
     expect(spans[1].style.fontKerning).toBe('none')
     expect(spans[2].style.fontKerning).toBe('')
-  })
-})
-
-describe('complex-script spans', () => {
-  it('styles.css restores OpenType ligatures and kerning on cs runs', () => {
-    const css = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../src/renderer/styles.css'),
-      'utf8',
-    ).replace(/\/\*[\s\S]*?\*\//g, '')
-    const m = /:is\(\.doc-page, \.page-hf\) span:is\(\.doc-cs, \[data-cs\]\) \{([^}]*)\}/.exec(css)
-    expect(m).not.toBeNull()
-    expect(m![1]).toContain('font-variant-ligatures: normal')
-    expect(m![1]).toContain('font-feature-settings: normal')
-    expect(m![1]).toContain('font-kerning: normal')
   })
 })

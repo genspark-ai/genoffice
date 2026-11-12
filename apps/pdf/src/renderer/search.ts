@@ -1,7 +1,5 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { foldCase, isWordChar } from '@genoffice/ui'
-import { findPattern } from './redact-patterns'
-import type { RedactPattern } from './redact-patterns'
 
 /** One hit: original page + PDF user-space rects (multiple when spanning several text items) */
 export interface SearchMatch {
@@ -9,7 +7,7 @@ export interface SearchMatch {
   rects: [number, number, number, number][]
 }
 
-export interface IndexedItem {
+interface IndexedItem {
   start: number
   end: number
   x: number
@@ -132,26 +130,6 @@ export function createSearchIndexCache(): SearchIndexCache {
   }
 }
 
-/** PDF-space boxes covering chars [s, e) of a page, interpolated within each item by char ratio */
-export function rangeRects(
-  items: readonly IndexedItem[],
-  s: number,
-  e: number,
-): [number, number, number, number][] {
-  const rects: [number, number, number, number][] = []
-  for (const it of items) {
-    if (it.end <= s || it.start >= e) continue
-    const len = it.end - it.start
-    const lo = (Math.max(s, it.start) - it.start) / len
-    const hi = (Math.min(e, it.end) - it.start) / len
-    const x1 = it.x + it.w * lo
-    const x2 = it.x + it.w * hi
-    if (x2 - x1 < 0.01) continue
-    rects.push([x1, it.y, x2, it.y + it.h])
-  }
-  return rects
-}
-
 /** Full-text search with optional case/word modifiers; rects linearly interpolated within items by char ratio (approximate; bounding box for rotated glyphs) */
 export function searchInIndex(
   index: SearchIndex,
@@ -179,85 +157,20 @@ export function searchInIndex(
       }
       const e = s + q.length
       from = e
-      const rects = rangeRects(items, s, e)
+      const rects: [number, number, number, number][] = []
+      for (const it of items) {
+        if (it.end <= s || it.start >= e) continue
+        const len = it.end - it.start
+        const lo = (Math.max(s, it.start) - it.start) / len
+        const hi = (Math.min(e, it.end) - it.start) / len
+        const x1 = it.x + it.w * lo
+        const x2 = it.x + it.w * hi
+        if (x2 - x1 < 0.01) continue
+        rects.push([x1, it.y, x2, it.y + it.h])
+      }
       if (rects.length > 0) matches.push({ pageIndex, rects })
     }
     if (matches.length >= MAX_MATCHES) break
   }
   return matches
-}
-
-export interface PatternMatch extends SearchMatch {
-  pattern: RedactPattern
-  text: string
-  /** Part of the hit sits on a rotated run, whose interpolated box does not cover the glyphs */
-  rotated?: boolean
-}
-
-/** Every hit of the given sensitive-information patterns, page by page, capped like search */
-export function findPatternsInIndex(
-  index: SearchIndex,
-  patterns: readonly RedactPattern[],
-  skipPage: (pageIndex: number) => boolean = () => false,
-): PatternMatch[] {
-  const matches: PatternMatch[] = []
-  for (let pageIndex = 0; pageIndex < index.length; pageIndex++) {
-    if (skipPage(pageIndex)) continue
-    const { text, items } = index[pageIndex]!
-    for (const pattern of patterns) {
-      for (const [s, e] of findPattern(pattern, text)) {
-        const rects = rangeRects(items, s, e)
-        if (rects.length === 0) continue
-        const rotated = items.some((it) => it.rot && it.end > s && it.start < e)
-        matches.push({
-          pageIndex,
-          rects,
-          pattern,
-          text: text.slice(s, e),
-          ...(rotated ? { rotated: true } : {}),
-        })
-        if (matches.length >= MAX_MATCHES) return matches
-      }
-    }
-  }
-  return matches
-}
-
-/** Pad a text box so descenders and the interpolation slack at either end are covered */
-export function redactionRect([x1, y1, x2, y2]: [number, number, number, number]): [
-  number,
-  number,
-  number,
-  number,
-] {
-  const h = y2 - y1
-  return [x1 - h * 0.1, y1 - h * 0.25, x2 + h * 0.1, y2 + h * 0.05]
-}
-
-export interface PatternMarks {
-  marks: { pageIndex: number; rect: [number, number, number, number] }[]
-  /** Distinct hits that produced marks */
-  hits: number
-  /** Hits skipped because their text is rotated */
-  rotated: number
-  /** Hits dropped once `room` marks were used */
-  capped: boolean
-}
-
-/** Redaction marks for pattern hits, skipping rotated runs, at most `room` rects */
-export function patternMarks(matches: readonly PatternMatch[], room: number): PatternMarks {
-  const out: PatternMarks = { marks: [], hits: 0, rotated: 0, capped: false }
-  for (const m of matches) {
-    if (m.rotated) {
-      out.rotated++
-      continue
-    }
-    if (out.marks.length + m.rects.length > room) {
-      out.capped = true
-      break
-    }
-    for (const r of m.rects) out.marks.push({ pageIndex: m.pageIndex, rect: redactionRect(r) })
-    out.hits++
-  }
-  return out
 }

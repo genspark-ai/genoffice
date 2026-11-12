@@ -53,7 +53,6 @@ export const zhTW = {
   ribbonFilePrint: '列印…',
   ribbonFileExportImages: '匯出為 PNG…',
   ribbonFileExportImagesJpg: '匯出為 JPG…',
-  ribbonFileExportVideo: '匯出為影片 (MP4)…',
   ribbonUnsavedSuffix: ' — 未儲存',
   ribbonSaveTip: '儲存 (⌘S)',
   ribbonAutoSave: '自動儲存',

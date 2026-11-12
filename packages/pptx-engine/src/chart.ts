@@ -692,7 +692,7 @@ export function parseChartXml(
         !!c.stock,
       )
   } else parsePlotSeries(plot, kind, false, false, !!cartesian[0]?.stock)
-  // A plot with no series is still a chart (PowerPoint draws the frame, blank plot)
+  if (!series.length) return null
   if (!categories.length) {
     // With no category cache, keep names empty (length from the longest series); never inject placeholders
     let n = 0

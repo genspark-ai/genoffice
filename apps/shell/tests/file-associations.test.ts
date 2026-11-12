@@ -42,25 +42,23 @@ describe('packaged file associations', () => {
     }
   })
 
-  it('gives the legacy Office associations their binary mimeType and the OOXML icon', () => {
-    const legacy = [
-      { ext: 'doc', mimeType: 'application/msword', icon: 'docx' },
-      { ext: 'dot', mimeType: 'application/msword', icon: 'docx' },
-      { ext: 'ppt', mimeType: 'application/vnd.ms-powerpoint', icon: 'pptx' },
-    ]
-    for (const { ext, mimeType, icon } of legacy) {
+  it('gives the legacy Word associations the Word mimeType', () => {
+    for (const ext of ['doc', 'dot']) {
       const association = config.fileAssociations.find(
         (entry: { ext: string }) => entry.ext === ext,
       )
       expect(association, `no file association declared for .${ext}`).toBeTruthy()
-      expect(association.mimeType, `.${ext} Linux desktop entry mimeType`).toBe(mimeType)
-      expect(association.icon).toBe(icon)
+      expect(
+        association.mimeType,
+        `.${ext} must declare application/msword for the Linux desktop entry`,
+      ).toBe('application/msword')
+      expect(association.icon).toBe('docx')
     }
   })
 
-  it('keeps plain text, JSON and legacy .doc/.dot/.ppt off the Windows default list', () => {
+  it('keeps plain text, JSON and legacy .doc/.dot off the Windows default list', () => {
     const winExts = config.win.fileAssociations.map((entry: { ext: string }) => entry.ext)
-    for (const ext of ['txt', 'json', 'doc', 'dot', 'ppt']) {
+    for (const ext of ['txt', 'json', 'doc', 'dot']) {
       expect(winExts, `.${ext} must not become a Windows default opener`).not.toContain(ext)
     }
     for (const ext of ['docx', 'xlsx', 'pptx', 'pdf', 'md', 'html']) {

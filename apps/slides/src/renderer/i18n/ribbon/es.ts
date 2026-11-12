@@ -56,7 +56,6 @@ export const es = {
   ribbonFilePrint: 'Imprimir…',
   ribbonFileExportImages: 'Exportar como PNG…',
   ribbonFileExportImagesJpg: 'Exportar como JPG…',
-  ribbonFileExportVideo: 'Exportar como video (MP4)…',
   ribbonUnsavedSuffix: ' — Sin guardar',
   ribbonSaveTip: 'Guardar (⌘S)',
   ribbonAutoSave: 'Autoguardado',

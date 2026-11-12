@@ -1,4 +1,3 @@
-import { SEG_BREAKABLE_RE } from '../text-layout/script-rules'
 import { Extension, type Editor } from '@tiptap/core'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
@@ -48,7 +47,6 @@ export const SearchHighlightExtension = Extension.create({
               return DecorationSet.create(
                 tr.doc,
                 meta.ranges.map((r, i) =>
-                  // inline-rules: allow — search highlight
                   Decoration.inline(r.from, r.to, {
                     class: i === meta.activeIndex ? 'search-hit search-hit-active' : 'search-hit',
                   }),
@@ -88,7 +86,6 @@ export const PendingCommentHighlightExtension = Extension.create({
             if (meta === null) return DecorationSet.empty
             if (meta) {
               return DecorationSet.create(tr.doc, [
-                // inline-rules: allow — pending comment range
                 Decoration.inline(meta.from, meta.to, { class: 'comment-pending' }),
               ])
             }
@@ -139,7 +136,6 @@ export const ResolvedCommentsExtension = Extension.create({
                 .filter(Boolean)
               if (ids.length === 0 || !ids.every((id) => done.has(id))) return
               decos.push(
-                // inline-rules: allow — resolved comment range
                 Decoration.inline(pos, pos + node.nodeSize, { class: 'doc-comment-resolved' }),
               )
             })
@@ -473,6 +469,9 @@ function tabGlyphLeft(view: EditorView, pos: number): number | null {
   return rect ? rect.left : null
 }
 
+/** inner whitespace or CJK text: a wrap opportunity inside the tab segment */
+const SEG_BREAKABLE_RE = /\s|[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/
+
 /**
  * Leader width (layout px): the free width of the title's last line when the
  * page number fits before the right tab stop; else the "leader + page" unit
@@ -715,7 +714,6 @@ class TabLayoutView {
       const box = fixed ? ' doc-tab-fixed' : ''
       const wrap = t.wrap ? ' doc-tab-wrap' : ''
       decos.push(
-        // inline-rules: allow — maps the tab layout's result for one tab character
         Decoration.inline(
           t.pos,
           t.pos + 1,
@@ -1164,7 +1162,6 @@ export const WsRunLineHeightExtension = Extension.create({
             (m) => m.type.name === 'docTextStyle' && (m.attrs.sizeHalfPoints || m.attrs.styleId),
           )
           if (!styled) return
-          // inline-rules: allow — formatting-mark display of a whitespace run
           decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'doc-ws-run' }))
         }),
       ),

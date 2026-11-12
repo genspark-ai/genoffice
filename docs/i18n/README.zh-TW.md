@@ -261,12 +261,6 @@ Cursor 及任何其他 MCP 用戶端都能自行啟動 `genoffice mcp`，不必�
 </tr>
 </table>
 
-### 9 · 舊格式檔案 — 2000 年代的 `.doc`、`.xls` 和 `.ppt` 也能開啟
-
-Word 97–2003 的 `.doc`、Excel 的 `.xls` 或 PowerPoint 的 `.ppt` 會在本機轉換成 `.docx`、`.xlsx` 或 `.pptx` 副本後開啟，原檔案不會被改動。圖片、表格、公式、數字格式、填滿和版面配置都會保留。
-
-<img src="../assets/readme/legacy-formats-motion.webp" alt="GenOffice 依序開啟一份虛構的 2004 年度報告的 .ppt、.doc 和 .xls 檔案的縮時畫面，接著是同一張投影片在 PowerPoint 中的原件與在 GenOffice 中的轉換結果並排對照" width="100%">
-
 ## 為什麼選 GenOffice
 
 - **開源**，採用 Apache-2.0 授權，在 GitHub 上公開開發。

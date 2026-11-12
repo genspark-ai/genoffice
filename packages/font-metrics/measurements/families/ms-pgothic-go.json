@@ -1,7 +1,5 @@
 {
   "family": "MS PGothic GO",
-  "standsInFor": "MS PGothic",
-  "standInChain": { "tail": "ja-sans", "companions": ["MS PGothic JA GO"] },
   "source": {
     "kind": "probe",
     "date": "2026-09-03",

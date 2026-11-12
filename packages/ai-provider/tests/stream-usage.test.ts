@@ -44,7 +44,7 @@ describe('openai-compatible usage', () => {
         return okResponse(
           sseStream([
             'data: {"choices":[{"delta":{"content":"hi"}}]}',
-            'data: {"choices":[],"usage":{"prompt_tokens":123,"completion_tokens":45,"prompt_tokens_details":{"cached_tokens":100}}}',
+            'data: {"choices":[],"usage":{"prompt_tokens":123,"completion_tokens":45}}',
             'data: [DONE]',
             '',
           ]),
@@ -54,7 +54,7 @@ describe('openai-compatible usage', () => {
     const c = collector()
     await run('openai', c)
     expect(c.deltas.join('')).toBe('hi')
-    expect(c.usages).toEqual([{ inputTokens: 123, outputTokens: 45, cacheReadTokens: 100 }])
+    expect(c.usages).toEqual([{ inputTokens: 123, outputTokens: 45 }])
     expect(requests[0]!.stream_options).toEqual({ include_usage: true })
   })
 
@@ -166,9 +166,7 @@ describe('anthropic usage', () => {
     )
     const c = collector()
     await run('anthropic', c)
-    expect(c.usages).toEqual([
-      { inputTokens: 1000, outputTokens: 7, cacheReadTokens: 900, cacheWriteTokens: 95 },
-    ])
+    expect(c.usages).toEqual([{ inputTokens: 1000, outputTokens: 7 }])
   })
 })
 
@@ -182,7 +180,7 @@ describe('gemini usage', () => {
           okResponse(
             sseStream([
               'data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":2}}',
-              'data: {"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":34,"cachedContentTokenCount":8}}',
+              'data: {"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":34}}',
               '',
             ]),
           ),
@@ -191,6 +189,6 @@ describe('gemini usage', () => {
     const c = collector()
     await run('gemini', c)
     expect(c.deltas.join('')).toBe('hi')
-    expect(c.usages).toEqual([{ inputTokens: 12, outputTokens: 34, cacheReadTokens: 8 }])
+    expect(c.usages).toEqual([{ inputTokens: 12, outputTokens: 34 }])
   })
 })

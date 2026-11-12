@@ -14,8 +14,7 @@ import {
   type HfRowGeom,
 } from '../src/renderer/editor/hf-dom'
 import { fromHfParagraph, toStyleRecord } from '../src/renderer/editor/para-layout-spec'
-import { estimateHfHeight } from '../src/renderer/line-metrics'
-import { lineHeightFactor } from '../src/renderer/text-layout/font-rules'
+import { estimateHfHeight, lineHeightFactor } from '../src/renderer/line-metrics'
 
 const single = { style: 'single', szEighths: 12, color: 'auto' }
 

@@ -11,7 +11,7 @@ import { assertZipInflatesWithinLimits } from '@genoffice/zip-gate'
 import { createHash } from 'node:crypto'
 import { XMLParser } from 'fast-xml-parser'
 import type { SlideSize } from './types'
-import { asXmlNode, canonicalizeNsPrefixes, xmlArray } from './xml-utils'
+import { asXmlNode, xmlArray } from './xml-utils'
 
 const relsParser = new XMLParser({
   ignoreAttributes: false,
@@ -81,8 +81,7 @@ export class PackageArchive {
     for (const name of names) {
       const file = zip.files[name]
       if (file.dir) continue
-      const bytes = await file.async('uint8array')
-      entries.set(name, isXmlPart(name) ? canonicalXmlBytes(bytes) : bytes)
+      entries.set(name, await file.async('uint8array'))
     }
     // The JSZip object is not kept: it pins the caller's compressed bytes (a second copy of
     // every part next to the inflated entries) and nothing reads it after this point — saves
@@ -250,17 +249,6 @@ export class PackageArchive {
     }
     return layouts[0]
   }
-}
-
-function isXmlPart(name: string): boolean {
-  return /\.(xml|rels)$/i.test(name)
-}
-
-/** Only re-encodes when a prefix actually changed, so untouched parts stay byte-identical. */
-function canonicalXmlBytes(bytes: Uint8Array): Uint8Array {
-  const text = Buffer.from(bytes).toString('utf8')
-  const fixed = canonicalizeNsPrefixes(text)
-  return fixed === text ? bytes : new Uint8Array(Buffer.from(fixed, 'utf8'))
 }
 
 /** 'ppt/slides/slide1.xml' → 'ppt/slides/_rels/slide1.xml.rels' */

@@ -2697,77 +2697,6 @@
   font-display: block;
 }
 
-/* Caladea, the Cambria stand-in, has no Cyrillic, so every Cyrillic letter under
- * a Cambria chain (declared Cambria, or the missing-name fallback) fell to the
- * Noto Serif CJK tail, wider and in a different design. This family follows
- * Caladea in the Cambria chains: its rangeless faces are Caladea itself (same
- * line box, nothing new for the glyphs Caladea has) and the ranged faces are
- * Liberation Serif Cyrillic outlines scaled to Cambria's advances, one per cut.
- * 
- * Cambria Cyrillic GO: hmtx 2026-11-08
- * advance-matched Liberation Serif derivative (tools/build-metric-fonts.py) over the Cyrillic block: hmtx = Cambria DFonts advances; Word probe 2026-11-08 lays a 12 pt Cyrillic line in Cambria 270.8 pt wide where Times is 252.7
- * fonts: Cambria.ttc#0, Cambriab.ttf, Cambriai.ttf, Cambriaz.ttf (Word DFonts); LiberationSerif-Regular/Bold/Italic/BoldItalic.ttf */
-@font-face {
-  font-family: 'Cambria Cyrillic GO';
-  src: url('./Caladea-Regular.ttf');
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Cambria Cyrillic GO';
-  src: url('./Caladea-Bold.ttf');
-  font-weight: bold;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Cambria Cyrillic GO';
-  src: url('./Caladea-Italic.ttf');
-  font-weight: normal;
-  font-style: italic;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Cambria Cyrillic GO';
-  src: url('./Caladea-BoldItalic.ttf');
-  font-weight: bold;
-  font-style: italic;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Cambria Cyrillic GO';
-  src: url('./CambriaCyrillicGO-Regular.ttf');
-  unicode-range: U+0400-04FF;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Cambria Cyrillic GO';
-  src: url('./CambriaCyrillicGO-Bold.ttf');
-  unicode-range: U+0400-04FF;
-  font-weight: bold;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Cambria Cyrillic GO';
-  src: url('./CambriaCyrillicGO-Italic.ttf');
-  unicode-range: U+0400-04FF;
-  font-weight: normal;
-  font-style: italic;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Cambria Cyrillic GO';
-  src: url('./CambriaCyrillicGO-BoldItalic.ttf');
-  unicode-range: U+0400-04FF;
-  font-weight: bold;
-  font-style: italic;
-  font-display: block;
-}
-
 /* Century Gothic ships only inside Office (Word's DFonts), so Chromium fell to
  * the Helvetica-class sans: ~9% narrower per body line (hmtx of both fonts,
  * 2026-09-12). Its geometry is not a uniform scale of Liberation Sans (per glyph
@@ -3343,36 +3272,6 @@
   font-display: block;
 }
 
-/* Kristen ITC is an M365 cloud face Word downloads and renders real; macOS and
- * Chromium never see it, and its script PANOSE sent the name to the serif
- * fallback (Times, 24% narrower per line, so a 48-page corpus document lost a
- * page). The single Regular cut is advance-matched from Liberation Sans
- * (KristenITCGO-Regular.ttf); the rangeless face carries the non-Latin fallback
- * under the cloud font's hhea box. Registered weight-normal only: Word
- * synthesizes bold without changing advances.
- * 
- * Kristen ITC GO: hmtx 2026-11-08
- * advance-matched Liberation Sans derivative (tools/build-metric-fonts.py): hmtx = Kristen ITC cloud advances; corpus Word PDF 2026-11-08 paces the face at 0.49 em/char against the UA serif's 0.39, line box hhea 1.0278/0.332 (1.36)
- * fonts: Kristen ITC (Office CloudFonts cache); LiberationSans-Regular.ttf */
-@font-face {
-  font-family: 'Kristen ITC GO';
-  src: url('./LiberationSans-Regular.ttf');
-  ascent-override: 102.78%;
-  descent-override: 33.2%;
-  line-gap-override: 0%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Kristen ITC GO';
-  src: url('./KristenITCGO-Regular.ttf');
-  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0141-0142, U+0152-0153, U+0160-0161, U+0178, U+017D-017E, U+0192, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-
 /* Lucida Handwriting ships with Office (Word's DFonts) and Windows, not macOS
  * or Linux, so Chromium fell to the Helvetica-class sans: ~23% narrower per
  * body line and 1.15 pitch instead of its 1.3794. Against Liberation Sans
@@ -3839,7 +3738,6 @@
  * and punctuation ranges live in separate "JA GO" families so a dual-slot run
  * keeps only the Latin alias in its ascii head and its eastAsia face still owns
  * the kana. Real faces (Windows) precede these aliases in the chain.
- * Box: overrides divided by each face's size-adjust give every face the real hhea of Word's msgothic.ttc / msmincho.ttc (0.8594 / 0.1406, no line gap), the box the resolver and the grid strut already use; Liberation Mono at 83.333% sat at 0.6938 / 0.2502 and its offset centre padded mixed lines under a Cambria / Times / Arial strut (Word probe 2026-11-07).
  * 
  * MS Gothic GO: probe 2026-09-03
  * advances from Word msgothic.ttc confirmed by a Word probe: Latin monospaced 0.5em */
@@ -3848,9 +3746,6 @@
   src: url('./LiberationMono-Regular.ttf') format('truetype');
   size-adjust: 83.333%;
   unicode-range: U+0020-007E, U+00A0-00A6, U+00A9-00AF, U+00B2-00B3, U+00B5, U+00B7-00D6, U+00D8-00F6, U+00F8-00FF;
-  ascent-override: 103.13%;
-  descent-override: 16.87%;
-  line-gap-override: 0%;
   font-weight: normal;
   font-style: normal;
   font-display: block;
@@ -3859,9 +3754,6 @@
   font-family: 'MS Gothic GO';
   src: url('./NotoSansCJKsc-Regular-subset.woff2') format('woff2');
   unicode-range: U+00A7, U+00B1, U+00B6, U+00D7, U+00F7;
-  ascent-override: 85.94%;
-  descent-override: 14.06%;
-  line-gap-override: 0%;
   font-weight: normal;
   font-style: normal;
   font-display: block;
@@ -3871,16 +3763,12 @@
   src: url('./LiberationMono-Regular.ttf') format('truetype');
   size-adjust: 166.667%;
   unicode-range: U+00A8, U+00B0, U+00B4;
-  ascent-override: 51.56%;
-  descent-override: 8.44%;
-  line-gap-override: 0%;
   font-weight: normal;
   font-style: normal;
   font-display: block;
 }
 
 /* MS Mincho: the same fixed-pitch half-width Latin as MS Gothic (Word probe 2026-09-17)
- * Box: overrides divided by each face's size-adjust give every face the real hhea of Word's msgothic.ttc / msmincho.ttc (0.8594 / 0.1406, no line gap), the box the resolver and the grid strut already use; Liberation Mono at 83.333% sat at 0.6938 / 0.2502 and its offset centre padded mixed lines under a Cambria / Times / Arial strut (Word probe 2026-11-07).
  * 
  * MS Mincho GO: probe 2026-09-17
  * Word probe: the same fixed-pitch half-width Latin as MS Gothic */
@@ -3889,9 +3777,6 @@
   src: url('./LiberationMono-Regular.ttf') format('truetype');
   size-adjust: 83.333%;
   unicode-range: U+0020-007E, U+00A0-00A6, U+00A9-00AF, U+00B2-00B3, U+00B5, U+00B7-00D6, U+00D8-00F6, U+00F8-00FF;
-  ascent-override: 103.13%;
-  descent-override: 16.87%;
-  line-gap-override: 0%;
   font-weight: normal;
   font-style: normal;
   font-display: block;
@@ -3900,9 +3785,6 @@
   font-family: 'MS Mincho GO';
   src: url('./NotoSansCJKsc-Regular-subset.woff2') format('woff2');
   unicode-range: U+00A7, U+00B1, U+00B6, U+00D7, U+00F7;
-  ascent-override: 85.94%;
-  descent-override: 14.06%;
-  line-gap-override: 0%;
   font-weight: normal;
   font-style: normal;
   font-display: block;
@@ -3912,9 +3794,6 @@
   src: url('./LiberationMono-Regular.ttf') format('truetype');
   size-adjust: 166.667%;
   unicode-range: U+00A8, U+00B0, U+00B4;
-  ascent-override: 51.56%;
-  descent-override: 8.44%;
-  line-gap-override: 0%;
   font-weight: normal;
   font-style: normal;
   font-display: block;
@@ -4082,299 +3961,34 @@
   font-style: normal;
 }
 
-/* Simplified Arabic (M365 cloud face Word renders real) is a compact naskh. Class scales are harfbuzz shaped widths of the cloud cut over the stand-in, measured over two production Arabic bodies (57k letters, 2026-11-08) and checked against a Word for Mac PDF of 8 single-line sentences (Word = harfbuzz within 0.1%): Arabic letters 0.858 of the Noto Naskh subset (bold cut 0.880; weight-normal only so Blink synthesizes bold and bold runs keep the regular ratio), Arabic-Indic digits, Arabic punctuation (incl. the U+066A-066D separators) and the ornate brackets each on their own ratio; tatweel, ZWNJ and ZWJ stay in the letter face because Blink shapes each unicode-range face as its own run and a split joiner would break the cursive connection (the cloud tatweel is far narrower, 0.26 / 0.34, an accepted drift), and vs Liberation Sans/Helvetica: ASCII digits, Latin letters (mixed-case English prose, 0.922; the Noto subset has no Latin so the letters would otherwise leave the alias), space, dots, brackets, other punctuation, guillemets, dashes. The earlier single 0.800 / 0.924 ratio (2026-09-11 pangram) ran 6-13% wide on real text. Every face pins the Word hhea box.
- * 
- * Noto Naskh Arabic SA: hmtx 2026-11-08
- * hb-shape widths per class of two production Arabic bodies, cloud cut over the stand-in; Word PDF of 8 single lines = hb within 0.1%; box = hhea 2416/979 over 2048
- * fonts: Simplified Arabic (M365 cloud); NotoNaskhArabic-Regular-subset.woff2; LiberationSans-Regular.ttf */
+/* Noto Naskh Arabic SA: hmtx 2026-09-11
+ * hb-shape width of a long Arabic body, 0.924 (bold 0.916)
+ * fonts: Simplified Arabic (M365 cloud); NotoNaskhArabic-Regular-subset.woff2 */
 @font-face {
   font-family: 'Noto Naskh Arabic SA';
   src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
-  size-adjust: 85.8%;
-  unicode-range: U+0600-060B, U+060D-061A, U+061C-061E, U+0620-065F, U+066E-06EF, U+06FA-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FD3D, U+FD40-FDFF, U+FE70-FEFF, U+200C-200D;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic SA';
-  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
-  size-adjust: 117.15%;
-  unicode-range: U+0660-0669, U+06F0-06F9;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic SA';
-  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
-  size-adjust: 117.1%;
-  unicode-range: U+060C, U+061B, U+061F, U+066A-066D;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic SA';
-  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
-  size-adjust: 110.8%;
-  unicode-range: U+FD3E-FD3F;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic SA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 94.6%;
-  unicode-range: U+0030-0039;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic SA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 92.25%;
-  unicode-range: U+0041-005A, U+0061-007A;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic SA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 114.03%;
-  unicode-range: U+0020, U+00A0;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic SA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 114.7%;
-  unicode-range: U+002C, U+002E, U+003A, U+003B;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic SA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 95.1%;
-  unicode-range: U+0028-0029, U+005B, U+005D, U+007B, U+007D;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic SA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 94%;
-  unicode-range: U+0021-0027, U+002A-002B, U+002D, U+002F, U+003C-0040, U+005C, U+005E-0060, U+007C, U+007E;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic SA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 84.4%;
-  unicode-range: U+00AB, U+00BB;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic SA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 90%;
-  unicode-range: U+2010-2015;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic SA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 90%;
-  unicode-range: U+2022, U+2026;
-  ascent-override: 117.97%;
-  descent-override: 47.8%;
+  size-adjust: 92.4%;
   font-weight: normal;
   font-style: normal;
   font-display: block;
 }
 
-/* Traditional Arabic (M365 cloud face Word renders real) is a compact naskh. Class scales are harfbuzz shaped widths of the cloud cut over the stand-in, measured over two production Arabic bodies (57k letters, 2026-11-08) and checked against a Word for Mac PDF of 8 single-line sentences (Word = harfbuzz within 0.1%): Arabic letters 0.693 of the Noto Naskh subset (bold cut 0.736; weight-normal only so Blink synthesizes bold and bold runs keep the regular ratio), Arabic-Indic digits, Arabic punctuation (incl. the U+066A-066D separators) and the ornate brackets each on their own ratio; tatweel, ZWNJ and ZWJ stay in the letter face because Blink shapes each unicode-range face as its own run and a split joiner would break the cursive connection (the cloud tatweel is far narrower, 0.26 / 0.34, an accepted drift), and vs Liberation Sans/Helvetica: ASCII digits, Latin letters (mixed-case English prose, 0.906; the Noto subset has no Latin so the letters would otherwise leave the alias), space, dots, brackets, other punctuation, guillemets, dashes. The earlier single 0.800 / 0.924 ratio (2026-09-11 pangram) ran 6-13% wide on real text. Every face pins the Word hhea box.
+/* Stand-ins for Traditional/Simplified Arabic (compact Windows naskh faces
+ * Word downloads from M365 and renders real). Ratios are the shaped width of
+ * a long Arabic body in the cloud font vs the bundled Noto Naskh
+ * subset (harfbuzz over the real files, 2026-09-11): Traditional Arabic
+ * 0.800 (bold cut 0.834), Simplified Arabic 0.924 (bold 0.916). Registered
+ * weight-normal only so Blink still synthesizes bold; bold runs keep the
+ * regular ratio. Canvas measureText resolves the same @font-face, so metrics
+ * follow automatically.
  * 
- * Noto Naskh Arabic TA: hmtx 2026-11-08
- * hb-shape widths per class of two production Arabic bodies, cloud cut over the stand-in; Word PDF of 8 single lines = hb within 0.1%; box = hhea 2036/1025 over 2048
- * fonts: Traditional Arabic (M365 cloud); NotoNaskhArabic-Regular-subset.woff2; LiberationSans-Regular.ttf */
+ * Noto Naskh Arabic TA: hmtx 2026-09-11
+ * hb-shape width of a long Arabic body, 0.800 (bold 0.834)
+ * fonts: Traditional Arabic (M365 cloud); NotoNaskhArabic-Regular-subset.woff2 */
 @font-face {
   font-family: 'Noto Naskh Arabic TA';
   src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
-  size-adjust: 69.3%;
-  unicode-range: U+0600-060B, U+060D-061A, U+061C-061E, U+0620-065F, U+066E-06EF, U+06FA-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FD3D, U+FD40-FDFF, U+FE70-FEFF, U+200C-200D;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic TA';
-  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
-  size-adjust: 102.9%;
-  unicode-range: U+0660-0669, U+06F0-06F9;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic TA';
-  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
-  size-adjust: 102.5%;
-  unicode-range: U+060C, U+061B, U+061F, U+066A-066D;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic TA';
-  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
-  size-adjust: 110.8%;
-  unicode-range: U+FD3E-FD3F;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic TA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 88.13%;
-  unicode-range: U+0030-0039;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic TA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 90.6%;
-  unicode-range: U+0041-005A, U+0061-007A;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic TA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 87.77%;
-  unicode-range: U+0020, U+00A0;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic TA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 100%;
-  unicode-range: U+002C, U+002E, U+003A, U+003B;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic TA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 86.85%;
-  unicode-range: U+0028-0029, U+005B, U+005D, U+007B, U+007D;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic TA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 98.5%;
-  unicode-range: U+0021-0027, U+002A-002B, U+002D, U+002F, U+003C-0040, U+005C, U+005E-0060, U+007C, U+007E;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic TA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 73.2%;
-  unicode-range: U+00AB, U+00BB;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic TA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 95%;
-  unicode-range: U+2010-2015;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Noto Naskh Arabic TA';
-  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
-  size-adjust: 100%;
-  unicode-range: U+2022, U+2026;
-  ascent-override: 99.41%;
-  descent-override: 50.05%;
+  size-adjust: 80%;
   font-weight: normal;
   font-style: normal;
   font-display: block;
@@ -6024,66 +5638,6 @@
   ascent-override: 97.9%;
   descent-override: 35.1%;
   line-gap-override: 0%;
-  font-display: block;
-}
-
-/* Shonar Bangla is an M365 cloud face Word downloads and renders real; macOS and
- * Chromium never see it, so Bengali runs fell to Kohinoor Bangla, 1.34x the Word
- * line width, and a 38-page Bengali document wrapped to 40 pages. Its glyphs sit
- * small in the em: the Bengali block is 0.69 of Nirmala UI's advances at a
- * near-constant ratio (one size-adjusted GenOffice Bengali face per weight) and
- * its Latin is Times at 0.827 for every glyph (the rangeless Liberation Serif
- * faces, which also keep quotes and dashes off the CJK tail). Every face pins the
- * cloud font's hhea box (0.8081 / 0.4863 regular, 0.8403 / 0.4775 bold) divided
- * by its size-adjust. Word has no italic cut; both sides synthesize it.
- * 
- * Shonar Bangla GO: hmtx 2026-11-12
- * hb-shape widths of 207 Bengali paragraphs of a corpus document: Shonar Bangla over GenOffice Bengali 0.687 regular (p10-p90 0.674-0.706), 0.686 bold (0.673-0.700); hmtx of its Latin letters, digits, punctuation, quotes and space over Liberation Serif 0.827 for every glyph in both cuts; Word paces the face at its hhea box (10.5 pt at line 340 auto -> 19.7 pt)
- * fonts: Shonar Bangla Regular/Bold (Office CloudFonts cache); GenOfficeBengali-Regular/Bold.woff2; LiberationSerif-Regular/Bold.ttf */
-@font-face {
-  font-family: 'Shonar Bangla GO';
-  src: url('./LiberationSerif-Regular.ttf');
-  size-adjust: 82.7%;
-  ascent-override: 97.71%;
-  descent-override: 58.8%;
-  line-gap-override: 0%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Shonar Bangla GO';
-  src: url('./LiberationSerif-Bold.ttf');
-  size-adjust: 82.7%;
-  ascent-override: 101.61%;
-  descent-override: 57.74%;
-  line-gap-override: 0%;
-  font-weight: bold;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Shonar Bangla GO';
-  src: url('./GenOfficeBengali-Regular.woff2') format('woff2');
-  size-adjust: 68.7%;
-  unicode-range: U+0964-0965, U+0980-09FF, U+200C-200D;
-  ascent-override: 117.63%;
-  descent-override: 70.79%;
-  line-gap-override: 0%;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Shonar Bangla GO';
-  src: url('./GenOfficeBengali-Bold.woff2') format('woff2');
-  size-adjust: 68.6%;
-  unicode-range: U+0964-0965, U+0980-09FF, U+200C-200D;
-  ascent-override: 122.5%;
-  descent-override: 69.61%;
-  line-gap-override: 0%;
-  font-weight: bold;
-  font-style: normal;
   font-display: block;
 }
 

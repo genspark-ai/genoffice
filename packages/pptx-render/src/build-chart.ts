@@ -161,9 +161,6 @@ function buildChartNodeTitled(
   metrics: FontMetricsProvider,
   media?: MediaResolver,
 ): ChartRenderNode | null {
-  // Seriesless chart: PowerPoint exports a blank frame — no plot, not even the title
-  // (probe: title-only <c:barChart> with no <c:ser>); chartSpace fill/border still apply
-  if (!model.series.length) return emptyChartNode(id, sourceId, box)
   if (!model.title) {
     const node = buildChartNodeInner(id, sourceId, model, box, vp, metrics, media)
     if (node) extrudeBars(node, model)

@@ -1,7 +1,5 @@
 {
   "family": "David GO",
-  "standsInFor": "David",
-  "standInChain": { "tail": "latin-serif" },
   "source": {
     "kind": "hmtx",
     "date": "2026-11-03",

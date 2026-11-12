@@ -94,7 +94,6 @@ import type {
 import type { HeadlessExportTarget } from '@genoffice/electron-utils/headless-export'
 import type { FaceVerticalMetrics } from '@genoffice/font-metrics'
 import type { AiPanelPrefs } from '@genoffice/ui'
-import type { SaveAsExportFormat } from './save-as-format'
 
 export type { FaceVerticalMetrics }
 
@@ -528,8 +527,6 @@ export interface DesktopApi {
     ok: boolean
     path?: string
     error?: string
-    /** the dialog picked another format: nothing was written, export to `path` instead */
-    exportAs?: SaveAsExportFormat
     passwordIntentPending?: boolean
     dataUrl?: string
   }>

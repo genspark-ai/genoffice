@@ -2,7 +2,6 @@ import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import {
-  agentDisplayLabel,
   agentIds,
   agentTarget,
   bundledSkillFrom,
@@ -190,7 +189,7 @@ function install(
     if (!detected.has(t.id) && !force) {
       throw new CliError(
         EXIT.usage,
-        `${agentDisplayLabel(t)} is not installed on this machine (${t.skillsDir} would be created)`,
+        `${t.label} is not installed on this machine (${t.skillsDir} would be created)`,
         { agent: t.id, skills_dir: t.skillsDir },
         { reason: 'unsupported', suggestion: 'repeat with --force to create the folder anyway' },
       )
@@ -279,7 +278,7 @@ function refusalHint(status: SkillInstallState['status']): string {
 function row(target: AgentTarget | null, detected: boolean, state: SkillInstallState): AgentRow {
   return {
     agent: target?.id ?? null,
-    label: target ? agentDisplayLabel(target) : state.path,
+    label: target?.label ?? state.path,
     detected,
     skills_dir: target?.skillsDir ?? state.path.replace(/[\\/]genoffice[\\/]SKILL\.md$/, ''),
     status: state.status,

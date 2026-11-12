@@ -793,8 +793,6 @@ export const ar = {
   ribbonOutlineView: 'مخطط تفصيلي',
   ribbonOutlineViewTip:
     'عرض المخطط التفصيلي: إظهار التسلسل الهرمي للعناوين فقط؛ وتبقى العناوين قابلة للتحرير',
-  ribbonStoryView: 'عرض القصة',
-  ribbonStoryViewTip: 'عرض القصة: اكتب دون تنسيق المستند',
   ribbonReadMode: 'وضع القراءة',
   ribbonReadModeTip: 'وضع القراءة: إخفاء الشريط للتركيز على القراءة، اضغط Esc للخروج',
   ribbonPagePreview: 'معاينة الصفحات',

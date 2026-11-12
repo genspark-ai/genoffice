@@ -271,71 +271,6 @@ function planKeepWhole(
   return facts ? floatKeepWholeOf(facts) : undefined
 }
 
-/**
- * Space a cut table's phantom rows (page-gap rows, repeated-header clones)
- * take between its real rows beyond what their own rects report. A collapsed
- * row answers a zero rect while the table can still keep height for it, and
- * the clone the preview paints has no phantom rows at all: every block after
- * the table then sat one line below the clone (008, two cut tables, 19 px
- * each). Measured as the distance between the real rows the phantoms separate,
- * less the rows' own rects and the table's row spacing; zero when they collapse
- * cleanly.
- */
-export function phantomRowResidues(table: HTMLElement): GapRect[] {
-  const rows = Array.from(table.querySelectorAll<HTMLElement>('tr')).filter(
-    (tr) => tr.closest('table') === table,
-  )
-  if (!rows.some(isPhantomRow)) return []
-  const cs = getComputedStyle(table)
-  const spacing =
-    cs.borderCollapse === 'separate'
-      ? parseFloat(cs.borderSpacing.split(' ')[1] ?? cs.borderSpacing) || 0
-      : 0
-  const out: GapRect[] = []
-  let lastRealBottom: number | null = null
-  let phantomPx = 0
-  let pending = false
-  for (const tr of rows) {
-    const r = tr.getBoundingClientRect()
-    if (isPhantomRow(tr)) {
-      phantomPx += r.height
-      pending = true
-      continue
-    }
-    if (pending && lastRealBottom !== null) {
-      const height = r.top - lastRealBottom - spacing - phantomPx
-      if (height > 0) out.push({ top: lastRealBottom, height })
-    }
-    pending = false
-    phantomPx = 0
-    lastRealBottom = r.bottom
-  }
-  return out
-}
-
-export function phantomRowResiduePx(table: HTMLElement): number {
-  return phantomRowResidues(table).reduce((s, g) => s + g.height, 0)
-}
-
-const isPhantomRow = (tr: Element) =>
-  tr.classList.contains('page-gap') || tr.classList.contains('page-repeat-header')
-
-/** screen rect of an in-block gap, or of a cut table's phantom-row residue (`top` = where it sits) */
-export interface GapRect {
-  top: number
-  height: number
-}
-
-/** every in-block gap a block's rows / lines / markers must be read net of:
- *  the inline gap widgets' rects plus, for a table, the phantom-row residues */
-export function blockGapRects(el: HTMLElement, inlineGaps?: Iterable<Element>): GapRect[] {
-  const out: GapRect[] = []
-  for (const g of inlineGaps ?? el.querySelectorAll('.page-gap-inline'))
-    out.push(g.getBoundingClientRect())
-  if (el.tagName === 'TABLE') out.push(...phantomRowResidues(el))
-  return out
-}
-
 export function measureBlocks(
   pm: HTMLElement,
   origin: number,
@@ -348,11 +283,8 @@ export function measureBlocks(
   carryOf?: (pos: number) => number | undefined,
 ): MeasuredContent {
   const blocks: BlockBox[] = []
-  /** elements that became blocks (join tails look their head up here) */
-  const blockEls = new Set<HTMLElement>()
   const floats: FloatBox[] = []
   const sectBreaks = new Set<number>()
-  let unsavedSectBreaks = 0
   let totalHeight = 0
   let gapAccum = 0
   // float-carry spacer (split floating table): real flow space that moves the
@@ -390,9 +322,9 @@ export function measureBlocks(
         [gapInlinesByBlock, relImgsByBlock, relXImgsByBlock].every((m) => !m.get(el)?.length)
       // a chained middle paragraph (tail and head) was folded away: climb to its block
       let headEl = joinHeadOf(el)
-      while (headEl && !blockEls.has(headEl)) headEl = joinHeadOf(headEl)
-      if (plain && headEl) {
-        const prev = blocks.find((b) => b.el === headEl)!
+      while (headEl && !blocks.some((b) => b.el === headEl)) headEl = joinHeadOf(headEl)
+      const prev = headEl ? blocks.find((b) => b.el === headEl) : undefined
+      if (plain && prev) {
         const bottom = (rect.bottom - origin - gapAccum) / zoomFactor
         prev.height = Math.max(prev.height, bottom - prev.top)
         prev.domHeight = prev.height
@@ -478,7 +410,6 @@ export function measureBlocks(
     if (el.classList.contains('doc-protected-sectbreak')) {
       const idx = el.getAttribute('data-idx')
       if (idx) sectBreaks.add(parseInt(idx, 10))
-      else if (el.dataset.sectBreak) unsavedSectBreaks++
       continue
     }
     // Word ignores page-type w:br inside table cells, and breaks inside a
@@ -496,20 +427,9 @@ export function measureBlocks(
     // textbox whose anchor paragraph holds a page-type w:br or pageBreakBefore)
     // must still be seen
     if (rect.height <= 0 && !hasBreak && !pageBreakBefore) continue
-    blockEls.add(el)
     // in-block gaps from mid-paragraph page breaks: subtract from block height and add to the gap accumulator for later blocks
-    const gapRects = blockGapRects(el, gapInlinesByBlock.get(el) ?? [])
     let innerGap = 0
-    for (const g of gapRects) innerGap += g.height
-    const floatTable =
-      el.classList.contains('doc-table-float-left') ||
-      el.classList.contains('doc-table-float-right')
-    const floatFlowed = floatTable && el.classList.contains('doc-table-float-flow')
-    const floatPicture = /(?:^|\s)img-wrap-(?:square|tight|through)-(?:left|right)(?:\s|$)/.test(
-      el.className,
-    )
-    const floated =
-      floatPicture || el.classList.contains('doc-para-frame-float') || (floatTable && !floatFlowed)
+    for (const g of gapInlinesByBlock.get(el) ?? []) innerGap += g.getBoundingClientRect().height
     let top = (rect.top - anchorShiftPx(el) * zoomFactor - origin - gapAccum) / zoomFactor + nudge
     // a page-opening section clears the previous section's page-bottom float:
     // it starts where the shifted float ends, without the float's text distance
@@ -523,6 +443,7 @@ export function measureBlocks(
     // the plan's break facts apply when it saw the same break characters the
     // DOM holds (the shadow comparison keeps the two in step)
     const planned = plan && plan.breakCount === breakEls.length ? plan : undefined
+    const gapRects = (gapInlinesByBlock.get(el) ?? []).map((g) => g.getBoundingClientRect())
     const gapAbove = (y: number) => gapRects.reduce((s, g) => (g.top <= y ? s + g.height : s), 0)
     // Y of the line starting after a break: its ink top, element-relative and
     // net of inline gaps a previous pass already inserted there
@@ -631,8 +552,17 @@ export function measureBlocks(
       breakOnlyLineH = box / Math.max(1, autoLineMultOf(el))
     }
     const leadingBreak = hasText && leadingCount > 0 && !leadingCut
+    const floatTable =
+      el.classList.contains('doc-table-float-left') ||
+      el.classList.contains('doc-table-float-right')
+    const floatFlowed = floatTable && el.classList.contains('doc-table-float-flow')
     const lifted =
       el.dataset.anchorLiftBase !== undefined && (parseFloat(el.style.marginTop) || 0) < 0
+    const floatPicture = /(?:^|\s)img-wrap-(?:square|tight|through)-(?:left|right)(?:\s|$)/.test(
+      el.className,
+    )
+    const floated =
+      floatPicture || el.classList.contains('doc-para-frame-float') || (floatTable && !floatFlowed)
     // page/margin-anchored floated table: strip the applied --tblp-dy shift so
     // the engine sees the natural flow position (float margins move only the
     // float's own box, so no gapAccum contribution)
@@ -755,26 +685,18 @@ export function measureBlocks(
         }
       : scrapedFloat
     const carryAppliedPx = plan && carryOf ? (carryOf(plan.pos) ?? 0) : carryApplied
-    const unsavedBreaksBefore = unsavedSectBreaks
-    unsavedSectBreaks = 0
     blocks.push({
       top: top - relVApplied,
       height,
       domHeight: height,
-      ...(unsavedBreaksBefore ? { unsavedSectBreaksBefore: unsavedBreaksBefore } : {}),
-      ...(relVApplied ? { shiftAppliedPx: relVApplied } : {}),
       ...(padBeforePx > 0.5 ? { padBeforePx } : {}),
       ...(marginBeforePx !== undefined ? { marginBeforePx } : {}),
       ...(plan ? { dropAtPageTop: plan.dropAtPageTop } : {}),
       ...(plan?.forcedLeadSpacePt ? { forcedLeadSpacePx: (plan.forcedLeadSpacePt * 96) / 72 } : {}),
-      ...(plan?.sectionLeadSpacePt !== undefined
-        ? { sectionLeadSpacePx: (plan.sectionLeadSpacePt * 96) / 72 }
-        : {}),
       ...(floated ? { floated: true } : {}),
       ...(floatPicture
         ? { floatPicture: true, anchorDyPx: parseFloat(el.dataset.anchorDy ?? '') || 0 }
         : {}),
-      ...(el.dataset.anchorDy ? { anchorShifted: true } : {}),
       ...(floated && lifted ? { lifted: true } : {}),
       ...(floatTable ? { floatTable: true } : {}),
       ...plannedFloat,
@@ -1129,11 +1051,11 @@ export function tableHeaderFlags(tableXml: string): boolean[] {
 }
 
 /** In-block virtual offsets of the block's footnote markers (document order),
- *  same space as lineBoxes offsets (in-block inline gaps subtracted). The
- *  marker's vertical centre is used: a superscript box can poke above the line
- *  box it sits in and its top would map to the previous line. */
+ *  same space as lineBoxes offsets (in-block inline gaps subtracted). */
 export function noteRefOffsets(el: HTMLElement, zoomFactor: number): number[] {
-  const gaps = blockGapRects(el)
+  const gaps = Array.from(el.querySelectorAll('.page-gap-inline')).map((g) =>
+    g.getBoundingClientRect(),
+  )
   const gapAbove = (top: number) => gaps.reduce((s, g) => (g.top <= top ? s + g.height : s), 0)
   const elTop = el.getBoundingClientRect().top
   const out: number[] = []
@@ -1142,29 +1064,9 @@ export function noteRefOffsets(el: HTMLElement, zoomFactor: number): number[] {
   )) {
     if (sup.closest('.page-gap, .page-float-host, .page-repeat-header')) continue
     const r = sup.getBoundingClientRect()
-    out.push(((r.top + r.bottom) / 2 - elTop - gapAbove(r.top)) / zoomFactor)
+    out.push((r.top - elTop - gapAbove(r.top)) / zoomFactor)
   }
   return out
-}
-
-/** Pair the block's footnote reservations with its markers (both in document
- *  order) so the slicer and the page painter charge each note to the line
- *  holding its reference. A count mismatch keeps the block-level fallback
- *  (whole reservation on the paragraph's last line; a table's notes all on
- *  its first page). Idempotent: resolved bands are kept. */
-export function resolveNoteBands(
-  blocks: BlockBox[],
-  metaOf: BlockMetaOf | undefined,
-  zoomFactor = 1,
-): void {
-  for (const b of blocks) {
-    if (b.noteBands || !b.el || b.docxIndex === undefined) continue
-    const bands = metaOf?.(b.docxIndex)?.footnoteBands
-    if (!bands?.length) continue
-    const offsets = noteRefOffsets(b.el, zoomFactor)
-    if (offsets.length !== bands.length) continue
-    b.noteBands = bands.map((band, i) => ({ offset: offsets[i], height: band.heightPx }))
-  }
 }
 
 /** Inject parse-layer constraints into measured blocks (call before slicing; table row flags are applied by fillLineBoxes) */
@@ -1196,7 +1098,18 @@ export function applyBlockMeta(
       // printed three footnotes over the last body lines)
       b.height += meta.footnoteExtraPx
       b.footnoteExtraPx = (b.footnoteExtraPx ?? 0) + meta.footnoteExtraPx
+      // marker offsets pair with the per-ref heights (both in document order):
+      // a count mismatch keeps the block-level fallback (whole reservation on
+      // the paragraph's last line; a table's notes all on its first page)
+      if (meta.footnoteBands && b.el) {
+        const offsets = noteRefOffsets(b.el, zoomFactor)
+        if (offsets.length === meta.footnoteBands.length) {
+          b.noteBands = meta.footnoteBands.map((band, i) => ({
+            offset: offsets[i],
+            height: band.heightPx,
+          }))
+        }
+      }
     }
   }
-  resolveNoteBands(blocks, metaOf, zoomFactor)
 }

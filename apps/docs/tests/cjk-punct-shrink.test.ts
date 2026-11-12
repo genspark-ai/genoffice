@@ -6,8 +6,6 @@
  * start a line) compresses to about half width, a voluntary pull only lightly;
  * the ragged last line never compresses.
  */
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import {
@@ -367,16 +365,5 @@ describe('spacingHost', () => {
     ;(ea as HTMLElement).style.letterSpacing = '-5px'
     expect(baseOf(ea)).toBe(4)
     p.remove()
-  })
-})
-
-describe('native fullwidth-closer trimming', () => {
-  it('is off on every text surface so a line-final closer wraps with its predecessor', () => {
-    const css = readFileSync(resolve('src/renderer/styles.css'), 'utf8')
-    const rule = /\n((?:\.[\w-]+,\n)*\.[\w-]+) \{\n\s*text-spacing-trim: space-all;\n\}/.exec(css)
-    const roots = rule?.[1].split(',\n') ?? []
-    expect(roots).toEqual(
-      expect.arrayContaining(['.doc-page', '.pv-content', '.page-hf', '.doc-textbox-editor']),
-    )
   })
 })

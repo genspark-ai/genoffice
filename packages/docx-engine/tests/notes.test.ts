@@ -9,7 +9,7 @@ import {
   type SaveBlock,
 } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
-import { parseNoteSeparator, parseNotesXml } from '../src/notes'
+import { parseNotesXml } from '../src/notes'
 import { standaloneNoteParagraphReader } from '../src/parse'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
@@ -527,50 +527,5 @@ describe('rich-text footnote display runs', () => {
     const notes = parseNotesXml(footnotesXml, 'footnote', standaloneNoteParagraphReader())
     expect(notes).toHaveLength(1)
     expect(notes[0]!.text).toBe('A — B')
-  })
-})
-
-describe('separator paragraph', () => {
-  const part = (sep: string) =>
-    XML_DECL +
-    '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
-    `<w:footnote w:type="separator" w:id="-1"><w:p>${sep}<w:r><w:separator/></w:r></w:p></w:footnote>` +
-    '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:pPr><w:spacing w:before="900"/></w:pPr><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>' +
-    '<w:footnote w:id="1"><w:p><w:r><w:footnoteRef/></w:r><w:r><w:t>note</w:t></w:r></w:p></w:footnote>' +
-    '</w:footnotes>'
-
-  it('reads the separator entry\u2019s own paragraph spacing, not the continuation separator\u2019s', () => {
-    const sep = parseNoteSeparator(
-      part('<w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>'),
-      'footnote',
-      standaloneNoteParagraphReader(),
-    )
-    expect(sep?.spacing).toMatchObject({ afterTwips: 0, lineRule: 'auto', lineRawTwips: 240 })
-    expect(sep?.styleId).toBeUndefined()
-  })
-
-  it('a bare separator paragraph resolves through the defaults like any note paragraph', () => {
-    const sep = parseNoteSeparator(part(''), 'footnote', standaloneNoteParagraphReader())
-    expect(sep).toBeDefined()
-    expect(sep?.spacing?.lineRawTwips).toBeUndefined()
-  })
-
-  it('does not read a self-closing separator entry as the opener of the next entry', () => {
-    const xml =
-      XML_DECL +
-      '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
-      '<w:footnote w:type="separator" w:id="-1"/>' +
-      '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:pPr><w:spacing w:before="900"/></w:pPr><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>' +
-      '</w:footnotes>'
-    expect(parseNoteSeparator(xml, 'footnote', standaloneNoteParagraphReader())).toBeUndefined()
-  })
-
-  it('is absent when the part has no separator entry', () => {
-    const xml =
-      XML_DECL +
-      '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
-      '<w:footnote w:id="1"><w:p><w:r><w:footnoteRef/></w:r><w:r><w:t>note</w:t></w:r></w:p></w:footnote>' +
-      '</w:footnotes>'
-    expect(parseNoteSeparator(xml, 'footnote', standaloneNoteParagraphReader())).toBeUndefined()
   })
 })

@@ -257,11 +257,6 @@ export function IntegrationsPane({
                 <div className="set-field-text">
                   <div className="set-field-stack">
                     <div className="set-field-label">{row.label}</div>
-                    {row.readers && (
-                      <div className="set-field-desc">
-                        {t('intgSharedReaders', { list: row.readers.join(', ') })}
-                      </div>
-                    )}
                     <div className="set-field-desc set-intg-state" data-tip={state.path}>
                       {stateText(t, state, bundled)}
                     </div>

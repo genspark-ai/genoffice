@@ -973,7 +973,6 @@ export function TextEditOverlay({
           // extractParagraphs reads the root alignment back, so the fresh-shape preview
           // is also what gets committed
           ...(fresh ? { textAlign: 'center' as const } : {}),
-          fontKerning: 'normal',
           padding: `${insets.t}px ${insets.r}px ${insets.b}px ${insets.l}px`,
           fontSize: baseFontSize,
           fontFamily: baseFont,

@@ -16,7 +16,7 @@
           "--doc-grid-strut-tail:'Times New Roman'",
           "--doc-font-box:"
         ],
-        "styles": ["--doc-line-factor:1.1499", "--doc-strut:8pt", "font-size:var(--doc-strut)"]
+        "styles": ["--doc-line-factor:1.15", "--doc-strut:8pt", "font-size:var(--doc-strut)"]
       },
       "note": "strut face and factor follow the Times New Roman runs"
     },
@@ -26,7 +26,7 @@
       "para": 5,
       "expect": {
         "stylesStartWith": ["font-family:'Times New Roman'"],
-        "styles": ["--doc-line-factor:1.1499"]
+        "styles": ["--doc-line-factor:1.15"]
       }
     },
     {
@@ -35,7 +35,7 @@
       "para": 0,
       "expect": {
         "stylesStartWith": ["font-family:'Calibri'"],
-        "styles": ["--doc-line-factor:1.2207", "--doc-strut:8pt"]
+        "styles": ["--doc-line-factor:1.22", "--doc-strut:8pt"]
       }
     },
     {
@@ -44,7 +44,7 @@
       "para": 0,
       "expect": {
         "stylesStartWith": ["font-family:'Times New Roman'", "--doc-font-box:"],
-        "styles": ["--doc-line-factor:1.1499", "font-size:8pt"]
+        "styles": ["--doc-line-factor:1.15", "font-size:8pt"]
       },
       "note": "empty paragraph: the mark's face is the strut face too"
     },
@@ -54,7 +54,7 @@
       "para": 0,
       "expect": {
         "stylesStartWith": ["font-family:'Cambria'"],
-        "styles": ["--doc-line-factor:1.1724"]
+        "styles": ["--doc-line-factor:1.172"]
       }
     }
   ],

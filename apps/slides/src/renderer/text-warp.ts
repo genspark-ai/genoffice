@@ -26,7 +26,6 @@ let mctx: CanvasRenderingContext2D | null = null
 export function measureGlyph(text: string, g: GlyphDraw): number {
   mctx ??= document.createElement('canvas').getContext('2d')
   if (!mctx) return text.length * g.fontSize * 0.6
-  mctx.fontKerning = 'normal'
   mctx.font = `${g.fontStyle && g.fontStyle !== 'normal' ? g.fontStyle + ' ' : ''}${g.fontSize}px ${g.fontFamily}`
   return mctx.measureText(text).width
 }

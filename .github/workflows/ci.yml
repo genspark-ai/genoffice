@@ -104,39 +104,6 @@ jobs:
           fi
           npm run check:inline-rules
 
-      # The pagination preview / PDF export consume the canvas PageCut data
-      # (pagination-pass.ts); new lines there must not re-slice, re-measure or
-      # look pages up on their own.
-      - name: Check page-cut readers
-        env:
-          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
-          fi
-          npm run check:page-cut-readers
-
-      # Table column-width decisions (min/max-content, grid rewrites, tcW predicates)
-      # stay in apps/docs/src/renderer/table-layout/, not in the callers or the parser.
-      - name: Check table layout rules
-        env:
-          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
-          fi
-          npm run check:table-layout-rules
-
-      # Face / line-factor / chain decisions stay in text-layout/font-rules/
-      - name: Check font rules
-        env:
-          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          if [ -z "$FORMAT_BASE_REF" ] || ! git rev-parse --verify "$FORMAT_BASE_REF^{commit}" >/dev/null 2>&1; then
-            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
-          fi
-          npm run check:font-rules
-
       # Line-metric numbers (fonts.css size-adjust/overrides, knownLineFactor)
       # must cite the Word measurement they came from.
       - name: Check font-metric provenance

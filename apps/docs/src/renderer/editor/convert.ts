@@ -53,6 +53,7 @@ import {
   type SectionInfo,
   type TableCell,
   type TableModel,
+  type TableParagraph,
   type TextboxDisplay,
   type TextboxParaPatch,
   type TextboxParasPatchSet,
@@ -62,36 +63,25 @@ import {
 } from '@genoffice/docx-engine'
 import { t } from '../i18n/locale'
 import { symbolFontCovers } from '../font-check'
-import { charScaleEm, textHasComplexScript, wordKerns } from '../line-metrics'
+import {
+  canvasMetrics,
+  charScaleEm,
+  maxLineWidthPx,
+  maxWordWidthPx,
+  textHasComplexScript,
+  type FontMetricsProvider,
+  wordKerns,
+} from '../line-metrics'
 import { inferredBidi } from './direction'
 import { splitCellBoxGroup } from './protected-render'
 import { inlineMathML } from './equation'
 import { isStraightLineKind } from './shape-svg'
-import { borderDrawnPx, collapsedEdgePx } from './border-metrics'
+import { borderDrawnPx, borderTotalPt, collapsedEdgePx } from './border-metrics'
 import { parseRunBorderAttr } from './run-border'
 import { parseTextOutlineAttr } from './text-outline'
 import { charScaleXAttr, parseGlowAttr, parseTextEffectAttr } from './text-effects'
 import { SHAPE_INLINE_WRAP, shapeWrapOf } from './floating-z-order'
 import { holdsDeclaredWidth, resolveTableWidth } from './table-geometry'
-import {
-  DEFAULT_CELL_MAR,
-  gridFromEditorColumns,
-  budgetAvail,
-  sectionWidthBudget,
-  type RunDefaults,
-} from '../table-layout'
-import type { TableWidthBudget } from '../table-layout'
-
-// column-width algorithm: apps/docs/src/renderer/table-layout/ (tests import the old names from here)
-export {
-  clampTableColWidths,
-  distributeContentAutofit,
-  expandAutofitColWidths,
-  budgetAvail,
-  sectionWidthBudget,
-  type RunDefaults,
-  type TableWidthBudget,
-} from '../table-layout'
 import type { PictureLayer } from './image-rotation'
 import { tableFloatSideRoom } from './anchor-geometry'
 
@@ -122,17 +112,21 @@ export interface PmDocOptions {
   defaultRun?: RunDefaults
 }
 
+export interface RunDefaults {
+  sizeHalfPoints?: number
+  font?: string
+}
+
 export function pmDocOptions(parsed: {
   compatibilityMode?: number
-  docDefaults?: { sizeHalfPoints?: number; asciiFont?: string; eastAsiaLang?: string }
+  docDefaults?: { sizeHalfPoints?: number; asciiFont?: string }
 }): PmDocOptions {
-  const { sizeHalfPoints, asciiFont, eastAsiaLang } = parsed.docDefaults ?? {}
+  const { sizeHalfPoints, asciiFont } = parsed.docDefaults ?? {}
   return {
     legacyTableIndent: (parsed.compatibilityMode ?? 0) < 15,
     defaultRun: {
       ...(sizeHalfPoints ? { sizeHalfPoints } : {}),
       ...(asciiFont ? { font: asciiFont } : {}),
-      ...(eastAsiaLang ? { eastAsiaLang } : {}),
     },
   }
 }
@@ -204,14 +198,6 @@ function tableStyleParaAttr(eff: EffectivePPr | undefined): string | null {
   return Object.keys(t).length > 0 ? JSON.stringify(t) : null
 }
 
-function styleAutoUnderLiteral(
-  format: ParaFormat | undefined,
-  side: 'Before' | 'After',
-): true | null {
-  if (!format || format[`space${side}Auto`] != null || format[`space${side}`] == null) return null
-  return format.effective?.spacing[side === 'Before' ? 'beforeAuto' : 'afterAuto'] ? true : null
-}
-
 /** Display-only twin for runs: non-toggle rPr the table style resolves (size, face,
  * caps, spacing); bold/colour stay on the cell (styleBold/styleColor) and the style CSS */
 function tableStyleRunAttr(eff: EffectiveRPr | undefined): string | null {
@@ -243,8 +229,6 @@ function formatAttrs(format: ParaFormat | undefined, runs?: Run[]): Record<strin
     spaceAfter: format?.spaceAfter ?? null,
     spaceBeforeAuto: format?.spaceBeforeAuto ?? null,
     spaceAfterAuto: format?.spaceAfterAuto ?? null,
-    styleSpaceBeforeAuto: styleAutoUnderLiteral(format, 'Before'),
-    styleSpaceAfterAuto: styleAutoUnderLiteral(format, 'After'),
     contextualSpacing: format?.contextualSpacing ?? null,
     keepNext: format?.keepNext ?? null,
     keepLines: format?.keepLines ?? null,
@@ -295,6 +279,33 @@ function sectionRowCapTwips(
  * left page margin to the paper's right edge), centered ones spill both
  * margins symmetrically (paper = full page width, the hard compression cap);
  * fit = text column width, the target autofit growth is reclaimed back to */
+export interface TableWidthBudget {
+  avail: number
+  fit: number
+  paper: number
+}
+function sectionWidthBudget(
+  sections: SectionInfo[] | undefined,
+  docxIndex: number | null,
+): TableWidthBudget | null {
+  if (!sections?.length || docxIndex == null) return null
+  const sec =
+    sections.find((s) => docxIndex >= s.firstBlockIndex && docxIndex <= s.lastBlockIndex) ??
+    sections[sections.length - 1]
+  const paper = sec.settings.pageWidth
+  const avail = paper - sec.settings.marginLeft
+  if (avail <= 0) return null
+  const fit = avail - sec.settings.marginRight
+  return { avail, fit: fit > 0 ? fit : avail, paper }
+}
+
+/** centered tables (w:jc or w:tblpXSpec) spill both margins, so their growth bound is the paper width */
+export function budgetAvail(model: TableModel, budget: TableWidthBudget): number {
+  return model.align === 'center' || model.floatPos?.xSpec === 'center'
+    ? budget.paper
+    : budget.avail
+}
+
 /** Cap declared row heights (incl. nested tables); returns the input model when nothing exceeds the cap */
 export function capTableRowHeights(model: TableModel, capTwips: number): TableModel {
   let changed = false
@@ -315,6 +326,165 @@ export function capTableRowHeights(model: TableModel, capTwips: number): TableMo
     }),
   )
   return changed ? { ...model, rows, rowHeightsTwips } : model
+}
+
+const DEFAULT_CELL_MAR = 108
+/** compression floor for real columns (24px); sliver grid slots below it keep their width */
+const MIN_COL_TWIPS = 360
+
+function tableIndentTwips(model: TableModel): number {
+  return model.align !== 'center' && model.align !== 'right' && (model.indentTwips ?? 0) > 0
+    ? model.indentTwips!
+    : 0
+}
+
+/** nested tables are bounded by their cell's content width (grid slice minus
+ * side padding); without a usable grid the outer budget still bounds them */
+function mapNestedTables(
+  model: TableModel,
+  widths: number[] | undefined,
+  budget: number,
+  transform: (nt: TableModel, availTwips: number) => TableModel,
+): { rows: TableModel['rows']; changed: boolean } {
+  let changed = false
+  const rows = model.rows.map((row) => {
+    let column = 0
+    let cellChanged = false
+    const cells = row.map((cell) => {
+      const start = column
+      const span = cell.colSpan ?? 1
+      column += span
+      if (!cell.nestedTables?.length) return cell
+      const cols = widths?.slice(start, start + span) ?? []
+      const mar = cell.cellMarTwips ?? model.cellMarTwips
+      const pad = (mar?.left ?? DEFAULT_CELL_MAR) + (mar?.right ?? DEFAULT_CELL_MAR)
+      const cellWidth = cols.length === span ? cols.reduce((a, b) => a + b, 0) - pad : budget
+      if (cellWidth <= 0) return cell
+      const nested = cell.nestedTables.map((nt) => transform(nt, cellWidth))
+      if (nested.every((nt, i) => nt === cell.nestedTables![i])) return cell
+      cellChanged = true
+      return { ...cell, nestedTables: nested }
+    })
+    if (!cellChanged) return row
+    changed = true
+    return cells
+  })
+  return { rows, changed }
+}
+
+function withColWidths(
+  model: TableModel,
+  rows: TableModel['rows'],
+  widths: number[] | undefined,
+): TableModel {
+  if (!widths) return { ...model, rows }
+  const total = widths.reduce((a, b) => a + b, 0)
+  return {
+    ...model,
+    rows,
+    colWidthsTwips: widths,
+    ...(total > 0 ? { colWidthsPct: widths.map((w) => (w / total) * 100) } : {}),
+  }
+}
+
+/**
+ * Last-resort display clamp for grids wider than the hard cap (the paper width
+ * for top-level tables, the cell content width for nested ones — Word lets
+ * over-wide tables spill into the page margins, clipped at the paper, so
+ * merely exceeding the text column must not narrow columns and wrap their
+ * text onto extra lines). The cut comes proportionally out of the surplus
+ * over each column's min-content, so a garbage gridCol absorbs it while real
+ * columns keep their words unbroken. Fixed table layout grows past
+ * width/max-width to the sum of absolute column widths, so an unclamped
+ * garbage gridCol pushes content megapixels off page. Display-only like
+ * capTableRowHeights: untouched tables still save their original bytes, and
+ * structural rebuilds already regenerate the grid from these display widths
+ * (same as user column resizes, which are clamped too).
+ */
+export function clampTableColWidths(
+  model: TableModel,
+  capTwips: number,
+  metrics: FontMetricsProvider | null = canvasMetrics(),
+): TableModel {
+  const budget = capTwips - tableIndentTwips(model)
+  let widths = model.colWidthsTwips
+  let widthsChanged = false
+  if (widths && budget > 0 && widths.reduce((a, b) => a + b, 0) > budget) {
+    const mins = minContentColTwips(model, widths.length, metrics).map((m, i) =>
+      Math.min(Math.max(m, MIN_COL_TWIPS), budget, widths![i]),
+    )
+    const overflow = widths.reduce((a, b) => a + b, 0) - budget
+    const surplus = widths.map((w, i) => w - mins[i])
+    const totalSurplus = surplus.reduce((a, b) => a + b, 0)
+    if (totalSurplus > 0) {
+      const take = Math.min(overflow, totalSurplus)
+      widths = widths.map((w, i) => w - Math.round((surplus[i] / totalSurplus) * take))
+    }
+    // min-contents alone can exceed the cap: compress proportionally
+    const sum = widths.reduce((a, b) => a + b, 0)
+    if (sum > budget) {
+      const scale = budget / sum
+      widths = widths.map((w) => Math.max(1, Math.round(w * scale)))
+    }
+    widthsChanged = true
+  }
+  const { rows, changed: rowsChanged } = mapNestedTables(model, widths, budget, (nt, cap) =>
+    clampTableColWidths(nt, cap, metrics),
+  )
+  if (!widthsChanged && !rowsChanged) return model
+  return withColWidths(model, rows, widthsChanged ? widths : undefined)
+}
+
+/**
+ * Browser fallback faces run wider than the 0.52em heuristic average (Arial /
+ * Helvetica digits and most lowercase advance 0.556em, +7%); an under-floored
+ * column re-shatters the very word the floor exists for (RFP sample: two-digit
+ * row numbers broke one digit per line; Word grants that column ~11% over the
+ * estimate). Measured widths only need rounding headroom.
+ */
+const MIN_CONTENT_SLACK = 1.08
+const MEASURED_SLACK = 1.02
+/** collapsed half-borders plus px rounding eat ~1px per side of the measured word (CI cap tables shattered "Board") */
+const MEASURED_EDGE_PX = 2
+
+/** per grid column (twips): widest unbreakable word in single-span cells, plus side
+ * padding; `bare` drops the slack (a grid Word laid out already holds its words) */
+function minContentColTwips(
+  model: TableModel,
+  colCount: number,
+  metrics: FontMetricsProvider | null,
+  bare = false,
+  defaults?: RunDefaults,
+): number[] {
+  const slack = bare ? 1 : metrics ? MEASURED_SLACK : MIN_CONTENT_SLACK
+  const mins = new Array<number>(colCount).fill(0)
+  for (const row of model.rows) {
+    let column = 0
+    for (const cell of row) {
+      const start = column
+      column += cell.colSpan ?? 1
+      if ((cell.colSpan ?? 1) !== 1 || start >= colCount) continue
+      // merged-away and vertical-text cells don't demand word width
+      if (cell.vMerge === 'continue' || cell.textDirection) continue
+      const mar = cell.cellMarTwips ?? model.cellMarTwips
+      const pad = (mar?.left ?? DEFAULT_CELL_MAR) + (mar?.right ?? DEFAULT_CELL_MAR)
+      for (const nt of cell.nestedTables ?? []) {
+        const ntMin = nestedTableMinTwips(nt, metrics, defaults)
+        if (ntMin > 0) mins[start] = Math.max(mins[start], ntMin + pad)
+      }
+      let wordPx = cellMaxWordPx(cell, metrics, defaults)
+      if (wordPx <= 0) continue
+      if (metrics && !bare) wordPx += MEASURED_EDGE_PX
+      mins[start] = Math.max(mins[start], Math.ceil(wordPx * slack * 15) + pad)
+    }
+  }
+  return mins
+}
+
+/** the autofit reclaim pass never compresses a column below its min-content
+ * or MIN_COL_TWIPS; sliver slots already under that keep their width */
+function reclaimFloorTwips(width: number, minContent: number): number {
+  return Math.max(minContent, Math.min(width, MIN_COL_TWIPS))
 }
 
 /** w:tblCellSpacing: the table spans its w:tblGrid and the (n + 1) gaps of 2s come
@@ -342,6 +512,350 @@ export function cellSpacingBorderPx(colCount: number, borders: TableModel['borde
   )
 }
 
+/** side cell margins of a table's own cells (twips) */
+function sideMarginTwips(model: TableModel): number {
+  const mar = model.cellMarTwips
+  return (mar?.left ?? DEFAULT_CELL_MAR) + (mar?.right ?? DEFAULT_CELL_MAR)
+}
+
+/** narrowest width a nested table can take inside its cell: fixed grids keep
+ * their declared width, pct tables follow the cell, autofit ones shrink to
+ * every column's min-content (an empty cell keeps its side margins). Word
+ * straddles the outer vertical borders, so the box is half a border wider on
+ * each side (a regression sample: eight nesting levels, each parent column
+ * = nested grid + 216 + 10 twips for sz 4 borders). */
+function nestedTableMinTwips(
+  nt: TableModel,
+  metrics: FontMetricsProvider | null,
+  defaults?: RunDefaults,
+): number {
+  const widths = nt.colWidthsTwips
+  if (!widths?.length || nt.widthPct) return 0
+  const indent = tableIndentTwips(nt)
+  const border = ((borderTotalPt(nt.borders?.left) + borderTotalPt(nt.borders?.right)) / 2) * 20
+  // a nested dxa table keeps its declared width too: the parent column grows to
+  // it and the other columns give the growth back (probe 2026-10-29: nested dxa
+  // 6000 in a 5000 column -> 6226 = 6000 + 216 + border, siblings 2000/3000 -> 1536/2237)
+  if (nt.fixedLayout || nt.dxaWidth) return widths.reduce((a, b) => a + b, 0) + indent + border
+  const mins = minContentColTwips(nt, widths.length, metrics, false, defaults)
+  return (
+    mins.reduce((sum, m, i) => sum + nestedFloorTwips(widths[i], m, sideMarginTwips(nt)), 0) +
+    indent +
+    border
+  )
+}
+
+/** a nested table over its cell width shrinks each column to its min-content;
+ * an empty column keeps its side margins (Word: tcW 360/360 holding a nested
+ * table and "8" in a 544-twip cell -> 222/328), sliver grid slots keep their width */
+function nestedFloorTwips(width: number, minContent: number, sideMar: number): number {
+  return Math.max(minContent, Math.min(width, sideMar))
+}
+
+/** paragraph indent inside a cell eats line width like the word itself does;
+ * list fallbacks mirror the .doc-li per-level CSS defaults (0.55in + 0.3in/level) */
+function paraIndentPx(para: TableParagraph): number {
+  const leftTw = para.indentLeft ?? (para.list ? 792 + 432 * (para.list.ilvl || 0) : 0)
+  const firstTw = Math.max(para.indentFirstLine ?? 0, 0)
+  return Math.max(leftTw + firstTw, 0) / 15
+}
+
+type CellRuns = Parameters<typeof maxWordWidthPx>[0]
+
+/** widest paragraph of a cell (px), paragraph indent included. `word`: the
+ * widest unbreakable unit (min-content); `line`: the unwrapped line (max-content).
+ * An inline picture is an unbreakable unit of its own width; floating ones
+ * take no cell width. */
+function cellMeasurePx(
+  cell: TableCell,
+  mode: 'word' | 'line',
+  metrics: FontMetricsProvider | null,
+  defaults?: RunDefaults,
+): number {
+  const measureText = (runs: CellRuns) =>
+    mode === 'word'
+      ? metrics
+        ? maxWordWidthPx(runs, metrics)
+        : maxWordWidthPx(runs)
+      : metrics
+        ? maxLineWidthPx(runs, metrics)
+        : maxLineWidthPx(runs)
+  let max = 0
+  if (cell.richParas?.length) {
+    for (const para of cell.richParas) {
+      const runs: CellRuns = []
+      let imgMax = 0
+      let imgSum = 0
+      for (const r of para.runs) {
+        if (r.image && !r.image.wrap && (r.image.widthPx ?? 0) > 0) {
+          imgMax = Math.max(imgMax, r.image.widthPx!)
+          imgSum += r.image.widthPx!
+        }
+        if (!r.text) continue
+        // Latin words render in the ascii slot; `font` may be the East Asian face
+        const family = r.fontAscii ?? r.font ?? defaults?.font
+        const size = r.sizeHalfPoints ?? defaults?.sizeHalfPoints
+        runs.push({
+          text: r.text,
+          ...(family ? { fontFamily: family } : {}),
+          ...(size ? { sizeHalfPoints: size } : {}),
+          ...(r.bold ? { bold: true } : {}),
+          ...(r.italic ? { italic: true } : {}),
+        })
+      }
+      const textPx = runs.length ? measureText(runs) : 0
+      const px = mode === 'word' ? Math.max(textPx, imgMax) : textPx + imgSum
+      if (px <= 0) continue
+      max = Math.max(max, px + paraIndentPx(para))
+    }
+  } else {
+    for (const text of cell.paras) {
+      if (!text) continue
+      max = Math.max(
+        max,
+        measureText([
+          {
+            text,
+            ...(cell.bold ? { bold: true } : {}),
+            ...(defaults?.font ? { fontFamily: defaults.font } : {}),
+            ...(defaults?.sizeHalfPoints ? { sizeHalfPoints: defaults.sizeHalfPoints } : {}),
+          },
+        ]),
+      )
+    }
+  }
+  return max
+}
+
+function cellMaxWordPx(
+  cell: TableCell,
+  metrics: FontMetricsProvider | null,
+  defaults?: RunDefaults,
+): number {
+  return cellMeasurePx(cell, 'word', metrics, defaults)
+}
+
+/** widest a nested table wants to be in its cell (twips): its grid plus indent
+ * and the straddled outer borders; pct tables follow the cell (0) */
+function nestedTablePreferredTwips(nt: TableModel): number {
+  const widths = nt.colWidthsTwips
+  if (!widths?.length || nt.widthPct) return 0
+  const border = ((borderTotalPt(nt.borders?.left) + borderTotalPt(nt.borders?.right)) / 2) * 20
+  return widths.reduce((a, b) => a + b, 0) + tableIndentTwips(nt) + border
+}
+
+/** per grid column (twips): widest unwrapped paragraph in single-span cells plus
+ * side padding (max-content) */
+function maxContentColTwips(
+  model: TableModel,
+  colCount: number,
+  metrics: FontMetricsProvider | null,
+  defaults?: RunDefaults,
+): number[] {
+  const slack = metrics ? MEASURED_SLACK : MIN_CONTENT_SLACK
+  const maxes = new Array<number>(colCount).fill(0)
+  for (const row of model.rows) {
+    let column = 0
+    for (const cell of row) {
+      const start = column
+      column += cell.colSpan ?? 1
+      if ((cell.colSpan ?? 1) !== 1 || start >= colCount) continue
+      if (cell.vMerge === 'continue' || cell.textDirection) continue
+      const mar = cell.cellMarTwips ?? model.cellMarTwips
+      const pad = (mar?.left ?? DEFAULT_CELL_MAR) + (mar?.right ?? DEFAULT_CELL_MAR)
+      for (const nt of cell.nestedTables ?? []) {
+        const ntMax = Math.max(
+          nestedTablePreferredTwips(nt),
+          nestedTableMinTwips(nt, metrics, defaults),
+        )
+        if (ntMax > 0) maxes[start] = Math.max(maxes[start], ntMax + pad)
+      }
+      let linePx = cellMeasurePx(cell, 'line', metrics, defaults)
+      if (linePx <= 0) continue
+      if (metrics) linePx += MEASURED_EDGE_PX
+      maxes[start] = Math.max(maxes[start], Math.ceil(linePx * slack * 15) + pad)
+    }
+  }
+  return maxes
+}
+
+/**
+ * Word autofit for a table whose cells carry no w:tcW (probe 2026-10-20, pct
+ * 100/50 tables, uniform and skewed grids): the grid is ignored and the table
+ * width is shared like CSS auto layout - over the max-content sum the extra is
+ * split in proportion to each column's max-content; under it every column
+ * starts at its min-content and the rest is split by (max - min).
+ */
+export function distributeContentAutofit(
+  tableTwips: number,
+  mins: number[],
+  maxes: number[],
+): number[] {
+  const n = mins.length
+  const lo = mins.map((m) => Math.max(1, m))
+  const hi = maxes.map((m, i) => Math.max(m, lo[i]))
+  const sumLo = lo.reduce((a, b) => a + b, 0)
+  const sumHi = hi.reduce((a, b) => a + b, 0)
+  let widths: number[]
+  if (tableTwips >= sumHi) {
+    const extra = tableTwips - sumHi
+    widths = hi.map((h) => h + (sumHi > 0 ? (extra * h) / sumHi : extra / n))
+  } else if (tableTwips > sumLo) {
+    const room = tableTwips - sumLo
+    const slack = hi.map((h, i) => h - lo[i])
+    const sumSlack = slack.reduce((a, b) => a + b, 0)
+    widths = lo.map((l, i) => l + (sumSlack > 0 ? (room * slack[i]) / sumSlack : room / n))
+  } else {
+    const scale = sumLo > 0 ? tableTwips / sumLo : 1
+    widths = lo.map((l) => l * scale)
+  }
+  const rounded = widths.map((w) => Math.max(1, Math.round(w)))
+  const drift = tableTwips - rounded.reduce((a, b) => a + b, 0)
+  if (drift !== 0 && rounded.length) {
+    let widest = 0
+    rounded.forEach((w, i) => {
+      if (w > rounded[widest]) widest = i
+    })
+    rounded[widest] = Math.max(1, rounded[widest] + drift)
+  }
+  return rounded
+}
+
+/**
+ * Word autofit (tblW auto/absent, no fixed tblLayout): a column grows to its
+ * min-content — the widest unbreakable word — so narrow declared widths don't
+ * shatter words char by char (heuristic estimate, see maxWordWidthPx). Growth
+ * past the fit width, like a declared total already past it, is reclaimed
+ * proportionally from columns with surplus over their own min-content; any
+ * remainder spills and is bounded by clampTableColWidths. Display-only, like
+ * the clamp.
+ */
+export function expandAutofitColWidths(
+  model: TableModel,
+  availTwips: number,
+  fitTwips: number = availTwips,
+  metrics: FontMetricsProvider | null = canvasMetrics(),
+  nested = false,
+  legacy = false,
+  defaults?: RunDefaults,
+): TableModel {
+  const indent = tableIndentTwips(model)
+  const budget = availTwips - indent
+  let widths = model.colWidthsTwips
+  let widthsChanged = false
+  // a dxa tblW is only a preferred width: without w:tblLayout fixed Word still
+  // grows a column to its widest unbreakable word and reclaims the growth from
+  // the other columns' surplus, keeping the declared total (measured: a long
+  // merge-field token grew its tcW 2835 -> 3000, neighbours shrank)
+  const autofit = model.autoLayout || (!model.fixedLayout && !model.widthPct)
+  // pct-width autofit tables: the min-content floor applies to the resolved
+  // widths (Word never wraps below the widest word even when w:tblW is a tiny
+  // percentage); growth converts the table to absolute widths for display.
+  // pct resolves against the full text column — the render path draws
+  // width:N% of the content box and applies the indent as a margin
+  let resolvedPct = false
+  if (autofit && model.widthPct && model.colWidthsPct?.length && budget > 0) {
+    const tableW = (Math.min(fitTwips, availTwips) * model.widthPct) / 100
+    if (tableW > 0) {
+      widths = model.colWidthsPct.map((p) => Math.round((p / 100) * tableW))
+      resolvedPct = true
+      if (model.contentAutofit) {
+        const n = widths.length
+        const mins = minContentColTwips(model, n, metrics, false, defaults)
+        const maxes = maxContentColTwips(model, n, metrics, defaults)
+        if (maxes.some((m) => m > 0)) {
+          const sideMar = sideMarginTwips(model)
+          // an empty column still keeps its side margins
+          widths = distributeContentAutofit(
+            Math.round(tableW),
+            mins.map((m) => Math.max(m, Math.min(sideMar, Math.round(tableW) / n))),
+            maxes.map((m, i) => Math.max(m, mins[i])),
+          )
+          widthsChanged = true
+        }
+      }
+    }
+  }
+  if (autofit && (resolvedPct || !model.widthPct) && widths?.length && budget > 0) {
+    const mins = minContentColTwips(
+      model,
+      widths.length,
+      metrics,
+      !!model.layoutGrid,
+      defaults,
+    ).map((m) => Math.min(m, budget))
+    const declared = widths.reduce((a, b) => a + b, 0)
+    const fit = Math.min(fitTwips, availTwips)
+    const target = fit - indent
+    // Over-wide tblW-auto preferred widths compress to the column less the
+    // signed table indent (Word probe 2026-09-17, compat 14 and 15: tblInd -108
+    // widens the box by 108, +558 narrows it by 558, the right edge stays on
+    // the margin). Compat < 15 measures the indent to the cell text, so the
+    // border box hangs by the side cell margins - the left one is already in
+    // the legacy indent shift, the right one is added here (centered tables
+    // shift nothing and hang on both sides). A nested table sits inside the
+    // cell padding, so it never hangs. An explicit dxa tblW is honoured
+    // (measured: landscape and portrait forms 7-22% wider than the column,
+    // negative tblInd, drawn at full width; a left-aligned 531 pt grid on a
+    // 451 pt column ran 8 pt past the paper edge, clipped, rows single-line).
+    const sideMar = sideMarginTwips(model)
+    const leftAligned = model.align !== 'center' && model.align !== 'right'
+    const legacyHang = !legacy
+      ? 0
+      : leftAligned && !model.floatSide
+        ? (model.cellMarTwips?.right ?? DEFAULT_CELL_MAR)
+        : sideMar
+    const box = fit - (leftAligned ? (model.indentTwips ?? 0) : 0) + legacyHang
+    const hang = leftAligned ? Math.min(model.indentTwips ?? 0, 0) : 0
+    // an explicit dxa tblW keeps its declared total whatever the jc: a centred
+    // 12000/13000-twip table on a 9360 column is centred on the margin box and
+    // clipped by the paper, a right-aligned one pins its right edge to the
+    // margin and runs off the paper on the left (probe 2026-10-29)
+    const explicitDxa =
+      !model.autoLayout &&
+      !nested &&
+      ((model.dxaWidth && !model.floatSide) || declared + hang <= budget)
+    const kept =
+      resolvedPct || nested
+        ? target
+        : Math.max(target, explicitDxa ? declared : Math.min(declared, box))
+    if (mins.some((m, i) => m > widths![i]) || (!resolvedPct && declared > kept)) {
+      const grown = widths.map((w, i) => Math.max(w, mins[i]))
+      const overflow = grown.reduce((a, b) => a + b, 0) - kept
+      if (overflow > 0) {
+        const floors = grown.map((w, i) =>
+          nested ? nestedFloorTwips(w, mins[i], sideMar) : reclaimFloorTwips(w, mins[i]),
+        )
+        const surplus = grown.map((w, i) => Math.max(0, w - floors[i]))
+        const totalSurplus = surplus.reduce((a, b) => a + b, 0)
+        if (totalSurplus > 0) {
+          const take = Math.min(overflow, totalSurplus)
+          for (let i = 0; i < grown.length; i++)
+            grown[i] -= Math.round((surplus[i] / totalSurplus) * take)
+        }
+        // min-contents alone can exceed the budget (one huge unbreakable
+        // token): compress proportionally like Word instead of handing the
+        // excess to clampTableColWidths, which zeroes trailing columns
+        const sum = grown.reduce((a, b) => a + b, 0)
+        if (sum > kept) {
+          const scale = kept / sum
+          for (let i = 0; i < grown.length; i++)
+            grown[i] = Math.max(1, Math.round(grown[i] * scale))
+        }
+      }
+      widths = grown
+      widthsChanged = true
+    }
+  }
+  const { rows, changed: rowsChanged } = mapNestedTables(model, widths, budget, (nt, avail) =>
+    expandAutofitColWidths(nt, avail, avail, metrics, true, false, defaults),
+  )
+  if (!widthsChanged && !rowsChanged) return model
+  const result = withColWidths(model, rows, widthsChanged ? widths : undefined)
+  if (widthsChanged && resolvedPct) delete result.widthPct
+  return result
+}
+
 /** a floating table hung on the left margin without an offset: Word places
  *  its cell text at the margin like an inline table (compat < 15 probe) */
 function marginHungFloat(model: TableModel): boolean {
@@ -358,7 +872,6 @@ export function legacyIndentTable(model: TableModel): TableModel {
   const first = model.rows[0]?.[0]
   const spacing = model.cellSpacingTwips ?? 0
   const shift =
-    // table-layout: allow — the table's indent, not a column width
     (first?.cellMarTwips?.left ?? model.cellMarTwips?.left ?? DEFAULT_CELL_MAR) +
     (spacing > 0
       ? 2 * spacing + borderDrawnPx(first?.borders?.left ?? model.borders?.left) * 15
@@ -774,7 +1287,6 @@ export function tableModelToPmNode(
     attrs: {
       docxIndex,
       blockRevision,
-      // table-layout: allow — the model's grid carried to the node as is
       colWidthsPct: model.colWidthsPct ?? null,
       // never narrower than the grid: Word's autofit columns hold their widest
       // line with zero slack, so rounding the table down wraps that line
@@ -1364,12 +1876,17 @@ export function pmTableToModel(table: PmNode): TableModel {
     active = next
   }
 
+  let colWidthsPct = (table.attrs?.colWidthsPct as number[] | null) ?? undefined
+  let colWidthsTwips: number[] | undefined
   const firstRow = table.content?.[0]?.content ?? []
-  const { colWidthsPct, colWidthsTwips } = gridFromEditorColumns(
-    firstRow.flatMap((cell) => (cell.attrs?.colwidth as number[] | null) ?? []),
-    maximumColumns,
-    (table.attrs?.colWidthsPct as number[] | null) ?? undefined,
-  )
+  const explicit = firstRow.flatMap((cell) => (cell.attrs?.colwidth as number[] | null) ?? [])
+  if (explicit.length === maximumColumns && explicit.every((width) => width > 0)) {
+    const total = explicit.reduce((sum, width) => sum + width, 0)
+    colWidthsPct = explicit.map((width) => (width / total) * 100)
+    colWidthsTwips = explicit.map((width) => Math.round(width * 15))
+  } else if (colWidthsPct?.length !== maximumColumns) {
+    colWidthsPct = Array.from({ length: maximumColumns }, () => 100 / maximumColumns)
+  }
   const tblStyleAttr = table.attrs?.tblStyleId as string | null | undefined
   const isNew = table.attrs?.docxIndex == null
   const tablePropsEdited = (name: string): boolean => isNew || table.attrs?.[name] === true
@@ -1718,10 +2235,9 @@ function runMarks(run: Run): PmMark[] {
   ) {
     // an inline-block cannot wrap and drops inherited underlines: only
     // whitespace-free, undecorated runs get the real glyph compression
-    const scaleEm = run.charScalePct ? charScaleEm(run.text, run.charScalePct, run) : 0
     const scaleX =
       run.charScalePct && !/\s/.test(run.text) && !run.underline && !run.strike && !run.link
-        ? charScaleXAttr(run.text, run.charScalePct, scaleEm)
+        ? charScaleXAttr(run.text, run.charScalePct, charScaleEm(run.text, run.charScalePct))
         : null
     // A run whose rPr carries our element came back from a file this editor
     // wrote. The parser has no schema for a custom element, so the label is
@@ -1748,7 +2264,7 @@ function runMarks(run: Run): PmMark[] {
         // the cs chain sizes complex-script text, and every character of an rtl run
         csFont: run.csFont && (run.cs || textHasComplexScript(run.text)) ? run.csFont : null,
         charSpacingTwips: run.charSpacingTwips ?? null,
-        charScaleEm: scaleEm && !scaleX ? scaleEm : null,
+        charScaleEm: run.charScalePct && !scaleX ? charScaleEm(run.text, run.charScalePct) : null,
         charScaleX: scaleX,
         charScalePct: run.charScalePct ?? null,
         kern: wordKerns(run.kernHalfPoints, run.sizeHalfPoints) ?? null,

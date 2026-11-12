@@ -2627,68 +2627,6 @@
       "unicode-range": "U+0020-0021, U+0023-0024, U+002A-002B, U+002D, U+0030-0039, U+003C-0040, U+0043, U+0045-0046, U+004C, U+005E-005F, U+0063, U+007A, U+007E, U+00A1-00A7, U+00A9, U+00AC, U+00AE-00AF, U+00B1-00B3, U+00B8, U+00BF, U+00C7-00CB, U+00D7, U+00E7, U+00F7, U+2013-2015, U+2017, U+2020-2022, U+20AC"
     }
   ],
-  "Cambria Cyrillic GO": [
-    {
-      "font-display": "block",
-      "font-family": "'Cambria Cyrillic GO'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "src": "url('./Caladea-Regular.ttf')"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Cambria Cyrillic GO'",
-      "font-style": "normal",
-      "font-weight": "bold",
-      "src": "url('./Caladea-Bold.ttf')"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Cambria Cyrillic GO'",
-      "font-style": "italic",
-      "font-weight": "normal",
-      "src": "url('./Caladea-Italic.ttf')"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Cambria Cyrillic GO'",
-      "font-style": "italic",
-      "font-weight": "bold",
-      "src": "url('./Caladea-BoldItalic.ttf')"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Cambria Cyrillic GO'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "src": "url('./CambriaCyrillicGO-Regular.ttf')",
-      "unicode-range": "U+0400-04FF"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Cambria Cyrillic GO'",
-      "font-style": "normal",
-      "font-weight": "bold",
-      "src": "url('./CambriaCyrillicGO-Bold.ttf')",
-      "unicode-range": "U+0400-04FF"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Cambria Cyrillic GO'",
-      "font-style": "italic",
-      "font-weight": "normal",
-      "src": "url('./CambriaCyrillicGO-Italic.ttf')",
-      "unicode-range": "U+0400-04FF"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Cambria Cyrillic GO'",
-      "font-style": "italic",
-      "font-weight": "bold",
-      "src": "url('./CambriaCyrillicGO-BoldItalic.ttf')",
-      "unicode-range": "U+0400-04FF"
-    }
-  ],
   "Cambria Math GO": [
     {
       "font-display": "block",
@@ -3463,26 +3401,6 @@
       "unicode-range": "U+0020-007E, U+00A0-00FF, U+2010-2027, U+2030-205E"
     }
   ],
-  "Kristen ITC GO": [
-    {
-      "ascent-override": "102.78%",
-      "descent-override": "33.2%",
-      "font-display": "block",
-      "font-family": "'Kristen ITC GO'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "line-gap-override": "0%",
-      "src": "url('./LiberationSans-Regular.ttf')"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Kristen ITC GO'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "src": "url('./KristenITCGO-Regular.ttf')",
-      "unicode-range": "U+0020-007E, U+00A0-00FF, U+0131, U+0141-0142, U+0152-0153, U+0160-0161, U+0178, U+017D-017E, U+0192, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122"
-    }
-  ],
   "Latin Sans GO": [
     {
       "font-display": "block",
@@ -4048,36 +3966,27 @@
   ],
   "MS Gothic GO": [
     {
-      "ascent-override": "103.13%",
-      "descent-override": "16.87%",
       "font-display": "block",
       "font-family": "'MS Gothic GO'",
       "font-style": "normal",
       "font-weight": "normal",
-      "line-gap-override": "0%",
       "size-adjust": "83.333%",
       "src": "url('./LiberationMono-Regular.ttf') format('truetype')",
       "unicode-range": "U+0020-007E, U+00A0-00A6, U+00A9-00AF, U+00B2-00B3, U+00B5, U+00B7-00D6, U+00D8-00F6, U+00F8-00FF"
     },
     {
-      "ascent-override": "85.94%",
-      "descent-override": "14.06%",
       "font-display": "block",
       "font-family": "'MS Gothic GO'",
       "font-style": "normal",
       "font-weight": "normal",
-      "line-gap-override": "0%",
       "src": "url('./NotoSansCJKsc-Regular-subset.woff2') format('woff2')",
       "unicode-range": "U+00A7, U+00B1, U+00B6, U+00D7, U+00F7"
     },
     {
-      "ascent-override": "51.56%",
-      "descent-override": "8.44%",
       "font-display": "block",
       "font-family": "'MS Gothic GO'",
       "font-style": "normal",
       "font-weight": "normal",
-      "line-gap-override": "0%",
       "size-adjust": "166.667%",
       "src": "url('./LiberationMono-Regular.ttf') format('truetype')",
       "unicode-range": "U+00A8, U+00B0, U+00B4"
@@ -4085,36 +3994,27 @@
   ],
   "MS Mincho GO": [
     {
-      "ascent-override": "103.13%",
-      "descent-override": "16.87%",
       "font-display": "block",
       "font-family": "'MS Mincho GO'",
       "font-style": "normal",
       "font-weight": "normal",
-      "line-gap-override": "0%",
       "size-adjust": "83.333%",
       "src": "url('./LiberationMono-Regular.ttf') format('truetype')",
       "unicode-range": "U+0020-007E, U+00A0-00A6, U+00A9-00AF, U+00B2-00B3, U+00B5, U+00B7-00D6, U+00D8-00F6, U+00F8-00FF"
     },
     {
-      "ascent-override": "85.94%",
-      "descent-override": "14.06%",
       "font-display": "block",
       "font-family": "'MS Mincho GO'",
       "font-style": "normal",
       "font-weight": "normal",
-      "line-gap-override": "0%",
       "src": "url('./NotoSansCJKsc-Regular-subset.woff2') format('woff2')",
       "unicode-range": "U+00A7, U+00B1, U+00B6, U+00D7, U+00F7"
     },
     {
-      "ascent-override": "51.56%",
-      "descent-override": "8.44%",
       "font-display": "block",
       "font-family": "'MS Mincho GO'",
       "font-style": "normal",
       "font-weight": "normal",
-      "line-gap-override": "0%",
       "size-adjust": "166.667%",
       "src": "url('./LiberationMono-Regular.ttf') format('truetype')",
       "unicode-range": "U+00A8, U+00B0, U+00B4"
@@ -4307,292 +4207,22 @@
   ],
   "Noto Naskh Arabic SA": [
     {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
       "font-display": "block",
       "font-family": "'Noto Naskh Arabic SA'",
       "font-style": "normal",
       "font-weight": "normal",
-      "size-adjust": "85.8%",
-      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
-      "unicode-range": "U+0600-060B, U+060D-061A, U+061C-061E, U+0620-065F, U+066E-06EF, U+06FA-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FD3D, U+FD40-FDFF, U+FE70-FEFF, U+200C-200D"
-    },
-    {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic SA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "117.15%",
-      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
-      "unicode-range": "U+0660-0669, U+06F0-06F9"
-    },
-    {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic SA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "117.1%",
-      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
-      "unicode-range": "U+060C, U+061B, U+061F, U+066A-066D"
-    },
-    {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic SA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "110.8%",
-      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
-      "unicode-range": "U+FD3E-FD3F"
-    },
-    {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic SA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "94.6%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+0030-0039"
-    },
-    {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic SA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "92.25%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+0041-005A, U+0061-007A"
-    },
-    {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic SA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "114.03%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+0020, U+00A0"
-    },
-    {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic SA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "114.7%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+002C, U+002E, U+003A, U+003B"
-    },
-    {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic SA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "95.1%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+0028-0029, U+005B, U+005D, U+007B, U+007D"
-    },
-    {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic SA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "94%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+0021-0027, U+002A-002B, U+002D, U+002F, U+003C-0040, U+005C, U+005E-0060, U+007C, U+007E"
-    },
-    {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic SA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "84.4%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+00AB, U+00BB"
-    },
-    {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic SA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "90%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+2010-2015"
-    },
-    {
-      "ascent-override": "117.97%",
-      "descent-override": "47.8%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic SA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "90%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+2022, U+2026"
+      "size-adjust": "92.4%",
+      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')"
     }
   ],
   "Noto Naskh Arabic TA": [
     {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
       "font-display": "block",
       "font-family": "'Noto Naskh Arabic TA'",
       "font-style": "normal",
       "font-weight": "normal",
-      "size-adjust": "69.3%",
-      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
-      "unicode-range": "U+0600-060B, U+060D-061A, U+061C-061E, U+0620-065F, U+066E-06EF, U+06FA-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FD3D, U+FD40-FDFF, U+FE70-FEFF, U+200C-200D"
-    },
-    {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic TA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "102.9%",
-      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
-      "unicode-range": "U+0660-0669, U+06F0-06F9"
-    },
-    {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic TA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "102.5%",
-      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
-      "unicode-range": "U+060C, U+061B, U+061F, U+066A-066D"
-    },
-    {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic TA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "110.8%",
-      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
-      "unicode-range": "U+FD3E-FD3F"
-    },
-    {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic TA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "88.13%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+0030-0039"
-    },
-    {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic TA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "90.6%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+0041-005A, U+0061-007A"
-    },
-    {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic TA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "87.77%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+0020, U+00A0"
-    },
-    {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic TA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "100%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+002C, U+002E, U+003A, U+003B"
-    },
-    {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic TA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "86.85%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+0028-0029, U+005B, U+005D, U+007B, U+007D"
-    },
-    {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic TA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "98.5%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+0021-0027, U+002A-002B, U+002D, U+002F, U+003C-0040, U+005C, U+005E-0060, U+007C, U+007E"
-    },
-    {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic TA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "73.2%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+00AB, U+00BB"
-    },
-    {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic TA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "95%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+2010-2015"
-    },
-    {
-      "ascent-override": "99.41%",
-      "descent-override": "50.05%",
-      "font-display": "block",
-      "font-family": "'Noto Naskh Arabic TA'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "100%",
-      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+2022, U+2026"
+      "size-adjust": "80%",
+      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')"
     }
   ],
   "Noto Naskh Arabic TNR": [
@@ -6234,54 +5864,6 @@
       "font-family": "'Segoe UI Symbol GO'",
       "line-gap-override": "0%",
       "src": "local('Segoe UI Symbol'), local('SegoeUISymbol'), local('Apple Symbols'), local('AppleSymbols')"
-    }
-  ],
-  "Shonar Bangla GO": [
-    {
-      "ascent-override": "97.71%",
-      "descent-override": "58.8%",
-      "font-display": "block",
-      "font-family": "'Shonar Bangla GO'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "line-gap-override": "0%",
-      "size-adjust": "82.7%",
-      "src": "url('./LiberationSerif-Regular.ttf')"
-    },
-    {
-      "ascent-override": "101.61%",
-      "descent-override": "57.74%",
-      "font-display": "block",
-      "font-family": "'Shonar Bangla GO'",
-      "font-style": "normal",
-      "font-weight": "bold",
-      "line-gap-override": "0%",
-      "size-adjust": "82.7%",
-      "src": "url('./LiberationSerif-Bold.ttf')"
-    },
-    {
-      "ascent-override": "117.63%",
-      "descent-override": "70.79%",
-      "font-display": "block",
-      "font-family": "'Shonar Bangla GO'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "line-gap-override": "0%",
-      "size-adjust": "68.7%",
-      "src": "url('./GenOfficeBengali-Regular.woff2') format('woff2')",
-      "unicode-range": "U+0964-0965, U+0980-09FF, U+200C-200D"
-    },
-    {
-      "ascent-override": "122.5%",
-      "descent-override": "69.61%",
-      "font-display": "block",
-      "font-family": "'Shonar Bangla GO'",
-      "font-style": "normal",
-      "font-weight": "bold",
-      "line-gap-override": "0%",
-      "size-adjust": "68.6%",
-      "src": "url('./GenOfficeBengali-Bold.woff2') format('woff2')",
-      "unicode-range": "U+0964-0965, U+0980-09FF, U+200C-200D"
     }
   ],
   "Symbol Bullet GO": [

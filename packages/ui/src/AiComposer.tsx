@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import { IconEnter, IconSend, IconStop } from './icons'
 import { useAiPanelPrefs } from './ai-panel-prefs-store'
-import { useImeEnterGuard } from './ime-enter'
 
 // Keep in sync with the CSS `max-height` on `.ai-input-box textarea` (7 lines à 24px)
 const MAX_TEXTAREA_HEIGHT = 168
@@ -78,7 +77,6 @@ export function AiComposer({
   const innerRef = useRef<HTMLTextAreaElement | null>(null)
   const ref = textareaRef ?? innerRef
   const canSend = value.trim().length > 0 && !busy
-  const ime = useImeEnterGuard()
   const { spellcheck } = useAiPanelPrefs()
 
   // auto-grow up to ~6 lines; empty clears the inline height outright so the
@@ -107,12 +105,9 @@ export function AiComposer({
         dir="auto"
         spellCheck={spellcheck}
         onChange={(e) => onChange(e.target.value)}
-        onCompositionStart={ime.handleCompositionStart}
-        onCompositionEnd={ime.handleCompositionEnd}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
-            if (ime.isImeConfirm(e.nativeEvent)) return
             if (canSend) onSend()
             else if (busy && onQueue) onQueue()
           } else if (e.key === 'Escape' && busy) {

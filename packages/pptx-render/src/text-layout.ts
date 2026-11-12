@@ -160,45 +160,6 @@ function tokenWidth(tok: Token, metrics: FontMetricsProvider): number {
   return tok.ls ? w + tok.ls * [...tok.text].length : w
 }
 
-type KernCache = Map<string, number>
-
-/**
- * Kerning across a token boundary (word|space, space|word, word|punctuation). PowerPoint
- * kerns the whole line — the glyph positions in its PDF export kern every pair that
- * touches a space — while tokens measure in isolation; Constantia's space pairs alone
- * shorten a 22pt line by about 1%, enough to pull one more word up.
- */
-function pairKern(prev: Token, tok: Token, metrics: FontMetricsProvider, cache: KernCache): number {
-  if (prev.isTab || tok.isTab || prev.isBreak || tok.isBreak || prev.ls || tok.ls) return 0
-  if (prev.wOverride != null || tok.wOverride != null) return 0
-  const a = prev.style
-  const b = tok.style
-  if (a.kerning === false || b.kerning === false) return 0
-  if (a.fontFamily !== b.fontFamily || a.fontSizePx !== b.fontSizePx) return 0
-  if (a.bold !== b.bold || a.italic !== b.italic) return 0
-  const last = [...prev.text].pop()
-  const first = [...tok.text][0]
-  if (!last || !first || hasWideChar(last) || hasWideChar(first)) return 0
-  const key = `${last}${first}|${a.fontFamily}|${a.fontSizePx}|${a.bold ? 1 : 0}${a.italic ? 1 : 0}`
-  let k = cache.get(key)
-  if (k === undefined) {
-    k = metrics.measure(last + first, a) - metrics.measure(last, a) - metrics.measure(first, a)
-    if (!Number.isFinite(k) || Math.abs(k) < 1e-6) k = 0
-    cache.set(key, k)
-  }
-  return k
-}
-
-/** Natural width of a token run: advances plus the kerning across each boundary. */
-function tokensWidth(toks: Token[], metrics: FontMetricsProvider, cache: KernCache): number {
-  let w = 0
-  for (let i = 0; i < toks.length; i++) {
-    w += tokenWidth(toks[i]!, metrics)
-    if (i) w += pairKern(toks[i - 1]!, toks[i]!, metrics, cache)
-  }
-  return w
-}
-
 /**
  * rPr cap="all"/"small" display transform. Length-preserving: code points whose uppercase
  * expands (ß→SS) stay as-is so click-to-caret offsets keep mapping 1:1 to source text.
@@ -912,20 +873,13 @@ function layoutParagraph(
   const lines: LaidLine[] = []
   let cur: Token[] = []
   let curW = 0
-  let lastStop = -1
-  const kerns: KernCache = new Map()
 
   const pushLine = (toks: Token[]) => {
     // Strip trailing whitespace (recorded verbatim: the editor re-adds it when joining wrapped lines back into a paragraph)
     let trailingSpace = false
     let trailingText = ''
-    // Swallowed whitespace keeps its run's font metrics: PowerPoint sizes the line by a
-    // large trailing-space run even though the space itself takes no width
-    const swallowed: Token[] = []
     while (toks.length && toks[toks.length - 1]!.isSpace) {
-      const sp = toks.pop()!
-      swallowed.unshift(sp)
-      trailingText = sp.text + trailingText
+      trailingText = toks.pop()!.text + trailingText
       trailingSpace = true
     }
     if (!toks.length) {
@@ -933,25 +887,19 @@ function layoutParagraph(
       // element-level font ops leave on blank cells/paragraphs) styles the line and is
       // kept as a zero-width glyph run so the editor and ribbon readback see the format.
       const src = p.runs[0]
-      const tallest = swallowed.reduce<Token | undefined>(
-        (m, t) => (!m || t.style.fontSizePx > m.style.fontSizePx ? t : m),
-        undefined,
-      )
-      const st: RunStyle = tallest
-        ? tallest.style
-        : src
-          ? runStyle(src, scale, fontScale)
-          : {
-              fontFamily: DEFAULT_FONT,
-              fontSizePx: ptToPx(
-                fontScale !== 1
-                  ? Math.max(1, Math.round(DEFAULT_SIZE_PT * fontScale))
-                  : DEFAULT_SIZE_PT,
-                scale,
-              ),
-              bold: false,
-              italic: false,
-            }
+      const st: RunStyle = src
+        ? runStyle(src, scale, fontScale)
+        : {
+            fontFamily: DEFAULT_FONT,
+            fontSizePx: ptToPx(
+              fontScale !== 1
+                ? Math.max(1, Math.round(DEFAULT_SIZE_PT * fontScale))
+                : DEFAULT_SIZE_PT,
+              scale,
+            ),
+            bold: false,
+            italic: false,
+          }
       const m = metrics.metrics(st)
       const box = lineH(p, st.fontSizePx, scale, lnSpcRed)
       const leadAbove = baselineOff(p, box, m.descent) - m.ascent
@@ -984,7 +932,7 @@ function layoutParagraph(
       })
       return
     }
-    const line = buildLine(toks, metrics, p, scale, lnSpcRed, kerns, swallowed)
+    const line = buildLine(toks, metrics, p, scale, lnSpcRed)
     if (trailingSpace) {
       line.trailingSpace = true
       line.trailingText = trailingText
@@ -1003,19 +951,14 @@ function layoutParagraph(
       lines[lines.length - 1]!.softBreakAfter = tok.srcRun
       cur = []
       curW = 0
-      lastStop = -1
       endedWithBreak = true
       continue
     }
     endedWithBreak = false
     if (tok.isTab && tabs) {
-      // Each tab takes the first unused stop at or past the pen (PowerPoint-measured on a
-      // ruler with a stop at 0: the first tab of the line consumes it at zero width, the
-      // second lands on the next stop); past the last stop, the default grid
+      // Tab advances to the next stop past the cursor; past the last stop, to the default grid
       const cursor = tabs.originPx + (lines.length === 0 ? firstLineShrinkPx : 0) + curW
-      const idx = tabs.stopsPx.findIndex((s, i) => i > lastStop && s >= cursor - 0.5)
-      if (idx >= 0) lastStop = idx
-      const stop = idx >= 0 ? tabs.stopsPx[idx]! : undefined
+      const stop = tabs.stopsPx.find((s) => s > cursor + 0.5)
       tok.wOverride = Math.max(
         (stop ?? (Math.floor(cursor / tabs.defaultPx) + 1) * tabs.defaultPx) - cursor,
         0,
@@ -1039,8 +982,7 @@ function layoutParagraph(
     }
     // A closing mark ending the line may hang past the margin by its own advance
     const hangW = hangingOn && !tok.isSpace ? hangingTailWidth(tok, rulesOf(tok), metrics) : 0
-    const kern = cur.length ? pairKern(cur[cur.length - 1]!, tok, metrics, kerns) : 0
-    if (wrap && cur.length && curW + kern + w - hangW > lineAvail() && !tok.isSpace) {
+    if (wrap && cur.length && curW + w - hangW > lineAvail() && !tok.isSpace) {
       // Kinsoku: pull the predecessor down when the new line would start with a closing
       // mark, push an opening bracket down when it would end the old line.
       const carry: Token[] = []
@@ -1053,8 +995,7 @@ function layoutParagraph(
       }
       pushLine(cur)
       cur = carry
-      curW = tokensWidth(carry, metrics, kerns)
-      lastStop = -1
+      curW = carry.reduce((s, t) => s + tokenWidth(t, metrics), 0)
     }
     // Hard-break over-long words (a single token wider than the line, even with its closing
     // mark hanging); the last piece stays open so following words continue on that line
@@ -1066,7 +1007,6 @@ function layoutParagraph(
       curW += tokenWidth(tail, metrics)
       continue
     }
-    if (cur.length) curW += pairKern(cur[cur.length - 1]!, tok, metrics, kerns)
     cur.push(tok)
     curW += w
   }
@@ -1138,22 +1078,12 @@ function buildLine(
   p: Paragraph,
   scale: number,
   lnSpcRed = 0,
-  kerns: KernCache = new Map(),
-  /** Tokens that set the line's metrics without being drawn (swallowed trailing spaces) */
-  metricOnly: Token[] = [],
 ): LaidLine {
   let x = 0
   let ascent = 0
   let descent = 0
   let sizeM = 0
-  for (const tok of metricOnly) {
-    const m = metrics.metrics(tok.style)
-    ascent = Math.max(ascent, m.ascent)
-    descent = Math.max(descent, m.descent)
-    sizeM = Math.max(sizeM, tok.style.fontSizePx)
-  }
   const runs: GlyphRun[] = []
-  let prev: Token | undefined
   // Lines with RTL levels are reordered into visual order before laying out x (break in logical order → draw in visual order)
   for (const tok of visualOrder(toks)) {
     const m = metrics.metrics(tok.style)
@@ -1161,8 +1091,6 @@ function buildLine(
     descent = Math.max(descent, m.descent)
     sizeM = Math.max(sizeM, tok.style.fontSizePx)
     const w = tokenWidth(tok, metrics)
-    if (prev && !prev.level && !tok.level) x += pairKern(prev, tok, metrics, kerns)
-    prev = tok
     runs.push({
       text: tok.text,
       x,
@@ -1920,7 +1848,7 @@ function layoutAll(
     // (PowerPoint's ruler clamps marL+indent at 0; prod deck: marL 0 / indent -0.44in)
     const firstLineDx = hasBullet ? bulletOverflowPx : Math.max(indentPx, -marLPx)
     const laid = layoutParagraph(p, avail, wrap, metrics, scale, fontScale, lnSpcRed, firstLineDx, {
-      stopsPx: (p.tabStops ?? []).map((t) => emuToPx(t.pos, scale)).sort((a, b) => a - b),
+      stopsPx: (p.tabStops ?? []).map((t) => emuToPx(t.pos, scale)),
       defaultPx: Math.max(emuToPx(p.defTabSz ?? 914400, scale), 1),
       originPx: textX,
     })
@@ -1935,7 +1863,7 @@ function layoutAll(
     laid.forEach((ln, li) => {
       const baseline = y + (ln.leadAbove ?? 0) + ln.ascent
       inkBottom = Math.max(inkBottom, baseline + ln.descent)
-      const lineWidth = ln.runs.reduce((acc, r) => Math.max(acc, r.x + r.widthPx), 0)
+      const lineWidth = ln.runs.reduce((acc, r) => acc + r.widthPx, 0)
       // Without a bullet the first line adds indent (positive or negative, clamped at the
       // inset); with a bullet the body starts at marL, pushed right when the glyph
       // overflows the hanging indent
@@ -2011,10 +1939,8 @@ function layoutAll(
           }
         }
       }
-      // Center/right alignment counts the overflow push so the text stays inside the box,
-      // and the first line aligns within its own (indent-shifted) span: a right-aligned
-      // hanging indent keeps that line flush right like PowerPoint
-      const off = alignOffset(align, avail - firstShift, lineWidth + bulletShift)
+      // Center/right alignment counts the overflow push so the text stays inside the box
+      const off = alignOffset(align, avail, lineWidth + bulletShift)
       let dx = textX + firstShift + bulletShift + off
       // Mirrored box: the body's right boundary sits marL (+ first-line shifts) from the
       // right edge; every line lives inside [0, rightEdge]. Spread justified lines fill

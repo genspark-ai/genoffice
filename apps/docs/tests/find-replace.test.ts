@@ -67,15 +67,11 @@ const texts = (editor: Editor, query: string, o: Partial<FindOptions> = {}) =>
 
 /** a pass layout with only the fields these helpers read */
 const layoutOf = (l: Pick<PageLayout, 'blocks' | 'slices' | 'sections'>): PageLayout => ({
-  passGen: 1,
   cuts: [],
   geoms: [],
   hfHeights: [],
   rowSplits: [],
   carries: [],
-  floats: [],
-  floatPullUps: [],
-  pageNotes: [],
   ...l,
 })
 

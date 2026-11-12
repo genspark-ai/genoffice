@@ -10,7 +10,6 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Stage, Layer, Rect, Group } from 'react-konva'
-import type Konva from 'konva'
 import type { RenderNode, RenderSlide } from '@genoffice/pptx-render'
 import type { ShapeKey } from '../../shared/ipc'
 import { fillToKonva } from '../konva-adapter'
@@ -94,8 +93,6 @@ export function MorphStage({
   images,
   width,
   onDone,
-  progress,
-  stageRef,
 }: {
   from: RenderSlide
   to: RenderSlide
@@ -105,17 +102,12 @@ export function MorphStage({
   width: number
   /** Tween finished (guaranteed to fire only once) */
   onDone: () => void
-  /** Driven from outside (video export renders one frame per call): 0..1 raw, the stage eases it; no clock runs */
-  progress?: number
-  stageRef?: (stage: Konva.Stage | null) => void
 }) {
-  const [clockT, setT] = useState(0)
-  const t = progress ?? clockT
+  const [t, setT] = useState(0)
   const onDoneRef = useRef(onDone)
   onDoneRef.current = onDone
 
   useEffect(() => {
-    if (progress != null) return
     let raf = 0
     const t0 = performance.now()
     const tick = () => {
@@ -130,7 +122,7 @@ export function MorphStage({
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [progress])
+  }, [])
 
   const plan = useMemo(() => buildPlan(from, to, fromKeys, toKeys), [from, to, fromKeys, toKeys])
 
@@ -140,13 +132,7 @@ export function MorphStage({
   const q = easeInOut(Math.min(1, Math.max(0, t)))
 
   return (
-    <Stage
-      width={width}
-      height={h}
-      listening={false}
-      style={{ pointerEvents: 'none' }}
-      ref={stageRef}
-    >
+    <Stage width={width} height={h} listening={false} style={{ pointerEvents: 'none' }}>
       <Layer scaleX={scale} scaleY={scale} listening={false}>
         <Rect
           x={0}

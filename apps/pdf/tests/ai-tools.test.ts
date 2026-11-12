@@ -87,8 +87,6 @@ function makeDeps(over: Partial<PdfAiDeps> = {}): PdfAiDeps {
     deleteNoteThread: vi.fn(),
     outline: () => null,
     searchIndex: () => Promise.resolve(INDEX),
-    redactionCount: () => 0,
-    addRedactions: vi.fn(),
     isDeleted: () => false,
     gotoPage: vi.fn(() => true),
     addMarkup: vi.fn(),
@@ -174,48 +172,6 @@ describe('AGENT_TOOLS definitions', () => {
       const result = await executePdfTool(deps, call(tool.name, { page: 1, start: 1 }))
       expect(result.output).not.toContain('Unknown tool')
     }
-  })
-})
-
-describe('find_sensitive_info', () => {
-  const text = 'Mail ada@example.com, card 4111 1111 1111 1111, ref 12345'
-  const index: SearchIndex = [
-    { text, lower: text, items: [{ start: 0, end: text.length, x: 0, y: 700, w: 570, h: 10 }] },
-  ]
-
-  it('lists hits without marking by default', async () => {
-    const deps = makeDeps({ searchIndex: () => Promise.resolve(index) })
-    const result = await executePdfTool(deps, call('find_sensitive_info', {}))
-    expect(result.isError).toBeFalsy()
-    expect(result.output).toContain('Page 1 [email]: ada@example.com')
-    expect(result.output).toContain('Page 1 [credit-card]: 4111 1111 1111 1111')
-    expect(deps.addRedactions).not.toHaveBeenCalled()
-  })
-
-  it('queues pending redaction marks with mark=true', async () => {
-    const deps = makeDeps({ searchIndex: () => Promise.resolve(index) })
-    const result = await executePdfTool(
-      deps,
-      call('find_sensitive_info', { patterns: ['email'], mark: true }),
-    )
-    expect(result.output).toContain('Queued 1 hit(s)')
-    const marks = vi.mocked(deps.addRedactions).mock.calls[0]![0]
-    expect(marks).toHaveLength(1)
-    const [x1, y1, x2, y2] = marks[0]!.rect
-    expect(x1).toBeLessThan(50)
-    expect(x2).toBeGreaterThan(200)
-    expect(y1).toBeLessThan(700)
-    expect(y2).toBeGreaterThan(710)
-  })
-
-  it('rejects unknown patterns and refuses to mark a read-only document', async () => {
-    const deps = makeDeps({ searchIndex: () => Promise.resolve(index) })
-    const bad = await executePdfTool(deps, call('find_sensitive_info', { patterns: ['cn-id'] }))
-    expect(bad.isError).toBe(true)
-    const ro = makeDeps({ searchIndex: () => Promise.resolve(index), readOnly: () => true })
-    const res = await executePdfTool(ro, call('find_sensitive_info', { mark: true }))
-    expect(res.isError).toBe(true)
-    expect(ro.addRedactions).not.toHaveBeenCalled()
   })
 })
 

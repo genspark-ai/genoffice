@@ -16,7 +16,7 @@ import {
 } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { lineHeightFactor } from '../src/renderer/text-layout/font-rules'
+import { lineHeightFactor } from '../src/renderer/line-metrics'
 
 ;(globalThis as { CSS?: unknown }).CSS ??= { escape: (s: string) => s }
 

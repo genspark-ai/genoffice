@@ -5,7 +5,6 @@ import {
   type AiModelPickerBridge,
   AiSkillChips,
   AiSkillsMenu,
-  useImeEnterGuard,
 } from '@genoffice/ui'
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
@@ -399,7 +398,6 @@ export function AiPanel({
   >([])
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const ime = useImeEnterGuard()
   /** Stop following once the user scrolls up; re-attach when near the bottom */
   const stickToBottomRef = useRef(true)
   /** Current chat's projectId/chatId, set after resolve succeeds */
@@ -2396,12 +2394,9 @@ export function AiPanel({
                 inputEditedSinceRunRef.current = true
                 setInput(e.target.value)
               }}
-              onCompositionStart={ime.handleCompositionStart}
-              onCompositionEnd={ime.handleCompositionEnd}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault()
-                  if (ime.isImeConfirm(e.nativeEvent)) return
                   if (busy) enqueueDraft()
                   else run()
                 } else if (e.key === 'Escape' && busy) {

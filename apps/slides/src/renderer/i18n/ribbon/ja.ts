@@ -55,7 +55,6 @@ export const ja = {
   ribbonFilePrint: '印刷…',
   ribbonFileExportImages: 'PNG としてエクスポート…',
   ribbonFileExportImagesJpg: 'JPG としてエクスポート…',
-  ribbonFileExportVideo: 'ビデオとしてエクスポート (MP4)…',
   ribbonUnsavedSuffix: ' — 未保存',
   ribbonSaveTip: '保存 (⌘S)',
   ribbonAutoSave: '自動保存',

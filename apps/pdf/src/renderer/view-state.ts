@@ -21,31 +21,7 @@ export type PdfViewState = {
 type StoredEntry = PdfViewState & { at: number }
 
 export const VIEW_STATE_KEY = 'genoffice-pdf-view-state'
-export const LAST_ZOOM_KEY = 'genoffice-pdf-last-zoom'
 export const MAX_VIEW_ENTRIES = 100
-
-export type PdfZoom = Pick<PdfViewState, 'scale' | 'fitMode'>
-
-/** The zoom in effect in the most recently viewed file; what "last used" opens new files at */
-export function loadLastZoom(storage: StorageLike = localStorage): PdfZoom | null {
-  try {
-    const e = JSON.parse(storage.getItem(LAST_ZOOM_KEY) ?? 'null') as Record<string, unknown> | null
-    if (!e || typeof e !== 'object') return null
-    if (typeof e.scale !== 'number' || !Number.isFinite(e.scale) || e.scale <= 0) return null
-    if (e.fitMode !== 'width' && e.fitMode !== 'page' && e.fitMode !== null) return null
-    return { scale: e.scale, fitMode: e.fitMode }
-  } catch {
-    return null
-  }
-}
-
-export function saveLastZoom(zoom: PdfZoom, storage: StorageLike = localStorage): void {
-  try {
-    storage.setItem(LAST_ZOOM_KEY, JSON.stringify(zoom))
-  } catch {
-    /* best-effort, like the per-file state */
-  }
-}
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>
 
