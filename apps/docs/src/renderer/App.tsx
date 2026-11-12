@@ -984,6 +984,18 @@ export function App() {
   const [showReviewPane, setShowReviewPane] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('print')
   const [readMode, setReadMode] = useState(false)
+  // Read mode is a print-layout reading, so a view pick and Read Mode are
+  // exclusive: picking a view leaves read mode, entering read mode lands on the
+  // print layout — the status bar never lights two views at once, and a click
+  // always changes what the canvas shows
+  const switchView = (mode: ViewMode) => {
+    setViewMode(mode)
+    setReadMode(false)
+  }
+  const toggleReadMode = () => {
+    if (!readMode) setViewMode('print')
+    setReadMode(!readMode)
+  }
   const [showGrid, setShowGrid] = useState(false)
   const [splitView, setSplitView] = useState(false)
   const [showPagePreview, setShowPagePreview] = useState(false)
@@ -2157,6 +2169,14 @@ export function App() {
     if (!editor) return
     editor.commands.setStoryViewActive(viewMode === 'story')
   }, [editor, viewMode])
+
+  // the exclusivity backstop for the paths that bypass the view buttons: a
+  // read-only file opens into read mode straight through file-actions, and that
+  // must land on the print layout instead of stacking a second lit view onto
+  // whatever the status bar already shows
+  useEffect(() => {
+    if (readMode && viewMode !== 'print') setViewMode('print')
+  }, [readMode, viewMode])
 
   // window title follows the document, so the OS window list and Switch Window show file names
   useEffect(() => {
@@ -7749,8 +7769,8 @@ export function App() {
     },
     onProtectDoc: () => setShowProtectDialog(true),
     onCompare: () => void compareWithFile(),
-    onViewMode: setViewMode,
-    onReadMode: setReadMode,
+    onViewMode: switchView,
+    onReadMode: toggleReadMode,
     onShowGrid: setShowGrid,
     onSplitView: setSplitView,
     onPagePreview: () => setShowPagePreview(true),
@@ -8867,10 +8887,7 @@ export function App() {
                     className={`status-view-btn${viewMode === 'print' && !readMode ? ' on' : ''}`}
                     data-tip={t('ribbonPrintLayout')}
                     aria-label={t('ribbonPrintLayout')}
-                    onClick={() => {
-                      setViewMode('print')
-                      setReadMode(false)
-                    }}
+                    onClick={() => switchView('print')}
                   >
                     <IconPrintLayout size={14} />
                   </button>
@@ -8878,7 +8895,7 @@ export function App() {
                     className={`status-view-btn${viewMode === 'web' ? ' on' : ''}`}
                     data-tip={t('ribbonWebLayout')}
                     aria-label={t('ribbonWebLayout')}
-                    onClick={() => setViewMode('web')}
+                    onClick={() => switchView('web')}
                   >
                     <IconWebLayout size={14} />
                   </button>
@@ -8886,7 +8903,7 @@ export function App() {
                     className={`status-view-btn${viewMode === 'outline' ? ' on' : ''}`}
                     data-tip={t('ribbonOutlineView')}
                     aria-label={t('ribbonOutlineView')}
-                    onClick={() => setViewMode('outline')}
+                    onClick={() => switchView('outline')}
                   >
                     <IconOutlineView size={14} />
                   </button>
@@ -8894,7 +8911,7 @@ export function App() {
                     className={`status-view-btn${viewMode === 'story' ? ' on' : ''}`}
                     data-tip={t('ribbonStoryView')}
                     aria-label={t('ribbonStoryView')}
-                    onClick={() => setViewMode('story')}
+                    onClick={() => switchView('story')}
                   >
                     <IconStoryView size={14} />
                   </button>
@@ -8902,7 +8919,7 @@ export function App() {
                     className={`status-view-btn${readMode ? ' on' : ''}`}
                     data-tip={t('ribbonReadMode')}
                     aria-label={t('ribbonReadMode')}
-                    onClick={() => setReadMode((v) => !v)}
+                    onClick={() => toggleReadMode()}
                   >
                     <IconReadMode size={14} />
                   </button>
