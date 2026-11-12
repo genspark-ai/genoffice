@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { decodeChunksUtf8 } from '@genoffice/electron-utils'
 
 /**
  * Shell-main half of the MCP → `genoffice` CLI delegation.
@@ -98,8 +99,16 @@ export function createCliRunner(paths: CliRunnerPaths): CliRunner {
           ...(options.cwd ? { cwd: options.cwd } : {}),
           windowsHide: true,
         })
-        let stdout = ''
-        let stderr = ''
+        // Collect raw chunks and decode once at the end: decoding each chunk
+        // on its own splits a multi-byte character that straddles two events.
+        const outChunks: Array<Buffer | string> = []
+        const errChunks: Array<Buffer | string> = []
+        let outBytes = 0
+        let errBytes = 0
+        const snapshot = (): { stdout: string; stderr: string } => ({
+          stdout: decodeChunksUtf8(outChunks),
+          stderr: decodeChunksUtf8(errChunks),
+        })
         let settled = false
         let truncated = false
         const finish = (outcome: CliRunOutcome): void => {
@@ -110,34 +119,57 @@ export function createCliRunner(paths: CliRunnerPaths): CliRunner {
         }
         // Unbounded child output would OOM the shell main process: cap the
         // buffers and kill the child past the budget.
-        const onChunk = (chunk: Buffer, stream: 'out' | 'err'): void => {
-          if (stream === 'out') stdout += chunk.toString()
-          else stderr += chunk.toString()
-          if (stdout.length + stderr.length > MAX_CLI_OUTPUT_BYTES && !truncated) {
+        const onChunk = (chunk: Buffer | string, stream: 'out' | 'err'): void => {
+          const size = typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length
+          if (stream === 'out') {
+            outChunks.push(chunk)
+            outBytes += size
+          } else {
+            errChunks.push(chunk)
+            errBytes += size
+          }
+          if (outBytes + errBytes > MAX_CLI_OUTPUT_BYTES && !truncated) {
             truncated = true
             child.kill()
-            stdout = stdout.slice(0, MAX_CLI_OUTPUT_BYTES)
-            stderr = `${stderr.slice(0, 1000)}\n…output truncated past ${MAX_CLI_OUTPUT_BYTES} bytes`
-            finish({ ok: false, code: -1, stdout, stderr })
+            const text = snapshot()
+            finish({
+              ok: false,
+              code: -1,
+              stdout: text.stdout.slice(0, MAX_CLI_OUTPUT_BYTES),
+              stderr: `${text.stderr.slice(0, 1000)}\n…output truncated past ${MAX_CLI_OUTPUT_BYTES} bytes`,
+            })
           }
         }
         const timer = setTimeout(() => {
           child.kill()
-          finish({ ok: false, code: -1, stdout, stderr: `${stderr}\ngenoffice timed out` })
+          const text = snapshot()
+          finish({
+            ok: false,
+            code: -1,
+            stdout: text.stdout,
+            stderr: `${text.stderr}\ngenoffice timed out`,
+          })
         }, timeoutMs)
         child.stdout?.on('data', (chunk: Buffer) => onChunk(chunk, 'out'))
         child.stderr?.on('data', (chunk: Buffer) => onChunk(chunk, 'err'))
         child.on('error', (err) => {
-          finish({ ok: false, code: -1, stdout, stderr: `${stderr}\n${String(err)}` })
+          const text = snapshot()
+          finish({
+            ok: false,
+            code: -1,
+            stdout: text.stdout,
+            stderr: `${text.stderr}\n${String(err)}`,
+          })
         })
         child.on('close', (code) => {
-          const json = parseJson(stdout)
+          const text = snapshot()
+          const json = parseJson(text.stdout)
           finish({
             ok: code === 0 && json?.status === 'ok',
             code: code ?? -1,
             json,
-            stdout,
-            stderr,
+            stdout: text.stdout,
+            stderr: text.stderr,
           })
         })
         if (options.input !== undefined) child.stdin?.end(options.input)
