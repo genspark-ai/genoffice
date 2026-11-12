@@ -892,11 +892,13 @@ function redactionRangesOf(node: PmDocNode, base: number): Array<{ from: number;
 
 /**
  * One character of a paragraph's flat text: where it sits in the document,
- * whether a tracked deletion owns it, and the marks its run carries.
+ * whether a tracked deletion owns it, whether a pending insertion owns it, and
+ * the marks its run carries.
  */
 interface FlatChar {
   from: number
   struck: boolean
+  inserted: boolean
   marks: PmDocNode['marks']
 }
 
@@ -930,9 +932,10 @@ function flatParagraphText(
       return
     }
     const struck = paraDeleted || child.marks.some((m) => m.type.name === 'del')
+    const inserted = child.marks.some((m) => m.type.name === 'ins')
     for (let i = 0; i < child.text.length; i++) {
       text += child.text[i]
-      chars.push({ from: p.pos + 1 + offset + i, struck, marks: child.marks })
+      chars.push({ from: p.pos + 1 + offset + i, struck, inserted, marks: child.marks })
     }
   })
   flush()
@@ -977,9 +980,15 @@ function runFindReplace(op: Op, env: RunEnv): OpResult {
           const span = seg.chars.slice(at, at + needle.length)
           const first = span[0]!
           const last = span[span.length - 1]!
+          // A span straddling a pending-insertion boundary is not one match:
+          // replacing it would either strip the insertion's revision (plain ->
+          // ins) or pull accepted text into a pending insertion (ins -> plain),
+          // so Reject would then delete words the edit never wrote. Left alone —
+          // the phrase is replaceable once the revision resolves.
+          const mixedInsertion = span.some((c) => c.inserted) && span.some((c) => !c.inserted)
           if (span.some((c) => c.struck)) {
             skippedDeleted++
-          } else if (insideScope(b, scoped, first.from, last.from + 1)) {
+          } else if (!mixedInsertion && insideScope(b, scoped, first.from, last.from + 1)) {
             // the replacement takes the matched text's formatting: the marks of
             // the run the match starts in, the way Word reads a cross-run match
             replacements.push({ from: first.from, to: last.from + 1, marks: first.marks })
@@ -1428,7 +1437,7 @@ register({
 register({
   name: 'findReplace',
   signature:
-    '{ op: "findReplace", find, replace, matchCase?, target? }  // plain-text find & replace inside runs (no cross-block matching); the replacement keeps the matched text\'s formatting — the right op for small in-place fixes; target narrows the scanned blocks (blockIndexes / scope:"selection" / nodeType), omitted = whole document',
+    '{ op: "findReplace", find, replace, matchCase?, target? }  // plain-text find & replace across runs within a paragraph (no cross-block matching); the replacement keeps the matched text\'s formatting — the right op for small in-place fixes; target narrows the scanned blocks (blockIndexes / scope:"selection" / nodeType), omitted = whole document',
   keys: ['find', 'replace', 'matchCase'],
   target: 'optional',
   validate(op, where) {
