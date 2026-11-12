@@ -15,6 +15,7 @@ import type { ReactElement } from 'react'
 import type { Editor } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
+import { useAiPanelPrefs } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { AI_QUEUE_ANCHOR_CLICK, queueAnchorRange } from '../editor/aiQueueAnchors'
 import { setInactiveSelectionShown } from '../editor/inactiveSelection'
@@ -105,6 +106,7 @@ export function AiAskPopover({
   onQueueRemove,
 }: Props): ReactElement | null {
   const { t } = useI18n()
+  const showAskTrigger = useAiPanelPrefs().showAiAskTrigger
   const [trigger, setTrigger] = useState<{ left: number; top: number } | null>(null)
   const [open, setOpen] = useState<OpenState | null>(null)
   const [kind, setKind] = useState<SelectionKind>('text')
@@ -134,6 +136,10 @@ export function AiAskPopover({
   // floating trigger follows the live selection while the editor is focused
   useEffect(() => {
     const update = () => {
+      if (!showAskTrigger) {
+        setTrigger(null)
+        return
+      }
       if (openRef.current) {
         setTrigger(null)
         return
@@ -157,6 +163,7 @@ export function AiAskPopover({
     const scroller = document.querySelector('.editor-scroll')
     scroller?.addEventListener('scroll', update, { passive: true })
     window.addEventListener('resize', update)
+    update()
     return () => {
       editor.off('selectionUpdate', update)
       editor.off('focus', update)
@@ -164,7 +171,7 @@ export function AiAskPopover({
       scroller?.removeEventListener('scroll', update)
       window.removeEventListener('resize', update)
     }
-  }, [editor])
+  }, [editor, showAskTrigger])
 
   // clicking a queued anchor in the document re-opens the popover on that item
   useEffect(() => {
@@ -396,7 +403,7 @@ export function AiAskPopover({
 
   return (
     <>
-      {trigger && !open && (
+      {trigger && !open && showAskTrigger && (
         <button
           className="ai-ask-trigger"
           style={{ left: trigger.left, top: trigger.top }}
