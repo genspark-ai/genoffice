@@ -890,12 +890,71 @@ function redactionRangesOf(node: PmDocNode, base: number): Array<{ from: number;
   return out
 }
 
+/**
+ * One character of a paragraph's flat text: where it sits in the document,
+ * whether a tracked deletion owns it, and the marks its run carries.
+ */
+interface FlatChar {
+  from: number
+  struck: boolean
+  marks: PmDocNode['marks']
+}
+
+/**
+ * A paragraph's text nodes concatenated, so a phrase the document splits across
+ * runs still matches — font fallback, numbering, comments, revision data and
+ * local formatting all split a visually continuous phrase into several `w:r`s,
+ * and a per-node search silently finds none of it. A non-text child (a footnote
+ * reference, an image, a break) interrupts the text: two passages a reader sees
+ * as separate are not one phrase. Case folding happens per code unit and keeps
+ * the original character whenever the fold is not exactly one code unit, so the
+ * folded haystack indexes one-to-one into `chars` (a whole-string
+ * `toLowerCase` can expand — `İ` folds to two — and would point matches at the
+ * wrong characters).
+ */
+function flatParagraphText(
+  p: { node: PmDocNode; pos: number },
+  paraDeleted: boolean,
+): Array<{ text: string; chars: FlatChar[] }> {
+  const segments: Array<{ text: string; chars: FlatChar[] }> = []
+  let text = ''
+  let chars: FlatChar[] = []
+  const flush = () => {
+    if (chars.length > 0) segments.push({ text, chars })
+    text = ''
+    chars = []
+  }
+  p.node.forEach((child, offset) => {
+    if (!child.isText || !child.text) {
+      flush()
+      return
+    }
+    const struck = paraDeleted || child.marks.some((m) => m.type.name === 'del')
+    for (let i = 0; i < child.text.length; i++) {
+      text += child.text[i]
+      chars.push({ from: p.pos + 1 + offset + i, struck, marks: child.marks })
+    }
+  })
+  flush()
+  return segments
+}
+
+/** lower-case one code unit at a time; see flatParagraphText for the alignment */
+function foldPerUnit(text: string): string {
+  let out = ''
+  for (let i = 0; i < text.length; i++) {
+    const lo = text[i].toLowerCase()
+    out += lo.length === 1 ? lo : text[i]
+  }
+  return out
+}
+
 function runFindReplace(op: Op, env: RunEnv): OpResult {
   const { tr, schema, ctx, sel } = env
   const find = String(op.find)
   const replace = String(op.replace ?? '')
   const matchCase = op.matchCase !== false
-  const needle = matchCase ? find : find.toLowerCase()
+  const needle = matchCase ? find : foldPerUnit(find)
   const blocks = op.target ? matchTarget(tr.doc, targetOf(op), sel) : topLevelBlocks(tr.doc)
   const scoped = op.target ? scopedRange(targetOf(op), sel) : null
   const replacements: Array<{ from: number; to: number; marks: PmDocNode['marks'] }> = []
@@ -911,22 +970,24 @@ function runFindReplace(op: Op, env: RunEnv): OpResult {
     const blockDeleted = isTrackedDeleted(b.node)
     for (const p of scanParagraphs(b, scoped)) {
       const paraDeleted = blockDeleted || isTrackedDeleted(p.node)
-      p.node.forEach((child, offset) => {
-        if (!child.isText || !child.text) return
-        const struck = paraDeleted || child.marks.some((m) => m.type.name === 'del')
-        const hay = matchCase ? child.text : child.text.toLowerCase()
+      for (const seg of flatParagraphText(p, paraDeleted)) {
+        const hay = matchCase ? seg.text : foldPerUnit(seg.text)
         let at = hay.indexOf(needle)
         while (at !== -1) {
-          const from = p.pos + 1 + offset + at
-          if (struck) {
+          const span = seg.chars.slice(at, at + needle.length)
+          const first = span[0]!
+          const last = span[span.length - 1]!
+          if (span.some((c) => c.struck)) {
             skippedDeleted++
-          } else if (insideScope(b, scoped, from, from + needle.length)) {
-            replacements.push({ from, to: from + needle.length, marks: child.marks })
+          } else if (insideScope(b, scoped, first.from, last.from + 1)) {
+            // the replacement takes the matched text's formatting: the marks of
+            // the run the match starts in, the way Word reads a cross-run match
+            replacements.push({ from: first.from, to: last.from + 1, marks: first.marks })
             touchedIndexes.add(b.index)
           }
           at = hay.indexOf(needle, at + needle.length)
         }
-      })
+      }
     }
   }
 

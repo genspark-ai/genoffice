@@ -320,6 +320,55 @@ describe('findReplace', () => {
     expect(loose.results[0].detail).toBe('Replaced 2 occurrence(s)')
     expect(editor.state.doc.child(1).textContent).toBe('X intro,X is great')
   })
+
+  it('matches a phrase the document splits across runs', () => {
+    // the issue's shape: font fallback, numbering, comments and local
+    // formatting all split a visually continuous phrase into several runs.
+    // Runs the editor would merge (same marks) are one text node already, so
+    // the split has to come from differing marks to exercise this.
+    const editor = createEditor([
+      para([text('某', [{ type: 'bold' }]), text('总结模板'), text('细化', [{ type: 'italic' }])], {
+        docxIndex: 0,
+      }),
+    ])
+    const outcome = executeOps(editor, [
+      { op: 'findReplace', find: '某总结模板细化', replace: '智能技术文档' },
+    ])
+    expect(outcome.ok).toBe(true)
+    expect(outcome.results[0].detail).toBe('Replaced 1 occurrence(s)')
+    expect(editor.state.doc.child(0).textContent).toBe('智能技术文档')
+  })
+
+  it('a cross-run replacement keeps the formatting of the run the match starts in', () => {
+    const editor = createEditor([
+      para([text('某', [{ type: 'bold' }]), text('总结模板细化')], { docxIndex: 0 }),
+    ])
+    executeOps(editor, [{ op: 'findReplace', find: '某总结模板细化', replace: '新文案' }])
+    const block = editor.state.doc.child(0)
+    expect(block.textContent).toBe('新文案')
+    expect(block.child(0).marks.some((m) => m.type.name === 'bold')).toBe(true)
+  })
+
+  it('matches across runs case-insensitively', () => {
+    const editor = createEditor([
+      para([text('GEN', [{ type: 'bold' }]), text('spark')], { docxIndex: 0 }),
+    ])
+    const outcome = executeOps(editor, [
+      { op: 'findReplace', find: 'genspark', replace: 'X', matchCase: false },
+    ])
+    expect(outcome.ok).toBe(true)
+    expect(editor.state.doc.child(0).textContent).toBe('X')
+  })
+
+  it('a non-text child interrupts the match', () => {
+    const editor = createEditor([
+      para([text('某总结'), { type: 'hardBreak' }, text('模板')], { docxIndex: 0 }),
+    ])
+    const outcome = executeOps(editor, [{ op: 'findReplace', find: '某总结模板', replace: 'X' }])
+    expect(outcome.ok).toBe(true)
+    expect(outcome.results[0].changed).toBe(0)
+    expect(editor.state.doc.child(0).textContent).toBe('某总结模板')
+  })
 })
 
 describe('updateMatchedTextStyle', () => {
