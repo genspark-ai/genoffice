@@ -12822,7 +12822,7 @@ body.docs-crop-active
 }
 
 .read-mode .editor-scroll {
-  background: var(--docs-pv-canvas);
+  background: var(--canvas);
   padding-top: 44px;
 }
 
