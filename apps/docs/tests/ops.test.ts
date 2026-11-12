@@ -320,6 +320,33 @@ describe('findReplace', () => {
     expect(loose.results[0].detail).toBe('Replaced 2 occurrence(s)')
     expect(editor.state.doc.child(1).textContent).toBe('X intro,X is great')
   })
+
+  it('matches a phrase split across adjacent runs', () => {
+    // font fallback / spell check / bookmarks split one visible phrase into runs
+    const editor = createEditor([
+      para([text('Head '), text('Gen', [{ type: 'bold' }]), text('Spark'), text(' tail')]),
+    ])
+    const outcome = executeOps(editor, [
+      { op: 'findReplace', find: 'GenSpark', replace: 'Genspark' },
+    ])
+    expect(outcome.ok).toBe(true)
+    expect(outcome.results[0].detail).toBe('Replaced 1 occurrence(s)')
+    const block = editor.state.doc.child(0)
+    expect(block.textContent).toBe('Head Genspark tail')
+    // the replacement keeps the first matched run's formatting
+    expect(block.child(1).text).toBe('Genspark')
+    expect(block.child(1).marks.some((m) => m.type.name === 'bold')).toBe(true)
+  })
+
+  it('does not match across a line break', () => {
+    const editor = createEditor([para([text('Gen'), { type: 'hardBreak' }, text('Spark')])])
+    const outcome = executeOps(editor, [
+      { op: 'findReplace', find: 'GenSpark', replace: 'Genspark' },
+    ])
+    expect(outcome.ok).toBe(true)
+    expect(outcome.results[0]).toMatchObject({ matched: 0, changed: 0 })
+    expect(editor.state.doc.child(0).textContent).toBe('GenSpark')
+  })
 })
 
 describe('updateMatchedTextStyle', () => {

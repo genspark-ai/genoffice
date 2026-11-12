@@ -3,6 +3,7 @@ import type { Editor } from '@tiptap/core'
 import type { Node as PmDocNode, Schema } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
 import { generateTocFieldXml, type TabStop, type TocEntry } from '@genoffice/docx-engine'
+import { foldCase } from '../editor/find'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
 import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
@@ -890,12 +891,60 @@ function redactionRangesOf(node: PmDocNode, base: number): Array<{ from: number;
   return out
 }
 
+/** One text node of a paragraph, with the document position of its first character. */
+interface TextRun {
+  from: number
+  text: string
+  marks: PmDocNode['marks']
+  /** tracked-deleted text: never rewritten, only counted as skipped */
+  struck: boolean
+}
+
+/**
+ * A paragraph's runs, split wherever a match may not cross: a tracked deletion
+ * or an inline leaf (line break, image, note mark) ends the segment. Adjacent
+ * live runs stay together — Word stores one visible phrase as several runs for
+ * font fallback, spell check, bookmarks or comments, and a reader is right to
+ * expect `findReplace` to see past those boundaries.
+ */
+function textSegments(paragraph: PmDocNode, base: number, deleted: boolean): TextRun[][] {
+  const segments: TextRun[][] = []
+  let runs: TextRun[] = []
+  const flush = () => {
+    if (runs.length > 0) segments.push(runs)
+    runs = []
+  }
+  paragraph.forEach((child, offset) => {
+    if (!child.isText || !child.text) {
+      flush()
+      return
+    }
+    const struck = deleted || child.marks.some((m) => m.type.name === 'del')
+    runs.push({ from: base + offset, text: child.text, marks: child.marks, struck })
+    if (struck) flush()
+  })
+  flush()
+  return segments
+}
+
+/** the run a segment offset lands in, and that character's document position */
+function locate(runs: TextRun[], offset: number): { pos: number; index: number } {
+  let start = 0
+  for (let i = 0; i < runs.length; i++) {
+    const end = start + runs[i]!.text.length
+    if (offset < end) return { pos: runs[i]!.from + (offset - start), index: i }
+    start = end
+  }
+  const last = runs[runs.length - 1]!
+  return { pos: last.from + last.text.length, index: runs.length - 1 }
+}
+
 function runFindReplace(op: Op, env: RunEnv): OpResult {
   const { tr, schema, ctx, sel } = env
   const find = String(op.find)
   const replace = String(op.replace ?? '')
   const matchCase = op.matchCase !== false
-  const needle = matchCase ? find : find.toLowerCase()
+  const needle = matchCase ? find : foldCase(find)
   const blocks = op.target ? matchTarget(tr.doc, targetOf(op), sel) : topLevelBlocks(tr.doc)
   const scoped = op.target ? scopedRange(targetOf(op), sel) : null
   const replacements: Array<{ from: number; to: number; marks: PmDocNode['marks'] }> = []
@@ -911,22 +960,28 @@ function runFindReplace(op: Op, env: RunEnv): OpResult {
     const blockDeleted = isTrackedDeleted(b.node)
     for (const p of scanParagraphs(b, scoped)) {
       const paraDeleted = blockDeleted || isTrackedDeleted(p.node)
-      p.node.forEach((child, offset) => {
-        if (!child.isText || !child.text) return
-        const struck = paraDeleted || child.marks.some((m) => m.type.name === 'del')
-        const hay = matchCase ? child.text : child.text.toLowerCase()
+      for (const runs of textSegments(p.node, p.pos + 1, paraDeleted)) {
+        const segment = runs.map((run) => run.text).join('')
+        const hay = matchCase ? segment : foldCase(segment)
         let at = hay.indexOf(needle)
         while (at !== -1) {
-          const from = p.pos + 1 + offset + at
+          const start = locate(runs, at)
+          const end = locate(runs, at + needle.length - 1)
+          const struck = runs.slice(start.index, end.index + 1).some((run) => run.struck)
           if (struck) {
             skippedDeleted++
-          } else if (insideScope(b, scoped, from, from + needle.length)) {
-            replacements.push({ from, to: from + needle.length, marks: child.marks })
+          } else if (insideScope(b, scoped, start.pos, end.pos + 1)) {
+            replacements.push({
+              from: start.pos,
+              to: end.pos + 1,
+              // a match that spans several runs keeps the first run's formatting
+              marks: runs[start.index]!.marks,
+            })
             touchedIndexes.add(b.index)
           }
           at = hay.indexOf(needle, at + needle.length)
         }
-      })
+      }
     }
   }
 
@@ -1367,7 +1422,7 @@ register({
 register({
   name: 'findReplace',
   signature:
-    '{ op: "findReplace", find, replace, matchCase?, target? }  // plain-text find & replace inside runs (no cross-block matching); the replacement keeps the matched text\'s formatting — the right op for small in-place fixes; target narrows the scanned blocks (blockIndexes / scope:"selection" / nodeType), omitted = whole document',
+    '{ op: "findReplace", find, replace, matchCase?, target? }  // plain-text find & replace across a paragraph\'s runs (a phrase only formatting split apart still matches, but not across line breaks or blocks); the replacement keeps the matched text\'s formatting — the right op for small in-place fixes; target narrows the scanned blocks (blockIndexes / scope:"selection" / nodeType), omitted = whole document',
   keys: ['find', 'replace', 'matchCase'],
   target: 'optional',
   validate(op, where) {
