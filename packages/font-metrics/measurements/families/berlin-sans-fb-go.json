@@ -1,5 +1,7 @@
 {
   "family": "Berlin Sans FB GO",
+  "standsInFor": "Berlin Sans FB Demi",
+  "standInChain": { "tail": "latin-sans" },
   "source": {
     "kind": "probe",
     "date": "2026-09-17",

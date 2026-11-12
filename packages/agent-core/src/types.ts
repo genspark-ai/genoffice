@@ -39,6 +39,25 @@ export interface AgentImage {
 export interface AgentTokenUsage {
   inputTokens?: number
   outputTokens?: number
+  /** share of inputTokens served from the provider's prompt cache */
+  cacheReadTokens?: number
+  /** share of inputTokens written to the prompt cache this turn */
+  cacheWriteTokens?: number
+}
+
+const USAGE_FIELDS = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const
+
+/** Sum two usage records; a side no provider reported stays absent instead of a fake zero. */
+export function addTokenUsage(
+  prev: AgentTokenUsage | null | undefined,
+  delta: AgentTokenUsage,
+): AgentTokenUsage {
+  const out: AgentTokenUsage = { ...(prev ?? {}) }
+  for (const field of USAGE_FIELDS) {
+    const n = delta[field]
+    if (n !== undefined) out[field] = (out[field] ?? 0) + n
+  }
+  return out
 }
 
 export type AgentMessage =

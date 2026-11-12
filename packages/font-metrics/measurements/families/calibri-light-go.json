@@ -1,5 +1,6 @@
 {
   "family": "Calibri Light GO",
+  "standsInFor": "Calibri Light",
   "source": {
     "kind": "hmtx",
     "date": "2026-10-29",

@@ -401,9 +401,9 @@ describe('empty header paragraphs', () => {
       paras: [{ runs }],
     })
     const def = estimateHfHeight(part([{ text: '' }]), 600)
-    expect(def).toBeCloseTo(10.5 * (96 / 72) * 1.22, 3)
+    expect(def).toBeCloseTo(10.5 * (96 / 72) * 1.2207, 3)
     const sized = estimateHfHeight(part([{ text: ' ', sizeHalfPoints: 36 }]), 600)
-    expect(sized).toBeCloseTo(18 * (96 / 72) * 1.22, 3)
+    expect(sized).toBeCloseTo(18 * (96 / 72) * 1.2207, 3)
   })
 })
 
@@ -611,7 +611,7 @@ describe('cell paragraph line factor and row-anchored pictures', () => {
   it('sizes a cell line by the declared face factor, not the substitute metrics', () => {
     const runs = [{ text: 'MONTEZ AZULEZ', fontAscii: 'Century Gothic', sizeHalfPoints: 32 }]
     const style = hfCellParaStyle(undefined, undefined, runs)
-    expect(style['--doc-line-factor']).toBe('1.226')
+    expect(style['--doc-line-factor']).toBe('1.2261')
     expect(style.lineHeight).toContain('var(--doc-line-factor')
     expect(hfCellParaStyle(undefined, undefined, [{ text: 'plain' }])).toEqual({
       direction: 'ltr',

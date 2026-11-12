@@ -16,7 +16,7 @@ import {
   isEastAsianLangTag,
   themeLangEaSlotFont,
 } from '@genoffice/docx-engine'
-import { isEaLayoutFace, isKoreanLayoutFace } from '../line-metrics'
+import { isEaLayoutFace, isKoreanLayoutFace } from './font-rules'
 import { isEastAsianFaceName, isJapaneseFaceName, isKoreanFaceName } from './face-info'
 
 export interface BodyFaces {
@@ -45,6 +45,8 @@ export interface DocumentTextContext {
   body: BodyFaces
   /** the East Asian face Word lays the body out with (three-way rule below) */
   bodyEaFace: BodyEastAsianFace
+  /** docDefaults w:lang w:eastAsia as declared */
+  eastAsiaLang: string | null
   /** docDefaults w:lang w:val names an East Asian language */
   eastAsianLang: boolean
   /** Latin body face (Normal ascii, then docDefaults, then Normal's shared name) */
@@ -58,6 +60,8 @@ export interface DocumentTextContext {
   latinViaEaSlot: boolean
   /** balanceSingleByteDoubleByteWidth widens spaces: the flag plus useFELayout or a CJK body face */
   balancedSpaces: boolean
+  /** w:compat doNotUseHTMLParagraphAutoSpacing: adjacent paragraph spacing adds up, HTML auto spacing is 0 */
+  additiveSpacing: boolean
 }
 
 function defaultParaDisplay(parsed: ParsedDocFull): StyleDisplay | undefined {
@@ -105,11 +109,13 @@ export function documentTextContext(parsed: ParsedDocFull): DocumentTextContext 
     body,
     bodyEaFace,
     bodyEaSlot: body.normal?.eastAsiaFont ?? body.normalEaDistinct ?? body.ddEa,
+    eastAsiaLang: parsed.docDefaults?.eastAsiaLang ?? null,
     eastAsianLang: isEastAsianLangTag(parsed.docDefaults?.lang),
     bodyAscii: body.normal?.fontAscii ?? body.dd?.asciiFont ?? body.normal?.font ?? null,
     bodyEa,
     latinViaEaSlot: isEastAsianLangTag(parsed.docDefaults?.lang),
     balancedSpaces: balance && (parsed.useFELayout === true || bodyEaFace.declared),
+    additiveSpacing: parsed.doNotUseHTMLParagraphAutoSpacing === true,
   }
   cache.set(parsed, ctx)
   return ctx
@@ -220,6 +226,10 @@ export function eaFaceForKrFactor(ctx: DocumentTextContext): string {
 export function eaFaceForGridStrut(ctx: DocumentTextContext): string | undefined {
   const { bodyEaFace, body } = ctx
   if (bodyEaFace.declared) return bodyEaFace.face
-  if (bodyEaFace.source === 'emptySlot' && body.ddEaFromLang && body.ddEa) return body.ddEa
+  if (bodyEaFace.source !== 'emptySlot' || !body.ddEa) return undefined
+  if (body.ddEaFromLang) return body.ddEa
+  // Normal's empty theme slot over a docDefaults that names an East Asian face
+  if (!body.ddEaSlotEmpty && (isEastAsianFaceName(body.ddEa) || isEaLayoutFace(body.ddEa)))
+    return body.ddEa
   return undefined
 }

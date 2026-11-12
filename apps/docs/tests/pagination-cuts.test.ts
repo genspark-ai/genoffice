@@ -8,6 +8,8 @@ import {
   headingPagesOf,
   pageCutDiffs,
   pageCutSignature,
+  pageOwners,
+  pageLeadsOf,
   pagePaperEdges,
   topPushAt,
   type GapLedgerEntry,
@@ -179,6 +181,57 @@ describe('buildPageCuts', () => {
     expect(cuts.map((c) => c.capacityPx)).toEqual([450, 500, 480, 500])
   })
 
+  it('names the block each block-kind gap widget opens a page in front of', () => {
+    const blocks = [para(0, 400), para(400, 300), table(700, [100, 100]), para(900, 100)]
+    const cuts = buildPageCuts(
+      blocks,
+      [slice(0, 400), slice(400, 800), slice(800, 1000)],
+      [geom(400)],
+      [{ headerPx: 0, footerPx: 0 }],
+    )
+    const gap = { heightPx: 0, marginBottomPx: 0, marginTopPx: 0, pullUpPx: 0, repeatHeaderPx: 0 }
+    applyGapLedger(cuts, [
+      { page: 1, kind: 'block', ...gap },
+      { page: 2, kind: 'table', ...gap },
+    ] as GapLedgerEntry[])
+    expect(cuts.map((c) => c.lead.kind)).toEqual(['block', 'block', 'row'])
+    // the row lead resets the wrap obstacles in front of the block after the table
+    expect([...pageLeadsOf(cuts, blocks)]).toEqual([
+      [blocks[1].el, 1],
+      [blocks[3].el, 2],
+    ])
+    applyGapLedger(cuts, [])
+    expect(pageLeadsOf(cuts, blocks).size).toBe(0)
+  })
+
+  it('in-block leads (row / cell / line) reset in front of the next block; the last turn wins (B4)', () => {
+    const gap = { heightPx: 0, marginBottomPx: 0, marginTopPx: 0, pullUpPx: 0, repeatHeaderPx: 0 }
+    // a paragraph split by a line lead, then a table straddling two turns
+    const blocks = [para(0, 500), para(500, 100), table(600, [100, 100, 100, 100]), para(1000, 100)]
+    const cuts = buildPageCuts(
+      blocks,
+      [slice(0, 400), slice(400, 700), slice(700, 900), slice(900, 1100)],
+      [geom(400)],
+      [{ headerPx: 0, footerPx: 0 }],
+    )
+    expect(cuts.map((c) => c.lead.kind)).toEqual(['block', 'line', 'row', 'row'])
+    applyGapLedger(cuts, [
+      { page: 1, kind: 'inline', ...gap },
+      { page: 2, kind: 'table', ...gap },
+      { page: 3, kind: 'table', ...gap },
+    ] as GapLedgerEntry[])
+    expect([...pageLeadsOf(cuts, blocks)]).toEqual([
+      [blocks[1].el, 1],
+      [blocks[3].el, 3],
+    ])
+    // a split floating table's in-table turns move only the float: no reset
+    applyGapLedger(cuts, [
+      { page: 2, kind: 'table', floatGap: true, ...gap },
+      { page: 3, kind: 'table', floatGap: true, ...gap },
+    ] as GapLedgerEntry[])
+    expect(pageLeadsOf(cuts, blocks).size).toBe(0)
+  })
+
   it('pins floated blocks to the page their anchor lands on', () => {
     const blocks = [para(0, 400), para(400, 400), para(420, 50, { floated: true })]
     const cuts = buildPageCuts(
@@ -188,6 +241,46 @@ describe('buildPageCuts', () => {
       [{ headerPx: 0, footerPx: 0 }],
     )
     expect(cuts.map((c) => c.floats)).toEqual([[], [2]])
+  })
+
+  it('names the page of every anchor-shifted block and floating box', () => {
+    const blocks = [para(0, 400, { anchorShifted: true }), para(400, 400), para(420, 50)]
+    const box = (anchorTop: number) => ({
+      el: document.createElement('div'),
+      top: anchorTop + 30,
+      height: 20,
+      anchorTop,
+      pinned: false,
+      pageRelV: false,
+    })
+    const cuts = buildPageCuts(
+      blocks,
+      [slice(0, 400), slice(400, 800)],
+      [geom(400)],
+      [{ headerPx: 0, footerPx: 0 }],
+      { floats: [box(410), box(10), box(-5), box(900)] },
+    )
+    expect(cuts.map((c) => c.anchored)).toEqual([[0], []])
+    expect(cuts.map((c) => c.boxes)).toEqual([
+      [1, 2],
+      [0, 3],
+    ])
+    const owners = pageOwners(cuts)
+    expect([...owners.blocks]).toEqual([[0, 0]])
+    expect([...owners.boxes].sort()).toEqual([
+      [0, 1],
+      [1, 0],
+      [2, 0],
+      [3, 1],
+    ])
+    expect(pageCutDiffs(cuts, cuts)).toEqual([])
+    const other = buildPageCuts(
+      blocks,
+      [slice(0, 400), slice(400, 800)],
+      [geom(400)],
+      [{ headerPx: 0, footerPx: 0 }],
+    )
+    expect(pageCutDiffs(cuts, other)).toEqual(['p1 boxes 1,2 vs ', 'p2 boxes 0,3 vs '])
   })
 })
 

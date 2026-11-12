@@ -1555,17 +1555,20 @@ function resolveSectionHf(
     const slot = slotOf(kind, variant)
     if (side.hfDirty.has(slot)) return side.hf[slot] ?? null
   }
+  // walking back from si, the nearest section with a pending part or a parsed reference owns it
   for (let i = si; i >= 0; i--) {
+    const pending = side.hfSection.get(sectionHfKey(sections[i]!.lastBlockIndex, kind, variant))
+    if (pending) return pending.hf
     const ref = (kind === 'header' ? sections[i]!.headerRefs : sections[i]!.footerRefs)[variant]
     if (!ref) continue
-    for (let j = i; j >= 0; j--) {
-      const pending = side.hfSection.get(sectionHfKey(sections[j]!.lastBlockIndex, kind, variant))
-      if (pending) return pending.hf
-    }
     const info = parsed.hfParts?.[ref]
     return info ? hfFromPart(info) : null
   }
-  return side.hf[slotOf(kind, variant)] ?? null
+  // Word inherits forward only: with a reference somewhere later, this section shows nothing
+  const anyRef = sections.some(
+    (s) => (kind === 'header' ? s.headerRefs : s.footerRefs)[variant] !== undefined,
+  )
+  return anyRef ? null : (side.hf[slotOf(kind, variant)] ?? null)
 }
 
 function sectionHfText(
@@ -1688,7 +1691,7 @@ function setSectionHeaderFooter(
   )
   const slot = slotOf(kind, view)
   if (section === sections.length - 1) {
-    if (view === 'first' && !side.titlePg) {
+    if (view === 'first' && !sections[section]!.titlePg) {
       side.titlePg = true
       side.titlePgDirty = true
     }

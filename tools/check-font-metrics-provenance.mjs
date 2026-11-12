@@ -1,7 +1,7 @@
 // Rejects new line-metric numbers that cite no measurement. Every added or
 // changed `size-adjust` / `*-override` in apps/docs/src/renderer/fonts/fonts.css
 // and every numeric return or literal inside knownLineFactor() in
-// apps/docs/src/renderer/line-metrics.ts must have, within the 12 preceding
+// apps/docs/src/renderer/text-layout/font-rules/line-factor.ts must have, within the 12 preceding
 // lines of the resulting file, a comment naming where the value came from
 // (a Word probe, a Word PDF, a corpus measurement, the face's hhea table or a
 // dated note). Diff-based like check-theme-colors: pre-existing lines never fail.
@@ -22,7 +22,7 @@ if (args.length > 0) {
 }
 
 const FONTS_CSS = 'apps/docs/src/renderer/fonts/fonts.css'
-const LINE_METRICS = 'apps/docs/src/renderer/line-metrics.ts'
+const LINE_METRICS = 'apps/docs/src/renderer/text-layout/font-rules/line-factor.ts'
 const WINDOW = 12
 const CSS_METRIC = /^\s*(size-adjust|ascent-override|descent-override|line-gap-override)\s*:/
 const TS_FACTOR = /\breturn\s+\d+\.\d+\b|^\s*\d+\.\d+\s*,?\s*$|:\s*\d+\.\d+\s*,?\s*(\/\/.*)?$/

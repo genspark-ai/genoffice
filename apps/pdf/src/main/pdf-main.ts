@@ -17,6 +17,7 @@ import type { WebContents } from 'electron'
 import {
   buildPrintableHtml,
   configuredAuthorName,
+  readPdfDefaultZoom,
   configuredDefaultSaveDir,
   contextMenuLabels,
   installContextMenu,
@@ -1220,6 +1221,9 @@ function registerPdfIpc(): void {
   ipcMain.handle(PDF_CHANNELS.consumePending, (e) => openPathByWc.get(e.sender.id) ?? null)
 
   ipcMain.handle(PDF_CHANNELS.getUsername, (): string => configuredAuthorName(app))
+  ipcMain.handle(PDF_CHANNELS.getDefaultZoom, () =>
+    readPdfDefaultZoom(join(app.getPath('userData'), 'app-settings.json')),
+  )
 
   ipcMain.handle(PDF_CHANNELS.printers, async (e) => {
     const printers = await e.sender.getPrintersAsync()

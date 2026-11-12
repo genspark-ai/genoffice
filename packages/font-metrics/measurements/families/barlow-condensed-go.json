@@ -1,5 +1,7 @@
 {
   "family": "Barlow Condensed GO",
+  "standsInFor": "Barlow Condensed",
+  "standInChain": { "tail": "latin-sans" },
   "source": {
     "kind": "hmtx",
     "date": "2026-10-29",

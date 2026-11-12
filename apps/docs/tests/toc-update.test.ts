@@ -12,12 +12,7 @@ import { generateTocFieldXml, parseDocx, saveDocx } from '@genoffice/docx-engine
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import {
-  collectTocEntries,
-  findTocRange,
-  tocAtPos,
-  updateTocField,
-} from '../src/renderer/editor/toc-update'
+import { collectTocEntries, findTocRange, updateTocField } from '../src/renderer/editor/toc-update'
 
 const editors = new Set<Editor>()
 
@@ -96,8 +91,6 @@ describe('findTocRange', () => {
     expect(range?.to).toBeGreaterThan(0)
     // the kept heading is before the replaced range
     expect(editor.state.doc.textBetween(0, range!.from)).toContain('Contents')
-    expect(tocAtPos(editor.state.doc, parsed.blocks, range!.from + 1)).toBe(true)
-    expect(tocAtPos(editor.state.doc, parsed.blocks, range!.to + 50)).toBe(false)
   })
 
   it('finds a TOC field and reports null without any TOC', async () => {

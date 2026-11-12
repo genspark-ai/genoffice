@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cssFontFamily, isBundledFont } from '../src/renderer/line-metrics'
+import { cssFontFamily, isBundledFont } from '../src/renderer/text-layout/font-rules'
 import { fontAttrsFromFamilyChain } from '../src/renderer/editor/marks'
 
 describe('Cambria Math font chain', () => {

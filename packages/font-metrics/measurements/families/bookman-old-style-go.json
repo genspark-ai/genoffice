@@ -1,5 +1,7 @@
 {
   "family": "Bookman Old Style GO",
+  "standsInFor": "Bookman Old Style",
+  "standInChain": { "tail": "latin-serif" },
   "source": {
     "kind": "hmtx",
     "date": "2026-10-31",

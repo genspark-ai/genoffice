@@ -1,5 +1,7 @@
 {
   "family": "Yu Gothic Light GO",
+  "standsInFor": "Yu Gothic Light",
+  "standInChain": { "tail": "ja-sans", "companions": ["Yu Gothic Sans GO"] },
   "source": {
     "kind": "hmtx",
     "date": "2026-09-30",

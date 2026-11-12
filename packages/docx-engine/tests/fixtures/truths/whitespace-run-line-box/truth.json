@@ -1,0 +1,76 @@
+{
+  "id": "whitespace-run-line-box",
+  "title": "Whitespace runs and the paragraph mark never size a line that holds ink; a no-break space does",
+  "section": "word-truths.md#L1105",
+  "probe_date": "2026-11-08",
+  "class": "pure",
+  "source": "spacerun-word.pdf (Times New Roman 12 one-line paragraphs, 6 per variant between Arial markers; Word for Mac direct PDF, pymupdf baselines): Times control 13.68/13.92, every space / tab variant the same, Calibri 14 mark the same, Calibri 14 no-break space 17.04/17.28, sz 2 space-only paragraphs 1.20",
+  "cases": [
+    {
+      "kind": "bodyLineBox",
+      "block": 1,
+      "expect": { "--doc-line-factor": "1.1499", "--doc-strut": "12pt" },
+      "note": "control: three Times 12 runs, 13.78 = 12 x 1.149"
+    },
+    {
+      "kind": "bodyLineBox",
+      "block": 8,
+      "expect": { "--doc-line-factor": "1.1499", "--doc-strut": "12pt" },
+      "note": "mid-line ' ' run inheriting Calibri 11: 13.78, the inherited face does not win max()"
+    },
+    {
+      "kind": "bodyLineBox",
+      "block": 15,
+      "expect": { "--doc-line-factor": "1.1499", "--doc-strut": "12pt" },
+      "note": "mid-line ' ' run Calibri 14 (sz 28): 13.78"
+    },
+    {
+      "kind": "bodyLineBox",
+      "block": 22,
+      "expect": { "--doc-line-factor": "1.1499", "--doc-strut": "12pt" },
+      "note": "Calibri 14 paragraph mark over Times 12 text: 13.78"
+    },
+    {
+      "kind": "bodyLineBox",
+      "block": 36,
+      "expect": { "--doc-line-factor": "1.1499", "--doc-strut": "12pt" },
+      "note": "tab-only Calibri 14 run between the Times runs: 13.82"
+    },
+    {
+      "kind": "bodyLineBox",
+      "block": 57,
+      "expect": { "--doc-line-factor": "1.1499", "--doc-strut": "12pt" },
+      "note": "' ' run inheriting the Calibri 14 mark: 13.78"
+    },
+    {
+      "kind": "inlineClasses",
+      "block": 15,
+      "expect": ["doc-ws-run"],
+      "note": "the Calibri 14 space run gives up its line box"
+    },
+    {
+      "kind": "inlineClasses",
+      "block": 36,
+      "expect": ["doc-ws-run"],
+      "note": "the tab-only run too"
+    },
+    {
+      "kind": "inlineClasses",
+      "block": 43,
+      "expect": [],
+      "note": "U+00A0 is ink: the Calibri 14 no-break space lifts the line to 17.09 = 14 x 1.2207"
+    },
+    {
+      "kind": "inlineClasses",
+      "block": 71,
+      "expect": [],
+      "note": "a space-only paragraph has no ink to yield to: the mark (sz 2) sizes it, 1.20"
+    },
+    {
+      "kind": "format",
+      "block": 78,
+      "expect": { "emptyRunSizeHalfPoints": 2 },
+      "note": "lastRenderedPageBreak before the ' ' run: still mark-sized, 1.20"
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 {
   "family": "Garamond GO",
+  "standsInFor": "Garamond",
+  "standInChain": { "tail": "latin-serif" },
   "source": {
     "kind": "hmtx",
     "date": "2026-10-27",

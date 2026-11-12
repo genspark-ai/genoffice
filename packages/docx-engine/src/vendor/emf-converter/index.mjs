@@ -5146,10 +5146,10 @@ function replayEmfPlusRecords(view, offset, length, ctx, _canvasW, _canvasH, sta
     const recType = view.getUint16(offset, true);
     const recFlags = view.getUint16(offset + 2, true);
     const recSize = view.getUint32(offset + 4, true);
-    const recDataSize = view.getUint32(offset + 8, true);
     if (recSize < 12 || offset + recSize > end) {
       break;
     }
+    const recDataSize = Math.min(view.getUint32(offset + 8, true), recSize - 12);
     recordCount++;
     emfPlusRecordTypes.set(recType, (emfPlusRecordTypes.get(recType) ?? 0) + 1);
     const dataOff = offset + 12;
@@ -5869,6 +5869,13 @@ function replayWmfRecords(view, ctx, header, canvasW, canvasH, replayOptions = {
   const windowOrg = { x: header.boundsLeft, y: header.boundsTop };
   const windowExt = { cx: logicalW, cy: logicalH };
   const coord = createWmfCoord(windowOrg, windowExt, canvasW, canvasH);
+  // Pen widths are logical units too, so they follow the same window->canvas scale
+  const syncDevScale = () => {
+    state.devScale = Math.min(
+      canvasW / Math.abs(windowExt.cx || 1),
+      canvasH / Math.abs(windowExt.cy || 1)
+    );
+  };
   const objectTable = /* @__PURE__ */ new Map();
   const allocObjectSlot = () => {
     let slot = 0;
@@ -5878,6 +5885,7 @@ function replayWmfRecords(view, ctx, header, canvasW, canvasH, replayOptions = {
     return slot;
   };
   const state = { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap, symbolTextMap: replayOptions.symbolTextMap };
+  syncDevScale();
   const stateStack = [];
   const wCtx = { view, ctx, state, coord };
   let offset = header.headerSize;
@@ -5911,6 +5919,7 @@ function replayWmfRecords(view, ctx, header, canvasW, canvasH, replayOptions = {
         if (recSize >= 10) {
           windowExt.cy = view.getInt16(dataOff, true);
           windowExt.cx = view.getInt16(dataOff + 2, true);
+          syncDevScale();
         }
         break;
       case META_SAVEDC:

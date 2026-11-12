@@ -32,11 +32,10 @@ export function sniffImage(
   return null
 }
 
-/** A producer-controlled image header must not hand zero, NaN or a 32-bit
-    maximum straight to an OOXML drawing extent (cx/cy are written verbatim).
-    Keep the same 40M pixel budget bmp.ts uses for embedded bitmaps; the caller
-    already falls back to a default size when intrinsicSize returns null. */
-const MAX_IMAGE_PIXELS = 40_000_000
+/** A producer-controlled image header must not hand zero or a 32-bit maximum
+    to an OOXML drawing extent. Nothing is decoded here, so the bound is per
+    side (the largest that still fits an EMU extent), not a pixel budget. */
+const MAX_IMAGE_SIDE = 200_000
 
 function saneSize(width: number, height: number): { width: number; height: number } | null {
   if (
@@ -44,9 +43,8 @@ function saneSize(width: number, height: number): { width: number; height: numbe
     !Number.isInteger(height) ||
     width < 1 ||
     height < 1 ||
-    width > 0x7fffffff ||
-    height > 0x7fffffff ||
-    width * height > MAX_IMAGE_PIXELS
+    width > MAX_IMAGE_SIDE ||
+    height > MAX_IMAGE_SIDE
   )
     return null
   return { width, height }

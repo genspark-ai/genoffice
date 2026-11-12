@@ -9,8 +9,9 @@ requests only when you use them.
 ## Search reranking (off by default)
 
 File search runs on this device: the index is built from your local files, is
-queried locally, and is never uploaded. If you turn on **Search reranking** in
-Settings, every search also sends one request to the decision-model endpoint you
+queried locally, and is never uploaded. If you turn on **Jev search
+reranking** in Settings, a search with two or more hits whose judgement is not
+already cached also sends one request to the decision-model endpoint you
 selected. That request contains:
 
 - the query text
@@ -24,7 +25,7 @@ ranking is used unchanged.
 
 Selecting a local endpoint — Kev, Rizzo Flow, or a custom URL on this machine —
 keeps that request on the device. A custom URL pointing at a server you host
-sends the excerpts to that server instead of a vendor. Turning **Search
+sends the excerpts to that server instead of a vendor. Turning **Jev search
 reranking** off stops these requests entirely.
 
 ## Usage analytics

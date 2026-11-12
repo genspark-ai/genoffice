@@ -159,6 +159,7 @@ import { ATTACHMENT_IMAGE_EXTS, MARKDOWN_MEDIA_DIR_TOKEN, type MarkdownImage } f
 import { MERGE_DATA_SOURCE_EXTENSIONS, readMergeDataSource } from './merge-data-source'
 import { mergeOutputFileName, mergeOutputPath } from './merge-output'
 import { ClickClaims } from '../shared/context-menu-claims'
+import { SAVE_AS_EXPORT_FILTERS, saveAsExportFormat } from '../shared/save-as-format'
 import {
   OPENABLE_DOC_EXTENSIONS,
   docImportKindForPath,
@@ -5462,12 +5463,18 @@ export function registerDocsIpc(): void {
           typeof sourcePath === 'string' ? sourcePath : null,
           defaultName,
         ),
-        filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
+        filters: [{ name: tm('filterWord'), extensions: ['docx'] }, ...SAVE_AS_EXPORT_FILTERS],
       })
       if (result.canceled || !result.filePath) return { ok: false }
       // the tab may have been closed while the dialog was open; checked before the
       // write because Save As may overwrite an existing file (no safe rollback)
       if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+      // another format is an exported copy: the renderer runs that export, the document stays where it is
+      const exportAs = saveAsExportFormat(result.filePath)
+      if (exportAs) {
+        allowPdfWrite(event.sender.id, result.filePath)
+        return { ok: false, exportAs, path: result.filePath }
+      }
       try {
         const passwordState = snapshotDocPassword(
           event.sender.id,

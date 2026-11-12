@@ -47,10 +47,10 @@ const GRANDFATHERED_LEGACY = new Set([
   'rule:shonar-bangla',
 ])
 
-const LINE_METRICS = 'apps/docs/src/renderer/line-metrics.ts'
+const LINE_METRICS = 'apps/docs/src/renderer/text-layout/font-rules/line-factor.ts'
 const RENDERER_CSS = /^apps\/docs\/src\/renderer\/.*\.css$/
 const CSS_METRIC = /^\s*(size-adjust|ascent-override|descent-override|line-gap-override)\s*:/
-const TS_FACTOR = /\breturn\s+\d+\.\d+\b/
+const TS_FACTOR = /\breturn\s+\d+\.\d+\b|\bfactor:\s*\d+\.\d+\b/
 const COMMENT_LINE = /^\s*(\/\/|\/\*|\*)/
 
 function git(commandArgs, { allowFailure = false } = {}) {

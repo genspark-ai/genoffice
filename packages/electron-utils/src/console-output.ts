@@ -17,22 +17,11 @@ import { TextDecoder } from 'node:util'
  * Non-Windows output stays UTF-8.
  */
 
-/** WHATWG TextDecoder labels for the OEM code pages Windows reports. 437/850
- *  have no label of their own; windows-1252 is the closest Western mapping. */
+/** WHATWG TextDecoder labels for the OEM code pages Windows reports. The
+ *  Western and Central European OEM pages (437, 850, 852...) have no label
+ *  and differ from every ISO/Windows page above 0x7f, so they stay unmapped. */
 const OEM_DECODER_LABELS: Readonly<Record<number, string>> = {
-  437: 'windows-1252',
-  850: 'windows-1252',
-  852: 'iso-8859-2',
-  855: 'iso-8859-5',
-  857: 'iso-8859-9',
-  858: 'windows-1252',
-  860: 'iso-8859-1',
-  861: 'iso-8859-1',
-  862: 'iso-8859-8',
-  863: 'iso-8859-1',
-  865: 'iso-8859-1',
   866: 'ibm866',
-  869: 'iso-8859-7',
   874: 'windows-874',
   932: 'shift_jis',
   936: 'gbk',

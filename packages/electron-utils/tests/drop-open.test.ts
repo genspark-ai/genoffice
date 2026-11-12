@@ -149,6 +149,12 @@ describe('partitionDropPayload', () => {
     expect(result.unsupportedExts).toEqual(['doc', 'pages', 'rtf'])
   })
 
+  it('treats a dropped legacy .ppt as openable: Slides converts it', () => {
+    const result = partitionDropPayload(['/decks/legacy.ppt', 'show.pps'])
+    expect(result.supported).toEqual(['/decks/legacy.ppt'])
+    expect(result.unsupportedExts).toEqual(['pps'])
+  })
+
   it('caps the number of openable files at 20', () => {
     const many = Array.from({ length: 30 }, (_, i) => `/tmp/f${i}.docx`)
     expect(partitionDropPayload(many).supported.length).toBe(20)

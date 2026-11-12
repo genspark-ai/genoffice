@@ -251,6 +251,11 @@ ships no Latin letters or ASCII digits/periods (upstream has none); those fall
 through the chain to Kohinoor Bangla. Renamed per OFL ("Noto" is a Reserved
 Font Name; advances are modified).
 
+Shonar Bangla (another M365 cloud face) reuses these files as "Shonar Bangla
+GO": its Bengali advances are 0.69 of Nirmala UI's at a near-constant ratio, so
+one size-adjusted face per weight under the cloud font's hhea box is enough
+(manifest `shonar-bangla-go.json`).
+
 ## Arabic fallback
 
 | Font                             | Role                                                     |

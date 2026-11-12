@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
+import { useImeEnterGuard } from '@genoffice/ui'
 import { useI18n, type StringKey } from './i18n/locale'
 
 export interface AskAnchorRect {
@@ -45,6 +46,7 @@ export function AiAskPopover({
   const [text, setText] = useState('')
   const boxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const ime = useImeEnterGuard()
   // real height measured before first paint — placing by the estimate and
   // re-reading offsetHeight on later renders would make the box jump/flip
   const [measuredH, setMeasuredH] = useState<number | null>(null)
@@ -132,8 +134,10 @@ export function AiAskPopover({
         maxLength={INSTRUCTION_MAX}
         placeholder={t('aiAskPlaceholder')}
         onChange={(e) => setText(e.target.value)}
+        onCompositionStart={ime.handleCompositionStart}
+        onCompositionEnd={ime.handleCompositionEnd}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+          if (e.key === 'Enter' && !ime.isImeConfirm(e.nativeEvent)) {
             e.preventDefault()
             submit()
           }

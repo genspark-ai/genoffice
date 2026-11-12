@@ -362,6 +362,8 @@ export function AiPanel({
       pendingSummary: () => apiRef.current.pendingSummary(),
       outline: () => apiRef.current.outline(),
       searchIndex: () => apiRef.current.searchIndex(),
+      redactionCount: () => apiRef.current.redactionCount(),
+      addRedactions: (marks) => apiRef.current.addRedactions(marks),
       isDeleted: (i) => apiRef.current.isDeleted(i),
       gotoPage: (p) => apiRef.current.gotoPage(p),
       addMarkup: (type, idx, rects, color) => apiRef.current.addMarkup(type, idx, rects, color),

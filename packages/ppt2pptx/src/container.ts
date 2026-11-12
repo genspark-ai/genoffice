@@ -19,6 +19,7 @@ const PPT_LIMITS: Ole2Limits = {
 export function openPptContainer(bytes: Uint8Array): {
   document: Uint8Array
   currentUser: Uint8Array | null
+  pictures: Uint8Array | null
 } {
   const opened = openOle2Container(bytes, PPT_LIMITS)
   if (!opened.ok) throw new LegacyPptError(opened.code, opened.detail)
@@ -39,5 +40,5 @@ export function openPptContainer(bytes: Uint8Array): {
       throw new LegacyPptError('encrypted')
     }
   }
-  return { document, currentUser }
+  return { document, currentUser, pictures: container.stream('Pictures') ?? null }
 }

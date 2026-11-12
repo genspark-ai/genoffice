@@ -1,11 +1,10 @@
+import { eastAsianAndLatinOf } from '../text-layout/script-rules'
 import { Extension, Mark, combineTransactionSteps, getChangedRanges } from '@tiptap/core'
 import { runFaceDecls } from '../text-layout/run-faces'
 import type { Mark as PmMark } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import {} from '@tiptap/pm/tables'
-import { cssRunFontFamily, wordSlotFaces } from '../line-metrics'
-import { isEastAsianFontName } from '../font-list'
+import { cssRunFontFamily, wordSlotFaces } from '../text-layout/font-rules'
 import { t } from '../i18n/locale'
 import { dkBackground } from './dark-page'
 import { runBorderDecls } from './run-border'
@@ -355,6 +354,7 @@ export const RevisionOriginalExtension = Extension.create({
                 const ascii = old.fontAscii ? String(old.fontAscii) : null
                 styles.push(`font-family:${cssRunFontFamily(ascii, ea)}`)
               }
+              // inline-rules: allow — paints a tracked format change's old run properties
               decos.push(Decoration.inline(pos, pos + node.nodeSize, { style: styles.join(';') }))
             })
             return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
@@ -498,10 +498,7 @@ export function fontAttrsFromFamilyChain(chain: string | undefined): Record<stri
         !/ go$/i.test(x) &&
         !/^noto (naskh|sans) arabic (w|ta|tnr)$/i.test(x),
     )
-  const ea = families.find(
-    (f, i) => isEastAsianFontName(f) && (i === 0 || !/^noto (sans|serif) cjk sc$/i.test(f)),
-  )
-  const latin = families.find((f) => !isEastAsianFontName(f))
+  const { ea, latin } = eastAsianAndLatinOf(families)
   if (!ea && !latin) return {}
   return { font: ea ?? latin, ...(latin ? { fontAscii: latin } : {}) }
 }

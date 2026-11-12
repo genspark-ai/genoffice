@@ -14,7 +14,17 @@
  *     (ja/ko/traditional-zh/serif/mono) with fonts guaranteed on this platform -> if all miss,
  *     return undefined (callers use heuristic metrics).
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  existsSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
@@ -230,6 +240,22 @@ const ALIASES: Record<string, string[]> = {
   'microsoft yahei': ['MSYH', '微软雅黑'],
   楷体: ['KaiTi', 'Kaiti SC'],
   仿宋: ['FangSong', 'STFangsong'],
+  // Legacy GB2312-suffixed Windows names are the same faces
+  kaiti_gb2312: ['KaiTi', 'Kaiti SC'],
+  fangsong_gb2312: ['FangSong', 'STFangsong'],
+  // SinoType (ST*) families: macOS ships them as STxxx faces inside Kaiti/Songti/Xingkai.ttc
+  // (index keys are filenames); the missing ones would otherwise substitute to Calibri
+  '\u534e\u6587\u6977\u4f53': ['STKaiti', 'Kaiti', 'Kaiti SC'],
+  stkaiti: ['Kaiti', 'Kaiti SC'],
+  '\u534e\u6587\u5b8b\u4f53': ['STSong', 'Songti', 'Songti SC'],
+  stsong: ['Songti', 'Songti SC'],
+  '\u534e\u6587\u4e2d\u5b8b': ['STZhongsong', 'STSong', 'Songti'],
+  stzhongsong: ['STSong', 'Songti'],
+  '\u534e\u6587\u884c\u6977': ['STXingkai', 'Xingkai', 'Xingkai SC'],
+  stxingkai: ['Xingkai', 'Xingkai SC'],
+  '\u534e\u6587\u4eff\u5b8b': ['STFangsong', 'FangSong'],
+  '\u534e\u6587\u9ed1\u4f53': ['STHeiti', 'SimHei'],
+  '\u534e\u6587\u7ec6\u9ed1': ['STXihei', 'STHeiti'],
   helvetica: ['Arial'],
   'helvetica neue': ['Arial'],
   'arial rounded mt bold': ['Arial Rounded Bold'],
@@ -327,6 +353,7 @@ function variableTwinsOf(family: string): string[] {
 const SERIF_RE =
   /serif|roman|garamond|georgia|playfair|didot|bodoni|baskerville|caslon|palatino|antiqua|minion|lora|merriweather|crimson|spectral|charter|literata|song|songti|宋|mincho|明朝|ming|batang|바탕|myeongjo|명조|gungsuh|궁서|細明|標楷|儷宋/i
 const MONO_RE = /mono|courier|consolas|menlo|monaco|code|typewriter/i
+const ETHIOPIC_RE = /[\u1200-\u139f\u2d80-\u2ddf\uab00-\uab2f]/
 /** Bullet glyphs Arial (WGL4) covers: • ■ □ ▪ ▫ ▲ ► ▼ ◄ ◊ ○ ● ◘ ◙ */
 const SYMBOL_BULLET_GLYPH_RE = /^[•■□▪▫▲►▼◄◊○●◘◙]+$/
 
@@ -339,6 +366,16 @@ const SUBSTITUTES: Record<'serif' | 'sans' | 'mono', string[]> = {
   sans: ['Calibri', 'Arial', 'Verdana'],
   mono: ['Calibri', 'Courier New'],
 }
+
+// Families PowerPoint's own substitution table maps to a specific face instead of Calibri:
+// DejaVu Sans (Bitstream Vera lineage) exports as Verdana, Liberation Sans as Arial (pdffonts
+// probes); Liberation Serif/Mono follow their metric twins the same way
+const NAMED_SUBSTITUTES = new Map<string, string[]>([
+  [norm('DejaVu Sans'), ['Verdana']],
+  [norm('Liberation Sans'), ['Arial']],
+  [norm('Liberation Serif'), ['Times New Roman']],
+  [norm('Liberation Mono'), ['Courier New']],
+])
 
 function classifyFamily(family: string): 'serif' | 'sans' | 'mono' {
   if (MONO_RE.test(family)) return 'mono'
@@ -395,7 +432,8 @@ function substitutesFor(
   // Calibri, but prod_064's digits in missing 함초롬돋움 in Malgun
   const script =
     substScript ?? (latinOnly ? classifyCjkScriptByNameScript(family) : classifyCjkScript(family))
-  if (!script) return SUBSTITUTES[classifyFamily(family)]
+  if (!script)
+    return [...(NAMED_SUBSTITUTES.get(norm(family)) ?? []), ...SUBSTITUTES[classifyFamily(family)]]
   const serif = SERIF_RE.test(family)
   const mac = process.platform === 'darwin'
   switch (script) {
@@ -525,6 +563,63 @@ function readFaceDir(buf: Buffer): FaceInfo[] {
   })
 }
 
+/**
+ * Family names (name 1/16) of every face in a font file, reading only the table directory
+ * and the name table through the fd. Windows core fonts keep 8.3 filenames (Constan.ttf is
+ * Constantia, gara.ttf Garamond, pala.ttf Palatino Linotype), so a filename index alone
+ * never reaches them; this is what the family index is built from without loading 300 MB
+ * of Office fonts.
+ */
+function readFileFamilies(path: string): string[] {
+  let fd: number | null = null
+  try {
+    fd = openSync(path, 'r')
+    const size = fstatSync(fd).size
+    const readAt = (offset: number, length: number): Buffer | null => {
+      if (offset < 0 || length <= 0 || offset + length > size) return null
+      const buf = Buffer.alloc(length)
+      return readSync(fd!, buf, 0, length, offset) === length ? buf : null
+    }
+    const head = readAt(0, 12)
+    if (!head) return []
+    const offsets =
+      head.toString('ascii', 0, 4) === 'ttcf'
+        ? (() => {
+            const count = Math.min(head.readUInt32BE(8), 64)
+            const table = readAt(12, count * 4)
+            return table ? Array.from({ length: count }, (_, i) => table.readUInt32BE(4 * i)) : []
+          })()
+        : [0]
+    const families: string[] = []
+    for (const offset of offsets) {
+      const dirHead = readAt(offset, 12)
+      if (!dirHead) continue
+      const numTables = Math.min(dirHead.readUInt16BE(4), 64)
+      const dir = readAt(offset + 12, numTables * 16)
+      if (!dir) continue
+      for (let t = 0; t < numTables; t++) {
+        if (dir.toString('ascii', 16 * t, 16 * t + 4) !== 'name') continue
+        const nameOff = dir.readUInt32BE(16 * t + 8)
+        const nameLen = dir.readUInt32BE(16 * t + 12)
+        const name = readAt(nameOff, Math.min(nameLen, 1 << 20))
+        if (!name) break
+        try {
+          for (const f of readNameStrings(name, 0).families)
+            if (!families.includes(f)) families.push(f)
+        } catch {
+          /* a damaged name table contributes nothing */
+        }
+        break
+      }
+    }
+    return families
+  } catch {
+    return []
+  } finally {
+    if (fd !== null) closeSync(fd)
+  }
+}
+
 /** OpenType layout tables — droppable for metrics-only parsing when opentype.js rejects them. */
 const LAYOUT_TABLES: ReadonlySet<string> = new Set(['GSUB', 'GPOS', 'GDEF'])
 
@@ -652,7 +747,13 @@ function rankFaces(
     // Weight-stripped base-family lookups (wantKey "avenir" for request "Avenir Light"):
     // the sub-family face announces the full name in family+subfamily, the plain face doesn't
     (origKey && origKey !== wantKey && f.styleText.includes(origKey) ? 3 : 0) +
-    (f.famKeys.some((k) => k === wantKey || k.startsWith(wantKey)) ? 2 : 0) +
+    // The plain family face beats a sub-family extending the name (substitute "Yu Gothic"
+    // must land on Yu Gothic Medium, not the narrow-kana Yu Gothic UI in the same ttc)
+    (f.famKeys.some((k) => k === wantKey)
+      ? 4
+      : f.famKeys.some((k) => k.startsWith(wantKey))
+        ? 2
+        : 0) +
     (styleKeys.some((s) => f.styleText.includes(s)) ? 1 : 0) +
     // Regular requests: an exact 'regular'/'book' face outranks 'medium'/'w3' fallbacks
     // (cloud dirs carry every weight; a tie otherwise picks whichever file sorts first)
@@ -674,6 +775,8 @@ class FontRegistry {
   private privateDirs: string[] = []
   /** Path -> face directory */
   private faceDirs = new Map<string, FaceInfo[]>()
+  /** Normalized family name (name table) -> files in the private dirs declaring it; built on first miss */
+  private families: Map<string, string[]> | null = null
   /** `path#offset` -> parsed font (null = parse failed) */
   private parsed = new Map<string, OpentypeFontLike | null>()
   private indexed = false
@@ -731,6 +834,27 @@ class FontRegistry {
 
   isPrivate(path: string): boolean {
     return this.privateDirs.some((d) => path.startsWith(d))
+  }
+
+  /**
+   * Files of the private dirs (Office DFonts, the user font store) keyed by the family names
+   * their name tables declare — the filename index misses every Windows 8.3-named family.
+   */
+  private familyIndex(): Map<string, string[]> {
+    if (this.families) return this.families
+    const families = new Map<string, string[]>()
+    for (const path of new Set(this.index.values())) {
+      if (!this.isPrivate(path) || path.startsWith(EMBEDDED_FONT_DIR)) continue
+      for (const family of readFileFamilies(path)) {
+        const key = norm(family)
+        const paths = families.get(key)
+        if (paths) {
+          if (!paths.includes(path)) paths.push(path)
+        } else families.set(key, [path])
+      }
+    }
+    this.families = families
+    return families
   }
 
   private facesOf(path: string): FaceInfo[] {
@@ -853,22 +977,26 @@ class FontRegistry {
     this.buildIndex()
     const candidates: string[] = []
     const seen = new Set<string>()
-    const push = (f: string) => {
+    // Alias entries are file keys (YuGothM.ttc); the family they stand for picks the face
+    // inside the collection (Yu Gothic Medium, not Yu Gothic UI)
+    const standsFor = new Map<string, string>()
+    const push = (f: string, family?: string) => {
       const k = norm(f)
       if (k && !seen.has(k)) {
         seen.add(k)
         candidates.push(f)
+        if (family) standsFor.set(k, norm(family))
       }
     }
     push(style.fontFamily)
-    for (const a of aliasesOf(style.fontFamily)) push(a)
+    for (const a of aliasesOf(style.fontFamily)) push(a, style.fontFamily)
     for (const v of variableTwinsOf(style.fontFamily)) push(v)
     // Candidates after this index are same-script/class substitutes, not the requested
     // family — the sub-family cloud fallback below must run before them
     const substituteStart = candidates.length
     for (const s of substitutesFor(style.fontFamily, style.substScript, style.latinOnly)) {
       push(s)
-      for (const a of aliasesOf(s)) push(a)
+      for (const a of aliasesOf(s)) push(a, s)
     }
     // wN: Japanese fonts split files by weight (Hiragino Kaku Gothic W0..W9), and Chromium
     // matches faces by CSS weight (bold=700 -> W7, normal=400 -> W4) — metrics must pick the
@@ -906,10 +1034,11 @@ class FontRegistry {
     const tryFamily = (family: string, strict = false) => {
       const base = norm(family)
       // Try style-variant files first, then fall back to regular (approximate widths still far better than heuristics)
+      const wantKey = standsFor.get(base) ?? base
       for (const suf of [...suffixes, '', 'regular']) {
         const path = this.index.get(base + norm(suf))
         if (!path) continue
-        const hit = this.loadBest(path, base, style, origKey, reqWeight)
+        const hit = this.loadBest(path, wantKey, style, origKey, reqWeight)
         if (hit && (!strict || faceMatches(hit.font)))
           return { ...hit, family: hit.family || family }
       }
@@ -917,6 +1046,13 @@ class FontRegistry {
       const cloudPaths = this.cloud.get(base)
       if (cloudPaths) {
         const hit = this.loadBestCloud(cloudPaths, base, style, origKey, reqWeight)
+        if (hit) return { ...hit, family: hit.family || family }
+      }
+      // Office fonts under 8.3 filenames (Constan.ttf, gara.ttf, pala.ttf, consola.ttf…): the
+      // name table knows the family even when no filename does
+      const familyPaths = this.familyIndex().get(wantKey) ?? this.familyIndex().get(base)
+      if (familyPaths) {
+        const hit = this.loadBestCloud(familyPaths, wantKey, style, origKey, reqWeight)
         if (hit) return { ...hit, family: hit.family || family }
       }
       return undefined
@@ -971,7 +1107,62 @@ class FontRegistry {
 
 /** One glyph as returned by opentype.js (only the advance is read here). */
 interface OpentypeGlyph {
+  index?: number
   advanceWidth?: number
+}
+
+interface KernSubtable {
+  posFormat?: number
+}
+interface KernLookup {
+  subtables: KernSubtable[]
+}
+
+const kernLookupCache = new WeakMap<
+  object,
+  ((a: OpentypeGlyph, b: OpentypeGlyph) => number) | null
+>()
+
+/**
+ * opentype.js's Font.getKerningValue trusts GPOS whenever the font has a GPOS table at
+ * all: with the kern feature absent (Times New Roman) or wrapped in Extension lookups it
+ * skips (Constantia, Cambria), the empty lookup list zeroes every pair and the `kern`
+ * table it parsed is never consulted. PowerPoint kerns those fonts, so lines measured
+ * unkerned ran ~1% long and broke a word early.
+ */
+function kernLookup(
+  f: OpentypeRuntimeFont,
+): ((a: OpentypeGlyph, b: OpentypeGlyph) => number) | null {
+  const cached = kernLookupCache.get(f)
+  if (cached !== undefined) return cached
+  let fn: ((a: OpentypeGlyph, b: OpentypeGlyph) => number) | null = null
+  const pos = f.position
+  const script = pos?.getDefaultScriptName?.() ?? 'latn'
+  let lookups: KernLookup[] = []
+  try {
+    lookups = pos?.getKerningTables?.(script) ?? []
+    if (!lookups.length && pos?.getLookupTables) {
+      lookups = pos
+        .getLookupTables(script, undefined, 'kern', 9)
+        .map((l) => ({
+          subtables: l.subtables.flatMap((s) =>
+            s.lookupType === 2 && s.extension ? [s.extension] : [],
+          ),
+        }))
+        .filter((l) => l.subtables.length)
+    }
+  } catch {
+    lookups = []
+  }
+  if (lookups.length && pos?.getKerningValue) {
+    const get = pos.getKerningValue.bind(pos)
+    fn = (a, b) => (a.index != null && b.index != null ? get(lookups, a.index, b.index) || 0 : 0)
+  } else if (f.kerningPairs && Object.keys(f.kerningPairs).length) {
+    const pairs = f.kerningPairs
+    fn = (a, b) => pairs[`${a.index},${b.index}`] ?? 0
+  }
+  kernLookupCache.set(f, fn)
+  return fn
 }
 
 /**
@@ -982,6 +1173,18 @@ interface OpentypeGlyph {
 interface OpentypeRuntimeFont extends OpentypeFontLike {
   charToGlyph?(char: string): OpentypeGlyph
   getKerningValue?(left: unknown, right: unknown): number
+  kerningPairs?: Record<string, number>
+  position?: {
+    getDefaultScriptName?(): string
+    getKerningTables?(script: string): KernLookup[] | undefined
+    getLookupTables?(
+      script: string,
+      language: string | undefined,
+      feature: string,
+      lookupType: number,
+    ): Array<{ subtables: Array<{ lookupType?: number; extension?: KernSubtable }> }>
+    getKerningValue?(lookups: KernLookup[], left: number, right: number): number
+  }
   tables?: {
     fvar?: {
       axes?: Array<{ tag: string; minValue: number; maxValue: number; defaultValue: number }>
@@ -1003,7 +1206,7 @@ interface OpentypeRuntimeFont extends OpentypeFontLike {
  * spaces get swallowed, and runs can even overlap. Here we accumulate advance per glyph (with
  * kern pairs) without triggering the shaping path.
  */
-function wrapSafeAdvance(font: OpentypeFontLike): OpentypeFontLike {
+export function wrapSafeAdvance(font: OpentypeFontLike): OpentypeFontLike {
   const f = font as OpentypeRuntimeFont
   if (typeof f.charToGlyph !== 'function') return font
   return {
@@ -1014,15 +1217,15 @@ function wrapSafeAdvance(font: OpentypeFontLike): OpentypeFontLike {
       ? { charToGlyphIndex: (ch: string) => font.charToGlyphIndex!(ch) }
       : {}),
     getAdvanceWidth(text: string, fontSize: number, options?: { kerning?: boolean }): number {
-      const kern = options?.kerning !== false
+      const kern = options?.kerning !== false ? kernLookup(f) : null
       let units = 0
-      let prev: unknown = null
+      let prev: OpentypeGlyph | null = null
       for (const ch of text) {
         const glyph = f.charToGlyph!(ch)
         units += glyph?.advanceWidth ?? 0
-        if (kern && prev && typeof f.getKerningValue === 'function') {
+        if (kern && prev && glyph) {
           try {
-            units += f.getKerningValue(prev, glyph) || 0
+            units += kern(prev, glyph)
           } catch {
             /* Treat a failed kern lookup as 0 */
           }
@@ -1345,6 +1548,14 @@ export function createSystemFontMetrics(): FontMetricsProvider {
     const lacks = (probe: string) => !e || e.font.charToGlyphIndex?.(probe) === 0
     if (style.substScript === 'ko' && /[가-힣]/.test(text) && lacks('가')) return 'Malgun Gothic'
     if (style.substScript === 'ja' && /[぀-ヿ]/.test(text) && lacks('あ')) return 'Yu Gothic'
+    // Ethiopic has no language gate: PowerPoint draws it in Nyala whatever the run's lang
+    // (pdffonts probe on an en-US Calibri run; Chromium's per-glyph fallback lands on Kefa,
+    // whose glyphs run ~1.3x larger). The fallback face must carry the glyph itself, or
+    // measure would re-enter forever on a subset Nyala
+    if (ETHIOPIC_RE.test(text) && lacks('\u12a0')) {
+      const nyala = resolveEntry({ ...style, fontFamily: 'Nyala' })
+      if (nyala && !nyala.substituted && nyala.font.charToGlyphIndex?.('\u12a0')) return 'Nyala'
+    }
     // Geometric bullets the face lacks draw in Arial, PowerPoint's linked symbol font (its ● is
     // 0.43em whatever the run font; Chromium's per-glyph fallback on macOS lands on a CJK face
     // with a 0.75em circle, which buSzPts then scales up — seen in an Open Sans deck)

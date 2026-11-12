@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  LAST_ZOOM_KEY,
   MAX_VIEW_ENTRIES,
   VIEW_STATE_KEY,
   captureViewState,
   captureZoomAnchor,
+  loadLastZoom,
   loadViewState,
+  saveLastZoom,
   saveViewState,
   zoomAnchorY,
 } from '../src/renderer/view-state'
@@ -208,5 +211,22 @@ describe('captureZoomAnchor / zoomAnchorY', () => {
     expect(anchor?.content).toBe(800)
     expect(captureZoomAnchor({ y: 100, rowHeights: [], gap, scale: 1 })).toBeNull()
     expect(captureZoomAnchor({ y: 100, rowHeights: heights, gap, scale: 0 })).toBeNull()
+  })
+})
+
+describe('last zoom', () => {
+  it('round-trips a fit mode and a custom scale', () => {
+    const storage = memStorage()
+    saveLastZoom({ scale: 1, fitMode: 'page' }, storage)
+    expect(loadLastZoom(storage)).toEqual({ scale: 1, fitMode: 'page' })
+    saveLastZoom({ scale: 1.75, fitMode: null }, storage)
+    expect(loadLastZoom(storage)).toEqual({ scale: 1.75, fitMode: null })
+  })
+
+  it('rejects missing or corrupt entries', () => {
+    expect(loadLastZoom(memStorage())).toBeNull()
+    expect(loadLastZoom(memStorage({ [LAST_ZOOM_KEY]: '{bad' }))).toBeNull()
+    expect(loadLastZoom(memStorage({ [LAST_ZOOM_KEY]: '{"scale":0,"fitMode":null}' }))).toBeNull()
+    expect(loadLastZoom(memStorage({ [LAST_ZOOM_KEY]: '{"scale":1,"fitMode":"x"}' }))).toBeNull()
   })
 })

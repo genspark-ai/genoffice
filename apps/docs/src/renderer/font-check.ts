@@ -1,5 +1,5 @@
 import type { ParsedDoc, TableModel } from '@genoffice/docx-engine'
-import { BUNDLED_FONTS, cssFontFamily, isBundledFont } from './line-metrics'
+import { BUNDLED_FONTS, cssFontFamily, isBundledFont } from './text-layout/font-rules'
 
 const GENERIC = new Set(['serif', 'sans-serif', 'monospace'])
 

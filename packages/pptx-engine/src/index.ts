@@ -7,7 +7,7 @@
 import { stripRedactExt, syncRedactExt } from './redaction-xml'
 import JSZip from 'jszip'
 import { PackageArchive, relsPathFor, resolveTarget, type Relationship } from './zip'
-import { parseClrMap, parseTheme, type Theme } from './theme'
+import { parseClrMap, parseTheme, themeWithOverride, type Theme } from './theme'
 import {
   parseSlide,
   parseDecorations,
@@ -383,6 +383,21 @@ export interface OpenedPptx {
   archive: PackageArchive
 }
 
+/**
+ * A slide's own themeOverride part (keep-source-formatting pastes) replaces the master
+ * theme's clrScheme/fontScheme for that slide: PowerPoint resolves every schemeClr on it,
+ * background included, against the override.
+ */
+function slideTheme(archive: PackageArchive, slidePath: string, theme: Theme): Theme {
+  for (const rel of archive.readRels(slidePath).values()) {
+    if (rel.type.endsWith('/themeOverride') && rel.targetMode !== 'External') {
+      const xml = archive.readText(resolveTarget(slidePath, rel.target))
+      if (xml) return themeWithOverride(theme, xml)
+    }
+  }
+  return theme
+}
+
 /** Parse one slide from the archive (assembling the inheritance-chain ctx); shared by openPptx and duplicateSlide. */
 function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slide | null {
   const slideXml = archive.readText(slidePath)
@@ -396,7 +411,7 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
   if (chain.themePath) {
     const themeXml = archive.readText(chain.themePath)
     if (themeXml) {
-      ctx.theme = parseTheme(themeXml)
+      ctx.theme = slideTheme(archive, slidePath, parseTheme(themeXml))
       // Dark masters remap schemeClr names (bg1→dk1 …); must be in place before any color resolution below
       ctx.theme.clrMap = parseClrMap(masterXml, layoutXml, slideXml)
       ctx.themeMediaRels = partMediaRels(archive, chain.themePath)
@@ -1122,7 +1137,7 @@ function slideInheritanceCtx(archive: PackageArchive, slidePath: string) {
   if (chain.themePath) {
     const themeXml = archive.readText(chain.themePath)
     if (themeXml) {
-      theme = parseTheme(themeXml)
+      theme = slideTheme(archive, slidePath, parseTheme(themeXml))
       theme.clrMap = parseClrMap(masterXml, layoutXml, archive.readText(slidePath) ?? undefined)
     }
   }

@@ -56,8 +56,12 @@ const rescuePathFor = (filePath: string) =>
  * are on disk either way.
  */
 async function keepRescueCopy(filePath: string, tmp: string): Promise<void> {
+  const rescue = rescuePathFor(filePath)
   try {
-    await copyFile(tmp, rescuePathFor(filePath))
+    await copyFile(tmp, rescue)
+    // The staging temp is already on disk; the copy must be too before it
+    // becomes the only holder of the new bytes.
+    await syncFileBestEffort(rescue)
   } catch {
     /* the staging temp still holds the bytes */
     return

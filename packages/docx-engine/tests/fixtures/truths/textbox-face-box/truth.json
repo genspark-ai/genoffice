@@ -12,7 +12,7 @@
       "box": 0,
       "para": 0,
       "expect": {
-        "styles": ["--doc-line-factor:1.22", "--doc-font-box:1.0000", "--doc-font-skew:0.5000"],
+        "styles": ["--doc-line-factor:1.2207", "--doc-font-box:1.0000", "--doc-font-skew:0.5000"],
         "notStyles": ["--doc-lead-gap"]
       },
       "note": "Calibri box 0.75 + 0.25 em: the lead-gap maths (styles.css) place the descent on the single line's bottom"

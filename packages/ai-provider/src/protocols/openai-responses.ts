@@ -13,7 +13,7 @@ import {
   throwIfCreditsNotice,
   throwIfToolCountOverBudget,
   throwIfToolJsonOverBudget,
-  usageCount,
+  openAiUsage,
   type StreamCallbacks,
 } from './shared'
 
@@ -167,18 +167,17 @@ interface ResponsesObject {
   status?: string
   output?: ResponsesItem[]
   incomplete_details?: { reason?: string }
-  usage?: { input_tokens?: unknown; output_tokens?: unknown }
+  usage?: {
+    input_tokens?: unknown
+    output_tokens?: unknown
+    input_tokens_details?: { cached_tokens?: unknown } | null
+  }
   error?: { message?: string } | string | null
 }
 
 function usageOf(raw: ResponsesObject['usage']): AiTokenUsage | undefined {
   if (!raw) return undefined
-  const usage: AiTokenUsage = {}
-  const input = usageCount(raw.input_tokens)
-  const output = usageCount(raw.output_tokens)
-  if (input !== undefined) usage.inputTokens = input
-  if (output !== undefined) usage.outputTokens = output
-  return usage.inputTokens !== undefined || usage.outputTokens !== undefined ? usage : undefined
+  return openAiUsage(raw.input_tokens, raw.output_tokens, raw.input_tokens_details)
 }
 
 /** Turn the completed items of one response into callbacks; shared by the SSE and JSON paths. */

@@ -10,6 +10,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Stage, Layer, Rect, Group } from 'react-konva'
+import type Konva from 'konva'
 import type { Context } from 'konva/lib/Context'
 import type { RenderNode, RenderSlide, ShapeRenderNode } from '@genoffice/pptx-render'
 import type { AnimationItem } from '../../shared/ipc'
@@ -191,11 +192,14 @@ export function AnimatedSlideStage({
   images,
   width,
   states,
+  stageRef,
 }: {
   slide: RenderSlide
   images: Map<string, HTMLImageElement>
   width: number
   states: Map<string, NodeAnimState>
+  /** Offscreen capture (video export) grabs the stage through this */
+  stageRef?: (stage: Konva.Stage | null) => void
 }) {
   const scale = width / slide.widthPx
   const h = slide.heightPx * scale
@@ -210,7 +214,13 @@ export function AnimatedSlideStage({
     paraStates.set(pk.sourceId, arr)
   }
   return (
-    <Stage width={width} height={h} listening={false} style={{ pointerEvents: 'none' }}>
+    <Stage
+      width={width}
+      height={h}
+      listening={false}
+      style={{ pointerEvents: 'none' }}
+      ref={stageRef}
+    >
       <Layer scaleX={scale} scaleY={scale} listening={false}>
         <Rect
           x={0}

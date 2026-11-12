@@ -6,7 +6,8 @@ import { useI18n, type StringKey } from '../i18n/locale'
 import { fontFamiliesFor, systemFamiliesBesidesCandidates } from '../font-list'
 import { fontSizeLabel, fontSizeOptions, parseFontSize } from '../font-sizes'
 import { useSystemFontFamilies } from '../system-fonts'
-import { charScaleEm, cssFontFamily, wordKerns } from '../line-metrics'
+import { charScaleEm, wordKerns } from '../line-metrics'
+import { cssFontFamily } from '../text-layout/font-rules'
 import { useModalKeys } from './modal-keys'
 
 /**
@@ -126,7 +127,7 @@ export function setTextStyleWithScale(
       const merged = { ...(node.marks.find((m) => m.type === type)?.attrs ?? {}), ...attrs }
       if ('charScalePct' in attrs) {
         const pct = merged.charScalePct as number | null
-        merged.charScaleEm = pct && pct !== 100 ? charScaleEm(node.text, pct) : null
+        merged.charScaleEm = pct && pct !== 100 ? charScaleEm(node.text, pct, merged) : null
       }
       tr.addMark(Math.max(pos, from), Math.min(pos + node.nodeSize, to), type.create(merged))
     })

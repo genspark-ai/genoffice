@@ -2,9 +2,10 @@ import { statSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 
 /**
- * Reopen the documents of the previous session at launch (genoffice#2162).
- * Off by default; when on, the shell window's file tabs are stored in
- * app-settings.json as it closes and reopened at the next launch.
+ * Reopen the documents of the previous session (genoffice#2162). On unless
+ * switched off: the shell window's file tabs are stored in app-settings.json
+ * as it closes and reopened at the next launch, or when the window is
+ * recreated from the Dock on macOS, where closing it leaves the app running.
  */
 export const RESTORE_LAST_SESSION_KEY = 'restoreLastSession'
 export const LAST_SESSION_DOCUMENTS_KEY = 'lastSessionDocuments'
@@ -13,7 +14,7 @@ export const LAST_SESSION_DOCUMENTS_KEY = 'lastSessionDocuments'
 const MAX_RESTORED_DOCUMENTS = 50
 
 export function restoreLastSessionEnabled(settings: Record<string, unknown>): boolean {
-  return settings[RESTORE_LAST_SESSION_KEY] === true
+  return settings[RESTORE_LAST_SESSION_KEY] !== false
 }
 
 /** the saved tab paths, once each, absolute only, in tab order */

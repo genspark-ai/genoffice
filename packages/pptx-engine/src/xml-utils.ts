@@ -43,6 +43,15 @@ export function percentFraction(raw: unknown): number | undefined {
   return text.endsWith('%') ? n / 100 : n / 100000
 }
 
+/** The same value in percent; one division keeps whole percents exact. */
+export function percentPoints(raw: unknown): number | undefined {
+  if (raw == null) return undefined
+  const text = String(raw).trim()
+  const n = Number.parseFloat(text)
+  if (!Number.isFinite(n)) return undefined
+  return text.endsWith('%') ? n : n / 1000
+}
+
 /** XML 1.0 forbids C0 controls (minus tab/LF/CR), U+FFFE/FFFF and lone
     surrogates even when escaped — one such byte makes the whole part
     unparseable and PowerPoint offers repair. VT/FF (common in PDF-extracted
@@ -133,4 +142,70 @@ export function hasDefaultFor(ct: string, ext: string): boolean {
   const re = new RegExp(`\\bExtension\\s*=\\s*(["'])${ext}\\1`)
   for (const tag of ct.matchAll(DEFAULT_TAG)) if (re.test(tag[0])) return true
   return false
+}
+
+/**
+ * Prefix PowerPoint (and this engine's literal `p:`/`a:`/`r:` lookups) expect for each OOXML
+ * namespace. `''` marks namespaces that are conventionally the default namespace of their part.
+ */
+const CANONICAL_NS_PREFIX: Record<string, string> = {
+  'http://schemas.openxmlformats.org/presentationml/2006/main': 'p',
+  'http://schemas.openxmlformats.org/drawingml/2006/main': 'a',
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships': 'r',
+  'http://schemas.openxmlformats.org/drawingml/2006/chart': 'c',
+  'http://schemas.openxmlformats.org/drawingml/2006/chartDrawing': 'cdr',
+  'http://schemas.openxmlformats.org/drawingml/2006/diagram': 'dgm',
+  'http://schemas.openxmlformats.org/drawingml/2006/picture': 'pic',
+  'http://schemas.openxmlformats.org/markup-compatibility/2006': 'mc',
+  'http://schemas.microsoft.com/office/drawing/2014/chartex': 'cx',
+  'http://schemas.microsoft.com/office/drawing/2008/diagram': 'dsp',
+  'http://schemas.microsoft.com/office/drawing/2010/main': 'a14',
+  'http://schemas.microsoft.com/office/drawing/2014/main': 'a16',
+  'http://schemas.microsoft.com/office/drawing/2016/SVG/main': 'asvg',
+  'http://schemas.microsoft.com/office/drawing/2017/model3d': 'am3d',
+  'http://schemas.microsoft.com/office/drawing/2012/chart': 'c15',
+  'http://schemas.microsoft.com/office/powerpoint/2010/main': 'p14',
+  'http://schemas.microsoft.com/office/powerpoint/2012/main': 'p15',
+  'http://schemas.microsoft.com/office/powerpoint/2015/main': 'p159',
+  'urn:schemas-microsoft-com:vml': 'v',
+  'http://schemas.openxmlformats.org/package/2006/relationships': '',
+  'http://schemas.openxmlformats.org/package/2006/content-types': '',
+}
+
+const ROOT_START_TAG = /<(?!\?|!)[^>]*>/
+const XMLNS_DECL = /\sxmlns(?::([A-Za-z_][\w.-]*))?=(["'])([^"']*)\2/g
+
+/**
+ * Rewrite namespace prefixes to the ones PowerPoint writes. Tools that re-serialize a part
+ * through a generic XML library (Python ElementTree writes `ns0:`, `ns1:`, …) keep the XML
+ * namespace-correct, and PowerPoint opens such decks, but every reader here addresses
+ * elements by literal prefix and would see an empty presentation. Returns the input unchanged
+ * when every declared prefix is already canonical or the rewrite would collide with an
+ * existing declaration.
+ */
+export function canonicalizeNsPrefixes(xml: string): string {
+  const root = ROOT_START_TAG.exec(xml)
+  if (!root) return xml
+  const declared = new Map<string, string>()
+  for (const m of root[0].matchAll(XMLNS_DECL)) declared.set(m[1] ?? '', m[3]!)
+  const renames = new Map<string, string>()
+  for (const [prefix, uri] of declared) {
+    const want = CANONICAL_NS_PREFIX[uri]
+    if (want === undefined || want === prefix || prefix === '') continue
+    if (declared.has(want) && declared.get(want) !== uri) return xml
+    renames.set(prefix, want)
+  }
+  if (!renames.size) return xml
+  const alt = [...renames.keys()].map((p) => p.replace(/[.-]/g, '\\$&')).join('|')
+  const decl = new RegExp(`(\\sxmlns):(${alt})=`, 'g')
+  const names = new RegExp(`(<\\/?|\\s)(${alt}):(?=[A-Za-z_])`, 'g')
+  return xml
+    .replace(decl, (_, lead: string, p: string) => {
+      const want = renames.get(p)!
+      return want ? `${lead}:${want}=` : `${lead}=`
+    })
+    .replace(names, (_, lead: string, p: string) => {
+      const want = renames.get(p)!
+      return want ? `${lead}${want}:` : lead
+    })
 }

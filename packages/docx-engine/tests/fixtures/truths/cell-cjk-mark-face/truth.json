@@ -27,7 +27,7 @@
       "expect": {
         "styles": [
           "font-size:12pt",
-          "--doc-line-factor:1.22",
+          "--doc-line-factor:1.2207",
           "font-family:'Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC',sans-serif"
         ]
       }

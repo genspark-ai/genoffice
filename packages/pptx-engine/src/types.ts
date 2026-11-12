@@ -606,7 +606,7 @@ export interface TextElement extends ElementBase {
   /** spPr carried neither a:prstGeom nor a:custGeom (non-placeholder): PowerPoint draws only the text */
   noGeometry?: true
   fill?: Fill
-  /** <p:sp useBgFill="1">: painted with the slide's effective background fill (fill is only a fallback) */
+  /** <p:sp useBgFill="1"> without an spPr fill of its own: painted with the slide's effective background fill */
   useBgFill?: boolean
   /** <a:effectLst><a:fillOverlay>: second fill composited over the base (PowerPoint blends
    *  with the record's blend mode; the renderer approximates every mode as multiply) */

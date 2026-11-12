@@ -12,22 +12,18 @@ import { textParaLineBox } from '../text-layout/para-line-box'
 import {
   asciiOnlyCjkFace,
   autoSpacingPt,
-  cjkDeclaredLineFactor,
   cjkScriptRanges,
-  cssCsFontFamily,
   cssExactLineCap,
-  cssFontFamily,
   cssGridSpacingPt,
   cssLeadTop,
   cssLineHeight,
-  cssRunFontFamily,
-  cutAdjustedAlias,
   emptyEaSlotHangulFactor,
   facesDiffer,
   fontBoxCss,
   isCjkFontName,
-  isEaLayoutFace,
-  lineHeightFactor,
+  isWhitespaceRun,
+  scaledLatinLineFactor,
+  textInkIsEmoji,
   nonCjkInkRanges,
   paraLineFactorCss,
   runLatinFactorFaces,
@@ -37,11 +33,20 @@ import {
   textHasComplexScript,
   textHasHangul,
   textHasLatinInk,
+} from '../line-metrics'
+import {
+  cjkDeclaredLineFactor,
+  cssCsFontFamily,
+  cssFontFamily,
+  cssRunFontFamily,
+  cutAdjustedAlias,
+  isEaLayoutFace,
+  lineHeightFactor,
   inheritedMarkFace,
   inheritedSlotFace,
   latinViaEastAsiaSlotOn,
   runSlotFaces,
-} from '../line-metrics'
+} from '../text-layout/font-rules'
 import type {
   NoteRun,
   ParaFormat,
@@ -76,6 +81,8 @@ export type LayoutRunAttrs = {
   csSize?: number | null
   eaSlotEmpty?: boolean | null
   rawRPr?: string | null
+  /** w:w character scaling, percent */
+  charScalePct?: number | null
 }
 
 /** one inline leaf of a paragraph, in document order */
@@ -179,10 +186,13 @@ export function markSizeHalfPoints(
 export function strutHalfPoints(para: LayoutPara): { halfPoints: number; mixed: boolean } | null {
   let min: number | null = null
   let mixed = false
-  for (const r of para.runs) {
-    if (r.kind !== 'text') continue
-    // space-only runs never size a line (Word probe 2026-09-11)
-    if (SPACE_ONLY_RE.test(r.text)) continue
+  // whitespace never sizes a line beside ink; a tab-only paragraph is content
+  // (a space-only one takes the mark rules)
+  const ink = inkRuns(para)
+  const sizing = ink.length
+    ? ink
+    : para.runs.filter((r) => r.kind === 'text' && !SPACE_ONLY_RE.test(r.text))
+  for (const r of sizing) {
     const sz = markSizeHalfPoints(r.attrs)
     if (sz != null) min = Math.min(min ?? Infinity, sz)
     else if (!r.bare) mixed = true
@@ -210,9 +220,24 @@ export function declaredCjkStrutClass(para: LayoutPara): string | undefined {
   return twoFaces ? 'doc-grid-strut' : undefined
 }
 
-/** text runs that size a line (space-only runs never do, Word probe 2026-09-11) */
+/** the East Asian face the CJK runs of a .doc-grid-strut paragraph declare (its strut
+ *  face): the first run pairing it with another ascii face, else the first declared one
+ *  (a declared-plus-inheriting paragraph has no pair) */
+export function paraStrutEaFace(para: LayoutPara): string | undefined {
+  let declared: string | undefined
+  for (const r of para.runs) {
+    if (r.kind !== 'text' || !textHasCjk(r.text)) continue
+    const ea = r.attrs?.font
+    if (!ea) continue
+    if (facesDiffer(r.attrs?.fontAscii, ea)) return ea
+    if (!declared && isEaLayoutFace(ea)) declared = ea
+  }
+  return declared
+}
+
+/** text runs that size a line (space / tab runs never do, Word probes 2026-09-11, 2026-11-08) */
 function inkRuns(para: LayoutPara): LayoutRun[] {
-  return para.runs.filter((r) => r.kind === 'text' && !SPACE_ONLY_RE.test(r.text))
+  return para.runs.filter((r) => r.kind === 'text' && !isWhitespaceRun(r.text))
 }
 
 /** true when every ink run paints one size (uniform or all inherited) */
@@ -293,14 +318,30 @@ export function paraCutAdjustedClass(para: LayoutPara): string | undefined {
  * Cambria-themed doc whose runs all say Calibri lays out at 1.22, not 1.17);
  * runs inheriting the body face keep the doc var via max().
  */
+const LATIN_SCRIPT_VAR = 'var(--doc-line-factor-latin,1.2)'
+const SCALED_LATIN_SCRIPT_VAR =
+  'var(--doc-line-factor-latin-scaled,var(--doc-line-factor-latin,1.2))'
+const runIsScaled = (r: LayoutRun) => {
+  const pct = r.attrs?.charScalePct
+  return typeof pct === 'number' && pct > 0 && pct !== 100
+}
+
 export function latinParaFactor(para: LayoutPara, scriptVar: string, latinInkOnly = false): string {
   let declaredMax = 0
   let undeclared = false
+  // every inked run carries w:w != 100: the inherited Times face lays out at its
+  // scaled box (scaledLatinLineFactor); a declared face is resolved per run
+  let allScaled = true
   for (const r of para.runs) {
-    if (r.kind !== 'text') continue
+    if (r.kind !== 'text' || isWhitespaceRun(r.text)) continue
     if (latinInkOnly && !textHasLatinInk(r.text)) continue
     // per-line mode lifts an ascii-only CJK face through its own stretches
     if (latinInkOnly && r.attrs && asciiOnlyCjkFace(r.attrs)) continue
+    const scaled = runIsScaled(r)
+    if (!scaled && /\S/.test(r.text)) allScaled = false
+    // fallback glyphs lift their own line (inline-segments symbolFallbacks); an
+    // emoji-only run's declared face draws nothing and lends no box
+    if (textInkIsEmoji(r.text)) continue
     // ascii/hAnsi slot only: Word lays Latin text with the (possibly inherited)
     // ascii face, so an eastAsia-only declaration (attrs.font) must not drag
     // its factor onto a Latin line (EA "Arial Unicode MS" = 1.74, sample 13)
@@ -310,14 +351,23 @@ export function latinParaFactor(para: LayoutPara, scriptVar: string, latinInkOnl
       r.attrs?.csFont,
       r.attrs?.cs,
     )) {
-      if (family) declaredMax = Math.max(declaredMax, lineHeightFactor(family))
+      if (family)
+        declaredMax = Math.max(
+          declaredMax,
+          scaled ? scaledLatinLineFactor(family) : lineHeightFactor(family),
+        )
       else undeclared = true
     }
   }
   // text without rFonts under an East Asian docDefaults language lays out in
   // the inherited eastAsia face (SimSun 1.3), empty paragraphs keep scriptVar
   const inherited = inheritedSlotFace()
-  const inheritedVar = inherited && undeclared ? String(lineHeightFactor(inherited)) : scriptVar
+  const inheritedVar =
+    inherited && undeclared
+      ? String(lineHeightFactor(inherited))
+      : undeclared && allScaled && scriptVar === LATIN_SCRIPT_VAR
+        ? SCALED_LATIN_SCRIPT_VAR
+        : scriptVar
   if (declaredMax <= 0) return inheritedVar
   return undeclared ? `max(${inheritedVar}, ${declaredMax})` : String(declaredMax)
 }
@@ -356,7 +406,7 @@ export function paraComplexScriptFamily(para: LayoutPara): string | null {
 export function paraRunFontFamily(para: LayoutPara): string | null {
   let first: string | null = null
   for (const r of para.runs) {
-    if (r.kind !== 'text') continue
+    if (r.kind !== 'text' || isWhitespaceRun(r.text)) continue
     const ea = r.attrs?.font ? String(r.attrs.font) : null
     const ascii = r.attrs?.fontAscii ? String(r.attrs.fontAscii) : null
     if (!ea && !ascii) return null
@@ -378,7 +428,7 @@ export function paraMixedDeclaredCjk(para: LayoutPara): boolean {
   let declaredCjk = false
   let inherited = false
   for (const r of para.runs) {
-    if (r.kind !== 'text') continue
+    if (r.kind !== 'text' || isWhitespaceRun(r.text)) continue
     const family = r.attrs?.font ?? r.attrs?.fontAscii
     if (!family) inherited = true
     else if (isEaLayoutFace(family)) declaredCjk = true
@@ -533,6 +583,8 @@ const CLIPBOARD_PARA_ATTR_TYPES: Record<string, 'string' | 'number' | 'boolean'>
   spaceAfter: 'number',
   spaceBeforeAuto: 'boolean',
   spaceAfterAuto: 'boolean',
+  styleSpaceBeforeAuto: 'boolean',
+  styleSpaceAfterAuto: 'boolean',
   contextualSpacing: 'boolean',
   keepNext: 'boolean',
   keepLines: 'boolean',
@@ -823,7 +875,7 @@ export function lineBoxSpec(
     if (textHasHangul(text) && fmt.wordWrap !== false) {
       styles.push('word-break:keep-all', 'overflow-wrap:anywhere')
     }
-    const box = textParaLineBox(para, { fontBox: true, leadGapZero: true, strut: !note })
+    const box = textParaLineBox(para, { strut: !note })
     const strut = strutHalfPoints(para)
     // strip paragraph: runs without their own w:sz inherit the paragraph /
     // table style's size (hf cells), which .doc-strut-mixed restores through
@@ -1011,6 +1063,7 @@ export function layoutParaOfRuns(
           sizeHalfPoints: run.sizeHalfPoints ?? null,
           eaSlotEmpty: run.eaSlotEmpty ?? null,
           rawRPr: run.rawRPr ?? null,
+          charScalePct: run.charScalePct ?? null,
         }),
         bare: false,
         bold: !!run.bold,
@@ -1084,8 +1137,10 @@ export function fromRuns(
       indentFirstLineChars: fmt?.directCharIndents?.firstLine ?? null,
       spaceBefore: fmt?.spaceBefore ?? tableStyle('spaceBefore') ?? null,
       spaceAfter: fmt?.spaceAfter ?? tableStyle('spaceAfter') ?? null,
-      spaceBeforeAuto: fmt?.spaceBeforeAuto ?? false,
-      spaceAfterAuto: fmt?.spaceAfterAuto ?? false,
+      spaceBeforeAuto:
+        fmt?.spaceBeforeAuto ?? (fmt?.spaceBefore != null && !!fmt?.effective?.spacing.beforeAuto),
+      spaceAfterAuto:
+        fmt?.spaceAfterAuto ?? (fmt?.spaceAfter != null && !!fmt?.effective?.spacing.afterAuto),
       contextualSpacing: fmt?.contextualSpacing ?? null,
       emptyRunSize: fmt?.emptyRunSizeHalfPoints ?? null,
       emptyRunFont: fmt?.emptyRunFontFamily ?? null,
@@ -1302,8 +1357,8 @@ export function fromPmNode(
       indentFirstLineChars: numOrNull(node.attrs.indentFirstLineChars),
       spaceBefore: numOrNull(node.attrs.spaceBefore ?? tbl?.spaceBefore),
       spaceAfter: numOrNull(node.attrs.spaceAfter ?? tbl?.spaceAfter),
-      spaceBeforeAuto: !!node.attrs.spaceBeforeAuto,
-      spaceAfterAuto: !!node.attrs.spaceAfterAuto,
+      spaceBeforeAuto: !!(node.attrs.spaceBeforeAuto ?? node.attrs.styleSpaceBeforeAuto),
+      spaceAfterAuto: !!(node.attrs.spaceAfterAuto ?? node.attrs.styleSpaceAfterAuto),
       contextualSpacing: node.attrs.contextualSpacing as boolean | null,
       emptyRunSize: numOrNull(node.attrs.emptyRunSize),
       emptyRunFont: node.attrs.emptyRunFont ? String(node.attrs.emptyRunFont) : null,

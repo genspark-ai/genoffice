@@ -101,6 +101,9 @@ Local modifications to `index.mjs` (2026-08, GenOffice):
   from a non-ASCII facename (CJK MathType previews write GBK bytes for both
   the face and the text under charset 0); the per-byte Dx array is folded to
   one advance per decoded glyph
+- WMF pen widths scale by the window-to-canvas ratio like coordinates do
+  (the replay set no `devScale`, so a 16-unit pen on a 3700-unit-wide picture
+  drew 16 px thick and clip-art outlines swallowed their fills)
 - Dual-mode EMF+ files: the suppressed fallback's SaveDC/RestoreDC no longer touch the
   canvas — they snapshot and restore the DC alone (drawing state plus window/viewport
   mapping) in a dedicated stack, so a mapping a fallback block sets inside its own

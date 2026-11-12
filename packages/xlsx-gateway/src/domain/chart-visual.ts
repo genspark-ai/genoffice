@@ -680,7 +680,7 @@ export function chartDataFromValues(
   return series.length > 0 ? { byRow, hasHeaderRow, hasCategoryColumn, categories, series } : null
 }
 
-/// Named-columns chart data (#2528): the caller knows the table's shape and
+/// Named-columns chart data (genoffice#2528): the caller knows the table's shape and
 /// names the columns of the dataRange to chart — first the labels, then one
 /// series each. Nothing is detected: the first row is the header, every named
 /// column after the first is one series (so a table no taller than it is wide
@@ -826,7 +826,7 @@ export interface BuildChartVisualInput {
   readonly title?: string | undefined
   readonly anchorCell?: string | undefined
   /// Columns of the dataRange to chart, first the labels then one series each
-  /// (#2528). With them nothing is detected: the first row is the header and
+  /// (genoffice#2528). With them nothing is detected: the first row is the header and
   /// each named column is one series. Unset keeps the detected layout.
   readonly columns?: readonly string[] | undefined
   readonly values: readonly (readonly ChartGridValue[])[]
