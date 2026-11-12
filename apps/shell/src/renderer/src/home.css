@@ -404,16 +404,16 @@ body.vib .home {
 }
 
 .quick-cards {
-  display: flex;
-  align-items: stretch;
+  /* auto-fill grid: the tiles wrap into rows instead of shrinking until the
+     labels are crushed when the window is narrow or more formats are added */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
   gap: 10px;
 }
 
 .quick-card {
   position: relative;
-  flex: 1;
   min-width: 0;
-  max-width: 280px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -461,7 +461,8 @@ body.vib .home {
 }
 
 .quick-title {
-  min-width: 0;
+  flex: 0 1 auto;
+  min-width: 2ch;
   overflow: hidden;
   font-size: 14px;
   font-weight: 600;
@@ -490,6 +491,10 @@ body.vib .home {
   color: var(--text-muted);
 }
 
+.quick-title-row .ai-chip {
+  flex-shrink: 0;
+}
+
 .ai-chip {
   padding: 1px 6px;
   border-radius: 4px;
@@ -498,17 +503,6 @@ body.vib .home {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.03em;
-}
-
-@media (max-width: 1100px) {
-  .quick-cards {
-    flex-wrap: wrap;
-  }
-
-  .quick-card {
-    flex: 1 1 calc(50% - 5px);
-    max-width: none;
-  }
 }
 
 /* ---- recents ---- */
