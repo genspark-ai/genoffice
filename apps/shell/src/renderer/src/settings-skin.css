@@ -1,0 +1,540 @@
+/* Settings dialog skin, layered over settings.css.
+   Layout: a 1024px × 80vh dialog, a 200px sidebar on a slightly lifted surface,
+   and a 624px content column centred in the pane. Type: regular-weight labels,
+   semibold titles and section headings, muted one-line descriptions. Chrome:
+   hairline grey cards with divided rows and filled grey pill controls.
+   Every colour derives from the theme tokens (CLAUDE.md theming rules), so
+   light, dark and system themes all follow. */
+
+.set-dialog {
+  --st-bg: var(--surface);
+  --st-side: color-mix(in srgb, var(--text-primary) 4%, var(--surface));
+  --st-line: color-mix(in srgb, var(--text-primary) 13%, var(--surface));
+  --st-text: color-mix(in srgb, var(--text-primary) 92%, var(--surface));
+  --st-muted: color-mix(in srgb, var(--text-primary) 60%, var(--surface));
+  --st-hover: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  --st-seg: color-mix(in srgb, var(--text-primary) 4%, var(--surface));
+  --st-seg-on: color-mix(in srgb, var(--text-primary) 16%, var(--surface));
+  --st-pill: color-mix(in srgb, var(--text-primary) 11%, var(--surface));
+  --st-pill-hover: color-mix(in srgb, var(--text-primary) 16%, var(--surface));
+  --st-nav-on: color-mix(in srgb, var(--text-primary) 11%, var(--surface));
+  --st-field: color-mix(in srgb, var(--text-primary) 4%, var(--surface));
+  --st-knob-off: color-mix(in srgb, var(--text-primary) 24%, var(--surface));
+  --st-tint: color-mix(in srgb, var(--accent) 16%, transparent);
+  --st-r: 12px;
+
+  position: relative;
+  width: min(1024px, calc(100vw - 48px));
+  height: min(80vh, 820px);
+  min-height: min(520px, 90vh);
+  border: 1px solid var(--st-line);
+  border-radius: 16px;
+  background: var(--st-bg);
+  color: var(--st-text);
+  box-shadow: var(--shadow-modal-strong);
+}
+.set-dialog .set-body {
+  container-type: inline-size;
+}
+
+/* the title moves into the sidebar label; the close button sits alone in the corner */
+.set-dialog .set-header {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  padding: 0;
+}
+.set-dialog .set-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.set-dialog .set-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--st-muted);
+}
+.set-dialog .set-close:hover {
+  background: var(--st-hover);
+  color: var(--text-primary);
+}
+
+/* ── sidebar ── */
+.set-dialog .set-nav {
+  position: relative;
+  width: 200px;
+  padding: 16px 8px 8px;
+  gap: 2px;
+  background: var(--st-side);
+}
+.set-dialog .set-nav-label {
+  padding: 0 8px 6px;
+  font-size: 13px;
+  color: var(--st-muted);
+}
+.set-dialog .set-nav > .set-nav-item {
+  position: relative;
+  z-index: 1;
+  gap: 10px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 14.5px;
+  font-weight: 400;
+  line-height: 20px;
+  color: var(--st-text);
+}
+.set-dialog .set-nav > .set-nav-item svg {
+  width: 15px;
+  height: 15px;
+  color: var(--st-muted);
+}
+.set-dialog .set-nav > .set-nav-item.active {
+  background: none;
+  font-weight: 400;
+}
+.set-dialog .set-nav > .set-nav-item.active svg {
+  color: var(--text-primary);
+}
+.set-dialog .set-nav > .set-nav-item:hover:not(.active) {
+  background: var(--st-hover);
+}
+.set-dialog .set-nav > .set-nav-item:focus {
+  outline: none;
+}
+.set-dialog .set-nav > .set-nav-item:focus-visible:not(.active) {
+  box-shadow: inset 0 0 0 1px var(--st-line);
+}
+.set-dialog .set-nav > .fx-indicator {
+  border-radius: 6px;
+  background: var(--st-nav-on);
+}
+.set-nav-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% + 16px);
+  margin: auto -8px -8px;
+  padding: 14px 16px;
+  border: 0;
+  border-top: 1px solid var(--st-line);
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.set-nav-account:hover {
+  background: var(--st-hover);
+}
+.set-nav-avatar {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.set-nav-account-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.set-nav-account-name {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.set-nav-account-email {
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--st-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── content column: 624px centred in the pane ── */
+.set-dialog .set-pane {
+  padding: 0 max(32px, calc((100cqw - 200px - 624px) / 2)) 40px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--st-line) transparent;
+}
+.set-dialog .set-pane-title {
+  margin: 26px 0 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 30px;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+.set-dialog .set-pane-head {
+  margin: 0;
+  padding: 26px 0 0;
+  border-bottom: 0;
+  background: var(--st-bg);
+}
+.set-dialog .set-pane-head .set-pane-title {
+  margin: 0;
+}
+.set-pane-desc,
+.set-dialog .set-pane-title + .set-intg-lead {
+  margin: 4px 0 0;
+  font-size: 14.5px;
+  line-height: 20px;
+  color: var(--st-muted);
+}
+.set-dialog .set-pane-subtitle {
+  margin: 24px 0 10px;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--text-primary);
+}
+.set-dialog .set-pane-subhead {
+  margin: 24px 0 10px;
+}
+.set-dialog .set-pane-subhead .set-pane-subtitle {
+  margin: 0;
+}
+
+/* ── cards: consecutive rows form one hairline card with divided rows ── */
+.set-dialog .set-pane > .set-field {
+  min-height: 46px;
+  margin: 0;
+  padding: 10px 13px;
+  gap: 16px;
+  border: 1px solid var(--st-line);
+  border-top-width: 0;
+}
+.set-dialog .set-pane > .set-field:first-child,
+.set-dialog .set-pane > :not(.set-field) + .set-field {
+  border-top-width: 1px;
+  border-top-left-radius: var(--st-r);
+  border-top-right-radius: var(--st-r);
+}
+.set-dialog .set-pane > .set-field:last-child,
+.set-dialog .set-pane > .set-field:not(:has(+ .set-field)) {
+  border-bottom-left-radius: var(--st-r);
+  border-bottom-right-radius: var(--st-r);
+}
+.set-dialog .set-pane > :is(.set-pane-title, .set-pane-desc, .set-pane-head) + .set-field,
+.set-dialog .set-pane > .set-field-desc + .set-field {
+  margin-top: 20px;
+}
+.set-dialog .set-pane > .set-field + .set-field-desc {
+  margin: 8px 2px 0;
+  font-size: 13px;
+}
+.set-dialog .set-pane > .set-field + :is(.set-pane-footer, .set-btn-row, .set-config-block) {
+  margin-top: 16px;
+}
+.set-dialog .set-config-block {
+  padding: 4px 13px;
+  border: 1px solid var(--st-line);
+  border-radius: var(--st-r);
+}
+.set-dialog .set-config-block .set-field:last-child {
+  border-bottom: 0;
+}
+
+/* row text */
+.set-dialog .set-field-label {
+  font-size: 14.5px;
+  font-weight: 400;
+  line-height: 20px;
+  color: var(--st-text);
+}
+.set-dialog .set-field-desc {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--st-muted);
+}
+.set-dialog .set-field-value {
+  font-size: 14px;
+  color: var(--st-muted);
+}
+
+/* ── pills ── */
+.set-dialog .set-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--st-pill);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.set-dialog .set-btn:hover:not(:disabled) {
+  background: var(--st-pill-hover);
+}
+.set-dialog .set-btn.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.set-dialog .set-btn.primary:hover:not(:disabled) {
+  background: var(--accent-hover, var(--accent));
+}
+.set-dialog .set-btn.danger {
+  color: var(--danger);
+}
+.set-dialog .set-select-wrap,
+.set-dialog .set-dd .gs-dd-btn {
+  min-width: 120px;
+  min-height: 28px;
+  justify-content: space-between;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--st-pill);
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.set-dialog .set-select-wrap:hover,
+.set-dialog .set-select-wrap:focus-within,
+.set-dialog .set-dd .gs-dd-btn:hover,
+.set-dialog .set-dd .gs-dd-btn:focus-visible {
+  background: var(--st-pill-hover);
+}
+.set-dialog .set-input {
+  min-height: 30px;
+  border: 1px solid var(--st-line);
+  border-radius: 8px;
+  background: var(--st-field);
+  font-size: 13.5px;
+}
+.set-dialog .set-input:focus {
+  border-color: var(--accent);
+}
+.set-dialog .set-num-input {
+  width: 160px;
+  min-width: 0;
+}
+.set-dialog .set-switch {
+  background: var(--st-knob-off);
+}
+.set-dialog .set-switch::after {
+  background: var(--accent-text);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text-primary) 25%, transparent);
+}
+.set-dialog .set-switch[aria-checked='true'] {
+  background: var(--accent);
+}
+
+/* segmented tabs: outlined track, filled active segment (slides, see settings-fx) */
+.set-dialog .set-intg-tabs {
+  padding: 2px;
+  border: 1px solid var(--st-line);
+  border-radius: 999px;
+  background: var(--st-seg);
+}
+.set-dialog .set-intg-tab,
+.set-dialog .set-intg-seg {
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--st-text);
+}
+.set-dialog .set-intg-tab.active,
+.set-dialog .set-intg-seg.active {
+  background: var(--st-seg-on);
+  font-weight: 400;
+  box-shadow: none;
+}
+
+/* ── Integrations: hairline tiles with a letter avatar ── */
+.set-dialog .set-intg-hero {
+  margin: 20px 0 0;
+  padding: 18px 20px;
+  border: 1px solid var(--st-line);
+  border-radius: 14px;
+  background: radial-gradient(120% 140% at 0% 0%, var(--st-tint), transparent 60%);
+}
+.set-dialog .set-intg-hero-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.set-dialog .set-intg-hero-steps li {
+  border: 0;
+  background: var(--st-pill);
+}
+.set-dialog .set-intg-row,
+.set-dialog .set-intg-option {
+  margin-bottom: 8px;
+  padding: 10px 13px;
+  border: 1px solid var(--st-line);
+  border-radius: var(--st-r);
+}
+.set-dialog .set-intg-option:last-of-type {
+  border-bottom: 1px solid var(--st-line);
+}
+.set-dialog .set-intg-row:hover,
+.set-dialog .set-intg-option:hover {
+  background: var(--st-hover);
+}
+.set-dialog .set-intg-row .set-field {
+  min-height: 0;
+  gap: 12px;
+  padding: 0;
+}
+.set-intg-avatar {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--st-tint);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+}
+.set-dialog .set-intg-details {
+  margin-top: 12px;
+  padding: 2px 13px 10px;
+  border: 1px solid var(--st-line);
+  border-radius: var(--st-r);
+}
+.set-dialog .set-intg-details > summary {
+  padding: 10px 0;
+}
+.set-dialog .set-intg-confirm {
+  border-radius: var(--st-r);
+  background: var(--st-tint);
+}
+
+/* ── Skills: card grid ── */
+.set-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.set-skill-browse {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+.set-dialog .set-skill-chips {
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 2px;
+  overflow-x: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  scrollbar-width: none;
+}
+.set-dialog .set-skill-chips .set-intg-tab {
+  flex-shrink: 0;
+  border: 1px solid var(--st-line);
+}
+.set-dialog .set-skill-chips .set-intg-tab.active {
+  border-color: transparent;
+  background: var(--text-primary);
+  color: var(--surface);
+}
+.set-skill-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--st-line);
+  border-radius: var(--st-r);
+  transition: background 0.12s ease;
+}
+.set-skill-card:hover {
+  background: var(--st-hover);
+}
+.set-skill-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.set-skill-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--st-tint);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+}
+.set-skill-text {
+  flex: 1;
+  min-width: 0;
+}
+.set-skill-name {
+  overflow: hidden;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-skill-desc {
+  display: -webkit-box;
+  margin-top: 3px;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--st-muted);
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.set-skill-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+}
+.set-skill-details {
+  min-width: 0;
+}
+.set-skill-details > summary {
+  padding: 4px 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--st-muted);
+  cursor: pointer;
+}
+.set-skill-details > summary::-webkit-details-marker {
+  display: none;
+}
+.set-skill-details > summary:hover {
+  color: var(--text-primary);
+}
+.set-skill-details[open] {
+  flex-basis: 100%;
+  order: 2;
+}
+.set-skill-details .set-intg-code-block {
+  max-height: 240px;
+  margin: 8px 0 0;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.set-skill-action .set-intg-state {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+  font-size: 13px;
+}

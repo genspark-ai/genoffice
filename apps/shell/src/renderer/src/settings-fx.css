@@ -1,0 +1,77 @@
+/* Settings motion (settings-fx.tsx): a sliding highlight under the active
+   nav item and segmented tab, a springy switch, and short entrance fades.
+   Theme tokens only; all motion is skipped under prefers-reduced-motion. */
+
+.fx-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+}
+.fx-indicator[data-ready] {
+  transition:
+    transform 0.3s cubic-bezier(0.3, 0.75, 0.2, 1),
+    width 0.3s cubic-bezier(0.3, 0.75, 0.2, 1),
+    height 0.3s cubic-bezier(0.3, 0.75, 0.2, 1),
+    opacity 0.15s ease;
+}
+.set-dialog .set-intg-sections {
+  position: relative;
+  isolation: isolate;
+}
+.set-dialog .set-intg-sections > .fx-indicator {
+  background: var(--st-seg-on);
+}
+.set-dialog .set-intg-sections > .set-intg-seg {
+  position: relative;
+  z-index: 1;
+}
+.set-dialog .set-intg-sections > .set-intg-seg.active {
+  background: none;
+}
+
+.set-dialog .set-switch::after {
+  transition:
+    left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+    width 0.2s ease;
+}
+.set-dialog .set-switch:active::after {
+  width: 22px;
+}
+
+.fx-count {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .set-dialog {
+    animation: fx-pop 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .set-dialog .set-pane > * {
+    animation: fx-fade 0.25s ease-out both;
+  }
+  .set-skill-card {
+    animation: fx-rise 0.32s cubic-bezier(0.2, 0.75, 0.2, 1) both;
+    animation-delay: calc(min(var(--i, 0), 12) * 25ms);
+  }
+}
+@keyframes fx-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+}
+@keyframes fx-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fx-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}

@@ -61,7 +61,10 @@ import type {
 import { ProviderLogo } from './provider-logos'
 import { IntegrationsPane, skillUpdateDue } from './IntegrationsPane'
 import { FoundSkills } from './FoundSkills'
+import { CountUp, useSlidingIndicator } from './settings-fx'
 import './settings.css'
+import './settings-skin.css'
+import './settings-fx.css'
 
 // ── Settings modal (opened from the account menu) ─────────
 // Genspark-style two-pane dialog: section nav on the left, fields on the right.
@@ -299,7 +302,7 @@ function Field({
   action,
 }: {
   label: string
-  value: string
+  value: ReactNode
   valueTitle?: string
   action?: ReactNode
 }) {
@@ -664,6 +667,7 @@ function AiModelPane({ t }: { t: TFunc }) {
           </button>
         </div>
       </div>
+      <p className="set-pane-desc">{t('setAiModelSub')}</p>
       <div className="set-field">
         <div className="set-field-text">
           <label className="set-field-label">{t('setAiProvider')}</label>
@@ -1601,6 +1605,7 @@ function AiMediaPane({
           </button>
         </div>
       </div>
+      <p className="set-pane-desc">{t('setAiMediaSub')}</p>
       <div className="set-field-desc set-ai-note">{t('setAiSharedKeyHint')}</div>
       <section>
         {subhead('search', t('setAiCapSearch'))}
@@ -1814,6 +1819,8 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const { lang, setLang, t } = useI18n()
   const [section, setSection] = useState<SectionId>(target?.section ?? 'account')
+  const navRef = useRef<HTMLElement | null>(null)
+  const navPill = useSlidingIndicator(navRef, '.set-nav-item.active', section)
   useEffect(() => {
     if (target) setSection(target.section)
   }, [target])
@@ -2008,7 +2015,11 @@ export function SettingsModal({
           </button>
         </div>
         <div className="set-body">
-          <nav className="set-nav" aria-label={t('settings')}>
+          <nav ref={navRef} className="set-nav" aria-label={t('settings')}>
+            <span ref={navPill} className="fx-indicator" aria-hidden="true" />
+            <div className="set-nav-label" aria-hidden="true">
+              {t('settings')}
+            </div>
             {SECTIONS.map((s) => (
               <button
                 key={s.id}
@@ -2023,19 +2034,44 @@ export function SettingsModal({
                 )}
               </button>
             ))}
+            <button type="button" className="set-nav-account" onClick={() => setSection('account')}>
+              <span className="set-nav-avatar" aria-hidden="true">
+                {(authorName.value || authorName.fallback || email || '?')
+                  .slice(0, 1)
+                  .toUpperCase()}
+              </span>
+              <span className="set-nav-account-text">
+                <span className="set-nav-account-name">
+                  {authorName.value || authorName.fallback || t('setSecAccount')}
+                </span>
+                <span className="set-nav-account-email">
+                  {loggedIn ? email : t('setNotLoggedIn')}
+                </span>
+              </span>
+            </button>
           </nav>
-          <div className={'set-pane' + (section === 'aiModel' ? ' set-pane-ai-model' : '')}>
+          <div
+            className={'set-pane' + (section === 'aiModel' ? ' set-pane-ai-model' : '')}
+            data-section={section}
+            key={section}
+          >
             {section === 'account' && (
               <>
                 <h3 className="set-pane-title">{t('setSecAccount')}</h3>
+                <p className="set-pane-desc">{t('setAccountSub')}</p>
                 <Field label={t('setEmail')} value={loggedIn ? email : t('setNotLoggedIn')} />
                 {loggedIn && (
                   <Field
                     label={t('credits')}
                     value={
-                      status?.creditBalance === undefined
-                        ? '—'
-                        : Math.floor(status.creditBalance).toLocaleString('en-US')
+                      status?.creditBalance === undefined ? (
+                        '—'
+                      ) : (
+                        <CountUp
+                          value={status.creditBalance}
+                          format={(n) => Math.floor(n).toLocaleString('en-US')}
+                        />
+                      )
                     }
                     action={
                       <button
@@ -2084,6 +2120,8 @@ export function SettingsModal({
             {section === 'general' && (
               <>
                 <h3 className="set-pane-title">{t('setSecGeneral')}</h3>
+                <p className="set-pane-desc">{t('setGeneralSub')}</p>
+                <h4 className="set-pane-subtitle">{t('setGrpInterface')}</h4>
                 <div className="set-field">
                   <div className="set-field-text">
                     <label className="set-field-label">{t('language')}</label>
@@ -2126,26 +2164,7 @@ export function SettingsModal({
                     onPick={(v) => applyDocumentTheme(v as DocTheme)}
                   />
                 </div>
-                <div className="set-field">
-                  <div className="set-field-text">
-                    <label className="set-field-label">{t('csvImportLimit')}</label>
-                  </div>
-                  <Dropdown
-                    className="set-dd"
-                    value={String(csvLimitMb)}
-                    ariaLabel={t('csvImportLimit')}
-                    options={CSV_IMPORT_LIMIT_CHOICES_MB.map((mb) => ({
-                      value: String(mb),
-                      label: `${mb} MB`,
-                    }))}
-                    onPick={(v) => {
-                      const mb = Number(v)
-                      if (!Number.isInteger(mb)) return
-                      setCsvLimitMb(mb)
-                      void window.aiOffice.setCsvImportLimit?.(mb)
-                    }}
-                  />
-                </div>
+                <h4 className="set-pane-subtitle">{t('setGrpAi')}</h4>
                 <div className="set-field">
                   <div className="set-field-text">
                     <label className="set-field-label">{t('setAiPanelSide')}</label>
@@ -2190,74 +2209,6 @@ export function SettingsModal({
                       )
                     }}
                   />
-                </div>
-                <div className="set-field">
-                  <div className="set-field-text">
-                    <div className="set-field-stack">
-                      <label className="set-field-label" htmlFor="set-author-name">
-                        {t('setAuthorName')}
-                      </label>
-                      <div className="set-field-desc">{t('setAuthorNameDesc')}</div>
-                    </div>
-                  </div>
-                  <input
-                    id="set-author-name"
-                    className="set-input"
-                    type="text"
-                    value={authorName.value}
-                    placeholder={authorName.fallback}
-                    maxLength={AUTHOR_NAME_MAX}
-                    spellCheck={false}
-                    autoComplete="off"
-                    onChange={(e) => setAuthorName((prev) => ({ ...prev, value: e.target.value }))}
-                    onBlur={commitAuthorName}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') e.currentTarget.blur()
-                    }}
-                  />
-                </div>
-                <div className="set-field">
-                  <div className="set-field-text">
-                    <div className="set-field-stack">
-                      <div className="set-field-label">{t('setLegacyImportPrompt')}</div>
-                      <div className="set-field-desc">{t('setLegacyImportPromptDesc')}</div>
-                    </div>
-                  </div>
-                  <button
-                    className="set-switch"
-                    role="switch"
-                    aria-checked={legacyImportPrompt}
-                    aria-label={t('setLegacyImportPrompt')}
-                    onClick={() => {
-                      const next = !legacyImportPrompt
-                      setLegacyImportPrompt(next)
-                      void window.aiOffice.setLegacyImportPrompt?.(next).then(setLegacyImportPrompt)
-                    }}
-                  />
-                </div>
-                <div className="set-field">
-                  <div className="set-field-text">
-                    <div className="set-field-stack">
-                      <label className="set-field-label" htmlFor="set-pdf-default-zoom">
-                        {t('setPdfDefaultZoom')}
-                      </label>
-                      <div className="set-field-desc">{t('setPdfDefaultZoomDesc')}</div>
-                    </div>
-                  </div>
-                  <select
-                    id="set-pdf-default-zoom"
-                    className="set-input"
-                    value={pdfDefaultZoom}
-                    onChange={(e) => {
-                      const next = e.target.value as PdfDefaultZoom
-                      setPdfDefaultZoom(next)
-                      void window.aiOffice.setPdfDefaultZoom?.(next).then(setPdfDefaultZoom)
-                    }}
-                  >
-                    <option value="width">{t('setPdfDefaultZoomWidth')}</option>
-                    <option value="page">{t('setPdfDefaultZoomPage')}</option>
-                    <option value="last">{t('setPdfDefaultZoomLast')}</option>
-                  </select>
                 </div>
                 <div className="set-field">
                   <div className="set-field-text">
@@ -2319,25 +2270,32 @@ export function SettingsModal({
                     onClick={() => updateAiPrefs({ openInNewDocs: !aiPrefs.openInNewDocs })}
                   />
                 </div>
-                {defaultApp && defaultApp.state !== 'unsupported' && (
-                  <div className="set-field">
-                    <div className="set-field-text">
-                      <div className="set-field-stack">
-                        <div className="set-field-label">{t('setDefaultApp')}</div>
-                        <div className="set-field-desc">{defaultAppDesc}</div>
-                      </div>
+                <h4 className="set-pane-subtitle">{t('setGrpFiles')}</h4>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <div className="set-field-stack">
+                      <label className="set-field-label" htmlFor="set-author-name">
+                        {t('setAuthorName')}
+                      </label>
+                      <div className="set-field-desc">{t('setAuthorNameDesc')}</div>
                     </div>
-                    <button
-                      className="set-btn"
-                      disabled={defaultAppBusy || defaultApp.state === 'default'}
-                      onClick={claimDefaultApp}
-                    >
-                      {defaultApp.manualOnly
-                        ? t('setDefaultAppOpenSettings')
-                        : t('setDefaultAppSet')}
-                    </button>
                   </div>
-                )}
+                  <input
+                    id="set-author-name"
+                    className="set-input"
+                    type="text"
+                    value={authorName.value}
+                    placeholder={authorName.fallback}
+                    maxLength={AUTHOR_NAME_MAX}
+                    spellCheck={false}
+                    autoComplete="off"
+                    onChange={(e) => setAuthorName((prev) => ({ ...prev, value: e.target.value }))}
+                    onBlur={commitAuthorName}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                  />
+                </div>
                 <Field
                   label={t('saveLocation')}
                   value={saveDir || '—'}
@@ -2367,6 +2325,89 @@ export function SettingsModal({
                     }}
                   />
                 </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <div className="set-field-stack">
+                      <label className="set-field-label" htmlFor="set-pdf-default-zoom">
+                        {t('setPdfDefaultZoom')}
+                      </label>
+                      <div className="set-field-desc">{t('setPdfDefaultZoomDesc')}</div>
+                    </div>
+                  </div>
+                  <select
+                    id="set-pdf-default-zoom"
+                    className="set-input"
+                    value={pdfDefaultZoom}
+                    onChange={(e) => {
+                      const next = e.target.value as PdfDefaultZoom
+                      setPdfDefaultZoom(next)
+                      void window.aiOffice.setPdfDefaultZoom?.(next).then(setPdfDefaultZoom)
+                    }}
+                  >
+                    <option value="width">{t('setPdfDefaultZoomWidth')}</option>
+                    <option value="page">{t('setPdfDefaultZoomPage')}</option>
+                    <option value="last">{t('setPdfDefaultZoomLast')}</option>
+                  </select>
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <div className="set-field-stack">
+                      <div className="set-field-label">{t('setLegacyImportPrompt')}</div>
+                      <div className="set-field-desc">{t('setLegacyImportPromptDesc')}</div>
+                    </div>
+                  </div>
+                  <button
+                    className="set-switch"
+                    role="switch"
+                    aria-checked={legacyImportPrompt}
+                    aria-label={t('setLegacyImportPrompt')}
+                    onClick={() => {
+                      const next = !legacyImportPrompt
+                      setLegacyImportPrompt(next)
+                      void window.aiOffice.setLegacyImportPrompt?.(next).then(setLegacyImportPrompt)
+                    }}
+                  />
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <label className="set-field-label">{t('csvImportLimit')}</label>
+                  </div>
+                  <Dropdown
+                    className="set-dd"
+                    value={String(csvLimitMb)}
+                    ariaLabel={t('csvImportLimit')}
+                    options={CSV_IMPORT_LIMIT_CHOICES_MB.map((mb) => ({
+                      value: String(mb),
+                      label: `${mb} MB`,
+                    }))}
+                    onPick={(v) => {
+                      const mb = Number(v)
+                      if (!Number.isInteger(mb)) return
+                      setCsvLimitMb(mb)
+                      void window.aiOffice.setCsvImportLimit?.(mb)
+                    }}
+                  />
+                </div>
+                {defaultApp && defaultApp.state !== 'unsupported' && (
+                  <div className="set-field">
+                    <div className="set-field-text">
+                      <div className="set-field-stack">
+                        <div className="set-field-label">{t('setDefaultApp')}</div>
+                        <div className="set-field-desc">{defaultAppDesc}</div>
+                      </div>
+                    </div>
+                    <button
+                      className="set-btn"
+                      disabled={defaultAppBusy || defaultApp.state === 'default'}
+                      onClick={claimDefaultApp}
+                    >
+                      {defaultApp.manualOnly
+                        ? t('setDefaultAppOpenSettings')
+                        : t('setDefaultAppSet')}
+                    </button>
+                  </div>
+                )}
+                <h4 className="set-pane-subtitle">{t('setGrpStartup')}</h4>
                 <div className="set-field">
                   <div className="set-field-text">
                     <div className="set-field-stack">
@@ -2440,6 +2481,7 @@ export function SettingsModal({
             {section === 'about' && (
               <>
                 <h3 className="set-pane-title">{t('setSecAbout')}</h3>
+                <p className="set-pane-desc">{t('setAboutSub')}</p>
                 <Field label={t('versionLabel')} value={appVersion || '—'} />
                 {updateState && (
                   <div className="set-field">
