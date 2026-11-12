@@ -277,6 +277,16 @@ document in a visible editor tab while you watch.
 </tr>
 </table>
 
+### 11 · Legacy files — `.doc`, `.xls` and `.ppt` from the 2000s open too
+
+A Word 97–2003 `.doc`, an Excel `.xls` or a PowerPoint `.ppt` opens as a
+converted `.docx`, `.xlsx` or `.pptx` copy, made on your machine; the original
+file is never changed. Pictures, tables, formulas, number formats, fills and
+layout carry over. What each format keeps and drops is in [Legacy and ODF
+files open as converted copies](#legacy-and-odf-files-open-as-converted-copies).
+
+<img src="docs/assets/readme/legacy-formats-motion.webp" alt="Time-lapse of GenOffice opening three files of a fictional 2004 annual report: a six-slide .ppt paged through in Slides, a .doc with a cover picture and a shaded table scrolled in Docs, and an .xls sales table with totals in Sheets; then one slide shown side by side, the original .ppt in PowerPoint next to the converted deck in GenOffice" width="100%">
+
 ## Why GenOffice
 
 - **Open source**, Apache-2.0, built in the open on GitHub.

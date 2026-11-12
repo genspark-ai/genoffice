@@ -225,6 +225,12 @@ Word in una scheda dell'editor visibile mentre osservi.
 </tr>
 </table>
 
+### 9 · File datati — si aprono anche i `.doc`, `.xls` e `.ppt` degli anni 2000
+
+Un `.doc` di Word 97–2003, un `.xls` di Excel o un `.ppt` di PowerPoint si apre come copia convertita `.docx`, `.xlsx` o `.pptx`, creata sul tuo computer; il file originale non viene mai modificato. Immagini, tabelle, formule, formati numerici, riempimenti e layout vengono mantenuti.
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="Time-lapse di GenOffice che apre i file .ppt, .doc e .xls di un bilancio annuale fittizio del 2004, poi una diapositiva mostrata in PowerPoint accanto alla presentazione convertita in GenOffice" width="100%">
+
 ## Perché GenOffice
 
 - **Open source**, Apache-2.0, sviluppato in modo aperto su GitHub.
