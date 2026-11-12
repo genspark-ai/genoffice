@@ -13227,7 +13227,9 @@ ruby.doc-ruby rt {
 }
 
 .ctx-submenu-scroll {
-  max-height: 320px;
+  /* the fit logic in CtxSubmenu sets the inline cap; this fallback only bounds a
+   * submenu before (or without) that measurement */
+  max-height: min(320px, calc(100vh - 24px));
   overflow-y: auto;
 }
 
