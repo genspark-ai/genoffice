@@ -170,19 +170,16 @@ import type { HeaderFooterConfig, WatermarkConfig } from './stamps'
 import { createSearchIndexCache, searchInIndex } from './search'
 import type { SearchIndex, SearchMatch } from './search'
 import { mapDocFont, type DocFontStyle } from './doc-font'
-import { groupPageBlocks, reflowOverflows, type TextBlock } from './text-block'
+import { groupPageBlocks, type TextBlock } from './text-block'
 import {
   joinBlockLines,
   mapLineRangeToBlock,
-  measurePt,
   spliceBlockText,
   unifyRadicals,
   wrapText,
 } from './text-wrap'
 import {
-  colorRunsEqual,
   colorSegments,
-  colorsToRuns,
   decodeStyle,
   encodeStyle,
   mapCharColors,
@@ -264,6 +261,7 @@ import {
   blockRectKey,
   blockMoveInput,
   editCarriesBlock,
+  mergeTextDraft as mergeTextDraftImpl,
   isBlockEditOf,
   patchPendingEdits,
   resolveTextEdit,
@@ -2575,14 +2573,14 @@ export default function App() {
           // the document is gone or unreadable: nothing left to recognize
         }
         if (ocrAbortRef.current !== controller) return // a newer pass took over
-        // A manual trigger over a document with nothing left to recognize says so
-        if (manualLimit !== undefined && result && result.total === 0) {
+        // A manual trigger over a document with nothing left to recognize says so;
+        // the state still unwinds below, or the disabled button and the toast
+        // would stick until the document reloads
+        if (manualLimit !== undefined && result && result.total === 0)
           showNoticeRef.current(t('ocrNothing'))
-          return
-        }
         // A finished pass and a platform without an OCR engine are not worth a
-        setOcrRunning(false)
         // toast; a cap or a user cancel is, and it says how far the pass got
+        setOcrRunning(false)
         setOcrRun(
           result && (result.stop === 'cap' || result.stop === 'cancelled')
             ? {
@@ -3230,6 +3228,11 @@ export default function App() {
       font: te.input.newFont,
       bold: te.input.newBold ? true : undefined,
       italic: te.input.newItalic ? true : undefined,
+      // A committed reveal rides the pending edit: the matched run still draws
+      // nothing until save, so the eye stays offered and stays on — reopening,
+      // fixing a typo and committing must not let the text go invisible again
+      reveal: te.input.reveal ? true : undefined,
+      invisible: te.input.reveal ? true : undefined,
       editId: te.id,
       cover: te.cover,
       seedInk: te.baseInk,
@@ -3321,6 +3324,9 @@ export default function App() {
             if (!d || d.origIdx !== origIdx || d.rect !== rect) return d
             let next = d
             if (v.bounds) next = { ...next, cover: v.bounds }
+            // Same as the line probe: the matched run draws nothing (the OCR bake
+            // layer's invisible form), so the eye toggle follows the data here too
+            if (v.invisible) next = { ...next, invisible: true }
             next = seedDraftColors(next, v)
             return next
           })
@@ -3613,192 +3619,14 @@ export default function App() {
 
   /** Fold a floating-editor draft into the pending-edit list; null = nothing changed,
       'overflow' = a block reflow would spill onto occupied space below (not merged —
-      the caller notifies and keeps the draft) */
+      the caller notifies and keeps the draft). The merged logic lives in
+      text-edit-preview; pageBlocks carries the neighbors the overflow guard measures
+      against and newId mints pending-edit ids. */
   const mergeTextDraft = (
     edits: LocalTextEdit[],
     d: TextDraft,
-  ): LocalTextEdit[] | null | 'overflow' => {
-    const existing = d.editId ? edits.find((e) => e.id === d.editId) : undefined
-    // Block drafts commit their reflowed form: greedy-wrap each paragraph to the
-    // block width in the same face/size the editor previews with, and anchor the
-    // rebuilt lines at the block corner with the block's original leading
-    let newText = d.value
-    let origin: [number, number] | undefined
-    let lineLeading: number | undefined
-    let lineXOffsets: number[] | undefined
-    let overflowed = false
-    // An emptied box commits as a deletion: newText '' tells the save to remove the
-    // matched run instead of rebuilding it (Escape still discards the draft)
-    if (d.value.trim() === '') newText = ''
-    if (d.block && d.value.trim() !== '') {
-      const size = d.size ?? d.fontSize
-      // Measure the reflow in the document's look-alike face when the user
-      // didn't pick one — it tracks the save-time advances better than the app font
-      const seedF = d.font ? undefined : d.seedFont
-      const css =
-        (d.font ? EDIT_FONT_BY_ID.get(d.font)?.css : undefined) ??
-        seedF?.css ??
-        getComputedStyle(document.body).fontFamily
-      const cssStyle = `${d.italic || seedF?.italic ? 'italic ' : ''}${boldToken(
-        d.bold,
-        !!d.font,
-        seedF?.weight,
-      )}`.trim()
-      lineLeading = d.block.lineHeight * (size / d.fontSize)
-      const wrapped = d.value
-        .split('\n')
-        .flatMap((p) => (p.trim() ? wrapText(p, d.block!.widthPt, size, css, cssStyle) : []))
-      // Checked only after the no-op early returns below: a re-wrap in the
-      // fallback face can grow a tight block even when nothing was edited,
-      // and an untouched dismiss must never be refused
-      overflowed = reflowOverflows(
-        d.block,
-        wrapped.length,
-        lineLeading,
-        size,
-        pageBlocks.get(d.origIdx),
-        d.rect,
-      )
-      newText = wrapped.join('\n')
-      origin = [d.block.leftPt, d.block.firstBaseline]
-      if (d.block.align !== 'left') {
-        lineXOffsets = wrapped.map((l) => {
-          const slack = d.block!.widthPt - measurePt(l, size, css, cssStyle)
-          return Math.max(0, d.block!.align === 'center' ? slack / 2 : slack)
-        })
-      }
-    }
-    // Selection-level styles: draft-space per-char keys carried onto the committed
-    // newText (wrapping only rearranges whitespace, so non-ws chars align in order)
-    const draftStyles = d.charStyles?.some((c) => c) ? d.charStyles : undefined
-    const keyRuns = draftStyles
-      ? colorsToRuns(
-          newText === d.value ? draftStyles : mapCharColors(d.value, draftStyles, newText),
-        )
-      : []
-    const styleRuns = keyRuns.length ? keyRunsToStyleRuns(keyRuns) : undefined
-    const prevValue = existing ? existing.input.newText : d.oldText
-    const cmpValue = existing && d.block ? newText : d.value
-    const prevSize = existing?.input.newFontSize
-    const prevColor = existing?.input.newColor && rgb255ToHex(existing.input.newColor)
-    const prevFont = existing?.input.newFont
-    const prevBold = existing?.input.newBold ? true : undefined
-    const prevItalic = existing?.input.newItalic ? true : undefined
-    // Baseline for "did the styles change": the pending edit's committed runs
-    // (newText offsets, same space as keyRuns), or — for a fresh draft — the
-    // document's own colors the probe seeded (oldText offsets: compare in draft
-    // space, the wrap may shift words and move newText offsets without any
-    // style changing). Seeded colors alone are not a change — they only ride
-    // along so a rebuild repaints them.
-    const prevRuns = existing
-      ? styleRunsToKeyRuns(existing.input.styleRuns ?? existing.input.colorRuns ?? [])
-      : (d.seedStyleRuns ?? [])
-    const cmpRuns = existing ? keyRuns : draftStyles ? colorsToRuns(draftStyles) : []
-    // Folded paragraph draft committed untouched: keep the folded line edits as
-    // they are instead of converting them into a whole-paragraph rebuild (the
-    // fold-seeded styles of those edits are not a change either)
-    if (
-      d.foldBase !== undefined &&
-      d.value === d.foldBase &&
-      d.size === undefined &&
-      d.color === undefined &&
-      d.font === undefined &&
-      d.bold === undefined &&
-      d.italic === undefined &&
-      colorRunsEqual(
-        draftStyles ? colorsToRuns(draftStyles) : [],
-        d.foldStyles ? colorsToRuns(d.foldStyles) : [],
-      )
-    )
-      return null
-    if (
-      cmpValue === prevValue &&
-      d.size === prevSize &&
-      d.color === prevColor &&
-      d.font === prevFont &&
-      d.bold === prevBold &&
-      d.italic === prevItalic &&
-      colorRunsEqual(cmpRuns, prevRuns)
-    )
-      return null
-    const dropFolded = (list: LocalTextEdit[]) =>
-      d.foldedIds && d.foldedIds.length > 0
-        ? list.filter((e) => !d.foldedIds!.includes(e.id))
-        : list
-    // A pure move reopened and closed untouched must stay a pure move: its stored
-    // newText keeps the document's own line breaks (which a DOM re-wrap would not
-    // reproduce), and "unchanged text" must not read as "revert" below — that
-    // would silently delete the pending move
-    if (
-      existing?.input.translate &&
-      d.value === d.oldText &&
-      d.size === undefined &&
-      d.color === undefined &&
-      d.font === undefined &&
-      d.bold === undefined &&
-      d.italic === undefined &&
-      keyRuns.length === 0
-    )
-      return null
-    if (
-      d.value === d.oldText &&
-      d.size === undefined &&
-      d.color === undefined &&
-      d.font === undefined &&
-      d.bold === undefined &&
-      d.italic === undefined &&
-      !d.reveal &&
-      keyRuns.length === 0
-    ) {
-      // Reverted back to the original — the pending edit(s) are moot. An active
-      // reveal is itself a change: invisible -> visible is the edit.
-      return dropFolded(edits.filter((e) => e.id !== d.editId))
-    }
-    if (overflowed) return 'overflow'
-    const input: TextEditInput = {
-      pageIndex: d.origIdx,
-      rect: d.rect,
-      oldText: d.oldText,
-      newText,
-      fontSize: d.fontSize,
-      newFontSize: d.size,
-      newColor: d.color === undefined ? undefined : hexTo255(d.color),
-      styleRuns,
-      newFont: d.font,
-      newBold: d.bold,
-      newItalic: d.italic,
-      ...(d.reveal ? { reveal: true } : {}),
-      origin,
-      lineLeading,
-      lineXOffsets,
-      align: d.block && d.block.align !== 'left' ? d.block.align : undefined,
-      blockSource: d.block ? d.value : undefined,
-    }
-    return d.editId
-      ? dropFolded(edits).map((e) =>
-          e.id === d.editId
-            ? {
-                ...e,
-                input,
-                cover: d.cover ?? e.cover,
-                baseInk: d.seedInk ?? e.baseInk,
-                baseFont: d.seedFont ?? e.baseFont,
-                paper: d.paper ?? e.paper,
-              }
-            : e,
-        )
-      : [
-          ...edits,
-          {
-            id: newId(),
-            input,
-            cover: d.cover,
-            baseInk: d.seedInk,
-            baseFont: d.seedFont,
-            paper: d.paper,
-          },
-        ]
-  }
+  ): LocalTextEdit[] | null | 'overflow' =>
+    mergeTextDraftImpl(edits, d, { pageBlocks, newId })
 
   /** Background dry-run of a just-committed edit against the file. A span that doesn't
       line up with the underlying text objects would otherwise surface only at save time;
