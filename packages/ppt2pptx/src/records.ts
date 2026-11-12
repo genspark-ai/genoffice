@@ -120,8 +120,8 @@ export function decodeTextChars(payload: Uint8Array): string {
   return normalizeRunes(rawTextChars(payload))
 }
 
-/** decode a TextBytesAtom payload: one byte per char (Windows codepage 1252
-    at heart; latin1 covers the bytes, the smart-quote runes get named) */
+/** decode a TextBytesAtom payload: one byte per char (ANSI, i.e. Windows-1252;
+    latin1 covers the bytes outside the 0x80–0x9F block) */
 export function decodeTextBytes(payload: Uint8Array): string {
   return normalizeRunes(rawTextBytes(payload))
 }
@@ -144,14 +144,40 @@ function nameSpecials(text: string): string {
     .join('')
 }
 
+/**
+ * Windows-1252's 0x80–0x9F block: latin1 reads those bytes as C1 controls, but
+ * in the ANSI codepage a slide's bytes atom comes from they are punctuation.
+ * The five bytes cp1252 leaves undefined (0x81, 0x8D, 0x8F, 0x90, 0x9D) keep
+ * their latin1 value.
+ */
 const CP1252_SPECIALS: Record<string, string> = {
-  '\u0091': '\u2018',
-  '\u0092': '\u2019',
-  '\u0093': '\u201c',
-  '\u0094': '\u201d',
-  '\u0095': '\u2022',
-  '\u0096': '\u2013',
-  '\u0097': '\u2014',
+  '\u0080': '\u20ac', // €
+  '\u0082': '\u201a', // ‚
+  '\u0083': '\u0192', // ƒ
+  '\u0084': '\u201e', // „
+  '\u0085': '\u2026', // …
+  '\u0086': '\u2020', // †
+  '\u0087': '\u2021', // ‡
+  '\u0088': '\u02c6', // ˆ
+  '\u0089': '\u2030', // ‰
+  '\u008a': '\u0160', // Š
+  '\u008b': '\u2039', // ‹
+  '\u008c': '\u0152', // Œ
+  '\u008e': '\u017d', // Ž
+  '\u0091': '\u2018', // ‘
+  '\u0092': '\u2019', // ’
+  '\u0093': '\u201c', // “
+  '\u0094': '\u201d', // ”
+  '\u0095': '\u2022', // •
+  '\u0096': '\u2013', // –
+  '\u0097': '\u2014', // —
+  '\u0098': '\u02dc', // ˜
+  '\u0099': '\u2122', // ™
+  '\u009a': '\u0161', // š
+  '\u009b': '\u203a', // ›
+  '\u009c': '\u0153', // œ
+  '\u009e': '\u017e', // ž
+  '\u009f': '\u0178', // Ÿ
 }
 
 /** PowerPoint text carries its own paragraph/format runes (\u000B vertical tab
