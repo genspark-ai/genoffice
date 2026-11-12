@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import wordFaces from '@genoffice/font-metrics/word-faces.json'
-import { cssFontFamily, setDocFontTable } from '../../src/renderer/line-metrics'
+import { cssFontFamily, setDocFontTable } from '../../src/renderer/text-layout/font-rules'
 
 const out = process.env.FACE_CHAINS_OUT ?? ''
 
@@ -44,6 +44,8 @@ const PROBES = [
   'Consolas',
   'Century Gothic',
   'Lucida Handwriting',
+  'Kristen ITC',
+  'system-ui',
   'Courier New',
   'Menlo',
   'Nunito Sans',

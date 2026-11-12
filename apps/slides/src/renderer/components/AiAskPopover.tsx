@@ -7,7 +7,7 @@
  * coordinates and refreshed while the canvas scrolls or zooms.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useAiPanelPrefs } from '@genoffice/ui'
+import { useAiPanelPrefs, useImeEnterGuard } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
 import {
   EDIT_INSTRUCTION_MAX,
@@ -165,6 +165,7 @@ export function AiAskPopover({
   const [rect, setRect] = useState<AnchorRect | null>(() => getAnchorRect())
   const boxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const ime = useImeEnterGuard()
 
   // Latest text without re-subscribing the outside-click listener on every keystroke
   const textRef = useRef(text)
@@ -281,8 +282,10 @@ export function AiAskPopover({
         maxLength={EDIT_INSTRUCTION_MAX}
         placeholder={t('aiAskPlaceholder')}
         onChange={(e) => setText(e.target.value)}
+        onCompositionStart={ime.handleCompositionStart}
+        onCompositionEnd={ime.handleCompositionEnd}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+          if (e.key === 'Enter' && !ime.isImeConfirm(e.nativeEvent)) {
             e.preventDefault()
             if (!canSubmit) return
             if (queueBlocked) onSendNow?.(text.trim())

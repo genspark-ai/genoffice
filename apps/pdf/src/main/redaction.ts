@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { chainPdfium, loadPdfium, saveDoc, withDocument } from './text-edit'
+import { MAX_REDACTION_REGIONS } from '../shared/ipc'
 import type { RedactionInput } from '../shared/ipc'
 
 /** PDF user-space rectangle. Callers retain original page indices until the redaction copy is made. */
@@ -287,8 +288,7 @@ function checkRect(
   return [x1, y1, x2, y2]
 }
 
-/** Max redaction rects per request: prevents 100k-rect DoS on native redact. */
-export const MAX_REDACTION_REGIONS = 500
+export { MAX_REDACTION_REGIONS }
 
 export function validateRedactionRegions(value: unknown): RedactionRegion[] {
   if (!Array.isArray(value) || value.length === 0)

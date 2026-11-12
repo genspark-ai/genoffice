@@ -1041,6 +1041,23 @@ describe('genoffice docs: comments, revisions, header/footer, images, charts', (
     })
   })
 
+  it("does not inherit a later section's header into earlier sections", async () => {
+    const dir = tempDir()
+    const path = join(dir, 'trailing-only.docx')
+    writeFileSync(path, readFileSync(DOCX))
+    const ops = join(dir, 'ops.json')
+    writeFileSync(ops, JSON.stringify([{ op: 'insert_section_break', afterBlockIndex: 1 }]))
+    expect((await run(['docs', 'apply', path, '--ops', ops, '--json'])).code).toBe(0)
+    writeFileSync(
+      ops,
+      JSON.stringify([{ op: 'set_header_footer', kind: 'header', text: 'Trailing only' }]),
+    )
+    expect((await run(['docs', 'apply', path, '--ops', ops, '--json'])).code).toBe(0)
+    const read = (await run(['docs', 'read', path, '--header-footer', '--json'])).json().detail
+      .headerFooter
+    expect(read.sections.map((s: { header: string }) => s.header)).toEqual(['', 'Trailing only'])
+  })
+
   it('writes one selected section per set_header_footer{section} call', async () => {
     const dir = tempDir()
     const path = join(dir, 'section-hf.docx')
@@ -1153,6 +1170,19 @@ describe('genoffice docs: comments, revisions, header/footer, images, charts', (
       .headerFooter
     expect(withFirst.sections[0].footerFirst).toBe('Cover footer')
     expect((await documentXml(path)).match(/<w:titlePg\/>/g)).toHaveLength(1)
+
+    // the trailing section gets its own titlePg even though another section already has one
+    writeFileSync(
+      ops,
+      JSON.stringify([
+        { op: 'set_header_footer', kind: 'footer', view: 'first', section: 2, text: 'Last first' },
+      ]),
+    )
+    expect((await run(['docs', 'apply', path, '--ops', ops, '--json'])).code).toBe(0)
+    const lastFirst = (await run(['docs', 'read', path, '--header-footer', '--json'])).json().detail
+      .headerFooter
+    expect(lastFirst.sections[2].footerFirst).toBe('Last first')
+    expect((await documentXml(path)).match(/<w:titlePg\/>/g)).toHaveLength(2)
 
     // an out-of-range section is rejected with the valid range
     writeFileSync(

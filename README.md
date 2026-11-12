@@ -39,9 +39,9 @@ files, edits PDF, Markdown and HTML, and puts an AI agent next to every
 document — not a chat box bolted on the side, but an editor that reads the
 file, makes the change, and shows you exactly what it touched. ODF files
 (`.odt`, `.ods`, `.odp` and the `.ott`/`.ots`/`.otp` templates) open as
-editable OOXML copies, and so do legacy Word `.doc`/`.dot` files and Hancom
-documents (`.hwp`, `.hwpx`); the imports are open-only — saving writes OOXML,
-never the source format.
+editable OOXML copies, and so do legacy Word `.doc`/`.dot`, Excel 97 `.xls`
+and PowerPoint 97–2003 `.ppt` files and Hancom documents (`.hwp`, `.hwpx`);
+the imports are open-only — saving writes OOXML, never the source format.
 
 - **Real formats, byte-preserving.** Only what you edit is rewritten. Everything
   else in the file survives byte-for-byte, so documents keep working in Word,
@@ -383,7 +383,7 @@ check its own work.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, ppt → pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -578,13 +578,14 @@ copy and opens that copy; the original is never read again and never written.
 
 - Docs and Slides ask where to put the copy first (the sibling `.docx`/`.pptx`
   next to the original by default), so every later Save lands there. A `.ppt`
-  converts with its text as editable boxes in the original slide order and
-  size; shape geometry, images and text formatting are not carried over yet.
+  converts with its masters, shape geometry, fills, pictures and text
+  formatting, so the deck looks the way PowerPoint showed it; notes,
+  animations, transitions and hyperlinks are not carried over yet.
 - Sheets opens the converted workbook straight away and routes the first Save
   through Save As to a fresh `.xlsx`. `.csv` is the exception: it keeps its
   identity and Save writes values back to the `.csv`, as Excel does.
 - The conversion is one-way and can drop features the source format carries
-  but OOXML does not. `.doc`, `.hwp` and the ODF formats show a confirmation
+  but OOXML does not. `.doc`, `.ppt`, `.hwp` and the ODF formats show a confirmation
   dialog saying so; tick "Convert without asking next time" to skip it, and
   "Ask before converting legacy files" in Settings → General turns it back on.
 

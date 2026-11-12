@@ -63,7 +63,7 @@ function stubFontAliases(
 async function freshModules() {
   vi.resetModules()
   const systemFonts = await import('../src/renderer/system-fonts')
-  const lineMetrics = await import('../src/renderer/line-metrics')
+  const lineMetrics = await import('../src/renderer/text-layout/font-rules')
   const fontCheck = await import('../src/renderer/font-check')
   return { systemFonts, lineMetrics, fontCheck }
 }
@@ -78,7 +78,7 @@ afterEach(() => {
 // the transform is paid while the file is collected, not inside a test's
 // timeout (the dynamic imports below re-evaluate it, but the transform is
 // already cached)
-await import('../src/renderer/line-metrics')
+await import('../src/renderer/text-layout/font-rules')
 
 // the localized FangSong spelling, escaped: a raw Han object key trips the
 // public-hygiene check, and quoting does not survive prettier (quoteProps
@@ -139,6 +139,19 @@ describe('font aliases', () => {
     // an unsubscribed listener hears nothing more
     await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
     expect(seen).toEqual([['\u4eff\u5b8b_GB2312'], ['\u4eff\u5b8b_GB2312']])
+  })
+
+  it('an answer that landed before the subscription is replayable', async () => {
+    stubCanvas(['FangSong_GB2312'])
+    const { systemFonts } = await freshModules()
+    expect(systemFonts.fontAliasAnswers()).toEqual({ seq: 0, names: [] })
+    stubFontAliases(async () => ({ [FANGSONG]: ['FangSong_GB2312'] }))
+    await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
+    expect(systemFonts.fontAliasAnswers()).toEqual({ seq: 1, names: ['\u4eff\u5b8b_GB2312'] })
+    // an unanswered name does not count as an answer
+    stubFontAliases(async () => ({}))
+    await systemFonts.resolveFontAliases(['SimSun'])
+    expect(systemFonts.fontAliasAnswers().seq).toBe(1)
   })
 
   it('an alias the document does not declare covers nothing', async () => {

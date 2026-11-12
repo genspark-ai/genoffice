@@ -55,6 +55,7 @@ export const ru = {
   ribbonFilePrint: 'Печать…',
   ribbonFileExportImages: 'Экспорт в PNG…',
   ribbonFileExportImagesJpg: 'Экспорт в JPG…',
+  ribbonFileExportVideo: 'Экспорт в видео (MP4)…',
   ribbonUnsavedSuffix: ' — Не сохранено',
   ribbonSaveTip: 'Сохранить (⌘S)',
   ribbonAutoSave: 'Автосохранение',

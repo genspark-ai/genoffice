@@ -75,10 +75,12 @@ export function onOffTagIn(xml: string, name: string): boolean | undefined {
   return !['0', 'false', 'none', 'off'].includes(raw.toLowerCase())
 }
 
+const HYPHEN_CHARS = { noBreakHyphen: '\u2011', softHyphen: '\u00ad' } as const
+
 export function plainText(xml: string): string {
   const texts: string[] = []
   // a space at cell boundaries keeps table text from gluing together
-  const re = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>|<\/w:tc>/g
+  const re = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>|<w:(noBreakHyphen|softHyphen)\s*\/>|<\/w:tc>/g
   let m: RegExpExecArray | null
   let pendingGap = false
   while ((m = re.exec(xml)) !== null) {
@@ -90,7 +92,7 @@ export function plainText(xml: string): string {
       texts.push(' ')
       pendingGap = false
     }
-    texts.push(m[1])
+    texts.push(m[1] ?? HYPHEN_CHARS[m[2] as keyof typeof HYPHEN_CHARS])
   }
   return decodeEntities(texts.join(''))
 }

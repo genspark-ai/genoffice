@@ -1,5 +1,6 @@
 import type { EmbeddedFont, EmbeddedFontLineMetrics } from '@genoffice/docx-engine'
-import { noteEmbeddedFontsChanged, setEmbeddedLineMetrics } from './line-metrics'
+import { noteEmbeddedFontsChanged } from './line-metrics'
+import { setEmbeddedLineMetrics } from './text-layout/font-rules'
 
 let active: FontFace[] = []
 let generation = 0

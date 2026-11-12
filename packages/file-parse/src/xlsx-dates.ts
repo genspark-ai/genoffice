@@ -161,7 +161,7 @@ export function formatSerial(
     if (!date1904 && days === 0) return null
     // 9999-12-31 is the last day the calendar represents; beyond it the Date
     // leaves its range and the cell would render as "0NaN-NaN-NaN".
-    if (days > 2958465) return null
+    if (days > (date1904 ? 2957003 : 2958465)) return null
     // 1900 system: 1899-12-30 as epoch makes serials ≥ 61 land right; below 60 shift back one day
     const epoch = date1904 ? Date.UTC(1904, 0, 1) : Date.UTC(1899, 11, 30)
     const shift = !date1904 && days < 60 ? 1 : 0

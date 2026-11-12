@@ -12,7 +12,7 @@
       "row": 0,
       "expect": {
         "classes": ["doc-cs-mixed"],
-        "styles": ["--doc-line-factor:1.22"]
+        "styles": ["--doc-line-factor:1.2207"]
       },
       "note": "styles.css .doc-cs-mixed span[data-cs] { line-height:0 }: without it Chromium unions the centred Arial box under the Calibri strut to 1.31"
     },
@@ -22,7 +22,7 @@
       "row": 1,
       "expect": {
         "notClasses": ["doc-cs-mixed"],
-        "styles": ["--doc-line-factor:1.15"]
+        "styles": ["--doc-line-factor:1.1499"]
       },
       "note": "Arabic-only: the cs face is the strut, nothing to collapse"
     }

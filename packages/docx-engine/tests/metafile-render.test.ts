@@ -813,6 +813,46 @@ describe('GDI pen width', () => {
   })
 })
 
+describe('WMF pen width', () => {
+  it('scales the logical pen width by the window-to-canvas ratio', async () => {
+    reset()
+    const rec = (type: number, params: number[]) => {
+      const bytes = new Uint8Array(6 + params.length * 2)
+      const v = new DataView(bytes.buffer)
+      v.setUint32(0, 3 + params.length, true)
+      v.setUint16(4, type, true)
+      params.forEach((p, i) => v.setInt16(6 + i * 2, p, true))
+      return bytes
+    }
+    const records = [
+      rec(0x020b, [0, 0]), // SETWINDOWORG
+      rec(0x020c, [1000, 1000]), // SETWINDOWEXT
+      rec(0x02fa, [0, 50, 0, 0, 0]), // CREATEPENINDIRECT width 50
+      rec(0x012d, [0]), // SELECTOBJECT
+      rec(0x0214, [100, 100]), // MOVETO
+      rec(0x0213, [900, 900]), // LINETO
+      rec(0, []),
+    ]
+    const body = records.reduce((n, r) => n + r.length, 0)
+    const wmf = new Uint8Array(18 + body)
+    const hv = new DataView(wmf.buffer)
+    hv.setUint16(0, 1, true)
+    hv.setUint16(2, 9, true)
+    hv.setUint16(4, 0x0300, true)
+    hv.setUint32(6, wmf.length / 2, true)
+    let at = 18
+    for (const r of records) {
+      wmf.set(r, at)
+      at += r.length
+    }
+    await convertWmfToDataUrl(wmf.buffer, { dpiScale: 1, maxWidth: 100 })
+    expect(calls.some((c) => c.method === 'stroke')).toBe(true)
+    // 1000 logical units on a 100 px canvas: a 50-unit pen is 5 px, not 50
+    expect(canvases[0]?.width).toBe(100)
+    expect(canvases[0]?.getContext('2d')?.lineWidth).toBe(5)
+  })
+})
+
 describe('EMR_EXTTEXTOUTW Dx advances', () => {
   it("places every glyph by the writer's advances, not the substitute font's widths", async () => {
     reset()

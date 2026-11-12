@@ -179,12 +179,6 @@ function findFieldTocRange(doc: PmNode, blocks: Block[]): TocRange | null {
   return { from, to, keepPageBreak, kind: 'field' }
 }
 
-/** whether a document position sits inside the document's table of contents */
-export function tocAtPos(doc: PmNode, blocks: Block[], pos: number): boolean {
-  const range = findTocRange(doc, blocks)
-  return range !== null && pos >= range.from && pos <= range.to
-}
-
 /**
  * Regenerate the document's table of contents from the current headings,
  * replacing the existing TOC (field or Word sdt shape) in place.

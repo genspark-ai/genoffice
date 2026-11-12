@@ -300,3 +300,14 @@ describe('chart rendering: typeface, tick label position, axis titles, per-point
     expect(byText(node, '20')).toBeDefined()
   })
 })
+
+describe('seriesless chart', () => {
+  it('renders an empty chart frame (no title, no chip) like PowerPoint', () => {
+    const model: ChartModel = { kind: 'bar', categories: [], series: [], title: 'Orders' }
+    const node = buildChartNode('r', 'e', model, box, vp, metrics)!
+    expect(node).not.toBeNull()
+    expect(node.type).toBe('chart')
+    expect(node.bars).toEqual([])
+    expect(texts(node)).toEqual([])
+  })
+})

@@ -146,9 +146,9 @@
       "hheaTotal": 1.1816,
       "ascent": 0.7568,
       "descent": 0.4248,
-      "xAvg": 0.4937,
+      "xAvg": 0.4951,
       "eastAsian": false,
-      "panose": "02020503050405090304",
+      "panose": "02020603050405020304",
       "source": "cloud"
     },
     "aptos": {
@@ -651,6 +651,16 @@
       "panose": "04040905080002020502",
       "source": "cloud"
     },
+    "browallia new": {
+      "family": "Browallia New",
+      "hheaTotal": 1.2495,
+      "ascent": 0.8643,
+      "descent": 0.3853,
+      "xAvg": 0.2949,
+      "eastAsian": false,
+      "panose": "020b0604020202020204",
+      "source": "cloud"
+    },
     "calibri": {
       "family": "Calibri",
       "hheaTotal": 1.2207,
@@ -890,6 +900,16 @@
       "eastAsian": false,
       "panose": "04040404050702020202",
       "source": "dfonts"
+    },
+    "daunpenh": {
+      "family": "DaunPenh",
+      "hheaTotal": 1.3413,
+      "ascent": 0.6821,
+      "descent": 0.6592,
+      "xAvg": 0.3887,
+      "eastAsian": false,
+      "panose": "01010101010101010101",
+      "source": "cloud"
     },
     "david": {
       "family": "David",
@@ -1609,7 +1629,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "020b0900000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "HGPGothicE"
     },
     "hgp\u5275\u82f1\u89d2\u30b4\u30b7\u30c3\u30afub": {
       "family": "HGP\u5275\u82f1\u89d2\uff7a\uff9e\uff7c\uff6f\uff78UB",
@@ -1619,7 +1640,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "020b0900000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "HGPSoeiKakugothicUB"
     },
     "hgp\u660e\u671de": {
       "family": "HGP\u660e\u671dE",
@@ -1629,7 +1651,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020900000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "HGPMinchoE"
     },
     "hgsgothice": {
       "family": "HGSGothicE",
@@ -1679,7 +1702,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "020b0900000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "HGSGothicE"
     },
     "hgs\u5275\u82f1\u89d2\u30b4\u30b7\u30c3\u30afub": {
       "family": "HGS\u5275\u82f1\u89d2\uff7a\uff9e\uff7c\uff6f\uff78UB",
@@ -1689,7 +1713,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "020b0900000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "HGSSoeiKakugothicUB"
     },
     "hgs\u660e\u671de": {
       "family": "HGS\u660e\u671dE",
@@ -1699,7 +1724,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020900000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "HGSMinchoE"
     },
     "hg\u30b4\u30b7\u30c3\u30afe": {
       "family": "HG\uff7a\uff9e\uff7c\uff6f\uff78E",
@@ -1709,7 +1735,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "020b0909000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "HGGothicE"
     },
     "hg\u4e38\u30b4\u30b7\u30c3\u30afm-pro": {
       "family": "HG\u4e38\uff7a\uff9e\uff7c\uff6f\uff78M-PRO",
@@ -1719,7 +1746,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "020f0600000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "HGMaruGothicMPRO"
     },
     "hg\u5275\u82f1\u89d2\u30b4\u30b7\u30c3\u30afub": {
       "family": "HG\u5275\u82f1\u89d2\uff7a\uff9e\uff7c\uff6f\uff78UB",
@@ -1729,7 +1757,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "020b0909000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "HGSoeiKakugothicUB"
     },
     "hg\u660e\u671de": {
       "family": "HG\u660e\u671dE",
@@ -1739,7 +1768,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020909000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "HGMinchoE"
     },
     "high tower text": {
       "family": "High Tower Text",
@@ -1861,14 +1891,24 @@
       "panose": "030604020304060b0204",
       "source": "cloud"
     },
+    "ink free": {
+      "family": "Ink Free",
+      "hheaTotal": 1.238,
+      "ascent": 0.91,
+      "descent": 0.328,
+      "xAvg": 0.557,
+      "eastAsian": false,
+      "panose": "03080402000500000000",
+      "source": "cloud"
+    },
     "iskoola pota": {
       "family": "Iskoola Pota",
       "hheaTotal": 1.1353,
       "ascent": 0.8911,
       "descent": 0.2441,
-      "xAvg": 0.7017,
+      "xAvg": 0.688,
       "eastAsian": false,
-      "panose": "020b0802040204020203",
+      "panose": "020b0502040204020203",
       "source": "cloud"
     },
     "italianno": {
@@ -2489,7 +2529,8 @@
       "xAvg": 0.8994,
       "eastAsian": true,
       "panose": "020b0500000101010101",
-      "source": "cloud"
+      "source": "cloud",
+      "canonical": "Microsoft GothicNeo"
     },
     "microsoft \uace0\ub515neo light": {
       "family": "Microsoft \uace0\ub515Neo Light",
@@ -2499,7 +2540,8 @@
       "xAvg": 0.8984,
       "eastAsian": true,
       "panose": "020b0300000101010101",
-      "source": "cloud"
+      "source": "cloud",
+      "canonical": "Microsoft GothicNeo"
     },
     "mingliu": {
       "family": "MingLiU",
@@ -2739,7 +2781,8 @@
       "xAvg": 0.418,
       "eastAsian": true,
       "panose": "020b0600070205080204",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "MS PGothic"
     },
     "ms p\u660e\u671d": {
       "family": "\uff2d\uff33 \uff30\u660e\u671d",
@@ -2749,7 +2792,8 @@
       "xAvg": 0.4102,
       "eastAsian": true,
       "panose": "02020600040205080304",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "MS PMincho"
     },
     "ms reference sans serif": {
       "family": "MS Reference Sans Serif",
@@ -2789,7 +2833,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "020b0609070205080204",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "MS Gothic"
     },
     "ms \u660e\u671d": {
       "family": "\uff2d\uff33 \u660e\u671d",
@@ -2799,7 +2844,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020609040205080304",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "MS Mincho"
     },
     "mt extra": {
       "family": "MT Extra",
@@ -3179,6 +3225,16 @@
       "xAvg": 0.6104,
       "eastAsian": false,
       "panose": "020b0706030804020204",
+      "source": "cloud"
+    },
+    "oranienbaum": {
+      "family": "Oranienbaum",
+      "hheaTotal": 1.155,
+      "ascent": 0.895,
+      "descent": 0.26,
+      "xAvg": 0.465,
+      "eastAsian": false,
+      "panose": "02000506080000020003",
       "source": "cloud"
     },
     "oswald": {
@@ -4221,6 +4277,16 @@
       "panose": "02020400000000000000",
       "source": "cloud"
     },
+    "ud digi kyokasho np-r": {
+      "family": "UD Digi Kyokasho NP-R",
+      "hheaTotal": 1.1567,
+      "ascent": 0.8799,
+      "descent": 0.2769,
+      "xAvg": 0.9897,
+      "eastAsian": true,
+      "panose": "02020400000000000000",
+      "source": "cloud"
+    },
     "ud \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 n-b": {
       "family": "UD \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 N-B",
       "hheaTotal": 1.1567,
@@ -4229,7 +4295,8 @@
       "xAvg": 0.9888,
       "eastAsian": true,
       "panose": "02020700000000000000",
-      "source": "cloud"
+      "source": "cloud",
+      "canonical": "UD Digi Kyokasho N-B"
     },
     "ud \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 n-r": {
       "family": "UD \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 N-R",
@@ -4239,7 +4306,8 @@
       "xAvg": 0.9888,
       "eastAsian": true,
       "panose": "02020400000000000000",
-      "source": "cloud"
+      "source": "cloud",
+      "canonical": "UD Digi Kyokasho N-R"
     },
     "ud \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 nk-b": {
       "family": "UD \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 NK-B",
@@ -4249,7 +4317,8 @@
       "xAvg": 0.9829,
       "eastAsian": true,
       "panose": "02020700000000000000",
-      "source": "cloud"
+      "source": "cloud",
+      "canonical": "UD Digi Kyokasho NK-B"
     },
     "ud \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 nk-r": {
       "family": "UD \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 NK-R",
@@ -4259,7 +4328,19 @@
       "xAvg": 0.9814,
       "eastAsian": true,
       "panose": "02020400000000000000",
-      "source": "cloud"
+      "source": "cloud",
+      "canonical": "UD Digi Kyokasho NK-R"
+    },
+    "ud \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 np-r": {
+      "family": "UD \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 NP-R",
+      "hheaTotal": 1.1567,
+      "ascent": 0.8799,
+      "descent": 0.2769,
+      "xAvg": 0.9897,
+      "eastAsian": true,
+      "panose": "02020400000000000000",
+      "source": "cloud",
+      "canonical": "UD Digi Kyokasho NP-R"
     },
     "univers": {
       "family": "Univers",
@@ -4310,6 +4391,16 @@
       "eastAsian": false,
       "panose": "020b0604030504040204",
       "source": "dfonts"
+    },
+    "verdana pro": {
+      "family": "Verdana Pro",
+      "hheaTotal": 1.2153,
+      "ascent": 1.0054,
+      "descent": 0.21,
+      "xAvg": 0.6177,
+      "eastAsian": false,
+      "panose": "020b0604030504040204",
+      "source": "cloud"
     },
     "vijaya": {
       "family": "Vijaya",
@@ -4379,6 +4470,16 @@
       "xAvg": 0.5967,
       "eastAsian": false,
       "panose": "02070703090703020303",
+      "source": "cloud"
+    },
+    "wandohope": {
+      "family": "Wandohope",
+      "hheaTotal": 1.237,
+      "ascent": 0.98,
+      "descent": 0.257,
+      "xAvg": 0.86,
+      "eastAsian": true,
+      "panose": "02030603000000000000",
       "source": "cloud"
     },
     "webdings": {
@@ -4579,7 +4680,8 @@
       "xAvg": 0.9561,
       "eastAsian": true,
       "panose": "020b0604030504040204",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Meiryo"
     },
     "\u4eff\u5b8b": {
       "family": "\u4eff\u5b8b",
@@ -4589,7 +4691,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02010609060101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "FangSong"
     },
     "\u534e\u6587\u4e2d\u5b8b": {
       "family": "\u534e\u6587\u4e2d\u5b8b",
@@ -4599,7 +4702,8 @@
       "xAvg": 0.492,
       "eastAsian": true,
       "panose": "02010600040101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "STZhongsong"
     },
     "\u534e\u6587\u4eff\u5b8b": {
       "family": "\u534e\u6587\u4eff\u5b8b",
@@ -4609,7 +4713,8 @@
       "xAvg": 0.387,
       "eastAsian": true,
       "panose": "02010600040101010101",
-      "source": "cloud"
+      "source": "cloud",
+      "canonical": "STFangsong"
     },
     "\u534e\u6587\u65b0\u9b4f": {
       "family": "\u534e\u6587\u65b0\u9b4f",
@@ -4619,7 +4724,8 @@
       "xAvg": 0.429,
       "eastAsian": true,
       "panose": "02010800040101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "STXinwei"
     },
     "\u534e\u6587\u7425\u73c0": {
       "family": "\u534e\u6587\u7425\u73c0",
@@ -4629,7 +4735,8 @@
       "xAvg": 0.443,
       "eastAsian": true,
       "panose": "02010800040101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "STHupo"
     },
     "\u534e\u6587\u7ec6\u9ed1": {
       "family": "\u534e\u6587\u7ec6\u9ed1",
@@ -4639,7 +4746,8 @@
       "xAvg": 0.481,
       "eastAsian": true,
       "panose": "02010600040101010101",
-      "source": "cloud"
+      "source": "cloud",
+      "canonical": "STXihei"
     },
     "\u534e\u6587\u884c\u6977": {
       "family": "\u534e\u6587\u884c\u6977",
@@ -4649,7 +4757,8 @@
       "xAvg": 0.313,
       "eastAsian": true,
       "panose": "02010800040101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "STXingkai"
     },
     "\u534e\u6587\u96b6\u4e66": {
       "family": "\u534e\u6587\u96b6\u4e66",
@@ -4659,7 +4768,8 @@
       "xAvg": 0.354,
       "eastAsian": true,
       "panose": "02010800040101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "STLiti"
     },
     "\u5b8b\u4f53": {
       "family": "\u5b8b\u4f53",
@@ -4669,7 +4779,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02010600030101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "SimSun"
     },
     "\u5fae\u8edf\u6b63\u9ed1\u9ad4": {
       "family": "\u5fae\u8edf\u6b63\u9ed1\u9ad4",
@@ -4679,7 +4790,8 @@
       "xAvg": 0.4683,
       "eastAsian": true,
       "panose": "020b0604030504040204",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Microsoft JhengHei"
     },
     "\u5fae\u8f6f\u96c5\u9ed1": {
       "family": "\u5fae\u8f6f\u96c5\u9ed1",
@@ -4689,7 +4801,8 @@
       "xAvg": 0.4819,
       "eastAsian": true,
       "panose": "020b0503020204020204",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Microsoft YaHei"
     },
     "\u5fae\u8f6f\u96c5\u9ed1 light": {
       "family": "\u5fae\u8f6f\u96c5\u9ed1 Light",
@@ -4699,7 +4812,8 @@
       "xAvg": 0.4761,
       "eastAsian": true,
       "panose": "020b0502040204020203",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Microsoft YaHei Light"
     },
     "\u65b0\u5b8b\u4f53": {
       "family": "\u65b0\u5b8b\u4f53",
@@ -4709,7 +4823,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02010609030101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "NSimSun"
     },
     "\u65b0\u7d30\u660e\u9ad4": {
       "family": "\u65b0\u7d30\u660e\u9ad4",
@@ -4719,7 +4834,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020500000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "PMingLiU"
     },
     "\u65b0\u7d30\u660e\u9ad4-extb": {
       "family": "\u65b0\u7d30\u660e\u9ad4-ExtB",
@@ -4729,7 +4845,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020500000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "PMingLiU-ExtB"
     },
     "\u6977\u4f53": {
       "family": "\u6977\u4f53",
@@ -4739,7 +4856,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02010609060101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "KaiTi"
     },
     "\u6e38\u30b4\u30b7\u30c3\u30af": {
       "family": "\u6e38\u30b4\u30b7\u30c3\u30af",
@@ -4749,7 +4867,8 @@
       "xAvg": 0.9629,
       "eastAsian": true,
       "panose": "020b0400000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Yu Gothic"
     },
     "\u6e38\u30b4\u30b7\u30c3\u30af light": {
       "family": "\u6e38\u30b4\u30b7\u30c3\u30af Light",
@@ -4759,7 +4878,8 @@
       "xAvg": 0.9609,
       "eastAsian": true,
       "panose": "020b0300000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Yu Gothic Light"
     },
     "\u6e38\u30b4\u30b7\u30c3\u30af medium": {
       "family": "\u6e38\u30b4\u30b7\u30c3\u30af Medium",
@@ -4769,7 +4889,8 @@
       "xAvg": 0.9629,
       "eastAsian": true,
       "panose": "020b0500000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Yu Gothic Medium"
     },
     "\u6e38\u660e\u671d": {
       "family": "\u6e38\u660e\u671d",
@@ -4779,7 +4900,8 @@
       "xAvg": 0.9688,
       "eastAsian": true,
       "panose": "02020400000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Yu Mincho"
     },
     "\u6e38\u660e\u671d demibold": {
       "family": "\u6e38\u660e\u671d Demibold",
@@ -4789,7 +4911,8 @@
       "xAvg": 0.9688,
       "eastAsian": true,
       "panose": "02020600000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Yu Mincho Demibold"
     },
     "\u6e38\u660e\u671d light": {
       "family": "\u6e38\u660e\u671d Light",
@@ -4799,7 +4922,8 @@
       "xAvg": 0.9673,
       "eastAsian": true,
       "panose": "02020300000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Yu Mincho Light"
     },
     "\u7b49\u7ebf": {
       "family": "\u7b49\u7ebf",
@@ -4809,7 +4933,8 @@
       "xAvg": 0.4473,
       "eastAsian": true,
       "panose": "02010600030101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "DengXian"
     },
     "\u7b49\u7ebf light": {
       "family": "\u7b49\u7ebf Light",
@@ -4819,7 +4944,8 @@
       "xAvg": 0.4473,
       "eastAsian": true,
       "panose": "02010600030101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "DengXian Light"
     },
     "\u7d30\u660e\u9ad4": {
       "family": "\u7d30\u660e\u9ad4",
@@ -4829,7 +4955,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020509000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "MingLiU"
     },
     "\u7d30\u660e\u9ad4-extb": {
       "family": "\u7d30\u660e\u9ad4-ExtB",
@@ -4839,7 +4966,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020500000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "MingLiU-ExtB"
     },
     "\u7d30\u660e\u9ad4_hkscs": {
       "family": "\u7d30\u660e\u9ad4_HKSCS",
@@ -4849,7 +4977,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020500000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "MingLiU_HKSCS"
     },
     "\u7d30\u660e\u9ad4_hkscs-extb": {
       "family": "\u7d30\u660e\u9ad4_HKSCS-ExtB",
@@ -4859,7 +4988,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020500000000000000",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "MingLiU_HKSCS-ExtB"
     },
     "\u7d30\u660e\u9ad4_mscs": {
       "family": "\u7d30\u660e\u9ad4_MSCS",
@@ -4869,7 +4999,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020500000000000000",
-      "source": "cloud"
+      "source": "cloud",
+      "canonical": "MingLiU_MSCS"
     },
     "\u9ed1\u4f53": {
       "family": "\u9ed1\u4f53",
@@ -4879,7 +5010,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02010609060101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "SimHei"
     },
     "\uac1c\uad6c\uc7c1\uc774": {
       "family": "\uac1c\uad6c\uc7c1\uc774",
@@ -4889,7 +5021,8 @@
       "xAvg": 0.808,
       "eastAsian": false,
       "panose": "00000000000000000000",
-      "source": "cloud"
+      "source": "cloud",
+      "canonical": "Gaegu"
     },
     "\uad74\ub9bc": {
       "family": "\uad74\ub9bc",
@@ -4899,7 +5032,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "020b0600000101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Gulim"
     },
     "\uad74\ub9bc\uccb4": {
       "family": "\uad74\ub9bc\uccb4",
@@ -4909,7 +5043,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "020b0609000101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "GulimChe"
     },
     "\uad81\uc11c": {
       "family": "\uad81\uc11c",
@@ -4919,7 +5054,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02030600000101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Gungsuh"
     },
     "\uad81\uc11c\uccb4": {
       "family": "\uad81\uc11c\uccb4",
@@ -4929,7 +5065,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02030609000101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "GungsuhChe"
     },
     "\ub098\ub214\uace0\ub515": {
       "family": "\ub098\ub214\uace0\ub515",
@@ -4939,7 +5076,8 @@
       "xAvg": 0.463,
       "eastAsian": true,
       "panose": "020d0604000000000000",
-      "source": "asset"
+      "source": "asset",
+      "canonical": "NanumGothic"
     },
     "\ub098\ub214\uace0\ub515 extrabold": {
       "family": "\ub098\ub214\uace0\ub515 ExtraBold",
@@ -4949,7 +5087,8 @@
       "xAvg": 0.463,
       "eastAsian": true,
       "panose": "020d0904000000000000",
-      "source": "asset"
+      "source": "asset",
+      "canonical": "NanumGothic"
     },
     "\ub098\ub214\uba85\uc870": {
       "family": "\ub098\ub214\uba85\uc870",
@@ -4959,7 +5098,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020603020101020101",
-      "source": "asset"
+      "source": "asset",
+      "canonical": "NanumMyeongjo"
     },
     "\ub098\ub214\uba85\uc870 extrabold": {
       "family": "\ub098\ub214\uba85\uc870 ExtraBold",
@@ -4969,7 +5109,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02020603020101020101",
-      "source": "asset"
+      "source": "asset",
+      "canonical": "NanumMyeongjo"
     },
     "\ub098\ub214\uc190\uae00\uc528 \ubd93": {
       "family": "\ub098\ub214\uc190\uae00\uc528 \ubd93",
@@ -4979,7 +5120,8 @@
       "xAvg": 0.33,
       "eastAsian": true,
       "panose": "03060600000000000000",
-      "source": "asset"
+      "source": "asset",
+      "canonical": "Nanum Brush Script"
     },
     "\ub098\ub214\uc190\uae00\uc528 \ud39c": {
       "family": "\ub098\ub214\uc190\uae00\uc528 \ud39c",
@@ -4989,7 +5131,8 @@
       "xAvg": 0.355,
       "eastAsian": true,
       "panose": "03040600000000000000",
-      "source": "asset"
+      "source": "asset",
+      "canonical": "Nanum Pen Script"
     },
     "\ub3cb\uc6c0": {
       "family": "\ub3cb\uc6c0",
@@ -4999,7 +5142,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "020b0600000101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Dotum"
     },
     "\ub3cb\uc6c0\uccb4": {
       "family": "\ub3cb\uc6c0\uccb4",
@@ -5009,7 +5153,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "020b0609000101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "DotumChe"
     },
     "\ub9d1\uc740 \uace0\ub515": {
       "family": "\ub9d1\uc740 \uace0\ub515",
@@ -5019,7 +5164,8 @@
       "xAvg": 0.4634,
       "eastAsian": true,
       "panose": "020b0503020000020004",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Malgun Gothic"
     },
     "\ub9d1\uc740 \uace0\ub515 semilight": {
       "family": "\ub9d1\uc740 \uace0\ub515 Semilight",
@@ -5029,7 +5175,8 @@
       "xAvg": 0.981,
       "eastAsian": true,
       "panose": "020b0502040204020203",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Malgun Gothic Semilight"
     },
     "\ubc14\ud0d5": {
       "family": "\ubc14\ud0d5",
@@ -5039,7 +5186,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02030600000101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "Batang"
     },
     "\ubc14\ud0d5\uccb4": {
       "family": "\ubc14\ud0d5\uccb4",
@@ -5049,7 +5197,8 @@
       "xAvg": 0.5,
       "eastAsian": true,
       "panose": "02030609000101010101",
-      "source": "dfonts"
+      "source": "dfonts",
+      "canonical": "BatangChe"
     }
   },
   "system": {
@@ -5123,7 +5272,8 @@
       "descent": 0.12,
       "xAvg": -0.544,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": ".Aqua Kana"
     },
     ".aqua \u304b\u306a \u30dc\u30fc\u30eb\u30c9": {
       "family": ".Aqua \u304b\u306a \u30dc\u30fc\u30eb\u30c9",
@@ -5132,7 +5282,8 @@
       "descent": 0.12,
       "xAvg": -0.97,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": ".Aqua Kana"
     },
     ".arial hebrew desk interface": {
       "family": ".Arial Hebrew Desk Interface",
@@ -5744,7 +5895,8 @@
       "descent": 0.3,
       "xAvg": 0.847,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Apple SD Gothic Neo"
     },
     "apple symbols": {
       "family": "Apple Symbols",
@@ -6473,7 +6625,8 @@
       "descent": 0.14,
       "xAvg": 0.997,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Heiti SC"
     },
     "heiti-\ubc88\uccb4": {
       "family": "Heiti-\ubc88\uccb4",
@@ -6482,7 +6635,8 @@
       "descent": 0.14,
       "xAvg": 0.997,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Heiti TC"
     },
     "helvetica": {
       "family": "Helvetica",
@@ -6896,7 +7050,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "kailasa": {
       "family": "Kailasa",
@@ -8786,7 +8941,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "plantagenet cherokee": {
       "family": "Plantagenet Cherokee",
@@ -8804,7 +8960,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "pt mono": {
       "family": "PT Mono",
@@ -8876,7 +9033,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "rockwell": {
       "family": "Rockwell",
@@ -9281,7 +9439,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "tamil mn": {
       "family": "Tamil MN",
@@ -9416,7 +9575,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "\u0441\u0438\u0441\u0442\u0435\u043c\u043d\u0438\u0439 \u0448\u0440\u0438\u0444\u0442": {
       "family": "\u0421\u0438\u0441\u0442\u0435\u043c\u043d\u0438\u0439 \u0448\u0440\u0438\u0444\u0442",
@@ -9425,7 +9585,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "\u0441\u0438\u0441\u0442\u0435\u043c\u043d\u044b\u0439 \u0448\u0440\u0438\u0444\u0442": {
       "family": "\u0421\u0438\u0441\u0442\u0435\u043c\u043d\u044b\u0439 \u0448\u0440\u0438\u0444\u0442",
@@ -9434,7 +9595,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "\u05d2\u05d5\u05e4\u05df \u05de\u05e2\u05e8\u05db\u05ea": {
       "family": "\u05d2\u05d5\u05e4\u05df \u05de\u05e2\u05e8\u05db\u05ea",
@@ -9443,7 +9605,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "\u0627\u0644\u0628\u064a\u0627\u0646": {
       "family": "\u0627\u0644\u0628\u064a\u0627\u0646",
@@ -9452,7 +9615,8 @@
       "descent": 0.509,
       "xAvg": 0.471,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Al Bayan"
     },
     "\u0627\u0644\u062a\u0627\u0631\u064a\u062e": {
       "family": "\u0627\u0644\u062a\u0627\u0631\u064a\u062e",
@@ -9461,7 +9625,8 @@
       "descent": 0.4458,
       "xAvg": 0.0,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Al Tarikh"
     },
     "\u0627\u0644\u0646\u064a\u0644": {
       "family": "\u0627\u0644\u0646\u064a\u0644",
@@ -9470,7 +9635,8 @@
       "descent": 0.535,
       "xAvg": 0.0,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Al Nile"
     },
     "\u0628\u063a\u062f\u0627\u062f": {
       "family": "\u0628\u063a\u062f\u0627\u062f",
@@ -9479,7 +9645,8 @@
       "descent": 0.4463,
       "xAvg": 0.4062,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Baghdad"
     },
     "\u0628\u064a\u0631\u0648\u062a": {
       "family": "\u0628\u064a\u0631\u0648\u062a",
@@ -9488,7 +9655,8 @@
       "descent": 0.2749,
       "xAvg": 0.0,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Beirut"
     },
     "\u062c\u064a\u0632\u0629": {
       "family": "\u062c\u064a\u0632\u0629",
@@ -9497,7 +9665,8 @@
       "descent": 0.3309,
       "xAvg": 0.4797,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Geeza Pro"
     },
     "\u062e\u0637 \u0627\u0644\u0646\u0638\u0627\u0645": {
       "family": "\u062e\u0637 \u0627\u0644\u0646\u0638\u0627\u0645",
@@ -9506,7 +9675,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "\u062f\u0645\u0634\u0642": {
       "family": "\u062f\u0645\u0634\u0642",
@@ -9515,7 +9685,8 @@
       "descent": 0.4199,
       "xAvg": 0.4521,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Damascus"
     },
     "\u062f\u064a\u0648\u0627\u0646 \u062b\u0644\u062b": {
       "family": "\u062f\u064a\u0648\u0627\u0646 \u062b\u0644\u062b",
@@ -9524,7 +9695,8 @@
       "descent": 0.7026,
       "xAvg": 0.1934,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Diwan Thuluth"
     },
     "\u062f\u064a\u0648\u0627\u0646 \u0643\u0648\u0641\u064a": {
       "family": "\u062f\u064a\u0648\u0627\u0646 \u0643\u0648\u0641\u064a",
@@ -9533,7 +9705,8 @@
       "descent": 0.4883,
       "xAvg": 0.0,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Diwan Kufi"
     },
     "\u0635\u0646\u0639\u0627\u0621": {
       "family": "\u0635\u0646\u0639\u0627\u0621",
@@ -9542,7 +9715,8 @@
       "descent": 0.2539,
       "xAvg": 0.0,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Sana"
     },
     "\u0641\u0627\u0631\u0633\u064a": {
       "family": "\u0641\u0627\u0631\u0633\u064a",
@@ -9551,7 +9725,8 @@
       "descent": 0.9766,
       "xAvg": 0.439,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Farisi"
     },
     "\u0641\u0631\u062d": {
       "family": "\u0641\u0631\u062d",
@@ -9560,7 +9735,8 @@
       "descent": 0.2456,
       "xAvg": 0.0,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Farah"
     },
     "\u0643\u0648\u0641\u064a": {
       "family": "\u0643\u0648\u0641\u064a",
@@ -9569,7 +9745,8 @@
       "descent": 0.4668,
       "xAvg": 0.5005,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "KufiStandardGK"
     },
     "\u0645\u0646\u0649": {
       "family": "\u0645\u0646\u0649",
@@ -9578,7 +9755,8 @@
       "descent": 0.335,
       "xAvg": 0.0,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Muna"
     },
     "\u0645\u0650\u0635\u062d\u0641\u064a": {
       "family": "\u0645\u0650\u0635\u062d\u0641\u064a",
@@ -9587,7 +9765,8 @@
       "descent": 0.6621,
       "xAvg": 0.2446,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Mishafi"
     },
     "\u0645\u0650\u0635\u062d\u0641\u064a \u0630\u0647\u0628\u064a": {
       "family": "\u0645\u0650\u0635\u062d\u0641\u064a \u0630\u0647\u0628\u064a",
@@ -9596,7 +9775,8 @@
       "descent": 0.6621,
       "xAvg": 0.439,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Mishafi Gold"
     },
     "\u0646\u062f\u064a\u0645": {
       "family": "\u0646\u062f\u064a\u0645",
@@ -9605,7 +9785,8 @@
       "descent": 0.4531,
       "xAvg": 0.4341,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Nadeem"
     },
     "\u0646\u0633\u062e": {
       "family": "\u0646\u0633\u062e",
@@ -9614,7 +9795,8 @@
       "descent": 0.6391,
       "xAvg": 0.381,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "DecoType Naskh"
     },
     "\u0646\u0648\u0679\u0648 \u0646\u0633\u062a\u0639\u0644\u06cc\u0642 \u0627\u0631\u062f\u0648": {
       "family": "\u0646\u0648\u0679\u0648 \u0646\u0633\u062a\u0639\u0644\u06cc\u0642 \u0627\u0631\u062f\u0648",
@@ -9623,7 +9805,8 @@
       "descent": 0.596,
       "xAvg": 0.553,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Nastaliq Urdu"
     },
     "\u0648\u0633\u064a\u0645": {
       "family": "\u0648\u0633\u064a\u0645",
@@ -9632,7 +9815,8 @@
       "descent": 0.5522,
       "xAvg": 0.1592,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Waseem"
     },
     "\u0688\u06cc\u0645\u0633\u06a9\u0633": {
       "family": "\u0688\u06cc\u0645\u0633\u06a9\u0633",
@@ -9641,7 +9825,8 @@
       "descent": 0.4199,
       "xAvg": 0.4521,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Damascus"
     },
     "\u06af\u06cc\u0632\u0627 \u067e\u0631\u0648": {
       "family": "\u06af\u06cc\u0632\u0627 \u067e\u0631\u0648",
@@ -9650,7 +9835,8 @@
       "descent": 0.3309,
       "xAvg": 0.4797,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Geeza Pro"
     },
     "\u0906\u0908\u091f\u0940\u090f\u092b\u093c \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940": {
       "family": "\u0906\u0908\u091f\u0940\u090f\u092b\u093c \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940",
@@ -9659,7 +9845,8 @@
       "descent": 0.35,
       "xAvg": 0.725,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "ITF Devanagari"
     },
     "\u0906\u0908\u091f\u0940\u090f\u092b\u093c \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940 \u092e\u0930\u093e\u0920\u0940": {
       "family": "\u0906\u0908\u091f\u0940\u090f\u092b\u093c \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940 \u092e\u0930\u093e\u0920\u0940",
@@ -9668,7 +9855,8 @@
       "descent": 0.35,
       "xAvg": 0.725,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "ITF Devanagari Marathi"
     },
     "\u0906\u092f\u091f\u0940\u090f\u092b \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940": {
       "family": "\u0906\u092f\u091f\u0940\u090f\u092b \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940",
@@ -9677,7 +9865,8 @@
       "descent": 0.35,
       "xAvg": 0.725,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "ITF Devanagari"
     },
     "\u0906\u092f\u091f\u0940\u090f\u092b \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940 \u092e\u0930\u093e\u0920\u0940": {
       "family": "\u0906\u092f\u091f\u0940\u090f\u092b \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940 \u092e\u0930\u093e\u0920\u0940",
@@ -9686,7 +9875,8 @@
       "descent": 0.35,
       "xAvg": 0.725,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "ITF Devanagari Marathi"
     },
     "\u0907\u0928\u093e\u0908\u092e\u093e\u0925\u0940": {
       "family": "\u0907\u0928\u093e\u0908\u092e\u093e\u0925\u0940",
@@ -9695,7 +9885,8 @@
       "descent": 0.4,
       "xAvg": 0.928,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "InaiMathi"
     },
     "\u0909\u0921\u093c\u093f\u092f\u093e \u090f\u092e\u090f\u0928": {
       "family": "\u0909\u0921\u093c\u093f\u092f\u093e \u090f\u092e\u090f\u0928",
@@ -9704,7 +9895,8 @@
       "descent": 0.2808,
       "xAvg": 0.5625,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Oriya MN"
     },
     "\u0909\u0921\u093c\u093f\u092f\u093e \u0938\u0902\u0917 \u090f\u092e\u090f\u0928": {
       "family": "\u0909\u0921\u093c\u093f\u092f\u093e \u0938\u0902\u0917 \u090f\u092e\u090f\u0928",
@@ -9713,7 +9905,8 @@
       "descent": 0.3497,
       "xAvg": 0.5793,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Oriya Sangam MN"
     },
     "\u0915\u0928\u094d\u0928\u0921\u093c \u090f\u092e\u090f\u0928": {
       "family": "\u0915\u0928\u094d\u0928\u0921\u093c \u090f\u092e\u090f\u0928",
@@ -9722,7 +9915,8 @@
       "descent": 0.2808,
       "xAvg": 0.6719,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Kannada MN"
     },
     "\u0915\u0928\u094d\u0928\u0921\u093c \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928": {
       "family": "\u0915\u0928\u094d\u0928\u0921\u093c \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928",
@@ -9731,7 +9925,8 @@
       "descent": 0.3154,
       "xAvg": 0.7178,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Kannada Sangam MN"
     },
     "\u0915\u094b\u0939\u093f\u0928\u0942\u0930 \u0917\u0941\u091c\u0930\u093e\u0924\u0940": {
       "family": "\u0915\u094b\u0939\u093f\u0928\u0942\u0930 \u0917\u0941\u091c\u0930\u093e\u0924\u0940",
@@ -9740,7 +9935,8 @@
       "descent": 0.45,
       "xAvg": 0.831,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Kohinoor Gujarati"
     },
     "\u0915\u094b\u0939\u093f\u0928\u0942\u0930 \u0924\u0947\u0932\u0941\u0917\u0941": {
       "family": "\u0915\u094b\u0939\u093f\u0928\u0942\u0930 \u0924\u0947\u0932\u0941\u0917\u0941",
@@ -9749,7 +9945,8 @@
       "descent": 0.35,
       "xAvg": 0.755,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Kohinoor Telugu"
     },
     "\u0915\u094b\u0939\u093f\u0928\u0942\u0930 \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940": {
       "family": "\u0915\u094b\u0939\u093f\u0928\u0942\u0930 \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940",
@@ -9758,7 +9955,8 @@
       "descent": 0.35,
       "xAvg": 0.656,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Kohinoor Devanagari"
     },
     "\u0915\u094b\u0939\u093f\u0928\u0942\u0930 \u092c\u093e\u0902\u0917\u094d\u0932\u093e": {
       "family": "\u0915\u094b\u0939\u093f\u0928\u0942\u0930 \u092c\u093e\u0902\u0917\u094d\u0932\u093e",
@@ -9767,7 +9965,8 @@
       "descent": 0.35,
       "xAvg": 0.65,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Kohinoor Bangla"
     },
     "\u0917\u0940\u091c\u093c\u093e \u092a\u094d\u0930\u094b": {
       "family": "\u0917\u0940\u091c\u093c\u093e \u092a\u094d\u0930\u094b",
@@ -9776,7 +9975,8 @@
       "descent": 0.3309,
       "xAvg": 0.4797,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Geeza Pro"
     },
     "\u0917\u0941\u091c\u0930\u093e\u0924\u0940 \u090f\u091a\u091f\u0940": {
       "family": "\u0917\u0941\u091c\u0930\u093e\u0924\u0940 \u090f\u091a\u091f\u0940",
@@ -9785,7 +9985,8 @@
       "descent": 0.6323,
       "xAvg": 0.5,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Gujarati MT"
     },
     "\u0917\u0941\u091c\u0930\u093e\u0924\u0940 \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928": {
       "family": "\u0917\u0941\u091c\u0930\u093e\u0924\u0940 \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928",
@@ -9794,7 +9995,8 @@
       "descent": 0.3499,
       "xAvg": 0.5948,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Gujarati Sangam MN"
     },
     "\u0917\u0941\u0930\u0941\u092e\u0941\u0916\u0940 \u090f\u092e\u090f\u0928": {
       "family": "\u0917\u0941\u0930\u0941\u092e\u0941\u0916\u0940 \u090f\u092e\u090f\u0928",
@@ -9803,7 +10005,8 @@
       "descent": 0.2451,
       "xAvg": -0.4009,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Gurmukhi MN"
     },
     "\u0917\u0941\u0930\u0941\u092e\u0941\u0916\u0940 \u090f\u092e\u091f\u0940": {
       "family": "\u0917\u0941\u0930\u0941\u092e\u0941\u0916\u0940 \u090f\u092e\u091f\u0940",
@@ -9812,7 +10015,8 @@
       "descent": 0.4395,
       "xAvg": 0.4414,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Gurmukhi MT"
     },
     "\u0917\u0941\u0930\u0941\u092e\u0941\u0916\u0940 \u0938\u0902\u0917\u0924\u093f \u090f\u092e\u090f\u0928": {
       "family": "\u0917\u0941\u0930\u0941\u092e\u0941\u0916\u0940 \u0938\u0902\u0917\u0924\u093f \u090f\u092e\u090f\u0928",
@@ -9821,7 +10025,8 @@
       "descent": 0.2993,
       "xAvg": 0.5659,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Gurmukhi Sangam MN"
     },
     "\u0917\u094d\u0930\u0902\u0925 \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928": {
       "family": "\u0917\u094d\u0930\u0902\u0925 \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928",
@@ -9830,7 +10035,8 @@
       "descent": 0.8594,
       "xAvg": 0.7612,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Grantha Sangam MN"
     },
     "\u0924\u092e\u093f\u0932 \u090f\u092e\u090f\u0928": {
       "family": "\u0924\u092e\u093f\u0932 \u090f\u092e\u090f\u0928",
@@ -9839,7 +10045,8 @@
       "descent": 0.2808,
       "xAvg": 0.8477,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Tamil MN"
     },
     "\u0924\u092e\u093f\u0932 \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928": {
       "family": "\u0924\u092e\u093f\u0932 \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928",
@@ -9848,7 +10055,8 @@
       "descent": 0.3501,
       "xAvg": 0.7612,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Tamil Sangam MN"
     },
     "\u0924\u0947\u0932\u0941\u0917\u0941 \u090f\u092e\u090f\u0928": {
       "family": "\u0924\u0947\u0932\u0941\u0917\u0941 \u090f\u092e\u090f\u0928",
@@ -9857,7 +10065,8 @@
       "descent": 0.2808,
       "xAvg": 0.7412,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Telugu MN"
     },
     "\u0924\u0947\u0932\u0941\u0917\u0941 \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928": {
       "family": "\u0924\u0947\u0932\u0941\u0917\u0941 \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928",
@@ -9866,7 +10075,8 @@
       "descent": 0.62,
       "xAvg": 0.91,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Telugu Sangam MN"
     },
     "\u0926\u092e\u093f\u0936\u094d\u0915\u0936": {
       "family": "\u0926\u092e\u093f\u0936\u094d\u0915\u0936",
@@ -9875,7 +10085,8 @@
       "descent": 0.4199,
       "xAvg": 0.4521,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Damascus"
     },
     "\u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940 \u090f\u092e\u091f\u0940": {
       "family": "\u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940 \u090f\u092e\u091f\u0940",
@@ -9884,7 +10095,8 @@
       "descent": 0.6826,
       "xAvg": 0.585,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Devanagari MT"
     },
     "\u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940 \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928": {
       "family": "\u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940 \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928",
@@ -9893,7 +10105,8 @@
       "descent": 0.4268,
       "xAvg": 0.3721,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Devanagari Sangam MN"
     },
     "\u0928\u094b\u091f\u094b \u0928\u093e\u0938\u094d\u0924\u093e\u0932\u093f\u0915\u093c \u0909\u0930\u094d\u0926\u0942": {
       "family": "\u0928\u094b\u091f\u094b \u0928\u093e\u0938\u094d\u0924\u093e\u0932\u093f\u0915\u093c \u0909\u0930\u094d\u0926\u0942",
@@ -9902,7 +10115,8 @@
       "descent": 0.596,
       "xAvg": 0.553,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Nastaliq Urdu"
     },
     "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c": {
       "family": "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c",
@@ -9911,7 +10125,8 @@
       "descent": 0.54,
       "xAvg": 0.555,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada"
     },
     "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u090f\u0915\u094d\u0938\u094d\u091f\u094d\u0930\u093e \u092c\u094b\u0932\u094d\u0921": {
       "family": "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u090f\u0915\u094d\u0938\u094d\u091f\u094d\u0930\u093e \u092c\u094b\u0932\u094d\u0921",
@@ -9920,7 +10135,8 @@
       "descent": 0.54,
       "xAvg": 0.615,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada ExtraBold"
     },
     "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u090f\u0915\u094d\u0938\u094d\u091f\u094d\u0930\u093e \u0932\u093e\u0907\u091f": {
       "family": "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u090f\u0915\u094d\u0938\u094d\u091f\u094d\u0930\u093e \u0932\u093e\u0907\u091f",
@@ -9929,7 +10145,8 @@
       "descent": 0.54,
       "xAvg": 0.519,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada ExtraLight"
     },
     "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u0925\u093f\u0928": {
       "family": "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u0925\u093f\u0928",
@@ -9938,7 +10155,8 @@
       "descent": 0.54,
       "xAvg": 0.51,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada Thin"
     },
     "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u092c\u094d\u0932\u0948\u0915": {
       "family": "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u092c\u094d\u0932\u0948\u0915",
@@ -9947,7 +10165,8 @@
       "descent": 0.54,
       "xAvg": 0.633,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada Black"
     },
     "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u092e\u0940\u0921\u093f\u092f\u092e": {
       "family": "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u092e\u0940\u0921\u093f\u092f\u092e",
@@ -9956,7 +10175,8 @@
       "descent": 0.54,
       "xAvg": 0.568,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada Medium"
     },
     "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u0932\u093e\u0907\u091f": {
       "family": "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u0932\u093e\u0907\u091f",
@@ -9965,7 +10185,8 @@
       "descent": 0.54,
       "xAvg": 0.533,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada Light"
     },
     "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u0938\u0947\u092e\u0940 \u092c\u094b\u0932\u094d\u0921": {
       "family": "\u0928\u094b\u091f\u094b \u0938\u0902\u0938 \u0915\u0928\u094d\u0928\u0921\u093c \u0938\u0947\u092e\u0940 \u092c\u094b\u0932\u094d\u0921",
@@ -9974,7 +10195,8 @@
       "descent": 0.54,
       "xAvg": 0.582,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada SemiBold"
     },
     "\u0928\u094b\u091f\u094b \u0938\u0948\u0902\u0938 \u0909\u0921\u093f\u092f\u093e": {
       "family": "\u0928\u094b\u091f\u094b \u0938\u0948\u0902\u0938 \u0909\u0921\u093f\u092f\u093e",
@@ -9983,7 +10205,8 @@
       "descent": 0.4834,
       "xAvg": 0.5889,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Oriya"
     },
     "\u092c\u093e\u0902\u0917\u094d\u0932\u093e \u090f\u092e\u090f\u0928": {
       "family": "\u092c\u093e\u0902\u0917\u094d\u0932\u093e \u090f\u092e\u090f\u0928",
@@ -9992,7 +10215,8 @@
       "descent": 0.7767,
       "xAvg": 0.7161,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Bangla MN"
     },
     "\u092c\u093e\u0902\u0917\u094d\u0932\u093e \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928": {
       "family": "\u092c\u093e\u0902\u0917\u094d\u0932\u093e \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928",
@@ -10001,7 +10225,8 @@
       "descent": 0.375,
       "xAvg": 0.605,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Bangla Sangam MN"
     },
     "\u092e\u0932\u092f\u093e\u0932\u092e \u090f\u092e\u090f\u0928": {
       "family": "\u092e\u0932\u092f\u093e\u0932\u092e \u090f\u092e\u090f\u0928",
@@ -10010,7 +10235,8 @@
       "descent": 0.2451,
       "xAvg": 0.8262,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Malayalam MN"
     },
     "\u092e\u0932\u092f\u093e\u0932\u092e \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928": {
       "family": "\u092e\u0932\u092f\u093e\u0932\u092e \u0938\u0902\u0917\u092e \u090f\u092e\u090f\u0928",
@@ -10019,7 +10245,8 @@
       "descent": 0.375,
       "xAvg": 0.7905,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Malayalam Sangam MN"
     },
     "\u092e\u0941\u0915\u094d\u0924\u093e \u092e\u093e\u0939\u0940": {
       "family": "\u092e\u0941\u0915\u094d\u0924\u093e \u092e\u093e\u0939\u0940",
@@ -10028,7 +10255,8 @@
       "descent": 0.532,
       "xAvg": 0.505,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "MuktaMahee Regular"
     },
     "\u092e\u0941\u0915\u094d\u0924\u093e \u092e\u093e\u0939\u0940 \u090f\u0915\u094d\u0938\u094d\u091f\u094d\u0930\u093e \u092c\u094b\u0932\u094d\u0921": {
       "family": "\u092e\u0941\u0915\u094d\u0924\u093e \u092e\u093e\u0939\u0940 \u090f\u0915\u094d\u0938\u094d\u091f\u094d\u0930\u093e \u092c\u094b\u0932\u094d\u0921",
@@ -10037,7 +10265,8 @@
       "descent": 0.532,
       "xAvg": 0.538,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "MuktaMahee ExtraBold"
     },
     "\u092e\u0941\u0915\u094d\u0924\u093e \u092e\u093e\u0939\u0940 \u090f\u0915\u094d\u0938\u094d\u091f\u094d\u0930\u093e \u0932\u093e\u0907\u091f": {
       "family": "\u092e\u0941\u0915\u094d\u0924\u093e \u092e\u093e\u0939\u0940 \u090f\u0915\u094d\u0938\u094d\u091f\u094d\u0930\u093e \u0932\u093e\u0907\u091f",
@@ -10046,7 +10275,8 @@
       "descent": 0.532,
       "xAvg": 0.488,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "MuktaMahee ExtraLight"
     },
     "\u092e\u0941\u0915\u094d\u0924\u093e \u092e\u093e\u0939\u0940 \u092e\u0940\u0921\u093f\u092f\u092e": {
       "family": "\u092e\u0941\u0915\u094d\u0924\u093e \u092e\u093e\u0939\u0940 \u092e\u0940\u0921\u093f\u092f\u092e",
@@ -10055,7 +10285,8 @@
       "descent": 0.532,
       "xAvg": 0.513,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "MuktaMahee Medium"
     },
     "\u092e\u0941\u0915\u094d\u0924\u093e \u092e\u093e\u0939\u0940 \u0932\u093e\u0907\u091f": {
       "family": "\u092e\u0941\u0915\u094d\u0924\u093e \u092e\u093e\u0939\u0940 \u0932\u093e\u0907\u091f",
@@ -10064,7 +10295,8 @@
       "descent": 0.532,
       "xAvg": 0.496,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "MuktaMahee Light"
     },
     "\u092e\u0941\u0915\u094d\u0924\u093e \u092e\u093e\u0939\u0940 \u0938\u0947\u092e\u0940 \u092c\u094b\u0932\u094d\u0921": {
       "family": "\u092e\u0941\u0915\u094d\u0924\u093e \u092e\u093e\u0939\u0940 \u0938\u0947\u092e\u0940 \u092c\u094b\u0932\u094d\u0921",
@@ -10073,7 +10305,8 @@
       "descent": 0.532,
       "xAvg": 0.522,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "MuktaMahee SemiBold"
     },
     "\u0936\u094d\u0930\u0940 \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940 714": {
       "family": "\u0936\u094d\u0930\u0940 \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940 714",
@@ -10082,7 +10315,8 @@
       "descent": 0.4273,
       "xAvg": 0.6211,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Shree Devanagari 714"
     },
     "\u0995\u09cb\u09b9\u09bf\u09a8\u09c2\u09b0 \u09ac\u09be\u0982\u09b2\u09be": {
       "family": "\u0995\u09cb\u09b9\u09bf\u09a8\u09c2\u09b0 \u09ac\u09be\u0982\u09b2\u09be",
@@ -10091,7 +10325,8 @@
       "descent": 0.35,
       "xAvg": 0.65,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Kohinoor Bangla"
     },
     "\u09ac\u09be\u0982\u09b2\u09be \u098f\u09ae\u098f\u09a8": {
       "family": "\u09ac\u09be\u0982\u09b2\u09be \u098f\u09ae\u098f\u09a8",
@@ -10100,7 +10335,8 @@
       "descent": 0.7767,
       "xAvg": 0.7161,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Bangla MN"
     },
     "\u09ac\u09be\u0982\u09b2\u09be \u09b8\u0982\u0997\u09cd\u09b0\u09be\u09ae \u098f\u09ae\u098f\u09a8": {
       "family": "\u09ac\u09be\u0982\u09b2\u09be \u09b8\u0982\u0997\u09cd\u09b0\u09be\u09ae \u098f\u09ae\u098f\u09a8",
@@ -10109,7 +10345,8 @@
       "descent": 0.375,
       "xAvg": 0.605,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Bangla Sangam MN"
     },
     "\u0a17\u0a41\u0a30\u0a2e\u0a41\u0a16\u0a40 \u0a10\u0a2e\u0a10\u0a71\u0a28": {
       "family": "\u0a17\u0a41\u0a30\u0a2e\u0a41\u0a16\u0a40 \u0a10\u0a2e\u0a10\u0a71\u0a28",
@@ -10118,7 +10355,8 @@
       "descent": 0.2451,
       "xAvg": -0.4009,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Gurmukhi MN"
     },
     "\u0a17\u0a41\u0a30\u0a2e\u0a41\u0a16\u0a40 \u0a10\u0a2e\u0a1c\u0a40": {
       "family": "\u0a17\u0a41\u0a30\u0a2e\u0a41\u0a16\u0a40 \u0a10\u0a2e\u0a1c\u0a40",
@@ -10127,7 +10365,8 @@
       "descent": 0.4395,
       "xAvg": 0.4414,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Gurmukhi MT"
     },
     "\u0a17\u0a41\u0a30\u0a2e\u0a41\u0a16\u0a40 \u0a38\u0a70\u0a17\u0a2e \u0a10\u0a2e\u0a10\u0a71\u0a28": {
       "family": "\u0a17\u0a41\u0a30\u0a2e\u0a41\u0a16\u0a40 \u0a38\u0a70\u0a17\u0a2e \u0a10\u0a2e\u0a10\u0a71\u0a28",
@@ -10136,7 +10375,8 @@
       "descent": 0.2993,
       "xAvg": 0.5659,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Gurmukhi Sangam MN"
     },
     "\u0a2e\u0a41\u0a15\u0a24\u0a3e \u0a2e\u0a3e\u0a39\u0a40": {
       "family": "\u0a2e\u0a41\u0a15\u0a24\u0a3e \u0a2e\u0a3e\u0a39\u0a40",
@@ -10145,7 +10385,8 @@
       "descent": 0.532,
       "xAvg": 0.505,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "MuktaMahee Regular"
     },
     "\u0a2e\u0a41\u0a15\u0a24\u0a3e \u0a2e\u0a3e\u0a39\u0a40 \u0a10\u0a15\u0a38\u0a1f\u0a4d\u0a30\u0a3e\u0a2c\u0a4b\u0a32\u0a21": {
       "family": "\u0a2e\u0a41\u0a15\u0a24\u0a3e \u0a2e\u0a3e\u0a39\u0a40 \u0a10\u0a15\u0a38\u0a1f\u0a4d\u0a30\u0a3e\u0a2c\u0a4b\u0a32\u0a21",
@@ -10154,7 +10395,8 @@
       "descent": 0.532,
       "xAvg": 0.538,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "MuktaMahee ExtraBold"
     },
     "\u0a2e\u0a41\u0a15\u0a24\u0a3e \u0a2e\u0a3e\u0a39\u0a40 \u0a10\u0a15\u0a38\u0a1f\u0a4d\u0a30\u0a3e\u0a32\u0a3e\u0a08\u0a1f": {
       "family": "\u0a2e\u0a41\u0a15\u0a24\u0a3e \u0a2e\u0a3e\u0a39\u0a40 \u0a10\u0a15\u0a38\u0a1f\u0a4d\u0a30\u0a3e\u0a32\u0a3e\u0a08\u0a1f",
@@ -10163,7 +10405,8 @@
       "descent": 0.532,
       "xAvg": 0.488,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "MuktaMahee ExtraLight"
     },
     "\u0a2e\u0a41\u0a15\u0a24\u0a3e \u0a2e\u0a3e\u0a39\u0a40 \u0a2e\u0a40\u0a21\u0a40\u0a05\u0a2e": {
       "family": "\u0a2e\u0a41\u0a15\u0a24\u0a3e \u0a2e\u0a3e\u0a39\u0a40 \u0a2e\u0a40\u0a21\u0a40\u0a05\u0a2e",
@@ -10172,7 +10415,8 @@
       "descent": 0.532,
       "xAvg": 0.513,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "MuktaMahee Medium"
     },
     "\u0a2e\u0a41\u0a15\u0a24\u0a3e \u0a2e\u0a3e\u0a39\u0a40 \u0a32\u0a3e\u0a08\u0a1f": {
       "family": "\u0a2e\u0a41\u0a15\u0a24\u0a3e \u0a2e\u0a3e\u0a39\u0a40 \u0a32\u0a3e\u0a08\u0a1f",
@@ -10181,7 +10425,8 @@
       "descent": 0.532,
       "xAvg": 0.496,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "MuktaMahee Light"
     },
     "\u0a2e\u0a41\u0a15\u0a24\u0a3e \u0a2e\u0a3e\u0a39\u0a40 \u0a38\u0a48\u0a2e\u0a40\u0a2c\u0a4b\u0a32\u0a21": {
       "family": "\u0a2e\u0a41\u0a15\u0a24\u0a3e \u0a2e\u0a3e\u0a39\u0a40 \u0a38\u0a48\u0a2e\u0a40\u0a2c\u0a4b\u0a32\u0a21",
@@ -10190,7 +10435,8 @@
       "descent": 0.532,
       "xAvg": 0.522,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "MuktaMahee SemiBold"
     },
     "\u0a95\u0acb\u0ab9\u0abf\u0aa8\u0ac2\u0ab0 \u0a97\u0ac1\u0a9c\u0ab0\u0abe\u0aa4\u0ac0": {
       "family": "\u0a95\u0acb\u0ab9\u0abf\u0aa8\u0ac2\u0ab0 \u0a97\u0ac1\u0a9c\u0ab0\u0abe\u0aa4\u0ac0",
@@ -10199,7 +10445,8 @@
       "descent": 0.45,
       "xAvg": 0.831,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Kohinoor Gujarati"
     },
     "\u0a97\u0ac1\u0a9c\u0ab0\u0abe\u0aa4\u0ac0 \u0a8f\u0aae\u0a9f\u0ac0": {
       "family": "\u0a97\u0ac1\u0a9c\u0ab0\u0abe\u0aa4\u0ac0 \u0a8f\u0aae\u0a9f\u0ac0",
@@ -10208,7 +10455,8 @@
       "descent": 0.6323,
       "xAvg": 0.5,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Gujarati MT"
     },
     "\u0a97\u0ac1\u0a9c\u0ab0\u0abe\u0aa4\u0ac0 \u0ab8\u0a82\u0a97\u0aae \u0a8f\u0aae\u0a8f\u0aa8": {
       "family": "\u0a97\u0ac1\u0a9c\u0ab0\u0abe\u0aa4\u0ac0 \u0ab8\u0a82\u0a97\u0aae \u0a8f\u0aae\u0a8f\u0aa8",
@@ -10217,7 +10465,8 @@
       "descent": 0.3499,
       "xAvg": 0.5948,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Gujarati Sangam MN"
     },
     "\u0b13\u0b30\u0b3f\u0b5f\u0b3e \u0b0f\u0b2e\u0b4d\u0b0f\u0b28\u0b4d": {
       "family": "\u0b13\u0b30\u0b3f\u0b5f\u0b3e \u0b0f\u0b2e\u0b4d\u0b0f\u0b28\u0b4d",
@@ -10226,7 +10475,8 @@
       "descent": 0.2808,
       "xAvg": 0.5625,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Oriya MN"
     },
     "\u0b13\u0b30\u0b3f\u0b5f\u0b3e \u0b38\u0b19\u0b4d\u0b17\u0b2e \u0b0f\u0b2e\u0b4d\u0b0f\u0b28\u0b4d": {
       "family": "\u0b13\u0b30\u0b3f\u0b5f\u0b3e \u0b38\u0b19\u0b4d\u0b17\u0b2e \u0b0f\u0b2e\u0b4d\u0b0f\u0b28\u0b4d",
@@ -10235,7 +10485,8 @@
       "descent": 0.3497,
       "xAvg": 0.5793,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Oriya Sangam MN"
     },
     "\u0b28\u0b4b\u0b1f\u0b4b \u0b38\u0b3e\u0b28\u0b4d\u0b38 \u0b13\u0b30\u0b3f\u0b5f\u0b3e": {
       "family": "\u0b28\u0b4b\u0b1f\u0b4b \u0b38\u0b3e\u0b28\u0b4d\u0b38 \u0b13\u0b30\u0b3f\u0b5f\u0b3e",
@@ -10244,7 +10495,8 @@
       "descent": 0.4834,
       "xAvg": 0.5889,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Oriya"
     },
     "\u0b87\u0ba3\u0bc8\u0bae\u0ba4\u0bbf": {
       "family": "\u0b87\u0ba3\u0bc8\u0bae\u0ba4\u0bbf",
@@ -10253,7 +10505,8 @@
       "descent": 0.4,
       "xAvg": 0.928,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "InaiMathi"
     },
     "\u0b95\u0bbf\u0bb0\u0ba8\u0bcd\u0ba4 \u0b9a\u0b99\u0bcd\u0b95\u0bae\u0bcd \u0b8e\u0bae\u0bcd\u0b8e\u0ba9\u0bcd": {
       "family": "\u0b95\u0bbf\u0bb0\u0ba8\u0bcd\u0ba4 \u0b9a\u0b99\u0bcd\u0b95\u0bae\u0bcd \u0b8e\u0bae\u0bcd\u0b8e\u0ba9\u0bcd",
@@ -10262,7 +10515,8 @@
       "descent": 0.8594,
       "xAvg": 0.7612,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Grantha Sangam MN"
     },
     "\u0ba4\u0bae\u0bbf\u0bb4\u0bcd \u0b8e\u0bae\u0bcd\u0b8e\u0ba9\u0bcd": {
       "family": "\u0ba4\u0bae\u0bbf\u0bb4\u0bcd \u0b8e\u0bae\u0bcd\u0b8e\u0ba9\u0bcd",
@@ -10271,7 +10525,8 @@
       "descent": 0.2808,
       "xAvg": 0.8477,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Tamil MN"
     },
     "\u0ba4\u0bae\u0bbf\u0bb4\u0bcd \u0b9a\u0b99\u0bcd\u0b95\u0bae\u0bcd \u0b8e\u0bae\u0bcd\u0b8e\u0ba9\u0bcd": {
       "family": "\u0ba4\u0bae\u0bbf\u0bb4\u0bcd \u0b9a\u0b99\u0bcd\u0b95\u0bae\u0bcd \u0b8e\u0bae\u0bcd\u0b8e\u0ba9\u0bcd",
@@ -10280,7 +10535,8 @@
       "descent": 0.3501,
       "xAvg": 0.7612,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Tamil Sangam MN"
     },
     "\u0c15\u0c4b\u0c39\u0c3f\u0c28\u0c42\u0c30\u0c4d \u0c24\u0c46\u0c32\u0c41\u0c17\u0c41": {
       "family": "\u0c15\u0c4b\u0c39\u0c3f\u0c28\u0c42\u0c30\u0c4d \u0c24\u0c46\u0c32\u0c41\u0c17\u0c41",
@@ -10289,7 +10545,8 @@
       "descent": 0.35,
       "xAvg": 0.755,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Kohinoor Telugu"
     },
     "\u0c24\u0c46\u0c32\u0c41\u0c17\u0c41 \u0c0e\u0c2e\u0c4d\u0c0e\u0c28\u0c4d": {
       "family": "\u0c24\u0c46\u0c32\u0c41\u0c17\u0c41 \u0c0e\u0c2e\u0c4d\u0c0e\u0c28\u0c4d",
@@ -10298,7 +10555,8 @@
       "descent": 0.2808,
       "xAvg": 0.7412,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Telugu MN"
     },
     "\u0c24\u0c46\u0c32\u0c41\u0c17\u0c41 \u0c38\u0c02\u0c17\u0c02 \u0c0e\u0c2e\u0c4d\u0c0e\u0c28\u0c4d": {
       "family": "\u0c24\u0c46\u0c32\u0c41\u0c17\u0c41 \u0c38\u0c02\u0c17\u0c02 \u0c0e\u0c2e\u0c4d\u0c0e\u0c28\u0c4d",
@@ -10307,7 +10565,8 @@
       "descent": 0.62,
       "xAvg": 0.91,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Telugu Sangam MN"
     },
     "\u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0c8e\u0cae\u0ccd\u0c8e\u0ca8\u0ccd": {
       "family": "\u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0c8e\u0cae\u0ccd\u0c8e\u0ca8\u0ccd",
@@ -10316,7 +10575,8 @@
       "descent": 0.2808,
       "xAvg": 0.6719,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Kannada MN"
     },
     "\u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0cb8\u0c82\u0c97\u0c82 \u0c8e\u0cae\u0ccd\u0c8e\u0ca8\u0ccd": {
       "family": "\u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0cb8\u0c82\u0c97\u0c82 \u0c8e\u0cae\u0ccd\u0c8e\u0ca8\u0ccd",
@@ -10325,7 +10585,8 @@
       "descent": 0.3154,
       "xAvg": 0.7178,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Kannada Sangam MN"
     },
     "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1": {
       "family": "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1",
@@ -10334,7 +10595,8 @@
       "descent": 0.54,
       "xAvg": 0.555,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada"
     },
     "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0c8e\u0c95\u0ccd\u0cb8\u0ccd\u200c\u0c9f\u0ccd\u0cb0\u0cbe \u0cb2\u0cc8\u0c9f\u0ccd": {
       "family": "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0c8e\u0c95\u0ccd\u0cb8\u0ccd\u200c\u0c9f\u0ccd\u0cb0\u0cbe \u0cb2\u0cc8\u0c9f\u0ccd",
@@ -10343,7 +10605,8 @@
       "descent": 0.54,
       "xAvg": 0.519,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada ExtraLight"
     },
     "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0c8e\u0c95\u0ccd\u0cb8\u0ccd\u200c\u0c9f\u0ccd\u0cb0\u0cbe\u0cac\u0ccb\u0cb2\u0ccd\u0ca1\u0ccd": {
       "family": "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0c8e\u0c95\u0ccd\u0cb8\u0ccd\u200c\u0c9f\u0ccd\u0cb0\u0cbe\u0cac\u0ccb\u0cb2\u0ccd\u0ca1\u0ccd",
@@ -10352,7 +10615,8 @@
       "descent": 0.54,
       "xAvg": 0.615,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada ExtraBold"
     },
     "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0ca5\u0cbf\u0ca8\u0ccd": {
       "family": "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0ca5\u0cbf\u0ca8\u0ccd",
@@ -10361,7 +10625,8 @@
       "descent": 0.54,
       "xAvg": 0.51,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada Thin"
     },
     "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0cac\u0ccd\u0cb2\u0ccd\u0caf\u0cbe\u0c95\u0ccd": {
       "family": "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0cac\u0ccd\u0cb2\u0ccd\u0caf\u0cbe\u0c95\u0ccd",
@@ -10370,7 +10635,8 @@
       "descent": 0.54,
       "xAvg": 0.633,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada Black"
     },
     "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0cae\u0cc0\u0ca1\u0cbf\u0caf\u0cae\u0ccd": {
       "family": "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0cae\u0cc0\u0ca1\u0cbf\u0caf\u0cae\u0ccd",
@@ -10379,7 +10645,8 @@
       "descent": 0.54,
       "xAvg": 0.568,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada Medium"
     },
     "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0cb2\u0cc8\u0c9f\u0ccd": {
       "family": "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0cb2\u0cc8\u0c9f\u0ccd",
@@ -10388,7 +10655,8 @@
       "descent": 0.54,
       "xAvg": 0.533,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada Light"
     },
     "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0cb8\u0cc6\u0cae\u0cbf\u0cac\u0ccb\u0cb2\u0ccd\u0ca1\u0ccd": {
       "family": "\u0ca8\u0cca\u0c9f\u0cca \u0cb8\u0ccd\u0caf\u0cbe\u0ca8\u0ccd\u0cb8\u0ccd \u0c95\u0ca8\u0ccd\u0ca8\u0ca1 \u0cb8\u0cc6\u0cae\u0cbf\u0cac\u0ccb\u0cb2\u0ccd\u0ca1\u0ccd",
@@ -10397,7 +10665,8 @@
       "descent": 0.54,
       "xAvg": 0.582,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Noto Sans Kannada SemiBold"
     },
     "\u0d2e\u0d32\u0d2f\u0d3e\u0d33\u0d02 \u0d0e\u0d02\u0d0e\u0d7b": {
       "family": "\u0d2e\u0d32\u0d2f\u0d3e\u0d33\u0d02 \u0d0e\u0d02\u0d0e\u0d7b",
@@ -10406,7 +10675,8 @@
       "descent": 0.2451,
       "xAvg": 0.8262,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Malayalam MN"
     },
     "\u0d2e\u0d32\u0d2f\u0d3e\u0d33\u0d02 \u0d38\u0d02\u0d17\u0d02 \u0d0e\u0d02\u0d0e\u0d7b": {
       "family": "\u0d2e\u0d32\u0d2f\u0d3e\u0d33\u0d02 \u0d38\u0d02\u0d17\u0d02 \u0d0e\u0d02\u0d0e\u0d7b",
@@ -10415,7 +10685,8 @@
       "descent": 0.375,
       "xAvg": 0.7905,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": "Malayalam Sangam MN"
     },
     "\u0e41\u0e1a\u0e1a\u0e2d\u0e31\u0e01\u0e29\u0e23\u0e23\u0e30\u0e1a\u0e1a": {
       "family": "\u0e41\u0e1a\u0e1a\u0e2d\u0e31\u0e01\u0e29\u0e23\u0e23\u0e30\u0e1a\u0e1a",
@@ -10424,7 +10695,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "\u30b7\u30b9\u30c6\u30e0\u30d5\u30a9\u30f3\u30c8": {
       "family": "\u30b7\u30b9\u30c6\u30e0\u30d5\u30a9\u30f3\u30c8",
@@ -10433,7 +10705,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "\u30d2\u30e9\u30ae\u30ce\u4e38\u30b4 pro": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u4e38\u30b4 Pro",
@@ -10442,7 +10715,8 @@
       "descent": 0.12,
       "xAvg": 0.534,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Maru Gothic Pro"
     },
     "\u30d2\u30e9\u30ae\u30ce\u4e38\u30b4 pro w4": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u4e38\u30b4 Pro W4",
@@ -10451,7 +10725,8 @@
       "descent": 0.12,
       "xAvg": 0.534,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Maru Gothic Pro"
     },
     "\u30d2\u30e9\u30ae\u30ce\u4e38\u30b4 pron": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u4e38\u30b4 ProN",
@@ -10460,7 +10735,8 @@
       "descent": 0.12,
       "xAvg": 0.534,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Maru Gothic ProN"
     },
     "\u30d2\u30e9\u30ae\u30ce\u4e38\u30b4 pron w4": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u4e38\u30b4 ProN W4",
@@ -10469,7 +10745,8 @@
       "descent": 0.12,
       "xAvg": 0.534,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Maru Gothic ProN"
     },
     "\u30d2\u30e9\u30ae\u30ce\u660e\u671d pro": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u660e\u671d Pro",
@@ -10478,7 +10755,8 @@
       "descent": 0.12,
       "xAvg": 0.521,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Mincho Pro"
     },
     "\u30d2\u30e9\u30ae\u30ce\u660e\u671d pro w3": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u660e\u671d Pro W3",
@@ -10487,7 +10765,8 @@
       "descent": 0.12,
       "xAvg": 0.521,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Mincho Pro"
     },
     "\u30d2\u30e9\u30ae\u30ce\u660e\u671d pro w6": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u660e\u671d Pro W6",
@@ -10496,7 +10775,8 @@
       "descent": 0.12,
       "xAvg": 0.554,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Mincho Pro"
     },
     "\u30d2\u30e9\u30ae\u30ce\u660e\u671d pron": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u660e\u671d ProN",
@@ -10505,7 +10785,8 @@
       "descent": 0.12,
       "xAvg": 0.521,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Mincho ProN"
     },
     "\u30d2\u30e9\u30ae\u30ce\u660e\u671d pron w3": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u660e\u671d ProN W3",
@@ -10514,7 +10795,8 @@
       "descent": 0.12,
       "xAvg": 0.521,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Mincho ProN"
     },
     "\u30d2\u30e9\u30ae\u30ce\u660e\u671d pron w6": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u660e\u671d ProN W6",
@@ -10523,7 +10805,8 @@
       "descent": 0.12,
       "xAvg": 0.554,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Mincho ProN"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 pro": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 Pro",
@@ -10532,7 +10815,8 @@
       "descent": 0.12,
       "xAvg": 0.544,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Kaku Gothic Pro"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 pro w3": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 Pro W3",
@@ -10541,7 +10825,8 @@
       "descent": 0.12,
       "xAvg": 0.544,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Kaku Gothic Pro"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 pro w6": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 Pro W6",
@@ -10550,7 +10835,8 @@
       "descent": 0.12,
       "xAvg": 0.6,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Kaku Gothic Pro"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 pron": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 ProN",
@@ -10559,7 +10845,8 @@
       "descent": 0.12,
       "xAvg": 0.544,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Kaku Gothic ProN"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 pron w3": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 ProN W3",
@@ -10568,7 +10855,8 @@
       "descent": 0.12,
       "xAvg": 0.544,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Kaku Gothic ProN"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 pron w6": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 ProN W6",
@@ -10577,7 +10865,8 @@
       "descent": 0.12,
       "xAvg": 0.6,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Kaku Gothic ProN"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 std": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 Std",
@@ -10586,7 +10875,8 @@
       "descent": 0.12,
       "xAvg": 0.66,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Kaku Gothic Std"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 std w8": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 Std W8",
@@ -10595,7 +10885,8 @@
       "descent": 0.12,
       "xAvg": 0.66,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Kaku Gothic Std"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 stdn": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 StdN",
@@ -10604,7 +10895,8 @@
       "descent": 0.12,
       "xAvg": 0.66,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Kaku Gothic StdN"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 stdn w8": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 StdN W8",
@@ -10613,7 +10905,8 @@
       "descent": 0.12,
       "xAvg": 0.66,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Kaku Gothic StdN"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af",
@@ -10622,7 +10915,8 @@
       "descent": 0.12,
       "xAvg": 0.563,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af w0": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af W0",
@@ -10631,7 +10925,8 @@
       "descent": 0.12,
       "xAvg": 0.497,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af w1": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af W1",
@@ -10640,7 +10935,8 @@
       "descent": 0.12,
       "xAvg": 0.517,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af w2": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af W2",
@@ -10649,7 +10945,8 @@
       "descent": 0.12,
       "xAvg": 0.529,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af w3": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af W3",
@@ -10658,7 +10955,8 @@
       "descent": 0.12,
       "xAvg": 0.544,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af w4": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af W4",
@@ -10667,7 +10965,8 @@
       "descent": 0.12,
       "xAvg": 0.563,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af w5": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af W5",
@@ -10676,7 +10975,8 @@
       "descent": 0.12,
       "xAvg": 0.577,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af w6": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af W6",
@@ -10685,7 +10985,8 @@
       "descent": 0.12,
       "xAvg": 0.6,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af w7": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af W7",
@@ -10694,7 +10995,8 @@
       "descent": 0.12,
       "xAvg": 0.628,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af w8": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af W8",
@@ -10703,7 +11005,8 @@
       "descent": 0.12,
       "xAvg": 0.66,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans"
     },
     "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af w9": {
       "family": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4\u30b7\u30c3\u30af W9",
@@ -10712,7 +11015,8 @@
       "descent": 0.12,
       "xAvg": 0.699,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans"
     },
     "\u51ac\u9752\u9ed1\u4f53\u7b80\u4f53\u4e2d\u6587": {
       "family": "\u51ac\u9752\u9ed1\u4f53\u7b80\u4f53\u4e2d\u6587",
@@ -10721,7 +11025,8 @@
       "descent": 0.12,
       "xAvg": 0.544,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans GB"
     },
     "\u51ac\u9752\u9ed1\u4f53\u7b80\u4f53\u4e2d\u6587 w3": {
       "family": "\u51ac\u9752\u9ed1\u4f53\u7b80\u4f53\u4e2d\u6587 W3",
@@ -10730,7 +11035,8 @@
       "descent": 0.12,
       "xAvg": 0.544,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans GB"
     },
     "\u51ac\u9752\u9ed1\u4f53\u7b80\u4f53\u4e2d\u6587 w6": {
       "family": "\u51ac\u9752\u9ed1\u4f53\u7b80\u4f53\u4e2d\u6587 W6",
@@ -10739,7 +11045,8 @@
       "descent": 0.12,
       "xAvg": 0.6,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans GB"
     },
     "\u51ac\u9752\u9ed1\u9ad4\u7c21\u9ad4\u4e2d\u6587": {
       "family": "\u51ac\u9752\u9ed1\u9ad4\u7c21\u9ad4\u4e2d\u6587",
@@ -10748,7 +11055,8 @@
       "descent": 0.12,
       "xAvg": 0.544,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans GB"
     },
     "\u51ac\u9752\u9ed1\u9ad4\u7c21\u9ad4\u4e2d\u6587 w3": {
       "family": "\u51ac\u9752\u9ed1\u9ad4\u7c21\u9ad4\u4e2d\u6587 W3",
@@ -10757,7 +11065,8 @@
       "descent": 0.12,
       "xAvg": 0.544,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans GB"
     },
     "\u51ac\u9752\u9ed1\u9ad4\u7c21\u9ad4\u4e2d\u6587 w6": {
       "family": "\u51ac\u9752\u9ed1\u9ad4\u7c21\u9ad4\u4e2d\u6587 W6",
@@ -10766,7 +11075,8 @@
       "descent": 0.12,
       "xAvg": 0.6,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Hiragino Sans GB"
     },
     "\u534e\u6587\u5b8b\u4f53": {
       "family": "\u534e\u6587\u5b8b\u4f53",
@@ -10775,7 +11085,8 @@
       "descent": 0.14,
       "xAvg": 0.408,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "STSong"
     },
     "\u5b8b\u4f53-\u7b80": {
       "family": "\u5b8b\u4f53-\u7b80",
@@ -10784,7 +11095,8 @@
       "descent": 0.34,
       "xAvg": 0.407,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Songti SC"
     },
     "\u5b8b\u4f53-\u7e41": {
       "family": "\u5b8b\u4f53-\u7e41",
@@ -10793,7 +11105,8 @@
       "descent": 0.34,
       "xAvg": 0.407,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Songti TC"
     },
     "\u5b8b\u9ad4-\u7c21": {
       "family": "\u5b8b\u9ad4-\u7c21",
@@ -10802,7 +11115,8 @@
       "descent": 0.34,
       "xAvg": 0.407,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Songti SC"
     },
     "\u5b8b\u9ad4-\u7e41": {
       "family": "\u5b8b\u9ad4-\u7e41",
@@ -10811,7 +11125,8 @@
       "descent": 0.34,
       "xAvg": 0.407,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Songti TC"
     },
     "\u7cfb\u7d71\u5b57\u9ad4": {
       "family": "\u7cfb\u7d71\u5b57\u9ad4",
@@ -10820,7 +11135,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "\u7cfb\u7edf\u5b57\u4f53": {
       "family": "\u7cfb\u7edf\u5b57\u4f53",
@@ -10829,7 +11145,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     },
     "\u9ed1\u4f53-\u7b80": {
       "family": "\u9ed1\u4f53-\u7b80",
@@ -10838,7 +11155,8 @@
       "descent": 0.14,
       "xAvg": 0.997,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Heiti SC"
     },
     "\u9ed1\u4f53-\u7e41": {
       "family": "\u9ed1\u4f53-\u7e41",
@@ -10847,7 +11165,8 @@
       "descent": 0.14,
       "xAvg": 0.997,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Heiti TC"
     },
     "\u9ed1\u9ad4-\u7c21": {
       "family": "\u9ed1\u9ad4-\u7c21",
@@ -10856,7 +11175,8 @@
       "descent": 0.14,
       "xAvg": 0.997,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Heiti SC"
     },
     "\u9ed1\u9ad4-\u7e41": {
       "family": "\u9ed1\u9ad4-\u7e41",
@@ -10865,7 +11185,8 @@
       "descent": 0.14,
       "xAvg": 0.997,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Heiti TC"
     },
     "\u9ed2\u4f53-\u7c21": {
       "family": "\u9ed2\u4f53-\u7c21",
@@ -10874,7 +11195,8 @@
       "descent": 0.14,
       "xAvg": 0.997,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Heiti SC"
     },
     "\u9ed2\u4f53-\u7e41": {
       "family": "\u9ed2\u4f53-\u7e41",
@@ -10883,7 +11205,8 @@
       "descent": 0.14,
       "xAvg": 0.997,
       "eastAsian": true,
-      "source": "system"
+      "source": "system",
+      "canonical": "Heiti TC"
     },
     "\uc2dc\uc2a4\ud15c \uc11c\uccb4": {
       "family": "\uc2dc\uc2a4\ud15c \uc11c\uccb4",
@@ -10892,7 +11215,8 @@
       "descent": 0.2109,
       "xAvg": 0.5796,
       "eastAsian": false,
-      "source": "system"
+      "source": "system",
+      "canonical": ".SF NS"
     }
   }
 }

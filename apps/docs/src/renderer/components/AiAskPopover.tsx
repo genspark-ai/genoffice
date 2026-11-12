@@ -10,6 +10,7 @@
  * editable there) instead of discarding it.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useImeEnterGuard } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
@@ -112,6 +113,7 @@ export function AiAskPopover({
   const boxRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const ime = useImeEnterGuard()
 
   const openRef = useRef(open)
   openRef.current = open
@@ -325,8 +327,10 @@ export function AiAskPopover({
           maxLength={EDIT_INSTRUCTION_MAX}
           placeholder={t('aiAskPlaceholder')}
           onChange={(e) => setText(e.target.value)}
+          onCompositionStart={ime.handleCompositionStart}
+          onCompositionEnd={ime.handleCompositionEnd}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+            if (e.key === 'Enter' && !ime.isImeConfirm(e.nativeEvent)) {
               e.preventDefault()
               if (!canSubmit) return
               if (open.mode === 'edit') {

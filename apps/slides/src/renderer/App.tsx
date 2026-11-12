@@ -72,6 +72,7 @@ import { IconNotes, IconPlayBoxed } from './components/icons'
 import { PresenterView } from './components/PresenterView'
 import { CustomShowDialog } from './components/CustomShowDialog'
 import { PrintDialog } from './components/PrintDialog'
+import { ExportVideoDialog } from './components/ExportVideoDialog'
 import { FindReplaceDialog } from './components/FindReplaceDialog'
 import { formatClock, type CustomShow } from './slideshow-utils'
 import { ContextMenu } from './components/ContextMenu'
@@ -1044,6 +1045,7 @@ export function App() {
     [],
   )
   const exportPdf = useCallback(() => void fileActions.exportPdf(ctxRef.current), [])
+  const [videoDlgOpen, setVideoDlgOpen] = useState(false)
 
   // Headless export mode (--headless-export): this renderer lives in a hidden
   // window whose only job is to run the File menu's PDF export against a path
@@ -2354,6 +2356,7 @@ export function App() {
       else if (cmd === 'export-pdf') void exportPdf()
       else if (cmd === 'export-images') void exportImages('png')
       else if (cmd === 'export-images-jpg') void exportImages('jpg')
+      else if (cmd === 'export-video') setVideoDlgOpen(true)
       else if (cmd === 'print') setPrintDlgOpen(true)
       // Through the preview path so the zoom pivots on the viewport center, not the scroll origin
       else if (cmd === 'zoom-in') previewZoom(nextPreset)
@@ -3317,6 +3320,7 @@ export function App() {
         onPrint={() => setPrintDlgOpen(true)}
         onExportImages={() => void exportImages('png')}
         onExportImagesJpg={() => void exportImages('jpg')}
+        onExportVideo={() => setVideoDlgOpen(true)}
         onFormat={onFormat}
         zoom={zoom}
         onZoom={previewZoom}
@@ -4673,6 +4677,16 @@ export function App() {
             setDirty(true)
           }}
           onClose={() => setFindOpen(false)}
+        />
+      )}
+
+      {videoDlgOpen && (
+        <ExportVideoDialog
+          slideCount={slides.length}
+          run={(opts, onProgress, signal) =>
+            fileActions.exportVideoFile(ctxRef.current, opts, onProgress, signal)
+          }
+          onClose={() => setVideoDlgOpen(false)}
         />
       )}
 

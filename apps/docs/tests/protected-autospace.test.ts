@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { DOMSerializer } from '@tiptap/pm/model'
 import type { TableModel, TextboxDisplay } from '@genoffice/docx-engine'
 import { renderTableSpec, renderTextboxSpec } from '../src/renderer/editor/protected-render'
-import { setBalancedSpaceWidening } from '../src/renderer/line-metrics'
+import { setOpenDocumentText } from '../src/renderer/text-layout/open-document'
 
 const render = (spec: unknown): HTMLElement =>
   DOMSerializer.renderSpec(document, spec as never).dom as HTMLElement
@@ -15,15 +15,15 @@ const pads = (dom: HTMLElement) => dom.querySelectorAll('.doc-autospace-pad')
 
 describe('renderTableSpec hangul spaces', () => {
   const H = '\ud55c\uae00'
-  beforeAll(() => setBalancedSpaceWidening(true))
-  afterAll(() => setBalancedSpaceWidening(false))
+  beforeAll(() => setOpenDocumentText({ balancedSpaces: true }))
+  afterAll(() => setOpenDocumentText({ balancedSpaces: false }))
 
   it('leaves the spaces in their text node without balanceSingleByteDoubleByteWidth', () => {
-    setBalancedSpaceWidening(false)
+    setOpenDocumentText({ balancedSpaces: false })
     const dom = render(renderTableSpec({ rows: [[{ paras: [`${H} A ${H}`] }]] }))
     expect(dom.querySelectorAll('.doc-balanced-space')).toHaveLength(0)
     expect(dom.querySelector('td')!.textContent).toBe(`${H} A ${H}`)
-    setBalancedSpaceWidening(true)
+    setOpenDocumentText({ balancedSpaces: true })
   })
   it('wraps spaces with a hangul neighbour across rich-cell runs, not Latin ones', () => {
     const model: TableModel = {

@@ -33,6 +33,7 @@ import {
   handleExportCsv,
   serializeActiveSheetCsv,
 } from './csv-export'
+import { settleFormulas } from './formula-settle'
 import type { CellScalar, CellState } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import type { SheetRedactionState } from '@genoffice/xlsx-gateway/gateway/xlsx-redaction'
 /// The slicerState member of a save request (zod: non-strict object shape).
@@ -694,8 +695,10 @@ export async function handleSave(
       ctx.setMessage(t('appCsvExportNeedsFullLoad'))
       return { ok: false }
     }
-    const active = activeCsvSheet(ctx.univerRef.current)
     const runtime = ctx.univerRef.current
+    await settleFormulas(runtime)
+    if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
+    const active = activeCsvSheet(runtime)
     const serialized =
       active === null || runtime === null
         ? null

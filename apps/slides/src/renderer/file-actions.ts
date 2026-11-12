@@ -11,6 +11,11 @@ import type { ActionCtx } from './action-context'
 import { collectExportPdfLinks } from './export-links'
 import { renderSlidesToPdfPages } from './export-pages'
 import { renderSlidesToImageBase64 } from './export-render'
+import {
+  exportVideo,
+  type VideoExportOptions,
+  type VideoExportResult,
+} from './video-export/export-video'
 import { t } from './i18n/locale'
 import { showToast } from './components/toast-bus'
 
@@ -206,6 +211,38 @@ export async function exportImages(ctx: ActionCtx, format: 'png' | 'jpg' = 'png'
   } catch (err) {
     ctx.setStatus(t('appExportImagesFailed', { error: String(err) }))
   }
+}
+
+/** Export as video: save dialog, then the offline show encoded to MP4; the dialog shows progress and cancels */
+export async function exportVideoFile(
+  ctx: ActionCtx,
+  opts: VideoExportOptions,
+  onProgress: (fraction: number) => void,
+  signal: AbortSignal,
+): Promise<VideoExportResult> {
+  if (!ctx.slides.some((s) => !s.hidden)) {
+    ctx.setStatus(t('appExportNoSlides'))
+    return { ok: false, cancelled: true }
+  }
+  const path = await window.slidesApi.pickExportVideoPath(`${exportBaseName(ctx)}.mp4`)
+  if (!path) return { ok: false, cancelled: true }
+  const r = await exportVideo(
+    { slides: ctx.slides, images: ctx.images, path },
+    opts,
+    onProgress,
+    signal,
+  )
+  if (r.ok) {
+    ctx.setStatus(t('appExportVideoDone', { path: r.path }))
+    showToast(t('appExportVideoDone', { path: r.path }))
+  } else if (!r.cancelled) {
+    const msg = r.unsupported
+      ? t('appExportVideoUnsupported')
+      : t('appExportVideoFailed', { error: r.error })
+    ctx.setStatus(msg)
+    showToast(msg, 'error')
+  }
+  return r
 }
 
 /**

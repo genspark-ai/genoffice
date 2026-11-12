@@ -1,5 +1,7 @@
 {
   "family": "Meiryo GO",
+  "standsInFor": "Meiryo",
+  "standInChain": { "tail": "ja-sans" },
   "source": {
     "kind": "probe",
     "date": "2026-09-03",

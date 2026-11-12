@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -123,4 +123,52 @@ it('continues using a valid configured default as the initial suggestion', async
   expect(state.pick).toHaveBeenCalledWith(
     expect.objectContaining({ defaultPath: join(custom, 'Draft.docx') }),
   )
+})
+
+it('offers the export formats next to Word in the Save As dialog', async () => {
+  state.pick.mockResolvedValue({ canceled: true, filePath: '' })
+  await saveAs(await documentBytes())
+  const filters = state.pick.mock.calls[0]![0].filters as { extensions: string[] }[]
+  expect(filters.map((filter) => filter.extensions[0])).toEqual(['docx', 'pdf', 'html', 'md'])
+})
+
+it.each([
+  ['copy.pdf', 'pdf'],
+  ['copy.HTML', 'html'],
+  ['copy.htm', 'html'],
+  ['copy.md', 'md'],
+])(
+  'hands a %s destination to the export instead of writing the docx there',
+  async (name, format) => {
+    const target = join(state.root, 'picked', name)
+    state.pick.mockResolvedValue({ canceled: false, filePath: target })
+    expect(await saveAs(await documentBytes())).toEqual({
+      ok: false,
+      exportAs: format,
+      path: target,
+    })
+    expect(existsSync(target)).toBe(false)
+  },
+)
+
+it('authorizes the picked export destination for the export that follows', async () => {
+  const target = join(state.root, 'picked', 'copy.html')
+  state.pick.mockResolvedValue({ canceled: false, filePath: target })
+  await saveAs(await documentBytes())
+  const sender = {
+    id: 71,
+    send: vi.fn(),
+    isDestroyed: () => false,
+    getOwnerBrowserWindow: () => null,
+  }
+  const exportHtml = state.handlers.get('docs:export-html')!
+  expect(await exportHtml({ sender }, 'Draft.docx', '<p>copy</p>', target)).toMatchObject({
+    path: target,
+  })
+  expect(readFileSync(target, 'utf8')).toContain('<p>copy</p>')
+  const other = join(state.root, 'picked', 'other.html')
+  expect(await exportHtml({ sender }, 'Draft.docx', '<p>copy</p>', other)).toMatchObject({
+    ok: false,
+    error: 'export target is not an authorized path',
+  })
 })

@@ -22,7 +22,7 @@ import { resolveColorNode } from './color'
 import {
   asXmlNode,
   decodeNumericCharRefs,
-  percentFraction,
+  percentPoints,
   xmlArray,
   type XmlNode,
 } from './xml-utils'
@@ -290,8 +290,7 @@ const ALIGN_MAP: Record<string, TextAlign> = {
 
 /** <a:spcPct val="150000"/> or val="150%" → 150 (%). */
 function spcPctVal(node: unknown): number | undefined {
-  const ratio = percentFraction(asXmlNode(asXmlNode(node)['a:spcPct'])['@_val'])
-  return ratio != null ? ratio * 100 : undefined
+  return percentPoints(asXmlNode(asXmlNode(node)['a:spcPct'])['@_val'])
 }
 
 /** <a:spcPts val="2400"/> → 24 (pt). */

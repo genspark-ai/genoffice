@@ -3,8 +3,8 @@ import type { EmbeddedFont } from '@genoffice/docx-engine'
 import { adoptEmbeddedFonts } from '../src/renderer/embedded-fonts'
 
 const setEmbeddedLineMetrics = vi.fn()
-vi.mock('../src/renderer/line-metrics', () => ({
-  noteEmbeddedFontsChanged: () => {},
+vi.mock('../src/renderer/line-metrics', () => ({ noteEmbeddedFontsChanged: () => {} }))
+vi.mock('../src/renderer/text-layout/font-rules', () => ({
   setEmbeddedLineMetrics: (faces: unknown) => setEmbeddedLineMetrics(faces),
 }))
 

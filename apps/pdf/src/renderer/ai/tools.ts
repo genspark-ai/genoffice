@@ -2,11 +2,13 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { AgentToolCall, AgentToolDef, ToolExecution } from '@genoffice/agent-core'
 import type { OutlineNode } from '../OutlinePanel'
 import type { PageEntry, SearchIndex } from '../search'
-import { searchInIndex } from '../search'
+import { findPatternsInIndex, patternMarks, searchInIndex } from '../search'
+import { REDACT_PATTERNS } from '../redact-patterns'
+import type { RedactPattern } from '../redact-patterns'
 import { foldCase } from '@genoffice/ui'
 import { geomDispSize, pdfRectToCss, pdfToView, quadToRect, viewToPdf } from '../annotations'
 import type { PageGeom } from '../annotations'
-import { EDIT_FONTS } from '../../shared/ipc'
+import { EDIT_FONTS, MAX_REDACTION_REGIONS } from '../../shared/ipc'
 import type {
   CreateDocumentRequest,
   CreateDocumentResult,
@@ -67,6 +69,9 @@ export interface PdfAiDeps {
   pendingSummary(): string
   outline(): OutlineNode[] | null
   searchIndex(): Promise<SearchIndex> | null
+  /** Pending redaction marks; the user reviews and applies them, never the AI */
+  redactionCount(): number
+  addRedactions(marks: { pageIndex: number; rect: [number, number, number, number] }[]): void
   isDeleted(origIdx: number): boolean
   /** Original page number → scroll to that page; returns false if the page was deleted */
   gotoPage(origPage: number): boolean
@@ -260,6 +265,25 @@ export const AGENT_TOOLS: AgentToolDef[] = [
         query: { type: 'string', description: 'Text to search for (case-insensitive)' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'find_sensitive_info',
+    description:
+      'Find phone numbers, email addresses, credit card numbers (Luhn-checked), US Social Security numbers, dates and IBANs (mod-97 checked) in the document text with deterministic matchers. Returns each hit with its page. mark=true also queues every hit as a pending redaction mark; the user must review the marks and click Apply redactions themselves — you cannot apply them. Scanned pages are covered only after OCR.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        patterns: {
+          type: 'array',
+          items: { type: 'string', enum: [...REDACT_PATTERNS] },
+          description: 'Patterns to look for; omit for all',
+        },
+        mark: {
+          type: 'boolean',
+          description: 'Queue the hits as pending redaction marks; defaults to false',
+        },
+      },
     },
   },
   {
@@ -1270,6 +1294,52 @@ async function searchText(deps: PdfAiDeps, input: Record<string, unknown>): Prom
   return {
     output: lines.join('\n') || 'No matches found',
     summary: t('aiToolSearch', { query, count: matches.length }),
+  }
+}
+
+async function findSensitiveInfo(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+): Promise<ToolExecution> {
+  const raw = input.patterns
+  const patterns = (Array.isArray(raw) && raw.length > 0 ? raw : REDACT_PATTERNS).map(String)
+  const bad = patterns.filter((p) => !REDACT_PATTERNS.includes(p as RedactPattern))
+  if (bad.length > 0)
+    return err(
+      `Unknown pattern(s): ${bad.join(', ')}; use ${REDACT_PATTERNS.join(', ')}`,
+      t('aiToolFindSensitive', { count: 0 }),
+    )
+  const mark = input.mark === true
+  if (mark && deps.readOnly()) return err(READONLY_OUTPUT, t('aiToolFindSensitive', { count: 0 }))
+  const indexPromise = deps.searchIndex()
+  if (!indexPromise) return err('Document not ready', t('aiToolFindSensitive', { count: 0 }))
+  const index = await indexPromise
+  const matches = findPatternsInIndex(index, patterns as RedactPattern[], deps.isDeleted)
+  const lines = matches
+    .slice(0, 60)
+    .map(
+      (m) =>
+        `Page ${m.pageIndex + 1} [${m.pattern}]: ${m.text.replace(/\s+/g, ' ')}${m.rotated ? ' (rotated text)' : ''}`,
+    )
+  if (matches.length > 60) lines.push(`(${matches.length} hits total; only the first 60 listed)`)
+  if (mark && matches.length > 0) {
+    const found = patternMarks(matches, MAX_REDACTION_REGIONS - deps.redactionCount())
+    if (found.marks.length > 0) deps.addRedactions(found.marks)
+    lines.push(
+      `Queued ${found.hits} hit(s) as pending redaction marks. Ask the user to review them and click Apply redactions.`,
+    )
+    if (found.rotated > 0)
+      lines.push(
+        `${found.rotated} hit(s) on rotated text were not marked; the user must mark them by hand.`,
+      )
+    if (found.capped)
+      lines.push(
+        `The redaction limit (${MAX_REDACTION_REGIONS} areas) was reached; remaining hits were not marked.`,
+      )
+  }
+  return {
+    output: lines.join('\n') || 'No matches found',
+    summary: t('aiToolFindSensitive', { count: matches.length }),
   }
 }
 
@@ -3545,6 +3615,8 @@ export async function executePdfTool(
       return readPages(deps, input)
     case 'search_text':
       return searchText(deps, input)
+    case 'find_sensitive_info':
+      return findSensitiveInfo(deps, input)
     case 'goto_page': {
       const summary = t('aiToolGoto', { page: Number(input.page) })
       const r = resolvePage(deps, input.page)

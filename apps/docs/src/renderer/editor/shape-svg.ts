@@ -246,31 +246,210 @@ export function shapeBackgroundCss(
   return `background-image:${image};background-size:100% 100%;background-repeat:no-repeat`
 }
 
+/** inset = cw·w + ch·h + cs·min(w,h) */
+type InsetCoef = readonly [cw: number, ch: number, cs: number]
+type RectCoef = readonly [l: InsetCoef, t: InsetCoef, r: InsetCoef, b: InsetCoef]
+
+const Z: InsetCoef = [0, 0, 0]
+const W = (c: number): InsetCoef => [c, 0, 0]
+const H = (c: number): InsetCoef => [0, c, 0]
+const S = (c: number): InsetCoef => [0, 0, c]
+/** inscribed rect of the ellipse: (1 - 1/√2) / 2 per side */
+const K = (1 - Math.SQRT1_2) / 2
+const ELLIPSE: RectCoef = [W(K), H(K), W(K), H(K)]
+const ROUND = S(0.04882)
+const SNIP = S(1 / 12)
+
+/**
+ * OOXML presetShapeDefinitions text rectangles at the default adjust values,
+ * as insets from the shape box. Every rect that is linear in w, h and
+ * min(w,h) lives here; the few with a pin()/branch term are computed below.
+ */
+const TEXT_RECT_INSETS: Record<string, RectCoef> = {
+  ellipse: ELLIPSE,
+  chord: ELLIPSE,
+  donut: ELLIPSE,
+  noSmoking: ELLIPSE,
+  smileyFace: ELLIPSE,
+  teardrop: ELLIPSE,
+  flowChartConnector: ELLIPSE,
+  flowChartOr: ELLIPSE,
+  flowChartSummingJunction: ELLIPSE,
+  wedgeEllipseCallout: ELLIPSE,
+  flowChartDelay: [Z, H(K), W(K), H(K)],
+  flowChartTerminator: [W(0.04713), H(K), W(0.04713), H(K)],
+  roundRect: [ROUND, ROUND, ROUND, ROUND],
+  flowChartAlternateProcess: [ROUND, ROUND, ROUND, ROUND],
+  wedgeRoundRectCallout: [ROUND, ROUND, ROUND, ROUND],
+  round2DiagRect: [ROUND, ROUND, ROUND, ROUND],
+  round2SameRect: [ROUND, ROUND, ROUND, Z],
+  round1Rect: [Z, Z, ROUND, Z],
+  snipRoundRect: [ROUND, ROUND, SNIP, Z],
+  snip1Rect: [Z, SNIP, SNIP, Z],
+  snip2SameRect: [SNIP, SNIP, SNIP, Z],
+  snip2DiagRect: [SNIP, SNIP, SNIP, SNIP],
+  horizontalScroll: [S(0.125), S(0.125), S(0.0625), S(0.125)],
+  verticalScroll: [S(0.125), S(0.125), S(0.125), S(0.0625)],
+  bevel: [S(0.125), S(0.125), S(0.125), S(0.125)],
+  frame: [S(0.125), S(0.125), S(0.125), S(0.125)],
+  plaque: [S(0.11785), S(0.11785), S(0.11785), S(0.11785)],
+  octagon: [S(K), S(K), S(K), S(K)],
+  can: [Z, S(0.25), Z, S(0.125)],
+  cube: [Z, S(0.25), S(0.25), Z],
+  foldedCorner: [Z, Z, Z, S(1 / 6)],
+  diamond: [W(0.25), H(0.25), W(0.25), H(0.25)],
+  flowChartDecision: [W(0.25), H(0.25), W(0.25), H(0.25)],
+  flowChartSort: [W(0.25), H(0.25), W(0.25), H(0.25)],
+  flowChartCollate: [W(0.25), H(0.25), W(0.25), H(0.25)],
+  triangle: [W(0.25), H(0.5), W(0.25), Z],
+  flowChartExtract: [W(0.25), H(0.5), W(0.25), Z],
+  flowChartMerge: [W(0.25), Z, W(0.25), H(0.5)],
+  rtTriangle: [W(1 / 12), H(7 / 12), W(5 / 12), H(1 / 12)],
+  pentagon: [W(0.19098), H(0.23607), W(0.19098), Z],
+  homePlate: [Z, Z, S(0.25), Z],
+  heart: [W(1 / 6), H(0.25), W(1 / 6), H(1 / 3)],
+  wave: [Z, H(0.25), Z, H(0.25)],
+  doubleWave: [Z, H(0.125), Z, H(0.125)],
+  ribbon: [W(0.25), H(1 / 6), W(0.25), Z],
+  ribbon2: [W(0.25), Z, W(0.25), H(1 / 6)],
+  diagStripe: [Z, Z, W(0.25), H(0.25)],
+  rightArrow: [Z, H(0.25), S(0.25), H(0.25)],
+  leftArrow: [S(0.25), H(0.25), Z, H(0.25)],
+  leftRightArrow: [S(0.25), H(0.25), S(0.25), H(0.25)],
+  notchedRightArrow: [S(0.25), H(0.25), S(0.25), H(0.25)],
+  stripedRightArrow: [S(0.15625), H(0.25), S(0.25), H(0.25)],
+  upArrow: [W(0.25), S(0.25), W(0.25), Z],
+  downArrow: [W(0.25), Z, W(0.25), S(0.25)],
+  upDownArrow: [W(0.25), S(0.25), W(0.25), S(0.25)],
+  quadArrow: [S(0.1125), [0, 0.5, -0.1125], S(0.1125), [0, 0.5, -0.1125]],
+  leftArrowCallout: [W(0.35023), Z, Z, Z],
+  rightArrowCallout: [Z, Z, W(0.35023), Z],
+  upArrowCallout: [Z, H(0.35023), Z, Z],
+  downArrowCallout: [Z, Z, Z, H(0.35023)],
+  star4: [W(0.41161), H(0.41161), W(0.41161), H(0.41161)],
+  star5: [W(0.30902), H(0.38197), W(0.30902), H(0.23607)],
+  star6: [W(1 / 6), H(0.25), W(1 / 6), H(0.25)],
+  star7: [W(0.22252), H(0.19806), W(0.22252), H(0.24698)],
+  star8: [W(0.15355), H(0.15355), W(0.15355), H(0.15355)],
+  star10: [W(0.13819), H(0.25), W(0.13819), H(0.25)],
+  star12: [W(0.23483), H(0.23483), W(0.23483), H(0.23483)],
+  star16: [W(0.23483), H(0.23483), W(0.23483), H(0.23483)],
+  star24: [W(0.23483), H(0.23483), W(0.23483), H(0.23483)],
+  star32: [W(0.23483), H(0.23483), W(0.23483), H(0.23483)],
+  sun: [W(0.32323), H(0.32323), W(0.32323), H(0.32323)],
+  moon: [W(K), H(0.23949), W(0.5), H(0.23949)],
+  cloud: [W(0.13782), H(0.15102), W(0.20894), H(0.19736)],
+  cloudCallout: [W(0.13782), H(0.15102), W(0.20894), H(0.19736)],
+  irregularSeal1: [W(0.21421), H(0.29259), W(0.22676), H(0.35477)],
+  irregularSeal2: [W(0.2487), H(0.29546), W(0.32222), H(0.26227)],
+  lightningBolt: [W(0.40542), H(0.34431), W(0.35569), H(0.33903)],
+  gear6: [
+    [0.14536, 0, 0.10639],
+    [0, 0.14754, 0.10574],
+    [0.14536, 0, 0.10639],
+    [0, 0.14754, 0.10574],
+  ],
+  gear9: [
+    [0.12631, 0, 0.07474],
+    [0, 0.16781, 0.06644],
+    [0.12631, 0, 0.07474],
+    [0, 0.18967, 0.06207],
+  ],
+  circularArrow: [
+    [K, 0, 0.04419],
+    [0, K, 0.04419],
+    [K, 0, 0.04419],
+    [0, K, 0.04419],
+  ],
+  leftCircularArrow: [
+    [K, 0, 0.04419],
+    [0, K, 0.04419],
+    [K, 0, 0.04419],
+    [0, K, 0.04419],
+  ],
+  mathEqual: [W(0.13255), H(0.206), W(0.13255), H(0.206)],
+  mathNotEqual: [W(0.13255), H(0.206), W(0.13255), H(0.206)],
+  mathPlus: [W(0.13255), [0, 0.5, -0.1176], W(0.13255), [0, 0.5, -0.1176]],
+  arc: [W(0.5), Z, Z, H(0.5)],
+  blockArc: [Z, Z, Z, H(0.5)],
+  // the spec's pie rect swaps t/r (known erratum): use the inscribed rect
+  pie: ELLIPSE,
+  leftBrace: [W(1 - 0.35355), S(0.02441), Z, S(0.02441)],
+  rightBrace: [Z, S(0.02441), W(1 - 0.35355), S(0.02441)],
+  leftBracket: [W(0.29289), S(0.02441), Z, S(0.02441)],
+  rightBracket: [Z, S(0.02441), W(0.29289), S(0.02441)],
+  flowChartDisplay: [W(1 / 6), Z, W(1 / 6), Z],
+  flowChartMagneticDrum: [W(1 / 6), Z, W(1 / 3), Z],
+  flowChartManualOperation: [W(0.2), Z, W(0.2), Z],
+  flowChartPreparation: [W(0.2), Z, W(0.2), Z],
+  flowChartPredefinedProcess: [W(0.125), Z, W(0.125), Z],
+  flowChartInternalStorage: [W(0.125), H(0.125), Z, Z],
+  flowChartManualInput: [Z, H(0.2), Z, Z],
+  flowChartPunchedTape: [Z, H(0.2), Z, H(0.2)],
+  flowChartMagneticDisk: [Z, H(1 / 3), Z, H(1 / 6)],
+  flowChartOffpageConnector: [Z, Z, Z, H(0.2)],
+  flowChartDocument: [Z, Z, Z, H(0.19806)],
+  flowChartMultidocument: [Z, H(0.17014), W(0.13912), H(0.03787)],
+}
+
+/** text rects whose default-adjust formula pins on the aspect ratio */
+function pinnedTextInsets(
+  prst: string,
+  w: number,
+  h: number,
+): { l: number; t: number; r: number; b: number } | null {
+  const ss = Math.min(w, h)
+  switch (prst) {
+    case 'hexagon': {
+      const maxAdj = (50000 * w) / ss
+      const a = Math.min(25000, maxAdj)
+      const q1 = -maxAdj / 2
+      const q2 = a + q1
+      const q6 = (a + (q2 > 0 ? q1 : 0)) / q1
+      const q8 = (q2 > 0 ? 4 : 2) - q6 * (q2 > 0 ? 3 : 2)
+      return { l: (w * q8) / 24, t: (h * q8) / 24, r: (w * q8) / 24, b: (h * q8) / 24 }
+    }
+    case 'parallelogram': {
+      const maxAdj = (100000 * w) / ss
+      const q2 = (1 + (5 * Math.min(25000, maxAdj)) / maxAdj) / 12
+      return { l: q2 * w, t: q2 * h, r: q2 * w, b: q2 * h }
+    }
+    case 'trapezoid': {
+      const maxAdj = (50000 * w) / ss
+      const f = Math.min(25000, maxAdj) / maxAdj
+      return { l: (w / 3) * f, t: (h / 3) * f, r: (w / 3) * f, b: 0 }
+    }
+    case 'plus': {
+      const x1 = ss / 4
+      return w > h ? { l: 0, t: x1, r: 0, b: x1 } : { l: x1, t: 0, r: x1, b: 0 }
+    }
+    case 'chevron': {
+      const x1 = (ss * Math.min(50000, (100000 * w) / ss)) / 100000
+      const inset = w - 2 * x1 > 0 ? x1 : 0
+      return { l: inset, t: 0, r: inset, b: 0 }
+    }
+    case 'corner': {
+      const x1 = (ss * Math.min(50000, (100000 * w) / ss)) / 100000
+      const dy1 = (ss * Math.min(50000, (100000 * h) / ss)) / 100000
+      return w > h ? { l: 0, t: h - dy1, r: 0, b: 0 } : { l: 0, t: 0, r: w - x1, b: 0 }
+    }
+    default:
+      return null
+  }
+}
+
 /** Geometry text-rect insets (px) inside a w×h preset shape; Word keeps the
- *  text inside this rect, bodyPr insets apply within it. Approximates the
- *  OOXML presetShapeDefinitions text rectangles; extend per preset as needed.
+ *  text inside this rect, bodyPr insets apply within it. Null = the full box.
  *  Document geometry, not chrome — never themed. */
 export function shapeTextInsetsPx(
   prst: string,
   w: number,
   h: number,
 ): { l: number; t: number; r: number; b: number } | null {
-  // inscribed rect of the ellipse: (1 - 1/√2) / 2 per side
-  const k = (1 - Math.SQRT1_2) / 2
-  switch (prst) {
-    case 'ellipse':
-      return { l: w * k, t: h * k, r: w * k, b: h * k }
-    case 'triangle':
-      return { l: w / 4, t: h / 2, r: w / 4, b: 0 }
-    case 'diamond':
-      return { l: w / 4, t: h / 4, r: w / 4, b: h / 4 }
-    case 'rightArrow':
-      return { l: 0, t: h / 4, r: Math.min(w, h) / 2, b: h / 4 }
-    case 'leftArrow':
-      return { l: Math.min(w, h) / 2, t: h / 4, r: 0, b: h / 4 }
-    case 'star5':
-      return { l: w * 0.19, t: h * 0.31, r: w * 0.19, b: h * 0.29 }
-    default:
-      return null
-  }
+  if (!(w > 0) || !(h > 0)) return null
+  const coef = TEXT_RECT_INSETS[prst]
+  if (!coef) return pinnedTextInsets(prst, w, h)
+  const ss = Math.min(w, h)
+  const at = ([cw, ch, cs]: InsetCoef) => Math.max(0, cw * w + ch * h + cs * ss)
+  return { l: at(coef[0]), t: at(coef[1]), r: at(coef[2]), b: at(coef[3]) }
 }

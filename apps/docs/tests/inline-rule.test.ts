@@ -109,9 +109,9 @@ describe('VML horizontal rule sharing a text paragraph', () => {
     const [node] = runsToInline([{ ...hr, fontAscii: 'Georgia', sizeHalfPoints: 28, bold: true }])
     expect(node.attrs?.rule).toMatchObject({ fontAscii: 'Georgia', sizeHalfPoints: 28 })
     const decls = inlineRuleDecls(node.attrs?.rule as never)
-    expect(decls).toContain('--doc-line-factor-latin:1.1375')
+    expect(decls).toContain('--doc-line-factor-latin:1.1362')
     expect(decls).toContain('font-size:14pt')
-    expect(inlineRuleStyle(node.attrs?.rule as never)['--doc-line-factor-latin']).toBe('1.1375')
+    expect(inlineRuleStyle(node.attrs?.rule as never)['--doc-line-factor-latin']).toBe('1.1362')
     expect(inlineRuleDecls(RULE)).not.toContainEqual(
       expect.stringContaining('--doc-line-factor-latin'),
     )

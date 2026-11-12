@@ -88,13 +88,15 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     // current lineup per platform.claude.com models overview (2026-10-27):
     // Sonnet 5.5 (2026-09-28) replaces Sonnet 5 as the speed/intelligence
     // default; it accepts only tool_choice auto/none, which is all this
-    // adapter sends. Fable needs data retention enabled on the org, otherwise
-    // the API answers model_not_available; every other id is served to any key.
+    // adapter sends. Fable 5.2 (2026-11) supersedes 5.1 at a lower price.
+    // Fable needs data retention enabled on the org, otherwise the API
+    // answers model_not_available; every other id is served to any key.
     models: [
       'claude-opus-5-5',
       'claude-sonnet-5-5',
-      'claude-fable-5-1',
+      'claude-fable-5-2',
       'claude-haiku-5-5',
+      'claude-fable-5-1',
       'claude-sonnet-5',
       'claude-opus-5',
       'claude-fable-5',
@@ -296,6 +298,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     models: [
       'openrouter/auto',
       'anthropic/claude-opus-5.5',
+      'anthropic/claude-fable-5.2',
       'anthropic/claude-sonnet-5',
       'openai/gpt-6-astra',
       'openai/gpt-6-sol',
@@ -472,6 +475,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
       'claude-sonnet-5',
       'claude-opus-5-5',
       'claude-opus-5',
+      'claude-fable-5-2',
       'claude-fable-5-1',
       'claude-haiku-5-5',
       'gemini-3.7-flash',

@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useAiPanelPrefs } from '@genoffice/ui'
+import { useAiPanelPrefs, useImeEnterGuard } from '@genoffice/ui'
 import { useI18n } from '../i18n/locale'
 import {
   selectionAskPosition,
@@ -39,6 +39,7 @@ export function AiSelectionAsk({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const boxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const ime = useImeEnterGuard()
   const askLabel = t('aiAskBtn')
 
   useLayoutEffect(() => {
@@ -50,7 +51,7 @@ export function AiSelectionAsk({
       width,
       height,
     })
-  }, [anchor, askLabel, open])
+  }, [anchor, askLabel, open, showAskTrigger])
 
   useEffect(() => {
     if (!open) return
@@ -135,8 +136,10 @@ export function AiSelectionAsk({
         maxLength={MAX_INSTRUCTION}
         placeholder={t('aiComposerPlaceholder')}
         onChange={(event) => setText(event.target.value)}
+        onCompositionStart={ime.handleCompositionStart}
+        onCompositionEnd={ime.handleCompositionEnd}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+          if (event.key === 'Enter' && !ime.isImeConfirm(event.nativeEvent)) {
             event.preventDefault()
             submit()
           }

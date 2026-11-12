@@ -1229,6 +1229,17 @@ export interface ExportImagesResult {
   error?: string
 }
 
+/**
+ * Export as video: the renderer encodes the MP4 itself (WebCodecs + muxer) and streams the
+ * bytes to a file the main process holds open; the muxer rewrites earlier positions when it
+ * finalizes, so writes carry an absolute offset.
+ */
+export interface VideoFileWrite {
+  id: number
+  data: Uint8Array
+  position: number
+}
+
 /** Save as Picture: one PNG of the selected elements, written where the save dialog points */
 export interface SavePictureOp {
   /** base64 PNG (without the data: prefix) */
@@ -1338,6 +1349,7 @@ export type MenuCommand =
   | 'export-pdf'
   | 'export-images'
   | 'export-images-jpg'
+  | 'export-video'
   | 'print'
   | 'zoom-in'
   | 'zoom-out'
@@ -1741,6 +1753,13 @@ export interface SlidesApi {
   exportImages: (op: ExportImagesOp) => Promise<ExportImagesResult>
   /** Export as PDF: shows the save dialog for the target path, cancel returns null */
   pickExportPdfPath: (defaultName: string) => Promise<string | null>
+  /** Export as video: shows the save dialog for the .mp4 path, cancel returns null */
+  pickExportVideoPath: (defaultName: string) => Promise<string | null>
+  /** Open the video file for streamed writes; returns a handle id */
+  videoFileOpen: (path: string) => Promise<number>
+  videoFileWrite: (op: VideoFileWrite) => Promise<void>
+  /** Close the handle; discard=true also deletes the (cancelled/failed) file */
+  videoFileClose: (id: number, discard: boolean) => Promise<void>
   /** Save as Picture: save dialog + write of the selection PNG */
   savePicture: (op: SavePictureOp) => Promise<SavePictureResult>
   /** Main process printToPDF via a hidden window, written to disk */

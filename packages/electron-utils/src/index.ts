@@ -164,3 +164,11 @@ export {
   writeLegacyImportSkip,
   type LegacyImportKind,
 } from './legacy-import-prefs'
+export {
+  PDF_DEFAULT_ZOOM_KEY,
+  PDF_DEFAULT_ZOOMS,
+  readPdfDefaultZoom,
+  sanitizePdfDefaultZoom,
+  writePdfDefaultZoom,
+  type PdfDefaultZoom,
+} from './pdf-zoom-prefs'

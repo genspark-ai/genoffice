@@ -50,12 +50,12 @@ describe('intrinsicSize', () => {
     expect(intrinsicSize(jpeg(800, 600))).toEqual({ width: 800, height: 600 })
   })
 
-  it('refuses zero, out-of-spec and over-budget dimensions', () => {
+  it('refuses zero and out-of-spec dimensions', () => {
     for (const bytes of [
       png(0, 480),
       png(640, 0),
       png(0xffffffff, 1),
-      png(10_000, 10_000),
+      png(200_001, 1),
       gif(0, 200),
       gif(320, 0),
     ]) {
@@ -66,6 +66,10 @@ describe('intrinsicSize', () => {
   it('applies the same rule to dimensions read from a JPEG SOF header', () => {
     expect(intrinsicSize(jpeg(0, 600))).toBeNull()
     expect(intrinsicSize(jpeg(800, 0))).toBeNull()
-    expect(intrinsicSize(jpeg(65535, 65535))).toBeNull()
+  })
+
+  it('keeps a valid large photo at its own aspect', () => {
+    expect(intrinsicSize(jpeg(8688, 5792))).toEqual({ width: 8688, height: 5792 })
+    expect(intrinsicSize(png(10_000, 10_000))).toEqual({ width: 10_000, height: 10_000 })
   })
 })

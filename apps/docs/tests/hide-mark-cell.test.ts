@@ -47,7 +47,26 @@ describe('w:hideMark cells', () => {
     editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
     const td = editor.view.dom.querySelector('td')!
     expect(td.getAttribute('data-hide-mark')).toBe('1')
-    expect(td.querySelector(':scope > .doc-p-empty:only-child')).not.toBeNull()
+    expect(td.querySelector(':scope > .doc-p-empty:last-child')).not.toBeNull()
+  })
+
+  it('collapses the empty paragraph after content, not an interior one', async () => {
+    const xml = TABLE_XML.replace(
+      '<w:p/>',
+      '<w:p><w:r><w:t>a</w:t></w:r></w:p><w:p/><w:p><w:r><w:t>b</w:t></w:r></w:p><w:p/>',
+    )
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    liveEditors.push(editor)
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const td = editor.view.dom.querySelector('td[data-hide-mark]')!
+    const empties = td.querySelectorAll(':scope > .doc-p-empty')
+    expect(empties.length).toBe(2)
+    expect(td.querySelectorAll(':scope > .doc-p-empty:not(.doc-p-pic):last-child').length).toBe(1)
+    expect(empties[1]).toBe(td.lastElementChild)
   })
 
   it('marks read-only table cells the same way', async () => {
@@ -56,9 +75,9 @@ describe('w:hideMark cells', () => {
     expect(spec).toContain('"data-hide-mark":"1"')
   })
 
-  it('zeroes the lone empty paragraph of a hideMark cell', () => {
+  it('zeroes the trailing empty paragraph of a hideMark cell (Word probe 2026-11-08: the last one only)', () => {
     const rule =
-      /\.doc-table td\[data-hide-mark\] > \.doc-p-empty:not\(\.doc-p-pic\):only-child[^{]*\{([^}]*)\}/.exec(
+      /\.doc-table td\[data-hide-mark\] > \.doc-p-empty:not\(\.doc-p-pic\):last-child[^{]*\{([^}]*)\}/.exec(
         css,
       )
     expect(rule).not.toBeNull()
@@ -80,7 +99,7 @@ describe('w:hideMark cells', () => {
     editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
     const p = editor.view.dom.querySelector('td[data-hide-mark] > .doc-p-empty')!
     expect(p.classList.contains('doc-p-pic')).toBe(true)
-    expect(css).toContain('td[data-hide-mark] > .doc-p-empty:not(.doc-p-pic):only-child')
+    expect(css).toContain('td[data-hide-mark] > .doc-p-empty:not(.doc-p-pic):last-child')
   })
 })
 

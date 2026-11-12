@@ -22,6 +22,17 @@ export interface PptRecord {
 
 export const PPT_TYPES = {
   documentContainer: 0x03e8,
+  environment: 0x03f2,
+  ppDrawingGroup: 0x040b,
+  ppDrawing: 0x040c,
+  fontCollection: 0x07d5,
+  colorSchemeAtom: 0x07f0,
+  oePlaceholderAtom: 0x0bc3,
+  outlineTextRefAtom: 0x0f9e,
+  styleTextPropAtom: 0x0fa1,
+  txMasterStyleAtom: 0x0fa3,
+  textRulerAtom: 0x0fa6,
+  fontEntityAtom: 0x0fb7,
   documentAtom: 0x03e9,
   endDocument: 0x03ea,
   slideContainer: 0x03ee,
@@ -33,6 +44,14 @@ export const PPT_TYPES = {
   textCharsAtom: 0x0fa0,
   textBytesAtom: 0x0fa8,
   slideListWithText: 0x0ff0,
+  cString: 0x0fba,
+  styleTextProp9Atom: 0x0fac,
+  outlineTextProps9: 0x0fae,
+  outlineTextPropsHeader9Atom: 0x0faf,
+  list: 0x07d0,
+  progTags: 0x1388,
+  progBinaryTag: 0x138a,
+  binaryTagExtension: 0x138b,
   userEditAtom: 0x0ff5,
   currentUserAtom: 0x0ff6,
   persistPtrIncrementalBlock: 0x1772,
@@ -61,6 +80,28 @@ export function* walkRecords(
   }
 }
 
+/**
+ * The same walk for the drawing / style layers: a damaged record ends the
+ * walk instead of failing the deck, so one bad master or shape costs only
+ * itself.
+ */
+export function* walkRecordsLenient(
+  stream: Uint8Array,
+  from = 0,
+  to = stream.length,
+): Generator<PptRecord> {
+  let at = from
+  while (at + RECORD_HEADER <= to) {
+    const head = stream[at]! | (stream[at + 1]! << 8)
+    const type = stream[at + 2]! | (stream[at + 3]! << 8)
+    const length = new DataView(stream.buffer, stream.byteOffset + at + 4, 4).getUint32(0, true)
+    const offset = at + RECORD_HEADER
+    if (offset + length > to) return
+    yield { version: head & 0x000f, instance: head >> 4, type, length, offset }
+    at = offset + length
+  }
+}
+
 export function payloadOf(stream: Uint8Array, record: PptRecord): Uint8Array {
   return stream.subarray(record.offset, record.offset + record.length)
 }
@@ -76,15 +117,31 @@ export function isRecordContainer(record: PptRecord): boolean {
 
 /** decode a TextCharsAtom payload: UTF-16LE with PowerPoint's control runes */
 export function decodeTextChars(payload: Uint8Array): string {
-  const text = Buffer.from(payload.buffer, payload.byteOffset, payload.length).toString('utf16le')
-  return normalizeRunes(text)
+  return normalizeRunes(rawTextChars(payload))
 }
 
 /** decode a TextBytesAtom payload: one byte per char (Windows codepage 1252
     at heart; latin1 covers the bytes, the smart-quote runes get named) */
 export function decodeTextBytes(payload: Uint8Array): string {
+  return normalizeRunes(rawTextBytes(payload))
+}
+
+/** the text as PowerPoint stores it: '\r' ends a paragraph, '\u000b' breaks a line */
+export function rawTextChars(payload: Uint8Array): string {
+  const text = Buffer.from(payload.buffer, payload.byteOffset, payload.length).toString('utf16le')
+  return nameSpecials(text)
+}
+
+export function rawTextBytes(payload: Uint8Array): string {
   const text = Buffer.from(payload.buffer, payload.byteOffset, payload.length).toString('latin1')
-  return normalizeRunes(text)
+  return nameSpecials(text)
+}
+
+/** names the cp1252 runes and blanks the bullet markers, one char for one so run counts still line up */
+function nameSpecials(text: string): string {
+  return [...text]
+    .map((ch) => (ch === '\u001e' || ch === '\u001f' ? ' ' : (CP1252_SPECIALS[ch] ?? ch)))
+    .join('')
 }
 
 const CP1252_SPECIALS: Record<string, string> = {

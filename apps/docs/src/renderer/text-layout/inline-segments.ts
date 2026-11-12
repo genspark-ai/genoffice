@@ -7,12 +7,15 @@
  *
  * Rules here (Word truths in each function's comment):
  *   autospace pads, balanced spaces, Korean no-break seams, SimSun-gap line
- *   lifts, justification symbols, hinted East Asian curly quotes.
+ *   lifts, justification symbols, hinted East Asian curly quotes, whitespace
+ *   runs that give up their line box.
  */
 import { textHasEastAsian } from '@genoffice/docx-engine'
 import {
   asciiOnlyCjkFace,
+  autospaceHangulSeam,
   autospaceLatinFirst,
+  cssCsDigitLiftExpr,
   autospacePadBetween,
   autospacePadClass,
   autospacePadScale,
@@ -20,14 +23,25 @@ import {
   balancedSpaceOffsets,
   codePointLengthAt,
   hasBalancedSpaceContext,
+  isWhitespaceRun,
   justifySymbolRanges,
+  fallbackGlyphRanges,
+  symbolFallbackFontFamily,
+  symbolFallbackLineFactor,
   krNoBreakOffsets,
-  latinAutospaceGapEm,
-  SIMSUN_GAP_CHAR_RE,
-  simsunGapLineFactor,
+  textHasComplexScript,
   textHasHangul,
   type AutospaceMode,
 } from '../line-metrics'
+import {
+  cssCsFontFamily,
+  cssRunFontFamily,
+  latinAutospaceGapEm,
+  lineHeightFactor,
+  SIMSUN_GAP_CHAR_RE,
+  simsunGapLineFactor,
+} from './font-rules'
+import { middleDotGlue, type MiddleDotGlue } from '../table-layout/tokenize'
 
 export interface InlineRunAttrs {
   font?: string | null
@@ -35,6 +49,10 @@ export interface InlineRunAttrs {
   eastAsiaFont?: string | null
   eaSlotEmpty?: boolean | null
   rawRPr?: string | null
+  /** w:cs face when it applies to the run (rtl run, or complex-script text) */
+  csFont?: string | null
+  /** the run's own w:lang w:eastAsia (direct or character style) */
+  eaLang?: string | null
 }
 
 export interface InlineRun {
@@ -63,6 +81,14 @@ export interface InlineParagraph {
   justified: boolean
   /** line-height expression the SimSun-gap lift applies, null when the lift is off (exact lines) */
   simsunGapLineHeight: string | null
+  /** exact line rule: fallback glyphs never lift their line */
+  exactLine?: boolean
+  /** the paragraph's own line-height declaration (fixed rules), carried by lifted glyph spans */
+  fixedLineHeight?: string | null
+  /** paragraph line multiple for per-line face lifts, null when lines are pinned (exact rule) */
+  lineMultiple?: number | 'inherited' | null
+  /** w:lang w:eastAsia a run without its own inherits (paragraph style chain, then docDefaults) */
+  eaLang?: string | null
 }
 
 export interface Segment {
@@ -88,15 +114,24 @@ function autospacePads(p: InlineParagraph, mode: AutospaceMode): Segment[] {
   const cls = autospacePadClass(mode)
   const faceOf = (run: InlineRun): string | null =>
     (run.attrs?.fontAscii ?? run.attrs?.font) || p.inheritedAscii
-  const push = (from: number, to: number, latinFirst: boolean, face: string | null) => {
-    const scale = latinFirst ? autospacePadScale(latinAutospaceGapEm(face), mode) : 1
+  const push = (
+    from: number,
+    to: number,
+    latinFirst: boolean,
+    face: string | null,
+    hangul: boolean,
+  ) => {
+    const scale = latinFirst ? autospacePadScale(latinAutospaceGapEm(face)) : 2
+    // a Korean word-wrap paragraph never breaks at a hangul seam, so its margin never meets a line
+    // start; with wordWrap off the seam can open a line and takes the collapsible space like any other
+    const base = hangul && p.wordWrap ? `${cls} doc-autospace-pad-m` : cls
     out.push(
-      scale === 1
-        ? { from, to, cls }
+      scale === 2
+        ? { from, to, cls: base }
         : {
             from,
             to,
-            cls: `${cls} doc-autospace-pad-le`,
+            cls: `${base} doc-autospace-pad-le`,
             style: `--doc-autospace-pad-le:${scale}`,
           },
     )
@@ -115,6 +150,7 @@ function autospacePads(p: InlineParagraph, mode: AutospaceMode): Segment[] {
         run.offset + codePointLengthAt(run.text, 0),
         autospaceLatinFirst(prevText),
         prevFace,
+        autospaceHangulSeam(prevText, run.text),
       )
     }
     for (const seam of autospaceSeams(run.text, mode)) {
@@ -123,6 +159,7 @@ function autospacePads(p: InlineParagraph, mode: AutospaceMode): Segment[] {
         run.offset + seam.at + codePointLengthAt(run.text, seam.at),
         seam.latinFirst,
         face,
+        autospaceHangulSeam(run.text.slice(0, seam.at), run.text.slice(seam.at)),
       )
     }
     prevText = run.text
@@ -154,6 +191,43 @@ function krNoBreakJoiners(p: InlineParagraph): number[] {
       for (const i of krNoBreakOffsets(run.text, prevText)) out.push(run.offset + i)
       prevText = run.text
     } else prevText = ''
+  }
+  return out
+}
+
+const MIDDLE_DOT = '\u00b7'
+
+/** Word's line-start / line-end character set reaches Latin text through the East Asian
+ *  language: under zh-CN or no w:lang w:eastAsia the spaces beside U+00B7 and before ":"
+ *  are no break opportunity, under zh-TW only the ones before (probe 2026-11-08). The
+ *  span opens on the character before the spaces: Chromium breaks ahead of a no-wrap
+ *  span that starts with a space, so a space run opening its run stays breakable. */
+function middleDotNoBreaks(p: InlineParagraph): Segment[] {
+  const chars: Array<{ ch: string; at: number; run: number; glue: MiddleDotGlue }> = []
+  p.runs.forEach((run, k) => {
+    if (!run.text) {
+      chars.push({ ch: '', at: run.offset, run: k, glue: 'none' })
+      return
+    }
+    const glue = middleDotGlue(run.attrs?.eaLang ?? p.eaLang ?? undefined)
+    for (let i = 0; i < run.text.length; i++)
+      chars.push({ ch: run.text[i], at: run.offset + i, run: k, glue })
+  })
+  const out: Segment[] = []
+  for (let a = 1; a < chars.length; a++) {
+    if (chars[a].ch !== ' ' || chars[a - 1].ch === ' ') continue
+    let b = a
+    while (b < chars.length && chars[b].ch === ' ') b++
+    const prev = chars[a - 1]
+    const next = chars[b]
+    if (!prev.ch || !next?.ch) continue
+    const glued =
+      ((next.ch === MIDDLE_DOT || next.ch === ':') && next.glue !== 'none') ||
+      (prev.ch === MIDDLE_DOT && prev.glue === 'both')
+    if (!glued || prev.run !== chars[b - 1].run) continue
+    const last = out[out.length - 1]
+    if (last && last.to === prev.at && chars[a - 2]?.run === prev.run) last.to = chars[b - 1].at + 1
+    else out.push({ from: prev.at, to: chars[b - 1].at + 1, cls: 'doc-nobreak' })
   }
   return out
 }
@@ -197,6 +271,39 @@ function justifySymbols(p: InlineParagraph): Segment[] {
 
 /** the run's own w:rFonts carries w:hint="eastAsia" (revision snapshots inside w:rPrChange don't count) */
 const EA_HINT_RE = /<w:rFonts\b[^>]*\bw:hint="eastAsia"/
+const RPR_CHANGE_RE = /<w:rPrChange[\s\S]*?<\/w:rPrChange>/
+
+function hasEaHint(rawRPr: string | null | undefined): boolean {
+  return !!rawRPr && EA_HINT_RE.test(rawRPr.replace(RPR_CHANGE_RE, ''))
+}
+
+/** symbols the run's Latin face lacks draw in Word's fallback face (Segoe UI Symbol,
+ *  Apple Color Emoji, Arial) and the line takes that face's box where the glyph lands
+ *  (probes 2026-11-07/08); a non-lifting span gets a zero inline box so the fallback
+ *  face's own metrics never grow the line; an eastAsia-hinted run draws them with its
+ *  East Asian face */
+function symbolFallbacks(p: InlineParagraph): Segment[] {
+  const out: Segment[] = []
+  for (const run of p.runs) {
+    if (!run.text || hasEaHint(run.attrs?.rawRPr)) continue
+    const declared = run.attrs?.fontAscii ?? null
+    for (const r of fallbackGlyphRanges(run.text, declared, declared ?? p.inheritedAscii)) {
+      const factor = p.exactLine ? null : symbolFallbackLineFactor(r.kind)
+      const style = [`font-family:${symbolFallbackFontFamily(r.kind)}`]
+      if (factor !== null) {
+        style.push(`--doc-line-factor:${factor}`)
+        if (p.fixedLineHeight) style.push(`line-height:${p.fixedLineHeight}`)
+      } else style.push('line-height:0')
+      out.push({
+        from: run.offset + r.from,
+        to: run.offset + r.to,
+        cls: factor !== null ? 'doc-run-lf doc-sym-fb' : 'doc-sym-fb',
+        style: style.join(';'),
+      })
+    }
+  }
+  return out
+}
 const EA_QUOTES_RE = /[‘’“”]+/g
 
 /** quote ranges of `text` Word renders with the East Asian font (w:hint="eastAsia";
@@ -205,12 +312,25 @@ export function eaHintQuoteRanges(
   rawRPr: string | null | undefined,
   text: string,
 ): Array<{ from: number; to: number }> {
-  if (!rawRPr || !text || !/[‘’“”]/.test(text)) return []
-  if (!EA_HINT_RE.test(rawRPr.replace(/<w:rPrChange[\s\S]*?<\/w:rPrChange>/, ''))) return []
+  if (!text || !/[‘’“”]/.test(text) || !hasEaHint(rawRPr)) return []
   const ranges: Array<{ from: number; to: number }> = []
   for (const m of text.matchAll(EA_QUOTES_RE))
     ranges.push({ from: m.index, to: m.index + m[0].length })
   return ranges
+}
+
+/** a space / tab run beside ink gives up its line box (styles.css .doc-ws-run): Word never
+ *  sizes a line by whitespace, whatever the run's face or size, while Chromium unions the
+ *  run's own box into the line (probe 2026-11-08: Calibri 11 / 14 space or tab runs leave a
+ *  Times 12 line at 13.8; a no-break space run is ink and lifts it) */
+function whitespaceRuns(p: InlineParagraph): Segment[] {
+  const out: Segment[] = []
+  if (!p.runs.some((r) => r.text && !isWhitespaceRun(r.text))) return out
+  for (const run of p.runs) {
+    if (run.text && isWhitespaceRun(run.text))
+      out.push({ from: run.offset, to: run.offset + run.size, cls: 'doc-ws-run' })
+  }
+  return out
 }
 
 function eaHintQuotes(p: InlineParagraph): Segment[] {
@@ -218,6 +338,90 @@ function eaHintQuotes(p: InlineParagraph): Segment[] {
   for (const run of p.runs) {
     for (const r of eaHintQuoteRanges(run.attrs?.rawRPr, run.text))
       out.push({ from: run.offset + r.from, to: run.offset + r.to, cls: 'doc-ea-quotes' })
+  }
+  return out
+}
+
+const ASCII_NUMBER_RE = /[0-9]+(?:[.,:/][0-9]+)*/g
+// Latin-1 letters without the multiplication / division signs (neutrals under W7)
+const LATIN_LETTER_RE = /[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\u0370-\u03FF\u0400-\u04FF]/
+const STRONG_LETTER_RE =
+  /[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\u0370-\u03FF\u0400-\u04FF\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/
+
+/** ranges of `text` (one run, `before` = the paragraph text ahead of it) that Word
+ *  draws with the ascii face inside a complex-script run: ASCII digit groups whose
+ *  nearest preceding strong letter is not Latin (UAX#9 W7 keeps them European
+ *  numbers; after a Latin letter they join the Latin stretch and stay in the cs
+ *  face). Word for Mac probes 2026-11-02 / 2026-11-08: '1.2' and '2024' beside
+ *  Arabic letters are Calibri under cs Arial with and without w:rtl / w:cs, and
+ *  pace the line at Calibri's 1.22; 'abc 1.2 def 2024' is all Arial; '.' ':' '(' '%'
+ *  without digits and Arabic-Indic digits stay in the cs face. */
+export function csAsciiDigitRanges(text: string, before = ''): Array<{ from: number; to: number }> {
+  const out: Array<{ from: number; to: number }> = []
+  if (!/[0-9]/.test(text)) return out
+  for (const m of text.matchAll(ASCII_NUMBER_RE)) {
+    const ahead = before + text.slice(0, m.index)
+    let strong: string | undefined
+    for (let i = ahead.length - 1; i >= 0; i--) {
+      if (STRONG_LETTER_RE.test(ahead[i])) {
+        strong = ahead[i]
+        break
+      }
+    }
+    if (strong && LATIN_LETTER_RE.test(strong)) continue
+    out.push({ from: m.index, to: m.index + m[0].length })
+  }
+  return out
+}
+
+/** digit groups of a cs run move to the ascii face at the run size and lift their own
+ *  line to that face's factor when it is the taller one */
+function csAsciiDigits(p: InlineParagraph): Segment[] {
+  const out: Segment[] = []
+  let before = ''
+  for (const run of p.runs) {
+    const cs = run.attrs?.csFont
+    const ascii = (run.attrs?.fontAscii ?? run.attrs?.font) || p.inheritedAscii
+    if (cs && ascii && ascii.trim().toLowerCase() !== cs.trim().toLowerCase()) {
+      const family = cssRunFontFamily(ascii, null)
+      const lift =
+        p.lineMultiple != null && lineHeightFactor(ascii) > lineHeightFactor(cs) + 1e-3
+          ? `;line-height:${cssCsDigitLiftExpr(
+              family,
+              cssCsFontFamily(cs, ascii),
+              lineHeightFactor(ascii),
+              lineHeightFactor(cs),
+              p.lineMultiple,
+            )}`
+          : ''
+      for (const r of csAsciiDigitRanges(run.text, before))
+        out.push({
+          from: run.offset + r.from,
+          to: run.offset + r.to,
+          cls: 'doc-cs-ascii',
+          style: `font-family:${family}${lift}`,
+        })
+    }
+    before += run.text
+  }
+  return out
+}
+
+/** `added` with every range already covered by `taken` cut out (a pad on the first
+ *  digit of a CJK-digit seam leaves the rest of the number its own span) */
+function subtractOverlaps(added: Segment[], taken: Segment[]): Segment[] {
+  const out: Segment[] = []
+  for (const a of added) {
+    let pieces = [a]
+    for (const t of taken) {
+      pieces = pieces.flatMap((x) => {
+        if (t.from >= x.to || t.to <= x.from) return [x]
+        const left = t.from > x.from ? [{ ...x, to: t.from }] : []
+        const right = t.to < x.to ? [{ ...x, from: t.to }] : []
+        return [...left, ...right]
+      })
+    }
+    out.push(...pieces)
   }
   return out
 }
@@ -230,6 +434,23 @@ export function inlineSegments(p: InlineParagraph): InlineSegments {
   if (p.simsunGapLineHeight) segments.push(...simsunGapLifts(p, p.simsunGapLineHeight))
   if (p.justified && !textHasEastAsian(text)) segments.push(...justifySymbols(p))
   segments.push(...eaHintQuotes(p))
+  segments.push(...symbolFallbacks(p))
+  // a range another rule already wraps (autospace pad, balanced space) keeps that
+  // span: the static emitter writes each segment's text once, overlaps would double it
+  segments.push(...subtractOverlaps(csAsciiDigits(p), segments))
+  if (text.includes(MIDDLE_DOT) || text.includes(' :')) {
+    const whole = middleDotNoBreaks(p)
+    // a span another rule holds inside a glued range (balanced space) takes the wrap
+    // mode itself: segments cannot nest
+    for (const s of segments) {
+      if (whole.some((w) => w.from <= s.from && s.to <= w.to))
+        s.cls = s.cls ? `${s.cls} doc-nobreak` : 'doc-nobreak'
+    }
+    segments.push(...subtractOverlaps(whole, segments))
+  }
+  segments.push(
+    ...whitespaceRuns(p).filter((w) => !segments.some((s) => s.from < w.to && w.from < s.to)),
+  )
   const joiners = p.wordWrap && textHasHangul(text) ? krNoBreakJoiners(p) : []
   return { segments, joiners }
 }
@@ -254,6 +475,9 @@ export interface RunLike {
   eastAsiaFont?: string | null
   eaSlotEmpty?: boolean | null
   rawRPr?: string | null
+  csFont?: string | null
+  cs?: boolean | null
+  eastAsiaLang?: string | null
 }
 
 /** InlineRun list of parsed runs: a run's text precedes its picture, and the picture
@@ -263,14 +487,18 @@ export function inlineRunsOf(runs: readonly RunLike[]): { runs: InlineRun[]; byR
   const byRun: InlineRun[] = []
   let offset = 0
   for (const r of runs) {
+    // same gate as the static run span: the cs face applies to rtl runs and complex-script text
+    const csFont = r.csFont && (r.cs || textHasComplexScript(r.text)) ? r.csFont : null
     const attrs =
-      r.font || r.fontAscii || r.eastAsiaFont || r.rawRPr
+      r.font || r.fontAscii || r.eastAsiaFont || r.rawRPr || csFont || r.eastAsiaLang
         ? {
             font: r.font,
             fontAscii: r.fontAscii,
             eastAsiaFont: r.eastAsiaFont,
             eaSlotEmpty: r.eaSlotEmpty,
             rawRPr: r.rawRPr,
+            csFont,
+            eaLang: r.eastAsiaLang,
           }
         : null
     const run: InlineRun = { text: r.text, offset, size: r.text.length, attrs }

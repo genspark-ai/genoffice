@@ -53,7 +53,8 @@ import { dkStyleProps } from '../editor/dark-page'
 import { INLINE_RULE_CLASS, inlineRuleStyle } from '../editor/inline-rule'
 import { textColorValue } from '../editor/text-color'
 import { textOutlineCssValue } from '../editor/text-outline'
-import { cssRunFontFamily, fontKerningCss, runLetterSpacingCss } from '../line-metrics'
+import { fontKerningCss, runLetterSpacingCss } from '../line-metrics'
+import { cssRunFontFamily } from '../text-layout/font-rules'
 
 export interface HfValue {
   text: string

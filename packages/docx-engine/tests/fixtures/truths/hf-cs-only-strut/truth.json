@@ -11,7 +11,7 @@
       "part": 0,
       "expect": {
         "stylesStartWith": ["font-family:'Arial'", "--doc-grid-strut-tail:'Arial'"],
-        "styles": ["--doc-line-factor:1.15", "direction:rtl"]
+        "styles": ["--doc-line-factor:1.1499", "direction:rtl"]
       },
       "note": "cs-only paragraph: the strut takes the cs chain (paraComplexScriptFamily)"
     },
@@ -25,7 +25,7 @@
       "part": 2,
       "expect": {
         "stylesStartWith": ["font-family:'Calibri'"],
-        "styles": ["--doc-line-factor:1.22"]
+        "styles": ["--doc-line-factor:1.2207"]
       }
     },
     {
@@ -33,7 +33,7 @@
       "part": 3,
       "expect": {
         "stylesStartWith": ["font-family:'Calibri'"],
-        "styles": ["--doc-line-factor:1.22"],
+        "styles": ["--doc-line-factor:1.2207"],
         "classes": ["doc-cs-mixed"]
       },
       "note": "Latin letters on the line: the Calibri line; the Arabic span gives up its own box"

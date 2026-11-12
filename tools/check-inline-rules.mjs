@@ -4,18 +4,14 @@
 // about text themselves: no script tests, no face-name predicates, no raw CJK
 // code-point ranges, no settings.xml compat reads, no ad-hoc Decoration.inline.
 // A rule goes into text-layout/ (with its Word probe) and the emitter maps the
-// result. Diff-based like check-theme-colors: pre-existing lines never fail.
+// result. Every line of the emitters is checked, not only the added ones.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const args = process.argv.slice(2)
-let baseRef = process.env.FORMAT_BASE_REF || ''
-if (args[0] === '--base') {
-  args.shift()
-  baseRef = args.shift() || ''
-}
-if (/^0+$/.test(baseRef)) baseRef = ''
+// --base is accepted for the callers that pass it to every check; the scan is whole-file
+if (args[0] === '--base') args.splice(0, 2)
 if (args.length > 0) {
   console.error(`Unexpected argument: ${args[0]}`)
   process.exit(2)
@@ -98,49 +94,19 @@ function checkLines(file, entries) {
   }
 }
 
-function scanDiff(diffArgs) {
-  const out = git(['diff', '-U0', ...diffArgs, '--', ...EMITTERS]).stdout
-  const added = new Map()
-  let file = null
-  let newLine = 0
-  for (const line of out.split('\n')) {
-    if (line.startsWith('+++ b/')) {
-      const path = line.slice(6)
-      file = EMITTERS.has(path) ? path : null
-    } else if (line.startsWith('@@')) {
-      const m = /\+(\d+)/.exec(line)
-      newLine = m ? Number(m[1]) : 0
-    } else if (file && line.startsWith('+')) {
-      if (!added.has(file)) added.set(file, [])
-      added.get(file).push({ line: newLine, text: line.slice(1) })
-      newLine++
-    }
-  }
-  for (const [f, entries] of added) checkLines(f, entries)
-}
-
-if (baseRef) {
-  const verification = git(['rev-parse', '--verify', `${baseRef}^{commit}`], { allowFailure: true })
-  if (verification.status === 0) scanDiff([`${baseRef}...HEAD`])
-  else
-    console.warn(
-      `Inline-rules base ${baseRef} is not available in this checkout; checking working-tree changes only.`,
-    )
-}
-scanDiff([])
-scanDiff(['--cached'])
-for (const file of git(['ls-files', '--others', '--exclude-standard']).stdout.split('\n')) {
-  if (!EMITTERS.has(file) || !existsSync(join(repoRoot, file))) continue
+for (const file of EMITTERS) {
+  const path = join(repoRoot, file)
+  if (!existsSync(path)) continue
   checkLines(
     file,
-    readFileSync(join(repoRoot, file), 'utf8')
+    readFileSync(path, 'utf8')
       .split('\n')
       .map((text, i) => ({ line: i + 1, text })),
   )
 }
 
 if (violations.size === 0) {
-  console.log('No new inline text-layout decisions outside text-layout/.')
+  console.log('No inline text-layout decisions outside text-layout/.')
   process.exit(0)
 }
 console.error(
