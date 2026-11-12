@@ -1,3 +1,4 @@
+import { FloatWatch } from './editor/float-watch'
 import { scriptFontHtml } from './editor/script-fonts'
 import { carryDocSeen } from './ai/tools'
 import { DOC_CSS_COMMITTED_EVENT, WRAP_WIDTHS_COMMITTED_EVENT } from './editor/cjk-punct-shrink'
@@ -79,6 +80,7 @@ import {
   type HfPictureEdit,
   type HfImage,
   type NoteInfo,
+  type NoteSeparator,
   type TextboxDisplay,
   type ParsedDocFull,
   type SectionInfo,
@@ -116,7 +118,13 @@ import { AiPanel, aiRevisionAuthor } from './ai/AiPanel'
 import type { AiCommentsAccess, AiDocExtras, AiHeaderFooterAccess } from './ai/tools'
 import type { AiStyleInfo } from './ai/style-ops'
 import { applyResolvedPageSetup, describeSection, type AiPageSetupAccess } from './ai/page-setup'
-import { patchPendingSectPr, sectionIndexAtBlock } from './ai/pending-sections'
+import {
+  dropRemovedPendingSections,
+  patchPendingSectPr,
+  pendingSectionAt,
+  rewritePendingSectPrs,
+  sectionIndexAtBlock,
+} from './ai/pending-sections'
 import { protectedNoteMarkBlock, type AiNotesAccess } from './ai/note-ops'
 import { applyHfText, hfEditText } from './editor/hf-text'
 import {
@@ -170,9 +178,6 @@ import { PrintDialog } from './components/PrintDialog'
 import {
   hfVariantOf,
   hfVariantReservedPx,
-  appendEndnotesBlock,
-  appendFloatSpillBlock,
-  assignSections,
   bumpLineSampleFontEpoch,
   carryStreamedSamples,
   endnotesAnchorY,
@@ -186,9 +191,9 @@ import {
   docGridPitchPt,
   type LineAnchor,
   hfPartWidthPx,
-  buildPageCuts,
   headingPagesOf,
   pageCutSignature,
+  pageLeadsOf,
   applyGapLedger,
   pagePaperEdges,
   pageReaderShadow,
@@ -197,7 +202,6 @@ import {
   outerTableRows,
   type PageCut,
   pageNumbers,
-  sliceWithLineSplit,
   type SliceOutputs,
   tableRowFlags,
   type BlockBox,
@@ -244,7 +248,9 @@ import {
   isResumePage,
   type PageSlice,
   type PassResume,
+  blockGapRects,
 } from './pagination'
+import { prepareFlow, sliceFlow, type PassContext } from './pagination-pass'
 import {
   GAP_BAND,
   alignGapHfStrips,
@@ -263,6 +269,8 @@ import {
   setRowFills,
   syncAnchorBands,
   syncCutOverlays,
+  syncSeamOverlays,
+  type SeamOverlaySpec,
   syncFloatShifts,
   syncPageBorders,
   syncPageSheets,
@@ -278,6 +286,7 @@ import {
   pageFramesFromGaps,
   gapLedgerOf,
   PAGE_TURN_SEL,
+  isPageTurn,
   type PageFrame,
 } from './editor/pagination-gaps'
 import { syncWrapObstacles } from './editor/wrap-obstacles'
@@ -312,7 +321,9 @@ import {
   resolveNoteStyle,
   noteRunStyle,
   footnoteLineHeightPx,
-  FOOTNOTE_SEPARATOR_H,
+  noteSeparatorPx,
+  noteSeparatorRow,
+  setNoteSeparatorRows,
   takeSettledMetricFaces,
   textHasCjk,
 } from './line-metrics'
@@ -350,6 +361,7 @@ import {
 import { computeFormatState } from './components/ribbon-format-state'
 import {
   IconOutlineView,
+  IconStoryView,
   IconPrintLayout,
   IconReadMode,
   IconRedo,
@@ -490,7 +502,7 @@ import { StylesPane } from './components/StylesPane'
 import { Ruler } from './components/Ruler'
 import { docBodyFont, docHasCjk, docLineFactor, docStyleCss, docThemeCss } from './doc-style-css'
 import { docFontsCoveredBy } from './font-check'
-import { onFontAliasesChanged } from './system-fonts'
+import { fontAliasAnswers, onFontAliasesChanged } from './system-fonts'
 import { isDocDirty, runGuardedCandidate, runGuardedDocumentAction } from './doc-dirty'
 import {
   EMPTY_HF_VARIANTS,
@@ -542,6 +554,7 @@ const EDIT_PASS_DEBOUNCE_MAX_MS = 2000
 /** a pass re-running for its own late-applied widths / suppression: nobody is
  *  typing, so it only waits for the previous pass's DOM writes to commit */
 const FOLLOW_UP_PASS_DELAY_MS = 100
+const EXPORT_PASS_RETRY_MS = 500
 const WORD_COUNT_THROTTLE_MS = 400
 /** consecutive follow-up passes a pass may schedule for itself */
 import { runHeadlessDocumentExport } from './headless-export'
@@ -848,6 +861,28 @@ export function App() {
   const themeDark = useUiThemeIsDark()
   const docThemeDark = useDocThemeIsDark()
   const [darkPage, setDarkPage] = useState(() => resolveDarkPage(docThemeDark))
+  // Word-style page seam: double-click the gap between two pages (a band or a
+  // zero-height cut seam) to hide/show the white space; the cursor over it is
+  // the vertical double arrow. Persisted per profile, like Word's view option.
+  useEffect(() => {
+    document.body.classList.toggle(
+      'hide-page-seams',
+      localStorage.getItem('docs-hide-page-seams') === '1',
+    )
+    const onDblClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target?.closest?.('.page-seam, .page-gap')) return
+      // double-click on a gap's header/footer strip still opens its editor
+      if (target.closest('.page-gap-hf, .page-hf-editing')) return
+      event.preventDefault()
+      event.stopPropagation()
+      const hidden = !document.body.classList.contains('hide-page-seams')
+      document.body.classList.toggle('hide-page-seams', hidden)
+      localStorage.setItem('docs-hide-page-seams', hidden ? '1' : '0')
+    }
+    document.addEventListener('dblclick', onDblClick, true)
+    return () => document.removeEventListener('dblclick', onDblClick, true)
+  }, [])
   useEffect(() => {
     setDarkPage(resolveDarkPage(docThemeDark))
   }, [docThemeDark])
@@ -987,12 +1022,13 @@ export function App() {
   /** live section list of the last pass (header obstacles of the next pass) */
   const lastSecListRef = useRef<SectionInfo[] | null>(null)
   const cutsNow = useCallback(() => pageLayoutRef.current?.cuts, [])
-  /** runs the debounced pagination pass now (set by the scheduler effect) */
-  const flushPaginationRef = useRef<() => void>(() => {})
+  /** runs the debounced pagination pass now (set by the scheduler effect);
+   *  `fresh` runs one even when none is pending */
+  const flushPaginationRef = useRef<(fresh?: boolean) => void>(() => {})
   /** the current pass's layout, after any pending pass: readers that need
    *  the document as it stands (TOC numbers, the preview snapshot) */
-  const layoutNow = useCallback((): PageLayout | null => {
-    flushPaginationRef.current()
+  const layoutNow = useCallback((fresh = false): PageLayout | null => {
+    flushPaginationRef.current(fresh)
     return pageLayoutRef.current
   }, [])
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -1789,8 +1825,7 @@ export function App() {
     const cur = (saved >= 0 ? sections[saved].settings : undefined) ?? section
     if (!cur) return
     const next = { ...cur, [kind === 'header' ? 'headerDist' : 'footerDist']: twips }
-    if (saved >= 0)
-      setSections((prev) => prev.map((s, i) => (i === saved ? { ...s, settings: next } : s)))
+    if (saved >= 0) editSectionSettings((_s, i) => (i === saved ? next : null))
     if (sections.length <= 1 || saved < 0 || saved === sections.length - 1) {
       setSection(next)
       setSectionDirty(true)
@@ -2139,6 +2174,14 @@ export function App() {
     editor.commands.setOutlineViewActive(viewMode === 'outline')
   }, [editor, viewMode])
 
+  // story view (View ▸ Story View): the plugin draws the margin markers and
+  // keeps typed text off the document's hidden formatting, only while the view
+  // mode is story
+  useEffect(() => {
+    if (!editor) return
+    editor.commands.setStoryViewActive(viewMode === 'story')
+  }, [editor, viewMode])
+
   // window title follows the document, so the OS window list and Switch Window show file names
   useEffect(() => {
     document.title = doc ? doc.fileName : 'GenOffice Docs'
@@ -2231,6 +2274,7 @@ export function App() {
 
   /** App state bundle for the extracted file actions (file-actions.ts); refreshed every render. */
   const fileCtxRef = useRef<FileActionContext>(null as unknown as FileActionContext)
+  const seenAliasSeqRef = useRef(0)
   // style-pane previews patch the parsed styles; a font-settle rebuild must keep them
   const liveStylesRef = useRef<{ parsed: ParsedDocFull; styles: Map<string, StyleInfo> } | null>(
     null,
@@ -2642,6 +2686,37 @@ export function App() {
     }
   })
 
+  // an unsaved break undone or deleted takes its modelled section with it
+  useEffect(() => {
+    const live = editor && dropRemovedPendingSections(editor.state.doc, sections)
+    if (!live) return
+    const gone = new Set(live.dropped)
+    const shift = (d: number[]) =>
+      d.filter((i) => !gone.has(i)).map((i) => i - live.dropped.filter((g) => g < i).length)
+    setSections(live.sections)
+    setSectionsDirty(shift)
+    setPgNumDirtySections(shift)
+    // docVersion: the doc identity is what changes, and it is not a React value
+  }, [editor, sections, docVersion])
+
+  /** Layout-tab settings per section; one behind an unsaved break has them written into its break paragraph */
+  const editSectionSettings = (
+    settingsOf: (s: SectionInfo, i: number) => SectionSettings | null,
+  ) => {
+    const patched = editor
+      ? rewritePendingSectPrs(editor, sections, (s, i) => {
+          const next = settingsOf(s, i)
+          return next && applySectionSettings(s.sectPrXml, next)
+        })
+      : sections
+    setSections((prev) =>
+      prev.map((s, i) => {
+        const next = settingsOf(s, i)
+        return next ? { ...s, settings: next, sectPrXml: patched[i]?.sectPrXml ?? s.sectPrXml } : s
+      }),
+    )
+  }
+
   /**
    * Insert a section break: the new break paragraph takes a copy of the current
    * section's sectPr (content before the break keeps the original
@@ -2719,6 +2794,16 @@ export function App() {
           },
         })
         .run()
+      // modelled now, not when the save re-reads the file: a save that races
+      // further edits skips the reload, and a whole-document page setup would
+      // miss the section. A ribbon break in a never-saved document stays out
+      // of the model: it takes effect on the first save.
+      const breakAfter =
+        afterBlockIndex ?? ($head.depth > 0 ? $head.index(0) : pmDoc.childCount - 1)
+      const created =
+        target && (ai || doc.filePath)
+          ? pendingSectionAt(pmDoc, target, breakAfter, sectPrCopy)
+          : null
       // the section after the break is terminated by the "original current section sectPr",
       // whose w:type decides how the new section starts: always write the chosen type back
       // (including a nextPage reset, so a leftover continuous from the original section doesn't linger)
@@ -2735,6 +2820,23 @@ export function App() {
           prev.map((s, i) => (i === targetSection ? { ...s, startType: type } : s)),
         )
         setSectionsDirty((d) => (d.includes(targetSection) ? d : [...d, targetSection]))
+      }
+      if (created) {
+        setSections((prev) => {
+          const next = [...prev]
+          next.splice(targetSection, 0, created)
+          if (next[targetSection + 1]) {
+            next[targetSection + 1] = {
+              ...next[targetSection + 1]!,
+              firstBlockIndex: created.lastBlockIndex + 1,
+              startType: type,
+            }
+          }
+          return next
+        })
+        const shift = (d: number[]) => d.map((i) => (i >= targetSection ? i + 1 : i))
+        setSectionsDirty(shift)
+        setPgNumDirtySections(shift)
       }
       const labels: Record<SectionInfo['startType'], string> = {
         nextPage: t('appBreakNextPage'),
@@ -3043,8 +3145,22 @@ export function App() {
       pgNumModal.start.trim() === '' ? undefined : Math.max(0, parseInt(pgNumModal.start, 10) || 0)
     const idx = sections.length > 0 ? Math.min(activeSection, sections.length - 1) : -1
     if (idx >= 0) {
+      const patched = editor
+        ? rewritePendingSectPrs(editor, sections, (s, i) =>
+            i === idx ? applyPageNumType(s.sectPrXml, fmt, start) : null,
+          )
+        : sections
       setSections((prev) =>
-        prev.map((s, i) => (i === idx ? { ...s, pageNumberFmt: fmt, pageNumberStart: start } : s)),
+        prev.map((s, i) =>
+          i === idx
+            ? {
+                ...s,
+                pageNumberFmt: fmt,
+                pageNumberStart: start,
+                sectPrXml: patched[i]?.sectPrXml ?? s.sectPrXml,
+              }
+            : s,
+        ),
       )
     }
     if (idx < 0 || idx === sections.length - 1) {
@@ -3057,7 +3173,7 @@ export function App() {
     }
     setPgNumModal(null)
     setStatus(t('appPgNumFormatSet'))
-  }, [pgNumModal, sections, activeSection])
+  }, [pgNumModal, sections, activeSection, editor])
 
   const exportPdf = useCallback(
     (outPath?: string) => exportPdfImpl(fileCtxRef.current, outPath),
@@ -3531,6 +3647,20 @@ export function App() {
       setZoom(prev.zoom)
     }
   }, [readMode])
+
+  // separator rows above the note areas: the notes parts' separator paragraphs
+  // under the document's styles (module-level: the slicer, gaps and preview read one row)
+  useLayoutEffect(() => {
+    const rowOf = (sep?: NoteSeparator) =>
+      noteSeparatorRow(
+        section?.docGrid,
+        doc && sep ? resolveNoteStyle(doc.parsed, sep.styleId, sep.spacing) : undefined,
+      )
+    setNoteSeparatorRows({
+      footnote: rowOf(doc?.parsed.footnoteSeparator),
+      endnote: rowOf(doc?.parsed.endnoteSeparator),
+    })
+  }, [doc, section])
 
   // note paragraph metrics per pStyle + direct spacing (notes without either use Normal/docDefaults)
   const noteStyleOf = useMemo(() => {
@@ -4034,6 +4164,17 @@ export function App() {
       onUpdate(null, dirtyIndex, true)
     }
     const followUp = (why: string) => followUpAt(why, null)
+    // anchored drawings that get their size after a pass (picture decode, late
+    // group layout) re-run it from their block; the preview never prints a pass
+    // whose floats were measured before the boxes existed
+    let passGen = 0
+    const floatWatch = new FloatWatch((changed) => {
+      const pm = pmEl()
+      let top: Element | null = changed[0]
+      while (top && top.parentElement && top.parentElement !== pm) top = top.parentElement
+      const bi = lastBlocks.findIndex((b) => b.el === top)
+      followUpAt('float-geometry', bi >= 0 ? bi : null)
+    })
     let secWidthSig = ''
     let charSpaceSig = ''
     const colWidthPass = newWidthPassState()
@@ -4066,6 +4207,7 @@ export function App() {
         // mixed-column pages pull their gap (and everything below) up over the
         // vacated stacked space: add that back to land in the gapless coordinates
         let pullUpAbove = 0
+        let insideGap = false
         for (const gap of pm.querySelectorAll<HTMLElement>(
           `${PAGE_TURN_SEL}, .page-repeat-header`,
         )) {
@@ -4074,9 +4216,13 @@ export function App() {
           if (r.top < midScreen) {
             gapAbove += Math.min(r.height, midScreen - r.top)
             pullUpAbove += Math.max(0, -parseFloat(gap.style.marginTop) || 0)
+            if (midScreen < r.bottom && isPageTurn(gap)) insideGap = true
           }
         }
-        return pageAt(slices, (midScreen - origin - gapAbove) / factor + pullUpAbove)
+        // a midpoint inside a gap band lands on the band's top, i.e. the page
+        // boundary itself: nudge it onto the page below (sub-pixel ties)
+        const y = (midScreen - origin - gapAbove) / factor + pullUpAbove
+        return pageAt(slices, insideGap ? y + 1 : y)
       }
       // the page whose gap box starts at or above the midpoint (inside a gap band
       // the page below it is current, where the DOM sum lands too)
@@ -4258,6 +4404,13 @@ export function App() {
     }
     const remeasure = () => {
       if (disposed) return
+      // a pass during a PDF export re-slices under the print media and rebuilds
+      // the preview; the export keeps its page list, so the new sheets print in
+      // every later group
+      if (scroller.closest('.app.pv-exporting')) {
+        timer = window.setTimeout(remeasure, EXPORT_PASS_RETRY_MS)
+        return
+      }
       timer = null
       lastPassAt = performance.now()
       const edited = fastEdits
@@ -4332,16 +4485,8 @@ export function App() {
       // the previous pass's block leads: where its gap widgets stand in the DOM
       const prevLayout = pageLayoutRef.current
       const pageLeads = prevLayout
-        ? new Map<Element, number>(
-            prevLayout.cuts.flatMap((c, i) => {
-              const el =
-                c.gap?.kind === 'block' && c.lead.kind === 'block'
-                  ? prevLayout.blocks[c.lead.block]?.el
-                  : undefined
-              return el ? [[el, i] as const] : []
-            }),
-          )
-        : undefined
+        ? pageLeadsOf(prevLayout.cuts, prevLayout.blocks)
+        : new Map<Element, number>()
       // header drawings reaching into the body of each page of the previous
       // pass (its cuts name the variant and section a page shows)
       const headerObstacleCache = new Map<number, ReturnType<typeof hfBodyObstacles>>()
@@ -4400,8 +4545,6 @@ export function App() {
           true,
           floatCarriesOf(editor.state),
         )
-        if (hasVertical)
-          for (const b of blocks) if (b.el && !b.floated) b.inlineExtraPx = blockInlineExtraPx(b.el)
         planDiff = planOf
           ? [
               ...shadowPlanDiff(planOf, blocks, blockMetaOf),
@@ -4414,44 +4557,6 @@ export function App() {
           lastPassChildCount,
         })
         tMeasure = performance.now() - t0
-        // multi-section: assign blocks to sections by docxIndex; each section has its own content height / forced breaks.
-        // liveSections: when a section-break block is deleted, that section merges into the next in real time (effective before saving)
-        const secList =
-          sections.length > 0 ? liveSections(sections, blocks, sectBreaks, delSectBreaks) : null
-        lastSecListRef.current = secList
-        if (secList) assignSections(blocks, secList)
-        // the endnote area takes part in page slicing (placed together at the document end; overflows continue on later pages)
-        const withEndnotes = appendEndnotesBlock(
-          blocks,
-          totalHeight,
-          endnoteItems,
-          FOOTNOTE_SEPARATOR_H,
-        )
-        // floating boxes below the flow end still need pages to land on; boxes
-        // reaching only into the last page's bottom margin stay there (Word
-        // draws anchored objects over the margin instead of opening a page)
-        const hfHs = secList ? hfHeightsOf(secList) : null
-        const geoms: SectionGeom[] = secList
-          ? colGeomsFor(sectionGeoms(secList, hfHs!, evenOddHf))
-          : [{ contentHeight: contentH, forceBreak: false, ...singleVariantGeom }]
-        const lastSec = secList?.[secList.length - 1]?.settings ?? section
-        const spillOverhangPx =
-          geoms[geoms.length - 1]?.marginBottomPx ?? (lastSec ? twipsToPx(lastSec.marginBottom) : 0)
-        const flowWithFloats = appendFloatSpillBlock(
-          blocks,
-          withEndnotes?.totalHeight ?? totalHeight,
-          floats,
-          spillOverhangPx,
-        )
-        const flowH = flowWithFloats ?? withEndnotes?.totalHeight ?? totalHeight
-        const secSig = secList
-          ? secList
-              .map((s) => `${s.firstBlockIndex}:${s.lastBlockIndex}:${s.startType ?? ''}`)
-              .join('|')
-          : ''
-        const resume = resumeFor(blocks, secSig, dirty)
-        if (resume) resumePasses++
-        const t1 = performance.now()
         // rowSplits enables the per-cell row split; the canvas only needs the
         // matching row heights (the preview applies the cell shifts)
         const sliceOut: SliceOutputs = {
@@ -4464,52 +4569,37 @@ export function App() {
           floatSplits: [],
           oversizeClips: [],
         }
-        let s = sliceWithLineSplit(
-          blocks,
-          geoms,
-          flowH,
-          factor,
-          blockMetaOf,
-          sliceOut,
-          resume ?? undefined,
-        )
-        const floatTops = floats.map((f) => f.top)
-        const pullFloats = () => {
-          floats.forEach((f, i) => (f.top = floatTops[i]))
-          for (const p of sliceOut.floatPullUps ?? [])
-            for (const f of floats)
-              if (!f.pinned && !f.pageRelV && Math.abs(f.anchorTop - p.blockTop) < 0.5)
-                f.top += p.dyPx
-        }
-        pullFloats()
-        // the spill block was sized from unpulled boxes: a box pulled up to the
-        // paper edge may no longer need the page it opened
-        if (flowWithFloats !== null && sliceOut.floatPullUps?.length) {
-          const spillAt = blocks.findIndex((b) => b.isFloatSpill)
-          if (spillAt >= 0) blocks.splice(spillAt, 1)
-          const base = withEndnotes?.totalHeight ?? totalHeight
-          const again = appendFloatSpillBlock(blocks, base, floats, spillOverhangPx)
-          if ((again ?? base) < flowH - 0.5) {
-            s = sliceWithLineSplit(blocks, geoms, again ?? base, factor, blockMetaOf, sliceOut)
-            pullFloats()
-          }
-        }
-        tSlice = performance.now() - t1
-        const cuts = buildPageCuts(blocks, s, geoms, hfHs ?? [singleHfPx], {
+        const passCtx: PassContext = {
+          sections,
+          section,
+          delSectBreaks,
+          endnoteItems,
+          endnoteSeparatorPx: noteSeparatorPx('endnote'),
+          hfHeightsOf,
+          singleHfPx,
+          singleGeom: { contentHeight: contentH, forceBreak: false, ...singleVariantGeom },
           evenOddHf,
-          // a lone section follows the live Different First Page toggle (pageHfOf, hfHeightsOf)
-          titlePgOf:
-            secList && secList.length > 1
-              ? (si) => secList[Math.min(si, secList.length - 1)].titlePg
-              : () => titlePg,
-          pageNumberFmtOf: secList
-            ? (si) => secList[Math.min(si, secList.length - 1)]?.pageNumberFmt
-            : undefined,
-          floatSplits: sliceOut.floatSplits,
-        })
+          titlePg,
+          // when the canvas column layout is inactive, measure as full-width single flow
+          dropCols: colMode === 'none' || viewMode !== 'print',
+          blockMetaOf,
+          ...(hasVertical ? { inlineExtraOf: blockInlineExtraPx } : {}),
+          factor,
+          resumeFor: (bs, secSig) => resumeFor(bs, secSig, dirty) ?? undefined,
+          out: sliceOut,
+        }
+        const flow = prepareFlow({ blocks, totalHeight, floats, sectBreaks }, passCtx)
+        const secList = flow.secList
+        lastSecListRef.current = secList
+        const hfHs = secList ? flow.hfHeights : null
+        const geoms = flow.geoms
+        const t1 = performance.now()
+        const { slices: s, cuts, resumed } = sliceFlow(flow, passCtx)
+        if (resumed) resumePasses++
+        tSlice = performance.now() - t1
         lastPre = sliceOut.preParity ?? []
         lastOut = sliceOut
-        lastSecSig = secSig
+        lastSecSig = flow.secSig
         sliceIters = sliceOut.iterations ?? 0
         sliceSplit = `${Math.round(sliceOut.fillMs ?? 0)}+${Math.round(sliceOut.sliceRunMs ?? 0)}`
         return {
@@ -4519,6 +4609,7 @@ export function App() {
           s,
           cuts,
           geoms,
+          flow,
           floats,
           rowSplits: sliceOut.rowSplits ?? [],
           rowFills: sliceOut.rowFills ?? [],
@@ -4548,7 +4639,11 @@ export function App() {
       pageCuts = cuts
       lastBlocks = blocks
       lastPassChildCount = editor?.state.doc.childCount ?? lastPassChildCount
+      const pageNotes = pageFootnotesOf(blocks, slices)
+      passGen++
+      const floatWatchRec = floatWatch.record(pm)
       pageLayoutRef.current = {
+        passGen,
         blocks,
         slices,
         sections: secList ?? [],
@@ -4557,6 +4652,10 @@ export function App() {
         hfHeights: hfHs ?? [singleHfPx],
         rowSplits: measured.rowSplits,
         carries: [],
+        floats,
+        floatPullUps,
+        flow: measured.flow,
+        pageNotes,
       }
       if (mirrorMargins) locateCaretPageRef.current()
       const blockIndex = new BlockIndex(blocks)
@@ -4621,13 +4720,15 @@ export function App() {
         const carryGaps = new Map<number, number>()
         const overlayCutAnchors: LineAnchor[] = []
         const overlayPages: number[] = []
+        // zero-height cut points still paint a page seam (absolute overlay, no
+        // row-height feedback) so atLeast rows keep the gap without the #2521 chin
+        const seamOverlays: SeamOverlaySpec[] = []
         const carries: FlowCarry[] = []
         const lineRectsOf = createLineRectsCache()
         const gapIds = new Set<string>()
         let firstPageFloats: { els: HTMLElement[]; key: string } | undefined
         if (viewMode === 'print' && !readMode) {
           const pmRect = pm.getBoundingClientRect()
-          const pageNotes = pageFootnotesOf(blocks, slices)
           // per-page header/footer for the gaps (previous page's footer + next page's
           // header), variant-selected like the pagination preview (first page / odd-even /
           // per-section references), with real page numbers for the '#' marker
@@ -4827,7 +4928,9 @@ export function App() {
             const stacked = !slices[k].regions || colMode === 'mixed'
             const items = pageNotes[k] ?? []
             const fnH =
-              items.length > 0 ? items.reduce((s, n) => s + n.height, 0) + FOOTNOTE_SEPARATOR_H : 0
+              items.length > 0
+                ? items.reduce((s, n) => s + n.height, 0) + noteSeparatorPx('footnote')
+                : 0
             const remaining = stacked ? prevCut.padPx : 0
             const pullUp = stacked ? Math.max(0, prevCut.usedPx - prevCut.physUsedPx) : 0
             // used excludes the reserved footnote height (footnoteExtraPx inflates capacity
@@ -5036,10 +5139,9 @@ export function App() {
                   return
                 }
                 // the I11 shadow of the row sampler: the measured row top must still be
-                // where the DOM row sits (a tr's offset includes in-table gaps above it)
-                const gapRects = Array.from(b.el.querySelectorAll('.page-gap-inline')).map((g) =>
-                  g.getBoundingClientRect(),
-                )
+                // where the DOM row sits (a tr's offset includes the in-table gaps and
+                // the phantom-row residue above it, like the sampler reads them)
+                const gapRects = blockGapRects(b.el)
                 const trTop = tr.getBoundingClientRect().top
                 const gapsAbove = gapRects.reduce((s, g) => (g.top <= trTop ? s + g.height : s), 0)
                 const off = (trTop - b.el.getBoundingClientRect().top - gapsAbove) / factor
@@ -5170,9 +5272,15 @@ export function App() {
               if (cutCell) {
                 // single-column row: insert a real inline gap band; bleed to the paper
                 // edges from the anchor's block (the widget's containing block)
-                const r = (
-                  anchorElement(anchor)?.closest('td > *, th > *') ?? cutCell
-                ).getBoundingClientRect()
+                const host = anchorElement(anchor)?.closest('td > *, th > *') ?? cutCell
+                const r = host.getBoundingClientRect()
+                // The line box starts at the anchor's real left edge; the host's
+                // border box does not include text-indent / list-marker offsets.
+                // An inline-block gap anchored there would inherit that offset and
+                // paint its paper band past the page's right edge (the white step at
+                // the seam). Shift by the offset and take it back from the right
+                // bleed, so the band keeps the paper width.
+                const cellLineDx = anchor.left === undefined ? 0 : (anchor.left - r.left) / factor
                 gaps.push({
                   pos,
                   kind: 'cell',
@@ -5181,8 +5289,9 @@ export function App() {
                   metrics: {
                     ...metrics,
                     // rect offsets from the paper edge already include the page margins
-                    marginLeft: (r.left - pmRect.left) / factor - pageLeftOf(nextSec),
-                    marginRight: (pmRect.right - r.right) / factor - pageLeftOf(nextSec),
+                    marginLeft: (r.left - pmRect.left) / factor - pageLeftOf(nextSec) + cellLineDx,
+                    marginRight:
+                      (pmRect.right - r.right) / factor - pageLeftOf(nextSec) - cellLineDx,
                   },
                   ...(pullUp > 0.5 ? { pullUp } : {}),
                   ...hfProps,
@@ -5190,6 +5299,36 @@ export function App() {
               } else {
                 // multi-cell row: keep the zero-height dashed marker (no hfProps — it can't host header/footer strips)
                 gaps.push({ pos, kind: 'cut', page: k + 1, metrics })
+                // ...but still draw the page seam: an absolute overlay of the
+                // same paper bands, so the gap is visible and double-clickable.
+                // It spans the whole sheet, independent of the host cell.
+                if (anchor.top !== undefined) {
+                  const seamCell = anchorElement(anchor)?.closest('td, th')
+                  // close the whole table, not just the cell that holds the
+                  // anchor: the seam rule must meet both outer borders
+                  const seamTable = seamCell?.closest('table') ?? seamCell
+                  const cellRect = seamTable?.getBoundingClientRect()
+                  const cellStyle = seamCell ? getComputedStyle(seamCell) : null
+                  seamOverlays.push({
+                    bottom: anchor.top,
+                    marginBottom: metrics.marginBottom,
+                    marginTop: metrics.marginTop,
+                    left: 0,
+                    width: pmRect.width / factor,
+                    cell:
+                      cellRect && cellStyle
+                        ? {
+                            left: (cellRect.left - pmRect.left) / factor,
+                            width: cellRect.width / factor,
+                            color:
+                              cellStyle.borderTopColor ||
+                              cellStyle.borderRightColor ||
+                              'rgb(0, 0, 0)',
+                            thickness: parseFloat(cellStyle.borderTopWidth) || 1,
+                          }
+                        : undefined,
+                  })
+                }
               }
               return
             }
@@ -5199,7 +5338,12 @@ export function App() {
             const anchor =
               lineStartAnchor(b.el, cutOff, factor, lineRectsOf) ??
               nextLineAnchor(b.el, cutOff, factor, lineRectsOf)
-            const pos = anchor ? posFromAnchor(editor.view, anchor) : undefined
+            if (!anchor) {
+              console.warn('[pagination] no line anchor at page boundary', slice.start)
+              missCut('no line anchor at the cut')
+              return
+            }
+            const pos = posFromAnchor(editor.view, anchor)
             if (pos == null) {
               console.warn('[pagination] no line anchor at page boundary', slice.start)
               missCut('no line anchor at the cut')
@@ -5207,14 +5351,18 @@ export function App() {
             }
             // fold the block's offset from the paper edge (page margin + indent) into negative margins so the gap spans exactly the paper width
             const elRect = b.el.getBoundingClientRect()
+            // same line-box offset as the in-cell branch: text-indent moves the
+            // anchored inline gap, not the block's border box
+            const paraLineDx = anchor.left === undefined ? 0 : (anchor.left - elRect.left) / factor
             gaps.push({
               pos,
               page: k + 1,
               boundaryY: slice.start,
               metrics: {
                 ...notesMetrics,
-                marginLeft: (elRect.left - pmRect.left) / factor - pageLeftOf(nextSec),
-                marginRight: (pmRect.right - elRect.right) / factor - pageLeftOf(nextSec),
+                marginLeft: (elRect.left - pmRect.left) / factor - pageLeftOf(nextSec) + paraLineDx,
+                marginRight:
+                  (pmRect.right - elRect.right) / factor - pageLeftOf(nextSec) - paraLineDx,
               },
               ...(pullUp > 0.5 ? { pullUp } : {}),
               ...(notes ? { notes, notesKey } : {}),
@@ -5300,7 +5448,7 @@ export function App() {
               ...(f.extraPx ? { extraPx: f.extraPx } : {}),
             })
         }
-        setRowFills(editor.view, rowFillEls, layoutBatch)
+        setRowFills(editor.view, rowFillEls, layoutBatch, factor)
         stage('rowFills')
         // oversized single-line blocks: resolve the engine's page-bottom clips to their elements
         const oversizeEls: Array<{ el: HTMLElement; clipPx: number }> = []
@@ -5507,6 +5655,7 @@ export function App() {
         )
         stage('clampCells')
         syncCutOverlays((pm.closest('.page-wrap') as HTMLElement) ?? pm, overlayCutAnchors, factor)
+        syncSeamOverlays((pm.closest('.page-wrap') as HTMLElement) ?? pm, seamOverlays, factor)
         stage('cutOverlays')
         {
           // page border (w:pgBorders): per-page overlay boxes (w:display can
@@ -5635,6 +5784,9 @@ export function App() {
           pageCuts,
           floatSplits,
           pageCutSig: pageCutSignature(pageCuts),
+          passGen,
+          floatBoxes: floatWatchRec.boxes,
+          floatsZeroHeight: floatWatchRec.zeroHeight,
           planDiff,
           planDiffHistogram: planDiffHistogram(planDiff),
           obstacleShadow: { wrappers: obstacleShadow.wrappers, boxes: obstacleShadow.boxes },
@@ -5756,7 +5908,8 @@ export function App() {
     // state fills in: a synchronous whole-document pass per run made a long
     // open quadratic, so the paced scheduler takes it (the last chunk's update
     // still lands a full pass once the tail has settled)
-    flushPaginationRef.current = () => {
+    flushPaginationRef.current = (fresh = false) => {
+      if (fresh) onUpdate()
       if (timer === null) return
       window.clearTimeout(timer)
       remeasure()
@@ -5796,7 +5949,8 @@ export function App() {
     // spelling: the alias map lands over IPC, after the first layout, so the
     // document is re-styled and re-paginated like a settled metric face. An
     // update that touches no declared font must not reflow anything.
-    const offFontAliases = onFontAliasesChanged((names) => {
+    const onAliases = (names: readonly string[]) => {
+      seenAliasSeqRef.current = fontAliasAnswers().seq
       const parsed = fileCtxRef.current.doc?.parsed
       if (!parsed) return
       if (!docFontsCoveredBy(parsed, names).length) return
@@ -5804,7 +5958,11 @@ export function App() {
       const live = liveStylesRef.current
       setDocCss(docStyleCss(live?.parsed === parsed ? { ...parsed, styles: live.styles } : parsed))
       onUpdate()
-    })
+    }
+    const offFontAliases = onFontAliasesChanged(onAliases)
+    // an answer that landed between the open's setDocCss and this subscription
+    const landed = fontAliasAnswers()
+    if (landed.seq !== seenAliasSeqRef.current) onAliases(landed.names)
     scroller.addEventListener('scroll', locate, { passive: true })
     const onDocUpdate = ({ transaction }: { transaction: Transaction }) => {
       resetWidthPassHistory(colWidthPass)
@@ -5847,6 +6005,7 @@ export function App() {
     editor?.on('transaction', onShrinkTr)
     return () => {
       disposed = true
+      floatWatch.dispose()
       flushPaginationRef.current = () => {}
       if (timer) window.clearTimeout(timer)
       if (hfTimer) window.clearTimeout(hfTimer)
@@ -7475,22 +7634,8 @@ export function App() {
           copyXml ? { sectPr: copyXml, sections: ctx.sections } : undefined,
         )
         if (!owner || !copyXml) return null
-        // until the save re-reads the file, the new section is modelled here: it
-        // owns the blocks up to the break (by docxIndex), the owner keeps the rest
-        let lastDocx: number | null = null
-        for (let i = Math.min(afterBlockIndex, pmDoc.childCount - 1); i >= 0; i--) {
-          const di = pmDoc.child(i).attrs?.docxIndex as number | null | undefined
-          if (di !== null && di !== undefined) {
-            lastDocx = di
-            break
-          }
-        }
-        const created: SectionInfo = {
-          ...owner,
-          pendingBreak: true,
-          sectPrXml: copyXml,
-          lastBlockIndex: lastDocx ?? owner.firstBlockIndex - 1,
-        }
+        // insertSectionBreak committed the new section to state; the mirror follows
+        const created = pendingSectionAt(pmDoc, owner, afterBlockIndex, copyXml)
         // the remainder starts with the chosen type; a pending owner's sectPr was
         // patched in place by insertSectionBreak, the others get it written on save
         const remainderXml = applySectionStartType(copyXml, type)
@@ -7504,21 +7649,6 @@ export function App() {
         ctx.sections[ownerIdx + 1] = ownerNext
         ctx.effective.splice(ownerIdx, 0, copyXml)
         ctx.effective[ownerIdx + 1] = remainderXml
-        setSections((prev) => {
-          const next = [...prev]
-          next.splice(ownerIdx, 0, created)
-          if (next[ownerIdx + 1]) {
-            next[ownerIdx + 1] = {
-              ...next[ownerIdx + 1]!,
-              firstBlockIndex: ownerNext.firstBlockIndex,
-              startType: type,
-            }
-          }
-          return next
-        })
-        const shift = (d: number[]) => d.map((i) => (i >= ownerIdx ? i + 1 : i))
-        setSectionsDirty(shift)
-        setPgNumDirtySections(shift)
         return null
       },
     }),
@@ -7556,9 +7686,7 @@ export function App() {
     onToggleAi: () => setShowAi((v) => !v),
     onSection: (next: SectionSettings) => {
       // layout applies to the cursor's section; the final section's sectPr goes through SaveOptions.section (also drives canvas geometry)
-      setSections((prev) =>
-        prev.map((s, i) => (i === activeSection ? { ...s, settings: next } : s)),
-      )
+      editSectionSettings((_s, i) => (i === activeSection ? next : null))
       if (sections.length <= 1 || activeSection === sections.length - 1) {
         setSection(next)
         setSectionDirty(true)
@@ -7570,7 +7698,7 @@ export function App() {
     onPageBorderAll: (props: SectionSettings['pageBorderProps'] | null) => {
       const bordered = ({ pageBorderProps: _drop, ...s }: SectionSettings): SectionSettings =>
         props ? { ...s, pageBorder: true, pageBorderProps: props } : { ...s, pageBorder: false }
-      setSections((prev) => prev.map((s) => ({ ...s, settings: bordered(s.settings) })))
+      editSectionSettings((s) => bordered(s.settings))
       if (section) {
         setSection(bordered(section))
         setSectionDirty(true)
@@ -7587,7 +7715,7 @@ export function App() {
         orientation === 'landscape'
           ? { ...s, orientation, pageWidth: portraitH, pageHeight: portraitW }
           : { ...s, orientation, pageWidth: portraitW, pageHeight: portraitH }
-      setSections((prev) => prev.map((s) => ({ ...s, settings: sized(s.settings) })))
+      editSectionSettings((s) => sized(s.settings))
       if (section) {
         setSection(sized(section))
         setSectionDirty(true)
@@ -8837,6 +8965,14 @@ export function App() {
                     <IconOutlineView size={14} />
                   </button>
                   <button
+                    className={`status-view-btn${viewMode === 'story' ? ' on' : ''}`}
+                    data-tip={t('ribbonStoryView')}
+                    aria-label={t('ribbonStoryView')}
+                    onClick={() => setViewMode('story')}
+                  >
+                    <IconStoryView size={14} />
+                  </button>
+                  <button
                     className={`status-view-btn${readMode ? ' on' : ''}`}
                     data-tip={t('ribbonReadMode')}
                     aria-label={t('ribbonReadMode')}
@@ -9138,7 +9274,7 @@ export function App() {
           section={section}
           canvasTop={canvasTop}
           layout={layoutNow}
-          blockPlans={blockPlans}
+          layoutRev={layoutRev}
           sections={sections}
           mirrorMargins={mirrorMargins}
           delSectBreaks={delSectBreaks}
@@ -9180,7 +9316,6 @@ export function App() {
           watermarkDirty={watermarkDirty}
           pendingWatermark={pendingWatermarkImage}
           blockMetaOf={blockMetaOf}
-          pageFootnotesOf={pageFootnotesOf}
           footnotesBeneathText={doc.parsed.footnoteProps?.pos === 'beneathText'}
           endnoteItems={endnoteItems}
           resolveHf={(secs, si, kind, variant) =>
@@ -9215,6 +9350,7 @@ export function App() {
             if (!exportLocksPreview) setShowPagePreview(false)
           }}
           suppressEscape={showPrintDialog || exportLocksPreview}
+          behindPrintDialog={showPrintDialog}
         />
       )}
 
