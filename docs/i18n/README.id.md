@@ -227,6 +227,12 @@ terlihat sambil Anda menyaksikannya.
 </tr>
 </table>
 
+### 9 · File lama — `.doc`, `.xls`, dan `.ppt` dari era 2000-an juga bisa dibuka
+
+File `.doc` Word 97–2003, `.xls` Excel, atau `.ppt` PowerPoint dibuka sebagai salinan hasil konversi `.docx`, `.xlsx`, atau `.pptx` yang dibuat di komputer Anda; file asli tidak pernah diubah. Gambar, tabel, rumus, format angka, isian, dan tata letak ikut terbawa.
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="Selang waktu GenOffice membuka file .ppt, .doc, dan .xls dari laporan tahunan fiktif 2004, lalu satu slide ditampilkan di PowerPoint di samping dek hasil konversi di GenOffice" width="100%">
+
 ## Mengapa GenOffice
 
 - **Open source**, Apache-2.0, dikembangkan secara terbuka di GitHub.

@@ -223,6 +223,12 @@ Cursor 및 다른 모든 MCP 클라이언트는 스킬을 설치하거나 창을
 </tr>
 </table>
 
+### 9 · 이전 형식 파일 — 2000년대의 `.doc`, `.xls`, `.ppt`도 열립니다
+
+Word 97–2003 `.doc`, Excel `.xls`, PowerPoint `.ppt` 파일은 사용자의 컴퓨터에서 변환된 `.docx`, `.xlsx`, `.pptx` 사본으로 열립니다. 원본 파일은 변경되지 않습니다. 그림, 표, 수식, 숫자 서식, 채우기, 레이아웃이 그대로 옮겨집니다.
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="GenOffice가 가상의 2004년 연례 보고서 .ppt, .doc, .xls 파일을 여는 타임랩스. 이어서 PowerPoint의 원본 슬라이드와 GenOffice에서 변환한 슬라이드를 나란히 표시" width="100%">
+
 ## GenOffice를 선택하는 이유
 
 - **오픈소스**, Apache-2.0 라이선스로 GitHub에서 공개 개발됩니다.
