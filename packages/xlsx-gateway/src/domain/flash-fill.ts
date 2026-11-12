@@ -65,13 +65,20 @@ export function applyFlashFillTemplate(
     .join('')
 }
 
-/// The leftmost source column for a fill into `targetColumn`: the data block to its left, up to
-/// the first empty column. A narrower window turned a column it missed into literal text.
+const NEAREST_SOURCES = 6
+/// Each walked column is a read of the selected rows, so a whole-column selection over a very wide
+/// list stays bounded.
+const FARTHEST_SOURCE = 64
+
+/// The leftmost source column for a fill into `targetColumn`: always the six nearest columns, gaps
+/// included (a blank Middle name between First and Last), and further left while the list goes on.
+/// A column left out of the sources turned into literal text.
 export function flashFillFirstSource(
   targetColumn: number,
   hasValues: (column: number) => boolean,
 ): number {
-  let first = targetColumn - 1
-  while (first > 0 && hasValues(first - 1)) first -= 1
-  return first
+  const limit = Math.max(0, targetColumn - FARTHEST_SOURCE)
+  let walked = targetColumn - 1
+  while (walked > limit && hasValues(walked - 1)) walked -= 1
+  return Math.min(Math.max(0, targetColumn - NEAREST_SOURCES), walked)
 }

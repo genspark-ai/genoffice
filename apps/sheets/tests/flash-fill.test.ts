@@ -62,11 +62,18 @@ describe('flashFillFirstSource', () => {
     expect(flashFillFirstSource(9, filled(0, 1, 2, 3, 4, 5, 6, 7, 8))).toBe(0)
   })
 
-  it('stops at the first empty column', () => {
-    expect(flashFillFirstSource(6, filled(0, 1, 3, 4, 5))).toBe(3)
+  it('keeps the six nearest columns, across an empty one inside the list', () => {
+    expect(flashFillFirstSource(3, filled(0, 2))).toBe(0)
+    expect(flashFillFirstSource(6, filled(0, 1, 3, 4, 5))).toBe(0)
+    expect(flashFillFirstSource(4, filled(0, 1))).toBe(0)
   })
 
-  it('reads across an empty column right before the filled one', () => {
-    expect(flashFillFirstSource(5, filled(1, 2, 3))).toBe(1)
+  it('stops a walk past the six nearest at an empty column', () => {
+    const list = Array.from({ length: 20 }, (_, column) => column).filter((column) => column !== 11)
+    expect(flashFillFirstSource(20, filled(...list))).toBe(12)
+  })
+
+  it('walks no further than 64 columns', () => {
+    expect(flashFillFirstSource(100, () => true)).toBe(36)
   })
 })
