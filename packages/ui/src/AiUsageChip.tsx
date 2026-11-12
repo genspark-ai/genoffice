@@ -1,6 +1,6 @@
 import React from 'react'
 import type { Lang } from '@genoffice/i18n'
-import type { AgentTokenUsage } from '@genoffice/agent-core'
+import { addTokenUsage, type AgentTokenUsage } from '@genoffice/agent-core'
 import { AI_USAGE_LABELS } from './strings-ai-usage'
 import './ai-usage.css'
 
@@ -14,17 +14,12 @@ export function formatTokenCount(n: number): string {
   return String(n)
 }
 
-/** Add one turn's reported usage into an accumulator; sides the provider never
- * reported stay absent instead of turning into fake zeros. */
-export function addTokenUsage(
-  prev: AgentTokenUsage | undefined,
-  delta: AgentTokenUsage,
-): AgentTokenUsage {
-  const out: AgentTokenUsage = { ...(prev ?? {}) }
-  if (delta.inputTokens !== undefined) out.inputTokens = (out.inputTokens ?? 0) + delta.inputTokens
-  if (delta.outputTokens !== undefined)
-    out.outputTokens = (out.outputTokens ?? 0) + delta.outputTokens
-  return out
+export { addTokenUsage }
+
+/** whole percent of the input served from the prompt cache; null when the provider reports no cache figures */
+export function cacheHitPercent(usage: AgentTokenUsage): number | null {
+  if (usage.cacheReadTokens === undefined || !usage.inputTokens) return null
+  return Math.round((usage.cacheReadTokens / usage.inputTokens) * 100)
 }
 
 function usageText(usage: AgentTokenUsage): string {
@@ -51,7 +46,11 @@ export function AiUsageChip({
 }): React.JSX.Element | null {
   const text = usageText(usage)
   if (!text) return null
-  const title = session ? AI_USAGE_LABELS[lang].sessionTitle : AI_USAGE_LABELS[lang].runTitle
+  const labels = AI_USAGE_LABELS[lang]
+  const hit = cacheHitPercent(usage)
+  const title =
+    (session ? labels.sessionTitle : labels.runTitle) +
+    (hit === null ? '' : ` · ${labels.cacheHit.replace('{pct}', String(hit))}`)
   return (
     <span className="ai-usage-chip" title={title}>
       {session ? 'Σ ' : ''}

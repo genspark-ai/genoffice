@@ -81,24 +81,24 @@
     {
       "kind": "latinLineFactor",
       "font": "Noto Sans CJK KR",
-      "expect": 1.172,
+      "expect": 1.1724,
       "note": "Latin-only lines of the missing KR superfamily lay out in Cambria"
     },
     {
       "kind": "krNoBreakIncludes",
-      "text": "5,000\uc6d0)\uc774",
+      "text": "5,000원)이",
       "expect": [7],
       "note": "Korean word-wrap: no split between a closing bracket and the following hangul"
     },
     {
       "kind": "krNoBreakIncludes",
-      "text": "\uc0c9\u00b7\ubb34\uac8c\uac10",
+      "text": "색·무게감",
       "expect": [2],
       "note": "no split after the middle dot"
     },
     {
       "kind": "krNoBreakIncludes",
-      "text": "[3]\uc544\ub0b4",
+      "text": "[3]아내",
       "expect": [3],
       "note": "no split between ] and hangul"
     }

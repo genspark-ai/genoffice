@@ -20,12 +20,9 @@
  * leftwards when over-wide.
  */
 import type { TableModel } from '@genoffice/docx-engine'
-import {
-  clampTableColWidths,
-  expandAutofitColWidths,
-  legacyIndentTable,
-  type RunDefaults,
-} from './convert'
+import { legacyIndentTable } from './convert'
+import type { FontMetricsProvider } from '../line-metrics'
+import { clampTableColWidths, expandAutofitColWidths, type RunDefaults } from '../table-layout'
 
 export type TableWidthPolicy = 'fixed' | 'dxa' | 'pct' | 'auto'
 
@@ -274,6 +271,8 @@ export interface ResolveTableWidthCtx {
   /** compat < 15: w:tblInd measured to the cell text, box hangs by the cell margins */
   legacyIndent: boolean
   defaults?: RunDefaults
+  /** advances to size the columns with; undefined = the renderer's canvas (node: heuristic) */
+  metrics?: FontMetricsProvider | null
 }
 
 export interface ResolvedTableWidth {
@@ -325,7 +324,7 @@ export function resolveTableWidth(
       t,
       avail,
       budget.fit,
-      undefined,
+      ctx.metrics,
       false,
       ctx.legacyIndent,
       ctx.defaults,
@@ -334,7 +333,7 @@ export function resolveTableWidth(
     hold = holdsDeclaredWidth(t) || holdsFixedGrid(t, budget.paper)
     if (hold) log.push(`declared ${policy} width held, no paper clamp`)
     else {
-      const clamped = clampTableColWidths(t, budget.paper)
+      const clamped = clampTableColWidths(t, budget.paper, ctx.metrics)
       if (clamped !== t) log.push(`clamped to the paper ${budget.paper}`)
       t = clamped
     }
@@ -369,11 +368,13 @@ export function resolveTableWidth(
     hang,
     hold,
     bleed,
-    // a pct table is its share of the column whatever the saved grid says
+    // a pct table is its share of the column whatever the saved grid says;
+    // noWrap columns pinned past the text column are shrunk proportionally
     overWide: t.widthPct
       ? t.widthPct > 100
       : bleed !== 'none' ||
-        (widthTwips !== null && declaredTwips !== null && widthTwips < declaredTwips),
+        (widthTwips !== null && declaredTwips !== null && widthTwips < declaredTwips) ||
+        (!!budget && (t.noWrapPinnedTwips ?? 0) > budget.fit - (t.indentTwips ?? 0)),
     log,
   }
 }

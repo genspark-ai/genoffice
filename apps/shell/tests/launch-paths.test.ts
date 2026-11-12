@@ -101,5 +101,13 @@ describe('collectLaunchPaths', () => {
         (path) => path === 'legacy.doc' || path === 'unsupported.rtf',
       ),
     ).toEqual(['legacy.doc'])
+    // .ppt converts through the slides route since the legacy importer landed
+    expect(
+      collectLaunchPaths(
+        ['GenOffice.exe', 'legacy.ppt', 'unsupported.rtf'],
+        undefined,
+        (path) => path === 'legacy.ppt' || path === 'unsupported.rtf',
+      ),
+    ).toEqual(['legacy.ppt'])
   })
 })

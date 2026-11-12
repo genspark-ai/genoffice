@@ -29,6 +29,18 @@ export const nl = {
   appExportPdfProgress: 'PDF exporteren…',
   appExportPdfDone: 'PDF geëxporteerd: {path}',
   appExportPdfFailed: 'Exporteren van PDF mislukt: {error}',
+  appExportVideoTitle: 'Exporteren als video',
+  appExportVideoResolution: 'Resolutie',
+  appExportVideoSeconds: 'Seconden per dia',
+  appExportVideoUseTimings:
+    'Opgenomen tijdsinstellingen en gesproken tekst gebruiken indien aanwezig',
+  appExportVideoCreate: 'Video maken',
+  appExportVideoCancel: 'Annuleren',
+  appExportVideoProgress: 'Video coderen… {percent}%',
+  appExportVideoDone: 'Video geëxporteerd: {path}',
+  appExportVideoFailed: 'Video-export mislukt: {error}',
+  appExportVideoUnsupported:
+    'Dit systeem heeft geen H.264-video-encoder, MP4-export is niet mogelijk',
   appStatusBgAppliedAll: "Achtergrondkleur toegepast op alle dia's",
   appStatusThemeApplied: 'Thema "{name}" toegepast',
   appStatusThemeApplyFailed: 'Thema toepassen mislukt: {error}',

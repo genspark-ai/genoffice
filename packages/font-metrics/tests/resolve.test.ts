@@ -7,6 +7,8 @@ import {
   panoseSerif,
   resolveFace,
   storeContext,
+  SUBSTITUTION_RULES,
+  SUBSTITUTION_STEPS,
   type FaceHints,
   type WordFacesData,
 } from '../src/resolve'
@@ -54,6 +56,93 @@ describe('word-faces.json', () => {
   })
 })
 
+describe('measurements/substitutions.json', () => {
+  it('every row has a unique id, a compiling match, a target the store knows and a dated source', () => {
+    const ids = new Set<string>()
+    for (const r of SUBSTITUTION_RULES) {
+      expect(ids.has(r.id), r.id).toBe(false)
+      ids.add(r.id)
+      if (typeof r.match === 'string') expect(() => new RegExp(r.match as string)).not.toThrow()
+      else expect(['HG_RE', 'ARABIC_RE', 'TAMIL_RE', 'THAI_RE']).toContain(r.match.ref)
+      expect(data.faces[faceKey(r.target)] ?? data.system[faceKey(r.target)], r.target).toBeTruthy()
+      expect(['probe', 'corpus']).toContain(r.source.kind)
+      expect(r.source.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(r.source.probe.length).toBeGreaterThan(10)
+    }
+  })
+
+  it("Word's name-prefix table: Helvetica* -> Arial, Segoe* -> Segoe UI (probe 2026-11-08)", () => {
+    expect(resolveFace('Helvetica Zebra', ctxWith())).toMatchObject({
+      family: 'Arial',
+      exception: true,
+    })
+    expect(resolveFace('HelveticaZebra', ctxWith())?.family).toBe('Arial')
+    expect(resolveFace('Segoe Zebra', ctxWith())).toMatchObject({
+      family: 'Segoe UI',
+      exception: true,
+    })
+    // the installed copy still lays out itself
+    expect(resolveFace('Helvetica', ctxWith({}, { helvetica: 1.2 }))?.substituted).toBe(false)
+    expect(resolveFace('Segoe UI', ctxWith())?.substituted).toBe(false)
+  })
+})
+
+describe('measurements/substitution-steps.json', () => {
+  it('every step has a unique id, a rule label, compiling patterns, a dated source; the fallback closes the table', () => {
+    const ids = new Set<string>()
+    const refs = [
+      'HG_RE',
+      'ARABIC_RE',
+      'TAMIL_RE',
+      'THAI_RE',
+      'HAN_RE',
+      'HANGUL_RE',
+      'HAN_KR_RE',
+      'ARABIC_CLOUD_RE',
+    ]
+    const pattern = (m: string | { ref: string }) =>
+      typeof m === 'string'
+        ? expect(() => new RegExp(m)).not.toThrow()
+        : expect(refs).toContain(m.ref)
+    for (const s of SUBSTITUTION_STEPS) {
+      expect(ids.has(s.id), s.id).toBe(false)
+      ids.add(s.id)
+      expect(s.rule.length).toBeGreaterThan(0)
+      for (const k of ['name', 'nameNot', 'altNameNot'] as const)
+        if (s.when?.[k]) pattern(s.when[k]!)
+      if (typeof s.target === 'string')
+        expect(
+          data.faces[faceKey(s.target)] ?? data.system[faceKey(s.target)],
+          s.target,
+        ).toBeTruthy()
+      expect(['probe', 'corpus']).toContain(s.source.kind)
+      expect(s.source.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    }
+    const last = SUBSTITUTION_STEPS[SUBSTITUTION_STEPS.length - 1]
+    expect(last.id).toBe('fallback')
+    expect(last.when).toBeUndefined()
+  })
+
+  it('keeps the order Word applies: charset before altName before the name table before script', () => {
+    const order = SUBSTITUTION_STEPS.map((s) => s.id)
+    const before = (a: string, b: string) => expect(order.indexOf(a)).toBeLessThan(order.indexOf(b))
+    before('charset81', 'alt-name')
+    before('charset80', 'alt-name')
+    before('arabic-alt-name', 'name-table')
+    before('arabic-code-page', 'name-table')
+    before('hg-alt-name', 'name-table')
+    before('name-table', 'alt-name')
+    before('alt-name', 'latin-code-page')
+    before('latin-code-page', 'han')
+    before('han', 'hangul')
+    // a charset-81 entry with an altName still takes the charset step
+    expect(
+      resolveFace('Fixture KR', ctxWith({ 'fixture kr': { charset: '81', altName: 'Arial' } }))
+        ?.rules,
+    ).toEqual(['charset81'])
+  })
+})
+
 describe('lineFactorOf', () => {
   it('uses the hhea total for Latin faces and (ascent + descent) x 1.3 for East Asian ones', () => {
     expect(lineFactorOf(data.faces.calibri)).toBe(1.2207)
@@ -89,18 +178,45 @@ describe('resolveFace', () => {
     expect(resolveFace('Foo Sans', ctxWith({}, { 'foo sans': 1.3 }))?.lineFactor).toBe(1.3)
   })
 
-  it('falls to Calibri with a fontTable entry, Cambria with PANOSE serif or no entry', () => {
+  it('falls to Calibri with a fontTable entry, Cambria with w:family roman or no entry', () => {
     expect(resolveFace('Mont', ctxWith({ mont: { panose: '00000700' } }))).toMatchObject({
       family: 'Calibri',
       substituted: true,
       lineFactor: 1.2207,
       path: ['mont', 'calibri'],
     })
-    expect(resolveFace('Mont', ctxWith({ mont: { panose: '02030504' } }))?.family).toBe('Cambria')
+    // probe 2026-11-08: a serif PANOSE alone (no w:family) is Calibri, PANOSE never decides
+    expect(resolveFace('Mont', ctxWith({ mont: { panose: '02030504' } }))?.family).toBe('Calibri')
+    expect(
+      resolveFace('Mont', ctxWith({ mont: { panose: '020A0603', csb0: '00000007' } }))?.family,
+    ).toBe('Calibri')
     expect(resolveFace('Mont', ctxWith())?.family).toBe('Cambria')
-    // probe 2026-10-22: w:family roman without PANOSE is Cambria, swiss / modern / auto Calibri
+    // probes 2026-10-22 / 2026-11-08: w:family roman is Cambria whatever the PANOSE, swiss / modern / auto Calibri
     expect(resolveFace('Mont', ctxWith({ mont: { family: 'roman' } }))?.family).toBe('Cambria')
+    expect(
+      resolveFace('Mont', ctxWith({ mont: { family: 'roman', panose: '020B0604' } }))?.family,
+    ).toBe('Cambria')
     expect(resolveFace('Mont', ctxWith({ mont: { family: 'modern' } }))?.family).toBe('Calibri')
+    expect(
+      resolveFace('Mont', ctxWith({ mont: { family: 'swiss', panose: '020A0603' } }))?.family,
+    ).toBe('Calibri')
+  })
+
+  it('a missing name starting with PT lays out in Arial whatever its entry (probe 2026-11-08)', () => {
+    const hints = {
+      'pt astra serif': { panose: '020A0603040505020204' },
+      'pt zebra roman': { panose: '020A0603040505020204', family: 'roman' },
+    }
+    expect(resolveFace('PT Astra Serif', ctxWith(hints))).toMatchObject({
+      family: 'Arial',
+      substituted: true,
+      exception: true,
+      lineFactor: 1.1499,
+      path: ['pt astra serif', 'arial'],
+    })
+    expect(resolveFace('PT Zebra Roman', ctxWith(hints))?.family).toBe('Arial')
+    expect(resolveFace('PTZebra Serif', ctxWith())?.family).toBe('Arial')
+    expect(resolveFace('Astra Serif', ctxWith(hints))?.family).toBe('Cambria')
   })
 
   it('lays the LibreOffice metric clones out with the faces they clone', () => {
@@ -155,6 +271,50 @@ describe('resolveFace', () => {
     })
     expect(resolveFace('Fixture Naskh AR', ctxWith(hints))?.family).toMatch(/^times new roman$/i)
     expect(resolveFace('Fixture Sans Latin', ctxWith(hints))?.family).toBe('Calibri')
+  })
+
+  it('sends an Arabic name covering the Arabic code page to Arial ahead of the Times rule, cloud faces excepted', () => {
+    const sig = { charset: '00', csb0: '00000041' }
+    const hints = {
+      'fixture kufi sig': sig,
+      'fixture kufi alt': { ...sig, altName: 'Verdana' },
+      'fixture kufi b2': { charset: 'B2', csb0: '00000041' },
+      'traditional arabic': sig,
+    }
+    expect(resolveFace('Fixture Kufi Sig', ctxWith(hints))).toMatchObject({
+      family: 'Arial',
+      rules: ['arabicCodePage'],
+    })
+    expect(resolveFace('Fixture Kufi Alt', ctxWith(hints))).toMatchObject({
+      family: 'Verdana',
+      rules: ['altName'],
+    })
+    expect(resolveFace('Fixture Kufi B2', ctxWith(hints))).toMatchObject({
+      family: 'Times New Roman',
+      rules: ['table'],
+    })
+    expect(resolveFace('Traditional Arabic', ctxWith(hints))?.substituted).toBe(false)
+  })
+
+  it('names the rule behind every substitution step', () => {
+    const hints = {
+      'fixture kr': { charset: '81' },
+      'fixture ja': { charset: '80' },
+      'fixture alt': { altName: 'Fixture Target', panose: '020b0604' },
+      'fixture target': { family: 'roman' },
+      'fixture plain': { family: 'swiss' },
+    }
+    const rules = (name: string) => resolveFace(name, ctxWith(hints))?.rules
+    expect(rules('Fixture KR')).toEqual(['charset81'])
+    expect(rules('Fixture JA')).toEqual(['charset80'])
+    expect(rules('Fixture Alt')).toEqual(['altName', 'fallback'])
+    expect(rules('Fixture Plain')).toEqual(['fallback'])
+    expect(rules('PT Zebra')).toEqual(['table'])
+    expect(rules('Noto Sans KR')).toEqual(['hanKr'])
+    expect(rules('\u6c49\u4eea\u4e66\u5b8b')).toEqual(['han'])
+    expect(rules('\ud734\uba3c\uace0\ub515')).toEqual(['hangul'])
+    expect(rules('Arial Bold')).toEqual(['styleSuffix'])
+    expect(rules('Calibri')).toEqual([])
   })
 
   it('a missing name follows its fontTable altName in every slot, Arabic names included', () => {

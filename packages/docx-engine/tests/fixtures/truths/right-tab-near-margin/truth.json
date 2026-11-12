@@ -1,0 +1,62 @@
+{
+  "id": "right-tab-near-margin",
+  "title": "A right stop near the column edge ends the segment on the stop whatever its width; a stop past the edge lands on the edge; a passed stop collapses the tab",
+  "section": "word-truths.md#L1034",
+  "probe_date": "2026-11-07",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-11-07): 11920 x 16860 page, 1133 margins (column 9654 twips, edge x 539.35 pt), Arial 10.5 titles with a 10 pt raised page number; right stop 9524: number ink ends 532.88 for '14' and '7', plain and decimalZero-numbered hanging lines alike; stop 9654 and 9798: number ends 539.38 (column edge); stop 9510: 532.18; title ink past 521.72 (stop - number width): number follows the title directly (522.39-533.56, 527.06-538.22) on one line; title ending 532.29 / 536.96: tab + number wrap to a second line ending on the stop; dot leader fills title end -> number",
+  "cases": [
+    {
+      "kind": "strayTabPlan",
+      "stops": [
+        { "pos": 405, "val": "left", "leader": "none" },
+        { "pos": 9524, "val": "right", "leader": "none" }
+      ],
+      "leftTwips": 405,
+      "tabCount": 1,
+      "expect": { "kind": "right", "stopTwips": 9524 },
+      "note": "numbered TOC line: the one right stop past the indent boxes the page number flush to 9524"
+    },
+    {
+      "kind": "strayTabPlan",
+      "stops": [{ "pos": 9798, "val": "right" }],
+      "leftTwips": 405,
+      "tabCount": 1,
+      "expect": { "kind": "right", "stopTwips": 9798 },
+      "note": "stop past the column edge: the emitter clamps the box at the edge (min(stop, 100%))"
+    },
+    {
+      "kind": "strayTabPlan",
+      "stops": [{ "pos": 9524, "val": "right", "leader": "dot" }],
+      "leftTwips": 405,
+      "tabCount": 1,
+      "expect": { "kind": "grid", "tabSizeTwips": 9119 },
+      "note": "leader stops stay on the tab-size grid (the leader needs the measured title end)"
+    },
+    {
+      "kind": "strayTabPlan",
+      "stops": [{ "pos": 9524, "val": "right" }],
+      "leftTwips": 405,
+      "tabCount": 2,
+      "expect": { "kind": "grid", "tabSizeTwips": 9119 },
+      "note": "two tabs on the line: grid"
+    },
+    {
+      "kind": "strayTabPlan",
+      "stops": [{ "pos": 2880, "val": "left" }],
+      "leftTwips": 0,
+      "tabCount": 1,
+      "expect": { "kind": "grid", "tabSizeTwips": 2880 },
+      "note": "left stop: Chromium grid sized by the first stop past the indent"
+    },
+    {
+      "kind": "strayTabPlan",
+      "stops": [],
+      "leftTwips": 405,
+      "tabCount": 1,
+      "expect": { "kind": "grid", "tabSizeTwips": 720 },
+      "note": "no custom stop: default 720 grid"
+    }
+  ],
+  "docx": "probe.docx"
+}

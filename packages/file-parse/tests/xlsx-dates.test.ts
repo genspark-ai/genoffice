@@ -135,6 +135,16 @@ describe('formatSerial', () => {
     expect(formatSerial(1.5, elapsed, false)).toBe('36:00:00')
   })
 
+  it('returns null past the last representable calendar day', () => {
+    expect(formatSerial(45000, date, false)).toBe('2023-03-15')
+    expect(formatSerial(2958465, date, false)).toBe('9999-12-31')
+    expect(formatSerial(2958466, date, false)).toBeNull()
+    expect(formatSerial(1e9, date, false)).toBeNull()
+    expect(formatSerial(2957003, date, true)).toBe('9999-12-31')
+    expect(formatSerial(2957004, date, true)).toBeNull()
+    expect(formatSerial(1e9, date, true)).toBeNull()
+  })
+
   it('renders elapsed durations in their own unit, not always h:mm:ss (#1479)', () => {
     const minSec = classifyFormatCode('[mm]:ss')!
     expect(minSec).toMatchObject({ elapsed: true, elapsedUnit: 'm' })
@@ -264,6 +274,16 @@ describe('xlsxToText date cells', () => {
         '<c r="B1" s="1"><v>45292.9999999</v></c></row>',
     })
     expect(await xlsxToText(bytes)).toBe('# S\n2024-01-01 | 2024-01-02 00:00')
+  })
+
+  it('keeps the raw serial when a date value is past the calendar range', async () => {
+    const bytes = await workbook({
+      xfs: '<xf numFmtId="14"/>',
+      sheetXml:
+        '<row r="1"><c r="A1" s="0"><v>1000000000</v></c>' +
+        '<c r="B1" s="0"><v>45000</v></c></row>',
+    })
+    expect(await xlsxToText(bytes)).toContain('1000000000 | 2023-03-15')
   })
 
   it('keeps the raw serial when the style index is out of range or the value is not numeric', async () => {

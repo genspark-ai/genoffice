@@ -29,12 +29,13 @@ pub(crate) fn argb_to_hex(value: &str) -> Option<String> {
         .then(|| format!("#{}", hex.to_ascii_uppercase()))
 }
 
+/// Sparkline groups sit in the worksheet's `extLst`, after the cell data, so
+/// this reads the part with its cells already left out
+/// (`read_worksheet_without_cells`) and open does not parse every cell again.
 pub(crate) fn read_sheet_sparklines(
-    archive: &mut ZipArchive<File>,
-    worksheet_path: &str,
+    worksheet_without_cells: &str,
 ) -> Result<Vec<SparklineGroupInfo>, SidecarError> {
-    let entry = zip_entry(archive, worksheet_path)?;
-    let mut reader = Reader::from_reader(BufReader::new(entry));
+    let mut reader = Reader::from_reader(worksheet_without_cells.as_bytes());
     parse_sparkline_groups(&mut reader)
 }
 

@@ -120,7 +120,40 @@ describe('shapeTextInsetsPx', () => {
   })
 
   it('rightArrow keeps text out of the head and above/below the shaft', () => {
-    expect(shapeTextInsetsPx('rightArrow', 240, 80)).toEqual({ l: 0, t: 20, r: 40, b: 20 })
+    // presetShapeDefinitions: x2 = r - ss/4 at the default head length
+    expect(shapeTextInsetsPx('rightArrow', 240, 80)).toEqual({ l: 0, t: 20, r: 20, b: 20 })
+  })
+
+  it('scrolls inset by the curl: ss/8 on three sides, ss/16 past the rolled edge', () => {
+    expect(shapeTextInsetsPx('horizontalScroll', 400, 100)).toEqual({
+      l: 12.5,
+      t: 12.5,
+      r: 6.25,
+      b: 12.5,
+    })
+    expect(shapeTextInsetsPx('verticalScroll', 100, 400)).toEqual({
+      l: 12.5,
+      t: 12.5,
+      r: 12.5,
+      b: 6.25,
+    })
+  })
+
+  it('aspect-pinned presets follow the pinned adjust', () => {
+    const hex = shapeTextInsetsPx('hexagon', 400, 100)!
+    expect(hex.l).toBeCloseTo(41.667, 2)
+    expect(hex.t).toBeCloseTo(10.417, 2)
+    const tall = shapeTextInsetsPx('hexagon', 100, 400)!
+    expect(tall.l).toBeCloseTo(16.667, 2)
+    expect(tall.t).toBeCloseTo(66.667, 2)
+    expect(shapeTextInsetsPx('plus', 400, 100)).toEqual({ l: 0, t: 25, r: 0, b: 25 })
+    expect(shapeTextInsetsPx('chevron', 100, 400)).toEqual({ l: 0, t: 0, r: 0, b: 0 })
+  })
+
+  it('roundRect family insets by the corner radius chord', () => {
+    const r = shapeTextInsetsPx('roundRect', 400, 100)!
+    expect(r.l).toBeCloseTo(4.882, 2)
+    expect(shapeTextInsetsPx('round2SameRect', 400, 100)!.b).toBe(0)
   })
 
   it('plain rect has no geometry insets', () => {

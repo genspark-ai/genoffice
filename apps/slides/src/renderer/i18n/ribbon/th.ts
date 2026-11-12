@@ -55,6 +55,7 @@ export const th = {
   ribbonFilePrint: 'พิมพ์…',
   ribbonFileExportImages: 'ส่งออกเป็น PNG…',
   ribbonFileExportImagesJpg: 'ส่งออกเป็น JPG…',
+  ribbonFileExportVideo: 'ส่งออกเป็นวิดีโอ (MP4)…',
   ribbonUnsavedSuffix: ' — ยังไม่ได้บันทึก',
   ribbonSaveTip: 'บันทึก (⌘S)',
   ribbonAutoSave: 'บันทึกอัตโนมัติ',

@@ -54,12 +54,26 @@ export interface SanitizeLabelOptions {
 
 /** Clean a label for storage and for the model prompt. */
 export function sanitizeLabel(raw: string, options: SanitizeLabelOptions = {}): string {
-  return raw
-    .replace(options.forComment ? LABEL_STRIP_COMMENT : LABEL_STRIP, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, MAX_LABEL_LENGTH)
-    .trim()
+  return cutLabel(
+    raw
+      .replace(options.forComment ? LABEL_STRIP_COMMENT : LABEL_STRIP, '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    MAX_LABEL_LENGTH,
+  ).trim()
+}
+
+/**
+ * `slice(0, max)` without leaving half of a surrogate pair at the end. A label
+ * is stored in the document and written into its XML, so a straddling emoji
+ * used to leave a lone high surrogate — a character XML 1.0 cannot carry.
+ */
+function cutLabel(text: string, max: number): string {
+  if (text.length <= max) return text
+  let end = max
+  const last = text.charCodeAt(end - 1)
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1
+  return text.slice(0, end)
 }
 
 /** What the model reads in place of the withheld words. */

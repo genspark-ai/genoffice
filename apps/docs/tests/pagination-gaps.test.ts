@@ -19,6 +19,7 @@ import {
   pageBorderArtStripStyle,
   pageBorderStyleOf,
   rowFillAttrs,
+  rowGapPx,
   syncPageBorders,
   syncFloatShifts,
 } from '../src/renderer/editor/pagination-gaps'
@@ -252,6 +253,9 @@ describe('phantom-row rowspan bridging', () => {
   }
   const cell = (root: HTMLElement, id: string) =>
     root.querySelector(`#${id}`) as HTMLTableCellElement
+  const over = (root: HTMLElement, id: string) => cell(root, id).hidden
+  const copies = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll<HTMLElement>('.page-rh-over'), (c) => c.dataset.rhCols)
 
   it('grows a rowspan crossing the insertion point and records the base', () => {
     const root = rootOf(`
@@ -302,6 +306,78 @@ describe('phantom-row rowspan bridging', () => {
     syncPhantomRowspans(root)
     expect(cell(root, 'a').rowSpan).toBe(2)
     expect(cell(root, 'a').hasAttribute('data-base-rowspan')).toBe(false)
+  })
+
+  it('keeps a phantom row inside a crossing span to the free columns', () => {
+    const root = rootOf(`
+      <tr><td></td><td></td><td></td></tr>
+      <tr><td id="a" rowspan="3"></td><td></td><td id="c" rowspan="3"></td></tr>
+      <tr><td></td></tr>
+      <tr class="page-gap"><td id="g" colspan="3"></td></tr>
+      <tr class="page-repeat-header"><td id="h0"></td><td id="h1"></td><td id="h2"></td></tr>
+      <tr><td></td></tr>
+      <tr><td></td><td></td><td></td></tr>`)
+    syncPhantomRowspans(root)
+    expect(cell(root, 'a').rowSpan).toBe(5)
+    // columns 0 and 2 are taken by the crossing cells: one free column in between
+    expect(cell(root, 'g').colSpan).toBe(1)
+    // the header cells of the taken columns leave the grid and paint over the crossing cells
+    expect(['h0', 'h1', 'h2'].map((id) => over(root, id))).toEqual([true, false, true])
+    expect(copies(root)).toEqual(['0-1', '2-3'])
+    expect(cell(root, 'h1').classList.contains('page-rh-host')).toBe(true)
+    expect(root.querySelectorAll('#h0').length).toBe(1)
+    // no row reaches past the table's three columns
+    for (const tr of root.querySelectorAll('tr')) {
+      const own = Array.from(tr.cells)
+        .filter((td) => !td.hidden)
+        .reduce((n, td) => n + td.colSpan, 0)
+      expect(own).toBeLessThanOrEqual(3)
+    }
+    syncPhantomRowspans(root)
+    expect(cell(root, 'g').colSpan).toBe(1)
+    expect(copies(root)).toEqual(['0-1', '2-3'])
+    // the span no longer crosses: the phantom row takes the whole grid again
+    cell(root, 'a').setAttribute('data-base-rowspan', '1')
+    cell(root, 'c').setAttribute('data-base-rowspan', '1')
+    syncPhantomRowspans(root)
+    expect(cell(root, 'g').colSpan).toBe(3)
+    expect(cell(root, 'g').hasAttribute('data-base-colspan')).toBe(false)
+    expect([over(root, 'h0'), over(root, 'h2')]).toEqual([false, false])
+    expect(copies(root)).toEqual([])
+    expect(cell(root, 'h1').classList.contains('page-rh-host')).toBe(false)
+  })
+
+  it('places a later header clone row past the merges of the clone itself', () => {
+    const root = rootOf(`
+      <tr><td></td><td></td><td id="c" rowspan="3"></td></tr>
+      <tr><td></td><td></td></tr>
+      <tr class="page-gap"><td id="g" colspan="3"></td></tr>
+      <tr class="page-repeat-header"><td id="p" rowspan="2"></td><td id="q"></td><td id="r"></td></tr>
+      <tr class="page-repeat-header"><td id="s"></td><td id="t"></td></tr>
+      <tr><td></td><td></td></tr>`)
+    syncPhantomRowspans(root)
+    expect(cell(root, 'g').colSpan).toBe(2)
+    // column 2 is the crossing cell's; the second clone row starts at column 1
+    expect(['p', 'q', 'r', 's', 't'].map((id) => over(root, id))).toEqual([
+      false,
+      false,
+      true,
+      false,
+      true,
+    ])
+  })
+
+  it('leaves a phantom row outside every span untouched', () => {
+    const root = rootOf(`
+      <tr><td id="a" rowspan="2"></td><td></td></tr>
+      <tr><td></td></tr>
+      <tr class="page-gap"><td id="g" colspan="2"></td></tr>
+      <tr class="page-repeat-header"><td id="h0"></td><td id="h1"></td></tr>
+      <tr><td></td><td></td></tr>`)
+    syncPhantomRowspans(root)
+    expect(cell(root, 'g').colSpan).toBe(2)
+    expect(cell(root, 'g').hasAttribute('data-base-colspan')).toBe(false)
+    expect([over(root, 'h0'), over(root, 'h1')]).toEqual([false, false])
   })
 })
 
@@ -1102,6 +1178,47 @@ describe('rowFillAttrs', () => {
       'data-split-extra': '10.0',
     })
     expect(rowFillAttrs(310.4, 0, 2)).toEqual({ style: 'height:308px' })
+  })
+})
+
+describe('rowGapPx', () => {
+  const rect = (top: number, bottom: number) => () => ({ top, bottom }) as DOMRect
+  const table = (collapse: string) => {
+    const t = document.createElement('table')
+    t.style.borderCollapse = collapse
+    t.innerHTML =
+      '<tbody><tr><td></td></tr><tr class="page-gap"><td></td></tr><tr><td></td></tr><tr><td></td></tr></tbody>'
+    document.body.appendChild(t)
+    t.getBoundingClientRect = rect(100, 401)
+    const rows = Array.from(t.querySelectorAll('tr'))
+    rows[0].getBoundingClientRect = rect(100.5, 150.5)
+    rows[2].getBoundingClientRect = rect(150.5, 200.5)
+    rows[3].getBoundingClientRect = rect(200.5, 400.5)
+    return rows
+  }
+
+  it('gives an edge row of a collapsed table the outer half border', () => {
+    const rows = table('collapse')
+    expect(rowGapPx(rows[0])).toBe(0.5)
+    expect(rowGapPx(rows[2])).toBe(0)
+    expect(rowGapPx(rows[3])).toBe(0.5)
+    expect(rowGapPx(rows[3], 2)).toBe(0.25)
+  })
+
+  it('keeps a last-row fill at the same height on every pass', () => {
+    const natural = 97.73
+    const want = 31.77
+    let measured = natural
+    let extra = 0
+    const seen: string[] = []
+    for (let pass = 0; pass < 4; pass++) {
+      const target = measured - extra + want
+      const attrs = rowFillAttrs(target, want, 0.5)
+      seen.push(attrs.style)
+      measured = parseFloat(attrs.style.slice('height:'.length)) + 0.5
+      extra = parseFloat(attrs['data-split-extra']!)
+    }
+    expect(new Set(seen)).toEqual(new Set(['height:129px']))
   })
 })
 

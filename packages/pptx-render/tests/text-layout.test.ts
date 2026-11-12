@@ -510,6 +510,27 @@ describe('2.3 text layout', () => {
     expect(runs[0]!.x).toBeCloseTo((400 - lineW) / 2, 1)
   })
 
+  it('align=right with a hanging indent and no bullet keeps the first line flush right', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [{ text: 'ab', fontSize: 18 }],
+            align: 'right',
+            marL: 228600,
+            indent: -219075,
+          },
+        ],
+      }),
+      boxWidthPx: 400,
+      boxHeightPx: 100,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const runs = layout.lines[0]!.runs
+    expect(runs[runs.length - 1]!.x + runs[runs.length - 1]!.widthPx).toBeCloseTo(400, 1)
+  })
+
   it('align=right flushes line to the right edge', () => {
     const layout = layoutText({
       body: body({ paragraphs: [{ runs: [{ text: 'ab', fontSize: 18 }], align: 'right' }] }),
@@ -1611,6 +1632,39 @@ describe('paragraph marR / tab stops / dash & wide-space wrapping', () => {
     expect(grid.runs.find((r) => r.text === 'cd')!.x).toBeCloseTo(96, 0)
   })
 
+  it('a stop at the pen position is consumed once at zero width, the next tab moves on', () => {
+    const tab = { text: '\t', fontSize: 18 }
+    const stops = [{ pos: 0 }, { pos: 476250 }, { pos: 952500 }, { pos: 1428750 }]
+    const at = (runs: { text: string; fontSize: number }[]) =>
+      lay([{ runs, tabStops: stops }], 400).lines[0]!.runs.find((r) => r.text === 'cd')!.x
+    expect(at([tab, { text: 'cd', fontSize: 18 }])).toBeCloseTo(0, 0)
+    expect(at([tab, tab, { text: 'cd', fontSize: 18 }])).toBeCloseTo(50, 0)
+    expect(at([tab, tab, tab, { text: 'cd', fontSize: 18 }])).toBeCloseTo(100, 0)
+    // Text past the first stops: the tab still goes to the first stop beyond the pen
+    expect(at([{ text: 'abcdef', fontSize: 18 }, tab, { text: 'cd', fontSize: 18 }])).toBeCloseTo(
+      100,
+      0,
+    )
+  })
+
+  it('a line ending in a tab drops it like trailing whitespace', () => {
+    const lines = lay(
+      [
+        {
+          runs: [
+            { text: 'ab', fontSize: 18 },
+            { text: '\t', fontSize: 18 },
+          ],
+          tabStops: [{ pos: 0 }],
+        },
+      ],
+      400,
+    ).lines
+    expect(lines).toHaveLength(1)
+    expect(lines[0]!.runs.map((r) => r.text).join('')).toBe('ab')
+    expect(lines[0]!.trailingText).toBe('\t')
+  })
+
   it('breaks after a dash instead of mid-word', () => {
     const p: Paragraph = { runs: [{ text: 'Cloud–Edge', fontSize: 18 }] }
     const lines = lay([p], 100).lines
@@ -1818,6 +1872,72 @@ describe('mixed-script runs', () => {
     expect(fam('مرحبا')).toBe('Yu Gothic')
     expect(fam('AB')).toBe('Arial')
     expect(fam('漢')).toBe('Yu Gothic')
+  })
+})
+
+describe('cross-token kerning', () => {
+  // 10px per character, plus a -4px kern whenever "r" is followed by a space
+  const kerning: FontMetricsProvider = {
+    ...new HeuristicMetrics(),
+    metrics: (style) => new HeuristicMetrics().metrics(style),
+    measure: (text) => [...text].length * 10 - (text.match(/r /g)?.length ?? 0) * 4,
+  }
+  const lay = (text: string, boxWidthPx: number, metrics: FontMetricsProvider = kerning) =>
+    layoutText({
+      body: body({
+        paragraphs: [{ runs: [{ text, fontSize: 18 }] }],
+        insets: { l: 0, t: 0, r: 0, b: 0 },
+      }),
+      boxWidthPx,
+      boxHeightPx: 200,
+      metrics,
+      vp,
+    }).lines
+
+  it('a word|space kern pair pulls the following run left and lets one more word fit', () => {
+    // "car bar" = 7 chars = 70px minus the kerned "r " pair = 66px
+    const [line] = lay('car bar', 67)
+    const bar = line!.runs.find((r) => r.text === 'bar')!
+    expect(bar.x).toBe(10 * 4 - 4)
+    expect(lay('car bar', 67)).toHaveLength(1)
+    // Same text without the kern pair needs 70px and wraps
+    expect(lay('cat bat', 67)).toHaveLength(2)
+  })
+})
+
+describe('trailing whitespace keeps its run metrics', () => {
+  const m = new HeuristicMetrics()
+  const lay = (runs: Paragraph['runs']) =>
+    layoutText({
+      body: body({ paragraphs: [{ runs }] }),
+      boxWidthPx: 400,
+      boxHeightPx: 400,
+      metrics: m,
+      vp,
+    }).lines
+
+  it('a large trailing-space run sets the line height but adds no width', () => {
+    const plain = lay([{ text: 'Overview on', fontSize: 18 }])
+    const tall = lay([
+      { text: 'Overview on', fontSize: 18 },
+      { text: ' ', fontSize: 72 },
+    ])
+    expect(tall).toHaveLength(1)
+    expect(tall[0]!.height).toBeCloseTo(plain[0]!.height * 4, 3)
+    expect(tall[0]!.runs[0]!.baselineY).toBeGreaterThan(plain[0]!.runs[0]!.baselineY)
+    expect(tall[0]!.runs.map((r) => r.text).join('')).toBe('Overview on')
+    expect(tall[0]!.trailingText).toBe(' ')
+  })
+
+  it('a line made only of a large space takes that size', () => {
+    const [line] = lay([{ text: 'a', fontSize: 18 }])
+    const lines = lay([
+      { text: 'a', fontSize: 18 },
+      { text: '\n', fontSize: 18 },
+      { text: ' ', fontSize: 72 },
+    ])
+    expect(lines).toHaveLength(2)
+    expect(lines[1]!.height).toBeCloseTo(line!.height * 4, 3)
   })
 })
 

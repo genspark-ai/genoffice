@@ -164,6 +164,13 @@ describe('selecting text inside an embedded object', () => {
       expect(atoms(), `${key} must not remove the atom`).toBe(2)
     }
     expect(events.every((event) => event.defaultPrevented)).toBe(true)
+    // Paste, cut and IME input bypass the keydown guard; they are stopped too.
+    for (const type of ['beforeinput', 'paste', 'cut', 'compositionstart']) {
+      const event = new Event(type, { bubbles: true, cancelable: true })
+      editor.view.dom.dispatchEvent(event)
+      expect(event.defaultPrevented, `${type} must be swallowed`).toBe(true)
+      expect(atoms(), `${type} must not remove the atom`).toBe(2)
+    }
 
     // A new press ends the drag: normal editing keys are no longer swallowed.
     document.dispatchEvent(mouse('mousedown'))
@@ -174,6 +181,9 @@ describe('selecting text inside an embedded object', () => {
     })
     editor.view.dom.dispatchEvent(next)
     expect(next.defaultPrevented).toBe(false)
+    const paste = new Event('paste', { bubbles: true, cancelable: true })
+    editor.view.dom.dispatchEvent(paste)
+    expect(paste.defaultPrevented).toBe(false)
     drag.mockRestore()
     editor.destroy()
   })

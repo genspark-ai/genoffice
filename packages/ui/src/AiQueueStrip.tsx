@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { IconBroom, IconChevronDown, IconPause, IconPencil, IconPlay, IconTrash } from './icons'
 import type { AiQueueStripLabels } from './strings-ai-queue'
+import { useImeEnterGuard } from './ime-enter'
 
 /** how long a press has to hold before it turns into a drag */
 const DRAG_HOLD_MS = 220
@@ -53,6 +54,7 @@ export function AiQueueStrip({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const editRef = useRef<HTMLInputElement | null>(null)
+  const ime = useImeEnterGuard()
   const listRef = useRef<HTMLUListElement | null>(null)
   const [drag, setDrag] = useState<{ id: string; overIndex: number } | null>(null)
   // the drag lives in a ref too: the pointer handlers run outside React's render
@@ -191,8 +193,10 @@ export function AiQueueStrip({
                     dir="auto"
                     onChange={(e) => setDraft(e.target.value)}
                     onBlur={commitEdit}
+                    onCompositionStart={ime.handleCompositionStart}
+                    onCompositionEnd={ime.handleCompositionEnd}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                      if (e.key === 'Enter' && !ime.isImeConfirm(e.nativeEvent)) {
                         e.preventDefault()
                         commitEdit()
                       } else if (e.key === 'Escape') {

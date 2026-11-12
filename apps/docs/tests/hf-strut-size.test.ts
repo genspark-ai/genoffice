@@ -160,12 +160,12 @@ describe('strip paragraph line factor follows the runs’ face', () => {
   it('a Times New Roman 8pt line is 8 x 1.15, not the body font factor', () => {
     const runs = [{ text: 'NPSN : 2056', sizeHalfPoints: 16, fontAscii: 'Times New Roman' }]
     expect(strip(p(runs))).toMatchObject({
-      '--doc-line-factor': '1.15',
+      '--doc-line-factor': '1.1499',
       lineHeight: 'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))',
       ...strut(8),
     })
     expect(strip(p(runs)).fontFamily).toMatch(/^'Times New Roman'/)
-    expect(hfLineFactorNumber(runs as never)).toBe(1.15)
+    expect(hfLineFactorNumber(runs as never)).toBe(1.1499)
   })
 
   it('a footer table line keeps the inherited document multiple (docDefaults line=276)', () => {
@@ -189,7 +189,7 @@ describe('strip paragraph line factor follows the runs’ face', () => {
       pageTotal: 1,
     })
     const cell = el.querySelector<HTMLElement>('.page-hf-cell-para')!
-    expect(cell.style.getPropertyValue('--doc-line-factor')).toBe('1.15')
+    expect(cell.style.getPropertyValue('--doc-line-factor')).toBe('1.1499')
     expect(cell.style.lineHeight).toBe(
       'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))',
     )
@@ -228,11 +228,11 @@ describe('strip paragraph line factor follows the runs’ face', () => {
       pageTotal: 1,
     })
     const paras = el.querySelectorAll<HTMLElement>('.page-hf-para')
-    expect(paras[0].style.getPropertyValue('--doc-line-factor')).toBe('1.15')
+    expect(paras[0].style.getPropertyValue('--doc-line-factor')).toBe('1.1499')
     expect(paras[0].style.lineHeight).toBe(
       'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))',
     )
-    expect(paras[1].style.getPropertyValue('--doc-line-factor')).toBe('1.172')
+    expect(paras[1].style.getPropertyValue('--doc-line-factor')).toBe('1.1724')
     expect(paras[1].style.lineHeight).toBe('calc(var(--doc-line-factor,1.2) * 1.5)')
     expect(paras[2].style.getPropertyValue('--doc-line-factor')).toBe(
       'var(--doc-line-factor-latin,1.2)',
@@ -250,7 +250,7 @@ describe('strip paragraph line factor follows the runs’ face', () => {
       ],
       tabStops: [{ pos: 9000, align: 'right' }],
     } as never)
-    expect(tabbed?.minHeightPt).toBeCloseTo(8 * 1.15, 5)
+    expect(tabbed?.minHeightPt).toBeCloseTo(8 * 1.1499, 5)
     expect(
       hfTabSegments({
         runs: [

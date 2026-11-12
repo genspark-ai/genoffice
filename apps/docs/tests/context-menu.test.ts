@@ -11,6 +11,7 @@ import {
   FontDialog,
   ParagraphDialog,
 } from '../src/renderer/components/ContextMenu'
+import { TRANSLATE_LANGS } from '../src/renderer/components/translate-langs'
 
 function createEditor(paraAttrs: Record<string, unknown> = {}): Editor {
   return new Editor({
@@ -454,6 +455,104 @@ describe('EditorContextMenu — Word hyperlink / field / spelling items', () => 
     await act(async () => {})
     expect(onRespell).toHaveBeenCalled()
     unmount()
+    editor.destroy()
+  })
+})
+
+describe('EditorContextMenu — submenu viewport fit (genoffice translate menu)', () => {
+  const byLabel = (container: Element, label: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>('.ctx-item')].find(
+      (b) => b.querySelector('.ctx-label')?.textContent === label,
+    )!
+
+  function openTranslate(container: HTMLElement) {
+    const translate = byLabel(container, 'Translate')
+    act(() => {
+      // React synthesizes onMouseEnter from bubbling mouseover
+      translate.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      translate.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+    })
+    return container.querySelector<HTMLDivElement>('.ctx-submenu')!
+  }
+
+  it('opens the Translate submenu with every language, scrollable', () => {
+    const editor = createEditor()
+    select(editor, 1, 4)
+    const { container, unmount } = render(createElement(EditorContextMenu, menuProps(editor)))
+    const submenu = openTranslate(container)
+    expect(submenu).not.toBeNull()
+    const langs = submenu.querySelectorAll('.ctx-item').length
+    expect(langs).toBe(TRANSLATE_LANGS.length)
+    // the fit logic caps the box and scrolls the rest
+    expect(submenu.classList.contains('ctx-submenu-scroll')).toBe(true)
+    unmount()
+    editor.destroy()
+  })
+
+  it('shifts a submenu up when the opening item sits near the window bottom', () => {
+    const editor = createEditor()
+    select(editor, 1, 4)
+    const realRect = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      if (this instanceof Element && this.classList.contains('ctx-submenu')) {
+        // opens 600px down, 200px tall: the bottom edge (800) passes the 768px window
+        return {
+          top: 600,
+          bottom: 800,
+          height: 200,
+          left: 0,
+          right: 200,
+          width: 200,
+          x: 0,
+          y: 600,
+          toJSON: () => ({}),
+        } as DOMRect
+      }
+      return realRect.call(this)
+    }
+    try {
+      const { container, unmount } = render(createElement(EditorContextMenu, menuProps(editor)))
+      const submenu = openTranslate(container)
+      // bottom-aligned to the window edge (760): top = 760 - 200 - 600 - 5
+      expect(submenu.style.top).toBe('-45px')
+      unmount()
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = realRect
+    }
+    editor.destroy()
+  })
+
+  it('anchors a taller-than-the-window submenu to the top and scrolls it', () => {
+    const editor = createEditor()
+    select(editor, 1, 4)
+    const realRect = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      if (this instanceof Element && this.classList.contains('ctx-submenu')) {
+        return {
+          top: 500,
+          bottom: 5000,
+          height: 4500,
+          left: 0,
+          right: 200,
+          width: 200,
+          x: 0,
+          y: 500,
+          toJSON: () => ({}),
+        } as DOMRect
+      }
+      return realRect.call(this)
+    }
+    try {
+      const { container, unmount } = render(createElement(EditorContextMenu, menuProps(editor)))
+      const submenu = openTranslate(container)
+      // rising any further would poke out the top: anchored at the 8px margin,
+      // the rest scrolls (maxHeight = window 768 - top margin 8 - bottom margin 8)
+      expect(submenu.style.top).toBe('-497px')
+      expect(submenu.style.maxHeight).toBe('752px')
+      unmount()
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = realRect
+    }
     editor.destroy()
   })
 })

@@ -360,7 +360,7 @@ describe('renderTableSpec paragraph line box', () => {
         ],
       ],
     })
-    expect(style).toContain('--doc-line-factor:max(var(--doc-line-factor-latin,1.2), 1.22)')
+    expect(style).toContain('--doc-line-factor:max(var(--doc-line-factor-latin,1.2), 1.2207)')
     expect(style).not.toContain('font-family')
   })
 

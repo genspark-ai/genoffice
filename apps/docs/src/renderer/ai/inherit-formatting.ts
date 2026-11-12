@@ -38,6 +38,8 @@ const INHERITED_PARA_ATTRS = [
   'spaceAfter',
   'spaceBeforeAuto',
   'spaceAfterAuto',
+  'styleSpaceBeforeAuto',
+  'styleSpaceAfterAuto',
   'contextualSpacing',
   'pageBreakBefore',
   'bidi',

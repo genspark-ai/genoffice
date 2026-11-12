@@ -1,0 +1,77 @@
+{
+  "family": "Cambria Cyrillic GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-11-08",
+    "fonts": [
+      "Cambria.ttc#0, Cambriab.ttf, Cambriai.ttf, Cambriaz.ttf (Word DFonts)",
+      "LiberationSerif-Regular/Bold/Italic/BoldItalic.ttf"
+    ],
+    "probe": "advance-matched Liberation Serif derivative (tools/build-metric-fonts.py) over the Cyrillic block: hmtx = Cambria DFonts advances; Word probe 2026-11-08 lays a 12 pt Cyrillic line in Cambria 270.8 pt wide where Times is 252.7"
+  },
+  "note": "Caladea, the Cambria stand-in, has no Cyrillic, so every Cyrillic letter under\na Cambria chain (declared Cambria, or the missing-name fallback) fell to the\nNoto Serif CJK tail, wider and in a different design. This family follows\nCaladea in the Cambria chains: its rangeless faces are Caladea itself (same\nline box, nothing new for the glyphs Caladea has) and the ranged faces are\nLiberation Serif Cyrillic outlines scaled to Cambria's advances, one per cut.",
+  "faces": [
+    {
+      "src": "url('./Caladea-Regular.ttf')"
+    },
+    {
+      "src": "url('./Caladea-Bold.ttf')",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./Caladea-Italic.ttf')",
+      "style": "italic"
+    },
+    {
+      "src": "url('./Caladea-BoldItalic.ttf')",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./CambriaCyrillicGO-Regular.ttf')",
+      "unicodeRange": "U+0400-04FF"
+    },
+    {
+      "src": "url('./CambriaCyrillicGO-Bold.ttf')",
+      "unicodeRange": "U+0400-04FF",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./CambriaCyrillicGO-Italic.ttf')",
+      "unicodeRange": "U+0400-04FF",
+      "style": "italic"
+    },
+    {
+      "src": "url('./CambriaCyrillicGO-BoldItalic.ttf')",
+      "unicodeRange": "U+0400-04FF",
+      "weight": "bold",
+      "style": "italic"
+    }
+  ],
+  "refit": {
+    "method": "advance-matched",
+    "range": "U+0400-04FF",
+    "cuts": {
+      "normal/normal": {
+        "word": "dfonts:Cambria.ttc#0",
+        "base": "repo:apps/docs/src/renderer/fonts/LiberationSerif-Regular.ttf",
+        "out": "apps/docs/src/renderer/fonts/CambriaCyrillicGO-Regular.ttf"
+      },
+      "bold/normal": {
+        "word": "dfonts:Cambriab.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/LiberationSerif-Bold.ttf",
+        "out": "apps/docs/src/renderer/fonts/CambriaCyrillicGO-Bold.ttf"
+      },
+      "normal/italic": {
+        "word": "dfonts:Cambriai.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/LiberationSerif-Italic.ttf",
+        "out": "apps/docs/src/renderer/fonts/CambriaCyrillicGO-Italic.ttf"
+      },
+      "bold/italic": {
+        "word": "dfonts:Cambriaz.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/LiberationSerif-BoldItalic.ttf",
+        "out": "apps/docs/src/renderer/fonts/CambriaCyrillicGO-BoldItalic.ttf"
+      }
+    }
+  }
+}

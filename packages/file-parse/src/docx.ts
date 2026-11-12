@@ -1,5 +1,6 @@
 import JSZip from 'jszip'
 import { assertZipInflatesWithinLimits, assertZipWithinLimits } from '@genoffice/docx-engine'
+import { resolveTarget } from './opc'
 
 export interface DocxTextOptions {
   /** stop once this many characters have been collected (the caller slices anyway) */
@@ -52,6 +53,10 @@ async function mainDocumentPath(zip: JSZip): Promise<string | null> {
     if (!/Type="[^"]*\/officeDocument"/.test(tag) || /TargetMode="External"/.test(tag)) continue
     const target = /Target="([^"]+)"/.exec(tag)?.[1]
     if (!target) continue
+    // OPC targets are percent-encoded; the zip entry name is the decoded path.
+    const resolved = resolveTarget('', target)
+    if (resolved && zip.file(resolved)) return resolved
+    // resolveTarget rejects malformed escapes (a literal `%`); keep the raw lookup for those.
     const path = target.replace(/^\//, '')
     if (zip.file(path)) return path
   }

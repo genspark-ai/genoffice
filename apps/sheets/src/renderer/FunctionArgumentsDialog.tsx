@@ -48,7 +48,7 @@ export function FunctionArgumentsDialog({
   const [collapsed, setCollapsed] = useState(false)
   const [previews, setPreviews] = useState<ReadonlyMap<string, string>>(new Map())
   /// Linked workbooks of the edited file: open ones take a grid pick through
-  /// another tab, closed ones a typed range (#2109).
+  /// another tab, closed ones a typed range (genoffice#2109).
   const [pickTargets, setPickTargets] = useState<readonly ExternalPickTarget[]>([])
   const [pickingName, setPickingName] = useState<string | null>(null)
   const [typedSheets, setTypedSheets] = useState<ReadonlyMap<number, string>>(new Map())

@@ -70,3 +70,27 @@ describe('AI panel side', () => {
     expect(sameAiPanelPrefs(right, normalizeAiPanelPrefs({ side: 'right' }))).toBe(true)
   })
 })
+
+describe('showAiAskTrigger preference', () => {
+  it('defaults to on for settings files written before the switch existed', () => {
+    expect(DEFAULT_AI_PANEL_PREFS.showAiAskTrigger).toBe(true)
+    expect(normalizeAiPanelPrefs({}).showAiAskTrigger).toBe(true)
+    expect(normalizeAiPanelPrefs(undefined).showAiAskTrigger).toBe(true)
+  })
+
+  it('accepts an explicit off and ignores malformed values', () => {
+    expect(normalizeAiPanelPrefs({ showAiAskTrigger: false })).toEqual({
+      ...DEFAULT_AI_PANEL_PREFS,
+      showAiAskTrigger: false,
+    })
+    expect(normalizeAiPanelPrefs({ showAiAskTrigger: 'no' }).showAiAskTrigger).toBe(true)
+  })
+
+  it('takes part in equality so toggling is persisted and broadcast', () => {
+    const on = normalizeAiPanelPrefs({})
+    const off = normalizeAiPanelPrefs({ showAiAskTrigger: false })
+    expect(sameAiPanelPrefs(on, off)).toBe(false)
+    expect(sameAiPanelPrefs(off, normalizeAiPanelPrefs({ showAiAskTrigger: false }))).toBe(true)
+    expect(sameAiPanelPrefs(on, normalizeAiPanelPrefs({ side: 'right' }))).toBe(false)
+  })
+})

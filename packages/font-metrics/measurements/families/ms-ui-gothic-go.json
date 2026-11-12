@@ -1,5 +1,7 @@
 {
   "family": "MS UI Gothic GO",
+  "standsInFor": "MS UI Gothic",
+  "standInChain": { "tail": "ja-sans", "companions": ["MS UI Gothic JA GO"] },
   "source": {
     "kind": "probe",
     "date": "2026-09-03",

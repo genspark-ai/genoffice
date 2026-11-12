@@ -208,6 +208,12 @@ Word 文档，供你实时查看。
 </tr>
 </table>
 
+### 9 · 旧格式文件 — 2000 年代的 `.doc`、`.xls` 和 `.ppt` 也能打开
+
+Word 97–2003 的 `.doc`、Excel 的 `.xls` 或 PowerPoint 的 `.ppt` 会在本机转换成 `.docx`、`.xlsx` 或 `.pptx` 副本后打开，原文件不会被改动。图片、表格、公式、数字格式、填充和版式都会保留。
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="GenOffice 依次打开一份虚构的 2004 年度报告的 .ppt、.doc 和 .xls 文件的延时画面，随后是同一页幻灯片在 PowerPoint 中的原件与在 GenOffice 中的转换结果并排对比" width="100%">
+
 ## 为什么选择 GenOffice
 
 - **开源**，Apache-2.0 协议，在 GitHub 上公开开发。

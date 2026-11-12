@@ -225,6 +225,12 @@ ve viditelné záložce editoru, zatímco se díváte.
 </tr>
 </table>
 
+### 9 · Starší soubory — otevřou se i `.doc`, `.xls` a `.ppt` z nultých let
+
+Soubor `.doc` z Wordu 97–2003, excelový `.xls` nebo powerpointový `.ppt` se otevře jako převedená kopie `.docx`, `.xlsx` nebo `.pptx` vytvořená ve vašem počítači; původní soubor se nikdy nemění. Obrázky, tabulky, vzorce, formáty čísel, výplně a rozvržení se přenesou.
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="Časosběr: GenOffice otevírá soubory .ppt, .doc a .xls fiktivní výroční zprávy za rok 2004, poté jeden snímek zobrazený v PowerPointu vedle převedené prezentace v GenOffice" width="100%">
+
 ## Proč GenOffice
 
 - **Open source**, Apache-2.0, vyvíjený otevřeně na GitHubu.

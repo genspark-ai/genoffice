@@ -7,7 +7,7 @@
 import { stripRedactExt, syncRedactExt } from './redaction-xml'
 import JSZip from 'jszip'
 import { PackageArchive, relsPathFor, resolveTarget, type Relationship } from './zip'
-import { parseClrMap, parseTheme, type Theme } from './theme'
+import { parseClrMap, parseTheme, themeWithOverride, type Theme } from './theme'
 import {
   parseSlide,
   parseDecorations,
@@ -383,6 +383,21 @@ export interface OpenedPptx {
   archive: PackageArchive
 }
 
+/**
+ * A slide's own themeOverride part (keep-source-formatting pastes) replaces the master
+ * theme's clrScheme/fontScheme for that slide: PowerPoint resolves every schemeClr on it,
+ * background included, against the override.
+ */
+function slideTheme(archive: PackageArchive, slidePath: string, theme: Theme): Theme {
+  for (const rel of archive.readRels(slidePath).values()) {
+    if (rel.type.endsWith('/themeOverride') && rel.targetMode !== 'External') {
+      const xml = archive.readText(resolveTarget(slidePath, rel.target))
+      if (xml) return themeWithOverride(theme, xml)
+    }
+  }
+  return theme
+}
+
 /** Parse one slide from the archive (assembling the inheritance-chain ctx); shared by openPptx and duplicateSlide. */
 function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slide | null {
   const slideXml = archive.readText(slidePath)
@@ -396,7 +411,7 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
   if (chain.themePath) {
     const themeXml = archive.readText(chain.themePath)
     if (themeXml) {
-      ctx.theme = parseTheme(themeXml)
+      ctx.theme = slideTheme(archive, slidePath, parseTheme(themeXml))
       // Dark masters remap schemeClr names (bg1→dk1 …); must be in place before any color resolution below
       ctx.theme.clrMap = parseClrMap(masterXml, layoutXml, slideXml)
       ctx.themeMediaRels = partMediaRels(archive, chain.themePath)
@@ -1122,7 +1137,7 @@ function slideInheritanceCtx(archive: PackageArchive, slidePath: string) {
   if (chain.themePath) {
     const themeXml = archive.readText(chain.themePath)
     if (themeXml) {
-      theme = parseTheme(themeXml)
+      theme = slideTheme(archive, slidePath, parseTheme(themeXml))
       theme.clrMap = parseClrMap(masterXml, layoutXml, archive.readText(slidePath) ?? undefined)
     }
   }
@@ -1469,7 +1484,8 @@ export interface EffectsPatch {
 
 /** #RRGGBB / #RRGGBBAA → <a:srgbClr> (alpha channel becomes an <a:alpha> child in 1000ths of a percent). */
 function effectColorXml(hex: string): string {
-  const m = /^#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$/.exec(hex)
+  const t = (hex ?? '').trim()
+  const m = /^#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$/.exec(t)
   const val = (m?.[1] ?? '000000').toUpperCase()
   const alpha = m?.[2] != null ? Math.round((parseInt(m[2], 16) / 255) * 100000) : 100000
   return alpha < 100000
@@ -4128,7 +4144,9 @@ export interface ElementClipboardItem {
   contentTypes?: Readonly<Record<string, string>>
 }
 
-const RID_ATTR_RE = /\br:(?:embed|link|id)="(rId\d+)"/g
+// Quote-agnostic like the other relationship scanners: a slide written by a
+// producer that prefers single quotes still names its rIds.
+const RID_ATTR_RE = /\br:(?:embed|link|id)\s*=\s*(["'])(rId\d+)\1/g
 
 /** Copy: grab the element's current XML and the relationships it references (part paths that pictures/charts etc. point at). */
 export function copyElementData(
@@ -4143,7 +4161,7 @@ export function copyElementData(
   const contentTypes: Record<string, string> = {}
   const seen = new Set<string>()
   for (const m of xml.matchAll(RID_ATTR_RE)) {
-    const rid = m[1]!
+    const rid = m[2]!
     if (seen.has(rid)) continue
     seen.add(rid)
     const rel = slideRels.get(rid)

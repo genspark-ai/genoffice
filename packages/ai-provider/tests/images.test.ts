@@ -32,10 +32,19 @@ async function requestBodyFor(
 
 const IMAGE = { base64: 'aGVsbG8=', mime: 'image/png' }
 
+// the last two messages carry prompt-cache markers on the official endpoint
+// (see anthropic-prompt-cache.test.ts); pad the tail so the inspected message
+// keeps its unmarked shape
+const TAIL: AgentMessage[] = [
+  { role: 'assistant', text: 'ok' },
+  { role: 'user', text: 'next' },
+]
+
 describe('anthropic user message with images', () => {
   it('sends a content array of text + image blocks', async () => {
     const body = await requestBodyFor('anthropic', [
       { role: 'user', text: 'look at this image', images: [IMAGE] },
+      ...TAIL,
     ])
     expect(body.messages[0]).toEqual({
       role: 'user',
@@ -50,13 +59,16 @@ describe('anthropic user message with images', () => {
   })
 
   it('omits the text block when text is empty', async () => {
-    const body = await requestBodyFor('anthropic', [{ role: 'user', text: '', images: [IMAGE] }])
+    const body = await requestBodyFor('anthropic', [
+      { role: 'user', text: '', images: [IMAGE] },
+      ...TAIL,
+    ])
     expect(body.messages[0].content).toHaveLength(1)
     expect(body.messages[0].content[0].type).toBe('image')
   })
 
   it('keeps plain string content when no images (existing behavior)', async () => {
-    const body = await requestBodyFor('anthropic', [{ role: 'user', text: 'hi' }])
+    const body = await requestBodyFor('anthropic', [{ role: 'user', text: 'hi' }, ...TAIL])
     expect(body.messages[0]).toEqual({ role: 'user', content: 'hi' })
   })
 })

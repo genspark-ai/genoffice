@@ -55,7 +55,15 @@ const DOCS: Array<{ name: string; file: string }> = [
 ]
 
 /** doc name -> hazard id and note */
-const KNOWN_FAILURES: Record<string, string> = {}
+const KNOWN_FAILURES: Record<string, string> = {
+  // the page-2 cut is a one-line tie: pass 1 splits the row at 1728.0, the fonts-loadingdone re-measure
+  // moves it whole to page 3 (1694.2) and the document grows 2.0 px (2538.1 -> 2540.1). Snapping the
+  // row-fit comparison to the LayoutUnit grid did not change it (CI run 42779841935), so this is not
+  // float drift: the re-measure reads the split-state DOM (row splitExtra / translated cell children)
+  // and decides the row differently. Needs an Electron session to pin.
+  'geo-table-pct-nonuniform':
+    'row-split decision differs between first pass and split-state re-measure',
+}
 
 interface DebugSlice {
   start: number

@@ -1,7 +1,7 @@
 import { decodeEntities } from './parse-xml-text'
 import { applyRevisionResolutions } from './revision-xml'
 import { patchParagraphTexts } from './text-patch'
-import type { NoteInfo, NoteRun } from './types'
+import type { NoteInfo, NoteRun, NoteSeparator } from './types'
 import { escapeXmlAttr, escapeXmlText } from './xml-utils'
 
 /**
@@ -109,6 +109,23 @@ export function parseNotesXml(xml: string, kind: NoteKind, read?: NoteParagraphR
       ...(noRefMark ? { noRefMark: true as const } : {}),
     }
   })
+}
+
+/** the separator entry (w:type="separator"): a paragraph whose pPr chain sizes the row above a page's notes */
+export function parseNoteSeparator(
+  xml: string,
+  kind: NoteKind,
+  read: NoteParagraphReader,
+): NoteSeparator | undefined {
+  const entry = ENTRY[kind]
+  // the attribute run must not end in "/": a self-closing separator entry is not an opener
+  const m = new RegExp(
+    `<${entry}\\s(?=[^>]*w:type=(?:"separator"|'separator'))[^>]*[^/>]>([\\s\\S]*?)</${entry}>`,
+  ).exec(xml)
+  const pXml = m ? noteParagraphsOf(m[1])[0] : undefined
+  if (!pXml) return undefined
+  const para = read(pXml)
+  return { ...(para.styleId ? { styleId: para.styleId } : {}), spacing: para.spacing }
 }
 
 /** the entry's paragraph slices in order (self-closing form first: the

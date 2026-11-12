@@ -1408,6 +1408,18 @@ export function IconOutlineView(props: IconProps) {
   )
 }
 
+export function IconStoryView(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="3.76" width="10.01" height="8.47" rx="0.62" />
+      <path d="M 6.46 3.76 v 8.47" strokeWidth="1" />
+      <path d="M 8 5.69 h 3.85 M 8 7.62 h 3.85 M 8 9.54 h 2.31" strokeWidth="1" />
+      {/* the '#' mark in the margin */}
+      <path d="M 4.3 5.2 v 1.3 M 5.5 5.2 v 1.3 M 4.05 5.85 h 1.7" strokeWidth="1" />
+    </Svg>
+  )
+}
+
 export function IconRuler(props: IconProps) {
   return (
     <Svg {...props}>

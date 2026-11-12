@@ -1,0 +1,59 @@
+{
+  "id": "times-charscale-hhea-box",
+  "title": "Times New Roman runs with character scaling (w:w != 100) lay out at the hhea box 1.107, not the 1.15 line factor",
+  "section": "word-truths.md#L1167",
+  "probe_date": "2026-11-08",
+  "source": "probe build.py (+ build_base.py), A4 1440 margins, docDefaults Calibri 11, fontTable altName=self, 6 br-joined lines per paragraph, Word for Mac direct PDF, pymupdf span origins",
+  "cases": [
+    {
+      "kind": "paraFactor",
+      "block": 1,
+      "expect": "1.107",
+      "note": "TNRw90: pitch 20.16-20.40 at 10.5pt line 420"
+    },
+    {
+      "kind": "paraFactor",
+      "block": 5,
+      "expect": "1.107",
+      "note": "TNRw200: pitch 20.16-20.40"
+    },
+    {
+      "kind": "paraFactor",
+      "block": 7,
+      "expect": "1.1499",
+      "note": "TNRw100: pitch 21.12 = 10.5 x 1.149 x 1.75"
+    },
+    {
+      "kind": "paraFactor",
+      "block": 9,
+      "expect": "1.107",
+      "note": "TNRw101: any scale but 100"
+    },
+    {
+      "kind": "paraFactor",
+      "block": 11,
+      "expect": "1.1499",
+      "note": "Arialw105: Arial 13.68-13.92 at 12pt, unchanged"
+    },
+    {
+      "kind": "paraFactor",
+      "block": 13,
+      "expect": "1.1499",
+      "note": "Arialw100"
+    },
+    {
+      "kind": "paraFactor",
+      "block": 15,
+      "expect": "1.2207",
+      "note": "Calibriw105: Calibri 14.64 unchanged"
+    },
+    {
+      "kind": "paraFactor",
+      "block": 23,
+      "expect": "1.107",
+      "note": "TNRw105s240: 12pt single: 13.2-13.44 vs 13.68-13.92"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

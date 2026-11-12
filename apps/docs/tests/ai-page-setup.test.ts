@@ -11,7 +11,13 @@ import {
   type AiPageSetupAccess,
   type ResolvedPageSetup,
 } from '../src/renderer/ai/page-setup'
-import { patchPendingSectPr, sectionIndexAtBlock } from '../src/renderer/ai/pending-sections'
+import {
+  dropRemovedPendingSections,
+  patchPendingSectPr,
+  pendingSectionAt,
+  rewritePendingSectPrs,
+  sectionIndexAtBlock,
+} from '../src/renderer/ai/pending-sections'
 import { buildDocContext } from '../src/renderer/ai/protocol'
 import { executeTool, markDocSeen } from '../src/renderer/ai/tools'
 
@@ -323,5 +329,57 @@ describe('unsaved section breaks', () => {
     expect(patchPendingSectPr(editor, sections, 1, LETTER_SECT_PR)).toBe(false)
     editor.commands.deleteRange({ from: 0, to: editor.state.doc.content.size })
     expect(patchPendingSectPr(editor, sections, 0, LETTER_SECT_PR)).toBe(false)
+  })
+
+  it('a break inserted after a block closes a section owning the blocks up to it', () => {
+    const editor = createEditor(['a', 'b', null, 'c'])
+    const owner = sectionFromSectPr(LETTER_SECT_PR, 0, 2)
+    const created = pendingSectionAt(editor.state.doc, owner, 1, LETTER_SECT_PR)
+    expect(created).toMatchObject({ pendingBreak: true, firstBlockIndex: 0, lastBlockIndex: 1 })
+    const sections = [created, { ...owner, firstBlockIndex: 2 }]
+    const owners = [0, 1, 2, 3].map((i) => sectionIndexAtBlock(editor.state.doc, sections, i))
+    expect(owners).toEqual([0, 0, 0, 1])
+  })
+
+  it('a whole-document page setup reaches unsaved sections through their break paragraphs', () => {
+    const editor = createEditor(['a', 'b', null, 'c', 'd', null, 'e', 'f'])
+    const sections = pendingSections()
+    const landscape = (xml: string) =>
+      xml.replace('<w:pgSz w:w="12240" w:h="15840"/>', '<w:pgSz w:w="15840" w:h="12240"/>')
+    const next = rewritePendingSectPrs(editor, sections, (s) => landscape(s.sectPrXml))
+    expect(genXmlAt(editor, 2)).toContain('<w:pgSz w:w="15840" w:h="12240"/>')
+    expect(genXmlAt(editor, 5)).toContain('<w:pgSz w:w="15840" w:h="12240"/>')
+    expect(next.map((s) => s.sectPrXml.includes('w:w="15840"'))).toEqual([true, true, false])
+    const owners = [0, 3, 6].map((i) => sectionIndexAtBlock(editor.state.doc, next, i))
+    expect(owners).toEqual([0, 1, 2])
+  })
+
+  it('an unsaved break undone or deleted takes its section out of the model', () => {
+    const sections = pendingSections()
+    sections[0] = { ...sections[0]!, startType: 'continuous' }
+    const intact = createEditor(['a', 'b', null, 'c', 'd', null, 'e', 'f'])
+    expect(dropRemovedPendingSections(intact.state.doc, sections)).toBeNull()
+
+    const undone = createEditor(['a', 'b', 'c', 'd', null, 'e', 'f'])
+    const live = dropRemovedPendingSections(undone.state.doc, sections)
+    expect(live?.dropped).toEqual([0])
+    expect(live?.sections).toHaveLength(2)
+    expect(live?.sections[0]).toMatchObject({
+      pendingBreak: true,
+      firstBlockIndex: 0,
+      lastBlockIndex: 3,
+      startType: 'continuous',
+    })
+  })
+
+  it('a break is told by its position: a stale sectPr or a deleted neighbour keeps the section', () => {
+    const editor = createEditor(
+      ['a', 'b', null, 'c', 'd', null, 'e', 'f'],
+      applySectionStartType(LETTER_SECT_PR, 'continuous'),
+    )
+    const b = editor.state.doc.child(0).nodeSize
+    editor.commands.deleteRange({ from: b, to: b + editor.state.doc.child(1).nodeSize })
+    expect(editor.state.doc.childCount).toBe(7)
+    expect(dropRemovedPendingSections(editor.state.doc, pendingSections())).toBeNull()
   })
 })

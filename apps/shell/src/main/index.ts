@@ -1,4 +1,4 @@
-import { execSync, spawn } from 'node:child_process'
+import { execSync } from 'node:child_process'
 import {
   cpSync,
   existsSync,
@@ -30,6 +30,7 @@ import {
 } from 'electron'
 import type { MenuItemConstructorOptions, NativeImage, WebContents } from 'electron'
 import { atomicCopyFile, atomicWriteFile } from './atomic-write'
+import { openTrash } from './trash'
 import { registerAiNamingIpc } from './ai-naming-service'
 import { tabStripOverlay } from './title-bar-overlay'
 import { shellWindowBackground } from './window-background'
@@ -87,6 +88,9 @@ import {
   systemAuthorName,
   readLegacyImportPrompt,
   writeLegacyImportPrompt,
+  readPdfDefaultZoom,
+  sanitizePdfDefaultZoom,
+  writePdfDefaultZoom,
 } from '@genoffice/electron-utils'
 import { createMainProcessProxyDispatcher } from '@genoffice/electron-utils/main-proxy'
 import {
@@ -709,6 +713,7 @@ function currentAiPanelPrefs(): AiPanelPrefs {
     spellcheck: saved.aiPanelSpellcheck,
     openInNewDocs: saved.aiPanelOpenInNewDocs,
     showAiSidebar: saved.aiPanelShowSidebar,
+    showAiAskTrigger: saved.aiPanelShowAskTrigger,
   })
   return cachedAiPanelPrefs
 }
@@ -4382,10 +4387,8 @@ function createShellWindow(): void {
 // ---- routing: one dispatch function for every open path ----
 
 /**
- * Single source of truth for the open-dialog filter. Includes the still-legacy
- * .ppt binary so it is selectable and surfaces the explicit "not supported"
- * dialog via openDocumentPath instead of being grayed out; .doc/.dot route into
- * the docs import filter.
+ * Single source of truth for the open-dialog filter. .doc/.dot and .ppt route
+ * into the docs/slides import filters (converted copies).
  */
 const OPEN_DIALOG_EXTENSIONS = [
   'docx',
@@ -5186,14 +5189,8 @@ function registerHomeIpc(): void {
     removeStarredFiles(list)
   })
 
-  ipcMain.handle(HOME_CHANNELS.openTrash, () => {
-    if (process.platform === 'darwin') {
-      void shell.openPath(join(app.getPath('home'), '.Trash'))
-    } else if (process.platform === 'win32') {
-      spawn('explorer.exe', ['shell:RecycleBin'], { detached: true }).unref()
-    } else {
-      void shell.openPath(join(app.getPath('home'), '.local', 'share', 'Trash', 'files'))
-    }
+  ipcMain.handle(HOME_CHANNELS.openTrash, async () => {
+    await openTrash()
   })
 
   ipcMain.handle(HOME_CHANNELS.openHelp, () => {
@@ -5305,6 +5302,11 @@ function registerHomeIpc(): void {
   ipcMain.handle(HOME_CHANNELS.setLegacyImportPrompt, (_event, prompt: unknown): boolean => {
     writeLegacyImportPrompt(APP_SETTINGS_PATH(), prompt !== false)
     return readLegacyImportPrompt(APP_SETTINGS_PATH())
+  })
+  ipcMain.handle(HOME_CHANNELS.getPdfDefaultZoom, () => readPdfDefaultZoom(APP_SETTINGS_PATH()))
+  ipcMain.handle(HOME_CHANNELS.setPdfDefaultZoom, (_event, zoom: unknown) => {
+    writePdfDefaultZoom(APP_SETTINGS_PATH(), sanitizePdfDefaultZoom(zoom))
+    return readPdfDefaultZoom(APP_SETTINGS_PATH())
   })
 
   ipcMain.handle(HOME_CHANNELS.getAutoSaveDefault, (): AutoSaveDefault => currentAutoSaveDefault())
@@ -5423,6 +5425,7 @@ function registerHomeIpc(): void {
       spellcheck: 'spellcheck' in raw ? raw.spellcheck : prev.spellcheck,
       openInNewDocs: 'openInNewDocs' in raw ? raw.openInNewDocs : prev.openInNewDocs,
       showAiSidebar: 'showAiSidebar' in raw ? raw.showAiSidebar : prev.showAiSidebar,
+      showAiAskTrigger: 'showAiAskTrigger' in raw ? raw.showAiAskTrigger : prev.showAiAskTrigger,
     })
     if (sameAiPanelPrefs(next, prev)) return prev
     cachedAiPanelPrefs = next
@@ -5433,6 +5436,7 @@ function registerHomeIpc(): void {
       aiPanelSpellcheck: next.spellcheck,
       aiPanelOpenInNewDocs: next.openInNewDocs,
       aiPanelShowSidebar: next.showAiSidebar,
+      aiPanelShowAskTrigger: next.showAiAskTrigger,
     })
     for (const wc of webContents.getAllWebContents()) wc.send('app:ai-panel-prefs-changed', next)
     return next
@@ -7339,18 +7343,7 @@ app.whenReady().then(async () => {
     })
   }
 
-  const launchSettings = readAppSettings(APP_SETTINGS_PATH())
-  const launchPaths = launchPathsWithLastSession(launchSettings, pendingLaunchPaths)
-  if (launchSettings[LAST_SESSION_DOCUMENTS_KEY] !== undefined) {
-    // consumed before opening: a document that crashes the app during restore
-    // must not be restored again at the next launch
-    try {
-      writeAppSettings(APP_SETTINGS_PATH(), { [LAST_SESSION_DOCUMENTS_KEY]: undefined })
-    } catch (err) {
-      console.warn('[shell] could not clear the session documents:', err)
-    }
-  }
-  openLaunchPaths(launchPaths)
+  openLaunchPaths(consumeLastSessionPaths(pendingLaunchPaths))
   pendingLaunchPaths = []
   for (const recoverAs of pendingUnsavedNewRecoveries()) void newSheetTab(recoverAs)
 
@@ -7372,9 +7365,27 @@ app.whenReady().then(async () => {
   )
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createShellWindow()
+    if (BrowserWindow.getAllWindows().length > 0) return
+    createShellWindow()
+    openLaunchPaths(consumeLastSessionPaths([]))
   })
 })
+
+/** the last session's documents ahead of the launch paths, forgotten as they are read */
+function consumeLastSessionPaths(launchPaths: readonly string[]): string[] {
+  const settings = readAppSettings(APP_SETTINGS_PATH())
+  const paths = launchPathsWithLastSession(settings, launchPaths)
+  if (settings[LAST_SESSION_DOCUMENTS_KEY] !== undefined) {
+    // consumed before opening: a document that crashes the app during restore
+    // must not be restored again at the next launch
+    try {
+      writeAppSettings(APP_SETTINGS_PATH(), { [LAST_SESSION_DOCUMENTS_KEY]: undefined })
+    } catch (err) {
+      console.warn('[shell] could not clear the session documents:', err)
+    }
+  }
+  return paths
+}
 
 app.on('window-all-closed', () => {
   // A headless export destroys its hidden window between documents; only

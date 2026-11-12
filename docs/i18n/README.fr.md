@@ -229,6 +229,12 @@ document Word dans un onglet d'éditeur visible pendant que vous regardez.
 </tr>
 </table>
 
+### 9 · Anciens fichiers — les `.doc`, `.xls` et `.ppt` des années 2000 s’ouvrent aussi
+
+Un `.doc` Word 97–2003, un `.xls` Excel ou un `.ppt` PowerPoint s’ouvre sous forme de copie convertie `.docx`, `.xlsx` ou `.pptx`, créée sur votre machine ; le fichier d’origine n’est jamais modifié. Les images, tableaux, formules, formats de nombre, remplissages et la mise en page sont conservés.
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="Accéléré de GenOffice ouvrant les fichiers .ppt, .doc et .xls d’un rapport annuel fictif de 2004, puis une diapositive affichée dans PowerPoint à côté de la présentation convertie dans GenOffice" width="100%">
+
 ## Pourquoi GenOffice
 
 - **Open source**, licence Apache-2.0, développé au grand jour sur GitHub.

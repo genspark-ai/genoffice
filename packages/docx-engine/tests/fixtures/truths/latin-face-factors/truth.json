@@ -26,7 +26,8 @@
     {
       "kind": "factor",
       "font": "Open Sans",
-      "expect": 1.365
+      "expect": 1.3618,
+      "note": "cloud hhea; probe 1.365 quantised"
     },
     {
       "kind": "factor",
@@ -36,7 +37,8 @@
     {
       "kind": "factor",
       "font": "Trebuchet MS",
-      "expect": 1.1615
+      "expect": 1.1611,
+      "note": "DFonts hhea"
     },
     {
       "kind": "factor",
@@ -58,12 +60,13 @@
     {
       "kind": "factor",
       "font": "Verdana",
-      "expect": 1.2167
+      "expect": 1.2153,
+      "note": "DFonts hhea; probe 1.2167 quantised"
     },
     {
       "kind": "factor",
       "font": "Georgia Pro",
-      "expect": 0.98,
+      "expect": 0.9731,
       "note": "cloud face, typo metrics"
     }
   ],

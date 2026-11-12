@@ -10,7 +10,8 @@
  */
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { cssFontFamily, lineHeightFactor } from '../src/renderer/line-metrics'
+import { cssFontFamily, lineHeightFactor } from '../src/renderer/text-layout/font-rules'
+import { resolveDeclaredFace } from '../src/renderer/font-resolve'
 import { advanceEm, glyphBoundsEm, readWoff2 } from './helpers/woff2-metrics'
 
 const FONTS = join(__dirname, '../src/renderer/fonts')
@@ -70,9 +71,12 @@ describe('GenOffice Cordia / Sarabun (Word Thai metrics)', () => {
     expect(cssFontFamily('Tahoma')).not.toContain('GenOffice Cordia')
   })
 
-  it('line factors follow the Word faces (Cordia hhea 1.147, Sarabun 1.31)', () => {
+  it('line factors follow the Word faces (Cordia hhea 1.147, Sarabun 1.31; shipped faces real)', () => {
+    expect(resolveDeclaredFace('TH SarabunIT\u0e59')?.family).toBe('Cordia New')
     expect(lineHeightFactor('TH SarabunIT\u0e59')).toBeCloseTo(1.147, 3)
     expect(lineHeightFactor('Cordia New')).toBeCloseTo(1.147, 3)
     expect(lineHeightFactor('TH SarabunPSK')).toBeCloseTo(1.31, 3)
+    expect(lineHeightFactor('Angsana New')).toBe(1.3508)
+    expect(lineHeightFactor('Browallia New')).toBe(1.2495)
   })
 })

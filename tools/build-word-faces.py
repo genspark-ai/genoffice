@@ -31,6 +31,10 @@ SYSTEM_DIRS = ["/System/Library/Fonts", "/System/Library/Fonts/Supplemental"]
 ASSET_GLOB = "/System/Library/AssetsV2/com_apple_MobileAsset_Font*/*/AssetData/Nanum*.ttc"
 EA_BITS = range(17, 22)  # 932 JIS, 936 GB, 949 KR, 950 Big5, 1361 Johab
 REGULARISH = ("regular", "normal", "book", "roman", "w3", "w4", "medium")
+# cloud instances Word draws but paces as the missing-name Calibri route, lines
+# and advances alike (word-truths 2026-10-28: Bahnschrift variable condensed
+# instances); a store row would put the resolver on their own hhea
+PACED_AS_MISSING = {"bahnschrift light condensed", "bahnschrift semicondensed"}
 
 
 def key(name):
@@ -40,10 +44,13 @@ def key(name):
 def face_rows(font, source):
     name = font["name"]
     families = set()
+    legacy = set()
     for rec in name.names:
         if rec.nameID in (1, 16):
             try:
                 families.add(rec.toUnicode())
+                if rec.nameID == 1:
+                    legacy.add(rec.toUnicode())
             except Exception:
                 pass
     sub = (name.getDebugName(17) or name.getDebugName(2) or "Regular").lower()
@@ -67,7 +74,15 @@ def face_rows(font, source):
         "source": source,
     }
     regular = any(t in sub for t in REGULARISH) and "italic" not in sub and "bold" not in sub
-    return [(key(f), f, regular, row) for f in families]
+    # the English family of a localized twin (MS Gothic for the fullwidth-katakana
+    # spelling): the renderer keys its stand-in chains by it, so every spelling of
+    # one face shares one row. Only the font's own (nameID 1) names qualify.
+    ascii_names = sorted((f for f in legacy if f.isascii()), key=len)
+    canonical = ascii_names[0] if ascii_names else None
+    return [
+        (key(f), f, regular, {**row, **({"canonical": canonical} if canonical and not f.isascii() else {})})
+        for f in families
+    ]
 
 
 def collect(paths, source):
@@ -108,6 +123,7 @@ def main():
             faces = {key(k): {"family": k, **v, "source": "legacy-table", "_regular": True} for k, v in json.load(fh).items()}
     if not faces:
         sys.exit("no Word font store found and no --legacy-seed given")
+    faces = {k: v for k, v in faces.items() if k not in PACED_AS_MISSING}
 
     # macOS copies Word for Mac lays out with when a name is installed (Times New
     # Roman: the system copy has lineGap 87, DFonts' has 0); only families the

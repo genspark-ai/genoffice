@@ -1,7 +1,7 @@
 {
   "source": "packages/docx-engine/tests/fixtures/truths/autospace-switches-marker-tab/probe.docx",
   "paragraphs": 4,
-  "hashes": ["4f63b088a08f2bc4", "7daa5e07cedb6fce", "1f4eb71d15f3273e", "f5b61f4eee8d3544"],
+  "hashes": ["1088c05631655843", "0d215266d99a1d02", "1f8e19aa34bbe412", "76d549a95277cc51"],
   "cellParagraphs": 0,
   "cellHashes": [],
   "boxParagraphs": 0,

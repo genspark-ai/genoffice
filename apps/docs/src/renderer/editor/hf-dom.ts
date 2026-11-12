@@ -14,11 +14,11 @@ import {
 } from '@genoffice/docx-engine'
 import {
   cssAutoLineMult,
-  cssRunFontFamily,
   estimateHfAnchorFloorPx,
   estimateHfHeight,
   runLetterSpacingCss,
 } from '../line-metrics'
+import { cssRunFontFamily } from '../text-layout/font-rules'
 import {
   anchorXBand,
   anchorYBand,

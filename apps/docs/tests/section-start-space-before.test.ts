@@ -61,10 +61,59 @@ describe('space-before of the first paragraph of a forced section start', () => 
     expect(b.top).toBe(26)
   })
 
+  it('a planned excess caps the fold and trims the lead margin to it', () => {
+    // prev after=200 (13.33px) under before=480 (32px): Word keeps 24 - 10 = 14pt
+    const a = block(0, 0, 20, 0)
+    const b = block(1, 52, 20, 32)
+    b.marginBeforePx = 32
+    b.sectionLeadSpacePx = 18.67
+    a.spaceAfterPx = 32
+    a.height += 32
+    assignSections([a, b], [sec(0, 0, 'nextPage'), sec(1, 1, 'nextPage')])
+    expect(a.spaceAfterPx).toBeCloseTo(13.33, 2)
+    expect(b.spaceBeforePx).toBeCloseTo(18.67, 2)
+    expect(b.leadMtPx).toBeCloseTo(18.67, 2)
+    expect(b.top).toBeCloseTo(33.33, 2)
+  })
+
+  it('a zero excess leaves the space-after at the page bottom and trims the lead to nothing', () => {
+    const a = block(0, 0, 20, 0)
+    const b = block(1, 60, 20, 32)
+    b.marginBeforePx = 32
+    b.sectionLeadSpacePx = 0
+    a.spaceAfterPx = 40
+    a.height += 40
+    assignSections([a, b], [sec(0, 0, 'nextPage'), sec(1, 1, 'nextPage')])
+    expect(a.spaceAfterPx).toBe(40)
+    expect(b.top).toBe(60)
+    expect(b.spaceBeforePx).toBeUndefined()
+    expect(b.leadMtPx).toBe(0)
+  })
+
   it('a continuous section keeps the folded space-after (no page starts there)', () => {
     const { a, b } = flow('continuous')
     expect(a.spaceAfterPx).toBe(16)
     expect(b.top).toBe(36)
     expect(b.spaceBeforePx).toBeUndefined()
+  })
+})
+
+describe('blocks typed after an unsaved section break', () => {
+  it('belong to the section the break opened', () => {
+    const typed = (breaksBefore?: number): BlockBox =>
+      ({ top: 0, height: 20, unsavedSectBreaksBefore: breaksBefore }) as BlockBox
+    const blocks = [block(0, 0, 20, 0), typed(), typed(1), typed()]
+    assignSections(blocks, [
+      { ...sec(0, 0, 'nextPage'), pendingBreak: true },
+      sec(1, 1, 'nextPage'),
+    ])
+    expect(blocks.map((b) => b.section)).toEqual([0, 0, 1, 1])
+  })
+
+  it('stay put when the break is not modelled', () => {
+    const typed: BlockBox = { top: 0, height: 20, unsavedSectBreaksBefore: 1 } as BlockBox
+    const blocks = [block(0, 0, 20, 0), typed]
+    assignSections(blocks, [sec(0, 0, 'nextPage'), sec(1, 1, 'nextPage')])
+    expect(blocks.map((b) => b.section)).toEqual([0, 0])
   })
 })

@@ -29,6 +29,18 @@ export const de = {
   appExportPdfProgress: 'PDF wird exportiert…',
   appExportPdfDone: 'PDF exportiert: {path}',
   appExportPdfFailed: 'PDF-Export fehlgeschlagen: {error}',
+  appExportVideoTitle: 'Als Video exportieren',
+  appExportVideoResolution: 'Auflösung',
+  appExportVideoSeconds: 'Anzeigedauer pro Folie (Sekunden)',
+  appExportVideoUseTimings:
+    'Aufgezeichnete Anzeigedauern und Kommentare verwenden, falls vorhanden',
+  appExportVideoCreate: 'Video erstellen',
+  appExportVideoCancel: 'Abbrechen',
+  appExportVideoProgress: 'Video wird kodiert… {percent} %',
+  appExportVideoDone: 'Video exportiert: {path}',
+  appExportVideoFailed: 'Videoexport fehlgeschlagen: {error}',
+  appExportVideoUnsupported:
+    'Auf diesem System ist kein H.264-Videoencoder verfügbar, MP4-Export ist nicht möglich',
   appStatusBgAppliedAll: 'Hintergrundfarbe auf alle Folien angewendet',
   appStatusThemeApplied: 'Design „{name}“ angewendet',
   appStatusThemeApplyFailed: 'Design konnte nicht angewendet werden: {error}',

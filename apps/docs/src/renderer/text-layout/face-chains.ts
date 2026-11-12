@@ -19,14 +19,34 @@ import {
 export const CJK_SERIF = 'Noto Serif CJK SC'
 export const CJK_SANS = 'Noto Sans CJK SC'
 export const BOX = 'GenOffice Box Drawing'
-export const JA_SANS = ['Yu Gothic', 'GenOffice Hiragino Sans', 'Meiryo', 'Noto Sans JP']
+// KR tail: hangul a Japanese face cannot draw is Word's per-glyph fallback, Malgun
+// Gothic or Batang at 1em (probes 2026-09-30, 2026-11-03); without it Chromium's
+// system fallback packs the syllables at 0.865em
+export const JA_SANS = [
+  'Yu Gothic',
+  'GenOffice Hiragino Sans',
+  'Meiryo',
+  'Noto Sans JP',
+  'GenOffice Sans KR',
+]
 export const JA_SERIF = [
   'Yu Mincho',
   'GenOffice Hiragino Mincho',
   'GenOffice MS Mincho',
   'Noto Serif JP',
+  'GenOffice Batang',
+  'GenOffice Serif KR',
 ]
-export const KO_SANS = ['Malgun Gothic', 'GenOffice Sans KR', 'Apple SD Gothic Neo', 'Noto Sans KR']
+// Han after the hangul face: Word draws a Korean face's Hanja at 1em (Gulim, Malgun),
+// Apple SD Gothic Neo at 0.865em packs a Hanja-heavy line tighter than Word
+export const KO_SANS = [
+  'Malgun Gothic',
+  'GenOffice Sans KR',
+  'Noto Sans CJK GO',
+  'PingFang TC',
+  'Apple SD Gothic Neo',
+  'Noto Sans KR',
+]
 export const KO_SERIF = [
   'GenOffice Batang',
   'GenOffice Serif KR',
@@ -47,6 +67,9 @@ const TC_SERIF = [
 ]
 const SC_SANS = ['PingFang SC', 'Microsoft YaHei', CJK_SANS]
 const SC_SERIF = ['GenOffice Songti SC', 'STSong', 'SimSun', CJK_SERIF]
+
+const ARABIC_CAPABLE_ALT_RE =
+  /arial|calibri|tahoma|segoe ui|times new roman|courier new|microsoft sans serif|arabic|sakkal|dubai/i
 
 export const cssChain = (...families: string[]): string =>
   [...new Set(families)].map((x) => `'${x.replace(/'/g, '')}'`).join(',')
@@ -122,10 +145,11 @@ export const FACE_CHAIN_RULES: ChainRule[] = [
     when: (f) => /stix.*math|latin modern math/.test(f),
     chain: () => [['STIX Two Math', 'Caladea', 'Liberation Serif', BOX, CJK_SERIF], 'serif'],
   },
+  // Caladea has no Cyrillic; the advance-matched Liberation Serif derivative carries Cambria's
   {
     id: 'cambria',
     when: (f) => f.includes('cambria'),
-    chain: () => [['Caladea', BOX, CJK_SERIF], 'serif'],
+    chain: () => [['Caladea', 'Cambria Cyrillic GO', BOX, CJK_SERIF], 'serif'],
   },
   {
     id: 'times',
@@ -156,49 +180,11 @@ export const FACE_CHAIN_RULES: ChainRule[] = [
     when: (f) => f === 'arial' || f.startsWith('arial '),
     chain: () => [['Arial Arabic GO', 'Liberation Sans', CJK_SANS], 'sans-serif'],
   },
-  // Roboto is an M365 cloud face Word renders real; the generic sans-serif tail would draw Helvetica,
-  // 6-8% wider in bold, so the per-class size-adjusted Liberation Sans alias carries its advances
-  {
-    id: 'roboto',
-    when: (_f, head) => /^roboto$/.test(head),
-    chain: () => [['Roboto GO', CJK_SANS], 'sans-serif'],
-  },
-  // Garamond ships with Office and Word renders it real; it is a macOS on-demand asset Chromium
-  // cannot see, and the serif tail (Times) runs 3-5% wider, so the size-adjusted alias stands in
-  {
-    id: 'garamond',
-    when: (_f, head) => /^garamond$/.test(head),
-    chain: () => [['Garamond GO', BOX, CJK_SERIF], 'serif'],
-  },
-  // Berlin Sans FB Demi ships with Office, a bold display cut 0.953x Arial Bold wide (probe 2026-09-17)
-  {
-    id: 'berlin-sans-demi',
-    when: (f) => /berlin sans fb demi/.test(f),
-    chain: () => [['Berlin Sans FB GO', CJK_SANS], 'sans-serif'],
-  },
   // Segoe UI is an M365 cloud font Word renders real; the size-adjusted Helvetica alias carries its narrower advances
   {
     id: 'segoe-ui',
     when: (f) => SEGOE_UI_TEXT_RE.test(f),
     chain: () => [['Segoe UI GO', 'Noto Sans CJK GO', 'GenOffice PUA Blank'], 'sans-serif'],
-  },
-  // Consolas is Office-only: the size-adjusted Menlo alias carries its advances
-  {
-    id: 'consolas',
-    when: (f) => f.includes('consolas'),
-    chain: () => [['Consolas GO', CJK_SANS], 'monospace'],
-  },
-  // Century Gothic is Office-only too: the advance-matched Liberation Sans derivative carries its wide lowercase / narrow capitals
-  {
-    id: 'century-gothic',
-    when: (f) => f.includes('century gothic'),
-    chain: () => [['Century Gothic GO', CJK_SANS], 'sans-serif'],
-  },
-  // Lucida Handwriting ships with Office and Windows; elsewhere the per-case size-adjusted Liberation Sans Italic alias carries its wide script advances
-  {
-    id: 'lucida-handwriting',
-    when: (f) => f.includes('lucida handwriting'),
-    chain: () => [['Lucida Handwriting GO', CJK_SANS], 'sans-serif'],
   },
   {
     id: 'mono',
@@ -299,7 +285,20 @@ export const FACE_CHAIN_RULES: ChainRule[] = [
     when: (_f, _h, nfkc) => ARABIC_NAME_RE.test(nfkc),
     chain: (_f, _h, nfkc, n) => {
       const alt = n.arabicAlt(nfkc)
-      if (alt) return n.recurse(alt)
+      if (alt) {
+        // an altName without Arabic glyphs (Cambria) draws the Latin; the Arabic falls to Times (corpus 2026-11-07)
+        const css = n.recurse(alt)
+        if (ARABIC_CAPABLE_ALT_RE.test(alt)) return css
+        const generic = css.lastIndexOf(',')
+        const tail = cssChain(
+          'Times New Roman',
+          'Naskh Digits GO',
+          'Noto Naskh Arabic TNR',
+          'Geeza Pro',
+          'Al Bayan',
+        )
+        return `${css.slice(0, generic)},${tail}${css.slice(generic)}`
+      }
       // Dubai is a cloud face Word renders real; the size-adjusted alias carries its advances and hhea box where it is missing
       if (/\bdubai\b/i.test(nfkc) && !n.bundled && !n.available)
         return [['Dubai GO', 'Arial', 'Liberation Sans', CJK_SANS], 'sans-serif']

@@ -10,7 +10,7 @@
       "kind": "hfLineBox",
       "part": 0,
       "expect": {
-        "styles": ["--doc-strut:8pt", "font-size:var(--doc-strut)", "--doc-line-factor:1.15"],
+        "styles": ["--doc-strut:8pt", "font-size:var(--doc-strut)", "--doc-line-factor:1.1499"],
         "notStyles": ["font-size:min("]
       },
       "note": "smallest declared size carries the strut; the 11 pt run lays its own box"
@@ -26,7 +26,7 @@
       "part": 2,
       "para": 0,
       "expect": {
-        "styles": ["font-size:8pt", "--doc-line-factor:1.15"],
+        "styles": ["font-size:8pt", "--doc-line-factor:1.1499"],
         "notStyles": ["--doc-strut"]
       },
       "note": "space-only sz 32 run under a sz 16 Times New Roman mark: the mark sizes the line"

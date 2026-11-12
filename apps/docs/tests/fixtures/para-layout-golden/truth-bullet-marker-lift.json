@@ -1,7 +1,7 @@
 {
   "source": "packages/docx-engine/tests/fixtures/truths/bullet-marker-lift/probe.docx",
   "paragraphs": 1,
-  "hashes": ["71a8aed40d135fb3"],
+  "hashes": ["50dd06cea75bae02"],
   "cellParagraphs": 0,
   "cellHashes": [],
   "boxParagraphs": 0,

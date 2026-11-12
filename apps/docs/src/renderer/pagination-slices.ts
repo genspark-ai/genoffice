@@ -1,7 +1,7 @@
 // The slicing engine: greedy page breaking of measured blocks into page slices
 // (F2 model with table-row and line-level placement), plus page lookups.
 import { alignedOffset } from './editor/anchor-geometry'
-import { FOOTNOTE_SEPARATOR_H } from './line-metrics'
+import { noteSeparatorPx } from './line-metrics'
 import type {
   BlockBox,
   PageSlice,
@@ -653,7 +653,7 @@ export function computeSectionedSlicesF2(
     curFirstOfSection = firstOfSection
     pages.push({ section, regions: [], ...(continued ? { continued: true } : {}) })
     openRegion(y, section, headerH, headerTop)
-    pageNoteSepPx = curBlockNotes ? FOOTNOTE_SEPARATOR_H : 0
+    pageNoteSepPx = curBlockNotes ? noteSeparatorPx('footnote') : 0
     pageFloatBottom = 0
   }
   // advance on overflow: change column if not the last, turn the page on the last (headerH/headerTop: table header repeated at column top after a table break)
@@ -669,12 +669,14 @@ export function computeSectionedSlicesF2(
   /**
    * Word column balancing: a multi-column region closed mid-page by a continuous
    * column-count change redistributes its single-column content across the columns.
-   * Word fills line quotas left to right — target = ceil(visible lines / cols) per
-   * column, empty paragraph marks flow but don't count, and widow/orphan atomicity
-   * keeps short paragraphs whole (trailing columns may stay empty). Explicit column
-   * breaks disable it ("any effective page breaks stop the balancing act"), as do
-   * tables (row structure, v1). Mutates the current region's entries/height;
-   * returns the balanced region height, or null when not applicable.
+   * Every paragraph mark is content (trailing ones included); a column fills up
+   * to its share of the height and stops at the last boundary within it (half a
+   * line of tolerance for the rounding Word's line quota allows), and widow/orphan
+   * atomicity keeps short paragraphs whole (trailing columns may stay empty).
+   * Explicit column breaks disable it ("any effective page breaks stop the
+   * balancing act"), as do tables (row structure, v1). Mutates the current
+   * region's entries/height; returns the balanced region height, or null when
+   * not applicable.
    */
   const tryBalanceRegion = (endBi: number, endY: number): number | null => {
     const page = pages[pages.length - 1]
@@ -685,9 +687,8 @@ export function computeSectionedSlicesF2(
     const colWs = geomOf(region.section).colWidths
     if (colWs && colWs.length === region.cols) return balanceUnequal(region, endBi, endY, colWs)
     // boundary units: block tops always cuttable; in-block line starts cuttable
-    // per widow/orphan atomicity. Each unit carries the counted content height of
-    // its piece (0 for empty paragraph marks — they flow but don't add quota)
-    type Unit = { y: number; h: number; cut: boolean }
+    // per widow/orphan atomicity. Each unit carries the height of its piece
+    type Unit = { y: number; h: number; cut: boolean; line?: number }
     const units: Unit[] = []
     // trailing whitespace before the closing block (space-after / inter-section
     // spacing) must not inflate the last column's extent
@@ -698,8 +699,7 @@ export function computeSectionedSlicesF2(
       if (b.floated) continue
       if (b.top + b.height < startY + 0.01 || b.top > endY - 0.01) continue
       const bottom = Math.min(b.top + b.height, endY)
-      // trailing empty paragraph marks are absorbed (they don't extend the region)
-      if (!b.emptyPara) contentEnd = Math.max(contentEnd, bottom)
+      contentEnd = Math.max(contentEnd, bottom)
       const minKeep = b.widowControl !== false ? 2 : 1
       const lbs = b.lineBoxes && b.lineBoxes.length > 0 ? b.lineBoxes : null
       const n = lbs ? lbs.length : 1
@@ -713,7 +713,8 @@ export function computeSectionedSlicesF2(
         const y = Math.max(rawY, startY)
         units.push({
           y,
-          h: b.emptyPara ? 0 : Math.max(next - y, 0),
+          h: Math.max(next - y, 0),
+          ...(lbs ? { line: lbs[k].height } : {}),
           cut: rawY >= startY - 0.01 && (k === 0 || (k >= minKeep && n - k >= minKeep)),
         })
       }
@@ -721,17 +722,37 @@ export function computeSectionedSlicesF2(
     const countedH = units.reduce((s, u) => s + u.h, 0)
     if (countedH <= 0.01 || contentEnd - startY <= 0.01) return null
     const target = countedH / region.cols
+    const lineHs = units.filter((u) => u.line).map((u) => u.line!)
+    const lineH = lineHs.length
+      ? lineHs.sort((x, y) => x - y)[lineHs.length >> 1]
+      : Math.min(...units.filter((u) => u.h > 0).map((u) => u.h))
+    const slack = lineH / 2 + 0.01
     const cuts: number[] = []
-    let acc = 0
     let prevCut = startY
-    for (const u of units) {
-      if (cuts.length >= region.cols - 1) break
-      if (acc >= target - 0.01 && u.cut && u.y > prevCut + 0.01) {
-        cuts.push(u.y)
-        prevCut = u.y
-        acc = 0
+    // each column closes at the last boundary within its share; only when the
+    // first boundary already overshoots (an unsplittable opener) does it take
+    // that. Content that fits the share stays, leaving the remaining columns empty
+    for (let c = 0, i = 0; c < region.cols - 1; c++) {
+      let acc = 0
+      let chosen = -1
+      let over = false
+      for (let j = i; j < units.length; j++) {
+        const u = units[j]
+        if (u.cut && u.y > prevCut + 0.01) {
+          if (acc > target + slack) {
+            over = true
+            if (chosen < 0) chosen = j
+            break
+          }
+          chosen = j
+        }
+        acc += u.h
       }
-      acc += u.h
+      if (!over && acc <= target + slack) break
+      if (chosen < 0) break
+      cuts.push(units[chosen].y)
+      prevCut = units[chosen].y
+      i = chosen
     }
     while (cuts.length < region.cols - 1) cuts.push(endY) // trailing empty columns
     region.entries = [region.entries[0], ...cuts.map((y) => ({ y }))]
@@ -772,10 +793,10 @@ export function computeSectionedSlicesF2(
       if (b.top + b.height < startY + 0.01 || b.top > endY - 0.01) continue
       const y = Math.max(b.top, startY)
       const bottom = Math.min(b.top + b.height, endY)
-      if (!b.emptyPara) contentEnd = Math.max(contentEnd, bottom)
+      contentEnd = Math.max(contentEnd, bottom)
       pieces.push({
         y,
-        h: b.emptyPara ? 0 : Math.max(bottom - y, 0),
+        h: Math.max(bottom - y, 0),
         ...(b.fixedWidthPx === undefined && b.widthPx ? { w: b.widthPx } : {}),
         cut: b.top >= startY - 0.01,
         b,
@@ -907,7 +928,7 @@ export function computeSectionedSlicesF2(
             pageCapacityPx(g, !continued, pageNoAfter(curPageNo, last?.section ?? -1, curSection)),
             1,
           )
-    return fresh - (curBlockNotes ? FOOTNOTE_SEPARATOR_H : 0)
+    return fresh - (curBlockNotes ? noteSeparatorPx('footnote') : 0)
   }
   // whether height h fits in the current column (runaway degrade: everything fits)
   const fits = (h: number): boolean => runaway || usedInCol + h <= capColH() + 0.01
@@ -959,7 +980,7 @@ export function computeSectionedSlicesF2(
     const block = blocks[bi]
     curBi = bi
     curBlockNotes = (block.footnoteExtraPx ?? 0) > 0
-    if (curBlockNotes) pageNoteSepPx = FOOTNOTE_SEPARATOR_H
+    if (curBlockNotes) pageNoteSepPx = noteSeparatorPx('footnote')
 
     // section change
     const bSection = block.section ?? curSection
@@ -1016,7 +1037,7 @@ export function computeSectionedSlicesF2(
           let bottom = start
           for (let i = regionStartBi; i < bi; i++) {
             const b = blocks[i]
-            if (b.floated || (balancedH !== null && b.emptyPara)) continue
+            if (b.floated) continue
             if (b.top >= end - 0.01 || b.top + b.height <= start + 0.01) continue
             bottom = Math.max(bottom, Math.min(b.top + b.height - (b.spaceAfterPx ?? 0), end))
           }
@@ -1512,7 +1533,7 @@ export function computeSectionedSlicesF2(
           )
           // the head row's notes open the page's footnote area: the table will
           // charge that separator strip, so the chain must demand it too
-          if (head.notesPx && !pageNoteSepPx) anchorNeedH += FOOTNOTE_SEPARATOR_H
+          if (head.notesPx && !pageNoteSepPx) anchorNeedH += noteSeparatorPx('footnote')
         } else if (anchorBlock.oversizeLineH !== undefined) {
           // an oversized anchor clips to whatever remains below the chain, so it
           // demands the rest of a fresh column: the chain pushes and the pair
@@ -1524,7 +1545,9 @@ export function computeSectionedSlicesF2(
           anchorNeedH = anchorBlock.spaceBeforePx ?? 0
           for (let li = 0; li < need; li++) anchorNeedH += aLines[li].height
         } else {
-          anchorNeedH = anchorBlock.height // no line data yet (first pass): conservative
+          // no line data: a single-line anchor never gets any (no break points),
+          // so demand its text height; its space-after may overflow the bottom
+          anchorNeedH = anchorBlock.height - (anchorBlock.spaceAfterPx ?? 0)
         }
       }
 

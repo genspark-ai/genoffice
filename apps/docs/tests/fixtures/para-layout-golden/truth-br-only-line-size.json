@@ -1,7 +1,7 @@
 {
   "source": "packages/docx-engine/tests/fixtures/truths/br-only-line-size/probe.docx",
   "paragraphs": 2,
-  "hashes": ["d16326815816f38e", "370fcd1c2e61f9ac"],
+  "hashes": ["028ce6732a8f1677", "940c9d4eeecb4a96"],
   "cellParagraphs": 0,
   "cellHashes": [],
   "boxParagraphs": 0,

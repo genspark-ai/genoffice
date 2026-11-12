@@ -372,3 +372,33 @@ describe('the name the Save As dialog opens on', () => {
     ).toBe('\u624b\u52a8\u547d\u540d.docx')
   })
 })
+
+describe('Save As to another format', () => {
+  it('lets the autosave queued behind the dialog land before the copy is exported', async () => {
+    const opened = await open('Quarterly summary')
+    const ctx = ctxFor(opened, 'report.docx', '/tmp/report.docx')
+    const events: string[] = []
+    let closeDialog: (() => void) | null = null
+    Object.assign((window as unknown as { desktop: Record<string, unknown> }).desktop, {
+      saveDocxAs: () =>
+        new Promise((resolve) => {
+          closeDialog = () => resolve({ ok: false, exportAs: 'md', path: '/tmp/copy.md' })
+        }),
+      saveDocx: async () => {
+        events.push('autosave')
+        return { ok: true, path: '/tmp/report.docx' }
+      },
+      exportMarkdown: async (_name: string, _markdown: string, _images: unknown, out: string) => {
+        events.push(`export ${out}`)
+        return { ok: true, path: out }
+      },
+    })
+    const saveAs = save(ctx, true)
+    await expect.poll(() => closeDialog).not.toBeNull()
+    const autosave = save(ctx, false, true)
+    closeDialog!()
+    expect(await saveAs).toBe(false)
+    expect(await autosave).toBe(true)
+    expect(events).toEqual(['autosave', 'export /tmp/copy.md'])
+  })
+})

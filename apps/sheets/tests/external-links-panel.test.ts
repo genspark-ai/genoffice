@@ -141,13 +141,13 @@ describe('external links panel', () => {
     const onBreak = vi.fn()
     const host = await mount(panel(LISTED, { onBreak }))
     const scissors = [...host.querySelectorAll('button')].find(
-      (button) => button.getAttribute('data-tip') === '断开链接',
+      (button) => button.getAttribute('data-tip') === '\u65ad\u5f00\u94fe\u63a5',
     )!
     click(scissors)
     // first click only arms the confirm step
     expect(onBreak).not.toHaveBeenCalled()
     const confirm = [...host.querySelectorAll('button')].find(
-      (button) => button.textContent === '确认断开',
+      (button) => button.textContent === '\u786e\u8ba4\u65ad\u5f00',
     )!
     click(confirm)
     expect(onBreak).toHaveBeenCalledTimes(1)
@@ -158,7 +158,7 @@ describe('external links panel', () => {
     const onChangeSource = vi.fn()
     const host = await mount(panel(LISTED, { onChangeSource }))
     const sources = [...host.querySelectorAll('button')].filter(
-      (button) => button.getAttribute('data-tip') === '更改源',
+      (button) => button.getAttribute('data-tip') === '\u66f4\u6539\u6e90',
     )
     // only the file-backed link offers it (row 1 is a web source)
     expect(sources).toHaveLength(1)
@@ -171,8 +171,8 @@ describe('external links panel', () => {
     const host = await mount(panel(LISTED, { onChangeSource }))
     const rows = [...host.querySelectorAll('tbody tr')]
     const webRow = rows.find((row) => row.textContent?.includes('gone.xlsx'))!
-    expect(webRow.querySelector('[data-tip="更改源"]')).toBeNull()
+    expect(webRow.querySelector('[data-tip="\u66f4\u6539\u6e90"]')).toBeNull()
     const fileRow = rows.find((row) => row.textContent?.includes('source.xlsx'))!
-    expect(fileRow.querySelector('[data-tip="更改源"]')).not.toBeNull()
+    expect(fileRow.querySelector('[data-tip="\u66f4\u6539\u6e90"]')).not.toBeNull()
   })
 })
