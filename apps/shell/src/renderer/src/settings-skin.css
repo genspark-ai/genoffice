@@ -243,6 +243,11 @@
 .set-dialog .set-config-block .set-field:last-child {
   border-bottom: 0;
 }
+.set-dialog .set-field:has([aria-expanded='true']),
+.set-dialog .set-config-block:has([aria-expanded='true']) {
+  position: relative;
+  z-index: 20;
+}
 
 /* row text */
 .set-dialog .set-field-label {

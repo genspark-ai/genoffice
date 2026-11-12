@@ -50,7 +50,7 @@
   .set-dialog {
     animation: fx-pop 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
-  .set-dialog .set-pane > * {
+  .set-dialog .set-pane {
     animation: fx-fade 0.25s ease-out both;
   }
   .set-skill-card {
