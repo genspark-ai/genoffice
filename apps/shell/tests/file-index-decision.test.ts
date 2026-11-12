@@ -229,6 +229,18 @@ describe('endpointUrl', () => {
     )
   })
 
+  it('refuses credentials embedded in a custom URL', () => {
+    for (const base of [
+      'http://user:pass@127.0.0.1:8009/v1/systemone',
+      'https://user@decider.example/v1/systemone',
+      'https://:secret@decider.example/v1/systemone',
+    ]) {
+      expect(() => endpointUrl(opts({ endpoint: 'custom', customBaseUrl: base }))).toThrow(
+        'embedded-credentials',
+      )
+    }
+  })
+
   it('sends local excerpts only over https or a loopback host', () => {
     for (const base of [
       'https://decider.example/v1/systemone',
@@ -530,6 +542,10 @@ describe('probeDecision', () => {
         'Server URL must be https:// (http:// only for this machine)',
       ],
       [{ endpoint: 'custom', customBaseUrl: 'not a url' }, 'Server URL is not a valid address'],
+      [
+        { endpoint: 'custom', customBaseUrl: 'https://user:pass@decider.example/v1/systemone' },
+        'Use the API key field, not credentials in the server URL',
+      ],
       [{ endpoint: 'cloudflare', keys: { cloudflare: 'k' } }, 'Enter the Cloudflare account ID'],
       [
         {

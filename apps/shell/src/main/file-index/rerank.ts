@@ -186,6 +186,7 @@ const PROBE_ERRORS: Record<string, string> = {
   'missing-url': 'Enter the server URL',
   'missing-account': 'Enter the Cloudflare account ID',
   'bad-url': 'Server URL is not a valid address',
+  'embedded-credentials': 'Use the API key field, not credentials in the server URL',
   'insecure-url': 'Server URL must be https:// (http:// only for this machine)',
   'unsupported-model': 'Cloudflare only serves clef, clef-flash and clef-omni',
   'empty-request': 'Nothing to judge',
