@@ -101,3 +101,29 @@ Local modifications to `index.mjs` (2026-08, GenOffice):
   from a non-ASCII facename (CJK MathType previews write GBK bytes for both
   the face and the text under charset 0); the per-byte Dx array is folded to
   one advance per decoded glyph
+- Dual-mode EMF+ files: the suppressed fallback's SaveDC/RestoreDC no longer touch the
+  canvas — they snapshot and restore the DC alone (drawing state plus window/viewport
+  mapping) in a dedicated stack, so a mapping a fallback block sets inside its own
+  bracket does not reach the GetDC run after it, and the brackets can no longer pop or
+  interleave with the clip saves the EMF+ stream owns. Prism-style charts (dozens of
+  GetDC runs between EMF+ comments) accumulated stale clips and lost most content
+  (genoffice#2601; ported from upstream emf-converter 67ecf34)
+- EmfPlusSetPageTransform outlives the EMR_COMMENT it arrived in (page unit and scale
+  persist in the shared EMF+ state, like the transform and clip already did), and the
+  header's LogicalDpiX/Y are read as the UInt32 pair they are (MS-EMFPLUS 2.3.2.1) to
+  convert Point/Inch/Document/Millimeter units per axis instead of a fixed 96 DPI.
+  World, unknown units and non-positive scales are ignored, as GDI+ ignores them
+  (upstream emf-converter 311bfa6; genoffice#2601)
+- The EMF+ drawing records the vendored 2.0.2 skipped are implemented: FillRegion,
+  FillClosedCurve, DrawClosedCurve, DrawCurve and DrawBeziers, plus the rect form of
+  BeginContainer. Splines become the cubic Bezier segments GDI+ converts them to
+  (tangent i = tension/3 × (P[i+1] − P[i−1]); a segment runs P[i], P[i]+T[i],
+  P[i+1]−T[i+1], P[i+1]; a closed one wraps round), points read in all three
+  encodings (float32, C-flag 16-bit, P-flag relative EmfPlusPointR — GDI+'s one-byte
+  top-bit-set form, not the swapped one MS-EMFPLUS 2.2.2.21/22 states), FillRegion
+  paints the region object's flattened shapes through the clip, and BeginContainer
+  composes the src→dest rect mapping (unit from the flags, converted at the header
+  DPI) onto the world transform, starting the container at the Display page unit;
+  Save/Restore and NoParams containers now bracket the page unit with the transform
+  (genoffice#2601 follow-up; spline and container semantics ported from upstream
+  emf-converter)

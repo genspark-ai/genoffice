@@ -1454,3 +1454,662 @@ describe('GDI TA_TOP text uses the Windows ascent of known faces', () => {
     expect(glyphs[0].args[2]).toBe(40)
   })
 })
+
+// ---------- genoffice#2601: interleaved dual-mode EMF+ state machine ----------
+// A Prism-style chart metafile interleaves GDI records (axis labels drawn through an
+// HDC) with EMF+ records (bars, axes, legends) across dozens of EMR_COMMENT runs.
+// Two state-machine defects turned that shape into "most content disappears":
+// the suppressed fallback's SaveDC/RestoreDC touched the shared canvas stack, and
+// the page unit reset at every comment boundary. Both fixes are ports of upstream
+// emf-converter commits (67ecf34, 311bfa6).
+
+function emfSaveDc(): Uint8Array {
+  const rec = new Uint8Array(8)
+  const v = new DataView(rec.buffer)
+  v.setUint32(0, 33, true) // EMR_SAVEDC
+  v.setUint32(4, 8, true)
+  return rec
+}
+
+function emfRestoreDc(level: number): Uint8Array {
+  const rec = new Uint8Array(12)
+  const v = new DataView(rec.buffer)
+  v.setUint32(0, 34, true) // EMR_RESTOREDC
+  v.setUint32(4, 12, true)
+  v.setInt32(8, level, true)
+  return rec
+}
+
+function emfSetWindowExt(cx: number, cy: number): Uint8Array {
+  const rec = new Uint8Array(16)
+  const v = new DataView(rec.buffer)
+  v.setUint32(0, 9, true) // EMR_SETWINDOWEXTEX
+  v.setUint32(4, 16, true)
+  v.setInt32(8, cx, true)
+  v.setInt32(12, cy, true)
+  return rec
+}
+
+/** EmfPlusHeader with explicit LogicalDpi and the video-display flag (like screen recordings). */
+function plusHeaderDpi(dual: boolean, dpi: number): Uint8Array {
+  const payload = new Uint8Array(16)
+  const v = new DataView(payload.buffer)
+  v.setUint32(0, 0xdbc01002, true)
+  v.setUint32(4, 1, true) // EmfPlusFlags: video display
+  v.setUint32(8, dpi, true)
+  v.setUint32(12, dpi, true)
+  return plusRecord(0x4001, dual ? 1 : 0, payload)
+}
+
+function plusSetPageTransform(unit: number, scale: number): Uint8Array {
+  const payload = new Uint8Array(4)
+  new DataView(payload.buffer).setFloat32(0, scale, true)
+  return plusRecord(0x4030, unit, payload)
+}
+
+function plusSetClipRect(x: number, y: number, w: number, h: number): Uint8Array {
+  const payload = new Uint8Array(16)
+  const v = new DataView(payload.buffer)
+  v.setFloat32(0, x, true)
+  v.setFloat32(4, y, true)
+  v.setFloat32(8, w, true)
+  v.setFloat32(12, h, true)
+  return plusRecord(0x4032, 0, payload) // CombineModeReplace
+}
+
+function plusResetClip(): Uint8Array {
+  return plusRecord(0x4031, 0, new Uint8Array(0))
+}
+
+/** Solid-color brush object (version, BrushTypeSolidColor, ARGB). */
+function plusSolidBrush(id: number, argb: number): Uint8Array {
+  const payload = new Uint8Array(12)
+  const v = new DataView(payload.buffer)
+  v.setUint32(0, 0xdbc01002, true)
+  v.setUint32(4, 0, true)
+  v.setUint32(8, argb, true)
+  return plusRecord(0x4008, (1 << 8) | id, payload) // ObjectTypeBrush
+}
+
+/** FillRects naming a solid brush object (flags low byte), float32 rects. */
+function plusFillRects(rects: Array<[number, number, number, number]>, brushId = 1): Uint8Array {
+  const payload = new Uint8Array(8 + rects.length * 16)
+  const v = new DataView(payload.buffer)
+  v.setUint32(0, brushId, true)
+  v.setUint32(4, rects.length, true)
+  rects.forEach(([x, y, w, h], i) => {
+    v.setFloat32(8 + i * 16, x, true)
+    v.setFloat32(12 + i * 16, y, true)
+    v.setFloat32(16 + i * 16, w, true)
+    v.setFloat32(20 + i * 16, h, true)
+  })
+  return plusRecord(0x400a, brushId, payload)
+}
+
+function canvasOps(): string[] {
+  return calls
+    .filter((c) => !c.method.startsWith('set:') && c.method !== 'measureText')
+    .map(
+      (c) =>
+        `${c.method}(${c.args
+          .map((a) => (typeof a === 'number' ? Math.round(a * 100) / 100 : typeof a))
+          .join(',')})`,
+    )
+}
+
+describe('dual-mode fallback SaveDC/RestoreDC (Prism-style interleaves)', () => {
+  it('the suppressed fallbacks SaveDC/RestoreDC are transparent to the canvas', async () => {
+    // The same dual-mode file with and without SAVEDC/RESTOREDC brackets in the
+    // suppressed fallback segments must replay to identical canvas calls: the
+    // brackets own the DC, the canvas belongs to the EMF+ stream.
+    const body = (withBrackets: boolean) => [
+      emfPlusComment(plusHeader(true)),
+      emfPlusComment(plusSolidBrush(1, 0xffcc2222)),
+      emfPlusComment(plusSetClipRect(20, 20, 160, 60)),
+      ...(withBrackets ? [emfSaveDc(), emfSaveDc()] : []),
+      emfRectangle(0, 0, 50, 50), // suppressed GDI twin of an EMF+ fill
+      emfPlusComment(plusSetClipRect(40, 30, 100, 40)),
+      ...(withBrackets ? [emfRestoreDc(-1)] : []),
+      emfPlusComment(plusResetClip()),
+      emfPlusComment(plusFillRects([[0, 0, 200, 100]])),
+    ]
+    reset()
+    await convertEmfToDataUrl(assembleEmf(body(false)), { dpiScale: 2 })
+    const plain = canvasOps()
+    reset()
+    await convertEmfToDataUrl(assembleEmf(body(true)), { dpiScale: 2 })
+    expect(canvasOps()).toEqual(plain)
+  })
+
+  it('a mapping set inside the fallbacks own SaveDC bracket does not reach the GetDC run', async () => {
+    // The fallback's SETWINDOWEXTEX updates the DC (a later GetDC run sees its
+    // objects and mapping), but its RestoreDC must put the mapping back: the
+    // GetDC text after the bracket draws at the outer scale, not the bracketed one.
+    const body = (withBlock: boolean) => [
+      emfPlusComment(plusHeader(true)),
+      ...(withBlock ? [emfSaveDc(), emfSetWindowExt(400, 200), emfRestoreDc(-1)] : []),
+      emfPlusComment(plusGetDC()),
+      emfTextOut('N'),
+      emfPlusComment(plusRecord(0x4002, 0, new Uint8Array(4))),
+    ]
+    reset()
+    await convertEmfToDataUrl(assembleEmf(body(false)), { dpiScale: 2 })
+    const plain = calls.filter((c) => c.method === 'fillText').map((c) => c.args.slice(1))
+    reset()
+    await convertEmfToDataUrl(assembleEmf(body(true)), { dpiScale: 2 })
+    const blocked = calls.filter((c) => c.method === 'fillText').map((c) => c.args.slice(1))
+    expect(blocked).toEqual(plain)
+    expect(blocked[0]).toEqual([20, 40])
+  })
+})
+
+describe('EMF+ page transform (SetPageTransform)', () => {
+  it('persists across EMR_COMMENT records and converts at the header LogicalDpi', async () => {
+    // A UnitPoint page unit at LogicalDpi 144 is 2 device px per point; the
+    // canvas scale doubles that: one device-matrix unit of 4. The fill lives in
+    // a later comment than the transform, as in files that break the EMF+ stream
+    // around every GetDC run.
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeaderDpi(false, 144), plusSetPageTransform(3, 1)), // UnitPoint
+        emfPlusComment(plusSolidBrush(1, 0xffcc2222)),
+        emfPlusComment(plusFillRects([[10, 10, 20, 20]])),
+      ]),
+      { dpiScale: 2 },
+    )
+    const scale = calls.filter((c) => c.method === 'setTransform').map((c) => c.args[0])
+    expect(scale).toContainEqual(expect.closeTo(4, 3))
+  })
+
+  it('ignores a World unit, an unknown unit and a non-positive scale', async () => {
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeaderDpi(false, 144), plusSetPageTransform(3, 1)), // UnitPoint: valid
+        emfPlusComment(plusSetPageTransform(0, 2)), // UnitWorld: ignored
+        emfPlusComment(plusSetPageTransform(9, 2)), // unknown: ignored
+        emfPlusComment(plusSetPageTransform(4, 0)), // zero scale: ignored
+        emfPlusComment(plusSolidBrush(1, 0xffcc2222)),
+        emfPlusComment(plusFillRects([[10, 10, 20, 20]])),
+      ]),
+      { dpiScale: 2 },
+    )
+    // the invalid records did not knock the Point unit out: the fill still draws at
+    // 144/72 × dpiScale = 4, not at the plain dpi scale (2)
+    const scale = calls.filter((c) => c.method === 'setTransform').map((c) => c.args[0])
+    expect(scale).toContainEqual(expect.closeTo(4, 3))
+    expect(scale).not.toContainEqual(expect.closeTo(2, 3))
+  })
+})
+
+describe('Prism-style census interleave (dual mode)', () => {
+  it('paints bars, axes, GetDC-window GDI labels and DriverString across many comment runs', async () => {
+    // The record census from genoffice#2601: EmfPlusGetDC windows with EMR_EXTTEXTOUTW
+    // text between EMF+ FillRects bars, DrawLines axes and DrawDriverString legends.
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeader(true)),
+        emfPlusComment(plusSolidBrush(1, 0xffcc2222)),
+        emfPlusComment(
+          plusFillRects([
+            [40, 60, 20, 40],
+            [70, 50, 20, 50],
+            [100, 40, 20, 60],
+          ]),
+        ),
+        emfPlusComment(plusGetDC()),
+        emfTextOut('N=6'),
+        emfPlusComment(plusFillRects([[130, 70, 20, 30]])), // the next EMF+ record closes the window
+        emfPlusComment(plusFontObject(5, 'Arial', 12)),
+        emfPlusComment(plusDrawDriverString(5, 'a', [[150, 30]])),
+        emfPlusComment(plusFillRects([[160, 30, 15, 20]])),
+      ]),
+      { dpiScale: 2 },
+    )
+    const fills = calls.filter((c) => c.method === 'fillRect').map((c) => c.args)
+    const texts = calls.filter((c) => c.method === 'fillText').map((c) => c.args[0])
+    // every bar landed in page coordinates: none swallowed by a stale clip
+    expect(fills).toEqual([
+      [40, 60, 20, 40],
+      [70, 50, 20, 50],
+      [100, 40, 20, 60],
+      [130, 70, 20, 30],
+      [160, 30, 15, 20],
+    ])
+    // the GetDC-window GDI label and the EMF+ DriverString glyph both painted
+    expect(texts).toEqual(['N=6', 'a'])
+  })
+})
+
+// ---------- EMF+ curves, regions and containers (genoffice#2601 follow-up) ----------
+// Record types the vendored 2.0.2 silently skipped: FillRegion, FillClosedCurve,
+// DrawClosedCurve, DrawCurve, DrawBeziers and the rect form of BeginContainer.
+// Splines become the cubic Bezier segments GDI+ converts them to (tangent at i =
+// tension/3 × (P[i+1] − P[i−1]), a segment runs P[i], P[i]+T[i], P[i+1]−T[i+1],
+// P[i+1]; a closed spline wraps round), ported from upstream emf-converter.
+
+function plusPenObject(id: number, argb: number, width: number): Uint8Array {
+  const payload = new Uint8Array(24)
+  const v = new DataView(payload.buffer)
+  v.setUint32(0, 0xdbc01002, true)
+  v.setUint32(4, 0, true) // PenTypeSolidColor
+  v.setUint32(8, width, true)
+  v.setUint32(12, 2, true) // UnitTypePixel
+  v.setUint32(16, 0, true)
+  v.setUint32(20, argb, true)
+  return plusRecord(0x4008, (2 << 8) | id, payload) // ObjectTypePen
+}
+
+/** Float32 (or Int16 under the C flag) point data for one record. */
+function plusPointData(pts: Array<[number, number]>, compressed: boolean): Uint8Array {
+  const rec = new Uint8Array(pts.length * (compressed ? 4 : 8))
+  const v = new DataView(rec.buffer)
+  pts.forEach(([x, y], i) => {
+    if (compressed) {
+      v.setInt16(i * 4, x, true)
+      v.setInt16(i * 4 + 2, y, true)
+    } else {
+      v.setFloat32(i * 8, x, true)
+      v.setFloat32(i * 8 + 4, y, true)
+    }
+  })
+  return rec
+}
+
+/** EmfPlusPointR relative deltas, one byte per coordinate (top bit set, 7-bit signed). */
+function plusRelativeData(deltas: Array<[number, number]>): Uint8Array {
+  const byte = (v: number): number => {
+    const u = v < 0 ? v + 128 : v // negatives: bit 6 set, value = v - 128
+    return 0x80 | (u & 0x7f)
+  }
+  const rec = new Uint8Array(deltas.length * 2)
+  deltas.forEach(([dx, dy], i) => {
+    rec[i * 2] = byte(dx)
+    rec[i * 2 + 1] = byte(dy)
+  })
+  return rec
+}
+
+function plusFillClosedCurve(
+  brushId: number,
+  tension: number,
+  pts: Array<[number, number]>,
+  flags = 0,
+): Uint8Array {
+  const head = new Uint8Array(12)
+  const hv = new DataView(head.buffer)
+  hv.setUint32(0, brushId, true)
+  hv.setFloat32(4, tension, true)
+  hv.setUint32(8, pts.length, true)
+  return plusRecord(
+    0x4016,
+    flags | brushId,
+    new Uint8Array([...head, ...plusPointData(pts, (flags & 0x4000) !== 0)]),
+  )
+}
+
+function plusDrawClosedCurve(
+  penId: number,
+  tension: number,
+  pts: Array<[number, number]>,
+): Uint8Array {
+  const head = new Uint8Array(8)
+  const hv = new DataView(head.buffer)
+  hv.setFloat32(0, tension, true)
+  hv.setUint32(4, pts.length, true)
+  return plusRecord(0x4017, penId, new Uint8Array([...head, ...plusPointData(pts, false)]))
+}
+
+function plusDrawCurve(
+  penId: number,
+  tension: number,
+  offset: number,
+  segments: number,
+  pts: Array<[number, number]>,
+): Uint8Array {
+  const head = new Uint8Array(16)
+  const hv = new DataView(head.buffer)
+  hv.setFloat32(0, tension, true)
+  hv.setUint32(4, offset, true)
+  hv.setUint32(8, segments, true)
+  hv.setUint32(12, pts.length, true)
+  return plusRecord(0x4018, penId, new Uint8Array([...head, ...plusPointData(pts, false)]))
+}
+
+function plusDrawBeziers(penId: number, pts: Array<[number, number]>, flags = 0): Uint8Array {
+  const head = new Uint8Array(4)
+  new DataView(head.buffer).setUint32(0, pts.length, true)
+  const body =
+    (flags & 0x800) !== 0
+      ? plusRelativeData(pts as never)
+      : plusPointData(pts, (flags & 0x4000) !== 0)
+  return plusRecord(0x4019, flags | penId, new Uint8Array([...head, ...body]))
+}
+
+/** EmfPlusRegion object holding one rect node (Float32), as ObjectTypeRegion. */
+function plusRegionObject(id: number, x: number, y: number, w: number, h: number): Uint8Array {
+  const payload = new Uint8Array(8 + 4 + 16)
+  const v = new DataView(payload.buffer)
+  v.setUint32(0, 28, true) // Size
+  v.setUint32(4, 1, true) // RegionNodeCount: one leaf
+  v.setUint32(8, 0x10000000, true) // RegionNodeDataTypeRect
+  v.setFloat32(12, x, true)
+  v.setFloat32(16, y, true)
+  v.setFloat32(20, w, true)
+  v.setFloat32(24, h, true)
+  return plusRecord(0x4008, (4 << 8) | id, payload) // ObjectTypeRegion
+}
+
+function plusFillRegion(brushId: number, regionId: number): Uint8Array {
+  const payload = new Uint8Array(4)
+  new DataView(payload.buffer).setUint32(0, brushId, true)
+  return plusRecord(0x4013, regionId, payload)
+}
+
+/** BeginContainer: DestRect, SrcRect (RectF each), StackIndex; unit in the flags. */
+function plusBeginContainer(
+  dst: [number, number, number, number],
+  src: [number, number, number, number],
+  stackId: number,
+  unit = 2,
+): Uint8Array {
+  const payload = new Uint8Array(36)
+  const v = new DataView(payload.buffer)
+  v.setFloat32(0, dst[0], true)
+  v.setFloat32(4, dst[1], true)
+  v.setFloat32(8, dst[2], true)
+  v.setFloat32(12, dst[3], true)
+  v.setFloat32(16, src[0], true)
+  v.setFloat32(20, src[1], true)
+  v.setFloat32(24, src[2], true)
+  v.setFloat32(28, src[3], true)
+  v.setUint32(32, stackId, true)
+  return plusRecord(0x4027, unit, payload)
+}
+
+function plusEndContainer(stackId: number): Uint8Array {
+  const payload = new Uint8Array(4)
+  new DataView(payload.buffer).setUint32(0, stackId, true)
+  return plusRecord(0x4029, 0, payload)
+}
+
+describe('EMF+ curves (DrawBeziers / DrawCurve / closed curves)', () => {
+  it('DrawBeziers strokes one cubic per triple of control points', async () => {
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeader(true)),
+        emfPlusComment(plusPenObject(1, 0xff000000, 2)),
+        emfPlusComment(
+          plusDrawBeziers(1, [
+            [0, 0],
+            [10, 30],
+            [60, 30],
+            [100, 0],
+            [110, -30],
+            [140, -30],
+            [200, 0],
+          ]),
+        ),
+      ]),
+      { dpiScale: 2 },
+    )
+    const beziers = calls.filter((c) => c.method === 'bezierCurveTo').map((c) => c.args)
+    expect(beziers).toEqual([
+      [10, 30, 60, 30, 100, 0],
+      [110, -30, 140, -30, 200, 0],
+    ])
+    expect(calls.some((c) => c.method === 'stroke')).toBe(true)
+  })
+
+  it('DrawCurve converts the cardinal spline to Beziers; offset and segments select a run', async () => {
+    reset()
+    // tangent at i = tension/3 × (P[i+1] − P[i−1]); open spline ends use their one
+    // neighbour. Segment s runs P[s], P[s]+T[s], P[s+1]−T[s+1], P[s+1].
+    const pts: Array<[number, number]> = [
+      [0, 0],
+      [60, 30],
+      [120, 0],
+      [180, 30],
+      [240, 0],
+    ]
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeader(true)),
+        emfPlusComment(plusPenObject(2, 0xff000000, 1)),
+        emfPlusComment(plusDrawCurve(2, 0.5, 1, 2, pts)),
+      ]),
+      { dpiScale: 2 },
+    )
+    const starts = calls.filter((c) => c.method === 'moveTo').map((c) => c.args)
+    expect(starts).toEqual([[60, 30]])
+    const beziers = calls.filter((c) => c.method === 'bezierCurveTo').map((c) => c.args)
+    expect(beziers.length).toBe(2)
+    // k = 0.5/3 = 1/6; T[1] = (P[2] − P[0])/6 = (20, 0); T[2] = (P[3] − P[1])/6 = (20, 0)
+    expect(beziers[0]).toEqual([60 + 20, 30 + 0, 120 - 20, 0 - 0, 120, 0])
+  })
+
+  it('FillClosedCurve fills the closed spline, alternate unless the W flag asks winding', async () => {
+    const run = async (flags: number) => {
+      reset()
+      await convertEmfToDataUrl(
+        assembleEmf([
+          emfPlusComment(plusHeader(true)),
+          emfPlusComment(plusSolidBrush(1, 0xff336699)),
+          emfPlusComment(
+            plusFillClosedCurve(
+              1,
+              0.5,
+              [
+                [0, 0],
+                [100, 0],
+                [50, 120],
+              ],
+              flags,
+            ),
+          ),
+        ]),
+        { dpiScale: 2 },
+      )
+      return calls
+    }
+    const evenodd = await run(0)
+    const winding = await run(0x2000)
+    const fillRule = (cs: typeof evenodd) =>
+      cs.filter((c) => c.method === 'fill').map((c) => c.args[0])
+    expect(fillRule(evenodd)).toEqual(['evenodd'])
+    expect(fillRule(winding)).toEqual(['nonzero'])
+    // closed spline through 3 points = 3 segments; the first control point is
+    // P[0] + T[0] with T[0] = (P[1] − P[2]) × tension/3 = (50, −120)/6
+    const beziers = evenodd.filter((c) => c.method === 'bezierCurveTo').map((c) => c.args)
+    expect(beziers.length).toBe(3)
+    expect(beziers[0]).toEqual([
+      expect.closeTo(50 / 6, 3),
+      expect.closeTo(-120 / 6, 3),
+      expect.closeTo(100 - 50 / 6, 3),
+      expect.closeTo(-120 / 6, 3),
+      100,
+      0,
+    ])
+    expect(evenodd.some((c) => c.method === 'closePath')).toBe(true)
+  })
+
+  it('DrawClosedCurve strokes the wrapped spline; the P flag reads relative points identically', async () => {
+    const pts: Array<[number, number]> = [
+      [0, 0],
+      [50, 0],
+      [50, 50],
+    ]
+    const run = async (record: Uint8Array) => {
+      reset()
+      await convertEmfToDataUrl(
+        assembleEmf([
+          emfPlusComment(plusHeader(true)),
+          emfPlusComment(plusPenObject(1, 0xff000000, 1)),
+          emfPlusComment(record),
+        ]),
+        { dpiScale: 2 },
+      )
+      return calls.filter((c) => c.method === 'bezierCurveTo').map((c) => c.args)
+    }
+    const absolute = await run(plusDrawClosedCurve(1, 0.5, pts))
+    // deltas (0,0) (50,0) (0,50) as one-byte EmfPlusPointR coordinates
+    const relative = await run(
+      plusRecord(
+        0x4017,
+        1 | 0x800,
+        new Uint8Array([
+          ...new Uint8Array(new Float32Array([0.5]).buffer),
+          ...new Uint8Array(new Uint32Array([3]).buffer),
+          ...plusRelativeData([
+            [0, 0],
+            [50, 0],
+            [0, 50],
+          ]),
+        ]),
+      ),
+    )
+    expect(absolute.length).toBe(3)
+    expect(relative).toEqual(absolute)
+  })
+
+  it('the C flag reads 16-bit points', async () => {
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeader(true)),
+        emfPlusComment(plusPenObject(1, 0xff000000, 1)),
+        emfPlusComment(
+          plusRecord(
+            0x4019,
+            1 | 0x4000,
+            new Uint8Array([
+              ...new Uint8Array(new Uint32Array([4]).buffer),
+              ...plusPointData(
+                [
+                  [0, 0],
+                  [30, 0],
+                  [60, 40],
+                  [90, 40],
+                ],
+                true,
+              ),
+            ]),
+          ),
+        ),
+      ]),
+      { dpiScale: 2 },
+    )
+    const beziers = calls.filter((c) => c.method === 'bezierCurveTo').map((c) => c.args)
+    expect(beziers).toEqual([[30, 0, 60, 40, 90, 40]])
+  })
+})
+
+describe('EMF+ FillRegion', () => {
+  it('fills the region object with the record brush through the intersected shapes', async () => {
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeader(true)),
+        emfPlusComment(plusRegionObject(3, 10, 20, 50, 40)),
+        emfPlusComment(plusSolidBrush(1, 0xff336699)),
+        emfPlusComment(plusFillRegion(1, 3)),
+      ]),
+      { dpiScale: 2 },
+    )
+    // the rect node is world (10,20,50,40); the device clip happens at the identity
+    // transform with the dpiScale-2 device coordinates baked in
+    // the flattened rect node becomes a device-space path (moveTo/lineTo), clipped
+    // at the identity transform with the dpiScale-2 device coordinates baked in
+    const path = calls.slice(calls.findIndex((c) => c.method === 'beginPath'))
+    expect(path.map((c) => c.method).slice(0, 5)).toEqual([
+      'beginPath',
+      'moveTo',
+      'lineTo',
+      'lineTo',
+      'lineTo',
+    ])
+    expect(path[1].args).toEqual([20, 40])
+    expect(path[2].args).toEqual([120, 40])
+    expect(path[3].args).toEqual([120, 120])
+    expect(path[4].args).toEqual([20, 120])
+    expect(path[5].method).toBe('closePath')
+    expect(path[6]).toEqual({ method: 'clip', args: ['nonzero'] })
+    expect(calls.some((c) => c.method === 'clip')).toBe(true)
+    // the covering quad is the world pre-image of the device canvas: the inverse of
+    // the device matrix (2×) applied to the 400×200 canvas corners = the 200×100 bounds
+    const lastBegin = calls
+      .map((c, i) => (c.method === 'beginPath' ? i : -1))
+      .reduce((a, b) => Math.max(a, b))
+    const quad = calls.slice(lastBegin, lastBegin + 7).map((c) => [c.method, c.args])
+    expect(quad).toEqual([
+      ['beginPath', []],
+      ['moveTo', [0, 0]],
+      ['lineTo', [200, 0]],
+      ['lineTo', [200, 100]],
+      ['lineTo', [0, 100]],
+      ['closePath', []],
+      ['fill', []],
+    ])
+  })
+})
+
+describe('EMF+ BeginContainer (rect form)', () => {
+  it('maps container page space onto the enclosing world and restores on EndContainer', async () => {
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeader(true)),
+        emfPlusComment(plusSolidBrush(1, 0xff336699)),
+        // container: unit Pixel, source 200×100 → dest (200,100) 400×200
+        emfPlusComment(plusBeginContainer([200, 100, 400, 200], [0, 0, 200, 100], 7)),
+        emfPlusComment(plusFillRects([[10, 10, 20, 20]])),
+        emfPlusComment(plusEndContainer(7)),
+        emfPlusComment(plusFillRects([[10, 10, 20, 20]])),
+      ]),
+      { dpiScale: 2 },
+    )
+    // the container transform lives on the canvas: the world→device matrix inside is
+    // rectT (scale 2, translate (200,100)) composed with the enclosing world × dpiScale
+    const transformAt = (idx: number) => {
+      for (let i = idx; i >= 0; i--) {
+        if (calls[i].method === 'setTransform') return calls[i].args
+      }
+      return null
+    }
+    const fillIdx = calls.flatMap((c, i) => (c.method === 'fillRect' ? [i] : []))
+    expect(fillIdx.length).toBe(2)
+    expect(transformAt(fillIdx[0])).toEqual([4, 0, 0, 4, 400, 200])
+    // after EndContainer the enclosing world transform is back
+    expect(transformAt(fillIdx[1])).toEqual([2, 0, 0, 2, 0, 0])
+  })
+
+  it('the page unit set outside survives across the container', async () => {
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeaderDpi(false, 144), plusSetPageTransform(3, 1)), // UnitPoint
+        emfPlusComment(plusSolidBrush(1, 0xff336699)),
+        emfPlusComment(plusBeginContainer([0, 0, 100, 50], [0, 0, 200, 100], 3)),
+        emfPlusComment(plusFillRects([[5, 5, 10, 10]])), // inside: Display unit, scale 2
+        emfPlusComment(plusEndContainer(3)),
+        emfPlusComment(plusFillRects([[5, 5, 10, 10]])), // outside: Point unit again
+      ]),
+      { dpiScale: 2 },
+    )
+    // inside the container: the Display page unit (pixel) with the rect scale (0.5)
+    // composed × dpiScale = 1; outside again: the Point unit at 144 dpi × dpiScale = 4
+    const transformAt = (idx: number) => {
+      for (let i = idx; i >= 0; i--) {
+        if (calls[i].method === 'setTransform') return calls[i].args
+      }
+      return null
+    }
+    const fillIdx = calls.flatMap((c, i) => (c.method === 'fillRect' ? [i] : []))
+    expect(fillIdx.length).toBe(2)
+    expect(transformAt(fillIdx[0])).toEqual([1, 0, 0, 1, 0, 0])
+    expect(transformAt(fillIdx[1])).toEqual([4, 0, 0, 4, 0, 0])
+  })
+})
