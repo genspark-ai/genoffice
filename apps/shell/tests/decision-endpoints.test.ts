@@ -43,12 +43,21 @@ describe('decision model routes', () => {
     expect(bodyModel(opts({ endpoint: 'liquid' }))).toBe('d1')
     expect(bodyModel(opts({ endpoint: 'liquid-ultra' }))).toBe('d1-ultra')
     expect(bodyModel(opts({ endpoint: 'openai' }))).toBe('gpt-6-luna')
+    expect(bodyModel(opts({ endpoint: 'gemini' }))).toBe('gemini-decision-1')
   })
 
   it('sends OpenAI its GA decisions endpoint', () => {
     // /v1/decisions speaks OpenAI's own sibling protocol, not /v1/systemone —
     // prepare and validate translate; only the URL and model are pinned here.
     expect(endpointUrl(opts({ endpoint: 'openai' }))).toBe('https://api.openai.com/v1/decisions')
+  })
+
+  it('sends Google its v1beta decisions endpoint', () => {
+    // generativelanguage's /v1beta/decisions is Google's sibling protocol —
+    // shared input, keyed questions with plain criteria; only URL and model here.
+    expect(endpointUrl(opts({ endpoint: 'gemini' }))).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/decisions',
+    )
   })
 
   it('shares one URL between a vendor s sizes', () => {
@@ -134,6 +143,7 @@ describe('the settings dropdown matches the endpoint table', () => {
       'perplexity-flash',
       'liquid-ultra',
       'cloudflare-flash',
+      'gemini',
     ] as const) {
       expect(offered).toContain(added)
     }
