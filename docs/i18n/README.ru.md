@@ -19,7 +19,7 @@
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="Звёзды на GitHub"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <b>Русский</b> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <b>Русский</b> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center">
   <a href="#download"><b>Скачать</b></a> ·
@@ -100,7 +100,7 @@ GenOffice — бесплатная альтернатива Microsoft Office с 
 </tr>
 <tr>
 <td><b>Соберите сводку</b> — из одного предложения агент добавляет лист Summary с настоящими формулами <code>SUMIF</code> по регионам и категориям, вставляет столбчатую диаграмму и применяет все 43 изменения одним отменяемым пакетом.</td>
-<td><b>Спросите</b> — вопросы о книге возвращаются с объяснением и точными ячейками в виде кликабельных цитат. Под капотом: собственный Rust-движок `.xlsx`, сводные таблицы, срезы, условное форматирование, трассировка формул, а также картинки, встроенные в ячейки как нативные rich values Excel, — после повторного открытия в Excel они по-прежнему в ячейке.</td>
+<td><b>Спросите</b> — вопросы о книге возвращаются с объяснением и точными ячейками в виде кликабельных цитат. Под капотом: собственный Rust-движок `.xlsx`, сводные таблицы, срезы, условное форматирование, трассировка формул, а также картинки, встроенные в ячейки как нативные rich values Excel, — после повторного открытия в Excel они по-прежнему в ячейке.Заметка ячейки может содержать картинку — она показывается под всплывающим окном заметки.</td>
 </tr>
 </table>
 
@@ -226,6 +226,12 @@ HTTP-сервер внутри приложения позволяет аген�
 </tr>
 </table>
 
+### 9 · Старые файлы — `.doc`, `.xls` и `.ppt` из 2000-х тоже открываются
+
+Файл `.doc` Word 97–2003, `.xls` Excel или `.ppt` PowerPoint открывается как преобразованная копия `.docx`, `.xlsx` или `.pptx`, созданная на вашем компьютере; исходный файл никогда не меняется. Изображения, таблицы, формулы, числовые форматы, заливки и макет сохраняются.
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="Ускоренная запись: GenOffice открывает файлы .ppt, .doc и .xls вымышленного годового отчёта за 2004 год, затем один слайд показан в PowerPoint рядом с преобразованной презентацией в GenOffice" width="100%">
+
 ## Почему GenOffice
 
 - **Открытый исходный код**, Apache-2.0, разрабатывается открыто на GitHub.
@@ -279,13 +285,13 @@ HTTP-сервер внутри приложения позволяет аген�
 
 **Либо используйте собственный ключ.** В разделе «Настройки → Модель ИИ» перечислены
 Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
-Mistral, OpenRouter, Requesty и OpenCode Zen/Go, а также отдельный слот для любого
+Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code и OpenCode Zen/Go, а также отдельный слот для любого
 совместимого с OpenAI эндпоинта (базовый URL + ключ), включая локальные
 серверы моделей. Поиск и работа с медиа настраиваются через отдельных
 провайдеров по каждой возможности в разделе **Медиа и поиск ИИ**: Serper,
-Serply, Tavily, Parallel, Keenable, Exa или Firecrawl для веб-поиска
+Serply, SearchApi, Tavily, Parallel, Keenable, Exa или Firecrawl для веб-поиска
 (Keenable тоже работает без ключа — ключ лишь поднимает лимиты запросов) и
-OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax или любой
+OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX или любой
 совместимый с OpenAI эндпоинт для генерации изображений и анализа
 изображений/видео.
 
@@ -300,7 +306,7 @@ OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax или любой
 Скилл — это файл `SKILL.md`, который объясняет ИИ, как хорошо выполнить одну задачу: еженедельный отчёт, NDA, план урока.
 GenOffice поставляется с набором скиллов и принимает ваши, в том же формате, что используют агенты для программирования.
 
-- **Настройки → Скиллы.** **Установите** рекомендованный скилл или **Импортируйте** папку, zip либо один `SKILL.md`. При импорте ничего не запускается.
+- **Настройки → Скиллы.** **Установите** рекомендованный скилл или **Импортируйте** папку, zip либо один `SKILL.md`. При импорте ничего не запускается. Вкладка **Все** показывает весь рекомендуемый каталог в одном месте, с описаниями на языке приложения.
 - **В чате.** Откройте меню **+** рядом с полем ввода любой панели ИИ, выберите **Скиллы**, отметьте один и отправьте. Скилл уходит только с этим сообщением.
 
 ---
@@ -480,6 +486,8 @@ AppImage запускается прямо на месте: установите
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+На Chromebook те же пакеты работают внутри среды Linux (Crostini) — подробности в [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

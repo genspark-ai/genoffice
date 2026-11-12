@@ -30,6 +30,7 @@
     "@genoffice/hwp2docx": "*",
     "@genoffice/odf2ooxml": "*",
     "@genoffice/pdf2docx": "*",
+    "@genoffice/ppt2pptx": "*",
     "@genoffice/pipelines": "*",
     "@genoffice/pptx-engine": "*",
     "@genoffice/pptx-ops": "*",

@@ -555,6 +555,7 @@ export const ja = {
   appBridgeUnavailable:
     'デスクトップファイルブリッジが利用できません。Electron アプリを再起動してください。',
   appOpenCanceled: 'ブックの選択をキャンセルしました。',
+  appImportCanceled: 'インポートをキャンセルしました。',
   appOpeningWorkbook: 'ブックを開いています…',
   appOpened: '{name} を開きました — セルの編集は ⌘S でファイルに保存されます。',
   appOpenFailed: 'ブックを開けません。',
@@ -1219,6 +1220,9 @@ export const ja = {
   appLinksLocate: 'ソースファイルを表示',
   appLinksReachable: '利用可能',
   appLinksBroken: '利用不可',
+  appLinksBreak: 'リンクの解除',
+  appLinksBreakConfirm: '解除を確認',
+  appLinksChangeSource: 'ソースの変更',
   appGroupCalculation: '計算方法',
   appCalculationOptions: '計算方法の設定',
   appCalculationOptionsTitle: '自動または手動で再計算',

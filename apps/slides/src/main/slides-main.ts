@@ -27,6 +27,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { cleanupExpiredGeneratedPages } from './generated-page-temp'
 import { buildExportImagePaths } from './export-images'
+import { registerVideoExportIpc } from './video-export'
 import { exportSlidesPdf } from './pdf-export'
 import { printSlidesHtml } from './print-window'
 import { loadPrintHtml } from '@genoffice/electron-utils/print-window'
@@ -73,6 +74,7 @@ import {
 import { matchesElementRef } from '@genoffice/pptx-engine/identity'
 import { buildPagePptx, parsePageSpec } from '@genoffice/pipelines/slides'
 import { convertOdpToPptx } from '../../../../packages/odf2ooxml/src'
+import { convertPptToPptx, LegacyPptError } from '../../../../packages/ppt2pptx/src'
 import { sniffImageMime } from './media-mime'
 import {
   newPasteCascade,
@@ -804,13 +806,20 @@ async function maybeRecoverBytes(
  */
 async function preparePresentationForOpen(filePath: string): Promise<string | null> {
   const extension = deckExtension(filePath)
-  if (extension !== 'odp' && extension !== 'otp') return filePath
+  if (extension !== 'odp' && extension !== 'otp' && extension !== 'ppt') return filePath
+  // a legacy .ppt rides the same flow as the ODF decks: confirm the lossy
+  // import, pick the destination, convert, write atomically and open the copy
+  const legacyPpt = extension === 'ppt'
+  const detailKey = legacyPpt ? 'pptImportDetail' : 'odpImportDetail'
+  const failedTitleKey = legacyPpt ? 'pptImportFailedTitle' : 'odpImportFailedTitle'
+  const failedBodyKey = legacyPpt ? 'pptImportFailedBody' : 'odpImportFailedBody'
+  const skipFormat = legacyPpt ? 'ppt' : 'odp'
   const parent = dialogParent()
-  if (!readLegacyImportSkip(APP_SETTINGS_PATH(), 'odp')) {
+  if (!readLegacyImportSkip(APP_SETTINGS_PATH(), skipFormat)) {
     const options = {
       type: 'warning' as const,
       message: tm('odpImportMsg', { ext: extension }),
-      detail: tm('odpImportDetail'),
+      detail: tm(detailKey),
       buttons: [tm('odpImportConvertBtn'), tm('btnCancel')],
       defaultId: 0,
       cancelId: 1,
@@ -823,7 +832,7 @@ async function preparePresentationForOpen(filePath: string): Promise<string | nu
     if (response !== 0) return null
     if (checkboxChecked) {
       try {
-        writeLegacyImportSkip(APP_SETTINGS_PATH(), 'odp', true)
+        writeLegacyImportSkip(APP_SETTINGS_PATH(), skipFormat, true)
       } catch {
         /* unwritable settings: ask again next time */
       }
@@ -833,22 +842,29 @@ async function preparePresentationForOpen(filePath: string): Promise<string | nu
     dialog,
     parent,
     {
-      defaultPath: join(dirname(filePath), basename(filePath).replace(/\.(odp|otp)$/i, '.pptx')),
+      defaultPath: join(
+        dirname(filePath),
+        basename(filePath).replace(/\.(odp|otp|ppt)$/i, '.pptx'),
+      ),
       filters: [{ name: 'PowerPoint', extensions: ['pptx'] }],
     },
     getDraftsDir(),
   )
   if (r.canceled || !r.filePath) return null
   try {
-    const result = await convertOdpToPptx(new Uint8Array(await readFile(filePath)))
+    const source = new Uint8Array(await readFile(filePath))
+    const out = legacyPpt
+      ? (await convertPptToPptx(source)).bytes
+      : (await convertOdpToPptx(source)).pptx
     // atomic like the Docs and shell copies: a plain write leaves a truncated
     // .pptx where the user expects a deck if the process dies mid-write
-    await atomicWriteFile(r.filePath, Buffer.from(result.pptx))
-  } catch {
+    await atomicWriteFile(r.filePath, Buffer.from(out))
+  } catch (error) {
+    const encrypted = error instanceof LegacyPptError && error.code === 'encrypted'
     const errorOptions = {
       type: 'error' as const,
-      message: tm('odpImportFailedTitle'),
-      detail: tm('odpImportFailedBody'),
+      message: tm(encrypted ? 'encryptedPptxTitle' : failedTitleKey),
+      detail: tm(encrypted ? 'encryptedPptxBody' : failedBodyKey),
     }
     if (parent) await dialog.showMessageBox(parent, errorOptions)
     else await dialog.showMessageBox(errorOptions)
@@ -4744,6 +4760,17 @@ export function registerSlidesIpc(): void {
     return r.canceled || !r.filePath ? null : r.filePath
   })
 
+  ipcMain.handle('slides:pick-export-video-path', async (_e, defaultName: string) => {
+    const options = {
+      title: tm('dlgExportVideo'),
+      defaultPath: defaultName,
+      filters: [{ name: 'MP4', extensions: ['mp4'] }],
+    }
+    const r = await showSaveDialogWithMemory(dialog, dialogParent(), options, getDraftsDir())
+    return r.canceled || !r.filePath ? null : r.filePath
+  })
+  registerVideoExportIpc(ipcMain)
+
   ipcMain.handle(
     'slides:save-picture',
     async (_e, op: SavePictureOp): Promise<SavePictureResult> => {
@@ -4800,6 +4827,7 @@ export function registerSlidesIpc(): void {
         layout: op.layout ?? 'full',
         ...(op.notes ? { notes: op.notes } : {}),
         ...(op.orientation ? { orientation: op.orientation } : {}),
+        ...(op.order ? { order: op.order } : {}),
         ...(op.frame ? { frame: true } : {}),
       })
       const owner = hostWindowFor(e.sender) ?? dialogParent()
@@ -5255,6 +5283,7 @@ export function buildSlidesMenu(): Menu {
         { label: tm('menuExportPdf'), click: () => send('export-pdf') },
         { label: tm('menuExportImages'), click: () => send('export-images') },
         { label: tm('menuExportImagesJpg'), click: () => send('export-images-jpg') },
+        { label: tm('menuExportVideo'), click: () => send('export-video') },
         { label: tm('menuPrint'), accelerator: 'CmdOrCtrl+P', click: () => send('print') },
         { type: 'separator' },
         closeActiveTabHook

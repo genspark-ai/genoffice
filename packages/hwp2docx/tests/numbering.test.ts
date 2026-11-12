@@ -36,4 +36,17 @@ describe('paragraph heads', () => {
       ),
     ).toEqual(['4', 'ㄹ', 'iv', 'D', '㉱'])
   })
+
+  it('a huge producer-supplied start degrades to digits instead of a runaway numeral', () => {
+    // hh:paraHead/@start is the file's word: 1e9 used to build a megabyte of
+    // roman glyphs and 1e15 never returned, hanging the import.
+    expect(formatNumber(1_000_000_000, 'ROMAN_CAPITAL')).toBe('1000000000')
+    expect(formatNumber(1e15, 'ROMAN_SMALL')).toBe('1000000000000000')
+    const huge = `<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hh:refList>
+      <hh:numberings itemCnt="1"><hh:numbering id="9" start="0">
+        <hh:paraHead start="1000000000" level="1" numFormat="ROMAN_CAPITAL">^1.</hh:paraHead>
+      </hh:numbering></hh:numberings></hh:refList></hh:head>`
+    const counter = new HeadingCounter(readHeadings(parseXml(huge)!))
+    expect(counter.next('number', '9', 0)?.text).toBe('1000000000.')
+  })
 })

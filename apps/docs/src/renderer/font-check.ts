@@ -1,5 +1,5 @@
 import type { ParsedDoc, TableModel } from '@genoffice/docx-engine'
-import { BUNDLED_FONTS, cssFontFamily, isBundledFont } from './line-metrics'
+import { BUNDLED_FONTS, cssFontFamily, isBundledFont } from './text-layout/font-rules'
 
 const GENERIC = new Set(['serif', 'sans-serif', 'monospace'])
 
@@ -35,6 +35,16 @@ export function collectDocFonts(parsed: ParsedDoc): string[] {
     add(s.display?.fontAscii)
   }
   return [...names]
+}
+
+/**
+ * The document's declared fonts that an alias update covers: the alias map
+ * only matters for a font the open document declares, so an update that
+ * touches no declared font must not reflow it (genoffice#2449).
+ */
+export function docFontsCoveredBy(parsed: ParsedDoc, names: readonly string[]): string[] {
+  const declared = new Set(collectDocFonts(parsed))
+  return names.filter((name) => declared.has(name))
 }
 
 // document.fonts.check is useless here: Chromium answers true for any family

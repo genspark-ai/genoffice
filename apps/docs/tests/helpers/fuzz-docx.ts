@@ -10,6 +10,7 @@ import {
   buildDocx,
   IMAGE_PARAGRAPH_XML,
   MATH_PARAGRAPH_XML,
+  TINY_PNG_BASE64,
 } from '../../../../packages/docx-engine/tests/helpers/build-docx'
 
 /** mulberry32: small, fast, fully deterministic across runs and platforms. */
@@ -228,6 +229,152 @@ function sectionBreakXml(r: () => number): string {
   )
 }
 
+/** A rich header/footer body: 1-2 paragraphs, formatted runs, a PAGE or
+ *  NUMPAGES simple field, a tab separator, and optionally a logo image
+ *  (the caller wires the media relationship when `image` comes back true). */
+function richHfXml(
+  r: () => number,
+  seed: number,
+  kind: 'header' | 'footer',
+): { xml: string; image: boolean } {
+  const paras: string[] = []
+  const paraCount = 1 + (r() < 0.4 ? 1 : 0)
+  let image = false
+  for (let i = 0; i < paraCount; i++) {
+    const pieces: string[] = []
+    if (i === 0 && r() < 0.7) {
+      const instr = kind === 'footer' || r() < 0.5 ? ' PAGE ' : ' NUMPAGES '
+      pieces.push(`<w:fldSimple w:instr="${instr}"><w:r><w:t>1</w:t></w:r></w:fldSimple>`)
+    }
+    if (r() < 0.5) pieces.push('<w:r><w:tab/></w:r>')
+    pieces.push(runXml(`${CJK[Math.floor(r() * CJK.length)]} ${kind} ${seed}-${i}`, r))
+    if (i === paraCount - 1 && r() < 0.5) {
+      image = true
+      pieces.push(
+        inlineImageRunXml(kind === 'header' ? 'rIdHImg' : 'rIdFImg', 90 + (seed % 7), 50, 50),
+      )
+    }
+    paras.push(`<w:p>${pieces.join('')}</w:p>`)
+  }
+  return { xml: paras.join(''), image }
+}
+
+/** One inline drawing run: the same shape as IMAGE_PARAGRAPH_XML, with a
+ *  caller-chosen relationship id, docPr id and pixel size. */
+function inlineImageRunXml(rid: string, docPrId: number, wPx: number, hPx: number): string {
+  const cx = wPx * 9525
+  const cy = hPx * 9525
+  return (
+    `<w:r><w:drawing><wp:inline><wp:extent cx="${cx}" cy="${cy}"/>` +
+    `<wp:docPr id="${docPrId}" name="fuzz${docPrId}"/>` +
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    `<pic:pic><pic:blipFill><a:blip r:embed="${rid}"/></pic:blipFill></pic:pic>` +
+    '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>'
+  )
+}
+
+/** A body paragraph anchoring one comment: range markers around a plain run,
+ *  then the reference run. Never used on the anchor block (the suite's edit
+ *  target must stay free of markers the regenerated XML would rewrite). */
+function commentAnchorParaXml(
+  r: () => number,
+  seed: number,
+  index: number,
+  commentId: number,
+): string {
+  return (
+    `<w:p><w:commentRangeStart w:id="${commentId}"/>` +
+    runXml(`commented ${seed}-${index} \u6279\u6ce8`, r) +
+    `<w:commentRangeEnd w:id="${commentId}"/>` +
+    `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${commentId}"/></w:r></w:p>`
+  )
+}
+
+interface FuzzComment {
+  id: number
+  paraId: string
+  author: string
+  text: string
+  paras: number
+  done: boolean
+  parentId?: number
+}
+
+/** word/comments.xml: one or two paragraphs per comment, the paraId on the
+ *  last one (the commentsExtended link key), optionally an inline picture. */
+function commentsPartXml(comments: FuzzComment[], imageCommentId: number | undefined): string {
+  const body = comments
+    .map((c) => {
+      const paras: string[] = []
+      for (let p = 0; p < c.paras; p++) {
+        const isLast = p === c.paras - 1
+        const pieces: string[] = []
+        if (isLast && c.id === imageCommentId)
+          pieces.push(inlineImageRunXml('rIdCImg', 200 + c.id, 64, 48))
+        pieces.push(
+          `<w:r><w:t xml:space="preserve">${c.text}${p > 0 ? ` (${p + 1})` : ''}</w:t></w:r>`,
+        )
+        // only the last paragraph's paraId is the link key; earlier ones carry
+        // deterministic neighbors
+        const pid = isLast
+          ? c.paraId
+          : (parseInt(c.paraId, 16) + p).toString(16).toUpperCase().padStart(8, '0')
+        paras.push(
+          `<w:p w14:paraId="${pid}" w14:textId="${paraIdFor(pid)}">${pieces.join('')}</w:p>`,
+        )
+      }
+      return (
+        `<w:comment w:id="${c.id}" w:author="${c.author}" w:date="2026-01-01T00:00:00Z" w:initials="${c.author[0]}">` +
+        paras.join('') +
+        '</w:comment>'
+      )
+    })
+    .join('')
+  return (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
+    'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" ' +
+    'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ' +
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
+    'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    body +
+    '</w:comments>'
+  )
+}
+
+/** the link paraId of a comment: 8 hex digits, deterministic per seed and id. */
+function commentParaId(seed: number, id: number): string {
+  return (0x20000000 + seed * 0x1000 + id * 0x37).toString(16).toUpperCase().padStart(8, '0')
+}
+
+/** w14:paraId from an existing one: rotate deterministically, 8 hex digits. */
+function paraIdFor(from: string): string {
+  return ((parseInt(from, 16) ^ 0x5a5a5a) >>> 0).toString(16).toUpperCase().padStart(8, '0')
+}
+
+/** word/commentsExtended.xml: reply/resolution records keyed by paraId. */
+function commentsExtendedPartXml(comments: FuzzComment[]): string {
+  const entries = comments
+    .map((c) => {
+      const parent = c.parentId ? comments.find((p) => p.id === c.parentId) : undefined
+      return (
+        `<w15:commentEx w15:paraId="${c.paraId}"` +
+        (parent ? ` w15:paraIdParent="${parent.paraId}"` : '') +
+        ` w15:done="${c.done ? 1 : 0}"/>`
+      )
+    })
+    .join('')
+  return (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">' +
+    entries +
+    '</w15:commentsEx>'
+  )
+}
+
+const COMMENT_AUTHORS = ['Fuzz', 'Reviewer', 'Editor']
+
 export async function buildFuzzDocx(seed: number): Promise<Uint8Array> {
   const r = rng(seed * 7919 + 17)
   const blocks: string[] = [`<w:p><w:r><w:t>Anchor seed ${seed}</w:t></w:r></w:p>`]
@@ -247,26 +394,119 @@ export async function buildFuzzDocx(seed: number): Promise<Uint8Array> {
     const at = 1 + Math.floor(r() * (blocks.length - 1))
     blocks.splice(at, 0, sectionBreakXml(r))
   }
+  const extraStyles: string[] = []
+  const extraParts: Array<{ path: string; xml: string; contentType: string }> = []
+  const binaryParts: Array<{
+    path: string
+    base64: string
+    extension: string
+    contentType: string
+  }> = []
+  const extraRels: string[] = []
+
+  // header/footer knob: either, both, or neither; simple or rich (fields,
+  // multi-paragraph, formatted runs, tab); a rich part may carry a logo image
+  // (relationship + media wired through headerRelsXml / footerRelsXml)
+  const hfRoll = (kind: 'header' | 'footer'): string | undefined => {
+    if (r() >= 0.4) return undefined
+    if (r() >= 0.6)
+      return `<w:p>${runXml(`${CJK[Math.floor(r() * CJK.length)]} ${kind} ${seed}`, r)}</w:p>`
+    const rich = richHfXml(r, seed, kind)
+    if (rich.image)
+      binaryParts.push({
+        path: `word/media/image${kind === 'header' ? 'H' : 'F'}1.png`,
+        base64: TINY_PNG_BASE64,
+        extension: 'png',
+        contentType: 'image/png',
+      })
+    return rich.xml
+  }
+  const headerXml = hfRoll('header')
+  const footerXml = hfRoll('footer')
+
+  // comments knob: 0-3 anchored comments, optionally commentsExtended, and
+  // one comment may carry an inline picture (comments.xml.rels + media part)
+  if (r() < 0.45) {
+    const commentCount = 1 + Math.floor(r() * 3)
+    const withExt = r() < 0.6
+    const imageCommentId = r() < 0.4 ? 1 : undefined
+    const comments: FuzzComment[] = []
+    for (let i = 0; i < commentCount; i++) {
+      const id = i + 1
+      const at = 1 + Math.floor(r() * (blocks.length - 1))
+      blocks.splice(at, 0, commentAnchorParaXml(r, seed, i, id))
+      comments.push({
+        id,
+        paraId: commentParaId(seed, id),
+        author: COMMENT_AUTHORS[Math.floor(r() * COMMENT_AUTHORS.length)]!,
+        text:
+          r() < 0.5
+            ? `${CJK[Math.floor(r() * CJK.length)]}\u6279\u6ce8 ${id}`
+            : `note ${id} on ${seed}`,
+        paras: r() < 0.3 ? 2 : 1,
+        done: r() < 0.5,
+        parentId: i > 0 && r() < 0.4 ? 1 : undefined,
+      })
+    }
+    if (imageCommentId !== undefined) {
+      extraParts.push({
+        path: 'word/_rels/comments.xml.rels',
+        xml: `<Relationship Id="rIdCImg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/imageC1.png"/>`,
+        contentType: '', // .rels: no Override (filtered in buildDocx)
+      })
+      binaryParts.push({
+        path: 'word/media/imageC1.png',
+        base64: TINY_PNG_BASE64,
+        extension: 'png',
+        contentType: 'image/png',
+      })
+    }
+    extraParts.push({
+      path: 'word/comments.xml',
+      xml: commentsPartXml(comments, imageCommentId),
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+    })
+    extraRels.push(
+      '<Relationship Id="rIdCm" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/>',
+    )
+    if (withExt) {
+      extraParts.push({
+        path: 'word/commentsExtended.xml',
+        xml: commentsExtendedPartXml(comments),
+        contentType:
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml',
+      })
+      extraRels.push(
+        '<Relationship Id="rIdCmx" Type="http://schemas.microsoft.com/office/2011/relationships/commentsExtended" Target="commentsExtended.xml"/>',
+      )
+    }
+    // the reference-run rStyle lives in styles.xml in real Word files
+    extraStyles.push(
+      '<w:style w:type="character" w:styleId="CommentReference"><w:name w:val="annotation reference"/></w:style>',
+    )
+  }
+  // joined after the comment anchors are spliced in, or they never reach the body
   const body = blocks.join('')
-  // header/footer knob: either, both, or neither; the footer may carry a PAGE field
-  const headerXml =
-    r() < 0.4
-      ? `<w:p>${runXml(`${CJK[Math.floor(r() * CJK.length)]} header ${seed}`, r)}</w:p>`
-      : undefined
-  const footerXml =
-    r() < 0.4
-      ? `<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple>${runXml(` footer ${seed}`, r)}</w:p>`
-      : undefined
-  const sectionKnob = r() < 0.45
+  if (body.includes('rId20'))
+    extraRels.push(
+      '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/" TargetMode="External"/>',
+    )
   return buildDocx({
     bodyXml: body,
     withNumbering: body.includes('<w:numPr>'),
-    withImage: body.includes('r:embed='),
+    withImage: body.includes('r:embed="rId10"'),
     headerXml,
-    footerXml,
-    sectPrXml: sectionKnob ? sectionRoll(r) : undefined,
-    extraRels: body.includes('rId20')
-      ? '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/" TargetMode="External"/>'
+    headerRelsXml: headerXml?.includes('rIdHImg')
+      ? '<Relationship Id="rIdHImg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/imageH1.png"/>'
       : undefined,
+    footerXml,
+    footerRelsXml: footerXml?.includes('rIdFImg')
+      ? '<Relationship Id="rIdFImg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/imageF1.png"/>'
+      : undefined,
+    sectPrXml: r() < 0.45 ? sectionRoll(r) : undefined,
+    extraStylesXml: extraStyles.length ? extraStyles.join('') : undefined,
+    extraParts: extraParts.length ? extraParts : undefined,
+    binaryParts: binaryParts.length ? binaryParts : undefined,
+    extraRels: extraRels.length ? extraRels.join('') : undefined,
   })
 }

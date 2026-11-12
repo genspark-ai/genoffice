@@ -516,6 +516,7 @@ export const vi = {
   appBridgeUnavailable:
     'Cầu nối tệp trên máy tính để bàn không khả dụng. Khởi động lại ứng dụng Electron.',
   appOpenCanceled: 'Đã hủy chọn sổ làm việc.',
+  appImportCanceled: 'Đã hủy nhập.',
   appOpeningWorkbook: 'Đang mở sổ làm việc…',
   appOpened: 'Đã mở {name} — các chỉnh sửa ô được lưu lại bằng ⌘S.',
   appOpenFailed: 'Không thể mở sổ làm việc.',
@@ -1162,6 +1163,9 @@ export const vi = {
   appLinksLocate: 'Mở vị trí tệp nguồn',
   appLinksReachable: 'Khả dụng',
   appLinksBroken: 'Không khả dụng',
+  appLinksBreak: 'Ngắt liên kết',
+  appLinksBreakConfirm: 'Xác nhận ngắt',
+  appLinksChangeSource: 'Thay đổi nguồn',
   appGroupCalculation: 'Tính toán',
   appCalculationOptions: 'Tùy chọn tính toán',
   appCalculationOptionsTitle: 'Tính toán lại tự động hoặc thủ công',

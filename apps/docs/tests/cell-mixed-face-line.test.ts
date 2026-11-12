@@ -33,7 +33,7 @@ describe('mixed-face cell paragraphs', () => {
     expect(p.classList.contains('doc-mixed-face')).toBe(true)
     expect(p.style.getPropertyValue('--doc-line-factor')).toBe('1.3965')
     const spans = [...p.querySelectorAll('span[style*="--doc-run-lh"]')] as HTMLElement[]
-    expect(spans.map((s) => s.style.getPropertyValue('--doc-run-lh'))).toEqual(['1.3965', '1.15'])
+    expect(spans.map((s) => s.style.getPropertyValue('--doc-run-lh'))).toEqual(['1.3965', '1.1499'])
     editor.destroy()
   })
 

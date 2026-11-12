@@ -148,6 +148,23 @@ describe('rebuild path: run-level hlinkClick/strike/cs written back', () => {
   })
 })
 
+describe('rebuild path: run language tags written back', () => {
+  it('a structural edit keeps lang/altLang, which pick the line-breaking rules on reopen', () => {
+    const el = parseEl(
+      '<a:bodyPr/><a:p><a:r><a:rPr lang="ja-JP" altLang="en-US"/><a:t>\u3042\u3044</a:t></a:r></a:p>',
+    )
+    forceRebuild(el)
+    const out = patchTextElementXml(el, el.anchor.originalXml)
+    expect(out).toMatch(/<a:rPr lang="ja-JP" altLang="en-US"\/><a:t>\u3042\u3044<\/a:t>/)
+    const reparsed = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(out),
+      ctx: {},
+    }).elements[0] as TextElement
+    expect(reparsed.text!.paragraphs[0]!.runs[0]!.eaLang).toBe('ja')
+  })
+})
+
 describe('in-place patch path: strike toggle', () => {
   it('enabling strikethrough injects strike="sngStrike"', () => {
     const el = parseEl('<a:bodyPr/><a:p><a:r><a:rPr/><a:t>x</a:t></a:r></a:p>')

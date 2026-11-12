@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import wordFaces from '../../../packages/font-metrics/word-faces.json'
-import { lineHeightFactor, tableLineHeightFactor } from '../src/renderer/line-metrics'
+import { lineHeightFactor, tableLineHeightFactor } from '../src/renderer/text-layout/font-rules'
 
 const FONTS_CSS = join(__dirname, '../src/renderer/fonts/fonts.css')
 const FIXTURES = join(__dirname, 'fixtures/font-metrics')

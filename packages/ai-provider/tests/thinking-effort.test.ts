@@ -68,6 +68,9 @@ describe('thinkingShapeFor', () => {
       levels: ['low', 'medium', 'high', 'xhigh', 'max'],
     })
     expect(thinkingShapeFor('claude-sonnet-4-6').levels).toEqual(['low', 'medium', 'high'])
+    for (const id of ['claude-fable-5-2', 'anthropic/claude-fable-5.2']) {
+      expect(thinkingShapeFor(id).levels).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+    }
     // 4.5 and older reject `{ type: 'adaptive' }`: no knob at all
     expect(thinkingShapeFor('claude-sonnet-4-5').levels).toEqual([])
     expect(thinkingShapeFor('claude-opus-4-5').levels).toEqual([])
@@ -89,18 +92,50 @@ describe('thinkingShapeFor', () => {
 
   it('families whose surface is still documentation-only carry no knob', () => {
     for (const id of [
-      'deepseek-v4-pro',
-      'deepseek-flash',
       'kimi-k3.1-pro',
       'glm-5.2',
       'glm-5.3',
       'doubao-seed-2-1-pro-260628',
-      'MiniMax-M3.1-Flash',
       'hy4-preview',
       'mistral-medium-latest',
     ]) {
       expect(thinkingShapeFor(id).levels, id).toEqual([])
     }
+  })
+
+  it('minimax m3.1 takes the documented effort rungs, without an off; plain m3 stays knobless', () => {
+    // the vendor guide documents reasoning_effort for M3.1-Flash only; the
+    // plain M3 has no documented surface, so per the module rule it waits
+    expect(thinkingShapeFor('MiniMax-M3')).toEqual({ kind: 'openai-effort', levels: [] })
+    expect(thinkingShapeFor('minimax-m3.1-flash')).toEqual({
+      kind: 'openai-effort',
+      levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    expect(thinkingShapeFor('MiniMax-M3.1')).toEqual({
+      kind: 'openai-effort',
+      levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    })
+  })
+
+  it('deepseek takes the OpenAI effort ladder on both id spellings, every rung probed', () => {
+    expect(thinkingShapeFor('deepseek-flash')).toEqual({
+      kind: 'openai-effort',
+      levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    expect(thinkingShapeFor('deepseek-v4-pro')).toEqual({
+      kind: 'openai-effort',
+      levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    // the GenOffice-facing alias spells it with the hyphen (DEEPSEEK_V41_FLASH)
+    expect(thinkingShapeFor('deep-seek-v4.1-flash')).toEqual({
+      kind: 'openai-effort',
+      levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    // DeepSeek's chat-completions route accepts the upper rungs as-is (probed
+    // 200, 2026-11-08), so no Responses-only gating applies
+    expect(thinkingShapeFor('deepseek-flash', 'openai-compatible')).toEqual(
+      thinkingShapeFor('deepseek-flash'),
+    )
   })
 
   it('ling/spark/mimo are switches; qwen and grok keep their documented fields', () => {

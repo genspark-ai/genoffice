@@ -549,6 +549,9 @@ export interface BlankDocxOptions {
   appVersion?: string
   /** docProps/app.xml Template; defaults to Word's "Normal.dotm". */
   template?: string
+  /** drop the Application / AppVersion generator fields from docProps/app.xml
+   *  (the Word-default Template stays); defaults to false. */
+  omitGeneratorFields?: boolean
 }
 
 /** Build a minimal valid .docx: one empty paragraph, portrait page, standard styles. */
@@ -598,6 +601,7 @@ export async function buildBlankDocx(options?: BlankDocxOptions): Promise<Uint8A
       application: options?.application,
       appVersion: options?.appVersion,
       template: options?.template,
+      omitGeneratorFields: options?.omitGeneratorFields,
     }),
   )
 

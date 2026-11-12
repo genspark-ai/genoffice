@@ -46,6 +46,13 @@ describe('parseLength conversions', () => {
     expect(parseLength('1kg')).toBeUndefined()
     expect(parseLength('1 in ch')).toBeUndefined()
   })
+
+  it('returns undefined when the EMU conversion overflows to Infinity', () => {
+    // 400 digits overflow Number(), so the EMU product is Infinity; Infinity
+    // must not reach the XML writer or a numeric field.
+    expect(parseLength(`${'9'.repeat(400)}cm`)).toBeUndefined()
+    expect(parseLength(`${'9'.repeat(400)}in`)).toBeUndefined()
+  })
 })
 
 describe('normalizeLengthUnits', () => {
@@ -65,6 +72,11 @@ describe('normalizeLengthUnits', () => {
     expect(normalizeLengthUnits('1in')).toBe('1in')
     expect(normalizeLengthUnits('hello', 'x')).toBe('hello')
     expect(normalizeLengthUnits(914400, 'x')).toBe(914400)
+  })
+
+  it('leaves an overflowing length as typed so the schema rejects it', () => {
+    const huge = `${'9'.repeat(400)}cm`
+    expect(normalizeLengthUnits(huge, 'x')).toBe(huge)
   })
 
   it('only normalizes inset sides under insets/insetsEmu', () => {

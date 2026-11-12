@@ -545,6 +545,7 @@ export const pl = {
   appBridgeUnavailable:
     'Most plików aplikacji desktopowej jest niedostępny. Uruchom ponownie aplikację Electron.',
   appOpenCanceled: 'Anulowano wybór skoroszytu.',
+  appImportCanceled: 'Anulowano import.',
   appOpeningWorkbook: 'Otwieranie skoroszytu…',
   appOpened: 'Otwarto {name} — zmiany w komórkach zapisujesz z powrotem za pomocą ⌘S.',
   appOpenFailed: 'Nie można otworzyć skoroszytu.',
@@ -1198,6 +1199,9 @@ export const pl = {
   appLinksLocate: 'Pokaż plik źródłowy',
   appLinksReachable: 'Dostępne',
   appLinksBroken: 'Niedostępne',
+  appLinksBreak: 'Przerwij łącze',
+  appLinksBreakConfirm: 'Potwierdź przerwanie',
+  appLinksChangeSource: 'Zmień źródło',
   appGroupCalculation: 'Obliczanie',
   appCalculationOptions: 'Opcje obliczania',
   appCalculationOptionsTitle: 'Przeliczanie automatyczne lub ręczne',

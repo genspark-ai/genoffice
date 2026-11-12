@@ -470,6 +470,7 @@ export const zh = {
   // Open / save / page setup
   appBridgeUnavailable: '桌面文件桥不可用。请重启 Electron 应用。',
   appOpenCanceled: '已取消选择工作簿。',
+  appImportCanceled: '导入已取消。',
   appOpeningWorkbook: '正在打开工作簿…',
   appOpened: '已打开 {name}——单元格编辑用 ⌘S 保存回文件。',
   appOpenFailed: '无法打开工作簿。',
@@ -1107,6 +1108,9 @@ export const zh = {
   appLinksLocate: '定位源文件',
   appLinksReachable: '可用',
   appLinksBroken: '已断开',
+  appLinksBreak: '断开链接',
+  appLinksBreakConfirm: '确认断开',
+  appLinksChangeSource: '更改源',
   appGroupCalculation: '计算',
   appCalculationOptions: '计算选项',
   appCalculationOptionsTitle: '自动或手动重算',

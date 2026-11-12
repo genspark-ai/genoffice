@@ -43,12 +43,14 @@
     {
       "kind": "factor",
       "font": "Mont",
-      "expect": 1.22
+      "expect": 1.2207,
+      "note": "Calibri hhea"
     },
     {
       "kind": "factor",
       "font": "Zebra Probe Noentry",
-      "expect": 1.172
+      "expect": 1.1724,
+      "note": "Cambria hhea"
     },
     {
       "kind": "factor",

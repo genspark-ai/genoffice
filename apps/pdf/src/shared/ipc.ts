@@ -2,10 +2,14 @@ import type { AiPanelPrefs } from '@genoffice/ui'
 import type { Lang } from '@genoffice/i18n'
 import type { AiSettings, AiStreamChunk, AiStreamRequest } from '@genoffice/ai-provider'
 import type { PrintDuplex, PrintJobOptions, PrinterInfo } from '@genoffice/electron-utils/print-job'
+import type { PrinterOption } from '@genoffice/electron-utils/printer-options'
 export type { PrintDuplex, PrintJobOptions, PrinterInfo }
+export type { PrinterOption }
 
 /** largest slice readFileChunk hands over IPC; the renderer loops over them */
 export const PDF_READ_CHUNK_BYTES = 8 * 1024 * 1024
+
+export type PdfDefaultZoom = 'width' | 'page' | 'last'
 
 export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
@@ -39,6 +43,7 @@ export const PDF_CHANNELS = {
   setPageSize: 'pdf:set-page-size',
   splitPages: 'pdf:split-pages',
   cropPages: 'pdf:crop-pages',
+  restoreFile: 'pdf:restore-file',
   exportImages: 'pdf:export-images',
   convertOffice: 'pdf:convert-office',
   createDocument: 'pdf:create-document',
@@ -53,6 +58,7 @@ export const PDF_CHANNELS = {
   addSignature: 'pdf:add-signature',
   removeSignature: 'pdf:remove-signature',
   getUsername: 'pdf:get-username',
+  getDefaultZoom: 'pdf:get-default-zoom',
   dirtyChanged: 'pdf:dirty-changed',
   closeSaveRequest: 'pdf:close-save-request',
   closeSaveResult: 'pdf:close-save-result',
@@ -62,6 +68,7 @@ export const PDF_CHANNELS = {
   printRequest: 'pdf:print-request',
   print: 'pdf:print',
   printFile: 'pdf:print-file',
+  printerOptions: 'pdf:printer-options',
   printers: 'pdf:printers',
   fileRenamed: 'pdf:file-renamed',
   getLanguage: 'app:get-language',
@@ -70,6 +77,7 @@ export const PDF_CHANNELS = {
   themeChanged: 'app:theme-changed',
   getAiPanelPrefs: 'app:get-ai-panel-prefs',
   aiPanelPrefsChanged: 'app:ai-panel-prefs-changed',
+  authorNameChanged: 'app:author-name-changed',
 } as const
 
 export const VISUAL_SIGNATURE_CONTENT_PREFIX = 'GenOffice visual signature field: '
@@ -616,6 +624,9 @@ export interface StaticFormFillRecord {
 }
 
 /** A pending area selected for permanent native PDF redaction. PDF user space, y up. */
+/** Max redaction rects per request: prevents 100k-rect DoS on native redact. */
+export const MAX_REDACTION_REGIONS = 500
+
 export interface RedactionInput {
   pageIndex: number
   rect: [number, number, number, number]
@@ -941,6 +952,14 @@ export type ReplacePagesResult =
   | { ok: true; canceled: true }
   | { ok: false; error: string }
 
+/** The file put back as it was around a change written in place (Undo and Redo of that change) */
+export interface RestoreFileRequest {
+  path: string
+  bytes: ArrayBuffer
+}
+
+export type RestoreFileResult = { ok: true } | { ok: false; error: string }
+
 /** Resize all pages to a target paper size (points), content scaled to fit; written back in place */
 export interface SetPageSizeRequest {
   path: string
@@ -1150,6 +1169,7 @@ export interface PdfApi {
   setPageSize(request: SetPageSizeRequest): Promise<SetPageSizeResult>
   splitPages(request: SplitPagesRequest): Promise<SplitPagesResult>
   cropPages(request: CropPagesRequest): Promise<CropPagesResult>
+  restoreFile(request: RestoreFileRequest): Promise<RestoreFileResult>
   exportImages(request: ExportImagesRequest): Promise<ExportImagesResult>
   /** Convert the current PDF to Word / Excel / PowerPoint via the shell's local conversion flows */
   convertOffice(format: PdfConvertFormat): Promise<void>
@@ -1186,8 +1206,11 @@ export interface PdfApi {
   addSavedSignature(data: SignatureData): Promise<SavedSignature[]>
   /** Delete one saved signature by id; returns the updated list */
   removeSavedSignature(id: string): Promise<SavedSignature[]>
-  /** OS account name, used as the default author of new note comments; '' when unavailable */
+  /** Settings → General user name (the OS account name when unset), used as the default author of new note comments */
   getUsername(): Promise<string>
+  onUsernameChanged(handler: (name: string) => void): () => void
+  /** Settings → General default zoom, applied to files without a remembered reading position */
+  getDefaultZoom(): Promise<PdfDefaultZoom>
   /** Mirror unsaved-changes state to the main process; drives the save prompt before closing a tab/window */
   setDirty(dirty: boolean): void
   /** Main process asks for a save (close prompt, menu Save, export flows) and waits for sendCloseSaveResult.
@@ -1213,6 +1236,9 @@ export interface PdfApi {
   ): Promise<{ ok: boolean; error?: string }>
   /** installed printers for the in-app print dialog */
   listPrinters(): Promise<PrinterInfo[]>
+  /** the driver option groups a queue advertises (quality, color, media type),
+   *  for the print dialog's driver-options dropdowns; empty when none */
+  printerOptions(queue: string): Promise<PrinterOption[]>
   /** The file was renamed or moved from the shell (home Folders / Files pane); the viewer follows the new path */
   onFileRenamed(handler: (newPath: string) => void): () => void
   getLanguage(): Promise<Lang>

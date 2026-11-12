@@ -7,14 +7,14 @@
   "cases": [
     {
       "kind": "krNoBreakIncludes",
-      "text": "\uc811\uc218\u00b7\uac80\ud1a0\u00b7\ubcf4\uc644\u00b7\ud68c\uc2e0,",
+      "text": "접수·검토·보완·회신,",
       "expect": [2, 3, 5, 6, 8, 9],
       "note": "both seams of every middle dot are unbreakable"
     },
     {
       "kind": "latinLineFactor",
       "font": "Calibri",
-      "expect": 1.22,
+      "expect": 1.2207,
       "note": "Latin-only strip line: Calibri 13.44 (x line 259 in the strip), not the hangul 1.7305"
     },
     {

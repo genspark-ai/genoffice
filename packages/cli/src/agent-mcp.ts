@@ -2,7 +2,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync } from 'no
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { agentConfigDir, type AgentId } from './agent-skills'
 import { realizedPath, writeOutput } from './fs'
-import type { McpLaunch } from './mcp-launch'
+import { withCompactSchemas, type McpLaunch } from './mcp-launch'
 
 /**
  * Registering `genoffice mcp` (stdio) in each coding agent's MCP config, the
@@ -29,6 +29,11 @@ export interface McpEntryState {
   status: McpEntryStatus
   /** the program the existing entry starts, when readable */
   command: string | null
+  /**
+   * Set when a registered entry asks for compact tool schemas (`mcp install
+   * --compact-schemas`): the same launcher plus one env toggle, not a stale entry.
+   */
+  compactSchemas?: boolean
 }
 
 interface JsonShape {
@@ -196,8 +201,16 @@ export function readMcpEntry(id: AgentId, file: string, launch: McpLaunch): McpE
   const entry = map[MCP_SERVER_NAME]
   if (entry === undefined) return { status: 'absent', command: null }
   const { command, args } = def.shape.launchOf(entry)
-  if (JSON.stringify(entry) === JSON.stringify(def.shape.entry(launch))) {
-    return { status: 'registered', command }
+  // an entry written with --compact-schemas is the same launch plus one env toggle
+  for (const [compactSchemas, candidate] of [
+    [false, launch],
+    [true, withCompactSchemas(launch)],
+  ] as const) {
+    if (JSON.stringify(entry) === JSON.stringify(def.shape.entry(candidate))) {
+      return compactSchemas
+        ? { status: 'registered', command, compactSchemas: true }
+        : { status: 'registered', command }
+    }
   }
   return { status: isGenofficeLauncher(command, args) ? 'stale' : 'occupied', command }
 }
@@ -378,8 +391,12 @@ function cordisState(text: string, launch: McpLaunch): McpEntryState {
   const block = lines.slice(own[0], own[1])
   const { command, args } = cordisLaunchOf(block)
   // the block is ours by id: registered when it says exactly what we would write
-  if (block.join('\n').trim() === cordisEntryLines(launch).join('\n').trim())
-    return { status: 'registered', command }
+  const written = block.join('\n').trim()
+  const entryText = (l: McpLaunch) => cordisEntryLines(l).join('\n').trim()
+  if (written === entryText(launch)) return { status: 'registered', command }
+  // ... including the env toggle `mcp install --compact-schemas` writes
+  if (written === entryText(withCompactSchemas(launch)))
+    return { status: 'registered', command, compactSchemas: true }
   // ours, but written for another install path: stale, and ours to update.
   // A foreign command under our id is occupied — not ours to overwrite.
   return { status: isGenofficeLauncher(command, args) ? 'stale' : 'occupied', command }
@@ -533,10 +550,12 @@ function tomlState(text: string, launch: McpLaunch): McpEntryState {
   const own = ranges.find(([start]) => !TOML_HEADER.exec(lines[start]!)?.[1])
   const block = own ? lines.slice(own[0], own[1]) : []
   const command = tomlString(block, 'command')
-  const written = ranges.flatMap(([s, e]) => meaningful(lines.slice(s, e)))
-  if (written.join('\n') === meaningful(tomlTable(launch).split('\n')).join('\n')) {
-    return { status: 'registered', command }
-  }
+  const written = ranges.flatMap(([s, e]) => meaningful(lines.slice(s, e))).join('\n')
+  const tableText = (l: McpLaunch) => meaningful(tomlTable(l).split('\n')).join('\n')
+  // an entry written with --compact-schemas adds one env row; it is still ours
+  if (written === tableText(launch)) return { status: 'registered', command }
+  if (written === tableText(withCompactSchemas(launch)))
+    return { status: 'registered', command, compactSchemas: true }
   const args = tomlStrings(block, 'args')
   return { status: isGenofficeLauncher(command, args) ? 'stale' : 'occupied', command }
 }

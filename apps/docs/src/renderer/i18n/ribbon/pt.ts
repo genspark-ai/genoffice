@@ -14,9 +14,9 @@ export const pt = {
   ribbonLangIndonesian: 'indonésio',
   ribbonLangRussian: 'russo',
   ribbonLangArabic: 'árabe',
-  ribbonLangPortuguese: 'português',
+  ribbonLangPortuguese: 'Português',
   ribbonLangItalian: 'italiano',
-  ribbonLangPolish: 'polaco',
+  ribbonLangPolish: 'polonês',
   ribbonLangCzech: 'tcheco',
   ribbonLangDutch: 'neerlandês',
   ribbonLangMalay: 'malaio',
@@ -94,7 +94,7 @@ export const pt = {
   ribbonPainterTip:
     'Pincel de Formatação: clique para aplicar uma vez, clique duas vezes para manter até Esc',
   ribbonPainterActiveTip:
-    'Pincel de Formatação ativado: clique numa palavra ou arraste sobre o texto para aplicar (Esc ou clique novamente para cancelar)',
+    'Pincel de Formatação ativado: clique em uma palavra ou arraste sobre o texto para aplicar (Esc ou clique novamente para cancelar)',
   ribbonCopyFormat: 'Copiar formatação',
   ribbonPasteFormat: 'Colar formatação',
   ribbonGroupClipboard: 'Área de Transferência',
@@ -800,6 +800,8 @@ export const pt = {
   ribbonOutlineView: 'Estrutura de Tópicos',
   ribbonOutlineViewTip:
     'Estrutura de tópicos: mostrar apenas a hierarquia de títulos; os títulos continuam editáveis',
+  ribbonStoryView: 'História',
+  ribbonStoryViewTip: 'História: escrever sem a formatação do documento',
   ribbonReadMode: 'Modo de Leitura',
   ribbonReadModeTip:
     'Modo de leitura: ocultar a faixa de opções para leitura focada; pressione Esc para sair',
@@ -811,7 +813,7 @@ export const pt = {
   ribbonZoomDialogTip: 'Abrir a caixa de diálogo Zoom para escolher um nível ou modo de ajuste',
   ribbonZoomTo: 'Zoom para',
   ribbonZoomTextWidth: 'Largura do texto',
-  ribbonZoomPercent: 'Percentagem',
+  ribbonZoomPercent: 'Porcentagem',
   ribbonZoomOut: 'Reduzir',
   ribbonZoomIn: 'Ampliar',
   ribbonZoom100Tip: 'Zoom de 100%',

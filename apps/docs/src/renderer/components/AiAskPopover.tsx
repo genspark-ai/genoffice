@@ -10,12 +10,14 @@
  * editable there) instead of discarding it.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useImeEnterGuard } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { AI_QUEUE_ANCHOR_CLICK, queueAnchorRange } from '../editor/ai-queue-anchors'
 import { setInactiveSelectionShown } from '../editor/inactive-selection'
+import { useAiPanelPrefs } from '@genoffice/ui'
 import {
   EDIT_INSTRUCTION_MAX,
   EDIT_QUEUE_MAX,
@@ -102,6 +104,7 @@ export function AiAskPopover({
   onQueueRemove,
 }: Props): React.JSX.Element | null {
   const { t } = useI18n()
+  const showAskTrigger = useAiPanelPrefs().showAiAskTrigger
   const [trigger, setTrigger] = useState<{ left: number; top: number } | null>(null)
   const [open, setOpen] = useState<OpenState | null>(null)
   const [kind, setKind] = useState<SelectionKind>('text')
@@ -110,6 +113,7 @@ export function AiAskPopover({
   const boxRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const ime = useImeEnterGuard()
 
   const openRef = useRef(open)
   openRef.current = open
@@ -136,6 +140,10 @@ export function AiAskPopover({
         setTrigger(null)
         return
       }
+      if (!showAskTrigger) {
+        setTrigger(null)
+        return
+      }
       const { empty, to } = editor.state.selection
       if (empty || !editor.isFocused) {
         setTrigger(null)
@@ -155,6 +163,10 @@ export function AiAskPopover({
     const scroller = document.querySelector('.editor-scroll')
     scroller?.addEventListener('scroll', update, { passive: true })
     window.addEventListener('resize', update)
+    // Recompute on every re-subscribe, in particular when the setting is
+    // toggled: turning it off clears a stale position, and turning it back on
+    // must not resurrect that position without a fresh selection event.
+    update()
     return () => {
       editor.off('selectionUpdate', update)
       editor.off('focus', update)
@@ -162,7 +174,7 @@ export function AiAskPopover({
       scroller?.removeEventListener('scroll', update)
       window.removeEventListener('resize', update)
     }
-  }, [editor])
+  }, [editor, showAskTrigger])
 
   // clicking a queued anchor in the document re-opens the popover on that item
   useEffect(() => {
@@ -215,6 +227,13 @@ export function AiAskPopover({
     }
     close()
   }, [onQueueAdd, onQueueUpdate, close])
+
+  // Turning the switch off also dismisses a popover opened from the chip, but
+  // keeps whatever was typed (same as an outside click). Editing an existing
+  // queue anchor is a separate, explicit action and stays open.
+  useEffect(() => {
+    if (!showAskTrigger && openRef.current?.mode === 'new') commitOrClose()
+  }, [showAskTrigger, commitOrClose])
 
   useEffect(() => {
     if (!open) return
@@ -308,8 +327,10 @@ export function AiAskPopover({
           maxLength={EDIT_INSTRUCTION_MAX}
           placeholder={t('aiAskPlaceholder')}
           onChange={(e) => setText(e.target.value)}
+          onCompositionStart={ime.handleCompositionStart}
+          onCompositionEnd={ime.handleCompositionEnd}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+            if (e.key === 'Enter' && !ime.isImeConfirm(e.nativeEvent)) {
               e.preventDefault()
               if (!canSubmit) return
               if (open.mode === 'edit') {
@@ -394,7 +415,7 @@ export function AiAskPopover({
 
   return (
     <>
-      {trigger && !open && (
+      {trigger && !open && showAskTrigger && (
         <button
           ref={triggerRef}
           className="ai-ask-trigger"

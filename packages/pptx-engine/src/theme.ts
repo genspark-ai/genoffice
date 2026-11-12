@@ -4,7 +4,7 @@
  * schemeClr / theme fonts into final values.
  */
 import { XMLParser } from 'fast-xml-parser'
-import { asXmlNode, xmlArray, type XmlNode } from './xml-utils'
+import { asXmlNode, srgbHexValue, xmlArray, type XmlNode } from './xml-utils'
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
 
@@ -75,7 +75,7 @@ function readColorNode(node: unknown): string | undefined {
   if (!node) return undefined
   const n = asXmlNode(node)
   const srgb = asXmlNode(n['a:srgbClr'])
-  if (n['a:srgbClr']) return '#' + String(srgb['@_val']).toUpperCase()
+  if (n['a:srgbClr']) return srgbHexValue(srgb['@_val'])
   const sys = asXmlNode(n['a:sysClr'])
   if (n['a:sysClr']) return sysColorHex(sys['@_val'], sys['@_lastClr'])
   return undefined

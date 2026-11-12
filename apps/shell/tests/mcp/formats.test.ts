@@ -34,7 +34,7 @@ describe('format registry', () => {
       'ods',
       'ots',
     ])
-    expect(formatFamily('pptx').editorOpen).toEqual(['pptx', 'odp', 'otp'])
+    expect(formatFamily('pptx').editorOpen).toEqual(['pptx', 'odp', 'otp', 'ppt'])
   })
 
   it('keeps the converted-copy formats open-only: they convert on open and never save as the source', () => {

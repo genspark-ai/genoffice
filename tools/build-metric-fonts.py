@@ -15,8 +15,8 @@ only under w:kern) and so is hinting. Only the transformed base outlines ship.
 
 refit: { method: 'advance-matched', range, kern?: { cut: factor },
          cuts: { 'weight/style': { word, base, out } } }
-word / base use the build-font-aliases.mjs locators (dfonts: / repo: /
-system:), out is the Assets path of the derived TTF. The manifest's rangeless
+word / base use the build-font-aliases.mjs locators (dfonts: / cloud: /
+repo: / system:), out is the Assets path of the derived TTF. The manifest's rangeless
 general faces stay (they carry the non-Latin fallback); the script rewrites
 the ranged faces to one per cut and leaves fonts.generated.css to
 `node tools/build-font-aliases.mjs`.
@@ -43,6 +43,7 @@ from fontTools.ttLib import TTFont
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_DIR = ROOT / "packages/font-metrics/measurements/families"
 DFONTS = "/Applications/Microsoft Word.app/Contents/Resources/DFonts"
+CLOUD = os.path.expanduser("~/Library/Group Containers/UBF8T346G9.Office/FontCache/4/CloudFonts")
 CUT_SUBFAMILY = {
     "normal/normal": "Regular",
     "bold/normal": "Bold",
@@ -77,7 +78,14 @@ def locate(spec, dfonts):
     kind, _, rest = spec.partition(":")
     path, _, index = rest.partition("#")
     if kind == "dfonts":
-        return TTFont(os.path.join(dfonts, path))
+        return TTFont(os.path.join(dfonts, path), fontNumber=int(index or 0))
+    if kind == "cloud":
+        folder, _, full_name = path.partition("/")
+        for file in sorted(os.listdir(os.path.join(CLOUD, folder))):
+            font = TTFont(os.path.join(CLOUD, folder, file))
+            if font["name"].getDebugName(4) == full_name:
+                return font
+        raise SystemExit(f"{full_name} not found under {folder}")
     if kind == "repo":
         return TTFont(ROOT / path, fontNumber=int(index or 0))
     if kind == "system":

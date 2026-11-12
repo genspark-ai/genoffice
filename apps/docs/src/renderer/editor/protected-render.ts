@@ -14,17 +14,19 @@ import {
   autospaceMode,
   cssAutoLineMult,
   balancedSpaceWideningOn,
-  cjkDeclaredLineFactor,
+  docEastAsiaLang,
   cssGridLineBase,
   cssLineHeight,
   isCjk,
-  lineHeightFactor,
+  mixedLatinLineFactor,
   paraLineFactorCss,
   runLetterSpacingCss,
   fontKerningCss,
   textHasComplexScript,
   SPACE_ONLY_RE,
+  inlineLiftLineMultiple,
 } from '../line-metrics'
+import { cjkDeclaredLineFactor, lineHeightFactor } from '../text-layout/font-rules'
 import {
   custGeomBackgroundCss,
   shapeBackgroundCss,
@@ -71,6 +73,7 @@ import {
   type ChartDisplay,
   type FieldDisplay,
   type FormulaDisplay,
+  type ParaFormat,
   type Run,
   type TableModel,
   type TableParagraph,
@@ -155,7 +158,9 @@ export function renderFieldSpec(field: FieldDisplay): DomSpec | null {
       // an 18pt grid)
       const ea = field.eaFontFamily
       const factor = Math.max(
-        lineHeightFactor(field.fontFamily),
+        field.pageFontFamily
+          ? mixedLatinLineFactor([field.fontFamily, field.pageFontFamily])
+          : lineHeightFactor(field.fontFamily),
         ea ? (cjkDeclaredLineFactor(ea) ?? lineHeightFactor(ea)) : 0,
       )
       tocStyles.push(`--doc-line-factor:${factor}`)
@@ -1917,9 +1922,11 @@ function plainTextSpecs(text: string): unknown[] {
       inheritedAscii: staticAsciiOf(undefined),
       inheritedEa: null,
       wordWrap: true,
+      eaLang: docEastAsiaLang(),
       balancedSpaces: balancedSpaceWideningOn(),
       justified: false,
       simsunGapLineHeight: null,
+      lineMultiple: 'inherited',
     }),
   )
 }
@@ -2043,22 +2050,18 @@ function textSpanSpec(
 /** run spans with the paragraph's inline segments applied (pads at CJK-Latin seams,
  *  balanced spaces, Korean no-break joiners, hinted quotes); para = the paragraph's style
  *  id (inherited ascii face) and wordWrap */
-export function runSpansWithPads(
-  runs: Run[],
-  autoSpace?: AutoSpace,
-  para?: { styleId?: string; wordWrap?: boolean },
-): DomSpec[] {
+export function runSpansWithPads(runs: Run[], autoSpace?: AutoSpace, para?: StaticPara): DomSpec[] {
   const segs = runSegments(runs, autoSpace, para)
   return runs.flatMap((run, k) => runSpanSpecs(run, autoSpace, segs[k]))
 }
 
 /** the paragraph-level segments of a run list, split per run; a run rendered
  *  alone (field result, stray line) is its own one-run paragraph */
-function runSegments(
-  runs: Run[],
-  autoSpace?: AutoSpace,
-  para?: { styleId?: string; wordWrap?: boolean },
-): InlineSegments[] {
+type StaticPara = { styleId?: string } & Partial<
+  Pick<ParaFormat, 'wordWrap' | 'lineRule' | 'lineRawTwips' | 'lineSpacing' | 'eastAsiaLang'>
+>
+
+function runSegments(runs: Run[], autoSpace?: AutoSpace, para?: StaticPara): InlineSegments[] {
   const { runs: inline, byRun } = inlineRunsOf(runs)
   const all = inlineSegments({
     runs: inline,
@@ -2066,9 +2069,11 @@ function runSegments(
     inheritedAscii: staticAsciiOf(para?.styleId),
     inheritedEa: null,
     wordWrap: para?.wordWrap !== false,
+    eaLang: para?.eastAsiaLang ?? docEastAsiaLang(),
     balancedSpaces: balancedSpaceWideningOn(),
     justified: false,
     simsunGapLineHeight: null,
+    lineMultiple: inlineLiftLineMultiple(para?.lineRule, para?.lineRawTwips, para?.lineSpacing),
   })
   return byRun.map((r) => segmentsOfRun(all, r))
 }

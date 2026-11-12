@@ -1,4 +1,5 @@
 import type { AgentSkill, ExecutedToolCall } from './skill'
+import { addTokenUsage } from './types'
 import type {
   AgentImage,
   AgentMessage,
@@ -41,7 +42,7 @@ export interface AgentLoopEvents<TSnapshot> {
   onToolExecuted?(event: ToolExecutedEvent<TSnapshot>): void
   /** a turn requested tools and they ran; the loop is going back to the model */
   onTurnEnd?(): void
-  /** tokens the provider billed for the turn that just streamed (per model call; compaction summary turns are not reported) */
+  /** tokens the provider billed for the turn that just streamed (per model call, compaction summary turns included) */
   onUsage?(usage: AgentTokenUsage): void
   onDone?(result: AgentRunResult): void
   onError?(error: string): void
@@ -63,14 +64,17 @@ export interface AgentLoopOptions<TSnapshot = unknown> {
   events?: AgentLoopEvents<TSnapshot>
   /** hard cap on model round-trips per run (default DEFAULT_MAX_TURNS) */
   maxTurns?: number
-  /** history cap in messages, trimmed at user-turn boundaries (default 40) */
+  /** history cap in messages, trimmed at user-turn boundaries (default 200) */
   maxHistory?: number
   /** Context compaction; false disables it (enabled by default with default thresholds) */
   compaction?: CompactionOptions | false
   /** capture rollback state; invoked right before tools run (see snapshotBefore) */
   captureSnapshot?(): TSnapshot
-  /** wrap instruction + skill context into the user message text */
+  /** wrap instruction + skill context into the user message text; called again with
+   * CONTEXT_OMITTED_NOTE as the context when the next run folds the previous run's snapshot */
   formatUserMessage?(instruction: string, context: string): string
+  /** clock seam for tests (ms); defaults to Date.now */
+  now?(): number
   /** appended to the system prompt each turn (e.g. reply-language directive following the UI language) */
   systemSuffix?(): string
 }
@@ -87,6 +91,10 @@ const COMPACT_KEEP_RECENT_BYTES = 96 * 1024
 const SUMMARIZE_TOOL_OUTPUT_MAX = 2_000
 const SUMMARIZE_TIMEOUT_MS = 30_000
 /** When over budget mid-run, keep the last N tool messages verbatim and truncate earlier outputs to this length */
+/** Provider prompt caches expire after about five idle minutes: past that, rewriting history costs nothing */
+const CACHE_WARM_MS = 5 * 60 * 1000
+/** Stale context snapshots tolerated in a warm history before they are folded in one rewrite */
+const STALE_CONTEXT_MAX_BYTES = 48 * 1024
 const STALE_TOOL_KEEP_RECENT = 2
 const STALE_TOOL_OUTPUT_MAX = 1_000
 
@@ -434,6 +442,13 @@ const SUMMARIZE_SYSTEM =
 const COMPACT_SUMMARY_PREFIX = '[Summary of earlier conversation'
 const COMPACT_SUMMARY_HEADER = '[Summary of earlier conversation (auto-compacted)]'
 const COMPACT_SUMMARY_ACK = 'Understood, continuing from the progress so far.'
+/** Replaces an earlier run's document snapshot in its user message once a newer run carries the current one */
+export const CONTEXT_OMITTED_NOTE =
+  '[Document context attached to this earlier request omitted; the latest request carries the current state]'
+
+/** Leads a fresh snapshot while earlier ones are still unfolded in history */
+export const CONTEXT_SUPERSEDES_NOTE =
+  '[Current state. It supersedes the context attached to earlier requests in this conversation]'
 
 /** Approximate UTF-8 byte count (ASCII 1 byte, CJK etc. 3; surrogate pairs count as 6 — slight overestimate is harmless) */
 function utf8Size(s: string): number {
@@ -520,6 +535,10 @@ export class AgentLoop<TSnapshot = unknown> {
   private verifyRetryUsed = false
   /** user message of the in-flight run; a failed run rolls it (and everything after) back out of history */
   private runUserMsg: AgentMessage | null = null
+  /** earlier runs' user messages that still carry a skill-context snapshot, each with the bare instruction to rebuild it without */
+  private staleContexts: Array<{ msg: AgentMessage; instruction: string }> = []
+  /** when the last model request went out (0 = never): the prompt cache is warm for CACHE_WARM_MS after it */
+  private lastRequestAt = 0
   /** usage the provider reported for the turn now streaming (null until it reports) */
   private turnUsage: AgentTokenUsage | null = null
   /** usage summed across the turns of the in-flight run (null when nothing reported) */
@@ -632,24 +651,68 @@ export class AgentLoop<TSnapshot = unknown> {
     // mid-transition is enough to wedge the panel. The user message was never
     // pushed, so the rollback in failRun() is a no-op and only the report matters.
     try {
-      const context = this.options.skill.buildContext?.() ?? ''
-      const format =
-        this.options.formatUserMessage ??
-        ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
+      const fresh = this.options.skill.buildContext?.() ?? ''
+      // no fresh snapshot to supersede the old ones: they must not stay in view
+      this.foldStaleContexts(!fresh)
+      // an unfolded earlier snapshot is still in view: the model must not address the document by it
+      const context =
+        fresh && this.staleContexts.length > 0 ? `${CONTEXT_SUPERSEDES_NOTE}\n${fresh}` : fresh
       const userMsg: AgentMessage = {
         role: 'user',
-        text: format(instruction, context),
+        text: this.formatUser(instruction, context),
         ...(images?.length ? { images } : {}),
       }
-      void this.beginRun(userMsg)
+      void this.beginRun(userMsg, context ? instruction : null)
     } catch (err) {
       this.failRun(err instanceof Error ? err.message : String(err))
     }
   }
 
+  private formatUser(instruction: string, context: string): string {
+    const format =
+      this.options.formatUserMessage ??
+      ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
+    return format(instruction, context)
+  }
+
+  /**
+   * Every run's user message carries a fresh document snapshot (outline +
+   * selection, tens of KB in Docs) and only the newest one is useful to the
+   * model. Replacing a stale one rewrites history from that message on, which
+   * drops the provider's cached prefix for everything after it, so the fold
+   * waits for a moment the rewrite is free or due anyway: the cache has gone
+   * cold, the stale snapshots outgrew their allowance, or the history is over
+   * the compaction budget. Runs inside run()'s guard: formatUserMessage is
+   * consumer code.
+   */
+  private foldStaleContexts(force: boolean): void {
+    const stale = this.staleContexts.filter((c) => this.history.includes(c.msg))
+    this.staleContexts = stale
+    if (stale.length === 0) return
+    const cold = this.clock() - this.lastRequestAt >= CACHE_WARM_MS
+    const bulky = stale.reduce((n, c) => n + messageSize(c.msg), 0) > STALE_CONTEXT_MAX_BYTES
+    const overBudget =
+      this.compactionEnabled() && historySize(this.history) > this.compactBudget().maxBytes
+    if (!force && !cold && !bulky && !overBudget) return
+    for (const { msg, instruction } of stale) {
+      if (msg.role !== 'user') continue
+      this.history[this.history.indexOf(msg)] = {
+        ...msg,
+        text: this.formatUser(sanitizeAgentPayload(instruction), CONTEXT_OMITTED_NOTE),
+      }
+    }
+    this.staleContexts = []
+  }
+
+  private clock(): number {
+    return this.options.now?.() ?? Date.now()
+  }
+
   /** Compact (if needed), push the user message, then start the turn. Compaction failure doesn't block the run. */
-  private async beginRun(userMsg: AgentMessage): Promise<void> {
+  private async beginRun(userMsg: AgentMessage, instruction: string | null): Promise<void> {
     const generation = this.generation
+    // reset before compaction so the summary turn's billing folds into this run
+    this.runUsage = null
     try {
       await this.maybeCompact()
     } catch {
@@ -674,8 +737,8 @@ export class AgentLoop<TSnapshot = unknown> {
       userMsg = { ...userMsg, text: sanitizeAgentPayload(userMsg.text) }
     }
     this.runUserMsg = userMsg
+    if (instruction !== null) this.staleContexts.push({ msg: userMsg, instruction })
     this.history.push(userMsg)
-    this.runUsage = null
     this.startTurn()
   }
 
@@ -736,10 +799,20 @@ export class AgentLoop<TSnapshot = unknown> {
     const dropped = this.history.slice(0, cut)
     const opt = this.options.compaction === false ? undefined : this.options.compaction
     let summary: string | null = null
-    if (!opt?.disableLlmSummary) summary = await this.summarizeViaLlm(dropped)
+    let summaryUsage: AgentTokenUsage | null = null
+    if (!opt?.disableLlmSummary) {
+      ;({ text: summary, usage: summaryUsage } = await this.summarizeViaLlm(dropped))
+    }
     // A reset may have cleared history or started a new conversation while
     // the summary was pending. Discard its result before touching that history.
     if (generation !== this.generation) return
+    // The summary turn bills like any other model call: fold it into the run
+    // total and surface it, so compaction spend is visible instead of silent.
+    if (summaryUsage) {
+      this.turnUsage = summaryUsage
+      this.mergeRunUsage()
+      this.options.events?.onUsage?.(summaryUsage)
+    }
     if (!summary) summary = mechanicalDigest(dropped)
     this.history = [
       { role: 'user', text: `${COMPACT_SUMMARY_HEADER}\n${summary}` },
@@ -748,8 +821,10 @@ export class AgentLoop<TSnapshot = unknown> {
     ]
   }
 
-  /** Hand the folded conversation to the model for a summary; returns null on failure/timeout (falls back to the mechanical digest). */
-  private summarizeViaLlm(dropped: readonly AgentMessage[]): Promise<string | null> {
+  /** Hand the folded conversation to the model for a summary; text is null on failure/timeout (falls back to the mechanical digest). */
+  private summarizeViaLlm(
+    dropped: readonly AgentMessage[],
+  ): Promise<{ text: string | null; usage: AgentTokenUsage | null }> {
     // Slim down the summary request itself: pre-truncate tool outputs, strip images
     const slim: AgentMessage[] = dropped.map((m) => {
       if (m.role === 'tool') {
@@ -766,13 +841,14 @@ export class AgentLoop<TSnapshot = unknown> {
     })
     return new Promise((resolve) => {
       let text = ''
+      let usage: AgentTokenUsage | null = null
       let settled = false
       let handle: AgentStreamHandle | null = null
       const finish = (v: string | null) => {
         if (settled) return
         settled = true
         clearTimeout(timer)
-        resolve(v)
+        resolve({ text: v, usage })
       }
       const timer = setTimeout(() => {
         finish(null)
@@ -796,6 +872,9 @@ export class AgentLoop<TSnapshot = unknown> {
             },
             onToolCall: () => {
               /* the summary turn gets no tools */
+            },
+            onUsage: (u) => {
+              usage = u
             },
             onDone: () => finish(text.trim() || null),
             onError: () => finish(null),
@@ -875,6 +954,8 @@ export class AgentLoop<TSnapshot = unknown> {
     this.cancelled = false
     this.history = []
     this.runUserMsg = null
+    this.staleContexts = []
+    this.lastRequestAt = 0
   }
 
   private dropTurnLimitNote(): void {
@@ -937,18 +1018,18 @@ export class AgentLoop<TSnapshot = unknown> {
    * so a later fold (the next turn's start or the run's onDone) cannot double it. */
   private mergeRunUsage(): void {
     if (!this.turnUsage) return
-    const usage: AgentTokenUsage = { ...(this.runUsage ?? {}) }
-    if (this.turnUsage.inputTokens !== undefined)
-      usage.inputTokens = (usage.inputTokens ?? 0) + this.turnUsage.inputTokens
-    if (this.turnUsage.outputTokens !== undefined)
-      usage.outputTokens = (usage.outputTokens ?? 0) + this.turnUsage.outputTokens
-    this.runUsage = usage
+    this.runUsage = addTokenUsage(this.runUsage, this.turnUsage)
     this.turnUsage = null
   }
 
-  /** Runs at run boundaries only (restore / before a new user message): a long run's tail is all assistant/tool messages, and cutting mid-run would empty the request. */
+  /** Runs at run boundaries only (restore / before a new user message): a long run's tail is all assistant/tool messages, and cutting mid-run would empty the request.
+   * The byte budget (compaction) is the real context bound; this count cap is a
+   * backstop against pathological message counts. It must sit well above the
+   * message count a compacted history reaches, because every trim drops the
+   * head of the request — silently losing context AND invalidating the
+   * provider's prompt cache from byte 0. */
   private trimHistory(): void {
-    const max = this.options.maxHistory ?? 40
+    const max = this.options.maxHistory ?? 200
     if (this.history.length <= max) return
     // cut only at a user message so tool_use/tool_result pairs stay intact
     let i = this.history.length - max
@@ -970,6 +1051,7 @@ export class AgentLoop<TSnapshot = unknown> {
     this.turnUsage = null
     // Some transports emit an extra onDone after cancel — this turn may finalize only once
     let settled = false
+    this.lastRequestAt = this.clock()
     try {
       this.handle = this.options.transport.stream(
         {

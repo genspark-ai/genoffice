@@ -39,6 +39,37 @@ describe('parseCompatibilityMode', () => {
     )
   })
 
+  it('reads overrideTableStyleFontSizeAndJustification', async () => {
+    const parsed = async (compat: string) =>
+      parseDocx(
+        await buildDocx({
+          bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+          extraParts: [
+            {
+              path: 'word/settings.xml',
+              xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ${SETTINGS_NS}><w:compat>${compat}</w:compat></w:settings>`,
+              contentType:
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml',
+            },
+          ],
+        }),
+      )
+    expect(
+      (
+        await parsed(
+          `<w:compatSetting w:val="1" w:name="overrideTableStyleFontSizeAndJustification" ${URI}/>`,
+        )
+      ).overrideTableStyleFontSizeAndJustification,
+    ).toBe(true)
+    expect(
+      (
+        await parsed(
+          `<w:compatSetting w:name="overrideTableStyleFontSizeAndJustification" ${URI} w:val="0"/>`,
+        )
+      ).overrideTableStyleFontSizeAndJustification,
+    ).toBeUndefined()
+  })
+
   it('ignores other settings and defaults to 0', async () => {
     expect(
       await compatOf(

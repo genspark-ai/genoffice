@@ -77,6 +77,22 @@ describe('paragraph formatting HTML round-trip (r117)', () => {
     })
   })
 
+  it('keeps the style auto-spacing twins under a bare spacing literal', () => {
+    expect(
+      roundtripPara({
+        spaceBefore: 0,
+        spaceAfter: 0,
+        styleSpaceBeforeAuto: true,
+        styleSpaceAfterAuto: true,
+      }),
+    ).toMatchObject({
+      spaceBefore: 0,
+      spaceAfter: 0,
+      styleSpaceBeforeAuto: true,
+      styleSpaceAfterAuto: true,
+    })
+  })
+
   it('keeps explicit opt-out booleans (snapToGrid/autoSpace false)', () => {
     expect(roundtripPara({ snapToGrid: false, autoSpace: false })).toMatchObject({
       snapToGrid: false,

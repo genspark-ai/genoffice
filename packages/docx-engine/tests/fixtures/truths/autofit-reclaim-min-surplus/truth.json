@@ -1,0 +1,347 @@
+{
+  "id": "autofit-reclaim-min-surplus",
+  "title": "A tblW-auto tcW column grown to its unbreakable word is reclaimed from the other columns pro rata to their surplus over min-content; max-content never enters; growth under the column grows the table",
+  "section": "word-truths.md#L1216",
+  "probe_date": "2026-11-09",
+  "source": "probe build.py (A4 9026-twip column, Calibri 11 docDefaults, TableNormal cell margins 108, TableGrid borders), Word for Mac direct PDF, pymupdf vertical rules; the harness measures with Calibri advances (m 0.799, a 0.479, space 0.226, bold A/B/C/D 0.606/0.561/0.529/0.630 em) so Word's twips are asserted within 1 pt",
+  "cases": [
+    {
+      "kind": "autofitCols",
+      "block": 1,
+      "expect": [1061, 1051, 1416, 5486],
+      "note": "a a S + 30 m: the sentence column (min 'mmmm' = 919) gives back 840, the 'a' columns 1195 each = surplus 1337 : 1926 : 1926 over min-content",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 4,
+      "expect": [1181, 1176, 1171, 5486],
+      "note": "a a a control: equal shares",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 7,
+      "expect": [1061, 1416, 1051, 5486],
+      "note": "a (mmmm mmmm) a: same loss as the sentence column - the max-content (2 words) does not enter the weight",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 10,
+      "expect": [1061, 1416, 1051, 5486],
+      "note": "a (mmmm mmmm mmmm mmmm) a: identical to the 2-word case",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 13,
+      "expect": [874, 1795, 859, 5486],
+      "note": "a (mmmmmmmm mmmmmmmm) a: min 8 m = 1622, surplus 634 vs 1926",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 16,
+      "expect": [2035, 2030, 2098, 2851],
+      "note": "a a S + 15 m: growth 595 shared 1926 : 1926 : 1337",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 19,
+      "expect": [1291, 1291, 946, 5486],
+      "note": "mmmmmm (mmmmmm mmmmmm) S: min 6 m in both, the sentence column has the largest surplus",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 22,
+      "expect": [1003, 1147, 1378, 5486],
+      "note": "a mm mmmm: graded minimums 349 / 567 / 919",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 25,
+      "expect": [1709, 1704, 1872, 3730],
+      "note": "a a S + 20 m",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 28,
+      "expect": [907, 1310, 1310, 5486],
+      "note": "a S S",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 31,
+      "expect": [1800, 1800, 1800, 2851],
+      "note": "1800 x 4 + 15 m: total 8251 stays under the column, nothing reclaimed",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 34,
+      "expect": [1085, 1075, 1368, 5486],
+      "note": "1800 x 4 + 30 m: the table stops at the column (9014), overflow 1872 shared 1478 : 1478 : 881",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 37,
+      "expect": [1762, 1762, 1760, 3730],
+      "note": "1800 x 4 a a a + 20 m: overflow 116 in equal shares",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 40,
+      "expect": [1180, 1176, 1172, 5486],
+      "note": "1800 x 4 a a a + 30 m",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

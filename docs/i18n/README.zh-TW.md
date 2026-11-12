@@ -19,7 +19,7 @@ Word、Excel、PowerPoint 與 PDF 檔案，由你與你的 AI 共同編輯，並
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub stars"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <b>繁體中文</b> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <b>繁體中文</b> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center">
   <a href="#download"><b>下載</b></a> ·
@@ -106,7 +106,7 @@ Windows 與 Linux。它能開啟並儲存原生的 `.docx`、`.xlsx` 與 `.pptx`
 <td><b>直接詢問</b>——對工作簿的提問會附上推理過程，並把實際使用的
 儲存格做成可點擊的引用連結。背後是自研的 Rust `.xlsx` 引擎、樞紐分析表、
 篩選器、條件格式、公式追蹤，以及以 Excel 原生 rich value 形式嵌入儲存格的
-圖片——Excel 重新開啟時，圖片仍然在儲存格中。</td>
+圖片——Excel 重新開啟時，圖片仍然在儲存格中。儲存格備註可以帶圖片，顯示在備註彈出視窗的下方。</td>
 </tr>
 </table>
 
@@ -261,6 +261,12 @@ Cursor 及任何其他 MCP 用戶端都能自行啟動 `genoffice mcp`，不必�
 </tr>
 </table>
 
+### 9 · 舊格式檔案 — 2000 年代的 `.doc`、`.xls` 和 `.ppt` 也能開啟
+
+Word 97–2003 的 `.doc`、Excel 的 `.xls` 或 PowerPoint 的 `.ppt` 會在本機轉換成 `.docx`、`.xlsx` 或 `.pptx` 副本後開啟，原檔案不會被改動。圖片、表格、公式、數字格式、填滿和版面配置都會保留。
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="GenOffice 依序開啟一份虛構的 2004 年度報告的 .ppt、.doc 和 .xls 檔案的縮時畫面，接著是同一張投影片在 PowerPoint 中的原件與在 GenOffice 中的轉換結果並排對照" width="100%">
+
 ## 為什麼選 GenOffice
 
 - **開源**，採用 Apache-2.0 授權，在 GitHub 上公開開發。
@@ -304,13 +310,14 @@ Cursor 及任何其他 MCP 用戶端都能自行啟動 `genoffice mcp`，不必�
 圖片生成，以及圖片／音訊／影片分析。
 
 **或自帶金鑰。**「設定 → AI」列出了 Claude、OpenAI、Gemini、DeepSeek、
-Kimi、GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty 與
+Kimi、GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty、Opper、Cheaper Inference、Atlas Cloud、SiliconFlow、PPIO、Command Code 與
 OpenCode Zen/Go，另外還有一個自訂欄位可填入任何相容 OpenAI 的服務端點
 （base URL + 金鑰），也包括本機模型伺服器。搜尋與媒體功能則各自在
 **AI 媒體與搜尋**下設定獨立的服務商：網頁搜尋可選 Serper、Serply、
+SearchApi、
 Tavily、Parallel、Keenable、Exa 或 Firecrawl——其中 Keenable 同樣免金鑰，
 設定金鑰只會提高速率限制；圖片生成與圖片／影片分析可選 OpenAI、Gemini、
-Doubao/Seedream、GLM、Grok、Qwen、MiniMax，或任何相容 OpenAI 的圖片
+Doubao/Seedream、GLM、Grok、Qwen、MiniMax、Stability、FLUX，或任何相容 OpenAI 的圖片
 服務端點。
 
 整套軟體支援亮色、深色與跟隨系統三種主題。主題只會改變畫面顯示：
@@ -323,7 +330,7 @@ Doubao/Seedream、GLM、Grok、Qwen、MiniMax，或任何相容 OpenAI 的圖片
 Skill 是一份 `SKILL.md`，告訴 AI 怎樣把一件事做好：週報、保密協議、教案。
 GenOffice 內建了一批，也接受你自己的，格式與程式開發代理所用的相同。
 
-- **設定 → Skills。** **安裝**推薦的 skill，或**匯入**資料夾、zip 或單一 `SKILL.md`。匯入不會執行任何東西。
+- **設定 → Skills。** **安裝**推薦的 skill，或**匯入**資料夾、zip 或單一 `SKILL.md`。匯入不會執行任何東西。 **全部**標籤頁把整個推薦目錄列在一處，說明隨應用程式語言顯示。
 - **在聊天中。** 開啟任一 AI 面板輸入框旁的 **+** 選單，選 **Skills**，勾選一個，送出。Skill 只隨這一則訊息送出。
 
 ---
@@ -490,6 +497,8 @@ AppImage 可直接就地執行：先安裝 FUSE 2 執行環境
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+在 Chromebook 上，同樣的安裝套件可以在 Linux 環境（Crostini）中執行——詳見 [docs/platforms/chromeos.md](../platforms/chromeos.md)。
 
 </details>
 

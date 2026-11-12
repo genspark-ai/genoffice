@@ -377,7 +377,7 @@ function ensureThirdPartyNotices() {
 // 97-2003 .doc/.dot it would hijack the system editor, so Windows leaves those
 // out (mac/Linux still declare them for Open With). GenOffice opens .doc/.dot
 // through its own Open dialog on every platform.
-const WIN_OPEN_WITH_ONLY_EXTS = new Set(['txt', 'json', 'doc', 'dot'])
+const WIN_OPEN_WITH_ONLY_EXTS = new Set(['txt', 'json', 'doc', 'dot', 'ppt'])
 const FILE_ASSOCIATIONS = [
   {
     ext: 'docx',
@@ -425,6 +425,14 @@ const FILE_ASSOCIATIONS = [
     role: 'Editor',
     icon: 'pptx',
     mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  },
+  {
+    // import-only: opens as a converted .pptx copy, GenOffice never writes .ppt
+    ext: 'ppt',
+    name: 'PowerPoint 97-2003 Presentation',
+    role: 'Editor',
+    icon: 'pptx',
+    mimeType: 'application/vnd.ms-powerpoint',
   },
   {
     ext: 'xls',

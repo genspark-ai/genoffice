@@ -227,6 +227,7 @@ export const strings = {
     setSearchRerankCustomModel: '模型 ID',
     setSearchRerankAccount: '账户 ID',
     setAiPanelSide: 'AI 侧边栏位置',
+    csvImportLimit: 'CSV 导入上限',
     aiPanelSideLeft: '左侧',
     aiPanelSideRight: '右侧',
     setAiFontSize: 'AI 面板文字大小',
@@ -235,6 +236,11 @@ export const strings = {
     aiFontSizeXLarge: '特大',
     aiFontSizeCustom: '自定义',
     setAiSpellcheck: 'AI 对话拼写检查',
+    setPdfDefaultZoom: 'PDF 默认缩放',
+    setPdfDefaultZoomDesc: '打开没有阅读记录的 PDF 时使用的缩放。',
+    setPdfDefaultZoomWidth: '适应宽度',
+    setPdfDefaultZoomPage: '适应页面',
+    setPdfDefaultZoomLast: '上次使用的缩放',
     setLegacyImportPrompt: '打开旧格式前先提示',
     setLegacyImportPromptDesc:
       '打开 .doc、.odt、.hwp、.ods、.odp 等旧格式文件时，先说明哪些内容会转换过来。关闭后直接进入另存为。',
@@ -251,8 +257,12 @@ export const strings = {
       '关闭后，编辑器会隐藏 AI 侧栏和侧边按钮；功能区或菜单里的 AI 操作仍会打开面板，新文档也不会自动打开。',
     setAiOpenInNewDocs: '新文档中打开 AI 面板',
     setAiOpenInNewDocsDesc: '关闭后，新打开的文档默认收起 AI 面板；需要时点一下即可展开。',
+    setAiShowAskTrigger: '选中文字时显示「AI 修改」浮窗',
+    setAiShowAskTriggerDesc:
+      '关闭后，跟随文本选区出现的「AI 修改」快捷按钮将不再显示；AI 面板仍可正常使用。',
     setAuthorName: '用户名',
-    setAuthorNameDesc: '作为批注和修订的作者显示在 Docs、Sheets、Slides 中。留空则使用电脑账户名。',
+    setAuthorNameDesc:
+      '作为批注和修订的作者显示在 Docs、Sheets、Slides、PDF 中。留空则使用电脑账户名。',
     settings: '设置',
     setSecAccount: '账户',
     setSecGeneral: '通用',
@@ -293,6 +303,7 @@ export const strings = {
     intgStep1Update: 'GenOffice 升级带来新版 skill 时，对应助手旁会出现「更新」按钮。',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'skill 未安装',
+    intgSharedReaders: '{list} 共用的 skills 目录',
     intgStateInstalled: '已安装 skill {v} · 下次对话即可使用',
     intgLegacyTitle: '旧版 skill 副本',
     intgLegacyDesc:
@@ -749,6 +760,7 @@ export const strings = {
     setSearchRerankCustomModel: 'Model ID',
     setSearchRerankAccount: 'Account ID',
     setAiPanelSide: 'AI sidebar position',
+    csvImportLimit: 'CSV import limit',
     aiPanelSideLeft: 'Left',
     aiPanelSideRight: 'Right',
     setAiFontSize: 'AI panel text size',
@@ -757,6 +769,11 @@ export const strings = {
     aiFontSizeXLarge: 'Extra large',
     aiFontSizeCustom: 'Custom',
     setAiSpellcheck: 'Spell check in AI chat',
+    setPdfDefaultZoom: 'Default PDF zoom',
+    setPdfDefaultZoomDesc: 'Zoom used when a PDF opens without a remembered reading position.',
+    setPdfDefaultZoomWidth: 'Fit width',
+    setPdfDefaultZoomPage: 'Fit page',
+    setPdfDefaultZoomLast: 'Last used zoom',
     setLegacyImportPrompt: 'Ask before converting legacy files',
     setLegacyImportPromptDesc:
       'Explain what carries over before opening .doc, .odt, .hwp, .ods or .odp files. When off, Save As opens right away.',
@@ -774,9 +791,12 @@ export const strings = {
     setAiOpenInNewDocs: 'Open the AI panel in new documents',
     setAiOpenInNewDocsDesc:
       'When off, newly opened documents start with the AI panel collapsed; it is one click away when needed.',
+    setAiShowAskTrigger: 'Show the "Ask AI" chip on selection',
+    setAiShowAskTriggerDesc:
+      'When off, the floating "Ask AI" button that follows your selection no longer appears. The AI panel stays available.',
     setAuthorName: 'User name',
     setAuthorNameDesc:
-      'Shown as the author of comments and tracked changes in Docs, Sheets and Slides. Leave blank to use your computer account name.',
+      'Shown as the author of comments and tracked changes in Docs, Sheets, Slides and PDF. Leave blank to use your computer account name.',
     settings: 'Settings',
     setSecAccount: 'Account',
     setSecGeneral: 'General',
@@ -821,6 +841,7 @@ export const strings = {
       'When a GenOffice update ships a newer skill, an Update button appears next to that assistant.',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill not installed',
+    intgSharedReaders: 'Shared skills folder read by {list}',
     intgStateInstalled: 'Skill {v} installed · ready in your next chat',
     intgLegacyTitle: 'Older skill copies',
     intgLegacyDesc:
@@ -1286,6 +1307,7 @@ export const strings = {
     setSearchRerankCustomModel: 'ID mô hình',
     setSearchRerankAccount: 'ID tài khoản',
     setAiPanelSide: 'Vị trí thanh bên AI',
+    csvImportLimit: 'Giới hạn nhập CSV',
     aiPanelSideLeft: 'Trái',
     aiPanelSideRight: 'Phải',
     setAiFontSize: 'Cỡ chữ bảng điều khiển AI',
@@ -1294,6 +1316,11 @@ export const strings = {
     aiFontSizeXLarge: 'Rất lớn',
     aiFontSizeCustom: 'Tùy chỉnh',
     setAiSpellcheck: 'Kiểm tra chính tả trong trò chuyện AI',
+    setPdfDefaultZoom: 'Thu phóng PDF mặc định',
+    setPdfDefaultZoomDesc: 'Mức thu phóng khi mở PDF chưa có vị trí đọc đã lưu.',
+    setPdfDefaultZoomWidth: 'Vừa chiều rộng',
+    setPdfDefaultZoomPage: 'Vừa trang',
+    setPdfDefaultZoomLast: 'Mức thu phóng dùng lần trước',
     setLegacyImportPrompt: 'Hỏi trước khi chuyển đổi tệp cũ',
     setLegacyImportPromptDesc:
       'Giải thích nội dung được giữ lại trước khi mở tệp .doc, .odt, .hwp, .ods hoặc .odp. Khi tắt, hộp thoại Lưu dưới dạng mở ngay.',
@@ -1311,9 +1338,12 @@ export const strings = {
     setAiOpenInNewDocs: 'Mở bảng AI trong tài liệu mới',
     setAiOpenInNewDocsDesc:
       'Khi tắt, tài liệu mới mở sẽ thu gọn bảng AI; chỉ cần một lần bấm để mở lại khi cần.',
+    setAiShowAskTrigger: 'Hiện chip «Hỏi AI» khi chọn',
+    setAiShowAskTriggerDesc:
+      'Khi tắt, nút nổi «Hỏi AI» theo vùng chọn sẽ không còn hiện. Bảng AI vẫn dùng được.',
     setAuthorName: 'Tên người dùng',
     setAuthorNameDesc:
-      'Hiển thị là tác giả của nhận xét và thay đổi được theo dõi trong Docs, Sheets và Slides. Để trống để dùng tên tài khoản máy tính.',
+      'Hiển thị là tác giả của nhận xét và thay đổi được theo dõi trong Docs, Sheets, Slides và PDF. Để trống để dùng tên tài khoản máy tính.',
     settings: 'Cài đặt',
     setSecAccount: 'Tài khoản',
     setSecGeneral: 'Chung',
@@ -1358,6 +1388,7 @@ export const strings = {
       'Khi bản cập nhật GenOffice cung cấp kỹ năng mới hơn, nút Cập nhật sẽ xuất hiện bên cạnh trợ lý đó.',
     intgSkillVersion: 'kỹ năng {v}',
     intgStateMissing: 'Chưa cài đặt kỹ năng',
+    intgSharedReaders: 'Thư mục kỹ năng dùng chung mà {list} đọc',
     intgStateInstalled: 'Đã cài đặt kỹ năng {v} · sẵn sàng cho cuộc trò chuyện tiếp theo của bạn',
     intgLegacyTitle: 'Bản sao skill cũ',
     intgLegacyDesc:
@@ -1828,6 +1859,7 @@ export const strings = {
     setSearchRerankCustomModel: 'Model kimliği',
     setSearchRerankAccount: 'Hesap kimliği',
     setAiPanelSide: 'AI kenar çubuğu konumu',
+    csvImportLimit: 'CSV içe aktarma sınırı',
     aiPanelSideLeft: 'Sol',
     aiPanelSideRight: 'Sağ',
     setAiFontSize: 'AI paneli metin boyutu',
@@ -1836,6 +1868,12 @@ export const strings = {
     aiFontSizeXLarge: 'Çok büyük',
     aiFontSizeCustom: 'Özel',
     setAiSpellcheck: 'AI sohbetinde yazım denetimi',
+    setPdfDefaultZoom: 'Varsayılan PDF yakınlaştırma',
+    setPdfDefaultZoomDesc:
+      'Kayıtlı okuma konumu olmayan bir PDF açılırken kullanılan yakınlaştırma.',
+    setPdfDefaultZoomWidth: 'Genişliğe sığdır',
+    setPdfDefaultZoomPage: 'Sayfaya sığdır',
+    setPdfDefaultZoomLast: 'Son kullanılan yakınlaştırma',
     setLegacyImportPrompt: 'Eski dosyaları dönüştürmeden önce sor',
     setLegacyImportPromptDesc:
       '.doc, .odt, .hwp, .ods veya .odp dosyalarını açmadan önce nelerin aktarılacağını açıklar. Kapalıyken doğrudan Farklı Kaydet açılır.',
@@ -1853,9 +1891,12 @@ export const strings = {
     setAiOpenInNewDocs: 'Yeni belgelerde AI panelini aç',
     setAiOpenInNewDocsDesc:
       'Kapalıyken yeni açılan belgeler AI paneli daraltılmış olarak başlar; gerektiğinde tek tıkla açılır.',
+    setAiShowAskTrigger: "Seçimde «AI'ya Sor» çipini göster",
+    setAiShowAskTriggerDesc:
+      "Kapalıyken, seçimi takip eden «AI'ya Sor» yüzen düğmesi artık görünmez. AI paneli kullanılmaya devam eder.",
     setAuthorName: 'Kullanıcı adı',
     setAuthorNameDesc:
-      'Docs, Sheets ve Slides’ta açıklamaların ve izlenen değişikliklerin yazarı olarak gösterilir. Bilgisayar hesabınızın adını kullanmak için boş bırakın.',
+      'Docs, Sheets, Slides ve PDF’de açıklamaların ve izlenen değişikliklerin yazarı olarak gösterilir. Bilgisayar hesabınızın adını kullanmak için boş bırakın.',
     settings: 'Ayarlar',
     setSecAccount: 'Hesap',
     setSecGeneral: 'Genel',
@@ -1900,6 +1941,7 @@ export const strings = {
       'Bir GenOffice güncellemesi daha yeni bir beceri getirdiğinde o asistanın yanında bir Güncelle düğmesi görünür.',
     intgSkillVersion: 'beceri {v}',
     intgStateMissing: 'Beceri yüklü değil',
+    intgSharedReaders: '{list} tarafından okunan ortak beceri klasörü',
     intgStateInstalled: 'Beceri {v} yüklü · bir sonraki sohbetinizde hazır',
     intgLegacyTitle: 'Eski skill kopyaları',
     intgLegacyDesc:
@@ -2382,6 +2424,7 @@ export const strings = {
     setSearchRerankCustomModel: 'モデル ID',
     setSearchRerankAccount: 'アカウント ID',
     setAiPanelSide: 'AI サイドバーの位置',
+    csvImportLimit: 'CSV インポートの上限',
     aiPanelSideLeft: '左側',
     aiPanelSideRight: '右側',
     setAiFontSize: 'AI パネルの文字サイズ',
@@ -2390,6 +2433,11 @@ export const strings = {
     aiFontSizeXLarge: '特大',
     aiFontSizeCustom: 'カスタム',
     setAiSpellcheck: 'AI チャットのスペルチェック',
+    setPdfDefaultZoom: 'PDF の既定のズーム',
+    setPdfDefaultZoomDesc: '閲覧位置が記録されていない PDF を開くときのズーム。',
+    setPdfDefaultZoomWidth: '幅に合わせる',
+    setPdfDefaultZoomPage: 'ページに合わせる',
+    setPdfDefaultZoomLast: '前回使用したズーム',
     setLegacyImportPrompt: '旧形式ファイルの変換前に確認する',
     setLegacyImportPromptDesc:
       '.doc、.odt、.hwp、.ods、.odp を開く前に、引き継がれる内容を説明します。オフにすると直接「名前を付けて保存」が開きます。',
@@ -2408,9 +2456,12 @@ export const strings = {
     setAiOpenInNewDocs: '新しいドキュメントで AI パネルを開く',
     setAiOpenInNewDocsDesc:
       'オフにすると、新しく開いたドキュメントは AI パネルを折りたたんだ状態で始まります。必要なときはワンクリックで開けます。',
+    setAiShowAskTrigger: '選択時に「AI に修正依頼」チップを表示',
+    setAiShowAskTriggerDesc:
+      'オフにすると、テキスト選択に追従する「AI に修正依頼」ボタンが表示されなくなります。AI パネルは引き続き利用できます。',
     setAuthorName: 'ユーザー名',
     setAuthorNameDesc:
-      'Docs、Sheets、Slides でコメントと変更履歴の作成者として表示されます。空欄の場合はパソコンのアカウント名を使います。',
+      'Docs、Sheets、Slides、PDF でコメントと変更履歴の作成者として表示されます。空欄の場合はパソコンのアカウント名を使います。',
     settings: '設定',
     setSecAccount: 'アカウント',
     setSecGeneral: '一般',
@@ -2455,6 +2506,7 @@ export const strings = {
       'GenOffice の更新で新しいスキルが届くと、そのアシスタントの横に「更新」ボタンが表示されます。',
     intgSkillVersion: 'スキル {v}',
     intgStateMissing: 'スキル未インストール',
+    intgSharedReaders: '{list} が共通で読み込む skills フォルダー',
     intgStateInstalled: 'スキル {v} をインストール済み · 次のチャットから使えます',
     intgLegacyTitle: '古い skill のコピー',
     intgLegacyDesc:
@@ -2930,6 +2982,7 @@ export const strings = {
     setSearchRerankCustomModel: '모델 ID',
     setSearchRerankAccount: '계정 ID',
     setAiPanelSide: 'AI 사이드바 위치',
+    csvImportLimit: 'CSV 가져오기 한도',
     aiPanelSideLeft: '왼쪽',
     aiPanelSideRight: '오른쪽',
     setAiFontSize: 'AI 패널 글자 크기',
@@ -2938,6 +2991,11 @@ export const strings = {
     aiFontSizeXLarge: '더 크게',
     aiFontSizeCustom: '사용자 지정',
     setAiSpellcheck: 'AI 채팅 맞춤법 검사',
+    setPdfDefaultZoom: 'PDF 기본 확대/축소',
+    setPdfDefaultZoomDesc: '저장된 읽기 위치가 없는 PDF를 열 때 사용하는 배율입니다.',
+    setPdfDefaultZoomWidth: '너비 맞춤',
+    setPdfDefaultZoomPage: '페이지 맞춤',
+    setPdfDefaultZoomLast: '마지막 사용 배율',
     setLegacyImportPrompt: '이전 형식 파일 변환 전 확인',
     setLegacyImportPromptDesc:
       '.doc, .odt, .hwp, .ods, .odp 파일을 열기 전에 어떤 내용이 유지되는지 안내합니다. 끄면 바로 다른 이름으로 저장이 열립니다.',
@@ -2955,9 +3013,12 @@ export const strings = {
     setAiOpenInNewDocs: '새 문서에서 AI 패널 열기',
     setAiOpenInNewDocsDesc:
       '끄면 새로 여는 문서는 AI 패널이 접힌 상태로 시작합니다. 필요할 때 한 번 클릭하면 열립니다.',
+    setAiShowAskTrigger: '선택 시 「AI 수정 요청」칩 표시',
+    setAiShowAskTriggerDesc:
+      '끄면 텍스트 선택을 따라가는 「AI 수정 요청」버튼이 더 이상 표시되지 않습니다. AI 패널은 계속 사용할 수 있습니다.',
     setAuthorName: '사용자 이름',
     setAuthorNameDesc:
-      'Docs, Sheets, Slides에서 메모와 변경 내용 추적의 작성자로 표시됩니다. 비워 두면 컴퓨터 계정 이름을 사용합니다.',
+      'Docs, Sheets, Slides, PDF에서 메모와 변경 내용 추적의 작성자로 표시됩니다. 비워 두면 컴퓨터 계정 이름을 사용합니다.',
     settings: '설정',
     setSecAccount: '계정',
     setSecGeneral: '일반',
@@ -3001,6 +3062,7 @@ export const strings = {
       'GenOffice 업데이트에 새 스킬이 포함되면 해당 어시스턴트 옆에 업데이트 버튼이 나타납니다.',
     intgSkillVersion: '스킬 {v}',
     intgStateMissing: '스킬 미설치',
+    intgSharedReaders: '{list}이(가) 함께 읽는 공용 스킬 폴더',
     intgStateInstalled: '스킬 {v} 설치됨 · 다음 대화부터 사용 가능',
     intgLegacyTitle: '오래된 skill 사본',
     intgLegacyDesc:
@@ -3481,6 +3543,7 @@ export const strings = {
     setSearchRerankCustomModel: 'ID du modèle',
     setSearchRerankAccount: 'ID du compte',
     setAiPanelSide: 'Position de la barre latérale IA',
+    csvImportLimit: "Limite d'importation CSV",
     aiPanelSideLeft: 'Gauche',
     aiPanelSideRight: 'Droite',
     setAiFontSize: 'Taille du texte du panneau IA',
@@ -3489,6 +3552,12 @@ export const strings = {
     aiFontSizeXLarge: 'Très grande',
     aiFontSizeCustom: 'Personnalisé',
     setAiSpellcheck: 'Correction orthographique dans le chat IA',
+    setPdfDefaultZoom: 'Zoom PDF par défaut',
+    setPdfDefaultZoomDesc:
+      'Zoom utilisé à l’ouverture d’un PDF sans position de lecture mémorisée.',
+    setPdfDefaultZoomWidth: 'Ajuster à la largeur',
+    setPdfDefaultZoomPage: 'Ajuster à la page',
+    setPdfDefaultZoomLast: 'Dernier zoom utilisé',
     setLegacyImportPrompt: 'Demander avant de convertir les anciens fichiers',
     setLegacyImportPromptDesc:
       'Explique ce qui est conservé avant d’ouvrir un fichier .doc, .odt, .hwp, .ods ou .odp. Désactivé, Enregistrer sous s’ouvre directement.',
@@ -3508,7 +3577,10 @@ export const strings = {
       "Désactivé : les documents nouvellement ouverts démarrent avec le panneau IA replié ; un clic suffit pour l'afficher.",
     setAuthorName: 'Nom d’utilisateur',
     setAuthorNameDesc:
-      'Affiché comme auteur des commentaires et des modifications suivies dans Docs, Sheets et Slides. Laissez vide pour utiliser le nom de votre compte.',
+      'Affiché comme auteur des commentaires et des modifications suivies dans Docs, Sheets, Slides et PDF. Laissez vide pour utiliser le nom de votre compte.',
+    setAiShowAskTrigger: "Afficher la puce « Demander à l'IA » sur sélection",
+    setAiShowAskTriggerDesc:
+      "Désactivée, le bouton flottant « Demander à l'IA » qui suit la sélection n’apparaît plus. Le panneau IA reste disponible.",
     settings: 'Paramètres',
     setSecAccount: 'Compte',
     setSecGeneral: 'Général',
@@ -3554,6 +3626,7 @@ export const strings = {
       'Quand une mise à jour de GenOffice apporte un skill plus récent, un bouton Mettre à jour apparaît à côté de cet assistant.',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill non installé',
+    intgSharedReaders: 'Dossier de skills partagé, lu par {list}',
     intgStateInstalled: 'Skill {v} installé · prêt pour votre prochaine discussion',
     intgLegacyTitle: 'Anciennes copies du skill',
     intgLegacyDesc:
@@ -4047,6 +4120,7 @@ export const strings = {
     setSearchRerankCustomModel: 'Modell-ID',
     setSearchRerankAccount: 'Konto-ID',
     setAiPanelSide: 'Position der KI-Seitenleiste',
+    csvImportLimit: 'CSV-Importlimit',
     aiPanelSideLeft: 'Links',
     aiPanelSideRight: 'Rechts',
     setAiFontSize: 'Textgröße im KI-Bereich',
@@ -4055,6 +4129,11 @@ export const strings = {
     aiFontSizeXLarge: 'Sehr groß',
     aiFontSizeCustom: 'Benutzerdefiniert',
     setAiSpellcheck: 'Rechtschreibprüfung im KI-Chat',
+    setPdfDefaultZoom: 'Standard-PDF-Zoom',
+    setPdfDefaultZoomDesc: 'Zoom beim Öffnen einer PDF ohne gespeicherte Leseposition.',
+    setPdfDefaultZoomWidth: 'An Breite anpassen',
+    setPdfDefaultZoomPage: 'An Seite anpassen',
+    setPdfDefaultZoomLast: 'Zuletzt verwendeter Zoom',
     setLegacyImportPrompt: 'Vor dem Konvertieren alter Dateien nachfragen',
     setLegacyImportPromptDesc:
       'Erklärt vor dem Öffnen von .doc-, .odt-, .hwp-, .ods- oder .odp-Dateien, was übernommen wird. Ausgeschaltet öffnet sich direkt „Speichern unter“.',
@@ -4073,9 +4152,12 @@ export const strings = {
     setAiOpenInNewDocs: 'KI-Panel in neuen Dokumenten öffnen',
     setAiOpenInNewDocsDesc:
       'Wenn aus, starten neu geöffnete Dokumente mit eingeklapptem KI-Panel; ein Klick genügt, um es zu öffnen.',
+    setAiShowAskTrigger: '„KI fragen“-Chip bei Auswahl anzeigen',
+    setAiShowAskTriggerDesc:
+      'Ist die Option aus, erscheint der schwebende „KI fragen“-Knopf nicht mehr bei der Textauswahl. Das KI-Panel bleibt verfügbar.',
     setAuthorName: 'Benutzername',
     setAuthorNameDesc:
-      'Wird in Docs, Sheets und Slides als Autor von Kommentaren und nachverfolgten Änderungen angezeigt. Leer lassen, um den Kontonamen des Computers zu verwenden.',
+      'Wird in Docs, Sheets, Slides und PDF als Autor von Kommentaren und nachverfolgten Änderungen angezeigt. Leer lassen, um den Kontonamen des Computers zu verwenden.',
     settings: 'Einstellungen',
     setSecAccount: 'Konto',
     setSecGeneral: 'Allgemein',
@@ -4119,6 +4201,7 @@ export const strings = {
       'Bringt ein GenOffice-Update einen neueren Skill mit, erscheint neben diesem Assistenten ein Aktualisieren-Button.',
     intgSkillVersion: 'Skill {v}',
     intgStateMissing: 'Skill nicht installiert',
+    intgSharedReaders: 'Gemeinsamer Skill-Ordner, gelesen von {list}',
     intgStateInstalled: 'Skill {v} installiert · ab dem nächsten Chat bereit',
     intgLegacyTitle: 'Alte Skill-Kopien',
     intgLegacyDesc:
@@ -4606,6 +4689,7 @@ export const strings = {
     setSearchRerankCustomModel: 'ID del modelo',
     setSearchRerankAccount: 'ID de la cuenta',
     setAiPanelSide: 'Posición de la barra lateral de IA',
+    csvImportLimit: 'Límite de importación de CSV',
     aiPanelSideLeft: 'Izquierda',
     aiPanelSideRight: 'Derecha',
     setAiFontSize: 'Tamaño del texto del panel de IA',
@@ -4614,6 +4698,11 @@ export const strings = {
     aiFontSizeXLarge: 'Muy grande',
     aiFontSizeCustom: 'Personalizado',
     setAiSpellcheck: 'Corrección ortográfica en el chat de IA',
+    setPdfDefaultZoom: 'Zoom predeterminado de PDF',
+    setPdfDefaultZoomDesc: 'Zoom usado al abrir un PDF sin posición de lectura guardada.',
+    setPdfDefaultZoomWidth: 'Ajustar al ancho',
+    setPdfDefaultZoomPage: 'Ajustar a la página',
+    setPdfDefaultZoomLast: 'Último zoom usado',
     setLegacyImportPrompt: 'Preguntar antes de convertir archivos antiguos',
     setLegacyImportPromptDesc:
       'Explica qué se conserva antes de abrir archivos .doc, .odt, .hwp, .ods u .odp. Desactivado, se abre directamente Guardar como.',
@@ -4632,9 +4721,12 @@ export const strings = {
     setAiOpenInNewDocs: 'Abrir el panel de IA en documentos nuevos',
     setAiOpenInNewDocsDesc:
       'Si está desactivado, los documentos recién abiertos empiezan con el panel de IA plegado; se abre con un clic cuando lo necesites.',
+    setAiShowAskTrigger: 'Mostrar la ficha «Pedir a la IA» al seleccionar',
+    setAiShowAskTriggerDesc:
+      'Al desactivarla, el botón flotante «Pedir a la IA» que sigue la selección ya no aparece. El panel de IA sigue disponible.',
     setAuthorName: 'Nombre de usuario',
     setAuthorNameDesc:
-      'Se muestra como autor de los comentarios y los cambios con seguimiento en Docs, Sheets y Slides. Déjalo vacío para usar el nombre de tu cuenta.',
+      'Se muestra como autor de los comentarios y los cambios con seguimiento en Docs, Sheets, Slides y PDF. Déjalo vacío para usar el nombre de tu cuenta.',
     settings: 'Configuración',
     setSecAccount: 'Cuenta',
     setSecGeneral: 'General',
@@ -4680,6 +4772,7 @@ export const strings = {
       'Cuando una actualización de GenOffice traiga un skill más nuevo, aparecerá un botón Actualizar junto a ese asistente.',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill no instalado',
+    intgSharedReaders: 'Carpeta de skills compartida que leen {list}',
     intgStateInstalled: 'Skill {v} instalado · listo en tu próximo chat',
     intgLegacyTitle: 'Copias antiguas de la skill',
     intgLegacyDesc:
@@ -5157,6 +5250,7 @@ export const strings = {
     setSearchRerankCustomModel: 'รหัสโมเดล',
     setSearchRerankAccount: 'รหัสบัญชี',
     setAiPanelSide: 'ตำแหน่งแถบด้านข้าง AI',
+    csvImportLimit: 'ขีดจำกัดการนำเข้า CSV',
     aiPanelSideLeft: 'ซ้าย',
     aiPanelSideRight: 'ขวา',
     setAiFontSize: 'ขนาดตัวอักษรในแผง AI',
@@ -5165,6 +5259,11 @@ export const strings = {
     aiFontSizeXLarge: 'ใหญ่มาก',
     aiFontSizeCustom: 'กำหนดเอง',
     setAiSpellcheck: 'ตรวจการสะกดในแชท AI',
+    setPdfDefaultZoom: 'การซูม PDF เริ่มต้น',
+    setPdfDefaultZoomDesc: 'การซูมที่ใช้เมื่อเปิด PDF ที่ไม่มีตำแหน่งการอ่านที่บันทึกไว้',
+    setPdfDefaultZoomWidth: 'พอดีความกว้าง',
+    setPdfDefaultZoomPage: 'พอดีหน้า',
+    setPdfDefaultZoomLast: 'การซูมที่ใช้ล่าสุด',
     setLegacyImportPrompt: 'ถามก่อนแปลงไฟล์รูปแบบเก่า',
     setLegacyImportPromptDesc:
       'อธิบายว่าเนื้อหาใดจะถูกแปลงมาก่อนเปิดไฟล์ .doc, .odt, .hwp, .ods หรือ .odp เมื่อปิด จะเปิดบันทึกเป็นทันที',
@@ -5182,9 +5281,12 @@ export const strings = {
     setAiOpenInNewDocs: 'เปิดแผง AI ในเอกสารใหม่',
     setAiOpenInNewDocsDesc:
       'เมื่อปิด เอกสารที่เปิดใหม่จะเริ่มโดยพับแผง AI ไว้ คลิกครั้งเดียวเพื่อเปิดเมื่อต้องการ',
+    setAiShowAskTrigger: 'แสดงชิป «ถาม AI» เมื่อเลือกข้อความ',
+    setAiShowAskTriggerDesc:
+      'เมื่อปิด ปุ่มลอย «ถาม AI» ที่ตามการเลือกข้อความจะไม่แสดงอีกต่อไป แผง AI ยังใช้งานได้',
     setAuthorName: 'ชื่อผู้ใช้',
     setAuthorNameDesc:
-      'แสดงเป็นผู้เขียนความคิดเห็นและการติดตามการเปลี่ยนแปลงใน Docs, Sheets และ Slides เว้นว่างไว้เพื่อใช้ชื่อบัญชีคอมพิวเตอร์',
+      'แสดงเป็นผู้เขียนความคิดเห็นและการติดตามการเปลี่ยนแปลงใน Docs, Sheets, Slides และ PDF เว้นว่างไว้เพื่อใช้ชื่อบัญชีคอมพิวเตอร์',
     settings: 'การตั้งค่า',
     setSecAccount: 'บัญชี',
     setSecGeneral: 'ทั่วไป',
@@ -5227,6 +5329,7 @@ export const strings = {
       'เมื่อการอัปเดต GenOffice มาพร้อมสกิลเวอร์ชันใหม่ ปุ่มอัปเดตจะปรากฏข้างผู้ช่วยนั้น',
     intgSkillVersion: 'สกิล {v}',
     intgStateMissing: 'ยังไม่ติดตั้งสกิล',
+    intgSharedReaders: 'โฟลเดอร์สกิลที่ใช้ร่วมกัน ซึ่ง {list} อ่าน',
     intgStateInstalled: 'ติดตั้งสกิล {v} แล้ว · พร้อมใช้ในแชตถัดไป',
     intgLegacyTitle: 'สำเนา skill เก่า',
     intgLegacyDesc:
@@ -5701,6 +5804,7 @@ export const strings = {
     setSearchRerankCustomModel: 'ID model',
     setSearchRerankAccount: 'ID akun',
     setAiPanelSide: 'Posisi bilah samping AI',
+    csvImportLimit: 'Batas impor CSV',
     aiPanelSideLeft: 'Kiri',
     aiPanelSideRight: 'Kanan',
     setAiFontSize: 'Ukuran teks panel AI',
@@ -5709,6 +5813,11 @@ export const strings = {
     aiFontSizeXLarge: 'Sangat besar',
     aiFontSizeCustom: 'Kustom',
     setAiSpellcheck: 'Pemeriksaan ejaan di obrolan AI',
+    setPdfDefaultZoom: 'Zoom PDF default',
+    setPdfDefaultZoomDesc: 'Zoom yang dipakai saat membuka PDF tanpa posisi baca tersimpan.',
+    setPdfDefaultZoomWidth: 'Sesuaikan lebar',
+    setPdfDefaultZoomPage: 'Sesuaikan halaman',
+    setPdfDefaultZoomLast: 'Zoom terakhir dipakai',
     setLegacyImportPrompt: 'Tanya sebelum mengonversi file lama',
     setLegacyImportPromptDesc:
       'Jelaskan apa yang ikut terbawa sebelum membuka file .doc, .odt, .hwp, .ods, atau .odp. Jika nonaktif, Simpan Sebagai langsung terbuka.',
@@ -5726,9 +5835,12 @@ export const strings = {
     setAiOpenInNewDocs: 'Buka panel AI di dokumen baru',
     setAiOpenInNewDocsDesc:
       'Jika nonaktif, dokumen yang baru dibuka dimulai dengan panel AI terlipat; cukup satu klik saat dibutuhkan.',
+    setAiShowAskTrigger: 'Tampilkan chip "Tanya AI" saat memilih',
+    setAiShowAskTriggerDesc:
+      'Jika dimatikan, tombol mengambang "Tanya AI" yang mengikuti pilihan tidak lagi muncul. Panel AI tetap tersedia.',
     setAuthorName: 'Nama pengguna',
     setAuthorNameDesc:
-      'Ditampilkan sebagai penulis komentar dan perubahan terlacak di Docs, Sheets, dan Slides. Kosongkan untuk memakai nama akun komputer.',
+      'Ditampilkan sebagai penulis komentar dan perubahan terlacak di Docs, Sheets, Slides, dan PDF. Kosongkan untuk memakai nama akun komputer.',
     settings: 'Pengaturan',
     setSecAccount: 'Akun',
     setSecGeneral: 'Umum',
@@ -5773,6 +5885,7 @@ export const strings = {
       'Saat pembaruan GenOffice membawa skill yang lebih baru, tombol Perbarui muncul di samping asisten itu.',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill belum terpasang',
+    intgSharedReaders: 'Folder skill bersama yang dibaca {list}',
     intgStateInstalled: 'Skill {v} terpasang · siap di obrolan berikutnya',
     intgLegacyTitle: 'Salinan skill lama',
     intgLegacyDesc:
@@ -6250,6 +6363,7 @@ export const strings = {
     setSearchRerankCustomModel: 'ID модели',
     setSearchRerankAccount: 'ID аккаунта',
     setAiPanelSide: 'Положение боковой панели ИИ',
+    csvImportLimit: 'Ограничение импорта CSV',
     aiPanelSideLeft: 'Слева',
     aiPanelSideRight: 'Справа',
     setAiFontSize: 'Размер текста панели ИИ',
@@ -6258,6 +6372,11 @@ export const strings = {
     aiFontSizeXLarge: 'Очень крупный',
     aiFontSizeCustom: 'Другой',
     setAiSpellcheck: 'Проверка орфографии в чате ИИ',
+    setPdfDefaultZoom: 'Масштаб PDF по умолчанию',
+    setPdfDefaultZoomDesc: 'Масштаб при открытии PDF без сохранённой позиции чтения.',
+    setPdfDefaultZoomWidth: 'По ширине',
+    setPdfDefaultZoomPage: 'По странице',
+    setPdfDefaultZoomLast: 'Последний использованный масштаб',
     setLegacyImportPrompt: 'Спрашивать перед конвертацией старых файлов',
     setLegacyImportPromptDesc:
       'Перед открытием файлов .doc, .odt, .hwp, .ods или .odp поясняет, что будет перенесено. Если выключено, сразу открывается «Сохранить как».',
@@ -6275,9 +6394,12 @@ export const strings = {
     setAiOpenInNewDocs: 'Открывать панель ИИ в новых документах',
     setAiOpenInNewDocsDesc:
       'Если выключено, новые документы открываются со свёрнутой панелью ИИ; она доступна в один клик.',
+    setAiShowAskTrigger: 'Показывать чип «Спросить ИИ» при выделении',
+    setAiShowAskTriggerDesc:
+      'При отключении плавающая кнопка «Спросить ИИ», следующая за выделением, больше не появляется. Панель ИИ остаётся доступной.',
     setAuthorName: 'Имя пользователя',
     setAuthorNameDesc:
-      'Отображается как автор примечаний и исправлений в Docs, Sheets и Slides. Оставьте пустым, чтобы использовать имя учётной записи компьютера.',
+      'Отображается как автор примечаний и исправлений в Docs, Sheets, Slides и PDF. Оставьте пустым, чтобы использовать имя учётной записи компьютера.',
     settings: 'Настройки',
     setSecAccount: 'Аккаунт',
     setSecGeneral: 'Общие',
@@ -6322,6 +6444,7 @@ export const strings = {
       'Когда обновление GenOffice принесёт более новый скилл, рядом с этим ассистентом появится кнопка «Обновить».',
     intgSkillVersion: 'скилл {v}',
     intgStateMissing: 'Скилл не установлен',
+    intgSharedReaders: 'Общая папка скиллов, которую читают {list}',
     intgStateInstalled: 'Скилл {v} установлен · готов к следующему чату',
     intgLegacyTitle: 'Старые копии skill',
     intgLegacyDesc:
@@ -6800,6 +6923,7 @@ export const strings = {
     setSearchRerankCustomModel: 'معرّف النموذج',
     setSearchRerankAccount: 'معرّف الحساب',
     setAiPanelSide: 'موضع الشريط الجانبي للذكاء الاصطناعي',
+    csvImportLimit: 'حد استيراد CSV',
     aiPanelSideLeft: 'اليسار',
     aiPanelSideRight: 'اليمين',
     setAiFontSize: 'حجم نص لوحة الذكاء الاصطناعي',
@@ -6808,6 +6932,11 @@ export const strings = {
     aiFontSizeXLarge: 'كبير جدًا',
     aiFontSizeCustom: 'مخصص',
     setAiSpellcheck: 'التدقيق الإملائي في محادثة الذكاء الاصطناعي',
+    setPdfDefaultZoom: 'تكبير PDF الافتراضي',
+    setPdfDefaultZoomDesc: 'التكبير المستخدم عند فتح ملف PDF بدون موضع قراءة محفوظ.',
+    setPdfDefaultZoomWidth: 'ملاءمة العرض',
+    setPdfDefaultZoomPage: 'ملاءمة الصفحة',
+    setPdfDefaultZoomLast: 'آخر تكبير مستخدم',
     setLegacyImportPrompt: 'السؤال قبل تحويل الملفات القديمة',
     setLegacyImportPromptDesc:
       'يوضح ما سيتم نقله قبل فتح ملفات .doc أو .odt أو .hwp أو .ods أو .odp. عند الإيقاف يُفتح «حفظ باسم» مباشرة.',
@@ -6826,9 +6955,12 @@ export const strings = {
     setAiOpenInNewDocs: 'فتح لوحة الذكاء الاصطناعي في المستندات الجديدة',
     setAiOpenInNewDocsDesc:
       'عند الإيقاف، تبدأ المستندات المفتوحة حديثًا بلوحة الذكاء الاصطناعي مطوية؛ تكفي نقرة واحدة لفتحها عند الحاجة.',
+    setAiShowAskTrigger: 'إظهار شريحة «اسأل الذكاء الاصطناعي» عند التحديد',
+    setAiShowAskTriggerDesc:
+      'عند الإيقاف، لا يظهر الزر العائم «اسأل الذكاء الاصطناعي» الذي يتبع التحديد. تبقى لوحة الذكاء الاصطناعي متاحة.',
     setAuthorName: 'اسم المستخدم',
     setAuthorNameDesc:
-      'يظهر كمؤلف التعليقات والتغييرات المتعقبة في Docs وSheets وSlides. اتركه فارغًا لاستخدام اسم حساب الكمبيوتر.',
+      'يظهر كمؤلف التعليقات والتغييرات المتعقبة في Docs وSheets وSlides وPDF. اتركه فارغًا لاستخدام اسم حساب الكمبيوتر.',
     settings: 'الإعدادات',
     setSecAccount: 'الحساب',
     setSecGeneral: 'عام',
@@ -6871,6 +7003,7 @@ export const strings = {
     intgStep1Update: 'عندما يجلب تحديث GenOffice مهارة أحدث، يظهر زر «تحديث» بجوار ذلك المساعد.',
     intgSkillVersion: 'المهارة {v}',
     intgStateMissing: 'المهارة غير مثبّتة',
+    intgSharedReaders: 'مجلد مهارات مشترك يقرأه {list}',
     intgStateInstalled: 'المهارة {v} مثبّتة · جاهزة في محادثتك التالية',
     intgLegacyTitle: 'نسخ skill القديمة',
     intgLegacyDesc:
@@ -7149,11 +7282,11 @@ export const strings = {
     askSend: 'Enviar',
     askStop: 'Parar',
     askHeroTagline:
-      'Marque com estrela os arquivos que você lê com frequência e a IA poderá pesquisá-los e citar a fonte — clique numa citação para abrir.',
+      'Marque com estrela os arquivos que você lê com frequência e a IA poderá pesquisá-los e citar a fonte — clique em uma citação para abrir.',
     askStep1Title: 'Marcar arquivos',
     askStep1Desc: 'Em Recentes ou Pastas, clique na estrela da linha do arquivo',
     askStep2Title: 'Faça perguntas',
-    askStep2Desc: 'Pergunte como num chat, sem abrir nenhum documento antes',
+    askStep2Desc: 'Pergunte como em um chat, sem abrir nenhum documento antes',
     askStep3Title: 'Abrir citações',
     askStep3Desc: 'As respostas citam o arquivo de origem; clique para ir até ele',
     askCtaRecents: 'Marcar de Recentes',
@@ -7320,9 +7453,9 @@ export const strings = {
     setRestoreSession: 'Reabrir os documentos da última vez',
     setRestoreSessionDesc:
       'Os documentos abertos ao fechar o GenOffice são reabertos automaticamente na próxima vez que ele for iniciado.',
-    setTabSleep: 'Suspender separadores inativos',
+    setTabSleep: 'Suspender guias inativas',
     setTabSleepDesc:
-      'Com muitos separadores abertos, os que não vê há algum tempo libertam a memória e reabrem o ficheiro quando regressa. Separadores com alterações por guardar ou fixados nunca são suspensos.',
+      'As guias que você não acessa há algum tempo liberam memória e reabrem o arquivo quando você volta. Guias fixadas ou com alterações não salvas nunca são suspensas.',
     tabSleeping: 'Suspenso',
     setAutoSave: 'Salvar automaticamente todos os documentos',
     setAutoSaveDesc:
@@ -7340,6 +7473,7 @@ export const strings = {
     setSearchRerankCustomModel: 'ID do modelo',
     setSearchRerankAccount: 'ID da conta',
     setAiPanelSide: 'Posição da barra lateral de IA',
+    csvImportLimit: 'Limite de importação de CSV',
     aiPanelSideLeft: 'Esquerda',
     aiPanelSideRight: 'Direita',
     setAiFontSize: 'Tamanho do texto do painel de IA',
@@ -7348,6 +7482,11 @@ export const strings = {
     aiFontSizeXLarge: 'Muito grande',
     aiFontSizeCustom: 'Personalizado',
     setAiSpellcheck: 'Verificação ortográfica no chat de IA',
+    setPdfDefaultZoom: 'Zoom padrão de PDF',
+    setPdfDefaultZoomDesc: 'Zoom usado ao abrir um PDF sem posição de leitura memorizada.',
+    setPdfDefaultZoomWidth: 'Ajustar à largura',
+    setPdfDefaultZoomPage: 'Ajustar à página',
+    setPdfDefaultZoomLast: 'Último zoom usado',
     setLegacyImportPrompt: 'Perguntar antes de converter arquivos antigos',
     setLegacyImportPromptDesc:
       'Explica o que é preservado antes de abrir arquivos .doc, .odt, .hwp, .ods ou .odp. Desativado, Salvar como abre diretamente.',
@@ -7366,9 +7505,12 @@ export const strings = {
     setAiOpenInNewDocs: 'Abrir o painel de IA em novos documentos',
     setAiOpenInNewDocsDesc:
       'Quando desativado, os documentos recém-abertos começam com o painel de IA recolhido; basta um clique quando precisar.',
+    setAiShowAskTrigger: 'Mostrar o chip «Perguntar à IA» na seleção',
+    setAiShowAskTriggerDesc:
+      'Quando desativado, o botão flutuante «Perguntar à IA» que segue a seleção não aparece mais. O painel de IA continua disponível.',
     setAuthorName: 'Nome de usuário',
     setAuthorNameDesc:
-      'Exibido como autor dos comentários e das alterações controladas no Docs, Sheets e Slides. Deixe em branco para usar o nome da conta do computador.',
+      'Exibido como autor dos comentários e das alterações controladas no Docs, Sheets, Slides e PDF. Deixe em branco para usar o nome da conta do computador.',
     settings: 'Configurações',
     setSecAccount: 'Conta',
     setSecGeneral: 'Geral',
@@ -7414,6 +7556,7 @@ export const strings = {
       'Quando uma atualização do GenOffice trouxer um skill mais novo, um botão Atualizar aparece ao lado desse assistente.',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill não instalado',
+    intgSharedReaders: 'Pasta de skills partilhada, lida por {list}',
     intgStateInstalled: 'Skill {v} instalado · pronto no seu próximo chat',
     intgLegacyTitle: 'Cópias antigas do skill',
     intgLegacyDesc:
@@ -7650,9 +7793,9 @@ export const strings = {
       'Cada entrada é { id, name, vision, maxTokens, alias }; o que não está listado mantém os interruptores acima e as heurísticas embarcadas.',
     setAiEndpointKeyEnv: 'Variável de ambiente da chave',
     setAiEndpointModelsProbed:
-      'As capacidades observadas por esta sonda (vision, maxTokens, contextWindow) são guardadas em cache ao lado do endpoint e valem para os modelos não declarados; a sonda seguinte substitui-as por completo e nada do que está escrito aqui muda.',
+      'As capacidades observadas por esta sonda (vision, maxTokens, contextWindow) são salvas em cache ao lado do endpoint e valem para os modelos não declarados; a sonda seguinte substitui-as por completo e nada do que está escrito aqui muda.',
     setAiEndpointKeyEnvHint:
-      'Se definido, nenhuma chave é guardada aqui; ela é lida dessa variável de ambiente.',
+      'Se definido, nenhuma chave é salva aqui; ela é lida dessa variável de ambiente.',
     setAiEndpointHeadersBad: 'Formato de cabeçalho inválido: cada linha deve ser "Nome: Valor".',
     setAiEndpointModelsBad:
       'Declarações de modelo inválidas: deve ser um array JSON, ex. [{ "id": "m" }].',
@@ -7888,6 +8031,7 @@ export const strings = {
     setSearchRerankCustomModel: 'ID modello',
     setSearchRerankAccount: 'ID account',
     setAiPanelSide: 'Posizione della barra laterale IA',
+    csvImportLimit: 'Limite di importazione CSV',
     aiPanelSideLeft: 'Sinistra',
     aiPanelSideRight: 'Destra',
     setAiFontSize: 'Dimensione del testo del pannello IA',
@@ -7896,6 +8040,12 @@ export const strings = {
     aiFontSizeXLarge: 'Molto grande',
     aiFontSizeCustom: 'Personalizzato',
     setAiSpellcheck: 'Controllo ortografico nella chat IA',
+    setPdfDefaultZoom: 'Zoom PDF predefinito',
+    setPdfDefaultZoomDesc:
+      'Zoom usato all’apertura di un PDF senza posizione di lettura memorizzata.',
+    setPdfDefaultZoomWidth: 'Adatta alla larghezza',
+    setPdfDefaultZoomPage: 'Adatta alla pagina',
+    setPdfDefaultZoomLast: 'Ultimo zoom usato',
     setLegacyImportPrompt: 'Chiedi prima di convertire i file legacy',
     setLegacyImportPromptDesc:
       'Spiega cosa viene mantenuto prima di aprire file .doc, .odt, .hwp, .ods o .odp. Se disattivato, Salva con nome si apre subito.',
@@ -7913,9 +8063,12 @@ export const strings = {
     setAiOpenInNewDocs: 'Apri il pannello IA nei nuovi documenti',
     setAiOpenInNewDocsDesc:
       'Se disattivato, i documenti appena aperti iniziano con il pannello IA ridotto; basta un clic quando serve.',
+    setAiShowAskTrigger: "Mostra la scheda «Chiedi all'IA» sulla selezione",
+    setAiShowAskTriggerDesc:
+      "Disattivata, il pulsante fluttuante «Chiedi all'IA» che segue la selezione non appare più. Il pannello IA resta disponibile.",
     setAuthorName: 'Nome utente',
     setAuthorNameDesc:
-      'Mostrato come autore di commenti e revisioni in Docs, Sheets e Slides. Lascia vuoto per usare il nome dell’account del computer.',
+      'Mostrato come autore di commenti e revisioni in Docs, Sheets, Slides e PDF. Lascia vuoto per usare il nome dell’account del computer.',
     settings: 'Impostazioni',
     setSecAccount: 'Account',
     setSecGeneral: 'Generale',
@@ -7961,6 +8114,7 @@ export const strings = {
       "Quando un aggiornamento di GenOffice porta uno skill più recente, accanto a quell'assistente compare un pulsante Aggiorna.",
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill non installato',
+    intgSharedReaders: 'Cartella skill condivisa, letta da {list}',
     intgStateInstalled: 'Skill {v} installato · pronto nella prossima chat',
     intgLegacyTitle: 'Copie obsolete dello skill',
     intgLegacyDesc:
@@ -8434,6 +8588,7 @@ export const strings = {
     setSearchRerankCustomModel: 'ID modelu',
     setSearchRerankAccount: 'ID konta',
     setAiPanelSide: 'Położenie panelu bocznego AI',
+    csvImportLimit: 'Limit importu CSV',
     aiPanelSideLeft: 'Lewa',
     aiPanelSideRight: 'Prawa',
     setAiFontSize: 'Rozmiar tekstu panelu AI',
@@ -8442,6 +8597,12 @@ export const strings = {
     aiFontSizeXLarge: 'Bardzo duży',
     aiFontSizeCustom: 'Niestandardowy',
     setAiSpellcheck: 'Sprawdzanie pisowni w czacie AI',
+    setPdfDefaultZoom: 'Domyślne powiększenie PDF',
+    setPdfDefaultZoomDesc:
+      'Powiększenie używane przy otwieraniu PDF bez zapamiętanej pozycji czytania.',
+    setPdfDefaultZoomWidth: 'Dopasuj do szerokości',
+    setPdfDefaultZoomPage: 'Dopasuj do strony',
+    setPdfDefaultZoomLast: 'Ostatnio użyte powiększenie',
     setLegacyImportPrompt: 'Pytaj przed konwersją starych plików',
     setLegacyImportPromptDesc:
       'Wyjaśnia, co zostanie przeniesione przed otwarciem plików .doc, .odt, .hwp, .ods lub .odp. Po wyłączeniu od razu otwiera się Zapisz jako.',
@@ -8459,9 +8620,12 @@ export const strings = {
     setAiOpenInNewDocs: 'Otwieraj panel AI w nowych dokumentach',
     setAiOpenInNewDocsDesc:
       'Gdy wyłączone, nowo otwarte dokumenty zaczynają ze zwiniętym panelem AI; wystarczy jedno kliknięcie, gdy jest potrzebny.',
+    setAiShowAskTrigger: 'Pokaż chip „Zapytaj AI” przy zaznaczeniu',
+    setAiShowAskTriggerDesc:
+      'Po wyłączeniu pływający przycisk „Zapytaj AI” podążający za zaznaczeniem nie będzie się pojawiać. Panel AI pozostaje dostępny.',
     setAuthorName: 'Nazwa użytkownika',
     setAuthorNameDesc:
-      'Wyświetlana jako autor komentarzy i śledzonych zmian w Docs, Sheets i Slides. Pozostaw puste, aby użyć nazwy konta komputera.',
+      'Wyświetlana jako autor komentarzy i śledzonych zmian w Docs, Sheets, Slides i PDF. Pozostaw puste, aby użyć nazwy konta komputera.',
     settings: 'Ustawienia',
     setSecAccount: 'Konto',
     setSecGeneral: 'Ogólne',
@@ -8506,6 +8670,7 @@ export const strings = {
       'Gdy aktualizacja GenOffice przyniesie nowszy skill, obok tego asystenta pojawi się przycisk Aktualizuj.',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill niezainstalowany',
+    intgSharedReaders: 'Wspólny folder skilli odczytywany przez {list}',
     intgStateInstalled: 'Skill {v} zainstalowany · gotowy w następnym czacie',
     intgLegacyTitle: 'Stare kopie wtyczki',
     intgLegacyDesc:
@@ -8999,6 +9164,7 @@ export const strings = {
       'Když aktualizace GenOffice přinese novější skill, u daného asistenta se objeví tlačítko Aktualizovat.',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill není nainstalován',
+    intgSharedReaders: 'Sdílená složka skillů, kterou čtou {list}',
     intgStateInstalled: 'Skill {v} nainstalován · připraven v příštím chatu',
     intgLegacyTitle: 'Staré kopie skillu',
     intgLegacyDesc:
@@ -9192,6 +9358,7 @@ export const strings = {
     setSearchRerankCustomModel: 'ID modelu',
     setSearchRerankAccount: 'ID účtu',
     setAiPanelSide: 'Pozice postranního panelu AI',
+    csvImportLimit: 'Limit importu CSV',
     aiPanelSideLeft: 'Vlevo',
     aiPanelSideRight: 'Vpravo',
     setAiFontSize: 'Velikost textu panelu AI',
@@ -9200,6 +9367,11 @@ export const strings = {
     aiFontSizeXLarge: 'Extra velké',
     aiFontSizeCustom: 'Vlastní',
     setAiSpellcheck: 'Kontrola pravopisu v chatu AI',
+    setPdfDefaultZoom: 'Výchozí přiblížení PDF',
+    setPdfDefaultZoomDesc: 'Přiblížení při otevření PDF bez uložené pozice čtení.',
+    setPdfDefaultZoomWidth: 'Přizpůsobit šířce',
+    setPdfDefaultZoomPage: 'Přizpůsobit stránce',
+    setPdfDefaultZoomLast: 'Naposledy použité přiblížení',
     setLegacyImportPrompt: 'Ptát se před převodem starších souborů',
     setLegacyImportPromptDesc:
       'Před otevřením souborů .doc, .odt, .hwp, .ods nebo .odp vysvětlí, co se převede. Při vypnutí se rovnou otevře Uložit jako.',
@@ -9217,6 +9389,9 @@ export const strings = {
     setAiOpenInNewDocs: 'Otevírat panel AI v nových dokumentech',
     setAiOpenInNewDocsDesc:
       'Když je vypnuto, nově otevřené dokumenty začínají se sbaleným panelem AI; v případě potřeby stačí jedno kliknutí.',
+    setAiShowAskTrigger: 'Zobrazit chip „Zeptat se AI” při výběru',
+    setAiShowAskTriggerDesc:
+      'Když je vypnuto, plovoucí tlačítko „Zeptat se AI” následující výběr se již nezobrazuje. Panel AI zůstává dostupný.',
     intgSkillsDesc:
       'GenOffice používá pouze dovednosti ze své vlastní složky. Import složky nebo zipu zkopíruje celou dovednost; při importu se nic nespouští.',
     intgSkillsEmpty: 'Zatím nejsou nainstalovány žádné dovednosti.',
@@ -9247,7 +9422,7 @@ export const strings = {
     intgSkillsInstalledTag: 'Nainstalováno',
     setAuthorName: 'Uživatelské jméno',
     setAuthorNameDesc:
-      'Zobrazuje se jako autor komentářů a sledovaných změn v Docs, Sheets a Slides. Ponechte prázdné pro použití názvu účtu počítače.',
+      'Zobrazuje se jako autor komentářů a sledovaných změn v Docs, Sheets, Slides a PDF. Ponechte prázdné pro použití názvu účtu počítače.',
     helpSearchPlaceholder: 'Hledat v příručce… (stiskněte /)',
     helpSearchLabel: 'Hledat v příručce',
     helpContentsLabel: 'Obsah příručky',
@@ -9516,6 +9691,7 @@ export const strings = {
     setSearchRerankCustomModel: 'Model-ID',
     setSearchRerankAccount: 'Account-ID',
     setAiPanelSide: 'Positie AI-zijbalk',
+    csvImportLimit: 'CSV-importlimiet',
     aiPanelSideLeft: 'Links',
     aiPanelSideRight: 'Rechts',
     setAiFontSize: 'Tekstgrootte AI-paneel',
@@ -9524,6 +9700,11 @@ export const strings = {
     aiFontSizeXLarge: 'Extra groot',
     aiFontSizeCustom: 'Aangepast',
     setAiSpellcheck: 'Spellingcontrole in AI-chat',
+    setPdfDefaultZoom: 'Standaard PDF-zoom',
+    setPdfDefaultZoomDesc: 'Zoom bij het openen van een PDF zonder onthouden leespositie.',
+    setPdfDefaultZoomWidth: 'Aan breedte aanpassen',
+    setPdfDefaultZoomPage: 'Aan pagina aanpassen',
+    setPdfDefaultZoomLast: 'Laatst gebruikte zoom',
     setLegacyImportPrompt: 'Vragen voor het converteren van oude bestanden',
     setLegacyImportPromptDesc:
       'Legt uit wat behouden blijft voordat een .doc-, .odt-, .hwp-, .ods- of .odp-bestand wordt geopend. Uitgeschakeld opent direct Opslaan als.',
@@ -9542,9 +9723,12 @@ export const strings = {
     setAiOpenInNewDocs: 'AI-paneel openen in nieuwe documenten',
     setAiOpenInNewDocsDesc:
       'Indien uit, starten nieuw geopende documenten met een ingeklapt AI-paneel; één klik volstaat wanneer je het nodig hebt.',
+    setAiShowAskTrigger: 'Toon de «Vraag AI»-chip bij selectie',
+    setAiShowAskTriggerDesc:
+      'Als dit uit staat, verschijnt de zwevende «Vraag AI»-knop bij de selectie niet meer. Het AI-paneel blijft beschikbaar.',
     setAuthorName: 'Gebruikersnaam',
     setAuthorNameDesc:
-      'Wordt weergegeven als auteur van opmerkingen en bijgehouden wijzigingen in Docs, Sheets en Slides. Laat leeg om de accountnaam van je computer te gebruiken.',
+      'Wordt weergegeven als auteur van opmerkingen en bijgehouden wijzigingen in Docs, Sheets, Slides en PDF. Laat leeg om de accountnaam van je computer te gebruiken.',
     settings: 'Instellingen',
     setSecAccount: 'Account',
     setSecGeneral: 'Algemeen',
@@ -9589,6 +9773,7 @@ export const strings = {
       'Wanneer een GenOffice-update een nieuwere skill meebrengt, verschijnt naast die assistent een knop Bijwerken.',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill niet geïnstalleerd',
+    intgSharedReaders: 'Gedeelde skills-map, gelezen door {list}',
     intgStateInstalled: 'Skill {v} geïnstalleerd · klaar in uw volgende chat',
     intgLegacyTitle: 'Oude skillkopieën',
     intgLegacyDesc:
@@ -10060,6 +10245,7 @@ export const strings = {
     setSearchRerankCustomModel: 'ID model',
     setSearchRerankAccount: 'ID akaun',
     setAiPanelSide: 'Kedudukan bar sisi AI',
+    csvImportLimit: 'Had import CSV',
     aiPanelSideLeft: 'Kiri',
     aiPanelSideRight: 'Kanan',
     setAiFontSize: 'Saiz teks panel AI',
@@ -10068,6 +10254,12 @@ export const strings = {
     aiFontSizeXLarge: 'Sangat besar',
     aiFontSizeCustom: 'Tersuai',
     setAiSpellcheck: 'Semakan ejaan dalam sembang AI',
+    setPdfDefaultZoom: 'Zum PDF lalai',
+    setPdfDefaultZoomDesc:
+      'Zum yang digunakan apabila membuka PDF tanpa kedudukan bacaan tersimpan.',
+    setPdfDefaultZoomWidth: 'Muat lebar',
+    setPdfDefaultZoomPage: 'Muat halaman',
+    setPdfDefaultZoomLast: 'Zum terakhir digunakan',
     setLegacyImportPrompt: 'Tanya sebelum menukar fail lama',
     setLegacyImportPromptDesc:
       'Terangkan apa yang dikekalkan sebelum membuka fail .doc, .odt, .hwp, .ods atau .odp. Jika dimatikan, Simpan Sebagai terus dibuka.',
@@ -10086,9 +10278,12 @@ export const strings = {
     setAiOpenInNewDocs: 'Buka panel AI dalam dokumen baharu',
     setAiOpenInNewDocsDesc:
       'Jika dimatikan, dokumen yang baru dibuka bermula dengan panel AI dilipat; cukup satu klik apabila diperlukan.',
+    setAiShowAskTrigger: 'Papar cip "Tanya AI" semasa pilihan',
+    setAiShowAskTriggerDesc:
+      'Apabila dimatikan, butang terapung "Tanya AI" yang mengikut pilihan tidak lagi muncul. Panel AI masih tersedia.',
     setAuthorName: 'Nama pengguna',
     setAuthorNameDesc:
-      'Dipaparkan sebagai pengarang komen dan perubahan dijejak dalam Docs, Sheets dan Slides. Biarkan kosong untuk menggunakan nama akaun komputer.',
+      'Dipaparkan sebagai pengarang komen dan perubahan dijejak dalam Docs, Sheets, Slides dan PDF. Biarkan kosong untuk menggunakan nama akaun komputer.',
     settings: 'Tetapan',
     setSecAccount: 'Akaun',
     setSecGeneral: 'Umum',
@@ -10133,6 +10328,7 @@ export const strings = {
       'Apabila kemas kini GenOffice membawa skill yang lebih baharu, butang Kemas kini muncul di sebelah pembantu itu.',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill belum dipasang',
+    intgSharedReaders: 'Folder skill dikongsi yang dibaca oleh {list}',
     intgStateInstalled: 'Skill {v} dipasang · sedia dalam sembang seterusnya',
     intgLegacyTitle: 'Salinan skill lama',
     intgLegacyDesc:
@@ -10601,6 +10797,7 @@ export const strings = {
     setSearchRerankCustomModel: 'מזהה מודל',
     setSearchRerankAccount: 'מזהה חשבון',
     setAiPanelSide: 'מיקום סרגל הצד של הבינה המלאכותית',
+    csvImportLimit: 'מגבלת ייבוא CSV',
     aiPanelSideLeft: 'שמאל',
     aiPanelSideRight: 'ימין',
     setAiFontSize: 'גודל הטקסט בחלונית ה-AI',
@@ -10609,6 +10806,11 @@ export const strings = {
     aiFontSizeXLarge: 'גדול מאוד',
     aiFontSizeCustom: 'מותאם אישית',
     setAiSpellcheck: 'בדיקת איות בצ׳אט ה-AI',
+    setPdfDefaultZoom: 'זום ברירת מחדל ל-PDF',
+    setPdfDefaultZoomDesc: 'הזום שבו נפתח PDF ללא מיקום קריאה שמור.',
+    setPdfDefaultZoomWidth: 'התאמה לרוחב',
+    setPdfDefaultZoomPage: 'התאמה לעמוד',
+    setPdfDefaultZoomLast: 'הזום האחרון שהיה בשימוש',
     setLegacyImportPrompt: 'לשאול לפני המרת קבצים ישנים',
     setLegacyImportPromptDesc:
       'מסביר מה יישמר לפני פתיחת קובצי ‎.doc, ‎.odt, ‎.hwp, ‎.ods או ‎.odp. כשכבוי, „שמירה בשם” נפתח מיד.',
@@ -10626,9 +10828,12 @@ export const strings = {
     setAiOpenInNewDocs: 'פתיחת לוח ה-AI במסמכים חדשים',
     setAiOpenInNewDocsDesc:
       'כאשר כבוי, מסמכים שנפתחו זה עתה מתחילים עם לוח ה-AI מקופל; לחיצה אחת מספיקה כשצריך.',
+    setAiShowAskTrigger: 'הצג את השבב «שאל את ה-AI» בעת בחירה',
+    setAiShowAskTriggerDesc:
+      'כשהאפשרות כבויה, הכפתור הצף «שאל את ה-AI» שעוקב אחר הבחירה לא יופיע עוד. לוח ה-AI נשאר זמין.',
     setAuthorName: 'שם משתמש',
     setAuthorNameDesc:
-      'מוצג כמחבר ההערות והשינויים במעקב ב‑Docs, Sheets ו‑Slides. השאירו ריק כדי להשתמש בשם חשבון המחשב.',
+      'מוצג כמחבר ההערות והשינויים במעקב ב‑Docs, Sheets, Slides ו‑PDF. השאירו ריק כדי להשתמש בשם חשבון המחשב.',
     settings: 'הגדרות',
     setSecAccount: 'חשבון',
     setSecGeneral: 'כללי',
@@ -10671,6 +10876,7 @@ export const strings = {
     intgStep1Update: 'כשעדכון של GenOffice מביא skill חדש יותר, ליד אותו עוזר יופיע כפתור עדכון.',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'ה-skill לא מותקן',
+    intgSharedReaders: 'תיקיית skills משותפת שנקראת על ידי {list}',
     intgStateInstalled: 'skill {v} מותקן · מוכן בשיחה הבאה',
     intgLegacyTitle: 'עותקי skill ישנים',
     intgLegacyDesc:
@@ -11134,6 +11340,7 @@ export const strings = {
     setSearchRerankCustomModel: 'मॉडल ID',
     setSearchRerankAccount: 'खाता ID',
     setAiPanelSide: 'AI साइडबार की स्थिति',
+    csvImportLimit: 'CSV आयात सीमा',
     aiPanelSideLeft: 'बाईं ओर',
     aiPanelSideRight: 'दाईं ओर',
     setAiFontSize: 'AI पैनल का टेक्स्ट आकार',
@@ -11142,6 +11349,11 @@ export const strings = {
     aiFontSizeXLarge: 'बहुत बड़ा',
     aiFontSizeCustom: 'कस्टम',
     setAiSpellcheck: 'AI चैट में वर्तनी जाँच',
+    setPdfDefaultZoom: 'डिफ़ॉल्ट PDF ज़ूम',
+    setPdfDefaultZoomDesc: 'बिना सहेजी पढ़ने की स्थिति वाला PDF खोलते समय उपयोग होने वाला ज़ूम।',
+    setPdfDefaultZoomWidth: 'चौड़ाई में फ़िट',
+    setPdfDefaultZoomPage: 'पृष्ठ में फ़िट',
+    setPdfDefaultZoomLast: 'पिछली बार उपयोग किया ज़ूम',
     setLegacyImportPrompt: 'पुरानी फ़ाइलें बदलने से पहले पूछें',
     setLegacyImportPromptDesc:
       '.doc, .odt, .hwp, .ods या .odp फ़ाइलें खोलने से पहले बताता है कि क्या-क्या बदला जाएगा। बंद होने पर सीधे “इस रूप में सहेजें” खुलता है।',
@@ -11159,9 +11371,12 @@ export const strings = {
     setAiOpenInNewDocs: 'नए दस्तावेज़ों में AI पैनल खोलें',
     setAiOpenInNewDocsDesc:
       'बंद होने पर, नए खोले गए दस्तावेज़ AI पैनल संक्षिप्त अवस्था में शुरू होते हैं; ज़रूरत पड़ने पर एक क्लिक में खुल जाता है।',
+    setAiShowAskTrigger: 'चयन पर «AI से पूछें» चिप दिखाएँ',
+    setAiShowAskTriggerDesc:
+      'बंद करने पर, चयन का अनुसरण करने वाला «AI से पूछें» फ़्लोटिंग बटन अब नहीं दिखता। AI पैनल उपलब्ध रहता है।',
     setAuthorName: 'उपयोगकर्ता नाम',
     setAuthorNameDesc:
-      'Docs, Sheets और Slides में टिप्पणियों और ट्रैक किए गए परिवर्तनों के लेखक के रूप में दिखाया जाता है। कंप्यूटर खाता नाम उपयोग करने के लिए खाली छोड़ें।',
+      'Docs, Sheets, Slides और PDF में टिप्पणियों और ट्रैक किए गए परिवर्तनों के लेखक के रूप में दिखाया जाता है। कंप्यूटर खाता नाम उपयोग करने के लिए खाली छोड़ें।',
     settings: 'सेटिंग्स',
     setSecAccount: 'खाता',
     setSecGeneral: 'सामान्य',
@@ -11205,6 +11420,7 @@ export const strings = {
       'जब GenOffice के अपडेट में नया skill आता है, तो उस असिस्टेंट के पास अपडेट बटन दिखता है।',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'skill इंस्टॉल नहीं है',
+    intgSharedReaders: '{list} द्वारा पढ़ा जाने वाला साझा skills फ़ोल्डर',
     intgStateInstalled: 'skill {v} इंस्टॉल हो गया · अगली चैट में तैयार',
     intgLegacyTitle: 'पुरानी skill प्रतियाँ',
     intgLegacyDesc:
@@ -11665,6 +11881,7 @@ export const strings = {
     setSearchRerankCustomModel: '模型 ID',
     setSearchRerankAccount: '帳戶 ID',
     setAiPanelSide: 'AI 側邊欄位置',
+    csvImportLimit: 'CSV 匯入上限',
     aiPanelSideLeft: '左側',
     aiPanelSideRight: '右側',
     setAiFontSize: 'AI 面板文字大小',
@@ -11673,6 +11890,11 @@ export const strings = {
     aiFontSizeXLarge: '特大',
     aiFontSizeCustom: '自訂',
     setAiSpellcheck: 'AI 對話拼字檢查',
+    setPdfDefaultZoom: 'PDF 預設縮放',
+    setPdfDefaultZoomDesc: '開啟沒有閱讀記錄的 PDF 時使用的縮放。',
+    setPdfDefaultZoomWidth: '符合寬度',
+    setPdfDefaultZoomPage: '符合頁面',
+    setPdfDefaultZoomLast: '上次使用的縮放',
     setLegacyImportPrompt: '開啟舊格式前先提示',
     setLegacyImportPromptDesc:
       '開啟 .doc、.odt、.hwp、.ods、.odp 等舊格式檔案時，先說明哪些內容會轉換過來。關閉後直接進入另存新檔。',
@@ -11689,9 +11911,12 @@ export const strings = {
       '關閉後，編輯器會隱藏 AI 側欄和側邊按鈕；功能區或選單中的 AI 操作仍可開啟面板，新文件也不會自動開啟。',
     setAiOpenInNewDocs: '在新文件中開啟 AI 面板',
     setAiOpenInNewDocsDesc: '關閉後，新開啟的文件預設收合 AI 面板；需要時點一下即可展開。',
+    setAiShowAskTrigger: '選取文字時顯示「AI 修改」浮窗',
+    setAiShowAskTriggerDesc:
+      '關閉後，跟隨文字選取範圍出現的「AI 修改」快捷按鈕將不再顯示；AI 面板仍可正常使用。',
     setAuthorName: '使用者名稱',
     setAuthorNameDesc:
-      '作為註解和追蹤修訂的作者顯示在 Docs、Sheets、Slides 中。留空則使用電腦帳戶名稱。',
+      '作為註解和追蹤修訂的作者顯示在 Docs、Sheets、Slides、PDF 中。留空則使用電腦帳戶名稱。',
     settings: '設定',
     setSecAccount: '帳戶',
     setSecGeneral: '一般',
@@ -11732,6 +11957,7 @@ export const strings = {
     intgStep1Update: 'GenOffice 升級帶來新版 skill 時，對應助理旁會出現「更新」按鈕。',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'skill 未安裝',
+    intgSharedReaders: '{list} 共用的 skills 資料夾',
     intgStateInstalled: '已安裝 skill {v} · 下次對話即可使用',
     intgLegacyTitle: '舊版 skill 副本',
     intgLegacyDesc:

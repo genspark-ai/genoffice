@@ -529,6 +529,7 @@ export const ko = {
   appBridgeUnavailable:
     '데스크톱 파일 브리지를 사용할 수 없습니다. Electron 앱을 다시 시작하십시오.',
   appOpenCanceled: '통합 문서 선택을 취소했습니다.',
+  appImportCanceled: '가져오기를 취소했습니다.',
   appOpeningWorkbook: '통합 문서를 여는 중…',
   appOpened: '{name}을(를) 열었습니다 — 셀 편집은 ⌘S로 파일에 저장합니다.',
   appOpenFailed: '통합 문서를 열 수 없습니다.',
@@ -1190,6 +1191,9 @@ export const ko = {
   appLinksLocate: '원본 파일 열기',
   appLinksReachable: '사용 가능',
   appLinksBroken: '사용 안 함',
+  appLinksBreak: '링크 끊기',
+  appLinksBreakConfirm: '끊기 확인',
+  appLinksChangeSource: '원본 변경',
   appGroupCalculation: '계산',
   appCalculationOptions: '계산 옵션',
   appCalculationOptionsTitle: '자동 또는 수동 재계산',

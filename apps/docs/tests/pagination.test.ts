@@ -44,6 +44,7 @@ import {
   hfVariantOf,
   insertParityBlanks,
   lineBreakBoundaries,
+  tileBoxes,
   lineStartAnchor,
   nextLineAnchor,
   anchorElement,
@@ -52,6 +53,7 @@ import {
   liveSections,
   pageNumbers,
   applyBlockMeta,
+  resolveNoteBands,
   applyRowNotes,
   fillLineBoxes,
   measureBlocks,
@@ -399,6 +401,20 @@ describe('lineBreakBoundaries', () => {
 
   it('overlapping ink keeps the ink-top cut (never below the next line start)', () => {
     expect(lineBreakBoundaries([ln(0, 24), ln(22, 46)])).toEqual([22])
+  })
+})
+
+describe('tileBoxes', () => {
+  it('recentres sub-pixel boundary bias so the first and last lines tile evenly', () => {
+    // 4 x 36.8 lines sampled 0.4 high (floored half-leading): 36.4, 73.2, 110.0
+    const boxes = tileBoxes([36.4, 73.2, 110.0], 147.2)
+    expect(boxes.map((b) => +b.height.toFixed(2))).toEqual([36.8, 36.8, 36.8, 36.8])
+    expect(boxes.map((b) => +b.offsetInBlock.toFixed(2))).toEqual([0, 36.8, 73.6, 110.4])
+  })
+
+  it('leaves genuinely unequal first and last lines alone', () => {
+    const boxes = tileBoxes([20, 40], 80)
+    expect(boxes.map((b) => b.height)).toEqual([20, 20, 40])
   })
 })
 
@@ -1896,6 +1912,16 @@ describe('computeSectionedSlicesF2 — line-level pagination', () => {
     expect(slices.map((s) => s.start)).toEqual([0, 215])
   })
 
+  it('single-line anchor without line data: only its text must fit, not its space-after', () => {
+    const before = block(0, 140)
+    const heading = lineBlock(140, [20], { keepNext: true })
+    // one-line paragraphs are never line-sampled; text ends at 190, after runs to 205
+    const body = block(160, 45, { spaceAfterPx: 15 })
+    const next = lineBlock(205, [50])
+    const slices = computeSectionedSlicesF2([before, heading, body, next], geoms1, 255)
+    expect(slices.map((s) => s.start)).toEqual([0, 205])
+  })
+
   it('keepNext chain taller than a page keeps each block by splitting it (widow control off)', () => {
     const a = lineBlock(0, [60, 60], { keepNext: true, widowControl: false })
     const b = lineBlock(120, [60, 60], { keepNext: true, widowControl: false })
@@ -3243,6 +3269,37 @@ describe('fillLineBoxes — keepNext chain anchors', () => {
     ])
   })
 
+  it('soft-break rows between two text lines are lines of their own', () => {
+    // 'abc' + 4 breaks + 'def': the first break closes the abc row, the next
+    // three are blank rows; without them the abc..def ink gap was one boundary
+    const el = document.createElement('p')
+    el.append('abc')
+    const brs = Array.from({ length: 4 }, () => el.appendChild(document.createElement('br')))
+    el.append('def')
+    const para: BlockBox = { top: 0, height: 100, el }
+    const row = (i: number) => ({
+      top: i * 20,
+      bottom: i * 20 + 17,
+      height: 17,
+      width: 30,
+      left: 0,
+    })
+    const textRects = [[row(0)], [row(4)]]
+    const origRange = Range.prototype.getClientRects
+    const origBr = HTMLBRElement.prototype.getBoundingClientRect
+    Range.prototype.getClientRects = () => textRects.shift() as unknown as DOMRectList
+    HTMLBRElement.prototype.getBoundingClientRect = function () {
+      return { ...row(brs.indexOf(this as HTMLBRElement)), width: 0 } as DOMRect
+    }
+    try {
+      expect(fillLineBoxes([para], geoms, 1, twoPages(50))).toBe(true)
+    } finally {
+      Range.prototype.getClientRects = origRange
+      HTMLBRElement.prototype.getBoundingClientRect = origBr
+    }
+    expect(para.lineBoxes?.map((b) => b.offsetInBlock)).toEqual([0, 18.5, 38.5, 58.5, 78.5])
+  })
+
   it('samples a requested block that lies on no page edge', () => {
     const el = document.createElement('p')
     el.textContent = 'two lines'
@@ -3560,8 +3617,8 @@ describe('measureBlocks — break-only paragraphs', () => {
     const bands = [{ heightPx: 20 }, { heightPx: 40 }]
     applyBlockMeta(blocks, () => ({ footnoteExtraPx: 60, footnoteBands: bands }))
     expect(blocks[0].noteBands).toEqual([
-      { offset: 5, height: 20 },
-      { offset: 65, height: 40 },
+      { offset: 10, height: 20 },
+      { offset: 70, height: 40 },
     ])
     const rows: TableRowBox[] = [{ height: 30 }, { height: 30 }, { height: 30 }]
     applyRowNotes(el, rows, bands)
@@ -3582,7 +3639,9 @@ describe('measureBlocks — break-only paragraphs', () => {
     expect(blocks[0]).toMatchObject({ height: 112, footnoteExtraPx: 12 })
   })
 
-  it('applyBlockMeta resolves footnote bands at their marker offsets', () => {
+  // a superscript marker's box pokes above its line box: the band is keyed by
+  // the marker's centre so it stays with the line holding the reference
+  const noteRefPara = (): HTMLElement => {
     const el = document.createElement('p')
     el.getBoundingClientRect = () => ({ top: 100, height: 80 }) as DOMRect
     for (const top of [110, 152]) {
@@ -3590,19 +3649,42 @@ describe('measureBlocks — break-only paragraphs', () => {
       sup.className = 'doc-note-ref'
       sup.setAttribute('data-note-ref', String(top))
       sup.setAttribute('data-note-kind', 'footnote')
-      sup.getBoundingClientRect = () => ({ top, height: 8 }) as DOMRect
+      sup.getBoundingClientRect = () => ({ top, bottom: top + 8, height: 8 }) as DOMRect
       el.appendChild(sup)
     }
-    const blocks: BlockBox[] = [{ top: 0, height: 80, docxIndex: 0, el }]
+    return el
+  }
+
+  it('applyBlockMeta resolves footnote bands at their marker centres', () => {
+    const blocks: BlockBox[] = [{ top: 0, height: 80, docxIndex: 0, el: noteRefPara() }]
     applyBlockMeta(blocks, () => ({
       footnoteExtraPx: 30,
       footnoteBands: [{ heightPx: 10 }, { heightPx: 20 }],
     }))
     expect(blocks[0].noteBands).toEqual([
-      { offset: 10, height: 10 },
-      { offset: 52, height: 20 },
+      { offset: 14, height: 10 },
+      { offset: 56, height: 20 },
     ])
     expect(blocks[0].height).toBe(110)
+  })
+
+  it('resolveNoteBands pairs markers on freshly measured blocks without charging the height', () => {
+    // the preview reuses the canvas cuts with its own measured blocks: the
+    // page painter still needs each note keyed to its reference line
+    const blocks: BlockBox[] = [{ top: 0, height: 80, docxIndex: 0, el: noteRefPara() }]
+    const metaOf = () => ({
+      footnoteExtraPx: 30,
+      footnoteBands: [{ heightPx: 10 }, { heightPx: 20 }],
+    })
+    resolveNoteBands(blocks, metaOf)
+    expect(blocks[0].noteBands).toEqual([
+      { offset: 14, height: 10 },
+      { offset: 56, height: 20 },
+    ])
+    expect(blocks[0].height).toBe(80)
+    const seen = blocks[0].noteBands
+    resolveNoteBands(blocks, metaOf)
+    expect(blocks[0].noteBands).toBe(seen)
   })
 
   it('a split paragraph charges each note on the page holding its reference line', () => {
@@ -4343,7 +4425,8 @@ describe('computeSectionedSlicesF2 — multi-column flow', () => {
     // five 2-line paragraphs (10 lines) in a 2-col region of height 160: col1
     // naturally overflows at 8 lines, but the continuous single-column close
     // re-balances to the line quota (5) — widow/orphan atomicity keeps the
-    // 2-line paragraph whole, so the cut lands at the next paragraph top (6/4)
+    // 2-line paragraph whole and a column never passes its share by more than
+    // half a line, so the cut lands at the paragraph top before the quota (4/6)
     const blocks: BlockBox[] = [
       ...Array.from({ length: 5 }, (_, i) => ({
         ...lineBlock(i * 40, [20, 20]),
@@ -4359,8 +4442,31 @@ describe('computeSectionedSlicesF2 — multi-column flow', () => {
     expect(slices).toHaveLength(1)
     const regions = slices[0].regions!
     expect(regions[0].columns.map((c) => [c.start, c.end])).toEqual([
-      [0, 120],
-      [120, 200],
+      [0, 80],
+      [80, 200],
+    ])
+    expect(regions[0].height).toBe(120)
+    expect(regions[1].top).toBe(120)
+  })
+
+  it('balance stops short of the quota at an uncuttable straddler', () => {
+    // four 1-line paragraphs (80) then a 120px paragraph without line data and a
+    // continuous 1-col close: quota 100 — the straddler would carry the column
+    // to 200, so it opens the second column (Word fills a column up to its
+    // share, never past it)
+    const blocks: BlockBox[] = [
+      ...Array.from({ length: 4 }, (_, i) => ({ ...lineBlock(i * 20, [20]), section: 0 })),
+      { top: 80, height: 120, section: 0 },
+      { ...lineBlock(200, [30]), section: 1 },
+    ]
+    const geoms = [
+      { contentHeight: 400, forceBreak: false, cols: 2 },
+      { contentHeight: 400, forceBreak: false },
+    ]
+    const regions = computeSectionedSlicesF2(blocks, geoms, 230)[0].regions!
+    expect(regions[0].columns.map((c) => [c.start, c.end])).toEqual([
+      [0, 80],
+      [80, 200],
     ])
     expect(regions[0].height).toBe(120)
     expect(regions[1].top).toBe(120)
@@ -4389,8 +4495,10 @@ describe('computeSectionedSlicesF2 — multi-column flow', () => {
     ])
   })
 
-  it('empty paragraphs flow into balanced columns but do not count toward the quota', () => {
-    // 4 text lines + 2 trailing empties, 2 cols: quota 2 → cut after 2 text lines
+  it('empty paragraphs count as lines in the balance quota, trailing ones included', () => {
+    // 4 text lines + 2 trailing empties, 2 cols: 6 lines, quota 3 → cut after 3
+    // text lines; the second column keeps its empties and the region extent
+    // covers them
     const blocks: BlockBox[] = [
       { ...lineBlock(0, [20]), section: 0 },
       { ...lineBlock(20, [20]), section: 0 },
@@ -4405,8 +4513,8 @@ describe('computeSectionedSlicesF2 — multi-column flow', () => {
       { contentHeight: 400, forceBreak: false },
     ]
     const regions = computeSectionedSlicesF2(blocks, geoms, 150)[0].regions!
-    expect(regions[0].columns.map((c) => c.start)).toEqual([0, 40])
-    expect(regions[0].height).toBe(40) // trailing empties are absorbed: extent = 2 text lines
+    expect(regions[0].columns.map((c) => c.start)).toEqual([0, 60])
+    expect(regions[0].height).toBe(60)
   })
 
   it('a manual column break disables balancing for its region', () => {
@@ -4450,7 +4558,9 @@ describe('computeSectionedSlicesF2 — multi-column flow', () => {
   })
 
   it('a continuous section keeping the column count still balances the closed region (Word balance-columns idiom)', () => {
-    // five 2-line paragraphs in a 2-col section closed by a continuous 2-col section
+    // five 2-line paragraphs in a 2-col section closed by a continuous 2-col
+    // section: the quota (5 lines) falls inside a paragraph, so the first
+    // column stops at 4 lines
     const blocks: BlockBox[] = [
       ...Array.from({ length: 5 }, (_, i) => ({
         ...lineBlock(i * 40, [20, 20]),
@@ -4467,8 +4577,8 @@ describe('computeSectionedSlicesF2 — multi-column flow', () => {
     const regions = slices[0].regions!
     expect(regions).toHaveLength(2)
     expect(regions[0].columns.map((c) => [c.start, c.end])).toEqual([
-      [0, 120],
-      [120, 200],
+      [0, 80],
+      [80, 200],
     ])
     expect(regions[0].height).toBe(120)
     expect(regions[1].top).toBe(120)

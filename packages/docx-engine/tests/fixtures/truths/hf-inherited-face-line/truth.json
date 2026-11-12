@@ -45,7 +45,7 @@
       "para": 0,
       "expect": {
         "styles": [
-          "--doc-line-factor:1.15",
+          "--doc-line-factor:1.1499",
           "font-size:8pt",
           "line-height:calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))"
         ]
@@ -68,7 +68,7 @@
     {
       "kind": "hfLineBox",
       "part": 6,
-      "expect": { "styles": ["--doc-line-factor:1.22"] }
+      "expect": { "styles": ["--doc-line-factor:1.2207"] }
     }
   ],
   "docx": "probe.docx"

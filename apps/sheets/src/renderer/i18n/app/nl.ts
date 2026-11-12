@@ -554,6 +554,7 @@ export const nl = {
   appBridgeUnavailable:
     'De bestandsbridge van de desktop is niet beschikbaar. Start de Electron-app opnieuw.',
   appOpenCanceled: 'Werkmapselectie geannuleerd.',
+  appImportCanceled: 'Import geannuleerd.',
   appOpeningWorkbook: 'Werkmap openen…',
   appOpened: '{name} geopend — celbewerkingen slaat u terug op met ⌘S.',
   appOpenFailed: 'Kan de werkmap niet openen.',
@@ -1209,6 +1210,9 @@ export const nl = {
   appLinksLocate: 'Bronbestand tonen',
   appLinksReachable: 'Beschikbaar',
   appLinksBroken: 'Niet beschikbaar',
+  appLinksBreak: 'Koppeling verbreken',
+  appLinksBreakConfirm: 'Verbreken bevestigen',
+  appLinksChangeSource: 'Bron wijzigen',
   appGroupCalculation: 'Berekening',
   appCalculationOptions: 'Berekeningsopties',
   appCalculationOptionsTitle: 'Automatisch of handmatig herberekenen',

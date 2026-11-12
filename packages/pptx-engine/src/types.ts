@@ -233,6 +233,26 @@ export interface TextRun {
    */
   fontScriptHint?: 'ja' | 'ko' | 'sc' | 'tc'
   /**
+   * The run's East Asian language: its own altLang/lang, else the nearest inherited level
+   * default that carries a lang. 'none' = tagged with a non-East-Asian language (en-US);
+   * absent = no tag on the run or anywhere in its inheritance chain. PowerPoint for Mac with
+   * a Korean UI applied no East Asian rules to such text (a deck with no lang anywhere broke
+   * Hangul mid-word, like en-US), so layout applies none unless the host passes
+   * `defaultEaLang`. PowerPoint picks East Asian line-breaking rules by this tag, not by the
+   * characters (PowerPoint for Mac probes):
+   * - kinsoku and hanging punctuation use the language's own character sets, and en-US
+   *   text has none ("。" may start a line);
+   * - space-delimited Hangul words stay whole only in Korean-tagged text (an en-US run
+   *   breaks inside the last word that does not fit);
+   * - latinLnBrk="1" splits Latin words mid-word except in Korean-tagged text, where it
+   *   splits Hangul words instead.
+   */
+  eaLang?: 'ja' | 'ko' | 'sc' | 'tc' | 'none'
+  /** The run's own rPr lang / altLang, written back when the run is regenerated so an edit
+   *  does not strip the language its line breaking depends on. */
+  lang?: string
+  altLang?: string
+  /**
    * Original <a:latin>/<a:ea> typeface text (incl. +mj-lt/+mn-ea theme refs).
    * Present = the user has not changed the font: patches keep the original bytes
    * and regeneration writes the original values back, so CJK/Latin dual fonts and
@@ -586,7 +606,7 @@ export interface TextElement extends ElementBase {
   /** spPr carried neither a:prstGeom nor a:custGeom (non-placeholder): PowerPoint draws only the text */
   noGeometry?: true
   fill?: Fill
-  /** <p:sp useBgFill="1">: painted with the slide's effective background fill (fill is only a fallback) */
+  /** <p:sp useBgFill="1"> without an spPr fill of its own: painted with the slide's effective background fill */
   useBgFill?: boolean
   /** <a:effectLst><a:fillOverlay>: second fill composited over the base (PowerPoint blends
    *  with the record's blend mode; the renderer approximates every mode as multiply) */

@@ -76,8 +76,10 @@ export interface RemovedPartBinding {
 export interface RemovePartsPlan {
   /** package paths removal drops (or has already dropped), sorted */
   removedPaths: string[]
-  /** explicit paths that are not present in the package (ignored) */
+  /** explicit paths that are not present in the package (not a part, a folder or a glob) */
   unknownPaths: string[]
+  /** explicit paths naming parts the package depends on; the save refuses rather than damaging the file */
+  refusedPaths: string[]
   /** content controls bound to removed customXml stores */
   dataBindings: RemovedPartBinding[]
 }
@@ -157,11 +159,25 @@ function normalizeItemId(value: string): string {
   return value.replace(/[{}]/g, '').trim().toUpperCase()
 }
 
-/** The parts an option set selects, plus explicit paths that are not in the package. */
+/**
+ * Parts the package structurally depends on (Word repairs or refuses a file
+ * without them): the property parts and thumbnail the package root relates,
+ * and the document-structure parts a saved document always carries
+ * (genoffice#2554). An explicit path that names one is a refusal, not an
+ * unknown path.
+ */
+const STRUCTURAL_PART_RE: RegExp[] = [
+  /^docProps\/(?:core|app|custom)\.xml$/i,
+  /^docProps\/thumbnail\./i,
+  /^word\/(?:styles|settings|numbering|fontTable|webSettings)\.xml$/i,
+  /^word\/theme\//i,
+]
+
+/** The parts an option set selects, plus explicit paths that miss or must be refused. */
 async function wantedParts(
   zip: JSZip,
   options: RemovePartsOptions,
-): Promise<{ paths: Set<string>; unknownPaths: string[] }> {
+): Promise<{ paths: Set<string>; missingPaths: string[]; refusedPaths: string[] }> {
   const protectedPaths = new Set(PROTECTED_PART_PATHS)
   const mainPath = await resolveMainDocumentPath(zip)
   if (mainPath) {
@@ -177,16 +193,30 @@ async function wantedParts(
       if (!zip.files[name]!.dir && name.startsWith(prefix)) paths.add(name)
     }
   }
-  const unknownPaths: string[] = []
+  const missingPaths: string[] = []
+  const refusedPaths: string[] = []
   for (const raw of options.paths ?? []) {
     const path = normalizePartPath(String(raw))
-    if (!path || !zip.file(path) || protectedPaths.has(path)) {
-      unknownPaths.push(String(raw))
+    if (!path || !zip.file(path) || zip.file(path)!.dir) {
+      missingPaths.push(String(raw))
+      continue
+    }
+    if (protectedPaths.has(path) || STRUCTURAL_PART_RE.some((re) => re.test(path))) {
+      refusedPaths.push(String(raw))
       continue
     }
     paths.add(path)
   }
-  return { paths, unknownPaths }
+  // a customXml data store rides with its itemProps part: removing item1.xml
+  // alone would orphan itemProps1.xml and skip the dataBinding check
+  // (genoffice#2554)
+  for (const path of [...paths]) {
+    const m = /^customXml\/item(?!Props)([^/]*)\.xml$/i.exec(path)
+    if (!m) continue
+    const props = `customXml/itemProps${m[1]}.xml`
+    if (zip.file(props) && !zip.file(props)!.dir && !protectedPaths.has(props)) paths.add(props)
+  }
+  return { paths, missingPaths, refusedPaths }
 }
 
 /** Add the relationship part of every selected part (it belongs to the part and leaves with it). */
@@ -281,6 +311,14 @@ export function removePartsRefusalMessage(bindings: RemovedPartBinding[]): strin
   )
 }
 
+/** The error for explicit paths naming parts the package depends on. */
+export function removePartsRefusalMessageFor(refusedPaths: string[]): string {
+  return (
+    `remove_parts refuses parts the package depends on: ${refusedPaths.join(', ')}. ` +
+    'Removing them would corrupt or degrade the saved file.'
+  )
+}
+
 interface ZipPlan {
   plan: RemovePartsPlan
   /** story part XML with the dataBinding elements removed (only when stripping) */
@@ -288,7 +326,7 @@ interface ZipPlan {
 }
 
 async function planInZip(zip: JSZip, options: RemovePartsOptions): Promise<ZipPlan> {
-  const { paths, unknownPaths } = await wantedParts(zip, options)
+  const { paths, missingPaths, refusedPaths } = await wantedParts(zip, options)
   const removeSet = withOwnRels(zip, paths)
   const itemIds = await itemIdsOf(zip, removeSet)
   const storyParts = await storyPartsOf(zip)
@@ -297,7 +335,8 @@ async function planInZip(zip: JSZip, options: RemovePartsOptions): Promise<ZipPl
   return {
     plan: {
       removedPaths: [...removeSet].sort(),
-      unknownPaths,
+      unknownPaths: missingPaths,
+      refusedPaths,
       dataBindings: bindings,
     },
     stripped,
@@ -394,6 +433,7 @@ export async function applyRemoveParts(
   options: RemovePartsOptions,
 ): Promise<RemovePartsPlan> {
   const { plan, stripped } = await planInZip(zip, options)
+  if (plan.refusedPaths.length > 0) throw new Error(removePartsRefusalMessageFor(plan.refusedPaths))
   if (plan.removedPaths.length === 0) return plan
   if (plan.dataBindings.length > 0) {
     if ((options.dataBinding ?? 'refuse') !== 'strip')

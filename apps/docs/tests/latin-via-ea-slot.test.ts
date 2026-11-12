@@ -8,9 +8,9 @@ import {
   krLineFactor,
   latinViaEastAsiaSlotFor,
   lineHeightFactor,
-  setLatinViaEastAsiaSlot,
   wordSlotFaces,
-} from '../src/renderer/line-metrics'
+} from '../src/renderer/text-layout/font-rules'
+import { setOpenDocumentText } from '../src/renderer/text-layout/open-document'
 import { latinParaFactor, layoutParaOfRuns } from '../src/renderer/editor/para-layout-spec'
 import { prefetchFaces, setFontMetricsProvider } from '../src/renderer/font-resolve'
 
@@ -19,7 +19,7 @@ import { prefetchFaces, setFontMetricsProvider } from '../src/renderer/font-reso
 const editors: Editor[] = []
 afterEach(() => {
   editors.splice(0).forEach((e) => e.destroy())
-  setLatinViaEastAsiaSlot(false)
+  setOpenDocumentText(null)
   setFontMetricsProvider(undefined)
 })
 
@@ -112,12 +112,12 @@ describe('docDefaults East Asian w:lang w:val lays Latin out with the eastAsia s
   })
 
   it('an ascii-only run takes the inherited East Asian face, not its own Latin name', () => {
-    setLatinViaEastAsiaSlot(true, 'Batang')
+    setOpenDocumentText({ latinViaEaSlot: true, bodyEaSlot: 'Batang' })
     expect(runStyle({ font: 'Courier New', fontAscii: 'Courier New' })).toContain('Batang')
     expect(
       runStyle({ font: 'Courier New', fontAscii: 'Courier New', eastAsiaFont: 'Courier New' }),
     ).toContain('GenOffice SimSun Latin')
-    setLatinViaEastAsiaSlot(true, 'Arial')
+    setOpenDocumentText({ latinViaEaSlot: true, bodyEaSlot: 'Arial' })
     expect(runStyle({ font: 'Courier New', fontAscii: 'Courier New' })).toContain(
       'GenOffice SimSun Latin',
     )
@@ -154,12 +154,12 @@ describe('docDefaults East Asian w:lang w:val lays Latin out with the eastAsia s
     expect(latinParaFactor(para('Shaker Tarima'), 'var(--doc-line-factor-latin,1.2)')).toBe(
       'var(--doc-line-factor-latin,1.2)',
     )
-    setLatinViaEastAsiaSlot(true, 'Arial')
+    setOpenDocumentText({ latinViaEaSlot: true, bodyEaSlot: 'Arial' })
     expect(latinParaFactor(para('Shaker Tarima'), 'var(--doc-line-factor-latin,1.2)')).toBe('1.3')
     expect(latinParaFactor(para(''), 'var(--doc-line-factor-latin,1.2)')).toBe(
       'var(--doc-line-factor-latin,1.2)',
     )
-    setLatinViaEastAsiaSlot(true, 'Batang')
+    setOpenDocumentText({ latinViaEaSlot: true, bodyEaSlot: 'Batang' })
     expect(latinParaFactor(para('Shaker Tarima'), 'var(--doc-line-factor-latin,1.2)')).toBe(
       String(lineHeightFactor('Batang')),
     )
@@ -167,7 +167,7 @@ describe('docDefaults East Asian w:lang w:val lays Latin out with the eastAsia s
 
   it('runs render through the SimSun chain when the flag is on', () => {
     expect(runStyle({ font: 'Courier New', fontAscii: 'Courier New' })).toContain('Courier New')
-    setLatinViaEastAsiaSlot(true)
+    setOpenDocumentText({ latinViaEaSlot: true })
     const ff = runStyle({ font: 'Courier New', fontAscii: 'Courier New' })
     expect(ff).toContain('GenOffice SimSun Latin')
     expect(ff).not.toContain('Courier New')
@@ -182,7 +182,7 @@ describe('docDefaults East Asian w:lang w:val lays Latin out with the eastAsia s
     expect(base).toContain('GenOffice SimSun Latin')
     expect(base).not.toContain('Arial')
     // empty paragraphs keep the ascii face's height (Word probe 2026-11-02)
-    expect(base).toContain('--doc-line-factor-latin:1.15')
+    expect(base).toContain('--doc-line-factor-latin:1.1499')
     expect(ko).toMatch(/--doc-latin-chain:[^;}]*GenOffice SimSun Latin/)
     // without the rule Arial leads; a Latin eastAsia slot still sends CJK glyphs to
     // SimSun (Word probe 2026-11-04 e4: docDefaults Calibri in every slot draws Han in SimSun)
@@ -213,10 +213,10 @@ describe('docDefaults East Asian w:lang w:val lays Latin out with the eastAsia s
   it('an empty mark takes the eastAsia face only when that face draws East Asian script', () => {
     expect(inheritedMarkFace('Calibri')).toBe('Calibri')
     expect(inheritedMarkFace(null)).toBeNull()
-    setLatinViaEastAsiaSlot(true, 'Malgun Gothic')
+    setOpenDocumentText({ latinViaEaSlot: true, bodyEaSlot: 'Malgun Gothic' })
     expect(inheritedMarkFace('Calibri')).toBe('Malgun Gothic')
     expect(inheritedMarkFace(null)).toBe('Malgun Gothic')
-    setLatinViaEastAsiaSlot(true, 'Arial')
+    setOpenDocumentText({ latinViaEaSlot: true, bodyEaSlot: 'Arial' })
     expect(inheritedMarkFace('Arial')).toBe('Arial')
     expect(inheritedMarkFace(null)).toBeNull()
   })

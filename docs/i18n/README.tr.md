@@ -20,7 +20,7 @@ Word, Excel, PowerPoint ve PDF dosyaları; siz ve yapay zekânız tarafından d�
   <a href="https://x.com/merrickbuilds"><img src="https://img.shields.io/badge/follow-%40merrickbuilds-000000?logo=x&logoColor=white" alt="X'te @merrickbuilds'i takip edin"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <b>Türkçe</b></p><!-- lang-switcher · public-hygiene: allow -->
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <b>Türkçe</b></p><!-- lang-switcher · public-hygiene: allow -->
 
 <p align="center">
   <a href="#download"><b>İndir</b></a> ·
@@ -114,7 +114,7 @@ yönlendirilmiştir.
 </tr>
 <tr>
 <td><b>Oluşturun</b> — tek bir cümleden ajan, bölge ve kategoriye göre gerçek <code>SUMIF</code> formülleri içeren bir Summary sayfası ekler, bir sütun grafiği yerleştirir ve 43 değişikliği tek bir geri alınabilir toplu işlem olarak uygular.</td>
-<td><b>Sorun</b> — çalışma kitabıyla ilgili sorular, gerekçesiyle ve kullanılan hücreler tıklanabilir alıntılar olarak geri döner. Arka planda: kendi geliştirdiğimiz Rust tabanlı <code>.xlsx</code> motoru, özet tablolar, dilimleyiciler, koşullu biçimlendirme, formül izleme ve hücrelere Excel'in yerel zengin değerleri olarak gömülen resimler — Excel onları yeniden açtığında hâlâ hücrenin içindedir.</td>
+<td><b>Sorun</b> — çalışma kitabıyla ilgili sorular, gerekçesiyle ve kullanılan hücreler tıklanabilir alıntılar olarak geri döner. Arka planda: kendi geliştirdiğimiz Rust tabanlı <code>.xlsx</code> motoru, özet tablolar, dilimleyiciler, koşullu biçimlendirme, formül izleme ve hücrelere Excel'in yerel zengin değerleri olarak gömülen resimler — Excel onları yeniden açtığında hâlâ hücrenin içindedir.Hücre notları bir resim taşıyabilir; resim, notun açılır penceresinin altında gösterilir.</td>
 </tr>
 </table>
 
@@ -285,6 +285,12 @@ belgesi oluşturmasına izin verir.
 </tr>
 </table>
 
+### 11 · Eski dosyalar — 2000'lerden kalma `.doc`, `.xls` ve `.ppt` dosyaları da açılır
+
+Word 97–2003 `.doc`, Excel `.xls` veya PowerPoint `.ppt` dosyası, bilgisayarınızda oluşturulan dönüştürülmüş bir `.docx`, `.xlsx` veya `.pptx` kopyası olarak açılır; özgün dosya hiçbir zaman değiştirilmez. Görseller, tablolar, formüller, sayı biçimleri, dolgular ve düzen aktarılır.
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="GenOffice'in kurgusal bir 2004 faaliyet raporuna ait .ppt, .doc ve .xls dosyalarını açtığı hızlandırılmış görüntü; ardından bir slayt PowerPoint'te, yanında GenOffice'te dönüştürülmüş sunu" width="100%">
+
 ## Neden GenOffice
 
 - **Açık kaynak**, Apache-2.0, GitHub'da açıkta geliştiriliyor.
@@ -345,13 +351,15 @@ analizi kazanır.
 
 **Ya da kendi anahtarınızı getirin.** Ayarlar → AI; Claude, OpenAI, Gemini,
 DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter,
-Requesty, Opper, Cheaper Inference, Atlas Cloud ve OpenCode Zen/Go'yu, ayrıca
+Requesty, SiliconFlow, PPIO, Command Code, Opper, Cheaper Inference, Atlas Cloud ve OpenCode Zen/Go'yu, ayrıca
 yerel model sunucuları dahil herhangi bir OpenAI uyumlu uç nokta (temel URL +
 anahtar) için özel bir yuvayı listeler. Arama ve medyanın **AI Media &
 Search** altında yetenek başına kendi sağlayıcıları vardır: web araması için
-Serper, Serply, Tavily, Parallel, Keenable, Exa ya da Firecrawl; görsel üretimi
+Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa ya da Firecrawl; görsel üretimi
 ve görsel/video analizi için OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen,
-MiniMax ya da herhangi bir OpenAI uyumlu görsel uç noktası; görsel analizi için
+MiniMax,
+Stability,
+FLUX ya da herhangi bir OpenAI uyumlu görsel uç noktası; görsel analizi için
 ayrıca DeepSeek V4.1 Flash.
 
 **TypeSafe Jev**, ana ekranın dosya aramasını yeniden sıralar. **AI Media &
@@ -382,7 +390,8 @@ de kabul eder.
 
 - **Ayarlar → Skills.** Önerilen bir skill'i **Install** edin ya da bir
   klasörü, bir zip'i veya tek bir `SKILL.md` dosyasını **Import** edin. İçe
-  aktarmada hiçbir şey çalışmaz.
+  aktarmada hiçbir şey çalışmaz. **Tümü** sekmesi, önerilen kataloğun tamamını
+  tek yerde, uygulama dilindeki açıklamalarla listeler.
 - **Bir sohbette.** Herhangi bir yapay zekâ panelinde oluşturucunun yanındaki
   **+** menüsünü açın, **Skills**'i seçin, birini işaretleyin, gönderin. Skill
   yalnızca o mesajla birlikte gider.
@@ -575,6 +584,8 @@ AppImage olduğu yerde çalışır: FUSE 2 çalışma zamanını kurun
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+Bir Chromebook’ta aynı paketler Linux ortamında (Crostini) çalışır — ayrıntılar için [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

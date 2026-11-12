@@ -19,7 +19,7 @@ Archivos Word, Excel, PowerPoint y PDF, editados por ti y tu IA, guardados de nu
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="Estrellas de GitHub"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <b>Español</b> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <b>Español</b> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center">
   <a href="#download"><b>Descargar</b></a> ·
@@ -99,7 +99,7 @@ el prompt que puedes leer en el panel.
 </tr>
 <tr>
 <td><b>Créala</b> — a partir de una sola frase, el agente añade una hoja Summary con auténticas fórmulas <code>SUMIF</code> por región y categoría, inserta un gráfico de columnas y aplica los 43 cambios como un único lote que se puede deshacer.</td>
-<td><b>Pregúntale</b> — las preguntas sobre el libro se responden con el razonamiento y las celdas exactas usadas, presentadas como citas en las que se puede hacer clic. Por debajo: un motor <code>.xlsx</code> en Rust desarrollado internamente, tablas dinámicas, segmentaciones de datos, formato condicional, trazado de fórmulas e imágenes incrustadas en las celdas como valores enriquecidos nativos de Excel — Excel las vuelve a abrir aún dentro de la celda.</td>
+<td><b>Pregúntale</b> — las preguntas sobre el libro se responden con el razonamiento y las celdas exactas usadas, presentadas como citas en las que se puede hacer clic. Por debajo: un motor <code>.xlsx</code> en Rust desarrollado internamente, tablas dinámicas, segmentaciones de datos, formato condicional, trazado de fórmulas e imágenes incrustadas en las celdas como valores enriquecidos nativos de Excel — Excel las vuelve a abrir aún dentro de la celda.Las notas de celda pueden llevar una imagen, que se muestra bajo la ventana emergente de la nota.</td>
 </tr>
 </table>
 
@@ -227,6 +227,12 @@ mientras lo observas.
 </tr>
 </table>
 
+### 9 · Archivos antiguos — los `.doc`, `.xls` y `.ppt` de los años 2000 también se abren
+
+Un `.doc` de Word 97–2003, un `.xls` de Excel o un `.ppt` de PowerPoint se abre como una copia convertida `.docx`, `.xlsx` o `.pptx` creada en tu equipo; el archivo original nunca se modifica. Se conservan imágenes, tablas, fórmulas, formatos de número, rellenos y diseño.
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="Secuencia acelerada de GenOffice abriendo los archivos .ppt, .doc y .xls de un informe anual ficticio de 2004, y después una diapositiva mostrada en PowerPoint junto a la presentación convertida en GenOffice" width="100%">
+
 ## Por qué GenOffice
 
 - **Código abierto**, Apache-2.0, desarrollado abiertamente en GitHub.
@@ -282,13 +288,13 @@ Gemini) y los agentes obtienen búsqueda web y de imágenes, generación de
 imágenes, y análisis de imagen/audio/video.
 
 **O usa tu propia clave.** Settings → AI incluye Claude, OpenAI, Gemini,
-DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty y
+DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code y
 OpenCode Zen/Go, además de una ranura personalizada para cualquier endpoint
 compatible con OpenAI (URL base + clave), incluidos servidores de modelos
 locales. La búsqueda y los medios tienen sus propios proveedores por
-capacidad en **AI Media & Search**: Serper, Serply, Tavily, Parallel,
+capacidad en **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel,
 Keenable, Exa o Firecrawl para búsqueda web, y
-OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax o cualquier
+OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX o cualquier
 endpoint de imágenes compatible con OpenAI para generación de imágenes y
 análisis de imagen/video.
 
@@ -303,7 +309,7 @@ archivos guardados siempre conservan los colores propios del documento.
 Un skill es un `SKILL.md` que le dice a la IA cómo hacer bien una tarea: un informe semanal, un NDA, un plan de clase.
 GenOffice incluye un conjunto y acepta los tuyos, en el mismo formato que usan los agentes de código.
 
-- **Ajustes → Skills.** **Instala** un skill recomendado o **Importa** una carpeta, un zip o un único `SKILL.md`. Al importar no se ejecuta nada.
+- **Ajustes → Skills.** **Instala** un skill recomendado o **Importa** una carpeta, un zip o un único `SKILL.md`. Al importar no se ejecuta nada. La pestaña **Todas** muestra todo el catálogo recomendado en un solo lugar, con descripciones en el idioma de la aplicación.
 - **En un chat.** Abre el menú **+** junto al cuadro de texto de cualquier panel de IA, elige **Skills**, marca uno y envía. El skill solo acompaña a ese mensaje.
 
 ---
@@ -486,6 +492,8 @@ haz que el archivo sea ejecutable y luego ejecútalo:
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+En un Chromebook, los mismos paquetes funcionan dentro del entorno Linux (Crostini): los detalles están en [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

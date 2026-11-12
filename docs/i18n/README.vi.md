@@ -20,7 +20,7 @@ Tệp Word, Excel, PowerPoint và PDF do bạn và AI của bạn cùng chỉnh 
   <a href="https://x.com/merrickbuilds"><img src="https://img.shields.io/badge/follow-%40merrickbuilds-000000?logo=x&logoColor=white" alt="Follow @merrickbuilds on X"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <b>Tiếng Việt</b> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <b>Tiếng Việt</b> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center">
   <a href="#download"><b>Tải xuống</b></a> ·
@@ -130,7 +130,7 @@ thay đổi thành một lô hoàn tác được cùng lúc.</td>
 đúng những ô đã dùng dưới dạng trích dẫn bấm được. Bên dưới: một engine
 <code>.xlsx</code> Rust tự phát triển, pivot table, slicer, định dạng có
 điều kiện, truy vết công thức, và ảnh nhúng trong ô dưới dạng rich value
-gốc của Excel — mở lại trong Excel chúng vẫn nằm trong ô.</td>
+gốc của Excel — mở lại trong Excel chúng vẫn nằm trong ô.Ghi chú của ô có thể kèm ảnh, hiển thị bên dưới cửa sổ ghi chú.</td>
 </tr>
 </table>
 
@@ -362,6 +362,12 @@ trình soạn thảo Word hiện rõ. Cả hai được mô tả ở
 </tr>
 </table>
 
+### 11 · Tệp cũ — `.doc`, `.xls` và `.ppt` từ những năm 2000 cũng mở được
+
+Tệp `.doc` của Word 97–2003, `.xls` của Excel hoặc `.ppt` của PowerPoint được mở dưới dạng bản sao `.docx`, `.xlsx` hoặc `.pptx` đã chuyển đổi ngay trên máy của bạn; tệp gốc không bao giờ bị thay đổi. Hình ảnh, bảng, công thức, định dạng số, màu tô và bố cục đều được giữ lại.
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="Video tua nhanh GenOffice mở các tệp .ppt, .doc và .xls của một báo cáo thường niên giả định năm 2004, sau đó là một slide hiển thị trong PowerPoint bên cạnh bản trình bày đã chuyển đổi trong GenOffice" width="100%">
+
 ## Vì sao chọn GenOffice
 
 - **Mã nguồn mở**, Apache-2.0, xây công khai trên GitHub.
@@ -417,12 +423,13 @@ và ảnh, tạo ảnh, cùng phân tích ảnh/âm thanh/video.
 
 **Hoặc mang khoá riêng của bạn.** Settings → AI liệt kê Claude, OpenAI,
 Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral,
-OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud và OpenCode
-Zen/Go, cùng một ô tuỳ biến cho bất kỳ điểm cuối tương thích OpenAI nào
+OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlow,
+PPIO, Command Code và OpenCode Zen/Go, cùng một ô tuỳ biến cho bất kỳ điểm cuối tương thích OpenAI nào
 (base URL + khoá), kể cả máy chủ mô hình cục bộ. Search và media có nhà
 cung cấp riêng theo từng khả năng dưới **AI Media & Search**: Serper,
-Serply, Tavily, Parallel, Keenable, Exa hoặc Firecrawl cho tìm kiếm web;
-OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax hoặc bất kỳ điểm
+Serply, SearchApi, Tavily, Parallel, Keenable, Exa hoặc Firecrawl cho tìm kiếm web;
+OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX
+hoặc bất kỳ điểm
 cuối ảnh tương thích OpenAI nào cho tạo ảnh và phân tích ảnh/video, cùng
 DeepSeek V4.1 Flash cho phân tích ảnh.
 
@@ -451,7 +458,7 @@ của tài liệu.
 Skill là một tệp `SKILL.md` chỉ cho AI cách làm tốt một việc: báo cáo tuần, NDA, giáo án.
 GenOffice đi kèm một bộ skill và nhận cả skill của bạn, cùng định dạng mà các agent lập trình dùng.
 
-- **Cài đặt → Skill.** **Cài** một skill được đề xuất, hoặc **Nhập** một thư mục, một tệp zip hay một `SKILL.md` đơn lẻ. Không có gì chạy khi nhập.
+- **Cài đặt → Skill.** **Cài** một skill được đề xuất, hoặc **Nhập** một thư mục, một tệp zip hay một `SKILL.md` đơn lẻ. Không có gì chạy khi nhập. Tab **Tất cả** liệt kê toàn bộ danh mục được đề xuất ở một nơi, với mô tả theo ngôn ngữ của ứng dụng.
 - **Trong trò chuyện.** Mở menu **+** cạnh ô nhập của bất kỳ bảng AI nào, chọn **Skill**, tích một cái rồi gửi. Skill chỉ đi kèm đúng tin nhắn đó.
 
 ---
@@ -642,6 +649,8 @@ AppImage chạy tại chỗ: cài runtime FUSE 2
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+Trên Chromebook, các gói này chạy trong môi trường Linux (Crostini) — xem chi tiết tại [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

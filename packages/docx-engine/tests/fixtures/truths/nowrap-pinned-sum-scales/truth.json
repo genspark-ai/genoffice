@@ -1,0 +1,51 @@
+{
+  "id": "nowrap-pinned-sum-scales",
+  "title": "w:noWrap pins a column at its w:tcW; pinned widths over the text column are shrunk proportionally and the noWrap cells wrap after all",
+  "section": "word-truths.md#L1153",
+  "probe_date": "2026-11-08",
+  "source": "probe build.py (+ build_base.py), A4 9026-twip column, tblW auto, tblGrid 926/49/8051, Word for Mac direct PDF, pymupdf vertical rules",
+  "cases": [
+    {
+      "kind": "tableGeom",
+      "block": 1,
+      "expect": {
+        "overWide": true
+      },
+      "note": "span-2 noWrap 1530 + a row whose 12915 neighbour is noWrap too: pinned 14445 > 9026, Word draws column 1 at 48.2pt and wraps the date"
+    },
+    {
+      "kind": "tableGeom",
+      "block": 4,
+      "expect": {
+        "overWide": true
+      },
+      "note": "only the neighbour row's second cell is noWrap: same 14445 pin, same wrap"
+    },
+    {
+      "kind": "tableGeom",
+      "block": 7,
+      "expect": {
+        "overWide": false
+      },
+      "note": "both noWrap, 1530 + 7000 = 8530 fits: both columns drawn at their tcW, no wrap"
+    },
+    {
+      "kind": "tableGeom",
+      "block": 10,
+      "expect": {
+        "overWide": true
+      },
+      "note": "1530 + 9000 = 10530 over the column: column 1 drawn 1316 = 1530 x 9026/10530, date wraps"
+    },
+    {
+      "kind": "tableGeom",
+      "block": 13,
+      "expect": {
+        "overWide": true
+      },
+      "note": "both cells noWrap with text in one row"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

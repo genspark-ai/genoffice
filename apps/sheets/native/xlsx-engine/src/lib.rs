@@ -362,7 +362,11 @@ impl WorkbookSessions {
                     })
                 })
                 .collect();
-            let sparklines = read_sheet_sparklines(&mut archive, &worksheet_path)?;
+            let worksheet_without_cells =
+                visuals::read_worksheet_without_cells(&mut archive, &worksheet_path)?;
+            let sparklines = read_sheet_sparklines(&worksheet_without_cells)?;
+            let ole_objects =
+                visuals::read_ole_objects(&mut archive, &worksheet_without_cells, &worksheet_path)?;
             let cell_images = read_sheet_cell_images(
                 &mut archive,
                 &worksheet_path,
@@ -455,6 +459,7 @@ impl WorkbookSessions {
             visual_sources.push(SheetVisualSource {
                 sheet_id: id,
                 worksheet_path: worksheet_path.clone(),
+                ole_objects,
             });
             runtimes.push(SheetRuntime::new(worksheet_path));
         }

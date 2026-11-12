@@ -19,7 +19,13 @@ import { XMLParser } from 'fast-xml-parser'
 import type { Transform, TextAlign } from './types'
 import { type EaScript, type Theme, eaScriptOfLang, resolveFontRef } from './theme'
 import { resolveColorNode } from './color'
-import { asXmlNode, decodeNumericCharRefs, xmlArray, type XmlNode } from './xml-utils'
+import {
+  asXmlNode,
+  decodeNumericCharRefs,
+  percentPoints,
+  xmlArray,
+  type XmlNode,
+} from './xml-utils'
 
 /** Spec (and PowerPoint UI) ceiling for <a:buAutoNum startAt>. */
 export const MAX_AUTO_NUM_START = 32767
@@ -57,6 +63,9 @@ export interface LevelTextStyle {
   csFont?: string
   /** East Asian script of the level's defRPr lang/altLang (steers empty-ea theme refs on runs without a lang of their own) */
   eaScript?: EaScript
+  /** Line-breaking language of a level whose defRPr carries lang/altLang: its East Asian
+   *  script, or 'none' for a non-East-Asian tag (so an inherited en-US still counts as a tag) */
+  eaLang?: Exclude<EaScript, 'han'> | 'none'
   align?: TextAlign
   /** Bullet default (master bodyStyle levels commonly use buChar '•') */
   bullet?: {
@@ -279,10 +288,9 @@ const ALIGN_MAP: Record<string, TextAlign> = {
   just: 'justify',
 }
 
-/** <a:spcPct val="150000"/> → 150 (%). */
+/** <a:spcPct val="150000"/> or val="150%" → 150 (%). */
 function spcPctVal(node: unknown): number | undefined {
-  const v = asXmlNode(asXmlNode(node)['a:spcPct'])['@_val']
-  return v != null ? parseInt(String(v), 10) / 1000 : undefined
+  return percentPoints(asXmlNode(asXmlNode(node)['a:spcPct'])['@_val'])
 }
 
 /** <a:spcPts val="2400"/> → 24 (pt). */
@@ -408,6 +416,7 @@ export function parseDefRPrStyle(
   }
   const eaScript = eaScriptOfLang(defRPr['@_altLang']) ?? eaScriptOfLang(defRPr['@_lang'])
   if (eaScript) out.eaScript = eaScript
+  if (defRPr['@_altLang'] != null || defRPr['@_lang'] != null) out.eaLang = eaScript ?? 'none'
   const latinAttr = typefaceAttr(defRPr['a:latin'])
   const latin = resolveFontRef(latinAttr, theme, eaScript)
   if (latin) out.latinFont = latin
@@ -679,6 +688,7 @@ export function mergeTextStyleChain(
       src.csFont = from
     }
     if (out.eaScript == null && lvl.eaScript != null) out.eaScript = lvl.eaScript
+    if (out.eaLang == null && lvl.eaLang != null) out.eaLang = lvl.eaLang
     if (out.align == null && lvl.align != null) {
       out.align = lvl.align
       src.align = from

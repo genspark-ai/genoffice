@@ -1,0 +1,31 @@
+{
+  "id": "apple-sd-gothic-factor",
+  "class": "pure",
+  "title": "Apple SD Gothic Neo paces 1.56 = hhea x 1.3; the 2.60 reading was docGrid snapping",
+  "section": "word-truths.md#L1006",
+  "probe_date": "2026-11-05",
+  "source": "probe.docx -> Word PDF: Apple SD Gothic Neo 12pt pitch 18.72 (1.56), Heiti SC 15.6 (1.30), Malgun Gothic 20.64-20.88 (1.73), Calibri 14.64 (1.22); no docGrid, so no row snapping",
+  "cases": [
+    {
+      "kind": "factor",
+      "font": "Apple SD Gothic Neo",
+      "expect": 1.56,
+      "tol": 0.001,
+      "note": "hhea 1.20 x 1.3; Word pitch 18.72 at 12pt"
+    },
+    {
+      "kind": "factor",
+      "font": "Heiti SC",
+      "expect": 1.3,
+      "tol": 0.001,
+      "note": "Word pitch 15.6 at 12pt"
+    },
+    {
+      "kind": "factor",
+      "font": "Malgun Gothic",
+      "expect": 1.7291,
+      "tol": 0.002,
+      "note": "Word pitch 20.64-20.88 at 12pt"
+    }
+  ]
+}

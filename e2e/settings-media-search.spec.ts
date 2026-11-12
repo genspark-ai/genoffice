@@ -59,6 +59,7 @@ test('Jev reranking lives in the AI Media & Search pane, saves with it, and repo
           liquid: '',
           'liquid-ultra': '',
           openai: '',
+          gemini: '',
           cloudflare: '',
           'cloudflare-flash': '',
           kev: '',

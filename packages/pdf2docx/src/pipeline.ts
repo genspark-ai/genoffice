@@ -325,8 +325,8 @@ export function extractIrDocument(pdf: Uint8Array, opts: ConvertOptions): IrDocu
       // P6: the source document renders its headers/footers/page numbers onto
       // every page — detected across pages and dropped (first occurrence kept)
       // so they do not repeat through the rebuilt body text. Absolute layout
-      // has no body flow: each slide is its page, and the pptx rebuild has no
-      // header/footer seat, so a repeated line stays on every slide.
+      // has no body flow: each slide is its page, so a repeated line stays on
+      // every slide.
       const furniture: FurnitureResult = opts.absoluteLayout
         ? { drop: extractedPages.map(() => new Set()), droppedLines: 0, hf: [] }
         : detectFurniture(
@@ -534,9 +534,10 @@ export function extractIrDocument(pdf: Uint8Array, opts: ConvertOptions): IrDocu
       // by design — document priors only lower the page gate, borderline pages
       // stay flow.
       classifyPages(irPages, readDocMetadata(m, doc))
-      // cell-data (xlsx) promises page ↔ sheet: stitching would move a page's
-      // continuation paragraph onto the previous sheet and leave its own empty
-      if (!opts.cellData) stitchCrossPageParagraphs(irPages)
+      // cell-data (xlsx) and absolute layout (pptx) promise page ↔ sheet/slide:
+      // stitching would move a page's continuation paragraph onto the previous
+      // one and leave its own empty
+      if (!opts.cellData && !opts.absoluteLayout) stitchCrossPageParagraphs(irPages)
     },
     opts.password,
   )

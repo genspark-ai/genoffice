@@ -47,7 +47,7 @@ import {
   resolveReflection,
   type MediaResolver,
 } from './fill'
-import { layoutText } from './text-layout'
+import { layoutText, type TextLayoutInput } from './text-layout'
 import { HeuristicMetrics, type FontMetricsProvider } from './metrics'
 import { bevelFaceColor, buildCellBevel } from './cell-bevel'
 import {
@@ -81,7 +81,12 @@ export interface BuildOptions {
    * If omitted, the cached text in <a:fld> is used (which may be stale from before slides were moved).
    */
   slideNo?: number
+  /** Line-breaking language for text with no language tag anywhere (unset = no East Asian
+   *  rules; see TextLayoutInput.defaultEaLang). */
+  defaultEaLang?: DefaultEaLang
 }
+
+type DefaultEaLang = TextLayoutInput['defaultEaLang']
 
 /** Refresh slidenum field display to the current slide number (returns a replaced copy; returns the input as-is on no match, never mutates the model). */
 function withSlideNum(el: SlideElement, num: number): SlideElement {
@@ -158,7 +163,7 @@ export function buildRenderSlide(
   const nodes: RenderNode[] = []
   // master/layout decoration layer: drawn at the bottom (above the background, below content), read-only
   for (const el of slide.decorations ?? []) {
-    const node = buildNode(sub(el), vp, metrics, opts.media, { x: 0, y: 0 })
+    const node = buildNode(sub(el), vp, metrics, opts.media, opts.defaultEaLang, { x: 0, y: 0 })
     if (node && node.type !== 'placeholder-chip') {
       node.decoration = true
       nodes.push(node)
@@ -175,14 +180,14 @@ export function buildRenderSlide(
     bgLeading += 1
   }
   for (const [i, el] of slide.elements.entries()) {
-    const node = buildNode(sub(el), vp, metrics, opts.media, { x: 0, y: 0 })
+    const node = buildNode(sub(el), vp, metrics, opts.media, opts.defaultEaLang, { x: 0, y: 0 })
     if (node) {
       if (i < bgLeading) node.background = true
       nodes.push(node)
     }
     // chartUserShapes overlays ride on top of their chart, read-only like decorations
     for (const us of el.type === 'chart' ? ((el as ChartElement).userShapes ?? []) : []) {
-      const n = buildNode(us, vp, metrics, opts.media, { x: 0, y: 0 })
+      const n = buildNode(us, vp, metrics, opts.media, opts.defaultEaLang, { x: 0, y: 0 })
       if (n && n.type !== 'placeholder-chip') {
         n.decoration = true
         nodes.push(n)
@@ -211,10 +216,11 @@ function buildNode(
   vp: Viewport,
   metrics: FontMetricsProvider,
   media: MediaResolver | undefined,
+  defaultEaLang: DefaultEaLang,
   parentOffset: ParentPlacement,
   parentGroup?: SlideElement,
 ): RenderNode | null {
-  const node = buildNodeInner(el, vp, metrics, media, parentOffset)
+  const node = buildNodeInner(el, vp, metrics, media, defaultEaLang, parentOffset)
   // Durable id attached centrally so every node kind (charts and placeholder
   // chips included) carries it — the AI projection prefers it over sourceId.
   // Group children resolve through the parent's bytes (their creationId lives
@@ -231,19 +237,20 @@ function buildNodeInner(
   vp: Viewport,
   metrics: FontMetricsProvider,
   media: MediaResolver | undefined,
+  defaultEaLang: DefaultEaLang,
   parentOffset: ParentPlacement,
 ): RenderNode | null {
   const box = placeTransform(el.transform, vp, parentOffset)
   switch (el.type) {
     case 'text':
     case 'shape':
-      return buildShape(el as TextElement, box, vp, metrics, media)
+      return buildShape(el as TextElement, box, vp, metrics, media, defaultEaLang)
     case 'picture':
       return buildPicture(el as PictureElement, box, vp, media)
     case 'group':
-      return buildGroup(el as GroupElement, box, vp, metrics, media)
+      return buildGroup(el as GroupElement, box, vp, metrics, media, defaultEaLang)
     case 'table':
-      return buildTable(el as TableElement, box, vp, metrics, media)
+      return buildTable(el as TableElement, box, vp, metrics, media, defaultEaLang)
     case 'chart': {
       const chartEl = el as ChartElement
       const appCreated = chartEl.descr === 'aislides-chart'
@@ -325,7 +332,7 @@ function buildNodeInner(
             cy: by > fy * 1.2 ? by : fy,
           },
         }
-        return buildGroup(pseudo, box, vp, metrics, media)
+        return buildGroup(pseudo, box, vp, metrics, media, defaultEaLang)
       }
       // OLE read-only preview: the embedded preview image stretches to fill the frame (ignoring the
       // pic's own xfrm) over an opaque white canvas (metafile previews are often transparent);
@@ -387,6 +394,7 @@ function buildShape(
   vp: Viewport,
   metrics: FontMetricsProvider,
   media: MediaResolver | undefined,
+  defaultEaLang: DefaultEaLang,
 ): ShapeRenderNode {
   const node: ShapeRenderNode = {
     id: `r_${el.id}`,
@@ -465,6 +473,7 @@ function buildShape(
       metrics,
       vp,
       media,
+      defaultEaLang,
     })
   }
   return node
@@ -595,12 +604,13 @@ function buildPicture(
         rotationDeg: box.rotationDeg + m.rotationDeg,
       }
   }
-  // GDI metafiles play back on an opaque white DC: PowerPoint shows a white panel for
-  // an EMF/WMF that never paints its background (PlanS academy banner, measured)
+  // An EMF plays back on an opaque white DC: PowerPoint shows a white panel for one
+  // that never paints its background (PlanS academy banner, measured). A WMF is
+  // transparent: a legacy-deck table metafile over a tinted rectangle shows the tint.
   const isMetafile =
     typeof dataUrl === 'string' &&
-    (/^data:image\/(x-)?(emf|wmf|emz|wmz)[;,]/.test(dataUrl) ||
-      /^genoffice-slide-media:.*[?&]mime=image%2F(?:x-)?(emf|wmf)(?:&|$)/i.test(dataUrl))
+    (/^data:image\/(x-)?(emf|emz)[;,]/.test(dataUrl) ||
+      /^genoffice-slide-media:.*[?&]mime=image%2F(?:x-)?emf(?:&|$)/i.test(dataUrl))
   const node: PictureRenderNode = {
     id: `r_${el.id}`,
     type: 'picture',
@@ -646,6 +656,7 @@ function buildGroup(
   vp: Viewport,
   metrics: FontMetricsProvider,
   media: MediaResolver | undefined,
+  defaultEaLang: DefaultEaLang,
 ): GroupRenderNode {
   // Child coordinate system: child element EMU coords are based on <a:chOff>/<a:chExt>.
   // The size difference between the group box and the child coordinate system (the group
@@ -675,7 +686,7 @@ function buildGroup(
 
   const children: RenderNode[] = []
   for (const child of el.children ?? []) {
-    const c = buildNode(child, vp, metrics, media, parentOffset, el)
+    const c = buildNode(child, vp, metrics, media, defaultEaLang, parentOffset, el)
     if (c) children.push(c)
   }
   return {
@@ -701,6 +712,7 @@ function buildTable(
   vp: Viewport,
   metrics: FontMetricsProvider,
   media: MediaResolver | undefined,
+  defaultEaLang: DefaultEaLang,
 ): TableRenderNode {
   // a:gridCol w is authoritative in PowerPoint: a stale frame cx (generator tools write
   // placeholder exts) never squeezes the columns — the table renders at its grid width,
@@ -738,6 +750,7 @@ function buildTable(
         metrics,
         vp,
         media,
+        defaultEaLang,
         trimEdgeSpacing: true,
       })
       // PowerPoint sizes auto rows by the glyph extent (last baseline + descent), not
@@ -766,6 +779,7 @@ function buildTable(
         metrics,
         vp,
         media,
+        defaultEaLang,
         trimEdgeSpacing: true,
       })
       const needed = (probe.inkBottom ?? probe.contentHeight) + probe.insets.t + probe.insets.b
@@ -833,6 +847,7 @@ function buildTable(
           metrics,
           vp,
           media,
+          defaultEaLang,
           trimEdgeSpacing: true,
         })
       }

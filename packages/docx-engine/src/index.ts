@@ -19,9 +19,9 @@ export {
   type ContentControlShell,
   type ContentControlSpec,
 } from './content-control'
+export { reconcileGridColumns } from './table-widths'
 export {
   parseDocx,
-  reconcileGridColumns,
   paraCsFormat,
   styleRunFormat,
   type ParseExtras,
@@ -95,6 +95,7 @@ export {
   applyRemoveParts,
   planRemoveParts,
   removePartsRefusalMessage,
+  removePartsRefusalMessageFor,
   type RemovePartsKind,
   type RemovePartsOptions,
   type RemovePartsPlan,
@@ -208,7 +209,7 @@ export {
   notePropsFromXml,
   xmlFlagOn,
 } from './section'
-export { nextNoteId, parseNotesXml, type NoteKind } from './notes'
+export { nextNoteId, parseNoteSeparator, parseNotesXml, type NoteKind } from './notes'
 export {
   isPictureWatermark,
   pictureWatermarkPreviewImage,
@@ -323,3 +324,4 @@ export {
   textHasHangulChars,
   type CharClass,
 } from './char-class'
+export * from './table-width-thresholds'

@@ -525,6 +525,7 @@ export const cs = {
   appBridgeUnavailable:
     'Souborové rozhraní počítače není k dispozici. Restartujte aplikaci Electron.',
   appOpenCanceled: 'Výběr sešitu zrušen.',
+  appImportCanceled: 'Import zrušen.',
   appOpeningWorkbook: 'Otevírání sešitu…',
   appOpened: 'Otevřeno {name} — úpravy buněk se uloží zpět pomocí ⌘S.',
   appOpenFailed: 'Sešit nelze otevřít.',
@@ -1172,6 +1173,9 @@ export const cs = {
   appLinksLocate: 'Zobrazit zdrojový soubor',
   appLinksReachable: 'K dispozici',
   appLinksBroken: 'Není k dispozici',
+  appLinksBreak: 'Přerušit odkaz',
+  appLinksBreakConfirm: 'Potvrdit přerušení',
+  appLinksChangeSource: 'Změnit zdroj',
   appGroupCalculation: 'Výpočet',
   appCalculationOptions: 'Možnosti výpočtů',
   appCalculationOptionsTitle: 'Automatický nebo ruční přepočet',

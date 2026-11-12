@@ -9,6 +9,7 @@ import { INumfmtService } from '@univerjs/sheets'
 import { ConditionalFormattingService } from '@univerjs/preset-sheets-conditional-formatting'
 
 import { MAX_CSV_EXPORT_CHARS } from '../shared/ipc-channels'
+import { settleFormulas } from './formula-settle'
 import { formulaViewSheets } from './formula-view'
 import { t } from './i18n/locale'
 import { DATE_1904_OFFSET, isCalendarDatePattern, patternType } from './numfmt-fix'
@@ -231,15 +232,18 @@ export function sheetHasFormulas(sheet: CsvWorksheet): boolean {
 
 export async function handleExportCsv(ctx: CsvExportContext, targetPath?: string): Promise<void> {
   const runtime = ctx.univerRef.current
-  const active = activeCsvSheet(runtime)
-  if (!runtime || !active) return
-  const { sheet, sheetCount } = active
+  if (!runtime || !activeCsvSheet(runtime)) return
   const state = ctx.lazyWorkbookRef.current
   if (state && !state.flags.preloadComplete) {
     ctx.setMessage(t('appCsvExportNeedsFullLoad'))
     return
   }
   try {
+    await settleFormulas(runtime)
+    // The formula pass awaited: take the sheet again, it may have changed meanwhile.
+    const active = activeCsvSheet(runtime)
+    if (!active || ctx.lazyWorkbookRef.current !== state) return
+    const { sheet, sheetCount } = active
     const content = serializeActiveSheetCsv(
       sheet,
       state,

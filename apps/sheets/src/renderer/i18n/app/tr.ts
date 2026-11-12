@@ -550,6 +550,7 @@ export const tr = {
   appBridgeUnavailable:
     'Masaüstü dosya köprüsü kullanılamıyor. Electron uygulamasını yeniden başlatın.',
   appOpenCanceled: 'Çalışma kitabı seçimi iptal edildi.',
+  appImportCanceled: 'İçe aktarma iptal edildi.',
   appOpeningWorkbook: 'Çalışma kitabı açılıyor…',
   appOpened: '{name} açıldı — hücre düzenlemeleri ⌘S ile geri kaydedilir.',
   appOpenFailed: 'Çalışma kitabı açılamıyor.',
@@ -1202,6 +1203,9 @@ export const tr = {
   appLinksLocate: 'Kaynak dosyayı göster',
   appLinksReachable: 'Kullanılabilir',
   appLinksBroken: 'Kullanılamaz',
+  appLinksBreak: 'Bağlantıyı Kaldır',
+  appLinksBreakConfirm: 'Kaldırmayı Onayla',
+  appLinksChangeSource: 'Kaynağı Değiştir',
   appGroupCalculation: 'Hesaplama',
   appCalculationOptions: 'Hesaplama Seçenekleri',
   appCalculationOptionsTitle: 'Otomatik veya el ile yeniden hesaplama',

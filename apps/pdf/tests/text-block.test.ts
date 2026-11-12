@@ -9,6 +9,7 @@ interface Frag {
   w: number
   h: number
   rot?: boolean
+  font?: string
 }
 
 const page = (frags: Frag[]): PageEntry => {
@@ -24,6 +25,7 @@ const page = (frags: Frag[]): PageEntry => {
       w: f.w,
       h: f.h,
       ...(f.rot ? { rot: true as const } : {}),
+      ...(f.font ? { font: f.font } : {}),
     }
   })
   return { text, lower: text.toLowerCase(), items }
@@ -362,6 +364,154 @@ describe('groupPageBlocks', () => {
     )
     expect(blocks).toHaveLength(1)
     expect(blocks[0]!.fontSize).toBe(12)
+  })
+})
+
+describe('groupPageBlocks: lines a wrap cannot explain', () => {
+  const lineCounts = (frags: Frag[]) => groupPageBlocks(page(frags)).map((b) => b.lines.length)
+
+  it('starts a new paragraph at an indented line after a nearly full one', () => {
+    expect(
+      lineCounts([
+        { t: 'first paragraph opens here', x: 50, y: 700, w: 300, h: 12 },
+        { t: 'and ends close to the margin.', x: 50, y: 686, w: 290, h: 12 },
+        { t: 'Second paragraph, indented', x: 70, y: 672, w: 280, h: 12 },
+        { t: 'continues flush left', x: 50, y: 658, w: 300, h: 12 },
+      ]),
+    ).toEqual([2, 2])
+  })
+
+  it('keeps list items apart even when their widths match', () => {
+    expect(
+      lineCounts([
+        { t: '• Install the package first', x: 50, y: 700, w: 160, h: 12 },
+        { t: '• Run the setup script', x: 50, y: 686, w: 140, h: 12 },
+        { t: '• Done', x: 50, y: 672, w: 40, h: 12 },
+      ]),
+    ).toEqual([1, 1, 1])
+    expect(
+      lineCounts([
+        { t: '1. Install the package first', x: 50, y: 700, w: 160, h: 12 },
+        { t: '2. Run the setup script now', x: 50, y: 686, w: 150, h: 12 },
+      ]),
+    ).toEqual([1, 1])
+    expect(
+      lineCounts([
+        {
+          t: '1、\u5b89\u88c5\u8f6f\u4ef6\u5305\u5e76\u68c0\u67e5\u7248\u672c',
+          x: 50,
+          y: 700,
+          w: 160,
+          h: 12,
+        },
+        {
+          t: '2、\u8fd0\u884c\u5b89\u88c5\u811a\u672c\u5b8c\u6210\u914d\u7f6e',
+          x: 50,
+          y: 686,
+          w: 160,
+          h: 12,
+        },
+      ]),
+    ).toEqual([1, 1])
+  })
+
+  it('keeps a wrapped list item together with its hanging continuation', () => {
+    expect(
+      lineCounts([
+        { t: '• First item that wraps onto', x: 50, y: 700, w: 200, h: 12 },
+        { t: 'a second line here', x: 62, y: 686, w: 190, h: 12 },
+        { t: '• Second item that also wraps', x: 50, y: 672, w: 200, h: 12 },
+        { t: 'onto another line', x: 62, y: 658, w: 120, h: 12 },
+      ]),
+    ).toEqual([2, 2])
+  })
+
+  it('keeps a same-size heading in another font off the line below', () => {
+    expect(
+      lineCounts([
+        { t: 'Results and discussion', x: 50, y: 700, w: 150, h: 12, font: 'bold' },
+        {
+          t: 'The measured values confirm the model',
+          x: 50,
+          y: 686,
+          w: 250,
+          h: 12,
+          font: 'regular',
+        },
+        { t: 'across every run.', x: 50, y: 672, w: 110, h: 12, font: 'regular' },
+      ]),
+    ).toEqual([1, 2])
+  })
+
+  it('keeps a paragraph whole when its full first line is mostly a bold lead-in', () => {
+    expect(
+      lineCounts([
+        {
+          t: 'Important notice regarding your account – the',
+          x: 50,
+          y: 700,
+          w: 250,
+          h: 12,
+          font: 'bold',
+        },
+        {
+          t: 'terms change on 1 March for every customer',
+          x: 50,
+          y: 686,
+          w: 248,
+          h: 12,
+          font: 'regular',
+        },
+        { t: 'who signed before 2024.', x: 50, y: 672, w: 140, h: 12, font: 'regular' },
+      ]),
+    ).toEqual([3])
+  })
+
+  it('splits at paragraph spacing of a third of the leading', () => {
+    expect(
+      lineCounts([
+        bodyLine('Results and discussion of the study', 700),
+        bodyLine('body one', 680),
+        bodyLine('body two', 666),
+        bodyLine('body three', 652),
+      ]),
+    ).toEqual([1, 3])
+    expect(
+      lineCounts([
+        bodyLine('para one a', 700),
+        bodyLine('para one b', 686),
+        bodyLine('para two a', 666),
+        bodyLine('para two b', 652),
+      ]),
+    ).toEqual([2, 2])
+  })
+
+  it('keeps lines that start at unrelated offsets apart', () => {
+    expect(
+      lineCounts([
+        { t: 'Name: John Smith', x: 50, y: 700, w: 120, h: 12 },
+        { t: 'Department of Physics', x: 90, y: 686, w: 130, h: 12 },
+        { t: 'University', x: 130, y: 672, w: 70, h: 12 },
+      ]),
+    ).toEqual([1, 1, 1])
+  })
+
+  it('still reads an indented, unevenly led paragraph with a year at a line start as one', () => {
+    expect(
+      lineCounts([
+        { t: 'Indented opening line of a', x: 62, y: 700, w: 238, h: 12, font: 'regular' },
+        { t: 'paragraph whose figures date from', x: 50, y: 686, w: 250, h: 12, font: 'regular' },
+        {
+          t: '2019. A tall inline formula pushes',
+          x: 50,
+          y: 671.5,
+          w: 248,
+          h: 12,
+          font: 'regular',
+        },
+        { t: 'this line a little lower.', x: 50, y: 657.5, w: 140, h: 12, font: 'regular' },
+      ]),
+    ).toEqual([4])
   })
 })
 

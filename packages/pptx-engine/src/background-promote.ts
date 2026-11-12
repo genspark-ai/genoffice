@@ -36,7 +36,8 @@ function coversPage(t: Transform, size: SlideSize, maxAreaRatio: number): boolea
 }
 
 function isOpaqueColor(c: ResolvedColor): boolean {
-  return /^#?[0-9a-fA-F]{6}$/.test(c) || /^#?[0-9a-fA-F]{6}[fF]{2}$/.test(c)
+  const t = (c ?? '').trim()
+  return /^#?[0-9a-fA-F]{6}$/.test(t) || /^#?[0-9a-fA-F]{6}[fF]{2}$/.test(t)
 }
 
 /** No stroke, zero width, or a fully transparent stroke color (#RRGGBB00). */

@@ -41,8 +41,11 @@ describe('static textbox render', () => {
         },
       ],
     }
+    // run spans: a whitespace run wraps its text in a .doc-ws-run span
     const spans = [...render(renderTextboxSpec(box)).querySelectorAll('span')].filter(
-      (s) => !s.children.length,
+      (s) =>
+        !s.classList.contains('doc-ws-run') &&
+        (!s.children.length || s.firstElementChild?.classList.contains('doc-ws-run')),
     )
     expect(spans.map((s) => s.style.letterSpacing)).toEqual(['', '-2.45pt', '0.026em'])
   })

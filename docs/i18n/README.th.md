@@ -19,7 +19,7 @@
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub stars"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <b>ไทย</b> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <b>ไทย</b> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center">
   <a href="#download"><b>ดาวน์โหลด</b></a> ·
@@ -95,7 +95,7 @@ Windows และ Linux เปิดและบันทึกไฟล์ `.do
 </tr>
 <tr>
 <td><b>สร้างมันขึ้นมา</b> — จากประโยคเดียว เอเจนต์เพิ่มชีต Summary พร้อมสูตร <code>SUMIF</code> จริงแยกตามภูมิภาคและหมวดหมู่ แทรกกราฟแท่ง และรวมการเปลี่ยนแปลงทั้ง 43 รายการเป็นชุดเดียวที่ย้อนกลับได้</td>
-<td><b>ถามมัน</b> — คำถามเกี่ยวกับเวิร์กบุ๊กจะได้คำตอบพร้อมเหตุผลและเซลล์ที่ใช้จริงในรูปแบบลิงก์อ้างอิงที่คลิกได้ เบื้องหลังคือเอนจิน `.xlsx` ของ Rust ที่พัฒนาขึ้นเอง ตาราง pivot, slicer, การจัดรูปแบบตามเงื่อนไข การตรวจสอบที่มาของสูตร และภาพที่ฝังในเซลล์ในรูป rich value เนทิฟของ Excel — เปิดใหม่ใน Excel แล้วภาพยังอยู่ในเซลล์เดิม</td>
+<td><b>ถามมัน</b> — คำถามเกี่ยวกับเวิร์กบุ๊กจะได้คำตอบพร้อมเหตุผลและเซลล์ที่ใช้จริงในรูปแบบลิงก์อ้างอิงที่คลิกได้ เบื้องหลังคือเอนจิน `.xlsx` ของ Rust ที่พัฒนาขึ้นเอง ตาราง pivot, slicer, การจัดรูปแบบตามเงื่อนไข การตรวจสอบที่มาของสูตร และภาพที่ฝังในเซลล์ในรูป rich value เนทิฟของ Excel — เปิดใหม่ใน Excel แล้วภาพยังอยู่ในเซลล์เดิมโน้ตของเซลล์ใส่รูปภาพได้ โดยแสดงไว้ใต้ป๊อปอัปของโน้ต</td>
 </tr>
 </table>
 
@@ -220,6 +220,12 @@ Desktop, Cursor และไคลเอนต์ MCP อื่นใดสา�
 </tr>
 </table>
 
+### 9 · ไฟล์รุ่นเก่า — `.doc`, `.xls` และ `.ppt` จากยุค 2000 ก็เปิดได้
+
+ไฟล์ `.doc` ของ Word 97–2003, `.xls` ของ Excel หรือ `.ppt` ของ PowerPoint จะเปิดเป็นสำเนา `.docx`, `.xlsx` หรือ `.pptx` ที่แปลงบนเครื่องของคุณ ไฟล์ต้นฉบับจะไม่ถูกแก้ไข รูปภาพ ตาราง สูตร รูปแบบตัวเลข สีเติม และเค้าโครงจะถูกนำมาด้วย
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="ไทม์แลปส์ของ GenOffice ขณะเปิดไฟล์ .ppt, .doc และ .xls ของรายงานประจำปี 2004 ที่สมมติขึ้น จากนั้นแสดงสไลด์หนึ่งแผ่นใน PowerPoint เทียบกับงานนำเสนอที่แปลงแล้วใน GenOffice" width="100%">
+
 ## ทำไมต้อง GenOffice
 
 - **โอเพนซอร์ส** Apache-2.0 พัฒนาแบบเปิดบน GitHub
@@ -265,13 +271,19 @@ Desktop, Cursor และไคลเอนต์ MCP อื่นใดสา�
 
 **หรือใช้คีย์ของคุณเอง** เมนู Settings → AI มีให้เลือก Claude, OpenAI,
 Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral,
-OpenRouter, Requesty และ OpenCode Zen/Go พร้อมช่องสำหรับ endpoint ที่รองรับ
+OpenRouter, Requesty,
+Opper,
+Cheaper Inference,
+Atlas Cloud,
+SiliconFlow,
+PPIO,
+Command Code และ OpenCode Zen/Go พร้อมช่องสำหรับ endpoint ที่รองรับ
 OpenAI-compatible แบบกำหนดเอง (base URL + คีย์) รวมถึงเซิร์ฟเวอร์โมเดล
 ในเครื่องด้วย การค้นหาและมีเดียมีผู้ให้บริการแยกตามความสามารถของตัวเอง
-ภายใต้ **AI Media & Search**: Serper, Serply, Tavily, Parallel, Keenable,
+ภายใต้ **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable,
 Exa หรือ Firecrawl สำหรับการค้นหาเว็บ — โดย Keenable ก็ไม่ต้องใช้คีย์เช่นกัน
 คีย์มีไว้เพิ่มเพดานอัตราเรียกเท่านั้น และ OpenAI, Gemini, Doubao/Seedream,
-GLM, Grok, Qwen, MiniMax หรือ endpoint ที่รองรับ OpenAI-compatible ใดๆ
+GLM, Grok, Qwen, MiniMax, Stability, FLUX หรือ endpoint ที่รองรับ OpenAI-compatible ใดๆ
 สำหรับการสร้างภาพและการวิเคราะห์ภาพ/วิดีโอ
 
 สวีททั้งชุดมาพร้อมธีมสว่าง มืด และตามระบบ ธีมจะเปลี่ยนแค่สิ่งที่แสดง
@@ -285,7 +297,7 @@ GLM, Grok, Qwen, MiniMax หรือ endpoint ที่รองรับ OpenA
 สกิลคือไฟล์ `SKILL.md` ที่บอก AI ว่าจะทำงานหนึ่งอย่างให้ดีได้อย่างไร เช่น รายงานประจำสัปดาห์ NDA หรือแผนการสอน
 GenOffice มีสกิลชุดหนึ่งมาให้และรับสกิลของคุณเองด้วย ในรูปแบบเดียวกับที่เอเจนต์เขียนโค้ดใช้
 
-- **การตั้งค่า → สกิล** **ติดตั้ง**สกิลแนะนำ หรือ**นำเข้า**โฟลเดอร์ ไฟล์ zip หรือ `SKILL.md` ไฟล์เดียว การนำเข้าไม่รันอะไรทั้งสิ้น
+- **การตั้งค่า → สกิล** **ติดตั้ง**สกิลแนะนำ หรือ**นำเข้า**โฟลเดอร์ ไฟล์ zip หรือ `SKILL.md` ไฟล์เดียว การนำเข้าไม่รันอะไรทั้งสิ้น แท็บ **ทั้งหมด** แสดงแคตตาล็อกที่แนะนำทั้งหมดไว้ในที่เดียว พร้อมคำอธิบายตามภาษาของแอป
 - **ในแชต** เปิดเมนู **+** ข้างช่องพิมพ์ของแผง AI ใดก็ได้ เลือก **สกิล** ติ๊กหนึ่งรายการแล้วส่ง สกิลจะแนบไปกับข้อความนั้นเท่านั้น
 
 ---
@@ -457,6 +469,8 @@ sudo zypper install ./genoffice-<version>.x86_64.rpm  # openSUSE
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+บน Chromebook แพ็กเกจเดียวกันรันได้ในสภาพแวดล้อม Linux (Crostini) — ดูรายละเอียดที่ [docs/platforms/chromeos.md](../platforms/chromeos.md)
 
 </details>
 

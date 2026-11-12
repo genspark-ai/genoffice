@@ -567,6 +567,7 @@ export const de = {
   appBridgeUnavailable:
     'Die Desktop-Dateibrücke ist nicht verfügbar. Starten Sie die Electron-App neu.',
   appOpenCanceled: 'Arbeitsmappenauswahl abgebrochen.',
+  appImportCanceled: 'Import abgebrochen.',
   appOpeningWorkbook: 'Arbeitsmappe wird geöffnet…',
   appOpened: '{name} geöffnet — Zellbearbeitungen werden mit ⌘S zurückgespeichert.',
   appOpenFailed: 'Die Arbeitsmappe kann nicht geöffnet werden.',
@@ -1226,6 +1227,9 @@ export const de = {
   appLinksLocate: 'Quelldatei anzeigen',
   appLinksReachable: 'Verfügbar',
   appLinksBroken: 'Nicht verfügbar',
+  appLinksBreak: 'Link lösen',
+  appLinksBreakConfirm: 'Lösen bestätigen',
+  appLinksChangeSource: 'Quelle ändern',
   appGroupCalculation: 'Berechnung',
   appCalculationOptions: 'Berechnungsoptionen',
   appCalculationOptionsTitle: 'Automatische oder manuelle Neuberechnung',

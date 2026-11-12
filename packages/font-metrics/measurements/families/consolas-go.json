@@ -1,5 +1,7 @@
 {
   "family": "Consolas GO",
+  "standsInFor": "Consolas",
+  "standInChain": { "tail": "mono" },
   "source": {
     "kind": "hmtx",
     "date": "2026-09-11",

@@ -3,8 +3,7 @@
  * with convertPdfToDocx (pipeline.ts) and rebuilds each page as one slide of
  * the page's size, all blocks absolutely positioned.
  *
- * Furniture (repeated headers/footers/page numbers) stays dropped: slides
- * carry no header/footer text boxes; the dedup warning still surfaces.
+ * Furniture (repeated headers/footers/page numbers) stays on every slide.
  */
 import {
   extractIrDocument,

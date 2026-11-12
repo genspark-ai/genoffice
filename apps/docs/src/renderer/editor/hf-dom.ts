@@ -14,11 +14,11 @@ import {
 } from '@genoffice/docx-engine'
 import {
   cssAutoLineMult,
-  cssRunFontFamily,
   estimateHfAnchorFloorPx,
   estimateHfHeight,
   runLetterSpacingCss,
 } from '../line-metrics'
+import { cssRunFontFamily } from '../text-layout/font-rules'
 import {
   anchorXBand,
   anchorYBand,
@@ -852,6 +852,11 @@ export function hfUsesLegacyHash(value: HeaderFooter): boolean {
   if (!value.pageNumber) return false
   if (value.text.includes(PAGE_MARK)) return false
   return !value.paras?.some(paraHasPageMark)
+}
+
+/** Word's page-number gallery: the area's content becomes a single paragraph holding the PAGE field */
+export function hfPageNumberOnly(align: 'left' | 'center' | 'right'): HeaderFooter {
+  return { text: PAGE_MARK, pageNumber: true, paras: [{ align, runs: [{ text: PAGE_MARK }] }] }
 }
 
 export function hfHasPageField(value: HeaderFooter | null | undefined): boolean {

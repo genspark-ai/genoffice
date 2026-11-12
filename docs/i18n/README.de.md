@@ -19,7 +19,7 @@ Word-, Excel-, PowerPoint- und PDF-Dateien, bearbeitet von dir und deiner KI, ge
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub-Sterne"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <b>Deutsch</b> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <b>Deutsch</b> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center">
   <a href="#download"><b>Download</b></a> ·
@@ -100,7 +100,7 @@ Prompt gesteuert wird, den du im Panel nachlesen kannst.
 </tr>
 <tr>
 <td><b>Bau es</b> — aus einem einzigen Satz fügt der Agent ein Summary-Tabellenblatt mit echten <code>SUMIF</code>s nach Region und Kategorie hinzu, fügt ein Säulendiagramm ein und wendet die 43 Änderungen als einen einzigen, rückgängig machbaren Vorgang an.</td>
-<td><b>Frag es</b> — Fragen zur Arbeitsmappe werden mit der Begründung und den genau verwendeten Zellen als klickbare Belege beantwortet. Im Hintergrund: eine hausgemachte Rust-<code>.xlsx</code>-Engine, Pivot-Tabellen, Datenschnitte, bedingte Formatierung, Formel-Tracing und Bilder, die als native Rich Values von Excel in Zellen eingebettet sind — Excel zeigt sie beim erneuten Öffnen weiterhin in der Zelle.</td>
+<td><b>Frag es</b> — Fragen zur Arbeitsmappe werden mit der Begründung und den genau verwendeten Zellen als klickbare Belege beantwortet. Im Hintergrund: eine hausgemachte Rust-<code>.xlsx</code>-Engine, Pivot-Tabellen, Datenschnitte, bedingte Formatierung, Formel-Tracing und Bilder, die als native Rich Values von Excel in Zellen eingebettet sind — Excel zeigt sie beim erneuten Öffnen weiterhin in der Zelle.Zellnotizen können ein Bild tragen, das unter dem Notiz-Popup erscheint.</td>
 </tr>
 </table>
 
@@ -230,6 +230,12 @@ aufbauen, während du zusiehst.
 </tr>
 </table>
 
+### 9 · Alte Dateien — auch `.doc`, `.xls` und `.ppt` aus den 2000ern lassen sich öffnen
+
+Eine Word-97–2003-Datei `.doc`, eine Excel-Datei `.xls` oder eine PowerPoint-Datei `.ppt` öffnet sich als konvertierte `.docx`-, `.xlsx`- oder `.pptx`-Kopie, die auf Ihrem Rechner entsteht; die Originaldatei wird nie verändert. Bilder, Tabellen, Formeln, Zahlenformate, Füllungen und Layout bleiben erhalten.
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="Zeitraffer: GenOffice öffnet die .ppt-, .doc- und .xls-Dateien eines fiktiven Geschäftsberichts 2004, danach eine Folie in PowerPoint neben der konvertierten Präsentation in GenOffice" width="100%">
+
 ## Warum GenOffice
 
 - **Open Source**, Apache-2.0, offen entwickelt auf GitHub.
@@ -284,13 +290,13 @@ sowie Bild-/Audio-/Videoanalyse.
 
 **Oder bring deinen eigenen Schlüssel mit.** Unter Einstellungen → KI stehen
 Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
-Mistral, OpenRouter, Requesty und OpenCode Zen/Go zur Wahl, plus ein freier Slot für
+Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code und OpenCode Zen/Go zur Wahl, plus ein freier Slot für
 jeden OpenAI-kompatiblen Endpunkt (Basis-URL + Schlüssel), einschließlich
 lokaler Modell-Server. Suche und Medien haben eigene Anbieter je Fähigkeit
-unter KI-Medien & Suche: Serper, Serply, Tavily, Parallel, Keenable, Exa oder
+unter KI-Medien & Suche: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa oder
 Firecrawl für die Websuche – Keenable kommt ebenfalls ohne Schlüssel aus, ein
 Schlüssel hebt nur die Ratenlimits – und OpenAI, Gemini, Doubao/Seedream, GLM,
-Grok, Qwen, MiniMax oder jeder OpenAI-kompatible Bild-Endpunkt für
+Grok, Qwen, MiniMax, Stability, FLUX oder jeder OpenAI-kompatible Bild-Endpunkt für
 Bildgenerierung und Bild-/Videoanalyse.
 
 Die gesamte Suite bringt ein helles, ein dunkles und einen
@@ -305,7 +311,7 @@ Farben des Dokuments.
 Ein Skill ist eine `SKILL.md`, die der KI sagt, wie sie eine Aufgabe gut erledigt: einen Wochenbericht, eine NDA, einen Unterrichtsplan.
 GenOffice liefert eine Sammlung mit und nimmt deine eigenen an, im selben Format, das Coding-Agenten verwenden.
 
-- **Einstellungen → Skills.** Einen empfohlenen Skill **installieren** oder einen Ordner, ein Zip oder eine einzelne `SKILL.md` **importieren**. Beim Import wird nichts ausgeführt.
+- **Einstellungen → Skills.** Einen empfohlenen Skill **installieren** oder einen Ordner, ein Zip oder eine einzelne `SKILL.md` **importieren**. Beim Import wird nichts ausgeführt. Der Tab **Alle** listet den ganzen empfohlenen Katalog an einem Ort auf, mit Beschreibungen in der Sprache der App.
 - **Im Chat.** Das **+**-Menü neben dem Eingabefeld eines KI-Panels öffnen, **Skills** wählen, einen ankreuzen, senden. Der Skill geht nur mit dieser Nachricht mit.
 
 ---
@@ -489,6 +495,8 @@ Das AppImage läuft direkt: installiere die FUSE-2-Laufzeit
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+Auf einem Chromebook laufen dieselben Pakete in der Linux-Umgebung (Crostini) — Details in [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

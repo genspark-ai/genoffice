@@ -12,6 +12,7 @@ import {
   isNumericCell,
   parseCsv,
 } from '@genoffice/xlsx-gateway/gateway/csv-import'
+import { CSV_IMPORT_DEFAULT_LIMIT_MB } from '@genoffice/xlsx-gateway/gateway/csv-limits'
 import type { AdvancedFilterColumn, AdvancedFilterCriteria } from './AdvancedFilterDialog'
 import {
   buildLabelMatrix,
@@ -74,16 +75,20 @@ export function handleImportCsv(ctx: DataToolsContext): void {
   input.onchange = () => {
     const file = input.files?.[0]
     if (!file) return
-    if (file.size > 32 * 1024 * 1024) {
-      ctx.setMessage(t('appCsvTooLarge'))
-      return
-    }
-    void file
-      .arrayBuffer()
-      .then((buffer) => {
-        importCsvText(ctx, decodeCsvBuffer(new Uint8Array(buffer), CSV_CHARSET_BY_LANG[getLang()]))
-      })
-      .catch(() => ctx.setMessage(t('appCsvTooLarge')))
+    void (async () => {
+      // the same ceiling the open path uses (the user's setting): one limit
+      // for every way a delimited file comes in
+      // a failed settings IPC falls back to the default, never to no limit
+      const limitMb = await window.desktopApi
+        .getCsvImportLimit()
+        .catch(() => CSV_IMPORT_DEFAULT_LIMIT_MB)
+      if (file.size > limitMb * 1024 * 1024) {
+        ctx.setMessage(t('appCsvTooLarge'))
+        return
+      }
+      const buffer = await file.arrayBuffer()
+      importCsvText(ctx, decodeCsvBuffer(new Uint8Array(buffer), CSV_CHARSET_BY_LANG[getLang()]))
+    })().catch(() => ctx.setMessage(t('appCsvTooLarge')))
   }
   input.click()
 }

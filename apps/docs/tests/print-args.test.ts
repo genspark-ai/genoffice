@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  printPaperOption,
   printScaleOption,
   validPrintDim,
   validPrintGeometry,
@@ -45,5 +46,32 @@ describe('print arg validators', () => {
     expect(validPrintGeometry(12240, Infinity)).toBe(false)
     expect(validPrintGeometry('12240', 15840)).toBe(false)
     expect(validPrintGeometry(12240, 15840, 99)).toBe(false)
+  })
+
+  // Chromium prints on Letter unless the job states the document's own paper,
+  // and a sheet taller than the paper is split in two — the printed page loses
+  // its bottom and the page order goes with it (genoffice#2563)
+  it('states the document paper to Electron in microns', () => {
+    // A4: 11906 x 16838 twips = 210mm x 297mm
+    expect(printPaperOption({ widthTwips: 11_906, heightTwips: 16_838 })).toEqual({
+      pageSize: {
+        width: Math.round((11_906 * 25_400) / 1440),
+        height: Math.round((16_838 * 25_400) / 1440),
+      },
+    })
+    const paper = printPaperOption({ widthTwips: 11_906, heightTwips: 16_838 }).pageSize!
+    expect(paper.width).toBe(210_009)
+    expect(paper.height).toBe(297_004)
+    // Letter (8.5in x 11in) is what Chromium prints on when the job says nothing
+    expect(paper.width).not.toBe(Math.round((12_240 * 25_400) / 1440))
+    expect(paper.height).not.toBe(Math.round((15_840 * 25_400) / 1440))
+  })
+
+  it('states no paper for an absent or malformed one', () => {
+    expect(printPaperOption(undefined)).toEqual({})
+    expect(printPaperOption(null)).toEqual({})
+    expect(printPaperOption({})).toEqual({})
+    expect(printPaperOption({ widthTwips: 0, heightTwips: 16_838 })).toEqual({})
+    expect(printPaperOption({ widthTwips: 11_906, heightTwips: 'x' })).toEqual({})
   })
 })

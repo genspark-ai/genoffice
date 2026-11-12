@@ -56,6 +56,7 @@ export const id = {
   ribbonFilePrint: 'Cetak…',
   ribbonFileExportImages: 'Ekspor sebagai PNG…',
   ribbonFileExportImagesJpg: 'Ekspor sebagai JPG…',
+  ribbonFileExportVideo: 'Ekspor sebagai video (MP4)…',
   ribbonUnsavedSuffix: ' — Belum disimpan',
   ribbonSaveTip: 'Simpan (⌘S)',
   ribbonAutoSave: 'Simpan Otomatis',

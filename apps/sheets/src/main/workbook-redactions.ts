@@ -51,8 +51,9 @@ import {
 } from '@genoffice/xlsx-gateway/gateway/xlsx-package-io'
 
 /// Only the entry names are needed, so this stays structural rather than
-/// re-validating every CRC and size the save path checks.
-const manifestNamesSchema = z.object({ entries: z.array(z.object({ name: z.string() })) })
+/// re-validating every CRC and size the save path checks. Shared with the
+/// slicer-state read.
+export const manifestNamesSchema = z.object({ entries: z.array(z.object({ name: z.string() })) })
 
 const WORKBOOK_PART_PATH = 'xl/workbook.xml'
 

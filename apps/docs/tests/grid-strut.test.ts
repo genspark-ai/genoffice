@@ -11,11 +11,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ParsedDocFull } from '@genoffice/docx-engine'
 import { docStyleCss } from '../src/renderer/doc-style-css'
 import { editorExtensions } from '../src/renderer/editor/extensions'
+import { declaredStrutFace, resetStrutFaces } from '../src/renderer/text-layout/strut-face'
 
 ;(globalThis as { CSS?: unknown }).CSS ??= { escape: (s: string) => s }
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   document.head.innerHTML = ''
 })
 
@@ -155,28 +157,39 @@ function mountBlankFace() {
 }
 
 describe('docStyleCss grid strut face', () => {
+  // the strut box comes from the resolver's hhea split; the canvas stub only
+  // keeps the fallback path alive for faces the resolver does not know
   it('emits the metrics @font-face and the strut rule for typed-grid EA docs', () => {
     stubMetricsCanvas(1143, 286)
     mountBlankFace()
     const css = docStyleCss(parsedWith(GRID_SECT, 'ＭＳ 明朝'))
     expect(css).toContain("@font-face { font-family:'GenOffice Grid Strut'")
-    expect(css).toContain('ascent-override:114.3%')
-    expect(css).toContain('descent-override:28.6%')
+    expect(css).toContain('ascent-override:100.94%')
+    expect(css).toContain('descent-override:29.06%')
     expect(css).toContain('GenOfficePUABlank.woff2')
     // the Office-private MS Mincho renders through a stand-in, so the
     // inheriting .doc-ea-strut paragraphs share the strut too
     expect(css).toContain(
       // !important: all-declared CJK paragraphs carry their chain inline and get the class too
-      ".doc-page :is(.doc-grid-strut,.doc-ea-strut) { font-family:'GenOffice Grid Strut',var(--doc-grid-strut-tail,serif) !important }",
+      ".doc-page :is(.doc-grid-strut,.doc-ea-strut) { font-family:var(--doc-strut-face,'GenOffice Grid Strut'),var(--doc-grid-strut-tail,serif) !important }",
     )
     expect(css).toContain('--doc-grid-strut-tail:')
   })
 
-  it('emits nothing without an EA face or with a Latin one', () => {
+  it('emits no body strut face without an EA face or with a Latin one; the rules stay for paragraph faces', () => {
     stubMetricsCanvas(1143, 286)
     mountBlankFace()
-    expect(docStyleCss(parsedWith(GRID_SECT))).not.toContain('Grid Strut')
-    expect(docStyleCss(parsedWith(null, 'Century'))).not.toContain('Grid Strut')
+    for (const css of [
+      docStyleCss(parsedWith(GRID_SECT)),
+      docStyleCss(parsedWith(null, 'Century')),
+    ]) {
+      expect(css).not.toContain("@font-face { font-family:'GenOffice Grid Strut'")
+      expect(css).not.toContain('.doc-ea-strut')
+      expect(css).toContain(
+        ".doc-page :is(.doc-grid-strut) { font-family:var(--doc-strut-face,'GenOffice Grid Strut'),var(--doc-grid-strut-tail,serif) !important }",
+      )
+      expect(css).toContain('--doc-grid-strut-tail:')
+    }
   })
 
   it('a missing EA face rendered by a stand-in gets the strut without a grid', () => {
@@ -186,12 +199,17 @@ describe('docStyleCss grid strut face', () => {
     mountBlankFace()
     const css = docStyleCss(parsedWith(null, '\u6e38\u660e\u671d'))
     expect(css).toContain("@font-face { font-family:'GenOffice Grid Strut'")
-    expect(css).toContain('ascent-override:88%')
+    expect(css).toContain('ascent-override:104.52%')
     expect(css).toContain('.doc-page :is(.doc-grid-strut,.doc-ea-strut) {')
     // the CJK spans lead with the strut face too: their loaded range alias is
     // not the face the strut measured, and offset boxes union past the grid
     expect(css).toContain(
-      ".doc-page :is(.doc-grid-strut,.doc-ea-strut) .doc-east-asian-font { font-family:'GenOffice Grid Strut',",
+      ".doc-page :is(.doc-grid-strut,.doc-ea-strut) .doc-east-asian-font { font-family:var(--doc-strut-face,'GenOffice Grid Strut'),",
+    )
+    // balanced spaces too: their 0.8/0.2 one-glyph face unions a Gulim 12pt line
+    // under a Malgun strut to 17.1pt for Word's 15.6
+    expect(css).toContain(
+      ".doc-page :is(.doc-grid-strut,.doc-ea-strut) .doc-balanced-space { font-family:var(--doc-strut-face,'GenOffice Grid Strut'),'GenOffice Balanced Space' !important }",
     )
     expect(docStyleCss(parsedWith(null, '\uff2d\uff33 \u660e\u671d'))).toContain('.doc-ea-strut')
   })
@@ -200,9 +218,9 @@ describe('docStyleCss grid strut face', () => {
     stubMetricsCanvas(952, 351)
     mountBlankFace()
     const resolved = parsedWith(GRID_SECT, 'PMingLiU', { eaSlotEmpty: true, eaFromLang: true })
-    expect(docStyleCss(resolved)).toContain('ascent-override:95.2%')
+    expect(docStyleCss(resolved)).toContain('ascent-override:95.08%')
     const unresolved = parsedWith(GRID_SECT, 'Yu Gothic', { eaSlotEmpty: true })
-    expect(docStyleCss(unresolved)).not.toContain('Grid Strut')
+    expect(docStyleCss(unresolved)).not.toContain("@font-face { font-family:'GenOffice Grid Strut'")
   })
 
   it('Office-private faces under a metric alias get the strut without a grid', () => {
@@ -210,8 +228,8 @@ describe('docStyleCss grid strut face', () => {
     mountBlankFace()
     const css = docStyleCss(parsedWith(null, 'DengXian'))
     expect(css).toContain("@font-face { font-family:'GenOffice Grid Strut'")
-    expect(css).toContain('ascent-override:96.9%')
-    expect(css).toContain('descent-override:39.1%')
+    expect(css).toContain('ascent-override:96.64%')
+    expect(css).toContain('descent-override:38.82%')
     expect(css).toContain('.doc-page :is(.doc-grid-strut,.doc-ea-strut) {')
   })
 
@@ -235,10 +253,105 @@ describe('docStyleCss grid strut face', () => {
     expect(css).toContain('.doc-ea-strut')
   })
 
-  it('degrades silently when canvas metrics are unavailable', () => {
+  it('the resolver box needs no canvas; an unknown face without canvas degrades silently', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
     mountBlankFace()
-    // a face not probed by earlier tests (fontChainMetricsPct caches per chain)
-    expect(docStyleCss(parsedWith(GRID_SECT, 'ＭＳ ゴシック'))).not.toContain('Grid Strut')
+    expect(docStyleCss(parsedWith(GRID_SECT, '\uff2d\uff33 \u30b4\u30b7\u30c3\u30af'))).toContain(
+      'ascent-override:100.94%',
+    )
+  })
+})
+
+describe('per-paragraph strut face (strut-face.ts)', () => {
+  const fontsDesc = Object.getOwnPropertyDescriptor(document, 'fonts')
+  afterEach(() => {
+    resetStrutFaces()
+    if (fontsDesc) Object.defineProperty(document, 'fonts', fontsDesc)
+    else delete (document as { fonts?: unknown }).fonts
+  })
+
+  function stubFontFaces() {
+    const added: Array<{ family: string; src: string; descriptors: Record<string, string> }> = []
+    class FakeFontFace {
+      family: string
+      constructor(family: string, src: string, descriptors: Record<string, string>) {
+        this.family = family
+        added.push({ family, src, descriptors })
+      }
+      load() {
+        return Promise.resolve(this)
+      }
+    }
+    vi.stubGlobal('FontFace', FakeFontFace)
+    Object.defineProperty(document, 'fonts', {
+      value: {
+        add: vi.fn(),
+        check: () => true,
+        load: () => Promise.resolve([]),
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      },
+      configurable: true,
+    })
+    return added
+  }
+
+  it('registers one glyphless face per metric pair and names it in --doc-strut-face', () => {
+    mountBlankFace()
+    const added = stubFontFaces()
+    // MS Gothic and MS Mincho share Word's hhea (0.8594 / 0.1406) and line factor: one face
+    const gothic = declaredStrutFace('ＭＳ ゴシック')
+    expect(gothic).toBe('GenOffice Grid Strut 1')
+    expect(declaredStrutFace('MS Mincho')).toBe(gothic)
+    expect(added).toHaveLength(1)
+    expect(added[0].src).toContain('GenOfficePUABlank.woff2')
+    expect(added[0].descriptors).toEqual({
+      ascentOverride: '100.94%',
+      descentOverride: '29.06%',
+      lineGapOverride: '0%',
+    })
+    expect(declaredStrutFace('Yu Mincho')).toBe('GenOffice Grid Strut 2')
+    expect(declaredStrutFace('Calibri')).toBe('GenOffice Grid Strut 3')
+    expect(document.fonts.add).toHaveBeenCalledTimes(3)
+
+    // a Cambria + MS Gothic paragraph under a Latin-only document: the runs'
+    // face leads its strut (Word probe 2026-11-07: every partner pitches 1.3029)
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: para([text('日本語 abc', { font: 'ＭＳ ゴシック', fontAscii: 'Cambria' })]),
+    })
+    const p = pOf(editor)
+    expect(p.classList.contains('doc-grid-strut')).toBe(true)
+    expect(p.style.getPropertyValue('--doc-strut-face')).toBe("'GenOffice Grid Strut 1'")
+    editor.destroy()
+  })
+
+  it('takes the face of the run that pairs two slots, not an earlier single-slot run', () => {
+    mountBlankFace()
+    stubFontFaces()
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: para([
+        text('\u65e5\u672c', { font: 'Meiryo', fontAscii: 'Meiryo' }),
+        text('\u8a9e abc', { font: 'MS Gothic', fontAscii: 'Cambria' }),
+      ]),
+    })
+    const face = pOf(editor).style.getPropertyValue('--doc-strut-face')
+    expect(face).toBe(`'${declaredStrutFace('MS Gothic')}'`)
+    expect(face).not.toBe(`'${declaredStrutFace('Meiryo')}'`)
+    editor.destroy()
+  })
+
+  it('stays silent without the FontFace API or the blank source', () => {
+    expect(declaredStrutFace('MS Gothic')).toBeNull()
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: para([text('\u65e5\u672c\u8a9e', { font: 'MS Gothic', fontAscii: 'Cambria' })]),
+    })
+    expect(pOf(editor).style.getPropertyValue('--doc-strut-face')).toBe('')
+    editor.destroy()
   })
 })

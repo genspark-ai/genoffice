@@ -20,7 +20,7 @@ Word, Excel, PowerPoint and PDF files, edited by you and your AI, saved back in 
   <a href="https://x.com/merrickbuilds"><img src="https://img.shields.io/badge/follow-%40merrickbuilds-000000?logo=x&logoColor=white" alt="Follow @merrickbuilds on X"></a>
 </p>
 
-<p align="center"><b>English</b> · <a href="docs/i18n/README.es.md">Español</a> · <a href="docs/i18n/README.pt-BR.md">Português (Brasil)</a> · <a href="docs/i18n/README.de.md">Deutsch</a> · <a href="docs/i18n/README.fr.md">Français</a> · <a href="docs/i18n/README.zh-CN.md">简体中文</a> · <a href="docs/i18n/README.zh-TW.md">繁體中文</a> · <a href="docs/i18n/README.ko.md">한국어</a> · <a href="docs/i18n/README.ja.md">日本語</a> · <a href="docs/i18n/README.ar.md">العربية</a> · <a href="docs/i18n/README.ru.md">Русский</a> · <a href="docs/i18n/README.it.md">Italiano</a> · <a href="docs/i18n/README.nl.md">Nederlands</a> · <a href="docs/i18n/README.pl.md">Polski</a> · <a href="docs/i18n/README.cs.md">Čeština</a> · <a href="docs/i18n/README.id.md">Bahasa Indonesia</a> · <a href="docs/i18n/README.ms.md">Bahasa Melayu</a> · <a href="docs/i18n/README.th.md">ไทย</a> · <a href="docs/i18n/README.hi.md">हिन्दी</a> · <a href="docs/i18n/README.he.md">עברית</a> · <a href="docs/i18n/README.vi.md">Tiếng Việt</a> · <a href="docs/i18n/README.tr.md">Türkçe</a></p><!-- lang-switcher · public-hygiene: allow -->
+<p align="center"><b>English</b> · <a href="docs/i18n/README.es.md">Español</a> · <a href="docs/i18n/README.pt-BR.md">Português</a> · <a href="docs/i18n/README.de.md">Deutsch</a> · <a href="docs/i18n/README.fr.md">Français</a> · <a href="docs/i18n/README.zh-CN.md">简体中文</a> · <a href="docs/i18n/README.zh-TW.md">繁體中文</a> · <a href="docs/i18n/README.ko.md">한국어</a> · <a href="docs/i18n/README.ja.md">日本語</a> · <a href="docs/i18n/README.ar.md">العربية</a> · <a href="docs/i18n/README.ru.md">Русский</a> · <a href="docs/i18n/README.it.md">Italiano</a> · <a href="docs/i18n/README.nl.md">Nederlands</a> · <a href="docs/i18n/README.pl.md">Polski</a> · <a href="docs/i18n/README.cs.md">Čeština</a> · <a href="docs/i18n/README.id.md">Bahasa Indonesia</a> · <a href="docs/i18n/README.ms.md">Bahasa Melayu</a> · <a href="docs/i18n/README.th.md">ไทย</a> · <a href="docs/i18n/README.hi.md">हिन्दी</a> · <a href="docs/i18n/README.he.md">עברית</a> · <a href="docs/i18n/README.vi.md">Tiếng Việt</a> · <a href="docs/i18n/README.tr.md">Türkçe</a></p><!-- lang-switcher · public-hygiene: allow -->
 
 <p align="center">
   <a href="#download"><b>Download</b></a> ·
@@ -39,9 +39,9 @@ files, edits PDF, Markdown and HTML, and puts an AI agent next to every
 document — not a chat box bolted on the side, but an editor that reads the
 file, makes the change, and shows you exactly what it touched. ODF files
 (`.odt`, `.ods`, `.odp` and the `.ott`/`.ots`/`.otp` templates) open as
-editable OOXML copies, and so do legacy Word `.doc`/`.dot` files and Hancom
-documents (`.hwp`, `.hwpx`); the imports are open-only — saving writes OOXML,
-never the source format.
+editable OOXML copies, and so do legacy Word `.doc`/`.dot`, Excel 97 `.xls`
+and PowerPoint 97–2003 `.ppt` files and Hancom documents (`.hwp`, `.hwpx`);
+the imports are open-only — saving writes OOXML, never the source format.
 
 - **Real formats, byte-preserving.** Only what you edit is rewritten. Everything
   else in the file survives byte-for-byte, so documents keep working in Word,
@@ -108,7 +108,7 @@ can read in the panel.
 </tr>
 <tr>
 <td><b>Build it</b> — from one sentence the agent adds a Summary sheet with real <code>SUMIF</code>s by region and category, inserts a column chart, and applies the 43 changes as a single undoable batch.</td>
-<td><b>Ask it</b> — questions about the workbook come back with the reasoning and the exact cells used as clickable citations. Under the hood: an in-house Rust <code>.xlsx</code> engine, pivot tables, slicers, conditional formatting, formula tracing, and pictures embedded in cells as Excel's native rich values — Excel reopens them still in the cell.</td>
+<td><b>Ask it</b> — questions about the workbook come back with the reasoning and the exact cells used as clickable citations. Under the hood: an in-house Rust <code>.xlsx</code> engine, pivot tables, slicers, conditional formatting, formula tracing, and pictures embedded in cells as Excel's native rich values — Excel reopens them still in the cell. Cell notes can carry a picture, shown under the note's popup.</td>
 </tr>
 </table>
 
@@ -277,6 +277,16 @@ document in a visible editor tab while you watch.
 </tr>
 </table>
 
+### 11 · Legacy files — `.doc`, `.xls` and `.ppt` from the 2000s open too
+
+A Word 97–2003 `.doc`, an Excel `.xls` or a PowerPoint `.ppt` opens as a
+converted `.docx`, `.xlsx` or `.pptx` copy, made on your machine; the original
+file is never changed. Pictures, tables, formulas, number formats, fills and
+layout carry over. What each format keeps and drops is in [Legacy and ODF
+files open as converted copies](#legacy-and-odf-files-open-as-converted-copies).
+
+<img src="docs/assets/readme/legacy-formats-motion.webp" alt="Time-lapse of GenOffice opening three files of a fictional 2004 annual report: a six-slide .ppt paged through in Slides, a .doc with a cover picture and a shaded table scrolled in Docs, and an .xls sales table with totals in Sheets; then one slide shown side by side, the original .ppt in PowerPoint next to the converted deck in GenOffice" width="100%">
+
 ## Why GenOffice
 
 - **Open source**, Apache-2.0, built in the open on GitHub.
@@ -331,12 +341,12 @@ web and image search, image generation, and image/audio/video analysis.
 
 **Or bring your own key.** Settings → AI lists Claude, OpenAI, Gemini,
 DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper,
-Cheaper Inference, Atlas Cloud and OpenCode Zen/Go, plus a custom slot for any OpenAI-compatible endpoint (base
-URL + key), including local model servers. Search and media have their own
+Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code and OpenCode Zen/Go, plus a
+custom slot for any OpenAI-compatible endpoint (base URL + key), including local model servers. Search and media have their own
 per-capability providers under **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel,
 Keenable, Exa or Firecrawl for web search, and OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
-Qwen, MiniMax or any OpenAI-compatible images endpoint for image generation
-and image/video analysis, plus DeepSeek V4.1 Flash for image analysis.
+Qwen, MiniMax, Stability, FLUX or any OpenAI-compatible images endpoint for image
+generation and image/video analysis, plus DeepSeek V4.1 Flash for image analysis.
 
 **TypeSafe Jev** reranks the home screen's file search. Under **AI Media & Search →
 Local file search**, switch on Jev search reranking and pick an endpoint:
@@ -362,7 +372,9 @@ report, an NDA, a lesson plan. GenOffice ships a set of them and takes your own,
 in the same format coding agents use.
 
 - **Settings → Skills.** **Install** a recommended skill, or **Import** a
-  folder, a zip or a single `SKILL.md`. Nothing runs on import.
+  folder, a zip or a single `SKILL.md`. Nothing runs on import. The **All** tab
+  lists the whole recommended catalog in one place, with descriptions that
+  follow the app language.
 - **In a chat.** Open the **+** menu next to the composer of any AI panel,
   pick **Skills**, tick one, send. The skill goes along with that message only.
 
@@ -399,7 +411,7 @@ check its own work.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, ppt → pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -557,6 +569,10 @@ chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
 
+On a Chromebook, the same packages run inside the Linux environment
+(Crostini) — [docs/platforms/chromeos.md](docs/platforms/chromeos.md) has the
+details.
+
 </details>
 
 ## How it works
@@ -582,18 +598,22 @@ agent core and providers) lives in [CONTRIBUTING.md](CONTRIBUTING.md#engine-pack
 ### Legacy and ODF files open as converted copies
 
 Formats GenOffice cannot write back — legacy Word `.doc`/`.dot`, Hancom
-`.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, and the OpenDocument family (`.odt`,
-`.ott`, `.ods`, `.ots`, `.odp`, `.otp`) — are imports, not native files.
+`.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, legacy PowerPoint `.ppt`, and the
+OpenDocument family (`.odt`, `.ott`, `.ods`, `.ots`, `.odp`, `.otp`) — are
+imports, not native files.
 Opening one converts it on your machine into a `.docx`, `.xlsx` or `.pptx`
 copy and opens that copy; the original is never read again and never written.
 
 - Docs and Slides ask where to put the copy first (the sibling `.docx`/`.pptx`
-  next to the original by default), so every later Save lands there.
+  next to the original by default), so every later Save lands there. A `.ppt`
+  converts with its masters, shape geometry, fills, pictures and text
+  formatting, so the deck looks the way PowerPoint showed it; notes,
+  animations, transitions and hyperlinks are not carried over yet.
 - Sheets opens the converted workbook straight away and routes the first Save
   through Save As to a fresh `.xlsx`. `.csv` is the exception: it keeps its
   identity and Save writes values back to the `.csv`, as Excel does.
 - The conversion is one-way and can drop features the source format carries
-  but OOXML does not. `.doc`, `.hwp` and the ODF formats show a confirmation
+  but OOXML does not. `.doc`, `.ppt`, `.hwp` and the ODF formats show a confirmation
   dialog saying so; tick "Convert without asking next time" to skip it, and
   "Ask before converting legacy files" in Settings → General turns it back on.
 
@@ -645,8 +665,9 @@ trial, no paid tier for the apps themselves.
 Yes. GenOffice opens and saves native `.docx`, `.xlsx` and `.pptx` files.
 Saving is byte-preserving: parts of the file you didn't touch are written
 back byte-for-byte, so documents keep working in Microsoft Office.
-Legacy `.doc`/`.dot` and `.xls` files open too, as converted `.docx`/`.xlsx`
-copies — see [Legacy and ODF files open as converted copies](#legacy-and-odf-files-open-as-converted-copies).
+Legacy `.doc`/`.dot`, `.xls` and `.ppt` files open too, as converted
+`.docx`/`.xlsx`/`.pptx` copies — see [Legacy and ODF files open as converted
+copies](#legacy-and-odf-files-open-as-converted-copies).
 
 </details>
 

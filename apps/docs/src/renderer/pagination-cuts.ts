@@ -19,6 +19,7 @@ import {
 } from './pagination-slices'
 import type {
   BlockBox,
+  FloatBox,
   FloatSplitPatch,
   PageRegion,
   PageSlice,
@@ -90,6 +91,10 @@ export interface PageCut {
   blank: boolean
   /** page-pinned floated blocks whose anchor lands on this page */
   floats: number[]
+  /** anchor-shifted blocks (data-anchor-dy) whose flow slot lands on this page */
+  anchored: number[]
+  /** floating boxes (`PageCutOptions.floats` indices) whose anchor lands on this page */
+  boxes: number[]
   /** the gap widget that opens this page (applyGapLedger); absent on the first
    *  page, a parity twin and a boundary the gap builder dropped */
   gap?: PageGapFacts
@@ -245,10 +250,51 @@ export function pagePaperEdges(cuts: readonly PageCut[], firstMarginTop: number)
   return out
 }
 
+/** The blocks that open a page behind a block-kind gap widget, with the page
+ *  index: the wrap-obstacle pass clears its rectangles in front of them (a
+ *  page turn inside a table or a paragraph has no top-level widget and resets
+ *  nothing, as before). */
+export function pageLeadsOf(
+  cuts: readonly PageCut[],
+  blocks: readonly BlockBox[],
+): Map<Element, number> {
+  const out = new Map<Element, number>()
+  cuts.forEach((c, i) => {
+    const gap = c.gap
+    if (!gap) return
+    let el: HTMLElement | undefined
+    if (c.lead.kind === 'block') {
+      if (gap.kind === 'block') el = blocks[c.lead.block]?.el
+    } else if (c.lead.kind !== 'tail' && !gap.floatGap) {
+      // the turn sits inside a table or paragraph: Word scopes wrap obstacles
+      // to the page, so the first block after the straddling one opens the
+      // new set (a block straddling several pages resets once, at its last turn)
+      for (let b = c.lead.block + 1; b < blocks.length && !el; b++) el = blocks[b].el
+    }
+    if (el) out.set(el, i)
+  })
+  return out
+}
+
 /** page a floated block was pinned to (`floats`), or undefined */
 export function floatPageOf(cuts: readonly PageCut[], block: number): number | undefined {
   const i = cuts.findIndex((c) => c.floats.includes(block))
   return i >= 0 ? i : undefined
+}
+
+/** owning page by block index (`floats` and `anchored`) and by floating-box index (`boxes`) */
+export function pageOwners(cuts: readonly PageCut[]): {
+  blocks: ReadonlyMap<number, number>
+  boxes: ReadonlyMap<number, number>
+} {
+  const blocks = new Map<number, number>()
+  const boxes = new Map<number, number>()
+  cuts.forEach((c, i) => {
+    for (const b of c.floats) blocks.set(b, i)
+    for (const b of c.anchored) blocks.set(b, i)
+    for (const f of c.boxes) boxes.set(f, i)
+  })
+  return { blocks, boxes }
 }
 
 /**
@@ -275,6 +321,8 @@ export interface PageCutOptions {
   titlePgOf?: (section: number) => boolean | undefined
   pageNumberFmtOf?: (section: number) => string | undefined
   floatSplits?: FloatSplitPatch[]
+  /** the measured floating boxes; each cut lists the ones its page owns (`boxes`) */
+  floats?: readonly FloatBox[]
 }
 
 /** Page-window facts the sheets apply around a cut: table seams, the part of
@@ -369,6 +417,9 @@ export function pageCutSignature(cuts: readonly PageCut[]): string {
 }
 
 /** where two cut lists of one document disagree (0.5 px on lengths), one line per fact */
+const sameList = (a: readonly number[], b: readonly number[]) =>
+  a.length === b.length && a.every((v, i) => v === b[i])
+
 export function pageCutDiffs(a: readonly PageCut[], b: readonly PageCut[]): string[] {
   const out: string[] = []
   if (a.length !== b.length) out.push(`pages ${a.length} vs ${b.length}`)
@@ -407,6 +458,10 @@ export function pageCutDiffs(a: readonly PageCut[], b: readonly PageCut[]): stri
       ['leadTable', !!x.leadTable === !!y.leadTable, x.leadTable, y.leadTable],
       ['cutTable', !!x.cutTable === !!y.cutTable, x.cutTable, y.cutTable],
       ['tailTable', !!x.tailTable === !!y.tailTable, x.tailTable, y.tailTable],
+      ['display', x.display === y.display, x.display, y.display],
+      ['floats', sameList(x.floats, y.floats), x.floats.join(','), y.floats.join(',')],
+      ['anchored', sameList(x.anchored, y.anchored), x.anchored.join(','), y.anchored.join(',')],
+      ['boxes', sameList(x.boxes, y.boxes), x.boxes.join(','), y.boxes.join(',')],
     ]
     for (const [name, same, va, vb] of facts)
       if (!same) out.push(`p${i + 1} ${name} ${String(va)} vs ${String(vb)}`)
@@ -454,10 +509,15 @@ export function buildPageCuts(
   const firsts = sectionFirstPages(slices)
   const geomOf = (s: number) => geoms[Math.max(0, Math.min(s, geoms.length - 1))]
   const floats: number[][] = slices.map(() => [])
+  const anchored: number[][] = slices.map(() => [])
   blocks.forEach((b, i) => {
-    if (b.el && (b.floated || b.floatTable) && slices.length > 0)
-      floats[pinnedFloatPage(slices, b.top)].push(i)
+    if (slices.length === 0 || !b.el) return
+    if (b.floated || b.floatTable) floats[pinnedFloatPage(slices, b.top)].push(i)
+    if (b.anchorShifted) anchored[pinnedFloatPage(slices, b.top)].push(i)
   })
+  const boxes: number[][] = slices.map(() => [])
+  if (slices.length > 0)
+    opts.floats?.forEach((f, i) => boxes[pinnedFloatPage(slices, f.anchorTop)].push(i))
   let prevNo = 0
   let prevSection = -1
   const cuts: PageCut[] = slices.map((s, i) => {
@@ -509,6 +569,8 @@ export function buildPageCuts(
       display: formatPageNumber(pageNo, opts.pageNumberFmtOf?.(s.section)),
       blank: s.end === s.start,
       floats: floats[i],
+      anchored: anchored[i],
+      boxes: boxes[i],
       gapOffsetPx: 0,
       flowOffsetPx: 0,
     }

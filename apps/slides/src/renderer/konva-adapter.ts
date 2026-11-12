@@ -1093,8 +1093,9 @@ export function clrChangeImage(
     const [fr, fg, fb] = [hex(f, 0), hex(f, 2), hex(f, 4)]
     const [tr, tg, tb] = [hex(t, 0), hex(t, 2), hex(t, 4)]
     const ta = t.length >= 8 ? hex(t, 6) : 255
-    // small per-channel tolerance absorbs rasterizer rounding (metafile conversions)
-    const TOL = 4
+    // PowerPoint keys JPEG ringing around the transparent colour too; 8 leaves
+    // visible 8x8 blocks, 16 matches its output on a scanned stamp
+    const TOL = 16
     try {
       const data = ctx.getImageData(0, 0, c.width, c.height)
       const px = data.data
@@ -1533,6 +1534,14 @@ const FONT_STACK: Record<string, string> = {
   simhei: "SimHei, 'Heiti SC', sans-serif",
   楷体: "KaiTi, 'Kaiti SC', serif",
   仿宋: "FangSong, 'Songti SC', serif",
+  '\u534e\u6587\u6977\u4f53': "STKaiti, 'Kaiti SC', KaiTi, serif",
+  stkaiti: "STKaiti, 'Kaiti SC', KaiTi, serif",
+  '\u534e\u6587\u5b8b\u4f53': "STSong, 'Songti SC', SimSun, serif",
+  stsong: "STSong, 'Songti SC', SimSun, serif",
+  '\u534e\u6587\u4e2d\u5b8b': "STZhongsong, STSong, 'Songti SC', SimSun, serif",
+  '\u534e\u6587\u884c\u6977': "STXingkai, 'Xingkai SC', KaiTi, serif",
+  '\u534e\u6587\u4eff\u5b8b': "STFangsong, FangSong, 'Songti SC', serif",
+  '\u534e\u6587\u9ed1\u4f53': "STHeiti, SimHei, 'Heiti SC', sans-serif",
   等线: "DengXian, 'Microsoft YaHei', 'PingFang SC', sans-serif",
   dengxian: "DengXian, 'Microsoft YaHei', 'PingFang SC', sans-serif",
   // Western: consistent with the main-process metrics alias chain (calibri→Carlito→Arial etc.),
@@ -1603,9 +1612,17 @@ export function displayFontFamily(name: string): string {
   if (script === 'ja') return `'${name}', ${SERIF_HINT_RE.test(name) ? JA_SERIF : JA_SANS}`
   if (script === 'ko') return `'${name}', ${SERIF_HINT_RE.test(name) ? KO_SERIF : KO_SANS}`
   if (script === 'tc') return `'${name}', ${SERIF_HINT_RE.test(name) ? TC_SERIF : TC_SANS}`
-  // same tail as the gt-measure stack in shaped-metrics.ts
   return `'${name}', 'PingFang SC', 'Microsoft YaHei', 'Yu Gothic', 'Malgun Gothic', sans-serif`
 }
+
+declare global {
+  interface Window {
+    /** The drawing font stack, for main's ground-truth measureText (shaped-metrics.ts): glyphs a
+     *  face lacks must measure in the same fallback font they draw in, or word gaps drift. */
+    __genofficeDisplayFontFamily?: (name: string) => string
+  }
+}
+if (typeof window !== 'undefined') window.__genofficeDisplayFontFamily = displayFontFamily
 
 /**
  * Baseline anchoring for painted text, measured per family/style at a fixed size

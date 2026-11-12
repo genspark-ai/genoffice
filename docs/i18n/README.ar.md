@@ -19,7 +19,7 @@
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="نجوم GitHub"></a>
 </p>
 
-<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <b>العربية</b> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <b>العربية</b> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a></p>
 
 <p align="center" dir="rtl">
   <a href="#download"><b>التنزيل</b></a> ·
@@ -96,7 +96,7 @@ GenOffice بديل مجاني ومفتوح المصدر لـ Microsoft Office ع
 </tr>
 <tr>
 <td dir="rtl"><b>ابنِه</b> — من جملة واحدة، يضيف الوكيل ورقة ملخّص بصِيَغ <code>SUMIF</code> فعلية حسب المنطقة والفئة، ويُدرج رسمًا بيانيًا بالأعمدة، ويطبّق الـ43 تغييرًا كدفعة واحدة قابلة للتراجع.</td>
-<td dir="rtl"><b>اسأله</b> — تُجاب الأسئلة عن المصنّف مع شرح المنطق والخلايا الدقيقة المستخدمة كاستشهادات قابلة للنقر. ويعمل خلف الكواليس: محرّك <code>.xlsx</code> داخلي مطوَّر بلغة Rust، وجداول محورية، ومرشِّحات تقطيع (slicers)، وتنسيق شرطي، وتتبّع للصِّيَغ، وصور مُضمَّنة في الخلايا كقيم غنية (rich values) أصلية في Excel — يعيد Excel فتحها فتبقى في الخلية.</td>
+<td dir="rtl"><b>اسأله</b> — تُجاب الأسئلة عن المصنّف مع شرح المنطق والخلايا الدقيقة المستخدمة كاستشهادات قابلة للنقر. ويعمل خلف الكواليس: محرّك <code>.xlsx</code> داخلي مطوَّر بلغة Rust، وجداول محورية، ومرشِّحات تقطيع (slicers)، وتنسيق شرطي، وتتبّع للصِّيَغ، وصور مُضمَّنة في الخلايا كقيم غنية (rich values) أصلية في Excel — يعيد Excel فتحها فتبقى في الخلية.يمكن أن تحمل ملاحظة الخلية صورة، تُعرض أسفل نافذة الملاحظة المنبثقة.</td>
 </tr>
 </table>
 
@@ -221,6 +221,12 @@ Desktop وCursor وأي عميل MCP آخر تشغيل `genoffice mcp` بأنف�
 </tr>
 </table>
 
+### 9 · الملفات القديمة — ملفات `.doc` و`.xls` و`.ppt` من العقد الأول من الألفية تُفتح أيضاً
+
+يُفتح ملف Word 97–2003 بصيغة `.doc` أو ملف Excel بصيغة `.xls` أو ملف PowerPoint بصيغة `.ppt` كنسخة محوَّلة بصيغة `.docx` أو `.xlsx` أو `.pptx` تُنشأ على جهازك؛ والملف الأصلي لا يتغير أبداً. تنتقل الصور والجداول والصيغ وتنسيقات الأرقام والتعبئات والتخطيط.
+
+<img src="../assets/readme/legacy-formats-motion.webp" alt="عرض سريع لـ GenOffice وهو يفتح ملفات .ppt و.doc و.xls لتقرير سنوي خيالي لعام 2004، ثم شريحة واحدة معروضة في PowerPoint بجانب العرض المحوَّل في GenOffice" width="100%">
+
 ## لماذا GenOffice
 
 - **مفتوح المصدر**، برخصة Apache-2.0، ويُطوَّر علنًا على GitHub.
@@ -268,12 +274,18 @@ Desktop وCursor وأي عميل MCP آخر تشغيل `genoffice mcp` بأنف�
 
 **أو استخدم مفتاحك الخاص.** تسرد صفحة Settings → AI مزوِّدين مثل Claude
 وOpenAI وGemini وDeepSeek وKimi وGLM وQwen وDoubao وMiniMax وGrok وMistral
-وOpenRouter وRequesty وOpenCode Zen/Go، إضافة إلى خانة مخصَّصة لأي نقطة نهاية متوافقة مع
+وOpenRouter وRequesty
+وOpper
+وCheaper Inference
+وAtlas Cloud
+وSiliconFlow
+وPPIO
+وCommand Code وOpenCode Zen/Go، إضافة إلى خانة مخصَّصة لأي نقطة نهاية متوافقة مع
 OpenAI (عنوان أساسي + مفتاح)، بما في ذلك خوادم النماذج المحلية. ولكل من
 البحث والوسائط مزوِّدوه الخاصون بحسب القدرة تحت **AI Media & Search**: Serper
-أو Serply أو Tavily أو Parallel أو Keenable أو Exa أو Firecrawl للبحث عبر
+أو Serply أو SearchApi أو Tavily أو Parallel أو Keenable أو Exa أو Firecrawl للبحث عبر
 الويب — وKeenable كذلك لا يحتاج إلى مفتاح، فالمفتاح يرفع حدود الاستخدام فقط؛
-وOpenAI أو Gemini أو Doubao/Seedream أو GLM أو Grok أو Qwen أو MiniMax أو أي
+وOpenAI أو Gemini أو Doubao/Seedream أو GLM أو Grok أو Qwen أو MiniMax أو Stability أو FLUX أو أي
 نقطة نهاية للصور متوافقة مع OpenAI لتوليد الصور وتحليل الصور والفيديو.
 
 تأتي الحزمة كاملةً بثلاثة مظاهر: فاتح وداكن ومظهر النظام. تغيّر المظاهر فقط ما
@@ -287,7 +299,7 @@ OpenAI (عنوان أساسي + مفتاح)، بما في ذلك خوادم ال
 المهارة ملف `SKILL.md` يخبر الذكاء الاصطناعي كيف يُنجز مهمة واحدة بإتقان: تقرير أسبوعي، اتفاقية عدم إفصاح، خطة درس.
 يأتي GenOffice بمجموعة منها ويقبل مهاراتك الخاصة بالتنسيق نفسه الذي تستخدمه وكلاء البرمجة.
 
-- **الإعدادات ← المهارات.** **ثبّت** مهارة موصى بها، أو **استورد** مجلدًا أو ملف zip أو ملف `SKILL.md` واحدًا. لا يُشغَّل شيء عند الاستيراد.
+- **الإعدادات ← المهارات.** **ثبّت** مهارة موصى بها، أو **استورد** مجلدًا أو ملف zip أو ملف `SKILL.md` واحدًا. لا يُشغَّل شيء عند الاستيراد. ويوضح تبويب **الكل** الدليل الموصى به كاملاً في مكان واحد، مع أوصاف تتبع لغة التطبيق.
 - **في المحادثة.** افتح قائمة **+** بجوار مربع الكتابة في أي لوحة ذكاء اصطناعي، اختر **المهارات**، حدد واحدة وأرسل. تُرفق المهارة بتلك الرسالة فقط.
 
 ---
@@ -458,6 +470,8 @@ sudo zypper install ./genoffice-<version>.x86_64.rpm  # openSUSE
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+على جهاز Chromebook، تعمل الحزم نفسها داخل بيئة لينكس (Crostini) — التفاصيل في [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

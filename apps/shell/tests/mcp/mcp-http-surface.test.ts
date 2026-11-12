@@ -35,6 +35,7 @@ import { realCliRunner } from './real-cli'
 
 const DEFAULT_NAMES = [
   'apply_ops',
+  'check_document',
   'apply_sheet_ops',
   'apply_slide_ops',
   'create_session',
@@ -56,6 +57,7 @@ const DEFAULT_NAMES = [
 
 const BACKGROUND_NAMES = [
   ...DEFAULT_NAMES,
+  'convert_document',
   'create_docx',
   'create_pptx',
   'create_xlsx',
@@ -301,6 +303,7 @@ describe('MCP surface over Streamable HTTP (/mcp)', () => {
         'pptx',
         'odp',
         'otp',
+        'ppt',
       ])
 
       // ── 3. read_docx error paths ──────────────────────────────────────────

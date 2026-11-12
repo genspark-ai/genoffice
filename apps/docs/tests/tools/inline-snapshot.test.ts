@@ -22,23 +22,24 @@ import {
   autospaceSeams,
   balancedSpaceOffsets,
   charScaleEm,
-  cjkDeclaredLineFactor,
-  cssFontFamily,
   isCjkFontName,
   isCjkNamedFont,
-  isEaLayoutFace,
   isJapaneseFontName,
   isKoreanFontName,
+  textHasCjk,
+  textHasHangul,
+} from '../../src/renderer/line-metrics'
+import {
+  cjkDeclaredLineFactor,
+  cssFontFamily,
+  isEaLayoutFace,
   isKoreanLayoutFace,
   krCharsetRoute,
   lineHeightFactor,
   missingLatinSubstitute,
-  setBalancedSpaceWidening,
   setDocFontTable,
-  setLatinViaEastAsiaSlot,
-  textHasCjk,
-  textHasHangul,
-} from '../../src/renderer/line-metrics'
+} from '../../src/renderer/text-layout/font-rules'
+import { setOpenDocumentText } from '../../src/renderer/text-layout/open-document'
 import { isEastAsianFontName } from '../../src/renderer/font-list'
 import { layoutParaOfRuns, paraLineFactor } from '../../src/renderer/editor/para-layout-spec'
 import { eastAsianSegments } from '../../src/renderer/editor/script-fonts'
@@ -116,8 +117,7 @@ async function snapshotDoc(path: string) {
   const bodyEa = textCtx.bodyEa
   const viaEa = textCtx.latinViaEaSlot
   const balanced = textCtx.balancedSpaces
-  setLatinViaEastAsiaSlot(viaEa, textCtx.bodyEaSlot)
-  setBalancedSpaceWidening(balanced)
+  setOpenDocumentText(textCtx)
   const dd = parsed.docDefaults
   const doc = {
     bodyEaFont: bodyEa ?? null,
@@ -226,6 +226,7 @@ async function snapshotDoc(path: string) {
           balancedSpaces: balanced,
           justified: false,
           simsunGapLineHeight: 'x',
+          lineMultiple: null,
         })
         const by: Record<string, number> = {}
         for (const sg of all.segments)

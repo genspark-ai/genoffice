@@ -23,7 +23,8 @@ export function ToastHost() {
       raf = window.requestAnimationFrame(() => {
         raf = window.requestAnimationFrame(() => setVisible(true))
       })
-      const shownMs = next.kind === 'error' ? 4000 : 2000
+      // Info notes explain why an action was held; give them a beat longer.
+      const shownMs = next.kind === 'error' ? 4000 : next.kind === 'info' ? 3000 : 2000
       hideTimer = window.setTimeout(() => setVisible(false), shownMs)
       // keep the node mounted through the fade-out transition
       clearTimer = window.setTimeout(() => setToast(null), shownMs + 200)
@@ -52,6 +53,12 @@ export function ToastHost() {
           <>
             <circle cx="12" cy="12" r="9" />
             <path d="m8.2 12.3 2.6 2.6 5-5" />
+          </>
+        ) : toast.kind === 'info' ? (
+          <>
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7.6v.1" />
+            <path d="M12 10.9v5.5" />
           </>
         ) : (
           <>

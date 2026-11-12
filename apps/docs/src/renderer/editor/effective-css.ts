@@ -8,10 +8,10 @@
 import {
   additiveParagraphSpacing,
   autoSpacingPt,
-  cssFontFamily,
   cssGridSpacingPt,
   spaceBeforeProp,
 } from '../line-metrics'
+import { cssFontFamily } from '../text-layout/font-rules'
 
 export interface EffectiveParaCss {
   spaceBeforeTwips?: number | null

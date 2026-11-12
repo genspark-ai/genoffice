@@ -10,8 +10,18 @@ import {
 } from '@genoffice/ui'
 import type { AiFontSize, AiPanelPrefs, AiPanelSide } from '@genoffice/ui'
 import { getProviderAdapter, thinkingShapeFor } from '@genoffice/ai-provider/browser'
-import type { DecisionEndpoint, DefaultAppStatus, FileSearchSettings } from '../../shared/home-api'
-import { AUTHOR_NAME_MAX, isCloudflareEndpoint } from '../../shared/home-api'
+import type {
+  DecisionEndpoint,
+  DefaultAppStatus,
+  FileSearchSettings,
+  PdfDefaultZoom,
+} from '../../shared/home-api'
+import {
+  AUTHOR_NAME_MAX,
+  CSV_IMPORT_DEFAULT_LIMIT_MB,
+  CSV_IMPORT_LIMIT_CHOICES_MB,
+  isCloudflareEndpoint,
+} from '../../shared/home-api'
 import type { UpdateUiState } from '../../shared/update-api'
 import {
   DEFAULT_MAX_OUTPUT_TOKENS,
@@ -1124,6 +1134,7 @@ const DECISION_ENDPOINTS: { value: DecisionEndpoint; label: string }[] = [
   { value: 'liquid', label: 'Liquid AI (d1)' },
   { value: 'liquid-ultra', label: 'Liquid AI (d1-ultra)' },
   { value: 'openai', label: 'OpenAI (gpt-6-luna)' },
+  { value: 'gemini', label: 'Google (gemini-decision-1)' },
   { value: 'cloudflare', label: 'Cloudflare (Clef)' },
   { value: 'cloudflare-flash', label: 'Cloudflare (Clef-flash)' },
   { value: 'kev', label: 'Kev (local)' },
@@ -1808,12 +1819,13 @@ export function SettingsModal({
   }, [target])
   const [theme, setTheme] = useState<UiTheme>('system')
   const [docTheme, setDocTheme] = useState<DocTheme>('follow')
+  const [csvLimitMb, setCsvLimitMb] = useState(CSV_IMPORT_DEFAULT_LIMIT_MB)
   const [saveDir, setSaveDir] = useState('')
   const [analyticsOn, setAnalyticsOn] = useState(true)
   const [analyticsSaving, setAnalyticsSaving] = useState(false)
   const [autoSaveOn, setAutoSaveOn] = useState(false)
   const [tabSleepOn, setTabSleepOn] = useState(true)
-  const [restoreSessionOn, setRestoreSessionOn] = useState(false)
+  const [restoreSessionOn, setRestoreSessionOn] = useState(true)
   const [autoUpdateCheckOn, setAutoUpdateCheckOn] = useState(true)
   const [silentInstallOn, setSilentInstallOn] = useState(false)
   const [defaultApp, setDefaultApp] = useState<DefaultAppStatus | null>(null)
@@ -1822,6 +1834,7 @@ export function SettingsModal({
   const [aiPrefs, setAiPrefs] = useState<AiPanelPrefs>(DEFAULT_AI_PANEL_PREFS)
   const [authorName, setAuthorName] = useState<AuthorNameSetting>({ value: '', fallback: '' })
   const [legacyImportPrompt, setLegacyImportPrompt] = useState(true)
+  const [pdfDefaultZoom, setPdfDefaultZoom] = useState<PdfDefaultZoom>('width')
   const [channel, setChannel] = useState<'stable' | 'beta'>('stable')
   const [appVersion, setAppVersion] = useState('')
   const [githubStars, setGithubStars] = useState<number | null>(null)
@@ -1847,6 +1860,9 @@ export function SettingsModal({
     void window.aiOffice.getTabSleepEnabled?.().then((on) => {
       if (alive) setTabSleepOn(on)
     })
+    void window.aiOffice.getCsvImportLimit?.().then((mb) => {
+      if (alive && mb > 0) setCsvLimitMb(mb)
+    })
     void window.aiOffice.getRestoreLastSession?.().then((on) => {
       if (alive) setRestoreSessionOn(on)
     })
@@ -1858,6 +1874,9 @@ export function SettingsModal({
     })
     void window.aiOffice.getLegacyImportPrompt?.().then((v) => {
       if (alive) setLegacyImportPrompt(v)
+    })
+    void window.aiOffice.getPdfDefaultZoom?.().then((v) => {
+      if (alive) setPdfDefaultZoom(v)
     })
     void window.aiOffice.getAuthorName?.().then((v) => {
       if (alive) setAuthorName(v)
@@ -2109,6 +2128,26 @@ export function SettingsModal({
                 </div>
                 <div className="set-field">
                   <div className="set-field-text">
+                    <label className="set-field-label">{t('csvImportLimit')}</label>
+                  </div>
+                  <Dropdown
+                    className="set-dd"
+                    value={String(csvLimitMb)}
+                    ariaLabel={t('csvImportLimit')}
+                    options={CSV_IMPORT_LIMIT_CHOICES_MB.map((mb) => ({
+                      value: String(mb),
+                      label: `${mb} MB`,
+                    }))}
+                    onPick={(v) => {
+                      const mb = Number(v)
+                      if (!Number.isInteger(mb)) return
+                      setCsvLimitMb(mb)
+                      void window.aiOffice.setCsvImportLimit?.(mb)
+                    }}
+                  />
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
                     <label className="set-field-label">{t('setAiPanelSide')}</label>
                   </div>
                   <Dropdown
@@ -2199,6 +2238,30 @@ export function SettingsModal({
                 <div className="set-field">
                   <div className="set-field-text">
                     <div className="set-field-stack">
+                      <label className="set-field-label" htmlFor="set-pdf-default-zoom">
+                        {t('setPdfDefaultZoom')}
+                      </label>
+                      <div className="set-field-desc">{t('setPdfDefaultZoomDesc')}</div>
+                    </div>
+                  </div>
+                  <select
+                    id="set-pdf-default-zoom"
+                    className="set-input"
+                    value={pdfDefaultZoom}
+                    onChange={(e) => {
+                      const next = e.target.value as PdfDefaultZoom
+                      setPdfDefaultZoom(next)
+                      void window.aiOffice.setPdfDefaultZoom?.(next).then(setPdfDefaultZoom)
+                    }}
+                  >
+                    <option value="width">{t('setPdfDefaultZoomWidth')}</option>
+                    <option value="page">{t('setPdfDefaultZoomPage')}</option>
+                    <option value="last">{t('setPdfDefaultZoomLast')}</option>
+                  </select>
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <div className="set-field-stack">
                       <div className="set-field-label">{t('setAiSpellcheck')}</div>
                       <div className="set-field-desc">{t('setAiSpellcheckDesc')}</div>
                     </div>
@@ -2224,6 +2287,21 @@ export function SettingsModal({
                     aria-checked={aiPrefs.showAiSidebar}
                     aria-label={t('setAiShowSidebar')}
                     onClick={() => updateAiPrefs({ showAiSidebar: !aiPrefs.showAiSidebar })}
+                  />
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <div className="set-field-stack">
+                      <div className="set-field-label">{t('setAiShowAskTrigger')}</div>
+                      <div className="set-field-desc">{t('setAiShowAskTriggerDesc')}</div>
+                    </div>
+                  </div>
+                  <button
+                    className="set-switch"
+                    role="switch"
+                    aria-checked={aiPrefs.showAiAskTrigger}
+                    aria-label={t('setAiShowAskTrigger')}
+                    onClick={() => updateAiPrefs({ showAiAskTrigger: !aiPrefs.showAiAskTrigger })}
                   />
                 </div>
                 <div className="set-field">
