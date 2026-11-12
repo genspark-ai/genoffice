@@ -316,6 +316,14 @@ const MATH_AC_RE =
   /<mc:AlternateContent\b[^>]*>\s*<mc:Choice\b[^>]*>\s*<a14:m\b[\s\S]*?<\/mc:AlternateContent>/g
 
 /**
+ * An a14:m equation a producer wrote bare, without the mc:AlternateContent
+ * wrapper PowerPoint uses — WPS/Aspose exports do this, including inside table
+ * cells (genoffice#2644). Matched after MATH_AC_RE, so the inner block of a
+ * wrapped equation is never touched.
+ */
+const BARE_MATH_RE = /<a14:m\b[^>]*(?:\/>|>[\s\S]*?<\/a14:m>)/g
+
+/**
  * Equations are paragraph children fast-xml-parser would file outside the run
  * list (losing their position and, on rebuild, the block itself). They become a
  * run carrying the block verbatim (base64 in an attribute, TextRun.rawXml after
@@ -359,6 +367,9 @@ function parseShapeFragment(
   // fields in document order instead of being appended after all plain runs.
   const semanticXml = fragXml
     .replace(MATH_AC_RE, mathBlockAsRun)
+    // a bare a14:m: PowerPoint never writes it, but the equation would otherwise
+    // disappear from the paragraph (and from a table cell's text) on parse
+    .replace(BARE_MATH_RE, mathBlockAsRun)
     .replace(/<a:br\b[^>]*\/>|<a:br\b[\s\S]*?<\/a:br>/g, '<a:r><a:t>\n</a:t></a:r>')
     .replace(/<a:fld\b/g, '<a:r')
     .replace(/<\/a:fld>/g, '</a:r>')
