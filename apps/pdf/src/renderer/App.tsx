@@ -257,7 +257,6 @@ import {
   styleSegCss,
   boldCss,
   boldToken,
-  keyRunsToStyleRuns,
   blockRectKey,
   blockMoveInput,
   editCarriesBlock,
@@ -3625,8 +3624,7 @@ export default function App() {
   const mergeTextDraft = (
     edits: LocalTextEdit[],
     d: TextDraft,
-  ): LocalTextEdit[] | null | 'overflow' =>
-    mergeTextDraftImpl(edits, d, { pageBlocks, newId })
+  ): LocalTextEdit[] | null | 'overflow' => mergeTextDraftImpl(edits, d, { pageBlocks, newId })
 
   /** Background dry-run of a just-committed edit against the file. A span that doesn't
       line up with the underlying text objects would otherwise surface only at save time;
