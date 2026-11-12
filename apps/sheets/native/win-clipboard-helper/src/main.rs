@@ -203,7 +203,7 @@ fn render_and_append(request: &EmfRequest) -> Result<(i32, i32), String> {
         unsafe { DeleteEnhMetaFile(metafile) };
         return Ok((metrics.width_px, metrics.height_px));
     }
-    match append_to_clipboard(metafile) {
+    match append_to_clipboard(metafile, sequence) {
         Ok(()) => Ok((metrics.width_px, metrics.height_px)),
         Err(error) => Err(error),
     }
@@ -288,10 +288,8 @@ unsafe fn paint_table(
         let pen = CreatePen(PS_SOLID, 1, GRID_COLOR);
         let old_pen = SelectObject(hdc, pen);
         Rectangle(hdc, 0, 0, metrics.width_px, metrics.height_px);
-    }
 
-    let (anchors, covered) = merge_layout(request);
-    unsafe {
+        let (anchors, covered) = merge_layout(request);
         // The grey pen stays selected for the interior grid lines: restoring it
         // here would leave the default (black) pen for them, and the table would
         // come out with a grey frame and black inner lines.
@@ -456,7 +454,7 @@ unsafe fn draw_cell_text(
 }
 
 #[cfg(windows)]
-fn append_to_clipboard(metafile: *mut core::ffi::c_void) -> Result<(), String> {
+fn append_to_clipboard(metafile: *mut core::ffi::c_void, sequence: u32) -> Result<(), String> {
     use windows_sys::Win32::Graphics::Gdi::DeleteEnhMetaFile;
     use windows_sys::Win32::System::DataExchange::{
         CloseClipboard, OpenClipboard, SetClipboardData,
@@ -466,6 +464,16 @@ fn append_to_clipboard(metafile: *mut core::ffi::c_void) -> Result<(), String> {
 
     for _ in 0..20 {
         if unsafe { OpenClipboard(std::ptr::null_mut()) } != 0 {
+            // Re-checked in the success branch, not only before the loop: a
+            // busy clipboard is usually another copy being written, so the
+            // open may have waited out exactly the write this baseline exists
+            // to detect — appending then would put a stale picture beside the
+            // newer content.
+            if clipboard_sequence() != sequence {
+                unsafe { CloseClipboard() };
+                unsafe { DeleteEnhMetaFile(metafile) };
+                return Ok(());
+            }
             if unsafe { SetClipboardData(CF_ENHMETAFILE as u32, metafile) }.is_null() {
                 unsafe { CloseClipboard() };
                 unsafe { DeleteEnhMetaFile(metafile) };
