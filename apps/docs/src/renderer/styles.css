@@ -965,6 +965,11 @@ html.genoffice-popover-open .ribbon-tabs {
   position: static;
 }
 
+.ribbon-compact .ink-pen-slot.active .ink-pen-bar {
+  width: 14px;
+  margin-right: 0;
+}
+
 /* Page Layout: two columns each stacking two controls, 28 + 5 + 28 = 61px. */
 .ribbon-compact .layout-para {
   gap: 6px;
@@ -3236,6 +3241,13 @@ th[data-rev-fmt] {
   text-justify: none;
 }
 
+/* space / tab run beside ink (text-layout whitespaceRuns): Word never sizes a
+   line by whitespace, so the run's own box (another face or size than the text)
+   must not union into the line */
+.doc-ws-run {
+  line-height: 0;
+}
+
 /* tab with no room left on its line (TabStopExtension collapses it to half a
    space): a zero font keeps the character itself from adding to the line box */
 .doc-tab-collapse {
@@ -5163,29 +5175,61 @@ th[data-rev-fmt] {
   --doc-autospace-pad: 0.125em;
 }
 
-/* CJK/Latin autospace pad: the character after the boundary carries the extra
-   1/8em as a start margin. Plain inline (not inline-block): an atomic inline
-   would suppress Chromium's own text-autospace gap. Not an empty span: when an
-   empty inline's margin is what no longer fits at the line end, Chromium rewinds
-   to the previous recorded break opportunity (the preceding pad) instead of
-   breaking inside the CJK run, dropping a third of the line (prod 003). */
+/* CJK/Latin autospace pad: the character after the boundary carries Word's gap
+   as a collapsible space in its ::before (white-space:normal inside the
+   pre-wrap paragraph): like Word's gap it vanishes when the line breaks at the
+   seam (corpus 2026-11-10, a fixed-width JP cell: Word starts the next line at
+   the cell edge; a start margin survived the break and pushed a 12-glyph line
+   over its cell). The space suppresses Chromium's own text-autospace at the
+   seam, so the pad carries the whole gap (2 x the 1/8em base, or the Latin
+   face's share); the registered property resolves the em on the pad span
+   before the zero-size ::before inherits it; line-height 0 keeps the pseudo's
+   inline box out of the line box (a length line-height would otherwise centre
+   a full-height empty box on the baseline and grow every padded line).
+   tools/docs-autospace-pad-probe.mjs pins the three layout properties in
+   headless Chromium. A seam touching hangul keeps the
+   start-margin form under Korean word-wrap (w:wordWrap on): the paragraph
+   never breaks there, so the margin never meets a line start, and a space
+   would open a break Word does not take; with word-wrap off the seam can open
+   a line and takes the space like any other. */
+@property --doc-autospace-gap {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
 .doc-autospace-pad {
-  margin-inline-start: var(--doc-autospace-pad, 0.125em);
+  --doc-autospace-gap: calc(var(--doc-autospace-pad, 0.125em) * var(--doc-autospace-pad-le, 2));
 }
-/* only one of autoSpaceDE/DN is off: the native gap is disabled, the pad carries all of it */
-.doc-autospace-pad-full {
-  margin-inline-start: calc(var(--doc-autospace-pad, 0.125em) * 2);
+.doc-autospace-pad::before {
+  content: ' ';
+  white-space: normal;
+  font-size: 0;
+  line-height: 0;
+  word-spacing: var(--doc-autospace-gap);
 }
-/* Latin -> CJK seam: Word's gap is half the Latin face's average char width
-   (line-metrics latinAutospaceGapEm); the span scales its share of the base */
-.doc-autospace-pad-le {
-  margin-inline-start: calc(var(--doc-autospace-pad, 0.125em) * var(--doc-autospace-pad-le, 1));
+/* hangul seam: margin beside the native 1/8em gap; the whole gap when the native one is off (-full) */
+.doc-autospace-pad-m::before {
+  content: none;
+}
+.doc-autospace-pad-m {
+  margin-inline-start: calc(
+    var(--doc-autospace-pad, 0.125em) * (var(--doc-autospace-pad-le, 2) - 1)
+  );
+}
+.doc-autospace-pad-m.doc-autospace-pad-full {
+  margin-inline-start: calc(var(--doc-autospace-pad, 0.125em) * var(--doc-autospace-pad-le, 2));
 }
 
 /* static-DOM word-joiner (protected-render padSegments): generated content keeps
    the U+2060 out of innerText, so cell / textbox edits never commit it */
 .doc-kr-wj:empty::before {
   content: '\2060';
+}
+
+/* spaces Word never breaks at (inline-segments middleDotNoBreaks); the wrap mode
+   alone, so the spaces collapse or stay as their context says */
+.doc-nobreak {
+  text-wrap-mode: nowrap;
 }
 
 /* under balanceSingleByteDoubleByteWidth a space beside an East Asian character
@@ -5409,9 +5453,98 @@ th[data-rev-fmt] {
 }
 
 /* M4 always-on pagination in the canvas: page gap = previous page's bottom margin (white) + inter-page band (gray) + next page's top margin (white) */
+/* WPS-style seam cursor: two rules with opposing arrows (collapse / expand),
+   not the window-splitter double arrow. Hotspot at the icon centre. */
+:root {
+  --docs-seam-cursor-expand:
+    url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiI+PGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+PHBhdGggZD0iTTYgMTNoMjBNNiAxOWgyMCIvPjxwYXRoIGQ9Ik0xNiAzdjdNMTIuNSA2LjUgMTYgM2wzLjUgMy41Ii8+PHBhdGggZD0iTTE2IDI5di03TTEyLjUgMjUuNSAxNiAyOWwzLjUtMy41Ii8+PC9nPjwvc3ZnPg==')
+      16 16,
+    ns-resize;
+  --docs-seam-cursor-collapse:
+    url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiI+PGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+PHBhdGggZD0iTTYgMTNoMjBNNiAxOWgyMCIvPjxwYXRoIGQ9Ik0xNiAxMlYzTTEyLjUgNi41IDE2IDEwbDMuNS0zLjUiLz48cGF0aCBkPSJNMTYgMjB2OU0xMi41IDI1LjUgMTYgMjJsMy41IDMuNSIvPjwvZz48L3N2Zz4=')
+      16 16,
+    ns-resize;
+}
+
 .page-gap {
   position: relative;
-  cursor: default;
+  cursor: var(--docs-seam-cursor-collapse);
+  user-select: none;
+}
+
+/* collapsed: the next double-click expands the gap again */
+body.hide-page-seams .page-gap,
+body.hide-page-seams .page-seam {
+  cursor: var(--docs-seam-cursor-expand);
+}
+
+/* Zero-height in-row cut seams: the paper bands are an absolute overlay, so the
+   seam never participates in the row height (the atLeast "long chin", #2114).
+   Double-click toggles Word's Hide White Space. */
+.page-seam-overlays {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* above the table box and its collapsed borders, below the ribbon */
+  z-index: 999;
+}
+
+.page-seam {
+  position: absolute;
+  pointer-events: auto;
+  cursor: var(--docs-seam-cursor-collapse);
+}
+
+/* Word closes a row cut by a page break: a rule at each page edge. The overlay
+   paints them above the continuous cell border, so the row looks closed on both
+   pages instead of running through the gap. */
+.page-seam-rule {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* collapsed view: one dashed boundary line instead of the WPS double rule */
+.page-seam-dash {
+  position: absolute;
+  height: 0;
+  pointer-events: none;
+  border-top: 1px dashed var(--docs-gap-cut, #9aa0a6);
+  display: none;
+}
+
+body.hide-page-seams .page-seam-rule {
+  display: none;
+}
+
+body.hide-page-seams .page-seam-dash {
+  display: block;
+}
+
+.page-seam::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    var(--page-bg, var(--docs-paper)) 0 var(--seam-mb, 96px),
+    var(--canvas) var(--seam-mb, 96px) calc(var(--seam-mb, 96px) + 28px),
+    var(--page-bg, var(--docs-paper)) calc(var(--seam-mb, 96px) + 28px) 100%
+  );
+}
+
+/* no hover outline: the dashed rectangle read as a stray tooltip/button ring.
+   The cursor change is the only hover affordance. */
+
+body.hide-page-seams .page-seam::before {
+  background: transparent;
+  border-top: 0;
+}
+
+body.hide-page-seams
+
+.page-gap {
+  position: relative;
+  cursor: var(--docs-seam-cursor-collapse);
   user-select: none;
 }
 
@@ -5526,16 +5659,17 @@ th[data-rev-fmt] {
   text-align: left;
 }
 
-/* Word's built-in separator: a 2in rule (clamped to the column) on its own line;
-   the border sits at the bottom of the reserved row (11 + 1 + 4 = FOOTNOTE_SEPARATOR_H)
-   so it clears the last body line's descenders instead of underlining them */
+/* Word's built-in separator: a 2in rule (clamped to the column) on its own row;
+   the row is the document's separator paragraph (--note-sep-h, default
+   FOOTNOTE_SEPARATOR_H = 11 + 1 + 4) and the rule sits --note-sep-rule down it,
+   clear of the last body line's descenders instead of underlining them */
 .page-gap-notes::before {
   content: '';
   display: block;
   width: min(2in, 100%);
-  height: 11px;
+  height: var(--note-sep-rule, 11px);
   border-bottom: 1px solid var(--docs-paper-ink-faint);
-  margin-bottom: 4px;
+  margin-bottom: calc(var(--note-sep-h, 16px) - var(--note-sep-rule, 11px) - 1px);
 }
 
 /* rows are min-height (App.tsx): a long entry grows past its reserved height
@@ -5568,15 +5702,15 @@ th[data-rev-fmt] {
   color: var(--docs-paper-ink-dim);
 }
 
-/* same 2in bottom-anchored rule as .page-gap-notes::before; consuming the full
-   reserved row keeps the entries aligned with the engine's height reservation */
+/* same rule as .page-gap-notes::before; consuming the full reserved row keeps
+   the entries aligned with the engine's height reservation */
 .pv-footnotes::before {
   content: '';
   display: block;
   width: min(2in, 100%);
-  height: 11px;
+  height: var(--note-sep-rule, 11px);
   border-bottom: 1px solid var(--docs-paper-ink-faint);
-  margin-bottom: 4px;
+  margin-bottom: calc(var(--note-sep-h, 16px) - var(--note-sep-rule, 11px) - 1px);
 }
 
 /* Word renders note markers with the reference character style: superscript at
@@ -5597,12 +5731,12 @@ th[data-rev-fmt] {
 }
 
 .pv-endnote-separator {
-  /* matches FOOTNOTE_SEPARATOR_H (16px): 11 box + 1 bottom border + 4 spacing —
-     the rule sits at the row's bottom, clear of the last body line above it */
+  /* the endnotes part's separator row (default FOOTNOTE_SEPARATOR_H: 11 box + 1
+     border + 4 spacing), rule clear of the last body line above it */
   width: min(2in, 100%);
   border-bottom: 1px solid var(--docs-paper-ink-faint);
-  margin-bottom: 4px;
-  height: 11px;
+  margin-bottom: calc(var(--note-sep-h, 16px) - var(--note-sep-rule, 11px) - 1px);
+  height: var(--note-sep-rule, 11px);
 }
 
 /* header/footer strips inside canvas page gaps: double-click opens that page's
@@ -6539,6 +6673,11 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
      own --doc-cell-pad-* instead of inheriting the host row's */
   --doc-row-pad-t: initial;
   --doc-row-pad-b: initial;
+  /* a nested table without w:tblCellMar takes Word's defaults, not the host table's margins */
+  --doc-cell-pad-t: initial;
+  --doc-cell-pad-r: initial;
+  --doc-cell-pad-b: initial;
+  --doc-cell-pad-l: initial;
 }
 
 .doc-table.doc-table-autofit-contents,
@@ -6581,11 +6720,14 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   margin: 0 !important;
 }
 
-/* w:hideMark: Word leaves the end-of-cell mark out of the row height, so a cell
-   holding nothing but one empty paragraph collapses to its margins (or trHeight);
+/* w:hideMark: Word leaves the end-of-cell mark out of the row height, so the
+   cell's last paragraph collapses (line and space-after) when it is empty: a
+   lone empty paragraph leaves the margins (or trHeight), an empty paragraph
+   after content ends the cell at the last text line (Word probe 2026-11-08:
+   only the last one; earlier empties and a leading one keep their line);
    a picture-only paragraph is textless too but keeps its picture extent */
-.doc-table td[data-hide-mark] > .doc-p-empty:not(.doc-p-pic):only-child,
-.doc-table th[data-hide-mark] > .doc-p-empty:not(.doc-p-pic):only-child {
+.doc-table td[data-hide-mark] > .doc-p-empty:not(.doc-p-pic):last-child,
+.doc-table th[data-hide-mark] > .doc-p-empty:not(.doc-p-pic):last-child {
   height: 0;
   min-height: 0;
   line-height: 0;
@@ -6663,6 +6805,22 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   display: table-row;
   user-select: none;
   pointer-events: none;
+}
+
+/* a header clone cell whose column a crossing vMerge cell holds (fitPhantomRows):
+   a copy inside a cell that stayed in the grid, painted over the crossing cell
+   at its own column */
+.doc-table tr.page-repeat-header > .page-rh-host {
+  position: relative;
+}
+
+.doc-table tr.page-repeat-header .page-rh-over {
+  position: absolute;
+  /* onto the host's collapsed border, where a cell of the row would start */
+  top: -1px;
+  bottom: -1px;
+  box-sizing: border-box;
+  background: var(--page-bg, var(--docs-paper));
 }
 
 /* outer edges: table-level outer borders beat the inside-line variables even when the
@@ -7057,6 +7215,25 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   max-width: 100%;
 }
 
+/* an in-flow (wp:inline) box is its own line: Word's paragraph is exactly the
+   shape height (probe 2026-11-05: box top = previous line bottom, next baseline
+   = box bottom + ascent), so the chip border and the box margin leave the flow;
+   the selection frame moves to an outline */
+.doc-protected-textboxes:not(.doc-protected-floating) {
+  border-width: 0;
+}
+
+.doc-protected-textboxes:not(.doc-protected-floating) .doc-textbox {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.ProseMirror-focused
+  .doc-protected.doc-protected-textboxes:not(.doc-protected-floating).ProseMirror-selectednode {
+  outline: 1px dashed var(--word-blue);
+  outline-offset: -1px;
+}
+
 .doc-protected-textboxes:hover {
   border-color: var(--border);
 }
@@ -7433,6 +7610,15 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 .doc-page .doc-br-line {
   display: block;
 }
+/* the break run inherits the document face while the strut took the runs'
+   declared one (lineFactorLive): the row is the inherited face's line */
+.doc-page .doc-br-line.doc-br-inherit {
+  font-family: var(--doc-latin-chain, inherit);
+  font-size: var(--doc-base-fs, 1em);
+  line-height: calc(
+    var(--doc-line-factor-latin, var(--doc-line-factor, 1.2)) * 1em * var(--doc-line-mult, 1)
+  );
+}
 
 /* CJK stretch of a mixed-script paragraph (lineFactorLive): the strut sits at
    the Latin base and the stretch re-resolves the auto line rule with its own
@@ -7480,6 +7666,18 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 }
 .doc-page span.doc-cs-ni:not(em *) {
   font-style: normal;
+}
+
+/* Word shapes complex-script runs with the face's full OpenType features: Traditional
+   Arabic draws its lam-alef and other 'liga' forms and its GSUB/GPOS 'kern' without
+   w:kern (natural lines = harfbuzz default, kern+liga off runs 6 % wide), so the
+   ProseMirror / pv-content ligature switch and the document kerning default step
+   aside on cs spans. The scaled Noto Naskh aliases carry no kern and no liga width. */
+:is(.doc-page, .page-hf) span:is(.doc-cs, [data-cs]) {
+  -webkit-font-variant-ligatures: normal;
+  font-variant-ligatures: normal;
+  font-feature-settings: normal;
+  font-kerning: normal;
 }
 
 /* Mixed Latin + complex-script paragraph (extensions paraCsMixedClass): Word sizes
@@ -8499,6 +8697,22 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   line-height: 0;
   --doc-pic-mult: calc(1 + (var(--doc-line-mult, 1) - 1) * (1 - var(--doc-line-fixed, 0)));
   --doc-pic-extra: calc((var(--doc-pic-mult) - 1) * var(--doc-line-factor, 1.2) * 1em);
+  padding-top: var(--doc-pic-effect-t, 0px);
+  padding-bottom: calc(var(--doc-pic-effect-b, 0px) + var(--doc-pic-extra));
+}
+
+/* an in-flow text box paragraph takes the same extra below its shape; the host
+   paragraph's multiple, factor and mark size arrive under box-only names so
+   the box's own paragraphs keep inheriting the document values */
+.doc-protected.doc-protected-textboxes.doc-img-para {
+  --doc-pic-mult: calc(
+    1 + (var(--doc-tb-mult, var(--doc-line-mult, 1)) - 1) *
+      (1 - var(--doc-tb-fixed, var(--doc-line-fixed, 0)))
+  );
+  --doc-pic-extra: calc(
+    (var(--doc-pic-mult) - 1) * var(--doc-tb-lf, var(--doc-line-factor, 1.2)) *
+      var(--doc-tb-em, 1em)
+  );
   padding-top: var(--doc-pic-effect-t, 0px);
   padding-bottom: calc(var(--doc-pic-effect-b, 0px) + var(--doc-pic-extra));
 }
@@ -11845,9 +12059,10 @@ body.docs-crop-active
   height: min(600px, calc(100vh - 220px));
 }
 
-/* while the dialog is open the pagination preview is only its (hidden) print source */
+/* while the dialog is open the pagination preview is only its (hidden) print source.
+   A class, not .app:has(): that restyled the whole app on every editor DOM change */
 @media screen {
-  .app:has(.modal.print-dialog) .pagination-preview {
+  .pagination-preview.pv-behind-dialog {
     visibility: hidden;
   }
 }
@@ -12106,6 +12321,17 @@ body.docs-crop-active
   -webkit-font-variant-ligatures: none;
   font-variant-ligatures: none;
   font-feature-settings: 'liga' 0;
+}
+
+/* Chromium's default text-spacing-trim pulls a line-final fullwidth closer onto
+   the line by dropping its trailing half; Word never does (compat 15 keeps the
+   closer with its predecessor, cjk-punct-shrink models the hang/compression
+   cases itself) */
+.doc-page,
+.pv-content,
+.page-hf,
+.doc-textbox-editor {
+  text-spacing-trim: space-all;
 }
 
 /* Word pair-kerns only under w:kern; doc-style-css turns kerning back on where
@@ -12791,6 +13017,150 @@ body.docs-crop-active
   display: none;
 }
 
+/* ---- Story view: one column of text, the document's formatting hidden ----
+   The way InDesign's story editor and iA Writer show it: the words in one
+   column, the document's own look gone. It is a pure view — nothing in the
+   document changes. The run formatting rides the docTextStyle mark and the
+   paragraph formatting rides the block's own style, so hiding it is CSS over
+   the view class; the margin markers (editor/story-view.ts) carry the
+   structure the hidden formatting used to show. */
+
+.view-story {
+  --story-gutter: 3.25rem;
+  --story-marker-ink: var(--docs-paper-ink-faint);
+  --story-face: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --story-size: 16px;
+  --story-leading: 1.7;
+}
+
+/* the canvas shrinks to the column: no page, no margins, no header/footer */
+.view-story .doc-zoom {
+  width: auto;
+}
+
+.view-story .doc-page {
+  width: auto;
+  max-width: 46rem;
+  margin: 0 auto;
+  min-height: 0;
+  /* the gutter on the left holds the markers, the right one balances it */
+  padding: 2.5rem 3.25rem 6rem;
+  background: none;
+  box-shadow: none;
+  font-family: var(--story-face);
+  font-size: var(--story-size);
+  line-height: var(--story-leading);
+  color: var(--docs-paper-ink);
+}
+
+.view-story .page-hf,
+.view-story .page-margin-annotations {
+  display: none;
+}
+
+/* the document's own paragraph formatting: the style's face, the indent, the
+   spacing. The view brings one gap of its own (padding), so the document's
+   margins never fight it. */
+.view-story .doc-page :is(p, h1, h2, h3, h4, h5, h6, .doc-li) {
+  margin: 0 !important;
+  padding-bottom: 0.8em;
+  padding-inline-start: 0 !important;
+  text-indent: 0 !important;
+  font-family: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  font-style: inherit !important;
+  color: inherit !important;
+  background-color: transparent !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  text-transform: none !important;
+  font-variant-caps: normal !important;
+  text-shadow: none !important;
+}
+
+/* all headings share one look; the level shows in the margin marker. A heading
+   that is a styled paragraph (Word's numbered headings) gets the same look
+   through the class story-view.ts puts on it. */
+.view-story .doc-page :is(h1, h2, h3, h4, h5, h6),
+.view-story .doc-page .story-heading {
+  padding-top: 1em;
+  padding-bottom: 0.35em;
+  font-size: 1.2em !important;
+  font-weight: 600 !important;
+  font-style: inherit !important;
+}
+
+/* the run's own formatting: the docTextStyle mark carries the font, the size,
+   the colour, the highlight and the spacing. The bold, italic, underline and
+   strike marks are separate elements, so they stay. */
+.view-story .doc-page [data-doc-style] {
+  font-family: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  font-style: inherit !important;
+  color: inherit !important;
+  background-color: transparent !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  text-transform: none !important;
+  font-variant-caps: normal !important;
+  text-shadow: none !important;
+}
+
+/* a raised run keeps its raised, smaller self */
+.view-story .doc-page [data-doc-style][style*='vertical-align'] {
+  font-size: 0.75em !important;
+}
+
+/* a table stays a table; only its text goes plain */
+.view-story .doc-page .doc-table {
+  max-width: 100%;
+  font-family: inherit !important;
+  font-size: inherit !important;
+  color: inherit !important;
+}
+
+/* the margin markers: a faded '#' per heading level, a '>' for a quote */
+.view-story .doc-page :is(p, h1, h2, h3, h4, h5, h6, .doc-li) {
+  position: relative;
+}
+
+.view-story .story-marker {
+  position: absolute;
+  right: 100%;
+  width: var(--story-gutter);
+  margin-right: 0.9rem;
+  text-align: right;
+  color: var(--story-marker-ink);
+  font-family: var(--story-face);
+  font-size: 0.85em;
+  line-height: 1;
+  white-space: pre;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* the list's own marker moves into the gutter, unchanged: a numbered list
+   keeps its numbers, a bullet list keeps its bullet */
+.view-story .doc-li {
+  padding-inline-start: 0 !important;
+}
+
+.view-story .doc-li::before {
+  position: absolute;
+  right: 100%;
+  min-width: 0;
+  margin-inline-start: 0;
+  margin-right: 0.9rem;
+  text-align: right;
+  color: var(--story-marker-ink);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  font-style: inherit;
+}
+
 /* ---- Gridlines: alignment grid inside the text area (content-box = inside margins) ---- */
 
 .show-grid .doc-page {
@@ -13227,7 +13597,7 @@ ruby.doc-ruby rt {
 }
 
 .ctx-submenu-scroll {
-  max-height: 320px;
+  /* no CSS cap: CtxSubmenu has to measure the natural height to fit the window */
   overflow-y: auto;
 }
 
@@ -13581,6 +13951,11 @@ ruby.doc-ruby rt {
   bottom: 2px;
 }
 
+.ink-pen-slot.active .ink-pen-bar {
+  width: 22px;
+  margin-right: 12px;
+}
+
 .ink-pen-pop {
   min-width: 190px;
   padding: 8px;
@@ -13762,12 +14137,13 @@ ruby.doc-ruby rt {
   text-underline-offset: 3px;
 }
 
-/* inline table-break cut point: zero-height dashed page-break marker (spans the page, takes no layout height) */
+/* inline table-break cut point: zero-height dashed page-break marker (spans the page, takes no layout height).
+   Out of flow: an in-flow zero-size box still offers a line break, and in front of a word
+   wider than its cell that break adds a line to the row */
 .page-gap-cut {
-  display: inline-block;
+  position: absolute;
   width: 0;
   height: 0;
-  position: relative;
   pointer-events: none;
 }
 
@@ -13780,7 +14156,14 @@ tr > .page-gap-cut {
   display: none;
 }
 
+/* Seam cut markers draw their boundary through syncSeamOverlays (bounded to the
+   cell, no 200vw spill past the paper). The nested-table overlay variant keeps
+   its own full-width marker because it has no seam overlay. */
 .page-gap-cut::before {
+  content: none;
+}
+
+.page-gap-cut.page-cut-overlay::before {
   content: '';
   position: absolute;
   top: 0;
@@ -16180,4 +16563,20 @@ tr > .page-gap-cut {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+/* stray line with one right tab stop (strayTabSpecs): the runs after the tab
+   sit in a box flush to the stop, so the segment ends there whatever its
+   width instead of running off a left-aligned tab-size grid. The box keeps
+   its static vertical position (the line it sits on, below any padding-top
+   pagination adds for a band) and only its inline start is pinned */
+.doc-textbox-stray {
+  position: relative;
+}
+
+.doc-stray-rtab {
+  position: absolute;
+  inset-inline-start: 0;
+  text-align: end;
+  white-space: pre;
 }
