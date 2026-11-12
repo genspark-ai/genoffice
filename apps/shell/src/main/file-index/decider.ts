@@ -107,6 +107,9 @@ export function endpointUrl(opts: DecisionCallOptions): string {
 /**
  * Rejects a custom base URL that is not https, or http on this machine: the
  * request carries up to 20 local excerpts and should not cross a plain channel.
+ * Embedded credentials are refused as well, matching the chat side's
+ * `normalizeBaseUrl` rule: they would end up in request logs and error messages,
+ * and the endpoint's key field is the supported place for them.
  */
 function assertCustomUrl(base: string): string {
   let u: URL
@@ -115,6 +118,7 @@ function assertCustomUrl(base: string): string {
   } catch {
     throw new Error('bad-url')
   }
+  if (u.username || u.password) throw new Error('embedded-credentials')
   if (u.protocol === 'https:') return base
   if (u.protocol === 'http:' && LOOPBACK_HOST.test(u.host)) return base
   throw new Error('insecure-url')
