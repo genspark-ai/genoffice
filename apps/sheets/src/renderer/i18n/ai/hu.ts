@@ -6,7 +6,7 @@ export const hu = {
   aiEmptyBuildBody:
     'Írd le a szükséges táblázatot, adatot vagy diagramot — az AI a helyén hozza létre.',
   aiGskLoginBtn: 'Bejelentkezés a Gensparkba',
-  aiUndelivered: 'Elküldetlen',
+  aiUndelivered: 'Nem sikerült elküldeni',
   aiRetry: 'Újra',
   aiOpenAssistant: 'AI-asszisztens megnyitása',
   aiAskBtn: 'AI kérdezése',
@@ -69,7 +69,7 @@ export const hu = {
   aiNetworkError:
     'Hálózati probléma: nem sikerült elérni az AI-szolgáltatást. Ellenőrizd a kapcsolatot, és próbáld újra',
   aiCreditsExhausted:
-    'Elfogytak a Genspark-krediteid. Töltsd fel az egyenleget a genspark.ai/pricing oldalon, majd próbáld újra',
+    'Elfogytak a Genspark-kreditjeid. Töltsd fel az egyenlegedet a genspark.ai/pricing oldalon, majd próbáld újra',
   aiToolWorkbookContext: 'Munkafüzet-információk beolvasása',
   aiToolReadRange: 'Tartomány beolvasása',
   aiToolReadRangeOf: 'Tartomány beolvasása: {range}',
@@ -98,16 +98,16 @@ export const hu = {
   aiToolSelectRangeOf: 'Kijelölve: {range}',
   aiToolImageSearch: 'Képkeresés',
   aiToolImageSearchDone: 'Képkeresés: „{query}” ({count} találat)',
-  aiToolGenImage: 'Kép létrehozása',
-  aiToolGenImageDone: 'Kép létrehozva',
-  aiToolTracePrecedents: 'Precedensek nyomkövetése',
-  aiToolTracePrecedentsOf: 'Precedensek nyomkövetése: {address}',
-  aiToolTraceDependents: 'Függők nyomkövetése',
-  aiToolTraceDependentsOf: 'Függők nyomkövetése: {address} ({count})',
+  aiToolGenImage: 'Kép generálása',
+  aiToolGenImageDone: 'Kép generálva',
+  aiToolTracePrecedents: 'Előzmények nyomon követése',
+  aiToolTracePrecedentsOf: 'Előzmények nyomon követése: {address}',
+  aiToolTraceDependents: 'Követők nyomon követése',
+  aiToolTraceDependentsOf: 'Követők nyomon követése: {address} ({count})',
   aiScopeRange: 'Kijelölve: {range}',
   aiScopeColumn: 'Kijelölve: „{name}” oszlop',
   aiScopeColumns: 'Kijelölve: {names} — {count} oszlop',
   aiScopeRangeTip:
     'Az AI az „ez az oszlop / ezek a sorok / a kijelölt rész” kifejezéseket erre a tartományra érti, és elküldés után a futás során rögzített marad',
-  aiScopeClearTitle: 'Eldobja a tartomány hatókörét, és a teljes munkalapot célozza',
+  aiScopeClearTitle: 'Tartomány hatókörének törlése, a teljes munkalap a cél',
 } satisfies Record<keyof typeof zh, string>
