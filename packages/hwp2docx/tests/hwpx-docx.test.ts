@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { inflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { parseDocx } from '../../docx-engine/src/index'
 import { bmpToPng, convertHwpxToDocx, HwpConvertError } from '../src/index'
@@ -498,6 +499,59 @@ describe('convertHwpxToDocx', () => {
   })
 })
 
+/** The scanlines of our own single-IDAT PNG: filter byte + 8-bit channels per row. */
+function pngRaw(png: Uint8Array): {
+  width: number
+  height: number
+  channels: number
+  data: Uint8Array
+} {
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength)
+  const width = view.getUint32(16)
+  const height = view.getUint32(20)
+  const channels = png[25] === 6 ? 4 : 3
+  let at = 8
+  let idat: Uint8Array = new Uint8Array(0)
+  while (at < png.length) {
+    const len = view.getUint32(at)
+    const type = String.fromCharCode(...png.subarray(at + 4, at + 8))
+    if (type === 'IDAT') idat = png.subarray(at + 8, at + 8 + len)
+    at += 12 + len
+  }
+  return { width, height, channels, data: Uint8Array.from(inflateSync(idat)) }
+}
+
+function pixelAt(raw: ReturnType<typeof pngRaw>, x: number, y: number): number[] {
+  const stride = raw.width * raw.channels + 1
+  const at = y * stride + 1 + x * raw.channels
+  return [...raw.data.subarray(at, at + raw.channels)]
+}
+
+/** 2×2 16-bit BI_BITFIELDS BMP with RGB565 masks, rows bottom-up: red+white / green+blue */
+function bitmap565(): Uint8Array {
+  const size = 54 + 12 + 8
+  const out = new Uint8Array(size)
+  const view = new DataView(out.buffer)
+  out[0] = 0x42
+  out[1] = 0x4d
+  view.setUint32(2, size, true)
+  view.setUint32(10, 66, true) // pixels start after the header and the three masks
+  view.setUint32(14, 40, true)
+  view.setInt32(18, 2, true)
+  view.setInt32(22, 2, true)
+  view.setUint16(26, 1, true)
+  view.setUint16(28, 16, true)
+  view.setUint32(30, 3, true) // BI_BITFIELDS
+  view.setUint32(54, 0xf800, true) // red
+  view.setUint32(58, 0x07e0, true) // green: six bits, unlike BI_RGB's 5-5-5
+  view.setUint32(62, 0x001f, true) // blue
+  view.setUint16(66, 0xf800, true)
+  view.setUint16(68, 0xffff, true)
+  view.setUint16(70, 0x0400, true) // half-bright green: bit 5 of the six-bit channel
+  view.setUint16(72, 0x001f, true)
+  return out
+}
+
 describe('bmpToPng', () => {
   it('decodes bottom-up 24-bit rows into an RGB PNG', () => {
     const png = bmpToPng(tinyBmp())!
@@ -526,6 +580,16 @@ describe('bmpToPng', () => {
     const png = bmpToPng(bmp)
     expect(png).not.toBeNull()
     expect(png![25]).toBe(2) // decoded to RGB
+  })
+
+  it('reads a 16-bit BI_BITFIELDS image through its 5-6-5 masks', () => {
+    const raw = pngRaw(bmpToPng(bitmap565())!)
+    // bottom row lands second in PNG's top-down order; 0x0400 is half green in
+    // RGB565 and loses its low bit when read with BI_RGB's 5-5-5 layout
+    expect(pixelAt(raw, 0, 0)).toEqual([0, 130, 0])
+    expect(pixelAt(raw, 1, 0)).toEqual([0, 0, 255])
+    expect(pixelAt(raw, 0, 1)).toEqual([255, 0, 0])
+    expect(pixelAt(raw, 1, 1)).toEqual([255, 255, 255])
   })
 
   it('refuses RLE-compressed bitmaps', () => {
