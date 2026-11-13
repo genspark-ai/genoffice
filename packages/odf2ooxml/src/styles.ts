@@ -194,9 +194,9 @@ export class OdfStyles {
     else if (align === 'center') out.align = 'center'
     else if (align === 'end' || align === 'right') out.align = 'right'
     else if (align === 'justify') out.align = 'justify'
-    const before = odfLengthToEmu(a['fo:margin-top'])
+    const before = odfLengthToEmu(a['fo:margin-top'] ?? a['fo:margin'])
     if (before !== null) out.spaceBeforeTw = emuToTwips(before)
-    const after = odfLengthToEmu(a['fo:margin-bottom'])
+    const after = odfLengthToEmu(a['fo:margin-bottom'] ?? a['fo:margin'])
     if (after !== null) out.spaceAfterTw = emuToTwips(after)
     const lineHeight = a['fo:line-height']
     if (lineHeight) {
@@ -215,9 +215,9 @@ export class OdfStyles {
     if (atLeast !== null) out.lineAtLeastTw = emuToTwips(atLeast)
     const exact = odfLengthToEmu(a['style:line-spacing'])
     if (exact !== null) out.lineExactTw = emuToTwips(exact)
-    const left = odfLengthToEmu(a['fo:margin-left'])
+    const left = odfLengthToEmu(a['fo:margin-left'] ?? a['fo:margin'])
     if (left !== null) out.indentLeftTw = emuToTwips(left)
-    const right = odfLengthToEmu(a['fo:margin-right'])
+    const right = odfLengthToEmu(a['fo:margin-right'] ?? a['fo:margin'])
     if (right !== null) out.indentRightTw = emuToTwips(right)
     const first = odfLengthToEmu(a['fo:text-indent'])
     if (first !== null) out.indentFirstLineTw = emuToTwips(first)
