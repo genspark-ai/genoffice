@@ -182,6 +182,7 @@ export class OdfStyles {
     if (position) {
       if (/^super/i.test(position.trim())) out.vertAlign = 'superscript'
       else if (/^sub/i.test(position.trim())) out.vertAlign = 'subscript'
+      else if (/^0%(?:\s|$)/.test(position.trim())) out.vertAlign = undefined
     }
     const transform = a['style:text-transform'] ?? a['fo:text-transform']
     if (transform === 'uppercase') out.caps = 'all'
