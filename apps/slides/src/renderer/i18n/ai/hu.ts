@@ -94,7 +94,7 @@ export const hu = {
   aiSnapshotsTitle: 'Pillanatképek',
   aiRollback: 'Visszaállítás',
   aiStarterPolishTitle: 'Javítsd meg a dia címét és szövegét',
-  aiStarterTighten: 'Tömörd le a dia felsorolását',
+  aiStarterTighten: 'Tömörítsd a dia felsorolását',
   aiStarterProofread: 'Keresd meg és javítsd ki a teljes bemutató elírásait',
   aiTurnLimit:
     '(A kérés elérte az eszközhívási fordulók korlátját; a fenti válasz az eddig elvégzett lépéseket tükrözi, és lehet, hogy nem teljes.)',
