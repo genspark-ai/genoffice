@@ -173,6 +173,7 @@ export class OdfStyles {
     if (shading) out.shading = shading
     const fontName = a['style:font-name']
     if (fontName) out.font = this.fonts.get(fontName) ?? fontName
+    else if (a['fo:font-family']) out.font = a['fo:font-family'].replace(/^['"]|['"]$/g, '')
     const position = a['style:text-position']
     if (position) {
       if (/^super/i.test(position.trim())) out.vertAlign = 'superscript'
