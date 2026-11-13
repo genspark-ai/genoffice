@@ -403,6 +403,7 @@ interface ColumnSpec {
 }
 
 interface GridCell {
+  covered?: boolean
   row: number
   column: number
   colSpan: number
@@ -482,6 +483,7 @@ function placeCells(
         const repeat = clampRepeat(attr(node, 'table:number-columns-repeated'), 64)
         for (let index = 0; index < repeat; index++) {
           out.push({
+            covered: true,
             row: -1,
             column: -1,
             colSpan: 1,
@@ -500,6 +502,10 @@ function placeCells(
     const slotRow = occupancy[rowIndex]
     let column = 0
     for (const cell of cellsOfRow(row)) {
+      if (cell.covered) {
+        column++
+        continue
+      }
       while (column < columnCount && slotRow[column]) column++
       if (column >= columnCount) break
       const colSpan = Math.max(1, Math.min(cell.colSpan, columnCount - column))
@@ -517,7 +523,7 @@ function placeCells(
       cell.column = column
       cell.colSpan = colSpan
       cell.rowSpan = rowSpan
-      column += colSpan
+      column++
     }
     rowIndex++
   }
