@@ -174,8 +174,8 @@ function cellText(
   // <v> is ST_Xstring so it reaches the caller verbatim; the two reads that need it as a
   // scalar handle their own whitespace (Number tolerates it, the boolean compare strips it)
   const value = textOf(cell.v)
-  if ((type === '' || type === 'n') && cell['@_s'] !== undefined) {
-    const parts = dates.get(Number(cell['@_s']))
+  if (type === '' || type === 'n') {
+    const parts = dates.get(Number(cell['@_s'] ?? 0))
     if (parts && value.trim() !== '') {
       const rendered = formatSerial(Number(value), parts, date1904)
       if (rendered !== null) return rendered
