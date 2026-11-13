@@ -168,7 +168,7 @@ export const hu = {
   ribbonFindReplace: 'Keresés/csere',
   ribbonStrikethrough: 'Áthúzott',
   ribbonClearFormatting: 'Összes formázás törlése',
-  ribbonBullets: 'Felsorolás',
+  ribbonBullets: 'Felsorolásjelek',
   ribbonNumbering: 'Számozás',
   ribbonBulletChar: 'Felsorolásjel karaktere',
   ribbonBulletHang: 'Felsorolásjel behúzása',
@@ -379,7 +379,7 @@ export const hu = {
   ribbonGroupAdvancedAnim: 'Speciális animáció',
   ribbonAddAnimation: 'Animáció hozzáadása',
   ribbonAddAnimationTip: 'Új animáció hozzáfűzése a kijelölt alakzat meglévő animációi után',
-  ribbonAnimPane: 'Animációs panel',
+  ribbonAnimPane: 'Animációs ablaktábla',
   ribbonAnimPaneTip:
     'Az animációs panel megjelenítése vagy elrejtése (sorrend megtekintése, átrendezés, törlés)',
   ribbonAnimStart: 'Kezdés:',
@@ -410,7 +410,7 @@ export const hu = {
   ribbonHideSlideTip:
     'Az aktuális dia elrejtése (a fájlban megmarad, a vetítésben kihagyásra kerül; pptx-be kerül mentésre)',
   ribbonUnhideSlideTip: 'Az aktuális dia felfedése (a vetítésben újra megjelenik)',
-  ribbonRehearse: 'Időzítések próbája',
+  ribbonRehearse: 'Próbaidőzítések',
   ribbonRehearseTip:
     'Időzítések próbája: a vetítés lefuttatása az elejétől, idő rögzítése diánként; mentés automatikus diaátváltási időzítésként (pptx-be kerül mentésre)',
   ribbonRecord: 'Felvétel',
@@ -438,12 +438,12 @@ export const hu = {
   ribbonGroupPresentationViews: 'Bemutató nézetek',
   ribbonViewNormal: 'Normál',
   ribbonViewNormalTip: 'Normál nézet: miniatűrök + szerkesztővászon',
-  ribbonViewOutline: 'Vázlat nézet',
+  ribbonViewOutline: 'Vázlatnézet',
   ribbonViewOutlineTip: 'Vázlat nézet: a diák tallózása és ugrás a diák között szöveges vázlatként',
   ribbonViewSorter: 'Diarendező',
   ribbonViewSorterTip:
     'Diarendező: az összes dia rácsos áttekintése, dupla kattintással szerkeszthető',
-  ribbonViewReading: 'Olvasó nézet',
+  ribbonViewReading: 'Olvasónézet',
   ribbonViewReadingTip: 'Olvasó nézet: teljes képernyős böngészés diáról diára (Esc a kilépéshez)',
   ribbonViewMaster: 'Diaminta',
   ribbonViewMasterTip:
