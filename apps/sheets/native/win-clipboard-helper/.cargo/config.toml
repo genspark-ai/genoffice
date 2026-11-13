@@ -1,0 +1,9 @@
+# Statically link the MSVC CRT so the shipped helper has no vcruntime140.dll
+# dependency (same rationale as the xlsx-sidecar config). Like that one, this
+# file must be passed via `--config` because cargo discovers .cargo/config.toml
+# from the working directory, not from --manifest-path.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

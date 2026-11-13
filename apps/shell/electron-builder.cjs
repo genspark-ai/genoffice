@@ -94,6 +94,21 @@ const winSidecarCandidates = [
 const WIN_SIDECAR =
   winSidecarCandidates.find((rel) => existsSync(join(__dirname, rel))) ?? winSidecarCandidates[0]
 
+// Same layout rule as the sidecar: cross-build triple from the release
+// pipeline, or the host-native MSVC build on a matching Windows contributor
+// machine. Windows-only by purpose — the EMF clipboard helper has no role off
+// Windows, so its absence from other platforms' bundles is the normal state
+// and the sheets resolver degrades to a silent no-op when it is missing.
+const winClipboardCandidates = [
+  `../sheets/native/win-clipboard-helper/target/${winSidecarTarget}/release/win-clipboard-helper.exe`,
+  ...(process.platform === 'win32' && (process.arch === 'arm64') === winArm64
+    ? ['../sheets/native/win-clipboard-helper/target/release/win-clipboard-helper.exe']
+    : []),
+]
+const WIN_CLIPBOARD_HELPER =
+  winClipboardCandidates.find((rel) => existsSync(join(__dirname, rel))) ??
+  winClipboardCandidates[0]
+
 // GENOFFICE_LINUX_ARM64=1 — package the arm64 Linux artifacts instead of x64.
 // Config support only: no CI job runs a second Linux pass yet, and whether
 // Linux arm64 joins the release matrix is decided on the maintainers' side.
@@ -742,6 +757,10 @@ const config = {
       {
         from: WIN_SIDECAR,
         to: 'native/xlsx-sidecar.exe',
+      },
+      {
+        from: WIN_CLIPBOARD_HELPER,
+        to: 'native/win-clipboard-helper.exe',
       },
       {
         from: 'build/shell-new',

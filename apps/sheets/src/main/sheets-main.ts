@@ -20,6 +20,7 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises'
+import { runCopyEmfHelper } from './copy-emf-helper'
 import { refreshCsvDigest } from './csv-digest'
 import { ImportRegistry } from './import-registry'
 import { createServer } from 'node:http'
@@ -198,6 +199,7 @@ import {
   saveEditsChunkArraySchema,
   workbookSaveEditsChunkSchema,
   workbookSaveRequestSchema,
+  copyEmfRequestSchema,
   workbookSlicerStateRequestSchema,
   workbookSlicerStateResultSchema,
   type WorkbookCreateDocumentResult,
@@ -3938,6 +3940,18 @@ export function registerSheetsIpc(): void {
     return response === 0 ? 'csv' : response === 1 ? 'xlsx' : 'cancel'
   })
 
+  ipcMain.handle(IPC_CHANNELS.appendCopyEmf, (_event, input: unknown) =>
+    appendCopyEmfToClipboard(input),
+  )
+
+  // one cheap lookup per call: the renderer caches the answer and only then
+  // builds the O(cells) copy payload (an unanswered call would walk the
+  // selection and ship a multi-MB matrix for nothing off Windows)
+  ipcMain.handle(IPC_CHANNELS.copyEmfAvailable, () => {
+    const helper = resolveClipboardHelperPath()
+    return !!helper && existsSync(helper)
+  })
+
   ipcMain.handle(IPC_CHANNELS.saveWorkbook, async (event, input: unknown) => {
     const entry = sessionFor(event)
     const client = entry.client
@@ -5683,6 +5697,31 @@ function resolveSidecarPath(): string {
   if (process.env.XLSX_SIDECAR_PATH) return process.env.XLSX_SIDECAR_PATH
   if (app.isPackaged) return join(process.resourcesPath, 'native', executable)
   return join(app.getAppPath(), 'native', 'xlsx-engine', 'target', 'release', executable)
+}
+
+function resolveClipboardHelperPath(): string | null {
+  if (process.platform !== 'win32') return null
+  if (process.env.WIN_CLIPBOARD_HELPER_PATH) return process.env.WIN_CLIPBOARD_HELPER_PATH
+  if (app.isPackaged) return join(process.resourcesPath, 'native', 'win-clipboard-helper.exe')
+  return join(
+    app.getAppPath(),
+    'native',
+    'win-clipboard-helper',
+    'target',
+    'release',
+    'win-clipboard-helper.exe',
+  )
+}
+
+/// Spawns the clipboard helper with the copied range's description. The EMF
+/// it appends is an extra clipboard format beside the text the grid already
+/// wrote, so every failure here — missing helper, busy clipboard, a crash —
+/// degrades to the plain copy instead of surfacing an error.
+async function appendCopyEmfToClipboard(request: unknown): Promise<{ ok: boolean }> {
+  const helper = resolveClipboardHelperPath()
+  if (!helper || !existsSync(helper)) return { ok: false }
+  const payload = JSON.stringify(copyEmfRequestSchema.parse(request))
+  return await runCopyEmfHelper(helper, payload)
 }
 
 async function sha256File(path: string): Promise<string> {
