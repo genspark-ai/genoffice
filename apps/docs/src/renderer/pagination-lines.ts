@@ -1427,7 +1427,7 @@ export function nextLineAnchor(
 }
 
 /** Screen top of a cut anchor's line (the char rect at the anchor, else its parent box) */
-function anchorLineTop(a: LineAnchor, zoomFactor: number): number | null {
+export function anchorLineTop(a: LineAnchor, zoomFactor: number): number | null {
   if (a.node instanceof Element) return a.node.getBoundingClientRect().top
   if (a.node.length > 0) {
     const range = anchorRange()
@@ -1438,6 +1438,19 @@ function anchorLineTop(a: LineAnchor, zoomFactor: number): number | null {
       if (r.height > 0) return unshiftRunRect(r, a.node, zoomFactor).top
   }
   return a.node.parentElement?.getBoundingClientRect().top ?? null
+}
+
+/** Screen left of a cut anchor's line (the char rect at the anchor, else its parent box) */
+export function anchorLineLeft(a: LineAnchor, zoomFactor: number): number | null {
+  if (a.node instanceof Element) return a.node.getBoundingClientRect().left
+  if (a.node.length > 0) {
+    const range = anchorRange()
+    range.setStart(a.node, Math.min(a.charOffset, a.node.length - 1))
+    range.setEnd(a.node, Math.min(a.charOffset + 1, a.node.length))
+    for (const r of range.getClientRects?.() ?? [])
+      if (r.height > 0) return unshiftRunRect(r, a.node, zoomFactor).left
+  }
+  return a.node.parentElement?.getBoundingClientRect().left ?? null
 }
 
 /** Bottom (screen px) of a cell's content boxes (direct block children, pagination

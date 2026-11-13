@@ -5453,9 +5453,98 @@ th[data-rev-fmt] {
 }
 
 /* M4 always-on pagination in the canvas: page gap = previous page's bottom margin (white) + inter-page band (gray) + next page's top margin (white) */
+/* WPS-style seam cursor: two rules with opposing arrows (collapse / expand),
+   not the window-splitter double arrow. Hotspot at the icon centre. */
+:root {
+  --docs-seam-cursor-expand:
+    url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiI+PGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+PHBhdGggZD0iTTYgMTNoMjBNNiAxOWgyMCIvPjxwYXRoIGQ9Ik0xNiAzdjdNMTIuNSA2LjUgMTYgM2wzLjUgMy41Ii8+PHBhdGggZD0iTTE2IDI5di03TTEyLjUgMjUuNSAxNiAyOWwzLjUtMy41Ii8+PC9nPjwvc3ZnPg==')
+      16 16,
+    ns-resize;
+  --docs-seam-cursor-collapse:
+    url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiI+PGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+PHBhdGggZD0iTTYgMTNoMjBNNiAxOWgyMCIvPjxwYXRoIGQ9Ik0xNiAxMlYzTTEyLjUgNi41IDE2IDEwbDMuNS0zLjUiLz48cGF0aCBkPSJNMTYgMjB2OU0xMi41IDI1LjUgMTYgMjJsMy41IDMuNSIvPjwvZz48L3N2Zz4=')
+      16 16,
+    ns-resize;
+}
+
 .page-gap {
   position: relative;
-  cursor: default;
+  cursor: var(--docs-seam-cursor-collapse);
+  user-select: none;
+}
+
+/* collapsed: the next double-click expands the gap again */
+body.hide-page-seams .page-gap,
+body.hide-page-seams .page-seam {
+  cursor: var(--docs-seam-cursor-expand);
+}
+
+/* Zero-height in-row cut seams: the paper bands are an absolute overlay, so the
+   seam never participates in the row height (the atLeast "long chin", #2114).
+   Double-click toggles Word's Hide White Space. */
+.page-seam-overlays {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* above the table box and its collapsed borders, below the ribbon */
+  z-index: 999;
+}
+
+.page-seam {
+  position: absolute;
+  pointer-events: auto;
+  cursor: var(--docs-seam-cursor-collapse);
+}
+
+/* Word closes a row cut by a page break: a rule at each page edge. The overlay
+   paints them above the continuous cell border, so the row looks closed on both
+   pages instead of running through the gap. */
+.page-seam-rule {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* collapsed view: one dashed boundary line instead of the WPS double rule */
+.page-seam-dash {
+  position: absolute;
+  height: 0;
+  pointer-events: none;
+  border-top: 1px dashed var(--docs-gap-cut, #9aa0a6);
+  display: none;
+}
+
+body.hide-page-seams .page-seam-rule {
+  display: none;
+}
+
+body.hide-page-seams .page-seam-dash {
+  display: block;
+}
+
+.page-seam::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    var(--page-bg, var(--docs-paper)) 0 var(--seam-mb, 96px),
+    var(--canvas) var(--seam-mb, 96px) calc(var(--seam-mb, 96px) + 28px),
+    var(--page-bg, var(--docs-paper)) calc(var(--seam-mb, 96px) + 28px) 100%
+  );
+}
+
+/* no hover outline: the dashed rectangle read as a stray tooltip/button ring.
+   The cursor change is the only hover affordance. */
+
+body.hide-page-seams .page-seam::before {
+  background: transparent;
+  border-top: 0;
+}
+
+body.hide-page-seams
+
+.page-gap {
+  position: relative;
+  cursor: var(--docs-seam-cursor-collapse);
   user-select: none;
 }
 
@@ -14067,7 +14156,14 @@ tr > .page-gap-cut {
   display: none;
 }
 
+/* Seam cut markers draw their boundary through syncSeamOverlays (bounded to the
+   cell, no 200vw spill past the paper). The nested-table overlay variant keeps
+   its own full-width marker because it has no seam overlay. */
 .page-gap-cut::before {
+  content: none;
+}
+
+.page-gap-cut.page-cut-overlay::before {
   content: '';
   position: absolute;
   top: 0;

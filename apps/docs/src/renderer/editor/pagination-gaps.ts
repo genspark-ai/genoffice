@@ -944,6 +944,81 @@ export function syncCutOverlays(
   }
 }
 
+/** A zero-height in-row cut point that still needs the visual page seam: the
+ *  seam is drawn by an absolute overlay so it never participates in the row's
+ *  height (the atLeast-row "long chin", #2114/#2521), while the reader can
+ *  still double-click it to hide/show the gap like Word. */
+export interface SeamOverlaySpec {
+  /** screen top of the next page's first line (= the gap's bottom edge) */
+  bottom: number
+  /** previous page's bottom margin and next page's top margin (px) */
+  marginBottom: number
+  marginTop: number
+  /** unzoomed left offset of the host cell's paper edge from the page wrap */
+  left: number
+  /** unzoomed paper width */
+  width: number
+  /** cell box of the row crossing the seam: its page-edge closing rules, in
+   *  paper coordinates (left relative to the seam's left edge) */
+  cell?: { left: number; width: number; color: string; thickness: number }
+}
+
+export function syncSeamOverlays(
+  wrap: HTMLElement,
+  seams: readonly SeamOverlaySpec[],
+  zoomFactor: number,
+): void {
+  let layer = wrap.querySelector(':scope > .page-seam-overlays') as HTMLElement | null
+  if (seams.length === 0) {
+    layer?.remove()
+    return
+  }
+  if (!layer) {
+    layer = document.createElement('div')
+    layer.className = 'page-seam-overlays'
+    wrap.appendChild(layer)
+  }
+  layer.textContent = ''
+  const wr = wrap.getBoundingClientRect()
+  for (const s of seams) {
+    const el = document.createElement('div')
+    el.className = 'page-seam'
+    const height = s.marginBottom + GAP_BAND + s.marginTop
+    el.style.top = `${(s.bottom - wr.top) / zoomFactor - height}px`
+    el.style.left = `${s.left}px`
+    el.style.width = `${s.width}px`
+    el.style.height = `${height}px`
+    el.style.setProperty('--seam-mb', `${s.marginBottom}px`)
+    el.style.setProperty('--seam-mt', `${s.marginTop}px`)
+    if (s.cell) {
+      // Word closes a row cut by a page break: one rule at the previous page's
+      // bottom edge and one at the next page's top edge, spanning the cell.
+      for (const [cls, top] of [
+        ['page-seam-rule-top', s.marginBottom - s.cell.thickness],
+        ['page-seam-rule-bottom', height - s.marginTop],
+      ] as const) {
+        const rule = document.createElement('div')
+        rule.className = `page-seam-rule ${cls}`
+        rule.style.top = `${top}px`
+        rule.style.left = `${s.cell.left}px`
+        rule.style.width = `${s.cell.width}px`
+        rule.style.height = `${s.cell.thickness}px`
+        rule.style.background = s.cell.color
+        el.appendChild(rule)
+      }
+      // collapsed view keeps the dashed boundary line (the WPS double rule is
+      // noisier); it doubles as the header/footer position marker when expanded
+      const dash = document.createElement('div')
+      dash.className = 'page-seam-dash'
+      dash.style.top = `${s.marginBottom + GAP_BAND / 2}px`
+      dash.style.left = `${s.cell.left}px`
+      dash.style.width = `${s.cell.width}px`
+      el.appendChild(dash)
+    }
+    layer.appendChild(el)
+  }
+}
+
 export type PageBorderSideName = 'top' | 'right' | 'bottom' | 'left'
 
 export interface PageBorderSide {
@@ -1275,6 +1350,9 @@ export interface PageFrame {
   /** horizontal extent on the page wrap (differing-width documents center narrower pages) */
   left: number
   width: number
+  /** cell box of the row crossing the seam: its page-edge closing rules, in
+   *  paper coordinates (left relative to the seam's left edge) */
+  cell?: { left: number; width: number; color: string; thickness: number }
 }
 
 /**
