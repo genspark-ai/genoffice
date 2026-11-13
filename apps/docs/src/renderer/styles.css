@@ -13036,7 +13036,8 @@ body.docs-crop-active
 }
 
 /* an inferred heading is a guess read from the paragraph's shape, not a style
-   in the file: it takes the same look, faded until it becomes a real heading */
+   in the file: it takes the same look, faded so the guess stays
+   distinguishable from a real style */
 .view-story .doc-page .story-heading-inferred {
   opacity: 0.62;
 }
