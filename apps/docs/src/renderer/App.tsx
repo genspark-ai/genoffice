@@ -251,7 +251,7 @@ import {
   blockGapRects,
 } from './pagination'
 import { prepareFlow, sliceFlow, type PassContext } from './pagination-pass'
-import { anchorLineLeft, anchorLineTop } from './pagination-lines'
+import { anchorLineTop } from './pagination-lines'
 import {
   GAP_BAND,
   alignGapHfStrips,
@@ -862,28 +862,6 @@ export function App() {
   const themeDark = useUiThemeIsDark()
   const docThemeDark = useDocThemeIsDark()
   const [darkPage, setDarkPage] = useState(() => resolveDarkPage(docThemeDark))
-  // Word-style page seam: double-click the gap between two pages (a band or a
-  // zero-height cut seam) to hide/show the white space; the cursor over it is
-  // the vertical double arrow. Persisted per profile, like Word's view option.
-  useEffect(() => {
-    document.body.classList.toggle(
-      'hide-page-seams',
-      localStorage.getItem('docs-hide-page-seams') === '1',
-    )
-    const onDblClick = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null
-      if (!target?.closest?.('.page-seam, .page-gap')) return
-      // double-click on a gap's header/footer strip still opens its editor
-      if (target.closest('.page-gap-hf, .page-hf-editing')) return
-      event.preventDefault()
-      event.stopPropagation()
-      const hidden = !document.body.classList.contains('hide-page-seams')
-      document.body.classList.toggle('hide-page-seams', hidden)
-      localStorage.setItem('docs-hide-page-seams', hidden ? '1' : '0')
-    }
-    document.addEventListener('dblclick', onDblClick, true)
-    return () => document.removeEventListener('dblclick', onDblClick, true)
-  }, [])
   useEffect(() => {
     setDarkPage(resolveDarkPage(docThemeDark))
   }, [docThemeDark])
@@ -5281,8 +5259,6 @@ export function App() {
                 // paint its paper band past the page's right edge (the white step at
                 // the seam). Shift by the offset and take it back from the right
                 // bleed, so the band keeps the paper width.
-                const cellLeft = anchorLineLeft(anchor, factor)
-                const cellLineDx = cellLeft === null ? 0 : (cellLeft - r.left) / factor
                 gaps.push({
                   pos,
                   kind: 'cell',
@@ -5291,9 +5267,8 @@ export function App() {
                   metrics: {
                     ...metrics,
                     // rect offsets from the paper edge already include the page margins
-                    marginLeft: (r.left - pmRect.left) / factor - pageLeftOf(nextSec) + cellLineDx,
-                    marginRight:
-                      (pmRect.right - r.right) / factor - pageLeftOf(nextSec) - cellLineDx,
+                    marginLeft: (r.left - pmRect.left) / factor - pageLeftOf(nextSec),
+                    marginRight: (pmRect.right - r.right) / factor - pageLeftOf(nextSec),
                   },
                   ...(pullUp > 0.5 ? { pullUp } : {}),
                   ...hfProps,
@@ -5356,17 +5331,14 @@ export function App() {
             const elRect = b.el.getBoundingClientRect()
             // same line-box offset as the in-cell branch: text-indent moves the
             // anchored inline gap, not the block's border box
-            const paraLeft = anchorLineLeft(anchor, factor)
-            const paraLineDx = paraLeft === null ? 0 : (paraLeft - elRect.left) / factor
             gaps.push({
               pos,
               page: k + 1,
               boundaryY: slice.start,
               metrics: {
                 ...notesMetrics,
-                marginLeft: (elRect.left - pmRect.left) / factor - pageLeftOf(nextSec) + paraLineDx,
-                marginRight:
-                  (pmRect.right - elRect.right) / factor - pageLeftOf(nextSec) - paraLineDx,
+                marginLeft: (elRect.left - pmRect.left) / factor - pageLeftOf(nextSec),
+                marginRight: (pmRect.right - elRect.right) / factor - pageLeftOf(nextSec),
               },
               ...(pullUp > 0.5 ? { pullUp } : {}),
               ...(notes ? { notes, notesKey } : {}),

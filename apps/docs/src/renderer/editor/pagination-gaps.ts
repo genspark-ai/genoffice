@@ -946,7 +946,7 @@ export function syncCutOverlays(
 
 /** A zero-height in-row cut point that still needs the visual page seam: the
  *  seam is drawn by an absolute overlay so it never participates in the row's
- *  height (the atLeast-row "long chin", #2114/#2521), while the reader can
+ *  height (the atLeast-row long-chin fix), while the reader can
  *  still double-click it to hide/show the gap like Word. */
 export interface SeamOverlaySpec {
   /** screen top of the next page's first line (= the gap's bottom edge) */
@@ -1006,14 +1006,6 @@ export function syncSeamOverlays(
         rule.style.background = s.cell.color
         el.appendChild(rule)
       }
-      // collapsed view keeps the dashed boundary line (the WPS double rule is
-      // noisier); it doubles as the header/footer position marker when expanded
-      const dash = document.createElement('div')
-      dash.className = 'page-seam-dash'
-      dash.style.top = `${s.marginBottom + GAP_BAND / 2}px`
-      dash.style.left = `${s.cell.left}px`
-      dash.style.width = `${s.cell.width}px`
-      el.appendChild(dash)
     }
     layer.appendChild(el)
   }
