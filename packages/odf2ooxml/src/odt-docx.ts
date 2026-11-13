@@ -549,12 +549,13 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
     // lists inside cells keep their text as indented paragraphs; a private
     // numbering definition per cell would multiply abstractNums for little gain
     for (const { name, node: item } of childElements(list)) {
-      if (name !== 'text:list-item') continue
+      if (name !== 'text:list-item' && name !== 'text:list-header') continue
       for (const inner of childElements(item)) {
         if (inner.name === 'text:p') {
           emitInto(inner.node, { type: 'paragraph' })
           const block = blocks[blocks.length - 1]
-          block.format = { ...block.format, indentLeft: (block.format?.indentLeft ?? 0) + 720 }
+          if (name === 'text:list-item')
+            block.format = { ...block.format, indentLeft: (block.format?.indentLeft ?? 0) + 720 }
         } else if (inner.name === 'text:list') {
           emitListFlat(inner.node)
         }

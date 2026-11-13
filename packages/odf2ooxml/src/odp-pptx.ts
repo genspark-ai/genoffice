@@ -169,6 +169,8 @@ function collectParagraphs(
       out.push(toParagraph(node, ctx, listDepth))
     } else if (name === 'text:list') {
       collectParagraphs(node, ctx, out, listDepth + 1)
+    } else if (name === 'text:list-header') {
+      collectParagraphs(node, ctx, out, 0)
     } else if (name === 'text:list-item') {
       for (const inner of childElements(node)) {
         if (inner.name === 'text:p' || inner.name === 'text:h') {
