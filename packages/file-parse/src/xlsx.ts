@@ -26,10 +26,10 @@ const parser = new XMLParser({
   parseTagValue: false,
   removeNSPrefix: false,
   transformTagName: stripNamespacePrefix,
-  // trimValues also governs attributes; nothing read here (r:id, Target, cell ref, sheet
-  // name) carries meaningful edge whitespace, and an untrimmed Target builds the wrong zip
-  // path, which silently drops the whole sheet
-  attributeValueProcessor: (_name, value) => value.trim(),
+  // trimValues also governs attributes. Preserve worksheet names, but trim relationship
+  // IDs, targets and cell references: an untrimmed Target builds the wrong zip path,
+  // which silently drops the whole sheet.
+  attributeValueProcessor: (name, value) => (name === 'name' ? value : value.trim()),
 })
 
 function asArray<T>(value: T | T[] | undefined): T[] {
@@ -374,7 +374,7 @@ export async function xlsxToText(bytes: Uint8Array, opts: XlsxTextOptions = {}):
     const sheetXml =
       maxChars === Infinity ? raw.text : clipSheetXml(raw.text, budget, raw.truncated)
     const worksheet = parser.parse(sheetXml) as Record<string, any>
-    const lines: string[] = [`# ${String(sheet['@_name'] ?? '')}`]
+    const lines: string[] = [`# ${decodeXlsxEscapes(String(sheet['@_name'] ?? ''))}`]
     let sheetChars = lines[0].length
     const rows = asArray(worksheet.worksheet?.sheetData?.row) as Array<Record<string, unknown>>
     let hasData = false
