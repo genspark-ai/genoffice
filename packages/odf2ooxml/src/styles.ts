@@ -226,7 +226,8 @@ export class OdfStyles {
     if (right !== null) out.indentRightTw = emuToTwips(right)
     const first = odfLengthToEmu(a['fo:text-indent'])
     if (first !== null) out.indentFirstLineTw = emuToTwips(first)
-    if (a['fo:break-before'] === 'page') out.pageBreakBefore = true
+    if (a['fo:break-before'] === 'page' || a['fo:break-before'] === 'auto')
+      out.pageBreakBefore = a['fo:break-before'] === 'page'
     return Object.keys(out).length > 0 ? out : undefined
   }
 
