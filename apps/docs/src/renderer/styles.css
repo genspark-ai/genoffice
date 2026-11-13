@@ -12903,6 +12903,39 @@ body.docs-crop-active
   margin-left: 130px;
 }
 
+/* Structural headings: a document without heading styles still shows its
+   sections through bold or all-caps lines and section numbers. The outline
+   view keeps those paragraphs visible and at their inferred depth, faded so
+   they read as a guess rather than a style in the file. */
+.view-outline .doc-page > .inferred-heading {
+  display: block;
+}
+
+.view-outline .doc-page .inferred-heading {
+  position: relative;
+  padding-left: 22px;
+  opacity: 0.62;
+}
+
+.view-outline .doc-page .inferred-heading.inferred-h1 {
+  margin-left: 0;
+}
+.view-outline .doc-page .inferred-heading.inferred-h2 {
+  margin-left: 26px;
+}
+.view-outline .doc-page .inferred-heading.inferred-h3 {
+  margin-left: 52px;
+}
+.view-outline .doc-page .inferred-heading.inferred-h4 {
+  margin-left: 78px;
+}
+.view-outline .doc-page .inferred-heading.inferred-h5 {
+  margin-left: 104px;
+}
+.view-outline .doc-page .inferred-heading.inferred-h6 {
+  margin-left: 130px;
+}
+
 /* Word outline view marks each heading with a collapse handle. The glyph is a
    real DOM widget (editor/outline-view.ts) — the old ::before had no click
    target — positioned into the indent gutter the heading padding reserves. */
@@ -13002,6 +13035,12 @@ body.docs-crop-active
   font-style: inherit !important;
 }
 
+/* an inferred heading is a guess read from the paragraph's shape, not a style
+   in the file: it takes the same look, faded until it becomes a real heading */
+.view-story .doc-page .story-heading-inferred {
+  opacity: 0.62;
+}
+
 /* the run's own formatting: the docTextStyle mark carries the font, the size,
    the colour, the highlight and the spacing. The bold, italic, underline and
    strike marks are separate elements, so they stay. */
@@ -13050,6 +13089,10 @@ body.docs-crop-active
   white-space: pre;
   user-select: none;
   pointer-events: none;
+}
+
+.view-story .story-marker-inferred {
+  opacity: 0.62;
 }
 
 /* the list's own marker moves into the gutter, unchanged: a numbered list
