@@ -20,6 +20,8 @@ export interface OdfTextProps {
   font?: string
   vertAlign?: 'superscript' | 'subscript'
   caps?: 'all' | 'small'
+  resetUppercase?: boolean
+  resetSmallCaps?: boolean
   /** run shading fill, hex without '#' */
   shading?: string
 }
@@ -187,6 +189,8 @@ export class OdfStyles {
     if (transform === 'uppercase') out.caps = 'all'
     else if (transform === 'lowercase') out.caps = undefined
     else if (transform === 'capitalize') out.caps = undefined
+    if (transform === 'none') out.resetUppercase = true
+    if (a['fo:font-variant'] === 'normal') out.resetSmallCaps = true
     if (a['fo:font-variant'] === 'small-caps') out.caps = 'small'
     return Object.keys(out).length > 0 ? out : undefined
   }
@@ -289,7 +293,7 @@ export class OdfStyles {
     let para: OdfParaProps = { ...(this.defaults.para ?? {}) }
     // parent first so the style itself wins
     for (let index = chain.length - 1; index >= 0; index--) {
-      if (chain[index].text) text = { ...text, ...chain[index].text }
+      if (chain[index].text) text = mergeTextProps(text, chain[index].text!)
       if (chain[index].para) para = { ...para, ...chain[index].para }
     }
     return {
@@ -369,6 +373,17 @@ export class OdfStyles {
     for (const root of stylesRoots) findLayout(root)
     return properties
   }
+}
+
+export function mergeTextProps(base: OdfTextProps, override: OdfTextProps): OdfTextProps {
+  const out = { ...base, ...override }
+  if (
+    override.caps === undefined &&
+    ((override.resetUppercase && base.caps === 'all') ||
+      (override.resetSmallCaps && base.caps === 'small'))
+  )
+    out.caps = undefined
+  return out
 }
 
 /** label-alignment indents of a list level (space-before + min-label-width). */
