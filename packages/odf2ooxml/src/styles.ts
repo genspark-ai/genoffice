@@ -263,8 +263,12 @@ export class OdfStyles {
   }
 
   /** text/paragraph props for a style name, resolved along the parent chain. */
-  textProps(styleName: string | undefined, families: readonly string[]): OdfTextProps | null {
-    return this.resolve(styleName, families).text
+  textProps(
+    styleName: string | undefined,
+    families: readonly string[],
+    includeDefaults = true,
+  ): OdfTextProps | null {
+    return this.resolve(styleName, families, includeDefaults).text
   }
 
   paraProps(styleName: string | undefined, families: readonly string[]): OdfParaProps | null {
@@ -274,6 +278,7 @@ export class OdfStyles {
   private resolve(
     styleName: string | undefined,
     families: readonly string[],
+    includeDefaults = true,
   ): { text: OdfTextProps | null; para: OdfParaProps | null } {
     const chain: StyleDef[] = []
     const seen = new Set<string>()
@@ -285,7 +290,7 @@ export class OdfStyles {
       chain.push(def)
       current = def.parent
     }
-    let text: OdfTextProps = { ...(this.defaults.text ?? {}) }
+    let text: OdfTextProps = includeDefaults ? { ...(this.defaults.text ?? {}) } : {}
     let para: OdfParaProps = { ...(this.defaults.para ?? {}) }
     // parent first so the style itself wins
     for (let index = chain.length - 1; index >= 0; index--) {
