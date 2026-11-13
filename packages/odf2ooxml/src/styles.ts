@@ -153,8 +153,10 @@ export class OdfStyles {
   private readTextProps(node: XNode): OdfTextProps | undefined {
     const a = nodeAttrs(node)
     const out: OdfTextProps = {}
-    if (a['fo:font-weight'] === 'bold') out.bold = true
-    if (a['fo:font-style'] === 'italic') out.italic = true
+    if (a['fo:font-weight'] === 'bold' || a['fo:font-weight'] === 'normal')
+      out.bold = a['fo:font-weight'] === 'bold'
+    if (a['fo:font-style'] === 'italic' || a['fo:font-style'] === 'normal')
+      out.italic = a['fo:font-style'] === 'italic'
     if (a['style:text-underline-type'] !== undefined) {
       out.underline = a['style:text-underline-type'] !== 'none'
     } else if (a['style:text-underline-style'] !== undefined) {
