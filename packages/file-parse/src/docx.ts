@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { XMLParser } from 'fast-xml-parser'
 import { assertZipInflatesWithinLimits, assertZipWithinLimits } from '@genoffice/docx-engine'
 import { resolveTarget } from './opc'
 
@@ -25,15 +26,37 @@ export async function docxToText(bytes: Uint8Array, opts: DocxTextOptions = {}):
   const documentXml = docPath ? await zip.file(docPath)?.async('string') : undefined
   if (!documentXml) throw new Error('docx: main document part not found')
   const dir = docPath!.slice(0, docPath!.lastIndexOf('/') + 1)
-  const styleFacts = paragraphStyleFacts(await zip.file(`${dir}styles.xml`)?.async('string'))
+  const parts = new Map<string, string>([
+    ['styles', `${dir}styles.xml`],
+    ['footnotes', `${dir}footnotes.xml`],
+    ['endnotes', `${dir}endnotes.xml`],
+  ])
+  const relsPath = `${dir}_rels/${docPath!.slice(dir.length)}.rels`
+  const relsXml = await zip.file(relsPath)?.async('string')
+  if (relsXml) {
+    const parser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true })
+    const rels = parser.parse(relsXml).Relationships?.Relationship ?? []
+    for (const rel of Array.isArray(rels) ? rels : [rels]) {
+      const kind = String(rel['@_Type'] ?? '')
+        .split('/')
+        .at(-1)!
+      if (!parts.has(kind) || String(rel['@_TargetMode'] ?? '').toLowerCase() === 'external')
+        continue
+      const target = String(rel['@_Target'] ?? '').trim()
+      if (!target) continue
+      const path = resolveTarget(docPath!, target)
+      if (path) parts.set(kind, path)
+    }
+  }
+  const styleFacts = paragraphStyleFacts(await zip.file(parts.get('styles')!)?.async('string'))
   const out = new TextSink(opts.maxChars ?? Infinity)
   scanBody(documentXml, styleFacts, out)
   for (const [part, title] of [
-    ['footnotes.xml', 'Footnotes'],
-    ['endnotes.xml', 'Endnotes'],
+    ['footnotes', 'Footnotes'],
+    ['endnotes', 'Endnotes'],
   ] as const) {
     if (out.full) break
-    const xml = await zip.file(`${dir}${part}`)?.async('string')
+    const xml = await zip.file(parts.get(part)!)?.async('string')
     if (!xml) continue
     const notes = new TextSink(Infinity)
     scanBody(xml, styleFacts, notes, { notes: true })
