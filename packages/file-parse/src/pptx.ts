@@ -115,7 +115,12 @@ async function notesXmlForSlide(zip: JSZip, slidePath: string): Promise<string |
     Relationships?: { Relationship?: Record<string, string> | Record<string, string>[] }
   }
   for (const rel of asArray(doc.Relationships?.Relationship)) {
-    if (String(rel['@_Type'] ?? '') !== NOTES_SLIDE_REL) continue
+    const type = String(rel['@_Type'] ?? '')
+    if (
+      type !== NOTES_SLIDE_REL &&
+      type !== 'http://purl.oclc.org/ooxml/officeDocument/relationships/notesSlide'
+    )
+      continue
     if (String(rel['@_TargetMode'] ?? '').toLowerCase() === 'external') continue
     const target = String(rel['@_Target'] ?? '')
     return target ? zipText(zip, resolveTarget(slidePath, target)) : undefined
