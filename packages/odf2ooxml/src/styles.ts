@@ -51,6 +51,7 @@ export interface OdfListLevel {
 
 interface StyleDef {
   family: string
+  fontSizePercent?: number
   parent?: string
   text?: OdfTextProps
   para?: OdfParaProps
@@ -121,8 +122,12 @@ export class OdfStyles {
       return
     }
     const props = this.readProps(node)
+    const textProperties = firstChild(node, 'style:text-properties')
+    const fontSize = textProperties ? attr(textProperties, 'fo:font-size') : undefined
+    const percent = fontSize && /^(\d+(?:\.\d+)?)%$/.exec(fontSize.trim())
     this.defs.set(`${family}:${name}`, {
       family,
+      fontSizePercent: percent ? Number(percent[1]) : undefined,
       parent: attr(node, 'style:parent-style-name'),
       text: props.text,
       para: props.para,
@@ -289,7 +294,13 @@ export class OdfStyles {
     let para: OdfParaProps = { ...(this.defaults.para ?? {}) }
     // parent first so the style itself wins
     for (let index = chain.length - 1; index >= 0; index--) {
+      const inheritedSize = text.sizePt
       if (chain[index].text) text = { ...text, ...chain[index].text }
+      const percent = chain[index].fontSizePercent
+      if (percent !== undefined && inheritedSize !== undefined) {
+        const size = (inheritedSize * percent) / 100
+        if (size > 0 && odfLengthToEmu(`${size}pt`) !== null) text.sizePt = size
+      }
       if (chain[index].para) para = { ...para, ...chain[index].para }
     }
     return {
