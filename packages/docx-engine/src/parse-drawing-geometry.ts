@@ -28,7 +28,11 @@ export const LINE_PRSTS = new Set([
 ])
 
 /** wps line shape → display-only line box (synthetic prst carries the arrow ends) */
-export function lineBoxOf(shape: XNode, theme?: ThemeColors | null): TextboxDisplay | null {
+export function lineBoxOf(
+  shape: XNode,
+  theme?: ThemeColors | null,
+  ctm?: GroupCtm | null,
+): TextboxDisplay | null {
   const spPr = findChild(shape, 'wps:spPr')
   if (!spPr) return null
   const prst = attrsOf(findChild(spPr, 'a:prstGeom') ?? {})['prst']
@@ -62,7 +66,7 @@ export function lineBoxOf(shape: XNode, theme?: ThemeColors | null): TextboxDisp
   const ext = findChild(xfrm ?? {}, 'a:ext')
   const cx = ext ? parseInt(attrsOf(ext)['cx'] ?? '', 10) : NaN
   const cy = ext ? parseInt(attrsOf(ext)['cy'] ?? '', 10) : NaN
-  if (Number.isFinite(cx) && cx > 0) box.widthPx = Math.round(cx / EMU_PER_PX)
+  if (Number.isFinite(cx) && cx > 0) box.widthPx = Math.round((cx * (ctm?.sx ?? 1)) / EMU_PER_PX)
   const straight = box.prst === 'line' || box.prst === 'lineArrow' || box.prst === 'lineArrowDouble'
   // flips apply at any height: Word's horizontal lines carry cy="0", and a
   // flipH there still reverses which tip holds the arrow
@@ -79,7 +83,7 @@ export function lineBoxOf(shape: XNode, theme?: ThemeColors | null): TextboxDisp
   if (Number.isFinite(lnW) && lnW > 0)
     box.borderWidthPx = Math.round((lnW / EMU_PER_PX) * 100) / 100
   if (Number.isFinite(cy) && cy > 0) {
-    box.heightPx = Math.round(cy / EMU_PER_PX)
+    box.heightPx = Math.round((cy * (ctm?.sy ?? 1)) / EMU_PER_PX)
     box.minHeightPx = box.heightPx
     // a real vertical extent means the connector runs corner to corner
     // (≤12 px stays level: our own inserted lines keep a 12 px grab band)
