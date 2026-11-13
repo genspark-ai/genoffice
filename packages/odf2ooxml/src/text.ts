@@ -96,7 +96,7 @@ function runsFromChildren(
         case 'text:span': {
           const spanProps = mergeProps(
             props,
-            ctx.styles.textProps(attr(node, 'text:style-name'), ctx.families),
+            ctx.styles.textProps(attr(node, 'text:style-name'), ctx.families, false),
           )
           walk(nodeChildren(node), spanProps, href)
           break
