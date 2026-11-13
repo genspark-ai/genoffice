@@ -1,4 +1,5 @@
 import { FloatWatch } from './editor/float-watch'
+import { isSaveShortcut } from './save-shortcut'
 import { scriptFontHtml } from './editor/script-fonts'
 import { carryDocSeen } from './ai/tools'
 import { DOC_CSS_COMMITTED_EVENT, WRAP_WIDTHS_COMMITTED_EVENT } from './editor/cjk-punct-shrink'
@@ -6235,7 +6236,7 @@ export function App() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.code === 'KeyS' || e.key === 's')) {
+      if (isSaveShortcut(e)) {
         // Handle Save before editor keymaps interpret a non-Latin key as Undo.
         e.preventDefault()
         e.stopPropagation()
