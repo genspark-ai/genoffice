@@ -107,7 +107,9 @@ export class OdfStyles {
     const family = attr(node, 'style:family')
     if (!name || !family) return
     if (family === 'table-column') {
-      const properties = firstChild(node, 'style:column-properties')
+      const properties =
+        firstChild(node, 'style:table-column-properties') ??
+        firstChild(node, 'style:column-properties')
       const width = properties ? odfLengthToEmu(attr(properties, 'style:column-width')) : null
       if (width !== null && width > 0) this.columnWidths.set(name, width)
       return
