@@ -219,7 +219,9 @@ const occurrences = (text: string, part: string): number => text.split(part).len
  * that arrived inside a value is output, not a leftover. The rescan only tells
  * which provided placeholders are still at their spot: where the text is not
  * the expected substitution, the occurrences beyond the expected text's own
- * are placeholders the run-level replace could not match (split over runs).
+ * are placeholders the replace could not reach — a marker the flat per-
+ * paragraph match cannot span (interrupted by a line break or an inline
+ * object, or crossing a block boundary), still reported as split_placeholder.
  */
 function describe(merged: Merged, values: Values) {
   const leftover = new Map<string, number>()
@@ -336,12 +338,12 @@ function escapeHtml(s: string): string {
 
 /**
  * Word splits a placeholder over several runs whenever the formatting changes
- * inside it; findReplace matches within one run, so what it misses is rescanned
- * and reported as split_placeholder. findReplace reaches neither table cells
- * nor a line break (a hardBreak only comes in through HTML), so a table with a
- * provided placeholder and a paragraph whose value spans lines are round-tripped
- * through replace_blocks on their restricted HTML; the rest is one findReplace
- * pass.
+ * inside it; findReplace matches across those runs within one paragraph, and
+ * what it still cannot reach is rescanned and reported as split_placeholder.
+ * findReplace reaches neither table cells nor a line break (a hardBreak only
+ * comes in through HTML), so a table with a provided placeholder and a
+ * paragraph whose value spans lines are round-tripped through replace_blocks
+ * on their restricted HTML; the rest is one findReplace pass.
  */
 async function mergeDocx(path: string, values: Values, output: string): Promise<Merged> {
   const source = readInput(path)

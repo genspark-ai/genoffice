@@ -320,6 +320,100 @@ describe('findReplace', () => {
     expect(loose.results[0].detail).toBe('Replaced 2 occurrence(s)')
     expect(editor.state.doc.child(1).textContent).toBe('X intro,X is great')
   })
+
+  it('matches a phrase the document splits across runs', () => {
+    // the issue's shape: font fallback, numbering, comments and local
+    // formatting all split a visually continuous phrase into several runs.
+    // Runs the editor would merge (same marks) are one text node already, so
+    // the split has to come from differing marks to exercise this.
+    const editor = createEditor([
+      para(
+        [
+          text('\u67d0', [{ type: 'bold' }]),
+          text('\u603b\u7ed3\u6a21\u677f'),
+          text('\u7ec6\u5316', [{ type: 'italic' }]),
+        ],
+        { docxIndex: 0 },
+      ),
+    ])
+    const outcome = executeOps(editor, [
+      {
+        op: 'findReplace',
+        find: '\u67d0\u603b\u7ed3\u6a21\u677f\u7ec6\u5316',
+        replace: '\u667a\u80fd\u6280\u672f\u6587\u6863',
+      },
+    ])
+    expect(outcome.ok).toBe(true)
+    expect(outcome.results[0].detail).toBe('Replaced 1 occurrence(s)')
+    expect(editor.state.doc.child(0).textContent).toBe('\u667a\u80fd\u6280\u672f\u6587\u6863')
+  })
+
+  it('a cross-run replacement keeps the formatting of the run the match starts in', () => {
+    const editor = createEditor([
+      para([text('\u67d0', [{ type: 'bold' }]), text('\u603b\u7ed3\u6a21\u677f\u7ec6\u5316')], {
+        docxIndex: 0,
+      }),
+    ])
+    executeOps(editor, [
+      {
+        op: 'findReplace',
+        find: '\u67d0\u603b\u7ed3\u6a21\u677f\u7ec6\u5316',
+        replace: '\u65b0\u6587\u6848',
+      },
+    ])
+    const block = editor.state.doc.child(0)
+    expect(block.textContent).toBe('\u65b0\u6587\u6848')
+    expect(block.child(0).marks.some((m) => m.type.name === 'bold')).toBe(true)
+  })
+
+  it('a match mixing plain text with a pending insertion is skipped', () => {
+    // A replacement straddling an ins boundary would either strip the
+    // insertion's revision (plain -> ins) or pull accepted text into the
+    // pending insertion (ins -> plain) — Reject would then delete words the
+    // edit never wrote. The phrase is left alone until the revision resolves.
+    const editor = createEditor([
+      para(
+        [
+          text('\u67d0\u603b\u7ed3', [{ type: 'bold' }]),
+          text('\u6a21\u677f', [
+            { type: 'ins', attrs: { author: 'Alice', date: '2026-07-01T10:00:00Z' } },
+          ]),
+        ],
+        { docxIndex: 0 },
+      ),
+    ])
+    const outcome = executeOps(editor, [
+      { op: 'findReplace', find: '\u67d0\u603b\u7ed3\u6a21\u677f', replace: 'X' },
+    ])
+    expect(outcome.ok).toBe(true)
+    expect(outcome.results[0].changed).toBe(0)
+    expect(editor.state.doc.child(0).textContent).toBe('\u67d0\u603b\u7ed3\u6a21\u677f')
+  })
+
+  it('matches across runs case-insensitively', () => {
+    const editor = createEditor([
+      para([text('GEN', [{ type: 'bold' }]), text('spark')], { docxIndex: 0 }),
+    ])
+    const outcome = executeOps(editor, [
+      { op: 'findReplace', find: 'genspark', replace: 'X', matchCase: false },
+    ])
+    expect(outcome.ok).toBe(true)
+    expect(editor.state.doc.child(0).textContent).toBe('X')
+  })
+
+  it('a non-text child interrupts the match', () => {
+    const editor = createEditor([
+      para([text('\u67d0\u603b\u7ed3'), { type: 'hardBreak' }, text('\u6a21\u677f')], {
+        docxIndex: 0,
+      }),
+    ])
+    const outcome = executeOps(editor, [
+      { op: 'findReplace', find: '\u67d0\u603b\u7ed3\u6a21\u677f', replace: 'X' },
+    ])
+    expect(outcome.ok).toBe(true)
+    expect(outcome.results[0].changed).toBe(0)
+    expect(editor.state.doc.child(0).textContent).toBe('\u67d0\u603b\u7ed3\u6a21\u677f')
+  })
 })
 
 describe('updateMatchedTextStyle', () => {
