@@ -326,25 +326,44 @@ export async function xlsxToText(bytes: Uint8Array, opts: XlsxTextOptions = {}):
   await assertZipInflatesWithinLimits(bytes)
   const zip = await JSZip.loadAsync(bytes)
   assertZipWithinLimits(zip)
-  const workbookXml = await zipText(zip, 'xl/workbook.xml')
-  if (!workbookXml) throw new Error('Invalid xlsx: missing xl/workbook.xml')
+  let workbookPath = 'xl/workbook.xml'
+  const packageRels = await zipText(zip, '_rels/.rels')
+  if (packageRels) {
+    const root = parser.parse(packageRels)
+    for (const rel of asArray(root.Relationships?.Relationship) as Record<string, string>[]) {
+      if (
+        !String(rel['@_Type'] ?? '').endsWith('/officeDocument') ||
+        String(rel['@_TargetMode'] ?? '').toLowerCase() === 'external'
+      )
+        continue
+      const target = String(rel['@_Target'] ?? '')
+      const resolved = target ? resolveTarget('', target) : ''
+      if (resolved) {
+        workbookPath = resolved
+        break
+      }
+    }
+  }
+  const workbookXml = await zipText(zip, workbookPath)
+  if (!workbookXml) throw new Error(`Invalid xlsx: missing ${workbookPath}`)
 
   // Sheet order and names come from workbook.xml; r:id maps to the actual sheet path via the workbook rels
   const workbook = parser.parse(workbookXml) as Record<string, any>
   const sheets = asArray(workbook.workbook?.sheets?.sheet) as Array<Record<string, unknown>>
   const date1904 = isDate1904(workbook)
 
-  const relsXml = await zipText(zip, 'xl/_rels/workbook.xml.rels')
+  const workbookRelsPath = workbookPath.replace(/([^/]+)$/, '_rels/$1.rels')
+  const relsXml = await zipText(zip, workbookRelsPath)
   const relTargets = new Map<string, string>()
-  let stylesPath = 'xl/styles.xml'
-  let sharedStringsPath = 'xl/sharedStrings.xml'
+  let stylesPath = resolveTarget(workbookPath, 'styles.xml')
+  let sharedStringsPath = resolveTarget(workbookPath, 'sharedStrings.xml')
   if (relsXml) {
     const rels = parser.parse(relsXml) as Record<string, any>
     for (const rel of asArray(rels.Relationships?.Relationship) as Array<Record<string, unknown>>) {
       if (String(rel['@_TargetMode'] ?? '').toLowerCase() === 'external') continue
       const id = String(rel['@_Id'] ?? '')
       const target = String(rel['@_Target'] ?? '')
-      const resolved = target.trim() === '' ? '' : resolveTarget('xl/workbook.xml', target)
+      const resolved = target.trim() === '' ? '' : resolveTarget(workbookPath, target)
       if (id !== '' && resolved !== '') relTargets.set(id, resolved)
       if (resolved && String(rel['@_TargetMode'] ?? '').toLowerCase() !== 'external') {
         const type = String(rel['@_Type'] ?? '')
@@ -432,9 +451,9 @@ export async function xlsxToText(bytes: Uint8Array, opts: XlsxTextOptions = {}):
   if (sheets.length > 0 && sections.length === 0) {
     throw new Error(
       relsXml === undefined
-        ? `Invalid xlsx: xl/_rels/workbook.xml.rels is missing, so none of the ` +
+        ? `Invalid xlsx: ${workbookRelsPath} is missing, so none of the ` +
             `${sheets.length} declared sheet${sheets.length === 1 ? '' : 's'} can be resolved`
-        : `Invalid xlsx: no sheet relationship in xl/_rels/workbook.xml.rels resolves to a ` +
+        : `Invalid xlsx: no sheet relationship in ${workbookRelsPath} resolves to a ` +
             `readable worksheet part (${sheets.length} declared)`,
     )
   }
