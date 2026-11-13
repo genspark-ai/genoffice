@@ -12826,6 +12826,15 @@ body.docs-crop-active
   padding-top: 44px;
 }
 
+/* The crop marks are print furniture: an L at each text-boundary corner, drawn
+   against the page gaps' margins. A reading view has no paper to trim, and the
+   read-mode scroll offset leaves the marks sitting away from the text. */
+.read-mode .page-gap-paper::after,
+.read-mode .page-wrap:not(.paper-mixed)::before,
+.read-mode .page-wrap:not(.paper-mixed)::after {
+  content: none;
+}
+
 .read-exit {
   position: fixed;
   top: 52px;
