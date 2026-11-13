@@ -341,6 +341,7 @@ export async function xlsxToText(bytes: Uint8Array, opts: XlsxTextOptions = {}):
   if (relsXml) {
     const rels = parser.parse(relsXml) as Record<string, any>
     for (const rel of asArray(rels.Relationships?.Relationship) as Array<Record<string, unknown>>) {
+      if (String(rel['@_TargetMode'] ?? '').toLowerCase() === 'external') continue
       const id = String(rel['@_Id'] ?? '')
       const target = String(rel['@_Target'] ?? '')
       const resolved = target.trim() === '' ? '' : resolveTarget('xl/workbook.xml', target)
