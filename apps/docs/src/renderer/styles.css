@@ -5220,6 +5220,32 @@ th[data-rev-fmt] {
   margin-inline-start: calc(var(--doc-autospace-pad, 0.125em) * var(--doc-autospace-pad-le, 2));
 }
 
+/* Inter-script seam fill (selection-highlight.ts): the native ::selection is
+   left alone, so extents, paragraph and cell shading, find results, tracked
+   changes, dark mode and print keep the platform colour. Only the autospace
+   gap column is painted, in the same system colour the browser uses for the
+   highlight, so the fill matches whatever the platform paints. */
+.go-selection-seams {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.go-selection-seam {
+  position: absolute;
+  background: Highlight;
+}
+/* unfocused selections use the system's inactive ink, like the native highlight */
+.go-selection-seams.is-inactive .go-selection-seam {
+  background: GrayText;
+  opacity: 0.45;
+}
+@media print {
+  .go-selection-seams {
+    display: none;
+  }
+}
+
 /* static-DOM word-joiner (protected-render padSegments): generated content keeps
    the U+2060 out of innerText, so cell / textbox edits never commit it */
 .doc-kr-wj:empty::before {

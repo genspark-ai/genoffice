@@ -1,4 +1,5 @@
 import { isEastAsianLeadingFont } from '../text-layout/script-rules'
+import { selectionHighlightOverlay } from './selection-highlight'
 import { SEGOE_SYMBOL_CSS } from '../text-layout/font-rules/face-classes'
 import { ScriptFonts } from './script-fonts'
 import {
@@ -1910,6 +1911,7 @@ export const LineFactorExtension = Extension.create({
           },
         },
       }),
+      selectionHighlightOverlay(),
     ]
   },
 })
