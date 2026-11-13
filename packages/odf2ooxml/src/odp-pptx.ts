@@ -167,6 +167,8 @@ function collectParagraphs(
       out.push(toParagraph(node, ctx, listDepth))
     } else if (name === 'text:h') {
       out.push(toParagraph(node, ctx, listDepth))
+    } else if (name === 'text:section') {
+      if (attr(node, 'text:display') !== 'none') collectParagraphs(node, ctx, out, listDepth)
     } else if (name === 'text:list') {
       collectParagraphs(node, ctx, out, listDepth + 1)
     } else if (name === 'text:list-item') {
