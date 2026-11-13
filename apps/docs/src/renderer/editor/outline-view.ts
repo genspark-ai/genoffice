@@ -2,7 +2,8 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { collectHeadings, type HeadingRef } from './headings'
+import { collectHeadings, type HeadingRef, type HeadingStyles } from './headings'
+import { collectStructuralHeadings, structuralHeadingClass } from './structural-headings'
 import { headingAtPos, headingKey } from './nav-outline'
 
 declare module '@tiptap/core' {
@@ -41,6 +42,10 @@ export const outlineViewKey = new PluginKey<OutlineViewState>('docsOutlineView')
  * heading re-expands it. Leaving outline view clears the set: the folds are
  * view state, not document state, and re-expanding everything on the next
  * visit keeps that honest without persisting anything.
+ *
+ * A document without heading styles still gets rows when its paragraphs look
+ * like headings (see structural-headings.ts); those paragraphs stay ordinary
+ * paragraphs in the file and are faded in the view.
  */
 
 interface OutlineViewMeta {
@@ -90,19 +95,36 @@ function handleDom(leaf: boolean, collapsed: boolean): HTMLElement {
   return span
 }
 
+function outlineHeadings(
+  doc: ProseMirrorNode,
+  styles?: HeadingStyles,
+): { refs: HeadingRef[]; inferred: ReadonlySet<number> } {
+  const real = collectHeadings(doc, undefined, true)
+  if (real.length > 0) return { refs: real, inferred: new Set() }
+  // no heading styles anywhere: read bold/all-caps/numbered paragraphs instead
+  const structural = collectStructuralHeadings(doc, styles)
+  return { refs: structural, inferred: new Set(structural.map((ref) => ref.pos)) }
+}
+
 function buildOutlineDecorations(
   doc: ProseMirrorNode,
   collapsed: ReadonlySet<string>,
+  styles?: HeadingStyles,
 ): DecorationSet {
-  // includeEmpty: a blank heading shows its handle right away, like the old
-  // always-on ::before glyph did
-  const headings = collectHeadings(doc, undefined, true)
+  const { refs: headings, inferred } = outlineHeadings(doc, styles)
   if (headings.length === 0) return DecorationSet.empty
   const hidden = hiddenOutlineHeadings(headings, collapsed)
   const decos: Decoration[] = []
   headings.forEach((ref, index) => {
     const node = doc.nodeAt(ref.pos)
     if (!node) return
+    if (inferred.has(ref.pos)) {
+      decos.push(
+        Decoration.node(ref.pos, ref.pos + node.nodeSize, {
+          class: structuralHeadingClass(ref.level),
+        }),
+      )
+    }
     if (hidden.has(index)) {
       decos.push(Decoration.node(ref.pos, ref.pos + node.nodeSize, { class: 'outline-collapsed' }))
       return
@@ -137,6 +159,8 @@ export const OutlineViewExtension = Extension.create({
   },
 
   addProseMirrorPlugins() {
+    const editor = this.editor
+    const styles = (): HeadingStyles | undefined => editor.storage.listNumbering?.styles
     return [
       new Plugin({
         key: outlineViewKey,
@@ -165,7 +189,7 @@ export const OutlineViewExtension = Extension.create({
               active,
               collapsed,
               decorations: active
-                ? buildOutlineDecorations(tr.doc, collapsed)
+                ? buildOutlineDecorations(tr.doc, collapsed, styles())
                 : DecorationSet.empty,
             }
           },
@@ -184,7 +208,7 @@ export const OutlineViewExtension = Extension.create({
               const plugin = outlineViewKey.getState(view.state)
               if (!plugin?.active) return true
               const pos = view.posAtDOM(target, 0)
-              const headings = collectHeadings(view.state.doc, undefined, true)
+              const { refs: headings } = outlineHeadings(view.state.doc, styles())
               const index = headingAtPos(headings, pos)
               if (index < 0) return true
               view.dispatch(
