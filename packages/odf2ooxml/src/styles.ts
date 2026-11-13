@@ -236,7 +236,7 @@ export class OdfStyles {
       if (childName === 'text:list-level-style-bullet') {
         levels.set(level, {
           kind: 'bullet',
-          bulletChar: attr(child, 'style:bullet-char') ?? '•',
+          bulletChar: attr(child, 'text:bullet-char') ?? attr(child, 'style:bullet-char') ?? '•',
           ...listLevelIndent(child),
         })
       } else if (
