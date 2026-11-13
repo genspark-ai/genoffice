@@ -374,6 +374,18 @@ export class OdfStyles {
 function listLevelIndent(node: XNode): { indentLeftTw?: number; hangingTw?: number } {
   const properties = firstChild(node, 'style:list-level-properties')
   if (!properties) return {}
+  const alignment = firstChild(properties, 'style:list-level-label-alignment')
+  if (
+    attr(properties, 'text:list-level-position-and-space-mode') === 'label-alignment' &&
+    alignment
+  ) {
+    const left = odfLengthToEmu(attr(alignment, 'fo:margin-left'))
+    const first = odfLengthToEmu(attr(alignment, 'fo:text-indent'))
+    return {
+      ...(left !== null ? { indentLeftTw: emuToTwips(left) } : {}),
+      ...(first !== null && first <= 0 ? { hangingTw: emuToTwips(-first) } : {}),
+    }
+  }
   const a = nodeAttrs(properties)
   const spaceBefore = odfLengthToEmu(a['text:space-before'])
   const minWidth = odfLengthToEmu(a['text:min-label-width'])
