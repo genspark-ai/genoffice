@@ -419,7 +419,6 @@ interface ColumnSpec {
 }
 
 interface GridCell {
-  covered?: boolean
   row: number
   column: number
   colSpan: number
@@ -438,11 +437,54 @@ const CELL_GEN_CTX = {
   },
 }
 
+/** Grid width ceiling: clampRepeat's own 1024, so rows × repeats cannot grow without bound. */
+const MAX_GRID_COLUMNS = 1024
+
 function tableDraft(node: XNode, ctx: WalkContext): Draft {
   const columns = readColumns(node, ctx)
   const rows = readRows(node)
+  // ODF lets the column list be narrower than the grid positions a row paints
+  // (it is optional, and the fallback is a single column). placeCells stops at
+  // the grid's last column, so the excess cells used to disappear without a
+  // tally. Size the grid to the widest row, using the same placement rules.
+  const painted = Math.min(
+    MAX_GRID_COLUMNS,
+    rows.reduce((widest, row) => Math.max(widest, rowGridWidth(row)), 0),
+  )
+  while (columns.length < painted) columns.push({ widthEmu: null })
   const grid = placeCells(rows, columns.length, ctx)
   return { kind: 'xml', xml: tableXml(columns, grid) }
+}
+
+/**
+ * The grid positions one row names, as placeCells lays them out. A cell's span
+ * does not add positions of its own: ODF writes the span's non-anchor slots as
+ * `table:covered-table-cell` placeholders, so a 3-wide merged cell followed by
+ * its two covered cells is three positions, not five. Covered cells that do not
+ * follow a span in this row (a position covered from an earlier row's row span)
+ * each name one position of their own.
+ */
+function rowGridWidth(row: XNode): number {
+  let column = 0
+  /** span slots already advanced over, still waiting for their placeholders */
+  let reserved = 0
+  for (const { name, node } of childElements(row)) {
+    const repeat = clampRepeat(attr(node, 'table:number-columns-repeated'), 64)
+    if (name === 'table:covered-table-cell') {
+      for (let index = 0; index < repeat; index++) {
+        if (reserved > 0) reserved--
+        else column++
+      }
+      continue
+    }
+    if (name !== 'table:table-cell') continue
+    const span = Math.max(1, Number(attr(node, 'table:number-columns-spanned') ?? '1') || 1)
+    for (let index = 0; index < repeat; index++) {
+      column += span
+      reserved += span - 1
+    }
+  }
+  return column
 }
 
 function readColumns(table: XNode, ctx: WalkContext): ColumnSpec[] {
@@ -489,25 +531,16 @@ function placeCells(
   ctx: WalkContext,
 ): Array<Array<GridCell | null>> {
   const occupancy: Array<Array<GridCell | null>> = []
-  const cellsOfRow = (row: XNode): GridCell[] => {
-    const out: GridCell[] = []
+  /** a row's cells in order; null marks a table:covered-table-cell placeholder */
+  const cellsOfRow = (row: XNode): Array<GridCell | null> => {
+    const out: Array<GridCell | null> = []
     for (const { name, node } of childElements(row)) {
       if (name === 'table:table-cell') {
         const repeat = clampRepeat(attr(node, 'table:number-columns-repeated'), 64)
         for (let index = 0; index < repeat; index++) out.push(makeCell(node, ctx))
       } else if (name === 'table:covered-table-cell') {
         const repeat = clampRepeat(attr(node, 'table:number-columns-repeated'), 64)
-        for (let index = 0; index < repeat; index++) {
-          out.push({
-            covered: true,
-            row: -1,
-            column: -1,
-            colSpan: 1,
-            rowSpan: 1,
-            contentXml: '<w:p/>',
-            fill: null,
-          })
-        }
+        for (let index = 0; index < repeat; index++) out.push(null)
       }
     }
     return out
@@ -517,9 +550,15 @@ function placeCells(
     while (occupancy.length <= rowIndex) occupancy.push(new Array(columnCount).fill(null))
     const slotRow = occupancy[rowIndex]
     let column = 0
+    /** span slots already advanced over, still waiting for their placeholders */
+    let reserved = 0
     for (const cell of cellsOfRow(row)) {
-      if (cell.covered) {
-        column++
+      if (!cell) {
+        // A covered cell names a position that is already painted: the span
+        // anchor just advanced over it, or an earlier row covers it vertically.
+        // It is not a cell to place at the next free slot.
+        if (reserved > 0) reserved--
+        else column++
         continue
       }
       while (column < columnCount && slotRow[column]) column++
@@ -539,7 +578,8 @@ function placeCells(
       cell.column = column
       cell.colSpan = colSpan
       cell.rowSpan = rowSpan
-      column++
+      reserved += colSpan - 1
+      column += colSpan
     }
     rowIndex++
   }
