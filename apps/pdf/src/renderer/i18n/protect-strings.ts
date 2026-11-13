@@ -386,6 +386,26 @@ const localizedProtectStrings: Record<string, Partial<typeof protectStrings>> = 
     protectRemove: 'Korumayı kaldır',
     protectMismatch: 'Parolalar eşleşmiyor',
   },
+  hu: {
+    protect: 'Védelem',
+    protectHint: 'Állítsd be, módosítsd vagy távolítsd el a fájl mentéséhez használt jelszót',
+    protectTitle: 'Dokumentumvédelem',
+    protectSetHint:
+      'A következő mentés jelszóval menti el a fájlt. Az olvasóknak ez a jelszó kell a dokumentum megnyitásához.',
+    protectChangeHint:
+      'A következő mentés ezzel a jelszóval és ezekkel a korlátozásokkal írja újra a fájlt.',
+    protectPasswordLabel: 'Jelszó a megnyitáshoz',
+    protectConfirmLabel: 'Jelszó megerősítése',
+    protectOwnerLabel: 'Tulajdonosi jelszó (nem kötelező)',
+    protectPermsLabel: 'Megnyitás után az olvasók:',
+    permPrint: 'Nyomtatás',
+    permModify: 'Tartalom szerkesztése',
+    permAnnotate: 'Széljegyzetek készítése és űrlapok kitöltése',
+    permCopy: 'Szöveg és képek másolása',
+    protectApply: 'Védelem alkalmazása',
+    protectRemove: 'Védelem eltávolítása',
+    protectMismatch: 'A jelszavak nem egyeznek',
+  },
   he: {
     protect: 'הגנה',
     protectHint: 'הגדרה, שינוי או הסרה של סיסמת השמירה של הקובץ',

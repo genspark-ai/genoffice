@@ -110,6 +110,24 @@ const tUpd = createI18n({
     updCheckFailed: 'Güncellemeler denetlenemedi. Ağ bağlantınızı kontrol edip yeniden deneyin.',
     updOpenDownload: 'İndirme Sayfasını Aç',
   },
+  hu: {
+    updTitle: 'Szoftverfrissítés',
+    updHeadline: 'Új verzió érhető el',
+    updDesc:
+      'Ez a frissítés teljesítményjavításokat és hibajavításokat tartalmaz. Javasoljuk, hogy most frissíts.',
+    updDownload: 'Frissítés most',
+    updLater: 'Minimalizálás',
+    updInstall: 'Újraindítás és telepítés',
+    updDownloading: 'Frissítés letöltése…',
+    updFailed: 'Nem sikerült letölteni a frissítést. Ellenőrizd a hálózatot, és próbáld újra.',
+    updRetry: 'Újra',
+    updManual:
+      'Az automatikus frissítés nem sikerült. Töltsd le a legújabb verziót a letöltési oldalról, és telepítsd kézzel.',
+    updUpToDate: 'Naprakész vagy (verzió: {version}).',
+    updCheckFailed:
+      'Nem sikerült ellenőrizni a frissítéseket. Ellenőrizd a hálózatot, és próbáld újra.',
+    updOpenDownload: 'Letöltési oldal megnyitása',
+  },
   ja: {
     updTitle: 'ソフトウェアアップデート',
     updHeadline: '新しいバージョンがあります',

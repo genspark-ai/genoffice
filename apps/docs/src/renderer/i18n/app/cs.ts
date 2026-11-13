@@ -391,6 +391,7 @@ export const cs = {
   appLangTraditionalChinese: 'tradiční čínština',
   appLangVietnamese: 'vietnamština',
   appLangTurkish: 'turečtina',
+  appLangHungarian: 'maďarština',
   appWrapTextMenu: 'Obtékání textu',
   appViewImage: 'Zobrazit obrázek',
   appSaveImageAs: 'Uložit obrázek jako…',

@@ -36,8 +36,8 @@ describe('translate language keys', () => {
   })
 
   it('covers every language the UI itself ships', () => {
-    // 22 locales; the translate menu must be able to offer every one of them
-    expect(TRANSLATE_LANGS).toHaveLength(22)
+    // 23 locales; the translate menu must be able to offer every one of them
+    expect(TRANSLATE_LANGS).toHaveLength(23)
   })
 
   it('names zh-TW explicitly, which no join-then-capitalise rule could express', () => {

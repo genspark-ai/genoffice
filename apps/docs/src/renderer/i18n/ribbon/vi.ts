@@ -25,6 +25,7 @@ export const vi = {
   ribbonLangTraditionalChinese: 'Tiếng Trung (Phồn thể)',
   ribbonLangVietnamese: 'Tiếng Việt',
   ribbonLangTurkish: 'Tiếng Thổ Nhĩ Kỳ',
+  ribbonLangHungarian: 'Tiếng Hungary',
   ribbonAiCreditNote: 'Sử dụng AI và tiêu tốn tín dụng',
   ribbonAiRewriteConfirm:
     'Thao tác này sẽ gọi trợ lý AI: tiêu tốn tín dụng và có thể viết lại toàn bộ nội dung. Tiếp tục? (Bạn sẽ không được hỏi lại nữa.)',

@@ -397,6 +397,7 @@ export const es = {
   appLangTraditionalChinese: 'chino tradicional',
   appLangVietnamese: 'vietnamita',
   appLangTurkish: 'turco',
+  appLangHungarian: 'húngaro',
   appWrapTextMenu: 'Ajustar texto',
   appViewImage: 'Ver imagen',
   appSaveImageAs: 'Guardar imagen como…',

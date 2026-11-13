@@ -390,6 +390,7 @@ export const tr = {
   appLangTraditionalChinese: 'Geleneksel Çince',
   appLangVietnamese: 'Vietnamca',
   appLangTurkish: 'Türkçe',
+  appLangHungarian: 'Macarca',
   appWrapTextMenu: 'Metni Kaydır',
   appViewImage: 'Görüntüyü Görüntüle',
   appSaveImageAs: 'Görüntüyü Farklı Kaydet…',

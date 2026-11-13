@@ -36,6 +36,7 @@ export const strings = {
     ...paneStrings.tr,
     ...aiStrings.tr,
   },
+  hu: { ...appStrings.hu, ...ribbonStrings.hu, ...paneStrings.hu, ...aiStrings.hu },
   'zh-TW': {
     ...appStrings['zh-TW'],
     ...ribbonStrings['zh-TW'],

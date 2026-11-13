@@ -25,6 +25,7 @@ export const ru = {
   ribbonLangHindi: 'хинди',
   ribbonLangVietnamese: 'вьетнамский',
   ribbonLangTurkish: 'турецкий',
+  ribbonLangHungarian: 'венгерский',
   ribbonAiCreditNote: 'Использует ИИ и расходует кредиты',
   ribbonAiRewriteConfirm:
     'Это действие вызывает ИИ: расходуются кредиты, и всё содержимое может быть переписано. Продолжить? (Вопрос больше не появится.)',
