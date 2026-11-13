@@ -31,7 +31,7 @@ const parser = new XMLParser({
 /** Parse an ODF part; null on malformed XML (the caller degrades, never throws). */
 export function parseOdfXml(xml: string): XNode[] | null {
   try {
-    const out = parser.parse(xml)
+    const out = parser.parse(xml, true)
     return Array.isArray(out) ? out : null
   } catch {
     return null
