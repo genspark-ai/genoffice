@@ -28,6 +28,7 @@ import { useDismissablePopover, useEscapeToClose } from '@genoffice/ui'
 import { fileCountLabel, visiblePageCount } from './counts'
 import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
+import { ConfirmDialog } from './ConfirmDialog'
 import { SettingsModal } from './SettingsModal'
 import type { SettingsTarget } from './SettingsModal'
 import { skillUpdateDue } from './IntegrationsPane'
@@ -874,6 +875,7 @@ function AccountEntry({
       }[loginError]
     : null
 
+  const [confirmSignOut, setConfirmSignOut] = useState(false)
   const doLogout = () => {
     setLoggingOut(true)
     statusSeq.current++
@@ -942,10 +944,24 @@ function AccountEntry({
             setSettingsOpen(false)
             startLogin()
           }}
-          onLogout={doLogout}
+          onLogout={() => setConfirmSignOut(true)}
           skillUpdateDue={skillUpdate}
           onSkillUpdateDue={setSkillUpdate}
           target={target}
+        />
+      )}
+      {confirmSignOut && (
+        <ConfirmDialog
+          title={t('confirmSignOutTitle')}
+          body={t('confirmSignOutBody')}
+          confirmLabel={t('logout')}
+          cancelLabel={t('cancel')}
+          danger
+          onCancel={() => setConfirmSignOut(false)}
+          onConfirm={() => {
+            setConfirmSignOut(false)
+            doLogout()
+          }}
         />
       )}
       {!settingsOpen && waiting && authUrl && (
