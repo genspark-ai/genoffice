@@ -319,6 +319,7 @@ export function clipSheetXml(xml: string, budgetChars: number, truncated = false
 /** extract sheet text from an xlsx: one "# SheetName" section per sheet, cells joined with " | " */
 export async function xlsxToText(bytes: Uint8Array, opts: XlsxTextOptions = {}): Promise<string> {
   const maxChars = opts.maxChars ?? Infinity
+  if (maxChars <= 0) return ''
   let used = 0
   // The declared-size pass below is advisory; this metered gate is the one that
   // holds when a part lies about its size (GH #759).
