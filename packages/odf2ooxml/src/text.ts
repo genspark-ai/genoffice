@@ -125,7 +125,6 @@ function runsFromChildren(
         case 'text:reference-mark':
         case 'text:reference-mark-start':
         case 'text:reference-mark-end':
-        case 'text:sequence':
           break
         case 'text:note':
           ctx.drops.add('footnotes')
@@ -154,6 +153,7 @@ function runsFromChildren(
           ctx.drops.add('objects')
           break
         case 'text:page-number':
+        case 'text:sequence':
         case 'text:page-count':
         case 'text:sequence-ref':
         case 'text:bookmark-ref':
