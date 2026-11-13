@@ -984,6 +984,12 @@ export function App() {
   const [showReviewPane, setShowReviewPane] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('print')
   const [readMode, setReadMode] = useState(false)
+  // Story Focus: dim everything but the sentence the caret sits in (the
+  // story-view bar's toggle; the plugin draws the dim ranges)
+  const [storyFocus, setStoryFocus] = useState(false)
+  // the view Story View returns to when it closes (Leave Story, Esc): the one
+  // the document was in before entering
+  const [storyReturnView, setStoryReturnView] = useState<ViewMode>('print')
   const [showGrid, setShowGrid] = useState(false)
   const [splitView, setSplitView] = useState(false)
   const [showPagePreview, setShowPagePreview] = useState(false)
@@ -2152,11 +2158,25 @@ export function App() {
 
   // story view (View ▸ Story View): the plugin draws the margin markers and
   // keeps typed text off the document's hidden formatting, only while the view
-  // mode is story
+  // mode is story; Focus dims everything but the caret's sentence, inside the
+  // view only
   useEffect(() => {
     if (!editor) return
     editor.commands.setStoryViewActive(viewMode === 'story')
-  }, [editor, viewMode])
+    editor.commands.setStoryViewFocus(storyFocus && viewMode === 'story')
+  }, [editor, viewMode, storyFocus])
+
+  // entering Story View records the view it came from, so Leave Story (and Esc)
+  // returns the document to where it was
+  const viewBeforeStoryRef = useRef<ViewMode>('print')
+  useEffect(() => {
+    if (viewMode === 'story') {
+      if (viewBeforeStoryRef.current !== 'story') setStoryReturnView(viewBeforeStoryRef.current)
+      viewBeforeStoryRef.current = 'story'
+    } else {
+      viewBeforeStoryRef.current = viewMode
+    }
+  }, [viewMode])
 
   // window title follows the document, so the OS window list and Switch Window show file names
   useEffect(() => {
@@ -2887,6 +2907,19 @@ export function App() {
   /** which list dialog is open (ribbon galleries and the right-click menu open them) */
   const [listDialog, setListDialog] = useState<ListDialogKind | null>(null)
   const [listRecentsEpoch, setListRecentsEpoch] = useState(0)
+
+  // Story View: Esc leaves, back to the view the document came in from. A
+  // dialog the story bar opened owns this Escape instead (it closes itself).
+  useEffect(() => {
+    if (viewMode !== 'story') return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (showLinkModal || listDialog) return
+      setViewMode(storyReturnView)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [viewMode, showLinkModal, listDialog, storyReturnView])
   const recentLists = useMemo(
     () => ({
       bullets: recentListPresets('bullets'),
@@ -8258,13 +8291,16 @@ export function App() {
     multipage ? 'multipage' : '',
     showMarks ? 'show-marks' : '',
     `view-${viewMode}`,
+    viewMode === 'story' && storyFocus ? 'story-focus-on' : '',
     showGrid ? 'show-grid' : '',
     tableGridlines ? 'show-table-gridlines' : '',
-  ].join(' ')
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <div
-      className={`app ${readMode ? 'read-mode' : ''}${commentsUi.panel ? ' comments-pane-open' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}${balloonsActive && balloonMode === 'revisions' ? ' rev-balloon' : ''}${revisionFilter.insDel ? '' : ' rev-hide-insdel'}${revisionFilter.format ? '' : ' rev-hide-format'}${tcOptions.balloonLines ? '' : ' markup-no-lines'}`}
+      className={`app ${readMode ? 'read-mode' : ''}${viewMode === 'story' ? ' story-chrome' : ''}${commentsUi.panel ? ' comments-pane-open' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}${balloonsActive && balloonMode === 'revisions' ? ' rev-balloon' : ''}${revisionFilter.insDel ? '' : ' rev-hide-insdel'}${revisionFilter.format ? '' : ' rev-hide-format'}${tcOptions.balloonLines ? '' : ' markup-no-lines'}`}
       data-balloons={balloonsActive ? balloonMode : undefined}
       data-comment-cards={commentsUi.cards ? '' : undefined}
       data-comment-focus={commentFocus?.id}
@@ -8765,6 +8801,64 @@ export function App() {
               <button className="read-exit" onClick={() => setReadMode(false)}>
                 {t('appExitReadMode')}
               </button>
+            )}
+            {doc && editor && viewMode === 'story' && !readMode && (
+              <div className="story-bar" role="toolbar" aria-label={t('ribbonStoryView')}>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => editor.chain().focus().toggleMark('bold').run()}
+                >
+                  {t('ribbonMarkerBold')}
+                </button>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => editor.chain().focus().toggleMark('italic').run()}
+                >
+                  {t('ribbonMarkerItalic')}
+                </button>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => setShowLinkModal(true)}
+                >
+                  {t('ribbonLink')}
+                </button>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => setListDialog('bullet')}
+                >
+                  {t('storyBarList')}
+                </button>
+                <span className="story-bar-gap" />
+                <button
+                  type="button"
+                  className={`story-bar-btn${trackChanges ? ' on' : ''}`}
+                  aria-pressed={trackChanges}
+                  disabled={isProtected || trackChangesForced}
+                  onClick={toggleTrackChangesByUser}
+                >
+                  {t('ribbonTrackChanges')}
+                </button>
+                <button
+                  type="button"
+                  className={`story-bar-btn${storyFocus ? ' on' : ''}`}
+                  aria-pressed={storyFocus}
+                  onClick={() => setStoryFocus((v) => !v)}
+                >
+                  {t('storyBarFocus')}
+                </button>
+                <span className="story-bar-count">{t('appWordCountN', { n: wordCount })}</span>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => setViewMode(storyReturnView)}
+                >
+                  {t('storyBarLeave')}
+                </button>
+              </div>
             )}
             {doc && commentsUi.panel && (
               <CommentsPanel

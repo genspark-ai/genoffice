@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
+  storyFocusSentence,
   storyHeadingLevel,
   storyIsQuote,
   storyMarkerFor,
@@ -260,5 +261,142 @@ describe('story view: typing takes the paragraph style', () => {
       { text: 'redq', marks: ['docTextStyle'] },
     ])
     editor.destroy()
+  })
+})
+
+const THREE_SENTENCES = {
+  type: 'doc',
+  content: [
+    {
+      type: 'docParagraph',
+      content: [{ type: 'text', text: 'First one ends here. Second one goes on. Third one too.' }],
+    },
+    { type: 'docParagraph', content: [{ type: 'text', text: 'Another block entirely.' }] },
+  ],
+}
+
+describe('story view Focus: the sentence the caret sits in', () => {
+  it('runs from after the previous terminator to the next one', () => {
+    const text = 'First one ends here. Second one goes on. Third one too.'
+    // the caret on the S of Second: the sentence starts at 21, ends after its dot
+    const [from, to] = storyFocusSentence(text, 21)
+    // the trailing space of the gap rides the next sentence's range
+    expect(text.slice(from, to)).toBe('Second one goes on. ')
+  })
+
+  it('a block without a terminator reads as one sentence', () => {
+    expect(storyFocusSentence('no stops at all', 5)).toEqual([0, 15])
+  })
+
+  it('the CJK terminators end a sentence the same way', () => {
+    const text = '第一句。第二句！第三句'
+    const [from, to] = storyFocusSentence(text, 4)
+    expect(text.slice(from, to)).toBe('第二句！')
+  })
+
+  it('the caret in the gap after a terminator starts the next sentence', () => {
+    const text = 'First one ends here.  Second starts.'
+    // the caret on the second space of the gap: the next sentence is active
+    const [from, to] = storyFocusSentence(text, 21)
+    expect(text.slice(from, to)).toBe('Second starts.')
+  })
+})
+
+describe('story view Focus: the dim ranges', () => {
+  /** the text the view dims, with the caret parked inside the second sentence */
+  function dimmedText(editor: Editor): string {
+    return [...editor.view.dom.querySelectorAll('.story-dim')]
+      .map((el) => el.textContent)
+      .join('\n')
+  }
+
+  it("dims every sentence but the caret's, in every block", () => {
+    const editor = makeEditor(THREE_SENTENCES)
+    editor.commands.setStoryViewActive(true)
+    editor.commands.setStoryViewFocus(true)
+    editor.commands.setTextSelection(23) // inside "Second"
+    const dim = dimmedText(editor)
+    expect(dim).toContain('First one ends here.')
+    expect(dim).toContain('Third one too.')
+    expect(dim).toContain('Another block entirely.')
+    expect(dim).not.toContain('Second')
+    editor.destroy()
+  })
+
+  it('follows the caret: moving repaints the dim around the new sentence', () => {
+    const editor = makeEditor(THREE_SENTENCES)
+    editor.commands.setStoryViewActive(true)
+    editor.commands.setStoryViewFocus(true)
+    editor.commands.setTextSelection(2) // inside "First"
+    expect(dimmedText(editor)).not.toContain('First')
+    expect(dimmedText(editor)).toContain('Second one goes on.')
+    editor.destroy()
+  })
+
+  it('dims nothing while Focus is off, and nothing outside the view', () => {
+    const editor = makeEditor(THREE_SENTENCES)
+    editor.commands.setStoryViewActive(true)
+    editor.commands.setStoryViewFocus(false)
+    expect(editor.view.dom.querySelectorAll('.story-dim')).toHaveLength(0)
+    editor.commands.setStoryViewFocus(true)
+    editor.commands.setStoryViewActive(false)
+    expect(editor.view.dom.querySelectorAll('.story-dim')).toHaveLength(0)
+    editor.destroy()
+  })
+
+  it('a block holding an inline object stays visible when it is the active one', () => {
+    const editor = makeEditor({
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          content: [{ type: 'text', text: 'Plain words here. More words.' }],
+        },
+        {
+          type: 'docParagraph',
+          content: [{ type: 'text', text: 'With an object. ' }, { type: 'docNoteRef' }],
+        },
+      ],
+    } as never)
+    editor.commands.setStoryViewActive(true)
+    editor.commands.setStoryViewFocus(true)
+    editor.commands.setTextSelection(3) // inside the first block
+    // the second block (inline object) dims whole; the active block's sentence
+    // logic ran without touching positions it could not compute
+    expect(dimmedText(editor)).toContain('With an object.')
+    editor.destroy()
+  })
+})
+
+describe('story view frame: the chrome leaves and Focus dims', () => {
+  it('the ribbon and the panes are hidden in the story frame', () => {
+    expect(blocksFor('.story-chrome .ribbon')).toContain('display: none')
+    expect(blocksFor('.story-chrome .ai-dock')).toContain('display: none')
+    expect(blocksFor('.story-chrome .nav-pane')).toContain('display: none')
+    expect(blocksFor('.story-chrome .comments-pane')).toContain('display: none')
+  })
+
+  it('the story canvas uses the themed canvas, not the print-preview one', () => {
+    expect(blocksFor('.story-chrome .editor-scroll')).toContain('var(--canvas)')
+  })
+
+  it('the crop marks belong to the page and do not show here', () => {
+    expect(blocksFor('.view-story .page-wrap::before')).toContain('display: none')
+    expect(blocksFor('.view-story .page-gap-paper::after')).toContain('display: none')
+  })
+
+  it('the dim rides a decoration class scoped to the view', () => {
+    expect(blocksFor('.view-story .story-dim')).toContain('opacity: 0.25')
+  })
+
+  it('the face comes from the writing fonts when they are installed', () => {
+    expect(blocksFor('.view-story')).toContain('Monaspace Neon')
+    expect(blocksFor('.view-story')).toContain('IBM Plex Mono')
+    expect(blocksFor('.view-story')).toContain('system-ui')
+  })
+
+  it('the bar is plain text labels in one row', () => {
+    expect(blocksFor('.story-bar')).toContain('position: fixed')
+    expect(blocksFor('.story-bar-btn')).toContain('font: inherit')
   })
 })
