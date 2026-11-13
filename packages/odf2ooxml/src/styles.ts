@@ -213,7 +213,7 @@ export class OdfStyles {
         if (multiple <= 10) out.lineSpacing = multiple
       } else {
         const fixed = odfLengthToEmu(lineHeight)
-        if (fixed !== null) out.lineAtLeastTw = emuToTwips(fixed)
+        if (fixed !== null) out.lineExactTw = emuToTwips(fixed)
       }
     }
     const atLeast = odfLengthToEmu(a['style:line-height-at-least'])
