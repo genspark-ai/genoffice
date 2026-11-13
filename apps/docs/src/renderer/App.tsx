@@ -6234,6 +6234,19 @@ export function App() {
   }, [editor, save])
 
   useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.code === 'KeyS' || e.key === 's')) {
+        // Handle Save before editor keymaps interpret a non-Latin key as Undo.
+        e.preventDefault()
+        e.stopPropagation()
+        void save(e.shiftKey)
+      }
+    }
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [save])
+
+  useEffect(() => {
     // editing shortcuts only fire when focus is in an editor surface (main
     // ProseMirror, textbox sub-editor, in-place table cell) or nowhere at all —
     // never while typing in the find box, AI input or other form fields
@@ -6244,10 +6257,6 @@ export function App() {
     }
     const handler = (e: KeyboardEvent) => {
       const canEdit = !!editor?.isEditable && focusInEditor()
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault()
-        void save(e.shiftKey)
-      }
       if ((e.metaKey || e.ctrlKey) && e.key === 'o') {
         e.preventDefault()
         void openFile()
