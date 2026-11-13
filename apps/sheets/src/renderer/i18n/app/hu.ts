@@ -420,7 +420,7 @@ export const hu = {
   appPivotTooManyColItems: 'A kimutatásban több mint 1 000 oszlopelem van.',
   appPivotTooManyColLines: 'A kimutatásban több mint 1 000 oszlopsor van.',
   appPivotNeedsValues: 'A kimutatáshoz egy értékbejegyzés szükséges.',
-  appPivotTooManyRowLines: 'A kimutatásban több mint 20 000 sorsor van.',
+  appPivotTooManyRowLines: 'A kimutatásnak több mint 20 000 sora van.',
   appPivotOverlapSource:
     'A kimutatás kimenete átfedné a saját forrástartományát — adj meg másik célcellát (targetCell).',
   appPivotOverlapExisting:

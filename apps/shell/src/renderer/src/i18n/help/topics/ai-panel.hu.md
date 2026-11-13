@@ -30,7 +30,7 @@ Minden szerkesztőben előhívható az AI-panel: jelölj ki valamit, adj egy uta
 
 - A Slidesban, a HTML-ben és a Markdownban a kijelölést elrejtheted a modell elől: kattints rá jobb gombbal ▸ **A kijelölés elrejtése az AI elől**, nevezd el a helyőrzőt, és a modell a helyén a `{{name}}` jelölést fogja olvasni. (A Markdownban ez a menüpont a menüszalagon lévő áthúzott szemű kapcsolóval aktiválható; a HTML-nél a forráspanelen található.)
 - A fájl megőrzi az eredeti szöveget — a mentés, az exportálás és a nyomtatás változatlan marad, és a jelölés az újranyitás után is megmarad. Ugyanez a menüpont fel is fedi a szöveget (a Markdownban erre külön **A kijelölés újbóli megjelenítése az AI számára** menüpont szolgál).
-- A HTML-ben az elemek tartalma, az attribútumértékek és a szkriptek szövegliterálai rejthetők el; a megjelenített oldal soha nem változik.
+- A HTML-ben az elemek tartalma, az attribútumértékek és a szkriptekben lévő szöveges literálok rejthetők el; a megjelenített oldal soha nem változik.
 - A Slidesban teljes képeket, videókat és hangfájlokat is elrejthetsz, a rejtett tartalmú dia pedig sosem kerül elküldésre képernyőképként: az automatikus elrendezés-ellenőrzés kihagyja azt a diát, és ezt jelzi is.
 - Ez csak az alkalmazáson belüli AI-ra vonatkozik — a CLI, az MCP-eszközök és a felület nélküli (headless) exportálás közvetlenül a fájlt olvassa, ezért továbbra is látja a szöveget.
 

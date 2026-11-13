@@ -183,5 +183,5 @@ export const hu = {
   aiStarterAnnouncement: 'Írj egy termékbejelentést',
   aiStarterAnnouncementPrompt: 'Írj nekem egy termékbejelentést. Termék és legfontosabb pontok: ',
   aiStarterGuide: 'Írj egy útmutatót',
-  aiStarterGuidePrompt: 'Írj nekem egy útmutatót. A bemutandó folyamat: ',
+  aiStarterGuidePrompt: 'Írj nekem egy útmutatót. A bemutatandó folyamat: ',
 } satisfies Record<keyof typeof zh, string>

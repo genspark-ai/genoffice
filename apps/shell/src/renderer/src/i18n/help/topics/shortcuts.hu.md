@@ -268,7 +268,7 @@ Az AutoSzum csak macOS-en érhető el. Nyomd meg a ⌘⇧T kombinációt.
 | Csak az aktív munkalap újraszámítása                                       | ⇧F9   | Shift+F9        |
 | A szűrő be- vagy kikapcsolása a kijelölt tartományon                       | ⌘⇧F   |                 |
 
-Az Excel szűrőbillentyűparancsa, a Ctrl+Shift+L, nem csinál semmit Windows vagy Linux alatt. macOS-en nyomd meg a ⌘⇧F kombinációt, vagy bármely platformon használd a szűrőparancsot a menüszalagon.
+Az Excel szűrési billentyűparancsa, a Ctrl+Shift+L, nem csinál semmit Windows vagy Linux alatt. macOS-en nyomd meg a ⌘⇧F kombinációt, vagy bármely platformon használd a szűrőparancsot a menüszalagon.
 
 ### Ablak
 

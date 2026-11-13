@@ -216,7 +216,7 @@ Az AI kérdezése ugyanazt a helyi, teljes szövegű indexet keresi, mint a
 és oldalanként olvassa a fájlokat, így a modell csak a találatokat és a kért szakaszokat látja, az általad választott szolgáltatón keresztül. Emellett meghívhatja a beépített
 `genoffice` CLI-t is, hogy teljes fájlokat építsen; mindegyik fájl kártyaként jelenik meg a válasz alatt, és egy kattintással megnyílik.
 
-### 9 · CLI — a kódoló ügynököded vezérli a GenOffice-t, a saját gépeden
+### 9 · CLI — a kódoló ügynököd vezérli a GenOffice-t, a saját gépeden
 
 A GenOffice egy `genoffice` parancssort és egy ügynök-képességet mellékel. Telepítsd a képességet, és a Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode vagy
 Windsurf valódi Office-fájlokat tud létrehozni, konvertálni, olvasni és szerkeszteni ugyanazokkal a motorokkal, mint az alkalmazások, ablak megnyitása nélkül.

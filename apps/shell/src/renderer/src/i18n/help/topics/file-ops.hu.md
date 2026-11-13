@@ -33,7 +33,7 @@ A **⋯ ▸ Duplikálás** „<név> másolat” nevű fájlt hoz létre ugyanab
 ## Exportálás PDF-be
 
 - **Docs**: Fájl ▸ Exportálás PDF-ként (vagy a menüszalag gombja), a kialakított oldaltördeléssel.
-- **Slides**: az exportálás dianként rasztergrafikává alakít, nagy bemutatóknál előrehaladásjelzővel.
+- **Slides**: az exportálás diánként rasztergrafikává alakít, nagy bemutatóknál előrehaladásjelzővel.
 - **Sheets**: az exportálás a nyomtatási oldaltördelést követi.
 - Az exportálás rejtett ablakban történik, az eredmény pedig oda kerül, ahová te választod.
 
