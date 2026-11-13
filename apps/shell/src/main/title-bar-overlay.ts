@@ -9,7 +9,7 @@ import { tabStripHeight } from '../shared/tab-drag-geometry'
 /// dark fallback is the strip's --wall color.
 ///
 /// Its height has to follow the interface scale too (genoffice#1913): the strip is
-/// `zoom`ed, so a 150% strip is 66px tall and a 44px overlay band would leave
+/// `zoom`ed, so a 150% strip is 60px tall and a 40px overlay band would leave
 /// the caption buttons floating over the document.
 
 export function tabStripOverlay(dark: boolean, uiScale = 1, material = false): TitleBarOverlay {

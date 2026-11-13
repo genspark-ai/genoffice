@@ -103,14 +103,14 @@ body.vib {
   background: transparent;
 }
 
-/* ---- two-pane frame (below the 44px tab bar) ---- */
+/* ---- two-pane frame (below the 40px tab bar) ---- */
 
 .home {
   /* inset shell measured from the reference: 52px rail on the left, 1px hairline,
    * 10px corners, 2px right / 4px bottom gap, top border at y=43 */
   position: relative;
   display: flex;
-  height: calc(100vh - 43px - 4px);
+  height: calc(100vh - 39px - 4px);
   margin: 0 2px 4px 52px;
   border: 1px solid var(--shell-border);
   border-radius: 10px;
@@ -119,7 +119,7 @@ body.vib {
 
 .rail {
   position: fixed;
-  top: 44px;
+  top: 40px;
   bottom: 4px;
   left: 0;
   width: 52px;

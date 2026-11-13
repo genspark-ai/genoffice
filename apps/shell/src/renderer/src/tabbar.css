@@ -21,7 +21,7 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 44px;
+  height: 40px;
   display: flex;
   align-items: stretch;
   background: var(--tabstrip-bg);
@@ -121,7 +121,7 @@ body.overlay-title-bar .tab-bar-drag-spacer {
    * bottom padding centers content in the upper 28px band, on the same
    * line as the hover capsule — measured from Chrome, whose favicons sit
    * 3px above the tab's geometric center */
-  margin-top: 8px;
+  margin-top: 6px;
   /* 12px left = 3px plate inset + 9px icon-to-plate, per Chrome @2x */
   padding: 0 8px 6px 12px;
   /* Chrome tabs shrink under pressure but never grow past 240px */
@@ -371,8 +371,8 @@ body.overlay-title-bar .tab-bar-drag-spacer {
 }
 
 .app-frame-content {
-  /* shell top border is drawn at y=43, under the 44px bar */
-  padding-top: 43px;
+  /* shell top border is drawn at y=39, under the 40px bar */
+  padding-top: 39px;
 }
 
 /* ── Dark mode tab bar overrides ─────────────────────────── */

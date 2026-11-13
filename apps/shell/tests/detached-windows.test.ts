@@ -502,7 +502,7 @@ describe('dockBandFor', () => {
       x: 10,
       y: 20 + 28 - 8,
       width: 100,
-      height: 44 + 16,
+      height: 40 + 16,
     })
     win.shown = false
     expect(detached.dockBandFor(win as never)).toBeNull()

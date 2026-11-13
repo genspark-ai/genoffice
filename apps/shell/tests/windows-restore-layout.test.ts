@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * constructors register are what these tests exercise.
  */
 
-const TAB_STRIP_HEIGHT = 44
+const TAB_STRIP_HEIGHT = 40
 
 const { FakeWindow, detachedWindows } = vi.hoisted(() => {
   const WINDOW_WIDTH = 800
