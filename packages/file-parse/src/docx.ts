@@ -290,7 +290,7 @@ function scanBody(
         if (opening) runHidden = false
         break
       case 'w:vanish':
-        if (opening && !/w:val="(0|false)"/.test(attrs!)) runHidden = true
+        if (opening && !/w:val="(0|false|off)"/.test(attrs!)) runHidden = true
         break
       case 'w:t':
         inText = opening && !selfClose
