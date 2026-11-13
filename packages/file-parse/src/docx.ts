@@ -17,6 +17,7 @@ export interface DocxTextOptions {
  * 19 MB report cost a gigabyte of RSS to index six thousand characters.
  */
 export async function docxToText(bytes: Uint8Array, opts: DocxTextOptions = {}): Promise<string> {
+  if (opts.maxChars !== undefined && opts.maxChars <= 0) return ''
   await assertZipInflatesWithinLimits(bytes)
   const zip = await JSZip.loadAsync(bytes)
   assertZipWithinLimits(zip)
