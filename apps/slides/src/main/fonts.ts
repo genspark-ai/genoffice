@@ -129,7 +129,15 @@ function fontDirs(): string[] {
     case 'win32':
       return ['C:\\Windows\\Fonts', join(homedir(), 'AppData/Local/Microsoft/Windows/Fonts')]
     default:
-      return ['/usr/share/fonts', '/usr/local/share/fonts', join(homedir(), '.fonts')]
+      return [
+        '/usr/share/fonts',
+        '/usr/local/share/fonts',
+        // fontconfig's per-user XDG dir: where desktop "install for this user" lands. Skipping
+        // it makes those families invisible to metrics while Chromium (fontconfig) still draws
+        // them, so a run following Latin text starts too early and CJK glyphs overlap.
+        join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'fonts'),
+        join(homedir(), '.fonts'),
+      ]
   }
 }
 
