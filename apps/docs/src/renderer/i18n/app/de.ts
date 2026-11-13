@@ -403,6 +403,7 @@ export const de = {
   appLangTraditionalChinese: 'Traditionelles Chinesisch',
   appLangVietnamese: 'Vietnamesisch',
   appLangTurkish: 'Türkisch',
+  appLangHungarian: 'Ungarisch',
   appWrapTextMenu: 'Textumbruch',
   appViewImage: 'Bild anzeigen',
   appSaveImageAs: 'Bild speichern unter…',

@@ -21,6 +21,7 @@ import { hi } from './app/hi'
 import { zhTW } from './app/zh-TW'
 import { vi } from './app/vi'
 import { tr } from './app/tr'
+import { hu } from './app/hu'
 
 /** Copy for App.tsx / canvas and edit overlays / renderer root-level modules */
 export const appStrings = defineStrings({
@@ -46,4 +47,5 @@ export const appStrings = defineStrings({
   'zh-TW': zhTW,
   vi,
   tr,
+  hu,
 })

@@ -383,6 +383,7 @@ export const he = {
   appLangTraditionalChinese: 'סינית מסורתית',
   appLangVietnamese: 'וייטנאמית',
   appLangTurkish: 'טורקית',
+  appLangHungarian: 'הונגרית',
   appWrapTextMenu: 'גלישת טקסט',
   appViewImage: 'הצג תמונה',
   appSaveImageAs: 'שמור תמונה בשם…',

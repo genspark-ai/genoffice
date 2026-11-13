@@ -507,6 +507,79 @@ const tMain = createI18n({
     csvKeepFormatDetail:
       'CSV yalnızca tek bir sayfanın düz değerlerini korur — formüller, biçimlendirme ve ek sayfalar .csv dosyasına kaydedilmez.',
   },
+  hu: {
+    filterSpreadsheets: 'Táblázatok',
+    filterXlsx: 'Excel-munkafüzetek',
+    filterXlsm: 'Makróbarát Excel-munkafüzetek',
+    odsImportMsg: 'Átalakítsuk ezt a .{ext} munkafüzetet?',
+    odsImportDetail:
+      'A GenOffice .xlsx fájlokat szerkeszt, az ODF-et nem. Az értékek, képletek és dátumok átjönnek (a képletek Excel-szintaxisra íródnak át, és ami nem alakítható át biztonságosan, az megtartja jelenlegi eredményét). A képek, az egyesített cellák, az oszlopszélességek és a sormagasságok szintén átjönnek; más formázások, például a szegélyek, valamint a diagramok nem kerülnek át. Az eredeti fájl soha nem módosul; az átalakított másolat első mentéskor .xlsx formátumban kerül mentésre.',
+    odsImportConvertBtn: 'Átalakítás és megnyitás',
+    importSkipConfirm: 'Átalakítás a jövőben kérdezés nélkül',
+    dlgAddAttachment: 'Mellékletek hozzáadása',
+    filterSupported: 'Támogatott fájlok',
+    filterAll: 'Minden fájl',
+    errUnsupportedExt: 'Nem támogatott fájltípus: .{ext}',
+    errNotFile: 'nem fájl',
+    errTooLarge: 'túllépi a megengedett {mb} MB-os korlátot',
+    errImageTooLarge: 'a kép túllépi az 5 MB-os korlátot',
+    errUnreadable: 'nem olvasható',
+    errFileTooLarge: 'A fájl túllépi a méretkorlátot',
+    errParseFailed: 'Nem sikerült feldolgozni a fájlt',
+    errImageNoText:
+      'A képmellékletek nem tartalmaznak szöveget; a kép a felhasználó üzenetével együtt lesz elküldve',
+    errNotImage: 'nem támogatott képtípus',
+    errGskNotLoggedIn:
+      'Nem vagy bejelentkezve a Gensparkba: kattints alább a „Bejelentkezés a Gensparkba” gombra, jelentkezz be, majd próbáld újra',
+    errNoApiKey: 'Nincs API-kulcs beállítva a következő szolgáltatóhoz: {provider}',
+    errAiRegion:
+      'Ennek a modellnek a szolgáltatója nem érhető el az aktuális régiódban — válassz egy másik modellt, vagy módosítsd a hálózatot',
+    errAiBusy: 'Az AI-szolgáltatás jelenleg túlterhelt — próbáld újra egy pillanat múlva',
+    errNoModel: 'Nincs modellnév beállítva',
+    errImgAbsPath: 'A kép elérési útjának abszolútnak kell lennie.',
+    errImgNotFound: 'A képfájl nem található: {path}',
+    errImgTooLarge20: 'A kép túllépi a 20 MB-os korlátot, ezért nem szúrható be.',
+    errImgBadType: 'A fájl nem PNG/JPEG/GIF kép.',
+    errDiskChanged:
+      'A munkafüzet a megnyitása után megváltozott a lemezen — ehelyett használd a Mentés másként parancsot.',
+    autosaveFoundTitle: 'Helyreállított verzió található',
+    autosaveDiskNewer:
+      'Megjegyzés: a lemezen lévő fájl a helyreállítási másolat mentése után módosult. A visszaállítás felülírja ezeket az újabb módosításokat.',
+    autosaveFoundBody:
+      'Az előző munkamenetből elmentetlen módosítások maradtak. Visszaállítod az automatikusan mentett verziót? A visszaállítás utáni mentés felülírja az eredeti fájlt.',
+    autosaveRestore: 'Visszaállítás',
+    autosaveDiscard: 'Elvetés',
+    menuFile: 'Fájl',
+    menuOpenWorkbook: 'Munkafüzet megnyitása…',
+    menuSave: 'Mentés',
+    menuSaveAs: 'Mentés másként…',
+    menuExportPdf: 'PDF exportálása…',
+    menuPrint: 'Nyomtatás…',
+    menuClose: 'Bezárás',
+    menuQuit: 'Kilépés',
+    menuEdit: 'Szerkesztés',
+    menuUndo: 'Visszavonás',
+    menuRedo: 'Újra',
+    closeUnsavedMsg: '{count} elmentetlen módosítás',
+    closeUnsavedDetail: 'Ha mentés nélkül zárod be, a módosítások elvesznek.',
+    btnDontSave: 'Mentés nélkül',
+    btnCancel: 'Mégse',
+    csvSaveAsNotice:
+      'A CSV-fájlok nem őrzik meg a formázást — .xlsx formátumban mentve minden módosításod megmarad.',
+    menuExportCsv: 'CSV exportálása…',
+    filterCsv: 'CSV (vesszővel tagolt)',
+    csvFormulaLossMsg:
+      'Ez a munkalap olyan képleteket tartalmaz, amelyeket a CSV nem tud megtartani.',
+    csvFormulaLossDetail:
+      'A CSV csak a sima értékeket őrzi meg — a képletek az aktuális eredményükre egyszerűsödnek, és a formázás elvész.',
+    csvKeepXlsxBtn: 'Mentés .xlsx formátumban',
+    csvContinueBtn: 'Folytatás CSV formátumban',
+    csvActiveSheetOnlyNotice:
+      'A CSV-fájlok egyetlen munkalapot tárolnak — csak az aktív munkalap („{name}”) lesz exportálva.',
+    csvKeepFormatMsg: 'Folytatod a mentést CSV formátumban?',
+    csvKeepFormatDetail:
+      'A CSV csak egyetlen munkalap sima értékeit tartja meg — a képletek, a formázás és az esetleges további munkalapok nem kerülnek elmentésre a .csv fájlba.',
+  },
   ja: {
     filterSpreadsheets: 'スプレッドシート',
     filterXlsx: 'Excel ブック',

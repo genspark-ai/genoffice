@@ -272,6 +272,7 @@ describe('the tab context menu', () => {
       'he',
       'hi',
       'zh-TW',
+      'hu',
     ] as const
     expect(Object.keys(mainMenuStrings).sort()).toEqual([...locales].sort())
     for (const locale of locales) {

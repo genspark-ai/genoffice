@@ -401,6 +401,7 @@ export const fr = {
   appLangTraditionalChinese: 'chinois traditionnel',
   appLangVietnamese: 'vietnamien',
   appLangTurkish: 'turc',
+  appLangHungarian: 'hongrois',
   appWrapTextMenu: 'Habillage du texte',
   appViewImage: "Afficher l'image",
   appSaveImageAs: "Enregistrer l'image sous…",

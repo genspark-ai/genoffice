@@ -395,6 +395,7 @@ export const ms = {
   appLangTraditionalChinese: 'Cina Tradisional',
   appLangVietnamese: 'Vietnam',
   appLangTurkish: 'Turki',
+  appLangHungarian: 'Hungary',
   appWrapTextMenu: 'Lilit Teks',
   appViewImage: 'Lihat Imej',
   appSaveImageAs: 'Simpan Imej Sebagai…',

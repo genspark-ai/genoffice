@@ -24,6 +24,7 @@ export const zh = {
   ribbonLangTraditionalChinese: '繁体中文',
   ribbonLangVietnamese: '越南文',
   ribbonLangTurkish: '土耳其文',
+  ribbonLangHungarian: '匈牙利文',
   ribbonAiCreditNote: '将调用 AI 并消耗额度',
   ribbonAiRewriteConfirm:
     '此操作将调用 AI：会消耗额度，并可能改写整篇内容。是否继续？（确认后不再提示）',

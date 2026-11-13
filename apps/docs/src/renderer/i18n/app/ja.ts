@@ -411,6 +411,7 @@ export const ja = {
   appLangTraditionalChinese: '繁体字中国語',
   appLangVietnamese: 'ベトナム語',
   appLangTurkish: 'トルコ語',
+  appLangHungarian: 'ハンガリー語',
   appWrapTextMenu: '文字列の折り返し',
   appViewImage: '画像を表示',
   appSaveImageAs: '名前を付けて画像を保存…',

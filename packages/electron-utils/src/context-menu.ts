@@ -212,6 +212,15 @@ const LABELS: Record<string, ContextMenuLabels> = {
     copyImage: 'Görüntüyü Kopyala',
     saveImageAs: 'Görüntüyü Farklı Kaydet…',
   },
+  hu: {
+    cut: 'Kivágás',
+    copy: 'Másolás',
+    paste: 'Beillesztés',
+    selectAll: 'Az összes kijelölése',
+    viewImage: 'Kép megtekintése',
+    copyImage: 'Kép másolása',
+    saveImageAs: 'Kép mentése másként…',
+  },
   'zh-TW': {
     cut: '剪下',
     copy: '複製',

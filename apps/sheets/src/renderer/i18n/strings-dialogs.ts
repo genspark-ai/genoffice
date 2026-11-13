@@ -21,6 +21,7 @@ import { hi } from './dialogs/hi'
 import { zhTW } from './dialogs/zh-TW'
 import { vi } from './dialogs/vi'
 import { tr } from './dialogs/tr'
+import { hu } from './dialogs/hu'
 
 /** Copy for the dialogs (advanced filter, cell format, pivot table, header/footer, symbols, slicer…) */
 export const dialogStrings = defineStrings({
@@ -46,4 +47,5 @@ export const dialogStrings = defineStrings({
   'zh-TW': zhTW,
   vi,
   tr,
+  hu,
 })

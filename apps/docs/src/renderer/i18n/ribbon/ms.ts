@@ -25,6 +25,7 @@ export const ms = {
   ribbonLangTraditionalChinese: 'Cina Tradisional',
   ribbonLangVietnamese: 'Vietnam',
   ribbonLangTurkish: 'Turki',
+  ribbonLangHungarian: 'Hungary',
   ribbonAiCreditNote: 'Menggunakan AI dan menggunakan kredit',
   ribbonAiRewriteConfirm:
     'Tindakan ini memanggil AI: menggunakan kredit dan mungkin menulis semula keseluruhan kandungan. Teruskan? (Tidak akan ditanya lagi.)',

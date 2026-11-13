@@ -25,6 +25,7 @@ export const tr = {
   ribbonLangTraditionalChinese: 'Geleneksel Çince',
   ribbonLangVietnamese: 'Vietnamca',
   ribbonLangTurkish: 'Türkçe',
+  ribbonLangHungarian: 'Macarca',
   ribbonAiCreditNote: 'Yapay zeka kullanır ve kredi harcar',
   ribbonAiRewriteConfirm:
     'Bu işlem yapay zeka asistanını çağırır: kredi harcar ve içeriğin tamamını yeniden yazabilir. Devam edilsin mi? (Bir daha sorulmayacak.)',
