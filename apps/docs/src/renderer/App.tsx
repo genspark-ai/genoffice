@@ -984,17 +984,14 @@ export function App() {
   const [showReviewPane, setShowReviewPane] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('print')
   const [readMode, setReadMode] = useState(false)
-  // Read mode is a print-layout reading, so a view pick and Read Mode are
-  // exclusive: picking a view leaves read mode, entering read mode lands on the
-  // print layout — the status bar never lights two views at once, and a click
-  // always changes what the canvas shows
+  // Read mode is a print-layout reading, so a view pick and Read Mode are exclusive
   const switchView = (mode: ViewMode) => {
     setViewMode(mode)
     setReadMode(false)
   }
-  const toggleReadMode = () => {
-    if (!readMode) setViewMode('print')
-    setReadMode(!readMode)
+  const setReadModeExclusive = (v: boolean) => {
+    if (v) setViewMode('print')
+    setReadMode(v)
   }
   const [showGrid, setShowGrid] = useState(false)
   const [splitView, setSplitView] = useState(false)
@@ -2170,10 +2167,7 @@ export function App() {
     editor.commands.setStoryViewActive(viewMode === 'story')
   }, [editor, viewMode])
 
-  // the exclusivity backstop for the paths that bypass the view buttons: a
-  // read-only file opens into read mode straight through file-actions, and that
-  // must land on the print layout instead of stacking a second lit view onto
-  // whatever the status bar already shows
+  // Backstop for paths that bypass the view buttons (read-only opens land in read mode)
   useEffect(() => {
     if (readMode && viewMode !== 'print') setViewMode('print')
   }, [readMode, viewMode])
@@ -7770,7 +7764,7 @@ export function App() {
     onProtectDoc: () => setShowProtectDialog(true),
     onCompare: () => void compareWithFile(),
     onViewMode: switchView,
-    onReadMode: toggleReadMode,
+    onReadMode: setReadModeExclusive,
     onShowGrid: setShowGrid,
     onSplitView: setSplitView,
     onPagePreview: () => setShowPagePreview(true),
@@ -8919,7 +8913,7 @@ export function App() {
                     className={`status-view-btn${readMode ? ' on' : ''}`}
                     data-tip={t('ribbonReadMode')}
                     aria-label={t('ribbonReadMode')}
-                    onClick={() => toggleReadMode()}
+                    onClick={() => setReadModeExclusive(!readMode)}
                   >
                     <IconReadMode size={14} />
                   </button>
