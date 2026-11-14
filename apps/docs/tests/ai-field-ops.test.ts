@@ -214,6 +214,52 @@ describe('insertField', () => {
     ])
   })
 
+  it('inserts a Zotero citation as an ADDIN field Zotero can refresh, and refuses other add-ins', () => {
+    const editor = createEditor([para('See ')])
+    const payload = {
+      citationID: 'abc123',
+      properties: { formattedCitation: '(Charmaz, 2014, S. 45–47)', noteIndex: 0 },
+      citationItems: [
+        {
+          id: 'FQDNECPZ',
+          uris: ['http://zotero.org/users/1/items/FQDNECPZ'],
+          itemData: { id: 'FQDNECPZ', type: 'book', title: 'Constructing grounded theory' },
+          locator: '45-47',
+          label: 'page',
+        },
+      ],
+    }
+    const args = `ZOTERO_ITEM CSL_CITATION ${JSON.stringify(payload)}`
+    const outcome = executeOps(editor, [
+      {
+        op: 'insertField',
+        target: at(0),
+        type: 'ADDIN',
+        args,
+        result: '(Charmaz, 2014, S. 45–47)',
+      },
+    ])
+    expect(outcome.ok, outcome.error).toBe(true)
+    expect(fieldsOf(editor)).toEqual([
+      { text: '(Charmaz, 2014, S. 45–47)', instr: `ADDIN ${args}`, dirty: false },
+    ])
+    // updateFields leaves a citation to Zotero
+    const update = executeOps(editor, [{ op: 'updateFields' }])
+    expect(update.ok, update.error).toBe(true)
+    expect(fieldsOf(editor)[0]!.dirty).toBe(false)
+
+    const refused = (op: Record<string, unknown>) =>
+      executeOps(editor, [{ op: 'insertField', target: at(0), type: 'ADDIN', ...op }]).error
+    expect(refused({ args: 'EN.CITE <EndNote/>', result: 'x' })).toContain('Zotero citation')
+    expect(refused({ args: 'ZOTERO_ITEM CSL_CITATION {nope}', result: 'x' })).toContain(
+      'not valid JSON',
+    )
+    expect(
+      refused({ args: 'ZOTERO_ITEM CSL_CITATION {"citationItems":[]}', result: 'x' }),
+    ).toContain('non-empty citationItems')
+    expect(refused({ args })).toContain('needs result')
+  })
+
   it('needs exactly one paragraph-like target', () => {
     const editor = createEditor([para('a'), para('b')])
     const many = executeOps(editor, [
@@ -407,6 +453,41 @@ describe('field ops through the docx save path', () => {
     expect(outcome.ok, outcome.error).toBe(true)
     expect(fieldsOf(reopened)).toEqual([{ text: 'Summary paragraph.', ref: 'Summary' }])
     expect((await save(reopened, reparsed)).xml).toMatch(dirtyRef)
+  })
+
+  it('a Zotero citation is saved as the Word-plugin field and reopens as one', async () => {
+    const source = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t xml:space="preserve">See </w:t></w:r></w:p>',
+    })
+    const parsed = await parseDocx(source)
+    const editor = createEditor(blocksToPmDoc(parsed.blocks).content as JsonNode[])
+    const json =
+      '{"citationID":"x1","properties":{"plainCitation":"(Charmaz, 2014, p. 45)"},"citationItems":[{"id":1,"uris":["http://zotero.org/users/1/items/FQDNECPZ"],"locator":"45","label":"page"}]}'
+    const outcome = executeOps(editor, [
+      {
+        op: 'insertField',
+        target: at(0),
+        type: 'ADDIN',
+        args: `ZOTERO_ITEM CSL_CITATION ${json}`,
+        result: '(Charmaz, 2014, p. 45)',
+      },
+    ])
+    expect(outcome.ok, outcome.error).toBe(true)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const out = await saveDocx(parsed, plan.saveBlocks)
+    const xml = await (await JSZip.loadAsync(out)).file('word/document.xml')!.async('string')
+    expect(xml).toMatch(
+      /<w:fldChar w:fldCharType="begin"\/><\/w:r><w:r><w:instrText xml:space="preserve"> ADDIN ZOTERO_ITEM CSL_CITATION \{/,
+    )
+    expect(xml).toContain(
+      `<w:instrText xml:space="preserve"> ADDIN ZOTERO_ITEM CSL_CITATION ${json} </w:instrText>`,
+    )
+    expect(xml).toMatch(/<w:t xml:space="preserve">\(Charmaz, 2014, p\. 45\)<\/w:t>/)
+    const reparsed = await parseDocx(out)
+    expect(reparsed.blocks[0]!.runs?.find((r) => r.instrField)).toMatchObject({
+      text: '(Charmaz, 2014, p. 45)',
+      instrField: `ADDIN ZOTERO_ITEM CSL_CITATION ${json}`,
+    })
   })
 
   it('writes dirty complex fields and a bookmark Word can resolve', async () => {
