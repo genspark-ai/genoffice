@@ -66,6 +66,7 @@ interface ListFrame {
 
 interface BlockContext {
   list: ListFrame | null
+  continuation?: boolean
   /** 1-based depth inside the current list (0 outside one) */
   depth: number
 }
@@ -161,20 +162,29 @@ export async function convertOdtToDocx(odt: Uint8Array): Promise<OdtToDocxResult
     frame.maxDepth = Math.max(frame.maxDepth, depth)
     for (const { name, node } of childElements(list)) {
       if (name === 'text:list-item') {
+        let firstParagraph = true
         for (const inner of childElements(node)) {
           if (inner.name === 'text:p') {
-            emitParagraph(inner.node, ctx, drafts, { list: frame, depth }, { type: 'paragraph' })
+            emitParagraph(
+              inner.node,
+              ctx,
+              drafts,
+              { list: frame, depth, continuation: !firstParagraph },
+              { type: 'paragraph' },
+            )
+            firstParagraph = false
           } else if (inner.name === 'text:h') {
             emitParagraph(
               inner.node,
               ctx,
               drafts,
-              { list: frame, depth },
+              { list: frame, depth, continuation: !firstParagraph },
               {
                 type: 'heading',
                 level: clampHeadingLevel(attr(inner.node, 'text:outline-level')),
               },
             )
+            firstParagraph = false
           } else if (inner.name === 'text:list') {
             walkList(inner.node, frame, depth, context)
           } else if (inner.name === 'table:table') {
@@ -232,7 +242,13 @@ export async function convertOdtToDocx(odt: Uint8Array): Promise<OdtToDocxResult
     if (base.type === 'heading') block.level = base.level
     const format = paraFormat(walkCtx.styles, attr(node, 'text:style-name'))
     if (format) block.format = format
-    if (blockContext.list) {
+    if (blockContext.list && blockContext.continuation) {
+      const level = walkCtx.styles.listLevels(blockContext.list.styleName)?.get(blockContext.depth)
+      block.format = {
+        ...block.format,
+        indentLeft: level?.indentLeftTw ?? 720 * blockContext.depth,
+      }
+    } else if (blockContext.list) {
       const frame = blockContext.list
       if (base.type === 'heading') block.type = 'heading'
       else block.type = 'listItem'
@@ -549,12 +565,13 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
     // lists inside cells keep their text as indented paragraphs; a private
     // numbering definition per cell would multiply abstractNums for little gain
     for (const { name, node: item } of childElements(list)) {
-      if (name !== 'text:list-item') continue
+      if (name !== 'text:list-item' && name !== 'text:list-header') continue
       for (const inner of childElements(item)) {
         if (inner.name === 'text:p') {
           emitInto(inner.node, { type: 'paragraph' })
           const block = blocks[blocks.length - 1]
-          block.format = { ...block.format, indentLeft: (block.format?.indentLeft ?? 0) + 720 }
+          if (name === 'text:list-item')
+            block.format = { ...block.format, indentLeft: (block.format?.indentLeft ?? 0) + 720 }
         } else if (inner.name === 'text:list') {
           emitListFlat(inner.node)
         }
