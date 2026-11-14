@@ -167,6 +167,7 @@ import {
   isOpenableDocPath,
 } from '../shared/open-file'
 import { atomicWriteFile } from './atomic-write'
+import { bareFileName } from './file-name'
 import {
   adoptLazyMediaHashes,
   forgetLazyMediaOwner,
@@ -3664,12 +3665,18 @@ export function defaultSaveDir(): string {
   return configuredDefaultSaveDir(app)
 }
 
-/** first free path for fileName inside dir: name.ext, name-2.ext, name-3.ext… */
+/** first free path for fileName inside dir: name.ext, name-2.ext, name-3.ext…
+ *  fileName arrives from renderers and MCP callers as a *suggestion*, so it is
+ *  reduced to its bare name first (file-name.ts): a `..` segment or an
+ *  absolute path must not steer the write out of dir — docs:save-new's
+ *  suggested name had no dialog or grant behind it, and every new-file write
+ *  funnels through here. */
 export function uniquePathIn(dir: string, fileName: string): string {
-  const dot = fileName.lastIndexOf('.')
-  const base = dot > 0 ? fileName.slice(0, dot) : fileName
-  const ext = dot > 0 ? fileName.slice(dot) : ''
-  let candidate = join(dir, fileName)
+  const bare = bareFileName(fileName)
+  const dot = bare.lastIndexOf('.')
+  const base = dot > 0 ? bare.slice(0, dot) : bare
+  const ext = dot > 0 ? bare.slice(dot) : ''
+  let candidate = join(dir, bare)
   for (let i = 2; existsSync(candidate); i++) candidate = join(dir, `${base}-${i}${ext}`)
   return candidate
 }
