@@ -69,9 +69,9 @@ export async function docxToText(bytes: Uint8Array, opts: DocxTextOptions = {}):
 }
 
 async function mainDocumentPath(zip: JSZip): Promise<string | null> {
-  if (zip.file('word/document.xml')) return 'word/document.xml'
+  const conventional = zip.file('word/document.xml') ? 'word/document.xml' : null
   const rels = await zip.file('_rels/.rels')?.async('string')
-  if (!rels) return null
+  if (!rels) return conventional
   const parser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true })
   const relationships = parser.parse(rels).Relationships?.Relationship ?? []
   for (const rel of Array.isArray(relationships) ? relationships : [relationships]) {
@@ -89,7 +89,7 @@ async function mainDocumentPath(zip: JSZip): Promise<string | null> {
     const path = target.replace(/^\//, '')
     if (zip.file(path)) return path
   }
-  return null
+  return conventional
 }
 
 interface StyleFacts {
