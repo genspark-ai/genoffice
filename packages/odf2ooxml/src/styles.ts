@@ -175,6 +175,7 @@ export class OdfStyles {
     if (color) out.color = color
     const shading = odfColorToHex(a['fo:background-color'])
     if (shading) out.shading = shading
+    else if (a['fo:background-color'] === 'transparent') out.shading = undefined
     const fontName = a['style:font-name']
     if (fontName) out.font = this.fonts.get(fontName) ?? fontName
     else if (a['fo:font-family']) out.font = a['fo:font-family'].replace(/^['"]|['"]$/g, '')
