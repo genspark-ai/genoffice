@@ -26,6 +26,7 @@ import {
   COLOR_BY_INDEX,
   characterFormattingOf,
   shadingFillOf,
+  type CharacterFormatting,
   type FormattedParagraph,
   type Shading,
   type FormattedRun,
@@ -35,6 +36,8 @@ import {
 } from './formatting'
 import type { HeaderFooterStory, SectionHeaderFooter } from './headers'
 import { fontNamesFor } from './fonts'
+import { legacyStyleId } from './styles'
+import type { LegacyStyleDef } from './resolve'
 import type { LegacyNote, NoteKind } from './notes'
 import { EMU_PER_TWIP, type ImageBlock } from './images'
 import {
@@ -121,6 +124,9 @@ const UNDERLINE_KINDS = new Set([
 export function toDocxRun(run: FormattedRun): Run {
   const formatting = run.formatting
   const out: Run = { text: run.text }
+  // the run's character style (w:rStyle) — the resolver stamped the id only
+  // when the style exists and is not the null "Default Paragraph Font"
+  if (formatting.styleId) out.styleId = formatting.styleId
   if (formatting.bold) out.bold = true
   if (formatting.italic) out.italic = true
   if (formatting.rtl) out.rtl = true
@@ -404,7 +410,10 @@ function paragraphBlock(entry: {
     runs: paragraph.runs.map(toDocxRun),
   }
   if (entry.list) block.list = { ...entry.list }
-  if (entry.styleId) block.styleId = entry.styleId
+  // the notes pass their own dedicated style; a body paragraph references the
+  // legacy stylesheet entry the resolver stamped onto its formatting
+  const styleId = entry.styleId ?? paragraph.formatting.styleId
+  if (styleId) block.styleId = styleId
   const format = toParaFormat(paragraph.formatting)
   if (format) block.format = format
   return block
@@ -1519,6 +1528,49 @@ function settingsXml(
   )
 }
 
+/** The pPr of a style definition: the chain-resolved formatting serialized
+    through the same paragraph formatter the body uses (a synthetic empty
+    paragraph, keeping element order and attribute spellings identical). */
+function stylePPrXml(formatting: ParagraphFormatting): string | undefined {
+  const format = toParaFormat(formatting)
+  if (!format) return undefined
+  const xml = generateParagraphXml({ type: 'paragraph', runs: [], format }, GENERATE_CONTEXT)
+  return /<w:pPr>([\s\S]*?)<\/w:pPr>/.exec(xml)?.[1]
+}
+
+/** The rPr element of a style definition (paragraph styles' CHPX layer, or a
+    character style's whole chain): the same run-model merge the paragraph mark
+    uses. Returns the complete <w:rPr> element, or undefined when empty. */
+function styleRPrXml(formatting: CharacterFormatting | undefined): string | undefined {
+  if (!formatting) return undefined
+  const rPr = mergeRPrModel('', toDocxRun({ text: '', formatting }), false)
+  return rPr === '' ? undefined : rPr
+}
+
+/** w:style definitions for the legacy stylesheet entries. Ids are w97-<istd>
+    (styles.ts legacyStyleId), names are the source document's own, and
+    basedOn links only point at bases that are emitted too (Normal is the
+    template's own and the null character style is never a base reference). */
+function styleDefsXml(defs: LegacyStyleDef[]): string {
+  const emitted = new Set(defs.map((def) => def.istd))
+  return defs
+    .map((def) => {
+      const parts = [`<w:style w:type="${def.kind}" w:styleId="${legacyStyleId(def.istd)}">`]
+      parts.push(`<w:name w:val="${escapeXmlText(def.name)}"/>`)
+      if (def.basedOn !== undefined && emitted.has(def.basedOn))
+        parts.push(`<w:basedOn w:val="${legacyStyleId(def.basedOn)}"/>`)
+      if (def.kind === 'paragraph') {
+        const pPr = def.paragraph ? stylePPrXml(def.paragraph) : undefined
+        if (pPr) parts.push(`<w:pPr>${pPr}</w:pPr>`)
+      }
+      const rPr = styleRPrXml(def.character)
+      if (rPr) parts.push(rPr)
+      parts.push('</w:style>')
+      return parts.join('')
+    })
+    .join('')
+}
+
 /**
  * The blank template's docDefaults are docx-engine's authoring defaults; a
  * converted .doc gets Word 97's (10pt, no space after, single spacing) plus
@@ -1528,6 +1580,7 @@ function convertedStylesXml(
   styles: string,
   languages: { latin?: string; eastAsia?: string },
   noteKinds: NoteKind[] = [],
+  styleDefs: LegacyStyleDef[] = [],
 ): string {
   let out = styles
     .replace(
@@ -1546,8 +1599,9 @@ function convertedStylesXml(
       '/>'
     out = out.replace('</w:rPr></w:rPrDefault>', lang + '</w:rPr></w:rPrDefault>')
   }
-  if (noteKinds.length > 0)
-    out = out.replace('</w:styles>', noteKinds.map(noteStylesXml).join('') + '</w:styles>')
+  const extra =
+    noteKinds.map(noteStylesXml).join('') + (styleDefs.length > 0 ? styleDefsXml(styleDefs) : '')
+  if (extra !== '') out = out.replace('</w:styles>', extra + '</w:styles>')
   return out
 }
 
@@ -1738,6 +1792,7 @@ export async function writeLegacyDocx(
   model: LegacyDocModel,
   layout?: LegacyDocLayout,
   body?: LegacyDocBody,
+  styleDefs: LegacyStyleDef[] = [],
 ): Promise<Uint8Array> {
   const zip = await JSZip.loadAsync(await buildBlankDocx())
   const documentFile = zip.file(DOCUMENT_PATH)
@@ -1917,6 +1972,7 @@ export async function writeLegacyDocx(
         await stylesFile.async('string'),
         dominantLanguages(model.paragraphs),
         noteKinds,
+        styleDefs,
       ),
     )
 
@@ -2107,10 +2163,14 @@ export function conversionWarnings(
 
 /**
  * Read a legacy .doc and convert it into a .docx. Documents with a stylesheet
- * are read through the style resolver (stage 3b), so style-based formatting is
- * written as direct formatting; styles themselves are not emitted as .docx
- * styles yet. Every section's geometry and header/footer stories are written;
- * the sectPr of all but the last section sits in its last paragraph.
+ * are read through the style resolver (stage 3b): style-based formatting is
+ * written as direct formatting, and every defined stylesheet entry is emitted
+ * as a real w:style the paragraphs and runs reference through w:pStyle /
+ * w:rStyle (the direct formatting carries the same properties the style
+ * contributes, so the rendering is unchanged while the styles gallery and
+ * style edits work on the converted file). Every section's geometry and
+ * header/footer stories are written; the sectPr of all but the last section
+ * sits in its last paragraph.
  */
 export async function convertLegacyDocToDocx(
   bytes: Uint8Array,
@@ -2119,9 +2179,9 @@ export async function convertLegacyDocToDocx(
     return { docx: bytes, warnings: ['the file is already Office Open XML; it was kept as is'] }
   // dynamic import keeps the module graph acyclic: index.ts re-exports this file
   const { readLegacyDoc } = await import('./index')
-  const { model, layout, body, stylesResolved } = readLegacyDoc(bytes)
+  const { model, layout, body, stylesResolved, styleDefs } = readLegacyDoc(bytes)
   const tablesHandled = body.blocks.some((block) => block.type === 'table')
-  const docx = await writeLegacyDocx(model, layout, body)
+  const docx = await writeLegacyDocx(model, layout, body, styleDefs)
   const warnings = conversionWarnings(model, { stylesResolved, layout, tablesHandled })
   for (const warning of body.warnings) if (!warnings.includes(warning)) warnings.push(warning)
   return { docx, warnings }

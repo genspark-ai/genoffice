@@ -31,7 +31,7 @@ import {
 } from './formatting'
 import { fontNamesFor, parseFontTable } from './fonts'
 import { iterateSprms, readSprmU16 } from './sprm'
-import { parseStsh, type Style, type StyleSheet } from './styles'
+import { legacyStyleId, parseStsh, type Style, type StyleSheet } from './styles'
 import { createWordControlMapper } from './text'
 
 /** the style index Word applies to paragraphs with no PAPX / no explicit style */
@@ -101,6 +101,15 @@ function characterStyleIndex(sprms: Uint8Array): number | undefined {
   return istd
 }
 
+/** a stylesheet slot carries a definition worth emitting/referencing: not an
+    empty cbStd == 0 placeholder */
+function styleIsDefined(style: Style | undefined): boolean {
+  return (
+    style !== undefined &&
+    (style.name !== '' || style.papxSprms.length > 0 || style.chpxSprms.length > 0)
+  )
+}
+
 function resolveParagraphFormatting(
   istd: number,
   sprms: Uint8Array,
@@ -112,6 +121,10 @@ function resolveParagraphFormatting(
     applyParagraphGrpprl(formatting, style.papxSprms, resolver.context, 'inherit')
   applyParagraphGrpprl(formatting, sprms, resolver.context, 'inherit')
   formatting.styleIndex = istd
+  // the writer references the style through this id; istd 0 is Normal, which
+  // the blank template already defines, so it is never emitted nor referenced
+  if (istd !== DEFAULT_PARAGRAPH_STYLE_ISTD && styleIsDefined(resolver.styles.styles.get(istd)))
+    formatting.styleId = legacyStyleId(istd)
   return formatting
 }
 
@@ -121,6 +134,10 @@ function suppressedTocStyle(styles: StyleSheet, istd: number, inTocLink: boolean
   const sti = styles.styles.get(istd)?.sti
   return sti === STI_HYPERLINK || sti === STI_FOLLOWED_HYPERLINK
 }
+
+/** Word's built-in heading style ids: sti 1..9 are heading 1..9 */
+const STI_HEADING_FIRST = 1
+const STI_HEADING_LAST = 9
 
 function resolveCharacterFormatting(
   sprms: Uint8Array,
@@ -152,6 +169,18 @@ function resolveCharacterFormatting(
       'a run character style',
     ))
       applyCharacterGrpprl(formatting, style.chpxSprms, 'inherit')
+    // the run carries the character style through this id (w:rStyle); istd 10
+    // ("Default Paragraph Font") is the null style and is never referenced,
+    // and a Hyperlink-family style is implied by the run's own link (the
+    // engine convention: rStyle Hyperlink is written by the generator)
+    const referencedStyle = resolver.styles.styles.get(characterIstd)
+    if (
+      characterIstd !== DEFAULT_CHARACTER_STYLE_ISTD &&
+      styleIsDefined(referencedStyle) &&
+      referencedStyle!.sti !== STI_HYPERLINK &&
+      referencedStyle!.sti !== STI_FOLLOWED_HYPERLINK
+    )
+      formatting.styleId = legacyStyleId(characterIstd)
   }
   applyCharacterGrpprl(formatting, sprms, 'inherit')
   if (resolver.styles.fonts) {
@@ -164,6 +193,83 @@ function resolveCharacterFormatting(
     if (names) formatting.fontNames = names
   }
   return formatting
+}
+
+/** A stylesheet entry for the .docx writer's styles.xml: the style's own chain
+    (base first, the same layering the direct-formatting resolution uses)
+    resolved into formatting structs. The writer serializes these into
+    w:style definitions whose ids come from styles.ts legacyStyleId. */
+export interface LegacyStyleDef {
+  istd: number
+  kind: 'paragraph' | 'character'
+  name: string
+  basedOn?: number
+  /** the chain-resolved paragraph properties (paragraph styles) */
+  paragraph?: ParagraphFormatting
+  /** the chain-resolved run properties (a paragraph style's CHPX layer, or a
+      character style's whole chain) */
+  character?: CharacterFormatting
+}
+
+/** Resolve every defined style of the stylesheet into a LegacyStyleDef.
+    Normal (paragraph istd 0) is skipped — the blank .docx template already
+    defines it and its chain is baked into docDefaults. */
+export function legacyStyleDefs(
+  styles: StyleSheet,
+  context: ParagraphContext,
+  warnings: string[] = [],
+): LegacyStyleDef[] {
+  const warn = warnOnce(warnings)
+  const styleFonts = (formatting: CharacterFormatting): void => {
+    if (!styles.fonts) return
+    const names = fontNamesFor(styles.fonts, {
+      ascii: formatting.ftcAscii,
+      hAnsi: formatting.ftcHAnsi,
+      eastAsia: formatting.ftcEastAsia,
+      cs: formatting.ftcBi,
+    })
+    if (names) formatting.fontNames = names
+  }
+  const defs: LegacyStyleDef[] = []
+  for (const style of styles.styles.values()) {
+    if (!styleIsDefined(style)) continue
+    // Normal is the blank template's own style, and the Hyperlink family is
+    // provided by the template too (the generator implies it on link runs)
+    if (style.kind === 'paragraph' && style.istd === DEFAULT_PARAGRAPH_STYLE_ISTD) continue
+    if (style.sti === STI_HYPERLINK || style.sti === STI_FOLLOWED_HYPERLINK) continue
+    const chain = styleChain(styles, style.istd, warn, `style ${style.istd}`)
+    if (chain.length === 0) continue
+    const def: LegacyStyleDef = {
+      istd: style.istd,
+      kind: style.kind === 'paragraph' ? 'paragraph' : 'character',
+      name: style.name,
+      ...(style.basedOn !== undefined ? { basedOn: style.basedOn } : {}),
+    }
+    if (style.kind === 'paragraph') {
+      const paragraph: ParagraphFormatting = {}
+      for (const entry of chain)
+        applyParagraphGrpprl(paragraph, entry.papxSprms, context, 'inherit')
+      delete paragraph.styleIndex
+      delete paragraph.styleId
+      // Word's built-in heading styles carry the outline level the sti maps
+      // to; a legacy PAPX sprmSOutLvl (already resolved) wins when present
+      if (
+        paragraph.outlineLevel === undefined &&
+        style.sti >= STI_HEADING_FIRST &&
+        style.sti <= STI_HEADING_LAST
+      )
+        paragraph.outlineLevel = style.sti - 1
+      if (Object.keys(paragraph).length > 0) def.paragraph = paragraph
+    }
+    const character: CharacterFormatting = {}
+    for (const entry of chain) applyCharacterGrpprl(character, entry.chpxSprms, 'inherit')
+    styleFonts(character)
+    delete character.styleIndex
+    delete character.styleId
+    if (Object.keys(character).length > 0) def.character = character
+    defs.push(def)
+  }
+  return defs
 }
 
 /** The stylesheet of a document with its font table attached (undefined without an STSH). */
