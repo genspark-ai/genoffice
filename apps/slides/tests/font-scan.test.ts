@@ -45,6 +45,24 @@ describe('scanFontDirs', () => {
     ).toEqual([{ kind: 'cloud', roots: [] }])
   })
 
+  it('walks vendor subdirs (Linux keeps every font two levels down)', () => {
+    // /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf, ~/.local/share/fonts/ms-win10/msyh.ttc
+    const root = join(tmp, 'nested')
+    mkdirSync(join(root, 'truetype', 'dejavu'), { recursive: true })
+    mkdirSync(join(root, 'opentype', 'noto'), { recursive: true })
+    mkdirSync(join(root, 'ms-win10'), { recursive: true })
+    writeFileSync(join(root, 'truetype', 'dejavu', 'DejaVuSans.ttf'), '')
+    writeFileSync(join(root, 'opentype', 'noto', 'NotoSansCJK-Regular.ttc'), '')
+    writeFileSync(join(root, 'ms-win10', 'msyhbd.ttf'), '')
+    writeFileSync(join(root, 'truetype', 'dejavu', 'readme.txt'), '')
+    const [r] = scanFontDirs([{ kind: 'flat', dir: root }], 5000)
+    expect(r && r.kind === 'flat' ? r.files.sort() : null).toEqual([
+      join('ms-win10', 'msyhbd.ttf'),
+      join('opentype', 'noto', 'NotoSansCJK-Regular.ttc'),
+      join('truetype', 'dejavu', 'DejaVuSans.ttf'),
+    ])
+  })
+
   it('returns at the deadline instead of blocking on unfinished dirs', () => {
     const t0 = Date.now()
     const out = scanFontDirs([{ kind: 'flat', dir: flat }], 0)
