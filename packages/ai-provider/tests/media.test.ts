@@ -474,6 +474,59 @@ describe('generateImageWithProvider (vendor shapes)', () => {
       generateImageWithProvider('minimax', cfg('image-01'), { prompt: 'x' }),
     ).rejects.toThrow(/1004 auth/)
   })
+
+  it('MiniMax H3-Image: OpenAI-Images shape on /v1/images/generations, b64 result', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_B64 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await generateImageWithProvider('minimax', cfg('MiniMax-H3-Image'), {
+      prompt: 'a fox',
+      aspectRatio: '16:9',
+    })
+    expect(out.mime).toBe('image/png')
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://api.minimax.io/v1/images/generations')
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      model: 'MiniMax-H3-Image',
+      prompt: 'a fox',
+      n: 1,
+      // the documented default is 4K — explicitly kept at 2K
+      area: '2K',
+      response_format: 'b64_json',
+      aspect_ratio: '16:9',
+    })
+  })
+
+  it('MiniMax H3-Image: references ride /v1/images/edits as data URLs; URL result downloaded', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/images/edits')
+        ? jsonResponse({ data: [{ url: 'https://cdn.example/x.png' }] })
+        : new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await generateImageWithProvider('minimax', cfg('MiniMax-H3-Image-Highspeed'), {
+      prompt: 'a fox in this style',
+      references: [{ bytes: PNG, mime: 'image/png' }],
+    })
+    expect(out.mime).toBe('image/png')
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://api.minimax.io/v1/images/edits')
+    const body = JSON.parse(init.body as string)
+    expect(body.model).toBe('MiniMax-H3-Image-Highspeed')
+    expect(body.images).toEqual([{ image_url: `data:image/png;base64,${PNG_B64}` }])
+    expect((fetchMock.mock.calls[1] as unknown as [string])[0]).toBe('https://cdn.example/x.png')
+  })
+
+  it('MiniMax H3-Image: more than 16 references refuses without a request', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_B64 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      generateImageWithProvider('minimax', cfg('MiniMax-H3-Image'), {
+        prompt: 'x',
+        references: Array.from({ length: 17 }, () => ({ bytes: PNG, mime: 'image/png' })),
+      }),
+    ).rejects.toThrow(/16 reference/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })
 
 describe('analyzeMediaWithProvider', () => {

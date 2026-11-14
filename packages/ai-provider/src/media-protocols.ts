@@ -412,18 +412,27 @@ async function generateImageDashscope(
 
 const MINIMAX_RATIOS = new Set(['1:1', '16:9', '4:3', '3:2', '2:3', '3:4', '9:16', '21:9'])
 
+/** H3-Image takes any X:Y up to 3:1 on its endpoints, but the UI vocabulary is
+ *  this shared set, so the same whitelist covers both wire shapes. */
+function isMiniMaxH3Image(model: string): boolean {
+  return /^minimax-h3-image/i.test(model)
+}
+
 async function generateImageMinimax(
   config: AiMediaProviderConfig,
   model: string,
   input: GenerateImageInput,
   signal: AbortSignal,
 ): Promise<MediaBlob> {
+  const base = trimSlash(config.baseUrl || MINIMAX_BASE_URL)
+  if (isMiniMaxH3Image(model)) {
+    return generateImageMinimaxH3(config, base, model, input, signal)
+  }
   if (input.references?.length) {
     throw new Error(
       'MiniMax image-01 here generates from the prompt alone; pick another image provider for edits.',
     )
   }
-  const base = trimSlash(config.baseUrl || MINIMAX_BASE_URL)
   const ratio =
     input.aspectRatio && MINIMAX_RATIOS.has(input.aspectRatio) ? input.aspectRatio : undefined
   const resp = await aiFetch(endpointUrl(base, '/image_generation'), {
@@ -452,6 +461,48 @@ async function generateImageMinimax(
   const url = (data.image_urls as unknown[] | undefined)?.[0]
   if (typeof url === 'string' && url) return downloadImage('Image generation failed:', url, signal)
   throw new Error(`Image generation returned no image: ${JSON.stringify(json).slice(0, 200)}`)
+}
+
+/** H3-Image speaks the OpenAI-Images shape (platform docs 2026-11-12): text to
+ *  image on /v1/images/generations, edits with 1-16 source images (data URLs
+ *  accepted) on /v1/images/edits, answers in data[].b64_json|url. */
+async function generateImageMinimaxH3(
+  config: AiMediaProviderConfig,
+  base: string,
+  model: string,
+  input: GenerateImageInput,
+  signal: AbortSignal,
+): Promise<MediaBlob> {
+  const refs = input.references ?? []
+  if (refs.length > 16) {
+    throw new Error('MiniMax H3-Image takes at most 16 reference images.')
+  }
+  const ratio =
+    input.aspectRatio && MINIMAX_RATIOS.has(input.aspectRatio) ? input.aspectRatio : undefined
+  // The endpoints are not idempotent — the reference notes a retry bills a
+  // second generation — and aiFetch re-sends the request once through its
+  // rescue fetch on a transport failure or a block page. Accepted: the call
+  // is one-off and user-initiated.
+  const resp = await aiFetch(
+    endpointUrl(base, refs.length ? '/images/edits' : '/images/generations'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...bearer(config) },
+      body: JSON.stringify({
+        model,
+        prompt: input.prompt,
+        n: 1,
+        // the documented default is 4K (5440×3072 for 16:9, back as base64) —
+        // the other providers here ask for roughly 1K–2K, so pin 2K
+        area: '2K',
+        response_format: 'b64_json',
+        ...(ratio ? { aspect_ratio: ratio } : {}),
+        ...(refs.length ? { images: refs.map((ref) => ({ image_url: dataUrl(ref) })) } : {}),
+      }),
+      signal,
+    },
+  )
+  return openAiImageResult('Image generation failed:', resp, signal)
 }
 
 // ── OpenAI-compatible chat understanding ───────────────────────────
