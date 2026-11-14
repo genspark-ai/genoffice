@@ -317,6 +317,66 @@ describe('wpg group children', () => {
     expect(star.inlineExtentPx).toBeUndefined()
   })
 
+  // legacy .doc diagrams converted by Word keep their VML coordsize as the
+  // group's child space: chExt is a few hundred units for a ~1 inch group
+  const smallUnitGroup = (children: string): string =>
+    `<w:p><w:r><w:drawing><wp:anchor behindDoc="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1">` +
+    `<wp:simplePos x="0" y="0"/>` +
+    `<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>` +
+    `<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>` +
+    `<wp:extent cx="742950" cy="200025"/><wp:wrapNone/>` +
+    `<wp:docPr id="15" name="Group 210"/>` +
+    `<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup">` +
+    `<wpg:wgp ${WPG_NS} ${WPS_NS}><wpg:cNvGrpSpPr/><wpg:grpSpPr>` +
+    `<a:xfrm><a:off x="0" y="0"/><a:ext cx="742950" cy="200025"/>` +
+    `<a:chOff x="4155" y="2580"/><a:chExt cx="1590" cy="390"/></a:xfrm>` +
+    `</wpg:grpSpPr>${children}</wpg:wgp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>`
+  const sx = 742950 / 1590
+  const sy = 200025 / 390
+
+  it('sizes children in drawing space when the group child space uses small units', async () => {
+    const xml = smallUnitGroup(wsp({ prst: 'ellipse', offX: 4230, offY: 2685, cx: 195, cy: 210 }))
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const [box] = doc.blocks[0].textboxes!
+    expect(box.widthPx).toBe(Math.round((195 * sx) / 9525))
+    expect(box.heightPx).toBe(Math.round((210 * sy) / 9525))
+    expect(box.widthPx).toBeGreaterThan(0)
+    expect(box.offsetXEmu).toBe(Math.round((4230 - 4155) * sx))
+  })
+
+  it('keeps a gradient rect whose child-space height only looks like a thin rule', async () => {
+    // 390 units is 200025 EMU (21 px) once scaled: a real shape, not a decorative rule
+    const gradientRect =
+      `<wps:wsp><wps:cNvPr id="938119248" name="Rectangle 196"/><wps:cNvSpPr/><wps:spPr>` +
+      `<a:xfrm><a:off x="4155" y="2580"/><a:ext cx="1590" cy="390"/></a:xfrm>` +
+      `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
+      `<a:gradFill rotWithShape="0"><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs>` +
+      `<a:gs pos="100000"><a:srgbClr val="999999"/></a:gs></a:gsLst><a:lin ang="5400000" scaled="1"/></a:gradFill>` +
+      `<a:ln w="12700"><a:solidFill><a:srgbClr val="666666"/></a:solidFill></a:ln>` +
+      `</wps:spPr><wps:bodyPr/></wps:wsp>`
+    const doc = await parseDocx(await buildDocx({ bodyXml: smallUnitGroup(gradientRect) }))
+    const boxes = doc.blocks[0].textboxes
+    expect(boxes?.length).toBe(1)
+    expect(boxes![0].widthPx).toBe(Math.round(742950 / 9525))
+    expect(boxes![0].heightPx).toBe(Math.round(200025 / 9525))
+    expect(boxes![0].borderColor).toBe('666666')
+  })
+
+  it('sizes a grouped connector in drawing space', async () => {
+    const line = wsp({
+      prst: 'straightConnector1',
+      offX: 4200,
+      offY: 2580,
+      cx: 0,
+      cy: 390,
+      ln: '<a:ln w="9525"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>',
+    })
+    const doc = await parseDocx(await buildDocx({ bodyXml: smallUnitGroup(line) }))
+    const [box] = doc.blocks[0].textboxes!
+    expect(box.prst).toBe('line')
+    expect(box.heightPx).toBe(Math.round(200025 / 9525))
+  })
+
   it('an inline group reserves its extent height for the anchor line (children still float)', async () => {
     const inline = GROUP_PARA.replace(
       /<wp:anchor[^>]*>[\s\S]*?<wp:wrapNone\/>/,

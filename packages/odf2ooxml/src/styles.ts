@@ -51,6 +51,7 @@ export interface OdfListLevel {
 
 interface StyleDef {
   family: string
+  fontSizePercent?: number
   parent?: string
   text?: OdfTextProps
   para?: OdfParaProps
@@ -121,8 +122,12 @@ export class OdfStyles {
       return
     }
     const props = this.readProps(node)
+    const textProperties = firstChild(node, 'style:text-properties')
+    const fontSize = textProperties ? attr(textProperties, 'fo:font-size') : undefined
+    const percent = fontSize && /^(\d+(?:\.\d+)?)%$/.exec(fontSize.trim())
     this.defs.set(`${family}:${name}`, {
       family,
+      fontSizePercent: percent ? Number(percent[1]) : undefined,
       parent: attr(node, 'style:parent-style-name'),
       text: props.text,
       para: props.para,
@@ -159,8 +164,8 @@ export class OdfStyles {
       out.bold = a['fo:font-weight'] === 'bold'
     else if (/^[1-9]00$/.test(a['fo:font-weight'] ?? ''))
       out.bold = Number(a['fo:font-weight']) >= 600
-    if (a['fo:font-style'] === 'italic' || a['fo:font-style'] === 'normal')
-      out.italic = a['fo:font-style'] === 'italic'
+    if (['italic', 'oblique', 'normal'].includes(a['fo:font-style']))
+      out.italic = a['fo:font-style'] !== 'normal'
     if (a['style:text-underline-type'] !== undefined) {
       out.underline = a['style:text-underline-type'] !== 'none'
     } else if (a['style:text-underline-style'] !== undefined) {
@@ -177,6 +182,7 @@ export class OdfStyles {
     if (color) out.color = color
     const shading = odfColorToHex(a['fo:background-color'])
     if (shading) out.shading = shading
+    else if (a['fo:background-color'] === 'transparent') out.shading = undefined
     const fontName = a['style:font-name']
     if (fontName) out.font = this.fonts.get(fontName) ?? fontName
     else if (a['fo:font-family']) out.font = a['fo:font-family'].replace(/^['"]|['"]$/g, '')
@@ -184,6 +190,7 @@ export class OdfStyles {
     if (position) {
       if (/^super/i.test(position.trim())) out.vertAlign = 'superscript'
       else if (/^sub/i.test(position.trim())) out.vertAlign = 'subscript'
+      else if (/^0%(?:\s|$)/.test(position.trim())) out.vertAlign = undefined
     }
     const transform = a['style:text-transform'] ?? a['fo:text-transform']
     if (transform === 'uppercase') out.caps = 'all'
@@ -215,7 +222,7 @@ export class OdfStyles {
         if (multiple <= 10) out.lineSpacing = multiple
       } else {
         const fixed = odfLengthToEmu(lineHeight)
-        if (fixed !== null) out.lineAtLeastTw = emuToTwips(fixed)
+        if (fixed !== null) out.lineExactTw = emuToTwips(fixed)
       }
     }
     const atLeast = odfLengthToEmu(a['style:line-height-at-least'])
@@ -228,7 +235,8 @@ export class OdfStyles {
     if (right !== null) out.indentRightTw = emuToTwips(right)
     const first = odfLengthToEmu(a['fo:text-indent'])
     if (first !== null) out.indentFirstLineTw = emuToTwips(first)
-    if (a['fo:break-before'] === 'page') out.pageBreakBefore = true
+    if (a['fo:break-before'] === 'page' || a['fo:break-before'] === 'auto')
+      out.pageBreakBefore = a['fo:break-before'] === 'page'
     return Object.keys(out).length > 0 ? out : undefined
   }
 
@@ -265,8 +273,12 @@ export class OdfStyles {
   }
 
   /** text/paragraph props for a style name, resolved along the parent chain. */
-  textProps(styleName: string | undefined, families: readonly string[]): OdfTextProps | null {
-    return this.resolve(styleName, families).text
+  textProps(
+    styleName: string | undefined,
+    families: readonly string[],
+    includeDefaults = true,
+  ): OdfTextProps | null {
+    return this.resolve(styleName, families, includeDefaults).text
   }
 
   paraProps(styleName: string | undefined, families: readonly string[]): OdfParaProps | null {
@@ -276,6 +288,7 @@ export class OdfStyles {
   private resolve(
     styleName: string | undefined,
     families: readonly string[],
+    includeDefaults = true,
   ): { text: OdfTextProps | null; para: OdfParaProps | null } {
     const chain: StyleDef[] = []
     const seen = new Set<string>()
@@ -287,11 +300,17 @@ export class OdfStyles {
       chain.push(def)
       current = def.parent
     }
-    let text: OdfTextProps = { ...(this.defaults.text ?? {}) }
+    let text: OdfTextProps = includeDefaults ? { ...(this.defaults.text ?? {}) } : {}
     let para: OdfParaProps = { ...(this.defaults.para ?? {}) }
     // parent first so the style itself wins
     for (let index = chain.length - 1; index >= 0; index--) {
+      const inheritedSize = text.sizePt
       if (chain[index].text) text = { ...text, ...chain[index].text }
+      const percent = chain[index].fontSizePercent
+      if (percent !== undefined && inheritedSize !== undefined) {
+        const size = (inheritedSize * percent) / 100
+        if (size > 0 && odfLengthToEmu(`${size}pt`) !== null) text.sizePt = size
+      }
       if (chain[index].para) para = { ...para, ...chain[index].para }
     }
     return {
