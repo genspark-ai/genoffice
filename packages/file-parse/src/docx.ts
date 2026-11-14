@@ -72,10 +72,15 @@ async function mainDocumentPath(zip: JSZip): Promise<string | null> {
   if (zip.file('word/document.xml')) return 'word/document.xml'
   const rels = await zip.file('_rels/.rels')?.async('string')
   if (!rels) return null
-  for (const m of rels.matchAll(/<Relationship\b[^>]*>/g)) {
-    const tag = m[0]
-    if (!/Type="[^"]*\/officeDocument"/.test(tag) || /TargetMode="External"/.test(tag)) continue
-    const target = /Target="([^"]+)"/.exec(tag)?.[1]
+  const parser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true })
+  const relationships = parser.parse(rels).Relationships?.Relationship ?? []
+  for (const rel of Array.isArray(relationships) ? relationships : [relationships]) {
+    if (
+      !String(rel['@_Type'] ?? '').endsWith('/officeDocument') ||
+      String(rel['@_TargetMode'] ?? '').toLowerCase() === 'external'
+    )
+      continue
+    const target = String(rel['@_Target'] ?? '').trim()
     if (!target) continue
     // OPC targets are percent-encoded; the zip entry name is the decoded path.
     const resolved = resolveTarget('', target)
