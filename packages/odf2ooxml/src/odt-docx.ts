@@ -440,8 +440,9 @@ const CELL_GEN_CTX = {
 
 function tableDraft(node: XNode, ctx: WalkContext): Draft {
   const columns = readColumns(node, ctx)
-  const rows = readRows(node)
-  const grid = placeCells(rows, columns.length, ctx)
+  const rows = readRows(node, columns.length, ctx)
+  // a repeated row is the same node several times: build its cells once
+  const grid = placeCells(rows, columns.length, ctx, new WeakMap())
   return { kind: 'xml', xml: tableXml(columns, grid) }
 }
 
@@ -464,11 +465,44 @@ function readColumns(table: XNode, ctx: WalkContext): ColumnSpec[] {
   return out
 }
 
-function readRows(table: XNode): XNode[] {
+/**
+ * Ceilings on what `table:number-rows-repeated` may add to one table. The
+ * attribute is per row element, so small elements multiply without bound: 50
+ * rows each claiming 1048576 copies over a 64-column grid came out as 51,200
+ * rows / 3.3M cells / a 380 MB document.xml from a 578-byte .odt. Only the
+ * copies a repeat adds are budgeted (an explicit row is linear in the file's
+ * own size); the table shares the budget, and the copies it cannot hold are
+ * reported through `ctx.drops` instead of vanishing.
+ *
+ * The count keeps a narrow table's repeats cheap; the slot ceiling bounds the
+ * cells painted by a wide one (64 columns stop at 1024 rows, not 4096).
+ */
+const MAX_REPEATED_ROWS = 4096
+const MAX_TABLE_SLOTS = 65_536
+
+function readRows(table: XNode, columnCount: number, ctx: WalkContext): XNode[] {
   const out: XNode[] = []
+  const rowBudget = Math.min(
+    MAX_REPEATED_ROWS,
+    Math.floor(MAX_TABLE_SLOTS / Math.max(1, columnCount)),
+  )
+  let repeated = 0
+  const push = (row: XNode): void => {
+    const text = attr(row, 'table:number-rows-repeated')
+    const repeat = clampRepeat(text)
+    // what the file asked for, before the per-element cap and the table budget
+    const asked = Number(text ?? '1')
+    const claimed = Number.isFinite(asked) && asked > 1 ? Math.floor(asked) : 1
+    // the row itself is never a repeat: only the copies after it spend budget
+    const budget = Math.max(0, rowBudget - repeated)
+    const copies = 1 + Math.min(repeat - 1, budget)
+    repeated += copies - 1
+    for (let index = 0; index < copies; index++) out.push(row)
+    if (copies < claimed) ctx.drops.add('repeated-table-rows', claimed - copies)
+  }
   const walk = (node: XNode): void => {
     for (const { name, node: child } of childElements(node)) {
-      if (name === 'table:table-row') out.push(child)
+      if (name === 'table:table-row') push(child)
       else if (name === 'table:table-header-rows' || name === 'table:table-rows') walk(child)
     }
   }
@@ -482,11 +516,18 @@ function clampRepeat(text: string | undefined, cap = 1024): number {
   return Math.min(value, cap)
 }
 
+/** what a cell node paints; identical for every copy a repeat asks for */
+interface CellContent {
+  contentXml: string
+  fill: string | null
+}
+
 /** resolve the occupancy grid: every (row, column) slot names the cell that paints it */
 function placeCells(
   rows: XNode[],
   columnCount: number,
   ctx: WalkContext,
+  built: WeakMap<XNode, CellContent>,
 ): Array<Array<GridCell | null>> {
   const occupancy: Array<Array<GridCell | null>> = []
   const cellsOfRow = (row: XNode): GridCell[] => {
@@ -494,7 +535,7 @@ function placeCells(
     for (const { name, node } of childElements(row)) {
       if (name === 'table:table-cell') {
         const repeat = clampRepeat(attr(node, 'table:number-columns-repeated'), 64)
-        for (let index = 0; index < repeat; index++) out.push(makeCell(node, ctx))
+        for (let index = 0; index < repeat; index++) out.push(makeCell(node, ctx, built))
       } else if (name === 'table:covered-table-cell') {
         const repeat = clampRepeat(attr(node, 'table:number-columns-repeated'), 64)
         for (let index = 0; index < repeat; index++) {
@@ -546,7 +587,23 @@ function placeCells(
   return occupancy
 }
 
-function makeCell(node: XNode, ctx: WalkContext): GridCell {
+function makeCell(node: XNode, ctx: WalkContext, built: WeakMap<XNode, CellContent>): GridCell {
+  let content = built.get(node)
+  if (!content) {
+    content = buildCellContent(node, ctx)
+    built.set(node, content)
+  }
+  return {
+    row: -1,
+    column: -1,
+    colSpan: Math.max(1, Number(attr(node, 'table:number-columns-spanned') ?? '1') || 1),
+    rowSpan: Math.max(1, Number(attr(node, 'table:number-rows-spanned') ?? '1') || 1),
+    contentXml: content.contentXml,
+    fill: content.fill,
+  }
+}
+
+function buildCellContent(node: XNode, ctx: WalkContext): CellContent {
   const blocks: GeneratedBlock[] = []
   const emitInto = (
     child: XNode,
@@ -596,14 +653,7 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
   }
   const contentXml =
     blocks.map((block) => generateParagraphXml(block, CELL_GEN_CTX)).join('') || '<w:p/>'
-  return {
-    row: -1,
-    column: -1,
-    colSpan: Math.max(1, Number(attr(node, 'table:number-columns-spanned') ?? '1') || 1),
-    rowSpan: Math.max(1, Number(attr(node, 'table:number-rows-spanned') ?? '1') || 1),
-    contentXml,
-    fill: ctx.styles.cellFill(attr(node, 'table:style-name')),
-  }
+  return { contentXml, fill: ctx.styles.cellFill(attr(node, 'table:style-name')) }
 }
 
 function tableXml(columns: ColumnSpec[], grid: Array<Array<GridCell | null>>): string {
