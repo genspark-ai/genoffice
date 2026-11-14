@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { SHEET_ZOOM_MAX, SHEET_ZOOM_MIN, createWheelZoomStepper } from '../src/renderer/wheel-zoom'
 
-function harness(zoom: number, editing = false) {
+function harness(zoom: number) {
   const set: number[] = []
   let prevented = 0
   let stopped = 0
@@ -14,7 +14,6 @@ function harness(zoom: number, editing = false) {
       set.push(z)
       zoom = z
     },
-    isCellEditing: () => editing,
   })
   const wheel = (deltaY: number, timeStamp: number, extra: Partial<WheelEvent> = {}) =>
     step({
@@ -74,14 +73,16 @@ describe('createWheelZoomStepper', () => {
     expect(h.stopped()).toBe(4)
   })
 
-  it('ignores plain scrolling and wheel events during cell editing', () => {
+  it('ignores plain scrolling and keeps zooming while a cell is edited', () => {
     const plain = harness(1)
     plain.wheel(-100, 0, { ctrlKey: false })
     expect(plain.set).toEqual([])
     expect(plain.prevented()).toBe(0)
-    const editing = harness(1, true)
-    editing.wheel(-100, 0)
-    expect(editing.set).toEqual([])
-    expect(editing.prevented()).toBe(0)
+    // Excel keeps Ctrl+wheel zooming while the cell editor is open; the editor
+    // overlay is re-placed once the gesture settles.
+    const whileEditing = harness(1)
+    whileEditing.wheel(-100, 0)
+    expect(whileEditing.set).toEqual([1.1])
+    expect(whileEditing.prevented()).toBe(1)
   })
 })

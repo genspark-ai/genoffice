@@ -32,6 +32,7 @@ import {
   installWrapMeasureLifecycle,
   noteSidecarCrash,
 } from './univer-sync'
+import { installEditorScrollFollow } from './editor-scroll-follow'
 import { installGridGrowth } from './grid-growth'
 import {
   pollUntilReady,
@@ -85,6 +86,7 @@ import {
   CellValueType,
   getNumfmtParseValueFilter,
   BooleanNumber,
+  ICommandService,
   InterceptorEffectEnum,
   isRealNum,
   IUndoRedoService,
@@ -100,6 +102,7 @@ import {
 } from '@univerjs/core'
 import { FormulaExecutedStateType } from '@univerjs/engine-formula'
 import { FindReplaceController, IFindReplaceService } from '@univerjs/find-replace'
+import { SetZoomRatioOperation } from '@univerjs/sheets-ui'
 import { ILayoutService } from '@univerjs/ui'
 import { UniverSheetsConditionalFormattingPreset } from '@univerjs/preset-sheets-conditional-formatting'
 import UniverPresetSheetsConditionalFormattingEnUS from '@univerjs/preset-sheets-conditional-formatting/locales/en-US'
@@ -2318,6 +2321,9 @@ export function App({
     // the grid is sized to the data, so a blank sheet stops scrolling a few
     // columns past its last cell; this extends it ahead of the viewport
     const gridGrowthDispose = installGridGrowth(runtime)
+    // Univer places the open cell editor once; keep it on its cell while the
+    // grid scrolls (the bridge's own refresh is a no-op when no editor is open)
+    const editorScrollFollow = installEditorScrollFollow(runtime)
     // Load-time wrap-row measures queue until Univer's auto-height
     // interceptor exists (lifecycle Rendered).
     const wrapMeasureDisposable = installWrapMeasureLifecycle(runtime)
@@ -3747,10 +3753,25 @@ export function App({
       : () => undefined
     const disposeWheelZoom = gridHost
       ? installWheelZoomSteps(gridHost, {
-          isCellEditing: () => editingCellRef.current,
           getZoom: () => runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getZoom(),
           setZoom: (zoom) => {
-            runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.zoom(zoom)
+            const workbook = runtime.univerAPI.getActiveWorkbook()
+            const sheet = workbook?.getActiveSheet()
+            if (!workbook || !sheet) return
+            // worksheet.zoom() runs SetZoomRatioCommand, which returns false
+            // while the cell editor is visible; the operation underneath only
+            // calls SheetsZoomRenderController.updateZoom and has no such guard.
+            void runtime.univer
+              .__getInjector()
+              .get(ICommandService)
+              .executeCommand(SetZoomRatioOperation.id, {
+                unitId: workbook.getId(),
+                subUnitId: sheet.getSheetId(),
+                zoomRatio: zoom,
+              })
+            // the operation applies synchronously; re-place the editor on the
+            // next frame instead of waiting for the 250ms pinch fallback
+            editorScrollFollow.refresh()
           },
         })
       : () => undefined
@@ -3901,6 +3922,7 @@ export function App({
       undoRedoSub.unsubscribe()
       findRevealDispose()
       gridGrowthDispose()
+      editorScrollFollow.dispose()
       wrapMeasureDisposable.dispose()
       prefersDark.removeEventListener('change', applyUniverDark)
       dateTextDisposable.dispose()

@@ -9,7 +9,6 @@ export const SHEET_ZOOM_MAX = MAX_PERCENT / 100
 export interface WheelZoomTarget {
   readonly getZoom: () => number | undefined
   readonly setZoom: (zoom: number) => void
-  readonly isCellEditing: () => boolean
 }
 
 type WheelLike = Pick<
@@ -26,12 +25,13 @@ type WheelLike = Pick<
 /// Runs ahead of Univer's own Ctrl+wheel zoom (which scales by pixel delta, so
 /// a Windows mouse notch jumps 14 points): a notch steps 10 points here and is
 /// stopped before Univer sees it; a trackpad pinch falls through to Univer's
-/// continuous zoom untouched.
+/// continuous zoom untouched. Works while a cell is being edited too — Excel
+/// keeps zooming there, and the cell editor overlay is re-placed once the
+/// gesture settles (editor-scroll-follow.ts).
 export function createWheelZoomStepper(target: WheelZoomTarget): (event: WheelLike) => void {
   const classifier = createZoomWheelClassifier()
   return (event) => {
     if (!event.ctrlKey && !event.metaKey) return
-    if (target.isCellEditing()) return
     const intent = classifier.feed(event, event.timeStamp)
     if (intent === 'pinch') return
     event.preventDefault()
