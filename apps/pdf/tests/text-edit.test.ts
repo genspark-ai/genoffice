@@ -1758,3 +1758,166 @@ describe('eraseTextRuns', () => {
     expect(await extractText(bytes)).toBe('Still here')
   })
 })
+
+describe('reveal edits on the OCR bake layer (#2549)', () => {
+  /** visible anchor text + an invisible white bake-layer run, like a saved scan */
+  async function scanFixture(): Promise<Fixture> {
+    const f = await makeFixture('Existing text')
+    const r = await applyTextInserts(f.bytes, [
+      {
+        pageIndex: 0,
+        origin: [50, 650],
+        text: 'Scanned words',
+        fontSize: 14,
+        color: [255, 255, 255],
+        invisible: true,
+      },
+    ])
+    return {
+      bytes: r.bytes,
+      // the invisible run's match rect (engine matches the text; the rect scopes it)
+      rect: [45, 644, 150, 668],
+    }
+  }
+
+  const fillColors = (bytes: Uint8Array) => {
+    const raw = Buffer.from(bytes)
+    const text = raw.toString('latin1')
+    let content = ''
+    for (const m of text.matchAll(/(?<!end)stream\r?\n/g)) {
+      const start = m.index! + m[0].length
+      const chunk = raw.subarray(start, text.indexOf('endstream', start))
+      let body: string
+      try {
+        body = inflateSync(chunk).toString('latin1')
+      } catch {
+        body = chunk.toString('latin1')
+      }
+      if (/T[jJ]/.test(body)) content += body
+    }
+    return [...content.matchAll(/([\d.]+) ([\d.]+) ([\d.]+) rg\b/g)].map((m) =>
+      m.slice(1).map(Number),
+    )
+  }
+
+  it('keeps the bake layer invisible when the edit does not reveal', async () => {
+    const f = await scanFixture()
+    const check = await validateTextEdits(f.bytes, [
+      {
+        pageIndex: 0,
+        rect: f.rect,
+        oldText: 'Scanned words',
+        newText: 'Edited words',
+        fontSize: 14,
+      },
+    ])
+    expect(check[0]?.reason).toBeNull()
+    const out = await applyAll(f.bytes, [
+      {
+        pageIndex: 0,
+        rect: f.rect,
+        oldText: 'Scanned words',
+        newText: 'Edited words',
+        fontSize: 14,
+      },
+    ])
+    expect(await extractText(out)).toContain('Edited words')
+    // render mode 3 survived the rewrite
+    expect(strokeOps(out).renderModes).toContain(3)
+  })
+
+  it('reveal rebuilds the run visible with a black fill', async () => {
+    const f = await scanFixture()
+    const out = await applyAll(f.bytes, [
+      {
+        pageIndex: 0,
+        rect: f.rect,
+        oldText: 'Scanned words',
+        newText: 'Edited words',
+        fontSize: 14,
+        reveal: true,
+      },
+    ])
+    expect(await extractText(out)).toContain('Edited words')
+    // no invisible object remains, and the rebuilt run draws black
+    expect(strokeOps(out).renderModes).not.toContain(3)
+    expect(fillColors(out)).toContainEqual([0, 0, 0])
+  })
+
+  // The reveal toggle follows the data: the validation reports the matched run
+  // as invisible, so a scan that was recognized, saved and reopened still
+  // offers the eye.
+  it('the validation reports the matched run as invisible', async () => {
+    const f = await scanFixture()
+    const check = await validateTextEdits(f.bytes, [
+      {
+        pageIndex: 0,
+        rect: f.rect,
+        oldText: 'Scanned words',
+        newText: 'Scanned words',
+        fontSize: 14,
+      },
+    ])
+    expect(check[0]?.reason).toBeNull()
+    expect(check[0]?.invisible).toBe(true)
+  })
+
+  // The reveal must not take the in-place path: that one only rewrites the
+  // glyphs, so a run whose text does not change would keep its invisible
+  // rendering (mode 3, white fill) and the reveal would show nothing.
+  it('reveal draws the run even when the text does not change', async () => {
+    const f = await scanFixture()
+    const out = await applyAll(f.bytes, [
+      {
+        pageIndex: 0,
+        rect: f.rect,
+        oldText: 'Scanned words',
+        newText: 'Scanned words',
+        fontSize: 14,
+        reveal: true,
+      },
+    ])
+    expect(strokeOps(out).renderModes).not.toContain(3)
+    expect(fillColors(out)).toContainEqual([0, 0, 0])
+  })
+
+  // A stroke puts the run in fill+stroke (mode 2) and surfaces the bake
+  // layer's white glyphs on the scanned page — the very regression the reveal
+  // removes. Without a reveal the run stays invisible.
+  it('bold without a reveal keeps the bake layer invisible', async () => {
+    const f = await scanFixture()
+    const out = await applyAll(f.bytes, [
+      {
+        pageIndex: 0,
+        rect: f.rect,
+        oldText: 'Scanned words',
+        newText: 'Edited words',
+        fontSize: 14,
+        newBold: true,
+      },
+    ])
+    expect(strokeOps(out).renderModes).toContain(3)
+    expect(strokeOps(out).renderModes).not.toContain(2)
+  })
+
+  it('reveal with an explicit color keeps the caller color', async () => {
+    const f = await scanFixture()
+    const out = await applyAll(f.bytes, [
+      {
+        pageIndex: 0,
+        rect: f.rect,
+        oldText: 'Scanned words',
+        newText: 'Edited words',
+        fontSize: 14,
+        newColor: [200, 10, 10],
+        reveal: true,
+      },
+    ])
+    expect(strokeOps(out).renderModes).not.toContain(3)
+    // content-stream floats round: compare channels approximately
+    const red = fillColors(out).find(
+      (c) => Math.abs(c[0]! - 200 / 255) < 0.01 && Math.abs(c[1]! - 10 / 255) < 0.01,
+    )
+    expect(red).toBeDefined()
+  })
+})

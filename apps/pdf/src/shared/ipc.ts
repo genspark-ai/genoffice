@@ -434,6 +434,11 @@ export interface TextEditInput {
   oldText: string
   /** Replacement; '\n' splits it into stacked lines (one text object per line) */
   newText: string
+  /** Rebuild the replaced run as visible text (the OCR bake layer's objects are
+      render mode 3 with a white fill, so an edit that keeps them can never be
+      seen). Forces the full-redraw path and defaults the fill to black when the
+      caller sends no color; absent = keep the run's own visibility. */
+  reveal?: boolean
   /** Original run's font size in PDF pt (fallback sizing for the rebuilt object) */
   fontSize: number
   /** User-chosen size in PDF pt; absent = keep the original run's size */
@@ -536,6 +541,10 @@ export interface TextEditValidation {
   /** Base fill color of the matched run (its first object in reading order), for
       display while editing — a uniformly colored run has no colorRuns to seed from */
   baseColor?: [number, number, number]
+  /** The matched run draws nothing (render mode 3): the OCR bake layer's
+      invisible form. The reveal toggle follows the data, so a scan that was
+      recognized, saved and reopened still offers it. */
+  invisible?: boolean
 }
 
 /** Curated fonts selectable for rebuilt text runs. Single-face .ttf on every platform we

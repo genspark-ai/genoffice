@@ -2,13 +2,21 @@ import { Fragment } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { pdfRectToCss, pdfToView } from './annotations'
 import type { PageGeom } from './annotations'
-import { colorSegments, decodeStyle, encodeStyle, runsToColors } from './color-runs'
+import {
+  colorRunsEqual,
+  colorSegments,
+  colorsToRuns,
+  decodeStyle,
+  encodeStyle,
+  mapCharColors,
+  runsToColors,
+} from './color-runs'
 import type { CharStyle } from './color-runs'
 import type { DocFontStyle } from './doc-font'
 import { EDIT_FONTS, SYNTHETIC_BOLD_STROKE_EM } from '../shared/ipc'
 import type { TextEditInput, TextEditValidation, TextInsertInput } from '../shared/ipc'
-import type { TextBlock } from './text-block'
-import { joinBlockLines } from './text-wrap'
+import { reflowOverflows, type TextBlock } from './text-block'
+import { joinBlockLines, measurePt, wrapText } from './text-wrap'
 
 export const EDIT_FONT_BY_ID = new Map<string, (typeof EDIT_FONTS)[number]>(
   EDIT_FONTS.map((f) => [f.id, f]),
@@ -136,6 +144,10 @@ export interface LocalTextEdit {
       (it is the save-time match key). The engine-side position rides in input.translate
       (pure moves) or the shifted input.origin (moved rebuild edits). */
   moveBy?: [number, number]
+  /** The matched run drew nothing at commit time (the OCR bake layer's invisible
+      form, from the draft's probe). Renderer metadata only: reopening the edit
+      keeps offering the reveal toggle. Kept like cover/baseInk. */
+  invisible?: true
 }
 
 /** Stable per-render key for a clustered block's rect (same idea as imageRectKey) */
@@ -501,6 +513,16 @@ export interface TextDraft {
   /** Style toggles; true = on, undefined = off (resolved via font variants at save) */
   bold?: true
   italic?: true
+  /** Rebuild the replaced run as visible text (scanned-page OCR bake layer only;
+      see TextEditInput.reveal). Off = keep the run's invisible rendering. */
+  reveal?: true
+  /** The reveal state the fold seeded (a folded line edit that is revealed): an
+      untouched commit keeps the folded edits even with the eye showing on */
+  foldReveal?: true
+  /** The matched run draws nothing (render mode 3) — the OCR bake layer's
+      invisible form, from the open probe. It gates the reveal toggle: a scan
+      that was recognized, saved and reopened still carries the layer. */
+  invisible?: true
   editId?: string
   /** Further pending edits folded into this block draft (besides editId); the
       commit replaces editId and removes these — they would overlap the block
@@ -529,6 +551,200 @@ export interface TextDraft {
   /** Carried from a reopened moved edit: the floating editor draws at rect + moveBy
       (where the preview sits) while rect itself stays the save-time match key */
   moveBy?: [number, number]
+}
+
+/** Fold a floating-editor draft into the pending-edit list; null = nothing changed,
+    'overflow' = a block reflow would spill onto occupied space below (not merged —
+    the caller notifies and keeps the draft). `pageBlocks` carries the neighbors the
+    overflow guard measures against; `newId` mints pending-edit ids. */
+export function mergeTextDraft(
+  edits: LocalTextEdit[],
+  d: TextDraft,
+  ctx: { pageBlocks: Map<number, TextBlock[]>; newId: () => string },
+): LocalTextEdit[] | null | 'overflow' {
+  const existing = d.editId ? edits.find((e) => e.id === d.editId) : undefined
+  // Block drafts commit their reflowed form: greedy-wrap each paragraph to the
+  // block width in the same face/size the editor previews with, and anchor the
+  // rebuilt lines at the block corner with the block's original leading
+  let newText = d.value
+  let origin: [number, number] | undefined
+  let lineLeading: number | undefined
+  let lineXOffsets: number[] | undefined
+  let overflowed = false
+  // An emptied box commits as a deletion: newText '' tells the save to remove the
+  // matched run instead of rebuilding it (Escape still discards the draft)
+  if (d.value.trim() === '') newText = ''
+  if (d.block && d.value.trim() !== '') {
+    const size = d.size ?? d.fontSize
+    // Measure the reflow in the document's look-alike face when the user
+    // didn't pick one — it tracks the save-time advances better than the app font
+    const seedF = d.font ? undefined : d.seedFont
+    const css =
+      (d.font ? EDIT_FONT_BY_ID.get(d.font)?.css : undefined) ??
+      seedF?.css ??
+      getComputedStyle(document.body).fontFamily
+    const cssStyle = `${d.italic || seedF?.italic ? 'italic ' : ''}${boldToken(
+      d.bold,
+      !!d.font,
+      seedF?.weight,
+    )}`.trim()
+    lineLeading = d.block.lineHeight * (size / d.fontSize)
+    const wrapped = d.value
+      .split('\n')
+      .flatMap((p) => (p.trim() ? wrapText(p, d.block!.widthPt, size, css, cssStyle) : []))
+    // Checked only after the no-op early returns below: a re-wrap in the
+    // fallback face can grow a tight block even when nothing was edited,
+    // and an untouched dismiss must never be refused
+    overflowed = reflowOverflows(
+      d.block,
+      wrapped.length,
+      lineLeading,
+      size,
+      ctx.pageBlocks.get(d.origIdx),
+      d.rect,
+    )
+    newText = wrapped.join('\n')
+    origin = [d.block.leftPt, d.block.firstBaseline]
+    if (d.block.align !== 'left') {
+      lineXOffsets = wrapped.map((l) => {
+        const slack = d.block!.widthPt - measurePt(l, size, css, cssStyle)
+        return Math.max(0, d.block!.align === 'center' ? slack / 2 : slack)
+      })
+    }
+  }
+  // Selection-level styles: draft-space per-char keys carried onto the committed
+  // newText (wrapping only rearranges whitespace, so non-ws chars align in order)
+  const draftStyles = d.charStyles?.some((c) => c) ? d.charStyles : undefined
+  const keyRuns = draftStyles
+    ? colorsToRuns(newText === d.value ? draftStyles : mapCharColors(d.value, draftStyles, newText))
+    : []
+  const styleRuns = keyRuns.length ? keyRunsToStyleRuns(keyRuns) : undefined
+  const prevValue = existing ? existing.input.newText : d.oldText
+  const cmpValue = existing && d.block ? newText : d.value
+  const prevSize = existing?.input.newFontSize
+  const prevColor = existing?.input.newColor && rgb255ToHex(existing.input.newColor)
+  const prevFont = existing?.input.newFont
+  const prevBold = existing?.input.newBold ? true : undefined
+  const prevItalic = existing?.input.newItalic ? true : undefined
+  // Baseline for "did the styles change": the pending edit's committed runs
+  // (newText offsets, same space as keyRuns), or — for a fresh draft — the
+  // document's own colors the probe seeded (oldText offsets: compare in draft
+  // space, the wrap may shift words and move newText offsets without any
+  // style changing). Seeded colors alone are not a change — they only ride
+  // along so a rebuild repaints them.
+  const prevRuns = existing
+    ? styleRunsToKeyRuns(existing.input.styleRuns ?? existing.input.colorRuns ?? [])
+    : (d.seedStyleRuns ?? [])
+  const cmpRuns = existing ? keyRuns : draftStyles ? colorsToRuns(draftStyles) : []
+  // Folded paragraph draft committed untouched: keep the folded line edits as
+  // they are instead of converting them into a whole-paragraph rebuild (the
+  // fold-seeded styles of those edits are not a change either; the eye state
+  // the fold seeded is not one — only a toggle past it is)
+  if (
+    d.foldBase !== undefined &&
+    d.value === d.foldBase &&
+    d.size === undefined &&
+    d.color === undefined &&
+    d.font === undefined &&
+    d.bold === undefined &&
+    d.italic === undefined &&
+    !!d.reveal === !!d.foldReveal &&
+    colorRunsEqual(
+      draftStyles ? colorsToRuns(draftStyles) : [],
+      d.foldStyles ? colorsToRuns(d.foldStyles) : [],
+    )
+  )
+    return null
+  // The eye toggle is a change in itself: reveal is the invisible -> visible edit,
+  // and comparing it away would swallow a pure reveal (fresh draft or reopened)
+  if (
+    cmpValue === prevValue &&
+    d.size === prevSize &&
+    d.color === prevColor &&
+    d.font === prevFont &&
+    d.bold === prevBold &&
+    d.italic === prevItalic &&
+    !!d.reveal === !!existing?.input.reveal &&
+    colorRunsEqual(cmpRuns, prevRuns)
+  )
+    return null
+  const dropFolded = (list: LocalTextEdit[]) =>
+    d.foldedIds && d.foldedIds.length > 0 ? list.filter((e) => !d.foldedIds!.includes(e.id)) : list
+  // A pure move reopened and closed untouched must stay a pure move: its stored
+  // newText keeps the document's own line breaks (which a DOM re-wrap would not
+  // reproduce), and "unchanged text" must not read as "revert" below — that
+  // would silently delete the pending move
+  if (
+    existing?.input.translate &&
+    d.value === d.oldText &&
+    d.size === undefined &&
+    d.color === undefined &&
+    d.font === undefined &&
+    d.bold === undefined &&
+    d.italic === undefined &&
+    keyRuns.length === 0
+  )
+    return null
+  if (
+    d.value === d.oldText &&
+    d.size === undefined &&
+    d.color === undefined &&
+    d.font === undefined &&
+    d.bold === undefined &&
+    d.italic === undefined &&
+    !d.reveal &&
+    keyRuns.length === 0
+  ) {
+    // Reverted back to the original — the pending edit(s) are moot. An active
+    // reveal is itself a change: invisible -> visible is the edit.
+    return dropFolded(edits.filter((e) => e.id !== d.editId))
+  }
+  if (overflowed) return 'overflow'
+  const input: TextEditInput = {
+    pageIndex: d.origIdx,
+    rect: d.rect,
+    oldText: d.oldText,
+    newText,
+    fontSize: d.fontSize,
+    newFontSize: d.size,
+    newColor: d.color === undefined ? undefined : hexTo255(d.color),
+    styleRuns,
+    newFont: d.font,
+    newBold: d.bold,
+    newItalic: d.italic,
+    ...(d.reveal ? { reveal: true } : {}),
+    origin,
+    lineLeading,
+    lineXOffsets,
+    align: d.block && d.block.align !== 'left' ? d.block.align : undefined,
+    blockSource: d.block ? d.value : undefined,
+  }
+  return d.editId
+    ? dropFolded(edits).map((e) =>
+        e.id === d.editId
+          ? {
+              ...e,
+              input,
+              cover: d.cover ?? e.cover,
+              baseInk: d.seedInk ?? e.baseInk,
+              baseFont: d.seedFont ?? e.baseFont,
+              paper: d.paper ?? e.paper,
+              invisible: d.invisible ?? e.invisible,
+            }
+          : e,
+      )
+    : [
+        ...edits,
+        {
+          id: ctx.newId(),
+          input,
+          cover: d.cover,
+          baseInk: d.seedInk,
+          baseFont: d.seedFont,
+          paper: d.paper,
+          invisible: d.invisible,
+        },
+      ]
 }
 
 export const draftOwnedEditIds = (
