@@ -1,3 +1,4 @@
+// Modified for ForaOffice: retain logical table coordinates when exporting images and cell content.
 import type { Editor } from '@tiptap/core'
 import { isTrackedDeleted } from './ai/doc-utils'
 import { serializeRangeToHtml } from './ai/protocol'
@@ -132,11 +133,15 @@ function fence(code: string): string {
 }
 
 function table(el: Element): string {
-  const rows = Array.from(el.querySelectorAll('tr')).map((tr) =>
-    Array.from(tr.children).map((cell) =>
-      inline(cell).replace(/\n/g, '<br>').replace(/\|/g, '\\|'),
-    ),
-  )
+  const rows = Array.from(el.querySelectorAll('tr')).map((tr) => {
+    const row: string[] = []
+    for (const cell of Array.from(tr.children)) {
+      const sourceColumn = cell.getAttribute('data-col')
+      const column = sourceColumn !== null ? Number(sourceColumn) : row.length
+      row[column] = inline(cell).replace(/\n/g, '<br>').replace(/\|/g, '\\|')
+    }
+    return row
+  })
   if (rows.length === 0) return ''
   const width = Math.max(...rows.map((r) => r.length))
   const line = (cells: string[]) =>

@@ -89,9 +89,11 @@ describe('w:sym runs survive saving', () => {
 
   it('splits text appended under the symbol mark into one w:sym plus plain w:t', async () => {
     const { parsed, editor, host } = await openDoc(SYM_PARA)
-    const outcome = executeOps(editor, [
-      { op: 'findReplace', find: '\u00d7', replace: '\u00d7\u00d7yz' },
-    ])
+    const outcome = executeOps(
+      editor,
+      [{ op: 'findReplace', find: '\u00d7', replace: '\u00d7\u00d7yz' }],
+      { source: 'ui' },
+    )
     expect(outcome.ok).toBe(true)
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
     const xml = await documentXml(await saveDocx(parsed, plan.saveBlocks))
@@ -106,7 +108,9 @@ describe('w:sym runs survive saving', () => {
 
   it('writes a symbol replaced by ordinary text as plain w:t', async () => {
     const { parsed, editor, host } = await openDoc(SYM_PARA)
-    const outcome = executeOps(editor, [{ op: 'findReplace', find: '×', replace: 'x' }])
+    const outcome = executeOps(editor, [{ op: 'findReplace', find: '×', replace: 'x' }], {
+      source: 'ui',
+    })
     expect(outcome.ok).toBe(true)
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
     const xml = await documentXml(await saveDocx(parsed, plan.saveBlocks))

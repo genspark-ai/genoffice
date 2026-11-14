@@ -141,8 +141,10 @@ describe('AI rich generation: blank template -> docx', () => {
       },
       NUM_IDS,
     )
-    expect(exec.output).toContain('<table><tr><th>Metric</th><th>Value</th></tr>')
-    expect(exec.output).toContain('<td>60<br>(incl. tax)</td>')
+    expect(exec.output).toContain(
+      '<table><tr><th data-row="0" data-col="0">Metric</th><th data-row="0" data-col="1">Value</th></tr>',
+    )
+    expect(exec.output).toContain('<td data-row="2" data-col="1">60<br>(incl. tax)</td>')
     expect(exec.output).toContain('<pre>const x = 1\nconsole.log(x)</pre>')
     expect(exec.output).toContain('<blockquote>A quoted sentence.</blockquote>')
     expect(exec.output).not.toContain('Protected content')

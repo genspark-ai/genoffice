@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { docsToolCatalog, DOCS_READ_TOOLS } from '../shared/tool-catalog'
 import { DOCS_RUNTIME_TOOLS } from '../shared/runtime-tools'
@@ -54,9 +55,10 @@ export function createDocsMcpServer(options: DocsMcpServerOptions): McpServer {
       },
     },
   ]
-  for (const tool of tools) {
-    if (options.readOnly && tool.name !== 'read_document' && !DOCS_READ_TOOLS.has(tool.name))
-      continue
+  const availableTools = tools.filter(
+    (tool) => !options.readOnly || tool.name === 'read_document' || DOCS_READ_TOOLS.has(tool.name),
+  )
+  for (const tool of availableTools) {
     server.registerTool(
       tool.name,
       {
@@ -124,5 +126,17 @@ export function createDocsMcpServer(options: DocsMcpServerOptions): McpServer {
       },
     )
   }
+  // The high-level SDK only serializes ZodObject; composed object schemas
+  // (for example required kind OR engineTarget) otherwise become {} on tools/list.
+  // Serve the authoritative JSON Schema through the SDK's standard request handler.
+  server.server.setRequestHandler(ListToolsRequestSchema, () => ({
+    tools: availableTools.map((tool) => ({
+      ...tool,
+      inputSchema: { ...tool.inputSchema, type: 'object' as const },
+      annotations: {
+        readOnlyHint: DOCS_READ_TOOLS.has(tool.name) || tool.name === 'read_document',
+      },
+    })),
+  }))
   return server
 }
