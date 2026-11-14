@@ -1,5 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { Markdown } from '@genoffice/ui'
+import '@genoffice/ui/markdown.css'
+import { useModalFocus } from './use-modal-focus'
 import { useSlidingIndicator } from './settings-fx'
 import type { StringKey, TFunc } from './locale'
 import type { FoundSkill, RecommendedSkill } from '../../shared/found-skill'
@@ -278,13 +282,15 @@ function SkillRow({
 }: {
   t: TFunc
   skill: FoundSkill
-  action?: React.ReactNode
+  action?: ReactNode
   index?: number
 }) {
   const [body, setBody] = useState<string | null>(null)
   const [reading, setReading] = useState(false)
+  const [open, setOpen] = useState(false)
 
   const show = async () => {
+    setOpen(true)
     if (body !== null || reading) return
     setReading(true)
     try {
@@ -308,21 +314,127 @@ function SkillRow({
         </div>
       </div>
       <div className="set-skill-foot">
-        <details
+        <button
+          type="button"
           className="set-skill-details"
-          onToggle={(e) => {
-            if ((e.currentTarget as HTMLDetailsElement).open) void show()
-          }}
+          aria-haspopup="dialog"
+          onClick={() => void show()}
         >
-          <summary>{t('intgSkillsRead')}</summary>
-          {body === null ? null : (
-            <pre className="set-intg-code set-intg-code-block">
-              <code>{body}</code>
-            </pre>
-          )}
-        </details>
+          {t('intgSkillsRead')}
+        </button>
         {action && <div className="set-skill-action">{action}</div>}
       </div>
+      {open && (
+        <SkillDetail
+          t={t}
+          skill={skill}
+          body={body}
+          action={action}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </div>
+  )
+}
+
+/** SKILL.md without its YAML front matter: name and description are shown above it */
+export function skillInstructions(body: string): string {
+  return body.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, '').trim()
+}
+
+/** A skill's own page: name, description and its rendered instructions, over Settings. */
+function SkillDetail({
+  t,
+  skill,
+  body,
+  action,
+  onClose,
+}: {
+  t: TFunc
+  skill: FoundSkill
+  /** null while the instructions are loading */
+  body: string | null
+  action?: ReactNode
+  onClose: () => void
+}) {
+  const cardRef = useRef<HTMLDivElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const titleId = useId()
+  const [copied, setCopied] = useState(false)
+  useModalFocus(cardRef, closeRef, onClose)
+  const text = body === null ? null : skillInstructions(body)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  const copy = () => {
+    if (!text) return
+    void navigator.clipboard?.writeText(text).then(() => setCopied(true))
+  }
+
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        ref={cardRef}
+        className="modal skill-detail"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="skill-detail-head">
+          <span className="set-skill-icon" aria-hidden="true">
+            {skill.name.slice(0, 1).toUpperCase()}
+          </span>
+          <h3 id={titleId} className="skill-detail-title">
+            {skill.name}
+          </h3>
+          <button
+            ref={closeRef}
+            type="button"
+            className="skill-detail-close"
+            onClick={onClose}
+            aria-label={t('skillDetailClose')}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <path
+                d="M2 2l10 10M12 2L2 12"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+        {skill.description && <p className="skill-detail-desc">{skill.description}</p>}
+        <div
+          className="skill-detail-body"
+          // a scroll region keyboard users can reach and scroll
+          tabIndex={0}
+          role="region"
+          aria-labelledby={titleId}
+          aria-busy={text === null}
+        >
+          {text ? (
+            <Markdown text={text} />
+          ) : (
+            <span className="skill-detail-empty">
+              {text === null ? t('skillDetailLoading') : t('skillDetailEmpty')}
+            </span>
+          )}
+        </div>
+        <div className="modal-buttons skill-detail-foot">
+          <button type="button" className="set-btn" disabled={!text} onClick={copy}>
+            {copied ? t('loginCopied') : t('skillDetailCopy')}
+          </button>
+          <span className="skill-detail-spacer" />
+          {action && <div className="set-skill-action">{action}</div>}
+        </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
