@@ -198,6 +198,17 @@ export async function convertOdtToDocx(odt: Uint8Array): Promise<OdtToDocxResult
         for (const inner of childElements(node)) {
           if (inner.name === 'text:p') {
             emitParagraph(inner.node, ctx, drafts, { list: null, depth }, { type: 'paragraph' })
+          } else if (inner.name === 'text:h') {
+            emitParagraph(
+              inner.node,
+              ctx,
+              drafts,
+              { list: null, depth },
+              {
+                type: 'heading',
+                level: clampHeadingLevel(attr(inner.node, 'text:outline-level')),
+              },
+            )
           }
         }
       }
@@ -567,8 +578,16 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
     for (const { name, node: item } of childElements(list)) {
       if (name !== 'text:list-item' && name !== 'text:list-header') continue
       for (const inner of childElements(item)) {
-        if (inner.name === 'text:p') {
-          emitInto(inner.node, { type: 'paragraph' })
+        if (inner.name === 'text:p' || inner.name === 'text:h') {
+          emitInto(
+            inner.node,
+            inner.name === 'text:h'
+              ? {
+                  type: 'heading',
+                  level: clampHeadingLevel(attr(inner.node, 'text:outline-level')),
+                }
+              : { type: 'paragraph' },
+          )
           const block = blocks[blocks.length - 1]
           if (name === 'text:list-item')
             block.format = { ...block.format, indentLeft: (block.format?.indentLeft ?? 0) + 720 }
