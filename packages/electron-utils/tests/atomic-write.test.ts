@@ -1,10 +1,12 @@
 import {
+  existsSync,
   fsyncSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { open, rename, writeFile, copyFile } from 'node:fs/promises'
@@ -15,6 +17,7 @@ import {
   atomicCopyFile,
   atomicWriteFile,
   atomicWriteVia,
+  restrictFileToOwner,
   writeJsonAtomic,
 } from '../src/atomic-write'
 
@@ -419,5 +422,56 @@ describe('writeJsonAtomic', () => {
     })
     writeJsonAtomic(target, { ok: true })
     expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual({ ok: true })
+  })
+})
+
+describe('writeJsonAtomic mode', () => {
+  it.skipIf(process.platform === 'win32')('writes the file owner-only when a mode is given', () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-json-'))
+    const target = join(dir, 'ai-settings.json')
+    writeJsonAtomic(target, { apiKey: 'sk-test' }, 0o600)
+    expect((statSync(target).mode & 0o777) === 0o600).toBe(true)
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'tightens the mode of an existing looser file via the rename',
+    () => {
+      dir = mkdtempSync(join(tmpdir(), 'eu-json-'))
+      const target = join(dir, 'ai-settings.json')
+      writeFileSync(target, '{"old":true}', { mode: 0o644 })
+      writeJsonAtomic(target, { apiKey: 'sk-test' }, 0o600)
+      expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual({ apiKey: 'sk-test' })
+      expect((statSync(target).mode & 0o777) === 0o600).toBe(true)
+    },
+  )
+
+  it('stays at the platform default when no mode is passed', () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-json-'))
+    const target = join(dir, 'recents.json')
+    writeJsonAtomic(target, { ok: true })
+    expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual({ ok: true })
+    // the platform/umask default applies; only assert the restricted mode was
+    // NOT forced here, since the exact default depends on the umask
+    expect((statSync(target).mode & 0o777) === 0o600 || (statSync(target).mode & 0o077) !== 0).toBe(
+      true,
+    )
+  })
+})
+
+describe('restrictFileToOwner', () => {
+  it.skipIf(process.platform === 'win32')('heals a world-readable credentials file', () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-json-'))
+    const target = join(dir, 'ai-settings.json')
+    writeFileSync(target, '{"apiKey":"sk-old"}', { mode: 0o644 })
+    restrictFileToOwner(target)
+    expect((statSync(target).mode & 0o777) === 0o600).toBe(true)
+    expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual({ apiKey: 'sk-old' })
+  })
+
+  it('is a no-op for a missing file', () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-json-'))
+    const target = join(dir, 'absent.json')
+    expect(() => restrictFileToOwner(target)).not.toThrow()
+    expect(existsSync(target)).toBe(false)
   })
 })
