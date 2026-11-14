@@ -37,10 +37,23 @@ export function attrsOf(node: XNode): Record<string, string> {
 }
 
 export function textOf(node: XNode): string {
+  // Iterative on purpose: deepXmlParser legitimately builds very deep trees
+  // (POI stress files nest 5000 table levels — see deepXmlParser's note), and
+  // fxp builds those iteratively, so the walk must not re-introduce a
+  // per-level stack frame or hostile depth kills us where the parser held.
   let out = ''
-  for (const child of childrenOf(node)) {
-    if ('#text' in child) out += String(child['#text'])
-    else out += textOf(child)
+  const stack: (string | XNode)[] = [node]
+  while (stack.length > 0) {
+    const item = stack.pop()!
+    if (typeof item === 'string') {
+      out += item
+      continue
+    }
+    const children = childrenOf(item)
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i]!
+      stack.push('#text' in child ? String(child['#text']) : child)
+    }
   }
   return out
 }
