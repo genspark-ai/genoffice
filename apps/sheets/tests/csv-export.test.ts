@@ -37,6 +37,15 @@ describe('csvField', () => {
     expect(csvField('line1\nline2')).toBe('"line1\nline2"')
   })
 
+  it('neutralizes formula-shaped fields with the text marker', () => {
+    expect(csvField('=cmd')).toBe("'=cmd")
+    expect(csvField('-cmd')).toBe("'-cmd")
+    expect(csvField('+SUM(A1)')).toBe("'+SUM(A1)")
+    // plain numbers keep their shape
+    expect(csvField('-5')).toBe('-5')
+    expect(csvField('+1.5')).toBe('+1.5')
+  })
+
   it('normalizes CR/CRLF line breaks before quoting', () => {
     expect(csvField('a\r\nb')).toBe('"a\nb"')
     expect(csvField('a\rb')).toBe('"a\nb"')

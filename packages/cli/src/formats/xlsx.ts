@@ -1,4 +1,6 @@
 import JSZip from 'jszip'
+import { loadUserZip } from './gated-zip'
+import { neutralizeCsvFormulaField } from '@genoffice/xlsx-gateway/domain/csv-formula-guard'
 import * as numfmt from 'numfmt'
 import {
   decodeCsvBuffer,
@@ -613,7 +615,7 @@ export async function readSheet(path: string, opts: ReadOptions): Promise<SheetR
 }
 
 async function hasThemePart(source: Buffer): Promise<boolean> {
-  const zip = await JSZip.loadAsync(source)
+  const zip = await loadUserZip(source)
   return zip.file('xl/theme/theme1.xml') !== null
 }
 
@@ -664,7 +666,7 @@ function sameStyleColor(a: StyleColor | undefined, b: StyleColor | undefined): b
 
 async function storedFormats(path: string): Promise<StylesheetFormats | undefined> {
   try {
-    const zip = await JSZip.loadAsync(await readFile(path))
+    const zip = await loadUserZip(path)
     const xml = await zip.file('xl/styles.xml')?.async('string')
     return xml === undefined ? undefined : parseStylesheetFormats(xml)
   } catch {
@@ -946,10 +948,15 @@ function isCalendarDatePattern(pattern: string): boolean {
   }
 }
 
-// same quoting as the app's csv-export.ts (RFC 4180: quote on comma, quote or newline)
+// same quoting as the app's csv-export.ts (RFC 4180: quote on comma, quote or newline),
+// plus the formula-injection guard both writers share (xlsx-gateway
+// domain/csv-formula-guard): the next app to open this CSV evaluates a
+// leading =/+/-/@ as a formula or DDE instruction, so a hostile workbook's
+// cell must not survive export verbatim
 function csvField(text: string): string {
   const normalized = text.replace(/\r\n|\r/g, '\n')
-  return /[",\n]/.test(normalized) ? `"${normalized.replace(/"/g, '""')}"` : normalized
+  const guarded = neutralizeCsvFormulaField(normalized)
+  return /[",\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded
 }
 
 // ── writing ────────────────────────────────────────────────────────────
@@ -1382,7 +1389,7 @@ async function cachedFormulaValues(
     wanted.set(toA1Address(cell.row, cell.column), cell.sheet + '|' + cell.row + '|' + cell.column)
     wantedBySheet.set(cell.sheet, wanted)
   }
-  const zip = await JSZip.loadAsync(source)
+  const zip = await loadUserZip(source)
   const workbook = (await zip.file('xl/workbook.xml')?.async('string')) ?? ''
   const relationships = (await zip.file('xl/_rels/workbook.xml.rels')?.async('string')) ?? ''
   const targets = new Map(
