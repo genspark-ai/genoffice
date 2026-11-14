@@ -144,6 +144,10 @@ export interface LocalTextEdit {
       (it is the save-time match key). The engine-side position rides in input.translate
       (pure moves) or the shifted input.origin (moved rebuild edits). */
   moveBy?: [number, number]
+  /** The matched run drew nothing at commit time (the OCR bake layer's invisible
+      form, from the draft's probe). Renderer metadata only: reopening the edit
+      keeps offering the reveal toggle. Kept like cover/baseInk. */
+  invisible?: true
 }
 
 /** Stable per-render key for a clustered block's rect (same idea as imageRectKey) */
@@ -512,6 +516,9 @@ export interface TextDraft {
   /** Rebuild the replaced run as visible text (scanned-page OCR bake layer only;
       see TextEditInput.reveal). Off = keep the run's invisible rendering. */
   reveal?: true
+  /** The reveal state the fold seeded (a folded line edit that is revealed): an
+      untouched commit keeps the folded edits even with the eye showing on */
+  foldReveal?: true
   /** The matched run draws nothing (render mode 3) — the OCR bake layer's
       invisible form, from the open probe. It gates the reveal toggle: a scan
       that was recognized, saved and reopened still carries the layer. */
@@ -609,9 +616,7 @@ export function mergeTextDraft(
   // newText (wrapping only rearranges whitespace, so non-ws chars align in order)
   const draftStyles = d.charStyles?.some((c) => c) ? d.charStyles : undefined
   const keyRuns = draftStyles
-    ? colorsToRuns(
-        newText === d.value ? draftStyles : mapCharColors(d.value, draftStyles, newText),
-      )
+    ? colorsToRuns(newText === d.value ? draftStyles : mapCharColors(d.value, draftStyles, newText))
     : []
   const styleRuns = keyRuns.length ? keyRunsToStyleRuns(keyRuns) : undefined
   const prevValue = existing ? existing.input.newText : d.oldText
@@ -633,7 +638,8 @@ export function mergeTextDraft(
   const cmpRuns = existing ? keyRuns : draftStyles ? colorsToRuns(draftStyles) : []
   // Folded paragraph draft committed untouched: keep the folded line edits as
   // they are instead of converting them into a whole-paragraph rebuild (the
-  // fold-seeded styles of those edits are not a change either)
+  // fold-seeded styles of those edits are not a change either; the eye state
+  // the fold seeded is not one — only a toggle past it is)
   if (
     d.foldBase !== undefined &&
     d.value === d.foldBase &&
@@ -642,6 +648,7 @@ export function mergeTextDraft(
     d.font === undefined &&
     d.bold === undefined &&
     d.italic === undefined &&
+    !!d.reveal === !!d.foldReveal &&
     colorRunsEqual(
       draftStyles ? colorsToRuns(draftStyles) : [],
       d.foldStyles ? colorsToRuns(d.foldStyles) : [],
@@ -722,6 +729,7 @@ export function mergeTextDraft(
               baseInk: d.seedInk ?? e.baseInk,
               baseFont: d.seedFont ?? e.baseFont,
               paper: d.paper ?? e.paper,
+              invisible: d.invisible ?? e.invisible,
             }
           : e,
       )
@@ -734,6 +742,7 @@ export function mergeTextDraft(
           baseInk: d.seedInk,
           baseFont: d.seedFont,
           paper: d.paper,
+          invisible: d.invisible,
         },
       ]
 }

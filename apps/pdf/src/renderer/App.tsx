@@ -3096,7 +3096,14 @@ export default function App() {
     block: TextBlock,
     blockText: string,
     edits: LocalTextEdit[] = textEdits,
-  ): { value: string; editId: string; foldedIds: string[]; charStyles?: string[] } | null => {
+  ): {
+    value: string
+    editId: string
+    foldedIds: string[]
+    charStyles?: string[]
+    reveal?: true
+    invisible?: true
+  } | null => {
     const inside = edits.filter((e) => {
       if (e.input.pageIndex !== origIdx) return false
       const r = e.input.rect
@@ -3147,6 +3154,10 @@ export default function App() {
       editId: inside[0]!.id,
       foldedIds: inside.slice(1).map((e) => e.id),
       charStyles: styles?.some((k) => k) ? styles : undefined,
+      // The eye state of the folded edits: a revealed line edit keeps the eye on
+      // in the paragraph editor (and rides the commit), a bake-layer edit offers it
+      reveal: inside.some((e) => e.input.reveal) || undefined,
+      invisible: inside.some((e) => e.invisible) || undefined,
     }
   }
 
@@ -3260,7 +3271,7 @@ export default function App() {
       // nothing until save, so the eye stays offered and stays on — reopening,
       // fixing a typo and committing must not let the text go invisible again
       reveal: te.input.reveal ? true : undefined,
-      invisible: te.input.reveal ? true : undefined,
+      invisible: te.invisible ?? (te.input.reveal ? true : undefined),
       editId: te.id,
       cover: te.cover,
       seedInk: te.baseInk,
@@ -3315,6 +3326,13 @@ export default function App() {
       foldedIds: fold && fold.foldedIds.length > 0 ? fold.foldedIds : undefined,
       foldBase: fold?.value,
       foldStyles: fold?.charStyles,
+      // The folded edits' eye state rides in: a revealed line keeps the paragraph
+      // editor's eye on (and rides the commit past a text edit), and an edit on
+      // the bake layer keeps offering the eye. foldReveal pins what the fold
+      // seeded so an untouched commit still keeps the folded edits.
+      reveal: fold?.reveal,
+      foldReveal: fold?.reveal,
+      invisible: fold?.invisible,
       block: {
         leftPt: block.rect[0],
         firstBaseline: block.lines[0]!.y,
