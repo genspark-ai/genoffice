@@ -131,6 +131,7 @@ export function formatSerial(
   if (parts.elapsed) {
     if (serial < 0) return null
     const total = Math.round(serial * 86400)
+    if (!Number.isFinite(total)) return null
     // [mm] / [mm]:ss count total minutes; [ss] counts total seconds — only the
     // leading [h] form renders as an h:mm:ss clock
     if (parts.elapsedUnit === 'm') {
