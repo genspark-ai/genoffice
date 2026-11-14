@@ -117,6 +117,7 @@ export async function loadOdfPackage(bytes: Uint8Array): Promise<OdfPackage | nu
     if (stylesXml === null) return null
   }
   const stylesRoots = stylesXml ? parseOdfXml(stylesXml) : null
+  if (stylesEntry && !stylesRoots) return null
   return {
     contentRoots,
     stylesRoots,
