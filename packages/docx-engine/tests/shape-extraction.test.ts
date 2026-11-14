@@ -141,6 +141,45 @@ describe('textless custGeom shapes', () => {
     expect(box!.offsetYEmu).toBe(200000 + 95250)
   })
 
+  it('a scaled group maps child extents out of the child coordinate space', async () => {
+    // Word writes icon groups in a child space far smaller than EMU (the #2688
+    // fixture: ext 600075 vs chExt 1305): a child ext read as absolute EMU
+    // rounds down to a 0px box and every shape inside the group collapses
+    const group =
+      `<wpg:wgp ${WPG_NS} ${WPS_NS}><wpg:cNvGrpSpPr/><wpg:grpSpPr>` +
+      `<a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="476250"/>` +
+      `<a:chOff x="0" y="0"/><a:chExt cx="1000" cy="500"/></a:xfrm>` +
+      `</wpg:grpSpPr>` +
+      custWsp({
+        offX: 0,
+        offY: 0,
+        cx: 1000,
+        cy: 500,
+        fill: '<a:solidFill><a:srgbClr val="0070C0"/></a:solidFill>',
+      }) +
+      custWsp({
+        offX: 250,
+        offY: 125,
+        cx: 500,
+        cy: 250,
+        fill: '<a:solidFill><a:srgbClr val="C0504D"/></a:solidFill>',
+      }) +
+      `</wpg:wgp>`
+    const doc = await parseDocx(await buildDocx({ bodyXml: anchorParagraph(group, GROUP_URI) }))
+    const [full, half] = doc.blocks[0].textboxes ?? []
+    expect(full).toBeTruthy()
+    // 1000 child units × (952500/1000) EMU/unit = 952500 EMU = 100px
+    expect(full!.widthPx).toBe(100)
+    expect(full!.heightPx).toBe(50)
+    expect(full!.offsetXEmu).toBe(100000)
+    expect(full!.offsetYEmu).toBe(200000)
+    expect(half).toBeTruthy()
+    expect(half!.widthPx).toBe(50)
+    expect(half!.heightPx).toBe(25)
+    expect(half!.offsetXEmu).toBe(100000 + 238125)
+    expect(half!.offsetYEmu).toBe(200000 + 119063)
+  })
+
   it('a page-relative posOffset group anchors its children column-relative', async () => {
     const group =
       `<wpg:wgp ${WPG_NS} ${WPS_NS}><wpg:cNvGrpSpPr/><wpg:grpSpPr>` +
@@ -665,7 +704,8 @@ describe('label group over an inline chart picture', () => {
     expect(strip.floating).toBe(true)
     expect(strip.offsetXEmu).toBe(100000 + 21102)
     expect(strip.offsetYEmu).toBe(200000 + 513471)
-    expect(strip.heightPx).toBe(13)
+    // 121920 EMU is exactly 12.8px: the grouped ext keeps the fraction
+    expect(strip.heightPx).toBe(12.8)
   })
 
   it('keeps a standalone filled strip anchored next to sibling drawings', async () => {

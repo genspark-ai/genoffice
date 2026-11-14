@@ -3519,10 +3519,18 @@ function extractTextboxes(
         const y = parseInt(off['y'] ?? '', 10)
         if (Number.isFinite(x)) box.offsetXEmu = Math.round(ctm.tx + x * ctm.sx)
         if (Number.isFinite(y)) box.offsetYEmu = Math.round(ctm.ty + y * ctm.sy)
-        if (ctm.sx !== 1 && box.widthPx) box.widthPx = Math.round(box.widthPx * ctm.sx)
-        if (ctm.sy !== 1) {
-          if (box.heightPx) box.heightPx = Math.round(box.heightPx * ctm.sy)
-          if (box.minHeightPx) box.minHeightPx = Math.round(box.minHeightPx * ctm.sy)
+        // the child's a:ext lives in the group's child space (chOff/chExt), not
+        // EMU: scale the raw value before the px rounding in buildWpsBox, whose
+        // cx/EMU_PER_PX read rounds a 1305-unit child down to a 0px box — every
+        // shape inside a scaled wpg group collapsed that way (empty icons)
+        const ext = attrsOf(findChild(xfrm ?? {}, 'a:ext') ?? {})
+        const cx = parseInt(ext['cx'] ?? '', 10)
+        const cy = parseInt(ext['cy'] ?? '', 10)
+        if (Number.isFinite(cx) && cx > 0) box.widthPx = emuToPx(cx * ctm.sx)
+        // heightPx exists only when the shape does not auto-fit: keep that rule
+        if (Number.isFinite(cy) && cy > 0 && box.heightPx !== undefined) {
+          box.heightPx = emuToPx(cy * ctm.sy)
+          box.minHeightPx = box.heightPx
         }
         // grouped shapes place absolutely at their mapped offset like Word
         box.floating = true
