@@ -1,3 +1,4 @@
+// Modified for ForaOffice: reliable document targeting and portable inspection.
 import type { RevisionResolution } from './revision-xml'
 import type { DocumentProperties } from './doc-properties'
 import type { EffectivePPr, EffectiveRPr } from './resolve-props'
@@ -810,6 +811,10 @@ export interface SectionInfo {
 
 /** one rich paragraph of a header / footer part */
 export interface HfParagraph extends ParaFormat {
+  /** Source text container in this part. Ordinals exclude mc:Fallback twins and expire on reparse. */
+  textbox?: { index: number; paragraph: number; readOnly?: true; rewrite?: true }
+  /** Text shares an unmodelled drawing paragraph; whole-part plain-text replacement is unsafe. */
+  textReadOnly?: true
   /** w:framePr w:xAlign — text frame floated at the margin edge; the line
    *  overlays the following paragraph's flow line instead of stacking (Word) */
   frameXAlign?: 'left' | 'center' | 'right'
@@ -1028,6 +1033,10 @@ export interface NumberingDef {
 /** Content for the default page header / footer. */
 export interface HeaderFooter {
   text: string
+  /** Original textbox content cannot be mapped safely to the display model. */
+  textReadOnly?: true
+  /** Pending section-scoped edit: clone the part and preserve other sections. */
+  sectionOnly?: true
   /** append an automatic page number (PAGE field), footer only */
   pageNumber?: boolean
   /**
@@ -1128,6 +1137,8 @@ export interface HfImage {
 export interface HfPartInfo {
   /** plain text, PAGE fields shown as PAGE_MARK, NUMPAGES as TOTAL_PAGES_MARK, SECTIONPAGES as SECTION_PAGES_MARK */
   text: string
+  /** Original textbox content cannot be mapped safely to the display model. */
+  textReadOnly?: true
   hasPageNumber: boolean
   paras: HfParagraph[]
   /** images in the part (display-only; text edits do not affect their bytes) */

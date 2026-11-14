@@ -21,6 +21,10 @@ export const PAGE_SETUP_TOOL: AgentToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
+      engineTarget: {
+        type: 'object',
+        description: 'Revision-bound section target from query_document.',
+      },
       section: {
         type: 'integer',
         description:

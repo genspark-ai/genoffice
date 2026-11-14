@@ -86,7 +86,9 @@ describe('character-level ops reach table cells', () => {
 
   it('findReplace rewrites text inside a table cell and reports the block', () => {
     const editor = createEditor([table([['Q3 revenue', 'Q3 cost']]), para([text('Q3 summary')])])
-    const outcome = executeOps(editor, [{ op: 'findReplace', find: 'Q3', replace: 'Q4' }])
+    const outcome = executeOps(editor, [
+      { op: 'findReplace', find: 'Q3', replace: 'Q4', match: 'all', target: { scope: 'document' } },
+    ])
     expect(outcome.ok, outcome.error).toBe(true)
     expect(outcome.results[0]).toMatchObject({ matched: 2 })
     expect(cellTexts(editor).map((c) => c.text)).toEqual(['Q4 revenue', 'Q4 cost'])

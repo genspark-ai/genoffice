@@ -88,7 +88,12 @@ describe('lazy media placeholders', () => {
 
   it('builds and parses URLs', () => {
     const url = lazyMediaUrl(HASH, 'word/media/image1.png')
-    expect(url).toBe(`genoffice-docx-media://${HASH}/word/media/image1.png`)
+    expect(url).toBe(`genoffice-docx-media://media/${HASH}/word/media/image1.png`)
+    expect(new URL(url).hostname).toBe('media')
+    expect(parseLazyMediaUrl(`genoffice-docx-media://${HASH}/word/media/image1.png`)).toEqual({
+      hash: HASH,
+      partPath: 'word/media/image1.png',
+    })
     expect(parseLazyMediaUrl(url)).toEqual({ hash: HASH, partPath: 'word/media/image1.png' })
     expect(parseLazyMediaUrl('data:image/png;base64,AAAA')).toBeNull()
   })

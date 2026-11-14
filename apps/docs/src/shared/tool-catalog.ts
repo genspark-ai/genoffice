@@ -1,3 +1,4 @@
+// Modified for ForaOffice: reliable document targeting and portable inspection.
 import type { AgentToolDef } from '@genoffice/agent-core'
 import { MIND_MAP_TOOL } from '@genoffice/agent-core/mind-map'
 import { PAGE_SETUP_TOOL, SECTION_BREAK_TOOL } from './page-tool-schema'
@@ -13,6 +14,7 @@ import {
 import { DOCS_IMAGE_SOURCE_SCHEMA } from './media-policy'
 
 export const DOCS_READ_TOOLS = new Set([
+  'query_document',
   'read_attachment',
   'search_knowledge_base',
   'read_knowledge_file',
@@ -62,7 +64,7 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
     {
       name: 'insert_content',
       description:
-        'Insert new content at a given position (restricted HTML, may contain multiple blocks). For writing/continuing/generating new content; to rewrite existing content use replace_blocks.',
+        'Insert new content at a given position (restricted HTML, may contain multiple blocks). For writing/continuing/generating new content; to rewrite existing content use replace_blocks. Image tags must use exact current media:D:R:B.I references from read_blocks; every invalid or unsupported image rejects the whole write. New images use insert_picture.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -83,10 +85,16 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
     {
       name: 'replace_blocks',
       description:
-        'Replace a block range with new content (restricted HTML). For rewriting/translating/condensing/expanding existing content; the new block count may differ from the old. Compatible paragraph/text formatting (font, size, color, indent, spacing, alignment) is inherited by block role; this is not a lossless DOCX round trip and does not guarantee section boundaries, fields or protected objects. A rewritten <table> keeps column widths, borders, shading and cell formatting (unchanged cells keep their content). Read-only data-doc-readonly elements are refused before editing; exclude those ranges or edit surrounding text in place. Intentional replacement or explicit deleteBlocks may remove structures. Preserve inline pictures with the exact doc:B.I image references.',
+        'Replace a block range with new content (restricted HTML). For rewriting/translating/condensing/expanding existing content; the new block count may differ from the old. Compatible paragraph/text formatting (font, size, color, indent, spacing, alignment) is inherited by block role; this is not a lossless DOCX round trip and does not guarantee section boundaries, fields or protected objects. A rewritten <table> keeps column widths, borders, shading and cell formatting (unchanged cells keep their content). Read-only data-doc-readonly elements are refused before editing; exclude those ranges or edit surrounding text in place. Intentional replacement or explicit deleteBlocks may remove structures. Preserve writable inline pictures with the exact current media:D:R:B.I HTML references from read_blocks. Invalid, stale, unsupported or legacy unbound image references reject the whole write.',
       inputSchema: {
         type: 'object',
         properties: {
+          deleteStructures: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Exact revision-bound structure IDs from query_document that this replacement intentionally removes.',
+          },
           startBlockIndex: {
             type: 'integer',
             description: 'start block index (0-based, inclusive)',
@@ -104,10 +112,16 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
     {
       name: 'replace_selection',
       description:
-        "Replace exactly the user's selected text (the <sel>…</sel> span in the context) with new inline content, leaving the rest of the block untouched. For rewording/translating/correcting a selected phrase or sentence inside a paragraph, including a table cell. The new text inherits the selection's formatting unless the fragment styles it. Requires a range selection inside one paragraph/heading/list item; ranges across paragraphs or cells are refused. Pending deletion revisions are preserved and cannot be rewritten. For whole blocks use replace_blocks.",
+        "Replace exactly the user's selected text (the <sel>…</sel> span in the context) with new inline content, leaving the rest of the block untouched. For rewording/translating/correcting a selected phrase or sentence inside a paragraph, including a table cell. The new text inherits the selection's formatting unless the fragment styles it. Requires a range selection inside one paragraph/heading/list item; ranges across paragraphs or cells are refused. Pending deletion revisions are preserved and cannot be rewritten. Image tags must copy exact current media:D:R:B.I references; invalid or unsupported images reject the whole write. For whole blocks use replace_blocks.",
       inputSchema: {
         type: 'object',
         properties: {
+          deleteStructures: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Exact revision-bound structure IDs from query_document that this replacement intentionally removes.',
+          },
           html: {
             type: 'string',
             description:
@@ -123,7 +137,7 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
         (operationNames.length
           ? `Run a list of formatting/structure ops as one atomic transaction: ${operationNames.join(', ')}. `
           : 'Run formatting/structure ops as one atomic transaction. Call get_editor_capabilities for operation names and signatures. ') +
-        'Each op is a flat { op, target?, ...fields } object; fields are patches (present = set, null = clear, absent = untouched). Any invalid op rejects the whole batch with its usage line.',
+        'Each op is a flat { op, target?, ...fields } object; fields are patches (present = set, null = clear, absent = untouched). Any invalid op rejects the whole batch with its usage line. findReplace defaults to exactly one literal match across formatting runs within one paragraph; zero/multiple matches reject atomically. Intentional bulk replacement requires match:"all" and an explicit target scope.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -135,7 +149,8 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
           },
           dryRun: {
             type: 'boolean',
-            description: 'validate and return the plan without changing the document',
+            description:
+              'Check parameters, current target types/ranges and schema executability by building the whole transaction, then discard it. No document, history or revision changes; later edits can invalidate this preview.',
           },
         },
         required: ['ops'],
@@ -464,11 +479,32 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
       name: 'set_header_footer',
       description:
         'Set the page header or footer text (the current contents are listed in the message context). Plain text; \\n separates lines; the tokens {PAGE} and {NUMPAGES} become live page-number fields; an empty string clears the text. ' +
-        'Per-line alignment/styling of the existing header/footer is preserved; images in it are untouched. view "first"/"even" writes the different-first-page / even-page variant (enabling that setting if needed).',
+        'Per-line alignment/styling and images are preserved. Supported textboxes are patched in their original containers, including compatibility twins; unsupported textbox structures are refused before editing. textboxIndex selects one zero-based textbox from the current strip context and expires when the part changes; omitted replaces all editable text lines. section is zero-based, default 0 for BOTH kinds. scope=section (default) isolates the target and preserves other sections, including inherited/shared parts; scope=shared edits the owning part and affects the sharedWith sections listed in context. view first enables titlePg for that section; even enables document-wide even/odd display.',
       inputSchema: {
         type: 'object',
         properties: {
           kind: { type: 'string', enum: ['header', 'footer'] },
+          engineTarget: {
+            type: 'object',
+            description: 'Revision-bound header/footer/textbox target from query_document.',
+          },
+          textboxIndex: {
+            type: 'integer',
+            minimum: 0,
+            description:
+              'One textbox from fresh section/variant context; omitted edits all supported text lines.',
+          },
+          section: {
+            type: 'integer',
+            minimum: 0,
+            description: 'Zero-based section index from context; default 0.',
+          },
+          scope: {
+            type: 'string',
+            enum: ['section', 'shared'],
+            description:
+              'Default section preserves non-target sections; shared edits the shared/inherited owning part.',
+          },
           text: {
             type: 'string',
             description: 'new text; \\n between lines; may contain {PAGE} / {NUMPAGES}; "" clears',
@@ -479,7 +515,8 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
             description: 'which variant to write (default when omitted)',
           },
         },
-        required: ['kind', 'text'],
+        required: ['text'],
+        anyOf: [{ required: ['kind'] }, { required: ['engineTarget'] }],
       },
     },
     PAGE_SETUP_TOOL,

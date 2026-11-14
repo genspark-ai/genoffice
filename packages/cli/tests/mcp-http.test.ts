@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -121,7 +121,15 @@ describe('genoffice mcp --http', () => {
     const first = (before.json().detail.items[0].text as string).split(' ')[0]!
     const r = await call('docs_apply', {
       file: url,
-      ops: [{ op: 'findReplace', find: first, replace: 'GENOFFICE' }],
+      ops: [
+        {
+          op: 'findReplace',
+          find: first,
+          replace: 'GENOFFICE',
+          match: 'all',
+          target: { scope: 'document' },
+        },
+      ],
     })
     expect(r.isError).toBe(false)
     const ok = r.json()
@@ -243,11 +251,11 @@ describe('remote defaults', () => {
       for (const name of ['render', 'slides_render']) {
         const args: Record<string, unknown> = { file: 'x.pptx' }
         defaultOut(tools.get(name)!, args, ctx)
-        expect(String(args.out)).toMatch(new RegExp(`^${ctx.scratchDir}/render-`))
+        expect(String(args.out).startsWith(join(ctx.scratchDir, 'render-'))).toBe(true)
       }
       const created: Record<string, unknown> = { from: 'notes.md' }
       defaultOut(tools.get('create_pdf')!, created, ctx)
-      expect(String(created.out)).toMatch(/\/notes\.pdf$/)
+      expect(basename(String(created.out))).toBe('notes.pdf')
       const kept: Record<string, unknown> = { file: 'a.docx', out: 'b.docx' }
       defaultOut(tools.get('docs_apply')!, kept, ctx)
       expect(kept.out).toBe('b.docx')
@@ -296,7 +304,7 @@ describe('file store and fetch guard', () => {
     try {
       const dir = tempDir()
       const path = await fetchToFile(`http://127.0.0.1:${port}/redirect`, dir)
-      expect(path.endsWith('/data.csv')).toBe(true)
+      expect(basename(path)).toBe('data.csv')
       expect(readFileSync(path, 'utf8')).toBe('a,b\n1,2\n')
       const byName = await fetchToFile(`http://localhost:${port}/dir/data.csv`, dir)
       expect(readFileSync(byName, 'utf8')).toBe('a,b\n1,2\n')

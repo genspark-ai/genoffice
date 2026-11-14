@@ -8,6 +8,7 @@ import JSZip from 'jszip'
 import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
 import type { DocsEditorHandle } from '../apps/docs/src/renderer/embedded'
+import type { DocsQueryResult } from '../apps/docs/src/shared/document-query'
 import type { DocsEditorAction } from '../apps/docs/src/shared/editor-action'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -261,6 +262,17 @@ test('the embedded public editor edits, undoes, saves and reopens Word with its 
       return result.output
     }
     expect(JSON.stringify((await tool('read_document', {})).content)).toContain('Manual Word text')
+    const queried = JSON.parse(
+      await toolOutput('query_document', {
+        domain: 'body',
+        containsText: 'Manual Word text',
+        limit: 1,
+      }),
+    ) as DocsQueryResult
+    expect(queried.page.complete).toBe(true)
+    expect(queried.items).toHaveLength(1)
+    expect(queried.items[0].html).toContain('Manual Word text')
+    expect(queried.items[0].supportedOperations).toContain('findReplace')
     await tool('get_editor_capabilities', {})
     await tool('replace_selection', { html: 'Agent' })
     await expect(body).toHaveText('Agent Word text')

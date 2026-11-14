@@ -46,8 +46,8 @@
     "dist:linux": "npm run notices && npm run build:all && npm run dist:linux -w @genoffice/shell",
     "build:sdk": "npm run build:sdk -w @genoffice/docs",
     "check:sdk-package": "node tools/check-docs-sdk-package.mjs",
-    "test:sdk:browser": "cross-env FORAOFFICE_SDK_TEST_HOST=browser playwright test --config e2e/playwright.config.ts e2e/docs-embedded-runtime.spec.ts e2e/docs-node-host.spec.ts e2e/docs-sdk-integration.spec.ts e2e/docs-sdk-ai-operations.spec.ts e2e/docs-sdk-table-selection.spec.ts",
-    "test:sdk:electron": "cross-env FORAOFFICE_SDK_TEST_HOST=electron playwright test --config e2e/playwright.config.ts e2e/docs-embedded-runtime.spec.ts e2e/docs-node-host.spec.ts e2e/docs-sdk-integration.spec.ts e2e/docs-sdk-ai-operations.spec.ts e2e/docs-sdk-table-selection.spec.ts"
+    "test:sdk:browser": "cross-env FORAOFFICE_SDK_TEST_HOST=browser playwright test --config e2e/playwright.config.ts e2e/docs-embedded-runtime.spec.ts e2e/docs-node-host.spec.ts e2e/docs-sdk-integration.spec.ts e2e/docs-sdk-ai-operations.spec.ts e2e/docs-sdk-table-selection.spec.ts e2e/docs-sdk-safe-editing.spec.ts",
+    "test:sdk:electron": "cross-env FORAOFFICE_SDK_TEST_HOST=electron playwright test --config e2e/playwright.config.ts e2e/docs-embedded-runtime.spec.ts e2e/docs-node-host.spec.ts e2e/docs-sdk-integration.spec.ts e2e/docs-sdk-ai-operations.spec.ts e2e/docs-sdk-table-selection.spec.ts e2e/docs-sdk-safe-editing.spec.ts"
   },
   "dependencies": {
     "ws": "^8.21.1"

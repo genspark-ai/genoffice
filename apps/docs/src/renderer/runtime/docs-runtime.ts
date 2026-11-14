@@ -1,3 +1,4 @@
+// Modified for ForaOffice: reliable document targeting and portable inspection.
 import type { Editor } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
@@ -8,14 +9,19 @@ import {
   buildDocContext,
   getSelectionScope,
   HTML_RULES,
+  parseHtmlFragment,
+  parseInlineFragment,
+  resolveImageRefs,
   type AiTrack,
   type NumIds,
 } from '../ai/protocol'
-import { opCatalog, opNames } from '../ai/ops'
+import { executeOps, opCatalog, opNames } from '../ai/ops'
+import type { DocsEngineTarget } from '../../shared/document-query'
 import {
   executeTool,
   markDocSeen,
   onDocSeenCarry,
+  validateHtmlStructureIntent,
   type AiCommentsAccess,
   type AiDocExtras,
   type AiHeaderFooterAccess,
@@ -27,7 +33,7 @@ import type { WritePosition } from './draft-landing'
 import { z } from 'zod'
 import { docsToolCatalog, DOCS_READ_TOOLS } from '../../shared/tool-catalog'
 import { DOCS_DRAFT_CONTROLS, DOCS_RUNTIME_TOOLS } from '../../shared/runtime-tools'
-import { DocumentDraft, draftPosition } from './document-draft'
+import { DocumentDraft, DraftInputError, draftPosition } from './document-draft'
 import { DRAFT_META, hasActiveDocumentDraft } from './draft-landing'
 import { toolUnavailable } from './capabilities'
 import type {
@@ -36,7 +42,12 @@ import type {
   DocsSaveOutcome,
   DocsSaveResult,
 } from '../../shared/operation-result'
-import { readDocumentMedia } from './document-media'
+import {
+  readDocumentMedia,
+  documentMediaReferences,
+  prepareDocumentImageWrite,
+  bindDocumentImageHtml,
+} from './document-media'
 import {
   DOCS_RESOURCE_TOOL_NAMES,
   DOCS_RESOURCE_TOOLS,
@@ -44,10 +55,11 @@ import {
   type DocsResourceTools,
 } from '../../shared/resource-tools'
 import { redactLabelsOf } from '../ai/redact-view'
+import { queryDocument, projectedTargetHtml, type QueryContinuation } from './document-query'
 
 type RuntimeExecution = ToolExecution &
-  Pick<DocsOperationResult, 'errorCode' | 'media'> &
-  Partial<Pick<DocsOperationResult, 'committed'>>
+  Pick<DocsOperationResult, 'errorCode' | 'media' | 'imageReferenceErrors'> &
+  Partial<Pick<DocsOperationResult, 'committed' | 'receipt' | 'matchCount' | 'changeCount'>>
 
 interface DocumentGenerationState {
   documentId: string
@@ -72,6 +84,28 @@ export interface RuntimeDocument {
   pageSetup?: AiPageSetupAccess
   extras?: AiDocExtras
   notes?: AiNotesAccess
+}
+
+/** Detached runtimes can observe these complete authored stores without a host epoch. */
+function stateVersionOf(doc: RuntimeDocument | null | undefined): unknown {
+  if (!doc || doc.stateVersion !== undefined) return doc?.stateVersion
+  return JSON.stringify({
+    headerFooter: doc.headerFooter?.read(),
+    pages: doc.pageSetup?.list(),
+    comments: doc.comments?.list(),
+    footnotes: doc.notes?.list('footnote'),
+    endnotes: doc.notes?.list('endnote'),
+  })
+}
+
+function authoredStoreUnavailable(name: string, doc: RuntimeDocument | null) {
+  if (doc?.stateVersion === undefined && ['define_style', 'set_watermark'].includes(name))
+    return {
+      reason:
+        'This authored store has no complete observable snapshot. The host must provide RuntimeDocument.stateVersion for style or watermark writes.',
+      errorCode: 'unavailable' as const,
+    }
+  return undefined
 }
 
 export interface RuntimeCaller {
@@ -135,6 +169,7 @@ const failure = (
   output,
   summary: 'Document operation refused',
   isError: true,
+  mutated: false,
   errorCode,
 })
 const executionFailure = (error: unknown): RuntimeExecution =>
@@ -181,19 +216,22 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
   let knownStateVersion: unknown
   let revisionEditor: Editor | undefined
   const countRevision = ({ transaction }: { transaction: Transaction }) => {
-    if (transaction.docChanged) documentState.revision++
+    if (transaction.docChanged && !transaction.before.eq(transaction.doc)) documentState.revision++
   }
   const clients = new Set<DocsRuntimeClient>()
   const pendingDrafts = new Set<DocumentDraft>()
+  const queryContinuations = new Map<string, QueryContinuation>()
 
   const current = (): RuntimeDocument => {
-    const doc = bindings.current()
+    const bound = bindings.current()
+    const doc = bound && { ...bound, stateVersion: stateVersionOf(bound) }
     if (disposed || !doc || doc.editor.isDestroyed) throw new Error('The document is not open')
     if (doc.identity !== identity) {
       // End callers of the replaced generation, including uncooperative pending native writers.
       for (const client of clients) client.close()
       for (const draft of pendingDrafts) draft.discard()
       pendingDrafts.clear()
+      queryContinuations.clear()
       identity = doc.identity
       documentId = crypto.randomUUID()
       revisionEditor?.off('transaction', countRevision)
@@ -242,12 +280,22 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
     const createOwnedDraft = (doc: RuntimeDocument, position: WritePosition) => {
       if (hasActiveDocumentDraft(doc.editor)) throw new Error('A document draft is already active')
       const draftId = crypto.randomUUID()
+      const sourceState = stateVersionOf(bindings.current())
       const draft = new DocumentDraft(
         doc.editor,
         doc.numIds,
         position,
         () => !doc.editor.isDestroyed && bindings.current()?.identity === boundIdentity,
         () => bindings.current()?.track,
+        {
+          documentId: boundState.documentId,
+          revision: boundState.revision,
+          isCurrent: () =>
+            !closed &&
+            !disposed &&
+            bindings.current()?.identity === boundIdentity &&
+            stateVersionOf(bindings.current()) === sourceState,
+        },
       )
       drafts.set(draftId, draft)
       pendingDrafts.add(draft)
@@ -268,7 +316,11 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
         if (!draft) return failure('The draft does not belong to this caller')
         let mutated = false
         if (call.name === 'update_document_draft')
-          draft.update(Number(call.input.sequence), String(call.input.html))
+          draft.update(
+            Number(call.input.sequence),
+            String(call.input.html),
+            call.input.deleteStructures,
+          )
         if (call.name === 'stop_document_draft') draft.stop()
         if (call.name === 'finish_document_draft') {
           if (call.input.decision === 'discard') draft.discard()
@@ -286,6 +338,13 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
           mutated,
         }
       } catch (error) {
+        if (error instanceof DraftInputError)
+          return {
+            ...failure(error.message, error.errorCode),
+            ...(error.imageReferenceErrors
+              ? { imageReferenceErrors: error.imageReferenceErrors }
+              : {}),
+          }
         return failure(error instanceof Error ? error.message : String(error))
       }
     }
@@ -339,13 +398,18 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
         return {
           documentId,
           revision: documentState.revision,
-          text: buildDocContext(
-            doc.editor,
-            frozen.scope,
-            doc.comments?.list(),
-            doc.headerFooter?.read(),
-            doc.pageSetup?.list(),
-          ),
+          text:
+            bindDocumentImageHtml(
+              buildDocContext(
+                doc.editor,
+                frozen.scope,
+                doc.comments?.list(),
+                doc.headerFooter?.read(),
+                doc.pageSetup?.list(),
+              ),
+              documentId,
+              documentState.revision,
+            ) + documentMediaReferences(doc.editor, documentId, documentState.revision),
         }
       },
       execute(call, signal) {
@@ -353,12 +417,46 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
           ? AbortSignal.any([signal, lifetime.signal])
           : lifetime.signal
         let revisionBefore = boundState.revision
+        let resolvedTargets: DocsEngineTarget[] = []
+        let operationResults: NonNullable<DocsOperationResult['receipt']>['operations']
+        let operationChanged = false
+        const ownApply = <T>(operation: () => T): T => {
+          const before = bindings.current()
+          let bodyChanged = false
+          const observe = ({ transaction }: { transaction: Transaction }) => {
+            if (
+              !transaction.getMeta(DRAFT_META) &&
+              transaction.docChanged &&
+              !transaction.before.eq(transaction.doc)
+            )
+              bodyChanged = true
+          }
+          before?.editor.on('transaction', observe)
+          const state = stateVersionOf(before)
+          try {
+            return apply(operation)
+          } finally {
+            before?.editor.off('transaction', observe)
+            const after = bindings.current()
+            if (
+              before &&
+              after &&
+              before.identity === after.identity &&
+              (bodyChanged || state !== stateVersionOf(after))
+            )
+              operationChanged = true
+          }
+        }
         const run = async (): Promise<RuntimeExecution> => {
           revisionBefore = boundState.revision
           if (closed || disposed) return failure('The document caller is closed', 'stale_target')
           if (operationSignal.aborted)
             return failure('stopped by the user; the operation was canceled', 'canceled')
           const doc = current()
+          revisionBefore = boundState.revision
+          const missingStoreEpoch = authoredStoreUnavailable(call.name, bindings.current())
+          if (missingStoreEpoch)
+            return failure(missingStoreEpoch.reason, missingStoreEpoch.errorCode)
           const resourceProvider = resources()
           const helper = resourceProvider?.tools.find((tool) => tool.name === call.name)
           const schema =
@@ -375,6 +473,188 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
               'The document was replaced; create a new document binding',
               'stale_target',
             )
+          if (call.name === 'query_document') {
+            try {
+              const result = queryDocument(
+                doc.editor,
+                boundState.documentId,
+                boundState.revision,
+                call.input,
+                doc,
+                queryContinuations,
+              )
+              seen = doc.editor.state.doc
+              markDocSeen(doc.editor)
+              return { output: JSON.stringify(result), summary: 'Document query', mutated: false }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              return failure(
+                message,
+                message.startsWith('Stale') ? 'stale_target' : 'invalid_input',
+              )
+            }
+          }
+          if (call.name === 'apply_ops' && Array.isArray(call.input.ops)) {
+            resolvedTargets = call.input.ops.flatMap((op) =>
+              op?.target?.engine ? [op.target.engine] : [],
+            )
+            if (
+              resolvedTargets.some(
+                (target) =>
+                  target.documentId !== boundState.documentId ||
+                  target.revision !== boundState.revision,
+              )
+            )
+              return failure(
+                'Stale or wrong-document target; use query_document again before editing.',
+                'stale_target',
+              )
+            for (const target of resolvedTargets) {
+              if (target.expectedHtml === undefined) continue
+              if (projectedTargetHtml(doc.editor, target) !== target.expectedHtml)
+                return failure(
+                  'Engine target content precondition failed; query_document again.',
+                  'invalid_input',
+                )
+            }
+          }
+          const localIntent = (value: unknown): string[] | undefined => {
+            if (value === undefined) return undefined
+            if (!Array.isArray(value))
+              throw new Error('deleteStructures must contain revision-bound structure references')
+            return value.map((id) => {
+              if (typeof id !== 'string') throw new Error('Invalid structure reference')
+              const prefix = `structure:${boundState.documentId}:${boundState.revision}:`
+              if (!id.startsWith(prefix))
+                throw new Error('Stale or unbound structure reference; query_document again')
+              return id.slice(prefix.length)
+            })
+          }
+          try {
+            if (call.input.deleteStructures !== undefined && call.name !== 'update_document_draft')
+              call = {
+                ...call,
+                input: {
+                  ...call.input,
+                  deleteStructures: localIntent(call.input.deleteStructures),
+                },
+              }
+            if (call.name === 'apply_ops' && Array.isArray(call.input.ops))
+              call = {
+                ...call,
+                input: {
+                  ...call.input,
+                  ops: call.input.ops.map((op) =>
+                    op && typeof op === 'object' && op.deleteStructures !== undefined
+                      ? { ...op, deleteStructures: localIntent(op.deleteStructures) }
+                      : op,
+                  ),
+                },
+              }
+          } catch (error) {
+            return failure(error instanceof Error ? error.message : String(error), 'stale_target')
+          }
+          if (call.input.engineTarget !== undefined) {
+            const target = call.input.engineTarget as DocsEngineTarget
+            if (
+              target.documentId !== boundState.documentId ||
+              target.revision !== boundState.revision
+            )
+              return failure('Stale side-state target; query_document again.', 'stale_target')
+            if (
+              !target.address ||
+              !Number.isSafeInteger(target.address.section) ||
+              target.address.section < 0
+            )
+              return failure('Invalid side-state target address', 'invalid_input')
+            const domain =
+              call.name === 'set_page_setup'
+                ? 'sections'
+                : target.address.kind === 'header'
+                  ? 'headers'
+                  : 'footers'
+            const windows = new Map<string, QueryContinuation>()
+            let window = queryDocument(
+              doc.editor,
+              boundState.documentId,
+              boundState.revision,
+              { domain, limit: 50, maxItemChars: 4000 },
+              doc,
+              windows,
+            )
+            let found: boolean
+            while (true) {
+              found = window.items.some(
+                (item) =>
+                  item.target.expectedType === target.expectedType &&
+                  item.target.kind === target.kind &&
+                  item.supportedOperations.includes(call.name) &&
+                  item.target.address?.section === target.address?.section &&
+                  item.target.address?.kind === target.address?.kind &&
+                  item.target.address?.view === target.address?.view &&
+                  item.target.address?.textboxIndex === target.address?.textboxIndex &&
+                  (target.expectedHtml === undefined ||
+                    (item.complete && item.html === target.expectedHtml)),
+              )
+              if (found || !window.page.nextCursor) break
+              window = queryDocument(
+                doc.editor,
+                boundState.documentId,
+                boundState.revision,
+                { cursor: window.page.nextCursor },
+                doc,
+                windows,
+              )
+            }
+            if (!found || (call.name !== 'set_page_setup' && call.name !== 'set_header_footer'))
+              return failure('Target type/address does not support this operation', 'invalid_input')
+            for (const [key, value] of Object.entries(target.address))
+              if (call.input[key] !== undefined && call.input[key] !== value)
+                return failure(
+                  'Explicit parameters disagree with the engine target',
+                  'invalid_input',
+                )
+            resolvedTargets = [target]
+            call = { ...call, input: { ...call.input, ...target.address } }
+          }
+          if (['insert_content', 'replace_blocks', 'replace_selection'].includes(call.name)) {
+            const images = prepareDocumentImageWrite(
+              doc.editor,
+              String(call.input.html ?? ''),
+              boundState.documentId,
+              boundState.revision,
+            )
+            if (images.errors.length)
+              return {
+                ...failure(
+                  'Explicit image references could not be applied; no changes were made. Use current media: references from read_blocks; use insert_picture for new images. Protected block/OLE previews are not writable image references.',
+                  images.errors.some((error) => error.reason === 'expired')
+                    ? 'stale_target'
+                    : 'invalid_input',
+                ),
+                mutated: false,
+                imageReferenceErrors: images.errors,
+              }
+            // Reuse execution's representation checks before any history metadata is dispatched.
+            if (/<img\b/i.test(images.html)) {
+              try {
+                const nodes =
+                  call.name === 'replace_selection'
+                    ? parseInlineFragment(images.html)
+                    : parseHtmlFragment(images.html, doc.numIds)
+                resolveImageRefs(doc.editor, nodes, images.html)
+              } catch (error) {
+                return {
+                  ...failure(
+                    error instanceof Error ? error.message : String(error),
+                    'invalid_input',
+                  ),
+                  mutated: false,
+                }
+              }
+            }
+            call = { ...call, input: { ...call.input, html: images.html } }
+          }
           if (call.name === 'get_editor_capabilities') {
             const helperTools = resources()?.tools ?? []
             const tools = [
@@ -389,7 +669,8 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
                       reason: 'This resource helper is not available in the current host context',
                       errorCode: 'unavailable' as const,
                     }
-                : toolUnavailable(tool.name, doc)
+                : (authoredStoreUnavailable(tool.name, bindings.current()) ??
+                  toolUnavailable(tool.name, doc))
               return { ...tool, available: !unavailable, ...(unavailable ?? {}) }
             })
             return {
@@ -481,18 +762,35 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
           if (unavailable) return failure(unavailable.reason, unavailable.errorCode)
           if (call.name === 'read_document_media') {
             const expected = doc.editor.state.doc
+            let blockIndex = Number(call.input.blockIndex)
+            let imageIndex =
+              call.input.imageIndex === undefined ? undefined : Number(call.input.imageIndex)
+            if (call.input.mediaRef !== undefined) {
+              const ref = /^media:([^:]+):(\d+):(\d+)\.(\d+)$/.exec(String(call.input.mediaRef))
+              if (!ref) return failure('Invalid document media reference.', 'invalid_input')
+              if (ref[1] !== boundState.documentId || Number(ref[2]) !== boundState.revision)
+                return failure('The media reference is stale; read fresh context.', 'stale_target')
+              if (
+                (call.input.blockIndex !== undefined && blockIndex !== Number(ref[3])) ||
+                (imageIndex !== undefined && imageIndex !== Number(ref[4]))
+              )
+                return failure('mediaRef and image coordinates disagree.', 'invalid_input')
+              blockIndex = Number(ref[3])
+              imageIndex = Number(ref[4])
+            }
             return withCancellation(
               readDocumentMedia(
                 doc.editor,
-                Number(call.input.blockIndex),
+                blockIndex,
                 operationSignal,
                 () =>
                   !closed &&
                   !disposed &&
                   bindings.current()?.identity === boundIdentity &&
-                  bindings.current()?.stateVersion === doc.stateVersion &&
+                  stateVersionOf(bindings.current()) === doc.stateVersion &&
                   seen === expected &&
                   doc.editor.state.doc === expected,
+                imageIndex,
               ),
               operationSignal,
             )
@@ -503,6 +801,7 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
           const revisionsWereCurrent = revisionsSeen === doc.editor.state.doc
           const stateWasCurrent = seenState === doc.stateVersion
           const writesDocument =
+            !(call.name === 'apply_ops' && call.input.dryRun === true) &&
             !DOCS_READ_TOOLS.has(call.name) &&
             !DOCS_DRAFT_CONTROLS.has(call.name) &&
             call.name !== 'start_document_draft' &&
@@ -524,25 +823,56 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
             )
           const isDraftTool =
             call.name === 'start_document_draft' || DOCS_DRAFT_CONTROLS.has(call.name)
+          const structureError = validateHtmlStructureIntent(
+            doc.editor,
+            call,
+            frozen?.doc === doc.editor.state.doc ? frozen.scope : null,
+            doc.numIds,
+          )
+          if (structureError) return failure(structureError, 'invalid_input')
           if (hasActiveDocumentDraft(doc.editor) && !isDraftTool && !DOCS_READ_TOOLS.has(call.name))
             return failure('Settle the active document draft before editing')
           if (call.name === 'document_history') {
-            const changed = apply(() =>
+            const changed = ownApply(() =>
               call.input.action === 'undo'
                 ? doc.editor.commands.undo()
                 : doc.editor.commands.redo(),
             )
             if (!changed) return failure(`No ${String(call.input.action)} is available`)
             revisionsSeen = seen = doc.editor.state.doc
-            revisionState = seenState = bindings.current()?.stateVersion
+            revisionState = seenState = stateVersionOf(bindings.current())
             return {
               output: `Document ${String(call.input.action)} completed`,
               summary: 'Document history',
               mutated: true,
             }
           }
-          if (!DOCS_READ_TOOLS.has(call.name))
-            doc.editor.view.dispatch(closeHistory(doc.editor.state.tr))
+          // These stores have their own host persistence; they do not form body undo entries.
+          const storeOnly = [
+            'set_header_footer',
+            'set_page_setup',
+            'set_watermark',
+            'define_style',
+            'reply_comment',
+            'resolve_comment',
+            'delete_comment',
+            'edit_note',
+          ].includes(call.name)
+          let changesHistory = !DOCS_READ_TOOLS.has(call.name) && !storeOnly && !isDraftTool
+          if (call.name === 'apply_ops') {
+            const preview = executeOps(doc.editor, call.input.ops, {
+              numIds: doc.numIds,
+              track: doc.track,
+              selection: frozen?.doc === doc.editor.state.doc ? frozen.scope : null,
+              styles: doc.extras?.styles,
+              dryRun: true,
+              engineEpoch: boundState,
+            })
+            if (!preview.ok)
+              return failure(preview.error ?? 'The operation batch cannot execute', 'invalid_input')
+            changesHistory = call.input.dryRun !== true && preview.wouldChange === true
+          }
+          if (changesHistory) doc.editor.view.dispatch(closeHistory(doc.editor.state.tr))
           let expectedDoc = doc.editor.state.doc
           let expectedState = doc.stateVersion
           markDocSeen(doc.editor)
@@ -552,38 +882,86 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
           let result: RuntimeExecution
           try {
             const operation = Promise.resolve(
-              apply(() =>
+              ownApply(() =>
                 isDraftTool
                   ? draftTool(call, doc)
-                  : executeTool(
-                      doc.editor,
-                      call,
-                      doc.numIds,
-                      doc.track,
-                      operationSignal,
-                      frozen,
-                      doc.comments,
-                      doc.headerFooter,
-                      doc.pageSetup,
-                      doc.extras,
-                      doc.notes,
-                      {
-                        isCurrent: () =>
-                          !closed &&
-                          !disposed &&
-                          bindings.current()?.identity === boundIdentity &&
-                          (DOCS_READ_TOOLS.has(call.name) || doc.editor.isEditable) &&
-                          bindings.current()?.stateVersion === expectedState &&
-                          expectedDoc === doc.editor.state.doc,
-                        markSeen: () => {
-                          expectedDoc = doc.editor.state.doc
-                          expectedState = bindings.current()?.stateVersion
-                          if (blocksWereCurrent || readsBlocks) seen = expectedDoc
+                  : call.name === 'apply_ops'
+                    ? (() => {
+                        const outcome = executeOps(doc.editor, call.input.ops, {
+                          numIds: doc.numIds,
+                          track: doc.track,
+                          selection: frozen?.doc === doc.editor.state.doc ? frozen.scope : null,
+                          styles: doc.extras?.styles,
+                          dryRun: call.input.dryRun === true,
+                          engineEpoch: boundState,
+                        })
+                        if (!outcome.ok)
+                          return failure(
+                            outcome.error ?? 'The operation batch failed',
+                            'invalid_input',
+                          )
+                        const results = outcome.previewResults ?? outcome.results
+                        operationResults = results.map((result) => ({
+                          ...result,
+                          ...(result.structuralEffects
+                            ? {
+                                structuralEffects: result.structuralEffects.map((effect) => ({
+                                  ...effect,
+                                  reference: `structure:${boundState.documentId}:${revisionBefore}:${effect.reference}`,
+                                })),
+                              }
+                            : {}),
+                        }))
+                        return {
+                          output:
+                            call.input.dryRun === true
+                              ? `Dry run: ${(outcome.plan ?? []).join('\n')}`
+                              : outcome.summary,
+                          summary: 'Document operations',
+                          mutated:
+                            call.input.dryRun !== true &&
+                            results.some((result) => result.changed > 0),
+                          matchCount: results.reduce(
+                            (sum, result) => sum + (result.matchCount ?? result.matched),
+                            0,
+                          ),
+                          changeCount: results.reduce(
+                            (sum, result) => sum + (result.changeCount ?? result.changed),
+                            0,
+                          ),
+                        }
+                      })()
+                    : executeTool(
+                        doc.editor,
+                        call,
+                        doc.numIds,
+                        doc.track,
+                        operationSignal,
+                        frozen,
+                        doc.comments,
+                        doc.headerFooter,
+                        doc.pageSetup,
+                        doc.extras,
+                        doc.notes,
+                        {
+                          isCurrent: () =>
+                            !closed &&
+                            !disposed &&
+                            bindings.current()?.identity === boundIdentity &&
+                            (DOCS_READ_TOOLS.has(call.name) || doc.editor.isEditable) &&
+                            stateVersionOf(bindings.current()) === expectedState &&
+                            expectedDoc === doc.editor.state.doc,
+                          markSeen: () => {
+                            expectedDoc = doc.editor.state.doc
+                            expectedState = stateVersionOf(bindings.current())
+                            if (blocksWereCurrent || readsBlocks) seen = expectedDoc
+                          },
+                          apply: ownApply,
+                          selection: () => frozen?.scope ?? null,
+                          imageHtml: (html) =>
+                            bindDocumentImageHtml(html, boundState.documentId, boundState.revision),
                         },
-                        apply,
-                        selection: () => frozen?.scope ?? null,
-                      },
-                    ),
+                      ),
               ),
             )
             // Creation has independent host effects and no rollback contract. Await its
@@ -608,7 +986,23 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
               doc.editor.view.dispatch(transaction.setMeta('addToHistory', false))
           }
           if (!result.isError) {
-            const nextState = bindings.current()?.stateVersion
+            if (call.name === 'get_document_context')
+              result.output = bindDocumentImageHtml(
+                result.output,
+                boundState.documentId,
+                boundState.revision,
+              )
+            if (readsBlocks)
+              result.output += documentMediaReferences(
+                doc.editor,
+                boundState.documentId,
+                boundState.revision,
+                call.name === 'read_blocks' ? Number(call.input.startBlockIndex) : 0,
+                call.name === 'read_blocks'
+                  ? Number(call.input.endBlockIndex)
+                  : doc.editor.state.doc.childCount - 1,
+              )
+            const nextState = stateVersionOf(bindings.current())
             if (readsBlocks || (result.mutated && blocksWereCurrent)) seen = doc.editor.state.doc
             if (
               readsBlocks ||
@@ -637,29 +1031,47 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
           .then((execution): DocsOperationResult => {
             if (!disposed && bindings.current()?.identity === boundIdentity) current()
             const helper = DOCS_RESOURCE_TOOL_NAMES.has(call.name)
-            const storeWrite =
-              !helper &&
-              !execution.isError &&
-              !DOCS_READ_TOOLS.has(call.name) &&
-              !DOCS_DRAFT_CONTROLS.has(call.name) &&
-              call.name !== 'start_document_draft' &&
-              call.name !== 'create_document'
-            const committed =
-              execution.committed === undefined
-                ? !!execution.mutated || storeWrite
+            const changed = operationChanged
+            const independent = helper || call.name === 'create_document'
+            const committed = independent
+              ? execution.committed === undefined
+                ? !!execution.mutated
                 : execution.committed
-            if (
-              committed &&
-              !helper &&
-              call.name !== 'create_document' &&
-              boundState.revision === revisionBefore
-            )
-              boundState.revision++
+              : changed
             return {
               ...execution,
               documentId: boundState.documentId,
               revision: boundState.revision,
               committed,
+              mutated: helper || call.name === 'create_document' ? execution.mutated : changed,
+              receipt: {
+                outcome:
+                  helper || call.name === 'create_document'
+                    ? 'independent-effect'
+                    : execution.isError
+                      ? changed
+                        ? 'failure-after-commit'
+                        : 'rejected'
+                      : call.name === 'apply_ops' && call.input.dryRun === true
+                        ? 'preview'
+                        : changed
+                          ? 'applied'
+                          : DOCS_READ_TOOLS.has(call.name)
+                            ? 'read'
+                            : 'no-op',
+                revisionBefore,
+                revisionAfter: boundState.revision,
+                persistence:
+                  helper || call.name === 'create_document'
+                    ? committed === null
+                      ? 'unknown'
+                      : 'unchanged'
+                    : changed
+                      ? 'pending'
+                      : 'unchanged',
+                ...(resolvedTargets.length ? { resolvedTargets } : {}),
+                ...(operationResults ? { operations: operationResults } : {}),
+              },
               ...(execution.isError
                 ? { errorCode: execution.errorCode ?? 'execution_failure' }
                 : {}),
@@ -670,6 +1082,7 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
       },
       save(options, signal) {
         const run = async (): Promise<DocsSaveResult> => {
+          const revisionBefore = boundState.revision
           const refuse = (error: string, errorCode: DocsErrorCode): DocsSaveOutcome => ({
             ok: false,
             error,
@@ -728,6 +1141,17 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
               ? `Document saved to ${outcome.path ?? options.path}`
               : (outcome.error ?? 'The document could not be saved'),
             summary: outcome.ok ? 'Document saved' : 'Document save incomplete',
+            receipt: {
+              outcome: 'independent-effect',
+              revisionBefore,
+              revisionAfter: boundState.revision,
+              persistence:
+                outcome.ok && outcome.committed === true && !outcome.pending
+                  ? 'completed'
+                  : outcome.committed === null
+                    ? 'unknown'
+                    : 'pending',
+            },
             ...(!outcome.ok
               ? { isError: true, errorCode: outcome.errorCode ?? 'host_failure' }
               : {}),

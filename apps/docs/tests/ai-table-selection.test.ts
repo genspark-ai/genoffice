@@ -359,7 +359,7 @@ describe('AI table cell selection through the SDK runtime', () => {
     })
     const editor = createEditor({ type: 'doc', content: [table] })
     expect(serializeRangeToHtml(editor, 0, 0)).toContain(
-      `<tr><td></td><td></td><td>${ORIGINAL}</td></tr>`,
+      `<tr><td data-row="1" data-col="1"></td><td data-row="1" data-col="2">${ORIGINAL}</td></tr>`,
     )
     select(editor, 0)
     expect(buildDocContext(editor)).toContain(`<sel>${TARGET}</sel>`)
@@ -384,7 +384,7 @@ describe('AI table cell selection through the SDK runtime', () => {
       text(TARGET),
     ])
     expect(serializeRangeToHtml(editor, 0, 0)).toContain(
-      `<td data-doc-readonly="formula">漢字 E=mc2 2 ${TARGET}</td>`,
+      `<td data-row="0" data-col="0" data-doc-readonly="formula">漢字 E=mc2 2 ${TARGET}</td>`,
     )
   })
 })

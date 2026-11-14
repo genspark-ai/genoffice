@@ -71,6 +71,14 @@ host-issued credential. Do not reuse the desktop CLI server's URL, upload API or
 session rules. The SDK guide records the supported transport revisions; a new
 revision or client is accepted only after actual interoperability verification.
 
+Qt's trusted `startMcp`/`mcpState` result supplies separate editing and
+`readOnlyConnection` configurations for the same captured live document. Each
+uses its own credential and session callers; distribute only the intended
+configuration to each client. The read-only server does not register write,
+save or CLI tools. Both services end with their shared document binding, while
+one client's reads do not refresh another client's baseline. This permission
+grant is distinct from marking the hosted document itself read-only.
+
 Hosts may forward editor-originated actions through `harness.submit` and may
 resolve built-in instructions with stable operation identifiers. User-entered
 instructions remain user input, not localized operation identifiers. Models,
@@ -82,6 +90,12 @@ File roots, exact dialog approvals and private-state exclusions are enforced by
 the provided Node services. Hosts using their own services must enforce their
 own authorization boundary. Resource selection does not grant arbitrary file
 access; the bounded Office CLI is not a shell executor.
+
+Qt hosts use `configureResources` to select already-authorized attachments and
+knowledge files. Files outside read roots require a prior exact read grant;
+selection supplies no write authority. Clear selections and revoke temporary
+file grants when their application scope ends. Stopping MCP revokes its access,
+not the host's independent resource configuration.
 
 Save results distinguish committed, pending and unknown outcomes. Cancellation
 does not roll back committed work. Preserve an outstanding draft's explicit

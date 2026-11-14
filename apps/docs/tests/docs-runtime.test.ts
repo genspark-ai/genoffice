@@ -438,6 +438,7 @@ describe('shared Docs runtime', () => {
         current: () => ({
           editor,
           identity: editor,
+          stateVersion: 0,
           numIds: { bullet: null, ordered: null },
           extras: { watermark: { current: () => null, set } },
         }),
@@ -804,6 +805,7 @@ describe('shared Docs runtime', () => {
       current: () => ({
         editor,
         identity: editor,
+        stateVersion: 0,
         numIds: { bullet: null, ordered: null },
         extras: { watermark: { current: () => null, set } },
       }),
@@ -905,6 +907,7 @@ describe('shared Docs runtime', () => {
       current: () => ({
         editor,
         identity,
+        stateVersion: 0,
         numIds: { bullet: null, ordered: null },
         extras: { watermark: { current: () => null, set } },
       }),

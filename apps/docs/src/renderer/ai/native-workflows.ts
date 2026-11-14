@@ -110,11 +110,13 @@ export function createNativeDocsWorkflows(
         decision: result.truncated ? 'retain_partial' : 'finalize',
       })
       if (settled.isError) return settled
-      const state = JSON.parse(settled.output) as { result: { blocks: number } }
+      const state = JSON.parse(settled.output) as {
+        result: { blocks: number; validatedCharacters?: number }
+      }
       return {
         ...settled,
         output:
-          `Content written (${state.result.blocks} block(s), ${result.html.length} chars). Block indexes have changed; read fresh context.` +
+          `Content written (${state.result.blocks} block(s), ${state.result.validatedCharacters ?? result.html.length} chars). Block indexes have changed; read fresh context.` +
           (result.truncated ? ' INCOMPLETE: the user chose to keep the partial output.' : ''),
         summary: result.truncated ? t('aiSumWriteDocumentPartial') : summary,
       }

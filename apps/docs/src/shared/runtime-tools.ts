@@ -1,15 +1,49 @@
+// Modified for ForaOffice: reliable document targeting and portable inspection.
 import type { AgentToolDef } from '@genoffice/agent-core'
 
 /** Runtime lifecycle controls, separate from the pinned native AI tool catalog. */
 export const DOCS_RUNTIME_TOOLS: AgentToolDef[] = [
   {
-    name: 'read_document_media',
+    name: 'query_document',
     description:
-      'Read an authorized image block as image data for the external Harness to analyze. Use current block indexes from document context. Internal asset addresses are not exposed.',
+      'Read a bounded current-content window with revision-bound mutation targets. Partial reads refresh only the body baseline. Continue using nextCursor; stale continuation requires a fresh query.',
     inputSchema: {
       type: 'object',
-      properties: { blockIndex: { type: 'integer', minimum: 0 } },
-      required: ['blockIndex'],
+      additionalProperties: false,
+      properties: {
+        startBlockIndex: { type: 'integer', minimum: 0 },
+        endBlockIndex: { type: 'integer', minimum: 0 },
+        type: { type: 'string' },
+        containsText: { type: 'string', maxLength: 2000 },
+        domain: {
+          type: 'string',
+          enum: ['body', 'cells', 'images', 'sections', 'headers', 'footers'],
+        },
+        limit: { type: 'integer', minimum: 1, maximum: 50 },
+        maxItemChars: { type: 'integer', minimum: 1, maximum: 4000 },
+        cursor: { type: 'string', maxLength: 6000 },
+      },
+    },
+  },
+  {
+    name: 'read_document_media',
+    description:
+      'Read an authorized standalone, inline or table-cell image as standard MCP image content. Prefer the revision-bound mediaRef from fresh context/read_blocks; alternatively use blockIndex and imageIndex (required for multiple images). Missing resources, stale references and unsupported targets are distinguished. Internal asset addresses are not exposed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mediaRef: {
+          type: 'string',
+          description: 'Revision-bound reference returned by context/read_blocks.',
+        },
+        blockIndex: { type: 'integer', minimum: 0 },
+        imageIndex: {
+          type: 'integer',
+          minimum: 0,
+          description: 'Zero-based image ordinal within the block.',
+        },
+      },
+      anyOf: [{ required: ['mediaRef'] }, { required: ['blockIndex'] }],
     },
   },
   {
@@ -31,7 +65,7 @@ export const DOCS_RUNTIME_TOOLS: AgentToolDef[] = [
   {
     name: 'start_document_draft',
     description:
-      'Start a visible, unaccepted draft. The external Harness supplies cumulative HTML updates; the editor performs no inference.',
+      'Start a visible, unaccepted draft and capture its runtime-owned referenceSnapshot. Read full context and references first. replaceDocument selects the landing position; structural deletion still requires exact deleteStructures on each cumulative update. The external Harness supplies HTML; the editor performs no inference.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -49,13 +83,19 @@ export const DOCS_RUNTIME_TOOLS: AgentToolDef[] = [
   {
     name: 'update_document_draft',
     description:
-      'Update a draft with cumulative restricted HTML and an increasing sequence number. Replays must have identical content.',
+      'Update a draft with cumulative restricted HTML and an increasing sequence number. Replays must have identical content and deletion intent. Complete image references and structural effects are checked before preview; image/structure references bind to the draft referenceSnapshot while its authored source remains unchanged. Incomplete image tokens buffer without publishing; inspect validatedSequence/buffering. New images use insert_picture.',
     inputSchema: {
       type: 'object',
       properties: {
         draftId: { type: 'string' },
         sequence: { type: 'integer', minimum: 1 },
         html: { type: 'string', maxLength: 200_000 },
+        deleteStructures: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Exact removed structure references from the runtime-owned draft referenceSnapshot. Required for whole-document structural deletion; preserved images/compatible tables are excluded.',
+        },
       },
       required: ['draftId', 'sequence', 'html'],
     },
@@ -82,7 +122,7 @@ export const DOCS_RUNTIME_TOOLS: AgentToolDef[] = [
   {
     name: 'finish_document_draft',
     description:
-      'Finalize, retain incomplete content, or discard a stopped or streaming draft. Committed content uses normal tracking and undo.',
+      'Finalize, retain an identified validated prefix, or discard a draft. Reference/deletion drafts refuse after captured body or authored-side state changes; discard and read fresh context to restart. Incomplete HTML cannot finalize; retain_partial reports omittedTail and validatedSequence when retaining an earlier validated snapshot. Committed content uses normal tracking and undo.',
     inputSchema: {
       type: 'object',
       properties: {

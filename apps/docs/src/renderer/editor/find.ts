@@ -379,13 +379,14 @@ interface FlatBlock {
 }
 
 /** flatten a textblock's inline content so matches spanning marks are found */
-function flattenBlock(node: PmNode, pos: number): FlatBlock {
+function flattenBlock(node: PmNode, pos: number, include?: (node: PmNode) => boolean): FlatBlock {
   let text = ''
   const posAt: number[] = []
   node.forEach((child, offset) => {
     if (child.isText && child.text) {
       for (let k = 0; k < child.text.length; k++) posAt.push(pos + 1 + offset + k)
-      text += child.text
+      // A caller's excluded span is a boundary, never a gap whose neighbors join.
+      text += include && !include(child) ? LEAF_CHAR.repeat(child.text.length) : child.text
     } else {
       posAt.push(pos + 1 + offset)
       text += child.type.name === 'hardBreak' ? BREAK_CHAR : LEAF_CHAR
@@ -451,12 +452,17 @@ function scanBlock(flat: FlatBlock, q: CompiledQuery, opts: FindOptions, out: Fi
 const isSearchable = (node: PmNode) => node.type.name !== 'docProtected'
 
 /** collect matches in every textblock of `doc` (synchronous) */
-export function findInDoc(doc: PmNode, q: CompiledQuery, opts: FindOptions): FindMatch[] {
+export function findInDoc(
+  doc: PmNode,
+  q: CompiledQuery,
+  opts: FindOptions,
+  include?: (node: PmNode) => boolean,
+): FindMatch[] {
   const out: FindMatch[] = []
   doc.descendants((node, pos) => {
-    if (!isSearchable(node)) return false
+    if (!isSearchable(node) || (include && !include(node))) return false
     if (!node.isTextblock) return true
-    scanBlock(flattenBlock(node, pos), q, opts, out)
+    scanBlock(flattenBlock(node, pos, include), q, opts, out)
     return false
   })
   return out

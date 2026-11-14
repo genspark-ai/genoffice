@@ -26,6 +26,7 @@ const hasDelMark = (node: ProseMirrorNode) => node.marks.some((m) => m.type.name
  */
 const INHERITED_PARA_ATTRS = [
   'docxIndex',
+  'sectionBoundary',
   'styleId',
   'align',
   'lineSpacing',
@@ -112,7 +113,7 @@ export function inheritFrom(
 ): PmNode {
   const attrs: Record<string, unknown> = {}
   for (const key of INHERITED_PARA_ATTRS) {
-    if (key === 'docxIndex' && !opts.anchor) continue
+    if ((key === 'docxIndex' || key === 'sectionBoundary') && !opts.anchor) continue
     if (key === 'pageBreakBefore' && !opts.first) continue
     // false is a real value here (snapToGrid / spacing auto / contextualSpacing
     // off override the style chain); only unset attrs are skipped
@@ -489,9 +490,8 @@ function entryOwners(old: ProseMirrorNode, oldJson: PmNode): CellRef[][] {
 /**
  * Give a rewritten table the formatting of the table it replaces.
  *
- * The model saw the table as tableToHtml renders pmTableToModel: one <td> per
- * grid entry (a spanning cell once, merged-away cells as empty cells). When
- * the parsed table has the same grid, every table/row/cell attr carries over
+ * Restricted HTML carries physical cells with explicit spans. When the parsed
+ * table has identical geometry, every table/row/cell attr carries over
  * and each cell keeps its content if the text did not change — the rewrite
  * then saves through the same surgical cell-text patch as typing into the cell.
  *
@@ -514,8 +514,22 @@ export function inheritTableFormatting(
   const oldRows = oldJson.content ?? []
   const newRows = next.content ?? []
   if (oldRows.length === 0 || newRows.length === 0) return next
+  const samePhysicalShape =
+    newRows.length === oldRows.length &&
+    newRows.every((row, r) => {
+      const cells = row.content ?? []
+      const previous = oldRows[r].content ?? []
+      return (
+        cells.length === previous.length &&
+        cells.every((cell, c) =>
+          ['colspan', 'rowspan'].every(
+            (key) => (Number(cell.attrs?.[key]) || 1) === (Number(previous[c].attrs?.[key]) || 1),
+          ),
+        )
+      )
+    })
   const grid = pmTableToModel(oldJson).rows
-  // the model saw one <td> per grid entry — a spanning cell once, a merged-away
+  // Compatibility with older flattened HTML: one <td> per grid entry — a spanning cell once, a merged-away
   // slot as an empty cell — so an equal <td> count means the column grid is
   // unchanged even when the old table has horizontal merges
   const oldCols = Math.max(...grid.map((row) => row.length))
@@ -554,7 +568,9 @@ export function inheritTableFormatting(
       return false
     return true
   }
-  const exact = newRows.length === oldRows.length && newRows.every((row, r) => exactRow(r, row))
+  const exact =
+    samePhysicalShape ||
+    (newRows.length === oldRows.length && newRows.every((row, r) => exactRow(r, row)))
 
   /**
    * Row r of the old table, cell by cell against the parsed row. `dissolve`
@@ -585,38 +601,45 @@ export function inheritTableFormatting(
     return { ...oldRowJson, content: cells }
   }
 
-  const rows: PmNode[] = exact
-    ? newRows.map((row, r) => mapGridRow(r, row, false))
-    : (() => {
-        const template = pairRows(oldRows, newRows)
-        return newRows.map((row, r) => {
-          const j = template[r]
-          if (sameGrid && fitsGrid(j, row)) return mapGridRow(j, row, rowMerged(j))
-          const oldRow = old.child(j)
-          const oldRowJson = oldRows[j]
-          const oldCells = oldRowJson.content ?? []
-          // in an unchanged grid the template row also lends its column geometry
-          // (spans and widths), cell by cell — unless a vertical merge runs
-          // through it, where its cells no longer line up with the columns
-          const geometry =
-            sameGrid && !rowMerged(j) && oldCells.length === (row.content?.length ?? 0)
-          const cells = (row.content ?? []).map((newCell, c) => {
-            const k = Math.min(c, oldCells.length - 1)
-            const cell = inheritCell(oldRow.child(k), oldCells[k], newCell, 'style')
-            if (geometry) {
-              cell.attrs!.colspan = oldCells[k].attrs?.colspan ?? 1
-              cell.attrs!.colwidth = oldCells[k].attrs?.colwidth ?? null
+  const rows: PmNode[] = samePhysicalShape
+    ? newRows.map((row, r) => ({
+        ...oldRows[r],
+        content: (row.content ?? []).map((cell, c) =>
+          inheritCell(old.child(r).child(c), oldRows[r].content![c], cell, 'full'),
+        ),
+      }))
+    : exact
+      ? newRows.map((row, r) => mapGridRow(r, row, false))
+      : (() => {
+          const template = pairRows(oldRows, newRows)
+          return newRows.map((row, r) => {
+            const j = template[r]
+            if (sameGrid && fitsGrid(j, row)) return mapGridRow(j, row, rowMerged(j))
+            const oldRow = old.child(j)
+            const oldRowJson = oldRows[j]
+            const oldCells = oldRowJson.content ?? []
+            // in an unchanged grid the template row also lends its column geometry
+            // (spans and widths), cell by cell — unless a vertical merge runs
+            // through it, where its cells no longer line up with the columns
+            const geometry =
+              sameGrid && !rowMerged(j) && oldCells.length === (row.content?.length ?? 0)
+            const cells = (row.content ?? []).map((newCell, c) => {
+              const k = Math.min(c, oldCells.length - 1)
+              const cell = inheritCell(oldRow.child(k), oldCells[k], newCell, 'style')
+              if (geometry) {
+                cell.attrs!.colspan = oldCells[k].attrs?.colspan ?? 1
+                cell.attrs!.colwidth = oldCells[k].attrs?.colwidth ?? null
+              }
+              return cell
+            })
+            const attrs: Record<string, unknown> = { ...(row.attrs ?? {}) }
+            for (const key of ROW_STYLE_ATTRS) {
+              const value = oldRowJson.attrs?.[key]
+              if (value != null) attrs[key] = value
             }
-            return cell
+            return { type: 'docTableRow', attrs, content: cells }
           })
-          const attrs: Record<string, unknown> = { ...(row.attrs ?? {}) }
-          for (const key of ROW_STYLE_ATTRS) {
-            const value = oldRowJson.attrs?.[key]
-            if (value != null) attrs[key] = value
-          }
-          return { type: 'docTableRow', attrs, content: cells }
-        })
-      })()
+        })()
 
   const attrs: Record<string, unknown> = {
     ...oldJson.attrs,

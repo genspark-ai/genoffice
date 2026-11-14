@@ -1,3 +1,4 @@
+// Modified for ForaOffice: preserve supported header/footer textbox containers.
 import JSZip from 'jszip'
 import { isEastAsianLangTag } from './char-class'
 import type { JSZipObject } from 'jszip'
@@ -7209,6 +7210,7 @@ function hfContentFromXml(
   watermark: string | null
   watermarkPicture: PictureWatermarkInfo | null
   paras: HfParagraph[]
+  textReadOnly?: true
 } {
   // Rewrite each field span (begin..end) for display. PAGE and NUMPAGES become
   // private-use markers (the renderer substitutes real numbers; a literal '#'
@@ -7262,22 +7264,93 @@ function hfContentFromXml(
     hasPageNumber = true
     return `<w:t>${PAGE_MARK}</w:t>`
   })
+  const paras = hfParagraphs(
+    cleaned.replace(/<w:fldChar[^>]*?(?:\/>|>\s*<\/w:fldChar>)/g, ''),
+    theme,
+    styles,
+    tableMedia,
+    compatibilityMode,
+    themeFonts,
+    resolver,
+  )
+  const sourceTextboxes = hfTextboxSources(xml)
+  const textReadOnly = [...sourceTextboxes.keys()].some(
+    (index) => !paras.some((para) => para.textbox?.index === index),
+  )
+  for (const para of paras) {
+    if (para.textbox && (textReadOnly || sourceTextboxes.get(para.textbox.index)?.readOnly))
+      para.textbox.readOnly = true
+  }
   return {
     text: plainText(cleaned),
     hasPageNumber,
     watermark: kind === 'header' ? readWatermarkText(xml) : null,
     watermarkPicture: kind === 'header' ? readPictureWatermark(xml) : null,
-    // strip leftover field chars so the page marker parses as plain text
-    paras: hfParagraphs(
-      cleaned.replace(/<w:fldChar[^>]*?(?:\/>|>\s*<\/w:fldChar>)/g, ''),
-      theme,
-      styles,
-      tableMedia,
-      compatibilityMode,
-      themeFonts,
-      resolver,
-    ),
+    paras,
+    ...(textReadOnly ? { textReadOnly: true } : {}),
   }
+}
+
+/** Check both compatibility branches before display extraction drops the fallback. */
+function hfTextboxSources(xml: string): Map<number, { readOnly: boolean }> {
+  if (!xml.includes('<w:txbxContent')) return new Map()
+  const unsupported = (box: XNode) => {
+    if (
+      txbxHasStructuredContent(box) ||
+      hasDeepChild(
+        box,
+        new Set(['w:txbxContent', 'w:tbl', 'w:sdt', 'w:drawing', 'w:pict', 'w:object', 'm:oMath']),
+      )
+    )
+      return true
+    const pageInstruction = (instr: string) => /^\s*(?:PAGE|NUMPAGES|SECTIONPAGES)\b/.test(instr)
+    const simple: XNode[] = []
+    collectNodes(childrenOf(box), 'w:fldSimple', simple)
+    if (simple.some((field) => !pageInstruction(attrsOf(field)['w:instr'] ?? ''))) return true
+    const complexUnsupported = (fields: FieldFrame[]): boolean =>
+      fields.some(
+        (field) =>
+          field.end < 0 || !pageInstruction(field.instr) || complexUnsupported(field.children),
+      )
+    return complexUnsupported(parseFieldTree(serializeXNode(box)))
+  }
+  const sources = new Map<number, { readOnly: boolean }>()
+  let index = 0
+  const walk = (node: XNode, unsafe = false) => {
+    const name = nameOf(node)
+    if (name === 'mc:Fallback') return
+    if (name === 'w:txbxContent') {
+      const readOnly = unsafe || unsupported(node)
+      // Empty decorative boxes need no editable text metadata, but every source
+      // with text/fields must remain accounted for even if display traversal skips it.
+      if (
+        readOnly ||
+        plainText(serializeXNode(node)) ||
+        hasDeepChild(node, new Set(['w:fldChar', 'w:fldSimple']))
+      )
+        sources.set(index, { readOnly })
+      index++
+      return
+    }
+    if (name === 'mc:AlternateContent') {
+      const choices = findChildren(node, 'mc:Choice')
+      const fallbacks = findChildren(node, 'mc:Fallback')
+      const branches = [...choices, ...fallbacks].map((branch) => {
+        const boxes: XNode[] = []
+        collectNodes(childrenOf(branch), 'w:txbxContent', boxes)
+        return boxes
+      })
+      // Multiple-choice/grouped representations need a richer correspondence
+      // than the supported one-box DrawingML/VML twin. Keep them read-only.
+      unsafe ||=
+        choices.length !== 1 ||
+        fallbacks.length > 1 ||
+        branches.some((boxes) => boxes.length !== 1 || boxes.some(unsupported))
+    }
+    for (const child of childrenOf(node)) walk(child, unsafe)
+  }
+  for (const node of xmlParser.parse(xml) as XNode[]) walk(node)
+  return sources
 }
 
 /** Plain-text content of a header/footer part referenced by any sectPr. */
@@ -7373,6 +7446,7 @@ async function parseAllHfParts(
       text: content.text,
       hasPageNumber: content.hasPageNumber,
       paras: content.paras,
+      ...(content.textReadOnly ? { textReadOnly: true } : {}),
       ...(images.length > 0 ? { images } : {}),
     }
   }
@@ -7490,6 +7564,17 @@ function hfParagraphs(
   }
   const root = parsed.find((n) => nameOf(n) === 'w:hdr' || nameOf(n) === 'w:ftr')
   if (!root) return []
+  // Match patchTextboxParas' non-fallback, top-level content ordinals, including
+  // boxes in tables that the plain-text editor does not expose.
+  const textboxIndexes = new Map<XNode, number>()
+  const indexTextboxes = (node: XNode) => {
+    if (nameOf(node) === 'w:txbxContent') {
+      textboxIndexes.set(node, textboxIndexes.size)
+      return
+    }
+    for (const child of childrenOf(node)) indexTextboxes(child)
+  }
+  indexTextboxes(root)
   // header parts have their own rels; hyperlink targets are not resolved here
   const ctx = {
     rels: new Map(),
@@ -7553,7 +7638,9 @@ function hfParagraphs(
         return rest.text === '' ? [] : rest
       })
     }
-    const boxed = hasDeepChild(pNode, TXBX_CONTENT) ? textboxParagraphs(pNode, ctx) : []
+    const boxed = hasDeepChild(pNode, TXBX_CONTENT)
+      ? textboxParagraphs(pNode, ctx, textboxIndexes)
+      : []
     // runs carrying only w:rPr are a blank line like a bare w:p (genoffice#2116)
     if (
       runs.length === 0 &&
@@ -7630,6 +7717,7 @@ function hfParagraphs(
     const emptyFont = blank ? hfEmptyMarkFont(pPr, ctx) : undefined
     out.push({
       ...hfStyledParaFormat(pNode, ctx),
+      ...(boxed.length > 0 ? { textReadOnly: true as const } : {}),
       ...(mergedStops ? { tabStops: mergedStops } : {}),
       ...(sawPtab ? { ptabAligns } : {}),
       ...(frameXAlign ? { frameXAlign } : {}),
@@ -7969,23 +8057,52 @@ function hfCellContent(
 }
 
 /** text paragraphs nested inside textbox shapes (VML v:textbox / DrawingML wps:txbx → w:txbxContent) */
-function textboxParagraphs(pNode: XNode, ctx: BuildContext): HfParagraph[] {
+function textboxParagraphs(
+  pNode: XNode,
+  ctx: BuildContext,
+  indexes: Map<XNode, number>,
+): HfParagraph[] {
   const out: HfParagraph[] = []
   const walk = (node: XNode, box: HfTextBox | undefined) => {
     const name = nameOf(node)
     if (name === 'w:txbxContent') {
-      for (const inner of findChildren(node, 'w:p')) {
+      const readOnly =
+        txbxHasStructuredContent(node) ||
+        ['w:txbxContent', 'w:tbl', 'w:sdt', 'w:drawing', 'w:pict', 'w:object', 'm:oMath'].some(
+          (tag) => hasDeepChild(node, new Set([tag])),
+        )
+      const paragraphs = findChildren(node, 'w:p')
+      // Unsupported containers remain readable; their flattened paragraph ordinals
+      // are never passed to the original-container writer.
+      if (readOnly) {
+        paragraphs.length = 0
+        collectNodes(childrenOf(node), 'w:p', paragraphs)
+      }
+      for (let paragraph = 0; paragraph < paragraphs.length; paragraph++) {
+        const inner = paragraphs[paragraph]
         const runs = extractRuns(inner, ctx)
-        if (runs.length === 0) continue
+        // Ink-only decorative shapes have no text line or editable box geometry.
+        if (runs.length === 0 && !box?.widthPx && !box?.heightPx) continue
         const pPr = findChild(inner, 'w:pPr')
         // content of a floating box draws at the anchor, not in the strip flow:
         // it must not push the body down (Word), only display does
         out.push({
           ...(pPr ? extractParaFormat(pPr, ctx.themeColors) : {}),
           runs,
+          textbox: {
+            index: indexes.get(node)!,
+            paragraph,
+            ...(readOnly ? { readOnly: true } : {}),
+          },
           ...(box ? { boxAnchored: true, box } : {}),
         })
       }
+      if (paragraphs.length === 0 && (box?.widthPx || box?.heightPx))
+        out.push({
+          runs: [],
+          textbox: { index: indexes.get(node)!, paragraph: 0, readOnly: true },
+          ...(box ? { boxAnchored: true, box } : {}),
+        })
       return
     }
     let next = box

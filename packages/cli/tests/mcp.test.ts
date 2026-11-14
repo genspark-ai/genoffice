@@ -390,7 +390,15 @@ describe('mcp server', () => {
     const first = (before.json().detail.items[0].text as string).split(' ')[0]!
     const r = await call('docs_apply', {
       file: copy,
-      ops: [{ op: 'findReplace', find: first, replace: 'GENOFFICE' }],
+      ops: [
+        {
+          op: 'findReplace',
+          find: first,
+          replace: 'GENOFFICE',
+          match: 'all',
+          target: { scope: 'document' },
+        },
+      ],
     })
     expect(r.isError).toBe(false)
     expect(r.json()).toMatchObject({ status: 'ok', command: 'docs', output_path: copy })

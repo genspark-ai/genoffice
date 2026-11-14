@@ -1,3 +1,4 @@
+// Modified for ForaOffice: cover consecutive preview selection and keyboard commands.
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -462,7 +463,20 @@ test.describe('html editor', () => {
       await expect(frame.locator('p.note')).toHaveText('Beta')
       await expect(undoBtn).toBeDisabled()
 
-      // Delete inside the frame removes the element; the frame reloads without it
+      // Both inspector messages can arrive before the host renders the selection.
+      await frame.locator('p.note').evaluate((el) => {
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        el.ownerDocument.body.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }),
+        )
+      })
+      await expect(frame.locator('p.note')).toHaveCount(0)
+      await expect(undoBtn).toBeEnabled()
+      await frame.locator('body').press('ControlOrMeta+z')
+      await expect(frame.locator('p.note')).toHaveText('Beta')
+      await expect(undoBtn).toBeDisabled()
+
+      // Native Delete inside the frame removes the element; the frame reloads without it.
       await frame.locator('p.note').click()
       await frame.locator('body').press('Delete')
       await expect(frame.locator('p.note')).toHaveCount(0)

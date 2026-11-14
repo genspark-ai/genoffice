@@ -31,6 +31,12 @@ export type { DocsHttpMcpOptions, DocsHttpMcpServer, DocsMcpConnection } from '.
 export { createDocsHostBridge, connectDocsHostBridge } from './host-bridge'
 export type { DocsHostBridge } from './host-bridge'
 export { DocsOperationError, isDocsOperationResult } from '../shared/operation-result'
+export type { DocsEngineTarget, DocsQueryItem, DocsQueryResult } from '../shared/document-query'
+export type {
+  DocsDraftInspection,
+  DocsDraftSettlement,
+  DocsDraftState,
+} from '../shared/document-draft'
 export type {
   DocsOperationResult,
   DocsSaveResult,

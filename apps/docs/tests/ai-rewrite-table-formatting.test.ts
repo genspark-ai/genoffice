@@ -12,7 +12,8 @@ import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-doc
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { serializeRangeToHtml } from '../src/renderer/ai/protocol'
-import { executeTool } from '../src/renderer/ai/tools'
+import { createDocsRuntime } from '../src/renderer/runtime/docs-runtime'
+import type { DocsQueryResult } from '../src/shared/document-query'
 
 /**
  * Guard tests for the table half of issue #175: the model can only rewrite a
@@ -118,21 +119,53 @@ async function replaceBlocks(
   editor: Editor,
   start: number,
   end: number,
-  html: string,
+  html: string | ((source: DocsQueryResult) => string),
   track?: typeof TRACK,
+  deleteKinds: readonly string[] = [],
 ) {
-  const r = await executeTool(
-    editor,
-    {
+  const runtime = createDocsRuntime({
+    current: () => ({ editor, identity: editor, numIds: NUM_IDS, track }),
+  })
+  const caller = runtime.connect({ id: 'table-replacement' })
+  try {
+    caller.context()
+    const read = await caller.execute({
+      id: 'table-query',
+      name: 'query_document',
+      input: { domain: 'body', startBlockIndex: start, endBlockIndex: end },
+    })
+    expect(read.isError, read.output).not.toBe(true)
+    const source = JSON.parse(read.output) as DocsQueryResult
+    expect(source.page.complete).toBe(true)
+    source.items.forEach((item) => expect(item.structuresComplete).toBe(true))
+    const deleteStructures = source.items.flatMap(
+      (item) =>
+        item.structures
+          ?.filter((structure) => deleteKinds.includes(structure.kind))
+          .map((structure) => structure.id) ?? [],
+    )
+    const r = await caller.execute({
       id: 't',
       name: 'replace_blocks',
-      input: { startBlockIndex: start, endBlockIndex: end, html },
-    },
-    NUM_IDS,
-    track,
+      input: {
+        startBlockIndex: start,
+        endBlockIndex: end,
+        html: typeof html === 'function' ? html(source) : html,
+        deleteStructures,
+      },
+    })
+    expect(r.isError, r.output).toBeFalsy()
+    return r
+  } finally {
+    caller.close()
+    runtime.dispose()
+  }
+}
+
+function imageReferences(source: DocsQueryResult): string[] {
+  return source.items.flatMap((item) =>
+    [...item.html.matchAll(/<img src="([^"]+)">/g)].map((match) => match[1]),
   )
-  expect(r.isError).toBeFalsy()
-  return r
 }
 
 const blocks = (editor: Editor) => ((editor.getJSON() as PmNode).content ?? []) as Json[]
@@ -184,12 +217,11 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
       (nextCell) => nextCell.richParas![0].runs.find((run) => run.image)!.image!.dataUrl,
     )
     expect(before[0]).not.toBe(before[1])
-    await replaceBlocks(
-      editor,
-      0,
-      0,
-      '<table><tr><td><img src="doc:0.1"></td><td><img src="doc:0.0"></td></tr></table>',
-    )
+    await replaceBlocks(editor, 0, 0, (source) => {
+      const images = imageReferences(source)
+      expect(images).toHaveLength(2)
+      return `<table><tr><td><img src="${images[1]}"></td><td><img src="${images[0]}"></td></tr></table>`
+    })
     const saved = await saveAndReparse(editor, parsed)
     expect(
       saved.rows[0].map(
@@ -205,7 +237,12 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
       false,
       true,
     )
-    await replaceBlocks(editor, 0, 0, '<table><tr><td>A<img src="doc:0.0">BCD</td></tr></table>')
+    await replaceBlocks(
+      editor,
+      0,
+      0,
+      (source) => `<table><tr><td>A<img src="${imageReferences(source)[0]}">BCD</td></tr></table>`,
+    )
     const saved = await saveAndReparse(editor, parsed)
     const runs = saved.rows[0][0].richParas![0].runs
     const at = runs.findIndex((run) => run.image)
@@ -232,7 +269,10 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
         editor,
         0,
         0,
-        `<table>${[0, 1, 2].map((i) => `<tr><td>Parameter ${i}</td><td>${keep && i === 0 ? '<img src="doc:0.0">' : ''}</td></tr>`).join('')}</table>`,
+        (source) =>
+          `<table>${[0, 1, 2].map((i) => `<tr><td>Parameter ${i}</td><td>${keep && i === 0 ? `<img src="${imageReferences(source)[0]}">` : ''}</td></tr>`).join('')}</table>`,
+        undefined,
+        keep ? ['table'] : ['table', 'image'],
       )
       const saved = await saveAndReparse(editor, parsed)
       expect(saved.rows).toHaveLength(3)
@@ -250,7 +290,7 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
     const { editor } = await open(STYLED_TABLE)
     const html = serializeRangeToHtml(editor, 0, 0)
     expect(html).toBe(
-      '<table><tr><th>Metric</th><th>Value</th></tr><tr><td>Revenue</td><td>100</td></tr><tr><td>Total</td><td>100</td></tr></table>',
+      '<table><tr><th data-row="0" data-col="0">Metric</th><th data-row="0" data-col="1">Value</th></tr><tr><td data-row="1" data-col="0">Revenue</td><td data-row="1" data-col="1">100</td></tr><tr><td data-row="2" data-col="0">Total</td><td data-row="2" data-col="1">100</td></tr></table>',
     )
     expect(html).not.toMatch(/D9EAF7|Calibri|Cambria|3000|center|right/)
   })
@@ -330,7 +370,7 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
 
   it('a shaded header row that was not bold does not turn bold because the model echoed <th>', async () => {
     const { editor } = await open(FILL_ONLY_HEADER)
-    expect(serializeRangeToHtml(editor, 0, 0)).toContain('<th>Name</th>')
+    expect(serializeRangeToHtml(editor, 0, 0)).toContain('<th data-row="0" data-col="0">Name</th>')
     await replaceBlocks(
       editor,
       0,
@@ -353,6 +393,8 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
       0,
       0,
       '<table><tr><th>Metric</th><th>Value</th></tr><tr><td>Revenue</td><td>100</td></tr><tr><td>Cost</td><td>60</td></tr><tr><td>Total</td><td>40</td></tr></table>',
+      undefined,
+      ['table'],
     )
     const [table] = blocks(editor)
     expect(table.content).toHaveLength(4)
@@ -397,6 +439,8 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
       0,
       0,
       '<table><tr><th>Metric</th><th>Value</th><th>Change</th></tr><tr><td>Revenue</td><td>100</td><td>+5%</td></tr><tr><td>Total</td><td>100</td><td>+5%</td></tr></table>',
+      undefined,
+      ['table'],
     )
     const [table] = blocks(editor)
     expect(table.attrs.docxIndex).toBe(before.attrs.docxIndex)
@@ -424,7 +468,7 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
   it('merged cells survive: the empty cell the model echoes under a vertical merge is not a new cell', async () => {
     const { editor, parsed } = await open(MERGED_TABLE)
     expect(serializeRangeToHtml(editor, 0, 0)).toBe(
-      '<table><tr><td>Group</td><td>First</td></tr><tr><td></td><td>Second</td></tr></table>',
+      '<table><tr><td rowspan="2" data-row="0" data-col="0">Group</td><td data-row="0" data-col="1">First</td></tr><tr><td data-row="1" data-col="1">Second</td></tr></table>',
     )
     await replaceBlocks(
       editor,
@@ -454,13 +498,15 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
     const [before] = blocks(editor)
     // the spanning cell is one <th>; the parser pads that row with an empty cell
     expect(serializeRangeToHtml(editor, 0, 0)).toBe(
-      '<table><tr><th>Quarter</th></tr><tr><td>Revenue</td><td>100</td></tr><tr><td>Cost</td><td>60</td></tr></table>',
+      '<table><tr><th colspan="2" data-row="0" data-col="0">Quarter</th></tr><tr><td data-row="1" data-col="0">Revenue</td><td data-row="1" data-col="1">100</td></tr><tr><td data-row="2" data-col="0">Cost</td><td data-row="2" data-col="1">60</td></tr></table>',
     )
     await replaceBlocks(
       editor,
       0,
       0,
       '<table><tr><th>Quarter</th></tr><tr><td>Revenue</td><td>100</td></tr><tr><td>Cost</td><td>60</td></tr><tr><td>Profit</td><td>40</td></tr></table>',
+      undefined,
+      ['table'],
     )
     const [table] = blocks(editor)
     expect(table.content).toHaveLength(4)
@@ -494,6 +540,8 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
       0,
       0,
       '<table><tr><td>Group</td><td>First</td></tr><tr><td></td><td>Second</td></tr><tr><td></td><td>Third</td></tr></table>',
+      undefined,
+      ['table'],
     )
     const [table] = blocks(editor)
     expect(table.content).toHaveLength(3)
@@ -522,13 +570,15 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
     const { editor, parsed } = await open(BOTH_MERGED_TABLE)
     const [before] = blocks(editor)
     expect(serializeRangeToHtml(editor, 0, 0)).toBe(
-      '<table><tr><th>Quarter</th></tr><tr><td>Group</td><td>First</td></tr><tr><td></td><td>Second</td></tr></table>',
+      '<table><tr><th colspan="2" data-row="0" data-col="0">Quarter</th></tr><tr><td rowspan="2" data-row="1" data-col="0">Group</td><td data-row="1" data-col="1">First</td></tr><tr><td data-row="2" data-col="1">Second</td></tr></table>',
     )
     await replaceBlocks(
       editor,
       0,
       0,
       '<table><tr><th>Quarter</th></tr><tr><td>Group</td><td>First</td></tr><tr><td></td><td>Second</td></tr><tr><td>Other</td><td>Third</td></tr></table>',
+      undefined,
+      ['table'],
     )
     const [table] = blocks(editor)
     expect(table.content).toHaveLength(4)
@@ -565,7 +615,9 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
 
   it('a bulleted cell stays bulleted when the model rewrites its points', async () => {
     const { editor, parsed } = await open(LIST_CELL_TABLE, true)
-    expect(serializeRangeToHtml(editor, 0, 0)).toContain('<td>First point<br>Second point</td>')
+    expect(serializeRangeToHtml(editor, 0, 0)).toContain(
+      '<td data-row="0" data-col="1">First point<br>Second point</td>',
+    )
     await replaceBlocks(
       editor,
       0,

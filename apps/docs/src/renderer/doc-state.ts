@@ -78,11 +78,16 @@ export function hfFromPart(part: HfPartInfo | null | undefined): HeaderFooter | 
   // (hfHasVisibleContent) already counts images; keep both checks aligned
   if (
     !part ||
-    (!part.text && !part.hasPageNumber && part.paras.length === 0 && !part.images?.length)
+    (!part.text &&
+      !part.textReadOnly &&
+      !part.hasPageNumber &&
+      part.paras.length === 0 &&
+      !part.images?.length)
   )
     return null
   return {
     text: part.text,
+    ...(part.textReadOnly ? { textReadOnly: true } : {}),
     pageNumber: part.hasPageNumber,
     paras: part.paras.length > 0 ? part.paras : undefined,
   }

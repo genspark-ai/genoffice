@@ -7,6 +7,8 @@ import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/edi
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { executeOps } from '../src/renderer/ai/ops'
 import { evaluateIf, formatFieldDate, formatSeqNumber } from '../src/renderer/ai/field-ops'
+import { createDocsRuntime } from '../src/renderer/runtime/docs-runtime'
+import type { DocsQueryResult } from '../src/shared/document-query'
 
 interface JsonNode {
   type: string
@@ -268,7 +270,7 @@ describe('updateFields', () => {
     expect(editor.state.doc.textContent).toBe('Chapter one.Chapter one.Chapter one.')
   })
 
-  it('renumbers SEQ fields, refreshes REF and DATE, and marks the rest dirty', () => {
+  it('renumbers SEQ fields, refreshes REF and DATE, and marks the rest dirty', async () => {
     const editor = createEditor([
       para('Intro.', { bookmarks: ['Intro'] }),
       para('Figure '),
@@ -286,11 +288,37 @@ describe('updateFields', () => {
     ])
     expect(outcome.ok, outcome.error).toBe(true)
     // drop the middle figure and rename the bookmarked paragraph, then refresh
-    outcome = executeOps(editor, [
-      { op: 'deleteBlocks', target: at(2) },
-      { op: 'findReplace', target: at(0), find: 'Intro.', replace: 'Introduction.' },
-    ])
-    expect(outcome.ok, outcome.error).toBe(true)
+    const runtime = createDocsRuntime({
+      current: () => ({ editor, identity: editor, numIds: { bullet: null, ordered: null } }),
+    })
+    const client = runtime.connect({ id: 'delete-sequence-field' })
+    client.context()
+    try {
+      const query = await client.execute({
+        id: 'query',
+        name: 'query_document',
+        input: { startBlockIndex: 2, endBlockIndex: 2 },
+      })
+      const item = (JSON.parse(query.output) as DocsQueryResult).items[0]
+      expect(item.structuresComplete).toBe(true)
+      const deleted = await client.execute({
+        id: 'delete',
+        name: 'apply_ops',
+        input: {
+          ops: [
+            {
+              op: 'deleteBlocks',
+              target: { engine: item.target },
+              deleteStructures: item.structures!.map((structure) => structure.id),
+            },
+            { op: 'findReplace', target: at(0), find: 'Intro.', replace: 'Introduction.' },
+          ],
+        },
+      })
+      expect(deleted.isError, deleted.output).not.toBe(true)
+    } finally {
+      runtime.dispose()
+    }
     // NUMPAGES was inserted dirty; clear it to prove updateFields re-marks it
     const numPages = fieldsOf(editor).find((f) => f.instr === 'NUMPAGES')
     expect(numPages?.dirty).toBe(true)

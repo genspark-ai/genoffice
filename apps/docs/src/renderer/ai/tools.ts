@@ -12,6 +12,11 @@ import type { AgentToolCall, CreateDocumentType } from '../../shared/ipc'
 import { t } from '../i18n/locale'
 import { MIND_MAP_LIMITS, parseMindMapTree } from '@genoffice/agent-core/mind-map'
 import { executeOps, opNames } from './ops'
+import {
+  preservedInlineStructures,
+  preservedTableStructures,
+  validateStructureDeletion,
+} from './structure-inventory'
 import { clipExcerpt, repliesOf, resolveCommentAnchor } from './comment-ops'
 import { insertPictureAtSelection } from '../editor/insert-picture'
 import {
@@ -56,6 +61,8 @@ import {
   buildDocumentContext,
   buildRevisionsContext,
   insertBlocksAfter,
+  inheritBlockFormatting,
+  preservedImageStructureIds,
   isBlankDocument,
   isTrackedDeleted,
   liveInlineRanges,
@@ -92,7 +99,14 @@ export const DOCS_EDITOR_TOOLS = docsToolCatalog(opNames())
 export interface AiHeaderFooterAccess {
   read(): AiHfState
   /** returns an error message, or null on success */
-  set(kind: 'header' | 'footer', view: 'default' | 'first' | 'even', text: string): string | null
+  set(
+    kind: 'header' | 'footer',
+    view: 'default' | 'first' | 'even',
+    text: string,
+    section?: number,
+    scope?: 'section' | 'shared',
+    textboxIndex?: number,
+  ): string | null
 }
 
 /**
@@ -150,6 +164,9 @@ export interface ToolExecution {
   mutated: boolean
   /** short human-readable label for the chat activity chip */
   summary: string
+  /** Exact match/change counts when all operations report those units. */
+  matchCount?: number
+  changeCount?: number
   /** UI-only side channel (never enters the LLM context) */
   display?: ToolDisplay
 }
@@ -260,6 +277,68 @@ function replacementStructureNote(
   )
 }
 
+function preservedImageStructures(
+  editor: Editor,
+  kept: Array<{ block: number; index: number }>,
+): string[] {
+  return preservedImageStructureIds(editor.state.doc, kept)
+}
+
+/** Pure refusal preflight, also called by the runtime before opening an undo group. */
+export function validateHtmlStructureIntent(
+  editor: Editor,
+  call: AgentToolCall,
+  scope?: SelectionScope | null,
+  numIds: NumIds = { bullet: null, ordered: null },
+): string | null {
+  if (call.name !== 'replace_blocks' && call.name !== 'replace_selection') return null
+  try {
+    const html = String(call.input.html ?? '')
+    if (call.name === 'replace_blocks') {
+      const range = validRange(editor, call.input.startBlockIndex, call.input.endBlockIndex)
+      if (!range) return rangeError(editor)
+      const resolved = resolveImageRefs(editor, parseHtmlFragment(html, numIds), html)
+      const nodes = inheritBlockFormatting(editor, range.start, range.end, resolved.nodes, false)
+      const positions = blockRangePositions(editor, range.start, range.end)
+      const kept = [
+        ...preservedImageStructures(editor, resolved.kept),
+        ...preservedTableStructures(
+          editor.state.doc,
+          positions.from,
+          positions.to,
+          nodes.map((node) => editor.schema.nodeFromJSON(node)),
+        ),
+        ...preservedInlineStructures(
+          editor.state.doc,
+          positions.from,
+          positions.to,
+          nodes.map((node) => editor.schema.nodeFromJSON(node)),
+          call.input.deleteStructures,
+        ),
+      ]
+      return validateStructureDeletion(
+        editor.state.doc,
+        positions.from,
+        positions.to,
+        call.input.deleteStructures,
+        kept,
+      )
+    }
+    const range = selectionRange(editor, scope)
+    if (!range) return null
+    const resolved = resolveImageRefs(editor, parseInlineFragment(html), html)
+    return validateStructureDeletion(
+      editor.state.doc,
+      range.from,
+      range.to,
+      call.input.deleteStructures,
+      preservedImageStructures(editor, resolved.kept),
+    )
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
+}
+
 /** the range selection tools act on: the frozen scope when valid, else the live selection; null for a caret */
 function selectionRange(
   editor: Editor,
@@ -286,6 +365,8 @@ export interface DocReadState {
   markSeen(): void
   apply?<T>(operation: () => T): T
   selection?(): SelectionScope | null
+  /** Project image identity before paging, so continuation offsets address the returned HTML. */
+  imageHtml?(html: string): string
 }
 
 type BaselineCarry = (before: ProseMirrorNode, after: ProseMirrorNode) => void
@@ -715,7 +796,19 @@ export function executeTool(
   if (call.name === 'set_watermark' && typeof call.input.image === 'string')
     return setPictureWatermark(editor, call, signal, extras, readState)
   return settle(
-    executeSyncTool(editor, call, numIds, track, scope, comments, hf, pageSetup, extras, notes),
+    executeSyncTool(
+      editor,
+      call,
+      numIds,
+      track,
+      scope,
+      comments,
+      hf,
+      pageSetup,
+      extras,
+      notes,
+      readState?.imageHtml,
+    ),
   )
 }
 
@@ -730,6 +823,7 @@ function executeSyncTool(
   pageSetup?: AiPageSetupAccess,
   extras?: AiDocExtras,
   notes?: AiNotesAccess,
+  imageHtml?: (html: string) => string,
 ): ToolExecution {
   switch (call.name) {
     case 'get_document_context':
@@ -766,7 +860,8 @@ function executeSyncTool(
     case 'read_blocks': {
       const range = validRange(editor, call.input.startBlockIndex, call.input.endBlockIndex)
       if (!range) return fail(t('aiSumReadBlocks'), rangeError(editor))
-      const html = serializeRangeToHtml(editor, range.start, range.end)
+      const serialized = serializeRangeToHtml(editor, range.start, range.end)
+      const html = imageHtml?.(serialized) ?? serialized
       const offset = Math.max(0, Math.trunc(Number(call.input.offset)) || 0)
       if (offset > 0 && offset >= html.length) {
         return fail(
@@ -817,10 +912,10 @@ function executeSyncTool(
       let nodes: ReturnType<typeof parseHtmlFragment>
       try {
         nodes = parseHtmlFragment(html, numIds)
+        nodes = resolveImageRefs(editor, nodes, html).nodes
       } catch (e) {
         return fail(t('aiSumInsertContent'), e instanceof Error ? e.message : String(e))
       }
-      nodes = resolveImageRefs(editor, nodes).nodes
       if (nodes.length === 0)
         return fail(t('aiSumInsertContent'), 'html did not parse into any content blocks')
       const count = editor.state.doc.childCount
@@ -857,15 +952,42 @@ function executeSyncTool(
         legacyProtectedEchoError(editor, range.start, range.end, html)
       if (echo) return fail(t('aiSumReplaceContent'), echo)
       let nodes: ReturnType<typeof parseHtmlFragment>
+      let resolved: ReturnType<typeof resolveImageRefs>
       try {
         nodes = parseHtmlFragment(html, numIds)
+        resolved = resolveImageRefs(editor, nodes, html)
       } catch (e) {
         return fail(t('aiSumReplaceContent'), e instanceof Error ? e.message : String(e))
       }
-      const resolved = resolveImageRefs(editor, nodes)
       nodes = resolved.nodes
       if (nodes.length === 0)
         return fail(t('aiSumReplaceContent'), 'html did not parse into any content blocks')
+      const positions = blockRangePositions(editor, range.start, range.end)
+      const inherited = inheritBlockFormatting(editor, range.start, range.end, nodes, false)
+      const keptStructures = [
+        ...preservedImageStructures(editor, resolved.kept),
+        ...preservedTableStructures(
+          editor.state.doc,
+          positions.from,
+          positions.to,
+          inherited.map((node) => editor.schema.nodeFromJSON(node)),
+        ),
+        ...preservedInlineStructures(
+          editor.state.doc,
+          positions.from,
+          positions.to,
+          inherited.map((node) => editor.schema.nodeFromJSON(node)),
+          call.input.deleteStructures,
+        ),
+      ]
+      const structureError = validateStructureDeletion(
+        editor.state.doc,
+        positions.from,
+        positions.to,
+        call.input.deleteStructures,
+        keptStructures,
+      )
+      if (structureError) return fail(t('aiSumReplaceContent'), structureError)
       const had = countInlineImages(editor, range.start, range.end)
       const keptInRange = new Set(
         resolved.kept
@@ -874,10 +996,13 @@ function executeSyncTool(
       ).size
       const lost = had - keptInRange
       const structureNote = replacementStructureNote(editor, range.start, range.end, !!track)
-      replaceBlockRange(editor, range.start, range.end, nodes, track)
+      const omittedAnchors: number[] = []
+      for (let index = range.start; index <= range.end; index++)
+        if (editor.state.doc.child(index).attrs.sectionBoundary) omittedAnchors.push(index)
+      replaceBlockRange(editor, range.start, range.end, nodes, track, omittedAnchors)
       const pictureNote =
         lost > 0
-          ? ` ${lost} picture(s) that were in the replaced range are not in the new content and have been deleted${track ? ' (as a tracked change the user can reject)' : ' (the user can undo this)'}; tell the user if that was not intended. To keep pictures, include their <img src="doc:B.I"> tags from read_blocks in the new HTML.`
+          ? ` ${lost} picture(s) that were in the replaced range are not in the new content and have been deleted${track ? ' (as a tracked change the user can reject)' : ' (the user can undo this)'}; tell the user if that was not intended. To keep pictures, include their exact current <img> reference tags from read_blocks in the new HTML.`
           : ''
       return {
         output: `Replaced blocks ${range.start}-${range.end} with ${nodes.length} block(s). Compatible paragraph/text formatting was inherited; this does not guarantee preservation of section boundaries, fields or other document structures.${structureNote}${pictureNote} Block indexes have changed; use get_document_context if needed.`,
@@ -914,15 +1039,26 @@ function executeSyncTool(
         )
       }
       let inline: ReturnType<typeof parseInlineFragment>
+      let keptImages: Array<{ block: number; index: number }>
       try {
         inline = parseInlineFragment(html)
+        const resolved = resolveImageRefs(editor, inline, html)
+        inline = resolved.nodes
+        keptImages = resolved.kept
       } catch (e) {
         return fail(t('aiSumReplaceSelection'), e instanceof Error ? e.message : String(e))
       }
-      inline = resolveImageRefs(editor, inline).nodes
       if (inline.length === 0) {
         return fail(t('aiSumReplaceSelection'), 'html did not parse into any text')
       }
+      const structureError = validateStructureDeletion(
+        editor.state.doc,
+        range.from,
+        range.to,
+        call.input.deleteStructures,
+        preservedImageStructures(editor, keptImages),
+      )
+      if (structureError) return fail(t('aiSumReplaceSelection'), structureError)
       const schema = editor.schema
       // a carried-over picture's own marks are not the model restyling the selection
       const fragmentStyled = inline.some((n) => n.type === 'text' && (n.marks ?? []).length > 0)
@@ -931,6 +1067,7 @@ function executeSyncTool(
       const inherited = (anchor?.marks ?? []).filter(
         (m) =>
           !REVISION_MARK_TYPES.has(m.type.name) &&
+          !['instrField', 'refField', 'ctrlCheckbox', 'docSym'].includes(m.type.name) &&
           !(fragmentStyled && FRAGMENT_MARK_TYPES.has(m.type.name)),
       )
       const nodes = inline.map((n) => {
@@ -1356,6 +1493,30 @@ function executeSyncTool(
         return fail(summaryOf(), 'view must be "default", "first" or "even"')
       }
       if (typeof call.input.text !== 'string') return fail(summaryOf(), 'text must be a string')
+      const section = call.input.section === undefined ? 0 : Number(call.input.section)
+      const snapshot = hf.read()
+      if (snapshot.multiSection && !snapshot.sections)
+        return fail(
+          summaryOf(),
+          'This host does not expose section-addressed header/footer editing.',
+          'unavailable',
+        )
+      const count = snapshot.sections?.length ?? 1
+      if (
+        (call.input.section !== undefined && !Number.isInteger(call.input.section)) ||
+        !Number.isInteger(section) ||
+        section < 0 ||
+        section >= count
+      )
+        return fail(summaryOf(), `section must be 0-${count - 1}`)
+      const scope = call.input.scope ?? 'section'
+      if (scope !== 'section' && scope !== 'shared')
+        return fail(summaryOf(), 'scope must be section or shared')
+      const strip = snapshot.sections?.[section]?.strips.find(
+        (s) => s.kind === kind && s.view === view,
+      )
+      const affected =
+        scope === 'shared' ? (strip?.sharedTargets ?? [{ section, view }]) : [{ section, view }]
       // a doubly escaped newline arrives as the two characters backslash-n; a footer must not show it literally
       const text = call.input.text.includes('\n')
         ? call.input.text
@@ -1363,10 +1524,23 @@ function executeSyncTool(
       if (text.length > 2000) {
         return fail(summaryOf(), 'text is too long for a header/footer (2000 characters max)')
       }
-      const error = hf.set(kind, view, text)
+      const textboxIndex = call.input.textboxIndex
+      if (
+        textboxIndex !== undefined &&
+        (!Number.isInteger(textboxIndex) || Number(textboxIndex) < 0)
+      )
+        return fail(summaryOf(), 'textboxIndex must be a non-negative integer from current context')
+      const error = hf.set(
+        kind,
+        view,
+        text,
+        section,
+        scope,
+        textboxIndex === undefined ? undefined : Number(textboxIndex),
+      )
       if (error) return fail(summaryOf(), error)
       return {
-        output: `Updated the ${kind}${view !== 'default' ? ` (${view}-page variant)` : ''}.`,
+        output: `Updated section ${section} ${kind}${view !== 'default' ? ` (${view}-page variant)` : ''}${textboxIndex === undefined ? '' : ` textbox ${textboxIndex}`}; scope=${scope}; affected targets: ${JSON.stringify(affected)}. ${scope === 'section' ? 'Other sections retain their content; shared/inherited parts are isolated on save.' : 'All listed aliases of the owning part are affected.'}${view === 'even' ? ' Even/odd display is enabled document-wide.' : ''}`,
         mutated: false, // app state only, saved with the document; not part of the PM doc
         summary: summaryOf(),
       }
@@ -1508,6 +1682,9 @@ function executeSyncTool(
         }
       }
       const changed = outcome.results.reduce((sum, r) => sum + r.changed, 0)
+      const exactCounts = outcome.results.every(
+        (result) => result.matchCount !== undefined && result.changeCount !== undefined,
+      )
       const skippedDeleted = outcome.results.reduce((sum, r) => sum + (r.skippedDeleted ?? 0), 0)
       // explicit model-facing note so it stops retrying deletions of already-deleted text
       const deletedNote =
@@ -1517,6 +1694,13 @@ function executeSyncTool(
       return {
         output: outcome.summary + deletedNote,
         mutated: changed > 0,
+        committed: changed > 0,
+        ...(exactCounts
+          ? {
+              matchCount: outcome.results.reduce((sum, result) => sum + result.matchCount!, 0),
+              changeCount: outcome.results.reduce((sum, result) => sum + result.changeCount!, 0),
+            }
+          : {}),
         summary: outcome.summary,
       }
     }

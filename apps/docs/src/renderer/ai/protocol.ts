@@ -87,6 +87,7 @@ export const OPS_GUIDE = [
   '- "Turn blocks 2 to 4 into a numbered list" → ops: [{"op":"setList","target":{"blockIndexes":[2,3,4]},"kind":"number"}]',
   '- "Center all images" → ops: [{"op":"setImageProperties","target":{"nodeType":"image"},"align":"center"}]',
   '- "In block 5, change 8% to 9%" → ops: [{"op":"findReplace","find":"8%","replace":"9%","target":{"blockIndexes":[5]}}]',
+  '- findReplace defaults to exactly one literal match: zero or multiple matches reject the whole batch. It spans formatting runs in one paragraph and inherits match-start formatting; it cannot cross cells, paragraphs, fields, protected/deleted content, images or formulas. Read the target first. For intentional bulk replacement, set match:"all" with an explicit target (for example {scope:"document"}); matchCount/changeCount count occurrences, while matched/changed count blocks.',
   '- "Bold every TODO:" → ops: [{"op":"setMatchedFont","text":"TODO:","bold":true}]',
   '- "Turn all the red text back to normal" → ops: [{"op":"setMatchedFont","matchColor":"#FF0000","color":null}]  (read_blocks shows the red runs as <span style="color:#FF0000">; links and other colors are untouched)',
   '- "Make every 9 pt run 10.5 pt" → ops: [{"op":"setMatchedFont","matchFontSize":9,"fontSize":10.5}]',
@@ -118,7 +119,8 @@ export const HTML_RULES = [
   '- Do not include <html>/<body>, markdown code fences, or explanatory text',
   "- <sel>…</sel> appears only in the context to mark the user's selection; it is not a tag you may write",
   '- Elements with data-doc-readonly are read-only context, not replacement content or object references. Copying them into an HTML write is refused without changes. Edit surrounding text in place or exclude those blocks; use explicit structure operations when deletion is intended.',
-  '- <img src="doc:B.I"> in read_blocks output is picture I of block B. To keep a picture when you replace its block, copy that exact tag into the new HTML where the picture should sit; a replaced range whose pictures you leave out loses them (the tool result says so). Any other <img> is ignored — new pictures go through insert_picture',
+  '- Preserve a picture by copying its exact current <img> tag from read_blocks. The public runtime emits src="media:D:R:B.I", bound to document D and revision R; stale, malformed, missing, unsupported or unbound references reject the entire write before modification. Legacy doc:B.I is an internal coordinate projection, not a safe external write identity. New pictures go through insert_picture; other <img> sources are rejected rather than omitted.',
+  '- Table cells carry colspan/rowspan for merges and zero-based data-row/data-col grid positions. Covered grid positions do not contain extra cells. Preserve spans when rewriting; grid positions are read-only descriptions.',
   '- <span style="color:#RRGGBB;font-size:Npt"> appears only in read_blocks output, on runs whose color or size differs from the rest of the block (color:auto / font-size:default = back to the block\'s normal style); it is read-only — writing <span> has no effect, change colors and sizes with the apply_ops formatting commands',
   '- Organize long content into sections with h2/h3 (unless the user only wants a single paragraph)',
   '- Keep the same language as the original document / user instruction, unless translation is requested',
@@ -347,7 +349,7 @@ function wrapInlineText(raw: string, marks: PmMark[], base?: RunStyle): string {
 /** Export hook: maps a picture's source to the `src` the restricted HTML should carry; null drops it. */
 export type ImageSrcMapper = (src: string) => string | null
 
-/** `doc:B.I` — the I-th picture of block B; read_blocks shows it, replace_blocks resolves it back to the picture */
+/** Internal I-th-picture coordinate; the public runtime binds it to a document and revision. */
 export const IMAGE_REF_PREFIX = 'doc:'
 const IMAGE_REF_RE = /^doc:(\d+)\.(\d+)$/
 
@@ -539,23 +541,36 @@ function tableToHtml(
   const model = pmTableToModel(node.toJSON() as PmNode)
   const headerRow = isHeaderRowTable(model)
   const grid = TableMap.get(node)
-  const rows = model.rows.map((row, r) => {
+  let rowOffset = 0
+  const rows = Array.from({ length: node.childCount }, (_, r) => {
     const tag = headerRow && r === 0 ? 'th' : 'td'
     const physical = node.child(r)
+    const at = rowOffset
+    rowOffset += physical.nodeSize
     if (hasDeletionRevision(physical)) return ''
-    let column = 0
-    const cells = row
-      .map((entry) => {
-        const cellOffset = grid.map[r * grid.width + column]
-        column += entry.colSpan ?? 1
-        if (entry.vMerge === 'continue') return `<${tag}></${tag}>`
-        const cell = node.nodeAt(cellOffset)!
+    const physicalCells: Array<{ cell: ProseMirrorNode; cellOffset: number }> = []
+    physical.forEach((cell, offset) => physicalCells.push({ cell, cellOffset: at + offset + 1 }))
+    const cells = physicalCells
+      .map(({ cell, cellOffset }) => {
+        const rect = grid.findCell(cellOffset)
+        const spans = `${cell.attrs.colspan > 1 ? ` colspan="${cell.attrs.colspan}"` : ''}${cell.attrs.rowspan > 1 ? ` rowspan="${cell.attrs.rowspan}"` : ''}`
+        const position = ` data-row="${rect.top}" data-col="${rect.left}"`
         const contentStart = start + cellOffset + 2
         const paras: string[] = []
         let readOnly: string | undefined
         if (!hasDeletionRevision(cell))
           cell.forEach((paragraph, offset) => {
-            if (!paragraph.isTextblock || hasDeletionRevision(paragraph)) return
+            if (hasDeletionRevision(paragraph)) return
+            if (!paragraph.isTextblock) {
+              // Omitted nested structures still consume the ordinals used by documentImagesOf.
+              if (
+                refs &&
+                !paragraph.attrs.redact &&
+                !paragraph.marks.some((mark) => mark.type.name === REDACT_MARK)
+              )
+                refs.next += inlineImagesOf(paragraph).length
+              return
+            }
             const inlineStart = contentStart + offset + 1
             const from = sel ? Math.max(0, sel.from - inlineStart) : 0
             const to = sel ? Math.min(paragraph.content.size, sel.to - inlineStart) : 0
@@ -579,7 +594,7 @@ function tableToHtml(
                     .join(''),
             )
           })
-        return `<${tag}${readOnly ? ` data-doc-readonly="${readOnly}"` : ''}>${paras.join('<br>')}</${tag}>`
+        return `<${tag}${spans}${position}${readOnly ? ` data-doc-readonly="${readOnly}"` : ''}>${paras.join('<br>')}</${tag}>`
       })
       .join('')
     return `<tr>${cells}</tr>`
@@ -690,6 +705,27 @@ export function serializeRangeToHtml(
 
 /** Header/footer snapshot for the AI context; texts use {PAGE}/{NUMPAGES} tokens, null = variant off */
 export interface AiHfState {
+  sections?: Array<{
+    index: number
+    titlePg: boolean
+    strips: Array<{
+      kind: 'header' | 'footer'
+      view: 'default' | 'first' | 'even'
+      text: string
+      /** Whether whole-part plain-text replacement is supported. */
+      textEditable?: boolean
+      textboxes?: Array<{
+        index: number
+        text: string
+        editable: boolean
+        lifetime: 'current-part'
+      }>
+      owner: number
+      inherited: boolean
+      sharedWith: number[]
+      sharedTargets?: Array<{ section: number; view: 'default' | 'first' | 'even' }>
+    }>
+  }>
   header: string
   footer: string
   headerFirst: string | null
@@ -702,6 +738,14 @@ export interface AiHfState {
 }
 
 function hfContextLines(hf: AiHfState): string[] {
+  if (hf.sections)
+    return [
+      "Headers & footers: zero-based section indexes, variants default/first/even. set_header_footer defaults to section 0 for BOTH kinds; scope=section isolates the chosen section, scope=shared changes every listed sharedWith section. Optional textboxIndex selects one editable textbox in the current part; refresh context when the part changes. first enables that section's titlePg; even enables document-wide even/odd display. {PAGE}/{NUMPAGES}/{SECTIONPAGES} remain live fields.",
+      ...hf.sections.map(
+        (section) =>
+          `- section ${section.index} (titlePg=${section.titlePg}, evenOddHf=${hf.evenOddHf}): ${JSON.stringify(section.strips)}`,
+      ),
+    ]
   const fmt = (v: string) => (v ? `"${clip(v.replace(/\n/g, '\\n'), 160)}"` : '(empty)')
   const lines = [
     'Headers & footers ({PAGE}/{NUMPAGES} are live page-number fields; change with set_header_footer):',
@@ -719,7 +763,7 @@ function hfContextLines(hf: AiHfState): string[] {
   }
   if (hf.multiSection) {
     lines.push(
-      '- the document has multiple sections; header/footer edits apply to the first section (later sections inherit unless they define their own)',
+      '- the document has multiple sections, but section metadata is unavailable from this host; do not assume multi-section targeting is supported',
     )
   }
   return lines
@@ -1128,13 +1172,16 @@ function parseInline(element: Node, marks: PmMark[]): PmNode[] {
       return
     }
     if (tag === 'img') {
-      const ref = IMAGE_REF_RE.exec(el.getAttribute('src') ?? '')
-      if (ref)
-        nodes.push({
-          type: IMAGE_REF_NODE,
-          attrs: { block: Number(ref[1]), index: Number(ref[2]) },
-        })
-      // any other <img> is not restricted HTML: pictures come in through insert_picture
+      const source = el.getAttribute('src') ?? ''
+      const ref = IMAGE_REF_RE.exec(source)
+      if (!ref)
+        throw new Error(
+          'Unsupported or malformed explicit image reference. Use a current document reference; new images require insert_picture. No changes were made.',
+        )
+      nodes.push({
+        type: IMAGE_REF_NODE,
+        attrs: { block: Number(ref[1]), index: Number(ref[2]) },
+      })
       return
     }
     if (tag === 'formula') {
@@ -1289,6 +1336,33 @@ function parseTable(el: Element): PmNode | null {
       })
     }),
   )
+  // HTML merge geometry is document structure, not presentation. Keep physical
+  // cells only; rowspan-covered grid positions must not acquire blank cells.
+  if (
+    rawRows.some((row) =>
+      row.some((cell) => cell.hasAttribute('colspan') || cell.hasAttribute('rowspan')),
+    )
+  ) {
+    const occupied = new Set<string>()
+    let width = 0
+    rawRows.forEach((cells, r) => {
+      let column = 0
+      table.content![r].content = cells.map((el, c) => {
+        while (occupied.has(`${r}:${column}`)) column++
+        const dom = el as HTMLTableCellElement
+        const colspan = dom.colSpan || 1
+        const rowspan = Math.min(dom.rowSpan || rawRows.length - r, rawRows.length - r)
+        const cell = table.content![r].content![c]
+        cell.attrs = { ...cell.attrs, colspan, rowspan, colwidth: null }
+        for (let y = r; y < r + rowspan; y++)
+          for (let x = column; x < column + colspan; x++) occupied.add(`${y}:${x}`)
+        column += colspan
+        width = Math.max(width, column)
+        return cell
+      })
+    })
+    table.attrs = { ...table.attrs, colWidthsPct: Array.from({ length: width }, () => 100 / width) }
+  }
   return table
 }
 
@@ -1330,34 +1404,77 @@ function parseBlockquote(el: Element): PmNode | null {
 const IMAGE_REF_NODE = '__imageRef'
 
 /** the pictures read_blocks showed for this block, in the same order: no rules, no pending deletions, no withheld pictures */
-function inlineImagesOf(block: ProseMirrorNode): ProseMirrorNode[] {
-  const out: ProseMirrorNode[] = []
-  block.descendants((n) => {
-    if (hasDeletionRevision(n)) return false
+export function inlineImagesOf(block: ProseMirrorNode): ProseMirrorNode[] {
+  return inlineImageEntriesOf(block).map((entry) => entry.node)
+}
+
+/** The same media ordinal projection, with occurrence positions for preservation checks. */
+export function inlineImageEntriesOf(
+  block: ProseMirrorNode,
+): Array<{ node: ProseMirrorNode; from: number }> {
+  const out: Array<{ node: ProseMirrorNode; from: number }> = []
+  block.descendants((n, from) => {
+    if (
+      hasDeletionRevision(n) ||
+      n.attrs.redact ||
+      n.marks.some((m) => m.type.name === REDACT_MARK)
+    )
+      return false
     if (
       n.type.name === 'docInlineImage' &&
       !n.attrs.rule &&
       !n.marks.some((m) => m.type.name === 'del' || m.type.name === REDACT_MARK)
     )
-      out.push(n)
+      out.push({ node: n, from })
     return true
   })
   return out
 }
 
+/** Exact source occurrence IDs retained by writable inline-image references. */
+export function preservedImageStructureIds(
+  doc: ProseMirrorNode,
+  kept: Array<{ block: number; index: number }>,
+): string[] {
+  const result: string[] = []
+  doc.forEach((block, pos, index) => {
+    const images = inlineImageEntriesOf(block)
+    for (const reference of kept.filter((reference) => reference.block === index)) {
+      const image = images[reference.index]
+      if (image)
+        result.push(`image:${pos + 1 + image.from}:${pos + 1 + image.from + image.node.nodeSize}`)
+    }
+  })
+  return result
+}
+
+/** Visible images in the same order as the restricted-HTML image references. */
+export function documentImagesOf(block: ProseMirrorNode): ProseMirrorNode[] {
+  if (
+    hasDeletionRevision(block) ||
+    block.attrs.redact ||
+    block.marks.some((m) => m.type.name === REDACT_MARK)
+  )
+    return []
+  return block.type.name === 'docProtected' && block.attrs.blockType === 'image'
+    ? [block]
+    : inlineImagesOf(block)
+}
+
 /**
  * Swap `<img src="doc:B.I">` placeholders for the pictures they name in the
- * current document (before the edit lands). Unknown refs are dropped.
+ * current document (before the edit lands). Unknown refs reject the write.
  * Returns the blocks that were referenced, so replace_blocks can tell which
  * pictures of the replaced range survive.
  */
 export function resolveImageRefs(
-  editor: Editor,
+  editor: Editor | ProseMirrorNode,
   nodes: PmNode[],
+  html?: string,
 ): { nodes: PmNode[]; kept: Array<{ block: number; index: number }>; unresolved: number } {
   const kept: Array<{ block: number; index: number }> = []
   let unresolved = 0
-  const doc = editor.state.doc
+  const doc = 'state' in editor ? editor.state.doc : editor
   const visit = (list: PmNode[]): PmNode[] =>
     list.flatMap((n) => {
       if (n.type === IMAGE_REF_NODE) {
@@ -1374,7 +1491,20 @@ export function resolveImageRefs(
       }
       return n.content ? [{ ...n, content: visit(n.content) }] : [n]
     })
-  return { nodes: visit(nodes), kept, unresolved }
+  const resolved = visit(nodes)
+  if (unresolved)
+    throw new Error(
+      `${unresolved} explicit image reference(s) could not be resolved. No changes were made. Read current document context and use the returned references.`,
+    )
+  if (
+    html !== undefined &&
+    new DOMParser().parseFromString(html, 'text/html').querySelectorAll('img').length !==
+      kept.length
+  )
+    throw new Error(
+      'An explicit image is outside supported paragraph or table-cell content. No changes were made. Keep the exact image tag within supported inline HTML, or use insert_picture.',
+    )
+  return { nodes: resolved, kept, unresolved }
 }
 
 /** pictures (non-rule inline images) inside top-level blocks [start, end] */
@@ -1522,13 +1652,13 @@ const TRACKABLE_TYPES = new Set(['docParagraph', 'docHeading', 'docListItem'])
  * pass false.
  */
 export function inheritBlockFormatting(
-  editor: Editor,
+  editor: Editor | ProseMirrorNode,
   startIndex: number,
   endIndex: number,
   nodes: PmNode[],
   anchors: boolean,
 ): PmNode[] {
-  const doc = editor.state.doc
+  const doc = 'state' in editor ? editor.state.doc : editor
   const templates: Array<{ node: ProseMirrorNode; at: number }> = []
   const tables: Array<{ node: ProseMirrorNode; at: number }> = []
   for (let i = startIndex; i <= Math.min(endIndex, doc.childCount - 1); i++) {
@@ -1587,11 +1717,19 @@ export function replaceBlockRange(
   endIndex: number,
   parsed: PmNode[],
   track?: AiTrack,
+  deletedSections: readonly number[] = [],
 ): boolean {
   if (parsed.length === 0) return false
   // a tracked rewrite keeps the old blocks (struck through) next to the new
   // ones, so the anchors stay with the old blocks until the user accepts
-  const nodes = inheritBlockFormatting(editor, startIndex, endIndex, parsed, !track)
+  const removedSectionAnchors = new Set(
+    deletedSections.map((index) => editor.state.doc.child(index).attrs.docxIndex),
+  )
+  const nodes = inheritBlockFormatting(editor, startIndex, endIndex, parsed, !track).map((node) =>
+    node.attrs?.docxIndex != null && removedSectionAnchors.has(node.attrs.docxIndex)
+      ? { ...node, attrs: { ...node.attrs, sectionBoundary: false } }
+      : node,
+  )
   const { from, to } = blockRangePositions(editor, startIndex, endIndex)
   const pmNodes = nodes.map((n) => editor.schema.nodeFromJSON(n))
 

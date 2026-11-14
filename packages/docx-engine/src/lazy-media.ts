@@ -37,11 +37,11 @@ export const MAX_LAZY_PART_CHARS = 512
 
 export function lazyMediaUrl(hash: string, partPath: string): string {
   if (!HASH_RE.test(hash)) throw new Error(`lazy media: not a sha256 hex: ${hash}`)
-  return `${LAZY_MEDIA_SCHEME}://${hash}/${partPath.split('/').map(encodeURIComponent).join('/')}`
+  return `${LAZY_MEDIA_SCHEME}://media/${hash}/${partPath.split('/').map(encodeURIComponent).join('/')}`
 }
 
 export function parseLazyMediaUrl(url: string): { hash: string; partPath: string } | null {
-  const m = new RegExp(`^${LAZY_MEDIA_SCHEME}://([0-9a-f]{64})/(.+)$`).exec(url)
+  const m = new RegExp(`^${LAZY_MEDIA_SCHEME}://(?:media/)?([0-9a-f]{64})/(.+)$`).exec(url)
   if (!m) return null
   let partPath: string
   try {

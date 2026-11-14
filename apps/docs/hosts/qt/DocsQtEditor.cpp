@@ -489,6 +489,10 @@ void DocsQtEditor::callSdk(const QString& operation, const QJsonObject& argument
 void DocsQtEditor::grantFile(const QString& path, bool read, bool write, Completion done) {
     backendCall(QStringLiteral("files.grant"), {{"path", path}, {"read", read}, {"write", write}}, std::move(done));
 }
+void DocsQtEditor::configureResources(const QStringList& attachments, const QStringList& knowledge, Completion done) {
+    backendCall(QStringLiteral("resources.configure"), {{"attachments", QJsonArray::fromStringList(attachments)},
+        {"knowledge", QJsonArray::fromStringList(knowledge)}}, std::move(done));
+}
 void DocsQtEditor::startMcp(Completion done) {
     Q_ASSERT(QThread::currentThread() == thread());
     if (!ready_ || stopping_) {

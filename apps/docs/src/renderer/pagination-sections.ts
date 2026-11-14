@@ -1,6 +1,7 @@
 // Section geometry: page box, margins, columns, doc-grid pitch and the
 // per-block column / width / vertical-alignment specs derived from sections.
 import type { SectionInfo, SectionSettings, TextFlowDirection } from '@genoffice/docx-engine'
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 
 import { mirrorShiftPx } from './page-margins'
 import { hfHasVariant, hfVariantReservedPx, type HfVariant } from './pagination-hf'
@@ -965,6 +966,23 @@ export function liveSections(
     out.push(first === s.firstBlockIndex ? s : { ...s, firstBlockIndex: first })
   })
   return changed ? out : sections
+}
+
+/** Resolve live section ownership directly from the current editor transaction. */
+export function liveSectionsForDocument(
+  sections: SectionInfo[],
+  doc: ProseMirrorNode,
+  trackedDeleted?: Set<number>,
+): SectionInfo[] {
+  const present: Array<{ docxIndex: number }> = []
+  const removed = new Set(trackedDeleted)
+  doc.forEach((node) => {
+    const index = node.attrs.docxIndex
+    if (typeof index !== 'number') return
+    present.push({ docxIndex: index })
+    if (node.attrs.sectionBoundary === false) removed.add(index)
+  })
+  return liveSections(sections, present as BlockBox[], undefined, removed)
 }
 
 /**

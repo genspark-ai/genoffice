@@ -86,6 +86,8 @@ public:
     /** Trusted host grants, never exposed as renderer/Agent services. */
     void grantFile(const QString& path, bool read, bool write, Completion done);
     void revokeFile(const QString& path, Completion done);
+    /** Replace authorized attachment/knowledge selections; paths require host read grants. */
+    void configureResources(const QStringList& attachments, const QStringList& knowledge, Completion done);
     /** Trusted native menu entry; uses the editor's existing manual command handler. */
     void triggerMenuCommand(const QString& command, const QString& payload = {});
     QString nativeText(const QString& key) const;

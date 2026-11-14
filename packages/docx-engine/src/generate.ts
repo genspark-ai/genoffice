@@ -1,3 +1,4 @@
+// Modified for ForaOffice: synchronize attributed header/footer textbox fallbacks.
 import { sdtCheckboxGlyphs, sdtCheckboxIsChecked, syncSdtCheckbox } from './checkbox-control'
 import type {
   CellMargins,
@@ -951,7 +952,7 @@ export function patchTextboxParas(paragraphXml: string, patches: TextboxParasPat
   let xml = paragraphXml
   if (segs.length > 0 && byIndex.length > 0) {
     const fallbacks: Array<{ start: number; end: number }> = []
-    const fbRe = /<mc:Fallback>[\s\S]*?<\/mc:Fallback>/g
+    const fbRe = /<mc:Fallback\b[^>]*>[\s\S]*?<\/mc:Fallback>/g
     let fb: RegExpExecArray | null
     while ((fb = fbRe.exec(paragraphXml)) !== null) {
       fallbacks.push({ start: fb.index, end: fb.index + fb[0].length })

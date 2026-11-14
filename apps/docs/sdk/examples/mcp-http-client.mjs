@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
-// The trusted host supplies startMcp's connection object through stdin, never a tool argument.
+// The trusted host supplies startMcp's connection or readOnlyConnection through stdin, never a tool argument.
 let input = ''
 for await (const chunk of process.stdin) {
   input += chunk

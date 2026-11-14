@@ -7,11 +7,21 @@ import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/edi
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { buildDocContext, serializeRangeToHtml } from '../src/renderer/ai/protocol'
 import { executeTool } from '../src/renderer/ai/tools'
+import {
+  createDocsRuntime,
+  type DocsRuntime,
+  type DocsRuntimeClient,
+} from '../src/renderer/runtime/docs-runtime'
+import type { DocsQueryResult } from '../src/shared/document-query'
 
 const numIds = { bullet: null, ordered: null }
 const editors: Editor[] = []
-afterEach(() => editors.splice(0).forEach((editor) => editor.destroy()))
-async function fixture() {
+const runtimes: DocsRuntime[] = []
+afterEach(() => {
+  runtimes.splice(0).forEach((runtime) => runtime.dispose())
+  editors.splice(0).forEach((editor) => editor.destroy())
+})
+async function fixture(track?: { author: string }) {
   const parsed = await parseDocx(
     await buildDocx({
       withImage: true,
@@ -30,6 +40,12 @@ async function fixture() {
   editors.push(editor)
   editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
   buildDocContext(editor)
+  const runtime = createDocsRuntime({
+    current: () => ({ editor, identity: editor, numIds, track }),
+  })
+  runtimes.push(runtime)
+  const caller = runtime.connect({ id: 'structural-replacement' })
+  caller.context()
   const saved = async () => {
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
     const zip = await JSZip.loadAsync(await saveDocx(parsed, plan.saveBlocks))
@@ -45,7 +61,20 @@ async function fixture() {
       xml,
     }
   }
-  return { editor, saved }
+  return { editor, saved, caller }
+}
+
+async function query(caller: DocsRuntimeClient, start: number, end: number) {
+  const result = await caller.execute({
+    id: 'structure-query',
+    name: 'query_document',
+    input: { domain: 'body', startBlockIndex: start, endBlockIndex: end },
+  })
+  expect(result.isError, result.output).not.toBe(true)
+  const value = JSON.parse(result.output) as DocsQueryResult
+  expect(value.page.complete).toBe(true)
+  value.items.forEach((item) => expect(item.structuresComplete).toBe(true))
+  return value
 }
 
 it('refuses a mixed read-back rewrite without changing DOCX structures or content', async () => {
@@ -87,16 +116,20 @@ it('does not pretend that visible field text can round trip its instruction', as
 })
 
 it('keeps deliberate replacement available and reports its structural scope honestly', async () => {
-  const { editor, saved } = await fixture()
-  const result = await executeTool(
-    editor,
-    {
-      id: 'replace',
-      name: 'replace_blocks',
-      input: { startBlockIndex: 0, endBlockIndex: 4, html: '<p>Intentionally rewritten</p>' },
+  const { caller, saved } = await fixture()
+  const source = await query(caller, 0, 4)
+  const result = await caller.execute({
+    id: 'replace',
+    name: 'replace_blocks',
+    input: {
+      startBlockIndex: 0,
+      endBlockIndex: 4,
+      html: '<p>Intentionally rewritten</p>',
+      deleteStructures: source.items.flatMap(
+        (item) => item.structures?.map((structure) => structure.id) ?? [],
+      ),
     },
-    numIds,
-  )
+  })
   expect(result.isError).not.toBe(true)
   expect(result.output).toMatch(/protected.*block/i)
   expect(result.output).toMatch(/field/i)
@@ -106,17 +139,20 @@ it('keeps deliberate replacement available and reports its structural scope hone
 })
 
 it('describes pending structural deletion as tracked rather than already removed', async () => {
-  const { editor, saved } = await fixture()
-  const result = await executeTool(
-    editor,
-    {
-      id: 'tracked',
-      name: 'replace_blocks',
-      input: { startBlockIndex: 0, endBlockIndex: 4, html: '<p>Replacement</p>' },
+  const { editor, caller, saved } = await fixture({ author: 'AI' })
+  const source = await query(caller, 0, 4)
+  const result = await caller.execute({
+    id: 'tracked',
+    name: 'replace_blocks',
+    input: {
+      startBlockIndex: 0,
+      endBlockIndex: 4,
+      html: '<p>Replacement</p>',
+      deleteStructures: source.items.flatMap(
+        (item) => item.structures?.map((structure) => structure.id) ?? [],
+      ),
     },
-    numIds,
-    { author: 'AI' },
-  )
+  })
   expect(result.isError).not.toBe(true)
   expect(result.output).toMatch(/marked for deletion/i)
   expect(editor.state.doc.child(1).attrs.blockRevision.kind).toBe('del')
@@ -124,36 +160,37 @@ it('describes pending structural deletion as tracked rather than already removed
 })
 
 it('preserves in-place text editing and explicit section deletion semantics', async () => {
-  const { editor, saved } = await fixture()
-  const edit = await executeTool(
-    editor,
-    {
-      id: 'text',
-      name: 'apply_ops',
-      input: {
-        ops: [
-          {
-            op: 'findReplace',
-            find: 'Historical description',
-            replace: '{{description}}',
-            target: { blockIndexes: [0] },
-          },
-        ],
-      },
+  const { caller, saved } = await fixture()
+  const edit = await caller.execute({
+    id: 'text',
+    name: 'apply_ops',
+    input: {
+      ops: [
+        {
+          op: 'findReplace',
+          find: 'Historical description',
+          replace: '{{description}}',
+          target: { blockIndexes: [0] },
+        },
+      ],
     },
-    numIds,
-  )
+  })
   expect(edit.isError).not.toBe(true)
   expect(await saved()).toMatchObject({ sections: 2, fields: 1, images: 1 })
-  const deletion = await executeTool(
-    editor,
-    {
-      id: 'delete',
-      name: 'apply_ops',
-      input: { ops: [{ op: 'deleteBlocks', target: { blockIndexes: [1] } }] },
+  const source = await query(caller, 1, 1)
+  const deletion = await caller.execute({
+    id: 'delete',
+    name: 'apply_ops',
+    input: {
+      ops: [
+        {
+          op: 'deleteBlocks',
+          target: { engine: source.items[0].target },
+          deleteStructures: source.items[0].structures?.map((structure) => structure.id),
+        },
+      ],
     },
-    numIds,
-  )
+  })
   expect(deletion.isError).not.toBe(true)
   expect(await saved()).toMatchObject({ sections: 1, fields: 1, images: 1 })
 })

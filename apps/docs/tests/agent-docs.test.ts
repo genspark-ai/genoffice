@@ -870,7 +870,7 @@ describe('partial selection: table cells and code blocks', () => {
     expect(editor.state.doc.textBetween(25, 28)).toBe('ity')
     const context = buildDocContext(editor)
     expect(context).toContain('Current selection: block 1 (part of the text only')
-    expect(context).toContain('<td>C<sel>ity</sel> GDP</td>')
+    expect(context).toContain('<td data-row="0" data-col="0">C<sel>ity</sel> GDP</td>')
     expect(context).toContain('Selected text (3 characters): "ity"')
     const exec = await executeTool(
       editor,

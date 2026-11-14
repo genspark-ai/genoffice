@@ -232,7 +232,15 @@ describe('edit tools vs tracked deletions', () => {
         id: 't',
         name: 'apply_ops',
         input: {
-          ops: [{ op: 'findReplace', find: 'Old reference 74.', replace: '[9]' }],
+          ops: [
+            {
+              op: 'findReplace',
+              find: 'Old reference 74.',
+              replace: '[9]',
+              match: 'all',
+              target: { scope: 'document' },
+            },
+          ],
         },
       },
       NUM_IDS,

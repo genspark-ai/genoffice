@@ -10,6 +10,8 @@ import {
 } from '../src/renderer/ai/protocol'
 import { executeTool } from '../src/renderer/ai/tools'
 import { acceptAllRevisions, rejectAllRevisions } from '../src/renderer/editor/revisions'
+import { createDocsRuntime } from '../src/renderer/runtime/docs-runtime'
+import type { DocsQueryResult } from '../src/shared/document-query'
 import { setModuleLang } from '../src/renderer/i18n/locale'
 
 interface JsonNode {
@@ -74,16 +76,59 @@ function pictureCount(editor: Editor): number {
   return n
 }
 
-const replace = (editor: Editor, start: number, end: number, html: string) =>
-  executeTool(
-    editor,
-    {
-      id: 't',
+async function replace(
+  editor: Editor,
+  start: number,
+  end: number,
+  html: string | ((source: DocsQueryResult) => string),
+  intent: { kinds?: string[]; imageIndexes?: number[] } = {},
+  track?: { author: string },
+) {
+  const runtime = createDocsRuntime({
+    current: () => ({ editor, identity: editor, numIds: NUM_IDS, track }),
+  })
+  const caller = runtime.connect({ id: 'picture-replacement' })
+  try {
+    caller.context()
+    const read = await caller.execute({
+      id: 'read',
+      name: 'query_document',
+      input: { domain: 'body' },
+    })
+    expect(read.isError, read.output).not.toBe(true)
+    const source = JSON.parse(read.output) as DocsQueryResult
+    expect(source.page.complete).toBe(true)
+    const structures = source.items
+      .filter((item) => item.blockIndex >= start && item.blockIndex <= end)
+      .flatMap((item) => {
+        expect(item.structuresComplete).toBe(true)
+        return item.structures ?? []
+      })
+    const images = structures.filter((item) => item.kind === 'image')
+    return await caller.execute({
+      id: 'replace',
       name: 'replace_blocks',
-      input: { startBlockIndex: start, endBlockIndex: end, html },
-    },
-    NUM_IDS,
+      input: {
+        startBlockIndex: start,
+        endBlockIndex: end,
+        html: typeof html === 'function' ? html(source) : html,
+        deleteStructures: [
+          ...structures.filter((item) => intent.kinds?.includes(item.kind)).map((item) => item.id),
+          ...(intent.imageIndexes ?? []).map((index) => images[index].id),
+        ],
+      },
+    })
+  } finally {
+    caller.close()
+    runtime.dispose()
+  }
+}
+
+function refs(source: DocsQueryResult): string[] {
+  return source.items.flatMap((item) =>
+    [...item.html.matchAll(/<img src="([^"]+)"/g)].map((match) => match[1]),
   )
+}
 
 setModuleLang('en')
 
@@ -105,7 +150,7 @@ describe('pictures are visible to the model and survive a block rewrite when ech
 
   it('a rewrite that omits the picture deletes it and the result says so', async () => {
     const editor = createEditor([para([picture()]), para([text('Body')])])
-    const r = await replace(editor, 0, 1, '<p>New intro</p><p>New body</p>')
+    const r = await replace(editor, 0, 1, '<p>New intro</p><p>New body</p>', { imageIndexes: [0] })
     expect(r.isError).toBeFalsy()
     expect(r.output).toContain(
       '1 picture(s) that were in the replaced range are not in the new content',
@@ -119,7 +164,7 @@ describe('pictures are visible to the model and survive a block rewrite when ech
       editor,
       0,
       1,
-      '<p>Figure 1 <img src="doc:0.0"> shows it</p><p>New body</p>',
+      (source) => `<p>Figure 1 <img src="${refs(source)[0]}"> shows it</p><p>New body</p>`,
     )
     expect(r.isError).toBeFalsy()
     expect(r.output).not.toContain('picture(s)')
@@ -129,7 +174,7 @@ describe('pictures are visible to the model and survive a block rewrite when ech
     expect(editor.state.doc.child(0).content.child(1).attrs.dataUrl).toBe(PNG)
   })
 
-  it('an unknown ref and a foreign <img> are ignored rather than inserted', async () => {
+  it('refuses an unknown ref or foreign image instead of silently omitting it', async () => {
     const editor = createEditor([para([text('Body')])])
     const r = await replace(
       editor,
@@ -137,27 +182,32 @@ describe('pictures are visible to the model and survive a block rewrite when ech
       0,
       '<p>A <img src="doc:9.9"> B <img src="https://x/y.png"> C</p>',
     )
-    expect(r.isError).toBeFalsy()
+    expect(r).toMatchObject({ isError: true, mutated: false })
     expect(pictureCount(editor)).toBe(0)
-    expect(editor.state.doc.child(0).textContent).toBe('A  B  C')
+    expect(editor.state.doc.child(0).textContent).toBe('Body')
   })
 
   it('a ref from outside the replaced range copies that picture in without counting as a loss', async () => {
     const editor = createEditor([para([picture()]), para([text('Body')])])
-    const r = await replace(editor, 1, 1, '<p>Body with <img src="doc:0.0"></p>')
+    const r = await replace(
+      editor,
+      1,
+      1,
+      (source) => `<p>Body with <img src="${refs(source)[0]}"></p>`,
+    )
     expect(r.isError).toBeFalsy()
     expect(r.output).not.toContain('picture(s)')
     expect(pictureCount(editor)).toBe(2)
   })
 
-  it('a withheld picture gets no ref, and a guessed ref to it resolves to nothing', async () => {
+  it('a withheld picture gets no ref, and a guessed ref is refused without mutation', async () => {
     const editor = createEditor([
       para([picture([{ type: 'redaction', attrs: { label: 'private' } }]), text(' after')]),
     ])
     expect(serializeRangeToHtml(editor, 0, 0)).not.toContain('doc:')
     const r = await replace(editor, 0, 0, '<p>x <img src="doc:0.0"></p>')
-    expect(r.isError).toBeFalsy()
-    expect(pictureCount(editor)).toBe(0)
+    expect(r).toMatchObject({ isError: true, mutated: false })
+    expect(pictureCount(editor)).toBe(1)
   })
 
   it('a picture pending deletion is neither numbered nor counted as lost', async () => {
@@ -165,7 +215,7 @@ describe('pictures are visible to the model and survive a block rewrite when ech
       para([picture([{ type: 'del', attrs: { author: 'a' } }]), picture(), text(' tail')]),
     ])
     expect(serializeRangeToHtml(editor, 0, 0)).toBe('<p><img src="doc:0.0"> tail</p>')
-    const r = await replace(editor, 0, 0, '<p>kept <img src="doc:0.0"></p>')
+    const r = await replace(editor, 0, 0, (source) => `<p>kept <img src="${refs(source)[0]}"></p>`)
     expect(r.output).not.toContain('picture(s)')
     const live = editor.state.doc.child(0)
     expect(live.content.child(1).type.name).toBe('docInlineImage')
@@ -188,7 +238,13 @@ describe('pictures are visible to the model and survive a block rewrite when ech
 
   it('echoing one picture twice does not hide that another was dropped', async () => {
     const editor = createEditor([para([picture(), picture()])])
-    const r = await replace(editor, 0, 0, '<p><img src="doc:0.0"><img src="doc:0.0"></p>')
+    const r = await replace(
+      editor,
+      0,
+      0,
+      (source) => `<p><img src="${refs(source)[0]}"><img src="${refs(source)[0]}"></p>`,
+      { imageIndexes: [1] },
+    )
     expect(r.output).toContain('1 picture(s) that were in the replaced range')
     expect(pictureCount(editor)).toBe(2)
   })
@@ -236,11 +292,17 @@ describe('table formatting inheritance obeys explicit image references', () => {
         .child(0)
         .toJSON()
         .content.filter((node: JsonNode) => node.type !== 'docInlineImage')
-      const html =
+      const html = (source: DocsQueryResult) =>
         action === 'move'
-          ? 'Alpha <img src="doc:0.0">Beta end'
-          : `Alpha Beta${action === 'keep' ? '<img src="doc:0.0">' : ''} end`
-      const result = await replace(editor, 0, 0, `<table><tr><td>${html}</td></tr></table>`)
+          ? `Alpha <img src="${refs(source)[0]}">Beta end`
+          : `Alpha Beta${action === 'keep' ? `<img src="${refs(source)[0]}">` : ''} end`
+      const result = await replace(
+        editor,
+        0,
+        0,
+        (source) => `<table><tr><td>${html(source)}</td></tr></table>`,
+        { imageIndexes: action === 'omit' ? [0] : [] },
+      )
       expect(result.isError, result.output).toBeFalsy()
       const after = editor.state.doc
         .child(0)
@@ -273,7 +335,8 @@ describe('table formatting inheritance obeys explicit image references', () => {
       ]),
     ])
     const before = editor.state.doc.child(0).child(0).child(0).toJSON()
-    await replace(editor, 0, 0, serializeRangeToHtml(editor, 0, 0))
+    const result = await replace(editor, 0, 0, (source) => source.items[0].html)
+    expect(result.isError, result.output).not.toBe(true)
     expect(editor.state.doc.child(0).child(0).child(0).toJSON()).toEqual(before)
   })
 
@@ -281,11 +344,28 @@ describe('table formatting inheritance obeys explicit image references', () => {
     const editor = createEditor([
       table([[cell([{ type: 'docRuby', attrs: { base: '字', guide: 'zi' } }, picture()])]]),
     ])
-    const result = await replace(editor, 0, 0, serializeRangeToHtml(editor, 0, 0))
+    const result = await replace(editor, 0, 0, (source) => source.items[0].html)
     expect(result.isError, result.output).toBeFalsy()
     const paragraph = editor.state.doc.child(0).child(0).child(0).child(0)
     expect(paragraph.child(0).type.name).toBe('docRuby')
     expect(paragraph.child(1).type.name).toBe('docInlineImage')
+  })
+
+  it('refuses actual ruby loss even when its neighboring image is retained', async () => {
+    const editor = createEditor([
+      table([
+        [cell([{ type: 'docRuby', attrs: { base: 'ruby base', guide: 'guide' } }, picture()])],
+      ]),
+    ])
+    const before = editor.getJSON()
+    const result = await replace(
+      editor,
+      0,
+      0,
+      (source) => `<table><tr><td>Changed <img src="${refs(source)[0]}"></td></tr></table>`,
+    )
+    expect(result).toMatchObject({ isError: true, committed: false })
+    expect(editor.getJSON()).toEqual(before)
   })
 
   it('preserves horizontal spans when an explicit image dissolves a vertical merge', async () => {
@@ -302,7 +382,9 @@ describe('table formatting inheritance obeys explicit image references', () => {
       editor,
       0,
       0,
-      '<table><tr><td></td><td>Right one</td></tr><tr><td><img src="doc:0.0"></td><td>Right two</td></tr></table>',
+      (source) =>
+        `<table><tr><td></td><td>Right one</td></tr><tr><td><img src="${refs(source)[0]}"></td><td>Right two</td></tr></table>`,
+      { kinds: ['table'] },
     )
     expect(result.isError, result.output).toBeFalsy()
     const next = editor.state.doc.child(0)
@@ -321,9 +403,9 @@ describe('table formatting inheritance obeys explicit image references', () => {
     const editor = createEditor([table([[originalCell]])])
     const html = serializeRangeToHtml(editor, 0, 0)
     expect(html).toBe(
-      '<table><tr><td>A <img src="doc:0.0"><br>B <img src="doc:0.1"></td></tr></table>',
+      '<table><tr><td data-row="0" data-col="0">A <img src="doc:0.0"><br>B <img src="doc:0.1"></td></tr></table>',
     )
-    const result = await replace(editor, 0, 0, html)
+    const result = await replace(editor, 0, 0, (source) => source.items[0].html)
     expect(result.output).not.toContain('picture(s)')
     expect(pictureCount(editor)).toBe(2)
     expect(editor.state.doc.child(0).child(0).child(0).childCount).toBe(2)
@@ -338,8 +420,8 @@ describe('table formatting inheritance obeys explicit image references', () => {
       ]),
     ])
     const html = serializeRangeToHtml(editor, 0, 0)
-    expect(html).toContain('<td><img src="doc:0.0"></td>')
-    expect(html).toContain('<td><img src="doc:0.1"></td>')
+    expect(html).toContain('<td data-row="0" data-col="1"><img src="doc:0.0"></td>')
+    expect(html).toContain('<td data-row="1" data-col="1"><img src="doc:0.1"></td>')
     expect(html.match(/<img /g)).toHaveLength(2)
   })
 
@@ -353,13 +435,14 @@ describe('table formatting inheritance obeys explicit image references', () => {
     const editor = createEditor([original])
     expect(countInlineImages(editor, 0, 0)).toBe(1)
     expect(serializeRangeToHtml(editor, 0, 0)).toBe(
-      '<table><tr><td><img src="doc:0.0"></td></tr></table>',
+      '<table><tr><td data-row="1" data-col="0"><img src="doc:0.0"></td></tr></table>',
     )
     const result = await replace(
       editor,
       0,
       0,
-      '<table><tr><td><img src="doc:0.0"></td></tr></table>',
+      (source) => `<table><tr><td><img src="${refs(source)[0]}"></td></tr></table>`,
+      { kinds: ['table'] },
     )
     expect(result.output).not.toContain('picture(s)')
     expect(pictureCount(editor)).toBe(1)
@@ -371,7 +454,10 @@ describe('table formatting inheritance obeys explicit image references', () => {
     async (rows) => {
       const editor = createEditor([table([[cell([text('Old label')]), cell([picture()])]])])
       buildDocContext(editor)
-      const result = await replace(editor, 0, 0, parameterTable(rows))
+      const result = await replace(editor, 0, 0, parameterTable(rows), {
+        kinds: rows === 1 ? [] : ['table'],
+        imageIndexes: [0],
+      })
       expect(result.isError, result.output).toBeFalsy()
       expect(pictureCount(editor)).toBe(0)
       expect(result.output).toContain('1 picture(s) that were in the replaced range')
@@ -385,7 +471,7 @@ describe('table formatting inheritance obeys explicit image references', () => {
       editor,
       0,
       0,
-      '<table><tr><td><img src="doc:0.0"></td><td></td></tr></table>',
+      (source) => `<table><tr><td><img src="${refs(source)[0]}"></td><td></td></tr></table>`,
     )
     expect(result.output).not.toContain('picture(s)')
     expect(pictureCount(editor)).toBe(1)
@@ -397,17 +483,26 @@ describe('table formatting inheritance obeys explicit image references', () => {
 
   it('keeps one explicit image without cloning it into additional rows', async () => {
     const editor = createEditor([table([[cell([text('Old label')]), cell([picture()])]])])
-    const result = await replace(editor, 0, 0, parameterTable(3, '<img src="doc:0.0">'))
+    const result = await replace(
+      editor,
+      0,
+      0,
+      (source) => parameterTable(3, `<img src="${refs(source)[0]}">`),
+      { kinds: ['table'] },
+    )
+    expect(result.isError, result.output).not.toBe(true)
+    expect(editor.state.doc.child(0).childCount).toBe(3)
     expect(result.output).not.toContain('picture(s)')
     expect(pictureCount(editor)).toBe(1)
     expect(editor.state.doc.child(0).child(0).child(1).child(0).child(0).attrs.dataUrl).toBe(PNG)
   })
 
-  it('does not restore an image for an unknown reference in a blank cell', async () => {
+  it('refuses an unknown reference in a blank cell without changing the original table', async () => {
     const editor = createEditor([table([[cell([text('Old label')]), cell([picture()])]])])
     const result = await replace(editor, 0, 0, parameterTable(1, '<img src="doc:99.0">'))
-    expect(pictureCount(editor)).toBe(0)
-    expect(result.output).toContain('1 picture(s) that were in the replaced range')
+    expect(result).toMatchObject({ isError: true, mutated: false })
+    expect(pictureCount(editor)).toBe(1)
+    expect(editor.state.doc.child(0).textContent).toContain('Old label')
   })
 
   it('does not restore an omitted image when a different image is explicitly duplicated', async () => {
@@ -416,7 +511,9 @@ describe('table formatting inheritance obeys explicit image references', () => {
       editor,
       0,
       0,
-      '<table><tr><td><img src="doc:0.0"><img src="doc:0.0"></td><td></td></tr></table>',
+      (source) =>
+        `<table><tr><td><img src="${refs(source)[0]}"><img src="${refs(source)[0]}"></td><td></td></tr></table>`,
+      { imageIndexes: [1] },
     )
     expect(pictureCount(editor)).toBe(2)
     expect(result.output).toContain('1 picture(s) that were in the replaced range')
@@ -426,7 +523,10 @@ describe('table formatting inheritance obeys explicit image references', () => {
     const editor = createEditor([
       table([[cell([text('First')]), cell([picture()], { rowspan: 2 })], [cell([text('Second')])]]),
     ])
-    const result = await replace(editor, 0, 0, parameterTable(3))
+    const result = await replace(editor, 0, 0, parameterTable(3), {
+      kinds: ['table'],
+      imageIndexes: [0],
+    })
     expect(result.isError, result.output).toBeFalsy()
     expect(pictureCount(editor)).toBe(0)
     editor.state.doc.child(0).forEach((row) => {
@@ -443,7 +543,9 @@ describe('table formatting inheritance obeys explicit image references', () => {
       editor,
       0,
       0,
-      '<table><tr><td>First</td><td></td></tr><tr><td>Second</td><td><img src="doc:0.0"></td></tr></table>',
+      (source) =>
+        `<table><tr><td>First</td><td></td></tr><tr><td>Second</td><td><img src="${refs(source)[0]}"></td></tr></table>`,
+      { kinds: ['table'] },
     )
     expect(result.isError, result.output).toBeFalsy()
     expect(pictureCount(editor)).toBe(1)
@@ -458,14 +560,12 @@ describe('table formatting inheritance obeys explicit image references', () => {
     'keeps omitted images only in the deleted revision until %s',
     async (decision) => {
       const editor = createEditor([table([[cell([text('Old label')]), cell([picture()])]])])
-      const result = await executeTool(
+      const result = await replace(
         editor,
-        {
-          id: 'tracked',
-          name: 'replace_blocks',
-          input: { startBlockIndex: 0, endBlockIndex: 0, html: parameterTable(3) },
-        },
-        NUM_IDS,
+        0,
+        0,
+        parameterTable(3),
+        { kinds: ['table'], imageIndexes: [0] },
         { author: 'Reviewer' },
       )
       expect(result.isError, result.output).toBeFalsy()

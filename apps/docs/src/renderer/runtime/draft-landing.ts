@@ -31,7 +31,7 @@ export class DraftLanding {
   private to: number
   /** the text of the last tick that parsed and rendered */
   private rendered: string | null = null
-  private pending: string | null = null
+  private pending: { html: string; nodes?: ReturnType<typeof parseHtmlFragment> } | null = null
   private timer: ReturnType<typeof setTimeout> | null = null
   private closed = false
   private follow = true
@@ -60,6 +60,7 @@ export class DraftLanding {
     private readonly editor: Editor,
     private readonly numIds: NumIds,
     position: WritePosition,
+    private readonly canPreview: () => boolean = () => !editor.isDestroyed && editor.isEditable,
   ) {
     this.from =
       position.kind === 'after' && position.index >= 0
@@ -71,9 +72,9 @@ export class DraftLanding {
   }
 
   /** latest cumulative fragment; rendered on the next tick */
-  update(html: string): void {
+  update(html: string, nodes?: ReturnType<typeof parseHtmlFragment>): void {
     if (this.closed) return
-    this.pending = html
+    this.pending = { html, nodes }
     if (this.timer === null) this.timer = setTimeout(() => this.flush(), DRAFT_TICK_MS)
   }
 
@@ -87,6 +88,13 @@ export class DraftLanding {
       i++
     })
     return index
+  }
+
+  /** Freeze the visible preview without publishing a pending stale update. */
+  pause(): void {
+    if (this.timer !== null) clearTimeout(this.timer)
+    this.timer = null
+    this.pending = null
   }
 
   /**
@@ -139,12 +147,12 @@ export class DraftLanding {
 
   private flush(): void {
     this.timer = null
-    if (this.closed || this.conflicted || this.pending === null || this.editor.isDestroyed) return
-    const html = this.pending
+    if (this.closed || this.conflicted || this.pending === null || !this.canPreview()) return
+    const { html, nodes } = this.pending
     this.pending = null
     let next: ProseMirrorNode[]
     try {
-      next = parseHtmlFragment(html, this.numIds).map((n) =>
+      next = (nodes ?? parseHtmlFragment(html, this.numIds)).map((n) =>
         this.editor.schema.nodeFromJSON({ ...n, attrs: { ...n.attrs, aiChanged: false } }),
       )
     } catch {
@@ -155,12 +163,13 @@ export class DraftLanding {
       this.conflicted = true
       return
     }
-    this.rendered = html
     let keep = 0
     while (keep < live.length && keep < next.length && live[keep]!.node.eq(next[keep]!)) keep++
     if (keep === live.length && keep === next.length) return
     const at = keep > 0 ? live[keep - 1]!.end : this.from
     const wasVisible = this.follow && this.endVisible()
+    if (!this.canPreview()) return
+    this.rendered = html
     this.editor.view.dispatch(this.draftTr().replaceWith(at, this.to, next.slice(keep)))
     this.to = at + next.slice(keep).reduce((size, n) => size + n.nodeSize, 0)
     this.ownedNodes = new Set(this.liveNodes().map(({ node }) => node))

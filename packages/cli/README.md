@@ -100,9 +100,9 @@ placeholders in a `.docx`, `.pptx` or `.xlsx` template from a JSON object
 (a file, inline JSON or `-` for stdin). Nested objects flatten to dotted keys
 (`{{a.b}}`); arrays are not expanded and come back in `detail.ignored_keys`;
 whitespace inside the braces is tolerated. The fill runs on the engines' own
-find/replace paths: `findReplace` in the docs editor (a table block with a placeholder that has a
-value goes through `replace_blocks` on its restricted HTML, since `findReplace`
-does not reach cells; a table nothing fills is left untouched), deck-level `findReplace` plus `setNotes` in pptx-ops, and the workbook DSL's `set_cell`,
+find/replace paths: explicit scoped bulk `findReplace` in the docs editor (including
+placeholders split over formatting runs; table blocks retain the restricted-HTML
+merge route and a table nothing fills is left untouched), deck-level `findReplace` plus `setNotes` in pptx-ops, and the workbook DSL's `set_cell`,
 one per placeholder cell: a cell that is exactly one placeholder takes the
 value's type (a number becomes a number cell), every other cell gets its
 substituted text as literal text (`type: "text"`, so a value starting with
@@ -111,9 +111,9 @@ substituted text as literal text (`type: "text"`, so a value starting with
 The result lists `used_keys`, `unused_keys` and `unresolved_placeholders`
 (`{ placeholder, key, reason, location }` with the block index, slide and
 element id, or sheet and cell). `reason: no_key` is a placeholder the data
-does not cover; `split_placeholder` is one Word or PowerPoint stored across
-runs with different formatting, which run-level replace cannot match (retype
-it in one run); `unreachable_nested` sits inside a nested pptx group or a
+does not cover; `split_placeholder` is a placeholder the format's replacement
+path could not fill (Docs handles formatting-run splits within a paragraph);
+`unreachable_nested` sits inside a nested pptx group or a
 table in a group, which deck-level `findReplace` does not reach (ungroup it). Unresolved placeholders stay in place and the result carries an
 `unresolved_placeholder` warning; `--strict` turns them into an error of the
 same name and writes nothing. The output is written atomically, an existing

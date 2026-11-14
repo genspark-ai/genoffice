@@ -51,7 +51,12 @@ export function sdtCheckboxControl(
   if (!sdtPr || !box) return null
   const checkedEl = findChild(box, 'w14:checked')
   const checked = checkedEl ? isOn(attrsOf(checkedEl)['w14:val']) : false
-  const sdtPrXml = serializeXNode(sdtPr)
+  // The run retains sdtPr without its original sdt wrapper. Keep declarations
+  // from that wrapper so raw control properties remain namespace-valid on save.
+  const namespaces = Object.fromEntries(
+    Object.entries(attrsOf(sdt)).filter(([key]) => key === 'xmlns' || key.startsWith('xmlns:')),
+  )
+  const sdtPrXml = serializeXNode({ ...sdtPr, ':@': { ...namespaces, ...attrsOf(sdtPr) } })
   const glyphs = sdtCheckboxGlyphs(sdtPrXml)
   return { sdtPrXml, glyph: checked ? glyphs.checked : glyphs.unchecked }
 }

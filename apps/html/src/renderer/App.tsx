@@ -1,3 +1,4 @@
+// Modified for ForaOffice: keep preview selection coherent across consecutive keyboard commands.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Dropdown,
@@ -260,7 +261,6 @@ export default function App() {
   canvasModeRef.current = canvasMode
   savedTextRef.current = savedText
   statusRef.current = status
-  selectedSidRef.current = selectedSid
   const dirty = text !== savedText
 
   const getMap = useCallback((): ParseMap => {
@@ -630,6 +630,8 @@ export default function App() {
       opts: { reveal?: boolean; toPreview?: boolean; state?: NodeState } = {},
     ) => {
       if (sid !== selectedSidRef.current) flushPending()
+      // Consecutive inspector messages may arrive before React renders the selection.
+      selectedSidRef.current = sid
       setSelectedSid(sid)
       setSelectedState(opts.state ?? 'static')
       setTextSel(null)
@@ -700,6 +702,7 @@ export default function App() {
           if (!msg.element || msg.dynamic || msg.element.sid === null) {
             if (msg.element) {
               flushPending()
+              selectedSidRef.current = null
               setSelectedSid(null)
               setSelectedState('dynamic')
               setNotice(t('nodeDynamic'))

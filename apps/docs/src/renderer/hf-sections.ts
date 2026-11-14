@@ -1,3 +1,4 @@
+// Modified for ForaOffice: reliable document targeting and portable inspection.
 /**
  * The header/footer model every consumer shares (canvas strips, page gaps,
  * pagination heights, print preview, the AI tool, the save path).
@@ -18,6 +19,7 @@ import type {
   HfPartInfo,
   HfPictureEdit,
   SectionInfo,
+  SaveOptions,
 } from '@genoffice/docx-engine'
 import { hfFromPart, type HfVariantKey, type HfVariantsState, type HfView } from './doc-state'
 
@@ -124,10 +126,15 @@ function pendingForRef(
   rId: string,
 ): HeaderFooter | undefined {
   for (const sec of state.sections) {
-    if (refOf(sec, kind, variant) !== rId) continue
-    if (state.links[linkKey(sec.lastBlockIndex, kind, variant)]) continue
-    const edited = state.edits[editKey(sec.lastBlockIndex, kind, variant)]
-    if (edited) return edited
+    for (const view of [
+      variant,
+      ...(['default', 'first', 'even'] as const).filter((v) => v !== variant),
+    ]) {
+      if (refOf(sec, kind, view) !== rId) continue
+      if (state.links[linkKey(sec.lastBlockIndex, kind, view)]) continue
+      const edited = state.edits[editKey(sec.lastBlockIndex, kind, view)]
+      if (edited && !edited.sectionOnly) return edited
+    }
   }
   return undefined
 }
@@ -179,7 +186,9 @@ export function ownHf(
   const sec = state.sections[si]
   const single = state.sections.length <= 1
   if (!sec && !single) return undefined
-  if (sec && state.links[linkKey(sec.lastBlockIndex, kind, variant)]) return undefined
+  const own = sec ? state.edits[editKey(sec.lastBlockIndex, kind, variant)] : undefined
+  if (sec && state.links[linkKey(sec.lastBlockIndex, kind, variant)] && !own?.sectionOnly)
+    return undefined
   const rId = refOf(sec, kind, variant)
   const parts = state.parsed?.hfParts
   const images = rId
@@ -187,8 +196,22 @@ export function ownHf(
     : single
       ? docImages(state.parsed, kind, variant)
       : undefined
-  const own = sec ? state.edits[editKey(sec.lastBlockIndex, kind, variant)] : undefined
-  if (own) return { value: own, images: withHfPictureEdits(images, own) }
+  if (own) {
+    const inheritedImages = own.sectionOnly
+      ? resolveHf(
+          {
+            ...state,
+            edits: Object.fromEntries(
+              Object.entries(state.edits).filter(([, hf]) => !hf.sectionOnly),
+            ),
+          },
+          si,
+          kind,
+          variant,
+        ).images
+      : images
+    return { value: own, images: withHfPictureEdits(inheritedImages, own) }
+  }
   if (rId) {
     const shared = pendingForRef(state, kind, variant, rId)
     return {
@@ -209,7 +232,16 @@ export function resolveHf(
 ): HfResolved {
   const start = Math.min(si, Math.max(0, state.sections.length - 1))
   for (let j = start; j >= 0; j--) {
-    const own = ownHf(state, j, kind, variant)
+    const inheritedState =
+      j !== si
+        ? {
+            ...state,
+            edits: Object.fromEntries(
+              Object.entries(state.edits).filter(([, hf]) => !hf.sectionOnly),
+            ),
+          }
+        : state
+    const own = ownHf(inheritedState, j, kind, variant)
     if (own) return { ...own, owner: j }
   }
   return { value: null, owner: start }
@@ -258,8 +290,20 @@ export function withHfEdit(
 ): Pick<HfSectionState, 'edits' | 'links'> | null {
   const target = hfCommitTarget(state, si, kind, variant, ownerAtOpen)
   if (!target) return null
+  const committed = hfTextCommit(state.edits[target.key], next)
+  const edits = { ...state.edits }
+  const owner = state.sections[target.owner]
+  const rId = refOf(owner, kind, variant)
+  if (rId && !committed.sectionOnly) {
+    for (const [key, value] of Object.entries(edits)) {
+      const entry = parseEditKey(key)
+      const section = state.sections.find((s) => s.lastBlockIndex === entry.sectionEnd)
+      if (!value.sectionOnly && entry.kind === kind && refOf(section, kind, entry.variant) === rId)
+        delete edits[key]
+    }
+  }
   return {
-    edits: { ...state.edits, [target.key]: hfTextCommit(state.edits[target.key], next) },
+    edits: { ...edits, [target.key]: committed },
     links: state.links,
   }
 }
@@ -272,7 +316,11 @@ export function withHfEdit(
 export function hfTextCommit(prev: HeaderFooter | undefined, next: HeaderFooter): HeaderFooter {
   const { pictureOnly: _textKept, ...rest } = next
   const pictureEdits = prev?.pictureEdits ?? next.pictureEdits
-  return pictureEdits ? { ...rest, pictureEdits } : rest
+  return {
+    ...rest,
+    ...(pictureEdits ? { pictureEdits } : {}),
+    ...(prev?.sectionOnly ? { sectionOnly: true } : {}),
+  }
 }
 
 /**
@@ -335,12 +383,7 @@ export function withHfLink(
 }
 
 export interface HfSaveOptions {
-  sectionHf?: Array<{
-    lastBlockIndex: number
-    kind: HfKind
-    variant: Exclude<HfView, 'default'> | 'default'
-    hf: HeaderFooter
-  }>
+  sectionHf?: SaveOptions['sectionHf']
   sectionHfUnlink?: Array<{
     lastBlockIndex: number
     kind: HfKind
@@ -365,10 +408,43 @@ export function hfSaveOptions(state: HfSectionState): HfSaveOptions {
   const last = state.sections[state.sections.length - 1]
   const lastEnd = last?.lastBlockIndex
   const sectionHf: NonNullable<HfSaveOptions['sectionHf']> = []
+  const baseline = {
+    ...state,
+    edits: Object.fromEntries(Object.entries(state.edits).filter(([, hf]) => !hf.sectionOnly)),
+  }
+  const source = (index: number, kind: HfKind, variant: HfView) => {
+    const resolved = resolveHf(baseline, index, kind, variant)
+    return {
+      sourceRelationshipId: refOf(state.sections[resolved.owner], kind, variant) ?? null,
+      hf: resolved.value ?? { text: '' },
+    }
+  }
   for (const [key, hf] of Object.entries(state.edits)) {
     const { sectionEnd, kind, variant } = parseEditKey(key)
-    if (state.links[key]) continue
-    if (sectionEnd === lastEnd) {
+    if (state.links[key] && !hf.sectionOnly) continue
+    if (hf.sectionOnly) {
+      const index = state.sections.findIndex((s) => s.lastBlockIndex === sectionEnd)
+      if (index < 0) throw new Error('The header/footer section was removed')
+      let preserveFollowing: NonNullable<SaveOptions['sectionHf']>[number]['preserveFollowing']
+      for (let next = index + 1; next < state.sections.length; next++) {
+        if (ownHf(baseline, next, kind, variant)) break
+        if (state.edits[editKey(state.sections[next].lastBlockIndex, kind, variant)]?.sectionOnly)
+          continue
+        preserveFollowing = { sectionIndex: next, ...source(next, kind, variant) }
+        break
+      }
+      sectionHf.push({
+        lastBlockIndex: sectionEnd,
+        kind,
+        variant,
+        hf,
+        sectionIndex: index,
+        sourceRelationshipId: source(index, kind, variant).sourceRelationshipId,
+        preserveFollowing,
+      })
+      continue
+    }
+    if (sectionEnd === lastEnd && !hf.sectionOnly) {
       const slot =
         variant === 'default' ? kind : (`${kind}${variant === 'first' ? 'First' : 'Even'}` as const)
       out[slot] = hf

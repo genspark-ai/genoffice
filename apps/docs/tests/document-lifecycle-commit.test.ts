@@ -3,11 +3,16 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
-import { parseDocx } from '@genoffice/docx-engine'
-import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
+import { inlinePictureDrawingXml, parseDocx } from '@genoffice/docx-engine'
+import { buildDocx, TINY_PNG_BASE64 } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { collectRevisions } from '../src/renderer/editor/revisions'
-import { loadFile, newFile, type FileActionContext } from '../src/renderer/file-actions'
+import {
+  loadFile,
+  newFile,
+  saveExplicit,
+  type FileActionContext,
+} from '../src/renderer/file-actions'
 import type { DocState } from '../src/renderer/doc-state'
 import { installDocsHost, type DocsEditorServices } from '../src/renderer/host/docs-host'
 import { createDocsRuntime, type RuntimeDocument } from '../src/renderer/runtime/docs-runtime'
@@ -39,6 +44,7 @@ async function fixture() {
       kind: 'browser',
       services: {
         getRecentFiles: async () => [],
+        saveDocxTo: async (path: string) => ({ ok: true, path }),
         getSystemLocale: async () => 'en-US',
         docPasswordIntentRevision: async () => 0,
         discardDocPasswordIntents: async () => {},
@@ -96,6 +102,8 @@ async function fixture() {
   const base = {
     editor,
     dirtyRef: { current: true },
+    saveInFlightRef: { current: false },
+    saveIncompleteRef: { current: false },
     commitDocumentState: (operation: () => void) => flushSync(operation),
   }
   const ctx = new Proxy(base, {
@@ -193,4 +201,60 @@ it('commits a new blank document and clears prior document metadata before compl
     trackChanges: false,
     removePersonalInfo: false,
   })
+})
+
+it('commits the saved baseline before the save promise resolves', async () => {
+  const { ctx, metadata, status } = await fixture()
+  expect(await newFile(ctx), String(status())).toBe(true)
+  const before = metadata().doc
+  const result = await saveExplicit(ctx, { path: '/saved.docx', overwrite: true })
+  expect(result, String(status())).toMatchObject({ ok: true, committed: true, pending: false })
+  expect(metadata().doc.filePath).toBe('/saved.docx')
+  expect(metadata().doc.parsed).not.toBe(before.parsed)
+  expect(metadata().hfVariantsDirty).toEqual([])
+  expect(metadata().sectionHfEdits).toEqual({})
+})
+
+it('keeps immediate media references current across completed saves', async () => {
+  const { ctx, runtime, metadata, status } = await fixture()
+  const bytes = await buildDocx({
+    withImage: true,
+    bodyXml: `<w:p><w:r>${inlinePictureDrawingXml({ rId: 'rId10', docPrId: 1, widthPx: 20, heightPx: 20 })}</w:r></w:p>`,
+  })
+  expect(
+    await loadFile(ctx, {
+      path: '/image.docx',
+      name: 'Image.docx',
+      hash: 'image',
+      dataUrl: '',
+      data: bytes.slice().buffer as ArrayBuffer,
+    }),
+    String(status()),
+  ).toBe('ok')
+  const caller = runtime.connect({ id: 'immediate-saved-media' })
+  caller.context()
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const path = `/saved-image-${attempt}.docx`
+    expect(await saveExplicit(ctx, { path, overwrite: true }), String(status())).toMatchObject({
+      ok: true,
+      committed: true,
+      pending: false,
+    })
+    expect(metadata().doc.filePath).toBe(path)
+    const context = caller.context()
+    const mediaRef = /media:[a-z0-9-]+:\d+:0\.0/.exec(context.text)?.[0]
+    expect(mediaRef).toBeDefined()
+    expect(
+      await caller.execute({
+        id: `media-${attempt}`,
+        name: 'read_document_media',
+        input: { mediaRef },
+      }),
+    ).toMatchObject({
+      revision: context.revision,
+      committed: false,
+      media: { mimeType: 'image/png', data: TINY_PNG_BASE64 },
+    })
+    expect(caller.context().revision).toBe(context.revision)
+  }
 })

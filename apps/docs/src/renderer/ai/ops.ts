@@ -2,14 +2,18 @@ import { checkPlaceholders, placeholderSource, REDACT_MARK } from './redact'
 import type { Editor } from '@tiptap/core'
 import type { Node as PmDocNode, Schema } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
+import { TableMap } from '@tiptap/pm/tables'
 import { generateTocFieldXml, type TabStop, type TocEntry } from '@genoffice/docx-engine'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
-import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
+import { blockRangePositions, hasDeletionRevision, isTrackedDeleted, liveText } from './doc-utils'
 import { tabSpecsToStops, validateTabs, type TabSpec } from './tab-stops'
 import { styleOpDefs, type AiStyleAccess } from './style-ops'
 import { fieldOpDefs } from './field-ops'
 import { tableOpDefs } from './table-ops'
+import { compileFind, findInDoc } from '../editor/find'
+import type { DocsEngineTarget } from '../../shared/document-query'
+import { inventoryStructures } from './structure-inventory'
 
 /**
  * Canonical edit ops for the document. The model (apply_ops) and, later, the
@@ -26,6 +30,7 @@ import { tableOpDefs } from './table-ops'
 
 /** All given conditions filter with AND; at least one condition is required */
 export interface Target {
+  engine?: DocsEngineTarget
   /** 'image' matches protected image blocks (docProtected + blockType image); 'table' matches native (editable) tables */
   nodeType?: 'docHeading' | 'docParagraph' | 'docListItem' | 'image' | 'table'
   /** Restrict heading level (only with nodeType: 'docHeading') */
@@ -79,6 +84,7 @@ export interface Op {
 }
 
 export interface OpContext {
+  engineEpoch?: { documentId: string; revision: number }
   /** numbering context so converted list items join real docx numbering on save */
   numIds?: { bullet: string | null; ordered: string | null } | null
   /** record the batch's changes as tracked revisions under this author */
@@ -94,7 +100,7 @@ export interface OpContext {
   source?: 'ai' | 'ui'
   /** flag changed blocks with the yellow AI highlight (default: only for source 'ai') */
   markAi?: boolean
-  /** validate and plan only; nothing is dispatched */
+  /** Build and validate the full transaction, then discard it without dispatch. */
   dryRun?: boolean
   /** style catalog for applyStyle (ids, heading levels, pending define_style entries) */
   styles?: AiStyleAccess
@@ -104,22 +110,33 @@ export interface OpContext {
 const wantsAiMark = (ctx: OpContext): boolean => ctx.markAi ?? ctx.source !== 'ui'
 
 export interface OpResult {
+  structuralEffects?: Array<{
+    reference: string
+    kind: string
+    effect: 'removed' | 'marked-for-deletion'
+  }>
   op: string
   matched: number
   changed: number
   skippedProtected: number
   /** targets skipped because the text is a pending tracked deletion */
   skippedDeleted?: number
+  /** Exact occurrence/cell counts, separate from the legacy block totals. */
+  matchCount?: number
+  changeCount?: number
   detail?: string
 }
 
 export interface ExecuteOutcome {
+  previewResults?: OpResult[]
   ok: boolean
   results: OpResult[]
   summary: string
   error?: string
   /** one line per op, in order (always on success, alone on dryRun) */
   plan?: string[]
+  /** Whether the validated provisional document differs; previews never dispatch it. */
+  wouldChange?: boolean
 }
 
 // ---- registry ----
@@ -234,6 +251,7 @@ function validateTarget(target: unknown, where: string): string | null {
     }
   }
   const hasCondition =
+    tg.engine !== undefined ||
     tg.nodeType !== undefined ||
     tg.headingLevel !== undefined ||
     typeof tg.containsText === 'string' ||
@@ -259,7 +277,7 @@ function validateShape(op: Op, def: OpDef, where: string): string | null {
     if (error) return error
   }
   const unknown = Object.keys(op).filter(
-    (k) => k !== 'op' && k !== 'target' && !def.keys.includes(k),
+    (k) => k !== 'op' && k !== 'target' && k !== 'deleteStructures' && !def.keys.includes(k),
   )
   if (unknown.length > 0) {
     return `${where}: unknown field(s) ${unknown.join(', ')}; allowed: ${def.keys.join(', ')}`
@@ -895,7 +913,6 @@ function runFindReplace(op: Op, env: RunEnv): OpResult {
   const find = String(op.find)
   const replace = String(op.replace ?? '')
   const matchCase = op.matchCase !== false
-  const needle = matchCase ? find : find.toLowerCase()
   const blocks = op.target ? matchTarget(tr.doc, targetOf(op), sel) : topLevelBlocks(tr.doc)
   const scoped = op.target ? scopedRange(targetOf(op), sel) : null
   const replacements: Array<{ from: number; to: number; marks: PmDocNode['marks'] }> = []
@@ -906,29 +923,64 @@ function runFindReplace(op: Op, env: RunEnv): OpResult {
   for (const b of blocks) {
     if (b.node.type.name === 'docProtected') {
       if (blockText(b.node).includes(find)) skippedProtected++
-      continue
-    }
-    const blockDeleted = isTrackedDeleted(b.node)
-    for (const p of scanParagraphs(b, scoped)) {
-      const paraDeleted = blockDeleted || isTrackedDeleted(p.node)
-      p.node.forEach((child, offset) => {
-        if (!child.isText || !child.text) return
-        const struck = paraDeleted || child.marks.some((m) => m.type.name === 'del')
-        const hay = matchCase ? child.text : child.text.toLowerCase()
-        let at = hay.indexOf(needle)
-        while (at !== -1) {
-          const from = p.pos + 1 + offset + at
-          if (struck) {
-            skippedDeleted++
-          } else if (insideScope(b, scoped, from, from + needle.length)) {
-            replacements.push({ from, to: from + needle.length, marks: child.marks })
-            touchedIndexes.add(b.index)
-          }
-          at = hay.indexOf(needle, at + needle.length)
-        }
-      })
     }
   }
+  const options = { mode: 'literal' as const, matchCase, wholeWord: false, matchWidth: true }
+  // The operation takes literal text; native Word-style caret codes remain literal too.
+  const compiled = compileFind(find.replaceAll('^', '^^'), options)
+  if (!compiled.ok) throw new Error(`findReplace: invalid search (${compiled.error})`)
+  const include = (node: PmDocNode): boolean =>
+    !hasDeletionRevision(node) &&
+    !node.marks.some(
+      (mark) =>
+        mark.type.name === 'del' ||
+        (ctx.source !== 'ui' &&
+          ['instrField', 'refField', 'ctrlCheckbox', 'docSym'].includes(mark.type.name)),
+    )
+  // Preserve the deleted-hit diagnostic without allowing a match to bridge
+  // excluded text. Both scans use the same native matcher and coordinates.
+  const deletedAt = (from: number, to: number): boolean => {
+    const $from = tr.doc.resolve(from)
+    let deleted = false
+    for (let depth = 1; depth <= $from.depth; depth++) {
+      if (isTrackedDeleted($from.node(depth))) deleted = true
+    }
+    tr.doc.nodesBetween(from, to, (node) => {
+      if (hasDeletionRevision(node) || node.marks.some((mark) => mark.type.name === 'del'))
+        deleted = true
+    })
+    return deleted
+  }
+  for (const match of findInDoc(tr.doc, compiled.query, options)) {
+    const b = blocks.find((block) => block.index === tr.doc.resolve(match.from).index(0))
+    if (b && insideScope(b, scoped, match.from, match.to) && deletedAt(match.from, match.to))
+      skippedDeleted++
+  }
+  for (const match of findInDoc(tr.doc, compiled.query, options, include)) {
+    const $from = tr.doc.resolve(match.from)
+    const b = blocks.find((block) => block.index === $from.index(0))
+    if (!b || !insideScope(b, scoped, match.from, match.to)) continue
+    const first = $from.parent.childAfter($from.parentOffset).node
+    replacements.push({ from: match.from, to: match.to, marks: first?.marks ?? [] })
+    touchedIndexes.add(b.index)
+  }
+
+  const matchCount = replacements.length
+  const matchedBlocks = touchedIndexes.size
+  const matchMode = op.match ?? (ctx.source === 'ui' ? 'all' : 'one')
+  if (matchMode === 'all' && ctx.source !== 'ui' && !op.target)
+    throw new Error('findReplace: match="all" requires an explicit target scope')
+  if (matchMode === 'one' && matchCount !== 1)
+    throw new Error(
+      `findReplace: expected exactly one match, found ${matchCount}; narrow the target or explicitly use match="all" within a target scope`,
+    )
+  // An identical literal value is a successful match, not a document edit.
+  for (let index = replacements.length - 1; index >= 0; index--) {
+    const match = replacements[index]
+    if (tr.doc.textBetween(match.from, match.to) === replace) replacements.splice(index, 1)
+  }
+  touchedIndexes.clear()
+  replacements.forEach((match) => touchedIndexes.add(tr.doc.resolve(match.from).index(0)))
 
   // A rewrite is refused only when it would actually touch a withheld span: the
   // collected replacements are exactly the text the model is about to
@@ -1002,10 +1054,12 @@ function runFindReplace(op: Op, env: RunEnv): OpResult {
   }
   return {
     op: 'findReplace',
-    matched: touchedIndexes.size,
+    matched: matchedBlocks,
     changed: touchedIndexes.size,
     skippedProtected,
     skippedDeleted,
+    matchCount,
+    changeCount: replacements.length,
     detail: t('aiCmdReplacedCount', { count: replacements.length }),
   }
 }
@@ -1180,6 +1234,11 @@ function runSetList(op: Op, env: RunEnv): OpResult {
     }
     // headings keep their role; converting them to list items would drop the level
     if (b.node.type.name === 'docHeading') continue
+    if (b.node.type.name !== 'docParagraph' && b.node.type.name !== 'docListItem') {
+      throw new Error(
+        `setList cannot target ${b.node.type.name}; only paragraphs and list items are supported`,
+      )
+    }
     if (b.node.type.name === 'docListItem') {
       if (b.node.attrs.kind === kind) continue
       tr.setNodeMarkup(
@@ -1367,8 +1426,8 @@ register({
 register({
   name: 'findReplace',
   signature:
-    '{ op: "findReplace", find, replace, matchCase?, target? }  // plain-text find & replace inside runs (no cross-block matching); the replacement keeps the matched text\'s formatting — the right op for small in-place fixes; target narrows the scanned blocks (blockIndexes / scope:"selection" / nodeType), omitted = whole document',
-  keys: ['find', 'replace', 'matchCase'],
+    '{ op: "findReplace", find, replace, matchCase?, match?: "one"|"all", target? }  // literal logical-text replacement across formatting runs inside one paragraph; inherits match-start formatting, preserves outside text; default one rejects zero/multiple matches; all requires an explicit target scope',
+  keys: ['find', 'replace', 'matchCase', 'match'],
   target: 'optional',
   validate(op, where) {
     const shape = validateShape(op, this, where)
@@ -1379,6 +1438,8 @@ register({
     if (op.matchCase !== undefined && typeof op.matchCase !== 'boolean') {
       return `${where}: matchCase must be a boolean`
     }
+    if (op.match !== undefined && op.match !== 'one' && op.match !== 'all')
+      return `${where}: match must be "one" or "all"`
     return null
   },
   apply: runFindReplace,
@@ -1656,7 +1717,7 @@ const failure = (error: string): ExecuteOutcome => ({ ok: false, results: [], su
 /**
  * Validate every op, then apply the batch as one transaction. Any invalid op
  * rejects the whole batch (atomic) with every error listed, each followed by
- * the op's usage line; dryRun stops after planning.
+ * the op's usage line; dryRun validates the same provisional transaction without dispatch.
  */
 export function executeOps(editor: Editor, ops: unknown, ctx: OpContext = {}): ExecuteOutcome {
   if (!Array.isArray(ops) || ops.length === 0) return failure('ops must be a non-empty array')
@@ -1669,7 +1730,11 @@ export function executeOps(editor: Editor, ops: unknown, ctx: OpContext = {}): E
       errors.push(`${where}: must be an object with an "op" name field`)
       return
     }
-    const op = raw as Op
+    const input = raw as Op
+    const op =
+      input.op === 'setTableCellText' && input.range === undefined && input.target?.engine?.cell
+        ? { ...input, range: input.target.engine.cell }
+        : input
     const def = REGISTRY.get(op.op)
     if (!def || (def.hidden && ctx.source !== 'ui')) {
       errors.push(`${where}: unknown op "${op.op}". Supported ops: [${opNames().join(', ')}]`)
@@ -1688,24 +1753,170 @@ export function executeOps(editor: Editor, ops: unknown, ctx: OpContext = {}): E
       `${errors.join('\n')}\nNothing was applied (atomic): fix the op(s) and resend the whole batch.`,
     )
   }
-  if (ctx.dryRun) return { ok: true, results: [], summary: '', plan }
-
   const tr = editor.state.tr
   const schema = editor.schema
   const selection = frozenSelectionRange(editor, ctx.selection) ?? editor.state.selection
   const results: OpResult[] = []
   try {
     for (const [op, def] of planned) {
+      let resolved = op
+      let mappedIntent: string[] | undefined
+      if (op.deleteStructures !== undefined) {
+        if (
+          !Array.isArray(op.deleteStructures) ||
+          op.deleteStructures.some((id) => typeof id !== 'string')
+        )
+          throw new Error('deleteStructures must contain exact structure references')
+        const originalStructures = inventoryStructures(tr.before)
+        mappedIntent = op.deleteStructures.map((id: string) => {
+          const original = originalStructures.find((item) => item.id === id)
+          if (!original)
+            throw new Error('Structure reference is not present in the initial document')
+          const from = tr.mapping.mapResult(original.from, 1)
+          const to = tr.mapping.mapResult(original.to, -1)
+          if (from.deletedAcross || to.deletedAcross || from.pos >= to.pos)
+            throw new Error('Structure reference was removed by an earlier operation')
+          return `${original.kind}:${from.pos}:${to.pos}`
+        })
+      }
+      if (op.target?.engine) {
+        const target = op.target.engine
+        if ((target.cell || target.kind === 'cell') && op.op !== 'setTableCellText')
+          throw new Error(
+            'Cell targets support setTableCellText only; query a block target for structural operations.',
+          )
+        if (target.address || (target.kind && target.kind !== 'block' && target.kind !== 'cell'))
+          throw new Error('This target kind does not support apply_ops')
+        const epoch = ctx.engineEpoch
+        if (!epoch || target.documentId !== epoch.documentId || target.revision !== epoch.revision)
+          throw new Error('Stale engine target; use query_document for a fresh target.')
+        const range = target.range
+        if (
+          !range ||
+          !Number.isSafeInteger(range.from) ||
+          !Number.isSafeInteger(range.to) ||
+          range.from < 0 ||
+          range.to > tr.before.content.size ||
+          range.from >= range.to
+        )
+          throw new Error('Invalid engine target range')
+        const original = tr.before.nodeAt(range.from)
+        if (
+          !original ||
+          original.type.name !== target.expectedType ||
+          range.to !== range.from + original.nodeSize
+        )
+          throw new Error('Engine target type or extent does not match the document')
+        const from = tr.mapping.mapResult(range.from, 1)
+        const to = tr.mapping.mapResult(range.to, -1)
+        if (from.deletedAcross || to.deletedAcross || from.pos >= to.pos)
+          throw new Error('Engine target was removed by an earlier operation')
+        const current = tr.doc.nodeAt(from.pos)
+        if (
+          !current ||
+          current.type.name !== target.expectedType ||
+          current.nodeSize !== to.pos - from.pos
+        )
+          throw new Error('Engine target no longer resolves to its expected object')
+        resolved = { ...op, target: { ...op.target, range: { from: from.pos, to: to.pos } } }
+        if (target.cell) {
+          const originalMap = TableMap.get(original)
+          const { row, col } = target.cell
+          if (
+            !Number.isInteger(row) ||
+            !Number.isInteger(col) ||
+            row < 0 ||
+            col < 0 ||
+            row >= originalMap.height ||
+            col >= originalMap.width
+          )
+            throw new Error('Invalid engine cell address')
+          const owner = originalMap.map[row * originalMap.width + col]
+          const explicit = op.range as {
+            row: number
+            col: number
+            rowEnd?: number
+            colEnd?: number
+          }
+          if (
+            (explicit.rowEnd ?? explicit.row) < explicit.row ||
+            (explicit.colEnd ?? explicit.col) < explicit.col
+          )
+            throw new Error('Explicit cell range is reversed')
+          for (let r = explicit.row; r <= (explicit.rowEnd ?? explicit.row); r++)
+            for (let c = explicit.col; c <= (explicit.colEnd ?? explicit.col); c++)
+              if (
+                r >= originalMap.height ||
+                c >= originalMap.width ||
+                originalMap.map[r * originalMap.width + c] !== owner
+              )
+                throw new Error(
+                  'Explicit cell range disagrees with or widens the engine cell target',
+                )
+          const mappedOwner = tr.mapping.mapResult(range.from + 1 + owner, 1)
+          const currentMap = TableMap.get(current)
+          const relative = mappedOwner.pos - from.pos - 1
+          if (mappedOwner.deleted || !currentMap.map.includes(relative))
+            throw new Error('The targeted physical cell was removed by an earlier operation')
+          const rect = currentMap.findCell(relative)
+          resolved.range = { row: rect.top, col: rect.left }
+        }
+      }
       // selection positions mapped through the steps applied so far
       const sel: SelRange = {
         from: tr.mapping.map(selection.from),
         to: tr.mapping.map(selection.to),
       }
-      results.push(def.apply(op, { tr, schema, sel, ctx, editor }))
+      const structures = ctx.source === 'ui' ? [] : inventoryStructures(tr.doc)
+      const stepStart = tr.steps.length
+      const result = def.apply(resolved, { tr, schema, sel, ctx, editor })
+      if (ctx.source !== 'ui') {
+        const after = inventoryStructures(tr.doc)
+        const mapping = tr.mapping.slice(stepStart)
+        const removed =
+          op.op === 'moveBlocks'
+            ? []
+            : structures.filter((item) => {
+                const from = mapping.mapResult(item.from, 1)
+                const to = mapping.mapResult(item.to, -1)
+                return (
+                  from.deletedAcross ||
+                  to.deletedAcross ||
+                  !after.some(
+                    (next) =>
+                      next.kind === item.kind && next.from === from.pos && next.to === to.pos,
+                  )
+                )
+              })
+        const actual = removed.map((item) => item.id).sort()
+        if (JSON.stringify([...(mappedIntent ?? [])].sort()) !== JSON.stringify(actual))
+          throw new Error(
+            'This operation would delete protected structures without exact deleteStructures intent. Query the current targets and declare the exact structures to delete.',
+          )
+        if (removed.length)
+          result.structuralEffects = removed.map((item) => ({
+            reference: (op.deleteStructures as string[])[mappedIntent!.indexOf(item.id)],
+            kind: item.kind,
+            effect: ctx.track ? 'marked-for-deletion' : 'removed',
+          }))
+      }
+      results.push(result)
     }
   } catch (e) {
     return failure(e instanceof Error ? e.message : String(e))
   }
+
+  // Build the complete transaction even for a preview: schema and target checks
+  // must agree with execution, but no document or history state is dispatched.
+  if (ctx.dryRun)
+    return {
+      ok: true,
+      results: [],
+      previewResults: results,
+      summary: '',
+      plan,
+      wouldChange: !tr.doc.eq(editor.state.doc),
+    }
 
   if (tr.steps.length > 0) {
     // intent record for consumers downstream of the Step stream (journal, analytics)

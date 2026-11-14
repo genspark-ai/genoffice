@@ -1,6 +1,7 @@
 // Modified for ForaOffice from GenOffice v0.12.852.
 import {
   mergePPrFormat,
+  scanBody,
   parseLazyMediaUrl,
   setPPrChange,
   stripPPrChange,
@@ -154,15 +155,18 @@ export function blocksToPmDoc(
   const content: PmNode[] = []
   for (const [i, block] of blocks.entries()) {
     if (block.hidden) continue
-    content.push(
-      blockToPmNode(
-        block,
-        sectionRowCapTwips(sections, block.docxIndex),
-        sectionWidthBudget(sections, block.docxIndex),
-        options,
-        block.type === 'table' ? blocks.slice(i + 1) : [],
-      ),
+    const node = blockToPmNode(
+      block,
+      sectionRowCapTwips(sections, block.docxIndex),
+      sectionWidthBudget(sections, block.docxIndex),
+      options,
+      block.type === 'table' ? blocks.slice(i + 1) : [],
     )
+    // Non-final section properties belong to this paragraph's closing mark.
+    // Keep this source fact even when a detached runtime has no page-setup store.
+    if (/<(?:[\w.-]+:)?sectPr(?:\s|>)/.test(block.rawPPr ?? block.originalXml ?? ''))
+      node.attrs = { ...node.attrs, sectionBoundary: true }
+    content.push(node)
   }
   // the trailing sectPr has no node of its own: its tracked change rides on the last
   // paragraph that carries no section record itself (none → the record stays pending)
@@ -2999,6 +3003,7 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
     if (
       original &&
       !usedIndexes.has(idx!) &&
+      node.attrs?.sectionBoundary !== false &&
       signatureOfBlock(original) === signatureOfGenerated(generated)
     ) {
       usedIndexes.add(idx!)
@@ -3015,6 +3020,8 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
         usedIndexes.add(idx!)
         mapAnchor(idx!)
         applyRawPPr(generated, original!)
+        if (node.attrs?.sectionBoundary === false && generated.rawPPr)
+          generated.rawPPr = withoutSectionProperties(generated.rawPPr)
       } else if (original) {
         // A split twin inherits the source node's attrs, but pPrChange and
         // bookmark/comment anchors belong only to the anchored original.
@@ -3645,6 +3652,14 @@ function formulaTokensPatch(node: PmNode, original: Block): string[] | null {
  * format-model children into it (everything else keeps its bytes). Structure
  * changes (type / style / list) fall back to a full rebuild.
  */
+/** Remove only the source section child, retaining every unrelated pPr byte. */
+function withoutSectionProperties(rawPPr: string): string {
+  let body = rawPPr.replace(/^<w:pPr(?=[\s>])/, '<w:body').replace(/<\/w:pPr>$/, '</w:body>')
+  for (const element of scanBody(body).elements.reverse())
+    if (element.name === 'w:sectPr') body = body.slice(0, element.start) + body.slice(element.end)
+  return body.replace(/^<w:body(?=[\s>])/, '<w:pPr').replace(/<\/w:body>$/, '</w:pPr>')
+}
+
 function applyRawPPr(generated: GeneratedBlock, original: Block): void {
   const structureSame =
     original.type === generated.type &&

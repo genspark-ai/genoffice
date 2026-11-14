@@ -24,6 +24,7 @@ export const LIVE_DOCS_TOOL_NAMES = [
   'insert_text_box',
   'inspect_document_draft',
   'list_styles',
+  'query_document',
   'read_blocks',
   'read_comments',
   'read_document',

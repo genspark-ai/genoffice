@@ -55,27 +55,21 @@ async function templateDocx(dir: string): Promise<string> {
 }
 
 describe('genoffice merge', () => {
-  it('fills a docx template, keeps table cells and reports split and unknown placeholders', async () => {
+  it('fills a docx template across formatting runs, keeps table cells and reports unknown placeholders', async () => {
     const dir = tempDir()
     const template = await templateDocx(dir)
     const out = join(dir, 'invoice.docx')
     const r = await run(['merge', template, '--data', dataFile(dir, DATA), '--out', out, '--json'])
     expect(r.code).toBe(0)
     const j = r.json()
-    expect(j.summary).toBe('4 placeholders filled, 3 unresolved')
+    expect(j.summary).toBe('5 placeholders filled, 2 unresolved')
     expect(j.detail).toMatchObject({
       format: 'docx',
-      filled: 4,
+      filled: 5,
       used_keys: ['name', 'amount', 'due.date', 'item'],
       unused_keys: ['extra'],
     })
     expect(j.detail.unresolved_placeholders).toEqual([
-      {
-        placeholder: '{{name}}',
-        key: 'name',
-        reason: 'split_placeholder',
-        location: { block: 2 },
-      },
       { placeholder: '{{missing}}', key: 'missing', reason: 'no_key', location: { block: 3 } },
       { placeholder: '{{absent}}', key: 'absent', reason: 'no_key', location: { block: 4 } },
     ])
@@ -90,7 +84,7 @@ describe('genoffice merge', () => {
     const texts = read.json().detail.items.map((b: { text: string }) => b.text)
     expect(texts[0]).toBe('Invoice for Ada')
     expect(texts[1]).toBe('Amount due: 12.5 by 2026-10-01.')
-    expect(texts[2]).toBe('Ref {{name}} is split.')
+    expect(texts[2]).toBe('Ref Ada is split.')
     expect(texts[3]).toContain('Widget')
     expect(texts[3]).toContain('{{missing}}')
     expect(read.json().detail.items[3].table.rows).toBe(2)
@@ -113,7 +107,7 @@ describe('genoffice merge', () => {
     ])
     expect(strict.code).toBe(1)
     expect(strict.json()).toMatchObject({ status: 'error', error: 'unresolved_placeholder' })
-    expect(strict.json().detail.unresolved_placeholders).toHaveLength(3)
+    expect(strict.json().detail.unresolved_placeholders).toHaveLength(2)
     expect(existsSync(out)).toBe(false)
 
     const full = { ...DATA, missing: 'now here', absent: 'here too', name: 'Grace' }
@@ -127,9 +121,7 @@ describe('genoffice merge', () => {
       '--json',
     ])
     expect(ok.code).toBe(0)
-    expect(ok.json().detail.unresolved_placeholders).toEqual([
-      expect.objectContaining({ key: 'name', reason: 'split_placeholder' }),
-    ])
+    expect(ok.json().detail.unresolved_placeholders).toEqual([])
     expect(ok.json().detail.used_keys).toContain('missing')
 
     const again = await run(['merge', template, '--data', JSON.stringify(full), '--out', out])

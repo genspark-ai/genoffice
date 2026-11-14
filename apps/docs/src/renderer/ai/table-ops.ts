@@ -15,9 +15,11 @@ import {
 } from '@tiptap/pm/tables'
 import type { CellBorder, CellBorders, StyleInfo, TableLook } from '@genoffice/docx-engine'
 import type { Op, OpDef, OpResult, RunEnv, Target, TopBlock } from './ops'
+import { hasDeletionRevision } from './doc-utils'
+import { REDACT_MARK } from './redact'
 
 /**
- * Structural table ops: rows, columns, merges, cell formatting and the table
+ * Table ops: cell text, rows, columns, merges, cell formatting and the table
  * style. Row/column indexes are 0-based grid coordinates (a merged cell counts
  * once per grid slot it covers). Every op targets exactly one native table
  * block; the save path regenerates the table from the model, so gridSpan /
@@ -82,9 +84,17 @@ interface TableHit {
   map: TableMap
 }
 
-function resolveTable(op: Op, env: RunEnv, helpers: TableOpHelpers): TableHit | null {
+function resolveTable(
+  op: Op,
+  env: RunEnv,
+  helpers: TableOpHelpers,
+  precise = false,
+): TableHit | null {
   const blocks = helpers.matchTarget(env.tr.doc, op.target!, env.sel)
   if (blocks.length === 0) return null
+  if (precise && blocks.length !== 1) {
+    throw new Error(`${op.op}: the target must match exactly one native table block`)
+  }
   const tables = blocks.filter((b) => b.node.type.name === 'docTable')
   if (tables.length === 0) {
     const kinds = blocks.map((b) =>
@@ -384,6 +394,112 @@ const noMatch = (op: string): OpResult => ({ op, matched: 0, changed: 0, skipped
 
 export function tableOpDefs(h: TableOpHelpers): OpDef[] {
   const tableTarget = (op: Op, env: RunEnv) => resolveTable(op, env, h)
+
+  function runSetCellText(op: Op, env: RunEnv): OpResult {
+    const hit = resolveTable(op, env, h, true)
+    if (!hit) throw new Error(`${op.op}: the target must match one native table`)
+    const { map, pos, node: table } = hit
+    const rect = rectOf(op.range as CellRange, map, op.op)
+    const cells = cellsInRect(map, rect)
+    if (op.match !== 'all' && cells.length !== 1) {
+      throw new Error(
+        `${op.op}: range matches ${cells.length} physical cells; narrow it to one or use match:"all" for this explicit range`,
+      )
+    }
+    const text = String(op.text).replace(/\r\n?/g, '\n')
+    const replacements: Array<{ pos: number; cell: PmNode; paragraphs: PmNode[] }> = []
+    for (const cellPos of cells) {
+      const owner = map.findCell(cellPos)
+      if (
+        cells.length > 1 &&
+        (owner.left < rect.left ||
+          owner.right > rect.right ||
+          owner.top < rect.top ||
+          owner.bottom > rect.bottom)
+      ) {
+        throw new Error(`${op.op}: a merged cell crosses the range; include it whole`)
+      }
+      const cell = table.nodeAt(cellPos)!
+      const row = table.child(owner.top)
+      let unsafe = !!cell.attrs.gridGap
+      const inspect = (node: PmNode) => {
+        if (
+          hasDeletionRevision(node) ||
+          node.attrs.redact ||
+          node.attrs.sdtShell ||
+          node.marks.some((mark) =>
+            [
+              REDACT_MARK,
+              'del',
+              'ins',
+              'instrField',
+              'refField',
+              'ctrlCheckbox',
+              'docSym',
+            ].includes(mark.type.name),
+          )
+        )
+          unsafe = true
+      }
+      inspect(table)
+      inspect(row)
+      inspect(cell)
+      const paragraphs: PmNode[] = []
+      cell.forEach((paragraph) => {
+        inspect(paragraph)
+        if (!['docParagraph', 'docHeading', 'docListItem'].includes(paragraph.type.name)) {
+          unsafe = true
+          return
+        }
+        paragraph.forEach((inline) => {
+          inspect(inline)
+          if (
+            !inline.isText &&
+            (inline.type.name !== 'hardBreak' ||
+              ['pageBreak', 'colBreak', 'wrapBreak', 'mathBreak'].some((key) => inline.attrs[key]))
+          )
+            unsafe = true
+        })
+        paragraphs.push(paragraph)
+      })
+      if (unsafe || paragraphs.length === 0) {
+        throw new Error(
+          `${op.op}: cell at row ${owner.top} col ${owner.left} is not ordinary editable text; protected content, fields, revisions, objects and nested tables require a narrower text edit or explicit structure operation`,
+        )
+      }
+      if (cell.textBetween(0, cell.content.size, '\n', '\n') === text) continue
+      const first = paragraphs[0]
+      const marks = first.firstChild?.marks ?? []
+      const inline: PmNode[] = []
+      text.split('\n').forEach((line, index) => {
+        if (index > 0) inline.push(env.schema.nodes.hardBreak.create(null, null, marks))
+        if (line) inline.push(env.schema.text(line, marks))
+      })
+      const nextParagraphs = paragraphs.map((paragraph, index) =>
+        paragraph.copy(index === 0 ? Fragment.fromArray(inline) : Fragment.empty),
+      )
+      if (cell.content.eq(Fragment.fromArray(nextParagraphs))) continue
+      replacements.push({
+        pos: cellPos,
+        cell,
+        paragraphs: nextParagraphs,
+      })
+    }
+    // Later cells are written first, so earlier cell positions remain valid.
+    for (const replacement of replacements.sort((a, b) => b.pos - a.pos)) {
+      const from = pos + 1 + replacement.pos + 1
+      env.tr.replaceWith(from, from + replacement.cell.content.size, replacement.paragraphs)
+    }
+    if (replacements.length > 0) h.markChanged(env.tr, pos, env.ctx)
+    return {
+      op: op.op,
+      matched: 1,
+      changed: replacements.length > 0 ? 1 : 0,
+      skippedProtected: 0,
+      matchCount: cells.length,
+      changeCount: replacements.length,
+    }
+  }
 
   function runInsertRow(op: Op, env: RunEnv): OpResult {
     const hit = tableTarget(op, env)
@@ -732,6 +848,22 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
         return h.validateShape(op, this, where) ?? checkRange(op.cell, where, 'cell')
       },
       apply: runSplitCell,
+    },
+    {
+      name: 'setTableCellText',
+      signature:
+        '{ op: "setTableCellText", target, range: { row, col, rowEnd?, colEnd? }, text, match?: "one"|"all" }  // replace ordinary cell text in one native table; zero-based grid coordinates, ends inclusive; covered merged coordinates name their physical owner once; default one physical cell, explicit all applies to the bounded range; empty text clears; objects/fields/revisions/nested tables are refused',
+      keys: ['range', 'text', 'match'],
+      target: 'required',
+      validate(op, where) {
+        const error = h.validateShape(op, this, where) ?? checkRange(op.range, where, 'range')
+        if (error) return error
+        if (typeof op.text !== 'string') return `${where}: text must be a string`
+        if (op.match !== undefined && op.match !== 'one' && op.match !== 'all')
+          return `${where}: match must be "one" or "all"`
+        return null
+      },
+      apply: runSetCellText,
     },
     {
       name: 'setTableCellFormat',

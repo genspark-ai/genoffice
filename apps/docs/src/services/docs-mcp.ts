@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { docsToolCatalog, DOCS_READ_TOOLS } from '../shared/tool-catalog'
 import { DOCS_RUNTIME_TOOLS } from '../shared/runtime-tools'
 import { DOCS_RESOURCE_TOOLS } from '../shared/resource-tools'
 import type { McpCommandMessage } from '../shared/ipc'
-import { DocsOperationError } from '../shared/operation-result'
+import { DocsOperationError, isDocsOperationResult } from '../shared/operation-result'
+import type { DocsQueryResult } from '../shared/document-query'
 import { formatDocsMcpResult } from '../shared/mcp-result'
 import type { AgentToolDef } from '@genoffice/agent-core'
 
@@ -19,6 +21,8 @@ export interface DocsMcpServerOptions {
   endpoint: DocsCommandEndpoint
   /** A binding created by the host for the selected document/action, never a tool argument. */
   bindingId?: string
+  /** Host-created read grant: writes are neither advertised nor executable. */
+  readOnly?: boolean
 }
 
 /** A pre-bound document MCP server. The host supplies a standard SDK transport and authorized endpoint. */
@@ -51,7 +55,10 @@ export function createDocsMcpServer(options: DocsMcpServerOptions): McpServer {
       },
     },
   ]
-  for (const tool of tools) {
+  const availableTools = tools.filter(
+    (tool) => !options.readOnly || tool.name === 'read_document' || DOCS_READ_TOOLS.has(tool.name),
+  )
+  for (const tool of availableTools) {
     server.registerTool(
       tool.name,
       {
@@ -77,6 +84,32 @@ export function createDocsMcpServer(options: DocsMcpServerOptions): McpServer {
             },
             AbortSignal.any([extra.signal, lifetime.signal]),
           )
+          if (options.readOnly && isDocsOperationResult(result) && !result.isError) {
+            if (tool.name === 'query_document') {
+              const query = JSON.parse(result.output) as DocsQueryResult
+              for (const item of query.items)
+                item.supportedOperations = item.supportedOperations.filter((name) =>
+                  DOCS_READ_TOOLS.has(name),
+                )
+              return formatDocsMcpResult({ ...result, output: JSON.stringify(query) }, tool.name)
+            }
+            if (tool.name === 'get_editor_capabilities') {
+              const capabilities = JSON.parse(result.output) as {
+                editable: boolean
+                operations: unknown[]
+                tools: Array<{ name: string }>
+              }
+              capabilities.editable = false
+              capabilities.operations = []
+              capabilities.tools = capabilities.tools.filter((entry) =>
+                DOCS_READ_TOOLS.has(entry.name),
+              )
+              return formatDocsMcpResult(
+                { ...result, output: JSON.stringify(capabilities) },
+                tool.name,
+              )
+            }
+          }
           return formatDocsMcpResult(result, tool.name)
         } catch (error) {
           if (error instanceof DocsOperationError) return formatDocsMcpResult(error.result)
@@ -93,5 +126,17 @@ export function createDocsMcpServer(options: DocsMcpServerOptions): McpServer {
       },
     )
   }
+  // The high-level SDK only serializes ZodObject; composed object schemas
+  // (for example required kind OR engineTarget) otherwise become {} on tools/list.
+  // Serve the authoritative JSON Schema through the SDK's standard request handler.
+  server.server.setRequestHandler(ListToolsRequestSchema, () => ({
+    tools: availableTools.map((tool) => ({
+      ...tool,
+      inputSchema: { ...tool.inputSchema, type: 'object' as const },
+      annotations: {
+        readOnlyHint: DOCS_READ_TOOLS.has(tool.name) || tool.name === 'read_document',
+      },
+    })),
+  }))
   return server
 }

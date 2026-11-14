@@ -1,3 +1,4 @@
+// Modified for ForaOffice: retain original header/footer text containers on replacement.
 /**
  * Plain-text view of a header/footer part, shared by the on-canvas editing
  * surface and the AI set_header_footer tool: paragraphs edit as lines, the
@@ -64,12 +65,33 @@ export function hfEditText(value: HeaderFooter): string {
     .replaceAll(SECTION_PAGES_MARK, SECTION_TOKEN)
 }
 
+/** Textbox coordinates describe the currently parsed part, not persistent IDs. */
+export function hfTextboxes(value: HeaderFooter | null) {
+  const groups = new Map<number, HfParagraph[]>()
+  for (const para of value?.paras ?? []) {
+    if (!para.textbox) continue
+    const group = groups.get(para.textbox.index) ?? []
+    group.push(para)
+    groups.set(para.textbox.index, group)
+  }
+  return [...groups].map(([index, paras]) => ({
+    index,
+    text: hfEditText({ text: '', paras }),
+    editable: !paras.some((para) => para.textbox?.readOnly),
+    lifetime: 'current-part' as const,
+  }))
+}
+
 /**
  * Map edited lines back onto the part: each line keeps its original
  * paragraph's format and first-run styling (extra lines reuse the last
  * template), cells rows are spliced back at their original positions.
  */
-export function applyHfText(value: HeaderFooter | null, text: string): HeaderFooter {
+export function applyHfText(
+  value: HeaderFooter | null,
+  text: string,
+  textboxIndex?: number,
+): HeaderFooter {
   const base = value ?? { text: '' }
   const paras = hfParasOf(base)
   const lines = text
@@ -78,7 +100,9 @@ export function applyHfText(value: HeaderFooter | null, text: string): HeaderFoo
     .replaceAll(TOTAL_TOKEN, TOTAL_PAGES_MARK)
     .replaceAll(SECTION_TOKEN, SECTION_PAGES_MARK)
     .split('\n')
-  const textParas = paras.filter((p) => !p.cells)
+  const editable = (p: HfParagraph) =>
+    !p.cells && !p.lineOnly && (textboxIndex === undefined || p.textbox?.index === textboxIndex)
+  const textParas = paras.filter(editable)
   const templates: HfParagraph[] =
     textParas.length > 0 ? textParas : [{ align: 'center', runs: [] }]
   const edited: HfParagraph[] = lines.map((line, i) => {
@@ -88,16 +112,36 @@ export function applyHfText(value: HeaderFooter | null, text: string): HeaderFoo
     const { ins: _ins, del: _del, ...style } = textRuns.find((r) => !r.del) ?? textRuns[0] ?? {}
     return {
       ...template,
+      ...(template.textbox
+        ? {
+            textbox: {
+              ...template.textbox,
+              paragraph: template.textbox.paragraph + Math.max(0, i - templates.length + 1),
+              rewrite: true,
+            },
+          }
+        : {}),
       runs: [...leading, ...(line === '' ? [] : [{ ...style, text: line }]), ...trailing],
     }
   })
   const nextParas: HfParagraph[] = []
   let ei = 0
   for (const p of paras) {
-    if (p.cells) nextParas.push(p)
+    if (!editable(p)) nextParas.push(p)
     else if (ei < edited.length) nextParas.push(edited[ei++])
+    // An omitted textbox paragraph must be cleared in its original container,
+    // not dropped from the model while its old XML remains protected.
+    else if (p.textbox) nextParas.push({ ...p, runs: [], textbox: { ...p.textbox, rewrite: true } })
   }
   nextParas.push(...edited.slice(ei))
-  const nextText = edited.map((p) => p.runs.map((r) => r.text).join('')).join('')
-  return { ...base, text: nextText, paras: nextParas }
+  const nextText = nextParas
+    .filter((p) => !p.cells)
+    .map((p) => p.runs.map((r) => r.text).join(''))
+    .join('')
+  const pageNumber = nextParas.some((para) =>
+    [...para.runs, ...(para.cells?.flatMap((cell) => cell.paras.flat()) ?? [])].some((run) =>
+      run.text.includes(PAGE_MARK),
+    ),
+  )
+  return { ...base, text: nextText, paras: nextParas, pageNumber }
 }

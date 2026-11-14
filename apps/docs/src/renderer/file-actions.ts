@@ -62,7 +62,7 @@ import {
   type HfVariantsState,
   type PendingNumbering,
 } from './doc-state'
-import { hfSaveOptions } from './hf-sections'
+import { hfSaveOptions, type HfSectionState } from './hf-sections'
 import { fetchDocBytes } from './doc-bytes'
 import { parseDocxOffThread } from './parse-off-thread'
 import { PHASED_APPEND } from './editor/streaming-tail-guard'
@@ -131,7 +131,7 @@ export type PendingPdfExport = {
 /** The App state the file actions need; built fresh per call. */
 export interface FileActionContext {
   beforeDocumentReplace?(): void
-  /** Publish a replacement body and its authored stores before lifecycle completion. */
+  /** Publish a replacement or saved baseline and its authored stores before lifecycle completion. */
   commitDocumentState?(operation: () => void): void
   editor: Editor | null
   doc: DocState | null
@@ -184,6 +184,8 @@ export interface FileActionContext {
   setHfVariants: (value: HfVariantsState) => void
   setHfVariantsDirty: (value: HfVariantKey[]) => void
   sectionHfEdits: Record<string, HeaderFooter>
+  /** The same effective section snapshot used by runtime and canvas consumers. */
+  headerFooterState?: HfSectionState
   setSectionHfEdits: (value: Record<string, HeaderFooter>) => void
   /** laid-out page total, written as the cached NUMPAGES result */
   pageCount?: number
@@ -1006,11 +1008,13 @@ export async function buildDocBytes(
     }
     saveBlocks = applySectPrRewrites(saveBlocks, plan.saveBlockIndexByDocx, rewrites)
   }
-  const hfOptions = hfSaveOptions({
-    sections: ctx.sections,
-    edits: ctx.sectionHfEdits,
-    links: ctx.hfLinks,
-  })
+  const hfOptions = hfSaveOptions(
+    ctx.headerFooterState ?? {
+      sections: ctx.sections,
+      edits: ctx.sectionHfEdits,
+      links: ctx.hfLinks,
+    },
+  )
   const bytes = await saveDocx(doc.parsed, saveBlocks, {
     pageCount: ctx.pageCount,
     newPictures: Object.keys(plan.newPictures).length > 0 ? plan.newPictures : undefined,
@@ -1511,119 +1515,125 @@ async function saveOnce(
       // the converging complete save below toasts once.
       return true
     }
-    // Reload from saved bytes so docxIndex anchors point at the new file.
-    setLazyMediaHashes(reparsed.extras.lazyMediaHashes)
-    setDocFontTable(reparsed.fontTable)
-    editor.storage.listNumbering.styles = reparsed.styles
-    editor.storage.listNumbering.docDefaults = reparsed.docDefaults
-    editor.storage.listNumbering.defs = reparsed.numbering
-    applyDocLayoutSettings(editor, reparsed)
-    const rebasedPm = blocksToPmDoc(reparsed.blocks, readSections(reparsed), pmDocOptions(reparsed))
-    let unchanged = false
-    try {
-      const saved = editor.schema.nodeFromJSON(rebasedPm)
-      unchanged = editor.state.doc.eq(saved) || rebaseSavedAttributes(editor, saved)
-    } catch {
-      /* unrepresentable → rewrite */
-    }
-    // Equal doc: skip the rewrite so undo history, caret and scroll survive.
-    if (!unchanged) {
-      // The caret's marks — the ribbon's font/size live here as storedMarks and
-      // apply to whatever is typed next. setContent replaces the doc, so they
-      // have to travel with the selection or an autosave silently drops the
-      // font the user just picked (genoffice#2004). Both are read live, not
-      // before the await: a font chosen or a caret moved during the save must
-      // win, and the marks must belong to the position they are restored at.
-      const selectionPos = editor.state.selection.from
-      const caretMarks = caretMarksSnapshot(editor)
-      // Rebase saved anchors without recording the reload as a user edit.
-      editor
-        .chain()
-        .setMeta(TRACK_IGNORE, true)
-        .setContent(rebasedPm as never)
-        .run()
-      resetEditorHistory(editor)
-      const chain = editor
-        .chain()
-        .setTextSelection(Math.min(selectionPos, editor.state.doc.content.size))
-      if (!auto) chain.scrollIntoView()
-      chain.run()
-      restoreMarksAfterDocRewrite(editor, caretMarks)
-    }
-    ctx.setDocCss(docStyleCss(reparsed))
-    ctx.setDoc((prev) =>
-      prev
-        ? {
-            ...prev,
-            parsed: reparsed,
-            filePath: savedPath,
-            hosted: savedIdentity,
-            fileName: savedIdentity?.name ?? savedPath?.split(/[\\/]/).pop() ?? prev.fileName,
-          }
-        : prev,
-    )
-    ctx.setSection(readSectionSettings(reparsed))
-    ctx.setSections(readSections(reparsed))
-    ctx.setSectionDirty(false)
-    ctx.setPageColor(readPageColor(reparsed))
-    ctx.setPageColorDirty(false)
-    ctx.setHeader(
-      reparsed.headerText || reparsed.headerHasPageNumber || reparsed.headerParas?.length
-        ? {
-            text: reparsed.headerText ?? '',
-            pageNumber: reparsed.headerHasPageNumber,
-            paras: reparsed.headerParas ?? undefined,
-          }
-        : null,
-    )
-    ctx.setHeaderDirty(false)
-    ctx.setFooter(
-      reparsed.footerText || reparsed.footerHasPageNumber || reparsed.footerParas?.length
-        ? {
-            text: reparsed.footerText ?? '',
-            pageNumber: reparsed.footerHasPageNumber,
-            paras: reparsed.footerParas ?? undefined,
-          }
-        : null,
-    )
-    ctx.setFooterDirty(false)
-    ctx.setHfVariants(hfVariantsFromParsed(reparsed))
-    resetCrossDocEditState(ctx)
-    ctx.setHfVariantsDirty([])
-    ctx.setTitlePg(reparsed.titlePg ?? false)
-    ctx.setTitlePgDirty(false)
-    ctx.setEvenOddHf(reparsed.evenAndOddHeaders ?? false)
-    ctx.setEvenOddHfDirty(false)
-    ctx.setMirrorMargins(reparsed.mirrorMargins ?? false)
-    ctx.setMirrorMarginsDirty(false)
-    ctx.setTrackRevisionsDirty(false)
-    ctx.setComments(reparsed.comments)
-    ctx.setCommentsDirty(false)
-    ctx.setWatermark(reparsed.watermarkText ?? null)
-    ctx.setWatermarkDirty(false)
-    ctx.setWatermarkStyle(null)
-    ctx.setWatermarkPicture(null)
-    ctx.setInkAnnotations(annotationsFromParsed(reparsed.inks))
-    ctx.setInksDirty(false)
-    ctx.setFootnotes(reparsed.footnotes)
-    ctx.setEndnotes(reparsed.endnotes)
-    ctx.setNotesDirty(false)
-    ctx.setSources(reparsed.sources)
-    ctx.setSourcesDirty(false)
-    ctx.setZoteroDocumentData(reparsed.zoteroDocumentData)
-    ctx.setZoteroDocumentDataDirty(false)
-    ctx.setThemeFonts(reparsed.themeFonts ?? null)
-    ctx.setThemeFontsDirty(false)
-    ctx.setThemeColors(reparsed.themeColors ?? null)
-    ctx.setThemeColorsDirty(false)
-    ctx.setProtection(reparsed.protection)
-    ctx.setProtectionDirty(false)
-    // no onWriteProtectionLoaded here: saving must not re-lock the session
-    ctx.setWriteProtection(reparsed.writeProtection)
-    ctx.setWriteProtectionDirty(false)
-    ctx.setRemovePersonalInfo(reparsed.removePersonalInfo)
-    ctx.setRemovePersonalInfoDirty(false)
-    ctx.dirtyRef.current = false
+    commitDocumentState(ctx, () => {
+      // Reload from saved bytes so docxIndex anchors point at the new file.
+      setLazyMediaHashes(reparsed.extras.lazyMediaHashes)
+      setDocFontTable(reparsed.fontTable)
+      editor.storage.listNumbering.styles = reparsed.styles
+      editor.storage.listNumbering.docDefaults = reparsed.docDefaults
+      editor.storage.listNumbering.defs = reparsed.numbering
+      applyDocLayoutSettings(editor, reparsed)
+      const rebasedPm = blocksToPmDoc(
+        reparsed.blocks,
+        readSections(reparsed),
+        pmDocOptions(reparsed),
+      )
+      let unchanged = false
+      try {
+        const saved = editor.schema.nodeFromJSON(rebasedPm)
+        unchanged = editor.state.doc.eq(saved) || rebaseSavedAttributes(editor, saved)
+      } catch {
+        /* unrepresentable → rewrite */
+      }
+      // Equal doc: skip the rewrite so undo history, caret and scroll survive.
+      if (!unchanged) {
+        // The caret's marks — the ribbon's font/size live here as storedMarks and
+        // apply to whatever is typed next. setContent replaces the doc, so they
+        // have to travel with the selection or an autosave silently drops the
+        // font the user just picked (genoffice#2004). Both are read live, not
+        // before the await: a font chosen or a caret moved during the save must
+        // win, and the marks must belong to the position they are restored at.
+        const selectionPos = editor.state.selection.from
+        const caretMarks = caretMarksSnapshot(editor)
+        // Rebase saved anchors without recording the reload as a user edit.
+        editor
+          .chain()
+          .setMeta(TRACK_IGNORE, true)
+          .setContent(rebasedPm as never)
+          .run()
+        resetEditorHistory(editor)
+        const chain = editor
+          .chain()
+          .setTextSelection(Math.min(selectionPos, editor.state.doc.content.size))
+        if (!auto) chain.scrollIntoView()
+        chain.run()
+        restoreMarksAfterDocRewrite(editor, caretMarks)
+      }
+      ctx.setDocCss(docStyleCss(reparsed))
+      ctx.setDoc((prev) =>
+        prev
+          ? {
+              ...prev,
+              parsed: reparsed,
+              filePath: savedPath,
+              hosted: savedIdentity,
+              fileName: savedIdentity?.name ?? savedPath?.split(/[\\/]/).pop() ?? prev.fileName,
+            }
+          : prev,
+      )
+      ctx.setSection(readSectionSettings(reparsed))
+      ctx.setSections(readSections(reparsed))
+      ctx.setSectionDirty(false)
+      ctx.setPageColor(readPageColor(reparsed))
+      ctx.setPageColorDirty(false)
+      ctx.setHeader(
+        reparsed.headerText || reparsed.headerHasPageNumber || reparsed.headerParas?.length
+          ? {
+              text: reparsed.headerText ?? '',
+              pageNumber: reparsed.headerHasPageNumber,
+              paras: reparsed.headerParas ?? undefined,
+            }
+          : null,
+      )
+      ctx.setHeaderDirty(false)
+      ctx.setFooter(
+        reparsed.footerText || reparsed.footerHasPageNumber || reparsed.footerParas?.length
+          ? {
+              text: reparsed.footerText ?? '',
+              pageNumber: reparsed.footerHasPageNumber,
+              paras: reparsed.footerParas ?? undefined,
+            }
+          : null,
+      )
+      ctx.setFooterDirty(false)
+      ctx.setHfVariants(hfVariantsFromParsed(reparsed))
+      resetCrossDocEditState(ctx)
+      ctx.setHfVariantsDirty([])
+      ctx.setTitlePg(reparsed.titlePg ?? false)
+      ctx.setTitlePgDirty(false)
+      ctx.setEvenOddHf(reparsed.evenAndOddHeaders ?? false)
+      ctx.setEvenOddHfDirty(false)
+      ctx.setMirrorMargins(reparsed.mirrorMargins ?? false)
+      ctx.setMirrorMarginsDirty(false)
+      ctx.setTrackRevisionsDirty(false)
+      ctx.setComments(reparsed.comments)
+      ctx.setCommentsDirty(false)
+      ctx.setWatermark(reparsed.watermarkText ?? null)
+      ctx.setWatermarkDirty(false)
+      ctx.setWatermarkStyle(null)
+      ctx.setWatermarkPicture(null)
+      ctx.setInkAnnotations(annotationsFromParsed(reparsed.inks))
+      ctx.setInksDirty(false)
+      ctx.setFootnotes(reparsed.footnotes)
+      ctx.setEndnotes(reparsed.endnotes)
+      ctx.setNotesDirty(false)
+      ctx.setSources(reparsed.sources)
+      ctx.setSourcesDirty(false)
+      ctx.setZoteroDocumentData(reparsed.zoteroDocumentData)
+      ctx.setZoteroDocumentDataDirty(false)
+      ctx.setThemeFonts(reparsed.themeFonts ?? null)
+      ctx.setThemeFontsDirty(false)
+      ctx.setThemeColors(reparsed.themeColors ?? null)
+      ctx.setThemeColorsDirty(false)
+      ctx.setProtection(reparsed.protection)
+      ctx.setProtectionDirty(false)
+      // no onWriteProtectionLoaded here: saving must not re-lock the session
+      ctx.setWriteProtection(reparsed.writeProtection)
+      ctx.setWriteProtectionDirty(false)
+      ctx.setRemovePersonalInfo(reparsed.removePersonalInfo)
+      ctx.setRemovePersonalInfoDirty(false)
+      ctx.dirtyRef.current = false
+    })
     ctx.setStatus(
       auto ? t('appAutoSavedAt', { time: new Date().toLocaleTimeString() }) : t('appSaved'),
     )

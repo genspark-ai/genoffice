@@ -11,14 +11,49 @@ export const DOCS_ERROR_CODES = [
 ] as const
 export type DocsErrorCode = (typeof DOCS_ERROR_CODES)[number]
 
+export interface DocsImageReferenceIssue {
+  reference: string
+  reason: 'unbound' | 'malformed' | 'expired' | 'unsupported' | 'missing'
+}
+
 export interface DocsOperationResult extends ToolExecution {
+  receipt?: {
+    outcome:
+      | 'rejected'
+      | 'preview'
+      | 'read'
+      | 'no-op'
+      | 'applied'
+      | 'failure-after-commit'
+      | 'independent-effect'
+    revisionBefore: number
+    revisionAfter: number
+    persistence: 'unchanged' | 'pending' | 'completed' | 'unknown'
+    resolvedTargets?: import('./document-query').DocsEngineTarget[]
+    operations?: Array<{
+      op: string
+      matched: number
+      changed: number
+      matchCount?: number
+      changeCount?: number
+      structuralEffects?: Array<{
+        reference: string
+        kind: string
+        effect: 'removed' | 'marked-for-deletion'
+      }>
+    }>
+  }
   documentId: string
   revision: number
   /** null means the host lost the IO response and the file effect is unknown. */
   committed: boolean | null
   pending?: boolean
   errorCode?: DocsErrorCode
+  /** Exact matching/changing occurrences or cells, when provided by the operation. */
+  matchCount?: number
+  changeCount?: number
   media?: { data: string; mimeType: string }
+  imageReferenceErrors?: DocsImageReferenceIssue[]
 }
 
 export interface DocsSaveOutcome {

@@ -178,7 +178,7 @@ describe('the write guard on model output', () => {
 
   it('does not guard a document with no spans', async () => {
     const editor = await open('nothing secret here')
-    const out = executeOps(editor, replaceOps('now', '{{client phone}} today'))
+    const out = executeOps(editor, replaceOps('nothing', '{{client phone}} today'))
     expect(out.ok, out.error).toBe(true)
   })
 

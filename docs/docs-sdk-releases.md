@@ -7,11 +7,36 @@ installers merely because the corresponding build commands exist.
 
 ## Compatibility policy
 
+Unreleased logical-text change: external `apply_ops/findReplace` now requires
+exactly one literal match by default, including text split across formatting
+runs. Existing bulk callers must pass `match: "all"` and an explicit target
+scope. Zero/multiple precise matches refuse atomically; identical replacements
+do not advance revision or split undo history. Native UI defaults are unchanged.
+The replacement inherits match-start formatting and stays inside one paragraph
+without crossing cells, protected/deleted spans, fields, images or formulas.
+Occurrence counts are separate from the existing block-count summaries.
+
+Unreleased safety change: public live-document HTML writes now require the
+document/revision-bound image tags returned by `read_blocks`. Bare `doc:B.I`,
+invalid/stale references and unsupported HTTP/data `<img>` sources refuse the
+whole write rather than silently omitting requested content. Coordinate-based
+media reads remain available; new pictures use `insert_picture`. This is an
+intentional tightening of unsafe behavior, not a claim of compatible legacy
+write semantics. See the authoritative SDK guide for reference diagnostics and
+supported image versus protected-object boundaries.
+
 The public contract is the [SDK guide](../apps/docs/sdk/README.md), its exported
 types and observed public behavior. During `0.x`, a minor version may contain a
 breaking public contract change. Patch versions are intended for compatible
 fixes; document any unavoidable behavior change explicitly. Do not infer stable
 API guarantees from the current development version.
+
+The development `0.1.0` header/footer tools now support optional `textboxIndex`
+coordinates and report each textbox's current-part lifetime and editability.
+Supported replacements retain their original OOXML containers and compatibility
+twins. Previously accepted writes to unsupported structured textboxes now fail
+before mutation; consumers must refresh context and select an editable container
+or leave the part unchanged. Existing section/view/scope defaults are unchanged.
 
 Before a versioned delivery, update the Docs workspace version and any native
 package identity that represents that delivery, then record consumer-facing
@@ -26,6 +51,17 @@ Do not rename retained `@genoffice/*` workspace identifiers, the `genoffice` CLI
 compatibility environment variables or private resource schemes solely to change
 branding. These names do not imply affiliation with upstream or an SDK dependency
 on its agent.
+
+The imported downstream integration adds Qt `configureResources`, optional
+`readOnly` MCP server creation and `readOnlyConnection` in trusted-host start/state
+results. Existing `connection` consumers keep their editing access; review clients
+must receive only the separate read-only configuration. Both connections end with
+their shared document binding. Resource selection still needs read grants and does
+not grant writes. Include these additive contracts and their lifetime rules in
+the next delivery's compatibility notes. Successful saving of the active document
+also publishes its saved baseline before the next call; no caller-side delay is
+required. Save As with `adopt: false` exports a copy and retains the active
+baseline, identity and dirty state.
 
 ## Build and consume
 

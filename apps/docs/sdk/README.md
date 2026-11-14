@@ -63,6 +63,13 @@ The next awaited call can read or edit that document immediately, including its
 revision settings; no render delay or UI interaction is required. Existing
 document bindings are invalidated by replacement.
 
+A completed save of the active document publishes its new DOCX baseline,
+file/host identity metadata and authored stores before its promise resolves. The
+next immediate context/media read uses that baseline without a render delay.
+Save As with `adopt: false` exports a copy instead and preserves the active
+baseline, identity and dirty state. A save that reports pending work is not this
+completion guarantee; edits made during a save remain dirty until persisted.
+
 Mounted editors use the native ribbon's normal 10px side insets on macOS,
 Windows and Linux, with File immediately before Save. They do not reserve space
 for window buttons or turn the ribbon into a window drag region; the embedding
@@ -223,13 +230,25 @@ refused when echoed over a protected target. Ordinary authored text discussing
 that old wording remains valid; literal HTML examples must escape their markup.
 Markdown document creation remains plain Markdown, not an HTML write.
 
-For ordinary inline images, the existing `<img src="doc:B.I">` reference is
-writable: copy the exact reference from the current read to preserve that image.
-This also applies to table cells. Table and row formatting templates do not
+For ordinary inline images, public runtime reads return
+`<img src="media:D:R:B.I">`, bound to document `D` and revision `R`. Copy the
+exact current tag to preserve that image, including in table cells. Every
+explicit `<img>` is validated before insertion, block replacement or selection
+replacement. Missing, malformed, unsupported, wrong-document and expired
+references reject the whole write; `imageReferenceErrors` identifies the
+reference and reason in the operation result and standard MCP structured data.
+Refreshing context does not make an old reference current. Bare `doc:B.I`
+coordinates lack identity and are refused by public runtime writes; callers
+must migrate to the bound tags returned by `read_blocks`. They remain an
+internal coordinate projection, not an external preservation contract.
+HTTP/data sources are not accepted by these HTML writers; insert new pictures
+through `insert_picture`. Table and row formatting templates do not
 implicitly retain images or copy them into newly inserted rows. An explicit
 image in a formerly merged-away cell dissolves that merge to keep the content.
-Omitting the reference removes the image, as reported by the tool. Protected block objects
-and Word fields have no equivalent generic HTML preservation reference; keep
+Omitting the reference removes the image, as reported by the tool. Protected
+block images, OLE/formula objects and their previews are readable media but
+have no generic HTML preservation reference; a write cannot convert their
+preview into a claimed preserved object. Word fields likewise have no such reference. Keep
 them outside replacement ranges. Use `apply_ops/findReplace` on a known text
 range, or `replace_selection` for text within a single paragraph/cell, when
 surrounding objects and boundaries must remain intact.
@@ -622,8 +641,15 @@ its token in document text or tool results. Public Agent traffic uses standard
 MCP; the bridge is local host IPC, not an alternative Agent protocol.
 
 `examples/mcp-client.mjs` lists tools and reads the bound live document without a
-model. `createDocsMcpServer({ endpoint, bindingId?, version })` is also available
-for hosts that own a standard MCP transport directly.
+model. `createDocsMcpServer({ endpoint, bindingId?, version, readOnly? })` is also
+available for hosts that own a standard MCP transport directly. `readOnly: true`
+registers only `read_document` and the shared nonmutating tools: attachment and
+knowledge reads/search, document media/context/blocks, revisions/comments/notes,
+styles, capabilities, mind-map validation and draft inspection. Editing, saving,
+history changes, draft changes and `run_cli` are not registered and cannot be
+called through that server. This restriction is enforced by registration, not
+the advisory MCP `readOnlyHint` annotation. It does not change the underlying
+document's editing policy for other authorized callers.
 
 ### Host-controlled HTTP MCP in Qt
 
@@ -635,22 +661,35 @@ an active document reports an error; create/open a document first.
 ```cpp
 editor.startMcp([](const QJsonObject& reply) {
     if (reply.contains("error")) return; // Handle the normal JSON-RPC error.
-    const auto connection = reply.value("result").toObject().value("connection").toObject();
-    // Give connection to a compatible external MCP client through trusted host IPC.
+    const auto result = reply.value("result").toObject();
+    const auto connection = result.value("connection").toObject();
+    const auto readOnlyConnection = result.value("readOnlyConnection").toObject();
+    // Give each connection only to the intended client through trusted host IPC.
 });
 ```
 
-The JSON-RPC result contains `{ status: "running", connection }`. `connection`
-contains `url`, `transport: "streamable-http"`, `headers` (including its Bearer
-credential), an opaque runtime `documentId`, and `protocolVersions`.
-Configure a standard client with the URL and headers. Never publish the
-credential in document text, tool results or logs. `mcpState(completion)` returns
-the same running connection or `{ status: "stopped" | "failed" }`.
+The JSON-RPC result contains
+`{ status: "running", connection, readOnlyConnection }`. Both connections contain
+`url`, `transport: "streamable-http"`, `headers` (including a Bearer credential),
+the same opaque runtime `documentId`, and `protocolVersions`. They are separate
+loopback services with independent credentials and MCP sessions; a reviewer
+receives only `readOnlyConnection`, never the editing connection's credentials.
+Configure a standard client with the selected URL and headers. Never publish
+either credential in document text, prompts, tool results or logs.
+`mcpState(completion)` returns both running connections or
+`{ status: "stopped" | "failed" }`.
 `mcpStateChanged(state)` reports status and optional document identity without
 credentials. All native methods/completions use the GUI thread.
 
-`stopMcp(completion)` revokes access without closing the editor and is safe to
-repeat. Repeated start for the same active document reuses its grant. Document
+The two services share one captured document binding, but each MCP session has
+its own caller and read baseline. Reads by a reviewer do not refresh the editing
+caller's baseline. The read-only service enforces the tool restriction described
+above even when the live document is editable. Authorized resource helpers use
+the host's current resource selections and read permissions.
+
+`stopMcp(completion)` closes both services and revokes their shared binding
+without closing the editor, and is safe to repeat. Repeated start for the same
+active document reuses both grants. Document
 replacement, close checks, view disposal and backend/renderer failure revoke
 access; a replacement document requires an explicit new start. A canceled close
 check may already have revoked access. A connection binds when enabled, even
@@ -665,17 +704,22 @@ each session has independent document caller state. Terminating one session
 does not revoke the host grant. This is not a claim of support for the changed
 `2026-07-28` transport, legacy SSE endpoints, or remote network publication.
 
-`examples/mcp-http-client.mjs` accepts the connection object on stdin, discovers
-tools and reads the live document using the standard client. It prints no
+`examples/mcp-http-client.mjs` accepts either connection object on stdin, discovers
+its permitted tools and reads the live document using the standard client. It prints no
 credentials and needs no model. The host supplies any external client's own
 configuration format and conversation lifecycle.
 
 Node hosts can reuse `createDocsHttpMcpServer({ version, endpoint, bindingId,
-documentId, releaseScope })` from `@foraoffice/docs-sdk/services`. Bind a captured
+documentId, releaseScope, readOnly? })` from `@foraoffice/docs-sdk/services`. Bind a captured
 runtime scope before creating the service; release/close the service on document
 replacement and host disposal. `service.connection` has the same connection
 shape; `service.close()` is idempotent. The existing `/docs` command bridge is
 private host IPC and is never the HTTP MCP URL.
+
+Each HTTP service normally releases its binding through `releaseScope` when
+closed. When multiple services share a binding, the trusted host coordinates its
+single release and closes all services together; closing a session or a secondary
+read-only service must not accidentally release another service's authority.
 
 ## Resource helpers
 
@@ -698,6 +742,23 @@ and knowledge selections. Selection does not grant access to arbitrary files.
 The CLI accepts bounded argument arrays, enforces the same file policy and
 refuses in-place changes to the host's open document. Cancellation waits for the
 child process to close and preserves uncertain file effects.
+
+Qt hosts replace the current source selections with
+`configureResources(attachments, knowledge, completion)`, using the existing
+trusted `resources.configure` backend operation. Each list accepts up to 200
+paths and the successful result lists `attachments`, `knowledge` and
+`cliAvailable`; resource-change notifications update the renderer. Every path
+must already be readable under the configured roots or an exact host read grant.
+For an approved file outside the roots, complete
+`grantFile(path, true, false, completion)` before selecting it. Selection never
+grants write access or exposes this configuration operation to MCP callers.
+
+Pass empty lists to clear the selections. Removing a source prevents its pending
+read from publishing late data; use `revokeFile` as well when an exact temporary
+file grant ends. Source selections and file permissions are host-owned state:
+stopping MCP removes access through its connections but does not itself clear the
+host's resource configuration. Clear/revoke resources when their application
+scope ends, including document changes where the old sources no longer apply.
 
 The former inference tools are described in `get_editor_capabilities` as Harness
 workflows: web/image search, image generation, media analysis and document
@@ -806,3 +867,283 @@ Legacy `.doc`, `.odt`, `.hwp` import and HTML/MHT `altChunk` display conversion
 remain integrations supplied by the host; the Electron application retains its
 existing converters. Unconverted chunk parts remain preserved in the DOCX
 package. The SDK package does not install or modify a DIGspace application.
+
+## Document targeting and inspection
+
+These contracts are shared by the editor runtime and its standard MCP tools;
+they do not depend on a particular host, agent or report template.
+
+- `set_header_footer` accepts a zero-based `section` (default **0 for both
+  header and footer**) and `view: "default" | "first" | "even"`. Context lists
+  every section/variant, its text, owning section, inheritance and shared targets.
+  `scope: "section"` is the default: save creates an independent part and, when
+  necessary, materializes the former reference at the next inherited boundary,
+  preserving other sections and variants. `scope: "shared"` explicitly edits the
+  owning part and affects all `sharedTargets`, including other variants sharing
+  that part. Editing `first` enables that section's `titlePg`; editing `even`
+  enables the document-wide even/odd display setting. These visibility settings
+  are distinct from changing other sections' stored content. `{PAGE}` and
+  `{NUMPAGES}` remain live fields after save/reopen. Per-line styling and picture
+  relationships are preserved when cloning an existing part.
+  Each strip reports `textEditable` for whole-part replacement and lists
+  `textboxes: { index, text, editable, lifetime }[]` for individual targets.
+  An optional `textboxIndex` on `set_header_footer` edits only that container;
+  omit it to replace the part's advertised text scope. Indexes are zero-based
+  coordinates in the current part (`lifetime: "current-part"`), not persistent
+  IDs: refresh context after edits, reloads or part changes. Supported plain-text
+  DrawingML and VML textboxes are rewritten in their original containers,
+  preserving their anchors and compatible Choice/Fallback twins; replacement
+  and clear remove the old text and page fields without adding flow paragraphs.
+  `{PAGE}`, `{NUMPAGES}` and `{SECTIONPAGES}` remain live fields. Unsupported
+  structured textboxes (including tables, content controls, nested objects,
+  unmodelled fields or ambiguous compatibility groups) expose `editable: false`;
+  writes that include them fail before changing document state or first/even
+  visibility. A supported textbox can still be targeted independently of other
+  protected containers. Whole-part replacement refuses mixed drawing paragraphs
+  whose ordinary text cannot be rewritten faithfully. If original textbox
+  correspondence cannot be recovered, the whole part remains read-only.
+- Context and `read_blocks` list revision-bound `mediaRef` values; writable
+  inline-image HTML uses the same `media:D:R:B.I` identity. Pass `mediaRef` to `read_document_media`; results
+  use standard MCP image content without exposing resource URLs or credentials.
+  Standalone images, inline images and images in table cells use the same path.
+  The read-only compatibility form is `blockIndex` plus `imageIndex`; an ordinal is
+  required when a block has several images. Redacted/deleted/decorative pictures
+  are excluded. Refresh context after changes: an old `mediaRef` remains stale
+  even after another read. `stale_target` means an expired reference/baseline;
+  `invalid_input` means an unsupported target or invalid/ambiguous coordinates;
+  `unavailable` means missing image bytes or an HTTP 404/410 resource;
+  `permission_denied` covers revoked/denied resource access. Other IO failures
+  remain `host_failure`.
+- `read_blocks` represents merged tables with HTML `colspan`/`rowspan` and
+  zero-based `data-row`/`data-col` grid coordinates. Covered positions are not
+  synthetic blank cells. Preserve the spans in replacement HTML; coordinates
+  describe the read location and do not override the written layout.
+- `apply_ops/findReplace` matches literal text across formatting runs within a
+  paragraph, preserving non-target text and inheriting the first matched
+  character's formatting. It does not cross paragraph/cell, image, formula,
+  field, checkbox control, symbol payload, protected content or deleted content
+  boundaries. External writes default to `match: "one"`: zero or multiple matches
+  refuse the entire batch. Read and
+  narrow the target, or explicitly use `match: "all"` with a target such as
+  `{ scope: "document" }` for intentional bulk edits. Native UI bulk behavior
+  is unchanged. Receipts expose occurrence `matchCount`/`changeCount` when all
+  operations provide exact counts; legacy `matched`/`changed` summaries count
+  blocks. An identical replacement has zero changes, and refusals/no-ops leave
+  content, revision and undo grouping unchanged. Search caret codes and
+  replacement expressions are literal text at this operation boundary.
+- `apply_ops` batches remain atomic. `setList` accepts paragraphs/list items;
+  headings keep their role, protected objects retain the documented skip
+  behavior, and unsupported structures such as native tables are rejected with
+  a domain error. `dryRun: true` builds and validates the entire transaction
+  against the current document, including target types, ranges and schema
+  validity, then discards it. It changes neither content, undo history nor the
+  runtime revision. It is a preview, not a reservation: subsequent edits can
+  invalidate the plan. Any failed batch leaves the whole document unchanged.
+
+### Addressed table-cell text
+
+`apply_ops` supports `setTableCellText` for filling or clearing ordinary text in
+an existing native table, without rebuilding its rows or cells:
+
+```ts
+await caller.execute({
+  id: crypto.randomUUID(),
+  name: 'apply_ops',
+  input: {
+    ops: [
+      {
+        op: 'setTableCellText',
+        target: { blockIndexes: [3] },
+        range: { row: 0, col: 2 },
+        text: 'Approved', // empty string clears
+      },
+    ],
+  },
+})
+```
+
+The target must resolve to exactly one native table block. Existing engine
+targets such as `blockIndexes`, `nodeType: 'table'`, `containsText` and captured
+selection scope remain available. Read current context/`read_blocks` first;
+indexes and coordinates describe the current document, and must be refreshed
+after edits, reloads or structural changes. The runtime's existing document and
+caller freshness checks apply; coordinates are not persistent cell IDs.
+
+`range` uses zero-based logical grid coordinates, with optional inclusive
+`rowEnd`/`colEnd`. A covered merged coordinate addresses its physical owner.
+The default `match: 'one'` requires one physical cell, even when several covered
+coordinates name it. Explicit `match: 'all'` applies to the bounded rectangle,
+deduplicating merged owners. When the rectangle includes multiple physical
+cells, it must include each merged owner in full. Invalid bounds, ambiguous
+targets and omitted grid slots are refused.
+
+`matchCount` and `changeCount` count physical cells, including deduplication of
+covered coordinates; the existing block summary counts the table once. An
+unchanged cell contributes zero changes, and a wholly unchanged batch reports
+`committed: false` without advancing the runtime revision.
+
+This operation replaces plain text only. It preserves spans, widths, table/cell
+properties, neighboring cells and every existing paragraph's type and
+properties. Replacement text goes into the first paragraph, using its first
+run's formatting; remaining paragraphs are retained empty. Newlines become
+ordinary line breaks. Literal authored `{{tokens}}` remain ordinary text.
+Cells containing redaction/protection, revision text, fields, checkbox controls,
+symbol payloads, images, formulas, notes, nested tables or unsupported structures
+are refused as a whole. Use a
+narrower supported text operation when appropriate; removing structure requires
+its separate explicit operation. This is an additive operation: existing table
+row/column/format operations keep their contracts.
+
+### Revision-bound queries and execution receipts
+
+Refresh full context with `read_document` (MCP) or `client.context()` before a
+new editing sequence. `query_document` reads bounded, current content and returns
+`{ documentId, revision, page: { complete, nextCursor? }, items }`. Each item
+contains a mutation-ready `target`, `type`, display `blockIndex`, restricted
+`html`, per-item `complete`, and `supportedOperations`.
+
+```ts
+const query = await client.execute({
+  id: 'locate',
+  name: 'query_document',
+  input: { domain: 'body', containsText: 'Original', limit: 1 },
+})
+const item = JSON.parse(query.output).items[0]
+await client.execute({
+  id: 'replace',
+  name: 'apply_ops',
+  input: {
+    ops: [
+      { op: 'findReplace', target: { engine: item.target }, find: 'Original', replace: 'Updated' },
+    ],
+  },
+})
+```
+
+Domains are `body` (default), `cells`, `images`, `sections`, `headers`, and
+`footers`. Filters include inclusive `startBlockIndex`/`endBlockIndex`, `type`,
+and case-sensitive `containsText`. Filtering uses the same redacted, current
+content projection as output; deleted and withheld words are not searchable.
+Cell targets address one physical merged owner and support `setTableCellText`
+without an additional `range`. Image items expose `mediaRef` for
+`read_document_media`; an image target does not authorize a whole-block write.
+Section and header/footer/textbox items use `engineTarget: item.target` on
+`set_page_setup` or `set_header_footer`; explicit address parameters must agree.
+
+Targets expire on any body or authored-state revision or document replacement.
+They validate type/extent and optionally exact `expectedHtml`. Original targets
+are mapped through preceding operations in the same atomic batch; a removed
+target refuses the batch. Positions are scoped addresses, not permanent IDs.
+Cell and image targets cannot be widened implicitly into table/block deletion.
+An explicit cell range must resolve exclusively to the queried physical owner;
+covered coordinates in that same merged owner remain valid. Earlier row/column
+insertion maps the owner's document position and derives its new grid address,
+rather than reusing stale row/column numbers. Deleted rows/cells are excluded
+from cell queries; their presence does not shift emitted live-cell addresses.
+A removed owner or a replacement whose identity cannot be proven refuses the
+whole atomic batch; an adjacent cell never inherits that target.
+An engine-target operation following `moveBlocks` is currently refused before
+the batch commits: that operation rebuilds the whole body and has no retained
+position mapping. Perform the move, query fresh targets, then edit.
+
+Body items also expose `structures` with revision-bound IDs and
+`structuresComplete`. A complete inventory is required before declaring whole
+range deletion. Inventories are bounded to 32 entries per item; when incomplete,
+follow `item.structuresPage.nextCursor` using the same `query_document` cursor
+argument and collect entries until `structuresPage.complete`. These cursors
+retain the same document/revision and owner block. A response can enumerate all
+body items while one item's HTML or structure inventory remains partial.
+`replace_blocks`, `replace_selection`, and native `apply_ops` accept
+`deleteStructures: string[]`: the exact discovered IDs intentionally removed.
+Missing, duplicated, unrelated, expired or partial-object intent refuses before
+mutation. Referenced pictures and compatible table geometry retained by HTML
+replacement are excluded from deletion intent. Removing a field, formula,
+textbox, protected object, section boundary, or table requires checked intent;
+a boolean permission flag is insufficient. Native row/column edits retain
+their explicit topology semantics but still require intent for protected
+objects they actually remove. Moves preserve objects. Ordinary text and cell
+operations never acquire permission to consume structured payloads.
+
+`limit` is 1–50 (default 20); `maxItemChars` is 1–4000 (default 2000). An overall
+response budget can yield fewer items. Pass only `cursor: nextCursor` to
+continue the same query; changed filters/budgets and expired continuations are
+refused. Cursors are generation-local, bounded to the 128 most recent pending
+continuations; restart a query if one expires. `page.complete` describes item
+enumeration, while each item's `complete` describes its HTML projection. Neither
+claims that an external transport or Harness preserved every byte: consumers
+must validate the JSON/envelope and transport completion before treating it as
+a complete read. Query reads refresh body freshness only; they do not acknowledge
+unread authored stores. A stale side-state refusal requires `read_document` or
+`get_document_context`, rather than a blind retry or another partial query.
+
+Operations return an additive `receipt` with `revisionBefore`, `revisionAfter`,
+`outcome`, and `persistence`; applicable batches include `resolvedTargets` and
+per-operation counts. Outcomes distinguish `read`, `preview`, `rejected`,
+`no-op`, `applied`, `failure-after-commit`, and `independent-effect`. Exact text
+occurrences/cells use `matchCount`/`changeCount`; legacy matched/changed block
+summaries retain their meaning. An accepted no-op has `committed: false` and
+does not advance the revision. A post-commit error exposes the committed effect
+and must not be replayed blindly.
+Per-operation `structuralEffects` identify removed objects separately from
+objects marked for tracked deletion. Preview counts/effects describe the
+provisional transaction and are not committed effects.
+
+Live mutation has persistence `pending`; successful acknowledged saving has
+`completed` only when the host reports `ok`, `committed: true`, and
+`pending: false`. Unknown independent IO remains `unknown`. `apply_ops` provides
+one provisional body transaction and one body undo group; a preview reserves
+no version. Header/footer, page, style, file/CLI, and independent host effects
+do not acquire rollback or shared undo guarantees from that body transaction.
+
+Hosts should supply an authoritative `RuntimeDocument.stateVersion` that changes
+only when authored stores change. Detached runtimes can compare complete
+header/footer, page, comment, and note snapshots when it is omitted. Style and
+watermark getters do not expose complete authored data; those writes require
+the host epoch and otherwise refuse before mutation. This intentionally removes
+the former inference that any accepted write-named request changed the document.
+Existing positional targets and legacy range reads remain available; automation
+should migrate to revision-bound targets and inspect completeness and receipts.
+
+### Draft reference and deletion safety
+
+Read source context and references before `start_document_draft`. Its output and
+`inspect_document_draft` expose a runtime-owned `referenceSnapshot` containing
+the source `documentId` and `revision`. A draft is an unaccepted preview; its
+position flag `replaceDocument` grants no structural deletion permission.
+
+Every cumulative `update_document_draft` validates complete image tags and
+exact `deleteStructures` against that captured source before publishing preview
+content. Bare `doc:B.I`, missing, wrong-document, unsupported, expired and mixed
+invalid references reject the update without accepting its sequence. Whole
+replacement must declare exactly the removed field/object/table/section IDs;
+preserved referenced images and compatible inherited table geometry are excluded.
+Insertion drafts cannot declare deletion. Replays must preserve both HTML and
+deletion intent. New images continue to use `insert_picture`.
+
+Preview rendering changes live positions/revisions. Draft source references are
+an explicit scoped lifetime: the captured bound references remain usable only
+inside that runtime-owned draft while its authored source is unchanged. This
+does not revive them for other writes, refresh a caller baseline, or reserve a
+version. Any authored body change invalidates reference/deletion drafts; any
+authored-side change invalidates the captured store baseline. Finalization then
+refuses before committing; discard, read fresh context, and start a new draft.
+Reference-free insertion/initially blank drafts retain their existing mapped
+insertion behavior and preserve unrelated user typing.
+
+An unfinished image token buffers without publishing it; complete preceding
+image tags still undergo the same checks and an identifiable source prefix must
+belong to an authorized source image. `DocsDraftInspection` distinguishes the
+received `sequence`/`characters` from `validatedSequence`/`validatedCharacters`
+and reports `buffering`. A later complete cumulative update can validate normally.
+`finalize` refuses an incomplete tail. Explicit `retain_partial` may commit the
+last validated snapshot and reports `omittedTail`, `validatedSequence`, and
+`validatedCharacters`, rather than treating the unfinished image as an omitted
+object in a successful full write. A rejected complete invalid update never
+becomes an accepted prefix. Native tool-less writing retains its safe
+last-validated mid-formula fallback and reports the actual retained character count.
+
+Draft start/update/discard controls do not split body typing history. Preview
+transactions do not count as authored effects in operation receipts. Only a
+validated final landing opens the body undo group; saving remains unavailable
+until the draft is settled. These tightened rules apply equally to runtime,
+SDK and standard MCP draft operations.

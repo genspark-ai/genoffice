@@ -8,6 +8,8 @@ import {
   saveDocx,
 } from '@genoffice/docx-engine'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
+import { createDocsRuntime } from '../src/renderer/runtime/docs-runtime'
+import type { DocsQueryResult } from '../src/shared/document-query'
 import { executeTool } from '../src/renderer/ai/tools'
 
 /**
@@ -184,6 +186,72 @@ describe('AI formula generation: <formula> tag', () => {
     expect(block.runs!.map((r) => r.text).join('')).toContain('Rewritten text')
     expect(block.runs!.find((r) => r.math)!.math!.omml).toContain('<m:sSup>')
   })
+
+  it.each(['omit', 'change'] as const)(
+    'requires exact intent when a duplicate formula is %s, while retaining its identical neighbor',
+    async (action) => {
+      const { editor, parsed } = await createBlankEditor()
+      const runtime = createDocsRuntime({
+        current: () => ({ editor, identity: editor, numIds: NUM_IDS }),
+      })
+      const caller = runtime.connect({ id: 'formula-cardinality' })
+      try {
+        caller.context()
+        const inserted = await caller.execute({
+          id: 'insert',
+          name: 'insert_content',
+          input: {
+            html: '<p>Original <formula>x^2</formula> and <formula>x^2</formula></p>',
+          },
+        })
+        expect(inserted.isError, inserted.output).not.toBe(true)
+        const read = await caller.execute({
+          id: 'read',
+          name: 'query_document',
+          input: { domain: 'body', containsText: 'Original' },
+        })
+        expect(read.isError, read.output).not.toBe(true)
+        const source = JSON.parse(read.output) as DocsQueryResult
+        expect(source.page.complete).toBe(true)
+        const item = source.items[0]
+        expect(item.structuresComplete).toBe(true)
+        const formulas = item.structures!.filter((structure) => structure.kind === 'math')
+        expect(formulas).toHaveLength(2)
+        const html =
+          action === 'omit'
+            ? item.html.replace(' and <formula>x^2</formula>', '')
+            : item.html.replace('<formula>x^2</formula>', '<formula>y^2</formula>')
+        const input = { startBlockIndex: item.blockIndex, endBlockIndex: item.blockIndex, html }
+        const before = editor.getJSON()
+        const refused = await caller.execute({ id: 'refuse', name: 'replace_blocks', input })
+        expect(refused).toMatchObject({
+          isError: true,
+          committed: false,
+          receipt: { revisionBefore: source.revision, revisionAfter: source.revision },
+        })
+        expect(editor.getJSON()).toEqual(before)
+        const accepted = await caller.execute({
+          id: 'explicit',
+          name: 'replace_blocks',
+          input: {
+            ...input,
+            deleteStructures: [formulas[action === 'omit' ? 1 : 0].id],
+          },
+        })
+        expect(accepted.isError, accepted.output).not.toBe(true)
+        const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+        const reopened = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+        const math = reopened.blocks.flatMap((block) => block.runs ?? []).filter((run) => run.math)
+        expect(math).toHaveLength(action === 'omit' ? 1 : 2)
+        if (action === 'change') expect(math[0].math!.omml).toContain('y')
+        expect(math[math.length - 1].math!.omml).toContain('x')
+      } finally {
+        caller.close()
+        runtime.dispose()
+        editor.destroy()
+      }
+    },
+  )
 
   it('invalid LaTeX fails the whole call and leaves the document unchanged', async () => {
     const { editor } = await createBlankEditor()

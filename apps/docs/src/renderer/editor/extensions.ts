@@ -281,6 +281,8 @@ const FLOAT_TABLE_CTX = RUN_PICTURE_CTX
 
 const anchorAttrs = {
   docxIndex: { default: null as number | null },
+  /** Source paragraph closes a non-final section; never authored by restricted HTML. */
+  sectionBoundary: { default: null as boolean | null },
   /** JSON of the table-style paragraph properties (convert.ts tableStyleParaAttr); display only */
   tblPara: { default: null as string | null },
   styleId: { default: null as string | null },
@@ -3773,6 +3775,7 @@ export const DocProtected = Node.create({
   addAttributes() {
     return {
       docxIndex: { default: null as number | null },
+      sectionBoundary: { default: null as boolean | null },
       blockRevision: { default: null as Record<string, string> | null },
       /** JSON record of a section-break paragraph's tracked w:sectPrChange */
       sectPrChange: { default: null as string | null },

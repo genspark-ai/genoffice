@@ -3,10 +3,11 @@ import { launchSdkTestHost, sdkHostIsElectron, type SdkTestHost } from './sdk-ho
 import { createServer } from 'node:http'
 import { readFile, writeFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
-import { buildDocx } from '../packages/docx-engine/tests/helpers/build-docx'
+import { buildDocx, TINY_PNG_BASE64 } from '../packages/docx-engine/tests/helpers/build-docx'
 import { inlinePictureDrawingXml } from '../packages/docx-engine/src'
 import JSZip from 'jszip'
 import type { DocsEditorHandle } from '../apps/docs/src/renderer/embedded'
+import type { DocsQueryResult } from '../apps/docs/src/shared/document-query'
 
 type FixtureWindow = Window & { editor: DocsEditorHandle; sdkReady: boolean; saved: number[] }
 
@@ -471,18 +472,51 @@ test('embedded SDK preserves table-cell revisions and template structures throug
               input: { startBlockIndex: 0, endBlockIndex: 0 },
             }
             const before = await client.execute(read)
+            const queried = await client.execute({
+              id: 'query-table',
+              name: 'query_document',
+              input: { domain: 'body', type: 'docTable', startBlockIndex: 0, endBlockIndex: 0 },
+            })
+            if (queried.isError) throw new Error(queried.output)
+            const query = JSON.parse(queried.output) as DocsQueryResult
+            const table = query.items[0]
+            if (!query.page.complete || !table?.complete || !table.structuresComplete)
+              throw new Error('The table query must provide complete content and structural intent')
+            const image = new DOMParser()
+              .parseFromString(table.html, 'text/html')
+              .querySelector('img')
+            if (!image) throw new Error('Expected the public table image reference')
+            const imageHtml = image.outerHTML
+            const imageRef = image.getAttribute('src')
+            const deleteStructures = table
+              .structures!.filter(
+                (structure) => structure.kind === 'table' || (!keep && structure.kind === 'image'),
+              )
+              .map((structure) => structure.id)
             const replacement = await client.execute({
               id: 'replace',
               name: 'replace_blocks',
               input: {
                 startBlockIndex: 0,
                 endBlockIndex: 0,
-                html: `<table>${[0, 1, 2].map((i) => `<tr><td>Parameter ${i}</td><td>${keep && i === 0 ? '<img src="doc:0.0">' : ''}</td></tr>`).join('')}</table>`,
+                html: `<table>${[0, 1, 2].map((i) => `<tr><td>Parameter ${i}</td><td>${keep && i === 0 ? imageHtml : ''}</td></tr>`).join('')}</table>`,
+                deleteStructures,
               },
             })
             const after = await client.execute(read)
             const saved = await editor.documents.save()
-            return { opened, before, replacement, after, saved, bytes: fixture.saved }
+            return {
+              opened,
+              before,
+              query,
+              table,
+              imageRef,
+              deleteStructures,
+              replacement,
+              after,
+              saved,
+              bytes: fixture.saved,
+            }
           } finally {
             client.close()
           }
@@ -491,10 +525,36 @@ test('embedded SDK preserves table-cell revisions and template structures throug
       )
       expect(result.opened).toBe(true)
       expect(result.before.output.match(/<img /g)).toHaveLength(1)
-      expect(result.before.output).toContain('doc:0.0')
+      expect(result.imageRef).toMatch(/^media:[^:]+:\d+:\d+\.\d+$/)
+      expect(result.before.output).toContain(result.imageRef!)
+      expect(result.query.page.complete).toBe(true)
+      expect(result.table.structuresComplete).toBe(true)
+      expect(
+        result.table.structures!.filter((structure) => structure.kind === 'table'),
+      ).toHaveLength(1)
+      expect(
+        result.table.structures!.filter((structure) => structure.kind === 'image'),
+      ).toHaveLength(1)
+      expect(result.deleteStructures).toHaveLength(keep ? 1 : 2)
+      expect(result.deleteStructures).toContain(
+        result.table.structures!.find((structure) => structure.kind === 'table')!.id,
+      )
+      const imageStructure = result.table.structures!.find(
+        (structure) => structure.kind === 'image',
+      )!.id
+      if (keep) expect(result.deleteStructures).not.toContain(imageStructure)
+      else expect(result.deleteStructures).toContain(imageStructure)
       expect(result.replacement.isError, result.replacement.output).not.toBe(true)
+      expect(result.replacement).toMatchObject({
+        committed: true,
+        mutated: true,
+        receipt: {
+          outcome: 'applied',
+          revisionBefore: result.query.revision,
+          persistence: 'pending',
+        },
+      })
       expect(result.after.output.match(/<img /g) ?? []).toHaveLength(keep ? 1 : 0)
-      expect(result.replacement.output.includes('1 picture(s)')).toBe(!keep)
       expect(result.saved).toBe(true)
       const zip = await JSZip.loadAsync(Uint8Array.from(result.bytes))
       const xml = await zip.file('word/document.xml')!.async('string')
@@ -508,17 +568,39 @@ test('embedded SDK preserves table-cell revisions and template structures throug
         })
         try {
           client.context()
-          return await client.execute({
+          const read = await client.execute({
             id: 'read',
             name: 'read_blocks',
             input: { startBlockIndex: 0, endBlockIndex: 0 },
           })
+          const images = await client.execute({
+            id: 'active-images',
+            name: 'query_document',
+            input: { domain: 'images' },
+          })
+          if (images.isError) throw new Error(images.output)
+          const query = JSON.parse(images.output) as DocsQueryResult
+          const imageRead = query.items[0]
+            ? await client.execute({
+                id: 'image-bytes',
+                name: 'read_document_media',
+                input: { mediaRef: query.items[0].mediaRef },
+              })
+            : null
+          return { ...read, images: query, imageRead }
         } finally {
           client.close()
         }
       })
       expect(reloaded.isError, reloaded.output).not.toBe(true)
       expect(reloaded.output.match(/<img /g) ?? []).toHaveLength(keep ? 1 : 0)
+      expect(reloaded.images.items).toHaveLength(keep ? 1 : 0)
+      expect(reloaded.images.page.complete).toBe(true)
+      if (keep)
+        expect(reloaded.imageRead).toMatchObject({
+          committed: false,
+          media: { data: TINY_PNG_BASE64, mimeType: 'image/png' },
+        })
     }
   } finally {
     await browser?.close()

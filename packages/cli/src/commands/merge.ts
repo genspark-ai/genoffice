@@ -335,13 +335,9 @@ function escapeHtml(s: string): string {
 }
 
 /**
- * Word splits a placeholder over several runs whenever the formatting changes
- * inside it; findReplace matches within one run, so what it misses is rescanned
- * and reported as split_placeholder. findReplace reaches neither table cells
- * nor a line break (a hardBreak only comes in through HTML), so a table with a
- * provided placeholder and a paragraph whose value spans lines are round-tripped
- * through replace_blocks on their restricted HTML; the rest is one findReplace
- * pass.
+ * Logical-text findReplace handles placeholders split over formatting runs.
+ * Tables retain the existing HTML merge route, as do multiline values whose
+ * hardBreaks must come through HTML; plain blocks use explicit scoped bulk ops.
  */
 async function mergeDocx(path: string, values: Values, output: string): Promise<Merged> {
   const source = readInput(path)
@@ -363,7 +359,7 @@ async function mergeDocx(path: string, values: Values, output: string): Promise<
     const ops: Record<string, unknown>[] = plain.length
       ? sentinelOps(plain, values, {
           blockIndexes: [...new Set(plain.map((h) => h.location.block as number))],
-        })
+        }).map((op) => ({ ...op, match: 'all' }))
       : []
     for (const block of [...viaHtml].sort((a, b) => b - a)) {
       ops.push({

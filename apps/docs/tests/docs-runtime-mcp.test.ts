@@ -362,48 +362,98 @@ it.each(['unknown', 'released', 'replaced'] as const)(
   },
 )
 
-it('returns document images using standard MCP image content rather than resource credentials in text', async () => {
-  const { editorExtensions } = await import('../src/renderer/editor/extensions')
-  const data =
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6f1cAAAAASUVORK5CYII='
-  editor = new Editor({
-    element: document.createElement('div'),
-    extensions: editorExtensions,
-    content: {
-      type: 'doc',
-      content: [
-        {
-          type: 'docProtected',
-          attrs: { blockType: 'image', imageDataUrl: `data:image/png;base64,${data}` },
-        },
-      ],
-    },
-  })
-  const active = editor
-  runtime = createDocsRuntime({
-    current: () => ({ editor: active, identity: active, numIds: { bullet: null, ordered: null } }),
-  })
-  const router = createDocsCommandRouter(runtime)
-  boundServer = createDocsMcpServer({
-    version: 'test',
-    endpoint: {
-      request: (message, signal) => router.handle(message, signal),
-      closeCaller: (caller) => router.disconnect(caller),
-    },
-  })
-  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair()
-  await boundServer.connect(serverTransport)
-  client = new Client({ name: 'media-harness', version: '1' }, { capabilities: {} })
-  await client.connect(clientTransport)
-  const image = CallToolResultSchema.parse(
-    await client.callTool({ name: 'read_document_media', arguments: { blockIndex: 0 } }),
-  )
-  expect(image.isError).not.toBe(true)
-  expect(image.content).toContainEqual({ type: 'image', data, mimeType: 'image/png' })
-  expect(image.structuredContent).not.toHaveProperty('media')
-  expect(JSON.stringify(image.content.filter((item) => item.type === 'text'))).not.toContain(data)
-  router.dispose()
-})
+it.each(['standalone', 'inline', 'table'])(
+  'returns %s images through revision-bound references and standard MCP image content',
+  async (kind) => {
+    const { editorExtensions } = await import('../src/renderer/editor/extensions')
+    const data =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6f1cAAAAASUVORK5CYII='
+    editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content:
+          kind === 'standalone'
+            ? [
+                {
+                  type: 'docProtected',
+                  attrs: { blockType: 'image', imageDataUrl: `data:image/png;base64,${data}` },
+                },
+              ]
+            : kind === 'inline'
+              ? [
+                  {
+                    type: 'docParagraph',
+                    content: [
+                      {
+                        type: 'docInlineImage',
+                        attrs: { dataUrl: `data:image/png;base64,${data}` },
+                      },
+                    ],
+                  },
+                ]
+              : [
+                  {
+                    type: 'docTable',
+                    content: [
+                      {
+                        type: 'docTableRow',
+                        content: [
+                          {
+                            type: 'docTableCell',
+                            content: [
+                              {
+                                type: 'docParagraph',
+                                content: [
+                                  {
+                                    type: 'docInlineImage',
+                                    attrs: { dataUrl: `data:image/png;base64,${data}` },
+                                  },
+                                ],
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+      },
+    })
+    const active = editor
+    runtime = createDocsRuntime({
+      current: () => ({
+        editor: active,
+        identity: active,
+        numIds: { bullet: null, ordered: null },
+      }),
+    })
+    const router = createDocsCommandRouter(runtime)
+    boundServer = createDocsMcpServer({
+      version: 'test',
+      endpoint: {
+        request: (message, signal) => router.handle(message, signal),
+        closeCaller: (caller) => router.disconnect(caller),
+      },
+    })
+    const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair()
+    await boundServer.connect(serverTransport)
+    client = new Client({ name: 'media-harness', version: '1' }, { capabilities: {} })
+    await client.connect(clientTransport)
+    const context = await client.callTool({ name: 'get_document_context', arguments: {} })
+    const ref = /media:[a-z0-9-]+:\d+:0\.0/.exec(JSON.stringify(context))?.[0]
+    expect(ref).toBeDefined()
+    const image = CallToolResultSchema.parse(
+      await client.callTool({ name: 'read_document_media', arguments: { mediaRef: ref } }),
+    )
+    expect(image.isError).not.toBe(true)
+    expect(image.content).toContainEqual({ type: 'image', data, mimeType: 'image/png' })
+    expect(image.structuredContent).not.toHaveProperty('media')
+    expect(JSON.stringify(image.content.filter((item) => item.type === 'text'))).not.toContain(data)
+    router.dispose()
+  },
+)
 
 it('returns mind-map display data to the Harness without claiming an editor chat card was rendered', async () => {
   const { editorExtensions } = await import('../src/renderer/editor/extensions')

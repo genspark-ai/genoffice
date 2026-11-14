@@ -135,7 +135,8 @@ let newBlank = false
 let initialContent: AiDocContent | null = null
 let activePath: string | undefined
 const recent: string[] = []
-let httpMcp: { bindingId: string; service: DocsHttpMcpServer } | undefined
+let httpMcp:
+  { bindingId: string; service: DocsHttpMcpServer; readOnlyService: DocsHttpMcpServer } | undefined
 let startingMcp:
   { bindingId: string; controller: AbortController; promise: Promise<unknown> } | undefined
 let mcpStatus: 'stopped' | 'failed' = 'stopped'
@@ -194,7 +195,13 @@ const documentEndpoint: DocsCommandEndpoint = {
   closeCaller: (callerId) => notify('editor.disconnect', { callerId }),
 }
 const mcpState = () =>
-  httpMcp ? { status: 'running', connection: httpMcp.service.connection } : { status: mcpStatus }
+  httpMcp
+    ? {
+        status: 'running',
+        connection: httpMcp.service.connection,
+        readOnlyConnection: httpMcp.readOnlyService.connection,
+      }
+    : { status: mcpStatus }
 const reportMcpState = () =>
   notify('host.mcpStateChanged', {
     status: httpMcp ? 'running' : mcpStatus,
@@ -212,7 +219,9 @@ async function stopHttpMcp(bindingId?: string) {
     starting.controller.abort()
     notify('editor.releaseScope', { bindingId: starting.bindingId })
   }
-  const stopped = active?.service.close()
+  const stopped = active
+    ? Promise.all([active.readOnlyService.close(), active.service.close()])
+    : undefined
   reportMcpState()
   await Promise.all([stopped, starting?.promise.catch(() => undefined)])
 }
@@ -247,7 +256,24 @@ function startHttpMcp(): Promise<unknown> {
       await service.close()
       throw new Error('MCP access was stopped while starting')
     }
-    httpMcp = { bindingId: binding.bindingId, service }
+    let readOnlyService: DocsHttpMcpServer
+    try {
+      readOnlyService = await createDocsHttpMcpServer({
+        version: '0.1.0',
+        endpoint: documentEndpoint,
+        ...binding,
+        readOnly: true,
+        releaseScope: () => {},
+      })
+    } catch (error) {
+      await service.close()
+      throw error
+    }
+    if (closing || startingMcp !== attempt || attempt.controller.signal.aborted) {
+      await Promise.all([readOnlyService.close(), service.close()])
+      throw new Error('MCP access was stopped while starting')
+    }
+    httpMcp = { bindingId: binding.bindingId, service, readOnlyService }
     reportMcpState()
     return mcpState()
   })()
