@@ -340,8 +340,8 @@ export interface ZoteroRendererResponse {
  * MCP bridge: an editor command pushed from the shell main process into a docs
  * tab so an external agent drives the *visible* editor instead of writing a file
  * behind it. `insert_content` / `replace_blocks` / `apply_ops` / `insert_picture` /
- * `read_document` reuse the built-in agent's tool executors; `save_document` writes
- * the live document to an explicit path.
+ * `read_document` / `read_blocks` reuse the built-in agent's tool executors;
+ * `save_document` writes the live document to an explicit path.
  */
 export type McpEditorCommand =
   | 'insert_content'
@@ -349,6 +349,7 @@ export type McpEditorCommand =
   | 'apply_ops'
   | 'insert_picture'
   | 'read_document'
+  | 'read_blocks'
   | 'save_document'
 
 export interface McpCommandMessage {
