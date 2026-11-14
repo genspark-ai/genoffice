@@ -108,6 +108,7 @@ export class OdfStyles {
     const family = attr(node, 'style:family')
     if (!name || !family) return
     if (family === 'table-column') {
+      this.defs.set(`${family}:${name}`, { family, parent: attr(node, 'style:parent-style-name') })
       const properties =
         firstChild(node, 'style:table-column-properties') ??
         firstChild(node, 'style:column-properties')
@@ -136,8 +137,14 @@ export class OdfStyles {
 
   /** width of a table-column style, EMU; null when undeclared */
   columnWidthEmu(styleName: string | undefined): number | null {
-    if (!styleName) return null
-    return this.columnWidths.get(styleName) ?? null
+    const seen = new Set<string>()
+    while (styleName && !seen.has(styleName)) {
+      seen.add(styleName)
+      const width = this.columnWidths.get(styleName)
+      if (width !== undefined) return width
+      styleName = this.defs.get(`table-column:${styleName}`)?.parent
+    }
+    return null
   }
 
   /** fill of a table-cell style, hex without '#'; null otherwise */
