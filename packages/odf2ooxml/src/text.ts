@@ -42,8 +42,8 @@ export interface InlineImageRef {
 export class Drops {
   private counts = new Map<string, number>()
 
-  add(what: string): void {
-    this.counts.set(what, (this.counts.get(what) ?? 0) + 1)
+  add(what: string, count = 1): void {
+    this.counts.set(what, (this.counts.get(what) ?? 0) + count)
   }
 
   list(): Array<{ what: string; count: number }> {
