@@ -479,6 +479,10 @@ async function generateImageMinimaxH3(
   }
   const ratio =
     input.aspectRatio && MINIMAX_RATIOS.has(input.aspectRatio) ? input.aspectRatio : undefined
+  // The endpoints are not idempotent — the reference notes a retry bills a
+  // second generation — and aiFetch re-sends the request once through its
+  // rescue fetch on a transport failure or a block page. Accepted: the call
+  // is one-off and user-initiated.
   const resp = await aiFetch(
     endpointUrl(base, refs.length ? '/images/edits' : '/images/generations'),
     {
@@ -488,6 +492,9 @@ async function generateImageMinimaxH3(
         model,
         prompt: input.prompt,
         n: 1,
+        // the documented default is 4K (5440×3072 for 16:9, back as base64) —
+        // the other providers here ask for roughly 1K–2K, so pin 2K
+        area: '2K',
         response_format: 'b64_json',
         ...(ratio ? { aspect_ratio: ratio } : {}),
         ...(refs.length ? { images: refs.map((ref) => ({ image_url: dataUrl(ref) })) } : {}),

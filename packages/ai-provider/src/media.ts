@@ -185,14 +185,15 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     id: 'minimax',
     label: 'MiniMax',
     description:
-      'Image generation; MiniMax-M3 reads images and video (H3-Image models are on api.minimax.io only, not the CN base URL)',
+      'Image generation; MiniMax-M3 reads images and video (use api.minimaxi.com/v1 for CN)',
     keyPlaceholder: 'eyJ...',
     defaultBaseUrl: MINIMAX_BASE_URL,
     imageProtocol: 'minimax',
-    // per the platform docs 2026-11-12: MiniMax-H3-Image and its Highspeed
-    // twin speak the OpenAI-Images-shaped /v1/images/* endpoints and are
-    // documented on the international platform only; the CN platform still
-    // serves image-01 alone, so it stays listed
+    // per the platform docs 2026-11-14: MiniMax-H3-Image and its Highspeed
+    // twin speak the OpenAI-Images-shaped /v1/images/* endpoints on both
+    // platforms — confirmed on the international docs (api.minimax.io) and
+    // on the CN platform (platform.minimaxi.com, api base api.minimax.cn);
+    // image-01 keeps api.minimaxi.com as its CN host
     imageModels: ['MiniMax-H3-Image', 'MiniMax-H3-Image-Highspeed', 'image-01'],
     defaultImageModel: 'MiniMax-H3-Image',
     analysisProtocol: 'openai-chat',

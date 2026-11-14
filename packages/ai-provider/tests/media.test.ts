@@ -489,6 +489,8 @@ describe('generateImageWithProvider (vendor shapes)', () => {
       model: 'MiniMax-H3-Image',
       prompt: 'a fox',
       n: 1,
+      // the documented default is 4K — explicitly kept at 2K
+      area: '2K',
       response_format: 'b64_json',
       aspect_ratio: '16:9',
     })
