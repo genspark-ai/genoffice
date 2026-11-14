@@ -459,7 +459,7 @@ import {
   buildReviewEntries,
   filterRevisions,
   revisionAuthorCss,
-  revisionAuthors,
+  revisionAuthorsInkOrder,
   revisionsInSelection,
   type ReviewEntry,
   type RevisionFilter,
@@ -6056,7 +6056,15 @@ export function App() {
     () => filterRevisions(allRevisions, revisionFilter),
     [allRevisions, revisionFilter],
   )
-  const reviewAuthors = useMemo(() => revisionAuthors(allRevisions), [allRevisions])
+  // the review pane's author list in ink order: the document's own user keeps
+  // the plain default ink, AI edits and human collaborators get colored inks
+  // (revisionAuthorsInkOrder / #2654); the state mirror tracks Settings renames
+  const [ownAuthor, setOwnAuthor] = useState(authorName())
+  useEffect(() => onAuthorNameChanged(() => setOwnAuthor(authorName())), [])
+  const reviewAuthors = useMemo(
+    () => revisionAuthorsInkOrder(allRevisions, ownAuthor),
+    [allRevisions, ownAuthor],
+  )
   const reviewEntries = useMemo(
     () => (editor ? buildReviewEntries(editor.state.doc, shownRevisions, reviewAuthors) : []),
     [editor, shownRevisions, reviewAuthors],
