@@ -455,7 +455,12 @@ function readColumns(table: XNode, ctx: WalkContext): ColumnSpec[] {
   const walk = (node: XNode): void => {
     for (const { name, node: child } of childElements(node)) {
       if (name === 'table:table-column') push(child)
-      else if (name === 'table:table-header-columns' || name === 'table:table-columns') walk(child)
+      else if (
+        name === 'table:table-header-columns' ||
+        name === 'table:table-columns' ||
+        name === 'table:table-column-group'
+      )
+        walk(child)
     }
   }
   walk(table)
@@ -469,7 +474,12 @@ function readRows(table: XNode): XNode[] {
   const walk = (node: XNode): void => {
     for (const { name, node: child } of childElements(node)) {
       if (name === 'table:table-row') out.push(child)
-      else if (name === 'table:table-header-rows' || name === 'table:table-rows') walk(child)
+      else if (
+        name === 'table:table-header-rows' ||
+        name === 'table:table-rows' ||
+        name === 'table:table-row-group'
+      )
+        walk(child)
     }
   }
   walk(table)
