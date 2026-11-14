@@ -442,7 +442,15 @@ function tableDraft(node: XNode, ctx: WalkContext): Draft {
   const columns = readColumns(node, ctx)
   const rows = readRows(node)
   const grid = placeCells(rows, columns.length, ctx)
-  return { kind: 'xml', xml: tableXml(columns, grid) }
+  const header = headerRows(node)
+  return {
+    kind: 'xml',
+    xml: tableXml(
+      columns,
+      grid,
+      rows.map((row) => header.has(row)),
+    ),
+  }
 }
 
 function readColumns(table: XNode, ctx: WalkContext): ColumnSpec[] {
@@ -473,6 +481,27 @@ function readRows(table: XNode): XNode[] {
     }
   }
   walk(table)
+  return out
+}
+
+/**
+ * Rows ODF asks a renderer to repeat at the top of every page:
+ * `table:table-header-rows` wraps them, while `table:table-rows` holds the
+ * ordinary ones. `readRows` flattens both containers into one list, so the
+ * header nodes are collected here and marked when the grid is written — docx
+ * carries the same instruction per row, as `w:tblHeader` in `w:trPr`.
+ */
+function headerRows(table: XNode): Set<XNode> {
+  const out = new Set<XNode>()
+  const walk = (node: XNode, inHeader: boolean): void => {
+    for (const { name, node: child } of childElements(node)) {
+      if (name === 'table:table-row') {
+        if (inHeader) out.add(child)
+      } else if (name === 'table:table-header-rows') walk(child, true)
+      else if (name === 'table:table-rows') walk(child, inHeader)
+    }
+  }
+  walk(table, false)
   return out
 }
 
@@ -606,7 +635,12 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
   }
 }
 
-function tableXml(columns: ColumnSpec[], grid: Array<Array<GridCell | null>>): string {
+function tableXml(
+  columns: ColumnSpec[],
+  grid: Array<Array<GridCell | null>>,
+  /** one flag per grid row: does the source repeat it as a page header? */
+  headerFlags: boolean[],
+): string {
   // unknown column widths share the usable width of a Letter page with 1in
   // margins; fixed layout plus real gridCols keeps the spans honest
   const known = columns.filter((column) => column.widthEmu !== null)
@@ -633,6 +667,9 @@ function tableXml(columns: ColumnSpec[], grid: Array<Array<GridCell | null>>): s
   )
   grid.forEach((row, rowIndex) => {
     parts.push('<w:tr>')
+    // w:trPr opens the row; `w:tblHeader` repeats it at the top of each page,
+    // which is what `table:table-header-rows` asked the source renderer for
+    if (headerFlags[rowIndex]) parts.push('<w:trPr><w:tblHeader/></w:trPr>')
     row.forEach((cell, columnIndex) => {
       if (!cell) {
         // an empty slot in an irregular table keeps the row's column count
