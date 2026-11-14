@@ -510,31 +510,18 @@
   margin-top: auto;
 }
 .set-skill-details {
-  min-width: 0;
-}
-.set-skill-details > summary {
   padding: 4px 0;
-  list-style: none;
-  font-size: 13px;
+  border: 0;
+  background: none;
   color: var(--st-muted);
+  font: inherit;
+  font-size: 13px;
   cursor: pointer;
 }
-.set-skill-details > summary::-webkit-details-marker {
-  display: none;
-}
-.set-skill-details > summary:hover {
+.set-skill-details:hover,
+.set-skill-details:focus-visible {
   color: var(--text-primary);
-}
-.set-skill-details[open] {
-  flex-basis: 100%;
-  order: 2;
-}
-.set-skill-details .set-intg-code-block {
-  max-height: 240px;
-  margin: 8px 0 0;
-  overflow: auto;
-  font-size: 12px;
-  white-space: pre-wrap;
+  text-decoration: underline;
 }
 .set-skill-action .set-intg-state {
   padding: 3px 10px;
@@ -542,4 +529,74 @@
   background: color-mix(in srgb, var(--success) 14%, transparent);
   color: var(--success);
   font-size: 13px;
+}
+
+/* skill page (FoundSkills SkillDetail): a .modal portaled over Settings */
+.skill-detail {
+  --st-tint: color-mix(in srgb, var(--accent) 16%, transparent);
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 92vw);
+  max-width: none;
+  max-height: min(760px, 88vh);
+}
+.skill-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.skill-detail-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 18px;
+}
+.skill-detail-close {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.skill-detail-close:hover,
+.skill-detail-close:focus-visible {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+.skill-detail .skill-detail-desc {
+  margin: 12px 0 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.skill-detail-body {
+  flex: 1;
+  min-height: 120px;
+  margin-top: 16px;
+  overflow: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+  font-size: 13.5px;
+}
+.skill-detail-body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.skill-detail-empty {
+  color: var(--text-tertiary);
+}
+.skill-detail-foot {
+  align-items: center;
+  margin-top: 16px;
+}
+.skill-detail-spacer {
+  flex: 1;
 }
