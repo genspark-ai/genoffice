@@ -217,16 +217,27 @@ export class OdfStyles {
         const multiple = Number(percent[1]) / 100
         // 1000% is already beyond what a consumer honors; anything larger is
         // malformed input and would render as exponent notation in w:line
-        if (multiple <= 10) out.lineSpacing = multiple
+        if (multiple > 0 && multiple <= 10) {
+          out.lineSpacing = multiple
+          out.lineExactTw = undefined
+        }
       } else {
         const fixed = odfLengthToEmu(lineHeight)
-        if (fixed !== null) out.lineExactTw = emuToTwips(fixed)
+        if (fixed !== null) {
+          out.lineExactTw = emuToTwips(fixed)
+          out.lineSpacing = undefined
+        }
       }
     }
     const atLeast = odfLengthToEmu(a['style:line-height-at-least'])
     if (atLeast !== null) out.lineAtLeastTw = emuToTwips(atLeast)
     const exact = odfLengthToEmu(a['style:line-spacing'])
     if (exact !== null) out.lineExactTw = emuToTwips(exact)
+    if (lineHeight?.trim() === 'normal') {
+      out.lineSpacing = 1
+      out.lineExactTw = undefined
+      out.lineAtLeastTw = undefined
+    }
     const left = odfLengthToEmu(a['fo:margin-left'] ?? a['fo:margin'])
     if (left !== null) out.indentLeftTw = emuToTwips(left)
     const right = odfLengthToEmu(a['fo:margin-right'] ?? a['fo:margin'])
