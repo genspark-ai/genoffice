@@ -32,6 +32,7 @@ import {
   installWrapMeasureLifecycle,
   noteSidecarCrash,
 } from './univer-sync'
+import { installEditorScrollFollow } from './editor-scroll-follow'
 import { installGridGrowth } from './grid-growth'
 import {
   pollUntilReady,
@@ -2318,6 +2319,9 @@ export function App({
     // the grid is sized to the data, so a blank sheet stops scrolling a few
     // columns past its last cell; this extends it ahead of the viewport
     const gridGrowthDispose = installGridGrowth(runtime)
+    // Univer places the open cell editor once; keep it on its cell while the
+    // grid scrolls (the bridge refresh is a no-op when no editor is open)
+    const editorScrollFollow = installEditorScrollFollow(runtime)
     // Load-time wrap-row measures queue until Univer's auto-height
     // interceptor exists (lifecycle Rendered).
     const wrapMeasureDisposable = installWrapMeasureLifecycle(runtime)
@@ -3901,6 +3905,7 @@ export function App({
       undoRedoSub.unsubscribe()
       findRevealDispose()
       gridGrowthDispose()
+      editorScrollFollow.dispose()
       wrapMeasureDisposable.dispose()
       prefersDark.removeEventListener('change', applyUniverDark)
       dateTextDisposable.dispose()
