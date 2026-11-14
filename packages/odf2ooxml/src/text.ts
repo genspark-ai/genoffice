@@ -92,6 +92,7 @@ function runsFromChildren(
       const name = nodeName(node)
       switch (name) {
         case '#comment':
+        case 'text:ruby-text':
           break
         case 'text:span': {
           const spanProps = mergeProps(
