@@ -263,6 +263,52 @@ function underDeclared(part: ScannedPart, cause?: unknown): Error {
   return cause === undefined ? error : Object.assign(error, { cause })
 }
 
+/**
+ * Inflates one deflate-raw stream while refusing to materialise more than
+ * `maxBytes` of output: the stream is cancelled at the first chunk past the
+ * cap and null comes back, so a forged size header costs at most `maxBytes`
+ * of memory no matter how far the payload really inflates. Corrupt input and
+ * unsupported streams also return null — on-demand serving callers map that
+ * to a 404 rather than an exception.
+ *
+ * Companion to `assertZipInflatesWithinLimits` for paths that inflate one
+ * already-located part on demand (the docs lazy-media server reads media
+ * straight out of the source archive, outside any bulk open): the gate above
+ * proves an archive honest in bulk, this one holds for a single part whose
+ * declared sizes were never gate-checked.
+ */
+export async function inflateRawWithinCap(
+  raw: Uint8Array,
+  maxBytes: number,
+): Promise<Uint8Array | null> {
+  let seen = 0
+  const chunks: Uint8Array[] = []
+  try {
+    const reader = streamBytes(raw).pipeThrough(decompressionStream('deflate-raw')).getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      seen += value.byteLength
+      if (seen > maxBytes) {
+        await reader.cancel()
+        return null
+      }
+      chunks.push(value)
+    }
+  } catch {
+    // DecompressionStream rejects with an empty-message TypeError on bad data;
+    // a serving caller only needs the boolean answer.
+    return null
+  }
+  const out = new Uint8Array(seen)
+  let at = 0
+  for (const chunk of chunks) {
+    out.set(chunk, at)
+    at += chunk.byteLength
+  }
+  return out
+}
+
 /** UTF-8 with the high bytes preserved, matching what JSZip does with names. */
 function decodeLatin1(bytes: Uint8Array): string {
   let out = ''

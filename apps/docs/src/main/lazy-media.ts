@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { open, stat } from 'node:fs/promises'
-import { inflateRawSync } from 'node:zlib'
 import { protocol } from 'electron'
 import { DOCX_MEDIA_SCHEME_PRIVILEGE } from '@genoffice/electron-utils'
 import { takeHandoff } from './byte-handoff'
@@ -9,6 +8,7 @@ import {
   LAZY_MEDIA_SCHEME,
   isLazyMediaPart,
   parseLazyMediaUrl,
+  readMediaPartBounded,
 } from '@genoffice/docx-engine/lazy-media'
 import {
   bufferSource,
@@ -231,11 +231,15 @@ export async function readLazyMedia(url: string): Promise<{ body: Buffer; mime: 
   if (!ref || !isLazyMediaPart(ref.partPath)) return null
   const zip = await sourceZip(ref.hash)
   const entry = zip?.entries.get(ref.partPath)
-  if (!zip || !entry || (entry.method !== 0 && entry.method !== 8)) return null
-  const raw = await zip.read(entry.dataOffset, entry.csize)
+  if (!zip || !entry) return null
+  // Bounded serve: the lazy path skips the bulk open's metered-inflate gate,
+  // so a forged size header must not turn the inflate into the memory
+  // primitive (see readMediaPartBounded; null → 404 below).
+  const body = await readMediaPartBounded(entry, (offset, length) => zip.read(offset, length))
+  if (!body) return null
   const ext = ref.partPath.split('.').pop()?.toLowerCase() ?? ''
   return {
-    body: entry.method === 0 ? raw : inflateRawSync(raw),
+    body: Buffer.from(body),
     mime: MIME[ext] ?? 'application/octet-stream',
   }
 }
