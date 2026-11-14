@@ -16,6 +16,8 @@ import { closeDocument, documentHtml, openDocument } from '../formats/docx'
 import { extension, readInput, resolveInput, resolveOutput, writeOutput } from '../fs'
 import type { CommandContext, CommandDef } from '../registry'
 import { CliError, EXIT } from '../result'
+/** see the hwp branch below: the one format whose parser is an unauditable WASM black box */
+const MAX_HWP_INPUT_BYTES = 512 * 1024 * 1024
 
 /** Conversions that run in this process. */
 const NODE_ROUTES: Record<string, readonly string[]> = {
@@ -191,7 +193,19 @@ async function run(
     return { bytes: r.bytes, detail: r.detail }
   }
   if (from === 'hwpx' || from === 'hwp') {
-    const r = await convertHwp(readInput(input))
+    // Binary HWP goes into the rhwp WASM module as one whole buffer, whose
+    // memory and CPU behavior on hostile input is not auditable here — the
+    // size cap is the guard this side can apply. Aligned with the app's
+    // 512 MB open cap for .docx (docs-main MAX_OPEN_BYTES).
+    const bytes = readInput(input)
+    if (bytes.byteLength > MAX_HWP_INPUT_BYTES) {
+      throw new CliError(
+        EXIT.conversion,
+        `input .hwp is larger than the 512 MB cap (${Math.ceil(bytes.byteLength / (1024 * 1024))} MB)`,
+        { reason: 'input-too-large' },
+      )
+    }
+    const r = await convertHwp(bytes)
     return { bytes: r.bytes, detail: r.detail }
   }
   if (from === 'odp' || from === 'otp') {

@@ -15,6 +15,7 @@ import { t } from './i18n/locale'
 import { DATE_1904_OFFSET, isCalendarDatePattern, patternType } from './numfmt-fix'
 import { showToast } from './toast-bus'
 import type { LazyWorkbookState, UniverRuntime } from './univer-state'
+import { neutralizeCsvFormulaField } from '@genoffice/xlsx-gateway/domain/csv-formula-guard'
 
 /// Rows fetched per getDisplayValues call, bounding the facade's allocation.
 const EXPORT_ROW_BLOCK = 4096
@@ -53,7 +54,11 @@ export interface CsvWorksheet {
 
 export function csvField(text: string): string {
   const normalized = text.replace(/\r\n|\r/g, '\n')
-  return /[",\n]/.test(normalized) ? `"${normalized.replace(/"/g, '""')}"` : normalized
+  // formula-injection guard, shared with the CLI's writer
+  // (xlsx-gateway domain/csv-formula-guard): the next app to open this CSV
+  // evaluates a leading =/+/-/@ as a formula or DDE instruction
+  const guarded = neutralizeCsvFormulaField(normalized)
+  return /[",\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded
 }
 
 export function csvFromDisplayRows(rows: readonly (readonly string[])[]): string {
