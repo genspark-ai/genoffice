@@ -1,0 +1,166 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+vi.mock('electron', () => {
+  const native = {
+    showSaveDialog: async (options: unknown) => nativeSave(options),
+    showOpenDialog: async (options: unknown) => nativeOpen(options),
+    showMessageBox: async (options: unknown) => nativeMessage(options),
+  }
+  return { dialog: native, session: { defaultSession: {} } }
+})
+
+const nativeSave = vi.fn(async () => ({ canceled: true }))
+const nativeOpen = vi.fn(async () => ({ canceled: true, filePaths: [] }))
+const nativeMessage = vi.fn(async () => ({ response: 0 }))
+
+import {
+  runWithWebDispatch,
+  installWebDialogPatch,
+  listWebDialogDir,
+  resolveWebDialog,
+  validateWebDialogPath,
+  webDialogStartDirs,
+} from '../src/web/web-dialogs'
+import { WebTabContents } from '../src/web/web-contents'
+
+function tabWithCapturedDialogs(): {
+  tab: WebTabContents
+  requests: { id: number; options: unknown }[]
+} {
+  const tab = new WebTabContents('/docs/')
+  const requests: { id: number; options: unknown }[] = []
+  tab.deliver = (channel, args) => {
+    expect(channel).toBe('web:dialog')
+    requests.push(args[0] as { id: number; options: unknown })
+  }
+  return { tab, requests }
+}
+
+function uiRoot(): string {
+  return mkdtempSync(join(tmpdir(), 'webdlg-'))
+}
+
+describe('web dialogs', () => {
+  beforeEach(() => {
+    nativeSave.mockClear()
+    nativeOpen.mockClear()
+    nativeMessage.mockClear()
+    installWebDialogPatch()
+  })
+
+  let dir = ''
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+    dir = ''
+  })
+
+  it('routes dialogs to the tab during a web dispatch', async () => {
+    const { tab, requests } = tabWithCapturedDialogs()
+    const dialog = (await import('electron')).dialog as unknown as {
+      showSaveDialog: (options: unknown) => Promise<unknown>
+    }
+    const result = runWithWebDispatch(tab, () =>
+      dialog.showSaveDialog({ title: 'Export', defaultPath: '/tmp/x.pdf' }),
+    )
+    await new Promise((r) => setTimeout(r, 20))
+    expect(requests).toHaveLength(1)
+    expect(requests[0].options).toMatchObject({ kind: 'save', title: 'Export' })
+    resolveWebDialog(requests[0].id, { canceled: false, filePath: '/tmp/x.pdf' }, tab)
+    await expect(result).resolves.toEqual({ canceled: false, filePath: '/tmp/x.pdf' })
+    expect(nativeSave).not.toHaveBeenCalled()
+  })
+
+  it('keeps the dispatch context across awaits and drops it after', async () => {
+    const { tab, requests } = tabWithCapturedDialogs()
+    const seen = runWithWebDispatch(tab, async () => {
+      await new Promise((r) => setTimeout(r, 10))
+      // still inside the async chain after an await: concurrent dispatches
+      // cannot bleed into each other
+      ;(await import('electron')).dialog
+        .showSaveDialog({ title: 'still scoped' })
+        .catch(() => undefined)
+      await new Promise((r) => setTimeout(r, 10))
+      return requests.length
+    })
+    await new Promise((r) => setTimeout(r, 40))
+    await expect(seen).resolves.toBe(1)
+    // after the chain ends, the same call takes the native path again
+    const dialog2 = (await import('electron')).dialog as unknown as {
+      showMessageBox: (options: unknown) => Promise<unknown>
+    }
+    await dialog2.showMessageBox({ message: 'native' })
+    expect(nativeMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps native dialogs outside a web dispatch', async () => {
+    const dialog = (await import('electron')).dialog as unknown as {
+      showMessageBox: (options: unknown) => Promise<unknown>
+    }
+    await dialog.showMessageBox({ message: 'hi', buttons: ['OK'] })
+    expect(nativeMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('maps open dialogs and honors a canceled response', async () => {
+    const { tab, requests } = tabWithCapturedDialogs()
+    const dialog = (await import('electron')).dialog as unknown as {
+      showOpenDialog: (options: unknown) => Promise<unknown>
+    }
+    const result = runWithWebDispatch(tab, () => dialog.showOpenDialog({ title: 'Pick' }))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(requests).toHaveLength(1)
+    resolveWebDialog(requests[0].id, { canceled: true }, tab)
+    await expect(result).resolves.toEqual({ canceled: true, filePaths: [] })
+  })
+
+  it("one tab cannot answer another tab's dialog", async () => {
+    const a = tabWithCapturedDialogs()
+    const b = tabWithCapturedDialogs()
+    const dialog = (await import('electron')).dialog as unknown as {
+      showSaveDialog: (options: unknown) => Promise<unknown>
+    }
+    const result = runWithWebDispatch(a.tab, () => dialog.showSaveDialog({ title: 'A only' }))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(a.requests).toHaveLength(1)
+    resolveWebDialog(a.requests[0].id, { canceled: false, filePath: '/tmp/hijack' }, b.tab)
+    await new Promise((r) => setTimeout(r, 20))
+    resolveWebDialog(a.requests[0].id, { canceled: true }, a.tab)
+    await expect(result).resolves.toEqual({ canceled: true })
+  })
+
+  it('lists a directory for the overlay: dirs first, filtered, hidden skipped', async () => {
+    dir = uiRoot()
+    mkdirSync(join(dir, 'sub'))
+    writeFileSync(join(dir, 'b.png'), 'x')
+    writeFileSync(join(dir, 'a.txt'), 'x')
+    writeFileSync(join(dir, '.hidden.png'), 'x')
+    const entries = await listWebDialogDir(dir, ['png'])
+    expect(entries).toEqual([
+      { name: 'sub', dir: true },
+      { name: 'b.png', dir: false },
+    ])
+  })
+
+  it('validates dialog targets against the filesystem', async () => {
+    dir = uiRoot()
+    const file = join(dir, 'f.pdf')
+    writeFileSync(file, 'x')
+    expect(validateWebDialogPath(file, 'open')).toBe(file)
+    expect(validateWebDialogPath(join(dir, 'nope.pdf'), 'open')).toBeNull()
+    expect(validateWebDialogPath(join(dir, 'new.pdf'), 'save')).toBe(join(dir, 'new.pdf'))
+    expect(validateWebDialogPath(join(dir, 'gone', 'new.pdf'), 'save')).toBeNull()
+  })
+
+  it('starts the overlay at the dialog default path', () => {
+    dir = uiRoot()
+    const file = join(dir, 'report.docx')
+    writeFileSync(file, 'x')
+    expect(webDialogStartDirs(file)).toEqual([dir])
+    const fallback = webDialogStartDirs()
+    expect(fallback).toHaveLength(1)
+    // '/' on POSIX, the drive root on Windows
+    expect(fallback[0]).toMatch(/^(\/|[A-Za-z]:\\)$/)
+  })
+})
