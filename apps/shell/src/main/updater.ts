@@ -33,11 +33,13 @@ import {
  *
  * UX is the strong-guidance modal card (update-window.ts), not a native
  * dialog. Windows updates through the NSIS installer (latest.yml); macOS
- * through the zip target (latest-mac.yml); Linux through the AppImage
- * target (latest-linux.yml) — all published by the internal release
- * pipeline. On Linux only AppImage runs self-update (electron-updater
- * replaces the .AppImage file in place, no root needed); deb installs have
- * no updater — users upgrade via `apt install ./<new>.deb`.
+ * through the zip target (latest-mac.yml); Linux through latest-linux.yml,
+ * which carries the AppImage and the deb. On Linux, AppImage runs self-update
+ * in place (electron-updater replaces the .AppImage file, no root needed) and
+ * deb installs self-update through electron-updater's DebUpdater, which reads
+ * the baked resources/package-type file and installs the package behind a
+ * pkexec prompt. That install is offered on the card's explicit "Restart to
+ * install" button only — see `autoInstallOnAppQuit` below.
  *
  * Dev preview: GENOFFICE_FAKE_UPDATE=<version> in an unpacked run opens the
  * window with a simulated download so the UI can be exercised end to end.
@@ -449,12 +451,36 @@ function updateFeedBaseUrl(): string | null {
   }
 }
 
+/// electron-builder's FpmTarget writes a `package-type` file ("deb") next to
+/// app-update.yml for the deb build, and electron-updater reads that same file
+/// to pick its DebUpdater — the mechanism that lets a deb install self-update
+/// (the install runs dpkg behind a pkexec prompt). AppImage runs carry no
+/// package-type; their updater keys off the APPIMAGE env var instead. Anything
+/// else is not an install this updater can replace, so it answers null.
+///
+/// Only deb is claimed here: rpm keeps `rpm.publish: null` in
+/// electron-builder.cjs, so an rpm bake carries neither app-update.yml nor
+/// package-type and the feed has no .rpm entry, which means RpmUpdater can
+/// never be selected. Widening this to 'rpm' without publishing that target
+/// would advertise an upgrade path that does not exist.
+function linuxPackageType(): 'deb' | null {
+  try {
+    const value = readFileSync(path.join(process.resourcesPath, 'package-type'), 'utf8').trim()
+    return value === 'deb' ? 'deb' : null
+  } catch {
+    return null
+  }
+}
+
 /// Picks the manual-install artifact for this platform/arch from the update
 /// feed's file list: macOS wants the dmg matching process.arch (the zip is
 /// Squirrel-only), Windows the NSIS exe matching process.arch (the arm64 one
-/// carries an -arm64 suffix, the x64 one no arch), Linux the AppImage. Served feeds may
-/// carry either feed-relative names or absolute CDN URLs (mac-release-upload
-/// rewrites every url: entry to absolute), but only their basename is used.
+/// carries an -arm64 suffix, the x64 one no arch), Linux the package the
+/// running install self-updates to — the AppImage for AppImage runs, the deb
+/// for a deb install (the AppImage is a different install lineage and cannot
+/// upgrade a deb). Served feeds may carry either feed-relative names or
+/// absolute CDN URLs (mac-release-upload rewrites every url: entry to
+/// absolute), but only their basename is used.
 /// The final URL is always rebuilt against the trusted baked feed base.
 function manualDownloadUrlFor(info: UpdateInfo): string | null {
   const basenames = (info.files ?? []).flatMap((file) => {
@@ -479,7 +505,9 @@ function manualDownloadUrlFor(info: UpdateInfo): string | null {
     const x64 = pick((name) => name.endsWith('.exe') && !name.endsWith('-arm64.exe'))
     chosen = process.arch === 'arm64' ? (arm ?? x64) : (x64 ?? arm)
   } else {
-    chosen = pick((name) => name.endsWith('.AppImage'))
+    // a deb install must be offered the deb, not the AppImage
+    const extension = !process.env.APPIMAGE && linuxPackageType() === 'deb' ? '.deb' : '.AppImage'
+    chosen = pick((name) => name.endsWith(extension))
   }
   if (chosen === null) return null
   const base = updateFeedBaseUrl()
@@ -561,8 +589,8 @@ export function applyUpdateChannel(channel: UpdateChannel): void {
  * feedback: an available update opens the standard update window (even a
  * version dismissed with "later" this session — the user just asked for it),
  * up-to-date and failure each get a dialog, and installs with no self-update
- * mechanism (dev runs, Linux .deb) are pointed at the download page instead
- * of being told they're current. */
+ * mechanism (dev runs, an unpacked or rpm/flatpak Linux install) are pointed
+ * at the download page instead of being told they're current. */
 export async function checkForUpdatesNow(): Promise<void> {
   if (manualCheckInFlight) return
   manualCheckInFlight = true
@@ -640,13 +668,24 @@ export function initAutoUpdater(
   // Unpacked runs have no app-update.yml and must not hit the CDN with a
   // dev version. Windows updates via NSIS (latest.yml), macOS via the zip
   // target + latest-mac.yml (Squirrel.Mac requires a signed, notarized app
-  // — dmg is first-install only), Linux via the AppImage target +
-  // latest-linux.yml. On Linux the updater only works for AppImage runs
-  // (electron-updater's AppImageUpdater needs the APPIMAGE env var the
-  // AppImage runtime sets); deb installs update manually via apt.
+  // — dmg is first-install only), Linux via latest-linux.yml. On Linux
+  // self-update is available to AppImage runs (electron-updater's
+  // AppImageUpdater needs the APPIMAGE env var the AppImage runtime sets)
+  // and to deb installs (electron-updater reads the baked
+  // resources/package-type file and installs through DebUpdater). Prompting
+  // those users to update manually — "Automatic update failed…" on a plain
+  // check — because the updater never started is genoffice#2325.
   if (!app.isPackaged) return
   const isLinuxAppImage = process.platform === 'linux' && Boolean(process.env.APPIMAGE)
-  if (process.platform !== 'win32' && process.platform !== 'darwin' && !isLinuxAppImage) return
+  const isLinuxDeb =
+    process.platform === 'linux' && !isLinuxAppImage && linuxPackageType() === 'deb'
+  if (
+    process.platform !== 'win32' &&
+    process.platform !== 'darwin' &&
+    !isLinuxAppImage &&
+    !isLinuxDeb
+  )
+    return
 
   updaterActive = true
   autoUpdater.channel = CHANNEL_FEED[initialChannel]
@@ -654,8 +693,11 @@ export function initAutoUpdater(
   // back off since a beta user switching to stable must not downgrade
   autoUpdater.allowDowngrade = false
   autoUpdater.autoDownload = false
-  // if the user picked "later" after download, install on normal quit
-  autoUpdater.autoInstallOnAppQuit = true
+  // if the user picked "later" after download, install on normal quit. Not for
+  // a deb: DebUpdater installs through `dpkg -i` behind a pkexec prompt, and a
+  // root password dialog standing in front of a quit the user did not relate
+  // to an update is worse than the click the explicit button asks for.
+  autoUpdater.autoInstallOnAppQuit = !isLinuxDeb
   // full-package policy: never attempt blockmap differential downloads
   // (CI does not publish .blockmap files)
   autoUpdater.disableDifferentialDownload = true
@@ -778,9 +820,12 @@ export function initAutoUpdater(
     latestSeenVersion = info.version
     manualDownloadUrl = manualDownloadUrlFor(info)
     log('update available:', info.version)
-    if (quietCheck && silentInstallEnabled()) {
+    if (quietCheck && silentInstallEnabled() && !isLinuxDeb) {
       // quiet path: no card, the package downloads in the background and the
-      // app installs it when it quits (genoffice#2389)
+      // app installs it when it quits (genoffice#2389). Not for a deb: its
+      // install is the pkexec-backed `dpkg -i` that only the explicit
+      // "Restart to install" button may start, so a silent download with no
+      // card would leave the package sitting there uninstalled
       startDownload()
       return
     }
@@ -803,7 +848,9 @@ export function initAutoUpdater(
       return
     }
     log('downloaded:', info.version)
-    autoUpdater.autoInstallOnAppQuit = true
+    // a deb install stays on the explicit "Restart to install" button (see the
+    // pkexec note above); every other platform installs on quit as before
+    autoUpdater.autoInstallOnAppQuit = !isLinuxDeb
     downloadInFlight = false
     failedAttempts = 0
     setPhase({ phase: 'downloaded', percent: 100 })

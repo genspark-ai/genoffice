@@ -959,3 +959,196 @@ describe('checkForUpdatesNow (r148 manual check)', () => {
     expect(showMessageBox).not.toHaveBeenCalled()
   })
 })
+
+describe('linux deb self-update (genoffice#2325)', () => {
+  // electron-builder's FpmTarget bakes `package-type` ("deb") next to
+  // app-update.yml and electron-updater reads that file to pick DebUpdater.
+  // The gate in initAutoUpdater must treat it like the APPIMAGE env var: the
+  // updater starts, the background timer is registered, and a manual check
+  // consults the feed instead of claiming the automatic update "failed".
+  function mockLinuxFiles(packageType: string | null, feedYaml: string): void {
+    readFileSyncMock.mockImplementation(((p: unknown) => {
+      const s = String(p)
+      if (s.endsWith('package-type')) {
+        if (packageType === null) throw new Error('no package-type')
+        return packageType
+      }
+      if (s.endsWith('app-update.yml')) return feedYaml
+      throw new Error('no app-update.yml')
+    }) as never)
+  }
+
+  afterEach(() => {
+    delete process.env.APPIMAGE
+  })
+
+  it('activates the updater and its background timer for a deb install', async () => {
+    platformSpy?.restore()
+    setPlatform('linux')
+    delete process.env.APPIMAGE
+    mockLinuxFiles('deb', 'url: https://cdn.example.com/linux\n')
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(() => null)
+
+    expect(updaterState.listeners.size).toBeGreaterThan(0)
+    expect(updaterState.autoDownload).toBe(false)
+    expect(updaterState.disableDifferentialDownload).toBe(true)
+    vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
+    expect(checkForUpdates).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(RECHECK_INTERVAL_MS)
+    expect(checkForUpdates).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a deb install on the explicit install button', async () => {
+    // DebUpdater installs through `dpkg -i` behind pkexec; installing that on
+    // quit would open a root password dialog the user did not ask for
+    platformSpy?.restore()
+    setPlatform('linux')
+    delete process.env.APPIMAGE
+    mockLinuxFiles('deb', 'url: https://cdn.example.com/linux\n')
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(() => null)
+
+    expect(updaterState.autoInstallOnAppQuit).toBe(false)
+    updaterState.listeners.get('update-available')!({ version: '0.2.0', files: [] })
+    updaterState.listeners.get('update-downloaded')!({ version: '0.2.0' })
+    expect(updaterState.autoInstallOnAppQuit).toBe(false)
+  })
+
+  it('still installs on quit for an AppImage run', async () => {
+    platformSpy?.restore()
+    setPlatform('linux')
+    process.env.APPIMAGE = '/opt/GenOffice.AppImage'
+    mockLinuxFiles('deb', 'url: https://cdn.example.com/linux\n')
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(() => null)
+
+    expect(updaterState.autoInstallOnAppQuit).toBe(true)
+    updaterState.listeners.get('update-available')!({ version: '0.2.0', files: [] })
+    updaterState.listeners.get('update-downloaded')!({ version: '0.2.0' })
+    expect(updaterState.autoInstallOnAppQuit).toBe(true)
+  })
+
+  it('shows the card instead of downloading quietly for a deb install', async () => {
+    // "install silently" ends in an install on quit, which a deb must not do
+    platformSpy?.restore()
+    setPlatform('linux')
+    delete process.env.APPIMAGE
+    mockLinuxFiles('deb', 'url: https://cdn.example.com/linux\n')
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(
+      () => null,
+      'stable',
+      () => true,
+      () => true,
+    )
+    vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
+    updaterState.listeners.get('update-available')!({ version: '0.2.0', files: [] })
+
+    expect(showUpdateWindow).toHaveBeenCalledTimes(1)
+    expect(downloadUpdate).not.toHaveBeenCalled()
+  })
+
+  it('stays inactive on Linux with neither APPIMAGE nor a package-type', async () => {
+    platformSpy?.restore()
+    setPlatform('linux')
+    delete process.env.APPIMAGE
+    mockLinuxFiles(null, 'url: https://cdn.example.com/linux\n')
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(() => null)
+
+    vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
+    expect(updaterState.listeners.size).toBe(0)
+    expect(checkForUpdates).not.toHaveBeenCalled()
+  })
+
+  it.each(['rpm', 'pacman', 'flatpak'])(
+    'stays inactive for a %s package-type, which the feed does not publish',
+    async (pkg) => {
+      platformSpy?.restore()
+      setPlatform('linux')
+      delete process.env.APPIMAGE
+      mockLinuxFiles(pkg, 'url: https://cdn.example.com/linux\n')
+      const { initAutoUpdater } = await loadUpdater()
+      initAutoUpdater(() => null)
+
+      vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
+      expect(updaterState.listeners.size).toBe(0)
+      expect(checkForUpdates).not.toHaveBeenCalled()
+    },
+  )
+
+  it('a manual check on a deb install consults the feed instead of claiming failure', async () => {
+    platformSpy?.restore()
+    setPlatform('linux')
+    delete process.env.APPIMAGE
+    mockLinuxFiles('deb', 'url: https://cdn.example.com/linux\n')
+    const { initAutoUpdater, checkForUpdatesNow } = await loadUpdater()
+    initAutoUpdater(() => null)
+
+    checkForUpdates.mockImplementation(() => Promise.resolve({ isUpdateAvailable: false } as never))
+    await checkForUpdatesNow()
+
+    expect(checkForUpdates).toHaveBeenCalledTimes(1)
+    expect(showMessageBox).toHaveBeenCalledTimes(1)
+    // "You're up to date", not the "Automatic update failed…" dialog
+    const opts = showMessageBox.mock.calls.at(-1)![0] as { message: string }
+    expect(opts.message).not.toContain('Automatic update failed')
+    expect(showUpdateWindow).not.toHaveBeenCalled()
+  })
+
+  it('offers the .deb to a deb install that fails twice', async () => {
+    platformSpy?.restore()
+    setPlatform('linux')
+    delete process.env.APPIMAGE
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    mockLinuxFiles('deb', 'url: https://cdn.example.com/linux\n')
+    downloadUpdate.mockImplementation(() => Promise.reject(new Error('dpkg failed')))
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(() => null)
+
+    updaterState.listeners.get('update-available')!({
+      version: '0.2.0',
+      files: [{ url: 'GenOffice-0.2.0.AppImage' }, { url: 'genoffice_0.2.0_amd64.deb' }],
+    })
+    const actions = lastShownActions()
+    actions.onDownload()
+    await flushAsync()
+    expect(pushUpdateState).toHaveBeenCalledWith({ phase: 'error' })
+    actions.onDownload()
+    await flushAsync()
+    expect(pushUpdateState).toHaveBeenCalledWith({ phase: 'manual' })
+
+    actions.onOpenDownload()
+    expect(openExternal).toHaveBeenCalledWith(
+      'https://cdn.example.com/linux/genoffice_0.2.0_amd64.deb',
+    )
+  })
+
+  it('still offers the AppImage to an AppImage run that fails twice', async () => {
+    platformSpy?.restore()
+    setPlatform('linux')
+    process.env.APPIMAGE = '/opt/GenOffice.AppImage'
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    mockLinuxFiles('deb', 'url: https://cdn.example.com/linux\n')
+    downloadUpdate.mockImplementation(() => Promise.reject(new Error('offline')))
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(() => null)
+
+    updaterState.listeners.get('update-available')!({
+      version: '0.2.0',
+      files: [{ url: 'genoffice_0.2.0_amd64.deb' }, { url: 'GenOffice-0.2.0.AppImage' }],
+    })
+    const actions = lastShownActions()
+    actions.onDownload()
+    await flushAsync()
+    actions.onDownload()
+    await flushAsync()
+    expect(pushUpdateState).toHaveBeenCalledWith({ phase: 'manual' })
+
+    actions.onOpenDownload()
+    expect(openExternal).toHaveBeenCalledWith(
+      'https://cdn.example.com/linux/GenOffice-0.2.0.AppImage',
+    )
+  })
+})
