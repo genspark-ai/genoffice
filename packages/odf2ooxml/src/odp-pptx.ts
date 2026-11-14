@@ -198,6 +198,8 @@ function toParagraph(node: XNode, ctx: WalkContext, listDepth: number): Paragrap
   if (props?.align) paragraph.align = props.align
   if (props?.spaceBeforeTw !== undefined) paragraph.spaceBefore = props.spaceBeforeTw / 20
   if (props?.spaceAfterTw !== undefined) paragraph.spaceAfter = props.spaceAfterTw / 20
+  if (props?.lineSpacing !== undefined) paragraph.lineHeight = props.lineSpacing * 100
+  if (props?.lineExactTw !== undefined) paragraph.lineExact = props.lineExactTw / 20
   if (listDepth > 0) {
     // a flat bullet per level: ODF's per-level markers live in list styles
     // whose full OOXML bullet model is out of the first cut's scope
