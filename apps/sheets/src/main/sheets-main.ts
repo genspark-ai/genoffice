@@ -5356,6 +5356,11 @@ async function promptOdsImport(
 /// .xls, .tsv and the ODF imports (.ods/.ots) open as a converted copy in the temp dir; the session
 /// remembers the original's .xlsx sibling as the Save As default. .csv converts
 /// the same way but keeps its file identity, so Save writes values back to it.
+/** Legacy imports (.xls/.ods/.ots) hand the whole file to the sidecar's
+ *  calamine reader with no zip-gate in between; this file cap is the one
+ *  guard on the app side. Aligned with docs' MAX_OPEN_BYTES. */
+const MAX_LEGACY_IMPORT_BYTES = 512 * 1024 * 1024
+
 async function prepareWorkbookForOpen(
   client: XlsxSidecarClient,
   path: string,
@@ -5469,6 +5474,16 @@ async function prepareWorkbookForOpen(
       emptyCsv = converted.empty
       await writeFile(openPath, converted.buffer)
     } else {
+      // The sidecar's legacy import (calamine, for .xls/.ods/.ots) manages
+      // its own memory on the far side of the stdin protocol, and unlike
+      // .xlsx there is no zip-gate between the file and it — the file cap is
+      // the guard. Aligned with the app's 512 MB docx open cap.
+      const legacyStat = await stat(path)
+      if (legacyStat.size > MAX_LEGACY_IMPORT_BYTES) {
+        throw new Error(
+          `${tm('errTooLarge', { mb: MAX_LEGACY_IMPORT_BYTES / 1024 / 1024 })} (${(legacyStat.size / 1024 / 1024).toFixed(1)} MB)`,
+        )
+      }
       await client.convertWorkbook({ path, targetPath: openPath })
     }
   } catch (error) {
