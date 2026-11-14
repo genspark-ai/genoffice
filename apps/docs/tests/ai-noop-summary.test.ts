@@ -76,7 +76,13 @@ describe('no-op command summary', () => {
     ])
     const outcome = executeOps(editor, [
       { op: 'setFont', target: { blockIndexes: [0, 1] }, bold: true },
-      { op: 'findReplace', find: 'foo', replace: 'bar' },
+      {
+        op: 'findReplace',
+        target: { scope: 'document' },
+        match: 'all',
+        find: 'foo',
+        replace: 'bar',
+      },
     ])
     expect(outcome.ok, outcome.error).toBe(true)
     expect(outcome.results[0]).toMatchObject({ matched: 2, changed: 0 })

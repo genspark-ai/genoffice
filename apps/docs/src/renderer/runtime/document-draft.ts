@@ -18,7 +18,11 @@ import {
 } from '../ai/protocol'
 import type { DocsErrorCode, DocsImageReferenceIssue } from '../../shared/operation-result'
 import { prepareDocumentImageWrite } from './document-media'
-import { preservedTableStructures, validateStructureDeletion } from '../ai/structure-inventory'
+import {
+  preservedInlineStructures,
+  preservedTableStructures,
+  validateStructureDeletion,
+} from '../ai/structure-inventory'
 import type {
   DocsDraftInspection,
   DocsDraftSettlement,
@@ -272,6 +276,13 @@ export class DocumentDraft {
           0,
           this.original.content.size,
           inherited.map((node) => this.editor.schema.nodeFromJSON(node)),
+        ),
+        ...preservedInlineStructures(
+          this.original,
+          0,
+          this.original.content.size,
+          inherited.map((node) => this.editor.schema.nodeFromJSON(node)),
+          intent,
         ),
       ]
       const error = validateStructureDeletion(

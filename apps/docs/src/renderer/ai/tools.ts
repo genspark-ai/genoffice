@@ -12,7 +12,11 @@ import type { AgentToolCall, CreateDocumentType } from '../../shared/ipc'
 import { t } from '../i18n/locale'
 import { MIND_MAP_LIMITS, parseMindMapTree } from '@genoffice/agent-core/mind-map'
 import { executeOps, opNames } from './ops'
-import { preservedTableStructures, validateStructureDeletion } from './structure-inventory'
+import {
+  preservedInlineStructures,
+  preservedTableStructures,
+  validateStructureDeletion,
+} from './structure-inventory'
 import { clipExcerpt, repliesOf, resolveCommentAnchor } from './comment-ops'
 import { insertPictureAtSelection } from '../editor/insert-picture'
 import {
@@ -303,6 +307,13 @@ export function validateHtmlStructureIntent(
           positions.from,
           positions.to,
           nodes.map((node) => editor.schema.nodeFromJSON(node)),
+        ),
+        ...preservedInlineStructures(
+          editor.state.doc,
+          positions.from,
+          positions.to,
+          nodes.map((node) => editor.schema.nodeFromJSON(node)),
+          call.input.deleteStructures,
         ),
       ]
       return validateStructureDeletion(
@@ -960,6 +971,13 @@ function executeSyncTool(
           positions.from,
           positions.to,
           inherited.map((node) => editor.schema.nodeFromJSON(node)),
+        ),
+        ...preservedInlineStructures(
+          editor.state.doc,
+          positions.from,
+          positions.to,
+          inherited.map((node) => editor.schema.nodeFromJSON(node)),
+          call.input.deleteStructures,
         ),
       ]
       const structureError = validateStructureDeletion(

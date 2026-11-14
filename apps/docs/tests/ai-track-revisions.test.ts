@@ -9,6 +9,8 @@ import {
 } from '@genoffice/docx-engine'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { applyRevisionsBy, collectRevisions } from '../src/renderer/editor/revisions'
+import { createDocsRuntime } from '../src/renderer/runtime/docs-runtime'
+import type { DocsQueryResult } from '../src/shared/document-query'
 import { executeTool } from '../src/renderer/ai/tools'
 
 /**
@@ -191,16 +193,40 @@ describe('AI edits merged into the revision model', () => {
       },
       NUM_IDS,
     )
-    const exec = await executeTool(
-      editor,
-      {
-        id: 't2',
+    const runtime = createDocsRuntime({
+      current: () => ({ editor, identity: editor, numIds: NUM_IDS, track: TRACK }),
+    })
+    const caller = runtime.connect({ id: 'tracked-structure' })
+    let exec
+    try {
+      caller.context()
+      const read = await caller.execute({
+        id: 'query',
+        name: 'query_document',
+        input: { domain: 'body' },
+      })
+      expect(read.isError, read.output).not.toBe(true)
+      const source = JSON.parse(read.output) as DocsQueryResult
+      expect(source.page.complete).toBe(true)
+      source.items.forEach((item) => expect(item.structuresComplete).toBe(true))
+      const tables = source.items
+        .flatMap((item) => item.structures ?? [])
+        .filter((item) => item.kind === 'table')
+      expect(tables).toHaveLength(1)
+      exec = await caller.execute({
+        id: 'replace',
         name: 'replace_blocks',
-        input: { startBlockIndex: 0, endBlockIndex: 1, html: '<p>Replacement text.</p>' },
-      },
-      NUM_IDS,
-      TRACK,
-    )
+        input: {
+          startBlockIndex: 0,
+          endBlockIndex: 1,
+          html: '<p>Replacement text.</p>',
+          deleteStructures: tables.map((item) => item.id),
+        },
+      })
+    } finally {
+      caller.close()
+      runtime.dispose()
+    }
     expect(exec.isError).toBeFalsy()
     expect(editor.state.doc.textContent).toContain('Some text.')
     expect(collectRevisions(editor.state.doc).map((revision) => revision.kind)).toEqual([

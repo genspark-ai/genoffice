@@ -303,10 +303,15 @@ it('edits a standalone VML textbox through standard MCP and retains its shape', 
     const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
     await client.connect(clientTransport)
-    expect(
-      (await client.listTools()).tools.find((tool) => tool.name === 'set_header_footer')!
-        .inputSchema.properties,
-    ).toHaveProperty('textboxIndex')
+    const headerTool = (await client.listTools()).tools.find(
+      (tool) => tool.name === 'set_header_footer',
+    )!
+    expect(headerTool.inputSchema).toMatchObject({
+      type: 'object',
+      required: ['text'],
+      anyOf: [{ required: ['kind'] }, { required: ['engineTarget'] }],
+      properties: { textboxIndex: { type: 'integer' }, engineTarget: { type: 'object' } },
+    })
     const result = await client.callTool({
       name: 'set_header_footer',
       arguments: {

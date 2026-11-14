@@ -125,6 +125,39 @@ export function preservedTableStructures(
   return kept
 }
 
+/** Count exact retained atoms, including opaque content inherited by unchanged cells. */
+export function preservedInlineStructures(
+  doc: ProseMirrorNode,
+  from: number,
+  to: number,
+  replacement: readonly ProseMirrorNode[],
+  intent?: unknown,
+): string[] {
+  const next = doc.type.create(null, replacement)
+  const eligible = (item: StructureItem, source: ProseMirrorNode) =>
+    ['math', 'docRuby', 'docNoteRef', 'docCellBoxes', 'docNestedTable'].includes(item.kind) ||
+    (item.kind === 'image' && !!source.nodeAt(item.from)?.attrs.rule)
+  const candidates = inventoryStructures(next).filter((item) => eligible(item, next))
+  const requested = Array.isArray(intent) ? intent : []
+  // Identical atoms have identical payloads. Match retained occurrences first;
+  // the declared deletion chooses which occurrence is omitted when counts shrink.
+  const originals = inventoryStructures(doc, from, to)
+    .filter((item) => eligible(item, doc))
+    .sort((a, b) => Number(requested.includes(a.id)) - Number(requested.includes(b.id)))
+  const kept: string[] = []
+  for (const item of originals) {
+    const original = doc.nodeAt(item.from)
+    const index = candidates.findIndex(
+      (candidate) => candidate.kind === item.kind && original?.eq(next.nodeAt(candidate.from)!),
+    )
+    if (index >= 0) {
+      candidates.splice(index, 1)
+      kept.push(item.id)
+    }
+  }
+  return kept
+}
+
 /** No omitted, duplicated, extra or unrelated object may stand in for actual deletion. */
 export function validateStructureDeletion(
   doc: ProseMirrorNode,
