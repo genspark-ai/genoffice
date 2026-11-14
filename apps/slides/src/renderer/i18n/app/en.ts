@@ -17,7 +17,7 @@ export const en = {
   appStatusOpened: 'Opened {name} ({count} slides)',
   appStatusNewBlank: 'Created a blank presentation',
   appStatusSaved: 'Saved',
-  appStatusSaveFailed: 'Save failed: {error}',
+  appStatusSaveFailed: 'Save failed: the file is in use by another program. Close it and try again.',
   appErrorCanceled: 'Canceled',
   appUnknownError: 'Unknown error',
   appStatusSavedAs: 'Saved',

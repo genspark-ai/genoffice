@@ -1442,8 +1442,10 @@ async function saveOnce(
     if (!auto) showToast(t('appSaved'))
     return true
   } catch (err) {
-    ctx.setStatus(t('appSaveFailed', { error: String(err) }))
-    if (!auto) showToast(t('appSaveFailed', { error: String(err) }), 'error')
+    // The toast stays short; keep the technical detail in the console.
+    console.error('[docs] save failed', err)
+    ctx.setStatus(t('appSaveFailed'))
+    if (!auto) showToast(t('appSaveFailed'), 'error')
     return false
   } finally {
     ctx.saveInFlightRef.current = false

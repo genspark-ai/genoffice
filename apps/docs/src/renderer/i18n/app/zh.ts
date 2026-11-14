@@ -44,7 +44,7 @@ export const zh = {
   // File / save status
   appUntitledDocx: '未命名文档.docx',
   appOpenedFile: '已打开 {name}',
-  appOpenFailed: '打开失败: {error}',
+  appOpenFailed: '打开失败：文件被占用、已移动或格式不支持',
   appDocTooLargeBlocks: '{name}：文档过大（{blocks} 个段落、{chars} 个字符），无法打开',
   appDocLargeReadOnly: '文档很大（{blocks} 个段落），已以只读模式打开；按 Esc 可开始编辑',
   appDocLargeSpellOff:
@@ -52,8 +52,8 @@ export const zh = {
   appFontsMissing: '文档字体未安装：{names}（已用替代字体显示）',
   appVerticalTextNotice: '文档包含竖排文字（暂以横排显示，保存不受影响）',
   appNewDocCreated: '已新建空白文档,可在左侧 AI 面板直接描述要生成的内容',
-  appNewFailed: '新建失败: {error}',
-  appSaveFailed: '保存失败: {error}',
+  appNewFailed: '新建失败：请检查目标文件夹是否可写',
+  appSaveFailed: '保存失败：文件被其他程序占用，请关闭后重试',
   appAutoSavedAt: '已自动保存 ({time})',
   appSaved: '已保存',
   // Section breaks
