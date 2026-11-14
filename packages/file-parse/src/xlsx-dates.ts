@@ -99,7 +99,8 @@ export function classifyFormatCode(code: string): DateFormatParts | null {
   if (!hasY && !hasD && !hasH && !hasS && !hasM) return null
   // 'm' is a month unless it sits next to hours or seconds (Excel's own rule): mmm alone is a month
   const minuteM = hasM && (elapsedMinutes || /h\s*[:.\-/]?\s*m|m\s*[:.\-/]?\s*s/.test(body))
-  const date = hasY || hasD || (hasM && !minuteM)
+  const months = body.replace(/h+\s*[:.\-/]?\s*m{1,2}(?!m)|(?<!m)m{1,2}\s*[:.\-/]?\s*s+/g, '')
+  const date = hasY || hasD || (hasM && (!minuteM || (!elapsedMinutes && months.includes('m'))))
   const time = hasH || hasS || minuteM || elapsed
   if (!date && !time) return null
   return {

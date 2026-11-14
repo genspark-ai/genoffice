@@ -103,8 +103,8 @@ const buttonWithText = (text: string): HTMLButtonElement | undefined =>
 
 /** the Read disclosure inside the row that names this skill */
 const disclosureFor = (name: string): HTMLDetailsElement | undefined => {
-  const row = [...host.querySelectorAll('.set-intg-row')].find((r) =>
-    r.querySelector('.set-field-label')?.textContent?.includes(name),
+  const row = [...host.querySelectorAll('.set-skill-card')].find((r) =>
+    r.querySelector('.set-skill-name')?.textContent?.includes(name),
   )
   return row?.querySelector('details') ?? undefined
 }

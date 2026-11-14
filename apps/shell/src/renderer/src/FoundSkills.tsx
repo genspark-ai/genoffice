@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
+import { useSlidingIndicator } from './settings-fx'
 import type { StringKey, TFunc } from './locale'
 import type { FoundSkill, RecommendedSkill } from '../../shared/found-skill'
 
@@ -21,6 +23,8 @@ export function FoundSkills({ t }: { t: TFunc }) {
   const [notice, setNotice] = useState<Notice | null>(null)
   const [tab, setTab] = useState<Category | 'all' | null>(null)
   const [section, setSection] = useState<Section | null>(null)
+  const tabsBox = useRef<HTMLDivElement | null>(null)
+  const tabsPill = useSlidingIndicator(tabsBox, '.set-intg-seg.active', section)
 
   const load = useCallback(async () => {
     // the method itself is checked, not just the bridge: a preload from before
@@ -106,7 +110,8 @@ export function FoundSkills({ t }: { t: TFunc }) {
 
       <div className="set-intg-head">
         {categories.length > 0 ? (
-          <div className="set-intg-tabs set-intg-sections" role="tablist">
+          <div ref={tabsBox} className="set-intg-tabs set-intg-sections" role="tablist">
+            <span ref={tabsPill} className="fx-indicator" aria-hidden="true" />
             {sectionTab('mine', `${t('intgSkillsMine')} (${skills.length})`)}
             {sectionTab('recommended', t('intgSkillsRecommended'))}
           </div>
@@ -163,10 +168,11 @@ export function FoundSkills({ t }: { t: TFunc }) {
       )}
 
       {shown === 'mine' && skills.length > 0 && (
-        <div className="set-intg-list">
-          {skills.map((skill) => (
+        <div className="set-skill-grid">
+          {skills.map((skill, i) => (
             <SkillRow
               key={skill.path}
+              index={i}
               t={t}
               skill={skill}
               action={
@@ -180,8 +186,12 @@ export function FoundSkills({ t }: { t: TFunc }) {
       )}
 
       {shown === 'recommended' && categories.length > 0 && (
-        <div className="set-intg-list">
-          <div className="set-intg-tabs" role="tablist" aria-label={t('intgSkillsRecommended')}>
+        <div className="set-skill-browse">
+          <div
+            className="set-intg-tabs set-skill-chips"
+            role="tablist"
+            aria-label={t('intgSkillsRecommended')}
+          >
             {(['all', ...categories] as const).map((c) => (
               <button
                 key={c}
@@ -195,13 +205,14 @@ export function FoundSkills({ t }: { t: TFunc }) {
               </button>
             ))}
           </div>
-          <div role="tabpanel">
+          <div role="tabpanel" className="set-skill-grid">
             {(current === 'all'
               ? recommended
               : recommended.filter((s) => categoryOf(s) === current)
-            ).map((skill) => (
+            ).map((skill, i) => (
               <SkillRow
                 key={skill.path}
+                index={i}
                 t={t}
                 skill={skill}
                 action={
@@ -259,7 +270,17 @@ function categoryOf(s: RecommendedSkill): Category {
 }
 
 /** One skill, with its instructions behind a disclosure fetched on open. */
-function SkillRow({ t, skill, action }: { t: TFunc; skill: FoundSkill; action?: React.ReactNode }) {
+function SkillRow({
+  t,
+  skill,
+  action,
+  index = 0,
+}: {
+  t: TFunc
+  skill: FoundSkill
+  action?: React.ReactNode
+  index?: number
+}) {
   const [body, setBody] = useState<string | null>(null)
   const [reading, setReading] = useState(false)
 
@@ -276,29 +297,32 @@ function SkillRow({ t, skill, action }: { t: TFunc; skill: FoundSkill; action?: 
   }
 
   return (
-    <div className="set-intg-row set-intg-skill">
-      <div className="set-field">
-        <div className="set-field-text">
-          <div className="set-field-stack">
-            <div className="set-field-label">{skill.name}</div>
-            <div className="set-field-desc">{skill.description}</div>
-          </div>
+    <div className="set-skill-card" style={{ '--i': index } as CSSProperties}>
+      <div className="set-skill-head">
+        <span className="set-skill-icon" aria-hidden="true">
+          {skill.name.slice(0, 1).toUpperCase()}
+        </span>
+        <div className="set-skill-text">
+          <div className="set-skill-name">{skill.name}</div>
+          <div className="set-skill-desc">{skill.description}</div>
         </div>
-        {action && <div className="set-intg-actions">{action}</div>}
       </div>
-      <details
-        className="set-intg-details"
-        onToggle={(e) => {
-          if ((e.currentTarget as HTMLDetailsElement).open) void show()
-        }}
-      >
-        <summary>{t('intgSkillsRead')}</summary>
-        {body === null ? null : (
-          <pre className="set-intg-code set-intg-code-block">
-            <code>{body}</code>
-          </pre>
-        )}
-      </details>
+      <div className="set-skill-foot">
+        <details
+          className="set-skill-details"
+          onToggle={(e) => {
+            if ((e.currentTarget as HTMLDetailsElement).open) void show()
+          }}
+        >
+          <summary>{t('intgSkillsRead')}</summary>
+          {body === null ? null : (
+            <pre className="set-intg-code set-intg-code-block">
+              <code>{body}</code>
+            </pre>
+          )}
+        </details>
+        {action && <div className="set-skill-action">{action}</div>}
+      </div>
     </div>
   )
 }
