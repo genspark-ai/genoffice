@@ -5453,6 +5453,27 @@ th[data-rev-fmt] {
 }
 
 /* M4 always-on pagination in the canvas: page gap = previous page's bottom margin (white) + inter-page band (gray) + next page's top margin (white) */
+/* Zero-height in-row cut seams: the paper bands are an absolute overlay, so the
+   seam never participates in the row height (the atLeast "long chin"). The
+   overlay is transparent: it only paints closing rules at the page edges, so the
+   row's text stays visible across the boundary. */
+.page-seam-overlays {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.page-seam {
+  position: absolute;
+  pointer-events: none;
+}
+
+.page-seam-rule {
+  position: absolute;
+  pointer-events: none;
+}
+
 .page-gap {
   position: relative;
   cursor: default;
@@ -12564,6 +12585,7 @@ body.docs-crop-active
     background: none !important;
   }
 
+  .page-seam-overlays,
   .ribbon,
   .status-bar,
   .ai-dock,
@@ -14120,7 +14142,7 @@ tr > .page-gap-cut {
   display: none;
 }
 
-.page-gap-cut::before {
+.page-gap-cut.page-cut-overlay::before {
   content: '';
   position: absolute;
   top: 0;

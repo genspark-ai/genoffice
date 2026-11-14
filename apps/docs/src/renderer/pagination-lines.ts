@@ -1427,7 +1427,7 @@ export function nextLineAnchor(
 }
 
 /** Screen top of a cut anchor's line (the char rect at the anchor, else its parent box) */
-function anchorLineTop(a: LineAnchor, zoomFactor: number): number | null {
+export function anchorLineTop(a: LineAnchor, zoomFactor: number): number | null {
   if (a.node instanceof Element) return a.node.getBoundingClientRect().top
   if (a.node.length > 0) {
     const range = anchorRange()
