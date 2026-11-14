@@ -1582,13 +1582,15 @@ describe('recorder: Delete, cross-paragraph cuts, paragraph marks, columns, AI a
     editor.destroy()
   })
 
-  it('AI edits with the ribbon tracking on are credited to the Settings user name', () => {
+  it('AI edits with the ribbon tracking on are credited to the AI author, not the user name', () => {
+    // the AI author is distinct from the Settings user name, so the review
+    // pane colors AI edits apart from the user's own typing (#2654)
     setAuthorName('leaf')
     const editor = trackingEditor([para(text('old text'))])
     replaceInlineRange(editor, 1, 4, [editor.schema.text('new')])
     const ranges = collectRevisions(editor.state.doc)
     expect(ranges.map((r) => r.kind).sort()).toEqual(['del', 'ins'])
-    expect(ranges.every((r) => r.author === 'leaf')).toBe(true)
+    expect(ranges.every((r) => r.author === 'AI')).toBe(true)
     setAuthorName('')
     editor.destroy()
   })

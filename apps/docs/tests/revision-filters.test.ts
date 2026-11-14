@@ -10,6 +10,7 @@ import {
   filterRevisions,
   revisionAuthorCss,
   revisionAuthors,
+  revisionAuthorsInkOrder,
   revisionExcerpt,
   revisionsInSelection,
   revisionShown,
@@ -114,6 +115,27 @@ describe('author inks', () => {
     const many = Array.from({ length: 10 }, (_, i) => `u${i}`)
     expect(authorInkIndex(many, 'u8')).toBe(0)
     expect(authorInkIndex(many, 'u9')).toBe(1)
+  })
+
+  it('pins the own user to the plain ink and colors everyone else by appearance', () => {
+    const ranges = ['AI', 'Bob', 'AI'].map((a) => rev('ins', a))
+    expect(revisionAuthorsInkOrder(ranges, 'Ann')).toEqual(['Ann', 'AI', 'Bob'])
+    expect(authorInkIndex(revisionAuthorsInkOrder(ranges, 'Ann'), 'AI')).toBe(1)
+  })
+
+  it('keeps the own user first even when their edits come last or never happen', () => {
+    expect(
+      revisionAuthorsInkOrder(
+        ['AI', 'Ann'].map((a) => rev('ins', a)),
+        'Ann',
+      ),
+    ).toEqual(['Ann', 'AI'])
+    expect(
+      revisionAuthorsInkOrder(
+        ['Bob'].map((a) => rev('ins', a)),
+        'Ann',
+      ),
+    ).toEqual(['Ann', 'Bob'])
   })
 
   it('emits no rule for the first author and escapes names in the others', () => {

@@ -77,6 +77,18 @@ export function revisionAuthors(ranges: Array<Pick<RevisionRange, 'author'>>): s
   return out
 }
 
+/** Ink order with the document's own user pinned first: index 0 keeps the
+    plain default ink (your own writing is the plain text colour, #2654),
+    and every other author — AI edits, human collaborators — follows in
+    first-appearance order so their marks get colored inks whoever came
+    first in the document. */
+export function revisionAuthorsInkOrder(
+  ranges: Array<Pick<RevisionRange, 'author'>>,
+  ownAuthor: string,
+): string[] {
+  return [ownAuthor, ...revisionAuthors(ranges).filter((author) => author !== ownAuthor)]
+}
+
 export function authorInkIndex(authors: string[], author: string): number {
   const i = authors.indexOf(author)
   return i < 0 ? 0 : i % REVISION_INK_COUNT
