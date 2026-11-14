@@ -162,6 +162,8 @@ export class OdfStyles {
     const out: OdfTextProps = {}
     if (a['fo:font-weight'] === 'bold' || a['fo:font-weight'] === 'normal')
       out.bold = a['fo:font-weight'] === 'bold'
+    else if (/^[1-9]00$/.test(a['fo:font-weight'] ?? ''))
+      out.bold = Number(a['fo:font-weight']) >= 600
     if (['italic', 'oblique', 'normal'].includes(a['fo:font-style']))
       out.italic = a['fo:font-style'] !== 'normal'
     if (a['style:text-underline-type'] !== undefined) {
