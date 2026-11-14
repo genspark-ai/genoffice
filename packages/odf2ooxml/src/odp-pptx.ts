@@ -174,9 +174,11 @@ function collectParagraphs(
     } else if (name === 'text:list-header') {
       collectParagraphs(node, ctx, out, 0)
     } else if (name === 'text:list-item') {
+      let firstParagraph = true
       for (const inner of childElements(node)) {
         if (inner.name === 'text:p' || inner.name === 'text:h') {
-          out.push(toParagraph(inner.node, ctx, listDepth))
+          out.push(toParagraph(inner.node, ctx, listDepth, !firstParagraph))
+          firstParagraph = false
         } else if (inner.name === 'text:list') {
           collectParagraphs(inner.node, ctx, out, listDepth + 1)
         }
@@ -185,7 +187,12 @@ function collectParagraphs(
   }
 }
 
-function toParagraph(node: XNode, ctx: WalkContext, listDepth: number): Paragraph {
+function toParagraph(
+  node: XNode,
+  ctx: WalkContext,
+  listDepth: number,
+  continuation = false,
+): Paragraph {
   const imagesBefore = ctx.images.length
   const runs = runsFromParagraph(node, ctx)
   // a picture anchored inside a run flow has no textbox representation
@@ -201,9 +208,9 @@ function toParagraph(node: XNode, ctx: WalkContext, listDepth: number): Paragrap
   if (listDepth > 0) {
     // a flat bullet per level: ODF's per-level markers live in list styles
     // whose full OOXML bullet model is out of the first cut's scope
-    paragraph.bullet = { type: 'char', char: '•' }
+    paragraph.bullet = continuation ? { type: 'none' } : { type: 'char', char: '•' }
     paragraph.marL = 457_200 * listDepth
-    paragraph.indent = -457_200
+    paragraph.indent = continuation ? 0 : -457_200
   }
   return paragraph
 }
