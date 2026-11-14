@@ -115,14 +115,14 @@ function paragraphStyleFacts(stylesXml: string | undefined): Map<string, StyleFa
     const name = /<w:name\b[^>]*w:val="([^"]*)"/.exec(body)?.[1] ?? ''
     const byName = /^heading\s*(\d)$/i.exec(name)
     const outline = /<w:outlineLvl\b[^>]*w:val="(\d)"/.exec(body)
-    const heading = byName
-      ? Number(byName[1])
-      : /^title$/i.test(name)
-        ? 1
-        : outline
-          ? Number(outline[1]) === 9
-            ? 0
-            : Number(outline[1]) + 1
+    const heading = outline
+      ? Number(outline[1]) === 9
+        ? 0
+        : Number(outline[1]) + 1
+      : byName
+        ? Number(byName[1])
+        : /^title$/i.test(name)
+          ? 1
           : undefined
     const numId = /<w:numId\b[^>]*w:val="([^"]+)"/.exec(body)?.[1]
     raw.set(id, {
