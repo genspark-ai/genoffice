@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
+  storyEscLeavesView,
   storyFocusSentence,
   storyHeadingLevel,
   storyIsQuote,
@@ -289,9 +290,9 @@ describe('story view Focus: the sentence the caret sits in', () => {
   })
 
   it('the CJK terminators end a sentence the same way', () => {
-    const text = '第一句。第二句！第三句'
+    const text = '\u7B2C\u4E00\u53E5\u3002\u7B2C\u4E8C\uFF01\u7B2C\u4E09'
     const [from, to] = storyFocusSentence(text, 4)
-    expect(text.slice(from, to)).toBe('第二句！')
+    expect(text.slice(from, to)).toBe('\u7B2C\u4E8C\uFF01')
   })
 
   it('the caret in the gap after a terminator starts the next sentence', () => {
@@ -299,6 +300,73 @@ describe('story view Focus: the sentence the caret sits in', () => {
     // the caret on the second space of the gap: the next sentence is active
     const [from, to] = storyFocusSentence(text, 21)
     expect(text.slice(from, to)).toBe('Second starts.')
+  })
+
+  it('a dot inside a number does not end a sentence', () => {
+    const text = 'Pi is about 3.14 in most books.'
+    // the caret after "3.14 in": the dots of 3.14 are not terminators, the
+    // block reads as the one sentence the caret sits in
+    const [from, to] = storyFocusSentence(text, 17)
+    expect(text.slice(from, to)).toBe(text)
+  })
+
+  it('a dot inside a host name and a version do not end a sentence', () => {
+    const text = 'See example.com for details. Version v2.0.1 ships today.'
+    // the caret inside "example": the host's dot is not a terminator, the
+    // sentence runs to its own stop
+    const [from, to] = storyFocusSentence(text, 7)
+    expect(text.slice(from, to)).toBe('See example.com for details. ')
+    // the caret inside "v2.0.1": the version's dots keep it whole too
+    const [vFrom, vTo] = storyFocusSentence(text, 40)
+    expect(text.slice(vFrom, vTo)).toBe('Version v2.0.1 ships today.')
+  })
+
+  it('a terminator before a closing quote ends the sentence at the quote', () => {
+    const text = 'He said "Stop." Then he left.'
+    // the caret on "Then": the previous sentence ends past the closing quote
+    const [from, to] = storyFocusSentence(text, 16)
+    expect(text.slice(0, from)).toBe('He said "Stop." ')
+    expect(text.slice(from, to)).toBe('Then he left.')
+  })
+})
+
+describe('story view: the Escape that leaves the view', () => {
+  const esc = (over: Partial<KeyboardEvent> = {}): KeyboardEvent =>
+    ({
+      key: 'Escape',
+      defaultPrevented: false,
+      isComposing: false,
+      target: null,
+      ...over,
+    }) as KeyboardEvent
+
+  it('a plain Escape on the editor leaves the view', () => {
+    expect(storyEscLeavesView(esc(), false)).toBe(true)
+  })
+
+  it('an Escape of an open IME composition does not', () => {
+    expect(storyEscLeavesView(esc({ isComposing: true }), false)).toBe(false)
+  })
+
+  it('an Escape a transient overlay already consumed does not', () => {
+    expect(storyEscLeavesView(esc({ defaultPrevented: true }), false)).toBe(false)
+  })
+
+  it('an Escape while an overlay that owns it is open does not', () => {
+    // the context menu, the comment popup, the dialogs each close their own Escape
+    expect(storyEscLeavesView(esc(), true)).toBe(false)
+  })
+
+  it('an Escape inside the find panel belongs to the panel', () => {
+    const host = document.createElement('div')
+    host.className = 'find-panel'
+    document.body.append(host)
+    expect(storyEscLeavesView(esc({ target: host }), false)).toBe(false)
+    host.remove()
+  })
+
+  it('another key never leaves the view', () => {
+    expect(storyEscLeavesView(esc({ key: 'Enter' }), false)).toBe(false)
   })
 })
 
@@ -374,6 +442,12 @@ describe('story view frame: the chrome leaves and Focus dims', () => {
     expect(blocksFor('.story-chrome .ai-dock')).toContain('display: none')
     expect(blocksFor('.story-chrome .nav-pane')).toContain('display: none')
     expect(blocksFor('.story-chrome .comments-pane')).toContain('display: none')
+  })
+
+  it('the find panel stays available in the story frame', () => {
+    // Ctrl/Cmd+F still sets showFind here, so the frame hides the chrome
+    // panes but not the panel — hiding it made the shortcut read as dead
+    expect(blocksFor('.story-chrome .find-panel')).toBe('')
   })
 
   it('the story canvas uses the themed canvas, not the print-preview one', () => {

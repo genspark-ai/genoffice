@@ -12855,7 +12855,6 @@ body.docs-crop-active
 .story-chrome .ribbon,
 .story-chrome .ai-dock,
 .story-chrome .nav-pane,
-.story-chrome .find-panel,
 .story-chrome .comments-pane,
 .story-chrome .split-pane {
   display: none !important;
@@ -12922,7 +12921,7 @@ body.docs-crop-active
 
 .story-bar-count {
   padding: 0 8px;
-  color: var(--text-faint);
+  color: var(--text-tertiary);
   user-select: none;
   white-space: nowrap;
 }

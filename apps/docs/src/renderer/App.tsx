@@ -1,5 +1,6 @@
 import { FloatWatch } from './editor/float-watch'
 import { scriptFontHtml } from './editor/script-fonts'
+import { storyEscLeavesView } from './editor/story-view'
 import { carryDocSeen } from './ai/tools'
 import { DOC_CSS_COMMITTED_EVENT, WRAP_WIDTHS_COMMITTED_EVENT } from './editor/cjk-punct-shrink'
 import { justifyShrinkPluginKey } from './editor/justify-shrink'
@@ -2908,18 +2909,19 @@ export function App() {
   const [listDialog, setListDialog] = useState<ListDialogKind | null>(null)
   const [listRecentsEpoch, setListRecentsEpoch] = useState(0)
 
-  // Story View: Esc leaves, back to the view the document came in from. A
-  // dialog the story bar opened owns this Escape instead (it closes itself).
+  // Story View: Esc leaves, back to the view the document came in from. An
+  // Escape meant for something else never claims the view (storyEscLeavesView):
+  // the context menu, the comment popup and the dialogs close on their own
+  // Escape instead, and so does an Escape inside the find panel.
   useEffect(() => {
     if (viewMode !== 'story') return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      if (showLinkModal || listDialog) return
+      if (!storyEscLeavesView(e, !!(showLinkModal || listDialog || ctxMenu || commentPopup))) return
       setViewMode(storyReturnView)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [viewMode, showLinkModal, listDialog, storyReturnView])
+  }, [viewMode, showLinkModal, listDialog, ctxMenu, commentPopup, storyReturnView])
   const recentLists = useMemo(
     () => ({
       bullets: recentListPresets('bullets'),

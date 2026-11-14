@@ -147,6 +147,36 @@ function buildStoryDecorations(doc: ProseMirrorNode, styles?: StoryStyles): Deco
 /** the characters that end a sentence for Focus mode; the CJK terminators read
     the same way their Latin counterparts do */
 const SENTENCE_END = /[.!?。！？…]/u
+/** the Latin terminators, which also occur inside words and numbers */
+const SENTENCE_LATIN_END = /[.!?]/u
+/** a closing quote or bracket belongs to the sentence it closes */
+const SENTENCE_CLOSER = /["'\u201d\u2019\u300d\u300f\uff09)}\]]/u
+
+/**
+ * Whether the terminator at `at` really ends a sentence. A Latin one ends it
+ * only where the text actually stops — whitespace, a closing quote/bracket, or
+ * the end of the block — so "3.14", "example.com" and "v2.0.1" keep their
+ * dots; the CJK terminators never sit inside a Latin run, so they always end
+ * one.
+ */
+function sentenceStopsAt(text: string, at: number): boolean {
+  if (!SENTENCE_LATIN_END.test(text[at]!)) return true
+  if (at + 1 >= text.length) return true
+  if (/\s/u.test(text[at + 1]!)) return true
+  if (SENTENCE_CLOSER.test(text[at + 1]!)) return at + 2 >= text.length || /\s/u.test(text[at + 2]!)
+  return false
+}
+
+/** One past the sentence a terminator at `at` ends: past a closing quote or
+    bracket that carries the stop ("Stop." — the quote stays with the
+    sentence), then past the trailing whitespace that forms the gap between
+    the sentences. */
+function sentenceEndAfter(text: string, at: number): number {
+  let j = at + 1
+  if (j < text.length && SENTENCE_CLOSER.test(text[j]!)) j++
+  while (j < text.length && /\s/u.test(text[j]!)) j++
+  return j
+}
 
 /**
  * The sentence the caret sits in, as ranges into the block's text: from after
@@ -157,27 +187,38 @@ const SENTENCE_END = /[.!?。！？…]/u
 export function storyFocusSentence(text: string, cursor: number): [number, number] {
   let start = 0
   for (let i = 0; i < cursor;) {
-    if (!SENTENCE_END.test(text[i]!)) {
+    if (!SENTENCE_END.test(text[i]!) || !sentenceStopsAt(text, i)) {
       i++
       continue
     }
     // the terminator's trailing whitespace belongs to the gap between the
     // sentences; the next sentence starts after it. A caret inside that gap is
     // about to write the next one — that one stays visible.
-    let j = i + 1
-    while (j < text.length && /\s/u.test(text[j]!)) j++
-    start = j
-    i = j
+    i = start = sentenceEndAfter(text, i)
   }
   let end = text.length
   for (let k = cursor; k < text.length; k++) {
-    if (!SENTENCE_END.test(text[k]!)) continue
-    let j = k + 1
-    while (j < text.length && /\s/u.test(text[j]!)) j++
-    end = j
+    if (!SENTENCE_END.test(text[k]!) || !sentenceStopsAt(text, k)) continue
+    end = sentenceEndAfter(text, k)
     break
   }
   return [start, end]
+}
+
+/**
+ * Whether an Escape reaches the story view's own "leave" action. An Escape
+ * meant for something else never claims the view: a composing IME, an event a
+ * transient overlay already consumed (the paste chip marks its Escape), one
+ * aimed inside the find panel (it closes itself), or one landing while an
+ * overlay the app knows about is open — the context menu, the comment popup
+ * and the dialogs each close on their own Escape.
+ */
+export function storyEscLeavesView(e: KeyboardEvent, overlayOpen: boolean): boolean {
+  if (e.key !== 'Escape') return false
+  if (e.defaultPrevented || e.isComposing) return false
+  if (overlayOpen) return false
+  if (e.target instanceof Element && e.target.closest('.find-panel')) return false
+  return true
 }
 
 /**
