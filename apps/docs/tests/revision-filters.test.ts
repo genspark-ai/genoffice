@@ -118,24 +118,26 @@ describe('author inks', () => {
   })
 
   it('pins the own user to the plain ink and colors everyone else by appearance', () => {
-    const ranges = ['AI', 'Bob', 'AI'].map((a) => rev('ins', a))
+    const ranges = ['AI', 'Bob', 'AI', 'Ann'].map((a) => rev('ins', a))
     expect(revisionAuthorsInkOrder(ranges, 'Ann')).toEqual(['Ann', 'AI', 'Bob'])
     expect(authorInkIndex(revisionAuthorsInkOrder(ranges, 'Ann'), 'AI')).toBe(1)
   })
 
-  it('keeps the own user first even when their edits come last or never happen', () => {
+  it('keeps the own user first even when their edits come last, and omits them when they have none', () => {
     expect(
       revisionAuthorsInkOrder(
         ['AI', 'Ann'].map((a) => rev('ins', a)),
         'Ann',
       ),
     ).toEqual(['Ann', 'AI'])
+    // an own author without revisions must not appear in the pane's author
+    // list (the e2e author-filter assertions count exactly the revising authors)
     expect(
       revisionAuthorsInkOrder(
         ['Bob'].map((a) => rev('ins', a)),
         'Ann',
       ),
-    ).toEqual(['Ann', 'Bob'])
+    ).toEqual(['Bob'])
   })
 
   it('emits no rule for the first author and escapes names in the others', () => {
