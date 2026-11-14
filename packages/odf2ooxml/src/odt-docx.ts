@@ -578,16 +578,21 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
       }
     }
   }
-  for (const { name, node: child } of childElements(node)) {
-    if (name === 'text:p') emitInto(child, { type: 'paragraph' })
-    else if (name === 'text:h') {
-      emitInto(child, {
-        type: 'heading',
-        level: clampHeadingLevel(attr(child, 'text:outline-level')),
-      })
-    } else if (name === 'text:list') emitListFlat(child)
-    else if (name === 'table:table') ctx.drops.add('nested-tables')
+  const emitChildren = (container: XNode): void => {
+    for (const { name, node: child } of childElements(container)) {
+      if (name === 'text:p') emitInto(child, { type: 'paragraph' })
+      else if (name === 'text:h') {
+        emitInto(child, {
+          type: 'heading',
+          level: clampHeadingLevel(attr(child, 'text:outline-level')),
+        })
+      } else if (name === 'text:list') emitListFlat(child)
+      else if (name === 'text:section') {
+        if (attr(child, 'text:display') !== 'none') emitChildren(child)
+      } else if (name === 'table:table') ctx.drops.add('nested-tables')
+    }
   }
+  emitChildren(node)
   // whatever inline images the cell paragraphs referenced cannot live inside
   // the flat cell XML — dropped and counted
   if (ctx.images.length > 0) {
