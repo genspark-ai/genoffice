@@ -164,6 +164,100 @@ describe('convertOdtToDocx', () => {
     )
   })
 
+  it('keeps every cell of a table that declares fewer columns than it paints', async () => {
+    // The column list is optional; the single-column fallback stopped the grid
+    // at one slot, so every cell after the first disappeared with no tally.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-row>' +
+      '<table:table-cell><text:p>AAACELL</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>BBB CELL</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>CCC CELL</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    for (const text of ['AAACELL', 'BBB CELL', 'CCC CELL']) expect(document).toContain(text)
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(3)
+    expect(result.dropped).toEqual([])
+  })
+
+  it('keeps a span that the declared column list cannot hold', async () => {
+    // The same narrowing also clamped a cell's colspan to the fallback's one
+    // column, so a merged cell came back unmerged.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-row><table:table-cell table:number-columns-spanned="3"><text:p>wide</text:p></table:table-cell></table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document).toContain('<w:gridSpan w:val="3"/>')
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(3)
+  })
+
+  it('does not widen a declared grid for a fully merged first row', async () => {
+    // LibreOffice's shape for a 3-column table whose first row is merged: the
+    // anchored cell plus one covered placeholder per merged-in column. The span
+    // does not add grid positions of its own — the placeholders are its slots.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-column table:number-columns-repeated="3"/>' +
+      '<table:table-row>' +
+      '<table:table-cell table:number-columns-spanned="3"><text:p>merged</text:p></table:table-cell>' +
+      '<table:covered-table-cell/><table:covered-table-cell/>' +
+      '</table:table-row>' +
+      '<table:table-row>' +
+      '<table:table-cell><text:p>cell x</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>cell y</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>cell z</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(3)
+    expect(document).toContain('<w:gridSpan w:val="3"/>')
+    for (const text of ['merged', 'cell x', 'cell y', 'cell z']) expect(document).toContain(text)
+  })
+
+  it('does not widen a declared grid for a cell merging two of its columns', async () => {
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-column table:number-columns-repeated="3"/>' +
+      '<table:table-row>' +
+      '<table:table-cell table:number-columns-spanned="2"><text:p>pair</text:p></table:table-cell>' +
+      '<table:covered-table-cell/>' +
+      '<table:table-cell><text:p>side</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(3)
+    expect(document).toContain('<w:gridSpan w:val="2"/>')
+    expect(document).toContain('pair')
+    expect(document).toContain('side')
+  })
+
+  it('counts a vertical merge placeholder as the position it covers', async () => {
+    // The second row's covered cell stands for the slot under the row span; it
+    // must not shift that row's own cell into a fourth column.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-column table:number-columns-repeated="2"/>' +
+      '<table:table-row>' +
+      '<table:table-cell table:number-rows-spanned="2"><text:p>tall</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>top right</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '<table:table-row>' +
+      '<table:covered-table-cell/>' +
+      '<table:table-cell><text:p>bottom right</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(2)
+    expect(document).toContain('bottom right')
+  })
+
   it('bounds a row span to the rows that exist', async () => {
     // table:number-rows-spanned is producer-controlled: an unclamped 200000
     // allocated that many empty rows, and Infinity never returned.
