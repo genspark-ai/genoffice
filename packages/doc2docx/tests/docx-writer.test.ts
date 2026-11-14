@@ -592,7 +592,11 @@ describe('styles.doc -> docx round trip (resolved stylesheet)', () => {
     docx = result.docx
     warnings = result.warnings
     parsed = await parseDocx(docx)
-    paragraphs = paragraphsOf(parsed)
+    // the "heading 1" style now comes through as a real heading block, so the
+    // list holds paragraphs and headings in document order
+    paragraphs = parsed.blocks.filter(
+      (block) => block.type === 'paragraph' || block.type === 'heading',
+    )
   })
 
   it('writes every paragraph and no longer warns about unresolved styles', () => {

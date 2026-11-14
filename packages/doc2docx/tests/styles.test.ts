@@ -1,6 +1,8 @@
+import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import {
   LegacyDocError,
+  convertLegacyDocToDocx,
   openLegacyDoc,
   parseStsh,
   readLegacyDocModel,
@@ -462,5 +464,80 @@ describe('stylesheet errors', () => {
     new DataView(stsh.buffer).setUint16(2 + 18 + 2 + 10, 500, true)
     const bytes = syntheticDoc({ stsh })
     expect(errorCode(() => readResolvedLegacyDocModel(bytes))).toBe('bad_stsh')
+  })
+})
+
+describe('converted styles: the stylesheet becomes .docx styles', () => {
+  // istd 0 Normal (never emitted), istd 1 heading 1 (bold CHPX), istd 2
+  // Centered (basedOn 1, centered PAPX), istd 3 Strong (bold character),
+  // istd 4 an empty cbStd == 0 slot, istd 10 the null character style
+  const nullCharStyles = Array.from({ length: 10 }, () => ({ empty: true }) as SyntheticStyle)
+  const doc = syntheticDoc({
+    styles: [
+      { name: 'Normal', kind: 'paragraph', sti: 0 },
+      { name: 'heading 1', kind: 'paragraph', sti: 1, basedOn: 0, chpxSprms: sprm(0x0835, [1]) },
+      { name: 'Centered', kind: 'paragraph', basedOn: 1, papxSprms: sprm(0x2461, [0x01]) },
+      { name: 'Strong', kind: 'character', chpxSprms: sprm(0x0835, [1]) },
+      { empty: true },
+      ...nullCharStyles,
+      { name: 'Default Paragraph Font', kind: 'character' },
+    ],
+    text: 'Head\rCentered\r',
+    paragraphs: [{ istd: 1 }, { istd: 2 }],
+    runSprms: sprm(0x4a30, [3, 0]),
+  })
+
+  it('emits the defined styles and the paragraphs and runs reference them', async () => {
+    const { docx } = await convertLegacyDocToDocx(doc)
+    const zip = await JSZip.loadAsync(docx)
+    const stylesXml = (await zip.file('word/styles.xml')!.async('string'))!
+    // definitions carry the source name, the chain-resolved properties and a
+    // basedOn that only points at an emitted base
+    expect(stylesXml).toContain(
+      '<w:style w:type="paragraph" w:styleId="w97-1"><w:name w:val="heading 1"/>',
+    )
+    expect(stylesXml).toContain(
+      '<w:style w:type="paragraph" w:styleId="w97-2"><w:name w:val="Centered"/>',
+    )
+    expect(stylesXml).toContain('<w:basedOn w:val="w97-1"/>')
+    // istd 2 inherits heading 1's bold through the chain: the flattened
+    // definition carries it in rPr beside its own centered pPr
+    expect(stylesXml).toContain(
+      '<w:style w:type="paragraph" w:styleId="w97-2"><w:name w:val="Centered"/>' +
+        '<w:basedOn w:val="w97-1"/><w:pPr><w:jc w:val="center"/></w:pPr>' +
+        '<w:rPr><w:b/><w:bCs/></w:rPr></w:style>',
+    )
+    expect(stylesXml).toContain(
+      '<w:style w:type="character" w:styleId="w97-3"><w:name w:val="Strong"/>',
+    )
+    // Normal is the template's own style and the empty slot emits nothing
+    expect(stylesXml).not.toContain('w:styleId="w97-0">')
+    expect(stylesXml).not.toContain('w:styleId="w97-4">')
+    const documentXml = (await zip.file('word/document.xml')!.async('string'))!
+    expect(documentXml).toContain('<w:pStyle w:val="w97-1"/>')
+    expect(documentXml).toContain('<w:pStyle w:val="w97-2"/>')
+    expect(documentXml).toContain('<w:rStyle w:val="w97-3"/>')
+  })
+
+  it('a run in the null character style and a paragraph on an empty slot stay unreferenced', async () => {
+    const plain = syntheticDoc({
+      styles: [
+        { name: 'Normal', kind: 'paragraph', sti: 0 },
+        { empty: true },
+        ...Array.from({ length: 9 }, () => ({ empty: true }) as SyntheticStyle),
+        { name: 'Default Paragraph Font', kind: 'character' },
+      ],
+      text: 'plain\r',
+      paragraphs: [{ istd: 1 }],
+      runSprms: sprm(0x4a30, [10, 0]),
+    })
+    const { docx } = await convertLegacyDocToDocx(plain)
+    const zip = await JSZip.loadAsync(docx)
+    const documentXml = (await zip.file('word/document.xml')!.async('string'))!
+    expect(documentXml).not.toContain('<w:pStyle')
+    expect(documentXml).not.toContain('<w:rStyle')
+    const stylesXml = (await zip.file('word/styles.xml')!.async('string'))!
+    expect(stylesXml).not.toContain('w:styleId="w97-1">')
+    expect(stylesXml).not.toContain('w:styleId="w97-10">')
   })
 })

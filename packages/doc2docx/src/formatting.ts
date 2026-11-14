@@ -68,6 +68,10 @@ export interface CharacterFormatting {
   fontNames?: FontNames
   /** character style index (sprmCIstd) */
   styleIndex?: number
+  /** w:styleId the .docx writer emits for that character style (styles.ts
+      legacyStyleId); set by the resolver when the style exists and is not the
+      null style, so run references and the emitted definitions always match */
+  styleId?: string
   /** raised/lowered position in half-points (sprmCHpsPos) */
   positionHalfPoints?: number
   /** minimum kerning in half-points (sprmCHpsKern) */
@@ -139,6 +143,10 @@ export function isPositionedFrame(frame: ParagraphFrame | undefined): frame is P
 export interface ParagraphFormatting {
   /** paragraph style index (istd from the PapxInFkp) */
   styleIndex?: number
+  /** w:styleId the .docx writer emits for that paragraph style (styles.ts
+      legacyStyleId); set by the resolver when the style exists and is not
+      Normal, so paragraph references and the emitted definitions match */
+  styleId?: string
   alignment?: 'left' | 'center' | 'right' | 'justify' | 'distribute'
   /** the alignment came from sprmPJc (logical, flips in a bidi paragraph) rather than sprmPJc80 (physical) */
   alignmentLogical?: boolean
