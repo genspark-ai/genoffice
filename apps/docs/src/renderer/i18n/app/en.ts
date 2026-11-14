@@ -43,7 +43,7 @@ export const en = {
   appCharacter: 'Character',
   appUntitledDocx: 'Untitled.docx',
   appOpenedFile: 'Opened {name}',
-  appOpenFailed: 'Open failed: {error}',
+  appOpenFailed: 'Open failed: the file is in use, moved, or unsupported',
   appDocTooLargeBlocks:
     '{name}: the document is too large to open ({blocks} paragraphs, {chars} characters)',
   appDocLargeReadOnly:
@@ -54,8 +54,8 @@ export const en = {
   appVerticalTextNotice:
     'This document contains vertical text (shown horizontally for now; saving is unaffected)',
   appNewDocCreated: 'Blank document created. Describe what to generate in the AI pane on the left.',
-  appNewFailed: 'Failed to create document: {error}',
-  appSaveFailed: 'Save failed: {error}',
+  appNewFailed: 'Failed to create document: check that the target folder is writable. ({error})',
+  appSaveFailed: 'Save failed: the file is in use by another program. Close it and try again.',
   appAutoSavedAt: 'AutoSaved ({time})',
   appSaved: 'Saved',
   appSectionBreakInserted: 'Section break inserted ({type})',

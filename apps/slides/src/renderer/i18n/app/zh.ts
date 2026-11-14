@@ -16,7 +16,7 @@ export const zh = {
   appStatusOpened: '已打开 {name}（{count} 页）',
   appStatusNewBlank: '已新建空白演示文稿',
   appStatusSaved: '已保存',
-  appStatusSaveFailed: '保存失败：{error}',
+  appStatusSaveFailed: '保存失败：文件被其他程序占用，请关闭后重试',
   appErrorCanceled: '取消',
   appUnknownError: '未知错误',
   appStatusSavedAs: '已保存',

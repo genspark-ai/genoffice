@@ -17,7 +17,7 @@ export const zhTW = {
   appStatusOpened: '已開啟 {name}（{count} 頁）',
   appStatusNewBlank: '已建立空白簡報',
   appStatusSaved: '已儲存',
-  appStatusSaveFailed: '儲存失敗：{error}',
+  appStatusSaveFailed: '儲存失敗：檔案被其他程式占用，請關閉後重試',
   appErrorCanceled: '取消',
   appUnknownError: '未知錯誤',
   appStatusSavedAs: '已儲存',
