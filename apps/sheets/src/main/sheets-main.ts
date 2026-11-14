@@ -2947,6 +2947,25 @@ export async function requestSheetsClose(
 
 let coreIpcRegistered = false
 
+/**
+ * CSV export targets a view's user approved through a save dialog, keyed by
+ * webContents id. exportCsv honors a renderer-supplied targetPath only when
+ * it is in this set — the Save-As CSV hand-off is the one flow where the
+ * renderer carries a path back to a write, and the grant is what keeps that
+ * from being a "renderer names any file, the main process writes it" channel.
+ */
+const csvExportGrantsByWc = new Map<number, Set<string>>()
+
+function grantCsvExportTarget(wcId: number, path: string): void {
+  let grants = csvExportGrantsByWc.get(wcId)
+  if (!grants) {
+    grants = new Set()
+    csvExportGrantsByWc.set(wcId, grants)
+    webContents.fromId(wcId)?.once('destroyed', () => csvExportGrantsByWc.delete(wcId))
+  }
+  grants.add(path)
+}
+
 export function registerSheetsIpc(): void {
   if (coreIpcRegistered) return
   coreIpcRegistered = true
@@ -3844,7 +3863,16 @@ export function registerSheetsIpc(): void {
       if (response === 0) return { canceled: true, saveAsXlsxInstead: true }
       if (response === 2) return { canceled: true }
     }
+    // A renderer-supplied targetPath is honored only when this view's user
+    // picked exactly that path in a save dialog (the Save-As CSV hand-off).
+    // Without the grant check this channel was the suite's one "renderer
+    // names the file, the main process writes it" primitive: any renderer
+    // could overwrite any .csv on disk — or plant one anywhere — with
+    // attacker-chosen content, no dialog, no confirmation.
     let pickedPath = request.targetPath
+    if (pickedPath !== undefined && !csvExportGrantsByWc.get(event.sender.id)?.has(pickedPath)) {
+      pickedPath = undefined
+    }
     if (pickedPath === undefined) {
       const selection = await saveFileDialog(event, {
         defaultPath: request.fileName,
@@ -4019,6 +4047,7 @@ export function registerSheetsIpc(): void {
       // A CSV pick can't ride the xlsx pipeline: hand the path back so the
       // renderer serializes the active sheet through the CSV export channel.
       if (!macroEnabled && selection.filePath.toLowerCase().endsWith('.csv')) {
+        grantCsvExportTarget(event.sender.id, selection.filePath)
         return { canceled: true, csvSaveAsPath: selection.filePath }
       }
       targetPath = selection.filePath.toLowerCase().endsWith(`.${ext}`)
