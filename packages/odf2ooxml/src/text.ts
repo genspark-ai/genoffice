@@ -102,6 +102,10 @@ function runsFromChildren(
           walk(nodeChildren(node), spanProps, href)
           break
         }
+        case 'text:hidden-text':
+          if (!['true', '1'].includes(attr(node, 'text:is-hidden') ?? ''))
+            walk(nodeChildren(node), props, href)
+          break
         case 'text:a': {
           const target = attr(node, 'xlink:href') ?? ''
           const linkProps = mergeProps(
