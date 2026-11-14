@@ -1,3 +1,4 @@
+// Modified for ForaOffice: retain logical table coordinates when exporting images and cell content.
 import type { Editor } from '@tiptap/core'
 import { isTrackedDeleted } from './ai/doc-utils'
 import { serializeRangeToHtml } from './ai/protocol'
