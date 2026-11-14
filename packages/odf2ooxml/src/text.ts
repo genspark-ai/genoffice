@@ -7,6 +7,7 @@
  */
 
 import type { OdfStyles, OdfTextProps } from './styles'
+import { mergeTextProps } from './styles'
 import { odfLengthToEmu } from './units'
 import { XNode, attr, isTextNode, nodeChildren, nodeName, textOfNode } from './xml'
 
@@ -198,7 +199,7 @@ function mergeProps(
   override: OdfTextProps | null,
 ): OdfTextProps | undefined {
   if (!override) return baseProps
-  return { ...(baseProps ?? {}), ...override }
+  return mergeTextProps(baseProps ?? {}, override)
 }
 
 /** collapse runs whose formatting is identical — ODF spans split more eagerly than a reader wants */
