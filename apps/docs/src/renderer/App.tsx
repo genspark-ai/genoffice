@@ -984,6 +984,15 @@ export function App() {
   const [showReviewPane, setShowReviewPane] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('print')
   const [readMode, setReadMode] = useState(false)
+  // Read mode is a print-layout reading, so a view pick and Read Mode are exclusive
+  const switchView = (mode: ViewMode) => {
+    setViewMode(mode)
+    setReadMode(false)
+  }
+  const setReadModeExclusive = (v: boolean) => {
+    if (v) setViewMode('print')
+    setReadMode(v)
+  }
   const [showGrid, setShowGrid] = useState(false)
   const [splitView, setSplitView] = useState(false)
   const [showPagePreview, setShowPagePreview] = useState(false)
@@ -2157,6 +2166,11 @@ export function App() {
     if (!editor) return
     editor.commands.setStoryViewActive(viewMode === 'story')
   }, [editor, viewMode])
+
+  // Backstop for paths that bypass the view buttons (read-only opens land in read mode)
+  useEffect(() => {
+    if (readMode && viewMode !== 'print') setViewMode('print')
+  }, [readMode, viewMode])
 
   // window title follows the document, so the OS window list and Switch Window show file names
   useEffect(() => {
@@ -7749,8 +7763,8 @@ export function App() {
     },
     onProtectDoc: () => setShowProtectDialog(true),
     onCompare: () => void compareWithFile(),
-    onViewMode: setViewMode,
-    onReadMode: setReadMode,
+    onViewMode: switchView,
+    onReadMode: setReadModeExclusive,
     onShowGrid: setShowGrid,
     onSplitView: setSplitView,
     onPagePreview: () => setShowPagePreview(true),
@@ -8867,10 +8881,7 @@ export function App() {
                     className={`status-view-btn${viewMode === 'print' && !readMode ? ' on' : ''}`}
                     data-tip={t('ribbonPrintLayout')}
                     aria-label={t('ribbonPrintLayout')}
-                    onClick={() => {
-                      setViewMode('print')
-                      setReadMode(false)
-                    }}
+                    onClick={() => switchView('print')}
                   >
                     <IconPrintLayout size={14} />
                   </button>
@@ -8878,7 +8889,7 @@ export function App() {
                     className={`status-view-btn${viewMode === 'web' ? ' on' : ''}`}
                     data-tip={t('ribbonWebLayout')}
                     aria-label={t('ribbonWebLayout')}
-                    onClick={() => setViewMode('web')}
+                    onClick={() => switchView('web')}
                   >
                     <IconWebLayout size={14} />
                   </button>
@@ -8886,7 +8897,7 @@ export function App() {
                     className={`status-view-btn${viewMode === 'outline' ? ' on' : ''}`}
                     data-tip={t('ribbonOutlineView')}
                     aria-label={t('ribbonOutlineView')}
-                    onClick={() => setViewMode('outline')}
+                    onClick={() => switchView('outline')}
                   >
                     <IconOutlineView size={14} />
                   </button>
@@ -8894,7 +8905,7 @@ export function App() {
                     className={`status-view-btn${viewMode === 'story' ? ' on' : ''}`}
                     data-tip={t('ribbonStoryView')}
                     aria-label={t('ribbonStoryView')}
-                    onClick={() => setViewMode('story')}
+                    onClick={() => switchView('story')}
                   >
                     <IconStoryView size={14} />
                   </button>
@@ -8902,7 +8913,7 @@ export function App() {
                     className={`status-view-btn${readMode ? ' on' : ''}`}
                     data-tip={t('ribbonReadMode')}
                     aria-label={t('ribbonReadMode')}
-                    onClick={() => setReadMode((v) => !v)}
+                    onClick={() => setReadModeExclusive(!readMode)}
                   >
                     <IconReadMode size={14} />
                   </button>
