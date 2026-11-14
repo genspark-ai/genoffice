@@ -103,7 +103,11 @@ function runsFromChildren(
         }
         case 'text:a': {
           const target = attr(node, 'xlink:href') ?? ''
-          walk(nodeChildren(node), props, LINKABLE_HREF.test(target) ? target : href)
+          const linkProps = mergeProps(
+            props,
+            ctx.styles.textProps(attr(node, 'text:style-name'), ['text'], false),
+          )
+          walk(nodeChildren(node), linkProps, LINKABLE_HREF.test(target) ? target : href)
           break
         }
         case 'text:tab':
