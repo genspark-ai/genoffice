@@ -51,6 +51,7 @@ export interface OdfListLevel {
 
 interface StyleDef {
   family: string
+  fontSizePercent?: number
   parent?: string
   text?: OdfTextProps
   para?: OdfParaProps
@@ -107,7 +108,9 @@ export class OdfStyles {
     const family = attr(node, 'style:family')
     if (!name || !family) return
     if (family === 'table-column') {
-      const properties = firstChild(node, 'style:column-properties')
+      const properties =
+        firstChild(node, 'style:table-column-properties') ??
+        firstChild(node, 'style:column-properties')
       const width = properties ? odfLengthToEmu(attr(properties, 'style:column-width')) : null
       if (width !== null && width > 0) this.columnWidths.set(name, width)
       return
@@ -119,8 +122,12 @@ export class OdfStyles {
       return
     }
     const props = this.readProps(node)
+    const textProperties = firstChild(node, 'style:text-properties')
+    const fontSize = textProperties ? attr(textProperties, 'fo:font-size') : undefined
+    const percent = fontSize && /^(\d+(?:\.\d+)?)%$/.exec(fontSize.trim())
     this.defs.set(`${family}:${name}`, {
       family,
+      fontSizePercent: percent ? Number(percent[1]) : undefined,
       parent: attr(node, 'style:parent-style-name'),
       text: props.text,
       para: props.para,
@@ -153,8 +160,10 @@ export class OdfStyles {
   private readTextProps(node: XNode): OdfTextProps | undefined {
     const a = nodeAttrs(node)
     const out: OdfTextProps = {}
-    if (a['fo:font-weight'] === 'bold') out.bold = true
-    if (a['fo:font-style'] === 'italic') out.italic = true
+    if (a['fo:font-weight'] === 'bold' || a['fo:font-weight'] === 'normal')
+      out.bold = a['fo:font-weight'] === 'bold'
+    if (['italic', 'oblique', 'normal'].includes(a['fo:font-style']))
+      out.italic = a['fo:font-style'] !== 'normal'
     if (a['style:text-underline-type'] !== undefined) {
       out.underline = a['style:text-underline-type'] !== 'none'
     } else if (a['style:text-underline-style'] !== undefined) {
@@ -171,12 +180,15 @@ export class OdfStyles {
     if (color) out.color = color
     const shading = odfColorToHex(a['fo:background-color'])
     if (shading) out.shading = shading
+    else if (a['fo:background-color'] === 'transparent') out.shading = undefined
     const fontName = a['style:font-name']
     if (fontName) out.font = this.fonts.get(fontName) ?? fontName
+    else if (a['fo:font-family']) out.font = a['fo:font-family'].replace(/^['"]|['"]$/g, '')
     const position = a['style:text-position']
     if (position) {
       if (/^super/i.test(position.trim())) out.vertAlign = 'superscript'
       else if (/^sub/i.test(position.trim())) out.vertAlign = 'subscript'
+      else if (/^0%(?:\s|$)/.test(position.trim())) out.vertAlign = undefined
     }
     const transform = a['style:text-transform'] ?? a['fo:text-transform']
     if (transform === 'uppercase') out.caps = 'all'
@@ -194,9 +206,9 @@ export class OdfStyles {
     else if (align === 'center') out.align = 'center'
     else if (align === 'end' || align === 'right') out.align = 'right'
     else if (align === 'justify') out.align = 'justify'
-    const before = odfLengthToEmu(a['fo:margin-top'])
+    const before = odfLengthToEmu(a['fo:margin-top'] ?? a['fo:margin'])
     if (before !== null) out.spaceBeforeTw = emuToTwips(before)
-    const after = odfLengthToEmu(a['fo:margin-bottom'])
+    const after = odfLengthToEmu(a['fo:margin-bottom'] ?? a['fo:margin'])
     if (after !== null) out.spaceAfterTw = emuToTwips(after)
     const lineHeight = a['fo:line-height']
     if (lineHeight) {
@@ -208,20 +220,21 @@ export class OdfStyles {
         if (multiple <= 10) out.lineSpacing = multiple
       } else {
         const fixed = odfLengthToEmu(lineHeight)
-        if (fixed !== null) out.lineAtLeastTw = emuToTwips(fixed)
+        if (fixed !== null) out.lineExactTw = emuToTwips(fixed)
       }
     }
     const atLeast = odfLengthToEmu(a['style:line-height-at-least'])
     if (atLeast !== null) out.lineAtLeastTw = emuToTwips(atLeast)
     const exact = odfLengthToEmu(a['style:line-spacing'])
     if (exact !== null) out.lineExactTw = emuToTwips(exact)
-    const left = odfLengthToEmu(a['fo:margin-left'])
+    const left = odfLengthToEmu(a['fo:margin-left'] ?? a['fo:margin'])
     if (left !== null) out.indentLeftTw = emuToTwips(left)
-    const right = odfLengthToEmu(a['fo:margin-right'])
+    const right = odfLengthToEmu(a['fo:margin-right'] ?? a['fo:margin'])
     if (right !== null) out.indentRightTw = emuToTwips(right)
     const first = odfLengthToEmu(a['fo:text-indent'])
     if (first !== null) out.indentFirstLineTw = emuToTwips(first)
-    if (a['fo:break-before'] === 'page') out.pageBreakBefore = true
+    if (a['fo:break-before'] === 'page' || a['fo:break-before'] === 'auto')
+      out.pageBreakBefore = a['fo:break-before'] === 'page'
     return Object.keys(out).length > 0 ? out : undefined
   }
 
@@ -236,7 +249,7 @@ export class OdfStyles {
       if (childName === 'text:list-level-style-bullet') {
         levels.set(level, {
           kind: 'bullet',
-          bulletChar: attr(child, 'style:bullet-char') ?? '•',
+          bulletChar: attr(child, 'text:bullet-char') ?? attr(child, 'style:bullet-char') ?? '•',
           ...listLevelIndent(child),
         })
       } else if (
@@ -258,8 +271,12 @@ export class OdfStyles {
   }
 
   /** text/paragraph props for a style name, resolved along the parent chain. */
-  textProps(styleName: string | undefined, families: readonly string[]): OdfTextProps | null {
-    return this.resolve(styleName, families).text
+  textProps(
+    styleName: string | undefined,
+    families: readonly string[],
+    includeDefaults = true,
+  ): OdfTextProps | null {
+    return this.resolve(styleName, families, includeDefaults).text
   }
 
   paraProps(styleName: string | undefined, families: readonly string[]): OdfParaProps | null {
@@ -269,6 +286,7 @@ export class OdfStyles {
   private resolve(
     styleName: string | undefined,
     families: readonly string[],
+    includeDefaults = true,
   ): { text: OdfTextProps | null; para: OdfParaProps | null } {
     const chain: StyleDef[] = []
     const seen = new Set<string>()
@@ -280,11 +298,17 @@ export class OdfStyles {
       chain.push(def)
       current = def.parent
     }
-    let text: OdfTextProps = { ...(this.defaults.text ?? {}) }
+    let text: OdfTextProps = includeDefaults ? { ...(this.defaults.text ?? {}) } : {}
     let para: OdfParaProps = { ...(this.defaults.para ?? {}) }
     // parent first so the style itself wins
     for (let index = chain.length - 1; index >= 0; index--) {
+      const inheritedSize = text.sizePt
       if (chain[index].text) text = { ...text, ...chain[index].text }
+      const percent = chain[index].fontSizePercent
+      if (percent !== undefined && inheritedSize !== undefined) {
+        const size = (inheritedSize * percent) / 100
+        if (size > 0 && odfLengthToEmu(`${size}pt`) !== null) text.sizePt = size
+      }
       if (chain[index].para) para = { ...para, ...chain[index].para }
     }
     return {
@@ -370,6 +394,18 @@ export class OdfStyles {
 function listLevelIndent(node: XNode): { indentLeftTw?: number; hangingTw?: number } {
   const properties = firstChild(node, 'style:list-level-properties')
   if (!properties) return {}
+  const alignment = firstChild(properties, 'style:list-level-label-alignment')
+  if (
+    attr(properties, 'text:list-level-position-and-space-mode') === 'label-alignment' &&
+    alignment
+  ) {
+    const left = odfLengthToEmu(attr(alignment, 'fo:margin-left'))
+    const first = odfLengthToEmu(attr(alignment, 'fo:text-indent'))
+    return {
+      ...(left !== null ? { indentLeftTw: emuToTwips(left) } : {}),
+      ...(first !== null && first <= 0 ? { hangingTw: emuToTwips(-first) } : {}),
+    }
+  }
   const a = nodeAttrs(properties)
   const spaceBefore = odfLengthToEmu(a['text:space-before'])
   const minWidth = odfLengthToEmu(a['text:min-label-width'])

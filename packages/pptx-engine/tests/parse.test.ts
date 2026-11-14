@@ -805,6 +805,26 @@ describe('table (p:graphicFrame a:tbl) parsing', () => {
     expect(c00.borders.l).toEqual({ fill: { type: 'solid', color: '#000000' }, width: 12700 })
   })
 
+  it('keeps a bare a14:m equation a producer wrote without mc:AlternateContent', () => {
+    // WPS/Aspose table cells carry the equation directly, with no Fallback run
+    const math =
+      '<a14:m><m:oMathPara xmlns:m="m"><m:oMath>' +
+      '<m:r><m:t>E</m:t></m:r><m:r><m:t>=</m:t></m:r>' +
+      '<m:sSup><m:e><m:r><m:t>mc</m:t></m:r></m:e>' +
+      '<m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup>' +
+      '</m:oMath></m:oMathPara></a14:m>'
+    const withMath = tableXml.replace('<a:r><a:t>H2</a:t></a:r>', math)
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideXml.replace(tableXml, withMath),
+      ctx: {},
+    })
+    const run = (slide.elements[0] as any).rows[0][1].text.paragraphs[0].runs[0]
+    // the m:t tokens are the display text, and the block rides in rawXml for save
+    expect(run.text).toBe('E=mc2')
+    expect(run.rawXml).toContain('<m:sup><m:r><m:t>2</m:t></m:r></m:sup>')
+  })
+
   it('table element keeps byte fidelity (originalXml passthrough on save)', () => {
     const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml, ctx: {} })
     expect(reassembleSlideXml(slide)).toBe(slideXml)

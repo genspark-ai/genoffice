@@ -254,6 +254,9 @@ export function IntegrationsPane({
               data-state={state.status}
             >
               <div className="set-field">
+                <span className="set-intg-avatar" aria-hidden="true">
+                  {row.label.slice(0, 1).toUpperCase()}
+                </span>
                 <div className="set-field-text">
                   <div className="set-field-stack">
                     <div className="set-field-label">{row.label}</div>

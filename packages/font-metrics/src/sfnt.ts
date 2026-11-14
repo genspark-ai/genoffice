@@ -39,7 +39,19 @@ export function appleFontAssetRoots(assetsV2 = '/System/Library/AssetsV2'): stri
   return roots.sort((a, b) => b.ver - a.ver).map((r) => r.path)
 }
 
-function fontDirs(): string[] {
+/**
+ * Per-user font directory on Linux (fontconfig's XDG location). Desktop "install font for
+ * this user" actions (KDE, GNOME, Dolphin, copy-to-~/.local/share/fonts by hand) land here,
+ * so leaving it out of the scan makes those families invisible to metrics while Chromium —
+ * which resolves through fontconfig — still draws them. Layout then falls back to heuristic
+ * advances: every run after a Latin one starts too early, by roughly half an em, so a CJK
+ * glyph covers the last digit of the run before it.
+ */
+export function xdgUserFontDir(dataHome = process.env.XDG_DATA_HOME): string {
+  return join(dataHome || join(homedir(), '.local', 'share'), 'fonts')
+}
+
+export function fontDirs(): string[] {
   switch (process.platform) {
     case 'darwin':
       return [
@@ -54,7 +66,12 @@ function fontDirs(): string[] {
     case 'win32':
       return ['C:\\Windows\\Fonts', join(homedir(), 'AppData/Local/Microsoft/Windows/Fonts')]
     default:
-      return ['/usr/share/fonts', '/usr/local/share/fonts', join(homedir(), '.fonts')]
+      return [
+        '/usr/share/fonts',
+        '/usr/local/share/fonts',
+        xdgUserFontDir(),
+        join(homedir(), '.fonts'),
+      ]
   }
 }
 

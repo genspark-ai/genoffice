@@ -167,8 +167,12 @@ function collectParagraphs(
       out.push(toParagraph(node, ctx, listDepth))
     } else if (name === 'text:h') {
       out.push(toParagraph(node, ctx, listDepth))
+    } else if (name === 'text:section') {
+      if (attr(node, 'text:display') !== 'none') collectParagraphs(node, ctx, out, listDepth)
     } else if (name === 'text:list') {
       collectParagraphs(node, ctx, out, listDepth + 1)
+    } else if (name === 'text:list-header') {
+      collectParagraphs(node, ctx, out, 0)
     } else if (name === 'text:list-item') {
       for (const inner of childElements(node)) {
         if (inner.name === 'text:p' || inner.name === 'text:h') {
@@ -230,10 +234,10 @@ function frameBox(
     const fallback = DEFAULT_FRAME_BOX[attr(frame, 'presentation:class') ?? '']
     if (!fallback) return null
     return {
-      x: Math.round(fallback.x * deck.widthEmu),
-      y: Math.round(fallback.y * deck.heightEmu),
-      cx: Math.round(fallback.w * deck.widthEmu),
-      cy: Math.round(fallback.h * deck.heightEmu),
+      x: x ?? Math.round(fallback.x * deck.widthEmu),
+      y: y ?? Math.round(fallback.y * deck.heightEmu),
+      cx: width === null ? Math.round(fallback.w * deck.widthEmu) : Math.max(1, width),
+      cy: height === null ? Math.round(fallback.h * deck.heightEmu) : Math.max(1, height),
     }
   }
   return { x, y, cx: Math.max(1, width), cy: Math.max(1, height) }

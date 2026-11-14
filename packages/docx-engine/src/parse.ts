@@ -2996,8 +2996,13 @@ function extractTextboxes(
     shape: XNode,
     groupFill?: string,
     nested?: boolean,
-    grouped?: boolean,
+    ctm?: GroupCtm | null,
   ): TextboxDisplay | null => {
+    // a grouped shape's xfrm lives in the group's child space (chOff/chExt):
+    // sizes are measured in drawing EMU, before any rounding to px
+    const grouped = !!ctm
+    const scaleX = ctm?.sx ?? 1
+    const scaleY = ctm?.sy ?? 1
     const contents: XNode[] = []
     collectNodes(childrenOf(shape), 'w:txbxContent', contents)
     // only top-level contents of a top-level shape consume a save-path
@@ -3029,7 +3034,7 @@ function extractTextboxes(
     const custGeomNode = spPr ? findChild(spPr, 'a:custGeom') : undefined
     if (contents.length === 0) {
       if (prstOf && LINE_PRSTS.has(prstOf)) {
-        if (hasLineShapes) return lineBoxOf(shape, ctx.themeColors)
+        if (hasLineShapes) return lineBoxOf(shape, ctx.themeColors, ctm)
         if (!opts?.shapes) return null
         // anchored gallery connector: a real vertical extent, flips, or arrow
         // ends mark a drawn connector; plain near-flat lines stay on the
@@ -3043,8 +3048,8 @@ function extractTextboxes(
           const type = attrsOf(findChild(ln ?? {}, name) ?? {})['type']
           return !!type && type !== 'none'
         })
-        return (Number.isFinite(cy) && cy > 130000) || flipped || arrowed
-          ? lineBoxOf(shape, ctx.themeColors)
+        return (Number.isFinite(cy) && cy * scaleY > 130000) || flipped || arrowed
+          ? lineBoxOf(shape, ctx.themeColors, ctm)
           : null
       }
       if (hasLineShapes && !opts?.shapes) return null
@@ -3060,7 +3065,7 @@ function extractTextboxes(
         // and nothing else would paint it (the decorative-rule path only
         // takes a lone drawing paragraph)
         const filledSibling = (grouped || multiDrawing) && !!findChild(spPr ?? {}, 'a:solidFill')
-        if (!filledSibling && (!Number.isFinite(cy) || cy <= 130000)) return null
+        if (!filledSibling && (!Number.isFinite(cy) || cy * scaleY <= 130000)) return null
       }
     }
     const box: TextboxDisplay = { paras: [] }
@@ -3142,14 +3147,14 @@ function extractTextboxes(
       if (Number.isFinite(rot) && rot !== 0) box.rotDeg = Math.round(rot / 60000)
       const ext = findChild(xfrm ?? {}, 'a:ext')
       const cx = ext ? parseInt(attrsOf(ext)['cx'] ?? '', 10) : NaN
-      if (Number.isFinite(cx) && cx > 0) box.widthPx = Math.round(cx / EMU_PER_PX)
+      if (Number.isFinite(cx) && cx > 0) box.widthPx = Math.round((cx * scaleX) / EMU_PER_PX)
       // Word clips overflowing text unless the shape auto-fits its content;
       // carrying the fixed height keeps tall sparse boxes from exploding layout
       const bodyPrNode = findChild(shape, 'wps:bodyPr')
       const autoFit = bodyPrNode ? !!findChild(bodyPrNode, 'a:spAutoFit') : false
       const cy = ext ? parseInt(attrsOf(ext)['cy'] ?? '', 10) : NaN
       if (!autoFit && Number.isFinite(cy) && cy > 0) {
-        box.heightPx = Math.round(cy / EMU_PER_PX)
+        box.heightPx = Math.round((cy * scaleY) / EMU_PER_PX)
         box.minHeightPx = box.heightPx
       }
     }
@@ -3510,7 +3515,7 @@ function extractTextboxes(
       nested?: boolean,
     ): void => {
       wspCount++
-      const box = buildWpsBox(shape, groupFill, nested, ctm !== null)
+      const box = buildWpsBox(shape, groupFill, nested, ctm)
       if (!box) return
       if (ctm) {
         const xfrm = findChild(findChild(shape, 'wps:spPr') ?? {}, 'a:xfrm')
@@ -3519,11 +3524,6 @@ function extractTextboxes(
         const y = parseInt(off['y'] ?? '', 10)
         if (Number.isFinite(x)) box.offsetXEmu = Math.round(ctm.tx + x * ctm.sx)
         if (Number.isFinite(y)) box.offsetYEmu = Math.round(ctm.ty + y * ctm.sy)
-        if (ctm.sx !== 1 && box.widthPx) box.widthPx = Math.round(box.widthPx * ctm.sx)
-        if (ctm.sy !== 1) {
-          if (box.heightPx) box.heightPx = Math.round(box.heightPx * ctm.sy)
-          if (box.minHeightPx) box.minHeightPx = Math.round(box.minHeightPx * ctm.sy)
-        }
         // grouped shapes place absolutely at their mapped offset like Word
         box.floating = true
         if (inlineExtentPx > 0) box.inlineExtentPx = inlineExtentPx
