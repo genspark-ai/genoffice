@@ -808,6 +808,9 @@ export const it = {
     'Visualizzazione struttura: mostra solo la gerarchia dei titoli; i titoli restano modificabili',
   ribbonStoryView: 'Story',
   ribbonStoryViewTip: 'Story: scrivere senza la formattazione del documento',
+  storyBarList: 'Elenco',
+  storyBarFocus: 'Focus',
+  storyBarLeave: 'Esci da Story',
   ribbonReadMode: 'Modalità di lettura',
   ribbonReadModeTip:
     'Modalità di lettura: nascondi la barra multifunzione per una lettura concentrata, premi Esc per uscire',

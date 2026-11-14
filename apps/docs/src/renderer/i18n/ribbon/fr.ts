@@ -808,6 +808,9 @@ export const fr = {
     'Mode Plan : afficher uniquement la hiérarchie des titres ; les titres restent modifiables',
   ribbonStoryView: 'Story',
   ribbonStoryViewTip: 'Story : écrire sans la mise en forme du document',
+  storyBarList: 'Liste',
+  storyBarFocus: 'Focus',
+  storyBarLeave: 'Quitter Story',
   ribbonReadMode: 'Mode Lecture',
   ribbonReadModeTip:
     'Mode Lecture : masquer le ruban pour une lecture concentrée, appuyez sur Échap pour quitter',

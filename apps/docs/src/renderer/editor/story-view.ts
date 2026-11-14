@@ -39,6 +39,8 @@ declare module '@tiptap/core' {
     docsStoryView: {
       /** draw the story-view margin markers (true) or clear them */
       setStoryViewActive: (active: boolean) => ReturnType
+      /** Focus mode: dim everything but the sentence the caret sits in */
+      setStoryViewFocus: (on: boolean) => ReturnType
     }
   }
 }
@@ -54,6 +56,7 @@ export type StoryStyles = ReadonlyMap<string, StoryStyle>
 
 export interface StoryViewState {
   active: boolean
+  focus: boolean
   decorations: DecorationSet
 }
 
@@ -125,7 +128,7 @@ function markerDom(marker: string, inferred = false): HTMLElement {
   return span
 }
 
-function buildStoryDecorations(doc: ProseMirrorNode, styles?: StoryStyles): DecorationSet {
+function buildStoryDecorations(doc: ProseMirrorNode, styles?: StoryStyles): Decoration[] {
   const decos: Decoration[] = []
   const structural = new Map(
     collectStructuralHeadings(doc, styles).map((ref) => [ref.pos, ref] as const),
@@ -159,7 +162,115 @@ function buildStoryDecorations(doc: ProseMirrorNode, styles?: StoryStyles): Deco
       Decoration.widget(offset + 1, () => markerDom(marker), { key: `story-marker:${marker}` }),
     )
   })
-  return DecorationSet.create(doc, decos)
+  return decos
+}
+
+/** the characters that end a sentence for Focus mode; the CJK terminators read
+    the same way their Latin counterparts do */
+const SENTENCE_END = /[.!?。！？…]/u
+/** the Latin terminators, which also occur inside words and numbers */
+const SENTENCE_LATIN_END = /[.!?]/u
+/** a closing quote or bracket belongs to the sentence it closes */
+const SENTENCE_CLOSER = /["'\u201d\u2019\u300d\u300f\uff09)}\]]/u
+
+/**
+ * Whether the terminator at `at` really ends a sentence. A Latin one ends it
+ * only where the text actually stops — whitespace, a closing quote/bracket, or
+ * the end of the block — so "3.14", "example.com" and "v2.0.1" keep their
+ * dots; the CJK terminators never sit inside a Latin run, so they always end
+ * one.
+ */
+function sentenceStopsAt(text: string, at: number): boolean {
+  if (!SENTENCE_LATIN_END.test(text[at]!)) return true
+  if (at + 1 >= text.length) return true
+  if (/\s/u.test(text[at + 1]!)) return true
+  if (SENTENCE_CLOSER.test(text[at + 1]!)) return at + 2 >= text.length || /\s/u.test(text[at + 2]!)
+  return false
+}
+
+/** One past the sentence a terminator at `at` ends: past a closing quote or
+    bracket that carries the stop ("Stop." — the quote stays with the
+    sentence), then past the trailing whitespace that forms the gap between
+    the sentences. */
+function sentenceEndAfter(text: string, at: number): number {
+  let j = at + 1
+  if (j < text.length && SENTENCE_CLOSER.test(text[j]!)) j++
+  while (j < text.length && /\s/u.test(text[j]!)) j++
+  return j
+}
+
+/**
+ * The sentence the caret sits in, as ranges into the block's text: from after
+ * the previous terminator's trailing whitespace to the next terminator's own
+ * trailing whitespace. A block without a terminator reads as one sentence, and
+ * the ranges always cover the whole block.
+ */
+export function storyFocusSentence(text: string, cursor: number): [number, number] {
+  let start = 0
+  for (let i = 0; i < cursor;) {
+    if (!SENTENCE_END.test(text[i]!) || !sentenceStopsAt(text, i)) {
+      i++
+      continue
+    }
+    // the terminator's trailing whitespace belongs to the gap between the
+    // sentences; the next sentence starts after it. A caret inside that gap is
+    // about to write the next one — that one stays visible.
+    i = start = sentenceEndAfter(text, i)
+  }
+  let end = text.length
+  for (let k = cursor; k < text.length; k++) {
+    if (!SENTENCE_END.test(text[k]!) || !sentenceStopsAt(text, k)) continue
+    end = sentenceEndAfter(text, k)
+    break
+  }
+  return [start, end]
+}
+
+/**
+ * Whether an Escape reaches the story view's own "leave" action. An Escape
+ * meant for something else never claims the view: a composing IME, an event a
+ * transient overlay already consumed (the paste chip marks its Escape), one
+ * aimed inside the find panel (it closes itself), or one landing while an
+ * overlay the app knows about is open — the context menu, the comment popup
+ * and the dialogs each close on their own Escape.
+ */
+export function storyEscLeavesView(e: KeyboardEvent, overlayOpen: boolean): boolean {
+  if (e.key !== 'Escape') return false
+  if (e.defaultPrevented || e.isComposing) return false
+  if (overlayOpen) return false
+  if (e.target instanceof Element && e.target.closest('.find-panel')) return false
+  return true
+}
+
+/**
+ * The dim ranges Focus mode paints: every text run except the sentence the
+ * caret sits in. Inline decorations, so the dim rides the text itself — a
+ * paragraph the caret is not in dims whole. Empty blocks dim nothing (an empty
+ * paragraph is always the writing spot), and the active block keeps itself
+ * visible entirely when it holds an inline object: a text index is not a
+ * position there, so the sentence ranges could not be drawn safely.
+ */
+function buildFocusDim(doc: ProseMirrorNode, head: number): Decoration[] {
+  const decos: Decoration[] = []
+  doc.forEach((node, offset) => {
+    if (!node.isTextblock || node.content.size === 0) return
+    const start = offset + 1
+    const end = offset + node.nodeSize - 1
+    // a boundary position (caret between blocks) belongs to both blocks it
+    // sits against: pos == this block's start, pos == this block's end + 1 —
+    // each keeps its sentence visible around the caret
+    if (head < offset || head > offset + node.nodeSize) {
+      decos.push(Decoration.inline(start, end, { class: 'story-dim' }))
+      return
+    }
+    if (node.content.size !== node.textContent.length) return
+    const cursor = Math.min(Math.max(head - start, 0), node.textContent.length)
+    const [sFrom, sTo] = storyFocusSentence(node.textContent, cursor)
+    if (sFrom > 0) decos.push(Decoration.inline(start, start + sFrom, { class: 'story-dim' }))
+    if (sTo < node.textContent.length)
+      decos.push(Decoration.inline(start + sTo, end, { class: 'story-dim' }))
+  })
+  return decos
 }
 
 /**
@@ -201,6 +312,7 @@ export function stripHiddenMarksFromTypedText(
 
 interface StoryViewMeta {
   active?: boolean
+  focus?: boolean
 }
 
 export const StoryViewExtension = Extension.create({
@@ -213,6 +325,14 @@ export const StoryViewExtension = Extension.create({
         ({ state, dispatch }) => {
           if (storyViewKey.getState(state)?.active === active) return true
           if (dispatch) dispatch(state.tr.setMeta(storyViewKey, { active } satisfies StoryViewMeta))
+          return true
+        },
+      setStoryViewFocus:
+        (on: boolean) =>
+        ({ state, dispatch }) => {
+          if (storyViewKey.getState(state)?.focus === on) return true
+          if (dispatch)
+            dispatch(state.tr.setMeta(storyViewKey, { focus: on } satisfies StoryViewMeta))
           return true
         },
     }
@@ -230,14 +350,29 @@ export const StoryViewExtension = Extension.create({
       new Plugin({
         key: storyViewKey,
         state: {
-          init: () => ({ active: false, decorations: DecorationSet.empty }),
+          init: () => ({ active: false, focus: false, decorations: DecorationSet.empty }),
           apply(tr, value) {
             const meta = tr.getMeta(storyViewKey) as StoryViewMeta | undefined
             const active = meta?.active ?? value.active
-            if (active === value.active && !tr.docChanged) return value
+            const focus = meta?.focus ?? value.focus
+            // focus rides the caret: a selection-only transaction repaints the
+            // dim ranges too
+            if (
+              active === value.active &&
+              focus === value.focus &&
+              !tr.docChanged &&
+              !(active && focus && tr.selectionSet)
+            )
+              return value
             return {
               active,
-              decorations: active ? buildStoryDecorations(tr.doc, styles()) : DecorationSet.empty,
+              focus,
+              decorations: active
+                ? DecorationSet.create(tr.doc, [
+                    ...buildStoryDecorations(tr.doc, styles()),
+                    ...(focus ? buildFocusDim(tr.doc, tr.selection.head) : []),
+                  ])
+                : DecorationSet.empty,
             }
           },
         },

@@ -802,6 +802,9 @@ export const pl = {
     'Widok konspektu: pokaż tylko hierarchię nagłówków; nagłówki pozostają edytowalne',
   ribbonStoryView: 'Story',
   ribbonStoryViewTip: 'Story: pisanie bez formatowania dokumentu',
+  storyBarList: 'Lista',
+  storyBarFocus: 'Fokus',
+  storyBarLeave: 'Opuść Story',
   ribbonReadMode: 'Tryb czytania',
   ribbonReadModeTip:
     'Tryb czytania: ukryj wstążkę, aby skupić się na czytaniu; naciśnij Esc, aby wyjść',

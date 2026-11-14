@@ -806,6 +806,9 @@ export const es = {
     'Vista Esquema: mostrar solo la jerarquía de títulos; los títulos siguen siendo editables',
   ribbonStoryView: 'Historia',
   ribbonStoryViewTip: 'Historia: escribir sin el formato del documento',
+  storyBarList: 'Lista',
+  storyBarFocus: 'Enfoque',
+  storyBarLeave: 'Salir de Historia',
   ribbonReadMode: 'Modo de lectura',
   ribbonReadModeTip:
     'Modo de lectura: ocultar la cinta para leer sin distracciones; presione Esc para salir',
