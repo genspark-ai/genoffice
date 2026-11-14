@@ -19,6 +19,8 @@ import {
   storyHeadingLevel,
   storyIsQuote,
   storyMarkerFor,
+  storyScrollHost,
+  storyTypewriterDelta,
   type StoryStyle,
   type StoryStyles,
 } from '../src/renderer/editor/story-view'
@@ -472,5 +474,49 @@ describe('story view frame: the chrome leaves and Focus dims', () => {
   it('the bar is plain text labels in one row', () => {
     expect(blocksFor('.story-bar')).toContain('position: fixed')
     expect(blocksFor('.story-bar-btn')).toContain('font: inherit')
+  })
+})
+
+describe('Focus typewriter scroll: the caret line keeps to the middle', () => {
+  it('moves the caret line center to the viewport center', () => {
+    // a 100..700 viewport centers on 400; the caret line 200..216 centers on
+    // 208, so the page scrolls up by 192 to bring it to the middle
+    expect(storyTypewriterDelta(200, 216, 100, 700)).toBe(-192)
+    // already centered: the page does not move
+    expect(storyTypewriterDelta(392, 408, 100, 700)).toBe(0)
+    // below the middle: scrolls back down
+    expect(storyTypewriterDelta(600, 616, 100, 700)).toBe(208)
+    // one line under the middle: a small move
+    expect(storyTypewriterDelta(404, 424, 100, 700)).toBe(14)
+  })
+
+  it('clamps at the document edges by physics, not by a dead zone', () => {
+    // the first line cannot reach the middle: the delta asks for more than
+    // the scroller has, and scrollTop clamps at 0 — the rule iA Writer runs
+    expect(storyTypewriterDelta(10, 26, 0, 700)).toBe(-332)
+  })
+
+  it('the host is the nearest scrolling ancestor', () => {
+    const wrap = document.createElement('div')
+    wrap.style.overflowY = 'auto'
+    const inner = document.createElement('div')
+    wrap.appendChild(inner)
+    document.body.appendChild(wrap)
+    try {
+      const host = storyScrollHost({ dom: inner })
+      expect(host).not.toBeNull()
+      // jsdom has no layout: the wrapper's rect reads all zeroes
+      expect(host!.top).toBe(0)
+      expect(host!.bottom).toBe(0)
+    } finally {
+      wrap.remove()
+    }
+  })
+
+  it('without a scrolling ancestor the page scroller takes over', () => {
+    const host = storyScrollHost({ dom: document.createElement('div') })
+    expect(host).not.toBeNull()
+    expect(host!.top).toBe(0)
+    expect(host!.bottom).toBe(window.innerHeight)
   })
 })

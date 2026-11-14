@@ -28,7 +28,7 @@
  */
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state'
-import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import { ReplaceStep } from '@tiptap/pm/transform'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { TRACK_IGNORE } from './revisions'
@@ -242,6 +242,78 @@ export function storyEscLeavesView(e: KeyboardEvent, overlayOpen: boolean): bool
   return true
 }
 
+/** the viewport a typewriter scroll moves, and how it moves */
+export interface StoryScrollHost {
+  /** the visible top edge, in client coordinates */
+  top: number
+  /** the visible bottom edge, in client coordinates */
+  bottom: number
+  scrollBy: (delta: number) => void
+}
+
+/**
+ * The element whose scrollTop moves the caret line: the nearest ancestor of
+ * the editable host that scrolls itself (the app's .editor-scroll), falling
+ * back to the page scroller. Picked by overflow alone — the editor's ancestor
+ * chain carries exactly one scroll container, and a layoutless environment
+ * (the tests) has no scrollHeight to check.
+ */
+export function storyScrollHost(view: { dom: HTMLElement }): StoryScrollHost | null {
+  for (let el: HTMLElement | null = view.dom; el; el = el.parentElement) {
+    if (el === document.documentElement || el === document.body) break
+    if (getComputedStyle(el).overflowY === 'auto' || getComputedStyle(el).overflowY === 'scroll') {
+      const rect = el.getBoundingClientRect()
+      const host = el
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        scrollBy: (delta: number) => {
+          host.scrollTop += delta
+        },
+      }
+    }
+  }
+  const page = document.scrollingElement ?? document.documentElement
+  return {
+    top: 0,
+    bottom: window.innerHeight,
+    scrollBy: (delta: number) => {
+      page.scrollTop += delta
+    },
+  }
+}
+
+/**
+ * The typewriter delta: the caret line's center moves to the viewport's
+ * center. Positive scrolls down. iA Writer's rule — the line you type stays
+ * mid-window, and a caret near the first or last line cannot reach the middle,
+ * so the scroll just clamps where the document does.
+ */
+export function storyTypewriterDelta(
+  cursorTop: number,
+  cursorBottom: number,
+  viewportTop: number,
+  viewportBottom: number,
+): number {
+  return (cursorTop + cursorBottom) / 2 - (viewportTop + viewportBottom) / 2
+}
+
+/** re-center the caret line for Focus mode. Failures stay silent: the caret
+    may briefly sit on a position without a box at paint time, and a shapeless
+    environment (the tests) must not break the transaction that scheduled it. */
+function runTypewriterScroll(view: EditorView): void {
+  try {
+    const host = storyScrollHost(view)
+    if (!host) return
+    const cursor = view.coordsAtPos(view.state.selection.head)
+    if (!cursor) return
+    const delta = storyTypewriterDelta(cursor.top, cursor.bottom, host.top, host.bottom)
+    if (delta) host.scrollBy(delta)
+  } catch {
+    /* no box for the caret at paint time — nothing to scroll to */
+  }
+}
+
 /**
  * The dim ranges Focus mode paints: every text run except the sentence the
  * caret sits in. Inline decorations, so the dim rides the text itself — a
@@ -390,6 +462,36 @@ export const StoryViewExtension = Extension.create({
           typed = false
           if (!storyViewKey.getState(newState)?.active) return null
           return stripHiddenMarksFromTypedText(transactions, newState)
+        },
+        view(_editorView) {
+          // the typewriter scroll: with Focus on, every state change (typed
+          // text, the caret moved, Focus just switched on) re-centers the
+          // caret line at paint time. ProseMirror's own scrollIntoView has
+          // already run by then and only guarantees visibility — this moves
+          // the line the rest of the way to the middle.
+          let raf = 0
+          return {
+            update(v: EditorView) {
+              const st = storyViewKey.getState(v.state)
+              if (!st?.active || !st.focus) {
+                if (raf) {
+                  cancelAnimationFrame(raf)
+                  raf = 0
+                }
+                return
+              }
+              // coalesce a burst of transactions (a typed word, a paste) into
+              // one scroll at paint time
+              if (raf) cancelAnimationFrame(raf)
+              raf = requestAnimationFrame(() => {
+                raf = 0
+                runTypewriterScroll(v)
+              })
+            },
+            destroy() {
+              if (raf) cancelAnimationFrame(raf)
+            },
+          }
         },
       }),
     ]
