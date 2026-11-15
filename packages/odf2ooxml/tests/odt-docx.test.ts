@@ -213,6 +213,33 @@ describe('convertOdtToDocx', () => {
     expect(document.match(/<w:jc /g) ?? []).toHaveLength(2)
   })
 
+  it('carries a cell style style:vertical-align into w:vAlign', async () => {
+    const automatic =
+      '<style:style style:name="cm" style:family="table-cell"><style:table-cell-properties fo:background-color="#ffff99" style:vertical-align="middle"/></style:style>' +
+      '<style:style style:name="cb" style:family="table-cell"><style:table-cell-properties style:vertical-align="bottom"/></style:style>' +
+      '<style:style style:name="ct" style:family="table-cell"><style:table-cell-properties style:vertical-align="top"/></style:style>' +
+      // the fo: name is not what a table cell carries, so it must not be read
+      '<style:style style:name="cf" style:family="table-cell"><style:table-cell-properties fo:vertical-align="middle"/></style:style>'
+    const body =
+      '<table:table table:name="T"><table:table-column table:number-columns-repeated="4"/>' +
+      '<table:table-row>' +
+      '<table:table-cell table:style-name="cm"><text:p>middle</text:p></table:table-cell>' +
+      '<table:table-cell table:style-name="cb"><text:p>bottom</text:p></table:table-cell>' +
+      '<table:table-cell table:style-name="ct"><text:p>top</text:p></table:table-cell>' +
+      '<table:table-cell table:style-name="cf"><text:p>foreign</text:p></table:table-cell>' +
+      '</table:table-row></table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, automatic)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    // middle is Word's "center"; bottom keeps its name; top is the default
+    expect(document).toContain('<w:vAlign w:val="center"/>')
+    expect(document).toContain('<w:vAlign w:val="bottom"/>')
+    expect(document.match(/<w:vAlign /g) ?? []).toHaveLength(2)
+    // vAlign follows shd in CT_TcPr
+    expect(document).toContain(
+      '<w:shd w:val="clear" w:color="auto" w:fill="FFFF99"/><w:vAlign w:val="center"/>',
+    )
+  })
+
   it('imports a table with widths, spans and a cell fill', async () => {
     const automatic =
       '<style:style style:name="co1" style:family="table-column"><style:column-properties style:column-width="3cm"/></style:style>' +
