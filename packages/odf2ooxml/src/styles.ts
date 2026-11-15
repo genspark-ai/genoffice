@@ -45,6 +45,8 @@ export interface OdfListLevel {
   numFormat?: string
   numPrefix?: string
   numSuffix?: string
+  /** `text:start-value` the level itself declares, when it asks to start above 1 */
+  startValue?: number
   indentLeftTw?: number
   hangingTw?: number
 }
@@ -261,6 +263,7 @@ export class OdfStyles {
           numFormat: attr(child, 'style:num-format') ?? '1',
           numPrefix: attr(child, 'style:num-prefix'),
           numSuffix: attr(child, 'style:num-suffix'),
+          ...listLevelStart(child),
           ...listLevelIndent(child),
         })
       }
@@ -422,4 +425,16 @@ function listLevelIndent(node: XNode): { indentLeftTw?: number; hangingTw?: numb
     if (value !== null && value < 0) out.hangingTw = emuToTwips(-value)
   }
   return out
+}
+
+/**
+ * `text:start-value` a list level declares (20.425): the number the level
+ * starts at when no item asks for another one. Values at or below 1 are the
+ * default and stay silent; the cap keeps a crafted file from writing an
+ * exponent-shaped `w:start`.
+ */
+function listLevelStart(node: XNode): { startValue?: number } {
+  const value = Number(attr(node, 'text:start-value'))
+  if (!Number.isInteger(value) || value < 2) return {}
+  return { startValue: Math.min(value, 1_000_000) }
 }

@@ -62,6 +62,8 @@ interface ListFrame {
   styleName?: string
   /** deepest 1-based level any item used */
   maxDepth: number
+  /** `text:start-value` of the first item at each level: ODF's restart point */
+  starts: Map<number, number>
 }
 
 interface BlockContext {
@@ -156,12 +158,22 @@ export async function convertOdtToDocx(odt: Uint8Array): Promise<OdtToDocxResult
       numId: String(5000 + ++listCounter),
       styleName: attr(list, 'text:style-name'),
       maxDepth: 0,
+      starts: new Map(),
     }
     if (!parent) listFrames.push(frame)
     const depth = parent ? parentDepth + 1 : 1
     frame.maxDepth = Math.max(frame.maxDepth, depth)
+    /** levels of this list that already showed their first item */
+    const seenLevels = new Set<number>()
     for (const { name, node } of childElements(list)) {
       if (name === 'text:list-item') {
+        // ODF evaluates `text:start-value` only on the first item of a level
+        // (17.4.3); that is exactly where it can move w:start of the level
+        if (!seenLevels.has(depth)) {
+          seenLevels.add(depth)
+          const start = numberAttr(node, 'text:start-value')
+          if (start !== undefined && start > 1) frame.starts.set(depth, start)
+        }
         let firstParagraph = true
         for (const inner of childElements(node)) {
           if (inner.name === 'text:p') {
@@ -397,11 +409,15 @@ function numberingDefs(
       if (level?.kind === 'ordered') {
         if (depth === 1) kind = 'ordered'
         const format = NUM_FORMATS[level.numFormat ?? '1'] ?? 'decimal'
+        // a list whose first item asked for a different number starts there;
+        // otherwise the level's own declared start applies
+        const start = frame.starts.get(depth) ?? level.startValue
         defs.push({
           numFmt: format,
           lvlText: `${level.numPrefix ?? ''}%${depth}${level.numSuffix ?? '.'}`,
           indentLeft,
           hanging,
+          ...(start !== undefined ? { start } : {}),
         })
       } else {
         defs.push({ numFmt: 'bullet', lvlText: level?.bulletChar ?? '•', indentLeft, hanging })
@@ -480,6 +496,13 @@ function clampRepeat(text: string | undefined, cap = 1024): number {
   const value = Number(text ?? '1')
   if (!Number.isInteger(value) || value < 1) return 1
   return Math.min(value, cap)
+}
+
+/** an integer attribute; unset or non-numeric answers undefined, huge values are capped */
+function numberAttr(node: XNode, name: string): number | undefined {
+  const value = Number(attr(node, name))
+  if (!Number.isInteger(value) || value < 0) return undefined
+  return Math.min(value, 1_000_000)
 }
 
 /** resolve the occupancy grid: every (row, column) slot names the cell that paints it */

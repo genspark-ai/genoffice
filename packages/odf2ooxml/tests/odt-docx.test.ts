@@ -144,6 +144,70 @@ describe('convertOdtToDocx', () => {
     expect(numbering).toContain('w:lvlText w:val="%2."')
   })
 
+  it('starts a numbered list at the text:start-value of its first item', async () => {
+    const listStyle =
+      '<text:list-style style:name="L1">' +
+      '<text:list-level-style-number text:level="1" style:num-format="1" style:num-suffix=".">' +
+      '<style:list-level-properties text:space-before="0.5cm" text:min-label-width="0.4cm"/>' +
+      '</text:list-level-style-number></text:list-style>'
+    const body =
+      '<text:list text:style-name="L1">' +
+      '<text:list-item text:start-value="5"><text:p>five</text:p></text:list-item>' +
+      // ODF reads the attribute only on the first item of a level (17.4.3)
+      '<text:list-item text:start-value="9"><text:p>still six</text:p></text:list-item>' +
+      '</text:list>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, listStyle)))
+    const numbering = (await readDocxEntry(result.docx, 'word/numbering.xml')) ?? ''
+    expect(numbering).toContain('<w:start w:val="5"/>')
+    expect(numbering).not.toContain('<w:start w:val="9"/>')
+  })
+
+  it('keeps a numbered list at 1 when no item asks for another start', async () => {
+    const listStyle =
+      '<text:list-style style:name="L1">' +
+      '<text:list-level-style-number text:level="1" style:num-format="1" style:num-suffix=".">' +
+      '<style:list-level-properties text:space-before="0.5cm" text:min-label-width="0.4cm"/>' +
+      '</text:list-level-style-number></text:list-style>'
+    const body =
+      '<text:list text:style-name="L1"><text:list-item><text:p>one</text:p></text:list-item></text:list>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, listStyle)))
+    const numbering = (await readDocxEntry(result.docx, 'word/numbering.xml')) ?? ''
+    expect(numbering).toContain('<w:start w:val="1"/>')
+  })
+
+  it('starts a numbered list where its level style asks', async () => {
+    // the level itself may carry text:start-value (20.425), with no item involved
+    const listStyle =
+      '<text:list-style style:name="L1">' +
+      '<text:list-level-style-number text:level="1" text:start-value="7" style:num-format="1" style:num-suffix=".">' +
+      '<style:list-level-properties text:space-before="0.5cm" text:min-label-width="0.4cm"/>' +
+      '</text:list-level-style-number></text:list-style>'
+    const body =
+      '<text:list text:style-name="L1">' +
+      '<text:list-item><text:p>seven</text:p></text:list-item>' +
+      '<text:list-item><text:p>eight</text:p></text:list-item>' +
+      '</text:list>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, listStyle)))
+    const numbering = (await readDocxEntry(result.docx, 'word/numbering.xml')) ?? ''
+    expect(numbering).toContain('<w:start w:val="7"/>')
+  })
+
+  it('lets the first item override the start its level declares', async () => {
+    const listStyle =
+      '<text:list-style style:name="L1">' +
+      '<text:list-level-style-number text:level="1" text:start-value="7" style:num-format="1" style:num-suffix=".">' +
+      '<style:list-level-properties text:space-before="0.5cm" text:min-label-width="0.4cm"/>' +
+      '</text:list-level-style-number></text:list-style>'
+    const body =
+      '<text:list text:style-name="L1">' +
+      '<text:list-item text:start-value="5"><text:p>five</text:p></text:list-item>' +
+      '</text:list>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, listStyle)))
+    const numbering = (await readDocxEntry(result.docx, 'word/numbering.xml')) ?? ''
+    expect(numbering).toContain('<w:start w:val="5"/>')
+    expect(numbering).not.toContain('<w:start w:val="7"/>')
+  })
+
   it('imports a table with widths, spans and a cell fill', async () => {
     const automatic =
       '<style:style style:name="co1" style:family="table-column"><style:column-properties style:column-width="3cm"/></style:style>' +
