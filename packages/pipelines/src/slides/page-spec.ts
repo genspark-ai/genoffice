@@ -24,6 +24,7 @@ import {
 } from '@genoffice/pptx-engine'
 import { buildRenderSlide, EMU_PER_PX_96, type FontMetricsProvider } from '@genoffice/pptx-render'
 import { coverCropFractions } from './cover-crop'
+import { parseLenientJson } from './lenient-json'
 
 export const SPEC_CANVAS_W = 1280
 export const SPEC_CANVAS_H = 720
@@ -182,13 +183,15 @@ export function parsePageSpec(
   const matched = matchingBrace(text, start)
   const end = matched >= 0 ? matched : text.lastIndexOf('}')
   if (end <= start) return { ok: false, error: 'no JSON object found in the output' }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text.slice(start, end + 1))
-  } catch (e) {
-    return { ok: false, error: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` }
+  let result = parseLenientJson(text.slice(start, end + 1))
+  // A stray quote also misleads the brace walk; retry on the widest object before giving up.
+  const last = text.lastIndexOf('}')
+  if (!result.ok && last > end) {
+    const wide = parseLenientJson(text.slice(start, last + 1))
+    if (wide.ok) result = wide
   }
-  return parsePageSpecObject(parsed, canvasW, canvasH, opts)
+  if (!result.ok) return { ok: false, error: `invalid JSON: ${result.error}` }
+  return parsePageSpecObject(result.value, canvasW, canvasH, opts)
 }
 
 /** Same validation as parsePageSpec for an already-parsed JSON value (one page of a deck spec). */

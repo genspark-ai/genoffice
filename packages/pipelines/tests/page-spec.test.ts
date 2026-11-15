@@ -53,6 +53,22 @@ describe('parsePageSpec', () => {
     expect(r.spec.elements).toHaveLength(1)
   })
 
+  it('repairs a low-9 opening quote closed with a plain " (Hungarian copy)', () => {
+    // Shape measured from glm-5.3-flash: „…" with an ASCII closer, followed by : or ,
+    const raw = JSON.stringify({
+      background: '#0E1A2B',
+      elements: [textSpec('Kiemelt: a „hónap meglepetése": füzet, az „EcoLine", a sláger')],
+    }).replace(/\\"/g, '"')
+    expect(() => JSON.parse(raw)).toThrow()
+    const r = parsePageSpec(raw)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const el = r.spec.elements[0] as { paragraphs: Array<{ runs: Array<{ text: string }> }> }
+    expect(el.paragraphs[0]!.runs[0]!.text).toBe(
+      'Kiemelt: a „hónap meglepetése": füzet, az „EcoLine", a sláger',
+    )
+  })
+
   it('rejects output without a usable JSON object', () => {
     expect(parsePageSpec('sorry, I cannot').ok).toBe(false)
     expect(parsePageSpec('{"elements":[]}').ok).toBe(false)
