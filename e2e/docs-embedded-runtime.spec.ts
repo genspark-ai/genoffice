@@ -1,3 +1,4 @@
+// Modified for ForaOffice: exercise host diagnostics in the public embedded tool coverage.
 import { test, expect, _electron as electron } from '@playwright/test'
 import { createServer } from 'node:http'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
@@ -273,6 +274,14 @@ test('the embedded public editor edits, undoes, saves and reopens Word with its 
     expect(queried.items).toHaveLength(1)
     expect(queried.items[0].html).toContain('Manual Word text')
     expect(queried.items[0].supportedOperations).toContain('findReplace')
+    const diagnostics = JSON.parse(await toolOutput('read_document_diagnostics'))
+    expect(diagnostics).toMatchObject({
+      documentId: queried.documentId,
+      revision: queried.revision,
+      checksComplete: true,
+      items: [],
+      page: { complete: true },
+    })
     await tool('get_editor_capabilities', {})
     await tool('replace_selection', { html: 'Agent' })
     await expect(body).toHaveText('Agent Word text')
