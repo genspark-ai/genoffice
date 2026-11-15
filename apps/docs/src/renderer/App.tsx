@@ -29,6 +29,7 @@ import {
   useAiSidebarEnabled,
 } from '@genoffice/ui'
 import { commentAnchors, commentIdsAt, wordRangeAtCaret } from './editor/comments'
+import { isCommandLetter } from './command-letter'
 import { setFieldInstr, toggleAllFieldCodes, type FieldRange } from './editor/field-codes'
 import { linkTarget } from './editor/link-actions'
 import { FieldDialog } from './components/FieldDialog'
@@ -6233,6 +6234,21 @@ export function App() {
     return () => window.removeEventListener('ai-docs-run-done', handler)
   }, [editor, save])
 
+  // Save runs ahead of the editor keymaps (capture phase): with a non-Latin
+  // layout active the keystroke otherwise reaches the editor's own bindings and
+  // the report sees Ctrl+S undo the last edit instead of saving the document.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && isCommandLetter(e, 's')) {
+        e.preventDefault()
+        e.stopPropagation()
+        void save(e.shiftKey)
+      }
+    }
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [save])
+
   useEffect(() => {
     // editing shortcuts only fire when focus is in an editor surface (main
     // ProseMirror, textbox sub-editor, in-place table cell) or nowhere at all —
@@ -6244,15 +6260,11 @@ export function App() {
     }
     const handler = (e: KeyboardEvent) => {
       const canEdit = !!editor?.isEditable && focusInEditor()
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault()
-        void save(e.shiftKey)
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'o') {
+      if ((e.metaKey || e.ctrlKey) && isCommandLetter(e, 'o')) {
         e.preventDefault()
         void openFile()
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+      if ((e.metaKey || e.ctrlKey) && isCommandLetter(e, 'f')) {
         e.preventDefault()
         if (doc) {
           // bump even when the panel is already open: focus returns to the find box
@@ -6262,7 +6274,7 @@ export function App() {
       }
       // Word's replace: Ctrl+H everywhere (macOS Cmd+H is the system hide role,
       // which never reaches the renderer, so this branch is Ctrl+H there too)
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'h') {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && isCommandLetter(e, 'h')) {
         e.preventDefault()
         if (doc) {
           setShowFind(true)
@@ -6282,7 +6294,14 @@ export function App() {
         setFindFocusGoTo((n) => n + 1)
       }
       // Word dialog shortcuts: Font ⌘D / Paragraph ⌥⌘M / Hyperlink ⌘K
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'd' && doc && canEdit) {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        isCommandLetter(e, 'd') &&
+        doc &&
+        canEdit
+      ) {
         e.preventDefault()
         setShowFontDialog(true)
       }
@@ -6290,7 +6309,14 @@ export function App() {
         e.preventDefault()
         setShowParaDialog(true)
       }
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'k' && doc && canEdit) {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        isCommandLetter(e, 'k') &&
+        doc &&
+        canEdit
+      ) {
         e.preventDefault()
         setShowLinkModal(true)
       }

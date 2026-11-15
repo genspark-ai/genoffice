@@ -57,6 +57,7 @@ export type McpEditorCommandName =
   | 'apply_ops'
   | 'insert_picture'
   | 'read_document'
+  | 'read_blocks'
   | 'save_document'
 
 /**
@@ -505,7 +506,8 @@ function createDocxContentTools(deps: DocToolDeps, host: SessionHost): McpToolDe
       name: 'replace_blocks',
       description:
         'Replace a range of blocks in the visible document with new HTML content. ' +
-        'Use read_document to learn block indexes.',
+        'Use read_document to learn block indexes, then read_blocks to read the full original ' +
+        'text before rewriting it.',
       inputSchema: {
         startBlockIndex: z.number().int().describe('first block index to replace (inclusive)'),
         endBlockIndex: z.number().int().describe('last block index to replace (inclusive)'),
@@ -607,11 +609,39 @@ function createDocxContentTools(deps: DocToolDeps, host: SessionHost): McpToolDe
       description:
         'Read the visible document as a block list: one "index|type|text" line per block, where the ' +
         'index is what apply_ops and insert_content address. Long blocks are clipped for reading; ' +
-        'the list is an overview, not a lossless copy (use read_docx for full text).',
+        'use read_blocks for the full text of a block range.',
       inputSchema: { document: documentField },
       handler: async (args) => {
         const wc = await target(args.document)
         return docs.runCommand(wc, 'read_document', {})
+      },
+    },
+    {
+      name: 'read_blocks',
+      description:
+        'Read the full text of a block range in the visible document as restricted HTML, without ' +
+        'the preview clipping of read_document. Use read_document first for block indexes, and read ' +
+        'a block with this before rewriting it. Long ranges are paged: a truncated result says ' +
+        'which offset to continue from; concatenate the slices in order to get the full HTML.',
+      inputSchema: {
+        startBlockIndex: z.number().int().describe('start block index (0-based, inclusive)'),
+        endBlockIndex: z.number().int().describe('end block index (inclusive)'),
+        offset: z
+          .number()
+          .int()
+          .optional()
+          .describe(
+            'character offset to continue a truncated read; default 0 (use the offset from the previous truncation notice)',
+          ),
+        document: documentField,
+      },
+      handler: async (args) => {
+        const wc = await target(args.document)
+        return docs.runCommand(wc, 'read_blocks', {
+          startBlockIndex: args.startBlockIndex,
+          endBlockIndex: args.endBlockIndex,
+          ...(args.offset === undefined ? {} : { offset: args.offset }),
+        })
       },
     },
   ]

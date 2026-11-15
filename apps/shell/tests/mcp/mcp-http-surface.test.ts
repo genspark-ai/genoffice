@@ -44,6 +44,7 @@ const DEFAULT_NAMES = [
   'insert_picture',
   'open_documents',
   'open_in_genoffice',
+  'read_blocks',
   'read_deck',
   'read_document',
   'read_docx',
@@ -90,6 +91,8 @@ function docsControl(): { control: DocsControl; calls: Array<Record<string, unkn
       switch (command) {
         case 'read_document':
           return { blocks: [{ index: 0, text: 'Quarterly Report' }], text: 'Quarterly Report' }
+        case 'read_blocks':
+          return { text: '<h1>Quarterly Report</h1><p>Full body text.</p>' }
         case 'insert_content':
           return { summary: 'inserted', mutated: true }
         case 'replace_blocks':
@@ -340,6 +343,15 @@ describe('MCP surface over Streamable HTTP (/mcp)', () => {
       const read = await call(client, 'read_document', {})
       expect(read.isError).toBe(false)
       expect((read.json as { text: string }).text).toContain('Quarterly Report')
+
+      const blocks = await call(client, 'read_blocks', {
+        startBlockIndex: 0,
+        endBlockIndex: 0,
+      })
+      expect(blocks.isError).toBe(false)
+      expect((blocks.json as { text: string }).text).toBe(
+        '<h1>Quarterly Report</h1><p>Full body text.</p>',
+      )
 
       // ── 5. cross-family refusal (schema-valid, host-level) ────────────────
       // a second session switches the family; the docx content tool now refuses
