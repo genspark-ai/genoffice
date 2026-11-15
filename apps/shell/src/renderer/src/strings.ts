@@ -2417,6 +2417,9 @@ export const strings = {
     loginFailed: 'A bejelentkezés nem sikerült — kattints az újrapróbálkozáshoz',
     waitingShort: 'Várakozás…',
     loggingOut: 'Kijelentkezés…',
+    confirmSignOutTitle: 'Kijelentkezel a Gensparkból?',
+    confirmSignOutBody:
+      'A Genspark-fiókodat használó AI-funkciók nem működnek, amíg újra be nem jelentkezel.',
     logout: 'Kijelentkezés',
     credits: 'Kreditek',
     creditsTip: 'Kredithasználat részleteinek megtekintése',
