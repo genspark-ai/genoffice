@@ -66,7 +66,9 @@ export const UI_SCALE_DEFAULT = 1
  */
 export function readUiScale(settingsPath: string): number {
   const stored: unknown = readAppSettings(settingsPath)[UI_SCALE_KEY]
-  return typeof stored === 'number' && Number.isFinite(stored) ? clampUiScale(stored) : UI_SCALE_DEFAULT
+  return typeof stored === 'number' && Number.isFinite(stored)
+    ? clampUiScale(stored)
+    : UI_SCALE_DEFAULT
 }
 
 export function clampUiScale(scale: number): number {
