@@ -37,6 +37,8 @@ export interface OdfParaProps {
   indentRightTw?: number
   indentFirstLineTw?: number
   pageBreakBefore?: boolean
+  /** `fo:background-color` of the paragraph, hex without '#' */
+  background?: string
 }
 
 export interface OdfListLevel {
@@ -235,6 +237,10 @@ export class OdfStyles {
     if (first !== null) out.indentFirstLineTw = emuToTwips(first)
     if (a['fo:break-before'] === 'page' || a['fo:break-before'] === 'auto')
       out.pageBreakBefore = a['fo:break-before'] === 'page'
+    // "transparent" is ODF's default (the page shows through), so only a real
+    // colour asks for a fill
+    const background = odfColorToHex(a['fo:background-color'])
+    if (background) out.background = background
     return Object.keys(out).length > 0 ? out : undefined
   }
 

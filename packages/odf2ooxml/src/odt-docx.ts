@@ -343,6 +343,7 @@ function paraFormat(styles: OdfStyles, styleName: string | undefined): ParaForma
   if (props.indentRightTw !== undefined) out.indentRight = props.indentRightTw
   if (props.indentFirstLineTw !== undefined) out.indentFirstLine = props.indentFirstLineTw
   if (props.pageBreakBefore) out.pageBreakBefore = true
+  if (props.background) out.shadingFill = props.background
   return Object.keys(out).length > 0 ? out : undefined
 }
 
