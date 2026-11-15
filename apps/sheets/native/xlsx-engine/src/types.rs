@@ -141,6 +141,15 @@ pub struct SheetMetadata {
     /// In-cell rich-value pictures ("place picture in cell").
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub cell_images: Vec<CellImageInfo>,
+    /// Protection is known before cell indexing starts.
+    pub protection: SheetProtectionMetadata,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetProtectionMetadata {
+    pub sheet_protection: Option<SheetProtectionInfo>,
+    pub protected_ranges: Vec<ProtectedRangeInfo>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -507,7 +516,16 @@ pub struct SharedString {
     pub(crate) runs: Option<Vec<RichRun>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RangeReadMode {
+    #[default]
+    Wait,
+    Viewport,
+    Status,
+}
+
+#[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RangeResult {
     pub cells: Vec<CellRecord>,

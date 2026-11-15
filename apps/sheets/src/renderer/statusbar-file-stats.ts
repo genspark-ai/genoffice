@@ -21,8 +21,8 @@ import { RANGE_TYPE } from '@univerjs/core'
 import type { IRange } from '@univerjs/core'
 import { FUNCTION_NAMES_MATH, FUNCTION_NAMES_STATISTICAL } from '@univerjs/engine-formula'
 import { SheetsSelectionsService } from '@univerjs/sheets'
-import { IStatusBarService } from '@univerjs/sheets-ui'
-import type { RangeBounds } from '@genoffice/xlsx-gateway/domain/cell-address'
+import { IStatusBarService, StatusBarController } from '@univerjs/sheets-ui'
+import { rangeCellCount, type RangeBounds } from '@genoffice/xlsx-gateway/domain/cell-address'
 
 import type { RangeAggregate } from './ai/aggregate'
 import type { LazyWorkbookState, UniverRuntime } from './univer-state'
@@ -33,6 +33,7 @@ const MAX_STATUSBAR_AGGREGATE_CELLS = 1_000_000
 const RECOMPUTE_DEBOUNCE_MS = 150
 /** Each visible-row band is one aggregate round trip; past this the upstream numbers stay. */
 const MAX_VISIBLE_BANDS = 64
+const MAX_RENDERER_STATS_CELLS = 100_000
 
 interface StatusBarValue {
   func: string
@@ -124,6 +125,48 @@ export function installStatusBarFileStats(deps: StatusBarFileStatsDeps): { dispo
   const injector = runtime.univer.__getInjector()
   const statusBarService = injector.get(IStatusBarService) as unknown as StatusBarServiceLike
   const selectionsService = injector.get(SheetsSelectionsService)
+
+  const controller = injector.get(StatusBarController) as unknown as {
+    _calculateSelection: (ranges: IRange[], primary: unknown) => void
+  }
+  const calculateSelection = controller._calculateSelection
+  controller._calculateSelection = (ranges, primary) => {
+    const state = lazyWorkbookRef.current
+    const sheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
+    if (!state || state.flags.preloadComplete || !sheet) {
+      calculateSelection.call(controller, ranges, primary)
+      return
+    }
+    const resident = state.loadedRanges.get(sheet.getSheetId())
+    const bounds = ranges.map((range) =>
+      selectionBounds(range, sheet.getMaxRows(), sheet.getMaxColumns()),
+    )
+    if (
+      bounds.reduce((total, range) => total + rangeCellCount(range), 0) <= MAX_RENDERER_STATS_CELLS
+    ) {
+      calculateSelection.call(controller, ranges, primary)
+      return
+    }
+    // Univer walks every cell of the selection before publishing the footer.
+    // Keep its provisional result on the resident grid. The file-side pass
+    // below still reads the original selection from the selection service.
+    const window = resident
+      ? bounds.flatMap((range) => {
+          const intersection = {
+            startRow: Math.max(range.startRow, resident.startRow),
+            endRow: Math.min(range.endRow, resident.endRow),
+            startColumn: Math.max(range.startColumn, resident.startColumn),
+            endColumn: Math.min(range.endColumn, resident.endColumn),
+          }
+          return intersection.startRow <= intersection.endRow &&
+            intersection.startColumn <= intersection.endColumn
+            ? [intersection]
+            : []
+        })
+      : []
+    if (window.length === 0) statusBarService.setState({ values: [], pattern: null })
+    else calculateSelection.call(controller, window, primary)
+  }
 
   let applying = false
   let seq = 0
@@ -233,6 +276,7 @@ export function installStatusBarFileStats(deps: StatusBarFileStatsDeps): { dispo
     dispose() {
       if (timer) clearTimeout(timer)
       subscription.unsubscribe()
+      controller._calculateSelection = calculateSelection
     },
   }
 }

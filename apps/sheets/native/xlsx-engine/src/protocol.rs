@@ -15,7 +15,7 @@ use crate::archive::{
 };
 use crate::find::FindCellsRequest;
 use crate::recalc::{RecalcCache, RecalcEdit, RecalcRead, recalc_cells_reporting};
-use crate::{CellRange, SidecarError, THREADS, WorkbookSessions};
+use crate::{CellRange, RangeReadMode, SidecarError, THREADS, WorkbookSessions};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -41,6 +41,8 @@ pub enum Command {
         #[serde(rename = "sheetId")]
         sheet_id: String,
         range: CellRange,
+        #[serde(default)]
+        mode: RangeReadMode,
     },
     Close {
         #[serde(rename = "sessionId")]
@@ -550,15 +552,21 @@ pub fn handle_request(
             // longer can.
             let in_flight_cancelled = in_flight.flag();
             sessions
-                .open_with_locale(&path, &locale, short_date_format.as_deref(), &in_flight_cancelled)
+                .open_with_locale(
+                    &path,
+                    &locale,
+                    short_date_format.as_deref(),
+                    &in_flight_cancelled,
+                )
                 .and_then(to_json_value)
         }
         Command::ReadRange {
             session_id,
             sheet_id,
             range,
+            mode,
         } => sessions
-            .read_range(&session_id, &sheet_id, &range)
+            .read_range_with_mode(&session_id, &sheet_id, &range, mode)
             .and_then(to_json_value),
         Command::Close { session_id } => {
             // A resident recalc model can dwarf the session itself (an

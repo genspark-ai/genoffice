@@ -1318,11 +1318,23 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
         ...(columnWidth.styleIndex === undefined ? {} : { styleIndex: columnWidth.styleIndex }),
       }
     })
+    const protection = sheet.protection
+    if (protection !== undefined && !isRecord(protection)) {
+      throw new Error('Invalid worksheet protection metadata.')
+    }
     return {
       id: sheet.id,
       name: sheet.name,
       rowCount: sheet.rowCount,
       columnCount: sheet.columnCount,
+      ...(protection === undefined
+        ? {}
+        : {
+            protection: {
+              sheetProtection: parseSheetProtection(protection.sheetProtection),
+              protectedRanges: parseProtectedRanges(protection.protectedRanges),
+            },
+          }),
       // The renderer's oversized-sheet write gate needs this; omitting it
       // silently disables the gate (older sidecars don't report it).
       ...(isPositiveInteger(sheet.sourceXmlBytes) ? { sourceXmlBytes: sheet.sourceXmlBytes } : {}),
@@ -2188,37 +2200,53 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
       ...(rule.prompt === undefined ? {} : { prompt: rule.prompt }),
     }
   })
-  let sheetProtection: WorkbookRangeResult['sheetProtection'] = null
-  if (input.sheetProtection !== null && input.sheetProtection !== undefined) {
-    const protection = input.sheetProtection
-    if (
-      !isRecord(protection) ||
-      typeof protection.protected !== 'boolean' ||
-      typeof protection.hasPassword !== 'boolean'
-    ) {
-      throw new Error('Invalid workbook sheet protection.')
-    }
-    sheetProtection = {
-      protected: protection.protected,
-      hasPassword: protection.hasPassword,
-      ...(protection.allow === undefined
-        ? {}
-        : { allow: parseSheetProtectionAllow(protection.allow) }),
-      ...(protection.password === undefined
-        ? {}
-        : { password: parseSheetPasswordHash(protection.password) }),
-    }
-  }
   const parseBreaks = (value: unknown, label: string): number[] => {
     if (!Array.isArray(value) || value.length > 1_024 || !value.every(isNonnegativeInteger)) {
       throw new Error(`Invalid workbook ${label} response.`)
     }
     return value as number[]
   }
-  if (!Array.isArray(input.protectedRanges) || input.protectedRanges.length > 1_024) {
+  return {
+    cells,
+    rows,
+    merges,
+    hyperlinks,
+    conditionalRules,
+    autoFilter: input.autoFilter === null ? null : parseCellArea(input.autoFilter),
+    autoFilterColumns,
+    dataValidations,
+    sheetProtection: parseSheetProtection(input.sheetProtection),
+    rowBreaks: parseBreaks(input.rowBreaks, 'row breaks'),
+    colBreaks: parseBreaks(input.colBreaks, 'column breaks'),
+    protectedRanges: parseProtectedRanges(input.protectedRanges),
+    pageSetup: parsePagePrintSettings(input.pageSetup),
+    indexedThroughRow: input.indexedThroughRow,
+    indexingComplete: input.indexingComplete,
+  }
+}
+
+function parseSheetProtection(input: unknown): WorkbookRangeResult['sheetProtection'] {
+  if (input === null || input === undefined) return null
+  if (
+    !isRecord(input) ||
+    typeof input.protected !== 'boolean' ||
+    typeof input.hasPassword !== 'boolean'
+  ) {
+    throw new Error('Invalid workbook sheet protection.')
+  }
+  return {
+    protected: input.protected,
+    hasPassword: input.hasPassword,
+    ...(input.allow === undefined ? {} : { allow: parseSheetProtectionAllow(input.allow) }),
+    ...(input.password === undefined ? {} : { password: parseSheetPasswordHash(input.password) }),
+  }
+}
+
+function parseProtectedRanges(input: unknown): WorkbookRangeResult['protectedRanges'] {
+  if (!Array.isArray(input) || input.length > 1_024) {
     throw new Error('Invalid workbook protected ranges response.')
   }
-  const protectedRanges = input.protectedRanges.map((range) => {
+  return input.map((range) => {
     if (
       !isRecord(range) ||
       typeof range.name !== 'string' ||
@@ -2231,23 +2259,6 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
     }
     return { name: range.name, sqref: range.sqref, hasPassword: range.hasPassword }
   })
-  return {
-    cells,
-    rows,
-    merges,
-    hyperlinks,
-    conditionalRules,
-    autoFilter: input.autoFilter === null ? null : parseCellArea(input.autoFilter),
-    autoFilterColumns,
-    dataValidations,
-    sheetProtection,
-    rowBreaks: parseBreaks(input.rowBreaks, 'row breaks'),
-    colBreaks: parseBreaks(input.colBreaks, 'column breaks'),
-    protectedRanges,
-    pageSetup: parsePagePrintSettings(input.pageSetup),
-    indexedThroughRow: input.indexedThroughRow,
-    indexingComplete: input.indexingComplete,
-  }
 }
 
 function parsePagePrintSettings(input: unknown): WorkbookRangeResult['pageSetup'] {
