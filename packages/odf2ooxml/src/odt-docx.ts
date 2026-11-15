@@ -361,6 +361,8 @@ function toDocxRun(run: NeutralRun, allowLinks: boolean): Run {
   if (run.vertAlign) out.vertAlign = run.vertAlign
   if (run.caps) out.caps = run.caps
   if (run.shading) out.shading = run.shading
+  if (run.letterSpacingTw !== undefined) out.charSpacingTwips = run.letterSpacingTw
+  if (run.scalePct !== undefined) out.charScalePct = run.scalePct
   if (run.href && allowLinks) out.link = { href: run.href }
   return out
 }

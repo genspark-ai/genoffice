@@ -25,6 +25,10 @@ export interface NeutralRun {
   caps?: 'all' | 'small'
   /** hex without '#' */
   shading?: string
+  /** character spacing (w:spacing), twips; negative when condensed */
+  letterSpacingTw?: number
+  /** character width (w:w), percent */
+  scalePct?: number
   /** external hyperlink target (http/https/mailto/ftp only) */
   href?: string
 }
@@ -190,6 +194,10 @@ function base(props: OdfTextProps | undefined): Omit<NeutralRun, 'text'> {
   if (props.vertAlign) out.vertAlign = props.vertAlign
   if (props.caps) out.caps = props.caps
   if (props.shading) out.shading = props.shading
+  if (props.letterSpacingTw !== undefined) out.letterSpacingTw = props.letterSpacingTw
+  // 100% is the default, so it writes nothing; the props keep it so that a
+  // span inside a scaled one can reset the width
+  if (props.scalePct !== undefined && props.scalePct !== 100) out.scalePct = props.scalePct
   return out
 }
 
@@ -226,6 +234,8 @@ const FORMAT_KEYS: Array<keyof NeutralRun> = [
   'vertAlign',
   'caps',
   'shading',
+  'letterSpacingTw',
+  'scalePct',
   'href',
 ]
 
