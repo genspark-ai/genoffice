@@ -39,9 +39,9 @@ const first = paragraph('Unchanged opening paragraph.')
 const last = paragraph('Unchanged closing paragraph.')
 const bodyXml = first + TABLE_XML + paragraph('Respond within forty-eight (48) hours.') + last
 
-async function fixture(tracking: boolean) {
+async function fixture(tracking: boolean, fixtureBody = bodyXml, extraStylesXml?: string) {
   noteDocumentSwapped()
-  const bytes = await buildDocx({ bodyXml })
+  const bytes = await buildDocx({ bodyXml: fixtureBody, extraStylesXml })
   const parsed = await parseDocx(bytes)
   const dir = await mkdtemp(join(tmpdir(), 'genoffice-save-tracked-'))
   dirs.push(dir)
@@ -127,6 +127,190 @@ async function assertUntouched(original: Uint8Array, saved: Uint8Array) {
 }
 
 describe('production save reload with track changes enabled', () => {
+  it('keeps a changed table style inherited through save and a subsequent text edit', async () => {
+    const styles = ['FF0000', '0000FF']
+      .map(
+        (fill, index) =>
+          `<w:style w:type="table" w:styleId="Style${index}"><w:name w:val="Style${index}"/><w:tcPr><w:shd w:fill="${fill}"/></w:tcPr></w:style>`,
+      )
+      .join('')
+    const { editor, ctx, path } = await fixture(
+      false,
+      '<w:tbl><w:tblPr><w:tblStyle w:val="Style0"/></w:tblPr><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid>' +
+        '<w:tr><w:tc><w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr>' +
+        paragraph('ORIGINAL') +
+        '</w:tc></w:tr></w:tbl><w:p/>',
+      styles,
+    )
+    editor.storage.listNumbering.styles = ctx.doc!.parsed.styles
+    const runtime = createDocsRuntime({
+      current: () => ({
+        editor,
+        identity: editor,
+        numIds: { bullet: null, ordered: null },
+        autoAcceptUntracked: true,
+      }),
+      save: async () => {
+        const ok = await save(ctx, false, true)
+        return { ok, path, committed: ok, pending: !ok }
+      },
+    })
+    try {
+      const caller = runtime.connect({ id: 'saved-table-style' })
+      caller.context()
+      const style = await caller.execute({
+        id: 'style',
+        name: 'apply_ops',
+        input: { ops: [{ op: 'setTableStyle', target: { blockIndexes: [0] }, styleId: 'Style1' }] },
+      })
+      expect(style.isError, style.output).not.toBe(true)
+      expect((await caller.save({ path, overwrite: true })).ok).toBe(true)
+      caller.context({ captureSelection: false })
+      expect(ctx.doc!.parsed.blocks[0].table!.rows[0][0].fill).toBe('0000FF')
+      const text = await caller.execute({
+        id: 'text',
+        name: 'apply_ops',
+        input: {
+          ops: [
+            {
+              op: 'setTableCellText',
+              target: { blockIndexes: [0] },
+              range: { row: 0, col: 0 },
+              text: 'EDITED',
+            },
+          ],
+        },
+      })
+      expect(text.isError, text.output).not.toBe(true)
+      expect((await caller.save({ path, overwrite: true })).ok).toBe(true)
+      const zip = await JSZip.loadAsync(await readFile(path))
+      const xml = new DOMParser().parseFromString(
+        await zip.file('word/document.xml')!.async('string'),
+        'application/xml',
+      )
+      const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+      expect(xml.documentElement.textContent).toContain('EDITED')
+      expect(xml.getElementsByTagNameNS(ns, 'shd')).toHaveLength(0)
+      expect(ctx.doc!.parsed.blocks[0].table!.rows[0][0].fill).toBe('0000FF')
+    } finally {
+      runtime.dispose()
+    }
+  })
+  it.each(['fill', 'orphan', 'table'] as const)(
+    'preserves source properties and hidden content across save, undo and redo (%s)',
+    async (kind) => {
+      const row = (hidden: string) =>
+        '<w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr>' +
+        paragraph(hidden) +
+        '</w:tc><w:tc>' +
+        paragraph('SAME') +
+        '</w:tc></w:tr>'
+      const table = (text: string, band: number) =>
+        `<w:tbl><w:tblPr><w:tblStyleRowBandSize w:val="${band}"/></w:tblPr>` +
+        '<w:tblGrid><w:gridCol w:w="1255"/><w:gridCol w:w="974"/></w:tblGrid>' +
+        '<w:tr><w:tc><w:tcPr><w:tcW w:w="1255" w:type="dxa"/></w:tcPr>' +
+        paragraph(text) +
+        '</w:tc><w:tc><w:tcPr><w:tcW w:w="37" w:type="pct"/>' +
+        '<w:shd w:fill="D9E2F3" w:themeFill="accent1"/></w:tcPr>' +
+        paragraph('NEIGHBOR') +
+        '</w:tc></w:tr></w:tbl>'
+      const source =
+        kind === 'orphan'
+          ? '<w:tbl><w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="2400"/></w:tblGrid>' +
+            row('HIDDEN_A') +
+            row('HIDDEN_B') +
+            '</w:tbl><w:p/>'
+          : table('TABLE_A', 3) + (kind === 'table' ? table('TABLE_B', 7) : '') + '<w:p/>'
+      const { editor, ctx, path, bytes } = await fixture(false, source)
+      const runtime = createDocsRuntime({
+        current: () => ({
+          editor,
+          identity: editor,
+          numIds: { bullet: null, ordered: null },
+          autoAcceptUntracked: true,
+        }),
+        save: async () => {
+          const ok = await save(ctx, false, true)
+          return { ok, path, committed: ok, pending: !ok }
+        },
+      })
+      try {
+        const caller = runtime.connect({ id: 'save-history-source' })
+        caller.context()
+        const query = await caller.execute({
+          id: 'query',
+          name: 'query_document',
+          input: { type: 'docTable' },
+        })
+        const structures = (
+          JSON.parse(query.output) as { items: Array<{ structures: Array<{ id: string }> }> }
+        ).items[0].structures.map((item) => item.id)
+        const edit = await caller.execute({
+          id: 'edit',
+          name: 'apply_ops',
+          input: {
+            ops: [
+              kind === 'fill'
+                ? {
+                    op: 'setTableCellFormat',
+                    target: { blockIndexes: [0] },
+                    range: { row: 0, col: 0 },
+                    fill: '#FF0000',
+                  }
+                : kind === 'orphan'
+                  ? { op: 'deleteTableRow', target: { blockIndexes: [0] }, row: 0 }
+                  : {
+                      op: 'deleteBlocks',
+                      target: { blockIndexes: [0] },
+                      deleteStructures: structures,
+                    },
+            ],
+          },
+        })
+        expect(edit.isError, edit.output).not.toBe(true)
+        const saveXml = async () => {
+          expect((await caller.save({ path, overwrite: true })).ok).toBe(true)
+          caller.context({ captureSelection: false })
+          const zip = await JSZip.loadAsync(await readFile(path))
+          return new DOMParser().parseFromString(
+            await zip.file('word/document.xml')!.async('string'),
+            'application/xml',
+          )
+        }
+        const edited = await saveXml()
+        const undo = await caller.execute({
+          id: 'undo',
+          name: 'document_history',
+          input: { action: 'undo' },
+        })
+        expect(undo.isError, undo.output).not.toBe(true)
+        const restored = await saveXml()
+        const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+        const groups = (xml: Document, name: string) =>
+          [...xml.getElementsByTagNameNS(ns, name)].map((node) => node.outerHTML)
+        const initialZip = await JSZip.loadAsync(bytes)
+        const initial = new DOMParser().parseFromString(
+          await initialZip.file('word/document.xml')!.async('string'),
+          'application/xml',
+        )
+        expect(restored.documentElement.textContent).toBe(initial.documentElement.textContent)
+        for (const name of ['tblPr', 'tblGrid', 'tcPr'])
+          expect(groups(restored, name), name).toEqual(groups(initial, name))
+        const redo = await caller.execute({
+          id: 'redo',
+          name: 'document_history',
+          input: { action: 'redo' },
+        })
+        expect(redo.isError, redo.output).not.toBe(true)
+        const repeated = await saveXml()
+        expect(repeated.documentElement.textContent).toBe(edited.documentElement.textContent)
+        for (const name of ['tblPr', 'tblGrid', 'tcPr'])
+          expect(groups(repeated, name), name).toEqual(groups(edited, name))
+      } finally {
+        runtime.dispose()
+      }
+    },
+  )
   it('keeps a captured character selection after save rebases the document anchors', async () => {
     const { editor, ctx } = await fixture(false)
     let start = 0

@@ -2564,6 +2564,7 @@ export const ListNumberingExtension = Extension.create<object, ListNumberingStor
 
 const tableCellAttrs = {
   sourceCell: { default: null, rendered: false },
+  sourceProperties: { default: null, rendered: false },
   vAlign: { default: null as string | null },
   borders: { default: null as Record<string, unknown> | null },
   rawTcPr: { default: null as string | null },
@@ -3072,6 +3073,8 @@ export const DocTable = Node.create({
       originalStructure: { default: null as string | null },
       originalFormatting: { default: null as string | null },
       sourceTable: { default: null as string | null, rendered: false },
+      sourceEnvelope: { default: null as string | null, rendered: false },
+      sourceBaseline: { default: null as string | null, rendered: false },
       /** JSON of the merged-away (vMerge continue) cells: their own tcPr bytes
        *  and hidden text, keyed row:column (they have no node of their own) */
       continuationCells: { default: null as string | null },

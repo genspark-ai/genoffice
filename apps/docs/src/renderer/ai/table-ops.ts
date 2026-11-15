@@ -404,12 +404,7 @@ const noMatch = (op: string): OpResult => ({ op, matched: 0, changed: 0, skipped
 /** Moving a merge restart cannot silently decide where its hidden payload goes. */
 export function continuationMigrationError(table: PmNode, owner: PmNode): string | undefined {
   const source = owner.attrs.sourceCell as TableCell['sourceCell']
-  if (
-    !source ||
-    source.table !== table.attrs.sourceTable ||
-    typeof table.attrs.continuationCells !== 'string'
-  )
-    return
+  if (!source || typeof table.attrs.continuationCells !== 'string') return
   const records = JSON.parse(table.attrs.continuationCells) as Array<{
     owner?: TableCell['sourceCell']
     cell: TableCell

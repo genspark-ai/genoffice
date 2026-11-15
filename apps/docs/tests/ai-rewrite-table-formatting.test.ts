@@ -26,7 +26,9 @@ import type { DocsQueryResult } from '../src/shared/document-query'
 const NUM_IDS = { bullet: BLANK_BULLET_NUM_ID, ordered: BLANK_ORDERED_NUM_ID }
 const authoredJson = (node: PmNode) =>
   JSON.stringify(node, (key, value: unknown) =>
-    ['sourceTable', 'sourceRow', 'sourceCell'].includes(key) ? undefined : value,
+    ['sourceTable', 'sourceRow', 'sourceCell', 'sourceProperties'].includes(key)
+      ? undefined
+      : value,
   )
 const TRACK = { author: 'AI Assistant' }
 

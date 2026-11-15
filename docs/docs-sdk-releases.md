@@ -21,6 +21,8 @@ and cleared on new clones. Unsupported migration of nonempty hidden merge
 continuations now refuses precisely at the shared editing boundary instead of
 dropping retained content; normal empty-merge and row/column operations remain
 available. Inherited table styling stays inherited unless explicitly changed.
+Saving and then undoing or redoing table edits retains each table's own authored
+properties and the hidden continuation content belonging to retained cells.
 
 Cell queries now restrict `supportedOperations` to current target eligibility,
 return projection/limitation and structure metadata, and correlate image resource

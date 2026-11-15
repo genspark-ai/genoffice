@@ -121,6 +121,31 @@ it('retains every pre-existing duplicate source binding when splitting another t
   expect(pieces.child(1).attrs.sourceCell).toBeNull()
 })
 
+it.each(['native', 'dialog'] as const)(
+  'keeps inherited properties on new %s split pieces without duplicating source identity',
+  async (kind) => {
+    const { editor, saved } = await openSynthetic(
+      '<w:tbl><w:tblPr><w:tblStyle w:val="Inherited"/></w:tblPr><w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="2400"/></w:tblGrid>' +
+        '<w:tr><w:tc><w:tcPr><w:tcW w:w="4800" w:type="dxa"/><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>START</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>',
+      '<w:style w:type="table" w:styleId="Inherited"><w:name w:val="Inherited"/><w:tcPr><w:shd w:fill="FF0000"/></w:tcPr></w:style>',
+    )
+    const map = TableMap.get(editor.state.doc.firstChild!)
+    editor.view.dispatch(
+      editor.state.tr.setSelection(CellSelection.create(editor.state.doc, 1 + map.map[0])),
+    )
+    expect(
+      (kind === 'native' ? splitCellWithSource : splitCellsInto(1, 2, false))(
+        editor.state,
+        editor.view.dispatch,
+      ),
+    ).toBe(true)
+    const row = editor.state.doc.firstChild!.firstChild!
+    expect(row.child(0).attrs.sourceCell).toBeTruthy()
+    expect(row.child(1).attrs.sourceCell).toBeNull()
+    expect((await saved()).getElementsByTagNameNS(ns, 'shd')).toHaveLength(0)
+  },
+)
+
 it('retains the surviving orphan continuation by source when identical rows are deleted', async () => {
   const row = (hidden: string) =>
     '<w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:r><w:t>' +

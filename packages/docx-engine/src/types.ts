@@ -1538,6 +1538,8 @@ export interface TableCell {
   rawTcPr?: string
   /** Transient editor-load source address; never emitted into OOXML. */
   sourceCell?: { table: string; row: number; cell: number }
+  /** Observed properties paired with rawTcPr; copying formatting never grants content identity. */
+  sourceProperties?: Pick<TableCell, 'fill' | 'borders' | 'vAlign' | 'colSpan'>
   /** cell-level revision (tcPr w:cellIns / w:cellDel) */
   cellRevision?: { kind: 'ins' | 'del' } & RevisionInfo
   /** tracked cell-property change (tcPr w:tcPrChange); null = accepted */
@@ -1560,6 +1562,8 @@ export interface TableLook {
 
 /** Editable interchange model of a table block, extracted from or generated to OOXML. */
 export interface TableModel {
+  /** Load/save publication metadata for this parsed occurrence; never serialized into OOXML. */
+  sourcePublication?: { table: string; baseline: string; structure: string; formatting: string }
   rows: TableCell[][]
   /** relative column widths in percent (from w:tblGrid) */
   colWidthsPct?: number[]

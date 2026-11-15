@@ -72,7 +72,13 @@ import { docStyleCss } from './doc-style-css'
 import { documentTextContext } from './text-layout/document-context'
 import { setNoteNumFmts } from './note-format'
 import type { CompareEntry } from './editor/compare'
-import { blocksToPmDoc, pmDocOptions, pmDocToSavePlan, type PmNode } from './editor/convert'
+import {
+  blocksToPmDoc,
+  pmDocOptions,
+  pmDocToSavePlan,
+  rebaseSavedTableSources,
+  type PmNode,
+} from './editor/convert'
 import { TABLE_TRAILING_SKIP, setLazyMediaHashes } from './editor/extensions'
 import { setStaticAsciiResolver } from './editor/protected-render'
 import { FORMAT_MARKS, serializeMarks } from './editor/caret-marks'
@@ -328,7 +334,7 @@ function resetEditorHistory(editor: Editor): void {
 }
 
 /** Saved anchors are attributes: update them without replacing character positions or undo history. */
-function rebaseSavedAttributes(editor: Editor, saved: ProseMirrorNode): boolean {
+function rebaseSavedAttributes(editor: Editor, saved: ProseMirrorNode, blocks: Block[]): boolean {
   const before = editor.state.doc
   const sameContent = (left: ProseMirrorNode, right: ProseMirrorNode): boolean => {
     if (
@@ -344,6 +350,9 @@ function rebaseSavedAttributes(editor: Editor, saved: ProseMirrorNode): boolean 
     return true
   }
   if (!sameContent(before, saved)) return false
+  saved = editor.schema.nodeFromJSON(
+    rebaseSavedTableSources(before.toJSON(), saved.toJSON(), blocks),
+  )
   const transaction = editor.state.tr
   const update = (left: ProseMirrorNode, right: ProseMirrorNode, position: number) => {
     for (const key of Object.keys(right.attrs)) {
@@ -1531,7 +1540,8 @@ async function saveOnce(
       let unchanged = false
       try {
         const saved = editor.schema.nodeFromJSON(rebasedPm)
-        unchanged = editor.state.doc.eq(saved) || rebaseSavedAttributes(editor, saved)
+        unchanged =
+          editor.state.doc.eq(saved) || rebaseSavedAttributes(editor, saved, reparsed.blocks)
       } catch {
         /* unrepresentable → rewrite */
       }

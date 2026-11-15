@@ -2499,7 +2499,11 @@ function tableCellXml(
   cell: TableCell,
   width: number,
   verticalMerge?: 'restart' | 'continue',
-  preservation?: { all?: boolean; width?: boolean; original?: TableCell },
+  preservation?: {
+    all?: boolean
+    width?: boolean
+    original?: TableCell['sourceProperties']
+  },
 ): string {
   // Surgical rawTcPr patch: modeled children are replaced/inserted in schema order;
   // unmodeled ones (tcMar/textDirection/noWrap…) keep their original bytes
@@ -2512,7 +2516,7 @@ function tableCellXml(
     : ''
   const rawInner = rawTcPr.replace(/^<w:tcPr(?:\s[^>]*)?>/, '').replace(/<\/w:tcPr>$/, '')
   const children: PPrChild[] = rawTcPr.endsWith('</w:tcPr>') ? splitXmlChildren(rawInner) : []
-  const unchanged = (key: keyof TableCell) =>
+  const unchanged = (key: 'fill' | 'borders' | 'vAlign') =>
     !!preservation?.original &&
     JSON.stringify(preservation.original[key] ?? null) === JSON.stringify(cell[key] ?? null)
   if (
@@ -2596,7 +2600,11 @@ function tableCellXml(
   }
   const tail = items.length === 0 || items[items.length - 1].tbl ? '<w:p/>' : ''
   const content = items.map((item) => item.xml).join('')
-  const properties = preservation?.all ? (cell.rawTcPr ?? '') : `<w:tcPr>${tcPr.join('')}</w:tcPr>`
+  const properties = preservation?.all
+    ? (cell.rawTcPr ?? '')
+    : tcPr.length || cell.rawTcPr
+      ? `<w:tcPr>${tcPr.join('')}</w:tcPr>`
+      : ''
   return `<w:tc>${properties}${content}${tail}</w:tc>`
 }
 
@@ -2669,6 +2677,13 @@ function originalTableChildOf(tableXml: string, name: string): string | undefine
   return splitXmlChildren(tableXml.slice(innerStart, innerEnd)).find((c) => c.name === name)?.xml
 }
 
+/** Only a table's authored opening and property groups; no row/cell content snapshot. */
+export function tablePropertyEnvelope(tableXml: string): string | undefined {
+  const opening = /<w:tbl(?:\s[^>]*)?>/.exec(tableXml)?.[0]
+  if (!opening) return undefined
+  return `${opening}${originalTableChildOf(tableXml, 'w:tblPr') ?? ''}${originalTableChildOf(tableXml, 'w:tblGrid') ?? ''}</w:tbl>`
+}
+
 export function generateTableModelXml(
   model: TableModel,
   originalTableXml?: string,
@@ -2677,9 +2692,8 @@ export function generateTableModelXml(
     preserveProperties?: boolean
     /** Projected columns are unchanged; retain the authored grid and cell widths. */
     preserveGrid?: boolean
-    /** Source property comparison only; never used to restore cell content. */
-    originalTable?: TableModel
-    sourceTable?: string
+    /** The table's own properties are unchanged even when rows/cells were edited. */
+    preserveTableProperties?: boolean
   },
 ): string {
   const preserveProperties = !!originalTableXml && options?.preserveProperties === true
@@ -2772,16 +2786,11 @@ export function generateTableModelXml(
           }
           continue
         }
-        const source = cell.sourceCell
-        const originalCell =
-          source && typeof options?.sourceTable === 'string' && source.table === options.sourceTable
-            ? options?.originalTable?.rows[source.row]?.[source.cell]
-            : undefined
         cells.push(
           tableCellXml(cell, width, undefined, {
             all: preserveProperties,
             width: preserveGrid,
-            original: originalCell,
+            original: cell.sourceProperties,
           }),
         )
       }
@@ -2854,6 +2863,7 @@ export function generateTableModelXml(
   const originalTblPr = originalTableXml
     ? originalTableChildOf(originalTableXml, 'w:tblPr')
     : undefined
+  const opening = originalTableXml?.match(/<w:tbl(?:\s[^>]*)?>/)?.[0] ?? '<w:tbl>'
   const tblInd =
     model.indentTwips && Math.round(model.indentTwips) !== 0
       ? `<w:tblInd w:w="${Math.round(model.indentTwips)}" w:type="dxa"/>`
@@ -2964,10 +2974,9 @@ export function generateTableModelXml(
     )
   }
   if (preserveProperties) {
-    const opening = /^<w:tbl(?:\s[^>]*)?>/.exec(originalTableXml!)?.[0] ?? '<w:tbl>'
     return `${opening}${originalTblPr ?? ''}${originalTableChildOf(originalTableXml!, 'w:tblGrid') ?? ''}${rows}</w:tbl>`
   }
-  return `<w:tbl>${tblPr}${grid}${rows}</w:tbl>`
+  return `${opening}${options?.preserveTableProperties ? (originalTblPr ?? '') : tblPr}${grid}${rows}</w:tbl>`
 }
 
 /** rId / docPr placeholder of a picture inserted by the editor; saveDocx resolves

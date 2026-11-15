@@ -29,6 +29,7 @@ import {
   type TextboxSizePatch,
   patchTextboxParas,
   generateTableModelXml,
+  tablePropertyEnvelope,
   resolvePropChangeXml,
   inlinePictureDrawingXml,
   patchRunPictureXml,
@@ -1004,6 +1005,7 @@ function blockToPmNode(
         options.legacyTableIndent ?? false,
         options.defaultRun,
         followers,
+        block.originalXml ?? undefined,
       )
       // content-control member tables need the shell for chrome hit-testing
       if (block.sdtShell) node.attrs = { ...node.attrs, sdtShell: JSON.stringify(block.sdtShell) }
@@ -1196,8 +1198,21 @@ export function tableModelToPmNode(
   legacyIndent = false,
   defaults?: RunDefaults,
   followers: Block[] = [],
+  originalXml?: string,
 ): PmNode {
-  const sourceTable = crypto.randomUUID()
+  const sourceModel = model
+  const sourceTable = model.sourcePublication?.table ?? crypto.randomUUID()
+  const cellSource = (row: number, cell: number): NonNullable<TableCell['sourceCell']> => ({
+    table: sourceTable,
+    row,
+    cell,
+  })
+  const cellProperties = (row: number, cell: number): TableCell['sourceProperties'] => ({
+    fill: model.rows[row][cell].fill,
+    borders: model.rows[row][cell].borders,
+    vAlign: model.rows[row][cell].vAlign,
+    colSpan: model.rows[row][cell].colSpan,
+  })
   if (rowCapTwips != null) model = capTableRowHeights(model, rowCapTwips)
   const resolved = resolveTableWidth(
     model,
@@ -1252,6 +1267,7 @@ export function tableModelToPmNode(
   const continuationRecords: Array<{
     source: NonNullable<TableCell['sourceCell']>
     owner?: NonNullable<TableCell['sourceCell']>
+    row: { table: string; row: number }
     cell: TableCell
   }> = []
   // 1 px = 15 twips (96dpi); use real values when absolute grid widths exist, fall back to percentage approximation otherwise.
@@ -1355,6 +1371,8 @@ export function tableModelToPmNode(
       originalStructure: null,
       originalFormatting: null,
       sourceTable,
+      sourceBaseline: model.sourcePublication?.baseline ?? sourceTable,
+      sourceEnvelope: originalXml ? (tablePropertyEnvelope(originalXml) ?? null) : null,
       // merged-away (vMerge continue) cells have no node of their own: their
       // own tcPr bytes and hidden text ride here, keyed row:column
       continuationCells: null,
@@ -1378,8 +1396,13 @@ export function tableModelToPmNode(
       content: row.flatMap((cell, cellIndex): PmNode[] => {
         const start = positions[rowIndex][cellIndex]
         if (cell.vMerge === 'continue') {
-          const source = { table: sourceTable, row: rowIndex, cell: cellIndex }
-          continuationRecords.push({ source, owner: continuationOwners[rowIndex].get(start), cell })
+          const source = cellSource(rowIndex, cellIndex)
+          continuationRecords.push({
+            source,
+            row: { table: sourceTable, row: rowIndex },
+            owner: continuationOwners[rowIndex].get(start),
+            cell: { ...cell, sourceProperties: cellProperties(rowIndex, cellIndex) },
+          })
           // a rowspan already stands in for this column: no node needed
           if (rowspanCovered[rowIndex]?.has(start)) return []
           // the grid hole needs an inert placeholder so the editor's table
@@ -1390,6 +1413,7 @@ export function tableModelToPmNode(
               type: hasHeaderRow && rowIndex === 0 ? 'docTableHeader' : 'docTableCell',
               attrs: {
                 sourceCell: source,
+                sourceProperties: cellProperties(rowIndex, cellIndex),
                 colspan: cell.colSpan ?? 1,
                 rowspan: 1,
                 // the column-resize plugin fills a missing colwidth from the
@@ -1409,7 +1433,8 @@ export function tableModelToPmNode(
           {
             type: hasHeaderRow && rowIndex === 0 ? 'docTableHeader' : 'docTableCell',
             attrs: {
-              sourceCell: { table: sourceTable, row: rowIndex, cell: cellIndex },
+              sourceCell: cellSource(rowIndex, cellIndex),
+              sourceProperties: cellProperties(rowIndex, cellIndex),
               colspan,
               rowspan,
               clipHeightTwips: cellClipTwips(model, rowIndex, cell, rowspan),
@@ -1443,6 +1468,17 @@ export function tableModelToPmNode(
     continuationRecords.length > 0 ? JSON.stringify(continuationRecords) : null
   table.attrs!.originalStructure = tableStructureSignature(table)
   table.attrs!.originalFormatting = tableFormattingSignature(table)
+  if (!sourceModel.sourcePublication)
+    Object.defineProperty(sourceModel, 'sourcePublication', {
+      value: {
+        table: sourceTable,
+        baseline: table.attrs!.sourceBaseline as string,
+        structure: table.attrs!.originalStructure as string,
+        formatting: table.attrs!.originalFormatting as string,
+      },
+      writable: true,
+      configurable: true,
+    })
   return table
 }
 
@@ -1571,17 +1607,17 @@ export function tableStructureSignature(table: PmNode): string {
         cell.attrs?.gridGap ?? false,
         cell.attrs?.mergeGap ?? false,
         cell.attrs?.sourceCell ?? null,
+        cell.attrs?.sourceProperties ?? null,
       ]),
     ]),
   })
 }
 
-function tableCellSource(table: PmNode, value: unknown): TableCell['sourceCell'] {
+function tableCellSource(value: unknown): TableCell['sourceCell'] {
   const source = value as TableCell['sourceCell']
   if (
-    typeof table.attrs?.sourceTable !== 'string' ||
     !source ||
-    source.table !== table.attrs.sourceTable ||
+    typeof source.table !== 'string' ||
     !Number.isSafeInteger(source.row) ||
     !Number.isSafeInteger(source.cell) ||
     source.row < 0 ||
@@ -1592,7 +1628,94 @@ function tableCellSource(table: PmNode, value: unknown): TableCell['sourceCell']
 }
 
 const cellSourceKey = (source: NonNullable<TableCell['sourceCell']>) =>
-  `${source.row}:${source.cell}`
+  `${source.table}:${source.row}:${source.cell}`
+
+const rowSourceKey = (source: { table: string; row: number }) => `${source.table}:${source.row}`
+
+/** Called only after the save boundary has proved identical node content/shape. */
+export function rebaseSavedTableSources(before: PmNode, saved: PmNode, blocks: Block[]): PmNode {
+  const parsedTables = new Map(
+    blocks.filter((block) => block.type === 'table').map((block) => [block.docxIndex, block.table]),
+  )
+  type Source = NonNullable<TableCell['sourceCell']>
+  type SourceRow = { table: string; row: number }
+  type Continuation = { source: Source; row?: SourceRow; owner?: Source; cell: TableCell }
+  const records = (node: PmNode): Continuation[] =>
+    typeof node.attrs?.continuationCells === 'string'
+      ? JSON.parse(node.attrs.continuationCells)
+      : []
+  const walk = (left: PmNode, right: PmNode): PmNode => {
+    if (right.type !== 'docTable')
+      return {
+        ...right,
+        ...(right.content
+          ? { content: right.content.map((child, index) => walk(left.content![index], child)) }
+          : {}),
+      }
+    const cells = new Map<string, Source>()
+    const rows = new Map<string, SourceRow>()
+    const content = right.content!.map((row, r) => {
+      const oldRow = left.content![r]
+      const freshRow = row.attrs!.sourceRow as SourceRow
+      const sourceRow = (oldRow.attrs?.sourceRow as SourceRow | null) ?? freshRow
+      rows.set(rowSourceKey(freshRow), sourceRow)
+      return {
+        ...row,
+        attrs: { ...row.attrs, sourceRow },
+        content: row.content!.map((cell, c) => {
+          const fresh = tableCellSource(cell.attrs?.sourceCell)
+          if (!fresh) return cell
+          const old = tableCellSource(oldRow.content![c].attrs?.sourceCell)
+          const sourceCell = old
+            ? { ...fresh, table: old.table, row: old.row, cell: old.cell }
+            : fresh
+          cells.set(cellSourceKey(fresh), sourceCell)
+          return { ...cell, attrs: { ...cell.attrs, sourceCell } }
+        }),
+      }
+    })
+    const previous = new Map(
+      records(left)
+        .filter((record) => record.owner)
+        .map((record) => [
+          `${rowSourceKey(record.row ?? record.source)}:${cellSourceKey(record.owner!)}`,
+          record.source,
+        ]),
+    )
+    const continuations = records(right).map((record) => {
+      const row = rows.get(rowSourceKey(record.row ?? record.source))!
+      const owner = record.owner ? cells.get(cellSourceKey(record.owner))! : undefined
+      const prior = owner ? previous.get(`${rowSourceKey(row)}:${cellSourceKey(owner)}`) : undefined
+      const source =
+        cells.get(cellSourceKey(record.source)) ??
+        (prior
+          ? { ...record.source, table: prior.table, row: prior.row, cell: prior.cell }
+          : record.source)
+      return { ...record, source, row, owner }
+    })
+    const node: PmNode = {
+      ...right,
+      attrs: {
+        ...right.attrs,
+        sourceTable: left.attrs?.sourceTable ?? right.attrs!.sourceTable,
+        continuationCells: continuations.length ? JSON.stringify(continuations) : null,
+      },
+      content,
+    }
+    node.attrs!.originalStructure = tableStructureSignature(node)
+    node.attrs!.originalFormatting = tableFormattingSignature(node)
+    const parsed = parsedTables.get(right.attrs!.docxIndex as number)
+    if (parsed)
+      parsed.sourcePublication = {
+        table: node.attrs!.sourceTable as string,
+        baseline: node.attrs!.sourceBaseline as string,
+        structure: node.attrs!.originalStructure as string,
+        formatting: node.attrs!.originalFormatting as string,
+      }
+    return node
+  }
+  return walk(before, saved)
+}
 
 function tableColumnSignature(signature: string): string {
   const value = JSON.parse(signature) as Record<string, unknown> & { rows: unknown[][] }
@@ -1605,6 +1728,11 @@ function tableColumnSignature(signature: string): string {
     value.autoFitEdited,
     value.tblGridChange,
   ])
+}
+
+function tablePropertiesSignature(signature: string): string {
+  const { rows: _rows, ...properties } = JSON.parse(signature) as Record<string, unknown>
+  return JSON.stringify(properties)
 }
 
 function inlineFormattingSignature(content: PmNode[] | undefined): string[] {
@@ -1658,9 +1786,12 @@ export function tableFormattingSignature(table: PmNode): string {
 type TableParagraphSignature = [unknown, unknown, string[]]
 
 /** Rich cell patches can change run/paragraph styling, but not list topology. */
-function tableFormatChanges(table: PmNode): boolean[][][] | null {
-  if (typeof table.attrs?.originalFormatting !== 'string') return null
-  const original = JSON.parse(table.attrs.originalFormatting) as TableParagraphSignature[][][]
+function tableFormatChanges(
+  table: PmNode,
+  baseline = table.attrs?.originalFormatting,
+): boolean[][][] | null {
+  if (typeof baseline !== 'string') return null
+  const original = JSON.parse(baseline) as TableParagraphSignature[][][]
   const current = JSON.parse(tableFormattingSignature(table)) as TableParagraphSignature[][][]
   for (const [r, row] of (table.content ?? []).entries()) {
     for (const [c, cell] of (row.content ?? []).entries()) {
@@ -1728,15 +1859,20 @@ export function pmTableToModel(table: PmNode): TableModel {
       const records = JSON.parse(serializedContinuations) as Array<{
         source?: unknown
         owner?: unknown
+        row?: { table: string; row: number }
         cell?: unknown
       }>
       for (const record of records) {
-        const source = tableCellSource(table, record.source)
+        const source = tableCellSource(record.source)
         if (source && record.cell && typeof record.cell === 'object') {
           const cell = { ...(record.cell as TableCell), sourceCell: source }
           continuationCells.set(cellSourceKey(source), cell)
-          const owner = tableCellSource(table, record.owner)
-          if (owner) continuationsByOwner.set(`${source.row}:${cellSourceKey(owner)}`, cell)
+          const owner = tableCellSource(record.owner)
+          if (owner)
+            continuationsByOwner.set(
+              `${rowSourceKey(record.row ?? source)}:${cellSourceKey(owner)}`,
+              cell,
+            )
         }
       }
     } catch {
@@ -1780,8 +1916,8 @@ export function pmTableToModel(table: PmNode): TableModel {
     for (const [column, span] of active) {
       const owner = span.cell.sourceCell
       const merged =
-        rowSource && rowSource.table === table.attrs?.sourceTable && owner
-          ? continuationsByOwner.get(`${rowSource.row}:${cellSourceKey(owner)}`)
+        rowSource && owner
+          ? continuationsByOwner.get(`${rowSourceKey(rowSource)}:${cellSourceKey(owner)}`)
           : undefined
       // null = the editor accepted (strip the record), an object = still pending;
       // only an absent attr leaves the build-time record in place
@@ -1824,7 +1960,7 @@ export function pmTableToModel(table: PmNode): TableModel {
         // moves. A newly-created placeholder has no old payload to restore.
         while (occupied.has(cursor)) cursor++
         const gap = Math.max(1, Number(cellNode.attrs?.colspan) || 1)
-        const source = tableCellSource(table, cellNode.attrs?.sourceCell)
+        const source = tableCellSource(cellNode.attrs?.sourceCell)
         const merged = source ? continuationCells.get(cellSourceKey(source)) : undefined
         entries.push({
           column: cursor,
@@ -1844,7 +1980,9 @@ export function pmTableToModel(table: PmNode): TableModel {
       const colspan = Math.max(1, Number(cellNode.attrs?.colspan) || 1)
       const rowspan = Math.max(1, Number(cellNode.attrs?.rowspan) || 1)
       const style = {
-        sourceCell: tableCellSource(table, cellNode.attrs?.sourceCell),
+        sourceCell: tableCellSource(cellNode.attrs?.sourceCell),
+        sourceProperties:
+          (cellNode.attrs?.sourceProperties as TableCell['sourceProperties']) ?? undefined,
         fill: (cellNode.attrs?.fill as string | null) ?? undefined,
         color: (cellNode.attrs?.color as string | null) ?? undefined,
         bold: cellNode.attrs?.bold ? true : undefined,
@@ -2668,19 +2806,36 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
     }
     if (node.type === 'docTable') {
       const idx = node.attrs?.docxIndex as number | null
-      const original =
+      const candidate =
         idx !== null && idx !== undefined && !usedIndexes.has(idx)
           ? originalByIndex.get(idx)
           : undefined
+      const publication = candidate?.table?.sourcePublication
+      const original =
+        publication &&
+        publication.table === node.attrs?.sourceTable &&
+        publication.baseline === node.attrs?.sourceBaseline
+          ? candidate
+          : undefined
       const model = pmTableToModel(node)
+      const sourceStructure = node.attrs?.originalStructure
+      const signature = tableStructureSignature(node)
+      const ownXml = () =>
+        generateTableModelXml(model, node.attrs?.sourceEnvelope as string | undefined, {
+          preserveProperties: typeof sourceStructure === 'string' && sourceStructure === signature,
+          preserveGrid:
+            typeof sourceStructure === 'string' &&
+            tableColumnSignature(sourceStructure) === tableColumnSignature(signature),
+          preserveTableProperties:
+            typeof sourceStructure === 'string' &&
+            tablePropertiesSignature(sourceStructure) === tablePropertiesSignature(signature),
+        })
       if (original?.type === 'table') {
         usedIndexes.add(idx!)
         mapAnchor(idx!)
-        const structurallyUnchanged =
-          node.attrs?.originalStructure === tableStructureSignature(node)
-        const formattingUnchanged =
-          node.attrs?.originalFormatting === tableFormattingSignature(node)
-        const formatChanges = tableFormatChanges(node)
+        const structurallyUnchanged = publication!.structure === signature
+        const formattingUnchanged = publication!.formatting === tableFormattingSignature(node)
+        const formatChanges = tableFormatChanges(node, publication!.formatting)
         if (
           original.blockRevision &&
           !revision &&
@@ -2705,20 +2860,12 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           changedCount++
           pushBlock({
             kind: 'xml',
-            xml: generateTableModelXml(model, original.originalXml ?? undefined, {
-              preserveProperties: structurallyUnchanged,
-              preserveGrid:
-                typeof node.attrs?.originalStructure === 'string' &&
-                tableColumnSignature(node.attrs.originalStructure) ===
-                  tableColumnSignature(tableStructureSignature(node)),
-              originalTable: original.table,
-              sourceTable: node.attrs?.sourceTable as string | undefined,
-            }),
+            xml: ownXml(),
           })
         }
       } else {
         changedCount++
-        pushBlock({ kind: 'xml', xml: generateTableModelXml(model) })
+        pushBlock({ kind: 'xml', xml: ownXml() })
       }
       continue
     }

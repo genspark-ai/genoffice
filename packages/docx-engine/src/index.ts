@@ -118,6 +118,7 @@ export {
   generateParagraphXml,
   mergeRPrModel,
   generateTableModelXml,
+  tablePropertyEnvelope,
   generateTableXml,
   generateTocFieldXml,
   mergePPrFormat,

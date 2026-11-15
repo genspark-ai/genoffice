@@ -430,7 +430,7 @@ export function splitTableAtSelection(): Command {
       originalFormatting: null,
       tblCaption: null,
       tblDescription: null,
-      tblAltEdited: false,
+      tblAltEdited: true,
     })
     const gap = schema.nodes.docParagraph.create()
     const tr = state.tr.replaceWith(tablePos, tablePos + table.nodeSize, [
