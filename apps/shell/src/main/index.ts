@@ -4059,12 +4059,18 @@ function withViewMenu(): void {
       .items) {
       view.submenu.append(item)
     }
+    // Items appended to the live application menu stay in the Electron model
+    // but never reach the native macOS bar (Sheets: View showed only the system
+    // "Full Screen"). Setting the menu again rebuilds the bar from the model.
+    Menu.setApplicationMenu(menu)
     return
   }
   const viewItem = Menu.buildFromTemplate([viewMenuTemplate()]).items[0]!
   const helpIdx = menu.items.findIndex((item) => item.role === 'help')
   if (helpIdx === -1) menu.append(viewItem)
   else menu.insert(helpIdx, viewItem)
+  // Same as above: rebuild the native bar from the updated model.
+  Menu.setApplicationMenu(menu)
 }
 
 /// Interface scale (genoffice#1913). Read once at boot, then replaced by the View menu.
