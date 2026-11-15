@@ -6,7 +6,6 @@ import {
   CellSelection,
   TableMap,
   deleteColumn,
-  deleteRow,
   isInTable,
   mergeCells,
   selectedRect,
@@ -16,7 +15,10 @@ import { showToast } from '../components/toast-bus'
 import { t } from '../i18n/locale'
 import {
   columnWidthsPx,
+  canSplitSelectedCells,
+  continuationMigrationError,
   copyCellFormatting,
+  deleteRowWithSource,
   insertColumnAt,
   insertRowAt,
   pctOf,
@@ -192,6 +194,7 @@ function cellWidths(cell: GridCell): number[] | null {
 
 const blankRowAttrs = (row: PmNode): Record<string, unknown> => ({
   ...row.attrs,
+  sourceRow: null,
   heightTwips: null,
   heightRule: null,
   repeatHeader: false,
@@ -224,7 +227,13 @@ export function splitGridCell(
       c.left <= at.col &&
       at.col < c.left + c.colspan,
   )
-  if (!T || T.node.attrs.gridGap || (R === 1 && C === 1)) return null
+  if (
+    !T ||
+    T.node.attrs.gridGap ||
+    (R === 1 && C === 1) ||
+    continuationMigrationError(table, T.node)
+  )
+    return null
   const { colspan: cs, rowspan: rs } = T
 
   // ---- columns: k[i] new grid columns per old column i of the cell's span
@@ -286,7 +295,11 @@ export function splitGridCell(
       const span = spans[ci]
       const colwidth = regionWidths ? regionWidths.slice(cursor, cursor + span) : null
       const node = T.node.type.create(
-        { ...T.node.attrs, colwidth },
+        {
+          ...T.node.attrs,
+          colwidth,
+          sourceCell: ri === 0 && ci === 0 ? T.node.attrs.sourceCell : null,
+        },
         ri === 0 && ci === 0 ? T.node.content : blank,
       )
       placed.push({ node, top, left, rowspan: heights[ri], colspan: span })
@@ -323,7 +336,7 @@ function caretIntoCell(
 /** Split Cells… dialog: the selection's top-left cell (or the merged selection) becomes rows × cols */
 export function splitCellsInto(rows: number, cols: number, mergeFirst: boolean): Command {
   return (state, dispatch) => {
-    if (!isInTable(state)) return false
+    if (!canSplitSelectedCells(state)) return false
     const rect = selectedRect(state)
     const tablePos = rect.tableStart - 1
     let tr = state.tr
@@ -390,10 +403,14 @@ export function splitTableAtSelection(): Command {
       if (bottom <= row) upper.push(c)
       else if (c.top >= row) lower.push({ ...c, top: c.top - row })
       else {
+        if (continuationMigrationError(table, c.node)) return false
         // a merge crossing the cut: the lower part becomes an empty cell
         upper.push({ ...c, rowspan: row - c.top })
         lower.push({
-          node: c.node.type.create(c.node.attrs, blankCellContent(schema, c.node)),
+          node: c.node.type.create(
+            { ...c.node.attrs, sourceCell: null },
+            blankCellContent(schema, c.node),
+          ),
           top: 0,
           left: c.left,
           rowspan: bottom - row,
@@ -590,7 +607,7 @@ export function canShiftCells(state: EditorState): boolean {
 export function deleteCells(mode: DeleteCellsMode): Command {
   return (state, dispatch) => {
     if (!isInTable(state)) return false
-    if (mode === 'row') return deleteRow(state, dispatch)
+    if (mode === 'row') return deleteRowWithSource(state, dispatch)
     if (mode === 'column') return deleteTableColumn(state, dispatch)
     if (!canShiftCells(state)) return false
     const rect = selectedRect(state)
@@ -619,7 +636,7 @@ export function deleteCells(mode: DeleteCellsMode): Command {
           const gone = [...doomed].find((c) => c.top === r && c.left === rect.left + i)!
           placed.push({
             node: gone.node.type.create(
-              { ...gone.node.attrs, gridGap: true, fill: null, borders: null },
+              { ...gone.node.attrs, sourceCell: null, gridGap: true, fill: null, borders: null },
               blankCellContent(schema, gone.node),
             ),
             top: r,
@@ -639,7 +656,10 @@ export function deleteCells(mode: DeleteCellsMode): Command {
         for (let i = 0; i < height; i++) {
           const last = g.cells.find((c) => c.left === col && c.top === g.map.height - 1)!
           placed.push({
-            node: last.node.type.create(last.node.attrs, blankCellContent(schema, last.node)),
+            node: last.node.type.create(
+              { ...last.node.attrs, sourceCell: null },
+              blankCellContent(schema, last.node),
+            ),
             top: g.map.height - height + i,
             left: col,
             rowspan: 1,

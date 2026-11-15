@@ -101,7 +101,7 @@ export function SplitCellsDialog({ editor, onClose }: DialogProps) {
       className="split-cells-dialog"
       title={t('ribbonSplitCellsDialog')}
       onClose={onClose}
-      okDisabled={rows === 1 && cols === 1}
+      okDisabled={!splitCellsInto(rows, cols, mergeFirst)(editor.state)}
       onOk={() => runAndClose(editor, splitCellsInto(rows, cols, mergeFirst), onClose)}
     >
       <div className="table-dialog-grid">
@@ -189,6 +189,7 @@ export function DeleteCellsDialog({ editor, onClose }: DialogProps) {
       className="delete-cells-dialog"
       title={t('ribbonDeleteCells')}
       onClose={onClose}
+      okDisabled={!deleteCells(mode)(editor.state)}
       onOk={() => runAndClose(editor, deleteCells(mode), onClose)}
     >
       <div className="table-dialog-radios" role="radiogroup">

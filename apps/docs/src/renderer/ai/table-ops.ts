@@ -1,19 +1,28 @@
 import { Fragment, type Node as PmNode } from '@tiptap/pm/model'
 import { EditorState } from '@tiptap/pm/state'
-import type { Transaction } from '@tiptap/pm/state'
+import type { Command, Transaction } from '@tiptap/pm/state'
 import {
   CellSelection,
   TableMap,
   addColSpan,
+  deleteRow,
+  isInTable,
   removeColumn,
   removeRow,
   rowIsHeader,
+  selectedRect,
   splitCell,
   tableNodeTypes,
   type Rect,
   type TableRect,
 } from '@tiptap/pm/tables'
-import type { CellBorder, CellBorders, StyleInfo, TableLook } from '@genoffice/docx-engine'
+import type {
+  CellBorder,
+  CellBorders,
+  StyleInfo,
+  TableCell,
+  TableLook,
+} from '@genoffice/docx-engine'
 import type { Op, OpDef, OpResult, RunEnv, Target, TopBlock } from './ops'
 import { hasDeletionRevision } from './doc-utils'
 import { REDACT_MARK } from './redact'
@@ -392,6 +401,145 @@ function tableResult(op: string, changed: number): OpResult {
 
 const noMatch = (op: string): OpResult => ({ op, matched: 0, changed: 0, skippedProtected: 0 })
 
+/** Moving a merge restart cannot silently decide where its hidden payload goes. */
+export function continuationMigrationError(table: PmNode, owner: PmNode): string | undefined {
+  const source = owner.attrs.sourceCell as TableCell['sourceCell']
+  if (
+    !source ||
+    source.table !== table.attrs.sourceTable ||
+    typeof table.attrs.continuationCells !== 'string'
+  )
+    return
+  const records = JSON.parse(table.attrs.continuationCells) as Array<{
+    owner?: TableCell['sourceCell']
+    cell: TableCell
+  }>
+  if (
+    records.some(
+      (record) =>
+        record.owner?.table === source.table &&
+        record.owner.row === source.row &&
+        record.owner.cell === source.cell &&
+        (record.cell.paras.some(Boolean) ||
+          record.cell.richParas?.some((paragraph) => paragraph.runs.length > 0) ||
+          record.cell.nestedTables?.length ||
+          record.cell.anchoredBoxes?.length),
+    )
+  )
+    return 'This operation requires an unsupported migration of hidden continuation content. No changes were made; preserve the merge or explicitly replace the entire table with checked structural intent.'
+}
+
+function rowDeletionMigrationError(table: PmNode, from: number, to: number): string | undefined {
+  let error: string | undefined
+  table.forEach((row, _offset, index) => {
+    if (index < from || index >= to) return
+    row.forEach((cell) => {
+      if (index + Number(cell.attrs.rowspan) > to) error ??= continuationMigrationError(table, cell)
+    })
+  })
+  return error
+}
+
+export const deleteRowWithSource: Command = (state, dispatch) => {
+  if (!isInTable(state)) return false
+  const rect = selectedRect(state)
+  if (rowDeletionMigrationError(rect.table, rect.top, rect.bottom)) return false
+  return deleteRow(state, dispatch)
+}
+
+/** Dialog splits can also subdivide an ordinary cell; inspect every selected owner. */
+export function canSplitSelectedCells(state: EditorState): boolean {
+  if (!isInTable(state)) return false
+  const rect = selectedRect(state)
+  for (let row = rect.top; row < rect.bottom; row++) {
+    for (let col = rect.left; col < rect.right; col++) {
+      const cell = rect.table.nodeAt(rect.map.map[row * rect.map.width + col])!
+      if (continuationMigrationError(rect.table, cell)) return false
+    }
+  }
+  return true
+}
+
+/** Native split keeps one cell and clones its attrs onto new pieces. */
+export const splitCellWithSource: Command = (state, dispatch) => {
+  if (!canSplitSelectedCells(state)) return false
+  const origins = new Map<string, number[]>()
+  state.doc.descendants((node, pos) => {
+    if (!node.attrs.sourceCell) return
+    const key = JSON.stringify(node.attrs.sourceCell)
+    const positions = origins.get(key) ?? []
+    positions.push(pos)
+    origins.set(key, positions)
+  })
+  return splitCell(
+    state,
+    dispatch
+      ? (tr) => {
+          const reset: number[] = []
+          tr.doc.descendants((node, pos) => {
+            if (!node.attrs.sourceCell) return
+            const previous = origins.get(JSON.stringify(node.attrs.sourceCell))
+            if (!previous?.some((oldPos) => tr.mapping.map(oldPos) === pos)) reset.push(pos)
+          })
+          for (const pos of reset) {
+            const cell = tr.doc.nodeAt(pos)!
+            tr.setNodeMarkup(pos, undefined, { ...cell.attrs, sourceCell: null })
+          }
+          dispatch(tr)
+        }
+      : undefined,
+  )
+}
+
+/** Shared by cell queries and writes; protected payloads never become plain text authority. */
+export function ordinaryCellTextState(table: PmNode, row: PmNode, cell: PmNode) {
+  const contentKinds = new Set<string>()
+  if (cell.attrs.gridGap) contentKinds.add('grid-gap')
+  const inspect = (node: PmNode) => {
+    if (hasDeletionRevision(node)) contentKinds.add('revision')
+    if (node.attrs.redact) contentKinds.add('redaction')
+    if (node.attrs.sdtShell) contentKinds.add('content-control')
+    for (const mark of node.marks) {
+      if (
+        [REDACT_MARK, 'del', 'ins', 'instrField', 'refField', 'ctrlCheckbox', 'docSym'].includes(
+          mark.type.name,
+        )
+      )
+        contentKinds.add(mark.type.name)
+    }
+  }
+  inspect(table)
+  inspect(row)
+  inspect(cell)
+  const paragraphs: PmNode[] = []
+  cell.forEach((paragraph) => {
+    inspect(paragraph)
+    if (!['docParagraph', 'docHeading', 'docListItem'].includes(paragraph.type.name)) {
+      contentKinds.add(paragraph.type.name)
+      return
+    }
+    paragraph.forEach((inline) => {
+      inspect(inline)
+      if (
+        !inline.isText &&
+        (inline.type.name !== 'hardBreak' ||
+          ['pageBreak', 'colBreak', 'wrapBreak', 'mathBreak'].some((key) => inline.attrs[key]))
+      )
+        contentKinds.add(inline.type.name)
+    })
+    paragraphs.push(paragraph)
+  })
+  if (paragraphs.length === 0) contentKinds.add('non-text-cell')
+  return {
+    editable: contentKinds.size === 0,
+    paragraphs,
+    contentKinds: [...contentKinds],
+    reason: contentKinds.size
+      ? `Cell contains ${[...contentKinds].join(', ')}; use a narrower text edit or an explicit structure operation. Technical protection does not grant or deny business authorization.`
+      : undefined,
+  }
+}
+
 export function tableOpDefs(h: TableOpHelpers): OpDef[] {
   const tableTarget = (op: Op, env: RunEnv) => resolveTable(op, env, h)
 
@@ -421,50 +569,10 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
       }
       const cell = table.nodeAt(cellPos)!
       const row = table.child(owner.top)
-      let unsafe = !!cell.attrs.gridGap
-      const inspect = (node: PmNode) => {
-        if (
-          hasDeletionRevision(node) ||
-          node.attrs.redact ||
-          node.attrs.sdtShell ||
-          node.marks.some((mark) =>
-            [
-              REDACT_MARK,
-              'del',
-              'ins',
-              'instrField',
-              'refField',
-              'ctrlCheckbox',
-              'docSym',
-            ].includes(mark.type.name),
-          )
-        )
-          unsafe = true
-      }
-      inspect(table)
-      inspect(row)
-      inspect(cell)
-      const paragraphs: PmNode[] = []
-      cell.forEach((paragraph) => {
-        inspect(paragraph)
-        if (!['docParagraph', 'docHeading', 'docListItem'].includes(paragraph.type.name)) {
-          unsafe = true
-          return
-        }
-        paragraph.forEach((inline) => {
-          inspect(inline)
-          if (
-            !inline.isText &&
-            (inline.type.name !== 'hardBreak' ||
-              ['pageBreak', 'colBreak', 'wrapBreak', 'mathBreak'].some((key) => inline.attrs[key]))
-          )
-            unsafe = true
-        })
-        paragraphs.push(paragraph)
-      })
-      if (unsafe || paragraphs.length === 0) {
+      const { editable, paragraphs, reason } = ordinaryCellTextState(table, row, cell)
+      if (!editable) {
         throw new Error(
-          `${op.op}: cell at row ${owner.top} col ${owner.left} is not ordinary editable text; protected content, fields, revisions, objects and nested tables require a narrower text edit or explicit structure operation`,
+          `${op.op}: cell at row ${owner.top} col ${owner.left} is not ordinary editable text; ${reason}`,
         )
       }
       if (cell.textBetween(0, cell.content.size, '\n', '\n') === text) continue
@@ -529,7 +637,7 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
   function runDeleteRow(op: Op, env: RunEnv): OpResult {
     const hit = tableTarget(op, env)
     if (!hit) return noMatch(op.op)
-    const { map, pos } = hit
+    const { map, pos, node: table } = hit
     const row = Number(op.row)
     const count = Number(op.count ?? 1)
     if (row + count > map.height) {
@@ -540,6 +648,8 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
         `${op.op}: cannot delete every row of the table; use deleteBlocks to remove it`,
       )
     }
+    const migrationError = rowDeletionMigrationError(table, row, row + count)
+    if (migrationError) throw new Error(migrationError)
     for (let i = 0; i < count; i++) {
       removeRow(env.tr, tableRect(env.tr, pos), row)
     }
@@ -673,6 +783,8 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
     const rect = rectOf(op.cell as CellRange, map, op.op)
     const cellPos = map.map[rect.top * map.width + rect.left]!
     const cell = table.nodeAt(cellPos)!
+    const migrationError = continuationMigrationError(table, cell)
+    if (migrationError) throw new Error(migrationError)
     if (Number(cell.attrs.colspan) === 1 && Number(cell.attrs.rowspan) === 1) {
       throw new Error(`${op.op}: the cell at row ${rect.top} col ${rect.left} is not merged`)
     }
@@ -682,7 +794,7 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
       selection: CellSelection.create(env.tr.doc, abs),
     })
     let applied = false
-    splitCell(state, (t) => {
+    splitCellWithSource(state, (t) => {
       for (const step of t.steps) env.tr.step(step)
       applied = true
     })

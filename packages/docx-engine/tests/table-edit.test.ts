@@ -78,6 +78,26 @@ describe('patchTableCellTexts', () => {
 })
 
 describe('generateTableModelXml', () => {
+  it('preserves imported properties when only paragraph content requires regeneration', async () => {
+    const source =
+      '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="1255"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="731" w:hRule="atLeast"/></w:trPr>' +
+      '<w:tc><w:tcPr><w:tcW w:w="3000" w:type="pct"/><w:shd w:fill="ABCDEF" w:themeFill="accent1"/></w:tcPr>' +
+      '<w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: source }))
+    const model = parsed.blocks[0].table!
+    model.colWidthsTwips = [1260]
+    model.rows[0][0].richParas = [{ runs: [{ text: 'NEW', sizeHalfPoints: 34 }] }]
+    const output = generateTableModelXml(model, source, { preserveProperties: true })
+    for (const name of ['tblPr', 'tblGrid', 'tcPr', 'trPr']) {
+      const pattern = new RegExp(`<w:${name}\\b[\\s\\S]*?</w:${name}>`)
+      expect(output.match(pattern)?.[0]).toBe(source.match(pattern)?.[0])
+    }
+    expect(output).toContain('>NEW</w:t>')
+    expect(output).toContain('<w:sz w:val="34"/>')
+    // Default regeneration still follows an actual caller-requested grid change.
+    expect(generateTableModelXml(model, source)).toContain('<w:gridCol w:w="1260"/>')
+  })
   it('round-trips structural rows, columns, styling, and merged cells', async () => {
     const xml = generateTableModelXml({
       colWidthsPct: [25, 35, 40],

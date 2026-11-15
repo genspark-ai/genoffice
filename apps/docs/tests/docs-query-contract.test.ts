@@ -36,6 +36,333 @@ function open(html = '<p>Alpha</p><p>Beta</p>') {
   return { editor, client }
 }
 
+it.each([
+  { type: 'docInlineMath', attrs: { latex: 'x+y' } },
+  {
+    type: 'docInlineImage',
+    attrs: { dataUrl: 'data:image/png;base64,AA==', widthPx: 20, heightPx: 20 },
+  },
+  { type: 'text', text: 'FIELD', marks: [{ type: 'instrField', attrs: { instr: 'DATE' } }] },
+  {
+    type: 'text',
+    text: 'INSERTED',
+    marks: [{ type: 'ins', attrs: { author: 'Author', id: '1' } }],
+  },
+  { type: 'text', text: 'DELETED', marks: [{ type: 'del', attrs: { author: 'Author', id: '2' } }] },
+])('does not advertise ordinary cell text writes over $type payloads', async (inline) => {
+  const { editor, client } = open()
+  editor.commands.setContent({
+    type: 'doc',
+    content: [
+      {
+        type: 'docTable',
+        content: [
+          {
+            type: 'docTableRow',
+            content: [
+              {
+                type: 'docTableCell',
+                content: [
+                  {
+                    type: 'docParagraph',
+                    content: [
+                      { type: 'text', text: 'Before ' },
+                      inline,
+                      { type: 'text', text: ' after' },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      { type: 'docParagraph' },
+    ],
+  })
+  client.context()
+  const result = await client.execute({
+    id: 'query-mixed-cell',
+    name: 'query_document',
+    input: { domain: 'cells' },
+  })
+  const item = JSON.parse(result.output).items[0]
+  expect(item.supportedOperations).not.toContain('setTableCellText')
+  expect(item.limitations).toContainEqual(
+    expect.objectContaining({ operation: 'setTableCellText', code: 'protected_content' }),
+  )
+  expect(item.projection).toMatchObject({ lossless: false })
+  const before = editor.getJSON()
+  const refused = await client.execute({
+    id: 'write-mixed-cell',
+    name: 'apply_ops',
+    input: {
+      ops: [{ op: 'setTableCellText', target: { engine: item.target }, text: 'REPLACEMENT' }],
+    },
+  })
+  expect(refused).toMatchObject({ isError: true, committed: false, revision: result.revision })
+  expect(editor.getJSON()).toEqual(before)
+})
+
+it('describes nested cell objects without permitting their implicit replacement', async () => {
+  const { editor, client } = open()
+  editor.commands.setContent({
+    type: 'doc',
+    content: [
+      {
+        type: 'docTable',
+        content: [
+          {
+            type: 'docTableRow',
+            content: [
+              {
+                type: 'docTableCell',
+                content: [
+                  { type: 'docParagraph', content: [{ type: 'text', text: 'Before' }] },
+                  { type: 'docNestedTable', attrs: { model: { rows: [[{ paras: ['Nested'] }]] } } },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      { type: 'docParagraph' },
+    ],
+  })
+  client.context()
+  const result = await client.execute({
+    id: 'nested-query',
+    name: 'query_document',
+    input: { domain: 'cells' },
+  })
+  const item = JSON.parse(result.output).items[0]
+  expect(item.projection).toMatchObject({ lossless: false, contentKinds: ['docNestedTable'] })
+  expect(item.structures).toContainEqual(
+    expect.objectContaining({
+      kind: 'docNestedTable',
+      id: expect.stringContaining(`structure:${result.documentId}:${result.revision}:`),
+    }),
+  )
+  expect(item.supportedOperations).toEqual([])
+  expect(item.complete).toBe(true)
+  const before = editor.getJSON()
+  expect(
+    await client.execute({
+      id: 'nested-write',
+      name: 'apply_ops',
+      input: {
+        ops: [
+          { op: 'setTableCellText', target: { engine: item.target }, text: 'Lost nested content' },
+        ],
+      },
+    }),
+  ).toMatchObject({ isError: true, committed: false, revision: result.revision })
+  expect(editor.getJSON()).toEqual(before)
+})
+
+it('shares parent content-control protection between cell discovery and execution', async () => {
+  const { editor, client } = open('<table><tr><td>Cell</td></tr></table><p>After</p>')
+  editor.view.dispatch(
+    editor.state.tr.setNodeMarkup(0, undefined, {
+      ...editor.state.doc.firstChild!.attrs,
+      sdtShell: '{}',
+    }),
+  )
+  client.context()
+  const result = await client.execute({
+    id: 'controlled-query',
+    name: 'query_document',
+    input: { domain: 'cells' },
+  })
+  const item = JSON.parse(result.output).items[0]
+  expect(item.supportedOperations).toEqual([])
+  expect(item.projection.contentKinds).toContain('content-control')
+  expect(
+    await client.execute({
+      id: 'controlled-write',
+      name: 'apply_ops',
+      input: {
+        ops: [{ op: 'setTableCellText', target: { engine: item.target }, text: 'Replacement' }],
+      },
+    }),
+  ).toMatchObject({ isError: true, committed: false, revision: result.revision })
+})
+
+it('continues a cell object inventory on the same owner when earlier cells also match', async () => {
+  const { editor, client } = open()
+  editor.commands.setContent({
+    type: 'doc',
+    content: [
+      {
+        type: 'docTable',
+        content: [
+          {
+            type: 'docTableRow',
+            content: [
+              {
+                type: 'docTableCell',
+                content: [{ type: 'docParagraph', content: [{ type: 'text', text: 'Plain' }] }],
+              },
+              {
+                type: 'docTableCell',
+                content: [
+                  {
+                    type: 'docParagraph',
+                    content: Array.from({ length: 40 }, (_, i) => ({
+                      type: 'text',
+                      text: `FIELD_${i} `,
+                      marks: [
+                        { type: 'instrField', attrs: { instr: ` DOCPROPERTY property${i} ` } },
+                      ],
+                    })),
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      { type: 'docParagraph' },
+    ],
+  })
+  client.context()
+  const first = await client.execute({
+    id: 'cell-objects',
+    name: 'query_document',
+    input: { domain: 'cells' },
+  })
+  const item = JSON.parse(first.output).items[1]
+  expect(item.structures).toHaveLength(32)
+  expect(item.structuresComplete).toBe(false)
+  const next = await client.execute({
+    id: 'cell-objects-next',
+    name: 'query_document',
+    input: { cursor: item.structuresPage.nextCursor },
+  })
+  const nextItems = JSON.parse(next.output).items
+  expect(nextItems).toHaveLength(1)
+  expect(nextItems[0].target).toEqual(item.target)
+  expect(nextItems[0].structures).toHaveLength(8)
+  expect(nextItems[0].structuresPage.complete).toBe(true)
+  expect(
+    new Set([...item.structures, ...nextItems[0].structures].map((structure) => structure.id)).size,
+  ).toBe(40)
+})
+
+it('publishes merged table and explicit row capabilities that agree with executable operations', async () => {
+  const { client } = open('<p>Anchor</p>')
+  const capabilities = await client.execute({
+    id: 'table-capabilities',
+    name: 'get_editor_capabilities',
+    input: {},
+  })
+  const published = JSON.parse(capabilities.output)
+  expect(published.htmlRules).toContain('support horizontal/vertical merges')
+  expect(published.htmlRules).not.toContain('merged cells are not supported')
+  expect(published.htmlRules).not.toContain('only cell text remains editable')
+  expect(
+    await client.execute({
+      id: 'merged-insert',
+      name: 'insert_content',
+      input: {
+        afterBlockIndex: 0,
+        html: '<table><tr><td colspan="2">Merged</td></tr><tr><td>Left</td><td>Right</td></tr></table>',
+      },
+    }),
+  ).toMatchObject({ committed: true })
+  const before = await client.execute({
+    id: 'merged-read',
+    name: 'query_document',
+    input: { domain: 'cells' },
+  })
+  expect(JSON.parse(before.output).items[0].html).toContain('colspan="2"')
+  expect(
+    await client.execute({
+      id: 'row-delete',
+      name: 'apply_ops',
+      input: { ops: [{ op: 'deleteTableRow', target: { blockIndexes: [1] }, row: 1 }] },
+    }),
+  ).toMatchObject({ committed: true })
+  const after = await client.execute({
+    id: 'row-read',
+    name: 'query_document',
+    input: { domain: 'cells' },
+  })
+  expect(JSON.parse(after.output).items).toHaveLength(1)
+})
+
+it.each(['insert_content', 'replace_blocks'])(
+  'refuses unsupported table formula HTML atomically through %s',
+  async (name) => {
+    const { editor, client } = open('<p>Anchor</p><p>Keep</p>')
+    const before = editor.getJSON()
+    const context = client.context()
+    const html =
+      '<p>Must not be inserted</p><table><tr><td>Before <formula>x+y</formula> after</td></tr></table>'
+    const result = await client.execute({
+      id: 'unsupported-table-formula',
+      name,
+      input:
+        name === 'insert_content'
+          ? { afterBlockIndex: 0, html }
+          : { startBlockIndex: 0, endBlockIndex: 1, html },
+    })
+    expect(result).toMatchObject({
+      isError: true,
+      committed: false,
+      mutated: false,
+      revision: context.revision,
+    })
+    expect(result.output).toMatch(/formula.*table cell.*not supported/i)
+    expect(editor.getJSON()).toEqual(before)
+    expect(editor.commands.undo()).toBe(false)
+  },
+)
+
+it('preserves existing native cell equations through a neighboring public text edit and save/reopen', async () => {
+  const equation =
+    '<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>x+y</m:t></m:r></m:oMath>'
+  const parsed = await parseDocx(
+    await buildDocx({
+      bodyXml:
+        '<w:tbl><w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="2880"/></w:tblGrid><w:tr>' +
+        `<w:tc><w:p>${equation}</w:p></w:tc><w:tc><w:p><w:r><w:t>Neighbor</w:t></w:r></w:p></w:tc>` +
+        '</w:tr></w:tbl><w:p/>',
+    }),
+  )
+  const { editor, client } = open()
+  editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+  client.context()
+  const query = await client.execute({
+    id: 'native-equation-neighbor',
+    name: 'query_document',
+    input: { domain: 'cells' },
+  })
+  const [mathCell, neighbor] = JSON.parse(query.output).items
+  expect(mathCell.structures).toContainEqual(expect.objectContaining({ kind: 'math' }))
+  expect(neighbor.supportedOperations).toContain('setTableCellText')
+  expect(
+    await client.execute({
+      id: 'native-equation-edit',
+      name: 'apply_ops',
+      input: {
+        ops: [{ op: 'setTableCellText', target: { engine: neighbor.target }, text: 'Updated' }],
+      },
+    }),
+  ).toMatchObject({ committed: true })
+  const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+  const reopened = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+  const beforeMath = parsed.blocks[0].table?.rows[0][0].richParas
+    ?.flatMap((p) => p.runs)
+    .find((run) => run.math)?.math
+  const afterMath = reopened.blocks[0].table?.rows[0][0].richParas
+    ?.flatMap((p) => p.runs)
+    .find((run) => run.math)?.math
+  expect(beforeMath).toBeDefined()
+  expect(afterMath).toEqual(beforeMath)
+  expect(reopened.blocks[0].table?.rows[0][1].paras).toEqual(['Updated'])
+})
+
 it('returns bounded current targets and coherent continuation', async () => {
   const { client } = open()
   const first = await client.execute({ id: 'q', name: 'query_document', input: { limit: 1 } })
@@ -614,6 +941,12 @@ it('discovers standalone images as readable media without exposing asset URLs or
   expect(item).toMatchObject({
     type: 'image',
     target: { kind: 'image' },
+    carrierTarget: {
+      kind: 'block',
+      documentId: result.documentId,
+      revision: result.revision,
+      expectedType: 'docProtected',
+    },
     mediaRef: `media:${result.documentId}:${result.revision}:0.0`,
     supportedOperations: ['read_document_media'],
   })

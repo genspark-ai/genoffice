@@ -13,6 +13,8 @@ import { t } from '../i18n/locale'
 import { MIND_MAP_LIMITS, parseMindMapTree } from '@genoffice/agent-core/mind-map'
 import { executeOps, opNames } from './ops'
 import {
+  describeStructureDeletion,
+  inventoryStructures,
   preservedInlineStructures,
   preservedTableStructures,
   validateStructureDeletion,
@@ -285,19 +287,41 @@ function preservedImageStructures(
 }
 
 /** Pure refusal preflight, also called by the runtime before opening an undo group. */
-export function validateHtmlStructureIntent(
+export function inspectHtmlStructureIntent(
   editor: Editor,
   call: AgentToolCall,
   scope?: SelectionScope | null,
   numIds: NumIds = { bullet: null, ordered: null },
-): string | null {
-  if (call.name !== 'replace_blocks' && call.name !== 'replace_selection') return null
+): { error: string | null; plan?: import('../../shared/structure-plan').DocsStructurePlan } {
+  if (call.name !== 'replace_blocks' && call.name !== 'replace_selection') return { error: null }
+  const inspect = (from: number, to: number, preserved: string[]) => {
+    const affected = inventoryStructures(editor.state.doc, from, to)
+    return {
+      error: validateStructureDeletion(
+        editor.state.doc,
+        from,
+        to,
+        call.input.deleteStructures,
+        preserved,
+      ),
+      plan: describeStructureDeletion(
+        affected,
+        affected.filter((item) => !preserved.includes(item.id)),
+        (call.input.deleteStructures ?? []) as string[],
+      ),
+    }
+  }
   try {
     const html = String(call.input.html ?? '')
+    const echo = toolEchoError(html) ?? contextMarkerError(html)
+    if (echo) return { error: echo }
     if (call.name === 'replace_blocks') {
       const range = validRange(editor, call.input.startBlockIndex, call.input.endBlockIndex)
-      if (!range) return rangeError(editor)
+      if (!range) return { error: rangeError(editor) }
+      const protectedEcho = legacyProtectedEchoError(editor, range.start, range.end, html)
+      if (protectedEcho) return { error: protectedEcho }
       const resolved = resolveImageRefs(editor, parseHtmlFragment(html, numIds), html)
+      if (!resolved.nodes.length) return { error: 'html did not parse into any content blocks' }
       const nodes = inheritBlockFormatting(editor, range.start, range.end, resolved.nodes, false)
       const positions = blockRangePositions(editor, range.start, range.end)
       const kept = [
@@ -316,27 +340,28 @@ export function validateHtmlStructureIntent(
           call.input.deleteStructures,
         ),
       ]
-      return validateStructureDeletion(
-        editor.state.doc,
-        positions.from,
-        positions.to,
-        call.input.deleteStructures,
-        kept,
-      )
+      return inspect(positions.from, positions.to, kept)
     }
     const range = selectionRange(editor, scope)
-    if (!range) return null
+    if (!range) return { error: 'nothing is selected: replace_selection needs a range selection' }
+    const $from = editor.state.doc.resolve(range.from)
+    const $to = editor.state.doc.resolve(range.to)
+    if (!$from.sameParent($to) || !$from.parent.isTextblock)
+      return { error: 'replace_selection only edits text inside one paragraph/heading/list item' }
+    if (!liveInlineRanges(editor.state.doc, range.from, range.to).length)
+      return { error: 'the selection is a pending tracked deletion' }
     const resolved = resolveImageRefs(editor, parseInlineFragment(html), html)
-    return validateStructureDeletion(
-      editor.state.doc,
-      range.from,
-      range.to,
-      call.input.deleteStructures,
-      preservedImageStructures(editor, resolved.kept),
-    )
+    if (!resolved.nodes.length) return { error: 'html did not parse into any text' }
+    return inspect(range.from, range.to, preservedImageStructures(editor, resolved.kept))
   } catch (error) {
-    return error instanceof Error ? error.message : String(error)
+    return { error: error instanceof Error ? error.message : String(error) }
   }
+}
+
+export function validateHtmlStructureIntent(
+  ...args: Parameters<typeof inspectHtmlStructureIntent>
+): string | null {
+  return inspectHtmlStructureIntent(...args).error
 }
 
 /** the range selection tools act on: the frozen scope when valid, else the live selection; null for a caret */
@@ -773,6 +798,14 @@ export function executeTool(
   notes?: AiNotesAccess,
   readState?: DocReadState,
 ): ToolExecution | Promise<ToolExecution> {
+  if (
+    ['replace_blocks', 'replace_selection'].includes(call.name) &&
+    (call.input.preconditions !== undefined || call.input.dryRun === true)
+  )
+    return fail(
+      'Document operation refused',
+      'Replacement preconditions and previews require the live runtime/MCP entry point; no changes were made.',
+    )
   const scope = frozen && frozen.doc === editor.state.doc ? frozen.scope : null
   const staleSummary = staleSummaryOf(call)
   if (staleSummary && editedExternally(editor, readState))

@@ -24,6 +24,10 @@ import type { DocsQueryResult } from '../src/shared/document-query'
  */
 
 const NUM_IDS = { bullet: BLANK_BULLET_NUM_ID, ordered: BLANK_ORDERED_NUM_ID }
+const authoredJson = (node: PmNode) =>
+  JSON.stringify(node, (key, value: unknown) =>
+    ['sourceTable', 'sourceRow', 'sourceCell'].includes(key) ? undefined : value,
+  )
 const TRACK = { author: 'AI Assistant' }
 
 const HEADER_RPR =
@@ -401,8 +405,9 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
     expect(table.attrs.docxIndex).toBe(before.attrs.docxIndex)
     expect(table.attrs.colWidthsPct).toEqual([37.5, 62.5])
     expect(table.attrs.tblStyleId).toBe('TableGrid')
-    expect(JSON.stringify(table.content![0])).toBe(JSON.stringify(before.content![0]))
-    expect(JSON.stringify(table.content![1])).toBe(JSON.stringify(before.content![1]))
+    expect(authoredJson(table.content![0])).toBe(authoredJson(before.content![0]))
+    expect(authoredJson(table.content![1])).toBe(authoredJson(before.content![1]))
+    expect(table.content![0].attrs?.sourceRow).toBeNull()
     // the new Cost row: body cell type, the old column widths, Cambria 10pt, right-aligned value
     const cost = table.content![2]
     expect(cost.content!.map((c) => c.type)).toEqual(['docTableCell', 'docTableCell'])
@@ -515,7 +520,7 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
     // the title row is untouched: still one cell spanning both columns
     expect(table.content![0].content).toHaveLength(1)
     expect(cellAt(table, 0, 0).attrs).toMatchObject({ colspan: 2, fill: 'D9EAF7' })
-    expect(JSON.stringify(table.content![0])).toBe(JSON.stringify(before.content![0]))
+    expect(authoredJson(table.content![0])).toBe(authoredJson(before.content![0]))
     // the new row takes the geometry and look of the row above it
     const profit = table.content![3]
     expect(profit.content!.map((c) => c.attrs.colspan)).toEqual([1, 1])
@@ -586,7 +591,7 @@ describe('replace_blocks keeps a rewritten table formatted like the table it rep
     // the title row is not part of the vertical merge: byte-identical, span kept
     expect(table.content![0].content).toHaveLength(1)
     expect(cellAt(table, 0, 0).attrs).toMatchObject({ colspan: 2, rowspan: 1, fill: 'D9EAF7' })
-    expect(JSON.stringify(table.content![0])).toBe(JSON.stringify(before.content![0]))
+    expect(authoredJson(table.content![0])).toBe(authoredJson(before.content![0]))
     // the merged group dissolves: the spanning cell drops its rowspan, the slot
     // below it becomes a plain cell in the same look
     expect(cellAt(table, 1, 0).attrs).toMatchObject({ colspan: 1, rowspan: 1, fill: 'FFF2CC' })

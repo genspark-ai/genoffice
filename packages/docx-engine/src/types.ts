@@ -1536,6 +1536,8 @@ export interface TableCell {
   /** raw <w:tcPr>…</w:tcPr> bytes: surgically patched on regeneration so unmodeled
    *  properties (tcMar/textDirection etc.) are not lost */
   rawTcPr?: string
+  /** Transient editor-load source address; never emitted into OOXML. */
+  sourceCell?: { table: string; row: number; cell: number }
   /** cell-level revision (tcPr w:cellIns / w:cellDel) */
   cellRevision?: { kind: 'ins' | 'del' } & RevisionInfo
   /** tracked cell-property change (tcPr w:tcPrChange); null = accepted */

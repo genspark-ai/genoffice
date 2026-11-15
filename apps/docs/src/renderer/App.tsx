@@ -411,7 +411,8 @@ import {
   selectTablePart,
   splitTableAtSelection,
 } from './editor/table-ops'
-import { deleteRow, deleteTable, mergeCells } from '@tiptap/pm/tables'
+import { deleteTable, mergeCells } from '@tiptap/pm/tables'
+import { deleteRowWithSource as deleteRow } from './ai/table-ops'
 import { PromptModal } from './components/PromptModal'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { WordCountDialog, type DocStats } from './components/WordCountDialog'
@@ -7859,6 +7860,7 @@ export function App({
     () => createDocsAnnotations(() => runtimeDocumentRef.current, docsInspection),
     [docsInspection],
   )
+  if (runtimeDocumentRef.current) runtimeDocumentRef.current.annotations = docsAnnotations
   fileCtxRef.current.beforeDocumentReplace = () => {
     docsCommands.releaseAll()
     docsAnnotations.reset()

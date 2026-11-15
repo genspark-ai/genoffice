@@ -22,6 +22,223 @@ afterEach(() => {
 const p = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
 const tc = (text: string, props = '') => `<w:tc><w:tcPr>${props}</w:tcPr>${p(text)}</w:tc>`
 
+it.each([
+  { field: 'align', value: 'right', expected: { align: 'right' } },
+  { field: 'lineSpacing', value: 1.5, expected: { lineSpacing: 1.5 } },
+  { field: 'indentLeft', value: 340, expected: { indentLeft: 340 } },
+  { field: 'indentRight', value: 620, expected: { indentRight: 620 } },
+  { field: 'indentFirstLine', value: 400, expected: { indentFirstLine: 400 } },
+  { field: 'spaceBefore', value: 160, expected: { spaceBefore: 160 } },
+  { field: 'spaceAfter', value: 160, expected: { spaceAfter: 160 } },
+  { field: 'pageBreakBefore', value: true, expected: { pageBreakBefore: true } },
+  { field: 'shadingFill', value: '#AABBCC', expected: { shadingFill: 'AABBCC' } },
+  { field: 'borders', value: 'b', expected: { borders: 'b' } },
+  {
+    field: 'tabs',
+    value: [{ pos: 1440, align: 'right', leader: 'dot' }],
+    expected: { tabStops: [{ pos: 1440, val: 'right', leader: 'dot' }] },
+  },
+])(
+  'saves public paragraph field $field inside a table without rewriting untouched properties',
+  async ({ field, value, expected }) => {
+    const { apply, saved } = await fixture(
+      p('INTRO') +
+        '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr>' +
+        '<w:tblGrid><w:gridCol w:w="1255"/><w:gridCol w:w="974"/></w:tblGrid><w:tr>' +
+        '<w:tc><w:tcPr><w:tcW w:w="1255" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:keepNext/><w:mirrorIndents/></w:pPr>' +
+        '<w:r><w:t>TEXT</w:t></w:r></w:p></w:tc>' +
+        tc('NEIGHBOR', '<w:tcW w:w="37" w:type="pct"/>') +
+        '</w:tr></w:tbl>' +
+        p('AFTER_TABLE'),
+    )
+    const before = await saved()
+    const result = await apply([
+      { op: 'setParagraphFormat', target: { blockIndexes: [1] }, [field]: value },
+    ])
+    expect(result.isError, result.output).not.toBe(true)
+    const { xml, reopened } = await saved()
+    expect(
+      reopened.blocks.find((block) => block.type === 'table')?.table?.rows[0][0].richParas?.[0],
+    ).toMatchObject(expected)
+    const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    for (const name of ['tblPr', 'tblGrid', 'tcPr', 'keepNext', 'mirrorIndents']) {
+      const elements = (doc: Document) =>
+        [...doc.getElementsByTagNameNS(ns, name)].map((node) => node.outerHTML)
+      expect(elements(xml)).toEqual(elements(before.xml))
+    }
+  },
+)
+
+it('replaces right-indent aliases and character units with the requested twips value', async () => {
+  const { apply, saved } = await fixture(
+    p('INTRO') +
+      '<w:tbl><w:tr><w:tc><w:p><w:pPr><w:ind w:left="120" w:end="240" w:endChars="100"/><w:mirrorIndents/></w:pPr>' +
+      '<w:r><w:t>TEXT</w:t></w:r></w:p></w:tc></w:tr></w:tbl>' +
+      p('AFTER_TABLE'),
+  )
+  const result = await apply([
+    { op: 'setParagraphFormat', target: { blockIndexes: [1] }, indentRight: 620 },
+  ])
+  expect(result.isError, result.output).not.toBe(true)
+  const { xml, reopened } = await saved()
+  expect(
+    reopened.blocks.find((block) => block.type === 'table')?.table?.rows[0][0].richParas?.[0],
+  ).toMatchObject({ indentLeft: 120, indentRight: 620 })
+  const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+  const indent = xml.getElementsByTagNameNS(ns, 'tc')[0].getElementsByTagNameNS(ns, 'ind')[0]
+  expect(indent.getAttributeNS(ns, 'end')).toBeNull()
+  expect(indent.getAttributeNS(ns, 'endChars')).toBeNull()
+  expect(indent.getAttributeNS(ns, 'right')).toBe('620')
+  expect(indent.getAttributeNS(ns, 'rightChars')).toBe('0')
+  expect(xml.getElementsByTagNameNS(ns, 'mirrorIndents')).toHaveLength(1)
+})
+
+it.each([
+  { field: 'pageBreakBefore', value: false, tag: 'pageBreakBefore' },
+  { field: 'shadingFill', value: null, tag: 'shd' },
+  { field: 'borders', value: null, tag: 'pBdr' },
+])('clears authored paragraph $field inside a table', async ({ field, value, tag }) => {
+  const { apply, saved } = await fixture(
+    p('INTRO') +
+      '<w:tbl><w:tr><w:tc><w:p><w:pPr><w:pageBreakBefore/>' +
+      '<w:pBdr><w:bottom w:val="single" w:sz="8" w:color="123456"/></w:pBdr><w:shd w:fill="ABCDEF"/>' +
+      '<w:mirrorIndents/></w:pPr><w:r><w:t>TEXT</w:t></w:r></w:p></w:tc></w:tr></w:tbl>' +
+      p('AFTER_TABLE'),
+  )
+  const result = await apply([
+    { op: 'setParagraphFormat', target: { blockIndexes: [1] }, [field]: value },
+  ])
+  expect(result.isError, result.output).not.toBe(true)
+  const { xml } = await saved()
+  const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+  expect(xml.getElementsByTagNameNS(ns, tag)).toHaveLength(0)
+  for (const retained of ['pageBreakBefore', 'shd', 'pBdr', 'mirrorIndents'].filter(
+    (name) => name !== tag,
+  ))
+    expect(xml.getElementsByTagNameNS(ns, retained)).toHaveLength(1)
+})
+
+it.each(['text', 'font', 'paragraph'] as const)(
+  'preserves authored table geometry and untouched cells after a mixed-run %s edit',
+  async (kind) => {
+    const grid = '<w:tblGrid><w:gridCol w:w="1255"/><w:gridCol w:w="974"/></w:tblGrid>'
+    const neighbor =
+      '<w:tc><w:tcPr><w:tcW w:w="37" w:type="pct"/><w:shd w:fill="ABCDEF" w:themeFill="accent1"/></w:tcPr>' +
+      p('NEIGHBOR') +
+      '</w:tc>'
+    const { apply, saved } = await fixture(
+      p('INTRO') +
+        '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblLayout w:type="fixed"/></w:tblPr>' +
+        grid +
+        '<w:tr><w:tc><w:tcPr><w:tcW w:w="1255" w:type="dxa"/><w:vMerge w:val="restart"/></w:tcPr><w:p>' +
+        '<w:r><w:rPr><w:b/></w:rPr><w:t>AB</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>CD</w:t></w:r>' +
+        '</w:p></w:tc>' +
+        neighbor +
+        '</w:tr><w:tr>' +
+        tc('', '<w:vMerge/><w:tcW w:w="1255" w:type="dxa"/>') +
+        tc('KEEP') +
+        '</w:tr></w:tbl>' +
+        p('AFTER_TABLE'),
+    )
+    const initial = await saved()
+    const before = initial.xml
+    const op =
+      kind === 'text'
+        ? {
+            op: 'setTableCellText',
+            target: { blockIndexes: [1] },
+            range: { row: 0, col: 0 },
+            text: 'UPDATED',
+          }
+        : kind === 'font'
+          ? { op: 'setFont', target: { blockIndexes: [1] }, fontSize: 17 }
+          : { op: 'setParagraphFormat', target: { blockIndexes: [1] }, align: 'right' }
+    const result = await apply([op])
+    expect(result.isError, result.output).not.toBe(true)
+    const { xml, reopened } = await saved()
+    const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    const elements = (doc: Document, name: string) =>
+      [...doc.getElementsByTagNameNS(ns, name)].map((n) => n.outerHTML)
+    expect(elements(xml, 'tblGrid')).toEqual(elements(before, 'tblGrid'))
+    expect(elements(xml, 'tcPr')).toEqual(elements(before, 'tcPr'))
+    expect(elements(xml, 'tblPr')).toEqual(elements(before, 'tblPr'))
+    expect(elements(xml, 'vMerge')).toEqual(elements(before, 'vMerge'))
+    if (kind === 'text') {
+      expect(xml.documentElement.textContent).toContain('UPDATED')
+      expect(elements(xml, 'tc')[1]).toBe(elements(before, 'tc')[1])
+    } else if (kind === 'font')
+      expect(
+        [...xml.getElementsByTagNameNS(ns, 'sz')].some((n) => n.getAttributeNS(ns, 'val') === '34'),
+      ).toBe(true)
+    else
+      expect(
+        [...xml.getElementsByTagNameNS(ns, 'jc')].some(
+          (n) => n.getAttributeNS(ns, 'val') === 'right',
+        ),
+      ).toBe(true)
+    expect(reopened.blocks.find((block) => block.type === 'table')?.table?.colWidthsTwips).toEqual(
+      initial.reopened.blocks.find((block) => block.type === 'table')?.table?.colWidthsTwips,
+    )
+  },
+)
+
+it('retains unedited grid and cell properties when list formatting requires regeneration', async () => {
+  const { editor, saved } = await fixture(
+    p('INTRO') +
+      '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="1255"/><w:gridCol w:w="974"/></w:tblGrid><w:tr>' +
+      tc('ITEM', '<w:tcW w:w="1255" w:type="dxa"/>') +
+      tc('KEEP', '<w:tcW w:w="37" w:type="pct"/><w:shd w:fill="ABCDEF" w:themeFill="accent1"/>') +
+      '</w:tr></w:tbl>' +
+      p('AFTER_TABLE'),
+  )
+  const initial = await saved()
+  let paragraph = -1
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === 'docParagraph' && node.textContent === 'ITEM') paragraph = pos
+  })
+  expect(paragraph).toBeGreaterThan(0)
+  const node = editor.state.doc.nodeAt(paragraph)!
+  editor.view.dispatch(
+    editor.state.tr.setNodeMarkup(paragraph, editor.schema.nodes.docListItem, {
+      ...node.attrs,
+      kind: 'bullet',
+      numId: '1',
+      ilvl: 0,
+    }),
+  )
+  const { xml } = await saved()
+  const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+  for (const name of ['tblGrid', 'tblPr', 'tcPr']) {
+    const content = (doc: Document) =>
+      [...doc.getElementsByTagNameNS(ns, name)].map((n) => n.outerHTML)
+    expect(content(xml)).toEqual(content(initial.xml))
+  }
+  expect(xml.getElementsByTagNameNS(ns, 'numId')[0].getAttributeNS(ns, 'val')).toBe('1')
+})
+
+it('persists explicit column widths and row/column topology changes', async () => {
+  const { apply, saved } = await fixture()
+  for (const op of [
+    {
+      op: 'setTableCellFormat',
+      target: { blockIndexes: [1] },
+      range: { row: 0, col: 2 },
+      width: 1800,
+    },
+    { op: 'insertTableRow', target: { blockIndexes: [1] }, row: 1 },
+    { op: 'insertTableColumn', target: { blockIndexes: [1] }, col: 2 },
+  ]) {
+    const result = await apply([op])
+    expect(result.isError, result.output).not.toBe(true)
+  }
+  const { xml } = await saved()
+  const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+  const grid = [...xml.getElementsByTagNameNS(ns, 'gridCol')].map((n) => n.getAttributeNS(ns, 'w'))
+  expect(grid).toEqual(['2400', '2400', '1800', '1800'])
+  expect(xml.getElementsByTagNameNS(ns, 'tr')).toHaveLength(3)
+})
+
 async function fixture(bodyXml?: string) {
   const parsed = await parseDocx(
     await buildDocx({

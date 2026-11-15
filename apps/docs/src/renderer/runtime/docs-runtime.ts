@@ -21,7 +21,7 @@ import {
   executeTool,
   markDocSeen,
   onDocSeenCarry,
-  validateHtmlStructureIntent,
+  inspectHtmlStructureIntent,
   type AiCommentsAccess,
   type AiDocExtras,
   type AiHeaderFooterAccess,
@@ -56,9 +56,14 @@ import {
 } from '../../shared/resource-tools'
 import { redactLabelsOf } from '../ai/redact-view'
 import { queryDocument, projectedTargetHtml, type QueryContinuation } from './document-query'
+import { checkRangePreconditions } from './range-preconditions'
+import { bindStructurePlan } from '../../shared/structure-plan'
+import { queryDocumentDiagnostics } from './document-diagnostics'
+import type { DocsAnnotations } from '../sdk/annotations'
+import type { DocsRangePreconditions } from '../../shared/edit-preconditions'
 
 type RuntimeExecution = ToolExecution &
-  Pick<DocsOperationResult, 'errorCode' | 'media' | 'imageReferenceErrors'> &
+  Pick<DocsOperationResult, 'errorCode' | 'media' | 'imageReferenceErrors' | 'structurePlan'> &
   Partial<Pick<DocsOperationResult, 'committed' | 'receipt' | 'matchCount' | 'changeCount'>>
 
 interface DocumentGenerationState {
@@ -68,6 +73,7 @@ interface DocumentGenerationState {
 }
 
 export interface RuntimeDocument {
+  annotations?: DocsAnnotations
   editor: Editor
   /** Changes when the host opens or replaces a document, not on each render. */
   identity: object
@@ -494,6 +500,34 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
               )
             }
           }
+          if (call.name === 'read_document_diagnostics') {
+            if (!doc.annotations)
+              return failure(
+                'Host diagnostics are not available in this document session',
+                'unavailable',
+              )
+            try {
+              return {
+                output: JSON.stringify(
+                  queryDocumentDiagnostics(
+                    doc.editor,
+                    doc.annotations,
+                    boundState.documentId,
+                    boundState.revision,
+                    call.input,
+                  ),
+                ),
+                summary: 'Host document diagnostics',
+                mutated: false,
+              }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              return failure(
+                message,
+                message.startsWith('Stale') ? 'stale_target' : 'invalid_input',
+              )
+            }
+          }
           if (call.name === 'apply_ops' && Array.isArray(call.input.ops)) {
             resolvedTargets = call.input.ops.flatMap((op) =>
               op?.target?.engine ? [op.target.engine] : [],
@@ -517,6 +551,17 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
                   'invalid_input',
                 )
             }
+          }
+          if (call.name === 'replace_blocks') {
+            const refusal = checkRangePreconditions(
+              doc.editor,
+              call.input as Parameters<typeof checkRangePreconditions>[1],
+              boundState.documentId,
+              boundState.revision,
+            )
+            if (refusal) return failure(refusal.error, refusal.errorCode)
+            resolvedTargets =
+              (call.input.preconditions as DocsRangePreconditions | undefined)?.targets ?? []
           }
           const localIntent = (value: unknown): string[] | undefined => {
             if (value === undefined) return undefined
@@ -801,7 +846,10 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
           const revisionsWereCurrent = revisionsSeen === doc.editor.state.doc
           const stateWasCurrent = seenState === doc.stateVersion
           const writesDocument =
-            !(call.name === 'apply_ops' && call.input.dryRun === true) &&
+            !(
+              ['apply_ops', 'replace_blocks', 'replace_selection'].includes(call.name) &&
+              call.input.dryRun === true
+            ) &&
             !DOCS_READ_TOOLS.has(call.name) &&
             !DOCS_DRAFT_CONTROLS.has(call.name) &&
             call.name !== 'start_document_draft' &&
@@ -823,15 +871,52 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
             )
           const isDraftTool =
             call.name === 'start_document_draft' || DOCS_DRAFT_CONTROLS.has(call.name)
-          const structureError = validateHtmlStructureIntent(
+          const structureCheck = inspectHtmlStructureIntent(
             doc.editor,
             call,
             frozen?.doc === doc.editor.state.doc ? frozen.scope : null,
             doc.numIds,
           )
-          if (structureError) return failure(structureError, 'invalid_input')
+          const structurePlan =
+            structureCheck.plan &&
+            bindStructurePlan(structureCheck.plan, boundState.documentId, boundState.revision)
+          if (structureCheck.error)
+            return {
+              ...failure(structureCheck.error, 'invalid_input'),
+              ...(structurePlan ? { structurePlan } : {}),
+            }
           if (hasActiveDocumentDraft(doc.editor) && !isDraftTool && !DOCS_READ_TOOLS.has(call.name))
             return failure('Settle the active document draft before editing')
+          if (structurePlan) {
+            operationResults = [
+              {
+                op: call.name,
+                structuralEffectCount: structurePlan.counts.wouldRemove,
+                structuralEffectsComplete: structurePlan.counts.wouldRemove <= 64,
+                matched:
+                  call.name === 'replace_blocks'
+                    ? Number(call.input.endBlockIndex) - Number(call.input.startBlockIndex) + 1
+                    : 1,
+                changed:
+                  call.name === 'replace_blocks'
+                    ? Number(call.input.endBlockIndex) - Number(call.input.startBlockIndex) + 1
+                    : 1,
+                structuralEffects: structurePlan.wouldRemove.map((item) => ({
+                  reference: item.id,
+                  kind: item.kind,
+                  effect: doc.track ? 'marked-for-deletion' : 'removed',
+                })),
+              },
+            ]
+            if (call.input.dryRun === true)
+              return {
+                output:
+                  'Replacement preview validated at the current revision; no changes were made and no version was reserved.',
+                summary: 'Replacement preview',
+                mutated: false,
+                structurePlan,
+              }
+          }
           if (call.name === 'document_history') {
             const changed = ownApply(() =>
               call.input.action === 'undo'
@@ -869,7 +954,18 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
               engineEpoch: boundState,
             })
             if (!preview.ok)
-              return failure(preview.error ?? 'The operation batch cannot execute', 'invalid_input')
+              return {
+                ...failure(preview.error ?? 'The operation batch cannot execute', 'invalid_input'),
+                ...(preview.structurePlan
+                  ? {
+                      structurePlan: bindStructurePlan(
+                        preview.structurePlan,
+                        boundState.documentId,
+                        boundState.revision,
+                      ),
+                    }
+                  : {}),
+              }
             changesHistory = call.input.dryRun !== true && preview.wouldChange === true
           }
           if (changesHistory) doc.editor.view.dispatch(closeHistory(doc.editor.state.tr))
@@ -903,6 +999,15 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
                         const results = outcome.previewResults ?? outcome.results
                         operationResults = results.map((result) => ({
                           ...result,
+                          ...(result.structurePlan
+                            ? {
+                                structurePlan: bindStructurePlan(
+                                  result.structurePlan,
+                                  boundState.documentId,
+                                  revisionBefore,
+                                ),
+                              }
+                            : {}),
                           ...(result.structuralEffects
                             ? {
                                 structuralEffects: result.structuralEffects.map((effect) => ({
@@ -933,7 +1038,12 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
                       })()
                     : executeTool(
                         doc.editor,
-                        call,
+                        ['replace_blocks', 'replace_selection'].includes(call.name)
+                          ? {
+                              ...call,
+                              input: { ...call.input, preconditions: undefined, dryRun: undefined },
+                            }
+                          : call,
                         doc.numIds,
                         doc.track,
                         operationSignal,
@@ -1023,7 +1133,7 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
               revisionState = nextState
           }
           if (result.mutated) doc.editor.view.dispatch(closeHistory(doc.editor.state.tr))
-          return result
+          return structurePlan ? { ...result, structurePlan } : result
         }
         const result = boundState.queue
           .then(run)
@@ -1052,7 +1162,8 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
                       ? changed
                         ? 'failure-after-commit'
                         : 'rejected'
-                      : call.name === 'apply_ops' && call.input.dryRun === true
+                      : ['apply_ops', 'replace_blocks', 'replace_selection'].includes(call.name) &&
+                          call.input.dryRun === true
                         ? 'preview'
                         : changed
                           ? 'applied'

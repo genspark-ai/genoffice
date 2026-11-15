@@ -13,7 +13,8 @@ import { fieldOpDefs } from './field-ops'
 import { tableOpDefs } from './table-ops'
 import { compileFind, findInDoc } from '../editor/find'
 import type { DocsEngineTarget } from '../../shared/document-query'
-import { inventoryStructures } from './structure-inventory'
+import { describeStructureDeletion, inventoryStructures } from './structure-inventory'
+import type { DocsStructurePlan } from '../../shared/structure-plan'
 
 /**
  * Canonical edit ops for the document. The model (apply_ops) and, later, the
@@ -110,6 +111,9 @@ export interface OpContext {
 const wantsAiMark = (ctx: OpContext): boolean => ctx.markAi ?? ctx.source !== 'ui'
 
 export interface OpResult {
+  structurePlan?: DocsStructurePlan
+  structuralEffectCount?: number
+  structuralEffectsComplete?: boolean
   structuralEffects?: Array<{
     reference: string
     kind: string
@@ -128,6 +132,7 @@ export interface OpResult {
 }
 
 export interface ExecuteOutcome {
+  structurePlan?: DocsStructurePlan
   previewResults?: OpResult[]
   ok: boolean
   results: OpResult[]
@@ -663,7 +668,7 @@ function applyFontRange(
   }
   if (Object.keys(markPatch).length === 0) return
   // merge per text node: only the given attrs change, the rest survive
-  node.forEach((child, offset) => {
+  node.descendants((child, offset) => {
     if (!child.isText) return
     const childFrom = Math.max(contentFrom + offset, from)
     const childTo = Math.min(contentFrom + offset + child.nodeSize, to)
@@ -1757,8 +1762,11 @@ export function executeOps(editor: Editor, ops: unknown, ctx: OpContext = {}): E
   const schema = editor.schema
   const selection = frozenSelectionRange(editor, ctx.selection) ?? editor.state.selection
   const results: OpResult[] = []
+  const sourceStructures = ctx.source === 'ui' ? [] : inventoryStructures(tr.before)
+  let rejectedPlan: DocsStructurePlan | undefined
   try {
     for (const [op, def] of planned) {
+      rejectedPlan = undefined
       let resolved = op
       let mappedIntent: string[] | undefined
       if (op.deleteStructures !== undefined) {
@@ -1868,6 +1876,12 @@ export function executeOps(editor: Editor, ops: unknown, ctx: OpContext = {}): E
         to: tr.mapping.map(selection.to),
       }
       const structures = ctx.source === 'ui' ? [] : inventoryStructures(tr.doc)
+      const targeted = resolved.target ? matchTarget(tr.doc, resolved.target, sel) : []
+      const scopedStructures = structures.filter((item) =>
+        targeted.some(
+          (block) => item.from < block.pos + block.node.nodeSize && item.to > block.pos,
+        ),
+      )
       const stepStart = tr.steps.length
       const result = def.apply(resolved, { tr, schema, sel, ctx, editor })
       if (ctx.source !== 'ui') {
@@ -1889,21 +1903,61 @@ export function executeOps(editor: Editor, ops: unknown, ctx: OpContext = {}): E
                 )
               })
         const actual = removed.map((item) => item.id).sort()
+        const sourceMap = tr.mapping.slice(0, stepStart)
+        const toSource = (item: (typeof structures)[number]) =>
+          sourceStructures.find((source) => {
+            const from = sourceMap.mapResult(source.from, 1)
+            const to = sourceMap.mapResult(source.to, -1)
+            return (
+              !from.deletedAcross &&
+              !to.deletedAcross &&
+              source.kind === item.kind &&
+              from.pos === item.from &&
+              to.pos === item.to
+            )
+          })
+        const sourceRemoved = removed.map(toSource)
+        if (sourceRemoved.some((item) => !item))
+          throw new Error(
+            'Structure identities cannot be proven after an earlier rewrite or insertion. Apply that edit separately, query_document again, then declare the observed deletion targets.',
+          )
+        if (removed.length || scopedStructures.length || mappedIntent?.length) {
+          const sourceAffected = scopedStructures.flatMap((item) => {
+            const source = toSource(item)
+            return source ? [source] : []
+          })
+          rejectedPlan = describeStructureDeletion(
+            sourceAffected,
+            sourceRemoved.filter((item) => item !== undefined),
+            (op.deleteStructures ?? []) as string[],
+          )
+          if (sourceAffected.length !== scopedStructures.length) {
+            rejectedPlan.complete = false
+            rejectedPlan.counts.wouldPreserve += scopedStructures.length - sourceAffected.length
+          }
+          result.structurePlan = rejectedPlan
+        }
         if (JSON.stringify([...(mappedIntent ?? [])].sort()) !== JSON.stringify(actual))
           throw new Error(
             'This operation would delete protected structures without exact deleteStructures intent. Query the current targets and declare the exact structures to delete.',
           )
-        if (removed.length)
-          result.structuralEffects = removed.map((item) => ({
+        if (removed.length) {
+          result.structuralEffectCount = removed.length
+          result.structuralEffectsComplete = removed.length <= 64
+          result.structuralEffects = removed.slice(0, 64).map((item) => ({
             reference: (op.deleteStructures as string[])[mappedIntent!.indexOf(item.id)],
             kind: item.kind,
             effect: ctx.track ? 'marked-for-deletion' : 'removed',
           }))
+        }
       }
       results.push(result)
     }
   } catch (e) {
-    return failure(e instanceof Error ? e.message : String(e))
+    return {
+      ...failure(e instanceof Error ? e.message : String(e)),
+      ...(rejectedPlan ? { structurePlan: rejectedPlan } : {}),
+    }
   }
 
   // Build the complete transaction even for a preview: schema and target checks

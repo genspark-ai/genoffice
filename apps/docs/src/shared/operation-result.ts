@@ -17,6 +17,7 @@ export interface DocsImageReferenceIssue {
 }
 
 export interface DocsOperationResult extends ToolExecution {
+  structurePlan?: import('./structure-plan').DocsStructurePlan
   receipt?: {
     outcome:
       | 'rejected'
@@ -31,6 +32,9 @@ export interface DocsOperationResult extends ToolExecution {
     persistence: 'unchanged' | 'pending' | 'completed' | 'unknown'
     resolvedTargets?: import('./document-query').DocsEngineTarget[]
     operations?: Array<{
+      structurePlan?: import('./structure-plan').DocsStructurePlan
+      structuralEffectCount?: number
+      structuralEffectsComplete?: boolean
       op: string
       matched: number
       changed: number

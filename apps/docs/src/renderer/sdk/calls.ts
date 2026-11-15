@@ -26,6 +26,7 @@ const annotation = z.object({
   from: z.number().int().nonnegative(),
   to: z.number().int().nonnegative(),
   message: z.string().max(10000).optional(),
+  code: z.string().max(1000).optional(),
   severity: z.enum(['info', 'warning', 'error']).optional(),
   style: style.optional(),
 })
@@ -121,6 +122,9 @@ export async function executeDocsSdkCall(
       return { ok: true }
     case 'annotations.diagnostics':
       return api.annotations.diagnostics()
+    case 'annotations.snapshot':
+      z.object({}).strict().parse(input)
+      return api.annotations.snapshot()
     case 'annotations.errors':
       return api.annotations.errors()
     case 'annotations.refresh':

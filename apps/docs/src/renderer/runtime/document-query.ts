@@ -6,6 +6,7 @@ import { TableMap } from '@tiptap/pm/tables'
 import type { RuntimeDocument } from './docs-runtime'
 import { inventoryStructures } from '../ai/structure-inventory'
 import { hasDeletionRevision } from '../ai/doc-utils'
+import { ordinaryCellTextState } from '../ai/table-ops'
 
 /** Serializer coordinates remain source-grid coordinates when deleted rows are omitted. */
 function cellHtml(table: HTMLTableElement | null, row: number, col: number): string | undefined {
@@ -20,6 +21,8 @@ function cellHtml(table: HTMLTableElement | null, row: number, col: number): str
 export interface QueryWindow {
   /** Internal continuation window; initial public requests start at zero. */
   structureOffset?: number
+  /** A structure continuation stays on its original physical cell. */
+  structureCell?: { row: number; col: number }
   domain?: 'body' | 'cells' | 'images' | 'sections' | 'headers' | 'footers'
   startBlockIndex?: number
   endBlockIndex?: number
@@ -142,6 +145,21 @@ export function queryDocument(
       supportedOperations: editor.isEditable
         ? item.supportedOperations
         : item.supportedOperations.filter((name) => name === 'read_document_media'),
+      ...(!editor.isEditable &&
+      item.supportedOperations.some((name) => name !== 'read_document_media')
+        ? {
+            limitations: [
+              ...(item.limitations ?? []),
+              ...item.supportedOperations
+                .filter((name) => name !== 'read_document_media')
+                .map((operation) => ({
+                  operation,
+                  code: 'not_editable' as const,
+                  reason: 'The current document is not editable.',
+                })),
+            ],
+          }
+        : {}),
     }
     const size = JSON.stringify(projected).length
     if (outputChars + size > 18000 && items.length) {
@@ -156,6 +174,7 @@ export function queryDocument(
           endBlockIndex: item.blockIndex,
           limit: 1,
           structureOffset: projected.structuresPage.offset + (projected.structures?.length ?? 0),
+          ...(item.target.cell ? { structureCell: item.target.cell } : {}),
         },
         0,
       )
@@ -290,6 +309,14 @@ export function queryDocument(
         row.forEach((cell, cellOffset) => {
           if (hasDeletionRevision(cell)) return
           const rect = map.findCell(rowOffset + 1 + cellOffset)
+          if (
+            query.structureCell &&
+            (query.structureCell.row !== rect.top || query.structureCell.col !== rect.left)
+          )
+            return
+          const state = ordinaryCellTextState(node, row, cell)
+          const from = pos + rowOffset + cellOffset + 2
+          const structures = inventoryStructures(editor.state.doc, from, from + cell.nodeSize)
           add({
             target: {
               kind: 'cell',
@@ -303,7 +330,27 @@ export function queryDocument(
             blockIndex: index,
             html: cellHtml(table, rect.top, rect.left) ?? '',
             complete: true,
-            supportedOperations: ['setTableCellText'],
+            supportedOperations: state.editable ? ['setTableCellText'] : [],
+            ...(state.editable
+              ? {}
+              : {
+                  limitations: [
+                    {
+                      operation: 'setTableCellText',
+                      code: 'protected_content' as const,
+                      reason: state.reason!,
+                    },
+                  ],
+                }),
+            projection: { lossless: false, contentKinds: state.contentKinds },
+            structures: structures
+              .slice(query.structureOffset ?? 0, (query.structureOffset ?? 0) + 32)
+              .map((item) => ({ ...item, id: `structure:${documentId}:${revision}:${item.id}` })),
+            structuresComplete: !query.structureOffset && structures.length <= 32,
+            structuresPage: {
+              offset: query.structureOffset ?? 0,
+              complete: (query.structureOffset ?? 0) + 32 >= structures.length,
+            },
           })
         })
       })
@@ -325,6 +372,13 @@ export function queryDocument(
           html: `<img src="${src}">`,
           complete: true,
           mediaRef: src,
+          carrierTarget: {
+            kind: 'block',
+            documentId,
+            revision,
+            range: { from: pos, to: pos + node.nodeSize },
+            expectedType: node.type.name,
+          },
           supportedOperations: ['read_document_media'],
         })
       })

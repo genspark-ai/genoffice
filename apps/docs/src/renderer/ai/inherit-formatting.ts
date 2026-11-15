@@ -390,6 +390,7 @@ function inheritCell(
   // the old cell's look wins outright, null included: the parser's own defaults
   // (new-table vAlign, synthetic header fill) must not restyle a rewritten table
   if (mode === 'style') {
+    attrs.sourceCell = null
     for (const key of CELL_STYLE_ATTRS) attrs[key] = oldJson.attrs?.[key] ?? null
   }
   return { type: oldJson.type, attrs, content: inheritCellContent(old, oldJson, next) }
@@ -577,7 +578,7 @@ export function inheritTableFormatting(
    * gives each merged-away slot a plain cell of its own, styled like the cell
    * that spanned it, and drops every rowspan.
    */
-  const mapGridRow = (r: number, row: PmNode, dissolve: boolean): PmNode => {
+  const mapGridRow = (r: number, row: PmNode, dissolve: boolean, preserveSource = true): PmNode => {
     const oldRow = old.child(r)
     const oldRowJson = oldRows[r]
     const cells: PmNode[] = []
@@ -594,11 +595,19 @@ export function inheritTableFormatting(
         return
       }
       const cell = inheritCell(oldRow.child(pmIndex), oldRowJson.content![pmIndex], newCell, 'full')
+      if (!preserveSource) cell.attrs!.sourceCell = null
       if (dissolve) cell.attrs!.rowspan = 1
       cells.push(cell)
       pmIndex++
     })
-    return { ...oldRowJson, content: cells }
+    return {
+      ...oldRowJson,
+      attrs: {
+        ...oldRowJson.attrs,
+        sourceRow: preserveSource ? oldRowJson.attrs?.sourceRow : null,
+      },
+      content: cells,
+    }
   }
 
   const rows: PmNode[] = samePhysicalShape
@@ -614,7 +623,7 @@ export function inheritTableFormatting(
           const template = pairRows(oldRows, newRows)
           return newRows.map((row, r) => {
             const j = template[r]
-            if (sameGrid && fitsGrid(j, row)) return mapGridRow(j, row, rowMerged(j))
+            if (sameGrid && fitsGrid(j, row)) return mapGridRow(j, row, rowMerged(j), false)
             const oldRow = old.child(j)
             const oldRowJson = oldRows[j]
             const oldCells = oldRowJson.content ?? []

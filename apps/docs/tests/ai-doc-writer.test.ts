@@ -19,6 +19,7 @@ import { DraftLanding } from '../src/renderer/runtime/draft-landing'
 import { DocumentDraft } from '../src/renderer/runtime/document-draft'
 import { createDocsRuntime } from '../src/renderer/runtime/docs-runtime'
 import { createNativeDocsWorkflows } from '../src/renderer/ai/native-workflows'
+import { HTML_RULES } from '../src/renderer/ai/protocol'
 import type { AgentToolCall } from '@genoffice/agent-core'
 
 const NUM_IDS = { bullet: BLANK_BULLET_NUM_ID, ordered: BLANK_ORDERED_NUM_ID }
@@ -92,7 +93,7 @@ describe('buildDocWriterRequest', () => {
       '\n\nAnswer in French.',
     )
     expect(system).toContain('restricted HTML fragment only')
-    expect(system).toContain('Only these tags are allowed')
+    expect(system).toContain(HTML_RULES)
     expect(system.endsWith('Answer in French.')).toBe(true)
     expect(user).toContain('Title: Guide')
     expect(user).toContain('intro, body')

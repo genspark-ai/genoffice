@@ -12,8 +12,10 @@ import {
 /** Editing remains in the runtime; inference and orchestration use the Harness's own facilities. */
 
 import { DOCS_IMAGE_SOURCE_SCHEMA } from './media-policy'
+import { DOCS_RANGE_PRECONDITIONS_SCHEMA } from './edit-preconditions'
 
 export const DOCS_READ_TOOLS = new Set([
+  'read_document_diagnostics',
   'query_document',
   'read_attachment',
   'search_knowledge_base',
@@ -89,6 +91,12 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
       inputSchema: {
         type: 'object',
         properties: {
+          dryRun: {
+            type: 'boolean',
+            description:
+              'Validate and return provisional structural effects without editing or reserving the revision.',
+          },
+          preconditions: DOCS_RANGE_PRECONDITIONS_SCHEMA,
           deleteStructures: {
             type: 'array',
             items: { type: 'string' },
@@ -116,6 +124,11 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
       inputSchema: {
         type: 'object',
         properties: {
+          dryRun: {
+            type: 'boolean',
+            description:
+              'Validate the selected replacement without editing or reserving the revision.',
+          },
           deleteStructures: {
             type: 'array',
             items: { type: 'string' },

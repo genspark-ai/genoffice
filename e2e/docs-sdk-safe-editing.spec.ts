@@ -317,6 +317,321 @@ test('mounted SDK validates queried edits and saves body and header effects in t
   })
 })
 
+test('mounted SDK preserves mixed-run table layout and exposes range checks and host diagnostics', async () => {
+  test.setTimeout(120_000)
+  const fixture = await JSZip.loadAsync(
+    await readFile(
+      resolve(__dirname, '../apps/docs/tests/fixtures/foraoffice-header-textbox.docx'),
+    ),
+  )
+  const source = await fixture.file('word/document.xml')!.async('string')
+  const section = source.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/)?.[0]
+  if (!section) throw new Error('Expected the fixture section properties')
+  const paragraph = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
+  const table =
+    '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblLayout w:type="fixed"/></w:tblPr>' +
+    '<w:tblGrid><w:gridCol w:w="1255"/><w:gridCol w:w="974"/></w:tblGrid>' +
+    '<w:tr><w:tc><w:tcPr><w:tcW w:w="1255" w:type="dxa"/><w:vMerge w:val="restart"/></w:tcPr><w:p>' +
+    '<w:r><w:rPr><w:b/></w:rPr><w:t>AB</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>CD</w:t></w:r>' +
+    '</w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="37" w:type="pct"/>' +
+    '<w:shd w:fill="ABCDEF" w:themeFill="accent1"/></w:tcPr>' +
+    paragraph('NEIGHBOR') +
+    '</w:tc></w:tr><w:tr><w:tc><w:tcPr><w:vMerge/><w:tcW w:w="1255" w:type="dxa"/></w:tcPr>' +
+    '<w:p/></w:tc><w:tc>' +
+    paragraph('KEEP') +
+    '</w:tc></w:tr></w:tbl>'
+  const original = source.replace(
+    /<w:body>[\s\S]*?<\/w:body>/,
+    '<w:body><w:p><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:r><w:t>KEEP_HEADING</w:t></w:r></w:p>' +
+      paragraph('BODY_TO_REWRITE') +
+      table +
+      paragraph('AFTER_TABLE') +
+      section +
+      '</w:body>',
+  )
+  fixture.file('word/document.xml', original)
+  await withHostedDocument(await fixture.generateAsync({ type: 'nodebuffer' }), async (page) => {
+    const result = await page.evaluate(async () => {
+      const { editor, fixture } = window as unknown as FixtureWindow
+      const caller = editor.runtime.connect({ id: 'neutral-contracts-acceptance' })
+      const query = async (id: string, input: Record<string, string | number>) => {
+        const result = await caller.execute({ id, name: 'query_document', input })
+        if (result.isError) throw new Error(result.output)
+        return JSON.parse(result.output) as DocsQueryResult
+      }
+      try {
+        const before = caller.context()
+        const heading = (await query('heading', { containsText: 'KEEP_HEADING' })).items[0]
+        const body = (await query('body', { containsText: 'BODY_TO_REWRITE' })).items[0]
+        if (heading?.type !== 'docHeading' || body?.type !== 'docParagraph')
+          throw new Error('Expected the heading and body paragraph')
+        const refused = await caller.execute({
+          id: 'range-with-heading',
+          name: 'replace_blocks',
+          input: {
+            startBlockIndex: heading.blockIndex,
+            endBlockIndex: body.blockIndex,
+            html: '<p>WRONG_RANGE</p>',
+            preconditions: { allowedTypes: ['docParagraph'], preserve: [heading.target] },
+          },
+        })
+        const afterRefusal = caller.context()
+        const replaced = await caller.execute({
+          id: 'exact-body-range',
+          name: 'replace_blocks',
+          input: {
+            startBlockIndex: body.blockIndex,
+            endBlockIndex: body.blockIndex,
+            html: '<p>REWRITTEN_BODY</p>',
+            preconditions: {
+              targets: [body.target],
+              allowedTypes: ['docParagraph'],
+              preserve: [heading.target],
+            },
+          },
+        })
+        if (replaced.isError) throw new Error(replaced.output)
+        const cells = await query('mixed-cell', { domain: 'cells' })
+        const target = cells.items.find(
+          (item) => item.target.cell?.row === 0 && item.target.cell.col === 0,
+        )
+        if (!target?.supportedOperations.includes('setTableCellText'))
+          throw new Error('Expected an editable merged owner')
+        const filled = await caller.execute({
+          id: 'fill-mixed-cell',
+          name: 'apply_ops',
+          input: {
+            ops: [
+              { op: 'setTableCellText', target: { engine: target.target }, text: 'FILLED_MIXED' },
+            ],
+          },
+        })
+        if (filled.isError) throw new Error(filled.output)
+        const table = (
+          await query('formatted-table', { type: 'docTable', containsText: 'FILLED_MIXED' })
+        ).items[0]
+        if (!table) throw new Error('Expected the edited table')
+        const formatted = await caller.execute({
+          id: 'format-table-text',
+          name: 'apply_ops',
+          input: {
+            ops: [
+              { op: 'setFont', target: { engine: table.target }, fontSize: 17 },
+              { op: 'setParagraphFormat', target: { engine: table.target }, align: 'right' },
+            ],
+          },
+        })
+        if (formatted.isError) throw new Error(formatted.output)
+        editor.annotations.setRules('host-review', [
+          {
+            id: 'review-text',
+            pattern: 'FILLED_MIXED',
+            message: 'Review this authored value',
+            severity: 'warning',
+          },
+        ])
+        await editor.annotations.refresh()
+        const beforeDiagnostics = caller.context()
+        const diagnostics = await caller.execute({
+          id: 'read-host-diagnostics',
+          name: 'read_document_diagnostics',
+          input: { source: 'host-review' },
+        })
+        const afterDiagnostics = caller.context()
+        const saved = await editor.documents.save()
+        return {
+          before,
+          refused,
+          afterRefusal,
+          replaced,
+          filled,
+          formatted,
+          beforeDiagnostics,
+          diagnostics,
+          afterDiagnostics,
+          saved,
+          bytes: fixture.saved,
+          saves: fixture.saves,
+          state: editor.documents.state(),
+        }
+      } finally {
+        caller.close()
+      }
+    })
+    expect(result.refused).toMatchObject({
+      isError: true,
+      committed: false,
+      mutated: false,
+      revision: result.before.revision,
+    })
+    expect(result.afterRefusal).toEqual(result.before)
+    for (const operation of [result.replaced, result.filled, result.formatted]) {
+      expect(operation.isError, operation.output).not.toBe(true)
+      expect(operation.committed).toBe(true)
+    }
+    expect(result.diagnostics.isError, result.diagnostics.output).not.toBe(true)
+    expect(result.afterDiagnostics).toEqual(result.beforeDiagnostics)
+    const diagnostics = JSON.parse(result.diagnostics.output)
+    expect(diagnostics).toMatchObject({
+      documentId: result.beforeDiagnostics.documentId,
+      revision: result.beforeDiagnostics.revision,
+      checksComplete: true,
+      page: { complete: true },
+    })
+    expect(diagnostics.items).toContainEqual(
+      expect.objectContaining({ kind: 'source', source: 'host-review', status: 'complete' }),
+    )
+    expect(diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        kind: 'diagnostic',
+        source: 'host-review',
+        code: 'review-text',
+        message: 'Review this authored value',
+        severity: 'warning',
+        stale: false,
+        targets: [
+          expect.objectContaining({
+            documentId: result.beforeDiagnostics.documentId,
+            revision: result.beforeDiagnostics.revision,
+            expectedType: 'docTable',
+          }),
+        ],
+      }),
+    )
+    expect(result.saved).toBe(true)
+    expect(result.saves).toBe(1)
+    expect(result.state).toMatchObject({ dirty: false })
+    const bytes = Uint8Array.from(result.bytes)
+    await writeFile(test.info().outputPath('hosted-neutral-contracts.docx'), bytes)
+    const saved = await JSZip.loadAsync(bytes)
+    const xml = await saved.file('word/document.xml')!.async('string')
+    for (const name of ['tblGrid', 'tblPr', 'tcPr']) {
+      const properties = (body: string) =>
+        body.match(new RegExp(`<w:${name}\\b[\\s\\S]*?</w:${name}>`, 'g')) ?? []
+      expect(properties(xml)).toEqual(properties(original))
+    }
+    expect(xml.match(/<w:vMerge\b/g)).toHaveLength(2)
+    expect(xml).toContain('KEEP_HEADING')
+    expect(xml).toContain('REWRITTEN_BODY')
+    expect(xml).toContain('FILLED_MIXED')
+    expect(xml).toContain('NEIGHBOR')
+    expect(xml).toContain('AFTER_TABLE')
+    expect(xml).not.toContain('BODY_TO_REWRITE')
+    expect(xml).not.toContain('WRONG_RANGE')
+    expect(xml).toContain('<w:sz w:val="34"/>')
+    expect(xml).toContain('<w:jc w:val="right"/>')
+    const followup = await page.evaluate(async () => {
+      const { editor, fixture } = window as unknown as FixtureWindow
+      const caller = editor.runtime.connect({ id: 'neutral-save-baselines' })
+      const table = async () => {
+        caller.context()
+        const result = await caller.execute({
+          id: 'current-table',
+          name: 'query_document',
+          input: { type: 'docTable' },
+        })
+        if (result.isError) throw new Error(result.output)
+        return (JSON.parse(result.output) as DocsQueryResult).items[0].target
+      }
+      try {
+        const inserted = await caller.execute({
+          id: 'insert-before-source',
+          name: 'apply_ops',
+          input: {
+            ops: [
+              {
+                op: 'insertTableRow',
+                target: { engine: await table() },
+                row: 0,
+                position: 'before',
+              },
+            ],
+          },
+        })
+        if (inserted.isError) throw new Error(inserted.output)
+        const firstSave = await editor.documents.save()
+        const recolored = await caller.execute({
+          id: 'edit-refreshed-source',
+          name: 'apply_ops',
+          input: {
+            ops: [
+              {
+                op: 'setTableCellFormat',
+                target: { engine: await table() },
+                range: { row: 1, col: 1 },
+                fill: '#112233',
+              },
+            ],
+          },
+        })
+        if (recolored.isError) throw new Error(recolored.output)
+        const secondSave = await editor.documents.save()
+        return { firstSave, secondSave, bytes: fixture.saved, saves: fixture.saves }
+      } finally {
+        caller.close()
+      }
+    })
+    expect(followup.firstSave).toBe(true)
+    expect(followup.secondSave).toBe(true)
+    expect(followup.saves).toBe(3)
+    await writeFile(
+      test.info().outputPath('hosted-neutral-followup.docx'),
+      Uint8Array.from(followup.bytes),
+    )
+    const followupZip = await JSZip.loadAsync(Uint8Array.from(followup.bytes))
+    const followupXml = await followupZip.file('word/document.xml')!.async('string')
+    expect(followupXml.match(/<w:tblGrid\b[\s\S]*?<\/w:tblGrid>/)?.[0]).toBe(
+      original.match(/<w:tblGrid\b[\s\S]*?<\/w:tblGrid>/)?.[0],
+    )
+    expect(followupXml).toContain('w:fill="112233"')
+    expect(followupXml.match(/<w:tr\b/g)).toHaveLength(3)
+    const reopened = await page.evaluate(async () => {
+      const { editor } = window as unknown as FixtureWindow
+      const opened = await editor.documents.open()
+      const caller = editor.runtime.connect({ id: 'neutral-contracts-reopened' })
+      try {
+        const context = caller.context()
+        const queried = await caller.execute({
+          id: 'reopened-cells',
+          name: 'query_document',
+          input: { domain: 'cells' },
+        })
+        if (queried.isError) throw new Error(queried.output)
+        const diagnostics = await caller.execute({
+          id: 'reopened-diagnostics',
+          name: 'read_document_diagnostics',
+          input: { source: 'host-review' },
+        })
+        if (diagnostics.isError) throw new Error(diagnostics.output)
+        return {
+          opened,
+          context,
+          cells: JSON.parse(queried.output) as DocsQueryResult,
+          text: editor.inspection.snapshot().text,
+          diagnostics: JSON.parse(diagnostics.output),
+        }
+      } finally {
+        caller.close()
+      }
+    })
+    expect(reopened.opened).toBe(true)
+    expect(reopened.context.documentId).not.toBe(result.before.documentId)
+    expect(reopened.text).toContain('KEEP_HEADING')
+    expect(reopened.text).toContain('REWRITTEN_BODY')
+    expect(reopened.text).not.toContain('WRONG_RANGE')
+    expect(reopened.cells.items).toHaveLength(5)
+    expect(
+      reopened.cells.items.find((item) => item.target.cell?.row === 1 && item.target.cell.col === 0)
+        ?.html,
+    ).toContain('FILLED_MIXED')
+    expect(
+      reopened.cells.items.find((item) => item.target.cell?.row === 1 && item.target.cell.col === 1)
+        ?.html,
+    ).toContain('NEIGHBOR')
+    expect(reopened.diagnostics.items).toEqual([])
+  })
+})
+
 test('explicit section deletion updates live routing, undo and saved section ownership', async () => {
   test.setTimeout(120_000)
   const fixture = await JSZip.loadAsync(

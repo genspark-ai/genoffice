@@ -77,6 +77,8 @@ export type {
   DocsAnnotations,
   DocsAnnotation,
   DocsDiagnostic,
+  DocsDiagnosticSource,
+  DocsDiagnosticsSnapshot,
   DocsRangeStyle,
   DocsMatchRule,
   DocsChecker,
@@ -87,6 +89,8 @@ export type {
   DocsSaveOutcome,
   DocsErrorCode,
 } from '../shared/operation-result'
+export type { DocsStructurePlan } from '../shared/structure-plan'
+export type { DocsRangePreconditions } from '../shared/edit-preconditions'
 export { docsToolCatalog } from '../shared/tool-catalog'
 export { DOCS_RUNTIME_TOOLS } from '../shared/runtime-tools'
 
