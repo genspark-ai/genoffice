@@ -4009,23 +4009,32 @@ function applyMenuFor(kind: TabKind): void {
  * tab. CmdOrCtrl+Alt (not Shift): Shift+= is Sheets insert-cells and Docs
  * superscript, and the View menu now exists on editor tabs too, where those
  * accelerators are taken.
+ *
+ * On macOS it is Cmd+Ctrl instead: Sheets binds Cmd+Opt+- / Cmd+Opt+0 to the
+ * Excel-for-Mac border chords and the sheet swallows Cmd+Opt+= as well, so the
+ * Option chords never reached this menu on the one tab the scale applies to.
  */
+const UI_ZOOM_ACCEL =
+  process.platform === 'darwin'
+    ? { in: 'Cmd+Ctrl+=', out: 'Cmd+Ctrl+-', reset: 'Cmd+Ctrl+0' }
+    : { in: 'CmdOrCtrl+Alt+=', out: 'CmdOrCtrl+Alt+-', reset: 'CmdOrCtrl+Alt+0' }
+
 function uiScaleMenuItems(): MenuItemConstructorOptions[] {
   return [
     {
       label: tm('menuUiZoomIn'),
-      accelerator: 'CmdOrCtrl+Alt+=',
+      accelerator: UI_ZOOM_ACCEL.in,
       click: () => changeUiScale(APP_SETTINGS_PATH(), 1),
     },
     {
       label: tm('menuUiZoomOut'),
-      accelerator: 'CmdOrCtrl+Alt+-',
+      accelerator: UI_ZOOM_ACCEL.out,
       click: () => changeUiScale(APP_SETTINGS_PATH(), -1),
     },
     { type: 'separator' },
     {
       label: tm('menuUiZoomReset'),
-      accelerator: 'CmdOrCtrl+Alt+0',
+      accelerator: UI_ZOOM_ACCEL.reset,
       click: () => changeUiScale(APP_SETTINGS_PATH(), 0),
     },
   ]
@@ -4048,7 +4057,7 @@ function withViewMenu(): void {
   const menu = Menu.getApplicationMenu()
   if (!menu) return
   const hasScale = menu.items.some((item) =>
-    item.submenu?.items.some((i) => i.accelerator === 'CmdOrCtrl+Alt+='),
+    item.submenu?.items.some((i) => i.accelerator === UI_ZOOM_ACCEL.in),
   )
   if (hasScale) return
   const view = menu.items.find((item) => item.label === tm('menuView'))
