@@ -669,12 +669,20 @@ function augmentGridRowBoundaries(grid: TableGrid, chars: readonly PdfChar[]): v
 
 /** a text-implied valley must be at least this wide (in ems of the band's
  * median font size) to count as a column boundary — and gaps below it merge
- * into one word/interval first, so number-internal and letter-spacing gaps
- * never mint phantom columns */
+ * into one word/interval first, so number-internal gaps never mint phantom
+ * columns */
 const STREAM_VALLEY_MIN_EMS = 0.4
 /** a band needs at least this many text baselines before its valleys mean
  * "columns" — a single line's gaps are just word spacing */
 const STREAM_MIN_BASELINES = 2
+/** a valley is corroborated when the word gaps of at least this many
+ * distinct lines span across it */
+const STREAM_VALLEY_SUPPORT = 2
+/** two text-implied boundaries closer than this (pt) are one column seen
+ * twice — a label's own letter gap beside the boundary its values align to.
+ * The narrower valley (the tighter, more deliberate separation) wins, and
+ * the wide one — usually a label's intra-word space — is dropped. */
+const STREAM_BOUNDARY_SPACING_PT = 24
 /**
  * Stream columns inside a merged band (P39 invoice, #2669): a form's outer
  * frame and full-width rules solve into ONE grid, and the borderless detail
@@ -757,30 +765,46 @@ export function augmentGridStreamColumns(grid: TableGrid, chars: readonly PdfCha
     }
     if (right - cursor >= valleyMin) valleys.push({ lo: cursor, hi: right })
 
-    const kept: number[] = []
+    const kept: Array<{ pos: number; width: number }> = []
     for (const valley of valleys) {
       const pos = (valley.lo + valley.hi) / 2
       if (pos <= left || pos >= right) continue
       if (grid.xs.some((x) => Math.abs(x - pos) < MIN_CELL_DIM)) continue
-      let entirelyLeft = 0
-      let spanning = 0
+      // corroborate the valley with the lines' own word gaps: ≥2 distinct
+      // lines must have consecutive units whose gap spans across it. One
+      // line is not enough — it is that line's private space (the 合 计
+      // label's intra-word gap, #2669's sample); two lines make it a channel
+      // the whole band's text respects, which is what a column is.
+      let covering = 0
       for (const line of bandLines) {
-        const lo = Math.min(...line.map((u) => u.box.x0))
-        const hi = Math.max(...line.map((u) => u.box.x1))
-        if (hi <= valley.lo + 0.01) entirelyLeft++
-        else spanning++
+        const ivs = line.map((u) => ({ lo: u.box.x0, hi: u.box.x1 })).sort((a, b) => a.lo - b.lo)
+        for (let i = 1; i < ivs.length; i++) {
+          if (ivs[i - 1]!.hi <= valley.lo + 0.01 && ivs[i]!.lo >= valley.hi - 0.01) {
+            covering++
+            break
+          }
+        }
       }
-      // a column boundary separates a line's own content (some line flows
-      // across the whitespace) and fronts a real left column (some line
-      // lives entirely in it). A valley nothing lives left of is one line's
-      // private word gap — the 合 计 split of #2669's sample. No entirelyRight
-      // floor: the last column of a form band often holds values on one
-      // spanning line only (¥6.00 beside ¥100.00 on the 合计 row).
-      if (entirelyLeft >= 1 && spanning >= 1) kept.push(pos)
+      if (covering >= STREAM_VALLEY_SUPPORT) kept.push({ pos, width: valley.hi - valley.lo })
     }
     if (kept.length === 0) continue
-    for (const pos of kept) {
-      grid.vLines.push({ pos, segments: [[bandLo, bandHi]], virtual: false })
+
+    // one column seen twice: a label's letter gap beside the boundary its
+    // values align to. Enforce the column width between NEW boundaries only
+    // (existing rules are absent in this band — that is why it merged) and
+    // let the narrower valley win.
+    kept.sort((a, b) => a.pos - b.pos)
+    const spaced: Array<{ pos: number; width: number }> = []
+    for (const candidate of kept) {
+      const prev = spaced[spaced.length - 1]
+      if (prev && candidate.pos - prev.pos < STREAM_BOUNDARY_SPACING_PT) {
+        if (candidate.width < prev.width) spaced[spaced.length - 1] = candidate
+        continue
+      }
+      spaced.push(candidate)
+    }
+    for (const boundary of spaced) {
+      grid.vLines.push({ pos: boundary.pos, segments: [[bandLo, bandHi]], virtual: false })
     }
     grid.vLines.sort((a, b) => a.pos - b.pos)
     grid.xs = grid.vLines.map((l) => l.pos)
