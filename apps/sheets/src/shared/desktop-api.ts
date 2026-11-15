@@ -89,6 +89,58 @@ export const sheetThreadSchema = z
 export type SheetThread = z.infer<typeof sheetThreadSchema>
 export type SheetThreadReply = z.infer<typeof sheetThreadReplySchema>
 
+const sheetProtectionAllowSchema = z
+  .object({
+    selectLockedCells: z.boolean(),
+    selectUnlockedCells: z.boolean(),
+    formatCells: z.boolean(),
+    formatColumns: z.boolean(),
+    formatRows: z.boolean(),
+    insertColumns: z.boolean(),
+    insertRows: z.boolean(),
+    insertHyperlinks: z.boolean(),
+    deleteColumns: z.boolean(),
+    deleteRows: z.boolean(),
+    sort: z.boolean(),
+    autoFilter: z.boolean(),
+    pivotTables: z.boolean(),
+    objects: z.boolean(),
+    scenarios: z.boolean(),
+  })
+  .strict()
+const sheetPasswordHashSchema = z.union([
+  z.object({ legacy: z.string().min(1).max(8) }).strict(),
+  z
+    .object({
+      algorithmName: z.string().min(1).max(32),
+      hashValue: z.string().max(1024),
+      saltValue: z.string().max(1024),
+      spinCount: z.number().int().nonnegative(),
+    })
+    .strict(),
+])
+const sheetProtectionSchema = z
+  .object({
+    protected: z.boolean(),
+    hasPassword: z.boolean(),
+    /// Absent from stale sidecar binaries.
+    allow: sheetProtectionAllowSchema.optional(),
+    password: sheetPasswordHashSchema.optional(),
+  })
+  .strict()
+  .nullable()
+const protectedRangesSchema = z
+  .array(
+    z
+      .object({
+        name: z.string().min(1),
+        sqref: z.string().min(1),
+        hasPassword: z.boolean(),
+      })
+      .strict(),
+  )
+  .max(1_024)
+
 const worksheetMetadataSchema = z
   .object({
     id: z.string().min(1),
@@ -98,6 +150,11 @@ const worksheetMetadataSchema = z
     /// Uncompressed worksheet XML size reported by the sidecar. Optional for
     /// compatibility with an older sidecar binary.
     sourceXmlBytes: z.number().int().nonnegative().optional(),
+    /// Worksheet protection from the metadata pass. Absent for old sidecars.
+    protection: z
+      .object({ sheetProtection: sheetProtectionSchema, protectedRanges: protectedRangesSchema })
+      .strict()
+      .optional(),
     /// Cells with a value, formula or style (rowCount x columnCount is only
     /// the bounding box). Optional for compatibility with an older sidecar.
     storedCellCount: z.number().int().nonnegative().optional(),
@@ -434,36 +491,6 @@ const cellStyleSchema = z
     hidden: z.boolean().optional(),
   })
   .strict()
-const sheetProtectionAllowSchema = z
-  .object({
-    selectLockedCells: z.boolean(),
-    selectUnlockedCells: z.boolean(),
-    formatCells: z.boolean(),
-    formatColumns: z.boolean(),
-    formatRows: z.boolean(),
-    insertColumns: z.boolean(),
-    insertRows: z.boolean(),
-    insertHyperlinks: z.boolean(),
-    deleteColumns: z.boolean(),
-    deleteRows: z.boolean(),
-    sort: z.boolean(),
-    autoFilter: z.boolean(),
-    pivotTables: z.boolean(),
-    objects: z.boolean(),
-    scenarios: z.boolean(),
-  })
-  .strict()
-const sheetPasswordHashSchema = z.union([
-  z.object({ legacy: z.string().min(1).max(8) }).strict(),
-  z
-    .object({
-      algorithmName: z.string().min(1).max(32),
-      hashValue: z.string().max(1024),
-      saltValue: z.string().max(1024),
-      spinCount: z.number().int().nonnegative(),
-    })
-    .strict(),
-])
 /// c:txPr//a:defRPr shorthand shared by the chart title and data labels.
 const chartTextStyleSchema = z
   .object({
@@ -882,6 +909,9 @@ export const workbookRangeRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
     sheetId: z.string().min(1),
+    // Interactive reads never wait in the sidecar command queue. Status
+    // requests return only progress when the visible cells are already loaded.
+    mode: z.enum(['viewport', 'status']).optional(),
     range: z
       .object({
         startRow: z.number().int().nonnegative(),
@@ -1024,16 +1054,7 @@ export const workbookRangeResultSchema = z
       .max(MAX_RANGE_CELLS),
     /// Sheet-wide, delivered complete-only (like autoFilter). null = no
     /// <sheetProtection> element in the worksheet.
-    sheetProtection: z
-      .object({
-        protected: z.boolean(),
-        hasPassword: z.boolean(),
-        /// Absent from stale sidecar binaries.
-        allow: sheetProtectionAllowSchema.optional(),
-        password: sheetPasswordHashSchema.optional(),
-      })
-      .strict()
-      .nullable(),
+    sheetProtection: sheetProtectionSchema,
     /// Manual page breaks (0-based index of the row/column after the break);
     /// sheet-wide, complete-only.
     rowBreaks: z.array(z.number().int().nonnegative()).max(1_024),
@@ -1098,17 +1119,7 @@ export const workbookRangeResultSchema = z
       .nullish()
       .default(null),
     /// Allow-edit ranges (<protectedRanges>); sheet-wide, complete-only.
-    protectedRanges: z
-      .array(
-        z
-          .object({
-            name: z.string().min(1),
-            sqref: z.string().min(1),
-            hasPassword: z.boolean(),
-          })
-          .strict(),
-      )
-      .max(1_024),
+    protectedRanges: protectedRangesSchema,
     indexedThroughRow: z.number().int().nonnegative().nullable(),
     indexingComplete: z.boolean(),
   })

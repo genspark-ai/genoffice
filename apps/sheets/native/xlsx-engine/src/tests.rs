@@ -352,6 +352,7 @@ fn rejects_oversized_ranges() {
         print_titles: None,
         has_scoped_defined_names: false,
         cell_images: Vec::new(),
+        protection: SheetProtectionMetadata::default(),
     };
     let range = CellRange {
         start_row: 0,
@@ -538,6 +539,7 @@ fn omits_empty_sparklines_field_from_metadata_json() {
         print_titles: None,
         has_scoped_defined_names: false,
         cell_images: Vec::new(),
+        protection: SheetProtectionMetadata::default(),
     };
     let json = serde_json::to_string(&sheet).unwrap();
     assert!(!json.contains("sparklines"));
@@ -4704,13 +4706,19 @@ fn reads_sheet_protection_flags_hash_and_unlocked_styles() {
 <row r="1"><c r="A1"><v>1</v></c><c r="B1" s="1"/><c r="C1" s="2"><f>A1</f><v>1</v></c></row>
 </sheetData>
 <sheetProtection algorithmName="SHA-512" hashValue="aGFzaA==" saltValue="c2FsdA==" spinCount="100000" sheet="1" objects="1" scenarios="1" formatCells="0" sort="0" selectLockedCells="1"/>
+<protectedRanges><protectedRange name="Input" sqref="B1"><securityDescriptor>acl</securityDescriptor></protectedRange></protectedRanges>
 </worksheet>"#,
         ),
     ]);
 
     let mut sessions = WorkbookSessions::new();
     let metadata = sessions.open(&path).unwrap();
-    let sheet_id = metadata.sheets[0].id.clone();
+    let sheet = &metadata.sheets[0];
+    let sheet_id = sheet.id.clone();
+    let early = sheet.protection.sheet_protection.as_ref().unwrap();
+    assert!(early.protected && early.has_password);
+    assert_eq!(sheet.protection.protected_ranges[0].name, "Input");
+    assert!(sheet.protection.protected_ranges[0].has_password);
     assert_eq!(metadata.styles[1].locked, Some(false));
     assert_eq!(metadata.styles[1].hidden, None);
     assert_eq!(metadata.styles[2].locked, None);
@@ -4741,6 +4749,14 @@ fn reads_sheet_protection_flags_hash_and_unlocked_styles() {
             .iter()
             .any(|cell| cell.row == 0 && cell.column == 1 && cell.style_index == Some(1))
     );
+
+    let status = sessions
+        .read_range_with_mode(&metadata.session_id, &sheet_id, &range, RangeReadMode::Status)
+        .unwrap();
+    assert!(status.indexing_complete);
+    assert_eq!(status.indexed_through_row, result.indexed_through_row);
+    assert!(status.cells.is_empty());
+    assert_eq!(result.protected_ranges[0].sqref, "B1");
 
     let protection = result.sheet_protection.expect("sheetProtection parsed");
     assert!(protection.protected);

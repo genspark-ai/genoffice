@@ -91,6 +91,7 @@ import {
   IUniverInstanceService,
   LocaleType,
   mergeLocales,
+  RANGE_TYPE,
   ThemeService,
   UniverInstanceType,
   type ICellData,
@@ -383,7 +384,11 @@ import { installCfDisplayKeyCompare } from './cf-duplicate-key'
 import { installCfFormulaFold } from './cf-formula-fold'
 import { installSheetRenameFix } from './sheet-rename-fix'
 import { installArrowCollapse } from './arrow-collapse-fix'
-import { effectiveSheetProtection, installSheetProtectionGuard } from './sheet-protection'
+import {
+  effectiveSheetProtection,
+  fileSheetProtection,
+  installSheetProtectionGuard,
+} from './sheet-protection'
 import type { SheetProtectionAllow } from '@genoffice/xlsx-gateway/gateway/xlsx-protection'
 import { installCtrlDragFill } from './ctrl-drag-fill'
 import { installContextSubmenuReopenFix } from './context-submenu-reopen-fix'
@@ -434,6 +439,7 @@ import {
   type PasteSpecialSource,
 } from './paste-special'
 import { installStatusBarFileStats } from './statusbar-file-stats'
+import { installStreamedColumnWidth } from './streamed-column-width'
 import {
   installStatusBarStatsFilter,
   readStatusBarFuncs,
@@ -2488,6 +2494,7 @@ export function App({
         showToast(message, 'error')
       },
     })
+    const streamedColumnWidthDisposable = installStreamedColumnWidth(runtime, lazyWorkbookRef)
     const ctrlDragFillDisposable = installCtrlDragFill(runtime)
     // The grid's right-click item that withholds the selected cells from the
     // AI. Contributed to Univer's own menu rather than replacing it, so every
@@ -3593,8 +3600,16 @@ export function App({
                 setMessage(t('appFullLoadRunning'))
                 showToast(t('appFullLoadRunning'), 'info')
               } else if (verdict === 'offerFullLoad') setFullLoadPrompt('ask')
-              else if (verdict === 'workbookTooLarge') setFullLoadPrompt('tooLarge')
-              else if (verdict === 'valueModeFormulas') setMessage(t('appSortValueModeFormulas'))
+              else if (verdict === 'workbookTooLarge') {
+                if (event.id === MOVE_RANGE_COMMAND && ranges[0]?.rangeType === RANGE_TYPE.COLUMN) {
+                  // A full-column selection border can start a drag-move
+                  // next to the header's resize handle. Keep a move blocked
+                  // without putting a full-load dialog over the grid.
+                  const message = t('appMoveRowsColsUnsaved')
+                  setMessage(message)
+                  showToast(message, 'info')
+                } else setFullLoadPrompt('tooLarge')
+              } else if (verdict === 'valueModeFormulas') setMessage(t('appSortValueModeFormulas'))
               else setMessage(t('appSortRangeTooLarge'))
               return
             }
@@ -3926,6 +3941,7 @@ export function App({
       selectionWrapGuardDisposable.dispose()
       arrowCollapseDisposable.dispose()
       sheetProtectionDisposable.dispose()
+      streamedColumnWidthDisposable.dispose()
       ctrlDragFillDisposable.dispose()
       redactMenuDisposable.dispose()
       contextSubmenuReopenDisposable.dispose()
@@ -5057,10 +5073,18 @@ export function App({
       appliedRowKeys: new Map(),
       measuredWrapRows: new Map(),
       rowColStyleKeys: new Map(),
-      sheetProtections: new Map(),
+      sheetProtections: new Map(
+        selected.sheets.flatMap(({ id, protection }) =>
+          protection ? [[id, fileSheetProtection(protection.sheetProtection)] as const] : [],
+        ),
+      ),
       sheetPageBreaks: new Map(),
       sheetFilePageSetups: new Map(),
-      sheetProtectedRanges: new Map(),
+      sheetProtectedRanges: new Map(
+        selected.sheets.flatMap(({ id, protection }) =>
+          protection ? [[id, mapProtectedRanges(protection.protectedRanges, [])] as const] : [],
+        ),
+      ),
       uninstalledDefinedNames: new Set(),
       appliedCfSheets: new Set(),
       appliedFilterSheets: new Set(),

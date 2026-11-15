@@ -364,6 +364,7 @@ impl WorkbookSessions {
                 .collect();
             let worksheet_without_cells =
                 visuals::read_worksheet_without_cells(&mut archive, &worksheet_path)?;
+            let protection = read_sheet_protection(&worksheet_without_cells)?;
             let sparklines = read_sheet_sparklines(&worksheet_without_cells)?;
             let ole_objects =
                 visuals::read_ole_objects(&mut archive, &worksheet_without_cells, &worksheet_path)?;
@@ -455,6 +456,7 @@ impl WorkbookSessions {
                 print_titles: None,
                 has_scoped_defined_names: false,
                 cell_images,
+                protection,
             });
             visual_sources.push(SheetVisualSource {
                 sheet_id: id,
@@ -549,6 +551,16 @@ impl WorkbookSessions {
         sheet_id: &str,
         range: &CellRange,
     ) -> Result<RangeResult, SidecarError> {
+        self.read_range_with_mode(session_id, sheet_id, range, RangeReadMode::Wait)
+    }
+
+    pub(crate) fn read_range_with_mode(
+        &mut self,
+        session_id: &str,
+        sheet_id: &str,
+        range: &CellRange,
+        mode: RangeReadMode,
+    ) -> Result<RangeResult, SidecarError> {
         let session = self
             .sessions
             .get_mut(session_id)
@@ -560,7 +572,7 @@ impl WorkbookSessions {
             .ok_or_else(|| SidecarError::InvalidRequest("Unknown worksheet.".into()))?;
         range.validate(&session.sheets[sheet_index])?;
         session.ensure_parser(sheet_index)?;
-        session.read_range(sheet_index, range)
+        session.read_range(sheet_index, range, mode)
     }
 
     pub fn read_formula_cells(
@@ -770,6 +782,7 @@ impl WorkbookSession {
         &self,
         sheet_index: usize,
         range: &CellRange,
+        mode: RangeReadMode,
     ) -> Result<RangeResult, SidecarError> {
         let runtime = &self.runtimes[sheet_index];
         let (lock, condition) = &*runtime.state;
@@ -782,7 +795,7 @@ impl WorkbookSession {
                 .indexed_through_row
                 .map_or(range.start_row, |row| range.start_row.saturating_sub(row))
                 >= RANGE_WAIT_MAX_LAG_ROWS;
-        let index = if far_ahead {
+        let index = if far_ahead || !matches!(mode, RangeReadMode::Wait) {
             index
         } else {
             condition
@@ -801,6 +814,13 @@ impl WorkbookSession {
         }
         let indexed_through_row = index.indexed_through_row;
         let indexing_complete = index.complete;
+        if matches!(mode, RangeReadMode::Status) {
+            return Ok(RangeResult {
+                indexed_through_row,
+                indexing_complete,
+                ..RangeResult::default()
+            });
+        }
         let merges = index
             .merges
             .iter()
@@ -844,7 +864,7 @@ impl WorkbookSession {
             Vec::new()
         };
         let sheet_protection = if indexing_complete {
-            index.sheet_protection.clone()
+            self.sheets[sheet_index].protection.sheet_protection.clone()
         } else {
             None
         };
@@ -859,7 +879,7 @@ impl WorkbookSession {
             Vec::new()
         };
         let protected_ranges = if indexing_complete {
-            index.protected_ranges.clone()
+            self.sheets[sheet_index].protection.protected_ranges.clone()
         } else {
             Vec::new()
         };
@@ -1011,10 +1031,8 @@ struct SheetIndex {
     auto_filter: Option<MergedRange>,
     auto_filter_columns: Vec<FilterColumnCriteria>,
     data_validations: Vec<DataValidationRule>,
-    sheet_protection: Option<SheetProtectionInfo>,
     row_breaks: Vec<usize>,
     col_breaks: Vec<usize>,
-    protected_ranges: Vec<ProtectedRangeInfo>,
     page_setup: Option<PagePrintInfo>,
     /// Formula cells collected while indexing, capped at MAX_FORMULA_CELLS.
     /// Shared-formula followers are not counted: they live in
