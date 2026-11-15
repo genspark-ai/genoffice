@@ -16,7 +16,10 @@ export function loadPdfium(): Promise<PdfiumModule> {
     const { init } = (await import('@embedpdf/pdfium')) as unknown as {
       init(overrides: object): Promise<object>
     }
-    const wrapped = (await init({ wasmBinary })) as { pdfium?: unknown }
+    // pin thisProgram like the app and CLI bootstraps do: the emscripten
+    // default is the running program's path, and a checkout under a
+    // non-ASCII directory crashes _environ_get at init (stringToAscii assert)
+    const wrapped = (await init({ wasmBinary, thisProgram: 'genoffice' })) as { pdfium?: unknown }
     const m = (wrapped.pdfium ?? wrapped) as PdfiumModule & { _PDFiumExt_Init(): void }
     m._PDFiumExt_Init()
     return m
