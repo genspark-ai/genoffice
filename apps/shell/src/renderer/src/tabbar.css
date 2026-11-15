@@ -35,9 +35,12 @@ html.genoffice-popover-open .tab-bar {
   -webkit-app-region: no-drag;
 }
 
-/* room for the macOS traffic lights (titleBarStyle: hiddenInset) */
+/* room for the macOS traffic lights (titleBarStyle: hiddenInset).
+ * The strip is `zoom`ed but the traffic lights are not, so below 100% the
+ * spacer is divided back up to keep its 78px on screen; at or above 100% it
+ * keeps growing with the strip as before. */
 .tab-bar-drag-spacer {
-  width: 78px;
+  width: calc(78px / min(var(--ui-scale), 1));
   flex-shrink: 0;
 }
 
