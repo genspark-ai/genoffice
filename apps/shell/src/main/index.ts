@@ -59,6 +59,9 @@ import { createI18n, isLang, normalizeLang, setUiLang, type Lang } from '@genoff
 import {
   DEFAULT_SAVE_DIR_KEY,
   DROP_OPEN_CHANNEL,
+  USER_FILE_PATHS_SEEN_CHANNEL,
+  seenFilePaths,
+  sharedPathGrants,
   GITHUB_REPO_URL,
   appMenuLabels,
   appMenuTemplate,
@@ -4603,9 +4606,18 @@ const droppedFilesDeps = () => ({
 })
 
 function registerDroppedFilesIpc(): void {
-  ipcMain.on(DROP_OPEN_CHANNEL, (_event, raw: unknown) =>
-    handleDroppedFiles(raw, droppedFilesDeps()),
-  )
+  ipcMain.on(DROP_OPEN_CHANNEL, (event, raw: unknown) => {
+    // the drop itself is the user action: grant the paths for this view so
+    // editor reads of what was just dropped verify against the ledger
+    sharedPathGrants().grant(event.sender.id, seenFilePaths(raw))
+    handleDroppedFiles(raw, droppedFilesDeps())
+  })
+  // the grant-ledger feed for page-handled drops (AI attachment panels,
+  // image inserts) and clipboard file pastes: the preload bridge records
+  // every OS file drop/paste it resolves, claimed or not
+  ipcMain.on(USER_FILE_PATHS_SEEN_CHANNEL, (event, raw: unknown) => {
+    sharedPathGrants().grant(event.sender.id, seenFilePaths(raw))
+  })
 }
 
 /** the single router: extension decides which module owns the file; false = nothing opened */
@@ -5209,8 +5221,21 @@ function registerHomeIpc(): void {
     if (typeof path === 'string') toggleStarredFile(path)
   })
 
-  ipcMain.handle(HOME_CHANNELS.openPath, (_event, path: unknown) => {
+  ipcMain.handle(HOME_CHANNELS.openPath, (event, path: unknown) => {
     if (typeof path !== 'string' || !path || path.length > 4096) return
+    // Renderer-facing open channel: the path must be one the home UI can
+    // legitimately show (folder tree, recents, starred, save folder) or one
+    // this view's user physically handed over (OS drop / clipboard file —
+    // the drop bridge records those in the shared grant ledger). Without the
+    // check the channel is an open-any-file primitive for a compromised
+    // renderer; e2e drives it with fixture paths and skips the check.
+    if (
+      process.env.GENOFFICE_E2E !== '1' &&
+      !isRevealablePath(path) &&
+      !sharedPathGrants().has(event.sender.id, path)
+    )
+      return
+    sharedPathGrants().grant(event.sender.id, [path])
     openDocumentPath(path)
     fileIndexer?.refresh()
   })
@@ -5234,7 +5259,13 @@ function registerHomeIpc(): void {
       ],
       properties: ['openFile', 'multiSelections'],
     })
-    if (!result.canceled) for (const path of result.filePaths) openDocumentPath(path)
+    if (!result.canceled) {
+      if (result.filePaths.length > 0) {
+        // user picked them through the dialog: grant for this view's reads
+        sharedPathGrants().grant(event.sender.id, result.filePaths)
+        for (const path of result.filePaths) openDocumentPath(path)
+      }
+    }
   })
 
   ipcMain.handle(HOME_CHANNELS.newDoc, (_event, opts?: NewFileOpts) => {

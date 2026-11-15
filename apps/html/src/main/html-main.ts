@@ -9,7 +9,7 @@ import {
 } from 'node:fs'
 import { mkdtemp, open, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, extname, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   BrowserWindow,
@@ -41,6 +41,7 @@ import {
   readBodyCapped,
   printHtmlDocument,
   type PrintDialogOutcome,
+  sharedPathGrants,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool, documentMediaRoots } from '@genoffice/ai-search'
@@ -888,6 +889,20 @@ const savePathByWc = new Map<number, string>()
 const diskWatcherByWc = new Map<number, DocumentDiskWatcher>()
 /** Unsaved-changes flags mirrored from the renderer; drives the save prompt before closing a tab/window */
 const dirtyByWc = new Set<number>()
+
+/** Attachment reads verify against what this view's user put in front of the
+ *  app: dialog picks, OS drops and clipboard file pastes land in the shared
+ *  grant ledger, and files sitting beside the open document are its own
+ *  neighbors. Everything else is refused — without this the extension
+ *  whitelist was the only bar between a compromised renderer and arbitrary
+ *  file reads. */
+function canReadAttachment(wcId: number, filePath: string): boolean {
+  if (sharedPathGrants().has(wcId, filePath)) return true
+  const docPath = savePathByWc.get(wcId) ?? openPathByWc.get(wcId)
+  if (!docPath) return false
+  const rel = relative(dirname(docPath), resolve(filePath))
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+}
 /** Latest buffer text pushed by each renderer; served by html-preview:// to the preview iframe */
 const previewTextByWc = new Map<number, string>()
 const closeSaveWaiters = new Map<number, (ok: boolean) => void>()
@@ -1557,17 +1572,24 @@ function registerHtmlIpc(): void {
       properties: ['openFile', 'multiSelections'],
     })
     if (picked.canceled || picked.filePaths.length === 0) return null
+    sharedPathGrants().grant(e.sender.id, picked.filePaths)
     return collectAttachments(picked.filePaths)
   })
 
-  ipcMain.handle(HTML_CHANNELS.filesAdd, (_e, paths: unknown) =>
-    collectAttachments(Array.isArray(paths) ? paths.filter((p) => typeof p === 'string') : []),
-  )
+  ipcMain.handle(HTML_CHANNELS.filesAdd, (e, paths: unknown) => {
+    // panel drops and clipboard file pastes: the preload bridge has already
+    // recorded these paths in the ledger; granting here too keeps the
+    // ledger the single place a read checks
+    const strings = Array.isArray(paths) ? paths.filter((p) => typeof p === 'string') : []
+    sharedPathGrants().grant(e.sender.id, strings)
+    return collectAttachments(strings)
+  })
 
   ipcMain.handle(
     HTML_CHANNELS.filesAddPastedImage,
-    (_e, data: unknown, ext: unknown): AttachmentAddResult => {
+    (e, data: unknown, ext: unknown): AttachmentAddResult => {
       const filePath = savePastedImage(data, ext)
+      if (filePath) sharedPathGrants().grant(e.sender.id, [filePath])
       return filePath
         ? collectAttachments([filePath])
         : { accepted: [], rejected: [tm('errNotImage')] }
@@ -1577,11 +1599,13 @@ function registerHtmlIpc(): void {
   ipcMain.handle(
     HTML_CHANNELS.filesRead,
     async (
-      _e,
+      e,
       filePath: string,
       offset: number,
       maxChars: number,
     ): Promise<AttachmentReadResult> => {
+      if (!canReadAttachment(e.sender.id, filePath))
+        return { ok: false, error: 'html: path not granted to this view' }
       const name = basename(filePath)
       const ext = name.split('.').pop()?.toLowerCase() ?? ''
       if (!ATTACHMENT_EXTS.has(ext)) return { ok: false, error: tm('errUnsupportedExt', { ext }) }
@@ -1603,7 +1627,9 @@ function registerHtmlIpc(): void {
     },
   )
 
-  ipcMain.handle(HTML_CHANNELS.filesReadImage, (_e, filePath: string): AttachmentImageResult => {
+  ipcMain.handle(HTML_CHANNELS.filesReadImage, (e, filePath: string): AttachmentImageResult => {
+    if (!canReadAttachment(e.sender.id, filePath))
+      return { ok: false, error: 'html: path not granted to this view' }
     const name = basename(filePath)
     const ext = name.split('.').pop()?.toLowerCase() ?? ''
     const mime = ATTACHMENT_IMAGE_MIME[ext]
