@@ -37,6 +37,10 @@ export interface OdfParaProps {
   indentRightTw?: number
   indentFirstLineTw?: number
   pageBreakBefore?: boolean
+  /** `fo:keep-with-next="always"` — keep the paragraph on the same page as the next */
+  keepNext?: boolean
+  /** `fo:keep-together="always"` — never split the paragraph across pages */
+  keepLines?: boolean
 }
 
 export interface OdfListLevel {
@@ -235,6 +239,12 @@ export class OdfStyles {
     if (first !== null) out.indentFirstLineTw = emuToTwips(first)
     if (a['fo:break-before'] === 'page' || a['fo:break-before'] === 'auto')
       out.pageBreakBefore = a['fo:break-before'] === 'page'
+    // ODF spells both as auto/always; "auto" is the default, so it only has to
+    // cancel a value an ancestor style set
+    const keepNext = a['fo:keep-with-next']
+    if (keepNext !== undefined) out.keepNext = keepNext === 'always'
+    const keepTogether = a['fo:keep-together']
+    if (keepTogether !== undefined) out.keepLines = keepTogether === 'always'
     return Object.keys(out).length > 0 ? out : undefined
   }
 
