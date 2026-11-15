@@ -134,6 +134,8 @@ export const ar = {
   aiSumImageSearchDone: 'بحث عن صور «{query}» ({count} صورة)',
   aiSumAnalyzeMedia: 'تحليل الوسائط',
   aiSumAnalyzeMediaDone: 'تم تحليل الوسائط',
+  aiSumRenderPreview: 'جارٍ عرض الصفحات لتدقيق التخطيط',
+  aiSumRenderPreviewDone: 'تم تدقيق التخطيط',
   aiSumInsertImage: 'إدراج صورة',
   aiSumInsertWebImage: 'تم إدراج صورة من الويب',
   aiSumGenerateImage: 'إنشاء صورة',

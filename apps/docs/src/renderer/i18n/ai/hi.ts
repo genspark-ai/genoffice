@@ -136,6 +136,8 @@ export const hi = {
   aiSumImageSearchDone: 'चित्र खोज "{query}" ({count} चित्र)',
   aiSumAnalyzeMedia: 'मीडिया का विश्लेषण करें',
   aiSumAnalyzeMediaDone: 'मीडिया का विश्लेषण किया गया',
+  aiSumRenderPreview: 'लेआउट ऑडिट के लिए पेज रेंडर हो रहे हैं',
+  aiSumRenderPreviewDone: 'लेआउट जांचा गया',
   aiSumInsertImage: 'चित्र सम्मिलित करें',
   aiSumInsertWebImage: 'वेब चित्र सम्मिलित किया गया',
   aiSumGenerateImage: 'चित्र बनाएँ',

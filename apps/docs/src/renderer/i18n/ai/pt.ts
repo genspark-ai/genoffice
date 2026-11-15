@@ -139,6 +139,8 @@ export const pt = {
   aiSumImageSearchDone: 'Pesquisa de imagens "{query}" ({count} imagens)',
   aiSumAnalyzeMedia: 'Analisar mídia',
   aiSumAnalyzeMediaDone: 'Mídia analisada',
+  aiSumRenderPreview: 'Renderizando páginas para auditoria de layout',
+  aiSumRenderPreviewDone: 'Layout verificado',
   aiSumInsertImage: 'Inserir imagem',
   aiSumInsertWebImage: 'Imagem da web inserida',
   aiSumGenerateImage: 'Gerar imagem',

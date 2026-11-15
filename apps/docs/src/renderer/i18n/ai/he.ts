@@ -130,6 +130,8 @@ export const he = {
   aiSumImageSearchDone: 'חיפוש תמונות "{query}" ({count} תמונות)',
   aiSumAnalyzeMedia: 'ניתוח מדיה',
   aiSumAnalyzeMediaDone: 'המדיה נותחה',
+  aiSumRenderPreview: 'מעבד דפים לבדיקת פריסה',
+  aiSumRenderPreviewDone: 'הפריסה נבדקה',
   aiSumInsertImage: 'הוספת תמונה',
   aiSumInsertWebImage: 'הוספה של תמונה מהאינטרנט',
   aiSumGenerateImage: 'יצירת תמונה',

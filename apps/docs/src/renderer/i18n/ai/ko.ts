@@ -134,6 +134,8 @@ export const ko = {
   aiSumImageSearchDone: '"{query}" 이미지 검색({count}장)',
   aiSumAnalyzeMedia: '미디어 분석',
   aiSumAnalyzeMediaDone: '미디어 분석 완료',
+  aiSumRenderPreview: '페이지를 렌더링해 레이아웃 검토 중',
+  aiSumRenderPreviewDone: '레이아웃 검토 완료',
   aiSumInsertImage: '이미지 삽입',
   aiSumInsertWebImage: '웹 이미지 삽입',
   aiSumGenerateImage: '이미지 생성',

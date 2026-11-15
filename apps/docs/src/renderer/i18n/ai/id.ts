@@ -136,6 +136,8 @@ export const id = {
   aiSumImageSearchDone: 'Pencarian gambar "{query}" ({count} gambar)',
   aiSumAnalyzeMedia: 'Analisis media',
   aiSumAnalyzeMediaDone: 'Media dianalisis',
+  aiSumRenderPreview: 'Merender halaman untuk audit tata letak',
+  aiSumRenderPreviewDone: 'Tata letak diaudit',
   aiSumInsertImage: 'Sisipkan gambar',
   aiSumInsertWebImage: 'Gambar web disisipkan',
   aiSumGenerateImage: 'Hasilkan gambar',

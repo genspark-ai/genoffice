@@ -140,6 +140,8 @@ export const de = {
   aiSumImageSearchDone: 'Bildersuche „{query}“ ({count} Bilder)',
   aiSumAnalyzeMedia: 'Medien analysieren',
   aiSumAnalyzeMediaDone: 'Medien analysiert',
+  aiSumRenderPreview: 'Seiten für das Layout-Audit werden gerendert',
+  aiSumRenderPreviewDone: 'Layout geprüft',
   aiSumInsertImage: 'Bild einfügen',
   aiSumInsertWebImage: 'Webbild eingefügt',
   aiSumGenerateImage: 'Bild generieren',

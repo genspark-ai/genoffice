@@ -137,6 +137,8 @@ export const ru = {
   aiSumImageSearchDone: 'Поиск изображений «{query}» ({count} шт.)',
   aiSumAnalyzeMedia: 'Анализ медиа',
   aiSumAnalyzeMediaDone: 'Медиа проанализировано',
+  aiSumRenderPreview: 'Рендеринг страниц для проверки макета',
+  aiSumRenderPreviewDone: 'Макет проверен',
   aiSumInsertImage: 'Вставка изображения',
   aiSumInsertWebImage: 'Вставлено изображение из Интернета',
   aiSumGenerateImage: 'Сгенерировать изображение',

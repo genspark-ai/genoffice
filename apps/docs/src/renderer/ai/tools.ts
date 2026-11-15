@@ -495,6 +495,25 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     },
   },
   {
+    name: 'render_preview',
+    description:
+      'Render the current document to page images and hand them to the vision model for a layout audit; returns the audit as text. The document model cannot show what a reader sees — a two-column layout that collapsed into one, a table overflowing the page, or a broken page break is invisible here but obvious in the render. Call this after create_document or after a large rewrite, then fix what the audit reports.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pages: {
+          type: 'integer',
+          description:
+            'how many pages to render and audit, starting from page 1 (default 3, at most 4)',
+        },
+        requirements: {
+          type: 'string',
+          description: 'extra audit focus (English), e.g. "the two-column CV layout must survive"',
+        },
+      },
+    },
+  },
+  {
     name: 'insert_image',
     description:
       'Download a direct image link (an imageUrl from image_search) and insert it into the document (at the cursor / end of document).',
@@ -882,10 +901,79 @@ function imageSizeOf(dataUrl: string): Promise<{ width: number; height: number }
 }
 
 /** Async tools: web search / image search / insert web image. */
+/** PNG-ish resolution of the audit render: 1.5x the 96 dpi screen page — sharp
+    enough for a vision model to read column edges, small enough to stay a
+    cheap attachment */
+const RENDER_AUDIT_DPI = 144
+
+/** the audit prompt every render_preview carries: layout problems only, in a
+    form the assistant can act on */
+const RENDER_AUDIT_BASE = [
+  'These are rendered pages of a document an AI assistant just generated or rewrote.',
+  'Audit the visual layout and report concrete problems a reader would see:',
+  'columns that collapsed into one, tables wider than the page or cut off at the edge,',
+  'text overlapping or clipped, broken or absurd page breaks, giant empty gaps.',
+  'Do not comment on wording or style. If the layout is sound, say exactly that.',
+].join(' ')
+
+/** Render the PDF bytes to per-page JPEG data URLs through pdf.js — the same
+    rasterizer the Export-as-Images flow runs, kept in memory (no files, no
+    extra authorizations). */
+async function renderPagesToDataUrls(pdfBase64: string, maxPages: number): Promise<string[]> {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const { default: workerUrl } = await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')
+  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
+  const bytes = Uint8Array.from(atob(pdfBase64), (c) => c.charCodeAt(0))
+  const task = pdfjs.getDocument({ data: bytes, useWasm: false })
+  const pdfDoc = await task.promise
+  try {
+    const count = Math.min(pdfDoc.numPages, maxPages)
+    const urls: string[] = []
+    const canvas = document.createElement('canvas')
+    for (let i = 1; i <= count; i++) {
+      const page = await pdfDoc.getPage(i)
+      const viewport = page.getViewport({ scale: RENDER_AUDIT_DPI / 72 })
+      canvas.width = Math.round(viewport.width)
+      canvas.height = Math.round(viewport.height)
+      await page.render({ canvas, viewport }).promise
+      page.cleanup()
+      urls.push(canvas.toDataURL('image/jpeg', 0.85))
+    }
+    return urls
+  } finally {
+    await task.destroy()
+  }
+}
+
+/**
+ * The claim guard behind the visual self-check: a run that generated or
+ * rewrote the document wholesale but never rendered it has not seen what a
+ * reader sees, and its "done" is exactly the claim the loop is allowed to
+ * challenge once. Eyes off (no media provider) disables it — an audit without
+ * a vision model is not an audit.
+ */
+export function renderPreviewGuard(
+  executed: readonly { name: string; ok: boolean }[],
+  eyesOn: boolean,
+): string | null {
+  if (!eyesOn) return null
+  const generated = executed.some(
+    (c) => c.ok && (c.name === 'create_document' || c.name === 'write_document'),
+  )
+  if (!generated) return null
+  if (executed.some((c) => c.ok && c.name === 'render_preview')) return null
+  return (
+    'Your reply presents the document as ready, but this run wrote the document without ever looking at the rendered result. ' +
+    'Call render_preview (it renders the pages and audits the layout with the vision model), fix the layout problems it reports — ' +
+    'collapsed columns, tables wider than the page, broken page breaks — and then answer.'
+  )
+}
+
 async function executeAsyncTool(
   editor: Editor,
   call: AgentToolCall,
   signal?: AbortSignal,
+  pageSetup?: AiPageSetupAccess,
 ): Promise<ToolExecution> {
   switch (call.name) {
     case 'web_search': {
@@ -962,6 +1050,33 @@ async function executeAsyncTool(
           ? `${r.text.slice(0, MAX_ANALYSIS_CHARS)}\n…(truncated)`
           : r.text
       return { output: text, mutated: false, summary: t('aiSumAnalyzeMediaDone') }
+    }
+    case 'render_preview': {
+      // the first section's paper: a mixed-paper document audits at its
+      // leading size (per-section geometry is a later knife)
+      const section = pageSetup?.current(0)
+      const widthTwips = Math.round(Number(section?.settings.pageWidth) || 12240)
+      const heightTwips = Math.round(Number(section?.settings.pageHeight) || 15840)
+      const maxPages = Math.min(Math.max(Number(call.input.pages) || 3, 1), 4)
+      const pdf = await window.desktop.printPdfBuffer(widthTwips, heightTwips)
+      if (!pdf.ok || !pdf.base64) return fail(t('aiSumRenderPreview'), pdf.error ?? 'render failed')
+      let pages: string[]
+      try {
+        pages = await renderPagesToDataUrls(pdf.base64, maxPages)
+      } catch (err) {
+        return fail(t('aiSumRenderPreview'), `page rasterization failed: ${String(err)}`)
+      }
+      if (!pages.length) return fail(t('aiSumRenderPreview'), 'no page rendered')
+      const extra = String(call.input.requirements ?? '').trim()
+      const requirements = extra ? `${RENDER_AUDIT_BASE} Extra focus: ${extra}` : RENDER_AUDIT_BASE
+      const audit = await window.desktop.analyzeMedia({ mediaUrls: pages, requirements })
+      if (!audit.text) return fail(t('aiSumRenderPreview'), audit.error ?? 'layout audit failed')
+      const MAX_AUDIT_CHARS = 6000
+      const text =
+        audit.text.length > MAX_AUDIT_CHARS
+          ? `${audit.text.slice(0, MAX_AUDIT_CHARS)}\n…(truncated)`
+          : audit.text
+      return { output: text, mutated: false, summary: t('aiSumRenderPreviewDone') }
     }
     case 'insert_picture':
       return insertPicture(editor, call, signal)
@@ -1244,9 +1359,10 @@ export function executeTool(
     call.name === 'insert_picture' ||
     call.name === 'generate_image' ||
     call.name === 'analyze_media' ||
+    call.name === 'render_preview' ||
     call.name === 'create_document'
   ) {
-    return executeAsyncTool(editor, call, signal)
+    return executeAsyncTool(editor, call, signal, pageSetup)
   }
   if (call.name === 'write_document')
     return writeDocument(editor, call, numIds, track, signal, writer)

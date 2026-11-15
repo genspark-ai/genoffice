@@ -136,6 +136,8 @@ export const ja = {
   aiSumImageSearchDone: '「{query}」の画像を検索({count} 枚)',
   aiSumAnalyzeMedia: 'メディアを解析',
   aiSumAnalyzeMediaDone: 'メディアを解析しました',
+  aiSumRenderPreview: 'ページをレンダリングしてレイアウトを確認中',
+  aiSumRenderPreviewDone: 'レイアウトを確認しました',
   aiSumInsertImage: '画像を挿入',
   aiSumInsertWebImage: 'ウェブ画像を挿入',
   aiSumGenerateImage: '画像を生成',

@@ -137,6 +137,8 @@ export const pl = {
   aiSumImageSearchDone: 'Wyszukiwanie obrazów „{query}” ({count} obrazów)',
   aiSumAnalyzeMedia: 'Analizuj multimedia',
   aiSumAnalyzeMediaDone: 'Przeanalizowano multimedia',
+  aiSumRenderPreview: 'Renderowanie stron do audytu układu',
+  aiSumRenderPreviewDone: 'Układ sprawdzony',
   aiSumInsertImage: 'Wstaw obraz',
   aiSumInsertWebImage: 'Wstawiono obraz z internetu',
   aiSumGenerateImage: 'Generuj obraz',

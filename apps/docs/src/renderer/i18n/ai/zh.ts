@@ -126,6 +126,8 @@ export const zh = {
   aiSumImageSearchDone: '搜图“{query}”({count} 张)',
   aiSumAnalyzeMedia: '分析媒体',
   aiSumAnalyzeMediaDone: '已分析媒体',
+  aiSumRenderPreview: '渲染页面并审查布局',
+  aiSumRenderPreviewDone: '布局已审查',
   aiSumInsertImage: '插入图片',
   aiSumInsertWebImage: '插入联网图片',
   aiSumGenerateImage: '生成配图',
