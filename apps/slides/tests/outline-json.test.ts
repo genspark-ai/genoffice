@@ -41,6 +41,18 @@ describe('parseOutlineJson', () => {
     expect(obj?.core_hook).toBe('钩子')
   })
 
+  it('repairs a low-9 opening quote closed with a plain " (Hungarian/German copy)', () => {
+    // Shape measured from glm-5.3-flash: „…" with an ASCII closer, followed by : or ,
+    const broken =
+      '{"core_hook":"A „kis cég, nagy számok" gondolat","pages":[{"title":"Termékek","brief":"Kiemelt doboz: a „hónap meglepetése": füzet. Az „EcoLine", a sláger.","layout":"kpi_cards_row","image_queries":[]}]}'
+    expect(() => JSON.parse(broken)).toThrow()
+    const obj = parseOutlineJson(broken)
+    expect(obj?.core_hook).toBe('A „kis cég, nagy számok" gondolat')
+    expect((obj!.pages as Array<{ brief: string }>)[0]!.brief).toBe(
+      'Kiemelt doboz: a „hónap meglepetése": füzet. Az „EcoLine", a sláger.',
+    )
+  })
+
   it('returns null when completely broken', () => {
     expect(parseOutlineJson('not json at all')).toBeNull()
     expect(parseOutlineJson('{')).toBeNull()

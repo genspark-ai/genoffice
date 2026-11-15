@@ -292,14 +292,23 @@ export function openAiUsage(
 /**
  * Models occasionally emit unescaped " inside string values (e.g. English quotes in Chinese copy).
  * Single-pass scan: a " inside a string whose next non-whitespace char is not structural gets escaped.
+ *
+ * A low-9 opening quote („, U+201E: Hungarian, German, Czech, Polish…) is often closed with a plain
+ * " (`„Minta Kft", a…`, `a „hónap terméke": …`). While such a quote is open, the next " is its
+ * closer and is escaped even when a comma or colon follows it. `lowQuotes: false` turns that off, for
+ * the rare value that opens „ and never closes it.
  */
-function repairUnescapedQuotes(json: string): string {
+function repairUnescapedQuotes(json: string, lowQuotes = true): string {
   let out = ''
   let inStr = false
+  let lowQuoteOpen = false
   for (let i = 0; i < json.length; i++) {
     const c = json[i]!
     if (!inStr) {
-      if (c === '"') inStr = true
+      if (c === '"') {
+        inStr = true
+        lowQuoteOpen = false
+      }
       out += c
       continue
     }
@@ -307,7 +316,14 @@ function repairUnescapedQuotes(json: string): string {
       out += c + (json[++i] ?? '')
       continue
     }
+    if (c === '\u201E') lowQuoteOpen = lowQuotes
+    else if (c === '\u201D' || c === '\u201C') lowQuoteOpen = false
     if (c === '"') {
+      if (lowQuoteOpen) {
+        lowQuoteOpen = false
+        out += '\\"'
+        continue
+      }
       let j = i + 1
       while (j < json.length && ' \n\r\t'.includes(json[j]!)) j++
       const next = json[j]
@@ -412,8 +428,12 @@ export function parseToolInput(json: string): { input: Record<string, unknown>; 
     try {
       parsed = JSON.parse(repairUnescapedQuotes(json))
     } catch {
-      const msg = e instanceof Error ? e.message : String(e)
-      return { input: {}, error: `${msg}; raw: ${json.slice(0, 500)}` }
+      try {
+        parsed = JSON.parse(repairUnescapedQuotes(json, false))
+      } catch {
+        const msg = e instanceof Error ? e.message : String(e)
+        return { input: {}, error: `${msg}; raw: ${json.slice(0, 500)}` }
+      }
     }
   }
   if (!isPlainObject(parsed)) {

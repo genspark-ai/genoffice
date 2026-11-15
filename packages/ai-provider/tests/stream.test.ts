@@ -1832,4 +1832,22 @@ describe('parseToolInput', () => {
     expect(parseToolInput('{"a":1}')).toEqual({ input: { a: 1 } })
     expect(parseToolInput('')).toEqual({ input: {} })
   })
+  it('repairs a low-9 opening quote closed with a plain " before a comma or colon', () => {
+    // Shape measured from glm-5.3-flash writing Hungarian copy: „…" with an ASCII closer
+    const raw =
+      '{"title":"Az „Minta Papír Kft", a piacvezető","brief":"Kiemelt doboz: a „hónap terméke": füzet"}'
+    expect(() => JSON.parse(raw)).toThrow()
+    const r = parseToolInput(raw)
+    expect(r.error).toBeUndefined()
+    expect(r.input).toEqual({
+      title: 'Az „Minta Papír Kft", a piacvezető',
+      brief: 'Kiemelt doboz: a „hónap terméke": füzet',
+    })
+  })
+
+  it('still repairs a value whose low-9 quote never closes', () => {
+    const r = parseToolInput('{"a":"„nyitva","b":"x "y" z"}')
+    expect(r.error).toBeUndefined()
+    expect(r.input).toEqual({ a: '„nyitva', b: 'x "y" z' })
+  })
 })

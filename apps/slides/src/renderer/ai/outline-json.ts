@@ -37,21 +37,35 @@ function normalizeSmartQuotes(s: string): string {
  * Heuristic: if the character after " (skipping whitespace) isn't , } ] : or the end, treat it
  * as an in-value quote.
  */
-export function escapeBrokenStringLiterals(json: string): string {
+export function escapeBrokenStringLiterals(json: string, lowQuotes = true): string {
   let out = ''
   let i = 0
   let inString = false
+  // A low-9 opening quote („, U+201E) is often closed with a plain "; while one is open, the next
+  // " is its closer and is escaped even when , or : follows it (`a „hónap terméke": …`).
+  let lowQuoteOpen = false
   while (i < json.length) {
     const c = json[i]!
     if (!inString) {
       out += c
-      if (c === '"') inString = true
+      if (c === '"') {
+        inString = true
+        lowQuoteOpen = false
+      }
       i++
       continue
     }
     if (c === '\\') {
       out += c + (json[i + 1] ?? '')
       i += 2
+      continue
+    }
+    if (c === '\u201E') lowQuoteOpen = lowQuotes
+    else if (c === '\u201D' || c === '\u201C') lowQuoteOpen = false
+    if (c === '"' && lowQuoteOpen) {
+      lowQuoteOpen = false
+      out += '\\"'
+      i++
       continue
     }
     if (c === '"') {
@@ -99,6 +113,7 @@ export function parseOutlineJson(text: string): OutlineJson | null {
     normalizeSmartQuotes(raw),
     stripTrailingCommas(normalizeSmartQuotes(raw)),
     escapeBrokenStringLiterals(raw),
+    escapeBrokenStringLiterals(raw, false),
     escapeBrokenStringLiterals(normalizeSmartQuotes(raw)),
     stripTrailingCommas(escapeBrokenStringLiterals(normalizeSmartQuotes(raw))),
   ]
