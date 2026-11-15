@@ -2976,7 +2976,7 @@ export function generateTableModelXml(
   if (preserveProperties) {
     return `${opening}${originalTblPr ?? ''}${originalTableChildOf(originalTableXml!, 'w:tblGrid') ?? ''}${rows}</w:tbl>`
   }
-  return `${opening}${options?.preserveTableProperties ? (originalTblPr ?? '') : tblPr}${grid}${rows}</w:tbl>`
+  return `${opening}${originalTableXml && options?.preserveTableProperties ? (originalTblPr ?? '') : tblPr}${grid}${rows}</w:tbl>`
 }
 
 /** rId / docPr placeholder of a picture inserted by the editor; saveDocx resolves

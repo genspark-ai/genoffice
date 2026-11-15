@@ -1202,17 +1202,21 @@ export function tableModelToPmNode(
 ): PmNode {
   const sourceModel = model
   const sourceTable = model.sourcePublication?.table ?? crypto.randomUUID()
+  const sourceEnvelope = originalXml ? tablePropertyEnvelope(originalXml) : undefined
   const cellSource = (row: number, cell: number): NonNullable<TableCell['sourceCell']> => ({
     table: sourceTable,
     row,
     cell,
   })
-  const cellProperties = (row: number, cell: number): TableCell['sourceProperties'] => ({
-    fill: model.rows[row][cell].fill,
-    borders: model.rows[row][cell].borders,
-    vAlign: model.rows[row][cell].vAlign,
-    colSpan: model.rows[row][cell].colSpan,
-  })
+  const cellProperties = (row: number, cell: number): TableCell['sourceProperties'] =>
+    sourceEnvelope
+      ? {
+          fill: model.rows[row][cell].fill,
+          borders: model.rows[row][cell].borders,
+          vAlign: model.rows[row][cell].vAlign,
+          colSpan: model.rows[row][cell].colSpan,
+        }
+      : undefined
   if (rowCapTwips != null) model = capTableRowHeights(model, rowCapTwips)
   const resolved = resolveTableWidth(
     model,
@@ -1372,7 +1376,7 @@ export function tableModelToPmNode(
       originalFormatting: null,
       sourceTable,
       sourceBaseline: model.sourcePublication?.baseline ?? sourceTable,
-      sourceEnvelope: originalXml ? (tablePropertyEnvelope(originalXml) ?? null) : null,
+      sourceEnvelope: sourceEnvelope ?? null,
       // merged-away (vMerge continue) cells have no node of their own: their
       // own tcPr bytes and hidden text ride here, keyed row:column
       continuationCells: null,
@@ -1468,7 +1472,7 @@ export function tableModelToPmNode(
     continuationRecords.length > 0 ? JSON.stringify(continuationRecords) : null
   table.attrs!.originalStructure = tableStructureSignature(table)
   table.attrs!.originalFormatting = tableFormattingSignature(table)
-  if (!sourceModel.sourcePublication)
+  if (sourceEnvelope && !sourceModel.sourcePublication)
     Object.defineProperty(sourceModel, 'sourcePublication', {
       value: {
         table: sourceTable,
