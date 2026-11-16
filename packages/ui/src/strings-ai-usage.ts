@@ -117,6 +117,11 @@ export const AI_USAGE_LABELS: Record<Lang, AiUsageLabels> = {
     sessionTitle: 'Bu oturumun token kullanımı',
     cacheHit: '%{pct} önbellekten',
   },
+  hu: {
+    runTitle: 'A válasz tokenfelhasználása',
+    sessionTitle: 'A munkamenet tokenfelhasználása',
+    cacheHit: '{pct}% a gyorsítótárból',
+  },
   'zh-TW': {
     runTitle: '本回覆 token 用量',
     sessionTitle: '本次工作階段累計用量',

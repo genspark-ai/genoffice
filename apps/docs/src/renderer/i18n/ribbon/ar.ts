@@ -25,6 +25,7 @@ export const ar = {
   ribbonLangTraditionalChinese: 'الصينية التقليدية',
   ribbonLangVietnamese: 'الفيتنامية',
   ribbonLangTurkish: 'التركية',
+  ribbonLangHungarian: 'المجرية',
   ribbonAiCreditNote: 'يستدعي الذكاء الاصطناعي ويستهلك الرصيد',
   ribbonAiRewriteConfirm:
     'هذا الإجراء يستدعي الذكاء الاصطناعي: يستهلك الرصيد وقد يعيد كتابة المحتوى بالكامل. هل تريد المتابعة؟ (لن يتم السؤال مرة أخرى.)',

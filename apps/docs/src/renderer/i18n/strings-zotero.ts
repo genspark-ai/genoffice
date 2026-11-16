@@ -391,4 +391,23 @@ export const zoteroStrings = defineStrings({
       'Bu belgenin dipnotlarında veya son notlarında GenOffice tarafından henüz güncellenemeyen Zotero alıntıları var. Kaynakçanın bozulmaması için Zotero komutları burada kapatıldı.',
     zoteroGroup: 'Zotero',
   },
+  hu: {
+    zoteroCitation: 'Zotero-hivatkozás',
+    zoteroCitationTip:
+      'Hivatkozás beszúrása a Zoteróval; szerkesztéshez tedd a kurzort egy hivatkozásba',
+    zoteroBibliography: 'Zotero-irodalomjegyzék',
+    zoteroBibliographyTip: 'Irodalomjegyzék beszúrása vagy szerkesztése a Zoteróval',
+    zoteroRefresh: 'Frissítés',
+    zoteroRefreshTip: 'Az összes Zotero-hivatkozás és -irodalomjegyzék frissítése',
+    zoteroDocumentSettings: 'Dokumentum beállításai',
+    zoteroDocumentSettingsTip: 'Zotero dokumentumbeállítások',
+    zoteroDocumentPreferences: 'Dokumentumbeállítások',
+    zoteroRemoveCodes: 'Mezőkódok eltávolítása',
+    zoteroConnectionError:
+      'Nem sikerült csatlakozni a Zoterohoz. Indítsd el a Zoterót, és hagyd futni.',
+    zoteroOperationError: 'A Zotero-művelet nem sikerült.',
+    zoteroNoteFieldsUnsupported:
+      'Ez a dokumentum lábjegyzetekben vagy végjegyzetekben tartalmaz Zotero-hivatkozásokat, amelyeket a GenOffice egyelőre nem tud frissíteni. A Zotero-parancsok itt le vannak tiltva, hogy az irodalomjegyzék érintetlen maradjon.',
+    zoteroGroup: 'Zotero',
+  },
 })
