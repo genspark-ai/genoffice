@@ -61,3 +61,16 @@ it('does not consume standalone startup or AI creation when hosted storage is au
     getDocsHost().createDocument({ type: 'docx', title: 'New', content: '<p>x</p>' }),
   ).rejects.toThrow(/disabled/)
 })
+
+
+it('preserves the real file target and saved version supplied by a desktop host', async () => {
+  fixture({ openDocument: async () => ({ id: 'work', name: 'Report', path: '/work/document.docx',
+    fileHash: 'loaded-version', data: new ArrayBuffer(0) }) })
+  expect(await getDocsHost().openDocx()).toMatchObject({ path: '/work/document.docx',
+    hash: 'loaded-version', hosted: { id: 'work', path: '/work/document.docx', fileHash: 'loaded-version' } })
+})
+
+it('rejects an empty file target instead of treating it as a file-backed document', async () => {
+  fixture({ openDocument: async () => ({ id: 'work', name: 'Report', path: '' }) })
+  await expect(getDocsHost().openDocx()).rejects.toThrow(/invalid document identity/)
+})

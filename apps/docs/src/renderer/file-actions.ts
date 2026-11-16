@@ -594,7 +594,7 @@ export async function loadFile(
       noteDocumentSwapped()
       ctx.setDoc({
         parsed,
-        filePath: result.hosted ? null : result.path,
+        filePath: result.hosted ? (result.hosted.path ?? null) : result.path,
         hosted: result.hosted,
         fileName: result.name,
         hash: result.hash,
@@ -1247,16 +1247,18 @@ export async function saveExplicit(
       effect.current = next
     },
   })
-  const pending = !ok || ctx.saveIncompleteRef.current
+  const actualPath = ctx.doc?.hosted ? ctx.doc.hosted.path : path
+  const wrongTarget = ok && actualPath !== path
+  const pending = !ok || ctx.saveIncompleteRef.current || wrongTarget
   return {
     ok: ok && !pending,
-    path,
+    ...(actualPath ? {path:actualPath} : {}),
     pending,
     committed: effect.current === 'written' ? true : effect.current === 'writing' ? null : false,
     ...(pending
       ? {
           error:
-            error ||
+            (wrongTarget ? 'The host did not commit the requested file target' : error) ||
             (ok
               ? 'The snapshot was saved, but newer document changes remain unsaved'
               : 'The document could not be saved'),
@@ -1380,6 +1382,7 @@ async function saveOnce(
         data: buffer,
         kind: saveAs ? 'saveAs' : 'save',
         auto,
+        ...(doc.hosted.fileHash ? {expectedHash:doc.hosted.fileHash} : {}),
         ...(explicitTarget
           ? { requestedPath: explicitTarget.path, overwrite: explicitTarget.overwrite }
           : {}),
@@ -1408,7 +1411,7 @@ async function saveOnce(
         validateHostedIdentity(result.document)
         savedIdentity = { ...result.document }
       }
-      savedPath = null
+      savedPath = savedIdentity?.path ?? null
     } else if (getDocsDocumentHost()) {
       throw new Error('The current document has no hosted identity')
     } else if (explicitTarget) {

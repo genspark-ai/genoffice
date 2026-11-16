@@ -73,6 +73,8 @@ interface DocumentGenerationState {
 }
 
 export interface RuntimeDocument {
+  file?: {path:string;dirty:boolean;savedHash?:string}
+
   annotations?: DocsAnnotations
   editor: Editor
   /** Changes when the host opens or replaces a document, not on each render. */
@@ -134,6 +136,7 @@ export interface DocsRuntimeClient {
   context(options?: { captureSelection?: boolean }): {
     documentId: string
     revision: number
+    file?: RuntimeDocument['file']
     text: string
   }
   execute(call: AgentToolCall, signal?: AbortSignal): Promise<DocsOperationResult>
@@ -404,6 +407,7 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
         return {
           documentId,
           revision: documentState.revision,
+          ...(doc.file ? {file:doc.file} : {}),
           text:
             bindDocumentImageHtml(
               buildDocContext(
@@ -1102,6 +1106,8 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
                 boundState.documentId,
                 boundState.revision,
               )
+            if (call.name === 'get_document_context' && doc.file)
+              result.output = `File: ${doc.file.path}\nContent: live editing buffer; dirty=${doc.file.dirty}; savedHash=${doc.file.savedHash ?? 'unknown'}\n` + result.output
             if (readsBlocks)
               result.output += documentMediaReferences(
                 doc.editor,

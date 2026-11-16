@@ -4,6 +4,9 @@ export type DocsDocumentOperation = 'new' | 'open' | 'save' | 'saveAs' | 'export
 export interface DocsHostedIdentity {
   id: string
   name: string
+  /** Real desktop working file, when this host is file-backed. */
+  path?: string
+  fileHash?: string
   readOnly?: boolean
 }
 export interface DocsHostedDocument extends DocsHostedIdentity {
@@ -15,6 +18,8 @@ export interface DocsHostedSaveRequest {
   data: ArrayBuffer
   kind: 'save' | 'saveAs'
   auto: boolean
+  /** Version loaded by the editor; file-backed hosts reject an external change. */
+  expectedHash?: string
   /** A caller proposal, never authority to write a local file. */
   requestedPath?: string
   overwrite?: boolean
@@ -56,7 +61,7 @@ export interface DocsDocumentCommands {
   subscribe(listener: (state: DocsDocumentState | null) => void): () => void
 }
 
-export interface DocsDocumentState extends DocsHostedIdentity {
+export interface DocsDocumentState extends Omit<DocsHostedIdentity, 'path'> {
   /** Opaque editor session identity; changes on reopening or adopting another document. */
   documentToken: string
   path: string | null
@@ -79,6 +84,8 @@ export function validateHostedIdentity(document: DocsHostedIdentity): void {
     !document.id ||
     typeof document.name !== 'string' ||
     !document.name ||
+    (document.path !== undefined && (typeof document.path !== 'string' || !document.path)) ||
+    (document.fileHash !== undefined && typeof document.fileHash !== 'string') ||
     (document.readOnly !== undefined && typeof document.readOnly !== 'boolean')
   )
     throw new Error('The host returned an invalid document identity')
