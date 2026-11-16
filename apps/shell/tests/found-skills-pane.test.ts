@@ -7,7 +7,7 @@ import type { Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IntegrationsApi } from '../src/shared/integrations-api'
 import type { FoundSkill, RecommendedSkill } from '../src/shared/found-skill'
-import { FoundSkills } from '../src/renderer/src/FoundSkills'
+import { FoundSkills, skillInstructions } from '../src/renderer/src/FoundSkills'
 import { LocaleProvider } from '../src/renderer/src/locale'
 import { strings } from '../src/renderer/src/strings'
 
@@ -101,12 +101,30 @@ async function click(el: Element | null | undefined): Promise<void> {
 const buttonWithText = (text: string): HTMLButtonElement | undefined =>
   [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)
 
-/** the Read disclosure inside the row that names this skill */
-const disclosureFor = (name: string): HTMLDetailsElement | undefined => {
+/** the Details button inside the row that names this skill */
+const detailsFor = (name: string): HTMLButtonElement | undefined => {
   const row = [...host.querySelectorAll('.set-skill-card')].find((r) =>
     r.querySelector('.set-skill-name')?.textContent?.includes(name),
   )
-  return row?.querySelector('details') ?? undefined
+  return row?.querySelector<HTMLButtonElement>('.set-skill-details') ?? undefined
+}
+
+/** the skill page, portaled to body */
+const detailPage = (): HTMLElement | null => document.body.querySelector('.skill-detail')
+
+function pressKey(key: string, shiftKey = false): void {
+  act(() => {
+    ;(document.activeElement ?? document.body).dispatchEvent(
+      new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }),
+    )
+  })
+}
+
+function withBody(text: string): void {
+  window.aiOfficeIntegrations = {
+    ...(window.aiOfficeIntegrations as IntegrationsApi),
+    skillBody: async () => text,
+  } as unknown as IntegrationsApi
 }
 
 describe('FoundSkills', () => {
@@ -181,7 +199,7 @@ describe('FoundSkills', () => {
     expect(buttonWithText('Import folder…')).toBeTruthy()
   })
 
-  it('fetches a body only when its disclosure is opened', async () => {
+  it('fetches a body only when its detail page is opened', async () => {
     mountApi([skill({})])
     const body = vi.fn(async () => 'Do the thing.\n')
     window.aiOfficeIntegrations = {
@@ -190,17 +208,83 @@ describe('FoundSkills', () => {
     } as unknown as IntegrationsApi
     await render()
     expect(body).not.toHaveBeenCalled()
+    expect(detailPage()).toBeNull()
 
-    const details = disclosureFor('pptx-builder')
-    expect(details).toBeTruthy()
-    await act(async () => {
-      details!.open = true
-      details!.dispatchEvent(new Event('toggle'))
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await click(detailsFor('pptx-builder'))
     expect(body).toHaveBeenCalledWith('/app/skills/pptx-builder/SKILL.md')
-    expect(host.textContent).toContain('Do the thing.')
+    const page = detailPage()!
+    expect(page.getAttribute('role')).toBe('dialog')
+    expect(page.getAttribute('aria-modal')).toBe('true')
+    expect(document.getElementById(page.getAttribute('aria-labelledby')!)?.textContent).toBe(
+      'pptx-builder',
+    )
+    expect(page.textContent).toContain('Build a pptx')
+    expect(page.textContent).toContain('Do the thing.')
+
+    // a second open reuses the body it already read
+    await click(page.querySelector('.skill-detail-close'))
+    expect(detailPage()).toBeNull()
+    await click(detailsFor('pptx-builder'))
+    expect(body).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders the instructions without the front matter', async () => {
+    mountApi([skill({})])
+    withBody('---\nname: pptx-builder\ndescription: x\n---\n\n# Steps\n\n1. Open a deck\n')
+    await render()
+    await click(detailsFor('pptx-builder'))
+    const body = detailPage()!.querySelector('.skill-detail-body')!
+    expect(body.textContent).toContain('Steps')
+    expect(body.textContent).toContain('Open a deck')
+    expect(body.textContent).not.toContain('description: x')
+  })
+
+  it('says so when a skill has no instructions, and disables Copy', async () => {
+    mountApi([skill({})])
+    withBody('---\nname: pptx-builder\n---\n')
+    await render()
+    await click(detailsFor('pptx-builder'))
+    expect(detailPage()!.textContent).toContain('This skill has no instructions.')
+    const copy = [...detailPage()!.querySelectorAll('button')].find(
+      (b) => b.textContent === 'Copy instructions',
+    )
+    expect(copy?.disabled).toBe(true)
+  })
+
+  it('keeps focus inside the page, closes on Escape only, and gives focus back', async () => {
+    mountApi([skill({})])
+    await render()
+    const opener = detailsFor('pptx-builder')!
+    opener.focus()
+    await click(opener)
+    const page = detailPage()!
+    const close = page.querySelector<HTMLButtonElement>('.skill-detail-close')!
+    expect(document.activeElement).toBe(close)
+
+    // Shift+Tab from the first control wraps to the last one inside the page
+    pressKey('Tab', true)
+    expect(page.contains(document.activeElement)).toBe(true)
+    expect(document.activeElement).not.toBe(close)
+
+    const underneath = vi.fn()
+    window.addEventListener('keydown', underneath)
+    try {
+      pressKey('Escape')
+    } finally {
+      window.removeEventListener('keydown', underneath)
+    }
+    expect(underneath).not.toHaveBeenCalled()
+    expect(detailPage()).toBeNull()
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('strips only a leading front matter block', () => {
+    expect(skillInstructions('---\nname: a\n---\nBody')).toBe('Body')
+    expect(skillInstructions('﻿---\r\nname: a\r\n---\r\nBody')).toBe('Body')
+    expect(skillInstructions('Intro\n---\nnot front matter\n---\n')).toBe(
+      'Intro\n---\nnot front matter\n---',
+    )
+    expect(skillInstructions('---\nname: a\n---\n')).toBe('')
   })
 
   it('offers shipped skills with Install, Update or an installed tag, and installs by name', async () => {
