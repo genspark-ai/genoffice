@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Seek, Write};
 #[cfg(unix)]
@@ -308,37 +308,42 @@ impl WorkbookSessions {
         let mut visual_sources = Vec::with_capacity(declarations.len());
         let mut sheet_names = Vec::with_capacity(declarations.len());
         let mut stored_cell_budget = STORED_CELL_COUNT_BUDGET;
+        let sources =
+            worksheet_open_sources(&mut archive, &declarations, &relationships, cancelled)?;
+        let parallelism = if THREADS && sources.len() > 1 {
+            thread::available_parallelism().map_or(1, |count| count.get().min(4))
+        } else {
+            1
+        };
+        let mut scanned_metadata = VecDeque::new();
 
-        for declaration in declarations {
-            // One poll per worksheet rather than between reads: a
-            // many-sheet workbook spends most of its open in this loop, and
-            // a poll per statement would cost more than it saves.
+        for (index, declaration) in declarations.into_iter().enumerate() {
             if cancelled.load(Ordering::Acquire) {
                 return Err(SidecarError::cancelled());
             }
-            let target = relationships
-                .get(&declaration.relationship_id)
-                .ok_or_else(|| {
-                    SidecarError::Workbook(format!(
-                        "Missing worksheet relationship {}.",
-                        declaration.relationship_id
-                    ))
-                })?;
-            let worksheet_path = normalize_worksheet_path(target)?;
-            let source_xml_bytes = zip_entry(&mut archive, &worksheet_path)?.size();
+            let source = &sources[index];
+            let worksheet_path = &source.path;
+            // Scan the XML surrounding sheetData in small batches. These scans
+            // are independent; the cell-count budget and metadata assembly
+            // still run in workbook order.
+            if scanned_metadata.is_empty() && parallelism > 1 && source.is_large() {
+                let end = (index + parallelism).min(sources.len());
+                scanned_metadata =
+                    scan_large_worksheet_metadata(&workbook_path, &sources[index..end], cancelled);
+            }
             let dimensions = read_sheet_dimensions(
                 &mut archive,
-                &worksheet_path,
+                worksheet_path,
                 &color_context,
                 &mut stored_cell_budget,
             )?;
             let tables = read_sheet_tables(
                 &mut archive,
-                &worksheet_path,
+                worksheet_path,
                 &color_context,
                 &custom_table_styles,
             )?;
-            let comments = visuals::read_comments(&mut archive, &worksheet_path)?
+            let comments = visuals::read_comments(&mut archive, worksheet_path)?
                 .into_iter()
                 .filter_map(|comment| {
                     let anchor = comment
@@ -364,20 +369,24 @@ impl WorkbookSessions {
                     })
                 })
                 .collect();
-            let worksheet_without_cells =
-                visuals::read_worksheet_without_cells(&mut archive, &worksheet_path)?;
+            let worksheet_without_cells = match scanned_metadata.pop_front().flatten() {
+                Some(scanned) => scanned?,
+                None => {
+                    visuals::read_worksheet_without_cells(&mut archive, worksheet_path, cancelled)?
+                }
+            };
             let protection = read_sheet_protection(&worksheet_without_cells)?;
             let sparklines = read_sheet_sparklines(&worksheet_without_cells)?;
             let ole_objects =
-                visuals::read_ole_objects(&mut archive, &worksheet_without_cells, &worksheet_path)?;
+                visuals::read_ole_objects(&mut archive, &worksheet_without_cells, worksheet_path)?;
             let cell_images = read_sheet_cell_images(
                 &mut archive,
-                &worksheet_path,
+                worksheet_path,
                 &rich_value_images,
                 &wps_cell_images,
                 &mut cell_image_count,
             )?;
-            let pivot_infos = visuals::read_pivot_tables(&mut archive, &worksheet_path)?;
+            let pivot_infos = visuals::read_pivot_tables(&mut archive, worksheet_path)?;
             let pivot_ranges = pivot_infos
                 .iter()
                 .filter_map(|info| parse_range_reference(&info.output_ref))
@@ -426,7 +435,7 @@ impl WorkbookSessions {
                 name: declaration.name,
                 row_count,
                 column_count,
-                source_xml_bytes,
+                source_xml_bytes: source.xml_bytes,
                 stored_cell_count: dimensions.stored_cell_count,
                 value_cell_count: dimensions.value_cell_count,
                 value_row_count: dimensions.value_extent.map(|(rows, _)| rows),
@@ -465,7 +474,7 @@ impl WorkbookSessions {
                 worksheet_path: worksheet_path.clone(),
                 ole_objects,
             });
-            runtimes.push(SheetRuntime::new(worksheet_path));
+            runtimes.push(SheetRuntime::new(worksheet_path.clone()));
         }
         if sheets.is_empty() {
             return Err(SidecarError::Workbook(

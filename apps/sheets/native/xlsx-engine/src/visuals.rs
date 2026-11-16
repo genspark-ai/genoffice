@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use base64::Engine;
 use quick_xml::events::Event;
@@ -1949,27 +1950,53 @@ pub(crate) fn resolve_part_target(source_path: &str, target: &str) -> Result<Str
 pub(crate) fn read_worksheet_without_cells(
     archive: &mut ZipArchive<File>,
     path: &str,
+    cancelled: &AtomicBool,
 ) -> Result<String, SidecarError> {
     let entry = crate::zip_entry(archive, path)?;
-    let mut reader = Reader::from_reader(BufReader::new(entry));
-    let mut writer = Writer::new(Vec::new());
-    let mut buffer = Vec::new();
-    let mut skipped = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buffer)? {
-            Event::Eof => break,
-            Event::Start(start) if start.local_name().as_ref() == b"sheetData" => {
-                let end = start.to_end().into_owned();
-                reader.read_to_end_into(end.name(), &mut skipped)?;
-                skipped.clear();
+    // The XML parser can spend seconds inside read_to_end_into. Check for
+    // cancellation on buffer refills so parallel scans can stop promptly.
+    let input = WorksheetScanReader { entry, cancelled };
+    let mut reader = Reader::from_reader(BufReader::with_capacity(64 * 1024, input));
+    let result = (|| {
+        let mut writer = Writer::new(Vec::new());
+        let mut buffer = Vec::new();
+        let mut skipped = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buffer)? {
+                Event::Eof => break,
+                Event::Start(start) if start.local_name().as_ref() == b"sheetData" => {
+                    let end = start.to_end().into_owned();
+                    reader.read_to_end_into(end.name(), &mut skipped)?;
+                    skipped.clear();
+                }
+                Event::Empty(empty) if empty.local_name().as_ref() == b"sheetData" => {}
+                event => writer.write_event(event)?,
             }
-            Event::Empty(empty) if empty.local_name().as_ref() == b"sheetData" => {}
-            event => writer.write_event(event)?,
+            buffer.clear();
         }
-        buffer.clear();
+        String::from_utf8(writer.into_inner())
+            .map_err(|_| SidecarError::Workbook(format!("{path} is not valid UTF-8.")))
+    })();
+    if cancelled.load(Ordering::Acquire) {
+        Err(SidecarError::cancelled())
+    } else {
+        result
     }
-    String::from_utf8(writer.into_inner())
-        .map_err(|_| SidecarError::Workbook(format!("{path} is not valid UTF-8.")))
+}
+
+struct WorksheetScanReader<'a, R> {
+    entry: R,
+    cancelled: &'a AtomicBool,
+}
+
+impl<R: Read> Read for WorksheetScanReader<'_, R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        if self.cancelled.load(Ordering::Acquire) {
+            // Interrupted is retried by buffered readers.
+            return Err(std::io::Error::other("Worksheet metadata scan cancelled."));
+        }
+        self.entry.read(buffer)
+    }
 }
 
 fn read_xml(archive: &mut ZipArchive<File>, path: &str) -> Result<String, SidecarError> {
@@ -2199,6 +2226,7 @@ mod worksheet_without_cells_tests {
     use super::read_worksheet_without_cells;
     use crate::tests::open_fixture;
     use std::fs::File;
+    use std::sync::atomic::AtomicBool;
     use zip::ZipArchive;
 
     const CELLS: &str = r#"<sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v>2</v></c></row><row r="2"><c r="A2"><f>B1*2</f><v>4</v></c></row></sheetData>"#;
@@ -2206,7 +2234,12 @@ mod worksheet_without_cells_tests {
     fn trimmed(xml: &str) -> String {
         let (_dir, path) = open_fixture(&[("xl/worksheets/sheet1.xml", xml)]);
         let mut archive = ZipArchive::new(File::open(&path).unwrap()).unwrap();
-        read_worksheet_without_cells(&mut archive, "xl/worksheets/sheet1.xml").unwrap()
+        read_worksheet_without_cells(
+            &mut archive,
+            "xl/worksheets/sheet1.xml",
+            &AtomicBool::new(false),
+        )
+        .unwrap()
     }
 
     #[test]
