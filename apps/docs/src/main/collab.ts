@@ -43,6 +43,9 @@ interface Room {
 
 const rooms = new Map<string, Room>()
 
+/** the channels are registered once per process */
+let registered = false
+
 function roomFor(path: string): Room {
   let room = rooms.get(path)
   if (!room) {
@@ -135,6 +138,8 @@ function leaveRoom(path: string, memberId: number): void {
  * use, and every session lives in this one process.
  */
 export function registerCollabIpc(): void {
+  if (registered) return
+  registered = true
   ipcMain.handle(
     COLLAB_CHANNELS.join,
     (event, path: unknown, stateVector: unknown, clientId: unknown): CollabJoinReply => {
