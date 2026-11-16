@@ -27,16 +27,26 @@ function settle(password: string | null): void {
 function registerIpc(): void {
   if (ipcRegistered) return
   ipcRegistered = true
-  ipcMain.handle(PDF_PASSWORD_CHANNELS.getState, () => currentState)
-  ipcMain.handle(PDF_PASSWORD_CHANNELS.submit, (_event, password: unknown) => {
-    if (typeof password !== 'string') return
+  ipcMain.handle(PDF_PASSWORD_CHANNELS.getState, (event) =>
+    isDialogFrame(event.sender.id) ? currentState : null,
+  )
+  ipcMain.handle(PDF_PASSWORD_CHANNELS.submit, (event, password: unknown) => {
+    if (!isDialogFrame(event.sender.id) || typeof password !== 'string') return
     pushState({ busy: true })
     settle(password)
   })
-  ipcMain.handle(PDF_PASSWORD_CHANNELS.cancel, () => {
+  ipcMain.handle(PDF_PASSWORD_CHANNELS.cancel, (event) => {
+    if (!isDialogFrame(event.sender.id)) return
     settle(null)
     closePdfPasswordDialog()
   })
+}
+
+/** Only the dialog's own window may read or settle the prompt: the channels
+ *  are registered app-wide, so without this check any renderer could submit
+ *  a password into a prompt it cannot see, or cancel one mid-typing. */
+function isDialogFrame(wcId: number): boolean {
+  return pwWin !== null && !pwWin.isDestroyed() && pwWin.webContents.id === wcId
 }
 
 function pushState(patch: Partial<PdfPasswordUiState>): void {

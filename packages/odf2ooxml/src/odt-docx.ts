@@ -198,6 +198,17 @@ export async function convertOdtToDocx(odt: Uint8Array): Promise<OdtToDocxResult
         for (const inner of childElements(node)) {
           if (inner.name === 'text:p') {
             emitParagraph(inner.node, ctx, drafts, { list: null, depth }, { type: 'paragraph' })
+          } else if (inner.name === 'text:h') {
+            emitParagraph(
+              inner.node,
+              ctx,
+              drafts,
+              { list: null, depth },
+              {
+                type: 'heading',
+                level: clampHeadingLevel(attr(inner.node, 'text:outline-level')),
+              },
+            )
           }
         }
       }
@@ -443,7 +454,15 @@ function tableDraft(node: XNode, ctx: WalkContext): Draft {
   const columns = readColumns(node, ctx)
   const rows = readRows(node)
   const grid = placeCells(rows, columns.length, ctx)
-  return { kind: 'xml', xml: tableXml(columns, grid) }
+  const header = headerRows(node)
+  return {
+    kind: 'xml',
+    xml: tableXml(
+      columns,
+      grid,
+      rows.map((row) => header.has(row)),
+    ),
+  }
 }
 
 function readColumns(table: XNode, ctx: WalkContext): ColumnSpec[] {
@@ -456,7 +475,12 @@ function readColumns(table: XNode, ctx: WalkContext): ColumnSpec[] {
   const walk = (node: XNode): void => {
     for (const { name, node: child } of childElements(node)) {
       if (name === 'table:table-column') push(child)
-      else if (name === 'table:table-header-columns' || name === 'table:table-columns') walk(child)
+      else if (
+        name === 'table:table-header-columns' ||
+        name === 'table:table-columns' ||
+        name === 'table:table-column-group'
+      )
+        walk(child)
     }
   }
   walk(table)
@@ -470,10 +494,36 @@ function readRows(table: XNode): XNode[] {
   const walk = (node: XNode): void => {
     for (const { name, node: child } of childElements(node)) {
       if (name === 'table:table-row') out.push(child)
-      else if (name === 'table:table-header-rows' || name === 'table:table-rows') walk(child)
+      else if (
+        name === 'table:table-header-rows' ||
+        name === 'table:table-rows' ||
+        name === 'table:table-row-group'
+      )
+        walk(child)
     }
   }
   walk(table)
+  return out
+}
+
+/**
+ * Rows ODF asks a renderer to repeat at the top of every page:
+ * `table:table-header-rows` wraps them, while `table:table-rows` holds the
+ * ordinary ones. `readRows` flattens both containers into one list, so the
+ * header nodes are collected here and marked when the grid is written — docx
+ * carries the same instruction per row, as `w:tblHeader` in `w:trPr`.
+ */
+function headerRows(table: XNode): Set<XNode> {
+  const out = new Set<XNode>()
+  const walk = (node: XNode, inHeader: boolean): void => {
+    for (const { name, node: child } of childElements(node)) {
+      if (name === 'table:table-row') {
+        if (inHeader) out.add(child)
+      } else if (name === 'table:table-header-rows') walk(child, true)
+      else if (name === 'table:table-rows') walk(child, inHeader)
+    }
+  }
+  walk(table, false)
   return out
 }
 
@@ -568,8 +618,16 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
     for (const { name, node: item } of childElements(list)) {
       if (name !== 'text:list-item' && name !== 'text:list-header') continue
       for (const inner of childElements(item)) {
-        if (inner.name === 'text:p') {
-          emitInto(inner.node, { type: 'paragraph' })
+        if (inner.name === 'text:p' || inner.name === 'text:h') {
+          emitInto(
+            inner.node,
+            inner.name === 'text:h'
+              ? {
+                  type: 'heading',
+                  level: clampHeadingLevel(attr(inner.node, 'text:outline-level')),
+                }
+              : { type: 'paragraph' },
+          )
           const block = blocks[blocks.length - 1]
           if (name === 'text:list-item')
             block.format = { ...block.format, indentLeft: (block.format?.indentLeft ?? 0) + 720 }
@@ -579,16 +637,21 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
       }
     }
   }
-  for (const { name, node: child } of childElements(node)) {
-    if (name === 'text:p') emitInto(child, { type: 'paragraph' })
-    else if (name === 'text:h') {
-      emitInto(child, {
-        type: 'heading',
-        level: clampHeadingLevel(attr(child, 'text:outline-level')),
-      })
-    } else if (name === 'text:list') emitListFlat(child)
-    else if (name === 'table:table') ctx.drops.add('nested-tables')
+  const emitChildren = (container: XNode): void => {
+    for (const { name, node: child } of childElements(container)) {
+      if (name === 'text:p') emitInto(child, { type: 'paragraph' })
+      else if (name === 'text:h') {
+        emitInto(child, {
+          type: 'heading',
+          level: clampHeadingLevel(attr(child, 'text:outline-level')),
+        })
+      } else if (name === 'text:list') emitListFlat(child)
+      else if (name === 'text:section') {
+        if (attr(child, 'text:display') !== 'none') emitChildren(child)
+      } else if (name === 'table:table') ctx.drops.add('nested-tables')
+    }
   }
+  emitChildren(node)
   // whatever inline images the cell paragraphs referenced cannot live inside
   // the flat cell XML — dropped and counted
   if (ctx.images.length > 0) {
@@ -607,7 +670,12 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
   }
 }
 
-function tableXml(columns: ColumnSpec[], grid: Array<Array<GridCell | null>>): string {
+function tableXml(
+  columns: ColumnSpec[],
+  grid: Array<Array<GridCell | null>>,
+  /** one flag per grid row: does the source repeat it as a page header? */
+  headerFlags: boolean[],
+): string {
   // unknown column widths share the usable width of a Letter page with 1in
   // margins; fixed layout plus real gridCols keeps the spans honest
   const known = columns.filter((column) => column.widthEmu !== null)
@@ -634,6 +702,9 @@ function tableXml(columns: ColumnSpec[], grid: Array<Array<GridCell | null>>): s
   )
   grid.forEach((row, rowIndex) => {
     parts.push('<w:tr>')
+    // w:trPr opens the row; `w:tblHeader` repeats it at the top of each page,
+    // which is what `table:table-header-rows` asked the source renderer for
+    if (headerFlags[rowIndex]) parts.push('<w:trPr><w:tblHeader/></w:trPr>')
     row.forEach((cell, columnIndex) => {
       if (!cell) {
         // an empty slot in an irregular table keeps the row's column count
