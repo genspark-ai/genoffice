@@ -802,6 +802,9 @@ export const pt = {
     'Estrutura de tópicos: mostrar apenas a hierarquia de títulos; os títulos continuam editáveis',
   ribbonStoryView: 'História',
   ribbonStoryViewTip: 'História: escrever sem a formatação do documento',
+  storyBarList: 'Lista',
+  storyBarFocus: 'Foco',
+  storyBarLeave: 'Sair da História',
   ribbonReadMode: 'Modo de Leitura',
   ribbonReadModeTip:
     'Modo de leitura: ocultar a faixa de opções para leitura focada; pressione Esc para sair',

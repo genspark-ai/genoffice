@@ -12855,6 +12855,92 @@ body.docs-crop-active
   background: var(--hover);
 }
 
+/* ---- Story view: the frame. The chrome leaves, the way read mode presents a
+   document — the words on a plain background, one bar along the bottom. The
+   bar's actions (bold, italic, link, list, track changes, focus) are the only
+   formatting the view offers; everything about how the document looks belongs
+   to the page view. ---- */
+
+.story-chrome .ribbon,
+.story-chrome .ai-dock,
+.story-chrome .nav-pane,
+.story-chrome .comments-pane,
+.story-chrome .split-pane {
+  display: none !important;
+}
+
+.story-chrome .editor-scroll {
+  background: var(--canvas);
+  padding-top: 24px;
+}
+
+/* the Word/WPS crop marks belong to the page: a writing view has no page */
+.view-story .page-wrap::before,
+.view-story .page-wrap::after,
+.view-story .page-gap-paper::after {
+  display: none;
+}
+
+/* the bar: one row of plain text labels, no icons (iA Writer's) */
+.story-bar {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  max-width: calc(100vw - 48px);
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 15px;
+  background: var(--surface);
+  box-shadow: var(--docs-shadow-chip);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.story-bar-btn {
+  border: none;
+  background: none;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.story-bar-btn:hover {
+  background: var(--hover);
+}
+
+/* a switch shows its state in place: the label itself carries it */
+.story-bar-btn.on {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.story-bar-gap {
+  width: 1px;
+  height: 14px;
+  background: var(--border-strong);
+  margin: 0 4px;
+}
+
+.story-bar-count {
+  padding: 0 8px;
+  color: var(--text-tertiary);
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* Focus: everything but the caret's sentence dims (editor/story-view.ts paints
+   the .story-dim ranges) */
+.view-story .story-dim {
+  opacity: 0.25;
+}
+
 /* ---- Web Layout: document fills the window width, no page chrome ---- */
 
 .view-web {
@@ -12981,7 +13067,13 @@ body.docs-crop-active
 .view-story {
   --story-gutter: 3.25rem;
   --story-marker-ink: var(--docs-paper-ink-faint);
-  --story-face: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  /* one face set by the view, never by the document. The writing fonts first —
+     whichever is installed on the machine takes over, a missing one just
+     falls through — then the system stack. The bundled defaults (Monaspace
+     Neon, IBM Plex Mono) come with the font bundling itself. */
+  --story-face:
+    'Monaspace Neon', 'iA Writer Mono S', 'iA Writer Quattro S', 'IBM Plex Mono', 'Iosevka Etoile',
+    'Recursive', system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --story-size: 16px;
   --story-leading: 1.7;
 }

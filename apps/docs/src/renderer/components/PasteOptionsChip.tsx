@@ -160,6 +160,9 @@ export function PasteOptionsChip({ editor }: { editor: Editor }) {
     if (!chip) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      // mark the Escape consumed — other window listeners (the story view's
+      // own Esc) must not act on a key that was dismissing the chip
+      event.preventDefault()
       if (open) setOpen(false)
       else {
         setChip(null)
