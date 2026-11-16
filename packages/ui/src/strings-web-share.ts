@@ -123,4 +123,9 @@ export const WEB_SHARE_LABELS: Record<Lang, WebShareLabels> = {
     shareTip: 'Yerel ağda tarayıcı erişimini başlat ve bağlantıyı kopyala',
     stopTip: 'Paylaşımı durdur (tarayıcı oturumlarının bağlantısı kesilir)',
   },
+  hu: {
+    share: 'Megosztás',
+    shareTip: 'Indíts böngészős elérést a helyi hálózaton, és másolja a hivatkozást',
+    stopTip: 'Megosztás leállítása (a böngészős munkamenetek lekapcsolnak)',
+  },
 }
