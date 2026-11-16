@@ -416,6 +416,7 @@ function numberingDefs(
         defs.push({
           numFmt: format,
           lvlText: `${level.numPrefix ?? ''}%${depth}${level.numSuffix ?? '.'}`,
+          start: level.start,
           indentLeft,
           hanging,
         })

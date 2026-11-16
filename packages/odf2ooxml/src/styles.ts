@@ -57,6 +57,7 @@ export interface OdfListLevel {
   numFormat?: string
   numPrefix?: string
   numSuffix?: string
+  start?: number
   indentLeftTw?: number
   hangingTw?: number
 }
@@ -328,8 +329,10 @@ export class OdfStyles {
         childName === 'text:list-level-style-number' ||
         childName === 'text:list-level-style-roman'
       ) {
+        const start = Number(attr(child, 'text:start-value') ?? '1')
         levels.set(level, {
           kind: 'ordered',
+          ...(Number.isSafeInteger(start) && start >= 0 ? { start } : {}),
           numFormat: attr(child, 'style:num-format') ?? '1',
           numPrefix: attr(child, 'style:num-prefix'),
           numSuffix: attr(child, 'style:num-suffix'),
