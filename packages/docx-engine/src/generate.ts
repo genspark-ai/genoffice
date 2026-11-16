@@ -2361,11 +2361,11 @@ export function generateParagraphXml(block: GeneratedBlock, ctx: GenerateContext
  */
 let standaloneBookmarkSeq = 0
 
-function bookmarksXml(ctx: GenerateContext, names: string[] | undefined): string {
+function bookmarksXml(ctx: GenerateContext | null, names: string[] | undefined): string {
   if (!names?.length) return ''
   return names
     .map((name) => {
-      const id = ctx.allocateBookmarkId?.(name) ?? ++standaloneBookmarkSeq
+      const id = ctx?.allocateBookmarkId?.(name) ?? ++standaloneBookmarkSeq
       return `<w:bookmarkStart w:id="${id}" w:name="${escapeXmlAttr(name)}"/><w:bookmarkEnd w:id="${id}"/>`
     })
     .join('')
@@ -2556,8 +2556,15 @@ function tableCellXml(
     // (rich paragraphs carry their own align; the plain-paras fallback above sets it).
     // The parsed format, not just w:jc: hand-building the pPr here dropped w:bidi and
     // discarded every other paragraph property the model carries.
-    const pPr = mergePPrFormat(`<w:pPr>${numPr}</w:pPr>`, paragraph)
-    return `<w:p>${pPr}${runsXml(paragraph.runs, null)}</w:p>`
+    const styleId = 'styleId' in paragraph ? paragraph.styleId : undefined
+    const pStyle = styleId ? `<w:pStyle w:val="${escapeXmlAttr(styleId)}"/>` : ''
+    const pPr = mergePPrFormat(`<w:pPr>${pStyle}${numPr}</w:pPr>`, paragraph)
+    // the cell's bookmark anchors ride the rebuilt paragraph (no ctx here: the
+    // standalone ids are unique within the document and REF fields match by name)
+    const anchors =
+      ('hiddenBookmarks' in paragraph ? bookmarksXml(null, paragraph.hiddenBookmarks) : '') +
+      ('bookmarks' in paragraph ? bookmarksXml(null, paragraph.bookmarks) : '')
+    return `<w:p>${pPr}${anchors}${runsXml(paragraph.runs, null)}</w:p>`
   })
   // nested tables are regenerated from the model at their paragraph anchors (reverse
   // insertion keeps anchor indexes valid); OOXML requires tc to end with w:p
