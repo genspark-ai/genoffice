@@ -89,6 +89,48 @@ describe('listing and exporting with a stubbed platform', () => {
     expect(listing.certs[0]!.ref).toEqual({ source: 'windows', thumbprint: '2'.repeat(40) })
   })
 
+  it('reads each NSS identity without waiting for the one before it', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'nss-list-'))
+    const db = join(home, '.pki', 'nssdb')
+    mkdirSync(db, { recursive: true })
+    writeFileSync(join(db, 'cert9.db'), '')
+    const made = ['one', 'two', 'three', 'four'].map((name) =>
+      selfSigned(name, new Date(Date.now() + 86_400_000)),
+    )
+    const nameOf = (cert: forge.pki.Certificate): string =>
+      String(cert.subject.getField('CN').value)
+    let running = 0
+    let peak = 0
+    const run: Runner = async (_file, args) => {
+      if (args[0] === '-K') {
+        const lines = made.map(
+          (m, index) =>
+            `< ${index}> rsa  ${String(index).padStart(8, '0')}${'0'.repeat(12)}   ${nameOf(m.cert)}`,
+        )
+        return ok(lines.join('\n'))
+      }
+      const nickname = args[args.indexOf('-n') + 1]!
+      running++
+      peak = Math.max(peak, running)
+      // a real certutil launch is tens of milliseconds; hold the slot open
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      running--
+      const found = made.find((m) => nameOf(m.cert) === nickname)
+      return ok(found!.pem)
+    }
+    try {
+      const env: SystemStoreEnv = { platform: 'linux', home, run, now: () => new Date() }
+      const listing = await listSystemCertificates(undefined, env)
+      expect(listing.issues).toEqual([])
+      expect(listing.certs.map((c) => c.label).sort()).toEqual(['four', 'one', 'three', 'two'])
+      // serial reads peak at one process; the point of the change is fewer waits
+      expect(peak).toBeGreaterThan(1)
+      expect(peak).toBeLessThanOrEqual(8)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('refuses a malformed Windows thumbprint instead of passing it to PowerShell', async () => {
     const env: SystemStoreEnv = {
       platform: 'win32',

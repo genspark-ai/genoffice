@@ -181,6 +181,30 @@ export function parseNssKeyList(output: string): string[] {
 const looksLocked = (stderr: string): boolean =>
   /password|login|authentication|SEC_ERROR_BAD_PASSWORD|token/i.test(stderr)
 
+/**
+ * `certutil -L -n` reads one identity per process, so a store with many keys
+ * pays one process launch per key. The reads are independent and read-only, so
+ * run a few at a time; results keep their input order for a stable listing.
+ */
+const READ_CONCURRENCY = 8
+
+async function mapWithLimit<T, R>(
+  items: T[],
+  limit: number,
+  work: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (next < items.length) {
+      const index = next++
+      results[index] = await work(items[index]!)
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
 async function listNss(
   env: SystemStoreEnv,
   storePassword?: string,
@@ -206,21 +230,27 @@ async function listNss(
         if (looksLocked(keys.stderr)) out.issues.push('store-locked')
         continue
       }
-      for (const nickname of parseNssKeyList(keys.stdout)) {
+      const readCert = async (nickname: string): Promise<SystemCertificate | null> => {
         const pem = await env.run('certutil', ['-L', '-d', db, '-n', nickname, '-a', ...pwArgs])
-        if (pem.code !== 0) continue
+        if (pem.code !== 0) return null
         try {
-          out.certs.push(
-            toListed(
-              { source: 'nss', dir, nickname },
-              nickname,
-              new X509Certificate(pem.stdout),
-              env.now(),
-            ),
+          return toListed(
+            { source: 'nss', dir, nickname },
+            nickname,
+            new X509Certificate(pem.stdout),
+            env.now(),
           )
         } catch {
           /* a nickname that is not an X.509 certificate is not a signing identity */
+          return null
         }
+      }
+      for (const cert of await mapWithLimit(
+        parseNssKeyList(keys.stdout),
+        READ_CONCURRENCY,
+        readCert,
+      )) {
+        if (cert) out.certs.push(cert)
       }
     }
   })
