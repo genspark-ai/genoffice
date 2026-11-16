@@ -694,7 +694,7 @@ html.genoffice-popover-open .ribbon-tabs {
 /* The AI group leads the band in every app: 4px side padding like the
    docs/slides .ribbon-group, so the Genspark mark sits at the same x. */
 .ribbon-group:has(.ai-entry) {
-  padding: 2px 4px;
+  padding: 2px 3px;
 }
 
 .ribbon-group:last-child::after {
@@ -1130,12 +1130,12 @@ html.genoffice-popover-open .ribbon-tabs {
    (.rb-font-name 178px / .rb-font-size 68px) instead of sizing to the
    longest option */
 .select-like.font-name {
-  width: 178px;
+  width: 136px;
   min-width: 0;
 }
 
 .select-like.font-size {
-  width: 68px;
+  width: 54px;
   min-width: 0;
 }
 
