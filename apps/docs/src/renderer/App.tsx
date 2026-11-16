@@ -4700,7 +4700,7 @@ export function App() {
         const overlayCutAnchors: LineAnchor[] = []
         const overlayPages: number[] = []
         // zero-height cut points still paint a page seam (absolute overlay, no
-        // row-height feedback) so atLeast rows keep the gap without the #2521 chin
+        // row-height feedback) so atLeast rows keep the gap without the long chin
         const seamOverlays: SeamOverlaySpec[] = []
         const carries: FlowCarry[] = []
         const lineRectsOf = createLineRectsCache()
@@ -5253,12 +5253,6 @@ export function App() {
                 // edges from the anchor's block (the widget's containing block)
                 const host = anchorElement(anchor)?.closest('td > *, th > *') ?? cutCell
                 const r = host.getBoundingClientRect()
-                // The line box starts at the anchor's real left edge; the host's
-                // border box does not include text-indent / list-marker offsets.
-                // An inline-block gap anchored there would inherit that offset and
-                // paint its paper band past the page's right edge (the white step at
-                // the seam). Shift by the offset and take it back from the right
-                // bleed, so the band keeps the paper width.
                 gaps.push({
                   pos,
                   kind: 'cell',
@@ -5276,9 +5270,8 @@ export function App() {
               } else {
                 // multi-cell row: keep the zero-height dashed marker (no hfProps — it can't host header/footer strips)
                 gaps.push({ pos, kind: 'cut', page: k + 1, metrics })
-                // ...but still draw the page seam: an absolute overlay of the
-                // same paper bands, so the gap is visible and double-clickable.
-                // It spans the whole sheet, independent of the host cell.
+                // ...and draw the page-edge closing rules on a transparent
+                // overlay spanning the sheet, independent of the host cell.
                 const seamTop = anchorLineTop(anchor, factor)
                 if (seamTop !== null) {
                   const seamCell = anchorElement(anchor)?.closest('td, th')
@@ -5329,8 +5322,6 @@ export function App() {
             }
             // fold the block's offset from the paper edge (page margin + indent) into negative margins so the gap spans exactly the paper width
             const elRect = b.el.getBoundingClientRect()
-            // same line-box offset as the in-cell branch: text-indent moves the
-            // anchored inline gap, not the block's border box
             gaps.push({
               pos,
               page: k + 1,

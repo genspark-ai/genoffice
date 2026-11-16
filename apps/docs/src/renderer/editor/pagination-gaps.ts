@@ -946,8 +946,8 @@ export function syncCutOverlays(
 
 /** A zero-height in-row cut point that still needs the visual page seam: the
  *  seam is drawn by an absolute overlay so it never participates in the row's
- *  height (the atLeast-row long-chin fix), while the reader can
- *  still double-click it to hide/show the gap like Word. */
+ *  height (the atLeast-row long-chin fix). The overlay only paints closing
+ *  rules at the page edges; the row's text stays visible. */
 export interface SeamOverlaySpec {
   /** screen top of the next page's first line (= the gap's bottom edge) */
   bottom: number
@@ -958,8 +958,7 @@ export interface SeamOverlaySpec {
   left: number
   /** unzoomed paper width */
   width: number
-  /** cell box of the row crossing the seam: its page-edge closing rules, in
-   *  paper coordinates (left relative to the seam's left edge) */
+  /** cell box of the row crossing the seam, in paper coordinates */
   cell?: { left: number; width: number; color: string; thickness: number }
 }
 
@@ -988,24 +987,18 @@ export function syncSeamOverlays(
     el.style.left = `${s.left}px`
     el.style.width = `${s.width}px`
     el.style.height = `${height}px`
-    el.style.setProperty('--seam-mb', `${s.marginBottom}px`)
-    el.style.setProperty('--seam-mt', `${s.marginTop}px`)
     if (s.cell) {
-      // Word closes a row cut by a page break: one rule at the previous page's
-      // bottom edge and one at the next page's top edge, spanning the cell.
-      for (const [cls, top] of [
-        ['page-seam-rule-top', s.marginBottom - s.cell.thickness],
-        ['page-seam-rule-bottom', height - s.marginTop],
-      ] as const) {
-        const rule = document.createElement('div')
-        rule.className = `page-seam-rule ${cls}`
-        rule.style.top = `${top}px`
-        rule.style.left = `${s.cell.left}px`
-        rule.style.width = `${s.cell.width}px`
-        rule.style.height = `${s.cell.thickness}px`
-        rule.style.background = s.cell.color
-        el.appendChild(rule)
-      }
+      // The cut is zero-height: the previous page ends and the next page starts
+      // on the same line, so both page edges are at the overlay's bottom. One
+      // rule there closes the row without crossing text on either page.
+      const rule = document.createElement('div')
+      rule.className = 'page-seam-rule'
+      rule.style.top = `${height - s.cell.thickness}px`
+      rule.style.left = `${s.cell.left}px`
+      rule.style.width = `${s.cell.width}px`
+      rule.style.height = `${s.cell.thickness}px`
+      rule.style.background = s.cell.color
+      el.appendChild(rule)
     }
     layer.appendChild(el)
   }
@@ -1342,9 +1335,6 @@ export interface PageFrame {
   /** horizontal extent on the page wrap (differing-width documents center narrower pages) */
   left: number
   width: number
-  /** cell box of the row crossing the seam: its page-edge closing rules, in
-   *  paper coordinates (left relative to the seam's left edge) */
-  cell?: { left: number; width: number; color: string; thickness: number }
 }
 
 /**

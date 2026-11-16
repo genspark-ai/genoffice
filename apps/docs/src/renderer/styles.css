@@ -14098,6 +14098,15 @@ tr > .page-gap-cut {
   border-top: 2px dashed var(--docs-gap-cut);
 }
 
+.page-gap-cut::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100vw;
+  width: 200vw;
+  border-top: 2px dashed var(--docs-gap-cut);
+}
+
 /* cut markers for anchors inside read-only nested-table DOM (no PM position):
    absolute overlays on the page wrap instead of inline widgets */
 .page-cut-overlays {
