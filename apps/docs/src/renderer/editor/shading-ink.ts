@@ -9,7 +9,11 @@ export type FillInk = 'light' | 'dark'
 
 export function fillInk(hex: string | null | undefined): FillInk | undefined {
   if (!hex) return undefined
-  const s = hex.startsWith('#') ? hex.slice(1) : hex
+  // w:fill reaches this from the parser unnormalised, and a file written by hand
+  // or by a template tool can pad it (" F2F2F2", "#F2F2F2 "); trim before the
+  // hash check or the padding makes the fill look absent and the ink stays black
+  const trimmed = hex.trim()
+  const s = trimmed.startsWith('#') ? trimmed.slice(1) : trimmed
   if (!/^[0-9a-fA-F]{6}$/.test(s)) return undefined
   const n = parseInt(s, 16)
   const luma = (77 * ((n >> 16) & 255) + 151 * ((n >> 8) & 255) + 28 * (n & 255)) / 256
