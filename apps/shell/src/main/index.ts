@@ -35,7 +35,8 @@ import { atomicCopyFile, atomicWriteFile } from './atomic-write'
 // bridge can reach every handler
 import { installWebIpcCapture } from '../web/capture'
 installWebIpcCapture()
-import { parseWebServerArgv, startWebServer } from '../web/index'
+import { parseWebServerArgv } from '../web/index'
+import { startWebShare, stopWebShare, webShareStatus } from '../web/share'
 import { openTrash } from './trash'
 import { registerAiNamingIpc } from './ai-naming-service'
 import { tabStripOverlay } from './title-bar-overlay'
@@ -4817,6 +4818,19 @@ function statEntries(paths: string[]): Promise<RecentEntry[]> {
   return statPathEntriesAsync(paths, new Set(readStarredFiles()))
 }
 
+let webShareIpcRegistered = false
+
+/** Status-bar share chips (every editor): runtime start/stop for the web
+ *  service. One registration — the service is process-wide by design; the
+ *  chips in all six editors drive this same set of channels. */
+function registerWebShareIpc(): void {
+  if (webShareIpcRegistered) return
+  webShareIpcRegistered = true
+  ipcMain.handle('web-share:status', () => webShareStatus())
+  ipcMain.handle('web-share:start', async () => startWebShare())
+  ipcMain.handle('web-share:stop', () => stopWebShare())
+}
+
 function registerHomeIpc(): void {
   // signed-in means GenOffice's own device-code login; the shared gsk CLI key
   // is only a silent fallback, deliberately not shown here to nudge users onto our key
@@ -7057,6 +7071,7 @@ registerAiNamingIpc(() => currentLang())
 registerProjectIpc()
 registerDocsIpc()
 registerHomeIpc()
+registerWebShareIpc()
 registerIntegrationsIpc({
   settingsPath: APP_SETTINGS_PATH,
   window: () => shellWindow,
@@ -7150,8 +7165,9 @@ app.whenReady().then(async () => {
   if (webServerArgv.enabled) {
     // the web front end shares this process: same handlers, same sidecar, same
     // file access. Started before the window so a --hidden web service boots
-    // without flashing a desktop window.
-    void startWebServer(webServerArgv.overrides).catch((err: unknown) => {
+    // without flashing a desktop window. Routed through the share controller
+    // so the editors' status-bar chips reflect it.
+    void startWebShare(webServerArgv.overrides).catch((err: unknown) => {
       console.error('[web] server failed to start:', err)
     })
   }

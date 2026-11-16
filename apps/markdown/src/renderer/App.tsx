@@ -11,6 +11,7 @@ import {
   rememberAiPanelOpen,
   useAutoSavePref,
   useAiSidebarEnabled,
+  WebShareChip,
 } from '@genoffice/ui'
 import {
   pollUntilReady,
@@ -1514,6 +1515,7 @@ export default function App() {
               )}
             </div>
             <div className="status-right">
+              <WebShareChip lang={lang} />
               {statusText && (
                 <span className={`status-save status-${saveState}`}>{statusText}</span>
               )}

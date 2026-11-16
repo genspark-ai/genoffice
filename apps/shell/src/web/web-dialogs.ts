@@ -98,7 +98,14 @@ type ShowOpen = (options: OpenDialogOptions) => Promise<{ canceled: boolean; fil
 type ShowMessage = (options: MessageBoxOptions) => Promise<{ response: number }>
 
 /** Install once at web-server startup; wraps the Electron dialog methods. */
+let dialogPatchInstalled = false
+
 export function installWebDialogPatch(): void {
+  // the patch routes by dispatch scope (AsyncLocalStorage), never by "is a
+  // server up", so one install serves every start/stop cycle — re-wrapping
+  // would chain patched-over-patched functions for nothing
+  if (dialogPatchInstalled) return
+  dialogPatchInstalled = true
   const d = electronDialog.dialog as unknown as {
     showSaveDialog: ShowSave
     showOpenDialog: ShowOpen
