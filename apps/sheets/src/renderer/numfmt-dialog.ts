@@ -2,6 +2,8 @@ import { numfmt } from '@univerjs/core'
 
 import { getSystemShortDate } from '@genoffice/xlsx-gateway/shared/short-date'
 
+import { numberDisplayLocale } from './numfmt-fix'
+
 /// Model behind the Format Cells → Number tab: category + sub-options ⇄
 /// OOXML pattern. The ribbon's category dropdown (number-format.ts) derives
 /// its representative patterns from the same builders.
@@ -230,7 +232,11 @@ export function numfmtOptionsOf(pattern: string): NumfmtOptions {
 
 export function numfmtPreview(pattern: string, value: number | string): string {
   try {
-    return numfmt.format(pattern || 'General', value, { throws: false })
+    const locale = numberDisplayLocale()
+    return numfmt.format(pattern || 'General', value, {
+      throws: false,
+      ...(locale ? { locale } : {}),
+    })
   } catch {
     return typeof value === 'string' ? value : String(value)
   }

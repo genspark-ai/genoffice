@@ -460,7 +460,7 @@ import { installNotePopupCard, type NotePopupCard } from './note-hover-card'
 import { collectNotePictures, type NotePicture, type PendingNotePicture } from './note-pictures'
 import { handleRemoveNotePicture } from './note-picture-actions'
 import { installFormulaNullResultFix } from './formula-null-result'
-import { installNumberFormatFix } from './numfmt-fix'
+import { installNumberFormatFix, setNumberDisplayLocale } from './numfmt-fix'
 import { installIfsEmptySetFix } from './ifs-empty-set'
 import { installExcel365Functions } from './excel-365-functions'
 import { installCriteriaCompareCacheFix } from './criteria-compare-cache'
@@ -2258,6 +2258,8 @@ export function App({
         (!document.documentElement.hasAttribute('data-theme') && prefersDark.matches)
       )
     }
+    // before the first render: formatted numbers follow Hungarian conventions in hu
+    setNumberDisplayLocale(getLang() === 'hu' ? 'hu' : undefined)
     const runtime = createUniver({
       // green selection/highlight instead of Univer's default blue
       theme: greenTheme,

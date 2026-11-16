@@ -32,6 +32,20 @@ import { getWorkbookMdw } from './app-constants'
 import { isSubstitutedCellFamily } from './cell-font-fallback'
 import type { UniverRuntime } from './univer-state'
 
+/// Locale of formatted-number display (numfmt's `locale` option). Unset, every
+/// UI language renders en-US separators (`3,600 Ft`). The Hungarian UI sets
+/// 'hu' while the app language is Hungarian, so a formatted cell reads the way
+/// Hungarian Excel shows it: `3 600 Ft`, `3 600,50`, Hungarian month names.
+let displayLocale: string | undefined
+
+export function setNumberDisplayLocale(locale: string | undefined): void {
+  displayLocale = locale
+}
+
+export function numberDisplayLocale(): string | undefined {
+  return displayLocale
+}
+
 /// Horizontal room a cell's text never gets: Univer's 2+2px cell padding
 /// plus the 1px blur offset. Every width-vs-text rule here (General digit
 /// budget, #### overflow, `*x` fill) measures against `width - CELL_INSET_PX`.
@@ -110,7 +124,11 @@ export function hostLocalePattern(pattern: string): string {
 
 function safeFormat(pattern: string, value: number | string): string | null {
   try {
-    return numfmt.format(hostLocalePattern(pattern), value, { nbsp: true, throws: false })
+    return numfmt.format(hostLocalePattern(pattern), value, {
+      nbsp: true,
+      throws: false,
+      ...(displayLocale ? { locale: displayLocale } : {}),
+    })
   } catch {
     return null
   }
@@ -660,6 +678,8 @@ export function fixFormattedValue(
   }
   // Univer formatted with the LCID's separators (or rejected `[$]`); ours follow the host locale.
   if (hostLocalePattern(rawPattern) !== rawPattern && text !== String(displayed ?? '')) return text
+  // Univer formats with en-US separators; a set display locale (hu) wins.
+  if (displayLocale && text !== String(displayed ?? '')) return text
   return null
 }
 
@@ -917,7 +937,7 @@ export function installNumberFormatFix(
           location.worksheet.getColumnWidth(location.col)
         // Width and font are part of the key: a column resize re-runs the
         // interceptor (the skeleton is rebuilt) and must recompute the run.
-        const key = `* ${typeof raw} ${pattern} ${raw} ${width} ${fontString}`
+        const key = `* ${displayLocale ?? ''} ${typeof raw} ${pattern} ${raw} ${width} ${fontString}`
         let expanded = cache.get(key)
         if (expanded === undefined) {
           expanded = expandAsteriskFill(pattern, raw, width, measure)
@@ -935,7 +955,7 @@ export function installNumberFormatFix(
           })
         }
       }
-      const key = `${pattern} ${raw} ${cell.v}`
+      const key = `${displayLocale ?? ''} ${pattern} ${raw} ${cell.v}`
       let text = cache.get(key)
       if (text === undefined) {
         text = fixFormattedValue(pattern as string, raw, cell.v ?? undefined)
