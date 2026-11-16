@@ -3693,6 +3693,31 @@ function Ribbon({
             >
               <ToolSymbol symbol="A↓" />
             </button>
+            <MenuSelect
+              className="select-like compact"
+              label="Borders"
+              data-tip={t('appBorders')}
+              display={
+                <>
+                  <ToolSymbol symbol="⊡" /> {t('appBorders')}
+                </>
+              }
+              options={[
+                { value: 'all', label: t('appBorderAll'), icon: <BorderAllIcon /> },
+                { value: 'outer', label: t('appBorderOuter'), icon: <BorderOuterIcon /> },
+                {
+                  value: 'thick-outer',
+                  label: t('appBorderThickOuter'),
+                  icon: <BorderThickOuterIcon />,
+                },
+                { value: 'top', label: t('appBorderTop'), icon: <BorderTopIcon /> },
+                { value: 'bottom', label: t('appBorderBottom'), icon: <BorderBottomIcon /> },
+                { value: 'left', label: t('appBorderLeft'), icon: <BorderLeftIcon /> },
+                { value: 'right', label: t('appBorderRight'), icon: <BorderRightIcon /> },
+                { value: 'none', label: t('appBorderNone'), icon: <BorderNoneIcon /> },
+              ]}
+              onPick={(value) => onCommand(`border:${value}:${borderColor}`)}
+            />
           </div>
           <div className="inline-tools">
             <button
@@ -3777,31 +3802,6 @@ function Ribbon({
                 if (hex) setFillColor(hex)
                 onCommand(hex ? `fill:${hex}` : 'fill:none')
               }}
-            />
-            <MenuSelect
-              className="select-like compact"
-              label="Borders"
-              data-tip={t('appBorders')}
-              display={
-                <>
-                  <ToolSymbol symbol="⊡" /> {t('appBorders')}
-                </>
-              }
-              options={[
-                { value: 'all', label: t('appBorderAll'), icon: <BorderAllIcon /> },
-                { value: 'outer', label: t('appBorderOuter'), icon: <BorderOuterIcon /> },
-                {
-                  value: 'thick-outer',
-                  label: t('appBorderThickOuter'),
-                  icon: <BorderThickOuterIcon />,
-                },
-                { value: 'top', label: t('appBorderTop'), icon: <BorderTopIcon /> },
-                { value: 'bottom', label: t('appBorderBottom'), icon: <BorderBottomIcon /> },
-                { value: 'left', label: t('appBorderLeft'), icon: <BorderLeftIcon /> },
-                { value: 'right', label: t('appBorderRight'), icon: <BorderRightIcon /> },
-                { value: 'none', label: t('appBorderNone'), icon: <BorderNoneIcon /> },
-              ]}
-              onPick={(value) => onCommand(`border:${value}:${borderColor}`)}
             />
             <ColorDropdown
               label="Border color"
