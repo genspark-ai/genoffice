@@ -41,6 +41,10 @@ export interface OdfParaProps {
   pageBreakBefore?: boolean
   /** `fo:background-color` of the paragraph, hex without '#' */
   background?: string
+  /** `fo:keep-with-next="always"` — keep the paragraph on the same page as the next */
+  keepNext?: boolean
+  /** `fo:keep-together="always"` — never split the paragraph across pages */
+  keepLines?: boolean
 }
 
 export interface OdfListLevel {
@@ -273,6 +277,12 @@ export class OdfStyles {
     // colour asks for a fill
     const background = odfColorToHex(a['fo:background-color'])
     if (background) out.background = background
+    // ODF spells both as auto/always; "auto" is the default, so it only has to
+    // cancel a value an ancestor style set
+    const keepNext = a['fo:keep-with-next']
+    if (keepNext !== undefined) out.keepNext = keepNext === 'always'
+    const keepTogether = a['fo:keep-together']
+    if (keepTogether !== undefined) out.keepLines = keepTogether === 'always'
     return Object.keys(out).length > 0 ? out : undefined
   }
 
