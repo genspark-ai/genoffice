@@ -1,3 +1,4 @@
+// Modified for ForaOffice: resolve pending section boundaries from live editor identities.
 // Section geometry: page box, margins, columns, doc-grid pitch and the
 // per-block column / width / vertical-alignment specs derived from sections.
 import type { SectionInfo, SectionSettings, TextFlowDirection } from '@genoffice/docx-engine'
@@ -947,6 +948,8 @@ export function liveSections(
   extraPresent?: Set<number>,
   /** break paragraphs whose mark is a tracked deletion: Word's markup view drops the break */
   trackedDeleted?: Set<number>,
+  /** Session-local generated section breaks still present in the editor. */
+  pendingPresent?: Set<string>,
 ): SectionInfo[] {
   if (sections.length <= 1) return sections
   const present = new Set<number>(extraPresent)
@@ -958,7 +961,10 @@ export function liveSections(
   sections.forEach((s, i) => {
     const first = carryFirst ?? s.firstBlockIndex
     carryFirst = null
-    if (i < sections.length - 1 && !present.has(s.lastBlockIndex)) {
+    const boundaryPresent = s.pendingBreakId
+      ? pendingPresent?.has(s.pendingBreakId) === true
+      : present.has(s.lastBlockIndex)
+    if (i < sections.length - 1 && !boundaryPresent) {
       changed = true
       carryFirst = first
       return
@@ -976,13 +982,39 @@ export function liveSectionsForDocument(
 ): SectionInfo[] {
   const present: Array<{ docxIndex: number }> = []
   const removed = new Set(trackedDeleted)
+  const pending = new Set<string>()
   doc.forEach((node) => {
+    if (
+      typeof node.attrs.pendingSectionId === 'string' &&
+      typeof node.attrs.genXml === 'string' &&
+      /<w:sectPr\b/.test(node.attrs.genXml) &&
+      node.attrs.blockRevision?.kind !== 'del'
+    )
+      pending.add(node.attrs.pendingSectionId)
     const index = node.attrs.docxIndex
     if (typeof index !== 'number') return
     present.push({ docxIndex: index })
     if (node.attrs.sectionBoundary === false) removed.add(index)
   })
-  return liveSections(sections, present as BlockBox[], undefined, removed)
+  return liveSections(sections, present as BlockBox[], undefined, removed, pending)
+}
+
+/** Match a derived live section to its authoritative entry, including merged originals. */
+export function sourceSectionIndex(
+  sections: SectionInfo[],
+  target: SectionInfo | undefined,
+): number {
+  if (!target) return -1
+  const retained = sections.indexOf(target)
+  if (retained >= 0) return retained
+  if (target.pendingBreakId)
+    return sections.findIndex((section) => section.pendingBreakId === target.pendingBreakId)
+  return sections.findIndex(
+    (section) =>
+      !section.pendingBreakId &&
+      !!section.pendingBreak === !!target.pendingBreak &&
+      section.lastBlockIndex === target.lastBlockIndex,
+  )
 }
 
 /**

@@ -89,6 +89,78 @@ async function withHostedDocument(original: Buffer, run: (page: Page) => Promise
   }
 }
 
+for (const position of ['middle', 'end'] as const) {
+  test(`pending UI section breaks receive whole-document paper settings before the first save (${position})`, async () => {
+    const original = await JSZip.loadAsync(
+      await readFile(
+        resolve(__dirname, '../apps/docs/tests/fixtures/foraoffice-header-textbox.docx'),
+      ),
+    )
+    const xml = await original.file('word/document.xml')!.async('string')
+    original.file(
+      'word/document.xml',
+      xml.replace(
+        '<w:body>',
+        '<w:body><w:p><w:r><w:t>Pending section owner</w:t></w:r></w:p>' +
+          '<w:p><w:r><w:t>Pending section remainder</w:t></w:r></w:p>',
+      ),
+    )
+    await withHostedDocument(await original.generateAsync({ type: 'nodebuffer' }), async (page) => {
+      await page.locator('.ribbon-tab', { hasText: /^Layout$/ }).click()
+      await page.locator('.doc-page p', { hasText: /^Pending section owner$/ }).click()
+      await page.keyboard.press(position === 'end' ? 'Control+End' : 'End')
+      await page.getByRole('button', { name: 'Breaks', exact: true }).click()
+      await page
+        .locator('[data-rb-panel] button')
+        .filter({
+          has: page.locator('b', { hasText: /^Continuous$/ }),
+        })
+        .click()
+      const sections = await page.evaluate(async () => {
+        const caller = (window as unknown as FixtureWindow).editor.runtime.connect({
+          id: 'pending-sections',
+        })
+        try {
+          caller.context()
+          const result = await caller.execute({
+            id: 'pending-section-list',
+            name: 'query_document',
+            input: { domain: 'sections' },
+          })
+          if (result.isError) throw new Error(result.output)
+          return JSON.parse(result.output) as DocsQueryResult
+        } finally {
+          caller.close()
+        }
+      })
+      expect(sections.items).toHaveLength(2)
+      await page.getByRole('button', { name: 'Size', exact: true }).click()
+      await page
+        .locator('[data-rb-panel] button')
+        .filter({
+          has: page.locator('b', { hasText: /^More Paper Sizes/ }),
+        })
+        .click()
+      const dialog = page.locator('.modal', { hasText: 'Paper Size' })
+      await dialog.getByLabel(/^Width/).fill('28 cm')
+      await dialog.getByLabel(/^Height/).fill('20 cm')
+      await dialog.getByLabel('Apply to').selectOption('document')
+      await dialog.getByRole('button', { name: 'OK' }).click()
+      const saved = await page.evaluate(async () => {
+        const { editor, fixture } = window as unknown as FixtureWindow
+        return { ok: await editor.documents.save(), bytes: fixture.saved }
+      })
+      expect(saved.ok).toBe(true)
+      const bytes = await JSZip.loadAsync(Uint8Array.from(saved.bytes))
+      const result = await bytes.file('word/document.xml')!.async('string')
+      expect(result.match(/<w:sectPr\b/g)).toHaveLength(2)
+      expect(result.match(/<w:pgSz w:w="15874" w:h="11339" w:orient="landscape"\/>/g)).toHaveLength(
+        2,
+      )
+    })
+  })
+}
+
 test('mounted SDK validates queried edits and saves body and header effects in their original containers', async () => {
   test.setTimeout(120_000)
   const original = await readFile(

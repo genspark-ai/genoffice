@@ -807,6 +807,8 @@ export interface SectionInfo {
   footerRefs: Partial<Record<'default' | 'first' | 'even', string>>
   /** editor-side: created by a not yet saved section break; its sectPr lives in the break paragraph's generated XML, not in a parsed block */
   pendingBreak?: true
+  /** Editor-session identity of the generated break node; never written to OOXML. */
+  pendingBreakId?: string
 }
 
 /** one rich paragraph of a header / footer part */

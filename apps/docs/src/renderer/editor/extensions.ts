@@ -3782,6 +3782,7 @@ export const DocProtected = Node.create({
     return {
       docxIndex: { default: null as number | null },
       sectionBoundary: { default: null as boolean | null },
+      pendingSectionId: { default: null as string | null, rendered: false },
       blockRevision: { default: null as Record<string, string> | null },
       /** JSON record of a section-break paragraph's tracked w:sectPrChange */
       sectPrChange: { default: null as string | null },

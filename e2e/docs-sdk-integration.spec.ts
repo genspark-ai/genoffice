@@ -355,6 +355,7 @@ test('a browser host owns pathless storage while native inspection and advisory 
         kind: 'edit',
         instruction: 'Polish this passage without changing its meaning',
       })
+      expect(action.context).toContain('Selected text (4 characters): "same"')
       await body.click()
       await page.keyboard.press('Control+End')
       await page.keyboard.press('Control+Shift+ArrowLeft')

@@ -1,3 +1,4 @@
+// Modified for ForaOffice: use the live document's section boundaries in print preview.
 import { useEffect, useMemo, useState } from 'react'
 import type {
   CommentInfo,
@@ -17,7 +18,7 @@ import {
   effectiveHfRefs,
   effectiveTopPx,
   formatPageNumber,
-  liveSections,
+  liveSectionsForDocument,
   measureBlocks,
   noteAreaPlacement,
   type HfSet,
@@ -944,6 +945,7 @@ function FloatHfImg({
 }
 
 export function PaginationPreview({
+  documentView,
   section,
   canvasTop,
   sections,
@@ -972,6 +974,8 @@ export function PaginationPreview({
   onClose,
   suppressEscape,
 }: {
+  /** Source document for pending and deleted section-boundary ownership. */
+  documentView: EditorView
   /** Canvas geometry (final section): clone width, single-section fallbacks */
   section: SectionSettings
   /** canvas content-area top (px): the first section's effective top margin, the paper's padding-top */
@@ -1102,13 +1106,8 @@ export function PaginationPreview({
     if (measureNeutralize) pm.classList.add('measuring-columns')
     try {
       const origin = pm.getBoundingClientRect().top + canvasTop * factor
-      const { blocks, totalHeight, floats, sectBreaks } = measureBlocks(
-        pm,
-        origin,
-        factor,
-        blockPlans?.(),
-      )
-      const live = liveSections(sections, blocks, sectBreaks, delSectBreaks)
+      const { blocks, totalHeight, floats } = measureBlocks(pm, origin, factor, blockPlans?.())
+      const live = liveSectionsForDocument(sections, documentView.state.doc, delSectBreaks)
       setSecs(live)
       if (live.length > 0) assignSections(blocks, live)
       const withEndnotes = appendEndnotesBlock(

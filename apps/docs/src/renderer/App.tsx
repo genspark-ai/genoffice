@@ -189,8 +189,8 @@ import {
   createLineRectsCache,
   anchorElement,
   lineStartAnchor,
-  liveSections,
   liveSectionsForDocument,
+  sourceSectionIndex,
   nextLineAnchor,
   measureBlocks,
   alignJoinedParagraphs,
@@ -1636,12 +1636,7 @@ export function App({
   }, [editor, trackedDeletedSectBreaks, docVersion])
   const hfSections = useMemo(() => {
     if (!editor || sections.length <= 1) return sections
-    const present: Array<{ docxIndex: number }> = []
-    editor.state.doc.forEach((node) => {
-      const di = node.attrs?.docxIndex
-      if (typeof di === 'number') present.push({ docxIndex: di })
-    })
-    const next = liveSections(sections, present as BlockBox[], undefined, delSectBreaks)
+    const next = liveSectionsForDocument(sections, editor.state.doc, delSectBreaks)
     // every transaction re-runs this memo, and a streaming open appends a
     // chunk per frame: a fresh array per chunk re-ran the pagination effect
     // (a synchronous whole-document pass each) for every chunk. Unchanged
@@ -2823,7 +2818,8 @@ export function App({
         for (let i = 0; i <= afterBlockIndex && i < pmDoc.childCount; i++)
           pos += pmDoc.child(i).nodeSize
       }
-      editor
+      const pendingBreakId = crypto.randomUUID()
+      const inserted = editor
         .chain()
         .focus()
         .insertContentAt(pos, {
@@ -2833,9 +2829,11 @@ export function App({
             label: 'Section break paragraph',
             previewText: '',
             genXml,
+            pendingSectionId: pendingBreakId,
           },
         })
         .run()
+      if (!inserted) return
       // the section after the break is terminated by the "original current section sectPr",
       // whose w:type decides how the new section starts: always write the chosen type back
       // (including a nextPage reset, so a leftover continuous from the original section doesn't linger)
@@ -2867,6 +2865,7 @@ export function App({
       } else {
         setStatus(t('appSectionBreakPending'))
       }
+      return pendingBreakId
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- effectiveSectPrXml is rebuilt per render from the state listed here
     [
@@ -4509,7 +4508,7 @@ export function App({
       const measured = measureSingleFlow(pm, () => {
         const t0 = performance.now()
         const origin = pm.getBoundingClientRect().top + mTopPx * factor
-        const { blocks, totalHeight, floats, sectBreaks } = measureBlocks(
+        const { blocks, totalHeight, floats } = measureBlocks(
           pm,
           origin,
           factor,
@@ -4534,7 +4533,9 @@ export function App({
         // multi-section: assign blocks to sections by docxIndex; each section has its own content height / forced breaks.
         // liveSections: when a section-break block is deleted, that section merges into the next in real time (effective before saving)
         const secList =
-          sections.length > 0 ? liveSections(sections, blocks, sectBreaks, delSectBreaks) : null
+          sections.length > 0
+            ? liveSectionsForDocument(sections, editor.state.doc, delSectBreaks)
+            : null
         lastSecListRef.current = secList
         if (secList) assignSections(blocks, secList)
         // the endnote area takes part in page slicing (placed together at the document end; overflows continue on later pages)
@@ -6014,7 +6015,9 @@ export function App({
     const locateSection = () => {
       const { $head } = editor.state.selection
       const topIndex = $head.depth > 0 ? $head.index(0) : 0
-      setActiveSection(sectionIndexAtBlock(editor.state.doc, sections, topIndex))
+      const live = liveSectionsForDocument(sections, editor.state.doc, delSectBreaks)
+      const owner = live[sectionIndexAtBlock(editor.state.doc, live, topIndex)]
+      setActiveSection(Math.max(0, sourceSectionIndex(sections, owner)))
       if (!mirrorMargins) return
       const layout = pageLayoutRef.current
       const el = $head.depth > 0 ? editor.view.nodeDOM($head.before(1)) : null
@@ -6041,7 +6044,7 @@ export function App({
     return () => {
       editor.off('selectionUpdate', locateSection)
     }
-  }, [editor, sections, mirrorMargins])
+  }, [editor, sections, mirrorMargins, delSectBreaks, docVersion])
 
   // status-bar word count: the whole text is re-walked per doc, so pace it
   // (Word refreshes its count on idle too). A trailing throttle, not a
@@ -7495,9 +7498,8 @@ export function App({
     [],
   )
 
-  // AI page-setup tool: reads the live section list (block ranges in PM
-  // indexes) and writes through the Layout tab's paths. The mirror lets a
-  // batch of tool calls between renders see its own writes: `sections` as they
+  // Shared page-setup access for native tools and Layout controls. The mirror
+  // lets a batch of operations between renders see its own writes: `sections` as they
   // stand after each call and the sectPr each would save to.
   const aiPageCtx = {
     sections: sections.map((s) => ({ ...s })),
@@ -7546,9 +7548,8 @@ export function App({
               aiHfFlagsRef.current.deletedBreaks,
             )
           : []
-        index = ctx.sections.findIndex(
-          (section) => section.lastBlockIndex === live[index]?.lastBlockIndex,
-        )
+        const target = live[index]
+        index = sourceSectionIndex(ctx.sections, target)
         const sec = ctx.sections[index]
         if (!sec || !editor) return `section ${index} does not exist`
         const nextXml = applyResolvedPageSetup(ctx.effective[index] ?? sec.sectPrXml, resolved)
@@ -7594,16 +7595,15 @@ export function App({
           aiHfFlagsRef.current.deletedBreaks,
         )
         const ownerSection = live[sectionIndexAtBlock(pmDoc, live, Math.max(afterBlockIndex, 0))]
-        const ownerIdx = ctx.sections.findIndex(
-          (section) => section.lastBlockIndex === ownerSection?.lastBlockIndex,
-        )
+        const ownerIdx = sourceSectionIndex(ctx.sections, ownerSection)
         const owner = ctx.sections[ownerIdx]
         const copyXml = ctx.effective[ownerIdx]
-        insertSectionBreakRef.current(
+        const pendingBreakId = insertSectionBreakRef.current(
           type,
           afterBlockIndex,
           copyXml ? { sectPr: copyXml, sections: ctx.sections } : undefined,
         )
+        if (!pendingBreakId) return 'the section break could not be inserted'
         if (!owner || !copyXml) return null
         // until the save re-reads the file, the new section is modelled here: it
         // owns the blocks up to the break (by docxIndex), the owner keeps the rest
@@ -7618,6 +7618,7 @@ export function App({
         const created: SectionInfo = {
           ...owner,
           pendingBreak: true,
+          pendingBreakId,
           sectPrXml: copyXml,
           lastBlockIndex: lastDocx ?? owner.firstBlockIndex - 1,
         }
@@ -7954,28 +7955,25 @@ export function App({
     onNameWithAi: () => void nameWithAi(),
     onToggleAi: toggleAgentPanel,
     onSection: (next: SectionSettings) => {
-      // layout applies to the cursor's section; the final section's sectPr goes through SaveOptions.section (also drives canvas geometry)
-      setSections((prev) =>
-        prev.map((s, i) => (i === activeSection ? { ...s, settings: next } : s)),
-      )
-      if (sections.length <= 1 || activeSection === sections.length - 1) {
-        setSection(next)
-        setSectionDirty(true)
-      } else {
-        setSectionsDirty((d) => (d.includes(activeSection) ? d : [...d, activeSection]))
-        setStatus(t('appSectionSettingsApplied', { n: activeSection + 1 }))
-      }
+      if (!editor) return
+      const ctx = aiPageCtxRef.current
+      const live = liveSectionsForDocument(ctx.sections, editor.state.doc, delSectBreaks)
+      const index = sourceSectionIndex(live, ctx.sections[activeSection])
+      const error = aiPageSetupAccess.set(index, { settings: next })
+      if (error) setStatus(error)
     },
     onPageBorderAll: (props: SectionSettings['pageBorderProps'] | null) => {
       const bordered = ({ pageBorderProps: _drop, ...s }: SectionSettings): SectionSettings =>
         props ? { ...s, pageBorder: true, pageBorderProps: props } : { ...s, pageBorder: false }
-      setSections((prev) => prev.map((s) => ({ ...s, settings: bordered(s.settings) })))
-      if (section) {
-        setSection(bordered(section))
-        setSectionDirty(true)
+      for (const { index } of aiPageSetupAccess.list()) {
+        const current = aiPageSetupAccess.current(index)
+        if (!current) continue
+        const error = aiPageSetupAccess.set(index, { settings: bordered(current.settings) })
+        if (error) {
+          setStatus(error)
+          return
+        }
       }
-      const earlier = sections.slice(0, -1).map((_, i) => i)
-      if (earlier.length > 0) setSectionsDirty((d) => [...new Set([...d, ...earlier])])
     },
     onPaperSizeAll: (
       portraitW: number,
@@ -7986,21 +7984,29 @@ export function App({
         orientation === 'landscape'
           ? { ...s, orientation, pageWidth: portraitH, pageHeight: portraitW }
           : { ...s, orientation, pageWidth: portraitW, pageHeight: portraitH }
-      setSections((prev) => prev.map((s) => ({ ...s, settings: sized(s.settings) })))
-      if (section) {
-        setSection(sized(section))
-        setSectionDirty(true)
+      for (const { index } of aiPageSetupAccess.list()) {
+        const current = aiPageSetupAccess.current(index)
+        if (!current) continue
+        const error = aiPageSetupAccess.set(index, { settings: sized(current.settings) })
+        if (error) {
+          setStatus(error)
+          return
+        }
       }
-      const earlier = sections.slice(0, -1).map((_, i) => i)
-      if (earlier.length > 0) setSectionsDirty((d) => [...new Set([...d, ...earlier])])
     },
     onMirrorMargins: (on: boolean) => {
       if (on === mirrorMargins) return
       setMirrorMargins(on)
       setMirrorMarginsDirty(true)
     },
-    onInsertSectionBreak: (type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage') =>
-      insertSectionBreak(type),
+    onInsertSectionBreak: (type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage') => {
+      if (!editor) return
+      const { $head } = editor.state.selection
+      const position = $head.depth > 0 ? $head.after(1) : $head.pos
+      const afterBlockIndex = editor.state.doc.resolve(position).index(0) - 1
+      const error = aiPageSetupAccess.insertBreak(type, afterBlockIndex)
+      if (error) setStatus(error)
+    },
     onPageColor: (next: string | null) => {
       setPageColor(next)
       setPageColorDirty(true)
@@ -9558,8 +9564,9 @@ export function App({
         />
       )}
 
-      {doc && showPagePreview && section && (
+      {doc && editor && showPagePreview && section && (
         <PaginationPreview
+          documentView={editor.view}
           section={section}
           canvasTop={canvasTop}
           layout={layoutNow}

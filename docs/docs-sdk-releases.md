@@ -23,6 +23,9 @@ dropping retained content; normal empty-merge and row/column operations remain
 available. Inherited table styling stays inherited unless explicitly changed.
 Saving and then undoing or redoing table edits retains each table's own authored
 properties and the hidden continuation content belonging to retained cells.
+Selection requests commit the current editor-owned DOM text range before taking
+input focus. Layout controls and native tools share live section updates, so
+unsaved section breaks receive page settings before the first save.
 
 Cell queries now restrict `supportedOperations` to current target eligibility,
 return projection/limitation and structure metadata, and correlate image resource
