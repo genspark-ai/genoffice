@@ -1,8 +1,9 @@
 /**
  * #2669 regression: an e-invoice whose form is an outer frame plus
- * full-width band rules, with the borderless detail table (项目名称/规格型号/
- * 单位/数量/单价/金额/税率/税额) living in one band that has no interior
- * rules of its own. The lattice solved the whole form into ONE grid and the
+ * full-width band rules, with the borderless detail table (item name /
+ * spec / unit / quantity / unit price / amount / tax rate / tax amount)
+ * living in one band that has no interior rules of its own. The lattice
+ * solved the whole form into ONE grid and the
  * band merged into a single giant cell: every line item's columns collapsed
  * into one text stream, the buyer tax ID split in two (…FL0000X losing its
  * leading 9 into another fragment), and the four remark lines interleaved

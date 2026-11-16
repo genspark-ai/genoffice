@@ -772,9 +772,9 @@ export function augmentGridStreamColumns(grid: TableGrid, chars: readonly PdfCha
       if (grid.xs.some((x) => Math.abs(x - pos) < MIN_CELL_DIM)) continue
       // corroborate the valley with the lines' own word gaps: ≥2 distinct
       // lines must have consecutive units whose gap spans across it. One
-      // line is not enough — it is that line's private space (the 合 计
-      // label's intra-word gap, #2669's sample); two lines make it a channel
-      // the whole band's text respects, which is what a column is.
+      // line is not enough — it is that line's private space (the grand-
+      // total label's intra-word gap, #2669's sample); two lines make it a
+      // channel the whole band's text respects, which is what a column is.
       let covering = 0
       for (const line of bandLines) {
         const ivs = line.map((u) => ({ lo: u.box.x0, hi: u.box.x1 })).sort((a, b) => a.lo - b.lo)
