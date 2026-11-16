@@ -25,6 +25,7 @@ export const he = {
   ribbonLangTraditionalChinese: 'סינית מסורתית',
   ribbonLangVietnamese: 'וייטנאמית',
   ribbonLangTurkish: 'טורקית',
+  ribbonLangHungarian: 'הונגרית',
   ribbonAiCreditNote: 'משתמש ב-AI וצורך קרדיטים',
   ribbonAiRewriteConfirm:
     'פעולה זו מפעילה AI: היא צורכת קרדיטים ועשויה לשכתב את כל התוכן. להמשיך? (לא תישאל שוב.)',

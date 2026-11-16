@@ -1,9 +1,11 @@
 import JSZip from 'jszip'
+import { deflateRawSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import {
   assertDeclaredSizesWithinLimits,
   assertZipInflatesWithinLimits,
   DEFAULT_ZIP_LIMITS,
+  inflateRawWithinCap,
   type DeclaredPart,
 } from '../src/index'
 
@@ -136,5 +138,35 @@ describe('assertDeclaredSizesWithinLimits', () => {
     expect(() =>
       assertDeclaredSizesWithinLimits([{ name: 'a.xml', usize: 10 }], LIMITS),
     ).not.toThrow()
+  })
+})
+
+describe('inflateRawWithinCap', () => {
+  it('returns the inflated bytes for an honest stream', async () => {
+    const raw = deflateRawSync(Buffer.alloc(64 * KB))
+    const out = await inflateRawWithinCap(raw, 128 * KB)
+    expect(out).not.toBeNull()
+    expect(out!.byteLength).toBe(64 * KB)
+    expect(out![0]).toBe(0)
+    expect(out![63 * KB]).toBe(0)
+  })
+
+  it('accepts output exactly at the cap and refuses one byte past it', async () => {
+    const raw = deflateRawSync(Buffer.alloc(100))
+    await expect(inflateRawWithinCap(raw, 100)).resolves.not.toBeNull()
+    await expect(inflateRawWithinCap(raw, 99)).resolves.toBeNull()
+  })
+
+  it('cancels a lying stream at the cap instead of materialising the payload', async () => {
+    // 1 MB of output behind a small compressed block — the serving-side twin
+    // of the #759 bomb, where the caller never gate-checked the declaration.
+    const raw = deflateRawSync(Buffer.alloc(1024 * KB))
+    const before = process.memoryUsage().rss
+    await expect(inflateRawWithinCap(raw, 128 * KB)).resolves.toBeNull()
+    expect(process.memoryUsage().rss - before).toBeLessThan(32 * MB)
+  })
+
+  it('returns null for corrupt input instead of throwing', async () => {
+    await expect(inflateRawWithinCap(Buffer.from('not a deflate stream'), 1024)).resolves.toBeNull()
   })
 })

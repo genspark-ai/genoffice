@@ -25,6 +25,7 @@ export const es = {
   ribbonLangTraditionalChinese: 'chino tradicional',
   ribbonLangVietnamese: 'vietnamita',
   ribbonLangTurkish: 'turco',
+  ribbonLangHungarian: 'húngaro',
   ribbonAiCreditNote: 'Usa IA y consume créditos',
   ribbonAiRewriteConfirm:
     'Esta acción llama a la IA: consume créditos y puede reescribir todo el contenido. ¿Continuar? (No se volverá a preguntar.)',

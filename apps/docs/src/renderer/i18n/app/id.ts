@@ -393,6 +393,7 @@ export const id = {
   appLangTraditionalChinese: 'Tionghoa Tradisional',
   appLangVietnamese: 'Vietnam',
   appLangTurkish: 'Turki',
+  appLangHungarian: 'Hongaria',
   appWrapTextMenu: 'Bungkus Teks',
   appViewImage: 'Lihat Gambar',
   appSaveImageAs: 'Simpan Gambar Sebagai…',
