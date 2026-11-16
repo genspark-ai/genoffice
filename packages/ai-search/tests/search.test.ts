@@ -744,12 +744,39 @@ describe('webSearch (DeepSeek)', () => {
       body = JSON.parse(String(init?.body))
       return { ok: true, json: { results: [{ title: 'A', url: 'https://a.com', summary: 's' }] } }
     })
-    await webSearch('好'.repeat(300), 3, {
+    // astral characters: a UTF-16 slice(0, 128) would keep only 64 of them
+    await webSearch('😀'.repeat(300), 3, {
       useGsk: false,
       deepseekKey: 'sk-ds',
       prefer: 'deepseek',
     })
-    expect(Array.from(body.query ?? '')).toHaveLength(128)
+    expect(body.query).toBe('😀'.repeat(128))
+  })
+
+  it('makes no request without a key or with a blank query', async () => {
+    const urls: string[] = []
+    mockFetch((url) => {
+      urls.push(url)
+      return { ok: false }
+    })
+    await webSearch('q', 3, { useGsk: false, deepseekKey: '   ', prefer: 'deepseek' })
+    await webSearch('   ', 3, { useGsk: false, deepseekKey: 'sk-ds', prefer: 'deepseek' })
+    expect(urls.some((u) => u.includes('deepseek.com'))).toBe(false)
+  })
+
+  it('returns no more results than asked for', async () => {
+    mockFetch(() => ({
+      ok: true,
+      json: {
+        results: [1, 2, 3, 4].map((n) => ({
+          title: `T${n}`,
+          url: `https://${n}.com`,
+          summary: 's',
+        })),
+      },
+    }))
+    const r = await webSearch('q', 2, { useGsk: false, deepseekKey: 'sk-ds', prefer: 'deepseek' })
+    expect(r.results.map((x) => x.title)).toEqual(['T1', 'T2'])
   })
 
   it('caps an oversized summary at 1000 characters', async () => {

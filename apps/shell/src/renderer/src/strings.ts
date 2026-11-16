@@ -433,7 +433,7 @@ export const strings = {
     setAiSearchKeenableHint:
       '留空 API key 即可免费使用 Keenable 搜索（用量有限）。填写 key 可使用你的 Keenable 账户。图片搜索使用其他来源。',
     setAiSearchDeepSeekHint:
-      'DeepSeek 用你的 DeepSeek API key 提供网页搜索，按搜索次数从你的 DeepSeek 账户计费；图片搜索改用其他来源。',
+      'DeepSeek 提供网页搜索，按搜索次数从你的 DeepSeek 账户计费。请在此处单独填写 DeepSeek API key，它不与其他能力的 DeepSeek key 共用。图片搜索改用其他来源。',
     setAiCapImage: '生图',
     setAiCapAnalysis: '图片解析',
     setAiCapVideo: '视频解析',
@@ -993,7 +993,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Leave the key blank for free Keenable search (limited usage). Add a key to use your Keenable account. Image search uses other sources.',
     setAiSearchDeepSeekHint:
-      'DeepSeek serves web search with your DeepSeek API key, billed per search on your DeepSeek account; image search uses other sources.',
+      'DeepSeek serves web search, billed per search on your DeepSeek account. Enter your DeepSeek API key here; it is not shared with the DeepSeek key used for other capabilities. Image search uses other sources.',
     setAiCapImage: 'Image generation',
     setAiCapAnalysis: 'Image analysis',
     setAiCapVideo: 'Video analysis',
@@ -1562,7 +1562,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Để trống khóa để dùng tìm kiếm Keenable miễn phí (giới hạn lượt dùng). Nhập khóa để dùng tài khoản Keenable của bạn. Tìm kiếm hình ảnh sử dụng các nguồn khác.',
     setAiSearchDeepSeekHint:
-      'DeepSeek cung cấp tìm kiếm web bằng khóa API DeepSeek của bạn, tính phí theo từng lượt tìm kiếm vào tài khoản DeepSeek; tìm kiếm hình ảnh sử dụng các nguồn khác.',
+      'DeepSeek cung cấp tìm kiếm web, tính phí theo từng lượt tìm kiếm vào tài khoản DeepSeek của bạn. Hãy nhập khóa API DeepSeek tại đây; khóa này không dùng chung với khóa DeepSeek của các tính năng khác. Tìm kiếm hình ảnh sử dụng các nguồn khác.',
     setAiCapImage: 'Tạo hình ảnh',
     setAiCapAnalysis: 'Phân tích hình ảnh',
     setAiCapVideo: 'Phân tích video',
@@ -2134,7 +2134,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Ücretsiz Keenable araması için anahtarı boş bırakın (sınırlı kullanım). Keenable hesabınızı kullanmak için bir anahtar ekleyin. Görüntü araması diğer kaynakları kullanır.',
     setAiSearchDeepSeekHint:
-      'DeepSeek, DeepSeek API anahtarınızla web aramasını sağlar ve arama başına DeepSeek hesabınızdan ücretlendirilir; görüntü araması diğer kaynakları kullanır.',
+      'DeepSeek web aramasını sağlar ve arama başına DeepSeek hesabınızdan ücretlendirilir. DeepSeek API anahtarınızı buraya girin; diğer özelliklerde kullanılan DeepSeek anahtarıyla paylaşılmaz. Görüntü araması diğer kaynakları kullanır.',
     setAiCapImage: 'Görüntü oluşturma',
     setAiCapAnalysis: 'Görüntü analizi',
     setAiCapVideo: 'Video analizi',
@@ -2714,7 +2714,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Hagyd üresen a kulcsot az ingyenes Keenable-kereséshez (korlátozott használat). Adj meg egy kulcsot a saját Keenable-fiókod használatához. A képkeresés más forrásokat használ.',
     setAiSearchDeepSeekHint:
-      'A DeepSeek a DeepSeek API-kulcsoddal biztosítja a webes keresést, keresésenként a DeepSeek-fiókodra számlázva; a képkeresés más forrásokat használ.',
+      'A DeepSeek webes keresést biztosít, keresésenként a DeepSeek-fiókodra számlázva. A DeepSeek API-kulcsot itt add meg; ez nem közös a más funkciókhoz használt DeepSeek-kulccsal. A képkeresés más forrásokat használ.',
     setAiCapImage: 'Képgenerálás',
     setAiCapAnalysis: 'Képelemzés',
     setAiCapVideo: 'Videóelemzés',
@@ -3291,7 +3291,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'キーを空欄にすると Keenable 検索を無料で使えます（利用制限あり）。キーを入力すると自分の Keenable アカウントを使用します。画像検索には他のソースを使用します。',
     setAiSearchDeepSeekHint:
-      'DeepSeek はあなたの DeepSeek API キーで Web 検索を提供し、検索ごとに DeepSeek アカウントへ課金されます。画像検索には他のソースを使用します。',
+      'DeepSeek は Web 検索を提供し、検索ごとに DeepSeek アカウントへ課金されます。DeepSeek API キーはここに入力してください。他の機能で使う DeepSeek キーとは共有されません。画像検索には他のソースを使用します。',
     setAiCapImage: '画像生成',
     setAiCapAnalysis: '画像解析',
     setAiCapVideo: '動画解析',
@@ -3862,7 +3862,7 @@ export const strings = {
     setAiSearchKeenableHint:
       '키를 비워 두면 Keenable 검색을 무료로 사용할 수 있습니다(사용량 제한). 키를 입력하면 자신의 Keenable 계정을 사용합니다. 이미지 검색은 다른 소스를 사용합니다.',
     setAiSearchDeepSeekHint:
-      'DeepSeek는 내 DeepSeek API 키로 웹 검색을 제공하며, 검색할 때마다 DeepSeek 계정에 요금이 청구됩니다. 이미지 검색은 다른 소스를 사용합니다.',
+      'DeepSeek는 웹 검색을 제공하며, 검색할 때마다 DeepSeek 계정에 요금이 청구됩니다. DeepSeek API 키를 여기에 입력하세요. 다른 기능에 쓰는 DeepSeek 키와 공유되지 않습니다. 이미지 검색은 다른 소스를 사용합니다.',
     setAiCapImage: '이미지 생성',
     setAiCapAnalysis: '이미지 분석',
     setAiCapVideo: '동영상 분석',
@@ -4453,7 +4453,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Laissez la clé vide pour la recherche Keenable gratuite (usage limité). Ajoutez une clé pour utiliser votre compte Keenable. La recherche d’images utilise d’autres sources.',
     setAiSearchDeepSeekHint:
-      'DeepSeek assure la recherche web avec votre clé API DeepSeek, facturée à la recherche sur votre compte DeepSeek ; la recherche d’images utilise d’autres sources.',
+      'DeepSeek assure la recherche web, facturée à la recherche sur votre compte DeepSeek. Saisissez votre clé API DeepSeek ici ; elle n’est pas partagée avec la clé DeepSeek des autres fonctionnalités. La recherche d’images utilise d’autres sources.',
     setAiCapImage: "Génération d'images",
     setAiCapAnalysis: "Analyse d'images",
     setAiCapVideo: 'Analyse vidéo',
@@ -5044,7 +5044,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Ohne Schlüssel ist die Keenable-Suche kostenlos (begrenzte Nutzung). Mit einem Schlüssel verwenden Sie Ihr Keenable-Konto. Die Bildsuche nutzt andere Quellen.',
     setAiSearchDeepSeekHint:
-      'DeepSeek liefert mit deinem DeepSeek-API-Schlüssel die Websuche und rechnet pro Suche über dein DeepSeek-Konto ab; die Bildsuche nutzt andere Quellen.',
+      'DeepSeek liefert die Websuche und rechnet pro Suche über Ihr DeepSeek-Konto ab. Geben Sie Ihren DeepSeek-API-Schlüssel hier ein; er wird nicht mit dem DeepSeek-Schlüssel anderer Funktionen geteilt. Die Bildsuche nutzt andere Quellen.',
     setAiCapImage: 'Bildgenerierung',
     setAiCapAnalysis: 'Bildanalyse',
     setAiCapVideo: 'Videoanalyse',
@@ -5630,7 +5630,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Deja la clave vacía para usar la búsqueda gratuita de Keenable (uso limitado). Añade una clave para usar tu cuenta de Keenable. Las imágenes se buscan en otras fuentes.',
     setAiSearchDeepSeekHint:
-      'DeepSeek ofrece búsqueda web con tu clave de API de DeepSeek, facturada por búsqueda en tu cuenta de DeepSeek; las imágenes se buscan en otras fuentes.',
+      'DeepSeek ofrece búsqueda web, facturada por búsqueda en tu cuenta de DeepSeek. Introduce aquí tu clave de API de DeepSeek; no se comparte con la clave de DeepSeek de otras funciones. Las imágenes se buscan en otras fuentes.',
     setAiCapImage: 'Generación de imágenes',
     setAiCapAnalysis: 'Análisis de imágenes',
     setAiCapVideo: 'Análisis de vídeo',
@@ -6200,7 +6200,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'เว้นคีย์ว่างไว้เพื่อค้นหาด้วย Keenable ฟรี (จำกัดการใช้งาน) เพิ่มคีย์เพื่อใช้บัญชี Keenable ของคุณ การค้นหารูปภาพใช้แหล่งข้อมูลอื่น',
     setAiSearchDeepSeekHint:
-      'DeepSeek ให้บริการค้นหาเว็บด้วยคีย์ API ของ DeepSeek ของคุณ โดยคิดค่าบริการต่อการค้นหาจากบัญชี DeepSeek ของคุณ ส่วนการค้นหารูปภาพใช้แหล่งข้อมูลอื่น',
+      'DeepSeek ให้บริการค้นหาเว็บ โดยคิดค่าบริการต่อการค้นหาจากบัญชี DeepSeek ของคุณ กรุณาใส่คีย์ API ของ DeepSeek ที่นี่ คีย์นี้ไม่ได้ใช้ร่วมกับคีย์ DeepSeek ของความสามารถอื่น การค้นหารูปภาพใช้แหล่งข้อมูลอื่น',
     setAiCapImage: 'สร้างภาพ',
     setAiCapAnalysis: 'วิเคราะห์ภาพ',
     setAiCapVideo: 'วิเคราะห์วิดีโอ',
@@ -6776,7 +6776,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Kosongkan kunci untuk pencarian Keenable gratis (penggunaan terbatas). Tambahkan kunci untuk menggunakan akun Keenable Anda. Pencarian gambar memakai sumber lain.',
     setAiSearchDeepSeekHint:
-      'DeepSeek menyediakan pencarian web dengan kunci API DeepSeek Anda, ditagihkan per pencarian ke akun DeepSeek Anda; pencarian gambar memakai sumber lain.',
+      'DeepSeek menyediakan pencarian web, ditagihkan per pencarian ke akun DeepSeek Anda. Masukkan kunci API DeepSeek Anda di sini; kunci ini tidak dipakai bersama dengan kunci DeepSeek untuk kemampuan lain. Pencarian gambar memakai sumber lain.',
     setAiCapImage: 'Pembuatan gambar',
     setAiCapAnalysis: 'Analisis gambar',
     setAiCapVideo: 'Analisis video',
@@ -7355,7 +7355,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Оставьте ключ пустым для бесплатного поиска Keenable (с ограничениями). Добавьте ключ для использования своего аккаунта Keenable. Поиск изображений использует другие источники.',
     setAiSearchDeepSeekHint:
-      'DeepSeek обеспечивает веб-поиск с вашим API-ключом DeepSeek; оплата списывается за каждый запрос с вашего аккаунта DeepSeek. Поиск изображений использует другие источники.',
+      'DeepSeek обеспечивает веб-поиск; оплата списывается за каждый запрос с вашего аккаунта DeepSeek. Введите API-ключ DeepSeek здесь: он не общий с ключом DeepSeek для других возможностей. Поиск изображений использует другие источники.',
     setAiCapImage: 'Генерация изображений',
     setAiCapAnalysis: 'Анализ изображений',
     setAiCapVideo: 'Анализ видео',
@@ -7928,7 +7928,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'اترك المفتاح فارغًا لاستخدام بحث Keenable مجانًا (استخدام محدود). أضف مفتاحًا لاستخدام حسابك في Keenable. يستخدم بحث الصور مصادر أخرى.',
     setAiSearchDeepSeekHint:
-      'يوفّر DeepSeek البحث في الويب بمفتاح DeepSeek API الخاص بك، ويُحتسب كل بحث على حسابك في DeepSeek؛ ويستخدم بحث الصور مصادر أخرى.',
+      'يوفّر DeepSeek البحث في الويب، ويُحتسب كل بحث على حسابك في DeepSeek. أدخل مفتاح DeepSeek API هنا؛ فهو غير مشترك مع مفتاح DeepSeek المستخدم في الإمكانات الأخرى. يستخدم بحث الصور مصادر أخرى.',
     setAiCapImage: 'توليد الصور',
     setAiCapAnalysis: 'تحليل الصور',
     setAiCapVideo: 'تحليل الفيديو',
@@ -8503,7 +8503,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Deixe a chave vazia para pesquisar gratuitamente com Keenable (uso limitado). Adicione uma chave para usar sua conta Keenable. A pesquisa de imagens usa outras fontes.',
     setAiSearchDeepSeekHint:
-      'O DeepSeek oferece busca na web com a sua chave de API do DeepSeek, cobrada por busca na sua conta DeepSeek; a busca de imagens usa outras fontes.',
+      'O DeepSeek oferece busca na web, cobrada por busca na sua conta DeepSeek. Insira aqui a sua chave de API do DeepSeek; ela não é compartilhada com a chave do DeepSeek usada em outros recursos. A busca de imagens usa outras fontes.',
     setAiCapImage: 'Geração de imagens',
     setAiCapAnalysis: 'Análise de imagens',
     setAiCapVideo: 'Análise de vídeo',
@@ -9079,7 +9079,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Lascia la chiave vuota per la ricerca Keenable gratuita (uso limitato). Aggiungi una chiave per usare il tuo account Keenable. Le immagini vengono cercate in altre fonti.',
     setAiSearchDeepSeekHint:
-      'DeepSeek offre la ricerca web con la tua chiave API DeepSeek, addebitata per ricerca sul tuo account DeepSeek; le immagini vengono cercate in altre fonti.',
+      'DeepSeek offre la ricerca web, addebitata per ricerca sul tuo account DeepSeek. Inserisci qui la tua chiave API DeepSeek; non è condivisa con la chiave DeepSeek usata per altre funzioni. Le immagini vengono cercate in altre fonti.',
     setAiCapImage: 'Generazione di immagini',
     setAiCapAnalysis: 'Analisi di immagini',
     setAiCapVideo: 'Analisi video',
@@ -9652,7 +9652,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Pozostaw klucz pusty, aby bezpłatnie korzystać z wyszukiwania Keenable (z limitami). Dodaj klucz, aby używać swojego konta Keenable. Obrazy są wyszukiwane w innych źródłach.',
     setAiSearchDeepSeekHint:
-      'DeepSeek zapewnia wyszukiwanie w sieci z Twoim kluczem API DeepSeek, rozliczane za każde wyszukiwanie na Twoim koncie DeepSeek; obrazy są wyszukiwane w innych źródłach.',
+      'DeepSeek zapewnia wyszukiwanie w sieci, rozliczane za każde wyszukiwanie na Twoim koncie DeepSeek. Wpisz tutaj swój klucz API DeepSeek; nie jest on współdzielony z kluczem DeepSeek używanym w innych funkcjach. Obrazy są wyszukiwane w innych źródłach.',
     setAiCapImage: 'Generowanie obrazów',
     setAiCapAnalysis: 'Analiza obrazów',
     setAiCapVideo: 'Analiza wideo',
@@ -10165,7 +10165,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Nechte klíč prázdný pro bezplatné vyhledávání Keenable (omezené použití). Zadejte klíč pro použití svého účtu Keenable. Obrázky se vyhledávají v jiných zdrojích.',
     setAiSearchDeepSeekHint:
-      'DeepSeek zajišťuje webové vyhledávání s vaším klíčem DeepSeek API, účtované za každé vyhledávání na vašem účtu DeepSeek; obrázky se vyhledávají v jiných zdrojích.',
+      'DeepSeek zajišťuje webové vyhledávání, účtované za každé vyhledávání na vašem účtu DeepSeek. Klíč DeepSeek API zadejte zde; nesdílí se s klíčem DeepSeek pro jiné funkce. Obrázky se vyhledávají v jiných zdrojích.',
     setAiCapImage: 'Generování obrázků',
     setAiCapAnalysis: 'Analýza obrázků',
     setAiCapVideo: 'Analýza videí',
@@ -10791,7 +10791,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Laat de sleutel leeg voor gratis zoeken met Keenable (beperkt gebruik). Voeg een sleutel toe om je Keenable-account te gebruiken. Afbeeldingen komen uit andere bronnen.',
     setAiSearchDeepSeekHint:
-      'DeepSeek levert webzoeken met je DeepSeek API-sleutel, per zoekopdracht afgerekend op je DeepSeek-account; afbeeldingen komen uit andere bronnen.',
+      'DeepSeek levert webzoeken, per zoekopdracht afgerekend op je DeepSeek-account. Vul je DeepSeek API-sleutel hier in; die wordt niet gedeeld met de DeepSeek-sleutel van andere functies. Afbeeldingen komen uit andere bronnen.',
     setAiCapImage: 'Afbeeldingen genereren',
     setAiCapAnalysis: 'Afbeeldingsanalyse',
     setAiCapVideo: 'Video-analyse',
@@ -11366,7 +11366,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'Biarkan kunci kosong untuk carian Keenable percuma (penggunaan terhad). Tambah kunci untuk menggunakan akaun Keenable anda. Carian imej menggunakan sumber lain.',
     setAiSearchDeepSeekHint:
-      'DeepSeek menyediakan carian web dengan kunci API DeepSeek anda, dicaj bagi setiap carian pada akaun DeepSeek anda; carian imej menggunakan sumber lain.',
+      'DeepSeek menyediakan carian web, dicaj bagi setiap carian pada akaun DeepSeek anda. Masukkan kunci API DeepSeek anda di sini; kunci ini tidak dikongsi dengan kunci DeepSeek untuk keupayaan lain. Carian imej menggunakan sumber lain.',
     setAiCapImage: 'Penjanaan imej',
     setAiCapAnalysis: 'Analisis imej',
     setAiCapVideo: 'Analisis video',
@@ -11925,7 +11925,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'השאירו את המפתח ריק לחיפוש Keenable בחינם (שימוש מוגבל). הוסיפו מפתח כדי להשתמש בחשבון Keenable שלכם. חיפוש תמונות משתמש במקורות אחרים.',
     setAiSearchDeepSeekHint:
-      'DeepSeek מספק חיפוש באינטרנט עם מפתח ה-API של DeepSeek שלך, בחיוב לפי חיפוש בחשבון DeepSeek שלך; חיפוש תמונות משתמש במקורות אחרים.',
+      'DeepSeek מספק חיפוש באינטרנט, בחיוב לפי חיפוש בחשבון DeepSeek שלכם. הזינו כאן את מפתח ה-API של DeepSeek; הוא אינו משותף עם מפתח DeepSeek של יכולות אחרות. חיפוש תמונות משתמש במקורות אחרים.',
     setAiCapImage: 'יצירת תמונות',
     setAiCapAnalysis: 'ניתוח תמונות',
     setAiCapVideo: 'ניתוח וידאו',
@@ -12490,7 +12490,7 @@ export const strings = {
     setAiSearchKeenableHint:
       'मुफ़्त Keenable खोज के लिए कुंजी खाली छोड़ें (सीमित उपयोग)। अपने Keenable खाते का उपयोग करने के लिए कुंजी जोड़ें। इमेज खोज अन्य स्रोतों का उपयोग करती है।',
     setAiSearchDeepSeekHint:
-      'DeepSeek आपकी DeepSeek API कुंजी से वेब खोज देता है, और हर खोज का शुल्क आपके DeepSeek खाते से लिया जाता है; इमेज खोज अन्य स्रोतों का उपयोग करती है।',
+      'DeepSeek वेब खोज देता है, और हर खोज का शुल्क आपके DeepSeek खाते से लिया जाता है। अपनी DeepSeek API कुंजी यहाँ दर्ज करें; यह अन्य क्षमताओं की DeepSeek कुंजी के साथ साझा नहीं होती। इमेज खोज अन्य स्रोतों का उपयोग करती है।',
     setAiCapImage: 'इमेज जनरेशन',
     setAiCapAnalysis: 'इमेज विश्लेषण',
     setAiCapVideo: 'वीडियो विश्लेषण',
@@ -13039,7 +13039,7 @@ export const strings = {
     setAiSearchKeenableHint:
       '留空 API key 即可免費使用 Keenable 搜尋（用量有限）。填寫 key 可使用你的 Keenable 帳戶。圖片搜尋使用其他來源。',
     setAiSearchDeepSeekHint:
-      'DeepSeek 用你的 DeepSeek API key 提供網頁搜尋，按搜尋次數從你的 DeepSeek 帳戶計費；圖片搜尋改用其他來源。',
+      'DeepSeek 提供網頁搜尋，按搜尋次數從你的 DeepSeek 帳戶計費。請在此處單獨填寫 DeepSeek API key，它不與其他能力的 DeepSeek key 共用。圖片搜尋改用其他來源。',
     setAiCapImage: '生圖',
     setAiCapAnalysis: '圖片解析',
     setAiCapVideo: '影片解析',
