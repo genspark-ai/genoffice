@@ -67,7 +67,7 @@ describe('collectSeamRects', () => {
       [rangeOver(lead, pad)],
       VIEW,
       1,
-      () => 0,
+      () => 2,
       () => rect(100, 10, 8, 20),
     )
     expect(out).toEqual([{ left: 100, top: 10, width: 2, height: 20 }])
@@ -95,7 +95,7 @@ describe('collectSeamRects', () => {
       [rangeOver(lead, pad)],
       VIEW,
       1,
-      () => 0,
+      () => 2,
       () => rect(100, 10, 8, 20),
     )
     expect(out).toEqual([])
@@ -109,7 +109,7 @@ describe('collectSeamRects', () => {
       [rangeOver(lead, pad)],
       { ...VIEW, top: 900, bottom: 1200 },
       1,
-      () => 0,
+      () => 2,
       () => rect(100, 10, 8, 20),
     )
     expect(out).toEqual([])
@@ -137,7 +137,7 @@ describe('collectSeamRects', () => {
         [],
         VIEW,
         1,
-        () => 0,
+        () => 2,
         () => rect(100, 10, 8, 20),
       ),
     ).toEqual([])

@@ -143,7 +143,7 @@ export function collectSeamRects(
       if (!range) continue
       // A pad that starts the selection has its gap before the selected text;
       // the native highlight already covers the first glyph.
-      if (posAtDom(pad) >= selectionFrom) continue
+      if (posAtDom(pad) <= selectionFrom) continue
       const before = prevCharRect(pad)
       const after = padCharRect(pad)
       if (!before || !after) continue
