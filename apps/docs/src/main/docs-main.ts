@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { handOffBytes } from './byte-handoff'
-import { registerCollabIpc } from './collab'
 import {
   appendFileSync,
   existsSync,
@@ -7074,7 +7073,9 @@ export function startDocsStandalone(): void {
   registerAiIpc()
   registerProjectIpc()
   registerDocsIpc()
-  registerCollabIpc()
+  // the collaboration rooms carry a CRDT, and the editor's main module stays
+  // light: the relay is loaded on its own
+  void import('./collab').then((collab) => collab.registerCollabIpc())
 
   app.whenReady().then(() => {
     installRendererProtocol({ docs: join(__dirname, '../renderer') })
