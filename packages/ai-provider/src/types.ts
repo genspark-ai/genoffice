@@ -255,6 +255,7 @@ export type AiSearchProviderId =
   | 'exa'
   | 'firecrawl'
   | 'keenable'
+  | 'deepseek'
 
 export interface AiSearchProviderMeta {
   id: AiSearchProviderId

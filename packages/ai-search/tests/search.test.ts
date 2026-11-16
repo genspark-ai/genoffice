@@ -567,6 +567,7 @@ describe('search-tools', () => {
           exa: { apiKey: '' },
           firecrawl: { apiKey: '' },
           keenable: { apiKey: '' },
+          deepseek: { apiKey: '' },
         },
       },
     }
@@ -584,6 +585,7 @@ describe('search-tools', () => {
           exa: { apiKey: '' },
           firecrawl: { apiKey: '' },
           keenable: { apiKey: '' },
+          deepseek: { apiKey: '' },
         },
       },
     }
@@ -605,6 +607,7 @@ describe('search-tools', () => {
           exa: { apiKey: 'e' },
           firecrawl: { apiKey: '' },
           keenable: { apiKey: '' },
+          deepseek: { apiKey: '' },
         },
       },
     }
@@ -622,6 +625,7 @@ describe('search-tools', () => {
           exa: { apiKey: '' },
           firecrawl: { apiKey: 'fc-1' },
           keenable: { apiKey: '' },
+          deepseek: { apiKey: '' },
         },
       },
     }
@@ -644,6 +648,7 @@ describe('search-tools', () => {
           exa: { apiKey: '' },
           firecrawl: { apiKey: '' },
           keenable: { apiKey: '' },
+          deepseek: { apiKey: '' },
         },
       },
     }
@@ -698,5 +703,103 @@ describe('search-tools', () => {
         : { ok: false },
     )
     expect(await testSearchProvider('keenable', '')).toEqual({ ok: true })
+  })
+})
+
+describe('webSearch (DeepSeek)', () => {
+  it('posts to the Search API and reads the model-facing summary', async () => {
+    const urls: string[] = []
+    let init: RequestInit | undefined
+    mockFetch((url, i) => {
+      urls.push(url)
+      init = i
+      return {
+        ok: true,
+        json: {
+          results: [
+            { title: 'A', url: 'https://a.com', snippet: 'short', summary: ' long summary ' },
+            { title: '', url: 'https://b.com', snippet: 'only snippet', summary: '' },
+            { title: 'C', url: 'javascript:alert(1)', summary: 'dropped' },
+          ],
+        },
+      }
+    })
+    const r = await webSearch('q', 5, { useGsk: false, deepseekKey: ' sk-ds ', prefer: 'deepseek' })
+    expect(urls).toEqual(['https://api.deepseek.com/v1/tools/search'])
+    expect(init?.headers).toEqual({
+      Authorization: 'Bearer sk-ds',
+      'Content-Type': 'application/json',
+    })
+    expect(JSON.parse(String(init?.body))).toEqual({ query: 'q', count: 5 })
+    expect(r.method).toBe('deepseek')
+    expect(r.results).toEqual([
+      { title: 'A', url: 'https://a.com', snippet: 'long summary' },
+      { title: 'https://b.com', url: 'https://b.com', snippet: 'only snippet' },
+    ])
+  })
+
+  it('cuts the query to the 128 characters the API accepts', async () => {
+    let body: { query?: string } = {}
+    mockFetch((_url, init) => {
+      body = JSON.parse(String(init?.body))
+      return { ok: true, json: { results: [{ title: 'A', url: 'https://a.com', summary: 's' }] } }
+    })
+    await webSearch('好'.repeat(300), 3, {
+      useGsk: false,
+      deepseekKey: 'sk-ds',
+      prefer: 'deepseek',
+    })
+    expect(Array.from(body.query ?? '')).toHaveLength(128)
+  })
+
+  it('caps an oversized summary at 1000 characters', async () => {
+    mockFetch(() => ({
+      ok: true,
+      json: { results: [{ title: 'A', url: 'https://a.com', summary: 'x'.repeat(1500) }] },
+    }))
+    const r = await webSearch('q', 1, { useGsk: false, deepseekKey: 'sk-ds', prefer: 'deepseek' })
+    expect(r.results[0]?.snippet).toHaveLength(1000)
+  })
+
+  it('never runs off a DEEPSEEK_API_KEY env var', async () => {
+    process.env.DEEPSEEK_API_KEY = 'sk-chat'
+    const urls: string[] = []
+    try {
+      mockFetch((url) => {
+        urls.push(url)
+        if (url === 'https://search.parallel.ai/mcp') return { ok: false }
+        return {
+          ok: true,
+          text: '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fx.com">X Title</a>',
+        }
+      })
+      const r = await webSearch('q', 3)
+      expect(r.method).toBe('duckduckgo')
+      expect(urls.some((u) => u.includes('deepseek.com'))).toBe(false)
+    } finally {
+      delete process.env.DEEPSEEK_API_KEY
+    }
+  })
+
+  it('maps the settings choice to search options and reports a rejected key', async () => {
+    const settings = defaultAiSettings()
+    settings.search = {
+      ...settings.search!,
+      provider: 'deepseek',
+      providers: { ...settings.search!.providers, deepseek: { apiKey: 'sk-ds' } },
+    }
+    expect(searchOptionsFromSettings(settings)).toEqual({
+      useGsk: false,
+      deepseekKey: 'sk-ds',
+      prefer: 'deepseek',
+    })
+    mockFetch((url) =>
+      url.includes('deepseek.com')
+        ? { ok: false }
+        : { ok: true, text: '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fx.com">X</a>' },
+    )
+    const t = await testSearchProvider('deepseek', 'sk-bad')
+    expect(t.ok).toBe(false)
+    expect(t.error).toContain('deepseek did not answer')
   })
 })

@@ -1620,13 +1620,15 @@ function AiMediaPane({
               ? t('setAiSearchParallelHint')
               : search.provider === 'keenable'
                 ? t('setAiSearchKeenableHint')
-                : search.provider === 'serply'
-                  ? t('setAiSearchSerplyHint')
-                  : search.provider === 'searchapi'
-                    ? t('setAiSearchSearchApiHint')
-                    : searchMeta?.imageSearch
-                      ? t('setAiSearchSerperHint')
-                      : t('setAiSearchTavilyHint')}
+                : search.provider === 'deepseek'
+                  ? t('setAiSearchDeepSeekHint')
+                  : search.provider === 'serply'
+                    ? t('setAiSearchSerplyHint')
+                    : search.provider === 'searchapi'
+                      ? t('setAiSearchSearchApiHint')
+                      : searchMeta?.imageSearch
+                        ? t('setAiSearchSerperHint')
+                        : t('setAiSearchTavilyHint')}
         </div>
         {search.provider !== 'genspark' &&
           keyRow('set-ai-search-key', searchKey, searchMeta?.keyPlaceholder ?? 'API Key', (v) =>

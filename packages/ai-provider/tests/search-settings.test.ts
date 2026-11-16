@@ -20,6 +20,7 @@ describe('search settings', () => {
         exa: { apiKey: '' },
         firecrawl: { apiKey: '' },
         keenable: { apiKey: '' },
+        deepseek: { apiKey: '' },
       },
     })
     expect(defaultAiSettings().search?.provider).toBe('genspark')
@@ -55,6 +56,7 @@ describe('search settings', () => {
             exa: { apiKey: '' },
             firecrawl: { apiKey: '' },
             keenable: { apiKey: '' },
+            deepseek: { apiKey: '' },
           },
         },
       }),
@@ -72,6 +74,7 @@ describe('search settings', () => {
             exa: { apiKey: '' },
             firecrawl: { apiKey: '' },
             keenable: { apiKey: '' },
+            deepseek: { apiKey: '' },
           },
         },
       }),
@@ -89,6 +92,7 @@ describe('search settings', () => {
             exa: { apiKey: '' },
             firecrawl: { apiKey: '' },
             keenable: { apiKey: '' },
+            deepseek: { apiKey: '' },
           },
         },
       }),
@@ -201,6 +205,7 @@ describe('exa and firecrawl providers', () => {
           exa: { apiKey: id === 'exa' ? apiKey : '' },
           firecrawl: { apiKey: id === 'firecrawl' ? apiKey : '' },
           keenable: { apiKey: '' },
+          deepseek: { apiKey: '' },
         },
       },
     })
@@ -255,5 +260,26 @@ describe('Keenable search settings', () => {
   it('leaves the default provider on Genspark', () => {
     expect(defaultAiSearchSettings().provider).toBe('genspark')
     expect(activeSearchProvider({ search: defaultAiSearchSettings() })).toBe('genspark')
+  })
+})
+
+describe('DeepSeek search settings', () => {
+  it('is in the catalog without image search and defaults to an empty key', () => {
+    expect(AI_SEARCH_PROVIDERS.find((m) => m.id === 'deepseek')?.imageSearch).toBe(false)
+    expect(defaultAiSearchSettings().providers.deepseek.apiKey).toBe('')
+  })
+
+  it('restores and trims a saved key and becomes the active provider', () => {
+    const settings = resolveAiSearchSettings({
+      provider: 'deepseek',
+      providers: { deepseek: { apiKey: ' sk-ds ' } } as never,
+    })
+    expect(settings.providers.deepseek.apiKey).toBe('sk-ds')
+    expect(activeSearchProvider({ search: settings })).toBe('deepseek')
+  })
+
+  it('falls back to Genspark when selected without a key', () => {
+    const settings = resolveAiSearchSettings({ provider: 'deepseek' })
+    expect(activeSearchProvider({ search: settings })).toBe('genspark')
   })
 })

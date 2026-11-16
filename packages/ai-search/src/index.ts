@@ -6,6 +6,9 @@
  * SERPER_API_KEY, the Serply key reuses SERPLY_API_KEY, the SearchApi key reuses
  * SEARCHAPI_API_KEY, the Tavily key reuses TAVILY_API_KEY, Parallel uses PARALLEL_API_KEY, Exa
  * uses EXA_API_KEY, Firecrawl uses FIRECRAWL_API_KEY and Keenable uses KEENABLE_API_KEY.
+ * DeepSeek's Search API has no env key: it bills per request, so it only runs with the key
+ * the user saved for it in settings (a DEEPSEEK_API_KEY set for chat must not start paying
+ * for searches).
  * For Genspark auth see ./gsk.ts (GenOffice sign-in or explicit GSK_API_KEY).
  */
 
@@ -50,9 +53,19 @@ export interface SearchOptions {
   exaKey?: string
   firecrawlKey?: string
   keenableKey?: string
+  /** settings-only, no env default (see the file header) */
+  deepseekKey?: string
   /** which backend to try first (default serper) */
   prefer?:
-    'serper' | 'serply' | 'searchapi' | 'tavily' | 'parallel' | 'exa' | 'firecrawl' | 'keenable'
+    | 'serper'
+    | 'serply'
+    | 'searchapi'
+    | 'tavily'
+    | 'parallel'
+    | 'exa'
+    | 'firecrawl'
+    | 'keenable'
+    | 'deepseek'
 }
 
 const SEARCH_BACKENDS = new Set([
@@ -64,6 +77,7 @@ const SEARCH_BACKENDS = new Set([
   'exa',
   'firecrawl',
   'keenable',
+  'deepseek',
 ] as const)
 
 function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<SearchOptions> {
@@ -78,6 +92,7 @@ function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<S
     exaKey: o.exaKey ?? EXA_KEY(),
     firecrawlKey: o.firecrawlKey ?? FIRECRAWL_KEY(),
     keenableKey: o.keenableKey ?? KEENABLE_KEY(),
+    deepseekKey: o.deepseekKey ?? '',
     // `prefer` arrives from an ipc payload cast with `as`; an unknown id would make the
     // dispatch call a missing function.
     prefer:
@@ -473,6 +488,60 @@ async function keenableWebSearch(
   }
 }
 
+/** DeepSeek rejects a query over 128 characters with a 400. */
+const DEEPSEEK_QUERY_CHARS = 128
+/** Summaries are documented as ~600-800 chars but run past 1100 in practice. */
+const DEEPSEEK_SNIPPET_CHARS = 1000
+
+/**
+ * DeepSeek's standalone Search API (POST /v1/tools/search, the same key as chat). Each hit
+ * carries a short `snippet` meant for UI and a longer `summary` (~600-800 chars) meant for
+ * models; the summary is the one the agent reads. `need_content` stays off: full page text
+ * is not a snippet. Results only, no synthesized answer.
+ */
+async function deepseekWebSearch(
+  key: string,
+  query: string,
+  maxResults: number,
+): Promise<WebSearchResponse | null> {
+  key = key.trim()
+  // slice by code point so the cut never splits a surrogate pair
+  const q = Array.from(query.trim()).slice(0, DEEPSEEK_QUERY_CHARS).join('')
+  if (!key || !q) return null
+  try {
+    return await fetchWithTimeout(
+      'https://api.deepseek.com/v1/tools/search',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q, count: maxResults }),
+      },
+      async (resp) => {
+        if (!resp.ok) return null
+        const data = asRecord(await resp.json())
+        const raw: unknown[] = Array.isArray(data.results) ? data.results : []
+        const results: WebSearchResult[] = []
+        for (const item of raw) {
+          if (results.length >= maxResults) break
+          const o = asRecord(item)
+          const url = typeof o.url === 'string' ? o.url : ''
+          if (!/^https?:\/\//i.test(url)) continue
+          results.push({
+            title: typeof o.title === 'string' && o.title ? o.title : url,
+            url,
+            snippet: String(o.summary || o.snippet || '')
+              .trim()
+              .slice(0, DEEPSEEK_SNIPPET_CHARS),
+          })
+        }
+        return results.length ? { results, method: 'deepseek' } : null
+      },
+    )
+  } catch {
+    return null
+  }
+}
+
 // ── Web search ──────────────────────────────────────────────────────
 
 /**
@@ -517,6 +586,7 @@ export async function webSearch(
     exa: () => exaWebSearch(o.exaKey, q, max),
     firecrawl: () => firecrawlWebSearch(o.firecrawlKey, q, max),
     keenable: () => keenableWebSearch(o.keenableKey, q, max, o.prefer === 'keenable'),
+    deepseek: () => deepseekWebSearch(o.deepseekKey, q, max),
   }
   const order = [
     o.prefer,
@@ -530,6 +600,7 @@ export async function webSearch(
         'exa',
         'firecrawl',
         'keenable',
+        'deepseek',
       ] as const
     ).filter((id) => id !== o.prefer),
   ]
