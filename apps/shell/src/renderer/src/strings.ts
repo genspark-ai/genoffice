@@ -2704,6 +2704,10 @@ export const strings = {
     intgSkillsRemoveConfirm:
       'Eltávolítod ezt a képességet: {name}? A mappája törlődik a GenOffice-ból.',
     intgSkillsRemoved: 'Eltávolítva: {name}',
+    skillDetailClose: 'Bezárás',
+    skillDetailLoading: 'Útmutató betöltése…',
+    skillDetailEmpty: 'Ennek a készségnek nincs útmutatója.',
+    skillDetailCopy: 'Útmutató másolása',
     intgSkillsRead: 'Részletek',
     intgSkillsMine: 'Saját képességek',
     intgSkillsRecommended: 'Ajánlott',
