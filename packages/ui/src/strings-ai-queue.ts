@@ -262,4 +262,15 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     moveTitle: 'Yeniden sıralamak için sürükleyin (veya Alt+↑/↓)',
     queuePlaceholder: 'Sıraya almak için Enter · Durdurmak için Esc',
   },
+  hu: {
+    queuedCount: (n) => `${n} a várólistán`,
+    clearTitle: 'Várólistán lévő üzenetek törlése',
+    editTitle: 'Várólistán lévő üzenet szerkesztése',
+    removeTitle: 'Várólistán lévő üzenet eltávolítása',
+    pauseTitle: 'Várólista szüneteltetése',
+    resumeTitle: 'Várólista folytatása',
+    pausedHint: 'Szüneteltetve',
+    moveTitle: 'Átrendezés húzással (vagy Alt+↑/↓)',
+    queuePlaceholder: 'Enter: várólistára helyezés · Esc: leállítás',
+  },
 }
