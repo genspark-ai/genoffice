@@ -106,6 +106,9 @@ for (const position of ['middle', 'end'] as const) {
       ),
     )
     await withHostedDocument(await original.generateAsync({ type: 'nodebuffer' }), async (page) => {
+      const documentPage = page.locator('.doc-page[contenteditable="true"]')
+      await expect(documentPage).toBeVisible()
+      const initialPaperWidth = (await documentPage.boundingBox())!.width
       await page.locator('.ribbon-tab', { hasText: /^Layout$/ }).click()
       await page.locator('.doc-page p', { hasText: /^Pending section owner$/ }).click()
       await page.keyboard.press(position === 'end' ? 'Control+End' : 'End')
@@ -134,6 +137,17 @@ for (const position of ['middle', 'end'] as const) {
         }
       })
       expect(sections.items).toHaveLength(2)
+      await page.getByRole('button', { name: 'Size', exact: true }).click()
+      await page
+        .locator('[data-rb-panel] button')
+        .filter({ has: page.locator('b', { hasText: /^A5$/ }) })
+        .click()
+      // Mixed paper sizes paint individual sheets inside the shared flow container.
+      const firstSheet = page.locator('.page-sheet').first()
+      await expect(firstSheet).toBeVisible()
+      await expect
+        .poll(async () => (await firstSheet.boundingBox())!.width)
+        .toBeCloseTo((initialPaperWidth * 8391) / 11906, 0)
       await page.getByRole('button', { name: 'Size', exact: true }).click()
       await page
         .locator('[data-rb-panel] button')

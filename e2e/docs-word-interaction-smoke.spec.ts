@@ -597,8 +597,11 @@ test.describe.serial('docs Word interaction smoke', () => {
 
     await editor.getByRole('button', { name: 'Size', exact: true }).click()
     await layoutMenuItem('A5').click()
+    // Mixed paper sizes use individual sheets; the shared flow can stay A4-wide.
+    const firstSheet = editor.locator('.page-sheet').first()
+    await expect(firstSheet).toBeVisible()
     await expect
-      .poll(async () => (await docPage().boundingBox())!.width, POLL)
+      .poll(async () => (await firstSheet.boundingBox())!.width, POLL)
       .toBeLessThan(width0 * 0.8)
   })
 
