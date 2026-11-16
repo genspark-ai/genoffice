@@ -16484,3 +16484,31 @@ tr > .page-gap-cut {
   text-align: end;
   white-space: pre;
 }
+
+/* Remote cursors of a shared document (y-prosemirror). The cursor colour and
+ * the name label come from the other participant's awareness state, so only the
+ * shape is styled here. */
+.ProseMirror-yjs-cursor {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 1px solid;
+  border-right: 1px solid;
+  border-color: inherit;
+  word-break: normal;
+  pointer-events: none;
+}
+.ProseMirror-yjs-cursor > div {
+  position: absolute;
+  top: -1.2em;
+  left: -1px;
+  padding: 1px 4px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--docs-on-accent);
+  white-space: nowrap;
+  border-radius: 3px;
+}
+.ProseMirror-yjs-selection {
+  opacity: 0.3;
+}

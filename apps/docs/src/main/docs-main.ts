@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { handOffBytes } from './byte-handoff'
+import { registerCollabIpc } from './collab'
 import {
   appendFileSync,
   existsSync,
@@ -7073,6 +7074,7 @@ export function startDocsStandalone(): void {
   registerAiIpc()
   registerProjectIpc()
   registerDocsIpc()
+  registerCollabIpc()
 
   app.whenReady().then(() => {
     installRendererProtocol({ docs: join(__dirname, '../renderer') })

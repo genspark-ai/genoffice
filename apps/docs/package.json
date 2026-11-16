@@ -97,6 +97,9 @@
     "pdfjs-dist": "^6.2.108",
     "@genoffice/pptx-render": "*",
     "@genoffice/xlsx-gateway": "*",
-    "@genoffice/agent-core": "*"
+    "@genoffice/agent-core": "*",
+    "y-prosemirror": "^1.3.7",
+    "y-protocols": "^1.0.6",
+    "yjs": "^13.6.33"
   }
 }

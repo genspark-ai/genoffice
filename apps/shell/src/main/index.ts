@@ -190,6 +190,7 @@ import {
   uniquePathIn,
   authorizeMcpDocWrite,
 } from '../../../docs/src/main/docs-main'
+import { registerCollabIpc } from '../../../docs/src/main/collab'
 import { blankXlsxBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import-xlsx'
 import { blankPdfBuffer } from '../../../pdf/src/main/blank-pdf'
 import {
@@ -7053,6 +7054,9 @@ app.on('second-instance', (_event, argv, _cwd, additionalData) => {
 installNavigationGuard(app)
 installContextMenu(app, () => contextMenuLabels(currentLang()))
 registerAiIpc()
+// the collaboration rooms live in this process: a desktop window and a
+// browser tab of the same document are members of the same room
+registerCollabIpc()
 const openHomeSettings = (section: 'aiModel' | 'skills'): void => {
   const win = shellWindow
   if (!win || win.isDestroyed()) return
