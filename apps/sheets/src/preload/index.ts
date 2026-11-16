@@ -25,6 +25,7 @@ import type {
   WorkbookCellStyle,
   WorkbookConditionalRule,
   WorkbookFile,
+  WorkbookFilterResult,
   WorkbookFindCellsRequest,
   WorkbookFindCellsResult,
   WorkbookFormulaCellsRequest,
@@ -244,6 +245,13 @@ const desktopApi: DesktopApi = {
       validatedRequest,
     )
     return parseFormulaCellsResult(result)
+  },
+  async filterWorkbookRows(request) {
+    assertWorkbookSessionRequest(request)
+    // Main validates the filter payload and the sidecar response. This
+    // sandboxed bridge must not import the runtime schema and its npm deps.
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.filterWorkbookRows, request)
+    return parseFilterResult(result)
   },
   async findWorkbookCells(request) {
     const validatedRequest = parseFindCellsRequest(request)
@@ -1474,7 +1482,18 @@ function parseRangeRequest(input: WorkbookRangeRequest): WorkbookRangeRequest {
     !isNonnegativeInteger(endColumn) ||
     startRow > endRow ||
     startColumn > endColumn ||
-    (endRow - startRow + 1) * (endColumn - startColumn + 1) > 100_000
+    (input.rows !== undefined &&
+      (!Array.isArray(input.rows) ||
+        !input.rows.length ||
+        input.rows.length > 512 ||
+        input.rows.some(
+          (row, i, rows) =>
+            !isNonnegativeInteger(row) ||
+            row < startRow ||
+            row > endRow ||
+            (i > 0 && row <= rows[i - 1]!),
+        ))) ||
+    (input.rows?.length ?? endRow - startRow + 1) * (endColumn - startColumn + 1) > 100_000
   ) {
     throw new Error('Invalid workbook range request.')
   }
@@ -1691,6 +1710,41 @@ function parseFormulaCellsResult(input: unknown): WorkbookFormulaCellsResult {
     indexingComplete: input.indexingComplete,
     truncated: input.truncated,
   }
+}
+
+function parseFilterResult(input: unknown): WorkbookFilterResult {
+  if (!isRecord(input) || typeof input.ready !== 'boolean') {
+    throw new Error('Invalid worksheet filter response.')
+  }
+  const { ready, hidden, page } = input
+  if (hidden !== undefined && (typeof hidden !== 'string' || hidden.length > 174_764)) {
+    throw new Error('Invalid worksheet filter mask.')
+  }
+  if (page === undefined) return { ready, ...(hidden === undefined ? {} : { hidden }) }
+  if (
+    !isRecord(page) ||
+    !isNonnegativeInteger(page.total) ||
+    !Array.isArray(page.values) ||
+    page.values.length > 200
+  ) {
+    throw new Error('Invalid worksheet filter page.')
+  }
+  const values = page.values.map((entry: unknown) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.text !== 'string' ||
+      !isNonnegativeInteger(entry.count) ||
+      (entry.styleIndex !== undefined && !isNonnegativeInteger(entry.styleIndex))
+    ) {
+      throw new Error('Invalid worksheet filter value.')
+    }
+    return {
+      text: entry.text,
+      count: entry.count,
+      ...(entry.styleIndex === undefined ? {} : { styleIndex: entry.styleIndex }),
+    }
+  })
+  return { ready, page: { total: page.total, values } }
 }
 
 const FIND_LOOK_IN = new Set(['values', 'formulas', 'formulas_only', 'both'])

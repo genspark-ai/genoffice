@@ -17,6 +17,7 @@ use zip::ZipArchive;
 
 pub mod archive;
 pub mod convert;
+mod filter;
 pub mod find;
 pub mod odf;
 pub mod protocol;
@@ -29,6 +30,7 @@ pub mod stream_patch;
 mod visuals;
 
 mod cell_images;
+mod chunks;
 mod escher;
 mod external_links;
 mod refs;
@@ -64,7 +66,7 @@ const RANGE_WAIT: Duration = Duration::from_millis(750);
 const RANGE_WAIT_MAX_LAG_ROWS: usize = 16 * CHUNK_ROW_COUNT;
 const MAX_FORMULA_CELLS: usize = 100_000;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default)]
 struct ChunkData {
     cells: Vec<CellRecord>,
     rows: Vec<RowProperty>,
@@ -514,6 +516,7 @@ impl WorkbookSessions {
                 path: workbook_path,
                 sheets: sheets.clone(),
                 runtimes,
+                filter_columns: Default::default(),
                 shared_strings,
                 styled_xfs,
                 color_context: Arc::new(color_context),
@@ -551,7 +554,7 @@ impl WorkbookSessions {
         sheet_id: &str,
         range: &CellRange,
     ) -> Result<RangeResult, SidecarError> {
-        self.read_range_with_mode(session_id, sheet_id, range, RangeReadMode::Wait)
+        self.read_range_with_mode(session_id, sheet_id, range, RangeReadMode::Wait, None)
     }
 
     pub(crate) fn read_range_with_mode(
@@ -560,6 +563,7 @@ impl WorkbookSessions {
         sheet_id: &str,
         range: &CellRange,
         mode: RangeReadMode,
+        sparse_rows: Option<&[usize]>,
     ) -> Result<RangeResult, SidecarError> {
         let session = self
             .sessions
@@ -570,9 +574,9 @@ impl WorkbookSessions {
             .iter()
             .position(|sheet| sheet.id == sheet_id)
             .ok_or_else(|| SidecarError::InvalidRequest("Unknown worksheet.".into()))?;
-        range.validate(&session.sheets[sheet_index])?;
+        range.validate(&session.sheets[sheet_index], sparse_rows)?;
         session.ensure_parser(sheet_index)?;
-        session.read_range(sheet_index, range, mode)
+        session.read_range(sheet_index, range, mode, sparse_rows)
     }
 
     pub fn read_formula_cells(
@@ -696,6 +700,7 @@ struct WorkbookSession {
     path: PathBuf,
     sheets: Vec<SheetMetadata>,
     runtimes: Vec<SheetRuntime>,
+    filter_columns: filter::ColumnCache,
     shared_strings: Arc<Vec<SharedString>>,
     styled_xfs: Arc<Vec<bool>>,
     color_context: Arc<ColorContext>,
@@ -783,6 +788,7 @@ impl WorkbookSession {
         sheet_index: usize,
         range: &CellRange,
         mode: RangeReadMode,
+        sparse_rows: Option<&[usize]>,
     ) -> Result<RangeResult, SidecarError> {
         let runtime = &self.runtimes[sheet_index];
         let (lock, condition) = &*runtime.state;
@@ -821,6 +827,11 @@ impl WorkbookSession {
                 ..RangeResult::default()
             });
         }
+        let contains_row = |row| {
+            sparse_rows.map_or(row >= range.start_row && row <= range.end_row, |rows| {
+                rows.binary_search(&row).is_ok()
+            })
+        };
         let merges = index
             .merges
             .iter()
@@ -829,6 +840,10 @@ impl WorkbookSession {
                     && merge.end_row >= range.start_row
                     && merge.start_column <= range.end_column
                     && merge.end_column >= range.start_column
+                    && sparse_rows.is_none_or(|rows| {
+                        rows.get(rows.partition_point(|&row| row < merge.start_row))
+                            .is_some_and(|&row| row <= merge.end_row)
+                    })
             })
             .copied()
             .collect::<Vec<_>>();
@@ -836,8 +851,7 @@ impl WorkbookSession {
             .hyperlinks
             .iter()
             .filter(|link| {
-                link.row >= range.start_row
-                    && link.row <= range.end_row
+                contains_row(link.row)
                     && link.column >= range.start_column
                     && link.column <= range.end_column
             })
@@ -895,6 +909,18 @@ impl WorkbookSession {
         let last_chunk = last_available_row / CHUNK_ROW_COUNT;
         let paths = if indexed_through_row.is_none() || last_available_row < range.start_row {
             Vec::new()
+        } else if let Some(rows) = sparse_rows {
+            let mut previous = None;
+            rows.iter()
+                .take_while(|&&row| row <= last_available_row)
+                .filter_map(|&row| {
+                    let chunk = row / CHUNK_ROW_COUNT;
+                    if previous.replace(chunk) == Some(chunk) {
+                        return None;
+                    }
+                    index.chunk_files.get(&chunk).cloned()
+                })
+                .collect::<Vec<_>>()
         } else {
             (first_chunk..=last_chunk)
                 .filter_map(|chunk| index.chunk_files.get(&chunk).cloned())
@@ -905,20 +931,13 @@ impl WorkbookSession {
         let mut cells = Vec::new();
         let mut rows = Vec::new();
         for path in paths {
-            let file = File::open(path)?;
-            let chunk: ChunkData = serde_json::from_reader(BufReader::new(file))?;
+            let chunk = chunks::read_chunk(&path, range.start_column..=range.end_column, true)?;
             cells.extend(chunk.cells.into_iter().filter(|cell| {
-                cell.row >= range.start_row
-                    && cell.row <= range.end_row
+                contains_row(cell.row)
                     && cell.column >= range.start_column
                     && cell.column <= range.end_column
             }));
-            rows.extend(
-                chunk
-                    .rows
-                    .into_iter()
-                    .filter(|row| row.row >= range.start_row && row.row <= range.end_row),
-            );
+            rows.extend(chunk.rows.into_iter().filter(|row| contains_row(row.row)));
         }
         Ok(RangeResult {
             cells,

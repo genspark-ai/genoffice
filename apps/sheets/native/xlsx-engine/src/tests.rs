@@ -360,7 +360,7 @@ fn rejects_oversized_ranges() {
         start_column: 0,
         end_column: 99,
     };
-    assert!(range.validate(&sheet).is_err());
+    assert!(range.validate(&sheet, None).is_err());
 }
 
 fn sparklines_from(xml: &str) -> Vec<SparklineGroupInfo> {
@@ -4751,7 +4751,13 @@ fn reads_sheet_protection_flags_hash_and_unlocked_styles() {
     );
 
     let status = sessions
-        .read_range_with_mode(&metadata.session_id, &sheet_id, &range, RangeReadMode::Status)
+        .read_range_with_mode(
+            &metadata.session_id,
+            &sheet_id,
+            &range,
+            RangeReadMode::Status,
+            None,
+        )
         .unwrap();
     assert!(status.indexing_complete);
     assert_eq!(status.indexed_through_row, result.indexed_through_row);

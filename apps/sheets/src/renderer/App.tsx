@@ -13,6 +13,7 @@ import {
   lazyWorkbookCellReader,
   loadSnapshotIntoUniver,
   loadVisibleRange,
+  getScrollAnchor,
   loadWorkbookSkeleton,
   matrixBounds,
   modelCellValue,
@@ -407,15 +408,18 @@ import { installCenterContinuousRender } from './center-continuous'
 import { installExcelFilterButton } from './filter-button-excel-style'
 import {
   extendLargeFilterRange,
-  installLargeFilterValues,
+  filterModelFor,
+  setLargeFilterCriteria,
   isLargeFilterSheet,
   largeFilterAction,
 } from './large-filter'
 import { resetLargeFilter } from './large-filter-state'
+import { prepareLargeFilterPanel, streamedFilterTarget } from './LargeFilterPanel'
 import { installForceStringMarkGate, installLongTextRender } from './long-text-render'
 import { installAutofitWrapBudget } from './autofit-wrap-budget'
 import { installAutofitLinePitch } from './autofit-line-pitch'
-import { installHeaderUnhideDebounce } from './load-perf-patches'
+import { installHeaderUnhideDebounce, installRangeThemeVisibilityGate } from './load-perf-patches'
+import { installSparseSheetRender } from './sparse-sheet-render'
 import { installCopyAnimationIdle } from './copy-animation-idle'
 import { installNumberAsTextAlertSeverity } from './number-as-text-alert'
 import { installFormulaStreamHold } from './formula-stream-hold'
@@ -2373,6 +2377,7 @@ export function App({
     installRtlTextDirectionFix()
     // sheetView rightToLeft="1": mirror the grid geometry (column A on the
     // right, headers on the right) while keeping logical indices.
+    installSparseSheetRender()
     installRtlGridMirror()
     // Univer defines the right-to-left command/mutation pair but never
     // registers it; without this the View tab's toggle would silently no-op.
@@ -2393,6 +2398,7 @@ export function App({
     // canvas line box (Calibri 10: 12.75 pt per line, not ~10 pt).
     installAutofitLinePitch()
     installHeaderUnhideDebounce()
+    installRangeThemeVisibilityGate(runtime)
     // The dashed border on a copied range is a per-frame animation. It must
     // not keep repainting the scene while nobody is looking at it.
     installCopyAnimationIdle()
@@ -3063,6 +3069,10 @@ export function App({
           }
           if (event.id === 'sheet.mutation.remove-filter') {
             resetLargeFilter(state, params.subUnitId)
+            const worksheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
+            if (worksheet?.getSheetId() === params.subUnitId) {
+              void loadVisibleRange(runtime, lazyWorkbookRef, worksheet, setMessage)
+            }
           }
           setPendingEdits(journalSize(state.editJournal))
           return
@@ -3545,24 +3555,66 @@ export function App({
               cellCounts: workbookCellCounts(state.file.sheets),
             })
             if (verdict === 'workbookTooLarge' && subUnitId !== undefined) {
-              // Past the budget the filter runs on column projections read
-              // from the file (large-filter.ts); the panel opens as usual.
-              installLargeFilterValues(runtime, lazyWorkbookRef, isLargeFilterSheet, (loading) =>
-                setMessage(t(loading ? 'appLargeFilterLoading' : 'appReadyInitial')),
-              )
-              const worksheet = runtime.univerAPI.getActiveWorkbook()?.getSheetBySheetId(subUnitId)
+              const workbook = runtime.univerAPI.getActiveWorkbook()
+              const worksheet = workbook?.getSheetBySheetId(subUnitId)
+              const current = () => lazyWorkbookRef.current === state
+              const finish = async () => {
+                if (!current()) return
+                setPendingEdits(journalSize(state.editJournal))
+                if (
+                  workbook &&
+                  worksheet &&
+                  workbook.getActiveSheet()?.getSheetId() === subUnitId
+                ) {
+                  const range = filterModelFor(runtime, worksheet)?.getRange()
+                  const anchor = getScrollAnchor(workbook, worksheet)
+                  const column = anchor?.column ?? 0
+                  if (range && anchor?.row !== range.startRow) {
+                    worksheet.scrollToCell(range.startRow, column)
+                  }
+                  await loadVisibleRange(
+                    runtime,
+                    lazyWorkbookRef,
+                    worksheet,
+                    setMessage,
+                    range ? { row: range.startRow, column } : undefined,
+                  )
+                }
+                if (current()) setMessage(t('appReadyInitial'))
+              }
+              if (event.id === OPEN_FILTER_PANEL_OPERATION && worksheet) {
+                const column = (event.params as { col?: number } | undefined)?.col
+                if (typeof column === 'number') {
+                  const target = streamedFilterTarget(
+                    runtime,
+                    state,
+                    worksheet,
+                    column,
+                    async (criteria) => {
+                      await setLargeFilterCriteria(
+                        runtime,
+                        state,
+                        worksheet,
+                        column,
+                        criteria,
+                        current,
+                      )
+                      if (!current()) return
+                      await runtime.univerAPI.executeCommand('sheet.operation.close-filter-panel')
+                      await finish()
+                    },
+                  )
+                  if (target) prepareLargeFilterPanel(runtime, lazyWorkbookRef, target)
+                }
+              }
               const action = worksheet ? largeFilterAction(event.id, event.params, worksheet) : null
               if (!action) {
                 event.cancel = false
                 return
               }
-              event.cancel = true
               setMessage(t('appLargeFilterApplying'))
-              void action(runtime, state)
-                .then(() => {
-                  setPendingEdits(journalSize(state.editJournal))
-                  setMessage(t('appReadyInitial'))
-                })
+              void action(runtime, state, current)
+                .then(finish)
                 .catch((error: unknown) => setMessage(String(error)))
               return
             }
