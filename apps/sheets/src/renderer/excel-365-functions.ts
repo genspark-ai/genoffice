@@ -6,6 +6,8 @@
  * Excel's patterns are PCRE2; JavaScript RegExp covers the common subset,
  * plus a leading (?i) which PCRE2 users write for case-insensitive matching.
  */
+import { RegExpParser } from '@eslint-community/regexpp'
+import type { AST } from '@eslint-community/regexpp'
 import {
   ArrayValueObject,
   BaseFunction,
@@ -22,6 +24,11 @@ import type { BaseValueObject, IFunctionInfo } from '@univerjs/engine-formula'
 import type { UniverRuntime } from './univer-state'
 
 const LEADING_CASE_FLAG = /^\(\?i\)/
+const REPLACEMENT_REFERENCE = /\$(?:\$|(\d{1,2})|\{(\w+)\})/g
+/// Univer's builtin REGEXEXTRACT and REGEXREPLACE allow this many repeated
+/// alternations (isSafeRegExp).
+const MAX_REPEATED_ALTERNATIONS = 25
+const regExpParser = new RegExpParser()
 
 type Result = BaseValueObject
 
@@ -56,11 +63,80 @@ function compile(patternValue: BaseValueObject, caseValue: number): RegExp | Res
   } else if (caseValue === 1) {
     flags += 'i'
   }
-  try {
-    return new RegExp(pattern, flags)
-  } catch {
-    return ErrorValueObject.create(ErrorType.VALUE)
+  // The u flag gives \p{...} its PCRE2 meaning; a pattern that is only valid
+  // without it, such as an identity escape like \-, still compiles.
+  for (const unicode of [true, false]) {
+    let regExp: RegExp
+    try {
+      regExp = new RegExp(pattern, unicode ? `${flags}u` : flags)
+    } catch {
+      continue
+    }
+    return isSafePattern(pattern, unicode) ? regExp : ErrorValueObject.create(ErrorType.VALUE)
   }
+  return ErrorValueObject.create(ErrorType.VALUE)
+}
+
+/// Formulas run on the renderer's main thread, so a pattern that can
+/// backtrack exponentially, such as (a+)+$, would freeze the window. Like
+/// Univer's isSafeRegExp, this rejects an unbounded quantifier inside a
+/// repeated group and caps the repeated alternations. A trailing ? or {0,1}
+/// does not repeat its group, so \d+(\.\d+)? stays allowed.
+function isSafePattern(source: string, unicode: boolean): boolean {
+  let pattern: AST.Pattern
+  try {
+    pattern = regExpParser.parsePattern(source, 0, source.length, { unicode })
+  } catch {
+    return false
+  }
+  let repeatedAlternations = 0
+  const visit = (node: AST.Node, repeated: boolean): boolean => {
+    switch (node.type) {
+      case 'Quantifier':
+        if (repeated && node.max === Infinity) return false
+        if (node.max > 1 && hasAlternation(node.element)) {
+          repeatedAlternations += 1
+          if (repeatedAlternations > MAX_REPEATED_ALTERNATIONS) return false
+        }
+        return visit(node.element, repeated || node.max > 1)
+      case 'Pattern':
+      case 'Group':
+      case 'CapturingGroup':
+      case 'Assertion':
+        return 'alternatives' in node
+          ? node.alternatives.every((alternative) => visit(alternative, repeated))
+          : true
+      case 'Alternative':
+        return node.elements.every((element) => visit(element, repeated))
+      default:
+        return true
+    }
+  }
+  return visit(pattern, false)
+}
+
+function hasAlternation(node: AST.Node): boolean {
+  if (node.type === 'Quantifier') return hasAlternation(node.element)
+  if (node.type === 'Alternative') return node.elements.some(hasAlternation)
+  if (!('alternatives' in node)) return false
+  return node.alternatives.length > 1 || node.alternatives.some(hasAlternation)
+}
+
+/// Expands $n, ${n} and ${name} (with $0 the whole match) and $$, as PCRE2
+/// does. Any other $ stays literal.
+function expand(replacement: string, match: RegExpExecArray | RegExpMatchArray): string {
+  return replacement.replace(
+    REPLACEMENT_REFERENCE,
+    (reference, index: string | undefined, name: string | undefined) => {
+      if (reference === '$$') return '$'
+      const key = index ?? name!
+      if (/^\d+$/.test(key)) {
+        const group = Number(key)
+        return group < match.length ? (match[group] ?? '') : reference
+      }
+      return match.groups && key in match.groups ? (match.groups[key] ?? '') : reference
+    },
+  )
 }
 
 function isResult(value: unknown): value is Result {
@@ -142,7 +218,7 @@ export class RegexExtract extends BaseFunction {
       if (!first) return ErrorValueObject.create(ErrorType.NA)
       if (mode === 0) return StringValueObject.create(first[0])
       const groups = first.slice(1).map((group) => group ?? '')
-      return groups.length === 0 ? ErrorValueObject.create(ErrorType.NA) : row(groups, this)
+      return groups.length === 0 ? ErrorValueObject.create(ErrorType.VALUE) : row(groups, this)
     })
   }
 }
@@ -171,15 +247,18 @@ export class RegexReplace extends BaseFunction {
     const replaceWith = textOf(replacementCell)
     return perText(text, (cell) => {
       const value = textOf(cell)
-      if (nth === 0) return StringValueObject.create(value.replace(regExp, replaceWith))
+      // Every match is found on the whole text, so a lookaround still sees
+      // the characters around the match it replaces.
       const matches = [...value.matchAll(regExp)]
-      const target = matches[nth > 0 ? nth - 1 : matches.length + nth]
-      if (!target || target.index === undefined) return StringValueObject.create(value)
-      const single = new RegExp(regExp.source, regExp.flags.replace('g', ''))
-      const replaced = target[0].replace(single, replaceWith)
-      return StringValueObject.create(
-        value.slice(0, target.index) + replaced + value.slice(target.index + target[0].length),
-      )
+      const target = nth > 0 ? nth - 1 : matches.length + nth
+      let replaced = ''
+      let end = 0
+      matches.forEach((match, at) => {
+        if (nth !== 0 && at !== target) return
+        replaced += value.slice(end, match.index) + expand(replaceWith, match)
+        end = match.index + match[0].length
+      })
+      return StringValueObject.create(replaced + value.slice(end))
     })
   }
 }

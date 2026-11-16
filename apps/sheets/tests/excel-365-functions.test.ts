@@ -59,6 +59,25 @@ describe('REGEXTEST', () => {
     expect(fn.calculate(text('x'), text('(')).getValue()).toBe(ErrorType.VALUE)
     expect(fn.calculate(text('x'), text('x'), text('yes')).getValue()).toBe(ErrorType.VALUE)
   })
+
+  it('returns #VALUE! for a pattern that can backtrack exponentially', () => {
+    const input = text(`${'a'.repeat(40)}!`)
+    const started = performance.now()
+    expect(fn.calculate(input, text('(a+)+$')).getValue()).toBe(ErrorType.VALUE)
+    expect(fn.calculate(input, text('(?:a*)*b')).getValue()).toBe(ErrorType.VALUE)
+    expect(fn.calculate(input, text('(a|b+){2,}$')).getValue()).toBe(ErrorType.VALUE)
+    expect(performance.now() - started).toBeLessThan(1000)
+  })
+
+  it('still accepts nested quantifiers that cannot repeat each other unboundedly', () => {
+    expect(fn.calculate(text('3.14'), text('^\\d+(\\.\\d+)?$')).getValue()).toBe(true)
+    expect(fn.calculate(text('10.0.0.1'), text('^(\\d{1,3}\\.){3}\\d{1,3}$')).getValue()).toBe(true)
+  })
+
+  it('matches Unicode properties and keeps identity escapes', () => {
+    expect(fn.calculate(text('Ünï'), text('^\\p{L}+$')).getValue()).toBe(true)
+    expect(fn.calculate(text('a-b'), text('a\\-b')).getValue()).toBe(true)
+  })
 })
 
 describe('REGEXEXTRACT', () => {
@@ -86,6 +105,10 @@ describe('REGEXEXTRACT', () => {
     expect(fn.calculate(text('abc'), text('a'), num(3)).getValue()).toBe(ErrorType.VALUE)
   })
 
+  it('returns #VALUE! for return_mode 2 when the pattern has no capture group', () => {
+    expect(fn.calculate(text('abc'), text('b'), num(2)).getValue()).toBe(ErrorType.VALUE)
+  })
+
   it('honours case_sensitivity', () => {
     expect(fn.calculate(text('ABC'), text('b'), num(0), num(1)).getValue()).toBe('B')
   })
@@ -109,6 +132,18 @@ describe('REGEXREPLACE', () => {
 
   it('honours case_sensitivity', () => {
     expect(fn.calculate(text('Aa'), text('a'), text('-'), num(0), num(1)).getValue()).toBe('--')
+  })
+
+  it('keeps the context of the nth match for a lookaround', () => {
+    expect(fn.calculate(text('ab ab'), text('(?<=a)b'), text('X'), num(2)).getValue()).toBe('ab aX')
+  })
+
+  it('expands $0 and ${n} and keeps $$ as a dollar sign', () => {
+    expect(fn.calculate(text('abc'), text('b'), text('[$0]')).getValue()).toBe('a[b]c')
+    expect(fn.calculate(text('ab'), text('(a)(b)'), text('${2}${1}$$')).getValue()).toBe('ba$')
+    expect(
+      fn.calculate(text('2026-11'), text('(?<y>\\d+)-(?<m>\\d+)'), text('${m}/${y}')).getValue(),
+    ).toBe('11/2026')
   })
 })
 
