@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import { normalizeIr, raceWithAbort } from '../src'
+import { generateDocx } from '../src/generate'
 
 test('accepts a well-formed IR array', () => {
   const ir = normalizeIr([
@@ -91,6 +92,61 @@ test('a rejected spacer px never reaches the generated geometry', async () => {
         { type: 'para', runs: [] },
       ]),
     /invalid numeric "px"/,
+  )
+})
+
+test('rejects a paragraph, heading, list or table the generator cannot walk', () => {
+  // Page JavaScript is the source of this IR (see normalizeIr's contract), and
+  // these fields are dereferenced without a fallback: `node.runs.length`,
+  // `item.runs[0]`, `row.cells.map`, and HEADING_LEVELS[node.level - 1].
+  const bad: Array<[unknown, RegExp]> = [
+    [{ type: 'para' }, /index 0.*missing array "runs"/],
+    [{ type: 'para', runs: null }, /missing array "runs"/],
+    [{ type: 'heading', runs: [] }, /missing numeric "level"/],
+    [{ type: 'heading', level: null, runs: [] }, /missing numeric "level"/],
+    [{ type: 'heading', level: 'x', runs: [] }, /missing numeric "level"/],
+    [{ type: 'para', level: 2 }, /missing array "runs"/],
+    [{ type: 'list' }, /missing array "items"/],
+    [{ type: 'list', items: [{ runs: [] }, {}] }, /list item 1 missing array "runs"/],
+    [{ type: 'list', items: [{ style: {} }] }, /list item 0 missing array "runs"/],
+    [{ type: 'table' }, /missing array "rows"/],
+    [{ type: 'table', rows: [{}] }, /table row 0 missing array "cells"/],
+    [
+      { type: 'table', rows: [{ cells: [] }, { cells: null }] },
+      /table row 1 missing array "cells"/,
+    ],
+  ]
+  for (const [node, message] of bad) {
+    assert.throws(() => normalizeIr([node]), message, JSON.stringify(node))
+  }
+})
+
+test('keeps accepting the shapes the extractor writes', () => {
+  const ir = normalizeIr([
+    { type: 'para', runs: [] },
+    { type: 'heading', level: 2, runs: [{ text: 'Title' }] },
+    { type: 'list', items: [[{ text: 'old snapshot shape' }], { runs: [{ text: 'current' }] }] },
+    { type: 'table', rows: [{ cells: [] }, { cells: [{ runs: [{ text: 'cell' }] }] }] },
+    { type: 'image', shotId: 'abc123' },
+  ])
+  assert.equal(ir.length, 5)
+})
+
+test('rejects the shapes a compromised page can inject, which the generator cannot walk', async () => {
+  // The extractor calls into `globalThis.__html2docxTable` and friends, which
+  // classic scripts install on the page — page JavaScript can replace them, so
+  // these shapes are reachable IR even though the shipped extractor never
+  // writes them. Both throw a bare TypeError from inside the renderer
+  // (`node.runs.length`, `row.cells.map`) unless the boundary refuses them.
+  await assert.rejects(generateDocx([{ type: 'para' }] as never, {}), TypeError)
+  await assert.rejects(
+    generateDocx([{ type: 'table', rows: [{ cells: null }] }] as never, {}),
+    TypeError,
+  )
+  assert.throws(() => normalizeIr([{ type: 'para' }]), /index 0.*missing array "runs"/)
+  assert.throws(
+    () => normalizeIr([{ type: 'table', rows: [{ cells: null }] }]),
+    /table row 0 missing array "cells"/,
   )
 })
 
