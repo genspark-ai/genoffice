@@ -24,6 +24,10 @@ export interface OdfTextProps {
   resetSmallCaps?: boolean
   /** run shading fill, hex without '#' */
   shading?: string
+  /** `fo:letter-spacing` as docx's w:spacing, twips (negative when condensed) */
+  letterSpacingTw?: number
+  /** `style:text-scale` as docx's w:w, percent in 1..600 */
+  scalePct?: number
 }
 
 export interface OdfParaProps {
@@ -71,6 +75,7 @@ export class OdfStyles {
   private lists = new Map<string, Map<number, OdfListLevel>>()
   private columnWidths = new Map<string, number>()
   private cellFills = new Map<string, string | null>()
+  private tableAligns = new Map<string, 'center' | 'right'>()
   private defaults: { text?: OdfTextProps; para?: OdfParaProps } = {}
 
   constructor(contentRoots: XNode[] | null, stylesRoots: XNode[] | null) {
@@ -133,6 +138,14 @@ export class OdfStyles {
         this.cellFills.set(name, null)
       return
     }
+    if (family === 'table') {
+      // `table:align` places the table against the margins; "margins" is the
+      // default full-width behaviour and has no w:jc of its own
+      const properties = firstChild(node, 'style:table-properties')
+      const align = properties ? attr(properties, 'table:align') : undefined
+      if (align === 'center' || align === 'right') this.tableAligns.set(name, align)
+      return
+    }
     const props = this.readProps(node)
     const textProperties = firstChild(node, 'style:text-properties')
     const fontSize = textProperties ? attr(textProperties, 'fo:font-size') : undefined
@@ -167,6 +180,12 @@ export class OdfStyles {
       styleName = this.defs.get(`table-cell:${styleName}`)?.parent
     }
     return null
+  }
+
+  /** `table:align` of a table style, when the table is not flush with the margins */
+  tableAlign(styleName: string | undefined): 'center' | 'right' | null {
+    if (!styleName) return null
+    return this.tableAligns.get(styleName) ?? null
   }
 
   private readProps(node: XNode): { text?: OdfTextProps; para?: OdfParaProps } {
@@ -222,6 +241,11 @@ export class OdfStyles {
     if (transform === 'none') out.resetUppercase = true
     if (a['fo:font-variant'] === 'normal') out.resetSmallCaps = true
     if (a['fo:font-variant'] === 'small-caps') out.caps = 'small'
+    const letter = odfLengthToEmu(a['fo:letter-spacing'])
+    // 0 is kept: an explicit reset inside a spaced span has to override it
+    if (letter !== null) out.letterSpacingTw = emuToTwips(letter)
+    const scale = textScalePercent(a['style:text-scale'])
+    if (scale !== undefined) out.scalePct = scale
     return Object.keys(out).length > 0 ? out : undefined
   }
 
@@ -481,4 +505,18 @@ function listLevelIndent(node: XNode): { indentLeftTw?: number; hangingTw?: numb
     if (value !== null && value < 0) out.hangingTw = emuToTwips(-value)
   }
   return out
+}
+
+/**
+ * `style:text-scale` is a percentage of the character width (20.417 in ODF's
+ * vocabulary); docx spells the same thing as `w:w` in 1..600, so wider values
+ * clamp there instead of writing a value no consumer accepts.
+ */
+function textScalePercent(text: string | undefined): number | undefined {
+  if (!text) return undefined
+  const match = /^(\d+(?:\.\d+)?)%?$/.exec(text.trim())
+  if (!match) return undefined
+  const value = Math.round(Number(match[1]))
+  if (!Number.isFinite(value) || value < 1) return undefined
+  return Math.min(value, 600)
 }

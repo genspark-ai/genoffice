@@ -79,6 +79,24 @@ describe('convertOdtToDocx', () => {
     expect(rels).toContain('https://example.com/doc')
   })
 
+  it('carries character spacing and width from a text style into the run', async () => {
+    const body =
+      '<text:p>plain <text:span text:style-name="Twide">wide</text:span> ' +
+      '<text:span text:style-name="Ttight">tight</text:span> tail</text:p>'
+    const named =
+      '<style:style style:name="Twide" style:family="text"><style:text-properties fo:letter-spacing="0.05cm" style:text-scale="150%"/></style:style>' +
+      '<style:style style:name="Ttight" style:family="text"><style:text-properties fo:letter-spacing="-0.02cm"/></style:style>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body), stylesXml(named)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    // ODF spells them fo:letter-spacing and style:text-scale; docx spells the
+    // same two as w:spacing (twips, signed) and w:w (percent)
+    expect(document).toContain('<w:spacing w:val="28"/>') // 0.05cm = 18000 EMU
+    expect(document).toContain('<w:spacing w:val="-11"/>') // -0.02cm = -7200 EMU
+    expect(document).toContain('<w:w w:val="150"/>')
+    expect(document).toContain('wide')
+    expect(document).toContain('tight')
+  })
+
   it('resolves the parent style chain and character properties from styles.xml', async () => {
     const body = '<text:p text:style-name="P1">styled</text:p>'
     const named =
@@ -176,6 +194,25 @@ describe('convertOdtToDocx', () => {
     expect(numbering).toContain('w:lvlText w:val="%2."')
   })
 
+  it('carries table:align into w:jc and leaves a margins table flush', async () => {
+    // ODF places a table with table:align; "margins" is the default full-width
+    // behaviour, while center/right have a w:jc of their own
+    const automatic =
+      '<style:style style:name="TC" style:family="table"><style:table-properties table:align="center"/></style:style>' +
+      '<style:style style:name="TR" style:family="table"><style:table-properties table:align="right"/></style:style>' +
+      '<style:style style:name="TM" style:family="table"><style:table-properties table:align="margins"/></style:style>'
+    const table = (style: string, text: string): string =>
+      `<table:table table:name="${text}" table:style-name="${style}"><table:table-column/>` +
+      `<table:table-row><table:table-cell><text:p>${text}</text:p></table:table-cell></table:table-row></table:table>`
+    const body = table('TC', 'centred') + table('TR', 'right') + table('TM', 'margin')
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, automatic)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    // w:jc follows tblW, as CT_TblPrBase orders it
+    expect(document).toMatch(/<w:tblW[^>]*\/><w:jc w:val="center"\/><w:tblBorders>/)
+    expect(document).toMatch(/<w:tblW[^>]*\/><w:jc w:val="right"\/><w:tblBorders>/)
+    expect(document.match(/<w:jc /g) ?? []).toHaveLength(2)
+  })
+
   it('imports a table with widths, spans and a cell fill', async () => {
     const automatic =
       '<style:style style:name="co1" style:family="table-column"><style:column-properties style:column-width="3cm"/></style:style>' +
@@ -194,6 +231,100 @@ describe('convertOdtToDocx', () => {
     expect(document).toContain(
       '<w:tblGrid><w:gridCol w:w="1701"/><w:gridCol w:w="1701"/></w:tblGrid>',
     )
+  })
+
+  it('keeps every cell of a table that declares fewer columns than it paints', async () => {
+    // The column list is optional; the single-column fallback stopped the grid
+    // at one slot, so every cell after the first disappeared with no tally.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-row>' +
+      '<table:table-cell><text:p>AAACELL</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>BBB CELL</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>CCC CELL</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    for (const text of ['AAACELL', 'BBB CELL', 'CCC CELL']) expect(document).toContain(text)
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(3)
+    expect(result.dropped).toEqual([])
+  })
+
+  it('keeps a span that the declared column list cannot hold', async () => {
+    // The same narrowing also clamped a cell's colspan to the fallback's one
+    // column, so a merged cell came back unmerged.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-row><table:table-cell table:number-columns-spanned="3"><text:p>wide</text:p></table:table-cell></table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document).toContain('<w:gridSpan w:val="3"/>')
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(3)
+  })
+
+  it('does not widen a declared grid for a fully merged first row', async () => {
+    // LibreOffice's shape for a 3-column table whose first row is merged: the
+    // anchored cell plus one covered placeholder per merged-in column. The span
+    // does not add grid positions of its own — the placeholders are its slots.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-column table:number-columns-repeated="3"/>' +
+      '<table:table-row>' +
+      '<table:table-cell table:number-columns-spanned="3"><text:p>merged</text:p></table:table-cell>' +
+      '<table:covered-table-cell/><table:covered-table-cell/>' +
+      '</table:table-row>' +
+      '<table:table-row>' +
+      '<table:table-cell><text:p>cell x</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>cell y</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>cell z</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(3)
+    expect(document).toContain('<w:gridSpan w:val="3"/>')
+    for (const text of ['merged', 'cell x', 'cell y', 'cell z']) expect(document).toContain(text)
+  })
+
+  it('does not widen a declared grid for a cell merging two of its columns', async () => {
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-column table:number-columns-repeated="3"/>' +
+      '<table:table-row>' +
+      '<table:table-cell table:number-columns-spanned="2"><text:p>pair</text:p></table:table-cell>' +
+      '<table:covered-table-cell/>' +
+      '<table:table-cell><text:p>side</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(3)
+    expect(document).toContain('<w:gridSpan w:val="2"/>')
+    expect(document).toContain('pair')
+    expect(document).toContain('side')
+  })
+
+  it('counts a vertical merge placeholder as the position it covers', async () => {
+    // The second row's covered cell stands for the slot under the row span; it
+    // must not shift that row's own cell into a fourth column.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-column table:number-columns-repeated="2"/>' +
+      '<table:table-row>' +
+      '<table:table-cell table:number-rows-spanned="2"><text:p>tall</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>top right</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '<table:table-row>' +
+      '<table:covered-table-cell/>' +
+      '<table:table-cell><text:p>bottom right</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(2)
+    expect(document).toContain('bottom right')
   })
 
   it('bounds a row span to the rows that exist', async () => {
