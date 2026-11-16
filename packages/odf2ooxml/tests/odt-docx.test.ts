@@ -179,6 +179,41 @@ describe('convertOdtToDocx', () => {
     expect(document).toContain('<w:vMerge/>')
   })
 
+  it('marks table:table-header-rows so Word repeats the heading on each page', async () => {
+    // ODF splits the two row containers: header-rows repeat at the top of a
+    // page, rows do not. readRows flattens them, so the distinction has to
+    // ride along as w:tblHeader or the heading scrolls away on page two.
+    const body =
+      '<table:table table:name="T"><table:table-column/>' +
+      '<table:table-header-rows>' +
+      '<table:table-row><table:table-cell><text:p>head one</text:p></table:table-cell></table:table-row>' +
+      '<table:table-row><table:table-cell><text:p>head two</text:p></table:table-cell></table:table-row>' +
+      '</table:table-header-rows>' +
+      '<table:table-rows>' +
+      '<table:table-row><table:table-cell><text:p>body</text:p></table:table-cell></table:table-row>' +
+      '</table:table-rows>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    const rows = [...document.matchAll(/<w:tr>([\s\S]*?)<\/w:tr>/g)].map((match) => match[1])
+    expect(rows).toHaveLength(3)
+    // both header rows repeat; the ordinary row does not
+    expect(rows.map((row) => row.includes('<w:tblHeader/>'))).toEqual([true, true, false])
+    // w:trPr is the row's first child, so the marker precedes the first cell
+    expect(rows[0].startsWith('<w:trPr><w:tblHeader/></w:trPr><w:tc>')).toBe(true)
+  })
+
+  it('does not mark a heading when the table keeps its rows in one container', async () => {
+    const body =
+      '<table:table table:name="T"><table:table-column/>' +
+      '<table:table-row><table:table-cell><text:p>only</text:p></table:table-cell></table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document).not.toContain('w:tblHeader')
+    expect(document).toContain('<w:tr><w:tc>')
+  })
+
   it('carries the page geometry into the section properties', async () => {
     const body = '<text:p>page</text:p>'
     const result = await convertOdtToDocx(await buildOdt(contentXml(body), stylesXml('', PAGE_A4)))
