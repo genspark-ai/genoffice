@@ -471,6 +471,7 @@ function tableDraft(node: XNode, ctx: WalkContext): Draft {
       columns,
       grid,
       rows.map((row) => header.has(row)),
+      ctx.styles.tableAlign(attr(node, 'table:style-name')),
     ),
   }
 }
@@ -714,6 +715,8 @@ function tableXml(
   grid: Array<Array<GridCell | null>>,
   /** one flag per grid row: does the source repeat it as a page header? */
   headerFlags: boolean[],
+  /** `table:align`, when the source table is not flush with the margins */
+  align: 'center' | 'right' | null,
 ): string {
   // unknown column widths share the usable width of a Letter page with 1in
   // margins; fixed layout plus real gridCols keeps the spans honest
@@ -734,6 +737,8 @@ function tableXml(
   const parts: string[] = []
   parts.push(
     `<w:tbl><w:tblPr><w:tblW w:w="${colTw.reduce((a, b) => a + b, 0)}" w:type="dxa"/>` +
+      // w:jc sits between tblW and tblBorders in CT_TblPrBase
+      (align ? `<w:jc w:val="${align}"/>` : '') +
       `<w:tblBorders>${border}</w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr>`,
   )
   parts.push(

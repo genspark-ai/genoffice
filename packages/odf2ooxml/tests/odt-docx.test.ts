@@ -144,6 +144,25 @@ describe('convertOdtToDocx', () => {
     expect(numbering).toContain('w:lvlText w:val="%2."')
   })
 
+  it('carries table:align into w:jc and leaves a margins table flush', async () => {
+    // ODF places a table with table:align; "margins" is the default full-width
+    // behaviour, while center/right have a w:jc of their own
+    const automatic =
+      '<style:style style:name="TC" style:family="table"><style:table-properties table:align="center"/></style:style>' +
+      '<style:style style:name="TR" style:family="table"><style:table-properties table:align="right"/></style:style>' +
+      '<style:style style:name="TM" style:family="table"><style:table-properties table:align="margins"/></style:style>'
+    const table = (style: string, text: string): string =>
+      `<table:table table:name="${text}" table:style-name="${style}"><table:table-column/>` +
+      `<table:table-row><table:table-cell><text:p>${text}</text:p></table:table-cell></table:table-row></table:table>`
+    const body = table('TC', 'centred') + table('TR', 'right') + table('TM', 'margin')
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, automatic)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    // w:jc follows tblW, as CT_TblPrBase orders it
+    expect(document).toMatch(/<w:tblW[^>]*\/><w:jc w:val="center"\/><w:tblBorders>/)
+    expect(document).toMatch(/<w:tblW[^>]*\/><w:jc w:val="right"\/><w:tblBorders>/)
+    expect(document.match(/<w:jc /g) ?? []).toHaveLength(2)
+  })
+
   it('imports a table with widths, spans and a cell fill', async () => {
     const automatic =
       '<style:style style:name="co1" style:family="table-column"><style:column-properties style:column-width="3cm"/></style:style>' +

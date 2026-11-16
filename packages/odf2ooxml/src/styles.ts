@@ -65,6 +65,7 @@ export class OdfStyles {
   private lists = new Map<string, Map<number, OdfListLevel>>()
   private columnWidths = new Map<string, number>()
   private cellFills = new Map<string, string | null>()
+  private tableAligns = new Map<string, 'center' | 'right'>()
   private defaults: { text?: OdfTextProps; para?: OdfParaProps } = {}
 
   constructor(contentRoots: XNode[] | null, stylesRoots: XNode[] | null) {
@@ -127,6 +128,14 @@ export class OdfStyles {
         this.cellFills.set(name, null)
       return
     }
+    if (family === 'table') {
+      // `table:align` places the table against the margins; "margins" is the
+      // default full-width behaviour and has no w:jc of its own
+      const properties = firstChild(node, 'style:table-properties')
+      const align = properties ? attr(properties, 'table:align') : undefined
+      if (align === 'center' || align === 'right') this.tableAligns.set(name, align)
+      return
+    }
     const props = this.readProps(node)
     const textProperties = firstChild(node, 'style:text-properties')
     const fontSize = textProperties ? attr(textProperties, 'fo:font-size') : undefined
@@ -161,6 +170,12 @@ export class OdfStyles {
       styleName = this.defs.get(`table-cell:${styleName}`)?.parent
     }
     return null
+  }
+
+  /** `table:align` of a table style, when the table is not flush with the margins */
+  tableAlign(styleName: string | undefined): 'center' | 'right' | null {
+    if (!styleName) return null
+    return this.tableAligns.get(styleName) ?? null
   }
 
   private readProps(node: XNode): { text?: OdfTextProps; para?: OdfParaProps } {
