@@ -141,6 +141,23 @@ describe('convertOdtToDocx', () => {
     expect(lines.every((value) => /^\d+$/.test(value))).toBe(true)
   })
 
+  it('keeps a paragraph with the next one and its lines together', async () => {
+    const body =
+      '<text:p text:style-name="Pkeep">intro</text:p>' +
+      '<text:p text:style-name="Pcancel">body</text:p>'
+    const automatic =
+      '<style:style style:name="Pkeep" style:family="paragraph"><style:paragraph-properties fo:keep-with-next="always" fo:keep-together="always"/></style:style>' +
+      // "auto" is ODF's default, but it still has to cancel an inherited "always"
+      '<style:style style:name="Pcancel" style:family="paragraph" style:parent-style-name="Pkeep"><style:paragraph-properties fo:keep-with-next="auto" fo:keep-together="auto"/></style:style>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, automatic)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document).toContain('<w:keepNext/>')
+    expect(document).toContain('<w:keepLines/>')
+    // only the paragraph that asked for it carries either element
+    expect(document.match(/<w:keepNext\/>/g) ?? []).toHaveLength(1)
+    expect(document.match(/<w:keepLines\/>/g) ?? []).toHaveLength(1)
+  })
+
   it('imports lists with per-level bullet and number formats', async () => {
     const body =
       '<text:list text:style-name="L1"><text:list-item><text:p>first</text:p>' +
