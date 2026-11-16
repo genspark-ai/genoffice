@@ -70,6 +70,7 @@ import {
   MAX_REMOTE_IMAGE_BYTES,
   readBodyCapped,
   writeJsonAtomic,
+  restrictFileToOwner,
   recoveryCopyDiskNewer,
   readLegacyImportSkip,
   writeLegacyImportSkip,
@@ -4478,8 +4479,11 @@ export function registerAiIpc(): void {
     // file and clobber a saved (half-configured) BYOK selection.
     if ((stored.provider ?? 'genspark') === 'genspark' && stored.gskToolsEnabled === false) {
       stored.gskToolsEnabled = true
-      writeJsonAtomic(SETTINGS_PATH(), stored)
+      writeJsonAtomic(SETTINGS_PATH(), stored, 0o600)
     }
+    // heal the file mode of a settings file saved by an older build: BYOK keys
+    // are credentials and must not stay readable by other local accounts
+    restrictFileToOwner(SETTINGS_PATH())
     const settings = resolveAiSettings(stored, defaultAiSettings())
     // a stored BYOK provider is honored when usable; half-filled configs fall back to genspark
     settings.provider = activeProvider(settings)
@@ -4513,7 +4517,7 @@ export function registerAiIpc(): void {
       console.warn('[ai] rejected invalid ai:set-settings payload')
       return
     }
-    writeJsonAtomic(SETTINGS_PATH(), sanitized)
+    writeJsonAtomic(SETTINGS_PATH(), sanitized, 0o600)
     broadcastAiSettingsChanged()
   })
 

@@ -76,6 +76,7 @@ import {
   registerRendererScheme,
   rendererUrl,
   writeJsonAtomic,
+  restrictFileToOwner,
   recoveryCopyDiskNewer,
   configuredAuthorName,
   readLegacyImportSkip,
@@ -4383,6 +4384,9 @@ export function registerSheetsAiIpc(): void {
   ipcMain.handle(IPC_CHANNELS.aiGetSettings, (event): AiSettings => {
     sessionFor(event)
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
+    // heal the file mode of a settings file saved by an older build: BYOK keys
+    // are credentials and must not stay readable by other local accounts
+    restrictFileToOwner(SETTINGS_PATH())
     const settings = resolveAiSettings(stored, defaultAiSettings())
     // a stored BYOK provider is honored when usable; half-filled configs fall back to genspark
     settings.provider = activeProvider(settings)
@@ -4411,7 +4415,7 @@ export function registerSheetsAiIpc(): void {
   ipcMain.handle(IPC_CHANNELS.aiSetSettings, async (event, input: unknown) => {
     sessionFor(event)
     const settings = aiSettingsInputSchema.parse(input)
-    writeJsonAtomic(SETTINGS_PATH(), settings)
+    writeJsonAtomic(SETTINGS_PATH(), settings, 0o600)
     for (const wc of webContents.getAllWebContents())
       if (!wc.isDestroyed()) wc.send(IPC_CHANNELS.aiSettingsChanged)
   })
