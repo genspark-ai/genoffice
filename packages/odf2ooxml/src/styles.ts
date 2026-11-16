@@ -43,6 +43,8 @@ export interface OdfParaProps {
   indentRightTw?: number
   indentFirstLineTw?: number
   pageBreakBefore?: boolean
+  /** `fo:background-color` of the paragraph, hex without '#' */
+  background?: string
   /** `fo:keep-with-next="always"` — keep the paragraph on the same page as the next */
   keepNext?: boolean
   /** `fo:keep-together="always"` — never split the paragraph across pages */
@@ -295,6 +297,10 @@ export class OdfStyles {
     if (first !== null) out.indentFirstLineTw = emuToTwips(first)
     if (a['fo:break-before'] === 'page' || a['fo:break-before'] === 'auto')
       out.pageBreakBefore = a['fo:break-before'] === 'page'
+    // "transparent" is ODF's default (the page shows through), so only a real
+    // colour asks for a fill
+    const background = odfColorToHex(a['fo:background-color'])
+    if (background) out.background = background
     // ODF spells both as auto/always; "auto" is the default, so it only has to
     // cancel a value an ancestor style set
     const keepNext = a['fo:keep-with-next']

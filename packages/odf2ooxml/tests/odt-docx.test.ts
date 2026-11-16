@@ -141,6 +141,21 @@ describe('convertOdtToDocx', () => {
     expect(lines.every((value) => /^\d+$/.test(value))).toBe(true)
   })
 
+  it('fills a paragraph that asks for a background', async () => {
+    const body =
+      '<text:p text:style-name="Pfill">highlighted</text:p>' +
+      '<text:p text:style-name="Pclear">plain</text:p>'
+    const automatic =
+      '<style:style style:name="Pfill" style:family="paragraph"><style:paragraph-properties fo:background-color="#fff2a8"/></style:style>' +
+      // "transparent" is ODF's default, so it asks for no fill of its own
+      '<style:style style:name="Pclear" style:family="paragraph"><style:paragraph-properties fo:background-color="transparent"/></style:style>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, automatic)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document).toContain('<w:shd w:val="clear" w:color="auto" w:fill="FFF2A8"/>')
+    // one shaded paragraph, not two
+    expect(document.match(/<w:shd /g) ?? []).toHaveLength(1)
+  })
+
   it('keeps a paragraph with the next one and its lines together', async () => {
     const body =
       '<text:p text:style-name="Pkeep">intro</text:p>' +
