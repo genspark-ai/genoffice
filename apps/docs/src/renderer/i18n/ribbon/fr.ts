@@ -25,6 +25,7 @@ export const fr = {
   ribbonLangTraditionalChinese: 'chinois traditionnel',
   ribbonLangVietnamese: 'vietnamien',
   ribbonLangTurkish: 'turc',
+  ribbonLangHungarian: 'hongrois',
   ribbonAiCreditNote: "Fait appel à l'IA et consomme des crédits",
   ribbonAiRewriteConfirm:
     "Cette action fait appel à l'IA : elle consomme des crédits et peut réécrire tout le contenu. Continuer ? (Vous ne serez plus averti.)",

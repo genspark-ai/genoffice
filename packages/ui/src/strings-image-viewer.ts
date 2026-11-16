@@ -25,4 +25,5 @@ export const IMAGE_VIEWER_TITLES: Record<Lang, string> = {
   'zh-TW': '圖片檢視器',
   vi: 'Trình xem ảnh',
   tr: 'Görüntü görüntüleyici',
+  hu: 'Képnézegető',
 }

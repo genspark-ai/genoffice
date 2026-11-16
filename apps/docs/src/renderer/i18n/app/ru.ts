@@ -395,6 +395,7 @@ export const ru = {
   appLangTraditionalChinese: 'китайский (традиционный)',
   appLangVietnamese: 'вьетнамский',
   appLangTurkish: 'турецкий',
+  appLangHungarian: 'венгерский',
   appWrapTextMenu: 'Обтекание текстом',
   appViewImage: 'Открыть изображение',
   appSaveImageAs: 'Сохранить изображение как…',

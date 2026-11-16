@@ -100,6 +100,26 @@ describe('top-right mode cluster', () => {
     cleanup()
   })
 
+  it('the Print Layout button asks to leave read mode, not to toggle it', () => {
+    // onViewMode('print') pairs with onReadMode(false) — a flip would queue
+    // setReadMode(!false) after it and land the document in read mode
+    const onReadMode = vi.fn()
+    const onViewMode = vi.fn()
+    const { host, cleanup } = mount({ onReadMode, onViewMode })
+    act(() =>
+      [...host.querySelectorAll<HTMLButtonElement>('.ribbon-tab')]
+        .find((b) => b.textContent === 'View')!
+        .click(),
+    )
+    const printBtn = [...host.querySelectorAll<HTMLButtonElement>('.rb-big')].find((b) =>
+      b.textContent!.includes('Print Layout'),
+    )!
+    act(() => printBtn.click())
+    expect(onViewMode).toHaveBeenCalledWith('print')
+    expect(onReadMode).toHaveBeenCalledWith(false)
+    cleanup()
+  })
+
   it('disables Editing under forced track changes', () => {
     const { host, cleanup } = mount({ trackChanges: true, trackChangesForced: true })
     const modeBtn = [...host.querySelectorAll<HTMLButtonElement>('.ribbon-mode-btn')].at(-1)!
