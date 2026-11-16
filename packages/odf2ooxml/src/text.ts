@@ -7,6 +7,7 @@
  */
 
 import type { OdfStyles, OdfTextProps } from './styles'
+import { mergeTextProps } from './styles'
 import { odfLengthToEmu } from './units'
 import { XNode, attr, isTextNode, nodeChildren, nodeName, textOfNode } from './xml'
 
@@ -25,6 +26,10 @@ export interface NeutralRun {
   caps?: 'all' | 'small'
   /** hex without '#' */
   shading?: string
+  /** character spacing (w:spacing), twips; negative when condensed */
+  letterSpacingTw?: number
+  /** character width (w:w), percent */
+  scalePct?: number
   /** external hyperlink target (http/https/mailto/ftp only) */
   href?: string
 }
@@ -92,18 +97,27 @@ function runsFromChildren(
       const name = nodeName(node)
       switch (name) {
         case '#comment':
+        case 'text:ruby-text':
           break
         case 'text:span': {
           const spanProps = mergeProps(
             props,
-            ctx.styles.textProps(attr(node, 'text:style-name'), ctx.families),
+            ctx.styles.textProps(attr(node, 'text:style-name'), ctx.families, false),
           )
           walk(nodeChildren(node), spanProps, href)
           break
         }
+        case 'text:hidden-text':
+          if (!['true', '1'].includes(attr(node, 'text:is-hidden') ?? ''))
+            walk(nodeChildren(node), props, href)
+          break
         case 'text:a': {
           const target = attr(node, 'xlink:href') ?? ''
-          walk(nodeChildren(node), props, LINKABLE_HREF.test(target) ? target : href)
+          const linkProps = mergeProps(
+            props,
+            ctx.styles.textProps(attr(node, 'text:style-name'), ['text'], false),
+          )
+          walk(nodeChildren(node), linkProps, LINKABLE_HREF.test(target) ? target : href)
           break
         }
         case 'text:tab':
@@ -125,7 +139,6 @@ function runsFromChildren(
         case 'text:reference-mark':
         case 'text:reference-mark-start':
         case 'text:reference-mark-end':
-        case 'text:sequence':
           break
         case 'text:note':
           ctx.drops.add('footnotes')
@@ -154,6 +167,7 @@ function runsFromChildren(
           ctx.drops.add('objects')
           break
         case 'text:page-number':
+        case 'text:sequence':
         case 'text:page-count':
         case 'text:sequence-ref':
         case 'text:bookmark-ref':
@@ -185,6 +199,10 @@ function base(props: OdfTextProps | undefined): Omit<NeutralRun, 'text'> {
   if (props.vertAlign) out.vertAlign = props.vertAlign
   if (props.caps) out.caps = props.caps
   if (props.shading) out.shading = props.shading
+  if (props.letterSpacingTw !== undefined) out.letterSpacingTw = props.letterSpacingTw
+  // 100% is the default, so it writes nothing; the props keep it so that a
+  // span inside a scaled one can reset the width
+  if (props.scalePct !== undefined && props.scalePct !== 100) out.scalePct = props.scalePct
   return out
 }
 
@@ -193,7 +211,7 @@ function mergeProps(
   override: OdfTextProps | null,
 ): OdfTextProps | undefined {
   if (!override) return baseProps
-  return { ...(baseProps ?? {}), ...override }
+  return mergeTextProps(baseProps ?? {}, override)
 }
 
 /** collapse runs whose formatting is identical — ODF spans split more eagerly than a reader wants */
@@ -221,6 +239,8 @@ const FORMAT_KEYS: Array<keyof NeutralRun> = [
   'vertAlign',
   'caps',
   'shading',
+  'letterSpacingTw',
+  'scalePct',
   'href',
 ]
 

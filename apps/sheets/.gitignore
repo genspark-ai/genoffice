@@ -4,3 +4,4 @@ out/
 fixtures/generated/
 reports/
 native/xlsx-engine/target
+native/win-clipboard-helper/target

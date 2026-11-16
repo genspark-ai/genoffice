@@ -54,8 +54,8 @@ interface FloatingShapeBase {
   topTwips: number
   widthTwips: number
   heightTwips: number
-  horizontalRelative: 'margin' | 'page' | 'column'
-  verticalRelative: 'margin' | 'page' | 'paragraph'
+  horizontalRelative: 'margin' | 'page' | 'column' | 'character'
+  verticalRelative: 'margin' | 'page' | 'paragraph' | 'line'
   wrap: 'square' | 'topAndBottom' | 'none' | 'tight' | 'through'
   behindText: boolean
 }
@@ -132,6 +132,8 @@ const OPT_FILL_BOOLEANS = 0x01bf
 const OPT_LINE_COLOR = 0x01c0
 const OPT_LINE_WIDTH = 0x01cb
 const OPT_LINE_BOOLEANS = 0x01ff
+const OPT_POS_REL_H = 0x0390
+const OPT_POS_REL_V = 0x0392
 const DEFAULT_LINE_WIDTH_EMU = 9525
 const DEFAULT_INSETS_EMU: [number, number, number, number] = [91440, 45720, 91440, 45720]
 /** msosptRoundRectangle / msosptEllipse; everything else (incl. msosptTextBox 202) is a rectangle */
@@ -653,6 +655,9 @@ function textBoxStyle(
 
 const HORIZONTAL_RELATIVE: FloatingPicture['horizontalRelative'][] = ['margin', 'page', 'column']
 const VERTICAL_RELATIVE: FloatingPicture['verticalRelative'][] = ['margin', 'page', 'paragraph']
+/** MSOPRH and MSOPRV: the shape's own origin, which overrides the FSPA's bx and by. */
+const POS_REL_H: FloatingPicture['horizontalRelative'][] = ['margin', 'page', 'column', 'character']
+const POS_REL_V: FloatingPicture['verticalRelative'][] = ['margin', 'page', 'paragraph', 'line']
 const WRAPS: FloatingPicture['wrap'][] = [
   'square',
   'topAndBottom',
@@ -777,8 +782,14 @@ export function parseFloatingPictures(
           topTwips: leaf.rect.top,
           widthTwips: width,
           heightTwips: height,
-          horizontalRelative: HORIZONTAL_RELATIVE[anchor.bx] ?? 'column',
-          verticalRelative: VERTICAL_RELATIVE[anchor.by] ?? 'paragraph',
+          horizontalRelative:
+            POS_REL_H[shape.props.get(OPT_POS_REL_H) ?? -1] ??
+            HORIZONTAL_RELATIVE[anchor.bx] ??
+            'column',
+          verticalRelative:
+            POS_REL_V[shape.props.get(OPT_POS_REL_V) ?? -1] ??
+            VERTICAL_RELATIVE[anchor.by] ??
+            'paragraph',
           wrap: WRAPS[anchor.wr] ?? 'square',
           behindText: anchor.belowText,
         }
