@@ -3,7 +3,6 @@ declare module 'y-prosemirror' {
   import type { Node as PmNode, Schema } from '@tiptap/pm/model'
   import type { EditorView } from '@tiptap/pm/view'
   import type { Plugin, PluginKey } from '@tiptap/pm/state'
-  import type { Awareness } from 'y-protocols/awareness'
 
   /**
    * The plugin state y-prosemirror's binding reads: the fragment it is bound
@@ -36,7 +35,17 @@ declare module 'y-prosemirror' {
   export const ySyncPluginKey: PluginKey<YSyncState>
   export const yUndoPluginKey: PluginKey<unknown>
   export const yCursorPluginKey: PluginKey<unknown>
-  export function yCursorPlugin(awareness: Awareness, options?: unknown): Plugin
+  /** the awareness surface y-prosemirror's cursor plugin uses */
+  export interface AwarenessSurface {
+    clientID: number
+    getStates(): Map<number, Record<string, unknown>>
+    getLocalState(): Record<string, unknown> | null
+    setLocalStateField(field: string, value: unknown): void
+    on(event: 'update', listener: (changes: unknown, origin: unknown) => void): void
+    off(event: 'update', listener: (changes: unknown, origin: unknown) => void): void
+  }
+
+  export function yCursorPlugin(awareness: AwarenessSurface, options?: unknown): Plugin
   export function prosemirrorToYXmlFragment(doc: PmNode, xmlFragment?: Y.XmlFragment): Y.XmlFragment
   export function yXmlFragmentToProsemirrorJSON(schema: Schema, xmlFragment: Y.XmlFragment): unknown
 }

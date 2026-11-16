@@ -1,31 +1,22 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { EditorState, TextSelection } from '@tiptap/pm/state'
 import { EditorView } from '@tiptap/pm/view'
 import { Schema, type Node as PmNode } from '@tiptap/pm/model'
-import { Awareness } from 'y-protocols/awareness'
-import * as Y from 'yjs'
 import { yCursorPlugin } from 'y-prosemirror'
-
-/** the shell main process registers the collaboration channels on ipcMain */
-const invokeHandlers = new Map<string, (...args: unknown[]) => unknown>()
-const sendListeners = new Map<string, Array<(...args: unknown[]) => void>>()
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: (channel: string, fn: unknown) => {
-      invokeHandlers.set(channel, fn as (...args: unknown[]) => unknown)
-    },
-    on: (channel: string, fn: unknown) => {
-      const list = sendListeners.get(channel) ?? []
-      list.push(fn as (...args: unknown[]) => void)
-      sendListeners.set(channel, list)
-    },
-  },
-}))
 
 import { CollabSession } from '../src/renderer/collab/session'
 import { CollabSyncController } from '../src/renderer/collab/sync-extension'
-import { registerCollabIpc, resetCollabRooms } from '../src/main/collab'
+import { CollabAwareness } from '../src/renderer/collab/awareness'
+import { CollabRooms, type CollabSender } from '../src/main/collab-rooms'
 import { COLLAB_CHANNELS, type CollabBridge, type CollabJoinReply } from '../src/shared/collab'
+
+/**
+ * The collaboration loop with two simulated sessions.
+ *
+ * The sessions talk to the real room registry — only the shell's ipcMain
+ * wiring is left out, because that part is a thin translation of the same
+ * calls.
+ */
 
 const schema = new Schema({
   nodes: {
@@ -45,15 +36,9 @@ const schema = new Schema({
   },
 })
 
-/** one session's link to the shell main process */
+/** one session's link to the rooms */
 class TestPeer {
-  readonly sender: {
-    id: number
-    destroyed: boolean
-    send: (channel: string, ...args: unknown[]) => void
-    once: (event: string, listener: () => void) => void
-    isDestroyed: () => boolean
-  }
+  readonly sender: CollabSender & { destroyed: boolean }
 
   private readonly updateHandlers: Array<(path: string, update: string) => void> = []
   private readonly awarenessHandlers: Array<(path: string, update: string) => void> = []
@@ -62,7 +47,10 @@ class TestPeer {
   > = []
   private onDestroy: (() => void) | null = null
 
-  constructor(readonly id: number) {
+  constructor(
+    readonly id: number,
+    private readonly rooms: CollabRooms,
+  ) {
     this.sender = {
       id,
       destroyed: false,
@@ -94,28 +82,15 @@ class TestPeer {
 
   readonly bridge: CollabBridge = {
     join: (path: string, stateVector: string, clientId: number): Promise<CollabJoinReply> =>
-      Promise.resolve(
-        invokeHandlers.get(COLLAB_CHANNELS.join)?.(
-          { sender: this.sender },
-          path,
-          stateVector,
-          clientId,
-        ) as CollabJoinReply,
-      ),
+      Promise.resolve(this.rooms.join(this.sender, path, stateVector, clientId)),
     update: (path: string, update: string): void => {
-      for (const fn of sendListeners.get(COLLAB_CHANNELS.update) ?? []) {
-        fn({ sender: this.sender }, path, update)
-      }
+      this.rooms.update(this.sender, path, update)
     },
     awareness: (path: string, update: string): void => {
-      for (const fn of sendListeners.get(COLLAB_CHANNELS.awareness) ?? []) {
-        fn({ sender: this.sender }, path, update)
-      }
+      this.rooms.awareness(this.sender, path, update)
     },
     leave: (path: string): void => {
-      for (const fn of sendListeners.get(COLLAB_CHANNELS.leave) ?? []) {
-        fn({ sender: this.sender }, path)
-      }
+      this.rooms.leave(this.sender, path)
     },
     onUpdate: (handler: (path: string, update: string) => void): (() => void) => {
       this.updateHandlers.push(handler)
@@ -157,18 +132,18 @@ interface Rig {
 }
 
 /** two sessions on the same document, each with its own editor */
-function makeRig(): Rig {
-  const peerA = new TestPeer(1)
-  const peerB = new TestPeer(2)
+function makeRig(rooms: CollabRooms): Rig {
+  const peerA = new TestPeer(1, rooms)
+  const peerB = new TestPeer(2, rooms)
   const sessionA = new CollabSession({
     bridge: peerA.bridge,
     user: { name: 'A', color: '#e5484d' },
-    awareness: new Awareness(new Y.Doc()),
+    awareness: new CollabAwareness(),
   })
   const sessionB = new CollabSession({
     bridge: peerB.bridge,
     user: { name: 'B', color: '#30a46c' },
-    awareness: new Awareness(new Y.Doc()),
+    awareness: new CollabAwareness(),
   })
   const host = document.createElement('div')
   document.body.appendChild(host)
@@ -222,15 +197,14 @@ async function joinRoom(rig: Rig): Promise<void> {
 }
 
 describe('document collaboration', () => {
+  let rooms: CollabRooms
+
   beforeEach(() => {
-    invokeHandlers.clear()
-    sendListeners.clear()
-    resetCollabRooms()
-    registerCollabIpc()
+    rooms = new CollabRooms()
   })
 
   it('gives the room to the first member and lets a late member read it', async () => {
-    const rig = makeRig()
+    const rig = makeRig(rooms)
     await rig.sessionA.open(DOC_PATH)
     expect(rig.sessionA.ownsRoom).toBe(true)
     expect(rig.sessionA.hasRoomContent).toBe(false)
@@ -250,7 +224,7 @@ describe('document collaboration', () => {
   })
 
   it('syncs a keystroke to the other session', async () => {
-    const rig = makeRig()
+    const rig = makeRig(rooms)
     await joinRoom(rig)
 
     expect(rig.viewA.state.doc.textContent).toBe('hello')
@@ -265,14 +239,14 @@ describe('document collaboration', () => {
   })
 
   it('keeps the formatting of the shared document', async () => {
-    const rig = makeRig()
+    const rig = makeRig(rooms)
     await joinRoom(rig)
 
     expect(rig.viewB.state.doc.firstChild?.attrs.style).toBe('title')
   })
 
   it('shares the cursor through awareness', async () => {
-    const rig = makeRig()
+    const rig = makeRig(rooms)
     await joinRoom(rig)
 
     // A puts the caret inside the paragraph; the other session learns about it
@@ -282,14 +256,11 @@ describe('document collaboration', () => {
     )
     await settle()
 
-    const remote = [...rig.sessionB.awareness.getStates().values()].find(
-      (state) => (state.user as { name?: string } | undefined)?.name === 'A',
-    )
-    expect(remote).toBeDefined()
+    expect(remoteUser(rig.sessionB)).toBe('A')
   })
 
   it('drops the cursor of a member that left the room', async () => {
-    const rig = makeRig()
+    const rig = makeRig(rooms)
     await joinRoom(rig)
     rig.viewA.dom.focus()
     rig.viewA.dispatch(

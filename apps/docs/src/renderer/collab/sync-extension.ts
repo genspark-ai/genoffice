@@ -3,7 +3,7 @@ import { Plugin } from '@tiptap/pm/state'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import * as Y from 'yjs'
-import { Awareness } from 'y-protocols/awareness'
+import { CollabAwareness } from './awareness'
 import { ProsemirrorBinding, yCursorPlugin, ySyncPluginKey, type YSyncState } from 'y-prosemirror'
 import { COLLAB_FRAGMENT } from '../../shared/collab'
 
@@ -22,7 +22,7 @@ import { COLLAB_FRAGMENT } from '../../shared/collab'
 export class CollabSyncController {
   readonly plugin: Plugin<YSyncState>
   /** the awareness of this editor: one editor, one participant */
-  readonly awareness: Awareness
+  readonly awareness: CollabAwareness
 
   private readonly mapping = new Map<unknown, unknown>()
   /** the cursor plugin reads the mapping through the sync plugin's state */
@@ -38,7 +38,7 @@ export class CollabSyncController {
     // the editor is not bound to it, it only keeps the plugin state valid
     const idleDoc = new Y.Doc()
     const idleFragment = idleDoc.getXmlFragment(COLLAB_FRAGMENT)
-    this.awareness = new Awareness(idleDoc)
+    this.awareness = new CollabAwareness()
     this.plugin = new Plugin<YSyncState>({
       key: ySyncPluginKey,
       props: {

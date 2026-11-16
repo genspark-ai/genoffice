@@ -1,6 +1,5 @@
 import * as Y from 'yjs'
 import {
-  Awareness,
   applyAwarenessUpdate,
   encodeAwarenessUpdate,
   removeAwarenessStates,
@@ -8,6 +7,7 @@ import {
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { prosemirrorToYXmlFragment } from 'y-prosemirror'
 import { COLLAB_FRAGMENT, type CollabBridge, type CollabJoinReply } from '../../shared/collab'
+import { CollabAwareness } from './awareness'
 
 /**
  * One session's end of a collaboration room.
@@ -33,14 +33,6 @@ const REMOTE = 'collab-remote'
 /** how often the session re-publishes its cursor, so peers do not time it out */
 const HEARTBEAT_MS = 10_000
 
-/**
- * The awareness instance outlives the per-document yjs document: y-prosemirror's
- * cursor plugin captures the instance when the editor is created, so it cannot
- * be swapped when the document changes. It rides an anchor document that is
- * never destroyed.
- */
-const AWARENESS_ANCHOR = new Y.Doc()
-
 export interface CollabUser {
   name: string
   color: string
@@ -51,7 +43,7 @@ export interface CollabSessionOptions {
   user: CollabUser
   /** the awareness the editor's cursor plugin watches; a session that is not
    *  bound to an editor (a test, a headless writer) may bring its own */
-  awareness?: Awareness
+  awareness?: CollabAwareness
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -68,7 +60,7 @@ function fromBase64(text: string): Uint8Array {
 }
 
 export class CollabSession {
-  readonly awareness: Awareness
+  readonly awareness: CollabAwareness
 
   private readonly bridge: CollabBridge
   private readonly user: CollabUser
@@ -85,8 +77,7 @@ export class CollabSession {
   constructor(options: CollabSessionOptions) {
     this.bridge = options.bridge
     this.user = options.user
-    this.awareness = options.awareness ?? new Awareness(AWARENESS_ANCHOR)
-    this.awareness.setLocalStateField('user', options.user)
+    this.awareness = options.awareness ?? new CollabAwareness()
     this.awareness.on('update', this.onAwarenessUpdate)
     this.bridge.onUpdate((path, update) => {
       if (path === this.path) this.applyRemote(update)
@@ -132,11 +123,13 @@ export class CollabSession {
     this.doc = new Y.Doc()
     this.fragment = this.doc.getXmlFragment(COLLAB_FRAGMENT)
     this.doc.on('update', this.onDocUpdate)
-    this.awareness.setLocalState({ user: this.user })
+    // the awareness joins the room's document: one participant, one identity
+    const awareness = this.awareness.open(this.doc)
+    awareness.setLocalState({ user: this.user })
     const reply: CollabJoinReply = await this.bridge.join(
       path,
       toBase64(Y.encodeStateVector(this.doc)),
-      this.awareness.clientID,
+      awareness.clientID,
     )
     this.peers = reply.peers
     this.owner = reply.owner
@@ -145,7 +138,7 @@ export class CollabSession {
     this.notifyPeers()
     this.heartbeat = setInterval(() => {
       // the awareness protocol times a peer out when it stops hearing from it
-      this.awareness.setLocalState({ user: this.user })
+      this.awareness.instance?.setLocalState({ user: this.user })
     }, HEARTBEAT_MS)
   }
 
@@ -167,7 +160,7 @@ export class CollabSession {
       // dropped without destroying it so the awareness stays usable
       this.doc = null
     }
-    this.awareness.setLocalState(null)
+    this.awareness.close()
     if (path) this.bridge.leave(path)
   }
 
@@ -210,7 +203,9 @@ export class CollabSession {
     if (!path) return
     const changed = [...changes.added, ...changes.updated, ...changes.removed]
     if (changed.length === 0) return
-    this.bridge.awareness(path, toBase64(encodeAwarenessUpdate(this.awareness, changed)))
+    const awareness = this.awareness.instance
+    if (!awareness) return
+    this.bridge.awareness(path, toBase64(encodeAwarenessUpdate(awareness, changed)))
   }
 
   private onPeers(peers: number, owner: boolean, clientIds: number[]): void {
@@ -227,9 +222,11 @@ export class CollabSession {
   /** drop the cursors of members that are no longer in the room */
   private dropUnknownCursors(clientIds: number[]): void {
     const known = new Set(clientIds)
-    const stale = [...this.awareness.getStates().keys()].filter((id) => !known.has(id))
+    const awareness = this.awareness.instance
+    if (!awareness) return
+    const stale = [...awareness.getStates().keys()].filter((id) => !known.has(id))
     if (stale.length === 0) return
-    removeAwarenessStates(this.awareness, stale, REMOTE)
+    removeAwarenessStates(awareness, stale, REMOTE)
   }
 
   private applyRemote(update: string): void {
@@ -243,8 +240,10 @@ export class CollabSession {
   }
 
   private applyRemoteAwareness(update: string): void {
+    const awareness = this.awareness.instance
+    if (!awareness) return
     try {
-      applyAwarenessUpdate(this.awareness, fromBase64(update), REMOTE)
+      applyAwarenessUpdate(awareness, fromBase64(update), REMOTE)
     } catch {
       /* a malformed awareness payload must not take the session down */
     }
