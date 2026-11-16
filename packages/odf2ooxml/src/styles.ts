@@ -62,7 +62,7 @@ export class OdfStyles {
   private fonts = new Map<string, string>()
   private lists = new Map<string, Map<number, OdfListLevel>>()
   private columnWidths = new Map<string, number>()
-  private cellFills = new Map<string, string>()
+  private cellFills = new Map<string, string | null>()
   private defaults: { text?: OdfTextProps; para?: OdfParaProps } = {}
 
   constructor(contentRoots: XNode[] | null, stylesRoots: XNode[] | null) {
@@ -116,9 +116,12 @@ export class OdfStyles {
       return
     }
     if (family === 'table-cell') {
+      this.defs.set(`${family}:${name}`, { family, parent: attr(node, 'style:parent-style-name') })
       const properties = firstChild(node, 'style:table-cell-properties')
       const fill = properties ? odfColorToHex(attr(properties, 'fo:background-color')) : null
       if (fill) this.cellFills.set(name, fill)
+      else if (properties && attr(properties, 'fo:background-color') === 'transparent')
+        this.cellFills.set(name, null)
       return
     }
     const props = this.readProps(node)
@@ -142,8 +145,13 @@ export class OdfStyles {
 
   /** fill of a table-cell style, hex without '#'; null otherwise */
   cellFill(styleName: string | undefined): string | null {
-    if (!styleName) return null
-    return this.cellFills.get(styleName) ?? null
+    const seen = new Set<string>()
+    while (styleName && !seen.has(styleName)) {
+      seen.add(styleName)
+      if (this.cellFills.has(styleName)) return this.cellFills.get(styleName) ?? null
+      styleName = this.defs.get(`table-cell:${styleName}`)?.parent
+    }
+    return null
   }
 
   private readProps(node: XNode): { text?: OdfTextProps; para?: OdfParaProps } {
