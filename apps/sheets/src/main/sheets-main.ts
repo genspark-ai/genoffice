@@ -20,6 +20,7 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises'
+import { runCopyEmfHelper } from './copy-emf-helper'
 import { refreshCsvDigest } from './csv-digest'
 import { ImportRegistry } from './import-registry'
 import { createServer } from 'node:http'
@@ -75,6 +76,7 @@ import {
   registerRendererScheme,
   rendererUrl,
   writeJsonAtomic,
+  restrictFileToOwner,
   recoveryCopyDiskNewer,
   configuredAuthorName,
   readLegacyImportSkip,
@@ -198,6 +200,7 @@ import {
   saveEditsChunkArraySchema,
   workbookSaveEditsChunkSchema,
   workbookSaveRequestSchema,
+  copyEmfRequestSchema,
   workbookSlicerStateRequestSchema,
   workbookSlicerStateResultSchema,
   type WorkbookCreateDocumentResult,
@@ -3033,6 +3036,25 @@ export async function requestSheetsClose(
 
 let coreIpcRegistered = false
 
+/**
+ * CSV export targets a view's user approved through a save dialog, keyed by
+ * webContents id. exportCsv honors a renderer-supplied targetPath only when
+ * it is in this set — the Save-As CSV hand-off is the one flow where the
+ * renderer carries a path back to a write, and the grant is what keeps that
+ * from being a "renderer names any file, the main process writes it" channel.
+ */
+const csvExportGrantsByWc = new Map<number, Set<string>>()
+
+function grantCsvExportTarget(wcId: number, path: string): void {
+  let grants = csvExportGrantsByWc.get(wcId)
+  if (!grants) {
+    grants = new Set()
+    csvExportGrantsByWc.set(wcId, grants)
+    webContents.fromId(wcId)?.once('destroyed', () => csvExportGrantsByWc.delete(wcId))
+  }
+  grants.add(path)
+}
+
 export function registerSheetsIpc(): void {
   if (coreIpcRegistered) return
   coreIpcRegistered = true
@@ -3930,7 +3952,16 @@ export function registerSheetsIpc(): void {
       if (response === 0) return { canceled: true, saveAsXlsxInstead: true }
       if (response === 2) return { canceled: true }
     }
+    // A renderer-supplied targetPath is honored only when this view's user
+    // picked exactly that path in a save dialog (the Save-As CSV hand-off).
+    // Without the grant check this channel was the suite's one "renderer
+    // names the file, the main process writes it" primitive: any renderer
+    // could overwrite any .csv on disk — or plant one anywhere — with
+    // attacker-chosen content, no dialog, no confirmation.
     let pickedPath = request.targetPath
+    if (pickedPath !== undefined && !csvExportGrantsByWc.get(event.sender.id)?.has(pickedPath)) {
+      pickedPath = undefined
+    }
     if (pickedPath === undefined) {
       const selection = await saveFileDialog(event, {
         defaultPath: request.fileName,
@@ -4026,6 +4057,18 @@ export function registerSheetsIpc(): void {
     return response === 0 ? 'csv' : response === 1 ? 'xlsx' : 'cancel'
   })
 
+  ipcMain.handle(IPC_CHANNELS.appendCopyEmf, (_event, input: unknown) =>
+    appendCopyEmfToClipboard(input),
+  )
+
+  // one cheap lookup per call: the renderer caches the answer and only then
+  // builds the O(cells) copy payload (an unanswered call would walk the
+  // selection and ship a multi-MB matrix for nothing off Windows)
+  ipcMain.handle(IPC_CHANNELS.copyEmfAvailable, () => {
+    const helper = resolveClipboardHelperPath()
+    return !!helper && existsSync(helper)
+  })
+
   ipcMain.handle(IPC_CHANNELS.saveWorkbook, async (event, input: unknown) => {
     const entry = sessionFor(event)
     const client = entry.client
@@ -4093,6 +4136,7 @@ export function registerSheetsIpc(): void {
       // A CSV pick can't ride the xlsx pipeline: hand the path back so the
       // renderer serializes the active sheet through the CSV export channel.
       if (!macroEnabled && selection.filePath.toLowerCase().endsWith('.csv')) {
+        grantCsvExportTarget(event.sender.id, selection.filePath)
         return { canceled: true, csvSaveAsPath: selection.filePath }
       }
       targetPath = selection.filePath.toLowerCase().endsWith(`.${ext}`)
@@ -4457,6 +4501,9 @@ export function registerSheetsAiIpc(): void {
   ipcMain.handle(IPC_CHANNELS.aiGetSettings, (event): AiSettings => {
     sessionFor(event)
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
+    // heal the file mode of a settings file saved by an older build: BYOK keys
+    // are credentials and must not stay readable by other local accounts
+    restrictFileToOwner(SETTINGS_PATH())
     const settings = resolveAiSettings(stored, defaultAiSettings())
     // a stored BYOK provider is honored when usable; half-filled configs fall back to genspark
     settings.provider = activeProvider(settings)
@@ -4485,7 +4532,7 @@ export function registerSheetsAiIpc(): void {
   ipcMain.handle(IPC_CHANNELS.aiSetSettings, async (event, input: unknown) => {
     sessionFor(event)
     const settings = aiSettingsInputSchema.parse(input)
-    writeJsonAtomic(SETTINGS_PATH(), settings)
+    writeJsonAtomic(SETTINGS_PATH(), settings, 0o600)
     for (const wc of webContents.getAllWebContents())
       if (!wc.isDestroyed()) wc.send(IPC_CHANNELS.aiSettingsChanged)
   })
@@ -5430,6 +5477,11 @@ async function promptOdsImport(
 /// .xls, .tsv and the ODF imports (.ods/.ots) open as a converted copy in the temp dir; the session
 /// remembers the original's .xlsx sibling as the Save As default. .csv converts
 /// the same way but keeps its file identity, so Save writes values back to it.
+/** Legacy imports (.xls/.ods/.ots) hand the whole file to the sidecar's
+ *  calamine reader with no zip-gate in between; this file cap is the one
+ *  guard on the app side. Aligned with docs' MAX_OPEN_BYTES. */
+const MAX_LEGACY_IMPORT_BYTES = 512 * 1024 * 1024
+
 async function prepareWorkbookForOpen(
   client: XlsxSidecarClient,
   path: string,
@@ -5543,6 +5595,16 @@ async function prepareWorkbookForOpen(
       emptyCsv = converted.empty
       await writeFile(openPath, converted.buffer)
     } else {
+      // The sidecar's legacy import (calamine, for .xls/.ods/.ots) manages
+      // its own memory on the far side of the stdin protocol, and unlike
+      // .xlsx there is no zip-gate between the file and it — the file cap is
+      // the guard. Aligned with the app's 512 MB docx open cap.
+      const legacyStat = await stat(path)
+      if (legacyStat.size > MAX_LEGACY_IMPORT_BYTES) {
+        throw new Error(
+          `${tm('errTooLarge', { mb: MAX_LEGACY_IMPORT_BYTES / 1024 / 1024 })} (${(legacyStat.size / 1024 / 1024).toFixed(1)} MB)`,
+        )
+      }
       await client.convertWorkbook({ path, targetPath: openPath })
     }
   } catch (error) {
@@ -5771,6 +5833,31 @@ function resolveSidecarPath(): string {
   if (process.env.XLSX_SIDECAR_PATH) return process.env.XLSX_SIDECAR_PATH
   if (app.isPackaged) return join(process.resourcesPath, 'native', executable)
   return join(app.getAppPath(), 'native', 'xlsx-engine', 'target', 'release', executable)
+}
+
+function resolveClipboardHelperPath(): string | null {
+  if (process.platform !== 'win32') return null
+  if (process.env.WIN_CLIPBOARD_HELPER_PATH) return process.env.WIN_CLIPBOARD_HELPER_PATH
+  if (app.isPackaged) return join(process.resourcesPath, 'native', 'win-clipboard-helper.exe')
+  return join(
+    app.getAppPath(),
+    'native',
+    'win-clipboard-helper',
+    'target',
+    'release',
+    'win-clipboard-helper.exe',
+  )
+}
+
+/// Spawns the clipboard helper with the copied range's description. The EMF
+/// it appends is an extra clipboard format beside the text the grid already
+/// wrote, so every failure here — missing helper, busy clipboard, a crash —
+/// degrades to the plain copy instead of surfacing an error.
+async function appendCopyEmfToClipboard(request: unknown): Promise<{ ok: boolean }> {
+  const helper = resolveClipboardHelperPath()
+  if (!helper || !existsSync(helper)) return { ok: false }
+  const payload = JSON.stringify(copyEmfRequestSchema.parse(request))
+  return await runCopyEmfHelper(helper, payload)
 }
 
 async function sha256File(path: string): Promise<string> {

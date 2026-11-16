@@ -3,7 +3,7 @@ import { handlePdfControl, type ControlRequest } from './control'
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 // legacy build: the modern build relies on new APIs like Math.sumPrecise that the current
 // Electron V8 lacks, making embedded font parsing fail and whole pages render as garbled raw char codes
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { AiPanel, GensparkMark } from './ai/AiPanel'
@@ -69,11 +69,6 @@ type Arrange =
   | 'sameSize'
 
 const PASTE_OFFSET_PTS = 12
-/// Printer option that is not a device name (Electron: '' = OS default printer)
-const PRINT_SYSTEM_DIALOG = '\u0000system-dialog'
-// macOS's print sheet already carries copies/duplex, so it stays the default there
-const IS_MAC = navigator.platform.toLowerCase().includes('mac')
-const PRINT_DUPLEX_MODES: PrintDuplex[] = ['simplex', 'longEdge', 'shortEdge']
 /** Auto-detect stops here so a long scanned form cannot flood the document with fields */
 const DETECT_FIELD_CAP = 300
 
@@ -147,17 +142,12 @@ import {
   remapOutlinePages,
   remapOutlineTree,
 } from './heading-outline'
-import { filterPageParity, maySpoolOriginal, printPdf, type PageParity } from './print'
 import { readFileBytes } from './file-bytes'
-import type {
-  PdfEncryptionInput,
-  PdfPermissions,
-  PrintDuplex,
-  PrinterInfo,
-  PrinterOption,
-} from '../shared/ipc'
+import type { PdfEncryptionInput, PdfPermissions } from '../shared/ipc'
 import { mayChangeProtection } from './protection-gate'
 import { MAX_REDACTION_REGIONS } from '../shared/ipc'
+import { usePrintJob } from './usePrintJob'
+import { PrintDialog } from './PrintDialog'
 import { PasswordDialog } from './PasswordDialog'
 import { PropertiesDialog } from './PropertiesDialog'
 import { LinkDialog, type LinkDraft } from './LinkDialog'
@@ -184,19 +174,16 @@ import { REDACT_PATTERNS } from './redact-patterns'
 import type { RedactPattern } from './redact-patterns'
 import type { SearchIndex, SearchMatch } from './search'
 import { mapDocFont, type DocFontStyle } from './doc-font'
-import { groupPageBlocks, reflowOverflows, type TextBlock } from './text-block'
+import { groupPageBlocks, type TextBlock } from './text-block'
 import {
   joinBlockLines,
   mapLineRangeToBlock,
-  measurePt,
   spliceBlockText,
   unifyRadicals,
   wrapText,
 } from './text-wrap'
 import {
-  colorRunsEqual,
   colorSegments,
-  colorsToRuns,
   decodeStyle,
   encodeStyle,
   mapCharColors,
@@ -252,7 +239,6 @@ import {
   SIDEBAR_CHROME,
   clampSidebarW,
   loadSidebarW,
-  DOC_OPTS,
   PAPER_SIZES,
   STROKE_WIDTH,
   NOTE_MARGIN_W,
@@ -276,10 +262,10 @@ import {
   styleSegCss,
   boldCss,
   boldToken,
-  keyRunsToStyleRuns,
   blockRectKey,
   blockMoveInput,
   editCarriesBlock,
+  mergeTextDraft as mergeTextDraftImpl,
   isBlockEditOf,
   patchPendingEdits,
   resolveTextEdit,
@@ -379,6 +365,7 @@ import {
   IconFitPage,
   IconOutline,
   IconComments,
+  IconEye,
   IconDrawColor,
   RbCaret,
   IconSearch,
@@ -1118,7 +1105,6 @@ export default function App() {
   const [searchWholeWord, setSearchWholeWord] = useState(false)
   const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([])
   const [searchCur, setSearchCur] = useState(0)
-  const [printing, setPrinting] = useState(false)
   const [undoStack, setUndoStack] = useState<EditSnapshot[]>([])
   const [redoStack, setRedoStack] = useState<EditSnapshot[]>([])
   /** The file around each change written to it at once (Replace pages, Page size, Crop, Insert
@@ -1149,24 +1135,6 @@ export default function App() {
   const [replaceInvalid, setReplaceInvalid] = useState(false)
   const [pageSizeDlg, setPageSizeDlg] = useState(false)
   const [splitPagesDlg, setSplitPagesDlg] = useState(false)
-  const [printDlg, setPrintDlg] = useState(false)
-  const [printMode, setPrintMode] = useState<'all' | 'current' | 'custom'>('all')
-  const [printInput, setPrintInput] = useState('')
-  const [printInvalid, setPrintInvalid] = useState(false)
-  const [printParity, setPrintParity] = useState<PageParity>('all')
-  const [printers, setPrinters] = useState<PrinterInfo[]>([])
-  const [printDevice, setPrintDevice] = useState(IS_MAC ? PRINT_SYSTEM_DIALOG : '')
-  const [printCopies, setPrintCopies] = useState(1)
-  const [printCollate, setPrintCollate] = useState(true)
-  const [printDuplex, setPrintDuplex] = useState<PrintDuplex>('simplex')
-  // the chosen printer's driver option groups (quality, color, media type) and
-  // what the user picked from them; empty for the system dialog and on
-  // platforms where the CUPS route does not run
-  const [driverOptions, setDriverOptions] = useState<PrinterOption[]>([])
-  // bumped on every printer switch: a slow printerOptions() answer from an
-  // earlier queue must not overwrite the current queue's groups
-  const driverOptionsRequest = useRef(0)
-  const [driverChoices, setDriverChoices] = useState<Record<string, string>>({})
   /** Page-crop dialog: rendered page bitmap + which page it shows */
   const [pageCropDlg, setPageCropDlg] = useState<{ png: string; origIdx: number } | null>(null)
   const [cropAllPages, setCropAllPages] = useState(false)
@@ -1193,6 +1161,9 @@ export default function App() {
   /** Auto-OCR progress: `stop: null` while the pass runs (the toast offers Stop),
       then the reason it ended, for the cap and a user cancel alike. `pending` is
       the queue a capped pass can be continued over. */
+  /** A pass is in flight: the Recognize command must not start a second one
+      over the same controller. */
+  const [ocrRunning, setOcrRunning] = useState(false)
   const [ocrRun, setOcrRun] = useState<{
     done: number
     total: number
@@ -2564,12 +2535,16 @@ export default function App() {
       keeps the toast's Stop working on the resumed pass. A signal torn down in
       between (the document or its page count changed) is already aborted and
       would cancel the pass on its first check, so a fresh one replaces it. */
+  // showNotice is defined further down; the manual-OCR notice goes through the
+  // ref so the pass callback can sit above it
+  const showNoticeRef = useRef<(msg: string) => void>(() => undefined)
   const startOcrPass = useCallback(
-    (pending: number[] | null, doneBefore = 0) => {
+    (pending: number[] | null, doneBefore = 0, manualLimit?: number) => {
       if (!doc) return
       const live = ocrAbortRef.current
       const controller = live && !live.signal.aborted ? live : new AbortController()
       ocrAbortRef.current = controller
+      setOcrRunning(true)
       setOcrRun((prev) => ({
         done: doneBefore,
         total: prev?.total ?? 0,
@@ -2584,6 +2559,7 @@ export default function App() {
             cache: searchIndexCache,
             fromPage: () => currentOrigIdxRef.current,
             ...(pending === null ? {} : { pending }),
+            ...(manualLimit === undefined ? {} : { limit: manualLimit }),
             signal: controller.signal,
             geom: (origIdx) => pageGeomRef.current(origIdx),
             render: renderPageForOcr,
@@ -2596,8 +2572,14 @@ export default function App() {
           // the document is gone or unreadable: nothing left to recognize
         }
         if (ocrAbortRef.current !== controller) return // a newer pass took over
+        // A manual trigger over a document with nothing left to recognize says so;
+        // the state still unwinds below, or the disabled button and the toast
+        // would stick until the document reloads
+        if (manualLimit !== undefined && result && result.total === 0)
+          showNoticeRef.current(t('ocrNothing'))
         // A finished pass and a platform without an OCR engine are not worth a
         // toast; a cap or a user cancel is, and it says how far the pass got
+        setOcrRunning(false)
         setOcrRun(
           result && (result.stop === 'cap' || result.stop === 'cancelled')
             ? {
@@ -3085,7 +3067,14 @@ export default function App() {
     block: TextBlock,
     blockText: string,
     edits: LocalTextEdit[] = textEdits,
-  ): { value: string; editId: string; foldedIds: string[]; charStyles?: string[] } | null => {
+  ): {
+    value: string
+    editId: string
+    foldedIds: string[]
+    charStyles?: string[]
+    reveal?: true
+    invisible?: true
+  } | null => {
     const inside = edits.filter((e) => {
       if (e.input.pageIndex !== origIdx) return false
       const r = e.input.rect
@@ -3136,6 +3125,10 @@ export default function App() {
       editId: inside[0]!.id,
       foldedIds: inside.slice(1).map((e) => e.id),
       charStyles: styles?.some((k) => k) ? styles : undefined,
+      // The eye state of the folded edits: a revealed line edit keeps the eye on
+      // in the paragraph editor (and rides the commit), a bake-layer edit offers it
+      reveal: inside.some((e) => e.input.reveal) || undefined,
+      invisible: inside.some((e) => e.invisible) || undefined,
     }
   }
 
@@ -3245,6 +3238,11 @@ export default function App() {
       font: te.input.newFont,
       bold: te.input.newBold ? true : undefined,
       italic: te.input.newItalic ? true : undefined,
+      // A committed reveal rides the pending edit: the matched run still draws
+      // nothing until save, so the eye stays offered and stays on — reopening,
+      // fixing a typo and committing must not let the text go invisible again
+      reveal: te.input.reveal ? true : undefined,
+      invisible: te.invisible ?? (te.input.reveal ? true : undefined),
       editId: te.id,
       cover: te.cover,
       seedInk: te.baseInk,
@@ -3299,6 +3297,13 @@ export default function App() {
       foldedIds: fold && fold.foldedIds.length > 0 ? fold.foldedIds : undefined,
       foldBase: fold?.value,
       foldStyles: fold?.charStyles,
+      // The folded edits' eye state rides in: a revealed line keeps the paragraph
+      // editor's eye on (and rides the commit past a text edit), and an edit on
+      // the bake layer keeps offering the eye. foldReveal pins what the fold
+      // seeded so an untouched commit still keeps the folded edits.
+      reveal: fold?.reveal,
+      foldReveal: fold?.reveal,
+      invisible: fold?.invisible,
       block: {
         leftPt: block.rect[0],
         firstBaseline: block.lines[0]!.y,
@@ -3336,6 +3341,9 @@ export default function App() {
             if (!d || d.origIdx !== origIdx || d.rect !== rect) return d
             let next = d
             if (v.bounds) next = { ...next, cover: v.bounds }
+            // Same as the line probe: the matched run draws nothing (the OCR bake
+            // layer's invisible form), so the eye toggle follows the data here too
+            if (v.invisible) next = { ...next, invisible: true }
             next = seedDraftColors(next, v)
             return next
           })
@@ -3547,6 +3555,10 @@ export default function App() {
             if (!d || d.editId || d.origIdx !== origIdx || d.rect !== rect) return d
             let next = d
             if (v.bounds) next = { ...next, cover: v.bounds }
+            // The run draws nothing (the OCR bake layer): the reveal toggle
+            // follows the data, so a scan that was recognized, saved and
+            // reopened still offers it.
+            if (v.invisible) next = { ...next, invisible: true }
             next = seedDraftColors(next, v)
             return next
           })
@@ -3624,189 +3636,13 @@ export default function App() {
 
   /** Fold a floating-editor draft into the pending-edit list; null = nothing changed,
       'overflow' = a block reflow would spill onto occupied space below (not merged —
-      the caller notifies and keeps the draft) */
+      the caller notifies and keeps the draft). The merged logic lives in
+      text-edit-preview; pageBlocks carries the neighbors the overflow guard measures
+      against and newId mints pending-edit ids. */
   const mergeTextDraft = (
     edits: LocalTextEdit[],
     d: TextDraft,
-  ): LocalTextEdit[] | null | 'overflow' => {
-    const existing = d.editId ? edits.find((e) => e.id === d.editId) : undefined
-    // Block drafts commit their reflowed form: greedy-wrap each paragraph to the
-    // block width in the same face/size the editor previews with, and anchor the
-    // rebuilt lines at the block corner with the block's original leading
-    let newText = d.value
-    let origin: [number, number] | undefined
-    let lineLeading: number | undefined
-    let lineXOffsets: number[] | undefined
-    let overflowed = false
-    // An emptied box commits as a deletion: newText '' tells the save to remove the
-    // matched run instead of rebuilding it (Escape still discards the draft)
-    if (d.value.trim() === '') newText = ''
-    if (d.block && d.value.trim() !== '') {
-      const size = d.size ?? d.fontSize
-      // Measure the reflow in the document's look-alike face when the user
-      // didn't pick one — it tracks the save-time advances better than the app font
-      const seedF = d.font ? undefined : d.seedFont
-      const css =
-        (d.font ? EDIT_FONT_BY_ID.get(d.font)?.css : undefined) ??
-        seedF?.css ??
-        getComputedStyle(document.body).fontFamily
-      const cssStyle = `${d.italic || seedF?.italic ? 'italic ' : ''}${boldToken(
-        d.bold,
-        !!d.font,
-        seedF?.weight,
-      )}`.trim()
-      lineLeading = d.block.lineHeight * (size / d.fontSize)
-      const wrapped = d.value
-        .split('\n')
-        .flatMap((p) => (p.trim() ? wrapText(p, d.block!.widthPt, size, css, cssStyle) : []))
-      // Checked only after the no-op early returns below: a re-wrap in the
-      // fallback face can grow a tight block even when nothing was edited,
-      // and an untouched dismiss must never be refused
-      overflowed = reflowOverflows(
-        d.block,
-        wrapped.length,
-        lineLeading,
-        size,
-        pageBlocks.get(d.origIdx),
-        d.rect,
-      )
-      newText = wrapped.join('\n')
-      origin = [d.block.leftPt, d.block.firstBaseline]
-      if (d.block.align !== 'left') {
-        lineXOffsets = wrapped.map((l) => {
-          const slack = d.block!.widthPt - measurePt(l, size, css, cssStyle)
-          return Math.max(0, d.block!.align === 'center' ? slack / 2 : slack)
-        })
-      }
-    }
-    // Selection-level styles: draft-space per-char keys carried onto the committed
-    // newText (wrapping only rearranges whitespace, so non-ws chars align in order)
-    const draftStyles = d.charStyles?.some((c) => c) ? d.charStyles : undefined
-    const keyRuns = draftStyles
-      ? colorsToRuns(
-          newText === d.value ? draftStyles : mapCharColors(d.value, draftStyles, newText),
-        )
-      : []
-    const styleRuns = keyRuns.length ? keyRunsToStyleRuns(keyRuns) : undefined
-    const prevValue = existing ? existing.input.newText : d.oldText
-    const cmpValue = existing && d.block ? newText : d.value
-    const prevSize = existing?.input.newFontSize
-    const prevColor = existing?.input.newColor && rgb255ToHex(existing.input.newColor)
-    const prevFont = existing?.input.newFont
-    const prevBold = existing?.input.newBold ? true : undefined
-    const prevItalic = existing?.input.newItalic ? true : undefined
-    // Baseline for "did the styles change": the pending edit's committed runs
-    // (newText offsets, same space as keyRuns), or — for a fresh draft — the
-    // document's own colors the probe seeded (oldText offsets: compare in draft
-    // space, the wrap may shift words and move newText offsets without any
-    // style changing). Seeded colors alone are not a change — they only ride
-    // along so a rebuild repaints them.
-    const prevRuns = existing
-      ? styleRunsToKeyRuns(existing.input.styleRuns ?? existing.input.colorRuns ?? [])
-      : (d.seedStyleRuns ?? [])
-    const cmpRuns = existing ? keyRuns : draftStyles ? colorsToRuns(draftStyles) : []
-    // Folded paragraph draft committed untouched: keep the folded line edits as
-    // they are instead of converting them into a whole-paragraph rebuild (the
-    // fold-seeded styles of those edits are not a change either)
-    if (
-      d.foldBase !== undefined &&
-      d.value === d.foldBase &&
-      d.size === undefined &&
-      d.color === undefined &&
-      d.font === undefined &&
-      d.bold === undefined &&
-      d.italic === undefined &&
-      colorRunsEqual(
-        draftStyles ? colorsToRuns(draftStyles) : [],
-        d.foldStyles ? colorsToRuns(d.foldStyles) : [],
-      )
-    )
-      return null
-    if (
-      cmpValue === prevValue &&
-      d.size === prevSize &&
-      d.color === prevColor &&
-      d.font === prevFont &&
-      d.bold === prevBold &&
-      d.italic === prevItalic &&
-      colorRunsEqual(cmpRuns, prevRuns)
-    )
-      return null
-    const dropFolded = (list: LocalTextEdit[]) =>
-      d.foldedIds && d.foldedIds.length > 0
-        ? list.filter((e) => !d.foldedIds!.includes(e.id))
-        : list
-    // A pure move reopened and closed untouched must stay a pure move: its stored
-    // newText keeps the document's own line breaks (which a DOM re-wrap would not
-    // reproduce), and "unchanged text" must not read as "revert" below — that
-    // would silently delete the pending move
-    if (
-      existing?.input.translate &&
-      d.value === d.oldText &&
-      d.size === undefined &&
-      d.color === undefined &&
-      d.font === undefined &&
-      d.bold === undefined &&
-      d.italic === undefined &&
-      keyRuns.length === 0
-    )
-      return null
-    if (
-      d.value === d.oldText &&
-      d.size === undefined &&
-      d.color === undefined &&
-      d.font === undefined &&
-      d.bold === undefined &&
-      d.italic === undefined &&
-      keyRuns.length === 0
-    ) {
-      // Reverted back to the original — the pending edit(s) are moot
-      return dropFolded(edits.filter((e) => e.id !== d.editId))
-    }
-    if (overflowed) return 'overflow'
-    const input: TextEditInput = {
-      pageIndex: d.origIdx,
-      rect: d.rect,
-      oldText: d.oldText,
-      newText,
-      fontSize: d.fontSize,
-      newFontSize: d.size,
-      newColor: d.color === undefined ? undefined : hexTo255(d.color),
-      styleRuns,
-      newFont: d.font,
-      newBold: d.bold,
-      newItalic: d.italic,
-      origin,
-      lineLeading,
-      lineXOffsets,
-      align: d.block && d.block.align !== 'left' ? d.block.align : undefined,
-      blockSource: d.block ? d.value : undefined,
-    }
-    return d.editId
-      ? dropFolded(edits).map((e) =>
-          e.id === d.editId
-            ? {
-                ...e,
-                input,
-                cover: d.cover ?? e.cover,
-                baseInk: d.seedInk ?? e.baseInk,
-                baseFont: d.seedFont ?? e.baseFont,
-                paper: d.paper ?? e.paper,
-              }
-            : e,
-        )
-      : [
-          ...edits,
-          {
-            id: newId(),
-            input,
-            cover: d.cover,
-            baseInk: d.seedInk,
-            baseFont: d.seedFont,
-            paper: d.paper,
-          },
-        ]
-  }
+  ): LocalTextEdit[] | null | 'overflow' => mergeTextDraftImpl(edits, d, { pageBlocks, newId })
 
   /** Background dry-run of a just-committed edit against the file. A span that doesn't
       line up with the underlying text objects would otherwise surface only at save time;
@@ -4584,6 +4420,7 @@ export default function App() {
     setNotice(msg)
     noticeTimerRef.current = window.setTimeout(() => setNotice(null), 8000)
   }
+  showNoticeRef.current = showNotice
 
   useEffect(() => {
     if (!formHasXfa || !filePath || warnedXfaPathRef.current === filePath) return
@@ -6856,92 +6693,14 @@ export default function App() {
     void cropPagesOnDisk(pages, crop)
   }
 
-  // currentPage only tracks scroll, so it can outlive a page deletion
-  const printCurrentPage = Math.max(1, Math.min(currentPage, pageCount))
-  const openPrintDlg = () => {
-    setPrintMode('all')
-    setPrintInput(String(printCurrentPage))
-    setPrintInvalid(false)
-    setPrintParity('all')
-    setPrintDlg(true)
-    window.pdfApi
-      .listPrinters()
-      .then(setPrinters)
-      .catch(() => undefined)
-  }
-
-  /** Print: save first (markups/forms/page ops all into the file), then reload from the file to render, avoiding a destroyed old doc */
-  // Synchronous re-entry guard: the menu accelerator and the renderer's own ⌘P can both
-  // fire, and the `printing` state only updates after the async flush has started
-  const printBusyRef = useRef(false)
-  // `pages` are 1-based file pages; the flush compacts the file to the visible
-  // order first, so visible page v prints as file page v.
-  const printDoc = async (pages?: number[]) => {
-    if (printBusyRef.current) return
-    printBusyRef.current = true
-    const job =
-      printDevice === PRINT_SYSTEM_DIALOG
-        ? undefined
-        : {
-            deviceName: printDevice,
-            copies: printCopies,
-            collate: printCollate,
-            duplex: printDuplex,
-            driverOptions: driverOptions
-              .filter(
-                (g) =>
-                  driverChoices[g.name] !== undefined && driverChoices[g.name] !== g.defaultValue,
-              )
-              .map((g) => ({ name: g.name, value: driverChoices[g.name]! })),
-          }
-    try {
-      await flushThen(async () => {
-        setPrinting(true)
-        try {
-          if (job && IS_MAC && maySpoolOriginal(diskPasswordRef.current)) {
-            // macOS named printer: lp spools the flushed file itself — the
-            // vector original reaches the driver untouched, instead of a
-            // 150-200 DPI raster pass (genoffice#2347's route, quality half).
-            // An encrypted file stays encrypted on disk, which CUPS' pdftopdf
-            // cannot open, so those fall through to the raster path below.
-            const r = await window.pdfApi.printFile({ ...job, pages, path: filePath })
-            if (!r.ok && r.error) opFailed(r.error)
-            return
-          }
-          const data = await readFileBytes(window.pdfApi, filePath)
-          const pdoc = await getDocument({ data, ...DOC_OPTS }).promise
-          try {
-            await printPdf(pdoc, pages, job)
-          } finally {
-            void pdoc.loadingTask.destroy()
-          }
-        } catch (err) {
-          opFailed(err instanceof Error ? err.message : String(err))
-        } finally {
-          setPrinting(false)
-        }
-      })
-    } finally {
-      printBusyRef.current = false
-    }
-  }
-
-  /** Print dialog confirm: visible page numbers → 1-based file pages */
-  const confirmPrint = () => {
-    const pages =
-      printMode === 'all'
-        ? Array.from({ length: pageCount }, (_x, i) => i + 1)
-        : printMode === 'current'
-          ? [printCurrentPage]
-          : parsePageRanges(printInput, pageCount)
-    const subset = pages ? filterPageParity(pages, printParity) : []
-    if (subset.length === 0) {
-      setPrintInvalid(true)
-      return
-    }
-    setPrintDlg(false)
-    void printDoc(printMode === 'all' && printParity === 'all' ? undefined : subset)
-  }
+  const print = usePrintJob({
+    filePath,
+    pageCount,
+    currentPage,
+    flushThen,
+    opFailed,
+    diskPasswordRef,
+  })
 
   /** Capability surface for AI tools; rebuilt each render (AiPanel mirrors it via refs to get the latest) */
   /** One context line about edits queued but unsaved — the model cannot see them in the file */
@@ -7584,7 +7343,7 @@ export default function App() {
 
   // Shell menu Print → same dialog as the ribbon button / ⌘P
   useEffect(() => {
-    return window.pdfApi.onPrintRequest(openPrintDlg)
+    return window.pdfApi.onPrintRequest(print.openPrintDlg)
   })
 
   // Shortcuts: ⌘S/⌘F/⌘P/⌘±/⌘0 + page navigation (only ⌘ combos kept while an input control is focused)
@@ -7638,7 +7397,7 @@ export default function App() {
           openSearch()
         } else if (k === 'p' && !e.shiftKey) {
           e.preventDefault()
-          openPrintDlg()
+          print.openPrintDlg()
         } else if (e.key === '=' || e.key === '+') {
           e.preventDefault()
           zoomIn()
@@ -8478,13 +8237,13 @@ export default function App() {
                   <button
                     className="rb-big"
                     data-tip={`${t('print')} (${platformShortcuts('⌘P')})`}
-                    disabled={printing}
-                    onClick={openPrintDlg}
+                    disabled={print.printing}
+                    onClick={print.openPrintDlg}
                   >
                     <span className="rb-big-icon">
                       <IconPrint />
                     </span>
-                    <span>{printing ? t('printPreparing') : t('print')}</span>
+                    <span>{print.printing ? t('printPreparing') : t('print')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -9268,6 +9027,22 @@ export default function App() {
           {ribbonTab === 'view' && (
             <>
               {viewNavGroup}
+              <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className="rb-big"
+                    disabled={status !== 'ready' || ocrRunning}
+                    data-tip={t('ocrRecognizeTip')}
+                    onClick={() => startOcrPass(null, 0, Number.POSITIVE_INFINITY)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconEye />
+                    </span>
+                    <span>{t('ocrRecognize')}</span>
+                  </button>
+                </div>
+              </div>
               <div className="ribbon-sep" />
               {pageZoomGroup}
             </>
@@ -10404,6 +10179,29 @@ export default function App() {
                                               />
                                             )}
                                           </span>
+                                          {(textDraft.invisible ||
+                                            ocrPages.has(textDraft.origIdx)) && (
+                                            <button
+                                              className={`pdf-textedit-toggle${
+                                                textDraft.reveal ? ' active' : ''
+                                              }`}
+                                              data-tip={t('texteditReveal')}
+                                              aria-label={t('texteditReveal')}
+                                              aria-pressed={!!textDraft.reveal}
+                                              onClick={() =>
+                                                applyDraftStyle(
+                                                  () => ({}),
+                                                  (d) => ({
+                                                    ...d,
+                                                    reveal: d.reveal ? undefined : true,
+                                                  }),
+                                                  true,
+                                                )
+                                              }
+                                            >
+                                              <IconEye />
+                                            </button>
+                                          )}
                                           <button
                                             className="pdf-textedit-toggle pdf-textedit-trash"
                                             data-tip={t('texteditDeleteRun')}
@@ -11739,188 +11537,7 @@ export default function App() {
                 </div>
               </div>
             )}
-            {printDlg && (
-              <div className="pdf-modal-mask" onClick={() => setPrintDlg(false)}>
-                <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
-                  <div className="pdf-modal-title">{t('print')}</div>
-                  <label className="pdf-modal-row pdf-print-field">
-                    <span>{t('printPrinter')}</span>
-                    <select
-                      className="pdf-modal-input"
-                      value={printDevice}
-                      onChange={(e) => {
-                        const request = ++driverOptionsRequest.current
-                        setPrintDevice(e.target.value)
-                        setDriverChoices({})
-                        setDriverOptions([])
-                        if (e.target.value && IS_MAC)
-                          void window.pdfApi
-                            .printerOptions(e.target.value)
-                            .then((options) => {
-                              if (request === driverOptionsRequest.current)
-                                setDriverOptions(options)
-                            })
-                            .catch(() => {
-                              if (request === driverOptionsRequest.current) setDriverOptions([])
-                            })
-                      }}
-                    >
-                      <option value="">{t('printDefaultPrinter')}</option>
-                      {printers.map((p) => (
-                        <option key={p.name} value={p.name}>
-                          {p.displayName}
-                        </option>
-                      ))}
-                      <option value={PRINT_SYSTEM_DIALOG}>{t('printSystemDialog')}</option>
-                    </select>
-                  </label>
-                  <div className="pdf-modal-row pdf-print-field">
-                    <label className="pdf-print-copies">
-                      <span>{t('printCopies')}</span>
-                      <input
-                        className="pdf-modal-input"
-                        type="number"
-                        min={1}
-                        max={999}
-                        value={printCopies}
-                        disabled={printDevice === PRINT_SYSTEM_DIALOG}
-                        onChange={(e) =>
-                          setPrintCopies(
-                            Math.min(999, Math.max(1, Math.round(Number(e.target.value)) || 1)),
-                          )
-                        }
-                      />
-                    </label>
-                    <label className="pdf-modal-check">
-                      <input
-                        type="checkbox"
-                        checked={printCollate}
-                        disabled={printDevice === PRINT_SYSTEM_DIALOG || printCopies < 2}
-                        onChange={(e) => setPrintCollate(e.target.checked)}
-                      />
-                      {t('printCollate')}
-                    </label>
-                  </div>
-                  <label className="pdf-modal-row pdf-print-field">
-                    <span>{t('printDuplex')}</span>
-                    <select
-                      className="pdf-modal-input"
-                      value={printDuplex}
-                      disabled={printDevice === PRINT_SYSTEM_DIALOG}
-                      onChange={(e) => setPrintDuplex(e.target.value as PrintDuplex)}
-                    >
-                      {PRINT_DUPLEX_MODES.map((m) => (
-                        <option key={m} value={m}>
-                          {t(
-                            m === 'simplex'
-                              ? 'printDuplexOff'
-                              : m === 'longEdge'
-                                ? 'printDuplexLong'
-                                : 'printDuplexShort',
-                          )}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {driverOptions.map((group) => (
-                    <label key={group.name} className="pdf-modal-row pdf-print-field">
-                      <span>{group.translation}</span>
-                      <select
-                        className="pdf-modal-input"
-                        value={driverChoices[group.name] ?? group.defaultValue ?? group.values[0]}
-                        onChange={(e) =>
-                          setDriverChoices((c) => ({ ...c, [group.name]: e.target.value }))
-                        }
-                      >
-                        {group.values.map((v) => (
-                          <option key={v} value={v}>
-                            {v}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ))}
-                  <div className="pdf-print-divider" />
-                  <label className="pdf-modal-row">
-                    <input
-                      type="radio"
-                      name="print-range"
-                      checked={printMode === 'all'}
-                      onChange={() => {
-                        setPrintMode('all')
-                        setPrintInvalid(false)
-                      }}
-                    />
-                    <span>{t('printRangeAll')}</span>
-                  </label>
-                  <label className="pdf-modal-row">
-                    <input
-                      type="radio"
-                      name="print-range"
-                      checked={printMode === 'current'}
-                      onChange={() => {
-                        setPrintMode('current')
-                        setPrintInvalid(false)
-                      }}
-                    />
-                    <span>
-                      {t('printRangeCurrent')} ({printCurrentPage})
-                    </span>
-                  </label>
-                  <label className="pdf-modal-row">
-                    <input
-                      type="radio"
-                      name="print-range"
-                      checked={printMode === 'custom'}
-                      onChange={() => setPrintMode('custom')}
-                    />
-                    <span>{t('printRangeCustom')}</span>
-                  </label>
-                  {printMode === 'custom' && (
-                    <input
-                      className={`pdf-modal-input${printInvalid ? ' invalid' : ''}`}
-                      value={printInput}
-                      placeholder={t('printRangeHint')}
-                      autoFocus
-                      onChange={(e) => {
-                        setPrintInput(e.target.value)
-                        setPrintInvalid(false)
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') confirmPrint()
-                        else if (e.key === 'Escape') setPrintDlg(false)
-                      }}
-                    />
-                  )}
-                  <label className="pdf-modal-row pdf-print-field">
-                    <span>{t('printSubset')}</span>
-                    <select
-                      className="pdf-modal-input"
-                      value={printParity}
-                      onChange={(e) => {
-                        setPrintParity(e.target.value as PageParity)
-                        setPrintInvalid(false)
-                      }}
-                    >
-                      <option value="all">{t('printSubsetAll')}</option>
-                      <option value="odd">{t('printSubsetOdd')}</option>
-                      <option value="even">{t('printSubsetEven')}</option>
-                    </select>
-                  </label>
-                  {printInvalid && printMode !== 'custom' && (
-                    <div className="pdf-modal-hint pdf-print-empty">{t('printSubsetEmpty')}</div>
-                  )}
-                  <div className="pdf-modal-actions">
-                    <button className="pdf-modal-btn" onClick={() => setPrintDlg(false)}>
-                      {t('cancel')}
-                    </button>
-                    <button className="pdf-modal-btn primary" onClick={confirmPrint}>
-                      {t('print')}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+            <PrintDialog print={print} printCurrentPage={print.printCurrentPage} />
             {mergePagesDlg && (
               <div className="pdf-modal-mask" onClick={() => setMergePagesDlg(false)}>
                 <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>

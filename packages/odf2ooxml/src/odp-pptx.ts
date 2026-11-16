@@ -167,12 +167,18 @@ function collectParagraphs(
       out.push(toParagraph(node, ctx, listDepth))
     } else if (name === 'text:h') {
       out.push(toParagraph(node, ctx, listDepth))
+    } else if (name === 'text:section') {
+      if (attr(node, 'text:display') !== 'none') collectParagraphs(node, ctx, out, listDepth)
     } else if (name === 'text:list') {
       collectParagraphs(node, ctx, out, listDepth + 1)
+    } else if (name === 'text:list-header') {
+      collectParagraphs(node, ctx, out, 0)
     } else if (name === 'text:list-item') {
+      let firstParagraph = true
       for (const inner of childElements(node)) {
         if (inner.name === 'text:p' || inner.name === 'text:h') {
-          out.push(toParagraph(inner.node, ctx, listDepth))
+          out.push(toParagraph(inner.node, ctx, listDepth, !firstParagraph))
+          firstParagraph = false
         } else if (inner.name === 'text:list') {
           collectParagraphs(inner.node, ctx, out, listDepth + 1)
         }
@@ -181,7 +187,12 @@ function collectParagraphs(
   }
 }
 
-function toParagraph(node: XNode, ctx: WalkContext, listDepth: number): Paragraph {
+function toParagraph(
+  node: XNode,
+  ctx: WalkContext,
+  listDepth: number,
+  continuation = false,
+): Paragraph {
   const imagesBefore = ctx.images.length
   const runs = runsFromParagraph(node, ctx)
   // a picture anchored inside a run flow has no textbox representation
@@ -194,12 +205,14 @@ function toParagraph(node: XNode, ctx: WalkContext, listDepth: number): Paragrap
   if (props?.align) paragraph.align = props.align
   if (props?.spaceBeforeTw !== undefined) paragraph.spaceBefore = props.spaceBeforeTw / 20
   if (props?.spaceAfterTw !== undefined) paragraph.spaceAfter = props.spaceAfterTw / 20
+  if (props?.lineSpacing !== undefined) paragraph.lineHeight = props.lineSpacing * 100
+  if (props?.lineExactTw !== undefined) paragraph.lineExact = props.lineExactTw / 20
   if (listDepth > 0) {
     // a flat bullet per level: ODF's per-level markers live in list styles
     // whose full OOXML bullet model is out of the first cut's scope
-    paragraph.bullet = { type: 'char', char: '•' }
+    paragraph.bullet = continuation ? { type: 'none' } : { type: 'char', char: '•' }
     paragraph.marL = 457_200 * listDepth
-    paragraph.indent = -457_200
+    paragraph.indent = continuation ? 0 : -457_200
   }
   return paragraph
 }
@@ -230,10 +243,10 @@ function frameBox(
     const fallback = DEFAULT_FRAME_BOX[attr(frame, 'presentation:class') ?? '']
     if (!fallback) return null
     return {
-      x: Math.round(fallback.x * deck.widthEmu),
-      y: Math.round(fallback.y * deck.heightEmu),
-      cx: Math.round(fallback.w * deck.widthEmu),
-      cy: Math.round(fallback.h * deck.heightEmu),
+      x: x ?? Math.round(fallback.x * deck.widthEmu),
+      y: y ?? Math.round(fallback.y * deck.heightEmu),
+      cx: width === null ? Math.round(fallback.w * deck.widthEmu) : Math.max(1, width),
+      cy: height === null ? Math.round(fallback.h * deck.heightEmu) : Math.max(1, height),
     }
   }
   return { x, y, cx: Math.max(1, width), cy: Math.max(1, height) }

@@ -146,6 +146,11 @@ is there (that is what the release pipeline builds). On a Windows host the plain
 long as the host architecture matches the packaged one (`GENOFFICE_WIN_ARM64=1`
 still needs a cross build for `aarch64-pc-windows-msvc`).
 
+The Windows clipboard helper (`native/win-clipboard-helper`, genoffice#1985)
+follows the same layout rule and is built by the same `native:build`/`native:test`
+scripts; it is a Windows-only one-shot binary, so other platforms bundle nothing
+for it and the sheets resolver silently skips the EMF format when it is absent.
+
 ## Environment variables
 
 None are required — the apps run with all of these unset. They exist for

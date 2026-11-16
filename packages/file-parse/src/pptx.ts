@@ -54,7 +54,25 @@ function slideNumber(path: string): number {
 }
 
 async function presentationSlideEntries(zip: JSZip): Promise<(string | null)[] | null> {
-  const presXml = await zipText(zip, 'ppt/presentation.xml')
+  let presentationPath = 'ppt/presentation.xml'
+  const packageRels = await zipText(zip, '_rels/.rels')
+  if (packageRels) {
+    const root = manifestParser.parse(packageRels)
+    for (const rel of asArray(root.Relationships?.Relationship) as Record<string, string>[]) {
+      if (
+        !String(rel['@_Type'] ?? '').endsWith('/officeDocument') ||
+        String(rel['@_TargetMode'] ?? '').toLowerCase() === 'external'
+      )
+        continue
+      const target = String(rel['@_Target'] ?? '')
+      const resolved = target ? resolveTarget('', target) : ''
+      if (resolved) {
+        presentationPath = resolved
+        break
+      }
+    }
+  }
+  const presXml = await zipText(zip, presentationPath)
   if (presXml === undefined) return null
   const pres = manifestParser.parse(presXml) as {
     presentation?: {
@@ -64,7 +82,7 @@ async function presentationSlideEntries(zip: JSZip): Promise<(string | null)[] |
   const slideIds = asArray(pres.presentation?.sldIdLst?.sldId)
 
   const rels = new Map<string, { target: string; type: string; external: boolean }>()
-  const relsXml = await zipText(zip, 'ppt/_rels/presentation.xml.rels')
+  const relsXml = await zipText(zip, presentationPath.replace(/([^/]+)$/, '_rels/$1.rels'))
   if (relsXml) {
     const doc = manifestParser.parse(relsXml) as {
       Relationships?: { Relationship?: Record<string, string> | Record<string, string>[] }
@@ -85,7 +103,7 @@ async function presentationSlideEntries(zip: JSZip): Promise<(string | null)[] |
     const rel = rels.get(relationshipId(sldId))
     entries.push(
       rel && !rel.external && rel.target && rel.type.endsWith('/slide')
-        ? resolveTarget('ppt/presentation.xml', rel.target)
+        ? resolveTarget(presentationPath, rel.target)
         : null,
     )
   }
@@ -107,15 +125,19 @@ const NOTES_SLIDE_REL =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide'
 
 async function notesXmlForSlide(zip: JSZip, slidePath: string): Promise<string | undefined> {
-  const slash = slidePath.lastIndexOf('/')
-  const relsPath = `${slidePath.slice(0, slash)}/_rels/${slidePath.slice(slash + 1)}.rels`
+  const relsPath = slidePath.replace(/([^/]+)$/, '_rels/$1.rels')
   const relsXml = await zipText(zip, relsPath)
   if (!relsXml) return undefined
   const doc = manifestParser.parse(relsXml) as {
     Relationships?: { Relationship?: Record<string, string> | Record<string, string>[] }
   }
   for (const rel of asArray(doc.Relationships?.Relationship)) {
-    if (String(rel['@_Type'] ?? '') !== NOTES_SLIDE_REL) continue
+    const type = String(rel['@_Type'] ?? '')
+    if (
+      type !== NOTES_SLIDE_REL &&
+      type !== 'http://purl.oclc.org/ooxml/officeDocument/relationships/notesSlide'
+    )
+      continue
     if (String(rel['@_TargetMode'] ?? '').toLowerCase() === 'external') continue
     const target = String(rel['@_Target'] ?? '')
     return target ? zipText(zip, resolveTarget(slidePath, target)) : undefined

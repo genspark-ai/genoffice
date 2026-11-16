@@ -79,6 +79,24 @@ describe('convertOdtToDocx', () => {
     expect(rels).toContain('https://example.com/doc')
   })
 
+  it('carries character spacing and width from a text style into the run', async () => {
+    const body =
+      '<text:p>plain <text:span text:style-name="Twide">wide</text:span> ' +
+      '<text:span text:style-name="Ttight">tight</text:span> tail</text:p>'
+    const named =
+      '<style:style style:name="Twide" style:family="text"><style:text-properties fo:letter-spacing="0.05cm" style:text-scale="150%"/></style:style>' +
+      '<style:style style:name="Ttight" style:family="text"><style:text-properties fo:letter-spacing="-0.02cm"/></style:style>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body), stylesXml(named)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    // ODF spells them fo:letter-spacing and style:text-scale; docx spells the
+    // same two as w:spacing (twips, signed) and w:w (percent)
+    expect(document).toContain('<w:spacing w:val="28"/>') // 0.05cm = 18000 EMU
+    expect(document).toContain('<w:spacing w:val="-11"/>') // -0.02cm = -7200 EMU
+    expect(document).toContain('<w:w w:val="150"/>')
+    expect(document).toContain('wide')
+    expect(document).toContain('tight')
+  })
+
   it('resolves the parent style chain and character properties from styles.xml', async () => {
     const body = '<text:p text:style-name="P1">styled</text:p>'
     const named =
@@ -123,6 +141,38 @@ describe('convertOdtToDocx', () => {
     expect(lines.every((value) => /^\d+$/.test(value))).toBe(true)
   })
 
+  it('fills a paragraph that asks for a background', async () => {
+    const body =
+      '<text:p text:style-name="Pfill">highlighted</text:p>' +
+      '<text:p text:style-name="Pclear">plain</text:p>'
+    const automatic =
+      '<style:style style:name="Pfill" style:family="paragraph"><style:paragraph-properties fo:background-color="#fff2a8"/></style:style>' +
+      // "transparent" is ODF's default, so it asks for no fill of its own
+      '<style:style style:name="Pclear" style:family="paragraph"><style:paragraph-properties fo:background-color="transparent"/></style:style>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, automatic)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document).toContain('<w:shd w:val="clear" w:color="auto" w:fill="FFF2A8"/>')
+    // one shaded paragraph, not two
+    expect(document.match(/<w:shd /g) ?? []).toHaveLength(1)
+  })
+
+  it('keeps a paragraph with the next one and its lines together', async () => {
+    const body =
+      '<text:p text:style-name="Pkeep">intro</text:p>' +
+      '<text:p text:style-name="Pcancel">body</text:p>'
+    const automatic =
+      '<style:style style:name="Pkeep" style:family="paragraph"><style:paragraph-properties fo:keep-with-next="always" fo:keep-together="always"/></style:style>' +
+      // "auto" is ODF's default, but it still has to cancel an inherited "always"
+      '<style:style style:name="Pcancel" style:family="paragraph" style:parent-style-name="Pkeep"><style:paragraph-properties fo:keep-with-next="auto" fo:keep-together="auto"/></style:style>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, automatic)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document).toContain('<w:keepNext/>')
+    expect(document).toContain('<w:keepLines/>')
+    // only the paragraph that asked for it carries either element
+    expect(document.match(/<w:keepNext\/>/g) ?? []).toHaveLength(1)
+    expect(document.match(/<w:keepLines\/>/g) ?? []).toHaveLength(1)
+  })
+
   it('imports lists with per-level bullet and number formats', async () => {
     const body =
       '<text:list text:style-name="L1"><text:list-item><text:p>first</text:p>' +
@@ -142,6 +192,25 @@ describe('convertOdtToDocx', () => {
     expect(numbering).toContain('w:numFmt w:val="bullet"')
     expect(numbering).toContain('w:numFmt w:val="decimal"')
     expect(numbering).toContain('w:lvlText w:val="%2."')
+  })
+
+  it('carries table:align into w:jc and leaves a margins table flush', async () => {
+    // ODF places a table with table:align; "margins" is the default full-width
+    // behaviour, while center/right have a w:jc of their own
+    const automatic =
+      '<style:style style:name="TC" style:family="table"><style:table-properties table:align="center"/></style:style>' +
+      '<style:style style:name="TR" style:family="table"><style:table-properties table:align="right"/></style:style>' +
+      '<style:style style:name="TM" style:family="table"><style:table-properties table:align="margins"/></style:style>'
+    const table = (style: string, text: string): string =>
+      `<table:table table:name="${text}" table:style-name="${style}"><table:table-column/>` +
+      `<table:table-row><table:table-cell><text:p>${text}</text:p></table:table-cell></table:table-row></table:table>`
+    const body = table('TC', 'centred') + table('TR', 'right') + table('TM', 'margin')
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, automatic)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    // w:jc follows tblW, as CT_TblPrBase orders it
+    expect(document).toMatch(/<w:tblW[^>]*\/><w:jc w:val="center"\/><w:tblBorders>/)
+    expect(document).toMatch(/<w:tblW[^>]*\/><w:jc w:val="right"\/><w:tblBorders>/)
+    expect(document.match(/<w:jc /g) ?? []).toHaveLength(2)
   })
 
   it('imports a table with widths, spans and a cell fill', async () => {
@@ -164,6 +233,100 @@ describe('convertOdtToDocx', () => {
     )
   })
 
+  it('keeps every cell of a table that declares fewer columns than it paints', async () => {
+    // The column list is optional; the single-column fallback stopped the grid
+    // at one slot, so every cell after the first disappeared with no tally.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-row>' +
+      '<table:table-cell><text:p>AAACELL</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>BBB CELL</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>CCC CELL</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    for (const text of ['AAACELL', 'BBB CELL', 'CCC CELL']) expect(document).toContain(text)
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(3)
+    expect(result.dropped).toEqual([])
+  })
+
+  it('keeps a span that the declared column list cannot hold', async () => {
+    // The same narrowing also clamped a cell's colspan to the fallback's one
+    // column, so a merged cell came back unmerged.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-row><table:table-cell table:number-columns-spanned="3"><text:p>wide</text:p></table:table-cell></table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document).toContain('<w:gridSpan w:val="3"/>')
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(3)
+  })
+
+  it('does not widen a declared grid for a fully merged first row', async () => {
+    // LibreOffice's shape for a 3-column table whose first row is merged: the
+    // anchored cell plus one covered placeholder per merged-in column. The span
+    // does not add grid positions of its own — the placeholders are its slots.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-column table:number-columns-repeated="3"/>' +
+      '<table:table-row>' +
+      '<table:table-cell table:number-columns-spanned="3"><text:p>merged</text:p></table:table-cell>' +
+      '<table:covered-table-cell/><table:covered-table-cell/>' +
+      '</table:table-row>' +
+      '<table:table-row>' +
+      '<table:table-cell><text:p>cell x</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>cell y</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>cell z</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(3)
+    expect(document).toContain('<w:gridSpan w:val="3"/>')
+    for (const text of ['merged', 'cell x', 'cell y', 'cell z']) expect(document).toContain(text)
+  })
+
+  it('does not widen a declared grid for a cell merging two of its columns', async () => {
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-column table:number-columns-repeated="3"/>' +
+      '<table:table-row>' +
+      '<table:table-cell table:number-columns-spanned="2"><text:p>pair</text:p></table:table-cell>' +
+      '<table:covered-table-cell/>' +
+      '<table:table-cell><text:p>side</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(3)
+    expect(document).toContain('<w:gridSpan w:val="2"/>')
+    expect(document).toContain('pair')
+    expect(document).toContain('side')
+  })
+
+  it('counts a vertical merge placeholder as the position it covers', async () => {
+    // The second row's covered cell stands for the slot under the row span; it
+    // must not shift that row's own cell into a fourth column.
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-column table:number-columns-repeated="2"/>' +
+      '<table:table-row>' +
+      '<table:table-cell table:number-rows-spanned="2"><text:p>tall</text:p></table:table-cell>' +
+      '<table:table-cell><text:p>top right</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '<table:table-row>' +
+      '<table:covered-table-cell/>' +
+      '<table:table-cell><text:p>bottom right</text:p></table:table-cell>' +
+      '</table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect((document.match(/<w:gridCol /g) ?? []).length).toBe(2)
+    expect(document).toContain('bottom right')
+  })
+
   it('bounds a row span to the rows that exist', async () => {
     // table:number-rows-spanned is producer-controlled: an unclamped 200000
     // allocated that many empty rows, and Infinity never returned.
@@ -177,6 +340,41 @@ describe('convertOdtToDocx', () => {
     expect((document.match(/<w:tr>/g) ?? []).length).toBe(2)
     expect(document).toContain('<w:vMerge w:val="restart"/>')
     expect(document).toContain('<w:vMerge/>')
+  })
+
+  it('marks table:table-header-rows so Word repeats the heading on each page', async () => {
+    // ODF splits the two row containers: header-rows repeat at the top of a
+    // page, rows do not. readRows flattens them, so the distinction has to
+    // ride along as w:tblHeader or the heading scrolls away on page two.
+    const body =
+      '<table:table table:name="T"><table:table-column/>' +
+      '<table:table-header-rows>' +
+      '<table:table-row><table:table-cell><text:p>head one</text:p></table:table-cell></table:table-row>' +
+      '<table:table-row><table:table-cell><text:p>head two</text:p></table:table-cell></table:table-row>' +
+      '</table:table-header-rows>' +
+      '<table:table-rows>' +
+      '<table:table-row><table:table-cell><text:p>body</text:p></table:table-cell></table:table-row>' +
+      '</table:table-rows>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    const rows = [...document.matchAll(/<w:tr>([\s\S]*?)<\/w:tr>/g)].map((match) => match[1])
+    expect(rows).toHaveLength(3)
+    // both header rows repeat; the ordinary row does not
+    expect(rows.map((row) => row.includes('<w:tblHeader/>'))).toEqual([true, true, false])
+    // w:trPr is the row's first child, so the marker precedes the first cell
+    expect(rows[0].startsWith('<w:trPr><w:tblHeader/></w:trPr><w:tc>')).toBe(true)
+  })
+
+  it('does not mark a heading when the table keeps its rows in one container', async () => {
+    const body =
+      '<table:table table:name="T"><table:table-column/>' +
+      '<table:table-row><table:table-cell><text:p>only</text:p></table:table-cell></table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document).not.toContain('w:tblHeader')
+    expect(document).toContain('<w:tr><w:tc>')
   })
 
   it('carries the page geometry into the section properties', async () => {

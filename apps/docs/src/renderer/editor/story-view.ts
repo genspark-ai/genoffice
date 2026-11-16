@@ -18,6 +18,9 @@
  *   the structure the hidden formatting used to show stays readable. A heading
  *   also gets a class, so a heading that is a styled paragraph (Word's
  *   numbered headings are list items) takes the same look as a real h1..h6.
+ *   When the document has no heading styles at all, a short bold or all-caps
+ *   line (or a section number) is read as an inferred heading: same marker and
+ *   class, faded so the guess stays distinguishable from a real style.
  * - the typing rule. Text typed in the view takes the paragraph style's
  *   formatting, so typing next to a run with a manual font or colour does not
  *   silently pick it up. Only the typed text loses the hidden mark; the text
@@ -29,6 +32,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { ReplaceStep } from '@tiptap/pm/transform'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { TRACK_IGNORE } from './revisions'
+import { collectStructuralHeadings, structuralMarker } from './structural-headings'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -113,9 +117,9 @@ export function storyHeadingClass(level: number): string {
   return `story-heading story-h${Math.min(Math.max(level, 1), 6)}`
 }
 
-function markerDom(marker: string): HTMLElement {
+function markerDom(marker: string, inferred = false): HTMLElement {
   const span = document.createElement('span')
-  span.className = 'story-marker'
+  span.className = inferred ? 'story-marker story-marker-inferred' : 'story-marker'
   span.textContent = marker
   span.contentEditable = 'false'
   return span
@@ -123,7 +127,24 @@ function markerDom(marker: string): HTMLElement {
 
 function buildStoryDecorations(doc: ProseMirrorNode, styles?: StoryStyles): DecorationSet {
   const decos: Decoration[] = []
+  const structural = new Map(
+    collectStructuralHeadings(doc, styles).map((ref) => [ref.pos, ref] as const),
+  )
   doc.forEach((node, offset) => {
+    const inferred = structural.get(offset)
+    if (inferred) {
+      decos.push(
+        Decoration.node(offset, offset + node.nodeSize, {
+          class: `${storyHeadingClass(inferred.level)} story-heading-inferred`,
+        }),
+      )
+      decos.push(
+        Decoration.widget(offset + 1, () => markerDom(structuralMarker(inferred.level), true), {
+          key: `story-marker:${inferred.level}:inferred`,
+        }),
+      )
+      return
+    }
     const level = storyHeadingLevel(node, styles)
     if (level != null) {
       decos.push(

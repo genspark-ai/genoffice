@@ -66,6 +66,7 @@ interface ListFrame {
 
 interface BlockContext {
   list: ListFrame | null
+  continuation?: boolean
   /** 1-based depth inside the current list (0 outside one) */
   depth: number
 }
@@ -161,20 +162,29 @@ export async function convertOdtToDocx(odt: Uint8Array): Promise<OdtToDocxResult
     frame.maxDepth = Math.max(frame.maxDepth, depth)
     for (const { name, node } of childElements(list)) {
       if (name === 'text:list-item') {
+        let firstParagraph = true
         for (const inner of childElements(node)) {
           if (inner.name === 'text:p') {
-            emitParagraph(inner.node, ctx, drafts, { list: frame, depth }, { type: 'paragraph' })
+            emitParagraph(
+              inner.node,
+              ctx,
+              drafts,
+              { list: frame, depth, continuation: !firstParagraph },
+              { type: 'paragraph' },
+            )
+            firstParagraph = false
           } else if (inner.name === 'text:h') {
             emitParagraph(
               inner.node,
               ctx,
               drafts,
-              { list: frame, depth },
+              { list: frame, depth, continuation: !firstParagraph },
               {
                 type: 'heading',
                 level: clampHeadingLevel(attr(inner.node, 'text:outline-level')),
               },
             )
+            firstParagraph = false
           } else if (inner.name === 'text:list') {
             walkList(inner.node, frame, depth, context)
           } else if (inner.name === 'table:table') {
@@ -188,6 +198,17 @@ export async function convertOdtToDocx(odt: Uint8Array): Promise<OdtToDocxResult
         for (const inner of childElements(node)) {
           if (inner.name === 'text:p') {
             emitParagraph(inner.node, ctx, drafts, { list: null, depth }, { type: 'paragraph' })
+          } else if (inner.name === 'text:h') {
+            emitParagraph(
+              inner.node,
+              ctx,
+              drafts,
+              { list: null, depth },
+              {
+                type: 'heading',
+                level: clampHeadingLevel(attr(inner.node, 'text:outline-level')),
+              },
+            )
           }
         }
       }
@@ -232,7 +253,13 @@ export async function convertOdtToDocx(odt: Uint8Array): Promise<OdtToDocxResult
     if (base.type === 'heading') block.level = base.level
     const format = paraFormat(walkCtx.styles, attr(node, 'text:style-name'))
     if (format) block.format = format
-    if (blockContext.list) {
+    if (blockContext.list && blockContext.continuation) {
+      const level = walkCtx.styles.listLevels(blockContext.list.styleName)?.get(blockContext.depth)
+      block.format = {
+        ...block.format,
+        indentLeft: level?.indentLeftTw ?? 720 * blockContext.depth,
+      }
+    } else if (blockContext.list) {
       const frame = blockContext.list
       if (base.type === 'heading') block.type = 'heading'
       else block.type = 'listItem'
@@ -327,6 +354,9 @@ function paraFormat(styles: OdfStyles, styleName: string | undefined): ParaForma
   if (props.indentRightTw !== undefined) out.indentRight = props.indentRightTw
   if (props.indentFirstLineTw !== undefined) out.indentFirstLine = props.indentFirstLineTw
   if (props.pageBreakBefore) out.pageBreakBefore = true
+  if (props.background) out.shadingFill = props.background
+  if (props.keepNext) out.keepNext = true
+  if (props.keepLines) out.keepLines = true
   return Object.keys(out).length > 0 ? out : undefined
 }
 
@@ -345,6 +375,8 @@ function toDocxRun(run: NeutralRun, allowLinks: boolean): Run {
   if (run.vertAlign) out.vertAlign = run.vertAlign
   if (run.caps) out.caps = run.caps
   if (run.shading) out.shading = run.shading
+  if (run.letterSpacingTw !== undefined) out.charSpacingTwips = run.letterSpacingTw
+  if (run.scalePct !== undefined) out.charScalePct = run.scalePct
   if (run.href && allowLinks) out.link = { href: run.href }
   return out
 }
@@ -384,6 +416,7 @@ function numberingDefs(
         defs.push({
           numFmt: format,
           lvlText: `${level.numPrefix ?? ''}%${depth}${level.numSuffix ?? '.'}`,
+          start: level.start,
           indentLeft,
           hanging,
         })
@@ -421,11 +454,63 @@ const CELL_GEN_CTX = {
   },
 }
 
+/** Grid width ceiling: clampRepeat's own 1024, so rows × repeats cannot grow without bound. */
+const MAX_GRID_COLUMNS = 1024
+
 function tableDraft(node: XNode, ctx: WalkContext): Draft {
   const columns = readColumns(node, ctx)
   const rows = readRows(node)
+  // ODF lets the column list be narrower than the grid positions a row paints
+  // (it is optional, and the fallback is a single column). placeCells stops at
+  // the grid's last column, so the excess cells used to disappear without a
+  // tally. Size the grid to the widest row, using the same placement rules.
+  const painted = Math.min(
+    MAX_GRID_COLUMNS,
+    rows.reduce((widest, row) => Math.max(widest, rowGridWidth(row)), 0),
+  )
+  while (columns.length < painted) columns.push({ widthEmu: null })
   const grid = placeCells(rows, columns.length, ctx)
-  return { kind: 'xml', xml: tableXml(columns, grid) }
+  const header = headerRows(node)
+  return {
+    kind: 'xml',
+    xml: tableXml(
+      columns,
+      grid,
+      rows.map((row) => header.has(row)),
+      ctx.styles.tableAlign(attr(node, 'table:style-name')),
+    ),
+  }
+}
+
+/**
+ * The grid positions one row names, as placeCells lays them out. A cell's span
+ * does not add positions of its own: ODF writes the span's non-anchor slots as
+ * `table:covered-table-cell` placeholders, so a 3-wide merged cell followed by
+ * its two covered cells is three positions, not five. Covered cells that do not
+ * follow a span in this row (a position covered from an earlier row's row span)
+ * each name one position of their own.
+ */
+function rowGridWidth(row: XNode): number {
+  let column = 0
+  /** span slots already advanced over, still waiting for their placeholders */
+  let reserved = 0
+  for (const { name, node } of childElements(row)) {
+    const repeat = clampRepeat(attr(node, 'table:number-columns-repeated'), 64)
+    if (name === 'table:covered-table-cell') {
+      for (let index = 0; index < repeat; index++) {
+        if (reserved > 0) reserved--
+        else column++
+      }
+      continue
+    }
+    if (name !== 'table:table-cell') continue
+    const span = Math.max(1, Number(attr(node, 'table:number-columns-spanned') ?? '1') || 1)
+    for (let index = 0; index < repeat; index++) {
+      column += span
+      reserved += span - 1
+    }
+  }
+  return column
 }
 
 function readColumns(table: XNode, ctx: WalkContext): ColumnSpec[] {
@@ -438,7 +523,12 @@ function readColumns(table: XNode, ctx: WalkContext): ColumnSpec[] {
   const walk = (node: XNode): void => {
     for (const { name, node: child } of childElements(node)) {
       if (name === 'table:table-column') push(child)
-      else if (name === 'table:table-header-columns' || name === 'table:table-columns') walk(child)
+      else if (
+        name === 'table:table-header-columns' ||
+        name === 'table:table-columns' ||
+        name === 'table:table-column-group'
+      )
+        walk(child)
     }
   }
   walk(table)
@@ -452,10 +542,36 @@ function readRows(table: XNode): XNode[] {
   const walk = (node: XNode): void => {
     for (const { name, node: child } of childElements(node)) {
       if (name === 'table:table-row') out.push(child)
-      else if (name === 'table:table-header-rows' || name === 'table:table-rows') walk(child)
+      else if (
+        name === 'table:table-header-rows' ||
+        name === 'table:table-rows' ||
+        name === 'table:table-row-group'
+      )
+        walk(child)
     }
   }
   walk(table)
+  return out
+}
+
+/**
+ * Rows ODF asks a renderer to repeat at the top of every page:
+ * `table:table-header-rows` wraps them, while `table:table-rows` holds the
+ * ordinary ones. `readRows` flattens both containers into one list, so the
+ * header nodes are collected here and marked when the grid is written — docx
+ * carries the same instruction per row, as `w:tblHeader` in `w:trPr`.
+ */
+function headerRows(table: XNode): Set<XNode> {
+  const out = new Set<XNode>()
+  const walk = (node: XNode, inHeader: boolean): void => {
+    for (const { name, node: child } of childElements(node)) {
+      if (name === 'table:table-row') {
+        if (inHeader) out.add(child)
+      } else if (name === 'table:table-header-rows') walk(child, true)
+      else if (name === 'table:table-rows') walk(child, inHeader)
+    }
+  }
+  walk(table, false)
   return out
 }
 
@@ -472,24 +588,16 @@ function placeCells(
   ctx: WalkContext,
 ): Array<Array<GridCell | null>> {
   const occupancy: Array<Array<GridCell | null>> = []
-  const cellsOfRow = (row: XNode): GridCell[] => {
-    const out: GridCell[] = []
+  /** a row's cells in order; null marks a table:covered-table-cell placeholder */
+  const cellsOfRow = (row: XNode): Array<GridCell | null> => {
+    const out: Array<GridCell | null> = []
     for (const { name, node } of childElements(row)) {
       if (name === 'table:table-cell') {
         const repeat = clampRepeat(attr(node, 'table:number-columns-repeated'), 64)
         for (let index = 0; index < repeat; index++) out.push(makeCell(node, ctx))
       } else if (name === 'table:covered-table-cell') {
         const repeat = clampRepeat(attr(node, 'table:number-columns-repeated'), 64)
-        for (let index = 0; index < repeat; index++) {
-          out.push({
-            row: -1,
-            column: -1,
-            colSpan: 1,
-            rowSpan: 1,
-            contentXml: '<w:p/>',
-            fill: null,
-          })
-        }
+        for (let index = 0; index < repeat; index++) out.push(null)
       }
     }
     return out
@@ -499,7 +607,17 @@ function placeCells(
     while (occupancy.length <= rowIndex) occupancy.push(new Array(columnCount).fill(null))
     const slotRow = occupancy[rowIndex]
     let column = 0
+    /** span slots already advanced over, still waiting for their placeholders */
+    let reserved = 0
     for (const cell of cellsOfRow(row)) {
+      if (!cell) {
+        // A covered cell names a position that is already painted: the span
+        // anchor just advanced over it, or an earlier row covers it vertically.
+        // It is not a cell to place at the next free slot.
+        if (reserved > 0) reserved--
+        else column++
+        continue
+      }
       while (column < columnCount && slotRow[column]) column++
       if (column >= columnCount) break
       const colSpan = Math.max(1, Math.min(cell.colSpan, columnCount - column))
@@ -517,6 +635,7 @@ function placeCells(
       cell.column = column
       cell.colSpan = colSpan
       cell.rowSpan = rowSpan
+      reserved += colSpan - 1
       column += colSpan
     }
     rowIndex++
@@ -543,28 +662,42 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
     // lists inside cells keep their text as indented paragraphs; a private
     // numbering definition per cell would multiply abstractNums for little gain
     for (const { name, node: item } of childElements(list)) {
-      if (name !== 'text:list-item') continue
+      if (name !== 'text:list-item' && name !== 'text:list-header') continue
       for (const inner of childElements(item)) {
-        if (inner.name === 'text:p') {
-          emitInto(inner.node, { type: 'paragraph' })
+        if (inner.name === 'text:p' || inner.name === 'text:h') {
+          emitInto(
+            inner.node,
+            inner.name === 'text:h'
+              ? {
+                  type: 'heading',
+                  level: clampHeadingLevel(attr(inner.node, 'text:outline-level')),
+                }
+              : { type: 'paragraph' },
+          )
           const block = blocks[blocks.length - 1]
-          block.format = { ...block.format, indentLeft: (block.format?.indentLeft ?? 0) + 720 }
+          if (name === 'text:list-item')
+            block.format = { ...block.format, indentLeft: (block.format?.indentLeft ?? 0) + 720 }
         } else if (inner.name === 'text:list') {
           emitListFlat(inner.node)
         }
       }
     }
   }
-  for (const { name, node: child } of childElements(node)) {
-    if (name === 'text:p') emitInto(child, { type: 'paragraph' })
-    else if (name === 'text:h') {
-      emitInto(child, {
-        type: 'heading',
-        level: clampHeadingLevel(attr(child, 'text:outline-level')),
-      })
-    } else if (name === 'text:list') emitListFlat(child)
-    else if (name === 'table:table') ctx.drops.add('nested-tables')
+  const emitChildren = (container: XNode): void => {
+    for (const { name, node: child } of childElements(container)) {
+      if (name === 'text:p') emitInto(child, { type: 'paragraph' })
+      else if (name === 'text:h') {
+        emitInto(child, {
+          type: 'heading',
+          level: clampHeadingLevel(attr(child, 'text:outline-level')),
+        })
+      } else if (name === 'text:list') emitListFlat(child)
+      else if (name === 'text:section') {
+        if (attr(child, 'text:display') !== 'none') emitChildren(child)
+      } else if (name === 'table:table') ctx.drops.add('nested-tables')
+    }
   }
+  emitChildren(node)
   // whatever inline images the cell paragraphs referenced cannot live inside
   // the flat cell XML — dropped and counted
   if (ctx.images.length > 0) {
@@ -583,7 +716,14 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
   }
 }
 
-function tableXml(columns: ColumnSpec[], grid: Array<Array<GridCell | null>>): string {
+function tableXml(
+  columns: ColumnSpec[],
+  grid: Array<Array<GridCell | null>>,
+  /** one flag per grid row: does the source repeat it as a page header? */
+  headerFlags: boolean[],
+  /** `table:align`, when the source table is not flush with the margins */
+  align: 'center' | 'right' | null,
+): string {
   // unknown column widths share the usable width of a Letter page with 1in
   // margins; fixed layout plus real gridCols keeps the spans honest
   const known = columns.filter((column) => column.widthEmu !== null)
@@ -603,6 +743,8 @@ function tableXml(columns: ColumnSpec[], grid: Array<Array<GridCell | null>>): s
   const parts: string[] = []
   parts.push(
     `<w:tbl><w:tblPr><w:tblW w:w="${colTw.reduce((a, b) => a + b, 0)}" w:type="dxa"/>` +
+      // w:jc sits between tblW and tblBorders in CT_TblPrBase
+      (align ? `<w:jc w:val="${align}"/>` : '') +
       `<w:tblBorders>${border}</w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr>`,
   )
   parts.push(
@@ -610,6 +752,9 @@ function tableXml(columns: ColumnSpec[], grid: Array<Array<GridCell | null>>): s
   )
   grid.forEach((row, rowIndex) => {
     parts.push('<w:tr>')
+    // w:trPr opens the row; `w:tblHeader` repeats it at the top of each page,
+    // which is what `table:table-header-rows` asked the source renderer for
+    if (headerFlags[rowIndex]) parts.push('<w:trPr><w:tblHeader/></w:trPr>')
     row.forEach((cell, columnIndex) => {
       if (!cell) {
         // an empty slot in an irregular table keeps the row's column count
