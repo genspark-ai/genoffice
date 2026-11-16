@@ -1576,12 +1576,12 @@ function registerHtmlIpc(): void {
     return collectAttachments(picked.filePaths)
   })
 
-  ipcMain.handle(HTML_CHANNELS.filesAdd, (e, paths: unknown) => {
-    // panel drops and clipboard file pastes: the preload bridge has already
-    // recorded these paths in the ledger; granting here too keeps the
-    // ledger the single place a read checks
+  ipcMain.handle(HTML_CHANNELS.filesAdd, (_e, paths: unknown) => {
+    // panel drops and clipboard file pastes are recorded by the preload
+    // bridge before this runs, so the ledger already holds every path a
+    // real drop carried; minting a grant for renderer-named paths here
+    // would let a compromised renderer read whatever it names
     const strings = Array.isArray(paths) ? paths.filter((p) => typeof p === 'string') : []
-    sharedPathGrants().grant(e.sender.id, strings)
     return collectAttachments(strings)
   })
 

@@ -3882,6 +3882,15 @@ function isRevealablePath(path: string): boolean {
   return [...readRecentFiles(), ...readStarredFiles()].some((p) => resolve(p) === key)
 }
 
+/** Wiki links resolve beside the document that holds them, and a wiki note
+ *  commonly opens a sibling the user never opened alone. A folder the user
+ *  has a document open in therefore counts as revealed for the open channel
+ *  (#2758 review): still the user's own active workspace, not the disk. */
+function isBesideOpenDocument(path: string): boolean {
+  const dir = dirname(resolve(path))
+  return tabManager?.openFilePaths().some((open) => dirname(resolve(open)) === dir) ?? false
+}
+
 function isAnyRoot(path: string): boolean {
   const key = resolve(path)
   return folderRootPaths().some((root) => resolve(root) === key)
@@ -5224,14 +5233,17 @@ function registerHomeIpc(): void {
   ipcMain.handle(HOME_CHANNELS.openPath, (event, path: unknown) => {
     if (typeof path !== 'string' || !path || path.length > 4096) return
     // Renderer-facing open channel: the path must be one the home UI can
-    // legitimately show (folder tree, recents, starred, save folder) or one
-    // this view's user physically handed over (OS drop / clipboard file —
-    // the drop bridge records those in the shared grant ledger). Without the
-    // check the channel is an open-any-file primitive for a compromised
-    // renderer; e2e drives it with fixture paths and skips the check.
+    // legitimately show (folder tree, recents, starred, save folder), one
+    // beside a document the view has open (wiki links resolve there), or
+    // one this view's user physically handed over (OS drop / clipboard
+    // file — the drop bridge records those in the shared grant ledger).
+    // Without the check the channel is an open-any-file primitive for a
+    // compromised renderer; e2e drives it with fixture paths and skips
+    // the check.
     if (
       process.env.GENOFFICE_E2E !== '1' &&
       !isRevealablePath(path) &&
+      !isBesideOpenDocument(path) &&
       !sharedPathGrants().has(event.sender.id, path)
     )
       return
