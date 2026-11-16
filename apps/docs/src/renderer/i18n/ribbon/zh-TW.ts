@@ -25,6 +25,7 @@ export const zhTW = {
   ribbonLangTraditionalChinese: '繁體中文',
   ribbonLangVietnamese: '越南文',
   ribbonLangTurkish: '土耳其文',
+  ribbonLangHungarian: '匈牙利文',
   ribbonAiCreditNote: '將呼叫 AI 並消耗額度',
   ribbonAiRewriteConfirm:
     '此操作將呼叫 AI：會消耗額度，並可能改寫整篇內容。是否繼續？（確認後不再提示）',
