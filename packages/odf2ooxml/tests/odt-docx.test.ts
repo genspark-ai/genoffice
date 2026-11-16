@@ -79,6 +79,24 @@ describe('convertOdtToDocx', () => {
     expect(rels).toContain('https://example.com/doc')
   })
 
+  it('carries character spacing and width from a text style into the run', async () => {
+    const body =
+      '<text:p>plain <text:span text:style-name="Twide">wide</text:span> ' +
+      '<text:span text:style-name="Ttight">tight</text:span> tail</text:p>'
+    const named =
+      '<style:style style:name="Twide" style:family="text"><style:text-properties fo:letter-spacing="0.05cm" style:text-scale="150%"/></style:style>' +
+      '<style:style style:name="Ttight" style:family="text"><style:text-properties fo:letter-spacing="-0.02cm"/></style:style>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body), stylesXml(named)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    // ODF spells them fo:letter-spacing and style:text-scale; docx spells the
+    // same two as w:spacing (twips, signed) and w:w (percent)
+    expect(document).toContain('<w:spacing w:val="28"/>') // 0.05cm = 18000 EMU
+    expect(document).toContain('<w:spacing w:val="-11"/>') // -0.02cm = -7200 EMU
+    expect(document).toContain('<w:w w:val="150"/>')
+    expect(document).toContain('wide')
+    expect(document).toContain('tight')
+  })
+
   it('resolves the parent style chain and character properties from styles.xml', async () => {
     const body = '<text:p text:style-name="P1">styled</text:p>'
     const named =

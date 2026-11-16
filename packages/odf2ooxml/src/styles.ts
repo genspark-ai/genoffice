@@ -24,6 +24,10 @@ export interface OdfTextProps {
   resetSmallCaps?: boolean
   /** run shading fill, hex without '#' */
   shading?: string
+  /** `fo:letter-spacing` as docx's w:spacing, twips (negative when condensed) */
+  letterSpacingTw?: number
+  /** `style:text-scale` as docx's w:w, percent in 1..600 */
+  scalePct?: number
 }
 
 export interface OdfParaProps {
@@ -231,6 +235,11 @@ export class OdfStyles {
     if (transform === 'none') out.resetUppercase = true
     if (a['fo:font-variant'] === 'normal') out.resetSmallCaps = true
     if (a['fo:font-variant'] === 'small-caps') out.caps = 'small'
+    const letter = odfLengthToEmu(a['fo:letter-spacing'])
+    // 0 is kept: an explicit reset inside a spaced span has to override it
+    if (letter !== null) out.letterSpacingTw = emuToTwips(letter)
+    const scale = textScalePercent(a['style:text-scale'])
+    if (scale !== undefined) out.scalePct = scale
     return Object.keys(out).length > 0 ? out : undefined
   }
 
@@ -480,4 +489,18 @@ function listLevelIndent(node: XNode): { indentLeftTw?: number; hangingTw?: numb
     if (value !== null && value < 0) out.hangingTw = emuToTwips(-value)
   }
   return out
+}
+
+/**
+ * `style:text-scale` is a percentage of the character width (20.417 in ODF's
+ * vocabulary); docx spells the same thing as `w:w` in 1..600, so wider values
+ * clamp there instead of writing a value no consumer accepts.
+ */
+function textScalePercent(text: string | undefined): number | undefined {
+  if (!text) return undefined
+  const match = /^(\d+(?:\.\d+)?)%?$/.exec(text.trim())
+  if (!match) return undefined
+  const value = Math.round(Number(match[1]))
+  if (!Number.isFinite(value) || value < 1) return undefined
+  return Math.min(value, 600)
 }
