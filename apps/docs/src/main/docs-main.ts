@@ -4184,6 +4184,20 @@ async function prepareDocumentForOpen(
   )
   if (picked.canceled || !picked.filePath) return null
   try {
+    // Imports are read whole and handed to one converter or another — the
+    // rhwp WASM path especially is unauditable — so the same cap as the
+    // .docx open (MAX_OPEN_BYTES) applies before a byte is read.
+    if ((await stat(filePath)).size > MAX_OPEN_BYTES) {
+      const mb = MAX_OPEN_BYTES / 1024 / 1024
+      if (parent && !parent.isDestroyed()) {
+        await dialog.showMessageBox(parent, {
+          type: 'error',
+          message: tm('dlgOpenDoc'),
+          detail: `${basename(filePath)}: ${tm('errTooLarge', { mb })}`,
+        })
+      }
+      return null
+    }
     const source = new Uint8Array(await readFile(filePath))
     const result = word97
       ? await convertLegacyDocToDocx(source)
