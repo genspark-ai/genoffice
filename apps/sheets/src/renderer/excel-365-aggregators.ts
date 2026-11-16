@@ -17,9 +17,12 @@
  *   through the named executor (fetched live from the function service),
  *   and lay the optional headers, totals and sort order over the result.
  *
- * Knives left for later: total_depth 2 (a subtotal row per group), a
- * HSTACK(SUM,AVERAGE) function pair, multi-column col_fields in PIVOTBY
- * (hierarchical column headers), and the aggregate-value sort encodings.
+ * Knives left for later: total_depth 2 (a subtotal row per group) and the
+ * negative depths (totals at top), a HSTACK(SUM,AVERAGE) function pair,
+ * multi-column col_fields in PIVOTBY (hierarchical column headers), and the
+ * aggregate-value sort encodings. field_headers=2 generates positional
+ * labels ("Field 1", "Value 1") — Excel derives them from the source
+ * table's field names, which a bare array does not carry.
  */
 import {
   ArrayValueObject,
@@ -217,7 +220,7 @@ function groupRows(
 }
 
 /** order the groups: sort_order names a row-field column (1-based, negative
-    for descending); anything else keeps first-seen order */
+    for descending); 0 keeps first-seen order */
 function orderGroups(grouped: Grouped, sortOrder: number, keyColumns: number): Grouped {
   if (sortOrder === 0 || grouped.keys.length <= 1) return grouped
   const column = Math.abs(sortOrder) - 1
@@ -232,6 +235,43 @@ function orderGroups(grouped: Grouped, sortOrder: number, keyColumns: number): G
     .map((entry) => entry.index)
   return { keys: order.map((at) => grouped.keys[at]!), rows: order.map((at) => grouped.rows[at]!) }
 }
+
+/**
+ * The field_headers argument, Excel's own encoding (support.microsoft.com
+ * GROUPBY): 0 no headers, 1 headers exist but stay hidden, 2 no headers but
+ * generate them, 3 headers exist and show. Missing — and anything out of
+ * range — is Excel's "automatic", which decides from the values argument
+ * alone (headers when the first value is text and the second a number); the
+ * row fields are never consulted.
+ */
+function decodeFieldHeaders(
+  headers: number,
+  values: ArrayValueObject,
+): { have: boolean; show: boolean; generate: boolean } {
+  switch (headers) {
+    case 0:
+      return { have: false, show: false, generate: false }
+    case 1:
+      return { have: true, show: false, generate: false }
+    case 2:
+      return { have: false, show: true, generate: true }
+    case 3:
+      return { have: true, show: true, generate: false }
+    default: {
+      const first = values.get(0, 0)?.getValue()
+      const second = values.get(1, 0)?.getValue()
+      const have = typeof first === 'string' && typeof second === 'number'
+      return { have, show: have, generate: false }
+    }
+  }
+}
+
+/** the header row field_headers=2 generates; Excel derives these from the
+    source table's field names, which a bare array does not carry */
+const generatedHeaders = (keyColumns: number, valueColumns: number): string[] => [
+  ...Array.from({ length: keyColumns }, (_, i) => `Field ${i + 1}`),
+  ...Array.from({ length: valueColumns }, (_, i) => `Value ${i + 1}`),
+]
 
 /** aggregate `values` column `valueColumn` over the given rows */
 function aggregateRows(
@@ -281,26 +321,20 @@ class GroupByFunction extends BaseFunction {
     if (isError(values)) return values
     const fnName = variants[2]?.getValue()
     if (typeof fnName !== 'string') return errorOf(ErrorType.VALUE)
-    const headers = numberArg(variants[3], 2)
+    // missing field_headers is Excel's automatic, decided from the values
+    // argument alone; missing total_depth is automatic = grand totals;
+    // missing sort_order is Excel's default ascending by the first row field
+    const headers = numberArg(variants[3], -1)
     if ('error' in headers) return headers.error
-    const totalDepth = numberArg(variants[4], 0)
+    const totalDepth = numberArg(variants[4], 1)
     if ('error' in totalDepth) return totalDepth.error
-    const sortOrder = numberArg(variants[5], 0)
+    const sortOrder = numberArg(variants[5], 1)
     if ('error' in sortOrder) return sortOrder.error
     const filterVariant = variants[6]
     const rowCount = Math.min(rowFields.getRowCount(), values.getRowCount())
-    // auto: the first row reads as headers when it holds text
-    let hasHeaders = headers.value === 1
-    if (headers.value === 2) {
-      for (let column = 0; column < rowFields.getColumnCount(); column++) {
-        if (typeof rowFields.get(0, column)?.getValue() === 'string') hasHeaders = true
-      }
-      for (let column = 0; column < values.getColumnCount(); column++) {
-        if (typeof values.get(0, column)?.getValue() === 'string') hasHeaders = true
-      }
-    }
-    if (hasHeaders && rowCount < 2) return errorOf(ErrorType.VALUE)
-    const dataStart = hasHeaders ? 1 : 0
+    const headerMode = decodeFieldHeaders(headers.value, values)
+    if (headerMode.have && rowCount < 2) return errorOf(ErrorType.VALUE)
+    const dataStart = headerMode.have ? 1 : 0
     let dataRows: number[] = []
     for (let row = dataStart; row < rowCount; row++) dataRows.push(row)
     if (filterVariant && !filterVariant.isNull?.()) {
@@ -314,13 +348,16 @@ class GroupByFunction extends BaseFunction {
     const keyColumns = rowFields.getColumnCount()
     const valueColumns = values.getColumnCount()
     const out: (BaseValueObject | null)[][] = []
-    if (hasHeaders) {
+    if (headerMode.show) {
       const head: (BaseValueObject | null)[] = []
+      const generated = headerMode.generate ? generatedHeaders(keyColumns, valueColumns) : null
       for (let column = 0; column < keyColumns; column++) {
-        head.push(rowFields.get(0, column) ?? null)
+        head.push(generated ? textValue(generated[column]!) : (rowFields.get(0, column) ?? null))
       }
       for (let column = 0; column < valueColumns; column++) {
-        head.push(values.get(0, column) ?? null)
+        head.push(
+          generated ? textValue(generated[keyColumns + column]!) : (values.get(0, column) ?? null),
+        )
       }
       out.push(head)
     }
@@ -371,7 +408,9 @@ class PivotByFunction extends BaseFunction {
     if (colFields.getColumnCount() > 1) return errorOf(ErrorType.VALUE)
     const fnName = variants[3]?.getValue()
     if (typeof fnName !== 'string') return errorOf(ErrorType.VALUE)
-    const headers = numberArg(variants[4], 2)
+    // field_headers: Excel's encoding, automatic from the values argument
+    // when missing — same decode as GROUPBY
+    const headers = numberArg(variants[4], -1)
     if ('error' in headers) return headers.error
     const rowTotal = numberArg(variants[5], 1)
     if ('error' in rowTotal) return rowTotal.error
@@ -387,16 +426,9 @@ class PivotByFunction extends BaseFunction {
       colFields.getRowCount(),
       values.getRowCount(),
     )
-    let hasHeaders = headers.value === 1
-    if (headers.value === 2) {
-      for (let column = 0; column < rowFields.getColumnCount(); column++) {
-        if (typeof rowFields.get(0, column)?.getValue() === 'string') hasHeaders = true
-      }
-      if (typeof colFields.get(0, 0)?.getValue() === 'string') hasHeaders = true
-      if (typeof values.get(0, 0)?.getValue() === 'string') hasHeaders = true
-    }
-    if (hasHeaders && rowCount < 2) return errorOf(ErrorType.VALUE)
-    const dataStart = hasHeaders ? 1 : 0
+    const headerMode = decodeFieldHeaders(headers.value, values)
+    if (headerMode.have && rowCount < 2) return errorOf(ErrorType.VALUE)
+    const dataStart = headerMode.have ? 1 : 0
     let dataRows: number[] = []
     for (let row = dataStart; row < rowCount; row++) dataRows.push(row)
     if (filterVariant && !filterVariant.isNull?.()) {
@@ -430,10 +462,11 @@ class PivotByFunction extends BaseFunction {
       columnOrder = colSort.value > 0 ? columnOrder : [...columnOrder].reverse()
     }
     const out: (BaseValueObject | null)[][] = []
-    if (hasHeaders) {
+    if (headerMode.show) {
       const head: (BaseValueObject | null)[] = []
+      const generated = headerMode.generate ? generatedHeaders(keyColumns, 0) : null
       for (let column = 0; column < keyColumns; column++) {
-        head.push(rowFields.get(0, column) ?? null)
+        head.push(generated ? textValue(generated[column]!) : (rowFields.get(0, column) ?? null))
       }
       for (const index of columnOrder) head.push(colKeys[index]!)
       if (rowTotal.value > 0) head.push(textValue(TOTAL_LABEL))

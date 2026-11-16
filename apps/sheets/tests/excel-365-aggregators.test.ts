@@ -53,6 +53,8 @@ describe('GROUPBY and PIVOTBY', () => {
             1: { 0: { v: 'Apple', t: 1 }, 1: { v: 'Fruit', t: 1 }, 2: { v: 10 } },
             2: { 0: { v: 'Banana', t: 1 }, 1: { v: 'Fruit', t: 1 }, 2: { v: 20 } },
             3: { 0: { v: 'Carrot', t: 1 }, 1: { v: 'Veg', t: 1 }, 2: { v: 30 } },
+            4: { 0: { v: 'Durian', t: 1 }, 1: { v: 'Veg', t: 1 }, 2: { v: 5 } },
+            5: { 0: { v: 'Ambrosia', t: 1 }, 1: { v: 'Fruit', t: 1 }, 2: { v: 7 } },
           },
         },
       },
@@ -79,20 +81,48 @@ describe('GROUPBY and PIVOTBY', () => {
     }
 
     // the bare SUM in the function position is the shape Excel writes; the
-    // lexer rewrite carries it into the executor as a string
-    expect(await calc('=SUM(GROUPBY(B1:B4,C1:C4,SUM))')).toBe(60)
-    // auto headers: the first group's key
+    // lexer rewrite carries it into the executor as a string. Automatic
+    // headers (values open with text over a number) plus the grand total
+    // Excel shows by default: 30 + 30 + 60
+    expect(await calc('=SUM(GROUPBY(B1:B4,C1:C4,SUM))')).toBe(120)
+    // auto headers shown: the detected header row, then the groups
+    expect(await calc('=INDEX(GROUPBY(B1:B4,C1:C4,SUM),1,1)')).toBe('Category')
     expect(await calc('=INDEX(GROUPBY(B1:B4,C1:C4,SUM),2,1)')).toBe('Fruit')
+    // merrick's case: numeric values argue no headers, groups sort ascending
+    // by the row field, and the grand total is there without asking
+    expect(await calc('=INDEX(GROUPBY(B2:B4,C2:C4,SUM),1,1)')).toBe('Fruit')
+    expect(await calc('=INDEX(GROUPBY(B2:B4,C2:C4,SUM),1,2)')).toBe(30)
+    expect(await calc('=INDEX(GROUPBY(B2:B4,C2:C4,SUM),2,1)')).toBe('Veg')
+    expect(await calc('=INDEX(GROUPBY(B2:B4,C2:C4,SUM),2,2)')).toBe(30)
+    expect(await calc('=INDEX(GROUPBY(B2:B4,C2:C4,SUM),3,1)')).toBe('Total')
+    expect(await calc('=INDEX(GROUPBY(B2:B4,C2:C4,SUM),3,2)')).toBe(60)
+    // the default sort: source order starts at Apple, ascending starts at
+    // Ambrosia
+    expect(await calc('=INDEX(GROUPBY(A2:A6,C2:C6,SUM),1,1)')).toBe('Ambrosia')
+    // field_headers 1: headers exist but stay hidden
+    expect(await calc('=INDEX(GROUPBY(B1:B4,C1:C4,SUM,1),1,1)')).toBe('Fruit')
+    expect(await calc('=SUM(GROUPBY(B1:B4,C1:C4,SUM,1))')).toBe(120)
+    // field_headers 2: no headers in the data, positional labels generated
+    expect(await calc('=INDEX(GROUPBY(B2:B4,C2:C4,SUM,2),1,1)')).toBe('Field 1')
+    expect(await calc('=INDEX(GROUPBY(B2:B4,C2:C4,SUM,2),1,2)')).toBe('Value 1')
+    expect(await calc('=INDEX(GROUPBY(B2:B4,C2:C4,SUM,2),2,1)')).toBe('Fruit')
+    // field_headers 3: headers exist and show
+    expect(await calc('=INDEX(GROUPBY(B1:B4,C1:C4,SUM,3),1,1)')).toBe('Category')
+    expect(await calc('=SUM(GROUPBY(B1:B4,C1:C4,SUM,3))')).toBe(120)
+    // total_depth 0 stays the way to ask for no grand total
+    expect(await calc('=SUM(GROUPBY(B1:B4,C1:C4,SUM,3,0))')).toBe(60)
     // a nested SUM(...) keeps its own semantics (30+30 groups + 60 Total)
     expect(await calc('=SUM(INDEX(GROUPBY(B1:B4,C1:C4,SUM,0,1),0,2))')).toBe(120)
     // headers off, grand total on: one Fruit group of 30 with a Total row
     expect(await calc('=INDEX(GROUPBY(B2:B3,C2:C3,SUM,0,1,-1),1,2)')).toBe(30)
     expect(await calc('=INDEX(GROUPBY(B2:B3,C2:C3,SUM,0,1,-1),2,1)')).toBe('Total')
     // the filter array drops Banana before grouping: 10 + 30
-    expect(await calc('=SUM(GROUPBY(B1:B4,C1:C4,SUM,0,0,0,{TRUE;TRUE;FALSE;TRUE}))')).toBe(40)
+    expect(await calc('=SUM(GROUPBY(B1:B4,C1:C4,SUM,3,0,0,{TRUE;TRUE;FALSE;TRUE}))')).toBe(40)
     // PIVOTBY: Apple under Fruit = 10; Carrot under Veg = 30 (spill matrix)
     expect(await calc('=INDEX(PIVOTBY(A2:A4,B2:B4,C2:C4,SUM,0),1,2)')).toBe(10)
     expect(await calc('=INDEX(PIVOTBY(A2:A4,B2:B4,C2:C4,SUM,0),3,3)')).toBe(30)
+    // PIVOTBY's automatic headers: detected and shown from the same values
+    expect(await calc('=INDEX(PIVOTBY(A1:A4,B1:B4,C1:C4,SUM),1,1)')).toBe('Product')
     // a plain formula elsewhere is untouched
     expect(await calc('=SUM(C2:C4)')).toBe(60)
     univer.dispose()
