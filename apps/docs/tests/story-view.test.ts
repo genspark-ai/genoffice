@@ -475,6 +475,38 @@ describe('story view frame: the chrome leaves and Focus dims', () => {
     expect(blocksFor('.story-bar')).toContain('position: fixed')
     expect(blocksFor('.story-bar-btn')).toContain('font: inherit')
   })
+
+  it('the four authorship inks are view tokens the injected sheet targets', () => {
+    const block = blocksFor('.view-story')
+    expect(block).toContain('--story-suggest-own')
+    expect(block).toContain('--story-suggest-others')
+    expect(block).toContain('--story-ai-ink')
+    expect(block).toContain('--story-ai-grad')
+  })
+
+  it('inline objects collapse to a placeholder box and expand on hover', () => {
+    const ph = blocksFor(
+      ":is(img.doc-inline-img[data-inline-image='1'], span.doc-inline-math, sup.doc-note-ref)",
+    )
+    expect(ph).toContain('display: inline-block')
+    expect(ph).toContain('var(--story-marker-ink)')
+    expect(ph).toContain('width: auto')
+    const note = blocksFor('.view-story .doc-page sup.doc-note-ref')
+    expect(note).toContain('font-size: 0.7em')
+    const anchor = blocksFor('.view-story .doc-page .doc-inline-img-anchor')
+    expect(anchor).toContain('width: 2.6em')
+    expect(anchor).toContain('float: none')
+  })
+
+  it('text boxes and block pictures collapse to one slim bar', () => {
+    const box = blocksFor('.view-story .doc-page .doc-protected:not(.doc-protected-invisible)')
+    expect(box).toContain('max-height')
+    expect(
+      blocksFor(
+        '.view-story .doc-page .doc-protected:not(.doc-protected-invisible):not(:hover) > *',
+      ),
+    ).toContain('visibility: hidden')
+  })
 })
 
 describe('Focus typewriter scroll: the caret line keeps to the middle', () => {
