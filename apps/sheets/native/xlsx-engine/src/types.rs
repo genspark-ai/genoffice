@@ -444,7 +444,11 @@ pub struct CellRange {
 }
 
 impl CellRange {
-    pub(crate) fn validate(&self, sheet: &SheetMetadata) -> Result<(), SidecarError> {
+    pub(crate) fn validate(
+        &self,
+        sheet: &SheetMetadata,
+        sparse_rows: Option<&[usize]>,
+    ) -> Result<(), SidecarError> {
         if self.start_row > self.end_row || self.start_column > self.end_column {
             return Err(SidecarError::InvalidRequest(
                 "Range boundaries are reversed.".into(),
@@ -455,7 +459,18 @@ impl CellRange {
                 "Range is outside the worksheet.".into(),
             ));
         }
-        let row_count = self.end_row - self.start_row + 1;
+        if sparse_rows.is_some_and(|rows| {
+            rows.is_empty()
+                || rows.len() > 512
+                || rows[0] < self.start_row
+                || rows[rows.len() - 1] > self.end_row
+                || rows.windows(2).any(|pair| pair[0] >= pair[1])
+        }) {
+            return Err(SidecarError::InvalidRequest(
+                "Invalid sparse row selection.".into(),
+            ));
+        }
+        let row_count = sparse_rows.map_or(self.end_row - self.start_row + 1, <[usize]>::len);
         let column_count = self.end_column - self.start_column + 1;
         if row_count.saturating_mul(column_count) > MAX_RANGE_CELLS {
             return Err(SidecarError::InvalidRequest(format!(
@@ -466,7 +481,7 @@ impl CellRange {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum CellValue {
     String(String),

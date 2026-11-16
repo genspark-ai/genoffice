@@ -172,7 +172,8 @@ import {
   type SparklineGroupState,
 } from './WorkbookVisuals'
 import { VISUAL_UNDO_COMMAND_ID } from './undo-carry'
-import { largeFilterHiddenRows, largeFilterOwnsSpan } from './large-filter-state'
+import { applyLargeFilter, isLargeFilterSheet } from './large-filter'
+import { largeFilterHiddenRows, largeFilterOwnsSpan, largeFilterSheet } from './large-filter-state'
 import {
   BORDER_COMMAND_TYPES,
   CLOSURE_MAX_CELLS,
@@ -1341,10 +1342,13 @@ export async function loadVisibleRange(
       : viewportStart.column
     visible = {
       startRow: viewportStart.row,
-      endRow: viewportStart.row + (visible ? visible.endRow - visible.startRow : 79),
+      endRow: viewportStart.row + (visible ? Math.min(visible.endRow - visible.startRow, 240) : 79),
       startColumn,
       endColumn: startColumn + columnSpan,
     }
+  }
+  if (visible && largeFilterHiddenRows(state, sheetId)?.size) {
+    visible = { ...visible, endRow: Math.min(visible.endRow, visible.startRow + 240) }
   }
   const range = createBufferedRange(
     normalizeVisibleRange(visible, screenRowCount, screenColumnCount),
@@ -1352,6 +1356,32 @@ export async function loadVisibleRange(
     screenColumnCount,
   )
   const generation = bumpViewportGeneration(state, sheetId)
+  const filtered = largeFilterHiddenRows(state, sheetId)
+  if (filtered?.size) {
+    try {
+      await loadFilteredViewport(
+        runtime,
+        lazyWorkbookRef,
+        worksheet,
+        state,
+        sheet,
+        range,
+        viewportStart?.row ?? visible?.startRow ?? range.startRow,
+        screenRowCount,
+        filtered,
+        generation,
+      )
+      if (viewportGenerationIs(state, sheetId, generation)) {
+        await loadFrozenRowStrip(lazyWorkbookRef, worksheet, sheet, range)
+      }
+    } catch (error: unknown) {
+      if (lazyWorkbookRef.current === state && viewportGenerationIs(state, sheetId, generation)) {
+        setMessage(String(error))
+      }
+    }
+    return
+  }
+  evictFilteredViewport(worksheet, state, sheet)
   await loadRange(runtime, lazyWorkbookRef, worksheet, range, setMessage)
   await loadFrozenColumnStrip(lazyWorkbookRef, worksheet, sheet, range)
   await loadFrozenRowStrip(lazyWorkbookRef, worksheet, sheet, range)
@@ -1364,6 +1394,229 @@ export async function loadVisibleRange(
     screenRowCount,
     generation,
   )
+}
+
+const filteredViewports = new WeakMap<LazyWorkbookState, Map<string, IRange[]>>()
+
+export function filteredViewportRows(
+  anchor: number,
+  rowCount: number,
+  limit: number,
+  hidden: ReadonlySet<number>,
+  rawVisible: (row: number) => boolean,
+): number[] {
+  const rows: number[] = []
+  for (let row = Math.max(0, anchor); row < rowCount && rows.length < limit; row += 1) {
+    if (!hidden.has(row) && rawVisible(row)) rows.push(row)
+  }
+  return rows
+}
+
+function evictFilteredViewport(
+  worksheet: UniverWorksheet,
+  state: LazyWorkbookState,
+  sheet: WorkbookFile['sheets'][number],
+  keep: readonly IRange[] = [],
+): void {
+  const sheetId = worksheet.getSheetId()
+  const viewports = filteredViewports.get(state)
+  const previous = viewports?.get(sheetId)
+  if (!previous?.length) return
+  viewports?.delete(sheetId)
+  const normal = state.loadedRanges.get(sheetId)
+  const pinned = state.closure.pinned.get(sheetId)
+  const pinnedKeys = pinned?.size ? new Set(pinned.keys()) : undefined
+  const suppressed = journalSuppression.active
+  journalSuppression.active = true
+  try {
+    keepActiveSheet(worksheet, () => {
+      for (const band of previous) {
+        // The ordinary viewport keeps its own residency record. Never clear
+        // a cell it still considers loaded.
+        const residents = normal ? [normal, ...keep] : keep
+        let parts = [band]
+        for (const resident of residents) {
+          parts = parts.flatMap((part) => {
+            const startRow = Math.max(part.startRow, resident.startRow)
+            const endRow = Math.min(part.endRow, resident.endRow)
+            const startColumn = Math.max(part.startColumn, resident.startColumn)
+            const endColumn = Math.min(part.endColumn, resident.endColumn)
+            if (startRow > endRow || startColumn > endColumn) return [part]
+            return [
+              ...rowsOutside(part, { ...part, startRow, endRow }),
+              { ...part, startRow, endRow, endColumn: startColumn - 1 },
+              { ...part, startRow, endRow, startColumn: endColumn + 1 },
+            ].filter((range) => range.startColumn <= range.endColumn)
+          })
+        }
+        for (const part of parts) evictWorksheetCells(worksheet, part, sheet.freeze, pinnedKeys)
+      }
+    })
+  } finally {
+    journalSuppression.active = suppressed
+  }
+}
+
+/// A viewport can comprise rows hundreds of thousands of physical lines
+/// apart. Read only the chunks containing those rows, and install their
+/// values at their original coordinates so selection, edits and save agree.
+async function loadFilteredViewport(
+  runtime: UniverRuntime,
+  lazyWorkbookRef: { current: LazyWorkbookState | null },
+  worksheet: UniverWorksheet,
+  state: LazyWorkbookState,
+  sheet: WorkbookFile['sheets'][number],
+  viewport: IRange,
+  anchor: number,
+  screenRowCount: number,
+  hidden: ReadonlySet<number>,
+  generation: number,
+): Promise<void> {
+  const sheetId = worksheet.getSheetId()
+  const current = () =>
+    lazyWorkbookRef.current === state &&
+    viewportGenerationIs(state, sheetId, generation) &&
+    largeFilterHiddenRows(state, sheetId) === hidden
+  const ops = state.editJournal.structuralOps.get(sheetId) ?? []
+  const bands = [viewport]
+  const frozenColumns = sheet.freeze?.frozenColumns ?? 0
+  if (viewport.startColumn >= frozenColumns && frozenColumns > 0) {
+    bands.push({ ...viewport, startColumn: 0, endColumn: frozenColumns - 1 })
+  }
+  const width = bands.reduce((sum, band) => sum + band.endColumn - band.startColumn + 1, 0)
+  const rows = filteredViewportRows(
+    anchor - 24,
+    screenRowCount,
+    Math.min(240, Math.max(1, Math.floor(60_000 / width))),
+    hidden,
+    (row) => worksheet.getSheet().getRowRawVisible(row),
+  )
+  const runs = groupRowRuns(rows, 0)
+  const next = bands.flatMap((band) =>
+    runs.map(([startRow, endRow]) => ({ ...band, startRow, endRow })),
+  )
+  const previous = filteredViewports.get(state)?.get(sheetId)
+  if (
+    previous?.length === next.length &&
+    next.every((range, index) => {
+      const old = previous[index]!
+      return containsRange(old, range) && containsRange(range, old)
+    })
+  )
+    return
+  const fileRows = [
+    ...new Set(
+      rows.flatMap((row) => {
+        const file = screenToFile(ops, 'row', row)
+        return file !== null && file < sheet.rowCount ? [file] : []
+      }),
+    ),
+  ].sort((a, b) => a - b)
+  const reads = await Promise.all(
+    bands.map(async (band) => {
+      const mapped = screenRangeToFileRange(ops, {
+        ...band,
+        startRow: rows[0] ?? 0,
+        endRow: rows.at(-1) ?? 0,
+      })
+      if (!mapped || !fileRows.length || mapped.startColumn >= sheet.columnCount) return undefined
+      const endColumn = Math.min(mapped.endColumn, sheet.columnCount - 1)
+      const batchSize = Math.max(
+        1,
+        Math.floor(SIDECAR_READ_BATCH_CELLS / (endColumn - mapped.startColumn + 1)),
+      )
+      const screen = { cells: [], rows: [], merges: [], hyperlinks: [] } as Pick<
+        WorkbookRangeResult,
+        'cells' | 'rows' | 'merges' | 'hyperlinks'
+      >
+      for (let i = 0; i < fileRows.length && current(); i += batchSize) {
+        const requested = fileRows.slice(i, i + batchSize)
+        const result = await windowDesktopRange(
+          state,
+          sheetId,
+          mapped.startColumn,
+          endColumn,
+          requested,
+        )
+        if (!current()) return undefined
+        storeFormulaText(state, sheetId, result.cells)
+        recordCachedFormulaValues(state, sheetId, result.cells)
+        const data = ops.length ? mapRangeResultToScreen(ops, result) : result
+        screen.cells.push(...data.cells)
+        screen.rows.push(...data.rows)
+        screen.merges.push(...data.merges)
+        screen.hyperlinks.push(...data.hyperlinks)
+      }
+      return screen
+    }),
+  )
+  if (!current()) return
+  const richFamilies = richRunFamilies(reads.flatMap((read) => read?.cells ?? []))
+  if (richFamilies.size) await untilCellFontsLoaded(registerCellFontAliases(richFamilies))
+  if (!current()) return
+  evictFilteredViewport(worksheet, state, sheet, next)
+  for (const [index, band] of bands.entries()) {
+    const data = reads[index]
+    if (data) {
+      recordRowStyleKeys(state, sheetId, data.rows)
+      recordHyperlinks(state, sheetId, data.hyperlinks)
+      keepActiveSheet(worksheet, () => {
+        applyMerges(worksheet, state, sheetId, data.merges)
+        applyRowProperties(runtime, worksheet, state, sheetId, data.rows)
+      })
+    }
+    const cellsByRow = new Map<number, WorkbookRangeResult['cells']>()
+    for (const cell of data?.cells ?? []) {
+      if (cell.column < band.startColumn || cell.column > band.endColumn) continue
+      let cells = cellsByRow.get(cell.row)
+      if (!cells) cellsByRow.set(cell.row, (cells = []))
+      cells.push(cell)
+    }
+    const inherited = inheritedWrapLookup(state.file.styles, data?.rows ?? [], sheet.columnWidths)
+    for (const [startRow, endRow] of runs) {
+      const cells: WorkbookRangeResult['cells'] = []
+      for (let row = startRow; row <= endRow; row += 1) cells.push(...(cellsByRow.get(row) ?? []))
+      patchWorksheetRange(
+        worksheet,
+        undefined,
+        { ...band, startRow, endRow },
+        state.formulaMode ? degradeCostlyFormulas(state, sheet.name, cells) : cells,
+        state.file.styles,
+        data?.hyperlinks ?? [],
+        sheet.tables,
+        sheet.pivotTables,
+        sheet.freeze,
+        state.formulaMode,
+        state.editJournal,
+        state.closure.pinned.get(sheetId),
+        state.recalc.overlay.get(sheetId),
+        undefined,
+        sheetRowColStyleKeys(state, sheetId),
+        inherited,
+        hiddenRowsInfo(state, sheetId),
+        false,
+      )
+    }
+  }
+  let viewports = filteredViewports.get(state)
+  if (!viewports) filteredViewports.set(state, (viewports = new Map()))
+  viewports.set(sheetId, next)
+}
+
+function windowDesktopRange(
+  state: LazyWorkbookState,
+  sheetId: string,
+  startColumn: number,
+  endColumn: number,
+  rows: number[],
+): Promise<WorkbookRangeResult> {
+  return window.desktopApi.readWorkbookRange({
+    sessionId: state.file.sessionId,
+    sheetId: lazyFileSheetId(state, sheetId),
+    mode: 'viewport',
+    rows,
+    range: { startRow: rows[0]!, endRow: rows.at(-1)!, startColumn, endColumn },
+  })
 }
 
 /// Every viewport load supersedes the previous one for its sheet: a scroll
@@ -3546,6 +3799,24 @@ async function loadRange(
           result.autoFilterColumns,
         )
         applyDataValidations(runtime, state, sheetId, result.dataValidations)
+        if (
+          result.autoFilterColumns.length &&
+          state.restoredFilterSpans.has(sheetId) &&
+          isLargeFilterSheet(state, sheetId) &&
+          !largeFilterOwnsSpan(state, sheetId) &&
+          !largeFilterSheet(state, sheetId).pending
+        ) {
+          const current = () => lazyWorkbookRef.current === state
+          void applyLargeFilter(runtime, state, worksheet, { record: false, current })
+            .then(() => {
+              if (current() && isActiveSheet(runtime, sheetId)) {
+                return loadVisibleRange(runtime, lazyWorkbookRef, worksheet, setMessage)
+              }
+            })
+            .catch((error: unknown) => {
+              if (current()) setMessage(String(error))
+            })
+        }
         state.decorationsPendingSheets.delete(sheetId)
       } else {
         state.decorationsPendingSheets.add(sheetId)

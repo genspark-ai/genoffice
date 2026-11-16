@@ -5,6 +5,7 @@ import type {
   ExternalLinksResult,
   ExternalLinksUpdateResult,
   WorkbookRangeRequest,
+  WorkbookFilterRequest,
 } from '../shared/desktop-api'
 
 const PROTOCOL_VERSION = 1
@@ -30,6 +31,7 @@ const CANCELLABLE_READS = new Set([
   'read_row_outline',
   'read_media',
   'find_cells',
+  'filter_rows',
 ])
 
 interface SidecarResponse {
@@ -88,6 +90,10 @@ export class XlsxSidecarClient {
     readonly sheetId: string
   }): Promise<unknown> {
     return this.request({ command: 'read_formula_cells', ...input })
+  }
+
+  async filterRows(input: WorkbookFilterRequest): Promise<unknown> {
+    return this.request({ command: 'filter_rows', ...input })
   }
 
   async findCells(

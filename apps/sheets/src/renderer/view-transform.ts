@@ -260,6 +260,30 @@ function spanEnvelope(
   return { start, end }
 }
 
+/// Piecewise translation of screen rows for the native filter. Inserted rows
+/// have no file span; deleted rows never enter the filter's input.
+export function screenFileRowSpans(
+  ops: readonly StructuralOp[],
+  startRow: number,
+  endRow: number,
+  fileRowCount: number,
+): { startRow: number; endRow: number; fileStartRow: number }[] {
+  return spanSegments(ops, 'row', { start: startRow, end: endRow }, false)
+    .flatMap(({ start, end }) => {
+      if (start >= fileRowCount) return []
+      const screen = fileToScreen(ops, 'row', start)
+      if (screen === null) return []
+      return [
+        {
+          startRow: screen,
+          endRow: screen + Math.min(end, fileRowCount - 1) - start,
+          fileStartRow: start,
+        },
+      ]
+    })
+    .sort((a, b) => a.startRow - b.startRow)
+}
+
 /// File-space range backing a screen-space range. The result may span file
 /// lines that were deleted (they map back to nothing and are dropped on
 /// install). Null when no line in the range has file backing.

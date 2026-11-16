@@ -1259,7 +1259,7 @@ pub(crate) fn flush_chunk(
     state: &Arc<(Mutex<SheetIndex>, Condvar)>,
     indexed_through_row: usize,
 ) -> Result<(), SidecarError> {
-    let path = cache_directory.join(format!("sheet-{sheet_index}-chunk-{chunk_index}.json"));
+    let path = cache_directory.join(format!("sheet-{sheet_index}-chunk-{chunk_index}.bin"));
     let has_data = !chunk.cells.is_empty() || !chunk.rows.is_empty();
     let outline_rows: Vec<RowOutlineEntry> = chunk
         .rows
@@ -1273,10 +1273,7 @@ pub(crate) fn flush_chunk(
         })
         .collect();
     if has_data {
-        let file = File::create(&path)?;
-        let mut writer = BufWriter::new(file);
-        serde_json::to_writer(&mut writer, chunk)?;
-        writer.flush()?;
+        chunks::write_chunk(&path, chunk)?;
         chunk.cells.clear();
         chunk.rows.clear();
     }

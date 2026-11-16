@@ -206,6 +206,20 @@ fn parse_wildcards(needle: &str) -> Vec<Token> {
     tokens
 }
 
+/// The condition editor uses a whole-cell wildcard pattern and preserves
+/// surrounding spaces. Unlike Find, its tilde is a literal character.
+pub(crate) struct FilterGlob(Vec<Token>);
+
+impl FilterGlob {
+    pub(crate) fn new(pattern: &str) -> Self {
+        Self(parse_wildcards(&pattern.to_lowercase().replace('~', "~~")))
+    }
+
+    pub(crate) fn matches(&self, text: &str) -> bool {
+        glob_match(&self.0, &text.to_lowercase().chars().collect::<Vec<_>>())
+    }
+}
+
 /// Whole-string glob match with single-star backtracking.
 fn glob_match(tokens: &[Token], text: &[char]) -> bool {
     let (mut t, mut s) = (0usize, 0usize);
@@ -261,7 +275,10 @@ pub fn cell_value_text(value: &CellValue) -> String {
     }
 }
 
-fn js_number_text(number: f64) -> String {
+pub(crate) fn js_number_text(number: f64) -> String {
+    if number == 0.0 {
+        return "0".to_owned();
+    }
     let magnitude = number.abs();
     if magnitude != 0.0 && !(1e-6..1e21).contains(&magnitude) {
         let exp = format!("{number:e}");
@@ -404,8 +421,7 @@ impl WorkbookSession {
         matcher: &FindMatcher,
         look_in: FindLookIn,
     ) -> Result<Vec<FindCellsMatch>, SidecarError> {
-        let file = File::open(path)?;
-        let chunk: ChunkData = serde_json::from_reader(BufReader::new(file))?;
+        let chunk = chunks::read_chunk(path, 0..=usize::MAX, false)?;
         let sheet_id = &self.sheets[sheet_index].id;
         Ok(chunk
             .cells

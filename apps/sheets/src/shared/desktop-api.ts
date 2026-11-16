@@ -912,6 +912,7 @@ export const workbookRangeRequestSchema = z
     // Interactive reads never wait in the sidecar command queue. Status
     // requests return only progress when the visible cells are already loaded.
     mode: z.enum(['viewport', 'status']).optional(),
+    rows: z.array(z.number().int().nonnegative()).min(1).max(512).optional(),
     range: z
       .object({
         startRow: z.number().int().nonnegative(),
@@ -928,12 +929,123 @@ export const workbookRangeRequestSchema = z
       context.addIssue({ code: 'custom', message: 'Range boundaries are reversed.' })
       return
     }
-    const rows = range.endRow - range.startRow + 1
+    if (
+      request.rows?.some(
+        (row, i, rows) =>
+          row < range.startRow || row > range.endRow || (i > 0 && row <= rows[i - 1]!),
+      )
+    ) {
+      context.addIssue({ code: 'custom', message: 'Invalid sparse row selection.' })
+    }
+    const rows = request.rows?.length ?? range.endRow - range.startRow + 1
     const columns = range.endColumn - range.startColumn + 1
     if (rows * columns > MAX_RANGE_CELLS) {
       context.addIssue({ code: 'custom', message: `Range exceeds ${MAX_RANGE_CELLS} cells.` })
     }
   })
+
+const filterRow = z.number().int().min(0).max(1_048_575)
+const filterColumn = z
+  .object({
+    fileColumn: z.number().int().min(0).max(16_383).nullable(),
+    overrides: z
+      .array(
+        z
+          .object({
+            startRow: filterRow,
+            endRow: filterRow,
+            value: cellScalarSchema,
+          })
+          .strict(),
+      )
+      .max(1_048_576),
+    predicate: z
+      .discriminatedUnion('kind', [
+        z
+          .object({
+            kind: z.literal('values'),
+            values: z.array(z.string()).max(1_048_576),
+            blank: z.boolean(),
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal('conditions'),
+            and: z.boolean(),
+            conditions: z
+              .array(
+                z
+                  .object({
+                    value: z.union([z.string(), z.number()]),
+                    operator: z
+                      .enum([
+                        'equal',
+                        'notEqual',
+                        'greaterThan',
+                        'greaterThanOrEqual',
+                        'lessThan',
+                        'lessThanOrEqual',
+                      ])
+                      .optional(),
+                  })
+                  .strict(),
+              )
+              .max(2),
+          })
+          .strict(),
+      ])
+      .optional(),
+  })
+  .strict()
+
+export const workbookFilterRequestSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    sheetId: z.string().min(1),
+    startRow: filterRow,
+    endRow: filterRow,
+    spans: z
+      .array(z.object({ startRow: filterRow, endRow: filterRow, fileStartRow: filterRow }).strict())
+      .max(1_048_576),
+    criteria: z.array(filterColumn).max(16_384),
+    page: z
+      .object({
+        column: filterColumn,
+        query: z.string().max(32_767),
+        offset: z.number().int().min(0).max(1_048_576),
+        limit: z.number().int().min(1).max(200),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+
+export const workbookFilterResultSchema = z
+  .object({
+    ready: z.boolean(),
+    hidden: z.string().max(174_764).optional(),
+    page: z
+      .object({
+        total: z.number().int().min(0).max(1_048_576),
+        values: z
+          .array(
+            z
+              .object({
+                text: z.string(),
+                count: z.number().int().min(1).max(1_048_576),
+                styleIndex: z.number().int().nonnegative().optional(),
+              })
+              .strict(),
+          )
+          .max(200),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+
+export type WorkbookFilterRequest = z.infer<typeof workbookFilterRequestSchema>
+export type WorkbookFilterResult = z.infer<typeof workbookFilterResultSchema>
 
 const workbookCellRecordSchema = z
   .object({
@@ -3488,6 +3600,7 @@ export interface DesktopApi {
   onSidecarCrashed(callback: () => void): () => void
   readWorkbookRange(request: WorkbookRangeRequest): Promise<WorkbookRangeResult>
   readWorkbookFormulas(request: WorkbookFormulaCellsRequest): Promise<WorkbookFormulaCellsResult>
+  filterWorkbookRows(request: WorkbookFilterRequest): Promise<WorkbookFilterResult>
   findWorkbookCells(request: WorkbookFindCellsRequest): Promise<WorkbookFindCellsResult>
   /** The workbook's refreshable data connections (web queries for now). */
   listWorkbookConnections(request: WorkbookConnectionsRequest): Promise<WorkbookConnectionsResult>
