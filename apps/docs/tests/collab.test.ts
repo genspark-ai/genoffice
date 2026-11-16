@@ -3,6 +3,7 @@ import { EditorState, TextSelection } from '@tiptap/pm/state'
 import { EditorView } from '@tiptap/pm/view'
 import { Schema, type Node as PmNode } from '@tiptap/pm/model'
 import { yCursorPlugin } from 'y-prosemirror'
+import type { Awareness } from 'y-protocols/awareness'
 
 import { CollabSession } from '../src/renderer/collab/session'
 import { CollabSyncController } from '../src/renderer/collab/sync-extension'
@@ -152,13 +153,13 @@ function makeRig(rooms: CollabRooms): Rig {
   const viewA = new EditorView(host, {
     state: EditorState.create({
       schema,
-      plugins: [ctrlA.plugin, yCursorPlugin(sessionA.awareness)],
+      plugins: [ctrlA.plugin, yCursorPlugin(sessionA.awareness as unknown as Awareness)],
     }),
   })
   const viewB = new EditorView(host, {
     state: EditorState.create({
       schema,
-      plugins: [ctrlB.plugin, yCursorPlugin(sessionB.awareness)],
+      plugins: [ctrlB.plugin, yCursorPlugin(sessionB.awareness as unknown as Awareness)],
     }),
   })
   return { peerA, peerB, sessionA, sessionB, ctrlA, ctrlB, viewA, viewB }

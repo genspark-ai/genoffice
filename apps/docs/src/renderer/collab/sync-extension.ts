@@ -1,10 +1,11 @@
 import { Extension } from '@tiptap/core'
-import { Plugin } from '@tiptap/pm/state'
+import { Plugin, type PluginKey } from '@tiptap/pm/state'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import * as Y from 'yjs'
+import { Awareness } from 'y-protocols/awareness'
+import { ProsemirrorBinding, yCursorPlugin, ySyncPluginKey } from 'y-prosemirror'
 import { CollabAwareness } from './awareness'
-import { ProsemirrorBinding, yCursorPlugin, ySyncPluginKey, type YSyncState } from 'y-prosemirror'
 import { COLLAB_FRAGMENT } from '../../shared/collab'
 
 /**
@@ -19,12 +20,28 @@ import { COLLAB_FRAGMENT } from '../../shared/collab'
  * The plugin registers under y-prosemirror's own key: its binding reads the
  * plugin state (the fragment, the history flags) from there.
  */
+
+/** the plugin state y-prosemirror's binding reads */
+interface CollabSyncState {
+  type: Y.XmlFragment | null
+  doc: Y.Doc | null
+  binding: { mapping: ProsemirrorMapping } | null
+  snapshot: unknown
+  prevSnapshot: unknown
+  isChangeOrigin: boolean
+  isUndoRedoOperation: boolean
+  addToHistory: boolean
+}
+
+/** the nodes a Y type maps to — y-prosemirror's own mapping shape */
+type ProsemirrorMapping = Map<Y.AbstractType<unknown>, PmNode | PmNode[]>
+
 export class CollabSyncController {
-  readonly plugin: Plugin<YSyncState>
+  readonly plugin: Plugin<CollabSyncState>
   /** the awareness of this editor: one editor, one participant */
   readonly awareness: CollabAwareness
 
-  private readonly mapping = new Map<unknown, unknown>()
+  private readonly mapping: ProsemirrorMapping = new Map()
   /** the cursor plugin reads the mapping through the sync plugin's state */
   private readonly bindingPlaceholder = { mapping: this.mapping }
   private view: EditorView | null = null
@@ -39,11 +56,11 @@ export class CollabSyncController {
     const idleDoc = new Y.Doc()
     const idleFragment = idleDoc.getXmlFragment(COLLAB_FRAGMENT)
     this.awareness = new CollabAwareness()
-    this.plugin = new Plugin<YSyncState>({
-      key: ySyncPluginKey,
+    this.plugin = new Plugin<CollabSyncState>({
+      key: ySyncPluginKey as PluginKey<CollabSyncState>,
       props: {
         editable: (state) => {
-          const syncState = ySyncPluginKey.getState(state)
+          const syncState = ySyncPluginKey.getState(state) as CollabSyncState | undefined
           return syncState?.snapshot == null && syncState?.prevSnapshot == null
         },
       },
@@ -59,7 +76,7 @@ export class CollabSyncController {
           addToHistory: true,
         }),
         apply: (tr, state) => {
-          const change = tr.getMeta(ySyncPluginKey)
+          const change = tr.getMeta(ySyncPluginKey) as Partial<CollabSyncState> | undefined
           if (change !== undefined) state = { ...state, ...change }
           state.addToHistory = tr.getMeta('addToHistory') !== false
           state.isChangeOrigin = change !== undefined && !!change.isChangeOrigin
@@ -171,6 +188,11 @@ export const CollabSync = Extension.create({
   addProseMirrorPlugins() {
     const ctrl = new CollabSyncController()
     controller = ctrl
-    return [ctrl.plugin, yCursorPlugin(ctrl.awareness)]
+    return [
+      ctrl.plugin,
+      // the cursor plugin takes the awareness surface; the facade answers with
+      // an empty world until a room opens
+      yCursorPlugin(ctrl.awareness as unknown as Awareness),
+    ]
   },
 })
