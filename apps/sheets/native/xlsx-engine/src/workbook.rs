@@ -112,6 +112,89 @@ pub(crate) fn normalize_worksheet_path(target: &str) -> Result<String, SidecarEr
     crate::archive::resolve_relationship_target("xl/workbook.xml", target)
 }
 
+pub(crate) struct WorksheetOpenSource {
+    pub(crate) path: String,
+    pub(crate) xml_bytes: u64,
+}
+
+impl WorksheetOpenSource {
+    pub(crate) fn is_large(&self) -> bool {
+        self.xml_bytes >= 32 * 1024 * 1024
+    }
+}
+
+pub(crate) fn worksheet_open_sources(
+    archive: &mut ZipArchive<File>,
+    declarations: &[SheetDeclaration],
+    relationships: &HashMap<String, String>,
+    cancelled: &AtomicBool,
+) -> Result<Vec<WorksheetOpenSource>, SidecarError> {
+    declarations
+        .iter()
+        .map(|declaration| {
+            if cancelled.load(Ordering::Acquire) {
+                return Err(SidecarError::cancelled());
+            }
+            let target = relationships
+                .get(&declaration.relationship_id)
+                .ok_or_else(|| {
+                    SidecarError::Workbook(format!(
+                        "Missing worksheet relationship {}.",
+                        declaration.relationship_id
+                    ))
+                })?;
+            let path = normalize_worksheet_path(target)?;
+            let xml_bytes = zip_entry(archive, &path)?.size();
+            Ok(WorksheetOpenSource { path, xml_bytes })
+        })
+        .collect()
+}
+
+/// Each worker has its own archive cursor. Keep results in sheet order and
+/// let the caller handle small sheets (or a failed thread spawn) inline.
+pub(crate) fn scan_large_worksheet_metadata(
+    path: &Path,
+    sources: &[WorksheetOpenSource],
+    cancelled: &AtomicBool,
+) -> VecDeque<Option<Result<String, SidecarError>>> {
+    if sources
+        .iter()
+        .filter(|source| source.is_large())
+        .take(2)
+        .count()
+        < 2
+    {
+        return VecDeque::new();
+    }
+    thread::scope(|scope| {
+        let scans: Vec<_> = sources
+            .iter()
+            .map(|source| {
+                if !source.is_large() {
+                    return None;
+                }
+                thread::Builder::new()
+                    .name("xlsx-sheet-metadata".into())
+                    .spawn_scoped(scope, move || {
+                        let mut archive = ZipArchive::new(File::open(path)?)?;
+                        visuals::read_worksheet_without_cells(&mut archive, &source.path, cancelled)
+                    })
+                    .ok()
+            })
+            .collect();
+        scans
+            .into_iter()
+            .map(|scan| {
+                scan.map(|scan| {
+                    scan.join().unwrap_or_else(|_| {
+                        Err(SidecarError::Io("Worksheet metadata scan failed.".into()))
+                    })
+                })
+            })
+            .collect()
+    })
+}
+
 pub(crate) struct SheetDimensions {
     pub(crate) row_count: usize,
     pub(crate) column_count: usize,

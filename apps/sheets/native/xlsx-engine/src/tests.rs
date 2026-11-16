@@ -501,6 +501,54 @@ fn open_reports_sparklines_that_follow_the_cells() {
 }
 
 #[test]
+fn parallel_metadata_scan_preserves_sheet_protection_after_cell_data() {
+    if !THREADS {
+        return;
+    }
+    let first = "xl/worksheets/sheet1.xml";
+    let middle = "xl/worksheets/sheet2.xml";
+    let last = "xl/worksheets/sheet3.xml";
+    let (_dir, path) = open_fixture(&[
+        (
+            first,
+            r#"<x:worksheet xmlns:x="urn:test"><x:sheetData><x:row/></x:sheetData><x:sheetProtection sheet="1"/></x:worksheet>"#,
+        ),
+        (middle, "<worksheet><sheetData/></worksheet>"),
+        (
+            last,
+            r#"<worksheet><sheetData/><sheetProtection sheet="1" autoFilter="0"/></worksheet>"#,
+        ),
+    ]);
+    // Exercise the large-sheet scheduling without putting huge parts in the test.
+    let sources = [
+        WorksheetOpenSource {
+            path: first.into(),
+            xml_bytes: 64 * 1024 * 1024,
+        },
+        WorksheetOpenSource {
+            path: middle.into(),
+            xml_bytes: 1,
+        },
+        WorksheetOpenSource {
+            path: last.into(),
+            xml_bytes: 64 * 1024 * 1024,
+        },
+    ];
+    let mut scans = scan_large_worksheet_metadata(&path, &sources, &AtomicBool::new(false));
+    let parse = |xml: String| {
+        read_sheet_protection(&xml)
+            .unwrap()
+            .sheet_protection
+            .unwrap()
+    };
+    let first = parse(scans.pop_front().unwrap().unwrap().unwrap());
+    assert!(first.protected && !first.allow.auto_filter);
+    assert!(scans.pop_front().unwrap().is_none());
+    let last = parse(scans.pop_front().unwrap().unwrap().unwrap());
+    assert!(last.protected && last.allow.auto_filter);
+}
+
+#[test]
 fn omits_empty_sparklines_field_from_metadata_json() {
     let sheet = SheetMetadata {
         id: "sheet-1".into(),
