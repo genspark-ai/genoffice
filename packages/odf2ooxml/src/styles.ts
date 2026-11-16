@@ -20,6 +20,8 @@ export interface OdfTextProps {
   font?: string
   vertAlign?: 'superscript' | 'subscript'
   caps?: 'all' | 'small'
+  resetUppercase?: boolean
+  resetSmallCaps?: boolean
   /** run shading fill, hex without '#' */
   shading?: string
 }
@@ -62,7 +64,7 @@ export class OdfStyles {
   private fonts = new Map<string, string>()
   private lists = new Map<string, Map<number, OdfListLevel>>()
   private columnWidths = new Map<string, number>()
-  private cellFills = new Map<string, string>()
+  private cellFills = new Map<string, string | null>()
   private tableAligns = new Map<string, 'center' | 'right'>()
   private defaults: { text?: OdfTextProps; para?: OdfParaProps } = {}
 
@@ -109,6 +111,7 @@ export class OdfStyles {
     const family = attr(node, 'style:family')
     if (!name || !family) return
     if (family === 'table-column') {
+      this.defs.set(`${family}:${name}`, { family, parent: attr(node, 'style:parent-style-name') })
       const properties =
         firstChild(node, 'style:table-column-properties') ??
         firstChild(node, 'style:column-properties')
@@ -117,9 +120,12 @@ export class OdfStyles {
       return
     }
     if (family === 'table-cell') {
+      this.defs.set(`${family}:${name}`, { family, parent: attr(node, 'style:parent-style-name') })
       const properties = firstChild(node, 'style:table-cell-properties')
       const fill = properties ? odfColorToHex(attr(properties, 'fo:background-color')) : null
       if (fill) this.cellFills.set(name, fill)
+      else if (properties && attr(properties, 'fo:background-color') === 'transparent')
+        this.cellFills.set(name, null)
       return
     }
     if (family === 'table') {
@@ -145,14 +151,25 @@ export class OdfStyles {
 
   /** width of a table-column style, EMU; null when undeclared */
   columnWidthEmu(styleName: string | undefined): number | null {
-    if (!styleName) return null
-    return this.columnWidths.get(styleName) ?? null
+    const seen = new Set<string>()
+    while (styleName && !seen.has(styleName)) {
+      seen.add(styleName)
+      const width = this.columnWidths.get(styleName)
+      if (width !== undefined) return width
+      styleName = this.defs.get(`table-column:${styleName}`)?.parent
+    }
+    return null
   }
 
   /** fill of a table-cell style, hex without '#'; null otherwise */
   cellFill(styleName: string | undefined): string | null {
-    if (!styleName) return null
-    return this.cellFills.get(styleName) ?? null
+    const seen = new Set<string>()
+    while (styleName && !seen.has(styleName)) {
+      seen.add(styleName)
+      if (this.cellFills.has(styleName)) return this.cellFills.get(styleName) ?? null
+      styleName = this.defs.get(`table-cell:${styleName}`)?.parent
+    }
+    return null
   }
 
   /** `table:align` of a table style, when the table is not flush with the margins */
@@ -177,6 +194,8 @@ export class OdfStyles {
     const out: OdfTextProps = {}
     if (a['fo:font-weight'] === 'bold' || a['fo:font-weight'] === 'normal')
       out.bold = a['fo:font-weight'] === 'bold'
+    else if (/^[1-9]00$/.test(a['fo:font-weight'] ?? ''))
+      out.bold = Number(a['fo:font-weight']) >= 600
     if (['italic', 'oblique', 'normal'].includes(a['fo:font-style']))
       out.italic = a['fo:font-style'] !== 'normal'
     if (a['style:text-underline-type'] !== undefined) {
@@ -209,6 +228,8 @@ export class OdfStyles {
     if (transform === 'uppercase') out.caps = 'all'
     else if (transform === 'lowercase') out.caps = undefined
     else if (transform === 'capitalize') out.caps = undefined
+    if (transform === 'none') out.resetUppercase = true
+    if (a['fo:font-variant'] === 'normal') out.resetSmallCaps = true
     if (a['fo:font-variant'] === 'small-caps') out.caps = 'small'
     return Object.keys(out).length > 0 ? out : undefined
   }
@@ -232,16 +253,27 @@ export class OdfStyles {
         const multiple = Number(percent[1]) / 100
         // 1000% is already beyond what a consumer honors; anything larger is
         // malformed input and would render as exponent notation in w:line
-        if (multiple <= 10) out.lineSpacing = multiple
+        if (multiple > 0 && multiple <= 10) {
+          out.lineSpacing = multiple
+          out.lineExactTw = undefined
+        }
       } else {
         const fixed = odfLengthToEmu(lineHeight)
-        if (fixed !== null) out.lineExactTw = emuToTwips(fixed)
+        if (fixed !== null) {
+          out.lineExactTw = emuToTwips(fixed)
+          out.lineSpacing = undefined
+        }
       }
     }
     const atLeast = odfLengthToEmu(a['style:line-height-at-least'])
     if (atLeast !== null) out.lineAtLeastTw = emuToTwips(atLeast)
     const exact = odfLengthToEmu(a['style:line-spacing'])
     if (exact !== null) out.lineExactTw = emuToTwips(exact)
+    if (lineHeight?.trim() === 'normal') {
+      out.lineSpacing = 1
+      out.lineExactTw = undefined
+      out.lineAtLeastTw = undefined
+    }
     const left = odfLengthToEmu(a['fo:margin-left'] ?? a['fo:margin'])
     if (left !== null) out.indentLeftTw = emuToTwips(left)
     const right = odfLengthToEmu(a['fo:margin-right'] ?? a['fo:margin'])
@@ -318,7 +350,7 @@ export class OdfStyles {
     // parent first so the style itself wins
     for (let index = chain.length - 1; index >= 0; index--) {
       const inheritedSize = text.sizePt
-      if (chain[index].text) text = { ...text, ...chain[index].text }
+      if (chain[index].text) text = mergeTextProps(text, chain[index].text!)
       const percent = chain[index].fontSizePercent
       if (percent !== undefined && inheritedSize !== undefined) {
         const size = (inheritedSize * percent) / 100
@@ -403,6 +435,17 @@ export class OdfStyles {
     for (const root of stylesRoots) findLayout(root)
     return properties
   }
+}
+
+export function mergeTextProps(base: OdfTextProps, override: OdfTextProps): OdfTextProps {
+  const out = { ...base, ...override }
+  if (
+    override.caps === undefined &&
+    ((override.resetUppercase && base.caps === 'all') ||
+      (override.resetSmallCaps && base.caps === 'small'))
+  )
+    out.caps = undefined
+  return out
 }
 
 /** label-alignment indents of a list level (space-before + min-label-width). */
