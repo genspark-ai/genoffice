@@ -45,17 +45,22 @@ html.genoffice-popover-open .tab-bar {
 }
 
 /* desktops that put the window controls on the leading edge (some Linux
-   layouts) report them as titlebar-area-x; keep the menu button clear */
+   layouts) report them as titlebar-area-x; keep the menu button clear.
+   Divided back below 100% like the macOS spacer: the strip is zoomed, the
+   caption buttons are not. */
 body.overlay-title-bar .tab-bar-drag-spacer {
-  width: max(8px, env(titlebar-area-x, 0px));
+  width: calc(max(8px, env(titlebar-area-x, 0px)) / min(var(--ui-scale), 1));
 }
 
 /* Windows/Linux caption buttons are drawn over the strip's right end
    (titleBarOverlay); the Window Controls Overlay env vars give their width,
-   and resolve to 0 where the overlay is absent */
+   and resolve to 0 where the overlay is absent. Divided back below 100% so
+   the reserve stays the width of the unzoomed buttons. */
 .tab-bar-caption-spacer {
   flex-shrink: 0;
-  width: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+  width: calc(
+    (100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)) / min(var(--ui-scale), 1)
+  );
 }
 
 .tab-app-menu-btn {
