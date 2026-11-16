@@ -347,6 +347,16 @@ const FONTS = [
     '© The Noto Project Authors. This bundle ships a subset of the original fonts;\nglyphs and metrics are unmodified.',
   ],
   [
+    'Monaspace Neon (variable)',
+    'SIL OFL 1.1',
+    'Copyright (c) 2023, GitHub https://github.com/githubnext/monaspace, with Reserved Font Name\n"Monaspace" (subfamilies Argon/Neon/Xenon/Radon/Krypton). The bundle ships the upstream\nvariable TTF (glyf outlines, wght 200-800) unmodified under its own name, so the Reserved\nFont Name clause does not apply.',
+  ],
+  [
+    'IBM Plex Mono',
+    'SIL OFL 1.1',
+    'Copyright 2017 IBM Corp., with Reserved Font Name "Plex". The bundle ships the upstream\nRegular and Bold static TTFs unmodified under their own name, so the Reserved Font Name\nclause does not apply.',
+  ],
+  [
     'GenOffice Gothic KR (NanumGothic derivative)',
     'SIL OFL 1.1',
     `${GOTHIC_KR_COPYRIGHT}\nSubset with unmodified metrics; renamed per OFL 1.1.`,
