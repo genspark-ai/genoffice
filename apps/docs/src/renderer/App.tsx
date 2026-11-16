@@ -462,6 +462,7 @@ import {
   revisionAuthorCss,
   revisionAuthorsInkOrder,
   revisionsInSelection,
+  storyAuthorshipCss,
   type ReviewEntry,
   type RevisionFilter,
   type RevisionScope,
@@ -6108,6 +6109,20 @@ export function App() {
     () => revisionAuthorCss(reviewAuthors, revisionFilter.hiddenAuthors, movesByAuthor(tcOptions)),
     [reviewAuthors, revisionFilter.hiddenAuthors, tcOptions],
   )
+  // the story view's four-ink split (own / others / AI; #2654), scoped under
+  // .view-story so the page view's per-author rainbow is untouched
+  const storyAuthorStyle = useMemo(
+    () =>
+      viewMode === 'story'
+        ? storyAuthorshipCss(
+            allRevisions,
+            ownAuthor,
+            revisionFilter.hiddenAuthors,
+            movesByAuthor(tcOptions),
+          )
+        : '',
+    [viewMode, allRevisions, ownAuthor, revisionFilter.hiddenAuthors, tcOptions],
+  )
   const isActiveEntry = (e: ReviewEntry) =>
     e.rev.story
       ? e.rev.story.id === activeStoryId
@@ -8345,6 +8360,7 @@ export function App() {
       <ToastHost />
       {docCss && <style data-doc-css="">{docCss}</style>}
       {revisionAuthorStyle && <style data-rev-authors="">{revisionAuthorStyle}</style>}
+      {storyAuthorStyle && <style data-story-authors="">{storyAuthorStyle}</style>}
       {tcOptionsStyle && <style data-rev-options="">{tcOptionsStyle}</style>}
       {liveLineFactor != null && (
         <style data-doc-css="">{`.doc-page { --doc-line-factor:${liveLineFactor} }`}</style>

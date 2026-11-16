@@ -4,6 +4,7 @@
  * view shows, per-author ink assignment, and the pane's entry list.
  */
 import type { Node as PmNode } from '@tiptap/pm/model'
+import { AI_AUTHOR } from '../ai/revision-author'
 import type { RevisionRange } from './revisions'
 
 export const REVISION_INK_COUNT = 8
@@ -132,6 +133,65 @@ export function revisionAuthorCss(
       `.has-move-to[data-rev-author=${a}]{background:none}`,
       `.has-ppr-change[data-ppr-change-author=${a}]{border-left:none;padding-left:0}`,
       `.has-ppr-change[data-ppr-change-author=${a}]::after{content:none}`,
+    )
+  }
+  return rules.join('\n')
+}
+
+/**
+ * Story-view authorship (issue #2654's "who wrote what"): four inks instead
+ * of the page view's one-per-author rainbow. The own user's suggestions take
+ * one colour, everyone else's suggestions take a single shared one (the
+ * author's name still rides the marks' title), and AI-written text (the 'AI'
+ * author, ai/revision-author.ts) a gradient. Scoped under .view-story with
+ * higher specificity than the page view's per-author sheet, which keeps
+ * running underneath for the specific-people filter — hidden authors stay
+ * out of every rule here so that filter keeps its effect. Display-only:
+ * accept/reject stays in the review panes.
+ */
+export function storyAuthorshipCss(
+  ranges: Array<Pick<RevisionRange, 'author'>>,
+  ownAuthor: string,
+  hiddenAuthors: string[] = [],
+  movesByAuthor: { from: boolean; to: boolean } = { from: false, to: false },
+): string {
+  const authors = revisionAuthors(ranges)
+  if (authors.length === 0) return ''
+  const insSel = movesByAuthor.to ? '' : ':not(.doc-move-to)'
+  const delSel = movesByAuthor.from ? '' : ':not(.doc-move-from)'
+  const own =
+    ownAuthor && authors.includes(ownAuthor) && !hiddenAuthors.includes(ownAuthor)
+      ? cssString(ownAuthor)
+      : null
+  const ai =
+    authors.includes(AI_AUTHOR) && !hiddenAuthors.includes(AI_AUTHOR) ? cssString(AI_AUTHOR) : null
+  const notOf = (attr: string, name: string | null) => (name ? `:not([${attr}=${name}])` : '')
+  const notHidden = (attr: string) =>
+    hiddenAuthors.map((h) => `:not([${attr}=${cssString(h)}])`).join('')
+  const rules: string[] = []
+
+  if (own) {
+    rules.push(
+      `.view-story .doc-page .doc-ins[data-ins-author=${own}]${insSel},.view-story .doc-page .doc-del[data-del-author=${own}]${delSel},.view-story .doc-page .has-rpr-change[data-rpr-author=${own}]{--docs-paper-rev-ink:var(--story-suggest-own)}`,
+    )
+  }
+  if (ai) {
+    rules.push(
+      `.view-story .doc-page .doc-ins[data-ins-author=${ai}]${insSel},.view-story .doc-page .doc-del[data-del-author=${ai}]${delSel},.view-story .doc-page .has-rpr-change[data-rpr-author=${ai}]{--docs-paper-rev-ink:var(--story-ai-ink)}`,
+    )
+    rules.push(
+      `.view-story .doc-page .doc-ins[data-ins-author=${ai}]${insSel}{background-image:var(--story-ai-grad);-webkit-background-clip:text;background-clip:text;color:transparent;text-decoration-color:var(--story-ai-ink)}`,
+    )
+  }
+  const others: Array<[cls: string, attr: string, sel: string]> = [
+    ['doc-ins', 'data-ins-author', insSel],
+    ['doc-del', 'data-del-author', delSel],
+    ['has-rpr-change', 'data-rpr-author', ''],
+  ]
+  for (const [cls, attr, sel] of others) {
+    const nots = notOf(attr, own) + notOf(attr, ai) + notHidden(attr)
+    rules.push(
+      `.view-story .doc-page .${cls}[${attr}]${nots}${sel}{--docs-paper-rev-ink:var(--story-suggest-others)}`,
     )
   }
   return rules.join('\n')

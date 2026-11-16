@@ -14,6 +14,7 @@ import {
   revisionExcerpt,
   revisionsInSelection,
   revisionShown,
+  storyAuthorshipCss,
 } from '../src/renderer/editor/revision-filters'
 import {
   handleRevision,
@@ -156,6 +157,50 @@ describe('author inks', () => {
     )
     expect(css).toContain('.has-move-from[data-rev-author="Ann"]{display:none}')
     expect(css).toContain('.has-ppr-change[data-ppr-change-author="Ann"]::after{content:none}')
+  })
+})
+
+describe('story authorship inks', () => {
+  const ranges = ['Pat', 'Sam', 'AI'].map((a) => rev('ins', a))
+
+  it('splits four ways: own ink, a shared others ink, and a gradient for AI', () => {
+    const css = storyAuthorshipCss(ranges, 'Pat')
+    expect(css).toContain('[data-ins-author="Pat"]')
+    expect(css).toContain('--docs-paper-rev-ink:var(--story-suggest-own)')
+    expect(css).toContain('[data-ins-author="AI"]')
+    expect(css).toContain('--docs-paper-rev-ink:var(--story-ai-ink)')
+    expect(css).toContain('background-image:var(--story-ai-grad)')
+    expect(css).toContain('background-clip:text')
+    const others = css.split('\n').find((r) => r.includes('story-suggest-others'))
+    expect(others).toContain('[data-ins-author]:not([data-ins-author="Pat"])')
+    expect(others).toContain(':not([data-ins-author="AI"])')
+    expect(css).toContain('[data-del-author]:not([data-del-author="Pat"])')
+  })
+
+  it('stays empty for a document without revisions', () => {
+    expect(storyAuthorshipCss([], 'Pat')).toBe('')
+  })
+
+  it('keeps hidden authors out of every rule so the people filter still works', () => {
+    const css = storyAuthorshipCss(ranges, 'Pat', ['Sam'])
+    const others = css.split('\n').find((r) => r.includes('story-suggest-others'))
+    expect(others).toContain(':not([data-ins-author="Sam"])')
+    // a hidden own author loses their rule too
+    expect(storyAuthorshipCss(ranges, 'Pat', ['Pat'])).not.toContain('story-suggest-own')
+    // and a hidden AI author loses the gradient
+    expect(storyAuthorshipCss(ranges, 'Pat', ['AI'])).not.toContain('story-ai-grad')
+  })
+
+  it('escapes quotes in the own author name', () => {
+    const css = storyAuthorshipCss([{ author: 'O"Brien' }, { author: 'AI' }], 'O"Brien')
+    expect(css).toContain('[data-ins-author="O\\"Brien"]')
+    expect(css).toContain('--docs-paper-rev-ink:var(--story-suggest-own)')
+  })
+
+  it('lets moved text keep the move ink when move colouring is on', () => {
+    const css = storyAuthorshipCss(ranges, 'Pat', [], { from: true, to: true })
+    expect(css).not.toContain('doc-move-to')
+    expect(css).not.toContain('doc-move-from')
   })
 })
 
