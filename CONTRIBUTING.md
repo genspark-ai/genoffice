@@ -36,6 +36,23 @@ depends on repository rules and must not be assumed enabled.
   i18n, UI kit.
 - `apps/sheets/native/xlsx-engine` — Rust xlsx engine (runs as a sidecar process) for xlsx import/export.
 
+## Product neutrality
+
+ForaOffice is a general-purpose Office editor intended for integration by any
+host and operation by any AI agent through standard protocols such as MCP.
+Currently implemented adapters and tested clients are a supported subset, not a
+restriction on the product's intended consumers. Distinguish this goal from
+combinations actually verified; portable integration is currently implemented
+for Docs only.
+
+Keep document editing, fidelity, capability discovery and operation results
+independent of host identity, model provider and industry workflows. Hosts own
+business rules, domain syntax, task orchestration and publication policy; expose
+their checks through generic extension contracts. Technical object protection
+and host authorization are distinct. Fix integration defects at the responsible
+shared boundary after checking the authoritative standard; consumer-specific
+branches and private agent handshakes do not belong in the editor core.
+
 ## Docs SDK contribution boundary
 
 Only Docs currently has the portable host/runtime work. Read the
