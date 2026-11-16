@@ -1,7 +1,9 @@
+// Modified for ForaOffice: verify the published canonical HTML rules in the CLI guide.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
+import { docsCatalog } from '../src/formats/docx'
 import { run, tempDir } from './helpers'
 
 const REPO = resolve(__dirname, '../../..')
@@ -440,7 +442,7 @@ describe('genoffice docx (docs editor under jsdom)', () => {
     const guide = await run(['guide', 'docs'])
     expect(guide.code).toBe(0)
     expect(guide.stdout).toContain('findReplace')
-    expect(guide.stdout).toContain('Only these tags are allowed')
+    expect(guide.stdout).toContain((await docsCatalog()).htmlRules)
   })
 
   it('handles mixed batches, appends by default, and dry-runs with real index shifts', async () => {

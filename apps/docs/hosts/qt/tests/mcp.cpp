@@ -197,6 +197,33 @@ private slots:
         QCOMPARE(noOpReceipt.value("revisionBefore"), current.value("revision"));
         QCOMPARE(noOpReceipt.value("revisionAfter"), current.value("revision"));
         QCOMPARE(noOpReceipt.value("persistence").toString(), QStringLiteral("unchanged"));
+        const auto beforePreview = sdk(*editor, "snapshot").value("result");
+        const auto blockIndex = current.value("items").toArray().first().toObject().value("blockIndex");
+        const QJsonObject guardedInput{{"startBlockIndex", blockIndex}, {"endBlockIndex", blockIndex},
+            {"html", "<p>Preview must not be committed</p>"}, {"dryRun", true},
+            {"preconditions", QJsonObject{{"targets", QJsonArray{currentTarget}}, {"allowedTypes", QJsonArray{"docParagraph"}}}}};
+        const auto guardedPreview = callLiveTool("replace_blocks", guardedInput);
+        QVERIFY2(!guardedPreview.value("isError").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(guardedPreview).toJson())));
+        QVERIFY(!guardedPreview.value("committed").toBool());
+        QCOMPARE(guardedPreview.value("receipt").toObject().value("outcome").toString(), QStringLiteral("preview"));
+        QCOMPARE(guardedPreview.value("revision"), current.value("revision"));
+        QCOMPARE(sdk(*editor, "snapshot").value("result"), beforePreview);
+        const auto rules = native([&](Editor::Completion done) {
+            editor->callSdk("annotations.setRules", {{"source", "host-check"}, {"rules", QJsonArray{QJsonObject{
+                {"id", "live-text"}, {"pattern", "Queried Agent edit"}, {"message", "Host supplied review finding"}, {"severity", "warning"}}}}}, std::move(done));
+        });
+        QVERIFY(!rules.contains("error"));
+        QVERIFY(!sdk(*editor, "annotations.refresh").contains("error"));
+        const auto diagnosticsReply = rpc(readConnection, "tools/call", {{"name", "read_document_diagnostics"}, {"arguments", QJsonObject{}}}, readSession)
+            .body.value("result").toObject();
+        QVERIFY2(!diagnosticsReply.value("isError").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(diagnosticsReply).toJson())));
+        const auto diagnostics = QJsonDocument::fromJson(diagnosticsReply.value("structuredContent").toObject().value("output").toString().toUtf8()).object();
+        QVERIFY(diagnostics.value("checksComplete").toBool());
+        bool hasFinding = false;
+        for (const auto& item : diagnostics.value("items").toArray())
+            hasFinding |= item.toObject().value("kind") == "diagnostic" && item.toObject().value("message") == "Host supplied review finding";
+        QVERIFY(hasFinding);
+        QCOMPARE(sdk(*editor, "snapshot").value("result"), beforePreview);
         const auto beforeStale = sdk(*editor, "snapshot").value("result");
         const auto stale = callLiveTool("apply_ops", {{"ops", QJsonArray{QJsonObject{
             {"op", "findReplace"}, {"target", QJsonObject{{"engine", target}}},

@@ -1,6 +1,7 @@
 // Modified for ForaOffice: one inventory for protected deletion intent.
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { hasDeletionRevision } from './doc-utils'
+import type { DocsStructurePlan } from '../../shared/structure-plan'
 
 export interface StructureItem {
   id: string
@@ -178,4 +179,37 @@ export function validateStructureDeletion(
   const actual = affected.map((item) => item.id).sort()
   if (JSON.stringify([...requested].sort()) === JSON.stringify(actual)) return null
   return 'This edit would delete protected document structures without exact matching deleteStructures intent. No changes were made. Query the current range, preserve its objects, or declare the exact structures to delete.'
+}
+
+/** Compare exact net deletion identities; bound the response, never the validation. */
+export function describeStructureDeletion(
+  affected: readonly StructureItem[],
+  removed: readonly StructureItem[],
+  requested: readonly string[],
+): DocsStructurePlan {
+  const required = removed.map((item) => item.id)
+  const missing = required.filter((id) => !requested.includes(id))
+  const seen = new Set<string>()
+  const extra = requested.filter((id) => {
+    const duplicate = seen.has(id)
+    seen.add(id)
+    return duplicate || !required.includes(id)
+  })
+  const wouldPreserve = affected.filter((item) => !required.includes(item.id))
+  const counts = {
+    required: required.length,
+    missing: missing.length,
+    extra: extra.length,
+    wouldRemove: removed.length,
+    wouldPreserve: wouldPreserve.length,
+  }
+  return {
+    required: required.slice(0, 64),
+    missing: missing.slice(0, 64),
+    extra: extra.slice(0, 64),
+    wouldRemove: removed.slice(0, 64),
+    wouldPreserve: wouldPreserve.slice(0, 64),
+    complete: Object.values(counts).every((count) => count <= 64),
+    counts,
+  }
 }

@@ -807,6 +807,8 @@ export interface SectionInfo {
   footerRefs: Partial<Record<'default' | 'first' | 'even', string>>
   /** editor-side: created by a not yet saved section break; its sectPr lives in the break paragraph's generated XML, not in a parsed block */
   pendingBreak?: true
+  /** Editor-session identity of the generated break node; never written to OOXML. */
+  pendingBreakId?: string
 }
 
 /** one rich paragraph of a header / footer part */
@@ -1536,6 +1538,10 @@ export interface TableCell {
   /** raw <w:tcPr>…</w:tcPr> bytes: surgically patched on regeneration so unmodeled
    *  properties (tcMar/textDirection etc.) are not lost */
   rawTcPr?: string
+  /** Transient editor-load source address; never emitted into OOXML. */
+  sourceCell?: { table: string; row: number; cell: number }
+  /** Observed properties paired with rawTcPr; copying formatting never grants content identity. */
+  sourceProperties?: Pick<TableCell, 'fill' | 'borders' | 'vAlign' | 'colSpan'>
   /** cell-level revision (tcPr w:cellIns / w:cellDel) */
   cellRevision?: { kind: 'ins' | 'del' } & RevisionInfo
   /** tracked cell-property change (tcPr w:tcPrChange); null = accepted */
@@ -1558,6 +1564,8 @@ export interface TableLook {
 
 /** Editable interchange model of a table block, extracted from or generated to OOXML. */
 export interface TableModel {
+  /** Load/save publication metadata for this parsed occurrence; never serialized into OOXML. */
+  sourcePublication?: { table: string; baseline: string; structure: string; formatting: string }
   rows: TableCell[][]
   /** relative column widths in percent (from w:tblGrid) */
   colWidthsPct?: number[]

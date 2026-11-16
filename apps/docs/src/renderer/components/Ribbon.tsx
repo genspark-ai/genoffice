@@ -26,12 +26,12 @@ import {
   addColumnBefore,
   addRowAfter,
   addRowBefore,
-  deleteRow,
   deleteTable,
   mergeCells,
   selectedRect,
   setCellAttr,
 } from '@tiptap/pm/tables'
+import { deleteRowWithSource as deleteRow } from '../ai/table-ops'
 import type {
   Block,
   CustomNumberingLevel,
@@ -3356,6 +3356,7 @@ function RibbonInner({
                       ).map(([label, Icon, command]) => (
                         <button
                           key={label}
+                          disabled={label === 'ribbonDeleteRow' && !fs.canDeleteRow}
                           onClick={() => {
                             setDropdown(null)
                             runTableCommand(command)
@@ -3405,7 +3406,10 @@ function RibbonInner({
                   <IconMergeCells />
                   {t('ribbonMergeCells')}
                 </button>
-                <button onClick={() => canEdit && onTableDialog?.('splitCells')}>
+                <button
+                  disabled={!fs.canSplitCellsDialog}
+                  onClick={() => canEdit && onTableDialog?.('splitCells')}
+                >
                   <IconSplitCells />
                   {t('ribbonSplitCells')}
                 </button>

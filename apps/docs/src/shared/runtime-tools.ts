@@ -4,6 +4,20 @@ import type { AgentToolDef } from '@genoffice/agent-core'
 /** Runtime lifecycle controls, separate from the pinned native AI tool catalog. */
 export const DOCS_RUNTIME_TOOLS: AgentToolDef[] = [
   {
+    name: 'read_document_diagnostics',
+    description:
+      'Read a bounded snapshot of host-provided document diagnostics and checker coverage/status. Does not run checkers or edit/save the document. Findings may be pending, failed or stale; an empty list is not proof of business correctness. Continue using cursor; changed document or checker results require a fresh query.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        source: { type: 'string', maxLength: 1000 },
+        limit: { type: 'integer', minimum: 1, maximum: 50 },
+        cursor: { type: 'string', maxLength: 10000 },
+      },
+    },
+  },
+  {
     name: 'query_document',
     description:
       'Read a bounded current-content window with revision-bound mutation targets. Partial reads refresh only the body baseline. Continue using nextCursor; stale continuation requires a fresh query.',

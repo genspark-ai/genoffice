@@ -1,9 +1,11 @@
+// Modified for ForaOffice: verify the published canonical HTML rules in the CLI guide.
 import { describe, expect, it } from 'vitest'
 import { OP_DOCS } from '@genoffice/pptx-ops/op-docs'
 import { fingerprint, signatureFromSchema } from '../src/op-catalog'
 import { SHEET_OP_GROUPS, sheetCatalog } from '../src/formats/xlsx-catalog'
 import { SUPPORTED_DSL_OPS } from '../src/formats/xlsx-dsl'
 import { REFUSED_DSL_OPS } from '../src/formats/xlsx-gateway-ops'
+import { docsCatalog } from '../src/formats/docx'
 import { run } from './helpers'
 
 describe('op catalogs', () => {
@@ -134,7 +136,7 @@ describe('op catalogs', () => {
     )
     const text = await run(['guide', 'docs', 'content'])
     expect(text.stdout).toContain('insert_chart {kind: bar|line|pie')
-    expect(text.stdout).toContain('Only these tags are allowed')
+    expect(text.stdout).toContain((await docsCatalog()).htmlRules)
     expect(text.stdout).not.toContain('setFont')
     const packageGuide = await run(['guide', 'docs', 'package'])
     expect(packageGuide.stdout).toContain('remove_parts')

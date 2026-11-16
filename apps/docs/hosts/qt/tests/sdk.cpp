@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QPointer>
 #include <QSignalSpy>
@@ -387,6 +388,80 @@ private slots:
         QVERIFY(call(editor, "ui.fileMenu.reset").contains("error"));
         editor.close();
     }
+    void mixedRunCellEditPreservesSavedTableLayout() {
+        QFile fixture(QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("fixtures/mixed-run-table.docx"));
+        QVERIFY(fixture.open(QIODevice::ReadOnly));
+        QByteArray bytes = fixture.readAll();
+        QVERIFY(bytes.startsWith("PK"));
+        int saves = 0;
+        QTemporaryDir workspace;
+        foraoffice::DocsQtOptions options;
+        options.packageRoot = qEnvironmentVariable("FORAOFFICE_QT_TEST_PACKAGE");
+        options.nodeExecutable = qEnvironmentVariable("FORAOFFICE_QT_TEST_NODE");
+        options.stateDirectory = workspace.filePath(".state");
+        options.defaultSaveDirectory = workspace.path();
+        options.readRoots = options.writeRoots = {workspace.path()};
+        options.language = "en";
+        options.documentHost = {{"enabled", true}, {"autoSave", QJsonObject{{"enabled", false}}}};
+        foraoffice::DocsQtEditor editor(options);
+        editor.resize(1100, 850);
+        for (const auto& method : {QStringLiteral("initialDocument"), QStringLiteral("openDocument")})
+            editor.setServiceHandler(method, [&](const QJsonArray&, foraoffice::DocsQtEditor::Completion done) {
+                done({{"result", QJsonObject{{"id", "host:mixed-table"}, {"name", "Mixed table.docx"},
+                    {"data", QJsonObject{{"base64", QString::fromLatin1(bytes.toBase64())}}}}}});
+            });
+        editor.setServiceHandler("confirmDocumentReplace", [](const QJsonArray&, foraoffice::DocsQtEditor::Completion done) { done({{"result", true}}); });
+        editor.setServiceHandler("recentDocuments", [](const QJsonArray&, foraoffice::DocsQtEditor::Completion done) { done({{"result", QJsonArray{}}}); });
+        editor.setServiceHandler("saveDocument", [&](const QJsonArray& args, foraoffice::DocsQtEditor::Completion done) {
+            bytes = QByteArray::fromBase64(args.at(0).toObject().value("data").toObject().value("base64").toString().toLatin1());
+            ++saves;
+            done({{"result", QJsonObject{{"ok", true}, {"committed", true}, {"pending", false},
+                {"document", QJsonObject{{"id", "host:mixed-table"}, {"name", "Mixed table.docx"}}}}}});
+        });
+        QSignalSpy ready(&editor, &foraoffice::DocsQtEditor::ready);
+        QSignalSpy failed(&editor, &foraoffice::DocsQtEditor::failed);
+        editor.show();
+        QTRY_VERIFY_WITH_TIMEOUT(!ready.isEmpty() || !failed.isEmpty(), 90000);
+        QVERIFY2(!ready.isEmpty(), failed.isEmpty() ? "Editor did not become ready" : qPrintable(failed.front()[0].toString()));
+        const auto edited = script(editor,
+            "(async()=>{const e=window.docsEditor,c=e.runtime.connect({id:'mixed-table'});try{"
+            "const before=c.context(),initial=e.inspection.snapshot().text;"
+            "const query=await c.execute({id:'cells',name:'query_document',input:{domain:'cells'}});"
+            "if(query.isError)throw Error(query.output);const item=JSON.parse(query.output).items.find(i=>i.target.cell.row===0&&i.target.cell.col===0);"
+            "if(!item||!item.supportedOperations.includes('setTableCellText'))throw Error('Missing editable merged owner');"
+            "const applied=await c.execute({id:'fill',name:'apply_ops',input:{ops:[{op:'setTableCellText',target:{engine:item.target},text:'QT_MIXED_UPDATED'}]}});"
+            "if(applied.isError)throw Error(applied.output);return {before,initial,after:c.context(),text:e.inspection.snapshot().text,applied};"
+            "}finally{c.close()}})()");
+        QVERIFY2(edited.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(edited).toJson())));
+        const auto result = edited.value("result").toObject();
+        QVERIFY(result.value("initial").toString().contains("ABCD"));
+        QVERIFY(result.value("text").toString().contains("QT_MIXED_UPDATED"));
+        QVERIFY(result.value("applied").toObject().value("committed").toBool());
+        QVERIFY(result.value("after").toObject().value("revision").toInt() > result.value("before").toObject().value("revision").toInt());
+        QVERIFY(call(editor, "documents.save").value("result").toBool());
+        QCOMPARE(saves, 1);
+        QVERIFY(bytes.startsWith("PK"));
+        const auto output = qEnvironmentVariable("FORAOFFICE_QT_TEST_RESULTS");
+        QVERIFY(!output.isEmpty());
+        QVERIFY(QDir().mkpath(output));
+        write(output + "/mixed-table.docx", bytes);
+        QVERIFY(call(editor, "documents.open").value("result").toBool());
+        const auto reopened = script(editor,
+            "(async()=>{const e=window.docsEditor,c=e.runtime.connect({id:'mixed-reopened'});try{const context=c.context();"
+            "const query=await c.execute({id:'reopened-cells',name:'query_document',input:{domain:'cells'}});"
+            "if(query.isError)throw Error(query.output);const item=JSON.parse(query.output).items.find(i=>i.target.cell.row===1&&i.target.cell.col===1);"
+            "if(!item)throw Error('Missing neighboring cell');return {context,text:e.inspection.snapshot().text,tail:new DOMParser().parseFromString(item.html,'text/html').body.textContent.trim()};"
+            "}finally{c.close()}})()");
+        QVERIFY2(reopened.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(reopened).toJson())));
+        const auto current = reopened.value("result").toObject();
+        QCOMPARE(current.value("tail").toString(), QStringLiteral("KEEP"));
+        QVERIFY(current.value("context").toObject().value("documentId") != result.value("before").toObject().value("documentId"));
+        for (const auto& text : {QStringLiteral("QT_MIXED_UPDATED"), QStringLiteral("NEIGHBOR"), QStringLiteral("KEEP"), QStringLiteral("AFTER_TABLE")})
+            QVERIFY(current.value("text").toString().contains(text));
+        QVERIFY(!current.value("text").toString().contains("ABCD"));
+        editor.close();
+    }
+
     void publicSdkWorksInARealManagedQtEditor() {
         QTemporaryDir workspace;
         QTemporaryDir outside;

@@ -10,11 +10,14 @@ import {
   addColumnBefore,
   addRowAfter,
   addRowBefore,
-  deleteRow,
   deleteTable,
   mergeCells,
-  splitCell,
 } from '@tiptap/pm/tables'
+import {
+  canSplitSelectedCells,
+  deleteRowWithSource as deleteRow,
+  splitCellWithSource as splitCell,
+} from '../ai/table-ops'
 import { platformShortcuts } from '@genoffice/i18n'
 import { redactTextBetween, type RedactableNode } from '../ai/redact-view'
 import type { TextboxDisplay } from '@genoffice/docx-engine'
@@ -324,6 +327,15 @@ export function EditorContextMenu({
 
   // ---- table section (shown when the cursor is inside a table, Word parity) ----
   const inTable = inTableOrSelected(editor.state)
+  const tableSelection = editor.state.selection
+  const tableState =
+    tableSelection instanceof NodeSelection && tableSelection.node.type.name === 'docTable'
+      ? editor.state.apply(
+          editor.state.tr.setSelection(
+            TextSelection.near(editor.state.doc.resolve(tableSelection.from + 1)),
+          ),
+        )
+      : editor.state
   /** cell commands can't run on a whole-table NodeSelection: drop the caret into the first cell */
   const enterFirstCell = () => {
     const sel = editor.state.selection
@@ -526,6 +538,7 @@ export function EditorContextMenu({
                   <button
                     key={labelKey}
                     className="ctx-item"
+                    disabled={labelKey === 'ribbonDeleteRow' && !deleteRow(tableState)}
                     onClick={run(() => runTable(command))}
                   >
                     <span className="ctx-label">{t(labelKey)}</span>
@@ -567,7 +580,7 @@ export function EditorContextMenu({
             onClick: run(() => runTable(mergeCells)),
           })}
           {item(t('ribbonSplitCellsDialog'), {
-            disabled: !canEdit,
+            disabled: !canEdit || !canSplitSelectedCells(tableState),
             onClick: run(() => {
               enterFirstCell()
               if (onTableDialog) onTableDialog('splitCells')

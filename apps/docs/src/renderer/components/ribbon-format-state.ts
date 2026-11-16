@@ -1,12 +1,13 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { NodeSelection } from '@tiptap/pm/state'
-import { isInTable, mergeCells, selectedRect, splitCell } from '@tiptap/pm/tables'
+import { isInTable, mergeCells, selectedRect } from '@tiptap/pm/tables'
+import { canSplitSelectedCells, deleteRowWithSource, splitCellWithSource } from '../ai/table-ops'
 import type { DocDefaults, Run, StyleInfo, TextboxDisplay } from '@genoffice/docx-engine'
 import { getActiveSubEditor } from '../editor/active-editor'
 import { shapeWrapOf } from '../editor/floating-z-order'
 import { selectedBoxIndex } from '../editor/selected-box'
-import { tableCellsSelection } from '../editor/table-ops'
+import { splitTableAtSelection, tableCellsSelection } from '../editor/table-ops'
 import { effectiveBidi, selectionHasBidi } from '../editor/direction'
 import {
   effectiveSizeHalfPoints,
@@ -32,6 +33,8 @@ export interface RibbonFormatState {
   inTable: boolean
   canMergeCells: boolean
   canSplitCell: boolean
+  canSplitCellsDialog: boolean
+  canDeleteRow: boolean
   /** Split Table needs a row above the caret's */
   canSplitTable: boolean
   imageSelected: boolean
@@ -115,6 +118,8 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   inTable: false,
   canMergeCells: false,
   canSplitCell: false,
+  canSplitCellsDialog: false,
+  canDeleteRow: false,
   canSplitTable: false,
   imageSelected: false,
   inlinePicture: false,
@@ -273,7 +278,7 @@ export function computeFormatState(
       cellWidthPx = colwidth?.[0] || null
       cellVAlign = (cellNode?.attrs.vAlign as string | null) ?? null
       cellTextDirection = (cellNode?.attrs.textDirection as string | null) ?? null
-      canSplitTable = rect.top > 0
+      canSplitTable = splitTableAtSelection()(tableState)
     } catch {
       /* degenerate selection: leave cell fields empty like the old activeCellInfo */
     }
@@ -318,7 +323,9 @@ export function computeFormatState(
     editable: editor.isEditable,
     inTable,
     canMergeCells: inTable && !!mergeCells(tableState),
-    canSplitCell: inTable && !!splitCell(tableState),
+    canSplitCell: inTable && splitCellWithSource(tableState),
+    canSplitCellsDialog: inTable && canSplitSelectedCells(tableState),
+    canDeleteRow: inTable && deleteRowWithSource(tableState),
     canSplitTable,
     imageSelected,
     inlinePicture: !!inlinePic,

@@ -19,12 +19,34 @@ export interface DocsAnnotation {
   from: number
   to: number
   message?: string
+  /** Host-defined diagnostic identifier; the editor does not interpret it. */
+  code?: string
   severity?: 'info' | 'warning' | 'error'
   style?: DocsRangeStyle
 }
 export interface DocsDiagnostic extends DocsAnnotation, DocsTextReference {
   source: string
   message: string
+  /** The decoration was mapped, but the host has not checked the new text. */
+  stale?: boolean
+}
+export interface DocsDiagnosticSource {
+  source: string
+  status: 'pending' | 'complete' | 'stale' | 'failed'
+  documentId: string
+  revision: number
+  coverage: { kind: 'document-text' | 'ranges'; from: number; to: number; rangeCount?: number }
+  error?: string
+}
+export interface DocsDiagnosticsSnapshot {
+  documentId: string
+  revision: number
+  /** Changes with diagnostic state even when document content is unchanged. */
+  version: number
+  complete: boolean
+  sources: DocsDiagnosticSource[]
+  diagnostics: DocsDiagnostic[]
+  errors: Array<{ source: string; message: string }>
 }
 export interface DocsMatchRule {
   id: string
@@ -50,6 +72,8 @@ export interface DocsAnnotations {
   registerChecker(source: string, checker: DocsChecker): () => void
   remove(source: string): void
   diagnostics(): DocsDiagnostic[]
+  /** Read current check state without running checkers or acknowledging stale findings. */
+  snapshot(): DocsDiagnosticsSnapshot
   errors(): Array<{ source: string; message: string }>
   onChange(listener: () => void): () => void
   refresh(): Promise<void>
@@ -132,11 +156,13 @@ export function createDocsAnnotations(
   let generation = 0
   let running: AbortController | undefined
   let scheduled = false
+  let version = 0
   const checkers = new Map<string, DocsChecker>()
   const rules = new Map<string, Array<{ rule: DocsMatchRule; pattern: RegExp }>>()
   const ranges = new Map<string, DocsAnnotation[]>()
   const findings = new Map<string, DocsDiagnostic[]>()
   const errors = new Map<string, string>()
+  const sourceStates = new Map<string, DocsDiagnosticSource>()
   const listeners = new Set<() => void>()
   const live = () => {
     if (disposed) throw new Error('The annotations API is disposed')
@@ -146,6 +172,7 @@ export function createDocsAnnotations(
     return next.editor
   }
   const paint = () => {
+    version++
     if (!editor || editor.isDestroyed) return
     const decorations: Decoration[] = []
     for (const entries of ranges.values())
@@ -187,6 +214,8 @@ export function createDocsAnnotations(
     // Never display diagnostics whose old offsets now address different text.
     findings.clear()
     errors.clear()
+    for (const [source, state] of sourceStates)
+      sourceStates.set(source, { ...state, status: 'stale', error: undefined })
     for (const [source, values] of ranges) {
       if (rules.has(source) || checkers.has(source)) {
         ranges.delete(source)
@@ -202,6 +231,25 @@ export function createDocsAnnotations(
             : [{ ...value, from: from.pos, to: to.pos }]
         }),
       )
+      const state = sourceStates.get(source)
+      if (state)
+        findings.set(
+          source,
+          (ranges.get(source) ?? []).flatMap((value) => {
+            return value.message === undefined
+              ? []
+              : [
+                  {
+                    ...value,
+                    documentId: state.documentId,
+                    revision: state.revision,
+                    source,
+                    message: value.message,
+                    stale: true,
+                  },
+                ]
+          }),
+        )
     }
     paint()
     if (scheduled) return
@@ -219,6 +267,7 @@ export function createDocsAnnotations(
       ranges.clear()
       findings.clear()
       errors.clear()
+      sourceStates.clear()
       paint()
     },
     activate() {
@@ -236,6 +285,7 @@ export function createDocsAnnotations(
       ranges.clear()
       findings.clear()
       errors.clear()
+      sourceStates.clear()
       identity = next.identity
       editor = next.editor
       editor.on('transaction', onTransaction)
@@ -286,6 +336,20 @@ export function createDocsAnnotations(
           .filter((value) => value.message !== undefined)
           .map((value) => ({ ...value, source, message: value.message! })),
       )
+      sourceStates.set(source, {
+        source,
+        status: 'complete',
+        documentId: snapshot.documentId,
+        revision: snapshot.revision,
+        coverage: {
+          kind: 'ranges',
+          from: values.length
+            ? values.reduce((from, value) => Math.min(from, value.from), Infinity)
+            : 0,
+          to: values.reduce((to, value) => Math.max(to, value.to), 0),
+          rangeCount: values.length,
+        },
+      })
       paint()
       void api.refresh().catch(() => {})
     },
@@ -296,6 +360,7 @@ export function createDocsAnnotations(
       ranges.delete(source)
       findings.delete(source)
       errors.delete(source)
+      sourceStates.delete(source)
       paint()
       void api.refresh().catch(() => {}) // Failure remains observable through errors()/onChange.
       return () => {
@@ -310,12 +375,34 @@ export function createDocsAnnotations(
       ranges.delete(source)
       findings.delete(source)
       errors.delete(source)
+      sourceStates.delete(source)
       paint()
       void api.refresh().catch(() => {})
     },
     diagnostics() {
       live()
       return [...findings.values()].flat().map((finding) => ({ ...finding }))
+    },
+    snapshot() {
+      live()
+      const reference = inspection.snapshot()
+      const sources = [...sourceStates.values()].map((state) => ({
+        ...state,
+        coverage: { ...state.coverage },
+        status:
+          state.documentId !== reference.documentId || state.revision !== reference.revision
+            ? ('stale' as const)
+            : state.status,
+      }))
+      return {
+        documentId: reference.documentId,
+        revision: reference.revision,
+        version,
+        complete: sources.every((state) => state.status === 'complete'),
+        sources,
+        diagnostics: [...findings.values()].flat().map((finding) => ({ ...finding })),
+        errors: [...errors].map(([source, message]) => ({ source, message })),
+      }
     },
     errors() {
       live()
@@ -332,6 +419,15 @@ export function createDocsAnnotations(
       const token = generation
       const controller = (running = new AbortController())
       const snapshot = inspection.snapshot()
+      for (const source of [...rules.keys(), ...checkers.keys()])
+        sourceStates.set(source, {
+          source,
+          status: 'pending',
+          documentId: snapshot.documentId,
+          revision: snapshot.revision,
+          coverage: { kind: 'document-text', from: 0, to: editor!.state.doc.content.size },
+        })
+      if (rules.size || checkers.size) paint()
       const apply = (source: string, values: DocsAnnotation[]) => {
         if (disposed || token !== generation || controller.signal.aborted) return
         const now = inspection.snapshot()
@@ -344,8 +440,12 @@ export function createDocsAnnotations(
             value.to > value.from &&
             value.to <= editor!.state.doc.content.size,
         )
+        if (accepted.length !== values.length)
+          throw new Error('Host checker returned an invalid annotation range')
         for (const value of accepted) styleAttributes(value.style)
         errors.delete(source)
+        const state = sourceStates.get(source)
+        if (state) sourceStates.set(source, { ...state, status: 'complete', error: undefined })
         ranges.set(source, accepted)
         findings.set(
           source,
@@ -362,7 +462,17 @@ export function createDocsAnnotations(
         paint()
       }
       for (const [source, values] of ranges) {
-        if (!rules.has(source) && !checkers.has(source)) apply(source, values)
+        // Mapping decorations is not a new business check. Explicit findings keep
+        // their original reference until the host publishes a fresh setRanges.
+        const state = sourceStates.get(source)
+        if (
+          !rules.has(source) &&
+          !checkers.has(source) &&
+          state?.status === 'complete' &&
+          state.documentId === snapshot.documentId &&
+          state.revision === snapshot.revision
+        )
+          apply(source, values)
       }
       for (const [source, entries] of rules) {
         const values: DocsAnnotation[] = []
@@ -378,6 +488,7 @@ export function createDocsAnnotations(
               from,
               to: last + 1,
               message: rule.message,
+              code: rule.id,
               severity: rule.severity,
               style: rule.style,
             })
@@ -392,6 +503,13 @@ export function createDocsAnnotations(
           } catch (error) {
             if (!controller.signal.aborted && token === generation) {
               errors.set(source, error instanceof Error ? error.message : String(error))
+              const state = sourceStates.get(source)
+              if (state)
+                sourceStates.set(source, {
+                  ...state,
+                  status: 'failed',
+                  error: error instanceof Error ? error.message : String(error),
+                })
               ranges.delete(source)
               findings.delete(source)
               paint()
@@ -410,6 +528,7 @@ export function createDocsAnnotations(
       ranges.clear()
       findings.clear()
       errors.clear()
+      sourceStates.clear()
       paint()
       listeners.clear()
       disposed = true

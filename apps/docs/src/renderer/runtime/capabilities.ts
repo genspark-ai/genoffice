@@ -47,6 +47,11 @@ export function toolUnavailable(
       reason: 'Watermarks are not available in this document session',
       errorCode: 'unavailable',
     }
+  if (name === 'read_document_diagnostics' && !doc.annotations)
+    return {
+      reason: 'Host diagnostics are not available in this document session',
+      errorCode: 'unavailable',
+    }
   if ((name === 'accept_changes' || name === 'reject_changes') && doc.extras?.revisionsLocked)
     return {
       reason: 'Document protection forbids revision decisions',

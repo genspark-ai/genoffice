@@ -23,6 +23,15 @@ export interface DocsQueryItem {
   complete: boolean
   supportedOperations: string[]
   mediaRef?: string
+  /** An image's containing block is a separate target, never implicit image-write authority. */
+  carrierTarget?: DocsEngineTarget
+  limitations?: Array<{
+    operation: string
+    code: 'protected_content' | 'not_editable'
+    reason: string
+  }>
+  /** Restricted HTML is not a lossless reconstruction of authored OOXML. */
+  projection?: { lossless: false; contentKinds: string[] }
   structures?: Array<{ id: string; kind: string; from: number; to: number }>
   structuresComplete?: boolean
   structuresPage?: { offset: number; complete: boolean; nextCursor?: string }

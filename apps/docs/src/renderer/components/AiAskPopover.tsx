@@ -12,7 +12,7 @@
  */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
-import { NodeSelection } from '@tiptap/pm/state'
+import { NodeSelection, TextSelection, type Selection } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { AI_QUEUE_ANCHOR_CLICK, queueAnchorRange } from '../editor/ai-queue-anchors'
@@ -93,6 +93,32 @@ function rangeRect(editor: Editor, from: number, to: number): AnchorRect | null 
   } catch {
     return null // positions can be transiently unmappable mid-transaction
   }
+}
+
+/** Native text selection can be ahead of the next ProseMirror selectionchange flush. */
+function commitDomTextSelection(editor: Editor): boolean {
+  const { view, state } = editor
+  if (!(state.selection instanceof TextSelection)) return true
+  const selection = view.dom.ownerDocument.getSelection()
+  if (
+    !selection?.anchorNode ||
+    !selection.focusNode ||
+    !view.dom.contains(selection.anchorNode) ||
+    !view.dom.contains(selection.focusNode)
+  )
+    return true
+  let next: Selection
+  try {
+    const anchor = view.posAtDOM(selection.anchorNode, selection.anchorOffset)
+    const head = view.posAtDOM(selection.focusNode, selection.focusOffset)
+    next = TextSelection.between(state.doc.resolve(anchor), state.doc.resolve(head))
+  } catch {
+    // The DOM range became unmappable during a document update; do not submit an older range.
+    return false
+  }
+  if (!next.eq(state.selection))
+    view.dispatch(state.tr.setSelection(next).setMeta('addToHistory', false))
+  return true
 }
 
 export function AiAskPopover({
@@ -240,6 +266,7 @@ export function AiAskPopover({
 
   // the input takes the DOM selection with it: keep the targeted range visible while the popover is open
   const openFromSelection = () => {
+    if (!commitDomTextSelection(editor) || editor.state.selection.empty) return
     setText('')
     setKind(selectionKind(editor))
     setOpen({ mode: 'new' })

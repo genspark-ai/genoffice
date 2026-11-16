@@ -1899,18 +1899,37 @@ function pprGroupUnchanged(
  * (character-unit indents resolved at parse time), and its `charIndents` say
  * which cancel attributes an indent edit has to write.
  */
-/** pPr groups a header/footer cell paragraph models, by the format fields that feed them */
+/** Editable cell paragraph groups, compared against their observed format. */
 const CELL_PPR_GROUPS: Array<[tag: string, fields: Array<keyof ParaFormat>]> = [
-  ['w:jc', ['align']],
-  ['w:spacing', ['spaceBefore', 'spaceAfter', 'lineSpacing', 'lineRule', 'lineRawTwips']],
-  ['w:ind', ['indentLeft', 'indentFirstLine']],
+  ['w:jc', ['align', 'bidi', 'bidiInherited']],
+  [
+    'w:spacing',
+    [
+      'spaceBefore',
+      'spaceAfter',
+      'spaceBeforeAuto',
+      'spaceAfterAuto',
+      'lineSpacing',
+      'lineRule',
+      'lineRawTwips',
+    ],
+  ],
+  ['w:ind', ['indentLeft', 'indentRight', 'indentFirstLine']],
   ['w:tabs', ['tabStops']],
+  ['w:pageBreakBefore', ['pageBreakBefore']],
+  ['w:shd', ['shadingFill']],
+  ['w:pBdr', ['borders', 'borderStyle', 'borderLines']],
+  ['w:bidi', ['bidi']],
+  ['w:framePr', ['frame', 'dropCap']],
+  ['w:textDirection', ['textDirection']],
+  ['w:rPr', ['emptyRunSizeHalfPoints']],
+  ...PPR_FLAG_TAGS.map((tag): [string, Array<keyof ParaFormat>] => [tag, [PPR_FLAG_FIELDS[tag]]]),
 ]
 
 /** attributes of w:ind / w:spacing the cell model drives, by group with the
  *  ParaFormat fields that drive it: only a group whose fields changed is rebuilt
  *  (a cleared field goes away with its character-unit and autospacing twins);
- *  the other groups, and attributes outside any group (right indent, …), keep
+ *  the other groups, and attributes outside any group, keep
  *  their raw value — the parser drops explicit zeros, so an untouched
  *  `w:after="0"` must never be regenerated from the model */
 const CELL_MODELED_ATTR_GROUPS: Record<
@@ -1919,14 +1938,21 @@ const CELL_MODELED_ATTR_GROUPS: Record<
 > = {
   'w:ind': [
     { attrs: ['w:left', 'w:start', 'w:leftChars', 'w:startChars'], fields: ['indentLeft'] },
+    { attrs: ['w:right', 'w:end', 'w:rightChars', 'w:endChars'], fields: ['indentRight'] },
     {
       attrs: ['w:firstLine', 'w:hanging', 'w:firstLineChars', 'w:hangingChars'],
       fields: ['indentFirstLine'],
     },
   ],
   'w:spacing': [
-    { attrs: ['w:before', 'w:beforeLines', 'w:beforeAutospacing'], fields: ['spaceBefore'] },
-    { attrs: ['w:after', 'w:afterLines', 'w:afterAutospacing'], fields: ['spaceAfter'] },
+    {
+      attrs: ['w:before', 'w:beforeLines', 'w:beforeAutospacing'],
+      fields: ['spaceBefore', 'spaceBeforeAuto'],
+    },
+    {
+      attrs: ['w:after', 'w:afterLines', 'w:afterAutospacing'],
+      fields: ['spaceAfter', 'spaceAfterAuto'],
+    },
     { attrs: ['w:line', 'w:lineRule'], fields: ['lineSpacing', 'lineRule', 'lineRawTwips'] },
   ],
 }
@@ -1972,9 +1998,9 @@ function mergeCellElementAttrs(
 
 /**
  * Paragraph format edit inside a layout-table cell: only the groups whose
- * fields differ from `original` are rewritten, so unmodeled pPr children
- * (bidi, borders, shading, page break) and style-resolved values the editor
- * merely reports stay as they were. w:jc / w:tabs go through mergePPrFormat;
+ * fields differ from `original` are rewritten, so other pPr children and
+ * style-resolved values the editor merely reports stay as they were.
+ * Whole-element groups go through mergePPrFormat;
  * w:ind / w:spacing merge attribute-wise so their unmodeled attributes survive.
  */
 export function mergeCellParaFormat(
@@ -1993,15 +2019,23 @@ export function mergeCellParaFormat(
     out = out.replace(/<w:tabs>[\s\S]*?<\/w:tabs>|<w:tabs\/>/, '')
     tags.delete('w:tabs')
   }
-  const viaMerge = new Set([...tags].filter((t) => t === 'w:jc' || t === 'w:tabs'))
-  if (viaMerge.size > 0) out = mergePPrFormat(out, format, undefined, viaMerge) || '<w:pPr></w:pPr>'
+  const viaMerge = new Set([...tags].filter((t) => t !== 'w:ind' && t !== 'w:spacing'))
+  if (viaMerge.size > 0) out = mergePPrFormat(out, format, original, viaMerge) || '<w:pPr></w:pPr>'
   const fresh = formatPPrChildren(format)
   for (const tag of ['w:spacing', 'w:ind']) {
     if (!tags.has(tag)) continue
     const rebuilt = new Set(
       CELL_MODELED_ATTR_GROUPS[tag].filter((g) => g.fields.some(differs)).flatMap((g) => g.attrs),
     )
-    out = mergeCellElementAttrs(out, tag, fresh.find((c) => c.name === tag)?.xml, rebuilt)
+    let freshElement = fresh.find((c) => c.name === tag)?.xml
+    if (tag === 'w:ind' && original?.charIndents) {
+      const cancels = charIndentCancelAttrs(original.charIndents, format).filter((attribute) =>
+        rebuilt.has(attribute.slice(0, attribute.indexOf('='))),
+      )
+      if (cancels.length)
+        freshElement = (freshElement ?? '<w:ind/>').replace('/>', ` ${cancels.join(' ')}/>`)
+    }
+    out = mergeCellElementAttrs(out, tag, freshElement, rebuilt)
   }
   return /^<w:pPr(?: [^>]*)?><\/w:pPr>$/.test(out) ? '' : out
 }
@@ -2048,10 +2082,21 @@ export function mergePPrFormat(
     const field = PPR_FLAG_FIELDS[tag]
     if (format?.[field] !== undefined || original?.[field] !== undefined) managedTags.add(tag)
   }
-  if (format?.dropCap !== undefined || format?.frame !== undefined) managedTags.add('w:framePr')
-  if (format?.textDirection !== undefined) managedTags.add('w:textDirection')
+  if (
+    format?.dropCap !== undefined ||
+    format?.frame !== undefined ||
+    original?.dropCap !== undefined ||
+    original?.frame !== undefined
+  )
+    managedTags.add('w:framePr')
+  if (format?.textDirection !== undefined || original?.textDirection !== undefined)
+    managedTags.add('w:textDirection')
   // only when the model carries a size: otherwise the paragraph-mark rPr stays unmanaged
-  if (format?.emptyRunSizeHalfPoints !== undefined) managedTags.add('w:rPr')
+  if (
+    format?.emptyRunSizeHalfPoints !== undefined ||
+    original?.emptyRunSizeHalfPoints !== undefined
+  )
+    managedTags.add('w:rPr')
   if (onlyTags) for (const tag of [...managedTags]) if (!onlyTags.has(tag)) managedTags.delete(tag)
   const rawChildren = splitXmlChildren(inner)
   const rawOf = (tag: string) => rawChildren.find((c) => c.name === tag)?.xml
@@ -2454,6 +2499,11 @@ function tableCellXml(
   cell: TableCell,
   width: number,
   verticalMerge?: 'restart' | 'continue',
+  preservation?: {
+    all?: boolean
+    width?: boolean
+    original?: TableCell['sourceProperties']
+  },
 ): string {
   // Surgical rawTcPr patch: modeled children are replaced/inserted in schema order;
   // unmodeled ones (tcMar/textDirection/noWrap…) keep their original bytes
@@ -2466,7 +2516,15 @@ function tableCellXml(
     : ''
   const rawInner = rawTcPr.replace(/^<w:tcPr(?:\s[^>]*)?>/, '').replace(/<\/w:tcPr>$/, '')
   const children: PPrChild[] = rawTcPr.endsWith('</w:tcPr>') ? splitXmlChildren(rawInner) : []
-  setTcPrChild(children, 'w:tcW', `<w:tcW w:w="${width}" w:type="dxa"/>`)
+  const unchanged = (key: 'fill' | 'borders' | 'vAlign') =>
+    !!preservation?.original &&
+    JSON.stringify(preservation.original[key] ?? null) === JSON.stringify(cell[key] ?? null)
+  if (
+    !preservation?.width ||
+    !preservation.original ||
+    (preservation.original.colSpan ?? 1) !== (cell.colSpan ?? 1)
+  )
+    setTcPrChild(children, 'w:tcW', `<w:tcW w:w="${width}" w:type="dxa"/>`)
   const span = cellSpan(cell)
   setTcPrChild(children, 'w:gridSpan', span > 1 ? `<w:gridSpan w:val="${span}"/>` : null)
   const merge = verticalMerge ?? cell.vMerge
@@ -2485,17 +2543,22 @@ function tableCellXml(
     setTcPrChild(children, 'w:cellMerge', cellMergeXml(cellMerge))
   // With borders unmodeled (undefined), leave the raw tcBorders alone; clearing borders
   // uses explicit none
-  if (cell.borders) setTcPrChild(children, 'w:tcBorders', cellBordersXml(cell.borders))
-  setTcPrChild(
-    children,
-    'w:shd',
-    cell.fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${escapeXmlAttr(cell.fill)}"/>` : null,
-  )
-  setTcPrChild(
-    children,
-    'w:vAlign',
-    cell.vAlign && cell.vAlign !== 'top' ? `<w:vAlign w:val="${cell.vAlign}"/>` : null,
-  )
+  if (cell.borders && !unchanged('borders'))
+    setTcPrChild(children, 'w:tcBorders', cellBordersXml(cell.borders))
+  if (!unchanged('fill'))
+    setTcPrChild(
+      children,
+      'w:shd',
+      cell.fill
+        ? `<w:shd w:val="clear" w:color="auto" w:fill="${escapeXmlAttr(cell.fill)}"/>`
+        : null,
+    )
+  if (!unchanged('vAlign'))
+    setTcPrChild(
+      children,
+      'w:vAlign',
+      cell.vAlign && cell.vAlign !== 'top' ? `<w:vAlign w:val="${cell.vAlign}"/>` : null,
+    )
   if (cell.tcPrEdited) {
     setTcPrChild(
       children,
@@ -2537,7 +2600,12 @@ function tableCellXml(
   }
   const tail = items.length === 0 || items[items.length - 1].tbl ? '<w:p/>' : ''
   const content = items.map((item) => item.xml).join('')
-  return `<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>${content}${tail}</w:tc>`
+  const properties = preservation?.all
+    ? (cell.rawTcPr ?? '')
+    : tcPr.length || cell.rawTcPr
+      ? `<w:tcPr>${tcPr.join('')}</w:tcPr>`
+      : ''
+  return `<w:tc>${properties}${content}${tail}</w:tc>`
 }
 
 /**
@@ -2599,18 +2667,37 @@ function tableLookXml(look: NonNullable<TableModel['tableLook']>): string {
   )
 }
 
-/** the table's own <w:tblPr> (depth-aware: a w:tblPrChange nests another tblPr inside it) */
-function originalTblPrOf(tableXml: string): string | undefined {
+/** A direct table child, excluding nested tables and property-revision records. */
+function originalTableChildOf(tableXml: string, name: string): string | undefined {
   const open = /<w:tbl[\s>]/.exec(tableXml)
   if (!open) return undefined
   const innerStart = tableXml.indexOf('>', open.index) + 1
   const innerEnd = tableXml.lastIndexOf('</w:tbl>')
   if (innerStart <= 0 || innerEnd < innerStart) return undefined
-  return splitXmlChildren(tableXml.slice(innerStart, innerEnd)).find((c) => c.name === 'w:tblPr')
-    ?.xml
+  return splitXmlChildren(tableXml.slice(innerStart, innerEnd)).find((c) => c.name === name)?.xml
 }
 
-export function generateTableModelXml(model: TableModel, originalTableXml?: string): string {
+/** Only a table's authored opening and property groups; no row/cell content snapshot. */
+export function tablePropertyEnvelope(tableXml: string): string | undefined {
+  const opening = /<w:tbl(?:\s[^>]*)?>/.exec(tableXml)?.[0]
+  if (!opening) return undefined
+  return `${opening}${originalTableChildOf(tableXml, 'w:tblPr') ?? ''}${originalTableChildOf(tableXml, 'w:tblGrid') ?? ''}</w:tbl>`
+}
+
+export function generateTableModelXml(
+  model: TableModel,
+  originalTableXml?: string,
+  options?: {
+    /** The caller has verified that table, row and cell properties are unchanged. */
+    preserveProperties?: boolean
+    /** Projected columns are unchanged; retain the authored grid and cell widths. */
+    preserveGrid?: boolean
+    /** The table's own properties are unchanged even when rows/cells were edited. */
+    preserveTableProperties?: boolean
+  },
+): string {
+  const preserveProperties = !!originalTableXml && options?.preserveProperties === true
+  const preserveGrid = !!originalTableXml && (preserveProperties || options?.preserveGrid === true)
   // the widest row decides the column count; folding it in a loop keeps the
   // argument count off the call (a spread here blew the stack past ~125k rows)
   let columnCount = Math.max(1, model.colWidthsPct?.length ?? 0)
@@ -2623,10 +2710,21 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
       ? model.colWidthsPct
       : Array.from({ length: columnCount }, () => 100 / columnCount)
   const totalPct = percentages.reduce((sum, value) => sum + value, 0) || 100
+  const sourceGrid = preserveGrid ? originalTableChildOf(originalTableXml!, 'w:tblGrid') : undefined
+  const sourceWidths = sourceGrid
+    ? splitXmlChildren(
+        sourceGrid.replace(/^<w:tblGrid(?:\s[^>]*)?>/, '').replace(/<\/w:tblGrid>$/, ''),
+      )
+        .filter((child) => child.name === 'w:gridCol')
+        .map((child) => Number(rawAttr(child.xml, 'w:w')))
+    : []
   const widths =
-    model.colWidthsTwips?.length === columnCount
-      ? model.colWidthsTwips.map((value) => Math.max(1, Math.round(value)))
-      : percentages.map((value) => Math.max(1, Math.round((value / totalPct) * 9360)))
+    sourceWidths.length === columnCount &&
+    sourceWidths.every((width) => Number.isFinite(width) && width >= 0)
+      ? sourceWidths
+      : model.colWidthsTwips?.length === columnCount
+        ? model.colWidthsTwips.map((value) => Math.max(1, Math.round(value)))
+        : percentages.map((value) => Math.max(1, Math.round((value / totalPct) * 9360)))
   const totalWidth = widths.reduce((sum, value) => sum + value, 0)
   const border = (name: string) => `<w:${name} w:val="single" w:sz="4" w:space="0" w:color="auto"/>`
   const sides = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'] as const
@@ -2662,7 +2760,9 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
     gridChange && !gridChange.resolved
       ? `<w:tblGridChange w:id="${escapeXmlAttr(gridChange.id ?? '0')}"><w:tblGrid>${gridChange.oldXml ?? ''}</w:tblGrid></w:tblGridChange>`
       : ''
-  const grid = `<w:tblGrid>${widths.map((width) => `<w:gridCol w:w="${width}"/>`).join('')}${gridRecord}</w:tblGrid>`
+  const grid = preserveGrid
+    ? (sourceGrid ?? '')
+    : `<w:tblGrid>${widths.map((width) => `<w:gridCol w:w="${width}"/>`).join('')}${gridRecord}</w:tblGrid>`
   const rows = model.rows
     .map((row, ri) => {
       let gridColumn = 0
@@ -2686,7 +2786,13 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
           }
           continue
         }
-        cells.push(tableCellXml(cell, width))
+        cells.push(
+          tableCellXml(cell, width, undefined, {
+            all: preserveProperties,
+            width: preserveGrid,
+            original: cell.sourceProperties,
+          }),
+        )
       }
       // trPr: original bytes passed through (tblHeader/cantSplit etc.); row height is
       // replaced/inserted/removed per the model
@@ -2749,10 +2855,15 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
         trPr = trPr.replace(/<w:trHeight[^>]*\/>/, '')
         if (/^<w:trPr(?:\s[^>]*)?>\s*<\/w:trPr>$/.test(trPr)) trPr = ''
       }
-      return `<w:tr>${tblPrEx}${trPr}${cells.join('')}</w:tr>`
+      return preserveProperties
+        ? `<w:tr>${model.rawTblPrExs?.[ri] ?? ''}${model.rawTrPrs?.[ri] ?? ''}${cells.join('')}</w:tr>`
+        : `<w:tr>${tblPrEx}${trPr}${cells.join('')}</w:tr>`
     })
     .join('')
-  const originalTblPr = originalTableXml ? originalTblPrOf(originalTableXml) : undefined
+  const originalTblPr = originalTableXml
+    ? originalTableChildOf(originalTableXml, 'w:tblPr')
+    : undefined
+  const opening = originalTableXml?.match(/<w:tbl(?:\s[^>]*)?>/)?.[0] ?? '<w:tbl>'
   const tblInd =
     model.indentTwips && Math.round(model.indentTwips) !== 0
       ? `<w:tblInd w:w="${Math.round(model.indentTwips)}" w:type="dxa"/>`
@@ -2862,7 +2973,10 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
       model.description ? `<w:tblDescription w:val="${escapeXmlAttr(model.description)}"/>` : null,
     )
   }
-  return `<w:tbl>${tblPr}${grid}${rows}</w:tbl>`
+  if (preserveProperties) {
+    return `${opening}${originalTblPr ?? ''}${originalTableChildOf(originalTableXml!, 'w:tblGrid') ?? ''}${rows}</w:tbl>`
+  }
+  return `${opening}${originalTableXml && options?.preserveTableProperties ? (originalTblPr ?? '') : tblPr}${grid}${rows}</w:tbl>`
 }
 
 /** rId / docPr placeholder of a picture inserted by the editor; saveDocx resolves

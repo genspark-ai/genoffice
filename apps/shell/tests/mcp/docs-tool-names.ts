@@ -28,6 +28,7 @@ export const LIVE_DOCS_TOOL_NAMES = [
   'read_blocks',
   'read_comments',
   'read_document',
+  'read_document_diagnostics',
   'read_document_media',
   'read_notes',
   'read_revisions',

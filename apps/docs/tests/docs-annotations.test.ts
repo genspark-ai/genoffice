@@ -137,6 +137,95 @@ it('maps explicit ranges through edits and makes checker failures observable wit
   expect(annotations.errors()).toEqual([])
 })
 
+it('exposes pending and completed checks without running checkers when the snapshot is read', async () => {
+  const { annotations, inspection, editor } = fixture()
+  let calls = 0
+  let complete!: (value: Array<{ from: number; to: number; message: string; code: string }>) => void
+  annotations.registerChecker('host-review', () => {
+    calls++
+    return new Promise((resolve) => {
+      complete = resolve
+    })
+  })
+  const before = editor.getJSON()
+  const reference = inspection.snapshot()
+  expect(annotations.snapshot()).toMatchObject({
+    documentId: reference.documentId,
+    revision: reference.revision,
+    complete: false,
+    sources: [{ source: 'host-review', status: 'pending', coverage: { kind: 'document-text' } }],
+    diagnostics: [],
+  })
+  annotations.snapshot()
+  expect(calls).toBe(1)
+  complete([{ from: 1, to: 4, message: 'Host finding', code: 'host.code' }])
+  await Promise.resolve()
+  expect(annotations.snapshot()).toMatchObject({
+    complete: true,
+    sources: [{ source: 'host-review', status: 'complete' }],
+    diagnostics: [{ source: 'host-review', code: 'host.code', message: 'Host finding' }],
+  })
+  expect(editor.getJSON()).toEqual(before)
+  expect(editor.commands.undo()).toBe(false)
+})
+
+it('does not relabel manually supplied diagnostics as checked after their decorations map through edits', async () => {
+  const { annotations, inspection, editor } = fixture()
+  const checked = inspection.snapshot()
+  annotations.setRanges('manual', [{ ...checked, from: 5, to: 10, message: 'Check this value' }])
+  expect(annotations.snapshot()).toMatchObject({
+    complete: true,
+    sources: [{ status: 'complete' }],
+  })
+  editor.commands.insertContentAt(1, 'prefix ')
+  await annotations.refresh()
+  const current = annotations.snapshot()
+  expect(current.revision).not.toBe(checked.revision)
+  expect(current).toMatchObject({
+    complete: false,
+    sources: [{ source: 'manual', status: 'stale', revision: checked.revision }],
+  })
+  expect(current.diagnostics[0]).toMatchObject({
+    from: 12,
+    to: 17,
+    revision: checked.revision,
+    stale: true,
+  })
+  annotations.setRanges('manual', [
+    { ...inspection.snapshot(), from: 12, to: 17, message: 'Checked again' },
+  ])
+  expect(annotations.snapshot()).toMatchObject({
+    complete: true,
+    sources: [{ status: 'complete' }],
+  })
+})
+
+it('reports failed checks separately from a clean result and clears source state on document replacement', async () => {
+  const { annotations, switchDocument } = fixture()
+  annotations.registerChecker('broken', () => {
+    throw new Error('Unavailable checker')
+  })
+  await expect(annotations.refresh()).rejects.toThrow('Unavailable checker')
+  expect(annotations.snapshot()).toMatchObject({
+    complete: false,
+    sources: [{ source: 'broken', status: 'failed', error: 'Unavailable checker' }],
+    diagnostics: [],
+  })
+  switchDocument()
+  expect(annotations.snapshot()).toMatchObject({ complete: true, sources: [], diagnostics: [] })
+})
+
+it('does not report an invalid checker result as a completed clean check', async () => {
+  const { annotations } = fixture()
+  annotations.registerChecker('invalid', () => [{ from: -1, to: 1000, message: 'Unlocatable' }])
+  await expect(annotations.refresh()).rejects.toThrow(/invalid annotation range/i)
+  expect(annotations.snapshot()).toMatchObject({
+    complete: false,
+    sources: [{ source: 'invalid', status: 'failed' }],
+    diagnostics: [],
+  })
+})
+
 it.each([
   ['{{field:known', 'unclosed'],
   ['{{field:{{field:known}}}}', 'nested'],

@@ -1,3 +1,4 @@
+// Modified for ForaOffice: identify generated boundaries before their first save.
 import type { Editor } from '@tiptap/core'
 import type { Node as PmDocNode } from '@tiptap/pm/model'
 import type { SectionInfo } from '@genoffice/docx-engine'
@@ -15,6 +16,14 @@ export function sectionIndexAtBlock(
   topIndex: number,
 ): number {
   if (sections.length === 0) return 0
+  const ownId =
+    topIndex >= 0 && topIndex < pmDoc.childCount
+      ? pmDoc.child(topIndex).attrs.pendingSectionId
+      : undefined
+  if (typeof ownId === 'string') {
+    const own = sections.findIndex((section) => section.pendingBreakId === ownId)
+    if (own >= 0) return own
+  }
   let docxIndex: number | null = null
   for (let i = Math.min(topIndex, pmDoc.childCount - 1); i >= 0; i--) {
     const node = pmDoc.child(i)
@@ -26,7 +35,13 @@ export function sectionIndexAtBlock(
     const genXml = node.attrs?.genXml
     if (i < topIndex && typeof genXml === 'string' && genXml.includes('<w:sectPr')) {
       const pending = sectionIndexAtBlock(pmDoc, sections, i)
-      if (sections[pending]?.pendingBreak && genXml.includes(sections[pending]!.sectPrXml)) {
+      const section = sections[pending]
+      if (
+        section?.pendingBreak &&
+        (section.pendingBreakId
+          ? node.attrs.pendingSectionId === section.pendingBreakId
+          : genXml.includes(section.sectPrXml))
+      ) {
         return Math.min(pending + 1, sections.length - 1)
       }
     }
@@ -58,7 +73,9 @@ export function patchPendingSectPr(
       node.type.name === 'docProtected' &&
       typeof genXml === 'string' &&
       genXml.includes(sec.sectPrXml) &&
-      sectionIndexAtBlock(pmDoc, sections, i) === index
+      (sec.pendingBreakId
+        ? node.attrs.pendingSectionId === sec.pendingBreakId
+        : sectionIndexAtBlock(pmDoc, sections, i) === index)
     ) {
       editor.view.dispatch(
         editor.state.tr.setNodeMarkup(pos, undefined, {

@@ -321,6 +321,13 @@ Search scope and supported patterns are identical to the existing UI.
 `editor.annotations` supplies document-local `setRules(source, rules)`,
 `setRanges(source, ranges)`, `registerChecker(source, checker)`, `remove(source)`,
 `refresh()`, `diagnostics()`, `errors()` and `onChange(listener)`.
+`snapshot()` adds a versioned read of source coverage/status and findings. A
+source is `pending`, `complete`, `stale`, or `failed`; completion of an async
+checker advances the diagnostic snapshot version without editing the document.
+Annotations and checker results may carry an optional host-defined `code`;
+match-rule findings use the rule ID. Manually supplied findings retain their
+original checked revision when decorations map through edits. Mapping or
+refreshing decorations does not certify the old finding against new content.
 Explicit ranges carry the inspection snapshot's document/revision reference.
 Ranges map through edits; rule-based results recompute. Rules accept a regular
 expression, optional message/severity, and background/color/underline styles.
@@ -1027,10 +1034,26 @@ content projection as output; deleted and withheld words are not searchable.
 Cell targets address one physical merged owner and support `setTableCellText`
 without an additional `range`. Image items expose `mediaRef` for
 `read_document_media`; an image target does not authorize a whole-block write.
+For cells, `supportedOperations` reflects the current target's ordinary-text
+eligibility. A mixed/protected cell instead includes `limitations` with the
+operation, code and reason. Execution repeats the same checks and still validates
+parameters and freshness; capability discovery does not reserve permission or
+a revision. Cell `projection: { lossless: false, contentKinds }` identifies
+content kinds that restricted HTML cannot round-trip. An image reference may be
+visible while a formula or field is not. `complete` describes HTML truncation,
+not object coverage. Cell structure inventories use the same bounded
+`structures`/`structuresPage` contract as body inventories; continuation stays
+bound to the physical owner. Image results additionally expose `carrierTarget`
+for explicit carrier-level operations. Reading an image or knowing its carrier
+does not grant deletion authority.
 Section and header/footer/textbox items use `engineTarget: item.target` on
 `set_page_setup` or `set_header_footer`; explicit address parameters must agree.
 
 Targets expire on any body or authored-state revision or document replacement.
+Acknowledged saving can rebuild the original-file baseline and its private
+source anchors, advancing the live revision even when the authored text is
+unchanged. Query fresh targets after saving; an independent persistence receipt
+does not promise that pre-save targets remain valid.
 They validate type/extent and optionally exact `expectedHtml`. Original targets
 are mapped through preceding operations in the same atomic batch; a removed
 target refuses the batch. Positions are scoped addresses, not permanent IDs.
@@ -1063,6 +1086,14 @@ a boolean permission flag is insufficient. Native row/column edits retain
 their explicit topology semantics but still require intent for protected
 objects they actually remove. Moves preserve objects. Ordinary text and cell
 operations never acquire permission to consume structured payloads.
+Native table source associations are private to the loaded document and are
+not emitted into HTML or DOCX. They preserve the actual source cell's properties
+and hidden continuation content when supported edits relocate cells. Splitting
+a merged region with nonempty hidden continuation payload, or deleting its
+restart row while retaining that payload, is refused before mutation when safe
+migration is not supported. The same check applies to runtime tools and native
+editor commands. Ordinary empty merged cells remain editable; this is a content
+representation limit, separate from access permission or business authorization.
 
 `limit` is 1–50 (default 20); `maxItemChars` is 1–4000 (default 2000). An overall
 response budget can yield fewer items. Pass only `cursor: nextCursor` to
@@ -1087,6 +1118,85 @@ and must not be replayed blindly.
 Per-operation `structuralEffects` identify removed objects separately from
 objects marked for tracked deletion. Preview counts/effects describe the
 provisional transaction and are not committed effects.
+
+HTML replacements (`replace_blocks`, `replace_selection`) also accept
+`dryRun: true`, validate their current replacement scope and structure intent,
+and return a `preview` receipt without document, revision or history changes.
+Their preview and application include per-operation structural effects. A
+replacement result and a rejected structure-intent check expose `structurePlan`:
+`required`, `missing`, `extra`, `wouldRemove`, and `wouldPreserve`. References
+are bound to the source document/revision, including native operations after
+earlier provisional edits in the same atomic batch. Plans describe net structure
+effects, not business authorization. Arrays are capped at 64 entries each;
+`counts` reports their full sizes and `complete: false` requires querying the
+current bounded structure inventory. Validation always compares the full sets;
+truncated diagnostics never relax deletion intent. A matching plan is not a
+save/reopen fidelity check, and a failed atomic batch commits none of its
+provisional effects.
+Per-operation effect lists have the same 64-entry bound, with
+`structuralEffectCount` and `structuralEffectsComplete` distinguishing a partial
+list from a complete effect report.
+
+`replace_blocks` accepts optional `preconditions`:
+
+```ts
+await client.execute({
+  id: 'guarded-replacement',
+  name: 'replace_blocks',
+  input: {
+    startBlockIndex: body.blockIndex,
+    endBlockIndex: body.blockIndex,
+    html: '<p>Updated body</p>',
+    preconditions: {
+      targets: [body.target],
+      allowedTypes: ['docParagraph'],
+      preserve: [nextHeading.target],
+    },
+  },
+})
+```
+
+`targets` is the exact ordered sequence of observed block targets covering the
+entire replacement range; optional target `expectedHtml` checks current projected
+content. `allowedTypes` applies to every selected block. `preserve` lists observed
+blocks that must stay outside the range. All supplied references must have the
+current document/revision, type and extent. These conditions are checked before
+history or content changes; cell/image/side-state targets cannot widen into block
+replacement. Conditions are optional, with no default heading prohibition:
+explicitly targeting a heading remains supported. A guarded runtime call refuses
+on mismatch; refresh/query and correct the request instead of dropping the guard.
+These additions require the live runtime/MCP entry point. The lower native tool
+entry point refuses them rather than silently ignoring a guard or preview flag.
+
+### Read host diagnostics through the runtime
+
+`read_document_diagnostics` is an optional read-only runtime/MCP tool backed by
+the current document's annotation provider. Detached runtimes opt in by supplying
+`RuntimeDocument.annotations`; the mounted SDK wires its existing annotations
+provider automatically. With no provider, discovery and execution report
+`unavailable`. Read-only MCP connections expose the same authorized diagnostic
+snapshot while continuing to deny edits and saves.
+
+Inputs are `source?`, `limit?` (1–50, default 20), or a returned `cursor` alone.
+The bounded result includes `documentId`, `revision`, `diagnosticVersion`,
+`checksComplete`, `withheldDiagnostics`, `page`, and `items`. Items are source
+summaries (status, checked reference, coverage, optional checker error) or
+findings (source, optional code, severity, bounded message, range, stale flag and
+checked reference). Current findings include runtime block `targets`; stale
+findings do not provide executable targets. `targetsComplete` identifies a
+finding spanning more than 32 blocks, and `messageComplete` identifies message
+truncation. Coverage describes the registered document-text check or explicit
+ranges, not a guarantee that every OOXML object was inspected. No registered
+sources means no checker coverage; an empty finding list is not acceptance.
+
+`checkedReference` uses the inspection API's own document/revision namespace;
+use returned runtime `targets`, not that reference, for edits. Continuations
+expire on document changes or new diagnostic results, even without a document
+edit. Reading does not start/refresh a checker, acknowledge a fresh editing
+baseline, author annotations into DOCX, or prevent ordinary draft saves. The host
+retains its own business grammar, checker registrations and publish decisions.
+Register/check using the existing annotations API and pass only the appropriate
+MCP credential to each caller.
 
 Live mutation has persistence `pending`; successful acknowledged saving has
 `completed` only when the host reports `ok`, `committed: true`, and

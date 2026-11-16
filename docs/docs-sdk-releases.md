@@ -7,6 +7,43 @@ installers merely because the corresponding build commands exist.
 
 ## Compatibility policy
 
+Unreleased editing-contract fixes preserve unedited table XML properties when
+mixed-run cell text or paragraph/run formatting changes. Display pixel widths
+no longer replace authored grid/cell widths on that save path; genuine layout
+operations still regenerate layout. Scalar font styling also reaches text in
+native table cells. This is preservation of unedited declarations, not a promise
+of identical automatic layout after text changes or arbitrary OOXML round trips.
+Private source anchors are refreshed with the acknowledged saved baseline;
+consumers should query fresh runtime targets after saving instead of retaining
+pre-save targets across baseline publication.
+Source associations are scoped to the loaded table, retained on genuine moves,
+and cleared on new clones. Unsupported migration of nonempty hidden merge
+continuations now refuses precisely at the shared editing boundary instead of
+dropping retained content; normal empty-merge and row/column operations remain
+available. Inherited table styling stays inherited unless explicitly changed.
+Saving and then undoing or redoing table edits retains each table's own authored
+properties and the hidden continuation content belonging to retained cells.
+Selection requests commit the current editor-owned DOM text range before taking
+input focus. Layout controls and native tools share live section updates, so
+unsaved section breaks receive page settings before the first save.
+
+Cell queries now restrict `supportedOperations` to current target eligibility,
+return projection/limitation and structure metadata, and correlate image resource
+references with explicit carrier targets. A caller previously treating projected
+cell HTML as lossless must inspect these fields and preserve protected objects.
+Unsupported formulas in table HTML now refuse the complete insert/replacement
+instead of flattening equations into text. Existing native equations remain
+preserved by supported neighboring text edits.
+
+The additive runtime contracts include bounded structure-intent diagnostics,
+HTML replacement previews/structural receipts, optional `replace_blocks`
+preconditions, and `read_document_diagnostics` on editing and read-only MCP
+connections. Existing annotations add versioned status snapshots and optional
+host codes. Mapped manual findings become stale until the host supplies a new
+checked result. No host business grammar or publication workflow is built in;
+ordinary draft save behavior is unchanged. See the SDK guide for exact bounds,
+freshness rules and migration examples.
+
 Unreleased logical-text change: external `apply_ops/findReplace` now requires
 exactly one literal match by default, including text split across formatting
 runs. Existing bulk callers must pass `match: "all"` and an explicit target

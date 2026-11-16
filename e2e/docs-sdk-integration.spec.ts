@@ -1,3 +1,4 @@
+// Modified for ForaOffice: verify portable selection setup across SDK test hosts.
 import { test, expect } from '@playwright/test'
 import { launchSdkTestHost, sdkHostIsElectron, type SdkTestHost } from './sdk-host'
 import { createServer } from 'node:http'
@@ -312,7 +313,9 @@ test('a browser host owns pathless storage while native inspection and advisory 
     const openSelectionPrompt = async () => {
       await body.click()
       await body.press('Control+Home')
-      await body.press('Control+Shift+ArrowRight')
+      // Select the known fixture text without Electron's native word-navigation command.
+      for (let index = 0; index < 'same'.length; index++) await body.press('Shift+ArrowRight')
+      await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('same')
       await expect(page.locator('.ai-ask-trigger')).toBeVisible()
       await page.locator('.ai-ask-trigger').click()
       await expect(instructionInput).toBeFocused()
@@ -352,6 +355,7 @@ test('a browser host owns pathless storage while native inspection and advisory 
         kind: 'edit',
         instruction: 'Polish this passage without changing its meaning',
       })
+      expect(action.context).toContain('Selected text (4 characters): "same"')
       await body.click()
       await page.keyboard.press('Control+End')
       await page.keyboard.press('Control+Shift+ArrowLeft')
