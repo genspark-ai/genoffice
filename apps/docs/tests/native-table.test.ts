@@ -205,6 +205,8 @@ describe('native editable tables', () => {
           csFont: null,
           csItalic: null,
           charSpacingTwips: null,
+          spacingDisplay: null,
+          charSpacingDisplayTwips: null,
           charScaleEm: null,
           charScalePct: null,
           charScaleX: null,

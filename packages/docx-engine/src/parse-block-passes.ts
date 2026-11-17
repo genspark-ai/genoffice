@@ -1,3 +1,4 @@
+// Modified for ForaOffice: separate authored spacing from compatibility rendering.
 // Whole-document passes run after the block list is built: protected leading
 // breaks, balanced DBCS spacing, image z-order normalization.
 import type { Block, Run, SectionSettings, TableModel, TextboxDisplay } from './types'
@@ -117,9 +118,8 @@ function doubledGlyphFraction(text: string, hangulKanaSingle: boolean): number {
  * docx) makes rPr w:spacing count double on double-byte characters: a Word
  * probe (2026-08-24) moves hangul advances 2pt per 20 twips with the flag and
  * 1pt without, Latin runs unchanged either way. CSS letter-spacing cannot
- * vary per character, so scale the display-only charSpacingTwips by each
- * run's doubled-glyph mix (the charScaleEm approximation precedent); saving
- * stays byte-faithful through rawRPr.
+ * vary per character, so renderers derive spacing from the run's glyph mix.
+ * Keep charSpacingTwips authored: generation compares it with rawRPr.
  */
 export function applyBalancedDbcsSpacing(
   runGroups: Array<Run[] | undefined>,
@@ -128,16 +128,25 @@ export function applyBalancedDbcsSpacing(
   for (const runs of runGroups) {
     if (!runs) continue
     for (const r of runs) {
-      if (!r.charSpacingTwips || !r.text) continue
-      // the gate is the face Word draws the hangul with: a paragraph style's
-      // East Asian slot counts as much as a direct w:rFonts
-      const frac = doubledGlyphFraction(
-        r.text,
-        keepsHangulKanaSingle(r.eastAsiaFont ?? r.effective?.fonts.eastAsia ?? defaultFont),
-      )
-      if (frac > 0) r.charSpacingTwips = Math.round(r.charSpacingTwips * (1 + frac) * 10) / 10
+      if (r.charSpacingTwips === undefined) continue
+      r.spacingDisplay = {
+        eastAsiaFont: r.eastAsiaFont ?? r.effective?.fonts.eastAsia ?? defaultFont,
+      }
     }
   }
+}
+
+/** CSS's per-run approximation of Word's compatibility adjustment. */
+export function displayCharSpacingTwips(
+  run: Pick<Run, 'text' | 'charSpacingTwips' | 'spacingDisplay' | 'eastAsiaFont'>,
+): number | undefined {
+  const spacing = run.charSpacingTwips
+  if (!spacing || !run.spacingDisplay) return spacing
+  const fraction = doubledGlyphFraction(
+    run.text,
+    keepsHangulKanaSingle(run.eastAsiaFont ?? run.spacingDisplay.eastAsiaFont),
+  )
+  return Math.round(spacing * (1 + fraction) * 10) / 10
 }
 
 /** every run container reachable from the parsed blocks (tables, textboxes, nested tables) */

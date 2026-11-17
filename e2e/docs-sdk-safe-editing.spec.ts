@@ -157,90 +157,137 @@ test('inline tables align within their section on a mixed-width canvas and in pr
   })
 })
 
-for (const mode of ['document', 'command', 'auto'] as const) {
-  test(`a caller can query and edit after an acknowledged equivalent save without rereading side stores (${mode})`, async () => {
-    const original = await buildDocx({
-      bodyXml: '<w:p><w:r><w:t>Before save</w:t></w:r></w:p>',
-      headerXml: '<w:p><w:r><w:t>Keep header</w:t></w:r></w:p>',
-    })
-    await withHostedDocument(
-      Buffer.from(original),
-      async (page) => {
-        const result = await page.evaluate(async (mode) => {
-          const { editor, fixture } = window as unknown as FixtureWindow
-          const caller = editor.runtime.connect({ id: 'save-and-continue' })
-          let sequence = 0
-          const command = (name: string, payload: Record<string, unknown>) =>
-            editor.commands.handle({
-              requestId: `save-sequence-${++sequence}`,
-              callerId: 'command-save-and-continue',
-              command: name,
-              payload,
-            })
-          const execute = (
-            name: string,
-            input: Record<string, unknown>,
-          ): Promise<DocsOperationResult> =>
-            mode === 'command'
-              ? (command(name, input) as Promise<DocsOperationResult>)
-              : caller.execute({ id: name, name, input })
-          if (mode === 'command') await command('read_document', {})
-          else caller.context()
-          const query = async () => {
-            const result = await execute('query_document', { domain: 'body' })
-            if (result.isError) throw new Error(result.output)
-            return (JSON.parse(result.output) as DocsQueryResult).items[0].target
-          }
-          const replace = async (find: string, replace: string) =>
-            execute('apply_ops', {
-              ops: [{ op: 'findReplace', target: { engine: await query() }, find, replace }],
-            })
-          try {
-            const first = await replace('Before save', 'First edit')
-            if (first.isError) throw new Error(first.output)
-            let saved: boolean
-            if (mode === 'command') {
-              const result = (await command('save_document', {
-                path: '/saved.docx',
-                overwrite: true,
-              })) as { ok: boolean }
-              saved = result.ok
-            } else if (mode === 'auto') {
-              saved = await new Promise<boolean>((resolve, reject) => {
-                const timeout = window.setTimeout(() => {
-                  off()
-                  reject(new Error('Autosave did not finish'))
-                }, 10000)
-                const off = editor.documents.subscribe((state) => {
-                  if (fixture.saves && state && !state.dirty) {
-                    window.clearTimeout(timeout)
-                    off()
-                    resolve(true)
-                  }
-                })
-                window.dispatchEvent(new Event('blur'))
+for (const balanced of [true, false]) {
+  for (const mode of ['document', 'command', 'auto', 'runtime'] as const) {
+    test(`a caller can query and edit after an acknowledged equivalent save without rereading side stores (${mode}, balance=${balanced})`, async () => {
+      const original = await buildDocx({
+        bodyXml:
+          '<w:p><w:r><w:rPr><w:rFonts w:ascii="Calibri" w:eastAsia="SimSun"/>' +
+          '<w:spacing w:val="10"/><w:sz w:val="28"/></w:rPr><w:t>测试字符间距文本</w:t></w:r></w:p>',
+        headerXml: '<w:p><w:r><w:t>Keep header</w:t></w:r></w:p>',
+        extraParts: [
+          {
+            path: 'word/settings.xml',
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml',
+            xml:
+              '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+              `<w:compat>${balanced ? '<w:balanceSingleByteDoubleByteWidth/>' : ''}</w:compat></w:settings>`,
+          },
+        ],
+      })
+      await withHostedDocument(
+        Buffer.from(original),
+        async (page) => {
+          const result = await page.evaluate(async (mode) => {
+            const { editor, fixture } = window as unknown as FixtureWindow
+            const caller = editor.runtime.connect({ id: 'save-and-continue' })
+            let sequence = 0
+            const command = (name: string, payload: Record<string, unknown>) =>
+              editor.commands.handle({
+                requestId: `save-sequence-${++sequence}`,
+                callerId: 'command-save-and-continue',
+                command: name,
+                payload,
               })
-            } else saved = await editor.documents.save()
-            const afterSave = await replace('First edit', 'After save')
-            return {
-              saved,
-              afterSave,
-              saves: fixture.saves,
-              text: editor.inspection.snapshot().text,
+            const execute = (
+              name: string,
+              input: Record<string, unknown>,
+            ): Promise<DocsOperationResult> =>
+              mode === 'command'
+                ? (command(name, input) as Promise<DocsOperationResult>)
+                : caller.execute({ id: name, name, input })
+            if (mode === 'command') await command('read_document', {})
+            else caller.context()
+            const query = async () => {
+              const result = await execute('query_document', { domain: 'body' })
+              if (result.isError) throw new Error(result.output)
+              return (JSON.parse(result.output) as DocsQueryResult).items[0].target
             }
-          } finally {
-            caller.close()
-            editor.commands.disconnect('command-save-and-continue')
+            const replace = async (find: string, replace: string) =>
+              execute('apply_ops', {
+                ops: [{ op: 'findReplace', target: { engine: await query() }, find, replace }],
+              })
+            try {
+              const first = await replace('测试', '验证')
+              if (first.isError) throw new Error(first.output)
+              const save = async (): Promise<boolean> => {
+                if (mode === 'command') {
+                  const result = (await command('save_document', {
+                    path: '/saved.docx',
+                    overwrite: true,
+                  })) as { ok: boolean }
+                  return result.ok
+                } else if (mode === 'auto') {
+                  const previousSaves = fixture.saves
+                  return await new Promise<boolean>((resolve, reject) => {
+                    const timeout = window.setTimeout(() => {
+                      off()
+                      reject(new Error('Autosave did not finish'))
+                    }, 10000)
+                    const off = editor.documents.subscribe((state) => {
+                      if (fixture.saves > previousSaves && state && !state.dirty) {
+                        window.clearTimeout(timeout)
+                        off()
+                        resolve(true)
+                      }
+                    })
+                    window.dispatchEvent(new Event('blur'))
+                  })
+                } else if (mode === 'runtime') {
+                  return (await caller.save({ path: '/saved.docx', overwrite: true })).ok
+                }
+                return await editor.documents.save()
+              }
+              const savedBytes: number[][] = []
+              const displaySpacing: string[] = []
+              const edits: DocsOperationResult[] = []
+              for (const [find, replacement] of [
+                ['验证', '复测'],
+                ['复测', '再测'],
+                ['再测', '完成'],
+              ]) {
+                if (!(await save())) throw new Error('Save did not finish')
+                savedBytes.push([...fixture.saved])
+                const span = [...document.querySelectorAll<HTMLElement>('.doc-page p span')].find(
+                  (el) => el.textContent?.includes(find),
+                )!
+                displaySpacing.push(getComputedStyle(span).letterSpacing)
+                const afterSave = await replace(find, replacement)
+                edits.push(afterSave)
+                if (afterSave.isError) break
+              }
+              return {
+                edits,
+                savedBytes,
+                displaySpacing,
+                saves: fixture.saves,
+                text: editor.inspection.snapshot().text,
+              }
+            } finally {
+              caller.close()
+              editor.commands.disconnect('command-save-and-continue')
+            }
+          }, mode)
+          expect(result.edits).toHaveLength(3)
+          for (const edit of result.edits) expect(edit.isError, edit.output).not.toBe(true)
+          expect(result.text).toContain('完成字符间距文本')
+          expect(result.saves).toBe(3)
+          expect(new Set(result.displaySpacing).size).toBe(1)
+          for (const bytes of result.savedBytes) {
+            const zip = await JSZip.loadAsync(Uint8Array.from(bytes))
+            expect(await zip.file('word/document.xml')!.async('string')).toContain(
+              '<w:spacing w:val="10"/>',
+            )
+            expect(await zip.file('word/header1.xml')!.async('uint8array')).toEqual(
+              await (await JSZip.loadAsync(original)).file('word/header1.xml')!.async('uint8array'),
+            )
           }
-        }, mode)
-        expect(result.saved).toBe(true)
-        expect(result.afterSave.isError, result.afterSave.output).not.toBe(true)
-        expect(result.text).toContain('After save')
-        expect(result.saves).toBe(1)
-      },
-      mode === 'auto',
-    )
-  })
+        },
+        mode === 'auto',
+      )
+    })
+  }
 }
 
 for (const position of ['middle', 'end'] as const) {

@@ -1063,6 +1063,10 @@ for its exact generated snapshot and a successful body rebase without a content
 rewrite. Different host-returned bytes or authored changes still require fresh
 full context. A custom runtime save binding does not gain this guarantee merely
 by returning `ok: true`; it must not acknowledge unseen authored changes.
+Compatibility rendering does not rewrite authored character spacing: text-only
+edits preserve native `w:spacing`, including documents using
+`balanceSingleByteDoubleByteWidth`. Explicit spacing edits save the requested
+native value; the display adjustment is applied separately.
 They validate type/extent and optionally exact `expectedHtml`. Original targets
 are mapped through preceding operations in the same atomic batch; a removed
 target refuses the batch. Positions are scoped addresses, not permanent IDs.

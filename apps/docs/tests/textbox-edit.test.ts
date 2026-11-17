@@ -4,6 +4,8 @@ import { parseDocx, saveDocx, type TextboxDisplay } from '@genoffice/docx-engine
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
+import { getActiveSubEditor } from '../src/renderer/editor/active-editor'
+import { setTextStyleWithScale } from '../src/renderer/components/FontDialog'
 
 const TXBX_CONTENT =
   '<w:txbxContent>' +
@@ -75,6 +77,30 @@ function editTextboxPara(
 }
 
 describe('text box rich-text edit and save', () => {
+  it('inherits compatibility settings when adding spacing to textbox text', async () => {
+    const { editor } = await openTextboxDoc()
+    editor.storage.balancedSpacing.enabled = true
+    try {
+      const subDom = editor.view.dom.querySelector<HTMLElement>('.doc-textbox-editor')!
+      subDom.dispatchEvent(new FocusEvent('focus'))
+      const sub = getActiveSubEditor()!
+      expect(sub).not.toBeNull()
+      sub.commands.setContent({
+        type: 'doc',
+        content: [{ type: 'docParagraph', content: [{ type: 'text', text: '中文' }] }],
+      })
+      const tr = sub.state.tr
+      setTextStyleWithScale(tr, [{ from: 1, to: 3 }], { charSpacingTwips: 20 })
+      sub.view.dispatch(tr)
+      expect(
+        sub.view.dom.querySelector<HTMLElement>('span[style*="letter-spacing"]')!.style
+          .letterSpacing,
+      ).toBe('2pt')
+    } finally {
+      editor.destroy()
+    }
+  })
+
   it('mounts a rich sub-editor inside each rendered box', async () => {
     const { editor } = await openTextboxDoc()
     const subDom = editor.view.dom.querySelector('.doc-textbox .doc-textbox-editor')

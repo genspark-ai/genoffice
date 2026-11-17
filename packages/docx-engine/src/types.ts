@@ -106,6 +106,8 @@ export interface Run {
   rtl?: boolean
   /** Character spacing (w:spacing, twips, may be negative) */
   charSpacingTwips?: number
+  /** Compatibility rendering context; never an authored w:spacing value. */
+  spacingDisplay?: { eastAsiaFont?: string }
   /** w:kern threshold in half-points (0 = explicitly off) */
   kernHalfPoints?: number
   /** w:caps ('all') / w:smallCaps ('small'), 'none' = explicit off */

@@ -420,6 +420,7 @@ export function restoreMarksAfterDocRewrite(editor: Editor, snapshot: string | n
 
 /** doc-level layout inputs living outside CSS: default tab grid + hyphenation lang */
 function applyDocLayoutSettings(editor: Editor, parsed: ParsedDocFull): void {
+  editor.storage.balancedSpacing.enabled = parsed.balanceDbcsSpacing === true
   setNoteNumFmts({ footnote: parsed.footnoteProps, endnote: parsed.endnoteProps })
   editor.storage.tabStops.defaultTabStopTwips = parsed.defaultTabStopTwips ?? null
   editor.storage.listNumbering.defaultTabTwips = parsed.defaultTabStopTwips ?? 720

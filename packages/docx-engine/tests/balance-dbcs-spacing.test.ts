@@ -2,11 +2,11 @@
  * settings.xml balanceSingleByteDoubleByteWidth makes rPr w:spacing count
  * double on double-byte characters (Word probe 2026-08-24), except hangul and
  * kana in modern faces such as Malgun Gothic (Word probe 2026-09-03). The
- * display-only charSpacingTwips scales by each run's doubled-glyph mix; raw
- * bytes round-trip untouched through rawRPr.
+ * display spacing scales by each run's doubled-glyph mix; charSpacingTwips
+ * remains authored so rawRPr comparisons and regeneration preserve it.
  */
 import { describe, expect, it } from 'vitest'
-import { parseDocx } from '../src/index'
+import { displayCharSpacingTwips, parseDocx } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const SETTINGS_PART = {
@@ -66,9 +66,10 @@ describe('balanceSingleByteDoubleByteWidth character spacing', () => {
   it('doubles spacing on wide glyphs, weighted by the run mix', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: BODY, extraParts: [SETTINGS_PART] }))
     expect(doc.balanceDbcsSpacing).toBe(true)
-    expect(doc.blocks[0].runs![0].charSpacingTwips).toBe(-40) // all wide -> x2
-    expect(doc.blocks[1].runs![0].charSpacingTwips).toBe(-20) // all narrow -> x1
-    expect(doc.blocks[2].runs![0].charSpacingTwips).toBe(-30) // half -> x1.5
+    expect(doc.blocks.slice(0, 3).map((b) => b.runs![0].charSpacingTwips)).toEqual([-20, -20, -20])
+    expect(displayCharSpacingTwips(doc.blocks[0].runs![0])).toBe(-40) // all wide -> x2
+    expect(displayCharSpacingTwips(doc.blocks[1].runs![0])).toBe(-20) // all narrow -> x1
+    expect(displayCharSpacingTwips(doc.blocks[2].runs![0])).toBe(-30) // half -> x1.5
   })
 
   it('gates on the paragraph style East Asian face when the run declares none', async () => {
@@ -82,8 +83,8 @@ describe('balanceSingleByteDoubleByteWidth character spacing', () => {
     const doc = await parseDocx(
       await buildDocx({ bodyXml: body, extraStylesXml: styles, extraParts: [SETTINGS_PART] }),
     )
-    expect(doc.blocks[0].runs![0].charSpacingTwips).toBe(-20)
-    expect(doc.blocks[1].runs![0].charSpacingTwips).toBe(-40)
+    expect(displayCharSpacingTwips(doc.blocks[0].runs![0])).toBe(-20)
+    expect(displayCharSpacingTwips(doc.blocks[1].runs![0])).toBe(-40)
   })
 
   it('keeps hangul and kana single in Malgun Gothic while Han still doubles', async () => {
@@ -96,7 +97,9 @@ describe('balanceSingleByteDoubleByteWidth character spacing', () => {
       spacedPara('정보화비전및전략수립', -20, 'HY Missing Font') +
       spacedPara('정보화비전및전략수립', -20, 'NanumGothic')
     const doc = await parseDocx(await buildDocx({ bodyXml: body, extraParts: [SETTINGS_PART] }))
-    const twips = doc.blocks.filter((b) => !b.hidden).map((b) => b.runs![0].charSpacingTwips)
+    const twips = doc.blocks
+      .filter((b) => !b.hidden)
+      .map((b) => displayCharSpacingTwips(b.runs![0]))
     expect(twips).toEqual([-20, -20, -20, -40, -40, -40, -20])
   })
 
@@ -112,8 +115,8 @@ describe('balanceSingleByteDoubleByteWidth character spacing', () => {
     const doc = await parseDocx(
       await buildDocx({ bodyXml: BODY, stylesXml: styles, extraParts: [SETTINGS_PART] }),
     )
-    expect(doc.blocks[0].runs![0].charSpacingTwips).toBe(-20)
-    expect(doc.blocks[2].runs![0].charSpacingTwips).toBe(-20)
+    expect(displayCharSpacingTwips(doc.blocks[0].runs![0])).toBe(-20)
+    expect(displayCharSpacingTwips(doc.blocks[2].runs![0])).toBe(-20)
   })
 
   it('reaches runs inside table cells', async () => {
@@ -125,7 +128,8 @@ describe('balanceSingleByteDoubleByteWidth character spacing', () => {
       '</w:tc></w:tr></w:tbl>'
     const doc = await parseDocx(await buildDocx({ bodyXml: tbl, extraParts: [SETTINGS_PART] }))
     const cell = doc.blocks[0].table!.rows[0][0]
-    expect(cell.richParas![0].runs[0].charSpacingTwips).toBe(-68)
+    expect(cell.richParas![0].runs[0].charSpacingTwips).toBe(-34)
+    expect(displayCharSpacingTwips(cell.richParas![0].runs[0])).toBe(-68)
   })
 
   it('leaves everything untouched without the flag', async () => {
@@ -133,6 +137,8 @@ describe('balanceSingleByteDoubleByteWidth character spacing', () => {
     expect(doc.balanceDbcsSpacing).toBeUndefined()
     expect(doc.blocks[0].runs![0].charSpacingTwips).toBe(-20)
     expect(doc.blocks[2].runs![0].charSpacingTwips).toBe(-20)
+    expect(displayCharSpacingTwips(doc.blocks[0].runs![0])).toBe(-20)
+    expect(displayCharSpacingTwips(doc.blocks[2].runs![0])).toBe(-20)
   })
 
   it('a val="0" flag counts as off', async () => {
@@ -144,7 +150,9 @@ describe('balanceSingleByteDoubleByteWidth character spacing', () => {
       ),
     }
     const doc = await parseDocx(await buildDocx({ bodyXml: BODY, extraParts: [off] }))
+    expect(doc.balanceDbcsSpacing).toBeUndefined()
     expect(doc.blocks[0].runs![0].charSpacingTwips).toBe(-20)
+    expect(displayCharSpacingTwips(doc.blocks[0].runs![0])).toBe(-20)
   })
 
   it('a Latin-only rFonts still inherits the default East Asian font for the gate', async () => {
@@ -162,7 +170,7 @@ describe('balanceSingleByteDoubleByteWidth character spacing', () => {
     const doc = await parseDocx(
       await buildDocx({ bodyXml: body, stylesXml: styles, extraParts: [SETTINGS_PART] }),
     )
-    expect(doc.blocks[0].runs![0].charSpacingTwips).toBe(-20)
-    expect(doc.blocks[1].runs![0].charSpacingTwips).toBe(-40)
+    expect(displayCharSpacingTwips(doc.blocks[0].runs![0])).toBe(-20)
+    expect(displayCharSpacingTwips(doc.blocks[1].runs![0])).toBe(-40)
   })
 })

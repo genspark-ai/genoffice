@@ -1,7 +1,9 @@
+// Modified for ForaOffice: separate authored spacing from compatibility rendering.
 import {
   PAGE_MARK,
   SECTION_PAGES_MARK,
   TOTAL_PAGES_MARK,
+  displayCharSpacingTwips,
   type HeaderFooter,
   type HfCellParaProps,
   type HfImage,
@@ -552,7 +554,8 @@ function hfRunsWidthPx(runs: Run[], display: (text: string) => string): number {
     } else {
       w += text.length * sizePt * 0.5 * (4 / 3)
     }
-    if (run.charSpacingTwips) w += (((run.charSpacingTwips / 20) * 4) / 3) * text.length
+    const spacing = displayCharSpacingTwips(run)
+    if (spacing) w += (((spacing / 20) * 4) / 3) * text.length
   }
   return w
 }

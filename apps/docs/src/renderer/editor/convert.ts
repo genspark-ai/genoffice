@@ -1,6 +1,7 @@
 // Modified for ForaOffice from GenOffice v0.12.852.
 import {
   mergePPrFormat,
+  displayCharSpacingTwips,
   scanBody,
   parseLazyMediaUrl,
   setPPrChange,
@@ -2485,6 +2486,8 @@ function runMarks(run: Run): PmMark[] {
         // the cs chain sizes complex-script text, and every character of an rtl run
         csFont: run.csFont && (run.cs || textHasComplexScript(run.text)) ? run.csFont : null,
         charSpacingTwips: run.charSpacingTwips ?? null,
+        spacingDisplay: run.spacingDisplay ? (run.spacingDisplay.eastAsiaFont ?? '') : null,
+        charSpacingDisplayTwips: run.spacingDisplay ? (displayCharSpacingTwips(run) ?? null) : null,
         charScaleEm: run.charScalePct && !scaleX ? charScaleEm(run.text, run.charScalePct) : null,
         charScaleX: scaleX,
         charScalePct: run.charScalePct ?? null,
@@ -4458,6 +4461,8 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
       if (mark.attrs?.csFont) run.csFont = String(mark.attrs.csFont)
       if (mark.attrs?.charSpacingTwips != null)
         run.charSpacingTwips = Number(mark.attrs.charSpacingTwips)
+      if (mark.attrs?.spacingDisplay != null)
+        run.spacingDisplay = { eastAsiaFont: String(mark.attrs.spacingDisplay) || undefined }
       if (mark.attrs?.charScalePct) run.charScalePct = Number(mark.attrs.charScalePct)
       if (mark.attrs?.kernHalfPoints != null) run.kernHalfPoints = Number(mark.attrs.kernHalfPoints)
       if (mark.attrs?.highlight) run.highlight = String(mark.attrs.highlight)
