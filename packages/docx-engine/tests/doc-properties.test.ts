@@ -114,6 +114,23 @@ describe('document properties', () => {
     })
   })
 
+  it('keeps imported Word-style application metadata byte-identical on a content save', async () => {
+    const input = await docxWithProps()
+    const before = input.slice()
+    const doc = await parseDocx(input)
+    const saved = await saveDocx(
+      doc,
+      [
+        ...originalOrder(doc),
+        { kind: 'generated', block: { type: 'paragraph', runs: [{ text: 'Added content' }] } },
+      ],
+      { savedAt: '2026-07-28T08:30:00Z' },
+    )
+    expect(await partOf(saved, 'docProps/app.xml')).toBe(await partOf(input, 'docProps/app.xml'))
+    expect((await parseDocx(saved)).properties.app.appVersion).toBe('16.0000')
+    expect(input).toEqual(before)
+  })
+
   it('a document without docProps has no properties but still opens', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: BODY }))
     expect(doc.properties).toEqual({ core: {}, app: {}, custom: {}, customTypes: {} })
