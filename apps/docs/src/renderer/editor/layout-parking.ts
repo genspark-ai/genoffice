@@ -47,6 +47,28 @@ export const parkingKey = new PluginKey<ParkingState>('layoutParking')
 /** forces parked decorations visible while a pass samples real layout */
 export const PARK_SUPPRESSED_CLASS = 'parking-suppressed'
 
+/** Parking pays a wake-up tax: resuming a parked tree costs a full relayout
+ *  of it, and the first measurement pass after parking inflates by exactly
+ *  that. Measured A/B (#2781 research): a plain-text 183-page document runs
+ *  ~0.03 ms of pass per block with parking off — parking there is a net
+ *  negative — while a table-heavy document runs ~2.4 ms/block and wins on
+ *  every axis. The arm decision is therefore per-block pass cost, sticky:
+ *  once a document has proven expensive to lay out it stays armed (parked
+ *  passes are cheaper, so a plain re-arm check would flap), and it disarms
+ *  when the document shrinks below the floor. */
+export const PARK_ARM_PER_BLOCK_MS = 0.25
+export const PARK_MIN_BLOCKS = 50
+
+export function parkingArmDecided(
+  lastPassMs: number,
+  blockCount: number,
+  previouslyArmed: boolean,
+): boolean {
+  if (blockCount < PARK_MIN_BLOCKS) return false
+  if (previouslyArmed) return true
+  return lastPassMs / Math.max(1, blockCount) >= PARK_ARM_PER_BLOCK_MS
+}
+
 export interface ParkingUpdate {
   entries: ParkEntry[]
 }
@@ -119,7 +141,7 @@ export const LayoutParkingExtension = Extension.create({
             return DecorationSet.create(doc, decos)
           },
         },
-        view(view: EditorView) {
+        view(_view: EditorView) {
           // parked blocks whose positions mapped past the document end would
           // linger forever; the pass re-dispatches anyway, this is a tidier
           return {

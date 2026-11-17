@@ -1,14 +1,16 @@
 /**
- * Route-B prototype probe for the large-document lag (#2781): a ~100-page
- * document opens twice, once with layout parking (content-visibility on
- * offscreen blocks) and once without, and the probe measures where the
- * continuous-DOM cost actually lives in real Chromium — typing frame gaps,
- * the measurement pass duration, and the parked-block count.
+ * Route-B prototype probe for the large-document lag (#2781): opens a
+ * table-heavy document (~25 pages of bordered 30x6 tables) and pins the
+ * parking mechanism in real Chromium — the sticky cost gate arms, most
+ * blocks park, the caret reveals a parked block and typing lands, and
+ * scrolling reveals parked content. Numbers print for the research note;
+ * only mechanism facts are asserted.
  *
- * The assertions pin the mechanism, not the latencies (machine-dependent):
- * parking engages on a large document, the caret reveals a parked block and
- * typing lands, scrolling reveals parked content, and the measured numbers
- * are printed for the research note. Run locally, not in CI:
+ * A plain-text document of the same page count must NOT park (the wake-up
+ * tax is a net loss there — ROUTE-B-RESEARCH.md section 6); that side is
+ * covered by the gate unit tests (parkingArmDecided).
+ *
+ * Local only, not in CI:
  *   npx playwright test e2e/large-doc-parking.spec.ts
  */
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -23,6 +25,14 @@ const PARAGRAPHS = 5000
 const MID = 2500
 
 const p = (text: string) => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`
+const TABLES = 40
+const ROWS = 30
+/** paragraphs per table: intro + closing */
+const BLOCKS = TABLES * 2 + TABLES * ROWS
+const MID_BLOCK = Math.floor(BLOCKS / 2)
+
+const cell = (t: string) =>
+  `<w:tc><w:tcPr><w:tcBorders><w:top w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/></w:tcBorders></w:tcPr><w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`
 
 async function bigDocx(): Promise<Buffer> {
   const zip = new JSZip()
@@ -34,13 +44,17 @@ async function bigDocx(): Promise<Buffer> {
     '_rels/.rels',
     '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
   )
-  const body = Array.from({ length: PARAGRAPHS }, (_, i) =>
-    p(
-      i % 50 === 0
-        ? `Paragraph ${i} opens a block of copy that runs a little longer so the page count lands near a hundred pages.`
-        : `Paragraph ${i} body copy.`,
-    ),
-  ).join('')
+  const row = (r: number, t: number) =>
+    `<w:tr>${[0, 1, 2, 3, 4, 5].map((c) => cell(`R${r}C${c} value ${t * 7 + c}`)).join('')}</w:tr>`
+  let body = ''
+  for (let t = 0; t < TABLES; t++) {
+    body += p(`Table ${t + 1} of ${TABLES} — quarterly figures.`)
+    const rows = Array.from({ length: ROWS }, (_, r) => row(r + t * ROWS, r)).join('')
+    body +=
+      `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr>` +
+      `<w:tblGrid><w:gridCol w:w="1500"/>${'<w:gridCol w:w="1500"/>'.repeat(5)}</w:tblGrid>${rows}</w:tbl>`
+    body += p(`Closing remarks for table ${t + 1} before the next section begins.`)
+  }
   zip.file(
     'word/document.xml',
     `<?xml version="1.0" encoding="UTF-8"?><w:document ${W}><w:body>${body}` +
@@ -120,7 +134,7 @@ async function runOnce(parking: boolean, docPath: string): Promise<void> {
 
     // click into the middle of the document: a parked region when parking is
     // on — the caret must reveal it (content-visibility relevance)
-    await page.locator('.doc-page p').nth(MID).click()
+    await page.locator('.doc-page p').nth(MID_BLOCK).click()
     const midState = await page.evaluate((idx) => {
       const el = document.querySelectorAll('.doc-page p')[idx] as HTMLElement
       return {
@@ -144,7 +158,7 @@ async function runOnce(parking: boolean, docPath: string): Promise<void> {
     })
     // the typed text must be in the document (caret reveal worked)
     const landed = await page.evaluate(() => {
-      const el = document.querySelectorAll('.doc-page p')[MID] as HTMLElement
+      const el = document.querySelectorAll('.doc-page p')[MID_BLOCK] as HTMLElement
       return el.textContent ?? ''
     })
     expect(landed).toContain('quick brown fox')
@@ -157,7 +171,7 @@ async function runOnce(parking: boolean, docPath: string): Promise<void> {
     })
     await page.waitForTimeout(600)
     const farVisible = await page.evaluate(() => {
-      const far = document.querySelectorAll('.doc-page p')[PARAGRAPHS - 60] as HTMLElement
+      const far = document.querySelectorAll('.doc-page p')[BLOCKS - 8] as HTMLElement
       return getComputedStyle(far).contentVisibility
     })
     expect(farVisible).not.toBe('auto')

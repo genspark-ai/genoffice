@@ -168,6 +168,7 @@ import type { NoteKind } from './note-format'
 import { PaginationPreview } from './components/PaginationPreview'
 import { imageParaPaginationMeta, paraPaginationMeta, tableWidowOff } from './editor/para-flags'
 import {
+  parkingArmDecided,
   parkingEntriesFor,
   parkingKey,
   parkBand,
@@ -4260,7 +4261,9 @@ export function App() {
     // column and vertical text re-wraps per line, so parking is for the
     // continuous single-column print canvas only. The e2e probe flips
     // __layoutParkingOff to measure the difference.
+    let parkingArmed = false
     const parkingActive = () =>
+      parkingArmed &&
       !(window as unknown as Record<string, unknown>).__layoutParkingOff &&
       !hasVertical &&
       colMode === 'none' &&
@@ -4498,6 +4501,10 @@ export function App() {
         locate()
       } finally {
         lastPassMs = performance.now() - lastPassAt
+        // the sticky cost gate: a document that has proven expensive to lay
+        // out arms parking; a cheap one never does (the wake-up tax would be
+        // a net loss, see layout-parking.ts for the measured numbers)
+        parkingArmed = parkingArmDecided(lastPassMs, lastBlocks.length, parkingArmed)
         // a pass that threw between the add and the pre-setPageGaps remove
         // must not leave the gap widgets hidden
         pmEl()?.classList.remove('measuring-natural')

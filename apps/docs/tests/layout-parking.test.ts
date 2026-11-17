@@ -11,6 +11,7 @@
 import { Editor } from '@tiptap/core'
 import { describe, expect, it } from 'vitest'
 import { editorExtensions } from '../src/renderer/editor/extensions'
+import * as mod from '../src/renderer/editor/layout-parking'
 import {
   parkingEntriesFor,
   parkingKey,
@@ -59,13 +60,38 @@ describe('parkBand', () => {
   })
 })
 
+describe('parkingArmDecided: the sticky per-block cost gate', () => {
+  const { parkingArmDecided } = mod
+
+  it('never arms a cheap-to-lay-out document (plain text 183 pages)', () => {
+    // measured: 166 ms over 5182 blocks = 0.032 ms/block
+    expect(parkingArmDecided(166, 5182, false)).toBe(false)
+    expect(parkingArmDecided(441, 5182, false)).toBe(false)
+  })
+
+  it('arms an expensive-to-lay-out document (table-heavy)', () => {
+    // measured: 295 ms over 122 blocks = 2.4 ms/block
+    expect(parkingArmDecided(295, 122, false)).toBe(true)
+    expect(parkingArmDecided(151, 122, false)).toBe(true)
+  })
+
+  it('stays armed once a document has proven expensive', () => {
+    expect(parkingArmDecided(10, 122, true)).toBe(true)
+  })
+
+  it('disarms when the document shrinks below the floor', () => {
+    expect(parkingArmDecided(295, 40, true)).toBe(false)
+    expect(parkingArmDecided(295, 0, true)).toBe(false)
+  })
+})
+
 describe('parkingEntriesFor', () => {
   const doc = {
     childCount: 3,
     child(i: number) {
       return { nodeSize: [12, 15, 9][i] }
     },
-  } as unknown as import('@tiptap/pm/model').ProseMirrorNode
+  } as unknown as Parameters<typeof parkingEntriesFor>[0]
 
   it('collects positions only for parked blocks, with their heights', () => {
     const entries = parkingEntriesFor(doc, [false, true, true], [40, 200, 90])

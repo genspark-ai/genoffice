@@ -122,19 +122,19 @@ fragmentation discussion (with its rewrite cost) becomes the only remaining leve
 
 **Pure text, 5000 paragraphs / 183 pages / 5182 blocks** (`/tmp/probe-ab.js`, A/B):
 
-| | parking OFF | parking ON |
-|---|---|---|
-| parked after open | 0 | 4957 (95.6%) |
+|                               | parking OFF  | parking ON          |
+| ----------------------------- | ------------ | ------------------- |
+| parked after open             | 0            | 4957 (95.6%)        |
 | typing RTT median / p95 / max | 1 / 1 / 4 ms | 1 / **94** / 107 ms |
-| whole-document pass | 166 ms | **441 ms** |
+| whole-document pass           | 166 ms       | **441 ms**          |
 
 **Table-heavy, 40 tables x 30 bordered rows x 6 cells (~25 pages) / 122 blocks**:
 
-| | parking OFF | parking ON |
-|---|---|---|
-| parked after open | 0 | 118 (96.7%) |
+|                               | parking OFF    | parking ON         |
+| ----------------------------- | -------------- | ------------------ |
+| parked after open             | 0              | 118 (96.7%)        |
 | typing RTT median / p95 / max | 4 / 21 / 41 ms | **2 / 13 / 16 ms** |
-| whole-document pass | 334 / 309 ms | **295 / 151 ms** |
+| whole-document pass           | 334 / 309 ms   | **295 / 151 ms**   |
 
 Readings, honest:
 
@@ -155,12 +155,17 @@ Readings, honest:
    renders (`typedOk` true in both runs); Chromium reveals focused content per
    the content-visibility spec.
 
-Design consequence: parking should engage **by block layout cost**, not merely
-document length — e.g. park only when the last pass exceeded a budget, or only
-blocks heavier than N px. A plain-text 5000-block document should never park
-(the wake-up tax dominates); a 100-page table report should always park. That
-gate is one `lastPassMs` comparison away in the existing scheduler and is the
-single most important refinement before this prototype could become a PR.
+Design consequence: parking must engage **by block layout cost**, not document
+length — implemented here as the sticky per-block cost gate
+(`parkingArmDecided`, layout-parking.ts): arm when the last full pass cost
+
+> = 0.25 ms/block, sticky (parked passes are cheaper, a plain re-check would
+> flap), disarm below 50 blocks. **Verified with the gate in the build**: the
+> plain-text 183-page document parks nothing (parked = 0, typing RTT p95 = 3 ms,
+> no wake-up tax) and the table document parks 118/122 (typing RTT p95 = 9 ms,
+> post-typing pass 155 ms). Calibration constants are knobs, not physics; a
+> mixed text-and-tables shape dilutes the per-block average and may need a
+> per-block-cost refinement later.
 
 ## 7. How to verify locally
 
