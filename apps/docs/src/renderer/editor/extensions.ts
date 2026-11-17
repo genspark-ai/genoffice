@@ -1,6 +1,7 @@
 // Modified for ForaOffice from GenOffice v0.12.852.
 import { getOptionalDocsHost } from '../host/docs-host'
 import { ScriptFonts } from './script-fonts'
+import { BalancedSpacingExtension } from './balanced-spacing'
 import {
   asciiFamilyResolver,
   eaFamilyResolver,
@@ -3979,7 +3980,7 @@ export const DocProtected = Node.create({
       const dom = buildProtectedDom(currentNode)
       const getNode = () => currentNode
       const pos = getPos as () => number | undefined
-      const textboxes = mountTextboxEditors(dom, getNode, pos, editor.view)
+      const textboxes = mountTextboxEditors(dom, getNode, pos, editor.view, editor)
       const table = wireTableEditing(dom, getNode, pos, editor.view)
       const field = wireFieldEditing(dom, getNode, pos, editor.view)
       const formula = wireFormulaEditing(dom, getNode, pos, editor.view)
@@ -5595,6 +5596,7 @@ function mountTextboxEditors(
   getNode: () => PmNode,
   getPos: () => number | undefined,
   view: EditorView,
+  owner: Editor,
 ):
   | (ProtectedContentEditor & {
       cleanup: () => void
@@ -5677,6 +5679,7 @@ function mountTextboxEditors(
         if (transaction.docChanged) scheduleMeasure(i)
       },
     })
+    sub.storage.balancedSpacing.owner = owner
     // TipTap initializes the host element and may clear attributes emitted by
     // the static DOM spec, so reapply the shape geometry after mounting.
     el.setAttribute('style', boxStyle(box, el))
@@ -7297,6 +7300,7 @@ export const textboxSubExtensions = [
   DoubleClickWordExtension,
   TextStyleMark,
   FormatOffClearExtension,
+  BalancedSpacingExtension,
   CommentMark,
   // tracked runs keep their w:ins / w:del through an edit instead of resurfacing as live text
   InsMark,
@@ -7394,6 +7398,7 @@ export const editorExtensions = [
   TextStyleMark,
   DocRedaction,
   FormatOffClearExtension,
+  BalancedSpacingExtension,
   CommentMark,
   InsMark,
   DelMark,

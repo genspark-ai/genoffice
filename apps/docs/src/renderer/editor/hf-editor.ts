@@ -1,3 +1,4 @@
+// Modified for ForaOffice: separate authored spacing from compatibility rendering.
 /**
  * Rich header/footer editing: a nested TipTap editor (textbox sub-editor
  * schema + tab stops) hosts the part's text paragraphs, so ribbon formatting
@@ -614,6 +615,7 @@ export function mountHfEditor(
   host: HTMLElement,
   opts: {
     value: HeaderFooter
+    owner?: Editor
     pageNo: string
     pageTotal: string
     /** the edited page's section page count (SECTIONPAGES); defaults to pageTotal */
@@ -656,6 +658,7 @@ export function mountHfEditor(
     onFocus: () => setActiveSubEditor(editor),
     onTransaction: ({ transaction }) => notifySubEditorState(transaction.docChanged),
   })
+  editor.storage.balancedSpacing.owner = opts.owner ?? null
   editor.view.dispatch(
     editor.state.tr.setMeta(hfFieldNumbersKey, {
       page: opts.pageNo,

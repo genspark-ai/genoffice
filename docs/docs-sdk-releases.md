@@ -75,6 +75,14 @@ the same owning section/column or nested cell area. Wider sections elsewhere in
 the document no longer introduce a second centering offset on the editor canvas.
 Floating tables retain their separate anchor rules; authored OOXML is unchanged.
 
+Unreleased character-spacing fix: `Run.charSpacingTwips` remains the authored
+OOXML value when `balanceSingleByteDoubleByteWidth` is enabled. Compatibility
+painting is derived separately, including after text, font and spacing edits;
+renderers using engine runs can use `displayCharSpacingTwips` for that adjustment.
+Text-only edits no longer write the display compensation back into `w:spacing`
+or compound it across saves. Equivalent-save caller continuity applies without
+relaxing concurrency, unread side-state or expired-reference checks.
+
 The public contract is the [SDK guide](../apps/docs/sdk/README.md), its exported
 types and observed public behavior. During `0.x`, a minor version may contain a
 breaking public contract change. Patch versions are intended for compatible

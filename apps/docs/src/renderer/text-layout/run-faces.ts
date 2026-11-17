@@ -1,3 +1,4 @@
+// Modified for ForaOffice: separate authored spacing from compatibility rendering.
 /**
  * Which faces a run lays out with, answered once for the live marks, the
  * static DOM and the inline rules: the faces a run without its own w:rFonts
@@ -20,21 +21,24 @@ import {
 /** paragraph styleId -> inherited face (null = none declared on the chain) */
 export type FaceOf = (styleId: unknown) => string | null
 
-/** EA face a run without its own font inherits: paragraph style chain, then
+/** EA face a run without its own font inherits: character and paragraph styles, then
  *  Normal, then docDefaults (an empty-theme-slot backfill is not a choice) */
 export function inheritedEaFamily(
   styleId: unknown,
   storage: ListNumberingStorage | undefined,
+  characterStyleId?: unknown,
 ): string | null {
   if (!storage) return null
   const ownEa = (d: StyleDisplay | undefined): string | null =>
     d?.font && !d.eaSlotEmpty && (d.font !== d.fontAscii || isEaLayoutFace(d.font)) ? d.font : null
-  let id = typeof styleId === 'string' ? styleId : null
-  for (let hops = 0; id && hops < 32; hops++) {
-    const info = storage.styles?.get(id)
-    const fam = ownEa(info?.display)
-    if (fam) return fam
-    id = info?.basedOn ?? null
+  for (const initial of [characterStyleId, styleId]) {
+    let id = typeof initial === 'string' ? initial : null
+    for (let hops = 0; id && hops < 32; hops++) {
+      const info = storage.styles?.get(id)
+      const fam = ownEa(info?.display)
+      if (fam) return fam
+      id = info?.basedOn ?? null
+    }
   }
   for (const info of storage.styles?.values() ?? []) {
     if (info.isDefault && info.type === 'paragraph') {

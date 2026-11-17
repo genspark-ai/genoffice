@@ -1,3 +1,4 @@
+// Modified for ForaOffice: separate authored spacing from compatibility rendering.
 /**
  * F1 line-box metrics engine
  *
@@ -33,6 +34,7 @@ import {
 import type { DocGrid } from '@genoffice/docx-engine'
 import {
   isCjkLetterChar,
+  displayCharSpacingTwips,
   isDoubleByteChar,
   isEastAsianChar,
   isEastAsianLangTag,
@@ -1422,9 +1424,12 @@ export function fontKerningCss(run: {
 export function runLetterSpacingCss(run: {
   text: string
   charSpacingTwips?: number
+  spacingDisplay?: { eastAsiaFont?: string }
+  eastAsiaFont?: string
   charScalePct?: number
 }): string | null {
-  const spacingPt = run.charSpacingTwips ? run.charSpacingTwips / 20 : 0
+  const spacing = displayCharSpacingTwips(run)
+  const spacingPt = spacing ? spacing / 20 : 0
   const scaleEm = run.charScalePct ? charScaleEm(run.text, run.charScalePct) : 0
   if (spacingPt && scaleEm) return `calc(${spacingPt}pt + ${scaleEm}em)`
   if (spacingPt) return `${spacingPt}pt`

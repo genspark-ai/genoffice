@@ -1,4 +1,6 @@
+// Modified for ForaOffice: separate authored spacing from compatibility rendering.
 import React, { useEffect, useRef, useState } from 'react'
+import type { Editor } from '@tiptap/core'
 import {
   PAGE_MARK,
   SECTION_PAGES_MARK,
@@ -130,6 +132,7 @@ function paraBox(
  */
 export function HeaderFooterArea({
   kind,
+  owner,
   value,
   images,
   readOnly,
@@ -145,6 +148,7 @@ export function HeaderFooterArea({
   onEditingChange,
 }: {
   kind: 'header' | 'footer'
+  owner?: Editor
   value: HfValue
   /** logo and other images in the part, display-only (text edits do not affect their saved bytes) */
   images?: HfImage[]
@@ -191,6 +195,7 @@ export function HeaderFooterArea({
     const { value: v, pageNo: pn, pageTotal: pt, sectionPages: sp } = latest.current
     const handle = mountHfEditor(el, {
       value: v,
+      owner,
       pageNo: String(pn ?? 1),
       pageTotal: String(pt ?? 1),
       sectionPages: String(sp ?? pt ?? 1),
@@ -203,7 +208,7 @@ export function HeaderFooterArea({
     })
     latest.current.onEditingChange?.(true, handle)
     return () => handle.exit()
-  }, [editing])
+  }, [editing, owner])
 
   const display = (text: string) => {
     const t = text
