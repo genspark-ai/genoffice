@@ -2793,6 +2793,11 @@ export const strings = {
     propProducer: 'Készítő',
     propCreated: 'Létrehozva',
     propModified: 'Módosítva',
+    ocrRecognize: 'Szöveg felismerése',
+    ocrRecognizeTip: 'OCR futtatása a dokumentum minden beolvasott oldalán (oldalkorlát nélkül)',
+    ocrNothing: 'Nincs több felismerendő beolvasott oldal.',
+    texteditReveal:
+      'A szöveg megjelenítése az oldalon szerkesztés után; kikapcsolva a láthatatlan keresőrétegben marad',
   },
   ja: {
     ...fillFormStringsFor('ja'),
