@@ -21,6 +21,7 @@ import {
   storyMarkerFor,
   storyScrollHost,
   storyTypewriterDelta,
+  storyTypewriterScrollDue,
   type StoryStyle,
   type StoryStyles,
 } from '../src/renderer/editor/story-view'
@@ -370,6 +371,29 @@ describe('story view: the Escape that leaves the view', () => {
   it('another key never leaves the view', () => {
     expect(storyEscLeavesView(esc({ key: 'Enter' }), false)).toBe(false)
   })
+
+  // the chip listens in the capture phase: both listeners sit on window, the
+  // story view's bubble listener registers first (the view is entered before a
+  // paste creates the chip), so a bubble-phase chip handler ran too late and
+  // one Escape both dismissed the chip and left the view
+  it('an Escape dismissing the paste options chip reaches the story listener already consumed', () => {
+    let storySaw = 'unseen'
+    const storyOnKey = (e: KeyboardEvent) => {
+      storySaw = storyEscLeavesView(e, false) ? 'leaves' : 'stays'
+    }
+    const chipOnKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') e.preventDefault()
+    }
+    window.addEventListener('keydown', storyOnKey)
+    window.addEventListener('keydown', chipOnKey, true)
+    try {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
+    } finally {
+      window.removeEventListener('keydown', storyOnKey)
+      window.removeEventListener('keydown', chipOnKey, true)
+    }
+    expect(storySaw).toBe('stays')
+  })
 })
 
 describe('story view Focus: the dim ranges', () => {
@@ -518,5 +542,27 @@ describe('Focus typewriter scroll: the caret line keeps to the middle', () => {
     expect(host).not.toBeNull()
     expect(host!.top).toBe(0)
     expect(host!.bottom).toBe(window.innerHeight)
+  })
+
+  it('only a caret the user moved re-centers — not a remote edit, not a drag', () => {
+    // Focus just switched on: one re-center
+    expect(storyTypewriterScrollDue(null, { active: true, collapsed: true, head: 10 })).toBe(true)
+    // typing: the caret moved, collapsed — scroll
+    expect(
+      storyTypewriterScrollDue({ active: true, head: 10 }, { active: true, collapsed: true, head: 12 }),
+    ).toBe(true)
+    // a transaction that does not move the caret (a remote or AI edit, a
+    // decoration refresh): the viewport stays where the user scrolled it
+    expect(
+      storyTypewriterScrollDue({ active: true, head: 10 }, { active: true, collapsed: true, head: 10 }),
+    ).toBe(false)
+    // a drag selection (a range): the line would follow the head every frame
+    expect(
+      storyTypewriterScrollDue({ active: true, head: 10 }, { active: true, collapsed: false, head: 40 }),
+    ).toBe(false)
+    // Focus off: never
+    expect(
+      storyTypewriterScrollDue({ active: true, head: 10 }, { active: false, collapsed: true, head: 10 }),
+    ).toBe(false)
   })
 })

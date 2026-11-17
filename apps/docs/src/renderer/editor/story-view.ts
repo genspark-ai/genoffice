@@ -298,6 +298,24 @@ export function storyTypewriterDelta(
   return (cursorTop + cursorBottom) / 2 - (viewportTop + viewportBottom) / 2
 }
 
+/**
+ * Whether this update re-centers the caret line. Only a caret the user moved
+ * does: a transaction that leaves the selection alone (a remote or AI edit, a
+ * decoration refresh) must not yank the viewport back to the caret the user
+ * may have scrolled away from, and a drag selection (a range) never scrolls —
+ * the line would follow the selection head every frame. Focus just switching
+ * on scrolls once, the same way.
+ */
+export function storyTypewriterScrollDue(
+  prev: { active: boolean; head: number } | null,
+  next: { active: boolean; collapsed: boolean; head: number },
+): boolean {
+  if (!next.active) return false
+  if (!prev?.active) return true
+  if (!next.collapsed) return false
+  return next.head !== prev.head
+}
+
 /** re-center the caret line for Focus mode. Failures stay silent: the caret
     may briefly sit on a position without a box at paint time, and a shapeless
     environment (the tests) must not break the transaction that scheduled it. */
@@ -464,17 +482,26 @@ export const StoryViewExtension = Extension.create({
           return stripHiddenMarksFromTypedText(transactions, newState)
         },
         view(_editorView) {
-          // the typewriter scroll: with Focus on, every state change (typed
-          // text, the caret moved, Focus just switched on) re-centers the
-          // caret line at paint time. ProseMirror's own scrollIntoView has
-          // already run by then and only guarantees visibility — this moves
-          // the line the rest of the way to the middle.
+          // the typewriter scroll: with Focus on, a caret the user moved (and
+          // the moment Focus switches on) re-centers the caret line at paint
+          // time. ProseMirror's own scrollIntoView has already run by then and
+          // only guarantees visibility — this moves the line the rest of the
+          // way to the middle. Updates that do not move the caret (a remote or
+          // AI edit, a decoration refresh) and drag selections never scroll.
           let raf = 0
+          let prev: { active: boolean; head: number } | null = null
           return {
             update(v: EditorView) {
               const st = storyViewKey.getState(v.state)
-              if (!st?.active || !st.focus) {
-                if (raf) {
+              const next = {
+                active: !!(st?.active && st.focus),
+                collapsed: v.state.selection.empty,
+                head: v.state.selection.head,
+              }
+              const due = storyTypewriterScrollDue(prev, next)
+              prev = { active: next.active, head: next.head }
+              if (!next.active || !due) {
+                if (!next.active && raf) {
                   cancelAnimationFrame(raf)
                   raf = 0
                 }

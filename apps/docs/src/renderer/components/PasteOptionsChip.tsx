@@ -174,10 +174,14 @@ export function PasteOptionsChip({ editor }: { editor: Editor }) {
     const onPointerDown = (event: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
     }
-    window.addEventListener('keydown', onKey)
+    // capture phase: both listeners sit on window, and the story view's bubble
+    // listener registers earlier (the view is entered before a paste creates
+    // the chip) — in the bubble phase it ran first and one Escape dismissed
+    // the chip AND left the view
+    window.addEventListener('keydown', onKey, true)
     window.addEventListener('mousedown', onPointerDown)
     return () => {
-      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keydown', onKey, true)
       window.removeEventListener('mousedown', onPointerDown)
     }
   }, [editor, chip, open])
