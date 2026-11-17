@@ -2131,8 +2131,37 @@ function executeSyncTool(
       }
     }
 
-    default:
+    default: {
+      if (opNames().includes(call.name)) {
+        const dryRun = call.input.dryRun === true
+        const outcome = executeOps(
+          editor,
+          [{ op: call.name, target: call.input.target ?? (scope ? { scope: 'selection' } : { scope: 'document' }), ...call.input }],
+          {
+            numIds,
+            track,
+            selection: scope,
+            dryRun,
+            styles: extras?.styles,
+          },
+        )
+        if (!outcome.ok) return fail(t('aiSumApplyCommands'), outcome.error ?? 'op execution failed')
+        if (dryRun) {
+          return {
+            output: `Dry run: ${outcome.plan?.length ?? 0} op(s) valid, nothing applied.\n${(outcome.plan ?? []).join('\n')}`,
+            mutated: false,
+            summary: t('aiSumApplyCommands'),
+          }
+        }
+        const changed = outcome.results.reduce((sum, r) => sum + r.changed, 0)
+        return {
+          output: outcome.summary,
+          mutated: changed > 0,
+          summary: outcome.summary,
+        }
+      }
       return fail(call.name, `unknown tool: ${call.name}`)
+    }
   }
 }
 

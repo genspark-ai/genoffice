@@ -1666,21 +1666,28 @@ const failure = (error: string): ExecuteOutcome => ({ ok: false, results: [], su
  * the op's usage line; dryRun stops after planning.
  */
 export function executeOps(editor: Editor, ops: unknown, ctx: OpContext = {}): ExecuteOutcome {
-  if (!Array.isArray(ops) || ops.length === 0) return failure('ops must be a non-empty array')
+  let list = ops
+  if (ops && typeof ops === 'object' && !Array.isArray(ops) && typeof (ops as Record<string, unknown>).op === 'string') {
+    list = [ops]
+  }
+  if (!Array.isArray(list) || list.length === 0) return failure('ops must be a non-empty array')
   const plan: string[] = []
   const errors: string[] = []
   const planned: Array<[Op, OpDef]> = []
-  ops.forEach((raw, i) => {
+  list.forEach((raw, i) => {
     const where = `op #${i}`
     if (!raw || typeof raw !== 'object' || typeof (raw as Op).op !== 'string') {
       errors.push(`${where}: must be an object with an "op" name field`)
       return
     }
-    const op = raw as Op
+    const op = { ...(raw as Op) }
     const def = REGISTRY.get(op.op)
     if (!def || (def.hidden && ctx.source !== 'ui')) {
       errors.push(`${where}: unknown op "${op.op}". Supported ops: [${opNames().join(', ')}]`)
       return
+    }
+    if (def.target === 'required' && !op.target) {
+      op.target = ctx.selection ? { scope: 'selection' } : { scope: 'document' }
     }
     const error = def.validate(op, `${where} ${op.op}`)
     if (error) {

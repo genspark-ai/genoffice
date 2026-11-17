@@ -1,4 +1,4 @@
-import type { AgentMessage, AgentToolDef } from '@genoffice/agent-core'
+import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 import { isAiOverloadedError } from './overload-error'
 import { withOutputCapFallback } from './output-cap'
 import { streamAnthropic } from './protocols/anthropic'
@@ -6,7 +6,15 @@ import { streamGemini } from './protocols/gemini'
 import { streamOpenAiCompatible } from './protocols/openai-compatible'
 import { streamOpenAiResponses } from './protocols/openai-responses'
 import { streamCodexAppServer } from './codex-app-server'
-import { isCliProvider, streamAgy } from './agy-cli'
+import { isKeylessProvider } from './agy-meta'
+import { streamAgy } from './agy-cli'
+import { firstJsonObject, readToolCallBody, resolveToolName } from './agy-tool-repair'
+import {
+  ensureLocalVlmEndpoint,
+  localVlmRequestConfig,
+  shouldFallbackFromAgyToLocalVlm,
+} from './local-vlm-fallback'
+import { LOCAL_VLM_IDLE_TIMEOUT_MS, LOCAL_VLM_SAMPLING_DEFAULTS } from './local-vlm-meta'
 import type { StreamCallbacks } from './protocols/shared'
 import { withSystemAddendum } from './system-addendum'
 import { getProviderAdapter, type AiProtocol } from './registry'
@@ -19,6 +27,378 @@ export { streamOpenAiResponses } from './protocols/openai-responses'
 export { AiCreditsError, sseLines } from './protocols/shared'
 export type { StreamCallbacks } from './protocols/shared'
 
+const CORE_DOC_TOOLS = new Set([
+  // Docs tools
+  'get_document_context',
+  'read_blocks',
+  'insert_content',
+  'replace_blocks',
+  'delete_blocks',
+  'apply_ops',
+  'write_document',
+  'create_document',
+  // Sheets tools
+  'get_workbook_context',
+  'read_range',
+  'aggregate_range',
+  'propose_operations',
+  'read_cells',
+  'find_cells',
+  'select_range',
+])
+
+function selectEffectiveToolsForLocalVlm(tools: AgentToolDef[]): {
+  effectiveTools: AgentToolDef[]
+  isDocEditor: boolean
+} {
+  // If document editing tools are present, we are in Docs/Sheets editor:
+  // preserve the document editing tools so AI can read/write the file directly!
+  const docTools = tools.filter((t) => CORE_DOC_TOOLS.has(t.name))
+  if (docTools.length > 0) {
+    return { effectiveTools: docTools, isDocEditor: true }
+  }
+
+  // If lightweight tools (<= 8), keep them
+  if (tools.length <= 8 && JSON.stringify(tools).length <= 4000) {
+    return { effectiveTools: tools, isDocEditor: false }
+  }
+
+  // Heavy composite toolset (e.g. HomeChat with 23 tools / 18,000 tokens):
+  // strip to prevent context overflow while keeping normal chat responsive
+  return { effectiveTools: [], isDocEditor: false }
+}
+
+function pruneSystemForLocalVlm(system: string, isDocEditor: boolean): string {
+  if (!system) return ''
+  const trimmed = system.trim()
+  // When in Docs/Sheets editor, preserve document editing rules and recipes!
+  if (isDocEditor) return trimmed
+  if (trimmed.length <= 2500) return trimmed
+  const lines = trimmed.split('\n')
+  const filtered = lines.filter((line) => {
+    const t = line.trim()
+    if (t.startsWith('- `') || t.startsWith('Tool:') || t.includes('json_schema')) return false
+    return true
+  })
+  const res = filtered.join('\n').trim()
+  return res.length > 3000 ? res.slice(0, 3000) : res
+}
+
+const KNOWN_OPS = new Set([
+  'setFont',
+  'setMatchedFont',
+  'setParagraphFormat',
+  'setHeadingLevel',
+  'findReplace',
+  'deleteBlocks',
+  'moveBlocks',
+  'setList',
+  'clearList',
+  'setImageProperties',
+  'insertToc',
+  'setParagraphAttrs',
+  'setOutlineLevel',
+  'stepIndent',
+  'stepHangingIndent',
+])
+
+function normalizeToolCall(
+  name: string,
+  input: Record<string, unknown>,
+): { name: string; input: Record<string, unknown> } {
+  if (name === 'read_blocks') {
+    const fixedInput = { ...input }
+    if (fixedInput.startBlockIndex === undefined) fixedInput.startBlockIndex = 0
+    if (fixedInput.endBlockIndex === undefined) fixedInput.endBlockIndex = 0
+    return { name, input: fixedInput }
+  }
+
+  // If model called an op directly (e.g. setFont), wrap as apply_ops
+  if (KNOWN_OPS.has(name)) {
+    const target = input.target ?? { scope: 'document' }
+    return {
+      name: 'apply_ops',
+      input: {
+        ops: [{ op: name, target, ...input }],
+      },
+    }
+  }
+
+  // If model called apply_ops with flattened op (no ops array)
+  if (name === 'apply_ops') {
+    if (!Array.isArray(input.ops)) {
+      if (typeof input.op === 'string') {
+        const target = input.target ?? { scope: 'document' }
+        return {
+          name: 'apply_ops',
+          input: {
+            ops: [{ target, ...input }],
+          },
+        }
+      }
+    } else {
+      // Ensure ops that require target have a target
+      const fixedOps = (input.ops as Array<Record<string, unknown>>).map((op) => {
+        if (op && typeof op === 'object' && typeof op.op === 'string' && KNOWN_OPS.has(op.op)) {
+          if (!op.target) {
+            return { target: { scope: 'document' }, ...op }
+          }
+        }
+        return op
+      })
+      return {
+        name: 'apply_ops',
+        input: { ...input, ops: fixedOps },
+      }
+    }
+  }
+
+  return { name, input }
+}
+
+function parseToolCallBlock(
+  fullBlock: string,
+  known: ReadonlySet<string>,
+): AgentToolCall | null {
+  const inner = fullBlock
+    .replace(/^<tool_call>/i, '')
+    .replace(/<\/tool_call>$/i, '')
+    .trim()
+
+  // 1. XML function syntax: <function=name>...</function>
+  const fnMatch = /<function=([a-zA-Z0-9_\-]+)>([\s\S]*?)<\/function>/i.exec(inner)
+  if (fnMatch) {
+    const rawName = fnMatch[1]!
+    const body = fnMatch[2]?.trim() ?? ''
+    const resolved = resolveToolName(rawName, known) ?? rawName
+    let input: Record<string, unknown> = {}
+
+    if (body) {
+      const argMatch = /<arguments>([\s\S]*?)<\/arguments>/i.exec(body)
+      const rawArgs = (argMatch ? argMatch[1]!.trim() : body)
+      if (rawArgs) {
+        try {
+          const parsed = JSON.parse(rawArgs)
+          if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+            input = parsed as Record<string, unknown>
+          }
+        } catch {
+          const jsonSub = firstJsonObject(rawArgs)
+          if (jsonSub) {
+            try {
+              input = JSON.parse(jsonSub.json)
+            } catch {}
+          }
+        }
+      }
+    }
+
+    const normalized = normalizeToolCall(resolved, input)
+
+    return {
+      id: `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      name: normalized.name,
+      input: normalized.input,
+    }
+  }
+
+  // 2. JSON syntax: {"name": "...", "arguments": {...}}
+  const obj = firstJsonObject(inner)
+  if (obj) {
+    const call = readToolCallBody(obj.json, known)
+    if (call) {
+      const normalized = normalizeToolCall(call.name, call.input)
+      return {
+        id: `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        name: normalized.name,
+        input: normalized.input,
+      }
+    }
+  }
+
+  return null
+}
+
+function wrapWithToolCallFilter(
+  cb: StreamCallbacks,
+  availableTools: readonly AgentToolDef[],
+): StreamCallbacks & { flush: () => void } {
+  const known = new Set(availableTools.map((t) => t.name))
+  for (const name of [
+    'read_blocks',
+    'insert_content',
+    'replace_blocks',
+    'delete_blocks',
+    'apply_ops',
+    'get_document_context',
+    'write_document',
+    ...KNOWN_OPS,
+  ]) {
+    known.add(name)
+  }
+
+  let buffer = ''
+  let inToolCall = false
+  let toolCallEmitted = false
+
+  const flushSafeBuffer = () => {
+    if (buffer && !inToolCall) {
+      const match = buffer.match(/<[t]?[o]?[o]?[l]?[_]?[c]?[a]?[l]?[l]?[>]?$/i)
+      if (match) {
+        const safe = buffer.slice(0, match.index)
+        if (safe) cb.onDelta(safe)
+        buffer = buffer.slice(match.index)
+      } else {
+        cb.onDelta(buffer)
+        buffer = ''
+      }
+    }
+  }
+
+  const flush = () => {
+    if (buffer) {
+      cb.onDelta(buffer)
+      buffer = ''
+    }
+    if (toolCallEmitted) {
+      cb.onStopReason?.('tool_calls')
+    }
+  }
+
+  return {
+    ...cb,
+    flush,
+    onDelta: (chunk: string) => {
+      buffer += chunk
+
+      while (buffer.length > 0) {
+        if (!inToolCall) {
+          const openMatch = /<tool_call>/i.exec(buffer)
+          if (!openMatch) {
+            flushSafeBuffer()
+            return
+          }
+          if (openMatch.index > 0) {
+            cb.onDelta(buffer.slice(0, openMatch.index))
+            buffer = buffer.slice(openMatch.index)
+          }
+          inToolCall = true
+        }
+
+        const closeMatch = /<\/tool_call>/i.exec(buffer)
+        if (!closeMatch) {
+          // Waiting for more chunks to close </tool_call>
+          return
+        }
+
+        const fullBlockEnd = closeMatch.index + closeMatch[0].length
+        const fullBlock = buffer.slice(0, fullBlockEnd)
+        buffer = buffer.slice(fullBlockEnd)
+        inToolCall = false
+
+        const call = parseToolCallBlock(fullBlock, known)
+        if (call) {
+          toolCallEmitted = true
+          cb.onToolCall?.(call)
+        } else {
+          cb.onDelta(fullBlock)
+        }
+      }
+    },
+    onStopReason: (reason) => {
+      if (buffer) {
+        cb.onDelta(buffer)
+        buffer = ''
+      }
+      cb.onStopReason?.(toolCallEmitted ? 'tool_calls' : reason)
+    },
+  }
+}
+
+function trimMessagesForLocalVlm(messages: AgentMessage[]): AgentMessage[] {
+  // Keep at most 6 recent messages to prevent context overflow on 8k context window
+  const recent = messages.length > 6 ? messages.slice(-6) : messages
+  return recent.map((m, idx) => {
+    // Keep the latest user message intact
+    if (idx === recent.length - 1 && m.role === 'user') return m
+    if (m.role === 'user' || m.role === 'assistant') {
+      if (m.text && m.text.length > 2000) {
+        return {
+          ...m,
+          text: m.text.slice(0, 2000) + '... [truncated]',
+        }
+      }
+    } else if (m.role === 'tool') {
+      const trimmedResults = m.results.map((r) => {
+        if (typeof r.output === 'string' && r.output.length > 1500) {
+          return {
+            ...r,
+            output: r.output.slice(0, 1500) + '... [truncated]',
+          }
+        }
+        return r
+      })
+      return { ...m, results: trimmedResults }
+    }
+    return m
+  })
+}
+
+async function streamLocalVlmOpenAi(
+  local: { baseUrl: string; model: string },
+  system: string,
+  messages: AgentMessage[],
+  tools: AgentToolDef[],
+  maxTokens: number,
+  cb: StreamCallbacks,
+): Promise<void> {
+  const localConfig = localVlmRequestConfig({ model: local.model })
+  const options = {
+    bodyExtras: { ...LOCAL_VLM_SAMPLING_DEFAULTS },
+    idleTimeoutMs: LOCAL_VLM_IDLE_TIMEOUT_MS,
+  }
+  // CPU Optimization:
+  // In Docs/Sheets editor: pass the document editing tools (read_blocks, insert_content,
+  // replace_blocks...) so AI can read/write the file directly!
+  // In HomeChat: strip heavy non-doc tools to avoid 18k token blowup while keeping prompt < 300 tokens.
+  const { effectiveTools, isDocEditor } = selectEffectiveToolsForLocalVlm(tools)
+  const slimSystem = pruneSystemForLocalVlm(system, isDocEditor)
+  const windowedMessages = trimMessagesForLocalVlm(messages)
+  const filteredCb = wrapWithToolCallFilter(cb, effectiveTools)
+
+  try {
+    await streamOpenAiCompatible(
+      local.baseUrl,
+      localConfig,
+      slimSystem,
+      windowedMessages,
+      effectiveTools,
+      maxTokens,
+      filteredCb,
+      options,
+    )
+    filteredCb.flush()
+  } catch (err) {
+    if (
+      /exceed_context_size_error|exceeds the available context size|context.*exceed/i.test(
+        err instanceof Error ? err.message : String(err),
+      )
+    ) {
+      return await streamOpenAiCompatible(
+        local.baseUrl,
+        localConfig,
+        '',
+        messages.slice(-2),
+        [],
+        maxTokens,
+        filteredCb,
+        options,
+      )
+    }
+    throw err
+  }
+}
+
 /** route a streaming, tool-calling-capable turn by provider id */
 async function streamForProviderInner(
   provider: AiProviderId,
@@ -30,12 +410,12 @@ async function streamForProviderInner(
   cb: StreamCallbacks,
 ): Promise<void> {
   if (provider === 'genspark') throw new Error('Genspark sign-in is disabled in this build')
-  if (!isCliProvider(provider) && !config.model?.trim()) {
+  if (!isKeylessProvider(provider) && !config.model?.trim()) {
     throw new Error('Choose an AI model in Settings → AI Model')
   }
   if (provider === 'custom') {
     if (!config.baseUrl?.trim()) throw new Error('Set the Base URL in Settings → AI Model')
-  } else if (!isCliProvider(provider) && !config.apiKey?.trim()) {
+  } else if (!isKeylessProvider(provider) && !config.apiKey?.trim()) {
     throw new Error('Set an API key in Settings → AI Model')
   }
   const endpoint = getProviderAdapter(provider).resolveEndpoint(config)
@@ -44,12 +424,22 @@ async function streamForProviderInner(
   if (endpoint.protocol === 'codex-app-server') {
     return streamCodexAppServer(config, system, messages, tools, maxTokens, cb)
   }
-  if (endpoint.protocol === 'agy-cli')
+  if (endpoint.protocol === 'local-vlm') {
+    const local = await ensureLocalVlmEndpoint(cb.signal)
+    return streamLocalVlmOpenAi(local, system, messages, tools, maxTokens, cb)
+  }
+  if (endpoint.protocol === 'agy-cli') {
+    if (await shouldFallbackFromAgyToLocalVlm(config.cliPath)) {
+      const local = await ensureLocalVlmEndpoint(cb.signal)
+      return streamLocalVlmOpenAi(local, system, messages, tools, maxTokens, cb)
+    }
     return streamAgy(config, system, messages, tools, maxTokens, cb)
+  }
   // A model the user declared a ceiling for outranks the caller's budget; the
   // endpoint's own 400 would otherwise cost a billed round trip.
   const cap = endpoint.maxTokens !== undefined ? Math.min(maxTokens, endpoint.maxTokens) : maxTokens
-  const protocol: Exclude<AiProtocol, 'codex-app-server' | 'agy-cli'> = endpoint.protocol
+  const protocol: Exclude<AiProtocol, 'codex-app-server' | 'agy-cli' | 'local-vlm'> =
+    endpoint.protocol
   return withOutputCapFallback(baseUrl, config.model, cap, (tokens) => {
     switch (protocol) {
       case 'anthropic':
