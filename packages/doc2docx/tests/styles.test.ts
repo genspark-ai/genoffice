@@ -480,7 +480,7 @@ describe('converted styles: the stylesheet becomes .docx styles', () => {
       { name: 'Strong', kind: 'character', chpxSprms: sprm(0x0835, [1]) },
       { empty: true },
       ...nullCharStyles,
-      { name: 'Default Paragraph Font', kind: 'character' },
+      { name: 'Default Paragraph Font', kind: 'character', sti: 65 },
     ],
     text: 'Head\rCentered\r',
     paragraphs: [{ istd: 1 }, { istd: 2 }],
@@ -491,32 +491,35 @@ describe('converted styles: the stylesheet becomes .docx styles', () => {
     const { docx } = await convertLegacyDocToDocx(doc)
     const zip = await JSZip.loadAsync(docx)
     const stylesXml = (await zip.file('word/styles.xml')!.async('string'))!
-    // definitions carry the source name, the chain-resolved properties and a
-    // basedOn that only points at an emitted base
-    expect(stylesXml).toContain(
-      '<w:style w:type="paragraph" w:styleId="w97-1"><w:name w:val="heading 1"/>',
-    )
+    // a built-in name maps onto the style the template already defines: the
+    // source's heading 1 IS the template's Heading1 — emitting a second style
+    // under one name makes Word repair the file
+    expect(stylesXml).not.toContain('w:styleId="w97-1">')
+    expect(stylesXml).not.toContain('w:styleId="w97-3">')
+    expect(stylesXml.match(/<w:name w:val="heading 1"\/>/g)).toHaveLength(1)
+    // the custom style keeps its own def, and its basedOn points at the
+    // template id the mapped base landed on
     expect(stylesXml).toContain(
       '<w:style w:type="paragraph" w:styleId="w97-2"><w:name w:val="Centered"/>',
     )
-    expect(stylesXml).toContain('<w:basedOn w:val="w97-1"/>')
     // istd 2 inherits heading 1's bold through the chain: the flattened
     // definition carries it in rPr beside its own centered pPr
     expect(stylesXml).toContain(
       '<w:style w:type="paragraph" w:styleId="w97-2"><w:name w:val="Centered"/>' +
-        '<w:basedOn w:val="w97-1"/><w:pPr><w:jc w:val="center"/></w:pPr>' +
+        '<w:basedOn w:val="Heading1"/><w:pPr><w:jc w:val="center"/></w:pPr>' +
         '<w:rPr><w:b/><w:bCs/></w:rPr></w:style>',
     )
-    expect(stylesXml).toContain(
-      '<w:style w:type="character" w:styleId="w97-3"><w:name w:val="Strong"/>',
-    )
+    // the null character style (sti 65) is never emitted as a real style
+    expect(stylesXml).not.toContain('w:styleId="w97-15">')
+    expect(stylesXml.match(/<w:name w:val="Default Paragraph Font"\/>/g)).toBeNull()
     // Normal is the template's own style and the empty slot emits nothing
     expect(stylesXml).not.toContain('w:styleId="w97-0">')
     expect(stylesXml).not.toContain('w:styleId="w97-4">')
     const documentXml = (await zip.file('word/document.xml')!.async('string'))!
-    expect(documentXml).toContain('<w:pStyle w:val="w97-1"/>')
+    // the paragraphs and runs reference the mapped template ids
+    expect(documentXml).toContain('<w:pStyle w:val="Heading1"/>')
     expect(documentXml).toContain('<w:pStyle w:val="w97-2"/>')
-    expect(documentXml).toContain('<w:rStyle w:val="w97-3"/>')
+    expect(documentXml).toContain('<w:rStyle w:val="Strong"/>')
   })
 
   it('a run in the null character style and a paragraph on an empty slot stay unreferenced', async () => {
@@ -525,7 +528,7 @@ describe('converted styles: the stylesheet becomes .docx styles', () => {
         { name: 'Normal', kind: 'paragraph', sti: 0 },
         { empty: true },
         ...Array.from({ length: 9 }, () => ({ empty: true }) as SyntheticStyle),
-        { name: 'Default Paragraph Font', kind: 'character' },
+        { name: 'Default Paragraph Font', kind: 'character', sti: 65 },
       ],
       text: 'plain\r',
       paragraphs: [{ istd: 1 }],

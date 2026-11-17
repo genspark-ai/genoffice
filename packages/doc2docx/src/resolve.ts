@@ -33,15 +33,37 @@ import { fontNamesFor, parseFontTable } from './fonts'
 import { iterateSprms, readSprmU16 } from './sprm'
 import { legacyStyleId, parseStsh, type Style, type StyleSheet } from './styles'
 import { createWordControlMapper } from './text'
+import { BLANK_STYLES_BY_NAME } from '@genoffice/docx-engine'
 
 /** the style index Word applies to paragraphs with no PAPX / no explicit style */
 export const DEFAULT_PARAGRAPH_STYLE_ISTD = 0
-/** the Word 97 default character style ("Default Paragraph Font") */
+/** the Word 97 default character style ("Default Paragraph Font") in Word's own
+    stylesheet layout; the slot order varies between producers, so the skip tests
+    also check the stable built-in number (STI_DEFAULT_CHARACTER) */
 export const DEFAULT_CHARACTER_STYLE_ISTD = 10
 const SPRM_C_ISTD = 0x4a30
 const STI_HYPERLINK = 85
 const STI_FOLLOWED_HYPERLINK = 87
+/** the built-in style number (sti) of the null character style "Default Paragraph Font" */
+const STI_DEFAULT_CHARACTER = 65
 const NO_SPRMS = new Uint8Array(0)
+
+/**
+ * A source style whose name matches a style the blank template already defines
+ * maps onto that template style: emitting a second style under the same name
+ * makes Word repair the file, and the pStyle / rStyle references point at the
+ * template's id instead of a w97- one. Same kind only — Word's built-in names
+ * are kind-scoped, and a paragraph style never rides a character id.
+ */
+function templateStyleIdOf(style: Style): string | undefined {
+  const direct = BLANK_STYLES_BY_NAME.get(style.name)
+  if (direct && direct.kind === style.kind) return direct.id
+  const lower = style.name.toLowerCase()
+  for (const [name, def] of BLANK_STYLES_BY_NAME) {
+    if (name.toLowerCase() === lower && def.kind === style.kind) return def.id
+  }
+  return undefined
+}
 
 interface Resolver {
   styles: StyleSheet
@@ -122,9 +144,14 @@ function resolveParagraphFormatting(
   applyParagraphGrpprl(formatting, sprms, resolver.context, 'inherit')
   formatting.styleIndex = istd
   // the writer references the style through this id; istd 0 is Normal, which
-  // the blank template already defines, so it is never emitted nor referenced
-  if (istd !== DEFAULT_PARAGRAPH_STYLE_ISTD && styleIsDefined(resolver.styles.styles.get(istd)))
-    formatting.styleId = legacyStyleId(istd)
+  // the blank template already defines, so it is never emitted nor referenced.
+  // A style whose name the template already defines references the template's
+  // own id — the def is not emitted beside it.
+  const style = resolver.styles.styles.get(istd)
+  if (istd !== DEFAULT_PARAGRAPH_STYLE_ISTD && styleIsDefined(style)) {
+    const mapped = style ? templateStyleIdOf(style) : undefined
+    formatting.styleId = mapped ?? legacyStyleId(istd)
+  }
   return formatting
 }
 
@@ -169,18 +196,22 @@ function resolveCharacterFormatting(
       'a run character style',
     ))
       applyCharacterGrpprl(formatting, style.chpxSprms, 'inherit')
-    // the run carries the character style through this id (w:rStyle); istd 10
-    // ("Default Paragraph Font") is the null style and is never referenced,
-    // and a Hyperlink-family style is implied by the run's own link (the
-    // engine convention: rStyle Hyperlink is written by the generator)
+    // the run carries the character style through this id (w:rStyle); the null
+    // style ("Default Paragraph Font") is never referenced — its slot order
+    // varies, so the skip checks the built-in number as well as Word's own
+    // istd 10 — and a Hyperlink-family style is implied by the run's own link
+    // (the engine convention: rStyle Hyperlink is written by the generator)
     const referencedStyle = resolver.styles.styles.get(characterIstd)
     if (
       characterIstd !== DEFAULT_CHARACTER_STYLE_ISTD &&
       styleIsDefined(referencedStyle) &&
       referencedStyle!.sti !== STI_HYPERLINK &&
-      referencedStyle!.sti !== STI_FOLLOWED_HYPERLINK
-    )
-      formatting.styleId = legacyStyleId(characterIstd)
+      referencedStyle!.sti !== STI_FOLLOWED_HYPERLINK &&
+      referencedStyle!.sti !== STI_DEFAULT_CHARACTER
+    ) {
+      const mapped = templateStyleIdOf(referencedStyle!)
+      formatting.styleId = mapped ?? legacyStyleId(characterIstd)
+    }
   }
   applyCharacterGrpprl(formatting, sprms, 'inherit')
   if (resolver.styles.fonts) {
@@ -204,6 +235,9 @@ export interface LegacyStyleDef {
   kind: 'paragraph' | 'character'
   name: string
   basedOn?: number
+  /** the template style id the base maps onto, when it does (the base's own
+      def is not emitted, so the w97- id would dangle) */
+  basedOnTemplate?: string
   /** the chain-resolved paragraph properties (paragraph styles) */
   paragraph?: ParagraphFormatting
   /** the chain-resolved run properties (a paragraph style's CHPX layer, or a
@@ -237,6 +271,17 @@ export function legacyStyleDefs(
     // provided by the template too (the generator implies it on link runs)
     if (style.kind === 'paragraph' && style.istd === DEFAULT_PARAGRAPH_STYLE_ISTD) continue
     if (style.sti === STI_HYPERLINK || style.sti === STI_FOLLOWED_HYPERLINK) continue
+    // the null character style ("Default Paragraph Font") is never emitted:
+    // its slot order varies between producers, so the skip checks the stable
+    // built-in number as well as Word's own istd 10
+    if (style.sti === STI_DEFAULT_CHARACTER) continue
+    if (style.kind === 'character' && style.istd === DEFAULT_CHARACTER_STYLE_ISTD) continue
+    // table / numbering styles (Table Normal, No List) have no w:style the
+    // writer can model: the template's defaults apply implicitly
+    if (style.kind !== 'paragraph' && style.kind !== 'character') continue
+    // a style the template already defines under the same name maps onto it
+    // and is not emitted beside it (Word repairs duplicate names)
+    if (templateStyleIdOf(style)) continue
     const chain = styleChain(styles, style.istd, warn, `style ${style.istd}`)
     if (chain.length === 0) continue
     const def: LegacyStyleDef = {
@@ -244,6 +289,16 @@ export function legacyStyleDefs(
       kind: style.kind === 'paragraph' ? 'paragraph' : 'character',
       name: style.name,
       ...(style.basedOn !== undefined ? { basedOn: style.basedOn } : {}),
+      // a base that mapped onto the template keeps the hierarchy visible
+      // in Word's style tree (the resolved formatting already folds it in)
+      ...(style.basedOn !== undefined
+        ? {
+            basedOnTemplate: (() => {
+              const base = styles.styles.get(style.basedOn!)
+              return base ? templateStyleIdOf(base) : undefined
+            })(),
+          }
+        : {}),
     }
     if (style.kind === 'paragraph') {
       const paragraph: ParagraphFormatting = {}

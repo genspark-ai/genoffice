@@ -147,6 +147,23 @@ const stylesXml = (eastAsiaFont?: string): string =>
   Array.from({ length: 9 }, (_, i) => tocStyle(i + 1)).join('') +
   '</w:styles>'
 
+/** name -> style id and kind for every style the blank template defines: a
+    legacy document's built-in style of the same name maps onto it instead of
+    being emitted beside it (two styles under one name is a Word repair). */
+export const BLANK_STYLES_BY_NAME: ReadonlyMap<
+  string,
+  { id: string; kind: 'paragraph' | 'character' }
+> = new Map(
+  [
+    ...stylesXml().matchAll(
+      /<w:style w:type="(\w+)"[^>]*w:styleId="([^"]+)"><w:name w:val="([^"]+)"/g,
+    ),
+  ].map((m) => {
+    const kind = m[1] === 'character' ? ('character' as const) : ('paragraph' as const)
+    return [m[3]!, { id: m[2]!, kind }] as const
+  }),
+)
+
 function bulletLevels(): string {
   let xml = ''
   for (let ilvl = 0; ilvl < 5; ilvl++) {

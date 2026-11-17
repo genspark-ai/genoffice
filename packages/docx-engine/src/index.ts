@@ -182,6 +182,7 @@ export { scanBody, type BodyElement, type BodyScan } from './scan'
 export {
   BLANK_BULLET_NUM_ID,
   BLANK_ORDERED_NUM_ID,
+  BLANK_STYLES_BY_NAME,
   buildBlankDocx,
   customLevelFromNumberingLevel,
   customLevelXml,

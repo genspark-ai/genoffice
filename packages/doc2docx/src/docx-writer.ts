@@ -1550,14 +1550,17 @@ function styleRPrXml(formatting: CharacterFormatting | undefined): string | unde
 /** w:style definitions for the legacy stylesheet entries. Ids are w97-<istd>
     (styles.ts legacyStyleId), names are the source document's own, and
     basedOn links only point at bases that are emitted too (Normal is the
-    template's own and the null character style is never a base reference). */
+    template's own and the null character style is never a base reference); a
+    base the template already defines under the same name links at the
+    template's id instead (its own def is not emitted beside it). */
 function styleDefsXml(defs: LegacyStyleDef[]): string {
   const emitted = new Set(defs.map((def) => def.istd))
   return defs
     .map((def) => {
       const parts = [`<w:style w:type="${def.kind}" w:styleId="${legacyStyleId(def.istd)}">`]
       parts.push(`<w:name w:val="${escapeXmlText(def.name)}"/>`)
-      if (def.basedOn !== undefined && emitted.has(def.basedOn))
+      if (def.basedOnTemplate) parts.push(`<w:basedOn w:val="${def.basedOnTemplate}"/>`)
+      else if (def.basedOn !== undefined && emitted.has(def.basedOn))
         parts.push(`<w:basedOn w:val="${legacyStyleId(def.basedOn)}"/>`)
       if (def.kind === 'paragraph') {
         const pPr = def.paragraph ? stylePPrXml(def.paragraph) : undefined
