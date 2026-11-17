@@ -2176,7 +2176,10 @@ let applyChain: Promise<unknown> = Promise.resolve()
 /** Serialize a pdfium operation behind every previously queued one (shared with image-edit) */
 export function chainPdfium<T>(fn: () => Promise<T>): Promise<T> {
   const run = applyChain.then(fn)
-  applyChain = run.catch(() => undefined)
+  applyChain = run.then(
+    () => undefined,
+    () => undefined,
+  )
   return run
 }
 
