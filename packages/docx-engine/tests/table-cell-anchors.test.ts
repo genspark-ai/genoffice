@@ -41,6 +41,23 @@ describe('table cell paragraph styles and bookmark anchors', () => {
     expect(xml.match(/<w:bookmarkEnd /g)).toHaveLength(2)
   })
 
+  it('a supplied allocator mints the rebuilt anchors ids; without one the ids stay self-unique', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: CELL_ANCHOR_TABLE_XML }))
+    const allocated: string[] = []
+    const xml = generateTableModelXml(doc.blocks[0].table!, undefined, {
+      allocateBookmarkId: (name) => {
+        allocated.push(name)
+        return 500 + allocated.length
+      },
+    })
+    expect(xml).toContain('<w:bookmarkStart w:id="501" w:name="KeepAnchor"/>')
+    expect(xml).toContain('<w:bookmarkStart w:id="502" w:name="_Toc99001"/>')
+    // the process-counter fallback still emits ids unique among themselves
+    const plain = generateTableModelXml(doc.blocks[0].table!)
+    const ids = [...plain.matchAll(/<w:bookmarkStart w:id="(\d+)"/g)].map((m) => m[1])
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
   it('the anchors survive a save and reload (round trip)', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: CELL_ANCHOR_TABLE_XML }))
     const xml = generateTableModelXml(doc.blocks[0].table!)

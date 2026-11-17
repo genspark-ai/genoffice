@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import JSZip from 'jszip'
 import { buildBlankDocx, parseDocx, saveDocx } from '@genoffice/docx-engine'
+import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { insertTableAt } from '../src/renderer/components/ribbon-tabs'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
@@ -71,5 +72,33 @@ describe('table cell paragraph style and bookmarks survive the save', () => {
     expect(xml).toContain('w:name="KeepAnchor"')
     expect(xml).toContain('<w:bookmarkStart ')
     expect(xml).toContain('<w:bookmarkEnd ')
+  })
+
+  // the rebuilt anchors' w:id must not collide with an id the document already
+  // keeps: Word pairs bookmarkStart / bookmarkEnd by id, so a reused id pairs
+  // the cross-references with the wrong target
+  it('a new cell bookmark is minted above the ids the document already keeps', async () => {
+    const source = await buildDocx({
+      bodyXml:
+        '<w:p><w:bookmarkStart w:id="1" w:name="BodyOne"/><w:bookmarkEnd w:id="1"/>' +
+        '<w:r><w:t>Before the table</w:t></w:r></w:p>',
+    })
+    const parsed = await parseDocx(source)
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    insertTableAt(editor, 2, 2)
+    selectFirstCellParagraph(editor)
+    const ok = editor.commands.updateAttributes('docParagraph', { bookmarks: ['CellAnchor'] })
+    expect(ok).toBe(true)
+
+    const { xml } = await saveAndUnzip(editor, parsed)
+    expect(xml).toContain('w:name="CellAnchor"')
+    const ids = [...xml.matchAll(/<w:bookmarkStart w:id="(\d+)"/g)].map((m) => m[1])
+    expect(ids).toContain('1')
+    expect(new Set(ids).size).toBe(ids.length)
+    editor.destroy()
   })
 })

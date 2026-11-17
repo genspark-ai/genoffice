@@ -2486,6 +2486,7 @@ function tableCellXml(
   cell: TableCell,
   width: number,
   verticalMerge?: 'restart' | 'continue',
+  ctx?: Pick<GenerateContext, 'allocateBookmarkId'>,
 ): string {
   // Surgical rawTcPr patch: modeled children are replaced/inserted in schema order;
   // unmodeled ones (tcMar/textDirection/noWrap…) keep their original bytes
@@ -2559,11 +2560,13 @@ function tableCellXml(
     const styleId = 'styleId' in paragraph ? paragraph.styleId : undefined
     const pStyle = styleId ? `<w:pStyle w:val="${escapeXmlAttr(styleId)}"/>` : ''
     const pPr = mergePPrFormat(`<w:pPr>${pStyle}${numPr}</w:pPr>`, paragraph)
-    // the cell's bookmark anchors ride the rebuilt paragraph (no ctx here: the
-    // standalone ids are unique within the document and REF fields match by name)
+    // the cell's bookmark anchors ride the rebuilt paragraph: a caller writing
+    // into an existing document supplies the document's allocator, whose ids
+    // never collide with the bookmarks the untouched blocks keep (REF fields
+    // match by name, but bookmarkStart / bookmarkEnd pair by id)
     const anchors =
-      ('hiddenBookmarks' in paragraph ? bookmarksXml(null, paragraph.hiddenBookmarks) : '') +
-      ('bookmarks' in paragraph ? bookmarksXml(null, paragraph.bookmarks) : '')
+      ('hiddenBookmarks' in paragraph ? bookmarksXml(ctx ?? null, paragraph.hiddenBookmarks) : '') +
+      ('bookmarks' in paragraph ? bookmarksXml(ctx ?? null, paragraph.bookmarks) : '')
     return `<w:p>${pPr}${anchors}${runsXml(paragraph.runs, null)}</w:p>`
   })
   // nested tables are regenerated from the model at their paragraph anchors (reverse
@@ -2572,7 +2575,7 @@ function tableCellXml(
   const items = paraXmls.map((xml) => ({ tbl: false, xml }))
   for (let i = nested.length - 1; i >= 0; i--) {
     const at = Math.min(cell.nestedTableAnchors?.[i] ?? paraXmls.length, paraXmls.length)
-    items.splice(at, 0, { tbl: true, xml: generateTableModelXml(nested[i]) })
+    items.splice(at, 0, { tbl: true, xml: generateTableModelXml(nested[i], undefined, ctx) })
   }
   const tail = items.length === 0 || items[items.length - 1].tbl ? '<w:p/>' : ''
   const content = items.map((item) => item.xml).join('')
@@ -2649,7 +2652,11 @@ function originalTblPrOf(tableXml: string): string | undefined {
     ?.xml
 }
 
-export function generateTableModelXml(model: TableModel, originalTableXml?: string): string {
+export function generateTableModelXml(
+  model: TableModel,
+  originalTableXml?: string,
+  ctx?: Pick<GenerateContext, 'allocateBookmarkId'>,
+): string {
   // the widest row decides the column count; folding it in a loop keeps the
   // argument count off the call (a spread here blew the stack past ~125k rows)
   let columnCount = Math.max(1, model.colWidthsPct?.length ?? 0)
@@ -2725,7 +2732,7 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
           }
           continue
         }
-        cells.push(tableCellXml(cell, width))
+        cells.push(tableCellXml(cell, width, undefined, ctx))
       }
       // trPr: original bytes passed through (tblHeader/cantSplit etc.); row height is
       // replaced/inserted/removed per the model

@@ -27,6 +27,7 @@ import {
   type TextboxSizePatch,
   patchTextboxParas,
   generateTableModelXml,
+  nextBookmarkIdAllocator,
   resolvePropChangeXml,
   inlinePictureDrawingXml,
   patchRunPictureXml,
@@ -1993,6 +1994,18 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
     if (!block.hidden && block.docxIndex !== null) originalByIndex.set(block.docxIndex, block)
   }
 
+  // A rebuilt table's cell bookmark anchors get ids from the document's own
+  // allocator, seeded past every id the untouched blocks keep — the engine's
+  // process-level counter does not know the document, and a colliding id makes
+  // Word pair bookmarkStart / bookmarkEnd across the wrong anchors. The save's
+  // generated paragraphs seed past these too (the engine reads them off the
+  // pre-rendered blocks), so one save never mints the same id twice.
+  const tableBookmarkCtx = {
+    allocateBookmarkId: nextBookmarkIdAllocator(
+      originalBlocks.map((b) => b.originalXml ?? '').join(''),
+    ),
+  }
+
   // Mixed-encoding guard: parse compresses wild producer relativeHeight values
   // (LibreOffice writes 1, 2, …) to compact ranks, but the raw XML keeps the
   // wild bytes. Word paints by the raw value, so rewriting ONE anchor to the
@@ -2132,12 +2145,12 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           changedCount++
           pushBlock({
             kind: 'xml',
-            xml: generateTableModelXml(model, original.originalXml ?? undefined),
+            xml: generateTableModelXml(model, original.originalXml ?? undefined, tableBookmarkCtx),
           })
         }
       } else {
         changedCount++
-        pushBlock({ kind: 'xml', xml: generateTableModelXml(model) })
+        pushBlock({ kind: 'xml', xml: generateTableModelXml(model, undefined, tableBookmarkCtx) })
       }
       continue
     }
