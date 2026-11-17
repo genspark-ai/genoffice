@@ -1,6 +1,7 @@
 // Modified for ForaOffice from GenOffice v0.12.852.
 import {
   mergePPrFormat,
+  mergeRPrModel,
   displayCharSpacingTwips,
   scanBody,
   parseLazyMediaUrl,
@@ -4619,7 +4620,10 @@ function normalizedRuns(runs: Run[]): unknown[] {
       ? ['image', r.rawRPr ?? null, r.image.xml, r.link?.href ?? null, revisionKey(r)]
       : [
           r.text,
-          r.rawRPr ?? null,
+          // Managed values are merged into the retained source XML on save.
+          // Compare that native format so a source refresh stays clean without
+          // replacing live marks (which would invalidate formatting undo steps).
+          mergeRPrModel(r.rawRPr ?? '', r, !!r.link) || null,
           r.styleId ?? null,
           !!r.bold,
           !!r.italic,
@@ -4627,9 +4631,8 @@ function normalizedRuns(runs: Run[]): unknown[] {
           !!r.strike,
           r.color ?? null,
           r.sizeHalfPoints ?? null,
-          r.font ?? null,
-          r.fontAscii ?? null,
-          r.eastAsiaFont ?? null,
+          // Native font slots are included in rPr above; parser projections
+          // (e.g. primary font backfilled from ascii) are not separate edits.
           r.highlight ?? null,
           ...charFormatKey(r),
           r.vertAlign ?? null,

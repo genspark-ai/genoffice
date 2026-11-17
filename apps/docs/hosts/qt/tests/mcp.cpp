@@ -80,12 +80,18 @@ private slots:
         auto editor = std::make_unique<Editor>(options);
         bool cancelNew = false;
         bool readOnly = false;
+        QByteArray savedBytes;
         editor->setServiceHandler("initialDocument", [](const QJsonArray&, Editor::Completion done) { done({{"result", QJsonValue::Null}}); });
         editor->setServiceHandler("recentDocuments", [](const QJsonArray&, Editor::Completion done) { done({{"result", QJsonArray{}}}); });
         editor->setServiceHandler("newDocument", [&](const QJsonArray&, Editor::Completion done) {
             done({{"result", cancelNew ? QJsonValue(QJsonValue::Null) : QJsonValue(QJsonObject{{"id", "host:document"}, {"name", "Document"}, {"readOnly", readOnly}})}});
         });
         editor->setServiceHandler("confirmDocumentReplace", [](const QJsonArray&, Editor::Completion done) { done({{"result", true}}); });
+        editor->setServiceHandler("saveDocument", [&](const QJsonArray& args, Editor::Completion done) {
+            savedBytes = QByteArray::fromBase64(args.first().toObject().value("data").toObject().value("base64").toString().toLatin1());
+            done({{"result", QJsonObject{{"ok", true}, {"committed", true}, {"pending", false},
+                {"document", QJsonObject{{"id", "host:document"}, {"name", "Document"}}}}}});
+        });
         QSignalSpy ready(editor.get(), &Editor::ready);
         QSignalSpy failed(editor.get(), &Editor::failed);
         QSignalSpy changed(editor.get(), &Editor::mcpStateChanged);
@@ -259,6 +265,24 @@ private slots:
             }
         }
         QVERIFY(imageReturned);
+        const auto formatted = callLiveTool("apply_ops", {{"ops", QJsonArray{QJsonObject{
+            {"op", "setFont"}, {"target", QJsonObject{{"blockIndexes", QJsonArray{blockIndex}}}}, {"bold", true}}}}});
+        QVERIFY2(!formatted.value("isError").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(formatted).toJson())));
+        QVERIFY(formatted.value("committed").toBool());
+        QVERIFY(formatted.value("mutated").toBool());
+        const auto saved = callLiveTool("save_document", {{"path", workspace.filePath("formatted.docx")}, {"overwrite", true}});
+        QVERIFY2(saved.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(saved).toJson())));
+        QVERIFY(!saved.value("pending").toBool());
+        QVERIFY(savedBytes.startsWith("PK"));
+        const auto savedQuery = callLiveTool("query_document", {{"containsText", "Queried Agent edit"}, {"limit", 1}});
+        QVERIFY2(!savedQuery.value("isError").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(savedQuery).toJson())));
+        const auto savedItems = QJsonDocument::fromJson(savedQuery.value("output").toString().toUtf8()).object().value("items").toArray();
+        QCOMPARE(savedItems.size(), 1);
+        const auto continued = callLiveTool("apply_ops", {{"ops", QJsonArray{QJsonObject{
+            {"op", "findReplace"}, {"target", QJsonObject{{"engine", savedItems.first().toObject().value("target")}}},
+            {"find", "Queried Agent edit"}, {"replace", "Saved Agent edit"}}}}});
+        QVERIFY2(!continued.value("isError").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(continued).toJson())));
+        QVERIFY(continued.value("committed").toBool());
         cancelNew = true;
         QVERIFY(!sdk(*editor, "documents.new").value("result").toBool());
         QCOMPARE(state(*editor).value("status").toString(), QStringLiteral("running"));

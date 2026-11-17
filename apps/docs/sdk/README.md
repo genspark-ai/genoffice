@@ -1067,6 +1067,10 @@ Compatibility rendering does not rewrite authored character spacing: text-only
 edits preserve native `w:spacing`, including documents using
 `balanceSingleByteDoubleByteWidth`. Explicit spacing edits save the requested
 native value; the display adjustment is applied separately.
+Equivalent native character-format source refreshes also retain the caller's
+baseline and formatting undo/redo. Authored run properties, including preserved
+OOXML properties outside the modeled subset, must remain equivalent; a partial
+query still does not acknowledge unread document-side changes.
 They validate type/extent and optionally exact `expectedHtml`. Original targets
 are mapped through preceding operations in the same atomic batch; a removed
 target refuses the batch. Positions are scoped addresses, not permanent IDs.
