@@ -42,11 +42,20 @@ export const UI_SCALE_KEY = 'uiScale'
  * more room, and past 150% surfaces that do not reflow (the ribbon, the AI
  * panel, Univer's formula bar and sheet tabs) clip instead of shrinking. The
  * higher steps land with the chrome reflow, not before it.
+ *
+ * The 80% and 90% steps go the other way: a smaller chrome fits more of a wide
+ * ribbon into the same window, so fewer commands spill into horizontal scroll.
  */
-export const UI_SCALE_STEPS = [1, 1.1, 1.25, 1.5] as const
+export const UI_SCALE_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.5] as const
 
 export const UI_SCALE_MIN = UI_SCALE_STEPS[0]
 export const UI_SCALE_MAX = UI_SCALE_STEPS[UI_SCALE_STEPS.length - 1]
+
+/**
+ * "No scaling": what an unset or unreadable setting means, and what Reset
+ * returns to. Its own constant now that the smallest preset sits below 100%.
+ */
+export const UI_SCALE_DEFAULT = 1
 
 /**
  * The stored value, clamped into range.
@@ -57,7 +66,9 @@ export const UI_SCALE_MAX = UI_SCALE_STEPS[UI_SCALE_STEPS.length - 1]
  */
 export function readUiScale(settingsPath: string): number {
   const stored: unknown = readAppSettings(settingsPath)[UI_SCALE_KEY]
-  return typeof stored === 'number' && Number.isFinite(stored) ? clampUiScale(stored) : UI_SCALE_MIN
+  return typeof stored === 'number' && Number.isFinite(stored)
+    ? clampUiScale(stored)
+    : UI_SCALE_DEFAULT
 }
 
 export function clampUiScale(scale: number): number {
@@ -138,6 +149,6 @@ export function onUiScaleChanged(listener: (scale: number) => void): void {
 
 /** `0` resets; `1` / `-1` step through the presets. */
 export function changeUiScale(settingsPath: string, direction: 1 | -1 | 0): number {
-  if (direction === 0) return setUiScale(settingsPath, UI_SCALE_MIN)
+  if (direction === 0) return setUiScale(settingsPath, UI_SCALE_DEFAULT)
   return setUiScale(settingsPath, stepUiScale(readUiScale(settingsPath), direction))
 }

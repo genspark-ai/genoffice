@@ -9,8 +9,16 @@ import { describe, expect, it, vi } from 'vitest'
 // resolve — same shape as tests/tab-manager.test.ts.
 vi.mock('electron', () => ({ webContents: { getAllWebContents: () => [] } }))
 
-const { UI_SCALE_MAX, UI_SCALE_MIN, UI_SCALE_STEPS, clampUiScale, readUiScale, stepUiScale } =
-  await import('../src/main/ui-scale')
+const {
+  UI_SCALE_DEFAULT,
+  UI_SCALE_MAX,
+  UI_SCALE_MIN,
+  UI_SCALE_STEPS,
+  changeUiScale,
+  clampUiScale,
+  readUiScale,
+  stepUiScale,
+} = await import('../src/main/ui-scale')
 
 /**
  * The interface scale (genoffice#1913): the user's "make the UI bigger" preference, and
@@ -38,7 +46,12 @@ describe('clampUiScale', () => {
     // 175/200% clip the ribbon, the AI panel and Univer's formula bar — the
     // higher steps wait for the chrome reflow, not ship broken.
     expect(UI_SCALE_MAX).toBe(1.5)
-    expect(UI_SCALE_STEPS).toEqual([1, 1.1, 1.25, 1.5])
+    expect(UI_SCALE_STEPS).toEqual([0.8, 0.9, 1, 1.1, 1.25, 1.5])
+  })
+
+  it('offers steps below 100% without making them the default', () => {
+    expect(UI_SCALE_MIN).toBe(0.8)
+    expect(UI_SCALE_DEFAULT).toBe(1)
   })
 })
 
@@ -47,6 +60,13 @@ describe('stepUiScale', () => {
     expect(stepUiScale(1, 1)).toBe(1.1)
     expect(stepUiScale(1.1, 1)).toBe(1.25)
     expect(stepUiScale(1.25, -1)).toBe(1.1)
+  })
+
+  it('zooms out below 100% one step at a time', () => {
+    expect(stepUiScale(1, -1)).toBe(0.9)
+    expect(stepUiScale(0.9, -1)).toBe(0.8)
+    expect(stepUiScale(0.8, 1)).toBe(0.9)
+    expect(stepUiScale(0.9, 1)).toBe(1)
   })
 
   it('stops at both ends instead of running off', () => {
@@ -99,5 +119,25 @@ describe('readUiScale', () => {
   it('clamps a stored value outside the range instead of honouring it', () => {
     expect(readUiScale(settingsFile({ uiScale: 99 }))).toBe(UI_SCALE_MAX)
     expect(readUiScale(settingsFile({ uiScale: -3 }))).toBe(UI_SCALE_MIN)
+  })
+
+  it('reads a stored value below 100%', () => {
+    expect(readUiScale(settingsFile({ uiScale: 0.8 }))).toBe(0.8)
+  })
+})
+
+describe('changeUiScale', () => {
+  it('resets to 100%, not to the smallest preset', () => {
+    const path = settingsFile({ uiScale: 0.8 })
+    expect(changeUiScale(path, 0)).toBe(1)
+    expect(readUiScale(path)).toBe(1)
+  })
+
+  it('persists a step below 100%', () => {
+    const path = settingsFile({})
+    expect(changeUiScale(path, -1)).toBe(0.9)
+    expect(changeUiScale(path, -1)).toBe(0.8)
+    expect(changeUiScale(path, -1)).toBe(0.8)
+    expect(readUiScale(path)).toBe(0.8)
   })
 })
