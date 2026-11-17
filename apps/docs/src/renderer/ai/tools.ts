@@ -394,7 +394,12 @@ export interface DocReadState {
   imageHtml?(html: string): string
 }
 
-type BaselineCarry = (before: ProseMirrorNode, after: ProseMirrorNode) => void
+type SavedSideState = { before: unknown; after: unknown }
+type BaselineCarry = (
+  before: ProseMirrorNode,
+  after: ProseMirrorNode,
+  savedSideState?: SavedSideState,
+) => void
 const baselineCarries = new WeakMap<Editor, Set<BaselineCarry>>()
 
 /** Trusted load/field refreshes may carry an existing read, never create a new read. */
@@ -412,10 +417,15 @@ export function markDocSeen(editor: Editor, readState?: DocReadState): void {
   else docBaseline.set(editor, editor.state.doc)
 }
 
-/** A streamed load tail is not a user edit: appending at the end keeps every block index the model saw valid. */
-export function carryDocSeen(editor: Editor, before: ProseMirrorNode): void {
+/** Trusted representation refreshes carry an existing read, never acknowledge unseen edits. */
+export function carryDocSeen(
+  editor: Editor,
+  before: ProseMirrorNode,
+  savedSideState?: SavedSideState,
+): void {
   if (docBaseline.get(editor) === before) docBaseline.set(editor, editor.state.doc)
-  for (const carry of baselineCarries.get(editor) ?? []) carry(before, editor.state.doc)
+  for (const carry of baselineCarries.get(editor) ?? [])
+    carry(before, editor.state.doc, savedSideState)
 }
 
 function editedExternally(editor: Editor, readState?: DocReadState): boolean {

@@ -11,6 +11,55 @@ const cell = (text: string) => ({ paras: [text] })
 const CW = 'var(--doc-content-w,100%)'
 const CTX = { kind: 'body', surface: 'static' } as const
 
+describe('table alignment uses its owning layout area', () => {
+  const table: TableModel = { rows: [[cell('A'), cell('B')]], widthPct: 50 }
+
+  it('retains an imported preferred percentage under the contents display mode', () => {
+    const input = { ...modelWidthInput(table, null), autoFit: 'contents' as const }
+    expect(tableWidthCss(input, { kind: 'body', surface: 'editor' }).widthExpr).toBe(
+      `calc(${CW} * 0.5)`,
+    )
+  })
+
+  it.each(['center', 'right'] as const)(
+    'aligns a percentage table %s within the section',
+    (align) => {
+      const input = modelWidthInput({ ...table, align }, null)
+      const css = tableWidthCss(input, CTX)
+      const width = `calc(${CW} * 0.5)`
+      expect(tablePositionCss(input, css)).toEqual([
+        align === 'center'
+          ? `margin-left:calc((${CW} - ${width})/2)`
+          : `margin-left:calc(${CW} - ${width})`,
+      ])
+    },
+  )
+
+  it.each(['center', 'right'] as const)(
+    'aligns an AutoFit Window table %s within the section',
+    (align) => {
+      const input = { ...modelWidthInput({ ...table, align }, null), autoFit: 'window' as const }
+      const css = tableWidthCss(input, { kind: 'body', surface: 'editor' })
+      expect(tablePositionCss(input, css)).toEqual([
+        align === 'center'
+          ? `margin-left:calc((${CW} - ${CW})/2)`
+          : `margin-left:calc(${CW} - ${CW})`,
+      ])
+    },
+  )
+
+  it.each(['center', 'right'] as const)(
+    'aligns a nested percentage table %s within its cell',
+    (align) => {
+      const input = modelWidthInput({ ...table, align }, null)
+      const css = tableWidthCss(input, { kind: 'nested', surface: 'static' })
+      expect(tablePositionCss(input, css)).toEqual([
+        align === 'center' ? 'margin-left:calc((100% - 50%)/2)' : 'margin-left:calc(100% - 50%)',
+      ])
+    },
+  )
+})
+
 describe('table-geometry: over-wide explicit dxa tables (Word probe 2026-10-29)', () => {
   const wide: TableModel = {
     rows: [[cell('c0'), cell('c1'), cell('c2')]],
