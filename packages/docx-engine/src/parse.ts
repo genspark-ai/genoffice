@@ -7460,7 +7460,8 @@ function noteRunOf(run: Run, base: EffectiveRPr): NoteRun {
   if (run.underline ?? base.underline) out.underline = true
   if (run.strike ?? base.strike) out.strike = true
   const color = run.color ?? base.color
-  if (color && /^[0-9A-Fa-f]{6}$/.test(color)) out.color = color.toUpperCase()
+  const colorTrimmed = (color ?? '').trim()
+  if (colorTrimmed && /^[0-9A-Fa-f]{6}$/.test(colorTrimmed)) out.color = colorTrimmed.toUpperCase()
   const size =
     run.sizeHalfPoints ??
     cs?.sizeHalfPoints ??
