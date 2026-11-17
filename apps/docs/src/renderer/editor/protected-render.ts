@@ -1,5 +1,6 @@
 // Modified for ForaOffice from GenOffice v0.12.852.
 import type { Node as PmNode } from '@tiptap/pm/model'
+import { drawingLineBackground, drawingLineSize } from './drawing-line'
 import { asciiFamilyResolver, runFaceDecls } from '../text-layout/run-faces'
 import {
   inlineRunsOf,
@@ -1790,8 +1791,13 @@ export function textboxBoxStyle(
   box: TextboxDisplay,
   opts?: { inCell?: boolean; editorChrome?: boolean },
 ): string {
-  const boxW = box.widthPx ?? 189
-  const boxH = box.heightPx ?? 113
+  const authoredLine =
+    box.drawingSource?.grouped &&
+    box.lineStyle &&
+    ['line', 'lineArrow', 'lineArrowDouble'].includes(box.prst ?? '')
+  const lineSize = authoredLine ? drawingLineSize(box) : null
+  const boxW = lineSize?.w ?? box.widthPx ?? 189
+  const boxH = lineSize?.h ?? box.heightPx ?? 113
   // Word keeps shape text inside the preset's text rectangle (e.g. the
   // ellipse's inscribed rect); bodyPr insets apply within that rect
   const geomInset = box.prst ? shapeTextInsetsPx(box.prst, boxW, boxH) : null
@@ -1816,21 +1822,23 @@ export function textboxBoxStyle(
     box.fillImageDataUrl && box.prst && !box.pathData
       ? (shapePaths(box.prst, boxW, boxH)?.main ?? null)
       : null
-  const geomCss = picClip
-    ? null
-    : box.pathData
-      ? custGeomBackgroundCss(box.pathData, boxW, boxH, fill, box.borderColor, box.borderWidthPx)
-      : box.prst
-        ? shapeBackgroundCss(
-            box.prst,
-            boxW,
-            boxH,
-            fill,
-            box.borderColor,
-            { diag: box.lineDiag, flipH: box.flipH, flipV: box.flipV },
-            box.borderWidthPx,
-          )
-        : null
+  const geomCss = authoredLine
+    ? drawingLineBackground(box)
+    : picClip
+      ? null
+      : box.pathData
+        ? custGeomBackgroundCss(box.pathData, boxW, boxH, fill, box.borderColor, box.borderWidthPx)
+        : box.prst
+          ? shapeBackgroundCss(
+              box.prst,
+              boxW,
+              boxH,
+              fill,
+              box.borderColor,
+              { diag: box.lineDiag, flipH: box.flipH, flipV: box.flipV },
+              box.borderWidthPx,
+            )
+          : null
   const waStyle = box.wordArtId ? WORDART_CSS[box.wordArtId] : undefined
   // picture fill (photo boxes / a:blipFill): tiles repeat at natural size,
   // stretch fills cover the whole box. Document data, hence inline.
@@ -1858,9 +1866,12 @@ export function textboxBoxStyle(
     // w:color still override it through the run spans (+ dark-page twin)
     box.textColor ? `color:#${box.textColor};${dkColor(box.textColor)}` : '',
     floatPos,
-    box.widthPx ? `width:${box.widthPx}px` : '',
+    lineSize || box.widthPx ? `width:${boxW}px` : '',
     // Word clips fixed-height (noAutofit) boxes instead of growing them
-    box.heightPx ? `height:${box.heightPx}px` : '',
+    lineSize || box.heightPx ? `height:${boxH}px` : '',
+    lineSize && !opts?.editorChrome
+      ? `margin-left:-${lineSize.dx}px;margin-top:-${lineSize.dy}px`
+      : '',
     `padding:${insetTop}px ${insetRight}px ${insetBottom}px ${insetLeft}px`,
     transforms.filter(Boolean).length > 0
       ? `transform:${transforms.filter(Boolean).join(' ')}`

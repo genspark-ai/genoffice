@@ -6537,6 +6537,28 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   pointer-events: none;
 }
 
+/* A group's handles belong to the hovered child. Showing every child's grips
+   on the shared node lets neighbouring handles cover a different shape. */
+.doc-protected-drawing-group:hover > .box-rotator > :is(.box-resize-handle, .box-rotate-handle),
+.ProseMirror-focused
+  .doc-protected-drawing-group.ProseMirror-selectednode
+  > .box-rotator
+  > :is(.box-resize-handle, .box-rotate-handle) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.doc-protected-drawing-group:not(.doc-content-editing)
+  > .box-rotator:hover
+  > :is(.box-resize-handle, .box-rotate-handle),
+.ProseMirror-focused
+  .doc-protected-drawing-group.ProseMirror-selectednode:not(.doc-content-editing)
+  > .box-rotator:hover
+  > :is(.box-resize-handle, .box-rotate-handle) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* a turned box draws its own selection frame: the wrapper's border stays
    axis-aligned around the rotator's turned contents, so it hides and the box
    outlines itself (the outline turns with the transform, like Word) */

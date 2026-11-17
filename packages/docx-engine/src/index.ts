@@ -11,6 +11,7 @@ export {
   sfntLineMetrics,
 } from './font-table'
 export { decodeEntities } from './parse-xml-text'
+export { patchDrawingShapes } from './drawing-edit'
 export { sdtCheckboxGlyphs, sdtCheckboxIsChecked } from './checkbox-control'
 export {
   buildContentControlXml,

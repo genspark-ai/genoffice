@@ -2131,6 +2131,22 @@ export interface TextboxDisplay {
    * injects a fresh wps:txbx into the shape addressed by this id.
    */
   shapeId?: string
+  /** Source shape within its outer drawing; scales map child coordinates to drawing EMU. */
+  drawingSource?: {
+    drawingIndex: number
+    shapeIndex: number
+    scaleX: number
+    scaleY: number
+    grouped: boolean
+    name?: string
+  }
+  /** Authored connector paint, kept separate from editor interaction bounds. */
+  lineStyle?: {
+    headEnd?: { type: string; width: string; length: string }
+    tailEnd?: { type: string; width: string; length: string }
+    dash?: string
+    compound?: string
+  }
   /**
    * Content holds tables / content controls flattened into display lines, so
    * paras do not map 1:1 onto the w:txbxContent w:p children the patch-save
