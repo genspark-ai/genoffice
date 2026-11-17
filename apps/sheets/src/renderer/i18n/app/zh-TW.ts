@@ -1,6 +1,7 @@
 import type { zh } from './zh'
 
 export const zhTW = {
+  appCollabOverwriteNotice: '已套用協作者對此活頁簿的變更。你未儲存的編輯（{count} 處）仍在待處理，儲存時仍會寫入。',
   // ── Withholding cells from the model ──
   redactMenuLabel: '把選中的內容對 AI 隱藏',
   redactDialogDesc:

@@ -1,6 +1,7 @@
 import type { zh } from './zh'
 
 export const vi = {
+  appCollabOverwriteNotice: 'Thay đổi từ một đồng nghiệp đã được áp dụng cho sổ tính này. Các chỉnh sửa chưa lưu của bạn ({count}) vẫn đang chờ và sẽ được ghi khi lưu.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Ẩn phần đã chọn khỏi AI',
   redactDialogDesc:

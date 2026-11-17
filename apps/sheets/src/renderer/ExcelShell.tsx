@@ -301,6 +301,9 @@ interface ExcelShellProps {
   /// Left side of the status bar (ready / streaming / AI progress messages).
   readonly statusMessage: string
   readonly emptyCsvNotice: boolean
+  /** a remote snapshot overwrote the grid while edits were pending */
+  readonly collabOverwriteNotice: string | null
+  readonly onDismissCollabOverwrite: () => void
   readonly onOpenWorkbook: () => void
   readonly onDismissEmptyCsvNotice: () => void
   /// Zoom of the active sheet in percent, echoed by the status-bar slider.
@@ -560,6 +563,8 @@ export function ExcelShell({
   openingWorkbook,
   statusMessage,
   emptyCsvNotice,
+  collabOverwriteNotice,
+  onDismissCollabOverwrite,
   onOpenWorkbook,
   onDismissEmptyCsvNotice,
   zoomPercent,
@@ -1085,6 +1090,19 @@ export function ExcelShell({
         <div className="sheet-main">
           <section className="workbook-area">
             <div id="univer-container" className="spreadsheet" />
+            {collabOverwriteNotice && (
+              <div className="collab-overwrite-notice" role="status">
+                <span>{collabOverwriteNotice}</span>
+                <button
+                  type="button"
+                  className="collab-overwrite-notice-close"
+                  aria-label={t('appClose')}
+                  onClick={onDismissCollabOverwrite}
+                >
+                  ×
+                </button>
+              </div>
+            )}
             {emptyCsvNotice && (
               <div className="csv-empty-notice" role="status">
                 <span>{t('appCsvEmpty')}</span>

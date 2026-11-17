@@ -1,6 +1,7 @@
 import type { zh } from './zh'
 
 export const th = {
+  appCollabOverwriteNotice: 'มีการใช้การเปลี่ยนแปลงจากเพื่อนร่วมงานกับสมุดงานนี้แล้ว การแก้ไขที่ยังไม่บันทึก ({count}) ยังคงรออยู่และจะถูกเขียนเมื่อบันทึก',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'ซ่อนส่วนที่เลือกจาก AI',
   redactDialogDesc:

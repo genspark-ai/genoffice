@@ -35,6 +35,10 @@ export interface SheetsCollabDeps {
   apply: (snapshot: string) => void
   /** the local participant's presence (which sheet, which range) */
   presence: () => string
+  /** unsaved edits in the local journal; a remote snapshot lands on top of them */
+  hasPendingEdits?: () => number
+  /** a remote snapshot overwrote the grid while edits were pending */
+  onRemoteOverwrite?: (pendingCount: number) => void
   /** how long to wait after the last edit before publishing */
   debounceMs?: number
   /** snapshots larger than this are not published — a workbook that big is
@@ -69,6 +73,10 @@ export class SheetsCollab {
     this.unsubs.push(
       this.deps.bridge.onUpdate((room, snapshot) => {
         if (room !== this.path) return
+        // A snapshot replaces the whole grid. Tell the user when their unsaved
+        // edits are still in the journal but no longer on screen.
+        const pending = this.deps.hasPendingEdits?.() ?? 0
+        if (pending > 0) this.deps.onRemoteOverwrite?.(pending)
         this.deps.apply(snapshot)
       }),
     )
@@ -85,8 +93,12 @@ export class SheetsCollab {
           this.presence = next
           setCollabPresence(next)
         }
-        // a second member showed up: the room needs a snapshot to start from
-        if (peers > 1) this.publish()
+        // a second member showed up: the room needs a snapshot to start from,
+        // and both sides need each other's cursor without waiting for a beat
+        if (peers > 1) {
+          this.publish()
+          this.publishPresence()
+        }
       }),
     )
     this.unsubs.push(
@@ -98,7 +110,10 @@ export class SheetsCollab {
     const reply = await this.deps.bridge.join(path, '', this.clientId)
     this.peers = reply.peers
     if (reply.update) this.deps.apply(reply.update)
-    if (reply.peers > 1) this.publish()
+    if (reply.peers > 1) {
+      this.publish()
+      this.publishPresence()
+    }
   }
 
   /** leave the room */
@@ -112,6 +127,11 @@ export class SheetsCollab {
     }
     for (const unsub of this.unsubs) unsub()
     this.unsubs = []
+    // switching workbooks must not leave the old room's avatars on screen
+    if (this.presence.size > 0) {
+      this.presence = new Map()
+      setCollabPresence(this.presence)
+    }
     if (path) this.deps.bridge.leave(path)
   }
 
@@ -131,7 +151,9 @@ export class SheetsCollab {
     if (!path || this.peers < 2) return
     const snapshot = this.deps.snapshot()
     const max = this.deps.maxSnapshotBytes ?? DEFAULT_MAX_SNAPSHOT_BYTES
-    if (snapshot.length > max) return
+    // UTF-16 string length undercounts CJK text (one code unit, three bytes on
+    // the wire); measure the bytes the bridge actually sends.
+    if (new TextEncoder().encode(snapshot).byteLength > max) return
     this.deps.bridge.update(path, snapshot)
   }
 

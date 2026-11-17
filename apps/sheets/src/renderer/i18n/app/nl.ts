@@ -1,6 +1,7 @@
 import type { zh } from './zh'
 
 export const nl = {
+  appCollabOverwriteNotice: 'Wijzigingen van een collega zijn toegepast op deze werkmap. Uw niet-opgeslagen wijzigingen ({count}) blijven in afwachting en worden bij opslaan geschreven.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Selectie verbergen voor de AI',
   redactDialogDesc:

@@ -1,6 +1,7 @@
 import type { zh } from './zh'
 
 export const es = {
+  appCollabOverwriteNotice: 'Se aplicaron los cambios de un compañero a este libro. Sus ediciones sin guardar ({count}) siguen pendientes y se escribirán al guardar.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Ocultar la selección a la IA',
   redactDialogDesc:

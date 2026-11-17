@@ -203,6 +203,106 @@ describe('sheets collaboration client', () => {
     await collab.close()
   })
 
+  it('reports a remote overwrite when edits are pending', async () => {
+    let updateHandler: ((room: string, snapshot: string) => void) | null = null
+    const bridge: CollabBridge = {
+      join: vi.fn(async () => ({ update: '', peers: 1, owner: true, clientIds: [11] })),
+      update: vi.fn(),
+      awareness: vi.fn(),
+      leave: vi.fn(),
+      onUpdate: (handler) => {
+        updateHandler = handler
+        return () => undefined
+      },
+      onAwareness: () => () => undefined,
+      onPeers: () => () => undefined,
+    }
+    const onRemoteOverwrite = vi.fn()
+    const collab = new SheetsCollab({
+      bridge,
+      snapshot: () => '{}',
+      apply: vi.fn(),
+      presence: () => '{}',
+      hasPendingEdits: () => 3,
+      onRemoteOverwrite,
+    })
+    await collab.open(PATH)
+    updateHandler!(PATH, '{"revision":1}')
+    expect(onRemoteOverwrite).toHaveBeenCalledWith(3)
+    await collab.close()
+  })
+
+  it('stays quiet when a remote snapshot lands on a clean workbook', async () => {
+    let updateHandler: ((room: string, snapshot: string) => void) | null = null
+    const bridge: CollabBridge = {
+      join: vi.fn(async () => ({ update: '', peers: 1, owner: true, clientIds: [11] })),
+      update: vi.fn(),
+      awareness: vi.fn(),
+      leave: vi.fn(),
+      onUpdate: (handler) => {
+        updateHandler = handler
+        return () => undefined
+      },
+      onAwareness: () => () => undefined,
+      onPeers: () => () => undefined,
+    }
+    const onRemoteOverwrite = vi.fn()
+    const collab = new SheetsCollab({
+      bridge,
+      snapshot: () => '{}',
+      apply: vi.fn(),
+      presence: () => '{}',
+      hasPendingEdits: () => 0,
+      onRemoteOverwrite,
+    })
+    await collab.open(PATH)
+    updateHandler!(PATH, '{"revision":1}')
+    expect(onRemoteOverwrite).not.toHaveBeenCalled()
+    await collab.close()
+  })
+
+  it('clears the previous room avatars when switching workbooks', async () => {
+    const first = new TestPeer(1, rooms)
+    const second = new TestPeer(2, rooms)
+    rooms.join(first.sender, PATH, 11)
+    const collab = new SheetsCollab({
+      bridge: second.bridge,
+      snapshot: () => '{}',
+      apply: vi.fn(),
+      presence: () => '{}',
+    })
+    await collab.open(PATH)
+    first.bridge.awareness(
+      PATH,
+      JSON.stringify({ id: 11, name: 'A', sheetId: 'sheet-1', sheetName: 'Sheet1', range: 'A1' }),
+    )
+    expect(currentCollabPresence().size).toBe(1)
+    await collab.close()
+    expect(currentCollabPresence().size).toBe(0)
+  })
+
+  it('publishes presence as soon as a second member joins', async () => {
+    const awareness = vi.fn()
+    const bridge: CollabBridge = {
+      join: vi.fn(async () => ({ update: '', peers: 2, owner: false, clientIds: [11, 22] })),
+      update: vi.fn(),
+      awareness,
+      leave: vi.fn(),
+      onUpdate: () => () => undefined,
+      onAwareness: () => () => undefined,
+      onPeers: () => () => undefined,
+    }
+    const collab = new SheetsCollab({
+      bridge,
+      snapshot: () => '{}',
+      apply: vi.fn(),
+      presence: () => '{}',
+    })
+    await collab.open(PATH)
+    expect(awareness).toHaveBeenCalledTimes(1)
+    await collab.close()
+  })
+
   it('applies the room state a late member receives', async () => {
     const first = new TestPeer(1, rooms)
     const second = new TestPeer(2, rooms)

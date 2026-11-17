@@ -261,6 +261,15 @@ export const CLOSURE_MAX_CELLS = 50_000
 /// Shared mutable state between App.tsx and univer-sync.ts.
 export const journalSuppression = { active: false }
 
+/**
+ * True while a remote collaboration snapshot is being applied. Remote edits
+ * must land in the edit journal (that is the save source, and the visual
+ * installer reads `visualAdds` from it), so the journal listener is left on.
+ * Only the undo filter consults this flag: a peer's edit is not a local undo
+ * step. `App.noteEdit` also reads it to avoid publishing the snapshot back.
+ */
+export const collabRemoteApply = { active: false }
+
 /// An AI batch whose applied payload exceeds this many cells keeps no undo
 /// entry: the stack retains the full mutation matrices both ways (five
 /// 200k-cell copies held ~336MB), and entries accumulate across proposals.
@@ -310,7 +319,7 @@ export function installJournalSuppressionUndoFilter(): void {
   }
   const originalPush = proto.pushUndoRedo
   proto.pushUndoRedo = function (this: unknown, item: UndoRedoItemLike) {
-    if (journalSuppression.active) return
+    if (journalSuppression.active || collabRemoteApply.active) return
     if (aiBulkUndoGate.active) {
       if (aiBulkUndoGate.dropped) return
       aiBulkUndoGate.cells += undoPayloadCells(item, AI_UNDO_CELL_BUDGET + 1)
