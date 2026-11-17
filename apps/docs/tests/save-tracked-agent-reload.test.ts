@@ -8,7 +8,7 @@ import { Editor } from '@tiptap/core'
 import { parseDocx, readSections } from '@genoffice/docx-engine'
 import { buildDocx, TABLE_XML } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { blocksToPmDoc, pmDocOptions } from '../src/renderer/editor/convert'
+import { blocksToPmDoc, pmDocOptions, pmDocToSavePlan } from '../src/renderer/editor/convert'
 import { collectRevisions } from '../src/renderer/editor/revisions'
 import { executeTool } from '../src/renderer/ai/tools'
 import {
@@ -19,6 +19,7 @@ import {
   exportImages,
   noteDocumentSwapped,
   save,
+  rebaseSavedAttributes,
   type FileActionContext,
 } from '../src/renderer/file-actions'
 import { DraftLanding } from '../src/renderer/runtime/draft-landing'
@@ -631,6 +632,119 @@ describe('production save reload with track changes enabled', () => {
       }
     },
   )
+
+  it.each([
+    { bold: true },
+    { italic: true },
+    { underline: true },
+    { fontFamily: 'Arial' },
+    { fontSize: 18 },
+    { color: '336699' },
+  ])('keeps a caller current after saving native formatting %j', async (format) => {
+    const { ctx, editor } = await fixture(false, paragraph('alpha'))
+    let stateVersion = {}
+    ctx.getDocumentStateVersion = () => stateVersion
+    ctx.commitDocumentState = (operation) => {
+      operation()
+      stateVersion = {}
+    }
+    const runtime = createDocsRuntime({
+      current: () => ({
+        editor,
+        identity: editor,
+        stateVersion,
+        numIds: { bullet: null, ordered: null },
+      }),
+    })
+    const caller = runtime.connect({ id: 'format-and-save' })
+    caller.context()
+    try {
+      const formatted = await caller.execute({
+        id: 'format',
+        name: 'apply_ops',
+        input: { ops: [{ op: 'setFont', target: { blockIndexes: [0] }, ...format }] },
+      })
+      expect(formatted.isError, formatted.output).not.toBe(true)
+      expect(await save(ctx, false, true)).toBe(true)
+      const historyKept = editor.can().undo()
+      expect(pmDocToSavePlan(editor.getJSON(), ctx.doc!.parsed.blocks).changedCount).toBe(0)
+      for (const [find, replace] of [
+        ['alpha', 'bravo'],
+        ['bravo', 'delta'],
+      ]) {
+        const query = await caller.execute({ id: 'query', name: 'query_document', input: {} })
+        const item = JSON.parse(query.output).items[0]
+        const edited = await caller.execute({
+          id: 'next',
+          name: 'apply_ops',
+          input: { ops: [{ op: 'findReplace', target: { engine: item.target }, find, replace }] },
+        })
+        expect(edited.isError, edited.output).not.toBe(true)
+        expect(await save(ctx, false, true)).toBe(true)
+      }
+      expect(historyKept).toBe(true)
+    } finally {
+      runtime.dispose()
+    }
+  })
+
+  it.each(['unmodeled', 'modeled', 'link'] as const)(
+    'refuses an authored %s difference when rebasing saved source marks',
+    async (kind) => {
+      const { ctx, editor } = await fixture(
+        false,
+        '<w:p><w:r><w:rPr><w:color w:val="336699"/><w:lang w:val="en-US"/></w:rPr><w:t>alpha</w:t></w:r></w:p>',
+      )
+      if (kind === 'link')
+        editor.view.dispatch(
+          editor.state.tr.addMark(
+            1,
+            6,
+            editor.schema.marks.link.create({ href: 'https://example.com/one' }),
+          ),
+        )
+      const before = editor.state.doc
+      const json = structuredClone(before.toJSON())
+      const text = json.content[0].content[0]
+      const style = text.marks.find((mark: { type: string }) => mark.type === 'docTextStyle')
+      if (kind === 'unmodeled') style.attrs.rawRPr = style.attrs.rawRPr.replace('en-US', 'fr-FR')
+      else if (kind === 'modeled') style.attrs.color = '996633'
+      else
+        text.marks.find((mark: { type: string }) => mark.type === 'link').attrs.href =
+          'https://example.com/two'
+      expect(
+        rebaseSavedAttributes(editor, editor.schema.nodeFromJSON(json), ctx.doc!.parsed.blocks),
+      ).toBe(false)
+      expect(editor.state.doc).toBe(before)
+    },
+  )
+
+  it.each([
+    { format: { fontFamily: 'Arial' }, field: 'fontAscii', value: 'Arial' },
+    { format: { fontSize: 18 }, field: 'sizeHalfPoints', value: 36 },
+    { format: { color: '336699' }, field: 'color', value: '336699' },
+  ])('undoes and redoes saved formatting in the DOCX (%j)', async ({ format, field, value }) => {
+    const { ctx, editor, path } = await fixture(false, paragraph('alpha'))
+    const formatted = await executeTool(
+      editor,
+      {
+        id: 'format-history',
+        name: 'apply_ops',
+        input: { ops: [{ op: 'setFont', target: { blockIndexes: [0] }, ...format }] },
+      },
+      { bullet: null, ordered: null },
+    )
+    expect(formatted.isError, formatted.output).not.toBe(true)
+    expect(await save(ctx, false, true)).toBe(true)
+    expect(editor.commands.undo()).toBe(true)
+    expect(await save(ctx, false, true)).toBe(true)
+    expect((await parseDocx(await readFile(path))).blocks[0].runs![0]).not.toHaveProperty(field)
+    expect(editor.commands.redo()).toBe(true)
+    expect(await save(ctx, false, true)).toBe(true)
+    expect((await parseDocx(await readFile(path))).blocks[0].runs![0]).toMatchObject({
+      [field]: value,
+    })
+  })
 
   it('preserves document-side edits made while the file is being written', async () => {
     const { ctx, editor } = await fixture(false)

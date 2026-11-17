@@ -211,6 +211,10 @@ for (const balanced of [true, false]) {
             try {
               const first = await replace('测试', '验证')
               if (first.isError) throw new Error(first.output)
+              const formatted = await execute('apply_ops', {
+                ops: [{ op: 'setFont', target: { blockIndexes: [0] }, bold: true }],
+              })
+              if (formatted.isError) throw new Error(formatted.output)
               const save = async (): Promise<boolean> => {
                 if (mode === 'command') {
                   const result = (await command('save_document', {

@@ -83,6 +83,14 @@ Text-only edits no longer write the display compensation back into `w:spacing`
 or compound it across saves. Equivalent-save caller continuity applies without
 relaxing concurrency, unread side-state or expired-reference checks.
 
+Unreleased persistence fix: saves after native character formatting can rebase
+source-only run-property and font-projection changes without invalidating a
+current caller's observed stores. Save signatures use the existing OOXML writer
+to compare native formatting while retaining unmodeled properties. Live format
+marks stay intact so formatting undo/redo survives saves. Different authored
+formatting, annotations, host-returned bytes and concurrent changes retain their
+existing protection; query fresh targets after saving.
+
 The public contract is the [SDK guide](../apps/docs/sdk/README.md), its exported
 types and observed public behavior. During `0.x`, a minor version may contain a
 breaking public contract change. Patch versions are intended for compatible

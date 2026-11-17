@@ -25,6 +25,7 @@ import {
   buildBlankDocx,
   paperSizeForLocale,
   findChartWorkbookPath,
+  mergeRPrModel,
   parseChartPartXml,
   parseDocx,
   patchChartPartXml,
@@ -74,6 +75,7 @@ import { setNoteNumFmts } from './note-format'
 import type { CompareEntry } from './editor/compare'
 import {
   blocksToPmDoc,
+  inlineToRuns,
   pmDocOptions,
   pmDocToSavePlan,
   rebaseSavedTableSources,
@@ -334,15 +336,55 @@ function resetEditorHistory(editor: Editor): void {
 }
 
 /** Saved anchors are attributes: update them without replacing character positions or undo history. */
-function rebaseSavedAttributes(editor: Editor, saved: ProseMirrorNode, blocks: Block[]): boolean {
+export function rebaseSavedAttributes(
+  editor: Editor,
+  saved: ProseMirrorNode,
+  blocks: Block[],
+): boolean {
   const before = editor.state.doc
+  const sameMarks = (left: ProseMirrorNode, right: ProseMirrorNode): boolean => {
+    if (
+      left.marks.length === right.marks.length &&
+      left.marks.every((mark, i) => mark.eq(right.marks[i]))
+    )
+      return true
+    if (!left.isText || !right.isText) return false
+    const other = (node: ProseMirrorNode) =>
+      node.marks.filter((mark) => mark.type.name !== 'docTextStyle')
+    const leftOther = other(left)
+    const rightOther = other(right)
+    if (
+      leftOther.length !== rightOther.length ||
+      leftOther.some((mark, i) => !mark.eq(rightOther[i]))
+    )
+      return false
+    const style = (node: ProseMirrorNode) =>
+      node.marks.find((mark) => mark.type.name === 'docTextStyle')
+    const leftAttrs = style(left)?.attrs ?? {}
+    const rightAttrs = style(right)?.attrs ?? {}
+    // Source/theme caches and parsed font-slot projections may change only if
+    // native formatting (including unmodeled rPr) serializes identically.
+    for (const key of new Set([...Object.keys(leftAttrs), ...Object.keys(rightAttrs)])) {
+      if (
+        ['rawRPr', 'themeRFonts', 'themeColor', 'font', 'fontAscii', 'eastAsiaFont'].includes(key)
+      )
+        continue
+      if (JSON.stringify(leftAttrs[key] ?? null) !== JSON.stringify(rightAttrs[key] ?? null))
+        return false
+    }
+    const leftRuns = inlineToRuns([left.toJSON()])
+    const rightRuns = inlineToRuns([right.toJSON()])
+    if (leftRuns.length !== 1 || rightRuns.length !== 1) return false
+    const a = leftRuns[0]
+    const b = rightRuns[0]
+    return mergeRPrModel(a.rawRPr ?? '', a, !!a.link) === mergeRPrModel(b.rawRPr ?? '', b, !!b.link)
+  }
   const sameContent = (left: ProseMirrorNode, right: ProseMirrorNode): boolean => {
     if (
       left.type !== right.type ||
       left.text !== right.text ||
       left.childCount !== right.childCount ||
-      left.marks.length !== right.marks.length ||
-      left.marks.some((mark, index) => !mark.eq(right.marks[index]))
+      !sameMarks(left, right)
     )
       return false
     for (let index = 0; index < left.childCount; index++)
@@ -360,6 +402,8 @@ function rebaseSavedAttributes(editor: Editor, saved: ProseMirrorNode, blocks: B
       if (position < 0) transaction.setDocAttribute(key, right.attrs[key])
       else transaction.setNodeAttribute(position, key, right.attrs[key])
     }
+    // Keep formatting marks intact: historical mark steps match their exact
+    // attributes. Save signatures compare native rPr instead of source caches.
     right.forEach((child, offset, index) => update(left.child(index), child, position + 1 + offset))
   }
   update(before, saved, -1)
