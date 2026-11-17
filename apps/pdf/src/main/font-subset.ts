@@ -45,7 +45,10 @@ let chain: Promise<unknown> = Promise.resolve()
     lodash/require.resolve baggage that breaks under a bundled main process. */
 export function subsetTtf(font: Buffer, text: string): Promise<Buffer> {
   const run = chain.then(() => subsetTtfInner(font, text))
-  chain = run.catch(() => undefined)
+  chain = run.then(
+    () => undefined,
+    () => undefined,
+  )
   return run
 }
 

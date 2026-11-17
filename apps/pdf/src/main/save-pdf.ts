@@ -1443,7 +1443,7 @@ function finalPageIndex(request: SavePdfRequest, p: number): number | null {
     const i = request.pageOrder.indexOf(p)
     return i >= 0 ? i : null
   }
-  const del = request.deletedPages ?? []
+  const del = [...new Set(request.deletedPages ?? [])]
   if (del.includes(p)) return null
   return p - del.filter((d) => d < p).length
 }
@@ -1696,7 +1696,7 @@ export async function applySaveRequest(
     page.node.delete(PDFName.of('PieceInfo'))
   }
   // Deletions go last, in descending order; earlier ops all address original page indices
-  for (const idx of [...(request.deletedPages ?? [])].sort((a, b) => b - a)) {
+  for (const idx of [...new Set(request.deletedPages ?? [])].sort((a, b) => b - a)) {
     if (idx >= 0 && idx < pdfDoc.getPageCount() && pdfDoc.getPageCount() > 1) pdfDoc.removePage(idx)
   }
   // Reorder last: pageOrder gives the new order of remaining-after-delete pages by original index.
