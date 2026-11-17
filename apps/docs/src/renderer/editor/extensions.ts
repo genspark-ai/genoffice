@@ -1,4 +1,5 @@
 import { isEastAsianLeadingFont } from '../text-layout/script-rules'
+import { selectionHighlightOverlay } from './selection-highlight'
 import { SEGOE_SYMBOL_CSS } from '../text-layout/font-rules/face-classes'
 import { ScriptFonts } from './script-fonts'
 import {
@@ -1910,6 +1911,7 @@ export const LineFactorExtension = Extension.create({
           },
         },
       }),
+      selectionHighlightOverlay(),
     ]
   },
 })
@@ -6533,8 +6535,9 @@ function imageResizePlugin(): Plugin {
             const lockH = !isChart && isStraightLineKind(boxes![0].prst)
             const minW = isChart ? 120 : 24
             const minH = isChart ? 80 : 8
-            // charts never draw wider than the render cap, so don't let the model exceed it
-            const maxW = isChart ? CHART_MAX_WIDTH_PX : Infinity
+            // the resize UI caps at the render cap, but a chart authored wider
+            // than it (its extent is honored now) must not snap down mid-drag
+            const maxW = isChart ? Math.max(CHART_MAX_WIDTH_PX, chart?.widthPx ?? 0) : Infinity
             const sizeAt = (e: MouseEvent) => ({
               w: Math.min(maxW, Math.max(minW, startW + (e.clientX - startX) / zoom)),
               h: lockH ? startH : Math.max(minH, startH + (e.clientY - startY) / zoom),

@@ -264,11 +264,12 @@ export const NEW_DOCUMENT_APPLICATION = 'GenOffice'
 /** Template a new GenOffice document records (Word's own default) */
 export const NEW_DOCUMENT_TEMPLATE = 'Normal.dotm'
 /**
- * AppVersion of a new document. The docx-engine package version at release
- * time; a blank-template test pins it to package.json so a version bump fails
- * loudly instead of shipping a stale stamp.
+ * OOXML AppVersion uses a two-component XX.YYYY value, not semver
+ * (ISO/IEC 29500-1, section 22.2.2.2). Record the docx-engine major/minor,
+ * right-padding the minor to four digits; the patch component is omitted.
+ * A blank-template test pins this stamp to the package major/minor.
  */
-export const NEW_DOCUMENT_APP_VERSION = '0.1.0'
+export const NEW_DOCUMENT_APP_VERSION = '0.1000'
 
 /** the W3CDTF stamp Word writes into core properties (seconds, Z) */
 export function w3cdtfStamp(date: Date): string {

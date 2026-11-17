@@ -28,6 +28,14 @@ describe('withFutureFunctionMarkers', () => {
     expect(withFutureFunctionMarkers('sum(A1:A3)')).toBe('sum(A1:A3)')
   })
 
+  it('prefixes the Microsoft 365 regex and aggregation functions', () => {
+    expect(
+      withFutureFunctionMarkers('IF(REGEXTEST(A1,"^[0-9]+$"),REGEXREPLACE(A1,"0","o"),"")'),
+    ).toBe('IF(_xlfn.REGEXTEST(A1,"^[0-9]+$"),_xlfn.REGEXREPLACE(A1,"0","o"),"")')
+    expect(withFutureFunctionMarkers('PERCENTOF(B2:B3,B2:B9)')).toBe('_xlfn.PERCENTOF(B2:B3,B2:B9)')
+    expect(spillsDynamicArray('REGEXEXTRACT(A1,"[0-9]+",1)')).toBe(true)
+  })
+
   it('restores the implicit-intersection and spill storage forms', () => {
     expect(withFutureFunctionMarkers('SINGLE(A:A)+SUM(ANCHORARRAY(C3))')).toBe(
       '_xlfn.SINGLE(A:A)+SUM(_xlfn.ANCHORARRAY(C3))',

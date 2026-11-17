@@ -52,6 +52,32 @@ const ru: Record<keyof typeof en, string> = {
   ribbonCellMargins: 'Поля ячеек по умолчанию',
 }
 
+const hu: Record<keyof typeof en, string> = {
+  ribbonTableStyleOptions: 'Táblázatstílus-beállítások',
+  ribbonTableFirstRow: 'Fejlécsor',
+  ribbonTableLastRow: 'Összegsor',
+  ribbonTableBandedRows: 'Sávos sorok',
+  ribbonTableFirstColumn: 'Első oszlop',
+  ribbonTableLastColumn: 'Utolsó oszlop',
+  ribbonTableBandedColumns: 'Sávos oszlopok',
+  ribbonTablePresetGrid: 'Egyszerű rács',
+  ribbonTablePresetBlueHeader: 'Kék fejléc',
+  ribbonTablePresetBlueBanded: 'Kék sávos',
+  ribbonTablePresetGrayBanded: 'Szürke sávos',
+  ribbonTablePresetGreenHeader: 'Zöld fejléc',
+  ribbonAutoFit: 'Automatikus illesztés',
+  ribbonAutoFitContents: 'Tartalomhoz igazítás',
+  ribbonAutoFitWindow: 'Ablakhoz igazítás',
+  ribbonFixedColumnWidth: 'Rögzített oszlopszélesség',
+  ribbonRepeatHeaderRows: 'Fejlécsorok ismétlése',
+  ribbonTableProperties: 'Táblázat tulajdonságai',
+  ribbonTableData: 'Táblázat',
+  ribbonHorizontalPosition: 'Vízszintes pozíció',
+  ribbonVerticalPosition: 'Függőleges pozíció',
+  ribbonDistanceFromText: 'Távolság a szövegtől',
+  ribbonCellMargins: 'Alapértelmezett cellamargók',
+}
+
 /**
  * New table controls deliberately fall back to English until each locale has
  * reviewed terminology. Keeping one complete key set prevents partially
@@ -80,4 +106,5 @@ export const tableStrings = defineStrings({
   'zh-TW': en,
   vi: en,
   tr: en,
+  hu,
 })
