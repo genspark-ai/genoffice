@@ -386,6 +386,7 @@ export const ar = {
   appLangTraditionalChinese: 'الصينية التقليدية',
   appLangVietnamese: 'الفيتنامية',
   appLangTurkish: 'التركية',
+  appLangHungarian: 'المجرية',
   appWrapTextMenu: 'التفاف النص',
   appViewImage: 'عرض الصورة',
   appSaveImageAs: 'حفظ الصورة باسم…',
