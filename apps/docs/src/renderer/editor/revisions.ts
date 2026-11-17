@@ -29,6 +29,7 @@ import {
 } from '@tiptap/pm/transform'
 import { authorName } from '../author-name'
 import { charScaleEm, wordKerns } from '../line-metrics'
+import type { Run, TextboxDisplay } from '@genoffice/docx-engine'
 import type { StoryLocation } from './story-revisions'
 import {
   gridColTwips,
@@ -65,12 +66,18 @@ export interface RevisionRange {
     | 'cellMerge'
     | 'numberingChange'
     | 'sectPrChange'
+    | 'protectedDel'
+    | 'protectedIns'
   author: string
   date?: string
   /** text carrying both ins and del marks: hidden in every view but All Markup */
   overlapped?: true
   /** w:name shared by the source (moveFrom) and destination (moveTo) of one move */
   moveId?: string
+  /** protected* kinds: the record's own w:id, which selective accept replays on the block XML */
+  recordId?: string
+  /** protected* kinds: the block's plain-text preview (a passthrough node has no text content) */
+  preview?: string
   /** set when the change lives outside the body (note, header / footer, textbox); from / to only order it */
   story?: StoryLocation
 }
@@ -239,6 +246,34 @@ function rejectedTextStyleAttrs(
   return next
 }
 
+/** the id / author / date tuple that identifies one tracked-change record across models */
+const recordKey = (kind: string, rec: { id?: string; author?: string; date?: string }): string =>
+  `${kind}|${rec.id ?? ''}|${rec.author ?? ''}|${rec.date ?? ''}`
+
+/**
+ * The records a passthrough block's display models already own: an anchored
+ * textbox's anchor paragraph is itself a passthrough block, so the box's runs
+ * (the story path lists their changes) hold the same records the block XML
+ * does — enumerating both would list each change twice and leave two
+ * resolution paths able to rewrite the same block's bytes.
+ */
+function storyOwnedRecords(boxes: readonly TextboxDisplay[] | null | undefined): Set<string> {
+  const out = new Set<string>()
+  const addRuns = (runs: readonly Run[]) => {
+    for (const run of runs) {
+      if (run.ins) out.add(recordKey('ins', run.ins))
+      if (run.del) out.add(recordKey('del', run.del))
+    }
+  }
+  for (const box of boxes ?? []) {
+    for (const para of box.paras) {
+      addRuns(para.runs)
+      for (const cell of para.cells ?? []) for (const runs of cell.paras) addRuns(runs)
+    }
+  }
+  return out
+}
+
 /** contiguous revision ranges in document order (adjacent same-kind ranges merged) */
 export function collectRevisions(doc: PmNode): RevisionRange[] {
   const out: RevisionRange[] = []
@@ -263,6 +298,38 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
       ...(revision.date ? { date: revision.date } : {}),
     })
     suppressed.push({ from: pos, to: pos + node.nodeSize, kind: revision.kind })
+  })
+  // Protected passthrough blocks (deleted fields, content the run model cannot
+  // round-trip) keep their original bytes: the parse left a record summary on
+  // the node, so each pending record lists like a body change and accept /
+  // reject writes a resolution step the save replays on the block's bytes.
+  doc.descendants((node, pos) => {
+    if (node.type.name !== 'docProtected') return
+    const raw = node.attrs?.revisionRecords as string | null | undefined
+    if (!raw) return
+    let records: Array<{ kind: string; author?: string; date?: string; id?: string }>
+    try {
+      records = JSON.parse(raw)
+    } catch {
+      return
+    }
+    if (!Array.isArray(records)) return
+    const owned = storyOwnedRecords(node.attrs?.textboxes as TextboxDisplay[] | null | undefined)
+    const end = pos + node.nodeSize
+    for (const rec of records) {
+      if (rec.kind !== 'ins' && rec.kind !== 'del') continue
+      // records a story path (the box's display model) already owns list there
+      if (owned.has(recordKey(rec.kind, rec))) continue
+      out.push({
+        from: pos,
+        to: end,
+        kind: rec.kind === 'ins' ? 'protectedIns' : 'protectedDel',
+        author: rec.author ?? '',
+        ...(rec.date ? { date: rec.date } : {}),
+        ...(rec.id ? { recordId: rec.id } : {}),
+        preview: (node.attrs?.previewText as string | null) || '',
+      })
+    }
   })
   const propRev = (record: unknown, kind: RevisionRange['kind'], from: number, to: number) => {
     const info = pendingPropChange(record)
@@ -535,6 +602,60 @@ export function applyRevisions(
   tr.setMeta(TRACK_IGNORE, true)
   // reverse order keeps earlier positions valid while later ranges mutate
   for (const r of withMovePairs(state.doc, ranges).sort((a, b) => b.from - a.from)) {
+    if (r.kind === 'protectedDel' || r.kind === 'protectedIns') {
+      // a passthrough block's records have no editable model: the decision is
+      // stored as a resolution step the save replays on the block's original
+      // bytes (the w:sectPrChange pattern). One step per picked record; ids
+      // and author are how the XML-level filter addresses it.
+      const nodePos = tr.mapping.map(r.from, -1)
+      const node = tr.doc.nodeAt(nodePos)
+      if (!node || node.type.name !== 'docProtected') continue
+      let steps: Array<{ mode: string; filter?: Record<string, unknown> }>
+      try {
+        steps = JSON.parse((node.attrs.revisionResolutions as string | null) ?? '[]')
+      } catch {
+        steps = []
+      }
+      // an id-less record can only be addressed coarsely: narrow the fallback
+      // by the change kind (and date) so one picked change does not resolve
+      // every change of that author in the block
+      const step = r.recordId
+        ? { mode, filter: { ids: [r.recordId] } }
+        : {
+            mode,
+            filter: {
+              ...(r.kind === 'protectedIns'
+                ? { type: 'insertion' as const }
+                : { type: 'deletion' as const }),
+              ...(r.author ? { author: r.author } : {}),
+              ...(r.date ? { date: r.date } : {}),
+            },
+          }
+      let records: Array<Record<string, unknown>>
+      try {
+        records = JSON.parse((node.attrs.revisionRecords as string | null) ?? '[]')
+      } catch {
+        records = []
+      }
+      let matched = false
+      const remaining = records.filter((rec) => {
+        if (matched) return true
+        const hit =
+          (r.recordId != null && rec.id === r.recordId) ||
+          (r.recordId == null &&
+            rec.kind === (r.kind === 'protectedIns' ? 'ins' : 'del') &&
+            rec.author === r.author &&
+            rec.date === r.date)
+        if (hit) matched = true
+        return !hit
+      })
+      tr.setNodeMarkup(nodePos, undefined, {
+        ...node.attrs,
+        revisionResolutions: JSON.stringify([...steps, step]),
+        revisionRecords: remaining.length > 0 ? JSON.stringify(remaining) : null,
+      })
+      continue
+    }
     if (r.kind === 'blockIns' || r.kind === 'blockDel') {
       const revisionKind = r.kind === 'blockIns' ? 'ins' : 'del'
       const removeNode = mode === 'accept' ? revisionKind === 'del' : revisionKind === 'ins'

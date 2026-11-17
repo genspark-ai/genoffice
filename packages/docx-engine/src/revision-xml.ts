@@ -509,3 +509,50 @@ export function cleanMoveRangeMarkers(xml: string): { xml: string; removed: numb
   if (dropped.length === 0) return { xml, removed: 0 }
   return { xml: applyEdits(xml, dropped.map(remove)), removed: dropped.length }
 }
+
+/** who wrote one pending tracked change, as the editor's record summary carries it */
+export interface TrackedChangeRecord {
+  kind: 'ins' | 'del' | 'move' | 'formatting'
+  author?: string
+  date?: string
+  /** the record's own w:id (selective accept addresses the XML record by it) */
+  id?: string
+}
+
+/**
+ * Author/date/id summary of every tracked-change record in a fragment. Passthrough
+ * blocks keep their original bytes because their revision constructs (deleted field
+ * instructions, unknown content) have no editable model — so their records surface
+ * through this summary instead: the editor lists them and accept / reject replays
+ * the decision on the block's original bytes with applyRevisionResolutions.
+ */
+export function readTrackedChangeRecords(xml: string): TrackedChangeRecord[] {
+  if (
+    !/<w:(?:ins|del|moveFrom|moveTo|cellIns|cellDel|cellMerge|numberingChange|\w+Change)[\s/>]/.test(
+      xml,
+    )
+  )
+    return []
+  const out: TrackedChangeRecord[] = []
+  for (const el of scan(xml)) {
+    const type = typeOf(el)
+    if (!type) continue
+    const author = attrOf(el, 'w:author')
+    const date = attrOf(el, 'w:date')
+    const id = attrOf(el, 'w:id')
+    out.push({
+      kind:
+        type === 'insertion'
+          ? 'ins'
+          : type === 'deletion'
+            ? 'del'
+            : type === 'move'
+              ? 'move'
+              : 'formatting',
+      ...(author ? { author } : {}),
+      ...(date ? { date } : {}),
+      ...(id ? { id } : {}),
+    })
+  }
+  return out
+}

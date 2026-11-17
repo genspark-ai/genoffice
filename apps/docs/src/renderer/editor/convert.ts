@@ -59,6 +59,8 @@ import {
   type AutoSpace,
   type EffectivePPr,
   type EffectiveRPr,
+  applyRevisionResolutions,
+  type RevisionResolution,
 } from '@genoffice/docx-engine'
 import { t } from '../i18n/locale'
 import { symbolFontCovers } from '../font-check'
@@ -499,6 +501,10 @@ function blockToPmNode(
           docxIndex: block.docxIndex,
           blockRevision: block.blockRevision ?? null,
           sectPrChange: block.sectPrChange ? JSON.stringify(block.sectPrChange) : null,
+          // a passthrough block's tracked-change records (a deleted field): the
+          // listing reads them and accept / reject writes resolution steps
+          revisionRecords: block.revisionRecords ? JSON.stringify(block.revisionRecords) : null,
+          revisionResolutions: null,
           blockType: block.type,
           styleId: block.styleId ?? null,
           pageBreakBefore: block.format?.pageBreakBefore ?? false,
@@ -2128,6 +2134,24 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           changedCount++
           pushBlock({ kind: 'xml', xml: unwrapBlockRevisionXml(original.originalXml) })
           continue
+        }
+        // accepted / rejected records inside a passthrough block (a deleted
+        // field): the decisions replay on the original bytes — the model keeps
+        // no editable copy of this content (issue #2808)
+        const resolutionsAttr = node.attrs?.revisionResolutions as string | null | undefined
+        if (resolutionsAttr && original.originalXml) {
+          let steps: RevisionResolution[]
+          try {
+            steps = JSON.parse(resolutionsAttr)
+          } catch {
+            steps = []
+          }
+          const resolved = applyRevisionResolutions(original.originalXml, steps)
+          if (resolved !== original.originalXml) {
+            changedCount++
+            pushBlock({ kind: 'xml', xml: resolved })
+            continue
+          }
         }
         const sectMode = original.sectPrChange
           ? sectPrChangeMode(node.attrs?.sectPrChange as string | null | undefined)

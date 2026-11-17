@@ -36,6 +36,10 @@ export interface RevisionEntry {
   /** absent for body changes; the story a change outside the body lives in */
   location?: StoryKind
   story?: StoryRevision
+  /** protected* kinds: the record's own w:id (selective accept replays by it) */
+  recordId?: string
+  /** protected* kinds: the block's plain-text preview (a passthrough node has no text content) */
+  preview?: string
 }
 
 export interface RevisionSelector {
@@ -73,6 +77,8 @@ const TYPE_OF: Record<RevisionRange['kind'], RevisionType> = {
   cellMerge: 'formatting',
   numberingChange: 'formatting',
   sectPrChange: 'formatting',
+  protectedDel: 'deletion',
+  protectedIns: 'insertion',
 }
 
 function blockIndexOfPos(doc: PmNode, pos: number): number {
@@ -157,9 +163,15 @@ export function listRevisionEntries(doc: PmNode, stories: StoryRevision[] = []):
       ...(r.date ? { date: r.date } : {}),
       blockIndex: blockIndexOfPos(doc, r.from),
       // the model's copy, not the document's: a revision range can cover a
-      // withheld span, and this text is sent to the model as-is
-      text: redactTextBetween(doc.toJSON(), r.from, r.to, ' ').replace(/\s+/g, ' ').trim(),
+      // withheld span, and this text is sent to the model as-is. A passthrough
+      // block has no text content — its preview stands in.
+      text:
+        r.preview !== undefined
+          ? r.preview
+          : redactTextBetween(doc.toJSON(), r.from, r.to, ' ').replace(/\s+/g, ' ').trim(),
       ...(change ? { change } : {}),
+      ...(r.recordId ? { recordId: r.recordId } : {}),
+      ...(r.preview !== undefined ? { preview: r.preview } : {}),
       from: r.from,
       to: r.to,
     }
@@ -314,6 +326,8 @@ export function applyRevisionSelection(
         kind: e.kind,
         author: e.author,
         ...(e.date ? { date: e.date } : {}),
+        ...(e.recordId ? { recordId: e.recordId } : {}),
+        ...(e.preview !== undefined ? { preview: e.preview } : {}),
       })),
     mode,
   )

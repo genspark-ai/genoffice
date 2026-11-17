@@ -279,6 +279,7 @@ export {
   cleanMoveRangeMarkers,
   countTrackedChangesXml,
   readPropChangeXml,
+  readTrackedChangeRecords,
   resolvePropChangeXml,
   type PropChangeRecord,
   type RevisionResolution,
@@ -286,6 +287,7 @@ export {
   type RevisionXmlMode,
   type RevisionXmlResult,
   type RevisionXmlType,
+  type TrackedChangeRecord,
 } from './revision-xml'
 export {
   resolveParagraphProps,

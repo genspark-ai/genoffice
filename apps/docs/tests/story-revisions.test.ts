@@ -26,6 +26,7 @@ import {
   resolutionOf,
 } from '../src/renderer/editor/story-revisions'
 import { listRevisionEntries } from '../src/renderer/ai/revision-ops'
+import { collectRevisions } from '../src/renderer/editor/revisions'
 import type { HfSectionState } from '../src/renderer/hf-sections'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 
@@ -168,6 +169,14 @@ describe('enumeration', () => {
       ['r1', 'textbox', 'new'],
       ['r2', 'textbox', 'old'],
     ])
+    // the box's records are owned by the story path: the body pass must not
+    // list them again (a second listing would leave two resolution paths able
+    // to rewrite the same block's bytes)
+    expect(
+      collectRevisions(editor.state.doc).filter(
+        (r) => r.kind === 'protectedIns' || r.kind === 'protectedDel',
+      ),
+    ).toEqual([])
     editor.destroy()
   })
 })

@@ -9,7 +9,7 @@ import { isMetafileMime, metafileToDataUrl } from './metafile'
 import { isTiffMime, tiffToDataUrlAsync } from './tiff'
 import { ommlEndsWithBreak, ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
 import { splitXmlChildren } from './generate'
-import { readPropChangeXml } from './revision-xml'
+import { readPropChangeXml, readTrackedChangeRecords } from './revision-xml'
 import {
   NOTE_PART_PATH,
   parseNoteSeparator,
@@ -614,6 +614,13 @@ export async function parseDocx(
     elements.push(el)
     const block = await buildBlock(el, i, xml, buildCtx, zoteroFieldParagraphs.get(el.start))
     if (el.name === 'w:p') attachInlineContentControls(block, xml)
+    // a passthrough block's original bytes may carry tracked changes (a deleted
+    // field, records inside unknown content): the summary attr is what lets the
+    // editor list and resolve them (see readTrackedChangeRecords)
+    if (block.type === 'passthrough') {
+      const records = readTrackedChangeRecords(xml)
+      if (records.length > 0) block.revisionRecords = records
+    }
     blocks.push(block)
     buildCtx.floatTableAhead = floatTableColumnSpan(block, sectionAt(el.start))
   }

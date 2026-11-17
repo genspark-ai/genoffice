@@ -31,6 +31,10 @@ export const KIND_LABEL: Record<RevisionRange['kind'], StringKey> = {
   cellMerge: 'appRevKindCellMerge',
   numberingChange: 'appRevKindNumbering',
   sectPrChange: 'appRevKindSectionFormat',
+  // passthrough blocks carry no editable model: their deleted field / record
+  // content lists with the plain deleted / inserted labels
+  protectedDel: 'appRevKindDel',
+  protectedIns: 'appRevKindIns',
 }
 
 const DELETED_KINDS = new Set<RevisionRange['kind']>([
@@ -40,6 +44,7 @@ const DELETED_KINDS = new Set<RevisionRange['kind']>([
   'cellDel',
   'blockDel',
   'paraMarkDel',
+  'protectedDel',
 ])
 
 const INSERTED_KINDS = new Set<RevisionRange['kind']>([
@@ -49,6 +54,7 @@ const INSERTED_KINDS = new Set<RevisionRange['kind']>([
   'cellIns',
   'blockIns',
   'paraMarkIns',
+  'protectedIns',
 ])
 
 /** One tracked change as a Word Reviewing Pane row: "Kind  Author  date", the text, Accept / Reject on hover */

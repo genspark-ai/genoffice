@@ -1,4 +1,4 @@
-import type { RevisionResolution } from './revision-xml'
+import type { RevisionResolution, TrackedChangeRecord } from './revision-xml'
 import type { DocumentProperties } from './doc-properties'
 import type { EffectivePPr, EffectiveRPr } from './resolve-props'
 
@@ -1821,6 +1821,8 @@ export interface Block {
   label?: string
   /** plain-text preview for protected blocks */
   previewText?: string
+  /** tracked-change records inside a passthrough block's original bytes (deleted fields, unknown content): the editor lists and resolves them through this summary */
+  revisionRecords?: TrackedChangeRecord[]
   /** data URL for inline display (type === 'image', or the packaged OLE preview on passthrough) */
   imageDataUrl?: string
   /** OLE embed ProgID (o:OLEObject), e.g. "Excel.Sheet.12"; drives the friendly type caption */
