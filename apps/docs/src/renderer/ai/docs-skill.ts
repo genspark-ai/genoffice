@@ -11,6 +11,7 @@ import {
 } from './protocol'
 import type { AiDocWriter } from './doc-writer'
 import type { AiPageSetupAccess } from './page-setup'
+import type { RenderPreviewPagesFn } from './tools'
 import {
   AGENT_TOOLS,
   executeTool,
@@ -50,6 +51,8 @@ export function createDocsSkill(
   getNotes?: () => AiNotesAccess | undefined,
   /** same as imageGenAvailable, for analyze_media (seeing pictures that are in the document) */
   mediaAnalysisAvailable?: () => boolean,
+  /** the print stage render_preview runs through (App-owned; the tool never prints outside the print pipeline) */
+  getRenderPreview?: () => RenderPreviewPagesFn | undefined,
 ): AgentSkill {
   // Selection frozen per run: tools act on the range the prompt described,
   // not on wherever the user's live selection has wandered mid-run. The doc
@@ -115,6 +118,7 @@ export function createDocsSkill(
         getPageSetup?.(),
         getExtras?.(),
         getNotes?.(),
+        getRenderPreview?.(),
       ),
     // the visual self-check: a run that wrote the document wholesale but never
     // rendered it gets exactly one forced look (the loop caps the correction)

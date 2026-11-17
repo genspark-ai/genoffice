@@ -98,12 +98,16 @@ describe('renderPreviewGuard', () => {
 })
 
 describe('the render_preview tool', () => {
-  it('renders the buffer, audits through the media pipeline, returns the text', async () => {
-    const printPdfBuffer = vi.fn(async () => ({ ok: true, base64: 'ZmFrZQ==' }))
+  it('prints through the injected pipeline, audits through the media pipeline, returns the text', async () => {
+    const renderPreview = vi.fn(async (maxPages: number) => {
+      // only the pages the audit keeps print (the pipeline clamps 1..4)
+      expect(maxPages).toBe(3)
+      return { ok: true as const, base64: 'ZmFrZQ==' }
+    })
     const analyzeMedia = vi.fn(async (_op: { mediaUrls: string[] }) => ({
       text: 'No layout problems found.',
     }))
-    vi.stubGlobal('window', Object.assign(window, { desktop: { printPdfBuffer, analyzeMedia } }))
+    vi.stubGlobal('window', Object.assign(window, { desktop: { analyzeMedia } }))
     vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(
       'data:image/jpeg;base64,QUJD',
     )
@@ -118,11 +122,14 @@ describe('the render_preview tool', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       pageSetup,
+      undefined,
+      undefined,
+      renderPreview,
     )
     expect(r.isError).toBeFalsy()
     expect(r.output).toContain('No layout problems found.')
-    expect(printPdfBuffer).toHaveBeenCalledWith(12240, 15840)
     expect(analyzeMedia).toHaveBeenCalledTimes(1)
     const op = analyzeMedia.mock.calls[0]![0] as { mediaUrls: string[]; requirements: string }
     expect(op.mediaUrls.every((u) => u.startsWith('data:image/jpeg;base64,'))).toBe(true)
@@ -130,11 +137,33 @@ describe('the render_preview tool', () => {
   })
 
   it('surfaces a render failure as a tool error', async () => {
+    vi.stubGlobal('window', Object.assign(window, { desktop: {} }))
+    const renderPreview = vi.fn(async () => ({ ok: false as const, error: 'print failed' }))
+    const editor = createEditor()
+    const r = await executeTool(
+      editor,
+      { name: 'render_preview', input: {} } as never,
+      numIds,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      pageSetup,
+      undefined,
+      undefined,
+      renderPreview,
+    )
+    expect(r.isError).toBe(true)
+    expect(r.output).toContain('print failed')
+  })
+
+  it('never prints outside the print pipeline: no injected stage, no print', async () => {
+    const printPdfBuffer = vi.fn()
     vi.stubGlobal(
       'window',
-      Object.assign(window, {
-        desktop: { printPdfBuffer: vi.fn(async () => ({ ok: false, error: 'print failed' })) },
-      }),
+      Object.assign(window, { desktop: { printPdfBuffer, analyzeMedia: vi.fn() } }),
     )
     const editor = createEditor()
     const r = await executeTool(
@@ -149,7 +178,8 @@ describe('the render_preview tool', () => {
       pageSetup,
     )
     expect(r.isError).toBe(true)
-    expect(r.output).toContain('print failed')
+    expect(r.output).toContain('the print pipeline is unavailable')
+    expect(printPdfBuffer).not.toHaveBeenCalled()
   })
 
   it('is hidden when no media provider is available', () => {

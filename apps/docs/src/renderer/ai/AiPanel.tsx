@@ -81,7 +81,7 @@ import { KIND_LABEL } from '../components/ReviewingPane'
 import { STORY_LABEL } from '../editor/story-revisions'
 import { DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { waitForFullContent } from '../phased-content'
-import { currentDocGeneration } from '../file-actions'
+import { currentDocGeneration, type RenderPreviewResult } from '../file-actions'
 import { createFilesSkill } from './files-skill'
 import { createSkillsSkill } from './skills-skill'
 import { boundChatHistory } from './chat-retention'
@@ -265,6 +265,9 @@ interface AiPanelProps {
   hfAccess?: AiHeaderFooterAccess
   /** section store for set_page_setup / insert_section_break and the page-setup context line */
   pageSetupAccess?: AiPageSetupAccess
+  /** the print stage render_preview runs through (App-owned: the pagination
+      preview's pipeline, only the kept pages printed, the print lock held) */
+  renderPreview?: (maxPages: number) => Promise<RenderPreviewResult>
   /** style catalog and watermark stores for define_style / applyStyle / set_watermark */
   docExtras?: AiDocExtras
   /** footnote / endnote lists for insert_footnote, insert_endnote, delete_note, read_notes */
@@ -351,6 +354,7 @@ export function AiPanel({
   commentsAccess,
   hfAccess,
   pageSetupAccess,
+  renderPreview,
   docExtras,
   notesAccess,
   trackChanges = false,
@@ -573,6 +577,8 @@ export function AiPanel({
   hfAccessRef.current = hfAccess
   const pageSetupAccessRef = useRef(pageSetupAccess)
   pageSetupAccessRef.current = pageSetupAccess
+  const renderPreviewRef = useRef(renderPreview)
+  renderPreviewRef.current = renderPreview
   const docExtrasRef = useRef(docExtras)
   docExtrasRef.current = docExtras
   const notesAccessRef = useRef(notesAccess)
@@ -839,6 +845,7 @@ export function AiPanel({
           () => docExtrasRef.current,
           () => notesAccessRef.current,
           () => mediaAnalysisAvailable(settingsRef.current, gskLoggedInRef.current),
+          () => renderPreviewRef.current,
         ),
         createFilesSkill(availableAttachments),
         createSkillsSkill(),

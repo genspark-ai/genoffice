@@ -969,11 +969,18 @@ export function renderPreviewGuard(
   )
 }
 
+/** the print stage render_preview runs through (file-actions renderPreviewPages,
+    threaded from App so the tool never prints outside the print pipeline) */
+export type RenderPreviewPagesFn = (
+  maxPages: number,
+) => Promise<{ ok: true; base64: string } | { ok: false; error: string }>
+
 async function executeAsyncTool(
   editor: Editor,
   call: AgentToolCall,
   signal?: AbortSignal,
   pageSetup?: AiPageSetupAccess,
+  renderPreview?: RenderPreviewPagesFn,
 ): Promise<ToolExecution> {
   switch (call.name) {
     case 'web_search': {
@@ -1052,14 +1059,18 @@ async function executeAsyncTool(
       return { output: text, mutated: false, summary: t('aiSumAnalyzeMediaDone') }
     }
     case 'render_preview': {
-      // the first section's paper: a mixed-paper document audits at its
-      // leading size (per-section geometry is a later knife)
-      const section = pageSetup?.current(0)
-      const widthTwips = Math.round(Number(section?.settings.pageWidth) || 12240)
-      const heightTwips = Math.round(Number(section?.settings.pageHeight) || 15840)
+      // the print runs through the pagination preview's own pipeline
+      // (renderPreviewPages): only the pages the audit keeps print, the print
+      // lock is held, and the ten-page chunking / pv-print-skip machinery of a
+      // real export applies. Printing the whole document to keep 3-4 pages
+      // would force the whole-document job the pipeline's comments warn about
+      // after every create_document / write_document.
       const maxPages = Math.min(Math.max(Number(call.input.pages) || 3, 1), 4)
-      const pdf = await window.desktop.printPdfBuffer(widthTwips, heightTwips)
-      if (!pdf.ok || !pdf.base64) return fail(t('aiSumRenderPreview'), pdf.error ?? 'render failed')
+      if (!renderPreview)
+        return fail(t('aiSumRenderPreview'), 'the print pipeline is unavailable for this document')
+      const pdf = await renderPreview(maxPages)
+      if (!pdf.ok) return fail(t('aiSumRenderPreview'), pdf.error ?? 'render failed')
+      if (!pdf.base64) return fail(t('aiSumRenderPreview'), 'render produced no pages')
       let pages: string[]
       try {
         pages = await renderPagesToDataUrls(pdf.base64, maxPages)
@@ -1339,6 +1350,7 @@ export function executeTool(
   pageSetup?: AiPageSetupAccess,
   extras?: AiDocExtras,
   notes?: AiNotesAccess,
+  renderPreview?: RenderPreviewPagesFn,
 ): ToolExecution | Promise<ToolExecution> {
   const scope = frozen && frozen.doc === editor.state.doc ? frozen.scope : null
   const staleSummary = staleSummaryOf(call)
@@ -1362,7 +1374,7 @@ export function executeTool(
     call.name === 'render_preview' ||
     call.name === 'create_document'
   ) {
-    return executeAsyncTool(editor, call, signal, pageSetup)
+    return executeAsyncTool(editor, call, signal, pageSetup, renderPreview)
   }
   if (call.name === 'write_document')
     return writeDocument(editor, call, numIds, track, signal, writer)
