@@ -88,6 +88,11 @@ export const convertCommand: CommandDef = {
       value: 'name',
       description: 'xlsx→csv: worksheet to export (default: the active one)',
     },
+    {
+      name: 'neutralize-formulas',
+      description:
+        'xlsx→csv: prefix formula-like cells (a leading =, a function call behind @/+/-, DDE) with a text-marker apostrophe; off by default — ordinary data keeps its bytes',
+    },
   ],
   async run(args, ctx) {
     const input = resolveInput(args.positionals[0], ctx)
@@ -183,7 +188,10 @@ async function run(
     return { bytes: await csvToXlsx(readInput(input), sheet), detail: { sheet } }
   }
   if (to === 'csv') {
-    const { csv, ...detail } = await sheetToCsv(input, { sheet: flagString(args, 'sheet') })
+    const { csv, ...detail } = await sheetToCsv(input, {
+      sheet: flagString(args, 'sheet'),
+      neutralizeFormulas: flagBool(args, 'neutralize-formulas'),
+    })
     // UTF-8 BOM, as the app writes it, so Excel opens the file without a wizard
     return { bytes: Buffer.from('\ufeff' + csv, 'utf-8'), detail }
   }

@@ -476,7 +476,11 @@ import {
   type PrintPreviewHost,
   type PageLayoutContext,
 } from './page-layout-actions'
-import { handleExportCsv as handleExportCsvImpl, type CsvExportContext } from './csv-export'
+import {
+  csvNeutralizeFormulasEnabled,
+  handleExportCsv as handleExportCsvImpl,
+  type CsvExportContext,
+} from './csv-export'
 import { effectivePageBreaks, installPageBreakPreview } from './page-break-preview'
 import { mapProtectedRanges } from './protected-ranges'
 import { handleSave as handleSaveImpl, type SaveContext, type SaveOutcome } from './save-actions'
@@ -5596,7 +5600,9 @@ export function App({
     } else if (action === 'export-pdf') {
       void handleExportPdfImpl(pageLayoutContext())
     } else if (action === 'export-csv') {
-      void handleExportCsvImpl(csvExportContext())
+      void handleExportCsvImpl(csvExportContext(), undefined, {
+        neutralizeFormulas: csvNeutralizeFormulasEnabled(),
+      })
     } else if (action === 'undo' || action === 'redo') {
       // The shell's own text fields (AI prompt, dialog inputs) keep native
       // text undo; everywhere else ⌘Z means workbook history.

@@ -856,7 +856,10 @@ export interface SheetCsv {
  * same shape the app's Export as CSV writes. Rows are produced band by band so
  * a wide, sparse used range never needs a dense grid of the whole sheet.
  */
-export async function sheetToCsv(path: string, opts: { sheet?: string }): Promise<SheetCsv> {
+export async function sheetToCsv(
+  path: string,
+  opts: { sheet?: string; neutralizeFormulas?: boolean },
+): Promise<SheetCsv> {
   return withOpenWorkbook(path, async (client, wb) => {
     const meta = pickSheet(wb, opts.sheet) as SheetMeta
     const styles = wb.styles ?? []
@@ -905,7 +908,7 @@ export async function sheetToCsv(path: string, opts: { sheet?: string }): Promis
           }
         }
         for (const row of grid) {
-          const line = row.map(csvField).join(',') + '\r\n'
+          const line = row.map((cell) => csvField(cell, opts.neutralizeFormulas === true)).join(',') + '\r\n'
           chars += line.length
           if (chars > MAX_CSV_CHARS) {
             throw new CliError(EXIT.conversion, 'sheet is too large to export as CSV', {
@@ -948,14 +951,15 @@ function isCalendarDatePattern(pattern: string): boolean {
   }
 }
 
-// same quoting as the app's csv-export.ts (RFC 4180: quote on comma, quote or newline),
-// plus the formula-injection guard both writers share (xlsx-gateway
-// domain/csv-formula-guard): the next app to open this CSV evaluates a
-// leading =/+/-/@ as a formula or DDE instruction, so a hostile workbook's
-// cell must not survive export verbatim
-function csvField(text: string): string {
+// same quoting as the app's csv-export.ts (RFC 4180: quote on comma, quote or
+// newline). The formula-injection guard both writers share (xlsx-gateway
+// domain/csv-formula-guard) is opt-in (--neutralize-formulas): ordinary data
+// never gains the apostrophe Excel does not hide on CSV open; the opt-in
+// neutralizes only the shapes the next app actually evaluates (=, a function
+// call behind @/+/-, the DDE program|topic!cell form).
+function csvField(text: string, neutralizeFormulas = false): string {
   const normalized = text.replace(/\r\n|\r/g, '\n')
-  const guarded = neutralizeCsvFormulaField(normalized)
+  const guarded = neutralizeFormulas ? neutralizeCsvFormulaField(normalized) : normalized
   return /[",\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded
 }
 

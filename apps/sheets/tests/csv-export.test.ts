@@ -37,13 +37,20 @@ describe('csvField', () => {
     expect(csvField('line1\nline2')).toBe('"line1\nline2"')
   })
 
-  it('neutralizes formula-shaped fields with the text marker', () => {
-    expect(csvField('=cmd')).toBe("'=cmd")
-    expect(csvField('-cmd')).toBe("'-cmd")
-    expect(csvField('+SUM(A1)')).toBe("'+SUM(A1)")
-    // plain numbers keep their shape
-    expect(csvField('-5')).toBe('-5')
-    expect(csvField('+1.5')).toBe('+1.5')
+  it('neutralizes formula-shaped fields only when the export opts in', () => {
+    // default off: ordinary data keeps its bytes (Excel does not hide the
+    // apostrophe on CSV open; pandas and DB imports read it as data)
+    expect(csvField('=cmd')).toBe('=cmd')
+    expect(csvField('-$1234.50')).toBe('-$1234.50')
+    expect(csvField('@handle')).toBe('@handle')
+    // opted in: the executable shapes get the text marker, ordinary data still
+    // does not
+    expect(csvField('=cmd', true)).toBe("'=cmd")
+    expect(csvField('+SUM(A1)', true)).toBe("'+SUM(A1)")
+    expect(csvField("+cmd|' /C calc'!A0", true)).toBe("'+cmd|' /C calc'!A0")
+    expect(csvField('-', true)).toBe('-')
+    expect(csvField('-$1234.50', true)).toBe('-$1234.50')
+    expect(csvField('@handle', true)).toBe('@handle')
   })
 
   it('normalizes CR/CRLF line breaks before quoting', () => {
