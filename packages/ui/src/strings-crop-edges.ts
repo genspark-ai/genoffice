@@ -224,4 +224,14 @@ export const CROP_EDGE_LABELS: Record<Lang, Record<CropEdge, string>> = {
     sw: 'Sol alt kenar',
     w: 'Sol kenar',
   },
+  hu: {
+    nw: 'Bal felső él',
+    n: 'Felső él',
+    ne: 'Jobb felső él',
+    e: 'Jobb él',
+    se: 'Jobb alsó él',
+    s: 'Alsó él',
+    sw: 'Bal alsó él',
+    w: 'Bal él',
+  },
 }

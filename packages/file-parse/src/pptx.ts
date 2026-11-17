@@ -125,8 +125,7 @@ const NOTES_SLIDE_REL =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide'
 
 async function notesXmlForSlide(zip: JSZip, slidePath: string): Promise<string | undefined> {
-  const slash = slidePath.lastIndexOf('/')
-  const relsPath = `${slidePath.slice(0, slash)}/_rels/${slidePath.slice(slash + 1)}.rels`
+  const relsPath = slidePath.replace(/([^/]+)$/, '_rels/$1.rels')
   const relsXml = await zipText(zip, relsPath)
   if (!relsXml) return undefined
   const doc = manifestParser.parse(relsXml) as {
