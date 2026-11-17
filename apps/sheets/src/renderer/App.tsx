@@ -565,6 +565,9 @@ import { ExternalLinksPanel } from './ExternalLinksPanel'
 import { breakExternalLinkFlow, updateExternalLinksFlow } from './external-links-flow'
 import { externalFileTarget } from './external-link-target'
 import { applyExternalLinkValues, journalExternalLinkLiterals } from './univer-sync'
+import { SheetsCollab } from './collab'
+import { applyRemoteWorkbookSnapshot } from './collab-apply'
+import type { CollabBridge } from '@genoffice/electron-utils/collab-protocol'
 import { TimelineFieldPicker, TimelinePanels, type TimelineUiState } from './TimelinePanel'
 import type { DefinedNameAction, DefinedNameRow } from './NameManagerDialog'
 import { workbookMediaDataUrl } from './workbook-media'
@@ -734,6 +737,37 @@ export function App({
   /// action buttons are greyed out on a fully empty sheet.
   const [sheetHasContent, setSheetHasContent] = useState(false)
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null)
+  /// Real-time collaboration: the room of this workbook's path. A session that
+  /// works alone never publishes — the room's member count is the switch, so
+  /// the lone editor behaves exactly as before.
+  const collabRef = useRef<SheetsCollab | null>(null)
+  /// The active sheet travels through a ref: the collaboration client must not
+  /// be rebuilt when the selection moves.
+  const activeSheetIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const bridge = (window as unknown as { collabApi?: CollabBridge }).collabApi
+    if (!bridge) return
+    const collab = new SheetsCollab({
+      bridge,
+      snapshot: () => JSON.stringify(adapterRef.current.getSnapshot()),
+      apply: (raw) => applyRemoteWorkbookSnapshot(univerRef.current, raw),
+      presence: () => JSON.stringify({ sheetId: activeSheetIdRef.current }),
+    })
+    collabRef.current = collab
+    return () => {
+      collabRef.current = null
+      void collab.close()
+    }
+  }, [])
+  useEffect(() => {
+    activeSheetIdRef.current = activeSheetId
+  }, [activeSheetId])
+  useEffect(() => {
+    void collabRef.current?.open(workbookFile?.path ?? '')
+  }, [workbookFile])
+  useEffect(() => {
+    collabRef.current?.publish()
+  }, [pendingEdits])
   const recomputeSheetContent = useCallback(() => {
     setSheetHasContent(() => {
       // A file opened from disk always counts as having content.

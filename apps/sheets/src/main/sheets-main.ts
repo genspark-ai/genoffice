@@ -21,6 +21,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { runCopyEmfHelper } from './copy-emf-helper'
+import { registerSheetsCollabIpc } from './collab'
 import { refreshCsvDigest } from './csv-digest'
 import { ImportRegistry } from './import-registry'
 import { createServer } from 'node:http'
@@ -3056,6 +3057,7 @@ function grantCsvExportTarget(wcId: number, path: string): void {
 }
 
 export function registerSheetsIpc(): void {
+  registerSheetsCollabIpc()
   if (coreIpcRegistered) return
   coreIpcRegistered = true
 
