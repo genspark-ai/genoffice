@@ -468,7 +468,9 @@ interface ChartGeom {
 }
 
 export function chartPlotWidth(chart: ChartDisplay): number {
-  return Math.min(chart.widthPx ?? 560, CHART_MAX_WIDTH_PX)
+  // an authored wp:extent is kept as-is: Word renders the drawn width even when
+  // it exceeds the column (the cap bounds only the default and the resize UI)
+  return chart.widthPx ?? Math.min(560, CHART_MAX_WIDTH_PX)
 }
 
 /** c:marker/c:size default (5pt) in px */
