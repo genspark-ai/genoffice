@@ -549,20 +549,32 @@ describe('Focus typewriter scroll: the caret line keeps to the middle', () => {
     expect(storyTypewriterScrollDue(null, { active: true, collapsed: true, head: 10 })).toBe(true)
     // typing: the caret moved, collapsed — scroll
     expect(
-      storyTypewriterScrollDue({ active: true, head: 10 }, { active: true, collapsed: true, head: 12 }),
+      storyTypewriterScrollDue(
+        { active: true, head: 10 },
+        { active: true, collapsed: true, head: 12 },
+      ),
     ).toBe(true)
     // a transaction that does not move the caret (a remote or AI edit, a
     // decoration refresh): the viewport stays where the user scrolled it
     expect(
-      storyTypewriterScrollDue({ active: true, head: 10 }, { active: true, collapsed: true, head: 10 }),
+      storyTypewriterScrollDue(
+        { active: true, head: 10 },
+        { active: true, collapsed: true, head: 10 },
+      ),
     ).toBe(false)
     // a drag selection (a range): the line would follow the head every frame
     expect(
-      storyTypewriterScrollDue({ active: true, head: 10 }, { active: true, collapsed: false, head: 40 }),
+      storyTypewriterScrollDue(
+        { active: true, head: 10 },
+        { active: true, collapsed: false, head: 40 },
+      ),
     ).toBe(false)
     // Focus off: never
     expect(
-      storyTypewriterScrollDue({ active: true, head: 10 }, { active: false, collapsed: true, head: 10 }),
+      storyTypewriterScrollDue(
+        { active: true, head: 10 },
+        { active: false, collapsed: true, head: 10 },
+      ),
     ).toBe(false)
   })
 })
