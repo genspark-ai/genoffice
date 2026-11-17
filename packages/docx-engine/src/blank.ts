@@ -545,7 +545,7 @@ export interface BlankDocxOptions {
   createdAt?: Date
   /** docProps/app.xml Application; defaults to "GenOffice". */
   application?: string
-  /** docProps/app.xml AppVersion; defaults to the docx-engine package version. */
+  /** docProps/app.xml AppVersion; defaults to the OOXML-formatted engine major/minor. */
   appVersion?: string
   /** docProps/app.xml Template; defaults to Word's "Normal.dotm". */
   template?: string
