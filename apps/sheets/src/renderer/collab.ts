@@ -1,4 +1,5 @@
 import type { CollabBridge } from '@genoffice/electron-utils/collab-protocol'
+import { setCollabPresence, type CollabPresenceState } from '@genoffice/ui'
 
 /**
  * The sheets app's collaboration client.
@@ -11,6 +12,18 @@ import type { CollabBridge } from '@genoffice/electron-utils/collab-protocol'
  * A session that works alone never publishes: the room's member count is the
  * switch, so a lone editor pays nothing and behaves exactly as before.
  */
+
+/** what a member of the room is doing right now */
+export interface SheetsPresence {
+  /** the member's awareness id */
+  id: number
+  /** the member's display name */
+  name: string
+  /** the sheet the member is on */
+  sheet?: string
+  /** the range the member has selected */
+  range?: string
+}
 
 export interface SheetsCollabDeps {
   bridge: CollabBridge
@@ -28,6 +41,7 @@ export interface SheetsCollabDeps {
 }
 
 const DEFAULT_DEBOUNCE_MS = 400
+
 const DEFAULT_MAX_SNAPSHOT_BYTES = 1_000_000
 
 export class SheetsCollab {
@@ -36,6 +50,7 @@ export class SheetsCollab {
   private unsubs: Array<() => void> = []
   private peers = 1
   private readonly clientId = Math.floor(Math.random() * 0x7fffffff)
+  private presence = new Map<number, CollabPresenceState>()
 
   constructor(private readonly deps: SheetsCollabDeps) {}
 
@@ -56,11 +71,26 @@ export class SheetsCollab {
       }),
     )
     this.unsubs.push(
-      this.deps.bridge.onPeers((room, peers) => {
+      this.deps.bridge.onPeers((room, peers, _owner, clientIds) => {
         if (room !== this.path) return
         this.peers = peers
+        // a member that left takes its cursor with it
+        const known = new Set(clientIds)
+        const stale = [...this.presence.keys()].filter((id) => !known.has(id))
+        if (stale.length > 0) {
+          const next = new Map(this.presence)
+          for (const id of stale) next.delete(id)
+          this.presence = next
+          setCollabPresence(next)
+        }
         // a second member showed up: the room needs a snapshot to start from
         if (peers > 1) this.publish()
+      }),
+    )
+    this.unsubs.push(
+      this.deps.bridge.onAwareness((room, raw) => {
+        if (room !== this.path) return
+        this.applyPresence(raw)
       }),
     )
     const reply = await this.deps.bridge.join(path, '', this.clientId)
@@ -108,5 +138,30 @@ export class SheetsCollab {
     const path = this.path
     if (!path || this.peers < 2) return
     this.deps.bridge.awareness(path, this.deps.presence())
+  }
+
+  /** the local member's awareness id — the presence carries it */
+  get awarenessId(): number {
+    return this.clientId
+  }
+
+  private applyPresence(raw: string): void {
+    let presence: SheetsPresence
+    try {
+      presence = JSON.parse(raw) as SheetsPresence
+    } catch {
+      return
+    }
+    if (!presence || typeof presence.id !== 'number') return
+    const next = new Map(this.presence)
+    next.set(presence.id, {
+      id: presence.id,
+      name: presence.name,
+      location: presence.sheet
+        ? `${presence.sheet}${presence.range ? `!${presence.range}` : ''}`
+        : undefined,
+    })
+    this.presence = next
+    setCollabPresence(next)
   }
 }

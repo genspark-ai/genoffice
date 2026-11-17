@@ -751,7 +751,18 @@ export function App({
       bridge,
       snapshot: () => JSON.stringify(adapterRef.current.getSnapshot()),
       apply: (raw) => applyRemoteWorkbookSnapshot(univerRef.current, raw),
-      presence: () => JSON.stringify({ sheetId: activeSheetIdRef.current }),
+      presence: () => {
+        // what the other members see: who is here and where they are
+        const workbook = univerRef.current?.univerAPI.getActiveWorkbook()
+        const sheet = workbook?.getActiveSheet()
+        const range = sheet?.getSelection()?.getActiveRange()?.getA1Notation()
+        return JSON.stringify({
+          id: collabRef.current?.awarenessId ?? 0,
+          name: threadStore.authorName(),
+          sheet: sheet?.getSheetName(),
+          range: range ?? undefined,
+        })
+      },
     })
     collabRef.current = collab
     return () => {
@@ -768,6 +779,12 @@ export function App({
   useEffect(() => {
     collabRef.current?.publish()
   }, [pendingEdits])
+  // The presence follows the selection, which changes without an edit, so it is
+  // republished on a slow heartbeat as well.
+  useEffect(() => {
+    const timer = setInterval(() => collabRef.current?.publishPresence(), 5000)
+    return () => clearInterval(timer)
+  }, [])
   const recomputeSheetContent = useCallback(() => {
     setSheetHasContent(() => {
       // A file opened from disk always counts as having content.

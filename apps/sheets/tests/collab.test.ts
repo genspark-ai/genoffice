@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CollabRooms, SHEETS_COLLAB_CHANNELS, type CollabSender } from '../src/main/collab-rooms'
+import { currentCollabPresence } from '@genoffice/ui'
 import { SheetsCollab } from '../src/renderer/collab'
 import type { CollabBridge, CollabJoinReply } from '@genoffice/electron-utils/collab-protocol'
 
@@ -17,6 +18,7 @@ class TestPeer {
   private readonly peersHandlers: Array<
     (path: string, peers: number, owner: boolean, clientIds: number[]) => void
   > = []
+  private readonly awarenessHandlers: Array<(path: string, update: string) => void> = []
 
   constructor(
     readonly id: number,
@@ -32,6 +34,8 @@ class TestPeer {
           for (const h of this.peersHandlers) {
             h(args[0] as string, args[1] as number, args[2] as boolean, args[3] as number[])
           }
+        } else if (channel === SHEETS_COLLAB_CHANNELS.remoteAwareness) {
+          for (const h of this.awarenessHandlers) h(args[0] as string, args[1] as string)
         }
       },
       once: () => undefined,
@@ -45,12 +49,20 @@ class TestPeer {
     update: (path: string, snapshot: string): void => {
       this.rooms.update(this.sender, path, snapshot)
     },
-    awareness: (_path: string, _update: string): void => undefined,
+    awareness: (path: string, update: string): void => {
+      this.rooms.awareness(this.sender, path, update)
+    },
     leave: (path: string): void => {
       this.rooms.leave(this.sender, path)
     },
     onUpdate: () => () => undefined,
-    onAwareness: () => () => undefined,
+    onAwareness: (handler: (path: string, update: string) => void): (() => void) => {
+      this.awarenessHandlers.push(handler)
+      return () => {
+        const i = this.awarenessHandlers.indexOf(handler)
+        if (i >= 0) this.awarenessHandlers.splice(i, 1)
+      }
+    },
     onPeers: (
       handler: (path: string, peers: number, owner: boolean, clientIds: number[]) => void,
     ): (() => void) => {
@@ -147,6 +159,31 @@ describe('sheets collaboration client', () => {
     expect(collab.memberCount).toBe(2)
     collab.publishNow()
     expect(second.updates).toEqual(['{"revision":1}'])
+    await collab.close()
+  })
+
+  it('tracks the presence of the other members and drops the ones that left', async () => {
+    const first = new TestPeer(1, rooms)
+    const second = new TestPeer(2, rooms)
+    // the other member is in the room, so its presence reaches this one
+    rooms.join(first.sender, PATH, 11)
+    const collab = new SheetsCollab({
+      bridge: second.bridge,
+      snapshot: () => '{"revision":1}',
+      apply: vi.fn(),
+      presence: () => '{}',
+    })
+    await collab.open(PATH)
+
+    // the other member publishes where it is
+    first.bridge.awareness(PATH, JSON.stringify({ id: 11, name: 'A', sheet: 'Sheet1' }))
+    expect([...currentCollabPresence().values()]).toEqual([
+      { id: 11, name: 'A', location: 'Sheet1' },
+    ])
+
+    // and the room reports that it left
+    rooms.leave(first.sender, PATH)
+    expect(currentCollabPresence().size).toBe(0)
     await collab.close()
   })
 

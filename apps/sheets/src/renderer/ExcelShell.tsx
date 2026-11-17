@@ -1,5 +1,5 @@
 import type { IFunctionInfo } from '@univerjs/engine-formula'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { platformShortcuts } from '@genoffice/i18n'
 import {
   Dropdown,
@@ -11,6 +11,9 @@ import {
   rememberAiPanelOpen,
   useAiSidebarEnabled,
   type AiTokenUsageView,
+  CollabPresenceChip,
+  currentCollabPresence,
+  subscribeCollabPresence,
   WebShareChip,
 } from '@genoffice/ui'
 
@@ -599,6 +602,17 @@ export function ExcelShell({
     expandFull: t('appRibbonExpand'),
   })
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
+  // the other members of the room, read from the presence store
+  const presence = useSyncExternalStore(subscribeCollabPresence, currentCollabPresence)
+  const presenceMembers = useMemo(
+    () =>
+      [...presence.values()].map((member) => ({
+        id: member.id,
+        name: member.name,
+        location: member.location,
+      })),
+    [presence],
+  )
   const [isCopilotOpen, setIsCopilotOpen] = useState(() =>
     aiPanelInitiallyOpen('ai-sheets-show-ai'),
   )
@@ -1116,6 +1130,7 @@ export function ExcelShell({
             </div>
             <div className="status-right">
               <WebShareChip lang={lang} />
+              <CollabPresenceChip members={presenceMembers} />
               {/* One-of-N view switcher, so it is a radiogroup rather than a
                   second set of buttons named like the View tab's. */}
               <div
