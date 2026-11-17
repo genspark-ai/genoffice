@@ -2361,7 +2361,10 @@ export function generateParagraphXml(block: GeneratedBlock, ctx: GenerateContext
  */
 let standaloneBookmarkSeq = 0
 
-function bookmarksXml(ctx: GenerateContext | null, names: string[] | undefined): string {
+function bookmarksXml(
+  ctx: Pick<GenerateContext, 'allocateBookmarkId'> | null,
+  names: string[] | undefined,
+): string {
   if (!names?.length) return ''
   return names
     .map((name) => {
