@@ -908,7 +908,8 @@ export async function sheetToCsv(
           }
         }
         for (const row of grid) {
-          const line = row.map((cell) => csvField(cell, opts.neutralizeFormulas === true)).join(',') + '\r\n'
+          const line =
+            row.map((cell) => csvField(cell, opts.neutralizeFormulas === true)).join(',') + '\r\n'
           chars += line.length
           if (chars > MAX_CSV_CHARS) {
             throw new CliError(EXIT.conversion, 'sheet is too large to export as CSV', {

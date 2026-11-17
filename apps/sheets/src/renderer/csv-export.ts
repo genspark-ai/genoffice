@@ -80,7 +80,9 @@ export function csvFromDisplayRows(
   rows: readonly (readonly string[])[],
   neutralizeFormulas = false,
 ): string {
-  return rows.map((row) => row.map((cell) => csvField(cell, neutralizeFormulas)).join(',') + '\r\n').join('')
+  return rows
+    .map((row) => row.map((cell) => csvField(cell, neutralizeFormulas)).join(',') + '\r\n')
+    .join('')
 }
 
 /// Runs `read` with the sheet dropped from the formula-view set, restoring it
