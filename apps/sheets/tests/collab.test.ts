@@ -176,9 +176,25 @@ describe('sheets collaboration client', () => {
     await collab.open(PATH)
 
     // the other member publishes where it is
-    first.bridge.awareness(PATH, JSON.stringify({ id: 11, name: 'A', sheet: 'Sheet1' }))
+    first.bridge.awareness(
+      PATH,
+      JSON.stringify({
+        id: 11,
+        name: 'A',
+        sheetId: 'sheet-1',
+        sheetName: 'Sheet1',
+        range: 'B2:C4',
+      }),
+    )
     expect([...currentCollabPresence().values()]).toEqual([
-      { id: 11, name: 'A', location: 'Sheet1' },
+      {
+        id: 11,
+        name: 'A',
+        location: 'Sheet1!B2:C4',
+        sheetId: 'sheet-1',
+        sheetName: 'Sheet1',
+        range: 'B2:C4',
+      },
     ])
 
     // and the room reports that it left

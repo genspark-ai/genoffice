@@ -19,9 +19,11 @@ export interface SheetsPresence {
   id: number
   /** the member's display name */
   name: string
-  /** the sheet the member is on */
-  sheet?: string
-  /** the range the member has selected */
+  /** the id of the sheet the member is on */
+  sheetId?: string
+  /** the name of that sheet */
+  sheetName?: string
+  /** the range the member has selected, in A1 notation */
   range?: string
 }
 
@@ -157,9 +159,12 @@ export class SheetsCollab {
     next.set(presence.id, {
       id: presence.id,
       name: presence.name,
-      location: presence.sheet
-        ? `${presence.sheet}${presence.range ? `!${presence.range}` : ''}`
+      location: presence.sheetName
+        ? `${presence.sheetName}${presence.range ? `!${presence.range}` : ''}`
         : undefined,
+      sheetId: presence.sheetId,
+      sheetName: presence.sheetName,
+      range: presence.range,
     })
     this.presence = next
     setCollabPresence(next)

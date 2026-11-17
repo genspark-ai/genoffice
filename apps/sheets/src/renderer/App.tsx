@@ -566,6 +566,7 @@ import { breakExternalLinkFlow, updateExternalLinksFlow } from './external-links
 import { externalFileTarget } from './external-link-target'
 import { applyExternalLinkValues, journalExternalLinkLiterals } from './univer-sync'
 import { SheetsCollab } from './collab'
+import { RemoteSelections } from './RemoteSelections'
 import { applyRemoteWorkbookSnapshot } from './collab-apply'
 import type { CollabBridge } from '@genoffice/electron-utils/collab-protocol'
 import { TimelineFieldPicker, TimelinePanels, type TimelineUiState } from './TimelinePanel'
@@ -759,7 +760,8 @@ export function App({
         return JSON.stringify({
           id: collabRef.current?.awarenessId ?? 0,
           name: threadStore.authorName(),
-          sheet: sheet?.getSheetName(),
+          sheetId: sheet?.getSheetId(),
+          sheetName: sheet?.getSheetName(),
           range: range ?? undefined,
         })
       },
@@ -6068,6 +6070,7 @@ export function App({
           onClose={() => setChartDialog(null)}
         />
       )}
+      <RemoteSelections runtime={getRuntime} />
       <ExcelShell
         openingWorkbook={openingWorkbook}
         prompt={prompt}

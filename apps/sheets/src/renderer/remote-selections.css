@@ -1,0 +1,32 @@
+/* The selection of another member of the room, drawn over the grid: the grid
+   itself is a canvas, so the boxes are DOM on top of it. */
+
+:root {
+  /* the name tag sits on the member's own colour, which is the same in both
+     themes, so its ink is fixed too (the same idea as docs' --docs-on-accent) */
+  --sheets-on-presence: #fff;
+}
+
+.remote-selection {
+  position: fixed;
+  /* over the grid and its own overlays (the chart button is 3, the outline
+     gutter 9), under the notices (20), the opening screen (35) and the
+     dialogs (40) */
+  z-index: 12;
+  border: 1.5px solid;
+  border-radius: 2px;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.remote-selection-label {
+  position: absolute;
+  left: -1px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--sheets-on-presence);
+  white-space: nowrap;
+  border-radius: 2px 2px 2px 0;
+  user-select: none;
+}

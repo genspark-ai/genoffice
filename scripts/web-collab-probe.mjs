@@ -105,6 +105,17 @@ assert(
   `B received the snapshot (${JSON.stringify(relayed.args)})`,
 )
 
+// A publishes its presence; B must receive it over the real transport
+a.send(channel('awareness'), [
+  path,
+  JSON.stringify({ id: 11, name: 'A', sheetId: 'sheet-1', sheetName: 'Sheet1', range: 'B2:C4' }),
+])
+const presence = await b.waitForEvent(channel('remote-awareness'))
+assert(
+  presence.args?.[1]?.includes('"name":"A"'),
+  `B received the presence (${JSON.stringify(presence.args)})`,
+)
+
 // a late member joins and gets the room's current state
 const c = connect('C')
 await c.ready
