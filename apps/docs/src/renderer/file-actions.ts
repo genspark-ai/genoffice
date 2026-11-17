@@ -1552,7 +1552,10 @@ function deferExportToPreview(ctx: FileActionContext, outPath?: string): Promise
 
 /** The context slice the AI's render_preview needs: the export exclusivity ref
     and the preview toggle (AiPanel threads an App-owned callback down). */
-export type RenderPreviewContext = Pick<FileActionContext, 'pendingMixedExportRef' | 'setShowPagePreview'>
+export type RenderPreviewContext = Pick<
+  FileActionContext,
+  'pendingMixedExportRef' | 'setShowPagePreview'
+>
 export type RenderPreviewResult = { ok: true; base64: string } | { ok: false; error: string }
 
 /**

@@ -8523,12 +8523,7 @@ export function App() {
               commentsAccess={aiCommentsAccess}
               hfAccess={aiHfAccess}
               pageSetupAccess={aiPageSetupAccess}
-              renderPreview={(maxPages) =>
-                renderPreviewPages(
-                  fileCtxRef.current,
-                  maxPages,
-                )
-              }
+              renderPreview={(maxPages) => renderPreviewPages(fileCtxRef.current, maxPages)}
               docExtras={aiDocExtras}
               notesAccess={aiNotesAccess}
               trackChanges={trackChanges}
