@@ -168,6 +168,14 @@ import type { NoteKind } from './note-format'
 import { PaginationPreview } from './components/PaginationPreview'
 import { imageParaPaginationMeta, paraPaginationMeta, tableWidowOff } from './editor/para-flags'
 import {
+  applyParking,
+  parkBand,
+  parkDecisions,
+  PARK_SUPPRESSED_CLASS,
+  resumeParking,
+  suppressParking,
+} from './editor/layout-parking'
+import {
   comparePlanToBlocks,
   planByElement,
   planDiffHistogram,
@@ -4243,6 +4251,42 @@ export function App() {
     let lastPre: PageSlice[] = []
     let lastOut: SliceOutputs | null = null
     let lastSecSig = ''
+
+    // Layout parking (route-B prototype for #2781): between measurement
+    // passes, offscreen top-level blocks carry content-visibility so
+    // Chromium skips their subtrees — typing cost stops growing with the
+    // document. Columned canvases translate blocks per column and vertical
+    // text re-wraps per line, so parking is for the continuous single-
+    // column print canvas only. The e2e probe flips __layoutParkingOff to
+    // measure the difference.
+    const parkingActive = () =>
+      !(window as unknown as Record<string, unknown>).__layoutParkingOff &&
+      !hasVertical &&
+      colMode === 'none' &&
+      viewMode === 'print' &&
+      !readMode
+    const repark = () => {
+      const pm = pmEl()
+      if (!pm) return
+      if (!parkingActive() || lastBlocks.length === 0) {
+        if (!pm.querySelector('.cv-parked')) return
+        for (const el of Array.from(pm.children)) {
+          if (el instanceof HTMLElement) el.classList.remove('cv-parked')
+        }
+        return
+      }
+      if (pm.classList.contains(PARK_SUPPRESSED_CLASS)) return
+      const band = parkBand(scroller as HTMLElement)
+      const els: HTMLElement[] = []
+      const boxes: Array<{ top: number; height: number }> = []
+      for (const b of lastBlocks) {
+        if (!b.el || !b.el.isConnected) continue
+        const rect = b.el.getBoundingClientRect()
+        boxes.push({ top: rect.top, height: rect.height || b.height })
+        els.push(b.el)
+      }
+      applyParking(els, boxes, parkDecisions(boxes, band))
+    }
     /** top-level child count at the last pass: a streaming pass whose only
      *  trigger is the appended tail (dirty ≥ this) may carry the prefix's
      *  line/row samples; any user edit below the frontier (dirty < this)
@@ -4408,6 +4452,10 @@ export function App() {
       fastEdits = new Set()
       const dirty = dirtyFrom
       dirtyFrom = Infinity
+      // parked blocks would sample as their remembered size: a pass and the
+      // fast passes must read real layout (they re-park in the finally)
+      const parkPm = pmEl()
+      if (parkPm) suppressParking(parkPm)
       try {
         const zoomEl = scroller.querySelector<HTMLElement>('.doc-zoom')
         // the canvas zoom as applied, not this closure's: a pass reaching the
@@ -4448,6 +4496,11 @@ export function App() {
         // a pass that threw between the add and the pre-setPageGaps remove
         // must not leave the gap widgets hidden
         pmEl()?.classList.remove('measuring-natural')
+        // the pass sampled real layout: park everything offscreen again so
+        // the idle time until the next pass skips it
+        const afterPm = pmEl()
+        if (afterPm) resumeParking(afterPm)
+        repark()
       }
     }
     const remeasurePass = (dirty: number | null) => {
@@ -5905,6 +5958,20 @@ export function App() {
     const landed = fontAliasAnswers()
     if (landed.seq !== seenAliasSeqRef.current) onAliases(landed.names)
     scroller.addEventListener('scroll', locate, { passive: true })
+    // scrolling shifts the parking band: parked blocks entering the viewport
+    // reveal (Chromium does this for skipped content anyway), blocks leaving
+    // it park again. rAF-coalesced; parked boxes report remembered sizes so
+    // the decision walk is cheap.
+    let reparkQueued = false
+    const reparkOnScroll = () => {
+      if (reparkQueued) return
+      reparkQueued = true
+      requestAnimationFrame(() => {
+        reparkQueued = false
+        repark()
+      })
+    }
+    scroller.addEventListener('scroll', reparkOnScroll, { passive: true })
     const onDocUpdate = ({ transaction }: { transaction: Transaction }) => {
       resetWidthPassHistory(colWidthPass)
       onUpdate(singleInlineEditIndex(transaction), firstChangedTopLevelIndex(transaction))
@@ -5953,6 +6020,7 @@ export function App() {
       document.fonts.removeEventListener('loadingdone', onLoadingDone)
       offFontAliases()
       scroller.removeEventListener('scroll', locate)
+      scroller.removeEventListener('scroll', reparkOnScroll)
       editor?.off('update', onDocUpdate)
       editor?.off('transaction', onShrinkTr)
     }
