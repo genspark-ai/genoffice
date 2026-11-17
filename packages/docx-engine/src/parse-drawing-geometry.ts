@@ -35,6 +35,7 @@ export function lineBoxOf(shape: XNode, theme?: ThemeColors | null): TextboxDisp
   if (!prst || !LINE_PRSTS.has(prst)) return null
   const box: TextboxDisplay = { paras: [], readOnly: true }
   const ln = findChild(spPr, 'a:ln')
+  if (ln && findChild(ln, 'a:noFill')) return null
   const border =
     (ln
       ? attrsOf(findChild(findChild(ln, 'a:solidFill') ?? {}, 'a:srgbClr') ?? {})['val']
@@ -48,6 +49,18 @@ export function lineBoxOf(shape: XNode, theme?: ThemeColors | null): TextboxDisp
   }
   const head = arrowEnd('a:headEnd')
   const tail = arrowEnd('a:tailEnd')
+  const endStyle = (name: string) => {
+    const a = attrsOf(findChild(ln ?? {}, name) ?? {})
+    return a['type'] && a['type'] !== 'none'
+      ? { type: a['type'], width: a['w'] ?? 'med', length: a['len'] ?? 'med' }
+      : undefined
+  }
+  box.lineStyle = {
+    headEnd: endStyle('a:headEnd'),
+    tailEnd: endStyle('a:tailEnd'),
+    dash: attrsOf(findChild(ln ?? {}, 'a:prstDash') ?? {})['val'],
+    compound: attrsOf(ln ?? {})['cmpd'],
+  }
   box.prst = prst.startsWith('bentConnector')
     ? 'lineBent'
     : prst.startsWith('curvedConnector')

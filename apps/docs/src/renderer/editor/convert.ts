@@ -27,6 +27,7 @@ import {
   patchDrawingExtent,
   patchTextboxSizes,
   patchShapeStyles,
+  patchDrawingShapes,
   type ShapeStylePatch,
   type TextboxSizePatch,
   patchTextboxParas,
@@ -2904,6 +2905,15 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
         const textboxTexts = textboxParasPatch(node, original)
         const textboxSizes = textboxSizesPatch(node, original)
         const textboxStyles = textboxStylesPatch(node, original)
+        const drawingXml =
+          original.originalXml && node.attrs?.textboxes && original.textboxes
+            ? patchDrawingShapes(
+                original.originalXml,
+                original.textboxes,
+                node.attrs.textboxes as TextboxDisplay[],
+              )
+            : original.originalXml
+        const drawingChanged = drawingXml !== original.originalXml
         const shapeWrapChanges = shapeWrapPatchOf(node, original)
         const textboxOffsetX =
           node.attrs?.imageOffsetXEmu != null ? Number(node.attrs.imageOffsetXEmu) : undefined
@@ -3001,6 +3011,7 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           pushBlock({ kind: 'xml', xml: patchTableCellTexts(original.originalXml, tableTexts) })
         } else if (
           (textboxTexts ||
+            drawingChanged ||
             textboxSizes ||
             textboxStyles ||
             textboxPositionChanged ||
@@ -3008,7 +3019,7 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           original.originalXml
         ) {
           changedCount++
-          let xml = original.originalXml
+          let xml = drawingXml ?? original.originalXml
           if (textboxTexts) xml = patchTextboxParas(xml, textboxTexts)
           if (textboxSizes) xml = patchTextboxSizes(xml, textboxSizes)
           if (textboxStyles) xml = patchShapeStyles(xml, textboxStyles)
@@ -3780,6 +3791,7 @@ function textboxSizesPatch(node: PmNode, original: Block): (TextboxSizePatch | n
   if (!current || !initial || current.length !== initial.length) return null
   let changed = false
   const sizes = current.map((box, index) => {
+    if (initial[index].drawingSource) return null
     // a resize on an autofit box (no initial heightPx) pins its height:
     // patchTextboxSizes drops spAutoFit so Word honors the fixed extent
     const wPx = box.widthPx && box.widthPx !== initial[index].widthPx ? box.widthPx : null
@@ -3797,6 +3809,7 @@ function textboxStylesPatch(node: PmNode, original: Block): (ShapeStylePatch | n
   if (!current || !initial || current.length !== initial.length) return null
   let changed = false
   const styles = current.map((box, index) => {
+    if (initial[index].drawingSource) return null
     const fillHex =
       (box.fill ?? null) !== (initial[index].fill ?? null) ? (box.fill ?? null) : undefined
     const borderHex =

@@ -130,6 +130,16 @@ The same philosophy holds in sheets and slides: the original file is the
 source of truth, edits are applied as narrow patches, and everything the
 editor didn't touch survives the round trip untouched.
 
+Docs DrawingML groups resolve child coordinates through `off/ext` and
+`chOff/chExt` before conversion to display pixels. Authored zero-width or
+zero-height lines remain valid geometry; selection areas and arrowhead
+padding exist only in the renderer. Parsed shapes retain their source drawing
+and child address so manual edits write the correct child in its parent
+coordinate space, leaving the group extent and siblings unchanged. A matching
+VML compatibility child is updated within the same alternate-content object.
+Textbox compatibility copies map to the corresponding primary textbox, not
+the last textbox in a group. Agent tools do not expose these internal addresses.
+
 ## Getting started
 
 Prerequisites: Node 24+ for Docs SDK build/consumption, npm 10+, and a Rust toolchain (`cargo` on PATH,
