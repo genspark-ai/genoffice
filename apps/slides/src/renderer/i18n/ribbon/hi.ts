@@ -25,6 +25,7 @@ export const hi = {
   ribbonLangHindi: 'हिंदी',
   ribbonLangVietnamese: 'वियतनामी',
   ribbonLangTurkish: 'तुर्की',
+  ribbonLangHungarian: 'हंगेरियन',
   ribbonAiCreditNote: 'AI का उपयोग करता है और क्रेडिट खर्च होते हैं',
   ribbonAiRewriteConfirm:
     'यह क्रिया AI को कॉल करती है: इसमें क्रेडिट खर्च होते हैं और पूरी सामग्री फिर से लिखी जा सकती है। जारी रखें? (दोबारा नहीं पूछा जाएगा।)',

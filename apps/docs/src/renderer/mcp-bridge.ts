@@ -54,6 +54,11 @@ interface InsertPictureInput {
   float?: unknown
   altText?: string
 }
+interface ReadBlocksInput {
+  startBlockIndex: number
+  endBlockIndex: number
+  offset?: number
+}
 
 /** mirror of AiPanel's clearAiHighlights: auto-accept the external edit, keeping undo history */
 function clearAiChangedFlags(editor: Editor): void {
@@ -173,6 +178,28 @@ async function runCommand(
       const outcome = await executeTool(
         editor,
         { id: 'mcp', name: 'get_document_context', input: {} },
+        numIdsFor(ctx),
+      )
+      if (outcome.isError) throw new Error(mcpErrorText(outcome.output))
+      return { text: outcome.output }
+    }
+
+    case 'read_blocks': {
+      const input = (payload ?? {}) as ReadBlocksInput
+      // The shared executor enforces the range, the read cap and the paging
+      // offset, and marks the document seen on success — the same freshness
+      // baseline read_document establishes for index-addressed writes.
+      const outcome = await executeTool(
+        editor,
+        {
+          id: 'mcp',
+          name: 'read_blocks',
+          input: {
+            startBlockIndex: input.startBlockIndex,
+            endBlockIndex: input.endBlockIndex,
+            ...(input.offset === undefined ? {} : { offset: input.offset }),
+          },
+        },
         numIdsFor(ctx),
       )
       if (outcome.isError) throw new Error(mcpErrorText(outcome.output))

@@ -4,6 +4,7 @@ import { carryDocSeen } from './ai/tools'
 import { DOC_CSS_COMMITTED_EVENT, WRAP_WIDTHS_COMMITTED_EVENT } from './editor/cjk-punct-shrink'
 import { justifyShrinkPluginKey } from './editor/justify-shrink'
 import { tabReflowMeta } from './editor/decoration-extensions'
+import { deletedAnything, touchesNode, touchedText } from './editor/touched-blocks'
 import {
   useCallback,
   useEffect,
@@ -29,6 +30,7 @@ import {
   useAiSidebarEnabled,
 } from '@genoffice/ui'
 import { commentAnchors, commentIdsAt, wordRangeAtCaret } from './editor/comments'
+import { isCommandLetter } from './command-letter'
 import { setFieldInstr, toggleAllFieldCodes, type FieldRange } from './editor/field-codes'
 import { linkTarget } from './editor/link-actions'
 import { FieldDialog } from './components/FieldDialog'
@@ -554,6 +556,12 @@ const EDIT_PASS_DEBOUNCE_MAX_MS = 2000
 const FOLLOW_UP_PASS_DELAY_MS = 100
 const EXPORT_PASS_RETRY_MS = 500
 const WORD_COUNT_THROTTLE_MS = 400
+/** the refresh makes two whole-document walks (text extraction + revision
+ *  scan); past this duration the document is big enough that walking it
+ *  every 400 ms stole real typing time (issue #2781), so the cadence
+ *  stretches the way the pagination scheduler's does */
+const WORD_COUNT_SLOW_WALK_MS = 25
+const WORD_COUNT_SLOW_INTERVAL_MS = 2000
 /** consecutive follow-up passes a pass may schedule for itself */
 import { runHeadlessDocumentExport } from './headless-export'
 import { installMcpBridge } from './mcp-bridge'
@@ -984,6 +992,15 @@ export function App() {
   const [showReviewPane, setShowReviewPane] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('print')
   const [readMode, setReadMode] = useState(false)
+  // Read mode is a print-layout reading, so a view pick and Read Mode are exclusive
+  const switchView = (mode: ViewMode) => {
+    setViewMode(mode)
+    setReadMode(false)
+  }
+  const setReadModeExclusive = (v: boolean) => {
+    if (v) setViewMode('print')
+    setReadMode(v)
+  }
   const [showGrid, setShowGrid] = useState(false)
   const [splitView, setSplitView] = useState(false)
   const [showPagePreview, setShowPagePreview] = useState(false)
@@ -1215,6 +1232,9 @@ export function App() {
   const [docCss, setDocCss] = useState('')
   // Live CJK-ness of the body while editing; overrides docCss's --doc-line-factor
   const [liveDocCjk, setLiveDocCjk] = useState<boolean | null>(null)
+  // the same answer as a ref, so the per-edit gate can skip a whole-document
+  // scan without waiting for React (null = the current document is unscanned)
+  const liveDocCjkRef = useRef<boolean | null>(null)
   // header/footer push-down re-measures after the doc-scoped <style> elements
   // commit: the DOM probe (hfReservedHeightPx) keys on the mounted CSS content,
   // so a value computed in the render pass that introduced new CSS is replaced
@@ -2158,6 +2178,11 @@ export function App() {
     editor.commands.setStoryViewActive(viewMode === 'story')
   }, [editor, viewMode])
 
+  // Backstop for paths that bypass the view buttons (read-only opens land in read mode)
+  useEffect(() => {
+    if (readMode && viewMode !== 'print') setViewMode('print')
+  }, [readMode, viewMode])
+
   // window title follows the document, so the OS window list and Switch Window show file names
   useEffect(() => {
     document.title = doc ? doc.fileName : 'GenOffice Docs'
@@ -2194,6 +2219,7 @@ export function App() {
   // kept the Western factor until save/reopen (whole page ~8% shorter than the file).
   useEffect(() => {
     setLiveDocCjk(null)
+    liveDocCjkRef.current = null
   }, [doc])
   useEffect(() => {
     if (!editor) return
@@ -2204,11 +2230,30 @@ export function App() {
         if (node.isText && node.text && textHasCjk(node.text)) has = true
         return !has
       })
+      liveDocCjkRef.current = has
       setLiveDocCjk(has)
     }
     let timer = 0
-    const onUpdate = () => {
+    // the whole-document scan only runs when the answer could have flipped:
+    // CJK text arriving, content being deleted (the last of it could go), or
+    // an unknown step kind. A rescan after every pause made long documents
+    // lag (issue #2781); the fast paths answer from the touched text alone.
+    const onUpdate = ({
+      transaction,
+      appendedTransactions,
+    }: {
+      transaction: Transaction
+      appendedTransactions: Transaction[]
+    }) => {
       window.clearTimeout(timer)
+      const batch = [transaction, ...appendedTransactions]
+      if (batch.some((tr) => textHasCjk(touchedText(tr) ?? ''))) {
+        liveDocCjkRef.current = true
+        setLiveDocCjk(true)
+        return
+      }
+      if (liveDocCjkRef.current === true && !batch.some(deletedAnything)) return
+      if (liveDocCjkRef.current === false && batch.every((tr) => touchedText(tr) !== null)) return
       timer = window.setTimeout(recompute, 300)
     }
     editor.on('update', onUpdate)
@@ -3098,9 +3143,22 @@ export function App() {
         carryDocSeen(editor, before)
       }
     }
-    editor.on('update', fill)
+    // a numId-less list item can only appear inside a range a step touched,
+    // so the whole-document walk runs only when that happened. Walking every
+    // keystroke made long documents lag (issue #2781).
+    const onFillUpdate = ({
+      transaction,
+      appendedTransactions,
+    }: {
+      transaction: Transaction
+      appendedTransactions: Transaction[]
+    }) => {
+      const batch = [transaction, ...appendedTransactions]
+      if (batch.some((tr) => touchesNode(tr, (node) => node.type.name === 'docListItem'))) fill()
+    }
+    editor.on('update', onFillUpdate)
     return () => {
-      editor.off('update', fill)
+      editor.off('update', onFillUpdate)
     }
   }, [editor, allocateListNumId])
 
@@ -6100,14 +6158,21 @@ export function App() {
   useEffect(() => {
     if (!editor) return
     let timer = 0
+    let slowWalk = false
     const refresh = () => {
       timer = 0
+      const started = performance.now()
       setWordCount(wordCountOfDoc(editor.state.doc))
       setRevisionRanges(doc ? revisionsOfDoc(editor.state.doc) : [])
       setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
+      slowWalk = performance.now() - started > WORD_COUNT_SLOW_WALK_MS
     }
     const onUpdate = () => {
-      if (!timer) timer = window.setTimeout(refresh, WORD_COUNT_THROTTLE_MS)
+      if (!timer)
+        timer = window.setTimeout(
+          refresh,
+          slowWalk ? WORD_COUNT_SLOW_INTERVAL_MS : WORD_COUNT_THROTTLE_MS,
+        )
     }
     refresh()
     editor.on('update', onUpdate)
@@ -6233,6 +6298,21 @@ export function App() {
     return () => window.removeEventListener('ai-docs-run-done', handler)
   }, [editor, save])
 
+  // Save runs ahead of the editor keymaps (capture phase): with a non-Latin
+  // layout active the keystroke otherwise reaches the editor's own bindings and
+  // the report sees Ctrl+S undo the last edit instead of saving the document.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && isCommandLetter(e, 's')) {
+        e.preventDefault()
+        e.stopPropagation()
+        void save(e.shiftKey)
+      }
+    }
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [save])
+
   useEffect(() => {
     // editing shortcuts only fire when focus is in an editor surface (main
     // ProseMirror, textbox sub-editor, in-place table cell) or nowhere at all —
@@ -6244,15 +6324,11 @@ export function App() {
     }
     const handler = (e: KeyboardEvent) => {
       const canEdit = !!editor?.isEditable && focusInEditor()
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault()
-        void save(e.shiftKey)
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'o') {
+      if ((e.metaKey || e.ctrlKey) && isCommandLetter(e, 'o')) {
         e.preventDefault()
         void openFile()
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+      if ((e.metaKey || e.ctrlKey) && isCommandLetter(e, 'f')) {
         e.preventDefault()
         if (doc) {
           // bump even when the panel is already open: focus returns to the find box
@@ -6262,7 +6338,7 @@ export function App() {
       }
       // Word's replace: Ctrl+H everywhere (macOS Cmd+H is the system hide role,
       // which never reaches the renderer, so this branch is Ctrl+H there too)
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'h') {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && isCommandLetter(e, 'h')) {
         e.preventDefault()
         if (doc) {
           setShowFind(true)
@@ -6282,7 +6358,14 @@ export function App() {
         setFindFocusGoTo((n) => n + 1)
       }
       // Word dialog shortcuts: Font ⌘D / Paragraph ⌥⌘M / Hyperlink ⌘K
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'd' && doc && canEdit) {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        isCommandLetter(e, 'd') &&
+        doc &&
+        canEdit
+      ) {
         e.preventDefault()
         setShowFontDialog(true)
       }
@@ -6290,7 +6373,14 @@ export function App() {
         e.preventDefault()
         setShowParaDialog(true)
       }
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'k' && doc && canEdit) {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        isCommandLetter(e, 'k') &&
+        doc &&
+        canEdit
+      ) {
         e.preventDefault()
         setShowLinkModal(true)
       }
@@ -7749,8 +7839,8 @@ export function App() {
     },
     onProtectDoc: () => setShowProtectDialog(true),
     onCompare: () => void compareWithFile(),
-    onViewMode: setViewMode,
-    onReadMode: setReadMode,
+    onViewMode: switchView,
+    onReadMode: setReadModeExclusive,
     onShowGrid: setShowGrid,
     onSplitView: setSplitView,
     onPagePreview: () => setShowPagePreview(true),
@@ -8867,10 +8957,7 @@ export function App() {
                     className={`status-view-btn${viewMode === 'print' && !readMode ? ' on' : ''}`}
                     data-tip={t('ribbonPrintLayout')}
                     aria-label={t('ribbonPrintLayout')}
-                    onClick={() => {
-                      setViewMode('print')
-                      setReadMode(false)
-                    }}
+                    onClick={() => switchView('print')}
                   >
                     <IconPrintLayout size={14} />
                   </button>
@@ -8878,7 +8965,7 @@ export function App() {
                     className={`status-view-btn${viewMode === 'web' ? ' on' : ''}`}
                     data-tip={t('ribbonWebLayout')}
                     aria-label={t('ribbonWebLayout')}
-                    onClick={() => setViewMode('web')}
+                    onClick={() => switchView('web')}
                   >
                     <IconWebLayout size={14} />
                   </button>
@@ -8886,7 +8973,7 @@ export function App() {
                     className={`status-view-btn${viewMode === 'outline' ? ' on' : ''}`}
                     data-tip={t('ribbonOutlineView')}
                     aria-label={t('ribbonOutlineView')}
-                    onClick={() => setViewMode('outline')}
+                    onClick={() => switchView('outline')}
                   >
                     <IconOutlineView size={14} />
                   </button>
@@ -8894,7 +8981,7 @@ export function App() {
                     className={`status-view-btn${viewMode === 'story' ? ' on' : ''}`}
                     data-tip={t('ribbonStoryView')}
                     aria-label={t('ribbonStoryView')}
-                    onClick={() => setViewMode('story')}
+                    onClick={() => switchView('story')}
                   >
                     <IconStoryView size={14} />
                   </button>
@@ -8902,7 +8989,7 @@ export function App() {
                     className={`status-view-btn${readMode ? ' on' : ''}`}
                     data-tip={t('ribbonReadMode')}
                     aria-label={t('ribbonReadMode')}
-                    onClick={() => setReadMode((v) => !v)}
+                    onClick={() => setReadModeExclusive(!readMode)}
                   >
                     <IconReadMode size={14} />
                   </button>
@@ -9280,7 +9367,9 @@ export function App() {
         />
       )}
 
-      {doc && showPrintDialog && <PrintDialog onClose={closePrintDialog} setStatus={setStatus} />}
+      {doc && showPrintDialog && (
+        <PrintDialog editor={editor} onClose={closePrintDialog} setStatus={setStatus} />
+      )}
 
       {stats && <WordCountDialog stats={stats} onClose={() => setStats(null)} />}
 

@@ -353,6 +353,7 @@ describe('M6 visible-editing tools (docs control wired)', () => {
       'insert_content',
       'insert_picture',
       'open_in_genoffice',
+      'read_blocks',
       'read_document',
       'read_docx',
       'read_docx_properties',
@@ -434,6 +435,33 @@ describe('M6 visible-editing tools (docs control wired)', () => {
         altText: 'chart',
       },
     })
+  })
+
+  it('routes read_blocks with its range and paging offset', async () => {
+    await client2!.callTool({ name: 'create_session', arguments: { family: 'docx' } })
+    const result = await client2!.callTool({
+      name: 'read_blocks',
+      arguments: { startBlockIndex: 1, endBlockIndex: 3, offset: 24_000 },
+    })
+    expect(result.isError).toBeFalsy()
+    expect(fake.calls.at(-1)).toEqual({
+      wcId: 42,
+      command: 'read_blocks',
+      payload: { startBlockIndex: 1, endBlockIndex: 3, offset: 24_000 },
+    })
+  })
+
+  it('read_blocks requires both block indexes', async () => {
+    const missingEnd = await client2!.callTool({
+      name: 'read_blocks',
+      arguments: { startBlockIndex: 0 },
+    })
+    expect(missingEnd.isError).toBe(true)
+    const missingStart = await client2!.callTool({
+      name: 'read_blocks',
+      arguments: { endBlockIndex: 0 },
+    })
+    expect(missingStart.isError).toBe(true)
   })
 
   it('insert_picture requires a url', async () => {

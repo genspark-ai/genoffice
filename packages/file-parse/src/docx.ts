@@ -69,13 +69,18 @@ export async function docxToText(bytes: Uint8Array, opts: DocxTextOptions = {}):
 }
 
 async function mainDocumentPath(zip: JSZip): Promise<string | null> {
-  if (zip.file('word/document.xml')) return 'word/document.xml'
+  const conventional = zip.file('word/document.xml') ? 'word/document.xml' : null
   const rels = await zip.file('_rels/.rels')?.async('string')
-  if (!rels) return null
-  for (const m of rels.matchAll(/<Relationship\b[^>]*>/g)) {
-    const tag = m[0]
-    if (!/Type="[^"]*\/officeDocument"/.test(tag) || /TargetMode="External"/.test(tag)) continue
-    const target = /Target="([^"]+)"/.exec(tag)?.[1]
+  if (!rels) return conventional
+  const parser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true })
+  const relationships = parser.parse(rels).Relationships?.Relationship ?? []
+  for (const rel of Array.isArray(relationships) ? relationships : [relationships]) {
+    if (
+      !String(rel['@_Type'] ?? '').endsWith('/officeDocument') ||
+      String(rel['@_TargetMode'] ?? '').toLowerCase() === 'external'
+    )
+      continue
+    const target = String(rel['@_Target'] ?? '').trim()
     if (!target) continue
     // OPC targets are percent-encoded; the zip entry name is the decoded path.
     const resolved = resolveTarget('', target)
@@ -84,7 +89,7 @@ async function mainDocumentPath(zip: JSZip): Promise<string | null> {
     const path = target.replace(/^\//, '')
     if (zip.file(path)) return path
   }
-  return null
+  return conventional
 }
 
 interface StyleFacts {
@@ -110,14 +115,14 @@ function paragraphStyleFacts(stylesXml: string | undefined): Map<string, StyleFa
     const name = /<w:name\b[^>]*w:val="([^"]*)"/.exec(body)?.[1] ?? ''
     const byName = /^heading\s*(\d)$/i.exec(name)
     const outline = /<w:outlineLvl\b[^>]*w:val="(\d)"/.exec(body)
-    const heading = byName
-      ? Number(byName[1])
-      : /^title$/i.test(name)
-        ? 1
-        : outline
-          ? Number(outline[1]) === 9
-            ? 0
-            : Number(outline[1]) + 1
+    const heading = outline
+      ? Number(outline[1]) === 9
+        ? 0
+        : Number(outline[1]) + 1
+      : byName
+        ? Number(byName[1])
+        : /^title$/i.test(name)
+          ? 1
           : undefined
     const numId = /<w:numId\b[^>]*w:val="([^"]+)"/.exec(body)?.[1]
     raw.set(id, {
