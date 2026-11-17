@@ -1,4 +1,5 @@
 import { FloatWatch } from './editor/float-watch'
+import { attachCommentUndoSync, resetCommentUndoStore } from './editor/comment-undo-sync'
 import { scriptFontHtml } from './editor/script-fonts'
 import { carryDocSeen } from './ai/tools'
 import { DOC_CSS_COMMITTED_EVENT, WRAP_WIDTHS_COMMITTED_EVENT } from './editor/cjk-punct-shrink'
@@ -2303,6 +2304,7 @@ export function App() {
   fileCtxRef.current = {
     editor,
     doc,
+    resetCommentUndoStore,
     dirtyRef,
     saveInFlightRef,
     saveIncompleteRef,
@@ -7961,7 +7963,18 @@ export function App() {
     }
     refresh()
     editor.on('transaction', refresh)
+    // comment metadata rides PM undo/redo: deleted comments come back whole,
+    // undo of an add removes them again (Word parity)
+    const detachCommentSync = attachCommentUndoSync(
+      editor,
+      () => commentsLiveRef.current,
+      (entries) => {
+        setComments(entries)
+        setCommentsDirty(true)
+      },
+    )
     return () => {
+      detachCommentSync()
       editor.off('transaction', refresh)
     }
   }, [editor])
