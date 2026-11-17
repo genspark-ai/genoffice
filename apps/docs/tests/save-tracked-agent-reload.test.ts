@@ -491,6 +491,147 @@ describe('production save reload with track changes enabled', () => {
     expect(sourcePath).toBe(path)
   })
 
+  it.each([false, true])(
+    'preserves current callers across saved store publication (auto=%s)',
+    async (auto) => {
+      const { ctx, editor, bytes, path } = await fixture(false)
+      let stateVersion = {}
+      ctx.getDocumentStateVersion = () => stateVersion
+      ctx.commitDocumentState = (operation) => {
+        operation()
+        stateVersion = {}
+      }
+      const runtime = createDocsRuntime({
+        current: () => ({
+          editor,
+          identity: editor,
+          stateVersion,
+          numIds: { bullet: null, ordered: null },
+        }),
+      })
+      const caller = runtime.connect({ id: 'save-reader' })
+      caller.context()
+      try {
+        const edit = await caller.execute({
+          id: 'before-save',
+          name: 'apply_ops',
+          input: {
+            ops: [
+              {
+                op: 'findReplace',
+                find: 'forty-eight (48) hours',
+                replace: 'seventy-two (72) hours',
+              },
+            ],
+          },
+        })
+        expect(edit.isError, edit.output).not.toBe(true)
+        const oldQuery = await caller.execute({
+          id: 'old-structures',
+          name: 'query_document',
+          input: { type: 'docTable' },
+        })
+        const oldTable = JSON.parse(oldQuery.output).items[0]
+        expect(await save(ctx, false, auto)).toBe(true)
+        expect(ctx.saveIncompleteRef.current).toBe(false)
+        await assertUntouched(bytes, new Uint8Array(await readFile(path)))
+        const oldIntent = await caller.execute({
+          id: 'expired-deletion',
+          name: 'replace_blocks',
+          input: {
+            startBlockIndex: oldTable.blockIndex,
+            endBlockIndex: oldTable.blockIndex,
+            html: '<p>Wrong</p>',
+            dryRun: true,
+            deleteStructures: oldTable.structures.map((item: { id: string }) => item.id),
+          },
+        })
+        expect(oldIntent).toMatchObject({
+          isError: true,
+          errorCode: 'stale_target',
+          committed: false,
+        })
+        const query = await caller.execute({
+          id: 'after-save-query',
+          name: 'query_document',
+          input: { containsText: 'seventy-two' },
+        })
+        const item = JSON.parse(query.output).items[0]
+        const result = await caller.execute({
+          id: 'after-save',
+          name: 'apply_ops',
+          input: {
+            ops: [
+              {
+                op: 'findReplace',
+                target: { engine: item.target },
+                find: 'seventy-two (72) hours',
+                replace: 'ninety-six (96) hours',
+              },
+            ],
+          },
+        })
+        expect(result.isError, result.output).not.toBe(true)
+        expect(editor.getText()).toContain('ninety-six (96) hours')
+      } finally {
+        runtime.dispose()
+      }
+    },
+  )
+
+  it.each(['body', 'format', 'section'])(
+    'does not carry a caller baseline across host-modified saved %s',
+    async (kind) => {
+      const { ctx, editor } = await fixture(false)
+      let stateVersion = {}
+      ctx.getDocumentStateVersion = () => stateVersion
+      ctx.commitDocumentState = (operation) => {
+        operation()
+        stateVersion = {}
+      }
+      window.desktop.saveDocx = async (_target, data) => {
+        const zip = await JSZip.loadAsync(data)
+        const xml = await zip.file('word/document.xml')!.async('string')
+        zip.file(
+          'word/document.xml',
+          kind === 'body'
+            ? xml.replace('<w:body>', '<w:body><w:p><w:r><w:t>Host addition</w:t></w:r></w:p>')
+            : kind === 'format'
+              ? xml.replace('<w:body><w:p>', '<w:body><w:p><w:pPr><w:jc w:val="right"/></w:pPr>')
+              : xml.replace('w:left="1440"', 'w:left="1800"'),
+        )
+        const changed = await zip.generateAsync({ type: 'base64' })
+        return { ok: true, dataUrl: `data:application/octet-stream;base64,${changed}` }
+      }
+      const runtime = createDocsRuntime({
+        current: () => ({
+          editor,
+          identity: editor,
+          stateVersion,
+          numIds: { bullet: null, ordered: null },
+        }),
+      })
+      const caller = runtime.connect({ id: 'host-save-reader' })
+      caller.context()
+      try {
+        expect(await save(ctx, false, true)).toBe(true)
+        if (kind === 'body') expect(editor.getText()).toContain('Host addition')
+        if (kind === 'format') expect(editor.state.doc.firstChild?.attrs.align).toBe('right')
+        await caller.execute({ id: 'after-save-query', name: 'query_document', input: {} })
+        const result = await caller.execute({
+          id: 'after-save',
+          name: 'apply_ops',
+          input: {
+            ops: [{ op: 'findReplace', find: 'Unchanged opening paragraph.', replace: 'Wrong' }],
+          },
+        })
+        expect(result).toMatchObject({ isError: true, errorCode: 'stale_target', committed: false })
+      } finally {
+        runtime.dispose()
+      }
+    },
+  )
+
   it('preserves document-side edits made while the file is being written', async () => {
     const { ctx, editor } = await fixture(false)
     const body = editor.state.doc

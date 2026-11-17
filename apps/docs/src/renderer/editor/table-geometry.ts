@@ -1,3 +1,4 @@
+// Modified for ForaOffice: resolve alignment in the owning layout area.
 /**
  * Table width geometry: one precedence table for how wide a table box is and
  * where it sits horizontally, shared by the convert-time column fit
@@ -138,6 +139,7 @@ export function tableWidthCss(input: TableWidthInput, ctx: TableGeometryCtx): Ta
   const styles: string[] = []
   const log: string[] = []
   const nested = ctx.kind === 'nested'
+  const contentWidth = nested ? '100%' : CONTENT_W
   const rtlStart = rtlStartAligned(input, ctx)
   const spillMargin = rtlStart ? 'var(--doc-margin-left,0px)' : 'var(--doc-margin-right,0px)'
   const centred = (input.align === 'center' && !input.floated) || input.tblpCentered
@@ -151,13 +153,13 @@ export function tableWidthCss(input: TableWidthInput, ctx: TableGeometryCtx): Ta
       ? 'rightMargin'
       : 'column'
   let bleed: TableWidthCss['bleed'] = 'none'
-  if (input.autoFit === 'contents') {
+  if (input.autoFit === 'contents' && !input.widthPct) {
     styles.push('width:auto')
     log.push('autofit contents: width auto')
   } else if (input.autoFit === 'window') {
     // 'window' and pct are shares of the section's TEXT COLUMN, not of the
     // canvas padding box: differing-margin sections resolve through --doc-content-w
-    widthExpr = CONTENT_W
+    widthExpr = contentWidth
     styles.push(`width:${widthExpr}`)
     log.push('autofit window: text column')
   } else if (input.widthPct) {
@@ -175,17 +177,14 @@ export function tableWidthCss(input: TableWidthInput, ctx: TableGeometryCtx): Ta
       styles.push(`width:${widthExpr}`, 'max-width:none')
       // auto margins resolve to 0 on overflow, so a held box wider than the
       // column is pinned by an explicit (negative-capable) margin
-      if (centred) centerMargin = `margin-left:calc((${CONTENT_W} - ${widthPx}px)/2)`
-      else if (input.align === 'right' && !input.floated)
-        rightMargin = `margin-left:calc(${CONTENT_W} - ${widthPx}px)`
       bleed = centred ? 'both' : input.align === 'right' ? 'left' : 'right'
       log.push(`${input.fixedLayout ? 'fixed' : 'dxa'} ${widthPx}px held, no clamp`)
     } else if (!nested && centred) {
       // over-wide grids spill both margins symmetrically (negative-margin
       // centring: auto margins resolve to 0 on overflow and would push the spill
       // right only), never past the paper
-      styles.push(`width:min(${widthPx}px,${PAPER_W})`)
-      centerMargin = `margin-left:calc((${CONTENT_W} - min(${widthPx}px,${PAPER_W}))/2)`
+      widthExpr = `min(${widthPx}px,${PAPER_W})`
+      styles.push(`width:${widthExpr}`)
       bleed = 'both'
       log.push(`centred ${widthPx}px, clamped to the paper`)
     } else {
@@ -215,6 +214,13 @@ export function tableWidthCss(input: TableWidthInput, ctx: TableGeometryCtx): Ta
   } else {
     origin = 'column'
     log.push('no absolute grid: auto width')
+  }
+  // Auto margins use the containing canvas, which can be wider than this
+  // section. All resolved widths align against the same area that sized them.
+  if (widthExpr) {
+    if (centred) centerMargin = `margin-left:calc((${contentWidth} - ${widthExpr})/2)`
+    else if (input.align === 'right' && !input.floated)
+      rightMargin = `margin-left:calc(${contentWidth} - ${widthExpr})`
   }
   return { widthExpr, styles, centerMargin, rightMargin, hold, rtlStart, origin, bleed, log }
 }

@@ -8,7 +8,9 @@ import JSZip from 'jszip'
 import { XMLParser } from 'fast-xml-parser'
 import type { DocsEditorHandle } from '../apps/docs/src/renderer/embedded'
 import type { DocsQueryResult } from '../apps/docs/src/shared/document-query'
+import type { DocsOperationResult } from '../apps/docs/src/shared/operation-result'
 import { launchSdkTestHost, sdkHostIsElectron, type SdkTestHost } from './sdk-host'
+import { buildDocx } from '../packages/docx-engine/tests/helpers/build-docx'
 
 type FixtureWindow = Window & {
   editor: DocsEditorHandle
@@ -16,7 +18,11 @@ type FixtureWindow = Window & {
   fixture: { saved: number[]; saves: number }
 }
 
-async function withHostedDocument(original: Buffer, run: (page: Page) => Promise<void>) {
+async function withHostedDocument(
+  original: Buffer,
+  run: (page: Page) => Promise<void>,
+  autoSave = false,
+) {
   const root = resolve(__dirname, '../apps/docs/out/embedded')
   const server = createServer(async (request, response) => {
     const path = new URL(request.url ?? '/', 'http://localhost').pathname
@@ -40,7 +46,8 @@ async function withHostedDocument(original: Buffer, run: (page: Page) => Promise
         const initial=Uint8Array.from(atob('${original.toString('base64')}'),c=>c.charCodeAt(0));
         const doc=()=>({id:'safe-editing:fixture',name:'Safe editing.docx',
           data:Uint8Array.from(window.fixture.saved.length?window.fixture.saved:initial).buffer});
-        host.documents={initialDocument:async()=>doc(),openDocument:async()=>doc(),
+        host.documents={autoSave:{enabled:${autoSave},allowToggle:false,intervalMs:60000},
+          initialDocument:async()=>doc(),openDocument:async()=>doc(),
           saveDocument:async request=>{window.fixture.saved=Array.from(new Uint8Array(request.data));window.fixture.saves++;
             return {ok:true,committed:true,pending:false,document:{id:'safe-editing:fixture',name:'Safe editing.docx'}};}};
         window.editor=await mountDocsEditor(document.getElementById('root'),{host});
@@ -87,6 +94,153 @@ async function withHostedDocument(original: Buffer, run: (page: Page) => Promise
     await browser?.close()
     await new Promise<void>((done) => server.close(() => done()))
   }
+}
+
+test('inline tables align within their section on a mixed-width canvas and in preview', async () => {
+  const table = (percent: number, align: string) =>
+    `<w:tbl><w:tblPr><w:tblW w:w="${percent * 50}" w:type="pct"/><w:jc w:val="${align}"/></w:tblPr>` +
+    `<w:tblGrid><w:gridCol w:w="${Math.floor((8306 * percent) / 200)}"/><w:gridCol w:w="${Math.ceil((8306 * percent) / 200)}"/></w:tblGrid>` +
+    '<w:tr><w:tc><w:tcPr><w:tcW w:w="2500" w:type="pct"/></w:tcPr><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>' +
+    '<w:tc><w:tcPr><w:tcW w:w="2500" w:type="pct"/></w:tcPr><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+  const portrait =
+    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/></w:sectPr>'
+  const original = await buildDocx({
+    bodyXml:
+      '<w:p><w:r><w:t>Portrait reference</w:t></w:r></w:p>' +
+      table(100, 'center') +
+      table(50, 'center') +
+      table(50, 'right') +
+      `<w:p><w:pPr>${portrait}</w:pPr></w:p>` +
+      '<w:p><w:r><w:t>Landscape reference</w:t></w:r></w:p>',
+    sectPrXml:
+      '<w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>',
+  })
+  await withHostedDocument(Buffer.from(original), async (page) => {
+    const geometry = () =>
+      page.evaluate(() => {
+        const reference = [...document.querySelectorAll<HTMLElement>('.doc-page > p')].find(
+          (p) => p.textContent === 'Portrait reference',
+        )!
+        const body = reference.getBoundingClientRect()
+        return [...document.querySelectorAll<HTMLElement>('.doc-page > table.doc-table')].map(
+          (table, index) => {
+            const box = table.getBoundingClientRect()
+            const width = body.width * (index === 0 ? 1 : 0.5)
+            const x = body.left + (index === 0 ? 0 : index === 1 ? width / 2 : width)
+            return { widthError: box.width - width, positionError: box.left - x }
+          },
+        )
+      })
+    await expect.poll(async () => (await geometry()).length).toBe(3)
+    await expect(page.locator('.doc-page > table.doc-table').first()).toHaveClass(
+      /doc-table-autofit-window/,
+    )
+    await expect
+      .poll(async () => Math.max(...(await geometry()).map((g) => Math.abs(g.positionError))))
+      .toBeLessThan(1)
+    for (const item of await geometry()) expect(Math.abs(item.widthError)).toBeLessThan(1)
+    await page.getByRole('button', { name: 'View', exact: true }).click()
+    await page.getByRole('button', { name: 'Page Preview', exact: true }).click()
+    const previewPage = page.locator('.pagination-preview .pv-page').first()
+    await expect(previewPage.locator('.doc-table')).toHaveCount(3)
+    const preview = await previewPage.evaluate((root) => {
+      const reference = [...root.querySelectorAll<HTMLElement>('p')]
+        .find((p) => p.textContent === 'Portrait reference')!
+        .getBoundingClientRect()
+      return [...root.querySelectorAll<HTMLElement>('table.doc-table')].map((table, index) => {
+        const box = table.getBoundingClientRect()
+        const x = reference.left + reference.width * (index === 0 ? 0 : index === 1 ? 0.25 : 0.5)
+        return box.left - x
+      })
+    })
+    for (const error of preview) expect(Math.abs(error)).toBeLessThan(1)
+  })
+})
+
+for (const mode of ['document', 'command', 'auto'] as const) {
+  test(`a caller can query and edit after an acknowledged equivalent save without rereading side stores (${mode})`, async () => {
+    const original = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>Before save</w:t></w:r></w:p>',
+      headerXml: '<w:p><w:r><w:t>Keep header</w:t></w:r></w:p>',
+    })
+    await withHostedDocument(
+      Buffer.from(original),
+      async (page) => {
+        const result = await page.evaluate(async (mode) => {
+          const { editor, fixture } = window as unknown as FixtureWindow
+          const caller = editor.runtime.connect({ id: 'save-and-continue' })
+          let sequence = 0
+          const command = (name: string, payload: Record<string, unknown>) =>
+            editor.commands.handle({
+              requestId: `save-sequence-${++sequence}`,
+              callerId: 'command-save-and-continue',
+              command: name,
+              payload,
+            })
+          const execute = (
+            name: string,
+            input: Record<string, unknown>,
+          ): Promise<DocsOperationResult> =>
+            mode === 'command'
+              ? (command(name, input) as Promise<DocsOperationResult>)
+              : caller.execute({ id: name, name, input })
+          if (mode === 'command') await command('read_document', {})
+          else caller.context()
+          const query = async () => {
+            const result = await execute('query_document', { domain: 'body' })
+            if (result.isError) throw new Error(result.output)
+            return (JSON.parse(result.output) as DocsQueryResult).items[0].target
+          }
+          const replace = async (find: string, replace: string) =>
+            execute('apply_ops', {
+              ops: [{ op: 'findReplace', target: { engine: await query() }, find, replace }],
+            })
+          try {
+            const first = await replace('Before save', 'First edit')
+            if (first.isError) throw new Error(first.output)
+            let saved: boolean
+            if (mode === 'command') {
+              const result = (await command('save_document', {
+                path: '/saved.docx',
+                overwrite: true,
+              })) as { ok: boolean }
+              saved = result.ok
+            } else if (mode === 'auto') {
+              saved = await new Promise<boolean>((resolve, reject) => {
+                const timeout = window.setTimeout(() => {
+                  off()
+                  reject(new Error('Autosave did not finish'))
+                }, 10000)
+                const off = editor.documents.subscribe((state) => {
+                  if (fixture.saves && state && !state.dirty) {
+                    window.clearTimeout(timeout)
+                    off()
+                    resolve(true)
+                  }
+                })
+                window.dispatchEvent(new Event('blur'))
+              })
+            } else saved = await editor.documents.save()
+            const afterSave = await replace('First edit', 'After save')
+            return {
+              saved,
+              afterSave,
+              saves: fixture.saves,
+              text: editor.inspection.snapshot().text,
+            }
+          } finally {
+            caller.close()
+            editor.commands.disconnect('command-save-and-continue')
+          }
+        }, mode)
+        expect(result.saved).toBe(true)
+        expect(result.afterSave.isError, result.afterSave.output).not.toBe(true)
+        expect(result.text).toContain('After save')
+        expect(result.saves).toBe(1)
+      },
+      mode === 'auto',
+    )
+  })
 }
 
 for (const position of ['middle', 'end'] as const) {

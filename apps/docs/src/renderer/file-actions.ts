@@ -1524,6 +1524,7 @@ async function saveOnce(
       // the converging complete save below toasts once.
       return true
     }
+    let rebased = false
     commitDocumentState(ctx, () => {
       // Reload from saved bytes so docxIndex anchors point at the new file.
       setLazyMediaHashes(reparsed.extras.lazyMediaHashes)
@@ -1545,6 +1546,7 @@ async function saveOnce(
       } catch {
         /* unrepresentable → rewrite */
       }
+      rebased = unchanged
       // Equal doc: skip the rewrite so undo history, caret and scroll survive.
       if (!unchanged) {
         // The caret's marks — the ribbon's font/size live here as storedMarks and
@@ -1644,6 +1646,20 @@ async function saveOnce(
       ctx.setRemovePersonalInfoDirty(false)
       ctx.dirtyRef.current = false
     })
+    // Only our exact generated snapshot is a trusted persistence rebase. A host
+    // returning different bytes may have changed authored content. Publish after
+    // the synchronous commit so readers see the new stores, and carry only
+    // baselines that already observed the source state, including autosave readers.
+    if (
+      rebased &&
+      ctx.getDocumentStateVersion &&
+      (!fullBytes ||
+        (fullBytes.length === bytes.length && fullBytes.every((byte, i) => byte === bytes[i])))
+    )
+      carryDocSeen(editor, docSnapshot, {
+        before: stateSnapshot,
+        after: ctx.getDocumentStateVersion(),
+      })
     ctx.setStatus(
       auto ? t('appAutoSavedAt', { time: new Date().toLocaleTimeString() }) : t('appSaved'),
     )

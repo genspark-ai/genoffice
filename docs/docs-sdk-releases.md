@@ -62,6 +62,19 @@ intentional tightening of unsafe behavior, not a claim of compatible legacy
 write semantics. See the authoritative SDK guide for reference diagnostics and
 supported image versus protected-object boundaries.
 
+Unreleased persistence fix: equivalent saved-baseline publication now carries
+already observed authored-store epochs for existing callers across manual,
+automatic and runtime saves. Saving still advances source-reference revisions:
+query fresh structure/media targets before further edits. The carry excludes
+already stale callers, concurrent changes, content rewrites and differing
+host-returned bytes; partial queries still do not acknowledge unread side stores.
+No host-specific recovery or automatic retry is introduced.
+
+Unreleased layout fix: resolved inline table widths and horizontal alignment use
+the same owning section/column or nested cell area. Wider sections elsewhere in
+the document no longer introduce a second centering offset on the editor canvas.
+Floating tables retain their separate anchor rules; authored OOXML is unchanged.
+
 The public contract is the [SDK guide](../apps/docs/sdk/README.md), its exported
 types and observed public behavior. During `0.x`, a minor version may contain a
 breaking public contract change. Patch versions are intended for compatible
