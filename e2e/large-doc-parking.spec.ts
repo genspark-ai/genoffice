@@ -65,32 +65,32 @@ function stats(gaps: number[]): TypingStats {
     median: Math.round(at(0.5)),
     p95: Math.round(at(0.95)),
     max: Math.round(sorted[sorted.length - 1]!),
-    longFrames: gaps.filter((g) => g > 100).length,
+    longFrames: gaps.filter((g) => g > 250).length,
     samples: gaps.length,
   }
 }
 
 /** records requestAnimationFrame gaps while the Node side types */
-function frameSampler(page: Page, frames: number): Promise<number[]> {
-  return page.evaluate(
-    (n) =>
-      new Promise<number[]>((resolve) => {
-        const gaps: number[] = []
-        let last = performance.now()
-        const tick = (t: number) => {
-          gaps.push(t - last)
-          last = t
-          if (gaps.length < n) requestAnimationFrame(tick)
-          else resolve(gaps)
-        }
-        requestAnimationFrame(tick)
-      }),
-    frames,
-  )
+/** main-thread responsiveness while typing: the Node side measures the round
+    trip of a trivial evaluate around each keystroke — the queuing delay the
+    typist feels. No rAF dependency (an occluded window throttles frames). */
+async function typingRtts(page: Page, text: string, delayMs: number): Promise<number[]> {
+  const rtts: number[] = []
+  for (const ch of text) {
+    await page.keyboard.type(ch, { delay: delayMs })
+    const t0 = Date.now()
+    await page.evaluate(() => 1)
+    rtts.push(Date.now() - t0)
+  }
+  return rtts
 }
 
 async function runOnce(parking: boolean, docPath: string): Promise<void> {
-  const launched = await launchShell({ onboardingSeen: true, openFile: docPath })
+  const launched = await launchShell({
+    onboardingSeen: true,
+    openFile: docPath,
+    videoDir: 'large-doc-parking',
+  })
   const { app } = launched
   try {
     const page = await waitForPageWithUrl(app, '://docs/')
@@ -103,7 +103,7 @@ async function runOnce(parking: boolean, docPath: string): Promise<void> {
     await page.waitForFunction(
       () => {
         const dbg = (window as never as Record<string, Record<string, unknown>>).__pageDebug
-        return Boolean(dbg && (dbg.passGen as number) >= 3)
+        return Boolean(dbg && (dbg.passGen as number) >= 1 && dbg.remeasureMs)
       },
       { timeout: 180_000 },
     )
@@ -129,11 +129,9 @@ async function runOnce(parking: boolean, docPath: string): Promise<void> {
       }
     }, MID)
 
-    // typing: rAF gaps sampled for 400 frames while 64 characters land
-    const sampler = frameSampler(page, 400)
-    await page.keyboard.type('The quick brown fox jumps over the lazy dog. ', { delay: 8 })
-    await page.keyboard.type('Parked typing keeps the frames short. ', { delay: 8 })
-    const gaps = await sampler
+    // typing: main-thread RTT sampled per keystroke, inserted where the
+    // caret sits (a parked region when parking is on)
+    const gaps = await typingRtts(page, 'The quick brown fox jumps. ', 30)
 
     // let the debounce pass fire and finish
     await page.waitForTimeout(2_500)

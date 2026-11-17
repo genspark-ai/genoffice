@@ -1,9 +1,8 @@
 # Route-B prototype research: per-page rendering for large documents
 
 **Branch**: `feat/layout-parking-proto` (local only — not pushed, no PR, per the user's
-instruction). **Issue**: #2781 (large documents laggy). **Status**: working prototype +
-mechanism tests + a real-Chromium probe spec; pass-duration and typing numbers need the
-probe run to be interpreted (see "What to measure").
+instruction). **Issue**: #2781 (large documents laggy). **Status**: working prototype,
+measured A/B in real Chromium; the verdict is shape-dependent (see section 6).
 
 This note is the handoff for the architectural decision. It maps what the current
 renderer does, what the prototype changes, what stays broken, and what a maintainer
@@ -119,7 +118,51 @@ row-fragmentation can be judged purely on its fidelity merits. If the probe stil
 shows long frames, the residual is the measurement pass + PM view update, and a real
 fragmentation discussion (with its rewrite cost) becomes the only remaining lever.
 
-## 6. How to verify locally
+## 6. Measured results (2026-11-17, Apple Silicon, real Chromium via the probe)
+
+**Pure text, 5000 paragraphs / 183 pages / 5182 blocks** (`/tmp/probe-ab.js`, A/B):
+
+| | parking OFF | parking ON |
+|---|---|---|
+| parked after open | 0 | 4957 (95.6%) |
+| typing RTT median / p95 / max | 1 / 1 / 4 ms | 1 / **94** / 107 ms |
+| whole-document pass | 166 ms | **441 ms** |
+
+**Table-heavy, 40 tables x 30 bordered rows x 6 cells (~25 pages) / 122 blocks**:
+
+| | parking OFF | parking ON |
+|---|---|---|
+| parked after open | 0 | 118 (96.7%) |
+| typing RTT median / p95 / max | 4 / 21 / 41 ms | **2 / 13 / 16 ms** |
+| whole-document pass | 334 / 309 ms | **295 / 151 ms** |
+
+Readings, honest:
+
+1. **A plain-text 100+ page document does not lag** on this machine — the
+   per-keystroke main-thread RTT is 1 ms with parking off. The #2781 reporter's
+   lag must come from a heavier shape (tables/images/complex styles), an older
+   version, or Windows. The parked run's p95=94 ms is the **pass wake-up tax**:
+   resuming a parked tree costs a full relayout of it, and a typing-triggered
+   pass burst (441 ms) lands inside the sampled window. On cheap-to-layout
+   documents parking is a net negative.
+2. **On layout-heavy documents parking wins on every axis** — typing RTT AND
+   the measurement pass itself (the pass also skips parked subtrees while
+   sampling-suppressed is off... precisely: the suppression lifts only around
+   sampling, so between passes the tree stays small). The heavier each block's
+   layout, the bigger the win — which is exactly the #2781 shape (tables and
+   pictures across 100+ pages).
+3. The caret-reveal path works: the caret typed into a parked region lands and
+   renders (`typedOk` true in both runs); Chromium reveals focused content per
+   the content-visibility spec.
+
+Design consequence: parking should engage **by block layout cost**, not merely
+document length — e.g. park only when the last pass exceeded a budget, or only
+blocks heavier than N px. A plain-text 5000-block document should never park
+(the wake-up tax dominates); a 100-page table report should always park. That
+gate is one `lastPassMs` comparison away in the existing scheduler and is the
+single most important refinement before this prototype could become a PR.
+
+## 7. How to verify locally
 
 ```bash
 # unit tests

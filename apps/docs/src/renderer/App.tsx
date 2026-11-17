@@ -168,12 +168,11 @@ import type { NoteKind } from './note-format'
 import { PaginationPreview } from './components/PaginationPreview'
 import { imageParaPaginationMeta, paraPaginationMeta, tableWidowOff } from './editor/para-flags'
 import {
-  applyParking,
+  parkingEntriesFor,
+  parkingKey,
   parkBand,
   parkDecisions,
   PARK_SUPPRESSED_CLASS,
-  resumeParking,
-  suppressParking,
 } from './editor/layout-parking'
 import {
   comparePlanToBlocks,
@@ -4255,37 +4254,43 @@ export function App() {
     // Layout parking (route-B prototype for #2781): between measurement
     // passes, offscreen top-level blocks carry content-visibility so
     // Chromium skips their subtrees — typing cost stops growing with the
-    // document. Columned canvases translate blocks per column and vertical
-    // text re-wraps per line, so parking is for the continuous single-
-    // column print canvas only. The e2e probe flips __layoutParkingOff to
-    // measure the difference.
+    // document. The parked state rides PM node decorations (layout-parking
+    // extension), so no amount of tiptap attribute re-assertion or gap-
+    // widget rebuilding wipes it. Columned canvases translate blocks per
+    // column and vertical text re-wraps per line, so parking is for the
+    // continuous single-column print canvas only. The e2e probe flips
+    // __layoutParkingOff to measure the difference.
     const parkingActive = () =>
       !(window as unknown as Record<string, unknown>).__layoutParkingOff &&
       !hasVertical &&
       colMode === 'none' &&
       viewMode === 'print' &&
       !readMode
-    const repark = () => {
-      const pm = pmEl()
-      if (!pm) return
+    // BlockBox.top is pagination flow px and scrollTop is scroller px: same
+    // family once zoom is 1 (a constant canvas-padding offset on both sides
+    // shifts the band equally, prototype-acceptable).
+    const dispatchParking = () => {
+      if (!editor) return
+      const current = parkingKey.getState(editor.state)
       if (!parkingActive() || lastBlocks.length === 0) {
-        if (!pm.querySelector('.cv-parked')) return
-        for (const el of Array.from(pm.children)) {
-          if (el instanceof HTMLElement) el.classList.remove('cv-parked')
-        }
+        if (!current || current.entries.length === 0) return
+        editor.view.dispatch(editor.state.tr.setMeta(parkingKey, { entries: [] }))
         return
       }
-      if (pm.classList.contains(PARK_SUPPRESSED_CLASS)) return
+      const pm = pmEl()
+      if (!pm || pm.classList.contains(PARK_SUPPRESSED_CLASS)) return
       const band = parkBand(scroller as HTMLElement)
-      const els: HTMLElement[] = []
-      const boxes: Array<{ top: number; height: number }> = []
-      for (const b of lastBlocks) {
-        if (!b.el || !b.el.isConnected) continue
-        const rect = b.el.getBoundingClientRect()
-        boxes.push({ top: rect.top, height: rect.height || b.height })
-        els.push(b.el)
-      }
-      applyParking(els, boxes, parkDecisions(boxes, band))
+      const boxes = lastBlocks.map((b) => ({ top: b.top, height: b.height }))
+      const decisions = parkDecisions(boxes, band)
+      const heights = lastBlocks.map((b) => b.height)
+      const entries = parkingEntriesFor(editor.state.doc, decisions, heights)
+      if (
+        current &&
+        current.entries.length === entries.length &&
+        current.entries.every((e, i) => e.pos === entries[i]!.pos && e.h === entries[i]!.h)
+      )
+        return
+      editor.view.dispatch(editor.state.tr.setMeta(parkingKey, { entries }))
     }
     /** top-level child count at the last pass: a streaming pass whose only
      *  trigger is the appended tail (dirty ≥ this) may carry the prefix's
@@ -4455,7 +4460,7 @@ export function App() {
       // parked blocks would sample as their remembered size: a pass and the
       // fast passes must read real layout (they re-park in the finally)
       const parkPm = pmEl()
-      if (parkPm) suppressParking(parkPm)
+      if (parkPm) parkPm.classList.add(PARK_SUPPRESSED_CLASS)
       try {
         const zoomEl = scroller.querySelector<HTMLElement>('.doc-zoom')
         // the canvas zoom as applied, not this closure's: a pass reaching the
@@ -4497,10 +4502,11 @@ export function App() {
         // must not leave the gap widgets hidden
         pmEl()?.classList.remove('measuring-natural')
         // the pass sampled real layout: park everything offscreen again so
-        // the idle time until the next pass skips it
+        // the idle time until the next pass skips it (the suppressed class
+        // comes off first so the decorations bite again)
         const afterPm = pmEl()
-        if (afterPm) resumeParking(afterPm)
-        repark()
+        if (afterPm) afterPm.classList.remove(PARK_SUPPRESSED_CLASS)
+        dispatchParking()
       }
     }
     const remeasurePass = (dirty: number | null) => {
@@ -5968,7 +5974,7 @@ export function App() {
       reparkQueued = true
       requestAnimationFrame(() => {
         reparkQueued = false
-        repark()
+        dispatchParking()
       })
     }
     scroller.addEventListener('scroll', reparkOnScroll, { passive: true })
