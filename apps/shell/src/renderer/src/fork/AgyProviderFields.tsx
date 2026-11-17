@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import type { AiProviderConfig } from '@genoffice/ai-provider/browser'
 import { useI18n, type TFunc } from '../locale'
 import { agyString } from './agy-strings'
+import { localVlmString } from '../i18n/strings-local-vlm'
 import {
   agyConnectionOf,
   agyPlatformOf,
@@ -37,9 +38,13 @@ export function testAiSettingsFor(
   settings: Parameters<NonNullable<Window['aiOffice']['testAiSettings']>>[0],
   fallbackError: string,
 ) {
-  return settings.provider === 'agy'
-    ? testAgyConnection(settings.providers.agy?.cliPath, fallbackError)
-    : window.aiOffice.testAiSettings?.(settings)
+  if (settings.provider === 'agy') {
+    return testAgyConnection(settings.providers.agy?.cliPath, fallbackError)
+  }
+  if (settings.provider === 'local-vlm') {
+    return window.aiOffice.testLocalVlm?.()
+  }
+  return window.aiOffice.testAiSettings?.(settings)
 }
 
 /** The one-paragraph description under the provider picker (agy's is honest about its limits). */
@@ -47,6 +52,7 @@ export function ProviderNote({ provider, t }: { provider: string; t: TFunc }) {
   const { lang } = useI18n()
   if (provider === 'genspark') return <>{t('setAiGensparkHint')}</>
   if (provider === 'codex') return <>{t('setAiCodexHint')}</>
+  if (provider === 'local-vlm') return <>{localVlmString(lang, 'note')}</>
   return <>{provider === 'agy' ? agyString(lang, 'agyNote') : t('setAiByokNote')}</>
 }
 
@@ -65,6 +71,7 @@ export function AgyProviderFields<
   const cliPath = config.cliPath ?? ''
   const onCatalog = (live: AgyCatalog) => setCatalog((c) => withAgyModels(c, live, config.model))
   const [connection, setConnection] = useState<AgyConnection>({ state: 'checking' })
+  const [localFallbackReady, setLocalFallbackReady] = useState<boolean | null>(null)
   const onCatalogRef = useRef(onCatalog)
   onCatalogRef.current = onCatalog
   const failure = agyString(lang, 'agyTestFailed')
@@ -91,6 +98,19 @@ export function AgyProviderFields<
 
   useEffect(() => {
     void check(cliPath)
+    void window.aiOffice
+      .getLocalVlmStatus?.()
+      .then((s) => {
+        if (s) {
+          setLocalFallbackReady(
+            s.installed &&
+              s.runtimeInstalled &&
+              s.settings.enabled &&
+              s.settings.autoFallbackFromAgy,
+          )
+        }
+      })
+      .catch(() => undefined)
     // first mount only: later path edits re-check on blur
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -116,6 +136,11 @@ export function AgyProviderFields<
           {agyString(lang, 'agyRecheck')}
         </button>
       </div>
+      {connection.state === 'missing' && localFallbackReady !== null && (
+        <div className="set-local-vlm-banner" role="status">
+          {localVlmString(lang, localFallbackReady ? 'agyFallbackReady' : 'agyFallbackMissing')}
+        </div>
+      )}
       <SettingsRow className="set-field">
         <div className="set-field-text">
           <div className="set-field-stack">

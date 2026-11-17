@@ -20,7 +20,10 @@
     "./provider-models": "./src/provider-models.ts",
     "./trace": "./src/trace.ts",
     "./agy-resident": "./src/agy-resident.ts",
-    "./diag-hook": "./src/diag-hook.ts"
+    "./diag-hook": "./src/diag-hook.ts",
+    "./local-vlm": "./src/local-vlm-manager.ts",
+    "./local-vlm-meta": "./src/local-vlm-meta.ts",
+    "./local-vlm-fallback": "./src/local-vlm-fallback.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -1,6 +1,7 @@
 import { app, powerMonitor } from 'electron'
 import type { IpcMain } from 'electron'
 import { join } from 'node:path'
+import { agyDefaultsUsable } from '@genoffice/ai-provider'
 import { buildAgyPrompt, listAgyModels, runAgy } from '@genoffice/ai-provider/agy-cli'
 import {
   buildAgyOcrPrompt,
@@ -8,6 +9,8 @@ import {
   systemTimezoneOffset,
 } from '@genoffice/ai-provider/agy-ocr'
 import { readAgyUsage } from '@genoffice/ai-provider/agy-usage'
+import { getLocalVlmRuntime } from '@genoffice/ai-provider/local-vlm'
+import { recognizeWithLocalVlm } from './local-vlm-ocr'
 import { readAppSettings, writeAppSettingThen } from '../app-settings'
 import {
   AGY_OCR_CHANNELS,
@@ -150,6 +153,15 @@ export function registerAgyOcr(deps: AgyOcrDeps): void {
         return gate.ok ? { ok: true } : { ok: false, reason: gate.reason }
       },
     )
+    const resolveBackend = (): 'agy' | 'local-vlm' | 'none' => {
+      const pref = settings.escalationBackend ?? 'auto'
+      const runtime = getLocalVlmRuntime()
+      const localReady = Boolean(runtime?.isRunnable())
+      if (pref === 'local-vlm') return localReady ? 'local-vlm' : 'none'
+      if (pref === 'agy') return 'agy'
+      if (agyDefaultsUsable()) return 'agy'
+      return runtime?.shouldFallbackFromAgy() ? 'local-vlm' : 'agy'
+    }
     job = new AgyOcrJob({
       settings: () => settings,
       pdfPageLimit: () => manager.getPdfMaxPages(),
@@ -160,6 +172,8 @@ export function registerAgyOcr(deps: AgyOcrDeps): void {
         systemTimezoneOffset,
       ),
       recognize: recognizeWithAgy,
+      recognizeLocal: recognizeWithLocalVlm,
+      resolveBackend,
       readUsage: cachedUsageReader(() => readAgyUsage(), Date.now),
       policy,
       idleSeconds,

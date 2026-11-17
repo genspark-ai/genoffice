@@ -5,6 +5,12 @@ import { chatOpenAiResponses } from './protocols/openai-responses'
 import { ResponseBodyTooLargeError } from './protocols/shared'
 import { chatCodexAppServer } from './codex-app-server'
 import { chatAgy } from './agy-cli'
+import {
+  ensureLocalVlmEndpoint,
+  localVlmRequestConfig,
+  shouldFallbackFromAgyToLocalVlm,
+} from './local-vlm-fallback'
+import { LOCAL_VLM_SAMPLING_DEFAULTS } from './local-vlm-meta'
 import { getProviderAdapter, type ResolvedEndpoint } from './registry'
 import type { AiChatResponse, AiProviderConfig, AiProviderId } from './types'
 import { AI_CHAT_RESPONSE_TIMEOUT_MS, createStreamWatchdog } from './watchdog'
@@ -35,8 +41,32 @@ export async function chatForProvider(
     switch (endpoint.protocol) {
       case 'codex-app-server':
         return chatCodexAppServer(config, system, user, wd.signal)
+      case 'local-vlm':
+        return ensureLocalVlmEndpoint(wd.signal).then((local) =>
+          chatOpenAiCompatible(
+            wd,
+            local.baseUrl,
+            localVlmRequestConfig({ model: local.model }),
+            system,
+            user,
+            { bodyExtras: { ...LOCAL_VLM_SAMPLING_DEFAULTS } },
+          ),
+        )
       case 'agy-cli':
-        return chatAgy(config, system, user, wd.signal)
+        return shouldFallbackFromAgyToLocalVlm(config.cliPath).then((useLocal) =>
+          useLocal
+            ? ensureLocalVlmEndpoint(wd.signal).then((local) =>
+                chatOpenAiCompatible(
+                  wd,
+                  local.baseUrl,
+                  localVlmRequestConfig({ model: local.model }),
+                  system,
+                  user,
+                  { bodyExtras: { ...LOCAL_VLM_SAMPLING_DEFAULTS } },
+                ),
+              )
+            : chatAgy(config, system, user, wd.signal),
+        )
       case 'anthropic':
         return chatAnthropic(wd, config, system, user, endpoint.baseUrl, {
           headers: endpoint.headers,

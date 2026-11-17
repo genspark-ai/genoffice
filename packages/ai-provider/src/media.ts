@@ -7,6 +7,12 @@ import type {
 } from './types'
 import { agyDefaultsUsable } from './agy-default'
 import { AGY_DEFAULT_MODEL, isCliProvider } from './agy-meta'
+import {
+  isLocalVlmProvider,
+  LOCAL_VLM_DEFAULT_MODEL,
+  LOCAL_VLM_PROVIDER_ID,
+  localVlmDefaultsUsable,
+} from './local-vlm-meta'
 
 export const OPENAI_IMAGES_BASE_URL = 'https://api.openai.com/v1'
 export const GEMINI_MEDIA_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
@@ -211,6 +217,19 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     videoAnalysis: true,
   },
   {
+    id: LOCAL_VLM_PROVIDER_ID,
+    label: 'Local AI (LFM3-VL-2B)',
+    description: 'On-device LFM3-VL-2B (Q4_K_M) via llama.cpp: private image analysis, no API key',
+    keyPlaceholder: '',
+    defaultBaseUrl: '',
+    imageModels: [],
+    defaultImageModel: '',
+    analysisProtocol: 'local-vlm',
+    analysisModels: [LOCAL_VLM_DEFAULT_MODEL],
+    defaultAnalysisModel: LOCAL_VLM_DEFAULT_MODEL,
+    videoAnalysis: false,
+  },
+  {
     id: 'custom',
     label: 'Custom',
     description: 'Any OpenAI-compatible endpoint: /images/generations and /chat/completions',
@@ -246,7 +265,10 @@ export function providerHasCapability(
  * Defaults for the media block. Image generation, image analysis and video analysis all start on
  * Antigravity when it is usable; otherwise on Gemini as before.
  */
-export function defaultAiMediaSettings(agyUsable: boolean = agyDefaultsUsable()): AiMediaSettings {
+export function defaultAiMediaSettings(
+  agyUsable: boolean = agyDefaultsUsable(),
+  localVlmUsable: boolean = localVlmDefaultsUsable(),
+): AiMediaSettings {
   const providers = {} as AiMediaSettings['providers']
   for (const meta of AI_MEDIA_PROVIDERS) {
     providers[meta.id] = {
@@ -257,9 +279,14 @@ export function defaultAiMediaSettings(agyUsable: boolean = agyDefaultsUsable())
     }
   }
   const preferred: AiMediaProviderId = agyUsable ? 'agy' : 'gemini'
+  const analysisPreferred: AiMediaProviderId = agyUsable
+    ? 'agy'
+    : localVlmUsable
+      ? 'local-vlm'
+      : 'gemini'
   return {
     imageProvider: preferred,
-    analysisProvider: preferred,
+    analysisProvider: analysisPreferred,
     videoAnalysisProvider: preferred,
     providers,
   }
@@ -319,8 +346,8 @@ export function mediaConfigUsable(
   config: AiMediaProviderConfig | undefined,
 ): boolean {
   if (!config) return false
-  // CLI providers sign in through their own login: nothing to store, usable once selected
-  if (isCliProvider(meta.id)) return true
+  // CLI providers and local on-device models require no API key or baseUrl
+  if (isCliProvider(meta.id) || isLocalVlmProvider(meta.id)) return true
   // Trim-aware like activeProvider: whitespace-only survivors of in-memory
   // settings are not usable configs.
   if (meta.needsBaseUrl) return !!config.baseUrl?.trim()

@@ -1,5 +1,6 @@
 import { agyDefaultsUsable } from './agy-default'
 import { AGY_PROVIDER_META } from './agy-meta'
+import { LOCAL_VLM_PROVIDER_META, localVlmDefaultsUsable } from './local-vlm-meta'
 import { normalizeCustomProfile } from './custom-profile'
 import { resolveCustomEndpoints } from './custom-endpoints'
 import { defaultAiMediaSettings, resolveAiMediaSettings } from './media'
@@ -83,6 +84,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     needsCliPath: true,
   },
   AGY_PROVIDER_META,
+  LOCAL_VLM_PROVIDER_META,
   {
     id: 'anthropic',
     label: 'Claude',
@@ -494,6 +496,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
 export function defaultAiSettings(
   defaultApiKeys?: Partial<Record<AiProviderId, string>>,
   agyUsable: boolean = agyDefaultsUsable(),
+  localVlmUsable: boolean = localVlmDefaultsUsable(),
 ): AiSettings {
   const providers = {} as AiSettings['providers']
   for (const meta of AI_PROVIDERS) {
@@ -508,11 +511,11 @@ export function defaultAiSettings(
     }
   }
   return {
-    // agy-first: the Antigravity CLI when it is installed and signed in, otherwise the old default
-    provider: agyUsable ? 'agy' : 'gemini',
+    // agy-first, then on-device LFM3-VL-2B when installed, otherwise the old default
+    provider: agyUsable ? 'agy' : localVlmUsable ? 'local-vlm' : 'gemini',
     providers,
     gskToolsEnabled: false,
-    media: defaultAiMediaSettings(agyUsable),
+    media: defaultAiMediaSettings(agyUsable, localVlmUsable),
     search: defaultAiSearchSettings(agyUsable),
   }
 }

@@ -4,6 +4,7 @@ export type AiProviderId =
   | 'genspark'
   | 'codex'
   | 'agy'
+  | 'local-vlm'
   | 'anthropic'
   | 'gemini'
   | 'deepseek'
@@ -179,12 +180,13 @@ export type AiMediaProviderId =
   | 'minimax'
   | 'deepseek'
   | 'agy'
+  | 'local-vlm'
   | 'custom'
 
 /** wire shape of the image endpoint ('agy-cli' = the local Antigravity agent, no HTTP) */
 export type AiImageProtocol = 'openai-images' | 'gemini' | 'dashscope' | 'minimax' | 'agy-cli'
 /** wire shape of the understanding endpoint */
-export type AiAnalysisProtocol = 'openai-chat' | 'gemini' | 'agy-cli'
+export type AiAnalysisProtocol = 'openai-chat' | 'gemini' | 'agy-cli' | 'local-vlm'
 
 export interface AiMediaProviderConfig {
   apiKey: string

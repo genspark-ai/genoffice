@@ -65,6 +65,7 @@ import { ClipboardSettingsToggle } from './fork/ClipboardSettingsToggle'
 import { DefaultFolderToggle } from './fork/DefaultFolderToggle'
 import { ClipboardHistorySettings } from './fork/ClipboardHistorySettings'
 import { AgyProviderFields, ProviderNote, testAiSettingsFor } from './fork/AgyProviderFields'
+import { LocalVlmFields } from './fork/LocalVlmFields'
 import { AgyMediaFields } from './fork/AgyMediaFields'
 import { AgyChatModelsSettings } from './fork/AgyChatModelsSettings'
 import { agyMediaTestConfig } from './fork/agy-media-state'
@@ -550,6 +551,7 @@ function AiModelPane({ t }: { t: TFunc }) {
   const isGenspark = provider === 'genspark'
   const isCodex = provider === 'codex'
   const isAgy = provider === 'agy'
+  const isLocalVlm = provider === 'local-vlm'
 
   const touch = () => {
     setDirty(true)
@@ -829,7 +831,7 @@ function AiModelPane({ t }: { t: TFunc }) {
             />
           )}
         </SettingsRow>
-        {!isCodex && !isGenspark && !isAgy && (
+        {!isCodex && !isGenspark && !isAgy && !isLocalVlm && (
           <div className="set-field-desc set-model-discovery" aria-live="polite">
             <span>
               {modelListState === 'loading'
@@ -888,6 +890,8 @@ function AiModelPane({ t }: { t: TFunc }) {
           <>
             <AgyProviderFields config={config} update={updateConfig} setCatalog={setCatalog} />
           </>
+        ) : isLocalVlm ? (
+          <LocalVlmFields />
         ) : !isGenspark ? (
           <>
             <SettingsRow className="set-field">
@@ -1632,7 +1636,8 @@ function AiMediaPane({
               update={(patch) => updateMediaConfig(id, patch)}
             />
           )}
-          {id !== 'genspark' && id !== 'agy' && (
+          {id === 'local-vlm' && <LocalVlmFields />}
+          {id !== 'genspark' && id !== 'agy' && id !== 'local-vlm' && (
             <>
               {modelRow(
                 `set-ai-${cap}-model`,

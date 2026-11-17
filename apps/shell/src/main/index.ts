@@ -433,6 +433,8 @@ import { registerStorageStartup, type StorageStartupTracker } from './fork/stora
 import { registerAiInstructions } from './fork/ai-instructions-ipc'
 import { registerAgyOcr } from './fork/agy-ocr-ipc'
 import { registerAgyChat } from './fork/agy-chat-ipc'
+import { registerLocalVlm } from './fork/local-vlm-ipc'
+import type { LocalVlmManager } from '@genoffice/ai-provider/local-vlm'
 import { startLoopMonitor } from './fork/loop-monitor'
 import { startLoopWatchdogToFile } from './fork/loop-watchdog'
 import {
@@ -5808,6 +5810,8 @@ function startFolderScan(path: string): void {
   }
 }
 
+let localVlmManager: LocalVlmManager | null = null
+
 function registerHomeIpc(): void {
   registerClipboardSuggest({ ipcMain, settingsPath: APP_SETTINGS_PATH })
   registerClipboardHistory({
@@ -5826,6 +5830,12 @@ function registerHomeIpc(): void {
     },
   })
   registerAiInstructions({ ipcMain, settingsPath: APP_SETTINGS_PATH })
+  localVlmManager = registerLocalVlm({
+    ipcMain,
+    settingsPath: APP_SETTINGS_PATH,
+    userDataPath: () => app.getPath('userData'),
+    parentWindow: () => shellWindow,
+  })
   registerAgyChat({
     ipcMain,
     settingsPath: APP_SETTINGS_PATH,
@@ -9486,6 +9496,7 @@ app.on('will-quit', (event) => {
       run: () => {
         markSheetsShuttingDown()
         stopSheetsSidecar()
+        void localVlmManager?.dispose()
         stopMcpSync()
         disposeDocumentIndexIpc?.()
         disposeDocumentIndexIpc = null

@@ -16,6 +16,7 @@ import type { AiProviderConfig, AiProviderId } from '@genoffice/ai-provider'
 import {
   activeProvider,
   defaultAiSettings,
+  isKeylessProvider,
   resolveAiSettings,
   resolveProfileCredential,
 } from '@genoffice/ai-provider'
@@ -50,8 +51,8 @@ export function resolveNamingProvider(stored: unknown, gskKey: string): NamingPr
   }
   // a custom endpoint may name an environment variable instead of storing a key
   config = resolveProfileCredential(config)
-  // codex drives its own executable and needs neither a key nor a model id
-  if (provider !== 'codex' && !config.apiKey?.trim()) return null
-  if (provider !== 'codex' && !config.model?.trim()) return null
+  // CLI and local on-device providers need no API key
+  if (!isKeylessProvider(provider) && !config.apiKey?.trim()) return null
+  if (!isKeylessProvider(provider) && !config.model?.trim()) return null
   return { provider, config }
 }

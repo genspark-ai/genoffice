@@ -1,4 +1,9 @@
 import { AGY_CAPABILITIES } from './agy-meta'
+import {
+  LOCAL_VLM_CAPABILITIES,
+  LOCAL_VLM_IDLE_TIMEOUT_MS,
+  LOCAL_VLM_SAMPLING_DEFAULTS,
+} from './local-vlm-meta'
 import { ANTHROPIC_BASE_URL } from './protocols/anthropic'
 import { GEMINI_BASE_URL } from './protocols/gemini'
 import { AI_PROVIDERS, DEEPSEEK_V41_FLASH, GENSPARK_LLM_BASE_URLS } from './providers'
@@ -17,11 +22,17 @@ export { modelEchoesReasoning, modelHasFixedSampling, modelLacksVision } from '.
 
 /** Wire protocols every provider maps onto, including the official Codex app-server bridge. */
 export type AiProtocol =
-  'anthropic' | 'gemini' | 'openai-compatible' | 'openai-responses' | 'codex-app-server' | 'agy-cli'
+  | 'anthropic'
+  | 'gemini'
+  | 'openai-compatible'
+  | 'openai-responses'
+  | 'codex-app-server'
+  | 'agy-cli'
+  | 'local-vlm'
 
 export interface ProviderCapabilities {
-  /** How the provider authenticates: app login, user key, or the Codex CLI's existing login. */
-  auth: 'gsk-login' | 'api-key' | 'codex-chatgpt' | 'agy-cli'
+  /** How the provider authenticates: app login, user key, Codex CLI, Antigravity CLI, or local VLM. */
+  auth: 'gsk-login' | 'api-key' | 'codex-chatgpt' | 'agy-cli' | 'local-vlm'
   /** chat models accept image input (declarative; for custom endpoints it is assumed, not known) */
   vision: boolean
   /** the provider can call GenOffice tools (absent = yes) */
@@ -168,6 +179,17 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     meta: metaOf('agy'),
     capabilities: AGY_CAPABILITIES,
     resolveEndpoint: () => ({ protocol: 'agy-cli', baseUrl: '' }),
+  },
+  'local-vlm': {
+    meta: metaOf('local-vlm'),
+    capabilities: LOCAL_VLM_CAPABILITIES,
+    resolveEndpoint: () => ({
+      protocol: 'local-vlm',
+      baseUrl: '',
+      bodyExtras: { ...LOCAL_VLM_SAMPLING_DEFAULTS },
+      idleTimeoutMs: LOCAL_VLM_IDLE_TIMEOUT_MS,
+      vision: true,
+    }),
   },
   anthropic: {
     meta: metaOf('anthropic'),

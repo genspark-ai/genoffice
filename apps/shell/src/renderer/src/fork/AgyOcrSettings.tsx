@@ -12,6 +12,8 @@ import { DEFAULT_LOCAL_OCR_SETTINGS, LOCAL_OCR_MAX_PAGES } from '../../../shared
 import { activityLine, agyOcrString, formatCount, type AgyOcrStringKey } from './agy-ocr-strings'
 import { readIndexRequest } from './index-request'
 import { localOcrCopy } from '../i18n/strings-local-ocr'
+import { localVlmString } from '../i18n/strings-local-vlm'
+import type { OcrEscalationBackend } from '../../../shared/fork/agy-ocr'
 import './agy-ocr.css'
 
 const POLL_MS = 3000
@@ -329,6 +331,39 @@ export function AgyOcrSettings() {
           disabled={disabled}
           onToggle={() => settings && save({ enabled: !settings.enabled })}
         />
+      </SettingsRow>
+
+      <SettingsRow className="set-field set-field-top">
+        <div className="set-field-text">
+          <div className="set-field-stack">
+            <div className="set-field-label">{localVlmString(lang, 'ocrBackendLabel')}</div>
+            {status?.activeBackend === 'local-vlm' && (
+              <div className="set-field-desc">{localVlmString(lang, 'ocrBackendLocalActive')}</div>
+            )}
+          </div>
+        </div>
+        <label className="set-select-wrap">
+          <span className="set-select-text">
+            {(settings?.escalationBackend ?? 'auto') === 'local-vlm'
+              ? localVlmString(lang, 'ocrBackendLocal')
+              : (settings?.escalationBackend ?? 'auto') === 'agy'
+                ? localVlmString(lang, 'ocrBackendAgy')
+                : localVlmString(lang, 'ocrBackendAuto')}
+          </span>
+          <select
+            className="set-select"
+            aria-label={localVlmString(lang, 'ocrBackendLabel')}
+            value={settings?.escalationBackend ?? 'auto'}
+            disabled={disabled}
+            onChange={(event) =>
+              save({ escalationBackend: event.target.value as OcrEscalationBackend })
+            }
+          >
+            <option value="auto">{localVlmString(lang, 'ocrBackendAuto')}</option>
+            <option value="agy">{localVlmString(lang, 'ocrBackendAgy')}</option>
+            <option value="local-vlm">{localVlmString(lang, 'ocrBackendLocal')}</option>
+          </select>
+        </label>
       </SettingsRow>
 
       <SettingsRow className="set-field set-field-top">

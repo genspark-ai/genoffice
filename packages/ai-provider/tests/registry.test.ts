@@ -369,7 +369,9 @@ describe('provider registry', () => {
             ? 'codex-chatgpt'
             : id === 'agy'
               ? 'agy-cli'
-              : 'api-key',
+              : id === 'local-vlm'
+                ? 'local-vlm'
+                : 'api-key',
       )
     }
   })

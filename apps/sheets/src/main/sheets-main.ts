@@ -97,6 +97,7 @@ import {
   resolveAiSettings,
   applySettingsWrite,
   setAiUserAgent,
+  isKeylessProvider,
   setRescueFetch,
   resolveProfileCredential,
   streamForProvider,
@@ -107,7 +108,7 @@ import {
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
 import { shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
-import { isCliProvider, listAgyModels } from '@genoffice/ai-provider/agy-cli'
+import { listAgyModels } from '@genoffice/ai-provider/agy-cli'
 import { convertLegacyXlsFile } from './disguised-xls'
 import {
   csvToXlsxBufferForOpen,
@@ -4136,14 +4137,14 @@ export function registerSheetsAiIpc(): void {
     }
     // a custom endpoint may name an environment variable instead of storing a key
     config = config ? resolveProfileCredential(config) : config
-    if (!config || (!isCliProvider(provider) && !config.apiKey)) {
+    if (!config || (!isKeylessProvider(provider) && !config.apiKey)) {
       return {
         ok: false,
         error:
           provider === 'genspark' ? tm('errGskNotLoggedIn') : missingKeyMessage(provider, config),
       }
     }
-    if (!isCliProvider(provider) && !config.model) return { ok: false, error: tm('errNoModel') }
+    if (!isKeylessProvider(provider) && !config.model) return { ok: false, error: tm('errNoModel') }
     try {
       const result = await chatForProvider(provider, config, request.system, request.user)
       // the one-shot path reports HTTP failures as ok:false with the raw body —
@@ -4190,7 +4191,7 @@ export function registerSheetsAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send(IPC_CHANNELS.aiStreamChunk, chunk)
     }
-    if (!config || (!isCliProvider(provider) && !config.apiKey)) {
+    if (!config || (!isKeylessProvider(provider) && !config.apiKey)) {
       send({
         requestId,
         type: 'error',
@@ -4199,7 +4200,7 @@ export function registerSheetsAiIpc(): void {
       })
       return
     }
-    if (!isCliProvider(provider) && !config.model) {
+    if (!isKeylessProvider(provider) && !config.model) {
       send({ requestId, type: 'error', error: tm('errNoModel') })
       return
     }

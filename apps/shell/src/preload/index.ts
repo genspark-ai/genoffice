@@ -61,6 +61,7 @@ import { createClipboardHistoryPreloadApi } from './fork/clipboard-history-api'
 import { createDocumentIndexPreloadApi } from './fork/document-index-api'
 import { createHomeChatPreloadApi } from './fork/home-chat-api'
 import { createLiveBackgroundPreloadApi } from './fork/live-background-api'
+import { createLocalVlmPreloadApi } from './fork/local-vlm-api'
 
 const UI_LANGUAGES: readonly UiLanguage[] = [
   'zh',
@@ -176,6 +177,7 @@ const homeApi: HomeApi = {
   ...createDocumentIndexPreloadApi(ipcRenderer),
   ...createHomeChatPreloadApi(ipcRenderer),
   ...createLiveBackgroundPreloadApi(ipcRenderer),
+  ...createLocalVlmPreloadApi(ipcRenderer),
   async recents(query) {
     return asRecentPage(await ipcRenderer.invoke(HOME_CHANNELS.recents, query))
   },

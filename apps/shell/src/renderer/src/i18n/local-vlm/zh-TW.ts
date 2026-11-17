@@ -1,0 +1,27 @@
+import type { zh } from './zh'
+
+export const copy = {
+  note: '在本機透過 llama.cpp 執行 Liquid AI LFM3-VL-2B (Q4_K_M) 視覺語言模型，無需 API Key 或網路。',
+  autoFallback: '未安裝或未登入 Antigravity CLI 時自動改用本機模型',
+  autoFallbackHint: '當 agy 無法使用時，對話、影像分析與掃描 PDF OCR 會自動使用本機 LFM3-VL-2B。',
+  statusReady: 'LFM3-VL-2B (Q4_K_M) 與 llama-server 已就緒。',
+  statusRunning: '本機推論服務執行中（連接埠 {port}）。',
+  statusMissing: '尚未安裝模型或執行引擎（{detail}）。',
+  downloadBtn: '下載 LFM3-VL-2B (Q4_K_M)',
+  downloading: '正在下載 {file}（{percent}%）',
+  cancelDownload: '取消',
+  startBtn: '啟動服務',
+  stopBtn: '停止服務',
+  browse: '瀏覽',
+  modelPathLabel: 'GGUF 模型路徑',
+  mmprojPathLabel: '視覺投影器 (mmproj) 路徑',
+  runtimePathLabel: 'llama-server 執行檔',
+  ramWarn: '目前可用記憶體偏低（{mb} MB），LFM3-VL-2B Q4_K_M 建議保留約 2.2 GB 可用記憶體。',
+  agyFallbackReady: '未偵測到 Antigravity CLI —— 已啟用本機 LFM3-VL-2B (Q4_K_M) 作為備援。',
+  agyFallbackMissing: '未偵測到 Antigravity CLI。可於 Local AI (LFM3-VL-2B) 下載離線模型作為備援。',
+  ocrBackendLabel: 'OCR 進階辨識後端',
+  ocrBackendAuto: '自動（Antigravity CLI，無法使用時改用本機 LFM3-VL-2B）',
+  ocrBackendAgy: '僅 Antigravity CLI',
+  ocrBackendLocal: '本機 LFM3-VL-2B (Q4_K_M)',
+  ocrBackendLocalActive: '目前使用本機 LFM3-VL-2B (Q4_K_M) 處理 OCR —— 不消耗 Antigravity 配額。',
+} satisfies Record<keyof typeof zh, string>

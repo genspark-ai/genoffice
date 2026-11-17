@@ -1,5 +1,6 @@
 import type { AiProviderId, AiProviderMeta } from './types'
 import { AGY_CHAT_DEFAULT_MODEL } from './agy-chat'
+import { isLocalVlmProvider } from './local-vlm-meta'
 
 /**
  * Browser-safe description of the Antigravity CLI provider. It lives apart from agy-cli.ts, which
@@ -31,4 +32,9 @@ export const AGY_CAPABILITIES = { auth: 'agy-cli', vision: true, tools: true } a
 /** CLI-backed providers authenticate through their own login: no API key is stored or required. */
 export function isCliProvider(provider: string): boolean {
   return provider === 'codex' || provider === AGY_PROVIDER_ID
+}
+
+/** Providers that do not require an API key (local CLIs and local on-device models). */
+export function isKeylessProvider(provider: string): boolean {
+  return isCliProvider(provider) || isLocalVlmProvider(provider)
 }

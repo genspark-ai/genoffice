@@ -7,6 +7,7 @@ import type { IndexingModeApi } from './indexing-mode'
 import type { AiInstructionsApi } from './ai-instructions-meta'
 import type { StorageStartupApi } from './storage-startup'
 import type { LiveBackgroundApi } from './live-background'
+import type { LocalVlmApi } from './local-vlm'
 
 /** Every fork-only method on window.aiOffice; HomeApi extends this so upstream stays untouched. */
 export interface ForkHomeApi
@@ -19,4 +20,5 @@ export interface ForkHomeApi
     AgyOcrApi,
     AiInstructionsApi,
     StorageStartupApi,
-    LiveBackgroundApi {}
+    LiveBackgroundApi,
+    LocalVlmApi {}

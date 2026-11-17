@@ -12,6 +12,9 @@
 import { aiFetch } from './fetch'
 import { generateImageWithAgy } from './agy-image'
 import { analyzeMediaWithAgy, testAgyMediaProvider } from './agy-media'
+import { ensureLocalVlmEndpoint, shouldFallbackFromAgyToLocalVlm } from './local-vlm-fallback'
+import { getLocalVlmRuntime } from './local-vlm-manager'
+import { LOCAL_VLM_SAMPLING_DEFAULTS } from './local-vlm-meta'
 import { endpointUrl } from './protocols/shared'
 import { httpBodyDetail } from './http-error'
 import { openAiContentText, readCappedResponseText } from './protocols/shared'
@@ -481,7 +484,11 @@ async function analyzeMediaOpenAi(
   const resp = await aiFetch(endpointUrl(openAiBase(provider, config), '/chat/completions'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...bearer(config) },
-    body: JSON.stringify({ model, messages: [{ role: 'user', content: parts }] }),
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: parts }],
+      ...(provider === 'local-vlm' ? LOCAL_VLM_SAMPLING_DEFAULTS : {}),
+    }),
     signal,
   })
   if (!resp.ok) return failFrom('Media analysis failed:', resp)
@@ -740,7 +747,29 @@ export async function analyzeMediaWithProvider(
   if (!meta.analysisProtocol) throw new Error(`${meta.label} does not analyze media`)
   const model = modelOf(meta, config, 'analysisModel')
   const guard = withTimeout(signal, ANALYZE_TIMEOUT_MS)
-  if (meta.analysisProtocol === 'agy-cli') return analyzeMediaWithAgy(config, input, guard)
+  if (meta.analysisProtocol === 'local-vlm') {
+    const local = await ensureLocalVlmEndpoint(guard)
+    return analyzeMediaOpenAi(
+      'local-vlm',
+      { ...config, baseUrl: local.baseUrl, apiKey: '' },
+      local.model,
+      input,
+      guard,
+    )
+  }
+  if (meta.analysisProtocol === 'agy-cli') {
+    if (await shouldFallbackFromAgyToLocalVlm(config.cliPath)) {
+      const local = await ensureLocalVlmEndpoint(guard)
+      return analyzeMediaOpenAi(
+        'local-vlm',
+        { ...config, baseUrl: local.baseUrl, apiKey: '' },
+        local.model,
+        input,
+        guard,
+      )
+    }
+    return analyzeMediaWithAgy(config, input, guard)
+  }
   return meta.analysisProtocol === 'gemini'
     ? analyzeMediaGemini(config, model, input, guard)
     : analyzeMediaOpenAi(provider, config, model, input, guard)
@@ -760,6 +789,11 @@ export async function testMediaProvider(
   signal?: AbortSignal,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
+    if (provider === 'local-vlm') {
+      const runtime = getLocalVlmRuntime()
+      if (!runtime) return { ok: false, error: 'Local AI (LFM3-VL-2B) runtime is not initialized' }
+      return await runtime.testConnection(signal)
+    }
     if (provider === 'agy') return await testAgyMediaProvider(config)
     const meta = metaOf(provider)
     requireBaseUrl(meta, config)

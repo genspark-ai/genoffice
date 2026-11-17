@@ -27,6 +27,7 @@ export function canAttemptChat(settings: AiSettings | null | undefined): boolean
   switch (auth) {
     case 'agy-cli':
     case 'codex-chatgpt':
+    case 'local-vlm':
       return true
     case 'gsk-login':
       return Boolean(config.model)

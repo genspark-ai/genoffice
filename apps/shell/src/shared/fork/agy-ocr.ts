@@ -34,6 +34,9 @@ export const AGY_OCR_SETTINGS_KEY = 'agyOcr'
 /** 'auto' = Vision on macOS, then TrueOCR and Tesseract. Explicit Tesseract runs only Tesseract. */
 export type LocalOcrEngineChoice = 'auto' | 'apple-vision' | 'trueocr-vie' | 'tesseract-vie'
 
+/** Escalation backend for pages that local OCR could not read confidently. */
+export type OcrEscalationBackend = 'auto' | 'agy' | 'local-vlm'
+
 /**
  * On-device "light index" OCR that runs BEFORE the cloud reader: the first `lightPages` pages of each
  * scanned PDF / image are read locally (enough to find the file), and only pages the local engine
@@ -90,6 +93,8 @@ export interface AgyOcrSettings {
   onlyWhenIdle: boolean
   /** local OCR pass; missing in settings saved before it existed (defaults apply) */
   localOcr?: LocalOcrSettings
+  /** Escalation backend when local OCR needs VLM help; undefined = 'auto' (agy then local LFM3-VL-2B). */
+  escalationBackend?: OcrEscalationBackend
 }
 
 export const DEFAULT_AGY_OCR_SETTINGS: AgyOcrSettings = {
@@ -118,6 +123,8 @@ const LOCAL_ENGINES: readonly LocalOcrEngineChoice[] = [
   'trueocr-vie',
   'tesseract-vie',
 ]
+
+const ESCALATION_BACKENDS: readonly OcrEscalationBackend[] = ['auto', 'agy', 'local-vlm']
 
 /** The local OCR settings with defaults filled in; every field validated (stored input is untrusted). */
 export function mergeLocalOcrSettings(
@@ -161,6 +168,11 @@ export function mergeAgyOcrSettings(base: AgyOcrSettings, patch: unknown): AgyOc
   const start = int(p.fiveHourFloorStart, 0, 100, base.fiveHourFloorStart)
   const end = int(p.fiveHourFloorEnd, 0, 100, base.fiveHourFloorEnd)
   const fiveOk = validFiveHourFloors(start, end)
+  const escalationBackend = ESCALATION_BACKENDS.includes(
+    p.escalationBackend as OcrEscalationBackend,
+  )
+    ? (p.escalationBackend as OcrEscalationBackend)
+    : base.escalationBackend
   return {
     autoWeeklyDailyBudgetPercent: int(
       p.autoWeeklyDailyBudgetPercent,
@@ -186,6 +198,7 @@ export function mergeAgyOcrSettings(base: AgyOcrSettings, patch: unknown): AgyOc
     onlyOnAC: typeof p.onlyOnAC === 'boolean' ? p.onlyOnAC : base.onlyOnAC,
     onlyWhenIdle: typeof p.onlyWhenIdle === 'boolean' ? p.onlyWhenIdle : base.onlyWhenIdle,
     localOcr: mergeLocalOcrSettings(base.localOcr, p.localOcr),
+    ...(escalationBackend && escalationBackend !== 'auto' ? { escalationBackend } : {}),
   }
 }
 
@@ -273,6 +286,8 @@ export interface AgyOcrStatus {
   lastResult?: { at: number; pages: number; file: string }
   lastError?: { at: number; message: string; path?: string }
   activity: AgyOcrActivity
+  /** Effective escalation backend currently selected ('agy' | 'local-vlm' | 'none'). */
+  activeBackend?: 'agy' | 'local-vlm' | 'none'
 }
 
 export const AGY_OCR_CHANNELS = {

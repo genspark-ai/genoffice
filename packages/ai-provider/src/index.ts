@@ -112,6 +112,7 @@ export {
   type SettingsWriteDecision,
 } from './ai-settings-guard'
 export { chatForProvider } from './chat'
+export { canAttemptChat } from './readiness'
 export { listGeminiModels } from './gemini-models'
 export type { GeminiModelInfo } from './gemini-models'
 export { setAiUserAgent, setRescueFetch } from './fetch'
@@ -147,3 +148,37 @@ export type { AgyErrorKind } from './agy-errors'
 export { agyChoice } from './agy-choice'
 export type { AgyChoice } from './agy-choice'
 export { prewarmAgy, shutdownAgyResidentServers, retireAgyResidentScope } from './agy-resident'
+export { isKeylessProvider } from './agy-meta'
+export {
+  DEFAULT_LOCAL_VLM_SETTINGS,
+  LOCAL_VLM_DEFAULT_MODEL,
+  LOCAL_VLM_HF_REPO,
+  LOCAL_VLM_MODEL_FILENAME,
+  LOCAL_VLM_MMPROJ_FILENAME,
+  LOCAL_VLM_PROVIDER_ID,
+  LOCAL_VLM_SAMPLING_DEFAULTS,
+  LOCAL_VLM_SETTINGS_KEY,
+  isLocalVlmProvider,
+  localVlmDefaultsUsable,
+  localVlmSettingsFrom,
+  mergeLocalVlmSettings,
+  setLocalVlmUsable,
+} from './local-vlm-meta'
+export type { LocalVlmDownloadProgress, LocalVlmSettings, LocalVlmStatus } from './local-vlm-meta'
+export {
+  LocalVlmManager,
+  getLocalVlmRuntime,
+  isValidGgufFile,
+  registerLocalVlmRuntime,
+  selectLlamaReleaseAsset,
+} from './local-vlm-manager'
+export type {
+  LlamaReleaseAsset,
+  LocalVlmManagerDeps,
+  LocalVlmRuntimeBridge,
+} from './local-vlm-manager'
+export {
+  ensureLocalVlmEndpoint,
+  localVlmRequestConfig,
+  shouldFallbackFromAgyToLocalVlm,
+} from './local-vlm-fallback'

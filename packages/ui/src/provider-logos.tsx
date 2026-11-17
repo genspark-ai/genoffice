@@ -311,6 +311,22 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
       <path d="M8.5 14.2c.9-1 2.2-1.5 3.5-1.5s2.6.5 3.5 1.5" strokeLinecap="round" />
     </svg>
   ),
+  'local-vlm': (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="4" y="4" width="16" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4" />
+      <circle cx="9.5" cy="10" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="14.5" cy="10" r="1.3" fill="currentColor" stroke="none" />
+    </svg>
+  ),
   custom: (
     <svg
       viewBox="0 0 24 24"

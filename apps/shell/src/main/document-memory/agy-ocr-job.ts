@@ -175,6 +175,10 @@ export interface OcrJobDeps {
     text: string
     usage?: { inputTokens?: number; outputTokens?: number; thinkingTokens?: number }
   }>
+  /** Optional local VLM fallback recognizer (LFM3-VL-2B) when agy is unavailable. */
+  recognizeLocal?: OcrJobDeps['recognize']
+  /** Resolves which escalation backend handles low-confidence OCR pages. */
+  resolveBackend?: () => 'agy' | 'local-vlm' | 'none'
   /** `agy /usage` (free); null when it cannot be read. Must not throw. */
   readUsage(): Promise<AgyUsageReading | null>
   policy(): OcrPolicyView | null
@@ -273,7 +277,12 @@ export class AgyOcrJob {
   private automaticCallActive = false
   private currentProgress?: { done: number; total: number }
 
+  private activeBackend(): 'agy' | 'local-vlm' | 'none' {
+    return this.deps.resolveBackend?.() ?? 'agy'
+  }
+
   private usesAutoBudget(settings: AgyOcrSettings): boolean {
+    if (this.activeBackend() === 'local-vlm') return false
     return (
       settings.autoUnlimited !== true && typeof settings.autoWeeklyDailyBudgetPercent === 'number'
     )
@@ -411,6 +420,7 @@ export class AgyOcrJob {
    * unreadable usage never runs.
    */
   private async quotaAllows(settings: AgyOcrSettings, forceRead = false): Promise<boolean> {
+    if (this.activeBackend() === 'local-vlm') return !forceRead || true
     if (settings.autoUnlimited === true && !forceRead) return true
     const budgetMode = this.usesAutoBudget(settings)
     const rules = budgetMode
@@ -702,12 +712,16 @@ export class AgyOcrJob {
       )
       const total = Math.min(rendered.totalPages, settings.maxPagesPerFile)
       this.currentProgress = { done: [...doneNow].filter((page) => page <= total).length, total }
+      const usingLocal = this.activeBackend() === 'local-vlm'
+      const effectivePerCall = usingLocal
+        ? Math.min(settings.pagesPerCall, 2)
+        : settings.pagesPerCall
       const wanted = planOcrBatch({
         totalPages: rendered.totalPages,
         done: doneNow,
         maxPagesPerFile: settings.maxPagesPerFile,
-        pagesPerCall: settings.pagesPerCall,
-        budget: settings.pagesPerCall,
+        pagesPerCall: effectivePerCall,
+        budget: effectivePerCall,
       })
       const pages = rendered.pages.filter((p) => wanted.includes(p.page))
       if (pages.length === 0) break // nothing left to read in this file
@@ -739,9 +753,11 @@ export class AgyOcrJob {
       let automaticAllowed = true
       try {
         this.stage = 'recognizing'
+        const recognizeFn =
+          usingLocal && this.deps.recognizeLocal ? this.deps.recognizeLocal : this.deps.recognize
         response = await boundedOcr(
-          this.deps.recognize({
-            model: settings.model,
+          recognizeFn({
+            model: usingLocal ? 'LFM3-VL-2B-Q4_K_M' : settings.model,
             pages: numbers,
             images: pages.map((p) => p.jpeg),
             signal: signal ?? new AbortController().signal,
@@ -1259,6 +1275,7 @@ export class AgyOcrJob {
       ...(state.lastResult ? { lastResult: state.lastResult } : {}),
       ...(state.lastError ? { lastError: state.lastError } : {}),
       activity: this.activity(settings, now),
+      ...(this.deps.resolveBackend ? { activeBackend: this.activeBackend() } : {}),
     }
   }
 
@@ -1296,6 +1313,7 @@ export class AgyOcrJob {
       idleSeconds: this.deps.idleSeconds(),
     })
     if (!gate.ok) return { kind: 'gate', why: gate.reason }
+    if (this.activeBackend() === 'local-vlm') return { kind: 'working' }
     if (settings.autoUnlimited) return { kind: 'checking' }
     const decision = state.quota?.decision
     if (!decision) return { kind: 'checking' }

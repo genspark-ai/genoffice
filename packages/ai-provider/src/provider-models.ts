@@ -14,6 +14,10 @@ export async function listProviderModelsForIpc(input: unknown): Promise<CodexMod
   if (!AI_PROVIDERS.some((entry) => entry.id === raw?.provider)) return EMPTY
   const provider = raw!.provider as AiProviderId
   if (provider === 'agy') return listAgyModelsForIpc(raw!.config)
+  if (provider === 'local-vlm') {
+    const meta = AI_PROVIDERS.find((entry) => entry.id === 'local-vlm')
+    return { models: meta?.models ?? [], defaultModel: meta?.defaultModel ?? '' }
+  }
   if (provider === 'genspark' || provider === 'codex') return EMPTY
   const stored = raw!.config as Partial<AiProviderConfig> | null
   const config: AiProviderConfig = {
