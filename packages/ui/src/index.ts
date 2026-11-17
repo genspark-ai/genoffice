@@ -1,5 +1,16 @@
 export { AiPanelSideButton } from './AiPanelSideButton'
 export { WebShareChip } from './WebShareChip'
+export {
+  CollabPresenceChip,
+  collabPresenceColor,
+  type CollabPresenceMember,
+} from './CollabPresenceChip'
+export {
+  currentCollabPresence,
+  setCollabPresence,
+  subscribeCollabPresence,
+  type CollabPresenceState,
+} from './collab-presence-store'
 export { WEB_SHARE_LABELS, type WebShareLabels } from './strings-web-share'
 export { AiComposer } from './AiComposer'
 export { AiQueueStrip } from './AiQueueStrip'
