@@ -14,7 +14,7 @@
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  color: #fff;
+  color: var(--color-btn-primary-text);
   font-size: 10px;
   line-height: 1;
   font-weight: 600;
