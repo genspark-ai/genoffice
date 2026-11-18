@@ -62,6 +62,35 @@ intentional tightening of unsafe behavior, not a claim of compatible legacy
 write semantics. See the authoritative SDK guide for reference diagnostics and
 supported image versus protected-object boundaries.
 
+Unreleased persistence fix: equivalent saved-baseline publication now carries
+already observed authored-store epochs for existing callers across manual,
+automatic and runtime saves. Saving still advances source-reference revisions:
+query fresh structure/media targets before further edits. The carry excludes
+already stale callers, concurrent changes, content rewrites and differing
+host-returned bytes; partial queries still do not acknowledge unread side stores.
+No host-specific recovery or automatic retry is introduced.
+
+Unreleased layout fix: resolved inline table widths and horizontal alignment use
+the same owning section/column or nested cell area. Wider sections elsewhere in
+the document no longer introduce a second centering offset on the editor canvas.
+Floating tables retain their separate anchor rules; authored OOXML is unchanged.
+
+Unreleased character-spacing fix: `Run.charSpacingTwips` remains the authored
+OOXML value when `balanceSingleByteDoubleByteWidth` is enabled. Compatibility
+painting is derived separately, including after text, font and spacing edits;
+renderers using engine runs can use `displayCharSpacingTwips` for that adjustment.
+Text-only edits no longer write the display compensation back into `w:spacing`
+or compound it across saves. Equivalent-save caller continuity applies without
+relaxing concurrency, unread side-state or expired-reference checks.
+
+Unreleased persistence fix: saves after native character formatting can rebase
+source-only run-property and font-projection changes without invalidating a
+current caller's observed stores. Save signatures use the existing OOXML writer
+to compare native formatting while retaining unmodeled properties. Live format
+marks stay intact so formatting undo/redo survives saves. Different authored
+formatting, annotations, host-returned bytes and concurrent changes retain their
+existing protection; query fresh targets after saving.
+
 The public contract is the [SDK guide](../apps/docs/sdk/README.md), its exported
 types and observed public behavior. During `0.x`, a minor version may contain a
 breaking public contract change. Patch versions are intended for compatible

@@ -8,7 +8,7 @@ import { Editor } from '@tiptap/core'
 import { parseDocx, readSections } from '@genoffice/docx-engine'
 import { buildDocx, TABLE_XML } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { blocksToPmDoc, pmDocOptions } from '../src/renderer/editor/convert'
+import { blocksToPmDoc, pmDocOptions, pmDocToSavePlan } from '../src/renderer/editor/convert'
 import { collectRevisions } from '../src/renderer/editor/revisions'
 import { executeTool } from '../src/renderer/ai/tools'
 import {
@@ -19,6 +19,7 @@ import {
   exportImages,
   noteDocumentSwapped,
   save,
+  rebaseSavedAttributes,
   type FileActionContext,
 } from '../src/renderer/file-actions'
 import { DraftLanding } from '../src/renderer/runtime/draft-landing'
@@ -489,6 +490,260 @@ describe('production save reload with track changes enabled', () => {
     } as unknown as typeof window.desktop
     expect(await save(ctx, false, true, undefined, { path: target, overwrite: false })).toBe(true)
     expect(sourcePath).toBe(path)
+  })
+
+  it.each([false, true])(
+    'preserves current callers across saved store publication (auto=%s)',
+    async (auto) => {
+      const { ctx, editor, bytes, path } = await fixture(false)
+      let stateVersion = {}
+      ctx.getDocumentStateVersion = () => stateVersion
+      ctx.commitDocumentState = (operation) => {
+        operation()
+        stateVersion = {}
+      }
+      const runtime = createDocsRuntime({
+        current: () => ({
+          editor,
+          identity: editor,
+          stateVersion,
+          numIds: { bullet: null, ordered: null },
+        }),
+      })
+      const caller = runtime.connect({ id: 'save-reader' })
+      caller.context()
+      try {
+        const edit = await caller.execute({
+          id: 'before-save',
+          name: 'apply_ops',
+          input: {
+            ops: [
+              {
+                op: 'findReplace',
+                find: 'forty-eight (48) hours',
+                replace: 'seventy-two (72) hours',
+              },
+            ],
+          },
+        })
+        expect(edit.isError, edit.output).not.toBe(true)
+        const oldQuery = await caller.execute({
+          id: 'old-structures',
+          name: 'query_document',
+          input: { type: 'docTable' },
+        })
+        const oldTable = JSON.parse(oldQuery.output).items[0]
+        expect(await save(ctx, false, auto)).toBe(true)
+        expect(ctx.saveIncompleteRef.current).toBe(false)
+        await assertUntouched(bytes, new Uint8Array(await readFile(path)))
+        const oldIntent = await caller.execute({
+          id: 'expired-deletion',
+          name: 'replace_blocks',
+          input: {
+            startBlockIndex: oldTable.blockIndex,
+            endBlockIndex: oldTable.blockIndex,
+            html: '<p>Wrong</p>',
+            dryRun: true,
+            deleteStructures: oldTable.structures.map((item: { id: string }) => item.id),
+          },
+        })
+        expect(oldIntent).toMatchObject({
+          isError: true,
+          errorCode: 'stale_target',
+          committed: false,
+        })
+        const query = await caller.execute({
+          id: 'after-save-query',
+          name: 'query_document',
+          input: { containsText: 'seventy-two' },
+        })
+        const item = JSON.parse(query.output).items[0]
+        const result = await caller.execute({
+          id: 'after-save',
+          name: 'apply_ops',
+          input: {
+            ops: [
+              {
+                op: 'findReplace',
+                target: { engine: item.target },
+                find: 'seventy-two (72) hours',
+                replace: 'ninety-six (96) hours',
+              },
+            ],
+          },
+        })
+        expect(result.isError, result.output).not.toBe(true)
+        expect(editor.getText()).toContain('ninety-six (96) hours')
+      } finally {
+        runtime.dispose()
+      }
+    },
+  )
+
+  it.each(['body', 'format', 'section'])(
+    'does not carry a caller baseline across host-modified saved %s',
+    async (kind) => {
+      const { ctx, editor } = await fixture(false)
+      let stateVersion = {}
+      ctx.getDocumentStateVersion = () => stateVersion
+      ctx.commitDocumentState = (operation) => {
+        operation()
+        stateVersion = {}
+      }
+      window.desktop.saveDocx = async (_target, data) => {
+        const zip = await JSZip.loadAsync(data)
+        const xml = await zip.file('word/document.xml')!.async('string')
+        zip.file(
+          'word/document.xml',
+          kind === 'body'
+            ? xml.replace('<w:body>', '<w:body><w:p><w:r><w:t>Host addition</w:t></w:r></w:p>')
+            : kind === 'format'
+              ? xml.replace('<w:body><w:p>', '<w:body><w:p><w:pPr><w:jc w:val="right"/></w:pPr>')
+              : xml.replace('w:left="1440"', 'w:left="1800"'),
+        )
+        const changed = await zip.generateAsync({ type: 'base64' })
+        return { ok: true, dataUrl: `data:application/octet-stream;base64,${changed}` }
+      }
+      const runtime = createDocsRuntime({
+        current: () => ({
+          editor,
+          identity: editor,
+          stateVersion,
+          numIds: { bullet: null, ordered: null },
+        }),
+      })
+      const caller = runtime.connect({ id: 'host-save-reader' })
+      caller.context()
+      try {
+        expect(await save(ctx, false, true)).toBe(true)
+        if (kind === 'body') expect(editor.getText()).toContain('Host addition')
+        if (kind === 'format') expect(editor.state.doc.firstChild?.attrs.align).toBe('right')
+        await caller.execute({ id: 'after-save-query', name: 'query_document', input: {} })
+        const result = await caller.execute({
+          id: 'after-save',
+          name: 'apply_ops',
+          input: {
+            ops: [{ op: 'findReplace', find: 'Unchanged opening paragraph.', replace: 'Wrong' }],
+          },
+        })
+        expect(result).toMatchObject({ isError: true, errorCode: 'stale_target', committed: false })
+      } finally {
+        runtime.dispose()
+      }
+    },
+  )
+
+  it.each([
+    { bold: true },
+    { italic: true },
+    { underline: true },
+    { fontFamily: 'Arial' },
+    { fontSize: 18 },
+    { color: '336699' },
+  ])('keeps a caller current after saving native formatting %j', async (format) => {
+    const { ctx, editor } = await fixture(false, paragraph('alpha'))
+    let stateVersion = {}
+    ctx.getDocumentStateVersion = () => stateVersion
+    ctx.commitDocumentState = (operation) => {
+      operation()
+      stateVersion = {}
+    }
+    const runtime = createDocsRuntime({
+      current: () => ({
+        editor,
+        identity: editor,
+        stateVersion,
+        numIds: { bullet: null, ordered: null },
+      }),
+    })
+    const caller = runtime.connect({ id: 'format-and-save' })
+    caller.context()
+    try {
+      const formatted = await caller.execute({
+        id: 'format',
+        name: 'apply_ops',
+        input: { ops: [{ op: 'setFont', target: { blockIndexes: [0] }, ...format }] },
+      })
+      expect(formatted.isError, formatted.output).not.toBe(true)
+      expect(await save(ctx, false, true)).toBe(true)
+      const historyKept = editor.can().undo()
+      expect(pmDocToSavePlan(editor.getJSON(), ctx.doc!.parsed.blocks).changedCount).toBe(0)
+      for (const [find, replace] of [
+        ['alpha', 'bravo'],
+        ['bravo', 'delta'],
+      ]) {
+        const query = await caller.execute({ id: 'query', name: 'query_document', input: {} })
+        const item = JSON.parse(query.output).items[0]
+        const edited = await caller.execute({
+          id: 'next',
+          name: 'apply_ops',
+          input: { ops: [{ op: 'findReplace', target: { engine: item.target }, find, replace }] },
+        })
+        expect(edited.isError, edited.output).not.toBe(true)
+        expect(await save(ctx, false, true)).toBe(true)
+      }
+      expect(historyKept).toBe(true)
+    } finally {
+      runtime.dispose()
+    }
+  })
+
+  it.each(['unmodeled', 'modeled', 'link'] as const)(
+    'refuses an authored %s difference when rebasing saved source marks',
+    async (kind) => {
+      const { ctx, editor } = await fixture(
+        false,
+        '<w:p><w:r><w:rPr><w:color w:val="336699"/><w:lang w:val="en-US"/></w:rPr><w:t>alpha</w:t></w:r></w:p>',
+      )
+      if (kind === 'link')
+        editor.view.dispatch(
+          editor.state.tr.addMark(
+            1,
+            6,
+            editor.schema.marks.link.create({ href: 'https://example.com/one' }),
+          ),
+        )
+      const before = editor.state.doc
+      const json = structuredClone(before.toJSON())
+      const text = json.content[0].content[0]
+      const style = text.marks.find((mark: { type: string }) => mark.type === 'docTextStyle')
+      if (kind === 'unmodeled') style.attrs.rawRPr = style.attrs.rawRPr.replace('en-US', 'fr-FR')
+      else if (kind === 'modeled') style.attrs.color = '996633'
+      else
+        text.marks.find((mark: { type: string }) => mark.type === 'link').attrs.href =
+          'https://example.com/two'
+      expect(
+        rebaseSavedAttributes(editor, editor.schema.nodeFromJSON(json), ctx.doc!.parsed.blocks),
+      ).toBe(false)
+      expect(editor.state.doc).toBe(before)
+    },
+  )
+
+  it.each([
+    { format: { fontFamily: 'Arial' }, field: 'fontAscii', value: 'Arial' },
+    { format: { fontSize: 18 }, field: 'sizeHalfPoints', value: 36 },
+    { format: { color: '336699' }, field: 'color', value: '336699' },
+  ])('undoes and redoes saved formatting in the DOCX (%j)', async ({ format, field, value }) => {
+    const { ctx, editor, path } = await fixture(false, paragraph('alpha'))
+    const formatted = await executeTool(
+      editor,
+      {
+        id: 'format-history',
+        name: 'apply_ops',
+        input: { ops: [{ op: 'setFont', target: { blockIndexes: [0] }, ...format }] },
+      },
+      { bullet: null, ordered: null },
+    )
+    expect(formatted.isError, formatted.output).not.toBe(true)
+    expect(await save(ctx, false, true)).toBe(true)
+    expect(editor.commands.undo()).toBe(true)
+    expect(await save(ctx, false, true)).toBe(true)
+    expect((await parseDocx(await readFile(path))).blocks[0].runs![0]).not.toHaveProperty(field)
+    expect(editor.commands.redo()).toBe(true)
+    expect(await save(ctx, false, true)).toBe(true)
+    expect((await parseDocx(await readFile(path))).blocks[0].runs![0]).toMatchObject({
+      [field]: value,
+    })
   })
 
   it('preserves document-side edits made while the file is being written', async () => {

@@ -1054,6 +1054,23 @@ Acknowledged saving can rebuild the original-file baseline and its private
 source anchors, advancing the live revision even when the authored text is
 unchanged. Query fresh targets after saving; an independent persistence receipt
 does not promise that pre-save targets remain valid.
+An equivalent saved-baseline publication carries an existing caller's observed
+side-state epoch to the newly published stores. This applies to manual saves,
+autosave and runtime saves, including other callers that observed the same source
+state. It does not create a read acknowledgement or refresh a caller already stale
+before saving. The editor only performs this carry after its concurrency checks,
+for its exact generated snapshot and a successful body rebase without a content
+rewrite. Different host-returned bytes or authored changes still require fresh
+full context. A custom runtime save binding does not gain this guarantee merely
+by returning `ok: true`; it must not acknowledge unseen authored changes.
+Compatibility rendering does not rewrite authored character spacing: text-only
+edits preserve native `w:spacing`, including documents using
+`balanceSingleByteDoubleByteWidth`. Explicit spacing edits save the requested
+native value; the display adjustment is applied separately.
+Equivalent native character-format source refreshes also retain the caller's
+baseline and formatting undo/redo. Authored run properties, including preserved
+OOXML properties outside the modeled subset, must remain equivalent; a partial
+query still does not acknowledge unread document-side changes.
 They validate type/extent and optionally exact `expectedHtml`. Original targets
 are mapped through preceding operations in the same atomic batch; a removed
 target refuses the batch. Positions are scoped addresses, not permanent IDs.

@@ -7,6 +7,7 @@ import { createDocsSkill } from '../src/renderer/ai/docs-skill'
 import { createDocsCommandRouter } from '../src/renderer/runtime/command-router'
 import { createSkillsSkill } from '../src/renderer/ai/skills-skill'
 import { createDocsResourceTools } from '../src/renderer/runtime/resource-tools'
+import { carryDocSeen } from '../src/renderer/ai/tools'
 
 const editors: Editor[] = []
 afterEach(() => {
@@ -26,6 +27,89 @@ async function documentWith(text: string) {
 }
 
 describe('shared Docs runtime', () => {
+  it('carries only observed side-state baselines across an equivalent saved publication', async () => {
+    const editor = await documentWith('Original')
+    let stateVersion = {}
+    const runtime = createDocsRuntime({
+      current: () => ({
+        editor,
+        identity: editor,
+        stateVersion,
+        numIds: { bullet: null, ordered: null },
+      }),
+      save: async ({ path }) => {
+        const before = stateVersion
+        stateVersion = {}
+        carryDocSeen(editor, editor.state.doc, { before, after: stateVersion })
+        return { ok: true, path, committed: true, pending: false }
+      },
+    })
+    const stale = runtime.connect({ id: 'unread-external-change' })
+    stale.context()
+    stateVersion = {}
+    const caller = runtime.connect({ id: 'save-caller' })
+    caller.context()
+    const reader = runtime.connect({ id: 'other-current-reader' })
+    const before = reader.context()
+    expect((await caller.save({ path: 'snapshot.docx', overwrite: false })).ok).toBe(true)
+    for (const client of [caller, reader]) {
+      const query = await client.execute({ id: 'query', name: 'query_document', input: {} })
+      const item = JSON.parse(query.output).items[0]
+      const result = await client.execute({
+        id: 'edit',
+        name: 'apply_ops',
+        input: {
+          ops: [
+            {
+              op: 'findReplace',
+              target: { engine: item.target },
+              find: 'Original',
+              replace: 'Original',
+            },
+          ],
+        },
+      })
+      expect(result.isError, result.output).not.toBe(true)
+      expect(result.revision).toBeGreaterThan(before.revision)
+    }
+    const rejected = await stale.execute({
+      id: 'stale-edit',
+      name: 'apply_ops',
+      input: { ops: [{ op: 'findReplace', find: 'Original', replace: 'Wrong' }] },
+    })
+    expect(rejected).toMatchObject({ isError: true, errorCode: 'stale_target', committed: false })
+    expect(editor.getText()).toBe('Original')
+    runtime.dispose()
+  })
+
+  it('does not acknowledge a side-state change merely because saving succeeds', async () => {
+    const editor = await documentWith('Original')
+    let stateVersion = {}
+    const runtime = createDocsRuntime({
+      current: () => ({
+        editor,
+        identity: editor,
+        stateVersion,
+        numIds: { bullet: null, ordered: null },
+      }),
+      save: async ({ path }) => {
+        stateVersion = {}
+        return { ok: true, path, committed: true, pending: false }
+      },
+    })
+    const caller = runtime.connect({ id: 'save-caller' })
+    caller.context()
+    await caller.save({ path: 'snapshot.docx', overwrite: false })
+    await caller.execute({ id: 'query', name: 'query_document', input: {} })
+    const result = await caller.execute({
+      id: 'edit',
+      name: 'apply_ops',
+      input: { ops: [{ op: 'findReplace', find: 'Original', replace: 'Wrong' }] },
+    })
+    expect(result).toMatchObject({ isError: true, errorCode: 'stale_target', committed: false })
+    runtime.dispose()
+  })
+
   it('keeps the new document generation usable while an old independent file operation settles', async () => {
     const editor = await documentWith('Original')
     let identity: object = editor

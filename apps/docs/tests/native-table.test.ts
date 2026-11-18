@@ -205,6 +205,8 @@ describe('native editable tables', () => {
           csFont: null,
           csItalic: null,
           charSpacingTwips: null,
+          spacingDisplay: null,
+          charSpacingDisplayTwips: null,
           charScaleEm: null,
           charScalePct: null,
           charScaleX: null,
@@ -559,7 +561,9 @@ describe('native editable tables', () => {
       }),
     )
     spec = specOf()
-    expect(spec[1].style).toContain('margin-left:auto')
+    expect(spec[1].style).toContain(
+      'margin-left:calc(var(--doc-content-w,100%) - min(683px,calc(var(--doc-content-w,100%) + var(--doc-margin-right,0px))))',
+    )
     expect(spec[1].style).not.toContain('96.7px')
     editor.destroy()
   })

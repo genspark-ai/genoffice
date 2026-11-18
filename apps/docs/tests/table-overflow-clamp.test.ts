@@ -655,7 +655,7 @@ describe('renderTableSpec width budget', () => {
     expect(style).toContain(`margin-left:calc((var(--doc-content-w,100%) - min(200px,${paper}))/2)`)
     const nestedStyle = (renderTableSpec(centered, true) as Spec)[1].style
     expect(nestedStyle).toContain('width:min(200px,100%)')
-    expect(nestedStyle).toContain('margin-left:auto;margin-right:auto')
+    expect(nestedStyle).toContain('margin-left:calc((100% - min(200px,100%))/2)')
 
     const pct: TableModel = {
       rows: [[cell('a'), cell('b')]],

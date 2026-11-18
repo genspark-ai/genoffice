@@ -6961,6 +6961,7 @@ export function App({
     let committed = false
     const handle = mountHfEditor(el, {
       value,
+      owner: editor ?? undefined,
       pageNo: page,
       pageTotal: el.dataset.hfTotal ?? '1',
       sectionPages: el.dataset.hfSectionPages,
@@ -8970,6 +8971,7 @@ export function App({
                         ) && (
                           <HeaderFooterArea
                             kind="header"
+                            owner={editor ?? undefined}
                             value={shownHeader ?? { text: '' }}
                             images={hfImagesOf('header')}
                             readOnly={isProtected || readMode}
@@ -9036,6 +9038,7 @@ export function App({
                         ) && (
                           <HeaderFooterArea
                             kind="footer"
+                            owner={editor ?? undefined}
                             value={shownFooter ?? { text: '' }}
                             images={hfImagesOf('footer')}
                             readOnly={isProtected || readMode}

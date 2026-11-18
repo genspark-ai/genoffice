@@ -1,3 +1,4 @@
+// Modified for ForaOffice: separate authored spacing from compatibility rendering.
 import { Extension, Mark, combineTransactionSteps, getChangedRanges } from '@tiptap/core'
 import { runFaceDecls } from '../text-layout/run-faces'
 import type { Mark as PmMark } from '@tiptap/pm/model'
@@ -522,6 +523,8 @@ const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'
   eastAsiaFont: 'string',
   csFont: 'string',
   charSpacingTwips: 'number',
+  spacingDisplay: 'string',
+  charSpacingDisplayTwips: 'number',
   charScaleEm: 'number',
   charScaleX: 'string',
   charScalePct: 'number',
@@ -623,6 +626,9 @@ export const TextStyleMark = Mark.create({
       // complex-script slot (w:cs); convert sets it only when the run text needs it
       csFont: { default: null as string | null },
       charSpacingTwips: { default: null as number | null },
+      // Compatibility display data is separate from the authored spacing above.
+      spacingDisplay: { default: null as string | null, rendered: false },
+      charSpacingDisplayTwips: { default: null as number | null, rendered: false },
       // letter spacing (em, negative = condensed) converted from w:w scaling; precomputed by convert per run text
       charScaleEm: { default: null as number | null },
       // w:w on a whitespace-free run as JSON {s,gapEm}: real glyph compression (text-effects.ts)
@@ -728,7 +734,8 @@ export const TextStyleMark = Mark.create({
       const family = cssRunFontFamily(wordSlotFaces(tbl.fontAscii, null).ascii, null)
       styles.push(`font-family:${family}`, `--doc-run-ff:${family}`)
     }
-    const charSpacingTwips = mark.attrs.charSpacingTwips ?? tbl?.charSpacingTwips
+    const charSpacingTwips =
+      mark.attrs.charSpacingDisplayTwips ?? mark.attrs.charSpacingTwips ?? tbl?.charSpacingTwips
     const spacingPt = charSpacingTwips ? Number(charSpacingTwips) / 20 : 0
     const scaleEm = mark.attrs.charScaleEm ? Number(mark.attrs.charScaleEm) : 0
     if (spacingPt && scaleEm) styles.push(`letter-spacing:calc(${spacingPt}pt + ${scaleEm}em)`)

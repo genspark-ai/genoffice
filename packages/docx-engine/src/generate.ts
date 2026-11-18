@@ -958,14 +958,30 @@ export function patchTextboxParas(paragraphXml: string, patches: TextboxParasPat
       fallbacks.push({ start: fb.index, end: fb.index + fb[0].length })
     }
     const inFallback = (pos: number) => fallbacks.some((f) => pos >= f.start && pos < f.end)
+    const primary = segs.filter((seg) => !inFallback(seg.start))
+    const alternatives = xmlSegments(paragraphXml, 'mc:AlternateContent', 0, paragraphXml.length)
+    const fallbackPatches = new Map<number, (typeof byIndex)[number]>()
+    for (const fallback of fallbacks) {
+      const alternative = alternatives.find(
+        (a) => a.start < fallback.start && a.end >= fallback.end,
+      )
+      if (!alternative) continue
+      const originals = primary.filter((s) => s.start > alternative.start && s.end < fallback.start)
+      const twins = segs.filter((s) => s.start > fallback.start && s.end < fallback.end)
+      twins.forEach((twin, i) => {
+        const original = originals[i]
+        if (original) fallbackPatches.set(twin.start, byIndex[primary.indexOf(original)])
+      })
+    }
 
     let out = ''
     let cursor = 0
     let ordinal = -1
-    let current: ReadonlyArray<TextboxParaPatch | null | undefined> | null = null
     for (const seg of segs) {
-      // a fallback twin repeats the preceding visible segment's patch
-      if (!inFallback(seg.start)) current = byIndex[++ordinal] ?? null
+      // A group fallback repeats the whole choice, not just its last textbox.
+      const current = inFallback(seg.start)
+        ? (fallbackPatches.get(seg.start) ?? null)
+        : (byIndex[++ordinal] ?? null)
       if (current == null) continue
       out +=
         paragraphXml.slice(cursor, seg.start) +
@@ -1282,35 +1298,41 @@ export function patchShapeStyles(
         style.borderWidthPx === undefined)
     )
       continue
-    const spPrMatch = /<wps:spPr>[\s\S]*?<\/wps:spPr>/.exec(drawingXml)
-    if (spPrMatch) {
-      let spPr = spPrMatch[0]
-      const lnStart = spPr.search(/<a:ln[\s>]/)
-      if (style.fillHex !== undefined) {
-        // the shape fill slot lives before a:ln; outline colors stay untouched
-        const head = lnStart === -1 ? spPr : spPr.slice(0, lnStart)
-        const tail = lnStart === -1 ? '' : spPr.slice(lnStart)
-        spPr = replaceFillSlot(head, style.fillHex) + tail
-      }
-      if (style.borderHex !== undefined) {
-        const lnMatch = /<a:ln[\s>][\s\S]*?<\/a:ln>/.exec(spPr)
-        if (lnMatch) {
-          spPr = spPr.replace(lnMatch[0], replaceFillSlot(lnMatch[0], style.borderHex))
-        } else if (style.borderHex) {
-          spPr = spPr.replace(
-            '</wps:spPr>',
-            `<a:ln><a:solidFill><a:srgbClr val="${style.borderHex}"/></a:solidFill></a:ln></wps:spPr>`,
-          )
-        }
-      }
-      if (style.rotDeg !== undefined) spPr = patchShapeRotation(spPr, style.rotDeg)
-      if (style.borderWidthPx !== undefined) spPr = patchShapeLineWidth(spPr, style.borderWidthPx)
-      drawingXml = drawingXml.replace(spPrMatch[0], spPr)
-    }
+    drawingXml = patchShapeProperties(drawingXml, style)
     out += paragraphXml.slice(cursor, drawing.start) + drawingXml
     cursor = drawing.end
   }
   return out + paragraphXml.slice(cursor)
+}
+
+/** Paint and rotation of one source shape, without changing its container. */
+export function patchShapeProperties(shapeXml: string, style: ShapeStylePatch): string {
+  const spPrMatch = /<wps:spPr(?:\s[^>]*)?>[\s\S]*?<\/wps:spPr>/.exec(shapeXml)
+  if (spPrMatch) {
+    let spPr = spPrMatch[0]
+    const lnStart = spPr.search(/<a:ln[\s>]/)
+    if (style.fillHex !== undefined) {
+      // the shape fill slot lives before a:ln; outline colors stay untouched
+      const head = lnStart === -1 ? spPr : spPr.slice(0, lnStart)
+      const tail = lnStart === -1 ? '' : spPr.slice(lnStart)
+      spPr = replaceFillSlot(head, style.fillHex) + tail
+    }
+    if (style.borderHex !== undefined) {
+      const lnMatch = /<a:ln[\s>][\s\S]*?<\/a:ln>/.exec(spPr)
+      if (lnMatch) {
+        spPr = spPr.replace(lnMatch[0], replaceFillSlot(lnMatch[0], style.borderHex))
+      } else if (style.borderHex) {
+        spPr = spPr.replace(
+          '</wps:spPr>',
+          `<a:ln><a:solidFill><a:srgbClr val="${style.borderHex}"/></a:solidFill></a:ln></wps:spPr>`,
+        )
+      }
+    }
+    if (style.rotDeg !== undefined) spPr = patchShapeRotation(spPr, style.rotDeg)
+    if (style.borderWidthPx !== undefined) spPr = patchShapeLineWidth(spPr, style.borderWidthPx)
+    shapeXml = shapeXml.replace(spPrMatch[0], spPr)
+  }
+  return shapeXml
 }
 
 /** Rewrite the first drawing's extent (chart/SmartArt graphicFrame paragraphs). */

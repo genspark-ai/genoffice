@@ -3005,7 +3005,7 @@ function extractTextboxes(
     const custGeomNode = spPr ? findChild(spPr, 'a:custGeom') : undefined
     if (contents.length === 0) {
       if (prstOf && LINE_PRSTS.has(prstOf)) {
-        if (hasLineShapes) return lineBoxOf(shape, ctx.themeColors)
+        if (hasLineShapes || grouped) return lineBoxOf(shape, ctx.themeColors)
         if (!opts?.shapes) return null
         // anchored gallery connector: a real vertical extent, flips, or arrow
         // ends mark a drawn connector; plain near-flat lines stay on the
@@ -3472,6 +3472,7 @@ function extractTextboxes(
     }
     const pagePos = meta.pageXEmu === undefined ? resolveAnchorPagePos(meta, opts?.section) : null
     let wspCount = 0
+    let sourceShapeCount = 0
     const extentCy = parseInt(/<wp:extent[^>]*cy="(\d+)"/.exec(frag)?.[1] ?? '', 10)
     const inlineExtentPx = !meta.anchored && extentCy > 0 ? emuToPx(extentCy) : 0
     const pushShape = (
@@ -3481,8 +3482,21 @@ function extractTextboxes(
       nested?: boolean,
     ): void => {
       wspCount++
+      const shapeIndex = nested ? -1 : sourceShapeCount++
       const box = buildWpsBox(shape, groupFill, nested, ctm !== null)
       if (!box) return
+      if (!nested) {
+        const shapeId = attrsOf(findChild(shape, 'wps:cNvPr') ?? {})['id']
+        if (shapeId) box.shapeId = shapeId
+        box.drawingSource = {
+          drawingIndex: fragIndex,
+          shapeIndex,
+          scaleX: ctm?.sx ?? 1,
+          scaleY: ctm?.sy ?? 1,
+          grouped: ctm !== null,
+          name: attrsOf(findChild(shape, 'wps:cNvPr') ?? {})['name'],
+        }
+      }
       if (ctm) {
         const xfrm = findChild(findChild(shape, 'wps:spPr') ?? {}, 'a:xfrm')
         const off = attrsOf(findChild(xfrm ?? {}, 'a:off') ?? {})
@@ -3490,11 +3504,20 @@ function extractTextboxes(
         const y = parseInt(off['y'] ?? '', 10)
         if (Number.isFinite(x)) box.offsetXEmu = Math.round(ctm.tx + x * ctm.sx)
         if (Number.isFinite(y)) box.offsetYEmu = Math.round(ctm.ty + y * ctm.sy)
-        if (ctm.sx !== 1 && box.widthPx) box.widthPx = Math.round(box.widthPx * ctm.sx)
-        if (ctm.sy !== 1) {
-          if (box.heightPx) box.heightPx = Math.round(box.heightPx * ctm.sy)
-          if (box.minHeightPx) box.minHeightPx = Math.round(box.minHeightPx * ctm.sy)
+        // Child extents are in the group's coordinate space. Resolve the
+        // transform before pixel conversion; early rounding loses small units.
+        const ext = attrsOf(findChild(xfrm ?? {}, 'a:ext') ?? {})
+        const cx = Number(ext['cx'])
+        const cy = Number(ext['cy'])
+        const line =
+          box.prst !== undefined &&
+          ['line', 'lineArrow', 'lineArrowDouble', 'lineBent', 'lineCurved'].includes(box.prst)
+        if (Number.isFinite(cx) && cx >= 0) box.widthPx = Math.round((cx * ctm.sx) / EMU_PER_PX)
+        if (Number.isFinite(cy) && cy >= 0 && (box.heightPx !== undefined || line)) {
+          box.heightPx = Math.round((cy * ctm.sy) / EMU_PER_PX)
+          box.minHeightPx = box.heightPx
         }
+        if (line) box.lineDiag = cy > 0
         // grouped shapes place absolutely at their mapped offset like Word
         box.floating = true
         if (inlineExtentPx > 0) box.inlineExtentPx = inlineExtentPx

@@ -1,6 +1,7 @@
 // Modified for ForaOffice from GenOffice v0.12.852.
 import { getOptionalDocsHost } from '../host/docs-host'
 import { ScriptFonts } from './script-fonts'
+import { BalancedSpacingExtension } from './balanced-spacing'
 import {
   asciiFamilyResolver,
   eaFamilyResolver,
@@ -13,6 +14,8 @@ import { MultiSelect } from './multi-select'
 import { Editor, Extension, Node } from '@tiptap/core'
 import { SHAPE_INLINE_WRAP } from './floating-z-order'
 import { selectBoxAt, selectedBoxPlugin } from './selected-box'
+import { drawingChildInteraction } from './drawing-child-interaction'
+import { drawingLineSize } from './drawing-line'
 import { StreamingTailGuardExtension } from './streaming-tail-guard'
 import { wrapGroupCss, type WrapPicture } from './wrap-group'
 import type { ChainedCommands, RawCommands } from '@tiptap/core'
@@ -3979,7 +3982,7 @@ export const DocProtected = Node.create({
       const dom = buildProtectedDom(currentNode)
       const getNode = () => currentNode
       const pos = getPos as () => number | undefined
-      const textboxes = mountTextboxEditors(dom, getNode, pos, editor.view)
+      const textboxes = mountTextboxEditors(dom, getNode, pos, editor.view, editor)
       const table = wireTableEditing(dom, getNode, pos, editor.view)
       const field = wireFieldEditing(dom, getNode, pos, editor.view)
       const formula = wireFormulaEditing(dom, getNode, pos, editor.view)
@@ -4032,7 +4035,10 @@ export const DocProtected = Node.create({
             (event as MouseEvent).detail < 2 &&
             target?.closest?.('.doc-textbox') &&
             !dom.classList.contains('doc-content-editing') &&
-            (currentNode.attrs.textboxes as TextboxDisplay[] | null)?.[0]?.prst
+            ((currentNode.attrs.textboxes as TextboxDisplay[] | null)?.[0]?.prst ||
+              (currentNode.attrs.textboxes as TextboxDisplay[] | null)?.some(
+                (b) => b.drawingSource?.grouped,
+              ))
           ) {
             return false
           }
@@ -4048,6 +4054,7 @@ export const DocProtected = Node.create({
   },
   addProseMirrorPlugins() {
     return [
+      drawingChildInteraction(),
       imageResizePlugin(),
       shapeRotatePlugin(),
       floatingObjectDragPlugin(),
@@ -4187,6 +4194,10 @@ function shapeRotatorStyle(box: TextboxDisplay): string {
     else if (box.z !== undefined) parts.push(`z-index:${Math.max(1, 2 + box.z)}`)
   }
   if (box.rotDeg) parts.push(`transform:rotate(${box.rotDeg}deg)`)
+  if (box.drawingSource?.grouped && box.lineStyle) {
+    const size = drawingLineSize(box)
+    parts.push(`margin-left:-${size.dx}px;margin-top:-${size.dy}px`)
+  }
   return parts.join(';')
 }
 
@@ -4315,6 +4326,8 @@ function protectedDomSpec(node: PmNode): DomSpec {
       attrs.class += ` doc-protected-boxes-${boxAlign}`
     }
     const boxes = textboxes as TextboxDisplay[]
+    if (boxes.length > 1 && boxes.some((b) => b.drawingSource?.grouped))
+      attrs.class += ' doc-protected-drawing-group'
     const diagram = node.attrs.diagramDisplay as DiagramDisplay | null
     // every box floats at its own anchor offset (wrapNone / multi-drawing
     // paragraphs): the wrapper leaves the flow like Word instead of stacking.
@@ -4405,7 +4418,11 @@ function protectedDomSpec(node: PmNode): DomSpec {
       ? [sideWrappedBoxSpec(sideBox, singleBox)]
       : singleBox
         ? [shapeRotatorSpec(boxes[0], renderTextboxSpec(boxes[0], { editorChrome: true }))]
-        : boxes.map((b) => renderTextboxSpec(b))
+        : boxes.map((b) =>
+            b.drawingSource?.grouped
+              ? shapeRotatorSpec(b, renderTextboxSpec(b, { editorChrome: true }))
+              : renderTextboxSpec(b),
+          )
     // the anchor paragraph's own text (e.g. a heading sharing its paragraph
     // with a sidebar box) renders as a display-only line before the boxes
     if (strayRuns?.length) {
@@ -5595,6 +5612,7 @@ function mountTextboxEditors(
   getNode: () => PmNode,
   getPos: () => number | undefined,
   view: EditorView,
+  owner: Editor,
 ):
   | (ProtectedContentEditor & {
       cleanup: () => void
@@ -5642,6 +5660,10 @@ function mountTextboxEditors(
     const el = boxEls[index]
     const minHeight = minHeights[index]
     if (!el || !minHeight) return
+    // noAutofit in a drawing group clips text inside the authored shape;
+    // editing its text must not change the surrounding diagram geometry.
+    if (knownBoxes?.[index].drawingSource?.grouped && knownBoxes[index].heightPx !== undefined)
+      return
     const borderHeight = el.offsetHeight - el.clientHeight
     el.style.height = 'auto'
     const naturalHeight = Math.ceil(el.scrollHeight + borderHeight)
@@ -5677,6 +5699,7 @@ function mountTextboxEditors(
         if (transaction.docChanged) scheduleMeasure(i)
       },
     })
+    sub.storage.balancedSpacing.owner = owner
     // TipTap initializes the host element and may clear attributes emitted by
     // the static DOM spec, so reapply the shape geometry after mounting.
     el.setAttribute('style', boxStyle(box, el))
@@ -5735,6 +5758,9 @@ function mountTextboxEditors(
       if (el) {
         el.setAttribute('style', boxStyle(box, el))
         el.classList.toggle('doc-textbox-filled', textboxIsFilled(box))
+        if (el.parentElement?.classList.contains('box-rotator')) {
+          el.parentElement.setAttribute('style', shapeRotatorStyle(box))
+        }
       }
       // corner resize only rewrites the attrs; without refreshing the minimum
       // the next autofit would shrink the box back below the resized height
@@ -7297,6 +7323,7 @@ export const textboxSubExtensions = [
   DoubleClickWordExtension,
   TextStyleMark,
   FormatOffClearExtension,
+  BalancedSpacingExtension,
   CommentMark,
   // tracked runs keep their w:ins / w:del through an edit instead of resurfacing as live text
   InsMark,
@@ -7394,6 +7421,7 @@ export const editorExtensions = [
   TextStyleMark,
   DocRedaction,
   FormatOffClearExtension,
+  BalancedSpacingExtension,
   CommentMark,
   InsMark,
   DelMark,

@@ -79,7 +79,7 @@ export interface RuntimeDocument {
   editor: Editor
   /** Changes when the host opens or replaces a document, not on each render. */
   identity: object
-  /** Stable while authored stores outside the body are unchanged. */
+  /** Authored-store epoch; trusted persistence may rebase an already observed epoch. */
   stateVersion?: unknown
   numIds: NumIds
   track?: AiTrack
@@ -267,9 +267,13 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
     let frozen = seed?.frozen ?? null
     let observedEditor = seed?.editor
     let releaseCarry: (() => void) | undefined
-    const carryRead = (before: ProseMirrorNode, after: ProseMirrorNode) => {
+    const carryRead: Parameters<typeof onDocSeenCarry>[1] = (before, after, savedSideState) => {
       if (seen === before) seen = after
       if (revisionsSeen === before) revisionsSeen = after
+      if (savedSideState && bindings.current()?.identity === boundIdentity) {
+        if (seenState === savedSideState.before) seenState = savedSideState.after
+        if (revisionState === savedSideState.before) revisionState = savedSideState.after
+      }
     }
     const drafts = new Map<string, DocumentDraft>()
     const resources = () => {

@@ -1,6 +1,8 @@
 // Modified for ForaOffice from GenOffice v0.12.852.
 import {
   mergePPrFormat,
+  mergeRPrModel,
+  displayCharSpacingTwips,
   scanBody,
   parseLazyMediaUrl,
   setPPrChange,
@@ -25,6 +27,7 @@ import {
   patchDrawingExtent,
   patchTextboxSizes,
   patchShapeStyles,
+  patchDrawingShapes,
   type ShapeStylePatch,
   type TextboxSizePatch,
   patchTextboxParas,
@@ -2485,6 +2488,8 @@ function runMarks(run: Run): PmMark[] {
         // the cs chain sizes complex-script text, and every character of an rtl run
         csFont: run.csFont && (run.cs || textHasComplexScript(run.text)) ? run.csFont : null,
         charSpacingTwips: run.charSpacingTwips ?? null,
+        spacingDisplay: run.spacingDisplay ? (run.spacingDisplay.eastAsiaFont ?? '') : null,
+        charSpacingDisplayTwips: run.spacingDisplay ? (displayCharSpacingTwips(run) ?? null) : null,
         charScaleEm: run.charScalePct && !scaleX ? charScaleEm(run.text, run.charScalePct) : null,
         charScaleX: scaleX,
         charScalePct: run.charScalePct ?? null,
@@ -2900,6 +2905,15 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
         const textboxTexts = textboxParasPatch(node, original)
         const textboxSizes = textboxSizesPatch(node, original)
         const textboxStyles = textboxStylesPatch(node, original)
+        const drawingXml =
+          original.originalXml && node.attrs?.textboxes && original.textboxes
+            ? patchDrawingShapes(
+                original.originalXml,
+                original.textboxes,
+                node.attrs.textboxes as TextboxDisplay[],
+              )
+            : original.originalXml
+        const drawingChanged = drawingXml !== original.originalXml
         const shapeWrapChanges = shapeWrapPatchOf(node, original)
         const textboxOffsetX =
           node.attrs?.imageOffsetXEmu != null ? Number(node.attrs.imageOffsetXEmu) : undefined
@@ -2997,6 +3011,7 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           pushBlock({ kind: 'xml', xml: patchTableCellTexts(original.originalXml, tableTexts) })
         } else if (
           (textboxTexts ||
+            drawingChanged ||
             textboxSizes ||
             textboxStyles ||
             textboxPositionChanged ||
@@ -3004,7 +3019,7 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           original.originalXml
         ) {
           changedCount++
-          let xml = original.originalXml
+          let xml = drawingXml ?? original.originalXml
           if (textboxTexts) xml = patchTextboxParas(xml, textboxTexts)
           if (textboxSizes) xml = patchTextboxSizes(xml, textboxSizes)
           if (textboxStyles) xml = patchShapeStyles(xml, textboxStyles)
@@ -3776,6 +3791,7 @@ function textboxSizesPatch(node: PmNode, original: Block): (TextboxSizePatch | n
   if (!current || !initial || current.length !== initial.length) return null
   let changed = false
   const sizes = current.map((box, index) => {
+    if (initial[index].drawingSource) return null
     // a resize on an autofit box (no initial heightPx) pins its height:
     // patchTextboxSizes drops spAutoFit so Word honors the fixed extent
     const wPx = box.widthPx && box.widthPx !== initial[index].widthPx ? box.widthPx : null
@@ -3793,6 +3809,7 @@ function textboxStylesPatch(node: PmNode, original: Block): (ShapeStylePatch | n
   if (!current || !initial || current.length !== initial.length) return null
   let changed = false
   const styles = current.map((box, index) => {
+    if (initial[index].drawingSource) return null
     const fillHex =
       (box.fill ?? null) !== (initial[index].fill ?? null) ? (box.fill ?? null) : undefined
     const borderHex =
@@ -4458,6 +4475,8 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
       if (mark.attrs?.csFont) run.csFont = String(mark.attrs.csFont)
       if (mark.attrs?.charSpacingTwips != null)
         run.charSpacingTwips = Number(mark.attrs.charSpacingTwips)
+      if (mark.attrs?.spacingDisplay != null)
+        run.spacingDisplay = { eastAsiaFont: String(mark.attrs.spacingDisplay) || undefined }
       if (mark.attrs?.charScalePct) run.charScalePct = Number(mark.attrs.charScalePct)
       if (mark.attrs?.kernHalfPoints != null) run.kernHalfPoints = Number(mark.attrs.kernHalfPoints)
       if (mark.attrs?.highlight) run.highlight = String(mark.attrs.highlight)
@@ -4614,7 +4633,10 @@ function normalizedRuns(runs: Run[]): unknown[] {
       ? ['image', r.rawRPr ?? null, r.image.xml, r.link?.href ?? null, revisionKey(r)]
       : [
           r.text,
-          r.rawRPr ?? null,
+          // Managed values are merged into the retained source XML on save.
+          // Compare that native format so a source refresh stays clean without
+          // replacing live marks (which would invalidate formatting undo steps).
+          mergeRPrModel(r.rawRPr ?? '', r, !!r.link) || null,
           r.styleId ?? null,
           !!r.bold,
           !!r.italic,
@@ -4622,9 +4644,8 @@ function normalizedRuns(runs: Run[]): unknown[] {
           !!r.strike,
           r.color ?? null,
           r.sizeHalfPoints ?? null,
-          r.font ?? null,
-          r.fontAscii ?? null,
-          r.eastAsiaFont ?? null,
+          // Native font slots are included in rPr above; parser projections
+          // (e.g. primary font backfilled from ascii) are not separate edits.
           r.highlight ?? null,
           ...charFormatKey(r),
           r.vertAlign ?? null,
