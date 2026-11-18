@@ -16,7 +16,22 @@ export function loadPdfium(): Promise<PdfiumModule> {
     const { init } = (await import('@embedpdf/pdfium')) as unknown as {
       init(overrides: object): Promise<object>
     }
-    const wrapped = (await init({ wasmBinary })) as { pdfium?: unknown }
+    const wrapped = (await init({
+      wasmBinary,
+      // A checkout under a non-ASCII path seeds the wasm environment with
+      // `_: argv[1]` — the vitest worker's full path — and the wasm's musl
+      // getenv later copies every string into the heap through stringToAscii,
+      // which asserts on any character above 0xff. Pin the program name and
+      // drop any environment value carrying such a character (PWD and friends
+      // under a localized checkout), so the loader never trips that assert.
+      thisProgram: '/usr/bin/node',
+      ENV: Object.fromEntries(
+        Object.entries(process.env).filter(
+          (entry): entry is [string, string] =>
+            entry[1] !== undefined && !/[\u{100}-\u{10FFFF}]/u.test(entry[1]),
+        ),
+      ),
+    })) as { pdfium?: unknown }
     const m = (wrapped.pdfium ?? wrapped) as PdfiumModule & { _PDFiumExt_Init(): void }
     m._PDFiumExt_Init()
     return m
