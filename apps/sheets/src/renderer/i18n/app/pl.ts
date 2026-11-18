@@ -682,6 +682,7 @@ export const pl = {
     'Formuły przeliczono na podstawie Twoich zmian — {count} zachowało wartości z pamięci podręcznej (funkcje nieobsługiwane przez silnik zastępczy).',
   appRecalcDone:
     'Formuły przeliczono na podstawie Twoich zmian ({count} komórek, silnik zastępczy).',
+  appReadOnlyIndexing: 'Podgląd tylko do odczytu podczas indeksowania arkusza.',
   appIndexing: 'Indeksowanie {name}: {rows} wierszy gotowych.',
   appStreamingRows: 'Ładowanie strumieniowe {name}: dostępnych {rows} wierszy.',
   appLoadRangeFailed: 'Nie można załadować widocznego zakresu.',

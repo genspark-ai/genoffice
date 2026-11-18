@@ -1984,6 +1984,84 @@ pub(crate) fn read_worksheet_without_cells(
     }
 }
 
+/// A range edit needs the worksheet's tail, even while the cell index is
+/// still running. Common UTF-8 exports have plain, unprefixed sheetData.
+/// In its cell markup a raw less-than sign is markup, so the exact closing
+/// tag can be found in inflated blocks. Fall back to the XML parser for
+/// comments, CDATA, processing instructions and other unusual forms.
+pub(crate) fn read_worksheet_envelope(
+    archive: &mut ZipArchive<File>,
+    path: &str,
+    cancelled: &AtomicBool,
+) -> Result<String, SidecarError> {
+    {
+        let entry = crate::zip_entry(archive, path)?;
+        let input = WorksheetScanReader { entry, cancelled };
+        let mut reader = Reader::from_reader(BufReader::with_capacity(128 * 1024, input));
+        let mut writer = Writer::new(Vec::new());
+        let mut buffer = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buffer)? {
+                Event::Start(tag) if tag.name().as_ref() == b"sheetData" => {
+                    if let Some(tail) = skim_cell_data(reader.into_inner())? {
+                        let mut xml = writer.into_inner();
+                        xml.extend(tail);
+                        return String::from_utf8(xml).map_err(|_| {
+                            SidecarError::Workbook(format!("{path} is not valid UTF-8."))
+                        });
+                    }
+                    break;
+                }
+                Event::Start(tag) if tag.local_name().as_ref() == b"sheetData" => break,
+                Event::Empty(tag) if tag.local_name().as_ref() == b"sheetData" => {}
+                Event::Eof => {
+                    return String::from_utf8(writer.into_inner()).map_err(|_| {
+                        SidecarError::Workbook(format!("{path} is not valid UTF-8."))
+                    });
+                }
+                event => writer.write_event(event)?,
+            }
+            buffer.clear();
+        }
+    }
+    read_worksheet_without_cells(archive, path, cancelled)
+}
+
+fn skim_cell_data(mut input: impl Read) -> std::io::Result<Option<Vec<u8>>> {
+    use memchr::memmem::Finder;
+    const CLOSE: &[u8] = b"</sheetData>";
+    const OVERLAP: usize = CLOSE.len() - 1;
+    let end = Finder::new(CLOSE);
+    let special = [
+        Finder::new(b"<!"),
+        Finder::new(b"<?"),
+        Finder::new(b"<sheetData"),
+    ];
+    let mut block = vec![0; 128 * 1024 + OVERLAP];
+    let mut carry = 0;
+    loop {
+        let read = input.read(&mut block[carry..])?;
+        if read == 0 {
+            return Ok(None);
+        }
+        let filled = carry + read;
+        let end_at = end.find(&block[..filled]);
+        if special
+            .iter()
+            .any(|tag| tag.find(&block[..end_at.unwrap_or(filled)]).is_some())
+        {
+            return Ok(None);
+        }
+        if let Some(at) = end_at {
+            let mut tail = block[at + CLOSE.len()..filled].to_vec();
+            input.read_to_end(&mut tail)?;
+            return Ok(Some(tail));
+        }
+        carry = filled.min(OVERLAP);
+        block.copy_within(filled - carry..filled, 0);
+    }
+}
+
 struct WorksheetScanReader<'a, R> {
     entry: R,
     cancelled: &'a AtomicBool,

@@ -1335,7 +1335,8 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
       name: sheet.name,
       rowCount: sheet.rowCount,
       columnCount: sheet.columnCount,
-      ...(protection === undefined
+      ...(sheet.progressive === true ? { progressive: true } : {}),
+      ...(protection === undefined || sheet.progressive === true
         ? {}
         : {
             protection: {
@@ -2260,6 +2261,17 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
     }
     return value as number[]
   }
+  const counts = input.cellCounts
+  if (
+    counts !== undefined &&
+    (!isRecord(counts) ||
+      !isNonnegativeInteger(counts.storedCellCount) ||
+      !isNonnegativeInteger(counts.valueCellCount) ||
+      !isNonnegativeInteger(counts.valueRowCount) ||
+      !isNonnegativeInteger(counts.valueColumnCount))
+  ) {
+    throw new Error('Invalid indexed cell counts.')
+  }
   return {
     cells,
     rows,
@@ -2270,12 +2282,26 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
     autoFilterColumns,
     dataValidations,
     sheetProtection: parseSheetProtection(input.sheetProtection),
+    ...(input.sparklines === undefined
+      ? {}
+      : { sparklines: parseSparklineGroups(input.sparklines) }),
+    ...(counts === undefined
+      ? {}
+      : {
+          cellCounts: {
+            storedCellCount: counts.storedCellCount as number,
+            valueCellCount: counts.valueCellCount as number,
+            valueRowCount: counts.valueRowCount as number,
+            valueColumnCount: counts.valueColumnCount as number,
+          },
+        }),
     rowBreaks: parseBreaks(input.rowBreaks, 'row breaks'),
     colBreaks: parseBreaks(input.colBreaks, 'column breaks'),
     protectedRanges: parseProtectedRanges(input.protectedRanges),
     pageSetup: parsePagePrintSettings(input.pageSetup),
     indexedThroughRow: input.indexedThroughRow,
     indexingComplete: input.indexingComplete,
+    ...(input.metadataReady === true ? { metadataReady: true } : {}),
   }
 }
 

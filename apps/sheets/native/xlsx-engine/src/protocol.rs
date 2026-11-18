@@ -31,6 +31,8 @@ fn default_locale() -> String {
 pub enum Command {
     Open {
         path: PathBuf,
+        #[serde(default)]
+        progressive: bool,
         #[serde(default = "default_locale")]
         locale: String,
         #[serde(default, rename = "shortDateFormat")]
@@ -547,6 +549,7 @@ pub fn handle_request(
     let result = match request.command {
         Command::Open {
             path,
+            progressive,
             locale,
             short_date_format,
         } => {
@@ -555,10 +558,11 @@ pub fn handle_request(
             // longer can.
             let in_flight_cancelled = in_flight.flag();
             sessions
-                .open_with_locale(
+                .open_with_options(
                     &path,
                     &locale,
                     short_date_format.as_deref(),
+                    progressive,
                     &in_flight_cancelled,
                 )
                 .and_then(to_json_value)

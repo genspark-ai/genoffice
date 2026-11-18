@@ -20,14 +20,120 @@ pub(crate) fn index_worksheet(
     styled_xfs: &[bool],
     colors: &ColorContext,
     rich_image_cells: &HashSet<(usize, usize)>,
+    progressive: bool,
     state: &Arc<(Mutex<SheetIndex>, Condvar)>,
     cancelled: &AtomicBool,
 ) -> Result<(), SidecarError> {
-    let file = File::open(workbook_path)?;
-    let mut archive = ZipArchive::new(file)?;
-    let link_targets = visuals::hyperlink_targets(&mut archive, worksheet_path)?;
+    let mut archive = ZipArchive::new(File::open(workbook_path)?)?;
+    let hyperlinks = visuals::hyperlink_targets(&mut archive, worksheet_path)?;
     let entry = zip_entry(&mut archive, worksheet_path)?;
-    let mut reader = Reader::from_reader(BufReader::new(entry));
+    let header_footer = index_worksheet_xml(
+        Reader::from_reader(BufReader::with_capacity(64 * 1024, entry)),
+        worksheet_path,
+        sheet_index,
+        cache_directory,
+        shared_strings,
+        styled_xfs,
+        colors,
+        rich_image_cells,
+        progressive,
+        false,
+        hyperlinks,
+        state,
+        cancelled,
+    )?;
+    publish_sheet_metadata(
+        &mut archive,
+        worksheet_path,
+        sheet_index,
+        header_footer,
+        state,
+    )
+}
+
+/// Decode the sheet envelope with the same parser used by the full index.
+pub(crate) fn read_worksheet_metadata(
+    workbook_path: &Path,
+    worksheet_path: &str,
+    sheet_index: usize,
+    colors: &ColorContext,
+    state: &Arc<(Mutex<SheetIndex>, Condvar)>,
+    cancelled: &AtomicBool,
+) -> Result<(), SidecarError> {
+    let mut archive = ZipArchive::new(File::open(workbook_path)?)?;
+    let xml = visuals::read_worksheet_envelope(&mut archive, worksheet_path, cancelled)?;
+    let hyperlinks = visuals::hyperlink_targets(&mut archive, worksheet_path)?;
+    let header_footer = index_worksheet_xml(
+        Reader::from_reader(xml.as_bytes()),
+        worksheet_path,
+        sheet_index,
+        Path::new(""),
+        &[],
+        &[],
+        colors,
+        &HashSet::new(),
+        true,
+        true,
+        hyperlinks,
+        state,
+        cancelled,
+    )?;
+    publish_sheet_metadata(
+        &mut archive,
+        worksheet_path,
+        sheet_index,
+        header_footer,
+        state,
+    )
+}
+
+fn publish_sheet_metadata(
+    archive: &mut ZipArchive<File>,
+    worksheet_path: &str,
+    sheet_index: usize,
+    staged: Option<(SheetDecorations, Option<String>)>,
+    state: &Arc<(Mutex<SheetIndex>, Condvar)>,
+) -> Result<(), SidecarError> {
+    let Some((mut decorations, header_footer)) = staged else {
+        return Ok(());
+    };
+    if let Some(id) = header_footer {
+        let pictures =
+            visuals::read_header_footer_pictures(archive, worksheet_path, &id, sheet_index)?;
+        if !pictures.is_empty() {
+            decorations
+                .page_setup
+                .get_or_insert_with(PagePrintInfo::default)
+                .header_footer_pictures = pictures;
+        }
+    }
+    let (lock, condition) = &**state;
+    let mut index = lock
+        .lock()
+        .map_err(|_| SidecarError::Io("Worksheet index lock was poisoned.".into()))?;
+    if index.decorations.is_none() {
+        index.decorations = Some(decorations);
+    }
+    condition.notify_all();
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn index_worksheet_xml<R: std::io::BufRead>(
+    mut reader: Reader<R>,
+    worksheet_path: &str,
+    sheet_index: usize,
+    cache_directory: &Path,
+    shared_strings: &[SharedString],
+    styled_xfs: &[bool],
+    colors: &ColorContext,
+    rich_image_cells: &HashSet<(usize, usize)>,
+    progressive: bool,
+    metadata_only: bool,
+    link_targets: HashMap<String, String>,
+    state: &Arc<(Mutex<SheetIndex>, Condvar)>,
+    cancelled: &AtomicBool,
+) -> Result<Option<(SheetDecorations, Option<String>)>, SidecarError> {
     let mut buffer = Vec::new();
     let mut cell_builder: Option<CellBuilder> = None;
     // <row r=> and <c r=> are both optional: a missing row is one below its
@@ -97,14 +203,41 @@ pub(crate) fn index_worksheet(
     // header/footer), or None.
     let mut header_footer_section: Option<HeaderFooterSection> = None;
     let mut legacy_drawing_hf_id: Option<String> = None;
+    // Keep only the worksheet envelope. The same pass that writes cached
+    // cell chunks also discovers protection and sparklines in the tail.
+    let mut envelope = progressive.then(|| quick_xml::Writer::new(Vec::new()));
+    let mut sheet_data_depth = 0;
+    let mut cell_counts = (progressive && !metadata_only).then(IndexedCellCounts::default);
+    let mut cell_has_value = false;
 
     loop {
         if cancelled.load(Ordering::Acquire) {
-            return Ok(());
+            return Err(SidecarError::cancelled());
         }
-        match reader.read_event_into(&mut buffer)? {
+        let event = reader.read_event_into(&mut buffer)?;
+        if let Some(writer) = envelope.as_mut() {
+            match &event {
+                Event::Start(tag) if tag.local_name().as_ref() == b"sheetData" => {
+                    sheet_data_depth += 1;
+                }
+                Event::End(tag)
+                    if sheet_data_depth > 0 && tag.local_name().as_ref() == b"sheetData" =>
+                {
+                    sheet_data_depth -= 1;
+                }
+                Event::Start(tag) | Event::Empty(tag)
+                    if cell_builder.is_some()
+                        && matches!(tag.local_name().as_ref(), b"v" | b"f" | b"is") =>
+                {
+                    cell_has_value = true;
+                }
+                _ if sheet_data_depth == 0 => writer.write_event(event.borrow())?,
+                _ => {}
+            }
+        }
+        match event {
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"row" =>
+                if !metadata_only && element.local_name().as_ref() == b"row" =>
             {
                 current_row = attribute_value(&reader, &element, b"r")?
                     .and_then(|value| value.parse::<usize>().ok())
@@ -130,18 +263,22 @@ pub(crate) fn index_worksheet(
                     chunk.rows.push(property);
                 }
             }
-            Event::Start(element) if element.local_name().as_ref() == b"c" => {
+            Event::Start(element) if !metadata_only && element.local_name().as_ref() == b"c" => {
                 let builder =
                     CellBuilder::from_element(&reader, &element, current_row, next_column)?;
                 next_column = builder.column + 1;
                 cell_builder = Some(builder);
+                cell_has_value = false;
             }
-            Event::Empty(element) if element.local_name().as_ref() == b"c" => {
+            Event::Empty(element) if !metadata_only && element.local_name().as_ref() == b"c" => {
                 // Self-closing cells carry no value but may carry a style
                 // (borders, fills); keep them like any other cell.
                 {
                     let builder =
                         CellBuilder::from_element(&reader, &element, current_row, next_column)?;
+                    if let Some(counts) = cell_counts.as_mut() {
+                        counts.record(&builder, false);
+                    }
                     next_column = builder.column + 1;
                     latest_row = latest_row.max(builder.row);
                     let cell_chunk = builder.row / CHUNK_ROW_COUNT;
@@ -337,6 +474,9 @@ pub(crate) fn index_worksheet(
             }
             Event::End(element) if element.local_name().as_ref() == b"c" => {
                 if let Some(builder) = cell_builder.take() {
+                    if let Some(counts) = cell_counts.as_mut() {
+                        counts.record(&builder, cell_has_value);
+                    }
                     latest_row = latest_row.max(builder.row);
                     let cell_chunk = builder.row / CHUNK_ROW_COUNT;
                     if cell_chunk != chunk_index {
@@ -877,6 +1017,9 @@ pub(crate) fn index_worksheet(
                 }
             }
             Event::Eof => {
+                if metadata_only {
+                    break;
+                }
                 flush_chunk(
                     sheet_index,
                     chunk_index,
@@ -892,25 +1035,32 @@ pub(crate) fn index_worksheet(
         }
         buffer.clear();
     }
-    // The reader holds the worksheet entry (and with it the archive) until
-    // dropped; the picture lookup needs the archive again.
-    drop(reader);
-    if let Some(relationship_id) = legacy_drawing_hf_id {
-        page_print.header_footer_pictures = visuals::read_header_footer_pictures(
-            &mut archive,
-            worksheet_path,
-            &relationship_id,
-            sheet_index,
-        )?;
+    {
+        let (lock, _) = &**state;
+        let mut index = lock
+            .lock()
+            .map_err(|_| SidecarError::Io("Worksheet index lock was poisoned.".into()))?;
+        if !metadata_only {
+            index.cell_counts = cell_counts;
+            index.shared_formula_groups = shared_formulas
+                .groups(|formula| format!("={}", strip_future_function_markers(formula)));
+        }
+        if index.decorations.is_some() {
+            return Ok(None);
+        }
     }
-    let (lock, condition) = &**state;
-    let mut index = lock
-        .lock()
-        .map_err(|_| SidecarError::Io("Worksheet index lock was poisoned.".into()))?;
-    index.merges = merges;
-    index.hyperlinks = hyperlinks;
-    index.shared_formula_groups =
-        shared_formulas.groups(|formula| format!("={}", strip_future_function_markers(formula)));
+    let (protection, sparklines) = envelope
+        .map(|writer| {
+            let xml = String::from_utf8(writer.into_inner()).map_err(|_| {
+                SidecarError::Workbook(format!("{worksheet_path} is not valid UTF-8."))
+            })?;
+            Ok::<_, SidecarError>((
+                Some(read_sheet_protection(&xml)?),
+                read_sheet_sparklines(&xml)?,
+            ))
+        })
+        .transpose()?
+        .unwrap_or_default();
     for (id, color) in x14_negative_colors {
         if let Some(rule) = x14_rule_slots
             .get(&id)
@@ -951,8 +1101,6 @@ pub(crate) fn index_worksheet(
             }
         }
     }
-    index.conditional_rules = conditional_rules;
-    index.auto_filter = auto_filter;
     // Same wire caps as the save side's schema (1,000 columns, 10,000 values
     // of ≤32,767 units, 1-2 custom criteria) — an out-of-spec file loses the
     // offending entries, not the whole sheet.
@@ -996,14 +1144,11 @@ pub(crate) fn index_worksheet(
     }
     auto_filter_columns
         .retain(|column| column.values.is_some() || column.blank || column.customs.is_some());
-    index.auto_filter_columns = auto_filter_columns;
     // Wire caps (schema and preload reject larger sets; the save side caps
     // at the same sizes) — a pathological file loses tail entries, not the
     // whole sheet.
     row_breaks.truncate(1_023);
     col_breaks.truncate(1_023);
-    index.row_breaks = row_breaks;
-    index.col_breaks = col_breaks;
     for text in [
         &mut page_print.odd_header,
         &mut page_print.odd_footer,
@@ -1016,11 +1161,20 @@ pub(crate) fn index_worksheet(
             truncate_utf16_units(value, 500);
         }
     }
-    index.page_setup = (page_print != PagePrintInfo::default()).then_some(page_print);
-    index.data_validations = data_validations;
-    condition.notify_all();
-    drop(index);
-    Ok(())
+    let decorations = SheetDecorations {
+        merges,
+        hyperlinks,
+        conditional_rules,
+        auto_filter,
+        auto_filter_columns,
+        data_validations,
+        row_breaks,
+        col_breaks,
+        page_setup: (page_print != PagePrintInfo::default()).then_some(page_print),
+        protection,
+        sparklines,
+    };
+    Ok(Some((decorations, legacy_drawing_hf_id)))
 }
 
 pub(crate) fn parse_dv_rule<R: std::io::BufRead>(
@@ -1303,6 +1457,7 @@ pub(crate) struct CellBuilder {
     row: usize,
     column: usize,
     style_index: Option<usize>,
+    has_style: bool,
     cell_type: Option<String>,
     raw_value: String,
     formula: String,
@@ -1312,6 +1467,17 @@ pub(crate) struct CellBuilder {
     inline_text: String,
     inline_runs: Vec<RichRun>,
     current_run: Option<RichRun>,
+}
+
+impl IndexedCellCounts {
+    fn record(&mut self, cell: &CellBuilder, has_value: bool) {
+        self.stored_cell_count += usize::from(has_value || cell.has_style);
+        if has_value {
+            self.value_cell_count += 1;
+            self.value_row_count = self.value_row_count.max(cell.row + 1);
+            self.value_column_count = self.value_column_count.max(cell.column + 1);
+        }
+    }
 }
 
 impl CellBuilder {
@@ -1327,11 +1493,14 @@ impl CellBuilder {
             Some(address) => parse_address(&address).unwrap_or((fallback_row, fallback_column)),
             None => (fallback_row, fallback_column),
         };
+        let style = attribute_value(reader, element, b"s")?;
         Ok(Self {
             row,
             column,
-            style_index: attribute_value(reader, element, b"s")?
+            style_index: style
+                .as_deref()
                 .and_then(|value| value.parse::<usize>().ok()),
+            has_style: style.is_some(),
             cell_type: attribute_value(reader, element, b"t")?,
             raw_value: String::new(),
             formula: String::new(),

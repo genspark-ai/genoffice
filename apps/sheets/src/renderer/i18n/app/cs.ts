@@ -660,6 +660,7 @@ export const cs = {
   appRecalcPartial:
     'Vzorce přepočítány podle vašich úprav — {count} si ponechalo hodnoty z mezipaměti (funkce, které záložní modul nezná).',
   appRecalcDone: 'Vzorce přepočítány podle vašich úprav ({count} buněk, záložní modul).',
+  appReadOnlyIndexing: 'Náhled jen pro čtení během indexování listu.',
   appIndexing: 'Indexuje se {name}: {rows} řádků připraveno.',
   appStreamingRows: 'Načítá se {name}: {rows} řádků k dispozici.',
   appLoadRangeFailed: 'Nelze načíst viditelnou oblast.',

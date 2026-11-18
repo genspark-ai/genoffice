@@ -666,6 +666,7 @@ export const ko = {
   appRecalcPartial:
     '편집에 따라 수식을 다시 계산했습니다 — {count}개는 캐시된 값을 유지했습니다(대체 엔진이 지원하지 않는 함수).',
   appRecalcDone: '편집에 따라 수식을 다시 계산했습니다({count}개 셀, 엔진 대체).',
+  appReadOnlyIndexing: '시트 색인 중에는 읽기 전용으로 미리 볼 수 있습니다.',
   appIndexing: '{name}의 인덱스를 만드는 중: {rows}행 준비됨.',
   appStreamingRows: '{name}을(를) 스트리밍하는 중: {rows}행 사용 가능.',
   appLoadRangeFailed: '표시 범위를 로드할 수 없습니다.',

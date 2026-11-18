@@ -695,6 +695,7 @@ export const ja = {
   appRecalcPartial:
     '編集に合わせて数式を再計算しました — {count} 個はキャッシュ値を保持しています（フォールバックエンジン未対応の関数）。',
   appRecalcDone: '編集に合わせて数式を再計算しました（{count} 個のセル、エンジンフォールバック）。',
+  appReadOnlyIndexing: 'シートのインデックス作成中は読み取り専用です。',
   appIndexing: '{name} のインデックスを作成中：{rows} 行が準備できました。',
   appStreamingRows: '{name} をストリーミング読み込み中：{rows} 行が利用可能です。',
   appLoadRangeFailed: '表示範囲を読み込めません。',

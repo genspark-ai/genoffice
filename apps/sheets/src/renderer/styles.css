@@ -5920,6 +5920,16 @@ textarea:focus {
   transform: translate(-50%, 0);
 }
 
+.app-toast.top-right {
+  left: auto;
+  right: 16px;
+  transform: translateY(-8px);
+}
+
+.app-toast.top-right.show {
+  transform: translateY(0);
+}
+
 .app-toast.error {
   background: var(--sheets-toast-error-bg);
 }
