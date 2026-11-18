@@ -485,6 +485,8 @@ interface GridCell {
   /** built paragraph XML (links stripped: relationships live with generated blocks only) */
   contentXml: string
   fill: string | null
+  /** fo:vertical-align of the cell style, in docx's vocabulary */
+  vAlign: 'center' | 'bottom' | null
 }
 
 const CELL_GEN_CTX = {
@@ -755,6 +757,7 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
     rowSpan: Math.max(1, Number(attr(node, 'table:number-rows-spanned') ?? '1') || 1),
     contentXml,
     fill: ctx.styles.cellFill(attr(node, 'table:style-name')),
+    vAlign: ctx.styles.cellAlign(attr(node, 'table:style-name')),
   }
 }
 
@@ -822,6 +825,8 @@ function tableXml(
       if (cell.colSpan > 1) tcPr.push(`<w:gridSpan w:val="${cell.colSpan}"/>`)
       if (cell.rowSpan > 1) tcPr.push('<w:vMerge w:val="restart"/>')
       if (cell.fill) tcPr.push(`<w:shd w:val="clear" w:color="auto" w:fill="${cell.fill}"/>`)
+      // vAlign follows shd in CT_TcPr
+      if (cell.vAlign) tcPr.push(`<w:vAlign w:val="${cell.vAlign}"/>`)
       parts.push(`<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>${cell.contentXml}</w:tc>`)
     })
     parts.push('</w:tr>')

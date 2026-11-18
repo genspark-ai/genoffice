@@ -77,6 +77,7 @@ export class OdfStyles {
   private columnWidths = new Map<string, number>()
   private cellFills = new Map<string, string | null>()
   private tableAligns = new Map<string, 'center' | 'right'>()
+  private cellAligns = new Map<string, 'center' | 'bottom'>()
   private defaults: { text?: OdfTextProps; para?: OdfParaProps } = {}
 
   constructor(contentRoots: XNode[] | null, stylesRoots: XNode[] | null) {
@@ -137,6 +138,12 @@ export class OdfStyles {
       if (fill) this.cellFills.set(name, fill)
       else if (properties && attr(properties, 'fo:background-color') === 'transparent')
         this.cellFills.set(name, null)
+      // ODF spells vertical alignment top/middle/bottom/automatic in
+      // style:vertical-align; Word has no value for "top" because it is the
+      // default, so only the other two travel
+      const vertical = properties ? attr(properties, 'style:vertical-align') : undefined
+      const align = vertical === 'middle' ? 'center' : vertical === 'bottom' ? 'bottom' : null
+      if (align) this.cellAligns.set(name, align)
       return
     }
     if (family === 'table') {
@@ -187,6 +194,12 @@ export class OdfStyles {
   tableAlign(styleName: string | undefined): 'center' | 'right' | null {
     if (!styleName) return null
     return this.tableAligns.get(styleName) ?? null
+  }
+
+  /** `style:vertical-align` of a table-cell style, in docx's vocabulary */
+  cellAlign(styleName: string | undefined): 'center' | 'bottom' | null {
+    if (!styleName) return null
+    return this.cellAligns.get(styleName) ?? null
   }
 
   private readProps(node: XNode): { text?: OdfTextProps; para?: OdfParaProps } {
