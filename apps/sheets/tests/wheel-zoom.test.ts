@@ -1,6 +1,7 @@
 // Ctrl+wheel in Sheets: a mouse notch steps ten percentage points through the
-// worksheet zoom API and is kept from Univer; a trackpad pinch is left to
-// Univer's continuous handler; nothing zooms while a cell is being edited.
+// worksheet zoom API and is kept from Univer; outside the cell editor a
+// trackpad pinch is left to Univer's continuous handler, while inside it the
+// pinch is accumulated into the same step so both gestures agree.
 import { describe, expect, it } from 'vitest'
 import { SHEET_ZOOM_MAX, SHEET_ZOOM_MIN, createWheelZoomStepper } from '../src/renderer/wheel-zoom'
 
@@ -54,8 +55,8 @@ describe('createWheelZoomStepper', () => {
     expect(hi.set).toEqual([SHEET_ZOOM_MAX])
   })
 
-  it('lets a trackpad pinch through to Univer', () => {
-    const h = harness(1)
+  it('lets a trackpad pinch through to Univer while no cell is edited', () => {
+    const h = harness(1, false)
     h.wheel(-3.4, 0)
     h.wheel(-7.25, 16)
     expect(h.set).toEqual([])
@@ -74,14 +75,26 @@ describe('createWheelZoomStepper', () => {
     expect(h.stopped()).toBe(4)
   })
 
-  it('ignores plain scrolling and wheel events during cell editing', () => {
+  it('ignores plain scrolling and keeps zooming while a cell is edited', () => {
     const plain = harness(1)
     plain.wheel(-100, 0, { ctrlKey: false })
     expect(plain.set).toEqual([])
     expect(plain.prevented()).toBe(0)
-    const editing = harness(1, true)
-    editing.wheel(-100, 0)
-    expect(editing.set).toEqual([])
-    expect(editing.prevented()).toBe(0)
+    // Excel keeps Ctrl+wheel zooming while the cell editor is open; the editor
+    // overlay is re-placed once the gesture settles.
+    const whileEditing = harness(1, true)
+    whileEditing.wheel(-100, 0)
+    expect(whileEditing.set).toEqual([1.1])
+    expect(whileEditing.prevented()).toBe(1)
+  })
+
+  it('steps a pinch while a cell is edited, like a wheel notch', () => {
+    const h = harness(1, true)
+    // a pinch is a fractional delta by definition (the classifier checks that)
+    for (let i = 0; i < 6; i += 1) h.wheel(-6.5, i * 16)
+    expect(h.set).toEqual([])
+    h.wheel(-6.5, 96)
+    expect(h.set).toEqual([1.1])
+    expect(h.prevented()).toBe(7)
   })
 })
