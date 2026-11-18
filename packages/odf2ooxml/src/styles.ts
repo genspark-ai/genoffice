@@ -20,8 +20,14 @@ export interface OdfTextProps {
   font?: string
   vertAlign?: 'superscript' | 'subscript'
   caps?: 'all' | 'small'
+  resetUppercase?: boolean
+  resetSmallCaps?: boolean
   /** run shading fill, hex without '#' */
   shading?: string
+  /** `fo:letter-spacing` as docx's w:spacing, twips (negative when condensed) */
+  letterSpacingTw?: number
+  /** `style:text-scale` as docx's w:w, percent in 1..600 */
+  scalePct?: number
 }
 
 export interface OdfParaProps {
@@ -37,6 +43,12 @@ export interface OdfParaProps {
   indentRightTw?: number
   indentFirstLineTw?: number
   pageBreakBefore?: boolean
+  /** `fo:background-color` of the paragraph, hex without '#' */
+  background?: string
+  /** `fo:keep-with-next="always"` — keep the paragraph on the same page as the next */
+  keepNext?: boolean
+  /** `fo:keep-together="always"` — never split the paragraph across pages */
+  keepLines?: boolean
 }
 
 export interface OdfListLevel {
@@ -45,6 +57,7 @@ export interface OdfListLevel {
   numFormat?: string
   numPrefix?: string
   numSuffix?: string
+  start?: number
   indentLeftTw?: number
   hangingTw?: number
 }
@@ -62,7 +75,9 @@ export class OdfStyles {
   private fonts = new Map<string, string>()
   private lists = new Map<string, Map<number, OdfListLevel>>()
   private columnWidths = new Map<string, number>()
-  private cellFills = new Map<string, string>()
+  private cellFills = new Map<string, string | null>()
+  private tableAligns = new Map<string, 'center' | 'right'>()
+  private cellAligns = new Map<string, 'center' | 'bottom'>()
   private defaults: { text?: OdfTextProps; para?: OdfParaProps } = {}
 
   constructor(contentRoots: XNode[] | null, stylesRoots: XNode[] | null) {
@@ -108,6 +123,7 @@ export class OdfStyles {
     const family = attr(node, 'style:family')
     if (!name || !family) return
     if (family === 'table-column') {
+      this.defs.set(`${family}:${name}`, { family, parent: attr(node, 'style:parent-style-name') })
       const properties =
         firstChild(node, 'style:table-column-properties') ??
         firstChild(node, 'style:column-properties')
@@ -116,9 +132,26 @@ export class OdfStyles {
       return
     }
     if (family === 'table-cell') {
+      this.defs.set(`${family}:${name}`, { family, parent: attr(node, 'style:parent-style-name') })
       const properties = firstChild(node, 'style:table-cell-properties')
       const fill = properties ? odfColorToHex(attr(properties, 'fo:background-color')) : null
       if (fill) this.cellFills.set(name, fill)
+      else if (properties && attr(properties, 'fo:background-color') === 'transparent')
+        this.cellFills.set(name, null)
+      // ODF spells vertical alignment top/middle/bottom/automatic in
+      // style:vertical-align; Word has no value for "top" because it is the
+      // default, so only the other two travel
+      const vertical = properties ? attr(properties, 'style:vertical-align') : undefined
+      const align = vertical === 'middle' ? 'center' : vertical === 'bottom' ? 'bottom' : null
+      if (align) this.cellAligns.set(name, align)
+      return
+    }
+    if (family === 'table') {
+      // `table:align` places the table against the margins; "margins" is the
+      // default full-width behaviour and has no w:jc of its own
+      const properties = firstChild(node, 'style:table-properties')
+      const align = properties ? attr(properties, 'table:align') : undefined
+      if (align === 'center' || align === 'right') this.tableAligns.set(name, align)
       return
     }
     const props = this.readProps(node)
@@ -136,14 +169,37 @@ export class OdfStyles {
 
   /** width of a table-column style, EMU; null when undeclared */
   columnWidthEmu(styleName: string | undefined): number | null {
-    if (!styleName) return null
-    return this.columnWidths.get(styleName) ?? null
+    const seen = new Set<string>()
+    while (styleName && !seen.has(styleName)) {
+      seen.add(styleName)
+      const width = this.columnWidths.get(styleName)
+      if (width !== undefined) return width
+      styleName = this.defs.get(`table-column:${styleName}`)?.parent
+    }
+    return null
   }
 
   /** fill of a table-cell style, hex without '#'; null otherwise */
   cellFill(styleName: string | undefined): string | null {
+    const seen = new Set<string>()
+    while (styleName && !seen.has(styleName)) {
+      seen.add(styleName)
+      if (this.cellFills.has(styleName)) return this.cellFills.get(styleName) ?? null
+      styleName = this.defs.get(`table-cell:${styleName}`)?.parent
+    }
+    return null
+  }
+
+  /** `table:align` of a table style, when the table is not flush with the margins */
+  tableAlign(styleName: string | undefined): 'center' | 'right' | null {
     if (!styleName) return null
-    return this.cellFills.get(styleName) ?? null
+    return this.tableAligns.get(styleName) ?? null
+  }
+
+  /** `style:vertical-align` of a table-cell style, in docx's vocabulary */
+  cellAlign(styleName: string | undefined): 'center' | 'bottom' | null {
+    if (!styleName) return null
+    return this.cellAligns.get(styleName) ?? null
   }
 
   private readProps(node: XNode): { text?: OdfTextProps; para?: OdfParaProps } {
@@ -162,6 +218,8 @@ export class OdfStyles {
     const out: OdfTextProps = {}
     if (a['fo:font-weight'] === 'bold' || a['fo:font-weight'] === 'normal')
       out.bold = a['fo:font-weight'] === 'bold'
+    else if (/^[1-9]00$/.test(a['fo:font-weight'] ?? ''))
+      out.bold = Number(a['fo:font-weight']) >= 600
     if (['italic', 'oblique', 'normal'].includes(a['fo:font-style']))
       out.italic = a['fo:font-style'] !== 'normal'
     if (a['style:text-underline-type'] !== undefined) {
@@ -194,7 +252,14 @@ export class OdfStyles {
     if (transform === 'uppercase') out.caps = 'all'
     else if (transform === 'lowercase') out.caps = undefined
     else if (transform === 'capitalize') out.caps = undefined
+    if (transform === 'none') out.resetUppercase = true
+    if (a['fo:font-variant'] === 'normal') out.resetSmallCaps = true
     if (a['fo:font-variant'] === 'small-caps') out.caps = 'small'
+    const letter = odfLengthToEmu(a['fo:letter-spacing'])
+    // 0 is kept: an explicit reset inside a spaced span has to override it
+    if (letter !== null) out.letterSpacingTw = emuToTwips(letter)
+    const scale = textScalePercent(a['style:text-scale'])
+    if (scale !== undefined) out.scalePct = scale
     return Object.keys(out).length > 0 ? out : undefined
   }
 
@@ -217,16 +282,27 @@ export class OdfStyles {
         const multiple = Number(percent[1]) / 100
         // 1000% is already beyond what a consumer honors; anything larger is
         // malformed input and would render as exponent notation in w:line
-        if (multiple <= 10) out.lineSpacing = multiple
+        if (multiple > 0 && multiple <= 10) {
+          out.lineSpacing = multiple
+          out.lineExactTw = undefined
+        }
       } else {
         const fixed = odfLengthToEmu(lineHeight)
-        if (fixed !== null) out.lineExactTw = emuToTwips(fixed)
+        if (fixed !== null) {
+          out.lineExactTw = emuToTwips(fixed)
+          out.lineSpacing = undefined
+        }
       }
     }
     const atLeast = odfLengthToEmu(a['style:line-height-at-least'])
     if (atLeast !== null) out.lineAtLeastTw = emuToTwips(atLeast)
     const exact = odfLengthToEmu(a['style:line-spacing'])
     if (exact !== null) out.lineExactTw = emuToTwips(exact)
+    if (lineHeight?.trim() === 'normal') {
+      out.lineSpacing = 1
+      out.lineExactTw = undefined
+      out.lineAtLeastTw = undefined
+    }
     const left = odfLengthToEmu(a['fo:margin-left'] ?? a['fo:margin'])
     if (left !== null) out.indentLeftTw = emuToTwips(left)
     const right = odfLengthToEmu(a['fo:margin-right'] ?? a['fo:margin'])
@@ -235,6 +311,16 @@ export class OdfStyles {
     if (first !== null) out.indentFirstLineTw = emuToTwips(first)
     if (a['fo:break-before'] === 'page' || a['fo:break-before'] === 'auto')
       out.pageBreakBefore = a['fo:break-before'] === 'page'
+    // "transparent" is ODF's default (the page shows through), so only a real
+    // colour asks for a fill
+    const background = odfColorToHex(a['fo:background-color'])
+    if (background) out.background = background
+    // ODF spells both as auto/always; "auto" is the default, so it only has to
+    // cancel a value an ancestor style set
+    const keepNext = a['fo:keep-with-next']
+    if (keepNext !== undefined) out.keepNext = keepNext === 'always'
+    const keepTogether = a['fo:keep-together']
+    if (keepTogether !== undefined) out.keepLines = keepTogether === 'always'
     return Object.keys(out).length > 0 ? out : undefined
   }
 
@@ -256,8 +342,10 @@ export class OdfStyles {
         childName === 'text:list-level-style-number' ||
         childName === 'text:list-level-style-roman'
       ) {
+        const start = Number(attr(child, 'text:start-value') ?? '1')
         levels.set(level, {
           kind: 'ordered',
+          ...(Number.isSafeInteger(start) && start >= 0 ? { start } : {}),
           numFormat: attr(child, 'style:num-format') ?? '1',
           numPrefix: attr(child, 'style:num-prefix'),
           numSuffix: attr(child, 'style:num-suffix'),
@@ -303,7 +391,7 @@ export class OdfStyles {
     // parent first so the style itself wins
     for (let index = chain.length - 1; index >= 0; index--) {
       const inheritedSize = text.sizePt
-      if (chain[index].text) text = { ...text, ...chain[index].text }
+      if (chain[index].text) text = mergeTextProps(text, chain[index].text!)
       const percent = chain[index].fontSizePercent
       if (percent !== undefined && inheritedSize !== undefined) {
         const size = (inheritedSize * percent) / 100
@@ -390,6 +478,17 @@ export class OdfStyles {
   }
 }
 
+export function mergeTextProps(base: OdfTextProps, override: OdfTextProps): OdfTextProps {
+  const out = { ...base, ...override }
+  if (
+    override.caps === undefined &&
+    ((override.resetUppercase && base.caps === 'all') ||
+      (override.resetSmallCaps && base.caps === 'small'))
+  )
+    out.caps = undefined
+  return out
+}
+
 /** label-alignment indents of a list level (space-before + min-label-width). */
 function listLevelIndent(node: XNode): { indentLeftTw?: number; hangingTw?: number } {
   const properties = firstChild(node, 'style:list-level-properties')
@@ -422,4 +521,18 @@ function listLevelIndent(node: XNode): { indentLeftTw?: number; hangingTw?: numb
     if (value !== null && value < 0) out.hangingTw = emuToTwips(-value)
   }
   return out
+}
+
+/**
+ * `style:text-scale` is a percentage of the character width (20.417 in ODF's
+ * vocabulary); docx spells the same thing as `w:w` in 1..600, so wider values
+ * clamp there instead of writing a value no consumer accepts.
+ */
+function textScalePercent(text: string | undefined): number | undefined {
+  if (!text) return undefined
+  const match = /^(\d+(?:\.\d+)?)%?$/.exec(text.trim())
+  if (!match) return undefined
+  const value = Math.round(Number(match[1]))
+  if (!Number.isFinite(value) || value < 1) return undefined
+  return Math.min(value, 600)
 }

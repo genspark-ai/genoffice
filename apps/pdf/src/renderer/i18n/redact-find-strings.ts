@@ -334,6 +334,24 @@ const localizedRedactFindStrings: Record<string, Partial<typeof redactFindString
     redactFoundRotated: 'Döndürülmüş metindeki {count} eşleşme atlandı; elle işaretleyin',
     aiToolFindSensitive: 'Hassas bilgileri bul ({count} sonuç)',
   },
+  hu: {
+    redactFind: 'Bizalmas adatok keresése',
+    redactFindHint:
+      'Telefonszámok, e-mail-címek, kártyaszámok és más bizalmas adatok megjelölése kitakarásra',
+    redactFindAll: 'Az összes fenti',
+    redactPatternPhone: 'Telefonszámok',
+    redactPatternEmail: 'E-mail-címek',
+    redactPatternCreditCard: 'Bankkártyaszámok',
+    redactPatternSsn: 'Amerikai társadalombiztosítási számok (SSN)',
+    redactPatternDate: 'Dátumok',
+    redactPatternIban: 'IBAN-számok',
+    redactFound:
+      '{count} elem megjelölve kitakarásra. Nézd át őket, majd kattints a „Kitakarások alkalmazása” gombra.',
+    redactFoundNone: 'Nem található egyező bizalmas információ',
+    redactFoundCapped: 'Csak az első {count} terület lett megjelölve (a kitakarási korlát elérve)',
+    redactFoundRotated: '{count} egyezés az elforgatott szövegen kimaradt; jelöld meg őket kézzel',
+    aiToolFindSensitive: 'Bizalmas adatok keresése ({count} találat)',
+  },
   he: {
     redactFind: 'איתור מידע רגיש',
     redactFindHint: 'סימון מספרי טלפון, דוא״ל, מספרי כרטיס ועוד להשחרה',

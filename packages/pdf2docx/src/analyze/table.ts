@@ -11,10 +11,12 @@
  * rejected.
  */
 import type { Rect } from '../geometry'
-import { overlapRatio, rectArea, rectCenterX, rectCenterY, rectUnionAll } from '../geometry'
+import { median, overlapRatio, rectArea, rectCenterX, rectCenterY, rectUnionAll } from '../geometry'
 import type { Fill, PageShapes, PdfChar, Stroke, TableBlock, TableCellBlock } from '../ir'
 import { groupIntoBlocks } from './blocks'
 import { analyzeChars } from './chars'
+import { groupIntoLines } from './lines'
+import { splitIntoUnits } from './units'
 
 /** strokes whose boxes come this close (pt) are touching → same group */
 const CONNECT_TOL = 2.5
@@ -663,6 +665,152 @@ function augmentGridRowBoundaries(grid: TableGrid, chars: readonly PdfChar[]): v
   grid.ys = grid.hLines.map((l) => l.pos)
 }
 
+// ── stream columns inside a merged band (P39 invoice) ──
+
+/** a text-implied valley must be at least this wide (in ems of the band's
+ * median font size) to count as a column boundary — and gaps below it merge
+ * into one word/interval first, so number-internal gaps never mint phantom
+ * columns */
+const STREAM_VALLEY_MIN_EMS = 0.4
+/** a band needs at least this many text baselines before its valleys mean
+ * "columns" — a single line's gaps are just word spacing */
+const STREAM_MIN_BASELINES = 2
+/** a valley is corroborated when the word gaps of at least this many
+ * distinct lines span across it */
+const STREAM_VALLEY_SUPPORT = 2
+/** two text-implied boundaries closer than this (pt) are one column seen
+ * twice — a label's own letter gap beside the boundary its values align to.
+ * The narrower valley (the tighter, more deliberate separation) wins, and
+ * the wide one — usually a label's intra-word space — is dropped. */
+const STREAM_BOUNDARY_SPACING_PT = 24
+/**
+ * Stream columns inside a merged band (P39 invoice, #2669): a form's outer
+ * frame and full-width rules solve into ONE grid, and the borderless detail
+ * table living in one band has no interior rules of its own — that band
+ * merges into a single giant cell and the line items' columns collapse into
+ * one text stream. Where a band carries no real interior rule and its
+ * baselines share whitespace valleys, each valley becomes a real column
+ * boundary scoped to the band (a partial-segment vLine): layoutCells splits
+ * the band's cells there while every other band — whose rules don't reach
+ * the new boundary — merges across it and keeps its solved structure.
+ *
+ * Valley evidence is deliberately strict: per-baseline intervals merge at
+ * the valley threshold first (word-internal gaps die), the union ink
+ * projection must clear the width floor, and a valley needs ink on BOTH
+ * sides in at least two baselines each — a boundary only one row's text
+ * respects is that row's own word gap, not a column.
+ */
+export function augmentGridStreamColumns(grid: TableGrid, chars: readonly PdfChar[]): void {
+  const visible = chars.filter((ch) => ch.code > 0x20)
+  if (visible.length === 0) return
+  const fontSize = median(visible.map((ch) => ch.fontSize)) || 12
+  const valleyMin = STREAM_VALLEY_MIN_EMS * fontSize
+  // the pipeline's own visual-line → gap-split fragments: digit runs, amounts
+  // and letter-spaced labels arrive as single units, so the projection below
+  // works at word granularity without a threshold of its own
+  const units = splitIntoUnits(groupIntoLines(visible))
+  const byLine = new Map<number, typeof units>()
+  for (const unit of units) {
+    let list = byLine.get(unit.lineIndex)
+    if (!list) byLine.set(unit.lineIndex, (list = []))
+    list.push(unit)
+  }
+  const lines = [...byLine.values()]
+  for (let r = 0; r + 1 < grid.ys.length; r++) {
+    const bandLo = grid.ys[r + 1]!
+    const bandHi = grid.ys[r]!
+    if (bandHi - bandLo < MIN_CELL_DIM * 2) continue
+    // a band with its own real interior rule is already structured
+    const structured = grid.vLines.some(
+      (line) =>
+        !line.virtual &&
+        line.pos > grid.box.x0 + MIN_CELL_DIM &&
+        line.pos < grid.box.x1 - MIN_CELL_DIM &&
+        coverage(line, bandLo, bandHi) >= BORDER_COVER_MIN * (bandHi - bandLo),
+    )
+    if (structured) continue
+
+    // the band's units, grouped by their visual line
+    const bandLines = lines
+      .map((line) =>
+        line.filter((u) => {
+          const cy = rectCenterY(u.box)
+          return cy >= bandLo && cy <= bandHi
+        }),
+      )
+      .filter((line) => line.length > 0)
+    if (bandLines.length < STREAM_MIN_BASELINES) continue
+
+    // union ink projection of the band over unit boxes
+    const flat = bandLines
+      .flat()
+      .map((u) => ({ lo: u.box.x0, hi: u.box.x1 }))
+      .sort((a, b) => a.lo - b.lo || a.hi - b.hi)
+    const union: Array<{ lo: number; hi: number }> = []
+    for (const iv of flat) {
+      const last = union[union.length - 1]
+      if (last && iv.lo <= last.hi) last.hi = Math.max(last.hi, iv.hi)
+      else union.push({ ...iv })
+    }
+
+    // valleys of the union projection, inside the grid, clear of existing xs
+    const left = grid.box.x0 + MIN_CELL_DIM
+    const right = grid.box.x1 - MIN_CELL_DIM
+    const valleys: Array<{ lo: number; hi: number }> = []
+    let cursor = left
+    for (const iv of union) {
+      if (iv.lo - cursor >= valleyMin) valleys.push({ lo: cursor, hi: Math.min(iv.lo, right) })
+      cursor = Math.max(cursor, iv.hi)
+      if (cursor >= right) break
+    }
+    if (right - cursor >= valleyMin) valleys.push({ lo: cursor, hi: right })
+
+    const kept: Array<{ pos: number; width: number }> = []
+    for (const valley of valleys) {
+      const pos = (valley.lo + valley.hi) / 2
+      if (pos <= left || pos >= right) continue
+      if (grid.xs.some((x) => Math.abs(x - pos) < MIN_CELL_DIM)) continue
+      // corroborate the valley with the lines' own word gaps: ≥2 distinct
+      // lines must have consecutive units whose gap spans across it. One
+      // line is not enough — it is that line's private space (the grand-
+      // total label's intra-word gap, #2669's sample); two lines make it a
+      // channel the whole band's text respects, which is what a column is.
+      let covering = 0
+      for (const line of bandLines) {
+        const ivs = line.map((u) => ({ lo: u.box.x0, hi: u.box.x1 })).sort((a, b) => a.lo - b.lo)
+        for (let i = 1; i < ivs.length; i++) {
+          if (ivs[i - 1]!.hi <= valley.lo + 0.01 && ivs[i]!.lo >= valley.hi - 0.01) {
+            covering++
+            break
+          }
+        }
+      }
+      if (covering >= STREAM_VALLEY_SUPPORT) kept.push({ pos, width: valley.hi - valley.lo })
+    }
+    if (kept.length === 0) continue
+
+    // one column seen twice: a label's letter gap beside the boundary its
+    // values align to. Enforce the column width between NEW boundaries only
+    // (existing rules are absent in this band — that is why it merged) and
+    // let the narrower valley win.
+    kept.sort((a, b) => a.pos - b.pos)
+    const spaced: Array<{ pos: number; width: number }> = []
+    for (const candidate of kept) {
+      const prev = spaced[spaced.length - 1]
+      if (prev && candidate.pos - prev.pos < STREAM_BOUNDARY_SPACING_PT) {
+        if (candidate.width < prev.width) spaced[spaced.length - 1] = candidate
+        continue
+      }
+      spaced.push(candidate)
+    }
+    for (const boundary of spaced) {
+      grid.vLines.push({ pos: boundary.pos, segments: [[bandLo, bandHi]], virtual: false })
+    }
+    grid.vLines.sort((a, b) => a.pos - b.pos)
+    grid.xs = grid.vLines.map((l) => l.pos)
+  }
+}
+
 /**
  * Column boundaries from cell-shading edges (P30): modern borderless tables
  * draw NO interior vertical rules — the header/zebra fills carry the column
@@ -983,6 +1131,7 @@ export function detectTables(
     if (!grid.lowRank) {
       augmentGridRowBoundaries(grid, perGrid[i]!)
       augmentGridColumnBoundaries(grid, perGrid[i]!, shapes.fills)
+      augmentGridStreamColumns(grid, perGrid[i]!)
     } else {
       // a closed one-column box whose fills reveal interior columns is a
       // shaded borderless table (header/zebra fills carry the structure) —

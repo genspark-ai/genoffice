@@ -886,11 +886,18 @@ export async function saveDocx(
   }
   const styleUpserts = [...(options.styleUpserts ?? []), ...headingUpserts]
 
+  // Pre-rendered xml blocks (a rebuilt table's model xml) carry bookmark ids an
+  // editor-side allocator minted above the original document's: seed past those
+  // too, or a generated paragraph's bookmark would collide with one of them.
+  const preRenderedXml = finalBlocks
+    .filter((b) => b.kind === 'xml')
+    .map((b) => b.xml)
+    .join('')
   const genCtx = {
     headingStyleIds,
     listParagraphStyleId: parsed.listParagraphStyleId,
     allocateHyperlinkRel,
-    allocateBookmarkId: nextBookmarkIdAllocator(documentXml),
+    allocateBookmarkId: nextBookmarkIdAllocator(documentXml + preRenderedXml),
     allocateRevisionId: nextRevisionIdAllocator(
       [documentXml, ...(await storyPartsXml(zip))],
       options.revisionIdFloor,
@@ -3248,7 +3255,7 @@ function maxDocPrId(documentXml: string): number {
  * bookmark that reused an id already in use made Word pair the two bookmarks
  * wrongly and land a cross-reference on the wrong target.
  */
-function nextBookmarkIdAllocator(documentXml: string): (name: string) => number {
+export function nextBookmarkIdAllocator(documentXml: string): (name: string) => number {
   let next = maxBookmarkId(documentXml) + 1
   return () => next++
 }

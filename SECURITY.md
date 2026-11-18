@@ -20,7 +20,12 @@ All application windows run with the full Electron renderer lockdown:
   enforces a protocol allowlist (http/https; pdf link annotations additionally
   allow mailto). `file:`, `javascript:`, and custom schemes are always rejected.
 - No API keys are hardcoded. AI requests are proxied through the signed-in
-  account by default; user-supplied keys stay in the OS-level settings store.
+  account by default; user-supplied keys stay in a settings file under the
+  app's own userData directory, written owner-only (0600) so other local
+  accounts cannot read them. (Encrypted-at-rest storage via safeStorage would
+  also seal backups and cloud-sync copies of that file, but the bundled CLI
+  reads the same file without Electron, so file permissions are the contract
+  both share.)
 
 ## Threat Model: AI-Generated Layout Scripts (slides)
 
