@@ -175,6 +175,14 @@ export const strings = {
     ...aiStrings.tr,
     ...zoteroStrings.tr,
   },
+  hu: {
+    ...appStrings.hu,
+    ...ribbonStrings.hu,
+    ...tableStrings.hu,
+    ...editorStrings.hu,
+    ...aiStrings.hu,
+    ...zoteroStrings.hu,
+  },
   'zh-TW': {
     ...appStrings['zh-TW'],
     ...ribbonStrings['zh-TW'],

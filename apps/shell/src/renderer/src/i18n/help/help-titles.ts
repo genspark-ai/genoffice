@@ -34,6 +34,7 @@ export const HELP_TITLE_LANGS = [
   'hi',
   'vi',
   'tr',
+  'hu',
 ] as const
 
 export type HelpTitleLang = (typeof HELP_TITLE_LANGS)[number]
@@ -63,6 +64,7 @@ const GROUP_TITLES: Record<HelpGroupId, Record<HelpTitleLang, string>> = {
     hi: 'शुरुआत',
     vi: 'Bắt đầu',
     tr: 'Başlarken',
+    hu: 'Első lépések',
   },
   apps: {
     zh: '应用',
@@ -87,6 +89,7 @@ const GROUP_TITLES: Record<HelpGroupId, Record<HelpTitleLang, string>> = {
     hi: 'ऐप्स',
     vi: 'Ứng dụng',
     tr: 'Uygulamalar',
+    hu: 'Alkalmazások',
   },
   ai: {
     zh: 'AI 能力',
@@ -111,6 +114,7 @@ const GROUP_TITLES: Record<HelpGroupId, Record<HelpTitleLang, string>> = {
     hi: 'AI सुविधाएँ',
     vi: 'Tính năng AI',
     tr: 'AI özellikleri',
+    hu: 'AI-funkciók',
   },
   manage: {
     zh: '文件与设置',
@@ -135,6 +139,7 @@ const GROUP_TITLES: Record<HelpGroupId, Record<HelpTitleLang, string>> = {
     hi: 'फ़ाइलें और सेटिंग्स',
     vi: 'Tệp và cài đặt',
     tr: 'Dosyalar ve ayarlar',
+    hu: 'Fájlok és beállítások',
   },
 }
 
@@ -164,6 +169,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'त्वरित प्रारंभ: इंटरफ़ेस और बुनियादी बातें',
     vi: 'Bắt đầu nhanh: giao diện và những điều cơ bản',
     tr: 'Hızlı başlangıç: arayüz ve temel bilgiler',
+    hu: 'Gyors kezdés: a felület és az alapok',
   },
   'home-screen': {
     zh: '主屏（Home）：文件都在哪',
@@ -188,6 +194,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'होम स्क्रीन: आपकी फ़ाइलें कहाँ हैं',
     vi: 'Màn hình Trang chủ: tập tin của bạn ở đâu',
     tr: 'Ana Sayfa ekranı: dosyalarınızın bulunduğu yer',
+    hu: 'A kezdőképernyő: itt találhatók a fájljaid',
   },
   'tabs-and-windows': {
     zh: '标签页与窗口管理',
@@ -212,6 +219,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'टैब और विंडो प्रबंधन',
     vi: 'Quản lý thẻ và cửa sổ',
     tr: 'Sekme ve pencere yönetimi',
+    hu: 'Lapok és ablakkezelés',
   },
   shortcuts: {
     zh: '快捷键一览',
@@ -236,6 +244,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'कीबोर्ड शॉर्टकट',
     vi: 'Phím tắt',
     tr: 'Klavye kısayolları',
+    hu: 'Billentyűparancsok',
   },
   docs: {
     zh: 'Docs：文字处理',
@@ -260,6 +269,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'Docs: शब्द प्रसंस्करण',
     vi: 'Docs: xử lý văn bản',
     tr: 'Docs: kelime işlem',
+    hu: 'Docs: szövegszerkesztés',
   },
   sheets: {
     zh: 'Sheets：电子表格',
@@ -284,6 +294,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'Sheets: स्प्रेडशीट',
     vi: 'Sheets: bảng tính',
     tr: 'Sheets: elektronik tablolar',
+    hu: 'Sheets: táblázatkezelés',
   },
   slides: {
     zh: 'Slides：演示文稿',
@@ -308,6 +319,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'Slides: प्रस्तुतियाँ',
     vi: 'Slides: trình chiếu',
     tr: 'Slides: sunular',
+    hu: 'Slides: bemutatók',
   },
   pdf: {
     zh: 'PDF：阅读、注释与涂黑',
@@ -332,6 +344,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'PDF: पढ़ना, एनोटेट करना और कालापन',
     vi: 'PDF: đọc, chú thích và che nội dung',
     tr: 'PDF: okuma, açıklama ekleme ve karartma',
+    hu: 'PDF: olvasás, széljegyzetek és kitakarás',
   },
   markdown: {
     zh: 'Markdown 编辑器',
@@ -356,6 +369,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'Markdown एडिटर',
     vi: 'Trình soạn thảo Markdown',
     tr: 'Markdown düzenleyici',
+    hu: 'A Markdown-szerkesztő',
   },
   html: {
     zh: 'HTML 编辑器',
@@ -380,6 +394,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'HTML एडिटर',
     vi: 'Trình soạn thảo HTML',
     tr: 'HTML düzenleyici',
+    hu: 'A HTML-szerkesztő',
   },
   'ai-panel': {
     zh: 'AI 助手面板',
@@ -404,6 +419,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'AI सहायक पैनल',
     vi: 'Bảng điều khiển trợ lý AI',
     tr: 'AI asistan paneli',
+    hu: 'Az AI-asszisztens panel',
   },
   'ai-models': {
     zh: 'AI 模型与设置',
@@ -428,6 +444,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'AI मॉडल और सेटिंग्स',
     vi: 'Mô hình AI và cài đặt',
     tr: 'AI modelleri ve ayarlar',
+    hu: 'AI-modellek és beállítások',
   },
   fonts: {
     zh: '字体：系统字体与可下载字体',
@@ -452,6 +469,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'फ़ॉन्ट: सिस्टम फ़ॉन्ट और डाउनलोड करने योग्य परिवार',
     vi: 'Phông chữ: phông hệ thống và các họ có thể tải về',
     tr: 'Yazı tipleri: sistem yazı tipleri ve indirilebilir aileler',
+    hu: 'Betűtípusok: rendszerbetűk és letölthető betűcsaládok',
   },
   'file-ops': {
     zh: '文件操作：重命名、删除、导出',
@@ -476,6 +494,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'फ़ाइल कार्रवाइयाँ: नाम बदलना, हटाना, निर्यात',
     vi: 'Thao tác tập tin: đổi tên, xóa, xuất',
     tr: 'Dosya işlemleri: yeniden adlandırma, silme, dışa aktarma',
+    hu: 'Fájlműveletek: átnevezés, törlés, exportálás',
   },
   'settings-integrations': {
     zh: '设置、语言、主题与 MCP 集成',
@@ -500,6 +519,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'सेटिंग्स, भाषा, थीम और MCP इंटीग्रेशन',
     vi: 'Cài đặt, ngôn ngữ, chủ đề và tích hợp MCP',
     tr: 'Ayarlar, dil, tema ve MCP tümleştirmeleri',
+    hu: 'Beállítások, nyelv, téma és MCP-integrációk',
   },
   install: {
     zh: '安装 GenOffice',
@@ -524,6 +544,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'GenOffice इंस्टॉल करना',
     vi: 'Cài đặt GenOffice',
     tr: 'GenOffice kurulumu',
+    hu: 'A GenOffice telepítése',
   },
   cli: {
     zh: '命令行与智能体',
@@ -548,6 +569,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'कमांड लाइन और एजेंट',
     vi: 'Dòng lệnh và tác nhân',
     tr: 'Komut satırı ve aracılar',
+    hu: 'Parancssor és ügynökök',
   },
   mcp: {
     zh: '连接编程助手',
@@ -572,6 +594,7 @@ const TOPIC_TITLES: Record<string, Record<HelpTitleLang, string>> = {
     hi: 'कोडिंग एजेंट से कनेक्ट करना',
     vi: 'Kết nối tác nhân lập trình',
     tr: 'Kodlama aracısı bağlama',
+    hu: 'Fejlesztői ügynök csatlakoztatása',
   },
 }
 

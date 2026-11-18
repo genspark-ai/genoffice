@@ -1443,7 +1443,7 @@ function finalPageIndex(request: SavePdfRequest, p: number): number | null {
     const i = request.pageOrder.indexOf(p)
     return i >= 0 ? i : null
   }
-  const del = request.deletedPages ?? []
+  const del = [...new Set(request.deletedPages ?? [])]
   if (del.includes(p)) return null
   return p - del.filter((d) => d < p).length
 }
@@ -1696,7 +1696,7 @@ export async function applySaveRequest(
     page.node.delete(PDFName.of('PieceInfo'))
   }
   // Deletions go last, in descending order; earlier ops all address original page indices
-  for (const idx of [...(request.deletedPages ?? [])].sort((a, b) => b - a)) {
+  for (const idx of [...new Set(request.deletedPages ?? [])].sort((a, b) => b - a)) {
     if (idx >= 0 && idx < pdfDoc.getPageCount() && pdfDoc.getPageCount() > 1) pdfDoc.removePage(idx)
   }
   // Reorder last: pageOrder gives the new order of remaining-after-delete pages by original index.
@@ -1705,11 +1705,22 @@ export async function applySaveRequest(
   const order = request.pageOrder
   if (order && order.length > 0) {
     const deletedSet = new Set(request.deletedPages ?? [])
-    const target = order
-      .filter((o) => !deletedSet.has(o))
-      .map((o) => pages[o])
-      .filter((p) => p !== undefined)
-    if (target.length === pdfDoc.getPageCount()) {
+    const surviving = order.filter((o) => !deletedSet.has(o))
+    if (surviving.length > 0) {
+      // a non-empty order must be a permutation of the pages that survive the
+      // deletion: with only the length checked, a duplicate index passed the
+      // guard and the rebuild replaced an omitted page with a copy of another
+      // one — real content gone, no failure indicated. The request fails
+      // instead of writing. An empty surviving list stays the guarded
+      // last-page skip (deleting every page keeps one no order can address).
+      const inRange = surviving.every((o) => Number.isInteger(o) && o >= 0 && o < pages.length)
+      const unique = new Set(surviving).size === surviving.length
+      if (!inRange || !unique || surviving.length !== pdfDoc.getPageCount()) {
+        throw new Error(
+          `pageOrder must be a permutation of the surviving pages (${pdfDoc.getPageCount()} of ${pages.length}); got [${order.join(', ')}]`,
+        )
+      }
+      const target = surviving.map((o) => pages[o]!)
       while (pdfDoc.getPageCount() > 0) pdfDoc.removePage(0)
       for (const p of target) pdfDoc.addPage(p)
     }

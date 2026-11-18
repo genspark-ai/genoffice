@@ -186,6 +186,7 @@ async function listNss(
   storePassword?: string,
 ): Promise<SystemCertificateListing> {
   const out: SystemCertificateListing = { certs: [], issues: [] }
+  const readConcurrency = 8
   const dirs = nssDatabaseDirs(env.home)
   if (dirs.length === 0) return out
   await withPrivateDir(async (scratch) => {
@@ -206,20 +207,32 @@ async function listNss(
         if (looksLocked(keys.stderr)) out.issues.push('store-locked')
         continue
       }
-      for (const nickname of parseNssKeyList(keys.stdout)) {
-        const pem = await env.run('certutil', ['-L', '-d', db, '-n', nickname, '-a', ...pwArgs])
-        if (pem.code !== 0) continue
-        try {
-          out.certs.push(
-            toListed(
-              { source: 'nss', dir, nickname },
-              nickname,
-              new X509Certificate(pem.stdout),
-              env.now(),
-            ),
-          )
-        } catch {
-          /* a nickname that is not an X.509 certificate is not a signing identity */
+      const nicknames = parseNssKeyList(keys.stdout)
+      for (let offset = 0; offset < nicknames.length; offset += readConcurrency) {
+        const batch = nicknames.slice(offset, offset + readConcurrency)
+        // Drain all reads before releasing the password file, even if a runner rejects.
+        const results = await Promise.allSettled(
+          batch.map((nickname) =>
+            env.run('certutil', ['-L', '-d', db, '-n', nickname, '-a', ...pwArgs]),
+          ),
+        )
+        for (const [index, result] of results.entries()) {
+          if (result.status === 'rejected') throw result.reason
+          const nickname = batch[index]!
+          const pem = result.value
+          if (pem.code !== 0) continue
+          try {
+            out.certs.push(
+              toListed(
+                { source: 'nss', dir, nickname },
+                nickname,
+                new X509Certificate(pem.stdout),
+                env.now(),
+              ),
+            )
+          } catch {
+            /* a nickname that is not an X.509 certificate is not a signing identity */
+          }
         }
       }
     }

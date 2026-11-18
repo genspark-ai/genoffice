@@ -231,13 +231,23 @@ export function parseSpContainer(stream: Uint8Array, record: PptRecord): EscherS
   return shape
 }
 
+/** A hostile stream can chain spgrContainer records 8 bytes a level, so the
+ *  descent is capped like the pptx engine's group parse (MAX_GROUP_DEPTH=64):
+ *  deeper nesting degrades to an empty group instead of exhausting the stack. */
+const MAX_SPGR_DEPTH = 64
+
 /** The shapes of an SpgrContainer; a nested group's first shape is the group itself. */
-export function parseSpgrContainer(stream: Uint8Array, record: PptRecord): EscherShape[] {
+export function parseSpgrContainer(
+  stream: Uint8Array,
+  record: PptRecord,
+  depth = 0,
+): EscherShape[] {
   const shapes: EscherShape[] = []
+  if (depth >= MAX_SPGR_DEPTH) return shapes
   for (const child of walkRecordsLenient(stream, record.offset, record.offset + record.length)) {
     if (child.type === ESCHER.spContainer) shapes.push(parseSpContainer(stream, child))
     else if (child.type === ESCHER.spgrContainer) {
-      const [self, ...members] = parseSpgrContainer(stream, child)
+      const [self, ...members] = parseSpgrContainer(stream, child, depth + 1)
       if (self) {
         self.children = members
         shapes.push(self)

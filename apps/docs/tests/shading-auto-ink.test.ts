@@ -99,6 +99,28 @@ describe('auto ink on dark shading', () => {
     )
   })
 
+  it('reads a w:fill the parser hands over padded, with or without the hash', async () => {
+    const body =
+      '<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr>' +
+      cell(' 000000 ', run('auto on padded black')) +
+      cell('#F2F2F2 ', run('auto on padded light')) +
+      '</w:tr></w:tbl>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: body }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    const tds = [...editor.view.dom.querySelectorAll('td')]
+    expect(tds.map((td) => td.getAttribute('data-ink'))).toEqual(['light', 'dark'])
+    editor.destroy()
+    // the trim runs before the hash check, so either padding is accepted
+    expect(fillInk(' 000000')).toBe('light')
+    expect(fillInk('#000000 ')).toBe('light')
+    expect(fillInk('  F2F2F2  ')).toBe('dark')
+  })
+
   it('styles.css flips the ink on data-ink="light" and re-darkens it on the dark page', () => {
     const light = /\[data-ink='light'\]\s*\{([^}]*)\}/.exec(STYLES_CSS)!
     expect(light[1]).toContain('--docs-paper-ink: #fff')
