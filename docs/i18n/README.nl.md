@@ -273,7 +273,7 @@ endpoint (base URL + key), inclusief lokale modelservers. Zoeken en media
 hebben elk hun eigen providers per capability onder **AI Media & Search**:
 Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa of Firecrawl voor webzoeken —
 Keenable werkt ook keyless; een key verhoogt alleen de rate limits — en
-OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX of elk
+OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX of elk
 OpenAI-compatibel images-endpoint voor beeldgeneratie en analyse van beeld en
 video.
 

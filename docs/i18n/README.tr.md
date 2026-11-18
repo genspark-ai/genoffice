@@ -339,6 +339,7 @@ Search** altında yetenek başına kendi sağlayıcıları vardır: web araması
 Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa ya da Firecrawl; görsel üretimi
 ve görsel/video analizi için OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen,
 MiniMax,
+Kling,
 Stability,
 FLUX ya da herhangi bir OpenAI uyumlu görsel uç noktası; görsel analizi için
 ayrıca DeepSeek V4.1 Flash.

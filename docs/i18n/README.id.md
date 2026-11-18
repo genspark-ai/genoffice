@@ -272,7 +272,7 @@ dengan OpenAI (base URL + kunci), termasuk server model lokal. Pencarian dan
 media memiliki penyedia tersendiri per kemampuan di bawah **AI Media &
 Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa, atau Firecrawl
 untuk pencarian web — Keenable juga tanpa kunci; kunci hanya menaikkan batas
-lajunya — dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX, atau
+lajunya — dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX, atau
 endpoint apa pun yang kompatibel dengan OpenAI untuk generasi gambar serta
 analisis gambar/video.
 

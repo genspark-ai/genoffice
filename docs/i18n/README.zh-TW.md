@@ -301,7 +301,7 @@ OpenCode Zen/Go，另外還有一個自訂欄位可填入任何相容 OpenAI 的
 SearchApi、
 Tavily、Parallel、Keenable、Exa 或 Firecrawl——其中 Keenable 同樣免金鑰，
 設定金鑰只會提高速率限制；圖片生成與圖片／影片分析可選 OpenAI、Gemini、
-Doubao/Seedream、GLM、Grok、Qwen、MiniMax、Stability、FLUX，或任何相容 OpenAI 的圖片
+Doubao/Seedream、GLM、Grok、Qwen、MiniMax、Kling、Stability、FLUX，或任何相容 OpenAI 的圖片
 服務端點。
 
 整套軟體支援亮色、深色與跟隨系統三種主題。主題只會改變畫面顯示：

@@ -269,7 +269,7 @@ endpoint (base URL + klíč), včetně lokálních serverů s modely. Vyhledáv�
 a média mají vlastní poskytovatele pro každou schopnost pod **AI Media
 & Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa nebo Firecrawl
 pro webové vyhledávání — i Keenable je bez klíče; klíč pouze zvýší limity
-počtu požadavků — a OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX
+počtu požadavků — a OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX
 nebo jakýkoli OpenAI kompatibilní endpoint pro obrázky, generování obrázků
 a analýzu obrázků/videa.
 

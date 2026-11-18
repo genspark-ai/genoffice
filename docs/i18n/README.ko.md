@@ -267,7 +267,7 @@ OpenCode Zen/Go가 있으며, 로컬 모델 서버를 포함한 모든 OpenAI �
 있습니다: 웹 검색은 Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa
 또는 Firecrawl(Keenable도 키 없이 쓸 수 있으며, 키가 있으면 속도
 제한만 완화됩니다), 이미지 생성과 이미지/비디오 분석은 OpenAI,
-Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX 또는 OpenAI 호환
+Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX 또는 OpenAI 호환
 이미지 엔드포인트 중에서 선택합니다.
 
 전체 제품군은 라이트, 다크, 시스템 테마를 지원합니다. 테마는 화면에

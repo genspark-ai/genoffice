@@ -272,7 +272,7 @@ Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlo
 провайдеров по каждой возможности в разделе **Медиа и поиск ИИ**: Serper,
 Serply, SearchApi, Tavily, Parallel, Keenable, Exa или Firecrawl для веб-поиска
 (Keenable тоже работает без ключа — ключ лишь поднимает лимиты запросов) и
-OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX или любой
+OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX или любой
 совместимый с OpenAI эндпоинт для генерации изображений и анализа
 изображений/видео.
 

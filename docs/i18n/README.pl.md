@@ -280,7 +280,7 @@ Wyszukiwanie i media mają własnych dostawców przypisanych do konkretnej
 funkcji w sekcji **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel,
 Keenable, Exa lub Firecrawl do wyszukiwania w internecie — Keenable również
 nie wymaga klucza, a klucz jedynie podnosi limity zapytań — oraz OpenAI,
-Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX lub dowolny endpoint
+Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX lub dowolny endpoint
 obrazów zgodny z OpenAI do generowania obrazów oraz analizy obrazu i wideo.
 
 Cały pakiet obsługuje motywy jasny, ciemny i systemowy. Motywy zmieniają

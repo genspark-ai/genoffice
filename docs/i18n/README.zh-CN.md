@@ -246,7 +246,7 @@ GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty、Opper�
 搜索和媒体能力在 **AI 媒体与搜索** 下按能力分别配置服务商：网页搜索可选 Serper、
 Serply、SearchApi、Tavily、Parallel、Keenable、Exa 或 Firecrawl —— 其中 Keenable 同样免密钥，
 配置密钥只会提高速率限额；图片生成和图片/视频解析可选 OpenAI、Gemini、
-Doubao/Seedream、GLM、Grok、Qwen、MiniMax、Stability、FLUX 或任何 OpenAI 兼容的图片端点。
+Doubao/Seedream、GLM、Grok、Qwen、MiniMax、Kling、Stability、FLUX 或任何 OpenAI 兼容的图片端点。
 
 整个套件提供浅色、深色和跟随系统三种主题。主题只改变屏幕上的显示：导出、打印
 和保存的文件始终保留文档自身的颜色。

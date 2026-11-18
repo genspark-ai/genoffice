@@ -271,7 +271,7 @@ compatibile con OpenAI (base URL + chiave), inclusi i server con modelli
 locali. Ricerca e media hanno i propri provider per singola funzionalità
 sotto **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa o
 Firecrawl per la ricerca web, e OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
-Qwen, MiniMax, Stability, FLUX o qualsiasi endpoint di immagini compatibile con OpenAI per la
+Qwen, MiniMax, Kling, Stability, FLUX o qualsiasi endpoint di immagini compatibile con OpenAI per la
 generazione di immagini e l'analisi di immagini/video.
 
 L'intera suite include i temi chiaro, scuro e di sistema. I temi cambiano

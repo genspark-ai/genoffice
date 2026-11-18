@@ -411,7 +411,7 @@ PPIO, Command Code và OpenCode Zen/Go, cùng một ô tuỳ biến cho bất k�
 (base URL + khoá), kể cả máy chủ mô hình cục bộ. Search và media có nhà
 cung cấp riêng theo từng khả năng dưới **AI Media & Search**: Serper,
 Serply, SearchApi, Tavily, Parallel, Keenable, Exa hoặc Firecrawl cho tìm kiếm web;
-OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX
+OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX
 hoặc bất kỳ điểm
 cuối ảnh tương thích OpenAI nào cho tạo ảnh và phân tích ảnh/video, cùng
 DeepSeek V4.1 Flash cho phân tích ảnh.

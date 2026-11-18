@@ -274,6 +274,7 @@ Mídia e Busca**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa ou 
 para busca na web — Keenable também dispensa chave; uma chave apenas eleva os
 limites de taxa —, e OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen,
 MiniMax,
+Kling,
 Stability,
 FLUX ou qualquer endpoint de imagens compatível com OpenAI para geração de
 imagens e análise de imagem/vídeo.

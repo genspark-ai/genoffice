@@ -1115,3 +1115,106 @@ describe('generateImageWithProvider (mai)', () => {
     ).rejects.toThrow(/Failed/)
   })
 })
+
+describe('generateImageWithProvider: kling', () => {
+  const klingConfig = {
+    apiKey: 'ak-demo:sk-demo-secret',
+    imageModel: 'kling-image-4.0',
+    analysisModel: '',
+  }
+
+  function klingResponses() {
+    const png = `data:image/png;base64,${PNG_B64}`
+    let calls = 0
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      calls++
+      const href = String(url)
+      if (href.endsWith('/v1/images/generations') && calls === 1) {
+        return jsonResponse({ code: 0, data: { task_id: 'task-7', task_status: 'submitted' } })
+      }
+      if (href.includes('/v1/images/generations/task-7') && calls === 2) {
+        return jsonResponse({ code: 0, data: { task_id: 'task-7', task_status: 'processing' } })
+      }
+      if (href.includes('/v1/images/generations/task-7')) {
+        return jsonResponse({
+          code: 0,
+          data: {
+            task_id: 'task-7',
+            task_status: 'succeed',
+            task_result: { images: [{ index: 0, url: png }] },
+          },
+        })
+      }
+      // the image download
+      return new Response(new Uint8Array(PNG), {
+        status: 200,
+        headers: { 'content-type': 'image/png' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('signs a JWT from access-key:secret-key, submits model_name, polls to the image URL', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = klingResponses()
+      const pending = generateImageWithProvider('kling', klingConfig, {
+        prompt: 'a cat on a sofa',
+        aspectRatio: '16:9',
+      })
+      // drive the 3 s poll intervals past the fake clock
+      await vi.advanceTimersByTimeAsync(10_000)
+      const out = await pending
+      expect(out.mime).toBe('image/png')
+      const [submitUrl, submitInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+      expect(submitUrl).toBe('https://api-beijing.klingai.com/v1/images/generations')
+      expect((submitInit.headers as Record<string, string>).Authorization).toMatch(
+        /^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/,
+      )
+      const body = JSON.parse(String(submitInit.body))
+      expect(body.model_name).toBe('kling-image-4.0')
+      expect(body.prompt).toBe('a cat on a sofa')
+      expect(body.aspect_ratio).toBe('16:9')
+      const [pollUrl] = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
+      expect(pollUrl).toBe('https://api-beijing.klingai.com/v1/images/generations/task-7')
+      // the JWT payload carries the access key and an expiry
+      const auth = (submitInit.headers as Record<string, string>).Authorization.slice(7)
+      const payload = JSON.parse(Buffer.from(auth.split('.')[1]!, 'base64url').toString('utf8'))
+      expect(payload.ak).toBe('ak-demo')
+      expect(payload.exp).toBeGreaterThan(payload.iat)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('surfaces the task failure message', async () => {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const href = String(url)
+      if (href.endsWith('/v1/images/generations')) {
+        return jsonResponse({ code: 0, data: { task_id: 'task-9', task_status: 'submitted' } })
+      }
+      return jsonResponse({
+        code: 0,
+        data: { task_id: 'task-9', task_status: 'failed', task_status_msg: 'content flagged' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(generateImageWithProvider('kling', klingConfig, { prompt: 'x' })).rejects.toThrow(
+      'content flagged',
+    )
+  })
+
+  it('rejects a key without the access-key:secret-key pair before any request', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      generateImageWithProvider(
+        'kling',
+        { apiKey: 'just-one-value', imageModel: 'kling-image-4.0', analysisModel: '' },
+        { prompt: 'x' },
+      ),
+    ).rejects.toThrow('access-key:secret-key')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})

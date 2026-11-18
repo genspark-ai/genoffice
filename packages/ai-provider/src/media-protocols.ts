@@ -9,6 +9,8 @@
  * tools go through the gsk CLI in @genoffice/ai-search.
  */
 
+import { createHmac } from 'node:crypto'
+import { KLING_BASE_URL } from './media'
 import { aiFetch } from './fetch'
 import { endpointUrl } from './protocols/shared'
 import { httpBodyDetail } from './http-error'
@@ -406,6 +408,106 @@ async function generateImageDashscope(
     throw new Error(`Image generation returned no image: ${JSON.stringify(json).slice(0, 200)}`)
   }
   return downloadImage('Image generation failed:', image, signal)
+}
+
+// ── Kling image generations (async task + poll) ────────────────────
+
+const KLING_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4'])
+const KLING_POLL_MS = 3_000
+
+function base64url(input: Buffer): string {
+  return input.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+/** Kling authenticates with a JWT signed HS256 from an access key (the ak
+ *  claim) and a secret key; the key field carries both as
+ *  `access-key:secret-key` so no settings shape grows a second field. */
+export function klingJwt(accessKey: string, secretKey: string, now = Date.now()): string {
+  const header = base64url(Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })))
+  const payload = base64url(
+    Buffer.from(
+      JSON.stringify({
+        ak: accessKey,
+        exp: Math.floor(now / 1000) + 1800,
+        iat: Math.floor(now / 1000) - 5,
+      }),
+    ),
+  )
+  const signature = base64url(
+    createHmac('sha256', secretKey).update(`${header}.${payload}`).digest(),
+  )
+  return `${header}.${payload}.${signature}`
+}
+
+function klingKeyPair(config: AiMediaProviderConfig): { accessKey: string; secretKey: string } {
+  const sep = config.apiKey.indexOf(':')
+  if (sep <= 0 || sep === config.apiKey.length - 1) {
+    throw new Error(
+      'Kling needs both an access key and a secret key — set the key as "access-key:secret-key"',
+    )
+  }
+  return { accessKey: config.apiKey.slice(0, sep), secretKey: config.apiKey.slice(sep + 1) }
+}
+
+async function generateImageKling(
+  config: AiMediaProviderConfig,
+  model: string,
+  input: GenerateImageInput,
+  signal: AbortSignal,
+): Promise<MediaBlob> {
+  if (input.references?.length) {
+    throw new Error(
+      'Kling Image 4.0 generates from the prompt alone; pick another image provider for edits.',
+    )
+  }
+  const { accessKey, secretKey } = klingKeyPair(config)
+  const base = trimSlash(config.baseUrl || KLING_BASE_URL)
+  const bearer = `Bearer ${klingJwt(accessKey, secretKey)}`
+  const ratio =
+    input.aspectRatio && KLING_RATIOS.has(input.aspectRatio) ? input.aspectRatio : undefined
+  const submit = await aiFetch(endpointUrl(base, '/v1/images/generations'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: bearer },
+    body: JSON.stringify({
+      model_name: model,
+      prompt: input.prompt,
+      ...(ratio ? { aspect_ratio: ratio } : {}),
+    }),
+    signal,
+  })
+  if (!submit.ok) return failFrom('Image generation failed:', submit)
+  const submitted = await readJson('Image generation failed:', submit)
+  const submittedData = asRecord(submitted.data)
+  const taskId = submittedData.task_id
+  if (typeof taskId !== 'string' || !taskId) {
+    throw new Error(`Image generation returned no task: ${JSON.stringify(submitted).slice(0, 200)}`)
+  }
+  // the generation runs as a task: poll until it succeeds, fails, or the
+  // 10-minute generate guard expires
+  for (;;) {
+    if (signal.aborted) throw new Error('Image generation failed: aborted')
+    await new Promise((resolve) => setTimeout(resolve, KLING_POLL_MS))
+    const poll = await aiFetch(endpointUrl(base, `/v1/images/generations/${taskId}`), {
+      headers: { Authorization: bearer },
+      signal,
+    })
+    if (!poll.ok) return failFrom('Image generation failed:', poll)
+    const polled = await readJson('Image generation failed:', poll)
+    const data = asRecord(polled.data)
+    const status = data.task_status
+    if (status === 'failed') {
+      throw new Error(`Image generation failed: ${String(data.task_status_msg ?? status)}`)
+    }
+    if (status !== 'succeed') continue
+    const result = asRecord(data.task_result)
+    const images = result.images as unknown[] | undefined
+    const first = images && images.length > 0 ? asRecord(images[0]) : undefined
+    const url = first?.url
+    if (typeof url === 'string' && url) {
+      return downloadImage('Image generation failed:', url, signal)
+    }
+    throw new Error(`Image generation returned no image: ${JSON.stringify(polled).slice(0, 200)}`)
+  }
 }
 
 // ── MiniMax image_generation ───────────────────────────────────────
@@ -958,6 +1060,8 @@ export async function generateImageWithProvider(
       return generateImageBfl(config, model, input, guard)
     case 'mai':
       return generateImageMai(config, model, input, guard)
+    case 'kling':
+      return generateImageKling(config, model, input, guard)
     case 'openai-images':
       return generateImageOpenAi(provider, config, model, input, guard)
   }

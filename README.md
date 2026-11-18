@@ -327,7 +327,7 @@ Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code and OpenCode Zen
 custom slot for any OpenAI-compatible endpoint (base URL + key), including local model servers. Search and media have their own
 per-capability providers under **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel,
 Keenable, Exa or Firecrawl for web search, and OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
-Qwen, MiniMax, Stability, FLUX or any OpenAI-compatible images endpoint for image
+Qwen, MiniMax, Kling, Stability, FLUX or any OpenAI-compatible images endpoint for image
 generation and image/video analysis, plus DeepSeek V4.1 Flash for image analysis.
 
 **TypeSafe Jev** reranks the home screen's file search. Under **AI Media & Search →

@@ -227,7 +227,7 @@ GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty、Opper�
 別のプロバイダーを設定できます：Web 検索には Serper、Serply、SearchApi、Tavily、Parallel、Keenable、Exa、
 Firecrawl のいずれかが使えます — このうち Keenable はキーなしでも使え、キーを設定しても
 レート制限が緩和されるだけです。画像生成と画像／動画解析には OpenAI、Gemini、Doubao/Seedream、GLM、
-Grok、Qwen、MiniMax、Stability、FLUX、または任意の OpenAI 互換の画像エンドポイントが使えます。
+Grok、Qwen、MiniMax、Kling、Stability、FLUX、または任意の OpenAI 互換の画像エンドポイントが使えます。
 
 スイート全体でライト・ダーク・システムのテーマに対応しています。テーマが変わるのは画面表示
 だけで、書き出し・印刷・保存されたファイルは常にドキュメント本来の色を保持します。

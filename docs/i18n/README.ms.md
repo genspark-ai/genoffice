@@ -276,7 +276,7 @@ Carian dan media mempunyai pembekal tersendiri mengikut keupayaan di bawah
 **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa atau
 Firecrawl untuk carian web — Keenable juga boleh digunakan tanpa kunci, kunci
 hanya meningkatkan had kadar; dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
-Qwen, MiniMax, Stability, FLUX atau mana-mana titik akhir imej serasi OpenAI untuk penjanaan
+Qwen, MiniMax, Kling, Stability, FLUX atau mana-mana titik akhir imej serasi OpenAI untuk penjanaan
 imej dan analisis imej/video.
 
 Keseluruhan rangkaian ini disertakan dengan tema terang, gelap dan sistem.

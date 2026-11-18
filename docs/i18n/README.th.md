@@ -267,7 +267,7 @@ OpenAI-compatible แบบกำหนดเอง (base URL + คีย์) �
 ภายใต้ **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable,
 Exa หรือ Firecrawl สำหรับการค้นหาเว็บ — โดย Keenable ก็ไม่ต้องใช้คีย์เช่นกัน
 คีย์มีไว้เพิ่มเพดานอัตราเรียกเท่านั้น และ OpenAI, Gemini, Doubao/Seedream,
-GLM, Grok, Qwen, MiniMax, Stability, FLUX หรือ endpoint ที่รองรับ OpenAI-compatible ใดๆ
+GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX หรือ endpoint ที่รองรับ OpenAI-compatible ใดๆ
 สำหรับการสร้างภาพและการวิเคราะห์ภาพ/วิดีโอ
 
 สวีททั้งชุดมาพร้อมธีมสว่าง มืด และตามระบบ ธีมจะเปลี่ยนแค่สิ่งที่แสดง

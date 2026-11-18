@@ -277,7 +277,7 @@ modèles locaux. La recherche et les médias disposent de leurs propres
 fournisseurs par fonctionnalité sous **IA Médias et Recherche** : Serper,
 Serply, SearchApi, Tavily, Parallel, Keenable, Exa ou Firecrawl pour la recherche web —
 Keenable fonctionne lui aussi sans clé, une clé ne fait qu'élever les limites
-de débit — et OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX ou
+de débit — et OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX ou
 tout point de terminaison d'images compatible OpenAI pour la génération
 d'images et l'analyse d'images/vidéos.
 
