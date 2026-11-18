@@ -102,7 +102,6 @@ import {
 } from '@univerjs/core'
 import { FormulaExecutedStateType } from '@univerjs/engine-formula'
 import { FindReplaceController, IFindReplaceService } from '@univerjs/find-replace'
-import { SetZoomRatioOperation } from '@univerjs/sheets-ui'
 import { ILayoutService } from '@univerjs/ui'
 import { UniverSheetsConditionalFormattingPreset } from '@univerjs/preset-sheets-conditional-formatting'
 import UniverPresetSheetsConditionalFormattingEnUS from '@univerjs/preset-sheets-conditional-formatting/locales/en-US'
@@ -3753,6 +3752,7 @@ export function App({
       : () => undefined
     const disposeWheelZoom = gridHost
       ? installWheelZoomSteps(gridHost, {
+          isCellEditing: () => editingCellRef.current,
           getZoom: () => runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getZoom(),
           setZoom: (zoom) => {
             const workbook = runtime.univerAPI.getActiveWorkbook()
@@ -3764,7 +3764,7 @@ export function App({
             void runtime.univer
               .__getInjector()
               .get(ICommandService)
-              .executeCommand(SetZoomRatioOperation.id, {
+              .executeCommand(SET_ZOOM_OPERATION, {
                 unitId: workbook.getId(),
                 subUnitId: sheet.getSheetId(),
                 zoomRatio: zoom,
