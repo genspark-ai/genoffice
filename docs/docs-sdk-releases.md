@@ -7,6 +7,17 @@ installers merely because the corresponding build commands exist.
 
 ## Compatibility policy
 
+Unreleased additive file-backed host support: hosted identities may include an
+actual absolute `path` and `fileHash`. New/open preserve these fields, document
+state exposes them, and runtime context separates live buffer content and dirty
+state from the saved file hash. `saveDocument` receives `expectedHash` when a
+loaded hash exists; the host must reject external changes and return its updated
+identity after committing. Explicit saves require the host to confirm the
+requested path through `document.path` or the save outcome's `path`; an absent or
+different target refuses baseline publication while retaining any confirmed
+write effect. Opaque pathless hosts retain ordinary save behavior. See the SDK
+guide's file-backed document host contract; no local file authority is implied.
+
 Unreleased editing-contract fixes preserve unedited table XML properties when
 mixed-run cell text or paragraph/run formatting changes. Display pixel widths
 no longer replace authored grid/cell widths on that save path; genuine layout

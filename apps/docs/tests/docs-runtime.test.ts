@@ -27,6 +27,28 @@ async function documentWith(text: string) {
 }
 
 describe('shared Docs runtime', () => {
+  it('exposes the file-backed host version separately from live unsaved content', async () => {
+    const editor = await documentWith('Unsaved content')
+    const file = { path: '/work/document.docx', dirty: true, savedHash: 'saved-version' }
+    const runtime = createDocsRuntime({
+      current: () => ({ editor, identity: editor, file, numIds: { bullet: null, ordered: null } }),
+    })
+    try {
+      const caller = runtime.connect({ id: 'file-context' })
+      expect(caller.context()).toMatchObject({
+        file,
+        text: expect.stringContaining('Unsaved content'),
+      })
+      const context = await caller.execute({ id: 'read', name: 'get_document_context', input: {} })
+      expect(context.isError).not.toBe(true)
+      expect(context.output).toContain('File: /work/document.docx')
+      expect(context.output).toContain('live editing buffer; dirty=true; savedHash=saved-version')
+      expect(context.output).toContain('Unsaved content')
+    } finally {
+      runtime.dispose()
+    }
+  })
+
   it('carries only observed side-state baselines across an equivalent saved publication', async () => {
     const editor = await documentWith('Original')
     let stateVersion = {}

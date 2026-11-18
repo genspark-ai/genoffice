@@ -19,18 +19,25 @@ import {
   exportImages,
   noteDocumentSwapped,
   save,
+  saveExplicit,
+  newFile,
   rebaseSavedAttributes,
   type FileActionContext,
 } from '../src/renderer/file-actions'
 import { DraftLanding } from '../src/renderer/runtime/draft-landing'
 import { EMPTY_HF_VARIANTS } from '../src/renderer/doc-state'
 import { createDocsRuntime } from '../src/renderer/runtime/docs-runtime'
+import { installDocsHost, type DocsEditorServices } from '../src/renderer/host/docs-host'
+import type { DocsHostedIdentity, DocsHostedSaveOutcome } from '../src/shared/document-host'
 
 ;(globalThis as { CSS?: unknown }).CSS ??= { escape: (s: string) => s }
 
 const dirs: string[] = []
 const editors: Editor[] = []
+let uninstallHost: (() => void) | undefined
 afterEach(async () => {
+  uninstallHost?.()
+  uninstallHost = undefined
   for (const editor of editors.splice(0)) editor.destroy()
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
@@ -77,8 +84,8 @@ async function fixture(tracking: boolean, fixtureBody = bodyXml, extraStylesXml?
   const ctx = new Proxy(state, {
     get(target, prop) {
       if (prop === 'setDoc')
-        return (updater: (prev: typeof state.doc) => typeof state.doc) => {
-          target.doc = updater(target.doc)
+        return (updater: typeof state.doc | ((prev: typeof state.doc) => typeof state.doc)) => {
+          target.doc = typeof updater === 'function' ? updater(target.doc) : updater
         }
       if (prop in target) return Reflect.get(target, prop)
       if (typeof prop === 'string' && (/^set[A-Z]/.test(prop) || /^on[A-Z]/.test(prop))) return noop
@@ -126,6 +133,161 @@ async function assertUntouched(original: Uint8Array, saved: Uint8Array) {
     )
   }
 }
+
+describe('file-backed hosted document saves', () => {
+  const identity: DocsHostedIdentity = {
+    id: 'hosted',
+    name: 'Hosted.docx',
+    path: '/work/hosted.docx',
+    fileHash: 'loaded',
+  }
+
+  async function hostedSave(result: DocsHostedSaveOutcome) {
+    const fixtureState = await fixture(false)
+    const { ctx } = fixtureState
+    ctx.doc = { ...ctx.doc!, filePath: identity.path!, hosted: { ...identity } }
+    ctx.dirtyRef.current = true
+    const requests: import('../src/shared/document-host').DocsHostedSaveRequest[] = []
+    uninstallHost = installDocsHost({
+      kind: 'browser',
+      services: { docPasswordIntentRevision: async () => 0 } as DocsEditorServices,
+      documents: {
+        newDocument: async () => ({ ...identity }),
+        saveDocument: async (request) => {
+          requests.push(request)
+          return result
+        },
+      },
+    })
+    return { ...fixtureState, requests }
+  }
+
+  it('retains a blank new document file identity and sends its loaded version on save', async () => {
+    const { ctx, requests } = await hostedSave({
+      ok: true,
+      committed: true,
+      pending: false,
+      document: { ...identity, fileHash: 'saved' },
+    })
+    const statuses: string[] = []
+    ctx.setStatus = (message) => statuses.push(message)
+    expect(await newFile(ctx), statuses.join('\n')).toBe(true)
+    expect(ctx.doc).toMatchObject({ filePath: identity.path, hash: 'loaded', hosted: identity })
+    expect(await save(ctx, false)).toBe(true)
+    expect(requests[0].expectedHash).toBe('loaded')
+    expect(ctx.doc?.hosted?.fileHash).toBe('saved')
+  })
+
+  it('reports the committed target directly even when the calling React context stays stale', async () => {
+    const path = '/work/renamed.docx'
+    const document = { ...identity, path, fileHash: 'saved' }
+    const { ctx, requests } = await hostedSave({
+      ok: true,
+      committed: true,
+      pending: false,
+      document,
+    })
+    const initialDoc = ctx.doc
+    const staleContext = new Proxy(ctx, {
+      get: (target, property) => (property === 'doc' ? initialDoc : Reflect.get(target, property)),
+    })
+    const outcome = await saveExplicit(staleContext, { path, overwrite: true })
+    expect(outcome).toMatchObject({ ok: true, path, committed: true, pending: false })
+    expect(requests[0]).toMatchObject({
+      expectedHash: 'loaded',
+      requestedPath: path,
+      overwrite: true,
+    })
+    expect(ctx.doc?.hosted).toEqual(document)
+    expect(staleContext.doc?.hosted?.path).toBe(identity.path)
+  })
+
+  it.each([false, true])(
+    'refuses a mismatched committed target before marking the buffer saved (omit=%s)',
+    async (omit) => {
+      const { ctx } = await hostedSave({
+        ok: true,
+        committed: true,
+        pending: false,
+        ...(omit ? {} : { document: { ...identity, fileHash: 'saved' } }),
+      })
+      const outcome = await saveExplicit(ctx, { path: '/work/requested.docx', overwrite: true })
+      expect(outcome).toMatchObject({
+        ok: false,
+        committed: true,
+        pending: true,
+        errorCode: 'host_failure',
+      })
+      expect(outcome.path).toBe(omit ? undefined : identity.path)
+      expect(ctx.dirtyRef.current).toBe(true)
+      expect(ctx.doc?.hosted?.fileHash).toBe('loaded')
+    },
+  )
+
+  it('does not report the source path as a committed target after the host refuses a write', async () => {
+    const { ctx } = await hostedSave({
+      ok: false,
+      committed: false,
+      pending: true,
+      error: 'External modification',
+      errorCode: 'stale_target',
+    })
+    const outcome = await saveExplicit(ctx, { path: '/work/requested.docx', overwrite: true })
+    expect(outcome).toMatchObject({
+      ok: false,
+      committed: false,
+      pending: true,
+      errorCode: 'stale_target',
+    })
+    expect(outcome.path).toBeUndefined()
+    expect(ctx.dirtyRef.current).toBe(true)
+  })
+
+  it('retains a confirmed write even when the host reports an incomplete save', async () => {
+    const { ctx } = await hostedSave({
+      ok: false,
+      committed: true,
+      pending: true,
+      error: 'Incomplete save',
+      path: identity.path,
+    })
+    expect(await saveExplicit(ctx, { path: identity.path!, overwrite: true })).toMatchObject({
+      ok: false,
+      committed: true,
+      pending: true,
+      path: identity.path,
+    })
+    expect(ctx.dirtyRef.current).toBe(true)
+  })
+
+  it('keeps opaque hosted documents compatible with ordinary saves', async () => {
+    const document = { id: 'opaque', name: 'Opaque.docx' }
+    const { ctx, requests } = await hostedSave({
+      ok: true,
+      committed: true,
+      pending: false,
+      document,
+    })
+    ctx.doc = { ...ctx.doc!, hosted: document, filePath: null }
+    expect(await save(ctx, false)).toBe(true)
+    expect(requests[0].expectedHash).toBeUndefined()
+    expect(ctx.doc).toMatchObject({ hosted: document, filePath: null })
+    expect(ctx.dirtyRef.current).toBe(false)
+  })
+
+  it('accepts an opaque host explicit save when the outcome confirms its committed path', async () => {
+    const document = { id: 'opaque', name: 'Opaque.docx' }
+    const path = '/work/output.docx'
+    const { ctx } = await hostedSave({ ok: true, committed: true, pending: false, document, path })
+    ctx.doc = { ...ctx.doc!, hosted: document, filePath: null }
+    expect(await saveExplicit(ctx, { path, overwrite: false })).toMatchObject({
+      ok: true,
+      committed: true,
+      pending: false,
+      path,
+    })
+  })
+})
 
 describe('production save reload with track changes enabled', () => {
   it('keeps a changed table style inherited through save and a subsequent text edit', async () => {

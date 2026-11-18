@@ -1275,7 +1275,6 @@ validated final landing opens the body undo group; saving remains unavailable
 until the draft is settled. These tightened rules apply equally to runtime,
 SDK and standard MCP draft operations.
 
-
 ### File-backed document hosts
 
 A desktop document host can return `path` (an actual absolute DOCX filename) and
@@ -1288,7 +1287,10 @@ File-backed saves receive `expectedHash` for the loaded/saved version and must
 reject an external modification rather than overwrite it. Return the actual path
 and new hash in `document` after committing. Explicit save requests carry
 `requestedPath`: fulfill that target or return a refusal. Never acknowledge an
-unwritten filename. File-menu state and runtime reads expose the actual path;
+unwritten filename. Confirm the committed target in `document.path` or the
+save outcome's `path`. An absent or different target leaves the active saved
+baseline unchanged and reports failure, preserving `committed: true` when a
+write was confirmed. File-menu state and runtime reads expose the actual path;
 runtime context distinguishes the live editing buffer from the saved file version.
 Cloud synchronization is a separate host concern and must not change the local
 save result.

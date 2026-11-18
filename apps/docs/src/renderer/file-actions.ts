@@ -784,7 +784,7 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     if (!target) return false
     validateHostedIdentity(target)
     if (target.data) return (await loadFile(ctx, hostedOpenResult(target))) === 'ok'
-    hosted = { id: target.id, name: target.name, readOnly: target.readOnly }
+    hosted = { ...target }
   }
   try {
     const bytes = await blankDocxBytes()
@@ -814,9 +814,9 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
       noteDocumentSwapped()
       ctx.setDoc({
         parsed,
-        filePath: null,
+        filePath: hosted?.path ?? null,
         fileName: hosted?.name ?? t('appUntitledDocx'),
-        hash: '',
+        hash: hosted?.fileHash ?? '',
         isBlank: true,
         hosted,
       })
@@ -1270,7 +1270,7 @@ export interface ExplicitSaveTarget {
   /** receives the main process's reason when the write is refused */
   onError?: (message: string, code?: DocsErrorCode) => void
   /** A lost host response must not be reported as a guaranteed absence of file writes. */
-  onEffect?: (effect: 'writing' | 'written' | 'refused') => void
+  onEffect?: (effect: 'writing' | 'written' | 'refused', path?: string) => void
 }
 
 /** The single result adapter for live-runtime saves and a newly created Word view. */
@@ -1281,6 +1281,7 @@ export async function saveExplicit(
   let error = ''
   let errorCode: DocsErrorCode | undefined
   const effect: { current: 'none' | 'writing' | 'written' | 'refused' } = { current: 'none' }
+  let actualPath = ctx.doc?.hosted ? undefined : path
   const ok = await save(ctx, false, true, undefined, {
     path,
     overwrite,
@@ -1288,22 +1289,21 @@ export async function saveExplicit(
       error = reason
       errorCode = code
     },
-    onEffect: (next) => {
+    onEffect: (next, committedPath) => {
       effect.current = next
+      if (committedPath !== undefined) actualPath = committedPath
     },
   })
-  const actualPath = ctx.doc?.hosted ? ctx.doc.hosted.path : path
-  const wrongTarget = ok && actualPath !== path
-  const pending = !ok || ctx.saveIncompleteRef.current || wrongTarget
+  const pending = !ok || ctx.saveIncompleteRef.current
   return {
     ok: ok && !pending,
-    ...(actualPath ? {path:actualPath} : {}),
+    ...(actualPath ? { path: actualPath } : {}),
     pending,
     committed: effect.current === 'written' ? true : effect.current === 'writing' ? null : false,
     ...(pending
       ? {
           error:
-            (wrongTarget ? 'The host did not commit the requested file target' : error) ||
+            error ||
             (ok
               ? 'The snapshot was saved, but newer document changes remain unsaved'
               : 'The document could not be saved'),
@@ -1427,13 +1427,21 @@ async function saveOnce(
         data: buffer,
         kind: saveAs ? 'saveAs' : 'save',
         auto,
-        ...(doc.hosted.fileHash ? {expectedHash:doc.hosted.fileHash} : {}),
+        ...(doc.hosted.fileHash ? { expectedHash: doc.hosted.fileHash } : {}),
         ...(explicitTarget
           ? { requestedPath: explicitTarget.path, overwrite: explicitTarget.overwrite }
           : {}),
       })
+      const committedPath = result.document?.path ?? result.path
       if (!result.ok || result.committed !== true || result.pending) {
-        explicitTarget?.onEffect?.(result.committed === false ? 'refused' : 'writing')
+        explicitTarget?.onEffect?.(
+          result.committed === true
+            ? 'written'
+            : result.committed === false
+              ? 'refused'
+              : 'writing',
+          result.committed === true ? committedPath : undefined,
+        )
         explicitTarget?.onError?.(
           result.error ?? 'The host did not commit the document',
           result.errorCode,
@@ -1441,7 +1449,14 @@ async function saveOnce(
         if (result.error) ctx.setStatus(t('appSaveFailed', { error: result.error }))
         return false
       }
-      explicitTarget?.onEffect?.('written')
+      explicitTarget?.onEffect?.('written', committedPath)
+      if (explicitTarget && committedPath !== explicitTarget.path) {
+        explicitTarget.onError?.(
+          'The host did not commit the requested file target',
+          'host_failure',
+        )
+        return false
+      }
       if (saveAs && (typeof result.adopt !== 'boolean' || (result.adopt && !result.document))) {
         ctx.setStatus(
           t('appSaveFailed', {

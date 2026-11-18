@@ -15,8 +15,12 @@ export function hostedOpenResult(document: DocsHostedDocument | null): OpenFileR
     dataUrl: '',
     hash: document.fileHash ?? '',
     data: document.data,
-    hosted: { id: document.id, name: document.name, readOnly: document.readOnly,
-      ...(document.path ? {path:document.path,fileHash:document.fileHash} : {}) },
+    hosted: {
+      id: document.id,
+      name: document.name,
+      readOnly: document.readOnly,
+      ...(document.path ? { path: document.path, fileHash: document.fileHash } : {}),
+    },
   }
 }
 
