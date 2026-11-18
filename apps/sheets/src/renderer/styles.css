@@ -7567,7 +7567,7 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
   border-radius: 8px;
   background: var(--surface);
   color: var(--text);
-  box-shadow: 0 6px 24px #0002;
+  box-shadow: var(--shadow-menu);
   font-size: 13px;
 }
 
@@ -7631,7 +7631,7 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
 }
 
 .streamed-filter-checklist input {
-  accent-color: #087b5b;
+  accent-color: var(--accent);
 }
 
 .streamed-filter-checklist small {
@@ -7649,7 +7649,7 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
 }
 
 .streamed-filter-panel .streamed-filter-confirm {
-  background: #087b5b;
-  color: white;
+  background: var(--color-btn-primary);
+  color: var(--color-btn-primary-text);
   border-color: transparent;
 }
