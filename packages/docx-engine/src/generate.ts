@@ -2361,11 +2361,14 @@ export function generateParagraphXml(block: GeneratedBlock, ctx: GenerateContext
  */
 let standaloneBookmarkSeq = 0
 
-function bookmarksXml(ctx: GenerateContext, names: string[] | undefined): string {
+function bookmarksXml(
+  ctx: Pick<GenerateContext, 'allocateBookmarkId'> | null,
+  names: string[] | undefined,
+): string {
   if (!names?.length) return ''
   return names
     .map((name) => {
-      const id = ctx.allocateBookmarkId?.(name) ?? ++standaloneBookmarkSeq
+      const id = ctx?.allocateBookmarkId?.(name) ?? ++standaloneBookmarkSeq
       return `<w:bookmarkStart w:id="${id}" w:name="${escapeXmlAttr(name)}"/><w:bookmarkEnd w:id="${id}"/>`
     })
     .join('')
@@ -2486,6 +2489,7 @@ function tableCellXml(
   cell: TableCell,
   width: number,
   verticalMerge?: 'restart' | 'continue',
+  ctx?: Pick<GenerateContext, 'allocateBookmarkId'>,
 ): string {
   // Surgical rawTcPr patch: modeled children are replaced/inserted in schema order;
   // unmodeled ones (tcMar/textDirection/noWrap…) keep their original bytes
@@ -2556,8 +2560,17 @@ function tableCellXml(
     // (rich paragraphs carry their own align; the plain-paras fallback above sets it).
     // The parsed format, not just w:jc: hand-building the pPr here dropped w:bidi and
     // discarded every other paragraph property the model carries.
-    const pPr = mergePPrFormat(`<w:pPr>${numPr}</w:pPr>`, paragraph)
-    return `<w:p>${pPr}${runsXml(paragraph.runs, null)}</w:p>`
+    const styleId = 'styleId' in paragraph ? paragraph.styleId : undefined
+    const pStyle = styleId ? `<w:pStyle w:val="${escapeXmlAttr(styleId)}"/>` : ''
+    const pPr = mergePPrFormat(`<w:pPr>${pStyle}${numPr}</w:pPr>`, paragraph)
+    // the cell's bookmark anchors ride the rebuilt paragraph: a caller writing
+    // into an existing document supplies the document's allocator, whose ids
+    // never collide with the bookmarks the untouched blocks keep (REF fields
+    // match by name, but bookmarkStart / bookmarkEnd pair by id)
+    const anchors =
+      ('hiddenBookmarks' in paragraph ? bookmarksXml(ctx ?? null, paragraph.hiddenBookmarks) : '') +
+      ('bookmarks' in paragraph ? bookmarksXml(ctx ?? null, paragraph.bookmarks) : '')
+    return `<w:p>${pPr}${anchors}${runsXml(paragraph.runs, null)}</w:p>`
   })
   // nested tables are regenerated from the model at their paragraph anchors (reverse
   // insertion keeps anchor indexes valid); OOXML requires tc to end with w:p
@@ -2565,7 +2578,7 @@ function tableCellXml(
   const items = paraXmls.map((xml) => ({ tbl: false, xml }))
   for (let i = nested.length - 1; i >= 0; i--) {
     const at = Math.min(cell.nestedTableAnchors?.[i] ?? paraXmls.length, paraXmls.length)
-    items.splice(at, 0, { tbl: true, xml: generateTableModelXml(nested[i]) })
+    items.splice(at, 0, { tbl: true, xml: generateTableModelXml(nested[i], undefined, ctx) })
   }
   const tail = items.length === 0 || items[items.length - 1].tbl ? '<w:p/>' : ''
   const content = items.map((item) => item.xml).join('')
@@ -2642,7 +2655,11 @@ function originalTblPrOf(tableXml: string): string | undefined {
     ?.xml
 }
 
-export function generateTableModelXml(model: TableModel, originalTableXml?: string): string {
+export function generateTableModelXml(
+  model: TableModel,
+  originalTableXml?: string,
+  ctx?: Pick<GenerateContext, 'allocateBookmarkId'>,
+): string {
   // the widest row decides the column count; folding it in a loop keeps the
   // argument count off the call (a spread here blew the stack past ~125k rows)
   let columnCount = Math.max(1, model.colWidthsPct?.length ?? 0)
@@ -2718,7 +2735,7 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
           }
           continue
         }
-        cells.push(tableCellXml(cell, width))
+        cells.push(tableCellXml(cell, width, undefined, ctx))
       }
       // trPr: original bytes passed through (tblHeader/cantSplit etc.); row height is
       // replaced/inserted/removed per the model
