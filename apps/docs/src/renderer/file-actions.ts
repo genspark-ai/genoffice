@@ -124,6 +124,9 @@ export type PendingPdfExport = {
 export interface FileActionContext {
   editor: Editor | null
   doc: DocState | null
+  /** clears the comment-undo graveyard on a document swap (optional: tests
+   *  build partial contexts) */
+  resetCommentUndoStore?: () => void
   dirtyRef: { current: boolean }
   saveInFlightRef: { current: boolean }
   saveIncompleteRef: { current: boolean }
