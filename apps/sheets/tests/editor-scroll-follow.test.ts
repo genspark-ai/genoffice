@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { installEditorScrollFollow } from '../src/renderer/editor-scroll-follow'
 import type { UniverRuntime } from '../src/renderer/univer-state'
 
