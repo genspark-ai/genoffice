@@ -26,6 +26,7 @@ import {
   AiUsageChip,
   addTokenUsage,
   createFileNav,
+  shortFileError,
   Markdown,
   type AiTokenUsageView,
 } from '@genoffice/ui'
@@ -917,7 +918,7 @@ export function KbAskPanel({
                     </button>
                     {m.saved && typeof m.saved === 'object' && 'error' in m.saved && (
                       <span className="kb-ask-action-error">
-                        {t('askSaveFailed', { error: m.saved.error })}
+                        {t('askSaveFailed', { error: shortFileError(m.saved.error) })}
                       </span>
                     )}
                   </>
