@@ -80,6 +80,7 @@ const LANG_OPTIONS = [
   { value: 'es', label: 'Español' },
   { value: 'fr', label: 'Français' },
   { value: 'he', label: 'עברית' },
+  { value: 'hu', label: 'Magyar' },
   { value: 'hi', label: 'हिन्दी' },
   { value: 'id', label: 'Bahasa Indonesia' },
   { value: 'it', label: 'Italiano' },

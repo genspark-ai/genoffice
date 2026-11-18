@@ -379,6 +379,7 @@ export const zhTW = {
   appLangTraditionalChinese: '繁體中文',
   appLangVietnamese: '越南文',
   appLangTurkish: '土耳其文',
+  appLangHungarian: '匈牙利文',
   appWrapTextMenu: '文繞圖',
   appViewImage: '檢視圖片',
   appSaveImageAs: '另存圖片為…',

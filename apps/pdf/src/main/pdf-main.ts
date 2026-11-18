@@ -1,6 +1,4 @@
 import {
-  constants,
-  copyFileSync,
   existsSync,
   linkSync,
   readFileSync,
@@ -39,6 +37,7 @@ import {
   printToPdfOptionsFor,
 } from '@genoffice/electron-utils/print-cups'
 import { DRIVER_OPTION_NAMES, queryPrinterOptions } from '@genoffice/electron-utils/printer-options'
+import { copyFileExclusiveSync } from '@genoffice/electron-utils/copy-file'
 
 /** 1-based file page positions for the lp `-P` page-list: integers within a
  * real document's reach, undefined = the whole document. Anything else is
@@ -214,6 +213,27 @@ const tDlg = createI18n({
     btnSave: 'Kaydet',
     btnDontSave: 'Kaydetme',
     btnCancel: 'İptal',
+  },
+  hu: {
+    dlgExportImages: 'Képek exportálása mappába',
+    dlgExtract: 'Oldalak kinyerése PDF-ként',
+    dlgInsert: 'Importálandó PDF kiválasztása',
+    dlgSplit: 'PDF felosztása mappába',
+    dlgMerge: 'Egyesítendő PDF-fájlok kiválasztása',
+    dlgMergeSave: 'Egyesített PDF mentése másként',
+    dlgMergePages: 'Egyesített oldalak mentése másként',
+    dlgReplace: 'Helyettesítő PDF kiválasztása',
+    dlgSplitPages: 'Felosztott oldalak mentése másként',
+    dlgRedactCopy: 'Kitakart másolat mentése másként',
+    dlgPickCertificate: 'Tanúsítványfájl kiválasztása',
+    dlgSignedCopy: 'Aláírt másolat mentése másként',
+    filterCertificate: 'Tanúsítványfájlok (.p12, .pfx)',
+    filterPdf: 'PDF-dokumentumok',
+    closeUnsavedMsg: 'A PDF-ben mentetlen módosítások vannak.',
+    closeUnsavedDetail: 'Mented a módosításokat a bezárás előtt?',
+    btnSave: 'Mentés',
+    btnDontSave: 'Ne mentsd',
+    btnCancel: 'Mégse',
   },
   ja: {
     dlgExportImages: '画像をフォルダに書き出す',
@@ -967,7 +987,7 @@ export interface NoClobberFileOps {
 
 const defaultNoClobberFileOps: NoClobberFileOps = {
   link: linkSync,
-  copyExclusive: (source, target) => copyFileSync(source, target, constants.COPYFILE_EXCL),
+  copyExclusive: copyFileExclusiveSync,
   unlink: unlinkSync,
   identity: (path) => {
     const stats = statSync(path, { bigint: true })

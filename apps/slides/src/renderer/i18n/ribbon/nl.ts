@@ -25,6 +25,7 @@ export const nl = {
   ribbonLangHindi: 'Hindi',
   ribbonLangVietnamese: 'Vietnamees',
   ribbonLangTurkish: 'Turks',
+  ribbonLangHungarian: 'Hongaars',
   ribbonAiCreditNote: 'Gebruikt AI en verbruikt tegoed',
   ribbonAiRewriteConfirm:
     'Deze actie roept AI aan: het verbruikt tegoed en kan de volledige inhoud herschrijven. Doorgaan? (U wordt niet opnieuw gevraagd.)',

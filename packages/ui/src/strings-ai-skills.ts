@@ -284,4 +284,16 @@ export const AI_SKILLS_LABELS: Record<Lang, AiSkillsLabels> = {
     removeTitle: 'Beceriyi kaldır',
     attachedTitle: 'Bu iletiye eklenen beceriler',
   },
+  hu: {
+    addTitle: 'Hozzáadás',
+    addFile: 'Fájl hozzáadása',
+    skills: 'Képességek',
+    searchPlaceholder: 'Képességek keresése',
+    noSkills: 'Még nincs telepítve egy képesség sem',
+    noMatch: 'Nincs egyező képesség',
+    manage: 'Képességek kezelése',
+    back: 'Vissza',
+    removeTitle: 'Képesség eltávolítása',
+    attachedTitle: 'Az üzenethez csatolt képességek',
+  },
 }

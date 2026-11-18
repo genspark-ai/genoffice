@@ -396,6 +396,7 @@ export const pl = {
   appLangTraditionalChinese: 'tradycyjny chiński',
   appLangVietnamese: 'wietnamski',
   appLangTurkish: 'turecki',
+  appLangHungarian: 'węgierski',
   appWrapTextMenu: 'Zawijaj tekst',
   appViewImage: 'Wyświetl obraz',
   appSaveImageAs: 'Zapisz obraz jako…',
