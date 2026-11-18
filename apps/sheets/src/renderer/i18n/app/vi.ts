@@ -651,6 +651,7 @@ export const vi = {
     'Các công thức được tính toán lại từ các chỉnh sửa của bạn — {count} công thức giữ lại giá trị đệm (các hàm mà công cụ dự phòng còn thiếu).',
   appRecalcDone:
     'Các công thức đã được tính toán lại từ các chỉnh sửa của bạn ({count} ô, công cụ dự phòng).',
+  appReadOnlyIndexing: 'Chỉ xem trong khi trang tính đang được lập chỉ mục.',
   appIndexing: 'Đang lập chỉ mục {name}: {rows} hàng đã sẵn sàng.',
   appStreamingRows: 'Đang tải theo luồng {name}: {rows} hàng khả dụng.',
   appLoadRangeFailed: 'Không thể tải vùng hiển thị.',

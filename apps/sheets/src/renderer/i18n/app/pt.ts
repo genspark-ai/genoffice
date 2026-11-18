@@ -697,6 +697,7 @@ export const pt = {
     'Fórmulas recalculadas com base nas suas edições — {count} mantiveram valores em cache (funções ausentes no mecanismo de fallback).',
   appRecalcDone:
     'Fórmulas recalculadas com base nas suas edições ({count} células, mecanismo de fallback).',
+  appReadOnlyIndexing: 'Pré-visualização somente leitura durante a indexação da planilha.',
   appIndexing: 'Indexando {name}: {rows} linhas prontas.',
   appStreamingRows: 'Carregando {name} por streaming: {rows} linhas disponíveis.',
   appLoadRangeFailed: 'Não foi possível carregar o intervalo visível.',

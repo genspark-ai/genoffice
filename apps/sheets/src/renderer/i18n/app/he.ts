@@ -605,6 +605,7 @@ export const he = {
   appRecalcPartial:
     'הנוסחאות חושבו מחדש לפי העריכות שלך — {count} שמרו על ערכים מהמטמון (פונקציות שחסרות במנוע הגיבוי).',
   appRecalcDone: 'הנוסחאות חושבו מחדש לפי העריכות שלך ({count} תאים, מנוע גיבוי).',
+  appReadOnlyIndexing: 'תצוגה לקריאה בלבד בזמן יצירת האינדקס של הגיליון.',
   appIndexing: 'יוצר אינדקס עבור {name}: {rows} שורות מוכנות.',
   appStreamingRows: 'מזרים את {name}: {rows} שורות זמינות.',
   appLoadRangeFailed: 'לא ניתן לטעון את הטווח הגלוי.',

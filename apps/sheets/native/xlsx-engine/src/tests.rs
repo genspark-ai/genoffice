@@ -352,6 +352,7 @@ fn rejects_oversized_ranges() {
         print_titles: None,
         has_scoped_defined_names: false,
         cell_images: Vec::new(),
+        progressive: false,
         protection: SheetProtectionMetadata::default(),
     };
     let range = CellRange {
@@ -497,7 +498,10 @@ fn open_reports_sparklines_that_follow_the_cells() {
     let metadata = open_single_sheet(&xml);
     assert_eq!(metadata.sheets[0].sparklines.len(), 1);
     assert_eq!(metadata.sheets[0].sparklines[0].cells[0].cell, "B1");
-    assert_eq!(metadata.sheets[0].sparklines[0].cells[0].source_ref, "S!A1:A1");
+    assert_eq!(
+        metadata.sheets[0].sparklines[0].cells[0].source_ref,
+        "S!A1:A1"
+    );
 }
 
 #[test]
@@ -534,7 +538,12 @@ fn parallel_metadata_scan_preserves_sheet_protection_after_cell_data() {
             xml_bytes: 64 * 1024 * 1024,
         },
     ];
-    let mut scans = scan_large_worksheet_metadata(&path, &sources, &AtomicBool::new(false));
+    let mut scans = scan_worksheet_metadata_batch(
+        &path,
+        &sources,
+        &[None, None, None],
+        &AtomicBool::new(false),
+    );
     let parse = |xml: String| {
         read_sheet_protection(&xml)
             .unwrap()
@@ -546,6 +555,128 @@ fn parallel_metadata_scan_preserves_sheet_protection_after_cell_data() {
     assert!(scans.pop_front().unwrap().is_none());
     let last = parse(scans.pop_front().unwrap().unwrap().unwrap());
     assert!(last.protected && last.allow.auto_filter);
+}
+
+#[test]
+fn progressive_open_prioritizes_the_active_sheet_and_prefetches_its_neighbour() {
+    if !THREADS {
+        return;
+    }
+    let sheet = format!(
+        r#"<worksheet><dimension ref="A1:R1000"/><sheetData>
+        <row r="1"><c r="A1" t="str"><v>Preview</v></c></row>
+        <row r="257" hidden="1"><c r="B257"><v>42</v></c><c r="C257" s="0"/></row>
+        {}</sheetData><sheetProtection sheet="1"/>
+        <protectedRanges><protectedRange name="Input" sqref="A1"/></protectedRanges>
+        <mergeCells><mergeCell ref="A1:B1"/></mergeCells></worksheet>"#,
+        " ".repeat(32 * 1024 * 1024)
+    );
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+              <bookViews><workbookView activeTab="1"/></bookViews><sheets>
+              <sheet name="Other" sheetId="1" r:id="rId1"/>
+              <sheet name="Active" sheetId="2" r:id="rId2"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/>
+               <Relationship Id="rId2" Target="worksheets/sheet2.xml"/></Relationships>"#,
+        ),
+        ("xl/worksheets/sheet1.xml", &sheet),
+        ("xl/worksheets/sheet2.xml", &sheet),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let opened = sessions
+        .open_with_options(&path, "en", None, true, &AtomicBool::new(false))
+        .unwrap();
+    assert_eq!(opened.active_tab, 1);
+    assert!(opened.sheets.iter().all(|sheet| sheet.progressive));
+    assert_eq!(opened.sheets[1].stored_cell_count, None);
+    let session = &sessions.sessions[&opened.session_id];
+    assert!(session.runtimes[0].handle.is_none());
+    assert!(session.runtimes[1].handle.is_some());
+
+    let first_cell = CellRange {
+        start_row: 0,
+        end_row: 0,
+        start_column: 0,
+        end_column: 0,
+    };
+    let preview = sessions
+        .read_range(&opened.session_id, "sheet-2", &first_cell)
+        .unwrap();
+    assert_eq!(
+        preview.cells[0].value,
+        Some(CellValue::String("Preview".into()))
+    );
+
+    for runtime in &sessions.sessions[&opened.session_id].runtimes {
+        let (lock, ready) = &*runtime.state;
+        let (index, _) = ready
+            .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(10), |index| {
+                !index.complete && index.error.is_none()
+            })
+            .unwrap();
+        assert!(index.complete, "{:?}", index.error);
+        assert!(index.decorations.is_some());
+        assert!(!index.chunk_files.is_empty());
+    }
+    let hydrated = sessions
+        .read_range(&opened.session_id, "sheet-2", &first_cell)
+        .unwrap();
+    assert!(hydrated.sheet_protection.is_some());
+    assert!(hydrated.metadata_ready);
+    assert_eq!(hydrated.protected_ranges[0].name, "Input");
+    assert_eq!(hydrated.merges[0].end_column, 1);
+    let counts = hydrated.cell_counts.unwrap();
+    assert_eq!(counts.stored_cell_count, 3);
+    assert_eq!(counts.value_cell_count, 2);
+    assert_eq!(counts.value_row_count, 257);
+    assert_eq!(counts.value_column_count, 2);
+    sessions.close(&opened.session_id).unwrap();
+}
+
+#[test]
+fn worksheet_envelope_hydrates_protection_without_indexing_cells() {
+    let worksheet = "xl/worksheets/sheet1.xml";
+    let xml = format!(
+        r#"<worksheet><sheetData><row><c><v>1</v></c></row>{}</sheetData>
+        <sheetProtection sheet="1"/><mergeCells><mergeCell ref="A1:B1"/></mergeCells></worksheet>"#,
+        " ".repeat(128 * 1024 - 20)
+    );
+    for xml in [
+        xml.clone(),
+        xml.replace("<row>", "<!-- </sheetData> --><row>"),
+        xml.replace("sheetData>", "s:sheetData>")
+            .replace("<worksheet>", r#"<worksheet xmlns:s="urn:test">"#),
+    ] {
+        let (_dir, path) = open_fixture(&[(worksheet, &xml)]);
+        let state = Arc::new((Mutex::new(SheetIndex::default()), Condvar::new()));
+        read_worksheet_metadata(
+            &path,
+            worksheet,
+            0,
+            &ColorContext::default(),
+            &state,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let index = state.0.lock().unwrap();
+        assert!(!index.complete);
+        assert!(index.chunk_files.is_empty());
+        let metadata = index.decorations.as_ref().unwrap();
+        assert!(
+            metadata
+                .protection
+                .as_ref()
+                .unwrap()
+                .sheet_protection
+                .is_some()
+        );
+        assert_eq!(metadata.merges[0].end_column, 1);
+    }
 }
 
 #[test]
@@ -587,6 +718,7 @@ fn omits_empty_sparklines_field_from_metadata_json() {
         print_titles: None,
         has_scoped_defined_names: false,
         cell_images: Vec::new(),
+        progressive: false,
         protection: SheetProtectionMetadata::default(),
     };
     let json = serde_json::to_string(&sheet).unwrap();

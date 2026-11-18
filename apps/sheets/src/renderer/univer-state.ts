@@ -92,6 +92,9 @@ export interface LazyWorkbookState {
   /// conditional formatting / filters / validations were not yet available,
   /// so an already-loaded range must not satisfy the next load request.
   readonly decorationsPendingSheets: Set<string>
+  /// Refresh the view once a progressively opened sheet has its full file state.
+  onProgressiveSheetReady?(sheetId: string): void
+  readonly deferredSparklines?: Map<string, WorkbookFile['sheets'][number]['sparklines']>
   /// File-side worksheet protection, delivered at open by the current sidecar.
   readonly sheetProtections: Map<string, SheetProtectionInfo>
   /// File-side manual page breaks (0-based index of the row/column after the

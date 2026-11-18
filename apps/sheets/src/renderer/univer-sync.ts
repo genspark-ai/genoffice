@@ -1311,6 +1311,7 @@ export async function loadVisibleRange(
   worksheet: UniverWorksheet,
   setMessage: (message: string) => void,
   viewportStart?: { row: number; column: number },
+  waitForFirstRange = false,
 ): Promise<void> {
   const state = lazyWorkbookRef.current
   if (!state) return
@@ -1382,7 +1383,7 @@ export async function loadVisibleRange(
     return
   }
   evictFilteredViewport(worksheet, state, sheet)
-  await loadRange(runtime, lazyWorkbookRef, worksheet, range, setMessage)
+  await loadRange(runtime, lazyWorkbookRef, worksheet, range, setMessage, false, waitForFirstRange)
   await loadFrozenColumnStrip(lazyWorkbookRef, worksheet, sheet, range)
   await loadFrozenRowStrip(lazyWorkbookRef, worksheet, sheet, range)
   await extendWindowPastHiddenRows(
@@ -1774,7 +1775,14 @@ export async function activateFormulaClosure(
 
   const inputs: ClosureSheetInput[] = []
   let indexedCount = 0
-  for (const sheet of state.file.sheets) {
+  const activeSheetId = state.file.sheets.some((sheet) => sheet.progressive)
+    ? runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId()
+    : undefined
+  const active = state.file.sheets.find((sheet) => sheet.id === activeSheetId)
+  const sheets = active
+    ? [active, ...state.file.sheets.filter((sheet) => sheet !== active)]
+    : state.file.sheets
+  for (const sheet of sheets) {
     const deadline = Date.now() + 180_000
     for (;;) {
       if (lazyWorkbookRef.current !== state) return
@@ -3540,8 +3548,8 @@ async function loadRange(
       state.retryTimers.set(sheetId, timer)
     }
     if (!waitForRequestedRange && loaded && containsRange(loaded, range)) {
-      // Conditional formatting, merges and other sheet-wide metadata arrive
-      // at EOF. Keep checking readiness without decoding the same cells.
+      // Poll metadata and cell indexing independently without decoding
+      // the same cells while neither just became ready.
       const anchor = {
         startRow: range.startRow,
         endRow: range.startRow,
@@ -3550,7 +3558,11 @@ async function loadRange(
       }
       const status = await readSheetRangeMapped(state, sheetId, anchor, sheetMeta, 'status')
       if (!isCurrent()) return
-      if (status && !status.raw.indexingComplete) {
+      if (
+        status &&
+        !status.raw.indexingComplete &&
+        !(state.decorationsPendingSheets.has(sheetId) && status.raw.metadataReady)
+      ) {
         scheduleViewportRetry(250)
         return
       }
@@ -3607,6 +3619,8 @@ async function loadRange(
       mapped.indexedThroughScreen === null
         ? null
         : Math.min(mapped.indexedThroughScreen, range.endRow)
+    const result = mapped.raw
+    const metadataReady = result.metadataReady ?? result.indexingComplete
     // Merges before cells: shrinkToFit measures its budget from Univer's
     // merge data, so a merged label patched first would shrink to its
     // anchor column.
@@ -3616,7 +3630,13 @@ async function loadRange(
     if (availableEndRow !== null && availableEndRow >= range.startRow) {
       const availableRange = { ...range, endRow: availableEndRow }
       const alreadyLoaded = state.loadedRanges.get(sheetId)
-      if (!alreadyLoaded || !containsRange(alreadyLoaded, availableRange)) {
+      if (
+        !alreadyLoaded ||
+        !containsRange(alreadyLoaded, availableRange) ||
+        (metadataReady &&
+          state.decorationsPendingSheets.has(sheetId) &&
+          mapped.screen.merges.length > 0)
+      ) {
         if (state.formulaMode) recordCachedFormulaValues(state, sheetId, mapped.screen.cells)
         recordRowStyleKeys(state, sheetId, mapped.screen.rows)
         recordHiddenFileRows(state, sheetId, mapped.screen.rows, availableRange)
@@ -3667,7 +3687,6 @@ async function loadRange(
         }
       }
     }
-    const result = mapped.raw
     // Every mode needs formulaText for the formula bar: formulaMode for
     // cache-only (defined-name) cells, value mode because streamed cells
     // carry no `f` in the grid at all — without the harvest a formula cell
@@ -3689,7 +3708,7 @@ async function loadRange(
     // The stale-height reset must not hide behind the patch gate: the
     // post-indexing retry that finally carries the sheet's merges usually
     // finds its range already loaded and skips the patch entirely.
-    const wrapWindow = patchedRange ?? (result.indexingComplete ? range : undefined)
+    const wrapWindow = patchedRange ?? (metadataReady ? range : undefined)
     if (wrapWindow && !bulk) {
       const qualifyingCells = wrapAutoFitCells(
         mapped.screen.cells,
@@ -3731,7 +3750,7 @@ async function loadRange(
         coverWrapRows(coverage, freshRows, wrapWindow.startColumn, wrapWindow.endColumn)
       }
       const sheetKey = `file-${state.file.sha256}:${sheetId}`
-      if (result.indexingComplete) {
+      if (metadataReady) {
         const qualifyingWithoutMerges = wrapAutoFitRows(
           mapped.screen.cells,
           state.file.styles,
@@ -3789,7 +3808,7 @@ async function loadRange(
     // skip it (rare: the sheet was being edited before it first rendered).
     if (!hasStructuralOps) {
       await applyConditionalRules(worksheet, state, sheetId, result.conditionalRules)
-      if (result.indexingComplete) {
+      if (metadataReady) {
         applySheetFilter(
           runtime,
           worksheet,
@@ -3800,6 +3819,7 @@ async function loadRange(
         )
         applyDataValidations(runtime, state, sheetId, result.dataValidations)
         if (
+          result.indexingComplete &&
           result.autoFilterColumns.length &&
           state.restoredFilterSpans.has(sheetId) &&
           isLargeFilterSheet(state, sheetId) &&
@@ -3826,11 +3846,10 @@ async function loadRange(
       // a pending entry would only force pointless sidecar re-reads.
       state.decorationsPendingSheets.delete(sheetId)
     }
-    if (result.indexingComplete) captureSheetFileState(state, sheetId, result)
+    if (metadataReady) captureSheetFileState(state, sheetId, result)
     const sheet = sheetMeta
     if (!result.indexingComplete) {
-      // Poll until the stream finishes: merged-cell ranges and trailing row
-      // properties only become available at the end of the worksheet part.
+      // Keep polling until the workbook's metadata and cell cache settle.
       const indexedRows = (result.indexedThroughRow ?? -1) + 1
       if (
         isActiveSheet(runtime, sheetId) &&
@@ -6487,7 +6506,9 @@ async function preloadEntireWorkbookInner(
       } else {
         state.decorationsPendingSheets.delete(sheetId)
       }
-      if (result.indexingComplete) captureSheetFileState(state, sheetId, result)
+      if (result.metadataReady ?? result.indexingComplete) {
+        captureSheetFileState(state, sheetId, result)
+      }
     }
     const finalOps = state.editJournal.structuralOps.get(sheet.id) ?? []
     state.loadedRanges.set(sheetId, {
@@ -6544,7 +6565,7 @@ export async function ensureSheetFileState(
     } catch {
       return false
     }
-    if (result.indexingComplete) {
+    if (result.metadataReady ?? result.indexingComplete) {
       captureSheetFileState(state, sheetId, result)
       return true
     }
@@ -6553,13 +6574,13 @@ export async function ensureSheetFileState(
   return false
 }
 
-/// Records the sheet-wide, complete-only file state (protection, manual page
-/// breaks, allow-edit ranges) the first time a sheet finishes indexing.
+/// Records protection and other sheet metadata as soon as the tail arrives.
 function captureSheetFileState(
   state: LazyWorkbookState,
   sheetId: string,
   result: WorkbookRangeResult,
 ): void {
+  const first = !state.sheetPageBreaks.has(sheetId)
   if (!state.sheetProtections.has(sheetId)) {
     state.sheetProtections.set(sheetId, fileSheetProtection(result.sheetProtection))
   }
@@ -6582,6 +6603,23 @@ function captureSheetFileState(
         state.editJournal.structuralOps.get(sheetId) ?? [],
       ),
     )
+  }
+  const meta = lazySheetMeta(state, sheetId)
+  if (meta?.progressive) {
+    const counts = result.cellCounts
+    if (counts && meta.storedCellCount === undefined) {
+      const fileSheetId = lazyFileSheetId(state, sheetId)
+      state.file = {
+        ...state.file,
+        sheets: state.file.sheets.map((sheet) =>
+          sheet.id === fileSheetId ? { ...sheet, ...counts } : sheet,
+        ),
+      }
+    }
+    if (first) {
+      if (result.sparklines) state.deferredSparklines?.set(sheetId, result.sparklines)
+      state.onProgressiveSheetReady?.(sheetId)
+    }
   }
 }
 
@@ -8474,7 +8512,7 @@ export function queueSparklineInstall(
     disposeVisuals(sparklineDisposablesRef.current)
     const sheetMeta = state.file.sheets.find((sheet) => sheet.id === sheetId)
     const sparklines: SparklineGroupState[] = [
-      ...(sheetMeta?.sparklines ?? []),
+      ...(state.deferredSparklines?.get(sheetId) ?? sheetMeta?.sparklines ?? []),
       ...state.editJournal.sparklineAdds
         .filter((entry) => entry.sheetId === sheetId)
         .map((entry) => ({

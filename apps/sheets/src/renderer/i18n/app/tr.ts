@@ -687,6 +687,7 @@ export const tr = {
     'Formüller düzenlemelerinize göre yeniden hesaplandı — {count} tanesi önbellek değerini korudu (yedek motorun desteklemediği işlevler).',
   appRecalcDone:
     'Formüller düzenlemelerinize göre yeniden hesaplandı ({count} hücre, yedek motor).',
+  appReadOnlyIndexing: 'Sayfa dizine eklenirken salt okunur önizleme.',
   appIndexing: '{name} dizinleniyor: {rows} satır hazır.',
   appStreamingRows: '{name} akışla yükleniyor: {rows} satır kullanılabilir.',
   appLoadRangeFailed: 'Görünür aralık yüklenemiyor.',

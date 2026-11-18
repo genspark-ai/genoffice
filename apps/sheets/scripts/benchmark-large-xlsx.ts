@@ -17,6 +17,7 @@ const openResultSchema = z.object({
   sessionId: z.string().uuid(),
   name: z.string(),
   entryCount: z.number().int().nonnegative(),
+  activeTab: z.number().int().nonnegative().default(0),
   sheets: z
     .array(
       z.object({
@@ -24,6 +25,8 @@ const openResultSchema = z.object({
         name: z.string(),
         rowCount: z.number().int().positive(),
         columnCount: z.number().int().positive(),
+        hidden: z.boolean().optional(),
+        progressive: z.boolean().optional(),
       }),
     )
     .min(1),
@@ -55,44 +58,47 @@ async function main(): Promise<void> {
 
   try {
     const openStarted = performance.now()
-    const opened = openResultSchema.parse(await client.open(resolve(fixturePath)))
+    const opened = openResultSchema.parse(
+      await client.open(resolve(fixturePath), 'en', undefined, true),
+    )
     const openMilliseconds = performance.now() - openStarted
     sessionId = opened.sessionId
-    const largestSheet = opened.sheets.reduce((largest, sheet) =>
-      sheet.rowCount * sheet.columnCount > largest.rowCount * largest.columnCount ? sheet : largest,
+    const activeSheet = [opened.sheets[opened.activeTab], ...opened.sheets].find(
+      (sheet) => sheet && !sheet.hidden,
     )
-    const endColumn = Math.min(49, largestSheet.columnCount - 1)
+    if (!activeSheet) throw new Error('Workbook has no visible worksheet.')
+    const endColumn = Math.min(49, activeSheet.columnCount - 1)
     const firstRange = {
       startRow: 0,
-      endRow: Math.min(99, largestSheet.rowCount - 1),
+      endRow: Math.min(99, activeSheet.rowCount - 1),
       startColumn: 0,
       endColumn,
     }
     const firstViewportStarted = performance.now()
     const firstViewport = await waitForIndexedRange(client, {
       sessionId,
-      sheetId: largestSheet.id,
+      sheetId: activeSheet.id,
       range: firstRange,
     })
     const firstViewportFinished = performance.now()
     const firstViewportMilliseconds = firstViewportFinished - firstViewportStarted
 
     const bottomRange = {
-      startRow: Math.max(0, largestSheet.rowCount - 100),
-      endRow: largestSheet.rowCount - 1,
+      startRow: Math.max(0, activeSheet.rowCount - 100),
+      endRow: activeSheet.rowCount - 1,
       startColumn: 0,
       endColumn,
     }
     const fullIndexStarted = performance.now()
     await waitForIndexedRange(client, {
       sessionId,
-      sheetId: largestSheet.id,
+      sheetId: activeSheet.id,
       range: bottomRange,
       mode: 'status',
     })
     const fullIndexMilliseconds = performance.now() - fullIndexStarted
     const bottomResult = workbookRangeResultSchema.parse(
-      await client.readRange({ sessionId, sheetId: largestSheet.id, range: bottomRange }),
+      await client.readRange({ sessionId, sheetId: activeSheet.id, range: bottomRange }),
     )
 
     const report = {
@@ -102,7 +108,7 @@ async function main(): Promise<void> {
       workbook: opened.name,
       entryCount: opened.entryCount,
       sheetCount: opened.sheets.length,
-      largestSheet,
+      activeSheet,
       openMilliseconds: round(openMilliseconds),
       firstViewportMilliseconds: round(firstViewportMilliseconds),
       timeToFirstViewportMilliseconds: round(firstViewportFinished - openStarted),

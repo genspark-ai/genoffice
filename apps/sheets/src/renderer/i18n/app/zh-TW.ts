@@ -576,6 +576,7 @@ export const zhTW = {
   appClosureActive: '{count} 個公式即時重新計算（閉包模式）；其餘部分依需求串流載入。',
   appRecalcPartial: '公式已依你的編輯重新計算——{count} 個保留了快取值（後備引擎不支援的函數）。',
   appRecalcDone: '公式已依你的編輯重新計算（{count} 個儲存格，引擎後備）。',
+  appReadOnlyIndexing: '工作表正在建立索引，暫時只能檢視。',
   appIndexing: '正在索引 {name}：{rows} 列就緒。',
   appStreamingRows: '正在串流載入 {name}：{rows} 列可用。',
   appLoadRangeFailed: '無法載入可見範圍。',

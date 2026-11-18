@@ -152,15 +152,19 @@ pub(crate) fn worksheet_open_sources(
 
 /// Each worker has its own archive cursor. Keep results in sheet order and
 /// let the caller handle small sheets (or a failed thread spawn) inline.
-pub(crate) fn scan_large_worksheet_metadata(
+pub(crate) fn scan_worksheet_metadata_batch(
     path: &Path,
     sources: &[WorksheetOpenSource],
+    headers: &[Option<SheetDimensions>],
     cancelled: &AtomicBool,
 ) -> VecDeque<Option<Result<String, SidecarError>>> {
+    let needs_scan = |source: &WorksheetOpenSource, header: &Option<SheetDimensions>| {
+        source.is_large() && header.is_none()
+    };
     if sources
         .iter()
-        .filter(|source| source.is_large())
-        .take(2)
+        .zip(headers)
+        .filter(|(source, header)| needs_scan(source, header))
         .count()
         < 2
     {
@@ -169,8 +173,9 @@ pub(crate) fn scan_large_worksheet_metadata(
     thread::scope(|scope| {
         let scans: Vec<_> = sources
             .iter()
-            .map(|source| {
-                if !source.is_large() {
+            .zip(headers)
+            .map(|(source, header)| {
+                if !needs_scan(source, header) {
                     return None;
                 }
                 thread::Builder::new()
@@ -221,6 +226,7 @@ pub(crate) struct SheetDimensions {
     pub(crate) outline_level_col: u8,
     pub(crate) outline_summary_below: bool,
     pub(crate) outline_summary_right: bool,
+    trusted_extent: bool,
 }
 
 /// Excel keeps a zoom per view type; the app always opens the normal view,
@@ -245,6 +251,26 @@ pub(crate) fn read_sheet_dimensions(
     worksheet_path: &str,
     colors: &ColorContext,
     count_budget: &mut usize,
+) -> Result<SheetDimensions, SidecarError> {
+    read_sheet_dimensions_inner(archive, worksheet_path, colors, count_budget, false)
+}
+
+pub(crate) fn read_progressive_sheet_header(
+    archive: &mut ZipArchive<File>,
+    worksheet_path: &str,
+    colors: &ColorContext,
+) -> Result<Option<SheetDimensions>, SidecarError> {
+    let mut budget = 0;
+    let header = read_sheet_dimensions_inner(archive, worksheet_path, colors, &mut budget, true)?;
+    Ok(header.trusted_extent.then_some(header))
+}
+
+fn read_sheet_dimensions_inner(
+    archive: &mut ZipArchive<File>,
+    worksheet_path: &str,
+    colors: &ColorContext,
+    count_budget: &mut usize,
+    header_only: bool,
 ) -> Result<SheetDimensions, SidecarError> {
     let entry = zip_entry(archive, worksheet_path)?;
     let mut reader = Reader::from_reader(BufReader::new(entry));
@@ -448,6 +474,13 @@ pub(crate) fn read_sheet_dimensions(
                     break (row_count, column_count, false);
                 }
             }
+            Event::Start(element) | Event::Empty(element)
+                if header_only && element.local_name().as_ref() == b"sheetData" =>
+            {
+                // Some producers write a placeholder or an Excel-wide
+                // dimension. Let the ordinary path measure their real extent.
+                break (1, 1, false);
+            }
             Event::End(element)
                 if element.local_name().as_ref() == b"sheetData" && dimension_trusted =>
             {
@@ -553,6 +586,7 @@ pub(crate) fn read_sheet_dimensions(
         outline_level_col,
         outline_summary_below,
         outline_summary_right,
+        trusted_extent: dimension_trusted,
     })
 }
 
