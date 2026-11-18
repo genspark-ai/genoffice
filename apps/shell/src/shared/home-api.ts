@@ -207,6 +207,7 @@ export type DecisionEndpoint =
   | 'liquid-ultra'
   | 'openai'
   | 'gemini'
+  | 'microsoft-decision'
   | 'cloudflare'
   | 'cloudflare-flash'
   | 'kev'

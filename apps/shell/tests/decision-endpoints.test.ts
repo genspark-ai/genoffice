@@ -44,6 +44,9 @@ describe('decision model routes', () => {
     expect(bodyModel(opts({ endpoint: 'liquid-ultra' }))).toBe('d1-ultra')
     expect(bodyModel(opts({ endpoint: 'openai' }))).toBe('gpt-6-luna')
     expect(bodyModel(opts({ endpoint: 'gemini' }))).toBe('gemini-decision-1')
+    expect(bodyModel(opts({ endpoint: 'microsoft-decision' }))).toBe(
+      'microsoft/microsoft-decision-1.1',
+    )
   })
 
   it('sends OpenAI its GA decisions endpoint', () => {
@@ -57,6 +60,15 @@ describe('decision model routes', () => {
     // shared input, keyed questions with plain criteria; only URL and model here.
     expect(endpointUrl(opts({ endpoint: 'gemini' }))).toBe(
       'https://generativelanguage.googleapis.com/v1beta/decisions',
+    )
+  })
+
+  it('routes Microsoft Decision 1.1 through the OpenRouter decisions API', () => {
+    // GA in Foundry and on OpenRouter (microsoft/microsoft-decision-1.1);
+    // OpenRouter's /api/alpha/decisions is the shape the openrouter route
+    // already speaks, so only the model differs.
+    expect(endpointUrl(opts({ endpoint: 'microsoft-decision' }))).toBe(
+      'https://openrouter.ai/api/alpha/decisions',
     )
   })
 
@@ -144,6 +156,7 @@ describe('the settings dropdown matches the endpoint table', () => {
       'liquid-ultra',
       'cloudflare-flash',
       'gemini',
+      'microsoft-decision',
     ] as const) {
       expect(offered).toContain(added)
     }

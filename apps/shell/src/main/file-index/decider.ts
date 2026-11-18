@@ -74,6 +74,10 @@ const ENDPOINTS: Record<Exclude<DecisionEndpoint, 'custom'>, EndpointSpec> = {
     url: 'https://generativelanguage.googleapis.com/v1beta/decisions',
     model: 'gemini-decision-1',
   },
+  'microsoft-decision': {
+    url: 'https://openrouter.ai/api/alpha/decisions',
+    model: 'microsoft/microsoft-decision-1.1',
+  },
   cloudflare: { url: '', model: '@cf/cloudflare/clef' },
   'cloudflare-flash': { url: '', model: '@cf/cloudflare/clef-flash' },
   kev: { url: KEV_URL, model: 'kev-latest', local: true },
