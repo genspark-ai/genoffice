@@ -62,6 +62,8 @@ interface ListFrame {
   styleName?: string
   /** deepest 1-based level any item used */
   maxDepth: number
+  /** depth -> value an item's `text:start-value` restarts the sequence at */
+  starts?: Map<number, number>
 }
 
 interface BlockContext {
@@ -152,16 +154,33 @@ export async function convertOdtToDocx(odt: Uint8Array): Promise<OdtToDocxResult
     parentDepth: number,
     context: BlockContext,
   ): void {
-    const frame: ListFrame = parent ?? {
-      numId: String(5000 + ++listCounter),
-      styleName: attr(list, 'text:style-name'),
-      maxDepth: 0,
-    }
-    if (!parent) listFrames.push(frame)
     const depth = parent ? parentDepth + 1 : 1
-    frame.maxDepth = Math.max(frame.maxDepth, depth)
+    // A nested list counts on its parent's numbering definition, which is what
+    // makes the levels of one multilevel list share a sequence. An item's
+    // `text:start-value` asks for a sequence of its own, so it cannot ride on
+    // that definition: two sibling sub-lists starting at 3 and 7 would both
+    // write into the same level, and only the last value would survive. Each
+    // restart gets a fresh definition instead.
+    const freshFrame = (start: number | null): ListFrame => {
+      const created: ListFrame = {
+        numId: String(5000 + ++listCounter),
+        styleName: parent ? parent.styleName : attr(list, 'text:style-name'),
+        maxDepth: 0,
+        ...(start !== null ? { starts: new Map([[depth, start]]) } : {}),
+      }
+      listFrames.push(created)
+      return created
+    }
+    const firstStart = firstItemStart(list)
+    let frame: ListFrame = parent && firstStart === null ? parent : freshFrame(firstStart)
+    let seenItem = false
     for (const { name, node } of childElements(list)) {
       if (name === 'text:list-item') {
+        const start = itemStart(node)
+        // the first item's value already shaped the frame above
+        if (start !== null && seenItem) frame = freshFrame(start)
+        seenItem = true
+        frame.maxDepth = Math.max(frame.maxDepth, depth)
         let firstParagraph = true
         for (const inner of childElements(node)) {
           if (inner.name === 'text:p') {
@@ -389,6 +408,29 @@ const NUM_FORMATS: Record<string, string> = {
   I: 'upperRoman',
 }
 
+/**
+ * `text:start-value` on a list item restarts that list's numbering at the given
+ * number. Anything that is not a non-negative integer is ignored, and so is a
+ * value past a sane ceiling: six digits already draw a marker wider than the
+ * page.
+ */
+const MAX_LIST_START = 1_000_000
+
+function itemStart(item: XNode): number | null {
+  const raw = attr(item, 'text:start-value')
+  if (raw === undefined) return null
+  const value = Number(raw.trim())
+  return Number.isSafeInteger(value) && value >= 0 && value <= MAX_LIST_START ? value : null
+}
+
+/** the start value of a list's first item: it shapes the list's own definition */
+function firstItemStart(list: XNode): number | null {
+  for (const { name, node } of childElements(list)) {
+    if (name === 'text:list-item') return itemStart(node)
+  }
+  return null
+}
+
 function listLevelKind(styles: OdfStyles, frame: ListFrame, depth: number): 'bullet' | 'ordered' {
   const level = styles.listLevels(frame.styleName)?.get(depth)
   return level?.kind === 'ordered' ? 'ordered' : 'bullet'
@@ -416,7 +458,7 @@ function numberingDefs(
         defs.push({
           numFmt: format,
           lvlText: `${level.numPrefix ?? ''}%${depth}${level.numSuffix ?? '.'}`,
-          start: level.start,
+          start: frame.starts?.get(depth) ?? level.start,
           indentLeft,
           hanging,
         })
@@ -443,6 +485,8 @@ interface GridCell {
   /** built paragraph XML (links stripped: relationships live with generated blocks only) */
   contentXml: string
   fill: string | null
+  /** fo:vertical-align of the cell style, in docx's vocabulary */
+  vAlign: 'center' | 'bottom' | null
 }
 
 const CELL_GEN_CTX = {
@@ -713,6 +757,7 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
     rowSpan: Math.max(1, Number(attr(node, 'table:number-rows-spanned') ?? '1') || 1),
     contentXml,
     fill: ctx.styles.cellFill(attr(node, 'table:style-name')),
+    vAlign: ctx.styles.cellAlign(attr(node, 'table:style-name')),
   }
 }
 
@@ -780,6 +825,8 @@ function tableXml(
       if (cell.colSpan > 1) tcPr.push(`<w:gridSpan w:val="${cell.colSpan}"/>`)
       if (cell.rowSpan > 1) tcPr.push('<w:vMerge w:val="restart"/>')
       if (cell.fill) tcPr.push(`<w:shd w:val="clear" w:color="auto" w:fill="${cell.fill}"/>`)
+      // vAlign follows shd in CT_TcPr
+      if (cell.vAlign) tcPr.push(`<w:vAlign w:val="${cell.vAlign}"/>`)
       parts.push(`<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>${cell.contentXml}</w:tc>`)
     })
     parts.push('</w:tr>')
