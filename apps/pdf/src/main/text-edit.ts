@@ -2251,6 +2251,30 @@ export function textInsertAxes(rotate = 0): readonly [number, number, number, nu
   }
 }
 
+/**
+ * A strong right-to-left letter: Hebrew (incl. the presentation forms), Arabic
+ * (incl. the presentation forms) and the RTL scripts that sit between them —
+ * Syriac, Thaana, NKo, Samaritan, Mandaic and Arabic Extended-A/B.
+ */
+const RTL_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u
+
+/**
+ * The line in the order pdfium must be handed it. `FPDFText_SetText` lays a text
+ * object's glyphs out left to right in the order it receives, so a Hebrew phrase
+ * passed in logical order reads mirrored on the page (and extracts mirrored,
+ * which then fails save verification). When every letter of the line is RTL and
+ * the line holds no digits — bidi leaves pure-RTL text as one run, and digits
+ * would stay left-to-right inside it — reverse the grapheme clusters. Mixed
+ * directions and numbers are left untouched: they need a full bidi pass.
+ */
+export function visualLine(line: string): string {
+  const letters = line.match(/\p{L}/gu)
+  if (!letters || !letters.every((ch) => RTL_LETTER.test(ch))) return line
+  if (/\p{N}/u.test(line)) return line
+  const clusters = line.match(/.\p{M}*/gsu) ?? []
+  return clusters.reverse().join('')
+}
+
 /** Insert new searchable text objects without matching/removing existing page content. */
 export function applyTextInserts(
   bytes: Uint8Array,
@@ -2372,7 +2396,7 @@ export function applyTextInserts(
                 for (const [lineIndex, line] of input.text.split('\n').entries()) {
                   if (!line) continue
                   const obj = m._FPDFPageObj_CreateTextObj(doc, font, input.fontSize)
-                  const textPtr = utf16Ptr(m, line)
+                  const textPtr = utf16Ptr(m, visualLine(line))
                   const ok = m._FPDFText_SetText(obj, textPtr)
                   m._free(textPtr)
                   if (!ok) {
