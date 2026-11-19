@@ -272,6 +272,12 @@ import {
   setRowFills,
   syncAnchorBands,
   syncCutOverlays,
+  syncNestedTableGaps,
+  nestedRowAtCut,
+  nestedRowSplit,
+  type NestedTableGap,
+  NESTED_ROW_TOL_PX,
+  tableGridCols,
   syncFloatShifts,
   syncPageBorders,
   syncPageSheets,
@@ -4755,6 +4761,7 @@ export function App() {
         // skips the same distance to start beside the last portion)
         const carryGaps = new Map<number, number>()
         const overlayCutAnchors: LineAnchor[] = []
+        const nestedGaps: NestedTableGap[] = []
         const overlayPages: number[] = []
         const carries: FlowCarry[] = []
         const lineRectsOf = createLineRectsCache()
@@ -5224,20 +5231,7 @@ export function App() {
                   // the spanning gap cell must cover exactly the table's column
                   // grid: a wider colSpan adds phantom columns, which collapses
                   // colgroup-less fixed-layout tables to ~1px columns (makeGapEl)
-                  const gridCols = Math.max(
-                    1,
-                    ...Array.from(
-                      tr
-                        .closest('table')
-                        ?.querySelectorAll<HTMLTableRowElement>(':scope > tbody > tr') ?? [],
-                    )
-                      .filter(
-                        (r) =>
-                          !r.classList.contains('page-gap') &&
-                          !r.classList.contains('page-repeat-header'),
-                      )
-                      .map((r) => Array.from(r.cells).reduce((s, c) => s + c.colSpan, 0)),
-                  )
+                  const gridCols = tableGridCols(tr.closest('table'))
                   for (let d = $pos.depth; d > 0; d--) {
                     if ($pos.node(d).type.name === 'docTableRow') {
                       // no notes area in table gaps: pad the full remainder
@@ -5290,8 +5284,72 @@ export function App() {
                 return
               }
               // anchors inside the read-only nested-table NodeView have no distinct PM
-              // position (posAtDOM collapses them all to the node start): overlay markers
+              // position (posAtDOM collapses them all to the node start), so no widget
+              // can reach them: the gaps go into the view's DOM (syncNestedTableGaps,
+              // pos is unused there), and a turn neither helper can place stays an
+              // overlay marker
               if (anchorElement(anchor)?.closest('.doc-nested-table')) {
+                // a turn between two of its rows: an in-table gap row, padded to the
+                // paper bottom like a row cut
+                const row = nestedRowAtCut(anchor, NESTED_ROW_TOL_PX * factor)
+                const table = row?.closest('table')
+                if (row && table) {
+                  const tablePad = Math.round(remaining)
+                  nestedGaps.push({
+                    row,
+                    gap: {
+                      pos: 0,
+                      kind: 'table',
+                      cols: tableGridCols(table),
+                      page: k + 1,
+                      boundaryY: slice.start,
+                      metrics:
+                        tablePad > 0
+                          ? {
+                              ...metrics,
+                              marginBottom: metrics.marginBottom + tablePad,
+                              bodyMarginBottom: metrics.marginBottom,
+                            }
+                          : metrics,
+                      ...hfProps,
+                    },
+                  })
+                  return
+                }
+                // a turn between a row's lines: Word splits the row, each cell
+                // carrying on at the next page's top
+                const split = nestedRowSplit(anchor, factor, NESTED_ROW_TOL_PX, (cell, off) =>
+                  nextLineAnchor(cell, off, factor, lineRectsOf),
+                )
+                if (split) {
+                  const last = split.cells.length - 1
+                  nestedGaps.push({
+                    row: split.row,
+                    gap: { pos: 0, kind: 'cell', page: k + 1, boundaryY: slice.start, metrics },
+                    cells: split.cells.map(({ mark, liftPx, block }, i) => {
+                      const r = block.getBoundingClientRect()
+                      return {
+                        mark,
+                        gap: {
+                          pos: 0,
+                          kind: 'cell' as const,
+                          page: k + 1,
+                          boundaryY: slice.start,
+                          metrics: {
+                            ...metrics,
+                            marginBottom: metrics.marginBottom + liftPx,
+                            bodyMarginBottom: metrics.marginBottom,
+                            marginLeft: (r.left - pmRect.left) / factor - pageLeftOf(nextSec),
+                            marginRight: (pmRect.right - r.right) / factor - pageLeftOf(nextSec),
+                          },
+                          // one set of header/footer strips, on the gap painted last
+                          ...(i === last ? hfProps : {}),
+                        },
+                      }
+                    }),
+                  })
+                  return
+                }
                 overlayCutAnchors.push(anchor)
                 overlayPages.push(k + 1)
                 return
@@ -5374,10 +5432,10 @@ export function App() {
           }
           // silently dropped boundaries merge two pages into one giant page — surface them
           const boundaries = slices.slice(1).filter((s, k) => s.start !== slices[k].start).length
-          if (gaps.length + overlayCutAnchors.length !== boundaries) {
+          if (gaps.length + nestedGaps.length + overlayCutAnchors.length !== boundaries) {
             gapBoundaryMismatch++
             console.warn(
-              `[pagination] ${gaps.length + overlayCutAnchors.length} page gaps built for ${boundaries} boundaries`,
+              `[pagination] ${gaps.length + nestedGaps.length + overlayCutAnchors.length} page gaps built for ${boundaries} boundaries`,
             )
           }
           // DOM-only (contenteditable=false subtrees the save path never reads);
@@ -5520,7 +5578,7 @@ export function App() {
         }
         // the cuts learn the gap widgets' geometry: every page reader below
         // (float shifts, cell boxes, frames, status bar, thumbnails) reads them
-        applyGapLedger(cuts, gapLedgerOf(gaps, overlayPages))
+        applyGapLedger(cuts, gapLedgerOf([...gaps, ...nestedGaps.map((g) => g.gap)], overlayPages))
         if (pageLayoutRef.current) pageLayoutRef.current.carries = carries
         // no gap widgets (web / read mode, one page): the flow is the page
         const ledgered = cuts.some((c) => c.gap)
@@ -5608,6 +5666,8 @@ export function App() {
         layoutBatch.commit()
         tCommit = performance.now() - tCommit0
         stage('commit')
+        // page turns between nested-table rows: gap rows inside the read-only views
+        syncNestedTableGaps(editor.view, nestedGaps)
         // in-table gap bands live in the spanning cell's coordinate space:
         // re-anchor them to the paper before the strips are measured/aligned
         alignTableGapFills(pm, factor)

@@ -3588,11 +3588,14 @@ export const DocNestedTable = Node.create({
         if (td) dirty.add(td)
       })
 
-      /** this table's own td elements (excluding deeper nested-table td), ordered like the model's non-vMerge-continue cells */
+      /** this table's own td elements (excluding deeper nested-table td and the
+       *  paginator's page-gap rows), ordered like the model's non-vMerge-continue cells */
       const ownTds = (): HTMLElement[] => {
         const root = dom.querySelector('table')
         if (!root) return []
-        return Array.from(dom.querySelectorAll('td')).filter((td) => td.closest('table') === root)
+        return Array.from(dom.querySelectorAll('td')).filter(
+          (td) => td.closest('table') === root && !td.closest('tr.page-gap'),
+        )
       }
 
       const flatCells = (): TableCell[] => {
@@ -5600,12 +5603,28 @@ function wireProtectedInteractionMode(
 
 /** split a contenteditable cell back into paragraph strings */
 function tdParas(td: HTMLElement): string[] {
+  // the paginator's page gaps inside the cell (nested-table page turns) are not
+  // cell text: their header/footer strips and own line stay out of innerText
+  const gaps = Array.from(td.querySelectorAll<HTMLElement>('.page-gap'))
+  if (gaps.length === 0) return tdParasOf(td)
+  const prev = gaps.map((g) => g.style.display)
+  gaps.forEach((g) => (g.style.display = 'none'))
+  try {
+    return tdParasOf(td)
+  } finally {
+    gaps.forEach((g, i) => (g.style.display = prev[i]))
+  }
+}
+
+function tdParasOf(td: HTMLElement): string[] {
   // one rendered block per paragraph (below the exact-height / vertical-text
   // wrapper): read them structurally so empty paragraphs survive (innerText
   // drops trailing empty blocks) and NBSP stays document text
   const wrapper = td.children.length === 1 ? td.children[0] : null
   const host = wrapper?.matches('.cell-clip, .cell-vert') ? wrapper : td
-  const blocks = Array.from(host.childNodes)
+  const blocks = Array.from(host.childNodes).filter(
+    (n) => !(n instanceof HTMLElement && n.classList.contains('page-gap')),
+  )
   if (blocks.length > 0 && blocks.every((n) => n instanceof HTMLElement && n.tagName === 'DIV')) {
     return blocks.map((block) => {
       const el = block as HTMLElement
