@@ -50,7 +50,7 @@ La configuración puede registrar GenOffice como programa predeterminado para .d
 
 - El acceso a la sesión (en la configuración o en la lista de proyectos de la nube) usa un flujo de **código de dispositivo**: GenOffice muestra un código y abre el inicio de sesión en el navegador; continúa solo cuando ha terminado.
 - El inicio de sesión solo se usa para: la lista de proyectos de la nube y los modelos alojados de Genspark. Sin él, todas las funciones locales y los modelos personalizados siguen funcionando.
-- Cerrar la sesión es un clic en la configuración.
+- Al cerrar sesión se pide confirmación primero y luego se cierran todas las funciones de IA vinculadas a la cuenta de Genspark (proyectos en la nube y modelos alojados); las funciones locales siguen funcionando.
 
 ## Integración MCP (para usuarios avanzados / clientes de IA)
 

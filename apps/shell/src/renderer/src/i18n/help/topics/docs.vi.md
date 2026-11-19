@@ -18,6 +18,7 @@ Các thẻ: **Trang chủ / Chèn / Vẽ / Bố trí / Thiết kế / Tham khả
 
 - **Xem lại**: **Trình biên tập** kiểm tra chính tả, ngữ pháp và dấu câu cho toàn bộ tài liệu; **Dịch**; kiểm tra chính tả; nhận xét (**AI giải quyết nhận xét** xử lý những nhận xét đang mở); theo dõi thay đổi với chế độ Tất cả đánh dấu / Đánh dấu đơn giản, chấp nhận/từ chối và **Tóm tắt sửa đổi bằng AI**; thống kê từ; **So sánh** với tệp khác; **Bảo vệ tài liệu**.
 - **Chế độ xem**: năm cách nhìn tệp — **Bố trí in**, **Bố trí Web**, **Dàn bài**, **Chế độ đọc** và **Xem trước trang**; thu nhỏ/phóng to/100 %/chiều rộng trang/một trang; **Ngăn AI**; **Chế độ tối**; thước kẻ, đường lưới và ngăn điều hướng; **Tab mới**, **Tách** và **Chuyển tab**; **hộp thoại phím tắt bàn phím** có thể tìm kiếm.
+- **Dàn ý suy luận**: các đoạn trông như tiêu đề nhưng không có kiểu tiêu đề sẽ xuất hiện trong bảng điều hướng với dấu suy luận; áp dụng kiểu tiêu đề để biến chúng thành tiêu đề thật.
   - **Chế độ tối** làm tối trang và vùng vẽ xung quanh, chứ không bao giờ làm tối dải ruy-băng — đó là cách Word chia sự khác biệt giữa một mặt phẳng chỉnh sửa tối và một cửa sổ tối. Lựa chọn này được ghi nhớ và dù thế nào cũng thắng chủ đề của ứng dụng.
   - **Tách** mở ra một ngăn thứ hai bên dưới, cuộn độc lập và phản chiếu ngăn đầu tiên; đóng lại bằng dấu × trên mép của nó.
 
@@ -72,6 +73,7 @@ Nhấp chuột phải ở bất kỳ đâu trong nội dung — menu đi theo th
 
 - Lưu .docx chỉ ghi lại những đoạn văn đã thay đổi — phần không đụng tới giữ nguyên từng byte.
 - Xuất PDF (theo cách ngắt trang hiện tại) và ảnh theo từng trang.
+- **Xem trước khi in theo con trỏ**: mở In sẽ đến thẳng trang có con trỏ thay vì luôn là trang 1.
 
 ## In
 

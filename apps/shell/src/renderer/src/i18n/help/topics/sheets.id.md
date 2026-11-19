@@ -52,6 +52,7 @@ Tab Rumus, tombol demi tombol:
 ![Tab Rumus](img/sheets-formulas.png)
 
 - **Sisipkan Fungsi** (fx): cari fungsi dengan pemandu argumen.
+- **Fungsi Excel 365**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE, dan PERCENTOF tersedia di bilah rumus (tanda tangan Excel; pola regex tidak aman ditolak).
 - **Jumlah Otomatis** (drop-down): SUM sekali klik, ditambah rata-rata/jumlah data/maks/min.
 - **Baru Digunakan / Keuangan / Logika / Teks / Tanggal & Waktu / Pencarian & Referensi / Matematika & Trigonometri / Lainnya**: telusuri dan sisipkan fungsi menurut kategori.
 - **Manajer Nama**: melihat, membuat, dan menghapus rentasan bernama.

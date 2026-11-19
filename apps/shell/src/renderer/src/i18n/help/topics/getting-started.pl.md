@@ -11,6 +11,7 @@ Okno składa się z trzech części:
 - **Pasek kart (u góry)**: każdy otwarty plik to jedna karta. Karta Strona główna, najbardziej z lewej, jest zawsze obecna i nie można jej zamknąć; pozostałe karty to Twoje dokumenty. Kliknij dwukrotnie kartę, aby zmienić nazwę pliku w miejscu.
 - **Obszar zawartości**: edytor (albo strona główna) należący do aktywnej karty.
 - **Pasek menu**: na macOS w systemowym pasku menu, na Windows/Linux u góry okna. Menu Plik/Edycja/Widok zmieniają się tak, aby pasowały do aktywnego edytora.
+- **Skala interfejsu**: **Widok ▸ Powiększ / Pomniejsz / Resetuj** skaluje całe okno w zakresie 80%–150% (⌘⌃= / ⌘⌃- / ⌘⌃0 w macOS; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 na innych platformach).
 
 ## Tworzenie dokumentu
 

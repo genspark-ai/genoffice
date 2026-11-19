@@ -18,6 +18,7 @@ Pestañas: **Inicio / Insertar / Dibujar / Disposición / Diseño / Referencias 
 
 - **Revisar**: **Editor** revisa la ortografía, la gramática y la puntuación de todo el documento; **Traducir**; corrección ortográfica; comentarios (**Comentarios con IA** trabaja los que están abiertos); control de cambios con las vistas Todas las revisiones / Revisiones simples, aceptar/rechazar y **Resumen IA de revisiones**; contar palabras; **Comparar** con otro archivo; **Proteger documento**.
 - **Vista**: cinco maneras de mirar el archivo — **Diseño de impresión**, **Diseño web**, **Esquema**, **Modo de lectura** y **Vista previa de páginas**; alejar/acercar/100 %/ancho de página/una página; **Panel de IA**; **Modo oscuro**; regla, líneas de la cuadrícula y el panel de navegación; **Nueva pestaña**, **Dividir** y **Cambiar de pestaña**; el cuadro de diálogo de **atajos de teclado** en el que se puede buscar.
+- **Esquema inferido**: los párrafos que parecen títulos pero no tienen estilo de título aparecen en el panel de navegación marcados como inferidos; al aplicar un estilo de título se convierten en reales.
   - **Modo oscuro** oscurece la página y el lienzo que la rodea, nunca la cinta — la división de Word entre una superficie de edición oscura y una ventana oscura. La elección se recuerda y gana sobre el tema de la aplicación en cualquier caso.
   - **Dividir** abre un segundo panel debajo que se desplaza de forma independiente y refleja el primero; ciérralo con la × de su borde.
 
@@ -72,6 +73,7 @@ Haga clic derecho en cualquier parte del cuerpo: el menú se ajusta a lo que ha 
 
 - Guarda .docx reescribiendo solo los párrafos modificados: el contenido intacto queda idéntico byte a byte.
 - Exporta a PDF (con la paginación actual) y a imágenes página por página.
+- **Vista previa de impresión en el cursor**: abrir Imprimir va directamente a la página donde está el cursor en vez de a la página 1.
 
 ## Imprimir
 

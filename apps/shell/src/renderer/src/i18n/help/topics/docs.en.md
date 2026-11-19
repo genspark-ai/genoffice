@@ -18,6 +18,7 @@ Tabs: **Home / Insert / Draw / Layout / Design / References / Review / View**, p
 
 - **Review**: **Editor** proofreads the whole document for spelling, grammar and punctuation; **Translate**; spell check; comments (**AI Resolve Comments** works through the open ones); track changes with All/Simple markup views, accept/reject, and **AI Revision Summary**; word count; **Compare** against another file; **Protect Document**.
 - **View**: five ways to look at the file — **Print Layout**, **Web Layout**, **Outline**, **Read Mode** and **Page Preview**; zoom out/in/100%/page width/one page; **AI Panel**; **Dark Mode**; ruler, gridlines and the navigation pane; **New Tab**, **Split** and **Switch Tabs**; the searchable **keyboard-shortcuts dialog**.
+- **Inferred outline**: paragraphs that look like headings but carry no heading style show up in the navigation pane marked as inferred; applying a heading style makes them real.
   - **Dark Mode** darkens the page and the canvas around it, never the ribbon — Word's split between a dark editing surface and a dark window. The choice is remembered, and it wins over the app theme either way.
   - **Split** opens a second pane below that scrolls independently and mirrors the first; close it with the × on its edge.
 
@@ -81,6 +82,7 @@ Right-click anywhere in the body — the menu follows what you clicked. Main gro
 
 - Saves .docx rewriting only changed paragraphs — untouched content stays byte-identical.
 - Exports PDF (as paginated) and per-page images.
+- **Print preview follows the caret**: opening Print goes straight to the page the cursor is on instead of page 1.
 
 ## Print
 

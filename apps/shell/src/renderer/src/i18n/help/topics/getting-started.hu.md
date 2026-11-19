@@ -11,6 +11,7 @@ Az ablak három részből áll:
 - **Lapsáv (fent)**: minden megnyitott fájl egy lap. A bal szélső lap, a Kezdőképernyő, mindig jelen van, és nem zárható be; a többi lap a dokumentumaid. Kattints duplán egy lapra, és a fájl nevét helyben átnevezheted.
 - **Tartalomterület**: az aktív laphoz tartozó szerkesztő (vagy a Kezdőképernyő).
 - **Menüsor**: macOS-en a rendszer menüsorában, Windows/Linux alatt az ablak tetején. A Fájl/Szerkesztés/Nézet menük az aktív szerkesztőhöz igazodnak.
+- **Felület méretezése**: **Nézet ▸ Nagyítás / Kicsinyítés / Visszaállítás** a teljes ablakot 80% és 150% között méretezi (macOS-en ⌘⌃= / ⌘⌃- / ⌘⌃0; máshol ctrl+alt+= / ctrl+alt+- / ctrl+alt+0).
 
 ## Dokumentum létrehozása
 

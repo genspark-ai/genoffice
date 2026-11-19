@@ -52,6 +52,7 @@ Sheets 是类 Excel 的表格编辑器，计算由一个独立的 Rust 引擎进
 ![公式页签](img/sheets-formulas.png)
 
 - **插入函数**（fx）：搜索函数并带参数向导。
+- **Excel 365 functions**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE and PERCENTOF are available in the formula bar (Excel signatures; unsafe regex patterns are refused).
 - **自动求和**（下拉）：一键 SUM，还有平均值/计数/最大最小等。
 - **最近使用的函数 / 财务 / 逻辑 / 文本 / 日期和时间 / 查找与引用 / 数学和三角函数 / 其他函数**：按分类浏览并插入函数。
 - **名称管理器**：查看、新建、删除命名区域。

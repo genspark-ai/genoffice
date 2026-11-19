@@ -11,6 +11,7 @@ La fenêtre comporte trois parties :
 - **Barre d’onglets (en haut)** : chaque fichier ouvert correspond à un onglet. L’onglet Accueil le plus à gauche est toujours présent et ne peut pas être fermé ; les autres onglets sont vos documents. Un double-clic sur un onglet permet de renommer le fichier sur place.
 - **Zone de contenu** : l’éditeur (ou l’accueil) correspondant à l’onglet actif.
 - **Menu** : dans la barre de menus système sur macOS, en haut de la fenêtre sur Windows/Linux. Les menus Fichier/Édition/Affichage s’adaptent à l’éditeur actif.
+- **Échelle de l'interface** : **Affichage ▸ Zoom avant / Zoom arrière / Réinitialiser** met toute la fenêtre entre 80 % et 150 % (⌘⌃= / ⌘⌃- / ⌘⌃0 sur macOS ; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 ailleurs).
 
 ## Créer un document
 

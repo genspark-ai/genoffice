@@ -52,6 +52,7 @@ Tab Formula, butiran demi butiran:
 ![Tab Formula](img/sheets-formulas.png)
 
 - **Sisip fungsi** (fx): mencari fungsi dengan pemandu argumen.
+- **Fungsi Excel 365**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE dan PERCENTOF tersedia dalam bar formula (tandatangan Excel; corak regex tidak selamat ditolak).
 - **Jumlah automatik** (senarai lungsur): SUM dengan satu klik, serta min / bilangan / maksimum / minimum.
 - **Digunakan baru-baru ini / Kewangan / Logik / Teks / Tarikh dan masa / Carian dan rujukan / Matematik dan trigonometri / Lain-lain**: semak dan sisip fungsi mengikut kategori.
 - **Pengurus nama**: lihat, cipta dan padam julat bernama.

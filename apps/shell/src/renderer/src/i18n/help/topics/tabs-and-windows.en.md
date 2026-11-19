@@ -10,6 +10,7 @@ Every open file shares one window; the tab strip at the top switches between the
 - **Close**: the × on the tab, or ⌘W/ctrl+W. Unsaved changes ask first.
 - **New**: the + at the right end of the strip.
 - **Activation is immediate**: pressing a tab switches as soon as it is pressed, without waiting for the click to finish.
+- **Rename a file**: double-click its tab, or right-click the tab and choose **Rename**; a single click only activates the tab.
 
 ## Rename: double-click a tab
 

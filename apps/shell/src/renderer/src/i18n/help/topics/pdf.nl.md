@@ -5,6 +5,7 @@ De pdf-editor heeft vijf linttabs: **Start / Annoteren / Bewerken / Pagina's / B
 ## Lezen en navigeren
 
 - Linkerzijbalk: **miniaturen** (klik om te springen, het zichtbare bereik is gemarkeerd) of **overzicht** (bladwijzers, indien aanwezig).
+- **Bewerkbare bladwijzers**: het overzichtspaneel kan bladwijzers toevoegen, hernoemen en verwijderen; wijzigingen worden bij opslaan in het bestand geschreven.
 - Zoom: de verhoudingsknop rechtsonder; ctrl+scrollwiel verandert de zoom in stappen.
 - Draaien: per pagina of voor alle pagina's via het menu Pagina's; draaiingen worden bij opslaan teruggeschreven.
 - Zoeken: ctrl+F op volledige tekst met alle treffers gemarkeerd.
@@ -57,6 +58,7 @@ Zes gereedschappen: **inkt, rechthoek, ellips, pijl, notitie**, plus de **zwartm
 - **Tekst bewerken**: klik op tekst om die blok voor blok te bewerken (pdfium-engine; lettertypen worden zo goed mogelijk benaderd).
 - **Tekst invoegen**: plaats doorzoekbare tekst met zelfgekozen lettertype, maat en kleur.
 - **Afbeelding / stempel invoegen**.
+- **OCR-tekstlaag**: **Tekst herkennen** op een gescande pagina voegt een doorzoekbare tekstlaag toe; de laag is ter plaatse te bewerken en de pagina-afbeelding blijft eronder (oogpictogram om te vergelijken).
 - Formulieren: AcroForm-velden vul je direct in; de waarden worden bij opslaan weggeschreven.
 
 ## Ondertekeningen

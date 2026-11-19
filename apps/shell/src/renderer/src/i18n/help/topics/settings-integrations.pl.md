@@ -50,7 +50,7 @@ Ustawienia mogą zarejestrować GenOffice jako obsługę plików .docx / .xlsx /
 
 - Punkt logowania (w ustawieniach lub na liście projektów w chmurze) korzysta z przepływu z **kodem urządzenia**: GenOffice pokazuje kod i otwiera stronę logowania w przeglądarce; po zakończeniu proces przebiega dalej automatycznie.
 - Logowanie służy wyłącznie do: listy projektów w chmurze i modeli hostowanych przez Genspark. Bez niego wszystkie funkcje lokalne i modele niestandardowe działają dalej.
-- Wylogowanie to jedno kliknięcie w ustawieniach.
+- Wylogowanie najpierw prosi o potwierdzenie, a następnie wylogowuje wszystkie funkcje AI powiązane z kontem Genspark (projekty w chmurze i modele hostowane); funkcje lokalne nadal działają.
 
 ## Integracja MCP (dla zaawansowanych użytkowników i klientów AI)
 

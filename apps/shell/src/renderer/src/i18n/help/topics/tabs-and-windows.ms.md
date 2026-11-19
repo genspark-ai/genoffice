@@ -10,6 +10,7 @@ Semua fail yang dibuka berkongsi satu tingkap. Baris tab di atas bertukar antara
 - **Tutup**: tanda × pada tab, atau ⌘W/ctrl+W. Jika ada perubahan yang belum disimpan, anda akan ditanya dahulu.
 - **Baharu**: tanda + pada hujung kanan baris tab.
 - **Pengaktifan serta-merta**: menekan tab bertukar dengan segera, tanpa menunggu klik selesai.
+- **Menamakan semula fail**: klik dua kali tabnya, atau klik kanan tab dan pilih **Namakan semula**; satu klik hanya mengaktifkan tab.
 
 ## Menamakan semula: klik dua kali pada tab
 

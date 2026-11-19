@@ -9,6 +9,7 @@ Model dan kunci dikonfigurasi di Pengaturan (baris akun di kiri bawah Beranda):
 - **Genspark terkelola**: masuk (alur device-code) lalu pakai — tanpa konfigurasi apa pun.
 - **Endpoint kustom (BYOK)**: Pengaturan ▸ AI menerima base URL dan kunci API untuk tiap protokol — yang kompatibel dengan OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen), dan lainnya. Kunci disimpan di berkas pengaturan aplikasi pada mesin ini dan hanya dikirim di header permintaan. Atlas Cloud termasuk protokol bawaan.
 - Model berbeda dapat dipilih per kemampuan: obrolan/pembuatan, pembuatan gambar, analisis gambar.
+- **MiniMax H3-Image** dan **MiniMax H3-Image Highspeed** tersedia untuk pembuatan gambar bersama image-01 (hingga 16 gambar referensi per penyuntingan).
 - **Uji koneksi**: memastikan endpoint dapat dijangkau dan model terlihat sebelum disimpan.
 - Base URL boleh memuat path dan query string (gaya gateway); path endpoint akan ditambahkan dengan benar.
 

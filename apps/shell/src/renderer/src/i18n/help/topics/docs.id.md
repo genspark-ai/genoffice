@@ -18,6 +18,7 @@ Tab: **Beranda / Sisipkan / Gambar / Tata Letak / Desain / Referensi / Tinjau / 
 
 - **Tinjau**: **Editor** memeriksa seluruh dokumen untuk ejaan, tata bahasa, dan tanda baca; **Terjemahkan**; pemeriksaan ejaan; komentar (**Komentar dengan AI** mengerjakan yang masih terbuka); lacak perubahan dengan tampilan Semua Markup / Markup Sederhana, terima/tolak, dan **Ringkasan revisi AI**; jumlah kata; **Bandingkan** dengan berkas lain; **Proteksi Dokumen**.
 - **Tampilan**: lima cara melihat berkas — **Tata Letak Cetak**, **Tata Letak Web**, **Kerangka**, **Mode Baca** dan **Pratinjau Halaman**; perkecil/perbesar/100 %/lebar halaman/satu halaman; **Panel AI**; **Mode Gelap**; penggaris, garis kisi, dan panel navigasi; **Tab Baru**, **Pisahkan** dan **Beralih Tab**; **dialog pintasan papan tikik** yang bisa dicari.
+- **Kerangka yang disimpulkan**: paragraf yang tampak seperti judul tetapi tanpa gaya judul muncul di panel navigasi dengan tanda disimpulkan; terapkan gaya judul agar menjadi judul sungguhan.
   - **Mode Gelap** menggelapkan halaman dan kanvas di sekitarnya, tidak pernah pita — pemisahan ala Word antara permukaan penyuntingan gelap dan jendela gelap. Pilihan ini diingat, dan dalam segala hal menang di atas tema aplikasi.
   - **Pisahkan** membuka panel kedua di bawah yang menggulir secara mandiri dan mencerminkan yang pertama; tutup dengan × pada tepinya.
 
@@ -72,6 +73,7 @@ Klik kanan di mana saja pada isi dokumen — menu menyesuaikan dengan yang Anda 
 
 - Menyimpan .docx menulis ulang hanya paragraf yang berubah — isi yang tidak disentuh tetap identik byte demi byte.
 - Mengekspor PDF (sesuai penomoran halaman) dan gambar per halaman.
+- **Pratinjau cetak mengikuti kursor**: membuka Cetak langsung menuju halaman tempat kursor berada, bukan selalu halaman 1.
 
 ## Mencetak
 

@@ -18,6 +18,7 @@ Docs 是类 Word 的文字处理器，读写真 .docx，分页排版所见即所
 
 - **审阅**：**编辑器** 通读全文检查拼写、语法与标点；**翻译**；拼写检查；批注（**AI 处理批注** 会处理尚未解决的批注）；修订追踪（所有标记/简单标记视图）、接受/拒绝，以及 **AI 总结修订**；字数统计；与另一文件 **比较**；**保护文档**。
 - **视图**：查看文件有五种方式——**页面视图**、**Web 版式**、**大纲**、**阅读视图** 与 **分页预览**；缩小/放大/百分比/页宽/整页；**AI 面板**；**深色模式**；标尺、网格线与导航窗格；**新建标签**、**拆分** 与 **切换标签**；以及可搜索全部快捷键的 **键盘快捷键** 对话框。
+- **Inferred outline**: paragraphs that look like headings but carry no heading style show up in the navigation pane marked as inferred; applying a heading style makes them real.
   - **深色模式** 只把页面和周围的画布变暗，绝不动功能区——这正是 Word 在深色编辑面与深色窗口之间的取舍。这个选择会被记住，而且无论应用主题是什么都以它为准。
   - **拆分** 会在下方开第二个窗格，独立滚动并与第一个保持同步；用窗格边缘的 × 关掉它。
 
@@ -72,6 +73,7 @@ Docs 是类 Word 的文字处理器，读写真 .docx，分页排版所见即所
 
 - 保存 .docx；只重写变更段落，未改动内容字节级不变。
 - 导出 PDF（按当前分页）与逐页图片。
+- **Print preview follows the caret**: opening Print goes straight to the page the cursor is on instead of page 1.
 
 ## 打印
 

@@ -9,6 +9,7 @@ Model dan kunci dikonfigurasikan dalam Tetapan, melalui baris akaun di penjuru k
 - **Genspark dihoskan**: log masuk dan gunakannya terus. Tiada konfigurasi diperlukan.
 - **Titik akhir tersuai (BYOK)**: Tetapan ▸ Model AI menerima URL asas dan kunci API bagi setiap protokol, termasuk yang serasi dengan OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen), dan lain-lain. Kunci disimpan dalam fail tetapan aplikasi pada mesin ini dan dihantar hanya dalam pengepala permintaan. Atlas Cloud antara protokol terbina dalam.
 - Anda boleh memilih model yang berbeza bagi setiap keupayaan, iaitu sembang dan penjanaan, penjanaan imej, dan analisis imej.
+- **MiniMax H3-Image** dan **MiniMax H3-Image Highspeed** tersedia untuk penjanaan imej bersama image-01 (sehingga 16 imej rujukan setiap suntingan).
 - **Uji sambungan** menyemak ketercapaian titik akhir dan keterlihatan model sebelum disimpan.
 - URL asas boleh mengandungi laluan dan rentetan pertanyaan, dan laluan titik akhir ditambah dengan betul.
 

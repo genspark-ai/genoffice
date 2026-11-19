@@ -5,6 +5,7 @@ Edytor PDF ma pięć kart na wstążce: **Narzędzia główne / Adnotacje / Edyc
 ## Czytanie i nawigacja
 
 - Lewy pasek boczny: **miniatury** (kliknij, aby przejść, widoczny zakres wyróżniony) albo **spis treści** (zakładki, jeśli są).
+- **Edytowalne zakładki**: panel konspektu pozwala dodawać, zmieniać nazwy i usuwać zakładki; zmiany są zapisywane w pliku przy zapisie.
 - Powiększenie: regulator współczynnika w prawym dolnym rogu; ctrl+kółko zmienia powiększenie stopniowo.
 - Obracanie: dla jednej strony lub wszystkich z menu Strony; obroty są zapisywane w pliku przy zapisie.
 - Wyszukiwanie: ctrl+F na pełnym tekście z podświetleniem wszystkich trafień.
@@ -57,6 +58,7 @@ Sześć narzędzi: **tusz, prostokąt, elipsa, strzałka, notatka**, a ponadto *
 - **Edytuj tekst**: kliknij tekst, aby edytować go blokami (silnik pdfium; dopasowanie krojów najlepsze, jak to możliwe).
 - **Wstaw tekst**: wstawia przeszukiwalny tekst o wybranym kroju, rozmiarze i kolorze.
 - **Wstaw obraz / pieczęć**.
+- **Warstwa tekstowa OCR**: **Rozpoznaj tekst** na zeskanowanej stronie dodaje przeszukiwalną warstwę tekstu; warstwę można edytować na miejscu, a obraz strony pozostaje pod spodem (ikona oka do porównania).
 - Formularze: pola AcroForm wypełnia się bezpośrednio; wartości są zapisywane przy zapisie.
 
 ## Podpisy

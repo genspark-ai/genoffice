@@ -11,6 +11,7 @@ GenOffice 是一个完全运行在本机的办公套件：一个窗口、一排�
 - **顶部标签条**：每个打开的文件是一个标签页。最左边的「主页」标签永远存在、不可关闭；其余标签对应你打开的文档，双击标签可以直接重命名文件。
 - **内容区**：当前标签对应的编辑器（或主页）。
 - **菜单栏**：macOS 在系统菜单栏，Windows/Linux 在窗口顶部。文件、编辑、视图等菜单会随当前标签切换成对应编辑器的版本。
+- **Interface scale**: **View ▸ Zoom In / Zoom Out / Reset** scales the whole window between 80% and 150% (⌘⌃= / ⌘⌃- / ⌘⌃0 on macOS; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 elsewhere).
 
 ## 新建文档
 

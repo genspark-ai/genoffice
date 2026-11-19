@@ -50,7 +50,7 @@ Settings can register GenOffice as the handler for .docx / .xlsx / .pptx / .pdf 
 
 - The sign-in entry (settings or the cloud project list) uses a **device-code** flow: GenOffice shows a code and opens the browser login; it continues automatically once done.
 - Sign-in is used only for: the cloud project list and Genspark's hosted models. Without it, every local feature and custom models keep working.
-- Sign out is one click in settings.
+- Signing out asks for confirmation first, then signs out every Genspark-backed AI feature (cloud projects and hosted models); local features keep working.
 
 ## MCP integration (for advanced users / AI clients)
 

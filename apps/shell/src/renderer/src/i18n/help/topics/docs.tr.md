@@ -18,6 +18,7 @@ Sekmeler: **Giriş / Ekle / Çiz / Düzen / Tasarım / Başvurular / Gözden Ge�
 
 - **Gözden Geçir**: **Düzenleyici** tüm belgeyi yazım, dil bilgisi ve noktalama açısından denetler; **Çevir**; yazım denetimi; açıklamalar (**AI ile Açıklamaları Çöz** açık olanları sırayla işler); Tümü/Basit işaretleme görünümleriyle değişiklikleri izleme, kabul/ret ve **AI Düzeltme Özeti**; sözcük sayısı; başka bir dosyayla **Karşılaştır**; **Belgeyi Koru**.
 - **Görünüm**: dosyaya bakmanın beş yolu — **Sayfa Düzeni**, **Web Düzeni**, **Anahat**, **Okuma Modu** ve **Sayfa Önizleme**; uzaklaştır/yakınlaştır/%100/sayfa genişliği/tek sayfa; **AI Paneli**; **Koyu Mod**; cetvel, kılavuz çizgileri ve gezinti bölmesi; **Yeni Sekme**, **Böl** ve **Sekme Değiştir**; aranabilir **klavye kısayolları iletişim kutusu**.
+- **Çıkarımsal ana hat**: başlığa benzeyen ancak başlık stili olmayan paragraflar gezinti panelinde çıkarımsal olarak işaretlenir; başlık stili uygulandığında gerçek başlık olurlar.
   - **Koyu Mod** sayfayı ve çevresindeki tuvali karartır, şeridi asla — Word'ün koyu düzenleme yüzeyi ile koyu pencere arasındaki ayrımı. Seçim hatırlanır ve her durumda uygulama temasına üstün gelir.
   - **Böl**, altta bağımsız kayan ve ilkini yansıtan ikinci bir bölme açar; kenarındaki × ile kapatın.
 
@@ -81,6 +82,7 @@ Gövdede herhangi bir yere sağ tıklayın — menü tıkladığınız şeye uya
 
 - .docx'i yalnızca değişen paragrafları yeniden yazarak kaydeder — dokunulmamış içerik bayt bayt aynı kalır.
 - PDF (sayfalandırıldığı gibi) ve sayfa başına görsel dışa aktarır.
+- **Baskı önizlemesi imleci izler**: Yazdır'ı açmak her zaman 1. sayfa yerine imlecin bulunduğu sayfaya gider.
 
 ## Yazdırma
 

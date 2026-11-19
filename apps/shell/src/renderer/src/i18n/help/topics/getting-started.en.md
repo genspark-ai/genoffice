@@ -11,6 +11,7 @@ The window has three parts:
 - **Tab strip (top)**: every open file is a tab. The leftmost Home tab is always present and cannot be closed; the other tabs are your documents. Double-click a tab to rename its file inline.
 - **Content area**: the editor (or Home) belonging to the active tab.
 - **Menu bar**: in the system menu bar on macOS, at the window top on Windows/Linux. File/Edit/View menus switch to match the active editor.
+- **Interface scale**: **View ▸ Zoom In / Zoom Out / Reset** scales the whole window between 80% and 150% (⌘⌃= / ⌘⌃- / ⌘⌃0 on macOS; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 elsewhere).
 
 ## Creating a document
 

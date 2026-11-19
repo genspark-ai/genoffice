@@ -9,6 +9,7 @@
 - **Genspark 官方**：登入（裝置碼流程）即可使用——完全免設定。
 - **自訂端點（BYOK）**：設定 ▸ AI 中可依協定填寫 Base URL 與 API 金鑰——OpenAI 相容、Anthropic、Gemini、DeepSeek、DashScope（qwen）等。金鑰儲存在本機的應用程式設定檔中，傳送時只放在請求標頭裡。 Atlas Cloud 也在內建協定之列。
 - 不同能力可以分別挑選模型：對話／生成、圖像生成、圖像分析。
+- 影像生成新增 **MiniMax H3-Image** 與 **MiniMax H3-Image Highspeed**（保留 image-01；編輯時最多可帶 16 張參考圖）。
 - **測試連線**：在儲存前先確認端點可連線且模型可見。
 - Base URL 可以帶上路徑與查詢字串（閘道形式）；端點路徑會正確地接在其後。
 

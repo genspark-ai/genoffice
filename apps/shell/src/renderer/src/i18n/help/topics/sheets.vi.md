@@ -52,6 +52,7 @@ Thẻ "Công thức", từng nút:
 ![Thẻ Công thức](img/sheets-formulas.png)
 
 - **Chèn hàm** (fx): tìm hàm kèm trình hướng dẫn tham số.
+- **Hàm Excel 365**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE và PERCENTOF có trong thanh công thức (chữ ký của Excel; các mẫu regex không an toàn bị từ chối).
 - **Tính tổng tự động (AutoSum)** (thả xuống): SUM một cú nhấp, cùng trung bình/đếm/lớn nhất/nhỏ nhất.
 - **Dùng gần đây / Tài chính / Logic / Văn bản / Ngày & Giờ / Tra cứu & Tham chiếu / Toán & Lượng giác / Thêm hàm khác**: duyệt và chèn hàm theo danh mục.
 - **Trình quản lý tên**: xem, tạo và xóa các vùng đã đặt tên.

@@ -52,6 +52,7 @@ The Formulas tab, button by button:
 ![The Formulas tab](img/sheets-formulas.png)
 
 - **Insert function** (fx): search functions with an argument wizard.
+- **Excel 365 functions**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE and PERCENTOF are available in the formula bar (Excel signatures; unsafe regex patterns are refused).
 - **AutoSum** (dropdown): one-click SUM, plus average/count/max/min.
 - **Recently used / Financial / Logical / Text / Date & time / Lookup & reference / Math & trig / More**: browse and insert functions by category.
 - **Name manager**: view, create and delete named ranges.

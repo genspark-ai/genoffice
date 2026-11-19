@@ -11,6 +11,7 @@ La finestra è composta da tre parti:
 - **Barra delle schede (in alto)**: ogni file aperto è una scheda. La scheda Home, all'estrema sinistra, è sempre presente e non può essere chiusa; le altre schede sono i tuoi documenti. Fai doppio clic su una scheda per rinominare il file direttamente lì.
 - **Area di contenuto**: l'editor (o Home) appartenente alla scheda attiva.
 - **Barra dei menu**: nella barra dei menu di sistema su macOS, in cima alla finestra su Windows/Linux. I menu File/Modifica/Visualizza si adattano all'editor attivo.
+- **Scala dell'interfaccia**: **Visualizza ▸ Ingrandisci / Riduci / Reimposta** ridimensiona l'intera finestra tra l'80% e il 150% (⌘⌃= / ⌘⌃- / ⌘⌃0 su macOS; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 altrove).
 
 ## Creare un documento
 

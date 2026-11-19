@@ -11,6 +11,7 @@ La ventana tiene tres partes:
 - **Barra de pestañas (arriba)**: cada archivo abierto es una pestaña. La pestaña Inicio de la izquierda siempre está presente y no se puede cerrar; las demás pestañas son sus documentos. Haga doble clic en una pestaña para cambiar el nombre del archivo en el sitio.
 - **Área de contenido**: el editor (o la pantalla de inicio) que corresponde a la pestaña activa.
 - **Menú**: en la barra de menús del sistema en macOS, en la parte superior de la ventana en Windows/Linux. Los menús Archivo/Edición/Vista se adaptan al editor activo.
+- **Escala de la interfaz**: **Ver ▸ Acercar / Alejar / Restablecer** escala toda la ventana entre el 80 % y el 150 % (⌘⌃= / ⌘⌃- / ⌘⌃0 en macOS; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 en el resto).
 
 ## Crear un documento
 

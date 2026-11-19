@@ -11,6 +11,7 @@ Tingkap ini mempunyai tiga bahagian:
 - **Baris tab (atas)**: setiap fail yang dibuka ialah satu tab. Tab Laman Utama, paling kiri, sentiasa ada dan tidak boleh ditutup; tab lain ialah dokumen anda. Klik dua kali pada tab untuk menamakan semula failnya terus di tempat.
 - **Kawasan kandungan**: editor (atau Laman Utama) yang berkaitan dengan tab aktif.
 - **Bar menu**: dalam bar menu sistem pada macOS, di atas tingkap pada Windows/Linux. Menu Fail/Edit/Paparan berubah mengikut editor yang aktif.
+- **Skala antara muka**: **Paparan ▸ Zum Masuk / Zum Keluar / Set Semula** menskalakan seluruh tetingkap antara 80%–150% (⌘⌃= / ⌘⌃- / ⌘⌃0 pada macOS; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 di tempat lain).
 
 ## Mencipta dokumen
 

@@ -52,6 +52,7 @@ Der Tab „Formeln“, Knopf für Knopf:
 ![Der Tab Formeln](img/sheets-formulas.png)
 
 - **Funktion einfügen** (fx): sucht Funktionen mit einem Argumentassistenten.
+- **Excel-365-Funktionen**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE und PERCENTOF stehen in der Formelleiste bereit (Excel-Signaturen; unsichere Regex-Muster werden abgelehnt).
 - **AutoSumme** (Dropdown): SUMME mit einem Klick, dazu Mittelwert/Anzahl/Maximum/Minimum.
 - **Zuletzt verwendet / Finanzen / Logik / Text / Datum und Uhrzeit / Nachschlagen und Verweisen / Mathematik und Trigonometrie / Weitere**: Funktionen nach Kategorie durchsuchen und einfügen.
 - **Namens-Manager**: benannte Bereiche anzeigen, erstellen und löschen.

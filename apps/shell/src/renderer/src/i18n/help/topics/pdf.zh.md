@@ -5,6 +5,7 @@ PDF 编辑器有五个功能区标签：**开始 / 注释 / 编辑 / 页面 / �
 ## 阅读与导航
 
 - 左侧栏：**缩略图**（点击跳页、显示当前可见范围）或**大纲**（书签目录，有则显示）。
+- **Editable bookmarks**: the outline pane can add, rename and delete bookmarks; edits are written back on save.
 - 缩放：右下角比例控件，ctrl+滚轮逐档缩放。
 - 页面旋转：页面菜单里逐页/全部旋转，旋转在保存时写回文件。
 - 搜索：ctrl+F 全文查找，高亮所有命中。
@@ -57,6 +58,7 @@ PDF 编辑器有五个功能区标签：**开始 / 注释 / 编辑 / 页面 / �
 - **编辑文字**：点文字进入编辑，逐块修改（引擎为 pdfium，复杂字体尽力匹配）。
 - **插入文字**：在指定位置插入可搜索的文字（选择字体、大小、颜色）。
 - **插入图片 / 图章**：放置图片或盖章。
+- **OCR text layer**: **Recognize text** on a scanned page adds a searchable text layer; the layer can be edited in place while the page image stays underneath (use the eye toggle to compare).
 - 表单：AcroForm 字段可直接填写；填写结果随保存写入。
 
 ## 签名

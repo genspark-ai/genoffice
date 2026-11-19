@@ -11,6 +11,7 @@ Okno má tři části:
 - **Pruh karet (nahoře)**: každý otevřený soubor je jedna karta. Karta Domů, úplně vlevo, je vždy přítomná a nelze ji zavřít; ostatní karty jsou vaše dokumenty. Dvojklikem na kartu přejmenujete soubor přímo na místě.
 - **Obsahová plocha**: editor (nebo Domů) patřící aktivní kartě.
 - **Pruh nabídek**: v systémovém pruhu nabídek na macOS, nahoře v okně na Windows/Linux. Nabídky Soubor/Úpravy/Zobrazení se přizpůsobují aktivnímu editoru.
+- **Měřítko rozhraní**: **Zobrazit ▸ Zvětšit / Zmenšit / Obnovit** škáluje celé okno mezi 80 % a 150 % (⌘⌃= / ⌘⌃- / ⌘⌃0 v macOS; jinde ctrl+alt+= / ctrl+alt+- / ctrl+alt+0).
 
 ## Vytvoření dokumentu
 

@@ -50,7 +50,7 @@ Cài đặt có thể đăng ký GenOffice làm ứng dụng xử lý .docx / .x
 
 - Lối đăng nhập (trong cài đặt hoặc danh sách dự án đám mây) dùng luồng **mã thiết bị**: GenOffice hiển thị một mã và mở trang đăng nhập trong trình duyệt; xong thì nó tự tiếp tục.
 - Đăng nhập chỉ dùng cho: danh sách dự án đám mây và các mô hình đám mây của Genspark. Không đăng nhập thì mọi tính năng cục bộ và mô hình tùy chỉnh vẫn hoạt động bình thường.
-- Đăng xuất chỉ cần một cú nhấp trong cài đặt.
+- Đăng xuất sẽ hỏi xác nhận trước, sau đó đăng xuất mọi tính năng AI dùng tài khoản Genspark (dự án đám mây và mô hình lưu trữ); các tính năng cục bộ vẫn hoạt động.
 
 ## Tích hợp MCP (dành cho người dùng nâng cao / ứng dụng AI)
 

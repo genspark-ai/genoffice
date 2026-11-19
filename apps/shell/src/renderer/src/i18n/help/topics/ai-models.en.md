@@ -9,6 +9,7 @@ Models and keys are configured in Settings (the account row at the bottom left o
 - **Genspark hosted**: sign in (device-code flow) and use it — zero configuration.
 - **Custom endpoints (BYOK)**: Settings ▸ AI takes a base URL and API key per protocol — OpenAI-compatible, Anthropic, Gemini, DeepSeek, DashScope (qwen) and more. Keys are stored in the app's settings file on this machine and sent only in request headers. Atlas Cloud is among the built-in protocols.
 - A different model can be picked per capability: chat/generation, image generation, image analysis.
+- **MiniMax H3-Image** and **MiniMax H3-Image Highspeed** are available for image generation alongside image-01 (up to 16 reference images for an edit).
 - **Connection test**: verify endpoint reachability and model visibility before saving.
 - Base URLs may carry a path and query string (gateway-style); endpoint paths are appended correctly.
 

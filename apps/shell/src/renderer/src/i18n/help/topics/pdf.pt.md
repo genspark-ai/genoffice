@@ -5,6 +5,7 @@ O editor de PDF tem cinco guias na faixa de opções: **Página Inicial / Anotar
 ## Leitura e navegação
 
 - Barra lateral esquerda: **Miniaturas** (clique para saltar, o intervalo visível fica destacado) ou **Estrutura** (os marcadores, quando existem).
+- **Favoritos editáveis**: o painel de estrutura permite adicionar, renomear e excluir marcadores; as alterações são gravadas no arquivo ao salvar.
 - Zoom: o controle de proporção no canto inferior direito; ctrl+roda ajusta o zoom por degraus.
 - Rotação: por página ou em todas as páginas a partir do menu Páginas; as rotações são gravadas ao salvar.
 - Pesquisar: ctrl+F para procurar em todo o texto com todas as ocorrências realçadas.
@@ -57,6 +58,7 @@ Seis ferramentas: **Desenho livre, Retângulo, Elipse, Seta, Nota**, mais a **Ce
 - **Editar texto**: clique no texto para o editar por blocos (motor pdfium; as fontes são aproximadas tanto quanto possível).
 - **Inserir texto**: coloque texto pesquisável com a fonte, o tamanho e a cor que quiser.
 - **Inserir imagem / carimbo**.
+- **Camada de texto OCR**: **Reconhecer texto** em uma página digitalizada adiciona uma camada de texto pesquisável; a camada pode ser editada no local e a imagem da página permanece por baixo (ícone de olho para comparar).
 - Formulários: os campos AcroForm preenchem-se diretamente; os valores são escritos ao salvar.
 
 ## Assinaturas

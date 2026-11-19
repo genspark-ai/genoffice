@@ -50,7 +50,7 @@ Tetapan boleh mendaftar GenOffice sebagai aplikasi yang mengendalikan fail .docx
 
 - Kemasukan log masuk, sama ada melalui tetapan atau senarai projek awan, menggunakan aliran **kod peranti**. GenOffice memaparkan kod tersebut dan membuka halaman log masuk dalam pelayar, dan aliran ini akan diteruskan secara automatik selepas selesai.
 - Log masuk hanya digunakan untuk dua perkara, iaitu senarai projek awan dan model yang dihoskan oleh Genspark. Tanpa log masuk, setiap fungsi setempat dan model tersuai akan terus berfungsi.
-- Log keluar boleh dilakukan dengan satu klik dalam tetapan.
+- Log keluar akan meminta pengesahan dahulu, kemudian log keluar semua ciri AI yang menggunakan akaun Genspark (projek awan dan model dihoskan); ciri setempat terus berfungsi.
 
 ## Integrasi MCP
 

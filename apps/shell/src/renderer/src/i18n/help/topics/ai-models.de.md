@@ -9,6 +9,7 @@ Modelle und Schlüssel werden in den Einstellungen konfiguriert (die Kontenzeile
 - **Genspark gehostet**: anmelden (Gerätecode-Verfahren) und loslegen — ganz ohne Konfiguration.
 - **Eigene Endpunkte (BYOK)**: Einstellungen ▸ KI erwartet eine Basis-URL und einen API-Schlüssel pro Protokoll — OpenAI-kompatibel, Anthropic, Gemini, DeepSeek, DashScope (qwen) und mehr. Schlüssel werden in der Einstellungsdatei der App auf diesem Rechner gespeichert und nur in den Anfrage-Headern gesendet. Atlas Cloud gehört zu den eingebauten Protokollen.
 - Je nach Fähigkeit lässt sich ein anderes Modell wählen: Chat/Erzeugung, Bilderzeugung, Bildanalyse.
+- **MiniMax H3-Image** und **MiniMax H3-Image Highspeed** stehen neben image-01 für die Bilderzeugung bereit (bis zu 16 Referenzbilder pro Bearbeitung).
 - **Verbindung testen**: prüft die Erreichbarkeit des Endpunkts und die Sichtbarkeit des Modells, bevor gespeichert wird.
 - Basis-URLs dürfen Pfad und Abfragezeichenfolge enthalten (Gateway-Stil); Endpunktpfade werden korrekt angehängt.
 

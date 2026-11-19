@@ -50,7 +50,7 @@ Pengaturan dapat mendaftarkan GenOffice sebagai aplikasi penangan .docx / .xlsx 
 
 - Jalur masuk (di pengaturan atau di daftar proyek cloud) memakai alur **device-code**: GenOffice menampilkan kode dan membuka login di browser; prosesnya dilanjutkan otomatis setelah selesai.
 - Login hanya dipakai untuk: daftar proyek cloud dan model terkelola Genspark. Tanpa login, semua fitur lokal dan model kustom tetap berfungsi.
-- Keluar cukup satu klik di pengaturan.
+- Keluar akan meminta konfirmasi lebih dulu, lalu mengeluarkan semua fitur AI berbasis akun Genspark (proyek cloud dan model terhosting); fitur lokal tetap berfungsi.
 
 ## Integrasi MCP (untuk pengguna lanjutan / klien AI)
 

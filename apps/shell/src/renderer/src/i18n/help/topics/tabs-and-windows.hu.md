@@ -10,6 +10,7 @@ Minden megnyitott fájl ugyanazt az ablakot használja; a felül látható laps�
 - **Bezárás**: a lapon lévő ×, vagy ⌘W/ctrl+W. Mentetlen módosítások esetén előbb rákérdez.
 - **Új**: a sáv jobb végén lévő +.
 - **Az aktiválás azonnali**: a lapra való lenyomáskor azonnal vált, nem várja meg, hogy a kattintás befejeződjön.
+- **Fájl átnevezése**: kattintson duplán a lapfülre, vagy kattintson jobb gombbal a lapfülre és válassza az **Átnevezés** lehetőséget; egyetlen kattintás csak aktiválja a lapfület.
 
 ## Átnevezés: kattints duplán egy lapra
 

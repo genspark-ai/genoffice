@@ -5,6 +5,7 @@ El editor de PDF tiene cinco pestañas en la cinta de opciones: **Inicio / Anota
 ## Lectura y navegación
 
 - Barra lateral izquierda: **Miniaturas** (haga clic para saltar, el intervalo visible aparece resaltado) o **Esquema** (los marcadores, cuando existen).
+- **Marcadores editables**: el panel de esquema permite añadir, renombrar y eliminar marcadores; los cambios se escriben en el archivo al guardar.
 - Zoom: el control de proporción de la esquina inferior derecha; ctrl+rueda ajusta el zoom por pasos.
 - Rotación: por página o de todas las páginas desde el menú Páginas; las rotaciones se vuelven a escribir al guardar.
 - Búsqueda: ctrl+F en texto completo, con todas las coincidencias resaltadas.
@@ -57,6 +58,7 @@ Seis herramientas: **Dibujar, Rectángulo, Elipse, Flecha, Nota**, más **Censur
 - **Editar texto**: pulse el texto para editarlo bloque por bloque (motor pdfium; las fuentes se ajustan lo mejor posible).
 - **Insertar texto**: coloque texto localizable con la fuente, el tamaño y el color que elija.
 - **Insertar imagen / sello**.
+- **Capa de texto OCR**: **Reconocer texto** en una página escaneada añade una capa de texto buscable; la capa se edita en el sitio y la imagen de la página queda debajo (icono del ojo para comparar).
 - Formularios: los campos AcroForm se rellenan directamente; los valores se escriben al guardar.
 
 ## Firmas

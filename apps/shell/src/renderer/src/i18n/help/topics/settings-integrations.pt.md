@@ -50,7 +50,7 @@ As Configurações podem registrar o GenOffice como o aplicativo que abre arquiv
 
 - O acesso (nas Configurações ou na lista de projetos na nuvem) usa um fluxo de **código de dispositivo**: o GenOffice mostra um código e abre o início de sessão no navegador; e a partir daí o processo prossegue sozinho.
 - O início de sessão serve apenas para: a lista de projetos na nuvem e os modelos hospedados da Genspark. Sem ele, todas as funcionalidades locais e os modelos personalizados continuam a funcionar.
-- Terminar sessão é um clique nas Configurações.
+- Sair da conta pede confirmação primeiro e depois desconecta todas as funções de IA ligadas à conta Genspark (projetos na nuvem e modelos hospedados); as funções locais continuam funcionando.
 
 ## Integração MCP (para usuários avançados / clientes de IA)
 

@@ -10,6 +10,7 @@ Alle geöffneten Dateien teilen sich ein Fenster; die Tab-Leiste oben wechselt w
 - **Schließen**: das × am Tab oder ⌘W/ctrl+W. Bei ungespeicherten Änderungen wird nachgefragt.
 - **Neu**: das + am rechten Ende der Leiste.
 - **Die Aktivierung erfolgt sofort**: Ein Tabwechsel passiert beim Drücken, ohne auf das Ende des Klicks zu warten.
+- **Datei umbenennen**: Doppelklick auf den Tab oder Rechtsklick ▸ **Umbenennen**; ein einzelner Klick aktiviert nur den Tab.
 
 ## Umbenennen: Tab doppelklicken
 

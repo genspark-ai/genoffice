@@ -50,7 +50,7 @@ Nastavení může zaregistrovat GenOffice jako aplikaci pro soubory .docx / .xls
 
 - Místo přihlášení (v nastavení nebo v seznamu cloudových projektů) používá postup s **kódem zařízení**: GenOffice zobrazí kód a otevře přihlašovací stránku v prohlížeči; po dokončení postup pokračuje automaticky.
 - Přihlášení slouží pouze k: seznamu cloudových projektů a modelům hostovaným Gensparkem. Bez něj fungují dál všechny místní funkce i vlastní modely.
-- Odhlášení je jedno kliknutí v nastavení.
+- Odhlášení nejprve požádá o potvrzení a poté odhlásí všechny funkce AI navázané na účet Genspark (cloudové projekty a hostované modely); místní funkce fungují dál.
 
 ## Integrace MCP (pro pokročilé uživatele a klienty AI)
 

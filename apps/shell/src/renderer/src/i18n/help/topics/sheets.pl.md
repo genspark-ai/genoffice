@@ -52,6 +52,7 @@ Karta Formuły, przycisk po przycisku:
 ![Karta Formuły](img/sheets-formulas.png)
 
 - **Wstaw funkcję** (fx): wyszukuje funkcje wraz z kreatorem argumentów.
+- **Funkcje Excel 365**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE i PERCENTOF są dostępne na pasku formuły (sygnatury Excela; niebezpieczne wzorce regex są odrzucane).
 - **Suma automatyczna** (lista rozwijana): SUMA jednym kliknięciem, a także średnia/ile/ maksimum/minimum.
 - **Ostatnio używane / Finansowe / Logiczne / Tekstowe / Data i godzina / Wyszukiwanie i odwołania / Matematyczne i trygonometryczne / inne**: przeglądaj i wstawiaj funkcje według kategorii.
 - **Menedżer nazw**: wyświetlanie, tworzenie i usuwanie nazwanych zakresów.

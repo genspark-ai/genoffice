@@ -10,6 +10,7 @@
 - **关闭**：标签右侧的 ×，或 ⌘W/ctrl+W。有未保存改动会先询问。
 - **新建**：标签条右侧的 + 号。
 - **激活即时生效**：按下标签（哪怕还没松开）就已切换，不会等到点击完成。
+- **Rename a file**: double-click its tab, or right-click the tab and choose **Rename**; a single click only activates the tab.
 
 ## 重命名：双击标签
 

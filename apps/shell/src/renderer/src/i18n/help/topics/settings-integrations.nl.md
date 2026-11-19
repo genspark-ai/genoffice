@@ -50,7 +50,7 @@ Met de instellingen kun je GenOffice registreren als verwerker van .docx / .xlsx
 
 - Het aanmeldpunt (in de instellingen of in de lijst met cloudprojecten) gebruikt een flow met **apparaatcode**: GenOffice toont een code en opent de aanmeldpagina in de browser; daarna gaat het automatisch verder.
 - Aanmelden wordt alleen gebruikt voor: de lijst met cloudprojecten en de modellen die Genspark host. Zonder aanmelden blijven alle lokale functies en eigen modellen werken.
-- Uitloggen is in de instellingen met één klik te doen.
+- Uitloggen vraagt eerst om bevestiging en logt daarna alle AI-functies die aan het Genspark-account hangen uit (cloudprojecten en gehoste modellen); lokale functies blijven werken.
 
 ## MCP-integratie (voor gevorderde gebruikers / AI-clients)
 

@@ -18,6 +18,7 @@ Karty: **Narzędzia główne / Wstawianie / Rysowanie / Układ / Projektowanie /
 
 - **Recenzja**: **Edytor** sprawdza cały dokument pod kątem pisowni, gramatyki i interpunkcji; **Przetłumacz**; sprawdzanie pisowni; komentarze (**Komentarze z AI** opracowuje nierozwiązane); śledzenie zmian z widokami Cała adiustacja / Prosta adiustacja, akceptowanie/odrzucanie oraz **Podsumowanie zmian AI**; licznik słów; **Porównaj** z innym plikiem; **Chroń dokument**.
 - **Widok**: pięć sposobów patrzenia na plik — **Układ wydruku**, **Układ sieci Web**, **Konspekt**, **Tryb czytania** i **Podgląd stron**; pomniejsz/powiększ/100 %/szerokość strony/jedna strona; **Panel AI**; **Tryb ciemny**; linijka, linie siatki i okienko nawigacji; **Nowa karta**, **Podziel** i **Przełącz karty**; wyszukiwalne okno **skrótów klawiaturowych**.
+- **Konspekt wnioskowany**: akapity przypominające nagłówki, ale bez stylu nagłówka, pojawiają się w panelu nawigacji z oznaczeniem wnioskowania; zastosowanie stylu nagłówka czyni je prawdziwymi nagłówkami.
   - **Tryb ciemny** przyciemnia stronę i płótno wokół niej, nigdy wstążkę — podział programu Word między ciemną powierzchnią edycji a ciemnym oknem. Wybór jest zapamiętywany i w każdym przypadku ma pierwszeństwo przed motywem aplikacji.
   - **Podziel** otwiera poniżej drugie okienko, które przewija się niezależnie i odwzorowuje pierwsze; zamknij je krzyżykiem × na jego krawędzi.
 
@@ -83,6 +84,7 @@ Kliknij prawym przyciskiem w dowolnym miejscu tekstu — menu dostosowuje się d
 
 - Zapis .docx przepisuje tylko zmienione akapity — nietknięta treść pozostaje identyczna bajt w bajt.
 - Eksport do PDF (z podziałem na strony) i obrazów każdej strony.
+- **Podgląd wydruku od kursora**: otwarcie okna Drukowanie przechodzi od razu do strony kursora, a nie do strony 1.
 
 ## Drukowanie
 

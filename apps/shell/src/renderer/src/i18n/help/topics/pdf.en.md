@@ -5,6 +5,7 @@ The PDF editor has five ribbon tabs: **Home / Annotate / Edit / Page / View**. I
 ## Reading and navigation
 
 - Left sidebar: **thumbnails** (click to jump, visible range highlighted) or **outline** (bookmarks, when present).
+- **Editable bookmarks**: the outline pane can add, rename and delete bookmarks; edits are written back on save.
 - Zoom: the ratio control bottom-right; ctrl+wheel steps the zoom.
 - Rotation: per-page or all pages from the Page menu; rotations are written back on save.
 - Search: ctrl+F full-text with all hits highlighted.
@@ -57,6 +58,7 @@ Six tools: **ink, rectangle, ellipse, arrow, note**, plus the **redaction box** 
 - **Edit text**: click text to edit it block by block (pdfium engine; fonts matched best-effort).
 - **Insert text**: place searchable text with font/size/color of your choice.
 - **Insert image / stamp**.
+- **OCR text layer**: **Recognize text** on a scanned page adds a searchable text layer; the layer can be edited in place while the page image stays underneath (use the eye toggle to compare).
 - Forms: AcroForm fields fill directly; values are written on save.
 
 ## Signatures
