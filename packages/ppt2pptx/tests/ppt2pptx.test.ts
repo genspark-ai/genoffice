@@ -1264,6 +1264,35 @@ describe('round 4: paragraph rulers, centre-body style, metro indents', () => {
     expect(xml.split(tabLst)).toHaveLength(3)
   })
 
+  it('a metroBlob outline of noFill hides the line the legacy records leave at its default', async () => {
+    const blobOf = async (ln: string): Promise<Uint8Array> => {
+      const pkg = new JSZip()
+      pkg.file(
+        'drs/shapexml.xml',
+        `<p:sp><p:spPr><a:prstGeom prst="rect"/><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>${ln}</p:spPr></p:sp>`,
+      )
+      return pkg.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
+    }
+    const shape = (metroBlob: Uint8Array, props: Record<number, number>): SlideSpec[] => [
+      {
+        textSequences: [
+          { kind: 4, text: 'box', anchor: [0, 0, 2000, 1000], shapeType: 1, props, metroBlob },
+        ],
+      },
+    ]
+    const hidden = await blobOf('<a:ln><a:noFill/></a:ln>')
+    // fUsefInsetPen alone, as PowerPoint for Mac writes it
+    expect(await slideXml(shape(hidden, { 0x01ff: 0x400000 }))).toContain(
+      '<a:ln><a:noFill/></a:ln>',
+    )
+    // an explicit legacy fLine wins over the blob
+    expect(await slideXml(shape(hidden, { 0x01ff: 0x080008 }))).toContain('<a:ln w="9525">')
+    const drawn = await blobOf(
+      '<a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>',
+    )
+    expect(await slideXml(shape(drawn, { 0x01ff: 0x400000 }))).toContain('<a:ln w="9525">')
+  })
+
   it('a metroBlob with one trailing paragraph more than the text still sets the indents', async () => {
     const pkg = new JSZip()
     pkg.file(

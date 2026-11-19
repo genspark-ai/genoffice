@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { bareFileName } from '../src/main/file-name'
+import { bareFileName, uniquePathIn } from '../src/main/file-name'
 
 describe('bareFileName', () => {
   it('keeps plain names untouched', () => {
@@ -19,5 +22,23 @@ describe('bareFileName', () => {
     expect(bareFileName('.')).toBe('')
     expect(bareFileName('/')).toBe('')
     expect(bareFileName('\\')).toBe('')
+  })
+})
+
+describe('uniquePathIn', () => {
+  it('numbers a taken name and gives a suggestion that names nothing a name of its own', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'unique-path-'))
+    try {
+      expect(uniquePathIn(dir, 'report.docx')).toBe(join(dir, 'report.docx'))
+      writeFileSync(join(dir, 'report.docx'), '')
+      expect(uniquePathIn(dir, 'sub/report.docx')).toBe(join(dir, 'report-2.docx'))
+      // a trailing separator or a navigation segment leaves no name: never the directory itself
+      for (const empty of ['report/', 'sub/dir/', '..', '/'])
+        expect(uniquePathIn(dir, empty)).toBe(join(dir, 'untitled'))
+      writeFileSync(join(dir, 'untitled'), '')
+      expect(uniquePathIn(dir, 'report/')).toBe(join(dir, 'untitled-2'))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

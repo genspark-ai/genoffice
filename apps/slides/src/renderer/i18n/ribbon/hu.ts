@@ -152,7 +152,7 @@ export const hu = {
   ribbonSlideSize: 'Diaméret',
   ribbonSlideSizeTip: 'Diaméret módosítása',
   ribbonSlideSize169: 'Szélesvásznú (16:9)',
-  ribbonSlideSize43: 'Standard (4:3)',
+  ribbonSlideSize43: 'Normál (4:3)',
   ribbonSlideSizeA4: 'A4-es papír (210 × 297 mm)',
   ribbonSlideSizeA3: 'A3-as papír (297 × 420 mm)',
   ribbonSlideSizeLandscape: 'Fekvő',

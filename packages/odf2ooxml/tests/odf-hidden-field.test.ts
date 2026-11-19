@@ -17,6 +17,12 @@ it.each(['false', '0'])('retains a visible hidden-text field with is-hidden=%s',
   expect(xml).toContain('BeforeVisibleAfter')
   expect(xml).not.toContain('Secret')
 })
+it('shows a visible hidden-text field that keeps its text on the attribute alone', async () => {
+  const xml = await convert(
+    `<text:p>Before<text:hidden-text text:is-hidden="false" text:string-value="Shown"/>After</text:p>`,
+  )
+  expect(xml).toContain('BeforeShownAfter')
+})
 it.each(['true', '1'])(
   'omits a hidden field in presentation text with is-hidden=%s',
   async (flag) => {

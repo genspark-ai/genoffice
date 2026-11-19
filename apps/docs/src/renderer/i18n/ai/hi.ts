@@ -9,6 +9,7 @@ export const hi = {
   aiStarterContinue: 'दस्तावेज़ जहाँ रुका है वहाँ से आगे लिखें',
   aiStarterFillTemplate: 'दस्तावेज़ के प्लेसहोल्डर ढूँढ़कर भरें',
   aiGskLoginBtn: 'Genspark में साइन इन करें',
+  aiGskLoginOk: 'Genspark में साइन इन हो गए',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'AI सहायक खोलें',
   aiSummarizeBtn: 'AI सारांश',

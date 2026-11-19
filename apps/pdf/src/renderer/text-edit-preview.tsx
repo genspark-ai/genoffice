@@ -683,8 +683,13 @@ export function mergeTextDraft(
     d.bold === undefined &&
     d.italic === undefined &&
     keyRuns.length === 0
-  )
-    return null
+  ) {
+    if (!!d.reveal === !!existing.input.reveal) return null
+    // only the eye changed: the move stays as stored and takes the new eye state
+    const { reveal: _was, ...moved } = existing.input
+    const input = d.reveal ? { ...moved, reveal: true as const } : moved
+    return dropFolded(edits).map((e) => (e.id === existing.id ? { ...e, input } : e))
+  }
   if (
     d.value === d.oldText &&
     d.size === undefined &&

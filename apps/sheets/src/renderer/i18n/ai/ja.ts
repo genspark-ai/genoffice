@@ -5,6 +5,7 @@ export const ja = {
   aiEmptyBuildTitle: 'AI にシート作りを任せる',
   aiEmptyBuildBody: '欲しい表・データ・グラフを伝えると、AI がその場で作成します。',
   aiGskLoginBtn: 'Genspark にサインイン',
+  aiGskLoginOk: 'Genspark にサインインしました',
   aiUndelivered: '送信できませんでした',
   aiRetry: '再試行',
   aiOpenAssistant: 'AI アシスタントを開く',

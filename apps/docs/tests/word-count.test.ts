@@ -6,6 +6,7 @@ import {
   countWords,
   documentTextForWordCount,
   nonAsianWordCount,
+  textStats,
 } from '../src/renderer/word-count'
 
 describe('word count CJK rule', () => {
@@ -180,6 +181,18 @@ describe('document word-count text', () => {
     } finally {
       editor.destroy()
     }
+  })
+
+  it('counts what footnote and endnote text adds, one paragraph per line', () => {
+    expect(textStats('See the first note.\n\nSecond note')).toEqual({
+      words: 6,
+      asianChars: 0,
+      nonAsianWords: 6,
+      charsNoSpace: 26,
+      charsWithSpace: 30,
+      paragraphs: 2,
+    })
+    expect(textStats('')).toMatchObject({ words: 0, paragraphs: 0 })
   })
 })
 

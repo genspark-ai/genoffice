@@ -2310,7 +2310,7 @@ html[dir='rtl'] .quick-title-row {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
+  margin-inline-start: auto;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: transparent;
@@ -2358,7 +2358,7 @@ html[dir='rtl'] .quick-title-row {
   color: var(--text);
   font: inherit;
   font-size: 12.5px;
-  text-align: left;
+  text-align: start;
   padding: 5px 8px;
   cursor: pointer;
 }
@@ -2382,7 +2382,7 @@ html[dir='rtl'] .quick-title-row {
 }
 .kb-ask-corpus-size {
   flex-shrink: 0;
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--text-tertiary);
   font-size: 11px;
 }

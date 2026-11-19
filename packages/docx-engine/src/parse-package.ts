@@ -400,6 +400,7 @@ export async function parseNumbering(zip: JSZip): Promise<{
   const absLevels = new Map<string, Record<number, NumberingLevel>>()
   const numStyleLinks = new Map<string, string>()
   const styleLinkAbs = new Map<string, string>()
+  const absStyleLink = new Map<string, string>()
   for (const abs of findChildren(root, 'w:abstractNum')) {
     const absId = attrsOf(abs)['w:abstractNumId']
     if (!absId) continue
@@ -412,7 +413,10 @@ export async function parseNumbering(zip: JSZip): Promise<{
     const numStyleLink = attrsOf(findChild(abs, 'w:numStyleLink') ?? {})['w:val']
     if (numStyleLink) numStyleLinks.set(absId, numStyleLink)
     const styleLink = attrsOf(findChild(abs, 'w:styleLink') ?? {})['w:val']
-    if (styleLink) styleLinkAbs.set(styleLink, absId)
+    if (styleLink) {
+      styleLinkAbs.set(styleLink, absId)
+      absStyleLink.set(absId, styleLink)
+    }
   }
   // w:numStyleLink indirection: the abstractNum is a reference to a numbering style;
   // the real levels live on the abstractNum carrying the matching w:styleLink
@@ -447,7 +451,14 @@ export async function parseNumbering(zip: JSZip): Promise<{
       const lvl = findChild(over, 'w:lvl')
       if (lvl) levels[ilvl] = parseNumberingLevel(lvl)
     }
-    defs.set(numId, { numId, abstractNumId: absId, levels, startOverrides })
+    const listStyleId = numStyleLinks.get(absId) ?? absStyleLink.get(absId)
+    defs.set(numId, {
+      numId,
+      abstractNumId: absId,
+      levels,
+      startOverrides,
+      ...(listStyleId ? { listStyleId } : {}),
+    })
     formats.set(numId, levels[0]?.numFmt === 'bullet' ? 'bullet' : 'ordered')
   }
   return { formats, defs, picBullets }

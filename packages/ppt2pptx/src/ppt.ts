@@ -31,7 +31,7 @@ import {
   walkRecords,
   walkRecordsLenient,
 } from './records'
-import { metroParagraphIndents } from './metro'
+import { metroLineHidden, metroParagraphIndents } from './metro'
 import {
   type AutoNumber,
   type LevelStyle,
@@ -1443,7 +1443,11 @@ function focusStops(
 function lineOf(ctx: ShapeContext, shape: EscherShape): PptLine | undefined {
   const type = shape.shapeType
   const defaultLine = !(type === 202 || type === 75 || type === 0)
-  if (!(boolProp(shape.props, OPT.lineBooleans, 0x08) ?? defaultLine)) return undefined
+  const explicit = boolProp(shape.props, OPT.lineBooleans, 0x08)
+  if (!(explicit ?? defaultLine)) return undefined
+  // PowerPoint 2007+ saves "no outline" only in the metroBlob and leaves fLine unset
+  const metroBlob = explicit === undefined ? shape.complex.get(OPT.metroBlob) : undefined
+  if (metroBlob && metroLineHidden(metroBlob)) return undefined
   const color =
     officeArtColor(shape.props.get(OPT.lineColor) ?? 0x000000, ctx.scheme, {
       fill: shape.props.get(OPT.fillColor),

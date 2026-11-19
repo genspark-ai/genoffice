@@ -16,7 +16,14 @@ import { TWIPS_PER_CM } from '../list-presets'
 import { applyTableValue, tableValueOf, type TableValue } from './TablePropertiesDialog'
 
 export type TableDialogKind =
-  'properties' | 'splitCells' | 'insertCells' | 'deleteCells' | 'cellMargins'
+  | 'properties'
+  | 'splitCells'
+  | 'insertCells'
+  | 'deleteCells'
+  | 'cellMargins'
+  | 'textToTable'
+  | 'tableToText'
+  | 'formula'
 
 /** Word's small table dialogs: Split Cells… / Insert Cells… / Delete Cells… */
 

@@ -153,7 +153,11 @@ export function collectSeamRects(
       if (r.width <= 0 || r.height <= 0) continue
       const left = before.left + before.width
       if (left >= bounds.right || left + width <= bounds.left) continue
-      out.push({ left, top: after.top, width, height: after.height })
+      // the layer is fixed on body, so a seam past the scroller's edge would paint over the chrome
+      const top = Math.max(after.top, bounds.top)
+      const bottom = Math.min(after.top + after.height, bounds.bottom)
+      if (bottom <= top) continue
+      out.push({ left, top, width, height: bottom - top })
     }
   }
   return out

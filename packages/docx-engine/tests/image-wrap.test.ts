@@ -570,4 +570,38 @@ describe('picture paragraph layout metadata', () => {
     const bare = await parseDocx(await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true }))
     expect(bare.blocks[0].imageEffectExtentBottomPx).toBeUndefined()
   })
+  it('writes each axis of a position in the frame it is given', () => {
+    const pos = (out: string, axis: 'H' | 'V') =>
+      new RegExp(`<wp:position${axis} relativeFrom="(\\w+)"><wp:posOffset>(-?\\d+)</wp:posOffset>`)
+        .exec(out)
+        ?.slice(1)
+    // the column and the paragraph unless told otherwise
+    const plain = applyImageWrap(ANCHOR_SQUARE_RIGHT_XML, 'front', { x: 100, y: 200 })
+    expect([pos(plain, 'H'), pos(plain, 'V')]).toEqual([
+      ['column', '100'],
+      ['paragraph', '200'],
+    ])
+    // a shape drawn at page offsets is written against the page
+    const page = applyImageWrap(ANCHOR_SQUARE_RIGHT_XML, 'front', {
+      x: 100,
+      y: 200,
+      relH: 'page',
+      relV: 'page',
+    })
+    expect([pos(page, 'H'), pos(page, 'V')]).toEqual([
+      ['page', '100'],
+      ['page', '200'],
+    ])
+    // the two axes can differ
+    const mixed = applyImageWrap(ANCHOR_SQUARE_RIGHT_XML, 'front', {
+      x: 100,
+      y: 200,
+      relH: 'column',
+      relV: 'margin',
+    })
+    expect([pos(mixed, 'H'), pos(mixed, 'V')]).toEqual([
+      ['column', '100'],
+      ['margin', '200'],
+    ])
+  })
 })

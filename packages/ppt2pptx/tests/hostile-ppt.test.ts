@@ -1,6 +1,5 @@
 /**
- * Hostile input and hostile drawing for the legacy .ppt converter — the
- * contribution #2606 asked for once the drawing layer landed on main. The
+ * Hostile input and hostile drawing for the legacy .ppt converter. The
  * contract under attack: every malformed file either converts or fails with
  * a LegacyPptError code, nothing hangs, and no non-finite number ever
  * reaches the .pptx the writer emits.

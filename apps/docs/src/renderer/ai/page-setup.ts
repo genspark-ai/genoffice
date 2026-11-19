@@ -468,6 +468,14 @@ export function resolvePageSetup(
   return out
 }
 
+/** the last section's pending page numbering after an AI change: the chapter number set in Format Page Numbers stays */
+export function mergePendingPgNum<C>(
+  pending: { fmt?: string; start?: number; chapter?: C } | null,
+  next: { fmt?: string; start?: number },
+): { fmt?: string; start?: number; chapter?: C } {
+  return pending && 'chapter' in pending ? { ...next, chapter: pending.chapter } : next
+}
+
 /** Rewrite one sectPr XML slice with a resolved page setup (headless store and section-break paragraphs). */
 export function applyResolvedPageSetup(sectPrXml: string, resolved: ResolvedPageSetup): string {
   let xml = applySectionSettings(sectPrXml, resolved.settings)

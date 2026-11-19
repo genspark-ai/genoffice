@@ -3,7 +3,7 @@ import { generateTableModelXml, parseDocx, saveDocx } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 // a table whose first cell paragraph carries a paragraph style and a bookmark
-// anchor its REF fields point at (issue #2803 / #2804)
+// anchor its REF fields point at (genoffice#2803, genoffice#2804)
 const CELL_ANCHOR_TABLE_XML =
   '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
   '<w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid>' +
@@ -28,6 +28,21 @@ describe('table cell paragraph styles and bookmark anchors', () => {
     expect(rich[1].styleId).toBe('Compact')
     expect(rich[1].hiddenBookmarks).toEqual(['_Toc99001'])
     expect(doc.blocks[0].table!.rows[0][1].richParas![0].styleId).toBeUndefined()
+  })
+
+  it('a bookmark inside a text box in the cell is not lifted onto the cell paragraph', async () => {
+    const boxed =
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>' +
+      '<w:p><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">' +
+      '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData>' +
+      '<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:txbx><w:txbxContent>' +
+      '<w:p><w:bookmarkStart w:id="9" w:name="Inner"/><w:bookmarkEnd w:id="9"/><w:r><w:t>box</w:t></w:r></w:p>' +
+      '</w:txbxContent></wps:txbx></wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>' +
+      '<w:r><w:t>Host</w:t></w:r></w:p>' +
+      '</w:tc></w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: boxed }))
+    expect(doc.blocks[0].table!.rows[0][0].richParas![0].bookmarks).toBeUndefined()
   })
 
   it('a regenerated cell re-emits the pStyle and the bookmark anchors', async () => {

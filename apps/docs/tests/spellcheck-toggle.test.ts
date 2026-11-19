@@ -63,7 +63,7 @@ describe('Review → Spelling toggle', () => {
   let editor: Editor
   let root: Root
   let container: HTMLElement
-  const onSpellcheck = vi.fn()
+  const onCommand = vi.fn()
 
   function renderRibbon(spellcheck: boolean) {
     act(() =>
@@ -71,16 +71,16 @@ describe('Review → Spelling toggle', () => {
         createElement(Ribbon, {
           ...ribbonProps(editor, computeFormatState(editor)),
           spellcheck,
-          onSpellcheck,
+          onCommand,
         }),
       ),
     )
   }
 
   const spellingButton = () =>
-    [...container.querySelectorAll<HTMLButtonElement>('.rb-big')].find(
-      // the icon's SVG text glyph ("abc") is part of textContent, so match the label span
-      (b) => b.querySelector('span:last-child')?.textContent === t('ribbonSpellcheckBtn'),
+    [...container.querySelectorAll<HTMLButtonElement>('.rb-small')].find(
+      // the icon's SVG text glyph ("abc") is part of textContent, so match its tail
+      (b) => b.textContent?.endsWith(t('ribbonSpellcheckBtn')),
     )
 
   beforeEach(() => {
@@ -94,10 +94,10 @@ describe('Review → Spelling toggle', () => {
     act(() => root.unmount())
     container.remove()
     editor.destroy()
-    onSpellcheck.mockClear()
+    onCommand.mockClear()
   })
 
-  it('shows an active toggle that reports the flipped state on click', () => {
+  it('shows an active toggle that runs the spelling command on click', () => {
     renderRibbon(true)
     const reviewTab = [...container.querySelectorAll<HTMLButtonElement>('.ribbon-tab')].find(
       (b) => b.textContent === t('ribbonTabReview'),
@@ -106,7 +106,7 @@ describe('Review → Spelling toggle', () => {
     const btn = spellingButton()!
     expect(btn.className).toContain('active')
     act(() => btn.click())
-    expect(onSpellcheck).toHaveBeenCalledWith(false)
+    expect(onCommand).toHaveBeenCalledWith('toggle-spellcheck')
   })
 
   it('renders inactive when spellcheck is off and re-enables on click', () => {
@@ -118,6 +118,6 @@ describe('Review → Spelling toggle', () => {
     const btn = spellingButton()!
     expect(btn.className).not.toContain('active')
     act(() => btn.click())
-    expect(onSpellcheck).toHaveBeenCalledWith(true)
+    expect(onCommand).toHaveBeenCalledWith('toggle-spellcheck')
   })
 })

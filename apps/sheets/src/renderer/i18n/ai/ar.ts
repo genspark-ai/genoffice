@@ -5,6 +5,7 @@ export const ar = {
   aiEmptyBuildTitle: 'دع الذكاء الاصطناعي ينشئ هذا المصنف لك',
   aiEmptyBuildBody: 'صف الجدول أو البيانات أو المخطط الذي تريده — ينشئه الذكاء الاصطناعي مباشرة.',
   aiGskLoginBtn: 'تسجيل الدخول إلى Genspark',
+  aiGskLoginOk: 'تم تسجيل الدخول إلى Genspark',
   aiUndelivered: 'لم يتم الإرسال',
   aiRetry: 'إعادة المحاولة',
   aiOpenAssistant: 'فتح مساعد الذكاء الاصطناعي',

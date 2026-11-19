@@ -13,7 +13,7 @@
  *   intact   — the field appears as one contiguous string inside a single
  *              table cell or paragraph (what a user can re-edit directly)
  *   split    — the field's text is present but fragmented across cells —
- *              the #2669 symptom (tax ID → "9" | "1310000MA1FL0000X")
+ *              the genoffice#2669 symptom (tax ID → "9" | "1310000MA1FL0000X")
  *   missing  — not found at all
  *
  * plus the detail-band column count for the invoice samples, the number a
@@ -67,7 +67,7 @@ interface Sample {
   headerField?: string
 }
 
-/** An English stand-in for the #2669 e-invoice: same banded geometry — outer
+/** An English stand-in for the genoffice#2669 e-invoice: same banded geometry — outer
  *  frame, full-width band rules, buyer/seller band with interior verticals,
  *  borderless detail band, remarks band. */
 async function buildBandedInvoice(): Promise<Uint8Array> {
@@ -247,7 +247,7 @@ function scoreField(field: string, rows: string[][], paras: string[]): Verdict {
     for (const cell of row) if (cell.includes(want)) return { status: 'intact', where: 'cell' }
   for (const para of paras) if (para.includes(want)) return { status: 'intact', where: 'paragraph' }
   // present but fragmented: the field's text spans cell/paragraph boundaries —
-  // the #2669 symptom (tax ID → "9" | "1310000MA1FL0000X")
+  // the genoffice#2669 symptom (tax ID → "9" | "1310000MA1FL0000X")
   const whole = norm([...rows.flat(), ...paras].join('\u0001'))
   if (want.split(' ').every((w) => whole.includes(w)))
     return { status: 'split', where: 'fragmented' }
@@ -343,15 +343,15 @@ describe.skipIf(!RUN)('pdf → editable accuracy bench (invoice/report class)', 
         pdf: new Uint8Array(readFileSync(REAL_INVOICE)),
         fields: [
           '91310000MA1FL0000X',
-          '样例重工工程技术有限责任公司',
+          '\u6837\u4f8b\u91cd\u5de5\u5de5\u7a0b\u6280\u672f\u6709\u9650\u8d23\u4efb\u516c\u53f8',
           '100.000000000000',
           '¥ 106.00',
-          '壹佰零陆圆整',
-          '购买方地址:示例市示例区示例路1号;',
-          '销方开户银行:示例银行示例分行;',
+          '\u58f9\u4f70\u96f6\u9646\u5706\u6574',
+          '\u8d2d\u4e70\u65b9\u5730\u5740:\u793a\u4f8b\u5e02\u793a\u4f8b\u533a\u793a\u4f8b\u8def1\u53f7;',
+          '\u9500\u65b9\u5f00\u6237\u94f6\u884c:\u793a\u4f8b\u94f6\u884c\u793a\u4f8b\u5206\u884c;',
         ],
         expectedColumns: 8,
-        headerField: '项目名称',
+        headerField: '\u9879\u76ee\u540d\u79f0',
       },
       {
         name: 'report-bordered',
@@ -395,7 +395,7 @@ describe.skipIf(!RUN)('pdf → editable accuracy bench (invoice/report class)', 
       '',
       'Field = a ground-truth string that must survive as ONE contiguous cell/paragraph',
       '(what a user can re-edit directly). split = present but fragmented across cells',
-      '(the #2669 symptom). Columns = cells in the detail/header row vs expected.',
+      '(the genoffice#2669 symptom). Columns = cells in the detail/header row vs expected.',
       '',
       '| sample | engine | intact | split | missing | detail columns (expected) |',
       '|---|---|---|---|---|---|',

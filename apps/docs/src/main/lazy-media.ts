@@ -262,6 +262,9 @@ export function registerLazyMediaProtocol(): void {
     }
     const media = await readLazyMedia(request.url)
     if (!media) return new Response(null, { status: 404 })
-    return new Response(new Uint8Array(media.body), { headers: { 'Content-Type': media.mime } })
+    // readable by the renderer's fetch: Reduce File Size resamples these bytes
+    return new Response(new Uint8Array(media.body), {
+      headers: { 'Content-Type': media.mime, 'Access-Control-Allow-Origin': '*' },
+    })
   })
 }

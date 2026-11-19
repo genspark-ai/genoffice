@@ -112,7 +112,7 @@ export async function save(getCtx: () => ActionCtx, quiet = false): Promise<bool
       ctx.setStatus(saved)
       if (!quiet) showToast(saved)
     } else {
-      console.error('[slides] save failed', r.error)
+      if (r.error) console.error('[slides] save failed', r.error)
       const failed = t('appStatusSaveFailed', {
         error: shortFileError(r.error ?? t('appErrorCanceled')),
       })
