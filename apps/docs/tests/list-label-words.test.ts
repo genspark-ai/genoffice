@@ -102,6 +102,45 @@ describe('list labels in the word count', () => {
     expect(listLabelText(editor.state.doc, defs)).toBe('1. 2.')
   })
 
+  it('counts the numbers of list paragraphs in a nested table, in sequence', () => {
+    // Word for Mac 16: three numbered items in a table nested in a cell are six words
+    const para = (numId: string) => ({ runs: [], list: { kind: 'ordered', numId, ilvl: 0 } })
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docListItem',
+            attrs: { docxIndex: null, kind: 'bullet', numId: '1', ilvl: 0 },
+            content: [{ type: 'text', text: 'alpha' }],
+          },
+          {
+            type: 'docNestedTable',
+            attrs: {
+              model: {
+                rows: [
+                  [
+                    {
+                      paras: ['beta', 'gamma'],
+                      richParas: [para('1'), para('1')],
+                      nestedTables: [{ rows: [[{ paras: ['x'], richParas: [para('1')] }]] }],
+                      nestedTableAnchors: [1],
+                    },
+                  ],
+                ],
+              },
+            },
+          },
+        ],
+      },
+    })
+    liveEditors.push(editor)
+    // the deeper table sits between beta and gamma: 1. alpha, 2. beta, 3. x, 4. gamma
+    expect(listLabelText(editor.state.doc, defs)).toBe('1. 2. 3. 4.')
+  })
+
   it('counts nothing without numbering definitions', () => {
     expect(listLabelText(listOf('1').state.doc, undefined)).toBe('')
     expect(listLabelText(listOf('1').state.doc, new Map())).toBe('')

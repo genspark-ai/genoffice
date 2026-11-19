@@ -189,6 +189,15 @@ function walkListLabels(
       at.push(pos)
       return false
     }
+    // a nested table is one node: its list paragraphs live in the model, in
+    // reading order, and take their numbers in the document's sequence
+    if (node.type.name === 'docNestedTable') {
+      for (const list of nestedTableLists(node.attrs.model as TableModel | null)) {
+        refs.push(list)
+        at.push(pos)
+      }
+      return false
+    }
     return true
   })
   if (refs.length === 0) return []
@@ -199,6 +208,26 @@ function walkListLabels(
     const text = m.symbolFont && m.symbolChar ? m.symbolChar : m.text
     if (text) out.push({ pos: at[i]!, text })
   })
+  return out
+}
+
+/** a nested table's list paragraphs in reading order, deeper tables placed at their anchors */
+function nestedTableLists(model: TableModel | null | undefined): ListItemRef[] {
+  const out: ListItemRef[] = []
+  for (const row of model?.rows ?? []) {
+    for (const cell of row) {
+      if (cell.vMerge === 'continue') continue
+      const paras = cell.richParas ?? []
+      const tables = cell.nestedTables ?? []
+      const anchors = cell.nestedTableAnchors ?? []
+      const tablesAt = (i: number) => tables.filter((_, t) => (anchors[t] ?? paras.length) === i)
+      for (let i = 0; i <= paras.length; i++) {
+        for (const inner of tablesAt(i)) out.push(...nestedTableLists(inner))
+        const list = paras[i]?.list
+        if (list) out.push({ numId: list.numId, ilvl: list.ilvl })
+      }
+    }
+  }
   return out
 }
 
