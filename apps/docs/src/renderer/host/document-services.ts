@@ -10,12 +10,17 @@ export function hostedOpenResult(document: DocsHostedDocument | null): OpenFileR
   if (!document) return null
   validateHostedIdentity(document)
   return {
-    path: '',
+    path: document.path ?? '',
     name: document.name,
     dataUrl: '',
-    hash: '',
+    hash: document.fileHash ?? '',
     data: document.data,
-    hosted: { id: document.id, name: document.name, readOnly: document.readOnly },
+    hosted: {
+      id: document.id,
+      name: document.name,
+      readOnly: document.readOnly,
+      ...(document.path ? { path: document.path, fileHash: document.fileHash } : {}),
+    },
   }
 }
 

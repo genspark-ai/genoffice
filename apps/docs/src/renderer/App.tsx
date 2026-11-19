@@ -7711,6 +7711,15 @@ export function App({
       ? {
           editor,
           identity: runtimeIdentity,
+          ...(doc.filePath
+            ? {
+                file: {
+                  path: doc.filePath,
+                  dirty: isDocDirty(fileCtxRef.current),
+                  savedHash: doc.hosted?.fileHash,
+                },
+              }
+            : {}),
           stateVersion: runtimeStateVersion,
           numIds: {
             bullet:
@@ -7766,6 +7775,7 @@ export function App({
             id: current.hosted?.id ?? current.filePath ?? '',
             name: current.hosted?.name ?? current.fileName,
             path: current.filePath,
+            ...(current.hosted?.fileHash ? { fileHash: current.hosted.fileHash } : {}),
             dirty: isDocDirty(fileCtxRef.current),
             readOnly: !editor || readMode || isProtected,
           }

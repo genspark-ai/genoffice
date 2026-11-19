@@ -2,7 +2,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, rename, writeFile } from 'node:fs/promises'
 import { extname, posix, resolve, sep } from 'node:path'
 import JSZip from 'jszip'
 import { XMLParser } from 'fast-xml-parser'
@@ -15,7 +15,7 @@ import { buildDocx } from '../packages/docx-engine/tests/helpers/build-docx'
 type FixtureWindow = Window & {
   editor: DocsEditorHandle
   ready: boolean
-  fixture: { saved: number[]; saves: number }
+  fixture: { saved: number[]; saves: number; savePath: string }
 }
 
 async function withHostedDocument(
@@ -24,6 +24,7 @@ async function withHostedDocument(
   autoSave = false,
 ) {
   const root = resolve(__dirname, '../apps/docs/out/embedded')
+  const savePath = test.info().outputPath('hosted-saved.docx')
   const server = createServer(async (request, response) => {
     const path = new URL(request.url ?? '/', 'http://localhost').pathname
     if (path === '/') {
@@ -41,15 +42,16 @@ async function withHostedDocument(
           if(name==='confirmDocumentReplace')return async()=>true;
           return async()=>defaults[name];
         }});
-        window.fixture={saved:[],saves:0};
+        window.fixture={saved:[],saves:0,savePath:${JSON.stringify(savePath)}};
         const host=createExternalDocsHost('${sdkHostIsElectron ? 'electron' : 'browser'}',services);
         const initial=Uint8Array.from(atob('${original.toString('base64')}'),c=>c.charCodeAt(0));
         const doc=()=>({id:'safe-editing:fixture',name:'Safe editing.docx',
           data:Uint8Array.from(window.fixture.saved.length?window.fixture.saved:initial).buffer});
         host.documents={autoSave:{enabled:${autoSave},allowToggle:false,intervalMs:60000},
           initialDocument:async()=>doc(),openDocument:async()=>doc(),
-          saveDocument:async request=>{window.fixture.saved=Array.from(new Uint8Array(request.data));window.fixture.saves++;
-            return {ok:true,committed:true,pending:false,document:{id:'safe-editing:fixture',name:'Safe editing.docx'}};}};
+          saveDocument:async request=>{window.fixture.saved=Array.from(new Uint8Array(request.data));
+            const target=await window.persistFixtureSave(window.fixture.saved,request.requestedPath);window.fixture.saves++;
+            return {ok:true,committed:true,pending:false,...target,document:{id:'safe-editing:fixture',name:'Safe editing.docx'}};}};
         window.editor=await mountDocsEditor(document.getElementById('root'),{host});
         await window.editor.ready;window.ready=true;
         </script></body></html>`)
@@ -84,6 +86,18 @@ async function withHostedDocument(
   try {
     browser = await launchSdkTestHost()
     const page = await browser.newPage()
+    await page.exposeFunction(
+      'persistFixtureSave',
+      async (data: number[], requestedPath?: string) => {
+        if (requestedPath === undefined) return {}
+        expect(requestedPath).toBe(savePath)
+        const bytes = Buffer.from(data)
+        await writeFile(savePath + '.tmp', bytes)
+        await rename(savePath + '.tmp', savePath)
+        expect(await readFile(savePath)).toEqual(bytes)
+        return { path: savePath }
+      },
+    )
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.goto(`http://127.0.0.1:${address.port}/`)
@@ -218,7 +232,7 @@ for (const balanced of [true, false]) {
               const save = async (): Promise<boolean> => {
                 if (mode === 'command') {
                   const result = (await command('save_document', {
-                    path: '/saved.docx',
+                    path: fixture.savePath,
                     overwrite: true,
                   })) as { ok: boolean }
                   return result.ok
@@ -239,7 +253,7 @@ for (const balanced of [true, false]) {
                     window.dispatchEvent(new Event('blur'))
                   })
                 } else if (mode === 'runtime') {
-                  return (await caller.save({ path: '/saved.docx', overwrite: true })).ok
+                  return (await caller.save({ path: fixture.savePath, overwrite: true })).ok
                 }
                 return await editor.documents.save()
               }

@@ -49,6 +49,14 @@ contributions. Optional capabilities must be provided explicitly. For managed
 documents, the host owns opaque identity and complete DOCX bytes; unsupported
 operations do not silently fall back to local storage.
 
+File-backed managed hosts may additionally supply an actual absolute `path` and
+`fileHash`. The host owns file creation, atomic persistence and external-change
+checks against the save request's `expectedHash`; these fields grant no file
+access. Return the updated identity after saving. An explicit requested target
+must be confirmed by the save response before the editor adopts its saved
+baseline. Runtime context reports the live buffer separately from the saved
+file version. Hosts storing only opaque bytes can omit both fields.
+
 Successful open/new completion publishes coherent document metadata and runtime
 state. Captured scopes bind to a document generation and, when relevant, its
 selection. They track valid edits without following a newly opened document.
