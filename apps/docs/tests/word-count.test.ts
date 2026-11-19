@@ -101,7 +101,9 @@ describe('document word-count text', () => {
     try {
       expect(editor.state.doc.textContent).not.toContain('E = mc 2')
       const text = documentTextForWordCount(editor.state.doc)
-      expect(countWords(text)).toBe(7)
+      // Word splits a spaced equation at its spaces, "=" included: Alpha,
+      // E, =, mc, 2, beta, ruby, gamma
+      expect(countWords(text)).toBe(8)
       expect(text).toContain('E = mc 2')
       expect(text).toContain('ruby')
       expect(text).not.toContain('index')
@@ -133,5 +135,106 @@ describe('document word-count text', () => {
     } finally {
       editor.destroy()
     }
+  })
+})
+
+/**
+ * Word for Mac 16's own Words statistic for each string (AppleScript `compute
+ * statistics`, one string per document, 2026-11-19): the ground truth the
+ * non-Asian word rule follows.
+ */
+const WORD_PROBES: Array<[string, number]> = [
+  ['0.75', 1],
+  ['p<0.05', 1],
+  ['>85%', 1],
+  ['<2 detik', 2],
+  ['a/b', 1],
+  ['x/y/z', 1],
+  ['multi-dataset', 1],
+  ['real-time', 1],
+  ['1,234', 1],
+  ['1.000.000', 1],
+  ['[1]', 1],
+  ['[1] Failory', 2],
+  ['(cross-functional)', 1],
+  ['e.g.', 1],
+  ['https://www.failory.com/blog/startup-failure-rate', 1],
+  ['doi: 10.3390/app16010234', 2],
+  ['3248\u20133265', 2],
+  ['pp. 810\u2013821,', 3],
+  ['a \u2013 b', 2],
+  ['a - b', 3],
+  ['a \u2014 b', 2],
+  ['a\u2014b', 2],
+  ['\u201cquoted\u201d', 1],
+  ['startup\u2019s', 1],
+  ["it's", 1],
+  ['AI-agentic', 1],
+  ['4-6', 1],
+  ['2024.\u201d', 1],
+  ['X', 1],
+  ['X X', 2],
+  ['\u2014', 0],
+  ['-', 1],
+  ['&', 1],
+  ['...', 1],
+  ['a ... b', 3],
+  ['60 Subjek, >30%, p<0.05', 4],
+  ['Rp 1.000.000', 2],
+  ['v1.2.3', 1],
+  ['50%', 1],
+  ['#tag', 1],
+  ['@user', 1],
+  ['[5] M. Attah', 3],
+  ['(Tabel 2).', 2],
+  ['TBME.2024.3474049', 1],
+  ['a\u00a0b', 2],
+  ['a\tb', 2],
+  ['a\u2026b', 1],
+  ['\u2026', 1],
+  ['a\u2012b', 1],
+  ['a\u2015b', 1],
+  ['a\u2212b', 1],
+  ['a\u00adb', 1],
+  ['a\u200bb', 1],
+  ['a\u2010b', 3],
+  ['a\u2011b', 1],
+  ['a\u2002b', 1],
+  ['a\u2009b', 1],
+  ['a\u3000b', 2],
+  ['\u2022 item', 1],
+  ['( a )', 3],
+  ['a , b', 3],
+  ['a . b', 3],
+  ['\u201c a \u201d', 3],
+  ['\u2013', 0],
+  ['a\u2013', 1],
+  ['\u2013a', 1],
+  ['a\u2014\u2014b', 2],
+  ['1\u20132\u20133', 3],
+  ['\u00a7 5', 2],
+  ['\u2192', 1],
+  ['a\u2192b', 3],
+  ['*', 1],
+  ['**bold**', 1],
+  ['~', 1],
+  ['\u00b1', 1],
+  ['a\u00b7b', 1],
+  ['\u2116 5', 2],
+  ['Tahun ke-1', 2],
+  ['ke-2', 1],
+  ['Rp1.000', 1],
+  ['x2', 1],
+  ['2x', 1],
+  ['5\u00d73', 1],
+  ['\u00bd', 1],
+  ['\u00b0C', 1],
+  ['25 \u00b0C', 2],
+  ['a / b', 3],
+]
+
+describe('word count matches Word', () => {
+  it.each(WORD_PROBES)('%j is %i word(s)', (text, words) => {
+    expect(countWords(text)).toBe(words)
   })
 })

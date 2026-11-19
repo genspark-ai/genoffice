@@ -19,21 +19,35 @@ import type { Selection } from '@tiptap/pm/state'
 const ASIAN_RE =
   /[ᄀ-ᇿ⺀-⿟、-〿぀-ヿ㄀-ㄯ㄰-㆏㇀-ㇿ㐀-䶿一-鿿가-힯豈-﫿！-｠￠-￦]|[\uD840-\uD8BF][\uDC00-\uDFFF]/g
 
-// Latin Extended Additional (Vietnamese, …) plus the space-delimited
-// non-Latin scripts Word counts as words: Greek, Cyrillic, Hebrew, Arabic,
-// Armenian, Devanagari, Thai, Lao, Tibetan, Myanmar, Georgian, Khmer.
-// Deliberately excludes the ASIAN_RE ranges above (counted char-by-char).
-/* eslint-disable no-misleading-character-class -- Thai/Lao etc ranges contain combining marks but are intentional word characters */
-const NON_ASIAN_WORD_RE =
-  /[A-Za-z0-9À-ɏͰ-ϿЀ-ӿ֐-׿؀-ۿḀ-ỿ\u0E00-\u0EFF\u1000-\u109F\u10A0-\u10FF\u1780-\u17FF\u0530-\u058F\u0900-\u097F\u0F00-\u0FFF]+(?:['-][A-Za-z0-9À-ɏͰ-ϿЀ-ӿ֐-׿؀-ۿḀ-ỿ\u0E00-\u0EFF\u1000-\u109F\u10A0-\u10FF\u1780-\u17FF\u0530-\u058F\u0900-\u097F\u0F00-\u0FFF]+)*/g
-/* eslint-enable no-misleading-character-class */
+/**
+ * Word's non-Asian words (probed against Word for Mac 16, 2026-11-19): any run
+ * of characters between whitespace is one word, punctuation and symbols
+ * included, so "0.75", "p<0.05", "a/b", "[1]", "&" and a URL each count once.
+ * - whitespace: space, tab, line breaks, NBSP and the ideographic space. The
+ *   thin, en and other typographic spaces join their neighbours ("a\u2009b" is
+ *   one word).
+ * - en dash, em dash and the bullet split words and are not words themselves:
+ *   "3248–3265" is two words, a lone "—" none.
+ * - the Unicode hyphen (U+2010) and the arrows split words and are words of
+ *   their own: "a→b" is three. The ASCII hyphen joins ("state-of-the-art").
+ * Asian characters are counted one by one (asianCharCount) and split the runs
+ * around them ("2026年8月2日": three non-Asian words).
+ */
+// explicit, not \s: JS counts the en/thin/hair spaces as whitespace, Word does not
+const WORD_SPACE_RE = /[ \t\n\r\f\v\u00a0\u3000\u2013\u2014\u2022]+/
+const OWN_WORD_RE = /([\u2010\u2190-\u21ff])/
 
 export function asianCharCount(text: string): number {
   return (text.match(ASIAN_RE) ?? []).length
 }
 
 export function nonAsianWordCount(text: string): number {
-  return (text.match(NON_ASIAN_WORD_RE) ?? []).length
+  let n = 0
+  for (const run of text.replace(ASIAN_RE, ' ').split(WORD_SPACE_RE)) {
+    if (!run) continue
+    for (const part of run.split(OWN_WORD_RE)) if (part) n++
+  }
+  return n
 }
 
 /** Word's Words figure: asian chars + non-asian words */
