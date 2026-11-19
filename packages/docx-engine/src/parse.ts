@@ -4373,6 +4373,7 @@ const RESULT_FORMAT_SKIP = new Set([
   'commentIds',
   'commentEndIds',
   'commentEndBeforeIds',
+  'commentEndTextOffsets',
   'ins',
   'del',
   'link',
@@ -4421,6 +4422,27 @@ function fieldResultRuns(xml: string, ctx: BuildContext, visible: string): Field
   return runs
 }
 
+/** A field may flatten several cached runs into one text run. Project all
+ * source boundaries through that same flattening, rather than inheriting the
+ * first cached run's markers as if they were formatting. */
+function projectFieldCommentEnds(target: Run, cached: Run[]): Run {
+  const ends = new Map<string, number>()
+  let length = 0
+  for (const run of cached) {
+    for (const id of run.commentEndBeforeIds ?? []) ends.set(id, length)
+    for (const [id, offset] of Object.entries(run.commentEndTextOffsets ?? {}))
+      ends.set(id, length + offset)
+    length += run.text.length
+    for (const id of run.commentEndIds ?? []) ends.set(id, length)
+  }
+  for (const [id, offset] of ends) {
+    if (offset === 0) (target.commentEndBeforeIds ??= []).push(id)
+    else if (offset === length) (target.commentEndIds ??= []).push(id)
+    else (target.commentEndTextOffsets ??= {})[id] = offset
+  }
+  return target
+}
+
 function extractRuns(
   pNode: XNode,
   ctx: BuildContext,
@@ -4462,6 +4484,7 @@ function extractRuns(
   let fieldSeparated = zoteroField !== undefined && zoteroField.part !== 'begin'
   let fieldCached = ''
   let fieldCachedRuns: Run[] = []
+  const pendingFieldCommentEnds: string[] = []
   let fieldBeginRun: XNode | null = null
   let fieldDirty = false
   const eqField = (instr: string) => (/^\s*EQ\b/i.test(instr) ? eqFieldToOmml(instr) : null)
@@ -4490,7 +4513,11 @@ function extractRuns(
     run.commentIds = [...new Set([...(run.commentIds ?? []), ...ids])].sort()
   }
   const pushRun = (run: Run, rev?: RevCtx) => {
-    if (pendingCommentEnds.length) run.commentEndBeforeIds = pendingCommentEnds.splice(0)
+    if (pendingCommentEnds.length)
+      run.commentEndBeforeIds = [
+        ...(run.commentEndBeforeIds ?? []),
+        ...pendingCommentEnds.splice(0),
+      ]
     if (activeComments.size > 0) run.commentIds = [...activeComments].sort()
     if (pendingRefIds.length > 0) {
       addCommentIds(run, pendingRefIds)
@@ -4499,6 +4526,14 @@ function extractRuns(
     if (rev?.ins) run.ins = rev.ins
     if (rev?.del) run.del = rev.del
     runs.push(run)
+  }
+  const pushFieldRun = (run: Run, rev?: RevCtx) => {
+    if (pendingFieldCommentEnds.length)
+      run.commentEndBeforeIds = [
+        ...(run.commentEndBeforeIds ?? []),
+        ...pendingFieldCommentEnds.splice(0),
+      ]
+    pushRun(projectFieldCommentEnds(run, fieldCachedRuns), rev)
   }
   const pushZoteroCachedRuns = (part: ZoteroFieldPart, rev?: RevCtx) => {
     const cachedRuns = fieldCachedRuns.length > 0 ? fieldCachedRuns : [{ text: fieldCached || ' ' }]
@@ -4532,6 +4567,7 @@ function extractRuns(
           fieldSeparated = false
           fieldCached = ''
           fieldCachedRuns = []
+          pendingFieldCommentEnds.length = 0
           fieldBeginRun = node
           fieldDirty = /^(?:true|1)$/.test(String(attrsOf(fldChar)['w:dirty'] ?? ''))
         }
@@ -4544,10 +4580,10 @@ function extractRuns(
           const xe = XE_INSTR_RE.exec(fieldInstr)
           const ref = REF_INSTR_RE.exec(fieldInstr)
           const hyper = convertibleHyperlink(fieldInstr)
-          if (xe) pushRun({ text: '', xeTerm: xe[1] ?? xe[2] }, rev)
+          if (xe) pushFieldRun({ text: '', xeTerm: xe[1] ?? xe[2] }, rev)
           else if (ref) {
             const name = ref[1] ?? ref[2]
-            pushRun(
+            pushFieldRun(
               {
                 text: fieldCached || name,
                 refField: name,
@@ -4565,7 +4601,7 @@ function extractRuns(
             }
             if (fieldCachedRuns.length > 0) {
               for (const cached of fieldCachedRuns) pushRun({ ...cached, link: linkVal }, rev)
-            } else pushRun({ text: hyper.href, link: linkVal }, rev)
+            } else pushFieldRun({ text: hyper.href, link: linkVal }, rev)
           } else if (/^\s*FORMCHECKBOX\s*$/.test(fieldInstr)) {
             // Legacy checkbox form field: no cached result — Word draws the box
             // from ffData. Display a glyph; write the begin run back verbatim.
@@ -4584,7 +4620,7 @@ function extractRuns(
                 res,
                 ctx.xmlSpacePreserve,
               )
-              pushRun(
+              pushFieldRun(
                 {
                   ...(glyphRun ?? { text: glyph }),
                   instrField: 'FORMCHECKBOX',
@@ -4601,7 +4637,7 @@ function extractRuns(
             // unmerged main document caches nothing. Show the guillemet
             // placeholder Word uses instead of an empty run; the value is not
             // dirtied because only the merge itself can supply it.
-            pushRun(
+            pushFieldRun(
               {
                 ...resultFormat(),
                 text: fieldCached || `«${merge[1] ?? merge[2]}»`,
@@ -4613,7 +4649,7 @@ function extractRuns(
             )
           } else if (SIMPLE_INLINE_FIELD_RE.test(fieldInstr)) {
             // an unformatted result run would drop to the paragraph default size
-            pushRun(
+            pushFieldRun(
               {
                 ...resultFormat(),
                 text: fieldCached || ' ',
@@ -4625,11 +4661,11 @@ function extractRuns(
             )
           } else if (eqField(fieldInstr)) {
             const eq = eqField(fieldInstr)!
-            pushRun({ ...resultFormat(), text: eq.text, math: { omml: eq.omml } }, rev)
+            pushFieldRun({ ...resultFormat(), text: eq.text, math: { omml: eq.omml } }, rev)
           } else if (fieldInstr.trim() === '') {
             // an instruction-less field (genoffice#2099 left citations this way)
             // keeps its result as an empty-instruction run, not a passthrough
-            pushRun(
+            pushFieldRun(
               {
                 ...resultFormat(),
                 text: fieldCached || ' ',
@@ -4646,6 +4682,13 @@ function extractRuns(
             // rejects them), so this only feeds display-only contexts such as
             // table cells and textbox content.
             for (const cached of fieldCachedRuns) pushRun(cached, rev)
+          }
+          // A field with no rendered result still has an exact boundary in
+          // the surrounding inline stream; do not leak its markers forward.
+          if (pendingFieldCommentEnds.length) {
+            const previous = runs[runs.length - 1]
+            if (previous) (previous.commentEndIds ??= []).push(...pendingFieldCommentEnds.splice(0))
+            else pendingCommentEnds.push(...pendingFieldCommentEnds.splice(0))
           }
           fieldInstr = ''
           fieldSeparated = false
@@ -4673,6 +4716,8 @@ function extractRuns(
           ctx.xmlSpacePreserve,
         )
         if (cached) {
+          if (pendingFieldCommentEnds.length)
+            cached.commentEndBeforeIds = pendingFieldCommentEnds.splice(0)
           fieldCached += cached.text
           fieldCachedRuns.push(cached)
         }
@@ -4770,15 +4815,17 @@ function extractRuns(
     const first = runs.length
     walk(childrenOf(node), link, rev)
     const cached = runs.splice(first)
+    const pushResult = (run: Run, rev?: RevCtx) =>
+      pushRun(projectFieldCommentEnds(run, cached), rev)
     const text = cached.map((r) => r.text).join('')
     const format = cached[0]
       ? Object.fromEntries(Object.entries(cached[0]).filter(([k]) => !RESULT_FORMAT_SKIP.has(k)))
       : {}
     const dirty = /^(?:true|1)$/.test(String(attrsOf(node)['w:dirty'] ?? ''))
-    if (xe) pushRun({ text: '', xeTerm: xe[1] ?? xe[2] }, rev)
+    if (xe) pushResult({ text: '', xeTerm: xe[1] ?? xe[2] }, rev)
     else if (ref) {
       const name = ref[1] ?? ref[2]
-      pushRun(
+      pushResult(
         {
           ...format,
           text: text || name,
@@ -4790,7 +4837,7 @@ function extractRuns(
         rev,
       )
     } else if (merge) {
-      pushRun(
+      pushResult(
         {
           ...format,
           text: text || `«${merge[1] ?? merge[2]}»`,
@@ -4801,7 +4848,7 @@ function extractRuns(
         rev,
       )
     } else {
-      pushRun(
+      pushResult(
         {
           ...format,
           text: text || ' ',
@@ -4822,9 +4869,11 @@ function extractRuns(
           if (name === 'w:commentRangeStart') activeComments.add(id)
           else activeComments.delete(id)
         } else if (id && name === 'w:commentRangeEnd') {
-          const previous = runs[runs.length - 1]
+          const buffered = fieldDepth > 0 && fieldSeparated
+          const target = buffered ? fieldCachedRuns : runs
+          const previous = target[target.length - 1]
           if (previous) (previous.commentEndIds ??= []).push(id)
-          else pendingCommentEnds.push(id)
+          else (buffered ? pendingFieldCommentEnds : pendingCommentEnds).push(id)
         }
       } else if (name === 'w:ins' || name === 'w:del') {
         const attrs = attrsOf(node)

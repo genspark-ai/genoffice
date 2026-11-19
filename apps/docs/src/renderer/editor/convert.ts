@@ -2221,18 +2221,30 @@ export function pmTableToModel(table: PmNode): TableModel {
 export function runsToInline(runs: Run[], commentEndOffsets?: Record<string, number>): PmNode[] {
   const nodes: PmNode[] = []
   let previous: Run | undefined
+  let runStart = 0
+  const inlineSize = () =>
+    nodes.reduce((size, node) => size + (node.type === 'text' ? node.text!.length : 1), 0)
   const recordEnds = (ids: string[] | undefined) => {
     if (!commentEndOffsets || !ids?.length) return
-    const offset = nodes.reduce(
-      (size, node) => size + (node.type === 'text' ? node.text!.length : 1),
-      0,
-    )
+    const offset = inlineSize()
     for (const id of ids) commentEndOffsets[id] = offset
   }
-  for (const run of runs) {
+  const finishRun = () => {
+    if (commentEndOffsets && previous?.commentEndTextOffsets) {
+      const size = inlineSize() - runStart
+      for (const [id, offset] of Object.entries(previous.commentEndTextOffsets)) {
+        // A field can project its cached text into an atom (e.g. EQ).
+        // Such a position addresses that output atom rather than XML text.
+        commentEndOffsets[id] = runStart + Math.min(offset, size)
+      }
+    }
     recordEnds(previous?.commentEndIds)
+  }
+  for (const run of runs) {
+    finishRun()
     recordEnds(run.commentEndBeforeIds)
     previous = run
+    runStart = commentEndOffsets && run.commentEndTextOffsets ? inlineSize() : 0
     const marks = runMarks(run)
     const atomMarks = marks.length > 0 ? { marks } : {}
     if (run.math) {
@@ -2331,7 +2343,7 @@ export function runsToInline(runs: Run[], commentEndOffsets?: Record<string, num
       nodes.push({ type: 'docXeMark', ...atomMarks, attrs: { term: run.xeTerm } })
     }
   }
-  recordEnds(previous?.commentEndIds)
+  finishRun()
   markLeadRule(nodes)
   return nodes
 }

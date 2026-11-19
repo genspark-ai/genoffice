@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { parseDocx, saveDocx, type CommentInfo } from '@genoffice/docx-engine'
 import { Editor } from '@tiptap/core'
 import { editorExtensions } from '../src/renderer/editor/extensions'
@@ -8,6 +8,8 @@ import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-doc
 
 const box = (left: number, top: number, width: number, height: number): DOMRect =>
   ({ left, top, right: left + width, bottom: top + height, width, height }) as DOMRect
+
+afterEach(() => document.body.replaceChildren())
 
 function fixture() {
   const app = document.createElement('div')
@@ -35,6 +37,63 @@ function fixture() {
 }
 
 describe('margin comment geometry', () => {
+  for (const field of ['simple', 'complex'] as const) {
+    it.each(['before', 'inside', 'end'])(
+      `preserves a cross-paragraph endpoint %s a ${field} field result`,
+      async (where) => {
+        const marker = '<w:commentRangeEnd w:id="1"/>'
+        const target = '<w:r><w:t>target</w:t></w:r>'
+        const cached =
+          (where === 'before' ? marker : '') +
+          target +
+          (where === 'before' ? '' : marker) +
+          (where === 'inside' ? '<w:r><w:t xml:space="preserve"> field suffix</w:t></w:r>' : '')
+        const fieldXml =
+          field === 'simple'
+            ? `<w:fldSimple w:instr=" DATE ">${cached}</w:fldSimple>`
+            : '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> DATE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+              cached +
+              '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+        let parsed = await parseDocx(
+          await buildDocx({
+            bodyXml:
+              '<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>open</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">prefix </w:t></w:r>' +
+              fieldXml +
+              '<w:r><w:t xml:space="preserve"> outside suffix</w:t></w:r></w:p>',
+          }),
+        )
+        const original = parsed.blocks[1].originalXml
+        for (let pass = 0; pass < 2; pass++) {
+          const f = fixture()
+          const editor = new Editor({
+            element: document.createElement('div'),
+            extensions: editorExtensions,
+            content: blocksToPmDoc(parsed.blocks) as never,
+          })
+          f.pm.replaceWith(editor.view.dom)
+          editor.view.dom.classList.add('doc-page')
+          editor.view.dom.getBoundingClientRect = () => box(0, 0, 1200, 2400)
+          editor.view.coordsAtPos = (pos) => ({
+            left: pos * 10,
+            right: pos * 10,
+            top: 1200,
+            bottom: 1216,
+          })
+          syncMarginAnnotations(f.wrap, editor.view.dom, f.comments, 1, parsed.blocks, editor.view)
+          expect(f.wrap.querySelector('.comment-leader')!.getAttribute('d')).toMatch(
+            new RegExp(`^M ${where === 'before' ? 140 : 200} 1215 L `),
+          )
+          const plan = pmDocToSavePlan(editor.getJSON() as never, parsed.blocks)
+          expect(plan.changedCount).toBe(0)
+          parsed = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+          expect(parsed.blocks[1].originalXml).toBe(original)
+          editor.destroy()
+          f.app.remove()
+        }
+      },
+    )
+  }
+
   it.each([
     [
       'notes',

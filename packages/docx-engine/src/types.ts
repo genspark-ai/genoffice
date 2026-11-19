@@ -163,6 +163,8 @@ export interface Run {
   commentEndIds?: string[]
   /** Cross-paragraph ends preceding the first run in a paragraph. Display only. */
   commentEndBeforeIds?: string[]
+  /** Ends inside a field's folded cached text, relative to that text. Display only. */
+  commentEndTextOffsets?: Record<string, number>
   /** run is inside a w:ins (tracked insertion) */
   ins?: RevisionInfo
   /** run is inside a w:del (tracked deletion; text came from w:delText) */
