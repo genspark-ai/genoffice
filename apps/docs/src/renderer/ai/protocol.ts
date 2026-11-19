@@ -532,13 +532,35 @@ export function serializeRangeToHtml(
   const json = redactNode(editor.getJSON() as RedactableNode) as PmNode
   const children = (json.content ?? []).slice(startIndex, endIndex + 1)
   const parts: string[] = []
-  let listBuffer: { kind: string; items: string[] } | null = null
-
+  // Open lists, outermost first; a deeper Word level (ilvl) nests a list inside the open item,
+  // which is how parseList reads it back.
+  let listHtml = ''
+  let listBase = 0
+  const openLists: string[] = []
+  const listTag = (kind: string) => (kind === 'ordered' ? 'ol' : 'ul')
+  const closeList = () => {
+    listHtml += `</li></${listTag(openLists.pop()!)}>`
+  }
   const flushList = () => {
-    if (!listBuffer) return
-    const tag = listBuffer.kind === 'ordered' ? 'ol' : 'ul'
-    parts.push(`<${tag}>${listBuffer.items.join('')}</${tag}>`)
-    listBuffer = null
+    if (!openLists.length) return
+    while (openLists.length) closeList()
+    parts.push(listHtml)
+    listHtml = ''
+  }
+  const addListItem = (kind: string, ilvl: number, html: string) => {
+    if (!openLists.length) listBase = ilvl
+    const depth = Math.min(Math.max(ilvl - listBase, 0) + 1, openLists.length + 1)
+    while (openLists.length > depth) closeList()
+    if (openLists.length === depth && openLists[depth - 1] !== kind) {
+      if (depth === 1) flushList()
+      else closeList()
+    }
+    if (openLists.length < depth) {
+      listHtml += `<${listTag(kind)}><li>${html}`
+      openLists.push(kind)
+    } else {
+      listHtml += `</li><li>${html}`
+    }
   }
   const inlineSel = (i: number): InlineSelection | undefined => {
     if (!sel) return undefined
@@ -563,11 +585,11 @@ export function serializeRangeToHtml(
       parts.push(`<h${level}>${inlineToHtml(node.content, inlineSel(i), image, refs)}</h${level}>`)
     } else if (node.type === 'docListItem') {
       const kind = (node.attrs?.kind as string) ?? 'bullet'
-      if (!listBuffer || listBuffer.kind !== kind) {
-        flushList()
-        listBuffer = { kind, items: [] }
-      }
-      listBuffer.items.push(`<li>${inlineToHtml(node.content, inlineSel(i), image, refs)}</li>`)
+      addListItem(
+        kind,
+        Number(node.attrs?.ilvl) || 0,
+        inlineToHtml(node.content, inlineSel(i), image, refs),
+      )
     } else if (node.type === 'docParagraph') {
       flushList()
       if (isCodeParagraph(node)) {

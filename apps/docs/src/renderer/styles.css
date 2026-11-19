@@ -5513,6 +5513,22 @@ th[data-rev-fmt] {
   z-index: 1;
 }
 
+/* in-cell gap of a split nested-table row that starts above the page turn
+   (the cell resumes a line early): see-through over that lift beside its own
+   column, where the other cells still show their last lines; paper in its own
+   column (its highlight must not show through) and below the lift */
+.page-gap-nested.page-gap-cell {
+  --gap-paper: var(--page-bg, var(--docs-paper));
+  background:
+    linear-gradient(var(--gap-paper), var(--gap-paper)) var(--gap-own-l, 0px) 0 /
+      calc(100% - var(--gap-own-l, 0px) - var(--gap-own-r, 0px)) var(--gap-lift, 0px) no-repeat,
+    linear-gradient(
+      to bottom,
+      transparent 0 var(--gap-lift, 0px),
+      var(--gap-paper) var(--gap-lift, 0px)
+    );
+}
+
 /* In-table gap at a row boundary. A real spanning cell isolates collapsed
    borders/backgrounds from the page gutter; the inner fill paints paper /
    canvas / paper bands without inheriting table-cell decoration. */
@@ -6634,6 +6650,18 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
      w:compat carries w:adjustLineHeightInTable — then docStyleCss restores the
      pitch in cells and they snap like body lines (Word probe 2026-09-02) */
   --doc-grid-pitch: 0.0001px;
+}
+
+/* a row split over pages and filled to its declared height (setRowFills): Word
+   aligns a cell within each fragment, and the fill is the last fragment's own
+   minimum. Centered or bottom-aligned across the whole tr, the fill's extra
+   would push every fragment's content down (a center-aligned form cell
+   spanning four pages started 29px low on each, and a page lost two
+   references). The fill goes below the content instead. Inline vAlign styles,
+   hence the override. */
+.doc-table tr[data-row-fill] > td,
+.doc-table tr[data-row-fill] > th {
+  vertical-align: top !important;
 }
 
 /* empty paragraph in a cell: LO sizes it near the Latin single line, so it must

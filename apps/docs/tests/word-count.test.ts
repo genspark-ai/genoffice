@@ -113,6 +113,51 @@ describe('document word-count text', () => {
     }
   })
 
+  it('counts the words of a table nested in a cell, as Word does', () => {
+    const inner = { rows: [[{ paras: ['deeper cell'] }]] }
+    const model = {
+      rows: [
+        [{ paras: ['No', 'Nama Kegiatan'] }, { paras: ['Bulan 1'] }],
+        [{ paras: ['Akuisisi dataset COG-BCI'], nestedTables: [inner] }, { paras: [''] }],
+      ],
+    }
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docTable',
+            content: [
+              {
+                type: 'docTableRow',
+                content: [
+                  {
+                    type: 'docTableCell',
+                    content: [
+                      { type: 'docParagraph', content: [{ type: 'text', text: 'Year one' }] },
+                      { type: 'docNestedTable', attrs: { model } },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    })
+
+    try {
+      const text = documentTextForWordCount(editor.state.doc)
+      // Year one (2) + No, Nama Kegiatan (3) + Bulan 1 (2) + Akuisisi dataset COG-BCI (3) + deeper cell (2)
+      expect(countWords(text)).toBe(12)
+      expect(text).toContain('Akuisisi dataset')
+    } finally {
+      editor.destroy()
+    }
+  })
+
   it('recognizes a paragraph containing only an inline formula as non-empty', () => {
     const editor = new Editor({
       element: document.createElement('div'),
