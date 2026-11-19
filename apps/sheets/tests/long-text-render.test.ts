@@ -16,6 +16,28 @@ const long = Array.from({ length: 10_000 }, (_, i) => String.fromCharCode(97 + (
 // 6 px per character, so 10k chars measure 60k px.
 const width = long.length * 6
 
+/** positions of the manual line breaks in a Univer dataStream */
+const breaksOf = (content: string): number[] => [...content.matchAll(/\r/g)].map((m) => m.index!)
+
+/** 20 manual lines of 100 characters, plus the trailing paragraph terminator */
+function multilineDoc() {
+  const lines = Array.from(
+    { length: 20 },
+    (_, i) => `${String(i).padStart(3, '0')}${'x'.repeat(97)}`,
+  )
+  const content = lines.join('\r')
+  return {
+    id: 'multiline-cell',
+    body: {
+      dataStream: `${content}\r\n`,
+      textRuns: [{ st: 0, ed: content.length, ts: { bl: 1 } }],
+      paragraphs: [...breaksOf(content), content.length].map((startIndex) => ({ startIndex })),
+      sectionBreaks: [{ startIndex: content.length + 1 }],
+    },
+    documentStyle: {},
+  }
+}
+
 describe('visibleSlice', () => {
   it('keeps short or unmeasured text intact', () => {
     const short = 'x'.repeat(LONG_TEXT_MIN_CHARS)
@@ -63,13 +85,36 @@ describe('truncateDocForLayout', () => {
     documentStyle: {},
   }
 
-  it('leaves short or multi-paragraph documents alone', () => {
+  it('leaves short documents alone', () => {
     expect(truncateDocForLayout(doc, HorizontalAlign.LEFT, 2000)).toBe(doc)
-    const multi = {
-      ...doc,
-      body: { ...doc.body, paragraphs: [{ startIndex: 5 }, { startIndex: 2000 }] },
-    }
-    expect(truncateDocForLayout(multi, HorizontalAlign.LEFT, 100)).toBe(multi)
+  })
+
+  it('cuts a multiline document but keeps its interior paragraph starts', () => {
+    // 26 cells of ~310 lines each were the slow case in genoffice#2873: the
+    // all-or-nothing guard left every one of their 30k characters to shape.
+    const multi = multilineDoc()
+    const content = multi.body.dataStream.slice(0, -2)
+    const out = truncateDocForLayout(multi, HorizontalAlign.LEFT, 250)
+    expect(out.body?.dataStream).toBe(`${content.slice(0, 250)}\r\n`)
+    const kept = breaksOf(content).filter((at) => at > 0 && at < 250)
+    expect(out.body?.paragraphs).toEqual([
+      ...kept.map((at) => ({ startIndex: at })),
+      { startIndex: 250 },
+    ])
+    expect(out.body?.sectionBreaks).toEqual([{ startIndex: 251 }])
+    expect(out.body?.textRuns).toEqual([{ st: 0, ed: 250, ts: { bl: 1 } }])
+  })
+
+  it('shifts interior paragraphs for a right-aligned window', () => {
+    const multi = multilineDoc()
+    const content = multi.body.dataStream.slice(0, -2)
+    const start = content.length - 250
+    const out = truncateDocForLayout(multi, HorizontalAlign.RIGHT, 250)
+    expect(out.body?.dataStream).toBe(`${content.slice(start)}\r\n`)
+    const kept = breaksOf(content)
+      .filter((at) => at > start && at < content.length)
+      .map((at) => ({ startIndex: at - start }))
+    expect(out.body?.paragraphs).toEqual([...kept, { startIndex: 250 }])
   })
 
   it('keeps the head with runs clipped and terminators rebuilt', () => {
