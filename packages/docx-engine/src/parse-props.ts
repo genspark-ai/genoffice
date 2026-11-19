@@ -1008,6 +1008,15 @@ export function mergeRuns(runs: Run[]): Run[] {
 }
 
 function sameStyle(a: Run, b: Run): boolean {
+  if (
+    a.commentEndIds ||
+    b.commentEndIds ||
+    a.commentEndBeforeIds ||
+    b.commentEndBeforeIds ||
+    a.commentEndTextOffsets ||
+    b.commentEndTextOffsets
+  )
+    return false
   // reference markers, index entries, cross-references and inline math are atomic; never merge
   if (a.noteRef || b.noteRef || a.xeTerm !== undefined || b.xeTerm !== undefined) return false
   if (a.refField !== undefined || b.refField !== undefined) return false

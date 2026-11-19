@@ -1012,6 +1012,7 @@ export function App({
   const [findFocusGoTo, setFindFocusGoTo] = useState(0)
   // last pagination pass, read by the Go To tab (page / section / line targets)
   const pageLayoutRef = useRef<PageLayout | null>(null)
+  const annotationFirstPageRef = useRef<{ left: number; width: number } | undefined>(undefined)
   /** live section list of the last pass (header obstacles of the next pass) */
   const lastSecListRef = useRef<SectionInfo[] | null>(null)
   const cutsNow = useCallback(() => pageLayoutRef.current?.cuts, [])
@@ -4405,9 +4406,28 @@ export function App({
           if (swapZoom) {
             zoomEl.style.zoom = String(liveZoom)
             factor = liveZoom
-            scroller.scrollTop = scrollTop
-            scroller.scrollLeft = scrollLeft
           }
+          // Natural measurement temporarily hides page gaps at every zoom,
+          // which can clamp the viewport even when no zoom swap was needed.
+          scroller.scrollTop = scrollTop
+          scroller.scrollLeft = scrollLeft
+        }
+        // Text line boxes can change when Blink restores the live CSS zoom.
+        // Measure screen anchors and page capacity only in that final display
+        // state, including fast passes that keep the existing pagination.
+        const pm = pmEl()
+        if (pm) {
+          syncMarginAnnotations(
+            (pm.closest('.page-wrap') as HTMLElement) ?? pm,
+            pm,
+            comments,
+            liveZoom,
+            doc.parsed.blocks,
+            editor.view,
+            marginHandlersRef.current,
+            pageLayoutRef.current?.cuts,
+            annotationFirstPageRef.current,
+          )
         }
         if (fast) {
           fastPasses++
@@ -5635,6 +5655,7 @@ export function App({
           const firstFrame = pbSec
             ? { left: pageLeftOf(pbSec), width: twipsToPx(pbSec.pageWidth) }
             : undefined
+          annotationFirstPageRef.current = firstFrame
           syncPageBorders(wrapEl, borderStyle, factor, firstFrame, cuts)
           stage('pageBorders')
           syncLineNumbers(wrapEl, pm, blocks, secList ?? [], factor, blockMetaOf, firstFrame, cuts)
@@ -5647,17 +5668,7 @@ export function App({
             cuts,
           )
         }
-        syncMarginAnnotations(
-          (pm.closest('.page-wrap') as HTMLElement) ?? pm,
-          pm,
-          comments,
-          factor,
-          doc.parsed.blocks,
-          editor.view,
-          marginHandlersRef.current,
-          cuts,
-        )
-        stage('sheets+annotations')
+        stage('sheets')
         tSetGaps = performance.now() - tSet0
         if (obstaclesChanged) followUp('obstacles')
         // a fill just applied to a split row changed the table height under the slices
@@ -8169,6 +8180,8 @@ export function App({
       doc.parsed.blocks,
       editor.view,
       marginHandlersRef.current,
+      pageLayoutRef.current?.cuts,
+      annotationFirstPageRef.current,
     )
     // only the flags on the root matter here; the pagination pass owns every other input
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -8192,6 +8205,10 @@ export function App({
       else setCommentPopup(id)
     },
     onCommentSelect: (id) => setCommentFocus({ id, nonce: Date.now() }),
+    onCommentCollapse: (id) => {
+      setCommentFocus((focus) => (focus?.id === id ? null : focus))
+      setCommentPopup((popup) => (popup === id ? null : popup))
+    },
     onCommentReply: (id, text) => replyToComment(id, text),
     onCommentResolve: resolveComment,
     onCommentEdit: editComment,

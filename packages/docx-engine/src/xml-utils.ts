@@ -14,6 +14,13 @@ const parserOptions = {
 
 export const xmlParser = new XMLParser(parserOptions)
 
+/** Decode XML numeric references during tokenization, without interpreting the
+ * decoded characters as markup or decoding escaped entity-looking text twice. */
+export const numericXmlParser = new XMLParser({
+  ...parserOptions,
+  htmlEntities: true,
+})
+
 /**
  * Table XML only: deep nesting is legitimate there (POI stress files nest 5000 table
  * levels, far past the default 100-tag cap). fxp parses iteratively, but callers must

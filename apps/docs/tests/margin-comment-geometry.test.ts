@@ -1,0 +1,308 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { parseDocx, saveDocx, type CommentInfo } from '@genoffice/docx-engine'
+import { Editor } from '@tiptap/core'
+import { editorExtensions } from '../src/renderer/editor/extensions'
+import { syncMarginAnnotations } from '../src/renderer/editor/margin-annotations'
+import { blocksToPmDoc, pmDocToSavePlan } from '../src/renderer/editor/convert'
+import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
+
+const box = (left: number, top: number, width: number, height: number): DOMRect =>
+  ({ left, top, right: left + width, bottom: top + height, width, height }) as DOMRect
+
+afterEach(() => document.body.replaceChildren())
+
+function fixture() {
+  const app = document.createElement('div')
+  app.className = 'app'
+  app.setAttribute('data-comment-cards', '')
+  const wrap = document.createElement('div')
+  wrap.className = 'page-wrap'
+  const pm = document.createElement('div')
+  pm.className = 'ProseMirror doc-page'
+  app.append(wrap)
+  wrap.append(pm)
+  document.body.append(app)
+  wrap.getBoundingClientRect = () => box(0, 0, 1460, 2400)
+  pm.getBoundingClientRect = () => box(0, 0, 1200, 2400)
+  const span = (id: string, rects: DOMRect[]) => {
+    const el = document.createElement('span')
+    el.className = 'doc-comment'
+    el.dataset.commentIds = id
+    el.getClientRects = () => rects as unknown as DOMRectList
+    pm.append(el)
+    return el
+  }
+  const comments: CommentInfo[] = [{ id: '1', author: 'A', text: 'Check this text' }]
+  return { app, wrap, pm, span, comments }
+}
+
+describe('margin comment geometry', () => {
+  for (const field of ['simple', 'complex'] as const) {
+    it.each(['before', 'inside', 'end'])(
+      `preserves a cross-paragraph endpoint %s a ${field} field result`,
+      async (where) => {
+        const marker = '<w:commentRangeEnd w:id="1"/>'
+        const target = '<w:r><w:t>target</w:t></w:r>'
+        const cached =
+          (where === 'before' ? marker : '') +
+          target +
+          (where === 'before' ? '' : marker) +
+          (where === 'inside' ? '<w:r><w:t xml:space="preserve"> field suffix</w:t></w:r>' : '')
+        const fieldXml =
+          field === 'simple'
+            ? `<w:fldSimple w:instr=" DATE ">${cached}</w:fldSimple>`
+            : '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> DATE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+              cached +
+              '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+        let parsed = await parseDocx(
+          await buildDocx({
+            bodyXml:
+              '<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>open</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">prefix </w:t></w:r>' +
+              fieldXml +
+              '<w:r><w:t xml:space="preserve"> outside suffix</w:t></w:r></w:p>',
+          }),
+        )
+        const original = parsed.blocks[1].originalXml
+        for (let pass = 0; pass < 2; pass++) {
+          const f = fixture()
+          const editor = new Editor({
+            element: document.createElement('div'),
+            extensions: editorExtensions,
+            content: blocksToPmDoc(parsed.blocks) as never,
+          })
+          f.pm.replaceWith(editor.view.dom)
+          editor.view.dom.classList.add('doc-page')
+          editor.view.dom.getBoundingClientRect = () => box(0, 0, 1200, 2400)
+          editor.view.coordsAtPos = (pos) => ({
+            left: pos * 10,
+            right: pos * 10,
+            top: 1200,
+            bottom: 1216,
+          })
+          syncMarginAnnotations(f.wrap, editor.view.dom, f.comments, 1, parsed.blocks, editor.view)
+          expect(f.wrap.querySelector('.comment-leader')!.getAttribute('d')).toMatch(
+            new RegExp(`^M ${where === 'before' ? 140 : 200} 1215 L `),
+          )
+          const plan = pmDocToSavePlan(editor.getJSON() as never, parsed.blocks)
+          expect(plan.changedCount).toBe(0)
+          parsed = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+          expect(parsed.blocks[1].originalXml).toBe(original)
+          editor.destroy()
+          f.app.remove()
+        }
+      },
+    )
+  }
+
+  it.each([
+    [
+      'notes',
+      '<w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:endnoteReference w:id="1"/></w:r>',
+      2,
+    ],
+    [
+      'ruby',
+      '<w:r><w:ruby><w:rt><w:r><w:t>phonetic</w:t></w:r></w:rt><w:rubyBase><w:r><w:t>base</w:t></w:r></w:rubyBase></w:ruby></w:r>',
+      1,
+    ],
+    ['math', '<m:oMath><m:r><m:t>x+y</m:t></m:r></m:oMath>', 1],
+  ])(
+    'uses actual inline positions after %s rather than XML text lengths',
+    async (_name, inline, units) => {
+      let parsed = await parseDocx(
+        await buildDocx({
+          bodyXml:
+            '<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>open</w:t></w:r></w:p>' +
+            `<w:p>${inline}<w:r><w:t>tail</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:t> suffix</w:t></w:r></w:p>`,
+          extraParts: ['footnote', 'endnote'].map((kind) => ({
+            path: `word/${kind}s.xml`,
+            contentType: `application/vnd.openxmlformats-officedocument.wordprocessingml.${kind}s+xml`,
+            xml: `<w:${kind}s xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:${kind} w:id="1"><w:p><w:r><w:t>Note content</w:t></w:r></w:p></w:${kind}></w:${kind}s>`,
+          })),
+        }),
+      )
+      const originalParagraph = parsed.blocks[1].originalXml
+      for (let pass = 0; pass < 2; pass++) {
+        const f = fixture()
+        const editor = new Editor({
+          element: document.createElement('div'),
+          extensions: editorExtensions,
+          content: blocksToPmDoc(parsed.blocks) as never,
+        })
+        f.pm.replaceWith(editor.view.dom)
+        editor.view.dom.classList.add('doc-page')
+        editor.view.dom.getBoundingClientRect = () => box(0, 0, 1200, 2400)
+        editor.view.coordsAtPos = (pos) => ({
+          left: pos * 10,
+          right: pos * 10,
+          top: 1200,
+          bottom: 1216,
+        })
+        syncMarginAnnotations(f.wrap, editor.view.dom, f.comments, 1, parsed.blocks, editor.view)
+        expect(f.wrap.querySelector('.comment-leader')!.getAttribute('d')).toMatch(
+          new RegExp(`^M ${(11 + Number(units)) * 10} 1215 L `),
+        )
+        const plan = pmDocToSavePlan(editor.getJSON() as never, parsed.blocks)
+        expect(plan.changedCount).toBe(0)
+        parsed = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+        expect(parsed.blocks[1].originalXml).toBe(originalParagraph)
+        editor.destroy()
+        f.app.remove()
+      }
+    },
+  )
+
+  it.each(['', '<w:r><w:t>untouched suffix</w:t></w:r>'])(
+    'keeps an endpoint at offset zero before %s through save and reopen',
+    async (suffix) => {
+      const bytes = await buildDocx({
+        bodyXml:
+          '<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>open</w:t></w:r></w:p>' +
+          `<w:p><w:commentRangeEnd w:id="1"/>${suffix}</w:p>`,
+      })
+      let parsed = await parseDocx(bytes)
+      for (let pass = 0; pass < 2; pass++) {
+        const f = fixture()
+        const editor = new Editor({
+          element: document.createElement('div'),
+          extensions: editorExtensions,
+          content: blocksToPmDoc(parsed.blocks) as never,
+        })
+        f.pm.replaceWith(editor.view.dom)
+        editor.view.dom.classList.add('doc-page')
+        editor.view.dom.getBoundingClientRect = () => box(0, 0, 1200, 2400)
+        editor.view.coordsAtPos = (pos) => ({
+          left: pos * 10,
+          right: pos * 10,
+          top: 1200,
+          bottom: 1216,
+        })
+        syncMarginAnnotations(f.wrap, editor.view.dom, f.comments, 1, parsed.blocks, editor.view)
+        expect(f.wrap.querySelector('.comment-leader')!.getAttribute('d')).toMatch(/^M 70 1215 L /)
+        const plan = pmDocToSavePlan(editor.getJSON() as never, parsed.blocks)
+        expect(plan.changedCount).toBe(0)
+        parsed = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+        editor.destroy()
+        f.app.remove()
+      }
+    },
+  )
+
+  it('connects to the last visible fragment of the full marked range', () => {
+    const f = fixture()
+    f.span('1', [box(200, 100, 80, 16)])
+    f.span('1', [box(280, 100, 40, 16), box(100, 116, 70, 16)])
+    syncMarginAnnotations(f.wrap, f.pm, f.comments, 1)
+    expect(f.wrap.querySelector('.comment-leader')!.getAttribute('d')).toMatch(/^M 170 131 L /)
+    expect(f.wrap.querySelector<HTMLElement>('.comment-bubble')!.style.top).toBe('116px')
+    f.app.remove()
+  })
+
+  it('places cards beside their owning page rather than the widest canvas', () => {
+    const f = fixture()
+    f.span('1', [box(200, 100, 80, 16)])
+    const gap = document.createElement('div')
+    gap.className = 'page-gap'
+    gap.style.setProperty('--gap-page-x', '0px')
+    gap.style.setProperty('--gap-page-w', '1200px')
+    gap.getBoundingClientRect = () => box(0, 1000, 1200, 40)
+    f.pm.append(gap)
+    f.span('2', [box(400, 1200, 80, 16)])
+    f.comments.push({ id: '2', author: 'A', text: 'Wide page' })
+    syncMarginAnnotations(f.wrap, f.pm, f.comments, 1, [], undefined, undefined, undefined, {
+      left: 200,
+      width: 800,
+    })
+    const cards = [...f.wrap.querySelectorAll<HTMLElement>('.comment-bubble')]
+    expect(cards.map((c) => c.closest<HTMLElement>('.comment-page')!.style.left)).toEqual([
+      '1014px',
+      '1214px',
+    ])
+    const icons = [...f.wrap.querySelectorAll<HTMLElement>('.comment-balloon')]
+    expect(icons.map((c) => c.style.left)).toEqual(['952px', '1152px'])
+    f.app.remove()
+  })
+
+  it('keeps text coordinates correct when reserving the comment column moves the wrap', () => {
+    const f = fixture()
+    f.wrap.getBoundingClientRect = () =>
+      box(f.wrap.classList.contains('has-markup-area') ? 0 : 100, 0, 1460, 2400)
+    f.pm.getBoundingClientRect = () => box(100, 0, 1200, 2400)
+    f.span('1', [box(200, 100, 80, 16)])
+    syncMarginAnnotations(f.wrap, f.pm, f.comments, 1)
+    expect(f.wrap.querySelector('.comment-leader')!.getAttribute('d')).toMatch(/^M 280 115 L /)
+    f.app.remove()
+  })
+
+  it('anchors cross-paragraph ranges at their end marker rather than start block', () => {
+    const f = fixture()
+    const first = document.createElement('p')
+    first.dataset.idx = '0'
+    first.getClientRects = () => [box(200, 100, 300, 16)] as unknown as DOMRectList
+    const last = document.createElement('p')
+    last.dataset.idx = '1'
+    last.getClientRects = () => [box(100, 1200, 400, 16)] as unknown as DOMRectList
+    f.pm.append(first, last)
+    syncMarginAnnotations(f.wrap, f.pm, f.comments, 1, [
+      { docxIndex: 0, originalXml: '<w:p><w:commentRangeStart w:id="1"/><w:r/></w:p>' },
+      { docxIndex: 1, originalXml: '<w:p><w:r/><w:commentRangeEnd w:id="1"/></w:p>' },
+    ])
+    expect(f.wrap.querySelector<HTMLElement>('.comment-bubble')!.style.top).toBe('1200px')
+    f.app.remove()
+  })
+
+  it('keeps a cross-paragraph endpoint attached while text before and after it changes', () => {
+    const f = fixture()
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docParagraph',
+            attrs: { docxIndex: 0, commentStarts: ['1'] },
+            content: [{ type: 'text', text: 'start' }],
+          },
+          {
+            type: 'docParagraph',
+            attrs: { docxIndex: 1, commentEnds: ['1'], commentEndOffsets: { '1': 6 } },
+            content: [{ type: 'text', text: 'target remaining' }],
+          },
+        ],
+      },
+    })
+    f.pm.replaceWith(editor.view.dom)
+    editor.view.dom.classList.add('doc-page')
+    editor.view.dom.getBoundingClientRect = () => box(0, 0, 1200, 2400)
+    editor.view.coordsAtPos = (pos) => ({
+      left: pos * 10,
+      right: pos * 10,
+      top: 1200,
+      bottom: 1216,
+    })
+    const blocks = [
+      {
+        docxIndex: 0,
+        originalXml: '<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>start</w:t></w:r></w:p>',
+      },
+      {
+        docxIndex: 1,
+        originalXml:
+          '<w:p><w:r><w:t>target</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:t> remaining</w:t></w:r></w:p>',
+      },
+    ]
+    const sync = () =>
+      syncMarginAnnotations(f.wrap, editor.view.dom, f.comments, 1, blocks, editor.view)
+    sync()
+    expect(f.wrap.querySelector('.comment-leader')!.getAttribute('d')).toMatch(/^M 140 1215 L /)
+    editor.view.dispatch(editor.state.tr.insertText('more ', 8))
+    sync()
+    expect(f.wrap.querySelector('.comment-leader')!.getAttribute('d')).toMatch(/^M 190 1215 L /)
+    editor.view.dispatch(editor.state.tr.insertText('after ', 20))
+    sync()
+    expect(f.wrap.querySelector('.comment-leader')!.getAttribute('d')).toMatch(/^M 190 1215 L /)
+    editor.destroy()
+    f.app.remove()
+  })
+})

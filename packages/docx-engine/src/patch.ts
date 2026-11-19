@@ -33,7 +33,7 @@ import {
   injectInkRunsIntoParagraph,
   stripInkRuns,
 } from './ink'
-import { resolveRelationshipTargetPath } from './parse-package'
+import { commentPlainText, resolveRelationshipTargetPath } from './parse-package'
 import { applyRemoveParts, planRemoveParts, type RemovePartsOptions } from './remove-parts'
 import { assertZipWithinLimits, resolveMainDocumentPath, type ParseExtras } from './parse'
 import { cleanupDocxOwnedResources, referencedRelationshipIds } from './resource-cleanup'
@@ -3036,30 +3036,6 @@ function buildCommentsExtendedXml(comments: CommentInfo[]): string {
     ' xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" mc:Ignorable="w15">' +
     `${body}</w15:commentsEx>`
   )
-}
-
-/** Aligned with parseComments' textOf: each w:p's w:t text, '\n' between paragraphs */
-function commentPlainText(commentXml: string): string {
-  const paras: string[] = []
-  // the self-closing form first: the open-to-close alternative would swallow it
-  const pRe = /<w:p(?:\s[^>]*)?\/>|<w:p[\s>][\s\S]*?<\/w:p>/g
-  let p: RegExpExecArray | null
-  while ((p = pRe.exec(commentXml)) !== null) {
-    const texts: string[] = []
-    const tRe = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g
-    let t: RegExpExecArray | null
-    while ((t = tRe.exec(p[0])) !== null) texts.push(t[1])
-    paras.push(
-      texts
-        .join('')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&apos;/g, "'")
-        .replace(/&amp;/g, '&'),
-    )
-  }
-  return paras.join('\n')
 }
 
 /** set or remove <w:documentProtection> at its CT_Settings position */

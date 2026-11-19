@@ -365,7 +365,7 @@ for (const position of ['middle', 'end'] as const) {
       const firstSheet = page.locator('.page-sheet').first()
       await expect(firstSheet).toBeVisible()
       await expect
-        .poll(async () => (await firstSheet.boundingBox())!.width)
+        .poll(async () => (await firstSheet.boundingBox())?.width ?? 0)
         .toBeCloseTo((initialPaperWidth * 8391) / 11906, 0)
       await page.getByRole('button', { name: 'Size', exact: true }).click()
       await page

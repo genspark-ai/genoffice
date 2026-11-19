@@ -35,6 +35,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { appendsAtEnd, touchedTopLevelBlocks } from './touched-blocks'
 import { containsNode, localEditBlocks, touchedNeedsRecompute } from './local-edit'
 import { BalloonMarkersExtension } from './balloon-markers'
+import { CommentEndpointsExtension } from './comment-endpoints'
 import { installProseMirrorPerf } from './prosemirror-perf'
 import type { EditorView } from '@tiptap/pm/view'
 import {
@@ -297,6 +298,11 @@ const anchorAttrs = {
   /** Endpoints of cross-paragraph comment ranges (only one end in this paragraph); written back on paragraph rebuild to avoid orphan marks */
   commentStarts: { default: null as string[] | null },
   commentEnds: { default: null as string[] | null },
+  commentEndOffsets: {
+    default: null as Record<string, number> | null,
+    rendered: false,
+    keepOnSplit: false,
+  },
   align: { default: null as string | null },
   lineSpacing: { default: null as number | null },
   /** Word line-spacing rule (auto/atLeast/exact); null = auto */
@@ -7426,6 +7432,7 @@ export const editorExtensions = [
   InsMark,
   DelMark,
   UndoRedo,
+  CommentEndpointsExtension,
   MultiSelect,
   SearchHighlightExtension,
   FormattingMarksExtension,

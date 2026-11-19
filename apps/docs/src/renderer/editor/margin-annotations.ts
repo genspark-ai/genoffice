@@ -4,8 +4,8 @@
  * pagination remeasure, cleared wholesale).
  *
  * - Comment bubbles: one bubble per open thread in a markup column right of the
- *   paper, top-aligned to its anchor line, stacked downward on overlap, with a
- *   dashed leader from the anchor. Hidden while the Comments panel is open
+ *   paper, arranged within its owning page using compression and scrolling,
+ *   with a dashed leader from the anchor. Hidden while the Comments panel is open
  *   (root `.comments-pane-open`): the pane replaces the margin cards, as in Word. The wrap gains `has-markup-area` +
  *   `--markup-w` so the column takes real width (screenshots/regression capture
  *   the wrap box); percentage-centered wrap overlays are re-centered in CSS.
@@ -24,7 +24,7 @@
  *   thread in the Comments panel.
  */
 import type { CommentInfo } from '@genoffice/docx-engine'
-import { PAGE_TURN_SEL } from './pagination-gaps'
+import { PAGE_TURN_SEL, pageFramesFromGaps } from './pagination-gaps'
 import { pagePaperEdges, pageReaderShadow, type PageCut } from '../pagination-cuts'
 import type { EditorView } from '@tiptap/pm/view'
 import type { Mark as PmMark, Node as PmNode } from '@tiptap/pm/model'
@@ -33,6 +33,8 @@ import { collectRevisions } from './revisions'
 import { absoluteDate, authorInitials, authorInk } from './comment-card'
 import { balloonRevKinds, currentBalloonMode } from './revision-view'
 import { trackChangesOptionsState } from './track-changes-options'
+import { commentEndpoints } from './comment-endpoints'
+import { layoutCommentPage, type PageComment } from './comment-page'
 
 export const MARKUP_AREA_W = 200
 /** Word's comment column: a separate strip right of the markup area (or of the page) */
@@ -79,6 +81,7 @@ export interface MarginHandlers {
   onCommentBalloon?: (id: string) => void
   /** margin card clicked: select that thread */
   onCommentSelect?: (id: string) => void
+  onCommentCollapse?: (id: string) => void
   /** Reply typed into a margin bubble's inline box */
   onCommentReply?: (id: string, text: string) => void
   onCommentResolve?: (id: string, done: boolean) => void
@@ -88,8 +91,15 @@ export interface MarginHandlers {
 
 type BubbleHandlers = Pick<
   MarginHandlers,
-  'onCommentReply' | 'onCommentResolve' | 'onCommentEdit' | 'onCommentDelete'
+  'onCommentReply' | 'onCommentResolve' | 'onCommentEdit' | 'onCommentDelete' | 'onCommentCollapse'
 >
+
+interface CommentEditDraft {
+  value: string
+  from: number
+  to: number
+  focused: boolean
+}
 
 function makeBalloonIcon(c: CommentInfo, on: boolean, onJump: () => void): HTMLElement {
   const btn = document.createElement('button')
@@ -265,6 +275,7 @@ function makeBubble(
   replies: CommentInfo[],
   onJump: () => void,
   h: BubbleHandlers,
+  editDrafts: ReadonlyMap<string | undefined, CommentEditDraft>,
 ): HTMLElement {
   const bubble = document.createElement('div')
   bubble.className = 'comment-bubble'
@@ -280,23 +291,17 @@ function makeBubble(
     const text = document.createElement('div')
     text.className = 'comment-text'
     text.textContent = c.text
-    if (c.image) {
-      // the picture a comment carries (genoffice#2040): shown under its text,
-      // sized by the saved extent like the editor draws body pictures
-      const img = document.createElement('img')
-      img.className = 'comment-image'
-      img.src = `data:${c.image.mime};base64,${c.image.base64}`
-      img.alt = ''
-      text.after(img)
-    }
     const head = makeCommentHead(c)
+    let draft = editDrafts.get(c.id)
     const startEdit = () => {
       if (!h.onCommentEdit || entry.querySelector('textarea')) return
       const box = document.createElement('div')
       box.className = 'comment-reply-compose'
       const ta = document.createElement('textarea')
       ta.className = 'comment-edit-input'
-      ta.value = c.text
+      const restored = draft
+      draft = undefined
+      ta.value = restored?.value ?? c.text
       const row = document.createElement('div')
       row.className = 'comment-compose-actions'
       const cancel = () => {
@@ -328,16 +333,36 @@ function makeBubble(
       row.append(cancelBtn, saveBtn)
       box.append(ta, row)
       text.replaceWith(box)
-      ta.focus()
+      if (!restored) ta.focus({ preventScroll: true })
       ta.setSelectionRange(ta.value.length, ta.value.length)
     }
     const actions = makeCardActions(c, isRoot, replies.length, h, startEdit, flushEdits)
     if (actions) head.appendChild(actions)
     entry.append(head, text)
+    if (c.image) {
+      // the picture a comment carries (genoffice#2040): shown under its text,
+      // sized by the saved extent like the editor draws body pictures
+      const img = document.createElement('img')
+      img.className = 'comment-image'
+      img.src = `data:${c.image.mime};base64,${c.image.base64}`
+      img.alt = ''
+      text.after(img)
+    }
     bubble.appendChild(entry)
+    if (draft) startEdit()
   }
   addEntry(root, true)
   for (const r of replies) addEntry(r, false)
+  const toggle = document.createElement('button')
+  toggle.type = 'button'
+  toggle.className = 'comment-reading-toggle'
+  toggle.hidden = true
+  toggle.addEventListener('click', (event) => {
+    event.stopPropagation()
+    if (bubble.classList.contains('comment-expanded')) h.onCommentCollapse?.(root.id)
+    else onJump()
+  })
+  bubble.appendChild(toggle)
   const onReply = h.onCommentReply
   if (onReply) {
     // Word's margin card: the Reply box is part of the selected card (.active, CSS), posts on Enter
@@ -747,6 +772,7 @@ export function syncMarginAnnotations(
   view?: EditorView,
   handlers?: MarginHandlers,
   cuts?: readonly PageCut[],
+  firstPage?: { left: number; width: number },
 ): void {
   const f = zoomFactor
   const wrapRect = wrap.getBoundingClientRect()
@@ -782,10 +808,12 @@ export function syncMarginAnnotations(
     }
   }
   // one bubble per open top-level thread that has an anchor range in the body
-  const anchorOf = new Map<string, HTMLElement>()
+  const anchorOf = new Map<string, DOMRect>()
   for (const span of pm.querySelectorAll<HTMLElement>('.doc-comment')) {
+    const rect = [...span.getClientRects()].filter((r) => r.height > 0).at(-1)
+    if (!rect) continue
     for (const id of (span.dataset.commentIds ?? '').split(' ')) {
-      if (id && !anchorOf.has(id)) anchorOf.set(id, span)
+      if (id) anchorOf.set(id, rect)
     }
   }
   type Placed = {
@@ -803,8 +831,15 @@ export function syncMarginAnnotations(
     onCommentResolve: handlers?.onCommentResolve,
     onCommentEdit: handlers?.onCommentEdit,
     onCommentDelete: handlers?.onCommentDelete,
+    onCommentCollapse: handlers?.onCommentCollapse,
   }
-  const localThread = (c: CommentInfo, rect: DOMRect, blockAnchor: HTMLElement | null) => {
+  const endpoints = view ? commentEndpoints(view, blocks) : new Map<string, number>()
+  const localThread = (
+    c: CommentInfo,
+    rect: DOMRect,
+    blockAnchor: HTMLElement | null,
+    textAnchor = blockAnchor === null,
+  ) => {
     // block-anchored threads have no .doc-comment span: flash the block itself
     const flash = blockAnchor ? () => flashEls([blockAnchor]) : () => flashAnchors(pm, c.id)
     const top = (rect.top - wrapRect.top) / f
@@ -823,8 +858,8 @@ export function syncMarginAnnotations(
       top,
       // leader start: end of the marked range, or start of the anchor paragraph's
       // first line for range-less comments (bare w:commentReference on an empty run)
-      y: blockAnchor ? top + Math.min(rect.height / f, 16) : (rect.bottom - wrapRect.top) / f - 1,
-      x: ((blockAnchor ? rect.left : rect.right) - wrapRect.left) / f,
+      y: textAnchor ? (rect.bottom - wrapRect.top) / f - 1 : top + Math.min(rect.height / f, 16),
+      x: ((textAnchor ? rect.right : rect.left) - wrapRect.left) / f,
       make: () => {
         const bubble = makeBubble(
           c,
@@ -834,6 +869,7 @@ export function syncMarginAnnotations(
             handlers?.onCommentSelect?.(c.id)
           },
           bubbleHandlers,
+          editDrafts,
         )
         if (flags.focus === c.id) bubble.classList.add('active')
         if (popup) bubble.classList.add('comment-popup')
@@ -843,22 +879,31 @@ export function syncMarginAnnotations(
   }
   for (const c of comments) {
     if (inline || c.parentId || c.done) continue
-    const el = anchorOf.get(c.id)
-    const rect = el ? [...el.getClientRects()].find((r) => r.height > 0) : undefined
+    const endpoint = endpoints.get(c.id)
+    if (endpoint !== undefined && view) {
+      const point = view.coordsAtPos(endpoint, -1)
+      const anchor = view.domAtPos(endpoint, -1).node
+      const el = anchor.nodeType === 1 ? (anchor as HTMLElement) : anchor.parentElement
+      localThread(c, new DOMRect(point.left, point.top, 0, point.bottom - point.top), el, true)
+      continue
+    }
+    const rect = anchorOf.get(c.id)
     if (rect) {
       localThread(c, rect, null)
       continue
     }
-    // no mark in the body: anchor to the block whose XML carries the reference
-    const idRe = new RegExp(
-      `<w:comment(?:Reference|RangeStart)\\b[^>]*w:id="${c.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`,
-    )
-    const block = blocks?.find(
-      (b) => b.docxIndex != null && b.originalXml && idRe.test(b.originalXml),
-    )
+    // Cross-paragraph ranges carry block markers rather than text marks.
+    // The end marker wins even when the reference or start lives elsewhere.
+    const markerBlock = (kind: string) => {
+      const idRe = new RegExp(
+        `<w:comment${kind}\\b[^>]*w:id=["']${c.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`,
+      )
+      return blocks?.find((b) => b.docxIndex != null && b.originalXml && idRe.test(b.originalXml))
+    }
+    const block = markerBlock('RangeEnd') ?? markerBlock('Reference') ?? markerBlock('RangeStart')
     const blockEl =
       block && (pm.querySelector(`[data-idx="${block.docxIndex}"]`) as HTMLElement | null)
-    const blockRect = blockEl && [...blockEl.getClientRects()].find((r) => r.height > 0)
+    const blockRect = blockEl && [...blockEl.getClientRects()].filter((r) => r.height > 0).at(-1)
     if (blockEl && blockRect) localThread(c, blockRect, blockEl)
   }
 
@@ -906,12 +951,39 @@ export function syncMarginAnnotations(
     wrap.appendChild(layer)
   }
   // selecting a card rebuilds this layer: carry a half-typed reply over to the new card
-  const typing = layer.querySelector<HTMLInputElement>('.comment-reply-input:focus')
-  const draft = typing && {
-    id: typing.closest<HTMLElement>('.comment-bubble')?.dataset.commentId,
-    value: typing.value,
-    caret: typing.selectionStart ?? typing.value.length,
-  }
+  const drafts = new Map(
+    [...layer.querySelectorAll<HTMLInputElement>('.comment-reply-input')].map((input) => [
+      input.closest<HTMLElement>('.comment-bubble')?.dataset.commentId,
+      {
+        value: input.value,
+        caret: input.selectionStart ?? input.value.length,
+        focused: document.activeElement === input,
+      },
+    ]),
+  )
+  const editDrafts = new Map(
+    [...layer.querySelectorAll<HTMLTextAreaElement>('.comment-edit-input')].map((input) => [
+      input.closest<HTMLElement>('[data-entry-id]')?.dataset.entryId,
+      {
+        value: input.value,
+        from: input.selectionStart,
+        to: input.selectionEnd,
+        focused: document.activeElement === input,
+      },
+    ]),
+  )
+  const scrollOffsets = new Map(
+    [...layer.querySelectorAll<HTMLElement>('.comment-page')].map((page) => [
+      page.dataset.page,
+      page.scrollTop,
+    ]),
+  )
+  const contentOffsets = new Map(
+    [...layer.querySelectorAll<HTMLElement>('.comment-bubble')].map((bubble) => [
+      bubble.dataset.commentId,
+      bubble.scrollTop,
+    ]),
+  )
   layer.textContent = ''
 
   // Word: revision balloons live in a markup strip glued to the page; comment cards
@@ -930,10 +1002,16 @@ export function syncMarginAnnotations(
   // a left column pads the wrap on the paper's side: the paper just moved, so
   // re-measure it and carry the anchors (measured above) along
   const paperNow = pm.getBoundingClientRect()
-  const shiftX = (paperNow.left - pmRect.left) / f
-  const paperLeft = (paperNow.left - wrapRect.left) / f
-  const paperRight = (paperNow.right - wrapRect.left) / f
+  const wrapNow = wrap.getBoundingClientRect()
+  const shiftX = (paperNow.left - pmRect.left + wrapRect.left - wrapNow.left) / f
+  const paperLeft = (paperNow.left - wrapNow.left) / f
+  const paperRight = (paperNow.right - wrapNow.left) / f
   const bands = pageBandsOf(pm, wrapRect, wrapRect.height / f, f, cuts)
+  const frames = pageFramesFromGaps(wrap, f, firstPage, cuts)
+  const frameAt = (y: number) =>
+    frames.find((frame) => y >= frame.top && y <= frame.bottom) ??
+    frames.find((frame) => y < frame.top) ??
+    frames[frames.length - 1]
   if (revColumn) {
     for (const b of bands) {
       const strip = document.createElement('div')
@@ -962,10 +1040,14 @@ export function syncMarginAnnotations(
 
   // Word's anchor glyphs: one per commented line, stacked inside the right page margin
   let prevIconBottom = -Infinity
+  let iconFrame = frames[0]
   for (const p of icons) {
+    const frame = frameAt(p.top)
+    if (frame !== iconFrame) prevIconBottom = -Infinity
+    iconFrame = frame
     const icon = p.make()
     const top = Math.max(p.top, prevIconBottom + BALLOON_STACK_GAP)
-    icon.style.left = `${paperRight - BALLOON_ICON_X}px`
+    icon.style.left = `${frame.left + frame.width - BALLOON_ICON_X}px`
     icon.style.top = `${top}px`
     layer.appendChild(icon)
     prevIconBottom = top + BALLOON_ICON_W
@@ -974,34 +1056,57 @@ export function syncMarginAnnotations(
   const svg = document.createElementNS(SVG_NS, 'svg')
   svg.setAttribute('class', 'comment-leaders')
   layer.appendChild(svg)
-  // two independent stacks per page band; a revision balloon that cannot start within
-  // its band is dropped (Word routes those to the overflow pane), comments always render
+  // Revisions retain their existing stack; comments are measured together per page.
   const revBubbleW = opts.balloonWidth - BUBBLE_PAD
   const cardW = COMMENT_AREA_W - COMMENT_CARD_PAD
   const revLeft = leftSide ? paperLeft - BUBBLE_ENTRY_X - revBubbleW : paperRight + BUBBLE_ENTRY_X
-  const cardLeft = leftSide
-    ? paperLeft - revW - COMMENT_ENTRY_X - cardW
-    : paperRight + revW + COMMENT_ENTRY_X
   const entryX = leftSide ? paperLeft - BUBBLE_ENTRY_X / 2 : paperRight + BUBBLE_ENTRY_X / 2
   const stacks = {
     rev: { bandIdx: 0, prevBottom: -Infinity },
-    card: { bandIdx: 0, prevBottom: -Infinity },
   }
+  const pages = new Map<
+    (typeof frames)[number],
+    { viewport: HTMLElement; content: HTMLElement; items: PageComment[] }
+  >()
+  let focusAfterLayout: HTMLInputElement | HTMLTextAreaElement | undefined
   for (const p of placed) {
     const isCard = p.sticky
-    const st = isCard ? stacks.card : stacks.rev
+    const st = stacks.rev
     while (st.bandIdx < bands.length - 1 && p.top >= bands[st.bandIdx + 1].top) {
       st.bandIdx++
       st.prevBottom = -Infinity
     }
     const bubble = p.make()
+    const frame = frameAt(p.y)
+    const cardLeft = leftSide
+      ? frame.left - revW - COMMENT_ENTRY_X - cardW
+      : frame.left + frame.width + revW + COMMENT_ENTRY_X
     const left = isCard ? cardLeft : revLeft
     const width = isCard ? cardW : revBubbleW
-    bubble.style.left = `${left}px`
+    bubble.style.left = `${isCard ? 0 : left}px`
     bubble.style.width = `${width}px`
     const top = Math.max(p.top, st.prevBottom + BUBBLE_STACK_GAP, bands[st.bandIdx].top)
     bubble.style.top = `${top}px`
-    layer.appendChild(bubble)
+    if (isCard) {
+      let page = pages.get(frame)
+      if (!page) {
+        const viewport = document.createElement('div')
+        viewport.className = 'comment-page'
+        viewport.dataset.page = String(frames.indexOf(frame))
+        viewport.style.left = `${left}px`
+        viewport.style.top = `${frame.top}px`
+        viewport.style.width = `${width + COMMENT_CARD_PAD / 2}px`
+        viewport.style.height = `${frame.bottom - frame.top}px`
+        const content = document.createElement('div')
+        content.className = 'comment-page-content'
+        content.style.width = `${width}px`
+        viewport.appendChild(content)
+        layer.appendChild(viewport)
+        page = { viewport, content, items: [] }
+        pages.set(frame, page)
+      }
+      page.content.appendChild(bubble)
+    } else layer.appendChild(bubble)
     if (
       !isCard &&
       top + bubble.offsetHeight > bands[st.bandIdx].bottom &&
@@ -1010,23 +1115,89 @@ export function syncMarginAnnotations(
       bubble.remove()
       continue
     }
-    st.prevBottom = top + bubble.offsetHeight
+    if (!isCard) st.prevBottom = top + bubble.offsetHeight
     const edge = leftSide ? left + width : left
     const path = document.createElementNS(SVG_NS, 'path')
-    // a card's leader runs from its anchor glyph, not across the markup strip
-    const d = isCard
-      ? `M ${leftSide ? paperLeft + BALLOON_ICON_X : paperRight - BALLOON_ICON_X + BALLOON_ICON_W} ${p.top + BALLOON_ICON_W / 2} L ${edge} ${top + 9}`
-      : `M ${p.x + shiftX} ${p.y} L ${entryX} ${p.y} L ${edge} ${top + 9}`
+    const leaderEntry = isCard
+      ? leftSide
+        ? frame.left - BUBBLE_ENTRY_X / 2
+        : frame.left + frame.width + BUBBLE_ENTRY_X / 2
+      : entryX
+    const d = `M ${p.x + shiftX} ${p.y} L ${leaderEntry} ${p.y} L ${edge} ${top + 9}`
     path.setAttribute('d', d)
-    if (isCard) path.setAttribute('class', 'comment-leader')
+    if (isCard) {
+      path.setAttribute('class', 'comment-leader')
+      path.dataset.commentId = bubble.dataset.commentId
+      const clipId = `comment-page-clip-${frames.indexOf(frame)}`
+      path.setAttribute('clip-path', `url(#${clipId})`)
+      const page = pages.get(frame)!
+      if (page.items.length === 0) {
+        const clip = document.createElementNS(SVG_NS, 'clipPath')
+        clip.id = clipId
+        const rect = document.createElementNS(SVG_NS, 'rect')
+        rect.setAttribute('y', String(frame.top))
+        rect.setAttribute('height', String(frame.bottom - frame.top))
+        clip.appendChild(rect)
+        svg.appendChild(clip)
+      }
+      const clipRect = svg.querySelector<SVGRectElement>(`#${clipId} rect`)!
+      const oldLeft = Number(clipRect.getAttribute('x'))
+      const oldRight = oldLeft + Number(clipRect.getAttribute('width'))
+      const clipLeft = Math.min(oldLeft, p.x + shiftX, leaderEntry, left)
+      const clipRight = Math.max(
+        oldRight,
+        wrapNow.width / f,
+        p.x + shiftX,
+        leaderEntry,
+        left + width,
+      )
+      clipRect.setAttribute('x', String(clipLeft))
+      clipRect.setAttribute('width', String(clipRight - clipLeft))
+      page.items.push({
+        bubble,
+        desiredTop: p.top - frame.top,
+        drawLeader: (cardTop) =>
+          path.setAttribute(
+            'd',
+            `M ${p.x + shiftX} ${p.y} L ${leaderEntry} ${p.y} L ${edge} ${frame.top + cardTop + 9}`,
+          ),
+      })
+    }
     svg.appendChild(path)
-    if (draft && draft.id === bubble.dataset.commentId) {
+    const draft = drafts.get(bubble.dataset.commentId)
+    if (draft) {
       const input = bubble.querySelector<HTMLInputElement>('.comment-reply-input')
       if (input) {
         input.value = draft.value
-        input.focus()
+        if (draft.focused) focusAfterLayout = input
         input.setSelectionRange(draft.caret, draft.caret)
       }
     }
+    for (const input of bubble.querySelectorAll<HTMLTextAreaElement>('.comment-edit-input')) {
+      const edit = editDrafts.get(input.closest<HTMLElement>('[data-entry-id]')?.dataset.entryId)
+      if (!edit) continue
+      if (edit.focused) focusAfterLayout = input
+      input.setSelectionRange(edit.from, edit.to)
+    }
   }
+  for (const [frame, page] of pages) {
+    const layout = (scrollTop?: number) => {
+      layoutCommentPage(
+        page.viewport,
+        page.content,
+        page.items,
+        frame.bottom - frame.top,
+        BUBBLE_STACK_GAP,
+        scrollTop,
+      )
+    }
+    layout(scrollOffsets.get(page.viewport.dataset.page) ?? 0)
+    for (const { bubble } of page.items)
+      bubble.scrollTop = contentOffsets.get(bubble.dataset.commentId) ?? 0
+    for (const image of page.content.querySelectorAll<HTMLImageElement>('.comment-image')) {
+      if (!image.complete) image.addEventListener('load', () => layout(), { once: true })
+    }
+    page.viewport.dispatchEvent(new Event('scroll'))
+  }
+  focusAfterLayout?.focus({ preventScroll: true })
 }
