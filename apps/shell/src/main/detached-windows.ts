@@ -165,6 +165,30 @@ export function detachedWindowForWebContents(wcId: number): BrowserWindow | unde
   return rec && !rec.window.isDestroyed() ? rec.window : undefined
 }
 
+export function detachedWindowsOf(kind: TabKind): BrowserWindow[] {
+  const out: BrowserWindow[] = []
+  for (const rec of detached.values())
+    if (rec.kind === kind && !rec.released && !rec.window.isDestroyed()) out.push(rec.window)
+  return out
+}
+
+/** takes the documents out of every detached window of a kind, closing the windows, for the shell to make tabs of */
+export function releaseDetachedOf(kind: TabKind): DetachedTab[] {
+  const out: DetachedTab[] = []
+  for (const rec of [...detached.values()]) {
+    if (rec.kind !== kind || rec.released || rec.window.isDestroyed() || torn?.rec === rec) continue
+    out.push(releaseDetached(rec))
+  }
+  return out
+}
+
+let dockingHeldUntil = 0
+
+/** a window moved by the app must not dock when it lands under the pointer */
+export function holdDocking(ms = 1500): void {
+  dockingHeldUntil = Date.now() + ms
+}
+
 /** editor kind of the focused detached window, if a detached window has focus */
 export function focusedDetachedKind(): TabKind | undefined {
   return focusedDetachedTab()?.kind
@@ -371,7 +395,7 @@ function dockDetachedWindow(rec: DetachedRecord): void {
  * outside → clear both.
  */
 function trackDockHover(rec: DetachedRecord): void {
-  if (rec.released || !dockHost) return
+  if (rec.released || !dockHost || Date.now() < dockingHeldUntil) return
   const band = dockHost.band()
   const cursor = screen.getCursorScreenPoint()
   if (!band || !pointInRect(cursor.x, cursor.y, band)) {
@@ -539,26 +563,41 @@ export function createDetachedEditorWindow(options: {
   // a second close event while the prompt is open must not re-enter the
   // prompt (the same double-trigger the main window guards against)
   let promptInFlight = false
+  let holdingQuit = false
   const vetoQuit = (): void => {
     resetSheetsShuttingDown()
     shellQuitTracker().reset()
   }
   win.on('close', (event) => {
     if (closeConfirmed || rec.released) return
+    const quitTracker = shellQuitTracker()
+    // cancelling the close also cancels an in-flight app.quit(): the quit is
+    // held here and issued again once this window may close, or the app is
+    // left running with no window (macOS)
     event.preventDefault()
+    if (quitTracker.quitting() && !holdingQuit) {
+      holdingQuit = true
+      quitTracker.hold()
+    }
     if (promptInFlight) return
     promptInFlight = true
     void (async () => {
       try {
         // a denied close vetoes any quit that was in flight: the sheets close
         // guard must prompt again on later closes instead of silently proceeding
-        if (await confirmDetachedClose(rec)) tearDown()
-        else vetoQuit()
+        if (await confirmDetachedClose(rec)) {
+          tearDown()
+          if (quitTracker.quitting()) quitTracker.quit()
+        } else vetoQuit()
       } catch (err) {
         console.error('[shell] detached window close prompt failed:', err)
         vetoQuit()
       } finally {
         promptInFlight = false
+        if (holdingQuit) {
+          holdingQuit = false
+          quitTracker.release()
+        }
       }
     })()
   })

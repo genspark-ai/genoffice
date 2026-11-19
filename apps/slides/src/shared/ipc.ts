@@ -1810,6 +1810,8 @@ export interface SlidesApi {
   aiGskStatus: (withEmail?: boolean) => Promise<GenSparkAccountStatus>
   /** Open the browser to log into Genspark (fire-and-forget; aiGskStatus turns logged-in once done) */
   aiGskLogin: () => Promise<void>
+  /** A browser-approved Genspark login landed (whichever surface started it) */
+  onGskLoginLanded: (handler: () => void) => () => void
   /** Record a run that ended without a usable reply, for post-mortem (fire-and-forget, never throws) */
   aiLogRunFailure: (entry: AiRunFailure) => Promise<void>
   webSearch: (

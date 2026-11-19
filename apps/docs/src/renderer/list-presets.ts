@@ -209,6 +209,82 @@ export function previewLevelText(levels: CustomNumberingLevel[], ilvl: number): 
 
 export type ListPresetKind = 'bullets' | 'numbers' | 'multi'
 
+const LIBRARY_DEFAULTS: Record<ListPresetKind, CustomNumberingLevel[][]> = {
+  bullets: BULLET_LIBRARY.map((glyph) => bulletPresetLevels(glyph)),
+  numbers: NUMBER_LIBRARY.map(({ numFmt, pattern }) => numberPresetLevels(numFmt, pattern)),
+  multi: MULTILEVEL_LIBRARY,
+}
+
+const LIBRARY_KEY: Record<ListPresetKind, string> = {
+  bullets: 'aidocs.list.library.bullets',
+  numbers: 'aidocs.list.library.numbers',
+  multi: 'aidocs.list.library.multi',
+}
+
+/** the library cards Customize has changed, by card position */
+function libraryOverrides(kind: ListPresetKind): Record<string, CustomNumberingLevel[]> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(LIBRARY_KEY[kind]) ?? '{}')
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        ([index, levels]) =>
+          LIBRARY_DEFAULTS[kind][Number(index)] && Array.isArray(levels) && levels.length > 0,
+      ),
+    ) as Record<string, CustomNumberingLevel[]>
+  } catch {
+    return {}
+  }
+}
+
+function storeLibraryOverrides(
+  kind: ListPresetKind,
+  overrides: Record<string, CustomNumberingLevel[]>,
+): void {
+  try {
+    if (Object.keys(overrides).length === 0) localStorage.removeItem(LIBRARY_KEY[kind])
+    else localStorage.setItem(LIBRARY_KEY[kind], JSON.stringify(overrides))
+  } catch {
+    /* storage full or disabled: the card keeps its built-in look */
+  }
+}
+
+/** A tab's library as the galleries show it: the built-in cards, each as Customize last left it */
+export function listLibrary(kind: ListPresetKind): CustomNumberingLevel[][] {
+  const overrides = libraryOverrides(kind)
+  return LIBRARY_DEFAULTS[kind].map((levels, i) => overrides[i] ?? levels)
+}
+
+export function libraryCardCustomized(kind: ListPresetKind, index: number): boolean {
+  return libraryOverrides(kind)[index] !== undefined
+}
+
+/** a start of 1 is what a level without one counts from */
+const levelsKey = (levels: CustomNumberingLevel[]): string =>
+  JSON.stringify(levels, (key, value: unknown) =>
+    key === 'start' && value === 1 ? undefined : value,
+  )
+
+/** Customize on a card: the card becomes these levels; the built-in definition again drops the override */
+export function customizeLibraryCard(
+  kind: ListPresetKind,
+  index: number,
+  levels: CustomNumberingLevel[],
+): void {
+  const builtIn = LIBRARY_DEFAULTS[kind][index]
+  if (!builtIn) return
+  const overrides = libraryOverrides(kind)
+  if (levelsKey(levels) === levelsKey(builtIn)) delete overrides[index]
+  else overrides[index] = levels
+  storeLibraryOverrides(kind, overrides)
+}
+
+export function resetLibraryCard(kind: ListPresetKind, index: number): void {
+  const overrides = libraryOverrides(kind)
+  delete overrides[index]
+  storeLibraryOverrides(kind, overrides)
+}
+
 const RECENT_KEY: Record<ListPresetKind, string> = {
   bullets: 'aidocs.list.recent.bullets',
   numbers: 'aidocs.list.recent.numbers',

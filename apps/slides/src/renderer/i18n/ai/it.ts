@@ -18,6 +18,7 @@ export const it = {
   aiQcStopped: 'Controllo del layout interrotto',
   aiQcCapped: 'Altre {count} pagina/e non controllate (limite per esecuzione)',
   aiGskLoginBtn: 'Accedi a Genspark',
+  aiGskLoginOk: 'Accesso a Genspark effettuato',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: "Apri l'assistente IA",
   aiFactCheckBtn: 'Fact-check IA',

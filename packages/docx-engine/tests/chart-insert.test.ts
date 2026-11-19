@@ -81,6 +81,42 @@ describe('saveDocx kind:chart', () => {
     expect(chartBlock?.chartDisplay?.series[1].values).toEqual([70, null, 110])
   })
 
+  it('a scatter chart keeps its x values as numbers in the embedded workbook', async () => {
+    const source = await buildDocx({ bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>' })
+    const parsed = await parseDocx(source)
+    const saved = await saveDocx(parsed, [
+      { kind: 'original', docxIndex: 0 },
+      { kind: 'chart', chart: { ...SPEC, kind: 'scatter', categories: ['1.5', '3', 'n/a'] } },
+    ])
+    const zip = await JSZip.loadAsync(saved)
+    const workbook = Object.keys(zip.files).find((name) =>
+      /^word\/charts\/embeddings\/.*\.xlsx$/.test(name),
+    )!
+    const xlsx = await JSZip.loadAsync(await zip.file(workbook)!.async('uint8array'))
+    const sheet = await xlsx.file('xl/worksheets/sheet1.xml')!.async('string')
+    // column A is what the chart part's c:xVal points at: numbers, a non-number by its position
+    expect(sheet).toMatch(/<c r="A2"[^>]*><v>1\.5<\/v><\/c>/)
+    expect(sheet).toMatch(/<c r="A3"[^>]*><v>3<\/v><\/c>/)
+    expect(sheet).toMatch(/<c r="A4"[^>]*><v>3<\/v><\/c>/)
+    expect(sheet).not.toMatch(/<c r="A[234]"[^>]*t="s"/)
+    // every other chart type keeps its category names there
+    const bar = await JSZip.loadAsync(
+      await saveDocx(parsed, [
+        { kind: 'original', docxIndex: 0 },
+        { kind: 'chart', chart: SPEC },
+      ]),
+    )
+    const barBook = Object.keys(bar.files).find((name) =>
+      /^word\/charts\/embeddings\/.*\.xlsx$/.test(name),
+    )!
+    const barSheet = await (
+      await JSZip.loadAsync(await bar.file(barBook)!.async('uint8array'))
+    )
+      .file('xl/worksheets/sheet1.xml')!
+      .async('string')
+    expect(barSheet).toMatch(/<c r="A2"[^>]*t="s"/)
+  })
+
   it('allocates distinct part names for multiple charts in one save', async () => {
     const source = await buildDocx({ bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>' })
     const parsed = await parseDocx(source)

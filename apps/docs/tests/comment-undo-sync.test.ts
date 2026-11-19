@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 /**
  * Comment metadata undo-sync: deleting a comment removes the mark (PM doc)
  * AND the metadata card (React state outside the document). Undo reverts the
@@ -225,5 +227,34 @@ describe('comment metadata undo-sync', () => {
 
     // doc A's card never comes back
     expect(store.some((c) => c.text === 'doc A card')).toBe(false)
+  })
+
+  it('a save that keeps the undo history keeps the parked card for the undo', async () => {
+    resetCommentUndoStore()
+    const hook = stubEditor(docWithMarkedText('hello world', '5'))
+    let store: CommentInfo[] = [entryOf('5', 'deleted before the save')]
+    attachCommentUndoSync(
+      hook.editor,
+      () => store,
+      (entries) => {
+        store = entries
+      },
+    )
+    hook.removeMark()
+
+    // the equal-doc save reload runs the reset without the graveyard clear
+    resetCrossDocEditState({ ...cleanSink(), resetCommentUndoStore }, true)
+    hook.setState(docWithMarkedText('hello world', '5'))
+    hook.fire()
+    await new Promise<void>((resolve) => queueMicrotask(() => resolve()))
+    expect(store.map((c) => c.text)).toEqual(['deleted before the save'])
+  })
+
+  it('the save reload clears the graveyard only when it rewrites the document', () => {
+    const src = readFileSync(join(__dirname, '../src/renderer/file-actions.ts'), 'utf8')
+    const saveOnce = src.indexOf('async function saveOnce(')
+    expect(src.indexOf('resetCrossDocEditState(ctx, unchanged)', saveOnce)).toBeGreaterThan(
+      saveOnce,
+    )
   })
 })

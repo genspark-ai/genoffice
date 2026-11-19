@@ -208,7 +208,7 @@ export interface BlockBox {
    */
   tableRows?: TableRowBox[]
 
-  /** virtual endnotes-area block (appended by appendEndnotesBlock; no DOM/docxIndex) */
+  /** endnotes: the virtual end-of-document area (appendEndnotesBlock; no DOM/docxIndex), or one row at a section's end */
   isEndnotes?: boolean
 
   /** virtual trailing block reserving pages for overflowing floating boxes (appendFloatSpillBlock) */
@@ -594,8 +594,12 @@ export interface ColumnBlockPlacement {
   charSpacePt?: number
   /** single-byte half of charSpacePt under balanceSingleByteDoubleByteWidth */
   charSpaceSbPt?: number
+  /** owning section's character-cell pitch (pt, snapToChars) */
+  charCellPt?: number
   dx: number
   dy: number
+  /** the part of dx owed to w:mirrorIndents: the export sheets, which place pages themselves, apply it alone */
+  mirrorDx?: number
   /** left edge of the block's page on the shared paper (--page-cx): pages narrower
    *  than the paper are centered; separate from dx so page-relative anchors can
    *  undo the column shift alone */
@@ -659,8 +663,13 @@ export interface FloatBox {
 }
 
 /** Page-bottom footnote entry (number/text/estimated height): shared by canvas page gaps and the pagination preview */
+/** class of an endnote row drawn in the flow at a section's end (editor/section-endnotes.ts) */
+export const SECT_NOTE_CLASS = 'page-sect-note'
+
 export interface PageNoteItem {
   no: number
+  /** w:numFmt of the note's section; absent = the kind's document format */
+  fmt?: string
   id: string
   text: string
   /** note body has no self-reference mark run: Word draws the entry without a numeral */

@@ -2,6 +2,7 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { htmlDir, htmlLang, type Lang } from '@genoffice/i18n'
 import { App } from './App'
+import { installKeyLayer } from './key-layer'
 import { setAuthorName } from './author-name'
 import { LocaleProvider, setModuleLang } from './i18n/locale'
 import type { DocTheme, UiTheme } from '../shared/ipc'
@@ -25,6 +26,7 @@ import { connectAppWideMeasurementUnit } from './units'
 import { setAltChunkHtmlConverter } from '@genoffice/docx-engine'
 
 installScreenTips()
+installKeyLayer()
 if (window.desktop?.convertAltChunkHtml) {
   setAltChunkHtmlConverter((html) => window.desktop.convertAltChunkHtml(html))
 }

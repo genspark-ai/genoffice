@@ -2,9 +2,16 @@ import { parseChartPartXml, type ChartDisplay } from '@genoffice/docx-engine'
 import { describe, expect, it } from 'vitest'
 import {
   CHART_TITLE_ROW_PX,
+  chartexSlotLabels,
   chartTitleRowPx,
   drawChartSvg,
+  histogramBins,
+  paretoOrder,
+  quantile,
   renderChartSpec,
+  surfaceBandOf,
+  surfaceBands,
+  treemapCells,
 } from '../src/renderer/editor/protected-render'
 
 function draw(chart: ChartDisplay): HTMLElement {
@@ -545,4 +552,236 @@ describe('chart drawing with a huge declared point count', () => {
       expect(dom.querySelector('svg')).not.toBeNull()
     })
   }
+
+  it('a stock chart draws a high-low line per category with a tick at the close, and no series line', () => {
+    const dom = draw({
+      partPath: 'word/charts/chart1.xml',
+      kind: 'stock',
+      categories: ['Mon', 'Tue'],
+      series: [
+        { name: 'High', values: [55, 57] },
+        { name: 'Low', values: [11, null] },
+        { name: 'Close', values: [32, 35] },
+      ],
+    })
+    const stroke = '#404040'
+    const lines = [...dom.querySelectorAll(`line[stroke="${stroke}"]`)]
+    const vertical = lines.filter((l) => l.getAttribute('x1') === l.getAttribute('x2'))
+    const ticks = lines.filter((l) => l.getAttribute('y1') === l.getAttribute('y2'))
+    expect(vertical).toHaveLength(2)
+    expect(ticks).toHaveLength(2)
+    // Monday runs from the high down to the low; the close sits between them, to the right
+    const [mon] = vertical
+    const top = Number(mon.getAttribute('y1'))
+    const bottom = Number(mon.getAttribute('y2'))
+    expect(top).toBeLessThan(bottom)
+    const close = ticks[0]
+    expect(Number(close.getAttribute('y1'))).toBeGreaterThan(top)
+    expect(Number(close.getAttribute('y1'))).toBeLessThan(bottom)
+    expect(Number(close.getAttribute('x2'))).toBeGreaterThan(Number(mon.getAttribute('x1')))
+    expect(dom.querySelectorAll('polyline, path')).toHaveLength(0)
+    // the legend keys are the colour the lines are drawn in, not the palette's
+    const keys = [...dom.querySelectorAll('rect')].map((r) => r.getAttribute('fill'))
+    expect(keys.length).toBeGreaterThanOrEqual(3)
+    expect(new Set(keys)).toEqual(new Set([stroke]))
+  })
+
+  it('a four-series stock chart adds the open, to the left', () => {
+    const dom = draw({
+      partPath: 'word/charts/chart1.xml',
+      kind: 'stock',
+      categories: ['Mon'],
+      series: [
+        { name: 'Open', values: [20] },
+        { name: 'High', values: [55] },
+        { name: 'Low', values: [11] },
+        { name: 'Close', values: [32] },
+      ],
+    })
+    const lines = [...dom.querySelectorAll('line[stroke="#404040"]')]
+    const [bar] = lines.filter((l) => l.getAttribute('x1') === l.getAttribute('x2'))
+    const ticks = lines.filter((l) => l.getAttribute('y1') === l.getAttribute('y2'))
+    expect(ticks).toHaveLength(2)
+    const x = Number(bar.getAttribute('x1'))
+    expect(ticks.some((t) => Number(t.getAttribute('x1')) < x)).toBe(true)
+    expect(ticks.some((t) => Number(t.getAttribute('x2')) > x)).toBe(true)
+  })
+
+  it('a surface draws one cell per point in the colour of its value band, keyed by the bands', () => {
+    const chart: ChartDisplay = {
+      partPath: 'word/charts/chart1.xml',
+      kind: 'surface',
+      categories: ['A', 'B', 'C'],
+      series: [
+        { name: 'Front', values: [0, 10, 20] },
+        { name: 'Back', values: [20, null, 49] },
+      ],
+    }
+    const bands = surfaceBands(chart)
+    expect(bands.labels).toEqual(['0-10', '10-20', '20-30', '30-40', '40-50'])
+    expect([0, 9.9, 10, 20, 49, 50].map((v) => surfaceBandOf(bands, v))).toEqual([0, 0, 1, 2, 4, 4])
+    const dom = draw(chart)
+    const cells = [...dom.querySelectorAll('rect.doc-chart-surface')]
+    expect(cells).toHaveLength(5)
+    // the same band is the same colour, a different band a different one
+    const fills = cells.map((c) => c.getAttribute('fill'))
+    expect(fills[2]).toBe(fills[3])
+    expect(new Set(fills).size).toBe(4)
+    // the first series is the front row: below the second
+    expect(Number(cells[0].getAttribute('y'))).toBeGreaterThan(Number(cells[3].getAttribute('y')))
+    const text = dom.textContent ?? ''
+    for (const label of ['Front', 'Back', 'A', 'C', '0-10', '40-50']) expect(text).toContain(label)
+  })
+
+  describe('charts of the 2014 extension', () => {
+    const one = (layout: NonNullable<ChartDisplay['layout']>, values: (number | null)[]) =>
+      draw({
+        partPath: 'word/charts/chartEx1.xml',
+        kind: layout === 'treemap' || layout === 'sunburst' ? 'pie' : 'bar',
+        layout,
+        categories: values.map((_, i) => `C${i + 1}`),
+        series: [{ name: 'S', values }],
+      })
+    const num = (el: Element, attr: string) => Number(el.getAttribute(attr))
+
+    it('a waterfall steps from the running total: up, then down from where it got to', () => {
+      const steps = [...one('waterfall', [100, -40, 60]).querySelectorAll('.doc-chartex-step')]
+      expect(steps).toHaveLength(3)
+      const [up, down, again] = steps
+      // the fall starts at the top of the rise, and the next rise at the bottom of the fall
+      expect(num(down, 'y')).toBeCloseTo(num(up, 'y'), 3)
+      expect(num(again, 'y') + num(again, 'height')).toBeCloseTo(
+        num(down, 'y') + num(down, 'height'),
+        3,
+      )
+      expect(down.getAttribute('fill')).not.toBe(up.getAttribute('fill'))
+      expect(again.getAttribute('fill')).toBe(up.getAttribute('fill'))
+    })
+
+    it('a funnel centres a bar per category, as wide as its value is to the largest', () => {
+      const stages = [...one('funnel', [200, 100, 50]).querySelectorAll('.doc-chartex-stage')]
+      expect(stages).toHaveLength(3)
+      expect(num(stages[1], 'width')).toBeCloseTo(num(stages[0], 'width') / 2, 3)
+      const centre = (el: Element) => num(el, 'x') + num(el, 'width') / 2
+      expect(centre(stages[2])).toBeCloseTo(centre(stages[0]), 3)
+    })
+
+    it('a treemap fills its box with areas in proportion to the values', () => {
+      const box = { x: 0, y: 0, w: 200, h: 100 }
+      const cells = treemapCells([60, null, 30, 10, 0], box)
+      expect(cells.map((c) => c.i)).toEqual([0, 2, 3])
+      const area = (c: { w: number; h: number }) => c.w * c.h
+      expect(area(cells[0])).toBeCloseTo(12000, 3)
+      expect(area(cells[1])).toBeCloseTo(6000, 3)
+      expect(area(cells[2])).toBeCloseTo(2000, 3)
+      expect(one('treemap', [60, 30, 10]).querySelectorAll('.doc-chartex-cell')).toHaveLength(3)
+    })
+
+    it('a sunburst is a ring of its categories', () => {
+      const dom = one('sunburst', [5, 3, 2])
+      expect(dom.querySelectorAll('path').length).toBeGreaterThanOrEqual(3)
+      expect(dom.querySelectorAll('.doc-chartex-cell, .doc-chartex-step')).toHaveLength(0)
+    })
+
+    it('a box and whisker boxes the middle half of each series', () => {
+      // Excel's exclusive quartile: the rank is (n + 1) * q
+      expect(quantile([1, 2, 3, 4, 5], 0.5)).toBe(3)
+      expect(quantile([1, 2, 3, 4, 5], 0.25)).toBe(1.5)
+      expect(quantile([1, 2, 3, 4], 0.25)).toBe(1.25)
+      expect(quantile([1, 2, 3, 4], 0.75)).toBe(3.75)
+      // a rank past either end stays on the end value
+      expect(quantile([2, 9], 0.25)).toBe(2)
+      expect(quantile([2, 9], 0.75)).toBe(9)
+      const dom = draw({
+        partPath: 'word/charts/chartEx1.xml',
+        kind: 'bar',
+        layout: 'boxWhisker',
+        categories: ['a', 'b', 'c', 'd', 'e'],
+        series: [
+          { name: 'North', values: [1, 2, 3, 4, 5] },
+          { name: 'South', values: [10, null, 12, 14, 20] },
+        ],
+      })
+      expect(dom.querySelectorAll('.doc-chartex-box')).toHaveLength(2)
+      expect(dom.textContent).toContain('North')
+      expect(dom.textContent).toContain('South')
+      // data near zero keeps zero on the axis; data far from it does not squeeze into a sliver
+      const axisLabels = (values: number[]) =>
+        [
+          ...draw({
+            partPath: 'word/charts/chartEx1.xml',
+            kind: 'bar',
+            layout: 'boxWhisker',
+            categories: values.map(String),
+            series: [{ name: 'S', values }],
+          }).querySelectorAll('.doc-chart-axis-label'),
+        ]
+          .map((l) => Number((l.textContent ?? '').replace(/,/g, '')))
+          .filter((n) => Number.isFinite(n))
+      expect(axisLabels([1, 2, 3, 4, 5])).toContain(0)
+      const far = axisLabels([1000, 1010, 1020, 1030])
+      expect(far.length).toBeGreaterThan(2)
+      expect(far).not.toContain(0)
+      expect(Math.min(...far)).toBeGreaterThanOrEqual(900)
+    })
+
+    it('a histogram counts the values into bins of equal width', () => {
+      const bins = histogramBins([1, 1, 2, 2, 2, 3, 9])
+      expect(bins.reduce((acc, b) => acc + b.count, 0)).toBe(7)
+      expect(bins[0].from).toBe(1)
+      expect(bins[bins.length - 1].to).toBe(9)
+      // the top value lands in the last bin, not past it
+      expect(bins[bins.length - 1].count).toBeGreaterThanOrEqual(1)
+      expect(histogramBins([4, 4, 4])).toEqual([{ from: 4, to: 5, count: 3 }])
+      expect(histogramBins([])).toEqual([])
+      const dom = one('histogram', [1, 1, 2, 2, 2, 3, 9])
+      expect(dom.querySelectorAll('.doc-chartex-bin')).toHaveLength(bins.length)
+    })
+
+    it('the plot keeps its height however many samples a histogram or a box and whisker holds', () => {
+      const samples = Array.from({ length: 60 }, (_, i) => 10 + (i % 17))
+      const chart = (layout: 'histogram' | 'boxWhisker'): ChartDisplay => ({
+        partPath: 'word/charts/chartEx1.xml',
+        kind: 'bar',
+        layout,
+        // one category per sample, as the part holds them
+        categories: samples.map((_, i) => `Sample number ${i + 1}`),
+        series: [{ name: 'S', values: samples }],
+      })
+      // what is drawn under the plot is the bins and the series, not the samples
+      expect(chartexSlotLabels(chart('histogram'), 'histogram').length).toBeLessThan(20)
+      expect(chartexSlotLabels(chart('boxWhisker'), 'boxWhisker')).toEqual(['S'])
+      const plotHeight = (dom: HTMLElement) => {
+        const grid = [...dom.querySelectorAll('.doc-chart-grid')].map((l) =>
+          Number(l.getAttribute('y1')),
+        )
+        return Math.max(...grid) - Math.min(...grid)
+      }
+      const few = draw({
+        ...chart('boxWhisker'),
+        categories: ['a'],
+        series: [{ name: 'S', values: [10, 26] }],
+      })
+      expect(plotHeight(draw(chart('boxWhisker')))).toBeCloseTo(plotHeight(few), 0)
+      expect(plotHeight(draw(chart('histogram')))).toBeGreaterThan(120)
+    })
+
+    it('a Pareto orders the categories by value and draws the share reached by each', () => {
+      expect(paretoOrder([10, 60, null, 30])).toEqual([
+        { i: 1, value: 60, cumulativePct: 60 },
+        { i: 3, value: 30, cumulativePct: 90 },
+        { i: 0, value: 10, cumulativePct: 100 },
+      ])
+      const dom = one('pareto', [10, 60, 30])
+      const bars = [...dom.querySelectorAll('.doc-chartex-bin')]
+      expect(bars).toHaveLength(3)
+      expect(num(bars[0], 'height')).toBeGreaterThan(num(bars[1], 'height'))
+      const line = dom.querySelector('.doc-chartex-cumulative')!
+      expect(line.getAttribute('points')!.split(' ')).toHaveLength(3)
+      // the labels follow the order of the bars
+      const labels = [...dom.querySelectorAll('.doc-chart-axis-label')].map((l) => l.textContent)
+      expect(labels.indexOf('C2')).toBeLessThan(labels.indexOf('C3'))
+      expect(labels.indexOf('C3')).toBeLessThan(labels.indexOf('C1'))
+    })
+  })
 })

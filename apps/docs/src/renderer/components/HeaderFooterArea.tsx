@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   PAGE_MARK,
   SECTION_PAGES_MARK,
@@ -8,6 +8,13 @@ import {
   type Run,
 } from '@genoffice/docx-engine'
 import { useI18n } from '../i18n/locale'
+import { docHyphenationSig, onDocHyphenationChange } from '../editor/hyphenation'
+import {
+  STATIC_HYPH_CLASS,
+  enforceStaticLineRules,
+  hyphenPieces,
+} from '../editor/hyphenation-static'
+import { HyphenatedText } from './HyphenatedText'
 import { spellcheckEnabled } from '../spellcheck-pref'
 import {
   hfCellGeometry,
@@ -175,6 +182,22 @@ export function HeaderFooterArea({
   const editRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const paras = hfParasOf(value, images)
+  const hyphenation = useSyncExternalStore(onDocHyphenationChange, docHyphenationSig)
+  // the consecutive limit and the zone, once the strip is laid out as it now reads
+  useEffect(() => {
+    if (hyphenation && rootRef.current) enforceStaticLineRules(rootRef.current)
+  }, [
+    hyphenation,
+    value,
+    images,
+    pageNo,
+    pageTotal,
+    sectionPages,
+    editing,
+    boxGeom?.pageW,
+    boxGeom?.marginLeft,
+    boxGeom?.marginRight,
+  ])
 
   useEffect(() => {
     if (editRequest != null && !readOnly) setEditing(true)
@@ -230,7 +253,7 @@ export function HeaderFooterArea({
   return (
     <div
       ref={rootRef}
-      className={`page-hf page-hf-${kind}${editing ? ' page-hf-editing' : ''}${hasBoxes ? ' page-hf-has-boxes' : ''}`}
+      className={`page-hf page-hf-${kind}${editing ? ' page-hf-editing' : ''}${hasBoxes ? ' page-hf-has-boxes' : ''}${hyphenation ? ` ${STATIC_HYPH_CLASS}` : ''}`}
       style={{
         ...(tabOver > 0 ? { ['--hf-tab-over' as string]: `${tabOver.toFixed(1)}px` } : {}),
         ...(indOver > 0 ? { ['--hf-ind-over' as string]: `${indOver.toFixed(1)}px` } : {}),
@@ -344,8 +367,10 @@ export function HfContent({
     ...(spacing[i].top ? { marginTop: `${spacing[i].top}px` } : {}),
     ...(spacing[i].bottom ? { marginBottom: `${spacing[i].bottom}px` } : {}),
   })
-  const runSpans = (runs: Run[], imgClass: string) =>
-    runs.map((run, l) => (
+  const runSpans = (runs: Run[], imgClass: string) => {
+    const texts = runs.map((run) => display(run.text))
+    const pieces = hyphenPieces(texts)
+    return runs.map((run, l) => (
       <span key={l} className={runRevClass(run)} style={runStyle(run)}>
         {run.image?.rule && (
           <span
@@ -359,7 +384,7 @@ export function HfContent({
         {run.image && !run.image.rule && (
           <img
             className={imgClass}
-            src={run.image.dataUrl}
+            src={run.image.vectorUrl ?? run.image.dataUrl}
             alt=""
             draggable={false}
             style={{
@@ -368,9 +393,10 @@ export function HfContent({
             }}
           />
         )}
-        {display(run.text)}
+        {pieces && pieces[l].length > 1 ? <HyphenatedText pieces={pieces[l]} /> : texts[l]}
       </span>
     ))
+  }
   const mergeFlags = hfBorderMergeFlags(paras)
   const renderPara = (para: HfParagraph, i: number) =>
     para.cells ? (

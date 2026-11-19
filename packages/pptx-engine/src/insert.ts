@@ -494,6 +494,10 @@ const IMAGE_MIME: Record<string, string> = {
   tiff: 'image/tiff',
 }
 
+export function isSupportedImageExt(ext: string): boolean {
+  return Object.hasOwn(IMAGE_MIME, ext.toLowerCase())
+}
+
 const IMAGE_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
 
 export interface NewPictureOptions {
@@ -532,8 +536,8 @@ export function addImageMediaAndRel(
 ): { rid: string; mediaPath: string } | null {
   const { archive } = opened
   const ext = extRaw.toLowerCase()
-  const mime = IMAGE_MIME[ext]
-  if (!mime) return null
+  if (!isSupportedImageExt(ext)) return null
+  const mime = IMAGE_MIME[ext]!
 
   // 1) media part: identical bytes already in the package (a logo on every
   // slide, a converter re-embedding one scan twice) share the part; otherwise

@@ -59,6 +59,8 @@ function numberPrefix(text: string): { kind: NumberKind; rest: string } | null {
   const token = match[1]
   const rest = text.slice(match[0].length)
   if (/^\d{1,3}$/.test(token)) return { kind: 'arabic', rest }
+  // a lone C, D, L or M is the letter of an A./B./C. outline, not 100/500/50/1000
+  if (/^[CDLM]$/.test(token)) return { kind: 'letter', rest }
   if (isRoman(token)) return { kind: 'roman', rest }
   if (/^[A-Z]$/.test(token)) return { kind: 'letter', rest }
   return null

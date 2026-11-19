@@ -1,10 +1,4 @@
-/**
- * The print subsystem lifted out of App.tsx (#2461's split of the giant
- * renderer components): the dialog's fields, the driver option groups one
- * queue advertises, and the print path itself. App wires the cross-boundary
- * pieces in; PrintDialog.tsx renders the returned object verbatim, so the
- * names here are the names the dialog reads.
- */
+/** The print dialog's fields, the driver option groups a queue advertises, and the print path. */
 import { useRef, useState } from 'react'
 // legacy build: same reasoning as App.tsx — embedded font parsing needs it
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
@@ -17,7 +11,7 @@ import type { PrintDuplex, PrinterInfo, PrinterOption } from '../shared/ipc'
 export const PRINT_SYSTEM_DIALOG = '\u0000system-dialog'
 export const PRINT_DUPLEX_MODES: PrintDuplex[] = ['simplex', 'longEdge', 'shortEdge']
 
-const IS_MAC = navigator.platform.toLowerCase().includes('mac')
+export const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 
 export interface PrintJobInput {
   /** The flushed file on disk; the print re-reads it so the destroyed old doc never matters */
@@ -39,6 +33,7 @@ export function usePrintJob(input: PrintJobInput) {
   const [printInvalid, setPrintInvalid] = useState(false)
   const [printParity, setPrintParity] = useState<PageParity>('all')
   const [printers, setPrinters] = useState<PrinterInfo[]>([])
+  // macOS's print sheet already carries copies/duplex, so it stays the default there
   const [printDevice, setPrintDevice] = useState(IS_MAC ? PRINT_SYSTEM_DIALOG : '')
   const [printCopies, setPrintCopies] = useState(1)
   const [printCollate, setPrintCollate] = useState(true)
@@ -52,6 +47,7 @@ export function usePrintJob(input: PrintJobInput) {
   const driverOptionsRequest = useRef(0)
   const [driverChoices, setDriverChoices] = useState<Record<string, string>>({})
   const [printing, setPrinting] = useState(false)
+  // currentPage only tracks scroll, so it can outlive a page deletion
   const printCurrentPage = Math.max(1, Math.min(currentPage, pageCount))
 
   const openPrintDlg = () => {

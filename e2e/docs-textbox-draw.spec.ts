@@ -51,7 +51,11 @@ test('draw text box inserts a box of the dragged size ready to type', async () =
     }
     await openTextBoxMenu()
     const menu = editor.locator('.rb-textbox-menu')
-    await expect(menu.locator('button')).toHaveText(['Draw Text Box', 'Simple Text Box'])
+    await expect(menu.locator('button')).toHaveText([
+      'Draw Text Box',
+      'Draw Vertical Text Box',
+      'Simple Text Box',
+    ])
     await menu.locator('button', { hasText: 'Draw Text Box' }).click()
     await expect(docPage).toHaveClass(/doc-shape-drawing/)
 

@@ -9,6 +9,7 @@ export const zhTW = {
   aiStarterContinue: '接著現有內容往下寫',
   aiStarterFillTemplate: '找出並填寫文件裡的佔位符',
   aiGskLoginBtn: '登入 Genspark',
+  aiGskLoginOk: '已登入 Genspark',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: '開啟 AI 助手',
   aiSummarizeBtn: 'AI 總結',

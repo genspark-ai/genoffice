@@ -142,6 +142,7 @@ export function StyleDialog({ target, initial, styles, pending, onSubmit, onClos
     ) ||
       Object.values(pending).some(
         (up) =>
+          !up.remove &&
           up.styleId !== target?.styleId &&
           (up.name ?? styles.get(up.styleId)?.name ?? up.styleId).toLowerCase() === lower,
       ))

@@ -9,6 +9,7 @@ export const en = {
   aiStarterContinue: 'Continue writing from where the document leaves off',
   aiStarterFillTemplate: 'Find and fill in the placeholders in this document',
   aiGskLoginBtn: 'Sign in to Genspark',
+  aiGskLoginOk: 'Signed in to Genspark',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'Open AI assistant',
   aiSummarizeBtn: 'AI Summarize',

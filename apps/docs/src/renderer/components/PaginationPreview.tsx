@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type {
   CommentInfo,
   HeaderFooter,
@@ -49,6 +49,7 @@ import { pageMargins } from '../page-margins'
 import { noteSeparatorPx, noteSeparatorRulePx } from '../line-metrics'
 import { cssFontFamily } from '../text-layout/font-rules'
 import { syncPreviewLineNumbers } from '../editor/line-numbers'
+import { syncPreviewColumnRules } from '../editor/column-rules'
 import type { EditorView } from '@tiptap/pm/view'
 import { revWhen, type AnchorBlock } from '../editor/margin-annotations'
 import { pageBorderArtStripStyle, pageBorderStyleOf } from '../editor/pagination-gaps'
@@ -66,6 +67,23 @@ import {
   wordArtSvgMarkup,
 } from '../editor/hf-dom'
 import { HeaderFooterArea } from './HeaderFooterArea'
+import { HyphenatedText } from './HyphenatedText'
+import { docHyphenationSig, onDocHyphenationChange } from '../editor/hyphenation'
+import {
+  STATIC_HYPH_CLASS,
+  enforceStaticLineRules,
+  hyphenPieces,
+} from '../editor/hyphenation-static'
+
+/** a note run's text, cut where the document hyphenates */
+function noteRunContent(para: ReadonlyArray<{ text: string }>, index: number): React.ReactNode {
+  const pieces = hyphenPieces(para.map((run) => run.text))
+  return pieces && pieces[index].length > 1 ? (
+    <HyphenatedText pieces={pieces[index]} />
+  ) : (
+    para[index].text
+  )
+}
 
 import {
   anchoredBoxesOf,
@@ -900,11 +918,20 @@ export function PaginationPreview({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [onClose, suppressEscape])
 
+  const hyphenation = useSyncExternalStore(onDocHyphenationChange, docHyphenationSig)
+  const hyphClass = hyphenation ? [STATIC_HYPH_CLASS] : []
+  // the consecutive limit and the zone in the strips and notes, once the sheets are laid out
+  useEffect(() => {
+    const root = previewScrollEl()
+    if (hyphenation && root) enforceStaticLineRules(root)
+  }, [hyphenation, slices, pageNotes, commentSpots, revSpots])
+
   // line numbers (w:lnNumType) ride the cloned pages: measured after the sheets mount;
   // markup spots rescale the sheets, so they re-measure too
   useEffect(() => {
     const root = previewScrollEl()
     if (root) syncPreviewLineNumbers(root, secs, blockMetaOf)
+    if (root) syncPreviewColumnRules(root, secs)
   }, [secs, blockMetaOf, slices, commentSpots, revSpots])
 
   // probe: where the clone's table lands inside each repeated-header window
@@ -1293,6 +1320,7 @@ export function PaginationPreview({
                       <div
                         key={ri}
                         className="pv-region"
+                        data-pv-region-section={Math.min(region.section, secs.length - 1)}
                         style={{
                           ...(extent !== undefined ? { height: extent } : {}),
                           // RTL section (w:bidi): columns fill right-to-left
@@ -1454,10 +1482,12 @@ export function PaginationPreview({
                       // instead of overprinting the next entry
                       <div
                         key={n.id}
-                        className={['pv-footnote', ...noteRowBox(n).classes].join(' ')}
+                        className={['pv-footnote', ...noteRowBox(n).classes, ...hyphClass].join(
+                          ' ',
+                        )}
                         style={{ minHeight: n.height, ...noteRowBox(n).style }}
                       >
-                        {!n.noRefMark && <sup>{noteMarkText('footnote', n.no)}</sup>}
+                        {!n.noRefMark && <sup>{noteMarkText('footnote', n.no, n.fmt)}</sup>}
                         {n.richParas
                           ? n.richParas.map((para, pi) => (
                               <span key={pi}>
@@ -1488,12 +1518,12 @@ export function PaginationPreview({
                                         run.caps === 'small' ? 'small-caps' : undefined,
                                     }}
                                   >
-                                    {run.text}
+                                    {noteRunContent(para, ri)}
                                   </span>
                                 ))}
                               </span>
                             ))
-                          : n.text}
+                          : noteRunContent([n], 0)}
                       </div>
                     ))}
                   </div>
@@ -1521,7 +1551,9 @@ export function PaginationPreview({
                       {rows.map(({ item: n, height, withSeparator }) => (
                         <div
                           key={n.id}
-                          className={['pv-footnote', ...noteRowBox(n).classes].join(' ')}
+                          className={['pv-footnote', ...noteRowBox(n).classes, ...hyphClass].join(
+                            ' ',
+                          )}
                           style={{ minHeight: height, ...noteRowBox(n).style }}
                         >
                           {withSeparator && (
@@ -1530,7 +1562,7 @@ export function PaginationPreview({
                               style={separatorVars('endnote')}
                             />
                           )}
-                          {!n.noRefMark && <sup>{noteMarkText('endnote', n.no)}</sup>}
+                          {!n.noRefMark && <sup>{noteMarkText('endnote', n.no, n.fmt)}</sup>}
                           {n.richParas
                             ? n.richParas.map((para, pi) => (
                                 <span key={pi}>
@@ -1564,12 +1596,12 @@ export function PaginationPreview({
                                           run.caps === 'small' ? 'small-caps' : undefined,
                                       }}
                                     >
-                                      {run.text}
+                                      {noteRunContent(para, ri)}
                                     </span>
                                   ))}
                                 </span>
                               ))
-                            : n.text}
+                            : noteRunContent([n], 0)}
                         </div>
                       ))}
                     </div>

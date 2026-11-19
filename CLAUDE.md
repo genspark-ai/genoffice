@@ -50,6 +50,23 @@ system mode).
 - `useI18n()`'s `t` is not referentially stable; never put it in a hook
   dependency array. Store the key and translate at render time.
 
+## Docs commands (mandatory)
+
+The Docs menu bar, ribbon and right-click menu run one set of commands, so an
+action behaves the same wherever it is started.
+
+1. **One id per action.** Register it in `apps/docs/src/shared/commands.ts`
+   and give it a handler in `apps/docs/src/renderer/commands/menu-commands.ts`.
+   What the handler needs from the app goes on `CommandHost`.
+2. **Entry points run the command.** A ribbon or right-click control calls
+   `runCommand(id, payload)` (or `<RbCommand cmd="…">`); it does not reach
+   into the editor itself. CI enforces this for new and changed click
+   handlers in `Ribbon.tsx`, `ribbon-*.tsx` and `ContextMenu.tsx`
+   (`tools/check-docs-commands.mjs`).
+3. **Not everything is a command.** Opening a control's own dropdown or dialog
+   is UI state. A handler that is neither takes a
+   `// command-exempt: <why>` comment on one of the three lines above it.
+
 ## UI strings (i18n)
 
 - Large dictionaries are sharded per locale: `i18n/strings-<domain>.ts` is a

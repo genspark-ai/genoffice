@@ -1,4 +1,4 @@
-import { Extension } from '@tiptap/core'
+import { Extension, type Editor } from '@tiptap/core'
 import { isEastAsianChar, isEastAsianLangTag, isHangulChar } from '@genoffice/docx-engine'
 import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
@@ -140,6 +140,8 @@ export interface CjkPunctShrinkStorage {
   legacyLayout: boolean
   /** docDefaults w:lang w:eastAsia: the fallback of the run / paragraph-style chain */
   docEastAsiaLang: string | null
+  /** settings.xml w:strictFirstAndLastChars: Word's Strict kinsoku level */
+  strictKinsoku: boolean
 }
 
 /** dispatched on document after the doc-scoped <style> commits (App) */
@@ -192,6 +194,10 @@ interface MeasuredShrink {
   baseLs: number
   /** the glyph hangs at zero advance (a trailing stop at the margin) */
   hang?: boolean
+  /** w:topLinePunct: an opening bracket that starts a line gives up its blank half */
+  lineStart?: boolean
+  /** the narrower bracket would fit back on the line above: a break in front keeps it where Word has it */
+  pin?: boolean
 }
 
 export interface ShrinkLineChars {
@@ -407,6 +413,9 @@ class CjkPunctShrinkView {
   private lastSig = ''
   private results = new SettledParagraphCache<MeasuredShrink[]>(shiftShrinks, (r) => r.length === 0)
   private seenSigs = new Set<string>()
+  /** per paragraph: the offsets of the line-start brackets trimmed last pass, and of those pinned */
+  private trimmed = new WeakMap<ProseMirrorNode, Set<number>>()
+  private pinned = new WeakMap<ProseMirrorNode, Set<number>>()
   private frozen = false
   private retryRaf = 0
   private retries = 0
@@ -452,6 +461,8 @@ class CjkPunctShrinkView {
   /** layout input changed (resize, fonts, stylesheet): every paragraph re-measures */
   private invalidate() {
     this.results.clear()
+    this.trimmed = new WeakMap()
+    this.pinned = new WeakMap()
     this.restartConvergence()
   }
 
@@ -550,7 +561,9 @@ class CjkPunctShrinkView {
     }
     this.retries = 0
 
-    const sig = JSON.stringify(shrinks.map((s) => [s.from, s.perChar, s.baseLs]))
+    const sig = JSON.stringify(
+      shrinks.map((s) => [s.from, s.perChar, s.baseLs, s.lineStart, s.pin]),
+    )
     if (sig === this.lastSig) return
     if (this.frozen) return
     if (this.seenSigs.has(sig) || this.seenSigs.size >= MEASURE_SIGS_MAX) {
@@ -562,21 +575,79 @@ class CjkPunctShrinkView {
     this.lastSig = sig
 
     if (shrinks.length === 0 && (!old || old === DecorationSet.empty)) return
+    const pins = shrinks
+      .filter((s) => s.pin)
+      .map((s) =>
+        Decoration.widget(s.from, () => document.createElement('br'), {
+          side: -1,
+          key: 'topline-pin',
+        }),
+      )
     const decos = shrinks.map((s) =>
       Decoration.inline(
         s.from,
         s.from + 1,
-        { class: 'doc-cjkshrink', style: shrinkStyle(s.ch, s.perChar, s.baseLs) },
+        {
+          class: 'doc-cjkshrink',
+          // Word probe 2026-11-18: half an em, whatever the alignment or the document's compression
+          style: s.lineStart ? 'margin-left:-0.5em' : shrinkStyle(s.ch, s.perChar, s.baseLs),
+        },
         { hang: s.hang === true },
       ),
     )
     view.dispatch(
-      view.state.tr.setMeta(cjkPunctShrinkPluginKey, decos).setMeta('addToHistory', false),
+      view.state.tr
+        .setMeta(cjkPunctShrinkPluginKey, [...pins, ...decos])
+        .setMeta('addToHistory', false),
     )
   }
 
   /** null = not measurable right now (hidden / not mounted) → retry */
   private measureParagraph(
+    node: ProseMirrorNode,
+    pos: number,
+    el: HTMLElement,
+  ): MeasuredShrink[] | null {
+    // Word probe 2026-11-18: with w:kinsoku off nothing is pulled, hung or compressed
+    const shrinks = node.attrs.kinsoku === false ? [] : this.measureShrinks(node, pos, el)
+    if (shrinks === null || node.attrs.topLinePunct !== true) return shrinks
+    if (el.offsetWidth === 0) return null
+    const starts = this.lineStartOpeners(node, pos)
+    const trimmed = new Set(starts.map((s) => s.from))
+    return [...starts, ...shrinks.filter((s) => !trimmed.has(s.from))]
+  }
+
+  /** the opening brackets that are the first character of a line */
+  private lineStartOpeners(node: ProseMirrorNode, pos: number): MeasuredShrink[] {
+    const { view } = this
+    const out: MeasuredShrink[] = []
+    const was = this.trimmed.get(node)
+    const pins = this.pinned.get(node) ?? new Set<number>()
+    const now = new Set<number>()
+    node.forEach((child, offset) => {
+      if (!child.isText) return
+      const text = child.text ?? ''
+      for (let i = 0; i < text.length; i++) {
+        if (!COMPRESSIBLE_OPEN.has(text[i])) continue
+        const at = pos + 1 + offset + i
+        const first =
+          offset + i === 0 ||
+          view.coordsAtPos(at - 1, 1).bottom <= view.coordsAtPos(at, 1).top + NOISE
+        // trimmed last pass and gone from the line start: half an em narrower, it fitted
+        // back on the line above. Word keeps it on the new line, so it is pinned there
+        if (!first && was?.has(offset + i)) pins.add(offset + i)
+        const pin = pins.has(offset + i)
+        if (!first && !pin) continue
+        now.add(offset + i)
+        out.push({ from: at, ch: text[i], perChar: 0, baseLs: 0, lineStart: true, pin })
+      }
+    })
+    this.trimmed.set(node, now)
+    this.pinned.set(node, pins)
+    return out
+  }
+
+  private measureShrinks(
     node: ProseMirrorNode,
     pos: number,
     el: HTMLElement,
@@ -867,10 +938,88 @@ class CjkPunctShrinkView {
   }
 }
 
+export const kinsokuOffPluginKey = new PluginKey<DecorationSet>('kinsokuOff')
+
+/**
+ * What Word's Strict level adds to the characters that may not start a line
+ * (probe 2026-11-18): small kana, the prolonged sound mark and their halfwidth
+ * forms, in Japanese text only. The line-end set and every other language are
+ * the same as Standard.
+ */
+const STRICT_JA_LINE_START = new Set(
+  '\u3041\u3043\u3045\u3047\u3049\u3063\u3083\u3085\u3087\u308e' +
+    '\u30a1\u30a3\u30a5\u30a7\u30a9\u30c3\u30e3\u30e5\u30e7\u30ee\u30f5\u30f6\u30fc' +
+    '\uff67\uff68\uff69\uff6a\uff6b\uff6c\uff6d\uff6e\uff6f\uff70',
+)
+
+function joiner(): HTMLElement {
+  const span = document.createElement('span')
+  span.className = 'doc-kr-wj'
+  span.textContent = '\u2060'
+  return span
+}
+
+/**
+ * The line-break opportunities that differ from Chromium's own rules.
+ * w:kinsoku off (Word probe 2026-11-18): a closing mark may start a line and an
+ * opening bracket may end one, so the paragraph gets a break opportunity in
+ * front of each closer and behind each opener. The Strict level: Japanese text
+ * gets a joiner in front of each character it adds to the line-start set.
+ */
+function kinsokuBreaks(doc: ProseMirrorNode, storage: CjkPunctShrinkStorage): DecorationSet {
+  const decos: Decoration[] = []
+  const wbr = () => document.createElement('wbr')
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock) return true
+    const off = node.attrs.kinsoku === false
+    if (!off && !storage.strictKinsoku) return false
+    const paraLang = (node.attrs.eaLang as string | null) ?? storage.docEastAsiaLang
+    node.forEach((child, offset) => {
+      if (!child.isText) return
+      const text = child.text ?? ''
+      const lang =
+        (child.marks.find((m) => m.type.name === 'docTextStyle')?.attrs.eaLang as
+          string | null | undefined) ?? paraLang
+      const strict = !off && /^ja\b/i.test(lang ?? '')
+      if (!off && !strict) return
+      for (let i = 0; i < text.length; i++) {
+        const at = pos + 1 + offset + i
+        if (strict) {
+          if (STRICT_JA_LINE_START.has(text[i]) && offset + i > 0)
+            decos.push(Decoration.widget(at, joiner, { side: -1, key: 'kinsoku-strict' }))
+          continue
+        }
+        // Latin punctuation was never under these rules: a break there would split "example.com"
+        if (text.charCodeAt(i) < 0x3000) continue
+        if (forbidsLineStart(text[i]) && offset + i > 0)
+          decos.push(Decoration.widget(at, wbr, { side: -1, key: 'kinsoku-off' }))
+        if (forbidsLineEnd(text[i]))
+          decos.push(Decoration.widget(at + 1, wbr, { side: -1, key: 'kinsoku-off' }))
+      }
+    })
+    return false
+  })
+  return decos.length > 0 ? DecorationSet.create(doc, decos) : DecorationSet.empty
+}
+
+/** Typography > Kinsoku level changed: the page follows at once */
+export function setStrictKinsoku(editor: Editor, strict: boolean): void {
+  editor.storage.cjkPunctShrink.strictKinsoku = strict
+  editor.view.dispatch(
+    editor.state.tr.setMeta(kinsokuOffPluginKey, true).setMeta('addToHistory', false),
+  )
+}
+
 export const CjkPunctShrinkExtension = Extension.create({
   name: 'cjkPunctShrink',
   addStorage(): CjkPunctShrinkStorage {
-    return { enabled: false, hangPunct: false, legacyLayout: false, docEastAsiaLang: null }
+    return {
+      enabled: false,
+      hangPunct: false,
+      legacyLayout: false,
+      docEastAsiaLang: null,
+      strictKinsoku: false,
+    }
   },
   addProseMirrorPlugins() {
     const storage = this.storage as CjkPunctShrinkStorage
@@ -893,6 +1042,19 @@ export const CjkPunctShrinkExtension = Extension.create({
           },
         },
         view: (editorView) => new CjkPunctShrinkView(editorView, storage),
+      }),
+      new Plugin<DecorationSet>({
+        key: kinsokuOffPluginKey,
+        state: {
+          init: (_, state) => kinsokuBreaks(state.doc, storage),
+          apply: (tr, old) =>
+            tr.docChanged || tr.getMeta(kinsokuOffPluginKey) ? kinsokuBreaks(tr.doc, storage) : old,
+        },
+        props: {
+          decorations(state) {
+            return this.getState(state)
+          },
+        },
       }),
     ]
   },
