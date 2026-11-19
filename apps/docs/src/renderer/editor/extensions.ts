@@ -281,6 +281,10 @@ import {
   pageRelVTarget,
   tableFloatInlineLeftCss,
 } from './anchor-geometry'
+
+/** height of one single-spaced line at 8pt and up (Word: 8pt x 1.15 = 12.3px):
+ *  a picture offset by less cannot have a whole line of its paragraph above it */
+const MIN_LINE_ABOVE_PICTURE_PX = 12
 export * from './marks'
 export * from './decoration-extensions'
 
@@ -807,8 +811,14 @@ export const DocInlineImage = Node.create({
         // top; the turned visual (Word's exclusion) starts an inset above it
         margin.top = px(ty)
         // a float excludes its whole margin box: without a shape the lines
-        // above the picture (Word lays them at full width) would shorten too
-        if (ty - qt > 0) styles.push(`shape-outside:inset(${px(ty - qt)} 0 0 0)`)
+        // above the picture (Word lays them at full width) would shorten too.
+        // An offset under one line leaves no line above the picture, and there
+        // the shape does harm: Chromium keeps the float's own first line at
+        // full width once it carries a shape-outside, where Word wraps the
+        // line the picture cuts into (a logo 2px under its anchor line top)
+        if (ty - qt >= MIN_LINE_ABOVE_PICTURE_PX) {
+          styles.push(`shape-outside:inset(${px(ty - qt)} 0 0 0)`)
+        }
         // clampCellImageTops fills --cell-lift once the cell top is measured
         if (ty < 0 && !/layoutInCell="(?:0|false)"/.test(String(node.attrs.xml ?? ''))) {
           margin.top = `calc(${px(ty)} + var(--cell-lift,0px))`

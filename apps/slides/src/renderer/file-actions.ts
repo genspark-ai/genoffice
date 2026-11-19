@@ -4,6 +4,7 @@
  * (Printing lives in components/PrintDialog.tsx — preview + options dialog.)
  */
 import type { RenderSlide } from '@genoffice/pptx-render'
+import { shortFileError } from '@genoffice/ui'
 import type { ExportPdfLink } from '../shared/ipc'
 import { baseName } from '../shared/base-name'
 import { modelSaveAsName } from './file-naming'
@@ -111,7 +112,10 @@ export async function save(getCtx: () => ActionCtx, quiet = false): Promise<bool
       ctx.setStatus(saved)
       if (!quiet) showToast(saved)
     } else {
-      const failed = t('appStatusSaveFailed', { error: r.error ?? t('appErrorCanceled') })
+      console.error('[slides] save failed', r.error)
+      const failed = t('appStatusSaveFailed', {
+        error: shortFileError(r.error ?? t('appErrorCanceled')),
+      })
       ctx.setStatus(failed)
       // quiet suppresses the success toast only — a failed save (incl. the 30s
       // auto-save) must surface, or edits silently stop reaching disk
@@ -173,7 +177,8 @@ export async function saveAsWithName(getCtx: () => ActionCtx, name: string | nul
     } else if (r.error) {
       // a canceled dialog returns ok:false without error — only real write
       // failures surface, matching the docs/sheets save-as feedback
-      const failed = t('appStatusSaveFailed', { error: r.error })
+      console.error('[slides] save failed', r.error)
+      const failed = t('appStatusSaveFailed', { error: shortFileError(r.error) })
       ctx.setStatus(failed)
       showToast(failed, 'error')
     }
