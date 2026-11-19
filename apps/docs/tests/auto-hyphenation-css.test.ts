@@ -24,11 +24,14 @@ function parsedDoc(opts: {
   } as unknown as ParsedDocFull
 }
 
-const AUTO = '.doc-page { hyphens:auto; -webkit-hyphens:auto }'
+const AUTO = '.doc-page { hyphens:auto; -webkit-hyphens:auto; --doc-shy:"\\AD" }'
 
 describe('autoHyphenation CSS', () => {
   it('emits document-wide hyphens:auto for plain autoHyphenation', () => {
-    expect(docStyleCss(parsedDoc({ autoHyphenation: true }))).toContain(AUTO)
+    const css = docStyleCss(parsedDoc({ autoHyphenation: true }))
+    expect(css).toContain(AUTO)
+    // the strips and notes beside the editor root draw our break points too
+    expect(css).toContain('.page-wrap, .pv-page { --doc-shy:"\\AD" }')
   })
 
   it('emits nothing without autoHyphenation', () => {
@@ -101,8 +104,12 @@ describe('autoHyphenation CSS', () => {
         ],
       }),
     )
-    expect(css).toContain('[data-style="NoHyph"] { hyphens:manual;-webkit-hyphens:manual }')
-    expect(css).toContain('[data-style="ReHyph"] { hyphens:auto;-webkit-hyphens:auto }')
+    expect(css).toContain(
+      '[data-style="NoHyph"] { hyphens:manual;-webkit-hyphens:manual;--doc-shy:none }',
+    )
+    expect(css).toContain(
+      '[data-style="ReHyph"] { hyphens:auto;-webkit-hyphens:auto;--doc-shy:"\\AD" }',
+    )
   })
 
   it('style values are inert without autoHyphenation', () => {

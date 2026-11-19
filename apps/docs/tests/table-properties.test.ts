@@ -1,18 +1,24 @@
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
-import { parseDocx } from '@genoffice/docx-engine'
+import { generateTableModelXml, parseDocx, upsertStyleXml } from '@genoffice/docx-engine'
 import { describe, expect, it, vi } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmTableToModel, type PmNode } from '../src/renderer/editor/convert'
+import { measureWidthIn } from '../src/renderer/components/TablePropertiesDialog'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
   applyTablePreset,
   repeatHeaderState,
   setTableAutoFit,
   setTableLookOption,
+  tablePresetStyleXml,
   toggleRepeatHeaderRows,
   updateSelectedTableAttrs,
 } from '../src/renderer/editor/table-properties'
+import {
+  setSelectedColumnPreferredWidth,
+  shareColumnWidths,
+} from '../src/renderer/editor/table-sizing'
 
 const TABLE =
   '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/>' +
@@ -185,26 +191,41 @@ describe('editable table properties', () => {
     editor.destroy()
   })
 
-  it('applies portable built-in shading and border presets', async () => {
+  it("a preset becomes the table's style, with the shading left to the style", async () => {
     const editor = await openTable()
-    expect(
-      applyTablePreset({
-        headerFill: 'BDD7EE',
-        band1Fill: 'DDEBF7',
-        band2Fill: 'FFFFFF',
-        borderColor: '9DC3E6',
-      })(editor.state, editor.view.dispatch),
-    ).toBe(true)
+    const preset = {
+      styleId: 'BlueBanded',
+      name: 'Blue Banded',
+      headerFill: 'BDD7EE',
+      band1Fill: 'DDEBF7',
+      band2Fill: 'FFFFFF',
+      borderColor: '9DC3E6',
+    }
+    expect(applyTablePreset(preset)(editor.state, editor.view.dispatch)).toBe(true)
     const table = editor.getJSON().content![0] as unknown as PmNode
-    expect(table.attrs?.tblStyleId).toBeNull()
+    expect(table.attrs).toMatchObject({
+      tblStyleId: 'BlueBanded',
+      tblLook: { firstRow: true, bandedRows: true },
+      tblLookEdited: true,
+    })
     expect(table.content![0].content![0].attrs).toMatchObject({
-      fill: 'BDD7EE',
+      fill: null,
       borders: { top: { style: 'single', color: '9DC3E6' } },
     })
-    expect(table.content![1].content![0].attrs?.fill).toBe('DDEBF7')
     const model = pmTableToModel(table)
-    expect(model.rows[0][0].fill).toBe('BDD7EE')
+    expect(model.tblStyleId).toBe('BlueBanded')
     expect(model.rows[1][0].borders?.left?.color).toBe('9DC3E6')
+
+    const styles = upsertStyleXml(
+      '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:styles>',
+      { styleId: preset.styleId, sourceXml: tablePresetStyleXml(preset), basedOn: 'TableNormal' },
+    )
+    expect(styles).toContain(
+      '<w:style w:type="table" w:customStyle="1" w:styleId="BlueBanded"><w:name w:val="Blue Banded"/><w:basedOn w:val="TableNormal"/>',
+    )
+    expect(styles).toMatch(
+      /<w:tblStylePr w:type="firstRow"><w:tcPr><w:shd [^>]*w:fill="BDD7EE"\/>.*<w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd [^>]*w:fill="DDEBF7"\/>/,
+    )
     editor.destroy()
   })
 
@@ -244,5 +265,57 @@ describe('editable table properties', () => {
       tblFloatEdited: true,
     })
     editor.destroy()
+  })
+
+  it('shares a table between its columns by percent without changing its width', () => {
+    expect(shareColumnWidths([200, 200, 200], 0, 1, 50)).toEqual([300, 150, 150])
+    expect(shareColumnWidths([100, 300], 1, 2, 25)).toEqual([300, 100])
+    // the other columns keep their minimum
+    expect(shareColumnWidths([200, 200], 0, 1, 100)).toEqual([360, 40])
+    expect(shareColumnWidths([200, 200], 0, 2, 30)).toEqual([200, 200])
+  })
+
+  it('a column measured in percent is written as a pct w:tcW and read back as one', async () => {
+    const editor = await openTable()
+    expect(
+      setSelectedColumnPreferredWidth({ pct: 30 }, 600)(editor.state, editor.view.dispatch),
+    ).toBe(true)
+    let table = editor.getJSON().content![0] as unknown as PmNode
+    expect(table.content!.map((row) => row.content![0].attrs?.widthPct)).toEqual([true, true])
+    expect(table.content!.map((row) => row.content![1].attrs?.widthPct)).toEqual([false, false])
+    // the table stays the share of the page it was
+    expect(table.attrs).toMatchObject({ widthPct: 100, tblAutoFit: 'window' })
+    expect((table.attrs!.colWidthsPct as number[]).map(Math.round)).toEqual([30, 70])
+    const xml = generateTableModelXml(pmTableToModel(table as PmNode))
+    expect(xml.match(/<w:tcW [^>]*>/g)).toEqual([
+      '<w:tcW w:w="1500" w:type="pct"/>',
+      expect.stringContaining('w:type="dxa"'),
+      '<w:tcW w:w="1500" w:type="pct"/>',
+      expect.stringContaining('w:type="dxa"'),
+    ])
+    const reread = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(reread.blocks[0].table!.rows.map((row) => row.map((cell) => !!cell.widthPct))).toEqual([
+      [true, false],
+      [true, false],
+    ])
+
+    // measuring in a length again drops the percent
+    expect(
+      setSelectedColumnPreferredWidth({ px: 120 }, 600)(editor.state, editor.view.dispatch),
+    ).toBe(true)
+    table = editor.getJSON().content![0] as unknown as PmNode
+    expect(table.content![0].content![0].attrs).toMatchObject({ widthPct: false, colwidth: [120] })
+    expect(generateTableModelXml(pmTableToModel(table as PmNode))).not.toContain('w:type="pct"/>')
+    editor.destroy()
+  })
+
+  it('Measure in restates the typed width in the unit switched to', () => {
+    const width = { cm: 4, pct: 50, inPct: false, tableCm: 16 }
+    expect(measureWidthIn(width, true)).toMatchObject({ inPct: true, pct: 25, cm: 4 })
+    expect(measureWidthIn({ ...width, inPct: true, pct: 75 }, false)).toMatchObject({
+      inPct: false,
+      cm: 12,
+    })
+    expect(measureWidthIn(width, false)).toEqual(width)
   })
 })

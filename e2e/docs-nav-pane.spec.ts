@@ -39,7 +39,7 @@ test('headings tree, search results, pages and heading edits', async () => {
     await expect(docPage.locator('h2')).toHaveCount(1)
 
     await editor.locator('.ribbon-tab', { hasText: /^View$/ }).click()
-    await editor.locator('.rb-big', { hasText: /^Navigation Pane$/ }).click()
+    await editor.locator(':is(.rb-big, .rb-small)', { hasText: /^Navigation Pane$/ }).click()
     const pane = editor.locator('.nav-pane')
     await pane.waitFor()
     const rows = pane.locator('.nav-row')

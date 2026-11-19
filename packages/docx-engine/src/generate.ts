@@ -2,6 +2,7 @@ import { sdtCheckboxGlyphs, sdtCheckboxIsChecked, syncSdtCheckbox } from './chec
 import type {
   CellMargins,
   CharIndents,
+  FieldTextRun,
   GeneratedBlock,
   ImageWrap,
   ParaFormat,
@@ -9,6 +10,11 @@ import type {
   PropChangeInfo,
   RevisionInfo,
   Run,
+  TextGlow,
+  TextOutline,
+  TextReflection,
+  TextShadow,
+  TextboxVert,
   TabStop,
   TableCell,
   TableModel,
@@ -19,6 +25,7 @@ import {
   paragraphPermMarkers,
   restoreParagraphPermMarkers,
 } from './perm-ranges'
+import { MERGE_RULE_INSTR_RE, NO_FIELD_RESULT } from './parse-props'
 import { resolvePropChangeXml } from './revision-xml'
 
 export interface GenerateContext {
@@ -61,6 +68,17 @@ export interface ImagePatch {
   /** mirror flips; false removes the attribute; undefined keeps */
   flipH?: boolean
   flipV?: boolean
+  /** alternative text (wp:docPr descr); '' removes it; undefined keeps */
+  altText?: string
+}
+
+/** Sets the alternative text of the first drawing in `xml` (wp:docPr descr); '' removes it. */
+export function setDrawingAltText(xml: string, alt: string): string {
+  // the first docPr belongs to the drawing's own anchor or inline
+  return xml.replace(/<wp:docPr\b([^>]*?)(\/?)>/, (_whole, attrs: string, close: string) => {
+    const rest = attrs.replace(/\s*\bdescr\s*=\s*(?:"[^"]*"|'[^']*')/, '')
+    return `<wp:docPr${rest}${alt ? ` descr="${escapeXmlAttr(alt)}"` : ''}${close}>`
+  })
 }
 
 /**
@@ -69,6 +87,7 @@ export interface ImagePatch {
  */
 export function patchImageParagraphXml(xml: string, patch: ImagePatch): string {
   let out = xml
+  if (patch.altText !== undefined) out = setDrawingAltText(out, patch.altText)
   if (patch.rotDeg !== undefined || patch.flipH !== undefined || patch.flipV !== undefined) {
     // rotation/flip live on the pic's own xfrm, not an anchored textbox sibling's
     out = out.replace(/(<pic:spPr[^>]*>[\s\S]*?)<a:xfrm([^>]*)>/, (_whole, prefix, attrs) => {
@@ -149,27 +168,20 @@ export function patchImageParagraphXml(xml: string, patch: ImagePatch): string {
       }
     }
   }
-  // Rewrite posOffset values inside positionH / positionV (surgical). Non-finite
-  // offsets would land verbatim (posOffset>NaN<) — skip and keep the original.
-  const finiteOffset = (v: number): number | null => (Number.isFinite(v) ? Math.round(v) : null)
-  if (patch.posOffsetX !== undefined) {
-    const x = finiteOffset(patch.posOffsetX)
-    if (x !== null) {
-      out = out.replace(
-        /(<wp:positionH[^>]*>[\s\S]*?)<wp:posOffset>-?\d+<\/wp:posOffset>([\s\S]*?<\/wp:positionH>)/,
-        `$1<wp:posOffset>${x}</wp:posOffset>$2`,
-      )
-    }
+  // Rewrite the position inside positionH / positionV (surgical); an alignment keyword
+  // gives way to the offset. Non-finite offsets would land verbatim (posOffset>NaN<) —
+  // skip and keep the original.
+  const setOffset = (axis: 'H' | 'V', value: number | undefined): void => {
+    if (value === undefined || !Number.isFinite(value)) return
+    out = out.replace(
+      new RegExp(
+        `(<wp:position${axis}[^>]*>[\\s\\S]*?)<wp:(posOffset|align)>[^<]*<\\/wp:\\2>([\\s\\S]*?<\\/wp:position${axis}>)`,
+      ),
+      `$1<wp:posOffset>${Math.round(value)}</wp:posOffset>$3`,
+    )
   }
-  if (patch.posOffsetY !== undefined) {
-    const y = finiteOffset(patch.posOffsetY)
-    if (y !== null) {
-      out = out.replace(
-        /(<wp:positionV[^>]*>[\s\S]*?)<wp:posOffset>-?\d+<\/wp:posOffset>([\s\S]*?<\/wp:positionV>)/,
-        `$1<wp:posOffset>${y}</wp:posOffset>$2`,
-      )
-    }
-  }
+  setOffset('H', patch.posOffsetX)
+  setOffset('V', patch.posOffsetY)
   return out
 }
 
@@ -198,7 +210,14 @@ export function applyImageZOrder(xml: string, zOrder?: number): string {
 export function applyImageWrap(
   xml: string,
   wrap: ImageWrap | null,
-  posOffset?: { x: number; y: number; relativeTo?: 'page' | 'margin' },
+  posOffset?: {
+    x: number
+    y: number
+    relativeTo?: 'page' | 'margin'
+    /** what each axis measures from, when the two differ; wins over `relativeTo` */
+    relH?: 'page' | 'margin' | 'column'
+    relV?: 'page' | 'margin' | 'paragraph'
+  },
   marginAlign?: { h: 'left' | 'center' | 'right'; v: 'top' | 'center' | 'bottom' },
   zOrder?: number,
 ): string {
@@ -228,8 +247,8 @@ export function applyImageWrap(
     wrap === 'through-right'
   let position: string
   if (posOffset !== undefined) {
-    const relH = posOffset.relativeTo ?? 'column'
-    const relV = posOffset.relativeTo ?? 'paragraph'
+    const relH = posOffset.relH ?? posOffset.relativeTo ?? 'column'
+    const relV = posOffset.relV ?? posOffset.relativeTo ?? 'paragraph'
     position =
       '<wp:simplePos x="0" y="0"/>' +
       `<wp:positionH relativeFrom="${relH}"><wp:posOffset>${Math.round(posOffset.x)}</wp:posOffset></wp:positionH>` +
@@ -1275,6 +1294,20 @@ export interface ShapeStylePatch {
   rotDeg?: number | null
   /** outline width in CSS px (a:ln@w = px * 9525 EMU); null clears the attribute; undefined = keep */
   borderWidthPx?: number | null
+  /** wps:bodyPr@vert; null is horizontal (the attribute goes); undefined = keep */
+  vert?: TextboxVert | null
+}
+
+function patchBodyVert(drawingXml: string, vert: TextboxVert | null): string {
+  const bodyPr = /<wps:bodyPr\b[^>]*>/.exec(drawingXml)
+  if (!bodyPr) {
+    return vert
+      ? drawingXml.replace('</wps:wsp>', `<wps:bodyPr vert="${vert}"/></wps:wsp>`)
+      : drawingXml
+  }
+  const bare = bodyPr[0].replace(/\s+vert="[^"]*"/, '')
+  const tag = vert ? bare.replace(/^<wps:bodyPr\b/, `<wps:bodyPr vert="${vert}"`) : bare
+  return drawingXml.replace(bodyPr[0], tag)
 }
 
 /**
@@ -1343,7 +1376,8 @@ export function patchShapeStyles(
         (s.fillHex === undefined &&
           s.borderHex === undefined &&
           s.rotDeg === undefined &&
-          s.borderWidthPx === undefined),
+          s.borderWidthPx === undefined &&
+          s.vert === undefined),
     )
   )
     return paragraphXml
@@ -1361,7 +1395,8 @@ export function patchShapeStyles(
       (style.fillHex === undefined &&
         style.borderHex === undefined &&
         style.rotDeg === undefined &&
-        style.borderWidthPx === undefined)
+        style.borderWidthPx === undefined &&
+        style.vert === undefined)
     )
       continue
     const spPrMatch = /<wps:spPr>[\s\S]*?<\/wps:spPr>/.exec(drawingXml)
@@ -1389,6 +1424,7 @@ export function patchShapeStyles(
       if (style.borderWidthPx !== undefined) spPr = patchShapeLineWidth(spPr, style.borderWidthPx)
       drawingXml = drawingXml.replace(spPrMatch[0], spPr)
     }
+    if (style.vert !== undefined) drawingXml = patchBodyVert(drawingXml, style.vert)
     out += paragraphXml.slice(cursor, drawing.start) + drawingXml
     cursor = drawing.end
   }
@@ -1577,7 +1613,9 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
         declared?.spacePt !== undefined
           ? Math.min(31, Math.max(0, Math.round(declared.spacePt)))
           : space
-      return `<w:${side} w:val="single" w:sz="${sz}" w:space="${sp}" w:color="${color}"/>`
+      const val = declared?.val ? escapeXmlAttr(declared.val) : 'single'
+      const fx = `${declared?.shadow ? ' w:shadow="1"' : ''}${declared?.frame ? ' w:frame="1"' : ''}`
+      return `<w:${side} w:val="${val}" w:sz="${sz}" w:space="${sp}" w:color="${color}"${fx}/>`
     }
     const sides: string[] = []
     // schema order inside pBdr: top, left, bottom, right
@@ -1587,11 +1625,12 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
     if (format.borders.includes('r')) sides.push(line('right', 'r'))
     if (sides.length > 0) out.push({ name: 'w:pBdr', xml: `<w:pBdr>${sides.join('')}</w:pBdr>` })
   }
-  if (format.shadingFill) {
-    out.push({
-      name: 'w:shd',
-      xml: `<w:shd w:val="clear" w:color="auto" w:fill="${escapeXmlAttr(format.shadingFill)}"/>`,
-    })
+  if (format.shadingFill || format.shadingPattern) {
+    const pattern = format.shadingPattern
+    const val = pattern ? escapeXmlAttr(pattern.val) : 'clear'
+    const color = pattern?.color ? escapeXmlAttr(pattern.color) : 'auto'
+    const fill = format.shadingFill ? escapeXmlAttr(format.shadingFill) : 'auto'
+    out.push({ name: 'w:shd', xml: `<w:shd w:val="${val}" w:color="${color}" w:fill="${fill}"/>` })
   }
   if (format.bidi) out.push({ name: 'w:bidi', xml: '<w:bidi/>' })
   const spacing = paraSpacingXml(format)
@@ -1637,13 +1676,20 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
   if (format.textDirection) {
     out.push({ name: 'w:textDirection', xml: `<w:textDirection w:val="${format.textDirection}"/>` })
   }
+  if (format.textAlignment) {
+    out.push({
+      name: 'w:textAlignment',
+      xml: `<w:textAlignment w:val="${escapeXmlAttr(format.textAlignment)}"/>`,
+    })
+  }
   if (format.frame) {
     out.push({ name: 'w:framePr', xml: framePrXml(format.frame) })
   } else if (format.dropCap) {
-    const { type, lines } = format.dropCap
+    const { type, lines, hSpace } = format.dropCap
+    const gap = hSpace && hSpace > 0 ? ` w:hSpace="${Math.round(hSpace)}"` : ''
     out.push({
       name: 'w:framePr',
-      xml: `<w:framePr w:dropCap="${type}" w:lines="${lines}" w:wrap="around" w:vAnchor="text" w:hAnchor="text"/>`,
+      xml: `<w:framePr w:dropCap="${type}" w:lines="${lines}"${gap} w:wrap="around" w:vAnchor="text" w:hAnchor="text"/>`,
     })
   }
   if (format.emptyRunSizeHalfPoints) {
@@ -1681,6 +1727,15 @@ const PPR_FLAG_FIELDS = {
   'w:widowControl': 'widowControl',
   'w:suppressLineNumbers': 'suppressLineNumbers',
   'w:contextualSpacing': 'contextualSpacing',
+  'w:kinsoku': 'kinsoku',
+  'w:wordWrap': 'wordWrapDirect',
+  'w:topLinePunct': 'topLinePunct',
+  'w:overflowPunct': 'overflowPunctDirect',
+  'w:autoSpaceDE': 'autoSpaceDE',
+  'w:autoSpaceDN': 'autoSpaceDN',
+  'w:suppressAutoHyphens': 'suppressAutoHyphens',
+  'w:snapToGrid': 'snapToGrid',
+  'w:mirrorIndents': 'mirrorIndents',
 } as const
 const PPR_FLAG_TAGS = Object.keys(PPR_FLAG_FIELDS) as Array<keyof typeof PPR_FLAG_FIELDS>
 
@@ -1785,6 +1840,8 @@ function rawIndUnchanged(raw: string | undefined, f: ParaFormat): boolean {
   )
 }
 
+const rawOn = (v: string | undefined): boolean => v === '1' || v === 'true' || v === 'on'
+
 function rawPBdrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
   let rawBorders = ''
   const rawLines: NonNullable<ParaFormat['borderLines']> = {}
@@ -1810,8 +1867,10 @@ function rawPBdrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
       if (Number.isFinite(sz) && sz > 0) line.szPt = sz / 8
       const space = parseInt(rawAttr(el.xml, 'w:space') ?? '', 10)
       if (Number.isFinite(space) && space > 0) line.spacePt = space
-      if (line.color !== undefined || line.szPt !== undefined || line.spacePt !== undefined)
-        rawLines[ch] = line
+      if (val && val !== 'single') line.val = val
+      if (rawOn(rawAttr(el.xml, 'w:shadow'))) line.shadow = true
+      if (rawOn(rawAttr(el.xml, 'w:frame'))) line.frame = true
+      if (Object.keys(line).length > 0) rawLines[ch] = line
     }
   }
   const norm = (s: string | undefined) => (s ? [...new Set(s)].sort().join('') : '')
@@ -1822,6 +1881,9 @@ function rawPBdrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
         lines?.[ch]?.color ?? null,
         lines?.[ch]?.szPt ?? null,
         lines?.[ch]?.spacePt ?? null,
+        lines?.[ch]?.val ?? null,
+        !!lines?.[ch]?.shadow,
+        !!lines?.[ch]?.frame,
       ]),
     )
   return normLines(rawLines) === normLines(f.borderLines)
@@ -1861,7 +1923,12 @@ function rawFramePrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
     val === 'drop' || val === 'margin'
       ? { type: val, lines: parseInt(rawAttr(raw, 'w:lines') ?? '3', 10) || 3 }
       : undefined
-  return rawDc?.type === f.dropCap?.type && rawDc?.lines === f.dropCap?.lines
+  const rawGap = rawDc ? parseInt(rawAttr(raw, 'w:hSpace') ?? '', 10) || 0 : 0
+  return (
+    rawDc?.type === f.dropCap?.type &&
+    rawDc?.lines === f.dropCap?.lines &&
+    rawGap === (f.dropCap?.hSpace ?? 0)
+  )
 }
 
 /** True when re-parsing the raw child yields the current model value, i.e. the group was not edited */
@@ -1917,7 +1984,16 @@ function pprGroupUnchanged(
     case 'w:keepLines':
     case 'w:widowControl':
     case 'w:suppressLineNumbers':
-    case 'w:contextualSpacing': {
+    case 'w:contextualSpacing':
+    case 'w:kinsoku':
+    case 'w:topLinePunct':
+    case 'w:wordWrap':
+    case 'w:overflowPunct':
+    case 'w:autoSpaceDE':
+    case 'w:autoSpaceDN':
+    case 'w:suppressAutoHyphens':
+    case 'w:snapToGrid':
+    case 'w:mirrorIndents': {
       const field = PPR_FLAG_FIELDS[tag]
       const v = f[field]
       // model lost a flag the parsed paragraph had: the user reset it to the style
@@ -1948,7 +2024,14 @@ function pprGroupUnchanged(
       return rawPBdrUnchanged(raw, f)
     case 'w:shd': {
       const fill = rawAttr(raw, 'w:fill')
-      return (fill && fill !== 'auto' ? fill : undefined) === f.shadingFill
+      const val = rawAttr(raw, 'w:val')
+      const pattern = val && val !== 'clear' && val !== 'nil' ? val : undefined
+      const color = pattern ? rawAttr(raw, 'w:color')?.replace(/^#/, '') : undefined
+      return (
+        (fill && fill !== 'auto' ? fill : undefined) === f.shadingFill &&
+        pattern === f.shadingPattern?.val &&
+        (color && color !== 'auto' ? color : undefined) === f.shadingPattern?.color
+      )
     }
     case 'w:tabs':
       return rawTabsUnchanged(raw, f.tabStops ?? [])
@@ -1958,6 +2041,8 @@ function pprGroupUnchanged(
       const m = raw ? /<w:sz\b[^>]*w:val="(\d+)"/.exec(raw) : null
       return (m ? parseInt(m[1], 10) : undefined) === f.emptyRunSizeHalfPoints
     }
+    case 'w:textAlignment':
+      return rawAttr(raw, 'w:val') === f.textAlignment
     default:
       return false
   }
@@ -1987,6 +2072,12 @@ const CELL_PPR_GROUPS: Array<[tag: string, fields: Array<keyof ParaFormat>]> = [
   ['w:spacing', ['spaceBefore', 'spaceAfter', 'lineSpacing', 'lineRule', 'lineRawTwips']],
   ['w:ind', ['indentLeft', 'indentFirstLine']],
   ['w:tabs', ['tabStops']],
+  ['w:kinsoku', ['kinsoku']],
+  ['w:wordWrap', ['wordWrapDirect']],
+  ['w:topLinePunct', ['topLinePunct']],
+  ['w:overflowPunct', ['overflowPunctDirect']],
+  ['w:autoSpaceDE', ['autoSpaceDE']],
+  ['w:autoSpaceDN', ['autoSpaceDN']],
 ]
 
 /** attributes of w:ind / w:spacing the cell model drives, by group with the
@@ -2075,7 +2166,9 @@ export function mergeCellParaFormat(
     out = out.replace(/<w:tabs>[\s\S]*?<\/w:tabs>|<w:tabs\/>/, '')
     tags.delete('w:tabs')
   }
-  const viaMerge = new Set([...tags].filter((t) => t === 'w:jc' || t === 'w:tabs'))
+  const viaMerge = new Set(
+    [...tags].filter((t) => t === 'w:jc' || t === 'w:tabs' || t in PPR_FLAG_FIELDS),
+  )
   if (viaMerge.size > 0) out = mergePPrFormat(out, format, undefined, viaMerge) || '<w:pPr></w:pPr>'
   const fresh = formatPPrChildren(format)
   for (const tag of ['w:spacing', 'w:ind']) {
@@ -2132,6 +2225,8 @@ export function mergePPrFormat(
   }
   if (format?.dropCap !== undefined || format?.frame !== undefined) managedTags.add('w:framePr')
   if (format?.textDirection !== undefined) managedTags.add('w:textDirection')
+  if (format?.textAlignment !== undefined || original?.textAlignment !== undefined)
+    managedTags.add('w:textAlignment')
   // only when the model carries a size: otherwise the paragraph-mark rPr stays unmanaged
   if (format?.emptyRunSizeHalfPoints !== undefined) managedTags.add('w:rPr')
   if (onlyTags) for (const tag of [...managedTags]) if (!onlyTags.has(tag)) managedTags.delete(tag)
@@ -2353,12 +2448,9 @@ export function generateParagraphXml(block: GeneratedBlock, ctx: GenerateContext
         `<w:r><w:commentReference w:id="${escapeXmlAttr(id)}"/></w:r>`,
     )
     .join('')
+  const marks = bookmarksXml(ctx, [...(block.hiddenBookmarks ?? []), ...(block.bookmarks ?? [])])
   const content =
-    bookmarksXml(ctx, block.hiddenBookmarks) +
-    bookmarksXml(ctx, block.bookmarks) +
-    crossStarts +
-    generateRunsXml(block.runs, ctx) +
-    crossEnds
+    marks.starts + crossStarts + generateRunsXml(block.runs, ctx) + crossEnds + marks.ends
   if (block.rawPPr !== undefined) return `<w:p>${block.rawPPr}${content}</w:p>`
 
   const children: PPrChild[] = []
@@ -2413,15 +2505,17 @@ let standaloneBookmarkSeq = 0
 
 function bookmarksXml(
   ctx: Pick<GenerateContext, 'allocateBookmarkId'> | null,
-  names: string[] | undefined,
-): string {
-  if (!names?.length) return ''
-  return names
-    .map((name) => {
-      const id = ctx?.allocateBookmarkId?.(name) ?? ++standaloneBookmarkSeq
-      return `<w:bookmarkStart w:id="${id}" w:name="${escapeXmlAttr(name)}"/><w:bookmarkEnd w:id="${id}"/>`
-    })
-    .join('')
+  names: string[],
+): { starts: string; ends: string } {
+  // the bookmark spans the paragraph's text: a REF field to an empty bookmark shows nothing in Word
+  let starts = ''
+  let ends = ''
+  for (const name of names) {
+    const id = ctx?.allocateBookmarkId?.(name) ?? ++standaloneBookmarkSeq
+    starts += `<w:bookmarkStart w:id="${id}" w:name="${escapeXmlAttr(name)}"/>`
+    ends += `<w:bookmarkEnd w:id="${id}"/>`
+  }
+  return { starts, ends }
 }
 
 export interface TableGenOptions {
@@ -2538,6 +2632,7 @@ function cellMergeXml(record: PropChangeInfo): string {
 function tableCellXml(
   cell: TableCell,
   width: number,
+  tableWidth: number,
   verticalMerge?: 'restart' | 'continue',
   ctx?: Pick<GenerateContext, 'allocateBookmarkId'>,
 ): string {
@@ -2552,7 +2647,13 @@ function tableCellXml(
     : ''
   const rawInner = rawTcPr.replace(/^<w:tcPr(?:\s[^>]*)?>/, '').replace(/<\/w:tcPr>$/, '')
   const children: PPrChild[] = rawTcPr.endsWith('</w:tcPr>') ? splitXmlChildren(rawInner) : []
-  setTcPrChild(children, 'w:tcW', `<w:tcW w:w="${width}" w:type="dxa"/>`)
+  setTcPrChild(
+    children,
+    'w:tcW',
+    cell.widthPct && tableWidth > 0
+      ? `<w:tcW w:w="${Math.round((width / tableWidth) * 5000)}" w:type="pct"/>`
+      : `<w:tcW w:w="${width}" w:type="dxa"/>`,
+  )
   const span = cellSpan(cell)
   setTcPrChild(children, 'w:gridSpan', span > 1 ? `<w:gridSpan w:val="${span}"/>` : null)
   const merge = verticalMerge ?? cell.vMerge
@@ -2592,6 +2693,7 @@ function tableCellXml(
     )
     setTcPrChild(children, 'w:tcMar', cellMarginsXml('w:tcMar', cell.cellMarTwips))
     setTcPrChild(children, 'w:noWrap', cell.noWrap ? '<w:noWrap/>' : null)
+    setTcPrChild(children, 'w:tcFitText', cell.fitText ? '<w:tcFitText/>' : null)
   }
   const tcPr = children.map((c) => c.xml)
   const paragraphs = cell.richParas?.length
@@ -2617,10 +2719,11 @@ function tableCellXml(
     // into an existing document supplies the document's allocator, whose ids
     // never collide with the bookmarks the untouched blocks keep (REF fields
     // match by name, but bookmarkStart / bookmarkEnd pair by id)
-    const anchors =
-      ('hiddenBookmarks' in paragraph ? bookmarksXml(ctx ?? null, paragraph.hiddenBookmarks) : '') +
-      ('bookmarks' in paragraph ? bookmarksXml(ctx ?? null, paragraph.bookmarks) : '')
-    return `<w:p>${pPr}${anchors}${runsXml(paragraph.runs, null)}</w:p>`
+    const marks = bookmarksXml(ctx ?? null, [
+      ...(('hiddenBookmarks' in paragraph && paragraph.hiddenBookmarks) || []),
+      ...(('bookmarks' in paragraph && paragraph.bookmarks) || []),
+    ])
+    return `<w:p>${pPr}${marks.starts}${runsXml(paragraph.runs, null, undefined, ctx ?? null)}${marks.ends}</w:p>`
   })
   // nested tables are regenerated from the model at their paragraph anchors (reverse
   // insertion keeps anchor indexes valid); OOXML requires tc to end with w:p
@@ -2876,7 +2979,7 @@ function tableModelXml(
           }
           continue
         }
-        cells.push(tableCellXml(cell, width, undefined, ctx))
+        cells.push(tableCellXml(cell, width, totalWidth, undefined, ctx))
       }
       // trPr: original bytes passed through (tblHeader/cantSplit etc.); row height is
       // replaced/inserted/removed per the model
@@ -3058,9 +3161,16 @@ function tableModelXml(
 /** rId / docPr placeholder of a picture inserted by the editor; saveDocx resolves
  *  it against SaveOptions.newPictures once the bytes land as a media part */
 export const NEW_PICTURE_TOKEN_PREFIX = 'aidocs-new-pic-'
+/** after a token, in the svgBlip's r:embed: the picture's SVG part rather than its bitmap */
+export const NEW_PICTURE_SVG_SUFFIX = '-svg'
+
+const SVG_BLIP_EXT_URI = '{96DAC541-7B7A-43D3-8B79-37D633B846F1}'
+const SVG_BLIP_NS = 'http://schemas.microsoft.com/office/drawing/2016/SVG/main'
 
 export interface InlinePictureXmlOptions {
   rId: string
+  /** relationship of the picture's SVG part, when the bitmap at rId is its fallback */
+  svgRId?: string
   /** wp:docPr / pic:cNvPr id (a placeholder token until the save mints a real one) */
   docPrId: string | number
   widthPx: number
@@ -3119,6 +3229,10 @@ export function inlinePictureDrawingXml(o: InlinePictureXmlOptions): string {
   const eeY = Math.max(0, Math.round((bh - cy) / 2))
   const id = String(o.docPrId)
   const name = `Picture ${id}`
+  const blip = o.svgRId
+    ? `<a:blip r:embed="${o.rId}"><a:extLst><a:ext uri="${SVG_BLIP_EXT_URI}">` +
+      `<asvg:svgBlip xmlns:asvg="${SVG_BLIP_NS}" r:embed="${o.svgRId}"/></a:ext></a:extLst></a:blip>`
+    : `<a:blip r:embed="${o.rId}"/>`
   return (
     '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
     `<wp:extent cx="${cx}" cy="${cy}"/>` +
@@ -3128,7 +3242,7 @@ export function inlinePictureDrawingXml(o: InlinePictureXmlOptions): string {
     '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
     '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
     `<pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr>` +
-    `<pic:blipFill><a:blip r:embed="${o.rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:blipFill>${blip}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
     `<pic:spPr><a:xfrm${rot ? ` rot="${rot * 60000}"` : ''}${o.flipH ? ' flipH="1"' : ''}${o.flipV ? ' flipV="1"' : ''}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
     '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
     '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>'
@@ -3173,60 +3287,469 @@ export interface TocEntry {
   /** heading level 1-9 */
   level: number
   text: string
-  /** page number computed by real pagination (cached text; begin is dirty, so Word still recalculates on open) */
+  /** page number computed by real pagination, saved as the field's result */
   pageNo?: number
+  /** the entry's level shows no page number (TOC \n) */
+  noPage?: boolean
 }
 
 /**
- * Generate a real TOC field as one w:p fragment per line. The begin fldChar is
- * marked dirty so Word recalculates entries and page numbers on open; the
- * static entry texts serve as the visible result until then.
+ * Generate a real TOC field as one w:p fragment per line. The entries and
+ * their pages are the field's result, as Word saves one; only a table whose
+ * pages are not known yet is marked dirty for Word to build.
  */
-export function generateTocFieldXml(entries: TocEntry[]): string[] {
+export function generateTocFieldXml(entries: TocEntry[], table: FieldTableLayout = {}): string[] {
   if (entries.length === 0) return []
   let deepest = 1
   for (const entry of entries) {
     if (entry.level > deepest) deepest = entry.level
   }
   const maxLevel = Math.min(deepest, 9)
-  const pPr = (level: number) =>
-    `<w:pPr><w:pStyle w:val="TOC${Math.min(Math.max(level, 1), 9)}"/>` +
-    '<w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9350"/></w:tabs>' +
-    '<w:rPr><w:noProof/></w:rPr></w:pPr>'
-  const entryRuns = (text: string, pageNo?: number) =>
-    `<w:r><w:rPr><w:noProof/></w:rPr><w:t xml:space="preserve">${escapeXmlText(text)}</w:t></w:r>` +
-    '<w:r><w:rPr><w:noProof/></w:rPr><w:tab/></w:r>' +
-    (pageNo !== undefined ? `<w:r><w:rPr><w:noProof/></w:rPr><w:t>${pageNo}</w:t></w:r>` : '')
+  return tocFieldLines(
+    entries,
+    table.instr ?? ` TOC \\o "1-${maxLevel}" \\h \\z \\u `,
+    (entry) => `TOC${Math.min(Math.max(entry.level, 1), 9)}`,
+    table,
+  )
+}
+
+/**
+ * A table of figures: the same field as a table of contents, built from the
+ * captions of one label (TOC \c) instead of the headings.
+ */
+export function generateTableOfFiguresFieldXml(
+  entries: Array<{ text: string; pageNo?: number; noPage?: boolean }>,
+  label: string,
+  table: FieldTableLayout = {},
+): string[] {
+  // the label is quoted inside the instruction: a quote of its own would end it early
+  const quoted = label.replace(/"/g, '')
+  return tocFieldLines(
+    entries,
+    table.instr ?? ` TOC \\h \\z \\c "${quoted}" `,
+    () => 'TableofFigures',
+    table,
+  )
+}
+
+/**
+ * The run's phonetic guide with the run's formatting on its base text. The
+ * formatting of a guide lives on the runs inside it, not on the run around
+ * it; a guide that already says how its base looks is written as it is.
+ */
+function rubyWithBaseFormat(run: Run, insideLink: boolean): string {
+  const { xml } = run.ruby!
+  const base = /<w:rubyBase>\s*<w:r>(?!\s*<w:rPr[\s>])/.exec(xml)
+  if (!base) return xml
+  const rPr = runRPrXml({ ...run, ruby: undefined }, insideLink)
+  if (!rPr) return xml
+  const at = base.index + base[0].length
+  return xml.slice(0, at) + rPr + xml.slice(at)
+}
+
+/**
+ * The same guide with another reading: everything else it says (alignment,
+ * sizes, the formatting of its runs) stays. Null when the fragment has no
+ * reading text to replace.
+ */
+export function setRubyReadingXml(xml: string, rt: string): string | null {
+  return setRubyPartText(xml, 'w:rt', rt)
+}
+
+/** where a reading sits over its base text (w:rubyAlign), the five Word's dialog offers */
+export const RUBY_ALIGNS = [
+  'center',
+  'distributeLetter',
+  'distributeSpace',
+  'left',
+  'right',
+] as const
+export type RubyAlign = (typeof RUBY_ALIGNS)[number]
+
+/** the w:rubyAlign of a guide; null when it has none or one the dialog does not offer */
+export function rubyAlignOf(xml: string): RubyAlign | null {
+  const val = /<w:rubyAlign\b[^>]*\bw:val="([^"]*)"/.exec(xml)?.[1]
+  return (RUBY_ALIGNS as readonly string[]).includes(val ?? '') ? (val as RubyAlign) : null
+}
+
+/** the guide with its alignment changed; null when the fragment has no w:rubyPr to hold one */
+export function setRubyAlignXml(xml: string, align: RubyAlign): string | null {
+  const tag = `<w:rubyAlign w:val="${align}"/>`
+  if (/<w:rubyAlign\b[^>]*\/>/.test(xml)) return xml.replace(/<w:rubyAlign\b[^>]*\/>/, tag)
+  // w:rubyAlign is the first child of w:rubyPr
+  return /<w:rubyPr>/.test(xml) ? xml.replace('<w:rubyPr>', `<w:rubyPr>${tag}`) : null
+}
+
+/** how a guide's reading is set: its font, its size and how far it is raised, in half-points */
+export interface RubyReadingStyle {
+  font?: string
+  sizeHalfPoints?: number
+  raiseHalfPoints?: number
+  baseSizeHalfPoints?: number
+}
+
+const rubyPrInt = (xml: string, tag: string): number | undefined => {
+  const val = new RegExp(`<w:${tag}\\b[^>]*\\bw:val="(\\d+)"`).exec(xml)?.[1]
+  return val === undefined ? undefined : parseInt(val, 10)
+}
+
+export function rubyReadingStyleOf(xml: string): RubyReadingStyle {
+  const rt = /<w:rt>([\s\S]*?)<\/w:rt>/.exec(xml)?.[1] ?? ''
+  const fonts = /<w:rFonts\b[^>]*>/.exec(rt)?.[0] ?? ''
+  const font = /\bw:(?:ascii|eastAsia|hAnsi)="([^"]*)"/.exec(fonts)?.[1]
+  return {
+    font: font ? decodeXmlText(font) : undefined,
+    sizeHalfPoints: rubyPrInt(xml, 'hps'),
+    raiseHalfPoints: rubyPrInt(xml, 'hpsRaise'),
+    baseSizeHalfPoints: rubyPrInt(xml, 'hpsBaseText'),
+  }
+}
+
+/** the guide with its reading set another way; null when the fragment has no w:rubyPr or reading run */
+export function setRubyReadingStyleXml(
+  xml: string,
+  style: Pick<RubyReadingStyle, 'font' | 'sizeHalfPoints' | 'raiseHalfPoints'>,
+): string | null {
+  if (!/<w:rubyPr>/.test(xml)) return null
+  const found = /<w:rt>([\s\S]*?)<\/w:rt>/.exec(xml)
+  if (!found) return null
+  // w:rubyPr holds rubyAlign, hps, hpsRaise, hpsBaseText, lid in that order
+  const setPr = (src: string, tag: string, val: number, before: string): string => {
+    const el = `<w:${tag} w:val="${Math.max(0, Math.round(val))}"/>`
+    const has = new RegExp(`<w:${tag}\\b[^>]*/>`)
+    if (has.test(src)) return src.replace(has, el)
+    const next = new RegExp(`<w:(?:${before})\\b|</w:rubyPr>`)
+    return src.replace(next, (m) => el + m)
+  }
+  let inner = found[1]
+  const { font, sizeHalfPoints: size, raiseHalfPoints: raise } = style
+  if (font !== undefined || size !== undefined) {
+    inner = inner.replace(
+      /<w:r>(\s*<w:rPr>([\s\S]*?)<\/w:rPr>|\s*<w:rPr\/>)?/g,
+      (_m, _whole, pr) => {
+        let rPr: string = pr ?? ''
+        if (font !== undefined) {
+          rPr = rPr.replace(/<w:rFonts\b[^>]*\/>/, '')
+          if (font) {
+            const f = escapeXmlAttr(font)
+            const el = `<w:rFonts w:ascii="${f}" w:hAnsi="${f}" w:eastAsia="${f}" w:cs="${f}"/>`
+            const lead = /^\s*<w:rStyle\b[^>]*\/>/.exec(rPr)?.[0] ?? ''
+            rPr = lead + el + rPr.slice(lead.length)
+          }
+        }
+        if (size !== undefined) {
+          const sz = Math.max(2, Math.round(size))
+          rPr = rPr.replace(/<w:sz(?:Cs)?\b[^>]*\/>/g, '')
+          // sz and szCs sit before the trailing run properties Word writes after them
+          const tail =
+            /<w:(?:highlight|u|effect|bdr|shd|fitText|vertAlign|rtl|cs|em|lang|eastAsianLayout|specVanish|oMath)\b/.exec(
+              rPr,
+            )
+          const at = tail ? tail.index : rPr.length
+          rPr = `${rPr.slice(0, at)}<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/>${rPr.slice(at)}`
+        }
+        return rPr ? `<w:r><w:rPr>${rPr}</w:rPr>` : '<w:r>'
+      },
+    )
+  }
+  let out =
+    xml.slice(0, found.index) + `<w:rt>${inner}</w:rt>` + xml.slice(found.index + found[0].length)
+  if (size !== undefined) out = setPr(out, 'hps', Math.max(2, size), 'hpsRaise|hpsBaseText|lid')
+  if (raise !== undefined) out = setPr(out, 'hpsRaise', raise, 'hpsBaseText|lid')
+  return out
+}
+
+/** the guide with its base text changed, in the first base run's formatting; null when it has no base run */
+export function setRubyBaseXml(xml: string, base: string): string | null {
+  return setRubyPartText(xml, 'w:rubyBase', base)
+}
+
+function setRubyPartText(xml: string, part: 'w:rt' | 'w:rubyBase', text: string): string | null {
+  const found = new RegExp(`<${part}>([\\s\\S]*?)</${part}>`).exec(xml)
+  if (!found) return null
+  let placed = false
+  const inner = found[1].replace(/<w:t(\s[^>]*)?>[^<]*<\/w:t>|<w:t(\s[^>]*)?\/>/g, () => {
+    if (placed) return ''
+    placed = true
+    return `<w:t xml:space="preserve">${escapeXmlText(text)}</w:t>`
+  })
+  if (!placed) return null
+  return (
+    xml.slice(0, found.index) +
+    `<${part}>${inner}</${part}>` +
+    xml.slice(found.index + found[0].length)
+  )
+}
+
+/**
+ * A phonetic guide (w:ruby) for base text: the reading sits above it at half
+ * the base size, raised clear of it, as Word writes a new one. The fragment
+ * goes inside a w:r.
+ */
+export function generateRubyXml(
+  base: string,
+  rt: string,
+  baseSizeHalfPoints = 21,
+  lang = 'zh-CN',
+  align: RubyAlign = 'center',
+): string {
+  const size = Math.max(2, Math.round(baseSizeHalfPoints))
+  const reading = Math.max(2, Math.round(size / 2))
+  return (
+    `<w:ruby><w:rubyPr><w:rubyAlign w:val="${align}"/>` +
+    `<w:hps w:val="${reading}"/><w:hpsRaise w:val="${Math.max(0, size - 2)}"/>` +
+    `<w:hpsBaseText w:val="${size}"/><w:lid w:val="${escapeXmlAttr(lang)}"/></w:rubyPr>` +
+    `<w:rt><w:r><w:rPr><w:sz w:val="${reading}"/><w:szCs w:val="${reading}"/></w:rPr>` +
+    `<w:t xml:space="preserve">${escapeXmlText(rt)}</w:t></w:r></w:rt>` +
+    `<w:rubyBase><w:r><w:t xml:space="preserve">${escapeXmlText(base)}</w:t></w:r></w:rubyBase></w:ruby>`
+  )
+}
+
+/**
+ * A table of authorities for one category of citations: the category's heading,
+ * then its citations with their pages (TOA \c). The heading is the first line of
+ * the field result, as Word writes it with \h.
+ */
+export function generateTableOfAuthoritiesFieldXml(
+  heading: string,
+  /** a citation made in several places lists its pages as text ("3, 7") */
+  entries: Array<{ text: string; pageNo?: number | string }>,
+  category: number,
+  table: FieldTableLayout = {},
+): string[] {
+  if (entries.length === 0) return []
+  return generateFieldTableXml(
+    [
+      { text: heading, style: 'TOAHeading' },
+      ...entries.map((e) => ({ ...e, style: 'TableofAuthorities' })),
+    ],
+    { ...table, instr: table.instr ?? ` TOA \\h \\c "${Math.round(category)}" \\p ` },
+  )
+}
+
+export type FieldTableLeader = 'none' | 'dot' | 'hyphen' | 'underscore'
+
+/** How the lines of a generated TOC / TOA / INDEX field are laid out. */
+export interface FieldTableLayout {
+  /** the field instruction, when it is not the generator's default */
+  instr?: string
+  /** leader of the right tab the page number sits behind (default dot) */
+  leader?: FieldTableLeader
+  /** the page number follows the text after this separator instead of a right tab */
+  pageSep?: string
+  /** position of the right tab, twips (default 9350) */
+  tabPos?: number
+}
+
+export interface FieldTableLine {
+  text: string
+  pageNo?: number | string
+  /** the line never takes a page number */
+  noPage?: boolean
+  /** paragraph style id of the line */
+  style?: string
+  /** left indent, twips */
+  indent?: number
+  /** the page text in formatted pieces (an index entry's bold or italic pages); joined, they are `pageNo` */
+  pageRuns?: FieldTablePageRun[]
+  /** the text in formatted pieces (a citation's original formatting); joined, they are `text` */
+  textRuns?: FieldTextRun[]
+}
+
+export type FieldTablePageRun = FieldTextRun
+
+const fieldTextRPr = (run: FieldTextRun, noProof = false): string => {
+  const inner =
+    (run.bold ? '<w:b/>' : '') +
+    (run.italic ? '<w:i/>' : '') +
+    (run.underline ? '<w:u w:val="single"/>' : '') +
+    (noProof ? '<w:noProof/>' : '')
+  return inner ? `<w:rPr>${inner}</w:rPr>` : ''
+}
+
+/** a field code as runs: the formatted pieces of its quoted long text stand in for that text */
+function fieldCodeRuns(code: string, formatted: FieldTextRun[] | undefined): FieldTextRun[] {
+  const text = formatted?.map((r) => r.text).join('') ?? ''
+  const at = text ? code.indexOf(`"${text}"`) : -1
+  if (at === -1) return [{ text: code }]
+  return [
+    { text: code.slice(0, at + 1) },
+    ...formatted!,
+    { text: code.slice(at + 1 + text.length) },
+  ]
+}
+
+/** a TOC / TOA / INDEX field as one w:p per line, the field begun in the first and ended in the last */
+export function generateFieldTableXml(
+  lines: FieldTableLine[],
+  table: FieldTableLayout & { instr: string },
+): string[] {
+  return tocFieldLines(lines, table.instr, (line) => line.style ?? '', table)
+}
+
+function tocFieldLines<
+  E extends {
+    text: string
+    pageNo?: number | string
+    noPage?: boolean
+    indent?: number
+    pageRuns?: FieldTablePageRun[]
+    textRuns?: FieldTextRun[]
+  },
+>(
+  entries: E[],
+  instr: string,
+  styleOf: (entry: E) => string,
+  table: FieldTableLayout = {},
+): string[] {
+  const tabbed = table.pageSep === undefined && entries.some((e) => !e.noPage)
+  const tabs = tabbed
+    ? `<w:tabs><w:tab w:val="right" w:leader="${table.leader ?? 'dot'}" w:pos="${table.tabPos ?? 9350}"/></w:tabs>`
+    : ''
+  const pPr = (entry: E) => {
+    const style = styleOf(entry)
+    return (
+      `<w:pPr>${style ? `<w:pStyle w:val="${style}"/>` : ''}${tabs}` +
+      (entry.indent ? `<w:ind w:left="${entry.indent}"/>` : '') +
+      '<w:rPr><w:noProof/></w:rPr></w:pPr>'
+    )
+  }
+  const run = (inner: string) => `<w:r><w:rPr><w:noProof/></w:rPr>${inner}</w:r>`
+  const entryRuns = (entry: E) => {
+    const text = entry.textRuns?.length
+      ? entry.textRuns
+          .map(
+            (piece) =>
+              `<w:r>${fieldTextRPr(piece, true)}<w:t xml:space="preserve">${escapeXmlText(piece.text)}</w:t></w:r>`,
+          )
+          .join('')
+      : run(`<w:t xml:space="preserve">${escapeXmlText(entry.text)}</w:t>`)
+    if (entry.noPage) return text
+    if (entry.pageRuns?.length) {
+      const pages = entry.pageRuns
+        .map(
+          (p) =>
+            `<w:r><w:rPr>${p.bold ? '<w:b/>' : ''}${p.italic ? '<w:i/>' : ''}<w:noProof/></w:rPr>` +
+            `<w:t xml:space="preserve">${escapeXmlText(p.text)}</w:t></w:r>`,
+        )
+        .join('')
+      const lead =
+        table.pageSep !== undefined
+          ? run(`<w:t xml:space="preserve">${escapeXmlText(table.pageSep)}</w:t>`)
+          : run('<w:tab/>')
+      return text + lead + pages
+    }
+    const page = entry.pageNo !== undefined ? escapeXmlText(String(entry.pageNo)) : ''
+    // separator and page share the last run: a refreshed page number rewrites that run alone
+    if (table.pageSep !== undefined)
+      return (
+        text +
+        run(`<w:t xml:space="preserve">${page ? escapeXmlText(table.pageSep) + page : ''}</w:t>`)
+      )
+    return text + run('<w:tab/>') + (page ? run(`<w:t>${page}</w:t>`) : '')
+  }
+  // built before the pages were laid out (they come for every line or for none): there is
+  // no result to show, so Word is asked to build the table
+  const paged = (e: E) => !!e.pageRuns?.length || (e.pageNo !== undefined && e.pageNo !== '')
+  const unpaged = !entries.some(paged) && entries.some((e) => !e.noPage)
   const begin =
-    '<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>' +
-    `<w:r><w:instrText xml:space="preserve"> TOC \\o "1-${maxLevel}" \\h \\z \\u </w:instrText></w:r>` +
+    `<w:r><w:fldChar w:fldCharType="begin"${unpaged ? ' w:dirty="true"' : ''}/></w:r>` +
+    `<w:r><w:instrText xml:space="preserve">${escapeXmlText(instr)}</w:instrText></w:r>` +
     '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
   const end = '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
 
   return entries.map((entry, i) => {
     const first = i === 0 ? begin : ''
     const last = i === entries.length - 1 ? end : ''
-    return `<w:p>${pPr(entry.level)}${first}${entryRuns(entry.text, entry.pageNo)}${last}</w:p>`
+    return `<w:p>${pPr(entry)}${first}${entryRuns(entry)}${last}</w:p>`
   })
+}
+
+/** a generated line whose page follows a separator: its last text run holds both */
+export function patchFieldTablePageXml(xml: string, tail: string): string {
+  const at = xml.lastIndexOf('<w:t xml:space="preserve">')
+  if (at === -1) return xml
+  const open = at + '<w:t xml:space="preserve">'.length
+  const close = xml.indexOf('</w:t>', open)
+  return close === -1 ? xml : xml.slice(0, open) + escapeXmlText(tail) + xml.slice(close)
+}
+
+export type SeqNumberFormat = 'ARABIC' | 'alphabetic' | 'ALPHABETIC' | 'roman' | 'ROMAN'
+
+export const SEQ_NUMBER_FORMATS: readonly SeqNumberFormat[] = [
+  'ARABIC',
+  'alphabetic',
+  'ALPHABETIC',
+  'roman',
+  'ROMAN',
+]
+
+const ROMAN_PARTS: Array<[number, string]> = [
+  [1000, 'M'],
+  [900, 'CM'],
+  [500, 'D'],
+  [400, 'CD'],
+  [100, 'C'],
+  [90, 'XC'],
+  [50, 'L'],
+  [40, 'XL'],
+  [10, 'X'],
+  [9, 'IX'],
+  [5, 'V'],
+  [4, 'IV'],
+  [1, 'I'],
+]
+
+/** a SEQ field's number as its `\*` format switch shows it (Word repeats the letter past z: aa, bb) */
+export function formatSeqNumber(n: number, format: SeqNumberFormat): string {
+  if (format === 'ARABIC' || n < 1) return String(n)
+  if (format === 'alphabetic' || format === 'ALPHABETIC') {
+    const letter = String.fromCharCode(97 + ((n - 1) % 26)).repeat(Math.floor((n - 1) / 26) + 1)
+    return format === 'ALPHABETIC' ? letter.toUpperCase() : letter
+  }
+  let rest = n
+  let out = ''
+  for (const [value, digits] of ROMAN_PARTS) {
+    while (rest >= value) {
+      out += digits
+      rest -= value
+    }
+  }
+  return format === 'ROMAN' ? out : out.toLowerCase()
+}
+
+export interface CaptionOptions {
+  format?: SeqNumberFormat
+  /** Word's "Exclude label from caption": the number alone, still counted under the label */
+  excludeLabel?: boolean
+  /** the number is a guess (the label's numbering is not computed here): Word renumbers on open */
+  dirty?: boolean
 }
 
 /**
  * Caption paragraph: `<label> <SEQ label> <text>`, e.g. "Figure 1 System architecture".
- * The SEQ field is marked dirty so Word renumbers all captions on open; the
- * static number is the visible result until then.
+ * The number is the SEQ field's result, saved as Word saves it.
  */
-export function generateCaptionXml(label: string, number: number, text: string): string {
+export function generateCaptionXml(
+  label: string,
+  number: number,
+  text: string,
+  options: CaptionOptions = {},
+): string {
+  const format = options.format ?? 'ARABIC'
   const rPr = '<w:rPr><w:color w:val="44546A"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr>'
   const run = (inner: string) => `<w:r>${rPr}${inner}</w:r>`
+  // a label with a space has to be quoted or SEQ reads its first word as the identifier
+  const id = /\s/.test(label) ? `"${label.replace(/"/g, '')}"` : label
   return (
     '<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="80" w:after="200"/></w:pPr>' +
-    run(`<w:t xml:space="preserve">${escapeXmlText(label)} </w:t>`) +
-    run('<w:fldChar w:fldCharType="begin" w:dirty="true"/>') +
+    (options.excludeLabel ? '' : run(`<w:t xml:space="preserve">${escapeXmlText(label)} </w:t>`)) +
+    run(`<w:fldChar w:fldCharType="begin"${options.dirty ? ' w:dirty="true"' : ''}/>`) +
     run(
-      `<w:instrText xml:space="preserve"> SEQ ${escapeXmlText(label)} \\* ARABIC </w:instrText>`,
+      `<w:instrText xml:space="preserve"> SEQ ${escapeXmlText(id)} \\* ${format} </w:instrText>`,
     ) +
     run('<w:fldChar w:fldCharType="separate"/>') +
-    run(`<w:t>${number}</w:t>`) +
+    run(`<w:t>${formatSeqNumber(number, format)}</w:t>`) +
     run('<w:fldChar w:fldCharType="end"/>') +
     (text ? run(`<w:t xml:space="preserve"> ${escapeXmlText(text)}</w:t>`) : '') +
     '</w:p>'
@@ -3235,34 +3758,46 @@ export function generateCaptionXml(label: string, number: number, text: string):
 
 /**
  * INDEX field as one w:p per cached entry line, alphabetically sorted. The
- * begin fldChar is dirty so Word rebuilds entries and page numbers on open.
+ * lines carry no pages, so the field is dirty and Word builds it on open.
  */
 export function generateIndexFieldXml(terms: string[]): string[] {
   const unique = [...new Set(terms.map((t) => t.trim()).filter(Boolean))]
   if (unique.length === 0) return []
   unique.sort((a, b) => a.localeCompare(b, 'zh-CN'))
-  const begin =
-    '<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>' +
-    '<w:r><w:instrText xml:space="preserve"> INDEX \\c "2" </w:instrText></w:r>' +
-    '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
-  const end = '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
-  const pPr =
-    '<w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="4300"/></w:tabs>' +
-    '<w:rPr><w:noProof/></w:rPr></w:pPr>'
-  return unique.map((term, i) => {
-    const first = i === 0 ? begin : ''
-    const last = i === unique.length - 1 ? end : ''
-    return (
-      `<w:p>${pPr}${first}` +
-      `<w:r><w:rPr><w:noProof/></w:rPr><w:t xml:space="preserve">${escapeXmlText(term)}</w:t></w:r>` +
-      '<w:r><w:rPr><w:noProof/></w:rPr><w:tab/></w:r>' +
-      `${last}</w:p>`
-    )
-  })
+  return generateFieldTableXml(
+    unique.map((text) => ({ text })),
+    { instr: ' INDEX \\c "2" ', tabPos: 4300 },
+  )
+}
+
+/**
+ * The instruction runs of a field. A mail-merge IF, SKIPIF or NEXTIF carries its nested
+ * MERGEFIELD operands as «Name»; Word only reads them as nested fields, so
+ * each one is written back as a field of its own.
+ */
+function fieldInstructionXml(instr: string): string {
+  const text = (part: string): string =>
+    `<w:r><w:instrText xml:space="preserve">${escapeXmlText(part)}</w:instrText></w:r>`
+  if (!MERGE_RULE_INSTR_RE.test(instr)) return text(` ${instr} `)
+  return ` ${instr} `
+    .split(/(«[^»]+»)/)
+    .map((part) => {
+      const name = /^«([^»]+)»$/.exec(part)?.[1]
+      if (name === undefined) return part === '' ? '' : text(part)
+      const code = /\s/.test(name) ? `"${name}"` : name
+      return (
+        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+        text(` MERGEFIELD ${code} `) +
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+        `<w:r><w:t>${escapeXmlText(part)}</w:t></w:r>` +
+        '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+      )
+    })
+    .join('')
 }
 
 function generateRunsXml(runs: Run[], ctx: GenerateContext): string {
-  return runsXml(runs, ctx.allocateHyperlinkRel, ctx.allocateRevisionId)
+  return runsXml(runs, ctx.allocateHyperlinkRel, ctx.allocateRevisionId, ctx)
 }
 
 /** OOXML runs without relationship allocation (header/footer parts, ...) */
@@ -3279,6 +3814,7 @@ function runsXml(
   runs: Run[],
   allocate: ((href: string) => string) | null,
   allocateRevisionId?: () => string,
+  bookmarkCtx: Pick<GenerateContext, 'allocateBookmarkId'> | null = null,
 ): string {
   // comment ranges: re-emit start/end/reference markers around the first..last
   // run each id covers, so editing a commented paragraph keeps its comments
@@ -3307,6 +3843,12 @@ function runsXml(
 
   const parts: string[] = []
 
+  // a NOTEREF field finds its note through a bookmark on the mark itself, in a link or not
+  const fragment = (run: Run, insideLink: boolean): string => {
+    const onMark = bookmarksXml(bookmarkCtx, run.noteRef?.bookmarks ?? [])
+    return onMark.starts + runFragmentXml(run, insideLink) + onMark.ends
+  }
+
   // serialize run indices [from, to) handling hyperlink grouping + comment markers
   const emitRange = (from: number, to: number) => {
     let i = from
@@ -3331,25 +3873,25 @@ function runsXml(
         const tooltip = group[0]?.link?.tooltip
         const tipAttr = tooltip ? ` w:tooltip="${escapeXmlAttr(tooltip)}"` : ''
         if (href.startsWith('#')) {
-          const inner = group.map((r) => runFragmentXml(r, true)).join('')
+          const inner = group.map((r) => fragment(r, true)).join('')
           parts.push(
             `<w:hyperlink w:anchor="${escapeXmlAttr(href.slice(1))}"${tipAttr}>${inner}</w:hyperlink>`,
           )
         } else {
           const finalRId = rId ?? allocate?.(href)
           if (finalRId) {
-            const inner = group.map((r) => runFragmentXml(r, true)).join('')
+            const inner = group.map((r) => fragment(r, true)).join('')
             parts.push(
               `<w:hyperlink r:id="${escapeXmlAttr(finalRId)}"${tipAttr}>${inner}</w:hyperlink>`,
             )
           } else {
-            parts.push(group.map((r) => runFragmentXml(r, false)).join(''))
+            parts.push(group.map((r) => fragment(r, false)).join(''))
           }
         }
         for (let j = groupStart; j < i; j++) parts.push(endsAt(j))
       } else {
         parts.push(startsAt(i))
-        parts.push(runFragmentXml(run, false))
+        parts.push(fragment(run, false))
         parts.push(endsAt(i))
         i++
       }
@@ -3469,8 +4011,10 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
   if (run.math) {
     return run.math.display ? `<m:oMathPara>${run.math.omml}</m:oMathPara>` : run.math.omml
   }
-  // atomic phonetic guide: the exact <w:ruby> fragment re-wrapped in a run
-  if (run.ruby) return `<w:r>${run.ruby.xml}</w:r>`
+  // atomic phonetic guide: the <w:ruby> fragment re-wrapped in a run
+  if (run.ruby) return `<w:r>${rubyWithBaseFormat(run, insideLink)}</w:r>`
+  // enclosed or combined characters: the EQ field's own runs
+  if (run.eqLayout) return eqLayoutFieldXml(run, insideLink)
   // atomic cell picture: the exact <w:drawing> fragment re-wrapped in a run
   if (run.image) {
     const text = run.text === '' ? '' : generateRunXml({ ...run, image: undefined }, insideLink)
@@ -3490,7 +4034,13 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
     // A marker the app minted has no rPr and keeps the superscript it has
     // always carried.
     const markerRPr = run.rawRPr ?? '<w:rPr><w:vertAlign w:val="superscript"/></w:rPr>'
-    return `<w:r>${markerRPr}<${tag} w:id="${escapeXmlAttr(run.noteRef.id)}"/></w:r>`
+    const { customMark } = run.noteRef
+    if (customMark === undefined)
+      return `<w:r>${markerRPr}<${tag} w:id="${escapeXmlAttr(run.noteRef.id)}"/></w:r>`
+    const markText = customMark
+      ? `<w:t xml:space="preserve">${escapeXmlText(customMark)}</w:t>`
+      : ''
+    return `<w:r>${markerRPr}<${tag} w:customMarkFollows="1" w:id="${escapeXmlAttr(run.noteRef.id)}"/>${markText}</w:r>`
   }
   if (run.refField !== undefined) {
     // cross-reference: full REF field, run text is the cached display result;
@@ -3526,9 +4076,14 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
     // A preserved begin run (form fields: w:ffData) replaces the bare begin, and the run text is a
     // synthesized glyph Word must not see as a cached result — Word draws the box from ffData.
     const instrXml =
-      `<w:r><w:instrText xml:space="preserve"> ${escapeXmlText(run.instrField)} </w:instrText></w:r>` +
-      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+      fieldInstructionXml(run.instrField) + '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
     const endXml = '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+    if (run.text === NO_FIELD_RESULT)
+      return (
+        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+        fieldInstructionXml(run.instrField) +
+        endXml
+      )
     if (run.zoteroFieldPart && run.zoteroFieldPart !== 'single') {
       const cachedXml = generateRunXml(
         {
@@ -3581,15 +4136,90 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
     )
   }
   let xml = run.text === '' ? '' : generateRunXml(run, insideLink)
-  if (run.xeTerm !== undefined) {
+  const kept = run.taInstr !== undefined ? `TA ${run.taInstr}` : run.tcInstr && `TC ${run.tcInstr}`
+  if (kept) {
+    // a citation or contents entry rides the index entry's slot: its instruction goes back as it was read
+    xml +=
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      fieldCodeRuns(` ${kept} `, run.taRuns)
+        .map(
+          (piece) =>
+            `<w:r>${fieldTextRPr(piece)}<w:instrText xml:space="preserve">${escapeXmlText(piece.text)}</w:instrText></w:r>`,
+        )
+        .join('') +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+  } else if (run.xeTerm !== undefined) {
     // embedded quotes would break the field instruction syntax; drop them
     const term = run.xeTerm.replace(/"/g, '')
     xml +=
       '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
-      `<w:r><w:instrText xml:space="preserve"> XE "${escapeXmlText(term)}" </w:instrText></w:r>` +
+      `<w:r><w:instrText xml:space="preserve"> XE "${escapeXmlText(term)}" ${
+        run.xeSwitches ? escapeXmlText(run.xeSwitches) + ' ' : ''
+      }</w:instrText></w:r>` +
       '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
   }
   return xml
+}
+
+const EMU_PER_POINT = 12700
+
+/** a w14 colour with its transparency, as the reader takes it back */
+function w14ColorXml(color: string, alpha: number | undefined): string {
+  const inner =
+    alpha !== undefined && alpha < 1 ? `<w14:alpha w14:val="${Math.round(alpha * 100000)}"/>` : ''
+  const hex = escapeXmlAttr(color)
+  return inner
+    ? `<w14:srgbClr w14:val="${hex}">${inner}</w14:srgbClr>`
+    : `<w14:srgbClr w14:val="${hex}"/>`
+}
+
+function w14TextFillXml(color: string): string {
+  return `<w14:textFill><w14:solidFill>${w14ColorXml(color, undefined)}</w14:solidFill></w14:textFill>`
+}
+
+/** the literal colour of a raw solid w14:textFill; '' when the fill is solid in a scheme colour */
+function rawSolidFill(xml: string | undefined): string | undefined {
+  const solid = /^<w14:textFill>\s*<w14:solidFill>\s*<w14:(srgbClr|schemeClr)\b[^>]*>/.exec(
+    xml ?? '',
+  )
+  if (!solid) return undefined
+  return solid[1] === 'srgbClr' ? (rawAttr(solid[0], 'w14:val') ?? '').toUpperCase() : ''
+}
+
+function w14GlowXml(glow: TextGlow): string {
+  const rad = Math.round(glow.radiusPt * EMU_PER_POINT)
+  return `<w14:glow w14:rad="${rad}">${w14ColorXml(glow.color, glow.alpha)}</w14:glow>`
+}
+
+function w14ShadowXml(shadow: TextShadow): string {
+  return (
+    `<w14:shadow w14:blurRad="${Math.round(shadow.blurPt * EMU_PER_POINT)}" ` +
+    `w14:dist="${Math.round(shadow.distPt * EMU_PER_POINT)}" ` +
+    `w14:dir="${Math.round(shadow.dirDeg * 60000)}" ` +
+    'w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl">' +
+    `${w14ColorXml(shadow.color, shadow.alpha)}</w14:shadow>`
+  )
+}
+
+function w14ReflectionXml(reflection: TextReflection): string {
+  const pct = (v: number) => Math.round(v * 100000)
+  return (
+    `<w14:reflection w14:blurRad="${Math.round(reflection.blurPt * EMU_PER_POINT)}" ` +
+    `w14:stA="${pct(reflection.startAlpha)}" w14:stPos="0" w14:endA="300" ` +
+    `w14:endPos="${pct(reflection.endPos)}" ` +
+    `w14:dist="${Math.round(reflection.distPt * EMU_PER_POINT)}" ` +
+    'w14:dir="5400000" w14:fadeDir="5400000" w14:sx="100000" w14:sy="-100000" ' +
+    'w14:kx="0" w14:ky="0" w14:algn="bl"/>'
+  )
+}
+
+function w14TextOutlineXml(outline: TextOutline): string {
+  return (
+    `<w14:textOutline w14:w="${Math.round(outline.widthPt * EMU_PER_POINT)}" ` +
+    'w14:cap="rnd" w14:cmpd="sng" w14:algn="ctr">' +
+    `<w14:solidFill>${w14ColorXml(outline.color, outline.alpha)}</w14:solidFill>` +
+    '<w14:prstDash w14:val="solid"/><w14:bevel/></w14:textOutline>'
+  )
 }
 
 /** CT_RPr child sequence (subset), for schema-ordered assembly and merging */
@@ -3633,6 +4263,16 @@ export const RPR_CHILD_ORDER = [
   'w:eastAsianLayout',
   'w:specVanish',
   'w:oMath',
+  'w14:glow',
+  'w14:shadow',
+  'w14:reflection',
+  'w14:textOutline',
+  'w14:textFill',
+  'w14:ligatures',
+  'w14:numForm',
+  'w14:numSpacing',
+  'w14:stylisticSets',
+  'w14:cntxtAlts',
   'w:rPrChange',
 ]
 
@@ -3654,14 +4294,68 @@ const RUN_MANAGED_GROUPS: Array<{ key: string; tags: string[] }> = [
   { key: 'size', tags: ['w:sz', 'w:szCs'] },
   { key: 'highlight', tags: ['w:highlight'] },
   { key: 'underline', tags: ['w:u'] },
+  { key: 'bdr', tags: ['w:bdr'] },
+  { key: 'fitText', tags: ['w:fitText'] },
+  { key: 'eaLayout', tags: ['w:eastAsianLayout'] },
+  { key: 'lang', tags: ['w:lang'] },
+  { key: 'noProof', tags: ['w:noProof'] },
   { key: 'shading', tags: ['w:shd'] },
   { key: 'vertAlign', tags: ['w:vertAlign'] },
   { key: 'rtl', tags: ['w:rtl'] },
+  { key: 'em', tags: ['w:em'] },
+  { key: 'otLigatures', tags: ['w14:ligatures'] },
+  { key: 'otNumForm', tags: ['w14:numForm'] },
+  { key: 'otNumSpacing', tags: ['w14:numSpacing'] },
+  { key: 'otSets', tags: ['w14:stylisticSets'] },
+  { key: 'otAlts', tags: ['w14:cntxtAlts'] },
+  { key: 'fxGlow', tags: ['w14:glow'] },
+  { key: 'fxShadow', tags: ['w14:shadow'] },
+  { key: 'fxReflection', tags: ['w14:reflection'] },
+  { key: 'fxOutline', tags: ['w14:textOutline'] },
+  { key: 'fxFill', tags: ['w14:textFill'] },
   { key: 'rPrChange', tags: ['w:rPrChange'] },
 ]
 
 const rawAttr = (xml: string | undefined, attr: string): string | undefined =>
   xml ? new RegExp(` ${attr}="([^"]*)"`).exec(xml)?.[1] : undefined
+
+/** the switched-on w14:styleSet ids of a raw w14:stylisticSets, as parse reads them */
+function rawStyleSets(xml: string | undefined): number[] {
+  return [...(xml ?? '').matchAll(/<w14:styleSet\b[^>]*>/g)]
+    .filter((m) => !/^(0|false|off)$/.test(rawAttr(m[0], 'w14:val') ?? ''))
+    .map((m) => parseInt(rawAttr(m[0], 'w14:id') ?? '', 10))
+    .filter((id) => id >= 1 && id <= 20)
+}
+
+type RunBorder = NonNullable<Run['bdr']>
+
+/** the run's own w:bdr as parse reads it: null for none/nil, undefined when there is no element */
+function rawRunBorder(xml: string | undefined): RunBorder | null | undefined {
+  if (!xml) return undefined
+  const val = rawAttr(xml, 'w:val')
+  if (!val || val === 'none' || val === 'nil') return null
+  const color = rawAttr(xml, 'w:color')
+  const space = parseInt(rawAttr(xml, 'w:space') ?? '', 10)
+  return {
+    val,
+    sz: parseInt(rawAttr(xml, 'w:sz') ?? '', 10) || 4,
+    ...(color && color !== 'auto' ? { color: color.replace(/^#/, '') } : {}),
+    ...(space > 0 ? { space } : {}),
+  }
+}
+
+function sameRunBorder(a: RunBorder | null | undefined, b: RunBorder | null): boolean {
+  if (!a || !b) return a === b
+  return (
+    a.val === b.val && a.sz === b.sz && a.color === b.color && (a.space ?? 0) === (b.space ?? 0)
+  )
+}
+
+/** w:bdr for a run; null writes the explicit "no border" that overrides a style's */
+function runBorderXml(bdr: RunBorder | null): string {
+  if (!bdr) return '<w:bdr w:val="nil"/>'
+  return `<w:bdr w:val="${escapeXmlAttr(bdr.val)}" w:sz="${bdr.sz}" w:space="${bdr.space ?? 0}" w:color="${escapeXmlAttr(bdr.color ?? 'auto')}"/>`
+}
 
 /** String version of boolProp: element present means true unless w:val negates it */
 function rawBool(xml: string | undefined): boolean {
@@ -3817,6 +4511,27 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
     out.push({ name: 'w:dstrike', xml: onOffXml('w:dstrike', run.dstrike) })
   if (run.vanishOwn !== undefined)
     out.push({ name: 'w:vanish', xml: onOffXml('w:vanish', run.vanishOwn) })
+  if (run.bdrOwn !== undefined) out.push({ name: 'w:bdr', xml: runBorderXml(run.bdrOwn) })
+  if (run.fitTextTwips)
+    out.push({ name: 'w:fitText', xml: `<w:fitText w:val="${Math.round(run.fitTextTwips)}"/>` })
+  if (run.eaLayout && (run.eaLayout.combine || run.eaLayout.vert)) {
+    const { combine, vert, id } = run.eaLayout
+    out.push({
+      name: 'w:eastAsianLayout',
+      xml:
+        `<w:eastAsianLayout${id === undefined ? '' : ` w:id="${id}"`}` +
+        `${combine ? ' w:combine="1"' : ''}${vert ? ' w:vert="1"' : ''}/>`,
+    })
+  }
+  if (run.lang && (run.lang.val || run.lang.eastAsia || run.lang.bidi)) {
+    const slot = (attr: string, value?: string) =>
+      value ? ` ${attr}="${escapeXmlAttr(value)}"` : ''
+    out.push({
+      name: 'w:lang',
+      xml: `<w:lang${slot('w:val', run.lang.val)}${slot('w:eastAsia', run.lang.eastAsia)}${slot('w:bidi', run.lang.bidi)}/>`,
+    })
+  }
+  if (run.noProof) out.push({ name: 'w:noProof', xml: '<w:noProof/>' })
   if (run.color)
     out.push({ name: 'w:color', xml: `<w:color w:val="${escapeXmlAttr(run.color)}"/>` })
   if (run.charSpacingTwips !== undefined)
@@ -3832,7 +4547,16 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
   }
   if (run.highlight)
     out.push({ name: 'w:highlight', xml: `<w:highlight w:val="${escapeXmlAttr(run.highlight)}"/>` })
-  if (run.underline) out.push({ name: 'w:u', xml: '<w:u w:val="single"/>' })
+  if (run.underline) {
+    const color =
+      run.underlineColor && run.underlineColor !== 'auto'
+        ? ` w:color="${escapeXmlAttr(run.underlineColor)}"`
+        : ''
+    out.push({
+      name: 'w:u',
+      xml: `<w:u w:val="${escapeXmlAttr(run.underlineStyle ?? 'single')}"${color}/>`,
+    })
+  }
   if (run.shading) {
     out.push({
       name: 'w:shd',
@@ -3842,6 +4566,34 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
   if (run.vertAlign)
     out.push({ name: 'w:vertAlign', xml: `<w:vertAlign w:val="${run.vertAlign}"/>` })
   if (run.rtl) out.push({ name: 'w:rtl', xml: '<w:rtl/>' })
+  if (run.em && run.em !== 'none') out.push({ name: 'w:em', xml: `<w:em w:val="${run.em}"/>` })
+  // the effects the editor set on the run; a cleared one writes nothing and its element goes
+  if (run.fxOwn?.glow) out.push({ name: 'w14:glow', xml: w14GlowXml(run.fxOwn.glow) })
+  if (run.fxOwn?.shadow) out.push({ name: 'w14:shadow', xml: w14ShadowXml(run.fxOwn.shadow) })
+  if (run.fxOwn?.reflection)
+    out.push({ name: 'w14:reflection', xml: w14ReflectionXml(run.fxOwn.reflection) })
+  if (run.fxOwn?.outline)
+    out.push({ name: 'w14:textOutline', xml: w14TextOutlineXml(run.fxOwn.outline) })
+  if (run.fxOwn?.fill && run.color)
+    out.push({ name: 'w14:textFill', xml: w14TextFillXml(run.color) })
+  const otf = run.otf
+  if (otf?.ligatures && otf.ligatures !== 'none')
+    out.push({
+      name: 'w14:ligatures',
+      xml: `<w14:ligatures w14:val="${escapeXmlAttr(otf.ligatures)}"/>`,
+    })
+  if (otf?.numForm && otf.numForm !== 'default')
+    out.push({ name: 'w14:numForm', xml: `<w14:numForm w14:val="${otf.numForm}"/>` })
+  if (otf?.numSpacing && otf.numSpacing !== 'default')
+    out.push({ name: 'w14:numSpacing', xml: `<w14:numSpacing w14:val="${otf.numSpacing}"/>` })
+  if (otf?.stylisticSets?.length)
+    out.push({
+      name: 'w14:stylisticSets',
+      xml: `<w14:stylisticSets>${otf.stylisticSets
+        .map((id) => `<w14:styleSet w14:id="${Math.round(id)}"/>`)
+        .join('')}</w14:stylisticSets>`,
+    })
+  if (otf?.cntxtAlts) out.push({ name: 'w14:cntxtAlts', xml: '<w14:cntxtAlts/>' })
   const rPrChange = revisionRPrChangeXml(run)
   if (rPrChange) out.push({ name: 'w:rPrChange', xml: rPrChange })
   return out
@@ -3939,7 +4691,14 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         const raw = rawAttr(rawOf('w:color'), 'w:val')
         // a theme-resolved model value never equals the cached literal; rebuilding
         // would materialize the theme link (same rule as rFonts above)
-        return raw === run.color || (run.themeColor !== undefined && run.color === run.themeColor)
+        return (
+          raw === run.color ||
+          (run.themeColor !== undefined && run.color === run.themeColor) ||
+          // the colour was read from the fill: the file has no w:color to compare
+          (raw === undefined &&
+            !!run.color &&
+            rawSolidFill(rawOf('w14:textFill')) === run.color.toUpperCase())
+        )
       }
       case 'size': {
         const raw = rawAttr(rawOf(cs ? 'w:szCs' : 'w:sz'), 'w:val')
@@ -3953,12 +4712,43 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         const raw = rawAttr(rawOf('w:shd'), 'w:fill')
         return (raw && raw !== 'auto' ? raw : undefined) === run.shading
       }
+      // undefined is "not touched": what the file says about these stays, switches the model
+      // does not carry (brackets, compression) included
+      case 'fitText':
+        return (
+          run.fitTextTwips === undefined || (rawInt(rawOf('w:fitText')) || 0) === run.fitTextTwips
+        )
+      case 'eaLayout': {
+        if (run.eaLayout === undefined) return true
+        const raw = rawOf('w:eastAsianLayout')
+        const on = (attr: string) => /^(1|true|on)$/.test(rawAttr(raw, attr) ?? '')
+        return on('w:combine') === !!run.eaLayout.combine && on('w:vert') === !!run.eaLayout.vert
+      }
+      case 'lang': {
+        if (run.lang === undefined) return true
+        const raw = rawOf('w:lang')
+        return (['val', 'eastAsia', 'bidi'] as const).every(
+          (slot) => (rawAttr(raw, `w:${slot}`) || undefined) === (run.lang?.[slot] || undefined),
+        )
+      }
+      case 'noProof':
+        return run.noProof === undefined || rawBool(rawOf('w:noProof')) === run.noProof
+      // `bdr` may be style-inherited; only the run's own border is compared
+      case 'bdr':
+        return run.bdrOwn === undefined || sameRunBorder(rawRunBorder(rawOf('w:bdr')), run.bdrOwn)
       case 'underline': {
         // w:u is not a boolean prop: no w:val (or val="none") means no
         // underline, regardless of other attributes like w:color. Must match
         // underlineProp() used at parse time.
         const val = rawAttr(rawOf('w:u'), 'w:val')
-        return (val !== undefined && val !== 'none') === !!run.underline
+        if ((val !== undefined && val !== 'none') !== !!run.underline) return false
+        if (!run.underline) return true
+        // a model without a style or colour never asked for another line: the file's own stays
+        return (
+          (run.underlineStyle === undefined || val === run.underlineStyle) &&
+          (run.underlineColor === undefined ||
+            (rawAttr(rawOf('w:u'), 'w:color') ?? 'auto') === run.underlineColor)
+        )
       }
       case 'vertAlign': {
         const raw = rawAttr(rawOf('w:vertAlign'), 'w:val')
@@ -3967,6 +4757,52 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
       }
       case 'rtl':
         return rawBool(rawOf('w:rtl')) === !!run.rtl
+      // undefined is "not touched": what the file says stays; the default value removes it
+      case 'em':
+        return run.em === undefined || (rawAttr(rawOf('w:em'), 'w:val') ?? 'none') === run.em
+      case 'otLigatures':
+        return (
+          run.otf?.ligatures === undefined ||
+          (rawAttr(rawOf('w14:ligatures'), 'w14:val') ?? 'none') === run.otf.ligatures
+        )
+      case 'otNumForm':
+        return (
+          run.otf?.numForm === undefined ||
+          (rawAttr(rawOf('w14:numForm'), 'w14:val') ?? 'default') === run.otf.numForm
+        )
+      case 'otNumSpacing':
+        return (
+          run.otf?.numSpacing === undefined ||
+          (rawAttr(rawOf('w14:numSpacing'), 'w14:val') ?? 'default') === run.otf.numSpacing
+        )
+      case 'otSets':
+        return (
+          run.otf?.stylisticSets === undefined ||
+          rawStyleSets(rawOf('w14:stylisticSets')).join() === run.otf.stylisticSets.join()
+        )
+      case 'otAlts': {
+        if (run.otf?.cntxtAlts === undefined) return true
+        const raw = rawOf('w14:cntxtAlts')
+        return (
+          (!!raw && !/^(0|false|off)$/.test(rawAttr(raw, 'w14:val') ?? '')) === run.otf.cntxtAlts
+        )
+      }
+      // undefined is "not touched in the editor": what the file says stays
+      case 'fxGlow':
+        return run.fxOwn?.glow === undefined
+      case 'fxShadow':
+        return run.fxOwn?.shadow === undefined
+      case 'fxReflection':
+        return run.fxOwn?.reflection === undefined
+      case 'fxOutline':
+        return run.fxOwn?.outline === undefined
+      // Word shows the fill, not w:color: a solid fill of the file follows a change of colour
+      case 'fxFill': {
+        if (run.fxOwn?.fill !== undefined) return false
+        const rawFill = rawSolidFill(rawOf('w14:textFill'))
+        if (rawFill === undefined || groupEqual('color')) return true
+        return rawFill === '' && rawOf('w:color') === undefined
+      }
       case 'rPrChange':
         return !!rawOf('w:rPrChange') === !!run.rPrChange
       default:
@@ -3981,6 +4817,8 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
     if (rawRFonts && (run.font || run.fontAscii)) {
       // edited font slots merge into the original element instead of replacing it
       freshOut.push({ name: 'w:rFonts', xml: mergeRFontsXml(rawRFonts, run) })
+    } else if (g.key === 'fxFill' && run.fxOwn?.fill === undefined) {
+      if (run.color) freshOut.push({ name: 'w14:textFill', xml: w14TextFillXml(run.color) })
     } else {
       freshOut.push(...freshByGroup.get(g.key)!)
     }
@@ -4022,6 +4860,8 @@ export function buildTextboxParagraphXml(opts?: {
   id?: number
   fillHex?: string
   borderHex?: string
+  /** the text runs down the box (Word's vertical text box is `eaVert`) */
+  vert?: TextboxVert
 }): string {
   const widthEmu = opts?.widthEmu ?? 1800000
   const heightEmu = opts?.heightEmu ?? 1080000
@@ -4042,7 +4882,7 @@ export function buildTextboxParagraphXml(opts?: {
     `<wps:cNvSpPr txBox="1"/>` +
     spPr +
     `<wps:txbx><w:txbxContent><w:p><w:r><w:t xml:space="preserve"> </w:t></w:r></w:p></w:txbxContent></wps:txbx>` +
-    `<wps:bodyPr/>` +
+    (opts?.vert ? `<wps:bodyPr vert="${opts.vert}"/>` : `<wps:bodyPr/>`) +
     `</wps:wsp>`
 
   const graphicData =
@@ -4451,6 +5291,65 @@ export function buildWordArtParagraphXml(opts: {
   return `<w:p><w:r>${alternateContent}</w:r></w:p>`
 }
 
+/** the size text has when neither it nor the editor names one (Word's 10.5 pt) */
+const DEFAULT_SIZE_HALF_POINTS = 21
+
+/**
+ * The EQ field of enclosed or combined characters. One read from the file is
+ * written as it was. A new one is written the way Word writes it: the parts
+ * overlaid with \o, every run in the run's own formatting, the sized part
+ * carrying its size and baseline shift.
+ */
+function eqLayoutFieldXml(run: Run, insideLink: boolean): string {
+  const layout = run.eqLayout!
+  if (layout.xml) return layout.xml
+  const base: Run = { ...run, eqLayout: undefined, text: '' }
+  const rPr = (over: Partial<Run> = {}) => runRPrXml({ ...base, ...over }, insideLink)
+  const plain = rPr()
+  const code = (text: string, props = plain) =>
+    `<w:r>${props}<w:instrText xml:space="preserve">${escapeXmlText(text)}</w:instrText></w:r>`
+  const size = run.sizeHalfPoints ?? DEFAULT_SIZE_HALF_POINTS
+  let body: string
+  if (layout.kind === 'enclose') {
+    const enclosure =
+      layout.style === 'enlarge'
+        ? rPr({
+            sizeHalfPoints: Math.round(size * 1.5),
+            positionHalfPoints: -Math.round(size * 0.19),
+          })
+        : plain
+    const inside =
+      layout.style === 'shrink'
+        ? rPr({
+            sizeHalfPoints: Math.max(2, Math.round((size * 2) / 3)),
+            positionHalfPoints: Math.round(size * 0.1),
+          })
+        : plain
+    body =
+      code(' eq \\o\\ac(') +
+      code(layout.a, enclosure) +
+      code(',') +
+      code(layout.b, inside) +
+      code(')')
+  } else {
+    // two lines of half-size text, one raised and one lowered about the baseline (points)
+    const small = rPr({ sizeHalfPoints: Math.max(2, Math.round(size / 2)) })
+    const up = Math.max(1, Math.round(size / 4))
+    const down = Math.max(1, Math.round(size / 10))
+    body =
+      code(` eq \\o(\\s\\up ${up}(`) +
+      code(layout.a, small) +
+      code(`),\\s\\do ${down}(`) +
+      code(layout.b, small) +
+      code('))')
+  }
+  return (
+    `<w:r>${plain}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    body +
+    `<w:r>${plain}<w:fldChar w:fldCharType="end"/></w:r>`
+  )
+}
+
 function runRPrXml(run: Run, insideLink: boolean): string {
   // OOXML requires rPr children in schema order:
   // rStyle < rFonts < b < i < strike < color < sz < highlight < u < vertAlign
@@ -4463,8 +5362,8 @@ function generateRunXml(run: Run, insideLink: boolean): string {
   const rPr = runRPrXml(run, insideLink)
 
   // Translate embedded control characters back to OOXML elements.
-  // Deleted runs carry their text in w:delText instead of w:t.
-  const textTag = run.del ? 'w:delText' : 'w:t'
+  // Deleted runs carry their text in w:delText instead of w:t; a moved-away run keeps w:t, as Word writes it.
+  const textTag = run.del && !run.del.move ? 'w:delText' : 'w:t'
   const segments: string[] = []
   let buffer = ''
   const flush = () => {

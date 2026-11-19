@@ -1,7 +1,25 @@
 import type { Editor } from '@tiptap/core'
+import type { ActionCommandId } from '../../src/shared/commands'
+import { runMenuCommand, type CommandHost } from '../../src/renderer/commands/menu-commands'
+import { applyGalleryStyle } from '../../src/renderer/components/ribbon-tabs'
+import { FALLBACK_STYLES } from '../../src/renderer/style-gallery'
 import type { RibbonFormatState } from '../../src/renderer/components/ribbon-format-state'
+import { MERGE_RANGE_ALL } from '../../src/renderer/mail-merge/range'
 
 const noop = () => {}
+
+/** runs ribbon commands on the editor; beyond applying a built-in style, what a command asks of the app does nothing */
+export function commandRunner(editor: Editor, hasDoc = true) {
+  const applyStyle: CommandHost['applyStyle'] = (styleId) => {
+    const info = FALLBACK_STYLES.get(styleId)
+    if (info) applyGalleryStyle(editor, null, info, undefined, null)
+  }
+  const base = { editor, hasDoc, tableSectionWidthPx: 600, applyStyle }
+  const host = new Proxy(base as CommandHost, {
+    get: (target, key) => (key in target ? target[key as keyof CommandHost] : noop),
+  })
+  return (id: ActionCommandId, payload?: string) => runMenuCommand(host, id, payload)
+}
 
 /** Every Ribbon prop, so a test can mount the real component and drive one control. */
 export function ribbonProps(editor: Editor, formatState: RibbonFormatState) {
@@ -9,14 +27,17 @@ export function ribbonProps(editor: Editor, formatState: RibbonFormatState) {
     editor,
     formatState,
     hasDoc: true,
-    blocks: [],
     onOpen: noop,
     onSave: noop,
     onSaveAs: noop,
-    onConvert: noop,
     onNameWithAi: noop,
     showAi: false,
-    onToggleAi: noop,
+    onCommand: commandRunner(editor),
+    editTarget: {
+      hasSelection: !editor.state.selection.empty,
+      editable: editor.isEditable,
+      field: false,
+    },
     section: null,
     onSection: noop,
     activeSection: null,
@@ -28,10 +49,8 @@ export function ribbonProps(editor: Editor, formatState: RibbonFormatState) {
     pageColor: null,
     onPageColor: noop,
     watermark: null,
-    watermarkStyle: null,
     watermarkPicture: null,
     watermarkDocImage: null,
-    onWatermark: noop,
     themeFonts: null,
     onThemeFonts: noop,
     themeColors: null,
@@ -54,18 +73,15 @@ export function ribbonProps(editor: Editor, formatState: RibbonFormatState) {
     onTrackChangesOptions: noop,
     darkPage: false,
     onDarkPage: noop,
-    onAiPreset: noop,
     header: null,
     onHeader: noop,
     onPageNumFormat: noop,
-    onInsertField: noop,
     footer: null,
     onFooter: noop,
     hfEditing: null,
     onHfAction: noop,
     onHfEdit: noop,
     showMarks: false,
-    onShowMarks: noop,
     showRuler: false,
     onShowRuler: noop,
     showNav: false,
@@ -78,7 +94,6 @@ export function ribbonProps(editor: Editor, formatState: RibbonFormatState) {
     onToggleComments: noop,
     commentsMode: 'contextual' as const,
     onCommentsMode: noop,
-    canComment: false,
     onNewComment: noop,
     commentAtCaret: false,
     onDeleteComment: noop,
@@ -108,8 +123,10 @@ export function ribbonProps(editor: Editor, formatState: RibbonFormatState) {
     onProtectDoc: noop,
     onCompare: noop,
     mergeSource: null,
-    onPickMergeDataSource: noop,
-    onMergeMailings: async () => ({ ok: true }),
+    mergeRecordIndex: 0,
+    onMergeRecordIndex: noop,
+    mergeRange: MERGE_RANGE_ALL,
+    onMergeRange: noop,
     filePath: null,
     viewMode: 'print' as const,
     onViewMode: noop,

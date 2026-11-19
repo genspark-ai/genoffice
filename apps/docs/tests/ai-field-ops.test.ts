@@ -3,9 +3,11 @@ import { Editor } from '@tiptap/core'
 import JSZip from 'jszip'
 import { parseDocx, saveDocx } from '@genoffice/docx-engine'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
+import { allowDirtyFields } from '../../../packages/docx-engine/tests/helpers/dirty-fields'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { executeOps } from '../src/renderer/ai/ops'
+import { settleFieldResults } from '../src/renderer/editor/field-results'
 import { evaluateIf, formatFieldDate, formatSeqNumber } from '../src/renderer/ai/field-ops'
 
 interface JsonNode {
@@ -257,6 +259,10 @@ describe('insertField', () => {
     expect(
       refused({ args: 'ZOTERO_ITEM CSL_CITATION {"citationItems":[]}', result: 'x' }),
     ).toContain('non-empty citationItems')
+    for (const items of ['[1]', '[{}]', '[{"locator":"45"}]'])
+      expect(
+        refused({ args: `ZOTERO_ITEM CSL_CITATION {"citationItems":${items}}`, result: 'x' }),
+      ).toContain('uris, id or itemData')
     expect(refused({ args })).toContain('needs result')
   })
 
@@ -270,7 +276,7 @@ describe('insertField', () => {
 })
 
 describe('updateFields', () => {
-  it('keeps partial formatting on a split result when only the dirty flag changes', () => {
+  it('leaves a computed field whose result stands as it is, partial formatting included', () => {
     const editor = createEditor([para('Status: ')])
     let outcome = executeOps(editor, [
       { op: 'insertField', target: at(0), type: 'IF', args: '3 > 2 "open" "closed"' },
@@ -292,8 +298,8 @@ describe('updateFields', () => {
       return true
     })
     expect(nodes).toEqual([
-      { text: 'op', bold: true, dirty: true },
-      { text: 'en', bold: false, dirty: true },
+      { text: 'op', bold: true, dirty: false },
+      { text: 'en', bold: false, dirty: false },
     ])
   })
 
@@ -314,7 +320,7 @@ describe('updateFields', () => {
     expect(editor.state.doc.textContent).toBe('Chapter one.Chapter one.Chapter one.')
   })
 
-  it('renumbers SEQ fields, refreshes REF and DATE, and marks the rest dirty', () => {
+  it('renumbers SEQ fields, refreshes REF and DATE, and leaves the rest as they are', () => {
     const editor = createEditor([
       para('Intro.', { bookmarks: ['Intro'] }),
       para('Figure '),
@@ -337,7 +343,7 @@ describe('updateFields', () => {
       { op: 'findReplace', target: at(0), find: 'Intro.', replace: 'Introduction.' },
     ])
     expect(outcome.ok, outcome.error).toBe(true)
-    // NUMPAGES was inserted dirty; clear it to prove updateFields re-marks it
+    // NUMPAGES was inserted without a computed result: it waits for Word
     const numPages = fieldsOf(editor).find((f) => f.instr === 'NUMPAGES')
     expect(numPages?.dirty).toBe(true)
     outcome = executeOps(editor, [{ op: 'updateFields' }])
@@ -430,6 +436,8 @@ describe('field ops through the docx save path', () => {
     }
     const dirtyRef =
       /w:dirty="true"\/><\/w:r><w:r><w:instrText xml:space="preserve"> REF Summary \\p </
+    // "above" / "below" is not computed here: the field is left for Word to update
+    allowDirtyFields()
     const parsed = await parseDocx(source)
     const editor = createEditor(blocksToPmDoc(parsed.blocks).content as JsonNode[])
     let outcome = executeOps(editor, [
@@ -490,7 +498,7 @@ describe('field ops through the docx save path', () => {
     })
   })
 
-  it('writes dirty complex fields and a bookmark Word can resolve', async () => {
+  it('writes complex fields with their results and a bookmark Word can resolve', async () => {
     const source = await buildDocx({
       bodyXml:
         '<w:p><w:r><w:t>Summary paragraph.</w:t></w:r></w:p>' +
@@ -507,13 +515,17 @@ describe('field ops through the docx save path', () => {
       { op: 'insertField', target: at(3), type: 'PAGEREF', args: 'Summary \\h' },
     ])
     expect(outcome.ok, outcome.error).toBe(true)
+    // the save numbers the caption; the PAGEREF's page is Word's to compute
+    settleFieldResults(editor, parsed.blocks)
+    allowDirtyFields()
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
     const out = await saveDocx(parsed, plan.saveBlocks)
     const xml = await (await JSZip.loadAsync(out)).file('word/document.xml')!.async('string')
     expect(xml).toContain('w:name="Summary"')
     expect(xml).toMatch(
-      /<w:fldChar w:fldCharType="begin" w:dirty="true"\/><\/w:r><w:r><w:instrText xml:space="preserve"> SEQ Figure \\\* ARABIC <\/w:instrText>/,
+      /<w:fldChar w:fldCharType="begin"\/><\/w:r><w:r><w:instrText xml:space="preserve"> SEQ Figure \\\* ARABIC <\/w:instrText>.*?<w:t[^>]*>1<\/w:t>/,
     )
+    expect(xml.match(/w:dirty="true"/g)).toHaveLength(1)
     expect(xml).toMatch(/ REF Summary \\h <\/w:instrText>[\s\S]*Summary paragraph\./)
     expect(xml).toMatch(/w:dirty="true"[\s\S]{0,80} PAGEREF Summary \\h /)
     const reparsed = await parseDocx(out)

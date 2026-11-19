@@ -15,6 +15,9 @@ export const strings = {
     askTitle: '问知识库',
     askEmptyCorpusHint: '还没有收藏文件——先在最近或文件夹里点星收藏,AI 就能读它们。',
     askCorpusCount: '知识库:{n} 个收藏文件',
+    askCorpusShow: '显示文件',
+    askCorpusHide: '隐藏文件',
+    askCorpusList: '知识库中的收藏文件',
     askIntro: '基于你收藏的文件提问,回答会标注来源文件,点击即可打开。',
     askToolSearch: '搜索知识库',
     askToolRead: '读取文件',
@@ -563,6 +566,9 @@ export const strings = {
     askTitle: 'Ask your knowledge base',
     askEmptyCorpusHint: 'No starred files yet — star some files first and the AI can read them.',
     askCorpusCount: 'Knowledge base: {n} starred files',
+    askCorpusShow: 'Show files',
+    askCorpusHide: 'Hide files',
+    askCorpusList: 'Starred files in the knowledge base',
     askIntro: 'Ask about your starred files. Answers cite their sources — click one to open it.',
     askToolSearch: 'Searching the knowledge base',
     askToolRead: 'Reading a file',
@@ -1127,6 +1133,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Chưa có tệp nào được đánh dấu — hãy đánh dấu tệp trước để AI có thể đọc chúng.',
     askCorpusCount: 'Cơ sở tri thức: {n} tệp đã đánh dấu',
+    askCorpusShow: 'Hiện tệp',
+    askCorpusHide: 'Ẩn tệp',
+    askCorpusList: 'Các tệp đã đánh dấu trong cơ sở tri thức',
     askIntro: 'Hỏi về các tệp bạn đã đánh dấu. Câu trả lời dẫn nguồn — nhấp để mở.',
     askToolSearch: 'Đang tìm cơ sở tri thức',
     askToolRead: 'Đang đọc tệp',
@@ -1694,6 +1703,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Henüz yıldızlı dosya yok — önce bazı dosyaları yıldızlayın, AI onları okuyabilsin.',
     askCorpusCount: 'Bilgi tabanı: {n} yıldızlı dosya',
+    askCorpusShow: 'Dosyaları göster',
+    askCorpusHide: 'Dosyaları gizle',
+    askCorpusList: 'Bilgi tabanındaki yıldızlı dosyalar',
     askIntro:
       'Yıldızlı dosyalarınız hakkında soru sorun. Yanıtlar kaynaklarını gösterir — açmak için birine tıklayın.',
     askToolSearch: 'Bilgi tabanında aranıyor',
@@ -2265,6 +2277,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Még nincs csillagozott fájl — előbb csillagozz néhány fájlt, és az AI el tudja olvasni őket.',
     askCorpusCount: 'Tudásbázis: {n} csillagozott fájl',
+    askCorpusShow: 'Fájlok megjelenítése',
+    askCorpusHide: 'Fájlok elrejtése',
+    askCorpusList: 'A tudásbázis csillagozott fájljai',
     askIntro:
       'Kérdezz a csillagozott fájljaidról. A válaszok feltüntetik a forrásokat — kattints egy hivatkozásra a megnyitásához.',
     askToolSearch: 'Keresés a tudásbázisban',
@@ -2845,6 +2860,9 @@ export const strings = {
     askEmptyCorpusHint:
       'スター付きファイルがまだありません。先にファイルをスターすると、AI が読めます。',
     askCorpusCount: 'ナレッジベース:スター付き {n} 件',
+    askCorpusShow: 'ファイルを表示',
+    askCorpusHide: 'ファイルを隠す',
+    askCorpusList: 'ナレッジベースのスター付きファイル',
     askIntro: 'スター付きファイルについて質問できます。回答には出典が付き、クリックで開けます。',
     askToolSearch: 'ナレッジベースを検索中',
     askToolRead: 'ファイルを読み込み中',
@@ -3424,6 +3442,9 @@ export const strings = {
     askEmptyCorpusHint:
       '즐겨찾기한 파일이 아직 없습니다. 먼저 파일을 즐겨찾기하면 AI가 읽을 수 있습니다.',
     askCorpusCount: '지식 베이스: 즐겨찾기 {n}개',
+    askCorpusShow: '파일 표시',
+    askCorpusHide: '파일 숨기기',
+    askCorpusList: '지식 베이스의 즐겨찾기 파일',
     askIntro: '즐겨찾기한 파일에 대해 질문하세요. 답변에는 출처가 표시되며 클릭하면 열립니다.',
     askToolSearch: '지식 베이스 검색 중',
     askToolRead: '파일 읽는 중',
@@ -3994,6 +4015,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Aucun fichier favori pour l’instant — ajoutez-en d’abord pour que l’IA puisse les lire.',
     askCorpusCount: 'Base de connaissances : {n} fichiers favoris',
+    askCorpusShow: 'Afficher les fichiers',
+    askCorpusHide: 'Masquer les fichiers',
+    askCorpusList: 'Fichiers favoris de la base de connaissances',
     askIntro:
       'Posez des questions sur vos fichiers favoris. Les réponses citent leurs sources — cliquez pour ouvrir.',
     askToolSearch: 'Recherche dans la base',
@@ -4584,6 +4608,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Noch keine Favoriten — markieren Sie zuerst Dateien, damit die KI sie lesen kann.',
     askCorpusCount: 'Wissensbasis: {n} favorisierte Dateien',
+    askCorpusShow: 'Dateien anzeigen',
+    askCorpusHide: 'Dateien ausblenden',
+    askCorpusList: 'Favorisierte Dateien in der Wissensbasis',
     askIntro:
       'Fragen Sie zu Ihren Favoriten. Antworten nennen ihre Quellen — Klick öffnet die Datei.',
     askToolSearch: 'Wissensbasis durchsuchen',
@@ -5171,6 +5198,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Aún no hay archivos favoritos: marca algunos primero para que la IA pueda leerlos.',
     askCorpusCount: 'Base de conocimientos: {n} archivos favoritos',
+    askCorpusShow: 'Mostrar archivos',
+    askCorpusHide: 'Ocultar archivos',
+    askCorpusList: 'Archivos favoritos de la base de conocimientos',
     askIntro:
       'Pregunta sobre tus archivos favoritos. Las respuestas citan la fuente; haz clic para abrirla.',
     askToolSearch: 'Buscando en la base',
@@ -5756,6 +5786,9 @@ export const strings = {
     askTitle: 'ถามคลังความรู้ของคุณ',
     askEmptyCorpusHint: 'ยังไม่มีไฟล์ที่ติดดาว — ติดดาวไฟล์ก่อนเพื่อให้ AI อ่านได้',
     askCorpusCount: 'คลังความรู้: {n} ไฟล์ที่ติดดาว',
+    askCorpusShow: 'แสดงไฟล์',
+    askCorpusHide: 'ซ่อนไฟล์',
+    askCorpusList: 'ไฟล์ที่ติดดาวในคลังความรู้',
     askIntro: 'ถามเกี่ยวกับไฟล์ที่ติดดาวของคุณ คำตอบจะอ้างอิงแหล่งที่มา — คลิกเพื่อเปิด',
     askToolSearch: 'กำลังค้นคลังความรู้',
     askToolRead: 'กำลังอ่านไฟล์',
@@ -6320,6 +6353,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Belum ada file berbintang — tandai beberapa file dahulu agar AI bisa membacanya.',
     askCorpusCount: 'Basis pengetahuan: {n} file berbintang',
+    askCorpusShow: 'Tampilkan file',
+    askCorpusHide: 'Sembunyikan file',
+    askCorpusList: 'File berbintang dalam basis pengetahuan',
     askIntro:
       'Bertanyalah tentang file berbintang anda. Jawaban menyebut sumbernya — klik untuk membuka.',
     askToolSearch: 'Mencari basis pengetahuan',
@@ -6897,6 +6933,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Пока нет избранных файлов — отметьте файлы звёздочкой, чтобы ИИ мог их читать.',
     askCorpusCount: 'База знаний: избранных файлов — {n}',
+    askCorpusShow: 'Показать файлы',
+    askCorpusHide: 'Скрыть файлы',
+    askCorpusList: 'Избранные файлы в базе знаний',
     askIntro:
       'Задавайте вопросы по избранным файлам. Ответы ссылаются на источники — нажмите, чтобы открыть.',
     askToolSearch: 'Поиск по базе',
@@ -7475,6 +7514,9 @@ export const strings = {
     askEmptyCorpusHint:
       'لا توجد ملفات مفضلة بعد — ضع نجمة على بعض الملفات أولاً ليتمكن الذكاء الاصطناعي من قراءتها.',
     askCorpusCount: 'قاعدة المعارف: {n} ملف مفضل',
+    askCorpusShow: 'إظهار الملفات',
+    askCorpusHide: 'إخفاء الملفات',
+    askCorpusList: 'الملفات المفضلة في قاعدة المعارف',
     askIntro: 'اسأل عن ملفاتك المفضلة. تذكر الإجابات مصادرها — انقر لفتحها.',
     askToolSearch: 'جارٍ البحث في القاعدة',
     askToolRead: 'جارٍ قراءة ملف',
@@ -8042,6 +8084,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Ainda não há arquivos favoritos — marque alguns primeiro para a IA poder lê-los.',
     askCorpusCount: 'Base de conhecimento: {n} arquivos favoritos',
+    askCorpusShow: 'Mostrar arquivos',
+    askCorpusHide: 'Ocultar arquivos',
+    askCorpusList: 'Arquivos favoritos na base de conhecimento',
     askIntro:
       'Pergunte sobre seus arquivos favoritos. As respostas citam as fontes — clique para abrir.',
     askToolSearch: 'Pesquisando na base',
@@ -8617,6 +8662,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Ancora nessun file preferito — contrassegnane prima alcuni perché l’IA possa leggerli.',
     askCorpusCount: 'Base di conoscenza: {n} file preferiti',
+    askCorpusShow: 'Mostra file',
+    askCorpusHide: 'Nascondi file',
+    askCorpusList: 'File preferiti nella base di conoscenza',
     askIntro:
       'Chiedi informazioni sui tuoi file preferiti. Le risposte citano la fonte — clicca per aprire.',
     askToolSearch: 'Ricerca nella base',
@@ -9191,6 +9239,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Nie ma jeszcze ulubionych plików — najpierw oznacz je gwiazdką, aby AI mogło je czytać.',
     askCorpusCount: 'Baza wiedzy: {n} ulubionych plików',
+    askCorpusShow: 'Pokaż pliki',
+    askCorpusHide: 'Ukryj pliki',
+    askCorpusList: 'Ulubione pliki w bazie wiedzy',
     askIntro: 'Zadawaj pytania o swoje pliki. Odpowiedzi podają źródła — kliknij, aby otworzyć.',
     askToolSearch: 'Wyszukiwanie w bazie',
     askToolRead: 'Czytanie pliku',
@@ -9761,6 +9812,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Zatím nejsou žádné oblíbené soubory — nejprve je označte hvězdičkou, aby je AI mohla číst.',
     askCorpusCount: 'Znalostní databáze: {n} oblíbených souborů',
+    askCorpusShow: 'Zobrazit soubory',
+    askCorpusHide: 'Skrýt soubory',
+    askCorpusList: 'Oblíbené soubory ve znalostní databázi',
     askIntro: 'Ptejte se na své oblíbené soubory. Odpovědi uvádějí zdroje — kliknutím otevřete.',
     askToolSearch: 'Prohledávání databáze',
     askToolRead: 'Čtení souboru',
@@ -10327,6 +10381,9 @@ export const strings = {
     askTitle: 'Vraag je kennisbank',
     askEmptyCorpusHint: 'Nog geen favorieten — markeer eerst bestanden zodat de AI ze kan lezen.',
     askCorpusCount: 'Kennisbank: {n} favoriete bestanden',
+    askCorpusShow: 'Bestanden tonen',
+    askCorpusHide: 'Bestanden verbergen',
+    askCorpusList: 'Favoriete bestanden in de kennisbank',
     askIntro: 'Vraag naar je favoriete bestanden. Antwoorden noemen hun bron — klik om te openen.',
     askToolSearch: 'Kennisbank doorzoeken',
     askToolRead: 'Bestand lezen',
@@ -10897,6 +10954,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Tiada fail kegemaran lagi — tanda beberapa fail dahulu supaya AI boleh membacanya.',
     askCorpusCount: 'Pangkalan pengetahuan: {n} fail kegemaran',
+    askCorpusShow: 'Tunjukkan fail',
+    askCorpusHide: 'Sembunyikan fail',
+    askCorpusList: 'Fail kegemaran dalam pangkalan pengetahuan',
     askIntro: 'Tanya tentang fail kegemaran anda. Jawapan memetik sumbernya — klik untuk membuka.',
     askToolSearch: 'Mencari pangkalan pengetahuan',
     askToolRead: 'Membaca fail',
@@ -11468,6 +11528,9 @@ export const strings = {
     askEmptyCorpusHint:
       'אין עדיין קבצים מסומנים — סמן קבצים בכוכבית תחילה כדי שה-AI יוכל לקרוא אותם.',
     askCorpusCount: 'בסיס ידע: {n} קבצים מסומנים',
+    askCorpusShow: 'הצגת קבצים',
+    askCorpusHide: 'הסתרת קבצים',
+    askCorpusList: 'קבצים מסומנים בבסיס הידע',
     askIntro: 'שאל על הקבצים המסומנים שלך. תשובות מציינות את המקור — לחיצה פותחת אותו.',
     askToolSearch: 'מחפש בבסיס הידע',
     askToolRead: 'קורא קובץ',
@@ -12021,6 +12084,9 @@ export const strings = {
     askEmptyCorpusHint:
       'अभी कोई स्टार की गई फ़ाइल नहीं है — पहले फ़ाइलों को स्टार करें ताकि AI उन्हें पढ़ सके।',
     askCorpusCount: 'नॉलेज बेस: {n} स्टार की गई फ़ाइलें',
+    askCorpusShow: 'फ़ाइलें दिखाएँ',
+    askCorpusHide: 'फ़ाइलें छिपाएँ',
+    askCorpusList: 'नॉलेज बेस में स्टार की गई फ़ाइलें',
     askIntro:
       'अपनी स्टार की गई फ़ाइलों के बारे में पूछें। उत्तर स्रोत बताते हैं — खोलने के लिए क्लिक करें।',
     askToolSearch: 'नॉलेज बेस खोज रहा है',
@@ -12586,6 +12652,9 @@ export const strings = {
     askTitle: '問知識庫',
     askEmptyCorpusHint: '還沒有收藏檔案——先在最近或資料夾裡點星收藏,AI 就能讀取它們。',
     askCorpusCount: '知識庫:{n} 個收藏檔案',
+    askCorpusShow: '顯示檔案',
+    askCorpusHide: '隱藏檔案',
+    askCorpusList: '知識庫中的收藏檔案',
     askIntro: '根據你收藏的檔案提問,回答會標註來源檔案,點擊即可開啟。',
     askToolSearch: '搜尋知識庫',
     askToolRead: '讀取檔案',

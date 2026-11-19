@@ -35,12 +35,39 @@ test('picture context menu lists only Word picture items', async () => {
     const labels = await menu
       .locator('.ctx-label')
       .evaluateAll((els) => els.map((e) => e.textContent))
-    expect(labels.slice(0, 5)).toEqual(['Cut', 'Copy', 'Paste', 'View Image', 'Save Image As…'])
-    expect(labels).toContain('Wrap Text')
+    // Word's picture menu, in Word's order; View Image is ours and sits below it
+    expect(labels).toEqual([
+      'Cut',
+      'Copy',
+      'Paste',
+      'Save as Picture…',
+      'Change Picture',
+      'Group',
+      'Bring to Front',
+      'Send to Back',
+      'Hyperlink…',
+      'Insert Caption…',
+      'Wrap Text',
+      'View Alt Text…',
+      'Crop',
+      'Auto Crop',
+      'Size and Position…',
+      'Format Picture…',
+      'View Image',
+      'New Comment',
+    ])
     for (const gone of ['Paste as Plain Text', 'Font…', 'Paragraph…', 'Synonyms', 'Translate']) {
       expect(labels).not.toContain(gone)
     }
-    expect(labels.length).toBeLessThanOrEqual(9)
+    // the picture items run the commands the Picture Format tab runs
+    await expect(menu.locator('.ctx-item', { hasText: 'Change Picture' })).toBeEnabled()
+    await menu.locator('.ctx-item', { hasText: /^Crop$/ }).click()
+    await expect(page.locator('.crop-modal')).toBeVisible()
+    const before = await img.getAttribute('src')
+    await page.locator('.crop-modal button.primary').click()
+    await expect(page.locator('.crop-modal')).toBeHidden()
+    // applying re-encodes the picture and writes it back to the selected one
+    await expect.poll(() => img.getAttribute('src')).not.toBe(before)
   } finally {
     await closeAndSaveVideo(launched)
   }

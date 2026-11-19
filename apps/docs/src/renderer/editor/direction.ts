@@ -71,7 +71,7 @@ export function activeBidi(editor: Editor): boolean {
  * side clears the attr, aligning to the end side sets it explicitly.
  */
 export function alignAttrFor(
-  align: 'left' | 'center' | 'right' | 'justify',
+  align: 'left' | 'center' | 'right' | 'justify' | 'distribute',
   bidi: boolean,
 ): string | null {
   if (align === 'left') return bidi ? 'left' : null
@@ -100,7 +100,7 @@ function dirFlipAttrs(attrs: Record<string, unknown>, bidi: boolean): Record<str
  */
 export function setSelectionAlign(
   editor: Editor,
-  align: 'left' | 'center' | 'right' | 'justify',
+  align: 'left' | 'center' | 'right' | 'justify' | 'distribute',
 ): boolean {
   return editor
     .chain()

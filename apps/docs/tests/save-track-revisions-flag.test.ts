@@ -72,6 +72,7 @@ async function fixture(settingsInner: string, trackChanges: boolean, dirty: bool
           target.doc = updater(target.doc)
         }
       if (prop in target) return Reflect.get(target, prop)
+      if (prop === 'endManualHyphenation') return noop
       if (typeof prop === 'string' && (/^set[A-Z]/.test(prop) || /^on[A-Z]/.test(prop))) return noop
       return undefined
     },
@@ -116,5 +117,18 @@ describe('Track Changes toggle <-> settings.xml w:trackRevisions', () => {
       false,
     )
     expect(await savedSettings(ctx, path)).not.toContain('trackRevisions')
+  })
+
+  it('Track moves set in the session saves as w:doNotTrackMoves and leaves it alone otherwise', async () => {
+    const off = await fixture('<w:trackRevisions/>', true, false)
+    ;(off.ctx as { trackMovesEdit: boolean | null }).trackMovesEdit = false
+    expect(await savedSettings(off.ctx, off.path)).toContain(
+      '<w:trackRevisions/><w:doNotTrackMoves/>',
+    )
+    const on = await fixture('<w:doNotTrackMoves/>', false, false)
+    ;(on.ctx as { trackMovesEdit: boolean | null }).trackMovesEdit = true
+    expect(await savedSettings(on.ctx, on.path)).not.toContain('doNotTrackMoves')
+    const untouched = await fixture('<w:doNotTrackMoves/>', false, false)
+    expect(await savedSettings(untouched.ctx, untouched.path)).toContain('<w:doNotTrackMoves/>')
   })
 })

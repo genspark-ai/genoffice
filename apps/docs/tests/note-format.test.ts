@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
-import {
-  formatNoteNumber,
-  noteMarkText,
-  setNoteNumFmts,
-  toRoman,
-} from '../src/renderer/note-format'
+import { formatNoteNumber, noteMarkText, setNoteProps, toRoman } from '../src/renderer/note-format'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 
 describe('note numbering', () => {
@@ -50,7 +45,7 @@ describe('note numbering', () => {
     expect(formatNoteNumber('upperLetter', 2)).toBe('B')
     expect(formatNoteNumber('chicago', 5)).toBe('**')
     expect(formatNoteNumber('decimalEnclosedCircle', 3)).toBe('3')
-    setNoteNumFmts({ endnote: { numFmt: 'decimal' }, footnote: { numFmt: 'lowerRoman' } })
+    setNoteProps({ endnote: { numFmt: 'decimal' }, footnote: { numFmt: 'lowerRoman' } })
     try {
       expect(noteMarkText('endnote', 1)).toBe('1')
       expect(noteMarkText('footnote', 2)).toBe('ii')
@@ -70,7 +65,7 @@ describe('note numbering', () => {
       expect(editor.view.dom.querySelector('sup[data-note-ref]')?.textContent).toBe('3')
       editor.destroy()
     } finally {
-      setNoteNumFmts({})
+      setNoteProps({})
     }
     expect(noteMarkText('endnote', 1)).toBe('i')
   })

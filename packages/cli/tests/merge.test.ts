@@ -70,7 +70,7 @@ describe('genoffice merge', () => {
       unused_keys: ['extra'],
     })
     // the {{na**me**}} marker the converter split over three runs fills like
-    // any other (the slides engine has done this since #1052); only markers
+    // any other (the slides engine already does); only markers
     // no flat match can reach stay behind, reported with their reason
     expect(j.detail.unresolved_placeholders).toEqual([
       { placeholder: '{{missing}}', key: 'missing', reason: 'no_key', location: { block: 3 } },

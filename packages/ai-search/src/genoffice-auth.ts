@@ -413,6 +413,9 @@ async function runDeviceLogin(
   // a completed login re-arms the one automatic re-login for the next rejected key
   autoLoginLaunched = false
   emit({ phase: 'success' })
+  // browser-approved logins only: the silent re-mint never went through the
+  // browser, so it must not pull the app window forward or toast
+  loginSuccessListener?.()
   // re-login replaces the key: revoke the superseded one so it can't pile up
   // server-side (best-effort — the new login must not fail on this)
   if (previousKeyId && previousKeyId !== minted.keyId) {
@@ -493,6 +496,16 @@ export type GskRecoveryOutcome =
  */
 export function setGenofficeLoginOpener(openUrl: ((url: string) => void) | null): void {
   loginOpener = openUrl
+}
+
+/** Fires after every browser-approved login lands (manual or automatic),
+ *  once the new key is saved. Registered by the main process to surface the
+ *  success in the app (this module is Electron-free); the silent re-mint
+ *  path never fires it. */
+let loginSuccessListener: (() => void) | null = null
+
+export function setGenofficeLoginSuccessListener(listener: (() => void) | null): void {
+  loginSuccessListener = listener
 }
 
 /**

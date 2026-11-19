@@ -102,6 +102,19 @@ fn payload_with_continues(data: &[u8], records: &[Record], index: usize) -> Vec<
     out
 }
 
+/// A future record's payload with its ContinueFrt12 records appended, each
+/// stripped of its own 12-byte FrtHeader.
+fn frt_payload_with_continues(data: &[u8], records: &[Record], index: usize) -> Vec<u8> {
+    let mut out = payload(data, &records[index]).to_vec();
+    for record in records.iter().skip(index + 1) {
+        if record.id != 0x087F {
+            break;
+        }
+        out.extend_from_slice(payload(data, record).get(12..).unwrap_or_default());
+    }
+    out
+}
+
 fn walk(data: &[u8]) -> XlsBinary {
     let records = scan(data);
     // BOUNDSHEET entries carry each sheet's BOF position, in sheet order —
@@ -147,6 +160,9 @@ fn walk(data: &[u8]) -> XlsBinary {
                 0x041E => styles.push_format(payload(data, record)),
                 0x00E0 => styles.push_xf(payload(data, record)),
                 0x0092 => styles.set_palette(payload(data, record)),
+                0x087C => styles.set_xf_crc(payload(data, record)),
+                0x087D => styles.push_xf_ext(payload(data, record)),
+                0x0896 => styles.set_theme(&frt_payload_with_continues(data, &records, index)),
                 _ => {}
             },
             Some(sheet) => match record.id {

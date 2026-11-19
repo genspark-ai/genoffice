@@ -28,6 +28,8 @@ export interface StyleParaProps {
   spaceAfterTwips?: number | null
   /** line spacing as a multiple (auto) */
   lineSpacing?: number | null
+  /** exact / at-least line height in twips; wins over lineSpacing */
+  lineFixed?: { rule: 'exact' | 'atLeast'; twips: number }
   indentLeftTwips?: number | null
   indentRightTwips?: number | null
   /** positive = first-line indent, negative = hanging indent */
@@ -35,6 +37,10 @@ export interface StyleParaProps {
   keepNext?: boolean
   keepLines?: boolean
   pageBreakBefore?: boolean
+  widowControl?: boolean
+  suppressLineNumbers?: boolean
+  contextualSpacing?: boolean
+  suppressAutoHyphens?: boolean
   /** 1-9 (w:outlineLvl val + 1) */
   outlineLevel?: number | null
   /** list level linked to the style (w:numPr); null removes it */
@@ -106,6 +112,12 @@ export interface StyleUpsert {
   quickFormat?: boolean
   /** one of Word's built-in styles (by name): created without w:customStyle */
   builtIn?: boolean
+  /** takes the style (and its linked character twin) out of styles.xml */
+  remove?: true
+  /** the file's own definition is ignored: the style is built from scratch */
+  replace?: true
+  /** a whole w:style element to start from instead of the file's own (copied from another file) */
+  sourceXml?: string
   rPr?: StyleRunProps
   pPr?: StyleParaProps
 }
@@ -336,6 +348,10 @@ function patchPara(children: Children, pp: StyleParaProps): void {
     spacing['w:line'] = pp.lineSpacing === null ? null : num(pp.lineSpacing * 240)
     spacing['w:lineRule'] = pp.lineSpacing === null ? null : 'auto'
   }
+  if (pp.lineFixed) {
+    spacing['w:line'] = num(pp.lineFixed.twips)
+    spacing['w:lineRule'] = pp.lineFixed.rule
+  }
   if (Object.keys(spacing).length > 0) children.attrs('w:spacing', spacing)
   const ind: Record<string, string | null> = {}
   if (pp.indentLeftTwips !== undefined) {
@@ -355,6 +371,10 @@ function patchPara(children: Children, pp: StyleParaProps): void {
   children.flag('w:keepNext', pp.keepNext)
   children.flag('w:keepLines', pp.keepLines)
   children.flag('w:pageBreakBefore', pp.pageBreakBefore)
+  children.flag('w:widowControl', pp.widowControl)
+  children.flag('w:suppressLineNumbers', pp.suppressLineNumbers)
+  children.flag('w:contextualSpacing', pp.contextualSpacing)
+  children.flag('w:suppressAutoHyphens', pp.suppressAutoHyphens)
   if (pp.outlineLevel !== undefined) {
     children.set(
       'w:outlineLvl',
@@ -418,16 +438,77 @@ export function mergeStyleXml(existing: string | null, up: StyleUpsert): string 
   return tag('w:style', attrs, children.toXml())
 }
 
-export function upsertStyleXml(xml: string, up: StyleUpsert): string {
-  const escapedId = up.styleId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const existing = new RegExp(
+const styleElementRe = (styleId: string): RegExp => {
+  const escapedId = styleId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(
     `<w:style\\b[^>]*\\bw:styleId=(["'])${escapedId}\\1[^>]*(?:\\/>|>[\\s\\S]*?<\\/w:style>)`,
   )
+}
+
+const styleRefOf = (styleXml: string, child: string): string | undefined =>
+  new RegExp(`<${child}\\b[^>]*\\bw:val=(["'])([^"']*)\\1`).exec(styleXml)?.[2]
+
+/** styles.xml without the style: its children move to its parent, w:next / w:link to it go */
+function removeStyleXml(xml: string, styleId: string, seen: Set<string> = new Set()): string {
+  const match = styleElementRe(styleId).exec(xml)
+  if (!match || seen.has(styleId)) return xml
+  seen.add(styleId)
+  const parent = styleRefOf(match[0], 'w:basedOn')
+  const linked = styleRefOf(match[0], 'w:link')
+  const id = escapeXmlAttr(styleId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  let out = xml.replace(match[0], '')
+  out = out.replace(new RegExp(`<w:basedOn\\s+w:val=(["'])${id}\\1\\s*/>`, 'g'), () =>
+    parent ? `<w:basedOn w:val="${parent}"/>` : '',
+  )
+  out = out.replace(new RegExp(`<w:(?:next|link)\\s+w:val=(["'])${id}\\1\\s*/>`, 'g'), '')
+  // the character half of a linked pair has no life of its own
+  const twin = linked ? styleElementRe(linked).exec(out)?.[0] : undefined
+  if (linked && twin && /\bw:type=(["'])character\1/.test(twin))
+    out = removeStyleXml(out, linked, seen)
+  return out
+}
+
+/** the ids a removal takes out of styles.xml: the style and its linked character twin */
+export function styleRemovalIds(xml: string, styleId: string): string[] {
+  const own = styleElementRe(styleId).exec(xml)?.[0]
+  if (!own) return []
+  const linked = styleRefOf(own, 'w:link')
+  const twin = linked ? styleElementRe(linked).exec(xml)?.[0] : undefined
+  return linked && twin && /\bw:type=(["'])character\1/.test(twin) ? [styleId, linked] : [styleId]
+}
+
+/** a story part without references to the removed styles: the text falls back to the default style */
+export function dropStyleRefsXml(xml: string, styleIds: readonly string[]): string {
+  if (styleIds.length === 0) return xml
+  const ids = styleIds.map((id) => escapeXmlAttr(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  return xml.replace(
+    new RegExp(`<w:(?:pStyle|rStyle|tblStyle)\\s+w:val=(["'])(?:${ids.join('|')})\\1\\s*/>`, 'g'),
+    '',
+  )
+}
+
+export function upsertStyleXml(xml: string, up: StyleUpsert): string {
+  if (up.remove) return removeStyleXml(xml, up.styleId)
+  const existing = styleElementRe(up.styleId)
   const match = existing.exec(xml)
-  const styleXml = mergeStyleXml(match?.[0] ?? null, up)
+  const base =
+    up.sourceXml !== undefined
+      ? up.sourceXml.replace(
+          /(<w:style\b[^>]*\bw:styleId=)(["'])[^"']*\2/,
+          (_, head: string) => `${head}"${escapeXmlAttr(up.styleId)}"`,
+        )
+      : up.replace
+        ? null
+        : (match?.[0] ?? null)
+  const styleXml = mergeStyleXml(base, up)
   return match
     ? xml.replace(existing, () => styleXml)
-    : xml.replace('</w:styles>', `${styleXml}</w:styles>`)
+    : xml.replace('</w:styles>', () => `${styleXml}</w:styles>`)
+}
+
+export function hasStyleXml(xml: string, styleId: string): boolean {
+  const escapedId = styleId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`<w:style\\b[^>]*\\bw:styleId=(["'])${escapedId}\\1`).test(xml)
 }
 
 /** Patch only the requested default font slots, preserving all other defaults. */

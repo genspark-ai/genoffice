@@ -44,22 +44,22 @@ export function installEditorScrollFollow(runtime: UniverRuntime): EditorScrollF
   let frame = 0
   let zoomTimer = 0
   let scrollSub: { unsubscribe: () => void } | null = null
-  let subscribedUnit: string | null = null
+  let subscribedStream: ScrollStream | null = null
 
   function bindViewport(): void {
     if (!renderManager) return
     const unitId = runtime.univerAPI?.getActiveWorkbook?.()?.getId()
-    if (!unitId || unitId === subscribedUnit) return
-    scrollSub?.unsubscribe()
-    scrollSub = null
+    if (!unitId) return
     const render = renderManager.getRenderUnitById(unitId)
     // SHEET_VIEWPORT_KEY.VIEW_MAIN, as the string: the enum is not re-exported
     // from the package root, and the viewport stream is optional at runtime.
     const scene = render?.scene as
       { getViewport?: (key: string) => { onScrollAfter$?: ScrollStream } | null } | null | undefined
-    const stream = scene?.getViewport?.('viewMain')?.onScrollAfter$
+    const stream = scene?.getViewport?.('viewMain')?.onScrollAfter$ ?? null
+    if (stream === subscribedStream) return
+    scrollSub?.unsubscribe()
     scrollSub = stream?.subscribe(() => schedule()) ?? null
-    subscribedUnit = unitId
+    subscribedStream = stream
   }
 
   function refresh(): void {
@@ -88,9 +88,13 @@ export function installEditorScrollFollow(runtime: UniverRuntime): EditorScrollF
     schedule()
   }
   const onScroll = () => schedule()
+  // Opening a file replaces the workbook and its viewport, so the stream bound
+  // at install is gone by then; a scrollbar drag starts with a press.
+  const onPointerDown = () => bindViewport()
 
   document.addEventListener('wheel', onWheel, { passive: true, capture: true })
   document.addEventListener('scroll', onScroll, { passive: true, capture: true })
+  document.addEventListener('pointerdown', onPointerDown, { passive: true, capture: true })
   return {
     refresh: schedule,
     dispose() {
@@ -100,6 +104,7 @@ export function installEditorScrollFollow(runtime: UniverRuntime): EditorScrollF
       scrollSub = null
       document.removeEventListener('wheel', onWheel, true)
       document.removeEventListener('scroll', onScroll, true)
+      document.removeEventListener('pointerdown', onPointerDown, true)
     },
   }
 }

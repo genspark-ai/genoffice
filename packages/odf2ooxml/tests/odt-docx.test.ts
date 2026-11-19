@@ -1,4 +1,4 @@
-﻿import JSZip from 'jszip'
+import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { convertOdtToDocx, OdfConvertError } from '../src/index'
 
@@ -12,7 +12,7 @@ const NAMESPACES =
   ' xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"' +
   ' xmlns:xlink="http://www.w3.org/1999/xlink"'
 
-/** 1Ã—1 red PNG */
+/** 1×1 red PNG */
 const PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
@@ -156,6 +156,18 @@ describe('convertOdtToDocx', () => {
     expect(document.match(/<w:shd /g) ?? []).toHaveLength(1)
   })
 
+  it('lets a transparent child style clear the background its parent set', async () => {
+    const body =
+      '<text:p text:style-name="Pfill">highlighted</text:p>' +
+      '<text:p text:style-name="Pchild">plain</text:p>'
+    const automatic =
+      '<style:style style:name="Pfill" style:family="paragraph"><style:paragraph-properties fo:background-color="#fff2a8"/></style:style>' +
+      '<style:style style:name="Pchild" style:family="paragraph" style:parent-style-name="Pfill"><style:paragraph-properties fo:background-color="transparent"/></style:style>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, automatic)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document.match(/<w:shd /g) ?? []).toHaveLength(1)
+  })
+
   it('keeps a paragraph with the next one and its lines together', async () => {
     const body =
       '<text:p text:style-name="Pkeep">intro</text:p>' +
@@ -180,7 +192,7 @@ describe('convertOdtToDocx', () => {
       '</text:list-item><text:list-item><text:p>second</text:p></text:list-item></text:list>'
     const listStyle =
       '<text:list-style style:name="L1">' +
-      '<text:list-level-style-bullet text:level="1" style:bullet-char="â€¢">' +
+      '<text:list-level-style-bullet text:level="1" style:bullet-char="•">' +
       '<style:list-level-properties text:space-before="0.5cm" text:min-label-width="0.4cm"/></text:list-level-style-bullet>' +
       '<text:list-level-style-number text:level="2" style:num-format="1" style:num-suffix=".">' +
       '<style:list-level-properties text:space-before="1cm" text:min-label-width="0.4cm"/></text:list-level-style-number>' +
@@ -240,6 +252,23 @@ describe('convertOdtToDocx', () => {
     )
   })
 
+  it('a cell style inherits vertical alignment from its parent, and an explicit top overrides it', async () => {
+    const automatic =
+      '<style:style style:name="base" style:family="table-cell"><style:table-cell-properties style:vertical-align="middle"/></style:style>' +
+      '<style:style style:name="kid" style:family="table-cell" style:parent-style-name="base"><style:table-cell-properties fo:background-color="#ffff99"/></style:style>' +
+      '<style:style style:name="top" style:family="table-cell" style:parent-style-name="base"><style:table-cell-properties style:vertical-align="top"/></style:style>'
+    const body =
+      '<table:table table:name="T"><table:table-column table:number-columns-repeated="2"/>' +
+      '<table:table-row>' +
+      '<table:table-cell table:style-name="kid"><text:p>inherited</text:p></table:table-cell>' +
+      '<table:table-cell table:style-name="top"><text:p>top</text:p></table:table-cell>' +
+      '</table:table-row></table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, automatic)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    expect(document.match(/<w:vAlign w:val="center"\/>/g) ?? []).toHaveLength(1)
+    expect(document.match(/<w:vAlign /g) ?? []).toHaveLength(1)
+  })
+
   it('imports a table with widths, spans and a cell fill', async () => {
     const automatic =
       '<style:style style:name="co1" style:family="table-column"><style:column-properties style:column-width="3cm"/></style:style>' +
@@ -294,7 +323,7 @@ describe('convertOdtToDocx', () => {
   it('does not widen a declared grid for a fully merged first row', async () => {
     // LibreOffice's shape for a 3-column table whose first row is merged: the
     // anchored cell plus one covered placeholder per merged-in column. The span
-    // does not add grid positions of its own â€” the placeholders are its slots.
+    // does not add grid positions of its own — the placeholders are its slots.
     const body =
       '<table:table table:name="T">' +
       '<table:table-column table:number-columns-repeated="3"/>' +
@@ -406,6 +435,22 @@ describe('convertOdtToDocx', () => {
     expect(result.dropped).toEqual([{ what: 'repeated-table-rows', count: 6 * 1048576 - rows }])
   })
 
+  it('spends one repeat budget across every table of the document', async () => {
+    const row =
+      '<table:table-row table:number-rows-repeated="1048576">' +
+      '<table:table-cell table:number-columns-repeated="64"><text:p>f</text:p></table:table-cell></table:table-row>'
+    const table =
+      '<table:table table:name="T"><table:table-column table:number-columns-repeated="64"/>' +
+      row +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(table.repeat(40))))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    const rows = (document.match(/<w:tr>/g) ?? []).length
+    // 4 tables' worth of slots (4 x 65536 / 64 columns) on top of the 40 explicit rows
+    expect(rows).toBe(40 + 4096)
+    expect(result.dropped).toEqual([{ what: 'repeated-table-rows', count: 40 * 1048576 - rows }])
+  })
+
   it('bounds a row repeat like the column reader does', async () => {
     const body =
       '<table:table table:name="T">' +
@@ -474,7 +519,7 @@ describe('convertOdtToDocx', () => {
     const body = '<text:p>page</text:p>'
     const result = await convertOdtToDocx(await buildOdt(contentXml(body), stylesXml('', PAGE_A4)))
     const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
-    // 21cm â†’ 11906 twips, 29.7cm â†’ 16838 twips, 2cm â†’ 1134
+    // 21cm → 11906 twips, 29.7cm → 16838 twips, 2cm → 1134
     expect(document).toContain('w:pgSz w:w="11906" w:h="16838"')
     expect(document).toContain('w:pgMar w:top="1134"')
   })

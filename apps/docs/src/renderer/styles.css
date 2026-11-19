@@ -818,22 +818,29 @@ html.genoffice-popover-open .ribbon-tabs {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   border: none;
   background: none;
   border-radius: 4px;
   /* PowerPoint-density: minimal side padding (slides ribbon parity) */
-  padding: 4px 7px 6px;
+  padding: 3px 7px;
   font-size: 12px;
-  /* no tab wrapping: wrapping in narrow windows makes the ribbon taller, causing height jumps when switching tabs */
-  white-space: nowrap;
   cursor: pointer;
   color: var(--text);
 }
 
+/* Word: the caption takes two lines when it has the words for it, and a
+ * one-line caption keeps the second line's room so every icon sits level.
+ * The band's height is fixed, so two lines is also the most it may take. */
+.rb-big > span:not(.rb-big-icon) {
+  min-height: 26px;
+  line-height: 13px;
+  text-align: center;
+}
+
 .rb-big-icon {
   min-height: 28px;
-  flex: 1;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -894,16 +901,37 @@ html.genoffice-popover-open .ribbon-tabs {
  * hasText and getByRole(name) both read it) but take it out of the visual
  * flow. display: none here would strip the accessible name and break the
  * getByRole('button', { name }) selectors across the e2e suite. */
-.ribbon-compact .rb-big > span:not(.rb-big-icon) {
+.ribbon-compact .rb-big > span:not(.rb-big-icon),
+.rb-group-tight .rb-big > span:not(.rb-big-icon) {
   position: absolute;
   width: 1px;
   height: 1px;
+  min-height: 0;
   padding: 0;
   margin: -1px;
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+.ribbon-compact .rb-small-label,
+.ribbon-compact .rb-small > small,
+.rb-col-tight .rb-small-label,
+.rb-col-tight .rb-small > small {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ribbon-compact .rb-small,
+.rb-col-tight .rb-small {
+  position: relative;
+  padding: 3px 5px;
 }
 
 /* the icon row is the whole button now, so let the hover/open paint cover it */
@@ -1155,6 +1183,120 @@ html.genoffice-popover-open .ribbon-tabs {
   gap: 2px;
 }
 
+/* Word: two controls share the band's height where three would crowd it */
+.rb-col.rb-pair {
+  justify-content: center;
+  gap: 6px;
+}
+
+.rb-group-tight .rb-big {
+  position: relative;
+}
+
+.rb-big-glyph {
+  font-size: 20px;
+  font-style: italic;
+  line-height: 28px;
+}
+
+/* Word: Home shows as many style cards as the window has room for */
+.style-gallery-inline {
+  display: flex;
+  gap: 3px;
+  margin-inline-end: 3px;
+}
+
+/* the opener at the end of the cards: they stand where the Styles button was */
+.rb-styles-more {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.rb-styles-more:hover:not(:disabled),
+.rb-styles-more.active {
+  background: var(--hover);
+}
+
+.rb-styles-more:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Word: with room to spare a stack of small controls is a row of full-height buttons */
+.rb-col.rb-col-wide {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.rb-col-wide .rb-small {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: center;
+  justify-items: center;
+  align-items: center;
+  gap: 2px 1px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  text-align: center;
+  white-space: normal;
+}
+
+.rb-col-wide .rb-small > svg:first-child,
+.rb-col-wide .rb-small > .rb-small-glyph:first-child {
+  width: 26px;
+  height: 26px;
+  margin: 4px 0;
+  stroke-width: 1.1;
+}
+
+.rb-col-wide .rb-small > .rb-small-glyph:first-child {
+  font-size: 18px;
+  line-height: 26px;
+}
+
+.rb-col-wide .rb-small > .rb-small-label,
+.rb-col-wide .rb-small > small {
+  grid-column: 1 / -1;
+  min-height: 26px;
+  line-height: 13px;
+}
+
+.rb-col-wide .rb-small > svg:first-child,
+.rb-col-wide .rb-small > .rb-small-glyph:first-child {
+  grid-column: 1 / -1;
+}
+
+/* the caption's spare width is shared by both columns: icon and caret meet in the middle */
+.rb-col-wide .rb-small:has(> .rb-caret-svg) > :first-child {
+  grid-column: 1;
+  justify-self: end;
+}
+
+.rb-col-wide .rb-small > .rb-caret-svg {
+  grid-row: 1;
+  grid-column: 2;
+  justify-self: start;
+}
+
+.rb-small-glyph {
+  width: 14px;
+  font-size: 11px;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .rb-small {
   display: flex;
   align-items: center;
@@ -1179,6 +1321,13 @@ html.genoffice-popover-open .ribbon-tabs {
   /* CSS resizes these below their attr size — re-pin the painted stroke
      (1.43 units × 14/16 ≈ 1.25px) */
   stroke-width: 1.43;
+}
+
+.rb-small .rb-caret-svg {
+  width: 10px;
+  height: 10px;
+  color: var(--text-dim);
+  stroke-width: 2.6;
 }
 
 .rb-small:hover:not(:disabled) {
@@ -2429,6 +2578,21 @@ th[data-rev-fmt] {
   justify-content: center;
 }
 
+/* Word: a caption over each pair of boxes, so the boxes carry one word each */
+.layout-col:has(> .layout-col-head) {
+  gap: 2px;
+}
+
+.layout-col-head {
+  font-size: 11px;
+  line-height: 13px;
+  color: var(--text-dim);
+}
+
+.layout-col:has(> .layout-col-head) .layout-num input {
+  height: 22px;
+}
+
 .layout-num {
   display: flex;
   align-items: center;
@@ -2454,6 +2618,17 @@ th[data-rev-fmt] {
 
 .layout-num input:disabled {
   opacity: 0.5;
+}
+
+.layout-num.mailings-field > span:first-child {
+  width: auto;
+}
+
+.mailings-status {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  text-align: center;
 }
 
 .layout-unit {
@@ -2612,6 +2787,7 @@ th[data-rev-fmt] {
 
 .styles-pane-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 8px 10px 0;
 }
@@ -2779,7 +2955,8 @@ th[data-rev-fmt] {
   /* classic (non-overlay) scrollbars change clientWidth as they come and go,
      which would make the zoom auto-refit oscillate — reserve the gutter */
   scrollbar-gutter: stable;
-  padding: 26px 24px 140px;
+  --scroll-pad-x: 24px;
+  padding: 26px var(--scroll-pad-x) 140px;
 }
 
 .editor-scroll.image-drop-target .doc-page {
@@ -2952,21 +3129,21 @@ th[data-rev-fmt] {
   padding: 0 4px;
 }
 
-.show-marks .doc-page :is(p, h1, h2, h3, h4).doc-sect-break-mark::after {
+:is(.show-marks, .view-draft) .doc-page :is(p, h1, h2, h3, h4).doc-sect-break-mark::after {
   content: none;
 }
 
 /* an empty section-break paragraph is zero-height until marks are on: then it
    is its own labelled line, like Word's */
-.show-marks .doc-protected-sectbreak.doc-sect-break-mark {
+:is(.show-marks, .view-draft) .doc-protected-sectbreak.doc-sect-break-mark {
   height: 13px;
 }
 
-.show-marks .doc-protected-sectbreak.doc-sect-break-mark .doc-sectbreak-label {
+:is(.show-marks, .view-draft) .doc-protected-sectbreak.doc-sect-break-mark .doc-sectbreak-label {
   display: none;
 }
 
-.show-marks .doc-protected-sectbreak.doc-sect-break-mark::before {
+:is(.show-marks, .view-draft) .doc-protected-sectbreak.doc-sect-break-mark::before {
   content: '';
   position: absolute;
   left: 0;
@@ -2977,7 +3154,7 @@ th[data-rev-fmt] {
   border-bottom: 1px dotted var(--text-dim);
 }
 
-.show-marks .doc-protected-sectbreak.doc-sect-break-mark::after {
+:is(.show-marks, .view-draft) .doc-protected-sectbreak.doc-sect-break-mark::after {
   content: attr(data-sect-break-label);
   position: relative;
   display: table;
@@ -3215,6 +3392,25 @@ th[data-rev-fmt] {
   white-space: nowrap;
 }
 
+/* the line between columns (w:cols w:sep): one rule per column gap, as tall as the
+   section's text on the page (see syncColumnRules / syncPreviewColumnRules); the
+   color is document data copied from the document root */
+.page-column-rules,
+.pv-column-rules {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.page-column-rule,
+.pv-column-rule {
+  position: absolute;
+  width: 0;
+  border-left: 0.75pt solid currentColor;
+  transform: translateX(-50%);
+}
+
 /* ---- tab stops (w:tabs) ---- */
 
 /* Paragraphs whose tabs were measured (TabStopExtension): tab chars get zero
@@ -3331,7 +3527,7 @@ th[data-rev-fmt] {
 .has-drop-cap::first-letter {
   float: left;
   line-height: 0.85;
-  margin-right: 0.05em;
+  margin-right: calc(0.05em + var(--drop-cap-gap, 0pt));
   margin-top: 0.1em;
   font-weight: normal;
 }
@@ -3339,7 +3535,7 @@ th[data-rev-fmt] {
 /* editor-created caps keep the body size on the run: scale the letter here;
    Word-imported caps (drop-cap-own-size) already carry the enlarged run size */
 .has-drop-cap:not(.drop-cap-own-size)::first-letter {
-  font-size: 3em;
+  font-size: calc(var(--drop-cap-lines, 3) * 1em);
 }
 
 /* Margin drop cap (in-margin): negative left margin to push it outside text area */
@@ -4367,50 +4563,6 @@ th[data-rev-fmt] {
   display: none;
 }
 
-/* Compare result pane */
-.compare-meta {
-  padding: 8px 12px;
-  font-size: 12px;
-  color: var(--text-dim);
-  border-bottom: 1px solid var(--border);
-}
-
-.compare-same {
-  text-align: center;
-  font-size: 11px;
-  color: var(--text-dim);
-  padding: 4px 0;
-}
-
-.compare-card {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 7px 9px;
-  margin: 4px 8px;
-  font-size: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.compare-left {
-  color: var(--docs-del-ink);
-  text-decoration: line-through;
-  opacity: 0.8;
-}
-
-.compare-right {
-  color: var(--docs-ins-ink);
-}
-
-.compare-added {
-  background: var(--docs-ins-bg);
-}
-
-.compare-removed {
-  background: var(--docs-del-bg);
-}
-
 /* Reviewing Pane (Review → Reviewing Pane): one card per tracked change */
 .review-pane-meta {
   padding: 8px 14px;
@@ -5223,6 +5375,19 @@ th[data-rev-fmt] {
 .doc-autospace-pad-m.doc-autospace-pad-full {
   margin-inline-start: calc(var(--doc-autospace-pad, 0.125em) * var(--doc-autospace-pad-le, 2));
 }
+/* our own break points (editor/hyphenation.ts): a soft hyphen where the paragraph hyphenates */
+.doc-shy::before {
+  content: var(--doc-shy, none);
+}
+.doc-shy.doc-shy-off::before {
+  content: none;
+}
+/* Chromium's dictionary stays out of the paragraphs that carry our break points */
+.doc-hyph,
+.doc-hyph-in,
+.doc-hyph-in :is(.page-hf-para, .page-hf-cell-para, .doc-textbox-para, .doc-hyphens-on) {
+  hyphens: manual !important;
+}
 
 /* Inter-script seam fill (selection-highlight.ts): the native ::selection is
    left alone, so extents, paragraph and cell shading, find results, tracked
@@ -5403,6 +5568,11 @@ th[data-rev-fmt] {
     --pbdr-fill: var(--dk-bg) !important;
   }
 
+  /* a shadowed paragraph border (w:shadow) drops in the remapped line colour */
+  :where(.page-dark) [style*='--dk-drop:']:where(:not(.doc-textbox-filled, .doc-textbox-filled *)) {
+    --pbdr-drop-c: var(--dk-drop) !important;
+  }
+
   :where(.page-dark) [style*='--dk-bgi:']:where(:not(.doc-textbox-filled, .doc-textbox-filled *)) {
     background-image: var(--dk-bgi) !important;
   }
@@ -5519,6 +5689,22 @@ th[data-rev-fmt] {
   z-index: 1;
 }
 
+/* in-cell gap of a split nested-table row that starts above the page turn
+   (the cell resumes a line early): see-through over that lift beside its own
+   column, where the other cells still show their last lines; paper in its own
+   column (its highlight must not show through) and below the lift */
+.page-gap-nested.page-gap-cell {
+  --gap-paper: var(--page-bg, var(--docs-paper));
+  background:
+    linear-gradient(var(--gap-paper), var(--gap-paper)) var(--gap-own-l, 0px) 0 /
+      calc(100% - var(--gap-own-l, 0px) - var(--gap-own-r, 0px)) var(--gap-lift, 0px) no-repeat,
+    linear-gradient(
+      to bottom,
+      transparent 0 var(--gap-lift, 0px),
+      var(--gap-paper) var(--gap-lift, 0px)
+    );
+}
+
 /* In-table gap at a row boundary. A real spanning cell isolates collapsed
    borders/backgrounds from the page gutter; the inner fill paints paper /
    canvas / paper bands without inheriting table-cell decoration. */
@@ -5633,6 +5819,26 @@ th[data-rev-fmt] {
 .page-gap-note sup {
   margin-right: 4px;
   font-size: 0.65em;
+}
+
+/* endnotes at a section's end: rows in the flow after the section's last block, drawn like
+   the note areas; the first carries the separator rule */
+.page-sect-note {
+  font-size: 10pt;
+  font-family: Calibri, Carlito, 'Carlito GO', sans-serif;
+  line-height: 1.3;
+  color: var(--docs-paper-ink-dim);
+  text-indent: 0;
+  text-align: left;
+}
+
+.page-sect-note-first::before {
+  content: '';
+  display: block;
+  width: min(2in, 100%);
+  height: var(--note-sep-rule, 11px);
+  border-bottom: 1px solid var(--docs-paper-ink-faint);
+  margin-bottom: calc(var(--note-sep-h, 16px) - var(--note-sep-rule, 11px) - 1px);
 }
 
 /* pagination preview: page-bottom footnote area (the referencing page; separator + small text); tiny overflow spills into the bottom margin */
@@ -5790,6 +5996,20 @@ th[data-rev-fmt] {
   overflow: hidden;
 }
 
+/* a style's paragraph indent, read by a paragraph whose own left/right border stands
+   out from it by w:space (para-border-css); not inherited, a table's indent is not its cells' */
+@property --pind-s {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0pt;
+}
+
+@property --pind-e {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0pt;
+}
+
 /* Word border groups: adjacent paragraphs with identical w:pBdr + shading draw
    top/bottom lines only at the group edges (ParaBorderMergeExtension classes).
    !important beats the inline border style; unscoped so pv clones and print match */
@@ -5801,6 +6021,7 @@ th[data-rev-fmt] {
 .pbdr-suppress-bottom {
   border-bottom: none !important;
   padding-bottom: 0 !important;
+  --pbdr-drop-y: 0px;
 }
 
 /* pagination preview: read-only overlay, one fixed-size box per page, content clone clipped via negative margin */
@@ -6137,24 +6358,24 @@ th[data-rev-fmt] {
    mirror automatically: indent and marker land on the right side. */
 .doc-li {
   position: relative;
-  padding-inline-start: var(--li-left, var(--style-li-left, 0.55in));
+  padding-inline-start: calc(var(--li-left, var(--style-li-left, 0.55in)) + var(--pbdr-os, 0pt));
   margin: 0 0 4pt;
 }
 
 .doc-li.ilvl-1 {
-  padding-inline-start: var(--li-left, var(--style-li-left, 0.85in));
+  padding-inline-start: calc(var(--li-left, var(--style-li-left, 0.85in)) + var(--pbdr-os, 0pt));
 }
 
 .doc-li.ilvl-2 {
-  padding-inline-start: var(--li-left, var(--style-li-left, 1.15in));
+  padding-inline-start: calc(var(--li-left, var(--style-li-left, 1.15in)) + var(--pbdr-os, 0pt));
 }
 
 .doc-li.ilvl-3 {
-  padding-inline-start: var(--li-left, var(--style-li-left, 1.45in));
+  padding-inline-start: calc(var(--li-left, var(--style-li-left, 1.45in)) + var(--pbdr-os, 0pt));
 }
 
 .doc-li.ilvl-4 {
-  padding-inline-start: var(--li-left, var(--style-li-left, 1.75in));
+  padding-inline-start: calc(var(--li-left, var(--style-li-left, 1.75in)) + var(--pbdr-os, 0pt));
 }
 
 /* Word HTML auto spacing (sp-auto-*, 14pt inline margins) collapses to 0 between
@@ -6642,6 +6863,18 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   --doc-grid-pitch: 0.0001px;
 }
 
+/* a row split over pages and filled to its declared height (setRowFills): Word
+   aligns a cell within each fragment, and the fill is the last fragment's own
+   minimum. Centered or bottom-aligned across the whole tr, the fill's extra
+   would push every fragment's content down (a center-aligned form cell
+   spanning four pages started 29px low on each, and a page lost two
+   references). The fill goes below the content instead. Inline vAlign styles,
+   hence the override. */
+.doc-table tr[data-row-fill] > td,
+.doc-table tr[data-row-fill] > th {
+  vertical-align: top !important;
+}
+
 /* empty paragraph in a cell: LO sizes it near the Latin single line, so it must
    not out-grow the row's content cells via the inherited CJK factor */
 .doc-table td .doc-p-empty,
@@ -6873,7 +7106,8 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   grid-template-columns: repeat(2, minmax(66px, auto));
 }
 
-.table-tool-group button {
+.table-tool-group button,
+.table-tool-inset button {
   min-height: 26px;
   padding: 3px 8px;
   border: 1px solid transparent;
@@ -6883,6 +7117,13 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   font-size: 11px;
   white-space: nowrap;
   cursor: pointer;
+}
+
+/* a block of tool rows inside a ribbon group: the look of a tool group without being one */
+.table-tool-inset {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 /* icon + label buttons (insert/merge/align/borders) */
@@ -6906,12 +7147,14 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   gap: 2px;
 }
 
-.table-tool-group button:hover:not(:disabled) {
+.table-tool-group button:hover:not(:disabled),
+.table-tool-inset button:hover:not(:disabled) {
   border-color: var(--border);
   background: var(--hover);
 }
 
-.table-tool-group button:disabled {
+.table-tool-group button:disabled,
+.table-tool-inset button:disabled {
   opacity: 0.35;
   cursor: default;
 }
@@ -6920,16 +7163,19 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   color: var(--danger);
 }
 
+/* Word: rows in one column, columns in the next */
 .table-style-options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(82px, auto));
-  gap: 2px;
+  grid-template-rows: repeat(3, auto);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(82px, auto);
+  gap: 1px 2px;
   align-content: center;
   flex: 1;
 }
 
 .table-style-options button {
-  min-height: 22px;
+  min-height: 20px;
   padding: 1px 5px;
   text-align: left;
 }
@@ -7229,6 +7475,13 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   border: none;
   width: 100%;
   max-width: 100%;
+}
+
+/* the caret stop ahead of a carried drawing: in the flow, with no height */
+.doc-carried-stop {
+  display: block;
+  height: 0;
+  overflow: hidden;
 }
 
 /* behindDoc anchors: under the body text like Word (positioned boxes would
@@ -8146,7 +8399,16 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   white-space: pre-wrap;
 }
 
-.doc-toc-line:hover .doc-toc-title {
+/* an entry that is no link (a table without \h): plain text under the pointer */
+.doc-toc-line[data-toc-nolink] {
+  cursor: text;
+}
+
+.ProseMirror [contenteditable='false'] .doc-toc-sep {
+  white-space: pre;
+}
+
+.doc-toc-line:not([data-toc-nolink]):hover .doc-toc-title {
   color: var(--accent);
   text-decoration: underline;
 }
@@ -8298,7 +8560,7 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
 
 .doc-formula-math {
   display: inline-block;
-  font-family: 'Cambria Math', 'STIX Two Math', 'Latin Modern Math', serif;
+  font-family: var(--doc-math-font, 'Cambria Math'), 'STIX Two Math', 'Latin Modern Math', serif;
   font-size: 16px;
   /* maths runs carry their own formatting: the paragraph style's bold/italic must not leak in */
   font-weight: normal;
@@ -8335,6 +8597,20 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   background: transparent;
   padding: 0;
   margin: 0;
+}
+
+/* the lines of an m:oMathPara sit in the equation's group by its m:jc (mathJcVars):
+   centred as a group keeps them flush left inside the centred group */
+.doc-protected-formula-display[data-math-para] .doc-formula-math math[display='block'] {
+  width: fit-content;
+  margin-left: var(--doc-math-line-l, 0);
+  margin-right: var(--doc-math-line-r, 0);
+}
+
+/* a line this pass wrapped off (math-wrap) is ink-high like every math block:
+   the gap restores about the font box a text-only line has */
+.doc-formula-math math.doc-math-wrap-rest {
+  margin-top: 0.3em;
 }
 
 .doc-protected-formula-display:hover {
@@ -8820,6 +9096,60 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   border-radius: 4px;
 }
 
+.link-places {
+  display: flex;
+  flex-direction: column;
+  height: 190px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.link-place-group {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.link-place {
+  display: flex;
+  gap: 8px;
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--text);
+  text-align: start;
+  cursor: pointer;
+}
+
+.link-place:hover {
+  background: var(--hover);
+}
+
+.link-place.active {
+  background: var(--accent-soft);
+}
+
+.link-place-name {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-place-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
 .bookmark-empty {
   padding: 14px;
   color: var(--text-dim);
@@ -8830,8 +9160,18 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 5px 10px;
+  border: none;
   border-bottom: 1px solid var(--border);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bookmark-row.on {
+  background: var(--accent-soft);
 }
 
 .bookmark-row:last-child {
@@ -8839,12 +9179,85 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
 }
 
 .bookmark-name {
-  background: none;
-  border: none;
   color: var(--word-blue);
-  cursor: pointer;
   font-weight: 600;
-  padding: 0;
+}
+
+.modal-row label {
+  flex: 1;
+  min-width: 0;
+}
+
+.modal .ref-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.modal .ref-check input {
+  width: auto;
+  height: auto;
+  margin: 0;
+}
+
+/* w:tcFitText: a paragraph is one line as wide as its cell */
+.doc-fit-line {
+  white-space: nowrap !important;
+  text-align: justify !important;
+  text-align-last: justify !important;
+  text-justify: inter-character;
+  contain: inline-size;
+}
+
+.doc-fit-line.doc-fit-squeezed {
+  text-align-last: start !important;
+}
+
+.auto-caption-list {
+  margin: 0 0 10px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.modal .auto-caption-list .ref-check {
+  margin: 0;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.modal .auto-caption-list .ref-check.picked {
+  background: var(--hover);
+}
+
+.ref-radios {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 8px 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.modal .ref-radios .ref-check {
+  margin: 0;
+}
+
+.bookmark-dialog .bookmark-list,
+.crossref-dialog .bookmark-list {
+  margin-top: 8px;
+}
+
+.modal.crossref-dialog {
+  width: 480px;
+}
+
+.modal-actions.caption-label-actions {
+  justify-content: flex-start;
+  margin: 8px 0 0;
 }
 
 .bookmark-preview {
@@ -11809,6 +12222,162 @@ body.docs-crop-active
   width: 380px;
 }
 
+.modal.autocorrect-dialog {
+  width: 560px;
+}
+
+.modal.autocorrect-dialog.ac-exceptions {
+  width: 380px;
+}
+
+.autocorrect-dialog .dlg-tabs {
+  margin-top: 10px;
+}
+
+.autocorrect-dialog .ac-with-button {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.autocorrect-dialog .ac-entries {
+  margin: 6px 0 10px;
+}
+
+.autocorrect-dialog .ac-entry-fields {
+  display: flex;
+  gap: 10px;
+}
+
+.autocorrect-dialog .ac-entry-fields label,
+.autocorrect-dialog .ac-look-in {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.autocorrect-dialog .ac-table {
+  height: 132px;
+  margin: 6px 0;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.autocorrect-dialog .ac-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.autocorrect-dialog .ac-row:hover {
+  background: var(--hover);
+}
+
+.autocorrect-dialog .ac-row.active {
+  background: var(--accent-soft);
+}
+
+.autocorrect-dialog .ac-row:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.autocorrect-dialog .ac-entry-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.autocorrect-dialog .ac-entry-kind {
+  display: flex;
+  gap: 16px;
+  margin-top: 4px;
+}
+
+.doc-ac-fix:hover {
+  box-shadow: 0 2px 0 0 var(--accent);
+}
+
+.ac-smart-button {
+  position: fixed;
+  z-index: 60;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ac-smart-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.ac-smart-menu button {
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.ac-smart-menu button:hover {
+  background: var(--hover);
+}
+
+.doc-autocomplete-tip {
+  position: absolute;
+  z-index: 5;
+  margin-top: -1.9em;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font:
+    normal 12px/1.3 system-ui,
+    sans-serif;
+  text-indent: 0;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.autocorrect-dialog .ac-preview {
+  min-height: 2.6em;
+  overflow-wrap: anywhere;
+}
+
 .protect-dialog .protect-section-title {
   margin: 24px 0 14px;
   padding-top: 16px;
@@ -12853,6 +13422,16 @@ body.docs-crop-active
   display: none !important;
 }
 
+/* Focus: the same bare window, with the document still editable */
+.focus-mode .ribbon,
+.focus-mode .ai-dock,
+.focus-mode .nav-pane,
+.focus-mode .find-panel,
+.focus-mode .comments-pane,
+.focus-mode .split-pane {
+  display: none !important;
+}
+
 .read-mode .editor-scroll {
   background: var(--canvas);
   padding-top: 44px;
@@ -12901,6 +13480,60 @@ body.docs-crop-active
 }
 
 .view-web .page-hf {
+  display: none;
+}
+
+/* ---- Draft: the page box keeps its geometry so lines and pages break as in Print Layout ---- */
+
+.view-draft .doc-page {
+  min-height: 0;
+  box-shadow: 0 0 0 100vmax var(--page-bg, var(--docs-paper));
+}
+
+.view-draft .page-wrap {
+  min-height: 0;
+  /* Gridlines clip the page's own fill to its text area */
+  background-color: var(--page-bg, var(--docs-paper));
+  margin: calc(-1 * var(--page-mt, 0px)) 0 calc(-1 * var(--page-mb, 0px));
+}
+
+.view-draft .page-hf,
+.view-draft .page-margin-annotations,
+.view-draft .page-line-numbers,
+.view-draft .page-wrap::before,
+.view-draft .page-wrap::after {
+  display: none;
+}
+
+/* hidden, not removed: the lines wrapping around them must keep their breaks */
+.view-draft .doc-protected-floating > :is(.doc-textbox, .box-rotator),
+.view-draft .doc-img-float > .doc-img-wrap,
+.view-draft .doc-inline-img-anchor,
+.view-draft .doc-inline-img[class*='doc-inline-img--'],
+.view-draft .page-float-host {
+  visibility: hidden;
+}
+
+/* sticky: the rules span what the scroller shows and never add to its scroll width */
+.draft-breaks {
+  position: sticky;
+  /* sticky insets count from the scroller's content edge, the rules from its padding edge */
+  left: calc(-1 * var(--scroll-pad-x));
+  height: 0;
+  margin: 0 calc(-1 * var(--scroll-pad-x));
+  /* above the page, which paints its own paper */
+  z-index: 1;
+  pointer-events: none;
+}
+
+.draft-break {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dotted var(--text-dim);
+}
+
+.view-draft:not(.show-marks) .doc-fmt-glyph {
   display: none;
 }
 
@@ -13285,6 +13918,41 @@ ruby.doc-ruby rt {
   line-height: 1;
 }
 
+ruby.doc-ruby[data-ruby-align='center'] {
+  ruby-align: center;
+}
+
+ruby.doc-ruby[data-ruby-align='distributeLetter'] {
+  ruby-align: space-between;
+}
+
+ruby.doc-ruby[data-ruby-align='distributeSpace'] {
+  ruby-align: space-around;
+}
+
+ruby.doc-ruby[data-ruby-align='left'] {
+  ruby-align: start;
+}
+
+/* flush right: ruby-align has no such value, so the reading and the base are two rows of a
+   grid, both set to its right edge; the line sits on the base's baseline and makes room for
+   the reading above it as it does for a ruby */
+ruby.doc-ruby[data-ruby-align='right'] {
+  display: inline-grid;
+  justify-items: end;
+  line-height: 1;
+  baseline-source: last;
+}
+
+ruby.doc-ruby[data-ruby-align='right'] > .doc-ruby-base {
+  grid-row: 2;
+}
+
+ruby.doc-ruby[data-ruby-align='right'] > rt {
+  grid-row: 1;
+  white-space: nowrap;
+}
+
 .ProseMirror-focused ruby.doc-ruby.ProseMirror-selectednode {
   outline: 2px solid var(--word-blue);
   border-radius: 2px;
@@ -13316,7 +13984,7 @@ ruby.doc-ruby rt {
   font-size: 1em;
   /* a real OpenType MATH face: the run's Cambria Math alias (Caladea) has no
      MATH table, so large operators, stacked limits and radicals collapse */
-  font-family: 'Cambria Math', 'STIX Two Math', 'Latin Modern Math', serif;
+  font-family: var(--doc-math-font, 'Cambria Math'), 'STIX Two Math', 'Latin Modern Math', serif;
 }
 
 /* Word sizes a math line by Cambria Math's font box (ascent 0.95em, descent
@@ -13498,6 +14166,10 @@ ruby.doc-ruby rt {
   content: 'XE:' attr(data-xe-term);
 }
 
+.show-marks .doc-tc-mark::before {
+  content: 'TC ' attr(data-tc);
+}
+
 .ProseMirror-focused .doc-xe-mark.ProseMirror-selectednode {
   outline: 2px solid var(--word-blue);
 }
@@ -13671,6 +14343,23 @@ ruby.doc-ruby rt {
   flex: 0 0 110px !important;
 }
 
+.font-underline-sample {
+  display: inline-block;
+  line-height: 1.6;
+  text-underline-offset: -0.35em;
+}
+
+.font-group {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.modal-actions .font-default-btn {
+  margin-right: auto;
+}
+
 .font-kern {
   align-items: center;
   gap: 8px;
@@ -13733,6 +14422,45 @@ ruby.doc-ruby rt {
 
 .para-checks .font-check {
   padding-bottom: 4px;
+}
+
+.para-checks.para-asian {
+  grid-template-columns: 1fr;
+}
+
+.modal.typography-dialog {
+  width: 360px;
+}
+
+.typography-dialog .font-check input[type='radio'] {
+  display: inline-block;
+  flex: none;
+  width: auto;
+  height: auto;
+  margin: 0;
+}
+
+.para-asian-options {
+  margin-top: 10px;
+}
+
+.para-section-title {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.pv-content .doc-mirror-ind {
+  transform: translateX(var(--mirror-ind-dx, 0px));
+}
+
+.para-checks.para-checks-wide {
+  grid-template-columns: 1fr;
+}
+
+.para-checks-wide .font-check {
+  white-space: normal;
 }
 
 .para-num {
@@ -14959,7 +15687,8 @@ tr > .page-gap-cut {
   align-items: center;
   gap: 3px;
   flex-wrap: nowrap;
-  max-width: 500px;
+  /* Word: the gallery takes the room the other groups (about 700px) leave */
+  max-width: clamp(320px, calc(100vw - 700px), 1400px);
   overflow-x: auto;
   padding-bottom: 2px;
   scrollbar-width: none;
@@ -15589,7 +16318,8 @@ tr > .page-gap-cut {
   gap: 1px;
 }
 
-.table-tool-group .cell-align-grid > button {
+.table-tool-group .cell-align-grid > button,
+.table-tool-inset .cell-align-grid > button {
   min-height: 20px;
   height: 20px;
   padding: 0;
@@ -15599,7 +16329,9 @@ tr > .page-gap-cut {
 }
 
 .table-tool-group .cell-align-grid > button.active,
-.table-tool-group .table-tool-button.active {
+.table-tool-group .table-tool-button.active,
+.table-tool-inset .cell-align-grid > button.active,
+.table-tool-inset .table-tool-button.active {
   border-color: var(--border);
   background: var(--active-bg);
 }
@@ -15622,6 +16354,859 @@ tr > .page-gap-cut {
   width: min(560px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   overflow: auto;
+}
+
+.tco-dialog.doc-dialog {
+  width: min(480px, calc(100vw - 48px));
+}
+
+.doc-dialog .doc-dialog-caption {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tco-dialog.doc-dialog .doc-dialog-links {
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.doc-dialog .doc-dialog-pitch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.columns-dialog .columns-dialog-cols {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: 4px 8px;
+  align-items: center;
+  max-height: 132px;
+  margin: 4px 0 8px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.bn-dialog .bn-numbering {
+  margin-top: 8px;
+}
+
+.bn-dialog .bn-numbering .tco-check {
+  display: inline-flex;
+  margin-inline-end: 16px;
+}
+
+.date-dialog .date-dialog-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  margin-bottom: 10px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.date-dialog .date-dialog-list button {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: start;
+}
+
+.date-dialog .date-dialog-list button:hover {
+  background: var(--hover);
+}
+
+.date-dialog .date-dialog-list button.active {
+  background: var(--accent-soft);
+}
+
+.tabs-dialog .tabs-dialog-list {
+  display: flex;
+  flex-direction: column;
+  height: 96px;
+  margin-bottom: 8px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.tabs-dialog .tabs-dialog-list button {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: start;
+}
+
+.tabs-dialog .tabs-dialog-list button:hover {
+  background: var(--hover);
+}
+
+.tabs-dialog .tabs-dialog-list button.active {
+  background: var(--accent-soft);
+}
+
+.tabs-dialog .tabs-dialog-options {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 14px;
+  margin-bottom: 6px;
+}
+
+.tabs-dialog .tabs-dialog-edit {
+  display: flex;
+  gap: 6px;
+}
+
+.tabs-dialog .modal-actions button {
+  white-space: nowrap;
+}
+
+.tco-dialog.hlc-dialog.tabs-dialog {
+  width: min(520px, calc(100vw - 48px));
+}
+
+.tco-dialog.bn-dialog {
+  width: min(520px, calc(100vw - 48px));
+}
+
+.bn-dialog .bn-grid {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+.bn-dialog .bn-grid .list-gallery-card {
+  min-height: 72px;
+  color: var(--text);
+}
+
+.bn-dialog .bn-styles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.bn-dialog .bn-styles[hidden],
+.bn-dialog .bn-grid[hidden] {
+  display: none;
+}
+
+.bn-dialog .bn-styles-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bn-dialog .bn-styles-list,
+.bn-dialog .bn-styles-preview {
+  display: flex;
+  flex-direction: column;
+  height: 168px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.bn-dialog .bn-styles-list button {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: start;
+}
+
+.bn-dialog .bn-styles-list button:hover {
+  background: var(--hover);
+}
+
+.bn-dialog .bn-styles-list button.active {
+  background: var(--accent-soft);
+}
+
+.bn-dialog .bn-styles-preview {
+  flex: 1;
+  height: auto;
+  gap: 4px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.bn-dialog .bn-styles-preview > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.bn-dialog .bn-styles-preview-line {
+  flex: 1;
+  min-width: 12px;
+  border-top: 2px solid var(--border);
+}
+
+.bn-dialog .bn-styles-tools,
+.bn-dialog .bn-styles-show {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.bn-dialog .bn-styles-tools button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.tco-dialog.index-tables-dialog {
+  width: min(520px, calc(100vw - 48px));
+}
+
+.index-tables-dialog .index-tables-hint {
+  margin: 4px 0 12px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.index-tables-dialog .index-tables-radios {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.index-tables-dialog .index-tables-radios .tco-check {
+  margin: 0;
+}
+
+.index-tables-dialog .modal-actions button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.index-tables-dialog .dlg-tabs button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.tco-dialog.it-options-dialog {
+  width: min(420px, calc(100vw - 48px));
+}
+
+.it-options-dialog .it-style-levels {
+  display: grid;
+  grid-template-columns: 1fr 72px;
+  gap: 4px 10px;
+  align-items: center;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.it-options-dialog .it-style-levels > * {
+  display: contents;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.it-options-dialog .it-style-levels-head > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.it-options-dialog .it-style-levels input {
+  width: 100%;
+}
+
+.it-options-dialog .it-options-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 8px;
+}
+
+.it-options-dialog .it-options-row .tco-check {
+  flex: none;
+  margin: 0;
+}
+
+.it-options-dialog .it-options-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.it-options-dialog .it-options-id {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.it-options-dialog .it-entry-styles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.it-options-dialog .it-entry-styles select {
+  height: auto;
+}
+
+.phonetic-guide-dialog .phonetic-guide-preview {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 64px;
+  margin: 4px 0 12px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 24px;
+  color: var(--text);
+}
+
+.reveal-formatting-dialog .reveal-formatting-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 3px 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.reveal-formatting-dialog .reveal-formatting-row span:first-child {
+  color: var(--text-dim);
+}
+
+.auto-text-dialog .auto-text-list,
+.language-dialog .language-list {
+  width: 100%;
+  height: 150px;
+}
+
+.language-dialog .language-list {
+  height: 220px;
+}
+
+.modal-actions .bs-horizontal-line {
+  margin-right: auto;
+}
+
+.organizer-dialog {
+  width: 620px;
+  max-width: 94vw;
+}
+
+.organizer-dialog .organizer-cols {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.organizer-dialog .organizer-col,
+.organizer-dialog .organizer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.organizer-dialog .organizer-col-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.organizer-dialog .organizer-list select {
+  width: 100%;
+  height: 220px;
+}
+
+.organizer-dialog .organizer-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 28px;
+}
+
+.organizer-dialog .organizer-rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.organizer-dialog .organizer-rename input {
+  flex: 1;
+}
+
+.field-options-dialog select {
+  width: 100%;
+  height: 132px;
+}
+
+.field-options-dialog select[name='specific'] {
+  height: 48px;
+}
+
+.field-options-dialog .field-options-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.auto-text-dialog .auto-text-preview {
+  min-height: 2.6em;
+  overflow-wrap: anywhere;
+}
+
+.selection-pane .selection-pane-row,
+.citations-pane .selection-pane-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.selection-pane .selection-pane-row:hover,
+.citations-pane .selection-pane-row:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.selection-pane .selection-pane-row.active {
+  background: var(--accent-soft);
+}
+
+.selection-pane .selection-pane-text,
+.citations-pane .selection-pane-text {
+  color: var(--text-dim);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tco-dialog.symbol-dialog {
+  width: min(560px, calc(100vw - 48px));
+}
+
+.symbol-dialog .symbol-grid {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  gap: 1px;
+  max-height: 252px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.symbol-dialog .symbol-cell {
+  width: auto;
+  padding: 0;
+}
+
+.symbol-dialog .symbol-cell.active {
+  background: var(--accent-soft);
+  outline: 1px solid var(--accent);
+}
+
+.symbol-dialog .symbol-dialog-picked {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.symbol-dialog .symbol-dialog-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 32px;
+  color: var(--text);
+}
+
+.symbol-dialog .symbol-special-list {
+  display: flex;
+  flex-direction: column;
+  height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.symbol-dialog .symbol-special-list button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: start;
+}
+
+.symbol-dialog .symbol-special-list button:hover {
+  background: var(--hover);
+}
+
+.symbol-dialog .symbol-special-list button.active {
+  background: var(--accent-soft);
+}
+
+.symbol-dialog .symbol-special-char {
+  flex: none;
+  width: 28px;
+  text-align: center;
+  font-size: 16px;
+}
+
+.tco-dialog.icons-dialog {
+  width: min(720px, calc(100vw - 48px));
+}
+
+.icons-dialog .icons-dialog-search {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.icons-dialog .icons-dialog-body {
+  display: flex;
+  gap: 12px;
+  height: min(400px, calc(100vh - 260px));
+}
+
+.icons-dialog .icons-dialog-categories {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 190px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.icons-dialog .icons-dialog-categories button {
+  flex: none;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: start;
+}
+
+.icons-dialog .icons-dialog-categories button:hover {
+  background: var(--hover);
+}
+
+.icons-dialog .icons-dialog-categories button.active {
+  background: var(--accent-soft);
+}
+
+.icons-dialog .icons-dialog-grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  grid-auto-rows: 52px;
+  gap: 4px;
+  align-content: start;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+}
+
+.icons-dialog .icons-dialog-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+}
+
+.icons-dialog .icons-dialog-cell svg {
+  width: 30px;
+  height: 30px;
+}
+
+.icons-dialog .icons-dialog-cell:hover {
+  background: var(--hover);
+}
+
+.icons-dialog .icons-dialog-cell.active {
+  background: var(--accent-soft);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.icons-dialog .icons-dialog-empty {
+  grid-column: 1 / -1;
+  padding: 24px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.icons-dialog .icons-dialog-count {
+  align-self: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.tco-dialog.hlc-dialog {
+  width: min(400px, calc(100vw - 48px));
+}
+
+.tco-dialog.footnote-dialog {
+  width: min(440px, calc(100vw - 48px));
+}
+
+.footnote-dialog .fn-dlg-grid {
+  grid-template-columns: minmax(120px, auto) 1fr;
+}
+
+.footnote-dialog .fn-dlg-grid .tco-check {
+  margin: 0;
+}
+
+.footnote-dialog .fn-dlg-mark {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.footnote-dialog .fn-dlg-mark input {
+  flex: 1;
+}
+
+.footnote-dialog .fn-dlg-convert {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.tco-dialog.hlc-dialog .modal-actions {
+  margin-top: 16px;
+}
+
+/* the page stays readable behind the question about each word */
+.manual-hyphenation-backdrop {
+  align-items: flex-end;
+  padding-bottom: 48px;
+  background: none;
+  backdrop-filter: none;
+}
+
+.manual-hyphenation-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.manual-hyphenation-word {
+  flex: 1;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 15px;
+}
+
+.manual-hyphenation-point {
+  min-width: 12px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 2px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.manual-hyphenation-point.active {
+  background: var(--accent);
+  color: var(--color-btn-primary-text);
+}
+
+/* Tools > Spelling and Grammar */
+.spelling-body {
+  display: flex;
+  gap: 12px;
+}
+
+.spelling-fields {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.spelling-context,
+.spelling-suggestions {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.spelling-context {
+  min-height: 56px;
+}
+
+.spelling-context b {
+  color: var(--danger);
+}
+
+.spelling-suggestions {
+  height: 110px;
+  padding: 2px;
+  overflow: auto;
+}
+
+.spelling-suggestions > div {
+  padding: 3px 6px;
+  border-radius: 3px;
+}
+
+.spelling-suggestions > [role='option'] {
+  cursor: pointer;
+}
+
+.spelling-suggestions > .active {
+  background: var(--accent);
+  color: var(--color-btn-primary-text);
+}
+
+.spelling-none {
+  color: var(--text-muted);
+}
+
+.modal-actions.spelling-buttons {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  margin-top: 0;
+}
+
+/* Tools > Track Changes > Compare Documents / Tools > Combine Documents */
+.tco-dialog.cmp-dialog {
+  width: min(600px, calc(100vw - 48px));
+}
+
+.cmp-dialog .cmp-sides {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.cmp-dialog .cmp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cmp-dialog .cmp-side label {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.cmp-dialog .cmp-pick {
+  display: flex;
+  gap: 6px;
+}
+
+.cmp-dialog .cmp-pick select {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+  height: 28px;
+}
+
+.cmp-dialog .cmp-side input {
+  margin-top: 0;
+  height: 28px;
+}
+
+.cmp-dialog .cmp-swap {
+  margin-top: 24px;
+  min-width: 32px;
+  height: 28px;
+}
+
+.cmp-dialog .cmp-more {
+  margin: 14px 0 8px;
+}
+
+.cmp-dialog .cmp-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+
+.cmp-dialog .cmp-reason {
+  display: block;
+  margin: 2px 0 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.cmp-dialog .cmp-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--danger);
 }
 
 .tco-dialog fieldset {
@@ -15671,6 +17256,31 @@ tr > .page-gap-cut {
   margin-top: 0;
   height: 28px;
   min-width: 0;
+}
+
+.size-scale-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.size-scale-field input {
+  flex: 1;
+  min-width: 0;
+}
+
+.equation-options-dialog .tco-grid {
+  grid-template-columns: auto minmax(140px, 1fr);
+  margin-bottom: 8px;
+}
+
+.equation-options-dialog .eq-opt-limits {
+  margin-bottom: 8px;
+}
+
+.equation-options-dialog .tco-check input[type='text'] {
+  width: 96px;
+  margin: 0 0 0 8px;
 }
 
 .tco-color-cell {
@@ -16657,4 +18267,1077 @@ tr > .page-gap-cut {
   .perm-region-nested .doc-cell-para::before {
     display: none;
   }
+}
+
+/* Mailings → Edit Recipient List: the list's rows, one check box each */
+.recipients-table {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.recipients-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.recipients-table th,
+.recipients-table td {
+  padding: 4px 8px;
+  text-align: start;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.recipients-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.recipients-dialog td input {
+  width: auto;
+  height: auto;
+  margin: 0;
+}
+
+.recipients-dialog .recipients-count {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.recipients-dialog th:first-child,
+.recipients-dialog td:first-child {
+  width: 1%;
+}
+
+.properties-dialog textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+  resize: vertical;
+}
+
+.properties-dialog textarea:focus {
+  border-color: var(--word-blue);
+}
+
+.properties-panel {
+  min-height: 340px;
+}
+
+.properties-contents {
+  max-height: 330px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.properties-custom-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+  align-items: end;
+}
+
+.properties-custom-form .properties-yes-no {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.properties-custom-form .properties-yes-no .tco-check {
+  margin: 0;
+}
+
+.tco-dialog .properties-custom-actions {
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+/* a long folder path wraps inside the dialog instead of widening the table past it */
+.properties-dialog .stats-table {
+  table-layout: fixed;
+}
+
+.properties-dialog .stats-table td:first-child {
+  width: 40%;
+}
+
+.properties-dialog .stats-table td:last-child {
+  overflow-wrap: anywhere;
+}
+
+.properties-custom-list {
+  max-height: 150px;
+}
+
+.properties-custom-list tbody tr {
+  cursor: pointer;
+}
+
+.properties-custom-list tr.selected td {
+  background: var(--hover);
+}
+
+.mark-entry-dialog .xe-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin: 0 0 6px;
+}
+
+.mark-entry-dialog .xe-target .tco-check {
+  flex: none;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.mark-entry-dialog .xe-target .tco-check input,
+.rule-dialog .tco-check input {
+  width: auto;
+}
+
+.mark-entry-dialog .xe-target > input,
+.mark-entry-dialog .xe-target > select {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Sort and Query Options: a key is a field, its type and its direction on one line */
+.tco-dialog.hlc-dialog.sort-dialog {
+  width: min(480px, calc(100vw - 48px));
+}
+
+.tco-dialog.hlc-dialog.filter-recipients-dialog {
+  width: min(620px, calc(100vw - 48px));
+}
+
+.sort-key {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tco-dialog .sort-key select {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin-top: 0;
+}
+
+.sort-order {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tco-dialog .sort-order .tco-check,
+.tco-dialog .sort-choices .tco-check {
+  margin: 0;
+}
+
+.sort-choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin-bottom: 6px;
+}
+
+.sort-caption {
+  flex-basis: 100%;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.tco-dialog .sort-choices .sort-other {
+  width: 40px;
+  height: 26px;
+  margin: 0;
+  text-align: center;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: 76px 1fr 1fr 1fr;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.filter-grid > span {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.tco-dialog .filter-grid select,
+.tco-dialog .filter-grid input {
+  min-width: 0;
+  height: 28px;
+  margin-top: 0;
+}
+
+/* Format → Borders and Shading: Word's three tabs across the top of the dialog */
+.bs-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bs-tabs button {
+  padding: 6px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.bs-tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.bs-tabs button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.borders-shading-dialog fieldset:disabled,
+.borders-shading-dialog button:disabled,
+.borders-shading-dialog .fld input:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* a control in a greyed group is dimmed once, by the group */
+.borders-shading-dialog fieldset:disabled :disabled {
+  opacity: 1;
+}
+
+.bs-shading-columns {
+  grid-template-columns: 230px 200px 1fr;
+}
+
+.bs-preview-page {
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+}
+
+/* the sample paragraph is document data: its lines and fill are the document's own */
+.bs-preview-para {
+  flex: 1;
+  padding: 10px 8px;
+}
+
+.bs-preview-para > span {
+  display: block;
+  height: 26px;
+  background: repeating-linear-gradient(to bottom, var(--text-dim) 0 2px, transparent 2px 8px);
+  opacity: 0.6;
+}
+
+.bs-fills {
+  display: grid;
+  grid-template-columns: repeat(6, 28px);
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+
+.bs-fills button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.bs-fills button.active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.font-substitution-none {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* floating objects selected along with the primary one (Shift+click) */
+.doc-protected.doc-multi-selected .doc-textbox,
+.doc-protected.doc-multi-selected .doc-img-wrap,
+img.doc-inline-img.doc-multi-selected,
+.doc-inline-img-anchor.doc-multi-selected > img {
+  outline: 2px solid var(--word-blue);
+}
+
+/* ---- Enclosed and combined characters: drawn overlaid, in the text's own color ---- */
+
+.doc-enclose-chars {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15em;
+  height: 1.15em;
+  line-height: 1;
+  text-indent: 0;
+  /* the text inside sits on the line's baseline; the enclosure spreads around it */
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
+/* the enclosure is a drawn shape; its character stays in the text, pushed out of sight, for copy and search */
+.doc-enclose-chars .doc-enclose-mark {
+  position: absolute;
+  inset: 0.04em;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 0.06em solid currentColor;
+  text-indent: -10em;
+}
+
+.doc-enclose-chars .doc-enclose-circle {
+  border-radius: 50%;
+}
+
+.doc-enclose-chars .doc-enclose-diamond {
+  inset: 0.17em;
+  transform: rotate(45deg);
+}
+
+.doc-enclose-chars .doc-enclose-triangle {
+  border: 0;
+  background: currentColor;
+  clip-path: polygon(evenodd, 50% 0, 100% 100%, 0 100%, 50% 0, 50% 14%, 11% 94%, 89% 94%, 50% 14%);
+}
+
+.doc-enclose-chars .doc-enclose-text {
+  position: relative;
+  font-size: 0.66em;
+}
+
+.doc-enclose-chars.doc-enclose-two .doc-enclose-text {
+  font-size: 0.46em;
+}
+
+.doc-enclose-chars .doc-enclose-triangle + .doc-enclose-text {
+  top: 0.22em;
+  font-size: 0.5em;
+}
+
+.doc-enclose-chars .doc-enclose-diamond + .doc-enclose-text {
+  font-size: 0.52em;
+}
+
+/* the enclosure enlarged around text that keeps its size */
+.doc-enclose-chars.doc-enclose-enlarge {
+  width: 1.6em;
+  height: 1.6em;
+}
+
+.doc-enclose-chars.doc-enclose-enlarge .doc-enclose-text {
+  font-size: 1em;
+}
+
+.doc-enclose-chars.doc-enclose-enlarge.doc-enclose-two .doc-enclose-text {
+  font-size: 0.7em;
+}
+
+.doc-enclose-chars.doc-enclose-enlarge .doc-enclose-triangle + .doc-enclose-text,
+.doc-enclose-chars.doc-enclose-enlarge .doc-enclose-diamond + .doc-enclose-text {
+  font-size: 0.75em;
+}
+
+.doc-combine-chars {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 0.5em;
+  line-height: 1;
+  text-indent: 0;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.ProseMirror-focused .doc-enclose-chars.ProseMirror-selectednode,
+.ProseMirror-focused .doc-combine-chars.ProseMirror-selectednode {
+  outline: 2px solid var(--word-blue);
+  border-radius: 2px;
+}
+
+.eq-layout-dialog .eq-layout-choices {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.eq-layout-dialog .eq-layout-choices legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.eq-layout-dialog .eq-layout-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 84px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.eq-layout-dialog .eq-layout-choice.eq-layout-mark {
+  min-width: 48px;
+}
+
+.eq-layout-dialog .eq-layout-choice.active {
+  border-color: var(--accent);
+  background: var(--active-bg);
+}
+
+.eq-layout-dialog .eq-layout-sample {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  font-size: 22px;
+  line-height: 1.4;
+}
+
+.eq-layout-dialog .eq-layout-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  margin: 4px 0 12px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 40px;
+  color: var(--text);
+}
+
+/* ---- Vertical text boxes: the text runs down the box, lines stacking right to left ---- */
+
+.doc-textbox.doc-textbox-vert {
+  writing-mode: vertical-rl;
+  text-orientation: sideways;
+}
+
+.doc-textbox.doc-textbox-eavert {
+  text-orientation: mixed;
+}
+
+.doc-textbox.doc-textbox-vert270 {
+  writing-mode: sideways-lr;
+}
+
+.doc-textbox.doc-textbox-wordartvert,
+.doc-textbox.doc-textbox-wordartvertrtl {
+  text-orientation: upright;
+}
+
+.doc-textbox.doc-textbox-wordartvert,
+.doc-textbox.doc-textbox-mongolianvert {
+  writing-mode: vertical-lr;
+}
+
+/* ---- Text Effects dialog ---- */
+
+.text-fx-dialog .text-fx-group {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.text-fx-dialog .text-fx-group legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.text-fx-dialog .text-fx-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.text-fx-dialog .text-fx-choice {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.text-fx-dialog .text-fx-choice.active {
+  border-color: var(--accent);
+  background: var(--active-bg);
+}
+
+.text-fx-dialog .text-fx-preset {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--docs-paper);
+  color: var(--docs-paper-ink, var(--text));
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.text-fx-dialog .text-fx-preset.active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.text-fx-dialog .text-fx-colors {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.text-fx-dialog .text-fx-swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.text-fx-dialog .text-fx-swatch.active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.text-fx-dialog .text-fx-group[data-fx='fill'] .text-fx-colors {
+  margin-top: 0;
+}
+
+/* the Home tab's gallery of the same looks */
+.spacing-menu.text-fx-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 44px);
+  gap: 6px;
+  padding: 8px;
+}
+
+.spacing-menu.text-fx-gallery .text-fx-tile {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--docs-paper);
+  color: var(--docs-paper-ink, var(--text));
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+}
+
+.spacing-menu.text-fx-gallery .text-fx-tile:hover {
+  border-color: var(--accent);
+  background: var(--docs-paper);
+}
+
+.spacing-menu.text-fx-gallery .text-fx-more {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+  white-space: nowrap;
+}
+
+/* the preview is a piece of the page: paper and ink, not chrome */
+.text-fx-dialog .text-fx-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 72px;
+  margin: 4px 0 12px;
+  /* room for a reflection, which takes no space of its own */
+  padding-bottom: 24px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--docs-paper);
+  color: var(--docs-paper-ink, var(--text));
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.reduce-size-dialog .reduce-size-note,
+.reduce-size-dialog .reduce-size-result {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.reduce-size-dialog .reduce-size-result {
+  min-height: 36px;
+  color: var(--text);
+}
+
+.insert-file-range-dialog .insert-file-name {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.insert-file-range-dialog .insert-file-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.insert-file-range-dialog .insert-file-range select {
+  flex: 1;
+  min-width: 0;
+}
+
+.tco-dialog.template-gallery-dialog {
+  width: min(680px, calc(100vw - 48px));
+}
+
+.template-gallery-dialog .template-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 12px;
+  align-content: start;
+  height: min(360px, calc(100vh - 240px));
+  margin-bottom: 12px;
+  padding: 10px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.template-gallery-dialog .template-gallery-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.template-gallery-dialog .template-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.template-gallery-dialog .template-tile:hover {
+  background: var(--hover);
+}
+
+.template-gallery-dialog .template-tile[aria-selected='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.template-gallery-dialog .template-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 112px;
+  height: 144px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text-dim);
+}
+
+.template-gallery-dialog .template-thumb img {
+  align-self: flex-start;
+  width: 100%;
+  height: auto;
+}
+
+.template-gallery-dialog .template-thumb svg {
+  width: 40px;
+  height: 40px;
+}
+
+.template-gallery-dialog .template-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Word-parity dialog additions: Word Count, Paste Special, Protect, Page Number Format, Table Properties ---- */
+
+.modal label.stats-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.modal label.stats-check input {
+  height: auto;
+  width: auto;
+  margin: 0;
+}
+
+.paste-special-dialog .paste-special-source {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.paste-special-dialog .paste-special-source span {
+  color: var(--text);
+}
+
+.paste-special-dialog .paste-special-modes {
+  display: flex;
+  gap: 20px;
+}
+
+.modal label.paste-special-as {
+  display: block;
+  margin: 4px 0 12px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.paste-special-dialog .paste-special-as select {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 6px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.paste-special-dialog .paste-special-result {
+  min-height: 2.4em;
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.protect-dialog .protect-sections {
+  justify-self: start;
+  align-self: start;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.protect-dialog .protect-sections:disabled {
+  opacity: 0.5;
+}
+
+.modal label.pgnum-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.modal label.pgnum-check input {
+  height: auto;
+  width: auto;
+  margin: 0;
+}
+
+.pgnum-dialog .disabled {
+  color: var(--text-dim);
+}
+
+.pgnum-dialog .pgnum-sub {
+  margin-left: 24px;
+}
+
+.pgnum-dialog .pgnum-title {
+  margin: 16px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.table-properties-width {
+  align-items: center;
+}
+
+.table-properties-dialog .table-properties-width > label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.table-properties-width input:not([type='checkbox']) {
+  box-sizing: border-box;
+  width: 84px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.table-properties-pct {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.modal.table-cell-options {
+  width: 420px;
+}
+
+.table-properties-dialog label.table-dialog-check {
+  display: flex;
+}
+
+.table-properties-dialog label.table-dialog-check input {
+  display: inline-block;
+  flex: none;
+  height: auto;
+}
+
+.table-properties-width > label {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.paste-special-dialog .paste-special-as select {
+  height: auto;
+}
+
+.table-properties-dialog .table-properties-width select {
+  width: auto;
+  margin-top: 0;
+}
+
+.modal-customize-keyboard {
+  width: 640px;
+  max-height: min(88vh, 760px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.modal-customize-keyboard h2 {
+  margin: 0;
+}
+
+.modal-customize-keyboard .ck-lists,
+.modal-customize-keyboard .ck-keys {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 14px;
+  min-height: 0;
+}
+
+.modal-customize-keyboard .ck-keys {
+  grid-template-columns: 1fr 1fr;
+}
+
+.modal-customize-keyboard .ck-column {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.modal-customize-keyboard .ck-column label {
+  margin: 0;
+}
+
+.modal-customize-keyboard .ck-list {
+  height: 190px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.modal-customize-keyboard .ck-list.ck-current {
+  height: 64px;
+}
+
+.modal-customize-keyboard .ck-categories .ck-list {
+  flex: 1;
+  height: auto;
+}
+
+.modal-customize-keyboard .ck-list button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: 13px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.modal-customize-keyboard .ck-list button:hover {
+  background: var(--hover);
+}
+
+.modal-customize-keyboard .ck-list button.is-selected {
+  background: var(--accent-soft);
+}
+
+.modal-customize-keyboard .ck-list kbd {
+  flex: none;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.modal-customize-keyboard .ck-list button.ck-sep {
+  margin-top: 5px;
+  border-top: 1px solid var(--border);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.modal-customize-keyboard .ck-search,
+.modal-customize-keyboard .ck-press,
+.modal-customize-keyboard .ck-value,
+.modal-customize-keyboard .ck-save-in select {
+  height: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+}
+
+.modal-customize-keyboard .ck-search:focus,
+.modal-customize-keyboard .ck-press:focus {
+  border-color: var(--accent);
+}
+
+.modal-customize-keyboard .ck-note {
+  margin: 0;
+  min-height: 34px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.modal-customize-keyboard .ck-btn {
+  align-self: flex-start;
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.modal-customize-keyboard .ck-btn:hover:not(:disabled) {
+  background: var(--color-bg-subtle);
+}
+
+.modal-customize-keyboard .ck-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.modal-customize-keyboard .ck-description p,
+.modal-customize-keyboard .ck-confirm p {
+  margin: 4px 0 0;
+  min-height: 18px;
+  color: var(--text-dim);
+}
+
+.modal-customize-keyboard .ck-save-in {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.modal-customize-keyboard .ck-save-in select {
+  flex: 1;
+  min-width: 0;
+}
+
+.modal-customize-keyboard .modal-actions {
+  margin-top: 0;
+}
+
+.modal-customize-keyboard .ck-reset {
+  margin-inline-end: auto;
 }

@@ -909,6 +909,8 @@ export function directParaFormat(
   | 'autoSpaceDN'
   | 'wordWrap'
   | 'overflowPunct'
+  | 'overflowPunctDirect'
+  | 'wordWrapDirect'
   | 'contextualSpacing'
 > {
   const direct = (k: string) => eff.source[k] === 'direct'
@@ -938,6 +940,8 @@ export function directParaFormat(
   ] as const) {
     if (direct(k)) f[k] = eff[k]
   }
+  if (direct('overflowPunct')) f.overflowPunctDirect = eff.overflowPunct
+  if (direct('wordWrap')) f.wordWrapDirect = eff.wordWrap
   if (direct('snapToGrid') && !eff.snapToGrid) f.snapToGrid = false
   const de = direct('autoSpaceDE') ? eff.autoSpaceDE : undefined
   const dn = direct('autoSpaceDN') ? eff.autoSpaceDN : undefined

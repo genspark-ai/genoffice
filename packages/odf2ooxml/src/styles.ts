@@ -9,6 +9,9 @@
 import { XNode, attr, firstChild, nodeAttrs, nodeChildren, nodeName } from './xml'
 import { emuToPt, emuToTwips, odfColorToHex, odfLengthToEmu } from './units'
 
+// w:start is a 32-bit decimal number
+const MAX_LIST_START = 0x7fffffff
+
 export interface OdfTextProps {
   bold?: boolean
   italic?: boolean
@@ -77,7 +80,7 @@ export class OdfStyles {
   private columnWidths = new Map<string, number>()
   private cellFills = new Map<string, string | null>()
   private tableAligns = new Map<string, 'center' | 'right'>()
-  private cellAligns = new Map<string, 'center' | 'bottom'>()
+  private cellAligns = new Map<string, 'center' | 'bottom' | null>()
   private defaults: { text?: OdfTextProps; para?: OdfParaProps } = {}
 
   constructor(contentRoots: XNode[] | null, stylesRoots: XNode[] | null) {
@@ -143,7 +146,8 @@ export class OdfStyles {
       // default, so only the other two travel
       const vertical = properties ? attr(properties, 'style:vertical-align') : undefined
       const align = vertical === 'middle' ? 'center' : vertical === 'bottom' ? 'bottom' : null
-      if (align) this.cellAligns.set(name, align)
+      // an explicit top is recorded too, so it overrides an inherited value
+      if (vertical) this.cellAligns.set(name, align)
       return
     }
     if (family === 'table') {
@@ -198,8 +202,13 @@ export class OdfStyles {
 
   /** `style:vertical-align` of a table-cell style, in docx's vocabulary */
   cellAlign(styleName: string | undefined): 'center' | 'bottom' | null {
-    if (!styleName) return null
-    return this.cellAligns.get(styleName) ?? null
+    const seen = new Set<string>()
+    while (styleName && !seen.has(styleName)) {
+      seen.add(styleName)
+      if (this.cellAligns.has(styleName)) return this.cellAligns.get(styleName) ?? null
+      styleName = this.defs.get(`table-cell:${styleName}`)?.parent
+    }
+    return null
   }
 
   private readProps(node: XNode): { text?: OdfTextProps; para?: OdfParaProps } {
@@ -311,10 +320,9 @@ export class OdfStyles {
     if (first !== null) out.indentFirstLineTw = emuToTwips(first)
     if (a['fo:break-before'] === 'page' || a['fo:break-before'] === 'auto')
       out.pageBreakBefore = a['fo:break-before'] === 'page'
-    // "transparent" is ODF's default (the page shows through), so only a real
-    // colour asks for a fill
     const background = odfColorToHex(a['fo:background-color'])
     if (background) out.background = background
+    else if (a['fo:background-color'] === 'transparent') out.background = undefined
     // ODF spells both as auto/always; "auto" is the default, so it only has to
     // cancel a value an ancestor style set
     const keepNext = a['fo:keep-with-next']
@@ -342,10 +350,11 @@ export class OdfStyles {
         childName === 'text:list-level-style-number' ||
         childName === 'text:list-level-style-roman'
       ) {
-        const start = Number(attr(child, 'text:start-value') ?? '1')
+        const startValue = attr(child, 'text:start-value')
+        const start = startValue && /^\d+$/.test(startValue) ? Number(startValue) : NaN
         levels.set(level, {
           kind: 'ordered',
-          ...(Number.isSafeInteger(start) && start >= 0 ? { start } : {}),
+          ...(start <= MAX_LIST_START ? { start } : {}),
           numFormat: attr(child, 'style:num-format') ?? '1',
           numPrefix: attr(child, 'style:num-prefix'),
           numSuffix: attr(child, 'style:num-suffix'),

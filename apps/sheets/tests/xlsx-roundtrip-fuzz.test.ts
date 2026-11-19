@@ -1,6 +1,6 @@
 /** Seeded round-trip fidelity fuzz for the XLSX save pipeline — the sheets
  *  sibling of the docs suite's roundtrip-fuzz.test.ts. The hostile-input
- *  suite (#2542) feeds corrupted packages to the reader and asserts bounded
+ *  suite (genoffice#2542) feeds corrupted packages to the reader and asserts bounded
  *  failure; this suite feeds valid packages to the *saver* and asserts the
  *  three properties that matter for a part-level archive editor (the
  *  save_archive contract: untouched entries ride through as raw copies):

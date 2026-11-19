@@ -11,13 +11,13 @@ import { Ribbon } from '../src/renderer/components/Ribbon'
 import { t } from '../src/renderer/i18n/locale'
 import { ribbonProps } from './helpers/ribbon-props'
 
-function makeEditor(): Editor {
+function makeEditor(text = 'hello world'): Editor {
   return new Editor({
     element: document.createElement('div'),
     extensions: editorExtensions,
     content: {
       type: 'doc',
-      content: [{ type: 'docParagraph', content: [{ type: 'text', text: 'hello world' }] }],
+      content: [{ type: 'docParagraph', ...(text ? { content: [{ type: 'text', text }] } : {}) }],
     },
   })
 }
@@ -26,7 +26,7 @@ describe('Insert → Comment', () => {
   let editor: Editor
   let root: Root
   let container: HTMLElement
-  const onNewComment = vi.fn()
+  const onCommand = vi.fn()
 
   beforeEach(() => {
     editor = makeEditor()
@@ -39,15 +39,15 @@ describe('Insert → Comment', () => {
     act(() => root.unmount())
     container.remove()
     editor.destroy()
-    onNewComment.mockClear()
+    onCommand.mockClear()
   })
 
-  function renderInsertTab(overrides: Record<string, unknown>) {
+  function renderInsertTab(overrides: Record<string, unknown> = {}) {
     act(() =>
       root.render(
         createElement(Ribbon, {
           ...ribbonProps(editor, computeFormatState(editor)),
-          onNewComment,
+          onCommand,
           ...overrides,
         }),
       ),
@@ -62,24 +62,34 @@ describe('Insert → Comment', () => {
   }
 
   it('starts a new comment when an anchor is available', () => {
-    const btn = renderInsertTab({ canComment: true })
+    const btn = renderInsertTab()
     expect(btn.disabled).toBe(false)
     act(() => btn.click())
-    expect(onNewComment).toHaveBeenCalledTimes(1)
+    expect(onCommand).toHaveBeenCalledTimes(1)
+    expect(onCommand).toHaveBeenCalledWith('insert-comment')
   })
 
   it('is disabled with nothing to anchor on', () => {
-    const btn = renderInsertTab({ canComment: false })
+    editor.destroy()
+    editor = makeEditor('... ...')
+    const btn = renderInsertTab()
     expect(btn.disabled).toBe(true)
   })
 
+  it('is live in an empty paragraph, which holds the comment itself', () => {
+    editor.destroy()
+    editor = makeEditor('')
+    const btn = renderInsertTab()
+    expect(btn.disabled).toBe(false)
+  })
+
   it('stays live under the comments-only restriction', () => {
-    const btn = renderInsertTab({ canComment: true, isProtected: true, commentsAllowed: true })
+    const btn = renderInsertTab({ isProtected: true, commentsAllowed: true })
     expect(btn.disabled).toBe(false)
   })
 
   it('is disabled when a protection forbids commenting', () => {
-    const btn = renderInsertTab({ canComment: true, isProtected: true, commentsAllowed: false })
+    const btn = renderInsertTab({ isProtected: true, commentsAllowed: false })
     expect(btn.disabled).toBe(true)
   })
 })
