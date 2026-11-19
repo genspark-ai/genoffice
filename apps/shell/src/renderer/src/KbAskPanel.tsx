@@ -193,6 +193,8 @@ export function KbAskPanel({
   const { t, lang } = useI18n()
   const [messages, setMessages] = useState<AskMessage[]>([])
   const [draft, setDraft] = useState('')
+  /** highlighted row in the @ mention list */
+  const [mentionIndex, setMentionIndex] = useState(0)
   const [attachedSkills, setAttachedSkills] = useState<string[]>([])
   const [attachments, setAttachments] = useState<AttachmentInfo[]>([])
   /** rejection / image-read messages, cleared after a few seconds */
@@ -207,6 +209,13 @@ export function KbAskPanel({
   const [gskEmail, setGskEmail] = useState<string | null>(null)
   const [provider, setProvider] = useState<string | null>(null)
   const corpusRef = useRef<KbFileInfo[]>([])
+  /** the @ token open at the end of the draft (null when none is being typed) */
+  const mention = useMemo(() => mentionToken(draft), [draft])
+  /** corpus files matching the typed mention, in starred order */
+  const mentionFiles = useMemo(
+    () => (mention ? matchMentionFiles(corpusRef.current, mention.query) : []),
+    [mention, corpusCount],
+  )
   const settingsRef = useRef<AiSettings | null>(null)
   const loopRef = useRef<AgentLoop<unknown> | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -563,6 +572,42 @@ export function KbAskPanel({
 
   const removeAttachment = (path: string): void =>
     setAttachments((prev) => prev.filter((a) => a.path !== path))
+
+  /** pick a corpus file out of the @ list: drop the token and attach the file */
+  const pickMention = (file: KbFileInfo): void => {
+    if (!mention) return
+    setDraft(removeMentionToken(draft, mention.start))
+    void window.aiOffice
+      .addAttachmentPaths([file.path])
+      .then(mergeAttachments)
+      .catch(() => {})
+  }
+
+  /** @ list keys: captured before the composer's own Enter/Escape handling */
+  const onMentionKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (!mention) return
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      setDraft(removeMentionToken(draft, mention.start))
+      return
+    }
+    if (mentionFiles.length === 0) return
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      event.stopPropagation()
+      setMentionIndex((index) =>
+        nextMentionIndex(index, event.key === 'ArrowDown' ? 1 : -1, mentionFiles.length),
+      )
+      return
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault()
+      event.stopPropagation()
+      const file = mentionFiles[Math.min(mentionIndex, mentionFiles.length - 1)]
+      if (file) pickMention(file)
+    }
+  }
 
   /** image attachments go multimodal with the question; a failed read is reported, not fatal */
   const collectImages = async (atts: readonly AttachmentInfo[]): Promise<AgentImage[]> => {
@@ -969,57 +1014,91 @@ export function KbAskPanel({
           {attachNotice}
         </p>
       )}
-      <AiComposer
-        value={draft}
-        busy={busy}
-        placeholder={t('askPlaceholder')}
-        hintIdle={t('askHintIdle')}
-        hintBusy={t('askHintBusy')}
-        sendLabel={t('askSend')}
-        stopLabel={t('askStop')}
-        ariaLabel={t('askPlaceholder')}
-        iconOnly
-        sendIconEnabled={<img src={sendEnterOn} alt="" aria-hidden />}
-        sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
-        stopIcon={<img src={sendStop} alt="" aria-hidden />}
-        header={
-          <>
-            <AskAttachments
-              items={attachments}
-              onRemove={removeAttachment}
-              removeLabel={t('askRemoveAttachment')}
-            />
-            <AiSkillChips lang={lang} names={attachedSkills} onRemove={toggleSkill} />
-          </>
-        }
-        footerStart={
-          <>
-            <AiModelPicker bridge={modelBridge} lang={lang} />
-            {sessionUsage && <AiUsageChip usage={sessionUsage} session lang={lang} />}
-            <AiSkillsMenu
-              lang={lang}
-              listSkills={listSkillsForMenu}
-              selected={attachedSkills}
-              onToggle={toggleSkill}
-              onAddFile={() =>
-                void window.aiOffice
-                  .pickAttachments()
-                  .then(mergeAttachments)
-                  .catch(() => {})
-              }
-              onManage={() => void window.aiOffice.openSkillsSettings?.().catch(() => {})}
-            />
-          </>
-        }
-        onChange={setDraft}
-        onPasteFiles={(files) => void addDroppedFiles(files)}
-        onSend={() => void ask()}
-        onStop={() => {
-          askSeqRef.current++
-          loopRef.current?.cancel()
-          finishLast()
-        }}
-      />
+      {corpusCount !== null && corpusCount > 0 && draft === '' && (
+        <p className="kb-ask-mention-hint">{t('askMentionHint')}</p>
+      )}
+      <div className="kb-ask-input-wrap" onKeyDownCapture={onMentionKeyDown}>
+        {mention &&
+          (mentionFiles.length > 0 ? (
+            <div className="kb-ask-mention" role="listbox" aria-label={t('askMentionTitle')}>
+              {mentionFiles.map((file, index) => (
+                <button
+                  key={file.path}
+                  type="button"
+                  role="option"
+                  aria-selected={index === mentionIndex}
+                  className={
+                    index === mentionIndex ? 'kb-ask-mention-row active' : 'kb-ask-mention-row'
+                  }
+                  title={file.path}
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    pickMention(file)
+                  }}
+                >
+                  <FileBadge ext={file.ext} size={14} />
+                  <span className="kb-ask-mention-name">{file.name}</span>
+                  {file.folder && <span className="kb-ask-mention-folder">{file.folder}</span>}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="kb-ask-mention kb-ask-mention-none" role="status">
+              {t('askMentionEmpty')}
+            </div>
+          ))}
+        <AiComposer
+          value={draft}
+          busy={busy}
+          placeholder={t('askPlaceholder')}
+          hintIdle={t('askHintIdle')}
+          hintBusy={t('askHintBusy')}
+          sendLabel={t('askSend')}
+          stopLabel={t('askStop')}
+          ariaLabel={t('askPlaceholder')}
+          iconOnly
+          sendIconEnabled={<img src={sendEnterOn} alt="" aria-hidden />}
+          sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
+          stopIcon={<img src={sendStop} alt="" aria-hidden />}
+          header={
+            <>
+              <AskAttachments
+                items={attachments}
+                onRemove={removeAttachment}
+                removeLabel={t('askRemoveAttachment')}
+              />
+              <AiSkillChips lang={lang} names={attachedSkills} onRemove={toggleSkill} />
+            </>
+          }
+          footerStart={
+            <>
+              <AiModelPicker bridge={modelBridge} lang={lang} />
+              {sessionUsage && <AiUsageChip usage={sessionUsage} session lang={lang} />}
+              <AiSkillsMenu
+                lang={lang}
+                listSkills={listSkillsForMenu}
+                selected={attachedSkills}
+                onToggle={toggleSkill}
+                onAddFile={() =>
+                  void window.aiOffice
+                    .pickAttachments()
+                    .then(mergeAttachments)
+                    .catch(() => {})
+                }
+                onManage={() => void window.aiOffice.openSkillsSettings?.().catch(() => {})}
+              />
+            </>
+          }
+          onChange={setDraft}
+          onPasteFiles={(files) => void addDroppedFiles(files)}
+          onSend={() => void ask()}
+          onStop={() => {
+            askSeqRef.current++
+            loopRef.current?.cancel()
+            finishLast()
+          }}
+        />
+      </div>
     </div>
   )
 }
@@ -1115,6 +1194,47 @@ function IconChevron({ open }: { open: boolean }): React.JSX.Element {
       <path d="m6 9 6 6 6-6" />
     </svg>
   )
+}
+
+export interface MentionToken {
+  /** index of the '@' in the draft */
+  start: number
+  /** the text typed after it (may be empty) */
+  query: string
+}
+
+/**
+ * The @ token open at the end of the draft, if any: '@' at the start or after
+ * whitespace with no whitespace after it, so '@lease' matches and 'a@b' does
+ * not. Only the tail matters: the token is whatever the reader is typing now.
+ */
+export function mentionToken(value: string): MentionToken | null {
+  const match = /(^|\s)@([^\s@]*)$/.exec(value)
+  if (!match) return null
+  return { start: value.length - match[2]!.length - 1, query: match[2]! }
+}
+
+/** Corpus files matching the typed mention: name, folder or extension; blank lists all. */
+export function matchMentionFiles(files: readonly KbFileInfo[], query: string): KbFileInfo[] {
+  const q = query.trim().toLowerCase()
+  if (q === '') return [...files]
+  return files.filter(
+    (file) =>
+      file.name.toLowerCase().includes(q) ||
+      file.folder.toLowerCase().includes(q) ||
+      file.ext.toLowerCase() === q,
+  )
+}
+
+/** Drop the open token (and its '@') from the draft. */
+export function removeMentionToken(value: string, start: number): string {
+  return value.slice(0, Math.max(0, start))
+}
+
+/** Move the highlighted row in the @ list, wrapping at both ends. */
+export function nextMentionIndex(index: number, step: number, length: number): number {
+  if (length <= 0) return 0
+  return (((index + step) % length) + length) % length
 }
 
 function IconInfo(): React.JSX.Element {
