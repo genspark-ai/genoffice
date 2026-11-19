@@ -1120,7 +1120,7 @@ export interface NestedTableGap {
   gap: PageGapSpec
   /** a split row: one in-cell gap per cell, at that cell's first line on the
    *  next page (no gap row then) */
-  cells?: Array<{ mark: CellLineMark; gap: PageGapSpec }>
+  cells?: Array<{ mark: CellLineMark; gap: PageGapSpec; liftPx?: number }>
 }
 
 /** Put an in-cell gap at a marked line start, splitting the text node when the
@@ -1209,6 +1209,14 @@ export function syncNestedTableGaps(view: EditorView, gaps: readonly NestedTable
       for (const c of g.cells) {
         const el = buildGapEl(c.gap, 'cell')
         el.classList.add('page-gap-nested')
+        // a cell resuming a line higher than the turn: the gap's top part sits
+        // beside the other cells' last lines, so it stays see-through there
+        if (c.liftPx) {
+          el.style.setProperty('--gap-lift', `${c.liftPx.toFixed(1)}px`)
+          // its own column stays paper there (the gap bleeds to the paper edges)
+          el.style.setProperty('--gap-own-l', `${c.gap.metrics.marginLeft.toFixed(1)}px`)
+          el.style.setProperty('--gap-own-r', `${c.gap.metrics.marginRight.toFixed(1)}px`)
+        }
         el.dataset.gapKey = key
         insertAtMark(c.mark, el)
       }

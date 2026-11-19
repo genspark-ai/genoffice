@@ -5336,6 +5336,7 @@ export function App() {
                       const r = block.getBoundingClientRect()
                       return {
                         mark,
+                        liftPx,
                         gap: {
                           pos: 0,
                           kind: 'cell' as const,

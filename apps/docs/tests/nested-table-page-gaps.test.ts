@@ -189,7 +189,7 @@ describe('syncNestedTableGaps', () => {
       gap: cellGap(),
       cells: [
         { mark: { cell: c0, text: n0 }, gap: cellGap() },
-        { mark: { cell: c1, text: n1 }, gap: cellGap(4) },
+        { mark: { cell: c1, text: n1 }, gap: cellGap(4), liftPx: 4 },
       ],
     })
     syncNestedTableGaps(view, [split(10, 11)])
@@ -200,6 +200,9 @@ describe('syncNestedTableGaps', () => {
     expect(gaps[0].nextSibling?.textContent).toBe('metodologi')
     expect(gaps[1].nextSibling?.textContent).toBe('integrasi')
     expect(c0.textContent).toBe('Supervisi metodologi')
+    // the lifted cell's gap stays see-through beside the other cells' last lines
+    expect((gaps[1] as HTMLElement).style.getPropertyValue('--gap-lift')).toBe('4.0px')
+    expect((gaps[0] as HTMLElement).style.getPropertyValue('--gap-lift')).toBe('')
 
     // a settled pass keeps the same elements even though the text is split now
     syncNestedTableGaps(view, [split(10, 11)])
