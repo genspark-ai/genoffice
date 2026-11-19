@@ -73,6 +73,25 @@ function fillExtFromDataUrl(op: Op, field = 'bytes'): void {
   }
 }
 
+/** New content has no source formatting to inherit: map public spacing
+ * names directly, preserving explicit zero and the supplied run properties. */
+function newParagraphs(paragraphs: Paragraph[]): Paragraph[] {
+  return paragraphs.map((paragraph) => {
+    const { lineSpacingPct, spaceBeforePt, spaceAfterPt, ...model } = paragraph as Paragraph & {
+      lineSpacingPct?: number
+      spaceBeforePt?: number
+      spaceAfterPt?: number
+    }
+    return {
+      ...model,
+      runs: model.runs.map((run) => ({ ...run })),
+      ...(lineSpacingPct != null ? { lineHeight: lineSpacingPct } : {}),
+      ...(spaceBeforePt != null ? { spaceBefore: spaceBeforePt } : {}),
+      ...(spaceAfterPt != null ? { spaceAfter: spaceAfterPt } : {}),
+    }
+  })
+}
+
 // ── addElement (textbox / preset shape / line) ──────────────────────────
 register({
   name: 'addElement',
@@ -108,7 +127,7 @@ register({
       kind: String(op.kind),
       offset: reqRect(op),
       ...(Array.isArray(op.paragraphs) && op.paragraphs.length
-        ? { paragraphs: op.paragraphs as Paragraph[] }
+        ? { paragraphs: newParagraphs(op.paragraphs as Paragraph[]) }
         : {}),
       ...(typeof op.fill === 'string' ? { fillColor: op.fill } : {}),
       ...(op.stroke ? { stroke: op.stroke as NewElementOptions['stroke'] } : {}),

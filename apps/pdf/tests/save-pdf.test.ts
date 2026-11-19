@@ -876,6 +876,31 @@ describe('applySaveRequest', () => {
     expect(out.getPages().map((p) => p.getWidth())).toEqual([300, 100])
   })
 
+  it('rejects a pageOrder that duplicates an index instead of dropping a real page', async () => {
+    // issue #2784: with only the length checked, [0, 0] passed as a two-page
+    // order rebuilt the tree with page 0 twice — the original 200 pt page was
+    // gone and the call returned bytes with no failure indication
+    const bytes = await makePdf([
+      [100, 400],
+      [200, 400],
+    ])
+    await expect(apply(bytes, request({ pageOrder: [0, 0] }))).rejects.toThrow(
+      /permutation of the surviving pages/,
+    )
+  })
+
+  it('rejects a pageOrder with an out-of-range or missing index', async () => {
+    const bytes = await makePdf([
+      [100, 400],
+      [200, 400],
+      [300, 400],
+    ])
+    await expect(apply(bytes, request({ pageOrder: [0, 9] }))).rejects.toThrow(/permutation/)
+    // an omitted page: not a permutation either — the request names a reorder
+    // it cannot express, and silently keeping the old order would hide that
+    await expect(apply(bytes, request({ pageOrder: [0, 1] }))).rejects.toThrow(/permutation/)
+  })
+
   it('skips the reorder when deleting every page leaves the guarded last page', async () => {
     // Deleting all pages keeps one via the last-page guard; the order list
     // then matches nothing alive, so the reorder must be skipped safely.

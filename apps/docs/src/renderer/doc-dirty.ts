@@ -118,6 +118,8 @@ export interface CrossDocEditStateSink {
   setPendingNumbering: (value: PendingNumbering) => void
   setDefaultFonts?: (fonts: DefaultFonts | undefined) => void
   setStyleUpserts: (value: Record<string, StyleUpsert>) => void
+  /** the comment undo graveyard must not outlive its document either */
+  resetCommentUndoStore?: () => void
 }
 
 /**
@@ -137,4 +139,7 @@ export function resetCrossDocEditState(sink: CrossDocEditStateSink): void {
   sink.setPendingNumbering(EMPTY_PENDING_NUMBERING)
   sink.setStyleUpserts({})
   sink.setDefaultFonts?.(undefined)
+  // parked comment metadata is document-scoped: a card parked by doc A's
+  // delete must not revive when doc B happens to reuse an anchor id
+  sink.resetCommentUndoStore?.()
 }

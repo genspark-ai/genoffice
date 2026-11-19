@@ -32,6 +32,7 @@ import {
   installWrapMeasureLifecycle,
   noteSidecarCrash,
 } from './univer-sync'
+import { installEditorScrollFollow } from './editor-scroll-follow'
 import { installGridGrowth } from './grid-growth'
 import {
   pollUntilReady,
@@ -461,6 +462,7 @@ import { handleRemoveNotePicture } from './note-picture-actions'
 import { installFormulaNullResultFix } from './formula-null-result'
 import { installNumberFormatFix } from './numfmt-fix'
 import { installIfsEmptySetFix } from './ifs-empty-set'
+import { installExcel365Functions } from './excel-365-functions'
 import { installCriteriaCompareCacheFix } from './criteria-compare-cache'
 import { installRateFallback } from './rate-function'
 import {
@@ -2318,6 +2320,9 @@ export function App({
     // the grid is sized to the data, so a blank sheet stops scrolling a few
     // columns past its last cell; this extends it ahead of the viewport
     const gridGrowthDispose = installGridGrowth(runtime)
+    // Univer places the open cell editor once; keep it on its cell while the
+    // grid scrolls (the bridge refresh is a no-op when no editor is open)
+    const editorScrollFollow = installEditorScrollFollow(runtime)
     // Load-time wrap-row measures queue until Univer's auto-height
     // interceptor exists (lifecycle Rendered).
     const wrapMeasureDisposable = installWrapMeasureLifecycle(runtime)
@@ -2468,6 +2473,7 @@ export function App({
     const rateFallbackDisposable = installRateFallback(runtime)
     // MINIFS/MAXIFS over zero matching cells return 0, not blank.
     const ifsEmptySetDisposable = installIfsEmptySetFix(runtime)
+    const excel365Disposable = installExcel365Functions(runtime)
     // Repeated *IF(S) '=' compares on text columns survive the inverted-
     // index cache when the criteria was number-coerced ("2026-06").
     const criteriaCompareCacheDisposable = installCriteriaCompareCacheFix()
@@ -3901,6 +3907,7 @@ export function App({
       undoRedoSub.unsubscribe()
       findRevealDispose()
       gridGrowthDispose()
+      editorScrollFollow.dispose()
       wrapMeasureDisposable.dispose()
       prefersDark.removeEventListener('change', applyUniverDark)
       dateTextDisposable.dispose()
@@ -3920,6 +3927,7 @@ export function App({
       cellFilenameDisposable.dispose()
       rateFallbackDisposable.dispose()
       ifsEmptySetDisposable.dispose()
+      excel365Disposable.dispose()
       criteriaCompareCacheDisposable.dispose()
       formulaLexerFixDisposable.dispose()
       sheetRenameFixDisposable.dispose()

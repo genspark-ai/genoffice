@@ -1,5 +1,6 @@
 import { CollabSync } from '../collab/sync-extension'
 import { isEastAsianLeadingFont } from '../text-layout/script-rules'
+import { selectionHighlightOverlay } from './selection-highlight'
 import { SEGOE_SYMBOL_CSS } from '../text-layout/font-rules/face-classes'
 import { ScriptFonts } from './script-fonts'
 import {
@@ -281,6 +282,10 @@ import {
   pageRelVTarget,
   tableFloatInlineLeftCss,
 } from './anchor-geometry'
+
+/** height of one single-spaced line at 8pt and up (Word: 8pt x 1.15 = 12.3px):
+ *  a picture offset by less cannot have a whole line of its paragraph above it */
+const MIN_LINE_ABOVE_PICTURE_PX = 12
 export * from './marks'
 export * from './decoration-extensions'
 
@@ -807,8 +812,14 @@ export const DocInlineImage = Node.create({
         // top; the turned visual (Word's exclusion) starts an inset above it
         margin.top = px(ty)
         // a float excludes its whole margin box: without a shape the lines
-        // above the picture (Word lays them at full width) would shorten too
-        if (ty - qt > 0) styles.push(`shape-outside:inset(${px(ty - qt)} 0 0 0)`)
+        // above the picture (Word lays them at full width) would shorten too.
+        // An offset under one line leaves no line above the picture, and there
+        // the shape does harm: Chromium keeps the float's own first line at
+        // full width once it carries a shape-outside, where Word wraps the
+        // line the picture cuts into (a logo 2px under its anchor line top)
+        if (ty - qt >= MIN_LINE_ABOVE_PICTURE_PX) {
+          styles.push(`shape-outside:inset(${px(ty - qt)} 0 0 0)`)
+        }
         // clampCellImageTops fills --cell-lift once the cell top is measured
         if (ty < 0 && !/layoutInCell="(?:0|false)"/.test(String(node.attrs.xml ?? ''))) {
           margin.top = `calc(${px(ty)} + var(--cell-lift,0px))`
@@ -1911,6 +1922,7 @@ export const LineFactorExtension = Extension.create({
           },
         },
       }),
+      selectionHighlightOverlay(),
     ]
   },
 })
@@ -6534,8 +6546,9 @@ function imageResizePlugin(): Plugin {
             const lockH = !isChart && isStraightLineKind(boxes![0].prst)
             const minW = isChart ? 120 : 24
             const minH = isChart ? 80 : 8
-            // charts never draw wider than the render cap, so don't let the model exceed it
-            const maxW = isChart ? CHART_MAX_WIDTH_PX : Infinity
+            // the resize UI caps at the render cap, but a chart authored wider
+            // than it (its extent is honored now) must not snap down mid-drag
+            const maxW = isChart ? Math.max(CHART_MAX_WIDTH_PX, chart?.widthPx ?? 0) : Infinity
             const sizeAt = (e: MouseEvent) => ({
               w: Math.min(maxW, Math.max(minW, startW + (e.clientX - startX) / zoom)),
               h: lockH ? startH : Math.max(minH, startH + (e.clientY - startY) / zoom),

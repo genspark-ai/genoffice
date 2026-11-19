@@ -1083,6 +1083,35 @@ function renderedImageStyle(editor: Editor): string {
   return spec[1].style
 }
 
+describe('square-wrapped picture a little below its anchor paragraph top', () => {
+  // a letterhead logo: behindDoc with an explicit wrapSquare still wraps (Word)
+  const logo = (y: number) =>
+    anchoredPicture(0, y, 762000, 762000)
+      .replace(TIGHT_WRAP, '<wp:wrapSquare wrapText="bothSides"/>')
+      .replace('behindDoc="0"', 'behindDoc="1"')
+
+  it('drops the shape under one line, so the anchor line wraps beside the picture', async () => {
+    const { editor } = await openImageDoc(
+      `<w:p>${logo(21590)}<w:r><w:t>Isian Substansi Proposal</w:t></w:r></w:p>`,
+    )
+    const style = renderedImageStyle(editor)
+    expect(style).toContain('margin-top:2.3px')
+    // with a shape-outside Chromium keeps the float's first line full width
+    expect(style).not.toContain('shape-outside')
+    editor.destroy()
+  })
+
+  it('keeps the shape once a whole line fits above the picture', async () => {
+    const { editor } = await openImageDoc(
+      `<w:p>${logo(228600)}<w:r><w:t>Isian Substansi Proposal</w:t></w:r></w:p>`,
+    )
+    const style = renderedImageStyle(editor)
+    expect(style).toContain('margin-top:24.0px')
+    expect(style).toContain('shape-outside:inset(24.0px 0 0 0)')
+    editor.destroy()
+  })
+})
+
 describe('wrapTopAndBottom placed below its anchor paragraph top', () => {
   const topBottom = (y: number) =>
     anchoredPicture(788972, y, 4425950, 2807970).replace(TIGHT_WRAP, '<wp:wrapTopAndBottom/>')

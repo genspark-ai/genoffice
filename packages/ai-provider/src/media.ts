@@ -189,8 +189,13 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     keyPlaceholder: 'eyJ...',
     defaultBaseUrl: MINIMAX_BASE_URL,
     imageProtocol: 'minimax',
-    imageModels: ['image-01'],
-    defaultImageModel: 'image-01',
+    // per the platform docs 2026-11-14: MiniMax-H3-Image and its Highspeed
+    // twin speak the OpenAI-Images-shaped /v1/images/* endpoints on both
+    // platforms — confirmed on the international docs (api.minimax.io) and
+    // on the CN platform (platform.minimaxi.com, api base api.minimax.cn);
+    // image-01 keeps api.minimaxi.com as its CN host
+    imageModels: ['MiniMax-H3-Image', 'MiniMax-H3-Image-Highspeed', 'image-01'],
+    defaultImageModel: 'MiniMax-H3-Image',
     analysisProtocol: 'openai-chat',
     analysisModels: ['MiniMax-M3'],
     defaultAnalysisModel: 'MiniMax-M3',

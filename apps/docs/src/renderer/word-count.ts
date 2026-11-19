@@ -7,6 +7,7 @@
  * Asian-character figure.
  */
 
+import type { TableModel } from '@genoffice/docx-engine'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { Selection } from '@tiptap/pm/state'
 
@@ -62,13 +63,31 @@ export function documentTextForWordCount(doc: ProseMirrorNode): string {
   return doc.textBetween(0, doc.content.size, ' ', leafTextForWordCount)
 }
 
+/** a nested table's paragraph texts, cell by cell, deeper nested tables included */
+export function tableModelText(model: TableModel | null | undefined): string {
+  if (!model?.rows) return ''
+  const parts: string[] = []
+  for (const row of model.rows) {
+    for (const cell of row) {
+      parts.push(...(cell.paras ?? []))
+      for (const inner of cell.nestedTables ?? []) parts.push(tableModelText(inner))
+    }
+  }
+  return parts.join(' ')
+}
+
 /**
- * Text an atomic inline leaf contributes to a word count. No doc schema
- * defines `spec.leafText`, so only the two nodes with text of their own
- * (inline math, ruby base) need naming; every other atom contributes nothing.
+ * Text an atomic leaf contributes to a word count. No doc schema defines
+ * `spec.leafText`, so the nodes with text of their own are named here: inline
+ * math, a ruby base, and a table nested in a cell (an atom drawn from its
+ * model, whose words Word counts like any other); every other atom
+ * contributes nothing.
  */
 export function leafTextForWordCount(leaf: ProseMirrorNode): string {
   if (leaf.type.name === 'docInlineMath') return String(leaf.attrs.text ?? '')
   if (leaf.type.name === 'docRuby') return String(leaf.attrs.base ?? '')
+  if (leaf.type.name === 'docNestedTable') {
+    return tableModelText(leaf.attrs.model as TableModel | null)
+  }
   return leaf.type.spec.leafText?.(leaf) ?? ''
 }

@@ -29,7 +29,26 @@ const BLOCKED: Record<string, string> = {
   FORMCHECKBOX: 'form fields are not supported',
   FORMTEXT: 'form fields are not supported',
   FORMDROPDOWN: 'form fields are not supported',
-  ADDIN: 'add-in fields are not supported',
+  ADDIN:
+    'the only add-in field accepted is a Zotero citation: args "ZOTERO_ITEM CSL_CITATION {json}" with result',
+}
+const ZOTERO_CITATION_ARGS = /^\s*ZOTERO_ITEM\s+CSL_CITATION\s+(\{[\s\S]*\})\s*$/
+
+/** null when args are a Zotero citation instruction the integration can refresh, else why not */
+function zoteroCitationProblem(args: unknown): string | null {
+  if (typeof args !== 'string') return BLOCKED.ADDIN!
+  const m = ZOTERO_CITATION_ARGS.exec(args)
+  if (!m) return BLOCKED.ADDIN!
+  let data: unknown
+  try {
+    data = JSON.parse(m[1]!)
+  } catch {
+    return 'the CSL_CITATION payload is not valid JSON'
+  }
+  const items = (data as { citationItems?: unknown } | null)?.citationItems
+  if (!Array.isArray(items) || items.length === 0)
+    return 'the CSL_CITATION payload needs a non-empty citationItems array'
+  return null
 }
 /** result defaults to "1" and Word recomputes on open */
 const COUNTER_FIELDS = new Set([
@@ -412,6 +431,8 @@ function resolveField(op: Op, doc: PmNode, pos: number, now = new Date()): Resol
     if (value !== undefined && given === undefined) return { instr, result: value, dirty: false }
     return { instr, result: needsResult(), dirty: true }
   }
+  // Zotero owns its citations: it rewrites the result on refresh, Word must not
+  if (type === 'ADDIN') return { instr, result: needsResult(), dirty: false }
   if (COUNTER_FIELDS.has(type)) return { instr, result: given ?? '1', dirty: true }
   return { instr, result: needsResult(), dirty: true }
 }
@@ -627,7 +648,7 @@ export function fieldOpDefs(h: FieldOpHelpers): OpDef[] {
   const insertField: OpDef = {
     name: 'insertField',
     signature:
-      '{ op: "insertField", target, type: "SEQ"|"REF"|"PAGEREF"|"DATE"|"TIME"|"MERGEFIELD"|"IF"|"PAGE"|"NUMPAGES"|"AUTHOR"|..., args?: string, result?: string, position?: "start"|"end", afterText?: string }  // insert a Word field into exactly one paragraph, at its end unless position or afterText says otherwise; args is the instruction after the keyword ({ SEQ Figure \\* ARABIC } = type "SEQ", args "Figure \\* ARABIC"). Computed here: SEQ (visible fields with that identifier so far + 1), REF/PAGEREF (the bookmarked paragraph; insertBookmark creates one), DATE/TIME (now, \\@ picture), MERGEFIELD («Name»), IF with literal operands; PAGE/NUMPAGES show "1"; anything else needs result, the text shown until Word updates it. Fields only Word can compute are marked dirty and refresh when the file opens in Word',
+      '{ op: "insertField", target, type: "SEQ"|"REF"|"PAGEREF"|"DATE"|"TIME"|"MERGEFIELD"|"IF"|"PAGE"|"NUMPAGES"|"AUTHOR"|..., args?: string, result?: string, position?: "start"|"end", afterText?: string }  // insert a Word field into exactly one paragraph, at its end unless position or afterText says otherwise; args is the instruction after the keyword ({ SEQ Figure \\* ARABIC } = type "SEQ", args "Figure \\* ARABIC"). Computed here: SEQ (visible fields with that identifier so far + 1), REF/PAGEREF (the bookmarked paragraph; insertBookmark creates one), DATE/TIME (now, \\@ picture), MERGEFIELD («Name»), IF with literal operands; PAGE/NUMPAGES show "1"; anything else needs result, the text shown until Word updates it. Fields only Word can compute are marked dirty and refresh when the file opens in Word. A Zotero citation is type "ADDIN", args "ZOTERO_ITEM CSL_CITATION {json}" (the Zotero Word-plugin payload: citationItems with uris, itemData, locator/label for pages) and result the formatted citation; Zotero\'s Refresh keeps it and the bibliography in sync',
     keys: ['type', 'args', 'result', 'position', 'afterText'],
     target: 'required',
     validate(op, where) {
@@ -635,9 +656,15 @@ export function fieldOpDefs(h: FieldOpHelpers): OpDef[] {
       if (shape) return shape
       if (typeof op.type !== 'string' || !/^[A-Za-z]+$/.test(op.type))
         return `${where}: type must be a field keyword such as SEQ, REF or DATE`
-      const blocked = BLOCKED[op.type.toUpperCase()]
-      if (blocked)
-        return `${where}: ${op.type.toUpperCase()} fields cannot be inserted this way; ${blocked}`
+      const keyword = op.type.toUpperCase()
+      if (keyword === 'ADDIN') {
+        const problem = zoteroCitationProblem(op.args)
+        if (problem) return `${where}: ADDIN fields cannot be inserted this way; ${problem}`
+        if (typeof op.result !== 'string' || op.result === '')
+          return `${where}: a Zotero citation needs result, the formatted citation text, e.g. "(Smith, 2020, p. 4)"`
+      } else if (BLOCKED[keyword]) {
+        return `${where}: ${keyword} fields cannot be inserted this way; ${BLOCKED[keyword]}`
+      }
       if (op.args !== undefined && typeof op.args !== 'string')
         return `${where}: args must be a string`
       if (op.result !== undefined && (typeof op.result !== 'string' || op.result === ''))

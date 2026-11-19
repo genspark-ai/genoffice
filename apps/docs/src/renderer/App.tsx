@@ -1,9 +1,11 @@
 import { FloatWatch } from './editor/float-watch'
+import { attachCommentUndoSync, resetCommentUndoStore } from './editor/comment-undo-sync'
 import { scriptFontHtml } from './editor/script-fonts'
 import { carryDocSeen } from './ai/tools'
 import { DOC_CSS_COMMITTED_EVENT, WRAP_WIDTHS_COMMITTED_EVENT } from './editor/cjk-punct-shrink'
 import { justifyShrinkPluginKey } from './editor/justify-shrink'
 import { tabReflowMeta } from './editor/decoration-extensions'
+import { deletedAnything, touchesNode, touchedText } from './editor/touched-blocks'
 import {
   useCallback,
   useEffect,
@@ -499,6 +501,7 @@ import {
   type CommentsMode,
 } from './components/comments-mode'
 import { StylesPane } from './components/StylesPane'
+import { useStoredFlag } from './stored-flag'
 import { Ruler } from './components/Ruler'
 import { docBodyFont, docHasCjk, docLineFactor, docStyleCss, docThemeCss } from './doc-style-css'
 import { docFontsCoveredBy } from './font-check'
@@ -556,6 +559,12 @@ const EDIT_PASS_DEBOUNCE_MAX_MS = 2000
 const FOLLOW_UP_PASS_DELAY_MS = 100
 const EXPORT_PASS_RETRY_MS = 500
 const WORD_COUNT_THROTTLE_MS = 400
+/** the refresh makes two whole-document walks (text extraction + revision
+ *  scan); past this duration the document is big enough that walking it
+ *  every 400 ms stole real typing time (issue #2781), so the cadence
+ *  stretches the way the pagination scheduler's does */
+const WORD_COUNT_SLOW_WALK_MS = 25
+const WORD_COUNT_SLOW_INTERVAL_MS = 2000
 /** consecutive follow-up passes a pass may schedule for itself */
 import { runHeadlessDocumentExport } from './headless-export'
 import { installMcpBridge } from './mcp-bridge'
@@ -977,7 +986,8 @@ export function App() {
     setStatus(on ? t('appTitlePgOn') : t('appTitlePgOff'))
   }
   const [showMarks, setShowMarks] = useState(false)
-  const [showRuler, setShowRuler] = useState(false)
+  // Word keeps View ▸ Ruler on across documents and launches
+  const [showRuler, setShowRuler] = useStoredFlag('aidocs.showRuler')
   const [leftPane, setLeftPane] = useState<LeftPane>(loadLeftPane)
   const showNav = leftPane === 'nav'
   const setShowNav = useCallback((on: boolean) => setLeftPane(on ? 'nav' : null), [])
@@ -1226,6 +1236,9 @@ export function App() {
   const [docCss, setDocCss] = useState('')
   // Live CJK-ness of the body while editing; overrides docCss's --doc-line-factor
   const [liveDocCjk, setLiveDocCjk] = useState<boolean | null>(null)
+  // the same answer as a ref, so the per-edit gate can skip a whole-document
+  // scan without waiting for React (null = the current document is unscanned)
+  const liveDocCjkRef = useRef<boolean | null>(null)
   // header/footer push-down re-measures after the doc-scoped <style> elements
   // commit: the DOM probe (hfReservedHeightPx) keys on the mounted CSS content,
   // so a value computed in the render pass that introduced new CSS is replaced
@@ -2210,6 +2223,7 @@ export function App() {
   // kept the Western factor until save/reopen (whole page ~8% shorter than the file).
   useEffect(() => {
     setLiveDocCjk(null)
+    liveDocCjkRef.current = null
   }, [doc])
   useEffect(() => {
     if (!editor) return
@@ -2220,11 +2234,30 @@ export function App() {
         if (node.isText && node.text && textHasCjk(node.text)) has = true
         return !has
       })
+      liveDocCjkRef.current = has
       setLiveDocCjk(has)
     }
     let timer = 0
-    const onUpdate = () => {
+    // the whole-document scan only runs when the answer could have flipped:
+    // CJK text arriving, content being deleted (the last of it could go), or
+    // an unknown step kind. A rescan after every pause made long documents
+    // lag (issue #2781); the fast paths answer from the touched text alone.
+    const onUpdate = ({
+      transaction,
+      appendedTransactions,
+    }: {
+      transaction: Transaction
+      appendedTransactions: Transaction[]
+    }) => {
       window.clearTimeout(timer)
+      const batch = [transaction, ...appendedTransactions]
+      if (batch.some((tr) => textHasCjk(touchedText(tr) ?? ''))) {
+        liveDocCjkRef.current = true
+        setLiveDocCjk(true)
+        return
+      }
+      if (liveDocCjkRef.current === true && !batch.some(deletedAnything)) return
+      if (liveDocCjkRef.current === false && batch.every((tr) => touchedText(tr) !== null)) return
       timer = window.setTimeout(recompute, 300)
     }
     editor.on('update', onUpdate)
@@ -2274,6 +2307,7 @@ export function App() {
   fileCtxRef.current = {
     editor,
     doc,
+    resetCommentUndoStore,
     dirtyRef,
     saveInFlightRef,
     saveIncompleteRef,
@@ -3114,9 +3148,22 @@ export function App() {
         carryDocSeen(editor, before)
       }
     }
-    editor.on('update', fill)
+    // a numId-less list item can only appear inside a range a step touched,
+    // so the whole-document walk runs only when that happened. Walking every
+    // keystroke made long documents lag (issue #2781).
+    const onFillUpdate = ({
+      transaction,
+      appendedTransactions,
+    }: {
+      transaction: Transaction
+      appendedTransactions: Transaction[]
+    }) => {
+      const batch = [transaction, ...appendedTransactions]
+      if (batch.some((tr) => touchesNode(tr, (node) => node.type.name === 'docListItem'))) fill()
+    }
+    editor.on('update', onFillUpdate)
     return () => {
-      editor.off('update', fill)
+      editor.off('update', onFillUpdate)
     }
   }, [editor, allocateListNumId])
 
@@ -6116,14 +6163,21 @@ export function App() {
   useEffect(() => {
     if (!editor) return
     let timer = 0
+    let slowWalk = false
     const refresh = () => {
       timer = 0
+      const started = performance.now()
       setWordCount(wordCountOfDoc(editor.state.doc))
       setRevisionRanges(doc ? revisionsOfDoc(editor.state.doc) : [])
       setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
+      slowWalk = performance.now() - started > WORD_COUNT_SLOW_WALK_MS
     }
     const onUpdate = () => {
-      if (!timer) timer = window.setTimeout(refresh, WORD_COUNT_THROTTLE_MS)
+      if (!timer)
+        timer = window.setTimeout(
+          refresh,
+          slowWalk ? WORD_COUNT_SLOW_INTERVAL_MS : WORD_COUNT_THROTTLE_MS,
+        )
     }
     refresh()
     editor.on('update', onUpdate)
@@ -7912,7 +7966,18 @@ export function App() {
     }
     refresh()
     editor.on('transaction', refresh)
+    // comment metadata rides PM undo/redo: deleted comments come back whole,
+    // undo of an add removes them again (Word parity)
+    const detachCommentSync = attachCommentUndoSync(
+      editor,
+      () => commentsLiveRef.current,
+      (entries) => {
+        setComments(entries)
+        setCommentsDirty(true)
+      },
+    )
     return () => {
+      detachCommentSync()
       editor.off('transaction', refresh)
     }
   }, [editor])

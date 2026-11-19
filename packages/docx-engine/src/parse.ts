@@ -6056,9 +6056,19 @@ function extractCell(
       : undefined
     const emptyFont = markSized ? emptyParaMarkFont(p, pPr, ctx.themeFonts, spaceOnly) : undefined
     const markSz = cellRef ? markSizeOf(eff, pPr) : undefined
+    // bookmark anchors opening in the cell paragraph (REF/TOC targets): carried
+    // on the model like the body paragraphs' names so a cell rebuild re-emits
+    // them instead of silently dropping the anchor its REF fields point at
+    const cellBookmarkNames = hasDeepChild(p, new Set(['w:bookmarkStart']))
+      ? bookmarkNamesOf(serializeXNode(p))
+      : { bookmarks: undefined, hiddenBookmarks: undefined }
     richParas.push({
       ...format,
       ...(cellStyleId ? { styleId: cellStyleId } : {}),
+      ...(cellBookmarkNames.bookmarks ? { bookmarks: cellBookmarkNames.bookmarks } : {}),
+      ...(cellBookmarkNames.hiddenBookmarks
+        ? { hiddenBookmarks: cellBookmarkNames.hiddenBookmarks }
+        : {}),
       ...(emptySz ? { emptyRunSizeHalfPoints: emptySz } : {}),
       ...(emptyFont ? { emptyRunFontFamily: emptyFont } : {}),
       ...(markSz ? { markSizeHalfPoints: markSz } : {}),

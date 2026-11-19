@@ -1445,6 +1445,10 @@ export interface TableParagraph extends ParaFormat {
   runs: Run[]
   /** w:pStyle of the cell paragraph (style CSS: fonts/spacing reach cell content) */
   styleId?: string
+  /** bookmark names whose w:bookmarkStart/End sit in the cell paragraph (REF/TOC anchors) */
+  bookmarks?: string[]
+  /** _-prefixed Word-internal bookmark names (_Ref/_Toc/_Hlk), re-emitted for the same reason */
+  hiddenBookmarks?: string[]
   /** list paragraph inside the cell (w:numPr) */
   list?: { kind: 'bullet' | 'ordered'; numId: string; ilvl: number }
 }
