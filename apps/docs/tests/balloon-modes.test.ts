@@ -102,7 +102,8 @@ describe('Show Markup → Balloons', () => {
     const rev = wrap.querySelector<HTMLElement>('.rev-bubble-del')!
     const card = wrap.querySelector<HTMLElement>('.comment-bubble:not(.rev-bubble)')!
     expect(parseFloat(rev.style.left)).toBeGreaterThanOrEqual(parseFloat(strip.style.left))
-    expect(parseFloat(card.style.left)).toBeGreaterThanOrEqual(
+    const commentPage = card.closest<HTMLElement>('.comment-page')!
+    expect(parseFloat(commentPage.style.left) + parseFloat(card.style.left)).toBeGreaterThanOrEqual(
       parseFloat(strip.style.left) + parseFloat(strip.style.width),
     )
     expect(wrap.style.getPropertyValue('--markup-w')).toBe('460px')

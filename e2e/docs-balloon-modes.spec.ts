@@ -116,6 +116,23 @@ test.describe('docs Show Markup balloons', () => {
       await expect(delBubble).toContainText('removed words')
       await expect(fmtBubble).toHaveCount(1)
       await expect(commentBubble).toHaveCount(1)
+      // Compare rendered coordinates: cards sit in their own page viewport,
+      // while revision balloons and the markup strip share the outer layer.
+      await expect
+        .poll(async () => {
+          const [strip, revision, card] = await Promise.all([
+            page.locator('.markup-strip').first().boundingBox(),
+            delBubble.boundingBox(),
+            commentBubble.boundingBox(),
+          ])
+          if (!strip || !revision || !card) return -Infinity
+          return Math.min(
+            revision.x - strip.x,
+            strip.x + strip.width - (revision.x + revision.width),
+            card.x - (strip.x + strip.width),
+          )
+        })
+        .toBeGreaterThanOrEqual(0)
       await expect(del).toBeHidden()
       const marker = page.locator('.doc-del-marker')
       await expect(marker).toHaveCount(1)
