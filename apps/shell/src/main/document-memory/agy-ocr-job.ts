@@ -712,7 +712,18 @@ export class AgyOcrJob {
       )
       const total = Math.min(rendered.totalPages, settings.maxPagesPerFile)
       this.currentProgress = { done: [...doneNow].filter((page) => page <= total).length, total }
-      const usingLocal = this.activeBackend() === 'local-vlm'
+      const backend = this.activeBackend()
+      // Blocker 3: when user explicitly chose 'local-vlm' but it is not ready, the resolver
+      // returns 'none'. We must NOT silently fall back to the cloud AGY backend because that
+      // would send document images to Google without the user's knowledge.
+      if (backend === 'none') {
+        this.recordError(
+          'Mô hình cục bộ (LFM3-VL-2B) chưa sẵn sàng. ' +
+            'Vui lòng tải mô hình trong Cài đặt hoặc chuyển sang chế độ AGY Cloud để nhận dạng OCR.',
+        )
+        return { pages: charged, stop: true }
+      }
+      const usingLocal = backend === 'local-vlm'
       const effectivePerCall = usingLocal
         ? Math.min(settings.pagesPerCall, 2)
         : settings.pagesPerCall

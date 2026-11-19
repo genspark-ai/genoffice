@@ -508,4 +508,143 @@ describe('agy fallback and OpenAI-compatible routing', () => {
     })
     expect(finalStopReason).toBe('tool_calls')
   })
+
+  it('blocks deleteBlocks without explicit target — no onToolCall, no data loss', async () => {
+    // Blocker 2: destructive ops without target must be silently dropped (not auto-scoped)
+    const baseUrl = 'http://127.0.0.1:45679/v1'
+    registerLocalVlmRuntime({
+      status: vi.fn() as never,
+      isRunnable: () => true,
+      shouldFallbackFromAgy: () => true,
+      ensureRunning: async () => ({ baseUrl, model: LOCAL_VLM_DEFAULT_MODEL }),
+      testConnection: async () => ({ ok: true }),
+      stop: async () => undefined,
+    })
+
+    vi.stubGlobal('fetch', (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const parsed = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      if (parsed.stream) {
+        // Model emits deleteBlocks with no target — must be dropped
+        const sse = [
+          `data: ${JSON.stringify({ choices: [{ delta: { content: '<tool_call>\n<function=deleteBlocks>\n<arguments>\n{}\n</arguments>\n</function>\n</tool_call>' }, finish_reason: null }] })}\n\n`,
+          `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+          'data: [DONE]\n\n',
+        ].join('')
+        return new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+      }
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch)
+
+    const toolCalls: unknown[] = []
+    await streamForProvider(
+      'local-vlm',
+      { apiKey: '', model: '' },
+      'You are a document editing assistant',
+      [{ role: 'user', text: 'delete everything' }],
+      [{ name: 'apply_ops', description: 'Apply ops', inputSchema: { type: 'object', properties: {} } }],
+      512,
+      {
+        signal: new AbortController().signal,
+        onDelta: () => undefined,
+        onToolCall: (tc) => toolCalls.push(tc),
+      },
+    )
+
+    // deleteBlocks without target must be blocked — no tool call must fire
+    expect(toolCalls.length).toBe(0)
+  })
+
+  it('allows deleteBlocks when model provides an explicit blockIndexes target', async () => {
+    // Blocker 2 (positive case): a proper target is accepted
+    const baseUrl = 'http://127.0.0.1:45679/v1'
+    registerLocalVlmRuntime({
+      status: vi.fn() as never,
+      isRunnable: () => true,
+      shouldFallbackFromAgy: () => true,
+      ensureRunning: async () => ({ baseUrl, model: LOCAL_VLM_DEFAULT_MODEL }),
+      testConnection: async () => ({ ok: true }),
+      stop: async () => undefined,
+    })
+
+    vi.stubGlobal('fetch', (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const parsed = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      if (parsed.stream) {
+        const sse = [
+          `data: ${JSON.stringify({ choices: [{ delta: { content: '<tool_call>\n<function=deleteBlocks>\n<arguments>\n{"target":{"blockIndexes":[2,3]}}\n</arguments>\n</function>\n</tool_call>' }, finish_reason: null }] })}\n\n`,
+          `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+          'data: [DONE]\n\n',
+        ].join('')
+        return new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+      }
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch)
+
+    const toolCalls: any[] = []
+    await streamForProvider(
+      'local-vlm',
+      { apiKey: '', model: '' },
+      'You are a document editing assistant',
+      [{ role: 'user', text: 'delete blocks 2 and 3' }],
+      [{ name: 'apply_ops', description: 'Apply ops', inputSchema: { type: 'object', properties: {} } }],
+      512,
+      {
+        signal: new AbortController().signal,
+        onDelta: () => undefined,
+        onToolCall: (tc) => toolCalls.push(tc),
+      },
+    )
+
+    expect(toolCalls.length).toBe(1)
+    expect(toolCalls[0]).toMatchObject({
+      name: 'apply_ops',
+      input: {
+        ops: [{ op: 'deleteBlocks', target: { blockIndexes: [2, 3] } }],
+      },
+    })
+  })
+
+  it('blocks a tool not listed in availableTools — allowlist enforcement (Blocker 4)', async () => {
+    // Blocker 4: model must NOT escalate to ops not in availableTools
+    const baseUrl = 'http://127.0.0.1:45679/v1'
+    registerLocalVlmRuntime({
+      status: vi.fn() as never,
+      isRunnable: () => true,
+      shouldFallbackFromAgy: () => true,
+      ensureRunning: async () => ({ baseUrl, model: LOCAL_VLM_DEFAULT_MODEL }),
+      testConnection: async () => ({ ok: true }),
+      stop: async () => undefined,
+    })
+
+    vi.stubGlobal('fetch', (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const parsed = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      if (parsed.stream) {
+        // Model tries to call apply_ops but availableTools only has read_blocks
+        const sse = [
+          `data: ${JSON.stringify({ choices: [{ delta: { content: '<tool_call>\n<function=setFont>\n<arguments>\n{"fontSize":12}\n</arguments>\n</function>\n</tool_call>' }, finish_reason: null }] })}\n\n`,
+          `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+          'data: [DONE]\n\n',
+        ].join('')
+        return new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+      }
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch)
+
+    const toolCalls: unknown[] = []
+    await streamForProvider(
+      'local-vlm',
+      { apiKey: '', model: '' },
+      'You are a document editing assistant',
+      [{ role: 'user', text: 'just read the doc' }],
+      // apply_ops is NOT in availableTools, so setFont (which maps to apply_ops) must be blocked
+      [{ name: 'read_blocks', description: 'Read blocks', inputSchema: { type: 'object', properties: {} } }],
+      512,
+      {
+        signal: new AbortController().signal,
+        onDelta: () => undefined,
+        onToolCall: (tc) => toolCalls.push(tc),
+      },
+    )
+
+    expect(toolCalls.length).toBe(0)
+  })
 })

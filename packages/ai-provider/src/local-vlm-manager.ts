@@ -493,9 +493,42 @@ export class LocalVlmManager implements LocalVlmRuntimeBridge {
     }
 
     let stderrTail = ''
+    // Blocker 4: build a minimal environment for the child process so that Cloud API keys
+    // (GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY …) stored in the parent env are
+    // never inherited by the untrusted llama-server subprocess.
+    const SAFE_ENV_KEYS = [
+      'PATH',
+      'Path',
+      'USERPROFILE',
+      'HOME',
+      'TEMP',
+      'TMP',
+      'TMPDIR',
+      'LANG',
+      'LC_ALL',
+      'SystemRoot',
+      'WINDIR',
+      'COMSPEC',
+      'TERM',
+    ]
+    const safeEnv: NodeJS.ProcessEnv = {}
+    for (const key of SAFE_ENV_KEYS) {
+      if (this.env[key] !== undefined) safeEnv[key] = this.env[key]
+    }
     const child = this.spawnFn(runtimePath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
+      env: safeEnv,
+    })
+    child.once('error', (err: NodeJS.ErrnoException) => {
+      const code = err.code ?? ''
+      if (code === 'ENOENT') {
+        this.lastError = `llama-server không tìm thấy tại: ${runtimePath}`
+      } else if (code === 'EACCES') {
+        this.lastError = `Không có quyền chạy llama-server: ${runtimePath}`
+      } else {
+        this.lastError = `Lỗi khởi động llama-server: ${err.message}`
+      }
     })
     this.proc = child
     this.activePort = port

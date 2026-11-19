@@ -75,3 +75,18 @@ part of this repository or of the installer.
 - F2LLM-v2-80M (CodeFuse AI, Apache License 2.0) and Qwen3-Embedding-0.6B
   (Alibaba Cloud, Apache License 2.0): the original Standard and High search
   models, kept for existing installations.
+
+Local Vision-Language Model (downloaded at user request, not bundled)
+
+Local AI features optionally download LFM3-VL-2B weights (Liquid AI) and
+llama-server binary (llama.cpp) at the user's request in Settings. The model
+weights and runtime binary are not part of this repository or of the installer.
+
+- LFM3-VL-2B (Liquid AI / Liquid Foundation Models): Released under the
+  LFM Open License v1.0 (https://www.liquid.ai/lfm-open-license).
+  Free for research and commercial use, subject to restrictions on commercial
+  use for organizations with greater than $10M in annual revenue (which require
+  a commercial agreement from Liquid AI).
+- llama-server runtime: distributed as part of llama.cpp under the MIT License
+  (Copyright (c) 2023-2026 Georgi Gerganov and llama.cpp contributors).
+

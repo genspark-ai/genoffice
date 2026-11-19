@@ -1686,7 +1686,22 @@ export function executeOps(editor: Editor, ops: unknown, ctx: OpContext = {}): E
       errors.push(`${where}: unknown op "${op.op}". Supported ops: [${opNames().join(', ')}]`)
       return
     }
+    // ── Blocker 2: Never auto-assign document scope for destructive ops ──────
+    // Ops whose target is 'required' are only auto-filled when they are
+    // explicitly safe styling ops (setFont, setParagraphFormat, …).
+    // Destructive ops (deleteBlocks, findReplace) MUST carry an explicit target
+    // from the caller — if missing, we return a human-readable error so the
+    // model can retry with the correct target rather than wiping the document.
+    const isDestructive = op.op === 'deleteBlocks' || op.op === 'findReplace'
     if (def.target === 'required' && !op.target) {
+      if (isDestructive) {
+        errors.push(
+          `${where}: "${op.op}" requires an explicit target (e.g. blockIndexes or containsText). ` +
+          'Refusing to auto-target the entire document to prevent accidental data loss.',
+        )
+        return
+      }
+      // Safe styling ops: auto-assign from active selection or entire document
       op.target = ctx.selection ? { scope: 'selection' } : { scope: 'document' }
     }
     const error = def.validate(op, `${where} ${op.op}`)

@@ -421,6 +421,15 @@ describe('deleteBlocks', () => {
     const otherRuns = editor.state.doc.child(1).content
     expect(otherRuns.child(0).marks.some((m) => m.type.name === 'bold')).toBe(false)
   })
+
+  it('rejects deleteBlocks without explicit target to prevent accidental document wipe', () => {
+    const editor = createEditor(fixtureDoc())
+    const initialCount = editor.state.doc.childCount
+    const outcome = executeOps(editor, [{ op: 'deleteBlocks' } as never])
+    expect(outcome.ok).toBe(false)
+    expect(outcome.error).toContain('requires an explicit target')
+    expect(editor.state.doc.childCount).toBe(initialCount)
+  })
 })
 
 describe('moveBlocks', () => {

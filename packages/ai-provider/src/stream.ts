@@ -84,14 +84,18 @@ function pruneSystemForLocalVlm(system: string, isDocEditor: boolean): string {
   return res.length > 3000 ? res.slice(0, 3000) : res
 }
 
-const KNOWN_OPS = new Set([
+/**
+ * Ops that are SAFE to auto-assign { scope: 'document' } when target is missing.
+ * Only styling/formatting ops with no destructive side-effects belong here.
+ * DESTRUCTIVE ops (deleteBlocks, moveBlocks, findReplace) are intentionally excluded:
+ * they must have an explicit target from the model — if missing, we reject them
+ * rather than risk silently deleting/moving the entire document.
+ */
+const SAFE_AUTO_TARGET_OPS = new Set([
   'setFont',
   'setMatchedFont',
   'setParagraphFormat',
   'setHeadingLevel',
-  'findReplace',
-  'deleteBlocks',
-  'moveBlocks',
   'setList',
   'clearList',
   'setImageProperties',
@@ -102,10 +106,36 @@ const KNOWN_OPS = new Set([
   'stepHangingIndent',
 ])
 
+/**
+ * All ops the model may legitimately name directly (without wrapping in apply_ops).
+ * Recognized as valid tool names during XML parsing so they are not leaked as text.
+ * Destructive ops ARE listed here (the model IS allowed to call them) but they must
+ * supply an explicit target — normalizeToolCall enforces this below.
+ */
+const KNOWN_OPS = new Set([
+  ...SAFE_AUTO_TARGET_OPS,
+  'deleteBlocks',
+  'moveBlocks',
+  'findReplace',
+])
+
+/** Ops that must have an explicit, non-document-scoped target to prevent data loss. */
+const DESTRUCTIVE_OPS = new Set(['deleteBlocks', 'moveBlocks', 'findReplace'])
+
 function normalizeToolCall(
   name: string,
   input: Record<string, unknown>,
-): { name: string; input: Record<string, unknown> } {
+  /** Names the caller is actually allowed to invoke (from availableTools). */
+  allowedNames: ReadonlySet<string>,
+): { name: string; input: Record<string, unknown> } | null {
+  // ── Blocker 4: enforce tool allowlist ──────────────────────────────────────
+  // Only pass through tool names that the current session was granted.
+  // KNOWN_OPS map to 'apply_ops', so if 'apply_ops' is not in allowedNames we
+  // reject everything that would arrive there too.
+  const resolvedName = KNOWN_OPS.has(name) ? 'apply_ops' : name
+  if (!allowedNames.has(resolvedName)) return null
+
+  // ── Fix read_blocks defaults ───────────────────────────────────────────────
   if (name === 'read_blocks') {
     const fixedInput = { ...input }
     if (fixedInput.startBlockIndex === undefined) fixedInput.startBlockIndex = 0
@@ -113,44 +143,62 @@ function normalizeToolCall(
     return { name, input: fixedInput }
   }
 
-  // If model called an op directly (e.g. setFont), wrap as apply_ops
+  // ── Wrap bare op name into apply_ops ──────────────────────────────────────
   if (KNOWN_OPS.has(name)) {
+    // ── Blocker 2: refuse destructive ops without an explicit target ───────
+    if (DESTRUCTIVE_OPS.has(name)) {
+      if (!input.target) {
+        // Return null → parseToolCallBlock will treat it as unrecognized and
+        // emit a text delta instead of silently destroying data.
+        return null
+      }
+      return {
+        name: 'apply_ops',
+        input: { ops: [{ op: name, ...input }] },
+      }
+    }
+
+    // Safe op: auto-assign document scope when target is missing.
     const target = input.target ?? { scope: 'document' }
     return {
       name: 'apply_ops',
-      input: {
-        ops: [{ op: name, target, ...input }],
-      },
+      input: { ops: [{ op: name, target, ...input }] },
     }
   }
 
-  // If model called apply_ops with flattened op (no ops array)
+  // ── Normalize apply_ops with flattened / missing ops array ────────────────
   if (name === 'apply_ops') {
     if (!Array.isArray(input.ops)) {
       if (typeof input.op === 'string') {
-        const target = input.target ?? { scope: 'document' }
+        const opName = input.op as string
+        // Reject destructive ops without target even here
+        if (DESTRUCTIVE_OPS.has(opName) && !input.target) return null
+        const target =
+          SAFE_AUTO_TARGET_OPS.has(opName) && !input.target
+            ? { scope: 'document' }
+            : input.target
         return {
           name: 'apply_ops',
-          input: {
-            ops: [{ target, ...input }],
-          },
+          input: { ops: [{ target, ...input }] },
         }
       }
-    } else {
-      // Ensure ops that require target have a target
-      const fixedOps = (input.ops as Array<Record<string, unknown>>).map((op) => {
-        if (op && typeof op === 'object' && typeof op.op === 'string' && KNOWN_OPS.has(op.op)) {
-          if (!op.target) {
-            return { target: { scope: 'document' }, ...op }
-          }
-        }
-        return op
-      })
-      return {
-        name: 'apply_ops',
-        input: { ...input, ops: fixedOps },
-      }
+      // Malformed apply_ops with no ops array and no op field — reject
+      return null
     }
+
+    // Normalize each op inside the array
+    const fixedOps = (input.ops as Array<Record<string, unknown>>).map((op) => {
+      if (!op || typeof op !== 'object' || typeof op.op !== 'string') return op
+      const opName = op.op as string
+      // Destructive ops must already have a target — do not auto-assign
+      if (DESTRUCTIVE_OPS.has(opName)) return op
+      // Safe ops: auto-assign document scope when missing
+      if (SAFE_AUTO_TARGET_OPS.has(opName) && !op.target) {
+        return { target: { scope: 'document' }, ...op }
+      }
+      return op
+    })
+    return { name: 'apply_ops', input: { ...input, ops: fixedOps } }
   }
 
   return { name, input }
@@ -159,6 +207,7 @@ function normalizeToolCall(
 function parseToolCallBlock(
   fullBlock: string,
   known: ReadonlySet<string>,
+  allowedNames: ReadonlySet<string>,
 ): AgentToolCall | null {
   const inner = fullBlock
     .replace(/^<tool_call>/i, '')
@@ -170,7 +219,9 @@ function parseToolCallBlock(
   if (fnMatch) {
     const rawName = fnMatch[1]!
     const body = fnMatch[2]?.trim() ?? ''
-    const resolved = resolveToolName(rawName, known) ?? rawName
+    // Only resolve to a known alias; never fall back to rawName for unknown tools.
+    const resolved = resolveToolName(rawName, known)
+    if (!resolved) return null
     let input: Record<string, unknown> = {}
 
     if (body) {
@@ -193,7 +244,8 @@ function parseToolCallBlock(
       }
     }
 
-    const normalized = normalizeToolCall(resolved, input)
+    const normalized = normalizeToolCall(resolved, input, allowedNames)
+    if (!normalized) return null
 
     return {
       id: `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
@@ -207,7 +259,8 @@ function parseToolCallBlock(
   if (obj) {
     const call = readToolCallBody(obj.json, known)
     if (call) {
-      const normalized = normalizeToolCall(call.name, call.input)
+      const normalized = normalizeToolCall(call.name, call.input, allowedNames)
+      if (!normalized) return null
       return {
         id: `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         name: normalized.name,
@@ -223,7 +276,13 @@ function wrapWithToolCallFilter(
   cb: StreamCallbacks,
   availableTools: readonly AgentToolDef[],
 ): StreamCallbacks & { flush: () => void } {
-  const known = new Set(availableTools.map((t) => t.name))
+  // allowedNames = exact tool names this session is permitted to invoke.
+  // KNOWN_OPS map to 'apply_ops', so they are only permitted if 'apply_ops' is in the list.
+  const allowedNames = new Set(availableTools.map((t) => t.name))
+
+  // known = all name strings we scan for inside <tool_call> blocks (superset of allowedNames).
+  // This lets us recognise KNOWN_OPS by name even though they will be remapped to apply_ops.
+  const known = new Set(allowedNames)
   for (const name of [
     'read_blocks',
     'insert_content',
@@ -296,7 +355,7 @@ function wrapWithToolCallFilter(
         buffer = buffer.slice(fullBlockEnd)
         inToolCall = false
 
-        const call = parseToolCallBlock(fullBlock, known)
+        const call = parseToolCallBlock(fullBlock, known, allowedNames)
         if (call) {
           toolCallEmitted = true
           cb.onToolCall?.(call)
