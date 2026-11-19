@@ -26,7 +26,7 @@ export const strings = {
     askSaveMd: '保存为 Markdown',
     askSaveDocx: '保存为 Word',
     askSavedAs: '已保存:{name}',
-    askSaveFailed: '保存失败:{error}',
+    askSaveFailed: '保存失败：{error}',
     askEmptyCorpus: '知识库还是空的:先收藏一些文件,再回来提问。',
     askNeedsLogin: '登录 Genspark 后即可使用 AI 问答。',
     askPlaceholder: '问一个关于收藏文件的问题…',
@@ -2828,6 +2828,10 @@ export const strings = {
       'Érvénytelen fejlécformátum: minden sornak „Név: Érték” alakúnak kell lennie.',
     setAiEndpointModelsBad:
       'Érvénytelen modellmegadás: JSON-tömb kell legyen, pl. [{ "id": "m" }].',
+    skillDetailClose: 'Bezárás',
+    skillDetailLoading: 'Útmutató betöltése…',
+    skillDetailEmpty: 'Ehhez a készséghez nincs útmutató.',
+    skillDetailCopy: 'Útmutató másolása',
   },
   ja: {
     addFolderRoot: 'フォルダーを追加…',
@@ -12597,7 +12601,7 @@ export const strings = {
     askSaveMd: '儲存為 Markdown',
     askSaveDocx: '儲存為 Word',
     askSavedAs: '已儲存:{name}',
-    askSaveFailed: '儲存失敗:{error}',
+    askSaveFailed: '儲存失敗：{error}',
     askEmptyCorpus: '知識庫還是空的:先收藏一些檔案,再回來提問。',
     askNeedsLogin: '登入 Genspark 後即可使用 AI 問答。',
     askPlaceholder: '問一個關於收藏檔案的問題…',

@@ -45,7 +45,7 @@ function strokeInvisible(stroke: Stroke | undefined): boolean {
   if (!stroke || stroke.width === 0 || stroke.fill.type === 'none') return true
   return (
     stroke.fill.type === 'solid' &&
-    (stroke.fill.color === 'none' || /^#?[0-9a-fA-F]{6}00$/.test(stroke.fill.color))
+    (stroke.fill.color === 'none' || /^#?[0-9a-fA-F]{6}00$/.test((stroke.fill.color ?? '').trim()))
   )
 }
 

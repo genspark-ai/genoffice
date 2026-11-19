@@ -84,6 +84,7 @@ export {
   saveDocx,
   findChartWorkbookPath,
   missingHeadingLevels,
+  nextBookmarkIdAllocator,
   readDocxPartBase64,
   type SaveBlock,
   type SaveOptions,
