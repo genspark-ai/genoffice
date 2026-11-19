@@ -123,6 +123,46 @@ describe('nestedRowSplit', () => {
   })
 })
 
+describe('nestedRowSplit widow control', () => {
+  // a 4-line cell paragraph whose 4th line falls past the turn: Word moves one
+  // more line along (2+2) instead of leaving a lone line on the next page
+  const rows = `
+    <tr data-top="100">
+      <td><p class="doc-cell-para"><span data-top="100">Supervisi</span><span data-top="120">DSR</span><span data-top="140">kolaborasi</span><span data-top="160">simulasi</span></p></td>
+      <td><p class="doc-cell-para"><span data-top="100">Arsitektur</span><span data-top="120">protokol</span><span data-top="140">kualitas</span><span data-top="160">collaboration</span><span data-top="180">outcomes</span></p></td>
+    </tr>`
+  /** the first text line at or below a cell offset (the line sampler's rule) */
+  const nextLine = (cell: HTMLElement, off: number): LineAnchor | null => {
+    const cellTop = cell.getBoundingClientRect().top
+    for (const span of Array.from(cell.querySelectorAll('span[data-top]')))
+      if (Number(span.getAttribute('data-top')) >= cellTop + off - 1.5)
+        return at(span.firstChild as Text)
+    return null
+  }
+  const firstWords = (widow: boolean) => {
+    const { host } = nested(rows)
+    const turn = at(host.querySelectorAll('span')[3]!.firstChild as Text) // 'simulasi', 160
+    const split = nestedRowSplit(turn, 1, 6, nextLine, widow)
+    // the span the mark's character offset opens
+    return split?.cells.map((c) => {
+      let off = 0
+      for (const span of Array.from(c.mark.cell.querySelectorAll('span'))) {
+        if ('text' in c.mark && off === c.mark.text) return span.textContent
+        off += span.textContent?.length ?? 0
+      }
+      return null
+    })
+  }
+
+  it('keeps two lines on the next page for each cell paragraph', () => {
+    expect(firstWords(true)).toEqual(['kolaborasi', 'collaboration'])
+  })
+
+  it('splits at the turn line without it (legacy layout)', () => {
+    expect(firstWords(false)).toEqual(['simulasi', 'collaboration'])
+  })
+})
+
 describe('syncNestedTableGaps', () => {
   it('puts a gap row before the row, keeps it on a settled pass, clears it', () => {
     const { view, host } = nested(`

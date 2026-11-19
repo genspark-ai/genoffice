@@ -1039,13 +1039,17 @@ export interface NestedCellCut {
  * each cell carries on at the next page's top). The row must belong to the
  * nested view's own table, as in nestedRowAtCut. Each cell whose content runs
  * past the turn gets its first line at or below the turn's line (less tolPx);
- * cells that end above the turn get nothing. Null when the row can't be found.
+ * cells that end above the turn get nothing. With widow control (Word 2013+
+ * cells, as planRowSplit), a cell's paragraph keeps at least two lines on each
+ * side or moves whole: Word splits a 4-line cell 2+2 where 3 lines would fit.
+ * Null when the row can't be found.
  */
 export function nestedRowSplit(
   anchor: LineAnchor,
   zoomFactor: number,
   tolPx: number,
   nextLine: (cell: HTMLElement, offsetInCell: number) => LineAnchor | null,
+  widow = false,
 ): { row: HTMLTableRowElement; cells: NestedCellCut[] } | null {
   const el = anchor.node instanceof Element ? anchor.node : anchor.node.parentElement
   const root = el?.closest('.doc-nested-table')?.querySelector('table')
@@ -1057,7 +1061,11 @@ export function nestedRowSplit(
   const cells: NestedCellCut[] = []
   for (const cell of Array.from(row.cells)) {
     const cellTop = cell.getBoundingClientRect().top
-    const a = nextLine(cell, (top - cellTop) / zoomFactor - tolPx)
+    let a = nextLine(cell, (top - cellTop) / zoomFactor - tolPx)
+    if (a && widow) {
+      const keep = widowLineTop(a)
+      if (keep !== null) a = nextLine(cell, (keep - cellTop) / zoomFactor)
+    }
     const at = a ? anchorTop(a) : null
     const mark = a ? markOfLine(cell, a) : null
     if (!a || !mark || at == null) continue
@@ -1066,6 +1074,42 @@ export function nestedRowSplit(
     cells.push({ mark, liftPx: Math.max(0, (top - at) / zoomFactor), block })
   }
   return cells.length > 0 ? { row, cells } : null
+}
+
+/** Text line tops (screen px) of the cell paragraph holding a line */
+function paragraphLineTops(para: Element): number[] {
+  const range = anchorRange()
+  const tops: number[] = []
+  const walk = document.createTreeWalker(para, NodeFilter.SHOW_TEXT)
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    if (!(n as Text).data.trim() || n.parentElement?.closest('.page-gap')) continue
+    range.selectNodeContents(n)
+    for (const r of Array.from(range.getClientRects())) {
+      if (r.height <= 0) continue
+      if (!tops.some((t) => Math.abs(t - r.top) < 3)) tops.push(r.top)
+    }
+  }
+  return tops.sort((x, y) => x - y)
+}
+
+/**
+ * Widow/orphan control for a cell paragraph a page turn splits: the top of the
+ * line the next page should start at instead, or null to keep the anchor's.
+ * A lone last line pulls one more along; a lone first line moves the whole
+ * paragraph.
+ */
+function widowLineTop(a: LineAnchor): number | null {
+  const line = a.node instanceof Element ? a.node : a.node.parentElement
+  const para = line?.closest('.doc-cell-para, p')
+  const top = anchorTop(a)
+  if (!para || top == null) return null
+  const tops = paragraphLineTops(para)
+  let k = tops.findIndex((t) => Math.abs(t - top) < 3)
+  if (k <= 0) return null
+  const was = k
+  if (tops.length - k < 2) k = tops.length - 2
+  if (k < 2) k = 0
+  return k === was ? null : tops[k]!
 }
 
 export interface NestedTableGap {

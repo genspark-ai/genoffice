@@ -5318,8 +5318,14 @@ export function App() {
                 }
                 // a turn between a row's lines: Word splits the row, each cell
                 // carrying on at the next page's top
-                const split = nestedRowSplit(anchor, factor, NESTED_ROW_TOL_PX, (cell, off) =>
-                  nextLineAnchor(cell, off, factor, lineRectsOf),
+                // Word 2013+ cells keep widow/orphan control (as planRowSplit)
+                const cellWidow = b.modernTableHeaders === true && !b.cellWidowOff
+                const split = nestedRowSplit(
+                  anchor,
+                  factor,
+                  NESTED_ROW_TOL_PX,
+                  (cell, off) => nextLineAnchor(cell, off, factor, lineRectsOf),
+                  cellWidow,
                 )
                 if (split) {
                   const last = split.cells.length - 1
