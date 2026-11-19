@@ -859,6 +859,24 @@ export function isInDocDir(target: string, dir: string, separator: string = sep)
   return target.startsWith(prefix)
 }
 
+/**
+ * True when a resolved asset target lives inside the vault root. Unlike
+ * isInDocDir this checks both the lexical path and the realpath, so `..`
+ * traversal and symlinks pointing outside the vault are refused. Used by the
+ * md-asset:// serve gate so Obsidian-style cross-folder embeds (notes in
+ * subfolders, pictures in a root-level attachments/) load instead of 403ing.
+ */
+export async function isInVaultRoot(target: string, root: string): Promise<boolean> {
+  const vault = resolve(root)
+  if (!isPathInside(vault, resolve(target))) return false
+  try {
+    const [realVault, realTarget] = await Promise.all([realpath(vault), realpath(target)])
+    return isPathInside(realVault, realTarget)
+  } catch {
+    return false
+  }
+}
+
 function encodeHtmlAttributeReplacement(value: string, quote: '"' | "'" | null): string {
   let encoded = ''
   for (const character of value) {

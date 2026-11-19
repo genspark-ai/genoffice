@@ -44,6 +44,7 @@ import {
   discardPendingOwnedAssets,
   extractMarkdownImageSources,
   isInDocDir,
+  isInVaultRoot,
   pendingOwnedAssetsForDocument,
   prepareAssetsForSaveAs,
   reconcileOwnedAssets,
@@ -743,6 +744,20 @@ function registerImageProtocol(): void {
     if (!DISPLAY_IMAGE_EXTS.has(extname(target).toLowerCase()) || !existsSync(target)) {
       return new Response(null, { status: 404 })
     }
+    // The wiki resolver walks the whole vault (configuredDefaultSaveDir), so a
+    // picture in a root-level attachments/ folder resolves even when the note
+    // sits in a subfolder. The serve gate must use the same root, not just the
+    // open document's own directory (genspark-ai/genoffice#2201).
+    let vaultRoot = ''
+    try {
+      vaultRoot = resolve(configuredDefaultSaveDir(app))
+    } catch {
+      // unconfigured/unusable vault root: fall back to the doc-dir gate below
+    }
+    if (vaultRoot && (await isInVaultRoot(target, vaultRoot))) {
+      return net.fetch(pathToFileURL(target).toString())
+    }
+    // Keep the old allowance for notes opened outside the vault.
     let inDocDir = false
     for (const doc of new Set([...openPathByWc.values(), ...savePathByWc.values()])) {
       const dir = resolve(dirname(doc))
