@@ -59,7 +59,10 @@ describe('margin comment geometry', () => {
       width: 800,
     })
     const cards = [...f.wrap.querySelectorAll<HTMLElement>('.comment-bubble')]
-    expect(cards.map((c) => c.style.left)).toEqual(['1014px', '1214px'])
+    expect(cards.map((c) => c.closest<HTMLElement>('.comment-page')!.style.left)).toEqual([
+      '1014px',
+      '1214px',
+    ])
     const icons = [...f.wrap.querySelectorAll<HTMLElement>('.comment-balloon')]
     expect(icons.map((c) => c.style.left)).toEqual(['952px', '1152px'])
     f.app.remove()
