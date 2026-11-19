@@ -46,6 +46,32 @@ async function buildCommentedDocx(): Promise<Uint8Array> {
 }
 
 describe('comment parsing', () => {
+  it('preserves hard line breaks inside comment paragraphs through save and reopen', async () => {
+    const original = await buildDocx({
+      bodyXml: COMMENTED_P,
+      extraParts: [
+        {
+          path: 'word/comments.xml',
+          contentType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+          xml: `<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="1" w:author="Alice"><w:p><w:r><w:t>First</w:t><w:br/><w:t>Second</w:t></w:r><w:r><w:cr/><w:t>Third</w:t></w:r></w:p></w:comment></w:comments>`,
+        },
+      ],
+    })
+    const parsed = await parseDocx(original)
+    expect(parsed.comments[0].text).toBe('First\nSecond\nThird')
+    const saved = await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], {
+      comments: parsed.comments,
+    })
+    expect((await parseDocx(saved)).comments[0].text).toBe('First\nSecond\nThird')
+    const before = await JSZip.loadAsync(original)
+    const after = await JSZip.loadAsync(saved)
+    const commentFragment = (xml: string) => /<w:comment\b[\s\S]*?<\/w:comment>/.exec(xml)?.[0]
+    expect(commentFragment(await after.file('word/comments.xml')!.async('string'))).toBe(
+      commentFragment(await before.file('word/comments.xml')!.async('string')),
+    )
+  })
+
   it('reads word/comments.xml into the display list', async () => {
     const doc = await parseDocx(await buildCommentedDocx())
     expect(doc.comments).toEqual([
