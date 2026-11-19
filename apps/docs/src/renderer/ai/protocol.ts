@@ -15,7 +15,12 @@ import { equationBlockJson, inlineEquationNodeJson } from '../editor/equation'
 import { inheritFrom, inheritTableFormatting, sameBlockRole } from './inherit-formatting'
 import { TRACK_AUTHOR, TRACK_IGNORE, type RevisionRange } from '../editor/revisions'
 import { aiRevisionAuthor } from './revision-author'
-import { countWords, documentTextForWordCount, leafTextForWordCount } from '../word-count'
+import {
+  countWords,
+  documentTextForWordCount,
+  leafTextForWordCount,
+  listLabelText,
+} from '../word-count'
 import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
 import {
   modelTextOf,
@@ -758,7 +763,9 @@ export function buildDocumentContext(
     : `No selection; cursor is in block ${scope.startIndex}`
 
   // authoritative stats for answer mode (previews above may be clipped)
-  const statsLine = `Full-text stats: words ${countWords(fullText)}, characters (no spaces) ${
+  // words as the status bar counts them: list numbers included (listLabelText)
+  const labelWords = countWords(listLabelText(editor.state.doc, editor.storage.listNumbering?.defs))
+  const statsLine = `Full-text stats: words ${countWords(fullText) + labelWords}, characters (no spaces) ${
     fullText.replace(/\s/g, '').length
   }, characters (with spaces) ${fullText.length}`
 

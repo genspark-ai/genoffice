@@ -19,7 +19,12 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent, SetStateAction } fro
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { handleDocsControl, type ControlRequest } from './control'
-import { DOMParser as PmDOMParser, type Mark as PmMark, Slice as PmSlice } from '@tiptap/pm/model'
+import {
+  DOMParser as PmDOMParser,
+  type Mark as PmMark,
+  type Node as PmNode,
+  Slice as PmSlice,
+} from '@tiptap/pm/model'
 import { NodeSelection, TextSelection, type Command, type Transaction } from '@tiptap/pm/state'
 import {
   Dropdown,
@@ -159,6 +164,7 @@ import {
   asianCharCount,
   countWords,
   documentTextForWordCount,
+  listLabelText,
   nonAsianWordCount,
   selectedWordCount,
 } from './word-count'
@@ -629,7 +635,18 @@ const EMPTY_BLOCKS: Block[] = []
 
 // O(doc) derivations cached by PM doc reference: caret moves and unrelated
 // state updates reuse the last result instead of re-walking the whole document
-const wordCountOfDoc = cachedByDoc((d) => countWords(documentTextForWordCount(d)))
+/** the status bar's words: the text plus the list numbers Word counts (listLabelText);
+ *  cached by doc and numbering defs (an edit to either replaces the reference) */
+const wordCountOfDoc = (() => {
+  const cache = new WeakMap<PmNode, { defs: unknown; words: number }>()
+  return (doc: PmNode, defs: Map<string, NumberingDef> | undefined): number => {
+    const hit = cache.get(doc)
+    if (hit && hit.defs === defs) return hit.words
+    const words = countWords(documentTextForWordCount(doc)) + countWords(listLabelText(doc, defs))
+    cache.set(doc, { defs, words })
+    return words
+  }
+})()
 const revisionsOfDoc = cachedByDoc((d) => collectRevisions(d))
 
 /**
@@ -6164,7 +6181,7 @@ export function App() {
     const refresh = () => {
       timer = 0
       const started = performance.now()
-      setWordCount(wordCountOfDoc(editor.state.doc))
+      setWordCount(wordCountOfDoc(editor.state.doc, editor.storage.listNumbering?.defs))
       setRevisionRanges(doc ? revisionsOfDoc(editor.state.doc) : [])
       setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
       slowWalk = performance.now() - started > WORD_COUNT_SLOW_WALK_MS
@@ -6206,11 +6223,13 @@ export function App() {
       if (node.isTextblock && documentTextForWordCount(node).trim() !== '') paragraphs++
       return true
     })
+    // Word counts list numbers as words (listLabelText), not as characters
+    const labels = listLabelText(editor.state.doc, editor.storage.listNumbering?.defs)
     setStats({
       pages: pageInfo.total,
-      words: countWords(text),
-      asianChars: asianCharCount(text),
-      nonAsianWords: nonAsianWordCount(text),
+      words: countWords(text) + countWords(labels),
+      asianChars: asianCharCount(text) + asianCharCount(labels),
+      nonAsianWords: nonAsianWordCount(text) + nonAsianWordCount(labels),
       charsNoSpace: text.replace(/\s/g, '').length,
       charsWithSpace: text.replace(/\n/g, '').length,
       paragraphs,

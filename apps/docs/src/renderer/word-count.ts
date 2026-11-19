@@ -7,6 +7,7 @@
  * Asian-character figure.
  */
 
+import { computeListMarkerInfos, type ListItemRef, type NumberingDef } from '@genoffice/docx-engine'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { Selection } from '@tiptap/pm/state'
 
@@ -26,15 +27,16 @@ const ASIAN_RE =
  * - whitespace: space, tab, line breaks, NBSP and the ideographic space. The
  *   thin, en and other typographic spaces join their neighbours ("a\u2009b" is
  *   one word).
- * - en dash, em dash and the bullet split words and are not words themselves:
- *   "3248–3265" is two words, a lone "—" none.
+ * - en dash, em dash, the bullet and the private-use symbol-font glyphs (a
+ *   Symbol or Wingdings bullet, U+F0B7) split words and are not words
+ *   themselves: "3248–3265" is two words, a lone "—" none.
  * - the Unicode hyphen (U+2010) and the arrows split words and are words of
  *   their own: "a→b" is three. The ASCII hyphen joins ("state-of-the-art").
  * Asian characters are counted one by one (asianCharCount) and split the runs
  * around them ("2026年8月2日": three non-Asian words).
  */
 // explicit, not \s: JS counts the en/thin/hair spaces as whitespace, Word does not
-const WORD_SPACE_RE = /[ \t\n\r\f\v\u00a0\u3000\u2013\u2014\u2022]+/
+const WORD_SPACE_RE = /[ \t\n\r\f\v\u00a0\u3000\u2013\u2014\u2022\ue000-\uf8ff]+/
 const OWN_WORD_RE = /([\u2010\u2190-\u21ff])/
 
 export function asianCharCount(text: string): number {
@@ -69,6 +71,42 @@ export function countWords(text: string): number {
 export function selectedWordCount(doc: ProseMirrorNode, selection: Selection): number {
   // the same leaf reader as the total: an inline formula's text counts in both
   return countWords(doc.textBetween(selection.from, selection.to, ' ', leafTextForWordCount))
+}
+
+/**
+ * The list labels Word counts as words: an item's number ("1.", "a)") and a
+ * bullet written as text (Word's Courier New "o"), but not a symbol-font bullet
+ * (Word's U+F0B7: a private-use glyph, no word) nor a picture bullet. Word for
+ * Mac 16 probe 2026-11-19: three numbered items "alpha", "beta", "gamma" are
+ * six words, the same items under a Symbol bullet three, under "o" six. The
+ * labels come from the numbering engine the editor draws them with.
+ */
+export function listLabelText(
+  doc: ProseMirrorNode,
+  defs: Map<string, NumberingDef> | null | undefined,
+): string {
+  if (!defs?.size) return ''
+  const refs: ListItemRef[] = []
+  doc.descendants((node) => {
+    if (node.type.name !== 'docListItem') return true
+    const deleted =
+      !!node.attrs.paraMarkDel ||
+      (node.attrs.blockRevision as { kind?: string } | null)?.kind === 'del'
+    refs.push({
+      numId: (node.attrs.numId as string | null) ?? null,
+      ilvl: Number(node.attrs.ilvl) || 0,
+      ...(deleted ? { deleted: true } : {}),
+    })
+    return false
+  })
+  if (refs.length === 0) return ''
+  return computeListMarkerInfos(refs, defs)
+    .map((m, i) => {
+      if (!m || m.picBulletSrc || refs[i]!.deleted) return ''
+      // the glyph as authored: a symbol-font bullet stays in the private-use area
+      return m.symbolFont && m.symbolChar ? m.symbolChar : m.text
+    })
+    .join(' ')
 }
 
 export function documentTextForWordCount(doc: ProseMirrorNode): string {
