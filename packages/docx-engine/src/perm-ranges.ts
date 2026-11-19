@@ -12,10 +12,13 @@ import { attrsOf, childrenOf, deepXmlParser, findChild, nameOf, type XNode } fro
  * The ranges are resolved here in one document-order walk over the body, at
  * the granularity the editor works with: a top-level paragraph, or a whole
  * cell of a top-level table. A paragraph or cell is editable when an open
- * range covers it from its start, or when any range starts or ends inside it.
- * That matches Word exactly for ranges that cover whole paragraphs or cells
- * (which is how Word itself writes them when a region is selected), and is
- * slightly more permissive for a range that covers only part of a paragraph.
+ * range covers any of its content (text, tabs, breaks, pictures, equations);
+ * one with no content, when a range is open at both its start and its end.
+ * Markers alone open nothing: Word ends a range that selected whole
+ * paragraphs with a w:permEnd at the start of the next one, and that
+ * paragraph stays locked. This matches Word for ranges over whole paragraphs
+ * or cells and is slightly more permissive for a range that covers only part
+ * of a paragraph.
  *
  * Only w:edGrp="everyone" ranges open anything: ranges granted to a named
  * editor (w:ed) or another group cannot be matched to the person editing here.
@@ -45,10 +48,32 @@ interface OpenRange {
   readonly table?: XNode
 }
 
-/** collectors record whether a range touched (started/ended in) the element being walked */
+/** collectors record whether an open range covered the element being walked */
 interface Collector {
   hit: boolean
+  /** whether an open range covers this element where the walk is now */
+  covered: () => boolean
+  /** the element had content at all */
+  content: boolean
+  /** a range was open where the element starts */
+  openAtStart: boolean
 }
+
+/** what a range must cover for a paragraph or cell to open: its visible content */
+const CONTENT = new Set([
+  'w:t',
+  'w:tab',
+  'w:br',
+  'w:cr',
+  'w:sym',
+  'w:noBreakHyphen',
+  'w:softHyphen',
+  'w:drawing',
+  'w:pict',
+  'w:object',
+  'm:oMath',
+  'm:oMathPara',
+])
 
 /** recursion guard: table XML may legitimately nest thousands of levels */
 const MAX_DEPTH = 256
@@ -77,9 +102,21 @@ export function permRangeMap(
   const paragraphs = new Set<number>()
   const tables = new Map<number, boolean[]>()
 
-  const touch = (): void => {
-    for (const c of collectors) c.hit = true
+  /** content met: every element the open ranges cover there opens */
+  const content = (): void => {
+    for (const c of collectors) {
+      c.content = true
+      if (!c.hit && c.covered()) c.hit = true
+    }
   }
+  const collect = (covered: () => boolean): Collector => ({
+    hit: false,
+    covered,
+    content: false,
+    openAtStart: covered(),
+  })
+  /** an element with no content opens when a range runs through it */
+  const settle = (c: Collector): boolean => c.hit || (!c.content && c.openAtStart && c.covered())
 
   const marker = (node: XNode, name: string, table: XNode | undefined): void => {
     const attrs = attrsOf(node)
@@ -93,9 +130,8 @@ export function permRangeMap(
         ...(colFirst !== undefined ? { colFirst, colLast: colLast ?? colFirst } : {}),
         ...(table ? { table } : {}),
       })
-      touch()
-    } else if (open.delete(id)) {
-      touch()
+    } else {
+      open.delete(id)
     }
   }
 
@@ -115,6 +151,7 @@ export function permRangeMap(
       if (!name) continue
       if (name === 'w:permStart' || name === 'w:permEnd') marker(node, name, table)
       else if (name === 'w:tbl') walkTable(node, depth + 1, undefined)
+      else if (CONTENT.has(name)) content()
       else walk(childrenOf(node), depth + 1, table)
     }
   }
@@ -123,11 +160,12 @@ export function permRangeMap(
   const walkTable = (tbl: XNode, depth: number, flags: boolean[] | undefined): void => {
     if (depth > MAX_DEPTH) return
     const visitCell = (tc: XNode, col: number): void => {
-      const collector: Collector = { hit: coversCell(tbl, col, col + gridSpanOf(tc) - 1) }
+      const last = col + gridSpanOf(tc) - 1
+      const collector = collect(() => coversCell(tbl, col, last))
       collectors.push(collector)
       walk(childrenOf(tc), depth + 1, tbl)
       collectors.pop()
-      flags?.push(collector.hit)
+      flags?.push(settle(collector))
     }
     const visitRowChildren = (nodes: readonly XNode[], state: { col: number }): void => {
       for (const node of nodes) {
@@ -170,11 +208,11 @@ export function permRangeMap(
       continue
     }
     if (el.name === 'w:p') {
-      const collector: Collector = { hit: open.size > 0 }
+      const collector = collect(() => open.size > 0)
       collectors.push(collector)
       walk(nodes, 0, undefined)
       collectors.pop()
-      if (collector.hit) paragraphs.add(el.start)
+      if (settle(collector)) paragraphs.add(el.start)
     } else if (el.name === 'w:tbl') {
       const tbl = nodes.find((node) => nameOf(node) === 'w:tbl')
       if (!tbl) continue

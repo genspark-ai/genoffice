@@ -83,6 +83,38 @@ describe('editing permission ranges: parse', () => {
     ])
   })
 
+  it('opens only what a range covers: an end marker before a paragraph text leaves it locked', async () => {
+    // Word ends a range that selected whole paragraphs at the start of the next
+    // one; that paragraph, and one after a start marker that follows all text,
+    // stay locked. An empty paragraph opens only inside a range.
+    const body = [
+      '<w:p><w:permStart w:id="1" w:edGrp="everyone"/><w:r><w:t>open</w:t></w:r></w:p>',
+      '<w:p/>',
+      '<w:p><w:permEnd w:id="1"/><w:r><w:t>Locked heading</w:t></w:r></w:p>',
+      '<w:p/>',
+      '<w:p><w:r><w:t>Locked tail</w:t></w:r><w:permStart w:id="2" w:edGrp="everyone"/></w:p>',
+      '<w:p><w:r><w:t>open again</w:t></w:r><w:permEnd w:id="2"/></w:p>',
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>',
+      '<w:tr><w:tc><w:p><w:permStart w:id="3" w:edGrp="everyone"/><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr>',
+      '<w:tr><w:tc><w:p><w:permEnd w:id="3"/><w:r><w:t>locked cell</w:t></w:r></w:p></w:tc></w:tr>',
+      '</w:tbl>',
+    ].join('')
+    const doc = await parseDocx(await buildDocx({ bodyXml: body }))
+    const paras = doc.blocks
+      .filter((b) => b.type !== 'table' && !isBodySectPr(b))
+      .map((b) => [b.runs?.map((r) => r.text).join('') ?? '', b.permEditable === true])
+    expect(paras).toEqual([
+      ['open', true],
+      ['', true],
+      ['Locked heading', false],
+      ['', false],
+      ['Locked tail', false],
+      ['open again', true],
+    ])
+    const table = doc.blocks.find((b) => b.type === 'table')!.table!
+    expect(table.rows.map((row) => row[0]!.permEditable === true)).toEqual([true, false])
+  })
+
   it('leaves documents without ranges untouched', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>' }))
     expect(doc.blocks.some((b) => b.permEditable)).toBe(false)
@@ -164,6 +196,62 @@ describe('editing permission ranges: save', () => {
     // start in the first half, end in the second
     expect(out).toMatch(/<w:permStart w:id="55"[^>]*\/>(?:(?!<\/w:p>).)*inline<\/w:t>/)
     expect(out).toMatch(/split off<\/w:t>(?:(?!<w:p[ >]).)*<w:permEnd w:id="55"\/>/)
+  })
+
+  it('closes a range whose end paragraph was joined into the one above or deleted', async () => {
+    // Locked intro / one (start) / two (end) / Locked outro: Backspace at the
+    // start of "two" joins it into "one"; the end must survive on the merged
+    // paragraph, or on reopen the range runs to the end of the document
+    const body = [
+      '<w:p><w:r><w:t>Locked intro</w:t></w:r></w:p>',
+      '<w:p><w:permStart w:id="7" w:edGrp="everyone"/><w:r><w:t>one</w:t></w:r></w:p>',
+      '<w:p><w:r><w:t>two</w:t></w:r><w:permEnd w:id="7"/></w:p>',
+      '<w:p><w:r><w:t>Locked outro</w:t></w:r></w:p>',
+    ].join('')
+    const doc = await parseDocx(await buildDocx({ bodyXml: body }))
+    const text = (b: (typeof doc.blocks)[number]) => b.runs?.map((r) => r.text).join('') ?? ''
+    const reopen = async (plan: SaveBlock[]) => {
+      const saved = await saveDocx(doc, plan)
+      const xml = await partOf(saved, 'word/document.xml')
+      expect(count(xml, /<w:permStart w:id="7"/g)).toBe(1)
+      expect(count(xml, /<w:permEnd w:id="7"/g)).toBe(1)
+      const again = await parseDocx(saved)
+      return again.blocks
+        .filter((b) => !isBodySectPr(b))
+        .map((b) => [text(b), b.permEditable === true])
+    }
+    const one = doc.blocks.findIndex((b) => text(b) === 'one')
+    const two = doc.blocks.findIndex((b) => text(b) === 'two')
+    const keep = (i: number): SaveBlock[] =>
+      isBodySectPr(doc.blocks[i]!) ? [] : [{ kind: 'original', docxIndex: i }]
+
+    // joined: "one" regenerated as "onetwo", "two" gone
+    const joined = doc.blocks.flatMap((_, i): SaveBlock[] =>
+      i === two
+        ? []
+        : i === one
+          ? [
+              {
+                kind: 'generated',
+                block: { type: 'paragraph', runs: [{ text: 'onetwo' }] },
+                docxIndex: i,
+              },
+            ]
+          : keep(i),
+    )
+    expect(await reopen(joined)).toEqual([
+      ['Locked intro', false],
+      ['onetwo', true],
+      ['Locked outro', false],
+    ])
+
+    // the end's paragraph deleted outright
+    const deleted = doc.blocks.flatMap((_, i): SaveBlock[] => (i === two ? [] : keep(i)))
+    expect(await reopen(deleted)).toEqual([
+      ['Locked intro', false],
+      ['one', true],
+      ['Locked outro', false],
+    ])
   })
 
   it('puts the markers back into a table rebuilt from its model', async () => {

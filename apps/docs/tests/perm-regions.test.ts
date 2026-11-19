@@ -8,7 +8,11 @@ import { describe, expect, it } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { paragraphMarkHeight, setPermRegionsEnabled } from '../src/renderer/editor/perm-regions'
+import {
+  PERM_REGIONS_LOAD,
+  paragraphMarkHeight,
+  setPermRegionsEnabled,
+} from '../src/renderer/editor/perm-regions'
 
 /** a read-only protected fill-in template: two open cells, two open top-level paragraphs */
 const BODY = [
@@ -252,6 +256,103 @@ describe('editing permission regions in the editor', () => {
     expect(rows.map((row) => row[0]!.permEditable === true)).toEqual([false, true, false, true])
     expect(rows[1]![0]!.paras).toEqual(['New [title]'])
     expect(rows[3]![0]!.paras).toEqual(['[first]', 'second', 'third'])
+    editor.destroy()
+  })
+
+  /** the reviewer's probe: one range over two whole paragraphs between locked ones */
+  const TWO_PARAS = [
+    '<w:p><w:r><w:t>Locked intro</w:t></w:r></w:p>',
+    '<w:p><w:permStart w:id="7" w:edGrp="everyone"/><w:r><w:t>one</w:t></w:r></w:p>',
+    '<w:p><w:r><w:t>two</w:t></w:r><w:permEnd w:id="7"/></w:p>',
+    '<w:p><w:r><w:t>Locked outro</w:t></w:r></w:p>',
+  ].join('')
+  const textOf = (editor: Editor) =>
+    editor.state.doc.textBetween(0, editor.state.doc.content.size, '|')
+
+  /** save, then reopen: each paragraph's text and whether it is open */
+  async function reopened(editor: Editor, parsed: Awaited<ReturnType<typeof open>>['parsed']) {
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const out = await part(saved, 'word/document.xml')
+    expect(count(out, /<w:permStart w:id="7"/g)).toBe(1)
+    expect(count(out, /<w:permEnd w:id="7"/g)).toBe(1)
+    const again = await parseDocx(saved)
+    return again.blocks
+      .filter((b) => b.type === 'paragraph' && !b.originalXml?.startsWith('<w:sectPr'))
+      .map((b) => [b.runs?.map((r) => r.text).join('') ?? '', b.permEditable === true])
+  }
+
+  it('refuses Select All followed by Delete or typing', async () => {
+    const { editor } = await open(true, TWO_PARAS)
+    const before = textOf(editor)
+    editor.commands.selectAll()
+    editor.view.dispatch(editor.state.tr.deleteSelection())
+    expect(textOf(editor)).toBe(before)
+    editor.commands.selectAll()
+    editor.view.dispatch(editor.state.tr.insertText('x'))
+    expect(textOf(editor)).toBe(before)
+    // a document load says so, and goes through
+    const { doc } = editor.state
+    const blank = editor.schema.nodes.docParagraph!.create()
+    editor.view.dispatch(
+      editor.state.tr.replaceWith(0, doc.content.size, blank).setMeta(PERM_REGIONS_LOAD, true),
+    )
+    expect(textOf(editor)).toBe('')
+    editor.destroy()
+  })
+
+  it('keeps the range closed when its end paragraph is joined into the one above', async () => {
+    const { editor, parsed } = await open(true, TWO_PARAS)
+    editor.commands.setTextSelection(posOf(editor, 'two'))
+    expect(editor.commands.joinBackward()).toBe(true)
+    expect(textOf(editor)).toBe('Locked intro|onetwo|Locked outro')
+    expect(await reopened(editor, parsed)).toEqual([
+      ['Locked intro', false],
+      ['onetwo', true],
+      ['Locked outro', false],
+    ])
+    editor.destroy()
+  })
+
+  it('keeps the range closed when a selection across its paragraphs is deleted', async () => {
+    const { editor, parsed } = await open(true, TWO_PARAS)
+    editor.view.dispatch(editor.state.tr.delete(posOf(editor, 'ne'), posOf(editor, 'wo')))
+    expect(textOf(editor)).toBe('Locked intro|owo|Locked outro')
+    expect(await reopened(editor, parsed)).toEqual([
+      ['Locked intro', false],
+      ['owo', true],
+      ['Locked outro', false],
+    ])
+    editor.destroy()
+  })
+
+  it('keeps the range closed when the paragraph carrying its end is deleted', async () => {
+    const { editor, parsed } = await open(true, TWO_PARAS)
+    // select the paragraph with its mark the way a user does (end of "one" to
+    // end of "two") and delete it
+    const endOfOne = posOf(editor, 'one') + 'one'.length
+    const endOfTwo = posOf(editor, 'two') + 'two'.length
+    editor.view.dispatch(editor.state.tr.delete(endOfOne, endOfTwo))
+    expect(textOf(editor)).toBe('Locked intro|one|Locked outro')
+    expect(await reopened(editor, parsed)).toEqual([
+      ['Locked intro', false],
+      ['one', true],
+      ['Locked outro', false],
+    ])
+    editor.destroy()
+  })
+
+  it('keeps a paragraph locked when the range ends at its start', async () => {
+    // Word writes a range over whole paragraphs this way: the end marker opens the next one
+    const { editor } = await open(
+      true,
+      [
+        '<w:p><w:permStart w:id="8" w:edGrp="everyone"/><w:r><w:t>open</w:t></w:r></w:p>',
+        '<w:p><w:permEnd w:id="8"/><w:r><w:t>Locked heading</w:t></w:r></w:p>',
+      ].join(''),
+    )
+    expect(typeAt(editor, 'open', 'x')).toBe(true)
+    expect(typeAt(editor, 'Locked heading', 'x')).toBe(false)
     editor.destroy()
   })
 

@@ -65,6 +65,7 @@ import { hfSaveOptions } from './hf-sections'
 import { fetchDocBytes } from './doc-bytes'
 import { parseDocxOffThread } from './parse-off-thread'
 import { PHASED_APPEND } from './editor/streaming-tail-guard'
+import { PERM_REGIONS_LOAD } from './editor/perm-regions'
 import { docTextLength, docWeight, openTierFor } from './large-document'
 import { documentToMarkdown } from './export-markdown'
 import { docStyleCss } from './doc-style-css'
@@ -426,6 +427,7 @@ function phasedHostFor(ctx: FileActionContext): PhasedContentHost {
         .setMeta(TRACK_IGNORE, true)
         .setMeta(TABLE_TRAILING_SKIP, true)
         .setMeta(PHASED_APPEND, true)
+        .setMeta(PERM_REGIONS_LOAD, true)
         .setContent(doc as never)
         .run(),
     appendNodes: (nodes) => {
@@ -700,9 +702,11 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     applyDocLayoutSettings(ctx.editor, parsed)
     // a tail still streaming for the previous document must never land in this one
     cancelPhasedContent()
-    ctx.editor.commands.setContent(
-      blocksToPmDoc(parsed.blocks, readSections(parsed), pmDocOptions(parsed)) as never,
-    )
+    ctx.editor
+      .chain()
+      .setMeta(PERM_REGIONS_LOAD, true)
+      .setContent(blocksToPmDoc(parsed.blocks, readSections(parsed), pmDocOptions(parsed)) as never)
+      .run()
     resetEditorHistory(ctx.editor)
     focusDocumentStart(ctx.editor)
     noteDocumentSwapped()
@@ -1359,6 +1363,7 @@ async function saveOnce(
       editor
         .chain()
         .setMeta(TRACK_IGNORE, true)
+        .setMeta(PERM_REGIONS_LOAD, true)
         .setContent(rebasedPm as never)
         .run()
       resetEditorHistory(editor)

@@ -38,6 +38,14 @@ declare module '@tiptap/core' {
 /** transactions carrying this meta skip the guard (the extension's own attr fixes) */
 export const PERM_REGIONS_BYPASS = 'permRegionsBypass'
 
+/**
+ * Meta of a transaction that loads a whole document (a new or reloaded file,
+ * the rebase after a save, an AI rollback): the guard lets it replace
+ * everything. A load is told apart by this mark, never by the range it
+ * covers: Select All and Delete or typing replaces the same range.
+ */
+export const PERM_REGIONS_LOAD = 'permRegionsLoad'
+
 const pluginKey = new PluginKey<DecorationSet>('permRegions')
 const REFRESH = 'permRegionsRefresh'
 
@@ -95,20 +103,12 @@ function stepIsOpen(step: Step, doc: PmNode): boolean {
   return false
 }
 
-/** a whole-document replace: the initial load or a remount, never a user edit */
-function replacesWholeDocument(tr: Transaction): boolean {
-  return tr.steps.some((step, i) => {
-    const s = step as { from?: unknown; to?: unknown }
-    return s.from === 0 && typeof s.to === 'number' && s.to >= tr.docs[i]!.content.size
-  })
-}
-
 export function permRegionsAllow(tr: Transaction): boolean {
   if (!tr.docChanged) return true
   if (tr.getMeta(PHASED_APPEND) || tr.getMeta(PERM_REGIONS_BYPASS)) return true
   // automatic follow-ups of an allowed edit (normalizations) are not user edits
   if (tr.getMeta('appendedTransaction')) return true
-  if (replacesWholeDocument(tr)) return true
+  if (tr.getMeta(PERM_REGIONS_LOAD)) return true
   return tr.steps.every((step, i) => stepIsOpen(step, tr.docs[i]!))
 }
 
@@ -256,7 +256,7 @@ export const PermRegionsExtension = Extension.create<object, PermRegionsStorage>
           const ranges: Array<[number, number]> = []
           trs.forEach((tr, t) => {
             if (!tr.docChanged || tr.getMeta(PERM_REGIONS_BYPASS)) return
-            if (tr.getMeta(PHASED_APPEND) || replacesWholeDocument(tr)) return
+            if (tr.getMeta(PHASED_APPEND) || tr.getMeta(PERM_REGIONS_LOAD)) return
             const after = trs.slice(t + 1)
             tr.mapping.maps.forEach((map, i) => {
               const rest = tr.mapping.slice(i + 1)
