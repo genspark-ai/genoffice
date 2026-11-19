@@ -46,6 +46,71 @@ async function buildCommentedDocx(): Promise<Uint8Array> {
 }
 
 describe('comment parsing', () => {
+  it('decodes numeric references once while preserving escaped numeric-looking text', async () => {
+    const fragment =
+      '<w:comment w:id="1" w:author="Alice"><w:p><w:r><w:t>&amp;#x26; &#x26; &#60;tag&#62;</w:t></w:r></w:p></w:comment>'
+    const original = await buildDocx({
+      bodyXml: COMMENTED_P,
+      extraParts: [
+        {
+          path: 'word/comments.xml',
+          xml:
+            '<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+            fragment +
+            '</w:comments>',
+          contentType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+        },
+      ],
+    })
+    const parsed = await parseDocx(original)
+    expect(parsed.comments[0].text).toBe('&#x26; & <tag>')
+    const output = await JSZip.loadAsync(
+      await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], { comments: parsed.comments }),
+    )
+    expect(await output.file('word/comments.xml')!.async('string')).toContain(fragment)
+  })
+  it.each(['<w:br/>', '<w:br></w:br>', '<w:cr/>', '<w:cr></w:cr>'])(
+    'preserves an unchanged rich comment with %s and a hyperlink byte-for-byte',
+    async (breakXml) => {
+      const fragment =
+        '<w:comment w:id="1" w:author="Alice"><w:p><w:r><w:rPr><w:b/><w:color w:val="123456"/></w:rPr>' +
+        `<w:t>First</w:t>${breakXml}<w:t>Second</w:t></w:r>` +
+        '<w:hyperlink r:id="link1"><w:r><w:rPr><w:i/></w:rPr><w:t>Linked &amp; retained</w:t></w:r></w:hyperlink></w:p></w:comment>'
+      const original = await buildDocx({
+        bodyXml: COMMENTED_P,
+        extraParts: [
+          {
+            path: 'word/comments.xml',
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+            xml:
+              '<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+              fragment +
+              '</w:comments>',
+          },
+          {
+            path: 'word/_rels/comments.xml.rels',
+            contentType: 'application/vnd.openxmlformats-package.relationships+xml',
+            xml: '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="link1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/review" TargetMode="External"/></Relationships>',
+          },
+        ],
+      })
+      const parsed = await parseDocx(original)
+      expect(parsed.comments[0].text).toBe('First\nSecondLinked & retained')
+      const saved = await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], {
+        comments: parsed.comments,
+      })
+      const output = await JSZip.loadAsync(saved)
+      expect(await output.file('word/comments.xml')!.async('string')).toContain(fragment)
+      const before = await JSZip.loadAsync(original)
+      expect(await output.file('word/_rels/comments.xml.rels')!.async('string')).toBe(
+        await before.file('word/_rels/comments.xml.rels')!.async('string'),
+      )
+      expect((await parseDocx(saved)).comments[0].text).toBe(parsed.comments[0].text)
+    },
+  )
+
   it('preserves hard line breaks inside comment paragraphs through save and reopen', async () => {
     const original = await buildDocx({
       bodyXml: COMMENTED_P,
@@ -106,7 +171,7 @@ describe('comment parsing', () => {
     const doc = await parseDocx(await buildCommentedDocx())
     expect(doc.blocks[1].type).toBe('paragraph')
     expect(doc.blocks[1].runs).toEqual([{ text: 'range opens here' }])
-    expect(doc.blocks[2].runs).toEqual([{ text: 'range closes here' }])
+    expect(doc.blocks[2].runs).toEqual([{ text: 'range closes here', commentEndIds: ['2'] }])
     // Cross-paragraph endpoints go into the block-level passthrough fields
     expect(doc.blocks[1].commentStarts).toEqual(['2'])
     expect(doc.blocks[1].commentEnds).toBeUndefined()
@@ -135,7 +200,7 @@ describe('comment parsing', () => {
       }),
     )
     expect(doc.blocks[0].runs).toEqual([{ text: 'range opens here' }])
-    expect(doc.blocks[1].runs).toEqual([{ text: 'range closes here' }])
+    expect(doc.blocks[1].runs).toEqual([{ text: 'range closes here', commentEndIds: ['2'] }])
     expect(doc.blocks[0].commentStarts).toEqual(['2'])
     expect(doc.blocks[1].commentEnds).toEqual(['2'])
   })
@@ -382,7 +447,7 @@ describe('reference-only comments (bare w:commentReference, no range markers)', 
 
   it('does not anchor a reference whose id has range markers elsewhere', async () => {
     const doc = await parseDocx(await refDocx(CROSS_P_A + CROSS_P_B))
-    expect(doc.blocks[1].runs).toEqual([{ text: 'range closes here' }])
+    expect(doc.blocks[1].runs).toEqual([{ text: 'range closes here', commentEndIds: ['2'] }])
   })
 })
 

@@ -10,6 +10,7 @@ import {
   nameOf,
   textOf,
   xmlParser,
+  numericXmlParser,
   type XNode,
 } from './xml-utils'
 import { customEnumItems } from './list-markers'
@@ -105,6 +106,16 @@ function resultTextOf(node: XNode): string {
   return out
 }
 
+function commentTextOf(node: XNode): string {
+  return findChildren(node, 'w:p').map(resultTextOf).join('\n')
+}
+
+/** Use the same visible-text projection for parsed comments and unchanged-fragment checks. */
+export function commentPlainText(xml: string): string {
+  const node = (numericXmlParser.parse(xml) as XNode[]).find((n) => nameOf(n) === 'w:comment')
+  return node ? commentTextOf(node) : ''
+}
+
 /**
  * The first picture a comment carries: the blip's relationship resolves
  * against word/_rels/comments.xml.rels, the bytes come from the media part,
@@ -157,7 +168,7 @@ async function commentImageOf(zip: JSZip, comment: XNode): Promise<CommentImage 
 export async function parseComments(zip: JSZip): Promise<CommentInfo[]> {
   const file = zip.file('word/comments.xml')
   if (!file) return []
-  const parsed = xmlParser.parse(await file.async('string')) as XNode[]
+  const parsed = numericXmlParser.parse(await file.async('string')) as XNode[]
   const root = parsed.find((n) => nameOf(n) === 'w:comments')
   if (!root) return []
   const out: CommentInfo[] = []
@@ -172,7 +183,7 @@ export async function parseComments(zip: JSZip): Promise<CommentInfo[]> {
       author: attrs['w:author'] ?? '',
       initials: attrs['w:initials'],
       date: attrs['w:date'],
-      text: paras.map(resultTextOf).join('\n'),
+      text: commentTextOf(node),
       ...(paraId ? { paraId } : {}),
       ...(image ? { image } : {}),
     })

@@ -4371,6 +4371,8 @@ const RESULT_FORMAT_SKIP = new Set([
   'fldDirty',
   'sdtCheckboxXml',
   'commentIds',
+  'commentEndIds',
+  'commentEndBeforeIds',
   'ins',
   'del',
   'link',
@@ -4452,6 +4454,7 @@ function extractRuns(
   collectRangeIds(childrenOf(pNode))
   const complete = new Set([...starts].filter((id) => ends.has(id)))
   const activeComments = new Set<string>()
+  const pendingCommentEnds: string[] = []
   type RevCtx = { ins?: RevisionInfo; del?: RevisionInfo }
   // inline field state: XE folds into Run.xeTerm, REF (cross-reference) into Run.refField
   let fieldDepth = zoteroField && zoteroField.part !== 'begin' ? 1 : 0
@@ -4487,6 +4490,7 @@ function extractRuns(
     run.commentIds = [...new Set([...(run.commentIds ?? []), ...ids])].sort()
   }
   const pushRun = (run: Run, rev?: RevCtx) => {
+    if (pendingCommentEnds.length) run.commentEndBeforeIds = pendingCommentEnds.splice(0)
     if (activeComments.size > 0) run.commentIds = [...activeComments].sort()
     if (pendingRefIds.length > 0) {
       addCommentIds(run, pendingRefIds)
@@ -4817,6 +4821,10 @@ function extractRuns(
         if (id && complete.has(id)) {
           if (name === 'w:commentRangeStart') activeComments.add(id)
           else activeComments.delete(id)
+        } else if (id && name === 'w:commentRangeEnd') {
+          const previous = runs[runs.length - 1]
+          if (previous) (previous.commentEndIds ??= []).push(id)
+          else pendingCommentEnds.push(id)
         }
       } else if (name === 'w:ins' || name === 'w:del') {
         const attrs = attrsOf(node)

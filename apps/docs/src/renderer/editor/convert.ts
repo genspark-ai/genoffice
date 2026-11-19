@@ -914,6 +914,10 @@ function blockToPmNode(
 ): PmNode {
   if (block.altChunk && options.legacyTableIndent)
     options = { ...options, legacyTableIndent: false }
+  const commentEndOffsets: Record<string, number> = {}
+  const inline = ['heading', 'listItem', 'paragraph'].includes(block.type)
+    ? runsToInline(block.runs ?? [], commentEndOffsets)
+    : []
   switch (block.type) {
     case 'heading':
       return {
@@ -928,6 +932,7 @@ function blockToPmNode(
           hiddenBookmarks: block.hiddenBookmarks ?? null,
           commentStarts: block.commentStarts ?? null,
           commentEnds: block.commentEnds ?? null,
+          commentEndOffsets: Object.keys(commentEndOffsets).length ? commentEndOffsets : null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
           paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
           paraMarkIns: block.paraMarkIns ? JSON.stringify(block.paraMarkIns) : null,
@@ -939,7 +944,7 @@ function blockToPmNode(
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format, block.runs),
         },
-        content: runsToInline(block.runs ?? []),
+        content: inline,
       }
     case 'listItem':
       return {
@@ -955,6 +960,7 @@ function blockToPmNode(
           hiddenBookmarks: block.hiddenBookmarks ?? null,
           commentStarts: block.commentStarts ?? null,
           commentEnds: block.commentEnds ?? null,
+          commentEndOffsets: Object.keys(commentEndOffsets).length ? commentEndOffsets : null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
           paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
           paraMarkIns: block.paraMarkIns ? JSON.stringify(block.paraMarkIns) : null,
@@ -966,7 +972,7 @@ function blockToPmNode(
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format, block.runs),
         },
-        content: runsToInline(block.runs ?? []),
+        content: inline,
       }
     case 'paragraph':
       return {
@@ -979,6 +985,7 @@ function blockToPmNode(
           hiddenBookmarks: block.hiddenBookmarks ?? null,
           commentStarts: block.commentStarts ?? null,
           commentEnds: block.commentEnds ?? null,
+          commentEndOffsets: Object.keys(commentEndOffsets).length ? commentEndOffsets : null,
           sdtShell: block.sdtShell ? JSON.stringify(block.sdtShell) : null,
           moveRevision: block.moveRevision ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
@@ -993,7 +1000,7 @@ function blockToPmNode(
           ruleOverlays: block.ruleOverlays ?? null,
           ...formatAttrs(block.format, block.runs),
         },
-        content: runsToInline(block.runs ?? []),
+        content: inline,
       }
     case 'table': {
       const table = block.table ?? { rows: [[{ paras: [''] }]] }
@@ -1501,22 +1508,26 @@ function cellContentNodes(cell: TableCell): PmNode[] {
   ).map((paragraph) => {
     const list = 'list' in paragraph ? paragraph.list : undefined
     const styleId = ('styleId' in paragraph ? paragraph.styleId : undefined) ?? null
+    const commentEndOffsets: Record<string, number> = {}
+    const content = runsToInline(paragraph.runs, commentEndOffsets)
+    const endpoints = Object.keys(commentEndOffsets).length ? { commentEndOffsets } : {}
     return list
       ? {
           type: 'docListItem',
           attrs: {
             ...formatAttrs(paragraph, paragraph.runs),
+            ...endpoints,
             styleId,
             kind: list.kind,
             numId: list.numId,
             ilvl: list.ilvl,
           },
-          content: runsToInline(paragraph.runs),
+          content,
         }
       : {
           type: 'docParagraph',
-          attrs: { ...formatAttrs(paragraph, paragraph.runs), styleId },
-          content: runsToInline(paragraph.runs),
+          attrs: { ...formatAttrs(paragraph, paragraph.runs), styleId, ...endpoints },
+          content,
         }
   })
   // fidelity on save comes from the outer table's bytes; reverse insertion keeps anchors valid
@@ -2207,9 +2218,21 @@ export function pmTableToModel(table: PmNode): TableModel {
   }
 }
 
-export function runsToInline(runs: Run[]): PmNode[] {
+export function runsToInline(runs: Run[], commentEndOffsets?: Record<string, number>): PmNode[] {
   const nodes: PmNode[] = []
+  let previous: Run | undefined
+  const recordEnds = (ids: string[] | undefined) => {
+    if (!commentEndOffsets || !ids?.length) return
+    const offset = nodes.reduce(
+      (size, node) => size + (node.type === 'text' ? node.text!.length : 1),
+      0,
+    )
+    for (const id of ids) commentEndOffsets[id] = offset
+  }
   for (const run of runs) {
+    recordEnds(previous?.commentEndIds)
+    recordEnds(run.commentEndBeforeIds)
+    previous = run
     const marks = runMarks(run)
     const atomMarks = marks.length > 0 ? { marks } : {}
     if (run.math) {
@@ -2308,6 +2331,7 @@ export function runsToInline(runs: Run[]): PmNode[] {
       nodes.push({ type: 'docXeMark', ...atomMarks, attrs: { term: run.xeTerm } })
     }
   }
+  recordEnds(previous?.commentEndIds)
   markLeadRule(nodes)
   return nodes
 }

@@ -298,6 +298,11 @@ const anchorAttrs = {
   /** Endpoints of cross-paragraph comment ranges (only one end in this paragraph); written back on paragraph rebuild to avoid orphan marks */
   commentStarts: { default: null as string[] | null },
   commentEnds: { default: null as string[] | null },
+  commentEndOffsets: {
+    default: null as Record<string, number> | null,
+    rendered: false,
+    keepOnSplit: false,
+  },
   align: { default: null as string | null },
   lineSpacing: { default: null as number | null },
   /** Word line-spacing rule (auto/atLeast/exact); null = auto */

@@ -139,3 +139,33 @@ test('inline comment edits retain their selection through repagination and can s
     )
   })
 })
+
+for (const kind of ['reply', 'edit'] as const) {
+  test(`reflow restores focused ${kind} without scrolling the document to a provisional card position`, async () => {
+    test.setTimeout(120_000)
+    await withCommentEditor(
+      await capacityDocument({ height: 12000, secondPage: true }),
+      async (page) => {
+        const card = page.locator('.comment-bubble[data-comment-id="2"]')
+        await card.click({ position: { x: 10, y: 10 } })
+        if (kind === 'edit') {
+          await card.locator('.comment-entry .comment-more').click()
+          await card.locator('.comment-entry .comment-card-edit').click()
+        }
+        const input = card.locator(
+          kind === 'reply' ? '.comment-reply-input' : '.comment-edit-input',
+        )
+        await input.fill('Retain focus without moving the document')
+        const previous = await page.locator('.editor-scroll').evaluate((el) => el.scrollTop)
+        const oldInput = (await input.elementHandle())!
+        await page.setViewportSize({ width: 1450, height: 1000 })
+        await expect.poll(() => oldInput.evaluate((el) => el.isConnected)).toBe(false)
+        await expect(input).toBeFocused()
+        await expect(input).toHaveValue('Retain focus without moving the document')
+        await expect
+          .poll(() => page.locator('.editor-scroll').evaluate((el) => el.scrollTop))
+          .toBeCloseTo(previous, 0)
+      },
+    )
+  })
+}
