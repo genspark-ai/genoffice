@@ -106,6 +106,29 @@ const SUFFIX_UNITS: Record<string, MeasurementUnit | 'px'> = {
   px: 'px',
 }
 
+type ReadLength = { value: number; unit: MeasurementUnit | 'px' }
+
+function readLength(
+  text: string,
+  unit: MeasurementUnit,
+  localSuffixes?: Partial<Record<MeasurementUnit, string>>,
+): ReadLength | null {
+  const m = /^\s*([+-]?(?:\d+[.,]?\d*|[.,]\d+))\s*(.*?)\s*$/.exec(text)
+  if (!m) return null
+  const value = Number((m[1] ?? '').replace(',', '.'))
+  if (!Number.isFinite(value)) return null
+  const suffix = (m[2] ?? '').toLowerCase()
+  if (suffix === '') return { value, unit }
+  if (localSuffixes) {
+    for (const u of MEASUREMENT_UNITS) {
+      const local = localSuffixes[u]?.toLowerCase()
+      if (local && local === suffix) return { value, unit: u }
+    }
+  }
+  const target = SUFFIX_UNITS[suffix]
+  return target ? { value, unit: target } : null
+}
+
 /** Parses `2cm`, `1"`, `1 in`, `36pt`, `3pi`, `2,5 cm`, a bare number (in
  * `unit`) or a localized suffix from `localSuffixes`; null when unreadable. */
 export function parseLength(
@@ -113,21 +136,30 @@ export function parseLength(
   unit: MeasurementUnit,
   localSuffixes?: Partial<Record<MeasurementUnit, string>>,
 ): number | null {
-  const m = /^\s*([+-]?(?:\d+[.,]?\d*|[.,]\d+))\s*(.*?)\s*$/.exec(text)
-  if (!m) return null
-  const value = Number((m[1] ?? '').replace(',', '.'))
-  if (!Number.isFinite(value)) return null
-  const suffix = (m[2] ?? '').toLowerCase()
-  if (suffix === '') return fromUnit(value, unit)
-  if (localSuffixes) {
-    for (const u of MEASUREMENT_UNITS) {
-      const local = localSuffixes[u]?.toLowerCase()
-      if (local && local === suffix) return fromUnit(value, u)
-    }
-  }
-  const target = SUFFIX_UNITS[suffix]
-  if (!target) return null
-  return target === 'px' ? Math.round(value * 15) : fromUnit(value, target)
+  const r = readLength(text, unit, localSuffixes)
+  if (!r) return null
+  return r.unit === 'px' ? Math.round(r.value * 15) : fromUnit(r.value, r.unit)
+}
+
+/** EMU per unit (DrawingML: 914400 per inch) */
+export const EMU_PER: Record<MeasurementUnit, number> = {
+  in: 914400,
+  cm: 360000,
+  mm: 36000,
+  pt: 12700,
+  pi: 152400,
+}
+
+/** parseLength's input rules straight to EMU, for editors that store EMU
+ * (slides, sheet drawings): no twip rounding, so 1 cm is exactly 360000 */
+export function parseLengthEmu(
+  text: string,
+  unit: MeasurementUnit,
+  localSuffixes?: Partial<Record<MeasurementUnit, string>>,
+): number | null {
+  const r = readLength(text, unit, localSuffixes)
+  if (!r) return null
+  return Math.round(r.value * (r.unit === 'px' ? 9525 : EMU_PER[r.unit]))
 }
 
 /** CSS px at 96 dpi: 1 px = 15 twips */

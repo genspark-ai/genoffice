@@ -12,7 +12,7 @@ import { armColorInput } from '../color-input'
 import { displayFontFamily } from '../konva-adapter'
 import { useSystemFontFamilies } from '../system-fonts'
 import { useFontCatalog } from '../font-manager'
-import { parseLength, twipsToEmu } from '@genoffice/ui/measurement'
+import { parseLengthEmu } from '@genoffice/ui/measurement'
 import { unitSuffixes, useMeasurementUnit } from '../measurement-unit'
 import {
   GensparkMark,
@@ -216,9 +216,9 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
   const lengthUnit = useMeasurementUnit()
   const lengthSuffixes = unitSuffixes(t)
   const commitHangDraft = () => {
-    const twips = parseLength(hangDraft, lengthUnit, lengthSuffixes)
-    if (twips === null || twips < 0 || !hasSelection) return
-    onParagraphFormat({ bulletHangEmu: twipsToEmu(twips) })
+    const emu = parseLengthEmu(hangDraft, lengthUnit, lengthSuffixes)
+    if (emu === null || emu < 0 || !hasSelection) return
+    onParagraphFormat({ bulletHangEmu: emu })
   }
   const [symDraft, setSymDraft] = useState('')
   const commitSymDraft = () => {

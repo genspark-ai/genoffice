@@ -7,6 +7,7 @@ import {
   isMeasurementUnitState,
   measurementUnitForRegion,
   parseLength,
+  parseLengthEmu,
   twipsToEmu,
 } from '../src/measurement'
 
@@ -40,6 +41,16 @@ describe('measurement units', () => {
     expect(formatLength(1440, 'pi')).toBe('6 pi')
     expect(parseLength('2,54 cm', 'in')).toBe(1440)
     expect(parseLength('6', 'pi')).toBe(1440)
+  })
+
+  it('parses straight to exact EMU for DrawingML lengths', () => {
+    expect(parseLengthEmu('10', 'mm')).toBe(360000)
+    expect(parseLengthEmu('0,5 cm', 'pt')).toBe(180000)
+    expect(parseLengthEmu('3.5', 'mm')).toBe(126000)
+    expect(parseLengthEmu('1"', 'cm')).toBe(914400)
+    expect(parseLengthEmu('72 pt', 'cm')).toBe(914400)
+    expect(parseLengthEmu('96px', 'cm')).toBe(914400)
+    expect(parseLengthEmu('furlong', 'cm')).toBeNull()
   })
 
   it('validates the state the shell hands out', () => {

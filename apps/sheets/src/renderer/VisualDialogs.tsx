@@ -26,7 +26,8 @@ const pxToLength = (px: number, unit: MeasurementUnit): number =>
   toUnit(emuToTwips(px * EMU_PER_PIXEL), unit)
 const lengthToPx = (value: number, unit: MeasurementUnit): number =>
   twipsToEmu(value * twipsPerUnit(unit)) / EMU_PER_PIXEL
-const format = (value: number): string => (Math.round(value * 100) / 100).toString()
+const format = (value: number, decimals = 2): string =>
+  (Math.round(value * 10 ** decimals) / 10 ** decimals).toString()
 
 /// Size and Properties commits size/rotation and placement in one apply so
 /// they land as a single undo step.
@@ -166,8 +167,8 @@ function SizePropertiesDialog({
   // the unit the dialog opened in; a change in Settings while it is open would reinterpret typed numbers
   const openedUnit = useMeasurementUnit()
   const [unit] = useState(openedUnit)
-  const [width, setWidth] = useState(format(pxToLength(frame?.width ?? 0, unit)))
-  const [height, setHeight] = useState(format(pxToLength(frame?.height ?? 0, unit)))
+  const [width, setWidth] = useState(format(pxToLength(frame?.width ?? 0, unit), DECIMALS[unit]))
+  const [height, setHeight] = useState(format(pxToLength(frame?.height ?? 0, unit), DECIMALS[unit]))
   const [lockAspect, setLockAspect] = useState(visual.kind === 'image')
   const [rotation, setRotation] = useState(format(visual.rotation ?? 0))
   // Session objects save as two-cell anchors; file objects without editAs
@@ -182,13 +183,13 @@ function SizePropertiesDialog({
     setWidth(value)
     setError(false)
     const n = Number(value)
-    if (lockAspect && Number.isFinite(n) && n > 0) setHeight(format(n / ratio))
+    if (lockAspect && Number.isFinite(n) && n > 0) setHeight(format(n / ratio, DECIMALS[unit]))
   }
   const onHeight = (value: string): void => {
     setHeight(value)
     setError(false)
     const n = Number(value)
-    if (lockAspect && Number.isFinite(n) && n > 0) setWidth(format(n * ratio))
+    if (lockAspect && Number.isFinite(n) && n > 0) setWidth(format(n * ratio, DECIMALS[unit]))
   }
 
   const apply = (): void => {

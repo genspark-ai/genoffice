@@ -9,13 +9,13 @@ import type { PictureRenderNode, RenderNode, ShapeRenderNode } from '@genoffice/
 import type { GradientFillSpec, SetEffectsPatch } from '../../shared/ipc'
 import { Dropdown, useDismissablePopover } from '@genoffice/ui'
 import {
+  DECIMALS,
+  EMU_PER,
   UNIT_STEP,
   formatLength,
-  fromUnit,
-  parseLength,
+  parseLengthEmu,
   toUnit,
   twipsPerUnit,
-  twipsToEmu,
 } from '@genoffice/ui/measurement'
 import { useI18n } from '../i18n/locale'
 import { unitSuffixes as localUnitSuffixes, useMeasurementUnit } from '../measurement-unit'
@@ -1263,8 +1263,8 @@ export function FormatPane({
   const fmtLen = (px: number) => formatLength(toTwips(px), unit, unitSuffixes[unit])
   /** a typed length (any unit suffix, or a bare number in the current unit) as view px */
   const parseLen = (raw: string): number | null => {
-    const twips = parseLength(raw, unit, unitSuffixes)
-    return twips === null ? null : (twips / 15) * vscale
+    const emu = parseLengthEmu(raw, unit, unitSuffixes)
+    return emu === null ? null : (emu / 9525) * vscale
   }
 
   // ---- Effects section: values shown in pt/°/%, the op speaks EMU ----
@@ -2418,18 +2418,17 @@ export function FormatPane({
                       t(key),
                       fmtLen(shape.text!.insets[side]),
                       (raw) => {
-                        const twips = parseLength(raw, unit, unitSuffixes)
-                        if (twips !== null && twips >= 0)
-                          onTextBodyProps(node.sourceId, {
-                            insets: { [side]: twipsToEmu(twips) },
-                          })
+                        const emu = parseLengthEmu(raw, unit, unitSuffixes)
+                        if (emu !== null && emu >= 0)
+                          onTextBodyProps(node.sourceId, { insets: { [side]: emu } })
                       },
                       (dir) => {
                         // step from the shown (rounded) value so clicks land on round numbers
                         const cur = toUnit(toTwips(shape.text!.insets[side]), unit)
                         const next = Math.max(0, cur + dir * UNIT_STEP[unit])
+                        const rounded = Number(next.toFixed(DECIMALS[unit]))
                         onTextBodyProps(node.sourceId, {
-                          insets: { [side]: twipsToEmu(fromUnit(next, unit)) },
+                          insets: { [side]: Math.round(rounded * EMU_PER[unit]) },
                         })
                       },
                     ),
