@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   clampVerticalMarginDrag,
   pageIndexAt,
+  rulerPageIndex,
   pageTopsOnScreen,
   verticalRulerDims,
 } from '../src/renderer/components/VerticalRuler'
@@ -41,6 +42,18 @@ describe('pageIndexAt', () => {
   })
   it('keeps the first page for a caret above the canvas', () => {
     expect(pageIndexAt(tops, -50)).toBe(0)
+  })
+})
+
+describe('rulerPageIndex', () => {
+  const tops = [100, 1300, 2500]
+  it("stays on the caret's page while it shows", () => {
+    expect(rulerPageIndex(tops, 200, 0, 900)).toBe(0)
+    expect(rulerPageIndex(tops, 200, 1200, 2100)).toBe(0) // its bottom still shows
+  })
+  it('takes the page in view once the caret page has scrolled away', () => {
+    expect(rulerPageIndex(tops, 200, 1400, 2300)).toBe(1)
+    expect(rulerPageIndex(tops, 200, 2400, 3300)).toBe(2)
   })
 })
 

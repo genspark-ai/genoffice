@@ -84,6 +84,23 @@ export function pageIndexAt(tops: readonly number[], y: number): number {
 }
 
 /**
+ * The page the vertical ruler measures: the caret's page while any of it is in
+ * view (Word's ruler follows the insertion point), else the page a third of
+ * the way down the view, so the scale never scrolls away with the caret.
+ */
+export function rulerPageIndex(
+  tops: readonly number[],
+  caretY: number,
+  viewTop: number,
+  viewBottom: number,
+): number {
+  const caret = pageIndexAt(tops, caretY)
+  const next = tops[caret + 1] ?? Infinity
+  if (tops[caret]! < viewBottom && next > viewTop) return caret
+  return pageIndexAt(tops, viewTop + (viewBottom - viewTop) / 3)
+}
+
+/**
  * Top of the caret's page relative to the ruler's bar, in the bar's zoomed
  * coordinates (screen px / zoom), or null before the editor is laid out.
  */
@@ -104,8 +121,7 @@ function measurePageTop(bar: HTMLElement, editor: Editor | null, zoom: number): 
   } catch {
     /* position not laid out yet: stay on the first page */
   }
-  const pageTop = tops[pageIndexAt(tops, caretY)] ?? pmRect.top
-  return (pageTop - barRect.top) / zoom
+  return (tops[rulerPageIndex(tops, caretY, barRect.top, barRect.bottom)]! - barRect.top) / zoom
 }
 
 /** a dotted line across the window at the dragged margin */
