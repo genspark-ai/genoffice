@@ -28,9 +28,9 @@ const SETTINGS =
   '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
   '<w:documentProtection w:edit="readOnly" w:enforcement="1"/></w:settings>'
 
-async function open(enabled = true) {
+async function open(enabled = true, bodyXml = BODY) {
   const source = await buildDocx({
-    bodyXml: BODY,
+    bodyXml,
     extraParts: [
       {
         path: 'word/settings.xml',
@@ -74,22 +74,53 @@ async function part(bytes: Uint8Array, path: string): Promise<string> {
 const count = (xml: string, re: RegExp) => [...xml.matchAll(re)].length
 
 describe('editing permission regions in the editor', () => {
-  it('highlights the open regions, with brackets at each end', async () => {
+  it('highlights the text of the open regions, with no brackets of its own', async () => {
     const { editor } = await open()
     const dom = editor.view.dom
     expect([...dom.querySelectorAll('.perm-region')].map((el) => el.textContent)).toEqual([
-      '[[title]]', // the widget brackets sit inside the paragraph
-      '[[first]',
-      'second]',
-      '[open paragraph]',
+      '[title]',
+      '[first]',
+      'second',
+      'open paragraph',
     ])
-    expect(dom.querySelectorAll('.perm-region-bracket')).toHaveLength(6)
+    // Word draws no brackets; a template's own "[" / "]" are its text
+    expect(dom.textContent).not.toContain('[[')
+    editor.destroy()
+  })
+
+  it('highlights a table nested in an open cell and marks empty paragraphs', async () => {
+    const nested = [
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>',
+      '<w:tr><w:tc><w:p><w:permStart w:id="44" w:edGrp="everyone" w:colFirst="0" w:colLast="0"/><w:r><w:t>Year 1</w:t></w:r></w:p>',
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2500"/><w:gridCol w:w="2500"/></w:tblGrid>',
+      '<w:tr><w:tc><w:p><w:r><w:t>Task</w:t></w:r></w:p></w:tc><w:tc><w:p/></w:tc></w:tr>',
+      '</w:tbl><w:p/></w:tc></w:tr><w:permEnd w:id="44"/>',
+      '<w:tr><w:tc><w:p><w:r><w:t>Locked</w:t></w:r></w:p></w:tc></w:tr>',
+      '</w:tbl>',
+    ].join('')
+    const { editor } = await open(true, nested)
+    const dom = editor.view.dom
+    expect([...dom.querySelectorAll('.perm-region')].map((el) => el.textContent)).toEqual([
+      'Year 1',
+    ])
+    // the nested table is an atom: its cells are highlighted through its class
+    const nestedTables = dom.querySelectorAll('.perm-region-nested')
+    expect(nestedTables).toHaveLength(1)
+    expect(nestedTables[0]!.textContent).toContain('Task')
+    // the empty paragraph after the nested table
+    expect(dom.querySelectorAll('.perm-region-empty')).toHaveLength(1)
+    expect(dom.textContent).toContain('Locked')
+    expect(
+      [...dom.querySelectorAll('.perm-region')].some((el) => el.textContent === 'Locked'),
+    ).toBe(false)
     editor.destroy()
   })
 
   it('shows and guards nothing while disabled', async () => {
     const { editor } = await open(false)
-    expect(editor.view.dom.querySelectorAll('.perm-region, .perm-region-bracket')).toHaveLength(0)
+    expect(
+      editor.view.dom.querySelectorAll('.perm-region, .perm-region-empty, .perm-region-nested'),
+    ).toHaveLength(0)
     expect(typeAt(editor, 'Locked intro', 'x')).toBe(true)
     editor.destroy()
   })

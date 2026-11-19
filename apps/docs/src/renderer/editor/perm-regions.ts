@@ -17,7 +17,7 @@ import { PHASED_APPEND } from './streaming-tail-guard'
  * - refuses every edit that reaches outside an open region (the rest of the
  *   document stays read-only, as in Word), and
  * - highlights the open regions the way Word's "Highlight the regions I can
- *   edit" does: a tinted background with brackets at each region's ends.
+ *   edit" does: a highlight behind their text.
  *
  * Open regions are a whole table cell or a run of top-level paragraphs; an
  * edit may cross paragraphs inside one cell or across open top-level
@@ -112,60 +112,43 @@ export function permRegionsAllow(tr: Transaction): boolean {
   return tr.steps.every((step, i) => stepIsOpen(step, tr.docs[i]!))
 }
 
-function bracket(text: string): HTMLElement {
-  const span = document.createElement('span')
-  span.className = 'perm-region-bracket'
-  span.contentEditable = 'false'
-  span.textContent = text
-  return span
-}
-
-/** background on every textblock of a region, brackets at its two ends */
+/**
+ * Word's "Highlight the regions I can edit": a highlight behind the text of
+ * every paragraph in an open region, tables nested in an open cell included,
+ * and a mark-sized patch on an empty paragraph where Word paints its paragraph
+ * mark. Word adds no brackets of its own; fill-in templates type them.
+ */
 function regionDecorations(doc: PmNode): DecorationSet {
   const decorations: Decoration[] = []
-  const addRegion = (blocks: Array<{ pos: number; node: PmNode }>, key: string) => {
-    if (blocks.length === 0) return
-    for (const { pos, node } of blocks) {
-      decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: 'perm-region' }))
+  const mark = (node: PmNode, pos: number): boolean => {
+    if (node.type.name === 'docNestedTable') {
+      // an atom drawn from its attributes: the highlight goes on through CSS
+      decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: 'perm-region-nested' }))
+      return false
     }
-    const first = blocks[0]!
-    const last = blocks[blocks.length - 1]!
+    if (!node.isTextblock) return true
     decorations.push(
-      Decoration.widget(first.pos + 1, () => bracket('['), {
-        side: -1,
-        ignoreSelection: true,
-        key: `${key}-open`,
-      }),
-      Decoration.widget(last.pos + last.node.nodeSize - 1, () => bracket(']'), {
-        side: 1,
-        ignoreSelection: true,
-        key: `${key}-close`,
-      }),
+      node.content.size > 0
+        ? Decoration.inline(pos + 1, pos + node.nodeSize - 1, { class: 'perm-region' })
+        : Decoration.node(pos, pos + node.nodeSize, { class: 'perm-region-empty' }),
     )
+    return false
   }
-  let run: Array<{ pos: number; node: PmNode }> = []
   doc.forEach((node, offset) => {
     if (isOpenTopBlock(node)) {
-      run.push({ pos: offset, node })
+      mark(node, offset)
       return
     }
-    addRegion(run, `p${run[0]?.pos}`)
-    run = []
     if (node.type.name !== 'docTable') return
     node.descendants((cell, cellPos) => {
       if (!CELL_TYPES.has(cell.type.name)) return true
       if (cell.attrs.permEditable === true) {
-        const blocks: Array<{ pos: number; node: PmNode }> = []
         const base = offset + 1 + cellPos + 1
-        cell.forEach((child, childOffset) => {
-          if (child.isTextblock) blocks.push({ pos: base + childOffset, node: child })
-        })
-        addRegion(blocks, `c${base}`)
+        cell.descendants((child, childPos) => mark(child, base + childPos))
       }
       return false
     })
   })
-  addRegion(run, `p${run[0]?.pos}`)
   return DecorationSet.create(doc, decorations)
 }
 

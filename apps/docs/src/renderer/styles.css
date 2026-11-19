@@ -175,9 +175,8 @@
   --docs-paper-comment-flash: rgb(130 171 81 / 45%);
   --docs-paper-comment-line: #82ab51;
   /* editing permission regions of a read-only protected document (Word's
-     "Highlight the regions I can edit": a pale yellow fill, olive brackets) */
+     "Highlight the regions I can edit": a pale yellow behind the text) */
   --docs-paper-perm-bg: rgb(255 240 120 / 30%);
-  --docs-paper-perm-bracket: #a8912b;
   /* printed markup is document output, not chrome: fixed values, identical in both themes;
      the balloon fill is the anchor tint composited over white (balloons sit on the gray strip) */
   --docs-print-markup-band: #f2f2f2;
@@ -5357,7 +5356,6 @@ th[data-rev-fmt] {
     --docs-paper-comment-flash: rgb(145 181 102 / 45%);
     --docs-paper-comment-line: #91b566;
     --docs-paper-perm-bg: rgb(118 105 30 / 30%);
-    --docs-paper-perm-bracket: #c2ad53;
     --docs-paper-ai-anchor-bg: rgb(74 116 197 / 14%);
     --docs-paper-ai-anchor-line: #4a74c5;
     --docs-paper-xe-ink: #c5ab7f;
@@ -16577,21 +16575,32 @@ tr > .page-gap-cut {
   background: var(--docs-paper-perm-bg);
 }
 
-.perm-region-bracket {
-  color: var(--docs-paper-perm-bracket);
-  font-weight: 400;
-  font-style: normal;
-  text-decoration: none;
+.perm-region-nested .doc-cell-para > span {
+  background: var(--docs-paper-perm-bg);
+}
+
+/* Word paints an empty paragraph's mark: a patch that takes no width, so the
+   caret and the paragraph's alignment stay where they were */
+.perm-region-empty::before,
+.perm-region-nested .doc-cell-para:not(:has(> span))::before {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-right: -0.5em;
+  vertical-align: text-bottom;
+  background: var(--docs-paper-perm-bg);
   pointer-events: none;
-  user-select: none;
 }
 
 @media print {
-  .perm-region {
+  .perm-region,
+  .perm-region-nested .doc-cell-para > span {
     background: none;
   }
 
-  .perm-region-bracket {
+  .perm-region-empty::before,
+  .perm-region-nested .doc-cell-para::before {
     display: none;
   }
 }
