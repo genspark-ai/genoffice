@@ -334,6 +334,8 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
     to: number
     kind: 'moveFrom' | 'moveTo'
     hasRuns?: boolean
+    /** its moved runs name their move: the other ins / del in it are ordinary edits */
+    named: boolean
   }> = []
   const credit = (raw: string | null): { author: string; date?: string } => {
     try {
@@ -361,17 +363,23 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
     if (paraMarkIns) out.push({ ...range, kind: 'paraMarkIns', ...credit(paraMarkIns) })
     if (paraMarkRPrChange && !paraMarkRPrChange.includes('"resolved"'))
       out.push({ ...range, kind: 'paraMarkRPrChange', ...credit(paraMarkRPrChange) })
-    if (moveRevision === 'from' || moveRevision === 'to')
+    if (moveRevision === 'from' || moveRevision === 'to') {
+      let named = false
+      node.descendants((child) => {
+        named ||= child.marks.some((m) => m.attrs.move && /^(?:ins|del)$/.test(m.type.name))
+      })
       moveParas.push({
         ...range,
         kind: moveRevision === 'from' ? 'moveFrom' : 'moveTo',
         // a moved paragraph mark is handled as that mark's revision
-        hasRuns: !!(paraMarkDel || paraMarkIns),
+        hasRuns: named || !!(paraMarkDel || paraMarkIns),
+        named,
       })
+    }
   })
   const moveKindAt = (pos: number, kind: 'ins' | 'del'): 'moveFrom' | 'moveTo' | null => {
     const para = moveParas.find((m) => pos >= m.from && pos < m.to)
-    if (!para) return null
+    if (!para || para.named) return null
     const match = para.kind === 'moveFrom' ? kind === 'del' : kind === 'ins'
     if (match) para.hasRuns = true
     return match ? para.kind : null
@@ -475,7 +483,12 @@ const PROP_CHANGE_ATTR: Partial<Record<RevisionRange['kind'], string>> = {
  * properties, before trPrChange). w:id stays empty: the save mints it from the
  * package-wide revision counter, as it does for run-level ins/del.
  */
-function withRowRecord(raw: unknown, kind: 'ins' | 'del', author: string, date: string): string {
+export function withRowRecord(
+  raw: unknown,
+  kind: 'ins' | 'del',
+  author: string,
+  date: string,
+): string {
   const record = `<w:${kind} w:id="" w:author="${xmlAttr(author)}" w:date="${date}"/>`
   const base =
     typeof raw === 'string' && /^<w:trPr(?:\s[^>]*)?>[\s\S]*<\/w:trPr>$/.test(raw)
@@ -992,10 +1005,32 @@ export function gotoRevision(editor: Editor, dir: 1 | -1): RevisionRange | null 
   return target
 }
 
+const SENTENCE_END = /[.!?\u2026\u3002\uff01\uff1f\uff0e]["'\u2019\u201d)\]\u300d\u300f\uff09]*\s*$/
+
+/**
+ * Word pairs a cut and a paste as a move only for whole sentences or paragraphs:
+ * the range starts at a paragraph or sentence start and ends at a sentence or paragraph end.
+ */
+export function coversWholeSentences(doc: PmNode, from: number, to: number): boolean {
+  const $from = doc.resolve(from)
+  const $to = doc.resolve(to)
+  // a range between blocks takes whole paragraphs
+  if (!$from.parent.isTextblock || !$to.parent.isTextblock) return true
+  const same = $from.sameParent($to)
+  // a note mark or other inline object at a boundary is not text: the sentence still ends before it
+  const textOf = (parent: PmNode, a: number, b: number) => parent.textBetween(a, b, undefined, '')
+  const before = textOf($from.parent, 0, $from.parentOffset)
+  if (before.trim() !== '' && !SENTENCE_END.test(before)) return false
+  if (!same && $to.parentOffset === 0) return true
+  const after = textOf($to.parent, $to.parentOffset, $to.parent.content.size)
+  if (after.trim() === '') return true
+  return SENTENCE_END.test(textOf($to.parent, same ? $from.parentOffset : 0, $to.parentOffset))
+}
+
 export interface TrackChangesStorage {
   enabled: boolean
   author: string
-  /** Track Changes Options: cut + paste pairs as a move (off = plain deletion + insertion) */
+  /** Track moves: a cut + paste of whole sentences pairs as a move (off = plain deletion + insertion) */
   trackMoves: boolean
   /** Track Changes Options: live format edits record w:rPrChange / w:pPrChange */
   trackFormatting: boolean
@@ -1350,16 +1385,19 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
           armed = null
           let removedKey = ''
           let insertedKey = ''
+          let movable = true
           for (const { step, docBefore } of steps) {
             if (!(step instanceof ReplaceStep)) continue
-            if (step.to > step.from)
+            if (step.to > step.from) {
               removedKey += sliceKey(docBefore.slice(step.from, step.to).content)
+              movable &&= coversWholeSentences(docBefore, step.from, step.to)
+            }
             insertedKey += sliceKey(step.slice.content)
           }
           let moveId: string | null = null
           if (!storage.trackMoves) {
             /* moves record as deletion + insertion */
-          } else if (uiEvent === 'drop' && insertedKey && insertedKey === removedKey)
+          } else if (uiEvent === 'drop' && movable && insertedKey && insertedKey === removedKey)
             moveId = newMoveId()
           else if (uiEvent === 'paste' && lastCut && insertedKey === lastCut.key)
             moveId = newMoveId()
@@ -1954,7 +1992,7 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
             }
           }
 
-          if (uiEvent === 'cut' && struck && removedKey && changed) {
+          if (uiEvent === 'cut' && movable && struck && removedKey && changed) {
             // the struck text sits inside the recorded span; remember where, not just how it is marked
             const ranges: Array<{ from: number; to: number }> = []
             const from = Math.max(0, tr.mapping.map(newFrom, -1))

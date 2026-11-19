@@ -5,6 +5,7 @@ export const ko = {
   aiEmptyBuildTitle: 'AI에게 시트 작성을 맡기세요',
   aiEmptyBuildBody: '원하는 표, 데이터, 차트를 설명하면 AI가 바로 만들어 줍니다.',
   aiGskLoginBtn: 'Genspark 로그인',
+  aiGskLoginOk: 'Genspark에 로그인했습니다',
   aiUndelivered: '전송되지 않았습니다',
   aiRetry: '다시 시도',
   aiOpenAssistant: 'AI 도우미 열기',

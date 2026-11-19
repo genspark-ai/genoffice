@@ -18,6 +18,7 @@ export const he = {
   aiQcStopped: 'בדיקת הפריסה הופסקה',
   aiQcCapped: 'עוד {count} עמודים לא נבדקו (מגבלה לכל הרצה)',
   aiGskLoginBtn: 'התחבר ל-Genspark',
+  aiGskLoginOk: 'מחובר ל-Genspark',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'פתיחת עוזר ה-AI',
   aiFactCheckBtn: 'בדיקת עובדות AI',

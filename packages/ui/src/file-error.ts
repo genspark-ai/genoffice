@@ -13,5 +13,8 @@ export function shortFileError(error: unknown): string {
   const code = (error as NodeJS.ErrnoException | null)?.code
   if (typeof code === 'string' && code) return code
   const message = error instanceof Error ? error.message : String(error ?? '')
+  // An error that crossed IPC is a string: the code survives only as its prefix.
+  const errno = /^(?:Error: )?(E[A-Z0-9]{2,}): /.exec(message)
+  if (errno?.[1]) return errno[1]
   return message.length > MAX_MESSAGE ? `${message.slice(0, MAX_MESSAGE)}…` : message
 }

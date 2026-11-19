@@ -489,6 +489,15 @@ describe('paired moves (w:moveFrom / w:moveTo)', () => {
     expect(doc.blocks[2].runs![0].del!.move).toBe('move4')
   })
 
+  it('reads moved-away text Word wrote as w:t', async () => {
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: MOVE_PAIR_XML.replace(/<(\/?)w:delText>/g, '<$1w:t>') }),
+    )
+    const from = doc.blocks[0].runs!.find((r) => r.del)!
+    expect(from.text).toBe('gone')
+    expect(from.del!.move).toBe('move77')
+  })
+
   it('saves editor moves as named ranges that pair again on reopen', async () => {
     const parsed = await parseDocx(
       await buildDocx({ bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>' }),
@@ -514,7 +523,7 @@ describe('paired moves (w:moveFrom / w:moveTo)', () => {
     ])
     const xml = await (await JSZip.loadAsync(out)).file('word/document.xml')!.async('string')
     const from =
-      /<w:moveFromRangeStart w:id="(\d+)" w:author="Alice" w:date="2026-07-01T10:00:00Z" w:name="move12345"\/><w:moveFrom w:id="(\d+)"[^>]*><w:r><w:delText[^>]*>go<\/w:delText><\/w:r><w:r><w:delText[^>]*>ne<\/w:delText><\/w:r><\/w:moveFrom><w:moveFromRangeEnd w:id="\1"\/>/.exec(
+      /<w:moveFromRangeStart w:id="(\d+)" w:author="Alice" w:date="2026-07-01T10:00:00Z" w:name="move12345"\/><w:moveFrom w:id="(\d+)"[^>]*><w:r><w:t[^>]*>go<\/w:t><\/w:r><w:r><w:t[^>]*>ne<\/w:t><\/w:r><\/w:moveFrom><w:moveFromRangeEnd w:id="\1"\/>/.exec(
         xml,
       )
     expect(from).not.toBeNull()
@@ -522,8 +531,14 @@ describe('paired moves (w:moveFrom / w:moveTo)', () => {
     expect(xml).toMatch(
       /<w:moveToRangeStart w:id="(\d+)"[^>]*w:name="move12345"\/><w:moveTo w:id="\d+"[^>]*><w:r><w:t[^>]*>gone<\/w:t><\/w:r><\/w:moveTo><w:moveToRangeEnd w:id="\1"\/>/,
     )
-    expect(xml).not.toMatch(/<w:(?:ins|del)\b/)
+    expect(xml).not.toMatch(/<w:(?:ins|del|delText)\b/)
     const back = await parseDocx(out)
+    expect(
+      back.blocks[0]
+        .runs!.filter((r) => r.del)
+        .map((r) => r.text)
+        .join(''),
+    ).toBe('gone')
     expect(back.blocks[0].runs!.find((r) => r.del)!.del!.move).toBe('move12345')
     expect(back.blocks[1].runs!.find((r) => r.ins)!.ins!.move).toBe('move12345')
   })

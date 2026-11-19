@@ -1790,6 +1790,24 @@
       "truths": 4,
       "proseOnly": "a CSS line-breaking behaviour (collapsible space at a line start) that jsdom cannot lay out; pinned as a stylesheet contract in apps/docs/tests/autospace-live.test.ts, measured on the corpus PDF and in headless Chromium.",
       "fixtures": []
+    },
+    {
+      "line": 1264,
+      "date": "2026-11-18",
+      "title": "Asian Typography paragraph switches: w:topLinePunct pulls a line-start opening bracket half an em into the margin side; w:kinsoku off breaks before a closer and after an opener; w:textAlignment moves the smaller runs and keeps the line pitch",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": "line positions that jsdom cannot lay out; the two rendered rules are measured in Electron by e2e/docs-autocorrect-asian-typography.spec.ts (half-em shift within 0.4-0.6 em, a full stop starting a line), the decorations by apps/docs/tests/paragraph-asian-typography.test.ts.",
+      "fixtures": []
+    },
+    {
+      "line": 1271,
+      "date": "2026-11-18",
+      "title": "Kinsoku levels are chosen by the run's East Asian language; Strict only adds 33 line-start characters to Japanese; a custom list replaces a language's sets; w:textAlignment moves each smaller run by its font's hhea ascent and descent; kana compression is capped at 1/16 em on justified lines that need it",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": "line breaking and glyph offsets that jsdom cannot lay out; measured in Electron by e2e/docs-autocorrect-asian-typography.spec.ts (no small kana starts a line under Strict; ascent tops and box middles meet under Top and Center), the offset formula by apps/docs/tests/paragraph-asian-typography.test.ts.",
+      "fixtures": []
     }
   ]
 }

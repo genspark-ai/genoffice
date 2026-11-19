@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react'
+import { imageSizeOf } from '../editor/picture-bytes'
 import type { Editor, JSONContent } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { TextSelection, type Transaction } from '@tiptap/pm/state'
+import { closeHistory } from '@tiptap/pm/history'
 import {
   SHAPE_GALLERY_GROUPS,
   useDismissablePopover,
@@ -17,23 +19,26 @@ import {
   type HeaderFooter,
   type StyleInfo,
   type TextboxDisplay,
+  type TextboxVert,
 } from '@genoffice/docx-engine'
 import type { DocsTabInfo } from '../../shared/ipc'
 import { runUiOps } from '../ai/ops'
-import { stepDocsZoom } from '../wheel-zoom'
 import { defaultParagraphStyleId, headingStyleId, type StyleMap } from '../style-gallery'
 import { tableModelToPmNode } from '../editor/convert'
 import { wordTableCell, wordTableModel } from '../editor/new-table'
 import { insertPageBreak } from '../editor/page-break'
-import { insertPictureAtSelection } from '../editor/insert-picture'
+import { insertPictureAtSelection, settleCaretAfterPicture } from '../editor/insert-picture'
 import { isStraightLineKind } from '../editor/shape-svg'
 import { HIGHLIGHTER_ALPHA, isPenKind, type InkPenKind, type InkTool } from '../editor/ink'
 import { colorsFor, newInkPreset, widthsFor, type InkPreset } from '../editor/ink-presets'
+import { autoCaptionInserted } from '../editor/auto-caption'
 import { t, useI18n, type StringKey } from '../i18n/locale'
 import iconEditor from '../assets/icon-editor.png'
 import iconTranslate from '../assets/icon-translate.png'
 import type { BalloonMode, RevisionDisplayMode } from '../editor/revision-view'
 import type { RevisionFilter, RevisionScope } from '../editor/revision-filters'
+import type { ActionCommandId } from '../../shared/commands'
+import { RbCommand, useCommandGreyed, useRunCommand } from './ribbon-command'
 import { TRANSLATE_LANGS, ribbonLangKey } from './translate-langs'
 import {
   IconAccept,
@@ -58,6 +63,7 @@ import {
   IconGridlines,
   IconNewWindow,
   IconPrintLayout,
+  IconEye,
   IconReadMode,
   IconRuler,
   IconSpellcheck,
@@ -75,16 +81,18 @@ import {
   IconZoom100,
   IconZoomIn,
   IconZoomOut,
+  IconBook,
+  IconWordCount,
+  IconGlobe,
+  IconResolveComment,
+  IconReadOnlyDoc,
+  IconDraftView,
+  IconFocusView,
+  IconArrangeAll,
+  IconMergeWindows,
 } from './icons'
 
-export {
-  BookmarkModal,
-  ChartInsertModal,
-  CrossRefModal,
-  InsertTab,
-  LinkInsertModal,
-  TableInsertModal,
-} from './ribbon-insert-tab'
+export { ChartInsertModal, InsertTab, LinkInsertModal, TableInsertModal } from './ribbon-insert-tab'
 export { DesignTab } from './ribbon-design-tab'
 export { LayoutTab } from './ribbon-layout-tab'
 export { MailingsTab } from './ribbon-mailings-tab'
@@ -144,6 +152,9 @@ const DIRECT_PARA_ATTRS: Record<string, unknown> = {
   spaceBeforeAuto: null,
   spaceAfterAuto: null,
   contextualSpacing: null,
+  suppressAutoHyphens: null,
+  mirrorIndents: null,
+  snapToGrid: null,
   keepNext: null,
   keepLines: null,
   widowControl: null,
@@ -154,6 +165,17 @@ const DIRECT_PARA_ATTRS: Record<string, unknown> = {
   tabStops: null,
   dropCap: null,
   pageBreakBefore: false,
+  overflowPunctDirect: null,
+  wordWrapDirect: null,
+  kinsoku: null,
+  topLinePunct: null,
+  textAlignment: null,
+  wordWrap: null,
+  autoSpaceDE: null,
+  autoSpaceDN: null,
+  // the page's switches fall back to Word's defaults; a style's own value shows again on reopen
+  overflowPunct: null,
+  autoSpace: null,
 }
 
 /** Word's Ctrl+Q: reset the paragraph to its style, keeping the text and its character formatting */
@@ -339,14 +361,7 @@ export interface TabProps {
 
 const MAX_IMAGE_WIDTH_PX = 620 // ~content width of a US Letter page at 96dpi
 
-export async function imageSizeOf(dataUrl: string): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
-    img.onerror = () => reject(new Error('Failed to read image'))
-    img.src = dataUrl
-  })
-}
+export { imageSizeOf }
 
 /* insert commands shared by the ribbon and the native application menu */
 
@@ -355,9 +370,16 @@ export const MAX_TABLE_COLS = 63
 /** row cap keeps a single insert from freezing layout (Word allows 32767) */
 export const MAX_TABLE_ROWS = 200
 
-export function insertTableAt(editor: Editor, rows: number, cols: number): void {
+export function insertTableAt(
+  editor: Editor,
+  rows: number,
+  cols: number,
+  /** the caret's paragraph is a typed +--+--+ line the table takes the place of, in one undo step */
+  replaceLine = false,
+): void {
   rows = Math.min(MAX_TABLE_ROWS, Math.max(1, Math.round(rows)))
   cols = Math.min(MAX_TABLE_COLS, Math.max(1, Math.round(cols)))
+  const before = editor.state.doc
   const table = wordTableModel(
     Array.from({ length: rows }, () => Array.from({ length: cols }, () => wordTableCell(['']))),
     cols,
@@ -365,13 +387,20 @@ export function insertTableAt(editor: Editor, rows: number, cols: number): void 
   // inside a cell a top-level docTable insert would split the outer table
   // — Word semantics is a nested child table at the end of the cell
   const { $from } = editor.state.selection
+  const typed = replaceLine ? $from.parent.content.size : 0
+  const start = () => {
+    const chain = editor.chain().focus()
+    if (typed === 0) return chain
+    // its own undo step: undo brings back the typed line, not the typing before it
+    return chain
+      .command(({ tr }) => !!closeHistory(tr))
+      .deleteRange({ from: $from.start(), to: $from.end() })
+  }
   for (let depth = $from.depth; depth > 0; depth--) {
     const name = $from.node(depth).type.name
     if (name === 'docTableCell' || name === 'docTableHeader') {
-      editor
-        .chain()
-        .focus()
-        .insertContentAt($from.end(depth), [
+      start()
+        .insertContentAt($from.end(depth) - typed, [
           { type: 'docNestedTable', attrs: { model: table } },
           { type: 'docParagraph' },
         ])
@@ -383,17 +412,27 @@ export function insertTableAt(editor: Editor, rows: number, cols: number): void 
   // Word: an empty paragraph stays below the new table (insertContent would
   // swallow it); the caret lands in the first cell either way
   const block = $from.depth > 0 ? $from.node(1) : null
-  const at = block?.isTextblock && block.content.size === 0 ? $from.before(1) : null
-  const chain = editor.chain().focus()
-  if (at == null) chain.insertContent(node).run()
-  else
-    chain
-      .insertContentAt(at, node)
-      .command(({ tr }) => {
-        tr.setSelection(TextSelection.near(tr.doc.resolve(at + 1)))
-        return true
+  const at =
+    block?.isTextblock && block.content.size === typed && (typed === 0 || $from.depth === 1)
+      ? $from.before(1)
+      : null
+  const chain = start()
+  if (at != null) chain.insertContentAt(at, node)
+  else chain.insertContent(node)
+  const from = at ?? ($from.depth > 0 ? $from.before() : 0)
+  chain
+    .command(({ tr }) => {
+      // a table inserted mid-paragraph sits after the split-off head
+      let table = -1
+      tr.doc.nodesBetween(from, tr.doc.content.size, (n, pos) => {
+        if (table < 0 && n.type.name === 'docTable' && pos >= from) table = pos
+        return table < 0 && !n.isTextblock
       })
-      .run()
+      if (table >= 0) tr.setSelection(TextSelection.near(tr.doc.resolve(table + 1)))
+      return true
+    })
+    .run()
+  autoCaptionInserted(editor, 'table', before)
 }
 
 /** Insert an inline image from a dataURL at the cursor (shared by paste/dialog; size scaled to content width) */
@@ -417,24 +456,7 @@ export async function insertImageFromDataUrl(
       heightPx: Math.round(natural.height * scale),
       label,
     })
-    // Pasting into an empty document leaves the image as the ONLY node with a
-    // node-selection on it: there is no text position to type at, and the
-    // next keystroke REPLACES the picture. Ensure a
-    // paragraph follows the image and put a text caret there — also what
-    // Word does after inserting a picture.
-    // A mid-paragraph insert already leaves the caret in the split-off rest
-    // of the paragraph; only a doc-level landing needs the paragraph check.
-    {
-      const { doc, selection, schema } = editor.state
-      const $after = doc.resolve(Math.min(selection.to, doc.content.size))
-      if (!$after.parent.isTextblock) {
-        const chain = editor.chain()
-        if ($after.nodeAfter?.isTextblock !== true && schema.nodes.docParagraph) {
-          chain.insertContentAt($after.pos, { type: 'docParagraph' })
-        }
-        chain.setTextSelection($after.pos + 1).run()
-      }
-    }
+    settleCaretAfterPicture(editor)
     return true
   } catch {
     return false
@@ -456,12 +478,17 @@ export const TEXTBOX_WIDTH_EMU = 1800000
 export const TEXTBOX_HEIGHT_EMU = 1080000
 
 /** Default TextboxDisplay model for a freshly inserted empty textbox */
-function emptyTextboxDisplay(widthEmu: number, heightEmu: number): TextboxDisplay {
+function emptyTextboxDisplay(
+  widthEmu: number,
+  heightEmu: number,
+  vert?: TextboxVert,
+): TextboxDisplay {
   return {
     fill: 'FFFFFF',
     borderColor: '000000',
     widthPx: Math.round(widthEmu / 9525),
     heightPx: Math.round(heightEmu / 9525),
+    ...(vert ? { vert } : {}),
     paras: [{ runs: [{ text: '' }] }],
   }
 }
@@ -473,7 +500,7 @@ function emptyTextboxDisplay(widthEmu: number, heightEmu: number): TextboxDispla
  */
 export function insertTextboxAt(
   editor: Editor,
-  opts?: { widthEmu?: number; heightEmu?: number; atPos?: number },
+  opts?: { widthEmu?: number; heightEmu?: number; atPos?: number; vert?: TextboxVert },
 ): number | null {
   const widthEmu = opts?.widthEmu ?? TEXTBOX_WIDTH_EMU
   const heightEmu = opts?.heightEmu ?? TEXTBOX_HEIGHT_EMU
@@ -481,6 +508,7 @@ export function insertTextboxAt(
     widthEmu,
     heightEmu,
     id: Math.floor(Math.random() * 900000) + 100000,
+    ...(opts?.vert ? { vert: opts.vert } : {}),
   })
   const content = {
     type: 'docProtected',
@@ -489,7 +517,7 @@ export function insertTextboxAt(
       blockType: 'passthrough',
       label: t('ribbonTextBox'),
       genXml: xml,
-      textboxes: [emptyTextboxDisplay(widthEmu, heightEmu)],
+      textboxes: [emptyTextboxDisplay(widthEmu, heightEmu, opts?.vert)],
     },
   }
   // top-level insert: a plain insertContent would replace a selected floating
@@ -748,23 +776,10 @@ export function insertBlankPageAt(editor: Editor): void {
 
 export interface InsertTabProps extends TabProps {
   header: HeaderFooter | null
-  onHeader: (next: HeaderFooter) => void
   footer: HeaderFooter | null
-  onFooter: (next: HeaderFooter) => void
-  /** Open the "Page Number Format" dialog (number format / start-at, writes sectPr w:pgNumType) */
-  onPageNumFormat: () => void
-  /** Insert an inline field (DATE/TIME/PAGE/NUMPAGES/FILENAME) */
-  onInsertField: (instr: string) => void
-  /** Header/Footer ▾ Edit: open the strip editor (the Different-page toggles live on the contextual tab) */
-  onHfEdit: (kind: 'header' | 'footer') => void
-  /** a selection (or a caret in a word) to anchor a new comment on, as in the Review tab */
-  canComment: boolean
-  onNewComment: () => void
   /** the Review-tab gate pair: commenting survives the comments-only restriction */
   isProtected: boolean
   commentsAllowed: boolean
-  /** a new table activates Table Design (Word); an existing one only shows the tabs */
-  onTableInserted: () => void
 }
 
 /** One-time "AI rewrites the whole document" acknowledgement */
@@ -778,38 +793,20 @@ interface ReviewTabProps extends TabProps {
   /** unresolved root comments; 0 disables the AI resolve-comments action */
   openCommentCount: number
   resolvedCommentCount: number
-  onShowComments: () => void
-  /** create a comment on the current selection (disabled when selection is empty) */
-  canComment: boolean
-  onNewComment: () => void
   /** the caret sits in a comment anchor: Delete ▾ › Delete acts on that thread */
   commentAtCaret: boolean
-  onDeleteComment: () => void
-  onDeleteAllComments: (resolvedOnly: boolean) => void
-  onGotoComment: (dir: 1 | -1) => void
   trackChanges: boolean
-  onTrackChanges: (on: boolean) => void
   /** native check-as-you-type spellcheck (red squiggle) */
   spellcheck: boolean
-  onSpellcheck: (on: boolean) => void
   revisionDisplay: RevisionDisplayMode
-  onRevisionDisplay: (mode: RevisionDisplayMode) => void
   /** Show Markup → Balloons */
   balloonMode: BalloonMode
-  onBalloonMode: (mode: BalloonMode) => void
-  /** Review ▸ Tracking dialog launcher: Track Changes Options */
-  onTrackChangesOptions: () => void
   revisionCount: number
-  onAcceptRevision: (scope: RevisionScope) => void
-  onRejectRevision: (scope: RevisionScope) => void
-  onGotoRevision: (dir: 1 | -1) => void
   /** Show Markup: unticked kinds / reviewers render as accepted */
   revisionFilter: RevisionFilter
-  onRevisionFilter: (filter: RevisionFilter) => void
   /** reviewers in first-appearance order (Specific People, Accept All by …) */
   revisionAuthors: string[]
   showReviewPane: boolean
-  onToggleReviewPane: () => void
   /** an editing restriction or write lock makes the body read-only */
   isProtected: boolean
   /** comments restriction: adding comments stays allowed although the body is read-only */
@@ -818,8 +815,6 @@ interface ReviewTabProps extends TabProps {
   trackChangesForced: boolean
   /** any protection is configured (highlights the Protect Document button) */
   protectActive: boolean
-  onProtectDoc: () => void
-  onCompare: () => void
 }
 
 export function ReviewTab({
@@ -831,60 +826,53 @@ export function ReviewTab({
   commentCount,
   openCommentCount,
   resolvedCommentCount,
-  onShowComments,
-  canComment,
-  onNewComment,
   commentAtCaret,
-  onDeleteComment,
-  onDeleteAllComments,
-  onGotoComment,
   trackChanges,
-  onTrackChanges,
   spellcheck,
-  onSpellcheck,
   revisionDisplay,
-  onRevisionDisplay,
   balloonMode,
-  onBalloonMode,
-  onTrackChangesOptions,
   revisionCount,
-  onAcceptRevision,
-  onRejectRevision,
-  onGotoRevision,
   revisionFilter,
-  onRevisionFilter,
   revisionAuthors,
   showReviewPane,
-  onToggleReviewPane,
   isProtected,
   commentsAllowed,
   trackChangesForced,
   protectActive,
-  onProtectDoc,
-  onCompare,
 }: ReviewTabProps) {
   const { t } = useI18n()
   const unknownAuthor = t('editorUnknownAuthor')
   const hasSelection = !!editor && !editor.state.selection.empty
-  const toggleAuthor = (author: string) =>
-    onRevisionFilter({
-      ...revisionFilter,
-      hiddenAuthors: revisionFilter.hiddenAuthors.includes(author)
-        ? revisionFilter.hiddenAuthors.filter((a) => a !== author)
-        : [...revisionFilter.hiddenAuthors, author],
-    })
-  const revisionMenu = (action: 'accept' | 'reject', onPick: (scope: RevisionScope) => void) => {
+  const runCommand = useRunCommand()
+  // commenting outlives the comments-only restriction, which the protection terms below answer
+  const commentOff = useCommandGreyed('insert-comment', { editable: true })
+  const showCommentsOff = useCommandGreyed('show-comments')
+  /** a pick from a menu: run the command, close the menu */
+  const revisionDisplayChoices: Array<[RevisionDisplayMode, string]> = [
+    ['simple', t('ribbonRevDisplaySimple')],
+    ['all', t('ribbonRevDisplayAll')],
+    ['none', t('ribbonRevDisplayNone')],
+    ['original', t('ribbonRevDisplayOriginal')],
+  ]
+  const pickCommand = (id: ActionCommandId, payload?: string) => {
+    runCommand(id, payload)
+    setDropdown(() => null)
+  }
+  const revisionMenu = (action: 'accept' | 'reject') => {
     const key = (suffix: string) =>
       `${action === 'accept' ? 'ribbonAccept' : 'ribbonReject'}${suffix}` as StringKey
-    const pick = (scope: RevisionScope) => () => {
-      onPick(scope)
-      setDropdown(() => null)
-    }
+    const pick = (scope: RevisionScope) => () =>
+      pickCommand(
+        action === 'accept' ? 'accept-revision' : 'reject-revision',
+        typeof scope === 'string' ? scope : JSON.stringify(scope),
+      )
     return (
       <div data-rb-panel="" className="layout-menu">
         <button onClick={pick('next')}>{t(key('Next'))}</button>
+        <button disabled={revisionCount === 0} onClick={pick('shown')}>
+          {t(key('Shown'))}
+        </button>
         <button onClick={pick('all')}>{t(key('All'))}</button>
-        <button onClick={pick('shown')}>{t(key('Shown'))}</button>
         <button disabled={!hasSelection} onClick={pick('selection')}>
           {t(key('Selection'))}
         </button>
@@ -930,17 +918,23 @@ export function ReviewTab({
             </span>
             <span>{t('ribbonEditorBtn')}</span>
           </button>
-          <button
-            className={`rb-big ${spellcheck ? 'active' : ''}`}
-            disabled={!hasDoc}
-            data-tip={t('ribbonSpellcheckTip')}
-            onClick={() => onSpellcheck(!spellcheck)}
-          >
-            <span className="rb-big-icon">
-              <IconSpellcheck size={BIG} />
-            </span>
-            <span>{t('ribbonSpellcheckBtn')}</span>
-          </button>
+          <div className="rb-col" data-wide="1" data-collapse="2">
+            <button
+              className={`rb-small ${spellcheck ? 'active' : ''}`}
+              disabled={!hasDoc}
+              data-tip={t('ribbonSpellcheckTip')}
+              onClick={() => runCommand('toggle-spellcheck')}
+            >
+              <IconSpellcheck size={14} />
+              <span className="rb-small-label">{t('ribbonSpellcheckBtn')}</span>
+            </button>
+            <RbCommand cmd="tools-thesaurus" look="small">
+              <IconBook size={14} />
+            </RbCommand>
+            <RbCommand cmd="word-count" look="small">
+              <IconWordCount size={14} />
+            </RbCommand>
+          </div>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupProofing')}</div>
       </div>
@@ -986,6 +980,9 @@ export function ReviewTab({
               </div>
             )}
           </div>
+          <RbCommand cmd="tools-language" look="big">
+            <IconGlobe size={BIG} />
+          </RbCommand>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupLanguage')}</div>
       </div>
@@ -996,92 +993,83 @@ export function ReviewTab({
         <div className="ribbon-group-items">
           <button
             className="rb-big"
-            disabled={!hasDoc || !canComment || (isProtected && !commentsAllowed)}
-            data-tip={canComment ? t('ribbonNewCommentTip') : t('ribbonNewCommentSelectTip')}
-            onClick={onNewComment}
+            disabled={commentOff || (isProtected && !commentsAllowed)}
+            data-tip={commentOff ? t('ribbonNewCommentSelectTip') : t('ribbonNewCommentTip')}
+            onClick={() => runCommand('insert-comment')}
           >
             <span className="rb-big-icon">
               <IconComment size={BIG} />
             </span>
             <span>{t('ribbonNewComment')}</span>
           </button>
-          <div className="rb-split-wrap">
-            <button
-              className="rb-big"
-              disabled={!hasDoc || commentCount === 0 || (isProtected && !commentsAllowed)}
-              data-tip={t('ribbonDeleteCommentTip')}
-              onClick={() => toggleDropdown(setDropdown, 'deleteComment')}
-            >
-              <span className="rb-big-icon">
-                <IconTrash size={BIG} />
+          <div className="rb-col" data-wide="2">
+            <div className="rb-split-wrap">
+              <button
+                className="rb-small"
+                disabled={!hasDoc || commentCount === 0 || (isProtected && !commentsAllowed)}
+                data-tip={t('ribbonDeleteCommentTip')}
+                onClick={() => toggleDropdown(setDropdown, 'deleteComment')}
+              >
+                <IconTrash size={14} />
+                <span className="rb-small-label">{t('ribbonDeleteComment')}</span>
                 <IconCaret />
-              </span>
-              <span>{t('ribbonDeleteComment')}</span>
+              </button>
+              {dropdown === 'deleteComment' && (
+                <div data-rb-panel="" className="layout-menu">
+                  <button disabled={!commentAtCaret} onClick={() => pickCommand('delete-comment')}>
+                    {t('ribbonDeleteComment')}
+                  </button>
+                  <button
+                    disabled={resolvedCommentCount === 0}
+                    onClick={() => pickCommand('delete-comments', 'resolved')}
+                  >
+                    {t('ribbonDeleteResolvedComments')}
+                  </button>
+                  <button onClick={() => pickCommand('delete-comments', 'all')}>
+                    {t('ribbonDeleteAllComments')}
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              className="rb-small"
+              disabled={!commentAtCaret || (isProtected && !commentsAllowed)}
+              data-tip={t('ribbonResolve')}
+              onClick={() => runCommand('comment-resolve')}
+            >
+              <IconResolveComment size={14} />
+              <span className="rb-small-label">{t('ribbonResolve')}</span>
             </button>
-            {dropdown === 'deleteComment' && (
-              <div data-rb-panel="" className="layout-menu">
-                <button
-                  disabled={!commentAtCaret}
-                  onClick={() => {
-                    onDeleteComment()
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonDeleteComment')}
-                </button>
-                <button
-                  disabled={resolvedCommentCount === 0}
-                  onClick={() => {
-                    onDeleteAllComments(true)
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonDeleteResolvedComments')}
-                </button>
-                <button
-                  onClick={() => {
-                    onDeleteAllComments(false)
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonDeleteAllComments')}
-                </button>
-              </div>
-            )}
+            <button
+              className="rb-small"
+              disabled={!hasDoc || openCommentCount === 0}
+              data-tip={t('ribbonPrevCommentTip')}
+              onClick={() => runCommand('comment-previous')}
+            >
+              <IconCommentPrev size={14} />
+              <span className="rb-small-label">{t('ribbonPrevComment')}</span>
+            </button>
           </div>
-          <button
-            className="rb-big"
-            disabled={!hasDoc || openCommentCount === 0}
-            data-tip={t('ribbonPrevCommentTip')}
-            onClick={() => onGotoComment(-1)}
-          >
-            <span className="rb-big-icon">
-              <IconCommentPrev size={BIG} />
-            </span>
-            <span>{t('ribbonPrevComment')}</span>
-          </button>
-          <button
-            className="rb-big"
-            disabled={!hasDoc || openCommentCount === 0}
-            data-tip={t('ribbonNextCommentTip')}
-            onClick={() => onGotoComment(1)}
-          >
-            <span className="rb-big-icon">
-              <IconCommentNext size={BIG} />
-            </span>
-            <span>{t('ribbonNextComment')}</span>
-          </button>
-          <button
-            className="rb-big"
-            disabled={!hasDoc}
-            data-tip={t('ribbonShowCommentsTip', { count: commentCount })}
-            onClick={onShowComments}
-          >
-            <span className="rb-big-icon">
-              <IconComments size={BIG} />
-            </span>
-            <span>{t('ribbonShowComments')}</span>
-          </button>
+          <div className="rb-col rb-pair" data-wide="2">
+            <button
+              className="rb-small"
+              disabled={!hasDoc || openCommentCount === 0}
+              data-tip={t('ribbonNextCommentTip')}
+              onClick={() => runCommand('comment-next')}
+            >
+              <IconCommentNext size={14} />
+              <span className="rb-small-label">{t('ribbonNextComment')}</span>
+            </button>
+            <button
+              className="rb-small"
+              disabled={showCommentsOff}
+              data-tip={t('ribbonShowCommentsTip', { count: commentCount })}
+              onClick={() => runCommand('show-comments')}
+            >
+              <IconComments size={14} />
+              <span className="rb-small-label">{t('ribbonShowComments')}</span>
+            </button>
+          </div>
           <button
             className="rb-big"
             disabled={!hasDoc || openCommentCount === 0}
@@ -1120,112 +1108,138 @@ export function ReviewTab({
             className={`rb-big ${trackChanges ? 'active' : ''}`}
             disabled={!hasDoc || isProtected || trackChangesForced}
             data-tip={t('ribbonTrackChangesTip')}
-            onClick={() => onTrackChanges(!trackChanges)}
+            onClick={() => runCommand('track-changes')}
           >
             <span className="rb-big-icon">
               <IconTrackChanges size={BIG} />
             </span>
             <span>{t('ribbonTrackChanges')}</span>
           </button>
-          <div className="rb-split-wrap">
-            <button
-              className={`rb-big ${revisionDisplay === 'none' || revisionDisplay === 'original' ? 'active' : ''}`}
-              disabled={!hasDoc}
-              data-tip={t('ribbonRevDisplayTip')}
-              onClick={() => toggleDropdown(setDropdown, 'revDisplay')}
-            >
-              <span className="rb-big-icon">
-                <IconReadMode size={BIG} />
+          <div className="rb-col rb-pair">
+            <div className="rb-split-wrap">
+              <button
+                className={`rb-small ${revisionDisplay === 'none' || revisionDisplay === 'original' ? 'active' : ''}`}
+                disabled={!hasDoc}
+                aria-label={t('ribbonDisplayForReview')}
+                data-tip={t('ribbonRevDisplayTip')}
+                onClick={() => toggleDropdown(setDropdown, 'displayForReview')}
+              >
+                <IconEye size={14} />
+                <span className="rb-small-label">
+                  {revisionDisplayChoices.find(([mode]) => mode === revisionDisplay)?.[1]}
+                </span>
                 <IconCaret />
-              </span>
-              <span>{t('ribbonRevDisplay')}</span>
-            </button>
-            {dropdown === 'revDisplay' && (
-              <div data-rb-panel="" className="layout-menu">
-                {(
-                  [
-                    ['simple', t('ribbonRevDisplaySimple')],
-                    ['all', t('ribbonRevDisplayAll')],
-                    ['none', t('ribbonRevDisplayNone')],
-                    ['original', t('ribbonRevDisplayOriginal')],
-                  ] as Array<[RevisionDisplayMode, string]>
-                ).map(([mode, label]) => (
+              </button>
+              {dropdown === 'displayForReview' && (
+                <div data-rb-panel="" className="layout-menu">
+                  {revisionDisplayChoices.map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      role="menuitemradio"
+                      aria-checked={revisionDisplay === mode}
+                      onClick={() => pickCommand('revision-display', mode)}
+                    >
+                      {label}
+                      {revisionDisplay === mode ? ' ✓' : ''}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="rb-split-wrap">
+              <button
+                className="rb-small"
+                disabled={!hasDoc}
+                data-tip={t('ribbonRevDisplay')}
+                onClick={() => toggleDropdown(setDropdown, 'revDisplay')}
+              >
+                <IconReadMode size={14} />
+                <span className="rb-small-label">{t('ribbonRevDisplay')}</span>
+                <IconCaret />
+              </button>
+              {dropdown === 'revDisplay' && (
+                <div data-rb-panel="" className="layout-menu">
+                  <div className="layout-menu-head">{t('ribbonMarkupShow')}</div>
+                  <button onClick={() => runCommand('markup-filter', 'insDel')}>
+                    {t('ribbonMarkupInsDel')}
+                    {revisionFilter.insDel ? ' ✓' : ''}
+                  </button>
+                  <button onClick={() => runCommand('markup-filter', 'format')}>
+                    {t('ribbonMarkupFormatting')}
+                    {revisionFilter.format ? ' ✓' : ''}
+                  </button>
+                  <div className="layout-menu-head">{t('ribbonMarkupBalloons')}</div>
+                  {(
+                    [
+                      ['revisions', t('ribbonBalloonsRevisions')],
+                      ['inline', t('ribbonBalloonsInline')],
+                      ['comments', t('ribbonBalloonsComments')],
+                    ] as Array<[BalloonMode, string]>
+                  ).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      role="menuitemradio"
+                      aria-checked={balloonMode === mode}
+                      onClick={() => pickCommand('balloon-mode', mode)}
+                    >
+                      {label}
+                      {balloonMode === mode ? ' ✓' : ''}
+                    </button>
+                  ))}
+                  {revisionAuthors.length > 0 && (
+                    <div className="layout-menu-head">{t('ribbonMarkupPeople')}</div>
+                  )}
+                  {revisionAuthors.map((author) => (
+                    <button
+                      key={author}
+                      onClick={() => runCommand('markup-filter', `author:${author}`)}
+                    >
+                      {author || unknownAuthor}
+                      {revisionFilter.hiddenAuthors.includes(author) ? '' : ' ✓'}
+                    </button>
+                  ))}
+                  <div className="rb-menu-sep" />
                   <button
-                    key={mode}
-                    onClick={() => {
-                      onRevisionDisplay(mode)
-                      setDropdown(() => null)
-                    }}
+                    data-testid="tc-options"
+                    onClick={() => pickCommand('track-changes-options')}
                   >
-                    {label}
-                    {revisionDisplay === mode ? ' ✓' : ''}
+                    {t('ribbonTcOptions')}
                   </button>
-                ))}
-                <div className="rb-menu-sep" />
-                <div className="layout-menu-head">{t('ribbonMarkupShow')}</div>
-                <button
-                  onClick={() =>
-                    onRevisionFilter({ ...revisionFilter, insDel: !revisionFilter.insDel })
-                  }
-                >
-                  {t('ribbonMarkupInsDel')}
-                  {revisionFilter.insDel ? ' ✓' : ''}
-                </button>
-                <button
-                  onClick={() =>
-                    onRevisionFilter({ ...revisionFilter, format: !revisionFilter.format })
-                  }
-                >
-                  {t('ribbonMarkupFormatting')}
-                  {revisionFilter.format ? ' ✓' : ''}
-                </button>
-                {revisionAuthors.length > 0 && (
-                  <div className="layout-menu-head">{t('ribbonMarkupPeople')}</div>
-                )}
-                {revisionAuthors.map((author) => (
-                  <button key={author} onClick={() => toggleAuthor(author)}>
-                    {author || unknownAuthor}
-                    {revisionFilter.hiddenAuthors.includes(author) ? '' : ' ✓'}
-                  </button>
-                ))}
-                <div className="layout-menu-head">{t('ribbonMarkupBalloons')}</div>
-                {(
-                  [
-                    ['revisions', t('ribbonBalloonsRevisions')],
-                    ['inline', t('ribbonBalloonsInline')],
-                    ['comments', t('ribbonBalloonsComments')],
-                  ] as Array<[BalloonMode, string]>
-                ).map(([mode, label]) => (
-                  <button
-                    key={mode}
-                    role="menuitemradio"
-                    aria-checked={balloonMode === mode}
-                    onClick={() => {
-                      onBalloonMode(mode)
-                      setDropdown(() => null)
-                    }}
-                  >
-                    {label}
-                    {balloonMode === mode ? ' ✓' : ''}
-                  </button>
-                ))}
-                <div className="rb-menu-sep" />
-                <button
-                  data-testid="tc-options"
-                  onClick={() => {
-                    onTrackChangesOptions()
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonTcOptions')}
-                </button>
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
+        </div>
+        <div className="ribbon-group-label">{t('ribbonGroupTracking')}</div>
+      </div>
+
+      <div className="ribbon-sep" />
+
+      <div className="ribbon-group">
+        <div className="ribbon-group-items">
+          <button
+            className={`rb-big ${showReviewPane ? 'active' : ''}`}
+            disabled={!hasDoc}
+            data-tip={t('ribbonReviewingPaneTip')}
+            onClick={() => runCommand('review-pane')}
+          >
+            <span className="rb-big-icon">
+              <IconNavPane size={BIG} />
+            </span>
+            <span>{t('ribbonReviewingPane')}</span>
+          </button>
+        </div>
+        <div className="ribbon-group-label">{t('ribbonReviewingPane')}</div>
+      </div>
+
+      <div className="ribbon-sep" />
+
+      <div className="ribbon-group">
+        <div className="ribbon-group-items">
           <div className="rb-split-wrap">
             <button
               className="rb-big"
-              disabled={!hasDoc || revisionCount === 0 || isProtected || trackChangesForced}
+              disabled={!hasDoc || isProtected || trackChangesForced}
               data-tip={t('ribbonAcceptTip', { count: revisionCount })}
               onClick={() => toggleDropdown(setDropdown, 'acceptRev')}
             >
@@ -1235,12 +1249,12 @@ export function ReviewTab({
               </span>
               <span>{t('ribbonAccept')}</span>
             </button>
-            {dropdown === 'acceptRev' && revisionMenu('accept', onAcceptRevision)}
+            {dropdown === 'acceptRev' && revisionMenu('accept')}
           </div>
           <div className="rb-split-wrap">
             <button
               className="rb-big"
-              disabled={!hasDoc || revisionCount === 0 || isProtected || trackChangesForced}
+              disabled={!hasDoc || isProtected || trackChangesForced}
               data-tip={t('ribbonRejectTip', { count: revisionCount })}
               onClick={() => toggleDropdown(setDropdown, 'rejectRev')}
             >
@@ -1250,41 +1264,28 @@ export function ReviewTab({
               </span>
               <span>{t('ribbonReject')}</span>
             </button>
-            {dropdown === 'rejectRev' && revisionMenu('reject', onRejectRevision)}
+            {dropdown === 'rejectRev' && revisionMenu('reject')}
           </div>
-          <button
-            className="rb-big"
-            disabled={!hasDoc || revisionCount === 0}
-            data-tip={t('ribbonPrevChangeTip')}
-            onClick={() => onGotoRevision(-1)}
-          >
-            <span className="rb-big-icon">
-              <IconUndo size={BIG} />
-            </span>
-            <span>{t('ribbonPrevChange')}</span>
-          </button>
-          <button
-            className="rb-big"
-            disabled={!hasDoc || revisionCount === 0}
-            data-tip={t('ribbonNextChangeTip')}
-            onClick={() => onGotoRevision(1)}
-          >
-            <span className="rb-big-icon">
-              <IconRedo size={BIG} />
-            </span>
-            <span>{t('ribbonNextChange')}</span>
-          </button>
-          <button
-            className={`rb-big ${showReviewPane ? 'active' : ''}`}
-            disabled={!hasDoc}
-            data-tip={t('ribbonReviewingPaneTip')}
-            onClick={onToggleReviewPane}
-          >
-            <span className="rb-big-icon">
-              <IconNavPane size={BIG} />
-            </span>
-            <span>{t('ribbonReviewingPane')}</span>
-          </button>
+          <div className="rb-col rb-pair" data-collapse="1">
+            <button
+              className="rb-small"
+              disabled={!hasDoc}
+              data-tip={t('ribbonPrevChangeTip')}
+              onClick={() => runCommand('revision-previous')}
+            >
+              <IconUndo size={14} />
+              <span className="rb-small-label">{t('ribbonPrevChange')}</span>
+            </button>
+            <button
+              className="rb-small"
+              disabled={!hasDoc}
+              data-tip={t('ribbonNextChangeTip')}
+              onClick={() => runCommand('revision-next')}
+            >
+              <IconRedo size={14} />
+              <span className="rb-small-label">{t('ribbonNextChange')}</span>
+            </button>
+          </div>
           <button
             className="rb-big"
             disabled={!hasDoc || revisionCount === 0}
@@ -1313,24 +1314,37 @@ export function ReviewTab({
             <span>{t('ribbonAiRevisions')}</span>
           </button>
         </div>
-        <div className="ribbon-group-label">{t('ribbonGroupTracking')}</div>
+        <div className="ribbon-group-label">{t('ribbonGroupChanges')}</div>
       </div>
 
       <div className="ribbon-sep" />
 
       <div className="ribbon-group">
         <div className="ribbon-group-items">
-          <button
-            className="rb-big"
-            disabled={!hasDoc}
-            data-tip={t('ribbonCompareTip')}
-            onClick={onCompare}
-          >
-            <span className="rb-big-icon">
-              <IconCompare size={BIG} />
-            </span>
-            <span>{t('ribbonCompare')}</span>
-          </button>
+          <div className="rb-split-wrap">
+            <button
+              className="rb-big"
+              disabled={!hasDoc}
+              data-tip={t('ribbonCompareTip')}
+              onClick={() => toggleDropdown(setDropdown, 'compare')}
+            >
+              <span className="rb-big-icon">
+                <IconCompare size={BIG} />
+                <IconCaret />
+              </span>
+              <span>{t('ribbonCompare')}</span>
+            </button>
+            {dropdown === 'compare' && (
+              <div data-rb-panel="" className="layout-menu">
+                <button onClick={() => pickCommand('compare-documents')}>
+                  {t('ribbonCompareDocuments')}
+                </button>
+                <button onClick={() => pickCommand('tools-combine-documents')}>
+                  {t('ribbonCombineDocuments')}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         <div className="ribbon-group-label">{t('ribbonCompare')}</div>
       </div>
@@ -1343,13 +1357,16 @@ export function ReviewTab({
             className={`rb-big ${protectActive ? 'active' : ''}`}
             disabled={!hasDoc}
             title={t('ribbonProtectDocTip')}
-            onClick={onProtectDoc}
+            onClick={() => runCommand('protect-document')}
           >
             <span className="rb-big-icon">
               <IconLock size={BIG} />
             </span>
             <span>{t('ribbonProtectDoc')}</span>
           </button>
+          <RbCommand cmd="file-always-read-only" look="big">
+            <IconReadOnlyDoc size={BIG} />
+          </RbCommand>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupProtect')}</div>
       </div>
@@ -1360,57 +1377,33 @@ export function ReviewTab({
 /* ================= View ================= */
 
 /** document rendering modes: Print Layout / Web Layout / Outline */
-export type ViewMode = 'print' | 'web' | 'outline' | 'story'
+export type ViewMode = 'print' | 'web' | 'outline' | 'draft' | 'story'
 
 interface ViewTabProps {
   hasDoc: boolean
-  /** current document path, so New Window can open the same file */
-  filePath: string | null
   zoom: number
-  onZoom: (zoom: number) => void
-  onZoomFit: (mode: 'width' | 'page' | 'multi') => void
-  onZoomDialog: () => void
   darkPage: boolean
-  onDarkPage: (v: boolean) => void
   showRuler: boolean
-  onShowRuler: (v: boolean) => void
   showNav: boolean
-  onShowNav: (v: boolean) => void
   viewMode: ViewMode
-  onViewMode: (mode: ViewMode) => void
   readMode: boolean
-  onReadMode: (v: boolean) => void
   showGrid: boolean
-  onShowGrid: (v: boolean) => void
   splitView: boolean
-  onSplitView: (v: boolean) => void
-  onPagePreview: () => void
 }
 
 export function ViewTab({
   hasDoc,
-  filePath,
   zoom,
-  onZoom,
-  onZoomFit,
-  onZoomDialog,
   darkPage,
-  onDarkPage,
   showRuler,
-  onShowRuler,
   showNav,
-  onShowNav,
   viewMode,
-  onViewMode,
   readMode,
-  onReadMode,
   showGrid,
-  onShowGrid,
   splitView,
-  onSplitView,
-  onPagePreview,
 }: ViewTabProps) {
   const { t } = useI18n()
+  const runCommand = useRunCommand()
   const [winMenuOpen, setWinMenuOpen] = useState(false)
   const [windows, setWindows] = useState<DocsTabInfo[]>([])
   /** wrap holding both the switch-tabs trigger and its menu */
@@ -1435,10 +1428,7 @@ export function ViewTab({
             className={`rb-big ${viewMode === 'print' && !readMode ? 'active' : ''}`}
             disabled={!hasDoc}
             data-tip={t('ribbonPrintLayoutTip')}
-            onClick={() => {
-              onViewMode('print')
-              onReadMode(false)
-            }}
+            onClick={() => runCommand('view-mode', 'print')}
           >
             <span className="rb-big-icon">
               <IconPrintLayout size={BIG} />
@@ -1449,29 +1439,49 @@ export function ViewTab({
             className={`rb-big ${viewMode === 'web' ? 'active' : ''}`}
             disabled={!hasDoc}
             data-tip={t('ribbonWebLayoutTip')}
-            onClick={() => onViewMode(viewMode === 'web' ? 'print' : 'web')}
+            onClick={() => runCommand('view-mode', 'web')}
           >
             <span className="rb-big-icon">
               <IconWebLayout size={BIG} />
             </span>
             <span>{t('ribbonWebLayout')}</span>
           </button>
-          <button
-            className={`rb-big ${viewMode === 'outline' ? 'active' : ''}`}
-            disabled={!hasDoc}
-            data-tip={t('ribbonOutlineViewTip')}
-            onClick={() => onViewMode(viewMode === 'outline' ? 'print' : 'outline')}
-          >
-            <span className="rb-big-icon">
-              <IconOutlineView size={BIG} />
-            </span>
-            <span>{t('ribbonOutlineView')}</span>
-          </button>
+          <div className="rb-col rb-pair">
+            <button
+              className={`rb-small ${viewMode === 'outline' ? 'active' : ''}`}
+              disabled={!hasDoc}
+              data-tip={t('ribbonOutlineViewTip')}
+              onClick={() => runCommand('view-mode', 'outline')}
+            >
+              <IconOutlineView size={14} />
+              <span className="rb-small-label">{t('ribbonOutlineView')}</span>
+            </button>
+            <button
+              className={`rb-small ${viewMode === 'draft' ? 'active' : ''}`}
+              disabled={!hasDoc}
+              data-tip={t('ribbonDraft')}
+              onClick={() => runCommand('view-mode', 'draft')}
+            >
+              <IconDraftView size={14} />
+              <span className="rb-small-label">{t('ribbonDraft')}</span>
+            </button>
+          </div>
+        </div>
+        <div className="ribbon-group-label">{t('ribbonGroupViews')}</div>
+      </div>
+
+      <div className="ribbon-sep" />
+
+      <div className="ribbon-group">
+        <div className="ribbon-group-items">
+          <RbCommand cmd="view-focus" look="big">
+            <IconFocusView size={BIG} />
+          </RbCommand>
           <button
             className={`rb-big ${viewMode === 'story' ? 'active' : ''}`}
             disabled={!hasDoc}
             data-tip={t('ribbonStoryViewTip')}
-            onClick={() => onViewMode(viewMode === 'story' ? 'print' : 'story')}
+            onClick={() => runCommand('view-mode', 'story')}
           >
             <span className="rb-big-icon">
               <IconStoryView size={BIG} />
@@ -1482,7 +1492,7 @@ export function ViewTab({
             className={`rb-big ${readMode ? 'active' : ''}`}
             disabled={!hasDoc}
             data-tip={t('ribbonReadModeTip')}
-            onClick={() => onReadMode(!readMode)}
+            onClick={() => runCommand('read-mode')}
           >
             <span className="rb-big-icon">
               <IconReadMode size={BIG} />
@@ -1493,7 +1503,7 @@ export function ViewTab({
             className="rb-big"
             disabled={!hasDoc || viewMode !== 'print' || readMode}
             data-tip={t('ribbonPagePreviewTip')}
-            onClick={onPagePreview}
+            onClick={() => runCommand('page-preview')}
           >
             <span className="rb-big-icon">
               <IconWholePage size={BIG} />
@@ -1501,7 +1511,44 @@ export function ViewTab({
             <span>{t('ribbonPagePreview')}</span>
           </button>
         </div>
-        <div className="ribbon-group-label">{t('ribbonGroupViews')}</div>
+        <div className="ribbon-group-label">{t('ribbonGroupImmersive')}</div>
+      </div>
+
+      <div className="ribbon-sep" />
+
+      <div className="ribbon-group">
+        <div className="ribbon-group-items">
+          <div className="rb-col">
+            <button
+              className={`rb-small ${showRuler ? 'active' : ''}`}
+              disabled={!hasDoc}
+              data-tip={t('ribbonRulerTip')}
+              onClick={() => runCommand('toggle-ruler')}
+            >
+              <IconRuler size={14} />
+              <span className="rb-small-label">{t('ribbonRuler')}</span>
+            </button>
+            <button
+              className={`rb-small ${showGrid ? 'active' : ''}`}
+              disabled={!hasDoc}
+              data-tip={t('ribbonGridlinesTip')}
+              onClick={() => runCommand('toggle-grid')}
+            >
+              <IconGridlines size={14} />
+              <span className="rb-small-label">{t('ribbonGridlines')}</span>
+            </button>
+            <button
+              className={`rb-small ${showNav ? 'active' : ''}`}
+              disabled={!hasDoc}
+              data-tip={t('ribbonNavPaneTip')}
+              onClick={() => runCommand('toggle-navigation')}
+            >
+              <IconNavPane size={14} />
+              <span className="rb-small-label">{t('ribbonNavPane')}</span>
+            </button>
+          </div>
+        </div>
+        <div className="ribbon-group-label">{t('ribbonGroupShow')}</div>
       </div>
 
       <div className="ribbon-sep" />
@@ -1511,7 +1558,7 @@ export function ViewTab({
             className="rb-big"
             disabled={!hasDoc}
             data-tip={t('ribbonZoomDialogTip')}
-            onClick={onZoomDialog}
+            onClick={() => runCommand('zoom-dialog')}
           >
             <span className="rb-big-icon">
               <IconZoom size={BIG} />
@@ -1522,7 +1569,7 @@ export function ViewTab({
             className="rb-big"
             disabled={!hasDoc}
             data-tip={t('ribbonZoomOut')}
-            onClick={() => onZoom(stepDocsZoom(zoom, -1))}
+            onClick={() => runCommand('zoom-out')}
           >
             <span className="rb-big-icon">
               <IconZoomOut size={BIG} />
@@ -1533,7 +1580,7 @@ export function ViewTab({
             className="rb-big"
             disabled={!hasDoc}
             data-tip={t('ribbonZoomIn')}
-            onClick={() => onZoom(stepDocsZoom(zoom, 1))}
+            onClick={() => runCommand('zoom-in')}
           >
             <span className="rb-big-icon">
               <IconZoomIn size={BIG} />
@@ -1545,46 +1592,42 @@ export function ViewTab({
             disabled={!hasDoc}
             data-tip={t('ribbonZoom100Tip')}
             aria-label={t('ribbonZoom100Tip')}
-            onClick={() => onZoom(100)}
+            onClick={() => runCommand('zoom-100')}
           >
             <span className="rb-big-icon">
               <IconZoom100 size={BIG} />
             </span>
             <span>100%</span>
           </button>
-          <button
-            className="rb-big"
-            disabled={!hasDoc}
-            data-tip={t('ribbonPageWidthTip')}
-            onClick={() => onZoomFit('width')}
-          >
-            <span className="rb-big-icon">
-              <IconPageWidth size={BIG} />
-            </span>
-            <span>{t('ribbonPageWidth')}</span>
-          </button>
-          <button
-            className="rb-big"
-            disabled={!hasDoc}
-            data-tip={t('ribbonWholePageTip')}
-            onClick={() => onZoomFit('page')}
-          >
-            <span className="rb-big-icon">
-              <IconWholePage size={BIG} />
-            </span>
-            <span>{t('ribbonWholePage')}</span>
-          </button>
-          <button
-            className="rb-big"
-            disabled={!hasDoc}
-            data-tip={t('ribbonMultiPageTip')}
-            onClick={() => onZoomFit('multi')}
-          >
-            <span className="rb-big-icon">
-              <IconMultiPage size={BIG} />
-            </span>
-            <span>{t('ribbonMultiPage')}</span>
-          </button>
+          <div className="rb-col">
+            <button
+              className="rb-small"
+              disabled={!hasDoc}
+              data-tip={t('ribbonWholePageTip')}
+              onClick={() => runCommand('zoom-whole-page')}
+            >
+              <IconWholePage size={14} />
+              <span className="rb-small-label">{t('ribbonWholePage')}</span>
+            </button>
+            <button
+              className="rb-small"
+              disabled={!hasDoc}
+              data-tip={t('ribbonMultiPageTip')}
+              onClick={() => runCommand('zoom-multi-page')}
+            >
+              <IconMultiPage size={14} />
+              <span className="rb-small-label">{t('ribbonMultiPage')}</span>
+            </button>
+            <button
+              className="rb-small"
+              disabled={!hasDoc}
+              data-tip={t('ribbonPageWidthTip')}
+              onClick={() => runCommand('zoom-page-width')}
+            >
+              <IconPageWidth size={14} />
+              <span className="rb-small-label">{t('ribbonPageWidth')}</span>
+            </button>
+          </div>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupZoom')}</div>
       </div>
@@ -1594,79 +1637,26 @@ export function ViewTab({
       <div className="ribbon-group">
         <div className="ribbon-group-items">
           <button
-            className={`rb-big ${darkPage ? 'active' : ''}`}
-            data-tip={t('ribbonDarkModeTip')}
-            onClick={() => onDarkPage(!darkPage)}
-          >
-            <span className="rb-big-icon">
-              <IconMoon size={BIG} />
-            </span>
-            <span>{t('ribbonDarkMode')}</span>
-          </button>
-        </div>
-        <div className="ribbon-group-label">{t('ribbonGroupAppearance')}</div>
-      </div>
-
-      <div className="ribbon-sep" />
-
-      <div className="ribbon-group">
-        <div className="ribbon-group-items">
-          <button
-            className={`rb-big ${showRuler ? 'active' : ''}`}
-            disabled={!hasDoc}
-            data-tip={t('ribbonRulerTip')}
-            onClick={() => onShowRuler(!showRuler)}
-          >
-            <span className="rb-big-icon">
-              <IconRuler size={BIG} />
-            </span>
-            <span>{t('ribbonRuler')}</span>
-          </button>
-          <button
-            className={`rb-big ${showGrid ? 'active' : ''}`}
-            disabled={!hasDoc}
-            data-tip={t('ribbonGridlinesTip')}
-            onClick={() => onShowGrid(!showGrid)}
-          >
-            <span className="rb-big-icon">
-              <IconGridlines size={BIG} />
-            </span>
-            <span>{t('ribbonGridlines')}</span>
-          </button>
-          <button
-            className={`rb-big ${showNav ? 'active' : ''}`}
-            disabled={!hasDoc}
-            data-tip={t('ribbonNavPaneTip')}
-            onClick={() => onShowNav(!showNav)}
-          >
-            <span className="rb-big-icon">
-              <IconNavPane size={BIG} />
-            </span>
-            <span>{t('ribbonNavPane')}</span>
-          </button>
-        </div>
-        <div className="ribbon-group-label">{t('ribbonGroupShow')}</div>
-      </div>
-
-      <div className="ribbon-sep" />
-
-      <div className="ribbon-group">
-        <div className="ribbon-group-items">
-          <button
             className="rb-big"
             data-tip={t('ribbonNewTabTip')}
-            onClick={() => void window.desktop.openNewTab(filePath)}
+            onClick={() => runCommand('new-window')}
           >
             <span className="rb-big-icon">
               <IconNewWindow size={BIG} />
             </span>
             <span>{t('ribbonNewTab')}</span>
           </button>
+          <RbCommand cmd="view-arrange-all" look="big">
+            <IconArrangeAll size={BIG} />
+          </RbCommand>
+          <RbCommand cmd="view-merge-windows" look="big">
+            <IconMergeWindows size={BIG} />
+          </RbCommand>
           <button
             className={`rb-big ${splitView ? 'active' : ''}`}
             disabled={!hasDoc}
             data-tip={t('ribbonSplitTip')}
-            onClick={() => onSplitView(!splitView)}
+            onClick={() => runCommand('split-view')}
           >
             <span className="rb-big-icon">
               <IconSplit size={BIG} />
@@ -1704,6 +1694,24 @@ export function ViewTab({
           </div>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupWindow')}</div>
+      </div>
+
+      <div className="ribbon-sep" />
+
+      <div className="ribbon-group">
+        <div className="ribbon-group-items">
+          <button
+            className={`rb-big ${darkPage ? 'active' : ''}`}
+            data-tip={t('ribbonDarkModeTip')}
+            onClick={() => runCommand('toggle-dark')}
+          >
+            <span className="rb-big-icon">
+              <IconMoon size={BIG} />
+            </span>
+            <span>{t('ribbonDarkMode')}</span>
+          </button>
+        </div>
+        <div className="ribbon-group-label">{t('ribbonGroupAppearance')}</div>
       </div>
     </>
   )

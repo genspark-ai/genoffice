@@ -1,3 +1,4 @@
+import { eqLayoutText } from '../editor/eq-layout'
 import type { Editor } from '@tiptap/core'
 import { REDACT_MARK } from './redact'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
@@ -155,7 +156,7 @@ export const AGENT_SYSTEM_PROMPT = [
   "- Dates follow the user's locale; never change text outside the placeholders.",
   '',
   '# Fields, footnotes & endnotes',
-  '- insertField writes real Word fields (SEQ caption numbers, DATE/TIME, REF/PAGEREF to a bookmark, MERGEFIELD, PAGE/NUMPAGES, AUTHOR…). Results the editor cannot compute (page numbers, document properties) are placeholders marked for Word to recompute when the file opens; mention that when you report. TOC → insertToc, never insertField.',
+  '- insertField writes real Word fields (SEQ caption numbers, DATE/TIME, REF/PAGEREF to a bookmark, MERGEFIELD, PAGE/NUMPAGES, AUTHOR…). Caption numbers get their real value when the document is saved. Results the editor cannot compute (page numbers, document properties, a REF with a position switch) are placeholders marked for Word to recompute when the file opens; mention that when you report. TOC → insertToc, never insertField.',
   '- insert_footnote / insert_endnote put a superscript reference mark into a block (after afterText, else at its end) and store the note text; read_notes lists notes with ids and anchored blocks; edit_note changes the text of one in place (findReplace inside the note, id kept); delete_note removes one with its mark. Notes are not document blocks — never reach them via block indexes or rewrite a block just to change its note.',
   '',
   '# Headers & footers',
@@ -352,6 +353,7 @@ function inlineAtomToHtml(node: PmNode, image?: ImageSrcMapper, refs?: ImageRefs
     return source ? `<formula>${escapeHtml(source)}</formula>` : ''
   }
   if (node.type === 'docRuby') return escapeHtml(String(node.attrs?.base ?? ''))
+  if (node.type === 'docEqLayout') return escapeHtml(eqLayoutText(node.attrs ?? {}))
   return ''
 }
 
@@ -543,12 +545,15 @@ export function serializeRangeToHtml(
     listHtml = ''
   }
   const addListItem = (kind: string, ilvl: number, html: string) => {
-    if (!openLists.length) listBase = ilvl
+    // a range that starts mid-list: the shallowest level seen so far is the top
+    if (!openLists.length || ilvl < listBase) listBase = ilvl
     const depth = Math.min(Math.max(ilvl - listBase, 0) + 1, openLists.length + 1)
     while (openLists.length > depth) closeList()
     if (openLists.length === depth && openLists[depth - 1] !== kind) {
-      if (depth === 1) flushList()
-      else closeList()
+      if (depth === 1) {
+        flushList()
+        listBase = ilvl
+      } else closeList()
     }
     if (openLists.length < depth) {
       listHtml += `<${listTag(kind)}><li>${html}`

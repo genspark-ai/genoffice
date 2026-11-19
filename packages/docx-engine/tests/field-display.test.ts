@@ -1,9 +1,16 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
-import { generateParagraphXml, generateTocFieldXml, parseDocx, saveDocx } from '../src/index'
+import {
+  generateParagraphXml,
+  generateTableOfFiguresFieldXml,
+  generateTocFieldXml,
+  parseDocx,
+  saveDocx,
+} from '../src/index'
 import { sdtCheckboxGlyphs } from '../src/checkbox-control'
 import type { Block, GenerateContext, GeneratedBlock } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
+import { allowDirtyFields } from './helpers/dirty-fields'
 
 const documentXmlOf = async (bytes: Uint8Array): Promise<string> =>
   (await JSZip.loadAsync(bytes)).file('word/document.xml')!.async('string')
@@ -777,10 +784,14 @@ describe('generateTocFieldXml', () => {
     { level: 1, text: '第二章 分析' },
   ]
 
-  it('emits a dirty TOC field spanning one paragraph per entry', () => {
+  it('emits a TOC field spanning one paragraph per entry, unmarked once every entry has its page', () => {
+    const paged = generateTocFieldXml(entries.map((e, i) => ({ ...e, pageNo: i + 1 })))
+    expect(paged.join('')).not.toContain('w:dirty')
+    expect(paged[0]).toContain('<w:fldChar w:fldCharType="begin"/>')
+    expect(paged[2]).toContain('<w:t>3</w:t>')
+    // built before the pages are known: there is no result to show, so Word is asked for one
     const frags = generateTocFieldXml(entries)
     expect(frags).toHaveLength(3)
-    // field structure: dirty begin + instruction in the first, single end in the last
     expect(frags[0]).toContain('w:fldCharType="begin" w:dirty="true"')
     expect(frags[0]).toContain(' TOC \\o "1-2" \\h \\z \\u ')
     expect(frags[0]).toContain('<w:pStyle w:val="TOC1"/>')
@@ -1068,11 +1079,11 @@ describe('field cached results in table cells', () => {
     expect(text).not.toContain('MERGEFIELD')
   })
 
-  it('a resultless field (NEXT) contributes no text', async () => {
+  it('a resultless field (NEXT) stays a field and takes no room', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: cellTable(NEXT_FIELD_PARAGRAPH) }))
     const cell = doc.blocks[0].table!.rows[0][0]
-    const text = (cell.richParas?.[0]?.runs ?? []).map((r) => r.text).join('')
-    expect(text).toBe('')
+    const runs = (cell.richParas?.[0]?.runs ?? []).filter((r) => r.text !== '')
+    expect(runs.map((r) => [r.instrField, r.text.replace(/\u200b/g, '')])).toEqual([['NEXT', '']])
   })
 })
 
@@ -1222,6 +1233,8 @@ describe('dirty inline fields', () => {
     '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
 
   it('parses w:dirty on the begin fldChar into Run.fldDirty and writes it back', async () => {
+    // the field came with the mark and keeps it
+    allowDirtyFields()
     const doc = await parseDocx(await buildDocx({ bodyXml: DIRTY_DATE_P }))
     expect(doc.blocks[0].runs?.[1]).toMatchObject({
       text: '2026-01-01',
@@ -1427,5 +1440,31 @@ describe('TOC entries without TOC styles (PAGEREF behind a right tab)', () => {
       '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
     const doc = await parseDocx(await buildDocx({ bodyXml: stray }))
     expect(doc.blocks[0].type).toBe('passthrough')
+  })
+})
+
+describe('generateTableOfFiguresFieldXml', () => {
+  it('emits a TOC field over the captions of one label, with their pages', () => {
+    const frags = generateTableOfFiguresFieldXml(
+      [
+        { text: 'Figure 1 Overview', pageNo: 2 },
+        { text: 'Figure 2 Detail <a&b>', pageNo: 3 },
+      ],
+      'Figure',
+    )
+    expect(frags).toHaveLength(2)
+    expect(frags[0]).toContain('<w:fldChar w:fldCharType="begin"/>')
+    expect(frags.join('')).not.toContain('w:dirty')
+    expect(frags[0]).toContain(' TOC \\h \\z \\c "Figure" ')
+    expect(frags[0]).toContain('<w:pStyle w:val="TableofFigures"/>')
+    expect(frags[0]).toContain('<w:t>2</w:t>')
+    expect(frags[1]).toContain('&lt;a&amp;b&gt;')
+    expect(frags[1]).toContain('w:fldCharType="end"')
+    expect(frags.join('').match(/w:fldCharType="begin"/g)).toHaveLength(1)
+  })
+
+  it('has nothing to emit without captions, and keeps a quote out of the instruction', () => {
+    expect(generateTableOfFiguresFieldXml([], 'Figure')).toEqual([])
+    expect(generateTableOfFiguresFieldXml([{ text: 'x' }], 'Fig"ure')[0]).toContain('\\c "Figure" ')
   })
 })

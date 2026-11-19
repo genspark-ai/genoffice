@@ -1,7 +1,7 @@
 import { ColorPicker } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
 
-const THEME_COLORS: Array<{ nameKey: StringKey; hex: string }> = [
+export const THEME_COLORS: Array<{ nameKey: StringKey; hex: string }> = [
   { nameKey: 'ribbonColorWhite', hex: 'FFFFFF' },
   { nameKey: 'ribbonColorBlack', hex: '000000' },
   { nameKey: 'ribbonColorLightGray', hex: 'E7E6E6' },
@@ -15,7 +15,7 @@ const THEME_COLORS: Array<{ nameKey: StringKey; hex: string }> = [
 ]
 
 /** Word standard colors */
-const STANDARD_COLORS: Array<{ nameKey: StringKey; hex: string }> = [
+export const STANDARD_COLORS: Array<{ nameKey: StringKey; hex: string }> = [
   { nameKey: 'ribbonColorDarkRed', hex: 'C00000' },
   { nameKey: 'ribbonColorRed', hex: 'FF0000' },
   { nameKey: 'ribbonColorOrange', hex: 'FFC000' },

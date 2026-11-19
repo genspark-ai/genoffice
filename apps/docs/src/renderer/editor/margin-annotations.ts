@@ -841,12 +841,33 @@ export function syncMarginAnnotations(
       },
     })
   }
+  // a range its paragraph holds (a comment on an empty paragraph) has no span to find
+  let holders: Map<string, HTMLElement> | undefined
+  const rangeHolders = () => {
+    if (holders) return holders
+    holders = new Map()
+    view?.state.doc.forEach((node, offset) => {
+      const starts = node.attrs.commentStarts as string[] | null
+      if (!Array.isArray(starts)) return
+      const dom = view.nodeDOM(offset)
+      if (!(dom instanceof HTMLElement)) return
+      // split twins all carry the range: the first holds it, as in navigation and the saved file
+      for (const id of starts) if (!holders!.has(id)) holders!.set(id, dom)
+    })
+    return holders
+  }
   for (const c of comments) {
     if (inline || c.parentId || c.done) continue
     const el = anchorOf.get(c.id)
     const rect = el ? [...el.getClientRects()].find((r) => r.height > 0) : undefined
     if (rect) {
       localThread(c, rect, null)
+      continue
+    }
+    const holder = rangeHolders().get(c.id)
+    const holderRect = holder && [...holder.getClientRects()].find((r) => r.height > 0)
+    if (holder && holderRect) {
+      localThread(c, holderRect, holder)
       continue
     }
     // no mark in the body: anchor to the block whose XML carries the reference

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { generateParagraphXml, parseDocx, saveDocx, type GenerateContext } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
+import { allowDirtyFields } from './helpers/dirty-fields'
 
 const GEN_CTX: GenerateContext = {
   headingStyleIds: new Map([[1, 'Heading1']]),
@@ -172,6 +173,8 @@ describe('REF field switch preservation', () => {
   })
 
   it('keeps w:dirty on a folded REF field through parse and save', async () => {
+    // the field came with the mark and keeps it
+    allowDirtyFields()
     const para =
       '<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>' +
       '<w:r><w:instrText xml:space="preserve"> REF _Ref1 \\p </w:instrText></w:r>' +
@@ -199,5 +202,91 @@ describe('REF field switch preservation', () => {
       GEN_CTX,
     )
     expect(xml).toContain('<w:instrText xml:space="preserve"> REF chap1 \\h </w:instrText>')
+  })
+
+  it('keeps a bookmark that wraps a note mark on the mark, apart from the paragraph bookmarks', async () => {
+    const mark =
+      '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="2"/></w:r>'
+    const body =
+      '<w:p><w:bookmarkStart w:id="1" w:name="Para"/><w:r><w:t>Claim</w:t></w:r>' +
+      `<w:bookmarkStart w:id="5" w:name="_Ref77"/>${mark}<w:bookmarkEnd w:id="5"/>` +
+      '<w:bookmarkEnd w:id="1"/></w:p>' +
+      // a bookmark that also covers text is the paragraph's
+      `<w:p><w:bookmarkStart w:id="6" w:name="_Ref88"/><w:r><w:t>Wide</w:t></w:r>${mark.replace('"2"', '"3"')}<w:bookmarkEnd w:id="6"/></w:p>` +
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> NOTEREF _Ref77 \\f \\h </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:t>1</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: body }))
+    const [first, second, third] = doc.blocks
+    expect(first.bookmarks).toEqual(['Para'])
+    expect(first.hiddenBookmarks).toBeUndefined()
+    expect(first.runs!.find((r) => r.noteRef)?.noteRef).toMatchObject({
+      id: '2',
+      bookmarks: ['_Ref77'],
+    })
+    expect(second.hiddenBookmarks).toEqual(['_Ref88'])
+    expect(second.runs!.find((r) => r.noteRef)?.noteRef?.bookmarks).toBeUndefined()
+    // the field folds into an editable run with its instruction and cached number
+    expect(third.type).toBe('paragraph')
+    expect(third.runs![0]).toMatchObject({ instrField: 'NOTEREF _Ref77 \\f \\h', text: '1' })
+
+    const xml = generateParagraphXml(
+      { type: 'paragraph', bookmarks: first.bookmarks, runs: first.runs! },
+      { ...GEN_CTX, allocateBookmarkId: (name) => (name === 'Para' ? 11 : 12) },
+    )
+    expect(xml).toContain(
+      `<w:bookmarkStart w:id="12" w:name="_Ref77"/>${mark}<w:bookmarkEnd w:id="12"/>`,
+    )
+    expect(xml.startsWith('<w:p><w:bookmarkStart w:id="11" w:name="Para"/>')).toBe(true)
+  })
+
+  it('finds the bookmark on a note mark in pretty-printed XML too', async () => {
+    const body =
+      '<w:p>\n  <w:r><w:t>Claim</w:t></w:r>\n  <w:bookmarkStart w:id="5" w:name="_Ref77"/>\n' +
+      '  <w:r>\n    <w:footnoteReference w:id="2"/>\n  </w:r>\n  <w:bookmarkEnd w:id="5"/>\n</w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: body }))
+    expect(doc.blocks[0].hiddenBookmarks).toBeUndefined()
+    expect(doc.blocks[0].runs!.find((r) => r.noteRef)?.noteRef?.bookmarks).toEqual(['_Ref77'])
+    // the paragraph rebuilt after an edit: the bookmark is written once, around the mark
+    const block = doc.blocks[0]
+    const saved = await saveDocx(doc, [
+      {
+        kind: 'generated',
+        block: {
+          type: 'paragraph',
+          bookmarks: block.bookmarks,
+          hiddenBookmarks: block.hiddenBookmarks,
+          runs: [{ text: 'Edited ' }, ...block.runs!],
+        },
+      },
+    ])
+    const zip = await (await import('jszip')).default.loadAsync(saved)
+    const xml = await zip.file('word/document.xml')!.async('string')
+    expect(xml.match(/w:name="_Ref77"/g)).toHaveLength(1)
+    expect(xml).toMatch(
+      /<w:bookmarkStart w:id="(\d+)" w:name="_Ref77"\/><w:r>.*?<w:footnoteReference w:id="2"\/><\/w:r><w:bookmarkEnd w:id="\1"\/>/,
+    )
+  })
+
+  it('writes the bookmark of a note mark that sits inside a hyperlink', () => {
+    const xml = generateParagraphXml(
+      {
+        type: 'paragraph',
+        runs: [
+          { text: 'linked', link: { href: '#Top' } },
+          {
+            text: '1',
+            link: { href: '#Top' },
+            noteRef: { kind: 'footnote', id: '2', bookmarks: ['_Ref77'] },
+          },
+        ],
+      },
+      { ...GEN_CTX, allocateBookmarkId: () => 9 },
+    )
+    expect(xml).toMatch(
+      /<w:hyperlink w:anchor="Top">.*<w:bookmarkStart w:id="9" w:name="_Ref77"\/><w:r>.*?<w:footnoteReference w:id="2"\/><\/w:r><w:bookmarkEnd w:id="9"\/><\/w:hyperlink>/,
+    )
   })
 })

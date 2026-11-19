@@ -712,6 +712,26 @@ export function canvasEditorEl(): HTMLElement | null {
   return document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
 }
 
+/**
+ * Where the first page's paper is in the window, down to where it leaves the
+ * view. Null when its top is scrolled away or the canvas is not the printed
+ * page on light paper: a picture taken there would not be of the page as it
+ * prints. `pageHeightPx` is the first section's page height at 100 %.
+ */
+export function firstPaperOnScreen(
+  pageHeightPx: number,
+): { x: number; y: number; width: number; height: number } | null {
+  const wrap = canvasEditorEl()?.closest<HTMLElement>('.doc-zoom.view-print .page-wrap')
+  const scroller = wrap?.closest<HTMLElement>('.editor-scroll')
+  if (!wrap || !scroller || wrap.closest('.page-dark') || wrap.offsetWidth === 0) return null
+  const paper = wrap.getBoundingClientRect()
+  const view = scroller.getBoundingClientRect()
+  if (paper.top < view.top || paper.left < view.left || paper.right > view.right) return null
+  const zoom = paper.width / wrap.offsetWidth
+  const bottom = Math.min(paper.top + pageHeightPx * zoom, paper.bottom, view.bottom)
+  return { x: paper.left, y: paper.top, width: paper.width, height: bottom - paper.top }
+}
+
 /** viewport Y of the flow's origin: the editor top plus the canvas offset */
 export function canvasFlowOrigin(pm: HTMLElement, canvasTop: number, factor: number): number {
   return pm.getBoundingClientRect().top + canvasTop * factor

@@ -28,7 +28,7 @@ test('multiple pages grid follows clicks and the caret, collapses at 100%', asyn
 
     // ---- View ▸ Multiple Pages: at least two columns, the live page is the caret's ----
     await editor.locator('.ribbon-tab', { hasText: /^View$/ }).click()
-    await editor.locator('.rb-big', { hasText: /^Multiple Pages$/ }).click()
+    await editor.locator(':is(.rb-big, .rb-small)', { hasText: /^Multiple Pages$/ }).click()
     const grid = editor.locator('.doc-zoom.multipage')
     await grid.waitFor(POLL)
     const slots = editor.locator('.mp-slot')
@@ -68,13 +68,13 @@ test('multiple pages grid follows clicks and the caret, collapses at 100%', asyn
     )
 
     // ---- One Page turns the arrangement off; a plain zoom-out alone keeps one column ----
-    await editor.locator('.rb-big', { hasText: /^One Page$/ }).click()
+    await editor.locator(':is(.rb-big, .rb-small)', { hasText: /^One Page$/ }).click()
     await expect(editor.locator('.doc-zoom.multipage')).toHaveCount(0, POLL)
     await editor.locator('.zoom-slider').focus()
     await editor.keyboard.press('Home')
     await expect(editor.locator('.zoom-value')).toHaveText('10%')
     await expect(editor.locator('.doc-zoom.multipage')).toHaveCount(0)
-    await editor.locator('.rb-big', { hasText: /^Multiple Pages$/ }).click()
+    await editor.locator(':is(.rb-big, .rb-small)', { hasText: /^Multiple Pages$/ }).click()
     await grid.waitFor(POLL)
 
     // ---- the Zoom dialog offers the mode; 100% collapses the grid ----
