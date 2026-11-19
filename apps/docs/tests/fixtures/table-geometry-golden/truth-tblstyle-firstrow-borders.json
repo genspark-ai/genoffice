@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/tblstyle-firstrow-borders/probe.docx",
+  "tables": 1,
+  "hashes": ["9b38c2b47958a02e"],
+  "staticTables": 1,
+  "staticHashes": ["ed983a1d919392fa"]
+}

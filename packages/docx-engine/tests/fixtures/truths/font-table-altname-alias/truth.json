@@ -1,0 +1,16 @@
+{
+  "id": "font-table-altname-alias",
+  "title": "A missing face with a fontTable w:altName is drawn in the alias face",
+  "section": "word-truths.md#L222",
+  "probe_date": "2026-09-17",
+  "source": "probe probe1.docx: \"Arial MT Black\" altName Courier New -> asterisk rule spaced at Courier pitch",
+  "cases": [
+    {
+      "kind": "cssFamilyIncludes",
+      "font": "Arial MT Black",
+      "expect": "Courier New"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

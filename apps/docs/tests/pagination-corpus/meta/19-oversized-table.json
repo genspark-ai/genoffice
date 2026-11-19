@@ -1,0 +1,6 @@
+{
+  "title": "Oversized table (>1 page)",
+  "tags": ["table", "cross-page", "large-table", "pixel-cut"],
+  "description": "60-row table exceeding one page, triggers the pixel hard-cut logic",
+  "file": "19-oversized-table.docx"
+}

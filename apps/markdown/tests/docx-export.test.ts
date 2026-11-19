@@ -1,0 +1,227 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { Editor } from '@tiptap/core'
+import { parseDocx } from '@genoffice/docx-engine'
+import { buildExtensions } from '../src/renderer/editor/extensions'
+import { exportDocxBytes, mapDocToSaveBlocks } from '../src/renderer/export/docxExport'
+
+// Undestroyed views leave DOMObserver flush timers that fire after jsdom teardown
+// ("document is not defined" unhandled error) — destroy every editor we create.
+const editors: Editor[] = []
+afterEach(() => {
+  for (const e of editors.splice(0)) e.destroy()
+})
+
+function createEditor(md: string): Editor {
+  const editor = new Editor({
+    extensions: buildExtensions({
+      slashController: {
+        onOpen: () => {},
+        onUpdate: () => {},
+        onKeyDown: () => false,
+        onClose: () => {},
+      },
+      slashItems: () => [],
+    }),
+    content: '',
+  })
+  editor.commands.setContent(md, { contentType: 'markdown' })
+  editors.push(editor)
+  return editor
+}
+
+const noImages = () => Promise.resolve(null)
+
+/** md → .docx bytes → parseDocx: the exported file must be a valid Word document */
+async function exportAndParse(md: string) {
+  const editor = createEditor(md)
+  const bytes = await exportDocxBytes(editor.getJSON(), noImages)
+  expect(bytes.length).toBeGreaterThan(1000)
+  return parseDocx(bytes)
+}
+
+describe('docx export', () => {
+  it('headings, paragraphs and inline marks survive into the docx', async () => {
+    const parsed = await exportAndParse('# Title\n\nSome **bold** and *italic* and `code` text.')
+    const heading = parsed.blocks.find((b) => b.type === 'heading')
+    expect(heading?.level).toBe(1)
+    expect(heading?.runs?.map((r) => r.text).join('')).toBe('Title')
+    const para = parsed.blocks.find((b) => b.type === 'paragraph')
+    const runs = para?.runs ?? []
+    expect(runs.find((r) => r.bold)?.text).toBe('bold')
+    expect(runs.find((r) => r.italic)?.text).toBe('italic')
+    expect(runs.map((r) => r.text).join('')).toContain('code')
+  })
+
+  it('bullet and ordered lists become native Word list items', async () => {
+    const parsed = await exportAndParse('- one\n- two\n\n1. first\n2. second')
+    const items = parsed.blocks.filter((b) => b.type === 'listItem')
+    expect(items.length).toBe(4)
+    expect(items.filter((b) => b.list?.kind === 'bullet').length).toBe(2)
+    expect(items.filter((b) => b.list?.kind === 'ordered').length).toBe(2)
+  })
+
+  it('nested list levels carry ilvl', async () => {
+    const parsed = await exportAndParse('- top\n  - nested')
+    const items = parsed.blocks.filter((b) => b.type === 'listItem')
+    expect(items[0]?.list?.ilvl).toBe(0)
+    expect(items[1]?.list?.ilvl).toBe(1)
+  })
+
+  it('tables become native Word tables with a bold header row', async () => {
+    const parsed = await exportAndParse('| Name | Value |\n| --- | --- |\n| a | 1 |')
+    const table = parsed.blocks.find((b) => b.type === 'table')
+    expect(table?.table?.rows.length).toBe(2)
+    expect(table?.table?.rows[0]?.[0]?.paras.join('')).toBe('Name')
+    expect(table?.table?.rows[1]?.[1]?.paras.join('')).toBe('1')
+  })
+
+  it('block math becomes a native OMML equation', async () => {
+    const editor = createEditor('$$\n\\frac{a}{b}\n$$')
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages)
+    const xml = mapping.blocks.find((b) => b.kind === 'xml')
+    expect(xml && 'xml' in xml && xml.xml).toContain('<m:oMath>')
+  })
+
+  it('block math outside the OMML subset keeps its LaTeX source visible', async () => {
+    const editor = createEditor('$$\n\\notacommand{x}\n$$')
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages)
+    const texts = mapping.blocks.map((b) =>
+      b.kind === 'generated' ? (b.block.runs ?? []).map((r) => r.text).join('') : '',
+    )
+    expect(texts.join('\n')).toContain('$$\\notacommand{x}$$')
+  })
+
+  it('inline math keeps its LaTeX in the run text', async () => {
+    const editor = createEditor('value $x_{1}$ end')
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages)
+    const texts = mapping.blocks.map((b) =>
+      b.kind === 'generated' ? (b.block.runs ?? []).map((r) => r.text).join('') : '',
+    )
+    expect(texts.join('\n')).toContain('$x_{1}$')
+  })
+
+  it('task lists render checkbox glyphs', async () => {
+    const parsed = await exportAndParse('- [x] done\n- [ ] open')
+    const texts = parsed.blocks.map((b) => (b.runs ?? []).map((r) => r.text).join(''))
+    expect(texts.some((t) => t.startsWith('☑'))).toBe(true)
+    expect(texts.some((t) => t.startsWith('☐'))).toBe(true)
+  })
+
+  it('code blocks keep their text in a shaded monospace paragraph', async () => {
+    const parsed = await exportAndParse('```js\nconst a = 1\nconst b = 2\n```')
+    const code = parsed.blocks.find((b) =>
+      (b.runs ?? []).some((r) => r.text.includes('const a = 1')),
+    )
+    expect(code).toBeDefined()
+    expect(code?.runs?.[0]?.font).toBe('Consolas')
+    expect(code?.runs?.[0]?.text).toContain('const b = 2')
+  })
+
+  it('mermaid blocks export as the rendered image when a renderer is given', async () => {
+    const editor = createEditor('```mermaid\nflowchart LR\n    A --> B\n```')
+    const png = { base64: 'iVBORw0KGgo=', mime: 'image/png' as const, widthPx: 200, heightPx: 100 }
+    const sources: string[] = []
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages, async (src) => {
+      sources.push(src)
+      return png
+    })
+    expect(sources).toEqual(['flowchart LR\n    A --> B'])
+    expect(mapping.blocks[0]).toEqual({ kind: 'image', image: png })
+  })
+
+  it('wavedrom blocks export through the renderer tagged with their language', async () => {
+    const editor = createEditor('```wavedrom\n{ signal: [{ name: "clk", wave: "p.." }] }\n```')
+    const png = { base64: 'iVBORw0KGgo=', mime: 'image/png' as const, widthPx: 200, heightPx: 100 }
+    const seen: string[] = []
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages, async (_src, language) => {
+      seen.push(language)
+      return png
+    })
+    expect(seen).toEqual(['wavedrom'])
+    expect(mapping.blocks[0]).toEqual({ kind: 'image', image: png })
+  })
+
+  it('mermaid blocks fall back to their source when rendering fails or is absent', async () => {
+    const md = '```mermaid\nflowchart LR\n    A --> B\n```'
+    const failing = await mapDocToSaveBlocks(createEditor(md).getJSON(), noImages, () =>
+      Promise.reject(new Error('no canvas')),
+    )
+    const none = await mapDocToSaveBlocks(createEditor(md).getJSON(), noImages)
+    for (const mapping of [failing, none]) {
+      const block = mapping.blocks[0]!
+      expect(block.kind).toBe('generated')
+      if (block.kind === 'generated') {
+        expect(block.block.runs?.[0]?.text).toBe('flowchart LR\n    A --> B')
+        expect(block.block.runs?.[0]?.font).toBe('Consolas')
+      }
+    }
+  })
+
+  it('links survive as hyperlink runs', async () => {
+    const parsed = await exportAndParse('Visit [Genspark](https://genspark.ai) now.')
+    const para = parsed.blocks.find((b) => b.type === 'paragraph')
+    const link = para?.runs?.find((r) => r.link)
+    expect(link?.text).toBe('Genspark')
+    expect(link?.link?.href).toBe('https://genspark.ai')
+  })
+
+  it('unresolvable images fall back to alt text', async () => {
+    const parsed = await exportAndParse('![architecture diagram](assets/missing.png)')
+    const texts = parsed.blocks.map((b) => (b.runs ?? []).map((r) => r.text).join(''))
+    expect(texts.some((t) => t.includes('architecture diagram'))).toBe(true)
+  })
+
+  it('an image between text splits the block: text, picture, text', async () => {
+    const png = { base64: 'iVBORw0KGgo=', mime: 'image/png' as const, widthPx: 20, heightPx: 10 }
+    const editor = createEditor('# Title ![badge](b.svg) tail\n\nBefore ![pic](p.png) after.')
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), () => Promise.resolve(png))
+    const shape = mapping.blocks.map((b) =>
+      b.kind === 'generated'
+        ? `${b.block.type}:${b.block.runs.map((r) => r.text).join('')}`
+        : b.kind,
+    )
+    expect(shape).toEqual([
+      'heading:Title ',
+      'image',
+      'heading: tail',
+      'paragraph:Before ',
+      'image',
+      'paragraph: after.',
+    ])
+  })
+
+  it('empty paragraphs still export as blank paragraphs', async () => {
+    const editor = createEditor('a\n\n\n\nb')
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages)
+    expect(mapping.blocks.length).toBe(editor.state.doc.childCount)
+  })
+
+  it('images inside list items keep their alt text', async () => {
+    const parsed = await exportAndParse('- item ![icon](i.png) tail')
+    const texts = parsed.blocks.map((b) => (b.runs ?? []).map((r) => r.text).join(''))
+    expect(texts).toContain('item [icon] tail')
+  })
+
+  it('separate ordered lists restart numbering', async () => {
+    const editor = createEditor('1. a\n\ntext between\n\n1. b')
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages)
+    expect(mapping.options.numbering?.restartNums?.length).toBe(2)
+    const numIds = mapping.options.numbering!.restartNums!.map((r) => r.numId)
+    expect(new Set(numIds).size).toBe(2)
+  })
+})
+
+describe('legacy HTML content degrades to plain runs in docx export', () => {
+  it('legacy styled HTML keeps its text without the styling', async () => {
+    const parsed = await exportAndParse(
+      '<p style="text-align: center"><span style="color: #e11d48">red</span> mid</p>\n\n' +
+        'plain <span style="background-color: #ffff00">lit</span> end',
+    )
+    const texts = parsed.blocks.map((b) => (b.runs ?? []).map((r) => r.text).join(''))
+    expect(texts.some((t) => t.includes('red') && t.includes('mid'))).toBe(true)
+    expect(texts.some((t) => t.includes('lit'))).toBe(true)
+    const runs = parsed.blocks.flatMap((b) => b.runs ?? [])
+    expect(runs.every((r) => !r.color && !r.highlight)).toBe(true)
+    expect(parsed.blocks.every((b) => b.format?.align !== 'center')).toBe(true)
+  })
+})

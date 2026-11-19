@@ -1,0 +1,3628 @@
+import { createHash } from 'node:crypto'
+import { closeSync, fsyncSync, openSync, readFileSync, writeFileSync } from 'node:fs'
+import { rename, rm } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
+
+import JSZip from 'jszip'
+import { assertZipInflatesWithinLimits } from '@genoffice/zip-gate'
+
+import type {
+  CellState,
+  ChangePlan,
+  WorkbookSnapshot,
+  WorksheetState,
+} from '../domain/workbook.types'
+import type {
+  WorkbookChartEdit,
+  WorkbookRichRun,
+  WorkbookStyleEdit,
+  WorkbookVisualEdit,
+} from '../shared/edit-schemas'
+import { spillsDynamicArray, withFutureFunctionMarkers } from './future-functions'
+import { decodeXlsxEscapes, decodeXmlText, encodeXlsxEscapes } from './xlsx-escapes'
+import { MINIMAL_STYLESHEET_XML } from './xlsx-default-styles'
+import {
+  applyWorkbookLinkBreak,
+  orderedExternalLinkParts,
+  retargetExternalLinkRels,
+  transformChartForLinkBreak,
+  transformSheetForLinkBreak,
+  transformWorkbookForLinkBreak,
+} from './xlsx-external-links'
+import { applyChartEdit } from './xlsx-chart'
+import { applyVisualEdits } from './xlsx-drawing-edit'
+import { applyCellImageAdditions } from './xlsx-cell-image-add'
+import {
+  applyVisualAdditions,
+  type ChartAdd,
+  type DrawingAnchor,
+  type ImageAdd,
+  relsPathFor,
+  resolveChartPivotSource,
+  resolveRelTarget,
+  type ShapeAdd,
+} from './xlsx-drawing-add'
+import {
+  applyTableAdditions,
+  areasOverlap,
+  areaToRef,
+  parseRef,
+  type TableArea,
+  type TableStyleOptions,
+} from './xlsx-table-add'
+import {
+  applyTableEdits,
+  sheetTableParts,
+  type LocatedTable,
+  type TableEdit,
+} from './xlsx-table-edit'
+import type { PivotFilterDef } from '../domain/pivot-filters'
+import {
+  applyPivotAdditions,
+  type PivotAddGrouping,
+  type PivotAddRowLine,
+  type PivotValueSpec,
+} from './xlsx-pivot-add'
+import type { SheetFilterState } from './xlsx-filter'
+import {
+  applyFilterState,
+  applyRowVisibilityState,
+  applyTableFilterState,
+  FilterEditError,
+} from './xlsx-filter'
+import { normalizeOoxmlPartPrefix } from './xlsx-namespace'
+import { resolvedStyleEntries } from './xlsx-style-entries'
+import { escapeRegExp } from './xlsx-sheets'
+import type { SheetAllocation, SheetEditPlan, SheetElement } from './xlsx-sheets'
+import {
+  addWorksheetOverride,
+  addWorksheetRelationship,
+  applySheetPlanToWorkbookXml,
+  assertAddedSheetsKeepRenamedNames,
+  assertNoSheetScopedDefinedNames,
+  buildWorksheetPartXml,
+  chartReferencesSheet,
+  classifyRemovedSheetRels,
+  definedNamesReferenceSheet,
+  definedNamesUseToken,
+  nextFreeRelationshipId,
+  nextFreeRelationshipIds,
+  maxSheetIdInWorkbook,
+  parseRelationships,
+  parseSheetElements,
+  partPathForRels,
+  pivotCacheReadsFromSheet,
+  prepareClonedSheetRels,
+  removePartOverride,
+  removeRelationshipById,
+  tableDisplayName,
+  renameSheetInPivotCacheSource,
+  renameSheetReferencesInChart,
+  renameSheetReferencesInDefinedNames,
+  renameSheetReferencesInWorksheet,
+  sanitizeClonedWorksheetXml,
+  SheetEditError,
+  stripPageSetupRelIds,
+  validateSheetName,
+  worksheetReferencesSheet,
+} from './xlsx-sheets'
+import type { StructuralOp } from './xlsx-structure'
+import { applyCfRules, type CfWireRule } from './xlsx-cf'
+import {
+  applyDefinedNamesState,
+  DefinedNameError,
+  type DefinedNamesState,
+} from './xlsx-defined-names'
+import { applyDvRules, type DvCellArea, type DvWireRule } from './xlsx-dv'
+import { applyPageSetupState, applyPrintAreas, type SheetPageSetupState } from './xlsx-page-setup'
+import {
+  applyProtectedRanges,
+  applySheetProtection,
+  applyWorkbookProtection,
+  type ProtectedRangeState,
+  type SheetProtectionWrite,
+} from './xlsx-protection'
+import { applyTabColor } from './xlsx-tab-color'
+import { applyThemeState, type WorkbookThemeState } from './xlsx-theme'
+import { applySheetNotes, type SheetNote } from './xlsx-notes'
+import {
+  applyRedactionNameMirror,
+  applyRedactionPart,
+  rekeyRedactionStates,
+  type SheetRedactionState,
+} from './xlsx-redaction'
+import {
+  applySparklineAdditions,
+  type SheetSparklineAddition,
+  type SparklineGroupAdd,
+} from './xlsx-sparkline'
+import {
+  applySlicerState,
+  SlicerAddError,
+  type SlicerRemovalWrite,
+  type SlicerStateWrite,
+  type SlicerControlWrite,
+} from './xlsx-slicer'
+import { setPivotRefreshOnLoad } from './xlsx-pivot'
+import { applyPivotLayoutExpansions, type PivotRefreshUpdate } from './xlsx-pivot-expand'
+import {
+  applyHyperlinkEdits,
+  ensureRelationshipNamespace,
+  type HyperlinkEdit,
+} from './xlsx-hyperlinks'
+import {
+  applyStructuralOps,
+  inferWorksheetAddresses,
+  isShiftingOp,
+  materializeSharedFormulaGroups,
+  type SharedFormulaCell,
+  shiftChartReferences,
+  shiftCrossSheetFormulas,
+  shiftDefinedNames,
+  shiftDrawingAnchors,
+  shiftTablePart,
+  shiftVmlObjectAnchors,
+  StructuralShiftError,
+  type TableColumnInsertion,
+} from './xlsx-structure'
+import { StylesheetEditor } from './xlsx-styles'
+
+/** Shared with the CLI's pre-open check so both layers accept the same files. */
+export const XLSX_ZIP_LIMITS = {
+  maxParts: 10_000,
+  maxPartBytes: 256 * 1024 * 1024,
+  maxTotalBytes: 256 * 1024 * 1024,
+} as const
+const MAX_ENTRY_COUNT = XLSX_ZIP_LIMITS.maxParts
+const MAX_UNCOMPRESSED_BYTES = XLSX_ZIP_LIMITS.maxTotalBytes
+import { MAX_GRID_COLUMNS, MAX_GRID_ROWS } from '../shared/grid-bounds'
+
+export { MAX_GRID_COLUMNS, MAX_GRID_ROWS }
+
+export interface PackageEntry {
+  readonly path: string
+  readonly size: number
+  readonly sha256: string
+}
+
+export interface XlsxMutation {
+  readonly buffer: Buffer
+  readonly touchedEntries: readonly string[]
+  /// Entries intentionally dropped from the package (e.g. a stale calcChain).
+  readonly removedEntries: readonly string[]
+  /// Entries intentionally created (e.g. an added worksheet part).
+  readonly addedEntries: readonly string[]
+  readonly beforeEntries: readonly PackageEntry[]
+  readonly afterEntries: readonly PackageEntry[]
+}
+
+export interface SheetStructuralOps {
+  readonly sheetName: string
+  readonly ops: readonly StructuralOp[]
+}
+
+export interface SheetHyperlinkEdits {
+  readonly sheetName: string
+  readonly edits: readonly HyperlinkEdit[]
+}
+
+export interface SheetCfState {
+  readonly sheetName: string
+  readonly rules: readonly CfWireRule[]
+  /** add to the sheet's existing rules instead of replacing them */
+  readonly append?: boolean
+}
+
+export interface SheetDvState {
+  readonly sheetName: string
+  readonly rules: readonly DvWireRule[]
+  readonly append?: boolean
+  /** append mode: ranges whose existing rule goes away */
+  readonly remove?: readonly DvCellArea[]
+}
+
+export interface SheetProtectionState extends SheetProtectionWrite {
+  readonly sheetName: string
+}
+
+/// Desired tab color as #RRGGBB; null removes the element.
+export interface SheetTabColorState {
+  readonly sheetName: string
+  readonly color: string | null
+}
+
+/// Full allow-edit-range snapshot for one sheet ([] removes the element).
+export interface SheetProtectedRangesState {
+  readonly sheetName: string
+  readonly ranges: readonly ProtectedRangeState[]
+}
+
+/// Recalculated cached values for formula cells: the engine already
+/// computed them for the screen, and the save writes them into <v> so the file's
+/// inputs and outputs agree even for readers without a formula engine
+/// (openpyxl data_only, pandas, preview services).
+/// `{ error }` is a result the engine typed as an error; a plain string is
+/// text even when it spells one (`="#N/A"`).
+export type FormulaCachedValue = string | number | boolean | null | { readonly error: string }
+
+export interface SheetFormulaValues {
+  readonly sheetName: string
+  readonly cells: readonly {
+    readonly row: number
+    readonly column: number
+    readonly value: FormulaCachedValue
+  }[]
+}
+
+export interface ImportedXlsx {
+  readonly snapshot: WorkbookSnapshot
+  readonly sheetNamesById: Readonly<Record<string, string>>
+}
+
+export interface CellEdit {
+  readonly sheetName: string
+  readonly row: number
+  readonly column: number
+  /// false = style-only edit; the cell's stored content stays untouched.
+  readonly writeValue: boolean
+  readonly cell: CellState
+  readonly style?: WorkbookStyleEdit | undefined
+  /// Per-run styling for a rich-text string value.
+  readonly rich?: readonly WorkbookRichRun[] | undefined
+  /// Reset the cell to the default style (xf 0) before applying `style`.
+  readonly styleReset?: boolean | undefined
+}
+
+export interface BulkConstantFill {
+  readonly sheetName: string
+  readonly startRow: number
+  readonly endRow: number
+  readonly startColumn: number
+  readonly endColumn: number
+  readonly value: string | number | boolean | null
+}
+
+/// Read access to the entries of a source package, independent of whether
+/// the bytes live in an in-memory JSZip buffer or behind the sidecar.
+export interface EntrySource {
+  paths(): Promise<readonly string[]>
+  has(path: string): Promise<boolean>
+  readText(path: string): Promise<string>
+  /// False when the entry is too large to load for patching (readText would
+  /// fail). Absent means everything is patchable (in-memory sources).
+  canPatch?(path: string): Promise<boolean>
+  /// Whether the entry's decoded XML text contains `needle`; consulted only
+  /// for entries that cannot be patched, to decide skip vs fail-closed.
+  containsText?(path: string, needle: string): Promise<boolean>
+  /// Drops a cached source string once the planner owns a newer transformed
+  /// copy. Streaming sources use this to keep large worksheet saves bounded.
+  releaseText?(path: string): void
+}
+
+/// The entry-level outcome of patch planning: what an assembler (in-memory
+/// JSZip or the sidecar streaming writer) must replace, add, and drop.
+export interface MutationPlan {
+  readonly replaced: ReadonlyMap<string, string>
+  readonly added: ReadonlyMap<string, string>
+  /// Non-text entries (media bytes); disjoint from `added`.
+  readonly addedBinary: ReadonlyMap<string, Uint8Array>
+  readonly removedEntries: readonly string[]
+  readonly addedEntries: readonly string[]
+  readonly touchedEntries: readonly string[]
+}
+
+/// Overlay of pending edits on top of a read-only source package. Planning
+/// code reads through the overlay so later stages see earlier rewrites.
+class PackageEditor {
+  private readonly overlay = new Map<string, string>()
+  private readonly binaryOverlay = new Map<string, Uint8Array>()
+  private readonly removed = new Set<string>()
+  private readonly addedPaths = new Set<string>()
+
+  constructor(private readonly source: EntrySource) {}
+
+  async paths(): Promise<readonly string[]> {
+    const base = (await this.source.paths()).filter((path) => !this.removed.has(path))
+    return [...base, ...this.addedPaths, ...this.binaryOverlay.keys()]
+  }
+
+  async has(path: string): Promise<boolean> {
+    if (this.removed.has(path)) return false
+    if (this.overlay.has(path) || this.binaryOverlay.has(path)) return true
+    return this.source.has(path)
+  }
+
+  async readText(path: string): Promise<string> {
+    if (!this.removed.has(path)) {
+      const pending = this.overlay.get(path)
+      if (pending !== undefined) return pending
+      if (await this.source.has(path)) return this.source.readText(path)
+    }
+    throw new Error(`Workbook is missing ${path}.`)
+  }
+
+  write(path: string, content: string): void {
+    if (this.removed.has(path)) throw new Error(`Cannot write removed entry ${path}.`)
+    this.overlay.set(path, content)
+  }
+
+  add(path: string, content: string): void {
+    this.addedPaths.add(path)
+    this.overlay.set(path, content)
+  }
+
+  addBinary(path: string, bytes: Uint8Array): void {
+    if (this.removed.has(path)) throw new Error(`Cannot write removed entry ${path}.`)
+    this.binaryOverlay.set(path, bytes)
+  }
+
+  remove(path: string): void {
+    this.overlay.delete(path)
+    if (!this.addedPaths.delete(path)) this.removed.add(path)
+  }
+
+  /// The entries dropped so far in this plan, for allocators that must not hand
+  /// out a removed part's name again (paths() hides them by design).
+  removedPaths(): readonly string[] {
+    return [...this.removed]
+  }
+
+  async canPatch(path: string): Promise<boolean> {
+    if (this.overlay.has(path)) return true
+    return this.source.canPatch?.(path) ?? true
+  }
+
+  async containsText(path: string, needle: string): Promise<boolean> {
+    const pending = this.overlay.get(path)
+    if (pending !== undefined) return pending.includes(needle)
+    if (!this.source.containsText) {
+      throw new Error(`Cannot scan ${path} for references.`)
+    }
+    return this.source.containsText(path, needle)
+  }
+
+  releaseSourceText(path: string): void {
+    this.source.releaseText?.(path)
+  }
+
+  toPlan(touchedEntries: ReadonlySet<string>): MutationPlan {
+    const replaced = new Map<string, string>()
+    const added = new Map<string, string>()
+    for (const [path, content] of this.overlay) {
+      if (this.addedPaths.has(path)) added.set(path, content)
+      else replaced.set(path, content)
+    }
+    return {
+      replaced,
+      added,
+      addedBinary: new Map(this.binaryOverlay),
+      removedEntries: [...this.removed].sort(),
+      addedEntries: [...this.addedPaths, ...this.binaryOverlay.keys()].sort(),
+      touchedEntries: [...touchedEntries].sort(),
+    }
+  }
+}
+
+const DEFAULT_STYLESHEET_XML = MINIMAL_STYLESHEET_XML
+
+const STYLES_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles'
+const STYLES_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml'
+
+async function addDefaultStylesheet(
+  pkg: PackageEditor,
+  touchedEntries: Set<string>,
+): Promise<void> {
+  const stylesPath = 'xl/styles.xml'
+  pkg.add(stylesPath, DEFAULT_STYLESHEET_XML)
+  touchedEntries.add(stylesPath)
+
+  const relationshipsPath = 'xl/_rels/workbook.xml.rels'
+  const relationships = await pkg.readText(relationshipsPath)
+  if (!relationships.includes(`Type="${STYLES_REL_TYPE}"`)) {
+    const relationship =
+      `<Relationship Id="${nextFreeRelationshipId(relationships)}" ` +
+      `Type="${STYLES_REL_TYPE}" Target="styles.xml"/>`
+    pkg.write(
+      relationshipsPath,
+      relationships.replace('</Relationships>', `${relationship}</Relationships>`),
+    )
+    touchedEntries.add(relationshipsPath)
+  }
+
+  const contentTypesPath = '[Content_Types].xml'
+  const contentTypes = await pkg.readText(contentTypesPath)
+  if (!contentTypes.includes('PartName="/xl/styles.xml"')) {
+    const override = `<Override PartName="/xl/styles.xml" ContentType="${STYLES_CONTENT_TYPE}"/>`
+    pkg.write(contentTypesPath, contentTypes.replace('</Types>', `${override}</Types>`))
+    touchedEntries.add(contentTypesPath)
+  }
+}
+
+const METADATA_REL_TYPE =
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata'
+const METADATA_CONTENT_TYPE =
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml'
+/// Excel 365's own metadata part for a workbook whose only cell metadata is
+/// the dynamic-array flag: `cm="1"` on a cell points at this record.
+const DYNAMIC_ARRAY_METADATA_XML =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+  '<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+  'xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray">' +
+  '<metadataTypes count="1"><metadataType name="XLDAPR" minSupportedVersion="120000" copy="1" pasteAll="1" pasteValues="1" merge="1" splitFirst="1" rowColShift="1" clearFormats="1" clearComments="1" assign="1" coerce="1" cellMeta="1"/></metadataTypes>' +
+  '<futureMetadata name="XLDAPR" count="1"><bk><extLst><ext uri="{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}"><xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk></futureMetadata>' +
+  '<cellMetadata count="1"><bk><rc t="1" v="0"/></bk></cellMetadata></metadata>'
+
+/**
+ * The 1-based `cm` index of a cell-metadata record that means "dynamic
+ * array" in this metadata part, or null when there is none. `rc t=` counts
+ * metadataTypes from 1 in document order; rich values or in-cell images may
+ * come first, so XLDAPR is looked up by name rather than assumed to be type 1.
+ */
+export function dynamicArrayCellMetaIndex(metadataXml: string): number | null {
+  const types = [...metadataXml.matchAll(/<metadataType\b[^>]*\bname="([^"]*)"/g)].map((m) => m[1])
+  const typeIndex = types.indexOf('XLDAPR') + 1
+  if (typeIndex === 0) return null
+  const cellMeta = /<cellMetadata\b[^>]*>([\s\S]*?)<\/cellMetadata>/.exec(metadataXml)?.[1]
+  if (!cellMeta) return null
+  const records = [...cellMeta.matchAll(/<bk\b[^>]*>([\s\S]*?)<\/bk>/g)]
+  const at = records.findIndex((bk) => new RegExp(`<rc\\b[^>]*\\bt="${typeIndex}"`).test(bk[1]!))
+  return at === -1 ? null : at + 1
+}
+
+/// The `cm` index to put on spill anchors: 1 for the part written here, the
+/// file's own XLDAPR record when it has one, null when `cm` cannot be trusted.
+async function ensureDynamicArrayMetadata(
+  pkg: PackageEditor,
+  touchedEntries: Set<string>,
+): Promise<number | null> {
+  const metadataPath = 'xl/metadata.xml'
+  if (await pkg.has(metadataPath)) {
+    return dynamicArrayCellMetaIndex(await pkg.readText(metadataPath))
+  }
+  pkg.add(metadataPath, DYNAMIC_ARRAY_METADATA_XML)
+  touchedEntries.add(metadataPath)
+
+  const relationshipsPath = 'xl/_rels/workbook.xml.rels'
+  const relationships = await pkg.readText(relationshipsPath)
+  if (!relationships.includes(`Type="${METADATA_REL_TYPE}"`)) {
+    const relationship =
+      `<Relationship Id="${nextFreeRelationshipId(relationships)}" ` +
+      `Type="${METADATA_REL_TYPE}" Target="metadata.xml"/>`
+    pkg.write(
+      relationshipsPath,
+      relationships.replace('</Relationships>', `${relationship}</Relationships>`),
+    )
+    touchedEntries.add(relationshipsPath)
+  }
+
+  const contentTypesPath = '[Content_Types].xml'
+  const contentTypes = await pkg.readText(contentTypesPath)
+  if (!contentTypes.includes('PartName="/xl/metadata.xml"')) {
+    const override = `<Override PartName="/xl/metadata.xml" ContentType="${METADATA_CONTENT_TYPE}"/>`
+    pkg.write(contentTypesPath, contentTypes.replace('</Types>', `${override}</Types>`))
+    touchedEntries.add(contentTypesPath)
+  }
+  return 1
+}
+
+function markDynamicArrayAnchor(worksheetXml: string, address: string, cm: number): string {
+  const cellPattern = new RegExp(`<c\\b([^>]*)\\br="${address}"([^>]*)>`)
+  return worksheetXml.replace(cellPattern, (open, before: string, after: string) =>
+    /\bcm="/.test(open) ? open : `<c${before}r="${address}"${after} cm="${cm}">`,
+  )
+}
+
+export async function createBufferEntrySource(buffer: Buffer): Promise<EntrySource> {
+  const zip = await loadSafeZip(buffer)
+  return {
+    paths: async () =>
+      Object.entries(zip.files)
+        .filter(([, file]) => !file.dir)
+        .map(([path]) => path),
+    has: async (path) => zip.file(path) !== null,
+    readText: async (path) => normalizeOoxmlPartPrefix(await readTextEntry(zip, path)),
+  }
+}
+
+/// In-memory assembler: applies a plan onto the source buffer with JSZip.
+/// Every entry is recompressed, so it stays subject to the whole-package
+/// decompression limit — the sidecar streaming assembler is the large-file
+/// path.
+export async function assembleWithJsZip(source: Buffer, plan: MutationPlan): Promise<XlsxMutation> {
+  const zip = await loadSafeZip(source)
+  const beforeEntries = await inventoryXlsx(source)
+  for (const path of plan.removedEntries) zip.remove(path)
+  for (const [path, content] of plan.replaced) zip.file(path, content, { createFolders: false })
+  for (const [path, content] of plan.added) zip.file(path, content, { createFolders: false })
+  for (const [path, bytes] of plan.addedBinary) zip.file(path, bytes, { createFolders: false })
+  const buffer = await zip.generateAsync({
+    type: 'nodebuffer',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 },
+  })
+  return {
+    buffer,
+    touchedEntries: plan.touchedEntries,
+    removedEntries: plan.removedEntries,
+    addedEntries: plan.addedEntries,
+    beforeEntries,
+    afterEntries: await inventoryXlsx(buffer),
+  }
+}
+
+export async function readBasicWorkbook(buffer: Buffer): Promise<ImportedXlsx> {
+  const zip = await createBufferEntrySource(buffer)
+  const workbookXml = await zip.readText('xl/workbook.xml')
+  const sharedStrings = await readSharedStrings(zip)
+  const sheets: WorksheetState[] = []
+  const sheetNamesById: Record<string, string> = {}
+  const sheetPattern = /<sheet\b((?:"[^"]*"|'[^']*'|[^>"'])*?)\/?>/g
+  let match: RegExpExecArray | null
+  while ((match = sheetPattern.exec(workbookXml)) !== null) {
+    const attributes = match[1] ?? ''
+    const name = readXmlAttribute(attributes, 'name')
+    const sheetNumber = readXmlAttribute(attributes, 'sheetId')
+    if (!name || !sheetNumber) continue
+    const decodedName = decodeXmlText(name)
+    const id = `sheet-${sheetNumber}`
+    let worksheetXml: string
+    try {
+      worksheetXml = await zip.readText(await resolveWorksheetPath(zip, decodedName))
+    } catch (error) {
+      // a dangling relationship or missing part drops only this sheet;
+      // malformed/escaping targets are security rejections and still abort
+      if (isMissingPartError(error)) continue
+      throw error
+    }
+    sheets.push({
+      id,
+      name: decodedName,
+      cells: parseWorksheetCells(inferWorksheetAddresses(worksheetXml), sharedStrings),
+    })
+    sheetNamesById[id] = decodedName
+  }
+  if (sheets.length === 0) throw new Error('Workbook contains no readable worksheets.')
+  return {
+    snapshot: { revision: 0, sheets },
+    sheetNamesById,
+  }
+}
+
+/**
+ * A worksheet read as plain text rows — the values as the file stores them.
+ *
+ * The editable model (readBasicWorkbook) keeps a formula as a formula and
+ * drops the value Excel cached for it, which is the wrong answer for a reader
+ * that wants the data itself: a data source (the recipient list of a mail
+ * merge) holds what the file last calculated. So the cell's own <v> is what
+ * this reads, exactly like the pivot source reader does.
+ *
+ * The first sheet is read unless a sheet is named. genoffice#2097.
+ */
+export async function readSheetRows(buffer: Buffer, sheetName?: string): Promise<string[][]> {
+  const zip = await createBufferEntrySource(buffer)
+  const workbookXml = await zip.readText('xl/workbook.xml')
+  const sharedStrings = await readSharedStrings(zip)
+  const name = sheetName ?? firstSheetName(workbookXml)
+  const worksheetXml = await zip.readText(await resolveWorksheetPath(zip, name))
+  const dateStyles = (await zip.has('xl/styles.xml'))
+    ? dateStyleIndexes(await zip.readText('xl/styles.xml'))
+    : new Set<number>()
+  const date1904 = /<workbookPr\b[^>]*\bdate1904="(?:1|true)"/.test(workbookXml)
+  return worksheetRows(worksheetXml, sharedStrings, { dateStyles, date1904 })
+}
+
+/** how a worksheet's numbers read as text */
+interface RowTextOptions {
+  /** cellXfs indexes whose number format is a date or a time */
+  dateStyles: ReadonlySet<number>
+  date1904: boolean
+}
+
+/** the built-in number formats that are dates or times (ECMA-376 18.8.30) */
+const BUILTIN_DATE_FORMATS = new Set([
+  14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 45, 46, 47, 50, 51,
+  52, 53, 54, 55, 56, 57, 58,
+])
+
+/** a custom format code is a date when a date token survives the literals and the colour/condition brackets */
+export function isDateFormatCode(code: string): boolean {
+  const bare = code
+    .replace(/"[^"]*"/g, '')
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/\\./g, '')
+  if (/[#0?@]/.test(bare) && !/[ymdh]/i.test(bare)) return false
+  return /[ymdh]/i.test(bare) || /s/.test(bare)
+}
+
+/** the cellXfs indexes whose number format is a date or a time */
+export function dateStyleIndexes(stylesXml: string): Set<number> {
+  // Entries as the sidecar reads them: a wrapped (mc:AlternateContent) numFmt
+  // or xf is one entry, read through its Fallback — a Choice branch may give
+  // the same numFmtId another format code.
+  const custom = new Set<number>()
+  const numFmts = /<numFmts\b[^>]*>([\s\S]*?)<\/numFmts>/.exec(stylesXml)?.[1] ?? ''
+  for (const numFmt of resolvedStyleEntries(numFmts, 'numFmt')) {
+    const attributes = /^<numFmt\b([^>]*?)\/?>/.exec(numFmt)?.[1] ?? ''
+    const id = Number(readXmlAttribute(attributes, 'numFmtId'))
+    const code = decodeXmlText(readXmlAttribute(attributes, 'formatCode') ?? '')
+    if (Number.isFinite(id) && isDateFormatCode(code)) custom.add(id)
+  }
+  const out = new Set<number>()
+  const cellXfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(stylesXml)?.[1] ?? ''
+  for (const [index, xf] of resolvedStyleEntries(cellXfs, 'xf').entries()) {
+    const id = Number(readXmlAttribute(/^<xf\b([^>]*?)\/?>/.exec(xf)?.[1] ?? '', 'numFmtId'))
+    if (BUILTIN_DATE_FORMATS.has(id) || custom.has(id)) out.add(index)
+  }
+  return out
+}
+
+/** an Excel serial as ISO text: the date, and the time when the serial carries one */
+export function serialDateText(serial: number, date1904: boolean): string {
+  const epoch = date1904 ? Date.UTC(1904, 0, 1) : Date.UTC(1899, 11, 30)
+  const ms = Math.round((serial + (!date1904 && serial < 60 ? 1 : 0)) * 86_400_000)
+  const date = new Date(epoch + ms)
+  if (Number.isNaN(date.getTime())) return String(serial)
+  const iso = date.toISOString()
+  const dayPart = iso.slice(0, 10)
+  const timePart = iso.slice(11, 19)
+  if (serial < 1) return timePart
+  return timePart === '00:00:00' ? dayPart : `${dayPart} ${timePart}`
+}
+
+/** the name of the first sheet in workbook.xml */
+function firstSheetName(workbookXml: string): string {
+  const sheetPattern = /<sheet\b((?:"[^"]*"|'[^']*'|[^>"'])*?)\/?>/g
+  const match = sheetPattern.exec(workbookXml)
+  const name = match ? readXmlAttribute(match[1] ?? '', 'name') : undefined
+  if (!name) throw new Error('Workbook contains no readable worksheets.')
+  return decodeXmlText(name)
+}
+
+/** the zero-based column an A1 address names */
+function columnIndexOf(address: string): number {
+  const match = /^\$?([A-Z]+)\$?[0-9]+$/.exec(address)
+  if (!match) return -1
+  let column = 0
+  for (const character of match[1]!) column = column * 26 + character.charCodeAt(0) - 64
+  return column - 1
+}
+
+/** the text of one cell, whatever the file stored it as */
+function cellText(
+  body: string,
+  type: string | undefined,
+  sharedStrings: readonly string[],
+  asDate = false,
+  date1904 = false,
+): string {
+  if (type === 'inlineStr') {
+    return [...body.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)]
+      .map((textMatch) => decodeCellText(textMatch[1] ?? ''))
+      .join('')
+  }
+  const rawValue = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/.exec(body)?.[1]
+  if (rawValue === undefined) return ''
+  if (type === 's') return sharedStrings[Number(rawValue)] ?? ''
+  if (type === 'str') return decodeCellText(rawValue)
+  if (type === 'b') return rawValue === '1' ? 'TRUE' : 'FALSE'
+  // a number keeps the file's own spelling, except that a date-formatted
+  // cell reads as a date, not as the serial the file holds
+  const text = decodeCellText(rawValue)
+  if (asDate && (type === undefined || type === 'n')) {
+    const serial = Number(text)
+    if (Number.isFinite(serial)) return serialDateText(serial, date1904)
+  }
+  return text
+}
+
+/** the rows of a worksheet, in file order; a row that is not there is empty */
+function worksheetRows(
+  worksheetXml: string,
+  sharedStrings: readonly string[],
+  options: RowTextOptions = { dateStyles: new Set(), date1904: false },
+): string[][] {
+  const rows: string[][] = []
+  const rowPattern = /<row\b([^>]*)>([\s\S]*?)<\/row>/g
+  let rowMatch: RegExpExecArray | null
+  while ((rowMatch = rowPattern.exec(worksheetXml)) !== null) {
+    const rowNumber = Number(readXmlAttribute(rowMatch[1] ?? '', 'r'))
+    const rowIndex = Number.isFinite(rowNumber) && rowNumber > 0 ? rowNumber - 1 : rows.length
+    const cells: string[] = []
+    const cellPattern = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g
+    let cellMatch: RegExpExecArray | null
+    while ((cellMatch = cellPattern.exec(rowMatch[2] ?? '')) !== null) {
+      const attributes = cellMatch[1] ?? ''
+      const address = readXmlAttribute(attributes, 'r')
+      const column = address ? columnIndexOf(address) : cells.length
+      if (column < 0) continue
+      const style = Number(readXmlAttribute(attributes, 's'))
+      const value = cellText(
+        cellMatch[2] ?? '',
+        readXmlAttribute(attributes, 't'),
+        sharedStrings,
+        options.dateStyles.has(style),
+        options.date1904,
+      )
+      while (cells.length < column) cells.push('')
+      cells[column] = value
+    }
+    while (rows.length < rowIndex) rows.push([])
+    rows[rowIndex] = cells
+  }
+  return rows
+}
+
+export async function inventoryXlsx(buffer: Buffer): Promise<readonly PackageEntry[]> {
+  const zip = await loadSafeZip(buffer)
+  const entries: PackageEntry[] = []
+  let totalSize = 0
+  for (const [path, file] of Object.entries(zip.files)) {
+    if (file.dir) continue
+    const bytes = await file.async('nodebuffer')
+    totalSize += bytes.length
+    if (totalSize > MAX_UNCOMPRESSED_BYTES) {
+      throw new Error('Workbook exceeds the uncompressed size limit.')
+    }
+    entries.push({ path, size: bytes.length, sha256: sha256(bytes) })
+  }
+  return entries.sort((left, right) => left.path.localeCompare(right.path))
+}
+
+export async function applyPlanToXlsx(
+  source: Buffer,
+  plan: ChangePlan,
+  sheetNamesById: Readonly<Record<string, string>>,
+): Promise<XlsxMutation> {
+  const pkg = new PackageEditor(await createBufferEntrySource(source))
+  const touchedEntries = new Set<string>()
+
+  for (const rename of plan.sheetRenames) {
+    const workbookPath = 'xl/workbook.xml'
+    const workbookXml = await pkg.readText(workbookPath)
+    const currentName = sheetNamesById[rename.sheetId]
+    if (!currentName) throw new Error(`Missing XLSX sheet mapping for ${rename.sheetId}.`)
+    if (currentName !== rename.before)
+      throw new Error(`Sheet ${rename.sheetId} no longer has the expected name.`)
+    pkg.write(workbookPath, replaceSheetName(workbookXml, currentName, rename.after))
+    touchedEntries.add(workbookPath)
+  }
+
+  for (const change of plan.cellChanges) {
+    const sheetName = sheetNamesById[change.sheetId]
+    if (!sheetName) throw new Error(`Missing XLSX sheet mapping for ${change.sheetId}.`)
+    if (!isGridCellAddress(change.address)) {
+      throw new Error(`Invalid cell address: ${change.address}`)
+    }
+    const worksheetPath = await resolveWorksheetPath(pkg, sheetName)
+    const worksheetXml = inferWorksheetAddresses(await pkg.readText(worksheetPath))
+    const actualCell = parseCell(worksheetXml, change.address)
+    if (!cellsEqual(actualCell, change.before)) {
+      throw new Error(`${sheetName}!${change.address} no longer has the expected content.`)
+    }
+    pkg.write(worksheetPath, patchCell(worksheetXml, change.address, change.after))
+    touchedEntries.add(worksheetPath)
+  }
+
+  return assembleWithJsZip(source, pkg.toPlan(touchedEntries))
+}
+
+/// Save path for user edits on streamed workbooks. Unlike applyPlanToXlsx
+/// there is no per-cell before-check: the caller gates on the whole-file
+/// SHA-256 recorded at open time, which the streamed originals came from.
+export async function applyCellEditsToXlsx(
+  source: Buffer,
+  edits: readonly CellEdit[],
+  structuralOps: readonly SheetStructuralOps[] = [],
+  chartEdits: readonly WorkbookChartEdit[] = [],
+  sheetPlan?: SheetEditPlan,
+  filterStates: readonly SheetFilterState[] = [],
+  hyperlinkEdits: readonly SheetHyperlinkEdits[] = [],
+  cfStates: readonly SheetCfState[] = [],
+  dvStates: readonly SheetDvState[] = [],
+  sheetProtections: readonly SheetProtectionState[] = [],
+  definedNamesState: DefinedNamesState | null = null,
+  pageSetupStates: readonly SheetPageSetupState[] = [],
+  noteStates: readonly SheetNoteState[] = [],
+  formulaValues: readonly SheetFormulaValues[] = [],
+  redactionStates: readonly SheetRedactionState[] | null = null,
+): Promise<XlsxMutation> {
+  const plan = await planCellEditsToXlsx(
+    await createBufferEntrySource(source),
+    edits,
+    structuralOps,
+    chartEdits,
+    sheetPlan,
+    filterStates,
+    hyperlinkEdits,
+    cfStates,
+    dvStates,
+    sheetProtections,
+    definedNamesState,
+    [],
+    pageSetupStates,
+    noteStates,
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    formulaValues,
+    // The slots between formulaValues and redactionStates (theme, workbook
+    // protection, protected ranges, bulk fills, tab colours, table edits,
+    // cell images, external-link ops) are features this wrapper does not
+    // expose. They must stay positional: planCellEditsToXlsx takes one long
+    // ordered list, so inserting a placeholder here shifts nothing — but
+    // dropping one would silently re-target every later argument, a table
+    // edit included.
+    null,
+    null,
+    [],
+    [],
+    [],
+    [],
+    [],
+    null,
+    redactionStates,
+  )
+  return assembleWithJsZip(source, plan)
+}
+
+export interface SheetNoteState {
+  readonly sheetName: string
+  readonly notes: readonly SheetNote[]
+}
+
+export interface SheetVisualAddition {
+  readonly sheetName: string
+  readonly anchor: DrawingAnchor
+  readonly chart?: ChartAdd | undefined
+  readonly shape?: ShapeAdd | undefined
+  readonly image?: ImageAdd | undefined
+}
+
+/// One session-created picture in a cell ("Place in Cell"): the save writes
+/// its media and rich-value parts and marks the host cell.
+export interface SheetCellImageAddition {
+  readonly sheetName: string
+  readonly row: number
+  readonly column: number
+  readonly mediaType: 'image/png' | 'image/jpeg' | 'image/gif'
+  readonly base64: string
+}
+
+export interface SheetTableAddition {
+  readonly sheetName: string
+  readonly area: TableArea
+  readonly name: string
+  readonly columnNames: readonly string[]
+  readonly style?: string | undefined
+  readonly bandedRows: boolean
+  readonly options?: TableStyleOptions | undefined
+}
+
+export interface SheetTableEdit extends Omit<TableEdit, 'worksheetPath'> {
+  readonly sheetName: string
+}
+
+export interface SheetPivotAddition {
+  /// Sheet that receives the pivot output.
+  readonly sheetName: string
+  readonly sourceSheetName: string
+  readonly sourceArea: TableArea
+  readonly location: TableArea
+  readonly name: string
+  readonly fieldNames: readonly string[]
+  /// Indices into fieldNames for the row dimension levels (outer → inner).
+  readonly rowFieldIndices: readonly number[]
+  readonly columnFieldIndex?: number | undefined
+  /// Indices into fieldNames for report-filter (page) fields, their member
+  /// lists, and the selected member per field (see PivotAddition).
+  readonly pageFieldIndices?: readonly number[] | undefined
+  readonly pageLevelItems?: readonly (readonly string[])[] | undefined
+  readonly pageItems?: readonly (number | null)[] | undefined
+  /// Deduplicated members of the level-0 row field; with multiple levels this
+  /// equals rowLevelItems[0].
+  readonly rowItems: readonly string[]
+  /// Deduplicated member lists per row level (required for multi-level rows, see
+  /// PivotAddition).
+  readonly rowLevelItems?: readonly (readonly string[])[] | undefined
+  /// Row-by-row layout of the output data rows (required for multi-level rows,
+  /// see PivotAddition).
+  readonly rowLines?: readonly PivotAddRowLine[] | undefined
+  readonly columnItems?: readonly string[] | undefined
+  /// Multi-level columns: column dimension field indices (outer first; takes
+  /// precedence over columnFieldIndex when provided).
+  readonly columnFieldIndices?: readonly number[] | undefined
+  /// Deduplicated member lists per column level (required with ≥2 column levels,
+  /// see PivotAddition).
+  readonly colLevelItems?: readonly (readonly string[])[] | undefined
+  /// Column-by-column layout of the output data columns (excluding the trailing
+  /// grand-total column; required with ≥2 column levels).
+  readonly colLines?: readonly PivotAddRowLine[] | undefined
+  /// Grouping rules for dimension fields (date/numeric ranges), see PivotAddition.
+  readonly groupings?: readonly PivotAddGrouping[] | undefined
+  /// Value/label filters plus the filtered-out hidden members, see PivotAddition.
+  readonly filters?: readonly PivotFilterDef[] | undefined
+  readonly rowHiddenItems?: readonly (readonly number[])[] | undefined
+  readonly colHiddenItems?: readonly (readonly number[])[] | undefined
+  readonly values: readonly PivotValueSpec[]
+}
+
+export type { PivotRefreshUpdate } from './xlsx-pivot-expand'
+export { PivotExpandError } from './xlsx-pivot-expand'
+export type { SheetSparklineAddition } from './xlsx-sparkline'
+export {
+  SlicerAddError,
+  parseSlicerState,
+  SLICER_REL_TYPE,
+  type SlicerPartState,
+} from './xlsx-slicer'
+
+/// Renderer-facing slicer state: control writes addressed by sheet NAME (the
+/// main process resolves the session's sheet ids; the planner resolves the
+/// worksheet part), part paths are package-absolute. `removals` come from
+/// controls the session restored from the file and then deleted — file
+/// slicers outside the session's knowledge are never touched, so an
+/// unreadable foreign slicer survives a save.
+export type SheetSlicerAddition = Omit<SlicerControlWrite, 'worksheetPath'> & {
+  readonly sheetName: string
+}
+export interface SheetSlicerState {
+  readonly slicers: readonly SheetSlicerAddition[]
+  readonly removals: readonly SlicerRemovalWrite[]
+}
+
+/// Breaks and retargets of the workbook's external links, resolved on the
+/// final entry contents this save produces. `broken` lists the 1-based `[n]`
+/// positions in `<externalReferences>`; their formulas become literals, their
+/// parts disappear, surviving `[m]` indices renumber. A `retargets` entry
+/// repoints one link's source path — formulas, sheet names and cached values
+/// stay, so values keep coming from the cache until the next update. Both
+/// lists are read in original index space (a retarget names the link as it
+/// is before any break of this save).
+export interface ExternalLinkOps {
+  readonly broken: readonly number[]
+  readonly retargets: readonly { readonly index: number; readonly target: string }[]
+}
+
+/// Applies the external-link ops to the patched package: retargets rewrite
+/// one link's own rels; breaks turn the sheets' broken-link formulas into
+/// literals, renumber the surviving links in every carrier (sheets, defined
+/// names, chart ranges), then delete the links' parts, references and
+/// content-type overrides. Runs last, on the final XML — the renderer
+/// journals the broken cells as literals, so the sheet transform usually only
+/// renumbers survivors.
+///
+/// The defined-name and chart transforms are the same ones planExternalLinkBreak
+/// runs for the CLI's `sheet links --break`: a name or a chart range that keeps
+/// `[n]` pointing at a link this save removes has no literal form, so the break
+/// is refused here too instead of writing a dangling index.
+async function applyExternalLinkOps(
+  pkg: PackageEditor,
+  ops: ExternalLinkOps,
+  touchedEntries: Set<string>,
+): Promise<void> {
+  const workbookPath = 'xl/workbook.xml'
+  const relsPath = 'xl/_rels/workbook.xml.rels'
+  let workbookXml = await pkg.readText(workbookPath)
+  let relsXml = await pkg.readText(relsPath)
+  const links = orderedExternalLinkParts(workbookXml, relsXml)
+  for (const retarget of ops.retargets) {
+    const link = links.find((entry) => entry.n === retarget.index)
+    if (link === undefined || link.part === null) {
+      throw new Error(`no external link ${retarget.index} to point at a new source`)
+    }
+    const relsPart = `${link.part.replace(/([^/]+)$/, '_rels/$1')}.rels`
+    pkg.write(relsPart, retargetExternalLinkRels(await pkg.readText(relsPart), retarget.target))
+    touchedEntries.add(relsPart)
+  }
+  const broken = [...new Set(ops.broken)]
+  if (broken.length === 0) return
+  for (const n of broken) {
+    const link = links.find((entry) => entry.n === n)
+    if (link === undefined || link.part === null) {
+      throw new Error(`no external link ${n} to break`)
+    }
+  }
+  // The break plan is computed before any part is written, so a refusal here
+  // leaves the package untouched (the plan is discarded whole either way).
+  const next = applyWorkbookLinkBreak(workbookXml, relsXml, broken)
+  // defined names address links through the same [n] indices, so a surviving
+  // name follows the renumbering and a broken one refuses the break
+  workbookXml = transformWorkbookForLinkBreak(next.workbookXml, broken)
+  relsXml = next.relsXml
+  let contentTypesXml: string | null = null
+  if (await pkg.has('[Content_Types].xml')) {
+    contentTypesXml = await pkg.readText('[Content_Types].xml')
+  }
+  for (const part of next.parts) {
+    pkg.remove(part)
+    const relsPart = `${part.replace(/([^/]+)$/, '_rels/$1')}.rels`
+    if (await pkg.has(relsPart)) pkg.remove(relsPart)
+    if (contentTypesXml !== null) contentTypesXml = removePartOverride(contentTypesXml, part)
+  }
+  for (const path of await pkg.paths()) {
+    if (!/^xl\/worksheets\/[^/]+\.xml$/.test(path)) continue
+    const xml = await pkg.readText(path)
+    const transformed = transformSheetForLinkBreak(xml, broken)
+    if (transformed !== xml) {
+      pkg.write(path, transformed)
+      touchedEntries.add(path)
+    }
+  }
+  // chart ranges reference cells — and thus links — outside the sheet part
+  for (const path of await pkg.paths()) {
+    if (!/^xl\/charts\/[^/]+\.xml$/.test(path)) continue
+    const xml = await pkg.readText(path)
+    const transformed = transformChartForLinkBreak(xml, broken)
+    if (transformed !== xml) {
+      pkg.write(path, transformed)
+      touchedEntries.add(path)
+    }
+  }
+  if (contentTypesXml !== null) {
+    pkg.write('[Content_Types].xml', contentTypesXml)
+    touchedEntries.add('[Content_Types].xml')
+  }
+  pkg.write(workbookPath, workbookXml)
+  pkg.write(relsPath, relsXml)
+  touchedEntries.add(workbookPath)
+  touchedEntries.add(relsPath)
+}
+
+/// Assembler-independent planning: computes the patched entry contents for a
+/// set of edits without materializing the output archive.
+export async function planCellEditsToXlsx(
+  source: EntrySource,
+  edits: readonly CellEdit[],
+  structuralOps: readonly SheetStructuralOps[] = [],
+  chartEdits: readonly WorkbookChartEdit[] = [],
+  sheetPlan?: SheetEditPlan,
+  filterStates: readonly SheetFilterState[] = [],
+  hyperlinkEdits: readonly SheetHyperlinkEdits[] = [],
+  cfStates: readonly SheetCfState[] = [],
+  dvStates: readonly SheetDvState[] = [],
+  sheetProtections: readonly SheetProtectionState[] = [],
+  definedNamesState: DefinedNamesState | null = null,
+  visualAdditions: readonly SheetVisualAddition[] = [],
+  pageSetupStates: readonly SheetPageSetupState[] = [],
+  noteStates: readonly SheetNoteState[] = [],
+  tableAdditions: readonly SheetTableAddition[] = [],
+  pivotAdditions: readonly SheetPivotAddition[] = [],
+  pivotCacheRefreshPaths: readonly string[] = [],
+  pivotRefreshUpdates: readonly PivotRefreshUpdate[] = [],
+  visualEdits: readonly WorkbookVisualEdit[] = [],
+  sparklineAdditions: readonly SheetSparklineAddition[] = [],
+  formulaValues: readonly SheetFormulaValues[] = [],
+  themeState: WorkbookThemeState | null = null,
+  workbookProtectionState: { readonly lockStructure: boolean } | null = null,
+  protectedRangeStates: readonly SheetProtectedRangesState[] = [],
+  bulkConstantFills: readonly BulkConstantFill[] = [],
+  tabColorStates: readonly SheetTabColorState[] = [],
+  tableEdits: readonly SheetTableEdit[] = [],
+  cellImageAdditions: readonly SheetCellImageAddition[] = [],
+  externalLinkOps: ExternalLinkOps | null = null,
+  // Last, deliberately: every caller written against an older order would
+  // otherwise see `tabColorStates` or a cell image land here and a parsed
+  // table edit parsed as a tab colour.
+  redactionStates: readonly SheetRedactionState[] | null = null,
+  // Truly last (same positional hazard): a nullable object after two array
+  // defaults would silently swallow an older caller's array.
+  slicerState: SheetSlicerState | null = null,
+): Promise<MutationPlan> {
+  // A pending pivot pins final coordinates for its source and output; shifts
+  // on either sheet, and sheet renames (worksheetSource@sheet), would desync
+  // the recorded ranges. Fail closed, mirroring the table-add guard.
+  if (pivotAdditions.length > 0) {
+    if (sheetPlan !== undefined) {
+      throw new Error(
+        'A new pivot cannot be saved together with sheet management changes — ' +
+          'save the pivot first.',
+      )
+    }
+    const pivotSheets = new Set(
+      pivotAdditions.flatMap((pivot) => [pivot.sheetName, pivot.sourceSheetName]),
+    )
+    if (structuralOps.some((sheet) => sheet.ops.length > 0 && pivotSheets.has(sheet.sheetName))) {
+      throw new Error(
+        'A new pivot cannot be saved together with row/column changes on its ' +
+          'sheets — save the pivot first.',
+      )
+    }
+  }
+  // Slicer state addresses its host sheet by name; a same-save rename would
+  // desync the resolution (the pivot guard's sheet-management half). Row and
+  // column shifts are fine — slicer parts carry no cell coordinates.
+  if (slicerState !== null && sheetPlan !== undefined) {
+    throw new SlicerAddError(
+      'Slicer changes cannot be saved together with sheet management changes — ' +
+        'save the slicers first.',
+    )
+  }
+  // A pending table add pins final coordinates; row/column shifts on the same
+  // sheet would desync the recorded range. The renderer saves before allowing
+  // further structural work, so this is a defensive fail-closed check.
+  if (tableAdditions.length > 0) {
+    const tableSheets = new Set(tableAdditions.map((table) => table.sheetName))
+    if (structuralOps.some((sheet) => sheet.ops.length > 0 && tableSheets.has(sheet.sheetName))) {
+      throw new Error(
+        'A new table cannot be saved together with row/column changes on its ' +
+          'sheet — save the table first.',
+      )
+    }
+  }
+  // A resized file table pins final coordinates the same way.
+  const resizedTableSheets = new Set(
+    tableEdits.filter((edit) => edit.area !== undefined).map((edit) => edit.sheetName),
+  )
+  if (
+    resizedTableSheets.size > 0 &&
+    structuralOps.some((sheet) => sheet.ops.length > 0 && resizedTableSheets.has(sheet.sheetName))
+  ) {
+    throw new Error(
+      'A resized table cannot be saved together with row/column changes on its ' +
+        'sheet — save the table first.',
+    )
+  }
+  // The defined-names snapshot carries model coordinates and file sheet
+  // indices; replaying structural or sheet operations underneath it would
+  // desync both. The renderer blocks the combination too.
+  if (
+    definedNamesState !== null &&
+    (structuralOps.some((sheet) => sheet.ops.length > 0) || sheetPlan !== undefined)
+  ) {
+    throw new DefinedNameError(
+      'Defined-name edits cannot be saved together with row/column or sheet ' +
+        'changes — save one of them first.',
+    )
+  }
+  if (sheetPlan !== undefined) {
+    const sheetStates: readonly (readonly { readonly sheetName: string }[])[] = [
+      edits,
+      structuralOps,
+      filterStates,
+      hyperlinkEdits,
+      cfStates,
+      dvStates,
+      sheetProtections,
+      visualAdditions,
+      pageSetupStates,
+      noteStates,
+      tableAdditions,
+      pivotAdditions,
+      sparklineAdditions,
+      formulaValues,
+      protectedRangeStates,
+      bulkConstantFills,
+      tabColorStates,
+      tableEdits,
+      cellImageAdditions,
+    ]
+    assertAddedSheetsKeepRenamedNames(
+      sheetPlan,
+      new Set(sheetStates.flatMap((states) => states.map((state) => state.sheetName))),
+    )
+  }
+  const pkg = new PackageEditor(source)
+  const touchedEntries = new Set<string>()
+
+  // Added sheets get their parts up front so cell edits, structural ops, and
+  // the cross-sheet scan below all see them. Duplicates are seeded from the
+  // source sheet's part; their journaled edits replay on top like any other.
+  const additions =
+    sheetPlan === undefined
+      ? []
+      : await allocateAddedSheets(
+          pkg,
+          sheetPlan.additions.map((addition) => addition.name),
+          touchedEntries,
+        )
+  const additionPaths = new Map(additions.map((addition) => [addition.name, addition.path]))
+  for (const [index, addition] of additions.entries()) {
+    const sourceSheetName = sheetPlan?.additions[index]?.sourceSheetName
+    if (sourceSheetName === undefined) {
+      pkg.add(addition.path, buildWorksheetPartXml())
+      continue
+    }
+    const sourcePath = await resolveWorksheetPath(pkg, sourceSheetName)
+    if (!(await pkg.canPatch(sourcePath))) {
+      throw new SheetEditError(
+        `${sourcePath} is too large to load — duplicating "${sourceSheetName}" ` +
+          'cannot be saved.',
+      )
+    }
+    assertNoSheetScopedDefinedNames(await pkg.readText('xl/workbook.xml'), sourceSheetName)
+    let cloneXml = sanitizeClonedWorksheetXml(await pkg.readText(sourcePath))
+    const sourceRelsPath = sourcePath.replace(/^(xl\/worksheets\/)([^/]+)$/, '$1_rels/$2.rels')
+    if (await pkg.has(sourceRelsPath)) {
+      const rels = prepareClonedSheetRels(await pkg.readText(sourceRelsPath), sourceSheetName)
+      if (rels.droppedPrinterSettings) cloneXml = stripPageSetupRelIds(cloneXml)
+      if (rels.relsXml !== null) {
+        pkg.add(
+          addition.path.replace(/^(xl\/worksheets\/)([^/]+)$/, '$1_rels/$2.rels'),
+          rels.relsXml,
+        )
+      }
+    }
+    pkg.add(addition.path, cloneXml)
+  }
+
+  // Formula caches can be refreshed on a sheet the user did not edit (a
+  // cross-sheet dependent), so those worksheets must be loaded too.
+  const sheetNames = new Set([
+    ...edits.map((edit) => edit.sheetName),
+    // a cached-value-only save (no cell edits) still patches its sheets
+    ...formulaValues.map((sheet) => sheet.sheetName),
+    ...bulkConstantFills.map((fill) => fill.sheetName),
+    ...structuralOps.map((sheet) => sheet.sheetName),
+    ...filterStates.map((state) => state.sheetName),
+    ...hyperlinkEdits.map((sheet) => sheet.sheetName),
+    ...cfStates.map((state) => state.sheetName),
+    ...dvStates.map((state) => state.sheetName),
+    ...sheetProtections.map((state) => state.sheetName),
+    ...tabColorStates.map((state) => state.sheetName),
+    ...pageSetupStates.map((state) => state.sheetName),
+    ...protectedRangeStates.map((state) => state.sheetName),
+  ])
+  const worksheetXmls = new Map<string, string>()
+  const worksheetPaths = new Map<string, string>()
+  for (const sheetName of sheetNames) {
+    const worksheetPath =
+      additionPaths.get(sheetName) ?? (await resolveWorksheetPath(pkg, sheetName))
+    worksheetPaths.set(sheetName, worksheetPath)
+    const worksheetXml = await pkg.readText(worksheetPath)
+    // Every later anchor lookup would report a bare "no sheetData"; name the
+    // part and what was read so an empty or truncated extraction is visible.
+    if (!worksheetXml.includes('<sheetData')) {
+      throw new Error(
+        `${worksheetPath} (sheet "${sheetName}") has no sheetData element — ` +
+          `${worksheetXml.length} characters read.`,
+      )
+    }
+    worksheetXmls.set(sheetName, worksheetXml)
+    pkg.releaseSourceText(worksheetPath)
+  }
+
+  // Pivot layout expansion: conflict-check and update pivotTableDefinition
+  // location refs before any cell edits are applied, so the worksheetXml
+  // seen by worksheetHasContentInArea reflects the pre-edit state.
+  if (pivotRefreshUpdates.length > 0) {
+    // The renderer only carries the sheet name; resolve it to a part path here
+    // before expanding.
+    const resolvedUpdates: PivotRefreshUpdate[] = []
+    for (const update of pivotRefreshUpdates) {
+      const worksheetPath =
+        update.worksheetPath ??
+        (update.sheetName !== undefined
+          ? await resolveWorksheetPath(pkg, update.sheetName)
+          : undefined)
+      if (worksheetPath === undefined) {
+        throw new Error('A pivot refresh update needs a worksheetPath or sheetName.')
+      }
+      resolvedUpdates.push({ ...update, worksheetPath })
+    }
+    await applyPivotLayoutExpansions(pkg, resolvedUpdates, touchedEntries)
+  }
+
+  // Stylesheet editor created up front: cell-edit styles and CF need it, and
+  // 'set-col-style' structural ops (select-all/full-column formatting) intern
+  // their column xf during the structural pass below.
+  let stylesheet: StylesheetEditor | null = null
+  const stylesPath = 'xl/styles.xml'
+  if (
+    edits.some((edit) => edit.style !== undefined) ||
+    cfStates.length > 0 ||
+    structuralOps.some(({ ops }) => ops.some((op) => op.kind === 'set-col-style'))
+  ) {
+    if (!(await pkg.has(stylesPath))) await addDefaultStylesheet(pkg, touchedEntries)
+    stylesheet = new StylesheetEditor(await pkg.readText(stylesPath))
+  }
+  const resolveColStyle =
+    stylesheet === null
+      ? undefined
+      : (baseXfIndex: number, delta: WorkbookStyleEdit) =>
+          stylesheet!.resolveStyle(baseXfIndex, delta)
+
+  // Structural operations replay first: journaled cell edits are already in
+  // the post-operation coordinate space. Qualified references from other
+  // sheets, defined names, and chart series shift along with the edited sheet.
+  const workbookPath = 'xl/workbook.xml'
+  const originalWorkbookXml = await pkg.readText(workbookPath)
+  let workbookXml = originalWorkbookXml
+  const pendingTableColumnSyncs: Array<{
+    sheetName: string
+    partPath: string
+    insertions: TableColumnInsertion[]
+  }> = []
+  // Only shifting ops desync a pivot cache's recorded source range; sizing,
+  // visibility, and outline ops on the source sheet are safe to save.
+  const pivotCacheDefinitionPaths = structuralOps.some(({ ops }) => ops.some(isShiftingOp))
+    ? (await pkg.paths()).filter((path) =>
+        /^xl\/pivotCache\/pivotCacheDefinition[^/]*\.xml$/.test(path),
+      )
+    : []
+  for (const { sheetName, ops } of structuralOps) {
+    if (ops.length === 0) continue
+    for (const cachePath of ops.some(isShiftingOp) ? pivotCacheDefinitionPaths : []) {
+      if (pivotCacheReadsFromSheet(await pkg.readText(cachePath), sheetName)) {
+        throw new StructuralShiftError(
+          `A pivot table reads its source data from "${sheetName}" — ` +
+            'row/column changes there cannot be saved.',
+        )
+      }
+    }
+    worksheetXmls.set(
+      sheetName,
+      applyStructuralOps(worksheetXmls.get(sheetName) ?? '', ops, sheetName, resolveColStyle),
+    )
+    const editedPath = worksheetPaths.get(sheetName)
+    if (editedPath !== undefined) {
+      const tableInsertions: Array<{ partPath: string; insertions: TableColumnInsertion[] }> = []
+      await shiftAnchoredSheetParts(
+        pkg,
+        editedPath,
+        worksheetXmls.get(sheetName) ?? '',
+        ops,
+        touchedEntries,
+        tableInsertions,
+      )
+      for (const entry of tableInsertions) {
+        pendingTableColumnSyncs.push({ sheetName, ...entry })
+      }
+    }
+    const nameByPath = new Map([...worksheetPaths].map(([name, path]) => [path, name]))
+    for (const path of await pkg.paths()) {
+      const isOtherSheet =
+        path.startsWith('xl/worksheets/') && path.endsWith('.xml') && path !== editedPath
+      const isChart = path.startsWith('xl/charts/') && path.endsWith('.xml')
+      if (!isOtherSheet && !isChart) continue
+      // A sheet with its own pending edits lives in worksheetXmls — shift that
+      // copy, or the final write-back would overwrite this pass.
+      const trackedName = nameByPath.get(path)
+      if (trackedName === undefined && !(await pkg.canPatch(path))) {
+        // Too large to rewrite: safe to leave alone unless it references the
+        // shifted sheet — an unshifted qualified reference would corrupt it.
+        if (await pkg.containsText(path, sheetName)) {
+          throw new Error(
+            `${path} references "${sheetName}" but is too large to rewrite — ` +
+              'this structural change cannot be saved.',
+          )
+        }
+        continue
+      }
+      const xml =
+        trackedName !== undefined
+          ? (worksheetXmls.get(trackedName) ?? '')
+          : await pkg.readText(path)
+      const shifted = isChart
+        ? shiftChartReferences(xml, sheetName, ops)
+        : shiftCrossSheetFormulas(xml, sheetName, ops)
+      if (shifted === xml) continue
+      if (trackedName !== undefined) {
+        worksheetXmls.set(trackedName, shifted)
+      } else {
+        pkg.write(path, shifted)
+        touchedEntries.add(path)
+      }
+    }
+    const shiftedWorkbook = shiftDefinedNames(workbookXml, sheetName, ops)
+    if (shiftedWorkbook !== workbookXml) {
+      workbookXml = shiftedWorkbook
+      pkg.write(workbookPath, workbookXml)
+      touchedEntries.add(workbookPath)
+    }
+  }
+
+  const spillEdits = edits.filter(
+    (edit) => edit.writeValue && edit.cell.formula && spillsDynamicArray(edit.cell.formula),
+  )
+  const dynamicArrayCm =
+    spillEdits.length > 0 ? await ensureDynamicArrayMetadata(pkg, touchedEntries) : null
+
+  // Withheld cells travel in a package part of their own, so they are written
+  // here rather than with the worksheets. A sheet renamed or removed in this
+  // same save takes its marks with it first — see rekeyRedactionStates.
+  // An empty list clears the part (the reader un-hid everything); null leaves
+  // it untouched, because a caller that never loaded the marks must not drop
+  // them.
+  const rekeyed =
+    redactionStates === null
+      ? null
+      : rekeyRedactionStates(
+          redactionStates,
+          sheetPlan?.renames ?? [],
+          sheetPlan?.removals ?? [],
+          structuralOps,
+        )
+  if (rekeyed !== null) await applyRedactionPart(pkg, touchedEntries, rekeyed)
+
+  const editsBySheet = groupBySheet(edits)
+  const fillsBySheet = groupBySheet(bulkConstantFills)
+  // (stylesheet was created before the structural pass — see above)
+  // Apply declarative fills and explicit edits in one worksheet pass. A
+  // per-cell edit runs after the fill and remains authoritative, while a
+  // 300MB sheet avoids allocating two successive full-size output strings.
+  const cellMutationSheets = new Set([...fillsBySheet.keys(), ...editsBySheet.keys()])
+  for (const sheetName of cellMutationSheets) {
+    const worksheetXml = inferWorksheetAddresses(worksheetXmls.get(sheetName) ?? '')
+    const cellMutations = groupCellMutations(
+      fillsBySheet.get(sheetName) ?? [],
+      editsBySheet.get(sheetName) ?? [],
+    )
+    const materialized = materializeEditedSharedFormulaGroups(worksheetXml, cellMutations)
+    const dimensionPatch = worksheetDimensionPatcher(cellMutations, materialized)
+    const edited = transformWorksheetCells(
+      materialized,
+      cellMutations,
+      (cellXml, rowNumber, column, mutation) => {
+        let result = cellXml
+        if (mutation.fill) {
+          result = applyEditToCellXml(
+            result,
+            toA1Address(rowNumber - 1, column),
+            {
+              sheetName,
+              row: rowNumber - 1,
+              column,
+              writeValue: true,
+              cell: { value: mutation.fill.value },
+            },
+            stylesheet,
+          )
+        }
+        return mutation.edits
+          ? applyCellEdits(result, rowNumber, column, mutation.edits, stylesheet)
+          : result
+      },
+      true,
+      dimensionPatch?.patch,
+    )
+    // No <dimension> tag to grow in place: fall back to a full-scan rebuild.
+    worksheetXmls.set(
+      sheetName,
+      dimensionPatch !== null && !dimensionPatch.matched()
+        ? expandWorksheetDimensionToCells(edited)
+        : edited,
+    )
+  }
+  if (dynamicArrayCm !== null) {
+    for (const [sheetName, group] of groupBySheet(spillEdits)) {
+      let worksheetXml = worksheetXmls.get(sheetName) ?? ''
+      for (const edit of group) {
+        worksheetXml = markDynamicArrayAnchor(
+          worksheetXml,
+          toA1Address(edit.row, edit.column),
+          dynamicArrayCm,
+        )
+      }
+      worksheetXmls.set(sheetName, worksheetXml)
+    }
+  }
+  // Recalculated formula results: refresh each formula cell's cached
+  // <v> while leaving its <f> alone. Applied after the value edits so a cell the
+  // user turned into a literal keeps that literal.
+  for (const sheet of formulaValues) {
+    if (sheet.cells.length === 0) continue
+    const worksheetXml = worksheetXmls.get(sheet.sheetName)
+    if (worksheetXml === undefined) continue
+    worksheetXmls.set(
+      sheet.sheetName,
+      transformWorksheetCells(
+        worksheetXml,
+        groupFormulaValuesByCell(sheet.cells),
+        (cellXml, rowNumber, column, value) =>
+          patchFormulaCachedValue(cellXml, toA1Address(rowNumber - 1, column), value),
+        false,
+      ),
+    )
+  }
+  // Columns inserted inside a table got generated names during the structural
+  // pass. Excel requires each header cell to spell its column's name, so
+  // reconcile against the final cell content: adopt a header the same save
+  // wrote (unique-ified the way Excel does), or write the generated name into
+  // a still-empty header cell.
+  if (pendingTableColumnSyncs.length > 0) {
+    const sharedStrings = await readSharedStrings(pkg)
+    for (const sync of pendingTableColumnSyncs) {
+      let worksheetXml = worksheetXmls.get(sync.sheetName)
+      if (worksheetXml === undefined) continue
+      let tableXml = await pkg.readText(sync.partPath)
+      const names = new Set<string>()
+      for (const match of tableXml.matchAll(/<tableColumn\b[^>]*?\bname="([^"]*)"/g)) {
+        names.add(decodeXmlText(match[1] ?? '').toLowerCase())
+      }
+      for (const insertion of sync.insertions) {
+        if (insertion.headerRow === null) continue
+        for (const column of insertion.columns) {
+          const address = toA1Address(insertion.headerRow, column.column)
+          const header = readHeaderCellText(worksheetXml, address, sharedStrings)
+          if (header.kind === 'blank') {
+            worksheetXml = writeHeaderCellText(worksheetXml, address, column.name)
+            continue
+          }
+          if (header.kind !== 'text') continue
+          const unique = uniqueTableColumnName(header.text, names, column.name)
+          // A non-string header (number/boolean) only adopts its text form
+          // when unique as-is — the stored value is never rewritten.
+          if (!header.plain && unique !== header.text) continue
+          if (unique.toLowerCase() !== column.name.toLowerCase()) {
+            names.delete(column.name.toLowerCase())
+            names.add(unique.toLowerCase())
+            tableXml = renameTableColumn(tableXml, column.id, unique)
+          }
+          if (header.plain && unique !== header.text) {
+            worksheetXml = writeHeaderCellText(worksheetXml, address, unique)
+          }
+        }
+      }
+      worksheetXmls.set(sync.sheetName, worksheetXml)
+      pkg.write(sync.partPath, tableXml)
+      touchedEntries.add(sync.partPath)
+    }
+  }
+
+  // Hyperlink edits carry final coordinates, so they apply after the
+  // structural replay; the rels sibling is created or rewritten alongside.
+  for (const sheet of hyperlinkEdits) {
+    if (sheet.edits.length === 0) continue
+    const worksheetPath = worksheetPaths.get(sheet.sheetName)
+    const worksheetXml = worksheetXmls.get(sheet.sheetName)
+    if (!worksheetPath || worksheetXml === undefined) continue
+    const relsPath = worksheetPath.replace(/^(xl\/worksheets\/)([^/]+)$/, '$1_rels/$2.rels')
+    const relsExisted = await pkg.has(relsPath)
+    const relsXml = relsExisted ? await pkg.readText(relsPath) : null
+    const patch = applyHyperlinkEdits(worksheetXml, relsXml, sheet.edits)
+    worksheetXmls.set(sheet.sheetName, ensureRelationshipNamespace(patch.worksheetXml))
+    if (patch.relsChanged && patch.relsXml !== null) {
+      if (relsExisted) {
+        pkg.write(relsPath, patch.relsXml)
+      } else {
+        pkg.add(relsPath, patch.relsXml)
+      }
+      touchedEntries.add(relsPath)
+    }
+  }
+
+  // Conditional formatting is declarative like filters: every section on a
+  // dirty sheet is rewritten from the snapshot (final coordinates).
+  for (const state of cfStates) {
+    const worksheetXml = worksheetXmls.get(state.sheetName)
+    if (worksheetXml === undefined || stylesheet === null) continue
+    worksheetXmls.set(
+      state.sheetName,
+      applyCfRules(worksheetXml, state.rules, stylesheet, { append: state.append }),
+    )
+  }
+
+  // Data validation follows the same declarative rewrite.
+  for (const state of dvStates) {
+    const worksheetXml = worksheetXmls.get(state.sheetName)
+    if (worksheetXml === undefined) continue
+    worksheetXmls.set(
+      state.sheetName,
+      applyDvRules(worksheetXml, state.rules, { append: state.append, remove: state.remove }),
+    )
+  }
+
+  for (const state of sheetProtections) {
+    const worksheetXml = worksheetXmls.get(state.sheetName)
+    if (worksheetXml === undefined) continue
+    worksheetXmls.set(state.sheetName, applySheetProtection(worksheetXml, state))
+  }
+
+  for (const state of tabColorStates) {
+    const worksheetXml = worksheetXmls.get(state.sheetName)
+    if (worksheetXml === undefined) continue
+    worksheetXmls.set(state.sheetName, applyTabColor(worksheetXml, state.color))
+  }
+
+  // Allow-edit ranges are declarative snapshots, like filters.
+  for (const state of protectedRangeStates) {
+    const worksheetXml = worksheetXmls.get(state.sheetName)
+    if (worksheetXml === undefined) continue
+    worksheetXmls.set(state.sheetName, applyProtectedRanges(worksheetXml, state.ranges))
+  }
+
+  // Page Layout settings merge attribute-by-attribute; untouched print
+  // settings in the file stay verbatim.
+  for (const state of pageSetupStates) {
+    const worksheetXml = worksheetXmls.get(state.sheetName)
+    if (worksheetXml === undefined) continue
+    worksheetXmls.set(state.sheetName, applyPageSetupState(worksheetXml, state))
+  }
+
+  // Filter snapshots used to run here, before the worksheet flush; they now
+  // run after the table edit/add phases (see applyRoutedFilterState below) so
+  // the routing sees the sheets' final table geometry.
+
+  for (const [sheetName, worksheetXml] of worksheetXmls) {
+    const worksheetPath = worksheetPaths.get(sheetName)
+    if (!worksheetPath) continue
+    if (additionPaths.has(sheetName)) {
+      pkg.add(worksheetPath, worksheetXml)
+    } else {
+      pkg.write(worksheetPath, worksheetXml)
+    }
+    touchedEntries.add(worksheetPath)
+  }
+  if (stylesheet?.changed) {
+    pkg.write(stylesPath, stylesheet.serialize())
+    touchedEntries.add(stylesPath)
+  }
+
+  // Chart edits run after structural shifts so they patch the already-shifted
+  // chart XML.
+  for (const chartEdit of chartEdits) {
+    const chartXml = await pkg.readText(chartEdit.chartPath)
+    pkg.write(chartEdit.chartPath, applyChartEdit(chartXml, chartEdit))
+    touchedEntries.add(chartEdit.chartPath)
+  }
+
+  // Edits to file visuals run before any new anchors are appended, so the
+  // sidecar's drawingIndex still matches the file's document order.
+  if (visualEdits.length > 0) {
+    await applyVisualEdits(pkg, visualEdits, touchedEntries)
+  }
+
+  // New visuals run after the worksheet XML flush above so the drawing
+  // element lands on the final sheet content.
+  if (visualAdditions.length > 0) {
+    const resolved = []
+    for (const addition of visualAdditions) {
+      resolved.push({
+        worksheetPath:
+          additionPaths.get(addition.sheetName) ??
+          (await resolveWorksheetPath(pkg, addition.sheetName)),
+        anchor: addition.anchor,
+        // A pivot-bound chart resolves its pivotTable part into the
+        // chartSpace pivotSource name here, where the sheet name is known.
+        chart:
+          addition.chart === undefined
+            ? undefined
+            : await resolveChartPivotSource(pkg, addition.sheetName, addition.chart),
+        shape: addition.shape,
+        image: addition.image,
+      })
+    }
+    await applyVisualAdditions(pkg, resolved, touchedEntries)
+  }
+
+  // Pictures placed in cells write Excel's rich-value parts and a vm-marked
+  // host cell; they also run on the flushed worksheet XML.
+  if (cellImageAdditions.length > 0) {
+    const resolved: {
+      worksheetPath: string
+      row: number
+      column: number
+      mediaType: 'image/png' | 'image/jpeg' | 'image/gif'
+      base64: string
+    }[] = []
+    for (const addition of cellImageAdditions) {
+      resolved.push({
+        worksheetPath:
+          additionPaths.get(addition.sheetName) ??
+          (await resolveWorksheetPath(pkg, addition.sheetName)),
+        row: addition.row,
+        column: addition.column,
+        mediaType: addition.mediaType,
+        base64: addition.base64,
+      })
+    }
+    await applyCellImageAdditions(pkg, resolved, touchedEntries)
+  }
+
+  // Note snapshots replace each dirty sheet's whole comment set; they run
+  // after the worksheet flush so the legacyDrawing element lands on the
+  // final sheet XML.
+  for (const state of noteStates) {
+    const worksheetPath =
+      additionPaths.get(state.sheetName) ?? (await resolveWorksheetPath(pkg, state.sheetName))
+    await applySheetNotes(pkg, worksheetPath, state.notes, touchedEntries)
+  }
+
+  // Recomputed pivots: their output cells were saved as ordinary edits above;
+  // flag the caches so Excel rebuilds them from the same source on open.
+  for (const cachePath of pivotCacheRefreshPaths) {
+    const cacheXml = await pkg.readText(cachePath)
+    pkg.write(cachePath, setPivotRefreshOnLoad(cacheXml))
+    touchedEntries.add(cachePath)
+  }
+
+  // File-table edits run first: a Convert to Range or rename must not
+  // block a new table over the same cells or with the freed name.
+  if (tableEdits.length > 0) {
+    const resolvedEdits: TableEdit[] = []
+    for (const { sheetName, ...edit } of tableEdits) {
+      resolvedEdits.push({
+        ...edit,
+        worksheetPath: additionPaths.get(sheetName) ?? (await resolveWorksheetPath(pkg, sheetName)),
+      })
+    }
+    await applyTableEdits(pkg, resolvedEdits, touchedEntries)
+  }
+  // New tables also run on the flushed worksheet XML: the <tableParts>
+  // element and overlap checks see the final sheet content.
+  if (tableAdditions.length > 0) {
+    const resolvedTables = []
+    for (const addition of tableAdditions) {
+      resolvedTables.push({
+        worksheetPath:
+          additionPaths.get(addition.sheetName) ??
+          (await resolveWorksheetPath(pkg, addition.sheetName)),
+        area: addition.area,
+        name: addition.name,
+        columnNames: addition.columnNames,
+        style: addition.style,
+        bandedRows: addition.bandedRows,
+        options: addition.options,
+      })
+    }
+    await applyTableAdditions(pkg, resolvedTables, touchedEntries)
+  }
+
+  // Filter snapshots run after structural replay, cell edits, and the table
+  // phases, so their coordinates and row set match the sheet's final content
+  // and the routing sees the final table geometry: a filter range inside an
+  // Excel table lands in the table part (Excel keeps table filters there,
+  // never on the worksheet); every other range keeps the worksheet element.
+  if (filterStates.length > 0) {
+    for (const state of filterStates) {
+      const worksheetPath =
+        additionPaths.get(state.sheetName) ??
+        worksheetPaths.get(state.sheetName) ??
+        (await resolveWorksheetPath(pkg, state.sheetName))
+      await applyRoutedFilterState(pkg, worksheetPath, state, touchedEntries)
+    }
+  }
+
+  // New sparklines also run on the flushed worksheet XML (extLst is the
+  // worksheet's last element, after tableParts).
+  if (sparklineAdditions.length > 0) {
+    const groupsBySheet = new Map<string, SparklineGroupAdd[]>()
+    for (const { sheetName, ...group } of sparklineAdditions) {
+      const groups = groupsBySheet.get(sheetName) ?? []
+      groups.push(group)
+      groupsBySheet.set(sheetName, groups)
+    }
+    for (const [sheetName, groups] of groupsBySheet) {
+      const worksheetPath =
+        additionPaths.get(sheetName) ?? (await resolveWorksheetPath(pkg, sheetName))
+      pkg.write(worksheetPath, applySparklineAdditions(await pkg.readText(worksheetPath), groups))
+      touchedEntries.add(worksheetPath)
+    }
+  }
+
+  // Any worksheet edit can invalidate the calculation chain — not just
+  // structural shifts: overwriting a formula cell with a literal leaves a
+  // calcChain entry pointing at a cell with no <f>, which Excel repairs with
+  // a scary prompt. calcChain is a pure recalculation-order cache, so
+  // drop it (with its content-type and relationship) whenever this save wrote
+  // any worksheet part and let Excel rebuild it on open. Sheet set changes
+  // are kept as an extra trigger (a removal-only save may touch no part).
+  const sheetSetChanged =
+    sheetPlan !== undefined &&
+    (sheetPlan.additions.length > 0 ||
+      sheetPlan.removals.length > 0 ||
+      sheetPlan.orderChanged === true)
+  const worksheetTouched = [...touchedEntries].some((path) => path.startsWith('xl/worksheets/'))
+  if ((worksheetTouched || sheetSetChanged) && (await pkg.has('xl/calcChain.xml'))) {
+    pkg.remove('xl/calcChain.xml')
+    const contentTypesPath = '[Content_Types].xml'
+    const contentTypes = await pkg.readText(contentTypesPath)
+    const strippedTypes = contentTypes.replace(
+      /<Override\b[^>]*PartName="\/xl\/calcChain\.xml"[^>]*\/>/,
+      '',
+    )
+    if (strippedTypes !== contentTypes) {
+      pkg.write(contentTypesPath, strippedTypes)
+      touchedEntries.add(contentTypesPath)
+    }
+    const workbookRelsPath = 'xl/_rels/workbook.xml.rels'
+    const workbookRels = await pkg.readText(workbookRelsPath)
+    const strippedRels = workbookRels.replace(
+      /<Relationship\b[^>]*Target="calcChain\.xml"[^>]*\/>/,
+      '',
+    )
+    if (strippedRels !== workbookRels) {
+      pkg.write(workbookRelsPath, strippedRels)
+      touchedEntries.add(workbookRelsPath)
+    }
+  }
+
+  // Sheet-level surgery runs last: every worksheet and chart part is already
+  // in its final content, so rename rewrites and removal guards see the
+  // saved state.
+  if (sheetPlan !== undefined) {
+    workbookXml = await applySheetPlanToPackage(
+      pkg,
+      sheetPlan,
+      additions,
+      workbookXml,
+      touchedEntries,
+    )
+  }
+
+  if (definedNamesState !== null) {
+    workbookXml = applyDefinedNamesState(workbookXml, definedNamesState)
+  }
+
+  if (workbookProtectionState !== null) {
+    workbookXml = applyWorkbookProtection(workbookXml, workbookProtectionState.lockStructure)
+  }
+
+  if (themeState !== null) {
+    const themePath = 'xl/theme/theme1.xml'
+    if (!(await pkg.has(themePath))) {
+      throw new Error('The workbook has no theme part — theme changes cannot be saved.')
+    }
+    pkg.write(themePath, applyThemeState(await pkg.readText(themePath), themeState))
+    touchedEntries.add(themePath)
+  }
+
+  // Print areas / title rows are sheet-scoped _xlnm names; they apply to the
+  // final workbook.xml (post sheet-plan, post defined-names rewrite — which
+  // keeps _xlnm entries verbatim). States name an existing sheet by its
+  // original file name, so one renamed in this save is looked up by its new
+  // name (an added sheet never takes a renamed sheet's old name — see
+  // assertAddedSheetsKeepRenamedNames).
+  const renamedTo = new Map(sheetPlan?.renames.map((rename) => [rename.sheetName, rename.newName]))
+  const printAreas = pageSetupStates
+    .filter((state) => state.printArea !== undefined || state.printTitles !== undefined)
+    .map((state) => ({
+      sheetName: renamedTo.get(state.sheetName) ?? state.sheetName,
+      printArea: state.printArea,
+      printTitles: state.printTitles,
+    }))
+  if (printAreas.length > 0) {
+    workbookXml = applyPrintAreas(workbookXml, printAreas)
+  }
+
+  // New pivots run last: their worksheet rels ride the package overlay, and
+  // the <pivotCaches> entry lands on the final workbook XML string.
+  if (pivotAdditions.length > 0) {
+    const resolvedPivots = []
+    for (const addition of pivotAdditions) {
+      resolvedPivots.push({
+        worksheetPath:
+          additionPaths.get(addition.sheetName) ??
+          (await resolveWorksheetPath(pkg, addition.sheetName)),
+        sourceSheetName: addition.sourceSheetName,
+        sourceArea: addition.sourceArea,
+        location: addition.location,
+        name: addition.name,
+        fieldNames: addition.fieldNames,
+        rowFieldIndices: addition.rowFieldIndices,
+        columnFieldIndex: addition.columnFieldIndex,
+        pageFieldIndices: addition.pageFieldIndices,
+        pageLevelItems: addition.pageLevelItems,
+        pageItems: addition.pageItems,
+        rowItems: addition.rowItems,
+        rowLevelItems: addition.rowLevelItems,
+        rowLines: addition.rowLines,
+        columnItems: addition.columnItems,
+        columnFieldIndices: addition.columnFieldIndices,
+        colLevelItems: addition.colLevelItems,
+        colLines: addition.colLines,
+        groupings: addition.groupings,
+        filters: addition.filters,
+        rowHiddenItems: addition.rowHiddenItems,
+        colHiddenItems: addition.colHiddenItems,
+        values: addition.values,
+      })
+    }
+    workbookXml = await applyPivotAdditions(pkg, resolvedPivots, workbookXml, touchedEntries)
+  }
+
+  // Slicer persistence runs after pivot additions: new pivots this
+  // save join the tabId enumeration, and the workbook-level cache exts land
+  // on the final workbook XML (before calcPr maintenance sees it).
+  if (slicerState !== null && (slicerState.slicers.length > 0 || slicerState.removals.length > 0)) {
+    const resolvedSlicers: SlicerControlWrite[] = []
+    for (const { sheetName, ...control } of slicerState.slicers) {
+      resolvedSlicers.push({
+        ...control,
+        worksheetPath: additionPaths.get(sheetName) ?? (await resolveWorksheetPath(pkg, sheetName)),
+      })
+    }
+    const resolved: SlicerStateWrite = {
+      slicers: resolvedSlicers,
+      removals: slicerState.removals,
+    }
+    workbookXml = await applySlicerState(pkg, resolved, workbookXml, touchedEntries)
+  }
+
+  // Excel trusts cached formula values on open, so formulas that depend on an
+  // edited cell would show stale results without a forced recalculation.
+  workbookXml = ensureFullCalcOnLoad(workbookXml)
+
+  // The defined-name mirror goes in last, on the final XML: it records each
+  // sheet by its position in workbook order, so it has to be written against
+  // the sheet list this save actually produced, not the one it started from.
+  // (The part above is the record; this is only what survives a reader that
+  // rebuilds the package and drops the part — see applyRedactionNameMirror.)
+  if (rekeyed !== null) {
+    workbookXml = applyRedactionNameMirror(
+      workbookXml,
+      rekeyed,
+      parseSheetElements(workbookXml).map((sheet) => sheet.name),
+    )
+  }
+
+  if (workbookXml !== originalWorkbookXml) {
+    pkg.write(workbookPath, workbookXml)
+    touchedEntries.add(workbookPath)
+  }
+
+  if (externalLinkOps !== null) {
+    await applyExternalLinkOps(pkg, externalLinkOps, touchedEntries)
+  }
+
+  return pkg.toPlan(touchedEntries)
+}
+
+/// Assigns non-colliding part paths, sheetId attributes, and relationship
+/// ids to the sheets being added.
+async function allocateAddedSheets(
+  pkg: PackageEditor,
+  names: readonly string[],
+  touchedEntries: Set<string>,
+): Promise<SheetAllocation[]> {
+  if (names.length === 0) return []
+  const workbookXml = await pkg.readText('xl/workbook.xml')
+  const relationshipsPath = 'xl/_rels/workbook.xml.rels'
+  const relationshipsXml = await pkg.readText(relationshipsPath)
+  let nextPartNumber = 1
+  for (const path of await pkg.paths()) {
+    const match = /^xl\/worksheets\/sheet([0-9]+)\.xml$/.exec(path)
+    if (match) nextPartNumber = Math.max(nextPartNumber, Number(match[1]) + 1)
+  }
+  const nextSheetId = maxSheetIdInWorkbook(workbookXml) + 1
+  const relationshipIds = nextFreeRelationshipIds(relationshipsXml, names.length)
+  const allocations = names.map((name, index) => ({
+    name,
+    path: `xl/worksheets/sheet${nextPartNumber + index}.xml`,
+    sheetId: nextSheetId + index,
+    relationshipId: relationshipIds[index]!,
+  }))
+  // Written now rather than in applySheetPlanToPackage so later allocators
+  // (styles.xml, metadata.xml) see these ids as taken.
+  let updatedRelationships = relationshipsXml
+  for (const allocation of allocations) {
+    updatedRelationships = addWorksheetRelationship(
+      updatedRelationships,
+      allocation.relationshipId,
+      allocation.path.replace(/^xl\//, ''),
+    )
+  }
+  pkg.write(relationshipsPath, updatedRelationships)
+  touchedEntries.add(relationshipsPath)
+  return allocations
+}
+
+async function applySheetPlanToPackage(
+  pkg: PackageEditor,
+  plan: SheetEditPlan,
+  additions: readonly SheetAllocation[],
+  workbookXml: string,
+  touchedEntries: Set<string>,
+): Promise<string> {
+  const elements = parseSheetElements(workbookXml)
+  const originalNames = elements.map((element) => element.name)
+  const originalSet = new Set(originalNames)
+  const renameByOriginal = new Map(plan.renames.map((rename) => [rename.sheetName, rename.newName]))
+  for (const rename of plan.renames) {
+    validateSheetName(rename.newName)
+    if (!originalSet.has(rename.sheetName)) {
+      throw new SheetEditError(`Sheet "${rename.sheetName}" was not found in the workbook.`)
+    }
+  }
+  for (const addition of additions) validateSheetName(addition.name)
+  for (const removal of plan.removals) {
+    if (!originalSet.has(removal)) {
+      throw new SheetEditError(`Sheet "${removal}" was not found in the workbook.`)
+    }
+    if (renameByOriginal.has(removal)) {
+      throw new SheetEditError(`Sheet "${removal}" cannot be renamed and removed in one save.`)
+    }
+  }
+  const finalNames = [
+    ...originalNames
+      .filter((name) => !plan.removals.includes(name))
+      .map((name) => renameByOriginal.get(name) ?? name),
+    ...additions.map((addition) => addition.name),
+  ]
+  if (new Set(finalNames).size !== finalNames.length) {
+    throw new SheetEditError('Two sheets would end up with the same name — aborted.')
+  }
+
+  const removalPaths = new Map<string, string>()
+  for (const removal of plan.removals) {
+    removalPaths.set(removal, await resolveWorksheetPath(pkg, removal))
+  }
+  const removedPathSet = new Set(removalPaths.values())
+  const packagePaths = await pkg.paths()
+  const survivingWorksheetPaths = packagePaths.filter(
+    (path) => /^xl\/worksheets\/[^/]+\.xml$/.test(path) && !removedPathSet.has(path),
+  )
+  const chartPaths = packagePaths.filter(
+    (path) => path.startsWith('xl/charts/') && path.endsWith('.xml'),
+  )
+  const pivotCacheDefinitionPaths = packagePaths.filter((path) =>
+    /^xl\/pivotCache\/pivotCacheDefinition[^/]*\.xml$/.test(path),
+  )
+
+  // Satellite parts owned by the removed sheets — drawings with their images
+  // and charts, legacy VML, comments, tables — die with the sheet. The
+  // closure walks each owned part's own relationships; unsupported sheet
+  // relationships (pivot tables, slicers) fail closed inside
+  // classifyRemovedSheetRels.
+  const removalRelsPaths = new Map<string, string>()
+  const ownedPartsByRemoval = new Map<string, ReadonlySet<string>>()
+  const removedOwnedParts = new Set<string>()
+  for (const removal of plan.removals) {
+    const removalPath = removalPaths.get(removal) ?? ''
+    const relsPath = relsPathFor(removalPath)
+    removalRelsPaths.set(removal, relsPath)
+    const owned = new Set<string>()
+    if (await pkg.has(relsPath)) {
+      const targets = classifyRemovedSheetRels(await pkg.readText(relsPath), removal)
+      const queue = targets.map((target) => resolveRelTarget(removalPath, target))
+      while (queue.length > 0) {
+        const part = queue.pop() as string
+        if (owned.has(part) || !(await pkg.has(part))) continue
+        owned.add(part)
+        const childRelsPath = relsPathFor(part)
+        if (!(await pkg.has(childRelsPath))) continue
+        owned.add(childRelsPath)
+        for (const entry of parseRelationships(await pkg.readText(childRelsPath))) {
+          if (!entry.external) queue.push(resolveRelTarget(part, entry.target))
+        }
+      }
+    }
+    ownedPartsByRemoval.set(removal, owned)
+    for (const part of owned) removedOwnedParts.add(part)
+  }
+
+  // A part in the closure may also be referenced from a part that survives —
+  // an image placed on two sheets shares one xl/media entry. Walk every
+  // surviving rels part and pull such targets (with their own subtrees) back
+  // out of the removal set.
+  const dyingRelsParts = new Set([
+    ...removalRelsPaths.values(),
+    ...[...removedOwnedParts].filter((part) => part.endsWith('.rels')),
+  ])
+  const keepQueue: string[] = []
+  for (const relsPath of packagePaths) {
+    if (!relsPath.endsWith('.rels') || dyingRelsParts.has(relsPath)) continue
+    const owner = partPathForRels(relsPath)
+    if (removedPathSet.has(owner)) continue
+    for (const entry of parseRelationships(await pkg.readText(relsPath))) {
+      if (entry.external) continue
+      const target = resolveRelTarget(owner, entry.target)
+      if (removedOwnedParts.has(target)) keepQueue.push(target)
+    }
+  }
+  while (keepQueue.length > 0) {
+    const part = keepQueue.pop() as string
+    if (!removedOwnedParts.delete(part)) continue
+    const childRelsPath = relsPathFor(part)
+    if (removedOwnedParts.delete(childRelsPath)) {
+      for (const entry of parseRelationships(await pkg.readText(childRelsPath))) {
+        if (!entry.external) keepQueue.push(resolveRelTarget(part, entry.target))
+      }
+    }
+  }
+
+  // Removals fail closed while every reference to the sheet is still intact.
+  const removedLocalIds = new Set(
+    originalNames.flatMap((name, index) => (plan.removals.includes(name) ? [index] : [])),
+  )
+  for (const removal of plan.removals) {
+    for (const path of survivingWorksheetPaths) {
+      if (!(await pkg.canPatch(path))) {
+        if (await pkg.containsText(path, removal)) {
+          throw new SheetEditError(
+            `Another sheet's formulas reference "${removal}" — deleting it is not allowed.`,
+          )
+        }
+        continue
+      }
+      if (worksheetReferencesSheet(await pkg.readText(path), removal)) {
+        throw new SheetEditError(
+          `Another sheet's formulas reference "${removal}" — deleting it is not allowed.`,
+        )
+      }
+    }
+    for (const chartPath of chartPaths) {
+      // Charts dying with a removed sheet chart that sheet's own data; only
+      // surviving charts can hold a genuinely dangling reference.
+      if (removedOwnedParts.has(chartPath)) continue
+      if (chartReferencesSheet(await pkg.readText(chartPath), removal)) {
+        throw new SheetEditError(
+          `A chart reads its data from "${removal}" — deleting it is not allowed.`,
+        )
+      }
+    }
+    if (definedNamesReferenceSheet(workbookXml, removal, removedLocalIds)) {
+      throw new SheetEditError(
+        `A workbook defined name references "${removal}" — deleting it is not allowed.`,
+      )
+    }
+    // A pivot hosted on a surviving sheet may read its source rows from the
+    // removed sheet; only the pivotCacheDefinition records that link
+    // (cacheSource/worksheetSource@sheet), so the hosting-sheet pivotTable
+    // fail-close in classifyRemovedSheetRels cannot catch it.
+    for (const cachePath of pivotCacheDefinitionPaths) {
+      if (pivotCacheReadsFromSheet(await pkg.readText(cachePath), removal)) {
+        throw new SheetEditError(
+          `A pivot table reads its source data from "${removal}" — deleting it is not allowed.`,
+        )
+      }
+    }
+    // Structured references (DecoTable[Amount]) into a removed table are not
+    // sheet-qualified, so the sheet-name checks above cannot catch them.
+    // Excel treats table names as case-insensitive, so the scan must too;
+    // entries too large to patch fall back to the sidecar's exact-case scan.
+    for (const part of ownedPartsByRemoval.get(removal) ?? []) {
+      if (!removedOwnedParts.has(part) || !/^xl\/tables\/[^/]+\.xml$/.test(part)) continue
+      const name = tableDisplayName(await pkg.readText(part))
+      if (name === undefined) continue
+      const needle = `${name}[`
+      const needleLower = needle.toLowerCase()
+      for (const path of survivingWorksheetPaths) {
+        const referenced = (await pkg.canPatch(path))
+          ? (await pkg.readText(path)).toLowerCase().includes(needleLower)
+          : await pkg.containsText(path, needle)
+        if (referenced) {
+          throw new SheetEditError(
+            `Another sheet's formulas use table "${name}" on "${removal}" — deleting it is not allowed.`,
+          )
+        }
+      }
+      // Defined names scoped to a removed sheet die with it (matching the
+      // sheet-name check above), so only surviving names can block.
+      if (definedNamesUseToken(workbookXml, needle, removedLocalIds)) {
+        throw new SheetEditError(
+          `A workbook defined name uses table "${name}" on "${removal}" — deleting it is not allowed.`,
+        )
+      }
+    }
+  }
+
+  for (const removal of plan.removals) {
+    const relsPath = removalRelsPaths.get(removal) ?? ''
+    if (await pkg.has(relsPath)) pkg.remove(relsPath)
+    pkg.remove(removalPaths.get(removal) ?? '')
+  }
+  for (const part of removedOwnedParts) pkg.remove(part)
+
+  // Renames rewrite every qualified reference in the surviving parts.
+  for (const rename of plan.renames) {
+    for (const path of survivingWorksheetPaths) {
+      if (!(await pkg.canPatch(path))) {
+        if (await pkg.containsText(path, rename.sheetName)) {
+          throw new SheetEditError(
+            `${path} references "${rename.sheetName}" but is too large to rewrite — ` +
+              'renaming this sheet cannot be saved.',
+          )
+        }
+        continue
+      }
+      const xml = await pkg.readText(path)
+      const renamed = renameSheetReferencesInWorksheet(xml, rename.sheetName, rename.newName)
+      if (renamed !== xml) {
+        pkg.write(path, renamed)
+        touchedEntries.add(path)
+      }
+    }
+    for (const chartPath of chartPaths) {
+      // Charts cascade-deleted with a removed sheet are already gone from the
+      // package by this point — reading them would throw.
+      if (removedOwnedParts.has(chartPath)) continue
+      const xml = await pkg.readText(chartPath)
+      const renamed = renameSheetReferencesInChart(xml, rename.sheetName, rename.newName)
+      if (renamed !== xml) {
+        pkg.write(chartPath, renamed)
+        touchedEntries.add(chartPath)
+      }
+    }
+    // Pivot caches sourced from the renamed sheet keep working only if their
+    // worksheetSource@sheet follows the rename.
+    for (const cachePath of pivotCacheDefinitionPaths) {
+      const xml = await pkg.readText(cachePath)
+      const renamed = renameSheetInPivotCacheSource(xml, rename.sheetName, rename.newName)
+      if (renamed !== xml) {
+        pkg.write(cachePath, renamed)
+        touchedEntries.add(cachePath)
+      }
+    }
+    workbookXml = renameSheetReferencesInDefinedNames(workbookXml, rename.sheetName, rename.newName)
+  }
+
+  const relationshipsPath = 'xl/_rels/workbook.xml.rels'
+  const originalRelationships = await pkg.readText(relationshipsPath)
+  let relationshipsXml = originalRelationships
+  for (const removal of plan.removals) {
+    const relationshipId = elements.find((element) => element.name === removal)?.relationshipId
+    if (relationshipId) relationshipsXml = removeRelationshipById(relationshipsXml, relationshipId)
+  }
+  if (relationshipsXml !== originalRelationships) {
+    pkg.write(relationshipsPath, relationshipsXml)
+    touchedEntries.add(relationshipsPath)
+  }
+
+  const contentTypesPath = '[Content_Types].xml'
+  const originalContentTypes = await pkg.readText(contentTypesPath)
+  let contentTypesXml = originalContentTypes
+  for (const removal of plan.removals) {
+    contentTypesXml = removePartOverride(contentTypesXml, removalPaths.get(removal) ?? '')
+  }
+  for (const part of removedOwnedParts) {
+    contentTypesXml = removePartOverride(contentTypesXml, part)
+  }
+  for (const addition of additions) {
+    contentTypesXml = addWorksheetOverride(contentTypesXml, addition.path)
+  }
+  if (contentTypesXml !== originalContentTypes) {
+    pkg.write(contentTypesPath, contentTypesXml)
+    touchedEntries.add(contentTypesPath)
+  }
+
+  return applySheetPlanToWorkbookXml(workbookXml, plan, additions)
+}
+
+/// Fails closed when a mutation altered any package entry it did not intend
+/// to touch, or dropped/created entries beyond the declared removals and
+/// additions.
+export function assertOnlyTouchedEntriesChanged(mutation: XlsxMutation): void {
+  const touched = new Set(mutation.touchedEntries)
+  const removed = new Set(mutation.removedEntries)
+  const added = new Set(mutation.addedEntries)
+  const before = new Set(mutation.beforeEntries.map((entry) => entry.path))
+  const after = new Map(mutation.afterEntries.map((entry) => [entry.path, entry.sha256]))
+  if (mutation.beforeEntries.length !== mutation.afterEntries.length + removed.size - added.size) {
+    throw new Error('Saving would change the workbook package structure — aborted.')
+  }
+  for (const entry of mutation.beforeEntries) {
+    const afterHash = after.get(entry.path)
+    if (afterHash === undefined) {
+      if (removed.has(entry.path)) continue
+      throw new Error(`Saving would drop ${entry.path} — aborted.`)
+    }
+    if (removed.has(entry.path)) {
+      throw new Error(`Saving should have removed ${entry.path} but did not — aborted.`)
+    }
+    if (!touched.has(entry.path) && afterHash !== entry.sha256) {
+      throw new Error(`Saving would unexpectedly modify ${entry.path} — aborted.`)
+    }
+  }
+  for (const path of added) {
+    if (before.has(path)) {
+      throw new Error(`Saving should have created ${path} but it already existed — aborted.`)
+    }
+    if (!after.has(path)) {
+      throw new Error(`Saving should have created ${path} but did not — aborted.`)
+    }
+  }
+  for (const entry of mutation.afterEntries) {
+    if (!before.has(entry.path) && !added.has(entry.path)) {
+      throw new Error(`Saving would unexpectedly create ${entry.path} — aborted.`)
+    }
+  }
+}
+
+export function toA1Address(row: number, column: number): string {
+  if (!Number.isInteger(row) || row < 0 || !Number.isInteger(column) || column < 0) {
+    throw new Error(`Invalid cell coordinates: ${row},${column}`)
+  }
+  let letters = ''
+  let remaining = column + 1
+  while (remaining > 0) {
+    remaining -= 1
+    letters = String.fromCharCode(65 + (remaining % 26)) + letters
+    remaining = Math.floor(remaining / 26)
+  }
+  return `${letters}${row + 1}`
+}
+
+/**
+ * Flush a freshly written file before it is renamed into place. The handle
+ * must be writable — Windows' FlushFileBuffers rejects read-only handles
+ * with EPERM (#356) — and the flush is best-effort on top of that: inside
+ * cloud-sync folders (OneDrive/Dropbox) or under AV locks, reopening or
+ * syncing can still be refused with EPERM/EACCES/EBUSY. The bytes are
+ * already written at this point, so a refused flush only weakens crash
+ * durability and must not fail the save itself.
+ */
+export async function syncFileBestEffort(path: string): Promise<void> {
+  const tolerated = (error: unknown) =>
+    ['EPERM', 'EACCES', 'EBUSY', 'EINVAL', 'ENOSYS'].includes(
+      (error as NodeJS.ErrnoException).code ?? '',
+    )
+  let descriptor: number
+  try {
+    descriptor = openSync(path, 'r+')
+  } catch (error: unknown) {
+    if (tolerated(error)) return
+    throw error
+  }
+  try {
+    fsyncSync(descriptor)
+  } catch (error: unknown) {
+    if (!tolerated(error)) throw error
+  } finally {
+    closeSync(descriptor)
+  }
+}
+
+export async function writeXlsxAtomically(path: string, buffer: Buffer): Promise<void> {
+  const temporaryPath = join(dirname(path), `${basename(path)}.${crypto.randomUUID()}.tmp`)
+  try {
+    writeFileSync(temporaryPath, buffer, { flag: 'wx' })
+    await syncFileBestEffort(temporaryPath)
+    await rename(temporaryPath, path)
+  } catch (error: unknown) {
+    await rm(temporaryPath, { force: true })
+    throw error
+  }
+}
+
+export async function mutateXlsxFile(
+  path: string,
+  expectedSha256: string,
+  plan: ChangePlan,
+  sheetNamesById: Readonly<Record<string, string>>,
+): Promise<XlsxMutation> {
+  const source = readFileSync(path)
+  if (sha256(source) !== expectedSha256) {
+    throw new Error('The workbook changed on disk after preview.')
+  }
+  const mutation = await applyPlanToXlsx(source, plan, sheetNamesById)
+  await writeXlsxAtomically(path, mutation.buffer)
+  return mutation
+}
+
+export function sha256(input: Buffer | string): string {
+  return createHash('sha256').update(input).digest('hex')
+}
+
+/// Package-relative form of a ZIP entry name, null when it escapes the root.
+/// '\' separators, a leading '/' and empty segments are producer quirks Excel
+/// tolerates (genoffice#196 shipped `/xl/workbook.xml`); folding them keeps
+/// lookups and the saved package on conformant names.
+function canonicalEntryName(raw: string): string | null {
+  if (raw.includes('\0')) return null
+  const segments: string[] = []
+  for (const segment of raw.split(/[/\\]/)) {
+    if (segment === '' || segment === '.') continue
+    if (segment === '..') {
+      if (segments.pop() === undefined) return null
+      continue
+    }
+    segments.push(segment)
+  }
+  const name = segments.join('/')
+  return name && /[/\\]$/.test(raw) ? `${name}/` : name
+}
+
+async function loadSafeZip(buffer: Buffer): Promise<JSZip> {
+  // Metered gate first: a forged central directory must not reach JSZip.
+  await assertZipInflatesWithinLimits(buffer, XLSX_ZIP_LIMITS)
+  const zip = await JSZip.loadAsync(buffer, { checkCRC32: true })
+  const paths = Object.keys(zip.files)
+  if (paths.length > MAX_ENTRY_COUNT) throw new Error('Workbook contains too many ZIP entries.')
+  // Snapshot first: removing a folder entry such as "/" drops its children too.
+  const files = paths.map((path) => [path, zip.files[path]] as const)
+  for (const [path, file] of files) {
+    const canonical = canonicalEntryName(path)
+    if (canonical === null) throw new Error('Workbook contains an unsafe ZIP path.')
+    if (canonical === path) continue
+    zip.remove(path)
+    if (file && !file.dir && canonical && !zip.files[canonical]) {
+      zip.file(canonical, await file.async('nodebuffer'), { createFolders: false, date: file.date })
+    }
+  }
+  return zip
+}
+
+async function readTextEntry(zip: JSZip, path: string): Promise<string> {
+  const entry = zip.file(path)
+  if (!entry) throw new Error(`Workbook is missing ${path}.`)
+  return entry.async('text')
+}
+
+/// Drawing anchors, table ranges and OLE objects' legacy VML anchors live in
+/// sibling parts wired through the worksheet rels; they must shift with the
+/// same structural op batch or the sheet's visuals and tables would drift.
+async function shiftAnchoredSheetParts(
+  pkg: PackageEditor,
+  worksheetPath: string,
+  worksheetXml: string,
+  ops: readonly StructuralOp[],
+  touchedEntries: Set<string>,
+  tableInsertions?: Array<{ partPath: string; insertions: TableColumnInsertion[] }>,
+): Promise<void> {
+  if (!ops.some(isShiftingOp)) return
+  const parts: Array<{ relId: string; kind: 'drawing' | 'table' | 'vml' }> = []
+  const drawingRelId = /<drawing\b[^>]*\br:id="([^"]+)"/.exec(worksheetXml)?.[1]
+  if (drawingRelId !== undefined) parts.push({ relId: drawingRelId, kind: 'drawing' })
+  for (const match of worksheetXml.matchAll(/<tablePart\b[^>]*\br:id="([^"]+)"/g)) {
+    if (match[1] !== undefined) parts.push({ relId: match[1], kind: 'table' })
+  }
+  // The legacy VML part holds the OLE objects' fallback anchors; only needed
+  // when the sheet actually has <oleObjects> (notes-only VML stays untouched).
+  const legacyRelId = /<legacyDrawing\b[^>]*\br:id="([^"]+)"/.exec(worksheetXml)?.[1]
+  if (legacyRelId !== undefined && worksheetXml.includes('<oleObjects')) {
+    parts.push({ relId: legacyRelId, kind: 'vml' })
+  }
+  if (parts.length === 0) return
+  const relsPath = relsPathFor(worksheetPath)
+  if (!(await pkg.has(relsPath))) {
+    throw new StructuralShiftError(
+      `${worksheetPath} has anchored parts but ${relsPath} is missing — ` +
+        'rows/columns cannot shift here.',
+    )
+  }
+  const relsXml = await pkg.readText(relsPath)
+  for (const { relId, kind } of parts) {
+    // Two-step lookup: attribute order varies by producer (openpyxl puts
+    // Target before Id), so never assume Id precedes Target.
+    const relationshipXml = new RegExp(
+      `<Relationship\\b[^>]*\\bId="${escapeRegExp(relId)}"[^>]*/?>`,
+    ).exec(relsXml)?.[0]
+    const target =
+      relationshipXml === undefined ? undefined : /\bTarget="([^"]+)"/.exec(relationshipXml)?.[1]
+    if (target === undefined) {
+      throw new StructuralShiftError(
+        `${worksheetPath} references ${kind} ${relId} but its relationship is missing — ` +
+          'rows/columns cannot shift here.',
+      )
+    }
+    const partPath = resolveRelTarget(worksheetPath, target)
+    if (!(await pkg.canPatch(partPath))) {
+      throw new StructuralShiftError(
+        `${partPath} is too large to rewrite — rows/columns cannot shift here.`,
+      )
+    }
+    const xml = await pkg.readText(partPath)
+    const insertions: TableColumnInsertion[] = []
+    const shifted =
+      kind === 'drawing'
+        ? shiftDrawingAnchors(xml, ops)
+        : kind === 'vml'
+          ? shiftVmlObjectAnchors(xml, ops)
+          : shiftTablePart(xml, ops, insertions)
+    if (insertions.length > 0) tableInsertions?.push({ partPath, insertions })
+    if (shifted === xml) continue
+    pkg.write(partPath, shifted)
+    touchedEntries.add(partPath)
+  }
+}
+
+/// Attribute order and entity encoding in <sheet> elements vary by producer,
+/// so never pattern-match the serialized XML for a name — parse each element
+/// and compare decoded names instead (issue #10: valid workbooks failed to
+/// save because r:id preceded name, or the name used numeric char refs).
+function findSheetElement(workbookXml: string, sheetName: string): SheetElement | undefined {
+  return parseSheetElements(workbookXml).find((element) => element.name === sheetName)
+}
+
+function isMissingPartError(error: unknown): boolean {
+  return error instanceof Error && /was not found\.|Workbook is missing /.test(error.message)
+}
+
+/// One declarative filter snapshot onto its final home. Excel keeps a
+/// ListObject's filter in the table part; the worksheet only ever carries
+/// row visibility for it (a worksheet autoFilter overlapping a table is
+/// invalid OOXML). Routing is geometric: exactly one table can contain the
+/// range because tables never overlap. A range that straddles a table
+/// boundary cannot be represented in either place, so it fails closed. A
+/// contained range whose table part is gone (Convert to Range in this same
+/// save) falls back to the worksheet element — Excel's own conversion
+/// semantics.
+async function applyRoutedFilterState(
+  pkg: PackageEditor,
+  worksheetPath: string,
+  state: SheetFilterState,
+  touchedEntries: Set<string>,
+): Promise<void> {
+  const match = state.filter?.range ?? state.visibilityRange
+  let routed: { table: LocatedTable; area: TableArea } | undefined
+  for (const table of await sheetTableParts(pkg, worksheetPath)) {
+    const area = tablePartArea(table)
+    if (area === null) continue
+    const contains =
+      area.startRow <= match.startRow &&
+      match.endRow <= area.endRow &&
+      area.startColumn <= match.startColumn &&
+      match.endColumn <= area.endColumn
+    if (contains) {
+      routed = { table, area }
+      continue
+    }
+    if (areasOverlap(area, match)) {
+      throw new FilterEditError(
+        `The filter range overlaps Excel table ${areaToRef(area)} without sitting ` +
+          'inside it — filter within the table, or clear the table first.',
+      )
+    }
+  }
+  const worksheetXml = await pkg.readText(worksheetPath)
+  if (routed === undefined) {
+    pkg.write(worksheetPath, applyFilterState(worksheetXml, state))
+    touchedEntries.add(worksheetPath)
+    return
+  }
+  const { table, area } = routed
+  pkg.write(
+    table.path,
+    applyTableFilterState(table.xml, { area, ...tablePartCounts(table.xml) }, state.filter),
+  )
+  touchedEntries.add(table.path)
+  pkg.write(worksheetPath, applyRowVisibilityState(worksheetXml, state))
+  touchedEntries.add(worksheetPath)
+}
+
+function tablePartArea(table: LocatedTable): TableArea | null {
+  const ref = /<table\b[^>]*\bref="([^"]+)"/.exec(table.xml)?.[1]
+  if (ref === undefined) return null
+  try {
+    return parseRef(ref)
+  } catch {
+    return null
+  }
+}
+
+function tablePartCounts(tableXml: string): {
+  headerRowCount: number
+  totalsRowCount: number
+} {
+  return {
+    headerRowCount: Number(/<table\b[^>]*?\bheaderRowCount="(\d+)"/.exec(tableXml)?.[1] ?? '1'),
+    totalsRowCount: Number(/<table\b[^>]*?\btotalsRowCount="(\d+)"/.exec(tableXml)?.[1] ?? '0'),
+  }
+}
+
+async function resolveWorksheetPath(
+  reader: Pick<EntrySource, 'readText'>,
+  sheetName: string,
+): Promise<string> {
+  const workbookXml = await reader.readText('xl/workbook.xml')
+  const relationshipId = findSheetElement(workbookXml, sheetName)?.relationshipId
+  if (relationshipId === undefined)
+    throw new Error(`Sheet "${sheetName}" was not found in workbook.xml.`)
+
+  const relationshipsXml = await reader.readText('xl/_rels/workbook.xml.rels')
+  // Two-step lookup: attribute order varies by producer (openpyxl puts
+  // Target before Id), so never assume Id precedes Target.
+  const relationshipXml = new RegExp(
+    `<Relationship\\b[^>]*\\bId="${escapeRegExp(relationshipId)}"[^>]*/?>`,
+  ).exec(relationshipsXml)?.[0]
+  const targetMatch =
+    relationshipXml === undefined ? undefined : /\bTarget="([^"]+)"/.exec(relationshipXml)?.[1]
+  if (!targetMatch) throw new Error(`Relationship ${relationshipId} was not found.`)
+  const target = decodeXmlText(targetMatch).replace(/^\/?xl\//, '')
+  return resolveRelTarget('xl/workbook.xml', target)
+}
+
+function replaceSheetName(workbookXml: string, before: string, after: string): string {
+  const element = findSheetElement(workbookXml, before)
+  if (!element) throw new Error(`Sheet "${before}" was not found.`)
+  const renamedXml = element.xml.replace(
+    /(\bname=")[^"]*(")/,
+    (_match, prefix: string, suffix: string) => `${prefix}${escapeXmlAttribute(after)}${suffix}`,
+  )
+  return workbookXml.replace(element.xml, () => renamedXml)
+}
+
+function patchCell(worksheetXml: string, address: string, cell: CellState): string {
+  // Lazy trailing attributes: greedy `[^>]*` swallows the "/" of a
+  // self-closing <c/>, so `/>` never matches and the match runs on to the
+  // next </c>, taking the sibling cell with it.
+  const cellPattern = new RegExp(
+    `<c\\b[^>]*?\\br="${escapeRegExp(address)}"[^>]*?(?:/>|>[\\s\\S]*?</c>)`,
+  )
+  const replacement = serializeCell(address, cell)
+  if (cellPattern.test(worksheetXml)) {
+    return worksheetXml.replace(cellPattern, replacement)
+  }
+  if (replacement === '') return worksheetXml
+
+  const rowNumber = address.match(/[1-9][0-9]*$/)?.[0]
+  if (!rowNumber) throw new Error(`Invalid cell address: ${address}`)
+  const rowPattern = new RegExp(
+    `<row\\b([^>]*?\\br="${rowNumber}"[^>]*?)(?:/>|>([\\s\\S]*?)</row>)`,
+  )
+  const row = rowPattern.exec(worksheetXml)
+  if (row) {
+    return worksheetXml.replace(
+      rowPattern,
+      () => `<row${row[1] ?? ''}>${row[2] ?? ''}${replacement}</row>`,
+    )
+  }
+  const newRow = `<row r="${rowNumber}">${replacement}</row>`
+  if (worksheetXml.includes('</sheetData>')) {
+    return worksheetXml.replace('</sheetData>', () => `${newRow}</sheetData>`)
+  }
+  const emptySheetData = /<sheetData\s*\/>/
+  if (emptySheetData.test(worksheetXml)) {
+    return worksheetXml.replace(emptySheetData, () => `<sheetData>${newRow}</sheetData>`)
+  }
+  throw new Error('Worksheet has no sheetData element.')
+}
+
+type HeaderCellText =
+  | { kind: 'blank' }
+  /// plain=true when the cell stores this exact string (rewritable); numbers
+  /// and booleans surface their text but the stored value stays untouched.
+  | { kind: 'text'; text: string; plain: boolean }
+  | { kind: 'opaque' }
+
+/// Display text of a table header cell. 'opaque' (formula or error cells)
+/// means the text cannot be derived safely — leave both sides alone.
+function readHeaderCellText(
+  worksheetXml: string,
+  address: string,
+  sharedStrings: readonly string[],
+): HeaderCellText {
+  const match = new RegExp(`<c\\b([^>]*)\\br="${address}"([^>]*?)(?:/>|>([\\s\\S]*?)</c>)`).exec(
+    worksheetXml,
+  )
+  if (!match) return { kind: 'blank' }
+  const attributes = `${match[1] ?? ''} ${match[2] ?? ''}`
+  const body = match[3] ?? ''
+  if (/<f[\s/>]/.test(body)) return { kind: 'opaque' }
+  const type = readXmlAttribute(attributes, 't')
+  if (type === 'e') return { kind: 'opaque' }
+  if (type === 'inlineStr') {
+    const text = [...body.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)]
+      .map((textMatch) => decodeCellText(textMatch[1] ?? ''))
+      .join('')
+    return text === '' ? { kind: 'blank' } : { kind: 'text', text, plain: true }
+  }
+  const rawValue = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/.exec(body)?.[1]
+  if (rawValue === undefined) return { kind: 'blank' }
+  if (type === 's') {
+    const text = sharedStrings[Number(rawValue)] ?? ''
+    return text === '' ? { kind: 'blank' } : { kind: 'text', text, plain: true }
+  }
+  if (type === 'b') return { kind: 'text', text: rawValue === '1' ? 'TRUE' : 'FALSE', plain: false }
+  const text = type === 'str' ? decodeCellText(rawValue) : decodeXmlText(rawValue)
+  if (text === '') return { kind: 'blank' }
+  return { kind: 'text', text, plain: type === 'str' }
+}
+
+/// Rewrites a cell to hold plain text, keeping its style index (table header
+/// formatting) intact.
+function writeHeaderCellText(worksheetXml: string, address: string, text: string): string {
+  const pattern = new RegExp(`<c\\b([^>]*)\\br="${address}"([^>]*?)(?:/>|>[\\s\\S]*?</c>)`)
+  const match = pattern.exec(worksheetXml)
+  const body = `<is><t xml:space="preserve">${escapeCellText(text)}</t></is>`
+  if (match) {
+    const style = readXmlAttribute(`${match[1] ?? ''} ${match[2] ?? ''}`, 's')
+    const cell = `<c r="${address}"${style === undefined ? '' : ` s="${style}"`} t="inlineStr">${body}</c>`
+    return (
+      worksheetXml.slice(0, match.index) + cell + worksheetXml.slice(match.index + match[0].length)
+    )
+  }
+  // Missing cell: splice into its row in column order (patchCell would append
+  // it after the row's last cell).
+  const rowNumber = address.match(/[1-9][0-9]*$/)?.[0]
+  const rowMatch =
+    rowNumber === undefined
+      ? null
+      : new RegExp(`<row\\b[^>]*\\br="${rowNumber}"[^>]*?(/>|>)`).exec(worksheetXml)
+  if (!rowMatch) return patchCell(worksheetXml, address, { value: text })
+  const cell = `<c r="${address}" t="inlineStr">${body}</c>`
+  const rowStart = rowMatch.index + rowMatch[0].length
+  if (rowMatch[1] === '/>') {
+    const opened = rowMatch[0].slice(0, -2) + '>'
+    return (
+      worksheetXml.slice(0, rowMatch.index) +
+      `${opened}${cell}</row>` +
+      worksheetXml.slice(rowStart)
+    )
+  }
+  const rowEnd = worksheetXml.indexOf('</row>', rowStart)
+  if (rowEnd === -1) return patchCell(worksheetXml, address, { value: text })
+  const column = parseA1Column(address)
+  const siblings = worksheetXml.slice(rowStart, rowEnd)
+  let insertAt = rowEnd
+  for (const sibling of siblings.matchAll(/<c\b[^>]*?\br="([A-Z]{1,3})[0-9]+"/g)) {
+    if (parseA1Column(`${sibling[1]}1`) > column) {
+      insertAt = rowStart + sibling.index
+      break
+    }
+  }
+  return worksheetXml.slice(0, insertAt) + cell + worksheetXml.slice(insertAt)
+}
+
+/// Excel-style de-duplication: a clashing header gets a numeric suffix. The
+/// column's own generated name never counts as a clash.
+function uniqueTableColumnName(text: string, taken: Set<string>, ownName: string): string {
+  const isFree = (candidate: string): boolean =>
+    candidate.toLowerCase() === ownName.toLowerCase() || !taken.has(candidate.toLowerCase())
+  if (isFree(text)) return text
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${text}${suffix}`
+    if (isFree(candidate)) return candidate
+  }
+}
+
+function renameTableColumn(tableXml: string, id: number, name: string): string {
+  return tableXml.replace(
+    new RegExp(`(<tableColumn\\b[^>]*?\\bid="${id}"[^>]*?\\bname=")[^"]*(")`),
+    (_m, prefix: string, suffix: string) => `${prefix}${escapeXmlAttribute(name)}${suffix}`,
+  )
+}
+
+function readCellStyleIndex(worksheetXml: string, address: string): number | undefined {
+  const match = new RegExp(`<c\\b([^>]*)\\br="${address}"([^>]*?)[/>]`).exec(worksheetXml)
+  if (!match) return undefined
+  const index = readXmlAttribute(`${match[1] ?? ''} ${match[2] ?? ''}`, 's')
+  return index === undefined ? undefined : Number(index)
+}
+
+/// Sets only the style index of a cell, leaving its stored content (value,
+/// type, formula) byte-for-byte untouched. Missing cells become empty styled
+/// cells so formatting applies to blanks too.
+function patchCellStyleOnly(
+  worksheetXml: string,
+  address: string,
+  styleIndex: number | undefined,
+): string {
+  if (styleIndex === undefined) return worksheetXml
+  const cellPattern = new RegExp(`(<c\\b[^>]*?\\br="${address}"[^>]*?)(\\s*/>|>)`)
+  const existing = cellPattern.exec(worksheetXml)
+  if (existing) {
+    const opening = existing[1] ?? ''
+    const patched = /\bs="[^"]*"/.test(opening)
+      ? opening.replace(/\bs="[^"]*"/, () => `s="${styleIndex}"`)
+      : opening.replace(`r="${address}"`, () => `r="${address}" s="${styleIndex}"`)
+    return worksheetXml.replace(cellPattern, () => `${patched}${existing[2] ?? ''}`)
+  }
+  return insertMissingCell(worksheetXml, address, `<c r="${address}" s="${styleIndex}"/>`)
+}
+
+/// Rewrites one cell in worksheet XML. The original cell's style index is
+/// kept (or replaced by styleOverride) so edits don't strip formatting, and
+/// missing cells or rows are inserted in ascending order (Excel expects
+/// sorted sheetData).
+function patchCellKeepingStyle(
+  worksheetXml: string,
+  address: string,
+  cell: CellState,
+  styleOverride?: number,
+  rich?: readonly WorkbookRichRun[],
+): string {
+  const cellPattern = new RegExp(`<c\\b([^>]*)\\br="${address}"([^>]*?)(?:/>|>[\\s\\S]*?</c>)`)
+  const existing = cellPattern.exec(worksheetXml)
+  const styleIndex =
+    styleOverride !== undefined
+      ? String(styleOverride)
+      : existing
+        ? readXmlAttribute(`${existing[1] ?? ''} ${existing[2] ?? ''}`, 's')
+        : undefined
+  const replacement = serializeStyledCell(
+    address,
+    cell,
+    styleIndex,
+    rich,
+    existingArrayRef(existing?.[0] ?? ''),
+  )
+  // Function replacements throughout: user text can contain `$1`/`$&`, which
+  // string replacements would expand as backreferences and corrupt the XML.
+  if (existing) return worksheetXml.replace(cellPattern, () => replacement)
+  if (replacement === '') return worksheetXml
+  return insertMissingCell(worksheetXml, address, replacement)
+}
+
+/**
+ * Refresh a formula cell's cached value: replace (or insert) <v> inside the existing
+ * <c>, keeping <f> and every attribute. Cells that don't exist or aren't formulas are
+ * left alone — the recalc overlay only ever names formula cells, and a cell the user
+ * turned into a literal must keep the literal.
+ */
+function patchFormulaCachedValue(
+  worksheetXml: string,
+  address: string,
+  value: FormulaCachedValue,
+): string {
+  // A self-closing <c/> has no formula to keep; it must match itself rather
+  // than run on into the next cell.
+  const cellPattern = new RegExp(`<c\\b([^>]*?)\\br="${address}"([^>]*?)(?:/>|>([\\s\\S]*?)</c>)`)
+  const existing = cellPattern.exec(worksheetXml)
+  if (!existing || existing[3] === undefined) return worksheetXml
+  const body = existing[3] ?? ''
+  if (!/<f[\s/>]/.test(body)) return worksheetXml
+  const attrs = `${existing[1] ?? ''}${existing[2] ?? ''}`
+  // Formula results carry t="str" for text, t="e" for an engine-typed error,
+  // no t (numeric default) otherwise; booleans use t="b" with 1/0. A null
+  // result drops the cached value entirely.
+  const numeric = typeof value === 'number' && Number.isFinite(value)
+  // Collapse the leftover whitespace too: group1's space before r= survives
+  // the strip, and re-splicing it per rewrite grew one blank per rewrite.
+  const stripped = attrs
+    .replace(/\st="[^"]*"/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ')
+  let typeAttr = ''
+  let valueXml = ''
+  if (numeric) {
+    valueXml = `<v>${value}</v>`
+  } else if (typeof value === 'boolean') {
+    typeAttr = ' t="b"'
+    valueXml = `<v>${value ? 1 : 0}</v>`
+  } else if (typeof value === 'object' && value !== null) {
+    typeAttr = ' t="e"'
+    valueXml = `<v>${escapeCellText(value.error)}</v>`
+  } else if (value !== null && value !== undefined && value !== '') {
+    typeAttr = ' t="str"'
+    valueXml = `<v>${escapeCellText(String(value))}</v>`
+  }
+  // Keep <f> (and any other children apart from the cached value) verbatim.
+  const kept = body.replace(/<v\b[^>]*\/>|<v\b[^>]*>[\s\S]*?<\/v>/g, '')
+  const replacement = `<c r="${address}"${stripped ? ` ${stripped}` : ''}${typeAttr}>${kept}${valueXml}</c>`
+  return worksheetXml.replace(cellPattern, () => replacement)
+}
+
+/// Row number (1-based, as in <row r=…>) → column (0-based) → the pending
+/// item for that cell (edits, a cached formula value, …). One applier
+/// function per sheet consumes the items — deliberately not a closure per
+/// cell, which at millions of edits costs more memory than the edits
+/// themselves. '' in = the cell does not exist; '' out = the cell is removed
+/// (or stays absent).
+type SheetCellItems<T> = Map<number, Map<number, T>>
+type CellItemApply<T> = (cellXml: string, rowNumber: number, column: number, item: T) => string
+
+/// One journaled edit applied to a single cell's XML — the same
+/// patchCellKeepingStyle / patchCellStyleOnly semantics the save path always
+/// had, minus the whole-worksheet rescan per edit.
+function applyEditToCellXml(
+  cellXml: string,
+  address: string,
+  edit: CellEdit,
+  stylesheet: StylesheetEditor | null,
+): string {
+  let styleOverride: number | undefined
+  if (edit.styleReset) {
+    styleOverride = edit.style && stylesheet ? stylesheet.resolveStyle(0, edit.style) : 0
+  } else if (edit.style && stylesheet) {
+    const baseIndex = (cellXml === '' ? undefined : readCellStyleIndex(cellXml, address)) ?? 0
+    styleOverride = stylesheet.resolveStyle(baseIndex, edit.style)
+  }
+  if (edit.writeValue) {
+    if (cellXml !== '') {
+      return patchCellKeepingStyle(cellXml, address, edit.cell, styleOverride, edit.rich)
+    }
+    const styleIndex = styleOverride === undefined ? undefined : String(styleOverride)
+    return serializeStyledCell(address, edit.cell, styleIndex, edit.rich)
+  }
+  if (styleOverride === undefined) return cellXml
+  if (cellXml === '') return `<c r="${address}" s="${styleOverride}"/>`
+  return patchCellStyleOnly(cellXml, address, styleOverride)
+}
+
+function groupBySheet<T extends { readonly sheetName: string }>(
+  items: readonly T[],
+): Map<string, T[]> {
+  const grouped = new Map<string, T[]>()
+  for (const item of items) {
+    const sheetItems = grouped.get(item.sheetName) ?? []
+    sheetItems.push(item)
+    grouped.set(item.sheetName, sheetItems)
+  }
+  return grouped
+}
+
+interface CellMutation {
+  fill?: BulkConstantFill
+  edits?: CellEdit | CellEdit[]
+}
+
+/// Rewriting a shared-formula master as a plain formula orphans its
+/// followers: a bare `<f t="shared" si="N"/>` carries no text of its own, so
+/// the saved file reopens with empty formulas in every untouched follower.
+/// Before the edits apply, expand each affected group's followers into plain
+/// translated formulas (cached <v> and attributes stay untouched).
+function materializeEditedSharedFormulaGroups(
+  worksheetXml: string,
+  cellMutations: SheetCellItems<CellMutation>,
+): string {
+  if (!worksheetXml.includes('t="shared"')) return worksheetXml
+  const rewritten = new Set<string>()
+  for (const [rowNumber, columns] of cellMutations) {
+    for (const [column, mutation] of columns) {
+      const edits =
+        mutation.edits === undefined
+          ? []
+          : Array.isArray(mutation.edits)
+            ? mutation.edits
+            : [mutation.edits]
+      if (mutation.fill !== undefined || edits.some((edit) => edit.writeValue)) {
+        rewritten.add(toA1Address(rowNumber - 1, column))
+      }
+    }
+  }
+  if (rewritten.size === 0) return worksheetXml
+  const isRewritten = (cell: SharedFormulaCell) => rewritten.has(toA1Address(cell.row, cell.column))
+  // Untranslatable follower (a shifted reference would leave the sheet —
+  // impossible for a group Excel itself wrote, but never leave a bare
+  // shared tag): degrade to its cached static value instead.
+  return materializeSharedFormulaGroups(
+    worksheetXml,
+    ({ anchor }) => isRewritten(anchor),
+    isRewritten,
+    'cached-value',
+  )
+}
+
+function groupCellMutations(
+  fills: readonly BulkConstantFill[],
+  edits: readonly CellEdit[],
+): SheetCellItems<CellMutation> {
+  const cells: SheetCellItems<CellMutation> = new Map()
+  for (const fill of fills) {
+    for (let row = fill.startRow; row <= fill.endRow; row += 1) {
+      const rowNumber = row + 1
+      let columns = cells.get(rowNumber)
+      if (!columns) {
+        columns = new Map()
+        cells.set(rowNumber, columns)
+      }
+      for (let column = fill.startColumn; column <= fill.endColumn; column += 1) {
+        columns.set(column, { ...columns.get(column), fill })
+      }
+    }
+  }
+  for (const edit of edits) {
+    const rowNumber = edit.row + 1
+    let columns = cells.get(rowNumber)
+    if (!columns) {
+      columns = new Map()
+      cells.set(rowNumber, columns)
+    }
+    const mutation = columns.get(edit.column) ?? {}
+    const existing = mutation.edits
+    mutation.edits =
+      existing === undefined
+        ? edit
+        : Array.isArray(existing)
+          ? [...existing, edit]
+          : [existing, edit]
+    columns.set(edit.column, mutation)
+  }
+  return cells
+}
+
+function applyCellEdits(
+  cellXml: string,
+  rowNumber: number,
+  column: number,
+  item: CellEdit | CellEdit[],
+  stylesheet: StylesheetEditor | null,
+): string {
+  const address = toA1Address(rowNumber - 1, column)
+  if (!Array.isArray(item)) return applyEditToCellXml(cellXml, address, item, stylesheet)
+  return item.reduce(
+    (current, edit) => applyEditToCellXml(current, address, edit, stylesheet),
+    cellXml,
+  )
+}
+
+function groupFormulaValuesByCell(
+  cells: SheetFormulaValues['cells'],
+): SheetCellItems<SheetFormulaValues['cells'][number]['value']> {
+  const valuesByCell: SheetCellItems<SheetFormulaValues['cells'][number]['value']> = new Map()
+  for (const cell of cells) {
+    const rowNumber = cell.row + 1
+    let columns = valuesByCell.get(rowNumber)
+    if (columns === undefined) {
+      columns = new Map()
+      valuesByCell.set(rowNumber, columns)
+    }
+    columns.set(cell.column, cell.value)
+  }
+  return valuesByCell
+}
+
+/// Applies all cell transforms to a worksheet in one pass over <sheetData>,
+/// instead of one whole-XML rewrite per cell (which made large saves
+/// O(edits × sheet size)). Rows and cells are assumed to carry r attributes
+/// in ascending order, as Excel and this gateway write them. With
+/// insertMissing, transforms for absent rows/cells run against '' and any
+/// non-empty result is inserted in document order.
+function transformWorksheetCells<T>(
+  worksheetXml: string,
+  cellItems: SheetCellItems<T>,
+  applyItem: CellItemApply<T>,
+  insertMissing: boolean,
+  /// Applied to the document prefix (everything before the sheetData body)
+  /// while the output is being assembled, so metadata like <dimension> is
+  /// patched inside the same single-copy pass instead of respliced into one
+  /// more full-size generation afterwards.
+  patchPrefix?: (prefix: string) => string,
+): string {
+  if (cellItems.size === 0) return worksheetXml
+  worksheetXml = inferWorksheetAddresses(worksheetXml)
+  const remainingRows = new Map(cellItems)
+  const targetRows = [...cellItems.keys()].sort((left, right) => left - right)
+  const buildRow = (rowNumber: number): string => {
+    const rowItems = remainingRows.get(rowNumber)
+    if (!rowItems) return ''
+    remainingRows.delete(rowNumber)
+    const cells = [...rowItems.entries()]
+      .sort((left, right) => left[0] - right[0])
+      .map(([column, item]) => applyItem('', rowNumber, column, item))
+      .filter((cellXml) => cellXml !== '')
+    return cells.length === 0 ? '' : `<row r="${rowNumber}">${cells.join('')}</row>`
+  }
+
+  const openIndex = worksheetXml.indexOf('<sheetData')
+  const emptySheetData = /<sheetData\s*\/>/.exec(worksheetXml)
+  if (emptySheetData || openIndex === -1) {
+    if (!insertMissing) return worksheetXml
+    const rowsXml = targetRows.map(buildRow).join('')
+    if (rowsXml === '') return worksheetXml
+    if (emptySheetData) {
+      const grown = worksheetXml.replace(
+        /<sheetData\s*\/>/,
+        () => `<sheetData>${rowsXml}</sheetData>`,
+      )
+      return patchPrefix ? patchPrefix(grown) : grown
+    }
+    throw new Error('Worksheet has no sheetData element.')
+  }
+  const closeIndex = worksheetXml.lastIndexOf('</sheetData>')
+  if (closeIndex === -1) throw new Error('Worksheet has no sheetData element.')
+  const bodyStart = worksheetXml.indexOf('>', openIndex) + 1
+  const body = worksheetXml.slice(bodyStart, closeIndex)
+
+  const documentPrefix = worksheetXml.slice(0, bodyStart)
+  const parts: string[] = [patchPrefix ? patchPrefix(documentPrefix) : documentPrefix]
+  let cursor = 0
+  let pendingIndex = 0
+  const rowOpenPattern = /<row\b[^>]*>/g
+  let openMatch: RegExpExecArray | null
+  while ((openMatch = rowOpenPattern.exec(body)) !== null) {
+    const openTag = openMatch[0]
+    let rowEnd: number
+    if (openTag.endsWith('/>')) {
+      rowEnd = openMatch.index + openTag.length
+    } else {
+      const closePosition = body.indexOf('</row>', openMatch.index + openTag.length)
+      if (closePosition === -1) break
+      rowEnd = closePosition + '</row>'.length
+    }
+    const rowXml = body.slice(openMatch.index, rowEnd)
+    parts.push(body.slice(cursor, openMatch.index))
+    cursor = rowEnd
+    rowOpenPattern.lastIndex = rowEnd
+    const rowNumber = Number(/\br="([1-9][0-9]*)"/.exec(openTag)?.[1])
+    if (!Number.isFinite(rowNumber)) {
+      parts.push(rowXml)
+      continue
+    }
+    if (insertMissing) {
+      while (pendingIndex < targetRows.length && (targetRows[pendingIndex] ?? 0) < rowNumber) {
+        parts.push(buildRow(targetRows[pendingIndex] ?? 0))
+        pendingIndex += 1
+      }
+      if (targetRows[pendingIndex] === rowNumber) pendingIndex += 1
+    }
+    const rowItems = remainingRows.get(rowNumber)
+    if (rowItems === undefined) {
+      parts.push(rowXml)
+      continue
+    }
+    remainingRows.delete(rowNumber)
+    parts.push(transformRowCells(rowXml, rowNumber, rowItems, applyItem, insertMissing))
+  }
+  parts.push(body.slice(cursor))
+  if (insertMissing) {
+    while (pendingIndex < targetRows.length) {
+      parts.push(buildRow(targetRows[pendingIndex] ?? 0))
+      pendingIndex += 1
+    }
+  }
+  parts.push(worksheetXml.slice(closeIndex))
+  return parts.join('')
+}
+
+/// One row's share of transformWorksheetCells: walk the row's cells once,
+/// transforming matches and (with insertMissing) splicing new cells in
+/// column order.
+function transformRowCells<T>(
+  rowXml: string,
+  rowNumber: number,
+  rowItems: ReadonlyMap<number, T>,
+  applyItem: CellItemApply<T>,
+  insertMissing: boolean,
+): string {
+  const openEnd = rowXml.indexOf('>') + 1
+  const selfClosing = rowXml.slice(0, openEnd).endsWith('/>')
+  const openTag = selfClosing ? `${rowXml.slice(0, openEnd - 2)}>` : rowXml.slice(0, openEnd)
+  const body = selfClosing ? '' : rowXml.slice(openEnd, rowXml.length - '</row>'.length)
+  const remaining = new Map(rowItems)
+  const targetColumns = [...rowItems.keys()].sort((left, right) => left - right)
+  const insertColumn = (column: number): string => {
+    const item = remaining.get(column)
+    if (item === undefined) return ''
+    remaining.delete(column)
+    return applyItem('', rowNumber, column, item)
+  }
+
+  const parts: string[] = []
+  let cursor = 0
+  let pendingIndex = 0
+  const cellOpenPattern = /<c\b[^>]*>/g
+  let openMatch: RegExpExecArray | null
+  while ((openMatch = cellOpenPattern.exec(body)) !== null) {
+    const openCell = openMatch[0]
+    let cellEnd: number
+    if (openCell.endsWith('/>')) {
+      cellEnd = openMatch.index + openCell.length
+    } else {
+      const closePosition = body.indexOf('</c>', openMatch.index + openCell.length)
+      if (closePosition === -1) break
+      cellEnd = closePosition + '</c>'.length
+    }
+    const cellXml = body.slice(openMatch.index, cellEnd)
+    parts.push(body.slice(cursor, openMatch.index))
+    cursor = cellEnd
+    cellOpenPattern.lastIndex = cellEnd
+    const letters = /\br="([A-Z]{1,3})[1-9][0-9]*"/.exec(openCell)?.[1]
+    const column = letters === undefined ? undefined : lettersToColumn(letters)
+    if (column === undefined) {
+      parts.push(cellXml)
+      continue
+    }
+    if (insertMissing) {
+      while (pendingIndex < targetColumns.length && (targetColumns[pendingIndex] ?? 0) < column) {
+        parts.push(insertColumn(targetColumns[pendingIndex] ?? 0))
+        pendingIndex += 1
+      }
+      if (targetColumns[pendingIndex] === column) pendingIndex += 1
+    }
+    const item = remaining.get(column)
+    if (item === undefined) {
+      parts.push(cellXml)
+      continue
+    }
+    remaining.delete(column)
+    parts.push(applyItem(cellXml, rowNumber, column, item))
+  }
+  parts.push(body.slice(cursor))
+  if (insertMissing) {
+    while (pendingIndex < targetColumns.length) {
+      parts.push(insertColumn(targetColumns[pendingIndex] ?? 0))
+      pendingIndex += 1
+    }
+  }
+  return `${openTag}${parts.join('')}</row>`
+}
+
+function insertMissingCell(worksheetXml: string, address: string, cellXml: string): string {
+  const rowNumber = Number(/[1-9][0-9]*$/.exec(address)?.[0])
+  if (!Number.isFinite(rowNumber)) throw new Error(`Invalid cell address: ${address}`)
+  const targetColumn = parseA1Column(address)
+  const rowPattern = new RegExp(`<row\\b([^>]*?\\br="${rowNumber}"[^>]*?)(/>|>([\\s\\S]*?)</row>)`)
+  const rowMatch = rowPattern.exec(worksheetXml)
+  if (rowMatch) {
+    const attributes = rowMatch[1] ?? ''
+    const body = rowMatch[2] === '/>' ? '' : (rowMatch[3] ?? '')
+    return worksheetXml.replace(
+      rowPattern,
+      () => `<row${attributes}>${insertCellInColumnOrder(body, cellXml, targetColumn)}</row>`,
+    )
+  }
+  return insertRowInOrder(worksheetXml, rowNumber, cellXml)
+}
+
+function insertCellInColumnOrder(rowBody: string, cellXml: string, targetColumn: number): string {
+  const siblingPattern = /<c\b[^>]*?\br="([A-Z]{1,3})[1-9][0-9]*"/g
+  let match: RegExpExecArray | null
+  while ((match = siblingPattern.exec(rowBody)) !== null) {
+    if (lettersToColumn(match[1] ?? '') > targetColumn) {
+      return rowBody.slice(0, match.index) + cellXml + rowBody.slice(match.index)
+    }
+  }
+  return rowBody + cellXml
+}
+
+function insertRowInOrder(worksheetXml: string, rowNumber: number, cellXml: string): string {
+  const newRow = `<row r="${rowNumber}">${cellXml}</row>`
+  const rowStartPattern = /<row\b[^>]*?\br="([1-9][0-9]*)"/g
+  let match: RegExpExecArray | null
+  while ((match = rowStartPattern.exec(worksheetXml)) !== null) {
+    if (Number(match[1]) > rowNumber) {
+      return worksheetXml.slice(0, match.index) + newRow + worksheetXml.slice(match.index)
+    }
+  }
+  if (worksheetXml.includes('</sheetData>')) {
+    return worksheetXml.replace('</sheetData>', () => `${newRow}</sheetData>`)
+  }
+  const emptySheetData = /<sheetData\s*\/>/
+  if (emptySheetData.test(worksheetXml)) {
+    return worksheetXml.replace(emptySheetData, () => `<sheetData>${newRow}</sheetData>`)
+  }
+  throw new Error('Worksheet has no sheetData element.')
+}
+
+function worksheetDimensionPatcher<T>(
+  items: SheetCellItems<T>,
+  worksheetXml: string,
+): { patch: (prefix: string) => string; matched: () => boolean } | null {
+  if (items.size === 0) return null
+  let targetRow = 1
+  let targetColumn = 0
+  for (const [row, columns] of items) {
+    targetRow = Math.max(targetRow, row)
+    for (const column of columns.keys()) targetColumn = Math.max(targetColumn, column)
+  }
+  let sawDimension = false
+  const patch = (prefix: string): string => {
+    // Also consume a paired empty form (<dimension ref="..."></dimension>) —
+    // replacing only the opening tag would orphan the closing tag and produce
+    // malformed XML.
+    const dimension = /<dimension\b[^>]*\bref="([^"]+)"[^>]*\/?>(?:\s*<\/dimension\s*>)?/.exec(
+      prefix,
+    )
+    if (!dimension?.[1]) return prefix
+    sawDimension = true
+    let currentRow = 1
+    let currentColumn = 0
+    for (const reference of dimension[1].split(':')) {
+      const cell = /^([A-Z]{1,3})([1-9][0-9]*)$/.exec(reference.replace(/\$/g, ''))
+      if (!cell?.[1] || !cell[2]) continue
+      currentRow = Math.max(currentRow, Number(cell[2]))
+      currentColumn = Math.max(currentColumn, lettersToColumn(cell[1]))
+    }
+    if (currentRow >= targetRow && currentColumn >= targetColumn) return prefix
+    // The stated ref did not even cover this save's writes, so it cannot be
+    // trusted for anything else either (minimal writers ship A1:A1 over a
+    // populated sheet). Rescan the real used range — an allocation-free
+    // pointer walk, unlike the old whole-document rebuild — or cells outside
+    // both the old ref and this mutation set would stay beyond the declared
+    // extent and vanish from the streamed viewport on reopen.
+    const used = scanExplicitCellBounds(worksheetXml)
+    const start = dimension[1].replace(/\$/g, '').split(':')[0] ?? 'A1'
+    const end = toA1Address(
+      Math.max(currentRow, targetRow, used.row) - 1,
+      Math.max(currentColumn, targetColumn, used.column),
+    )
+    return (
+      prefix.slice(0, dimension.index) +
+      `<dimension ref="${start}:${end}"/>` +
+      prefix.slice(dimension.index + dimension[0].length)
+    )
+  }
+  return { patch, matched: () => sawDimension }
+}
+
+/// Largest explicit ` r="XX9"` reference in the document (rows contribute
+/// their number; cells contribute both axes) via a rolling pointer walk that
+/// allocates nothing — implicit unaddressed cells are ignored, matching the
+/// historical full-scan fidelity.
+function scanExplicitCellBounds(xml: string): { row: number; column: number } {
+  let row = 1
+  let column = 0
+  let at = xml.indexOf(' r="')
+  while (at !== -1) {
+    let index = at + 4
+    let letters = 0
+    let letterCount = 0
+    while (index < xml.length) {
+      const code = xml.charCodeAt(index)
+      if (code < 65 || code > 90) break
+      letters = letters * 26 + (code - 64)
+      letterCount += 1
+      index += 1
+    }
+    let digits = 0
+    let sawDigit = false
+    while (index < xml.length) {
+      const code = xml.charCodeAt(index)
+      if (code < 48 || code > 57) break
+      digits = digits * 10 + (code - 48)
+      sawDigit = true
+      index += 1
+    }
+    // Only a clean `"`-terminated reference counts (letters are optional:
+    // a row's own r attribute still advances the row bound).
+    if (sawDigit && letterCount <= 3 && xml.charCodeAt(index) === 34) {
+      row = Math.max(row, digits)
+      if (letterCount > 0) column = Math.max(column, letters - 1)
+    }
+    at = xml.indexOf(' r="', index)
+  }
+  return { row, column }
+}
+
+/// The sidecar uses worksheet dimension metadata to choose the streamable
+/// viewport. Some minimal workbooks start at A1:A1; after inserting cells the
+/// dimension must grow too, or a successful save appears to lose every cell
+/// outside A1 when the workbook is reopened.
+function expandWorksheetDimensionToCells(worksheetXml: string): string {
+  let maximumRow = 1
+  let maximumColumn = 0
+  const include = (reference: string): void => {
+    const cleaned = reference.replace(/\$/g, '')
+    const cell = /^([A-Z]{1,3})([1-9][0-9]*)$/.exec(cleaned)
+    if (!cell?.[1] || !cell[2]) return
+    const row = Number(cell[2])
+    const column = lettersToColumn(cell[1])
+    maximumRow = Math.max(maximumRow, row)
+    maximumColumn = Math.max(maximumColumn, column)
+  }
+
+  const dimension = /<dimension\b[^>]*\bref="([^"]+)"[^>]*\/?>/.exec(worksheetXml)
+  if (dimension?.[1]) {
+    for (const reference of dimension[1].split(':')) include(reference)
+  }
+  for (const match of worksheetXml.matchAll(/<c\b[^>]*\br="([A-Z]{1,3}[1-9][0-9]*)"/g)) {
+    if (match[1]) include(match[1])
+  }
+
+  const last = toA1Address(maximumRow - 1, maximumColumn)
+  const reference = last === 'A1' ? 'A1' : `A1:${last}`
+  if (dimension) {
+    return worksheetXml.replace(/(<dimension\b[^>]*\bref=")[^"]+("[^>]*\/?>)/, `$1${reference}$2`)
+  }
+  return worksheetXml.replace(/(<worksheet\b[^>]*>)/, `$1<dimension ref="${reference}"/>`)
+}
+
+function serializeStyledCell(
+  address: string,
+  cell: CellState,
+  styleIndex: string | undefined,
+  rich?: readonly WorkbookRichRun[],
+  arrayRef?: string,
+): string {
+  const style = styleIndex === undefined ? '' : ` s="${styleIndex}"`
+  if (cell.formula) {
+    return `<c r="${address}"${style}>${formulaXml(address, cell.formula.replace(/^=/, ''), arrayRef)}</c>`
+  }
+  if (cell.value === null) {
+    // A cleared cell keeps its formatting only if it keeps a style index.
+    return styleIndex === undefined ? '' : `<c r="${address}"${style}/>`
+  }
+  if (typeof cell.value === 'string') {
+    if (rich && rich.length > 0) {
+      const runs = rich
+        .map(
+          (run) =>
+            `<r>${serializeRunProperties(run)}<t xml:space="preserve">${escapeCellText(run.text)}</t></r>`,
+        )
+        .join('')
+      return `<c r="${address}"${style} t="inlineStr"><is>${runs}</is></c>`
+    }
+    return `<c r="${address}"${style} t="inlineStr"><is><t xml:space="preserve">${escapeCellText(cell.value)}</t></is></c>`
+  }
+  if (typeof cell.value === 'boolean') {
+    return `<c r="${address}"${style} t="b"><v>${cell.value ? 1 : 0}</v></c>`
+  }
+  // CT_Cell/v is xsd:double; degrade like patchFormulaCachedValue does.
+  if (!Number.isFinite(cell.value)) {
+    return `<c r="${address}"${style} t="inlineStr"><is><t xml:space="preserve">${escapeCellText(String(cell.value))}</t></is></c>`
+  }
+  return `<c r="${address}"${style}><v>${cell.value}</v></c>`
+}
+
+/// `<rPr>` for one inline-string run; empty string when the run is plain.
+function serializeRunProperties(run: WorkbookRichRun): string {
+  const parts: string[] = []
+  if (run.bold) parts.push('<b/>')
+  if (run.italic) parts.push('<i/>')
+  if (run.strikethrough) parts.push('<strike/>')
+  if (run.underline) parts.push('<u/>')
+  if (run.size !== undefined) parts.push(`<sz val="${run.size}"/>`)
+  if (run.color !== undefined) {
+    const hex = run.color.replace(/^#/, '').toUpperCase()
+    if (/^[0-9A-F]{6}$/.test(hex)) parts.push(`<color rgb="FF${hex}"/>`)
+  }
+  if (run.family !== undefined) {
+    parts.push(`<rFont val="${escapeXmlAttribute(run.family)}"/>`)
+  }
+  if (run.vertAlign !== undefined) parts.push(`<vertAlign val="${run.vertAlign}"/>`)
+  return parts.length === 0 ? '' : `<rPr>${parts.join('')}</rPr>`
+}
+
+function ensureFullCalcOnLoad(workbookXml: string): string {
+  if (/<calcPr\b[^>]*\bfullCalcOnLoad="1"/.test(workbookXml)) return workbookXml
+  if (/<calcPr\b/.test(workbookXml)) {
+    return workbookXml.replace(
+      /<calcPr\b([^>]*?)(\/?>)/,
+      (_full, attributes: string, close: string) => {
+        const cleaned = attributes.replace(/\s*fullCalcOnLoad="[^"]*"/, '')
+        return `<calcPr${cleaned} fullCalcOnLoad="1"${close}`
+      },
+    )
+  }
+  // Schema order places calcPr after definedNames (or after sheets).
+  const anchor = workbookXml.includes('</definedNames>') ? '</definedNames>' : '</sheets>'
+  if (!workbookXml.includes(anchor)) return workbookXml
+  return workbookXml.replace(anchor, `${anchor}<calcPr fullCalcOnLoad="1"/>`)
+}
+
+function parseA1Column(address: string): number {
+  const letters = /^[A-Z]{1,3}/.exec(address)?.[0]
+  if (!letters) throw new Error(`Invalid cell address: ${address}`)
+  return lettersToColumn(letters)
+}
+
+function lettersToColumn(letters: string): number {
+  let column = 0
+  for (const character of letters) {
+    column = column * 26 + character.charCodeAt(0) - 64
+  }
+  return column - 1
+}
+
+/// The `ref` of an existing `<f t="array" ref="…">` master, or undefined when
+/// the cell holds no array formula. `spillsDynamicArray` only recognises modern
+/// spilling functions, so a legacy CSE master such as `=SUM(A1:C1*A2:C2)` has
+/// no marker of its own: without carrying its extent, re-serializing the master
+/// drops t="array" and turns it into an ordinary formula while its followers
+/// keep stale cached values.
+function existingArrayRef(cellXml: string): string | undefined {
+  if (cellXml === '') return undefined
+  const ref = /<f\b[^>]*\bt="array"[^>]*\bref="([^"]+)"/.exec(cellXml)?.[1]
+  if (ref === undefined) return undefined
+  // The extent must name a real range; anything else is left to the default
+  // spelling rather than written out as a broken array master.
+  const [start, end] = ref.split(':')
+  if (start === undefined || !isGridCellAddress(start)) return undefined
+  if (end !== undefined && !isGridCellAddress(end)) return undefined
+  return ref
+}
+
+function formulaXml(address: string, formula: string, arrayRef?: string): string {
+  const text = escapeXmlText(withFutureFunctionMarkers(formula))
+  // An existing array extent wins over the spill heuristic, which can only
+  // guess the master's own address.
+  const ref = arrayRef ?? (spillsDynamicArray(formula) ? address : undefined)
+  return ref === undefined ? `<f>${text}</f>` : `<f t="array" ref="${ref}">${text}</f>`
+}
+
+function serializeCell(address: string, cell: CellState): string {
+  if (cell.formula) {
+    return `<c r="${address}">${formulaXml(address, cell.formula.slice(1))}</c>`
+  }
+  if (cell.value === null) return ''
+  if (typeof cell.value === 'string') {
+    return `<c r="${address}" t="inlineStr"><is><t xml:space="preserve">${escapeCellText(cell.value)}</t></is></c>`
+  }
+  if (typeof cell.value === 'boolean') {
+    return `<c r="${address}" t="b"><v>${cell.value ? 1 : 0}</v></c>`
+  }
+  if (!Number.isFinite(cell.value)) {
+    return `<c r="${address}" t="inlineStr"><is><t xml:space="preserve">${escapeCellText(String(cell.value))}</t></is></c>`
+  }
+  return `<c r="${address}"><v>${cell.value}</v></c>`
+}
+
+function parseCell(worksheetXml: string, address: string): CellState {
+  const cellPattern = new RegExp(`<c\\b([^>]*?)\\br="${address}"([^>]*?)(?:/>|>([\\s\\S]*?)</c>)`)
+  const match = cellPattern.exec(worksheetXml)
+  if (!match) return { value: null }
+  const attributes = `${match[1] ?? ''}${match[2] ?? ''}`
+  const body = match[3] ?? ''
+  const formula = /<f(?:\s[^>]*[^/>])?>([\s\S]*?)<\/f>/.exec(body)?.[1]
+  if (formula !== undefined) return { value: null, formula: `=${decodeXmlText(formula)}` }
+  const type = /\bt="([^"]+)"/.exec(attributes)?.[1]
+  if (type === 's') throw new Error(`Shared-string cell ${address} is not writable in this PoC.`)
+  if (type === 'inlineStr') {
+    const text = /<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/.exec(body)?.[1] ?? ''
+    return { value: decodeCellText(text) }
+  }
+  const rawValue = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/.exec(body)?.[1]
+  if (rawValue === undefined) return { value: null }
+  if (type === 'b') return { value: rawValue === '1' }
+  const numericValue = Number(rawValue)
+  if (!Number.isFinite(numericValue))
+    throw new Error(`Cell ${address} has an unsupported numeric value.`)
+  return { value: numericValue }
+}
+
+function parseWorksheetCells(
+  worksheetXml: string,
+  sharedStrings: readonly string[],
+): Readonly<Record<string, CellState>> {
+  const cells: Record<string, CellState> = {}
+  const cellPattern = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g
+  let match: RegExpExecArray | null
+  while ((match = cellPattern.exec(worksheetXml)) !== null) {
+    const attributes = match[1] ?? ''
+    const address = readXmlAttribute(attributes, 'r')
+    if (!address || !isGridCellAddress(address)) continue
+    const body = match[2] ?? ''
+    const formula = /<f(?:\s[^>]*[^/>])?>([\s\S]*?)<\/f>/.exec(body)?.[1]
+    if (formula !== undefined) {
+      cells[address] = { value: null, formula: `=${decodeXmlText(formula)}` }
+      continue
+    }
+    const type = readXmlAttribute(attributes, 't')
+    if (type === 'inlineStr') {
+      const text = [...body.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)]
+        .map((textMatch) => decodeCellText(textMatch[1] ?? ''))
+        .join('')
+      cells[address] = { value: text }
+      continue
+    }
+    const rawValue = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/.exec(body)?.[1]
+    if (rawValue === undefined) {
+      cells[address] = { value: null }
+    } else if (type === 's') {
+      const index = Number(rawValue)
+      cells[address] = { value: sharedStrings[index] ?? '' }
+    } else if (type === 'b') {
+      cells[address] = { value: rawValue === '1' }
+    } else if (type === 'str') {
+      cells[address] = { value: decodeCellText(rawValue) }
+    } else {
+      const numericValue = Number(rawValue)
+      cells[address] = {
+        value: Number.isFinite(numericValue) ? numericValue : decodeXmlText(rawValue),
+      }
+    }
+  }
+  return cells
+}
+
+async function readSharedStrings(source: EntrySource): Promise<readonly string[]> {
+  if (!(await source.has('xl/sharedStrings.xml'))) return []
+  const xml = await source.readText('xl/sharedStrings.xml')
+  return parseSharedStringsXml(xml)
+}
+
+export function parseSharedStringsXml(xml: string): string[] {
+  return [...xml.matchAll(/<si(?:\s[^>]*)?>([\s\S]*?)<\/si>/g)].map((itemMatch) =>
+    [...(itemMatch[1] ?? '').matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)]
+      .map((textMatch) => decodeCellText(textMatch[1] ?? ''))
+      .join(''),
+  )
+}
+
+/** Cell addresses outside the Excel grid cannot exist in a valid file; skip them. Exported for tests. */
+export function isGridCellAddress(address: string): boolean {
+  const match = /^([A-Z]{1,3})([1-9][0-9]{0,6})$/.exec(address)
+  if (!match) return false
+  const row = Number(match[2])
+  if (row > MAX_GRID_ROWS) return false
+  let column = 0
+  for (const character of match[1]!) {
+    column = column * 26 + character.charCodeAt(0) - 64
+  }
+  return column <= MAX_GRID_COLUMNS
+}
+
+function cellsEqual(left: CellState, right: CellState): boolean {
+  return left.value === right.value && left.formula === right.formula
+}
+
+function escapeXmlText(input: string): string {
+  return input.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
+function escapeCellText(input: string): string {
+  return escapeXmlText(encodeXlsxEscapes(input))
+}
+
+/// Mirrors the sidecar: raw CRLF folds first so `_x000D_` + LF (Excel's CR LF)
+/// ends up as one line break.
+function decodeCellText(input: string): string {
+  const text = decodeXmlText(input).replace(/\r\n?/g, '\n')
+  return decodeXlsxEscapes(text).replace(/\r\n?/g, '\n')
+}
+
+function escapeXmlAttribute(input: string): string {
+  return escapeXmlText(input).replaceAll('"', '&quot;').replaceAll("'", '&apos;')
+}
+
+function readXmlAttribute(attributes: string, name: string): string | undefined {
+  return new RegExp(`(?:^|\\s)${escapeRegExp(name)}="([^"]*)"`).exec(attributes)?.[1]
+}

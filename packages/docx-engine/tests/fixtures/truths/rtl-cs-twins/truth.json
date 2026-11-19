@@ -1,0 +1,42 @@
+{
+  "id": "rtl-cs-twins",
+  "title": "A run with w:rtl reads szCs/bCs/iCs from the whole chain, never the base w:sz/w:b; an rtl paragraph mark sizes the empty line by szCs",
+  "section": "word-truths.md#L633",
+  "probe_date": "2026-10-22",
+  "source": "prod corpus 20261021 samples 007/023 Word PDFs: Heading1 b + sz 32 with an rtl-only run -> 11pt regular on one line (docDefaults szCs 22), pitch 13.5; mark sz 36 + rtl under BodyText szCs 24 -> empty line 20.5 = 12 x 1.149 x 1.5",
+  "cases": [
+    {
+      "kind": "runProps",
+      "block": 0,
+      "run": 0,
+      "expect": {
+        "cs": true,
+        "effective": {
+          "cs": true,
+          "sizeHalfPoints": 22,
+          "bold": false,
+          "italic": false
+        }
+      },
+      "note": "twins nobody defines: docDefaults szCs 22, regular (Run.effective since the body resolver landed)"
+    },
+    {
+      "kind": "format",
+      "block": 1,
+      "expect": {
+        "emptyRunSizeHalfPoints": 24
+      },
+      "note": "rtl mark: the chain szCs (BodyText 24), not its own w:sz 36"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 21.96,
+      "tol": 0.05,
+      "note": "empty rtl line = chain szCs 12pt x the face factor x 1.5 (Calibri here: 21.96; the sample face gave 12 x 1.149 x 1.5 = 20.5)",
+      "font": "Calibri"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

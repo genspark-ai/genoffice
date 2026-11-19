@@ -1,0 +1,6 @@
+{
+  "title": "Chinese official-document format",
+  "tags": ["chinese", "official-doc", "docGrid", "firstLine-indent", "center-justify"],
+  "description": "Standard government document format: centered large title + first-line-indented body + signature block, docGrid",
+  "file": "10-cn-official-doc.docx"
+}

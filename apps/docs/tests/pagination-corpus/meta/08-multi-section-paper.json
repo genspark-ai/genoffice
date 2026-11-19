@@ -1,0 +1,6 @@
+{
+  "title": "Multi-section mixed paper sizes",
+  "tags": ["multi-section", "landscape", "portrait", "section-break"],
+  "description": "Two sections: A4 portrait + landscape, tests pagination at section switches",
+  "file": "08-multi-section-paper.docx"
+}

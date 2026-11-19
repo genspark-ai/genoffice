@@ -1,0 +1,273 @@
+import { Editor } from '@tiptap/core'
+import { afterEach, describe, expect, it } from 'vitest'
+import { editorExtensions } from '../src/renderer/editor/extensions'
+import {
+  applyLiftTops,
+  computeSectionedSlicesF2,
+  measureBlocks,
+  type BlockBox,
+  type PageSlice,
+} from '../src/renderer/pagination'
+
+const rectOf = (top: number, height: number) =>
+  ({
+    top,
+    height,
+    bottom: top + height,
+    left: 0,
+    right: 100,
+    width: 100,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  }) as DOMRect
+
+const cell = { type: 'docTableCell', content: [{ type: 'docParagraph' }] }
+const row = { type: 'docTableRow', content: [cell] }
+
+/** Editors created during the current test; destroyed in afterEach so ProseMirror's
+ * DOMObserver timers can't fire after the JSDOM environment is torn down. */
+const liveEditors: Editor[] = []
+
+function makeEditor(): Editor {
+  const editor = new Editor({
+    element: document.createElement('div'),
+    extensions: editorExtensions,
+  })
+  liveEditors.push(editor)
+  return editor
+}
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
+
+function tableSpec(attrs: Record<string, unknown>): [string, Record<string, string>] {
+  const editor = makeEditor()
+  const table = editor.schema.nodeFromJSON({ type: 'docTable', attrs, content: [row] })
+  return editor.schema.nodes.docTable.spec.toDOM!(table) as [string, Record<string, string>]
+}
+
+const suppressedFloat = {
+  tblFloat: null,
+  tblFloatSource: 'left',
+  tblFloatSuppressed: true,
+  tblFloatHorzAnchor: 'margin',
+  tblFloatVertAnchor: 'text',
+}
+
+describe('suppressed text-anchored float with a negative w:tblpY', () => {
+  it('keeps the lift as a negative top margin', () => {
+    const [, attrs] = tableSpec({ ...suppressedFloat, tblFloatYTwips: -1096 })
+    expect(attrs.style).toContain('margin-top:-73.1px')
+    expect(attrs['data-tblp-lift']).toBe('73.1')
+  })
+
+  it('keeps a positive text-relative offset as a plain top margin (no lift)', () => {
+    const [, attrs] = tableSpec({ ...suppressedFloat, tblFloatYTwips: 312 })
+    expect(attrs['data-tblp-lift']).toBeUndefined()
+    expect(attrs.style).toContain('margin-top:20.8px')
+    expect(
+      tableSpec({ ...suppressedFloat, tblFloatVertAnchor: 'margin', tblFloatYTwips: 312 })[1]
+        .style ?? '',
+    ).not.toContain('margin-top:20.8px')
+  })
+
+  it('does not lift a positive offset, a page anchor or a live float', () => {
+    expect(
+      tableSpec({ ...suppressedFloat, tblFloatYTwips: 72 })[1]['data-tblp-lift'],
+    ).toBeUndefined()
+    expect(
+      tableSpec({ ...suppressedFloat, tblFloatVertAnchor: 'page', tblFloatYTwips: -1096 })[1][
+        'data-tblp-lift'
+      ],
+    ).toBeUndefined()
+    const live = tableSpec({
+      ...suppressedFloat,
+      tblFloat: 'left',
+      tblFloatSuppressed: false,
+      tblFloatYTwips: -1096,
+    })[1]
+    expect(live['data-tblp-lift']).toBeUndefined()
+    expect(live.style).toContain('margin-top:-73.1px')
+  })
+})
+
+describe('suppressed float keeps its w:tblpX', () => {
+  it('page-anchored X measures from the paper edge (may reach into the left margin)', () => {
+    const [, attrs] = tableSpec({
+      ...suppressedFloat,
+      tblFloatHorzAnchor: 'page',
+      tblFloatXTwips: 1103,
+    })
+    expect(attrs.style).toContain('margin-left:calc(73.5px - var(--doc-margin-left,0px))')
+  })
+
+  it('margin-anchored X is a plain indent; xSpec, a live float and a zero X are untouched', () => {
+    expect(tableSpec({ ...suppressedFloat, tblFloatXTwips: 300 })[1].style).toContain(
+      'margin-left:20.0px',
+    )
+    expect(
+      tableSpec({ ...suppressedFloat, tblFloatHorzAnchor: null, tblFloatXTwips: 300 })[1].style,
+    ).toContain('margin-left:20.0px')
+    expect(
+      tableSpec({ ...suppressedFloat, tblFloatXTwips: 300, tblFloatXSpec: 'center' })[1].style ??
+        '',
+    ).not.toContain('margin-left:20.0px')
+    expect(tableSpec({ ...suppressedFloat, tblFloatXTwips: 0 })[1].style ?? '').not.toContain(
+      'margin-left',
+    )
+    expect(
+      tableSpec({
+        ...suppressedFloat,
+        tblFloat: 'left',
+        tblFloatSuppressed: false,
+        tblFloatXTwips: 300,
+      })[1].style,
+    ).not.toContain('margin-left:20.0px')
+  })
+})
+
+describe('w:noWrap under a fixed table layout', () => {
+  const nowrapCell = { type: 'docTableCell', attrs: { noWrap: true }, content: [cell.content[0]] }
+  const cellStyle = (tableAttrs: Record<string, unknown>): string => {
+    const editor = makeEditor()
+    const table = editor.schema.nodeFromJSON({
+      type: 'docTable',
+      attrs: tableAttrs,
+      content: [{ type: 'docTableRow', content: [nowrapCell] }],
+    })
+    const spec = editor.schema.nodes.docTableCell.spec.toDOM!(table.child(0).child(0)) as [
+      string,
+      Record<string, string>,
+    ]
+    return spec[1].style ?? ''
+  }
+
+  it('the cell defers to the table-level fallback, which a fixed layout sets to normal', () => {
+    expect(cellStyle({})).toContain('white-space:var(--doc-cell-nowrap,nowrap)')
+    expect(tableSpec({ tblFixedLayout: true })[1].style).toContain('--doc-cell-nowrap:normal')
+    expect(tableSpec({})[1].style ?? '').not.toContain('--doc-cell-nowrap')
+  })
+
+  it('a grid wider than the text column sets the same fallback', () => {
+    expect(tableSpec({ tblOverWide: true })[1].style).toContain('--doc-cell-nowrap:normal')
+  })
+})
+
+function flow() {
+  const pm = document.createElement('div')
+  const add = (tag: string, top: number, height: number, html: string) => {
+    const el = document.createElement(tag)
+    el.innerHTML = html
+    el.getBoundingClientRect = () => rectOf(top, height)
+    pm.appendChild(el)
+    return el
+  }
+  add('p', 0, 20, 'mark')
+  const table = add('table', -50, 140, '<tr><td>logos</td></tr>')
+  table.dataset.tblpLift = '70'
+  add('p', 90, 20, 'title')
+  return pm
+}
+
+describe('measureBlocks — lifted table', () => {
+  it('records the lift and the lifted top', () => {
+    const { blocks } = measureBlocks(flow(), 0, 1)
+    expect(blocks.map((b) => [b.top, b.height, b.liftPx ?? null])).toEqual([
+      [0, 20, null],
+      [-50, 140, 70],
+      [90, 20, null],
+    ])
+  })
+})
+
+describe('applyLiftTops', () => {
+  it('opens the clip above a page start by the hanging part only', () => {
+    const blocks: BlockBox[] = [
+      { top: 0, height: 20 },
+      { top: -50, height: 140, liftPx: 70 },
+      { top: 90, height: 20 },
+      { top: 900, height: 140, liftPx: 70 },
+    ]
+    const slices: PageSlice[] = [
+      { start: 0, end: 900, section: 0 },
+      { start: 900, end: 1040, section: 0 },
+    ]
+    applyLiftTops(slices, blocks)
+    expect(slices[0].liftTop).toBeCloseTo(50)
+    expect(slices[1].liftTop).toBeUndefined()
+  })
+
+  it('opens the clip for a page-anchored float whose applied shift hangs above the page start', () => {
+    const blocks: BlockBox[] = [
+      { top: 0, height: 20 },
+      { top: 900, height: 20, emptyPara: true },
+      {
+        top: 920,
+        height: 300,
+        floated: true,
+        pageRelVyPx: 0,
+        pageRelVAnchor: 'page',
+        floatShiftPx: -80,
+      },
+    ]
+    const slices: PageSlice[] = [
+      { start: 0, end: 900, section: 0 },
+      { start: 900, end: 1300, section: 0 },
+    ]
+    applyLiftTops(slices, blocks)
+    expect(slices[0].liftTop).toBeUndefined()
+    expect(slices[1].liftTop).toBeCloseTo(60)
+  })
+
+  it("opens the clip for a lifted table that is the page's first block", () => {
+    const blocks: BlockBox[] = [{ top: -70, height: 140, liftPx: 70 }]
+    const slices: PageSlice[] = [{ start: 0, end: 900, section: 0 }]
+    applyLiftTops(slices, blocks)
+    expect(slices[0].liftTop).toBeCloseTo(70)
+  })
+})
+
+describe('slicer — lifted table charges only the flow it advances', () => {
+  const cap = 900
+  const geoms = [{ contentHeight: cap, forceBreak: false }]
+  const rows = (h: number) => [{ top: 0, height: h }]
+
+  it('credits a page-opening lift up to the top margin', () => {
+    const first: BlockBox[] = [
+      { top: -70, height: 140, liftPx: 70, tableRows: rows(140) },
+      { top: 70, height: cap - 80 },
+    ]
+    const margin = (topPx: number) => [{ contentHeight: cap, forceBreak: false, topPx }]
+    expect(computeSectionedSlicesF2(first, margin(96), cap - 10)).toHaveLength(1)
+    expect(computeSectionedSlicesF2(first, margin(40), cap - 10)).toHaveLength(2)
+  })
+
+  it('charges the whole table when a later page opens at its lifted top', () => {
+    const later: BlockBox[] = [
+      { top: 0, height: cap - 10 },
+      { top: cap - 80, height: 140, liftPx: 70, tableRows: rows(140) },
+      { top: cap + 60, height: cap - 130 },
+    ]
+    const geomsMargin = [{ contentHeight: cap, forceBreak: false, topPx: 96 }]
+    const slices = computeSectionedSlicesF2(later, geomsMargin, cap - 10)
+    expect(slices).toHaveLength(3)
+    expect(slices[1].start).toBe(cap - 80)
+  })
+
+  it('lets the block after a lifted table fit where stacked heights would not', () => {
+    const lifted: BlockBox[] = [
+      { top: 0, height: 20 },
+      { top: -50, height: 140, liftPx: 70, tableRows: rows(140) },
+      { top: 90, height: cap - 100 },
+    ]
+    expect(computeSectionedSlicesF2(lifted, geoms, cap - 10)).toHaveLength(1)
+    const stacked: BlockBox[] = [
+      { top: 0, height: 20 },
+      { top: 20, height: 140, tableRows: rows(140) },
+      { top: 160, height: cap - 100 },
+    ]
+    expect(computeSectionedSlicesF2(stacked, geoms, cap + 60)).toHaveLength(2)
+  })
+})

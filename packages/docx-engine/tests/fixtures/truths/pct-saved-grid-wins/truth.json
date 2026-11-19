@@ -1,0 +1,60 @@
+{
+  "id": "pct-saved-grid-wins",
+  "title": "pct table: tcW pct shares beat a placeholder or off-total grid; a non-uniform grid summing to the pct width is read as Word's layout",
+  "section": "word-truths.md#L833",
+  "probe_date": "2026-10-29",
+  "source": "probe build.py, Letter 9360-twip column, tblW pct 5000, tcW pct 750/2000/1500/750, Word for Mac direct PDF, pymupdf rule centres",
+  "cases": [
+    {
+      "kind": "autofitCols",
+      "block": 3,
+      "availTwips": 9360,
+      "expect": [1401, 3740, 2808, 1401],
+      "tol": 10,
+      "note": "uniform placeholder grid 2340 x 4: Word draws the tcW pct shares (rules 1445/2846/6586/9394/10795)"
+    },
+    {
+      "kind": "autofitCols",
+      "block": 5,
+      "availTwips": 9360,
+      "expect": [1401, 3740, 2808, 1401],
+      "tol": 10,
+      "note": "non-uniform grid summing to 6000, not the pct width: tcW shares again"
+    },
+    {
+      "kind": "autofitCols",
+      "block": 7,
+      "availTwips": 9360,
+      "expect": [1905, 3471, 2534, 1440],
+      "tol": 10,
+      "note": "tcW dxa equal to a grid summing to the column: that grid (rules 1445/3350/6821/9355/10795)"
+    },
+    {
+      "kind": "tableProps",
+      "block": 7,
+      "expect": {
+        "layoutGrid": true
+      }
+    },
+    {
+      "kind": "autofitCols",
+      "block": 1,
+      "status": "failing",
+      "availTwips": 9360,
+      "expect": [1401, 3740, 2808, 1401],
+      "tol": 10,
+      "note": "invented non-uniform grid summing to the column with disagreeing tcW pct: Word draws the tcW shares; gen keeps the grid as a Word-saved layout (same trade-off as the dxa rule, see the truth section)"
+    },
+    {
+      "kind": "autofitCols",
+      "block": 9,
+      "status": "failing",
+      "availTwips": 9360,
+      "expect": [840, 2246, 1680, 845],
+      "tol": 10,
+      "note": "pct 3000 variant of the same trade-off"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

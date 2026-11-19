@@ -1,0 +1,99 @@
+{
+  "family": "Aptos GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-10-31",
+    "fonts": [
+      "Aptos.ttf, Aptos-Bold.ttf, Aptos-Italic.ttf, Aptos-Bold-Italic.ttf (Word DFonts)",
+      "Carlito-Regular/Bold/Italic/BoldItalic.ttf"
+    ],
+    "probe": "Aptos hmtx x the corpus pair-kerning factor baked into an advance-matched Carlito derivative (tools/build-metric-fonts.py); general face corpus-weighted, box = Carlito hhea x the general size-adjust undone"
+  },
+  "refit": {
+    "method": "advance-matched",
+    "kern": {
+      "normal/normal": 0.995612,
+      "bold/normal": 0.996231,
+      "normal/italic": 0.995635,
+      "bold/italic": 0.996369
+    },
+    "range": "U+0020-007E, U+00A0-024F, U+1E00-1EFF, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+    "cuts": {
+      "normal/normal": {
+        "word": "dfonts:Aptos.ttf",
+        "base": "repo:packages/ui/src/fonts/Carlito-Regular.ttf",
+        "out": "apps/docs/src/renderer/fonts/AptosGO-Regular.ttf"
+      },
+      "bold/normal": {
+        "word": "dfonts:Aptos-Bold.ttf",
+        "base": "repo:packages/ui/src/fonts/Carlito-Bold.ttf",
+        "out": "apps/docs/src/renderer/fonts/AptosGO-Bold.ttf"
+      },
+      "normal/italic": {
+        "word": "dfonts:Aptos-Italic.ttf",
+        "base": "repo:packages/ui/src/fonts/Carlito-Italic.ttf",
+        "out": "apps/docs/src/renderer/fonts/AptosGO-Italic.ttf"
+      },
+      "bold/italic": {
+        "word": "dfonts:Aptos-Bold-Italic.ttf",
+        "base": "repo:packages/ui/src/fonts/Carlito-BoldItalic.ttf",
+        "out": "apps/docs/src/renderer/fonts/AptosGO-BoldItalic.ttf"
+      }
+    }
+  },
+  "note": "Aptos (M365 default body face since 2023): Word renders the real font, but\nit ships only inside Office, so Chromium never resolves it and the chain\nfell to Carlito, 5% narrower per line, one line short per paragraph (SAS\nprobe 2026-09-03: seven samples, pitch stays Calibri's 1.22). Aptos is not\na scale of Carlito: per glyph the ratio spans 0.87 (M, t, r) to 1.22 (C, s,\nc), so one factor fitted over whole lines left capitals 2.7% and bold 1.3%\nshort and moved a wrap every two pages (prod corpus 2026-10-20). Each face\ntherefore declares the corpus-weighted letter scale as its general rule and\none range-limited face per 1.5% advance bucket of the ASCII letters, digits,\nspace and common punctuation; later faces win inside their unicode-range.\nRatios = Aptos hmtx (Word DFonts / cloud-font cache) over Carlito hmtx,\ntimes the face's mean pair-kerning factor (0.9957-0.9963 over the corpus):\nWord kerns every run under the 2024 Normal template (docDefaults kern 2)\nand HarfBuzz kern+liga reproduces its PDF line widths exactly, while\nChromium cannot kern across the bucket faces. The metric overrides undo\neach face's size-adjust on the vertical axis (overrides scale with\nsize-adjust) so every bucket carries the line box of the 106.5% Carlito\nface the pagination model (line-metrics.ts) assumes: a 1.22x capital\nbucket otherwise grew a 12pt body line 0.4pt. Generated: do not hand-edit\nthe numbers, refit them against the font files.\n\n2026-10-31: the bucket faces made letters of one word differ in height (size-adjust\nscales both axes; 'aCronymS' in sample 019). The ranged faces are replaced by one\nadvance-matched derivative per cut (AptosGO-*.ttf): Carlito outlines scaled\nhorizontally to each Word advance x the kerning factor, one vertical factor (H/x ink\nratio), hmtx = Word advances, GPOS/kern dropped, U+00A0 mapped to the space glyph.\nhhea/OS2 carry the general face's line box so the pagination model is unchanged.",
+  "faces": [
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 106.3,
+      "ascentOverride": 75.15,
+      "descentOverride": 25.05,
+      "lineGapOverride": 22.11
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 110.1,
+      "ascentOverride": 72.52,
+      "descentOverride": 24.17,
+      "lineGapOverride": 21.34,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 106.7,
+      "ascentOverride": 74.88,
+      "descentOverride": 24.96,
+      "lineGapOverride": 22.04,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 110.4,
+      "ascentOverride": 72.37,
+      "descentOverride": 24.12,
+      "lineGapOverride": 21.3,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./AptosGO-Regular.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-00AC, U+00AE-017F, U+0181, U+0186, U+0189-018A, U+018E-0192, U+0194, U+0198-0199, U+01A0-01A1, U+01AF-01B0, U+01B2-01B4, U+01B7, U+01DD, U+01E6-01E7, U+01EA-01EB, U+01F8-01FF, U+0218-021B, U+0232-0233, U+0237, U+1E62-1E63, U+1E80-1E85, U+1E9E, U+1EA0-1EF9, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122"
+    },
+    {
+      "src": "url('./AptosGO-Bold.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-00AC, U+00AE-017F, U+0181, U+0186, U+0189-018A, U+018E-0192, U+0194, U+0198-0199, U+01A0-01A1, U+01AF-01B0, U+01B2-01B4, U+01B7, U+01DD, U+01E6-01E7, U+01EA-01EB, U+01F8-01FF, U+0218-021B, U+0232-0233, U+0237, U+1E62-1E63, U+1E80-1E85, U+1E9E, U+1EA0-1EF9, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./AptosGO-Italic.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-00AC, U+00AE-017F, U+0181, U+0186, U+0189-018A, U+018E-0192, U+0194, U+0198-0199, U+01A0-01A1, U+01AF-01B0, U+01B2-01B4, U+01B7, U+01DD, U+01E6-01E7, U+01EA-01EB, U+01F8-01FF, U+0218-021B, U+0232-0233, U+0237, U+1E62-1E63, U+1E80-1E85, U+1E9E, U+1EA0-1EF9, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+      "style": "italic"
+    },
+    {
+      "src": "url('./AptosGO-BoldItalic.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-00AC, U+00AE-017F, U+0181, U+0186, U+0189-018A, U+018E-0192, U+0194, U+0198-0199, U+01A0-01A1, U+01AF-01B0, U+01B2-01B4, U+01B7, U+01DD, U+01E6-01E7, U+01EA-01EB, U+01F8-01FF, U+0218-021B, U+0232-0233, U+0237, U+1E62-1E63, U+1E80-1E85, U+1E9E, U+1EA0-1EF9, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+      "weight": "bold",
+      "style": "italic"
+    }
+  ]
+}

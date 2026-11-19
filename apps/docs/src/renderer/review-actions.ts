@@ -1,0 +1,686 @@
+/**
+ * Review-tab actions: footnotes/endnotes, comments, revisions, ink
+ * annotations and compare (document protection lives in ProtectDialog +
+ * App.applyProtectDialog). Extracted from App.tsx; the App component passes a
+ * ReviewContext built fresh per call so state never goes stale.
+ */
+import type { Editor } from '@tiptap/core'
+import type { Node as PmNode } from '@tiptap/pm/model'
+import { TextSelection } from '@tiptap/pm/state'
+import {
+  compareDocuments,
+  nextNoteId,
+  parseDocx,
+  readSections,
+  type CommentImage,
+  type CommentInfo,
+  type NoteInfo,
+  type ParsedDocFull,
+} from '@genoffice/docx-engine'
+import type { Dispatch, SetStateAction } from 'react'
+import { authorName } from './author-name'
+import type { CompareRequest, CompareSide } from './compare-request'
+import { fetchDocBytes } from './doc-bytes'
+import type { DocState } from './doc-state'
+import {
+  addCommentToRange,
+  addCommentToSelection,
+  addReplyToCommentRange,
+  commentAnchors,
+  commentIdsAt,
+  nextCommentId,
+  removeCommentFromDoc,
+  removeCommentsFromDoc,
+  wordRangeAtCaret,
+  emptyParagraphAtCaret,
+} from './editor/comments'
+import { combineDocuments } from './editor/combine'
+import { blocksToPmDoc, pmDocOptions } from './editor/convert'
+import { pendingCommentPluginKey } from './editor/extensions'
+import type { InkAnnotation } from './editor/ink'
+import { renumber, type NoteKind } from './ai/note-ops'
+import {
+  TRACK_IGNORE,
+  acceptAllRevisions,
+  applyRevisions,
+  collectRevisions,
+  rejectAllRevisions,
+  revisionDateNow,
+  type RevisionRange,
+  revisionCount,
+} from './editor/revisions'
+import {
+  filterRevisions,
+  revisionsInSelection,
+  type RevisionFilter,
+  type RevisionScope,
+} from './editor/revision-filters'
+import type { StoryRevision } from './editor/story-revisions'
+import { t } from './i18n/locale'
+
+/** open the note text dialog; id set = editing an existing note */
+export interface NotePrompt {
+  kind: 'footnote' | 'endnote'
+  id?: string
+  /** a new note that takes this mark instead of a number */
+  customMark?: string
+}
+
+/** The App state the review actions need; built fresh per call. */
+export interface ReviewContext {
+  editor: Editor | null
+  doc: DocState | null
+  dirtyRef: { current: boolean }
+  setStatus: (status: string) => void
+  notePrompt: NotePrompt | null
+  setNotePrompt: (value: NotePrompt | null) => void
+  footnotes: NoteInfo[]
+  endnotes: NoteInfo[]
+  setFootnotes: Dispatch<SetStateAction<NoteInfo[]>>
+  setEndnotes: Dispatch<SetStateAction<NoteInfo[]>>
+  setNotesDirty: (dirty: boolean) => void
+  comments: CommentInfo[]
+  setComments: Dispatch<SetStateAction<CommentInfo[]>>
+  setCommentsDirty: (dirty: boolean) => void
+  setCommentComposing: (composing: boolean) => void
+  setShowComments: (show: boolean) => void
+  /** highlight one thread in the comments pane (Previous / Next) */
+  setCommentFocus: (focus: { id: string; nonce: number } | null) => void
+  setInkAnnotations: Dispatch<SetStateAction<InkAnnotation[]>>
+  setInksDirty: (dirty: boolean) => void
+  /** the open document as a save would write it now, unsaved edits included */
+  currentDocBytes: () => Promise<Uint8Array | null>
+  /** Show Markup filters: "shown" scopes and the current-change pick honour them */
+  revisionFilter: RevisionFilter
+  /** a change hidden by the Markup view needs All Markup before it can be shown */
+  showRevision: (target: RevisionRange) => void
+  /** switch the Markup view to All Markup */
+  showAllMarkup: () => void
+  /** pending changes in notes, header / footer parts and textboxes (document order after the body) */
+  storyRevisions: () => StoryRevision[]
+  /** the change outside the body Next / Previous last landed on, while it is still pending */
+  currentStoryRevision: () => StoryRevision | null
+  /** accept / reject those; `all` also clears what the models do not show (paragraph marks); the count applied */
+  applyStoryRevisions: (
+    targets: StoryRevision[],
+    mode: 'accept' | 'reject',
+    all?: boolean,
+  ) => number
+}
+
+// ---- References: footnotes / endnotes ----
+
+/** dialog submit: create a new note (+ caret marker) or update an existing one */
+export function submitNote(ctx: ReviewContext, text: string): void {
+  if (!ctx.notePrompt || !ctx.editor) return
+  const { kind, id } = ctx.notePrompt
+  const list = kind === 'footnote' ? ctx.footnotes : ctx.endnotes
+  const setList = kind === 'footnote' ? ctx.setFootnotes : ctx.setEndnotes
+  if (id !== undefined) {
+    setList(list.map((n) => (n.id === id ? { ...n, text } : n)))
+  } else {
+    const newId = nextNoteId(list)
+    const mark = ctx.notePrompt.customMark
+    setList([
+      ...list,
+      mark
+        ? { id: newId, text: `${mark} ${text}`, noRefMark: true, customMark: mark, created: true }
+        : { id: newId, text, created: true },
+    ])
+    ctx.editor
+      .chain()
+      .focus()
+      .insertContent({
+        type: 'docNoteRef',
+        attrs: { kind, id: newId, num: list.length + 1, mark: mark ?? null },
+      } as never)
+      .run()
+    // the mark lands at the caret, which can be above marks that are already
+    // in the body, so the `num` it was given is only the append order: rewrite
+    // every mark of this kind in document order before anything reads it
+    const tr = ctx.editor.state.tr
+    renumber(tr, kind)
+    if (tr.docChanged) ctx.editor.view.dispatch(tr)
+  }
+  ctx.setNotesDirty(true)
+}
+
+/** delete a note, remove its in-text marker, renumber the remaining markers */
+export function deleteNote(ctx: ReviewContext, kind: 'footnote' | 'endnote', id: string): void {
+  const list = kind === 'footnote' ? ctx.footnotes : ctx.endnotes
+  const next = list.filter((n) => n.id !== id)
+  ;(kind === 'footnote' ? ctx.setFootnotes : ctx.setEndnotes)(next)
+  ctx.setNotesDirty(true)
+  if (!ctx.editor) return
+  const editor = ctx.editor
+  const tr = editor.state.tr
+  const removals: Array<{ pos: number; size: number }> = []
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'docNoteRef' || node.attrs.kind !== kind) return
+    if (String(node.attrs.id) === id) {
+      removals.push({ pos, size: node.nodeSize })
+    }
+  })
+  for (const { pos, size } of removals.reverse()) tr.delete(pos, pos + size)
+  // number the survivors by where they sit in the body, the order submitNote
+  // uses; the list order is not the document order once a note has been
+  // inserted above one that was already there
+  renumber(tr, kind)
+  if (tr.docChanged) editor.view.dispatch(tr)
+}
+
+export type NoteConversion = 'toEndnotes' | 'toFootnotes' | 'swap'
+
+/**
+ * Word's Convert Notes: every footnote becomes an endnote, every endnote a
+ * footnote, or both at once. A note whose reference mark lives only in a
+ * protected block's XML stays what it is. Returns how many notes changed kind.
+ */
+export function convertNotes(ctx: ReviewContext, mode: NoteConversion): number {
+  const editor = ctx.editor
+  if (!editor) return 0
+  const lists = { footnote: ctx.footnotes, endnote: ctx.endnotes }
+  const moving = new Map<string, { pos: number; node: PmNode }[]>()
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'docNoteRef') return true
+    const kind = node.attrs.kind as NoteKind
+    if (mode === (kind === 'footnote' ? 'toFootnotes' : 'toEndnotes')) return false
+    const key = `${kind}:${node.attrs.id}`
+    moving.set(key, [...(moving.get(key) ?? []), { pos, node }])
+    return false
+  })
+  const next = {
+    footnote: lists.footnote.filter((n) => !moving.has(`footnote:${n.id}`)),
+    endnote: lists.endnote.filter((n) => !moving.has(`endnote:${n.id}`)),
+  }
+  const tr = editor.state.tr
+  let converted = 0
+  for (const from of ['footnote', 'endnote'] as const) {
+    const to = from === 'footnote' ? 'endnote' : 'footnote'
+    for (const note of lists[from]) {
+      const refs = moving.get(`${from}:${note.id}`)
+      if (!refs) continue
+      const id = nextNoteId(next[to])
+      // only a note the file holds has bytes to carry over: a new one may sit on a deleted note's id
+      const origin = note.origin ?? (note.created ? undefined : { kind: from, id: note.id })
+      next[to].push({ ...note, id, ...(origin ? { origin } : {}) })
+      for (const { pos, node } of refs)
+        tr.setNodeMarkup(pos, undefined, { ...node.attrs, kind: to, id })
+      converted++
+    }
+  }
+  if (converted === 0) return 0
+  renumber(tr, 'footnote')
+  renumber(tr, 'endnote')
+  // the note lists are not on the undo stack: an undone mark would point at a note that is gone
+  editor.view.dispatch(tr.setMeta('addToHistory', false))
+  ctx.setFootnotes(next.footnote)
+  ctx.setEndnotes(next.endnote)
+  ctx.setNotesDirty(true)
+  return converted
+}
+
+// ---- Review: comments / revisions / compare / protection ----
+
+/** keeps the picked range highlighted while the composer holds focus */
+export function setPendingCommentRange(
+  ctx: ReviewContext,
+  range: { from: number; to: number } | null,
+): void {
+  if (!ctx.editor) return
+  ctx.editor.view.dispatch(ctx.editor.state.tr.setMeta(pendingCommentPluginKey, range))
+}
+
+export function cancelNewComment(ctx: ReviewContext): void {
+  ctx.setCommentComposing(false)
+  setPendingCommentRange(ctx, null)
+}
+
+/** New comment: open the pane with the composer; the mark is applied on submit */
+export function startNewComment(ctx: ReviewContext): void {
+  const editor = ctx.editor
+  if (!editor) return
+  if (editor.state.selection.empty) {
+    // Word anchors on the word under a collapsed caret rather than refusing
+    const word = wordRangeAtCaret(editor)
+    if (word) editor.commands.setTextSelection(word)
+    else if (emptyParagraphAtCaret(editor.state) === null) {
+      ctx.setStatus(t('appSelectTextToComment'))
+      return
+    }
+  }
+  const { from, to } = editor.state.selection
+  setPendingCommentRange(ctx, { from, to })
+  ctx.setShowComments(true)
+  ctx.setCommentComposing(true)
+}
+
+export function submitNewComment(ctx: ReviewContext, text: string, image?: CommentImage): void {
+  if (!ctx.editor) return
+  setPendingCommentRange(ctx, null)
+  const id = nextCommentId(ctx.comments)
+  if (!addCommentToSelection(ctx.editor, id)) {
+    ctx.setStatus(t('appCommentSelectionLost'))
+    ctx.setCommentComposing(false)
+    return
+  }
+  const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+  ctx.setComments((prev) => [
+    ...prev,
+    { id, author: authorName(), date: now, text, ...(image ? { image } : {}) },
+  ])
+  ctx.setCommentsDirty(true)
+  ctx.setCommentComposing(false)
+  ctx.dirtyRef.current = true
+  ctx.setStatus(t('appCommentAdded'))
+}
+
+/** New thread on an explicit range (AI add_comment); the new id, null when the range holds no text */
+export function addCommentAt(
+  ctx: ReviewContext,
+  range: { from: number; to: number },
+  text: string,
+  author: string,
+  initials?: string,
+): string | null {
+  if (!ctx.editor) return null
+  const id = nextCommentId(ctx.comments)
+  if (!addCommentToRange(ctx.editor, range.from, range.to, id)) return null
+  const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+  ctx.setComments((prev) => [
+    ...prev,
+    { id, author, date: now, text, ...(initials ? { initials } : {}) },
+  ])
+  ctx.setCommentsDirty(true)
+  ctx.dirtyRef.current = true
+  ctx.setStatus(t('appCommentAdded'))
+  return id
+}
+
+/** Reply to a comment: the new entry carries parentId; the anchor shares the parent comment's range */
+export function replyToComment(
+  ctx: ReviewContext,
+  parentId: string,
+  text: string,
+  author = authorName(),
+): boolean {
+  if (!ctx.editor) return false
+  const id = nextCommentId(ctx.comments)
+  if (!addReplyToCommentRange(ctx.editor, parentId, id)) {
+    ctx.setStatus(t('appCommentAnchorGone'))
+    return false
+  }
+  const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+  ctx.setComments((prev) => [...prev, { id, author, date: now, text, parentId }])
+  ctx.setCommentsDirty(true)
+  ctx.dirtyRef.current = true
+  ctx.setStatus(t('appCommentReplied'))
+  return true
+}
+
+/** Word: comment text edits in place; the author, date and anchor stay */
+export function editComment(ctx: ReviewContext, id: string, text: string): void {
+  ctx.setComments((prev) => prev.map((c) => (c.id === id ? { ...c, text } : c)))
+  ctx.setCommentsDirty(true)
+  ctx.dirtyRef.current = true
+  ctx.setStatus(t('appCommentEdited'))
+}
+
+/** Resolve/reopen: the whole thread (parent + replies) gets done set together */
+export function resolveComment(ctx: ReviewContext, id: string, done: boolean): void {
+  ctx.setComments((prev) =>
+    prev.map((c) => (c.id === id || c.parentId === id ? { ...c, done } : c)),
+  )
+  ctx.setCommentsDirty(true)
+  ctx.dirtyRef.current = true
+  ctx.setStatus(done ? t('appCommentResolvedMsg') : t('appCommentReopenedMsg'))
+}
+
+export function deleteComment(ctx: ReviewContext, id: string): void {
+  if (!ctx.editor) return
+  // cascade: deleting a parent comment also deletes its replies (including their anchor marks)
+  const victims = [id, ...ctx.comments.filter((c) => c.parentId === id).map((c) => c.id)]
+  for (const v of victims) removeCommentFromDoc(ctx.editor, v)
+  ctx.setComments((prev) => prev.filter((c) => !victims.includes(c.id)))
+  ctx.setCommentsDirty(true)
+  ctx.dirtyRef.current = true
+}
+
+/** the thread under the caret (a reply resolves to its parent) */
+export function commentThreadAtCaret(ctx: ReviewContext): string | null {
+  if (!ctx.editor) return null
+  const ids = commentIdsAt(ctx.editor.state, ctx.editor.state.selection.from)
+  for (const id of ids) {
+    const info = ctx.comments.find((c) => c.id === id)
+    if (info) return info.parentId ?? info.id
+  }
+  return null
+}
+
+export function deleteCommentAtCaret(ctx: ReviewContext): void {
+  const id = commentThreadAtCaret(ctx)
+  if (id) deleteComment(ctx, id)
+}
+
+/** Delete All Comments in Document / Delete All Resolved Comments */
+export function deleteAllComments(ctx: ReviewContext, resolvedOnly: boolean): void {
+  if (!ctx.editor) return
+  // replies never carry done themselves: a resolved thread goes with all of its replies
+  const doneThreads = new Set(ctx.comments.filter((c) => c.done && !c.parentId).map((c) => c.id))
+  const victims = ctx.comments
+    .filter((c) => !resolvedOnly || c.done || (c.parentId && doneThreads.has(c.parentId)))
+    .map((c) => c.id)
+  if (victims.length === 0) return
+  removeCommentsFromDoc(ctx.editor, victims)
+  const gone = new Set(victims)
+  ctx.setComments((prev) => prev.filter((c) => !gone.has(c.id)))
+  ctx.setCommentsDirty(true)
+  ctx.dirtyRef.current = true
+}
+
+/** Previous / Next Comment: select the thread's anchor and light it up in the pane; open threads only */
+export function gotoComment(ctx: ReviewContext, dir: 1 | -1): boolean {
+  const editor = ctx.editor
+  if (!editor) return false
+  const open = new Set(ctx.comments.filter((c) => !c.parentId && !c.done).map((c) => c.id))
+  const anchors = commentAnchors(editor.state.doc).filter((a) => open.has(a.id))
+  if (anchors.length === 0) return false
+  // the thread under the caret is never a stop in either direction
+  const { from } = editor.state.selection
+  const target =
+    dir === 1
+      ? (anchors.find((a) => a.from > from) ?? anchors[0])
+      : ([...anchors].reverse().find((a) => a.to <= from && a.from < from) ??
+        anchors[anchors.length - 1])
+  const tr = editor.state.tr
+  tr.setSelection(TextSelection.between(tr.doc.resolve(target.from), tr.doc.resolve(target.to)))
+  tr.scrollIntoView()
+  tr.setMeta(TRACK_IGNORE, true)
+  editor.view.dispatch(tr)
+  editor.view.focus()
+  ctx.setShowComments(true)
+  ctx.setCommentFocus({ id: target.id, nonce: Date.now() })
+  return true
+}
+
+export function handleRevision(
+  ctx: ReviewContext,
+  action: 'accept' | 'reject',
+  scope: RevisionScope,
+): void {
+  const editor = ctx.editor
+  if (!editor) return
+  const done = (n: number) =>
+    ctx.setStatus(t(action === 'accept' ? 'appRevisionsAcceptedN' : 'appRevisionsRejectedN', { n }))
+  const stories = ctx.storyRevisions()
+  // stories first: textbox entries address their anchor node by position, which body edits shift
+  if (scope === 'all') {
+    // Word keeps Accept All and Reject All live with nothing tracked: say so, change nothing
+    if (stories.length === 0 && collectRevisions(editor.state.doc).length === 0) {
+      ctx.setStatus(t('appNoRevisionsToHandle'))
+      return
+    }
+    ctx.applyStoryRevisions(stories, action, true)
+    if (action === 'accept') acceptAllRevisions(editor)
+    else rejectAllRevisions(editor)
+    ctx.setStatus(action === 'accept' ? t('appAllRevisionsAccepted') : t('appAllRevisionsRejected'))
+  } else if (scope === 'next') {
+    const shown = filterRevisions(collectRevisions(editor.state.doc), ctx.revisionFilter)
+    const head = editor.state.selection.head
+    // a story change Next / Previous opened is the current one, as the caret is for the body
+    const shownStories = filterRevisions(stories, ctx.revisionFilter)
+    const current: RevisionRange | undefined =
+      ctx.currentStoryRevision() ??
+      shown.find((r) => head >= r.from && head <= r.to) ??
+      shown.find((r) => r.from > head) ??
+      shown[0] ??
+      shownStories[0]
+    if (!current) {
+      ctx.setStatus(t('appNoRevisionsToHandle'))
+      return
+    }
+    if (current.story) ctx.applyStoryRevisions([current as StoryRevision], action)
+    else applyRevisions(editor, [current], action)
+    const rest = filterRevisions(collectRevisions(editor.state.doc), ctx.revisionFilter)
+    const anchor = editor.state.selection.from
+    const restStories = filterRevisions(ctx.storyRevisions(), ctx.revisionFilter)
+    // the resolved story entry left the list: the one now at its index follows it
+    const at = shownStories.findIndex((r) => r.story.id === current.story?.id)
+    const next = current.story
+      ? (restStories[Math.max(0, at)] ?? rest[0] ?? restStories[0])
+      : (rest.find((r) => r.from >= anchor) ?? rest[0] ?? restStories[0])
+    if (next) ctx.showRevision(next)
+  } else {
+    const all = collectRevisions(editor.state.doc)
+    let targets: RevisionRange[]
+    let storyTargets: StoryRevision[] = []
+    if (scope === 'shown') {
+      targets = filterRevisions(all, ctx.revisionFilter)
+      storyTargets = filterRevisions(stories, ctx.revisionFilter)
+    } else if (scope === 'selection') {
+      const { from, to } = editor.state.selection
+      targets = revisionsInSelection(all, from, to)
+    } else {
+      targets = all.filter((r) => r.author === scope.author)
+      storyTargets = stories.filter((r) => r.author === scope.author)
+    }
+    if (targets.length === 0 && storyTargets.length === 0) {
+      ctx.setStatus(t('appNoRevisionsToHandle'))
+      return
+    }
+    const applied = ctx.applyStoryRevisions(storyTargets, action)
+    applyRevisions(editor, targets, action)
+    done(revisionCount(targets) + applied)
+  }
+  ctx.dirtyRef.current = true
+}
+
+/**
+ * Reviewing Pane / context menu: one specific change. The caller holds a
+ * throttled snapshot, so the range is re-resolved against the live document
+ * (same kind and reviewer, overlapping positions) before it is applied.
+ */
+export function handleRevisionRange(
+  ctx: ReviewContext,
+  action: 'accept' | 'reject',
+  target: RevisionRange,
+): void {
+  const editor = ctx.editor
+  if (!editor) return
+  if (target.story) {
+    if (ctx.applyStoryRevisions([target as StoryRevision], action) === 0)
+      ctx.setStatus(t('appNoRevisionsToHandle'))
+    else ctx.dirtyRef.current = true
+    return
+  }
+  const live = collectRevisions(editor.state.doc).find(
+    (r) =>
+      r.kind === target.kind &&
+      r.author === target.author &&
+      r.from < target.to &&
+      r.to > target.from,
+  )
+  if (!live) {
+    ctx.setStatus(t('appNoRevisionsToHandle'))
+    return
+  }
+  applyRevisions(editor, [live], action)
+  ctx.dirtyRef.current = true
+}
+
+// ---- Draw: overlay annotations ----
+
+export function addInk(ctx: ReviewContext, annotation: InkAnnotation): void {
+  ctx.setInkAnnotations((prev) => [...prev, annotation])
+  ctx.setInksDirty(true)
+  ctx.dirtyRef.current = true
+}
+
+export function removeInks(ctx: ReviewContext, ids: string[]): void {
+  const gone = new Set(ids)
+  ctx.setInkAnnotations((prev) => prev.filter((a) => !gone.has(a.id)))
+  ctx.setInksDirty(true)
+  ctx.dirtyRef.current = true
+}
+
+export function clearInks(ctx: ReviewContext): void {
+  ctx.setInkAnnotations([])
+  ctx.setInksDirty(true)
+  ctx.dirtyRef.current = true
+  ctx.setStatus(t('appInksCleared'))
+}
+
+/** the dialog's Browse: a .docx read whole, the tab's own document untouched */
+export async function pickCompareFile(): Promise<
+  Extract<CompareSide, { kind: 'file' }> | { error: string } | null
+> {
+  const picked = await window.desktop.pickDocx()
+  if (!picked) return null
+  if ('needsPassword' in picked) return { error: t('appDocPwdTitle') }
+  try {
+    const parsed = await parseDocx(await fetchDocBytes(picked.dataUrl))
+    const core = parsed.properties?.core ?? {}
+    return {
+      kind: 'file',
+      name: picked.name,
+      parsed,
+      author: core.lastModifiedBy?.trim() || core.creator?.trim() || authorName(),
+    }
+  } catch (err) {
+    return { error: String(err) }
+  }
+}
+
+/**
+ * Compare Documents / Combine Documents, as the dialog asked: into a new
+ * document the whole comparison (body, tables, headers and footers, notes,
+ * formatting, moves) opens as an untitled redline; into the open document the
+ * text differences are written as tracked changes in one undoable edit.
+ */
+export async function runCompare(ctx: ReviewContext, request: CompareRequest): Promise<void> {
+  const failed = request.mode === 'combine' ? 'appCombineFailed' : 'appCompareFailed'
+  const other = request.original.kind === 'file' ? request.original : request.revised
+  const name = other.kind === 'file' ? other.name : ''
+  try {
+    if (request.target === 'new') {
+      const side = async (s: CompareSide): Promise<ParsedDocFull | null> => {
+        if (s.kind === 'file') return s.parsed
+        const bytes = await ctx.currentDocBytes()
+        return bytes ? parseDocx(bytes) : null
+      }
+      const original = await side(request.original)
+      const revised = await side(request.revised)
+      if (!original || !revised) return
+      const { bytes, summary } = await compareDocuments(original, revised, {
+        author: request.author,
+        date: revisionDateNow(),
+        granularity: request.granularity,
+        settings: request.settings,
+        keepRevisions: request.mode === 'combine',
+      })
+      const changes =
+        summary.insertions +
+        summary.deletions +
+        summary.formatChanges +
+        summary.moves +
+        summary.carried
+      const left = summary.skipped > 0 ? ` ${t('appCombineSkipped', { n: summary.skipped })}` : ''
+      if (changes === 0) {
+        ctx.setStatus(t('appCompareNoDifference') + left)
+        return
+      }
+      await window.desktop.openResultTab(bytes)
+      ctx.setStatus(
+        t('appCompareOpened', {
+          ins: summary.insertions,
+          del: summary.deletions,
+          fmt: summary.formatChanges,
+          moves: summary.moves,
+          author: request.author,
+        }) + left,
+      )
+      return
+    }
+    const editor = ctx.editor
+    if (!ctx.doc || !editor || other.kind !== 'file') return
+    const styles = ctx.doc.parsed.styles
+    const summary = combineDocuments(
+      editor,
+      blocksToPmDoc(other.parsed.blocks, readSections(other.parsed), pmDocOptions(other.parsed))
+        .content ?? [],
+      {
+        author: request.author,
+        date: revisionDateNow(),
+        hasStyle: (id) => styles.has(id),
+        granularity: request.granularity,
+        ignore: {
+          case: !request.settings.caseChanges,
+          whitespace: !request.settings.whiteSpace,
+        },
+        tables: request.settings.tables,
+        openIsRevised: request.target === 'revised',
+        keepRevisions: request.mode === 'combine',
+      },
+    )
+    if (!summary.related) {
+      ctx.setStatus(t('appCombineUnrelated', { name }))
+      return
+    }
+    const changed = summary.insertions + summary.deletions + (summary.carried ?? 0) > 0
+    if (changed) {
+      ctx.dirtyRef.current = true
+      ctx.showAllMarkup()
+    }
+    const left = summary.skipped > 0 ? ` ${t('appCombineSkipped', { n: summary.skipped })}` : ''
+    ctx.setStatus(
+      (changed
+        ? t('appCombineDone', {
+            name,
+            ins: summary.insertions,
+            del: summary.deletions,
+            author: request.author,
+          })
+        : t('appCombineSame', { name })) + left,
+    )
+  } catch (err) {
+    ctx.setStatus(t(failed, { error: String(err) }))
+  }
+}
+
+/** A comment picture is shown at most this wide; larger ones scale down keeping the aspect */
+const MAX_COMMENT_IMAGE_PX = 320
+
+const COMMENT_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif'])
+
+/**
+ * The picture a comment carries, from a picked or pasted file: the bytes ride
+ * along base64 and the display size scales the natural size into the cap.
+ * null for anything that is not a png/jpeg/gif or does not decode.
+ */
+export async function commentImageFromFile(file: File): Promise<CommentImage | null> {
+  if (!COMMENT_IMAGE_MIMES.has(file.type)) return null
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () =>
+      resolve(String(reader.result).slice(String(reader.result).indexOf(',') + 1))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(new Blob([file], { type: file.type }))
+  } catch {
+    return null
+  }
+  const width = bitmap.width
+  const height = bitmap.height
+  bitmap.close()
+  if (width <= 0 || height <= 0) return null
+  const scale = Math.min(1, MAX_COMMENT_IMAGE_PX / Math.max(width, height))
+  return {
+    mime: file.type as CommentImage['mime'],
+    base64,
+    widthPx: Math.max(1, Math.round(width * scale)),
+    heightPx: Math.max(1, Math.round(height * scale)),
+  }
+}

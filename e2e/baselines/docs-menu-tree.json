@@ -1,0 +1,1048 @@
+[
+  {
+    "label": "File",
+    "submenu": [
+      {
+        "label": "New Document",
+        "accelerator": "CmdOrCtrl+N"
+      },
+      {
+        "label": "New from Template…"
+      },
+      {
+        "label": "Open…",
+        "accelerator": "CmdOrCtrl+O"
+      },
+      {
+        "label": "Open Recent"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Close",
+        "accelerator": "CmdOrCtrl+W"
+      },
+      {
+        "label": "Save",
+        "accelerator": "CmdOrCtrl+S"
+      },
+      {
+        "label": "Save As…",
+        "accelerator": "Shift+CmdOrCtrl+S"
+      },
+      {
+        "label": "Save as Template…"
+      },
+      {
+        "label": "Move…",
+        "disabled": true
+      },
+      {
+        "label": "Rename…",
+        "disabled": true
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Always Open Read-Only",
+        "type": "checkbox",
+        "checked": false
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Reduce File Size…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Page Setup…"
+      },
+      {
+        "label": "Print…",
+        "accelerator": "CmdOrCtrl+P"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Properties…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "New Window",
+        "accelerator": "Shift+CmdOrCtrl+N"
+      },
+      {
+        "label": "Name with AI…"
+      },
+      {
+        "label": "Export as PDF…"
+      },
+      {
+        "label": "Export as HTML…"
+      },
+      {
+        "label": "Export as Markdown…"
+      },
+      {
+        "label": "Export as Images…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Back to Home",
+        "accelerator": "Shift+CmdOrCtrl+H"
+      }
+    ]
+  },
+  {
+    "label": "Edit",
+    "submenu": [
+      {
+        "label": "Undo",
+        "accelerator": "CmdOrCtrl+Z",
+        "disabled": true
+      },
+      {
+        "label": "Can't Repeat",
+        "accelerator": "CmdOrCtrl+Y",
+        "disabled": true
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Cut",
+        "role": "cut",
+        "disabled": true
+      },
+      {
+        "label": "Copy",
+        "role": "copy",
+        "disabled": true
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Paste",
+        "role": "paste"
+      },
+      {
+        "label": "Paste Special…"
+      },
+      {
+        "label": "Paste and Match Formatting",
+        "role": "pasteandmatchstyle"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Clear",
+        "submenu": [
+          {
+            "label": "Clear Formatting"
+          },
+          {
+            "label": "Contents"
+          }
+        ]
+      },
+      {
+        "label": "Select All",
+        "role": "selectall"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Find",
+        "submenu": [
+          {
+            "label": "Find…",
+            "accelerator": "CmdOrCtrl+F"
+          },
+          {
+            "label": "Find Next"
+          },
+          {
+            "label": "Find Previous"
+          },
+          {
+            "label": "",
+            "type": "separator"
+          },
+          {
+            "label": "Replace…"
+          },
+          {
+            "label": "Go To…",
+            "accelerator": "Alt+Cmd+G"
+          },
+          {
+            "label": "Advanced Find and Replace…"
+          }
+        ]
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Select Data…",
+        "disabled": true
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Toggle Drawing"
+      }
+    ]
+  },
+  {
+    "label": "View",
+    "submenu": [
+      {
+        "label": "Print Layout",
+        "type": "checkbox",
+        "checked": true
+      },
+      {
+        "label": "Web Layout",
+        "type": "checkbox",
+        "checked": false
+      },
+      {
+        "label": "Outline",
+        "type": "checkbox",
+        "checked": false
+      },
+      {
+        "label": "Draft",
+        "type": "checkbox",
+        "checked": false
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Focus",
+        "type": "checkbox",
+        "checked": false
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Ribbon",
+        "type": "checkbox",
+        "checked": true
+      },
+      {
+        "label": "Sidebar",
+        "submenu": [
+          {
+            "label": "Thumbnail",
+            "type": "checkbox",
+            "checked": false
+          },
+          {
+            "label": "Navigation",
+            "type": "checkbox",
+            "checked": false
+          },
+          {
+            "label": "Reviewing",
+            "type": "checkbox",
+            "checked": false
+          },
+          {
+            "label": "Search"
+          }
+        ]
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Ruler",
+        "type": "checkbox",
+        "checked": false
+      },
+      {
+        "label": "Header and Footer"
+      },
+      {
+        "label": "Footnotes",
+        "disabled": true
+      },
+      {
+        "label": "Markup",
+        "type": "checkbox",
+        "checked": true
+      },
+      {
+        "label": "Reveal Formatting"
+      },
+      {
+        "label": "Zoom",
+        "submenu": [
+          {
+            "label": "Zoom…"
+          },
+          {
+            "label": "",
+            "type": "separator"
+          },
+          {
+            "label": "Zoom In",
+            "accelerator": "CmdOrCtrl+="
+          },
+          {
+            "label": "Zoom Out",
+            "accelerator": "CmdOrCtrl+-"
+          },
+          {
+            "label": "Actual Size (100%)",
+            "accelerator": "CmdOrCtrl+0"
+          },
+          {
+            "label": "",
+            "type": "separator"
+          },
+          {
+            "label": "500%"
+          },
+          {
+            "label": "200%"
+          },
+          {
+            "label": "150%"
+          },
+          {
+            "label": "125%"
+          },
+          {
+            "label": "100%"
+          },
+          {
+            "label": "75%"
+          },
+          {
+            "label": "50%"
+          },
+          {
+            "label": "25%"
+          },
+          {
+            "label": "10%"
+          },
+          {
+            "label": "Page Width"
+          },
+          {
+            "label": "Whole Page"
+          },
+          {
+            "label": "Multiple Pages"
+          }
+        ]
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Gridlines",
+        "type": "checkbox",
+        "checked": false
+      },
+      {
+        "label": "Enter Full Screen",
+        "role": "togglefullscreen"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "AI Sidebar",
+        "type": "checkbox",
+        "checked": true
+      },
+      {
+        "label": "Dark Mode",
+        "type": "checkbox",
+        "checked": false
+      },
+      {
+        "label": "Interface Zoom In",
+        "accelerator": "CmdOrCtrl+Alt+="
+      },
+      {
+        "label": "Interface Zoom Out",
+        "accelerator": "CmdOrCtrl+Alt+-"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Reset Interface Zoom",
+        "accelerator": "CmdOrCtrl+Alt+0"
+      }
+    ]
+  },
+  {
+    "label": "Insert",
+    "submenu": [
+      {
+        "label": "Pictures",
+        "submenu": [
+          {
+            "label": "Picture from File…"
+          }
+        ]
+      },
+      {
+        "label": "Shape",
+        "submenu": [
+          {
+            "label": "Rectangle"
+          },
+          {
+            "label": "Rounded Rectangle"
+          },
+          {
+            "label": "Triangle"
+          },
+          {
+            "label": "Oval"
+          },
+          {
+            "label": "Line"
+          }
+        ]
+      },
+      {
+        "label": "Chart",
+        "submenu": [
+          {
+            "label": "Column"
+          },
+          {
+            "label": "Bar"
+          },
+          {
+            "label": "Line"
+          },
+          {
+            "label": "Area"
+          },
+          {
+            "label": "Pie"
+          },
+          {
+            "label": "Treemap"
+          },
+          {
+            "label": "Sunburst"
+          },
+          {
+            "label": "Histogram"
+          },
+          {
+            "label": "Pareto"
+          },
+          {
+            "label": "Box and Whisker"
+          },
+          {
+            "label": "X Y (Scatter)"
+          },
+          {
+            "label": "Waterfall"
+          },
+          {
+            "label": "Funnel"
+          },
+          {
+            "label": "Stock"
+          },
+          {
+            "label": "Surface"
+          },
+          {
+            "label": "Radar"
+          }
+        ]
+      },
+      {
+        "label": "Table…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Icons…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Hyperlink…",
+        "accelerator": "CmdOrCtrl+K"
+      },
+      {
+        "label": "Bookmark…"
+      },
+      {
+        "label": "Cross-reference…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Comment"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Break",
+        "submenu": [
+          {
+            "label": "Page Break"
+          },
+          {
+            "label": "Column Break"
+          },
+          {
+            "label": "",
+            "type": "separator"
+          },
+          {
+            "label": "Section Break (Next Page)"
+          },
+          {
+            "label": "Section Break (Continuous)"
+          },
+          {
+            "label": "Section Break (Odd Page)"
+          },
+          {
+            "label": "Section Break (Even Page)"
+          }
+        ]
+      },
+      {
+        "label": "Footnote…"
+      },
+      {
+        "label": "Caption…"
+      },
+      {
+        "label": "Index and Tables…"
+      },
+      {
+        "label": "Watermark…"
+      },
+      {
+        "label": "Page Numbers…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Text Box",
+        "submenu": [
+          {
+            "label": "Text Box"
+          },
+          {
+            "label": "Draw Vertical Text Box"
+          }
+        ]
+      },
+      {
+        "label": "AutoText",
+        "submenu": [
+          {
+            "label": "AutoText…"
+          },
+          {
+            "label": "New…",
+            "disabled": true
+          }
+        ]
+      },
+      {
+        "label": "Date and Time…"
+      },
+      {
+        "label": "File…"
+      },
+      {
+        "label": "Field…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Equation…"
+      },
+      {
+        "label": "Advanced Symbol…"
+      }
+    ]
+  },
+  {
+    "label": "Format",
+    "submenu": [
+      {
+        "label": "Font…",
+        "accelerator": "CmdOrCtrl+D"
+      },
+      {
+        "label": "Text Effects…"
+      },
+      {
+        "label": "Paragraph…",
+        "accelerator": "Alt+CmdOrCtrl+M"
+      },
+      {
+        "label": "Document…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Bullets and Numbering…"
+      },
+      {
+        "label": "Borders and Shading…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Columns…"
+      },
+      {
+        "label": "Tabs…"
+      },
+      {
+        "label": "Drop Cap…",
+        "disabled": true
+      },
+      {
+        "label": "Text Direction…"
+      },
+      {
+        "label": "Change Case…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Asian Layout",
+        "submenu": [
+          {
+            "label": "Phonetic Guide…"
+          },
+          {
+            "label": "Enclose Characters…"
+          },
+          {
+            "label": "Horizontal in Vertical…"
+          },
+          {
+            "label": "Combine Characters…"
+          },
+          {
+            "label": "Two Lines in One…"
+          },
+          {
+            "label": "Fit Text…",
+            "disabled": true
+          }
+        ]
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Style…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Font Substitution…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Format Object…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Equation Options…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Selection Pane…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Bold",
+        "accelerator": "CmdOrCtrl+B"
+      },
+      {
+        "label": "Italic",
+        "accelerator": "CmdOrCtrl+I"
+      },
+      {
+        "label": "Underline",
+        "accelerator": "CmdOrCtrl+U"
+      },
+      {
+        "label": "Align",
+        "submenu": [
+          {
+            "label": "Align Left"
+          },
+          {
+            "label": "Center"
+          },
+          {
+            "label": "Align Right"
+          },
+          {
+            "label": "Justify"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Tools",
+    "submenu": [
+      {
+        "label": "Spelling and Grammar",
+        "submenu": [
+          {
+            "label": "Spelling and Grammar…",
+            "accelerator": "Alt+CmdOrCtrl+L"
+          },
+          {
+            "label": "Editor"
+          },
+          {
+            "label": "",
+            "type": "separator"
+          },
+          {
+            "label": "Hide Spelling Errors",
+            "type": "checkbox",
+            "checked": false
+          },
+          {
+            "label": "",
+            "type": "separator"
+          },
+          {
+            "label": "Reset Ignored Words and Grammar"
+          }
+        ]
+      },
+      {
+        "label": "Thesaurus…"
+      },
+      {
+        "label": "Hyphenation…"
+      },
+      {
+        "label": "Translate",
+        "submenu": [
+          {
+            "label": "Translate Selection"
+          },
+          {
+            "label": "Translate Document"
+          },
+          {
+            "label": "",
+            "type": "separator"
+          },
+          {
+            "label": "Set Document Translation Language…"
+          }
+        ]
+      },
+      {
+        "label": "Language…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Word Count…"
+      },
+      {
+        "label": "AutoCorrect Options…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Track Changes",
+        "submenu": [
+          {
+            "label": "Highlight Changes…"
+          },
+          {
+            "label": "Compare Documents…"
+          }
+        ]
+      },
+      {
+        "label": "Combine Documents…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Protect Document…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Envelopes…"
+      },
+      {
+        "label": "Labels…"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Customize Keyboard…"
+      }
+    ]
+  },
+  {
+    "label": "Table",
+    "submenu": [
+      {
+        "label": "Insert",
+        "submenu": [
+          {
+            "label": "Table…"
+          },
+          {
+            "label": "Columns to the Left",
+            "disabled": true
+          },
+          {
+            "label": "Columns to the Right",
+            "disabled": true
+          },
+          {
+            "label": "Rows Above",
+            "disabled": true
+          },
+          {
+            "label": "Rows Below",
+            "disabled": true
+          },
+          {
+            "label": "Cells…",
+            "disabled": true
+          }
+        ]
+      },
+      {
+        "label": "Delete",
+        "submenu": [
+          {
+            "label": "Table",
+            "disabled": true
+          },
+          {
+            "label": "Columns",
+            "disabled": true
+          },
+          {
+            "label": "Rows",
+            "disabled": true
+          },
+          {
+            "label": "Cells…",
+            "disabled": true
+          }
+        ]
+      },
+      {
+        "label": "Select",
+        "submenu": [
+          {
+            "label": "Table",
+            "disabled": true
+          },
+          {
+            "label": "Column",
+            "disabled": true
+          },
+          {
+            "label": "Row",
+            "disabled": true
+          },
+          {
+            "label": "Cell",
+            "disabled": true
+          }
+        ]
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Merge Cells",
+        "disabled": true
+      },
+      {
+        "label": "Split Cells…",
+        "disabled": true
+      },
+      {
+        "label": "Split Table",
+        "disabled": true
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "AutoFit and Distribute",
+        "submenu": [
+          {
+            "label": "AutoFit to Contents",
+            "disabled": true
+          },
+          {
+            "label": "AutoFit to Window",
+            "disabled": true
+          },
+          {
+            "label": "Fixed Column Width",
+            "disabled": true
+          },
+          {
+            "label": "",
+            "type": "separator"
+          },
+          {
+            "label": "Distribute Rows Evenly",
+            "disabled": true
+          },
+          {
+            "label": "Distribute Columns Evenly",
+            "disabled": true
+          }
+        ]
+      },
+      {
+        "label": "Repeat Header Rows",
+        "disabled": true
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Convert",
+        "submenu": [
+          {
+            "label": "Convert Text to Table…"
+          },
+          {
+            "label": "Convert Table to Text…",
+            "disabled": true
+          }
+        ]
+      },
+      {
+        "label": "Sort…"
+      },
+      {
+        "label": "Formula…"
+      },
+      {
+        "label": "View Gridlines"
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
+        "label": "Table Properties…",
+        "disabled": true
+      }
+    ]
+  }
+]

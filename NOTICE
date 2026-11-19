@@ -1,0 +1,68 @@
+GenOffice
+Copyright 2026 Mainfunc, Inc.
+
+This product includes software developed at Mainfunc, Inc.
+
+Bundled third-party components are listed in THIRD-PARTY-NOTICES.txt, which
+tools/gen-third-party-notices.mjs generates at packaging time. It is not
+checked into this repository; in a release build it ships inside the
+application bundle (Contents/Resources on macOS, resources/ on Windows).
+Run `node tools/gen-third-party-notices.mjs` to produce it from a source
+checkout.
+
+Bundled fonts and their licenses are documented in
+apps/docs/src/renderer/fonts/README.md.
+
+Downloadable fonts
+
+Any app can offer additional font families, at the reader's request, from the
+build-injected font mirror. Those families are not in the bundle and so are not
+in that README; the catalogue is
+packages/electron-utils/src/font-catalog.ts, and every family there carries its
+SPDX licence id in a `license` field, checked against a permissive allowlist by
+packages/electron-utils/tests/font-store.test.ts.
+
+All of them are licensed under the SIL Open Font License, Version 1.1
+(https://openfontlicense.org), which permits the bundling and redistribution
+this application performs. The families are: Open Sans, Roboto, Lato,
+Montserrat, Poppins, Inter, Source Sans 3, Oswald, Raleway, Nunito,
+Merriweather, Playfair Display, Work Sans, Rubik, Noto Sans JP, Noto Sans KR,
+Noto Sans SC, Noto Sans TC, Nanum Gothic, Noto Serif SC, Noto Serif TC,
+Noto Serif JP, Noto Serif KR, Nanum Myeongjo.
+
+Each downloaded file is verified against the sha256 recorded in the catalogue
+before it is installed, and the catalogue states each family's size so an app
+can ask before fetching tens of megabytes.
+
+Unicode Character Database
+
+apps/pdf/src/shared/radicals.ts contains a generated mapping derived from
+Unicode Character Database 17.0.0, EquivalentUnifiedIdeograph.txt
+(2025-08-01):
+https://www.unicode.org/Public/17.0.0/ucd/EquivalentUnifiedIdeograph.txt
+
+Copyright © 1991-2026 Unicode, Inc. This data is distributed under Unicode
+License v3. The complete copyright and permission notice is reproduced in
+LICENSE-UNICODE.txt.
+
+Fluent UI System Icons
+
+apps/docs/src/renderer/icon-library/icons.json contains the outlines of the
+icons Docs offers under Insert > Icons. They are taken from Fluent UI System
+Icons (npm package @fluentui/svg-icons 1.1.346, filled style, 24 px) by
+tools/docs-icon-library/build.mjs, which reads the list of icons in
+tools/docs-icon-library/list.mjs:
+https://github.com/microsoft/fluentui-system-icons
+
+Copyright (c) 2020 Microsoft Corporation. The icons are distributed under the
+MIT License, which permits the bundling and redistribution this application
+performs. An icon inserted into a document is a copy of one of these
+drawings.
+
+Office Open XML schemas
+
+tools/ooxml-validate/schemas contains the ISO/IEC 29500-4:2016 (ECMA-376
+Part 4, Transitional) XML Schema files for PresentationML and DrawingML, as
+distributed in the python-docx repository (ref/xsd), with one marked local
+amendment (see tools/ooxml-validate/README.md). They are used only by tests
+and development tooling and are not shipped in the application.

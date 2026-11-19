@@ -1,0 +1,214 @@
+/* GenOffice design tokens — the single source of truth for UI chrome colors.
+ * Theme switching: light defaults in :root, [data-theme='dark'] overrides,
+ * prefers-color-scheme fallback for system mode (no data-theme attribute).
+ * Per-app accents (--accent / --accent-dark / --accent-soft) live in each
+ * app's styles.css. Document content colors (paper, cells, exports, chart
+ * palettes) never live here and never reference these tokens. */
+
+:root {
+  /* Interface scale (issue #1913).
+   *
+   * `zoom` on a *chrome* container, never on the document container. That is
+   * the whole point: a window-level `webContents.setZoomFactor()` would also
+   * scale the canvas, so a document already at 150% would land at 150% x 150%
+   * and the user would watch the interface follow the document zoom — the very
+   * complaint #1913 is about. Scaling the chrome container and leaving the
+   * canvas as a sibling means the two never meet.
+   *
+   * The main process overwrites this value on every renderer from
+   * `app-settings.json` (`uiScale`); 1 is "no scaling". */
+  --ui-scale: 1;
+
+  /* chrome */
+  --surface: #ffffff;
+  --surface-subtle: #f6f7f9;
+  --chrome-bg: #ffffff;
+  --canvas: #e6e6e6;
+  --border: #e3e6ea;
+  --border-subtle: #efefef;
+  --border-strong: #d9d9d9;
+  --border-hover: #d3d7dd;
+  --text: #242424;
+  --text-primary: #232425;
+  --text-secondary: #606366;
+  --text-tertiary: #909499;
+  --text-muted: #616870;
+  --text-dim: #605e5c;
+  --hover: #f5f5f5;
+  --pressed: #edebe9;
+  --active-bg: #eaeaea;
+  --bg-hover: #f5f5f5;
+  --bg-hover-subtle: #f0f2f5;
+  --bg-hover-strong: #e8eaee;
+  --bg-hover-accent: #e0e4ea;
+  --bg-content: #fafafa;
+  --icon-muted: #b9bfc7;
+  --danger: #d13438;
+  --danger-bg: #fdf3f3;
+  /* Word's changed-line bar (Simple Markup): fixed red, tuned per theme */
+  --docs-revision-bar: #c00000;
+  --search-hit-bg: #ffe28a;
+  --search-hit-active-bg: #ff9632;
+  --search-hit-active-ink: #fff;
+  --danger-border: #f0c8c9;
+  --success: #107c41;
+  --success-bg: #eaf7ef;
+  --success-border: #c8e8d4;
+  --color-bg-overlay: rgb(0 0 0 / 50%);
+  --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 10%);
+  --shadow-btn-hover: 0 2px 8px rgb(35 36 37 / 15%);
+  --shadow-menu: 0 8px 24px rgb(0 0 0 / 18%);
+
+  /* AI panel (canonical names from the former per-app copies) */
+  --gs-font-sans:
+    'Arial', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    sans-serif;
+  --color-btn-primary: #232425;
+  --color-btn-primary-hover: #393a3b;
+  --color-btn-primary-text: #ffffff;
+  --color-ai-action: #e8663f;
+  --color-ai-action-hover: #d4552f;
+  --color-ai-action-text: #ffffff;
+  --color-brand-secondary: #0f7fff;
+  --color-text-primary: #232425;
+  --color-text-secondary: #606366;
+  --color-text-tertiary: #909499;
+  --color-bg-page: #ffffff;
+  --color-bg-subtle: #f5f5f5;
+  --color-border-default: #eaeaea;
+  --color-border-strong: #d0d3d8;
+  --color-border-brand: #0f7fff;
+  --color-error: #ef4444;
+  --color-error-hover: #dc2626;
+
+  /* non-color */
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --radius-12: 12px;
+  --radius-16: 16px;
+  --radius-30: 30px;
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --text-body-lg: 18px;
+  --text-small: 14px;
+  --text-caption: 12px;
+
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --surface: #1e1e1e;
+  --surface-subtle: #2a2a2a;
+  --chrome-bg: #252525;
+  --canvas: #2b2b2b;
+  --border: #3a3a3a;
+  --border-subtle: #3a3a3a;
+  --border-strong: #555;
+  --border-hover: #555;
+  --text: #e4e4e4;
+  --text-primary: #e4e4e4;
+  --text-secondary: #a0a0a0;
+  --text-tertiary: #a0a0a0;
+  --text-muted: #949494;
+  --text-dim: #a0a0a0;
+  --hover: #333;
+  --pressed: #3c3c3c;
+  --active-bg: #454545;
+  --bg-hover: #333;
+  --bg-hover-subtle: #333;
+  --bg-hover-strong: #444;
+  --bg-hover-accent: #444;
+  --bg-content: #1a1a1a;
+  --icon-muted: #666;
+  --danger: #d13438;
+  --danger-bg: #3a2020;
+  --docs-revision-bar: #ff6b6b;
+  --search-hit-bg: #745a1e;
+  --search-hit-active-bg: #d4781f;
+  --search-hit-active-ink: #1e1e1e;
+  --danger-border: #5a3030;
+  --success: #52c082;
+  --success-bg: #20342a;
+  --success-border: #33543f;
+  --color-bg-overlay: rgb(0 0 0 / 60%);
+  --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 30%);
+  --shadow-btn-hover: 0 2px 8px rgb(0 0 0 / 50%);
+  --shadow-menu: 0 8px 24px rgb(0 0 0 / 55%);
+
+  --color-btn-primary: #e4e4e4;
+  --color-btn-primary-hover: #d0d0d0;
+  --color-btn-primary-text: #1e1e1e;
+  --color-ai-action: #e8663f;
+  --color-ai-action-hover: #f07a55;
+  --color-ai-action-text: #ffffff;
+  --color-brand-secondary: #4a9eff;
+  --color-text-primary: #e4e4e4;
+  --color-text-secondary: #a0a0a0;
+  --color-text-tertiary: #8a8a8a;
+  --color-bg-page: #1e1e1e;
+  --color-bg-subtle: #2a2a2a;
+  --color-border-default: #3a3a3a;
+  --color-border-strong: #555;
+  --color-border-brand: #4a9eff;
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-theme='dark']) {
+    --surface: #1e1e1e;
+    --surface-subtle: #2a2a2a;
+    --chrome-bg: #252525;
+    --canvas: #2b2b2b;
+    --border: #3a3a3a;
+    --border-subtle: #3a3a3a;
+    --border-strong: #555;
+    --border-hover: #555;
+    --text: #e4e4e4;
+    --text-primary: #e4e4e4;
+    --text-secondary: #a0a0a0;
+    --text-tertiary: #a0a0a0;
+    --text-muted: #949494;
+    --text-dim: #a0a0a0;
+    --hover: #333;
+    --pressed: #3c3c3c;
+    --active-bg: #454545;
+    --bg-hover: #333;
+    --bg-hover-subtle: #333;
+    --bg-hover-strong: #444;
+    --bg-hover-accent: #444;
+    --bg-content: #1a1a1a;
+    --icon-muted: #666;
+    --danger: #d13438;
+    --danger-bg: #3a2020;
+    --docs-revision-bar: #ff6b6b;
+    --search-hit-bg: #745a1e;
+    --search-hit-active-bg: #d4781f;
+    --search-hit-active-ink: #1e1e1e;
+    --danger-border: #5a3030;
+    --success: #52c082;
+    --success-bg: #20342a;
+    --success-border: #33543f;
+    --color-bg-overlay: rgb(0 0 0 / 60%);
+    --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 30%);
+    --shadow-btn-hover: 0 2px 8px rgb(0 0 0 / 50%);
+    --shadow-menu: 0 8px 24px rgb(0 0 0 / 55%);
+
+    --color-btn-primary: #e4e4e4;
+    --color-btn-primary-hover: #d0d0d0;
+    --color-btn-primary-text: #1e1e1e;
+    --color-ai-action: #e8663f;
+    --color-ai-action-hover: #f07a55;
+    --color-ai-action-text: #ffffff;
+    --color-brand-secondary: #4a9eff;
+    --color-text-primary: #e4e4e4;
+    --color-text-secondary: #a0a0a0;
+    --color-text-tertiary: #8a8a8a;
+    --color-bg-page: #1e1e1e;
+    --color-bg-subtle: #2a2a2a;
+    --color-border-default: #3a3a3a;
+    --color-border-strong: #555;
+    --color-border-brand: #4a9eff;
+
+    color-scheme: dark;
+  }
+}

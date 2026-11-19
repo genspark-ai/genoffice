@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:*"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GenOffice Update</title>
+    <style>
+      :root {
+        --accent: #2367ec;
+        --accent-hover: #1b58cf;
+        --text: #242424;
+        --text-muted: #878e96;
+        --border: #e3e6ea;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      :root {
+        --ui-cjk: 'Microsoft YaHei', 'PingFang SC';
+      }
+      :root:lang(ja) {
+        --ui-cjk:
+          'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo';
+      }
+      :root:lang(ko) {
+        --ui-cjk: 'Apple SD Gothic Neo', 'Malgun Gothic';
+      }
+      :root:lang(zh-TW) {
+        --ui-cjk: 'PingFang TC', 'Microsoft JhengHei';
+      }
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+        font-family: -apple-system, 'Segoe UI', var(--ui-cjk), sans-serif;
+        color: var(--text);
+        background: transparent;
+        user-select: none;
+        -webkit-app-region: drag;
+      }
+      #card {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background: #fff;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+      }
+      #hero {
+        background: linear-gradient(135deg, #3d7ff5, #1b58cf);
+        padding: 30px 0 24px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+      #hero img {
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+      }
+      #headline {
+        color: #fff;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      #versions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 13px;
+      }
+      #versions .chip {
+        background: rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-variant-numeric: tabular-nums;
+      }
+      #versions .chip.new {
+        background: #fff;
+        color: var(--accent);
+        font-weight: 600;
+      }
+      #body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        padding: 22px 28px 20px;
+      }
+      #desc {
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--text-muted);
+        text-align: center;
+      }
+      #desc.error {
+        color: #b3261e;
+      }
+      #action {
+        -webkit-app-region: no-drag;
+        width: 100%;
+        height: 44px;
+        border: none;
+        border-radius: 10px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      #action:hover {
+        background: var(--accent-hover);
+      }
+      #progress {
+        width: 100%;
+        display: none;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #progress .track {
+        width: 100%;
+        height: 8px;
+        border-radius: 999px;
+        background: #edf1f7;
+        overflow: hidden;
+      }
+      #progress .bar {
+        height: 100%;
+        width: 0;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #3d7ff5, #1b58cf);
+        transition: width 0.2s;
+      }
+      #progress .label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      #later {
+        -webkit-app-region: no-drag;
+        background: none;
+        border: none;
+        font-size: 12px;
+        color: var(--text-muted);
+        cursor: pointer;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      #later:hover {
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="card">
+      <div id="hero">
+        <img src="./src/assets/app-icon.png" alt="GenOffice" />
+        <div id="headline"></div>
+        <div id="versions">
+          <span class="chip" id="ver-current"></span>
+          <span>→</span>
+          <span class="chip new" id="ver-new"></span>
+        </div>
+      </div>
+      <div id="body">
+        <div id="desc"></div>
+        <div id="progress">
+          <div class="track"><div class="bar" id="bar"></div></div>
+          <div class="label"><span id="progress-text"></span><span id="percent"></span></div>
+        </div>
+        <button id="action"></button>
+        <button id="later"></button>
+      </div>
+    </div>
+    <script type="module" src="/src/update.ts"></script>
+  </body>
+</html>

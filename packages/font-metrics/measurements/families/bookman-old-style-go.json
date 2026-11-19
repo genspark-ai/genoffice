@@ -1,0 +1,83 @@
+{
+  "family": "Bookman Old Style GO",
+  "standsInFor": "Bookman Old Style",
+  "standInChain": { "tail": "latin-serif" },
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-10-31",
+    "fonts": [
+      "Bookman Old Style (Word DFonts: Bookman Old Style.ttf, Bold, Italic, Bold Italic)",
+      "Caladea"
+    ],
+    "probe": "advance-matched Caladea derivative (tools/build-metric-fonts.py): hmtx = Bookman Old Style DFonts advances exactly, outlines scaled horizontally per glyph, one vertical factor (H/x ink ratio 1.015-1.031); Word paces Bookman at its own advances (production PDF spans / hmtx = 1.000 over 96 lines)"
+  },
+  "refit": {
+    "method": "advance-matched",
+    "range": "U+0020-007E, U+00A0-024F, U+1E00-1EFF, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+    "cuts": {
+      "normal/normal": {
+        "word": "dfonts:Bookman Old Style.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/Caladea-Regular.ttf",
+        "out": "apps/docs/src/renderer/fonts/BookmanOldStyleGO-Regular.ttf"
+      },
+      "bold/normal": {
+        "word": "dfonts:Bookman Old Style Bold.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/Caladea-Bold.ttf",
+        "out": "apps/docs/src/renderer/fonts/BookmanOldStyleGO-Bold.ttf"
+      },
+      "normal/italic": {
+        "word": "dfonts:Bookman Old Style Italic.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/Caladea-Italic.ttf",
+        "out": "apps/docs/src/renderer/fonts/BookmanOldStyleGO-Italic.ttf"
+      },
+      "bold/italic": {
+        "word": "dfonts:Bookman Old Style Bold Italic.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/Caladea-BoldItalic.ttf",
+        "out": "apps/docs/src/renderer/fonts/BookmanOldStyleGO-BoldItalic.ttf"
+      }
+    }
+  },
+  "note": "Bookman Old Style ships only inside Office (Word's DFonts), so Chromium fell to the\nname-guess sans chain (Helvetica), 0.80x the Word line width (corpus 2026-10-29: 201\nmatched lines, median 0.796). 2026-10-29 fitted one size-adjusted Caladea face per\n1.5 % advance-ratio bucket; the widths matched but size-adjust scales the glyph height\nwith the width, so one word mixed letter heights (S 1.33x beside U 1.04x, 'SUSUNAN\nORGANISASI' in sample 028). The ranged faces are now one advance-matched derivative\nper cut (BookmanOldStyleGO-*.ttf, tools/build-metric-fonts.py): Caladea outlines\nscaled horizontally to each Word advance, one vertical factor, Word advances in hmtx.\nThe rangeless Caladea face keeps the lowercase ratio for anything outside the Latin\nrepertoire. Pitch stays the hhea 1.1738 the resolver reads from word-faces.json.",
+  "faces": [
+    {
+      "src": "url('./Caladea-Regular.ttf')",
+      "sizeAdjust": 111.7
+    },
+    {
+      "src": "url('./Caladea-Bold.ttf')",
+      "sizeAdjust": 112.4,
+      "weight": "bold"
+    },
+    {
+      "src": "url('./Caladea-Italic.ttf')",
+      "sizeAdjust": 115.9,
+      "style": "italic"
+    },
+    {
+      "src": "url('./Caladea-BoldItalic.ttf')",
+      "sizeAdjust": 118.7,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./BookmanOldStyleGO-Regular.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122"
+    },
+    {
+      "src": "url('./BookmanOldStyleGO-Bold.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./BookmanOldStyleGO-Italic.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+      "style": "italic"
+    },
+    {
+      "src": "url('./BookmanOldStyleGO-BoldItalic.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+      "weight": "bold",
+      "style": "italic"
+    }
+  ]
+}

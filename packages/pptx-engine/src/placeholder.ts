@@ -1,0 +1,841 @@
+/**
+ * Placeholder geometry inheritance (Phase 2, filling a gap left by Phase 1).
+ *
+ * Placeholder shapes on a slide (<p:ph>) often omit their own <a:xfrm>; geometry
+ * must be backfilled from the slideLayout per OOXML inheritance rules, and from
+ * the slideMaster when the layout lacks it.
+ *
+ * Matching rules (aligned with PowerPoint / pptxtojson):
+ *   1. exact (type, idx) match first;
+ *   2. then by idx (when type is missing/inconsistent);
+ *   3. then by type;
+ *   4. body-like types (body/subTitle, etc.) fall back to each other, as do
+ *      title/ctrTitle.
+ *
+ * Read-only: layout/master geometry is used only for render inheritance, never
+ * written back to the original pptx.
+ */
+import { XMLParser } from 'fast-xml-parser'
+import type { Transform, TextAlign } from './types'
+import { type EaScript, type Theme, eaScriptOfLang, resolveFontRef } from './theme'
+import { resolveColorNode } from './color'
+import {
+  asXmlNode,
+  decodeNumericCharRefs,
+  percentPoints,
+  xmlArray,
+  type XmlNode,
+} from './xml-utils'
+
+/** Spec (and PowerPoint UI) ceiling for <a:buAutoNum startAt>. */
+export const MAX_AUTO_NUM_START = 32767
+
+const phParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  isArray: (name) => ['p:sp', 'p:graphicFrame', 'p:pic'].includes(name),
+})
+
+/** Default run/paragraph style for one indent level (from lstStyle's lvlNpPr/defRPr). */
+/** Fields whose inheritance source a level records (see mergeTextStyleChain). */
+export type StyleSourceField =
+  'fontSize' | 'bold' | 'italic' | 'color' | 'latinFont' | 'eaFont' | 'csFont' | 'align'
+
+export interface LevelTextStyle {
+  /** Which chain layer supplied each field (only set by mergeTextStyleChain) */
+  src?: Partial<Record<StyleSourceField, string>>
+  /** The level's unresolved latin theme ref (+mj-lt / +mn-lt), kept beside the resolved name */
+  latinFontRef?: string
+  /** Font size (pt) */
+  fontSize?: number
+  bold?: boolean
+  italic?: boolean
+  /** Character casing <a:defRPr cap>: 'all' | 'small' | 'none' */
+  cap?: string
+  color?: string
+  /** <a:defRPr><a:effectLst><a:outerShdw> (rare; e.g. watermark text boxes) */
+  shadow?: import('./types').ShadowEffect
+  latinFont?: string
+  eaFont?: string
+  /** The level's unresolved ea theme ref (+mj-ea / +mn-ea): a run re-resolves it with its own
+   *  script, since an empty theme <a:ea/> picks the per-script font only once the script is known */
+  eaFontRef?: string
+  csFont?: string
+  /** East Asian script of the level's defRPr lang/altLang (steers empty-ea theme refs on runs without a lang of their own) */
+  eaScript?: EaScript
+  /** Line-breaking language of a level whose defRPr carries lang/altLang: its East Asian
+   *  script, or 'none' for a non-East-Asian tag (so an inherited en-US still counts as a tag) */
+  eaLang?: Exclude<EaScript, 'han'> | 'none'
+  align?: TextAlign
+  /** Bullet default (master bodyStyle levels commonly use buChar '•') */
+  bullet?: {
+    type: 'none' | 'char' | 'number' | 'blip'
+    char?: string
+    /** <a:buBlip> picture bullet: media zip path + blip rId (see Paragraph.bullet) */
+    mediaRef?: string
+    blipEmbedId?: string
+    /** <a:buFont> typeface (symbol fonts like Wingdings) */
+    font?: string
+    color?: string
+    /** <a:buSzPct> (%, 100 = same size as text) */
+    sizePct?: number
+    /** <a:buSzPts> absolute glyph size (pt) */
+    sizePt?: number
+    /** <a:buAutoNum type> (arabicPeriod/romanLcParen…) */
+    numType?: string
+    /** <a:buAutoNum startAt> */
+    startAt?: number
+  }
+  /** Paragraph left indent (EMU) */
+  marL?: number
+  /** First-line indent (EMU, negative = hanging) */
+  indent?: number
+  /** Line/paragraph spacing defaults (lnSpc/spcBef/spcAft from master txStyles; source of inherited line spacing) */
+  lineHeight?: number
+  lineExact?: number
+  spaceBefore?: number
+  spaceAfter?: number
+  spaceBeforePct?: number
+  spaceAfterPct?: number
+  /** <a:lvlNpPr hangingPunct/latinLnBrk/eaLnBrk> line-break switches; absent = inherit */
+  hangingPunct?: boolean
+  latinLnBrk?: boolean
+  eaLnBrk?: boolean
+}
+
+/** Default styles for the 9 levels (index = level, 0-based). */
+export interface TextStyleLevels {
+  levels: Array<LevelTextStyle | undefined>
+  /** where this layer sits in the inheritance chain, for style provenance */
+  src?: string
+}
+
+/** master <p:txStyles>: the title/body/other families. */
+export interface MasterTextStyles {
+  title?: TextStyleLevels
+  body?: TextStyleLevels
+  other?: TextStyleLevels
+}
+
+export interface PlaceholderGeom {
+  type: string // ph type, normalized to 'body' when missing
+  idx: string // ph idx, '' when missing
+  transform: Transform | null
+  /** Default text style from this placeholder txBody's <a:lstStyle> */
+  textStyle?: TextStyleLevels
+  /** Vertical anchor from this placeholder's <a:bodyPr anchor=""> */
+  anchor?: 'top' | 'middle' | 'bottom'
+  /** <a:bodyPr anchorCtr> (explicit 0 recorded too: it overrides an inherited 1) */
+  anchorCtr?: boolean
+  /** Explicit bodyPr inset attrs (EMU); slide bodyPr attrs missing these inherit per-attribute */
+  insets?: { l?: number; t?: number; r?: number; b?: number }
+  /** Raw spPr node when it carries an explicit fill (parse.ts resolves it with the part's rels) */
+  fillSpPr?: unknown
+  /** Non-rect <a:prstGeom>: placeholder pictures inherit it as their clip shape */
+  presetGeom?: { prst: string; avLstRaw?: unknown }
+}
+
+/** Placeholder geometry table for one layer (layout or master). */
+export interface PlaceholderMap {
+  entries: PlaceholderGeom[]
+}
+
+const TITLE_TYPES = new Set(['title', 'ctrTitle'])
+const BODY_TYPES = new Set(['body', 'subTitle', 'obj', ''])
+/** Placeholders a slide never renders text into. They can still carry a lstStyle, so the
+ *  idx-only step below must skip them — a master's `dt idx="2"` must not hand its date
+ *  style to a body placeholder that merely shares idx="2". */
+const FUNCTION_TYPES = new Set([
+  'dt',
+  'ftr',
+  'sldNum',
+  'sldImg',
+  'hdr',
+  'clipArt',
+  'dgm',
+  'media',
+  'oleObj',
+  'chart',
+  'tbl',
+  'pic',
+])
+
+const ANCHOR_MAP: Record<string, PlaceholderGeom['anchor']> = {
+  t: 'top',
+  ctr: 'middle',
+  b: 'bottom',
+}
+
+const FILL_TAGS = ['a:solidFill', 'a:gradFill', 'a:blipFill', 'a:pattFill', 'a:noFill']
+
+function parseXfrmNode(xfrmRaw: unknown): Transform | null {
+  if (!xfrmRaw) return null
+  const xfrm = asXmlNode(xfrmRaw)
+  const offRaw = xfrm['a:off']
+  const extRaw = xfrm['a:ext']
+  if (!offRaw && !extRaw) return null
+  const off = asXmlNode(offRaw)
+  const ext = asXmlNode(extRaw)
+  return {
+    offset: {
+      x: offRaw ? parseInt(String(off['@_x']), 10) || 0 : 0,
+      y: offRaw ? parseInt(String(off['@_y']), 10) || 0 : 0,
+      cx: extRaw ? parseInt(String(ext['@_cx']), 10) || 0 : 0,
+      cy: extRaw ? parseInt(String(ext['@_cy']), 10) || 0 : 0,
+    },
+    rot: xfrm['@_rot'] ? parseInt(String(xfrm['@_rot']), 10) || 0 : 0,
+    flipH: xfrm['@_flipH'] === '1' || xfrm['@_flipH'] === 'true',
+    flipV: xfrm['@_flipV'] === '1' || xfrm['@_flipV'] === 'true',
+  }
+}
+
+/**
+ * Extract the placeholder geometry table + lstStyle text style defaults from a
+ * layout/master's full XML. Collects shapes that carry <p:ph> and at least one of
+ * <a:xfrm> or <a:lstStyle>.
+ */
+export function parsePlaceholderMap(
+  layoutOrMasterXml: string,
+  theme?: Theme,
+  mediaRels?: Map<string, string>,
+): PlaceholderMap {
+  const src: LstStyleSource = { mediaRels, foreignPart: true }
+  const entries: PlaceholderGeom[] = []
+  let doc: XmlNode
+  try {
+    doc = asXmlNode(phParser.parse(layoutOrMasterXml))
+  } catch {
+    return { entries }
+  }
+  // Path: p:sldLayout / p:sldMaster → p:cSld → p:spTree → p:sp[] + p:graphicFrame[] + p:pic[]
+  const root = asXmlNode(doc['p:sldLayout'] ?? doc['p:sldMaster'])
+  const spTreeRaw = asXmlNode(root['p:cSld'])['p:spTree']
+  if (!spTreeRaw) return { entries }
+  const spTree = asXmlNode(spTreeRaw)
+  const shapes: Array<{ node: XmlNode; nvKey: string; frame: boolean }> = [
+    ...xmlArray(spTree['p:sp']).map((node) => ({
+      node: asXmlNode(node),
+      nvKey: 'p:nvSpPr',
+      frame: false,
+    })),
+    ...xmlArray(spTree['p:graphicFrame']).map((node) => ({
+      node: asXmlNode(node),
+      nvKey: 'p:nvGraphicFramePr',
+      frame: true,
+    })),
+    ...xmlArray(spTree['p:pic']).map((node) => ({
+      node: asXmlNode(node),
+      nvKey: 'p:nvPicPr',
+      frame: false,
+    })),
+  ]
+  for (const { node: sp, nvKey, frame } of shapes) {
+    const phRaw = asXmlNode(asXmlNode(sp[nvKey])['p:nvPr'])['p:ph']
+    if (!phRaw) continue
+    const ph = asXmlNode(phRaw)
+    const type = String(ph['@_type'] ?? 'body')
+    const idx = ph['@_idx'] != null ? String(ph['@_idx']) : ''
+    const spPr = asXmlNode(sp['p:spPr'])
+    const transform = frame ? parseXfrmNode(sp['p:xfrm']) : parseXfrmNode(spPr['a:xfrm'])
+    const textStyle = parseLstStyleLevels(asXmlNode(sp['p:txBody'])['a:lstStyle'], theme, src)
+    const bodyPrNode = asXmlNode(asXmlNode(sp['p:txBody'])['a:bodyPr'])
+    const anchor = ANCHOR_MAP[String(bodyPrNode['@_anchor'] ?? '')]
+    const anchorCtrRaw = bodyPrNode['@_anchorCtr']
+    const anchorCtr =
+      anchorCtrRaw != null ? String(anchorCtrRaw) === '1' || anchorCtrRaw === 'true' : undefined
+    const insEntries = (['l', 't', 'r', 'b'] as const).flatMap((k) => {
+      const v = bodyPrNode[`@_${k}Ins`]
+      const n = v != null ? parseInt(String(v), 10) : NaN
+      return Number.isFinite(n) ? [[k, n] as const] : []
+    })
+    const insets = insEntries.length ? Object.fromEntries(insEntries) : undefined
+    const hasFill = FILL_TAGS.some((tag) => tag in spPr)
+    const prstGeomNode = asXmlNode(spPr['a:prstGeom'])
+    const prst = prstGeomNode['@_prst'] != null ? String(prstGeomNode['@_prst']) : undefined
+    const presetGeom =
+      prst && prst !== 'rect' ? { prst, avLstRaw: prstGeomNode['a:avLst'] } : undefined
+    if (
+      !transform &&
+      !textStyle &&
+      !anchor &&
+      anchorCtr === undefined &&
+      !insets &&
+      !hasFill &&
+      !presetGeom
+    )
+      continue
+    entries.push({
+      type,
+      idx,
+      transform,
+      ...(textStyle ? { textStyle } : {}),
+      ...(anchor ? { anchor } : {}),
+      ...(anchorCtr !== undefined ? { anchorCtr } : {}),
+      ...(insets ? { insets } : {}),
+      ...(hasFill ? { fillSpPr: spPr } : {}),
+      ...(presetGeom ? { presetGeom } : {}),
+    })
+  }
+  return { entries }
+}
+
+// ── lstStyle / txStyles text style parsing ───────────────────────────
+
+const ALIGN_MAP: Record<string, TextAlign> = {
+  l: 'left',
+  ctr: 'center',
+  r: 'right',
+  just: 'justify',
+}
+
+/** <a:spcPct val="150000"/> or val="150%" → 150 (%). */
+function spcPctVal(node: unknown): number | undefined {
+  return percentPoints(asXmlNode(asXmlNode(node)['a:spcPct'])['@_val'])
+}
+
+/** <a:spcPts val="2400"/> → 24 (pt). */
+function spcPtsVal(node: unknown): number | undefined {
+  const v = asXmlNode(asXmlNode(node)['a:spcPts'])['@_val']
+  return v != null ? parseInt(String(v), 10) / 100 : undefined
+}
+
+/** Typeface attribute of e.g. <a:latin typeface="…"/> as a string (undefined when absent). */
+function typefaceAttr(node: unknown): string | undefined {
+  const v = asXmlNode(node)['@_typeface']
+  return v != null ? String(v) : undefined
+}
+
+/** <a:lvlNpPr> (including defRPr) → LevelTextStyle. */
+/** Where a list style lives: only the slide part's own rIds may be written back into slide XML. */
+export interface LstStyleSource {
+  mediaRels?: Map<string, string>
+  /** Layout/master part: picture bullets resolve their image but keep no rId */
+  foreignPart?: boolean
+}
+
+function parseLvlPPr(
+  pPrRaw: unknown,
+  theme?: Theme,
+  src?: LstStyleSource,
+): LevelTextStyle | undefined {
+  if (!pPrRaw || typeof pPrRaw !== 'object') return undefined
+  const pPr = asXmlNode(pPrRaw)
+  const out: LevelTextStyle = {}
+  const algn = String(pPr['@_algn'] ?? '')
+  if (algn && ALIGN_MAP[algn]) out.align = ALIGN_MAP[algn]
+  const lineHeight = spcPctVal(pPr['a:lnSpc'])
+  const lineExact = spcPtsVal(pPr['a:lnSpc'])
+  if (lineHeight != null) out.lineHeight = lineHeight
+  if (lineExact != null) out.lineExact = lineExact
+  const spcBef = pPr['a:spcBef']
+  const spcAft = pPr['a:spcAft']
+  if (spcPtsVal(spcBef) != null) out.spaceBefore = spcPtsVal(spcBef)
+  if (spcPctVal(spcBef) != null) out.spaceBeforePct = spcPctVal(spcBef)
+  if (spcPtsVal(spcAft) != null) out.spaceAfter = spcPtsVal(spcAft)
+  if (spcPctVal(spcAft) != null) out.spaceAfterPct = spcPctVal(spcAft)
+  // Bullet + indent defaults (a body placeholder's bullets mostly come from here)
+  const buChar = asXmlNode(pPr['a:buChar'])['@_char']
+  if (pPr['a:buNone'] !== undefined) out.bullet = { type: 'none' }
+  else if (buChar != null) {
+    out.bullet = { type: 'char', char: decodeNumericCharRefs(String(buChar)) }
+  } else if (pPr['a:buAutoNum']) {
+    out.bullet = { type: 'number' }
+    const an = asXmlNode(pPr['a:buAutoNum'])
+    if (an['@_type'] != null) out.bullet.numType = String(an['@_type'])
+    const startAt = parseInt(String(an['@_startAt']), 10)
+    if (Number.isFinite(startAt) && startAt > 1)
+      out.bullet.startAt = Math.min(startAt, MAX_AUTO_NUM_START)
+  } else if (pPr['a:buBlip'] !== undefined) {
+    out.bullet = { type: 'blip' }
+    const embed = asXmlNode(asXmlNode(pPr['a:buBlip'])['a:blip'])['@_r:embed']
+    if (embed != null) {
+      if (!src?.foreignPart) out.bullet.blipEmbedId = String(embed)
+      const ref = src?.mediaRels?.get(String(embed))
+      if (ref) out.bullet.mediaRef = ref
+    }
+  }
+  if (out.bullet && out.bullet.type !== 'none') {
+    const buFont = typefaceAttr(pPr['a:buFont'])
+    if (buFont) out.bullet.font = buFont
+    const buColor = resolveColorNode(pPr['a:buClr'], theme)
+    if (buColor) out.bullet.color = buColor
+    const buSz = asXmlNode(pPr['a:buSzPct'])['@_val']
+    if (buSz != null) out.bullet.sizePct = (parseInt(String(buSz), 10) || 0) / 1000
+    const buSzPts = asXmlNode(pPr['a:buSzPts'])['@_val']
+    if (buSzPts != null) out.bullet.sizePt = (parseInt(String(buSzPts), 10) || 0) / 100
+  }
+  if (pPr['@_marL'] != null) {
+    const v = parseInt(String(pPr['@_marL']), 10)
+    if (!Number.isNaN(v)) out.marL = v
+  }
+  if (pPr['@_indent'] != null) {
+    const v = parseInt(String(pPr['@_indent']), 10)
+    if (!Number.isNaN(v)) out.indent = v
+  }
+  for (const k of ['hangingPunct', 'latinLnBrk', 'eaLnBrk'] as const) {
+    const v = pPr[`@_${k}`]
+    if (v === '1' || v === 'true') out[k] = true
+    else if (v === '0' || v === 'false') out[k] = false
+  }
+  Object.assign(out, parseDefRPrStyle(pPr['a:defRPr'], theme))
+  return Object.keys(out).length ? out : undefined
+}
+
+/**
+ * <a:defRPr> (default run properties of a lstStyle level or of a paragraph's own
+ * <a:pPr>) → the run-level subset of LevelTextStyle. Colors and theme font
+ * references are resolved for display; undefined when the node is absent or empty.
+ */
+export function parseDefRPrStyle(
+  defRPrRaw: unknown,
+  theme?: Theme,
+  phClr?: string,
+): LevelTextStyle | undefined {
+  if (!defRPrRaw || typeof defRPrRaw !== 'object') return undefined
+  const defRPr = asXmlNode(defRPrRaw)
+  const out: LevelTextStyle = {}
+  if (defRPr['@_sz']) out.fontSize = parseInt(String(defRPr['@_sz']), 10) / 100
+  if (defRPr['@_b'] != null) out.bold = defRPr['@_b'] === '1' || defRPr['@_b'] === 'true'
+  if (defRPr['@_i'] != null) out.italic = defRPr['@_i'] === '1' || defRPr['@_i'] === 'true'
+  if (defRPr['@_cap'] != null) out.cap = String(defRPr['@_cap'])
+  const color = resolveColorNode(defRPr['a:solidFill'], theme, phClr)
+  if (color) out.color = color
+  const shdw = asXmlNode(asXmlNode(defRPr['a:effectLst'])['a:outerShdw'])
+  const shdwColor = resolveColorNode(shdw, theme, phClr)
+  if (shdwColor) {
+    const num = (k: string) => {
+      const v = parseInt(String(shdw[k] ?? ''), 10)
+      return Number.isFinite(v) ? v : 0
+    }
+    out.shadow = {
+      color: shdwColor,
+      blurRad: num('@_blurRad'),
+      dist: num('@_dist'),
+      dirDeg: num('@_dir') / 60000,
+    }
+  }
+  const eaScript = eaScriptOfLang(defRPr['@_altLang']) ?? eaScriptOfLang(defRPr['@_lang'])
+  if (eaScript) out.eaScript = eaScript
+  if (defRPr['@_altLang'] != null || defRPr['@_lang'] != null) out.eaLang = eaScript ?? 'none'
+  const latinAttr = typefaceAttr(defRPr['a:latin'])
+  const latin = resolveFontRef(latinAttr, theme, eaScript)
+  if (latin) out.latinFont = latin
+  if (latinAttr?.startsWith('+')) out.latinFontRef = latinAttr
+  const eaAttr = typefaceAttr(defRPr['a:ea'])
+  const ea = resolveFontRef(eaAttr, theme, eaScript)
+  if (ea) out.eaFont = ea
+  if (eaAttr?.startsWith('+')) out.eaFontRef = eaAttr
+  const cs = resolveFontRef(typefaceAttr(defRPr['a:cs']), theme, eaScript)
+  if (cs) out.csFont = cs
+  return Object.keys(out).length ? out : undefined
+}
+
+/** <a:lstStyle> (or one txStyles family) → 9-level style table. */
+export function parseLstStyleLevels(
+  lst: unknown,
+  theme?: Theme,
+  src?: LstStyleSource,
+): TextStyleLevels | undefined {
+  if (!lst || typeof lst !== 'object') return undefined
+  const l = asXmlNode(lst)
+  const levels: Array<LevelTextStyle | undefined> = []
+  for (let i = 1; i <= 9; i++) levels[i - 1] = parseLvlPPr(l[`a:lvl${i}pPr`], theme, src)
+  return levels.some(Boolean) ? { levels } : undefined
+}
+
+/** presentation.xml <p:defaultTextStyle> → base defaults for non-placeholder text boxes. */
+export function parseDefaultTextStyle(
+  presentationXml: string,
+  theme?: Theme,
+): TextStyleLevels | undefined {
+  let doc: XmlNode
+  try {
+    doc = asXmlNode(phParser.parse(presentationXml))
+  } catch {
+    return undefined
+  }
+  return parseLstStyleLevels(asXmlNode(doc['p:presentation'])['p:defaultTextStyle'], theme)
+}
+
+/** master <p:txStyles> → default styles for the title/body/other families. */
+export function parseMasterTextStyles(
+  masterXml: string,
+  theme?: Theme,
+  mediaRels?: Map<string, string>,
+): MasterTextStyles {
+  const src: LstStyleSource = { mediaRels, foreignPart: true }
+  let doc: XmlNode
+  try {
+    doc = asXmlNode(phParser.parse(masterXml))
+  } catch {
+    return {}
+  }
+  const txRaw = asXmlNode(doc['p:sldMaster'])['p:txStyles']
+  if (!txRaw) return {}
+  const tx = asXmlNode(txRaw)
+  return {
+    ...(parseLstStyleLevels(tx['p:titleStyle'], theme, src)
+      ? { title: parseLstStyleLevels(tx['p:titleStyle'], theme, src)! }
+      : {}),
+    ...(parseLstStyleLevels(tx['p:bodyStyle'], theme, src)
+      ? { body: parseLstStyleLevels(tx['p:bodyStyle'], theme, src)! }
+      : {}),
+    ...(parseLstStyleLevels(tx['p:otherStyle'], theme, src)
+      ? { other: parseLstStyleLevels(tx['p:otherStyle'], theme, src)! }
+      : {}),
+  }
+}
+
+/** Find the lstStyle in a layer's map by placeholder (type, idx). The idx-only step is
+ *  what ECMA's idx matching needs for legacy decks (slide `<p:ph idx="1"/>` vs layout
+ *  `<p:ph type="obj" idx="1"/>`), so it stays — but it skips FUNCTION_TYPES, since those
+ *  never render slide text and would otherwise donate their style by index collision.
+ *  findInMap's geometry step applies the same skip, so style and geometry resolve to the
+ *  same placeholder. */
+function findStyleInMap(
+  map: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): TextStyleLevels | undefined {
+  if (!map || map.entries.length === 0) return undefined
+  const t = type ?? 'body'
+  const i = idx ?? ''
+  const styled = map.entries.filter((e) => e.textStyle)
+  let hit = styled.find((e) => e.type === t && e.idx === i)
+  if (!hit && i !== '') hit = styled.find((e) => e.idx === i && !FUNCTION_TYPES.has(e.type))
+  if (!hit) hit = styled.find((e) => e.type === t)
+  if (!hit && TITLE_TYPES.has(t)) hit = styled.find((e) => TITLE_TYPES.has(e.type))
+  if (!hit && BODY_TYPES.has(t)) hit = styled.find((e) => BODY_TYPES.has(e.type))
+  return hit?.textStyle
+}
+
+/** The layer has the placeholder this one inherits from (same type and idx). Its bodyPr
+ *  decides even when it leaves an attribute unset — the chain then continues to the
+ *  master, not to a same-type sibling (a layout's anchor="b" body idx="1" must not reach
+ *  the slide's idx="2" content placeholder whose own layout entry has no anchor). */
+function hasExactEntry(map: PlaceholderMap, t: string, i: string): boolean {
+  return i !== '' && map.entries.some((e) => e.type === t && e.idx === i)
+}
+
+/** Find the bodyPr anchor in a layer's map by placeholder (type, idx). No idx-only
+ *  step: master placeholders reuse idx values across types (a dt idx="2" must not
+ *  anchor a body idx="2" to the bottom). */
+function findAnchorInMap(
+  map: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): PlaceholderGeom['anchor'] {
+  if (!map || map.entries.length === 0) return undefined
+  const t = type ?? 'body'
+  const i = idx ?? ''
+  const anchored = map.entries.filter((e) => e.anchor)
+  let hit = anchored.find((e) => e.type === t && e.idx === i)
+  if (!hit && hasExactEntry(map, t, i)) return undefined
+  if (!hit) hit = anchored.find((e) => e.type === t)
+  if (!hit && TITLE_TYPES.has(t)) hit = anchored.find((e) => TITLE_TYPES.has(e.type))
+  if (!hit && BODY_TYPES.has(t)) hit = anchored.find((e) => BODY_TYPES.has(e.type))
+  return hit?.anchor
+}
+
+/** Same matching as findAnchorInMap for bodyPr insets (no idx-only step, see above). */
+function findInsetsInMap(
+  map: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): PlaceholderGeom['insets'] {
+  if (!map || map.entries.length === 0) return undefined
+  const t = type ?? 'body'
+  const i = idx ?? ''
+  const carriers = map.entries.filter((e) => e.insets)
+  let hit = carriers.find((e) => e.type === t && e.idx === i)
+  if (!hit && hasExactEntry(map, t, i)) return undefined
+  if (!hit) hit = carriers.find((e) => e.type === t)
+  if (!hit && TITLE_TYPES.has(t)) hit = carriers.find((e) => TITLE_TYPES.has(e.type))
+  if (!hit && BODY_TYPES.has(t)) hit = carriers.find((e) => BODY_TYPES.has(e.type))
+  return hit?.insets
+}
+
+/**
+ * Resolve a placeholder's inherited bodyPr insets, merged per-attribute (layout wins
+ * over master). PowerPoint inherits each unspecified inset attr along the ph chain —
+ * a master body with lIns=0 reaches slides whose layout bodyPr only sets numCol.
+ */
+export function resolvePlaceholderInsets(
+  layout: PlaceholderMap | undefined,
+  master: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): PlaceholderGeom['insets'] {
+  const fromLayout = findInsetsInMap(layout, type, idx)
+  const fromMaster = findInsetsInMap(master, type, idx)
+  if (!fromLayout || !fromMaster) return fromLayout ?? fromMaster
+  return { ...fromMaster, ...fromLayout }
+}
+
+/** Resolve a placeholder's inherited vertical anchor: layout first, master as fallback. */
+export function resolvePlaceholderAnchor(
+  layout: PlaceholderMap | undefined,
+  master: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): PlaceholderGeom['anchor'] {
+  return findAnchorInMap(layout, type, idx) ?? findAnchorInMap(master, type, idx)
+}
+
+/** Same matching as findAnchorInMap for anchorCtr (an explicit 0 in the layout wins over a master 1). */
+function findAnchorCtrInMap(
+  map: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): boolean | undefined {
+  if (!map || map.entries.length === 0) return undefined
+  const t = type ?? 'body'
+  const i = idx ?? ''
+  const marked = map.entries.filter((e) => e.anchorCtr !== undefined)
+  let hit = marked.find((e) => e.type === t && e.idx === i)
+  if (!hit && hasExactEntry(map, t, i)) return undefined
+  if (!hit) hit = marked.find((e) => e.type === t)
+  if (!hit && TITLE_TYPES.has(t)) hit = marked.find((e) => TITLE_TYPES.has(e.type))
+  if (!hit && BODY_TYPES.has(t)) hit = marked.find((e) => BODY_TYPES.has(e.type))
+  return hit?.anchorCtr
+}
+
+/** Resolve a placeholder's inherited anchorCtr: layout first, master as fallback. */
+export function resolvePlaceholderAnchorCtr(
+  layout: PlaceholderMap | undefined,
+  master: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): boolean | undefined {
+  return findAnchorCtrInMap(layout, type, idx) ?? findAnchorCtrInMap(master, type, idx)
+}
+
+/**
+ * Placeholder text style inheritance chain (highest priority first):
+ * layout placeholder lstStyle → master placeholder lstStyle → master txStyles
+ * (by ph family). The caller may prepend the slide shape's own lstStyle.
+ */
+export function placeholderStyleChain(
+  layout: PlaceholderMap | undefined,
+  master: PlaceholderMap | undefined,
+  masterTx: MasterTextStyles | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): TextStyleLevels[] {
+  const chain: TextStyleLevels[] = []
+  const fromLayout = findStyleInMap(layout, type, idx)
+  if (fromLayout) chain.push({ ...fromLayout, src: 'layout placeholder' })
+  const fromMaster = findStyleInMap(master, type, idx)
+  if (fromMaster) chain.push({ ...fromMaster, src: 'master placeholder' })
+  const t = type ?? 'body'
+  const [family, familySrc] = TITLE_TYPES.has(t)
+    ? [masterTx?.title, 'master titleStyle']
+    : BODY_TYPES.has(t)
+      ? [masterTx?.body, 'master bodyStyle']
+      : [masterTx?.other, 'master otherStyle']
+  if (family) chain.push({ ...family, src: familySrc })
+  return chain
+}
+
+/**
+ * Merge one level's default style field by field along the inheritance chain
+ * (earlier layers win). When a layer lacks the level, fall back to that layer's
+ * lvl1 (lenient fallback).
+ */
+export function mergeTextStyleChain(
+  chain: Array<TextStyleLevels | undefined>,
+  level: number,
+): LevelTextStyle | undefined {
+  const out: LevelTextStyle = {}
+  const src: NonNullable<LevelTextStyle['src']> = {}
+  let any = false
+  for (const layer of chain) {
+    if (!layer) continue
+    const lvl = layer.levels[level] ?? layer.levels[0]
+    if (!lvl) continue
+    any = true
+    const from = layer.src ?? 'inherited'
+    if (out.fontSize == null && lvl.fontSize != null) {
+      out.fontSize = lvl.fontSize
+      src.fontSize = from
+    }
+    if (out.bold == null && lvl.bold != null) {
+      out.bold = lvl.bold
+      src.bold = from
+    }
+    if (out.italic == null && lvl.italic != null) {
+      out.italic = lvl.italic
+      src.italic = from
+    }
+    if (out.cap == null && lvl.cap != null) out.cap = lvl.cap
+    if (out.color == null && lvl.color != null) {
+      out.color = lvl.color
+      src.color = from
+    }
+    if (out.shadow == null && lvl.shadow != null) out.shadow = lvl.shadow
+    if (out.latinFont == null && lvl.latinFont != null) {
+      out.latinFont = lvl.latinFont
+      if (lvl.latinFontRef != null) out.latinFontRef = lvl.latinFontRef
+      src.latinFont = from
+    }
+    if (out.eaFont == null && lvl.eaFont != null) {
+      out.eaFont = lvl.eaFont
+      if (lvl.eaFontRef != null) out.eaFontRef = lvl.eaFontRef
+      src.eaFont = from
+    }
+    if (out.csFont == null && lvl.csFont != null) {
+      out.csFont = lvl.csFont
+      src.csFont = from
+    }
+    if (out.eaScript == null && lvl.eaScript != null) out.eaScript = lvl.eaScript
+    if (out.eaLang == null && lvl.eaLang != null) out.eaLang = lvl.eaLang
+    if (out.align == null && lvl.align != null) {
+      out.align = lvl.align
+      src.align = from
+    }
+    if (out.bullet == null && lvl.bullet != null) out.bullet = lvl.bullet
+    if (out.marL == null && lvl.marL != null) out.marL = lvl.marL
+    if (out.indent == null && lvl.indent != null) out.indent = lvl.indent
+    if (out.hangingPunct == null && lvl.hangingPunct != null) out.hangingPunct = lvl.hangingPunct
+    if (out.latinLnBrk == null && lvl.latinLnBrk != null) out.latinLnBrk = lvl.latinLnBrk
+    if (out.eaLnBrk == null && lvl.eaLnBrk != null) out.eaLnBrk = lvl.eaLnBrk
+    // Line/paragraph spacing inherit as attribute pairs (pct and pts are two value forms of the same lnSpc/spcBef/spcAft node)
+    if (
+      out.lineHeight == null &&
+      out.lineExact == null &&
+      (lvl.lineHeight != null || lvl.lineExact != null)
+    ) {
+      if (lvl.lineHeight != null) out.lineHeight = lvl.lineHeight
+      if (lvl.lineExact != null) out.lineExact = lvl.lineExact
+    }
+    if (
+      out.spaceBefore == null &&
+      out.spaceBeforePct == null &&
+      (lvl.spaceBefore != null || lvl.spaceBeforePct != null)
+    ) {
+      if (lvl.spaceBefore != null) out.spaceBefore = lvl.spaceBefore
+      if (lvl.spaceBeforePct != null) out.spaceBeforePct = lvl.spaceBeforePct
+    }
+    if (
+      out.spaceAfter == null &&
+      out.spaceAfterPct == null &&
+      (lvl.spaceAfter != null || lvl.spaceAfterPct != null)
+    ) {
+      if (lvl.spaceAfter != null) out.spaceAfter = lvl.spaceAfter
+      if (lvl.spaceAfterPct != null) out.spaceAfterPct = lvl.spaceAfterPct
+    }
+  }
+  if (Object.keys(src).length) out.src = src
+  return any ? out : undefined
+}
+
+function findInMap(
+  map: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): Transform | undefined {
+  if (!map || map.entries.length === 0) return undefined
+  const t = type ?? 'body'
+  const i = idx ?? ''
+  // Search only entries with geometry (pure lstStyle entries do not participate in geometry inheritance)
+  const geo = map.entries.filter((e) => e.transform)
+
+  // 1. Exact (type, idx)
+  let hit = geo.find((e) => e.type === t && e.idx === i)
+  if (hit) return hit.transform!
+  // 2. By idx (when idx is non-empty), skipping function placeholders so style and
+  //    geometry agree — see findStyleInMap
+  if (i !== '') {
+    hit = geo.find((e) => e.idx === i && !FUNCTION_TYPES.has(e.type))
+    if (hit) return hit.transform!
+  }
+  // 3. By type
+  hit = geo.find((e) => e.type === t)
+  if (hit) return hit.transform!
+  // 4. Family fallback
+  if (TITLE_TYPES.has(t)) {
+    hit = geo.find((e) => TITLE_TYPES.has(e.type))
+    if (hit) return hit.transform!
+  }
+  if (BODY_TYPES.has(t)) {
+    hit = geo.find((e) => BODY_TYPES.has(e.type))
+    if (hit) return hit.transform!
+  }
+  return undefined
+}
+
+/**
+ * Placeholder fill inheritance: the nearest layer (layout, then master) whose matching
+ * placeholder spPr carries an explicit fill — including <a:noFill>, which stops the fallback.
+ * Returns the raw spPr plus its layer so the caller resolves blip rIds in that part's rels.
+ */
+export function resolvePlaceholderFillSpPr(
+  layout: PlaceholderMap | undefined,
+  master: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): { spPr: unknown; layer: 'layout' | 'master' } | undefined {
+  const t = type ?? 'body'
+  const i = idx ?? ''
+  for (const [map, layer] of [
+    [layout, 'layout'],
+    [master, 'master'],
+  ] as const) {
+    if (!map) continue
+    // Match the placeholder first (same order as geometry inheritance), THEN take its
+    // fill. Filtering to fill-carrying entries up front made an unrelated same-type
+    // sibling donate its fill when the true match had none (fed deck: a body ph
+    // picked up a decorative content placeholder's dark fill).
+    const entries = map.entries
+    const hit =
+      entries.find((e) => e.type === t && e.idx === i) ??
+      (i !== '' ? entries.find((e) => e.idx === i) : undefined) ??
+      entries.find((e) => e.type === t) ??
+      (TITLE_TYPES.has(t) ? entries.find((e) => TITLE_TYPES.has(e.type)) : undefined) ??
+      (BODY_TYPES.has(t) ? entries.find((e) => BODY_TYPES.has(e.type)) : undefined)
+    if (hit?.fillSpPr != null) return { spPr: hit.fillSpPr, layer }
+  }
+  return undefined
+}
+
+/**
+ * Resolve placeholder geometry: layout first, master as fallback.
+ * undefined means neither layer has inheritable geometry (the render layer may
+ * further fall back to a default or (0,0)).
+ */
+export function resolvePlaceholderTransform(
+  layout: PlaceholderMap | undefined,
+  master: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): Transform | undefined {
+  return findInMap(layout, type, idx) ?? findInMap(master, type, idx)
+}
+
+/**
+ * Placeholder preset-geometry inheritance (layout first, master as fallback).
+ * Matches the placeholder first (same order as fill inheritance) so an unrelated
+ * sibling never donates its shape.
+ */
+export function resolvePlaceholderPresetGeom(
+  layout: PlaceholderMap | undefined,
+  master: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): PlaceholderGeom['presetGeom'] | undefined {
+  const t = type ?? 'body'
+  const i = idx ?? ''
+  for (const map of [layout, master]) {
+    if (!map) continue
+    const entries = map.entries
+    const hit =
+      entries.find((e) => e.type === t && e.idx === i) ??
+      (i !== '' ? entries.find((e) => e.idx === i) : undefined) ??
+      entries.find((e) => e.type === t) ??
+      (TITLE_TYPES.has(t) ? entries.find((e) => TITLE_TYPES.has(e.type)) : undefined) ??
+      (BODY_TYPES.has(t) ? entries.find((e) => BODY_TYPES.has(e.type)) : undefined)
+    if (hit?.presetGeom) return hit.presetGeom
+    if (hit) return undefined
+  }
+  return undefined
+}

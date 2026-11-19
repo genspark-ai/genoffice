@@ -1,0 +1,6 @@
+{
+  "title": "Continuous section break",
+  "tags": ["multi-section", "continuous-section"],
+  "description": "Contains a continuous section break, tests section switching without a forced page break",
+  "file": "21-continuous-section.docx"
+}

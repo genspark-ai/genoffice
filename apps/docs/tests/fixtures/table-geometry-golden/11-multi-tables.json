@@ -1,0 +1,19 @@
+{
+  "source": "apps/docs/tests/pagination-corpus/docx/11-multi-tables.docx",
+  "tables": 5,
+  "hashes": [
+    "bfc6261319cf95b3",
+    "bfc6261319cf95b3",
+    "bfc6261319cf95b3",
+    "bfc6261319cf95b3",
+    "bfc6261319cf95b3"
+  ],
+  "staticTables": 5,
+  "staticHashes": [
+    "11dd37dad7eb5c82",
+    "11dd37dad7eb5c82",
+    "11dd37dad7eb5c82",
+    "11dd37dad7eb5c82",
+    "11dd37dad7eb5c82"
+  ]
+}

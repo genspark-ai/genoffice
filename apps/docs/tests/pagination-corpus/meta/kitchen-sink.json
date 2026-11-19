@@ -1,0 +1,6 @@
+{
+  "title": "Kitchen Sink",
+  "file": "kitchen-sink.docx",
+  "tags": ["fixture", "complex", "mixed", "kitchen-sink"],
+  "description": "Repo kitchen-sink test file covering many block types"
+}

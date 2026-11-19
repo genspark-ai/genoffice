@@ -1,0 +1,79 @@
+{
+  "family": "Century Gothic GO",
+  "standsInFor": "Century Gothic",
+  "standInChain": { "tail": "latin-sans" },
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-11-03",
+    "fonts": [
+      "Century Gothic.ttf, Century Gothic Bold.ttf, Century Gothic Italic.ttf, Century Gothic Bold Italic.ttf (Word DFonts)",
+      "LiberationSans-Regular/Bold/Italic/BoldItalic.ttf"
+    ],
+    "probe": "advance-matched Liberation Sans derivative (tools/build-metric-fonts.py): hmtx = Century Gothic DFonts advances exactly; Word paces Century Gothic at its hmtx (production PDF char origins / hmtx = 1.000 for lowercase and digits, 0.99 for kerned capitals)"
+  },
+  "note": "Century Gothic ships only inside Office (Word's DFonts), so Chromium fell to\nthe Helvetica-class sans: ~9% narrower per body line (hmtx of both fonts,\n2026-09-12). Its geometry is not a uniform scale of Liberation Sans (per glyph\n0.81-1.43: s 1.29, a 0.81, T 1.43), so 2026-09-12 fitted one size-adjusted face per\ncase class; the widths matched on average but drifted both ways over long\ndocuments and size-adjust scaled the glyph height with the width, so capitals and\ndigits sat visibly smaller than the lowercase in one line (13.3/11.4/12.0 pt pieces of\na 12 pt line). The ranged faces are now one advance-matched derivative per cut\n(CenturyGothicGO-*.ttf, tools/build-metric-fonts.py): Liberation Sans outlines\nscaled horizontally to each Word advance, one vertical factor, Word advances in\nhmtx. Production PDFs pace Century Gothic at its hmtx exactly (lowercase and\ndigits 1.000; capitals 0.96-0.99 only where w:kern is on, not baked in). The\nrangeless Liberation Sans face keeps the non-Latin fallback. Pitch stays the probed\n1.226 (`lineHeightFactor`).",
+  "faces": [
+    {
+      "src": "url('./LiberationSans-Regular.ttf')"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./CenturyGothicGO-Regular.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122"
+    },
+    {
+      "src": "url('./CenturyGothicGO-Bold.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./CenturyGothicGO-Italic.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+      "style": "italic"
+    },
+    {
+      "src": "url('./CenturyGothicGO-BoldItalic.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+      "weight": "bold",
+      "style": "italic"
+    }
+  ],
+  "refit": {
+    "method": "advance-matched",
+    "range": "U+0020-007E, U+00A0-024F, U+1E00-1EFF, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122",
+    "cuts": {
+      "normal/normal": {
+        "word": "dfonts:Century Gothic.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/LiberationSans-Regular.ttf",
+        "out": "apps/docs/src/renderer/fonts/CenturyGothicGO-Regular.ttf"
+      },
+      "bold/normal": {
+        "word": "dfonts:Century Gothic Bold.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/LiberationSans-Bold.ttf",
+        "out": "apps/docs/src/renderer/fonts/CenturyGothicGO-Bold.ttf"
+      },
+      "normal/italic": {
+        "word": "dfonts:Century Gothic Italic.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/LiberationSans-Italic.ttf",
+        "out": "apps/docs/src/renderer/fonts/CenturyGothicGO-Italic.ttf"
+      },
+      "bold/italic": {
+        "word": "dfonts:Century Gothic Bold Italic.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/LiberationSans-BoldItalic.ttf",
+        "out": "apps/docs/src/renderer/fonts/CenturyGothicGO-BoldItalic.ttf"
+      }
+    }
+  }
+}

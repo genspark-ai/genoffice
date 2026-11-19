@@ -1,0 +1,22 @@
+{
+  "source": "apps/docs/tests/pagination-corpus/docx/09-large-paragraph.docx",
+  "paragraphs": 8,
+  "hashes": [
+    "88dca09a4c6a179b",
+    "9f257d6dc9991e8d",
+    "a2bf889f506b40ae",
+    "92cb5ec849b8865a",
+    "779b7653d0b71d84",
+    "a7a89b68218126c5",
+    "ce4d879f199d7108",
+    "f1609113094dc9ca"
+  ],
+  "cellParagraphs": 0,
+  "cellHashes": [],
+  "boxParagraphs": 0,
+  "boxHashes": [],
+  "hfParagraphs": 0,
+  "hfHashes": [],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

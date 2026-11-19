@@ -1,0 +1,45 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly
+labels: [bug]
+body:
+  - type: dropdown
+    id: app
+    attributes:
+      label: App
+      description: Which part of the suite is affected?
+      options:
+        - GenOffice Docs (docs)
+        - GenOffice Sheets (sheets)
+        - GenOffice Slides (slides)
+        - GenOffice PDF (pdf)
+        - GenOffice Markdown (markdown)
+        - Shell / home screen
+        - AI panel / providers
+        - Build / packaging
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and OS
+      description: App version (or commit) and operating system
+      placeholder: '0.1.0 on macOS 15.3 / Windows 11'
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: >
+        What did you do, what did you expect, and what happened instead?
+        If a document triggers the bug, attach a minimal sample file if
+        possible (please remove anything confidential first).
+      placeholder: Steps to reproduce, expected behavior, actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Console output, stack traces, or screenshots, if any.

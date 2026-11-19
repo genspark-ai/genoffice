@@ -1,0 +1,59 @@
+{
+  "id": "autospacing-style-under-direct-literal",
+  "title": "A style's beforeAutospacing/afterAutospacing survives a direct w:spacing literal that carries no autospacing attribute (before=0 or before=400 both render the 14pt auto), an explicit autospacing=0 turns it off, a child style's bare literal keeps it too",
+  "section": "word-truths.md#L1101",
+  "probe_date": "2026-11-08",
+  "class": "pure",
+  "docx": "probe.docx",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-11-08, compat 15; compat 12 identical), pymupdf baselines, Letter, TNR 12 docDefaults after=0 line=240, style NW before=100 after=100 autospacing on, Normal neighbours; pitches 27.84/27.60 = 13.8 line + 14 auto, 13.92/13.68 = no gap",
+  "cases": [
+    {
+      "kind": "planSpaceBeforePt",
+      "block": 1,
+      "expect": 14,
+      "tol": 0.001,
+      "note": "T1 style auto"
+    },
+    {
+      "kind": "planSpaceBeforePt",
+      "block": 3,
+      "expect": 14,
+      "tol": 0.001,
+      "note": "T2 direct before=0 after=0, no attribute"
+    },
+    {
+      "kind": "planSpaceBeforePt",
+      "block": 5,
+      "expect": 0,
+      "tol": 0.001,
+      "note": "T3 explicit autospacing=0"
+    },
+    {
+      "kind": "planSpaceBeforePt",
+      "block": 7,
+      "expect": 14,
+      "tol": 0.001,
+      "note": "T4 direct before=400 without the attribute: the literal is inert"
+    },
+    {
+      "kind": "planSpaceBeforePt",
+      "block": 11,
+      "expect": 14,
+      "tol": 0.001,
+      "note": "T6 child style with a bare before=0 after=0"
+    },
+    {
+      "kind": "planSpaceBeforePt",
+      "block": 13,
+      "expect": 14,
+      "tol": 0.001,
+      "note": "T7 line=480 with a bare literal"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 3,
+      "expect": { "classes": ["sp-auto-b", "sp-auto-a"] },
+      "note": "the inline margin is the auto value, not the literal 0"
+    }
+  ]
+}

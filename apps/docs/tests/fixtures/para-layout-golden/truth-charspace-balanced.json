@@ -1,0 +1,13 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/charspace-balanced/probe.docx",
+  "paragraphs": 4,
+  "hashes": ["a0426094c9b09352", "eadced76b6a7aadb", "937fce05b481e977", "5e94b7cea30e2c10"],
+  "cellParagraphs": 0,
+  "cellHashes": [],
+  "boxParagraphs": 0,
+  "boxHashes": [],
+  "hfParagraphs": 0,
+  "hfHashes": [],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

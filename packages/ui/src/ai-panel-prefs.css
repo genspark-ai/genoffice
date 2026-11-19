@@ -1,0 +1,39 @@
+/* AI panel text size (Settings → General). The chat log and composer are
+   scaled as a block so the per-app px type scale keeps its proportions;
+   the factor comes from applyAiPanelPrefs() via --ai-font-zoom. */
+html[data-ai-font-size] .ai-chat,
+html[data-ai-font-size] .ai-composer {
+  zoom: var(--ai-font-zoom, 1);
+}
+
+/* Move only the assistant; document navigation retains its existing ordering. */
+html[data-ai-panel-side='right'] {
+  --ai-panel-border-left: 1px;
+  --ai-panel-border-right: 0px;
+}
+
+html[data-ai-panel-side='right'] .ai-dock {
+  order: 1;
+}
+
+html[data-ai-panel-side='right'] .ai-panel-resizer {
+  left: 0;
+  right: auto;
+}
+
+/* Sheets has a two-column grid instead of the other apps' flex docks. */
+html[data-ai-panel-side='right'] .sheet-body {
+  grid-template-columns: minmax(0, 1fr) var(--copilot-width, 360px);
+}
+
+html[data-ai-panel-side='right'] .sheet-body > .copilot {
+  order: 1;
+}
+
+html[data-ai-panel-side='right'] .app-shell.copilot-collapsed .sheet-body {
+  grid-template-columns: minmax(0, 1fr) 34px;
+}
+
+html[data-ai-panel-side='right'] .ai-panel-collapse svg {
+  transform: scaleX(-1);
+}

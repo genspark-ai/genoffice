@@ -1,0 +1,165 @@
+/** messages between the app (parent) and the inspector script inside the sandboxed preview frame */
+
+/** inspect = full editing; browse = the page behaves as published */
+export type InspectorMode = 'inspect' | 'browse'
+
+export type ToInspector =
+  | { type: 'gx:select'; sid: number | null }
+  | { type: 'gx:highlight'; sids: number[] }
+  | { type: 'gx:clearHighlight' }
+  | { type: 'gx:setMode'; mode: InspectorMode }
+  | { type: 'gx:beginTextEdit'; sid: number }
+  | { type: 'gx:theme'; dark: boolean }
+  /** poke inline styles for a live preview; the host commits them to the source as one set_style op */
+  | { type: 'gx:previewStyle'; sid: number; styles: Record<string, string | null> }
+  /** the mouse button went up over the host chrome: a reorder drag in the frame ends without a drop */
+  | { type: 'gx:endDrag' }
+  /** numbered pins on elements with queued AI edits (replaces the previous set) */
+  | { type: 'gx:mark'; marks: Array<{ sid: number; label: string }> }
+  /** restore the window scroll of the copy an edit just replaced */
+  | { type: 'gx:scrollTo'; y: number }
+
+/** effective styles of the selected element (px numbers without unit, colours as #rrggbb, '' when transparent) */
+export interface ComputedSnapshot {
+  color: string
+  fontSize: string
+  fontWeight: string
+  fontStyle: string
+  textAlign: string
+  background: string
+  /** computed `background-image` ('none', gradients, url(...) layers) */
+  backgroundImage: string
+  width: string
+  height: string
+  borderRadius: string
+  padding: string
+  opacity: string
+  /** authored inline values (what set_style writes back), not the resolved matrix / px */
+  transform: string
+  marginLeft: string
+  marginRight: string
+  objectFit: string
+  /** only on <img> */
+  image?: { src: string; alt: string; naturalWidth: number; naturalHeight: number }
+}
+
+export interface ElementRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface ElementFingerprint {
+  sid: number
+  tag: string
+  className: string
+  /** direct child element count and text content, compared against the source to spot script-mutated nodes */
+  childElementCount: number
+  text: string
+  rect: ElementRect
+  computed: ComputedSnapshot
+  /** the element's single direct text run, when it has exactly one (inline-editable) */
+  textRun: string | null
+  /** index of that run among the element's direct text nodes (set_text_node's index), -1 without a run */
+  textRunIndex: number
+  /** the element's text edits in place (single run, or text mixed with phrasing children) */
+  inlineEditable: boolean
+}
+
+/** every message carries the parse-map version the frame was instrumented with */
+export type FromInspector = { version: number } & FromInspectorBody
+
+export type FromInspectorBody =
+  | { type: 'gx:ready'; title: string; docHeight: number }
+  /** the window scrolled (coalesced per frame); the host hands it back after a reload */
+  | { type: 'gx:scroll'; y: number }
+  | { type: 'gx:hover'; sid: number | null }
+  | {
+      type: 'gx:rect'
+      sid: number
+      rect: ElementRect
+      computed: ComputedSnapshot
+      textRun: string | null
+      textRunIndex: number
+      inlineEditable: boolean
+    }
+  | { type: 'gx:select'; element: ElementFingerprint | null; dynamic: boolean }
+  | {
+      type: 'gx:textSelect'
+      sid: number
+      /** index among the element's direct child text nodes */
+      textNodeIndex: number
+      start: number
+      end: number
+      text: string
+    }
+  | { type: 'gx:textEditCommit'; sid: number; textNodeIndex: number; newText: string }
+  /** rich inline edit (text mixed with <strong> / <a> / <br> children): the whole inner HTML, data-gx-sid stripped */
+  | { type: 'gx:htmlEditCommit'; sid: number; html: string }
+  | { type: 'gx:textEditCancel' }
+  | {
+      type: 'gx:keyCommand'
+      command:
+        | 'delete'
+        | 'parent'
+        | 'next'
+        | 'prev'
+        | 'child'
+        | 'askAi'
+        | 'bold'
+        | 'italic'
+        | 'escape'
+        | 'undo'
+        | 'redo'
+        | 'zoomIn'
+        | 'zoomOut'
+        | 'zoomReset'
+        | 'moveUp'
+        | 'moveDown'
+    }
+  /** ctrl/meta + wheel inside the frame (trackpad pinch); the host owns the zoom level */
+  | { type: 'gx:zoom'; delta: number }
+  | { type: 'gx:navigateBlocked'; href: string }
+  | { type: 'gx:markClick'; sid: number }
+  /** a resize handle or a sideways image slide was released: the frame already shows these inline styles */
+  | { type: 'gx:resize'; sid: number; styles: Record<string, string> }
+  /** the selected element was dropped next to another one */
+  | { type: 'gx:moveTo'; sid: number; position: 'before' | 'after'; ref_sid: number }
+  /** a resize or reorder drag started / ended (the host hides its chrome meanwhile) */
+  | { type: 'gx:drag'; active: boolean }
+
+/** Message tags the instrumented inspector can emit; anything else is forged. */
+const KNOWN_FROM_INSPECTOR = new Set([
+  'gx:ready',
+  'gx:scroll',
+  'gx:hover',
+  'gx:rect',
+  'gx:select',
+  'gx:textSelect',
+  'gx:textEditCommit',
+  'gx:htmlEditCommit',
+  'gx:textEditCancel',
+  'gx:keyCommand',
+  'gx:zoom',
+  'gx:navigateBlocked',
+  'gx:markClick',
+  'gx:resize',
+  'gx:moveTo',
+  'gx:drag',
+])
+
+export function isFromInspector(data: unknown): data is FromInspector {
+  // The frame has an opaque origin (no allow-same-origin), so event.origin is
+  // useless and any script in the previewed document can postMessage here:
+  // require a known tag plus the numeric instrumentation version (the App
+  // additionally drops versions outside its live parse-map set).
+  if (typeof data !== 'object' || data === null) return false
+  const { type, version } = data as { type?: unknown; version?: unknown }
+  return (
+    typeof type === 'string' &&
+    KNOWN_FROM_INSPECTOR.has(type) &&
+    typeof version === 'number' &&
+    Number.isFinite(version)
+  )
+}

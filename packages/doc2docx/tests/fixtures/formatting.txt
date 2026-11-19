@@ -1,0 +1,7 @@
+﻿Bold text and italic text plain.
+Large underlined text
+Centered paragraph
+Right aligned paragraph
+Indented paragraph with line spacing
+Spaced paragraph
+\u4e2d\u6587\u7c97\u4f53\u6bb5\u843d

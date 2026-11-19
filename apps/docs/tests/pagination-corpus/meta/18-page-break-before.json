@@ -1,0 +1,6 @@
+{
+  "title": "pageBreakBefore property",
+  "tags": ["pageBreakBefore", "forced-break"],
+  "description": "Two paragraphs with the pageBreakBefore property, tests breakBefore logic",
+  "file": "18-page-break-before.docx"
+}

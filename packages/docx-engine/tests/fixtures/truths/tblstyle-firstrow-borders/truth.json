@@ -1,0 +1,53 @@
+{
+  "id": "tblstyle-firstrow-borders",
+  "title": "Table-style firstRow tcBorders apply to header cells (over tblBorders, under explicit cell borders) when tblLook firstRow is on",
+  "section": "word-truths.md#L587",
+  "probe_date": "2026-10-20",
+  "source": "prod corpus 20261020 samples 049/009 Word PDFs: Grid Table 1 Light insideH sz 4 #999999, firstRow bottom sz 12 #666666 drawn 1.44pt at the header bottom; each adjacent row takes half of each horizontal border (header and the row under it pitch 19.20 vs 18.72)",
+  "cases": [
+    {
+      "kind": "cellProps",
+      "block": 1,
+      "row": 0,
+      "cell": 0,
+      "expect": {
+        "borders": {
+          "bottom": {
+            "style": "single",
+            "szEighths": 12,
+            "color": "666666"
+          }
+        }
+      },
+      "note": "header cell bottom from tblStylePr firstRow"
+    },
+    {
+      "kind": "cellProps",
+      "block": 1,
+      "row": 0,
+      "cell": 1,
+      "expect": {
+        "borders": {
+          "bottom": {
+            "szEighths": 12
+          }
+        }
+      }
+    },
+    {
+      "kind": "tableProps",
+      "block": 1,
+      "expect": {
+        "borders": {
+          "insideH": {
+            "szEighths": 4,
+            "color": "999999"
+          }
+        }
+      },
+      "note": "body rows keep the sz 4 insideH gridline from the style tblBorders (no cell-level override)"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

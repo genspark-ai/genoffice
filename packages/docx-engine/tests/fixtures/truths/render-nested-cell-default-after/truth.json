@@ -1,0 +1,57 @@
+{
+  "id": "render-nested-cell-default-after",
+  "title": "Nested-cell paragraphs take the docDefaults after like body paragraphs (seven Aptos 12 rows pitch 25.34), direct after 0 still wins, and a style's line multiple survives in a nested cell (Calibri 11 at line 254 pitches 14.16)",
+  "section": "word-truths.md#L708",
+  "probe_date": "2026-10-28",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf: Letter, docDefaults Aptos 12 after 160 line 276. Outer A rules 97.20 .. 275.52 (178.32), nested rows 25.2/25.44 = 16.84 line + 8 after + gridline; outer B 300.96 .. 423.36 (122.40), nested rows 17.28/17.52; outer C 448.56 .. 535.44 (86.88), six Calibri lines pitch 14.40/14.16/14.16/14.16/14.16. In all three the empty end-of-cell paragraph after the nested table took no height (outer bottom = nested bottom + 0.48). Glyph tops: lead 72.25, mid 276.01, mid two 423.85, tail 535.93",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 1,
+      "expect": 178.32,
+      "tol": 2,
+      "note": "7 x (16.84 + 8) + gridlines: the default after reaches nested cells"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 3,
+      "expect": 122.4,
+      "tol": 2,
+      "note": "direct after 0 beats the default"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 5,
+      "expect": 86.88,
+      "tol": 2,
+      "note": "style line 254 kept in the nested cell: 6 x 14.16 + gridlines"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 0,
+      "to": 2,
+      "expect": 203.76,
+      "tol": 1.5
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 2,
+      "to": 4,
+      "expect": 147.84,
+      "tol": 1.5
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 4,
+      "to": 6,
+      "expect": 112.08,
+      "tol": 1.5
+    }
+  ],
+  "docx": "probe.docx"
+}

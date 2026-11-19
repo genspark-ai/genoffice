@@ -1,0 +1,52 @@
+{
+  "id": "render-bottom-float-section-break",
+  "title": "A one-row tblpPr table floated to the margin bottom right before a nextPage sectPr is pinned at the bottom of its page and takes no flow space; the next section opens the following page under it",
+  "section": "word-truths.md#L785",
+  "probe_date": "2026-10-28",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf: Letter, Calibri 11; page 1 title 24pt glyph box 71.95 .. 101.25, three lines to 141.68, float F rules 705.60 .. 719.52 (margin bottom 720), cell text x 156.48; page 2 empty opener glyph box top 72.05, T2 rules 85.44 .. 127.20 (centred, x 156.48), body two 127.73",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 2
+    },
+    {
+      "kind": "blockPage",
+      "block": 0,
+      "expect": 1
+    },
+    {
+      "kind": "blockPage",
+      "block": 4,
+      "expect": 1,
+      "note": "the page-bottom float stays on the cover page"
+    },
+    {
+      "kind": "blockPage",
+      "block": 6,
+      "expect": 2,
+      "note": "the empty paragraph opens the nextPage section on page 2"
+    },
+    {
+      "kind": "blockPage",
+      "block": 7,
+      "expect": 2,
+      "note": "the centred table follows on page 2, not pushed by the cover float"
+    },
+    {
+      "kind": "blockPage",
+      "block": 8,
+      "expect": 2
+    },
+    {
+      "kind": "blockTopDeltaPt",
+      "from": 6,
+      "to": 7,
+      "expect": 13.44,
+      "tol": 0.3,
+      "note": "T2's top rule 85.44 is one empty Calibri 11 line below the body top 72.0: nothing of the cover float lies between them (gen deviates by 4.47pt: the centred table's top after an empty paragraph, unrelated to the float)",
+      "status": "failing"
+    }
+  ],
+  "docx": "probe.docx"
+}

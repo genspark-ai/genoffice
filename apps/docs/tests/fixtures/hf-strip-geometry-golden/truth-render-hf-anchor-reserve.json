@@ -1,0 +1,112 @@
+[
+  {
+    "section": 0,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 17.9,
+    "floorPx": 0,
+    "floats": [],
+    "disagree": []
+  },
+  {
+    "section": 1,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 17.9,
+    "floorPx": 0,
+    "floats": ["none/behind@margin:paragraph"],
+    "disagree": []
+  },
+  {
+    "section": 2,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 17.9,
+    "floorPx": 0,
+    "floats": ["none@margin:paragraph"],
+    "disagree": []
+  },
+  {
+    "section": 3,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 17.9,
+    "floorPx": 0,
+    "floats": ["none/behind@margin:paragraph"],
+    "disagree": []
+  },
+  {
+    "section": 4,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 17.9,
+    "floorPx": 0,
+    "floats": ["none/behind@margin:page"],
+    "disagree": []
+  },
+  {
+    "section": 5,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 17.9,
+    "floorPx": 0,
+    "floats": ["none/behind@margin:margin"],
+    "disagree": []
+  },
+  {
+    "section": 6,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 85.3,
+    "floorPx": 85.3,
+    "floats": ["topBottom@margin:paragraph"],
+    "disagree": []
+  },
+  {
+    "section": 7,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 17.9,
+    "floorPx": 0,
+    "floats": ["square@margin:paragraph"],
+    "disagree": []
+  },
+  {
+    "section": 8,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 17.9,
+    "floorPx": 0,
+    "floats": ["none/behind@margin:paragraph"],
+    "disagree": []
+  },
+  {
+    "section": 9,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 17.9,
+    "floorPx": 0,
+    "floats": ["none@margin:page"],
+    "disagree": []
+  }
+]

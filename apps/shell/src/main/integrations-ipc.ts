@@ -1,0 +1,234 @@
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { app, clipboard, dialog, ipcMain, type BrowserWindow } from 'electron'
+import {
+  agentTarget,
+  bundledSkillFrom,
+  buildSkillZip,
+  currentSkillInstalled,
+  detectAgents,
+  findLegacySkillCopies,
+  installSkill,
+  LEDGER_KEY,
+  ledgerFromSettings,
+  readInstallState,
+  sweepLegacySkillCopies,
+  uninstallSkill,
+  type BundledSkill,
+  type SkillLedger,
+} from '@genoffice/cli/agent-skills'
+import { inspectCliLink } from '@genoffice/cli/install'
+import { readAppSettings, writeAppSetting } from './app-settings'
+import { isEphemeralInstall } from './cli-link'
+import {
+  importSkillDir,
+  importSkillMd,
+  importSkillZip,
+  installRecommendedSkill,
+  isKnownSkillPath,
+  readSkillBody,
+  removeSkill,
+  recommendedSkills,
+  skillsRoot,
+  usableSkills,
+} from './imported-skills'
+import { isInstallableSkillDir } from './skill-target'
+import {
+  INTEGRATIONS_CHANNELS,
+  type AgentId,
+  type IntegrationsStatus,
+  type LegacySweepResult,
+  type SkillInstallState,
+} from '../shared/integrations-api'
+import type { FoundSkill, RecommendedSkill } from '../shared/found-skill'
+
+export interface IntegrationsDeps {
+  settingsPath: () => string
+  /** the shell window dialogs attach to */
+  window: () => BrowserWindow | null
+  /** directory holding genoffice / genoffice.cmd and, packaged, skills/genoffice/SKILL.md */
+  cliDir: string
+  /** skills/genoffice/SKILL.md (repo file in dev, Resources/cli/skills/... packaged) */
+  skillPath: string
+  /** packages/cli/package.json (its version is the CLI version) */
+  cliPackageJson: string
+  /** skills/recommended (repo dir in dev, Resources/cli/skills/recommended packaged) */
+  recommendedSkillsDir: string
+}
+
+/** Settings → Integrations: probe, install, uninstall, zip. No write happens without a click in that pane. */
+export function registerIntegrationsIpc(deps: IntegrationsDeps): void {
+  const bundled = (): BundledSkill => bundledSkillFrom(readFileSync(deps.skillPath))
+  const ledger = (): SkillLedger => ledgerFromSettings(readAppSettings(deps.settingsPath()))
+  const saveLedger = (l: SkillLedger) => writeAppSetting(deps.settingsPath(), LEDGER_KEY, l)
+  // the only non-agent directory installSkill may write to is the one the user just picked
+  let pickedSkillDir: string | null = null
+  const vouchedSkillDirs = (): string[] => [
+    ...detectAgents().map((a) => a.skillsDir),
+    ...(pickedSkillDir ? [pickedSkillDir] : []),
+  ]
+  const stateOf = (skillsDir: string): SkillInstallState =>
+    readInstallState(skillsDir, bundled(), ledger())
+
+  ipcMain.handle(INTEGRATIONS_CHANNELS.status, (): IntegrationsStatus => {
+    const skill = bundled()
+    const l = ledger()
+    const launcher = join(deps.cliDir, process.platform === 'win32' ? 'genoffice.cmd' : 'genoffice')
+    return {
+      cli: {
+        ...inspectCliLink({ launcher }),
+        launcherDir: deps.cliDir,
+        ephemeral: app.isPackaged && isEphemeralInstall(process.resourcesPath, process.env),
+        version: cliVersion(deps.cliPackageJson),
+      },
+      skillVersion: skill.version,
+      skillNeedsCli: /^\s+cli:\s*['"]?>=\s*(\d+\.\d+\.\d+)/m.exec(skill.text)?.[1] ?? '',
+      agents: detectAgents().map((a) => ({ ...a, state: readInstallState(a.skillsDir, skill, l) })),
+      legacy: findLegacySkillCopies(l),
+    }
+  })
+
+  ipcMain.handle(
+    INTEGRATIONS_CHANNELS.installSkill,
+    (_e, target: { agentId?: AgentId; dir?: string }): SkillInstallState => {
+      const skillsDir = target.dir ?? agentTarget(target.agentId!)?.skillsDir
+      if (!skillsDir) throw new Error('unknown skill target')
+      if (target.dir && !isInstallableSkillDir(skillsDir, vouchedSkillDirs())) {
+        throw new Error('unknown skill target')
+      }
+      const l = ledger()
+      installSkill(skillsDir, bundled(), l)
+      // the shared `.agents` row replaced the per-tool copies; once it holds our
+      // skill the old ones are stale duplicates, so they go with it
+      if (currentSkillInstalled(l)) sweepLegacySkillCopies(l)
+      saveLedger(l)
+      return stateOf(skillsDir)
+    },
+  )
+
+  ipcMain.handle(INTEGRATIONS_CHANNELS.sweepLegacySkillCopies, (): LegacySweepResult => {
+    const l = ledger()
+    // without the current copy the legacy ones are all the user has
+    if (!currentSkillInstalled(l)) {
+      throw new Error('the shared .agents copy is not installed yet')
+    }
+    const sweep = sweepLegacySkillCopies(l)
+    if (sweep.removed.length) saveLedger(l)
+    return sweep
+  })
+
+  ipcMain.handle(
+    INTEGRATIONS_CHANNELS.uninstallSkill,
+    (_e, agentId: AgentId): SkillInstallState => {
+      const target = agentTarget(agentId)
+      if (!target) throw new Error('unknown skill target')
+      const l = ledger()
+      if (uninstallSkill(target.skillsDir, l)) saveLedger(l)
+      return stateOf(target.skillsDir)
+    },
+  )
+
+  // dialog titles come from the renderer, which owns the UI language
+  ipcMain.handle(
+    INTEGRATIONS_CHANNELS.pickSkillDir,
+    async (_e, title: string): Promise<string | null> => {
+      const opts: Electron.OpenDialogOptions = {
+        title: String(title ?? ''),
+        properties: ['openDirectory', 'createDirectory'],
+      }
+      const win = deps.window()
+      const r = await (win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts))
+      const picked = r.canceled ? null : (r.filePaths[0] ?? null)
+      pickedSkillDir = picked
+      return picked
+    },
+  )
+
+  ipcMain.handle(
+    INTEGRATIONS_CHANNELS.saveSkillZip,
+    async (_e, title: string): Promise<string | null> => {
+      const skill = bundled()
+      const opts: Electron.SaveDialogOptions = {
+        title: String(title ?? ''),
+        defaultPath: join(app.getPath('downloads'), `genoffice-skill-${skill.version}.zip`),
+        filters: [{ name: 'ZIP', extensions: ['zip'] }],
+      }
+      const win = deps.window()
+      const r = await (win ? dialog.showSaveDialog(win, opts) : dialog.showSaveDialog(opts))
+      if (r.canceled || !r.filePath) return null
+      writeFileSync(r.filePath, await buildSkillZip(skill))
+      return r.filePath
+    },
+  )
+
+  ipcMain.handle(INTEGRATIONS_CHANNELS.copyText, (_e, text: string): void => {
+    if (typeof text === 'string') clipboard.writeText(text)
+  })
+
+  ipcMain.handle(INTEGRATIONS_CHANNELS.listSkills, async (): Promise<FoundSkill[]> =>
+    usableSkills(app.getPath('userData')),
+  )
+
+  ipcMain.handle(INTEGRATIONS_CHANNELS.removeSkill, (_e, name: string): void => {
+    removeSkill(name, app.getPath('userData'))
+  })
+
+  ipcMain.handle(
+    INTEGRATIONS_CHANNELS.listRecommendedSkills,
+    async (): Promise<RecommendedSkill[]> =>
+      recommendedSkills(deps.recommendedSkillsDir, app.getPath('userData')),
+  )
+
+  ipcMain.handle(INTEGRATIONS_CHANNELS.installRecommendedSkill, (_e, name: unknown): FoundSkill => {
+    if (typeof name !== 'string') throw new Error('unknown skill')
+    return installRecommendedSkill(name, deps.recommendedSkillsDir, app.getPath('userData'))
+  })
+
+  ipcMain.handle(INTEGRATIONS_CHANNELS.skillBody, (_e, path: string): string => {
+    // the path came from the renderer, so it is only a file we just listed
+    const roots = [skillsRoot(app.getPath('userData')), deps.recommendedSkillsDir]
+    if (!roots.some((root) => isKnownSkillPath(path, root))) {
+      throw new Error('unknown skill')
+    }
+    return readSkillBody(path)
+  })
+
+  // the only writes: a person pressed Import and picked something in a dialog
+  // this process owns, so the source path never comes from the renderer
+  const pick = async (opts: Electron.OpenDialogOptions): Promise<string | null> => {
+    const win = deps.window()
+    const r = await (win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts))
+    return r.canceled ? null : (r.filePaths[0] ?? null)
+  }
+
+  ipcMain.handle(
+    INTEGRATIONS_CHANNELS.importSkillFolder,
+    async (_e, title: string): Promise<FoundSkill | null> => {
+      const dir = await pick({ title: String(title ?? ''), properties: ['openDirectory'] })
+      return dir ? importSkillDir(dir, app.getPath('userData')) : null
+    },
+  )
+
+  ipcMain.handle(
+    INTEGRATIONS_CHANNELS.importSkillZip,
+    async (_e, title: string): Promise<FoundSkill | null> => {
+      const file = await pick({
+        title: String(title ?? ''),
+        properties: ['openFile'],
+        filters: [{ name: 'Skill package', extensions: ['zip', 'md'] }],
+      })
+      if (!file) return null
+      return /\.md$/i.test(file)
+        ? importSkillMd(file, app.getPath('userData'))
+        : importSkillZip(file, app.getPath('userData'))
+    },
+  )
+}
+
+function cliVersion(packageJson: string): string {
+  try {
+    return String(JSON.parse(readFileSync(packageJson, 'utf-8')).version ?? '')
+  } catch {
+    return ''
+  }
+}

@@ -1,0 +1,204 @@
+/**
+ * 2.2 Fill / stroke resolution — converts pptx-engine Fill/Stroke (final values after
+ * inheritance) into RenderFill/RenderStroke the render layer can consume directly
+ * (px line width, angle in degrees, image dataUrl).
+ */
+import type { Fill, Stroke, ShadowEffect } from '@genoffice/pptx-engine'
+import type { RenderFill, RenderStroke, RenderShadow } from './render-tree'
+import { emuToPx, EMU_PER_PT, type Viewport } from './coords'
+import { imageDpiFromDataUrl } from './image-dpi'
+
+/** Lookup function for image mediaRef → dataUrl (injected by the caller, may lazy-load). */
+export type MediaResolver = (mediaRef: string) => string | undefined
+
+/** Box a tile grid anchors to, in shape-local px (a table cell passes the whole table). */
+export type TileFrame = { x: number; y: number; w: number; h: number }
+
+export function resolveFill(
+  fill: Fill | undefined,
+  vp: Viewport,
+  media?: MediaResolver,
+  tileFrame?: TileFrame,
+): RenderFill {
+  if (!fill) return { kind: 'none' }
+  switch (fill.type) {
+    case 'none':
+      return { kind: 'none' }
+    case 'solid':
+      return { kind: 'solid', color: fill.color }
+    case 'gradient':
+      return {
+        kind: 'gradient',
+        stops: fill.stops.map((s) => ({ pos: s.pos, color: s.color })),
+        angleDeg: fill.angle != null ? fill.angle / 60000 : 0,
+        ...(fill.scaled ? { scaled: true } : {}),
+        ...(fill.path ? { radial: true, path: fill.path } : {}),
+        ...(fill.path && fill.fillTo
+          ? {
+              center: {
+                x: (fill.fillTo.l + (1 - fill.fillTo.r)) / 2,
+                y: (fill.fillTo.t + (1 - fill.fillTo.b)) / 2,
+              },
+            }
+          : {}),
+        ...(fill.path && fill.tileRect ? { tileRect: fill.tileRect } : {}),
+      }
+    case 'image': {
+      const dataUrl = media?.(fill.mediaRef)
+      // Tile natural size: the bitmap's own dpi tag (PowerPoint measured: 75dpi JFIF texture,
+      // 150dpi PNG photo); dpi-less bitmaps lay out at 144dpi (page_transparent_bitmap:
+      // 94px tile = 0.653in), i.e. 2/3 of a 96dpi unit
+      const dpi = fill.tile ? imageDpiFromDataUrl(dataUrl) : undefined
+      const pxPerImagePxX = vp.scale * (96 / (dpi?.x ?? 144))
+      const pxPerImagePxY = vp.scale * (96 / (dpi?.y ?? 144))
+      return {
+        kind: 'image',
+        dataUrl,
+        mode: fill.mode ?? 'stretch',
+        ...(fill.alpha != null ? { alpha: fill.alpha } : {}),
+        ...(fill.fillRect ? { fillRect: fill.fillRect } : {}),
+        ...(fill.duotone ? { duotone: fill.duotone } : {}),
+        ...(fill.lum ? { lum: fill.lum } : {}),
+        ...(fill.clrChange ? { clrChange: fill.clrChange } : {}),
+        ...(fill.biLevel != null ? { biLevel: fill.biLevel } : {}),
+        ...(fill.tile
+          ? {
+              tile: {
+                scaleX: pxPerImagePxX * fill.tile.sx,
+                scaleY: pxPerImagePxY * fill.tile.sy,
+                txPx: emuToPx(fill.tile.tx, vp.scale),
+                tyPx: emuToPx(fill.tile.ty, vp.scale),
+                algn: fill.tile.algn,
+                ...(tileFrame ? { frame: tileFrame } : {}),
+              },
+            }
+          : {}),
+      }
+    }
+    case 'pattern':
+      // 8x8 preset mask, one mask pixel per 96dpi pixel (PowerPoint measured on n820786)
+      return {
+        kind: 'pattern',
+        preset: fill.preset,
+        fg: fill.fg,
+        bg: fill.bg,
+        cellPx: 8 * vp.scale,
+      }
+    default:
+      return { kind: 'none' }
+  }
+}
+
+export function resolveStroke(stroke: Stroke | undefined, vp: Viewport): RenderStroke | undefined {
+  if (!stroke) return undefined
+  const rf = stroke.fill
+  let color = '#000000'
+  let gradient: RenderStroke['gradient']
+  if (rf.type === 'solid') color = rf.color
+  else if (rf.type === 'gradient' && rf.stops.length) {
+    gradient = {
+      stops: rf.stops.map((s) => ({ pos: s.pos, color: s.color })),
+      angleDeg: rf.angle != null ? rf.angle / 60000 : 0,
+      ...(rf.scaled ? { scaled: true } : {}),
+    }
+    color = rf.stops[0]!.color
+  } else if (rf.type === 'none') return undefined
+  // A patterned line is mostly foreground ink, so a solid fg stroke is a far closer
+  // approximation than the #000000 fallback (resolveFill renders pattFill the same way).
+  // An image-filled line has no colour to borrow — returning undefined beats painting black.
+  else if (rf.type === 'pattern') color = rf.fg
+  else if (rf.type === 'image') return undefined
+  const widthEmu = stroke.width ?? 12700
+  const widthPx = Math.max(emuToPx(widthEmu, vp.scale), 0.5)
+  const widthPt = widthEmu / EMU_PER_PT
+  const dash = dashPreset(stroke.dash, widthPx)
+  const capMap = { flat: 'butt', round: 'round', square: 'square' } as const
+  return {
+    color,
+    widthPx,
+    widthPt,
+    ...(dash ? { dash } : {}),
+    ...(stroke.dash && stroke.dash !== 'solid' ? { dashPreset: stroke.dash } : {}),
+    ...(stroke.cap ? { cap: capMap[stroke.cap] } : {}),
+    ...(stroke.join ? { join: stroke.join } : {}),
+    ...(stroke.compound ? { compound: stroke.compound } : {}),
+    ...(gradient ? { gradient } : {}),
+  }
+}
+
+/** Outer shadow EMU/angle → px offsets (OOXML dir is clockwise, y-down, matching canvas). */
+export function resolveGlow(
+  glow: import('@genoffice/pptx-engine').GlowEffect | undefined,
+  vp: Viewport,
+): import('./render-tree').RenderGlow | undefined {
+  if (!glow) return undefined
+  return { color: glow.color, blurPx: emuToPx(glow.radius, vp.scale) }
+}
+
+export function resolveReflection(
+  reflection: import('@genoffice/pptx-engine').ReflectionEffect | undefined,
+  vp: Viewport,
+): import('./render-tree').RenderReflection | undefined {
+  if (!reflection) return undefined
+  return {
+    blurPx: emuToPx(reflection.blurRad, vp.scale),
+    startAlpha: reflection.startA,
+    endPos: reflection.endPos,
+    distPx: emuToPx(reflection.dist, vp.scale),
+  }
+}
+
+export function resolveShadow(
+  shadow: ShadowEffect | undefined,
+  vp: Viewport,
+): RenderShadow | undefined {
+  if (!shadow) return undefined
+  const distPx = emuToPx(shadow.dist, vp.scale)
+  const rad = (shadow.dirDeg * Math.PI) / 180
+  return {
+    color: shadow.color,
+    blurPx: emuToPx(shadow.blurRad, vp.scale),
+    offsetX: Math.cos(rad) * distPx,
+    offsetY: Math.sin(rad) * distPx,
+    distPx,
+    dirDeg: shadow.dirDeg,
+    ...(shadow.inner ? { inner: true } : {}),
+    ...(shadow.sx != null ? { scaleX: shadow.sx } : {}),
+    ...(shadow.sy != null ? { scaleY: shadow.sy } : {}),
+    ...(shadow.kxDeg ? { skewXDeg: shadow.kxDeg } : {}),
+    ...(shadow.kyDeg ? { skewYDeg: shadow.kyDeg } : {}),
+    ...(shadow.algn ? { algn: shadow.algn } : {}),
+  }
+}
+
+/** OOXML preset dash name → canvas dash array (relative to line width). */
+function dashPreset(name: string | undefined, w: number): number[] | undefined {
+  if (!name || name === 'solid') return undefined
+  const u = w
+  switch (name) {
+    case 'dot':
+      return [u, 3 * u]
+    case 'sysDot':
+      return [u, u]
+    case 'dash':
+      return [4 * u, 3 * u]
+    case 'sysDash':
+      return [3 * u, u]
+    case 'lgDash':
+      return [8 * u, 3 * u]
+    case 'dashDot':
+      return [4 * u, 3 * u, u, 3 * u]
+    case 'sysDashDot':
+      return [3 * u, u, u, u]
+    case 'lgDashDot':
+      return [8 * u, 3 * u, u, 3 * u]
+    case 'lgDashDotDot':
+      return [8 * u, 3 * u, u, 3 * u, u, 3 * u]
+    case 'dashDotDot':
+      return [4 * u, 3 * u, u, 3 * u, u, 3 * u]
+    case 'sysDashDotDot':
+      return [3 * u, u, u, u, u, u]
+    default:
+      return undefined
+  }
+}

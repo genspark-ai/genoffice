@@ -1,0 +1,32 @@
+{
+  "source": "apps/docs/tests/pagination-corpus/docx/18-page-break-before.docx",
+  "paragraphs": 18,
+  "hashes": [
+    "6884470f94a7e823",
+    "41aa318900c4adfb",
+    "0dd406a694a79875",
+    "7460dc87e1a053cc",
+    "9cfadb12ef83a0f8",
+    "f938c32640ba7150",
+    "07123c553eb0f629",
+    "9d3a6e571b23e3cd",
+    "aaaf7ecd28bb82df",
+    "80a83b1cee83f4a5",
+    "ba819629ba7588d4",
+    "a62b3c7c92318b88",
+    "00e1f5fffde71f30",
+    "40e4bb2089616edb",
+    "228c6eac86397246",
+    "f080720845957a08",
+    "e4a46c902c0bf077",
+    "a8ba806b20e7b50e"
+  ],
+  "cellParagraphs": 0,
+  "cellHashes": [],
+  "boxParagraphs": 0,
+  "boxHashes": [],
+  "hfParagraphs": 0,
+  "hfHashes": [],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

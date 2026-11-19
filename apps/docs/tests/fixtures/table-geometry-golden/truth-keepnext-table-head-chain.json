@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/keepnext-table-head-chain/probe.docx",
+  "tables": 1,
+  "hashes": ["da9c2c5020068fd2"],
+  "staticTables": 1,
+  "staticHashes": ["074efe3ea178b292"]
+}

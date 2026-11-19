@@ -1,0 +1,68 @@
+{
+  "id": "grid-line-rules",
+  "title": "Typed docGrid line rules: multiples scale the pitch, nothing non-exact sits below the snapped single, exact never snaps",
+  "section": "word-truths.md#L14",
+  "section_title": "Paragraph, grid and compat rules",
+  "probe_date": "2026-08-22",
+  "class": "pure",
+  "source": "Word probe 2026-08-22 (15 cases, #874) and the atLeast line=0 probe 2026-09-11; A4, docGrid lines linePitch=360 (18pt), Calibri 11",
+  "cases": [
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 18,
+      "tol": 0.001,
+      "note": "single snaps to one 18pt cell"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 27,
+      "tol": 0.001,
+      "note": "line=360 auto = 1.5 x pitch, no re-snap"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 15,
+      "tol": 0.001,
+      "note": "exact 300 never snaps"
+    },
+    {
+      "kind": "linePt",
+      "block": 3,
+      "expect": 18,
+      "tol": 0.001,
+      "note": "atLeast 200 floors at the snapped single"
+    },
+    {
+      "kind": "linePt",
+      "block": 4,
+      "expect": 13.42,
+      "tol": 0.02,
+      "note": "atLeast line=0 keeps the natural height"
+    },
+    {
+      "kind": "linePt",
+      "block": 5,
+      "expect": 36,
+      "tol": 0.001,
+      "note": "16pt natural 19.5 takes two cells"
+    },
+    {
+      "kind": "linePt",
+      "block": 6,
+      "expect": 13.42,
+      "tol": 0.02,
+      "note": "snapToGrid=0 leaves the grid"
+    },
+    {
+      "kind": "linePt",
+      "block": 7,
+      "expect": 36,
+      "tol": 0.001,
+      "note": "line=480 auto = two pitches"
+    }
+  ],
+  "docx": "probe.docx"
+}

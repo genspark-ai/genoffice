@@ -1,0 +1,6 @@
+{
+  "title": "Orphan heading test",
+  "tags": ["headings", "keepNext", "orphan", "widow"],
+  "description": "Heading lands right at the page bottom, tests keepNext orphan prevention",
+  "file": "12-orphan-heading.docx"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "textbox-hangul-wrap",
+  "title": "Korean text in a narrow text box breaks at spaces only: a ten-syllable word moves whole to its own line (Malgun Gothic 11, pitch 1.737)",
+  "section": "word-truths.md#L788",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf lines inside a 144 pt inline wps box: four lines each ending at a space, the long word alone on line three, baselines 103.44 / 122.40 / 141.60 / 160.56",
+  "cases": [
+    {
+      "kind": "boxLineBox",
+      "block": 1,
+      "box": 0,
+      "para": 0,
+      "expect": {
+        "styles": ["word-break:keep-all", "overflow-wrap:anywhere", "--doc-line-factor:1.7291"]
+      },
+      "note": "same rule as body and cell paragraphs (UAX#14 would break between syllables); overflow-wrap keeps the overlong-word fallback"
+    }
+  ],
+  "docx": "probe.docx"
+}

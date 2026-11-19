@@ -1,0 +1,120 @@
+{
+  "_about": "Line factors of knownLineFactor() (apps/docs/src/renderer/text-layout/font-rules/line-factor.ts), emitted to line-factors.generated.ts by tools/build-font-aliases.mjs. Since line F wave 3 the table holds pins only: lineHeightFactor = pins U resolver, so every row names a value Word confirmed that the resolver's face metrics do not give (LINE_FACTOR_PINS). Rules run in order within their stage; stages interleave with the behavioural branches of knownLineFactor: first (before the CJK-class delegations), arabic (before the Arabic altName route), latin (after it), last (after the KR/hangul/ideograph routes). match/exclude are regex sources tested against the lower-cased declared name, or a ref to a pattern of font-name-patterns.ts.",
+  "rules": [
+    {
+      "id": "algerian",
+      "stage": "first",
+      "match": "^algerian$",
+      "factor": 1.3167,
+      "source": {
+        "kind": "corpus",
+        "date": "2026-10-28",
+        "probe": "Word paces consecutive single-spaced 18pt Algerian lines at 23.7pt"
+      },
+      "pin": {
+        "reason": "the cloud record has no hhea lineGap (word-faces 1.1118)"
+      }
+    },
+    {
+      "id": "stxihei",
+      "stage": "first",
+      "match": "stxihei|华文细黑",
+      "factor": 1.79,
+      "source": {
+        "kind": "probe",
+        "date": "2026-10-22",
+        "probe": "Word lays out 17.91pt at 10pt (probes 2026-08-23, 2026-10-22)"
+      },
+      "pin": {
+        "reason": "the cloud file's hhea 1.079 does not reproduce the probes"
+      }
+    },
+    {
+      "id": "times",
+      "stage": "latin",
+      "match": "^times$",
+      "factor": 1.15,
+      "source": {
+        "kind": "probe",
+        "date": "2026-11-09",
+        "probe": "probe 2026-11-09 legacy-line-factor-rows: Word lays out a declared Times in Times New Roman (PDF font TimesNewRomanPSMT, 13.80 pt at 12 pt = 1.15); the macOS Times copy is never used"
+      },
+      "pin": {
+        "reason": "the installed macOS Times (hhea 1.0) is not the face Word draws; Times New Roman and the altName-routed PS spellings are resolver faces"
+      }
+    },
+    {
+      "id": "helvetica",
+      "stage": "latin",
+      "match": "^helvetica( (regular|bold|italic|bold italic))?$",
+      "factor": 1.2,
+      "source": {
+        "kind": "probe",
+        "date": "2026-11-09",
+        "probe": "probe 2026-11-09 legacy-line-factor-rows: Word draws the macOS Helvetica itself (PDF font Helvetica) at 14.40 pt / 12 pt = 1.2; Helvetica 55 Roman goes to ArialMT 13.80 (the name-prefix rule); the style-suffixed spellings keep the pin, every other Helvetica-prefixed name follows the resolver"
+      },
+      "pin": {
+        "reason": "the macOS Helvetica hhea total is 1.0 and does not reproduce the probe"
+      }
+    },
+    {
+      "id": "courier",
+      "stage": "latin",
+      "match": "^courier$",
+      "factor": 1.1333,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-12",
+        "probe": "uncited"
+      },
+      "pin": {
+        "reason": "unprobed sibling alias (LEGACY_FACE_ALIAS Courier -> Courier New): the installed macOS Courier (hhea 1.0) is not the face Word draws; Courier New itself is a resolver face"
+      }
+    },
+    {
+      "id": "segoe-ui-emoji",
+      "stage": "latin",
+      "match": "segoe ui emoji",
+      "factor": 1.0698,
+      "source": {
+        "kind": "probe",
+        "date": "2026-11-09",
+        "probe": "probe 2026-11-09 legacy-line-factor-rows: Word paces a Segoe UI Emoji run at 12.84 pt / 12 pt = 1.07 = the cloud file's typo box (sTypoAscender 1.0698 total), not its hhea 1.3301"
+      },
+      "pin": {
+        "reason": "the cloud record's hhea 1.3301 is not the box Word uses for this face"
+      }
+    },
+    {
+      "id": "inter",
+      "stage": "latin",
+      "match": "^inter( |$)",
+      "factor": 1.21,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-24",
+        "probe": "Word probe 2026-08-23/24 batch (word-truths L8): Inter 1.21 = its hhea; the store has no Inter, so the resolver would fall to Cambria"
+      },
+      "pin": {
+        "reason": "the store lacks the face; the Calibri/Cambria fallback is not what the probe measured"
+      }
+    },
+    {
+      "id": "noto-han-regional-latin",
+      "stage": "last",
+      "match": {
+        "ref": "NOTO_HAN_REGIONAL_RE"
+      },
+      "factor": 1.172,
+      "source": {
+        "kind": "probe",
+        "date": "2026-10-19",
+        "probe": "word-truths 2026-10-19: Latin under a missing Noto/Source Han JP name is Cambria whatever the fontTable says; CJK text goes through cjkDeclaredLineFactor"
+      },
+      "pin": {
+        "match": "^(?:noto|source han) (?:sans|serif)(?: cjk)? ?jp\\b",
+        "reason": "a missing JP name lays Latin out in Cambria while its CJK text goes SimSun"
+      }
+    }
+  ]
+}

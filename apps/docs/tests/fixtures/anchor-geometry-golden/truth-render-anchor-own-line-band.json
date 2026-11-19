@@ -1,0 +1,16 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-anchor-own-line-band/probe.docx",
+  "editor": [
+    "368515f91e1710ff",
+    "ccdd000d7f5cfbe6",
+    "dd17e2fb6a4b7026",
+    "e4e770e1ec3c918b",
+    "a522cf2e5a37f163",
+    "98168cec852a5977",
+    "8543ad33952388b0",
+    "03d527a468348ea7",
+    "46800b1f3b3c43d7"
+  ],
+  "nested": [],
+  "hf": []
+}

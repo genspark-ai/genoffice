@@ -1,0 +1,1198 @@
+import JSZip from 'jszip'
+import { chartWorkbookParts, colLetter } from '@genoffice/pptx-engine/chart-workbook'
+import type {
+  ChartAxis,
+  ChartDisplay,
+  ChartexLayout,
+  ChartSeries,
+  NewChart,
+  ThemeColors,
+} from './types'
+import {
+  attrsOf,
+  childrenOf,
+  escapeXmlText,
+  findChild,
+  findChildren,
+  nameOf,
+  textOf,
+  xmlParser,
+  type XNode,
+} from './xml-utils'
+
+export { CHART_WORKBOOK_REL_TYPE, colLetter } from '@genoffice/pptx-engine/chart-workbook'
+
+const CHART_KINDS: Record<string, ChartDisplay['kind']> = {
+  'c:barChart': 'bar',
+  'c:bar3DChart': 'bar',
+  'c:lineChart': 'line',
+  'c:line3DChart': 'line',
+  'c:pieChart': 'pie',
+  'c:pie3DChart': 'pie',
+  'c:doughnutChart': 'pie',
+  'c:areaChart': 'area',
+  'c:area3DChart': 'area',
+  'c:scatterChart': 'scatter',
+  'c:bubbleChart': 'bubble',
+  'c:radarChart': 'radar',
+  'c:stockChart': 'stock',
+  'c:surfaceChart': 'surface',
+  'c:surface3DChart': 'surface',
+}
+
+/** Word's chart-area border when c:chartSpace carries no c:spPr, as rendered by Word */
+const DEFAULT_FRAME_LINE = '868686'
+/** Largest point index honored (a full Excel column): a hostile idx/ptCount must not grow the array. */
+const MAX_CHART_CACHE_POINTS = 1_048_576
+/**
+ * Largest series count honored: each one reads its own caches, so a part with
+ * thousands of c:ser multiplied the point budget out to billions of slots.
+ */
+const MAX_CHART_SERIES = 256
+
+/**
+ * Read the display model of a chart part (word/charts/chartN.xml). Only the
+ * caches Word writes next to the data references (c:strCache / c:numCache)
+ * are read — the embedded workbook is never opened. Returns null when the
+ * part has no series with cached values.
+ */
+export function parseChartPartXml(
+  xml: string,
+  partPath: string,
+  theme?: ThemeColors | null,
+): ChartDisplay | null {
+  const parsed = xmlParser.parse(xml) as XNode[]
+  if (xml.includes('<cx:chartSpace')) return parseChartexPartXml(parsed, partPath)
+  const space = parsed.find((n) => nameOf(n) === 'c:chartSpace')
+  const chart = space ? findChild(space, 'c:chart') : undefined
+  const plotArea = chart ? findChild(chart, 'c:plotArea') : undefined
+  if (!space || !chart || !plotArea) return null
+
+  // first plotted chart type wins (combo charts render their primary series)
+  const plot = childrenOf(plotArea).find((c) => (nameOf(c) ?? '').endsWith('Chart'))
+  if (!plot) return null
+  const kind = CHART_KINDS[nameOf(plot) ?? ''] ?? 'other'
+  const horizontal = kind === 'bar' && attrsOf(findChild(plot, 'c:barDir') ?? {})['val'] === 'bar'
+  const groupingVal = attrsOf(findChild(plot, 'c:grouping') ?? {})['val']
+  const grouping =
+    (kind === 'bar' || kind === 'area' || kind === 'line') &&
+    (groupingVal === 'stacked' || groupingVal === 'percentStacked')
+      ? groupingVal
+      : undefined
+  const scatterStyle = attrsOf(findChild(plot, 'c:scatterStyle') ?? {})['val']
+  const radarStyleVal = attrsOf(findChild(plot, 'c:radarStyle') ?? {})['val']
+  const radarStyle =
+    kind === 'radar'
+      ? radarStyleVal === 'filled' || radarStyleVal === 'marker'
+        ? radarStyleVal
+        : 'standard'
+      : undefined
+  // every series switching its symbol off overrides the plot-level marker flag
+  const symbolsOff = findChildren(plot, 'c:ser').every(
+    (ser) =>
+      attrsOf(findChild(findChild(ser, 'c:marker') ?? {}, 'c:symbol') ?? {})['val'] === 'none',
+  )
+  const markers =
+    kind === 'line'
+      ? attrsOf(findChild(plot, 'c:marker') ?? {})['val'] === '1' && !symbolsOff
+      : kind === 'scatter'
+        ? (scatterStyle === undefined || scatterStyle.toLowerCase().includes('marker')) &&
+          !symbolsOff
+        : kind === 'radar'
+          ? radarStyle === 'marker' && !symbolsOff
+          : false
+  const scatterLines = kind === 'scatter' && /line|smooth/i.test(scatterStyle ?? '')
+  const holeVal = attrsOf(findChild(plot, 'c:holeSize') ?? {})['val']
+  // The spec default hole is 50%; an unparseable value falls back to it
+  // instead of zeroing (which would silently drop the setting from the model).
+  const holeParsed = holeVal !== undefined ? parseInt(holeVal, 10) : NaN
+  const holePct =
+    nameOf(plot) === 'c:doughnutChart' ? (Number.isFinite(holeParsed) ? holeParsed : 50) : 0
+  const legendPos = legendPosOf(chart)
+  const legendFontPt = textProps(findChild(findChild(chart, 'c:legend') ?? {}, 'c:txPr')).fontPt
+  const dataLabels = dataLabelsOf(plot, theme)
+  const frameLine = lineHex(findChild(space, 'c:spPr'), theme, DEFAULT_FRAME_LINE)
+  const axes = axesOf(plotArea, theme)
+  const dTable = findChild(plotArea, 'c:dTable')
+  const tableLine = dTable
+    ? lineHex(findChild(dTable, 'c:spPr'), theme, autoLineHex(theme))
+    : undefined
+  const dataTable = dTable
+    ? {
+        keys: boolFlag(dTable, 'c:showKeys'),
+        horz: boolFlag(dTable, 'c:showHorzBorder'),
+        vert: boolFlag(dTable, 'c:showVertBorder'),
+        outline: boolFlag(dTable, 'c:showOutline'),
+        ...(tableLine ? { line: tableLine } : {}),
+      }
+    : undefined
+  let explosionPct: number | undefined
+
+  let categories: string[] = []
+  const series: ChartSeries[] = []
+  const sers = findChildren(plot, 'c:ser')
+  // split the point budget over the series, so the total stays bounded
+  const maxPoints = Math.max(
+    1,
+    Math.floor(MAX_CHART_CACHE_POINTS / Math.min(sers.length, MAX_CHART_SERIES)),
+  )
+  for (const ser of sers) {
+    if (series.length >= MAX_CHART_SERIES) break
+    // scatter/bubble series carry x/y pairs instead of category/value caches
+    const val = findChild(ser, 'c:val') ?? findChild(ser, 'c:yVal')
+    const values = val ? cacheNumbers(val, maxPoints) : []
+    if (values.length === 0) continue
+    const cat = findChild(ser, 'c:cat') ?? findChild(ser, 'c:xVal')
+    if (cat && categories.length === 0) {
+      categories = cachePoints(cat, maxPoints).map((v) => v ?? '')
+      // date-formatted numeric caches hold Excel serials; display them as dates
+      const fmt = catFormatCode(cat)
+      if (fmt && /[yd]/i.test(fmt)) {
+        categories = categories.map((v) => serialDateText(v) ?? v)
+      } else if (nameOf(cat) === 'c:xVal') {
+        // x caches carry raw doubles (0.70000000000000062); trim for display
+        categories = categories.map((v) => {
+          const n = Number(v)
+          return v !== '' && Number.isFinite(n) ? String(Math.round(n * 10000) / 10000) : v
+        })
+      }
+    }
+    const name = seriesName(ser)
+    const entry: ChartSeries = { ...(name !== undefined ? { name } : {}), values }
+    const color = solidFillHex(findChild(ser, 'c:spPr'), theme)
+    if (color) entry.color = color
+    const pointColors = dataPointColors(ser, theme, maxPoints)
+    if (pointColors) entry.pointColors = pointColors
+    if (kind === 'pie' && series.length === 0) {
+      const expl = parseInt(attrsOf(findChild(ser, 'c:explosion') ?? {})['val'] ?? '', 10)
+      if (expl > 0) explosionPct = expl
+    }
+    if (kind === 'scatter' || kind === 'bubble') {
+      const xVal = findChild(ser, 'c:xVal')
+      const xValues = xVal ? cacheNumbers(xVal, maxPoints) : []
+      if (xValues.some((v) => v !== null)) entry.xValues = xValues
+      const sizeVal = findChild(ser, 'c:bubbleSize')
+      const sizes = sizeVal ? cacheNumbers(sizeVal, maxPoints) : []
+      if (sizes.some((v) => v !== null)) entry.sizes = sizes
+      if (scatterLines && !seriesLineHidden(ser)) entry.line = true
+    }
+    series.push(entry)
+  }
+  if (series.length === 0) return null
+
+  const palette = chartPalette(chartStyleVal(space), theme)
+  const titleFontPt = textProps(findChild(chart, 'c:title')).fontPt
+  let title = chartTitle(chart)
+  // Office names a single-series chart's auto title after the series
+  if (title === 'Chart Title' && series.length === 1 && series[0].name) title = series[0].name
+  return {
+    partPath,
+    kind,
+    ...(horizontal ? { horizontal } : {}),
+    ...(grouping ? { grouping } : {}),
+    ...(markers ? { markers } : {}),
+    ...(radarStyle ? { radarStyle } : {}),
+    ...(holePct > 0 ? { holePct } : {}),
+    ...(explosionPct ? { explosionPct } : {}),
+    ...(dataLabels ? { dataLabels } : {}),
+    ...(legendPos ? { legendPos } : { noLegend: true }),
+    ...(legendFontPt !== undefined ? { legendFontPt } : {}),
+    ...(frameLine ? { frameLine } : {}),
+    ...axes,
+    ...(dataTable ? { dataTable } : {}),
+    ...(title !== undefined ? { title } : {}),
+    ...(titleFontPt !== undefined ? { titleFontPt } : {}),
+    categories,
+    series,
+    ...(palette ? { palette } : {}),
+  }
+}
+
+/** CT_Boolean child: absent = false, a val-less element or val="1"/"true" = true */
+function boolFlag(parent: XNode, tag: string): boolean {
+  const node = findChild(parent, tag)
+  if (!node) return false
+  const val = attrsOf(node)['val']
+  return val === undefined || val === '1' || val === 'true'
+}
+
+/** size (pt) and solid color of the first a:defRPr / a:rPr under a text-properties node */
+function textProps(
+  node: XNode | undefined,
+  theme?: ThemeColors | null,
+): { fontPt?: number; color?: string } {
+  if (!node) return {}
+  let rPr: XNode | undefined
+  const walk = (n: XNode) => {
+    for (const child of childrenOf(n)) {
+      if (rPr) return
+      const name = nameOf(child)
+      if (name === 'a:defRPr' || name === 'a:rPr') rPr = child
+      else walk(child)
+    }
+  }
+  walk(node)
+  if (!rPr) return {}
+  const sz = parseInt(attrsOf(rPr)['sz'] ?? '', 10)
+  const color = solidFillHex(rPr, theme)
+  return { ...(sz > 0 ? { fontPt: sz / 100 } : {}), ...(color ? { color } : {}) }
+}
+
+/**
+ * c:dLbls show* flags; the first series' own dLbls beats the plot-level block.
+ * Per-point c:dLbl blocks override the series flags for their points, so when
+ * every cached point carries one Word shows only what those blocks enable.
+ */
+function dataLabelsOf(plot: XNode, theme?: ThemeColors | null): ChartDisplay['dataLabels'] {
+  const ser = findChild(plot, 'c:ser')
+  const dLbls = (ser ? findChild(ser, 'c:dLbls') : undefined) ?? findChild(plot, 'c:dLbls')
+  if (!dLbls || boolFlag(dLbls, 'c:delete')) return undefined
+  const flagsOf = (n: XNode) => ({
+    val: boolFlag(n, 'c:showVal'),
+    pct: boolFlag(n, 'c:showPercent'),
+    cat: boolFlag(n, 'c:showCatName'),
+  })
+  const val = ser ? (findChild(ser, 'c:val') ?? findChild(ser, 'c:yVal')) : undefined
+  const points = val ? cacheNumbers(val).length : 0
+  const perPoint = findChildren(dLbls, 'c:dLbl').filter((d) => !boolFlag(d, 'c:delete'))
+  let source: XNode = dLbls
+  let flags = flagsOf(dLbls)
+  if (points > 0 && perPoint.length >= points) {
+    source = perPoint[0]
+    flags = perPoint.map(flagsOf).reduce((a, f) => ({
+      val: a.val || f.val,
+      pct: a.pct || f.pct,
+      cat: a.cat || f.cat,
+    }))
+  }
+  if (!flags.val && !flags.pct && !flags.cat) return undefined
+  const out: NonNullable<ChartDisplay['dataLabels']> = {}
+  if (flags.val) out.val = true
+  if (flags.pct) out.pct = true
+  if (flags.cat) out.cat = true
+  const text = textProps(findChild(source, 'c:txPr') ?? findChild(dLbls, 'c:txPr'), theme)
+  if (text.fontPt !== undefined) out.fontPt = text.fontPt
+  if (text.color) out.color = text.color
+  const numFmt = attrsOf(findChild(source, 'c:numFmt') ?? findChild(dLbls, 'c:numFmt') ?? {})[
+    'formatCode'
+  ]
+  if (numFmt) out.numFmt = numFmt
+  return out
+}
+
+/**
+ * Bottom/left axes by c:axPos (horizontal bars put the category axis on the
+ * left, scatter has two value axes). Office's automatic axis line is tx1 at
+ * 75% tint; a:noFill hides it.
+ */
+function axesOf(
+  plotArea: XNode,
+  theme?: ThemeColors | null,
+): Pick<ChartDisplay, 'xAxis' | 'yAxis'> {
+  const out: Pick<ChartDisplay, 'xAxis' | 'yAxis'> = {}
+  const autoLine = autoLineHex(theme)
+  for (const ax of childrenOf(plotArea)) {
+    const name = nameOf(ax)
+    if (name !== 'c:catAx' && name !== 'c:valAx' && name !== 'c:dateAx' && name !== 'c:serAx')
+      continue
+    const pos = attrsOf(findChild(ax, 'c:axPos') ?? {})['val']
+    const slot =
+      pos === 'b' || pos === 't' ? 'xAxis' : pos === 'l' || pos === 'r' ? 'yAxis' : undefined
+    if (!slot || out[slot]) continue
+    const axis: ChartAxis = {}
+    const title = findChild(ax, 'c:title')
+    if (title) axis.title = richText(title) || 'Axis Title'
+    const line = lineHex(findChild(ax, 'c:spPr'), theme, autoLine)
+    if (line) axis.line = line
+    if (boolFlag(ax, 'c:delete')) axis.deleted = true
+    const text = textProps(findChild(ax, 'c:txPr'), theme)
+    if (text.fontPt !== undefined) axis.fontPt = text.fontPt
+    if (text.color) axis.color = text.color
+    const gridlines = findChild(ax, 'c:majorGridlines')
+    if (gridlines) {
+      const grid = lineHex(findChild(gridlines, 'c:spPr'), theme, autoGridHex(theme))
+      if (grid) axis.gridLine = grid
+    }
+    out[slot] = axis
+  }
+  return out
+}
+
+/** Office's automatic major gridline: tx1 at 15% tint */
+function autoGridHex(theme?: ThemeColors | null): string {
+  return tintHex(theme?.dk1 && /^[0-9A-Fa-f]{6}$/.test(theme.dk1) ? theme.dk1 : '000000', 0.15)
+}
+
+/** Office's automatic axis / data-table line: tx1 at 75% tint */
+function autoLineHex(theme?: ThemeColors | null): string {
+  return tintHex(theme?.dk1 && /^[0-9A-Fa-f]{6}$/.test(theme.dk1) ? theme.dk1 : '000000', 0.75)
+}
+
+/** a:t / cached c:v texts under a title-like element, concatenated */
+function richText(node: XNode): string {
+  const texts: string[] = []
+  const walk = (n: XNode, tag: string) => {
+    for (const child of childrenOf(n)) {
+      if (nameOf(child) === tag) texts.push(textOf(child))
+      else walk(child, tag)
+    }
+  }
+  walk(node, 'a:t')
+  if (texts.length === 0) walk(node, 'c:v')
+  return texts.join('')
+}
+
+/** a:ln color of an spPr: a:noFill → undefined, solid → resolved, absent → the Office automatic color */
+function lineHex(
+  spPr: XNode | undefined,
+  theme: ThemeColors | null | undefined,
+  auto: string,
+): string | undefined {
+  const ln = spPr ? findChild(spPr, 'a:ln') : undefined
+  if (!ln) return auto
+  if (findChild(ln, 'a:noFill')) return undefined
+  return solidFillHex(ln, theme) ?? auto
+}
+
+const LEGEND_POSITIONS = new Set(['b', 'l', 'r', 't', 'tr'])
+
+/** c:legend position; the schema default when c:legendPos is absent is "r" */
+function legendPosOf(chart: XNode): ChartDisplay['legendPos'] {
+  const legend = findChild(chart, 'c:legend')
+  if (!legend) return undefined
+  const val = attrsOf(findChild(legend, 'c:legendPos') ?? {})['val']
+  return (val !== undefined && LEGEND_POSITIONS.has(val) ? val : 'r') as ChartDisplay['legendPos']
+}
+
+/** numeric cache of a c:val / c:yVal / c:xVal / c:bubbleSize container */
+function cacheNumbers(container: XNode, maxPoints = MAX_CHART_CACHE_POINTS): (number | null)[] {
+  return cachePoints(container, maxPoints).map((v) => {
+    if (v === null || v.trim() === '') return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  })
+}
+
+/** the series a:ln is an explicit a:noFill (scatter series drawn markers-only) */
+function seriesLineHidden(ser: XNode): boolean {
+  const ln = findChild(findChild(ser, 'c:spPr') ?? {}, 'a:ln')
+  return ln !== undefined && findChild(ln, 'a:noFill') !== undefined
+}
+
+/** c:dPt explicit fills, sparse by point index (pie slices, highlighted bars) */
+function dataPointColors(
+  ser: XNode,
+  theme?: ThemeColors | null,
+  maxPoints = MAX_CHART_CACHE_POINTS,
+): (string | null)[] | null {
+  const out: (string | null)[] = []
+  let any = false
+  for (const dPt of findChildren(ser, 'c:dPt')) {
+    const idx = parseInt(attrsOf(findChild(dPt, 'c:idx') ?? {})['val'] ?? '', 10)
+    if (!Number.isFinite(idx) || idx < 0 || idx >= maxPoints) continue
+    const color = solidFillHex(findChild(dPt, 'c:spPr'), theme)
+    if (!color) continue
+    out[idx] = color
+    any = true
+  }
+  if (!any) return null
+  for (let i = 0; i < out.length; i++) out[i] ??= null
+  return out
+}
+
+// ---- chart style + color resolution ----
+
+/** scheme slots charts reference in fills, resolved against the doc theme */
+const SCHEME_SLOTS: Record<string, keyof ThemeColors> = {
+  accent1: 'accent1',
+  accent2: 'accent2',
+  accent3: 'accent3',
+  accent4: 'accent4',
+  accent5: 'accent5',
+  accent6: 'accent6',
+  dk1: 'dk1',
+  lt1: 'lt1',
+  dk2: 'dk2',
+  lt2: 'lt2',
+  tx1: 'dk1',
+  bg1: 'lt1',
+  tx2: 'dk2',
+  bg2: 'lt2',
+}
+
+/** resolve an spPr solid fill to hex (no '#'); schemeClr goes through the theme */
+function solidFillHex(spPr: XNode | undefined, theme?: ThemeColors | null): string | undefined {
+  if (!spPr) return undefined
+  const fill = findChild(spPr, 'a:solidFill')
+  if (!fill) return undefined
+  for (const clr of childrenOf(fill)) {
+    const name = nameOf(clr)
+    let base: string | undefined
+    if (name === 'a:srgbClr') base = attrsOf(clr)['val']
+    else if (name === 'a:sysClr') base = attrsOf(clr)['lastClr']
+    else if (name === 'a:schemeClr') {
+      const slot = SCHEME_SLOTS[attrsOf(clr)['val'] ?? '']
+      base = slot ? theme?.[slot] : undefined
+    }
+    const baseTrimmed = (base ?? '').trim()
+    if (!baseTrimmed || !/^[0-9A-Fa-f]{6}$/.test(baseTrimmed)) continue
+    return applyColorMods(baseTrimmed.toUpperCase(), clr)
+  }
+  return undefined
+}
+
+/** apply the transforms charts use (lumMod/lumOff/shade/tint) to a hex color */
+function applyColorMods(hex: string, clr: XNode): string {
+  let lumMod: number | undefined
+  let lumOff: number | undefined
+  let shadeV: number | undefined
+  let tintV: number | undefined
+  for (const child of childrenOf(clr)) {
+    const v = parseInt(attrsOf(child)['val'] ?? '', 10)
+    if (!Number.isFinite(v)) continue
+    const name = nameOf(child)
+    if (name === 'a:lumMod') lumMod = v / 100000
+    else if (name === 'a:lumOff') lumOff = v / 100000
+    else if (name === 'a:shade') shadeV = v / 100000
+    else if (name === 'a:tint') tintV = v / 100000
+  }
+  let out = hex
+  if (shadeV !== undefined) out = shadeHex(out, shadeV)
+  if (tintV !== undefined) out = tintHex(out, tintV)
+  if (lumMod !== undefined || lumOff !== undefined) out = lumHex(out, lumMod ?? 1, lumOff ?? 0)
+  return out
+}
+
+const hexRgb = (hex: string): [number, number, number] => [
+  parseInt(hex.slice(0, 2), 16),
+  parseInt(hex.slice(2, 4), 16),
+  parseInt(hex.slice(4, 6), 16),
+]
+
+const rgbHex = (r: number, g: number, b: number): string =>
+  [r, g, b]
+    .map((c) =>
+      Math.max(0, Math.min(255, Math.round(c)))
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')
+    .toUpperCase()
+
+/** a:shade — scale toward black */
+export function shadeHex(hex: string, factor: number): string {
+  const [r, g, b] = hexRgb(hex)
+  return rgbHex(r * factor, g * factor, b * factor)
+}
+
+/** a:tint — scale toward white */
+export function tintHex(hex: string, factor: number): string {
+  const [r, g, b] = hexRgb(hex)
+  const t = (c: number) => c * factor + 255 * (1 - factor)
+  return rgbHex(t(r), t(g), t(b))
+}
+
+/** a:lumMod/a:lumOff — HSL luminance L' = L*mod + off */
+export function lumHex(hex: string, mod: number, off: number): string {
+  const [r, g, b] = hexRgb(hex).map((c) => c / 255)
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  let h = 0
+  const l0 = (max + min) / 2
+  const d = max - min
+  let s = 0
+  if (d !== 0) {
+    s = d / (1 - Math.abs(2 * l0 - 1))
+    if (max === r) h = ((g - b) / d) % 6
+    else if (max === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  const l = Math.max(0, Math.min(1, l0 * mod + off))
+  const c = (1 - Math.abs(2 * l - 1)) * s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = l - c / 2
+  const seg =
+    h < 60
+      ? [c, x, 0]
+      : h < 120
+        ? [x, c, 0]
+        : h < 180
+          ? [0, c, x]
+          : h < 240
+            ? [0, x, c]
+            : h < 300
+              ? [x, 0, c]
+              : [c, 0, x]
+  return rgbHex((seg[0] + m) * 255, (seg[1] + m) * 255, (seg[2] + m) * 255)
+}
+
+/**
+ * c:style 1-48 (Word 2010 wraps it: mc:Choice c14:style 101-148 with a
+ * c:style fallback). The gallery column decides the series colors: 1 =
+ * grayscale, 2 = accent cycle, 3-8 = single accent.
+ */
+function chartStyleVal(space: XNode): number | undefined {
+  let node = findChild(space, 'c:style')
+  if (!node) {
+    const alt = findChild(space, 'mc:AlternateContent')
+    const choice = alt ? findChild(alt, 'mc:Choice') : undefined
+    const fallback = alt ? findChild(alt, 'mc:Fallback') : undefined
+    node =
+      (choice ? childrenOf(choice).find((c) => (nameOf(c) ?? '').endsWith(':style')) : undefined) ??
+      (fallback ? findChild(fallback, 'c:style') : undefined)
+  }
+  let v = parseInt(attrsOf(node ?? {})['val'] ?? '', 10)
+  if (v > 100) v -= 100
+  return Number.isFinite(v) && v >= 1 && v <= 48 ? v : undefined
+}
+
+/** Word's grayscale chart-style series colors (style column 1), approximated */
+const GRAYSCALE_PALETTE = ['595959', 'D9D9D9', 'A6A6A6', '404040', 'BFBFBF', '8C8C8C']
+
+/** series color cycle for a chart style column, from the doc theme accents */
+function chartPalette(
+  styleVal: number | undefined,
+  theme?: ThemeColors | null,
+): string[] | undefined {
+  const pos = styleVal === undefined ? 2 : ((styleVal - 1) % 8) + 1
+  if (pos === 1) return GRAYSCALE_PALETTE
+  const accents = [
+    theme?.accent1,
+    theme?.accent2,
+    theme?.accent3,
+    theme?.accent4,
+    theme?.accent5,
+    theme?.accent6,
+  ]
+  if (accents.some((a) => !a || !/^[0-9A-Fa-f]{6}$/.test(a))) return undefined
+  const list = accents.map((a) => a!.toUpperCase())
+  if (pos === 2) return list
+  const base = list[pos - 3]
+  // monochromatic column: one hue, tint/shade ladder between series
+  return [
+    base,
+    tintHex(base, 0.6),
+    shadeHex(base, 0.75),
+    tintHex(base, 0.3),
+    shadeHex(base, 0.5),
+    tintHex(base, 0.8),
+  ]
+}
+
+/** cx layoutId → closest classic display kind (degrade: shapes differ, data/labels/title survive) */
+/** cx layoutId → the shape the chart is drawn as; a clusteredColumn is a histogram unless a
+ *  paretoLine series makes the chart a Pareto */
+const CHARTEX_LAYOUTS: Record<string, ChartexLayout> = {
+  clusteredColumn: 'histogram',
+  boxWhisker: 'boxWhisker',
+  waterfall: 'waterfall',
+  funnel: 'funnel',
+  paretoLine: 'pareto',
+  sunburst: 'sunburst',
+  treemap: 'treemap',
+}
+
+const CHARTEX_KINDS: Record<string, ChartDisplay['kind']> = {
+  clusteredColumn: 'bar',
+  boxWhisker: 'bar',
+  waterfall: 'bar',
+  funnel: 'bar',
+  paretoLine: 'bar',
+  sunburst: 'pie',
+  treemap: 'pie',
+}
+
+/**
+ * Chartex (cx: 2014 chart extension: sunburst/treemap/boxWhisker/waterfall…)
+ * degrade: read cx:chartData dimensions + series names + title into the
+ * classic ChartDisplay model so the existing chart pipeline renders the data
+ * with the nearest classic shape (title and cached texts/numbers survive).
+ */
+function parseChartexPartXml(parsed: XNode[], partPath: string): ChartDisplay | null {
+  const space = parsed.find((n) => nameOf(n) === 'cx:chartSpace')
+  if (!space) return null
+  // lenient lookup: consumers must skip unknown elements, and test corpora
+  // rename cx:chartData to prove it — accept any child that carries cx:data
+  const chartData =
+    findChild(space, 'cx:chartData') ??
+    childrenOf(space).find((c) => findChild(c, 'cx:data') !== undefined)
+  // data id → {cats, vals}: strDim/numDim carry cx:lvl point caches (the first
+  // strDim level holds the leaf labels of hierarchical charts)
+  const dataById = new Map<string, { cats: string[]; vals: (number | null)[] }>()
+  for (const data of chartData ? findChildren(chartData, 'cx:data') : []) {
+    const id = attrsOf(data)['id'] ?? ''
+    const entry: { cats: string[]; vals: (number | null)[] } = { cats: [], vals: [] }
+    const ptsOf = (dim: XNode): (string | null)[] => {
+      const lvl = findChild(dim, 'cx:lvl')
+      if (!lvl) return []
+      const out: (string | null)[] = []
+      for (const pt of findChildren(lvl, 'cx:pt')) {
+        const idx = parseInt(attrsOf(pt)['idx'] ?? '', 10)
+        if (Number.isFinite(idx) && idx >= 0 && idx < MAX_CHART_CACHE_POINTS) out[idx] = textOf(pt)
+      }
+      return out
+    }
+    for (const dim of childrenOf(data)) {
+      const dimName = nameOf(dim)
+      if (dimName === 'cx:strDim') {
+        entry.cats = ptsOf(dim).map((v) => v ?? '')
+      } else if (dimName === 'cx:numDim') {
+        entry.vals = ptsOf(dim).map((v) => {
+          if (v === null || v.trim() === '') return null
+          const n = Number(v)
+          return Number.isFinite(n) ? n : null
+        })
+      }
+    }
+    dataById.set(id, entry)
+  }
+  const chart = findChild(space, 'cx:chart')
+  const plotRegion = chart
+    ? findChild(findChild(chart, 'cx:plotArea') ?? {}, 'cx:plotAreaRegion')
+    : undefined
+  let kind: ChartDisplay['kind'] = 'other'
+  let shape: ChartexLayout | undefined
+  let categories: string[] = []
+  const series: ChartSeries[] = []
+  for (const ser of plotRegion ? findChildren(plotRegion, 'cx:series') : []) {
+    const layout = attrsOf(ser)['layoutId'] ?? ''
+    if (kind === 'other' && CHARTEX_KINDS[layout]) kind = CHARTEX_KINDS[layout]
+    if (layout === 'paretoLine') {
+      // the line is drawn from the columns it accumulates: it is not a series of its own
+      shape = 'pareto'
+      continue
+    }
+    shape ??= CHARTEX_LAYOUTS[layout]
+    const dataId = attrsOf(findChild(ser, 'cx:dataId') ?? {})['val'] ?? ''
+    const data = dataById.get(dataId)
+    if (!data || data.vals.length === 0) continue
+    if (categories.length === 0) categories = data.cats
+    const name = textOf(
+      findChild(findChild(findChild(ser, 'cx:tx') ?? {}, 'cx:txData') ?? {}, 'cx:v') ?? {},
+    )
+    series.push({ ...(name ? { name } : {}), values: data.vals })
+  }
+  if (series.length === 0) return null
+  // cx:title holds a full a:t rich body like classic charts
+  const title = chart ? chartexTitle(chart) : undefined
+  return {
+    partPath,
+    kind,
+    ...(shape ? { layout: shape } : {}),
+    ...(title !== undefined ? { title } : {}),
+    categories,
+    series,
+  }
+}
+
+function chartexTitle(chart: XNode): string | undefined {
+  const title = findChild(chart, 'cx:title')
+  if (!title) return undefined
+  const texts: string[] = []
+  const walk = (node: XNode) => {
+    for (const child of childrenOf(node)) {
+      if (nameOf(child) === 'a:t') texts.push(textOf(child))
+      else walk(child)
+    }
+  }
+  walk(title)
+  const joined = texts.join('')
+  return joined !== '' ? joined : undefined
+}
+
+/** c:formatCode of a category cache (numCache/numLit), if any */
+function catFormatCode(container: XNode): string | undefined {
+  const ref = findChild(container, 'c:numRef')
+  const cache = ref ? findChild(ref, 'c:numCache') : findChild(container, 'c:numLit')
+  const code = cache ? findChild(cache, 'c:formatCode') : undefined
+  return code ? textOf(code) : undefined
+}
+
+/**
+ * Excel date serial → "m/d/yyyy" display (Word/LO render category dates, not serials).
+ * Excel's epoch counts a 29-Feb-1900 that never existed, so serials below 61 need a
+ * later day zero; serial 60 is that phantom day and has no date to show.
+ */
+function serialDateText(v: string | null): string | null {
+  const n = Number(v)
+  if (!Number.isFinite(n) || n <= 0 || n > 80000) return null
+  const base = n < 61 ? Date.UTC(1899, 11, 31) : Date.UTC(1899, 11, 30)
+  const d = new Date(base + Math.round(n) * 86400000)
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}`
+}
+
+/** cached point texts of a c:cat / c:val / c:tx container, in idx order */
+function cachePoints(container: XNode, maxPoints = MAX_CHART_CACHE_POINTS): (string | null)[] {
+  const ref = findChild(container, 'c:strRef') ?? findChild(container, 'c:numRef')
+  const cache = ref
+    ? (findChild(ref, 'c:strCache') ?? findChild(ref, 'c:numCache'))
+    : (findChild(container, 'c:strLit') ?? findChild(container, 'c:numLit'))
+  if (!cache) return []
+  const count = parseInt(attrsOf(findChild(cache, 'c:ptCount') ?? {})['val'] ?? '', 10)
+  const points: (string | null)[] = []
+  for (const pt of findChildren(cache, 'c:pt')) {
+    const idx = parseInt(attrsOf(pt)['idx'] ?? '', 10)
+    if (!Number.isFinite(idx) || idx < 0 || idx >= maxPoints) continue
+    points[idx] = textOf(findChild(pt, 'c:v') ?? {})
+  }
+  const requestedLength = Number.isFinite(count) ? Math.max(count, points.length) : points.length
+  const length = Math.min(Math.max(requestedLength, 0), maxPoints)
+  const out: (string | null)[] = []
+  for (let i = 0; i < length; i++) out.push(points[i] ?? null)
+  return out
+}
+
+function seriesName(ser: XNode): string | undefined {
+  const tx = findChild(ser, 'c:tx')
+  if (!tx) return undefined
+  const literal = findChild(tx, 'c:v')
+  if (literal) return textOf(literal)
+  const cached = cachePoints(tx)
+  return cached[0] ?? undefined
+}
+
+function chartTitle(chart: XNode): string | undefined {
+  const title = findChild(chart, 'c:title')
+  if (!title) return undefined
+  // strRef titles carry the cached text in c:strCache c:v, not a:t
+  const joined = richText(title)
+  if (joined) return joined
+  // text-less c:title = auto title; Word renders the "Chart Title" placeholder
+  // unless the auto title was explicitly deleted (CT_Boolean: a val-less
+  // element and val="true" both mean true)
+  const del = findChild(chart, 'c:autoTitleDeleted')
+  const delVal = del ? attrsOf(del)['val'] : undefined
+  const deleted = del !== undefined && (delVal === undefined || delVal === '1' || delVal === 'true')
+  return deleted ? undefined : 'Chart Title'
+}
+
+function strCacheXml(values: string[], f: string): string {
+  return (
+    `<c:strRef><c:f>${escapeXmlText(f)}</c:f><c:strCache><c:ptCount val="${values.length}"/>` +
+    values.map((v, i) => `<c:pt idx="${i}"><c:v>${escapeXmlText(v)}</c:v></c:pt>`).join('') +
+    '</c:strCache></c:strRef>'
+  )
+}
+
+function numCacheXml(values: (number | null)[], f: string): string {
+  return (
+    `<c:numRef><c:f>${escapeXmlText(f)}</c:f><c:numCache><c:formatCode>General</c:formatCode>` +
+    `<c:ptCount val="${values.length}"/>` +
+    values.map((v, i) => (v === null ? '' : `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`)).join('') +
+    '</c:numCache></c:numRef>'
+  )
+}
+
+/** the x of each scatter point: the category as a number, else its 1-based position */
+export const scatterXValues = (categories: string[]): number[] =>
+  categories.map((c, i) => {
+    const n = Number(c.trim().replace(/,/g, ''))
+    return c.trim() !== '' && Number.isFinite(n) ? n : i + 1
+  })
+
+/**
+ * Build a complete chart part (word/charts/chartN.xml) from data. The chart
+ * references an embedded workbook via c:externalData so Word's "Edit Data" works.
+ * Pass `externalDataRId` to wire the c:externalData relationship; omit it when
+ * the workbook will be added in a separate step.
+ */
+export function buildChartPartXml(chart: NewChart, externalDataRId?: string): string {
+  const rows = chart.categories.length
+  const sers = chart.series
+    .map((ser, i) => {
+      const col = colLetter(i)
+      return (
+        `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>` +
+        `<c:tx>${strCacheXml([ser.name], `Sheet1!$${col}$1`)}</c:tx>` +
+        `<c:cat>${strCacheXml(chart.categories, `Sheet1!$A$2:$A$${rows + 1}`)}</c:cat>` +
+        `<c:val>${numCacheXml(ser.values.slice(0, rows), `Sheet1!$${col}$2:$${col}$${rows + 1}`)}</c:val>` +
+        '</c:ser>'
+      )
+    })
+    .join('')
+
+  let plot: string
+  if (chart.kind === 'scatter') {
+    // each series pairs the shared x column with its own y column; the points stand alone
+    // (Word's plain Scatter: the connecting line is switched off on every series)
+    const xs = scatterXValues(chart.categories)
+    const lastRow = rows + 1
+    const points = chart.series
+      .map((ser, i) => {
+        const col = colLetter(i)
+        return (
+          `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>` +
+          `<c:tx>${strCacheXml([ser.name], `Sheet1!$${col}$1`)}</c:tx>` +
+          '<c:spPr><a:ln w="19050"><a:noFill/></a:ln></c:spPr>' +
+          `<c:xVal>${numCacheXml(xs, `Sheet1!$A$2:$A$${lastRow}`)}</c:xVal>` +
+          `<c:yVal>${numCacheXml(ser.values.slice(0, rows), `Sheet1!$${col}$2:$${col}$${lastRow}`)}</c:yVal>` +
+          '</c:ser>'
+        )
+      })
+      .join('')
+    const valAx = (id: string, pos: string, cross: string) =>
+      `<c:valAx><c:axId val="${id}"/><c:scaling><c:orientation val="minMax"/></c:scaling>` +
+      `<c:delete val="0"/><c:axPos val="${pos}"/><c:crossAx val="${cross}"/></c:valAx>`
+    plot =
+      `<c:scatterChart><c:scatterStyle val="lineMarker"/><c:varyColors val="0"/>${points}` +
+      '<c:axId val="111111111"/><c:axId val="222222222"/></c:scatterChart>' +
+      valAx('111111111', 'b', '222222222') +
+      valAx('222222222', 'l', '111111111')
+  } else if (chart.kind === 'stock') {
+    // Word's High-Low-Close: no line along a series, a line from the highest to the lowest
+    // value of each category, and a mark on the last series (the close); with four series
+    // the first is the open, and is marked too
+    const last = chart.series.length - 1
+    const marked = (i: number) => i === last || (chart.series.length >= 4 && i === 0)
+    const points = chart.series
+      .map((ser, i) => {
+        const col = colLetter(i)
+        return (
+          `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>` +
+          `<c:tx>${strCacheXml([ser.name], `Sheet1!$${col}$1`)}</c:tx>` +
+          '<c:spPr><a:ln w="19050"><a:noFill/></a:ln></c:spPr>' +
+          `<c:marker><c:symbol val="${marked(i) ? 'dash' : 'none'}"/>` +
+          `${marked(i) ? '<c:size val="5"/>' : ''}</c:marker>` +
+          `<c:cat>${strCacheXml(chart.categories, `Sheet1!$A$2:$A$${rows + 1}`)}</c:cat>` +
+          `<c:val>${numCacheXml(ser.values.slice(0, rows), `Sheet1!$${col}$2:$${col}$${rows + 1}`)}</c:val>` +
+          '<c:smooth val="0"/></c:ser>'
+        )
+      })
+      .join('')
+    plot =
+      `<c:stockChart>${points}<c:hiLowLines/>` +
+      '<c:axId val="111111111"/><c:axId val="222222222"/></c:stockChart>' +
+      '<c:catAx><c:axId val="111111111"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      '<c:delete val="0"/><c:axPos val="b"/><c:crossAx val="222222222"/></c:catAx>' +
+      '<c:valAx><c:axId val="222222222"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      '<c:delete val="0"/><c:axPos val="l"/><c:crossAx val="111111111"/></c:valAx>'
+  } else if (chart.kind === 'surface') {
+    // Word's Contour: the surface seen from straight above (see the c:view3D below)
+    const ax = (tag: string, id: string, pos: string, cross: string) =>
+      `<c:${tag}><c:axId val="${id}"/><c:scaling><c:orientation val="minMax"/></c:scaling>` +
+      `<c:delete val="0"/><c:axPos val="${pos}"/><c:crossAx val="${cross}"/></c:${tag}>`
+    plot =
+      `<c:surfaceChart><c:wireframe val="0"/>${sers}<c:bandFmts/>` +
+      '<c:axId val="111111111"/><c:axId val="222222222"/><c:axId val="333333333"/>' +
+      '</c:surfaceChart>' +
+      ax('catAx', '111111111', 'b', '222222222') +
+      ax('valAx', '222222222', 'l', '111111111') +
+      ax('serAx', '333333333', 'b', '222222222')
+  } else if (chart.kind === 'pie') {
+    plot = `<c:pieChart><c:varyColors val="1"/>${sers}<c:firstSliceAng val="0"/></c:pieChart>`
+  } else {
+    // horizontal bars put the categories up the side and the values along the bottom
+    const sideways = chart.kind === 'bar' && chart.horizontal === true
+    const axes =
+      '<c:catAx><c:axId val="111111111"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      `<c:delete val="0"/><c:axPos val="${sideways ? 'l' : 'b'}"/><c:crossAx val="222222222"/></c:catAx>` +
+      '<c:valAx><c:axId val="222222222"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      `<c:delete val="0"/><c:axPos val="${sideways ? 'b' : 'l'}"/><c:crossAx val="111111111"/></c:valAx>`
+    const axIds = '<c:axId val="111111111"/><c:axId val="222222222"/>'
+    const inner: Record<
+      Exclude<NewChart['kind'], 'pie' | 'scatter' | 'stock' | 'surface'>,
+      string
+    > = {
+      bar:
+        `<c:barChart><c:barDir val="${sideways ? 'bar' : 'col'}"/><c:grouping val="clustered"/>` +
+        `<c:varyColors val="0"/>${sers}${axIds}</c:barChart>`,
+      line:
+        `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${sers}` +
+        `<c:marker val="1"/>${axIds}</c:lineChart>`,
+      area: `<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>${sers}${axIds}</c:areaChart>`,
+      radar: `<c:radarChart><c:radarStyle val="marker"/><c:varyColors val="0"/>${sers}${axIds}</c:radarChart>`,
+    }
+    plot = inner[chart.kind] + axes
+  }
+
+  const title = chart.title
+    ? '<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r>' +
+      `<a:t>${escapeXmlText(chart.title)}</a:t></a:r></a:p></c:rich></c:tx>` +
+      '<c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>'
+    : ''
+  const view3D =
+    chart.kind === 'surface'
+      ? '<c:view3D><c:rotX val="90"/><c:rotY val="0"/><c:rAngAx val="0"/>' +
+        '<c:perspective val="0"/></c:view3D>'
+      : ''
+
+  return (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" ' +
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    `<c:chart>${title}${view3D}<c:plotArea><c:layout/>${plot}</c:plotArea>` +
+    '<c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend>' +
+    '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart>' +
+    (externalDataRId
+      ? `<c:externalData r:id="${externalDataRId}"><c:autoUpdate val="0"/></c:externalData>`
+      : '') +
+    '</c:chartSpace>'
+  )
+}
+
+export interface ChartSeriesPatch {
+  name?: string
+  /** aligned with ChartSeries.values; null = keep the original value */
+  values?: (number | null)[]
+}
+
+export interface ChartPatch {
+  title?: string
+  /** aligned with ChartDisplay.categories; null = keep */
+  categories?: (string | null)[]
+  /** aligned with ChartDisplay.series; null = keep that series untouched */
+  series?: (ChartSeriesPatch | null)[]
+}
+
+/**
+ * Patch cached texts/numbers of a chart part while keeping the structure —
+ * data references (c:f), styling, layout — byte-identical. Anything the
+ * patch cannot anchor (missing title, missing cache point) is left as-is.
+ * The embedded workbook is intentionally not touched: Word renders from
+ * these caches, but "Edit Data" will show the original sheet numbers.
+ */
+export function patchChartPartXml(xml: string, patch: ChartPatch): string {
+  // a text-less title (auto title / strRef with no rich body) has no a:t to
+  // rewrite: give it one first, then patch it like any other title
+  if (patch.title !== undefined) {
+    const t = tagRange(xml, 'c:title')
+    if (
+      t &&
+      innerTextRanges(xml, 'a:t', t.start, t.end).length === 0 &&
+      innerTextRanges(xml, 'c:v', t.start, t.end).length === 0
+    ) {
+      const runXml = `<a:r><a:t>${escapeXmlText(patch.title)}</a:t></a:r>`
+      const tx = tagRange(xml, 'c:tx', t.start, t.end)
+      const p = tx ? tagRange(xml, 'a:p', tx.start, tx.end) : null
+      if (p) {
+        // Word auto titles carry an empty c:tx/c:rich paragraph (only
+        // a:endParaRPr); CT_Title allows one c:tx, so inject the run there,
+        // before a:endParaRPr per schema order
+        const endPr = xml.indexOf('<a:endParaRPr', p.start)
+        const at = endPr !== -1 && endPr < p.end ? endPr : p.end - '</a:p>'.length
+        xml = xml.slice(0, at) + runXml + xml.slice(at)
+      } else {
+        const rich = `<c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p>${runXml}</a:p></c:rich></c:tx>`
+        if (tx) {
+          // cache-less strRef tx (no a:p, no c:v): nothing to inject into —
+          // replace the whole c:tx with a rich body (CT_Tx is a choice)
+          xml = xml.slice(0, tx.start) + rich + xml.slice(tx.end)
+        } else {
+          const openEnd = xml.indexOf('>', t.start) + 1
+          xml = xml.slice(0, openEnd) + rich + xml.slice(openEnd)
+        }
+      }
+    }
+  }
+
+  const edits: Array<{ start: number; end: number; text: string }> = []
+
+  if (patch.title !== undefined) {
+    const title = tagRange(xml, 'c:title')
+    if (title) {
+      let texts = innerTextRanges(xml, 'a:t', title.start, title.end)
+      // strRef titles keep the text in the c:strCache c:v cache instead
+      if (texts.length === 0) texts = innerTextRanges(xml, 'c:v', title.start, title.end)
+      // whole title into the first run, remaining runs blanked
+      texts.forEach((range, i) => {
+        edits.push({ ...range, text: i === 0 ? patch.title! : '' })
+      })
+    }
+  }
+
+  const serRanges = tagRanges(xml, 'c:ser')
+  serRanges.forEach((ser, i) => {
+    const serPatch = patch.series?.[i]
+    if (serPatch?.name !== undefined) {
+      const tx = tagRange(xml, 'c:tx', ser.start, ser.end)
+      if (tx) {
+        const texts = innerTextRanges(xml, 'c:v', tx.start, tx.end)
+        if (texts.length > 0) edits.push({ ...texts[0], text: serPatch.name })
+      }
+    }
+    if (serPatch?.values) {
+      const val = tagRange(xml, 'c:val', ser.start, ser.end)
+      if (val)
+        pushPointEdits(
+          xml,
+          val,
+          serPatch.values.map((v) => (v === null ? null : String(v))),
+          edits,
+        )
+    }
+    // categories are cached per series; every copy must agree
+    if (patch.categories) {
+      const cat = tagRange(xml, 'c:cat', ser.start, ser.end)
+      if (cat) pushPointEdits(xml, cat, patch.categories, edits)
+    }
+  })
+
+  if (edits.length === 0) return xml
+  let out = xml
+  for (const edit of edits.sort((a, b) => b.start - a.start)) {
+    out = out.slice(0, edit.start) + escapeXmlText(edit.text) + out.slice(edit.end)
+  }
+  return out
+}
+
+/** queue edits for the c:v of each indexed cache point present in [range] */
+function pushPointEdits(
+  xml: string,
+  range: { start: number; end: number },
+  texts: (string | null)[],
+  edits: Array<{ start: number; end: number; text: string }>,
+): void {
+  const re = /<c:pt idx="(\d+)"[^>]*>([\s\S]*?)<\/c:pt>/g
+  re.lastIndex = range.start
+  let m: RegExpExecArray | null
+  while ((m = re.exec(xml)) !== null && m.index < range.end) {
+    const idx = parseInt(m[1], 10)
+    const text = texts[idx]
+    if (text === null || text === undefined) continue
+    const inner = innerTextRanges(xml, 'c:v', m.index, m.index + m[0].length)
+    if (inner.length > 0) edits.push({ ...inner[0], text })
+  }
+}
+
+/** first depth-0 range of `tag` in [from, to); charts never nest these tags */
+function tagRange(
+  xml: string,
+  tag: string,
+  from = 0,
+  to = xml.length,
+): { start: number; end: number } | null {
+  const openPrefix = '<' + tag
+  let i = from
+  while (i < to) {
+    const o = xml.indexOf(openPrefix, i)
+    if (o === -1 || o >= to) return null
+    const after = xml.charAt(o + openPrefix.length)
+    if (after !== '>' && after !== ' ' && after !== '/') {
+      i = o + openPrefix.length // prefix of a longer tag (c:tx vs c:txPr)
+      continue
+    }
+    const close = xml.indexOf('</' + tag + '>', o)
+    if (close === -1 || close >= to) return null
+    return { start: o, end: close + tag.length + 3 }
+  }
+  return null
+}
+
+/** all depth-0 ranges of `tag` (used for c:ser, which never nests) */
+function tagRanges(xml: string, tag: string): Array<{ start: number; end: number }> {
+  const out: Array<{ start: number; end: number }> = []
+  let from = 0
+  let range: { start: number; end: number } | null
+  while ((range = tagRange(xml, tag, from)) !== null) {
+    out.push(range)
+    from = range.end
+  }
+  return out
+}
+
+/** inner-text ranges (between open and close tag) of every `tag` in [from, to) */
+function innerTextRanges(
+  xml: string,
+  tag: string,
+  from: number,
+  to: number,
+): Array<{ start: number; end: number }> {
+  const out: Array<{ start: number; end: number }> = []
+  const re = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, 'g')
+  re.lastIndex = from
+  let m: RegExpExecArray | null
+  while ((m = re.exec(xml)) !== null && m.index < to) {
+    const openEnd = m.index + m[0].indexOf('>') + 1
+    out.push({ start: openEnd, end: openEnd + m[1].length })
+  }
+  return out
+}
+
+// ---- embedded xlsx workbook ----
+
+/** The chart's embedded workbook (pptx-engine's chart-workbook.ts), base64-encoded. */
+export async function buildChartWorkbookXlsxBase64(
+  categories: string[],
+  series: Array<{ name: string; values: (number | null)[] }>,
+  /** a scatter chart's x of each point: column A holds these numbers instead of the category names */
+  xValues?: number[],
+): Promise<string> {
+  const zip = new JSZip()
+  const parts = chartWorkbookParts({ categories, series, ...(xValues ? { xValues } : {}) })
+  for (const [path, xml] of Object.entries(parts)) {
+    zip.file(path, xml)
+  }
+  return zipToBase64(zip)
+}
+
+async function zipToBase64(zip: JSZip): Promise<string> {
+  const bytes = await zip.generateAsync({
+    type: 'uint8array',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 },
+  })
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  return btoa(binary)
+}
+
+/**
+ * Patch the Sheet1 sheetData inside an embedded xlsx file (base64).
+ * Rewrites category column A and each series column with the provided values.
+ * Returns the updated base64, or null on failure.
+ */
+export async function patchChartWorkbookXlsxBase64(
+  base64: string,
+  categories: string[],
+  series: Array<{ name: string; values: (number | null)[] }>,
+): Promise<string | null> {
+  try {
+    const binaryStr = atob(base64)
+    const bytes = new Uint8Array(binaryStr.length)
+    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+
+    const zip = await JSZip.loadAsync(bytes)
+    const sheetFile = zip.file('xl/worksheets/sheet1.xml')
+    if (!sheetFile) return null
+
+    // Replace only Sheet1's sheetData in place, using inline strings so
+    // sharedStrings.xml (and every other part: styles, extra sheets, defined
+    // names) survives untouched.
+    const inlineStr = (ref: string, text: string) =>
+      `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${escapeXmlText(text)}</t></is></c>`
+    const headerCells = [inlineStr('A1', '')]
+    for (let j = 0; j < series.length; j++) {
+      headerCells.push(inlineStr(`${colLetter(j)}1`, series[j].name))
+    }
+    const dataRows: string[] = []
+    for (let i = 0; i < categories.length; i++) {
+      const rowNum = i + 2
+      const cells = [inlineStr(`A${rowNum}`, categories[i])]
+      for (let j = 0; j < series.length; j++) {
+        const val = series[j].values[i]
+        if (val !== null && val !== undefined) {
+          cells.push(`<c r="${colLetter(j)}${rowNum}"><v>${val}</v></c>`)
+        }
+      }
+      dataRows.push(`<row r="${rowNum}">${cells.join('')}</row>`)
+    }
+    const newSheetData = `<sheetData><row r="1">${headerCells.join('')}</row>${dataRows.join('')}</sheetData>`
+
+    const sheetXml = await sheetFile.async('string')
+    if (!/<sheetData\/>|<sheetData[\s>]/.test(sheetXml)) return null
+    let updatedSheet = sheetXml.replace(
+      /<sheetData\/>|<sheetData[^>]*>[\s\S]*?<\/sheetData>/,
+      newSheetData,
+    )
+    const lastRef = `${series.length > 0 ? colLetter(series.length - 1) : 'A'}${categories.length + 1}`
+    updatedSheet = updatedSheet.replace(/<dimension[^>]*\/>/, `<dimension ref="A1:${lastRef}"/>`)
+
+    zip.file('xl/worksheets/sheet1.xml', updatedSheet)
+    return await zipToBase64(zip)
+  } catch {
+    return null
+  }
+}

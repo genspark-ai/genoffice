@@ -1,0 +1,90 @@
+{
+  "id": "kr-marker-face-line",
+  "title": "A bullet drawn in Malgun Gothic lifts a Times New Roman 11pt list line to 16.56 (Malgun ascent 1.2886 em + the text descent), Batang / Gulim bullets to 13.44, a Times New Roman bullet leaves 12.72; Gulim text under a charset-81 fontTable entry paces 1.3029, not the missing-face Malgun route",
+  "section": "word-truths.md#L908",
+  "probe_date": "2026-11-02",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-11-02), pymupdf rawdict baselines, A4, Korean theme template (minor Latin Malgun Gothic, lang eastAsia ko-KR), List Paragraph Times New Roman + eastAsia Batang sz 24, runs sz 22: Malgun hint=eastAsia bullets 16.56 per item (wrapped lines inside the item 12.72), Batang and Gulim bullets 13.44, Times New Roman bullets 12.48-12.72; Normal (Web) Gulim style with Times New Roman runs 12.72, with Gulim runs 14.16-14.40; control Calibri 13.44",
+  "cases": [
+    {
+      "kind": "factor",
+      "font": "굴림",
+      "expect": 1.3029,
+      "tol": 0.004,
+      "note": "Gulim with a charset-81 fontTable entry is Word's own Gulim, 14.16-14.40 at 11pt"
+    },
+    {
+      "kind": "krRoute",
+      "font": "굴림",
+      "expect": null,
+      "note": "a face Word ships is not routed to Malgun by its charset"
+    },
+    {
+      "kind": "factor",
+      "font": "Times New Roman",
+      "expect": 1.15,
+      "tol": 0.001,
+      "note": "Times New Roman runs under the Gulim style keep their own 12.72 line"
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "맑은 고딕",
+      "markerPt": 11,
+      "textFont": "Times New Roman",
+      "textPt": 11,
+      "expect": 16.56,
+      "tol": 0.1,
+      "note": "Malgun Gothic bullet: 1.2886 x 11 + 0.2163 x 11"
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "바탕",
+      "markerPt": 11,
+      "textFont": "Times New Roman",
+      "textPt": 11,
+      "expect": 13.44,
+      "tol": 0.1,
+      "note": "Batang bullet: 1.0098 x 11 + 2.38"
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Gulim",
+      "markerPt": 11,
+      "textFont": "Times New Roman",
+      "textPt": 11,
+      "expect": 13.44,
+      "tol": 0.1
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Times New Roman",
+      "markerPt": 11,
+      "textFont": "Times New Roman",
+      "textPt": 11,
+      "expect": null,
+      "note": "a text-face bullet never lifts"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 3,
+      "expect": {
+        "classes": ["doc-li"],
+        "stylesStartWith": ["--li-marker-lh: calc(", "--li-marker-va: bottom"],
+        "notStyles": ["--li-marker-lh: 0"]
+      },
+      "note": "Malgun bullet item: lifted (Word 16.56)"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 8,
+      "expect": { "stylesStartWith": ["--li-marker-lh: calc(", "--li-marker-va: bottom"] },
+      "note": "Batang bullet item: lifted (Word 13.44)"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 13,
+      "expect": { "styles": ["--li-marker-lh: 0"] },
+      "note": "Times New Roman bullet item: the text line (Word 12.72)"
+    }
+  ]
+}

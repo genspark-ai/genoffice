@@ -1,0 +1,22 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-inherited-header-width/probe.docx",
+  "paragraphs": 3,
+  "hashes": ["a30572b1f3de0079", "67b083bb5ff60629", "c27e5d693af45afd"],
+  "cellParagraphs": 0,
+  "cellHashes": [],
+  "boxParagraphs": 0,
+  "boxHashes": [],
+  "hfParagraphs": 8,
+  "hfHashes": [
+    "6651bba01c71cf05",
+    "1766307fbb87617c",
+    "e2c22219c42c2d5c",
+    "909b40136bed8b2c",
+    "6651bba01c71cf05",
+    "1766307fbb87617c",
+    "e2c22219c42c2d5c",
+    "909b40136bed8b2c"
+  ],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

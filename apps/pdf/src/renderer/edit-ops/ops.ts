@@ -1,0 +1,920 @@
+/**
+ * Op definitions over the pending-edit buckets. Each op's apply reads only the
+ * buckets it declares in `touches` (see registry.ts). Cross-bucket rules the UI
+ * used to spell out at every call site live here once: deleting a page drops its
+ * pending markups/drawings, rotating a page keeps image stamps upright, deleting
+ * a saved note voids its pending content edit, removing a static-form-fill image
+ * edit turns into a delete of the underlying image.
+ */
+import type {
+  DrawingInput,
+  FormFieldInput,
+  FormWidgetEditInput,
+  FormValueInput,
+  ImageEditInput,
+  ImageLayer,
+  MarkupInput,
+  MetadataInput,
+  StaticFormFillRecord,
+  TextEditInput,
+  TextInsertInput,
+} from '../../shared/ipc'
+import type { LocalMarkup } from '../annotations'
+import type { LocalDrawing } from '../DrawLayer'
+import type { LocalImageEdit } from '../ImageEditLayer'
+import { imageRectKey } from '../ImageEditLayer'
+import type { LocalTextEdit, LocalTextInsert } from '../text-edit-preview'
+import type { SavedNoteAnnot } from '../note-threads'
+import type { LocalBlankPage, LocalFormField, SavedMarkupAnnot, StampConfig } from '../edit-state'
+import { GuidedError, register, type Op, type OpContext } from './registry'
+
+type Rect = [number, number, number, number]
+
+const str = (v: unknown, field: string): string => {
+  if (typeof v !== 'string' || v.length === 0)
+    throw new GuidedError(`"${field}" must be a non-empty string`)
+  return v
+}
+
+const obj = <T>(v: unknown, field: string): T => {
+  if (!v || typeof v !== 'object') throw new GuidedError(`"${field}" must be an object`)
+  return v as T
+}
+
+const pageIndex = (v: unknown, ctx: OpContext, field = 'pageIndex'): number => {
+  if (typeof v !== 'number' || !Number.isInteger(v))
+    throw new GuidedError(`"${field}" must be a 0-based original page index`)
+  if (v < 0 || v >= ctx.pageCount)
+    throw new GuidedError(
+      `${field} ${v} is out of range: the document has pages 0..${ctx.pageCount - 1}`,
+    )
+  if (ctx.deleted.has(v)) throw new GuidedError(`Page ${v} is deleted; undo the deletion first`)
+  return v
+}
+
+// NaN/Infinity from pointer math would reach the content stream; save-pdf.ts requires finiteness too.
+const rect = (v: unknown, field: string): Rect => {
+  if (
+    !Array.isArray(v) ||
+    v.length !== 4 ||
+    v.some((n) => typeof n !== 'number' || !Number.isFinite(n))
+  )
+    throw new GuidedError(`"${field}" must be [x1,y1,x2,y2] in PDF user space`)
+  return v as Rect
+}
+
+// The PDF spec caps user-space coordinates at 14400 units per axis; anything beyond
+// cannot land on a page and would poison the writer's bbox math.
+const MAX_COORD = 14400
+
+const point = (v: unknown, field: string): [number, number] => {
+  if (
+    !Array.isArray(v) ||
+    v.length !== 2 ||
+    v.some((n) => typeof n !== 'number' || !Number.isFinite(n))
+  )
+    throw new GuidedError(`"${field}" must be [x, y] in PDF user space`)
+  if ((v as number[]).some((n) => Math.abs(n) > MAX_COORD))
+    throw new GuidedError(`"${field}" must be within the PDF coordinate range (±${MAX_COORD})`)
+  return v as [number, number]
+}
+
+const id = (op: Op): string => str(op.id, 'id')
+
+// ── annotate ──────────────────────────────────────────────────────────
+
+register({
+  name: 'addMarkup',
+  touches: ['markups'],
+  additive: true,
+  validate(op, ctx) {
+    const m = obj<MarkupInput>(op.markup, 'markup')
+    pageIndex(m.pageIndex, ctx, 'markup.pageIndex')
+    if (!['highlight', 'underline', 'strikeout', 'squiggly'].includes(m.type))
+      throw new GuidedError('markup.type must be highlight | underline | strikeout | squiggly')
+    if (!Array.isArray(m.quads) || m.quads.length === 0)
+      throw new GuidedError('markup.quads must hold at least one 8-number quad')
+  },
+  apply(op, s) {
+    const m = op.markup as MarkupInput
+    const added: LocalMarkup = { id: id(op), ...m }
+    return { markups: [...s.markups, added] }
+  },
+})
+
+register({
+  name: 'removeMarkup',
+  touches: ['markups'],
+  validate(op) {
+    id(op)
+  },
+  apply(op, s) {
+    return { markups: s.markups.filter((m) => m.id !== op.id) }
+  },
+})
+
+register({
+  name: 'deleteSavedAnnot',
+  touches: ['annotDeletes', 'noteEdits'],
+  additive: true,
+  validate(op, ctx) {
+    const a = obj<SavedMarkupAnnot | SavedNoteAnnot>(op.annot, 'annot')
+    pageIndex(a.pageIndex, ctx, 'annot.pageIndex')
+    if (typeof a.objNum !== 'number') throw new GuidedError('annot.objNum must be a number')
+  },
+  apply(op, s) {
+    const annot = op.annot as SavedMarkupAnnot | SavedNoteAnnot
+    return {
+      annotDeletes: [...s.annotDeletes, { id: id(op), annot }],
+      noteEdits: s.noteEdits.filter((e) => e.annot.objNum !== annot.objNum),
+    }
+  },
+})
+
+register({
+  name: 'editSavedNote',
+  touches: ['noteEdits'],
+  additive: true,
+  validate(op, ctx) {
+    const a = obj<SavedNoteAnnot>(op.annot, 'annot')
+    pageIndex(a.pageIndex, ctx, 'annot.pageIndex')
+    if (typeof op.contents !== 'string') throw new GuidedError('"contents" must be a string')
+  },
+  apply(op, s) {
+    const annot = op.annot as SavedNoteAnnot
+    const contents = op.contents as string
+    const rest = s.noteEdits.filter(
+      (e) => e.annot.objNum !== annot.objNum || e.annot.pageIndex !== annot.pageIndex,
+    )
+    // Restoring the on-disk text drops the entry — unless a save for this note is
+    // in flight (force): then the entry must stay to target whichever text lands
+    const noop = contents === annot.contents && op.force !== true
+    return { noteEdits: noop ? rest : [...rest, { id: id(op), annot, contents }] }
+  },
+})
+
+register({
+  name: 'addDrawing',
+  touches: ['drawings'],
+  additive: true,
+  validate(op, ctx) {
+    const d = obj<DrawingInput>(op.drawing, 'drawing')
+    pageIndex(d.pageIndex, ctx, 'drawing.pageIndex')
+    if (
+      ![
+        'ink',
+        'rect',
+        'ellipse',
+        'line',
+        'arrow',
+        'image',
+        'note',
+        'link',
+        'measure',
+        'caret',
+        'polygon',
+      ].includes(d.kind)
+    )
+      throw new GuidedError(
+        'drawing.kind must be ink | rect | ellipse | line | arrow | image | note | link | measure | caret | polygon',
+      )
+    if (d.kind === 'note' && typeof d.contents !== 'string')
+      throw new GuidedError('a note drawing needs string contents')
+    if (d.kind === 'caret') point(d.point, 'drawing.point')
+    if (d.kind === 'polygon') {
+      if (!Array.isArray(d.vertices) || d.vertices.length < 3)
+        throw new GuidedError('a polygon drawing needs at least 3 vertices')
+      d.vertices.forEach((v, i) => point(v, `drawing.vertices[${i}]`))
+    }
+    if (d.kind === 'link') {
+      const hasUrl = typeof d.url === 'string' && d.url.length > 0
+      const page = d.destPage
+      if (hasUrl === (page !== undefined))
+        throw new GuidedError('a link drawing needs exactly one of url or destPage')
+      if (page !== undefined && (typeof page !== 'number' || !Number.isInteger(page) || page < 1))
+        throw new GuidedError('a link drawing destPage is a 1-based page number')
+    }
+  },
+  apply(op, s) {
+    const drawing = op.drawing as DrawingInput
+    const added: LocalDrawing = {
+      id: id(op),
+      // Pending notes are keyed by their record id for replies and thread lookup
+      input: drawing.kind === 'note' ? { ...drawing, localId: id(op) } : drawing,
+      ...(typeof op.formWidgetId === 'string' ? { formWidgetId: op.formWidgetId } : {}),
+    }
+    return { drawings: [...s.drawings, added] }
+  },
+})
+
+register({
+  name: 'removeDrawing',
+  touches: ['drawings'],
+  validate(op) {
+    id(op)
+  },
+  apply(op, s) {
+    return { drawings: s.drawings.filter((d) => d.id !== op.id) }
+  },
+})
+
+register({
+  name: 'setNoteContents',
+  touches: ['drawings'],
+  validate(op) {
+    id(op)
+    if (typeof op.contents !== 'string') throw new GuidedError('"contents" must be a string')
+  },
+  apply(op, s) {
+    return {
+      drawings: s.drawings.map((d) =>
+        d.id === op.id && d.input.kind === 'note'
+          ? { ...d, input: { ...d.input, contents: op.contents as string } }
+          : d,
+      ),
+    }
+  },
+})
+
+register({
+  name: 'moveDrawing',
+  touches: ['drawings'],
+  validate(op) {
+    id(op)
+    if (
+      typeof op.dx !== 'number' ||
+      !Number.isFinite(op.dx) ||
+      typeof op.dy !== 'number' ||
+      !Number.isFinite(op.dy)
+    )
+      throw new GuidedError('"dx" and "dy" must be numbers (PDF user space)')
+  },
+  apply(op, s) {
+    const dx = op.dx as number
+    const dy = op.dy as number
+    return {
+      drawings: s.drawings.map((d) => {
+        if (d.id !== op.id) return d
+        const input = d.input
+        switch (input.kind) {
+          case 'ink':
+            return {
+              ...d,
+              input: {
+                ...input,
+                paths: input.paths.map((p) => p.map((v, i) => (i % 2 === 0 ? v + dx : v + dy))),
+              },
+            }
+          case 'rect':
+          case 'ellipse':
+          case 'image':
+            return {
+              ...d,
+              input: {
+                ...input,
+                rect: [
+                  input.rect[0] + dx,
+                  input.rect[1] + dy,
+                  input.rect[2] + dx,
+                  input.rect[3] + dy,
+                ] as Rect,
+              },
+            }
+          case 'line':
+          case 'arrow':
+          case 'measure':
+            return {
+              ...d,
+              input: {
+                ...input,
+                from: [input.from[0] + dx, input.from[1] + dy] as [number, number],
+                to: [input.to[0] + dx, input.to[1] + dy] as [number, number],
+              },
+            }
+          case 'caret':
+            return {
+              ...d,
+              input: {
+                ...input,
+                point: [input.point[0] + dx, input.point[1] + dy] as [number, number],
+              },
+            }
+          case 'polygon':
+            return {
+              ...d,
+              input: {
+                ...input,
+                vertices: input.vertices.map(([x, y]) => [x + dx, y + dy] as [number, number]),
+              },
+            }
+          default:
+            return d
+        }
+      }),
+    }
+  },
+})
+
+register({
+  name: 'setDrawingRect',
+  touches: ['drawings'],
+  validate(op) {
+    id(op)
+    rect(op.rect, 'rect')
+  },
+  apply(op, s) {
+    const r = op.rect as Rect
+    return {
+      drawings: s.drawings.map((d) =>
+        d.id === op.id && d.input.kind === 'image' ? { ...d, input: { ...d.input, rect: r } } : d,
+      ),
+    }
+  },
+})
+
+// ── text ──────────────────────────────────────────────────────────────
+
+register({
+  name: 'putTextEdit',
+  touches: ['textEdits'],
+  additive: true,
+  validate(op, ctx) {
+    const e = obj<TextEditInput>(op.input, 'input')
+    pageIndex(e.pageIndex, ctx, 'input.pageIndex')
+    rect(e.rect, 'input.rect')
+    if (typeof e.oldText !== 'string' || typeof e.newText !== 'string')
+      throw new GuidedError('input.oldText and input.newText must be strings')
+  },
+  apply(op, s) {
+    const edit: LocalTextEdit = {
+      id: id(op),
+      input: op.input as TextEditInput,
+      ...(op.cover ? { cover: op.cover as Rect } : {}),
+      ...(op.moveBy ? { moveBy: op.moveBy as [number, number] } : {}),
+      ...(op.baseInk ? { baseInk: op.baseInk as string } : {}),
+      ...(op.baseFont ? { baseFont: op.baseFont as LocalTextEdit['baseFont'] } : {}),
+      ...(op.paper ? { paper: op.paper as string } : {}),
+    }
+    const i = s.textEdits.findIndex((e) => e.id === edit.id)
+    return {
+      textEdits: i < 0 ? [...s.textEdits, edit] : s.textEdits.map((e, j) => (j === i ? edit : e)),
+    }
+  },
+})
+
+register({
+  name: 'removeTextEdit',
+  touches: ['textEdits'],
+  validate(op) {
+    id(op)
+  },
+  apply(op, s) {
+    return { textEdits: s.textEdits.filter((e) => e.id !== op.id) }
+  },
+})
+
+register({
+  name: 'addTextInsert',
+  touches: ['textInserts'],
+  additive: true,
+  validate(op, ctx) {
+    const e = obj<TextInsertInput>(op.input, 'input')
+    pageIndex(e.pageIndex, ctx, 'input.pageIndex')
+    if (typeof e.text !== 'string') throw new GuidedError('input.text must be a string')
+  },
+  apply(op, s) {
+    const added: LocalTextInsert = { id: id(op), input: op.input as TextInsertInput }
+    return { textInserts: [...s.textInserts, added] }
+  },
+})
+
+register({
+  name: 'removeTextInsert',
+  touches: ['textInserts'],
+  validate(op) {
+    id(op)
+  },
+  apply(op, s) {
+    return { textInserts: s.textInserts.filter((e) => e.id !== op.id) }
+  },
+})
+
+register({
+  name: 'patchTextInsert',
+  touches: ['textInserts'],
+  validate(op) {
+    id(op)
+    obj(op.input, 'input')
+  },
+  apply(op, s) {
+    const patch = op.input as Partial<TextInsertInput>
+    return {
+      textInserts: s.textInserts.map((e) =>
+        e.id === op.id ? { ...e, input: { ...e.input, ...patch } } : e,
+      ),
+    }
+  },
+})
+
+// ── image ─────────────────────────────────────────────────────────────
+
+const claimKey = (input: ImageEditInput): string | null =>
+  input.kind === 'insertImage' ? null : `${input.pageIndex}:${imageRectKey(input.oldRect)}`
+
+register({
+  name: 'addImageEdit',
+  touches: ['imageEdits'],
+  additive: true,
+  validate(op, ctx) {
+    const e = obj<ImageEditInput>(op.input, 'input')
+    pageIndex(e.pageIndex, ctx, 'input.pageIndex')
+    if (!['insertImage', 'transformImage', 'replaceImage', 'deleteImage'].includes(e.kind))
+      throw new GuidedError(
+        'input.kind must be insertImage | transformImage | replaceImage | deleteImage',
+      )
+    if (e.kind !== 'deleteImage') rect(e.rect, 'input.rect')
+    if (e.kind !== 'insertImage') {
+      rect(e.oldRect, 'input.oldRect')
+      if (ctx.claimedImages.has(claimKey(e)!))
+        throw new GuidedError(
+          `The image at ${e.oldRect.join(',')} on page ${e.pageIndex} already has a pending edit; remove or update that edit instead`,
+        )
+    }
+  },
+  advance(op, ctx) {
+    const key = claimKey(op.input as ImageEditInput)
+    return key ? { claimedImages: new Set(ctx.claimedImages).add(key) } : {}
+  },
+  apply(op, s) {
+    const added: LocalImageEdit = {
+      id: id(op),
+      input: op.input as ImageEditInput,
+      ...(op.png !== undefined ? { png: op.png as string | null } : {}),
+      ...(typeof op.origAbove === 'boolean' ? { origAbove: op.origAbove } : {}),
+      ...(op.staticFill ? { staticFill: op.staticFill as StaticFormFillRecord } : {}),
+      ...(typeof op.opacityBase === 'string' ? { opacityBase: op.opacityBase } : {}),
+    }
+    return { imageEdits: [...s.imageEdits, added] }
+  },
+})
+
+register({
+  name: 'setImageEditRect',
+  touches: ['imageEdits'],
+  validate(op) {
+    id(op)
+    rect(op.rect, 'rect')
+  },
+  apply(op, s) {
+    const r = op.rect as Rect
+    return {
+      imageEdits: s.imageEdits.map((e) =>
+        e.id === op.id && e.input.kind !== 'deleteImage'
+          ? { ...e, input: { ...e.input, rect: r } }
+          : e,
+      ),
+    }
+  },
+})
+
+register({
+  name: 'bakeImageEdit',
+  touches: ['imageEdits'],
+  validate(op) {
+    id(op)
+    str(op.image, 'image')
+    rect(op.rect, 'rect')
+  },
+  apply(op, s) {
+    const image = op.image as string
+    const r = op.rect as Rect
+    const opacityBase = typeof op.opacityBase === 'string' ? op.opacityBase : undefined
+    return {
+      imageEdits: s.imageEdits.map((e) => {
+        if (e.id !== op.id) return e
+        if (e.input.kind === 'insertImage')
+          return { ...e, opacityBase, input: { ...e.input, image, rect: r } }
+        if (e.input.kind !== 'transformImage' && e.input.kind !== 'replaceImage') return e
+        // Transform ops morph into a replace with their quarter turns baked in
+        return {
+          ...e,
+          opacityBase,
+          input: {
+            kind: 'replaceImage' as const,
+            pageIndex: e.input.pageIndex,
+            oldRect: e.input.oldRect,
+            rect: r,
+            image,
+            ...(e.input.layer ? { layer: e.input.layer as ImageLayer } : {}),
+          },
+        }
+      }),
+    }
+  },
+})
+
+register({
+  name: 'patchImageEdit',
+  touches: ['imageEdits'],
+  validate(op) {
+    id(op)
+    if (op.input !== undefined) obj(op.input, 'input')
+    if (
+      op.opacityBase !== undefined &&
+      op.opacityBase !== null &&
+      typeof op.opacityBase !== 'string'
+    )
+      throw new GuidedError('"opacityBase" must be a string, or null to clear it')
+  },
+  apply(op, s) {
+    const patch = (op.input ?? {}) as Partial<Extract<ImageEditInput, { kind: 'replaceImage' }>>
+    return {
+      imageEdits: s.imageEdits.map((e) => {
+        if (e.id !== op.id || e.input.kind === 'deleteImage') return e
+        const next: LocalImageEdit = { ...e, input: { ...e.input, ...patch } as ImageEditInput }
+        if (op.opacityBase === null) delete next.opacityBase
+        else if (typeof op.opacityBase === 'string') next.opacityBase = op.opacityBase
+        return next
+      }),
+    }
+  },
+})
+
+register({
+  name: 'setStaticFillImage',
+  touches: ['imageEdits'],
+  validate(op) {
+    id(op)
+    str(op.image, 'image')
+    obj(op.staticFill, 'staticFill')
+  },
+  apply(op, s) {
+    const image = op.image as string
+    const staticFill = op.staticFill as StaticFormFillRecord
+    return {
+      imageEdits: s.imageEdits.map((e) => {
+        if (e.id !== op.id || e.input.kind === 'deleteImage') return e
+        // A re-typed fill on a transform keeps the footprint but now carries pixels
+        const input: ImageEditInput =
+          e.input.kind === 'transformImage'
+            ? {
+                kind: 'replaceImage',
+                pageIndex: e.input.pageIndex,
+                oldRect: e.input.oldRect,
+                rect: e.input.rect,
+                image,
+                layer: e.input.layer,
+                quarterTurns: e.input.quarterTurns,
+              }
+            : { ...e.input, image }
+        return { ...e, input, staticFill: { ...staticFill, rect: input.rect } }
+      }),
+    }
+  },
+})
+
+register({
+  name: 'removeImageEdit',
+  touches: ['imageEdits'],
+  validate(op) {
+    id(op)
+  },
+  apply(op, s) {
+    return {
+      imageEdits: s.imageEdits.flatMap((e) => {
+        if (e.id !== op.id) return [e]
+        // A static form fill re-typed or moved: removing the edit removes the fill
+        if (
+          e.staticFill &&
+          (e.input.kind === 'transformImage' || e.input.kind === 'replaceImage')
+        ) {
+          return [
+            {
+              ...e,
+              input: {
+                kind: 'deleteImage' as const,
+                pageIndex: e.input.pageIndex,
+                oldRect: e.input.oldRect,
+              },
+            },
+          ]
+        }
+        return []
+      }),
+    }
+  },
+})
+
+// ── form ──────────────────────────────────────────────────────────────
+
+register({
+  name: 'setFormValue',
+  touches: ['formEdits'],
+  validate(op) {
+    const v = obj<FormValueInput>(op.value, 'value')
+    str(v.name, 'value.name')
+    if (!['text', 'checkbox', 'radio', 'choice'].includes(v.kind))
+      throw new GuidedError('value.kind must be text | checkbox | radio | choice')
+  },
+  apply(op, s) {
+    const v = op.value as FormValueInput
+    return { formEdits: new Map(s.formEdits).set(v.name, v) }
+  },
+})
+
+const FORM_FIELD_KINDS = ['text', 'checkbox', 'radio', 'choice', 'signature']
+const FIELD_NAME_MAX = 200
+
+/** Radio buttons share a name on purpose: the name may be reused only by another radio button */
+const fieldName = (v: unknown, ctx: OpContext, kind?: string): string => {
+  const name = str(v, 'field.name').trim()
+  if (!name || name.length > FIELD_NAME_MAX || /[.\\/]/.test(name))
+    throw new GuidedError(
+      'field.name must be 1-200 characters without "." "/" or "\\" (dots nest fields in PDF)',
+    )
+  if (ctx.fieldNames?.has(name) && !(kind === 'radio' && ctx.radioGroups?.has(name)))
+    throw new GuidedError(`A form field named "${name}" already exists; pick another name`)
+  // "a" next to an existing "a.b" would become an ambiguous sibling of that group
+  for (const taken of ctx.fieldNames ?? [])
+    if (taken.startsWith(`${name}.`))
+      throw new GuidedError(
+        `"${name}" is already a field group in this document; pick another name`,
+      )
+  return name
+}
+
+const choiceOptions = (v: unknown): string[] => {
+  if (!Array.isArray(v)) throw new GuidedError('field.options must be an array of strings')
+  if (!v.every((o) => typeof o === 'string'))
+    throw new GuidedError('field.options must be an array of strings')
+  const options = [...new Set(v.map((o: string) => o.trim()).filter(Boolean))]
+  if (options.length === 0)
+    throw new GuidedError('field.options must list at least one option for a choice field')
+  return options
+}
+
+const fieldRect = (v: unknown, field: string): Rect => {
+  const r = rect(v, field)
+  if (Math.abs(r[2] - r[0]) < 1 || Math.abs(r[3] - r[1]) < 1)
+    throw new GuidedError(`${field} must be at least 1pt wide and tall`)
+  return r
+}
+
+register({
+  name: 'addFormField',
+  touches: ['formFields'],
+  additive: true,
+  validate(op, ctx) {
+    const f = obj<FormFieldInput>(op.field, 'field')
+    if (!FORM_FIELD_KINDS.includes(f.kind))
+      throw new GuidedError('field.kind must be text | checkbox | radio | choice | signature')
+    fieldName(f.name, ctx, f.kind)
+    pageIndex(f.pageIndex, ctx, 'field.pageIndex')
+    fieldRect(f.rect, 'field.rect')
+    if (f.kind === 'radio' && !(typeof f.exportValue === 'string' && f.exportValue.trim()))
+      throw new GuidedError('field.exportValue must not be empty for a radio button')
+    if (f.kind === 'choice') choiceOptions(f.options)
+  },
+  advance(op, ctx) {
+    const f = op.field as FormFieldInput
+    const name = f.name.trim()
+    return {
+      fieldNames: new Set([...(ctx.fieldNames ?? []), name]),
+      ...(f.kind === 'radio' ? { radioGroups: new Set([...(ctx.radioGroups ?? []), name]) } : {}),
+    }
+  },
+  apply(op, s) {
+    const f = op.field as FormFieldInput
+    const options = f.kind === 'choice' ? choiceOptions(f.options) : undefined
+    const added: LocalFormField = {
+      id: id(op),
+      input: {
+        ...f,
+        name: f.name.trim(),
+        ...(options
+          ? { options, value: options.includes(f.value ?? '') ? f.value : undefined }
+          : {}),
+      },
+    }
+    return { formFields: [...s.formFields, added] }
+  },
+})
+
+register({
+  name: 'patchFormField',
+  touches: ['formFields'],
+  validate(op, ctx) {
+    id(op)
+    const patch = obj<Partial<FormFieldInput>>(op.input, 'input')
+    if ('kind' in patch || 'pageIndex' in patch)
+      throw new GuidedError('kind and pageIndex cannot be patched; remove and add the field')
+    if ('name' in patch) fieldName(patch.name, ctx, op.kind as string | undefined)
+    if ('rect' in patch) fieldRect(patch.rect, 'input.rect')
+    if (
+      'exportValue' in patch &&
+      !(typeof patch.exportValue === 'string' && patch.exportValue.trim())
+    )
+      throw new GuidedError('input.exportValue must not be empty for a radio button')
+    if ('options' in patch) choiceOptions(patch.options)
+  },
+  apply(op, s) {
+    const patch = op.input as Partial<FormFieldInput>
+    return {
+      formFields: s.formFields.map((f) => {
+        if (f.id !== op.id) return f
+        const input = {
+          ...f.input,
+          ...patch,
+          ...(typeof patch.name === 'string' ? { name: patch.name.trim() } : {}),
+          ...(typeof patch.exportValue === 'string'
+            ? { exportValue: patch.exportValue.trim() }
+            : {}),
+        }
+        if (patch.options) {
+          input.options = choiceOptions(patch.options)
+          // A preselected option that was just removed must not be written to the file
+          if (input.value && !input.options.includes(input.value)) input.value = undefined
+        }
+        return { ...f, input }
+      }),
+    }
+  },
+})
+
+register({
+  name: 'removeFormField',
+  touches: ['formFields'],
+  validate(op) {
+    id(op)
+  },
+  apply(op, s) {
+    return { formFields: s.formFields.filter((f) => f.id !== op.id) }
+  },
+})
+
+register({
+  name: 'editFormWidget',
+  touches: ['formWidgetEdits'],
+  validate(op) {
+    str(op.widgetId, 'widgetId')
+    str(op.fieldName, 'fieldName')
+    const patch = obj<Partial<FormWidgetEditInput>>(op.input, 'input')
+    if ('rect' in patch) fieldRect(patch.rect, 'input.rect')
+    if ('required' in patch && typeof patch.required !== 'boolean')
+      throw new GuidedError('input.required must be a boolean')
+    if ('remove' in patch && typeof patch.remove !== 'boolean')
+      throw new GuidedError('input.remove must be a boolean')
+  },
+  apply(op, s) {
+    const widgetId = op.widgetId as string
+    const patch = op.input as Partial<FormWidgetEditInput>
+    const prev = s.formWidgetEdits.get(widgetId) ?? {
+      widgetId,
+      fieldName: op.fieldName as string,
+    }
+    const next = new Map(s.formWidgetEdits)
+    next.set(widgetId, { ...prev, ...patch })
+    return { formWidgetEdits: next }
+  },
+})
+
+// ── page ──────────────────────────────────────────────────────────────
+
+register({
+  name: 'insertBlankPage',
+  touches: ['blankPages', 'order'],
+  additive: true,
+  validate(op, ctx) {
+    if (op.after !== null) pageIndex(op.after, ctx, 'after')
+    if (op.pageIndex !== ctx.pageCount)
+      throw new GuidedError(
+        `pageIndex must be the next page index (${ctx.pageCount}): blank pages are appended to the document`,
+      )
+    for (const k of ['width', 'height'] as const) {
+      if (typeof op[k] !== 'number' || !Number.isFinite(op[k]) || (op[k] as number) <= 0)
+        throw new GuidedError(`"${k}" must be a positive number of PDF points`)
+    }
+  },
+  advance(_op, ctx) {
+    return { pageCount: ctx.pageCount + 1 }
+  },
+  apply(op, s) {
+    const idx = op.pageIndex as number
+    const after = op.after as number | null
+    const blank: LocalBlankPage = {
+      id: id(op),
+      input: { pageIndex: idx, width: op.width as number, height: op.height as number },
+    }
+    const base = s.order ?? Array.from({ length: idx }, (_, i) => i)
+    const at = after === null ? 0 : base.indexOf(after) + 1
+    return {
+      blankPages: [...s.blankPages, blank],
+      order: [...base.slice(0, at), idx, ...base.slice(at)],
+    }
+  },
+})
+
+register({
+  name: 'rotatePages',
+  touches: ['rotations', 'drawings'],
+  validate(op, ctx) {
+    if (!Array.isArray(op.pages) || op.pages.length === 0)
+      throw new GuidedError('"pages" must list at least one original page index')
+    for (const p of op.pages) pageIndex(p, ctx, 'pages[]')
+    if (op.dir !== 90 && op.dir !== -90 && op.dir !== 180)
+      throw new GuidedError('"dir" must be 90, -90 or 180')
+  },
+  apply(op, s) {
+    const pages = new Set(op.pages as number[])
+    const dir = op.dir as 90 | -90 | 180
+    const rotations = new Map(s.rotations)
+    for (const p of pages) {
+      const nv = ((rotations.get(p) ?? 0) + dir + 360) % 360
+      if (nv === 0) rotations.delete(p)
+      else rotations.set(p, nv)
+    }
+    if (dir === 180) return { rotations, drawings: s.drawings }
+    // Image stamps draw upright, so a quarter turn swaps their displayed width and
+    // height: swap the user-space rect about its center to keep the aspect ratio
+    const drawings = s.drawings.map((d) => {
+      if (d.input.kind !== 'image' || !pages.has(d.input.pageIndex)) return d
+      const [x1, y1, x2, y2] = d.input.rect
+      const cx = (x1 + x2) / 2
+      const cy = (y1 + y2) / 2
+      const hw = (x2 - x1) / 2
+      const hh = (y2 - y1) / 2
+      return { ...d, input: { ...d.input, rect: [cx - hh, cy - hw, cx + hh, cy + hw] as Rect } }
+    })
+    return { rotations, drawings }
+  },
+})
+
+register({
+  name: 'deletePage',
+  touches: ['deleted', 'markups', 'drawings', 'formFields'],
+  validate(op, ctx) {
+    const p = pageIndex(op.pageIndex, ctx)
+    if (ctx.pageCount - ctx.deleted.size <= 1)
+      throw new GuidedError(`Cannot delete page ${p}: at least one page must remain`)
+  },
+  advance(op, ctx) {
+    return { deleted: new Set(ctx.deleted).add(op.pageIndex as number) }
+  },
+  apply(op, s) {
+    const p = op.pageIndex as number
+    return {
+      deleted: new Set(s.deleted).add(p),
+      markups: s.markups.filter((m) => m.pageIndex !== p),
+      drawings: s.drawings.filter((d) => d.input.pageIndex !== p),
+      formFields: s.formFields.filter((f) => f.input.pageIndex !== p),
+    }
+  },
+})
+
+register({
+  name: 'setPageOrder',
+  touches: ['order'],
+  validate(op, ctx) {
+    if (op.order === null) return
+    const order = op.order
+    if (!Array.isArray(order) || order.length !== ctx.pageCount)
+      throw new GuidedError(
+        `"order" must list every original page index exactly once (${ctx.pageCount} pages, deleted ones included) or be null`,
+      )
+    const seen = new Set<number>()
+    for (const p of order) {
+      if (typeof p !== 'number' || p < 0 || p >= ctx.pageCount || seen.has(p))
+        throw new GuidedError(`"order" must be a permutation of 0..${ctx.pageCount - 1}`)
+      seen.add(p)
+    }
+  },
+  apply(op) {
+    return { order: op.order as number[] | null }
+  },
+})
+
+// ── document ──────────────────────────────────────────────────────────
+
+register({
+  name: 'setStamps',
+  touches: ['stampCfg'],
+  validate(op) {
+    if (op.cfg !== null) obj<StampConfig>(op.cfg, 'cfg')
+  },
+  apply(op) {
+    const cfg = op.cfg as StampConfig | null
+    // A config with neither layer is the cleared state, not a pending edit
+    return { stampCfg: cfg && (cfg.wm || cfg.hf) ? cfg : null }
+  },
+})
+
+register({
+  name: 'setMetadata',
+  touches: ['metadata'],
+  validate(op) {
+    if (op.metadata !== null) obj<MetadataInput>(op.metadata, 'metadata')
+  },
+  apply(op) {
+    return { metadata: op.metadata as MetadataInput | null }
+  },
+})

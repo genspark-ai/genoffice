@@ -1,0 +1,49 @@
+{
+  "id": "render-math-line-box",
+  "title": "A display equation's extents are Cambria Math font boxes around every element: a sub-only line at 9.6pt spans 12.48, undOvr limits sit 14.2 above / 12.0 below the main baseline, and the row adds before/after plus (m - 1) x the cell's single line",
+  "section": "word-truths.md#L775",
+  "probe_date": "2026-10-28",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf span boxes + drawings: Letter, docDefaults Times New Roman 9.5 line 276, cell paragraphs before/after 40, Cambria Math runs (Word renders them at 9.60 / scripts 6.48). Row rules 72.24 / 90.72 / 127.92 / 155.76 (18.48, 37.20, 27.84; the 142.68 rule is the fraction bar). Sub-only line: main box 74.40-85.65 (11.25 = 9.6 x 1.172), subscript box 79.28-86.88 -> union 12.48. Nary: main baseline 111.84, upper limit baseline 97.68 (14.16 above), lower 123.84 (12.0 below), union of boxes 91.52-125.28 = 33.76. Fraction: main baseline 145.44, numerator 138.24 (7.2 above), denominator 151.68 (6.24 below), union 129.12-153.81 = 24.69",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 0,
+      "expect": 83.52,
+      "tol": 2,
+      "note": "rows 18.48 + 37.20 + 27.84: before/after plus the Cambria Math boxes plus (1.15 - 1) x the TNR 9.5 single line"
+    },
+    {
+      "kind": "mathLinePt",
+      "block": 0,
+      "nth": 0,
+      "expect": 12.48,
+      "tol": 0.6,
+      "note": "sub-only line: 0.95 em ascent + subscript baseline shift + 0.222 em descent; Chromium draws the MathML with STIX Two Math (no Cambria Math on the render machine): 15.12pt",
+      "status": "failing"
+    },
+    {
+      "kind": "mathLinePt",
+      "block": 0,
+      "nth": 1,
+      "expect": 33.76,
+      "tol": 0.6,
+      "note": "sum with undOvr limits: limit boxes 14.16 above and 12.0 below the main baseline; STIX ink-based limit boxes: 32.03pt",
+      "status": "failing"
+    },
+    {
+      "kind": "mathLinePt",
+      "block": 0,
+      "nth": 2,
+      "expect": 24.69,
+      "tol": 0.6,
+      "note": "display fraction: numerator 7.2 above, denominator 6.24 below; STIX fraction shifts: 20.58pt",
+      "status": "failing"
+    }
+  ],
+  "docx": "probe.docx"
+}

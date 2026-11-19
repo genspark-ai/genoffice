@@ -1,0 +1,55 @@
+{
+  "id": "render-cloud-face-pitch",
+  "title": "Consecutive Dubai 12pt lines pitch 20.26 (23.28 at line 276), Algerian 18pt 23.76, and an altName-to-Calibri name 13.44 / 15.48",
+  "section": "word-truths.md#L702",
+  "probe_date": "2026-10-28",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf baselines, Letter, docDefaults Calibri 11, fontTable Dubai (charset 00, csb0 41) / Google Sans Text (altName Calibri) / Algerian; Word embedded Dubai-Regular, Algerian, Calibri. Dubai 12pt line 240 baselines 85.44/105.60/126.00; Algerian 18pt 152.40/176.16/199.92; Google Sans Text 11pt 214.56/228.00/241.44; at 276 254.88/270.24/285.84; Dubai 12pt at 276 304.08/327.36/350.64",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 0,
+      "to": 2,
+      "expect": 40.56,
+      "tol": 0.3,
+      "note": "Dubai 12pt single: 20.16 + 20.40"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 3,
+      "to": 5,
+      "expect": 47.52,
+      "tol": 0.3,
+      "note": "Algerian 18pt single: 2 x 23.76"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 6,
+      "to": 8,
+      "expect": 26.88,
+      "tol": 0.3,
+      "note": "Google Sans Text paces as Calibri: 2 x 13.44"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 9,
+      "to": 11,
+      "expect": 30.96,
+      "tol": 0.3,
+      "note": "same at line 276: 15.36 + 15.60"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 12,
+      "to": 14,
+      "expect": 46.56,
+      "tol": 0.3,
+      "note": "Dubai 12pt at line 276: 2 x 23.28"
+    }
+  ],
+  "docx": "probe.docx"
+}

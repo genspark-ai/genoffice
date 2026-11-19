@@ -1,0 +1,1280 @@
+/**
+ * Static node rendering — draws a RenderNode as Konva shapes (no interaction logic).
+ *
+ * Reused in three places so canvas / thumbnails / group children / master decoration
+ * layer stay visually identical:
+ * - SlideCanvas: shape content inside the interactive Group + group children + decoration layer
+ * - SlideThumb: whole page statically scaled down
+ */
+import React, { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import type Konva from 'konva'
+import { Group, Rect, Ellipse, Text, Line, Arrow, Image as KImage, Path } from 'react-konva'
+import type {
+  BevelEdge,
+  CellBevelRender,
+  RenderNode,
+  ShapeRenderNode,
+  PictureRenderNode,
+  ChipRenderNode,
+  TableRenderNode,
+  ChartRenderNode,
+  GroupRenderNode,
+  ArrowEndRender,
+  RenderReflection,
+} from '@genoffice/pptx-render'
+import { extrusionFrontFace } from '@genoffice/pptx-render'
+import {
+  featheredImage,
+  featheredShapeCanvas,
+  clippedImageCanvas,
+  fillToKonva,
+  hasBlipEffects,
+  imageHasAlpha,
+  imageShadowCanvas,
+  processedImage,
+  processedImageKey,
+  flatColorImage,
+  isDegenerateImage,
+  strokeToKonva,
+  shadowToKonva,
+  tracePictureClip,
+  isOverlayShadow,
+  shapeShadowOverlay,
+  type ShadowGeom,
+  cropToKonva,
+  presetToShapeKind,
+  shapeGlyphs,
+  layoutGlyphs,
+  normalizeColor,
+  boxPivotProps,
+  centerFillProps,
+  connectorHeadColor,
+  connectorStrokeProps,
+  subscribeFontsEpoch,
+  getFontsEpoch,
+} from './konva-adapter'
+import { ChartBody } from './ChartBody'
+import { needsTextFrameHitArea } from './text-hit-area'
+import { warpGlyphs, measureGlyph } from './text-warp'
+import { CANVAS_COLORS } from './canvas-colors'
+
+export interface NodeBodyProps {
+  node: RenderNode
+  images: Map<string, HTMLImageElement>
+  /** Currently edited in the DOM overlay: skip drawing the shape's text (avoids ghosting under the edit overlay) */
+  hideText?: boolean
+  /** Table cell being edited (model coordinates): skip drawing that cell's text */
+  hideCellText?: { row: number; col: number }
+  /** Accumulated mirror parity from flipped ancestor groups (their transform also mirrors this node's text) */
+  flipHInherited?: boolean
+  flipVInherited?: boolean
+}
+
+/**
+ * Node content (local coordinates relative to the node box top-left); positioning/rotation/flip
+ * are handled by the outer container.
+ */
+export const NodeBody = React.memo(function NodeBody({
+  node,
+  images,
+  hideText,
+  hideCellText,
+  flipHInherited,
+  flipVInherited,
+}: NodeBodyProps) {
+  // Late-loading FontFaces (private/embedded) change glyph baseline anchors; the epoch
+  // subscription re-renders past React.memo so glyph y props recompute (a batchDraw alone
+  // repaints stale positions).
+  useSyncExternalStore(subscribeFontsEpoch, getFontsEpoch)
+  const { box } = node
+
+  // Reflection: a flipped fading copy of the node drawn below it, then the node itself
+  // (the copy renders through NodeBody recursively with the reflection stripped)
+  const nodeRefl =
+    node.type === 'shape' || node.type === 'text' || node.type === 'picture'
+      ? (node as ShapeRenderNode | PictureRenderNode).reflection
+      : undefined
+  if (nodeRefl) {
+    const clone = { ...node, reflection: undefined } as RenderNode
+    return (
+      <>
+        <ReflectionCopy
+          node={clone}
+          images={images}
+          refl={nodeRefl}
+          w={box.w}
+          h={box.h}
+          hideText={hideText}
+          flipHInherited={flipHInherited}
+          flipVInherited={flipVInherited}
+        />
+        <NodeBody
+          node={clone}
+          images={images}
+          hideText={hideText}
+          hideCellText={hideCellText}
+          flipHInherited={flipHInherited}
+          flipVInherited={flipVInherited}
+        />
+      </>
+    )
+  }
+
+  if (node.type === 'group') {
+    const g = node as GroupRenderNode
+    // ext/chExt scaling is already baked into children geometry (build-slide); no whole-group stretch here
+    return (
+      <Group>
+        {g.children.map((c) => (
+          <StaticNode
+            key={c.id}
+            node={c}
+            images={images}
+            flipHInherited={!!box.flipH !== !!flipHInherited}
+            flipVInherited={!!box.flipV !== !!flipVInherited}
+          />
+        ))}
+      </Group>
+    )
+  }
+
+  if (node.type === 'picture') {
+    const pic = node as PictureRenderNode
+    const rawImg = pic.dataUrl ? images.get(pic.dataUrl) : undefined
+    // recolor effects change the pixels; the derived key keeps processed variants out of raw cache slots
+    const srcKey = processedImageKey(pic.dataUrl ?? '', pic)
+    const procImg =
+      rawImg && hasBlipEffects(pic)
+        ? (processedImage(rawImg, pic.dataUrl ?? '', pic) as HTMLImageElement)
+        : rawImg
+    // ≤2×2 pictures stretch to one flat color in PowerPoint (crop is meaningless there)
+    const tiny = !!procImg && isDegenerateImage(procImg)
+    const img = procImg && tiny ? (flatColorImage(procImg, srcKey) as HTMLImageElement) : procImg
+    const clip = pic.clip
+    const cropProps = tiny || !img ? {} : cropToKonva(pic, img)
+    // srcRect inset: the image only covers a sub-rect of the frame. The full frame
+    // stays the hit target and carries the outline (PowerPoint selects/strokes the
+    // frame, not the visible sub-image); shadow stays on the painted pixels.
+    const inset = 'x' in cropProps
+    // Inner/perspective shadows draw as an offscreen overlay (canvas shadow props can't express them)
+    const picShadowOv = shapeShadowOverlay(
+      pic.shadow,
+      { kind: 'rect', w: box.w, h: box.h, cornerRadius: clip?.cornerRadiusPx },
+      box.w,
+      box.h,
+    )
+    const picShadowImg = picShadowOv ? (
+      <KImage
+        image={picShadowOv.canvas}
+        x={picShadowOv.x}
+        y={picShadowOv.y}
+        width={picShadowOv.w}
+        height={picShadowOv.h}
+        listening={false}
+      />
+    ) : null
+    const image = img ? (
+      <>
+        {inset && !clip && (
+          <Rect width={box.w} height={box.h} fill="rgba(0,0,0,0)" {...strokeToKonva(pic.stroke)} />
+        )}
+        <KImage
+          image={
+            pic.softEdgePx && img.width
+              ? featheredImage(img, srcKey, pic.softEdgePx * (img.width / Math.max(box.w, 1)))
+              : img
+          }
+          width={box.w}
+          height={box.h}
+          {...cropProps}
+          {...(pic.opacity != null ? { opacity: pic.opacity } : {})}
+          {...(clip
+            ? {}
+            : {
+                ...(inset ? {} : strokeToKonva(pic.stroke)),
+                ...shadowToKonva(pic.shadow, pic.glow),
+              })}
+        />
+      </>
+    ) : pic.dataUrl ? (
+      <Rect width={box.w} height={box.h} fill="#eef" stroke="#99f" dash={[4, 4]} />
+    ) : null
+    if (clip && img) {
+      // picture styles shape clip: the image is clipped into the geometry, stroke follows the geometry outline;
+      // shadow/glow is cast by an opaque backing shape (the image exactly covers it, so no color shows through)
+      const shadowProps = shadowToKonva(pic.shadow, pic.glow)
+      const strokeProps = strokeToKonva(pic.stroke)
+      // A transparent picture casts its shadow from its own silhouette; an opaque
+      // backing there would paint the whole frame white
+      const alphaShadow =
+        'shadowColor' in shadowProps && imageHasAlpha(img, srcKey)
+          ? imageShadowCanvas(
+              clippedImageCanvas(img, srcKey, box.w, box.h, clip, cropProps),
+              shadowProps,
+            )
+          : undefined
+      const outline = (extra: Record<string, unknown>) =>
+        clip.pathData ? (
+          <Path data={clip.pathData} {...extra} />
+        ) : clip.polygonPoints ? (
+          <Line points={clip.polygonPoints} closed {...extra} />
+        ) : (
+          <Rect width={box.w} height={box.h} cornerRadius={clip.cornerRadiusPx ?? 0} {...extra} />
+        )
+      // Inset crops leave blank bands inside the geometry: back only the visible
+      // image sub-rect there (a full-geometry backing would show white through the bands)
+      const backing = (extra: Record<string, unknown>) =>
+        inset ? (
+          <Rect
+            x={cropProps.x}
+            y={cropProps.y}
+            width={cropProps.width}
+            height={cropProps.height}
+            {...extra}
+          />
+        ) : (
+          outline(extra)
+        )
+      return (
+        <>
+          {picShadowOv?.under ? picShadowImg : null}
+          {'shadowColor' in shadowProps &&
+            (alphaShadow ? (
+              <KImage
+                image={alphaShadow.canvas}
+                x={-alphaShadow.pad}
+                y={-alphaShadow.pad}
+                width={box.w + 2 * alphaShadow.pad}
+                height={box.h + 2 * alphaShadow.pad}
+                {...(pic.opacity != null ? { opacity: pic.opacity } : {})}
+                listening={false}
+              />
+            ) : (
+              backing({ fill: '#ffffff', ...shadowProps })
+            ))}
+          <Group
+            clipFunc={(ctx) => {
+              const p = tracePictureClip(ctx, clip, box.w, box.h)
+              return p ? ([p] as [Path2D]) : undefined
+            }}
+          >
+            {/* spPr fill: PowerPoint always paints it behind the image, even a translucent one */}
+            {pic.fill &&
+              outline({ ...fillToKonva(pic.fill, box.w, box.h, images, { x: box.x, y: box.y }) })}
+            {/* Backdrop only for fully opaque previews: with partial opacity the two alphas would stack */}
+            {pic.bgColor && (pic.opacity ?? 1) >= 1 && backing({ fill: pic.bgColor })}
+            {image}
+          </Group>
+          {'stroke' in strokeProps && outline({ ...strokeProps, fillEnabled: false })}
+          {picShadowOv && !picShadowOv.under ? picShadowImg : null}
+          {pic.media && <MediaBadge kind={pic.media} w={box.w} h={box.h} />}
+          {pic.redact && <RedactFrame label={pic.redact} w={box.w} h={box.h} />}
+        </>
+      )
+    }
+    return (
+      <>
+        {picShadowOv?.under ? picShadowImg : null}
+        {/* spPr fill: PowerPoint always paints it behind the image, even a translucent one */}
+        {pic.fill && (
+          <Rect
+            width={box.w}
+            height={box.h}
+            {...fillToKonva(pic.fill, box.w, box.h, images, { x: box.x, y: box.y })}
+          />
+        )}
+        {/* Backdrop only for fully opaque previews: with partial opacity the two alphas would stack */}
+        {pic.bgColor && img && (pic.opacity ?? 1) >= 1 && (
+          <Rect width={box.w} height={box.h} fill={pic.bgColor} />
+        )}
+        {image}
+        {picShadowOv && !picShadowOv.under ? picShadowImg : null}
+        {pic.media && <MediaBadge kind={pic.media} w={box.w} h={box.h} />}
+        {pic.redact && <RedactFrame label={pic.redact} w={box.w} h={box.h} />}
+      </>
+    )
+  }
+
+  if (node.type === 'table') {
+    const table = node as TableRenderNode
+    const tblW = table.gridX[table.gridX.length - 1] ?? node.box.w
+    const tblH = table.gridY[table.gridY.length - 1] ?? node.box.h
+    return (
+      <>
+        {table.bgFill && (
+          <Rect
+            x={0}
+            y={0}
+            width={tblW}
+            height={tblH}
+            {...fillToKonva(table.bgFill, tblW, tblH, images, { x: box.x, y: box.y })}
+          />
+        )}
+        {table.cells.map((cell, i) => {
+          const cellGlyphs =
+            hideCellText && cell.row === hideCellText.row && cell.col === hideCellText.col
+              ? []
+              : layoutGlyphs(cell.text)
+          return (
+            <React.Fragment key={i}>
+              {/* Bevel bands tile the outer ring, so the face keeps to the inner rect and a
+                  translucent fill never composites twice */}
+              <Rect
+                x={cell.x + (cell.bevel?.widthPx ?? 0)}
+                y={cell.y + (cell.bevel?.widthPx ?? 0)}
+                width={cell.w - 2 * (cell.bevel?.widthPx ?? 0)}
+                height={cell.h - 2 * (cell.bevel?.widthPx ?? 0)}
+                {...fillToKonva(cell.fill, cell.w, cell.h, images, {
+                  x: box.x + cell.x,
+                  y: box.y + cell.y,
+                })}
+              />
+              {cell.bevel && <CellBevelBands cell={cell} bevel={cell.bevel} />}
+              {cell.borders?.t && (
+                <Line
+                  points={[cell.x, cell.y, cell.x + cell.w, cell.y]}
+                  {...strokeToKonva(cell.borders.t)}
+                />
+              )}
+              {cell.borders?.b && (
+                <Line
+                  points={[cell.x, cell.y + cell.h, cell.x + cell.w, cell.y + cell.h]}
+                  {...strokeToKonva(cell.borders.b)}
+                />
+              )}
+              {cell.borders?.l && (
+                <Line
+                  points={[cell.x, cell.y, cell.x, cell.y + cell.h]}
+                  {...strokeToKonva(cell.borders.l)}
+                />
+              )}
+              {cell.borders?.r && (
+                <Line
+                  points={[cell.x + cell.w, cell.y, cell.x + cell.w, cell.y + cell.h]}
+                  {...strokeToKonva(cell.borders.r)}
+                />
+              )}
+              {/* Highlight backgrounds first, so a run's highlight never covers a neighbor's glyphs */}
+              {cellGlyphs.map(
+                (g, j) =>
+                  g.highlight && (
+                    <Rect
+                      key={`hl${j}`}
+                      x={cell.x + (cell.text?.insets.l ?? 0) + g.highlight.x}
+                      y={cell.y + (cell.text?.insets.t ?? 0) + g.highlight.y}
+                      width={g.highlight.w}
+                      height={g.highlight.h}
+                      fill={g.highlight.color}
+                      listening={false}
+                    />
+                  ),
+              )}
+              {cellGlyphs.map((g, j) => (
+                <Text
+                  key={j}
+                  x={cell.x + (cell.text?.insets.l ?? 0) + g.x}
+                  y={cell.y + (cell.text?.insets.t ?? 0) + g.y}
+                  text={g.text}
+                  fontSize={g.fontSize}
+                  fontFamily={g.fontFamily}
+                  fontStyle={g.fontStyle}
+                  textDecoration={g.textDecoration}
+                  rotation={g.rotation ?? 0}
+                  letterSpacing={g.letterSpacing ?? 0}
+                  fill={g.fill}
+                  direction={g.direction ?? 'ltr'}
+                  {...(g.stroke
+                    ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
+                    : {})}
+                  {...(g.shadowEnabled
+                    ? {
+                        shadowColor: g.shadowColor,
+                        shadowBlur: g.shadowBlur,
+                        shadowOffsetX: g.shadowOffsetX,
+                        shadowOffsetY: g.shadowOffsetY,
+                      }
+                    : {})}
+                />
+              ))}
+            </React.Fragment>
+          )
+        })}
+      </>
+    )
+  }
+
+  if (node.type === 'chart') {
+    return <ChartBody chart={node as ChartRenderNode} images={images} />
+  }
+
+  if (node.type === 'placeholder-chip') {
+    const chip = node as ChipRenderNode
+    return (
+      <>
+        <Rect
+          width={box.w}
+          height={box.h}
+          fill="#f5f5f7"
+          stroke="#c7c7cc"
+          dash={[6, 4]}
+          cornerRadius={4}
+        />
+        <Text
+          text={`⧉ ${chip.label}`}
+          width={box.w}
+          height={box.h}
+          align="center"
+          verticalAlign="middle"
+          fontSize={Math.min(16, box.h / 2)}
+          fill="#8e8e93"
+        />
+      </>
+    )
+  }
+
+  // shape / text
+  const shape = node as ShapeRenderNode
+  const fillProps = fillToKonva(shape.fill, box.w, box.h, images, { x: box.x, y: box.y })
+  const strokeProps = strokeToKonva(shape.stroke, { w: box.w, h: box.h })
+  const shadowProps = shadowToKonva(shape.shadow, shape.glow)
+  let glyphs = hideText ? [] : shapeGlyphs(shape)
+  // WordArt envelope warp: per-character transforms replace the straight runs
+  const txWarp = shape.text?.txWarp
+  const warped =
+    txWarp && glyphs.length
+      ? warpGlyphs(
+          glyphs,
+          Math.max(box.w - (shape.text?.insets.l ?? 0) - (shape.text?.insets.r ?? 0), 1),
+          Math.max(box.h - (shape.text?.insets.t ?? 0) - (shape.text?.insets.b ?? 0), 1),
+          txWarp,
+          measureGlyph,
+        )
+      : null
+  if (warped) glyphs = warped
+
+  // Connector/straight line: polyline (flip already baked into points), with optional arrow endpoints
+  if (shape.line) {
+    const lineStroke = connectorStrokeProps(strokeProps)
+    const color = connectorHeadColor(strokeProps)
+    const sw = lineStroke.strokeWidth ?? 1
+    const { headEnd, tailEnd, bezier } = shape.line
+
+    // Curved connector: draw the bezier with an SVG Path
+    if (bezier && bezier.length) {
+      const pts = shape.line.points
+      const startX = pts[0] ?? 0
+      const startY = pts[1] ?? 0
+      let d = `M ${startX} ${startY}`
+      // Each segment: [cp1x,cp1y,cp2x,cp2y,ex,ey]
+      for (let i = 0; i < bezier.length; i += 6) {
+        d += ` C ${bezier[i]} ${bezier[i + 1]}, ${bezier[i + 2]} ${bezier[i + 3]}, ${bezier[i + 4]} ${bezier[i + 5]}`
+      }
+      const dashProps = strokeProps.dash ? { dash: strokeProps.dash } : {}
+      return (
+        <>
+          <Path
+            data={d}
+            {...lineStroke}
+            hitStrokeWidth={Math.max(sw, 12)}
+            fill="transparent"
+            lineCap="round"
+            lineJoin="round"
+            {...dashProps}
+            {...shadowProps}
+          />
+          {headEnd && <ArrowHead end={headEnd} pts={shape.line.points} atStart color={color} />}
+          {tailEnd && (
+            <ArrowHead end={tailEnd} pts={shape.line.points} atStart={false} color={color} />
+          )}
+        </>
+      )
+    }
+
+    // Straight/bent lines (line/straightConnector/bentConnector)
+    // Determine whether custom arrowheads are needed (non-triangle types; triangle uses Konva Arrow built-in)
+    const hasCustomHead = headEnd && headEnd.type !== 'arrow' && headEnd.type !== 'triangle'
+    const hasCustomTail = tailEnd && tailEnd.type !== 'arrow' && tailEnd.type !== 'triangle'
+    const useKonvaArrow = (headEnd || tailEnd) && !hasCustomHead && !hasCustomTail
+
+    return (
+      <>
+        {useKonvaArrow ? (
+          <Arrow
+            points={shape.line.points}
+            {...lineStroke}
+            hitStrokeWidth={Math.max(sw, 12)}
+            {...(strokeProps.dash ? { dash: strokeProps.dash } : {})}
+            fill={color}
+            pointerAtBeginning={!!headEnd}
+            pointerAtEnding={!!tailEnd}
+            pointerLength={
+              tailEnd
+                ? Math.max(tailEnd.lengthPx, 6)
+                : headEnd
+                  ? Math.max(headEnd.lengthPx, 6)
+                  : sw * 3.5
+            }
+            pointerWidth={
+              tailEnd
+                ? Math.max(tailEnd.widthPx, 5)
+                : headEnd
+                  ? Math.max(headEnd.widthPx, 5)
+                  : sw * 3
+            }
+            lineCap="round"
+            lineJoin="round"
+            {...shadowProps}
+          />
+        ) : (
+          <Line
+            points={shape.line.points}
+            {...lineStroke}
+            hitStrokeWidth={Math.max(sw, 12)}
+            {...(strokeProps.dash ? { dash: strokeProps.dash } : {})}
+            lineCap="round"
+            lineJoin="round"
+            {...shadowProps}
+          />
+        )}
+        {hasCustomHead && headEnd && (
+          <ArrowHead end={headEnd} pts={shape.line.points} atStart color={color} />
+        )}
+        {hasCustomTail && tailEnd && (
+          <ArrowHead end={tailEnd} pts={shape.line.points} atStart={false} color={color} />
+        )}
+      </>
+    )
+  }
+
+  let geom: React.ReactNode
+  if (shape.extrusion) {
+    // scene3d/sp3d extrusion: pre-projected shaded faces in painter order replace the flat
+    // geometry; the shadow/glow is cast by the silhouette underneath them
+    const front = extrusionFrontFace(shape.extrusion.faces)
+    geom = (
+      <>
+        {shape.extrusion.shadowPath && front && 'shadowColor' in shadowProps && (
+          <Path
+            data={shape.extrusion.shadowPath}
+            {...(front.front ? fillProps : { fill: normalizeColor(front.color) })}
+            {...shadowProps}
+          />
+        )}
+        {shape.extrusion.faces.map((f, i) => (
+          <Path
+            key={i}
+            data={f.path}
+            {...(f.front
+              ? fillProps
+              : f.color === 'transparent'
+                ? { fillEnabled: false }
+                : { fill: normalizeColor(f.color) })}
+            {...(f.stroke
+              ? { stroke: normalizeColor(f.stroke), strokeWidth: f.strokeWidthPx ?? 1 }
+              : {})}
+            lineJoin="round"
+          />
+        ))}
+      </>
+    )
+  } else if (shape.pathData || shape.fillPathData || shape.strokePathData) {
+    // custGeom / arc-type presets: SVG path (local px; flip/rot handled by the outer container)
+    geom = (
+      <>
+        {shape.fillPathData && <Path data={shape.fillPathData} {...fillProps} {...shadowProps} />}
+        {shape.pathData && (
+          <Path
+            data={shape.pathData}
+            {...fillProps}
+            {...strokeProps}
+            {...shadowProps}
+            lineJoin="round"
+          />
+        )}
+        {shape.strokePathData && (
+          <Path data={shape.strokePathData} {...strokeProps} fillEnabled={false} lineJoin="round" />
+        )}
+      </>
+    )
+  } else if (shape.polygonPoints) {
+    geom = (
+      <Line
+        points={shape.polygonPoints}
+        closed
+        {...fillProps}
+        {...strokeProps}
+        {...shadowProps}
+        lineJoin="round"
+      />
+    )
+  } else if (presetToShapeKind(shape.presetGeometry) === 'ellipse') {
+    geom = (
+      <Ellipse
+        x={box.w / 2}
+        y={box.h / 2}
+        radiusX={box.w / 2}
+        radiusY={box.h / 2}
+        {...centerFillProps(fillProps, box.w, box.h)}
+        {...strokeProps}
+        {...shadowProps}
+      />
+    )
+  } else {
+    const rounded =
+      presetToShapeKind(shape.presetGeometry) === 'roundRect' || shape.cornerRadiusPx != null
+    const cornerRadius = rounded ? (shape.cornerRadiusPx ?? Math.min(box.w, box.h) * 0.167) : 0
+    if (
+      shape.softEdgePx &&
+      shape.fill.kind === 'solid' &&
+      !shape.fillOverlay &&
+      box.w >= 1 &&
+      box.h >= 1
+    ) {
+      const feathered = featheredShapeCanvas(
+        shape.fill.color,
+        box.w,
+        box.h,
+        shape.softEdgePx,
+        cornerRadius,
+        shape.stroke ? { color: shape.stroke.color, widthPx: shape.stroke.widthPx } : undefined,
+      )
+      geom = (
+        <KImage
+          image={feathered.canvas}
+          x={-feathered.pad}
+          y={-feathered.pad}
+          width={box.w + 2 * feathered.pad}
+          height={box.h + 2 * feathered.pad}
+          {...shadowProps}
+        />
+      )
+    } else {
+      geom = (
+        <Rect
+          width={box.w}
+          height={box.h}
+          cornerRadius={cornerRadius}
+          {...fillProps}
+          {...strokeProps}
+          {...shadowProps}
+        />
+      )
+    }
+  }
+
+  // fillOverlay: PowerPoint blends the overlay against the shape's own fill in isolation.
+  // Approximation: an opaque white underlay + base fill + overlay with multiply — where the
+  // base fill is absent/translucent the multiply hits white (= plain overlay color) instead
+  // of bleeding in whatever lies under the shape.
+  let overlayUnder: React.ReactNode = null
+  let overlayGeom: React.ReactNode = null
+  // Extrusion replaces the flat geometry, so a flat-geometry overlay would paint over the
+  // 3D faces — the base fill already went through scene3d shading, skip the overlay.
+  if (shape.fillOverlay && !shape.extrusion) {
+    const oProps = fillToKonva(shape.fillOverlay, box.w, box.h, images, { x: box.x, y: box.y })
+    const sameGeom = (props: Record<string, unknown>): React.ReactNode => {
+      const common = { listening: false, ...props }
+      if (shape.fillPathData || shape.pathData)
+        return <Path data={(shape.fillPathData ?? shape.pathData)!} {...common} />
+      if (shape.polygonPoints) return <Line points={shape.polygonPoints} closed {...common} />
+      if (presetToShapeKind(shape.presetGeometry) === 'ellipse')
+        return (
+          <Ellipse
+            x={box.w / 2}
+            y={box.h / 2}
+            radiusX={box.w / 2}
+            radiusY={box.h / 2}
+            {...common}
+          />
+        )
+      return (
+        <Rect width={box.w} height={box.h} cornerRadius={shape.cornerRadiusPx ?? 0} {...common} />
+      )
+    }
+    overlayUnder = sameGeom({ fill: '#ffffff' })
+    const isEllipse =
+      !shape.fillPathData &&
+      !shape.pathData &&
+      !shape.polygonPoints &&
+      presetToShapeKind(shape.presetGeometry) === 'ellipse'
+    overlayGeom = sameGeom({
+      ...(isEllipse ? centerFillProps(oProps, box.w, box.h) : oProps),
+      globalCompositeOperation: 'multiply' as const,
+    })
+  }
+
+  // Inner/perspective shadows draw as an offscreen overlay (canvas shadow props can't express them)
+  let shapeShadowUnder: React.ReactNode = null
+  let shapeShadowOver: React.ReactNode = null
+  if (isOverlayShadow(shape.shadow) && (!shape.extrusion || shape.extrusion.flat) && !shape.line) {
+    const sg: ShadowGeom =
+      shape.fillPathData || shape.pathData
+        ? { kind: 'path', data: (shape.fillPathData ?? shape.pathData)! }
+        : shape.polygonPoints
+          ? { kind: 'polygon', points: shape.polygonPoints }
+          : presetToShapeKind(shape.presetGeometry) === 'ellipse'
+            ? { kind: 'ellipse', w: box.w, h: box.h }
+            : {
+                kind: 'rect',
+                w: box.w,
+                h: box.h,
+                cornerRadius:
+                  presetToShapeKind(shape.presetGeometry) === 'roundRect'
+                    ? (shape.cornerRadiusPx ?? Math.min(box.w, box.h) * 0.167)
+                    : (shape.cornerRadiusPx ?? 0),
+              }
+    const ov = shapeShadowOverlay(shape.shadow, sg, box.w, box.h)
+    if (ov) {
+      const img = (
+        <KImage image={ov.canvas} x={ov.x} y={ov.y} width={ov.w} height={ov.h} listening={false} />
+      )
+      if (ov.under) shapeShadowUnder = img
+      else shapeShadowOver = img
+    }
+  }
+
+  return (
+    <>
+      {/* Text is drawn as individual glyph runs, so line spacing and insets otherwise
+          have no hit area. Cover every text-bearing shape (including round/custom
+          geometry) so clicks inside its text frame cannot reach a picture underneath. */}
+      {needsTextFrameHitArea(shape) && <Rect width={box.w} height={box.h} fill="transparent" />}
+      {shapeShadowUnder}
+      {overlayUnder}
+      {geom}
+      {overlayGeom}
+      {shapeShadowOver}
+      {/* PowerPoint flips geometry only: text in a flipped shape stays readable. The
+          container Group mirrors everything, so counter-flip the text layer. */}
+      <Group
+        scaleX={!!box.flipH !== !!flipHInherited ? -1 : 1}
+        scaleY={!!box.flipV !== !!flipVInherited ? -1 : 1}
+        x={!!box.flipH !== !!flipHInherited ? box.w : 0}
+        y={!!box.flipV !== !!flipVInherited ? box.h : 0}
+      >
+        {/* Text highlight backgrounds: all rects first so a run's highlight never covers a neighbor's glyphs */}
+        {glyphs.map(
+          (g, i) =>
+            g.highlight && (
+              <Rect
+                key={`hl${i}`}
+                x={(shape.text?.insets.l ?? 0) + g.highlight.x}
+                y={(shape.text?.insets.t ?? 0) + g.highlight.y}
+                width={g.highlight.w}
+                height={g.highlight.h}
+                fill={g.highlight.color}
+                listening={false}
+              />
+            ),
+        )}
+        {/* WordArt text extrusion: dark offset layers behind every glyph; PowerPoint's 3D
+          material also tints the face glyphs with the extrusion color (front stays lighter) */}
+        {shape.text?.extrusion &&
+          glyphs.flatMap((g, i) =>
+            [1, 0.5].map((k) => (
+              <Text
+                key={`x${i}-${k}`}
+                x={(shape.text?.insets.l ?? 0) + g.x + shape.text!.extrusion!.dx * k}
+                y={(shape.text?.insets.t ?? 0) + g.y + shape.text!.extrusion!.dy * k}
+                text={g.text}
+                fontSize={g.fontSize}
+                fontFamily={g.fontFamily}
+                fontStyle={g.fontStyle}
+                rotation={g.rotation ?? 0}
+                scaleX={g.scaleX ?? 1}
+                scaleY={g.scaleY ?? 1}
+                offsetX={g.offsetX ?? 0}
+                offsetY={g.offsetY ?? 0}
+                letterSpacing={g.letterSpacing ?? 0}
+                fill={normalizeColor(shadeHex(shape.text!.extrusion!.color, 0.7))}
+                listening={false}
+              />
+            )),
+          )}
+        {glyphs.map((g, i) => {
+          if (g.image) {
+            const img = images.get(g.image)
+            if (!img) return null
+            return (
+              <KImage
+                key={i}
+                image={img}
+                x={(shape.text?.insets.l ?? 0) + g.x}
+                y={(shape.text?.insets.t ?? 0) + g.y}
+                width={g.imageW ?? g.fontSize}
+                height={g.imageH ?? g.fontSize}
+                listening={false}
+              />
+            )
+          }
+          return (
+            <Text
+              key={i}
+              x={(shape.text?.insets.l ?? 0) + g.x}
+              y={(shape.text?.insets.t ?? 0) + g.y}
+              text={g.text}
+              fontSize={g.fontSize}
+              fontFamily={g.fontFamily}
+              fontStyle={g.fontStyle}
+              textDecoration={g.textDecoration}
+              rotation={g.rotation ?? 0}
+              scaleX={g.scaleX ?? 1}
+              scaleY={g.scaleY ?? 1}
+              offsetX={g.offsetX ?? 0}
+              offsetY={g.offsetY ?? 0}
+              letterSpacing={g.letterSpacing ?? 0}
+              fill={
+                shape.text?.extrusion
+                  ? normalizeColor(shadeHex(shape.text.extrusion.color, 0.35))
+                  : g.fill
+              }
+              direction={g.direction ?? 'ltr'}
+              {...(g.fillPriority && !shape.text?.extrusion
+                ? {
+                    fillPriority: g.fillPriority,
+                    fillLinearGradientStartPoint: g.fillLinearGradientStartPoint,
+                    fillLinearGradientEndPoint: g.fillLinearGradientEndPoint,
+                    fillLinearGradientColorStops: g.fillLinearGradientColorStops,
+                  }
+                : {})}
+              {...(g.stroke
+                ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
+                : {})}
+              {...(g.shadowEnabled
+                ? {
+                    shadowColor: g.shadowColor,
+                    shadowBlur: g.shadowBlur,
+                    shadowOffsetX: g.shadowOffsetX,
+                    shadowOffsetY: g.shadowOffsetY,
+                  }
+                : {})}
+            />
+          )
+        })}
+        {/* Reflections: faded mirror below each run (PowerPoint fades it out; approximated flat) */}
+        {glyphs.map(
+          (g, i) =>
+            g.reflection && (
+              <Text
+                key={`rf${i}`}
+                x={(shape.text?.insets.l ?? 0) + g.x}
+                y={(shape.text?.insets.t ?? 0) + g.y + g.fontSize * 1.8}
+                scaleY={-1}
+                text={g.text}
+                fontSize={g.fontSize}
+                fontFamily={g.fontFamily}
+                fontStyle={g.fontStyle}
+                letterSpacing={g.letterSpacing ?? 0}
+                fill={g.fill}
+                opacity={0.15}
+                listening={false}
+                {...(g.fillPriority
+                  ? {
+                      fillPriority: g.fillPriority,
+                      fillLinearGradientStartPoint: g.fillLinearGradientStartPoint,
+                      fillLinearGradientEndPoint: g.fillLinearGradientEndPoint,
+                      fillLinearGradientColorStops: g.fillLinearGradientColorStops,
+                    }
+                  : {})}
+              />
+            ),
+        )}
+      </Group>
+    </>
+  )
+})
+
+/**
+ * ArrowHead — draws a custom arrowhead (stealth/diamond/oval/arrow) at a polyline's start or end.
+ * The arrowhead always faces the segment direction (angle taken from the tangent at the end point).
+ */
+/** Darken a #RRGGBB color by factor (extrusion side layers). */
+/**
+ * Reflection copy: the node's content vertically flipped below it, fading out along
+ * the fade extent. The group is cached onto its own bitmap so the destination-out
+ * gradient (and the optional blur filter) composites against the copy only, never
+ * against the slide underneath.
+ */
+function ReflectionCopy({
+  node,
+  images,
+  refl,
+  w,
+  h,
+  hideText,
+  flipHInherited,
+  flipVInherited,
+}: {
+  node: RenderNode
+  images: Map<string, HTMLImageElement>
+  refl: RenderReflection
+  w: number
+  h: number
+  hideText?: boolean
+  flipHInherited?: boolean
+  flipVInherited?: boolean
+}) {
+  const srcRef = useRef<Konva.Group>(null)
+  const [bitmap, setBitmap] = useState<HTMLCanvasElement | null>(null)
+  const pad = Math.ceil(refl.blurPx) + 2
+  // The hidden group is only a RENDER SOURCE: Konva's cache() draws into the cache
+  // canvas regardless of the top node's visibility (Container.drawScene bypasses the
+  // check while caching), so the group never needs to become visible — which also
+  // means react-konva's prop reconciliation can never fight the visibility state.
+  // Fade + blur composite on our own offscreen canvas (native gaussian blur), so no
+  // destination-out ever touches the live layer.
+  useLayoutEffect(() => {
+    const g = srcRef.current
+    if (!g || w < 1 || h < 1) return
+    try {
+      // Adaptive resolution: a blurred image carries no detail beyond its blur radius
+      const basePr = Math.min(globalThis.devicePixelRatio || 1, 2)
+      const pr = Math.max(basePr / Math.min(Math.max(refl.blurPx / 6, 1), 6), 0.2)
+      g.cache({
+        x: -pad,
+        y: -pad,
+        width: Math.max(w + 2 * pad, 1),
+        height: Math.max(h + 2 * pad, 1),
+        pixelRatio: pr,
+      })
+      const cached = (
+        g as unknown as { _getCanvasCache(): { scene: { canvas: HTMLCanvasElement } } }
+      )._getCanvasCache().scene.canvas
+      const out = document.createElement('canvas')
+      out.width = Math.max(cached.width, 1)
+      out.height = Math.max(cached.height, 1)
+      const ctx = out.getContext('2d')
+      if (!ctx) return
+      if (refl.blurPx) ctx.filter = `blur(${(refl.blurPx * pr) / 2}px)`
+      ctx.drawImage(cached, 0, 0)
+      ctx.filter = 'none'
+      // Fade: fully kept at the touching edge (shape-local y=h), fully erased past the
+      // fade extent. Canvas rows map shape-local y → (y + pad) · pr.
+      ctx.globalCompositeOperation = 'destination-out'
+      const grad = ctx.createLinearGradient(
+        0,
+        (h + pad) * pr,
+        0,
+        (h * (1 - Math.max(refl.endPos, 0.02)) + pad) * pr,
+      )
+      grad.addColorStop(0, 'rgba(0,0,0,0)')
+      grad.addColorStop(1, 'rgba(0,0,0,1)')
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, out.width, out.height)
+      g.clearCache()
+      setBitmap(out)
+    } catch {
+      // jsdom / zero-size canvas: the reflection is cosmetic
+      setBitmap(null)
+    }
+  }, [node, images, refl, w, h, pad, hideText])
+  return (
+    <>
+      <Group ref={srcRef} visible={false} listening={false}>
+        <NodeBody
+          node={node}
+          images={images}
+          hideText={hideText}
+          flipHInherited={flipHInherited}
+          flipVInherited={flipVInherited}
+        />
+      </Group>
+      {bitmap && (
+        <KImage
+          image={bitmap}
+          x={-pad}
+          y={2 * h + refl.distPx + pad}
+          scaleY={-1}
+          width={w + 2 * pad}
+          height={h + 2 * pad}
+          opacity={refl.startAlpha}
+          listening={false}
+        />
+      )}
+    </>
+  )
+}
+
+function shadeHex(color: string, f: number): string {
+  const m = /^#([0-9a-f]{6})/i.exec(color)
+  if (!m) return color
+  const ch = (i: number) =>
+    Math.round(parseInt(m[1]!.slice(i, i + 2), 16) * f)
+      .toString(16)
+      .padStart(2, '0')
+  return `#${ch(0)}${ch(2)}${ch(4)}`
+}
+
+function ArrowHead({
+  end,
+  pts,
+  atStart,
+  color,
+}: {
+  end: ArrowEndRender
+  pts: number[]
+  atStart: boolean
+  color: string
+}) {
+  const nPts = pts.length / 2
+  if (nPts < 2) return null
+
+  // Compute the arrowhead angle
+  let angle: number
+  let tipX: number
+  let tipY: number
+  if (atStart) {
+    // Looking from point 2 toward point 1 (arrow points at pts[0,1])
+    const dx = pts[0]! - pts[2]!
+    const dy = pts[1]! - pts[3]!
+    angle = Math.atan2(dy, dx) * (180 / Math.PI)
+    tipX = pts[0]!
+    tipY = pts[1]!
+  } else {
+    // Looking from the second-to-last point toward the last
+    const lx = pts[(nPts - 1) * 2]!
+    const ly = pts[(nPts - 1) * 2 + 1]!
+    const px = pts[(nPts - 2) * 2]!
+    const py = pts[(nPts - 2) * 2 + 1]!
+    const dx = lx - px
+    const dy = ly - py
+    angle = Math.atan2(dy, dx) * (180 / Math.PI)
+    tipX = lx
+    tipY = ly
+  }
+
+  const w = end.widthPx
+  const l = end.lengthPx
+  const halfW = w / 2
+
+  if (end.type === 'oval') {
+    return (
+      <Ellipse
+        x={tipX}
+        y={tipY}
+        radiusX={l / 2}
+        radiusY={halfW}
+        rotation={angle}
+        fill={color}
+        listening={false}
+      />
+    )
+  }
+
+  if (end.type === 'diamond') {
+    // Diamond: tip as the front vertex, extending backward by l
+    const pts2 = [0, 0, -l / 2, -halfW, -l, 0, -l / 2, halfW]
+    return (
+      <Line
+        points={pts2}
+        closed
+        fill={color}
+        stroke={color}
+        strokeWidth={0}
+        x={tipX}
+        y={tipY}
+        rotation={angle}
+        listening={false}
+      />
+    )
+  }
+
+  if (end.type === 'stealth') {
+    // Stealth arrowhead: concave spear shape
+    const pts2 = [0, 0, -l, -halfW, -l * 0.65, 0, -l, halfW]
+    return (
+      <Line
+        points={pts2}
+        closed
+        fill={color}
+        stroke={color}
+        strokeWidth={0}
+        x={tipX}
+        y={tipY}
+        rotation={angle}
+        listening={false}
+      />
+    )
+  }
+
+  // 'arrow': open V-shaped line arrowhead
+  const pts2 = [-l, -halfW, 0, 0, -l, halfW]
+  return (
+    <Line
+      points={pts2}
+      stroke={color}
+      strokeWidth={Math.max(1, w * 0.12)}
+      x={tipX}
+      y={tipY}
+      rotation={angle}
+      listening={false}
+      lineCap="round"
+      lineJoin="round"
+    />
+  )
+}
+
+/** Play/speaker badge on audio/video poster frames (centered translucent circle + white glyph). */
+function MediaBadge({ kind, w, h }: { kind: 'video' | 'audio'; w: number; h: number }) {
+  const r = Math.max(10, Math.min(32, Math.min(w, h) * 0.18))
+  const cx = w / 2
+  const cy = h / 2
+  return (
+    <Group listening={false}>
+      <Ellipse x={cx} y={cy} radiusX={r} radiusY={r} fill="rgba(0,0,0,0.55)" />
+      {kind === 'video' ? (
+        <Line
+          points={[cx - r * 0.3, cy - r * 0.5, cx - r * 0.3, cy + r * 0.5, cx + r * 0.55, cy]}
+          closed
+          fill="#ffffff"
+          lineJoin="round"
+        />
+      ) : (
+        <Text
+          text="♪"
+          x={cx - r}
+          y={cy - r}
+          width={r * 2}
+          height={r * 2}
+          align="center"
+          verticalAlign="middle"
+          fontSize={r * 1.2}
+          fill="#ffffff"
+        />
+      )}
+    </Group>
+  )
+}
+
+/**
+ * A shape withheld from the model: a dashed frame plus the reader's own label in the
+ * corner. Drawn the way MediaBadge is — a `listening={false}` group over the node — so
+ * it rides along in thumbnails and group children without a second code path, and
+ * without covering the picture: the reader still has to see what they chose to hide.
+ */
+function RedactFrame({ label, w, h }: { label: string; w: number; h: number }) {
+  const pad = 2
+  const fontSize = Math.max(9, Math.min(13, Math.min(w, h) * 0.12))
+  const chipH = fontSize * 1.9
+  // The label is the reader's own, so it is shown as they wrote it (capped: a long one
+  // would swallow the picture it is standing on)
+  const text = `{{${label.length > 22 ? `${label.slice(0, 22)}…` : label}}}`
+  return (
+    <Group listening={false}>
+      <Rect
+        x={-pad}
+        y={-pad}
+        width={w + pad * 2}
+        height={h + pad * 2}
+        stroke={CANVAS_COLORS.redactFrame.stroke}
+        strokeWidth={1.5}
+        dash={[6, 4]}
+        cornerRadius={3}
+        listening={false}
+      />
+      <Rect
+        x={0}
+        y={0}
+        width={Math.min(w, fontSize * 0.62 * text.length + 8)}
+        height={chipH}
+        fill={CANVAS_COLORS.redactFrame.chip}
+        cornerRadius={3}
+        listening={false}
+      />
+      <Text
+        text={text}
+        x={4}
+        y={chipH / 2}
+        width={w - 8}
+        height={fontSize}
+        align="left"
+        fontSize={fontSize}
+        fill={CANVAS_COLORS.redactFrame.label}
+        ellipsis
+        listening={false}
+      />
+    </Group>
+  )
+}
+
+/**
+ * Statically positioned node: container (position/rotation/flip) + NodeBody.
+ * Rotation and flip pivot on the box center (boxPivotProps), matching OOXML.
+ */
+export const StaticNode = React.memo(function StaticNode({
+  node,
+  images,
+  flipHInherited,
+  flipVInherited,
+}: NodeBodyProps) {
+  const { box } = node
+  return (
+    <Group {...boxPivotProps(box)} listening={false}>
+      <NodeBody
+        node={node}
+        images={images}
+        flipHInherited={flipHInherited}
+        flipVInherited={flipVInherited}
+      />
+    </Group>
+  )
+})
+
+/** Four mitred bevel bands of a cell3D table cell, each a linear gradient from the outer edge
+    inward. They stay listening: the face rect is inset under them, so the ring is the cell's
+    pointer target there. */
+function CellBevelBands({
+  cell,
+  bevel,
+}: {
+  cell: { x: number; y: number; w: number; h: number }
+  bevel: CellBevelRender
+}) {
+  const { x, y, w, h } = cell
+  const b = bevel.widthPx
+  const bands: Array<{
+    key: BevelEdge
+    points: number[]
+    from: { x: number; y: number }
+    to: { x: number; y: number }
+  }> = [
+    {
+      key: 't',
+      points: [x, y, x + w, y, x + w - b, y + b, x + b, y + b],
+      from: { x, y },
+      to: { x, y: y + b },
+    },
+    {
+      key: 'r',
+      points: [x + w, y, x + w, y + h, x + w - b, y + h - b, x + w - b, y + b],
+      from: { x: x + w, y },
+      to: { x: x + w - b, y },
+    },
+    {
+      key: 'b',
+      points: [x, y + h, x + w, y + h, x + w - b, y + h - b, x + b, y + h - b],
+      from: { x, y: y + h },
+      to: { x, y: y + h - b },
+    },
+    {
+      key: 'l',
+      points: [x, y, x, y + h, x + b, y + h - b, x + b, y + b],
+      from: { x, y },
+      to: { x: x + b, y },
+    },
+  ]
+  return (
+    <>
+      {bands.map((band) => (
+        <Line
+          key={band.key}
+          points={band.points}
+          closed
+          fillLinearGradientStartPoint={band.from}
+          fillLinearGradientEndPoint={band.to}
+          fillLinearGradientColorStops={bevel.edges[band.key].flatMap((s) => [s.pos, s.color])}
+        />
+      ))}
+    </>
+  )
+}

@@ -1,0 +1,275 @@
+{
+  "id": "autofit-cjk-min-content-kinsoku",
+  "title": "CJK min-content: any two East Asian characters may break apart except before a closer or after an opener; small kana, sokuon and the prolonged sound mark may start a line; a Latin run inside is its own token",
+  "section": "word-truths.md#L1250",
+  "probe_date": "2026-11-09",
+  "class": "pure",
+  "docx": "probe.docx",
+  "source": "probe build.py (A4 9026-twip column, Calibri 11 docDefaults, eastAsia Yu Mincho ja-JP runs, TableNormal cell margins 108, TableGrid borders, compat 15), Word for Mac direct PDF, pymupdf vertical rules; the harness runs the renderer tokenizer over Carlito advances (m 0.799, a 0.479, S 0.459, N 0.646, bold A-D) with East Asian characters at 1 em",
+  "cases": [
+    {
+      "kind": "autofitCols",
+      "block": 1,
+      "expect": [283, 2909, 2914, 2909],
+      "note": "K0 a control",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "S": 0.459,
+        "N": 0.646
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 4,
+      "expect": [326, 2899, 2894, 2894],
+      "note": "K1 two kana: one-character floor",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "S": 0.459,
+        "N": 0.646
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 7,
+      "expect": [437, 2861, 2861, 2856],
+      "note": "K2 kana + ideographic comma: closer glued",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "S": 0.459,
+        "N": 0.646
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 10,
+      "expect": [437, 2861, 2861, 2856],
+      "note": "K3 opener + kana: opener glued",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "S": 0.459,
+        "N": 0.646
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 13,
+      "expect": [437, 2861, 2861, 2856],
+      "note": "K4 kana run with a comma inside",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "S": 0.459,
+        "N": 0.646
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 16,
+      "expect": [437, 2861, 2861, 2856],
+      "note": "K5 kana + closing paren",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "S": 0.459,
+        "N": 0.646
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 19,
+      "expect": [326, 2899, 2894, 2894],
+      "note": "K6 prolonged sound mark may start a line",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "S": 0.459,
+        "N": 0.646
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 22,
+      "expect": [326, 2899, 2894, 2894],
+      "note": "K7 small kana may start a line",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "S": 0.459,
+        "N": 0.646
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 25,
+      "expect": [394, 2870, 2875, 2875],
+      "note": "K8 Latin run inside kana is its own token",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "S": 0.459,
+        "N": 0.646
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 28,
+      "expect": [326, 2899, 2894, 2894],
+      "note": "K9 four kanji: one-character floor",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "S": 0.459,
+        "N": 0.646
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 31,
+      "expect": [326, 2899, 2894, 2894],
+      "note": "K10 sokuon may start a line",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "S": 0.459,
+        "N": 0.646
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    },
+    {
+      "kind": "autofitCols",
+      "block": 34,
+      "expect": [437, 2861, 2861, 2856],
+      "note": "K11 katakana middle dot never starts a line",
+      "advancesEm": {
+        "m": 0.799,
+        "a": 0.479,
+        " ": 0.226,
+        "S": 0.459,
+        "N": 0.646
+      },
+      "boldAdvancesEm": {
+        "A": 0.606,
+        "B": 0.561,
+        "C": 0.529,
+        "D": 0.63
+      },
+      "availTwips": 9026,
+      "fitTwips": 9026,
+      "tol": 20
+    }
+  ]
+}

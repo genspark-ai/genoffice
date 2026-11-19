@@ -1,0 +1,58 @@
+{
+  "id": "render-grid-line-rules",
+  "title": "Rendered typed-grid line boxes equal computeLineHeight",
+  "section": "word-truths.md#L14",
+  "section_title": "Paragraph, grid and compat rules",
+  "probe_date": "2026-08-22",
+  "class": "render",
+  "source": "same docx as grid-line-rules; expected values are the pure fixture values (Word probe 2026-08-22), the line box must match them within 0.02px",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "gridLineBox",
+      "block": 0,
+      "expect": 18,
+      "tol": 0.015,
+      "note": "single = one cell"
+    },
+    {
+      "kind": "gridLineBox",
+      "block": 1,
+      "expect": 27,
+      "tol": 0.015,
+      "note": "1.5 x pitch"
+    },
+    {
+      "kind": "gridLineBox",
+      "block": 2,
+      "expect": 15,
+      "tol": 0.015,
+      "note": "exact 300"
+    },
+    {
+      "kind": "gridLineBox",
+      "block": 3,
+      "expect": 18,
+      "tol": 0.015,
+      "note": "atLeast 200 floors at the cell"
+    },
+    {
+      "kind": "gridLineBox",
+      "block": 5,
+      "expect": 36,
+      "tol": 0.015,
+      "note": "16pt = two cells"
+    },
+    {
+      "kind": "gridLineBox",
+      "block": 7,
+      "expect": 36,
+      "tol": 0.015,
+      "note": "line 480"
+    }
+  ],
+  "docx": "probe.docx"
+}

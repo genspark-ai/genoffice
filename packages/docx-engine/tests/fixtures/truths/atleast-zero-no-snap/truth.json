@@ -1,0 +1,67 @@
+{
+  "id": "atleast-zero-no-snap",
+  "title": "atLeast w:line=0 is the only non-exact rule that does not snap to a typed line grid",
+  "section": "word-truths.md#L162",
+  "probe_date": "2026-09-11",
+  "source": "probe probe.py (Meiryo UI 10pt, docGrid lines 350 = 17.5pt), Word for Mac direct PDF, pymupdf baselines",
+  "cases": [
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 16.56,
+      "tol": 0.1,
+      "note": "atLeast 0: natural 1.65 x 10pt, no snap"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 17.52,
+      "tol": 0.05,
+      "note": "atLeast 200: snapped single grid line"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 17.52,
+      "tol": 0.05,
+      "note": "atLeast 330: snapped single grid line"
+    },
+    {
+      "kind": "linePt",
+      "block": 3,
+      "expect": 20.04,
+      "tol": 0.05,
+      "note": "atLeast 400: face value"
+    },
+    {
+      "kind": "linePt",
+      "block": 4,
+      "expect": 17.52,
+      "tol": 0.05,
+      "note": "no spacing: snapped single"
+    },
+    {
+      "kind": "linePt",
+      "block": 5,
+      "expect": 26.3,
+      "tol": 0.1,
+      "note": "auto 360 = 1.5 x grid pitch"
+    },
+    {
+      "kind": "linePt",
+      "block": 6,
+      "expect": 13.2,
+      "tol": 0.05,
+      "note": "8pt atLeast 0"
+    },
+    {
+      "kind": "linePt",
+      "block": 7,
+      "expect": 23.1,
+      "tol": 0.05,
+      "note": "14pt atLeast 0"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

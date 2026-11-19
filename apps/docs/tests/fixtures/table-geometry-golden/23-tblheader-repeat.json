@@ -1,0 +1,7 @@
+{
+  "source": "apps/docs/tests/pagination-corpus/docx/23-tblheader-repeat.docx",
+  "tables": 1,
+  "hashes": ["fd57627592e02602"],
+  "staticTables": 1,
+  "staticHashes": ["c97d17ecb2e595e6"]
+}

@@ -1,0 +1,27 @@
+{
+  "id": "hf-hangul-wrap",
+  "title": "Korean header text wraps at spaces only: Malgun Gothic 11 in the 468 pt column breaks into two lines ending at spaces, a 12-syllable word kept whole, pitch 18.96",
+  "section": "word-truths.md#L802",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf: Letter 1440 margins, header 720, docDefaults Calibri 11; Malgun Gothic 11 run of 64 hangul characters with 11 spaces: line 1 ends after a space at x 531.95, line 2 at 364.96, baselines 50.16 / 69.12 (pitch 18.96 = 11 x 1.7237), body top 73.97 = 36 + 2 x 18.96; w:wordWrap=0 gave the same two lines (no syllable fits in the 8 pt left). gen's strip paragraphs had no word-break rule, so Chromium's UAX#14 default could break between syllables",
+  "cases": [
+    {
+      "kind": "hfLineBox",
+      "part": 0,
+      "expect": { "styles": ["word-break:keep-all", "overflow-wrap:anywhere"] }
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 1,
+      "expect": { "notStyles": ["word-break"] },
+      "note": "w:wordWrap=0 allows character wrapping (Word's default rule off)"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 2,
+      "expect": { "notStyles": ["word-break"] }
+    }
+  ],
+  "docx": "probe.docx"
+}

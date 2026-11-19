@@ -1,0 +1,37 @@
+{
+  "id": "altname-latin-pace",
+  "title": "A missing Latin name with a fontTable altName paces as the alias face (Google Sans Text -> Calibri 13.44 at 11pt); a serif-PANOSE entry without altName paces as Cambria",
+  "section": "word-truths.md#L714",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), Letter, docDefaults Calibri 11: Word embedded Calibri for the altName name (glyph box 13.48 = 11.04 x 1.2207, baseline 82.56 -> next line 96.00 = 13.44) and Cambria for the serif-PANOSE name (box 12.94 = 1.172); the line-276 pitch 15.36/15.60 is the render-cloud-face-pitch probe's (identical paragraphs, same Word run)",
+  "cases": [
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 13.44,
+      "tol": 0.05,
+      "note": "altName Calibri, line 240"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 15.48,
+      "tol": 0.15,
+      "note": "altName Calibri under line 276: 15.36/15.60"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 12.89,
+      "tol": 0.1,
+      "note": "serif PANOSE, no altName: the generic Cambria rule"
+    },
+    {
+      "kind": "latinSubstitute",
+      "font": "Probe Serif Net",
+      "expect": "cambria"
+    }
+  ],
+  "docx": "probe.docx"
+}

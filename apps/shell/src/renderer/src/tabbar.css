@@ -1,0 +1,422 @@
+/* Chrome-style tab strip: tinted bar, white active tab with rounded top
+ * corners + concave "feet" merging into the content area below.
+ * Metrics copied from Chrome (macOS, light): 40px strip, 34px tabs that
+ * shrink from 240px but never stretch, "+" hugging the last tab. */
+/* Interface scale (issue #1913).
+ *
+ * The shell window is its own webContents and the six editors are
+ * WebContentsViews painted beside it, never inside it — so zooming the shell's
+ * frame cannot reach a document canvas. That is the whole reason this is a
+ * `--ui-scale` variable and not a window zoom: see src/main/ui-scale.ts. */
+.app-frame {
+  zoom: var(--ui-scale);
+}
+
+.tab-bar {
+  --tabstrip-bg: #ebebeb;
+  --tabstrip-text: #454746;
+  --tabstrip-text-active: #1f1f1f;
+  --tab-separator: rgba(0, 0, 0, 0.22);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  display: flex;
+  align-items: stretch;
+  background: var(--tabstrip-bg);
+  -webkit-app-region: drag;
+  z-index: 10;
+}
+
+/* While a Home popover is open the strip must deliver presses (drag regions
+   swallow them), so outside-press dismissal can see presses on the blank band */
+html.genoffice-popover-open .tab-bar {
+  -webkit-app-region: no-drag;
+}
+
+/* room for the macOS traffic lights (titleBarStyle: hiddenInset).
+ * The strip is `zoom`ed but the traffic lights are not, so below 100% the
+ * spacer is divided back up to keep its 78px on screen; at or above 100% it
+ * keeps growing with the strip as before. */
+.tab-bar-drag-spacer {
+  width: calc(78px / min(var(--ui-scale), 1));
+  flex-shrink: 0;
+}
+
+/* desktops that put the window controls on the leading edge (some Linux
+   layouts) report them as titlebar-area-x; keep the menu button clear.
+   Divided back below 100% like the macOS spacer: the strip is zoomed, the
+   caption buttons are not. */
+body.overlay-title-bar .tab-bar-drag-spacer {
+  width: calc(max(8px, env(titlebar-area-x, 0px)) / min(var(--ui-scale), 1));
+}
+
+/* Windows/Linux caption buttons are drawn over the strip's right end
+   (titleBarOverlay); the Window Controls Overlay env vars give their width,
+   and resolve to 0 where the overlay is absent. Divided back below 100% so
+   the reserve stays the width of the unzoomed buttons. */
+.tab-bar-caption-spacer {
+  flex-shrink: 0;
+  width: calc(
+    (100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)) / min(var(--ui-scale), 1)
+  );
+}
+
+.tab-app-menu-btn {
+  margin-right: 2px;
+}
+
+/* scrollable middle section; empty space stays part of the window drag region.
+ * Horizontal padding keeps the edge tabs' feet inside the scroll clip. */
+.tab-strip {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-item {
+  -webkit-app-region: no-drag;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* tab body is 34px tall and sits flush with the bar bottom; the 6px
+   * bottom padding centers content in the upper 28px band, on the same
+   * line as the hover capsule — measured from Chrome, whose favicons sit
+   * 3px above the tab's geometric center */
+  margin-top: 6px;
+  /* 12px left = 3px plate inset + 9px icon-to-plate, per Chrome @2x */
+  padding: 0 8px 6px 12px;
+  /* Chrome tabs shrink under pressure but never grow past 240px */
+  flex: 0 1 240px;
+  min-width: 104px;
+  border-radius: 10px 10px 0 0;
+  cursor: pointer;
+  color: var(--tabstrip-text);
+  font-size: 12.5px;
+  user-select: none;
+}
+
+/* Home carries the product name and is never closable, so it hugs its own
+ * content instead of sharing the document tabs' 240px flex basis — and it
+ * never shrinks, so "GenOffice" stays whole however many tabs are open.
+ * ("tab-home", not "home" — home.css owns `.home` for the home page
+ * container living in this same document.) */
+.tab-item.tab-home {
+  flex: 0 0 auto;
+  min-width: 0;
+  /* 2px tighter icon-to-label gap than document tabs: the home glyph is an
+   * outline (no solid plate), so the default 8px reads too loose */
+  gap: 6px;
+  /* 27px = 3px plate inset + 24px from "GenOffice" to the plate's edge, so the
+   * label gets a real 24px of breathing room (the 9px the other tabs' icons
+   * get reads too tight after a word) */
+  padding-right: 27px;
+}
+
+/* thin separator between adjacent inactive tabs */
+.tab-item:not(.active):not(:first-child)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  /* centered on the content line (3px above tab center, like the icons) */
+  top: calc(50% - 3px);
+  width: 1px;
+  height: 16px;
+  transform: translateY(-50%);
+  background: var(--tab-separator);
+}
+
+/* separators vanish next to the active or hovered tab.
+ * `:not(.active)` on the right-hand side is load-bearing: an active tab's
+ * ::before is its left foot, not a separator — hiding it would cut the
+ * rounded corner whenever the hovered/dragged tab sits just before it */
+.tab-item:not(.active):hover::before,
+.tab-item:hover + .tab-item:not(.active)::before,
+.tab-item.active + .tab-item:not(.active)::before,
+.tab-item.drag-source + .tab-item:not(.active)::before {
+  opacity: 0;
+}
+
+/* trailing separator between the last tab and the "+" button, centered in
+ * their 4px gap; same vanishing rules as the inter-tab separators */
+.tab-new-btn::before {
+  content: '';
+  position: absolute;
+  left: -2.5px;
+  top: 50%;
+  width: 1px;
+  height: 16px;
+  transform: translateY(-50%);
+  background: var(--tab-separator);
+}
+
+.tab-item.active + .tab-new-btn::before,
+.tab-item:hover + .tab-new-btn::before,
+.tab-item.drag-source + .tab-new-btn::before,
+.tab-new-btn:hover::before {
+  opacity: 0;
+}
+
+/* The highlight "plate" — one element serves both states so hover and
+ * active share the exact same left/right edges (measured from Chrome:
+ * icon 18px@2x and × 30px@2x from the plate edges in BOTH states, and
+ * every plate is inset ~3px from its tab box, giving adjacent plates
+ * their constant 6px separation). Activating a hovered tab must not
+ * change the plate's width — only its height/shape. */
+.tab-plate {
+  position: absolute;
+  /* hover shape: flush with the tab top, 28px tall, 9px radius */
+  inset: 0 3px 6px;
+  border-radius: 9px;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.tab-item:not(.active):hover .tab-plate {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.tab-item.active {
+  color: var(--tabstrip-text-active);
+  z-index: 1;
+}
+
+/* active shape: same side edges, full height, top corners only */
+.tab-item.active .tab-plate {
+  inset: 0 3px;
+  border-radius: 10px 10px 0 0;
+  background: var(--surface);
+}
+
+/* concave feet joining the active plate to the white content area below */
+.tab-item.active .tab-plate::before,
+.tab-item.active .tab-plate::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 10px;
+  height: 10px;
+}
+
+.tab-item.active .tab-plate::before {
+  left: -10px;
+  background: radial-gradient(circle at 0 0, transparent 9.5px, var(--surface) 10px);
+}
+
+.tab-item.active .tab-plate::after {
+  right: -10px;
+  background: radial-gradient(circle at 100% 0, transparent 9.5px, var(--surface) 10px);
+}
+
+/* mid drag-to-reorder: the dragged tab's plate carries a lift shadow */
+.tab-item.drag-source .tab-plate {
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+}
+
+/* ---- drag-to-reorder (Chrome-style: the grabbed tab follows the pointer, neighbours slide aside) ---- */
+
+.tab-strip.dragging .tab-item {
+  transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tab-strip.dragging .tab-item.drag-source {
+  transition: none;
+  z-index: 2;
+}
+
+/* ---- dock target (a detached window dragged over the strip): the strip
+ * tints and a slim bar marks the slot the document will land in ---- */
+
+.tab-strip {
+  position: relative;
+}
+
+.tab-strip.dock-target {
+  background: var(--hover);
+}
+
+.tab-dock-indicator {
+  position: absolute;
+  top: 8px;
+  bottom: 0;
+  width: 3px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.tab-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.tab-item.tab-dormant .tab-title {
+  opacity: 0.55;
+}
+
+.tab-title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.tab-close:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* "+" new tab button: lives inside the strip so it hugs the last tab, Chrome-style */
+.tab-new-btn {
+  margin-left: 4px;
+}
+
+.tab-overflow-btn {
+  margin: 0 8px 0 2px;
+}
+
+/* divider between the tab strip and the tab-overview button */
+.tab-overflow-btn::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 1px;
+  height: 16px;
+  transform: translateY(-50%);
+  background: var(--tab-separator);
+}
+
+.tab-new-btn,
+.tab-overflow-btn,
+.tab-app-menu-btn {
+  -webkit-app-region: no-drag;
+  position: relative;
+  flex-shrink: 0;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--tabstrip-text);
+  cursor: pointer;
+}
+
+.tab-new-btn:hover,
+.tab-overflow-btn:hover,
+.tab-app-menu-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.app-frame-content {
+  padding-top: 40px;
+}
+
+/* ── Dark mode tab bar overrides ─────────────────────────── */
+
+[data-theme='dark'] .tab-bar {
+  --tabstrip-bg: #2a2a2a;
+  --tabstrip-text: #b0b0b0;
+  --tabstrip-text-active: #e4e4e4;
+  --tab-separator: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme='dark'] .tab-item.active .tab-plate {
+  background: var(--surface);
+}
+
+[data-theme='dark'] .tab-item:not(.active):hover .tab-plate {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme='dark'] .tab-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme='dark'] .tab-new-btn:hover,
+[data-theme='dark'] .tab-overflow-btn:hover,
+[data-theme='dark'] .tab-app-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* System dark: same overrides when following OS preference */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-theme='dark']) .tab-bar {
+    --tabstrip-bg: #2a2a2a;
+    --tabstrip-text: #b0b0b0;
+    --tabstrip-text-active: #e4e4e4;
+    --tab-separator: rgba(255, 255, 255, 0.15);
+  }
+  :root:not([data-theme='light']):not([data-theme='dark']) .tab-item.active .tab-plate {
+    background: var(--surface);
+  }
+  :root:not([data-theme='light']):not([data-theme='dark']) .tab-item:not(.active):hover .tab-plate {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  :root:not([data-theme='light']):not([data-theme='dark']) .tab-close:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+  :root:not([data-theme='light']):not([data-theme='dark']) .tab-new-btn:hover,
+  :root:not([data-theme='light']):not([data-theme='dark']) .tab-overflow-btn:hover,
+  :root:not([data-theme='light']):not([data-theme='dark']) .tab-app-menu-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+/* Motion accessibility: suppress all animation for users who opt out */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.tab-rename-input {
+  min-width: 80px;
+  max-width: 220px;
+  width: 100%;
+  font: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 4px;
+  outline: none;
+}

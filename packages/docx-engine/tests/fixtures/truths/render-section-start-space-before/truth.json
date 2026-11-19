@@ -1,0 +1,52 @@
+{
+  "id": "render-section-start-space-before",
+  "title": "Space before of the first paragraph of a nextPage section: the excess over the previous paragraph's space after is kept at the page top (before=480 after prev after=200 -> +14, after=0 -> +24, after=600 -> flush), the same in compat 12 and 15",
+  "section": "word-truths.md#L1101",
+  "probe_date": "2026-11-08",
+  "class": "render",
+  "docx": "probe.docx",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-11-08, compat 15; compat 12 identical), pymupdf span tops, Letter, Calibri 11 docDefaults after=200 line=240, 14pt headings before=480 after=0; control A1 top 72.19, B1 86.11, C1 95.95, D1 71.95, E1 86.11, G1 86.11",
+  "cases": [
+    { "kind": "pages", "expect": 6 },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 2,
+      "control": 1,
+      "expect": 13.92,
+      "tol": 0.6,
+      "note": "B1: before=480 after an empty sectPr paragraph after=200 keeps 14"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 3,
+      "control": 1,
+      "expect": 23.76,
+      "tol": 0.6,
+      "note": "C1: previous after=0 keeps the full 24"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 4,
+      "control": 1,
+      "expect": -0.24,
+      "tol": 0.6,
+      "note": "D1: previous after=600 leaves nothing"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 5,
+      "control": 1,
+      "expect": 13.92,
+      "tol": 0.6,
+      "note": "E1: a text-bearing sectPr paragraph after=200"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 6,
+      "control": 1,
+      "expect": 13.92,
+      "tol": 0.6,
+      "note": "G1: direct before=480 after a continuous section's text paragraph after=200"
+    }
+  ]
+}

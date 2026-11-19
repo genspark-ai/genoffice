@@ -1,0 +1,11747 @@
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { handlePdfControl, type ControlRequest } from './control'
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
+// legacy build: the modern build relies on new APIs like Math.sumPrecise that the current
+// Electron V8 lacks, making embedded font parsing fail and whole pages render as garbled raw char codes
+import { GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+import { AiPanel, GensparkMark } from './ai/AiPanel'
+import { AiAskPopover, type AskAnchorRect } from './AiAskPopover'
+import {
+  createSavedAnnotCountsLoader,
+  loadSavedAnnots,
+  type SavedAnnotCounts,
+} from './annotation-catalog'
+import {
+  AUTO_OCR_PAGE_CAP,
+  OcrTextLayer,
+  renderPageForOcr,
+  runAutoOcr,
+  type AutoOcrResult,
+  type AutoOcrStop,
+  type OcrPageData,
+} from './ocr-layer'
+import type { CropRect, FileOpCanceled, FileOpResult, PdfAppDeps, RotateDelta } from './ai/tools'
+import {
+  MARKUP_COLORS,
+  geomDispSize,
+  pdfRectToCss,
+  pdfToView,
+  quadSetsMatch,
+  quadToRect,
+  selectionQuadsByPage,
+  viewToPdf,
+} from './annotations'
+import type { LocalMarkup, PageGeom } from './annotations'
+import { groupLineSpans } from './text-line'
+import { DRAW_COLORS, DrawLayer, cssRgb } from './DrawLayer'
+import { ColorPickerPopover } from './ColorPicker'
+import type { DrawTool, LocalDrawing, SavedNotePin } from './DrawLayer'
+import { NoteMarginColumn } from './NoteMargin'
+import type { NoteMarginDraft, NoteMarginThread } from './NoteMargin'
+import { flattenThread, pendingNoteKey, threadSubtree, visibleNoteThreads } from './note-threads'
+import type { NoteInput, NoteThreadItem, SavedNoteAnnot } from './note-threads'
+import { FormLayer } from './FormLayer'
+import {
+  FormDesignLayer,
+  FormFieldProps,
+  NUDGE_PTS,
+  clampRectToPage,
+  designWidgetId,
+  widgetDesignId,
+} from './FormDesignLayer'
+import type { DesignField, FormDesignTool } from './FormDesignLayer'
+import { collectDetectInput, detectFormFields } from './form-detect'
+import { checkboxWidgetAt, markRectForBox, printedBoxAt } from './form-mark-target'
+
+type Arrange =
+  | 'left'
+  | 'right'
+  | 'top'
+  | 'bottom'
+  | 'centerH'
+  | 'centerV'
+  | 'distributeH'
+  | 'distributeV'
+  | 'sameWidth'
+  | 'sameHeight'
+  | 'sameSize'
+
+const PASTE_OFFSET_PTS = 12
+/** Auto-detect stops here so a long scanned form cannot flood the document with fields */
+const DETECT_FIELD_CAP = 300
+
+const REDACT_PATTERN_LABELS: Record<RedactPattern, StringKey> = {
+  phone: 'redactPatternPhone',
+  email: 'redactPatternEmail',
+  'credit-card': 'redactPatternCreditCard',
+  ssn: 'redactPatternSsn',
+  date: 'redactPatternDate',
+  iban: 'redactPatternIban',
+}
+
+/** Field names still taken once pending widget removals are applied (a fully removed field frees its name) */
+function liveFieldNames(
+  catalog: FormCatalog | null,
+  edits: Map<string, FormWidgetEditInput>,
+): string[] {
+  if (!catalog) return []
+  const alive = new Set<string>()
+  for (const w of catalog.widgets) if (!edits.get(w.id)?.remove) alive.add(w.fieldName)
+  const names = [
+    ...[...catalog.fields.keys()].filter((name) => alive.has(name)),
+    ...catalog.otherFieldNames,
+  ]
+  // Every ancestor of a dotted name is a field group: generators and validation treat it as taken
+  const groups = names.flatMap((name) => {
+    const parts = name.split('.')
+    return parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('.'))
+  })
+  return [...names, ...groups]
+}
+import {
+  buildFormCatalog,
+  documentFormFeatures,
+  hasXfaMarker,
+  visibleFormWidgets,
+  type FormCatalog,
+  type FormField,
+  type FormWidget,
+} from './form-catalog'
+import { ImageEditLayer, imageRectKey } from './ImageEditLayer'
+import { RedactionLayer } from './RedactionLayer'
+import type { LocalRedaction } from './RedactionLayer'
+import type { LocalImageEdit } from './ImageEditLayer'
+import { CropDialog, CutoutDialog, cropImagePng } from './ImageDialogs'
+import { cropRect, flipPixels, multiplyAlpha } from './image-bake'
+import type { CropFractions, ImageBakeOp } from './image-bake'
+import { removeBackground, type PixelImage } from './cutout'
+import { navAction, shouldHandleDocumentUndo } from './keyNav'
+import { rowOfVisIdx, spreadRows, stepPage } from './spread'
+import {
+  captureViewState,
+  captureZoomAnchor,
+  loadLastZoom,
+  loadViewState,
+  saveLastZoom,
+  saveViewState,
+  zoomAnchorY,
+} from './view-state'
+import type { PdfViewState, ZoomAnchor } from './view-state'
+import { LinkLayer } from './LinkLayer'
+import { OutlinePanel } from './OutlinePanel'
+import { CommentsPanel, type CommentEntry } from './CommentsPanel'
+import { ComparePanel } from './ComparePanel'
+import { compareDocuments, type CompareResult, type PageText } from './compare-text'
+import { AttachmentsPanel, type AttachmentRow } from './AttachmentsPanel'
+import type { OutlineNode } from './OutlinePanel'
+import {
+  buildHeadingOutline,
+  destTop,
+  remapOutlinePages,
+  remapOutlineTree,
+} from './heading-outline'
+import { readFileBytes } from './file-bytes'
+import type { PdfEncryptionInput, PdfPermissions } from '../shared/ipc'
+import { mayChangeProtection } from './protection-gate'
+import { MAX_REDACTION_REGIONS } from '../shared/ipc'
+import { usePrintJob } from './usePrintJob'
+import { PrintDialog } from './PrintDialog'
+import { PasswordDialog } from './PasswordDialog'
+import { PropertiesDialog } from './PropertiesDialog'
+import { LinkDialog, type LinkDraft } from './LinkDialog'
+import { CertSignDialog } from './CertSignDialog'
+import { ProtectionDialog } from './ProtectionDialog'
+import { BatesDialog } from './BatesDialog'
+import { buildBatesInserts, type BatesConfig } from './bates'
+import { MeasureScaleDialog } from './MeasureScaleDialog'
+import { formatLength, type MeasureScale } from './measure'
+import { SignaturesDialog, overallSignatureStatus } from './SignaturesDialog'
+import { SignatureDialog, fileToCanvas } from './SignatureDialog'
+import type { SignatureData } from './SignatureDialog'
+import { signatureDrawingForField } from './signature-field'
+import {
+  renderStaticFormMark,
+  renderStaticFormText,
+  type StaticFormFillKind,
+} from './static-form-fill'
+import { StampDialog } from './StampDialog'
+import { buildStamps } from './stamps'
+import type { HeaderFooterConfig, WatermarkConfig } from './stamps'
+import { createSearchIndexCache, findPatternsInIndex, patternMarks, searchInIndex } from './search'
+import { REDACT_PATTERNS } from './redact-patterns'
+import type { RedactPattern } from './redact-patterns'
+import type { SearchIndex, SearchMatch } from './search'
+import { mapDocFont, type DocFontStyle } from './doc-font'
+import { groupPageBlocks, type TextBlock } from './text-block'
+import {
+  joinBlockLines,
+  mapLineRangeToBlock,
+  spliceBlockText,
+  unifyRadicals,
+  wrapText,
+} from './text-wrap'
+import {
+  colorSegments,
+  decodeStyle,
+  encodeStyle,
+  mapCharColors,
+  patchStyle,
+  runsToColors,
+  spliceCharColors,
+} from './color-runs'
+import type { CharStyle } from './color-runs'
+import { platformShortcuts } from '@genoffice/i18n'
+import {
+  Dropdown,
+  aiPanelInitiallyOpen,
+  rememberAiPanelOpen,
+  useDismissablePopover,
+  useRibbonCollapse,
+  useAiSidebarEnabled,
+} from '@genoffice/ui'
+import { useI18n } from './i18n/locale'
+import type { StringKey } from './i18n/locale'
+import { useAutosave } from './useAutosave'
+import type {
+  AnnotDeleteInput,
+  DrawingInput,
+  FormValueInput,
+  ImageEditFailure,
+  FormFieldInput,
+  FormFieldKind,
+  FormWidgetEditInput,
+  ImageEditInput,
+  ImageLayer,
+  MarkupType,
+  MetadataInput,
+  NoteEditInput,
+  OutlineEntryInput,
+  PageImageRef,
+  PdfConvertFormat,
+  PdfSignatureInfo,
+  StaticFormFillRecord,
+  StampInput,
+  TextEditFailure,
+  TextEditInput,
+  TextInsertFailure,
+  TextInsertInput,
+} from '../shared/ipc'
+import {
+  ZOOM_STEPS,
+  MIN_SCALE,
+  MAX_SCALE,
+  PAGE_GAP,
+  SCROLL_PAD,
+  SIDEBAR_W_KEY,
+  SIDEBAR_CHROME,
+  clampSidebarW,
+  loadSidebarW,
+  PAPER_SIZES,
+  STROKE_WIDTH,
+  NOTE_MARGIN_W,
+  parsePageRanges,
+} from './view-config'
+import type { PageSize, FitMode } from './view-config'
+import { useVisibleSet, PdfPage, MarkupOverlay } from './PdfPage'
+import { probePageGeometry } from './page-probe'
+import { loadPdfForView } from './open-document'
+import { PdfThumb, ThumbPendingOverlay } from './PdfThumb'
+import type { ThumbMenu } from './PdfThumb'
+import { SignDropOverlay, signPlaceK, imagePlaceK, staticFormFillPlaceK } from './SignDropOverlay'
+import {
+  EDIT_FONT_BY_ID,
+  measureTextWidth,
+  rgbToHex,
+  hexToRgb,
+  hexTo255,
+  rgb255ToHex,
+  styleRunsToKeyRuns,
+  styleSegCss,
+  boldCss,
+  boldToken,
+  blockRectKey,
+  blockMoveInput,
+  editCarriesBlock,
+  mergeTextDraft as mergeTextDraftImpl,
+  isBlockEditOf,
+  patchPendingEdits,
+  resolveTextEdit,
+  shiftPendingEdit,
+  shiftRect,
+  unionCover,
+  inflateCss,
+  textInsertPreviewStyle,
+  textEditPreviewParts,
+  textEditPreviewContent,
+  seedDraftColors,
+  draftOwnedEditIds,
+  previewsTextEdit,
+  paperCss,
+  textEraseKey,
+  textEraseProbe,
+} from './text-edit-preview'
+import { samplePaperColor } from './paper-sample'
+import type { LocalTextEdit, LocalTextInsert, TextDraft } from './text-edit-preview'
+import { buildOcrBakeInserts } from './ocr-bake'
+import { planEditOps, reduceBucket } from './edit-ops'
+import type { Bucket, Op, OpContext, PlanResult } from './edit-ops'
+import { rectsNear } from './edit-state'
+import type {
+  StampConfig,
+  SavedMarkupAnnot,
+  LocalAnnotDelete,
+  LocalBlankPage,
+  LocalFormField,
+  LocalNoteEdit,
+  EditSnapshot,
+  SavedSnapshot,
+  AnnotSelection,
+} from './edit-state'
+import {
+  IconThumbs,
+  IconHighlight,
+  IconUnderline,
+  IconSquiggly,
+  IconStrike,
+  IconEditText,
+  IconInk,
+  IconRect,
+  IconEllipse,
+  IconArrow,
+  IconNote,
+  IconCaret,
+  IconPolygon,
+  IconSign,
+  IconCertSign,
+  IconSignatures,
+  IconProtect,
+  IconBates,
+  IconMeasure,
+  IconPreviousField,
+  IconNextField,
+  IconCompleteForm,
+  IconFormAiFill,
+  IconFormText,
+  IconFieldText,
+  IconFieldCheckbox,
+  IconFieldSignature,
+  IconFieldKeep,
+  IconFieldArrange,
+  IconFieldDetect,
+  IconFieldDate,
+  IconFieldRadio,
+  IconFieldChoice,
+  IconFieldPreview,
+  IconFormCheck,
+  IconFormCross,
+  IconConvertPdf,
+  IconInsertImage,
+  IconEditImage,
+  IconLink,
+  IconNight,
+  IconSpread,
+  IconSinglePage,
+  IconWatermark,
+  IconProps,
+  IconRotateL,
+  IconRotateR,
+  IconDeletePage,
+  IconExtract,
+  IconInsertPdf,
+  IconInsertBlank,
+  IconRotateAll,
+  IconReverse,
+  IconSplitPdf,
+  IconMergePdf,
+  IconMergePages,
+  IconReplacePages,
+  IconSplitPages,
+  IconCropPages,
+  IconPageSize,
+  IconFitWidth,
+  IconFitPage,
+  IconOutline,
+  IconComments,
+  IconEye,
+  IconDrawColor,
+  RbCaret,
+  IconSearch,
+  IconPrint,
+  IconUndo,
+  IconRedo,
+  IconSave,
+  IconLayerUp,
+  IconLayerDown,
+  IconTrash,
+  IconRotateCw,
+  IconRotateCcw,
+  IconSwapImage,
+  IconFlipH,
+  IconFlipV,
+  IconCrop,
+  IconCutout,
+  IconOpacity,
+  IconAiSummarize,
+  IconAiKeyPoints,
+} from './icons'
+
+GlobalWorkerOptions.workerSrc = workerUrl
+
+const DRAW_TOOLS = [
+  { tool: 'ink' as const, icon: IconInk, key: 'drawInk' as const },
+  { tool: 'measure' as const, icon: IconMeasure, key: 'drawMeasure' as const },
+  { tool: 'rect' as const, icon: IconRect, key: 'drawRect' as const },
+  { tool: 'ellipse' as const, icon: IconEllipse, key: 'drawEllipse' as const },
+  { tool: 'arrow' as const, icon: IconArrow, key: 'drawArrow' as const },
+  { tool: 'polygon' as const, icon: IconPolygon, key: 'drawPolygon' as const },
+  { tool: 'caret' as const, icon: IconCaret, key: 'drawCaret' as const },
+  { tool: 'note' as const, icon: IconNote, key: 'drawNote' as const },
+]
+
+// ── ribbon tabs (docs-style tab strip over a fixed 80px band) ──
+const RIBBON_TABS = [
+  { id: 'home', labelKey: 'ribbonTabHome' },
+  { id: 'annotate', labelKey: 'ribbonTabAnnotate' },
+  { id: 'edit', labelKey: 'ribbonTabEdit' },
+  { id: 'page', labelKey: 'ribbonTabPage' },
+  { id: 'view', labelKey: 'ribbonTabView' },
+] as const
+type RibbonTab = (typeof RIBBON_TABS)[number]['id'] | 'fillForm' | 'formDesign'
+
+/** The file's bytes before and after a change written to it at once */
+interface WrittenStep {
+  before: Uint8Array
+  after: Uint8Array
+}
+interface WrittenSteps {
+  undo: WrittenStep[]
+  redo: WrittenStep[]
+}
+/** Each step holds the whole file twice: a long history of them would hold that much memory */
+const MAX_WRITTEN_STEPS = 10
+
+export default function App() {
+  const { lang, t } = useI18n()
+  const collapse = useRibbonCollapse('genoffice-pdf-ribbon-collapsed', {
+    collapse: t('ribbonCollapse'),
+    expand: t('ribbonExpand'),
+    // ⌥⌘K / Ctrl+Alt+K: the icon-only middle density (docs parity, see #362)
+    compact: t('ribbonCompact'),
+    expandFull: t('ribbonExpand'),
+  })
+  const [doc, setDoc] = useState<PDFDocumentProxy | null>(null)
+  const [filePath, setFilePath] = useState('')
+  const [status, setStatus] = useState<'loading' | 'error' | 'empty' | 'password' | 'ready'>(
+    'loading',
+  )
+  const [sizes, setSizes] = useState<PageSize[]>([])
+  /** 1-based pages whose probe failed: they render as error tiles instead of canvases */
+  const [failedPages, setFailedPages] = useState<Set<number>>(new Set())
+  /** the message of a failed open, shown with the placeholder's loadError line */
+  const [openError, setOpenError] = useState<string | null>(null)
+  // Blank pages added this session live past the document's pages as virtual original
+  // indices (see BlankPageInput); allSizes is the page table every index lookup uses
+  const [blankPages, setBlankPages] = useState<LocalBlankPage[]>([])
+  const blankPagesRef = useRef(blankPages)
+  blankPagesRef.current = blankPages
+  const commitBlankPages = (next: LocalBlankPage[]) => {
+    blankPagesRef.current = next
+    setBlankPages(next)
+  }
+  const allSizes = useMemo(() => {
+    if (blankPages.length === 0) return sizes
+    const table = [...sizes]
+    for (const b of blankPages)
+      table[b.input.pageIndex] = { width: b.input.width, height: b.input.height }
+    return table
+  }, [sizes, blankPages])
+  const isBlankPage = (origIdx: number) => origIdx >= sizes.length
+  // Ref-based views for code that runs before React re-renders (AI tool turns): a blank
+  // page committed a moment ago is already addressable
+  const blankSizeNow = (origIdx: number): PageSize | undefined => {
+    const b = blankPagesRef.current.find((x) => x.input.pageIndex === origIdx)
+    return b ? { width: b.input.width, height: b.input.height } : undefined
+  }
+  const pageCountNow = () => sizes.length + blankPagesRef.current.length
+  const [pageOrigins, setPageOrigins] = useState<[number, number][]>([])
+  const [pageUserUnits, setPageUserUnits] = useState<number[]>([])
+  const [baseRots, setBaseRots] = useState<number[]>([])
+  const [scale, setScale] = useState(1)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageInput, setPageInput] = useState('1')
+  const [sidebar, setSidebar] = useState<
+    'thumbs' | 'outline' | 'comments' | 'compare' | 'attachments' | null
+  >('thumbs')
+  const [compareResult, setCompareResult] = useState<CompareResult | null>(null)
+  const [compareName, setCompareName] = useState<string | null>(null)
+  const [compareBusy, setCompareBusy] = useState(false)
+  const [compareSwapped, setCompareSwapped] = useState(false)
+  const compareSidesRef = useRef<{ mine: PageText[]; theirs: PageText[] } | null>(null)
+  const [sidebarW, setSidebarW] = useState(loadSidebarW)
+  /** raster width for thumbnails — only updated when a drag ends (re-rastering every frame would jank) */
+  const [thumbRasterW, setThumbRasterW] = useState(() => loadSidebarW() - SIDEBAR_CHROME)
+  // Re-clamp when the window shrinks (max is 40% of the window), same as slides
+  useEffect(() => {
+    const onResize = () => setSidebarW((w) => clampSidebarW(w))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  /** Drag to resize: width follows the pointer (rAF-throttled); persisted on release */
+  const startSidebarResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = sidebarW
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    let w = startW
+    let raf = 0
+    const onMove = (ev: PointerEvent) => {
+      w = clampSidebarW(startW + ev.clientX - startX)
+      if (!raf)
+        raf = requestAnimationFrame(() => {
+          raf = 0
+          setSidebarW(w)
+        })
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      if (raf) cancelAnimationFrame(raf)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      setSidebarW(w)
+      setThumbRasterW(w - SIDEBAR_CHROME)
+      localStorage.setItem(SIDEBAR_W_KEY, String(Math.round(w)))
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+  // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
+  const [aiCollapsed, setAiCollapsed] = useState(
+    () => !aiPanelInitiallyOpen('genoffice-pdf-show-ai'),
+  )
+  /** the panel setter in the "true = visible" sense the sidebar hook expects */
+  const setAiOpen = useCallback((open: boolean) => setAiCollapsed(!open), [])
+  // the sidebar switch is a soft hide; it closes the panel when it turns off
+  const aiSidebarEnabled = useAiSidebarEnabled(setAiOpen)
+  useEffect(() => {
+    rememberAiPanelOpen('genoffice-pdf-show-ai', !aiCollapsed)
+  }, [aiCollapsed])
+  /** One-shot prompt pushed by the ribbon AI buttons; the panel auto-runs it (docs preset pattern) */
+  const [aiPreset, setAiPreset] = useState<{ text: string; nonce: number } | null>(null)
+  const [ribbonTab, setRibbonTab] = useState<RibbonTab>('home')
+  const [spread, setSpread] = useState<1 | 2>(1)
+  const [nightMode, setNightMode] = useState(false)
+  const [outline, setOutline] = useState<OutlineNode[] | null>(null)
+  const [outlineGenerated, setOutlineGenerated] = useState(false)
+  /** Edited bookmark tree (user add/rename/delete over the file's own outline).
+   * Only embedded outlines are editable — a generated heading tree is derived.
+   * Entries carry explicit page targets (resolved at edit time through
+   * doc.getPageIndex); a named destination we cannot resolve marks the whole
+   * edit unresolvable and the panel offers no save path for it (fail closed:
+   * the file's own /Outlines stay untouched). */
+  const [pendingOutline, setPendingOutline] = useState<{
+    tree: OutlineEntryInput[] | null
+    unresolvable: boolean
+    /** the tree differs from the file's outline: what Save writes, and what makes the document dirty */
+    edited: boolean
+    /** the pane shows the add / rename / delete affordances */
+    editing: boolean
+  } | null>(null)
+  const outlineDocRef = useRef<PDFDocumentProxy | null>(null)
+  const [markups, setMarkups] = useState<LocalMarkup[]>([])
+  const markupsRef = useRef(markups)
+  markupsRef.current = markups
+  /** Pending deletions of markup annotations already saved in the file */
+  const [annotDeletes, setAnnotDeletes] = useState<LocalAnnotDelete[]>([])
+  const annotDeletesRef = useRef(annotDeletes)
+  annotDeletesRef.current = annotDeletes
+  /** Pending content rewrites of saved note comments (one entry per note, latest text) */
+  const [noteEdits, setNoteEdits] = useState<LocalNoteEdit[]>([])
+  /** Mirrors for AI tool calls, which run several per turn before React re-renders */
+  const noteEditsRef = useRef(noteEdits)
+  noteEditsRef.current = noteEdits
+  /** Saved markup annotations per original page index, loaded lazily for visible pages (keyed to `doc`) */
+  const [savedMarkups, setSavedMarkups] = useState<Map<number, SavedMarkupAnnot[]>>(new Map())
+  /** Saved note (Text) comments per original page index, loaded in the same pass */
+  const [savedNotes, setSavedNotes] = useState<Map<number, SavedNoteAnnot[]>>(new Map())
+  /** Active comment thread: its margin card is expanded and linked to its pin */
+  const [activeNote, setActiveNote] = useState<{ origIdx: number; rootKey: string } | null>(null)
+  /** Settings → General user name; the default author of new note comments */
+  const [noteAuthor, setNoteAuthor] = useState('')
+  useEffect(() => {
+    window.pdfApi.getUsername().then(setNoteAuthor, () => {})
+    return window.pdfApi.onUsernameChanged(setNoteAuthor)
+  }, [])
+  const [highlightColor, setHighlightColor] = useState<[number, number, number]>(
+    MARKUP_COLORS.highlight,
+  )
+  const [highlightColorOpen, setHighlightColorOpen] = useState(false)
+  const [convertOpen, setConvertOpen] = useState(false)
+  const [convertBusy, setConvertBusy] = useState(false)
+  const [drawings, setDrawings] = useState<LocalDrawing[]>([])
+  const drawingsRef = useRef(drawings)
+  drawingsRef.current = drawings
+  const [drawTool, setDrawTool] = useState<DrawTool | null>(null)
+  /** real-world scale for the measure tool; lives in the session only */
+  const measureScaleRef = useRef<MeasureScale | null>(null)
+  const [measureScaleDlg, setMeasureScaleDlg] = useState(false)
+  /** the drawn line waiting for its real length while the scale dialog is open */
+  const pendingMeasureRef = useRef<
+    (Extract<DrawingInput, { kind: 'measure' }> & { pageIndex: number }) | null
+  >(null)
+  /** the drawn line's PDF length, shown as the calibration ruler */
+  const [measureDrawnPts, setMeasureDrawnPts] = useState(0)
+  /** set when the user re-clicks the armed measure tool: the next drawn line
+      re-calibrates instead of measuring */
+  const measureRecalibrateRef = useRef(false)
+  /** one-shot: the deliberate second click disarms the tool while keeping the
+      re-calibration request; the drawTool effect below must not read that
+      transition as a stale flag to clear */
+  const keepMeasureRecalibrateRef = useRef(false)
+  // Any way of leaving the measure tool other than the deliberate second
+  // click — another tool, Esc, entering another edit mode — drops a pending
+  // re-calibration request, so the dialog cannot re-open unexpectedly later.
+  useEffect(() => {
+    if (keepMeasureRecalibrateRef.current) {
+      keepMeasureRecalibrateRef.current = false
+      return
+    }
+    if (drawTool !== 'measure') measureRecalibrateRef.current = false
+  }, [drawTool])
+  const [redactions, setRedactions] = useState<LocalRedaction[]>([])
+  const redactionsRef = useRef(redactions)
+  redactionsRef.current = redactions
+  const [redactFindOpen, setRedactFindOpen] = useState(false)
+  const redactFindWrapRef = useRef<HTMLDivElement | null>(null)
+  const redactionApplyConfirmedRef = useRef(false)
+  const redactionRequestInFlightRef = useRef(false)
+  const [redactionCopyInFlight, setRedactionCopyInFlight] = useState(false)
+  const [textEdits, setTextEdits] = useState<LocalTextEdit[]>([])
+  const [textInserts, setTextInserts] = useState<LocalTextInsert[]>([])
+  // AI tool calls within one turn read and write inserts through this mirror (see orderRef)
+  const textInsertsRef = useRef(textInserts)
+  textInsertsRef.current = textInserts
+  const commitTextInserts = (next: LocalTextInsert[]) => {
+    textInsertsRef.current = next
+    setTextInserts(next)
+  }
+  const [pendingTextInsert, setPendingTextInsert] = useState<Omit<
+    TextInsertInput,
+    'pageIndex' | 'origin'
+  > | null>(null)
+  const [textInsertPointer, setTextInsertPointer] = useState<{
+    pageIndex: number
+    x: number
+    y: number
+  } | null>(null)
+  useEffect(() => {
+    if (!pendingTextInsert) setTextInsertPointer(null)
+  }, [pendingTextInsert])
+  const [editTextMode, setEditTextMode] = useState(false)
+  const [textDraft, setTextDraft] = useState<TextDraft | null>(null)
+  /** Current draft for async callbacks (block-probe fallback runs after renders) */
+  const textDraftRef = useRef<TextDraft | null>(null)
+  textDraftRef.current = textDraft
+  /** Hover affordance in edit-text mode: one box over the whole merged line */
+  interface LineHover {
+    origIdx: number
+    box: { left: number; top: number; width: number; height: number }
+  }
+  const [lineHover, setLineHover] = useState<LineHover | null>(null)
+  const lineHoverAnchor = useRef<HTMLElement | null>(null)
+  /** Mirror of lineHover for the mousemove handler: state commits lag continuous
+      pointer events, so containment must read the just-set box synchronously */
+  const lineHoverRef = useRef<LineHover | null>(null)
+  const clearLineHover = () => {
+    lineHoverAnchor.current = null
+    lineHoverRef.current = null
+    setLineHover(null)
+  }
+  /** WPS-style paragraph boxes shown while edit-text mode is on, clustered lazily
+      per visible page from the search index (PDF space; cleared on doc reload) */
+  const [pageBlocks, setPageBlocks] = useState<Map<number, TextBlock[]>>(new Map())
+  const [blockHover, setBlockHover] = useState<{ origIdx: number; idx: number } | null>(null)
+  /** Border-drag of a clustered block (WPS-style move); client-space endpoints,
+      converted to a PDF-space delta on release like the image-edit drag */
+  const [blockDrag, setBlockDrag] = useState<{
+    origIdx: number
+    idx: number
+    from: [number, number]
+    to: [number, number]
+  } | null>(null)
+  /** When a grip drag releases, the browser still synthesizes a click at the drop
+      point — which would open an editor for whatever text sits under it. Timestamped
+      so a missed click (release outside the window) can't swallow a later real one.
+      Shared with the pending-insert drag, whose stray click would pop the selection. */
+  const blockDragReleaseAt = useRef(0)
+  /** Drag-to-move of a pending inserted text (client-space endpoints, like blockDrag) */
+  const [insertDrag, setInsertDrag] = useState<{
+    id: string
+    from: [number, number]
+    to: [number, number]
+  } | null>(null)
+  const blockHoverRef = useRef<{ origIdx: number; idx: number } | null>(null)
+  const clearBlockHover = () => {
+    if (blockHoverRef.current) {
+      blockHoverRef.current = null
+      setBlockHover(null)
+    }
+  }
+  /** Pending edit addressing this clustered block: block edits and block moves keep
+      the block's own rect as their input.rect (the save-time match key), so those
+      match by exact rect key. A LINE edit whose text covers the whole block (the
+      single-line block case — its rect is the line span, not the block rect) owns
+      the block just the same: moving/reopening the block must address that edit,
+      not draft a colliding second one over the same objects. */
+  const pendingEditFor = (
+    origIdx: number,
+    block: TextBlock,
+    edits: LocalTextEdit[] = textEdits,
+  ): LocalTextEdit | undefined => {
+    const pageEdits = edits.filter((te) => te.input.pageIndex === origIdx)
+    if (pageEdits.length === 0) return undefined
+    const key = blockRectKey(block.rect)
+    const exact = pageEdits.find((te) => blockRectKey(te.input.rect) === key)
+    if (exact) return exact
+    const blockText = joinBlockLines(block.lines.map((l) => l.text)).replace(/\s+/g, '')
+    if (!blockText) return undefined
+    return pageEdits.find((te) => {
+      const r = te.input.rect
+      const cx = (r[0] + r[2]) / 2
+      const cy = (r[1] + r[3]) / 2
+      return (
+        cx >= block.rect[0] &&
+        cx <= block.rect[2] &&
+        cy >= block.rect[1] &&
+        cy <= block.rect[3] &&
+        te.input.oldText.replace(/\s+/g, '') === blockText
+      )
+    })
+  }
+
+  /** Overlap of two PDF rects as a fraction of the smaller one (0 = disjoint) */
+  const overlapOfSmaller = (a: readonly number[], b: readonly number[]): number => {
+    const ox = Math.min(a[2]!, b[2]!) - Math.max(a[0]!, b[0]!)
+    const oy = Math.min(a[3]!, b[3]!) - Math.max(a[1]!, b[1]!)
+    if (ox <= 0 || oy <= 0) return 0
+    const aArea = (a[2]! - a[0]!) * (a[3]! - a[1]!)
+    const bArea = (b[2]! - b[0]!) * (b[3]! - b[1]!)
+    return (ox * oy) / Math.min(aArea, bArea)
+  }
+
+  /** Pending edits that geometrically claim (part of) this block: rect overlap of at
+      least half the smaller box. Catches everything the text matchers miss — a DOM
+      visual line can join runs the clustering buckets into a neighboring block
+      (slightly raised labels, superscripts), so a line edit's oldText covers MORE
+      than the block and no text comparison lines up; likewise line edits inside a
+      multi-line paragraph claim their row. Drag visuals let these previews follow
+      the pointer and the ghost skips the rows they cover. */
+  const blockClaimEdits = (
+    origIdx: number,
+    block: TextBlock,
+    edits: LocalTextEdit[] = textEdits,
+  ): LocalTextEdit[] =>
+    edits.filter(
+      (te) => te.input.pageIndex === origIdx && overlapOfSmaller(te.input.rect, block.rect) >= 0.5,
+    )
+
+  const blockOverlapEdit = (
+    origIdx: number,
+    block: TextBlock,
+    edits: LocalTextEdit[] = textEdits,
+  ): LocalTextEdit | undefined => blockClaimEdits(origIdx, block, edits)[0]
+
+  /** The edit whose move/preview the block's drag visuals must follow. Single-line
+      blocks fall back to geometric ownership (nothing to fold there anyway);
+      multi-line blocks stay on the text matchers so paragraph folding keeps
+      handling embedded line edits. */
+  const blockOwnerEdit = (origIdx: number, b: TextBlock): LocalTextEdit | undefined =>
+    pendingEditFor(origIdx, b) ?? (b.lines.length === 1 ? blockOverlapEdit(origIdx, b) : undefined)
+
+  /** Where the block currently draws: its rect shifted by any pending move */
+  const blockDrawRect = (origIdx: number, b: TextBlock): [number, number, number, number] => {
+    const mv = blockOwnerEdit(origIdx, b)?.moveBy
+    return mv ? shiftRect(b.rect, mv) : b.rect
+  }
+
+  /** Track the paragraph under the pointer. Runs on every page mousemove (the boxes
+      are pointer-events: none so clicks fall through to the text layer), commits
+      state only when the hovered block changes */
+  const updateBlockHover = (origIdx: number, e: ReactMouseEvent<HTMLDivElement>) => {
+    const cur = blockHoverRef.current
+    const blocks = pageBlocks.get(origIdx)
+    let next: { origIdx: number; idx: number } | null = null
+    if (blocks && blocks.length > 0) {
+      const pageBox = e.currentTarget.getBoundingClientRect()
+      const [px, py] = viewToPdf(
+        pageGeom(origIdx),
+        (e.clientX - pageBox.left) / scale,
+        (e.clientY - pageBox.top) / scale,
+      )
+      // Slop covers the border grips, which sit just OUTSIDE the block rect —
+      // an exact test would clear the hover (and unmount the grip under the
+      // pointer) the moment the pointer reaches them
+      const pad = 8 / scale
+      const hit = (b: TextBlock, p: number): boolean => {
+        const r = blockDrawRect(origIdx, b)
+        return px >= r[0] - p && px <= r[2] + p && py >= r[1] - p && py <= r[3] + p
+      }
+      // Sticky: keep the hovered block while the pointer stays in its padded
+      // rect — two vertically-close blocks both claim the strip between them,
+      // and without hysteresis the frame flips to the neighbour the moment the
+      // pointer reaches a grip, so the press grabs the wrong block
+      const held = cur?.origIdx === origIdx ? blocks[cur.idx] : undefined
+      if (held && hit(held, pad)) return
+      // Fresh acquisition: strictly-inside beats slop-only
+      for (let i = 0; i < blocks.length && !next; i++) {
+        if (hit(blocks[i]!, 0)) next = { origIdx, idx: i }
+      }
+      for (let i = 0; i < blocks.length && !next; i++) {
+        if (hit(blocks[i]!, pad)) next = { origIdx, idx: i }
+      }
+    }
+    if (cur?.origIdx === next?.origIdx && cur?.idx === next?.idx) return
+    blockHoverRef.current = next
+    setBlockHover(next)
+  }
+  const updateLineHover = (origIdx: number, e: ReactMouseEvent<HTMLDivElement>) => {
+    updateBlockHover(origIdx, e)
+    const span = (e.target as HTMLElement).closest('.textLayer span')
+    if (!(span instanceof HTMLElement) || !(span.textContent ?? '').trim()) {
+      // Within-line gaps hit the textLayer background; keep the affordance while the
+      // pointer is still inside the merged box so it doesn't flicker across the line
+      const cur = lineHoverRef.current
+      if (cur?.origIdx === origIdx) {
+        const pageBox = e.currentTarget.getBoundingClientRect()
+        const x = e.clientX - pageBox.left
+        const y = e.clientY - pageBox.top
+        const b = cur.box
+        if (x >= b.left && x <= b.left + b.width && y >= b.top && y <= b.top + b.height) return
+      }
+      clearLineHover()
+      return
+    }
+    if (lineHoverAnchor.current === span) return
+    lineHoverAnchor.current = span
+    const pageBox = e.currentTarget.getBoundingClientRect()
+    const r = groupLineSpans(span).rect
+    const next: LineHover = {
+      origIdx,
+      box: {
+        left: r.left - pageBox.left,
+        top: r.top - pageBox.top,
+        width: r.right - r.left,
+        height: r.bottom - r.top,
+      },
+    }
+    lineHoverRef.current = next
+    setLineHover(next)
+  }
+  const [imageEdits, setImageEdits] = useState<LocalImageEdit[]>([])
+  /** Latest imageEdits for async callbacks (same rationale as applyEditOpsRef) */
+  const imageEditsRef = useRef(imageEdits)
+  imageEditsRef.current = imageEdits
+  /** Mutate state and the ref together so an edit queued by one AI tool call is visible
+      to the next call in the same turn (they all run before React re-renders) */
+  const updateImageEdits = (fn: (prev: LocalImageEdit[]) => LocalImageEdit[]) => {
+    imageEditsRef.current = fn(imageEditsRef.current)
+    setImageEdits(fn)
+  }
+  const [editImageMode, setEditImageMode] = useState(false)
+  /** Existing content-stream images per page, listed while edit-image mode is on */
+  const [pageImages, setPageImages] = useState<PageImageRef[]>([])
+  /** Baseline metadata loaded from the PDF; pending imageEdits carry any changes. */
+  const [savedStaticFormFills, setSavedStaticFormFills] = useState<StaticFormFillRecord[]>([])
+  /** Picked image awaiting click-to-place (same overlay flow as signatures) */
+  const [imagePick, setImagePick] = useState<Extract<SignatureData, { kind: 'image' }> | null>(null)
+  const [pendingStaticFill, setPendingStaticFill] = useState<StaticFormFillKind | null>(null)
+  const [staticTextDialog, setStaticTextDialog] = useState(false)
+  const [staticTextPurpose, setStaticTextPurpose] = useState<'form' | 'insert'>('form')
+  const [textInsertEditId, setTextInsertEditId] = useState<string | null>(null)
+  const [staticText, setStaticText] = useState('')
+  const [staticTextSize, setStaticTextSize] = useState(14)
+  const [staticTextColor, setStaticTextColor] = useState('#111111')
+  const [staticTextColorOpen, setStaticTextColorOpen] = useState(false)
+  const [staticTextAlign, setStaticTextAlign] = useState<'left' | 'center' | 'right'>('left')
+  useEffect(() => {
+    if (!staticTextDialog) setStaticTextColorOpen(false)
+  }, [staticTextDialog])
+  const [staticTextEditTarget, setStaticTextEditTarget] = useState<
+    | { kind: 'saved'; ref: PageImageRef; record: StaticFormFillRecord }
+    | { kind: 'pending'; editId: string; record: StaticFormFillRecord }
+    | null
+  >(null)
+  const imageFileRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (!imagePick) setPendingStaticFill(null)
+  }, [imagePick])
+  /** Edit-font ids available on this machine (loaded once; empty until then) */
+  const [editFonts, setEditFonts] = useState<string[]>([])
+  useEffect(() => {
+    window.pdfApi
+      .listEditFonts()
+      .then(setEditFonts)
+      .catch(() => {
+        /* dropdown simply stays at "original font" */
+      })
+  }, [])
+  /** Initial caret/selection placement runs once per opened draft; refocusing after a
+      style-bar click must keep the caret */
+  const draftSelectedRef = useRef(false)
+  /** Range to select in the next opened draft (WPS-style unified model: a click carries
+      its caret as a collapsed range, a drag carries the dragged characters); null = the
+      position is unknown — the caret goes to the end */
+  const draftPreselectRef = useRef<[number, number] | null>(null)
+  /** The open draft's textarea: style-bar color clicks read its selection (kept across blur) */
+  const draftTaRef = useRef<HTMLTextAreaElement | null>(null)
+  /** Shared color-picker popover on the text-edit style bar */
+  const [draftColorOpen, setDraftColorOpen] = useState(false)
+  /** Colored mirror behind the transparent-text textarea; scroll-synced to it */
+  const draftGhostRef = useRef<HTMLDivElement | null>(null)
+  const [drawColor, setDrawColor] = useState<[number, number, number]>(DRAW_COLORS[0]!.rgb)
+  const [colorOpen, setColorOpen] = useState(false)
+  /** Note just placed with the note tool; its content is typed into a margin draft card */
+  const [noteDraft, setNoteDraft] = useState<{ origIdx: number; at: [number, number] } | null>(null)
+  /** In-progress rewrite of an existing comment. Hoisted out of the margin card so a
+      save can fold it in before the post-save reload tears the edit box down. */
+  const [noteEditDraft, setNoteEditDraft] = useState<{
+    origIdx: number
+    rootKey: string
+    itemKey: string
+    text: string
+  } | null>(null)
+  // Deactivating the thread (close button, click elsewhere, another card) discards an
+  // open comment edit — the same outcome as pressing Escape in the edit box
+  useEffect(() => {
+    if (noteEditDraft && activeNote?.rootKey !== noteEditDraft.rootKey) setNoteEditDraft(null)
+  }, [activeNote, noteEditDraft])
+  const [stampCfg, setStampCfg] = useState<StampConfig | null>(null)
+  // AI tool calls within one turn run before React re-renders; the watermark and
+  // header/footer tools each read-modify-write the config, so they go through this ref
+  const stampRef = useRef(stampCfg)
+  stampRef.current = stampCfg
+  /** Current pending text edits for async callbacks (validation results land after renders) */
+  const textEditsRef = useRef(textEdits)
+  textEditsRef.current = textEdits
+
+  /** The only writer of textEdits: lands in the ref and React state at once, so the
+      ref is the single source of truth between renders (AI tool calls within one turn
+      run before React re-renders, and a later tool or undo snapshot must see what an
+      earlier one queued or a background dry-run dropped). fn runs twice (ref, then
+      React) — build new edits outside it so both copies share one id */
+  const applyTextEdits = (fn: (prev: LocalTextEdit[]) => LocalTextEdit[]) => {
+    textEditsRef.current = fn(textEditsRef.current)
+    setTextEdits(fn)
+  }
+  /** User-defined page order (original page indices); null means unreordered */
+  const [order, setOrder] = useState<number[] | null>(null)
+  const [metadata, setMetadata] = useState<MetadataInput | null>(null)
+  const metadataRef = useRef(metadata)
+  metadataRef.current = metadata
+  /** Properties as stored in the file; the pending metadata overrides them until saved */
+  const [docInfo, setDocInfo] = useState<MetadataInput>({})
+  const [stampDlg, setStampDlg] = useState(false)
+  const [propsDlg, setPropsDlg] = useState(false)
+  const [fileSize, setFileSize] = useState(0)
+  const [dragFrom, setDragFrom] = useState<number | null>(null)
+  const [dragOver, setDragOver] = useState<number | null>(null)
+  const [signDlg, setSignDlg] = useState(false)
+  /** Certificate (digital) signatures found in the file on disk, verified by the main process */
+  const [digitalSignatures, setDigitalSignatures] = useState<PdfSignatureInfo[]>([])
+  const [certSignDlg, setCertSignDlg] = useState(false)
+  const [batesDlg, setBatesDlg] = useState(false)
+  const [signaturesDlg, setSignaturesDlg] = useState(false)
+  /** Confirmed signature awaiting placement; when non-null the page enters click-to-place mode */
+  const [pendingSign, setPendingSign] = useState<SignatureData | null>(null)
+  /** A /Sig widget selected from the form layer; confirmed signatures fit this rect directly. */
+  const [signatureTarget, setSignatureTarget] = useState<FormWidget | null>(null)
+  const [exporting, setExporting] = useState<'png' | 'jpg' | null>(null)
+  const [formCatalog, setFormCatalog] = useState<FormCatalog | null>(null)
+  const [formHasXfa, setFormHasXfa] = useState(false)
+  const [documentEncrypted, setDocumentEncrypted] = useState(false)
+  /** false until a password-protected document has been opened for editing by the
+      session's own decryptor (pdf.js accepting the password is not the same claim) */
+  const [sessionUnlocked, setSessionUnlocked] = useState(false)
+  /** protection the next save writes; null while the document saves plain */
+  const [encryption, setEncryption] = useState<PdfEncryptionInput | null>(null)
+  /** password of the file on disk (null: it is plain) — a protection change makes it
+      differ from `encryption.userPassword` until the save lands */
+  const diskPasswordRef = useRef<string | null>(null)
+  /** the password the in-flight save is writing: it reaches diskPasswordRef
+      only once that save lands — the file on disk still carries the old one */
+  const pendingDiskPasswordRef = useRef<string | null | undefined>(undefined)
+  const [protectionDlg, setProtectionDlg] = useState(false)
+  /** the protection configuration differs from the file on disk (set, changed or
+      lifted since the last load); cleared by the post-save reload */
+  const [protectionDirty, setProtectionDirty] = useState(false)
+  /** what the file on disk allows this session: the /P limits bind a user
+      password (or the empty one of an owner-only file); the owner's ignore them */
+  const [diskLock, setDiskLock] = useState<{ unlockedAsOwner: boolean; modifying: boolean } | null>(
+    null,
+  )
+  /** embedded files as pdf.js reports them (filename → byte length) */
+  const [savedAttachments, setSavedAttachments] = useState<Map<string, number> | null>(null)
+  const [pendingAttachmentAdds, setPendingAttachmentAdds] = useState<
+    { name: string; bytesBase64: string }[]
+  >([])
+  const [pendingAttachmentRemoves, setPendingAttachmentRemoves] = useState<string[]>([])
+  const savedAttachmentBytesRef = useRef<Map<string, string>>(new Map())
+  const [activeFormWidgetId, setActiveFormWidgetId] = useState<string | null>(null)
+  const formControlRefs = useRef<Map<string, HTMLElement>>(new Map())
+  const [formEdits, setFormEdits] = useState<Map<string, FormValueInput>>(new Map())
+  const formEditsRef = useRef(formEdits)
+  formEditsRef.current = formEdits
+  const [formFields, setFormFields] = useState<LocalFormField[]>([])
+  // Written only through commitFormFields: re-syncing the ref from render state would let a
+  // high-priority render (a click) that skipped a queued post-save update reset it to the
+  // pre-save list, and the next placement would resurrect the saved fields as pending
+  const formFieldsRef = useRef(formFields)
+  const commitFormFields = (next: LocalFormField[]) => {
+    formFieldsRef.current = next
+    setFormFields(next)
+  }
+  const [formWidgetEdits, setFormWidgetEdits] = useState<Map<string, FormWidgetEditInput>>(
+    new Map(),
+  )
+  const formWidgetEditsRef = useRef(formWidgetEdits)
+  formWidgetEditsRef.current = formWidgetEdits
+  const [formDesignTool, setFormDesignTool] = useState<FormDesignTool | null>(null)
+  const [formDesignKeepTool, setFormDesignKeepTool] = useState(false)
+  const [formDesignPreview, setFormDesignPreview] = useState(false)
+  const [selectedFormFieldIds, setSelectedFormFieldIds] = useState<string[]>([])
+  const setSelectedFormFieldId = (id: string | null) => setSelectedFormFieldIds(id ? [id] : [])
+  const [formMenu, setFormMenu] = useState<{
+    x: number
+    y: number
+    fieldId: string | null
+    pageIndex: number
+  } | null>(null)
+  const formMenuRef = useRef<HTMLDivElement | null>(null)
+  const [arrangeOpen, setArrangeOpen] = useState(false)
+  const [detectingFields, setDetectingFields] = useState(false)
+  const arrangeWrapRef = useRef<HTMLDivElement | null>(null)
+  const formClipboardRef = useRef<FormFieldInput[]>([])
+  /** The field just placed: its card takes focus and offers Cancel */
+  const [freshFormFieldId, setFreshFormFieldId] = useState<string | null>(null)
+  const [rotations, setRotations] = useState<Map<number, number>>(new Map())
+  /** Latest rotations for same-turn AI geometry (an apply_ops rotation then an image bake) */
+  const rotationsRef = useRef(rotations)
+  rotationsRef.current = rotations
+  const [deleted, setDeleted] = useState<Set<number>>(new Set())
+  /** Markup bar over the current selection; quads (PDF space, keyed by original page
+      index) drive the Word-style toggle state of the buttons */
+  const [selPopup, setSelPopup] = useState<{
+    x: number
+    y: number
+    quads: Map<number, number[][]>
+  } | null>(null)
+  /** AI scope selection cached at mouseup — the native DOM selection collapses the
+      moment focus moves into the AI panel, so the chip/context read this snapshot.
+      Cleared by clicking elsewhere on the document or the chip's ×. */
+  const [aiSelection, setAiSelection] = useState<{
+    page: number
+    lastPage: number
+    text: string
+  } | null>(null)
+  /** Ask-AI popover opened from the markup bar; the anchor rect is captured at open */
+  const [askPop, setAskPop] = useState<{ rect: AskAnchorRect; excerpt: string } | null>(null)
+  /** Whole-document saved-annotation counts per original page for the AI context.
+      The scan starts on first AI use, not when the document opens. */
+  const [aiAnnotCounts, setAiAnnotCounts] = useState<SavedAnnotCounts | null>(null)
+  const aiAnnotCountsLoaderRef = useRef<{
+    doc: PDFDocumentProxy
+    controller: AbortController
+    load: () => Promise<SavedAnnotCounts>
+  } | null>(null)
+  useEffect(() => {
+    setAiAnnotCounts(null)
+    aiAnnotCountsLoaderRef.current?.controller.abort()
+    aiAnnotCountsLoaderRef.current = null
+    return () => {
+      aiAnnotCountsLoaderRef.current?.controller.abort()
+      aiAnnotCountsLoaderRef.current = null
+    }
+  }, [doc])
+  const startAiAnnotCountScan = useCallback(() => {
+    if (!doc || aiAnnotCountsLoaderRef.current?.doc === doc) return
+    const controller = new AbortController()
+    const entry = {
+      doc,
+      controller,
+      load: createSavedAnnotCountsLoader(doc, loadSavedAnnots, controller.signal),
+    }
+    aiAnnotCountsLoaderRef.current = entry
+    void entry.load().then((counts) => {
+      if (aiAnnotCountsLoaderRef.current === entry) setAiAnnotCounts(counts)
+    })
+  }, [doc])
+  // the first AI turn should already know whether the file carries review
+  // feedback, so an open panel starts the scan before the user sends anything
+  useEffect(() => {
+    if (!aiCollapsed) startAiAnnotCountScan()
+  }, [aiCollapsed, startAiAnnotCountScan])
+  const [selected, setSelected] = useState<AnnotSelection | null>(null)
+  /** Transparency presets fold-out inside the image selection popup */
+  const [opacityMenu, setOpacityMenu] = useState(false)
+  useEffect(() => setOpacityMenu(false), [selected])
+  const [deleteToast, setDeleteToast] = useState(false)
+  const [deletedInsertedText, setDeletedInsertedText] = useState(false)
+  const toastTimerRef = useRef<number | null>(null)
+  const [thumbMenu, setThumbMenu] = useState<ThumbMenu | null>(null)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [saveError, setSaveError] = useState('')
+  /** Transient message toast (save failures, skipped/rejected text edits) */
+  const [notice, setNotice] = useState<string | null>(null)
+  const noticeTimerRef = useRef<number | null>(null)
+  /** Autosave gate: this file was saved explicitly at least once */
+  const savedOnceRef = useRef(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchMatchCase, setSearchMatchCase] = useState(false)
+  const [searchWholeWord, setSearchWholeWord] = useState(false)
+  const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([])
+  const [searchCur, setSearchCur] = useState(0)
+  const [undoStack, setUndoStack] = useState<EditSnapshot[]>([])
+  const [redoStack, setRedoStack] = useState<EditSnapshot[]>([])
+  /** The file around each change written to it at once (Replace pages, Page size, Crop, Insert
+      PDF): Undo with no pending edit left writes it back as it was, Redo as the change left it */
+  const writtenRef = useRef<WrittenSteps>({ undo: [], redo: [] })
+  /** Their counts, for the Undo and Redo buttons */
+  const [written, setWrittenCounts] = useState({ undo: 0, redo: 0 })
+  const setWritten = (steps: WrittenSteps) => {
+    writtenRef.current = steps
+    setWrittenCounts({ undo: steps.undo.length, redo: steps.redo.length })
+  }
+  const writtenStepBusyRef = useRef(false)
+  const [pwInput, setPwInput] = useState('')
+  const [pwWrong, setPwWrong] = useState(false)
+  const [extractDlg, setExtractDlg] = useState(false)
+  const [extractInput, setExtractInput] = useState('')
+  const [extractInvalid, setExtractInvalid] = useState(false)
+  const [splitDlg, setSplitDlg] = useState(false)
+  const [splitInput, setSplitInput] = useState('1')
+  const [splitInvalid, setSplitInvalid] = useState(false)
+  const [mergePagesDlg, setMergePagesDlg] = useState(false)
+  const [mergeCount, setMergeCount] = useState('2')
+  const [mergeCountInvalid, setMergeCountInvalid] = useState(false)
+  const [mergeDirection, setMergeDirection] = useState<'horizontal' | 'vertical'>('vertical')
+  const [mergeSeparator, setMergeSeparator] = useState(false)
+  const [replaceDlg, setReplaceDlg] = useState(false)
+  const [replaceInput, setReplaceInput] = useState('')
+  const [replaceInvalid, setReplaceInvalid] = useState(false)
+  const [pageSizeDlg, setPageSizeDlg] = useState(false)
+  const [splitPagesDlg, setSplitPagesDlg] = useState(false)
+  /** Page-crop dialog: rendered page bitmap + which page it shows */
+  const [pageCropDlg, setPageCropDlg] = useState<{ png: string; origIdx: number } | null>(null)
+  const [cropAllPages, setCropAllPages] = useState(false)
+  const coalesceKeyRef = useRef<string | null>(null)
+  const passwordRef = useRef<string | undefined>(undefined)
+  const fitModeRef = useRef<FitMode>('width')
+  /** Reading position saved when this file was last viewed; applied once after open */
+  const pendingViewRestoreRef = useRef<PdfViewState | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const thumbsRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  /** Local approximations of document fonts by pdf.js font id (see doc-font.ts);
+      grows as edits/blocks touch pages, reset with the doc */
+  const [docFonts, setDocFonts] = useState<Map<string, DocFontStyle>>(new Map())
+  const docFontsRef = useRef(docFonts)
+  docFontsRef.current = docFonts
+  /** OCR results for scanned pages, keyed by original page index (reset per doc) */
+  const [ocrPages, setOcrPages] = useState<Map<number, OcrPageData>>(new Map())
+  /** One text extraction per loaded document, shared by search, paragraph boxes,
+      the AI tools and the auto-OCR pass */
+  const [searchIndexCache] = useState(createSearchIndexCache)
+  /** In-flight auto-OCR pass, so its toast can stop it */
+  const ocrAbortRef = useRef<AbortController | null>(null)
+  /** Auto-OCR progress: `stop: null` while the pass runs (the toast offers Stop),
+      then the reason it ended, for the cap and a user cancel alike. `pending` is
+      the queue a capped pass can be continued over. */
+  /** A pass is in flight: the Recognize command must not start a second one
+      over the same controller. */
+  const [ocrRunning, setOcrRunning] = useState(false)
+  const [ocrRun, setOcrRun] = useState<{
+    done: number
+    total: number
+    stop: Extract<AutoOcrStop, 'cap' | 'cancelled'> | null
+    /** The pages the pass left, which its Continue button hands to the next pass */
+    pending?: number[] | null
+  } | null>(null)
+  const warnedXfaPathRef = useRef('')
+  const searchJumpRef = useRef<{ matches: SearchMatch[]; cur: number } | null>(null)
+
+  /** Visible pages (with unsaved reorder, deleted pages hidden): position → original page index */
+  const visList = useMemo(() => {
+    const base = order ?? allSizes.map((_, i) => i)
+    return base.filter((i) => !deleted.has(i))
+  }, [allSizes, deleted, order])
+  const pageCount = visList.length
+  // AI tool calls within one turn run before React re-renders, so the order and
+  // deletions they read and write go through these refs instead of the closed-over state
+  const orderRef = useRef(order)
+  orderRef.current = order
+  const deletedRef = useRef(deleted)
+  deletedRef.current = deleted
+  const visListOf = (ord: number[] | null) =>
+    (ord ?? allSizes.map((_, i) => i)).filter((i) => !deletedRef.current.has(i))
+
+  const rows = useMemo(() => spreadRows(visList, spread), [visList, spread])
+
+  /** Visible position → row index */
+  const rowOfVis = useCallback((visIdx: number) => rowOfVisIdx(visIdx, spread), [spread])
+  const fileName = filePath.split(/[\\/]/).pop() ?? filePath
+
+  const rotDelta = useCallback(
+    (origIdx: number) => rotationsRef.current.get(origIdx) ?? 0,
+    // the state stays a dependency so memoized geometry rebinds after a render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rotations],
+  )
+  /** Page geometry: unrotated size + total display rotation; the single entry point for overlay coord conversion */
+  const pageGeom = useCallback(
+    (origIdx: number): PageGeom => {
+      const s = allSizes[origIdx] ?? blankSizeNow(origIdx)!
+      const [x0, y0] = pageOrigins[origIdx] ?? [0, 0]
+      return {
+        pw: s.width,
+        ph: s.height,
+        rot: (baseRots[origIdx] ?? 0) + rotDelta(origIdx),
+        x0,
+        y0,
+        userUnit: pageUserUnits[origIdx] ?? 1,
+      }
+    },
+    [allSizes, baseRots, pageOrigins, pageUserUnits, rotDelta],
+  )
+  /** Latest geometry for async pipelines that must not rebind on rotation (OCR) */
+  const pageGeomRef = useRef(pageGeom)
+  pageGeomRef.current = pageGeom
+  /** the auto-OCR's words as white text inserts: baked into every save while the
+      recognition data is in the session (the post-save reload finds a text layer,
+      so the pass never re-runs and the bake never doubles) */
+  const ocrBakeInserts = useMemo(() => {
+    const out: LocalTextInsert[] = []
+    for (const [origIdx, data] of ocrPages) {
+      const geom = pageGeomRef.current(origIdx)
+      if (!geom) continue
+      for (const input of buildOcrBakeInserts(origIdx, data.words, geom)) {
+        out.push({ id: `ocr-bake-${origIdx}-${out.length}`, input })
+      }
+    }
+    return out
+  }, [ocrPages])
+  /** Current original page index, readable without rebinding the OCR pass on scroll */
+  const currentOrigIdxRef = useRef(0)
+  currentOrigIdxRef.current = visList[currentPage - 1] ?? 0
+
+  /** Page display size (width/height swapped under rotation) */
+  const dispSize = useCallback(
+    (origIdx: number): PageSize => geomDispSize(pageGeom(origIdx)),
+    [pageGeom],
+  )
+
+  const { visible: visibleRows, setItemRef: setRowRef } = useVisibleSet(
+    scrollRef,
+    rows.length,
+    '800px 0px',
+    status === 'ready',
+  )
+  const { visible: visibleThumbs, setItemRef: setThumbRef } = useVisibleSet(
+    thumbsRef,
+    pageCount,
+    '400px 0px',
+    status === 'ready' && sidebar === 'thumbs',
+  )
+
+  // Keep the current page's thumbnail in view as the main viewport drives currentPage
+  useEffect(() => {
+    if (sidebar !== 'thumbs') return
+    const thumbEl = thumbsRef.current?.querySelector<HTMLElement>(`[data-idx="${currentPage - 1}"]`)
+    thumbEl?.scrollIntoView({ block: 'nearest' })
+  }, [currentPage, sidebar])
+
+  // During a normal post-save reload, retain pending visual overlays until every
+  // currently rendered page has swapped to the new document bitmap. Resolving the
+  // barrier from PdfPage's render effect lets React clear those overlays before the
+  // browser paints, avoiding the old-canvas-without-preview flash.
+  const postSaveRenderWaitRef = useRef<{
+    doc: PDFDocumentProxy
+    pending: Set<number>
+    finishScheduled: boolean
+    finish: () => void
+  } | null>(null)
+  const pageRenderState = useCallback(
+    (renderedDoc: PDFDocumentProxy, pageNo: number, pending: boolean) => {
+      const wait = postSaveRenderWaitRef.current
+      if (!wait || wait.doc !== renderedDoc) return
+      if (pending) {
+        wait.pending.add(pageNo)
+        return
+      }
+      wait.pending.delete(pageNo)
+      // Defer completion until all effects from the current visibility update have
+      // reported. A page entering the viewport can then join before a departing page
+      // releases the last item from the previous snapshot.
+      if (wait.pending.size === 0 && !wait.finishScheduled) {
+        wait.finishScheduled = true
+        queueMicrotask(() => {
+          wait.finishScheduled = false
+          if (postSaveRenderWaitRef.current === wait && wait.pending.size === 0) wait.finish()
+        })
+      }
+    },
+    [],
+  )
+
+  const loadDoc = useCallback(
+    async (
+      path: string,
+      previous: PDFDocumentProxy | null,
+      saved?: SavedSnapshot,
+      waitForPageNos: number[] = [],
+    ) => {
+      const bytes = await readFileBytes(window.pdfApi, path)
+      setFormHasXfa(hasXfaMarker(bytes))
+      if (!saved) {
+        setFormCatalog(null)
+        setSavedAttachments(null)
+        setPendingAttachmentAdds([])
+        setPendingAttachmentRemoves([])
+        setSavedStaticFormFills([])
+        setActiveFormWidgetId(null)
+        formControlRefs.current.clear()
+        commitFormFields([])
+        commitBlankPages([])
+        setFormWidgetEdits(new Map())
+        setFormDesignTool(null)
+        setFormDesignPreview(false)
+        setSelectedFormFieldId(null)
+        setFreshFormFieldId(null)
+      }
+      const task = loadPdfForView(bytes, passwordRef.current)
+      let loaded: PDFDocumentProxy
+      try {
+        loaded = await task.promise
+      } catch (err) {
+        // a failed open (wrong password, corrupt file) leaves the rejected task
+        // holding the file bytes and its worker: retire it before surfacing
+        void task.destroy()
+        throw err
+      }
+      const all: PageSize[] = []
+      const rots: number[] = []
+      const origins: [number, number][] = []
+      const userUnits: number[] = []
+      try {
+        const metadata = await loaded.getMetadata()
+        const documentInfo = metadata.info as {
+          EncryptFilterName?: string | null
+          IsXFAPresent?: boolean
+          Title?: string
+          Author?: string
+          Subject?: string
+          Keywords?: string
+        }
+        setDocInfo({
+          title: documentInfo.Title ?? '',
+          author: documentInfo.Author ?? '',
+          subject: documentInfo.Subject ?? '',
+          keywords: documentInfo.Keywords ?? '',
+        })
+        const formFeatures = documentFormFeatures(documentInfo, bytes)
+        setFormHasXfa(formFeatures.hasXfa)
+        setDocumentEncrypted(formFeatures.encrypted)
+        if (formFeatures.encrypted) {
+          // pdf.js already accepted this password for rendering; the session's own
+          // handler must accept it too before the document counts as editable
+          const password = passwordRef.current ?? ''
+          const outcome = await window.pdfApi.decryptPdf(bytes, password)
+          if (outcome.ok) {
+            setEncryption({
+              userPassword: password,
+              ownerPassword: password,
+              permissions: outcome.permissions,
+            })
+            setSessionUnlocked(true)
+            setDiskLock({
+              unlockedAsOwner: outcome.unlockedAs === 'owner',
+              modifying: outcome.permissions.modifying,
+            })
+          } else {
+            setEncryption(null)
+            setSessionUnlocked(false)
+            setDiskLock(null)
+          }
+          diskPasswordRef.current = password
+        } else {
+          setEncryption(null)
+          setSessionUnlocked(false)
+          setDiskLock(null)
+          diskPasswordRef.current = null
+        }
+        setProtectionDirty(false)
+        const probe = await probePageGeometry(loaded)
+        for (const geo of probe.pages) {
+          all.push({ width: geo.width, height: geo.height })
+          rots.push(geo.rotate)
+          origins.push(geo.origin)
+          userUnits.push(geo.userUnit)
+        }
+        // A page that cannot be probed no longer destroys the document: the
+        // tile renders as an error placeholder and the rest of the book opens
+        // (genoffice#2366 — one broken page deep in a large file used to blank
+        // the whole viewer with the reason only in the console)
+        if (probe.failures.length > 0) {
+          setFailedPages(new Set(probe.failures.map((f) => f.page)))
+          showNotice(
+            t('pdfPagesFailed', {
+              count: probe.failures.length,
+              detail: probe.failures
+                .slice(0, 3)
+                .map((f) => `#${f.page} ${f.message}`)
+                .join(', '),
+            }),
+          )
+        } else setFailedPages(new Set())
+      } catch (err) {
+        // getMetadata/page probing failed after the document resolved but before
+        // setDoc adopted it: destroy the half-open document (pdfjs-dist 6.x
+        // removed PDFDocumentProxy.destroy(); go through the loading task) and
+        // keep the previous document on screen, then surface the error
+        void loaded.loadingTask.destroy()
+        throw err
+      }
+      void loaded
+        .getAttachments()
+        .then(async (all) => {
+          const map = new Map<string, number>()
+          const bytes = new Map<string, string>()
+          for (const [name, file] of all ?? new Map()) {
+            // v6 ships metadata here and the bytes over getAttachmentContent(id)
+            const content = file.content ?? (await loaded.getAttachmentContent(name))
+            map.set(name, content?.byteLength ?? 0)
+            // String.fromCharCode spread chokes on huge files; chunks keep the stack flat
+            if (content) {
+              let text = ''
+              for (let i = 0; i < content.length; i += 0x8000) {
+                text += String.fromCharCode(...content.subarray(i, i + 0x8000))
+              }
+              bytes.set(name, window.btoa(text))
+            }
+          }
+          savedAttachmentBytesRef.current = bytes
+          setSavedAttachments(map)
+        })
+        .catch(() => setSavedAttachments(new Map()))
+      setPendingAttachmentAdds([])
+      setPendingAttachmentRemoves([])
+      try {
+        setFormCatalog(await buildFormCatalog(loaded))
+      } catch {
+        setFormCatalog({
+          widgets: [],
+          fields: new Map(),
+          byPage: new Map(),
+          otherFieldNames: new Set(),
+        })
+      }
+      try {
+        setSavedStaticFormFills(await window.pdfApi.listStaticFormFills(path))
+      } catch {
+        setSavedStaticFormFills([])
+      }
+      setSizes(all)
+      setPageOrigins(origins)
+      setPageUserUnits(userUnits)
+      setBaseRots(rots)
+      let renderedPages: Promise<void> | null = null
+      if (saved && waitForPageNos.length > 0) {
+        postSaveRenderWaitRef.current?.finish()
+        renderedPages = new Promise<void>((resolve) => {
+          const wait = {
+            doc: loaded,
+            pending: new Set(waitForPageNos.filter((pageNo) => pageNo <= loaded.numPages)),
+            finishScheduled: false,
+            finish: () => {},
+          }
+          const timer = window.setTimeout(() => wait.finish(), 2000)
+          wait.finish = () => {
+            window.clearTimeout(timer)
+            if (postSaveRenderWaitRef.current === wait) postSaveRenderWaitRef.current = null
+            resolve()
+          }
+          postSaveRenderWaitRef.current = wait
+          if (wait.pending.size === 0) wait.finish()
+        })
+      }
+      setDoc(loaded)
+      if (renderedPages) await renderedPages
+      if (!saved) {
+        setAiSelection(null)
+        setAskPop(null)
+        setMarkups([])
+        setRedactions([])
+        redactionApplyConfirmedRef.current = false
+        setAnnotDeletes([])
+        setNoteEdits([])
+        setDrawings([])
+        applyTextEdits(() => [])
+        commitTextInserts([])
+        setPendingTextInsert(null)
+        updateImageEdits(() => [])
+        setTextDraft(null)
+        setStampCfg(null)
+        setFormEdits(new Map())
+        setFormWidgetEdits(new Map())
+        setSignatureTarget(null)
+        rotationsRef.current = new Map()
+        setRotations(rotationsRef.current)
+        setDeleted(new Set())
+        setOrder(null)
+        setMetadata(null)
+      } else {
+        // Post-save reload: subtract exactly what the save wrote. Edits made while the
+        // write was in flight stay pending, with page indices remapped through the
+        // saved deletions/reorder (a page missing from pageMap is gone from the file).
+        const remap = new Map(saved.pageMap)
+        // Blank pages added while the write was in flight keep their edits: their virtual
+        // indices move past the reloaded document's pages and remap like any other page
+        const inFlightBlanks = blankPagesRef.current
+          .filter((b) => !saved.blankPageIds.has(b.id))
+          .sort((a, b) => a.input.pageIndex - b.input.pageIndex)
+          .map((b, k) => {
+            const pageIndex = loaded.numPages + k
+            remap.set(b.input.pageIndex, pageIndex)
+            return { ...b, input: { ...b.input, pageIndex } }
+          })
+        setOutline((prev) => (prev ? remapOutlinePages(prev, remap) : prev))
+        // Redaction marks are deliberately omitted from ordinary saves. Keep them
+        // through the reload, remapping their original page indices if this save
+        // changed page order or removed pages while it was running.
+        setRedactions((prev) =>
+          prev.flatMap((mark) => {
+            const ni = remap.get(mark.pageIndex)
+            return ni === undefined
+              ? []
+              : [ni === mark.pageIndex ? mark : { ...mark, pageIndex: ni }]
+          }),
+        )
+        setMarkups((prev) =>
+          prev.flatMap((mk) => {
+            if (saved.markupIds.has(mk.id)) return []
+            const ni = remap.get(mk.pageIndex)
+            return ni === undefined ? [] : [ni === mk.pageIndex ? mk : { ...mk, pageIndex: ni }]
+          }),
+        )
+        setAnnotDeletes((prev) =>
+          prev.flatMap((d) => {
+            if (saved.annotDeleteIds.has(d.id)) return []
+            const ni = remap.get(d.annot.pageIndex)
+            if (ni === undefined) return []
+            // The object number may be stale after the rewrite; the save path's
+            // subtype+rect fallback still finds the annotation
+            return [ni === d.annot.pageIndex ? d : { ...d, annot: { ...d.annot, pageIndex: ni } }]
+          }),
+        )
+        setNoteEdits((prev) =>
+          prev.flatMap((e) => {
+            if (saved.noteEditIds.has(e.id)) return []
+            const ni = remap.get(e.annot.pageIndex)
+            if (ni === undefined) return []
+            // An edit made while the write was in flight targets a note this save just
+            // rewrote: match on the new on-disk contents, and drop the edit entirely if
+            // it now says exactly what the file says
+            const written = saved.noteEditWritten.get(e.annot.objNum)
+            if (written !== undefined && e.contents === written) return []
+            const contents = written ?? e.annot.contents
+            if (ni === e.annot.pageIndex && contents === e.annot.contents) return [e]
+            return [{ ...e, annot: { ...e.annot, pageIndex: ni, contents } }]
+          }),
+        )
+        setDrawings((prev) =>
+          prev.flatMap((dr) => {
+            if (saved.drawingIds.has(dr.id)) return []
+            const ni = remap.get(dr.input.pageIndex)
+            if (ni === undefined) return []
+            return [
+              ni === dr.input.pageIndex ? dr : { ...dr, input: { ...dr.input, pageIndex: ni } },
+            ]
+          }),
+        )
+        applyTextEdits((prev) =>
+          prev.flatMap((te) => {
+            if (saved.textEditIds.has(te.id)) return []
+            const ni = remap.get(te.input.pageIndex)
+            if (ni === undefined) return []
+            return [
+              ni === te.input.pageIndex ? te : { ...te, input: { ...te.input, pageIndex: ni } },
+            ]
+          }),
+        )
+        commitTextInserts(
+          textInsertsRef.current.flatMap((insert) => {
+            if (saved.textInsertIds.has(insert.id)) return []
+            const ni = remap.get(insert.input.pageIndex)
+            if (ni === undefined) return []
+            return [
+              ni === insert.input.pageIndex
+                ? insert
+                : { ...insert, input: { ...insert.input, pageIndex: ni } },
+            ]
+          }),
+        )
+        commitBlankPages(inFlightBlanks)
+        commitFormFields(
+          formFieldsRef.current.flatMap((f) => {
+            if (saved.formFieldIds.has(f.id)) return []
+            const ni = remap.get(f.input.pageIndex)
+            if (ni === undefined) return []
+            return [ni === f.input.pageIndex ? f : { ...f, input: { ...f.input, pageIndex: ni } }]
+          }),
+        )
+        updateImageEdits((prev) =>
+          prev.flatMap((ie) => {
+            if (saved.imageEditIds.has(ie.id)) return []
+            const ni = remap.get(ie.input.pageIndex)
+            if (ni === undefined) return []
+            return [
+              ni === ie.input.pageIndex ? ie : { ...ie, input: { ...ie.input, pageIndex: ni } },
+            ]
+          }),
+        )
+        setTextDraft((prev) => {
+          if (!prev) return null
+          const ni = remap.get(prev.origIdx)
+          if (ni === undefined) return null
+          // A draft re-opened on an edit that just got saved becomes a fresh edit
+          const editId =
+            prev.editId !== undefined && saved.textEditIds.has(prev.editId)
+              ? undefined
+              : prev.editId
+          return ni === prev.origIdx && editId === prev.editId
+            ? prev
+            : { ...prev, origIdx: ni, editId }
+        })
+        // Config-style state: identity compare against the snapshot — unchanged means
+        // it is in the file now, a new object means the user changed it during the save
+        setStampCfg((prev) => (prev === saved.stampCfg ? null : prev))
+        setMetadata((prev) => (prev === saved.metadata ? null : prev))
+        // The tree this save wrote is in the file now: an open editing session keeps it
+        // as its clean base, a committed one is done. The save may have deleted or
+        // reordered pages, so the tree's page indices are the ones from before it —
+        // re-point them at the pages the file has now.
+        setPendingOutline((prev) =>
+          prev && saved.outline !== null && prev.tree === saved.outline
+            ? prev.editing
+              ? { ...prev, edited: false, tree: remapOutlineTree(prev.tree ?? [], remap) }
+              : null
+            : prev,
+        )
+        setFormEdits((prev) => {
+          const next = new Map<string, FormValueInput>()
+          for (const [k, v] of prev) if (saved.formEdits.get(k) !== v) next.set(k, v)
+          return next
+        })
+        setFormWidgetEdits((prev) => {
+          const next = new Map<string, FormWidgetEditInput>()
+          for (const [k, v] of prev) if (saved.formWidgetEdits.get(k) !== v) next.set(k, v)
+          return next
+        })
+        // Pending fields written by this save are gone from the design list; a selection pointing at
+        // them would keep Delete/Arrange armed with nothing to act on
+        setSelectedFormFieldIds((prev) => prev.filter((id) => !saved.formFieldIds.has(id)))
+        setFreshFormFieldId((prev) => (prev && saved.formFieldIds.has(prev) ? null : prev))
+        const nextRotations = new Map<number, number>()
+        for (const [oldIdx, delta] of rotationsRef.current) {
+          const residual = (((delta - (saved.rotations.get(oldIdx) ?? 0)) % 360) + 360) % 360
+          const ni = remap.get(oldIdx)
+          if (residual !== 0 && ni !== undefined) nextRotations.set(ni, residual)
+        }
+        rotationsRef.current = nextRotations
+        setRotations(nextRotations)
+        setDeleted((prev) => {
+          const next = new Set<number>()
+          // Saved deletions are absent from pageMap; the rest were deleted mid-save
+          for (const oldIdx of prev) {
+            const ni = remap.get(oldIdx)
+            if (ni !== undefined) next.add(ni)
+          }
+          return next
+        })
+        setOrder((prev) => {
+          if (!prev) return null
+          const mapped = prev.flatMap((o) => {
+            const ni = remap.get(o)
+            return ni === undefined ? [] : [ni]
+          })
+          return mapped.every((n, i) => n === i) ? null : mapped
+        })
+      }
+      setFileSize(bytes.byteLength)
+      setSelected(null)
+      setDeleteToast(false)
+      setUndoStack([])
+      setRedoStack([])
+      setWritten({ undo: [], redo: [] })
+      outlineDocRef.current = loaded
+      // A save-reload keeps the current tree (page indices already remapped
+      // above) visible while headings rescan
+      if (!saved) {
+        setOutline(null)
+        setOutlineGenerated(false)
+        setPendingOutline(null)
+      }
+      void loaded
+        .getOutline()
+        .then(
+          (o) => (o && o.length > 0 ? (o as OutlineNode[]) : null),
+          () => null,
+        )
+        .then(async (embedded) => {
+          const stale = () => outlineDocRef.current !== loaded
+          const generated = embedded
+            ? null
+            : await buildHeadingOutline(loaded, stale).catch(() => null)
+          if (stale()) return
+          setOutline(embedded ?? generated)
+          setOutlineGenerated(!embedded && generated !== null)
+        })
+      // pdfjs-dist 6.x removed PDFDocumentProxy.destroy(); go through the loading task
+      if (previous) void previous.loadingTask.destroy()
+      return loaded.numPages
+    },
+    [],
+  )
+
+  /** A fit mode is recomputed at 'ready'; a custom zoom must be in place before it so
+   *  the initial fit-width recompute does not take over */
+  const applyOpeningZoom = useCallback((zoom: { scale: number; fitMode: FitMode }) => {
+    fitModeRef.current = zoom.fitMode
+    if (zoom.fitMode === null) setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, zoom.scale)))
+  }, [])
+
+  const openPath = useCallback(
+    async (path: string) => {
+      try {
+        setFilePath(path)
+        setOpenError(null)
+        // A newly opened file starts outside the autosave gate
+        savedOnceRef.current = false
+        await loadDoc(path, null)
+        // Silently restore the last reading position (WPS-style). A saved custom
+        // zoom (fitMode null) must be applied before 'ready', or the initial
+        // fit-width recompute would take over; fit modes are recomputed anyway.
+        const savedView = loadViewState(path)
+        if (savedView) {
+          pendingViewRestoreRef.current = savedView
+          applyOpeningZoom(savedView)
+        } else {
+          const pref = await window.pdfApi.getDefaultZoom().catch(() => 'width' as const)
+          const zoom = pref === 'last' ? loadLastZoom() : null
+          applyOpeningZoom(zoom ?? { scale: 1, fitMode: pref === 'page' ? 'page' : 'width' })
+        }
+        setStatus('ready')
+      } catch (err) {
+        if ((err as Error | null)?.name === 'PasswordException') {
+          // a certificate-encrypted document has no password to type: pdf.js
+          // reports it like a password failure, and the answer has to name the
+          // real reason instead of looping the prompt
+          try {
+            const raw = await readFileBytes(window.pdfApi, path)
+            const probe = await window.pdfApi.decryptPdf(raw, '')
+            if (!probe.ok && probe.reason === 'certificate-encryption') {
+              showNotice(t('pwCertEncrypted'))
+              setStatus('error')
+              return
+            }
+          } catch {
+            /* classification is best-effort: the prompt still works without it */
+          }
+          // like docs: a failed attempt clears the field alongside the error
+          setPwWrong(passwordRef.current !== undefined)
+          setPwInput('')
+          setStatus('password')
+          return
+        }
+        console.error('[pdf] open failed:', err)
+        setOpenError(err instanceof Error ? err.message : String(err))
+        setStatus('error')
+      }
+    },
+    [loadDoc, applyOpeningZoom],
+  )
+
+  useEffect(() => {
+    void (async () => {
+      const path = await window.pdfApi.consumePending()
+      if (!path) {
+        setStatus('empty')
+        return
+      }
+      await openPath(path)
+    })()
+  }, [openPath])
+
+  /** Editable once the session can both read and write the document: password-opened
+      files count after our own decryptor accepted them (the save pipeline re-reads the
+      protected bytes from disk, which pdf-lib alone cannot). A session holding only
+      the user password — or the empty one of an owner-only file — is additionally
+      bound by the /P the file carries: modifying denied means read-only. */
+  const readOnly =
+    status === 'ready' &&
+    documentEncrypted &&
+    (!sessionUnlocked || (diskLock !== null && !diskLock.unlockedAsOwner && !diskLock.modifying))
+  /** Only the owner password may change or lift protection: a user-password
+      session, even one allowed to modify the content, must not be able to strip
+      the owner's password. A plain document has no protection to lose. */
+  const protectionEditable = mayChangeProtection(readOnly, diskLock)
+
+  useEffect(() => {
+    if (
+      activeFormWidgetId &&
+      ((formCatalog && !formCatalog.widgets.some((widget) => widget.id === activeFormWidgetId)) ||
+        formWidgetEdits.get(activeFormWidgetId)?.remove)
+    ) {
+      setActiveFormWidgetId(null)
+    }
+  }, [activeFormWidgetId, formCatalog, formWidgetEdits])
+
+  const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s))
+
+  /** Overall size of a row (in spread mode widths add up, including the page gap) */
+  const rowSize = useCallback(
+    (row: number[]): PageSize => {
+      const dims = row.map((i) => dispSize(i))
+      return {
+        width: dims.reduce((w, d) => w + d.width, 0) + (dims.length - 1) * PAGE_GAP,
+        height: Math.max(...dims.map((d) => d.height)),
+      }
+    },
+    [dispSize],
+  )
+
+  /** Cumulative row-top offset (with gaps), shared by scroll positioning and current-page calc */
+  const rowTop = useCallback(
+    (rowIdx: number) => {
+      let y = PAGE_GAP
+      for (let i = 0; i < rowIdx; i++) y += rowSize(rows[i]!).height * scale + PAGE_GAP
+      return y
+    },
+    [rows, rowSize, scale],
+  )
+
+  /** Scale-free zoom anchor (see `captureZoomAnchor`) plus page-relative x and viewport point.
+   *  Written back by a layout effect so it lands after React commits the resized pages; being
+   *  scale-free, a burst of queued wheel ticks resolves against one anchor without oscillating. */
+  const zoomAnchorRef = useRef<
+    (ZoomAnchor & { col: number; pageX: number | null; vx: number; vy: number }) | null
+  >(null)
+  const rowPages = (el: HTMLElement, rowIdx: number) =>
+    el.querySelectorAll(`.pdf-row[data-idx="${rowIdx}"] > .pdf-page`)
+  const rowHeights = useMemo(() => rows.map((row) => rowSize(row).height), [rows, rowSize])
+  /** Committed layout: the native wheel listener can fire before the passive effect
+   *  re-subscribes it, when its closure still holds the previous render's scale. */
+  const layoutRef = useRef({ scale, rowHeights })
+  useLayoutEffect(() => {
+    layoutRef.current = { scale, rowHeights }
+  })
+  /** A pending anchor is kept: the DOM has not moved since it was captured. */
+  const anchorZoomScroll = useCallback((nextScale: number, vx = 0, vy = 0) => {
+    const el = scrollRef.current
+    const { scale, rowHeights } = layoutRef.current
+    if (!el || nextScale === scale || zoomAnchorRef.current) return
+    const anchor = captureZoomAnchor({ y: el.scrollTop + vy, rowHeights, gap: PAGE_GAP, scale })
+    if (!anchor) return
+    // measure x against the spread page under the cursor: the unscaled gap between the two
+    // pages must not be folded into pageX
+    const pages = rowPages(el, anchor.rowIdx)
+    const elLeft = el.getBoundingClientRect().left
+    let col = 0
+    let pageX: number | null = null
+    pages.forEach((page, i) => {
+      const left = page.getBoundingClientRect().left - elLeft
+      if (i === 0 || left <= vx) {
+        col = i
+        pageX = (vx - left) / scale
+      }
+    })
+    zoomAnchorRef.current = { ...anchor, col, pageX, vx, vy }
+  }, [])
+  useLayoutEffect(() => {
+    const anchor = zoomAnchorRef.current
+    if (!anchor) return
+    zoomAnchorRef.current = null
+    const el = scrollRef.current
+    if (!el || anchor.rowIdx >= rowHeights.length) return
+    el.scrollTop = zoomAnchorY(anchor, rowHeights, PAGE_GAP, scale) - anchor.vy
+    if (anchor.pageX === null) return
+    const page = rowPages(el, anchor.rowIdx)[anchor.col]
+    if (!page) return
+    const pageLeft =
+      page.getBoundingClientRect().left - el.getBoundingClientRect().left + el.scrollLeft
+    el.scrollLeft = pageLeft + anchor.pageX * scale - anchor.vx
+  }, [scale, rowHeights])
+
+  /** Reserve the WPS-style comments margin while the doc has notes or one is being added */
+  const noteMarginOn = useMemo(
+    () =>
+      drawTool === 'note' ||
+      noteDraft !== null ||
+      drawings.some((d) => d.input.kind === 'note') ||
+      (() => {
+        const deletedObjs = new Set(annotDeletes.map((d) => d.annot.objNum))
+        return [...savedNotes.values()].some((l) => l.some((a) => !deletedObjs.has(a.objNum)))
+      })(),
+    [drawTool, noteDraft, drawings, annotDeletes, savedNotes],
+  )
+
+  const recomputeFit = useCallback(() => {
+    const mode = fitModeRef.current
+    const el = scrollRef.current
+    if (!mode || !el || rows.length === 0) return
+    const dims = rows.map((r) => rowSize(r))
+    const maxW = Math.max(...dims.map((s) => s.width))
+    // The comments margin sits beside the pages and must fit inside the same viewport
+    const availW = el.clientWidth - SCROLL_PAD * 2 - (noteMarginOn ? NOTE_MARGIN_W + PAGE_GAP : 0)
+    const next =
+      mode === 'width'
+        ? clampScale(availW / maxW)
+        : clampScale(
+            Math.min(
+              availW / maxW,
+              (el.clientHeight - PAGE_GAP * 2) / Math.max(...dims.map((s) => s.height)),
+            ),
+          )
+    anchorZoomScroll(next)
+    setScale(next)
+  }, [rows, rowSize, anchorZoomScroll, noteMarginOn])
+
+  useEffect(() => {
+    if (status !== 'ready') return
+    recomputeFit()
+    const el = scrollRef.current
+    if (!el) return
+    const ro = new ResizeObserver(recomputeFit)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [status, recomputeFit])
+
+  /** Apply the restored reading position once the doc is ready. Positions via the
+   *  row's DOM offset two frames later: the initial fit recompute (effect above)
+   *  and its anchored scroll write (layout effect on scale) must land first, or
+   *  they would clobber this write. */
+  useEffect(() => {
+    if (status !== 'ready' || rows.length === 0) return
+    const savedView = pendingViewRestoreRef.current
+    if (!savedView) return
+    const page = Math.min(Math.max(1, savedView.page), pageCount)
+    if (page <= 1 && savedView.frac === 0) {
+      pendingViewRestoreRef.current = null
+      return
+    }
+    const rowIdx = rowOfVis(page - 1)
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        // Cleared here, not at schedule time: the persist guard must keep blocking
+        // saves until this write lands (or is abandoned) — a slow first paint could
+        // otherwise let a debounced save overwrite the stored spot with the top
+        pendingViewRestoreRef.current = null
+        const el = scrollRef.current
+        const rowEl = el?.querySelector<HTMLElement>(`.pdf-row[data-idx="${rowIdx}"]`)
+        if (!el || !rowEl) return
+        const rowTopPx =
+          rowEl.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+        el.scrollTop = rowTopPx + savedView.frac * rowEl.offsetHeight
+      }),
+    )
+  }, [status, rows, pageCount, rowOfVis])
+
+  /** Persist the reading position (debounced) so reopening the file returns here.
+   *  Listens to scroll directly — currentPage only changes per page, not per pixel. */
+  useEffect(() => {
+    if (status !== 'ready' || !filePath || rows.length === 0) return
+    const el = scrollRef.current
+    if (!el) return
+    let timer = 0
+    const saveNow = () => {
+      window.clearTimeout(timer)
+      // Not yet positioned — saving now would overwrite the stored spot with page 1
+      if (pendingViewRestoreRef.current) return
+      const visPos = new Map(visList.map((origIdx, i) => [origIdx, i]))
+      saveViewState(
+        filePath,
+        captureViewState({
+          scrollTop: el.scrollTop,
+          rowHeights: rows.map((row) => rowSize(row).height * scale),
+          rowPages: rows.map((row) => (visPos.get(row[0]!) ?? 0) + 1),
+          gap: PAGE_GAP,
+          scale,
+          fitMode: fitModeRef.current,
+        }),
+      )
+      saveLastZoom({ scale, fitMode: fitModeRef.current })
+    }
+    const schedule = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(saveNow, 300)
+    }
+    el.addEventListener('scroll', schedule, { passive: true })
+    // Closing faster than the debounce would drop the last update; flush on teardown
+    window.addEventListener('pagehide', saveNow)
+    schedule()
+    return () => {
+      el.removeEventListener('scroll', schedule)
+      window.removeEventListener('pagehide', saveNow)
+      window.clearTimeout(timer)
+    }
+  }, [status, filePath, rows, rowSize, visList, scale])
+
+  /** Page-top offset of a visible position (used for search positioning) */
+  const pageTop = useCallback((visIdx: number) => rowTop(rowOfVis(visIdx)), [rowTop, rowOfVis])
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el || rows.length === 0) return
+    const anchor = el.scrollTop + el.clientHeight * 0.4
+    let rowIdx = 0
+    for (let i = 0; i < rows.length; i++) {
+      if (rowTop(i) <= anchor) rowIdx = i
+      else break
+    }
+    const page = visList.indexOf(rows[rowIdx]![0]!) + 1
+    setCurrentPage(page)
+    setPageInput(String(page))
+  }, [rows, rowTop, visList])
+
+  const scrollToPage = (n: number) => {
+    const el = scrollRef.current
+    if (!el) return
+    const target = Math.min(Math.max(1, n), pageCount)
+    el.scrollTop = rowTop(rowOfVis(target - 1)) - PAGE_GAP / 2
+  }
+
+  // genoffice CLI (`open --page`, `selection`): the shell evaluates this hook
+  useEffect(() => {
+    ;(window as unknown as Record<string, unknown>).__genofficeControl = (req: ControlRequest) =>
+      handlePdfControl(req, {
+        loaded: doc !== null,
+        pageCount,
+        currentPage,
+        scrollToPage,
+        selectedText: () => window.getSelection()?.toString() ?? '',
+      })
+  })
+
+  // A reorder committed by an AI tool has not been laid out yet when the tool wants to
+  // scroll, so the target waits for the render that carries the new order
+  const scrollAfterReorderRef = useRef<number | null>(null)
+  useEffect(() => {
+    const origIdx = scrollAfterReorderRef.current
+    if (origIdx === null) return
+    scrollAfterReorderRef.current = null
+    const visIdx = visList.indexOf(origIdx)
+    if (visIdx >= 0) scrollToPage(visIdx + 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scrollToPage reads the same render's rows
+  }, [visList])
+
+  /** The file's widgets with pending Form Design edits applied: moved, re-flagged, removed */
+  const liveFormCatalog = useMemo((): FormCatalog | null => {
+    if (!formCatalog || formWidgetEdits.size === 0) return formCatalog
+    const widgets = formCatalog.widgets.flatMap((w) => {
+      const e = formWidgetEdits.get(w.id)
+      if (!e) return [w]
+      if (e.remove) return []
+      return [{ ...w, rect: e.rect ?? w.rect, required: e.required ?? w.required }]
+    })
+    const byPage = new Map<number, FormWidget[]>()
+    for (const w of widgets) byPage.set(w.pageIndex, [...(byPage.get(w.pageIndex) ?? []), w])
+    return { ...formCatalog, widgets, byPage }
+  }, [formCatalog, formWidgetEdits])
+  const designFieldsByPage = useMemo(() => {
+    const out = new Map<number, DesignField[]>()
+    const push = (f: DesignField) => out.set(f.pageIndex, [...(out.get(f.pageIndex) ?? []), f])
+    for (const w of liveFormCatalog?.widgets ?? []) {
+      push({
+        id: widgetDesignId(w.id),
+        kind: w.kind,
+        name: w.fieldName,
+        pageIndex: w.pageIndex,
+        rect: w.rect,
+        required: w.required,
+        existing: true,
+      })
+    }
+    for (const f of formFields) {
+      push({
+        id: f.id,
+        kind: f.input.kind,
+        name: f.input.name,
+        pageIndex: f.input.pageIndex,
+        rect: f.input.rect,
+        required: !!f.input.required,
+        existing: false,
+        pending: f,
+      })
+    }
+    return out
+  }, [liveFormCatalog, formFields])
+  const selectedDesignFields = useMemo(() => {
+    const all = [...designFieldsByPage.values()].flat()
+    return selectedFormFieldIds.flatMap((id) => all.filter((f) => f.id === id))
+  }, [designFieldsByPage, selectedFormFieldIds])
+  const selectedDesignField = selectedDesignFields.length === 1 ? selectedDesignFields[0]! : null
+  // A pending field with its property card open is still being authored: saves leave it out
+  // until Done, or a save landing mid-edit writes the stale version and the post-save reload
+  // drops the edits made meanwhile
+  const heldFormFieldId =
+    selectedDesignField && !selectedDesignField.existing && !formDesignPreview
+      ? selectedDesignField.id
+      : null
+  const savableFormFields = heldFormFieldId
+    ? formFields.filter((f) => f.id !== heldFormFieldId)
+    : formFields
+  const selectedFormFieldIdSet = useMemo(
+    () => new Set(selectedFormFieldIds),
+    [selectedFormFieldIds],
+  )
+  const arrangeItems: [Arrange, string, number][] = [
+    ['left', t('formDesignAlignLeft'), 2],
+    ['centerH', t('formDesignAlignCenterH'), 2],
+    ['right', t('formDesignAlignRight'), 2],
+    ['top', t('formDesignAlignTop'), 2],
+    ['centerV', t('formDesignAlignCenterV'), 2],
+    ['bottom', t('formDesignAlignBottom'), 2],
+    ['distributeH', t('formDesignDistributeH'), 3],
+    ['distributeV', t('formDesignDistributeV'), 3],
+    ['sameWidth', t('formDesignSameWidth'), 2],
+    ['sameHeight', t('formDesignSameHeight'), 2],
+    ['sameSize', t('formDesignSameSize'), 2],
+  ]
+  const formWidgets = visibleFormWidgets(liveFormCatalog, visList)
+  const signedFormWidgetIds = useMemo(
+    () =>
+      new Set(
+        drawings.flatMap((drawing) =>
+          drawing.formWidgetId === undefined ? [] : [drawing.formWidgetId],
+        ),
+      ),
+    [drawings],
+  )
+  const hasFillableForm = formWidgets.length > 0
+  const activeFormIndex = formWidgets.findIndex((widget) => widget.id === activeFormWidgetId)
+
+  const registerFormControl = (id: string, element: HTMLElement | null) => {
+    if (element) formControlRefs.current.set(id, element)
+    else formControlRefs.current.delete(id)
+  }
+
+  const focusFormWidget = (widget: FormWidget) => {
+    const visibleIndex = visList.indexOf(widget.pageIndex)
+    if (visibleIndex < 0) return
+    setActiveFormWidgetId(widget.id)
+    scrollToPage(visibleIndex + 1)
+    setCurrentPage(visibleIndex + 1)
+    setPageInput(String(visibleIndex + 1))
+    let attempts = 0
+    const focusWhenMounted = () => {
+      const control = formControlRefs.current.get(widget.id)
+      if (control) {
+        control.focus()
+        return
+      }
+      if (attempts++ < 8) requestAnimationFrame(focusWhenMounted)
+    }
+    requestAnimationFrame(focusWhenMounted)
+  }
+
+  const stepFormWidget = (direction: 1 | -1) => {
+    if (formWidgets.length === 0) return
+    const current = activeFormIndex >= 0 ? activeFormIndex : direction === 1 ? -1 : 0
+    const next = (current + direction + formWidgets.length) % formWidgets.length
+    focusFormWidget(formWidgets[next]!)
+  }
+
+  const formFieldFilled = (field: FormField): boolean => {
+    const edit = formEdits.get(field.name)
+    if (field.kind === 'checkbox') return edit ? !!edit.checked : field.checked
+    // pdf.js deliberately hides the non-serializable /Sig value, and this app
+    // does not verify certificate signatures. A visual Ink/Stamp signature must
+    // therefore remain distinct from completion of a required digital-signature field.
+    if (field.kind === 'signature') return false
+    const value = edit && edit.kind !== 'checkbox' ? (edit.value ?? '') : field.value
+    return value.trim().length > 0
+  }
+
+  const visibleFormFieldNames = new Set(formWidgets.map((widget) => widget.fieldName))
+  const missingRequiredFields = [...(formCatalog?.fields.values() ?? [])].filter(
+    (field) =>
+      visibleFormFieldNames.has(field.name) &&
+      field.required &&
+      !field.readOnly &&
+      !formFieldFilled(field),
+  )
+
+  /** Zoom keeping the content at the viewport top anchored (row-exact, see anchorZoomScroll) */
+  const applyScale = (next: number, mode: FitMode) => {
+    fitModeRef.current = mode
+    const clamped = clampScale(next)
+    anchorZoomScroll(clamped)
+    setScale(clamped)
+  }
+
+  const zoomIn = () => applyScale(ZOOM_STEPS.find((s) => s > scale + 0.001) ?? MAX_SCALE, null)
+  const zoomOut = () =>
+    applyScale([...ZOOM_STEPS].reverse().find((s) => s < scale - 0.001) ?? MIN_SCALE, null)
+
+  const commitPageInput = () => {
+    const n = Number.parseInt(pageInput, 10)
+    if (Number.isFinite(n)) scrollToPage(n)
+    else setPageInput(String(currentPage))
+  }
+
+  const staticFormFills = useMemo(() => {
+    const records = new Map(savedStaticFormFills.map((record) => [record.id, record]))
+    for (const edit of imageEdits) {
+      if (!edit.staticFill) continue
+      if (edit.input.kind === 'deleteImage') {
+        records.delete(edit.staticFill.id)
+        continue
+      }
+      records.set(edit.staticFill.id, {
+        ...edit.staticFill,
+        pageIndex: edit.input.pageIndex,
+        rect: edit.input.rect,
+      })
+    }
+    return [...records.values()]
+  }, [imageEdits, savedStaticFormFills])
+
+  const dirtyBesidesFormFields =
+    markups.length > 0 ||
+    annotDeletes.length > 0 ||
+    noteEdits.length > 0 ||
+    drawings.length > 0 ||
+    textEdits.length > 0 ||
+    textInserts.length > 0 ||
+    imageEdits.length > 0 ||
+    stampCfg !== null ||
+    formEdits.size > 0 ||
+    blankPages.length > 0 ||
+    formWidgetEdits.size > 0 ||
+    rotations.size > 0 ||
+    deleted.size > 0 ||
+    order !== null ||
+    metadata !== null ||
+    protectionDirty ||
+    (pendingOutline?.edited ?? false) ||
+    pendingAttachmentAdds.length > 0 ||
+    pendingAttachmentRemoves.length > 0
+  // The pending OCR bake deliberately stays out of dirty: a scan the user only
+  // opened to read must not show the modified marker, prompt on close or feed
+  // the save-in-flight plumbing. The bake still rides the save request
+  // (anythingToSave keeps it), so an explicit ⌘S writes it — a user action —
+  // and everything the reader does afterwards sees a text layer.
+  const ordinaryDirty = dirtyBesidesFormFields || formFields.length > 0
+  const savableDirty = dirtyBesidesFormFields || savableFormFields.length > 0
+  const dirty = redactions.length > 0 || ordinaryDirty
+
+  // Mirror dirty state to the main process (close-tab/close-window guard)
+  useEffect(() => {
+    window.pdfApi.setDirty(dirty)
+  }, [dirty])
+
+  // Existing images are listed while edit-image mode is on; `doc` in the deps refreshes
+  // the list after a post-save reload (object rects may have changed on disk)
+  useEffect(() => {
+    if (!editImageMode || !filePath || !doc) {
+      setPageImages([])
+      return
+    }
+    let cancelled = false
+    window.pdfApi
+      .listPageImages(filePath)
+      .then((refs) => {
+        if (!cancelled) setPageImages(refs)
+      })
+      .catch(() => {
+        /* hit layer simply stays empty */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [editImageMode, filePath, doc])
+
+  // ── Undo/redo: push a full snapshot before each change; consecutive input on the same form field coalesces into one step ──
+
+  // Ref-mirrored fields read the mirrors so a pushUndo later in an AI turn captures
+  // the tools that ran before it, not the state this render closed over
+  const snapshot = (): EditSnapshot => ({
+    markups: markupsRef.current,
+    annotDeletes: annotDeletesRef.current,
+    noteEdits: noteEditsRef.current,
+    drawings: drawingsRef.current,
+    textEdits: textEditsRef.current,
+    textInserts: textInsertsRef.current,
+    imageEdits: imageEditsRef.current,
+    stampCfg: stampRef.current,
+    formEdits: formEditsRef.current,
+    formFields: formFieldsRef.current,
+    blankPages: blankPagesRef.current,
+    formWidgetEdits: formWidgetEditsRef.current,
+    rotations: rotationsRef.current,
+    deleted: deletedRef.current,
+    order: orderRef.current,
+    metadata: metadataRef.current,
+  })
+
+  const pushUndo = (coalesceKey?: string) => {
+    if (coalesceKey && coalesceKeyRef.current === coalesceKey) return
+    coalesceKeyRef.current = coalesceKey ?? null
+    const snap = snapshot()
+    setUndoStack((prev) => [...prev.slice(-49), snap])
+    setRedoStack([])
+    if (writtenRef.current.redo.length > 0) setWritten({ ...writtenRef.current, redo: [] })
+  }
+
+  const newId = () => `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+
+  const editOpContext = (): OpContext => ({
+    readOnly,
+    pageCount: pageCountNow(),
+    deleted: deletedRef.current,
+    claimedImages: new Set(
+      imageEditsRef.current.flatMap((e) =>
+        e.input.kind === 'insertImage'
+          ? []
+          : [`${e.input.pageIndex}:${imageRectKey(e.input.oldRect)}`],
+      ),
+    ),
+    fieldNames: new Set([
+      ...liveFieldNames(formCatalog, formWidgetEditsRef.current),
+      ...formFieldsRef.current.map((f) => f.input.name),
+    ]),
+    radioGroups: new Set([
+      ...[...(formCatalog?.fields.values() ?? [])]
+        .filter((f) => f.kind === 'radio')
+        .map((f) => f.name),
+      ...formFieldsRef.current.filter((f) => f.input.kind === 'radio').map((f) => f.input.name),
+    ]),
+  })
+
+  /**
+   * The one write path into the pending-edit buckets (edit-ops/registry.ts): the
+   * whole batch is validated first, then each touched bucket reduces from its ref
+   * mirror, so a later op in the same AI turn sees what an earlier one queued. The
+   * same reducers run over a whole snapshot in tests. One batch = one undo step
+   * (coalesceKey folds repeats). Post-save reload, undo/redo restore and async
+   * display metadata (validated bounds, ghost PNGs) are the only direct writes left.
+   */
+  const applyEditOps = (ops: Op[], opts?: { coalesceKey?: string }): PlanResult => {
+    const structuralIndex = ops.findIndex(
+      (op) => op.op === 'rotatePages' || op.op === 'deletePage' || op.op === 'setPageOrder',
+    )
+    if (redactions.length > 0 && structuralIndex >= 0) {
+      return {
+        ops: [],
+        records: [],
+        touched: new Set(),
+        failures: [
+          { index: structuralIndex, op: ops[structuralIndex]!, error: t('redactStructureBlocked') },
+        ],
+      }
+    }
+    const plan = planEditOps(ops, editOpContext(), newId)
+    if (plan.failures.length > 0 || plan.ops.length === 0) return plan
+    pushUndo(opts?.coalesceKey)
+    const base = snapshot()
+    const { ops: planned, touched } = plan
+    const reduce = <K extends Bucket>(bucket: K, prev: EditSnapshot[K]) =>
+      reduceBucket(bucket, prev, planned, base)
+    if (touched.has('markups')) {
+      markupsRef.current = reduce('markups', markupsRef.current)
+      setMarkups(markupsRef.current)
+    }
+    if (touched.has('annotDeletes')) {
+      annotDeletesRef.current = reduce('annotDeletes', annotDeletesRef.current)
+      setAnnotDeletes(annotDeletesRef.current)
+    }
+    if (touched.has('noteEdits')) {
+      noteEditsRef.current = reduce('noteEdits', noteEditsRef.current)
+      setNoteEdits(noteEditsRef.current)
+    }
+    if (touched.has('drawings')) {
+      drawingsRef.current = reduce('drawings', drawingsRef.current)
+      setDrawings(drawingsRef.current)
+    }
+    if (touched.has('textEdits')) applyTextEdits((p) => reduce('textEdits', p))
+    if (touched.has('textInserts')) commitTextInserts(reduce('textInserts', textInsertsRef.current))
+    if (touched.has('imageEdits')) updateImageEdits((p) => reduce('imageEdits', p))
+    if (touched.has('stampCfg')) {
+      stampRef.current = reduce('stampCfg', stampRef.current)
+      setStampCfg(stampRef.current)
+    }
+    if (touched.has('formEdits')) {
+      formEditsRef.current = reduce('formEdits', formEditsRef.current)
+      setFormEdits(formEditsRef.current)
+    }
+    if (touched.has('formFields')) commitFormFields(reduce('formFields', formFieldsRef.current))
+    if (touched.has('blankPages')) commitBlankPages(reduce('blankPages', blankPagesRef.current))
+    if (touched.has('formWidgetEdits')) {
+      formWidgetEditsRef.current = reduce('formWidgetEdits', formWidgetEditsRef.current)
+      setFormWidgetEdits(formWidgetEditsRef.current)
+    }
+    if (touched.has('rotations')) {
+      rotationsRef.current = reduce('rotations', rotationsRef.current)
+      setRotations(rotationsRef.current)
+    }
+    if (touched.has('deleted')) {
+      deletedRef.current = reduce('deleted', deletedRef.current)
+      setDeleted(deletedRef.current)
+    }
+    if (touched.has('order')) {
+      orderRef.current = reduce('order', orderRef.current)
+      setOrder(orderRef.current)
+    }
+    if (touched.has('metadata')) {
+      metadataRef.current = reduce('metadata', metadataRef.current)
+      setMetadata(metadataRef.current)
+    }
+    return plan
+  }
+  /** Latest entry for async callbacks (bakes, validated AI edits): the closure they
+      started with would snapshot stale state for undo by the time they land */
+  const applyEditOpsRef = useRef(applyEditOps)
+  applyEditOpsRef.current = applyEditOps
+
+  /** Ops turning the current text-edit list into `next`: the list-building paths keep
+      their merge logic and only the write goes through the op layer */
+  const textEditListOps = (prev: LocalTextEdit[], next: LocalTextEdit[]): Op[] => {
+    const keep = new Set(next.map((e) => e.id))
+    const before = new Map(prev.map((e) => [e.id, e]))
+    return [
+      ...prev.filter((e) => !keep.has(e.id)).map((e): Op => ({ op: 'removeTextEdit', id: e.id })),
+      ...next
+        .filter((e) => before.get(e.id) !== e)
+        .map((e): Op => ({
+          op: 'putTextEdit',
+          id: e.id,
+          input: e.input,
+          cover: e.cover,
+          moveBy: e.moveBy,
+          baseInk: e.baseInk,
+          baseFont: e.baseFont,
+          paper: e.paper,
+        })),
+    ]
+  }
+
+  /** order must cover all original pages: deleted ones trail so they don't affect the result */
+  const commitOrder = (vis: number[]) =>
+    applyEditOps([
+      {
+        op: 'setPageOrder',
+        order: [...vis, ...allSizes.map((_, i) => i).filter((i) => !vis.includes(i))],
+      },
+    ])
+
+  const applySnapshot = (s: EditSnapshot) => {
+    markupsRef.current = s.markups
+    formEditsRef.current = s.formEdits
+    formWidgetEditsRef.current = s.formWidgetEdits
+    setFormWidgetEdits(s.formWidgetEdits)
+    annotDeletesRef.current = s.annotDeletes
+    noteEditsRef.current = s.noteEdits
+    drawingsRef.current = s.drawings
+    rotationsRef.current = s.rotations
+    deletedRef.current = s.deleted
+    orderRef.current = s.order
+    metadataRef.current = s.metadata
+    setMarkups(s.markups)
+    setAnnotDeletes(s.annotDeletes)
+    setNoteEdits(s.noteEdits)
+    setDrawings(s.drawings)
+    applyTextEdits(() => s.textEdits)
+    commitTextInserts(s.textInserts)
+    commitFormFields(s.formFields)
+    commitBlankPages(s.blankPages)
+    setSelectedFormFieldIds((cur) =>
+      cur.filter((id) => designWidgetId(id) || s.formFields.some((f) => f.id === id)),
+    )
+    setFreshFormFieldId((cur) => (cur && s.formFields.some((f) => f.id === cur) ? cur : null))
+    updateImageEdits(() => s.imageEdits)
+    setTextDraft(null)
+    // The comment being rewritten may not exist in the restored snapshot; confirming a
+    // stale edit box would reapply text that undo just reverted
+    setNoteEditDraft(null)
+    setStampCfg(s.stampCfg)
+    setFormEdits(s.formEdits)
+    setRotations(s.rotations)
+    setDeleted(s.deleted)
+    setOrder(s.order)
+    setMetadata(s.metadata)
+    // The selected annotation may no longer exist in the restored snapshot
+    setSelected(null)
+  }
+
+  const undo = () => {
+    const top = undoStack[undoStack.length - 1]
+    if (!top) return void stepWritten('undo')
+    // Taken before applySnapshot rewrites the refs; the updater may run after it
+    const cur = snapshot()
+    setRedoStack((r) => [...r, cur])
+    setUndoStack((u) => u.slice(0, -1))
+    applySnapshot(top)
+    coalesceKeyRef.current = null
+  }
+
+  const redo = () => {
+    const top = redoStack[redoStack.length - 1]
+    if (!top) return void stepWritten('redo')
+    const cur = snapshot()
+    setUndoStack((u) => [...u, cur])
+    setRedoStack((r) => r.slice(0, -1))
+    applySnapshot(top)
+    coalesceKeyRef.current = null
+  }
+
+  // ── Full-text search ──
+
+  /** Text index cached per doc; invalidated and rebuilt after a save reload.
+      Scanned pages recognized by OCR overlay their entry so search, markups and
+      AI tools address them like born-digital text. */
+  const getSearchIndex = useCallback((): Promise<SearchIndex> | null => {
+    if (!doc) return null
+    const base = searchIndexCache.get(doc)
+    if (ocrPages.size === 0) return base
+    return base.then((idx) => idx.map((entry, i) => ocrPages.get(i)?.entry ?? entry))
+  }, [doc, ocrPages, searchIndexCache])
+
+  // Auto-OCR for scanned pages (issue #119): once the base index shows pages with
+  // no extractable text, recognize them sequentially in the background, starting
+  // at the current page. Boxes are stored in PDF space, so later zooms/rotations
+  // reproject. The pass runs renderer-side, one page at a time, so the user's
+  // Stop only has to abort this signal.
+
+  /** Start a pass over the document's scanned pages. `pending` continues a
+      capped pass over the pages it left; `null` starts at the current page.
+      `doneBefore` is what the passes already recognized, so a continued
+      pass keeps reporting the count for the whole document and not just for
+      itself. A cap is a pause and not a cancel, so a continuation reuses the
+      finished pass's signal while that signal is still live, which is also what
+      keeps the toast's Stop working on the resumed pass. A signal torn down in
+      between (the document or its page count changed) is already aborted and
+      would cancel the pass on its first check, so a fresh one replaces it. */
+  // showNotice is defined further down; the manual-OCR notice goes through the
+  // ref so the pass callback can sit above it
+  const showNoticeRef = useRef<(msg: string) => void>(() => undefined)
+  const startOcrPass = useCallback(
+    (pending: number[] | null, doneBefore = 0, manualLimit?: number) => {
+      if (!doc) return
+      const live = ocrAbortRef.current
+      const controller = live && !live.signal.aborted ? live : new AbortController()
+      ocrAbortRef.current = controller
+      setOcrRunning(true)
+      setOcrRun((prev) => ({
+        done: doneBefore,
+        total: prev?.total ?? 0,
+        stop: null,
+        pending: null,
+      }))
+      void (async () => {
+        let result: AutoOcrResult | null = null
+        try {
+          result = await runAutoOcr({
+            doc,
+            cache: searchIndexCache,
+            fromPage: () => currentOrigIdxRef.current,
+            ...(pending === null ? {} : { pending }),
+            ...(manualLimit === undefined ? {} : { limit: manualLimit }),
+            signal: controller.signal,
+            geom: (origIdx) => pageGeomRef.current(origIdx),
+            render: renderPageForOcr,
+            ocrPage: (png) => window.pdfApi.ocrPage(png),
+            onPage: (origIdx, data) => setOcrPages((prev) => new Map(prev).set(origIdx, data)),
+            onProgress: (done, total) =>
+              setOcrRun({ done: doneBefore + done, total, stop: null, pending: null }),
+          })
+        } catch {
+          // the document is gone or unreadable: nothing left to recognize
+        }
+        if (ocrAbortRef.current !== controller) return // a newer pass took over
+        // A manual trigger over a document with nothing left to recognize says so;
+        // the state still unwinds below, or the disabled button and the toast
+        // would stick until the document reloads
+        if (manualLimit !== undefined && result && result.total === 0)
+          showNoticeRef.current(t('ocrNothing'))
+        // A finished pass and a platform without an OCR engine are not worth a
+        // toast; a cap or a user cancel is, and it says how far the pass got
+        setOcrRunning(false)
+        setOcrRun(
+          result && (result.stop === 'cap' || result.stop === 'cancelled')
+            ? {
+                done: doneBefore + result.done,
+                total: result.total,
+                stop: result.stop,
+                pending: result.pending,
+              }
+            : null,
+        )
+      })()
+    },
+    [doc, searchIndexCache],
+  )
+
+  /** The pages the toast's Continue resumes over: only a capped pass has any,
+      and a scan that ran out has nothing left to resume. */
+  const ocrPending = ocrRun?.stop === 'cap' ? (ocrRun.pending ?? null) : null
+
+  useEffect(() => {
+    setOcrPages(new Map())
+    setOcrRun(null)
+    // the pass torn down below returns without unwinding; Recognize would stay greyed out
+    setOcrRunning(false)
+    if (!doc || sizes.length !== doc.numPages) return
+    startOcrPass(null)
+    return () => {
+      // tears down the pass this effect started, so its teardown still cancels
+      ocrAbortRef.current?.abort()
+      ocrAbortRef.current = null
+    }
+  }, [doc, sizes.length, searchIndexCache, startOcrPass])
+
+  /** Paragraph boxes are keyed to the loaded doc; drop them on save-reload */
+  useEffect(() => {
+    setPageBlocks(new Map())
+    setDocFonts(new Map())
+    clearBlockHover()
+    // The line affordance is just as stale after a reload (it hangs at the last
+    // pre-save pointer position until the next mousemove)
+    clearLineHover()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc])
+
+  /** Cluster paragraph boxes for pages scrolled into view while edit-text mode is on.
+      Reruns after its own setPageBlocks commit and finds nothing missing, so it settles */
+  useEffect(() => {
+    if (!editTextMode || readOnly || !doc) return
+    const missing: number[] = []
+    for (const r of visibleRows)
+      for (const i of rows[r] ?? []) if (!pageBlocks.has(i)) missing.push(i)
+    if (missing.length === 0) return
+    const index = getSearchIndex()
+    if (!index) return
+    let stale = false
+    void index.then((entries) => {
+      if (stale) return
+      const grouped = new Map<number, TextBlock[]>()
+      for (const i of missing) {
+        const entry = entries[i]
+        grouped.set(i, entry ? groupPageBlocks(entry) : [])
+      }
+      setPageBlocks((prev) => {
+        const next = new Map(prev)
+        for (const [i, blocks] of grouped) if (!next.has(i)) next.set(i, blocks)
+        return next
+      })
+      // Resolve the lines' document fonts up front so the border-drag ghost can
+      // read like the page the moment a drag starts
+      for (const [i, blocks] of grouped)
+        for (const b of blocks) for (const l of b.lines) if (l.font) void resolveDocFont(i, l.font)
+    })
+    return () => {
+      stale = true
+    }
+  }, [editTextMode, readOnly, doc, visibleRows, rows, pageBlocks, getSearchIndex])
+
+  /** Saved markup/note annotations are keyed to the loaded doc; drop them on save-reload */
+  useEffect(() => {
+    setSavedMarkups(new Map())
+    setSavedNotes(new Map())
+    setActiveNote(null)
+    setNoteDraft(null)
+  }, [doc])
+
+  /** Load saved markup + note annotations for pages scrolled into view: markups so
+      clicking one can select it for deletion, notes so their comment threads show.
+      Runs for read-only docs too (comments are viewable). Settles the same way as
+      the paragraph-box effect. */
+  useEffect(() => {
+    if (!doc) return
+    const missing: number[] = []
+    for (const r of visibleRows)
+      for (const i of rows[r] ?? []) if (!savedMarkups.has(i)) missing.push(i)
+    if (missing.length === 0) return
+    let stale = false
+    void (async () => {
+      const markupEntries: [number, SavedMarkupAnnot[]][] = []
+      const noteEntries: [number, SavedNoteAnnot[]][] = []
+      for (const origIdx of missing) {
+        const { markups: markupList, notes: noteList } = await loadSavedAnnots(doc, origIdx)
+        markupEntries.push([origIdx, markupList])
+        noteEntries.push([origIdx, noteList])
+      }
+      if (!stale) {
+        setSavedMarkups((prev) => new Map([...prev, ...markupEntries]))
+        setSavedNotes((prev) => new Map([...prev, ...noteEntries]))
+      }
+    })()
+    return () => {
+      stale = true
+    }
+  }, [doc, visibleRows, rows, savedMarkups])
+
+  useEffect(() => {
+    if (!searchOpen || !searchQuery.trim()) {
+      setSearchMatches([])
+      setSearchCur(0)
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      void getSearchIndex()?.then((idx) => {
+        if (cancelled) return
+        setSearchMatches(
+          searchInIndex(idx, searchQuery.trim(), {
+            matchCase: searchMatchCase,
+            wholeWord: searchWholeWord,
+          }),
+        )
+        setSearchCur(0)
+      })
+    }, 200)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [searchOpen, searchQuery, searchMatchCase, searchWholeWord, getSearchIndex])
+
+  /** Pages with unsaved deletion are excluded from match navigation */
+  const activeMatches = useMemo(
+    () => searchMatches.filter((m) => !deleted.has(m.pageIndex)),
+    [searchMatches, deleted],
+  )
+  const searchCurClamped = Math.min(searchCur, Math.max(0, activeMatches.length - 1))
+
+  const gotoMatch = useCallback(
+    (idx: number) => {
+      const m = activeMatches[idx]
+      const el = scrollRef.current
+      if (!m || !el) return
+      const visIdx = visList.indexOf(m.pageIndex)
+      if (visIdx < 0) return
+      const box = pdfRectToCss(pageGeom(m.pageIndex), m.rects[0] ?? [0, 0, 0, 0], scale)
+      el.scrollTop = Math.max(0, pageTop(visIdx) + box.top - el.clientHeight * 0.35)
+    },
+    [activeMatches, visList, pageGeom, scale, pageTop],
+  )
+
+  // Scroll to the current match on new results or position changes (unrelated changes like zoom don't re-scroll)
+  useEffect(() => {
+    if (!searchOpen || activeMatches.length === 0) return
+    const last = searchJumpRef.current
+    if (last && last.matches === activeMatches && last.cur === searchCurClamped) return
+    searchJumpRef.current = { matches: activeMatches, cur: searchCurClamped }
+    gotoMatch(searchCurClamped)
+  }, [searchOpen, activeMatches, searchCurClamped, gotoMatch])
+
+  const searchStep = (dir: 1 | -1) => {
+    const n = activeMatches.length
+    if (n === 0) return
+    setSearchCur((searchCurClamped + dir + n) % n)
+  }
+
+  const openSearch = () => {
+    setSearchOpen(true)
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    })
+  }
+
+  const closeSearch = () => setSearchOpen(false)
+
+  /** Selection quads in PDF space keyed by original page index; null when nothing usable */
+  const selectionQuads = (): Map<number, number[][]> | null => {
+    const el = scrollRef.current
+    if (!el) return null
+    const byVisPage = selectionQuadsByPage(
+      el,
+      visList.map((i) => pageGeom(i)),
+      scale,
+    )
+    if (!byVisPage) return null
+    const quads = new Map<number, number[][]>()
+    for (const [visIdx, q] of byVisPage) {
+      const origIdx = visList[visIdx]
+      if (origIdx !== undefined) quads.set(origIdx, q)
+    }
+    return quads.size > 0 ? quads : null
+  }
+
+  /** Mouse released over selected text → show the markup bar centered above the selection box (below if it doesn't fit) */
+  const handleMouseUp = () => {
+    // In edit-text mode a drag means "choose the characters to edit" (the click
+    // after mouseup opens the editor preselected), not the markup popup — and any
+    // previously cached AI scope no longer matches what the user sees
+    if (editTextMode && !readOnly) {
+      setAiSelection(null)
+      return
+    }
+    setTimeout(() => {
+      const el = scrollRef.current
+      const sel = window.getSelection()
+      if (!el || !sel || sel.isCollapsed || sel.rangeCount === 0) {
+        setSelPopup(null)
+        setAiSelection(null)
+        return
+      }
+      // Selection lives outside the document (e.g. panel text): leave the scope alone
+      if (!el.contains(sel.getRangeAt(0).commonAncestorContainer)) return
+      const box = sel.getRangeAt(0).getBoundingClientRect()
+      const quads = box.width >= 1 || box.height >= 1 ? selectionQuads() : null
+      if (!quads) {
+        // A live document selection the scope can't represent must not leave a stale chip
+        setAiSelection(null)
+        return
+      }
+      const selText = sel.toString()
+      // min/max, not insertion order: after a page reorder the visual walk can hit
+      // original indices out of sequence and would invert the span
+      const pages = [...quads.keys()]
+      if (pages.length > 0 && selText.trim()) {
+        setAiSelection({
+          page: Math.min(...pages) + 1,
+          lastPage: Math.max(...pages) + 1,
+          text: selText,
+        })
+      }
+      // Read-only documents still get the bar for its Ask-AI entry (Q&A works);
+      // the markup buttons themselves are hidden in that state
+      setSelPopup({
+        x: Math.min(Math.max(box.left + box.width / 2, 70), window.innerWidth - 70),
+        y: box.top >= 52 ? box.top - 44 : Math.min(box.bottom + 8, window.innerHeight - 44),
+        quads,
+      })
+    }, 0)
+  }
+
+  /** The existing markup of `type` whose quads equal this page selection (tolerance-
+      based): pending unsaved markups first, then annotations saved in the file
+      (minus ones already pending deletion). Null = the selection isn't marked. */
+  const markupMatching = (
+    origIdx: number,
+    type: MarkupType,
+    quads: number[][],
+  ): { pending: LocalMarkup } | { saved: SavedMarkupAnnot } | null => {
+    const pending = markups.find(
+      (m) => m.pageIndex === origIdx && m.type === type && quadSetsMatch(m.quads, quads),
+    )
+    if (pending) return { pending }
+    const pendingDeleted = new Set(annotDeletes.map((d) => d.annot.objNum))
+    const saved = (savedMarkups.get(origIdx) ?? []).find(
+      (a) => a.type === type && !pendingDeleted.has(a.objNum) && quadSetsMatch(a.quads, quads),
+    )
+    return saved ? { saved } : null
+  }
+
+  /** Word-style toggle: apply `type` to the selection, or remove it when the whole
+      selection already carries it. Selection and bar survive so more markup types can
+      be stacked/toggled on the same text; clicking anywhere else dismisses them. */
+  const applyMarkup = (type: MarkupType) => {
+    if (readOnly) return
+    const selQuads = selectionQuads()
+    if (!selQuads) {
+      setSelPopup(null)
+      return
+    }
+    const matches = [...selQuads].map(
+      ([origIdx, quads]) => [origIdx, quads, markupMatching(origIdx, type, quads)] as const,
+    )
+    if (matches.every(([, , m]) => m !== null)) {
+      // Every page of the selection is already marked → the click removes
+      applyEditOps(
+        matches.flatMap(([, , m]): Op[] =>
+          m && 'pending' in m
+            ? [{ op: 'removeMarkup', id: m.pending.id }]
+            : m && 'saved' in m
+              ? [{ op: 'deleteSavedAnnot', annot: m.saved }]
+              : [],
+        ),
+      )
+      return
+    }
+    // Pages already carrying the markup are skipped, not duplicated (Word semantics:
+    // applying to a partially-marked selection marks the rest)
+    applyEditOps(
+      matches.flatMap(([origIdx, quads, m]): Op[] =>
+        m
+          ? []
+          : [
+              {
+                op: 'addMarkup',
+                markup: {
+                  pageIndex: origIdx,
+                  type,
+                  color: type === 'highlight' ? highlightColor : MARKUP_COLORS[type],
+                  quads,
+                },
+              },
+            ],
+      ),
+    )
+  }
+
+  /** Ask-AI entry on the markup bar: capture the selection box as the popover
+      anchor now (the bar's mousedown preventDefault kept the selection alive up
+      to this click; the popover input will collapse it) */
+  const openAskPopover = () => {
+    const sel = window.getSelection()
+    const box =
+      sel && !sel.isCollapsed && sel.rangeCount > 0
+        ? sel.getRangeAt(0).getBoundingClientRect()
+        : null
+    const rect: AskAnchorRect | null = box
+      ? { left: box.left, top: box.top, right: box.right, bottom: box.bottom }
+      : selPopup
+        ? { left: selPopup.x, top: selPopup.y, right: selPopup.x, bottom: selPopup.y + 36 }
+        : null
+    if (!rect) return
+    setSelPopup(null)
+    setAskPop({ rect, excerpt: aiSelection?.text ?? sel?.toString() ?? '' })
+  }
+
+  /** Markup types the whole current selection already carries — shown as pressed
+      buttons in the bar (clicking one removes the markup) */
+  const activeMarkupTypes = useMemo(() => {
+    const active = new Set<MarkupType>()
+    if (!selPopup) return active
+    for (const type of ['highlight', 'underline', 'squiggly', 'strikeout'] as const) {
+      if ([...selPopup.quads].every(([origIdx, quads]) => markupMatching(origIdx, type, quads)))
+        active.add(type)
+    }
+    return active
+    // markupMatching reads markups/annotDeletes/savedMarkups; they are all listed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selPopup, markups, annotDeletes, savedMarkups])
+
+  // ── Annotation selection: click selects, deletion is explicit (delete popup / Delete key) ──
+
+  /** Clamp the delete popup anchor into the window, preferring a spot above the click (same rules as the markup bar) */
+  const popupPos = (x: number, y: number) => ({
+    x: Math.min(Math.max(x, 70), window.innerWidth - 70),
+    y: y >= 96 ? y - 48 : Math.min(y + 12, window.innerHeight - 44),
+  })
+
+  /** Floating bars are anchored to content (a click point, an edited text run), so near a
+   *  window edge their natural position can overflow — widths vary by content, so after
+   *  render measure the real box and shift it back inside via margin-left */
+  const clampFloatingBar = (el: HTMLElement | null) => {
+    if (!el) return
+    el.style.marginLeft = '0px'
+    const r = el.getBoundingClientRect()
+    const pad = 8
+    const shift = r.left < pad ? pad - r.left : Math.min(0, window.innerWidth - pad - r.right)
+    el.style.marginLeft = `${shift}px`
+  }
+  const delPopupRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    clampFloatingBar(delPopupRef.current)
+  }, [selected])
+  const textEditBarRef = useRef<HTMLDivElement>(null)
+  /** These default to floating above their anchor; when the anchor sits at the top of the
+   *  scroll viewport that position is clipped by the scroll container — flip below instead */
+  const flipBelowIfClipped = (el: HTMLElement | null, offset: string) => {
+    if (!el) return
+    el.style.top = ''
+    el.style.bottom = ''
+    const clipTop = scrollRef.current?.getBoundingClientRect().top ?? 0
+    if (el.getBoundingClientRect().top < clipTop) {
+      el.style.bottom = 'auto'
+      el.style.top = offset
+    }
+  }
+  const placeTextEditBars = () => {
+    flipBelowIfClipped(textEditBarRef.current, 'calc(100% + 5px)')
+    clampFloatingBar(textEditBarRef.current)
+  }
+  // textDraft dep: the font select's width follows the chosen font, so re-clamp on change
+  useLayoutEffect(placeTextEditBars, [textDraft])
+  // The draft survives scrolling (unlike selections), so the anchor can move back under the
+  // scrollport top after placement — re-run the flip/clamp as the viewport scrolls
+  useEffect(() => {
+    if (!textDraft) return
+    const el = scrollRef.current
+    if (!el) return
+    el.addEventListener('scroll', placeTextEditBars, { passive: true })
+    return () => el.removeEventListener('scroll', placeTextEditBars)
+    // placeTextEditBars reads only refs; re-subscribing per draft is enough
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textDraft])
+
+  /** Markup overlays don't take pointer events (text under them must stay selectable),
+   *  so a bare click on the page content hit-tests them here. Only a true click counts:
+   *  a drag that produced a text selection goes to the markup bar instead. Pending
+   *  (unsaved) markups win over saved annotations; last added wins within each group,
+   *  matching visual stacking order. */
+  const handlePageClick = (origIdx: number, e: ReactMouseEvent<HTMLDivElement>) => {
+    // Only clicks that land on the rendered page (canvas/text layer); overlays like
+    // draw shapes, note pins, stamps and previews handle their own selection
+    if (!(e.target as Element).closest?.('.pdf-page-content')) return
+    const sel = window.getSelection()
+    if (sel && !sel.isCollapsed) return
+    const box = e.currentTarget.getBoundingClientRect()
+    const g = pageGeom(origIdx)
+    const [px, py] = viewToPdf(g, (e.clientX - box.left) / scale, (e.clientY - box.top) / scale)
+    const hitQuads = (quads: number[][]) =>
+      quads.some((q) => {
+        const r = quadToRect(q)
+        return px >= r[0] && px <= r[2] && py >= r[1] && py <= r[3]
+      })
+    const select = (selection: AnnotSelection) => {
+      e.stopPropagation() // keep the scroll container from clearing the selection we just set
+      setSelected(selection)
+    }
+    const at = popupPos(e.clientX, e.clientY)
+    const onPage = markups.filter((m) => m.pageIndex === origIdx)
+    for (let i = onPage.length - 1; i >= 0; i--) {
+      const m = onPage[i]!
+      if (hitQuads(m.quads)) return select({ kind: 'markup', id: m.id, ...at })
+    }
+    if (readOnly) return
+    // Markup annotations already saved in the file (skipping ones pending deletion)
+    const pendingDeleted = new Set(annotDeletes.map((d) => d.annot.objNum))
+    const saved = savedMarkups.get(origIdx) ?? []
+    for (let i = saved.length - 1; i >= 0; i--) {
+      const a = saved[i]!
+      if (pendingDeleted.has(a.objNum) || !hitQuads(a.quads)) continue
+      return select({ kind: 'savedMarkup', annot: a, ...at })
+    }
+  }
+
+  /** Shift a drawing by a PDF-space delta (drag-to-move on the page) */
+  const moveDrawing = (id: string, dx: number, dy: number) => {
+    setSelected(null)
+    applyEditOps([{ op: 'moveDrawing', id, dx, dy }])
+  }
+
+  /** Replace an image drawing's rect (corner-handle resize) */
+  const resizeDrawing = (id: string, rect: [number, number, number, number]) => {
+    applyEditOps([{ op: 'setDrawingRect', id, rect }])
+  }
+
+  // ── Text editing (content-stream replacement, applied by the main process at save) ──
+
+  /** Line edit that can fold into a paragraph draft: anything without a position of
+      its own (block edits/moves carry origin/translate and are matched by rect key
+      instead). Style overrides fold too — they become selection styles of the draft. */
+  const isFoldableLineEdit = (i: TextEditInput) => i.origin === undefined && !i.translate
+
+  /** A line edit's styling as per-code-unit encoded keys over its newText: the
+      whole-edit overrides (newColor/newFont/…) as the base, with the selection
+      styleRuns patched on top. undefined = the edit carries no styling. */
+  const lineEditCharStyles = (i: TextEditInput): string[] | undefined => {
+    const baseKey = encodeStyle({
+      color: i.newColor ? rgb255ToHex(i.newColor) : undefined,
+      font: i.newFont,
+      size: i.newFontSize,
+      bold: i.newBold ? true : undefined,
+      italic: i.newItalic ? true : undefined,
+    })
+    const keyRuns = styleRunsToKeyRuns(i.styleRuns ?? i.colorRuns ?? [])
+    if (!baseKey && keyRuns.length === 0) return undefined
+    const perChar = runsToColors(i.newText.length, keyRuns)
+    return perChar.map((k) => (k ? patchStyle(baseKey, decodeStyle(k)) : baseKey))
+  }
+
+  /** Pending line edits inside `block` folded into its paragraph text. Opening the
+      paragraph over them with the original text would hide the user's changes, and
+      committing would create a second edit over the same objects — skipped at save
+      as overlapping. Styled line edits fold too: their styles come back as the
+      draft's selection styles (charStyles over `value`). null = nothing to fold or
+      some pending edit inside the block cannot fold (callers keep their previous
+      behavior then). */
+  const foldBlockValue = (
+    origIdx: number,
+    block: TextBlock,
+    blockText: string,
+    edits: LocalTextEdit[] = textEdits,
+  ): {
+    value: string
+    editId: string
+    foldedIds: string[]
+    charStyles?: string[]
+    reveal?: true
+    invisible?: true
+  } | null => {
+    const inside = edits.filter((e) => {
+      if (e.input.pageIndex !== origIdx) return false
+      const r = e.input.rect
+      const cx = (r[0] + r[2]) / 2
+      const cy = (r[1] + r[3]) / 2
+      return (
+        cx >= block.rect[0] && cx <= block.rect[2] && cy >= block.rect[1] && cy <= block.rect[3]
+      )
+    })
+    if (inside.length === 0) return null
+    if (!inside.every((e) => isFoldableLineEdit(e.input))) return null
+    // Non-space offset of each block line inside blockText, to disambiguate a
+    // repeated oldText toward the line the edit actually sits on
+    const offsets: number[] = []
+    let acc = 0
+    for (const l of block.lines) {
+      offsets.push(acc)
+      acc += l.text.replace(/\s+/g, '').length
+    }
+    const outRanges: [number, number][] = []
+    const folded = spliceBlockText(
+      blockText,
+      inside.map((e) => {
+        const cy = (e.input.rect[1] + e.input.rect[3]) / 2
+        const li = block.lines.findIndex((l) => cy >= l.rect[1] && cy <= l.rect[3])
+        return { oldText: e.input.oldText, newText: e.input.newText, hint: offsets[li] ?? 0 }
+      }),
+      outRanges,
+    )
+    if (folded === null) return null
+    // Carry each folded edit's styles onto the paragraph value at its spliced range
+    let styles: string[] | undefined
+    for (const [k, e] of inside.entries()) {
+      const perChar = lineEditCharStyles(e.input)
+      if (!perChar) continue
+      const [s0] = outRanges[k]!
+      // The splice inserted unifyRadicals(newText); map the newText-space keys over
+      // when folding changed the code units (rare radical-variant case)
+      const unified = unifyRadicals(e.input.newText)
+      const onUnified =
+        unified === e.input.newText ? perChar : mapCharColors(e.input.newText, perChar, unified)
+      styles ??= new Array<string>(folded.length).fill('')
+      for (let i = 0; i < onUnified.length && s0 + i < folded.length; i++)
+        styles[s0 + i] = onUnified[i]!
+    }
+    return {
+      value: folded,
+      editId: inside[0]!.id,
+      foldedIds: inside.slice(1).map((e) => e.id),
+      charStyles: styles?.some((k) => k) ? styles : undefined,
+      // The eye state of the folded edits: a revealed line edit keeps the eye on
+      // in the paragraph editor (and rides the commit), a bake-layer edit offers it
+      reveal: inside.some((e) => e.input.reveal) || undefined,
+      invisible: inside.some((e) => e.invisible) || undefined,
+    }
+  }
+
+  /** Map a page font to its local look-alike via the PostScript name on the
+      pdf.js font object (loaded once the page has rendered). Cached per doc;
+      unresolved ids are retried on the next call. */
+  const resolveDocFont = async (origIdx: number, fontId: string): Promise<DocFontStyle | null> => {
+    const cached = docFontsRef.current.get(fontId)
+    if (cached) return cached
+    if (!doc || isBlankPage(origIdx)) return null
+    try {
+      const page = await doc.getPage(origIdx + 1)
+      const f = page.commonObjs.get(fontId) as { name?: string } | null
+      if (!f?.name) return null
+      const style = mapDocFont(f.name)
+      setDocFonts((prev) => new Map(prev).set(fontId, style))
+      return style
+    } catch {
+      // Font object not resolved yet (page not rendered) — retried next call
+      return null
+    }
+  }
+
+  /** Seed the draft with the document's own face: the font id covering the most
+      characters inside the draft rect names it. Async like the ink probe; rect
+      identity pins the draft. */
+  /** Page color behind a run, read off its rendered canvas (see LocalTextEdit.paper) */
+  const samplePaper = (origIdx: number, rect: readonly [number, number, number, number]) =>
+    samplePaperColor(
+      document.querySelector(`.pdf-page[data-page="${origIdx}"]`),
+      pdfRectToCss(pageGeom(origIdx), rect, scale),
+    ) ?? undefined
+
+  const seedDraftFont = (origIdx: number, rect: [number, number, number, number]) => {
+    const index = getSearchIndex()
+    if (!index) return
+    void index.then(async (entries) => {
+      const items = entries[origIdx]?.items
+      if (!items) return
+      const weight = new Map<string, number>()
+      for (const it of items) {
+        if (!it.font) continue
+        const cx = it.x + it.w / 2
+        const cy = it.y + it.h / 2
+        if (cx < rect[0] || cx > rect[2] || cy < rect[1] || cy > rect[3]) continue
+        weight.set(it.font, (weight.get(it.font) ?? 0) + (it.end - it.start))
+      }
+      let best: string | undefined
+      let bestN = 0
+      for (const [f, n] of weight)
+        if (n > bestN) {
+          bestN = n
+          best = f
+        }
+      if (!best) return
+      const style = await resolveDocFont(origIdx, best)
+      if (!style) return
+      setTextDraft((d) =>
+        d && d.origIdx === origIdx && d.rect === rect && !d.seedFont
+          ? { ...d, seedFont: style }
+          : d,
+      )
+    })
+  }
+
+  /** Rebuild the floating editor's draft from a pending edit (reopen). Shared by the
+      preview click and by page clicks landing on a block that already carries a
+      pending block edit or move — committing a *second* edit over the same objects
+      would only be skipped as overlapping at save. */
+  const pendingDraft = (te: LocalTextEdit): TextDraft => {
+    // Block edits reopen as one logical paragraph (the stored newText is the wrapped
+    // form); leading is unscaled back to the original font size
+    const blk =
+      te.input.origin && te.input.lineLeading
+        ? {
+            leftPt: te.input.origin[0],
+            firstBaseline: te.input.origin[1],
+            widthPt: te.input.rect[2] - te.input.rect[0],
+            lineHeight:
+              te.input.lineLeading *
+              (te.input.fontSize / (te.input.newFontSize ?? te.input.fontSize)),
+            align: te.input.align ?? ('left' as const),
+            // rect is the unmoved match key; shift the bottom into the moved frame
+            bottomPt: te.input.rect[1] + (te.moveBy?.[1] ?? 0),
+          }
+        : undefined
+    const value = blk
+      ? (te.input.blockSource ?? joinBlockLines(te.input.newText.split('\n')))
+      : te.input.newText
+    // Selection styles are stored against the committed newText; carry them back
+    // onto the draft's logical text
+    const keyRuns = styleRunsToKeyRuns(te.input.styleRuns ?? te.input.colorRuns ?? [])
+    const onNew = keyRuns.length ? runsToColors(te.input.newText.length, keyRuns) : undefined
+    return {
+      origIdx: te.input.pageIndex,
+      rect: te.input.rect,
+      oldText: te.input.oldText,
+      fontSize: te.input.fontSize,
+      value,
+      charStyles: onNew
+        ? value === te.input.newText
+          ? onNew
+          : mapCharColors(te.input.newText, onNew, value)
+        : undefined,
+      size: te.input.newFontSize,
+      color: te.input.newColor ? rgb255ToHex(te.input.newColor) : undefined,
+      font: te.input.newFont,
+      bold: te.input.newBold ? true : undefined,
+      italic: te.input.newItalic ? true : undefined,
+      // A committed reveal rides the pending edit: the matched run still draws
+      // nothing until save, so the eye stays offered and stays on — reopening,
+      // fixing a typo and committing must not let the text go invisible again
+      reveal: te.input.reveal ? true : undefined,
+      invisible: te.invisible ?? (te.input.reveal ? true : undefined),
+      editId: te.id,
+      cover: te.cover,
+      seedInk: te.baseInk,
+      seedFont: te.baseFont,
+      paper: te.paper,
+      block: blk,
+      moveBy: te.moveBy,
+    }
+  }
+
+  /** Open the paragraph-sized editor over a clustered block: the whole block is the
+      edit unit and the commit reflows the text within the block width. Pending plain
+      line edits inside the block fold into the draft (the commit then replaces them).
+      `fallbackSpan` is the text-layer span under the click: when the dry-run probe
+      reports the block cannot be located as one unit (clustering misfires on table
+      layouts — vertically stacked cells read as a "paragraph"), committing could only
+      ever fail with textEditNoMatch, so degrade to the line-level editor for that
+      span instead. */
+  const startBlockEdit = (
+    origIdx: number,
+    block: TextBlock,
+    fallbackSpan?: HTMLElement,
+    preselect?: [number, number],
+  ) => {
+    // A pending edit already owns this block (a move, or a block edit whose preview
+    // no longer covers the click point): reopen it instead of drafting a duplicate
+    const pending = pendingEditFor(origIdx, block)
+    if (pending) {
+      setSelected(null)
+      draftSelectedRef.current = false
+      draftPreselectRef.current = null
+      setTextDraft(pendingDraft(pending))
+      return
+    }
+    const oldText = joinBlockLines(block.lines.map((l) => l.text))
+    if (!oldText.trim()) return
+    const rect: [number, number, number, number] = [...block.rect]
+    const fold = foldBlockValue(origIdx, block, oldText)
+    setSelected(null)
+    draftSelectedRef.current = false
+    // Preselect offsets are into oldText; folded pending edits shift them
+    draftPreselectRef.current = preselect && (fold?.value ?? oldText) === oldText ? preselect : null
+    setTextDraft({
+      origIdx,
+      rect,
+      oldText,
+      fontSize: block.fontSize,
+      value: fold?.value ?? oldText,
+      paper: samplePaper(origIdx, rect),
+      charStyles: fold?.charStyles,
+      editId: fold?.editId,
+      foldedIds: fold && fold.foldedIds.length > 0 ? fold.foldedIds : undefined,
+      foldBase: fold?.value,
+      foldStyles: fold?.charStyles,
+      // The folded edits' eye state rides in: a revealed line keeps the paragraph
+      // editor's eye on (and rides the commit past a text edit), and an edit on
+      // the bake layer keeps offering the eye. foldReveal pins what the fold
+      // seeded so an untouched commit still keeps the folded edits.
+      reveal: fold?.reveal,
+      foldReveal: fold?.reveal,
+      invisible: fold?.invisible,
+      block: {
+        leftPt: block.rect[0],
+        firstBaseline: block.lines[0]!.y,
+        widthPt: block.rect[2] - block.rect[0],
+        lineHeight: block.lineHeight,
+        align: block.align,
+        bottomPt: block.rect[1],
+      },
+    })
+    seedDraftFont(origIdx, rect)
+    if (filePath) {
+      const probe: TextEditInput = {
+        pageIndex: origIdx,
+        rect,
+        oldText,
+        newText: oldText,
+        fontSize: block.fontSize,
+      }
+      void window.pdfApi
+        .validateTextEdits({ path: filePath, edits: [probe] })
+        .then(([v]) => {
+          if (!v) return
+          if (v.reason) {
+            // Only swap editors while the draft is untouched — yanking typed text
+            // would be worse than the commit-time notice. rect identity pins the
+            // draft this probe belongs to (folded drafts carry an editId).
+            const d = textDraftRef.current
+            if (!d || d.origIdx !== origIdx || d.rect !== rect) return
+            if (d.value !== (d.foldBase ?? d.oldText)) return
+            setTextDraft(null)
+            if (fallbackSpan?.isConnected) openLineEdit(origIdx, fallbackSpan)
+            return
+          }
+          setTextDraft((d) => {
+            if (!d || d.origIdx !== origIdx || d.rect !== rect) return d
+            let next = d
+            if (v.bounds) next = { ...next, cover: v.bounds }
+            // Same as the line probe: the matched run draws nothing (the OCR bake
+            // layer's invisible form), so the eye toggle follows the data here too
+            if (v.invisible) next = { ...next, invisible: true }
+            next = seedDraftColors(next, v)
+            return next
+          })
+        })
+        .catch(() => {
+          /* cover falls back to the block rect */
+        })
+    }
+  }
+
+  /** A drag over page text in edit mode (WPS-style) opens the editor with exactly the
+      dragged characters selected: typing replaces just them, a swatch colors just them.
+      Runs off the click that follows the drag's mouseup; returns true when consumed. */
+  const dragEditFromSelection = (origIdx: number, e: ReactMouseEvent<HTMLDivElement>): boolean => {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false
+    const range = sel.getRangeAt(0)
+    const layer = e.currentTarget.querySelector('.textLayer')
+    if (!layer) return false
+    const spanOf = (node: Node): HTMLElement | null => {
+      const el = node instanceof Element ? node : node.parentElement
+      const span = el?.closest('.textLayer span')
+      return span instanceof HTMLElement && layer.contains(span) ? span : null
+    }
+    const offsetIn = (span: HTMLElement, node: Node, off: number) =>
+      node === span ? (off === 0 ? 0 : (span.textContent ?? '').length) : off
+    const startSpan = spanOf(range.startContainer)
+    const endSpan = spanOf(range.endContainer)
+    if (!startSpan || !endSpan) return false
+    const gs = groupLineSpans(startSpan)
+    const ge = gs.spans.includes(endSpan) ? gs : groupLineSpans(endSpan)
+    const si = gs.spans.indexOf(startSpan)
+    const ei = ge.spans.indexOf(endSpan)
+    if (si < 0 || ei < 0 || !gs.text.trim()) return false
+    const rawS = gs.starts[si]! + offsetIn(startSpan, range.startContainer, range.startOffset)
+    const rawE = ge.starts[ei]! + offsetIn(endSpan, range.endContainer, range.endOffset)
+    // The block under the drag's start (same lookup as plain clicks)
+    const pageBox = e.currentTarget.getBoundingClientRect()
+    const sr = startSpan.getBoundingClientRect()
+    const [px, py] = viewToPdf(
+      pageGeom(origIdx),
+      (sr.left + sr.width / 2 - pageBox.left) / scale,
+      (sr.top + sr.height / 2 - pageBox.top) / scale,
+    )
+    const block = pageBlocks
+      .get(origIdx)
+      ?.find((b) => px >= b.rect[0] && px <= b.rect[2] && py >= b.rect[1] && py <= b.rect[3])
+    if (block && block.lines.length > 1) {
+      const blockText = joinBlockLines(block.lines.map((l) => l.text))
+      // Cross-line drags map each endpoint through its own visual line
+      const pre =
+        gs === ge
+          ? mapLineRangeToBlock(blockText, gs.text, Math.min(rawS, rawE), Math.max(rawS, rawE))
+          : (() => {
+              const a = mapLineRangeToBlock(blockText, gs.text, rawS, gs.text.length)
+              const b = mapLineRangeToBlock(blockText, ge.text, 0, rawE)
+              return a && b
+                ? ([Math.min(a[0], b[0]), Math.max(a[1], b[1])] as [number, number])
+                : null
+            })()
+      sel.removeAllRanges()
+      startBlockEdit(origIdx, block, startSpan, pre ?? undefined)
+      return true
+    }
+    const pre: [number, number] =
+      gs === ge ? [Math.min(rawS, rawE), Math.max(rawS, rawE)] : [rawS, gs.text.length]
+    sel.removeAllRanges()
+    openLineEdit(origIdx, startSpan, pre)
+    return true
+  }
+
+  /** Caret of a click on page text: the span under the point plus the click's
+      code-unit offset inside its visual line. Unified selection model: a click is a
+      zero-length drag, so it carries a collapsed preselect into the opened editor. */
+  const caretFromPoint = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const layer = e.currentTarget.querySelector('.textLayer')
+    const r = document.caretRangeFromPoint(e.clientX, e.clientY)
+    if (!layer || !r) return null
+    const el =
+      r.startContainer instanceof Element ? r.startContainer : r.startContainer.parentElement
+    const span = el?.closest('.textLayer span')
+    if (!(span instanceof HTMLElement) || !layer.contains(span)) return null
+    const group = groupLineSpans(span)
+    const i = group.spans.indexOf(span)
+    if (i < 0) return null
+    const off =
+      r.startContainer === span ? 0 : Math.min(r.startOffset, (span.textContent ?? '').length)
+    return { span, group, raw: group.starts[i]! + off }
+  }
+
+  /** Click on a text-layer span in edit mode → open the floating editor over that run */
+  const startTextEdit = (origIdx: number, e: ReactMouseEvent<HTMLDivElement>) => {
+    if (!readOnly && dragEditFromSelection(origIdx, e)) {
+      e.stopPropagation()
+      return
+    }
+    const span = (e.target as HTMLElement).closest('.textLayer span')
+    const caret = caretFromPoint(e)
+    // A plain click inside a multi-line clustered block edits the paragraph
+    // (WPS-style); Alt+click keeps the line-level editor as the fallback for
+    // clustering misfires. Single-line blocks stay on the line path.
+    if (!e.altKey && !readOnly) {
+      const blocks = pageBlocks.get(origIdx)
+      if (blocks && blocks.length > 0) {
+        const pageBox = e.currentTarget.getBoundingClientRect()
+        const [px, py] = viewToPdf(
+          pageGeom(origIdx),
+          (e.clientX - pageBox.left) / scale,
+          (e.clientY - pageBox.top) / scale,
+        )
+        const block = blocks.find(
+          (b) => px >= b.rect[0] && px <= b.rect[2] && py >= b.rect[1] && py <= b.rect[3],
+        )
+        // Single-line blocks stay on the line path unless a pending block-level
+        // edit/move already owns them (startBlockEdit then reopens that edit)
+        if (block && (block.lines.length > 1 || pendingEditFor(origIdx, block))) {
+          e.stopPropagation()
+          const pre = caret
+            ? (mapLineRangeToBlock(
+                joinBlockLines(block.lines.map((l) => l.text)),
+                caret.group.text,
+                caret.raw,
+                caret.raw,
+              ) ?? undefined)
+            : undefined
+          startBlockEdit(origIdx, block, span instanceof HTMLElement ? span : undefined, pre)
+          return
+        }
+      }
+    }
+    const anchor = caret?.span ?? (span instanceof HTMLElement ? span : null)
+    if (!anchor) return
+    if (!(anchor.textContent ?? '').trim()) return
+    e.stopPropagation()
+    openLineEdit(origIdx, anchor, caret ? [caret.raw, caret.raw] : undefined)
+  }
+
+  /** Open the line-level floating editor over the visual line containing `span`.
+      Reads live client rects, so it also serves the async block-probe fallback. */
+  const openLineEdit = (origIdx: number, span: HTMLElement, preselect?: [number, number]) => {
+    const pageEl = span.closest('.pdf-page')
+    if (!pageEl) return
+    // Edit the whole visual line, not the clicked pdf.js run (CJK is often one span
+    // per glyph); the save-side matcher aggregates the covered text objects anyway
+    const lineGroup = groupLineSpans(span)
+    const oldText = lineGroup.text
+    if (!oldText.trim()) return
+    const pageBox = pageEl.getBoundingClientRect()
+    const sb = lineGroup.rect
+    const geom = pageGeom(origIdx)
+    const [ax, ay] = viewToPdf(
+      geom,
+      (sb.left - pageBox.left) / scale,
+      (sb.bottom - pageBox.top) / scale,
+    )
+    const [bx, by] = viewToPdf(
+      geom,
+      (sb.right - pageBox.left) / scale,
+      (sb.top - pageBox.top) / scale,
+    )
+    const rect: [number, number, number, number] = [
+      Math.min(ax, bx),
+      Math.min(ay, by),
+      Math.max(ax, bx),
+      Math.max(ay, by),
+    ]
+    const unionH = sb.bottom - sb.top
+    const fontSize =
+      unionH > 0 ? Math.abs(by - ay) * (lineGroup.fontHeight / unionH) : Math.abs(by - ay)
+    setSelected(null)
+    draftSelectedRef.current = false
+    draftPreselectRef.current = preselect ?? null
+    setTextDraft({
+      origIdx,
+      rect,
+      oldText,
+      fontSize,
+      value: oldText,
+      paper: samplePaper(origIdx, rect),
+    })
+    seedDraftFont(origIdx, rect)
+    // The span rect is a font-metric layout box; the run's glyph ink can poke out of it.
+    // Fetch the engine's real ink bounds so the editor/preview cover hides the old run fully.
+    if (filePath) {
+      const probe: TextEditInput = {
+        pageIndex: origIdx,
+        rect,
+        oldText,
+        newText: oldText,
+        fontSize,
+      }
+      void window.pdfApi
+        .validateTextEdits({ path: filePath, edits: [probe] })
+        .then(([v]) => {
+          if (!v) return
+          if (v.reason) {
+            // The engine cannot locate this line: close the untouched draft with the
+            // notice now instead of letting the user edit and fail at commit time.
+            // A draft the user already typed into stays open (yanking typed text
+            // would be worse) — the commit-time validation still reports it.
+            const d = textDraftRef.current
+            if (!d || d.editId || d.origIdx !== origIdx || d.rect !== rect) return
+            if (d.value !== d.oldText) return
+            setTextDraft(null)
+            showNotice(t('textEditNoMatch'))
+            return
+          }
+          setTextDraft((d) => {
+            if (!d || d.editId || d.origIdx !== origIdx || d.rect !== rect) return d
+            let next = d
+            if (v.bounds) next = { ...next, cover: v.bounds }
+            // The run draws nothing (the OCR bake layer): the reveal toggle
+            // follows the data, so a scan that was recognized, saved and
+            // reopened still offers it.
+            if (v.invisible) next = { ...next, invisible: true }
+            next = seedDraftColors(next, v)
+            return next
+          })
+        })
+        .catch(() => {
+          /* cover falls back to the span rect */
+        })
+    }
+  }
+
+  /** A partial-style patch: undefined fields keep, null clears back to inherit */
+  type StylePatch = { [K in keyof CharStyle]?: CharStyle[K] | null }
+
+  /** Style-bar action: a partial textarea selection styles just that range (the
+      selection survives the control's focus steal); a collapsed caret or a select-all
+      applies the whole-draft change and clears the touched fields from any selection
+      runs — the whole-draft value owns those fields again (the pre-existing color
+      behavior). `refocus` returns the caret to the textarea (skipped for native
+      inputs whose panels keep sending changes). */
+  const applyDraftStyle = (
+    partialPatch: (d: TextDraft, start: number, end: number) => StylePatch,
+    whole: (d: TextDraft) => TextDraft,
+    refocus: boolean,
+  ) => {
+    const ta = draftTaRef.current
+    setTextDraft((d) => {
+      if (!d) return d
+      const start = ta?.selectionStart ?? 0
+      const end = ta?.selectionEnd ?? 0
+      const partial = ta !== null && end > start && !(start === 0 && end >= d.value.length)
+      if (!partial) {
+        const next = whole(d)
+        if (!d.charStyles) return next
+        const clear: StylePatch = {}
+        for (const k of Object.keys(partialPatch(d, 0, 0)) as (keyof CharStyle)[]) clear[k] = null
+        const styles = d.charStyles.map((key) => patchStyle(key, clear))
+        return { ...next, charStyles: styles.some((k) => k) ? styles : undefined }
+      }
+      const patch = partialPatch(d, start, end)
+      const styles = d.charStyles ? [...d.charStyles] : Array<string>(d.value.length).fill('')
+      for (let i = start; i < end; i++) styles[i] = patchStyle(styles[i]!, patch)
+      return { ...d, charStyles: styles.some((k) => k) ? styles : undefined }
+    })
+    if (refocus && ta) {
+      const { selectionStart, selectionEnd } = ta
+      ta.focus()
+      ta.setSelectionRange(selectionStart, selectionEnd)
+    }
+  }
+
+  const applyDraftColor = (hex: string, refocus: boolean) =>
+    applyDraftStyle(
+      () => ({ color: hex }),
+      (d) => ({ ...d, color: hex }),
+      refocus,
+    )
+
+  /** Selection toggle for bold/italic: on unless every selected char is already
+      effectively on (explicit override, else the draft-level toggle); a target that
+      matches the draft level collapses back to inherit. */
+  const toggleDraftFlag = (flag: 'bold' | 'italic') =>
+    applyDraftStyle(
+      (d, start, end) => {
+        const base = d[flag] ?? false
+        let all = true
+        for (let i = start; i < end && all; i++) {
+          all = decodeStyle(d.charStyles?.[i] ?? '')[flag] ?? base
+        }
+        const target = !all
+        return { [flag]: target === base ? null : target }
+      },
+      (d) => ({ ...d, [flag]: d[flag] ? undefined : true }),
+      true,
+    )
+
+  /** Fold a floating-editor draft into the pending-edit list; null = nothing changed,
+      'overflow' = a block reflow would spill onto occupied space below (not merged —
+      the caller notifies and keeps the draft). The merged logic lives in
+      text-edit-preview; pageBlocks carries the neighbors the overflow guard measures
+      against and newId mints pending-edit ids. */
+  const mergeTextDraft = (
+    edits: LocalTextEdit[],
+    d: TextDraft,
+  ): LocalTextEdit[] | null | 'overflow' => mergeTextDraftImpl(edits, d, { pageBlocks, newId })
+
+  /** Background dry-run of a just-committed edit against the file. A span that doesn't
+      line up with the underlying text objects would otherwise surface only at save time;
+      dropping it immediately with a notice beats a save that silently skips it later. */
+  const validateTextEdit = (edit: LocalTextEdit) => {
+    if (!filePath) return
+    void window.pdfApi
+      .validateTextEdits({ path: filePath, edits: [edit.input] })
+      .then(([v]) => {
+        // Stale result: the edit may have been saved or deleted while validation ran
+        if (!v || !textEditsRef.current.some((e) => e.id === edit.id)) return
+        if (v.reason) {
+          applyTextEdits((prev) => prev.filter((e) => e.id !== edit.id))
+          showNotice(t(edit.input.translate ? 'textBlockMoveNoMatch' : 'textEditNoMatch'))
+        } else if (v.bounds) {
+          const bounds = v.bounds
+          applyTextEdits((prev) =>
+            prev.map((e) => (e.id === edit.id ? { ...e, cover: bounds } : e)),
+          )
+        }
+      })
+      .catch(() => {
+        /* best-effort: the save path skips-and-reports unmatched edits anyway */
+      })
+  }
+
+  /** Close the floating editor and commit its content. Returns the effective edit list
+      so save paths can include a just-folded draft that React state hasn't flushed yet. */
+  const commitTextDraft = (): LocalTextEdit[] => {
+    const d = textDraft
+    if (!d) return textEdits
+    const merged = mergeTextDraft(textEdits, d)
+    if (merged === 'overflow') {
+      // Keep the editor open so the user can shorten the text (or Escape out)
+      showNotice(t('textBlockOverflow'))
+      return textEdits
+    }
+    setTextDraft(null)
+    if (!merged) return textEdits
+    applyEditOps(textEditListOps(textEdits, merged))
+    // New edits append; re-opened ones keep their id
+    const committed = d.editId ? merged.find((e) => e.id === d.editId) : merged[merged.length - 1]
+    if (committed) validateTextEdit(committed)
+    return merged
+  }
+
+  /** Editor trash button / backspace-on-empty: delete the whole run the editor
+      holds, as if the user cleared the text and committed */
+  const deleteDraftRun = () => {
+    const d = textDraft
+    if (!d) return
+    setTextDraft(null)
+    const merged = mergeTextDraft(textEdits, { ...d, value: '' })
+    // A deletion ('' skips the block reflow) can never overflow
+    if (!merged || merged === 'overflow') return
+    applyEditOps(textEditListOps(textEdits, merged))
+    const committed = d.editId ? merged.find((e) => e.id === d.editId) : merged[merged.length - 1]
+    if (committed) validateTextEdit(committed)
+  }
+
+  /** Plan a block move against `edits` without committing: the edit that will carry
+      the block afterwards and the ids of pending edits it supersedes (folded line
+      edits), to be patched onto the live list by id. An untouched block becomes a
+      pure-translate edit — the engine shifts the original text objects as-is, so
+      fonts/kerning/leading survive byte-identical. A block already carrying a pending
+      edit shifts that edit's position instead ('shift'), and pending plain line edits
+      inside the block fold into one moved paragraph rebuild (two edits addressing the
+      same objects would collide at save). 'overflow' = the folded reflow would spill
+      onto occupied space below; null = nothing to move. */
+  const planBlockMove = (
+    origIdx: number,
+    block: TextBlock,
+    d: [number, number],
+    edits: LocalTextEdit[],
+  ):
+    | { te: LocalTextEdit; remove: ReadonlySet<string>; kind: 'shift' | 'fold' | 'move' }
+    | 'overflow'
+    | null => {
+    const none: ReadonlySet<string> = new Set()
+    const shift = (existing: LocalTextEdit) => ({
+      te: shiftPendingEdit(existing, block, d),
+      remove: none,
+      kind: 'shift' as const,
+    })
+    const existing = pendingEditFor(origIdx, block, edits)
+    if (existing) return shift(existing)
+    const oldText = joinBlockLines(block.lines.map((l) => l.text))
+    if (!oldText.trim()) return null
+    const fold = foldBlockValue(origIdx, block, oldText, edits)
+    if (fold) {
+      const draft: TextDraft = {
+        origIdx,
+        rect: [...block.rect],
+        oldText,
+        fontSize: block.fontSize,
+        value: fold.value,
+        charStyles: fold.charStyles,
+        editId: fold.editId,
+        foldedIds: fold.foldedIds.length > 0 ? fold.foldedIds : undefined,
+        block: {
+          leftPt: block.rect[0] + d[0],
+          firstBaseline: block.lines[0]!.y + d[1],
+          widthPt: block.rect[2] - block.rect[0],
+          lineHeight: block.lineHeight,
+          align: block.align,
+          bottomPt: block.rect[1] + d[1],
+        },
+      }
+      const merged = mergeTextDraft(edits, draft)
+      if (merged === 'overflow') return 'overflow'
+      if (!merged) return null
+      const folded = merged.find((e) => e.id === fold.editId)
+      if (!folded) return null
+      const remove = new Set(
+        edits.filter((e) => !merged.some((m) => m.id === e.id)).map((e) => e.id),
+      )
+      return { te: { ...folded, moveBy: d }, remove, kind: 'fold' }
+    }
+    // The text matchers can miss even though a pending edit claims this block's
+    // objects: a DOM visual line can join runs the clustering buckets into a
+    // neighboring block, so the edit's oldText covers more than the block and no
+    // text comparison lines up. A fresh translate edit would collide with it at
+    // save (one of the two silently skipped) — geometric ownership decides
+    // instead, and the whole edited line moves with the block.
+    const overlapping = blockOverlapEdit(origIdx, block, edits)
+    if (overlapping) return shift(overlapping)
+    const te: LocalTextEdit = { id: newId(), input: blockMoveInput(origIdx, block, d), moveBy: d }
+    return { te, remove: none, kind: 'move' }
+  }
+
+  /** Commit a border-drag of a clustered block as a pending move (WPS-style); see
+      planBlockMove. Returns the edit now carrying the block, null when nothing was
+      committed. */
+  const commitBlockMove = (
+    origIdx: number,
+    block: TextBlock,
+    d: [number, number],
+    edits: LocalTextEdit[] = textEdits,
+  ): LocalTextEdit | null => {
+    const plan = planBlockMove(origIdx, block, d, edits)
+    if (plan === 'overflow') {
+      showNotice(t('textBlockOverflow'))
+      return null
+    }
+    if (!plan) return null
+    const prev = textEditsRef.current
+    applyEditOps(
+      textEditListOps(
+        prev,
+        patchPendingEdits(prev, plan.te, plan.remove, plan.kind === 'move' ? 'upsert' : 'replace'),
+      ),
+    )
+    if (plan.kind !== 'shift') validateTextEdit(plan.te)
+    return plan.te
+  }
+
+  // ── Form Design: author new AcroForm fields (pending until saved) ──
+
+  const lastRadioGroupRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (ribbonTab !== 'formDesign') {
+      setFormDesignTool(null)
+      setFormDesignPreview(false)
+      setSelectedFormFieldId(null)
+      setFreshFormFieldId(null)
+      lastRadioGroupRef.current = null
+    }
+  }, [ribbonTab])
+
+  const startFormDesignTool = (kind: FormDesignTool) => {
+    if (formDesignTool === kind) {
+      setFormDesignTool(null)
+      return
+    }
+    setEditTextMode(false)
+    setTextDraft(null)
+    setPendingTextInsert(null)
+    setDrawTool(null)
+    setPendingSign(null)
+    setSignatureTarget(null)
+    setEditImageMode(false)
+    setImagePick(null)
+    setPendingStaticFill(null)
+    setSelected(null)
+    setSelectedFormFieldId(null)
+    setFreshFormFieldId(null)
+    setFormDesignPreview(false)
+    setFormDesignTool(kind)
+  }
+
+  const nextFieldName = (prefix: string): string => {
+    const taken = editOpContext().fieldNames ?? new Set<string>()
+    for (let n = 1; ; n++) {
+      const name = `${prefix}_${n}`
+      if (!taken.has(name)) return name
+    }
+  }
+
+  /** Consecutive radio buttons join the group placed last; the first one starts a new group.
+   *  Done saves the button, so the group is remembered by name rather than read off the pending list */
+  const nextRadio = (): Pick<FormFieldInput, 'name' | 'exportValue'> => {
+    const remembered = lastRadioGroupRef.current
+    const name =
+      remembered &&
+      (formCatalog?.fields.get(remembered)?.kind === 'radio' ||
+        formFieldsRef.current.some((f) => f.input.kind === 'radio' && f.input.name === remembered))
+        ? remembered
+        : nextFieldName('radio')
+    lastRadioGroupRef.current = name
+    const used = new Set([
+      ...formFieldsRef.current
+        .filter((f) => f.input.kind === 'radio' && f.input.name === name)
+        .map((f) => f.input.exportValue),
+      ...(formCatalog?.fields.get(name)?.options ?? []),
+    ])
+    for (let n = 1; ; n++) {
+      const exportValue = `option_${n}`
+      if (!used.has(exportValue)) return { name, exportValue }
+    }
+  }
+
+  const addFormField = (
+    tool: FormDesignTool,
+    pageIndex: number,
+    rect: FormFieldInput['rect'],
+    keepTool = false,
+  ) => {
+    const kind: FormFieldKind = tool === 'date' ? 'text' : tool
+    const field: FormFieldInput =
+      kind === 'radio'
+        ? { ...nextRadio(), kind, pageIndex, rect }
+        : {
+            name: nextFieldName(tool),
+            kind,
+            pageIndex,
+            rect,
+            ...(tool === 'date' ? { dateFormat: 'yyyy-mm-dd' } : {}),
+            ...(kind === 'choice' ? { options: ['Option 1', 'Option 2'] } : {}),
+          }
+    const plan = applyEditOps([{ op: 'addFormField', field }])
+    if (plan.failures.length > 0) {
+      showNotice(plan.failures[0]!.error)
+      return
+    }
+    const created = plan.records[0]?.created?.[0] ?? null
+    setSelectedFormFieldId(created)
+    setFreshFormFieldId(created)
+    // One placement per arming, like WPS/Acrobat; Ctrl/⌘ or the ribbon toggle keeps the tool
+    if (!keepTool && !formDesignKeepTool) setFormDesignTool(null)
+  }
+
+  const patchFormField = (id: string, input: Partial<FormFieldInput>, coalesceKey?: string) => {
+    const field = formFieldsRef.current.find((f) => f.id === id)
+    const kind = field?.input.kind
+    // Changing the value or moving the button into another group must keep values unique there
+    if (kind === 'radio' && ('exportValue' in input || 'name' in input)) {
+      const next = (input.exportValue ?? field!.input.exportValue ?? '').trim()
+      const group = (input.name ?? field!.input.name).trim()
+      const taken =
+        formFieldsRef.current.some(
+          (f) =>
+            f.id !== id &&
+            f.input.kind === 'radio' &&
+            f.input.name === group &&
+            f.input.exportValue === next,
+        ) || (formCatalog?.fields.get(group)?.options ?? []).includes(next)
+      if (!next || taken) {
+        showNotice(t('formDesignExportValueTaken'))
+        return false
+      }
+    }
+    const ops: Op[] = [{ op: 'patchFormField', id, kind, input }]
+    // A radio group has one default: checking this button unchecks its pending siblings
+    if (kind === 'radio' && input.checked) {
+      for (const f of formFieldsRef.current) {
+        if (
+          f.id !== id &&
+          f.input.kind === 'radio' &&
+          f.input.name === field!.input.name &&
+          f.input.checked
+        )
+          ops.push({ op: 'patchFormField', id: f.id, kind, input: { checked: false } })
+      }
+    }
+    const plan = applyEditOps(ops, { coalesceKey })
+    if (plan.failures.length > 0)
+      showNotice(
+        t(
+          'options' in input
+            ? 'formDesignOptionsEmpty'
+            : 'exportValue' in input
+              ? 'formDesignExportValueTaken'
+              : 'formDesignNameInvalid',
+        ),
+      )
+    return plan.failures.length === 0
+  }
+
+  /** Existing widgets edit through their own bucket; only rect and required apply to them */
+  const patchDesignField = (
+    field: DesignField,
+    input: Partial<FormFieldInput>,
+    coalesceKey?: string,
+  ) => {
+    const widgetId = designWidgetId(field.id)
+    if (!widgetId) return patchFormField(field.id, input, coalesceKey)
+    if (input.rect && isSignedWidget(widgetId)) {
+      showNotice(t('formDesignSignedLocked'))
+      return false
+    }
+    const patch: Partial<FormWidgetEditInput> = {}
+    if (input.rect) patch.rect = input.rect
+    if (input.required !== undefined) patch.required = input.required
+    if (Object.keys(patch).length === 0) return true
+    const plan = applyEditOps(
+      [{ op: 'editFormWidget', widgetId, fieldName: field.name, input: patch }],
+      { coalesceKey },
+    )
+    return plan.failures.length === 0
+  }
+
+  const deleteFormField = (id: string) => {
+    const widgetId = designWidgetId(id)
+    if (widgetId) {
+      const w = formCatalog?.widgets.find((x) => x.id === widgetId)
+      if (w && isSignedWidget(widgetId)) {
+        showNotice(t('formDesignSignedLocked'))
+        return
+      }
+      if (w) {
+        applyEditOps([
+          { op: 'editFormWidget', widgetId, fieldName: w.fieldName, input: { remove: true } },
+        ])
+        showNotice(t('formDesignDeleted'))
+      }
+    } else if (formFieldsRef.current.some((f) => f.id === id)) {
+      applyEditOps([{ op: 'removeFormField', id }])
+      showNotice(t('formDesignDeleted'))
+    }
+    setSelectedFormFieldIds((cur) => cur.filter((x) => x !== id))
+    setFreshFormFieldId((cur) => (cur === id ? null : cur))
+  }
+
+  /** One undo step for a group move/align; signed widgets are skipped with a notice */
+  const applyDesignRects = (
+    changes: { field: DesignField; rect: FormFieldInput['rect'] }[],
+    coalesceKey?: string,
+  ) => {
+    const ops: Op[] = []
+    let locked = false
+    for (const { field, rect } of changes) {
+      const widgetId = designWidgetId(field.id)
+      if (!widgetId) ops.push({ op: 'patchFormField', id: field.id, input: { rect } })
+      else if (isSignedWidget(widgetId)) locked = true
+      else ops.push({ op: 'editFormWidget', widgetId, fieldName: field.name, input: { rect } })
+    }
+    if (locked) showNotice(t('formDesignSignedLocked'))
+    if (ops.length > 0) applyEditOps(ops, { coalesceKey })
+  }
+
+  /** Align/distribute/size the selection in display space (what the user sees), per page */
+  const arrangeSelected = (how: Arrange) => {
+    const byPage = new Map<number, DesignField[]>()
+    for (const f of selectedDesignFields)
+      byPage.set(f.pageIndex, [...(byPage.get(f.pageIndex) ?? []), f])
+    const changes: { field: DesignField; rect: FormFieldInput['rect'] }[] = []
+    for (const [pageIndex, fields] of byPage) {
+      if (fields.length < 2) continue
+      const geom = pageGeom(pageIndex)
+      const boxes = fields.map((f) => ({ f, b: pdfRectToCss(geom, f.rect, 1) }))
+      const anchor = boxes[0]!.b
+      const minL = Math.min(...boxes.map((x) => x.b.left))
+      const maxR = Math.max(...boxes.map((x) => x.b.left + x.b.width))
+      const minT = Math.min(...boxes.map((x) => x.b.top))
+      const maxB = Math.max(...boxes.map((x) => x.b.top + x.b.height))
+      const next = boxes.map(({ b }) => ({ ...b }))
+      switch (how) {
+        case 'left':
+          next.forEach((b) => (b.left = minL))
+          break
+        case 'right':
+          next.forEach((b) => (b.left = maxR - b.width))
+          break
+        case 'top':
+          next.forEach((b) => (b.top = minT))
+          break
+        case 'bottom':
+          next.forEach((b) => (b.top = maxB - b.height))
+          break
+        case 'centerH':
+          next.forEach((b) => (b.left = (minL + maxR) / 2 - b.width / 2))
+          break
+        case 'centerV':
+          next.forEach((b) => (b.top = (minT + maxB) / 2 - b.height / 2))
+          break
+        case 'sameWidth':
+          next.forEach((b) => (b.width = anchor.width))
+          break
+        case 'sameHeight':
+          next.forEach((b) => (b.height = anchor.height))
+          break
+        case 'sameSize':
+          next.forEach((b) => {
+            b.width = anchor.width
+            b.height = anchor.height
+          })
+          break
+        case 'distributeH':
+        case 'distributeV': {
+          if (next.length < 3) break
+          const horizontal = how === 'distributeH'
+          const order = next
+            .map((_, i) => i)
+            .sort((i, j) =>
+              horizontal ? next[i]!.left - next[j]!.left : next[i]!.top - next[j]!.top,
+            )
+          const total = next.reduce((acc, b) => acc + (horizontal ? b.width : b.height), 0)
+          const span = horizontal ? maxR - minL : maxB - minT
+          const gap = (span - total) / (next.length - 1)
+          let cursor = horizontal ? minL : minT
+          for (const i of order) {
+            const b = next[i]!
+            if (horizontal) b.left = cursor
+            else b.top = cursor
+            cursor += (horizontal ? b.width : b.height) + gap
+          }
+          break
+        }
+      }
+      const size = dispSize(pageIndex)
+      next.forEach((b, i) => {
+        const [ax, ay] = viewToPdf(geom, b.left, b.top)
+        const [bx, by] = viewToPdf(geom, b.left + b.width, b.top + b.height)
+        changes.push({
+          field: boxes[i]!.f,
+          rect: clampRectToPage(
+            [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)],
+            geom,
+            size.width,
+            size.height,
+          ),
+        })
+      })
+    }
+    if (changes.length > 0) applyDesignRects(changes)
+  }
+
+  /** Copyable description of a design field; saved widgets are re-created as new fields on paste */
+  const designFieldInput = (f: DesignField): FormFieldInput | null => {
+    if (f.pending) return f.pending.input
+    const widgetId = designWidgetId(f.id)
+    const w = widgetId ? formCatalog?.widgets.find((x) => x.id === widgetId) : undefined
+    if (!w) return null
+    return {
+      name: w.fieldName,
+      kind: w.kind,
+      pageIndex: w.pageIndex,
+      rect: f.rect,
+      required: f.required,
+      ...(w.kind === 'text'
+        ? {
+            multiLine: w.multiLine,
+            maxLen: w.maxLen ?? undefined,
+            textAlignment: w.textAlignment,
+            ...(w.dateFormat ? { dateFormat: w.dateFormat } : {}),
+          }
+        : {}),
+      ...(w.kind === 'radio' ? { exportValue: w.buttonValue } : {}),
+      ...(w.kind === 'choice'
+        ? { options: w.options.map((o) => o.exportValue), value: w.value }
+        : {}),
+    }
+  }
+
+  const copySelectedFormFields = () => {
+    const inputs = selectedDesignFields.flatMap((f) => designFieldInput(f) ?? [])
+    if (inputs.length === 0) return false
+    formClipboardRef.current = inputs
+    return true
+  }
+
+  /** Paste as new fields (fresh unique names, radio groups renamed together), shifted by 12 pt */
+  const pasteFormFields = (pageIndex?: number) => {
+    const items = formClipboardRef.current
+    if (items.length === 0) return
+    const taken = new Set(editOpContext().fieldNames ?? [])
+    const fresh = (base: string) => {
+      const stem = base.replace(/_\d+$/, '')
+      for (let n = 1; ; n++) {
+        const name = `${stem}_${n}`
+        if (!taken.has(name)) {
+          taken.add(name)
+          return name
+        }
+      }
+    }
+    const radioNames = new Map<string, string>()
+    const ops: Op[] = items.map((input) => {
+      let name = radioNames.get(input.name)
+      if (!name) {
+        name = fresh(input.name)
+        if (input.kind === 'radio') radioNames.set(input.name, name)
+      }
+      const [x1, y1, x2, y2] = input.rect
+      const page = pageIndex ?? input.pageIndex
+      const size = dispSize(page)
+      const geom = pageGeom(page)
+      // Down-and-right on screen, whatever the page rotation
+      const [ox, oy] = viewToPdf(geom, 0, 0)
+      const [px, py] = viewToPdf(geom, PASTE_OFFSET_PTS, PASTE_OFFSET_PTS)
+      const [dx, dy] = [px - ox, py - oy]
+      const rect = clampRectToPage(
+        [x1 + dx, y1 + dy, x2 + dx, y2 + dy],
+        geom,
+        size.width,
+        size.height,
+      )
+      return { op: 'addFormField', field: { ...input, name, pageIndex: page, rect } }
+    })
+    const plan = applyEditOps(ops)
+    if (plan.failures.length > 0) {
+      showNotice(plan.failures[0]!.error)
+      return
+    }
+    setSelectedFormFieldIds(plan.records.flatMap((r) => r.created ?? []))
+    setFreshFormFieldId(null)
+  }
+
+  const duplicateSelectedFormFields = () => {
+    const before = formClipboardRef.current
+    if (copySelectedFormFields()) pasteFormFields()
+    formClipboardRef.current = before
+  }
+
+  /** One undo step for the whole selection; signed widgets stay and are reported once */
+  const deleteSelectedFormFields = () => {
+    const ops: Op[] = []
+    let locked = false
+    for (const id of selectedFormFieldIds) {
+      const widgetId = designWidgetId(id)
+      if (widgetId) {
+        const w = formCatalog?.widgets.find((x) => x.id === widgetId)
+        if (!w) continue
+        if (isSignedWidget(widgetId)) locked = true
+        else
+          ops.push({
+            op: 'editFormWidget',
+            widgetId,
+            fieldName: w.fieldName,
+            input: { remove: true },
+          })
+      } else if (formFieldsRef.current.some((f) => f.id === id)) {
+        ops.push({ op: 'removeFormField', id })
+      }
+    }
+    if (locked) showNotice(t('formDesignSignedLocked'))
+    if (ops.length === 0) return
+    applyEditOps(ops)
+    setSelectedFormFieldIds([])
+    setFreshFormFieldId(null)
+    showNotice(t('formDesignDeleted'))
+  }
+
+  /** Scan every page for blanks a reader would fill (underscores, boxes, "Label:" gaps) and add them as pending fields */
+  const detectFields = async () => {
+    if (!doc || detectingFields) return
+    setDetectingFields(true)
+    try {
+      const taken = new Set(editOpContext().fieldNames ?? [])
+      const found: FormFieldInput[] = []
+      for (const origIdx of visList) {
+        const page = await doc.getPage(origIdx + 1)
+        const { items, shapes } = await collectDetectInput(page)
+        const g = pageGeom(origIdx)
+        const unit = g.userUnit ?? 1
+        const x0 = g.x0 ?? 0
+        const y0 = g.y0 ?? 0
+        const occupied = [
+          ...(liveFormCatalog?.byPage.get(origIdx) ?? []).map((w) => w.rect),
+          ...formFieldsRef.current
+            .filter((f) => f.input.pageIndex === origIdx)
+            .map((f) => f.input.rect),
+        ]
+        const fields = detectFormFields({
+          pageIndex: origIdx,
+          pageBox: [x0, y0, x0 + g.pw / unit, y0 + g.ph / unit],
+          items,
+          shapes,
+          occupied,
+          taken,
+        })
+        for (const f of fields) taken.add(f.name)
+        found.push(...fields)
+        if (found.length >= DETECT_FIELD_CAP) break
+      }
+      if (found.length === 0) {
+        showNotice(t('formDesignDetectedNone'))
+        return
+      }
+      const plan = applyEditOps(
+        found.slice(0, DETECT_FIELD_CAP).map((field) => ({ op: 'addFormField', field })),
+      )
+      if (plan.failures.length > 0) {
+        showNotice(plan.failures[0]!.error)
+        return
+      }
+      setFormDesignTool(null)
+      setFreshFormFieldId(null)
+      setSelectedFormFieldIds(plan.records.flatMap((r) => r.created ?? []))
+      showNotice(t('formDesignDetected', { count: plan.records.length }))
+    } finally {
+      setDetectingFields(false)
+    }
+  }
+
+  /** A signed field (saved visual signature or a pending one) stays put, as in Acrobat */
+  const isSignedWidget = (widgetId: string) =>
+    signedFormWidgetIds.has(widgetId) ||
+    !!formCatalog?.widgets.find((x) => x.id === widgetId)?.signed
+
+  /** Arrow keys move on screen; the display delta goes through each page's rotation */
+  const nudgeSelectedFormFields = (vx: number, vy: number) => {
+    applyDesignRects(
+      selectedDesignFields.map((field) => {
+        const geom = pageGeom(field.pageIndex)
+        const size = dispSize(field.pageIndex)
+        const [ax, ay] = viewToPdf(geom, 0, 0)
+        const [bx, by] = viewToPdf(geom, vx, vy)
+        const [dx, dy] = [bx - ax, by - ay]
+        const [x1, y1, x2, y2] = field.rect
+        return {
+          field,
+          rect: clampRectToPage(
+            [x1 + dx, y1 + dy, x2 + dx, y2 + dy],
+            geom,
+            size.width,
+            size.height,
+          ),
+        }
+      }),
+      `formFields:nudge:${selectedFormFieldIds.join(',')}`,
+    )
+  }
+
+  const deleteSelected = () => {
+    const sel = selected
+    if (!sel) return
+    const op: Op =
+      sel.kind === 'markup'
+        ? { op: 'removeMarkup', id: sel.id }
+        : sel.kind === 'savedMarkup'
+          ? { op: 'deleteSavedAnnot', annot: sel.annot }
+          : sel.kind === 'drawing'
+            ? { op: 'removeDrawing', id: sel.id }
+            : sel.kind === 'textEdit'
+              ? { op: 'removeTextEdit', id: sel.id }
+              : sel.kind === 'textInsert'
+                ? { op: 'removeTextInsert', id: sel.id }
+                : sel.kind === 'imageEdit'
+                  ? { op: 'removeImageEdit', id: sel.id }
+                  : sel.kind === 'pageImage'
+                    ? {
+                        // Deleting an untouched existing image = a pending delete op
+                        op: 'addImageEdit',
+                        input: {
+                          kind: 'deleteImage',
+                          pageIndex: sel.ref.pageIndex,
+                          oldRect: sel.ref.rect,
+                        },
+                        staticFill: savedStaticFillForRef(sel.ref),
+                      }
+                    : { op: 'setStamps', cfg: null }
+    applyEditOps([op])
+    setSelected(null)
+    // Transient "deleted · undo" toast so the removal is visible and reversible in place
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
+    setDeletedInsertedText(sel.kind === 'textInsert')
+    setDeleteToast(true)
+    toastTimerRef.current = window.setTimeout(() => setDeleteToast(false), 5000)
+  }
+
+  /** Show a transient toast; the save-failure badge alone hides the actual reason */
+  const runCompare = async (): Promise<void> => {
+    if (!doc || compareBusy) return
+    // Both sides must come from the same extraction engine — pdf.js and pdfium
+    // break lines differently, and a cross-engine diff reports phantom changes
+    // on identical files. The open document therefore needs its current state
+    // on disk: no file yet, or pending edits, both mean "save first". Redaction
+    // marks stay out — a save does not apply them, so they could never unblock.
+    if (!filePath || ordinaryDirty) {
+      showNotice(t('compareNeedsSaved'))
+      return
+    }
+    setCompareBusy(true)
+    try {
+      const picked = await window.pdfApi.compareReadPdf()
+      if (!picked.ok) {
+        if (!('canceled' in picked)) showNotice(picked.reason)
+        return
+      }
+      const mine = await window.pdfApi.compareReadOpen(filePath, passwordRef.current)
+      if (!mine.ok) {
+        showNotice(mine.reason)
+        return
+      }
+      const mineSide: PageText[] = mine.pages.map((text, pageIndex) => ({ pageIndex, text }))
+      const theirs: PageText[] = picked.pages.map((text, pageIndex) => ({ pageIndex, text }))
+      compareSidesRef.current = { mine: mineSide, theirs }
+      setCompareName(picked.name)
+      setCompareResult(compareSides(mineSide, theirs, compareSwapped))
+    } catch (err) {
+      showNotice(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCompareBusy(false)
+    }
+  }
+
+  const compareSides = (mine: PageText[], theirs: PageText[], swapped: boolean): CompareResult =>
+    swapped ? compareDocuments(theirs, mine) : compareDocuments(mine, theirs)
+
+  const attachmentRows = (): AttachmentRow[] => {
+    const rows: AttachmentRow[] = []
+    const saved = savedAttachments ?? new Map<string, number>()
+    for (const [name, bytes] of saved) {
+      if (pendingAttachmentRemoves.includes(name)) {
+        rows.push({ name, bytes, saved: true, removing: true })
+        continue
+      }
+      rows.push({ name, bytes, saved: true })
+    }
+    for (const add of pendingAttachmentAdds) {
+      if (!pendingAttachmentRemoves.includes(add.name)) {
+        rows.push({
+          name: add.name,
+          bytes: Math.floor((add.bytesBase64.length * 3) / 4),
+          saved: false,
+        })
+      }
+    }
+    return rows
+  }
+
+  const addAttachment = async () => {
+    const picked = await window.pdfApi.pickAttachmentFile()
+    if (!picked.ok) {
+      if (!('cancelled' in picked)) showNotice(picked.reason)
+      return
+    }
+    setPendingAttachmentAdds((prev) => [
+      ...prev,
+      { name: picked.name, bytesBase64: picked.bytesBase64 },
+    ])
+  }
+
+  const exportAttachment = async (row: AttachmentRow) => {
+    const base64 = savedAttachmentBytesRef.current.get(row.name)
+    if (!filePath || !base64) return
+    const outcome = await window.pdfApi.exportAttachment(filePath, row.name, base64)
+    if ('targetPath' in outcome) showNotice(t('attachmentsExported', { name: row.name }))
+    else if (!('cancelled' in outcome)) showNotice(outcome.reason)
+  }
+
+  const toggleAttachmentRemove = (row: AttachmentRow): void => {
+    if (!row.saved) {
+      setPendingAttachmentAdds((prev) => prev.filter((a) => a.name !== row.name))
+      return
+    }
+    setPendingAttachmentRemoves((prev) =>
+      prev.includes(row.name) ? prev.filter((n) => n !== row.name) : [...prev, row.name],
+    )
+  }
+
+  const showNotice = (msg: string) => {
+    if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current)
+    setNotice(msg)
+    noticeTimerRef.current = window.setTimeout(() => setNotice(null), 8000)
+  }
+  showNoticeRef.current = showNotice
+
+  useEffect(() => {
+    if (!formHasXfa || !filePath || warnedXfaPathRef.current === filePath) return
+    warnedXfaPathRef.current = filePath
+    showNotice(t('formXfaWarning'))
+  }, [filePath, formHasXfa])
+
+  /** Localize known structured main-process errors; other messages pass through raw */
+  const friendlySaveError = (error: string): string => {
+    const verify = /save-verify-failed pages=([\d,]+)/.exec(error)
+    if (verify) return t('saveVerifyFailed', { pages: verify[1]!.split(',').join(', ') })
+    return error
+  }
+
+  const opFailed = (error: string) => {
+    const friendly = friendlySaveError(error)
+    setSaveError(friendly)
+    setSaveState('error')
+    showNotice(`${t('saveFailed')}: ${friendly}`)
+  }
+
+  /** Engine skip reasons are internal English strings; append the first one raw so a
+      failure is diagnosable from the toast alone (page numbers never explain WHY) */
+  const skipDetail = (skipped: { reason: string }[]): string => {
+    const reason = skipped.find((s) => s.reason)?.reason
+    return reason ? ` — ${reason}` : ''
+  }
+
+  /** Skipped text edits are dropped from the file and from the pending list — surface
+      which pages lost an edit instead of silently succeeding */
+  const noticeSkippedEdits = (skipped: TextEditFailure[]) => {
+    const pages = [...new Set(skipped.map((s) => s.pageIndex + 1))].sort((a, b) => a - b).join(', ')
+    showNotice(`${t('textEditSkipped', { pages })}${skipDetail(skipped)}`)
+  }
+
+  const noticeSkippedImages = (skipped: ImageEditFailure[]) => {
+    const pages = [...new Set(skipped.map((s) => s.pageIndex + 1))].sort((a, b) => a - b).join(', ')
+    showNotice(`${t('imageEditSkipped', { pages })}${skipDetail(skipped)}`)
+  }
+
+  const noticeSkippedTextInserts = (skipped: TextInsertFailure[]) => {
+    // The bake layer's inserts ride the tail of the same textInserts array; a
+    // glyph no face covers there is OCR noise on a page the reader never
+    // edited, and nagging about it on every save is worse than the silence.
+    // An insert the reader typed is still worth its toast.
+    const userCount = textInsertsRef.current.length
+    const mine = skipped.filter((s) => s.editIndex < userCount)
+    if (mine.length === 0) return
+    const pages = [...new Set(mine.map((s) => s.pageIndex + 1))].sort((a, b) => a - b).join(', ')
+    showNotice(`${t('textInsertSkipped', { pages })}${skipDetail(mine)}`)
+  }
+
+  /** Pending edits in SavePdfRequest form; shared by in-place Save and Save As.
+      `noteFlush` carries the drawings/noteEdits returned by commitNoteEdit — the
+      state values in this closure predate that flush. */
+  const editsPayload = (
+    edits: LocalTextEdit[] = textEdits,
+    noteFlush?: { drawings: LocalDrawing[]; noteEdits: LocalNoteEdit[] },
+    fields: LocalFormField[] = savableFormFields,
+  ) => ({
+    markups: markups.map(({ id: _id, ...rest }) => rest),
+    ...(noteAuthor ? { annotationAuthor: noteAuthor } : {}),
+    annotDeletes: annotDeletes.map((d): AnnotDeleteInput => ({
+      pageIndex: d.annot.pageIndex,
+      objNum: d.annot.objNum,
+      subtype: d.annot.type,
+      rect: d.annot.rect,
+      // A note thread's comments all share the root's rect; contents disambiguates
+      ...(d.annot.type === 'note' ? { contents: d.annot.contents } : {}),
+    })),
+    noteEdits: (noteFlush?.noteEdits ?? noteEdits).map((e): NoteEditInput => ({
+      pageIndex: e.annot.pageIndex,
+      objNum: e.annot.objNum,
+      rect: e.annot.rect,
+      oldContents: e.annot.contents,
+      contents: e.contents,
+    })),
+    drawings: (noteFlush?.drawings ?? drawings).map((d) => d.input),
+    textEdits: edits.map((e) => e.input),
+    textInserts: [
+      ...textInserts.map((insert) => insert.input),
+      ...ocrBakeInserts.map((insert) => insert.input),
+    ],
+    imageEdits: imageEdits.map((e) => e.input),
+    staticFormFills,
+    stamps: stampCfg ? renderStamps(stampCfg, visList) : [],
+    formValues: [...formEdits.values()],
+    formFields: fields.map((f) => f.input),
+    blankPages: blankPages.map((b) => b.input),
+    formWidgetEdits: [...formWidgetEdits.values()],
+    rotations: [...rotations].map(([pageIndex, delta]) => ({ pageIndex, delta })),
+    deletedPages: [...deleted],
+    ...(order ? { pageOrder: visList } : {}),
+    ...(metadata ? { metadata } : {}),
+    // false = keep the file's own /Encrypt entries, true = write the dialog's
+    protectionDirty,
+    ...(diskPasswordRef.current !== null
+      ? { decryption: { userPassword: diskPasswordRef.current } }
+      : {}),
+    ...(encryption ? { encryption } : {}),
+    ...(pendingOutline?.edited && pendingOutline.tree ? { outline: pendingOutline.tree } : {}),
+    ...(pendingAttachmentAdds.length > 0 || pendingAttachmentRemoves.length > 0
+      ? { attachments: { add: pendingAttachmentAdds, remove: pendingAttachmentRemoves } }
+      : {}),
+  })
+
+  /** Resolved when the running save() lands; queued saves and Save As serialize behind it */
+  const saveInFlightRef = useRef<Promise<boolean> | null>(null)
+  /** objNum → /Contents the in-flight save is writing via noteEdits. appliedNoteEdit
+      consults it so a re-edit during the write compares against what the file is about
+      to say, not the pre-save text (dropping on the wrong compare loses the edit). */
+  const inFlightNoteWritesRef = useRef<Map<number, string>>(new Map())
+  /** The in-flight save's page remap (old original index → index in the saved file);
+      Save As addresses late note edits through it once that save has rewritten pages */
+  const inFlightPageMapRef = useRef<Map<number, number> | null>(null)
+  /** Saves requested while another save was writing, drained by an effect after the
+      post-save reload has committed. Running the follow-up straight off the completion
+      promise would reuse the pre-reload render's closure — dirty still true, the saved
+      edits still listed — and write them onto the file a second time. */
+  const queuedSavesRef = useRef<
+    { autosave: boolean; flushAll: boolean; resolve: (ok: boolean) => void }[]
+  >([])
+
+  // flushAll also writes the field whose card is open: callers that treat success as
+  // "everything is in the file" (close-tab Save, flushThen) must not leave it behind
+  const save = (autosave = false, flushAll = false): Promise<boolean> => {
+    if (redactionRequestInFlightRef.current) return Promise.resolve(false)
+    // A save is already writing: queue behind it instead of reporting failure — the
+    // close prompt's "Save" and ⌘S regularly collide with the blur-triggered autosave
+    // (the prompt itself blurs the window). The ref is set synchronously, so this also
+    // covers two triggers landing in the same frame, where the saveState snapshot
+    // still reads 'idle' for both.
+    if (saveInFlightRef.current !== null) {
+      return new Promise<boolean>((resolve) =>
+        queuedSavesRef.current.push({ autosave, flushAll, resolve }),
+      )
+    }
+    // Fold an open floating-editor draft in first: keyboard save and autosave can land
+    // mid-typing, and the post-save reload closes the editor — without this the
+    // in-progress replacement would be silently dropped
+    const edits = commitTextDraft()
+    // Same for an open comment-edit box in the notes margin
+    const noteFlush = commitNoteEdit()
+    // From the ref, not render state: a queued save drains on the first commit after the
+    // previous save lands, and that render may not have applied the reload's subtraction yet
+    const pending = formFieldsRef.current
+    const fields =
+      flushAll || !heldFormFieldId ? pending : pending.filter((f) => f.id !== heldFormFieldId)
+    const anythingToSave =
+      (flushAll ? ordinaryDirty : savableDirty) ||
+      edits !== textEdits ||
+      noteFlush.drawings !== drawings ||
+      noteFlush.noteEdits !== noteEdits ||
+      ocrBakeInserts.length > 0
+    if (!anythingToSave || !filePath) return Promise.resolve(!anythingToSave)
+    // Writing a protection with no owner password would hand ownership to
+    // anyone, so a protection change with both passwords empty is refused. An
+    // unchanged owner-only file is not affected: its own /Encrypt entries are
+    // carried over, so the save keeps the owner's password without knowing it.
+    if (
+      protectionDirty &&
+      encryption !== null &&
+      encryption.userPassword === '' &&
+      encryption.ownerPassword === ''
+    ) {
+      showNotice(t('pwOwnerNeeded'))
+      return Promise.resolve(false)
+    }
+    // An explicit save opts this file into autosave
+    if (!autosave) savedOnceRef.current = true
+    // What this save writes — the post-save reload subtracts exactly this, keeping
+    // any edits the user makes while the write is in flight
+    const snapshot: SavedSnapshot = {
+      markupIds: new Set(markups.map((mk) => mk.id)),
+      annotDeleteIds: new Set(annotDeletes.map((d) => d.id)),
+      noteEditIds: new Set(noteFlush.noteEdits.map((e) => e.id)),
+      noteEditWritten: new Map(noteFlush.noteEdits.map((e) => [e.annot.objNum, e.contents])),
+      drawingIds: new Set(noteFlush.drawings.map((dr) => dr.id)),
+      textEditIds: new Set(edits.map((te) => te.id)),
+      textInsertIds: new Set(textInserts.map((insert) => insert.id)),
+      imageEditIds: new Set(imageEdits.map((ie) => ie.id)),
+      stampCfg,
+      formEdits,
+      formFieldIds: new Set(fields.map((f) => f.id)),
+      blankPageIds: new Set(blankPages.map((b) => b.id)),
+      formWidgetEdits,
+      rotations,
+      metadata,
+      outline: pendingOutline?.edited ? pendingOutline.tree : null,
+      pageMap: new Map(visList.map((origIdx, i) => [origIdx, i])),
+    }
+    inFlightNoteWritesRef.current = snapshot.noteEditWritten
+    inFlightPageMapRef.current = snapshot.pageMap
+    const run = (async (): Promise<boolean> => {
+      setSaveState('saving')
+      const result = await window.pdfApi.save({
+        path: filePath,
+        ...editsPayload(edits, noteFlush, fields),
+      })
+      if (!result.ok) {
+        opFailed(result.error)
+        return false
+      }
+      if (result.skippedTextEdits && result.skippedTextEdits.length > 0) {
+        noticeSkippedEdits(result.skippedTextEdits)
+      }
+      if (result.skippedTextInserts && result.skippedTextInserts.length > 0) {
+        noticeSkippedTextInserts(result.skippedTextInserts)
+      }
+      if (result.skippedImageEdits && result.skippedImageEdits.length > 0) {
+        noticeSkippedImages(result.skippedImageEdits)
+      }
+      // The write landed: a pending protection change is what the disk carries now
+      if (pendingDiskPasswordRef.current !== undefined) {
+        diskPasswordRef.current =
+          pendingDiskPasswordRef.current === '' ? null : pendingDiskPasswordRef.current
+        pendingDiskPasswordRef.current = undefined
+      }
+      // Reload: changes are in the file now, canvas renders directly, saved pending ops are cleared
+      try {
+        const el = scrollRef.current
+        const scrollTop = el?.scrollTop ?? 0
+        // Page structure/rotation changes cannot retain their old overlays because
+        // their geometry or page numbers no longer match the newly saved document.
+        const canRetainPreview = rotations.size === 0 && deleted.size === 0 && order === null
+        const renderedPageNos = canRetainPreview
+          ? [...visibleRows].flatMap((rowIdx) => (rows[rowIdx] ?? []).map((origIdx) => origIdx + 1))
+          : []
+        await loadDoc(filePath, doc, snapshot, renderedPageNos)
+        requestAnimationFrame(() => {
+          if (scrollRef.current) scrollRef.current.scrollTop = scrollTop
+        })
+      } catch {
+        /* Save already succeeded; a reload failure doesn't block (takes effect on next open) */
+      }
+      // Content-derived naming (docs/sheets analog): a shell-created blank still
+      // carrying its untitled name takes its file name from the topmost text this
+      // save inserted; the main process no-ops for every other file, so
+      // user-chosen names are never touched.
+      const nameCandidate = [...textInserts]
+        .sort(
+          (a, b) => a.input.pageIndex - b.input.pageIndex || b.input.origin[1] - a.input.origin[1],
+        )[0]
+        ?.input.text.split('\n')[0]
+        ?.trim()
+      if (nameCandidate) {
+        try {
+          const renamed = await window.pdfApi.autoRename(filePath, nameCandidate)
+          if (renamed.renamed && renamed.path) setFilePath(renamed.path)
+        } catch {
+          /* naming is best-effort; the save itself already succeeded */
+        }
+      }
+      setSaveState('saved')
+      setTimeout(() => setSaveState((s) => (s === 'saved' ? 'idle' : s)), 2000)
+      return true
+    })()
+    const tracked = run.finally(() => {
+      if (saveInFlightRef.current === tracked) {
+        saveInFlightRef.current = null
+        inFlightNoteWritesRef.current = new Map()
+        inFlightPageMapRef.current = null
+      }
+    })
+    saveInFlightRef.current = tracked
+    return tracked
+  }
+
+  // Drain queued saves. This effect runs after every commit, so by the time it fires
+  // the in-flight save's reload has rendered and `save` reads post-reload state: the
+  // follow-up writes only what is still pending (usually nothing) instead of
+  // re-applying the previous payload.
+  useEffect(() => {
+    if (queuedSavesRef.current.length === 0 || saveInFlightRef.current !== null) return
+    const queued = queuedSavesRef.current
+    queuedSavesRef.current = []
+    // One explicit request makes the whole drained batch explicit (autosave opt-in)
+    const autosaveOnly = queued.every((q) => q.autosave)
+    const flushAll = queued.some((q) => q.flushAll)
+    void save(autosaveOnly, flushAll).then((ok) => {
+      for (const q of queued) q.resolve(ok)
+    })
+  })
+
+  /**
+   * Save As: apply pending edits onto the source bytes and write only to targetPath.
+   * The original file stays untouched on disk and the edits stay pending in this tab.
+   */
+  const saveAsTo = async (targetPath: string): Promise<boolean> => {
+    if (!filePath) return false
+    // The copy must contain what the user sees, including an open floating-editor
+    // draft and an open comment-edit box
+    const draftEdits = commitTextDraft()
+    const noteFlush = commitNoteEdit()
+    // A save already in flight (autosave that started before the dialog opened) lands
+    // first. If it succeeded, every edit that was pending is now part of the source
+    // bytes, so the copy applies nothing on top — deriving this from the save result
+    // (instead of re-reading state) avoids racing React's render of the cleared edits.
+    const inFlight = saveInFlightRef.current
+    // What that save is writing per note, and its page remap — captured now, the
+    // refs clear when it lands
+    const inFlightWrites = new Map(inFlightNoteWritesRef.current)
+    const inFlightPageMap = inFlightPageMapRef.current ? new Map(inFlightPageMapRef.current) : null
+    const flushed = inFlight ? await inFlight.catch(() => false) : false
+    // The comment edit committed by commitNoteEdit above started after the in-flight
+    // save built its payload, so "everything was flushed" never covers it: the copy
+    // still needs that rewrite, matched against what the flushed save left on disk.
+    const preFlushIds = new Set(noteEdits.map((e) => e.id))
+    const lateNoteEdits = flushed
+      ? noteFlush.noteEdits
+          .filter((e) => !preFlushIds.has(e.id))
+          .flatMap((e): NoteEditInput[] => {
+            // The flushed save may have deleted or reordered pages: address the note
+            // by its index in the rewritten file; its page being gone drops the edit
+            const ni = inFlightPageMap ? inFlightPageMap.get(e.annot.pageIndex) : e.annot.pageIndex
+            if (ni === undefined) return []
+            return [
+              {
+                pageIndex: ni,
+                objNum: e.annot.objNum,
+                rect: e.annot.rect,
+                oldContents: inFlightWrites.get(e.annot.objNum) ?? e.annot.contents,
+                contents: e.contents,
+              },
+            ]
+          })
+      : []
+    const applyingRedactions = redactionApplyConfirmedRef.current && redactions.length > 0
+    const edits = applyingRedactions
+      ? {
+          markups: [],
+          drawings: [],
+          formValues: [],
+          stamps: [],
+          textEdits: [],
+          textInserts: [],
+          imageEdits: [],
+          staticFormFills,
+          redactions: redactions.map(({ pageIndex, rect }) => ({ pageIndex, rect })),
+        }
+      : flushed
+        ? {
+            markups: [],
+            drawings: [],
+            formValues: [],
+            stamps: [],
+            textEdits: [],
+            textInserts: [],
+            imageEdits: [],
+            ...(lateNoteEdits.length > 0 ? { noteEdits: lateNoteEdits } : {}),
+          }
+        : editsPayload(draftEdits, noteFlush, formFields)
+    setSaveState('saving')
+    // the redaction copy is a save like any other: on a protected document the
+    // main process has to decrypt the source and re-protect the cleaned output
+    const protection = {
+      ...(encryption !== null ? { encryption } : {}),
+      ...(diskPasswordRef.current !== null
+        ? { decryption: { userPassword: diskPasswordRef.current } }
+        : {}),
+      protectionDirty,
+    }
+    const result = await window.pdfApi.save({
+      path: filePath,
+      targetPath,
+      ...edits,
+      ...protection,
+    })
+    if (!result.ok) {
+      opFailed(result.error)
+      return false
+    }
+    if (result.skippedTextEdits && result.skippedTextEdits.length > 0) {
+      noticeSkippedEdits(result.skippedTextEdits)
+    }
+    if (result.skippedTextInserts && result.skippedTextInserts.length > 0) {
+      noticeSkippedTextInserts(result.skippedTextInserts)
+    }
+    if (result.skippedImageEdits && result.skippedImageEdits.length > 0) {
+      noticeSkippedImages(result.skippedImageEdits)
+    }
+    if (applyingRedactions) {
+      // The main process has committed this path and its read grant. Reload the
+      // sanitized bytes, clearing undo/search state that could expose old content.
+      const scrollTop = scrollRef.current?.scrollTop ?? 0
+      // a protection change rode this save: the file on disk now needs the new password
+      if (pendingDiskPasswordRef.current !== undefined) {
+        diskPasswordRef.current =
+          pendingDiskPasswordRef.current === '' ? null : pendingDiskPasswordRef.current
+        pendingDiskPasswordRef.current = undefined
+      }
+      setFilePath(targetPath)
+      setStatus('loading')
+      try {
+        await loadDoc(targetPath, doc)
+        // loadDoc leaves the text index and hits alone; both still hold the removed text
+        searchIndexCache.clear()
+        setSearchMatches([])
+        setSearchCur(0)
+        setStatus('ready')
+        requestAnimationFrame(() => {
+          if (scrollRef.current) scrollRef.current.scrollTop = scrollTop
+        })
+      } catch (err) {
+        // The write succeeded. Never resume editing a stale, unredacted canvas.
+        setStatus('error')
+        opFailed(err instanceof Error ? err.message : String(err))
+      }
+      redactionApplyConfirmedRef.current = false
+      setSaveState('idle')
+      return true
+    }
+    // Back to idle, not 'saved': only the copy was written — this tab's edits are
+    // still pending, so a saved-confirmation next to the unsaved badge would lie
+    setSaveState('idle')
+    return true
+  }
+
+  // The ref is written in the same turn so back-to-back calls see the true count against the cap
+  const appendRedactions = (
+    marks: readonly { pageIndex: number; rect: [number, number, number, number] }[],
+  ) => {
+    if (marks.length === 0) return
+    const next = [...redactionsRef.current, ...marks.map((m) => ({ ...m, id: newId() }))]
+    redactionsRef.current = next
+    setRedactions(next)
+  }
+
+  /** Queue redaction marks over every hit of the patterns; the user still reviews and applies */
+  const markSensitive = async (
+    patterns: readonly RedactPattern[],
+  ): Promise<{ hits: number; areas: number; rotated: number; capped: boolean } | null> => {
+    const indexPromise = getSearchIndex()
+    if (!indexPromise) return null
+    const index = await indexPromise
+    const room = MAX_REDACTION_REGIONS - redactionsRef.current.length
+    const found = patternMarks(
+      findPatternsInIndex(index, patterns, (i) => deletedRef.current.has(i)),
+      room,
+    )
+    appendRedactions(found.marks)
+    return {
+      hits: found.hits,
+      areas: found.marks.length,
+      rotated: found.rotated,
+      capped: found.capped,
+    }
+  }
+
+  const runRedactFind = (patterns: readonly RedactPattern[]) => {
+    setRedactFindOpen(false)
+    void markSensitive(patterns).then(
+      (r) => {
+        if (!r) return
+        const notes = [r.hits > 0 ? t('redactFound', { count: r.hits }) : t('redactFoundNone')]
+        if (r.rotated > 0) notes.push(t('redactFoundRotated', { count: r.rotated }))
+        if (r.capped) notes.push(t('redactFoundCapped', { count: r.areas }))
+        showNotice(notes.join(' '))
+      },
+      (err: unknown) => opFailed(err instanceof Error ? err.message : String(err)),
+    )
+  }
+
+  const requestRedactionSaveAs = () => {
+    if (redactions.length === 0 || redactionRequestInFlightRef.current) return
+    const otherPending =
+      saveInFlightRef.current !== null ||
+      textDraft !== null ||
+      noteDraft !== null ||
+      markups.length > 0 ||
+      annotDeletes.length > 0 ||
+      noteEdits.length > 0 ||
+      drawings.length > 0 ||
+      textEdits.length > 0 ||
+      textInserts.length > 0 ||
+      imageEdits.length > 0 ||
+      stampCfg !== null ||
+      formEdits.size > 0 ||
+      formFields.length > 0 ||
+      blankPages.length > 0 ||
+      formWidgetEdits.size > 0 ||
+      rotations.size > 0 ||
+      deleted.size > 0 ||
+      order !== null ||
+      metadata !== null
+    if (otherPending) {
+      showNotice(t('redactSaveFirst'))
+      return
+    }
+    if (!window.confirm(t('redactConfirm'))) return
+    redactionApplyConfirmedRef.current = true
+    redactionRequestInFlightRef.current = true
+    setRedactionCopyInFlight(true)
+    void window.pdfApi
+      .requestRedactionCopy(filePath)
+      .catch((err: unknown) => opFailed(err instanceof Error ? err.message : String(err)))
+      .finally(() => {
+        redactionRequestInFlightRef.current = false
+        redactionApplyConfirmedRef.current = false
+        setRedactionCopyInFlight(false)
+      })
+  }
+
+  // Autosave pauses while the shell's Save As flow is open: the save dialog blurs the
+  // window, and the blur-triggered autosave would write the pending edits into the original
+  const saveAsFlowRef = useRef(false)
+  useEffect(() => window.pdfApi.onSaveAsFlow((inFlight) => (saveAsFlowRef.current = inFlight)), [])
+
+  // Autosave (same strategy as Docs): every 30s and on window blur, silently persist pending
+  // edits via the regular save() path; skipped while a save is in flight or without a file path.
+  // Gated on one explicit save first: a PDF opened only to read must never be
+  // overwritten because a thumbnail got dragged or a markup tool tapped — Save (⌘S / the
+  // toolbar button / File ▸ Save) is what opts this file into unattended writes.
+  useAutosave(
+    () =>
+      savedOnceRef.current &&
+      ordinaryDirty &&
+      saveInFlightRef.current === null &&
+      filePath !== '' &&
+      !readOnly &&
+      !saveAsFlowRef.current &&
+      !redactionRequestInFlightRef.current,
+    () => void save(true),
+  )
+
+  // Done in the field popover persists the field; runs after the render that folded in
+  // the Enter-key name commit so the save sees the patched field
+  const [formDesignDoneSave, setFormDesignDoneSave] = useState(0)
+  useEffect(() => {
+    if (formDesignDoneSave > 0) void save()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formDesignDoneSave])
+
+  // ── Page operations ──
+
+  const rotatePages = (origIdxs: number[], dir: RotateDelta): string | null => {
+    if (redactions.length > 0) return t('redactStructureBlocked')
+    if (readOnly || origIdxs.length === 0) return null
+    return applyEditOps([{ op: 'rotatePages', pages: origIdxs, dir }]).failures[0]?.error ?? null
+  }
+
+  const rotatePage = (origIdx: number, dir: 90 | -90) => rotatePages([origIdx], dir)
+
+  const rotateAllPages = (dir: 90 | -90) => rotatePages(visList, dir)
+
+  /** Reverse the visible page order; deleted pages stay at the tail like movePage */
+  const reversePages = () => {
+    if (redactions.length > 0) {
+      showNotice(t('redactStructureBlocked'))
+      return
+    }
+    if (pageCount <= 1 || readOnly) return
+    commitOrder([...visList].reverse())
+  }
+
+  const deletePage = (origIdx: number) => {
+    if (redactions.length > 0) {
+      showNotice(t('redactStructureBlocked'))
+      return
+    }
+    if (pageCount <= 1 || readOnly) return
+    applyEditOps([{ op: 'deletePage', pageIndex: origIdx }])
+  }
+
+  // ── Drawing annotations ──
+
+  /** Drawn link box waiting for its target (URL or page) in the dialog */
+  const [linkDraft, setLinkDraft] = useState<LinkDraft | null>(null)
+
+  const commitDrawing = (origIdx: number, input: DrawingInput) => {
+    // A link needs its target before it can join the edit ops (validate requires
+    // exactly one of url/destPage); the drawn box waits in the dialog
+    if (input.kind === 'link') {
+      setLinkDraft({ pageIndex: origIdx, rect: input.rect })
+      return
+    }
+    if (input.kind === 'measure') {
+      const scale = measureScaleRef.current
+      // First draw calibrates, and a re-calibration request turns the next line
+      // into the new reference: the dialog derives the scale from its real
+      // length, and the line itself becomes the first measurement.
+      if (!scale || measureRecalibrateRef.current) {
+        pendingMeasureRef.current = { ...input, pageIndex: origIdx }
+        setMeasureDrawnPts(Math.hypot(input.to[0] - input.from[0], input.to[1] - input.from[1]))
+        setMeasureScaleDlg(true)
+        return
+      }
+      input = {
+        ...input,
+        label: formatLength(
+          Math.hypot(input.to[0] - input.from[0], input.to[1] - input.from[1]),
+          scale,
+        ),
+      }
+    }
+    const plan = applyEditOps([{ op: 'addDrawing', drawing: { ...input, pageIndex: origIdx } }])
+    // a dropped op used to vanish on mouse-up with nothing on screen
+    if (plan.failures.length > 0) showNotice(plan.failures[0]!.error)
+  }
+
+  /** Render stamps in current page order; page numbers depend on visList, so both preview and save compute fresh */
+  const renderStamps = useCallback(
+    (cfg: StampConfig, pages: number[]): StampInput[] =>
+      buildStamps(
+        pages.map((origIdx, i) => ({
+          origIdx,
+          pw: allSizes[origIdx]!.width,
+          ph: allSizes[origIdx]!.height,
+          displayNo: i + 1,
+        })),
+        cfg.wm,
+        cfg.hf,
+      ),
+    [allSizes],
+  )
+
+  const applyStamps = (wm: WatermarkConfig | null, hf: HeaderFooterConfig | null) => {
+    setStampDlg(false)
+    if (!wm && !hf) return
+    applyEditOps([{ op: 'setStamps', cfg: { wm, hf } }])
+  }
+
+  /** Stamp preview for visible pages (only pages in rendered rows, so large docs don't render every canvas) */
+  const stampPreview = useMemo(() => {
+    if (!stampCfg) return new Map<number, StampInput[]>()
+    const shown = new Set([...visibleRows].flatMap((r) => rows[r] ?? []))
+    const byPage = new Map<number, StampInput[]>()
+    for (const s of renderStamps(stampCfg, visList)) {
+      if (!shown.has(s.pageIndex)) continue
+      const list = byPage.get(s.pageIndex)
+      if (list) list.push(s)
+      else byPage.set(s.pageIndex, [s])
+    }
+    return byPage
+  }, [stampCfg, visList, rows, visibleRows, renderStamps])
+
+  /** Thumbnail drag-and-drop reorder: move the page at position from to position to */
+  const movePage = (from: number, to: number) => {
+    if (from === to || readOnly) return
+    const next = [...visList]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved!)
+    commitOrder(next)
+  }
+
+  /** Place signature centered on the click point (view coords, scale=1); sized via signPlaceK
+      to match the ghost preview. Points map view→PDF individually so it stays upright on
+      rotated pages. */
+  const placeSignature = (origIdx: number, vx: number, vy: number) => {
+    const sig = pendingSign
+    if (!sig) return
+    const geom = pageGeom(origIdx)
+    const disp = geomDispSize(geom)
+    const k = signPlaceK(sig, disp.width, disp.height)
+    const targetW = sig.width * k
+    const targetH = sig.height * k
+    const left = Math.min(Math.max(vx - targetW / 2, 0), Math.max(disp.width - targetW, 0))
+    const top = Math.min(Math.max(vy - targetH / 2, 0), Math.max(disp.height - targetH, 0))
+    let drawing: DrawingInput
+    if (sig.kind === 'image') {
+      const [ax, ay] = viewToPdf(geom, left, top)
+      const [bx, by] = viewToPdf(geom, left + targetW, top + targetH)
+      const rect: [number, number, number, number] = [
+        Math.min(ax, bx),
+        Math.min(ay, by),
+        Math.max(ax, bx),
+        Math.max(ay, by),
+      ]
+      drawing = { kind: 'image', pageIndex: origIdx, image: sig.image, rect }
+    } else {
+      const paths = sig.paths.map((p) => {
+        const out: number[] = []
+        // walk whole pairs only: a trailing odd or non-finite value would emit NaN
+        for (let i = 0; i + 1 < p.length; i += 2) {
+          const x = p[i]!
+          const y = p[i + 1]!
+          if (!Number.isFinite(x) || !Number.isFinite(y)) continue
+          out.push(...viewToPdf(geom, left + x * k, top + y * k))
+        }
+        return out
+      })
+      drawing = { kind: 'ink', pageIndex: origIdx, color: drawColor, width: 1.6, paths }
+    }
+    applyEditOps([{ op: 'addDrawing', drawing }])
+    setPendingSign(null)
+  }
+
+  /** Fit a visual signature into an AcroForm /Sig widget. */
+  const placeSignatureInField = (sig: SignatureData, target: FormWidget) => {
+    applyEditOps([
+      {
+        op: 'addDrawing',
+        drawing: signatureDrawingForField(sig, target, drawColor),
+        formWidgetId: target.id,
+      },
+    ])
+    setSignatureTarget(null)
+    setActiveFormWidgetId(target.id)
+  }
+
+  // ── Image editing (content-stream image ops, applied by the main process at save) ──
+
+  const prepareStaticFormFill = (
+    kind: StaticFormFillKind,
+    image: Extract<SignatureData, { kind: 'image' }>,
+  ) => {
+    setEditTextMode(false)
+    setTextDraft(null)
+    setPendingTextInsert(null)
+    setDrawTool(null)
+    setPendingSign(null)
+    setSignatureTarget(null)
+    setEditImageMode(false)
+    setPendingStaticFill(kind)
+    setImagePick(image)
+  }
+
+  const startStaticFormMark = (kind: 'check' | 'cross') => {
+    if (pendingStaticFill === kind) {
+      setImagePick(null)
+      setPendingStaticFill(null)
+      return
+    }
+    const image = renderStaticFormMark(kind)
+    if (image) prepareStaticFormFill(kind, image)
+  }
+
+  const textInsertOffsets = (
+    text: string,
+    fontSize: number,
+    align: 'left' | 'center' | 'right',
+  ): number[] => {
+    if (align === 'left') return text.split('\n').map(() => 0)
+    const font = `${fontSize}px ${getComputedStyle(document.body).fontFamily}`
+    return text
+      .split('\n')
+      .map((line) => measureTextWidth(line, font) * (align === 'center' ? -0.5 : -1))
+  }
+
+  const textInsertConfig = (
+    text: string,
+    fontSize: number,
+    color: [number, number, number],
+    align: 'left' | 'center' | 'right',
+  ): Omit<TextInsertInput, 'pageIndex' | 'origin'> => ({
+    text,
+    fontSize,
+    color,
+    lineLeading: fontSize * 1.2,
+    lineXOffsets: textInsertOffsets(text, fontSize, align),
+    align,
+  })
+
+  const patchTextInsert = (id: string, patch: Partial<TextInsertInput>) =>
+    applyEditOpsRef.current([{ op: 'patchTextInsert', id, input: patch }])
+
+  /** Re-entry guard: the dialog stays open (and its OK stays clickable) while the
+      canDrawText round-trip runs — a second click must not run the confirm again
+      (double undo step / duplicate insert) */
+  const textInsertConfirmBusy = useRef(false)
+
+  const confirmTextInsert = async () => {
+    const text = staticText.trim()
+    if (!text) return
+    if (textInsertConfirmBusy.current) return
+    textInsertConfirmBusy.current = true
+    try {
+      // The dialog preview renders with the browser's per-char font fallback, which
+      // proves nothing about save: gate on an embeddable face NOW, keeping the dialog
+      // open, instead of failing at save time ("could not be saved" long after typing).
+      // An IPC error must not block inserting — the save path re-checks anyway.
+      const drawable = await window.pdfApi.canDrawText(text).catch(() => true)
+      if (!drawable) {
+        showNotice(t('textInsertNoFont'))
+        return
+      }
+      const config = textInsertConfig(
+        text,
+        staticTextSize,
+        hexTo255(staticTextColor),
+        staticTextAlign,
+      )
+      setStaticTextDialog(false)
+      if (textInsertEditId) {
+        patchTextInsert(textInsertEditId, config)
+        setTextInsertEditId(null)
+        return
+      }
+      setPendingTextInsert(config)
+    } finally {
+      textInsertConfirmBusy.current = false
+    }
+  }
+
+  const confirmStaticFormText = () => {
+    if (staticTextPurpose === 'insert') {
+      void confirmTextInsert()
+      return
+    }
+    const image = renderStaticFormText(staticText, staticTextSize, staticTextColor, staticTextAlign)
+    if (!image) return
+    setStaticTextDialog(false)
+    const target = staticTextEditTarget
+    if (target) {
+      const updated: StaticFormFillRecord = {
+        ...target.record,
+        text: staticText,
+        fontSize: staticTextSize,
+        color: staticTextColor,
+        align: staticTextAlign,
+      }
+      setStaticTextEditTarget(null)
+      if (target.kind === 'saved') {
+        replaceExisting(target.ref, image.image, updated)
+      } else {
+        setSelected(null)
+        applyEditOps([
+          { op: 'setStaticFillImage', id: target.editId, image: image.image, staticFill: updated },
+        ])
+      }
+      return
+    }
+    prepareStaticFormFill('text', image)
+  }
+
+  const applyBates = (config: BatesConfig): void => {
+    const fontOf = (size: number) => `${size}px ${getComputedStyle(document.body).fontFamily}`
+    // Visible order, not the original file order: a reordered page takes the
+    // number of the position it now occupies, deleted pages get none, and
+    // inserted blank pages are numbered with everyone else. The page index is
+    // mapped back so the insert lands on the page the reader sees there.
+    const inserts = buildBatesInserts(
+      visList.map((origIdx) => {
+        const geom = pageGeom(origIdx)
+        return {
+          width: geom.pw,
+          height: geom.ph,
+          rotate: geom.rot,
+          x0: geom.x0,
+          y0: geom.y0,
+          userUnit: geom.userUnit,
+        }
+      }),
+      config,
+      (text, size) => measureTextWidth(text, fontOf(size)),
+    ).map((input) => ({ ...input, pageIndex: visList[input.pageIndex] ?? input.pageIndex }))
+    if (inserts.length === 0) {
+      setBatesDlg(false)
+      return
+    }
+    const plan = applyEditOps(inserts.map((input) => ({ op: 'addTextInsert' as const, input })))
+    setBatesDlg(false)
+    if (plan.failures.length > 0) {
+      // say what went wrong instead of "applied N pages" over an empty plan
+      showNotice(plan.failures[0]!.error)
+      return
+    }
+    showNotice(t('batesApplied', { count: inserts.length }))
+  }
+
+  const placeTextInsert = (origIdx: number, vx: number, vy: number) => {
+    const pending = pendingTextInsert
+    if (!pending) return
+    const geom = pageGeom(origIdx)
+    applyEditOps([
+      {
+        op: 'addTextInsert',
+        input: {
+          ...pending,
+          pageIndex: origIdx,
+          origin: viewToPdf(geom, vx, vy),
+          rotate: ((geom.rot % 360) + 360) % 360,
+        },
+      },
+    ])
+    setPendingTextInsert(null)
+    setTextInsertPointer(null)
+  }
+
+  /** Ribbon button → file picker; the picked image then enters click-to-place mode */
+  const pickInsertImage = () => {
+    setEditTextMode(false)
+    setTextDraft(null)
+    setPendingTextInsert(null)
+    setDrawTool(null)
+    setPendingSign(null)
+    setSignatureTarget(null)
+    setPendingStaticFill(null)
+    replaceTargetRef.current = null
+    imageFileRef.current?.click()
+  }
+
+  const onImageFilePicked = async (file: File) => {
+    const canvas = await fileToCanvas(file, 2400)
+    const base64 = canvas?.toDataURL('image/png').split(',')[1]
+    if (!canvas || !base64) return
+    const target = replaceTargetRef.current
+    if (target) {
+      replaceTargetRef.current = null
+      commitBaked(target, base64)
+      return
+    }
+    setImagePick({ kind: 'image', image: base64, width: canvas.width, height: canvas.height })
+    setPendingStaticFill(null)
+  }
+
+  const pdfRectFromView = (
+    geom: PageGeom,
+    left: number,
+    top: number,
+    w: number,
+    h: number,
+  ): [number, number, number, number] => {
+    const [ax, ay] = viewToPdf(geom, left, top)
+    const [bx, by] = viewToPdf(geom, left + w, top + h)
+    return [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)]
+  }
+
+  const pageBoxShapesRef = useRef(
+    new Map<number, readonly (readonly [number, number, number, number])[]>(),
+  )
+  useEffect(() => {
+    pageBoxShapesRef.current = new Map()
+  }, [doc])
+  const pageBoxShapes = async (origIdx: number) => {
+    const cached = pageBoxShapesRef.current.get(origIdx)
+    if (cached) return cached
+    if (!doc) return []
+    const shapes = await collectDetectInput(await doc.getPage(origIdx + 1))
+      .then((r) => r.shapes)
+      .catch(() => [])
+    pageBoxShapesRef.current.set(origIdx, shapes)
+    return shapes
+  }
+
+  /** A check/cross dropped on an interactive check box ticks that field; on a printed box it fills the box */
+  const placeFormMark = async (
+    kind: 'check' | 'cross',
+    pick: Extract<SignatureData, { kind: 'image' }>,
+    origIdx: number,
+    vx: number,
+    vy: number,
+  ) => {
+    const geom = pageGeom(origIdx)
+    const [px, py] = viewToPdf(geom, vx, vy)
+    const widget = checkboxWidgetAt(liveFormCatalog?.byPage.get(origIdx) ?? [], px, py)
+    if (widget) {
+      applyEditOps([
+        { op: 'setFormValue', value: { name: widget.fieldName, kind: 'checkbox', checked: true } },
+      ])
+      return
+    }
+    const box = printedBoxAt(await pageBoxShapes(origIdx), px, py)
+    if (box) {
+      const rect = markRectForBox(box)
+      const image = renderStaticFormMark(kind, rect[2] - rect[0])
+      if (image) commitPlacedImage(origIdx, image.image, rect, kind)
+      return
+    }
+    const disp = geomDispSize(geom)
+    const left = Math.min(Math.max(vx - pick.width / 2, 0), Math.max(disp.width - pick.width, 0))
+    const top = Math.min(Math.max(vy - pick.height / 2, 0), Math.max(disp.height - pick.height, 0))
+    commitPlacedImage(
+      origIdx,
+      pick.image,
+      pdfRectFromView(geom, left, top, pick.width, pick.height),
+      kind,
+    )
+  }
+
+  /** Drop the picked image centered on the click point, into the text-below band by default */
+  const placeImage = (origIdx: number, vx: number, vy: number) => {
+    const pick = imagePick
+    if (!pick) return
+    const fill = pendingStaticFill
+    setImagePick(null)
+    setPendingStaticFill(null)
+    if (fill === 'check' || fill === 'cross') {
+      void placeFormMark(fill, pick, origIdx, vx, vy)
+      return
+    }
+    const geom = pageGeom(origIdx)
+    const disp = geomDispSize(geom)
+    const k = fill ? staticFormFillPlaceK() : imagePlaceK(pick, disp.width, disp.height)
+    const w = pick.width * k
+    const h = pick.height * k
+    const left = Math.min(Math.max(vx - w / 2, 0), Math.max(disp.width - w, 0))
+    const top = Math.min(Math.max(vy - h / 2, 0), Math.max(disp.height - h, 0))
+    commitPlacedImage(origIdx, pick.image, pdfRectFromView(geom, left, top, w, h), fill)
+  }
+
+  /** Queue an insertImage op; fill != null tags it as a static form fill (text/check/cross) */
+  const commitPlacedImage = (
+    origIdx: number,
+    image: string,
+    rect: [number, number, number, number],
+    fill: StaticFormFillKind | null,
+  ) => {
+    const id = newId()
+    const staticFill: StaticFormFillRecord | undefined = fill
+      ? {
+          id,
+          kind: fill,
+          pageIndex: origIdx,
+          rect,
+          ...(fill === 'text'
+            ? {
+                text: staticText,
+                fontSize: staticTextSize,
+                color: staticTextColor,
+                align: staticTextAlign,
+              }
+            : {}),
+        }
+      : undefined
+    applyEditOpsRef.current([
+      {
+        op: 'addImageEdit',
+        id,
+        input: {
+          kind: 'insertImage',
+          pageIndex: origIdx,
+          image,
+          rect,
+          layer: fill ? 'aboveText' : 'belowText',
+          rotate: ((pageGeom(origIdx).rot % 360) + 360) % 360,
+        },
+        staticFill,
+      },
+    ])
+  }
+
+  /** Committed move/resize of a pending image op */
+  const updateImageEditRect = (id: string, rect: [number, number, number, number]) => {
+    setSelected(null)
+    applyEditOps([{ op: 'setImageEditRect', id, rect }])
+  }
+
+  /** Prefetched pixels of untouched existing images (keyed pageIndex:rectKey); fetched on
+      select/drag-start so the picture can follow the hand before any op exists */
+  const [existingPngs, setExistingPngs] = useState<Map<string, string>>(new Map())
+  const existingPngFetches = useRef(new Set<string>())
+  /** Bumped whenever the cache is dropped; a late IPC response started against a
+      previous doc must not repopulate the fresh cache (rect keys can collide) */
+  const existingPngEpoch = useRef(0)
+
+  const prefetchExistingPng = (ref: PageImageRef) => {
+    const key = `${ref.pageIndex}:${imageRectKey(ref.rect)}`
+    if (existingPngFetches.current.has(key)) return
+    existingPngFetches.current.add(key)
+    const epoch = existingPngEpoch.current
+    void window.pdfApi
+      .pageImagePng({ path: filePath, pageIndex: ref.pageIndex, rect: ref.rect })
+      .then((png) => {
+        if (existingPngEpoch.current !== epoch) return
+        if (png) setExistingPngs((prev) => new Map(prev).set(key, png))
+      })
+      .catch(() => {
+        if (existingPngEpoch.current === epoch) existingPngFetches.current.delete(key)
+      })
+  }
+
+  // Image rects change identity when the file is saved/reloaded; drop the cache
+  useEffect(() => {
+    existingPngEpoch.current++
+    setExistingPngs(new Map())
+    existingPngFetches.current.clear()
+  }, [doc])
+
+  const savedStaticFillForRef = (ref: PageImageRef): StaticFormFillRecord | undefined =>
+    savedStaticFormFills.find(
+      (record) => record.pageIndex === ref.pageIndex && rectsNear(record.rect, ref.rect),
+    )
+
+  const selectedStaticTextTarget = () => {
+    if (selected?.kind === 'pageImage') {
+      const record = savedStaticFillForRef(selected.ref)
+      return record?.kind === 'text'
+        ? ({ kind: 'saved', ref: selected.ref, record } as const)
+        : null
+    }
+    if (selected?.kind === 'imageEdit') {
+      const edit = imageEdits.find((candidate) => candidate.id === selected.id)
+      return edit?.staticFill?.kind === 'text'
+        ? ({ kind: 'pending', editId: edit.id, record: edit.staticFill } as const)
+        : null
+    }
+    return null
+  }
+
+  const startEditStaticText = () => {
+    const target = selectedStaticTextTarget()
+    if (!target) return
+    setStaticText(target.record.text ?? '')
+    setStaticTextSize(target.record.fontSize ?? 14)
+    setStaticTextColor(target.record.color ?? '#111111')
+    setStaticTextAlign(target.record.align ?? 'left')
+    setStaticTextEditTarget(target)
+    setStaticTextPurpose('form')
+    setTextInsertEditId(null)
+    setSelected(null)
+    setStaticTextDialog(true)
+  }
+
+  /** First touch of an existing image (drag/resize/layer/rotate) becomes a pending transform
+      op; its rendered pixels come from the prefetch cache or are fetched for the ghost preview */
+  const transformExisting = (
+    ref: PageImageRef,
+    rect: [number, number, number, number],
+    layer?: ImageLayer,
+    quarterTurns?: number,
+  ) => {
+    setSelected(null)
+    const id = newId()
+    const cached = existingPngs.get(`${ref.pageIndex}:${imageRectKey(ref.rect)}`) ?? null
+    const savedStaticFill = savedStaticFillForRef(ref)
+    const plan = applyEditOps([
+      {
+        op: 'addImageEdit',
+        id,
+        input: {
+          kind: 'transformImage',
+          pageIndex: ref.pageIndex,
+          oldRect: ref.rect,
+          rect,
+          ...(layer ? { layer } : {}),
+          ...(quarterTurns ? { quarterTurns } : {}),
+        },
+        png: cached,
+        origAbove: ref.aboveText,
+        staticFill: savedStaticFill ? { ...savedStaticFill, rect } : undefined,
+      },
+    ])
+    if (cached || plan.failures.length > 0) return
+    void window.pdfApi
+      .pageImagePng({ path: filePath, pageIndex: ref.pageIndex, rect: ref.rect })
+      .then((png) => {
+        if (png) setImageEdits((prev) => prev.map((e) => (e.id === id ? { ...e, png } : e)))
+      })
+      .catch(() => {
+        /* ghost stays a dashed box */
+      })
+  }
+
+  /** The rect's footprint after an odd quarter turn about its center (w/h swap) */
+  const rotatedRect = (r: readonly number[]): [number, number, number, number] => {
+    const cx = (r[0]! + r[2]!) / 2
+    const cy = (r[1]! + r[3]!) / 2
+    const w = r[2]! - r[0]!
+    const h = r[3]! - r[1]!
+    return [cx - h / 2, cy - w / 2, cx + h / 2, cy + w / 2]
+  }
+
+  /** Rotate PNG pixels by 0-3 screen-clockwise quarter turns (fresh inserts carry
+      rotation baked into the bytes; the bake pipeline collapses pending op turns) */
+  const rotatePngTurns = (b64: string, turns: number): Promise<string | null> => {
+    const tn = ((turns % 4) + 4) % 4
+    if (tn === 0) return Promise.resolve(b64)
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const c = document.createElement('canvas')
+        c.width = tn % 2 === 0 ? img.width : img.height
+        c.height = tn % 2 === 0 ? img.height : img.width
+        const ctx = c.getContext('2d')
+        if (!ctx) return resolve(null)
+        ctx.translate(c.width / 2, c.height / 2)
+        ctx.rotate((tn * 90 * Math.PI) / 180)
+        ctx.drawImage(img, -img.width / 2, -img.height / 2)
+        resolve(c.toDataURL('image/png').split(',')[1] ?? null)
+      }
+      img.onerror = () => resolve(null)
+      img.src = `data:image/png;base64,${b64}`
+    })
+  }
+
+  /** Rotate the selected image a quarter turn (screen-clockwise when dir = 1) */
+  const rotateSelected = (dir: 1 | -1) => {
+    const sel = selected
+    if (!sel) return
+    const turn = dir === 1 ? 1 : 3
+    if (sel.kind === 'pageImage') {
+      prefetchExistingPng(sel.ref)
+      transformExisting(sel.ref, rotatedRect(sel.ref.rect), undefined, turn)
+      return
+    }
+    if (sel.kind !== 'imageEdit') return
+    const edit = imageEdits.find((e) => e.id === sel.id)
+    if (!edit || edit.input.kind === 'deleteImage') return
+    setSelected(null)
+    if (edit.input.kind === 'insertImage') {
+      const { image } = edit.input
+      void rotatePngTurns(image, turn).then((rotated) => {
+        if (!rotated) return
+        // The canvas turn is async: apply via the ref (the closed-over entry would
+        // snapshot click-time state for undo) and rotate the element's CURRENT rect —
+        // a concurrent move/resize must not be overwritten. The bytes guard drops
+        // a rotation that lost a race (edit removed, or another turn landed first)
+        // BEFORE applying, so ⌘Z never records a no-op step.
+        const target = imageEditsRef.current.find((e) => e.id === sel.id)
+        if (!target || target.input.kind !== 'insertImage' || target.input.image !== image) return
+        applyEditOpsRef.current([
+          {
+            op: 'patchImageEdit',
+            id: sel.id,
+            input: { image: rotated, rect: rotatedRect(target.input.rect) },
+            // rotating the bytes invalidates a recorded pre-transparency base
+            opacityBase: null,
+          },
+        ])
+      })
+      return
+    }
+    applyEditOps([
+      {
+        op: 'patchImageEdit',
+        id: sel.id,
+        input: {
+          quarterTurns: ((edit.input.quarterTurns ?? 0) + turn) % 4,
+          rect: rotatedRect(edit.input.rect),
+        },
+      },
+    ])
+  }
+
+  /** Queue an in-place pixel swap of an existing image (footprint/z-order kept) */
+  const replaceExisting = (ref: PageImageRef, png: string, staticFill?: StaticFormFillRecord) => {
+    setSelected(null)
+    applyEditOps([
+      {
+        op: 'addImageEdit',
+        input: {
+          kind: 'replaceImage',
+          pageIndex: ref.pageIndex,
+          oldRect: ref.rect,
+          rect: ref.rect,
+          image: png,
+        },
+        origAbove: ref.aboveText,
+        staticFill,
+      },
+    ])
+  }
+
+  // ── Baked pixel edits (flip / transparency / crop / cutout / replace) ──
+  // PDF images are bitmaps, so these all land the same way: fetch the selection's
+  // displayed pixels, transform them on a canvas, and write the result back — a new
+  // replaceImage op for an untouched image, or an in-place byte swap of a pending op
+  // (transform ops morph into replaceImage with their quarter turns baked in).
+
+  /** What a pixel edit applies to; `before` guards edit ops against concurrent changes
+      (state inputs are immutable, so reference equality detects any interim mutation) */
+  type ImageBakeTarget =
+    { kind: 'existing'; ref: PageImageRef } | { kind: 'edit'; id: string; before: ImageEditInput }
+
+  const bakeTargetOf = (sel: AnnotSelection | null): ImageBakeTarget | null => {
+    if (sel?.kind === 'pageImage') return { kind: 'existing', ref: sel.ref }
+    if (sel?.kind !== 'imageEdit') return null
+    const e = imageEdits.find((x) => x.id === sel.id)
+    if (!e || e.input.kind === 'deleteImage') return null
+    return { kind: 'edit', id: sel.id, before: e.input }
+  }
+
+  /** Upscale over the on-page size when fetching bake sources, so crop/flip results
+      stay print-sharp instead of inheriting the ~1px/pt ghost resolution */
+  const BAKE_SCALE = 3
+
+  /** The target's pixels in displayed orientation (pending quarter turns baked in) */
+  const bakeSourcePng = async (target: ImageBakeTarget): Promise<string | null> => {
+    const fetchPng = (pageIndex: number, rect: [number, number, number, number]) =>
+      window.pdfApi
+        .pageImagePng({ path: filePath, pageIndex, rect, scale: BAKE_SCALE })
+        .catch(() => null)
+    if (target.kind === 'existing') return fetchPng(target.ref.pageIndex, target.ref.rect)
+    const input = target.before
+    if (input.kind === 'insertImage') return input.image
+    if (input.kind === 'replaceImage') return rotatePngTurns(input.image, input.quarterTurns ?? 0)
+    if (input.kind === 'transformImage') {
+      const src = await fetchPng(input.pageIndex, input.oldRect)
+      return src ? rotatePngTurns(src, input.quarterTurns ?? 0) : null
+    }
+    return null
+  }
+
+  const decodePng = (b64: string): Promise<HTMLImageElement | null> =>
+    new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => resolve(img.naturalWidth && img.naturalHeight ? img : null)
+      img.onerror = () => resolve(null)
+      img.src = `data:image/png;base64,${b64}`
+    })
+
+  /** Decode a PNG, run a same-size pixel transform, re-encode (null on failure) */
+  const transformPngPixels = async (
+    b64: string,
+    fn: (img: PixelImage) => Uint8ClampedArray<ArrayBuffer>,
+  ): Promise<string | null> => {
+    const img = await decodePng(b64)
+    if (!img) return null
+    const w = img.naturalWidth
+    const h = img.naturalHeight
+    const c = document.createElement('canvas')
+    c.width = w
+    c.height = h
+    const ctx = c.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(img, 0, 0)
+    const d = ctx.getImageData(0, 0, w, h)
+    ctx.putImageData(new ImageData(fn({ data: d.data, width: w, height: h }), w, h), 0, 0)
+    return c.toDataURL('image/png').split(',')[1] ?? null
+  }
+
+  const cropPng = async (b64: string, crop: CropFractions): Promise<string | null> => {
+    const img = await decodePng(b64)
+    try {
+      return img ? cropImagePng(img, crop) : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Crop footprint of an insert op: its bytes are display-oriented, so the fractions
+      apply in display space and map back through the page geometry (handles /Rotate) */
+  const cropRectDisplay = (
+    pageIndex: number,
+    rect: [number, number, number, number],
+    crop: CropFractions,
+  ): [number, number, number, number] => {
+    const geom = pageGeom(pageIndex)
+    const box = pdfRectToCss(geom, rect, 1)
+    const [ax, ay] = viewToPdf(geom, box.left + crop.l * box.width, box.top + crop.t * box.height)
+    const [bx, by] = viewToPdf(geom, box.left + crop.r * box.width, box.top + crop.b * box.height)
+    return [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)]
+  }
+
+  /** Whether a pending op already targets this existing image (reads the ref, so it
+      stays current across async bakes and same-turn AI tool calls) */
+  const isImageClaimedNow = (ref: PageImageRef): boolean => {
+    const key = `${ref.pageIndex}:${imageRectKey(ref.rect)}`
+    return imageEditsRef.current.some(
+      (e) =>
+        e.input.kind !== 'insertImage' &&
+        `${e.input.pageIndex}:${imageRectKey(e.input.oldRect)}` === key,
+    )
+  }
+
+  /** Land baked pixels on the target (see the section comment); crop also shrinks the
+      footprint to the kept region. Returns false for results that lost a race.
+      opacityBase marks the bytes as a transparency bake (see LocalImageEdit); any other
+      pixel edit leaves it unset, which clears a stale base. */
+  const commitBaked = (
+    target: ImageBakeTarget,
+    png: string,
+    crop?: CropFractions,
+    opacityBase?: string,
+  ): boolean => {
+    if (target.kind === 'existing') {
+      const ref = target.ref
+      if (isImageClaimedNow(ref)) return false
+      const plan = applyEditOpsRef.current([
+        {
+          op: 'addImageEdit',
+          input: {
+            kind: 'replaceImage',
+            pageIndex: ref.pageIndex,
+            oldRect: ref.rect,
+            rect: crop ? cropRect(ref.rect, crop) : ref.rect,
+            image: png,
+          },
+          origAbove: ref.aboveText,
+          opacityBase,
+        },
+      ])
+      return plan.failures.length === 0
+    }
+    const cur = imageEditsRef.current.find((x) => x.id === target.id)
+    if (!cur || cur.input !== target.before || cur.input.kind === 'deleteImage') return false
+    // Inserted images crop in display space (they follow the page rotation), existing ones in user space
+    const rect = !crop
+      ? cur.input.rect
+      : cur.input.kind === 'insertImage'
+        ? cropRectDisplay(cur.input.pageIndex, cur.input.rect, crop)
+        : cropRect(cur.input.rect, crop)
+    const plan = applyEditOpsRef.current([
+      { op: 'bakeImageEdit', id: target.id, image: png, rect, opacityBase },
+    ])
+    return plan.failures.length === 0
+  }
+
+  /** AI-tool entry to the same bakes as the floating bar, for an existing page image */
+  const bakeExisting = async (
+    ref: PageImageRef,
+    op: ImageBakeOp,
+    signal?: AbortSignal,
+  ): Promise<boolean> => {
+    if (readOnly || isImageClaimedNow(ref)) return false
+    const target: ImageBakeTarget = { kind: 'existing', ref }
+    const src = await bakeSourcePng(target)
+    if (!src || signal?.aborted) return false
+    const out =
+      op.kind === 'crop'
+        ? await cropPng(src, op.crop)
+        : await transformPngPixels(src, (img) =>
+            op.kind === 'flip'
+              ? flipPixels(img, op.axis)
+              : op.kind === 'opacity'
+                ? multiplyAlpha(img, op.alpha)
+                : removeBackground(img, op.tolerance).data,
+          )
+    if (!out || signal?.aborted) return false
+    const landed = commitBaked(
+      target,
+      out,
+      op.kind === 'crop' ? op.crop : undefined,
+      op.kind === 'opacity' ? src : undefined,
+    )
+    if (landed) setSelected(null)
+    return landed
+  }
+
+  /** Fetch → transform → commit, used by the one-click bakes (flip / transparency) */
+  const bakeSelected = (fn: (img: PixelImage) => Uint8ClampedArray<ArrayBuffer>) => {
+    const target = bakeTargetOf(selected)
+    if (!target) return
+    setSelected(null)
+    void (async () => {
+      const src = await bakeSourcePng(target)
+      const out = src ? await transformPngPixels(src, fn) : null
+      if (out) commitBaked(target, out)
+    })()
+  }
+
+  const flipSelected = (axis: 'h' | 'v') => bakeSelected((img) => flipPixels(img, axis))
+
+  /** Bake a transparency preset (percent transparent, slides-style ladder). Absolute,
+      not compounding: when the op's bytes came from an earlier transparency bake,
+      re-bake from the recorded pre-transparency pixels (bytes-only swap — rect, layer
+      and pending quarter turns stay put). */
+  const applyImageOpacity = (pct: number) => {
+    const target = bakeTargetOf(selected)
+    if (!target) return
+    setSelected(null)
+    const alpha = (img: PixelImage) => multiplyAlpha(img, 1 - pct / 100)
+    void (async () => {
+      const prior =
+        target.kind === 'edit'
+          ? imageEditsRef.current.find((x) => x.id === target.id)?.opacityBase
+          : undefined
+      if (prior && target.kind === 'edit') {
+        const out = await transformPngPixels(prior, alpha)
+        if (!out) return
+        // Reject a lost race BEFORE pushing undo (same as commitBaked), or ⌘Z
+        // would record a phantom step for the no-op map below
+        const cur = imageEditsRef.current.find((x) => x.id === target.id)
+        if (
+          !cur ||
+          cur.input !== target.before ||
+          (cur.input.kind !== 'insertImage' && cur.input.kind !== 'replaceImage')
+        ) {
+          return
+        }
+        applyEditOpsRef.current([
+          { op: 'patchImageEdit', id: target.id, input: { image: out }, opacityBase: prior },
+        ])
+        return
+      }
+      const src = await bakeSourcePng(target)
+      const out = src ? await transformPngPixels(src, alpha) : null
+      if (out) commitBaked(target, out, undefined, src ?? undefined)
+    })()
+  }
+
+  /** Crop / remove-background dialog over the selection's fetched pixels */
+  const [imageDialog, setImageDialog] = useState<{
+    kind: 'crop' | 'cutout'
+    target: ImageBakeTarget
+    image: string
+  } | null>(null)
+
+  const openImageDialog = (kind: 'crop' | 'cutout') => {
+    const target = bakeTargetOf(selected)
+    if (!target) return
+    setSelected(null)
+    void bakeSourcePng(target).then((src) => {
+      if (src) setImageDialog({ kind, target, image: src })
+    })
+  }
+
+  /** Replace flow: the bubble button stashes the target, then reuses the insert file input */
+  const replaceTargetRef = useRef<ImageBakeTarget | null>(null)
+  const startReplaceImage = () => {
+    const target = bakeTargetOf(selected)
+    if (!target) return
+    replaceTargetRef.current = target
+    setSelected(null)
+    imageFileRef.current?.click()
+  }
+
+  /** Current z-band of the selected image thing (labels the popup toggle) */
+  const selectedImageLayer = (): ImageLayer | null => {
+    const sel = selected
+    if (sel?.kind === 'pageImage') return sel.ref.aboveText ? 'aboveText' : 'belowText'
+    if (sel?.kind !== 'imageEdit') return null
+    const e = imageEdits.find((x) => x.id === sel.id)
+    if (!e || e.input.kind === 'deleteImage') return null
+    if (e.input.kind === 'insertImage') return e.input.layer
+    return e.input.layer ?? (e.origAbove ? 'aboveText' : 'belowText')
+  }
+
+  const toggleImageLayer = () => {
+    const sel = selected
+    const cur = selectedImageLayer()
+    if (!sel || !cur) return
+    const next: ImageLayer = cur === 'aboveText' ? 'belowText' : 'aboveText'
+    if (sel.kind === 'pageImage') {
+      transformExisting(sel.ref, sel.ref.rect, next)
+    } else if (sel.kind === 'imageEdit') {
+      applyEditOps([{ op: 'patchImageEdit', id: sel.id, input: { layer: next } }])
+    }
+    setSelected(null)
+  }
+
+  /** Existing images already claimed by a pending op are hidden from the hit layer */
+  const claimedImageKeys = useMemo(
+    () =>
+      new Set(
+        imageEdits.flatMap((e) =>
+          e.input.kind === 'insertImage'
+            ? []
+            : [`${e.input.pageIndex}:${imageRectKey(e.input.oldRect)}`],
+        ),
+      ),
+    [imageEdits],
+  )
+
+  // ── Live page preview: pdfium re-renders the touched region without the moved/
+  // resized/deleted images, without deleted saved annotations and without the text
+  // runs being edited, so the original vanishes immediately instead of at save ──
+
+  /** The open draft's erase probe; keyed on the run, so typing doesn't re-request */
+  const draftProbe = useMemo(
+    () =>
+      textDraft
+        ? {
+            probe: textEraseProbe(
+              textDraft.origIdx,
+              textDraft.rect,
+              textDraft.oldText,
+              textDraft.fontSize,
+            ),
+            rect: textDraft.cover ? unionCover(textDraft.rect, textDraft.cover) : textDraft.rect,
+          }
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the run, not the draft (typing must not re-request)
+    [
+      textDraft?.origIdx,
+      textDraft?.rect,
+      textDraft?.oldText,
+      textDraft?.fontSize,
+      textDraft?.cover,
+    ],
+  )
+  /** Pending edits the open draft stands in for (reopened / folded): the draft's probe
+      erases their run, so they take the draft's erased state */
+  const draftOwnedIds = useMemo(
+    () => draftOwnedEditIds(textDraft),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- same: identity fields only
+    [textDraft?.editId, textDraft?.foldedIds],
+  )
+
+  /** Pages with pending erase ops → image rects, saved annotations and text runs to remove */
+  const livePreviewRects = useMemo(() => {
+    const map = new Map<
+      number,
+      {
+        rects: [number, number, number, number][]
+        annots: (SavedMarkupAnnot | SavedNoteAnnot)[]
+        text: { probe: TextEditInput; rect: [number, number, number, number] }[]
+      }
+    >()
+    const jobFor = (pageIndex: number) => {
+      let job = map.get(pageIndex)
+      if (!job) {
+        job = { rects: [], annots: [], text: [] }
+        map.set(pageIndex, job)
+      }
+      return job
+    }
+    for (const e of imageEdits) {
+      if (e.input.kind !== 'insertImage') jobFor(e.input.pageIndex).rects.push(e.input.oldRect)
+    }
+    for (const d of annotDeletes) jobFor(d.annot.pageIndex).annots.push(d.annot)
+    // The draft goes first: a reopened edit's run must be claimed by the draft's probe
+    if (draftProbe) jobFor(draftProbe.probe.pageIndex).text.push(draftProbe)
+    for (const te of textEdits) {
+      if (draftOwnedIds.has(te.id)) continue
+      const { pageIndex, rect, oldText, fontSize } = te.input
+      jobFor(pageIndex).text.push({
+        probe: textEraseProbe(pageIndex, rect, oldText, fontSize),
+        rect: te.cover ? unionCover(rect, te.cover) : rect,
+      })
+    }
+    return map
+  }, [imageEdits, annotDeletes, textEdits, draftProbe, draftOwnedIds])
+
+  const [livePreview, setLivePreview] = useState<
+    Map<
+      number,
+      {
+        png: string
+        clip: { x: number; y: number; width: number; height: number }
+        /** textEraseKey of every run the render erased */
+        erased: Set<string>
+      }
+    >
+  >(new Map())
+  /** Whether a pending edit's original run is gone from the page render */
+  const runErased = (te: LocalTextEdit): boolean => {
+    const lp = livePreview.get(te.input.pageIndex)
+    if (!lp) return false
+    const probe = draftOwnedIds.has(te.id) && draftProbe ? draftProbe.probe : te.input
+    return lp.erased.has(textEraseKey(probe))
+  }
+  const draftErased =
+    !!draftProbe &&
+    !!livePreview.get(draftProbe.probe.pageIndex)?.erased.has(textEraseKey(draftProbe.probe))
+  /** Last requested render key per page; skips redundant IPC round-trips */
+  const livePreviewKeys = useRef(new Map<number, string>())
+
+  useEffect(() => {
+    // Drop previews for pages whose ops are gone (undo / save reload)
+    for (const p of [...livePreviewKeys.current.keys()]) {
+      if (!livePreviewRects.has(p)) livePreviewKeys.current.delete(p)
+    }
+    setLivePreview((prev) => {
+      if (![...prev.keys()].some((p) => !livePreviewRects.has(p))) return prev
+      const next = new Map(prev)
+      for (const p of [...next.keys()]) if (!livePreviewRects.has(p)) next.delete(p)
+      return next
+    })
+    for (const [pageIndex, job] of livePreviewRects) {
+      const geom = pageGeom(pageIndex)
+      const disp = geomDispSize(geom)
+      // Union of the erased rects in display coords, padded and clamped to the page
+      let x1 = Infinity
+      let y1 = Infinity
+      let x2 = -Infinity
+      let y2 = -Infinity
+      for (const r of [
+        ...job.rects,
+        ...job.annots.map((a) => a.rect),
+        ...job.text.map((t) => t.rect),
+      ]) {
+        const b = pdfRectToCss(geom, r, 1)
+        x1 = Math.min(x1, b.left)
+        y1 = Math.min(y1, b.top)
+        x2 = Math.max(x2, b.left + b.width)
+        y2 = Math.max(y2, b.top + b.height)
+      }
+      const pad = 2
+      x1 = Math.max(0, x1 - pad)
+      y1 = Math.max(0, y1 - pad)
+      x2 = Math.min(disp.width, x2 + pad)
+      y2 = Math.min(disp.height, y2 + pad)
+      if (x2 - x1 <= 0 || y2 - y1 <= 0) continue
+      const clip = { x: x1, y: y1, width: x2 - x1, height: y2 - y1 }
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      const pxWidth = Math.min(Math.ceil(clip.width * scale * dpr), 2800)
+      const rotIdx = ((Math.round(rotDelta(pageIndex) / 90) % 4) + 4) % 4
+      const excludedAnnots = job.annots.map((a): AnnotDeleteInput => ({
+        pageIndex: a.pageIndex,
+        objNum: a.objNum,
+        subtype: a.type,
+        rect: a.rect,
+        ...(a.type === 'note' ? { contents: a.contents } : {}),
+      }))
+      const annotKey = excludedAnnots
+        .map((a) => `${a.objNum}:${a.subtype}:${imageRectKey(a.rect)}`)
+        .join(',')
+      const textKey = job.text.map((t) => textEraseKey(t.probe)).join(';')
+      // The clip is part of the key: a run's ink bounds arrive after its draft opens and
+      // widen the region, and the same probes must then render again
+      const clipKey = [clip.x, clip.y, clip.width, clip.height].map(Math.round).join(',')
+      const key = `${job.rects.map(imageRectKey).join(';')}|${annotKey}|${textKey}|${clipKey}|${pxWidth}|${rotIdx}`
+      if (livePreviewKeys.current.get(pageIndex) === key) continue
+      livePreviewKeys.current.set(pageIndex, key)
+      void window.pdfApi
+        .pagePreviewPng({
+          path: filePath,
+          pageIndex,
+          excludeRects: job.rects,
+          ...(excludedAnnots.length > 0 ? { excludeAnnots: excludedAnnots } : {}),
+          ...(job.text.length > 0 ? { excludeText: job.text.map((t) => t.probe) } : {}),
+          clip,
+          pxWidth,
+          rotate: rotIdx,
+        })
+        .then((res) => {
+          // Stale guard: a newer request for this page may have superseded this one
+          // while the render ran — its result must not be overwritten by ours
+          if (livePreviewKeys.current.get(pageIndex) !== key) return
+          if (!res) return
+          const erased = new Set<string>()
+          job.text.forEach((t, i) => {
+            if (res.textErased[i]) erased.add(textEraseKey(t.probe))
+          })
+          setLivePreview((prev) => new Map(prev).set(pageIndex, { png: res.png, clip, erased }))
+        })
+        .catch(() => {
+          // Only clear the key if it is still ours; deleting a newer in-flight key
+          // would let its (valid) result be treated as stale and the page re-request
+          if (livePreviewKeys.current.get(pageIndex) === key) {
+            livePreviewKeys.current.delete(pageIndex)
+          }
+        })
+    }
+  }, [livePreviewRects, scale, pageGeom, rotDelta, filePath])
+
+  /** Export PNG or JPG: current page or all visible pages, 150dpi equivalent */
+  const exportImages = (allPages: boolean, format: 'png' | 'jpg' = 'png') =>
+    flushThen(async () => {
+      if (!doc || exporting) return
+      setExporting(format)
+      try {
+        const targets = allPages ? visList : [curOrigIdx].filter((i) => i >= 0)
+        const images: string[] = []
+        const pageNumbers: number[] = []
+        const canvas = document.createElement('canvas')
+        const encodePage = (cvs: HTMLCanvasElement) =>
+          format === 'jpg'
+            ? (cvs.toDataURL('image/jpeg', 0.92).split(',')[1] ?? '')
+            : (cvs.toDataURL('image/png').split(',')[1] ?? '')
+        for (const origIdx of targets) {
+          if (isBlankPage(origIdx)) {
+            const d = dispSize(origIdx)
+            canvas.width = Math.floor((d.width * 150) / 72)
+            canvas.height = Math.floor((d.height * 150) / 72)
+            const ctx2d = canvas.getContext('2d')
+            if (ctx2d) {
+              ctx2d.fillStyle = '#fff'
+              ctx2d.fillRect(0, 0, canvas.width, canvas.height)
+            }
+            images.push(encodePage(canvas))
+            pageNumbers.push(visList.indexOf(origIdx) + 1)
+            continue
+          }
+          const page = await doc.getPage(origIdx + 1)
+          const viewport = page.getViewport({
+            scale: 150 / 72,
+            rotation: (page.rotate + rotDelta(origIdx)) % 360,
+          })
+          canvas.width = Math.floor(viewport.width)
+          canvas.height = Math.floor(viewport.height)
+          await page.render({ canvas, viewport }).promise
+          images.push(encodePage(canvas))
+          pageNumbers.push(visList.indexOf(origIdx) + 1)
+        }
+        canvas.width = 0
+        canvas.height = 0
+        const result = await window.pdfApi.exportImages({
+          images,
+          pageNumbers,
+          baseName: fileName.replace(/\.pdf$/i, ''),
+          format,
+        })
+        if (!result.ok) opFailed(result.error)
+      } catch (err) {
+        opFailed(err instanceof Error ? err.message : String(err))
+      } finally {
+        setExporting(null)
+      }
+    })
+
+  /** Commit the margin draft card as a pending note; the new thread becomes active */
+  const confirmNoteDraft = (text: string) => {
+    const target = noteDraft
+    setNoteDraft(null)
+    if (!target || !text) return
+    const id = newId()
+    applyEditOps([
+      {
+        op: 'addDrawing',
+        id,
+        drawing: {
+          kind: 'note',
+          pageIndex: target.origIdx,
+          color: drawColor,
+          at: target.at,
+          contents: text,
+          author: noteAuthor || undefined,
+          createdMs: Date.now(),
+        },
+      },
+    ])
+    setActiveNote({ origIdx: target.origIdx, rootKey: pendingNoteKey(id) })
+  }
+
+  // ── Note comment threads (saved Text annots + pending notes, WPS-style replies) ──
+
+  /** Pending note drawings on a page (typed extraction; replies included) */
+  const pendingNotesOn = (origIdx: number): { id: string; input: NoteInput }[] =>
+    drawingsRef.current.flatMap((d) =>
+      d.input.kind === 'note' && d.input.pageIndex === origIdx
+        ? [{ id: d.id, input: d.input }]
+        : [],
+    )
+
+  /** Threads from a page's saved-note list, with notes pending deletion filtered out
+      and pending content edits overlaid. Only `item.contents` is overlaid — `item.saved`
+      keeps the on-disk text, which replies and the edits themselves need for identity
+      matching at save. */
+  const threadsFromSaved = (origIdx: number, savedList: SavedNoteAnnot[]): NoteThreadItem[] =>
+    visibleNoteThreads(
+      savedList,
+      pendingNotesOn(origIdx),
+      new Set(annotDeletesRef.current.map((d) => d.annot.objNum)),
+      new Map(
+        noteEditsRef.current
+          .filter((e) => e.annot.pageIndex === origIdx)
+          .map((e) => [e.annot.objNum, e.contents]),
+      ),
+    )
+
+  const noteThreadsOn = (origIdx: number): NoteThreadItem[] =>
+    threadsFromSaved(origIdx, savedNotes.get(origIdx) ?? [])
+
+  /** Async threads for any page: the visible-page cache when warm, pdf.js otherwise
+      (AI tools address arbitrary pages, not just the ones scrolled into view) */
+  const noteThreadsFor = async (origIdx: number): Promise<NoteThreadItem[]> => {
+    const cached = savedNotes.get(origIdx)
+    if (cached) return threadsFromSaved(origIdx, cached)
+    if (!doc) return threadsFromSaved(origIdx, [])
+    return threadsFromSaved(origIdx, (await loadSavedAnnots(doc, origIdx)).notes)
+  }
+
+  // ── All-document comments panel (Acrobat's Comments list) ──
+
+  /** Thread roots for every page, rebuilt when the panel is open and any note state moves */
+  const [commentEntries, setCommentEntries] = useState<CommentEntry[] | null>(null)
+  const [commentsLoading, setCommentsLoading] = useState(false)
+
+  useEffect(() => {
+    if (sidebar !== 'comments' || status !== 'ready' || !doc) {
+      setCommentEntries(null)
+      setCommentsLoading(false)
+      return
+    }
+    let cancelled = false
+    setCommentsLoading(true)
+    void (async () => {
+      // noteThreadsFor reads the visible-page cache and fetches the rest through
+      // pdf.js; one getAnnotations per uncached page, once per panel open
+      const out: CommentEntry[] = []
+      for (let origIdx = 0; origIdx < doc.numPages; origIdx++) {
+        for (const root of await noteThreadsFor(origIdx)) {
+          if (cancelled) return
+          const pageNo = visList.indexOf(origIdx) + 1
+          if (pageNo > 0) out.push({ origIdx, pageNo, root })
+        }
+      }
+      if (!cancelled) {
+        setCommentEntries(out)
+        setCommentsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // drawings/annotDeletes/noteEdits/savedNotes move the thread set; visList
+    // renumbers display pages on reorder; doc swaps documents
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sidebar, status, doc, drawings, annotDeletes, noteEdits, savedNotes, visList])
+
+  /** Root pins DrawLayer renders for saved threads (pending roots render from drawings) */
+  const savedNotePins = (origIdx: number): SavedNotePin[] =>
+    noteThreadsOn(origIdx).flatMap((root) =>
+      root.saved
+        ? [{ key: root.key, at: root.at, color: root.color, contents: root.contents }]
+        : [],
+    )
+
+  /** Append a reply to a thread's root (flat, WPS-style threads: /IRT → root) */
+  const replyToNote = (origIdx: number, root: NoteThreadItem, text: string, author?: string) => {
+    applyEditOpsRef.current([
+      {
+        op: 'addDrawing',
+        drawing: {
+          kind: 'note',
+          pageIndex: origIdx,
+          color: root.color ?? drawColor,
+          at: root.at,
+          contents: text,
+          author: author ?? (noteAuthor || undefined),
+          createdMs: Date.now(),
+          ...(root.saved
+            ? {
+                replyToSaved: {
+                  objNum: root.saved.objNum,
+                  rect: root.saved.rect,
+                  contents: root.saved.contents,
+                },
+              }
+            : root.pendingId !== null
+              ? { replyToLocalId: root.pendingId }
+              : {}),
+        },
+      },
+    ])
+  }
+
+  /** Ops rewriting one comment's text: pending notes mutate the drawing in place;
+      saved notes queue an in-place /Contents edit (keyed by note, later edits replace
+      it). Null when nothing changes. */
+  const noteEditOps = (item: NoteThreadItem, trimmed: string): Op[] | null => {
+    if (!trimmed || trimmed === item.contents) return null
+    if (item.pendingId !== null)
+      return [{ op: 'setNoteContents', id: item.pendingId, contents: trimmed }]
+    if (item.saved) {
+      // Restoring the on-disk text drops the entry only when the file provably holds
+      // it. A save in flight for this note is unconfirmed — force keeps the entry: if
+      // the write lands, the post-save subtraction drops entries matching it; if it
+      // fails, the entry still targets the unchanged on-disk text.
+      const force = inFlightNoteWritesRef.current.has(item.saved.objNum)
+      return [{ op: 'editSavedNote', annot: item.saved, contents: trimmed, force }]
+    }
+    return null
+  }
+
+  /** Confirm the comment-edit box (OK button / Cmd+Enter) */
+  const editNoteItem = (item: NoteThreadItem, text: string) => {
+    const ops = noteEditOps(item, text.trim())
+    if (ops) applyEditOpsRef.current(ops)
+  }
+
+  /** Fold an open comment-edit box into pending state (cf. commitTextDraft: a save can
+      land mid-typing and the post-save reload tears the edit box down, dropping the
+      typed text). Returns the arrays the save must write — the setState calls here
+      won't be visible to the caller's closure. */
+  const commitNoteEdit = (): { drawings: LocalDrawing[]; noteEdits: LocalNoteEdit[] } => {
+    const unchanged = { drawings, noteEdits }
+    const draft = noteEditDraft
+    if (!draft) return unchanged
+    setNoteEditDraft(null)
+    const item = noteThreadsOn(draft.origIdx)
+      .flatMap((root) => flattenThread(root))
+      .map(({ item: it }) => it)
+      .find((it) => it.key === draft.itemKey)
+    const ops = item ? noteEditOps(item, draft.text.trim()) : null
+    if (!ops) return unchanged
+    const plan = applyEditOps(ops)
+    if (plan.failures.length > 0) return unchanged
+    return { drawings: drawingsRef.current, noteEdits: noteEditsRef.current }
+  }
+
+  /** Delete a comment and everything under it (saved → pending annotDeletes; pending → dropped) */
+  const deleteNoteItem = (item: NoteThreadItem) => {
+    const { saved, pendingIds } = threadSubtree(item)
+    applyEditOps([
+      ...saved.map((annot): Op => ({ op: 'deleteSavedAnnot', annot })),
+      ...pendingIds.map((id): Op => ({ op: 'removeDrawing', id })),
+    ])
+    if (activeNote && item.key === activeNote.rootKey) setActiveNote(null)
+    // "deleted · undo" toast — a mistaken trash tap stays reversible before autosave
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
+    setDeletedInsertedText(false)
+    setDeleteToast(true)
+    toastTimerRef.current = window.setTimeout(() => setDeleteToast(false), 5000)
+  }
+
+  /** Extract/insert work on the file on disk — flush unsaved changes first; undefined = the save failed */
+  const flushThen = async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
+    if (redactions.length > 0) {
+      opFailed(t('redactStructureBlocked'))
+      return undefined
+    }
+    if (dirty && !(await save(false, true))) return undefined
+    return fn()
+  }
+
+  // File-level page operations shared by the ribbon dialogs and the AI tools. The
+  // flush writes the on-screen order into the file, so every page index below is a
+  // post-save index = visible position, not a pre-save original index.
+  const FLUSH_FAILED = { ok: false, error: 'saving the pending edits failed' } as const
+  // A canceled picker still comes after the flush, so the caller learns whether the save happened
+  const runFileOp = async <R extends { ok: true } | { ok: false; error: string }>(
+    run: () => Promise<R>,
+  ): Promise<Exclude<R, { canceled: true }> | FileOpCanceled | typeof FLUSH_FAILED> => {
+    const flushed = dirty
+    const result = await flushThen(run)
+    if (result === undefined) return FLUSH_FAILED
+    if (!result.ok) opFailed(result.error)
+    else if ('canceled' in result) return { ok: true, canceled: true, flushed }
+    return result as Exclude<R, { canceled: true }>
+  }
+  /** Reloads the file a change just wrote, and keeps the file from *before* it as an Undo step */
+  const reloadWritten = async (before: Uint8Array): Promise<number> => {
+    const kept = writtenRef.current.undo
+    const pageCount = await loadDoc(filePath, doc)
+    const after = await readFileBytes(window.pdfApi, filePath)
+    setWritten({ undo: [...kept.slice(-(MAX_WRITTEN_STEPS - 1)), { before, after }], redo: [] })
+    return pageCount
+  }
+
+  /** Undo or Redo of a change written at once, once no pending edit is left; false when there is none */
+  const stepWritten = (direction: 'undo' | 'redo'): boolean => {
+    const { undo: undoable, redo: redoable } = writtenRef.current
+    const steps = direction === 'undo' ? undoable : redoable
+    const step = steps[steps.length - 1]
+    if (!step || dirty || writtenStepBusyRef.current) return false
+    writtenStepBusyRef.current = true
+    void (async () => {
+      try {
+        const bytes = direction === 'undo' ? step.before : step.after
+        const result = await window.pdfApi.restoreFile({
+          path: filePath,
+          bytes: bytes.slice().buffer as ArrayBuffer,
+        })
+        if (!result.ok) {
+          opFailed(result.error)
+          return
+        }
+        await loadDoc(filePath, doc)
+        setWritten(
+          direction === 'undo'
+            ? { undo: undoable.slice(0, -1), redo: [...redoable, step] }
+            : { undo: [...undoable, step], redo: redoable.slice(0, -1) },
+        )
+      } finally {
+        writtenStepBusyRef.current = false
+      }
+    })()
+    return true
+  }
+
+  const rewriteInPlace = async (
+    run: () => Promise<{ ok: true } | { ok: true; canceled: true } | { ok: false; error: string }>,
+  ): Promise<FileOpResult> => {
+    const held: { before?: Uint8Array } = {}
+    const result = await runFileOp(async () => {
+      held.before = await readFileBytes(window.pdfApi, filePath)
+      return run()
+    })
+    if (!result.ok || 'canceled' in result) return result
+    return {
+      ok: true,
+      pageCount: held.before ? await reloadWritten(held.before) : await loadDoc(filePath, doc),
+    }
+  }
+  const baseName = () => fileName.replace(/\.pdf$/i, '')
+
+  const extractPagesToFile = (visIdxs: number[]) => {
+    const first = visIdxs[0]! + 1
+    const last = visIdxs[visIdxs.length - 1]! + 1
+    return runFileOp(() =>
+      window.pdfApi.extractPages({
+        path: filePath,
+        pages: visIdxs,
+        suggestedName: `${baseName()}-${first === last ? `p${first}` : `p${first}-${last}`}.pdf`,
+      }),
+    )
+  }
+  const splitPdfToFolder = (chunkSize: number) =>
+    runFileOp(() => window.pdfApi.splitPdf({ path: filePath, chunkSize, baseName: baseName() }))
+  const mergePagesToFile = (
+    perSheet: number,
+    direction: 'horizontal' | 'vertical',
+    separator: boolean,
+  ) =>
+    runFileOp(() =>
+      window.pdfApi.mergePages({
+        path: filePath,
+        perSheet,
+        direction,
+        separator,
+        suggestedName: `${baseName()}-${perSheet}in1.pdf`,
+      }),
+    )
+  const replacePagesOnDisk = (visIdxs: number[]) =>
+    rewriteInPlace(() => window.pdfApi.replacePages({ path: filePath, pages: visIdxs }))
+  const resizePages = (width: number, height: number) =>
+    rewriteInPlace(() => window.pdfApi.setPageSize({ path: filePath, width, height }))
+  const splitPagesToFile = (perPage: 2 | 4 | 9) =>
+    runFileOp(() =>
+      window.pdfApi.splitPages({
+        path: filePath,
+        perPage,
+        suggestedName: `${baseName()}-split.pdf`,
+      }),
+    )
+  const cropPagesOnDisk = (visIdxs: number[], rect: CropRect) =>
+    rewriteInPlace(() => window.pdfApi.cropPages({ path: filePath, pages: visIdxs, rect }))
+
+  const extractPage = (origIdx: number) => extractPagesToFile([visList.indexOf(origIdx)])
+
+  const openExtractDlg = () => {
+    setExtractInput(String(currentPage))
+    setExtractInvalid(false)
+    setExtractDlg(true)
+  }
+
+  /** Extract dialog confirm: visible page-number ranges → original page indices */
+  const confirmExtract = () => {
+    const pages = parsePageRanges(extractInput, pageCount)
+    if (!pages) {
+      setExtractInvalid(true)
+      return
+    }
+    setExtractDlg(false)
+    void extractPagesToFile(pages.map((n) => n - 1))
+  }
+
+  const reduceFileSize = async (): Promise<void> => {
+    if (!filePath) return
+    const outcome = await window.pdfApi.reduceFileSize(filePath)
+    if (!outcome.ok) {
+      if (!('canceled' in outcome)) showNotice(outcome.reason)
+      return
+    }
+    const savedPct =
+      outcome.bytesBefore > 0 ? Math.round((1 - outcome.bytesAfter / outcome.bytesBefore) * 100) : 0
+    // a run that came out bigger writes nothing and lands here as <= 0%: the
+    // toast says the file is already small instead of inventing a reduction
+    showNotice(savedPct > 0 ? t('reduceDone', { pct: savedPct }) : t('reduceAlreadySmall'))
+  }
+
+  const insertPdf = (afterOrigIdx: number) => {
+    // the flush bakes the visible order into the file, so the anchor becomes its visible position
+    const afterPageIndex = visListOf(orderRef.current).indexOf(afterOrigIdx)
+    return flushThen(async () => {
+      const before = await readFileBytes(window.pdfApi, filePath)
+      const result = await window.pdfApi.insertPdf({ path: filePath, afterPageIndex })
+      if (!result.ok) {
+        opFailed(result.error)
+        return
+      }
+      if (!('canceled' in result)) await reloadWritten(before)
+    })
+  }
+
+  /** Pending edit like a new slide in Slides: shows up at once, drags, undoes, lands in the file on save. -1 / null = first page */
+  const insertBlankPage = (
+    afterOrigIdx: number | null,
+  ): { ok: true; pageIndex: number } | { ok: false; error: string } => {
+    const after = afterOrigIdx !== null && afterOrigIdx >= 0 ? afterOrigIdx : null
+    const neighbor = after ?? visListOf(orderRef.current)[0]
+    const size =
+      neighbor !== undefined && (allSizes[neighbor] ?? blankSizeNow(neighbor))
+        ? geomDispSize(pageGeomRef.current(neighbor))
+        : { width: 595.28, height: 841.89 }
+    const pageIndex = sizes.length + blankPagesRef.current.length
+    const plan = applyEditOpsRef.current([
+      { op: 'insertBlankPage', after, pageIndex, width: size.width, height: size.height },
+    ])
+    if (plan.failures.length > 0) {
+      const error = plan.failures[0]!.error
+      opFailed(error)
+      return { ok: false, error }
+    }
+    scrollAfterReorderRef.current = pageIndex
+    return { ok: true, pageIndex }
+  }
+
+  const openSplitDlg = () => {
+    setSplitInput('1')
+    setSplitInvalid(false)
+    setSplitDlg(true)
+  }
+
+  /** Split dialog confirm: every N pages becomes its own file (at least two output files) */
+  const confirmSplit = () => {
+    const n = Number(splitInput.trim())
+    if (!Number.isInteger(n) || n < 1 || n >= pageCount) {
+      setSplitInvalid(true)
+      return
+    }
+    setSplitDlg(false)
+    void splitPdfToFolder(n)
+  }
+
+  const mergePdf = () =>
+    flushThen(async () => {
+      const base = fileName.replace(/\.pdf$/i, '')
+      const result = await window.pdfApi.mergePdf({
+        path: filePath,
+        suggestedName: `${base}-merged.pdf`,
+      })
+      if (!result.ok) opFailed(result.error)
+    })
+
+  const openMergePagesDlg = () => {
+    setMergeCount('2')
+    setMergeCountInvalid(false)
+    setMergeDirection('vertical')
+    setMergeSeparator(false)
+    setMergePagesDlg(true)
+  }
+
+  /** N-up "merge pages" with WPS-style options; output written to a new file */
+  const confirmMergePages = () => {
+    const n = Number(mergeCount.trim())
+    if (!Number.isInteger(n) || n < 2 || n > 16) {
+      setMergeCountInvalid(true)
+      return
+    }
+    setMergePagesDlg(false)
+    void mergePagesToFile(n, mergeDirection, mergeSeparator)
+  }
+
+  const openReplaceDlg = () => {
+    setReplaceInput(String(currentPage))
+    setReplaceInvalid(false)
+    setReplaceDlg(true)
+  }
+
+  /** Replace dialog confirm: visible page-number ranges → original indices; main picks the source PDF */
+  const confirmReplace = () => {
+    const pages = parsePageRanges(replaceInput, pageCount)
+    if (!pages) {
+      setReplaceInvalid(true)
+      return
+    }
+    setReplaceDlg(false)
+    void replacePagesOnDisk(pages.map((n) => n - 1))
+  }
+
+  /** Resize all pages to the picked paper size (points, portrait) */
+  const applyPageSize = (width: number, height: number) => {
+    setPageSizeDlg(false)
+    void resizePages(width, height)
+  }
+
+  /** Split every page into a perPage grid, saved as a new file */
+  const runSplitPages = (perPage: 2 | 4 | 9) => {
+    setSplitPagesDlg(false)
+    void splitPagesToFile(perPage)
+  }
+
+  /** Render the page as displayed (rotation included) for the crop dialog */
+  const openPageCrop = async (origIdx: number) => {
+    if (!doc || isBlankPage(origIdx)) return
+    try {
+      const page = await doc.getPage(origIdx + 1)
+      const rotation = (((page.rotate + rotDelta(origIdx)) % 360) + 360) % 360
+      const base = page.getViewport({ scale: 1, rotation })
+      const k = Math.min(1600 / base.width, 1600 / base.height, 4)
+      const viewport = page.getViewport({ scale: k, rotation })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.floor(viewport.width)
+      canvas.height = Math.floor(viewport.height)
+      await page.render({ canvas, viewport }).promise
+      const png = canvas.toDataURL('image/png').split(',')[1]
+      canvas.width = 0
+      if (!png) return
+      setCropAllPages(false)
+      setPageCropDlg({ png, origIdx })
+    } catch (err) {
+      opFailed(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  /** Crop confirm: fractions of the displayed page → CropBox shrink on one page or all */
+  const confirmPageCrop = (crop: { l: number; t: number; r: number; b: number }) => {
+    const dlg = pageCropDlg
+    if (!dlg) return
+    setPageCropDlg(null)
+    // Full-frame selection is a no-op
+    if (crop.l <= 0 && crop.t <= 0 && crop.r >= 1 && crop.b >= 1) return
+    const pages = cropAllPages ? visList.map((_, i) => i) : [visList.indexOf(dlg.origIdx)]
+    if (pages[0]! < 0) return
+    void cropPagesOnDisk(pages, crop)
+  }
+
+  const print = usePrintJob({
+    filePath,
+    pageCount,
+    currentPage,
+    flushThen,
+    opFailed,
+    diskPasswordRef,
+  })
+
+  /** Capability surface for AI tools; rebuilt each render (AiPanel mirrors it via refs to get the latest) */
+  /** One context line about edits queued but unsaved — the model cannot see them in the file */
+  const aiPendingSummary = (): string => {
+    const parts: string[] = []
+    const add = (n: number, label: string) => {
+      if (n > 0) parts.push(`${label}: ${n}`)
+    }
+    add(textEdits.length, 'text edits')
+    add(textInserts.length, 'text inserts')
+    add(imageEdits.length, 'image edits')
+    add(markups.length, 'markups')
+    add(annotDeletes.length, 'annotation deletions')
+    add(noteEdits.length, 'note edits')
+    add(drawings.length, 'drawings')
+    add(formEdits.size, 'form field changes')
+    add(formFields.length, 'new form fields (Form Design)')
+    add(blankPages.length, 'blank pages added')
+    add(formWidgetEdits.size, 'existing form field changes (Form Design)')
+    add(rotations.size, 'page rotations')
+    add(deleted.size, 'page deletions')
+    if (order) parts.push('page order changed')
+    if (metadata) parts.push('document properties changed')
+    if (stampCfg?.wm) parts.push('watermark')
+    if (stampCfg?.hf) parts.push('header/footer')
+    return parts.length > 0
+      ? `Unsaved changes queued this session (pending until the user saves, not yet visible in the file): ${parts.join(', ')}.`
+      : ''
+  }
+
+  /** One context line about the document's annotations; '' when there are none.
+      Deleted pages and per-annotation deletions are excluded, matching what
+      read_annotations actually returns. */
+  const aiAnnotationSummary = (): string => {
+    const pendingRoots = drawings.filter(
+      (d) =>
+        d.input.kind === 'note' &&
+        !d.input.replyToSaved &&
+        d.input.replyToLocalId === undefined &&
+        !deleted.has(d.input.pageIndex),
+    ).length
+    let deletedThreads = 0
+    let deletedMarkups = 0
+    for (const d of annotDeletes) {
+      if (deleted.has(d.annot.pageIndex)) continue // its whole page is already excluded
+      if (d.annot.type === 'note') {
+        if (d.annot.inReplyTo === null) deletedThreads++
+      } else deletedMarkups++
+    }
+    // scan still running: "unknown" must not read as "none" — a run started right
+    // after open would otherwise never hear the file carries review feedback
+    if (!aiAnnotCounts) {
+      startAiAnnotCountScan()
+      return 'Whether the file contains notes/markups has not been determined yet; use read_annotations to check when the user asks about review feedback.'
+    }
+    let savedThreads = 0
+    let savedMarkups = 0
+    aiAnnotCounts.threads.forEach((n, i) => {
+      if (!deleted.has(i)) savedThreads += n
+    })
+    aiAnnotCounts.markups.forEach((n, i) => {
+      if (!deleted.has(i)) savedMarkups += n
+    })
+    const threads = Math.max(0, savedThreads - deletedThreads) + pendingRoots
+    const markupCount =
+      Math.max(0, savedMarkups - deletedMarkups) +
+      markups.filter((m) => !deleted.has(m.pageIndex)).length
+    if (threads + markupCount === 0) return ''
+    const bits: string[] = []
+    if (threads > 0) bits.push(`${threads} note thread(s)`)
+    if (markupCount > 0) bits.push(`${markupCount} text markup(s)`)
+    return `The document has ${bits.join(' and ')}; use read_annotations to read them.`
+  }
+
+  const aiApi: PdfAppDeps = {
+    doc: () => doc,
+    fileName: () => fileName,
+    pageCount: pageCountNow,
+    currentPage: () => (visList[currentPage - 1] ?? 0) + 1,
+    readOnly: () => readOnly,
+    ocrText: (origIdx) => ocrPages.get(origIdx)?.entry.text ?? null,
+    selection: () => aiSelection,
+    pendingSummary: aiPendingSummary,
+    annotationSummary: aiAnnotationSummary,
+    annotationsOn: async (origIdx) => {
+      // one pdf.js pass per uncached page: notes and markups come from the same load
+      let notes = savedNotes.get(origIdx)
+      let savedList = savedMarkups.get(origIdx)
+      if ((!notes || !savedList) && doc) {
+        const loaded = await loadSavedAnnots(doc, origIdx)
+        notes ??= loaded.notes
+        savedList ??= loaded.markups
+      }
+      const pendingDeleted = new Set(annotDeletesRef.current.map((d) => d.annot.objNum))
+      return {
+        threads: threadsFromSaved(origIdx, notes ?? []),
+        markups: [
+          ...(savedList ?? [])
+            .filter((a) => !pendingDeleted.has(a.objNum))
+            .map((a) => ({ key: `S${a.objNum}`, type: a.type, quads: a.quads, saved: true })),
+          ...markups
+            .filter((m) => m.pageIndex === origIdx)
+            .map((m) => ({ key: `P${m.id}`, type: m.type, quads: m.quads, saved: false })),
+        ],
+      }
+    },
+    deleteMarkups: async (origIdx, keys) => {
+      const pendingIds = new Set(keys.filter((k) => k[0] === 'P').map((k) => k.slice(1)))
+      const savedNums = new Set(keys.filter((k) => k[0] === 'S').map((k) => Number(k.slice(1))))
+      let savedList = savedMarkups.get(origIdx)
+      if (!savedList && doc) savedList = (await loadSavedAnnots(doc, origIdx)).markups
+      const pendingDeleted = new Set(annotDeletesRef.current.map((d) => d.annot.objNum))
+      const saved = (savedList ?? []).filter(
+        (a) => savedNums.has(a.objNum) && !pendingDeleted.has(a.objNum),
+      )
+      if (pendingIds.size === 0 && saved.length === 0) return
+      applyEditOpsRef.current([
+        ...markupsRef.current
+          .filter((m) => m.pageIndex === origIdx && pendingIds.has(m.id))
+          .map((m): Op => ({ op: 'removeMarkup', id: m.id })),
+        ...saved.map((annot): Op => ({ op: 'deleteSavedAnnot', annot })),
+      ])
+    },
+    deleteNoteThread: (_origIdx, root) => deleteNoteItem(root),
+    addNote: (origIdx, at, contents, color) => {
+      const id = newId()
+      const plan = applyEditOpsRef.current([
+        {
+          op: 'addDrawing',
+          id,
+          drawing: {
+            kind: 'note',
+            pageIndex: origIdx,
+            color: color ?? drawColor,
+            at,
+            contents,
+            author: 'AI Assistant',
+            createdMs: Date.now(),
+          },
+        },
+      ])
+      if (plan.failures.length > 0) return { error: plan.failures[0]!.error }
+      setActiveNote({ origIdx, rootKey: pendingNoteKey(id) })
+      return { key: pendingNoteKey(id) }
+    },
+    findNoteRoot: async (origIdx, rootKey) =>
+      (await noteThreadsFor(origIdx)).find((r) => r.key === rootKey) ?? null,
+    replyToThread: (origIdx, root, contents) =>
+      replyToNote(origIdx, root, contents, 'AI Assistant'),
+    editNote: (_origIdx, item, contents) => {
+      const ops = noteEditOps(item, contents)
+      if (ops) applyEditOpsRef.current(ops)
+    },
+    outline: () => outline,
+    searchIndex: getSearchIndex,
+    redactionCount: () => redactionsRef.current.length,
+    addRedactions: appendRedactions,
+    isDeleted: (i) => deletedRef.current.has(i),
+    gotoPage: (p) => {
+      if (orderRef.current !== order) {
+        if (!visListOf(orderRef.current).includes(p - 1)) return false
+        scrollAfterReorderRef.current = p - 1
+        return true
+      }
+      const visIdx = visList.indexOf(p - 1)
+      if (visIdx < 0) return false
+      scrollToPage(visIdx + 1)
+      return true
+    },
+    addMarkup: (type, origIdx, rects, color) => {
+      const quads = rects.map((r) => [r[0], r[3], r[2], r[3], r[0], r[1], r[2], r[1]])
+      applyEditOpsRef.current([
+        {
+          op: 'addMarkup',
+          markup: {
+            pageIndex: origIdx,
+            type,
+            // default follows the manual path: the ribbon color for highlights
+            color: color ?? (type === 'highlight' ? highlightColor : MARKUP_COLORS[type]),
+            quads,
+          },
+        },
+      ])
+    },
+    editText: async (raw) => {
+      const resolved = resolveTextEdit(textEditsRef.current, raw)
+      if ('reason' in resolved) return resolved.reason
+      const { input, replaces, moveBy } = resolved
+      let cover: [number, number, number, number] | undefined
+      if (filePath) {
+        try {
+          const [v] = await window.pdfApi.validateTextEdits({ path: filePath, edits: [input] })
+          if (v?.reason) return v.reason
+          cover = v?.bounds
+        } catch {
+          /* best-effort: the save path skips-and-reports unmatched edits anyway */
+        }
+      }
+      const te: LocalTextEdit = { id: newId(), input, cover, moveBy }
+      const gone = new Set(replaces.map((e) => e.id))
+      const prev = textEditsRef.current
+      const plan = applyEditOpsRef.current(textEditListOps(prev, patchPendingEdits(prev, te, gone)))
+      return plan.failures[0]?.error ?? null
+    },
+    moveTextBlock: async (origIdx, block, d) => {
+      const plan = planBlockMove(origIdx, block, d, textEditsRef.current)
+      if (plan === 'overflow') {
+        return { reason: 'the moved paragraph would overlap the content below it' }
+      }
+      if (!plan || !editCarriesBlock(plan.te, block)) {
+        return {
+          reason:
+            'a pending edit of a line inside this paragraph keeps it from moving as one unit; undo that edit or rewrite the paragraph with edit_block first',
+        }
+      }
+      let te = plan.te
+      // Shifting a block-level edit of this block re-uses objects validated when it was
+      // queued; anything else is dry-run like a fresh move so the model learns of a
+      // rejection now instead of at save
+      if (filePath && !(plan.kind === 'shift' && isBlockEditOf(te, block))) {
+        try {
+          const [v] = await window.pdfApi.validateTextEdits({ path: filePath, edits: [te.input] })
+          if (v?.reason) return { reason: v.reason }
+          if (v?.bounds) te = { ...te, cover: v.bounds }
+        } catch {
+          /* best-effort: the save path skips-and-reports unmatched edits anyway */
+        }
+      }
+      // The owner the plan shifted or folded into may have gone while validating (a
+      // failed background dry-run drops edits); patching a vanished id would resurrect it
+      if (plan.kind !== 'move' && !textEditsRef.current.some((e) => e.id === te.id)) {
+        return { reason: 'the pending edits changed while the move was validated; retry' }
+      }
+      const prev = textEditsRef.current
+      const result = applyEditOpsRef.current(
+        textEditListOps(
+          prev,
+          patchPendingEdits(prev, te, plan.remove, plan.kind === 'move' ? 'upsert' : 'replace'),
+        ),
+      )
+      if (result.failures.length > 0) return { reason: result.failures[0]!.error }
+      return { moveBy: te.moveBy ?? d }
+    },
+    insertText: (input) => {
+      const id = newId()
+      const plan = applyEditOpsRef.current([{ op: 'addTextInsert', id, input }])
+      return plan.failures.length > 0 ? { error: plan.failures[0]!.error } : { id }
+    },
+    textInserts: () => textInsertsRef.current,
+    updateTextInsert: (id, edit) => {
+      applyEditOpsRef.current([{ op: 'patchTextInsert', id, input: edit }])
+    },
+    moveTextInsert: (id, origin) => {
+      applyEditOpsRef.current([{ op: 'patchTextInsert', id, input: { origin } }])
+    },
+    deleteTextInsert: (id) => {
+      applyEditOpsRef.current([{ op: 'removeTextInsert', id }])
+      setSelected((sel) => (sel?.kind === 'textInsert' && sel.id === id ? null : sel))
+    },
+    addFormMark: (origIdx, kind, rect) => {
+      const image = renderStaticFormMark(kind, Math.max(rect[2] - rect[0], rect[3] - rect[1]))
+      if (image) commitPlacedImage(origIdx, image.image, rect, kind)
+    },
+    formWidgets: (origIdx) => liveFormCatalog?.byPage.get(origIdx) ?? [],
+    pageBoxes: pageBoxShapes,
+    editFonts: () => editFonts,
+    formEdits: () => formEdits,
+    applyOps: (ops, opts) =>
+      opts?.dryRun ? planEditOps(ops, editOpContext(), newId) : applyEditOpsRef.current(ops),
+    metadata: () => metadataRef.current ?? docInfo,
+    pageOrder: () => visListOf(orderRef.current),
+    pageGeom: (origIdx) =>
+      (allSizes[origIdx] ?? blankSizeNow(origIdx)) ? pageGeom(origIdx) : null,
+    listImages: () => (filePath ? window.pdfApi.listPageImages(filePath) : Promise.resolve([])),
+    isImageClaimed: isImageClaimedNow,
+    insertImage: (origIdx, png, rect, layer) => {
+      applyEditOpsRef.current([
+        {
+          op: 'addImageEdit',
+          input: {
+            kind: 'insertImage',
+            pageIndex: origIdx,
+            image: png,
+            rect,
+            layer,
+            rotate: ((pageGeom(origIdx).rot % 360) + 360) % 360,
+          },
+        },
+      ])
+    },
+    transformImage: (ref, rect, layer, quarterTurns) =>
+      transformExisting(ref, rect, layer, quarterTurns),
+    replaceImage: (ref, png) => replaceExisting(ref, png),
+    bakeImage: bakeExisting,
+    deleteImage: (ref) => {
+      applyEditOpsRef.current([
+        {
+          op: 'addImageEdit',
+          input: { kind: 'deleteImage', pageIndex: ref.pageIndex, oldRect: ref.rect },
+        },
+      ])
+    },
+    searchImages: (query, maxResults) => window.pdfApi.imageSearch(query, maxResults),
+    generateImage: (op) => window.pdfApi.generateImage(op),
+    fetchImage: async (url) => {
+      const fetched = await window.pdfApi.fetchImage(url)
+      if (!fetched) return null
+      try {
+        const bytes = Uint8Array.from(atob(fetched.base64), (c) => c.charCodeAt(0))
+        const canvas = await fileToCanvas(
+          new File([bytes], 'ai-image', { type: fetched.mime }),
+          2400,
+        )
+        const png = canvas?.toDataURL('image/png').split(',')[1]
+        return canvas && png ? { png, width: canvas.width, height: canvas.height } : null
+      } catch {
+        return null
+      }
+    },
+    stamps: () => stampRef.current,
+    setStamps: (cfg) => {
+      applyEditOpsRef.current([{ op: 'setStamps', cfg }])
+    },
+    createDocument: (request) => window.pdfApi.createDocument(request),
+    insertBlankPage,
+    setPageSize: resizePages,
+    cropPages: cropPagesOnDisk,
+    replacePages: replacePagesOnDisk,
+    extractPages: extractPagesToFile,
+    splitPdf: splitPdfToFolder,
+    splitPages: splitPagesToFile,
+    mergePages: mergePagesToFile,
+  }
+
+  /**
+   * After an AI run that mutated a shell-created blank still carrying its untitled
+   * name, silently save once: the save's auto-rename then derives the file name from
+   * the inserted text — mirrors docs/sheets, where AI generation names the draft.
+   * PDFs the user merely opened keep the pending-until-⌘S contract (isUntitled is
+   * false for them, and the main process would refuse the rename anyway).
+   */
+  const autoSaveAfterAiRun = async () => {
+    if (!filePath || readOnly) return
+    try {
+      if (!(await window.pdfApi.isUntitled(filePath))) return
+    } catch {
+      return
+    }
+    // A file we created ourselves is safe to keep autosaving from here on
+    savedOnceRef.current = true
+    void save(true)
+  }
+
+  /** Internal destination of a Link annotation → jump to that page */
+  // ── Bookmark editing (embedded outlines only; fail-closed on named dests) ──
+
+  /** The original tree as the write model: every node gains pageIndex (0-based)
+      resolved through doc.getPageIndex; a named destination or url-only entry
+      cannot be rebuilt exactly, so it marks the whole edit unresolvable. */
+  const resolveOutlineForEdit = async (
+    nodes: OutlineNode[],
+  ): Promise<{
+    tree: {
+      title: string
+      pageIndex: number
+      top?: number | null
+      children?: { title: string; pageIndex: number; top?: number | null }[]
+    }[]
+    unresolvable: boolean
+  }> => {
+    let unresolvable = false
+    const walk = async (
+      list: OutlineNode[],
+    ): Promise<
+      {
+        title: string
+        pageIndex: number
+        top?: number | null
+        children?: { title: string; pageIndex: number; top?: number | null }[]
+      }[]
+    > => {
+      const out: {
+        title: string
+        pageIndex: number
+        top?: number | null
+        children?: { title: string; pageIndex: number; top?: number | null }[]
+      }[] = []
+      for (const node of list) {
+        let pageIndex: number | null = null
+        let top: number | null = null
+        if (Array.isArray(node.dest)) {
+          const ref = node.dest[0]
+          try {
+            pageIndex =
+              typeof ref === 'number'
+                ? ref
+                : await doc!.getPageIndex(ref as Parameters<PDFDocumentProxy['getPageIndex']>[0])
+            top = destTop(node.dest)
+          } catch {
+            pageIndex = null
+          }
+        } else if (typeof node.dest === 'string') {
+          try {
+            const arr = await doc!.getDestination(node.dest)
+            if (Array.isArray(arr)) {
+              const ref = arr[0]
+              pageIndex =
+                typeof ref === 'number'
+                  ? ref
+                  : await doc!.getPageIndex(ref as Parameters<PDFDocumentProxy['getPageIndex']>[0])
+              top = destTop(arr)
+            }
+          } catch {
+            pageIndex = null
+          }
+        }
+        if (node.url || pageIndex === null) unresolvable = true
+        out.push({
+          title: node.title,
+          ...(pageIndex !== null ? { pageIndex } : { pageIndex: 0 }),
+          ...(top !== null ? { top } : {}),
+          ...(node.items?.length ? { children: await walk(node.items) } : {}),
+        })
+      }
+      return out
+    }
+    if (!doc) return { tree: [], unresolvable: true }
+    const tree = await walk(nodes)
+    return { tree, unresolvable }
+  }
+
+  const startBookmarkEdit = (): void => {
+    // A committed (unsaved) tree reopens as is; the file's outline is only the
+    // starting point when nothing is pending
+    if (pendingOutline?.tree) {
+      setPendingOutline({ ...pendingOutline, editing: true })
+      return
+    }
+    if (!outline || outlineGenerated || !doc) return
+    void resolveOutlineForEdit(outline).then((resolved) =>
+      setPendingOutline({
+        ...resolved,
+        tree: resolved.unresolvable ? null : resolved.tree,
+        edited: false,
+        editing: true,
+      }),
+    )
+  }
+
+  /** ✓: leave edit mode and keep an edited tree for Save; an untouched one is simply dropped */
+  const finishBookmarkEdit = (): void => {
+    setPendingOutline((prev) => (prev?.edited && prev.tree ? { ...prev, editing: false } : null))
+  }
+
+  const addBookmarkForCurrentPage = (): void => {
+    const base = pendingOutline
+    if (!base || base.tree === null) return
+    const title = t('outlineNewTitle')
+    const entry = {
+      title,
+      pageIndex: visList[currentPage - 1] ?? 0,
+      top: null,
+      children: [],
+    }
+    setPendingOutline({ ...base, edited: true, tree: [...base.tree, { ...entry, children: [] }] })
+  }
+
+  type BookmarkNode = {
+    title: string
+    pageIndex: number
+    top?: number | null
+    children?: BookmarkNode[]
+  }
+
+  /** Mutate one node by index path ('0.1.0'); a null outcome deletes it */
+  const mutateBookmark = (
+    list: BookmarkNode[],
+    path: number[],
+    fn: (node: BookmarkNode) => BookmarkNode | null,
+  ): BookmarkNode[] => {
+    const [head, ...rest] = path
+    const next: BookmarkNode[] = []
+    list.forEach((node, index) => {
+      if (index !== head) {
+        next.push(node)
+        return
+      }
+      if (rest.length === 0) {
+        const outcome = fn(node)
+        if (outcome !== null) next.push(outcome)
+        return
+      }
+      next.push(
+        node.children?.length
+          ? { ...node, children: mutateBookmark(node.children, rest, fn) }
+          : node,
+      )
+    })
+    return next
+  }
+
+  const deleteBookmarkAt = (path: string): void => {
+    const base = pendingOutline
+    if (!base?.tree) return
+    setPendingOutline({
+      ...base,
+      edited: true,
+      tree: mutateBookmark(base.tree, path.split('.').map(Number), () => null),
+    })
+  }
+
+  const renameBookmarkAt = (path: string, title: string): void => {
+    const base = pendingOutline
+    if (!base?.tree) return
+    const trimmed = title.trim()
+    if (trimmed === '') return
+    setPendingOutline({
+      ...base,
+      edited: true,
+      tree: mutateBookmark(base.tree, path.split('.').map(Number), (entry) => ({
+        ...entry,
+        title: trimmed,
+      })),
+    })
+  }
+
+  const goToDest = async (dest: unknown) => {
+    if (!doc) return
+    try {
+      const arr = typeof dest === 'string' ? await doc.getDestination(dest) : dest
+      if (!Array.isArray(arr)) return
+      const ref = arr[0]
+      const origIdx =
+        typeof ref === 'number'
+          ? ref
+          : await doc.getPageIndex(ref as Parameters<PDFDocumentProxy['getPageIndex']>[0])
+      const visIdx = visList.indexOf(origIdx)
+      if (visIdx >= 0) scrollToPage(visIdx + 1)
+    } catch {
+      /* Ignore corrupted destinations */
+    }
+  }
+
+  const curOrigIdx = visList[currentPage - 1] ?? -1
+
+  // ── unified popover dismissal: a press outside the guard roots, a window
+  // blur, or a press on the shell tab strip closes each popover ──
+
+  /** Guard roots (popover panel + its trigger) for the dismissal hooks below */
+  const thumbMenuRef = useRef<HTMLDivElement | null>(null)
+  const drawColorWrapRef = useRef<HTMLDivElement | null>(null)
+  const draftColorWrapRef = useRef<HTMLSpanElement | null>(null)
+  const highlightWrapRef = useRef<HTMLDivElement | null>(null)
+  const opacityBtnRef = useRef<HTMLButtonElement | null>(null)
+  const opacityMenuRef = useRef<HTMLDivElement | null>(null)
+  const staticColorFieldRef = useRef<HTMLDivElement | null>(null)
+  const convertWrapRef = useRef<HTMLDivElement | null>(null)
+
+  // Thumbnail context menu
+  useDismissablePopover(thumbMenu != null, () => setThumbMenu(null), {
+    inside: () => [thumbMenuRef.current],
+  })
+  useDismissablePopover(formMenu != null, () => setFormMenu(null), {
+    inside: () => [formMenuRef.current],
+  })
+  // The field menu is tall; keep it inside the window when opened near the bottom/right edge
+  useLayoutEffect(() => {
+    const el = formMenuRef.current
+    if (!formMenu || !el) return
+    const r = el.getBoundingClientRect()
+    const left = Math.max(0, Math.min(formMenu.x, window.innerWidth - r.width - 4))
+    const top = Math.max(0, Math.min(formMenu.y, window.innerHeight - r.height - 4))
+    if (left !== formMenu.x || top !== formMenu.y) setFormMenu({ ...formMenu, x: left, y: top })
+  }, [formMenu])
+  useDismissablePopover(redactFindOpen, () => setRedactFindOpen(false), {
+    inside: () => [redactFindWrapRef.current],
+  })
+  useDismissablePopover(arrangeOpen, () => setArrangeOpen(false), {
+    inside: () => [arrangeWrapRef.current],
+  })
+
+  // Draw-color palette (Annotate tab). Guarded by its own wrap ref — the
+  // generic `.rb-drop-wrap` class is shared with the highlight split button,
+  // which used to keep this popover open when that button was pressed.
+  useDismissablePopover(colorOpen, () => setColorOpen(false), {
+    inside: () => [drawColorWrapRef.current],
+  })
+
+  // Text-edit color popover follows its draft: closes with the draft
+  useEffect(() => {
+    if (!textDraft) setDraftColorOpen(false)
+  }, [textDraft])
+  useDismissablePopover(draftColorOpen, () => setDraftColorOpen(false), {
+    inside: () => [draftColorWrapRef.current],
+  })
+
+  // Highlight split-button color popover
+  useDismissablePopover(highlightColorOpen, () => setHighlightColorOpen(false), {
+    inside: () => [highlightWrapRef.current],
+  })
+
+  // Transparency presets fold-out inside the image selection popup
+  useDismissablePopover(opacityMenu, () => setOpacityMenu(false), {
+    inside: () => [opacityBtnRef.current, opacityMenuRef.current],
+  })
+
+  // Color popover inside the static-text dialog (the dialog itself stays open)
+  useDismissablePopover(staticTextColorOpen, () => setStaticTextColorOpen(false), {
+    inside: () => [staticColorFieldRef.current],
+  })
+
+  // Converter dropdown (Home tab)
+  useDismissablePopover(convertOpen, () => setConvertOpen(false), {
+    inside: () => [convertWrapRef.current],
+  })
+
+  // Main process asked for a save (close prompt, menu Save, export) → save and report the result
+  useEffect(() => {
+    return window.pdfApi.onCloseSaveRequest(({ flushAll }) => {
+      if (redactions.length > 0) {
+        showNotice(t('redactSaveAsHint'))
+        window.pdfApi.sendCloseSaveResult(false)
+        return
+      }
+      void save(false, flushAll).then((ok) => window.pdfApi.sendCloseSaveResult(ok))
+    })
+  })
+
+  // Shell menu Save As → write pending edits to the picked path only; the original file is never mutated
+  useEffect(() => {
+    return window.pdfApi.onSaveAsRequest((targetPath) => {
+      void saveAsTo(targetPath)
+        .catch((err: unknown) => {
+          opFailed(err instanceof Error ? err.message : String(err))
+          return false
+        })
+        .then((ok) => window.pdfApi.sendSaveAsResult(ok))
+    })
+  })
+
+  // Shell menu Print → same dialog as the ribbon button / ⌘P
+  useEffect(() => {
+    return window.pdfApi.onPrintRequest(print.openPrintDlg)
+  })
+
+  // Shortcuts: ⌘S/⌘F/⌘P/⌘±/⌘0 + page navigation (only ⌘ combos kept while an input control is focused)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (redactionRequestInFlightRef.current) return
+      const target = e.target as HTMLElement | null
+      const inEditable =
+        !!target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      if (!shouldHandleDocumentUndo(e.target, e.key, e.metaKey || e.ctrlKey)) return
+      if (e.metaKey || e.ctrlKey) {
+        const k = e.key.toLowerCase()
+        if (ribbonTab === 'formDesign' && !formDesignPreview && !inEditable) {
+          if (k === 'c' && selectedFormFieldIds.length > 0) {
+            e.preventDefault()
+            copySelectedFormFields()
+            return
+          }
+          if (k === 'v' && formClipboardRef.current.length > 0) {
+            e.preventDefault()
+            pasteFormFields()
+            return
+          }
+          if (k === 'd' && selectedFormFieldIds.length > 0) {
+            e.preventDefault()
+            duplicateSelectedFormFields()
+            return
+          }
+          if (k === 'a') {
+            e.preventDefault()
+            const page = selectedDesignFields[0]?.pageIndex ?? visList[currentPage - 1]
+            setSelectedFormFieldIds(
+              page === undefined ? [] : (designFieldsByPage.get(page) ?? []).map((f) => f.id),
+            )
+            return
+          }
+        }
+        if (k === 's') {
+          e.preventDefault()
+          void save()
+        } else if (k === 'z') {
+          e.preventDefault()
+          if (e.shiftKey) redo()
+          else undo()
+        } else if (k === 'f') {
+          e.preventDefault()
+          openSearch()
+        } else if (k === 'p' && !e.shiftKey) {
+          e.preventDefault()
+          print.openPrintDlg()
+        } else if (e.key === '=' || e.key === '+') {
+          e.preventDefault()
+          zoomIn()
+        } else if (e.key === '-') {
+          e.preventDefault()
+          zoomOut()
+        } else if (e.key === '0') {
+          e.preventDefault()
+          fitModeRef.current = 'width'
+          recomputeFit()
+        }
+        return
+      }
+      if (e.key === 'Escape') {
+        // Modal dialogs own Escape; the states behind them must not react too
+        if (signDlg || stampDlg || propsDlg) return
+        if (askPop) setAskPop(null)
+        else if (textDraft) setTextDraft(null)
+        else if (pendingTextInsert) setPendingTextInsert(null)
+        else if (imagePick) setImagePick(null)
+        else if (editTextMode) setEditTextMode(false)
+        else if (editImageMode) setEditImageMode(false)
+        else if (pendingSign) setPendingSign(null)
+        else if (noteDraft) setNoteDraft(null)
+        else if (activeNote) setActiveNote(null)
+        else if (drawTool) setDrawTool(null)
+        else if (formMenu) setFormMenu(null)
+        else if (formDesignTool) setFormDesignTool(null)
+        else if (selectedFormFieldIds.length > 0) setSelectedFormFieldIds([])
+        else if (selected) setSelected(null)
+        else if (searchOpen) closeSearch()
+        return
+      }
+      if (inEditable) return
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedFormFieldIds.length > 0) {
+        e.preventDefault()
+        deleteSelectedFormFields()
+        return
+      }
+      if (
+        selectedDesignFields.length > 0 &&
+        ribbonTab === 'formDesign' &&
+        e.key.startsWith('Arrow')
+      ) {
+        const step = NUDGE_PTS * (e.shiftKey ? 10 : 1)
+        const [vx, vy] =
+          e.key === 'ArrowLeft'
+            ? [-step, 0]
+            : e.key === 'ArrowRight'
+              ? [step, 0]
+              : e.key === 'ArrowUp'
+                ? [0, -step]
+                : [0, step]
+        e.preventDefault()
+        nudgeSelectedFormFields(vx, vy)
+        return
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
+        e.preventDefault()
+        deleteSelected()
+        return
+      }
+      // Shift+navigation extends the text layer's native selection (Excel/
+      // Word parity: Shift+→ grows the selection by a character). Swallowing
+      // it here turned the keys into page flips and froze the selection.
+      if (e.shiftKey && !window.getSelection()?.isCollapsed) return
+      const el = scrollRef.current
+      if (!el) return
+      const inThumbs = !!thumbsRef.current?.contains(document.activeElement)
+      const action = navAction(e.key, inThumbs)
+      if (!action) return
+      e.preventDefault()
+      switch (action.type) {
+        case 'scrollViewport':
+          el.scrollTop += action.dir * (el.clientHeight - 40)
+          break
+        case 'scrollEdge':
+          el.scrollTop = action.edge === 'top' ? 0 : el.scrollHeight
+          break
+        case 'scrollBy':
+          el.scrollTop += action.delta
+          break
+        case 'stepPage': {
+          const target = stepPage(visList, spread, currentPage, action.dir)
+          scrollToPage(target)
+          if (inThumbs) {
+            const thumbEl = thumbsRef.current?.querySelector<HTMLElement>(
+              `[data-idx="${target - 1}"]`,
+            )
+            thumbEl?.focus({ preventScroll: true })
+            thumbEl?.scrollIntoView({ block: 'nearest' })
+          }
+          break
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  // Ctrl/⌘ + wheel zoom (native listener: React's wheel is passive and can't preventDefault)
+  const queuedScaleRef = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    queuedScaleRef.current = null
+  }, [scale])
+
+  // renamed / moved from the shell: keep saving to the file's new location
+  useEffect(() => window.pdfApi.onFileRenamed((next) => setFilePath(next)), [])
+
+  // Re-read the signatures whenever the document on screen is (re)loaded: a save rewrites the
+  // file, which is exactly when an old signature stops matching
+  useEffect(() => {
+    if (!doc || !filePath) {
+      setDigitalSignatures([])
+      return
+    }
+    let cancelled = false
+    void window.pdfApi
+      .listDigitalSignatures(filePath)
+      .then((list) => {
+        if (!cancelled) setDigitalSignatures(list)
+      })
+      .catch(() => {
+        if (!cancelled) setDigitalSignatures([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [doc, filePath])
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      if (e.deltaY === 0) return
+      // Accumulate against the queued scale so a fast pinch loses no ticks between renders
+      const committed = layoutRef.current.scale
+      const current = queuedScaleRef.current ?? committed
+      const next = clampScale(current - e.deltaY * 0.006)
+      if (next === current) return
+      if (next === committed) {
+        // nets out to no change: the queue must still be overridden, else an intermediate
+        // tick commits with no anchor; React then bails and the DOM never moves
+        queuedScaleRef.current = null
+        zoomAnchorRef.current = null
+        setScale(committed)
+        return
+      }
+      fitModeRef.current = null
+      queuedScaleRef.current = next
+      const box = el.getBoundingClientRect()
+      anchorZoomScroll(next, e.clientX - box.left, e.clientY - box.top)
+      setScale(next)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  })
+
+  if (status === 'password') {
+    return (
+      <div className="app">
+        <div className="pdf-placeholder" />
+        <PasswordDialog
+          fileName={fileName}
+          value={pwInput}
+          wrong={pwWrong}
+          onChange={(value) => {
+            setPwInput(value)
+            setPwWrong(false)
+          }}
+          onSubmit={() => {
+            passwordRef.current = pwInput
+            setStatus('loading')
+            void openPath(filePath)
+          }}
+          onCancel={() => {
+            // like docs: cancelling the prompt leaves no document
+            setPwInput('')
+            setPwWrong(false)
+            passwordRef.current = undefined
+            setStatus('empty')
+          }}
+        />
+      </div>
+    )
+  }
+
+  if (status !== 'ready' || !doc) {
+    return (
+      <div className="app">
+        <div className="pdf-placeholder">
+          {status === 'loading'
+            ? t('loading')
+            : status === 'error'
+              ? openError
+                ? `${t('loadError')}: ${openError}`
+                : t('loadError')
+              : t('noFile')}
+        </div>
+      </div>
+    )
+  }
+
+  const menuOrig = thumbMenu?.origIdx ?? -1
+  const menuInGap = thumbMenu != null && thumbMenu.origIdx === null
+  const menuInsertAfter = menuInGap ? (thumbMenu.afterOrigIdx ?? -1) : menuOrig
+
+  /** Ribbon AI buttons: expand the dock and auto-run the prompt in the assistant */
+  const runAiPreset = (text: string): void => {
+    setAiCollapsed(false)
+    setAiPreset({ text, nonce: Date.now() })
+  }
+
+  /** Converter dropdown → the shell's local conversion flows (save dialog, password prompt) */
+  const convertTo = async (format: PdfConvertFormat): Promise<void> => {
+    setConvertOpen(false)
+    if (convertBusy) return
+    setConvertBusy(true)
+    try {
+      await window.pdfApi.convertOffice(format)
+    } catch {
+      // No shell conversion flow in standalone mode; shell-side errors show their own dialogs
+    } finally {
+      setConvertBusy(false)
+    }
+  }
+
+  // ── shared ribbon groups (rendered on more than one tab) ──
+  // mousedown preventDefault: the browser clears the text selection the instant the button is pressed, so applyMarkup would lose it
+  const markupGroup = (
+    <div className="ribbon-group" onMouseDown={(e) => e.preventDefault()}>
+      <div className="ribbon-group-items">
+        <div
+          ref={highlightWrapRef}
+          className="rb-drop-wrap rb-highlight-drop-wrap rb-highlight-split"
+        >
+          <button
+            className="rb-big rb-highlight-main"
+            disabled={readOnly}
+            data-tip={t('highlight')}
+            onClick={() => applyMarkup('highlight')}
+          >
+            <span className="rb-big-icon">
+              <span className="rb-big-icon-colored">
+                <IconHighlight />
+                <span className="rb-color-bar" style={{ background: cssRgb(highlightColor) }} />
+              </span>
+            </span>
+            <span>{t('highlight')}</span>
+          </button>
+          <button
+            className={`rb-highlight-caret${highlightColorOpen ? ' active' : ''}`}
+            disabled={readOnly}
+            aria-label={t('drawColor')}
+            data-tip={t('drawColor')}
+            onClick={() => setHighlightColorOpen((open) => !open)}
+          >
+            <RbCaret />
+          </button>
+          {highlightColorOpen && (
+            <ColorPickerPopover
+              className="rb-drop"
+              value={rgbToHex(highlightColor)}
+              onPick={(hex) => setHighlightColor(hexToRgb(hex))}
+              onClose={() => setHighlightColorOpen(false)}
+            />
+          )}
+        </div>
+        <button
+          className="rb-big"
+          disabled={readOnly}
+          data-tip={t('underline')}
+          onClick={() => applyMarkup('underline')}
+        >
+          <span className="rb-big-icon">
+            <IconUnderline />
+          </span>
+          <span>{t('underline')}</span>
+        </button>
+        <button
+          className="rb-big"
+          disabled={readOnly}
+          data-tip={t('squiggly')}
+          onClick={() => applyMarkup('squiggly')}
+        >
+          <span className="rb-big-icon">
+            <IconSquiggly />
+          </span>
+          <span>{t('squiggly')}</span>
+        </button>
+        <button
+          className="rb-big"
+          disabled={readOnly}
+          data-tip={t('strikeout')}
+          onClick={() => applyMarkup('strikeout')}
+        >
+          <span className="rb-big-icon">
+            <IconStrike />
+          </span>
+          <span>{t('strikeout')}</span>
+        </button>
+      </div>
+    </div>
+  )
+
+  const pageZoomGroup = (
+    <div className="ribbon-group">
+      <div className="ribbon-group-items">
+        <div className="rb-col">
+          <div className="rb-row">
+            <input
+              className="tb-page-input"
+              value={pageInput}
+              onChange={(e) => setPageInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && commitPageInput()}
+              onBlur={commitPageInput}
+            />
+            <span className="tb-page-total">{t('pageOf', { total: pageCount })}</span>
+          </div>
+          <div className="rb-row">
+            <button
+              className="rb-icon"
+              data-tip={t('zoomOut')}
+              aria-label={t('zoomOut')}
+              onClick={zoomOut}
+            >
+              −
+            </button>
+            <span className="tb-zoom">{Math.round(scale * 100)}%</span>
+            <button
+              className="rb-icon"
+              data-tip={t('zoomIn')}
+              aria-label={t('zoomIn')}
+              onClick={zoomIn}
+            >
+              +
+            </button>
+          </div>
+        </div>
+        <button
+          className="rb-big"
+          onClick={() => {
+            fitModeRef.current = 'width'
+            recomputeFit()
+          }}
+        >
+          <span className="rb-big-icon">
+            <IconFitWidth />
+          </span>
+          <span>{t('fitWidth')}</span>
+        </button>
+        <button
+          className="rb-big"
+          onClick={() => {
+            fitModeRef.current = 'page'
+            recomputeFit()
+          }}
+        >
+          <span className="rb-big-icon">
+            <IconFitPage />
+          </span>
+          <span>{t('fitPage')}</span>
+        </button>
+      </div>
+    </div>
+  )
+
+  const searchBtn = (
+    <button
+      className={`rb-big${searchOpen ? ' active' : ''}`}
+      data-tip={`${t('search')} (${platformShortcuts('⌘F')})`}
+      onClick={() => (searchOpen ? closeSearch() : openSearch())}
+    >
+      <span className="rb-big-icon">
+        <IconSearch />
+      </span>
+      <span>{t('search')}</span>
+    </button>
+  )
+
+  const editTextBtn = (
+    <button
+      className={`rb-big${editTextMode ? ' active' : ''}`}
+      disabled={readOnly}
+      data-tip={t('editTextHint')}
+      onClick={() => {
+        setTextDraft(null)
+        setPendingTextInsert(null)
+        setDrawTool(null)
+        setPendingSign(null)
+        setImagePick(null)
+        setEditImageMode(false)
+        setEditTextMode((v) => !v)
+      }}
+    >
+      <span className="rb-big-icon">
+        <IconEditText />
+      </span>
+      <span>{t('editText')}</span>
+    </button>
+  )
+
+  const insertTextBtn = (
+    <button
+      className={`rb-big${pendingTextInsert ? ' active' : ''}`}
+      disabled={readOnly}
+      data-tip={t('insertTextHint')}
+      onClick={() => {
+        if (pendingTextInsert) {
+          setPendingTextInsert(null)
+          return
+        }
+        setEditTextMode(false)
+        setTextDraft(null)
+        setDrawTool(null)
+        setPendingSign(null)
+        setSignatureTarget(null)
+        setImagePick(null)
+        setPendingStaticFill(null)
+        setEditImageMode(false)
+        setTextInsertEditId(null)
+        setStaticTextPurpose('insert')
+        setStaticText('')
+        setStaticTextDialog(true)
+      }}
+    >
+      <span className="rb-big-icon">
+        <IconFormText />
+      </span>
+      <span>{t('insertText')}</span>
+    </button>
+  )
+
+  const activeFormWidget = activeFormIndex >= 0 ? formWidgets[activeFormIndex]! : null
+  const formWidgetSigned = (widget: FormWidget): boolean =>
+    widget.signed || signedFormWidgetIds.has(widget.id)
+  const firstSignatureWidget =
+    formWidgets.find((widget) => widget.kind === 'signature' && !formWidgetSigned(widget)) ?? null
+
+  const applyProtection = (result: {
+    userPassword: string
+    ownerPassword: string
+    permissions: PdfPermissions
+  }): void => {
+    if (!mayChangeProtection(readOnly, diskLock)) {
+      showNotice(t('pwOwnerNeeded'))
+      setProtectionDlg(false)
+      return
+    }
+    setEncryption(result)
+    setProtectionDirty(true)
+    // the next save writes a file that only opens with the new password; the
+    // file ON DISK keeps the old one until that write lands, so the disk
+    // password follows the save instead of leading it
+    passwordRef.current = result.userPassword
+    pendingDiskPasswordRef.current = result.userPassword
+    setProtectionDlg(false)
+  }
+
+  const removeProtection = (): void => {
+    if (!mayChangeProtection(readOnly, diskLock)) {
+      showNotice(t('pwOwnerNeeded'))
+      setProtectionDlg(false)
+      return
+    }
+    setEncryption(null)
+    setProtectionDirty(true)
+    // the next save writes plain; until then the disk file still needs the old password
+    passwordRef.current = undefined
+    pendingDiskPasswordRef.current = ''
+    setProtectionDlg(false)
+  }
+
+  const openCertSignDialog = () => {
+    if (dirty || saveInFlightRef.current !== null) {
+      showNotice(t('certSaveFirst'))
+      return
+    }
+    setCertSignDlg(true)
+  }
+
+  /** The signed copy becomes this tab's document; reload it like a Save As target */
+  const adoptSignedFile = async (path: string) => {
+    setCertSignDlg(false)
+    const scrollTop = scrollRef.current?.scrollTop ?? 0
+    setFilePath(path)
+    setStatus('loading')
+    try {
+      await loadDoc(path, doc)
+      searchIndexCache.clear()
+      setSearchMatches([])
+      setSearchCur(0)
+      setStatus('ready')
+      requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollTop
+      })
+      showNotice(t('certSigned', { name: path.split(/[\\/]/).pop() ?? path }))
+    } catch (err) {
+      setStatus('error')
+      opFailed(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const openSignatureDialog = (target: FormWidget | null) => {
+    setEditTextMode(false)
+    setTextDraft(null)
+    setPendingTextInsert(null)
+    setDrawTool(null)
+    setImagePick(null)
+    setEditImageMode(false)
+    setPendingSign(null)
+    setSignatureTarget(target)
+    if (target) focusFormWidget(target)
+    setSignDlg(true)
+  }
+
+  const completeForm = () => {
+    if (missingRequiredFields.length > 0) {
+      showNotice(t('formMissingRequired', { count: missingRequiredFields.length }))
+      const firstMissing = formWidgets.find(
+        (widget) => widget.fieldName === missingRequiredFields[0]!.name,
+      )
+      if (firstMissing) focusFormWidget(firstMissing)
+      return
+    }
+    showNotice(t('formCompleteDone'))
+    setRibbonTab('home')
+  }
+
+  const viewNavGroup = (
+    <div className="ribbon-group">
+      <div className="ribbon-group-items">
+        <button
+          className={`rb-big${sidebar === 'thumbs' ? ' active' : ''}`}
+          onClick={() => setSidebar((v) => (v === 'thumbs' ? null : 'thumbs'))}
+        >
+          <span className="rb-big-icon">
+            <IconThumbs />
+          </span>
+          <span>{t('thumbs')}</span>
+        </button>
+        <button
+          className={`rb-big${sidebar === 'outline' ? ' active' : ''}`}
+          disabled={!outline}
+          onClick={() => setSidebar((v) => (v === 'outline' ? null : 'outline'))}
+        >
+          <span className="rb-big-icon">
+            <IconOutline />
+          </span>
+          <span>{t('outline')}</span>
+        </button>
+        <button
+          className={`rb-big${sidebar === 'comments' ? ' active' : ''}`}
+          onClick={() => setSidebar((v) => (v === 'comments' ? null : 'comments'))}
+        >
+          <span className="rb-big-icon">
+            <IconComments />
+          </span>
+          <span>{t('commentsPanel')}</span>
+        </button>
+        <button
+          className={`rb-big${sidebar === 'compare' ? ' active' : ''}`}
+          disabled={status !== 'ready'}
+          onClick={() => setSidebar((v) => (v === 'compare' ? null : 'compare'))}
+        >
+          <span className="rb-big-icon">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="4" y="4" width="9" height="16" rx="1" />
+              <path d="M16 6.5 L20 6.5 M16 12 L20 12 M16 17.5 L20 17.5" />
+            </svg>
+          </span>
+          <span>{t('compare')}</span>
+        </button>
+        <button
+          className={`rb-big${sidebar === 'attachments' ? ' active' : ''}`}
+          disabled={status !== 'ready'}
+          onClick={() => setSidebar((v) => (v === 'attachments' ? null : 'attachments'))}
+        >
+          <span className="rb-big-icon">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20 11.5 12.3 19.2 a4.6 4.6 0 0 1-6.5-6.5 L13.6 5 a3.1 3.1 0 0 1 4.4 4.4 L10.6 16.8 a1.6 1.6 0 0 1-2.2-2.2 L15 8" />
+            </svg>
+          </span>
+          <span>{t('attachments')}</span>
+        </button>
+        {searchBtn}
+        <button
+          className={`rb-big${spread === 2 ? ' active' : ''}`}
+          data-tip={spread === 2 ? t('singlePage') : t('twoPage')}
+          onClick={() => setSpread((v) => (v === 1 ? 2 : 1))}
+        >
+          <span className="rb-big-icon">{spread === 2 ? <IconSinglePage /> : <IconSpread />}</span>
+          <span>{spread === 2 ? t('singlePage') : t('twoPage')}</span>
+        </button>
+        <button
+          className={`rb-big${nightMode ? ' active' : ''}`}
+          data-tip={t('nightMode')}
+          onClick={() => setNightMode((v) => !v)}
+        >
+          <span className="rb-big-icon">
+            <IconNight />
+          </span>
+          <span>{t('nightMode')}</span>
+        </button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="app" inert={redactionCopyInFlight} aria-busy={redactionCopyInFlight}>
+      <div className={`ribbon ${collapse.rootClass}`} ref={collapse.rootRef}>
+        <div className="ribbon-tabs" onDoubleClick={collapse.onTabsDoubleClick}>
+          <button
+            className="qa-btn"
+            data-tip={`${t('save')} (${platformShortcuts('⌘S')})`}
+            aria-label={t('save')}
+            disabled={!dirty || saveState === 'saving'}
+            onClick={() => void save()}
+          >
+            <IconSave />
+          </button>
+          <button
+            className="qa-btn"
+            data-tip={`${t('undo')} (${platformShortcuts('⌘Z')})`}
+            aria-label={`${t('undo')} (${platformShortcuts('⌘Z')})`}
+            disabled={undoStack.length === 0 && written.undo === 0}
+            onClick={undo}
+          >
+            <IconUndo />
+          </button>
+          <button
+            className="qa-btn"
+            data-tip={`${t('redo')} (${platformShortcuts('⇧⌘Z')})`}
+            aria-label={`${t('redo')} (${platformShortcuts('⇧⌘Z')})`}
+            disabled={redoStack.length === 0 && written.redo === 0}
+            onClick={redo}
+          >
+            <IconRedo />
+          </button>
+          <span className="qa-sep" />
+          {RIBBON_TABS.map(({ id, labelKey }) => (
+            <button
+              key={id}
+              className={`ribbon-tab ${collapse.tabClass(ribbonTab === id)}`}
+              data-tip={collapse.tabTip(ribbonTab === id)}
+              onClick={() => {
+                collapse.onTabPress(ribbonTab === id)
+                setRibbonTab(id)
+              }}
+            >
+              {t(labelKey)}
+            </button>
+          ))}
+          {!readOnly && (
+            <button
+              className={`ribbon-tab ribbon-tab-context ${collapse.tabClass(ribbonTab === 'fillForm')}`}
+              data-tip={collapse.tabTip(ribbonTab === 'fillForm')}
+              onClick={() => {
+                collapse.onTabPress(ribbonTab === 'fillForm')
+                setRibbonTab('fillForm')
+              }}
+            >
+              {t('ribbonTabFillForm')}
+            </button>
+          )}
+          {!readOnly && (
+            <button
+              className={`ribbon-tab ribbon-tab-context ${collapse.tabClass(ribbonTab === 'formDesign')}`}
+              data-tip={collapse.tabTip(ribbonTab === 'formDesign')}
+              onClick={() => {
+                collapse.onTabPress(ribbonTab === 'formDesign')
+                setRibbonTab('formDesign')
+              }}
+            >
+              {t('ribbonTabFormDesign')}
+            </button>
+          )}
+          <span className="ribbon-tabs-spacer" />
+          {readOnly && <span className="tb-readonly">{t('roEncrypted')}</span>}
+          {/* The file on disk is only touched by an explicit save until then. */}
+          {saveState === 'saving' ? (
+            <span className="tb-save-pending">{t('saving')}</span>
+          ) : (
+            dirty &&
+            saveState !== 'error' && <span className="tb-save-pending">{t('unsaved')}</span>
+          )}
+          {saveState === 'error' && (
+            <span className="tb-save-error" data-tip={saveError}>
+              {t('saveFailed')}
+            </span>
+          )}
+          {saveState === 'saved' && <span className="tb-save-ok">{t('savedOk')}</span>}
+          {formHasXfa && (
+            <span className="tb-form-warning" data-tip={t('formXfaWarning')}>
+              XFA
+            </span>
+          )}
+        </div>
+        <div className="ribbon-body" data-ribbon-body="">
+          {ribbonTab === 'home' && (
+            <>
+              {/* ---- Genspark AI (first slot: entry + one-click AI actions, docs parity) ---- */}
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className={`rb-big ai-entry${aiCollapsed ? '' : ' active'}`}
+                    data-tip={t('aiOpenAssistant')}
+                    onClick={() => setAiCollapsed((v) => !v)}
+                  >
+                    <span className="rb-big-icon">
+                      <GensparkMark size={26} />
+                    </span>
+                    <span>Genspark AI</span>
+                  </button>
+                  <button
+                    className="rb-big ai-entry"
+                    data-tip={t('aiSummarizeBtn')}
+                    onClick={() =>
+                      runAiPreset(
+                        t(aiSelection ? 'aiQuickSummarySelPrompt' : 'aiQuickSummaryPrompt'),
+                      )
+                    }
+                  >
+                    <span className="rb-big-icon">
+                      <span className="ai-feature-icon" aria-hidden="true">
+                        <IconAiSummarize />
+                      </span>
+                    </span>
+                    <span>{t('aiSummarizeBtn')}</span>
+                  </button>
+                  <button
+                    className="rb-big ai-entry"
+                    data-tip={t('aiKeyPointsBtn')}
+                    onClick={() =>
+                      runAiPreset(
+                        t(aiSelection ? 'aiQuickKeyPointsSelPrompt' : 'aiQuickKeyPointsPrompt'),
+                      )
+                    }
+                  >
+                    <span className="rb-big-icon">
+                      <span className="ai-feature-icon" aria-hidden="true">
+                        <IconAiKeyPoints />
+                      </span>
+                    </span>
+                    <span>{t('aiKeyPointsBtn')}</span>
+                  </button>
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              {markupGroup}
+              <div className="ribbon-sep" />
+              {/* Edit entries lead; Search moved after page/zoom (⌘F is the common path) */}
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  {editTextBtn}
+                  {insertTextBtn}
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <div className="rb-drop-wrap" ref={convertWrapRef}>
+                    <button
+                      className={`rb-big${convertOpen ? ' active' : ''}`}
+                      data-tip={t('convertPdfTip')}
+                      disabled={convertBusy || exporting !== null}
+                      onClick={() => setConvertOpen((v) => !v)}
+                    >
+                      <span className="rb-big-icon">
+                        <IconConvertPdf />
+                        <RbCaret />
+                      </span>
+                      <span>{exporting ? t('exporting') : t('convertPdf')}</span>
+                    </button>
+                    {convertOpen && (
+                      <div className="rb-drop rb-menu">
+                        <button onClick={() => void convertTo('docx')}>{t('convertToWord')}</button>
+                        <button onClick={() => void convertTo('xlsx')}>
+                          {t('convertToExcel')}
+                        </button>
+                        <button onClick={() => void convertTo('pptx')}>{t('convertToPpt')}</button>
+                        <button onClick={() => void convertTo('md')}>
+                          {t('convertToMarkdown')}
+                        </button>
+                        <button onClick={() => void convertTo('html')}>{t('convertToHtml')}</button>
+                        <div className="rb-menu-sep" />
+                        <button
+                          title={t('exportImagesAll')}
+                          onClick={() => {
+                            setConvertOpen(false)
+                            void exportImages(true)
+                          }}
+                        >
+                          {t('exportImages')}
+                        </button>
+                        <button
+                          title={t('exportImagesAllJpg')}
+                          onClick={() => {
+                            setConvertOpen(false)
+                            void exportImages(true, 'jpg')
+                          }}
+                        >
+                          {t('exportImagesJpg')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              {pageZoomGroup}
+              <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  {searchBtn}
+                  <button
+                    className="rb-big"
+                    data-tip={`${t('print')} (${platformShortcuts('⌘P')})`}
+                    disabled={print.printing}
+                    onClick={print.openPrintDlg}
+                  >
+                    <span className="rb-big-icon">
+                      <IconPrint />
+                    </span>
+                    <span>{print.printing ? t('printPreparing') : t('print')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    data-tip={t('propsTitle')}
+                    onClick={() => setPropsDlg(true)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconProps />
+                    </span>
+                    <span>{t('props')}</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+          {ribbonTab === 'annotate' && (
+            <>
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className="rb-big ai-entry"
+                    data-tip={t('aiReviewSummaryBtn')}
+                    onClick={() => runAiPreset(t('aiReviewSummaryPrompt'))}
+                  >
+                    <span className="rb-big-icon">
+                      <span className="ai-feature-icon" aria-hidden="true">
+                        <IconAiSummarize />
+                      </span>
+                    </span>
+                    <span>{t('aiReviewSummaryBtn')}</span>
+                  </button>
+                  <button
+                    className="rb-big ai-entry"
+                    disabled={readOnly}
+                    data-tip={t('aiProcessNotesBtn')}
+                    onClick={() => runAiPreset(t('aiProcessNotesPrompt'))}
+                  >
+                    <span className="rb-big-icon">
+                      <span className="ai-feature-icon" aria-hidden="true">
+                        <GensparkMark size={20} />
+                      </span>
+                    </span>
+                    <span>{t('aiProcessNotesBtn')}</span>
+                  </button>
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              {markupGroup}
+              <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  {DRAW_TOOLS.map(({ tool, icon: DrawIcon, key }) => (
+                    <button
+                      key={tool}
+                      className={`rb-big${drawTool === tool ? ' active' : ''}`}
+                      disabled={readOnly}
+                      data-tip={t(key)}
+                      onClick={() => {
+                        setEditTextMode(false)
+                        setTextDraft(null)
+                        setPendingTextInsert(null)
+                        setImagePick(null)
+                        setEditImageMode(false)
+                        if (tool === 'measure' && drawTool === 'measure') {
+                          // a second click disarms the tool like every other
+                          // one and asks the next measure line to re-open the
+                          // scale dialog, so a wrong first entry is never
+                          // stuck for the session
+                          measureRecalibrateRef.current = true
+                          keepMeasureRecalibrateRef.current = true
+                        }
+                        setDrawTool((v) => (v === tool ? null : tool))
+                      }}
+                    >
+                      <span className="rb-big-icon">
+                        <DrawIcon />
+                      </span>
+                      <span>{t(key)}</span>
+                    </button>
+                  ))}
+                  <button
+                    className={`rb-big${drawTool === 'redact' ? ' active' : ''}`}
+                    disabled={readOnly}
+                    data-tip={t('redactHint')}
+                    onClick={() => {
+                      setEditTextMode(false)
+                      setTextDraft(null)
+                      setEditImageMode(false)
+                      setDrawTool((tool) => (tool === 'redact' ? null : 'redact'))
+                    }}
+                  >
+                    <span className="rb-big-icon">
+                      <IconRect />
+                    </span>
+                    <span>{t('redact')}</span>
+                  </button>
+                  <div className="rb-drop-wrap" ref={redactFindWrapRef}>
+                    <button
+                      className={`rb-big${redactFindOpen ? ' active' : ''}`}
+                      disabled={readOnly || redactionCopyInFlight}
+                      data-tip={t('redactFindHint')}
+                      onClick={() => setRedactFindOpen((v) => !v)}
+                    >
+                      <span className="rb-big-icon">
+                        <IconSearch />
+                        <RbCaret />
+                      </span>
+                      <span>{t('redactFind')}</span>
+                    </button>
+                    {redactFindOpen && (
+                      <div className="rb-drop rb-menu">
+                        {REDACT_PATTERNS.map((p) => (
+                          <button key={p} onClick={() => runRedactFind([p])}>
+                            {t(REDACT_PATTERN_LABELS[p])}
+                          </button>
+                        ))}
+                        <div className="rb-menu-sep" />
+                        <button onClick={() => runRedactFind(REDACT_PATTERNS)}>
+                          {t('redactFindAll')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {redactions.length > 0 && (
+                    <>
+                      <button
+                        className="rb-big"
+                        data-tip={t('redactClear')}
+                        onClick={() => setRedactions([])}
+                      >
+                        {t('redactClear')}
+                      </button>
+                      <button
+                        className="rb-big"
+                        data-tip={t('redactApply')}
+                        onClick={requestRedactionSaveAs}
+                      >
+                        {t('redactApply')}
+                      </button>
+                    </>
+                  )}
+                  <button
+                    className={`rb-big${pendingSign ? ' active' : ''}`}
+                    disabled={readOnly}
+                    data-tip={t('signTitle')}
+                    onClick={() => {
+                      if (pendingSign) setPendingSign(null)
+                      else openSignatureDialog(null)
+                    }}
+                  >
+                    <span className="rb-big-icon">
+                      <IconSign />
+                    </span>
+                    <span>{t('sign')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={readOnly || status !== 'ready'}
+                    data-tip={t('certSignHint')}
+                    onClick={openCertSignDialog}
+                  >
+                    <span className="rb-big-icon">
+                      <IconCertSign />
+                    </span>
+                    <span>{t('certSign')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={!protectionEditable || status !== 'ready'}
+                    data-tip={t('protectHint')}
+                    onClick={() => setProtectionDlg(true)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconProtect />
+                    </span>
+                    <span>{t('protect')}</span>
+                  </button>
+                  {digitalSignatures.length > 0 && (
+                    <button
+                      className="rb-big"
+                      data-tip={t('sigPanelHint')}
+                      onClick={() => setSignaturesDlg(true)}
+                    >
+                      <span className="rb-big-icon">
+                        <IconSignatures />
+                      </span>
+                      <span>{t('sigPanel')}</span>
+                    </button>
+                  )}
+                  <div ref={drawColorWrapRef} className="rb-drop-wrap">
+                    <button
+                      className={`rb-big${colorOpen ? ' active' : ''}`}
+                      disabled={readOnly}
+                      data-tip={t('drawColor')}
+                      onClick={() => setColorOpen((v) => !v)}
+                    >
+                      <span className="rb-big-icon">
+                        <span className="rb-big-icon-colored">
+                          <IconDrawColor />
+                          <span
+                            className="rb-color-bar"
+                            style={{ background: cssRgb(drawColor) }}
+                          />
+                        </span>
+                        <RbCaret />
+                      </span>
+                      <span>{t('drawColor')}</span>
+                    </button>
+                    {colorOpen && (
+                      <ColorPickerPopover
+                        className="rb-drop"
+                        value={rgbToHex(drawColor)}
+                        onPick={(hex) => setDrawColor(hexToRgb(hex))}
+                        onClose={() => setColorOpen(false)}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+          {ribbonTab === 'edit' && (
+            <>
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  {editTextBtn}
+                  {insertTextBtn}
+                  <button
+                    className={`rb-big${imagePick && !pendingStaticFill ? ' active' : ''}`}
+                    disabled={readOnly}
+                    data-tip={t('insertImageHint')}
+                    onClick={() => (imagePick ? setImagePick(null) : pickInsertImage())}
+                  >
+                    <span className="rb-big-icon">
+                      <IconInsertImage />
+                    </span>
+                    <span>{t('insertImage')}</span>
+                  </button>
+                  <button
+                    className={`rb-big${editImageMode ? ' active' : ''}`}
+                    disabled={readOnly}
+                    data-tip={t('editImageHint')}
+                    onClick={() => {
+                      setEditTextMode(false)
+                      setTextDraft(null)
+                      setDrawTool(null)
+                      setPendingSign(null)
+                      setImagePick(null)
+                      setPendingTextInsert(null)
+                      setEditImageMode((v) => !v)
+                    }}
+                  >
+                    <span className="rb-big-icon">
+                      <IconEditImage />
+                    </span>
+                    <span>{t('editImage')}</span>
+                  </button>
+                  <button
+                    className={`rb-big${drawTool === 'link' ? ' active' : ''}`}
+                    disabled={readOnly}
+                    data-tip={t('editLinkHint')}
+                    onClick={() => {
+                      setEditTextMode(false)
+                      setTextDraft(null)
+                      setPendingTextInsert(null)
+                      setPendingSign(null)
+                      setImagePick(null)
+                      setEditImageMode(false)
+                      setDrawTool((tool) => (tool === 'link' ? null : 'link'))
+                    }}
+                  >
+                    <span className="rb-big-icon">
+                      <IconLink />
+                    </span>
+                    <span>{t('editLink')}</span>
+                  </button>
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className="rb-big"
+                    disabled={readOnly}
+                    data-tip={t('stampTitle')}
+                    onClick={() => setStampDlg(true)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconWatermark />
+                    </span>
+                    <span>{t('watermark')}</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+          {ribbonTab === 'fillForm' && (
+            <>
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className="rb-big ai-entry"
+                    disabled={readOnly}
+                    data-tip={t('aiFillFormBtn')}
+                    onClick={() => runAiPreset(t('aiFillFormPrompt'))}
+                  >
+                    <span className="rb-big-icon">
+                      <IconFormAiFill />
+                    </span>
+                    <span>{t('aiFillFormBtn')}</span>
+                  </button>
+                  <button
+                    className={`rb-big${pendingStaticFill === 'text' ? ' active' : ''}`}
+                    disabled={readOnly}
+                    data-tip={t('formAddTextHint')}
+                    onClick={() => {
+                      setImagePick(null)
+                      setPendingTextInsert(null)
+                      setStaticTextEditTarget(null)
+                      setStaticTextPurpose('form')
+                      setStaticText('')
+                      setStaticTextDialog(true)
+                    }}
+                  >
+                    <span className="rb-big-icon">
+                      <IconFormText />
+                    </span>
+                    <span>{t('formAddText')}</span>
+                  </button>
+                  <button
+                    className={`rb-big${pendingStaticFill === 'check' ? ' active' : ''}`}
+                    disabled={readOnly}
+                    data-tip={t('formAddCheckHint')}
+                    onClick={() => startStaticFormMark('check')}
+                  >
+                    <span className="rb-big-icon">
+                      <IconFormCheck />
+                    </span>
+                    <span>{t('formAddCheck')}</span>
+                  </button>
+                  <button
+                    className={`rb-big${pendingStaticFill === 'cross' ? ' active' : ''}`}
+                    disabled={readOnly}
+                    data-tip={t('formAddCrossHint')}
+                    onClick={() => startStaticFormMark('cross')}
+                  >
+                    <span className="rb-big-icon">
+                      <IconFormCross />
+                    </span>
+                    <span>{t('formAddCross')}</span>
+                  </button>
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              {hasFillableForm && (
+                <>
+                  <div className="ribbon-group">
+                    <div className="ribbon-group-items">
+                      <button
+                        className="rb-big"
+                        data-tip={t('formPreviousField')}
+                        onClick={() => stepFormWidget(-1)}
+                      >
+                        <span className="rb-big-icon">
+                          <IconPreviousField />
+                        </span>
+                        <span>{t('formPreviousField')}</span>
+                      </button>
+                      <button
+                        className="rb-big"
+                        data-tip={t('formNextField')}
+                        onClick={() => stepFormWidget(1)}
+                      >
+                        <span className="rb-big-icon">
+                          <IconNextField />
+                        </span>
+                        <span>{t('formNextField')}</span>
+                      </button>
+                      <span className="form-ribbon-progress">
+                        {t('formFieldProgress', {
+                          current: activeFormIndex >= 0 ? activeFormIndex + 1 : 0,
+                          total: formWidgets.length,
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="ribbon-sep" />
+                </>
+              )}
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className="rb-big"
+                    disabled={readOnly}
+                    data-tip={t('signTitle')}
+                    onClick={() =>
+                      openSignatureDialog(
+                        activeFormWidget?.kind === 'signature' &&
+                          !formWidgetSigned(activeFormWidget)
+                          ? activeFormWidget
+                          : firstSignatureWidget,
+                      )
+                    }
+                  >
+                    <span className="rb-big-icon">
+                      <IconSign />
+                    </span>
+                    <span>{t('sign')}</span>
+                  </button>
+                  <button
+                    className={`rb-big${imagePick && !pendingStaticFill ? ' active' : ''}`}
+                    disabled={readOnly}
+                    data-tip={t('insertImageHint')}
+                    onClick={() => (imagePick ? setImagePick(null) : pickInsertImage())}
+                  >
+                    <span className="rb-big-icon">
+                      <IconInsertImage />
+                    </span>
+                    <span>{t('insertImage')}</span>
+                  </button>
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button className="rb-big" onClick={completeForm}>
+                    <span className="rb-big-icon">
+                      <IconCompleteForm />
+                    </span>
+                    <span>{t('formComplete')}</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+          {ribbonTab === 'formDesign' && (
+            <>
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  {(
+                    [
+                      ['text', IconFieldText, 'formDesignText', 'formDesignTextHint'],
+                      ['date', IconFieldDate, 'formDesignDate', 'formDesignDateHint'],
+                      [
+                        'checkbox',
+                        IconFieldCheckbox,
+                        'formDesignCheckbox',
+                        'formDesignCheckboxHint',
+                      ],
+                      ['radio', IconFieldRadio, 'formDesignRadio', 'formDesignRadioHint'],
+                      ['choice', IconFieldChoice, 'formDesignChoice', 'formDesignChoiceHint'],
+                      [
+                        'signature',
+                        IconFieldSignature,
+                        'formDesignSignature',
+                        'formDesignSignatureHint',
+                      ],
+                    ] as const
+                  ).map(([kind, FieldIcon, labelKey, hintKey]) => (
+                    <button
+                      key={kind}
+                      className={`rb-big${formDesignTool === kind ? ' active' : ''}`}
+                      disabled={readOnly}
+                      data-tip={t(hintKey)}
+                      aria-pressed={formDesignTool === kind}
+                      onClick={() => startFormDesignTool(kind)}
+                    >
+                      <span className="rb-big-icon">
+                        <FieldIcon />
+                      </span>
+                      <span>{t(labelKey)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className={`rb-big${formDesignKeepTool ? ' active' : ''}`}
+                    disabled={readOnly}
+                    data-tip={t('formDesignKeepToolHint')}
+                    aria-pressed={formDesignKeepTool}
+                    onClick={() => setFormDesignKeepTool((v) => !v)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconFieldKeep />
+                    </span>
+                    <span>{t('formDesignKeepTool')}</span>
+                  </button>
+                  <button
+                    className={`rb-big${formDesignPreview ? ' active' : ''}`}
+                    disabled={readOnly}
+                    data-tip={t('formDesignPreviewHint')}
+                    aria-pressed={formDesignPreview}
+                    onClick={() => {
+                      setFormDesignTool(null)
+                      setSelectedFormFieldId(null)
+                      setFreshFormFieldId(null)
+                      setFormDesignPreview((v) => !v)
+                    }}
+                  >
+                    <span className="rb-big-icon">
+                      <IconFieldPreview />
+                    </span>
+                    <span>{t('formDesignPreview')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={readOnly || detectingFields || !doc}
+                    data-tip={t('formDesignDetectHint')}
+                    onClick={() => void detectFields()}
+                  >
+                    <span className="rb-big-icon">
+                      <IconFieldDetect />
+                    </span>
+                    <span>
+                      {detectingFields ? t('formDesignDetecting') : t('formDesignDetect')}
+                    </span>
+                  </button>
+                  <div className="rb-drop-wrap" ref={arrangeWrapRef}>
+                    <button
+                      className={`rb-big${arrangeOpen ? ' active' : ''}`}
+                      disabled={selectedFormFieldIds.length < 2}
+                      data-tip={t('formDesignArrangeHint')}
+                      onClick={() => setArrangeOpen((v) => !v)}
+                    >
+                      <span className="rb-big-icon">
+                        <IconFieldArrange />
+                        <RbCaret />
+                      </span>
+                      <span>{t('formDesignArrange')}</span>
+                    </button>
+                    {arrangeOpen && (
+                      <div className="rb-drop rb-menu">
+                        {arrangeItems.map(([how, label, min]) => (
+                          <button
+                            key={how}
+                            disabled={selectedFormFieldIds.length < min}
+                            onClick={() => {
+                              setArrangeOpen(false)
+                              arrangeSelected(how)
+                            }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    className="rb-big"
+                    disabled={selectedFormFieldIds.length === 0}
+                    data-tip={t('formDesignDelete')}
+                    onClick={deleteSelectedFormFields}
+                  >
+                    <span className="rb-big-icon">
+                      <IconTrash />
+                    </span>
+                    <span>{t('formDesignDelete')}</span>
+                  </button>
+                  <span className="form-ribbon-progress">
+                    {formDesignPreview
+                      ? t('formDesignPreviewOn')
+                      : formDesignTool
+                        ? t('formDesignPlaceHint')
+                        : formFields.length + formWidgetEdits.size > 0
+                          ? t('formDesignPending', {
+                              count: formFields.length + formWidgetEdits.size,
+                            })
+                          : t('formDesignEmptyHint')}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+          {ribbonTab === 'page' && (
+            <>
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className="rb-big"
+                    disabled={curOrigIdx < 0 || readOnly}
+                    onClick={() => rotatePage(curOrigIdx, -90)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconRotateL />
+                    </span>
+                    <span>{t('rotateLeft')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={curOrigIdx < 0 || readOnly}
+                    onClick={() => rotatePage(curOrigIdx, 90)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconRotateR />
+                    </span>
+                    <span>{t('rotateRight')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={pageCount === 0 || readOnly}
+                    onClick={() => rotateAllPages(90)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconRotateAll />
+                    </span>
+                    <span>{t('rotateAllPages')}</span>
+                  </button>
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className="rb-big"
+                    disabled={curOrigIdx < 0 || pageCount <= 1 || readOnly}
+                    onClick={() => deletePage(curOrigIdx)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconDeletePage />
+                    </span>
+                    <span>{t('deletePage')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={curOrigIdx < 0 || readOnly}
+                    onClick={openExtractDlg}
+                  >
+                    <span className="rb-big-icon">
+                      <IconExtract />
+                    </span>
+                    <span>{t('extractPage')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={readOnly}
+                    onClick={() => void insertPdf(curOrigIdx)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconInsertPdf />
+                    </span>
+                    <span>{t('insertPdf')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={status !== 'ready' || readOnly}
+                    data-tip={t('reduceHint')}
+                    onClick={() => void reduceFileSize()}
+                  >
+                    <span className="rb-big-icon">
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M15.5 4.5 A 8.5 8.5 0 1 0 19.5 11" />
+                        <path d="M15.5 2.5 L15.5 7.5 L10.5 7.5" />
+                      </svg>
+                    </span>
+                    <span>{t('reduce')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={readOnly}
+                    onClick={() => insertBlankPage(curOrigIdx)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconInsertBlank />
+                    </span>
+                    <span>{t('insertBlankPage')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={readOnly || pageCount === 0}
+                    data-tip={t('batesHint')}
+                    onClick={() => setBatesDlg(true)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconBates />
+                    </span>
+                    <span>{t('bates')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={curOrigIdx < 0 || readOnly}
+                    onClick={openReplaceDlg}
+                  >
+                    <span className="rb-big-icon">
+                      <IconReplacePages />
+                    </span>
+                    <span>{t('replacePages')}</span>
+                  </button>
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className="rb-big"
+                    disabled={curOrigIdx < 0 || readOnly}
+                    onClick={() => void openPageCrop(curOrigIdx)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconCropPages />
+                    </span>
+                    <span>{t('cropPages')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={pageCount === 0 || readOnly}
+                    onClick={() => setPageSizeDlg(true)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconPageSize />
+                    </span>
+                    <span>{t('pageSize')}</span>
+                  </button>
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className="rb-big"
+                    disabled={pageCount <= 1 || readOnly}
+                    onClick={reversePages}
+                  >
+                    <span className="rb-big-icon">
+                      <IconReverse />
+                    </span>
+                    <span>{t('reversePages')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={pageCount <= 1 || readOnly}
+                    onClick={openSplitDlg}
+                  >
+                    <span className="rb-big-icon">
+                      <IconSplitPdf />
+                    </span>
+                    <span>{t('splitPdf')}</span>
+                  </button>
+                  <button className="rb-big" disabled={readOnly} onClick={() => void mergePdf()}>
+                    <span className="rb-big-icon">
+                      <IconMergePdf />
+                    </span>
+                    <span>{t('mergePdf')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={pageCount <= 1 || readOnly}
+                    onClick={openMergePagesDlg}
+                  >
+                    <span className="rb-big-icon">
+                      <IconMergePages />
+                    </span>
+                    <span>{t('mergePages')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={pageCount === 0 || readOnly}
+                    onClick={() => setSplitPagesDlg(true)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconSplitPages />
+                    </span>
+                    <span>{t('splitPages')}</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+          {ribbonTab === 'view' && (
+            <>
+              {viewNavGroup}
+              <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className="rb-big"
+                    disabled={status !== 'ready' || ocrRunning}
+                    data-tip={t('ocrRecognizeTip')}
+                    onClick={() => startOcrPass(null, 0, Number.POSITIVE_INFINITY)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconEye />
+                    </span>
+                    <span>{t('ocrRecognize')}</span>
+                  </button>
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              {pageZoomGroup}
+            </>
+          )}
+        </div>
+      </div>
+      <input
+        ref={imageFileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          e.target.value = ''
+          if (f) void onImageFilePicked(f)
+        }}
+      />
+      <div className="app-main">
+        {/* dock wrapper animates the width between panel and rail (docs-style 180ms ease);
+              the panel stays mounted while collapsed so the chat history survives */}
+        <div
+          className={`ai-dock${aiCollapsed ? ' collapsed' : ''}${
+            !aiSidebarEnabled && aiCollapsed ? ' ai-dock-off' : ''
+          }`}
+        >
+          {aiCollapsed && aiSidebarEnabled && (
+            <button
+              className="ai-rail"
+              data-tip={t('aiOpenAssistant')}
+              aria-label={t('aiOpenAssistant')}
+              onClick={() => setAiCollapsed(false)}
+            >
+              <GensparkMark size={22} />
+            </button>
+          )}
+          <AiPanel
+            api={aiApi}
+            filePath={filePath}
+            preset={aiPreset}
+            onCollapse={() => setAiCollapsed(true)}
+            onRunDone={() => void autoSaveAfterAiRun()}
+            onClearSelection={() => setAiSelection(null)}
+          />
+        </div>
+        <div className="app-content">
+          {digitalSignatures.length > 0 && (
+            <div className={`pdf-sig-banner ${overallSignatureStatus(digitalSignatures)}`}>
+              <IconSignatures />
+              <span>
+                {t(
+                  {
+                    valid: 'sigBannerValid',
+                    untrusted: 'sigBannerUntrusted',
+                    warning: 'sigBannerWarning',
+                    invalid: 'sigBannerInvalid',
+                  }[overallSignatureStatus(digitalSignatures)] as 'sigBannerValid',
+                )}
+              </span>
+              <button className="pdf-modal-btn" onClick={() => setSignaturesDlg(true)}>
+                {t('sigBannerView')}
+              </button>
+            </div>
+          )}
+          <div className="pdf-body">
+            {sidebar === 'outline' && outline && (
+              <div className="pdf-thumbs pdf-outline-pane" style={{ width: sidebarW }}>
+                <div className="pdf-outline-header">
+                  <span>{t('outline')}</span>
+                  {!outlineGenerated && (
+                    <button
+                      type="button"
+                      className="rb-icon"
+                      aria-label={t('outlineEdit')}
+                      data-tip={t('outlineEdit')}
+                      disabled={status !== 'ready' || readOnly}
+                      onClick={() =>
+                        pendingOutline?.editing ? finishBookmarkEdit() : startBookmarkEdit()
+                      }
+                    >
+                      <span style={{ fontSize: 12, fontWeight: 600 }} aria-hidden="true">
+                        {pendingOutline?.editing ? '✓' : '✎'}
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="rb-icon"
+                    aria-label={t('aiCollapsePanel')}
+                    data-tip={t('aiCollapsePanel')}
+                    onClick={() => setSidebar(null)}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="m14 6-6 6 6 6" />
+                    </svg>
+                  </button>
+                </div>
+                <OutlinePanel
+                  outline={outline}
+                  note={outlineGenerated ? t('outlineGenerated') : undefined}
+                  label={t('outline')}
+                  emptyLabel={t('searchNoResults')}
+                  onGoToDest={(dest) => void goToDest(dest)}
+                  pending={pendingOutline?.tree ?? null}
+                  editing={pendingOutline?.editing ?? false}
+                  labels={{
+                    add: t('outlineAdd'),
+                    rename: t('outlineRename'),
+                    delete: t('outlineDelete'),
+                  }}
+                  onGoToPage={(pageIndex) => scrollToPage(visList.indexOf(pageIndex) + 1)}
+                  onAdd={addBookmarkForCurrentPage}
+                  onRename={renameBookmarkAt}
+                  onDelete={deleteBookmarkAt}
+                />
+              </div>
+            )}
+            {sidebar === 'comments' && (
+              <div className="pdf-thumbs pdf-outline-pane" style={{ width: sidebarW }}>
+                <div className="pdf-outline-header">
+                  <span>{t('commentsPanel')}</span>
+                  <button
+                    type="button"
+                    className="rb-icon"
+                    aria-label={t('aiCollapsePanel')}
+                    data-tip={t('aiCollapsePanel')}
+                    onClick={() => setSidebar(null)}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="m14 6-6 6 6 6" />
+                    </svg>
+                  </button>
+                </div>
+                <CommentsPanel
+                  t={t}
+                  entries={commentEntries ?? []}
+                  loading={commentsLoading || commentEntries === null}
+                  onOpen={(e) => {
+                    scrollToPage(visList.indexOf(e.origIdx) + 1)
+                    setNoteDraft(null)
+                    setActiveNote({ origIdx: e.origIdx, rootKey: e.root.key })
+                  }}
+                />
+              </div>
+            )}
+            {sidebar === 'compare' && (
+              <div className="pdf-thumbs" style={{ width: sidebarW }}>
+                <div className="pdf-outline-header">
+                  <span>{t('compare')}</span>
+                  <button
+                    type="button"
+                    className="rb-icon"
+                    aria-label={t('aiCollapsePanel')}
+                    onClick={() => setSidebar(null)}
+                  >
+                    ×
+                  </button>
+                </div>
+                <ComparePanel
+                  t={t}
+                  result={compareResult}
+                  otherName={compareName}
+                  busy={compareBusy}
+                  onPick={() => void runCompare()}
+                  onSwap={() => {
+                    const swapped = !compareSwapped
+                    setCompareSwapped(swapped)
+                    const sides = compareSidesRef.current
+                    setCompareResult(sides ? compareSides(sides.mine, sides.theirs, swapped) : null)
+                  }}
+                  onGoToPage={(pageNo) => scrollToPage(pageNo)}
+                />
+              </div>
+            )}
+            {sidebar === 'attachments' && (
+              <div className="pdf-thumbs" style={{ width: sidebarW }}>
+                <div className="pdf-outline-header">
+                  <span>{t('attachments')}</span>
+                  <button
+                    type="button"
+                    className="rb-icon"
+                    aria-label={t('aiCollapsePanel')}
+                    onClick={() => setSidebar(null)}
+                  >
+                    ×
+                  </button>
+                </div>
+                <AttachmentsPanel
+                  t={t}
+                  rows={attachmentRows()}
+                  onAdd={() => void addAttachment()}
+                  onExport={(row) => void exportAttachment(row)}
+                  onToggleRemove={toggleAttachmentRemove}
+                />
+              </div>
+            )}
+            {sidebar === 'thumbs' && (
+              <div
+                ref={thumbsRef}
+                className="pdf-thumbs"
+                style={{ width: sidebarW }}
+                onContextMenu={(e) => {
+                  // .pdf-thumb's own padding-bottom is the inter-page gap; its handler lets that bubble up
+                  const target = e.target as HTMLElement
+                  if (
+                    readOnly ||
+                    (target !== e.currentTarget && !target.classList.contains('pdf-thumb'))
+                  )
+                    return
+                  e.preventDefault()
+                  // Gap click: insert after the page above the pointer (end of document below the last one)
+                  let above = -1
+                  for (const el of e.currentTarget.querySelectorAll<HTMLElement>('.pdf-thumb')) {
+                    if (el.getBoundingClientRect().top < e.clientY) above = Number(el.dataset.idx)
+                  }
+                  setThumbMenu({
+                    x: Math.min(e.clientX, window.innerWidth - 190),
+                    y: Math.min(e.clientY, window.innerHeight - 100),
+                    origIdx: null,
+                    afterOrigIdx: visList[above] ?? null,
+                  })
+                }}
+              >
+                {visList.map((origIdx, v) => {
+                  const size = dispSize(origIdx)
+                  return (
+                    <div
+                      key={origIdx}
+                      ref={setThumbRef(v)}
+                      data-idx={v}
+                      tabIndex={-1}
+                      className={`pdf-thumb${currentPage === v + 1 ? ' pdf-thumb-active' : ''}${
+                        dragOver === v && dragFrom !== null && dragFrom !== v
+                          ? ' pdf-thumb-dropbefore'
+                          : ''
+                      }`}
+                      draggable={!readOnly}
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = 'move'
+                        setDragFrom(v)
+                      }}
+                      onDragOver={(e) => {
+                        if (dragFrom === null) return
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'move'
+                        setDragOver(v)
+                      }}
+                      onDragLeave={() => setDragOver((o) => (o === v ? null : o))}
+                      onDrop={(e) => {
+                        // no reorder in flight: an OS file drop — leave it to the drop-open bridge
+                        if (dragFrom === null) return
+                        e.preventDefault()
+                        movePage(dragFrom, v)
+                        setDragFrom(null)
+                        setDragOver(null)
+                      }}
+                      onDragEnd={() => {
+                        setDragFrom(null)
+                        setDragOver(null)
+                      }}
+                      onClick={() => scrollToPage(v + 1)}
+                      onContextMenu={(e) => {
+                        if (e.target === e.currentTarget) return
+                        e.preventDefault()
+                        setThumbMenu({
+                          x: Math.min(e.clientX, window.innerWidth - 190),
+                          y: Math.min(e.clientY, window.innerHeight - 190),
+                          origIdx,
+                        })
+                      }}
+                    >
+                      <div
+                        className="pdf-thumb-box"
+                        style={{ aspectRatio: `${size.width} / ${size.height}` }}
+                      >
+                        {!isBlankPage(origIdx) && (
+                          <PdfThumb
+                            doc={doc}
+                            pageNo={origIdx + 1}
+                            rotationDelta={rotDelta(origIdx)}
+                            visible={visibleThumbs.has(v)}
+                            rasterW={thumbRasterW}
+                          />
+                        )}
+                        {/* Pending erase ops patch the thumb too, so it tracks the canvas */}
+                        {livePreview.has(origIdx) &&
+                          (() => {
+                            const lp = livePreview.get(origIdx)!
+                            return (
+                              <img
+                                className="pdf-thumb-livepreview"
+                                src={`data:image/png;base64,${lp.png}`}
+                                alt=""
+                                style={{
+                                  left: `${(lp.clip.x / size.width) * 100}%`,
+                                  top: `${(lp.clip.y / size.height) * 100}%`,
+                                  width: `${(lp.clip.width / size.width) * 100}%`,
+                                  height: `${(lp.clip.height / size.height) * 100}%`,
+                                }}
+                              />
+                            )
+                          })()}
+                        {/* Pending edits mirror (markups/drawings/text/images/stamps) */}
+                        {visibleThumbs.has(v) &&
+                          (() => {
+                            const mk = markups.filter((m) => m.pageIndex === origIdx)
+                            const dw = drawings.filter((d) => d.input.pageIndex === origIdx)
+                            const tes = textEdits.filter((te) => te.input.pageIndex === origIdx)
+                            const tis = textInserts.filter((ti) => ti.input.pageIndex === origIdx)
+                            const ies = imageEdits.filter((ie) => ie.input.pageIndex === origIdx)
+                            const sts = stampPreview.get(origIdx) ?? []
+                            if (
+                              !mk.length &&
+                              !dw.length &&
+                              !tes.length &&
+                              !tis.length &&
+                              !ies.length &&
+                              !sts.length
+                            )
+                              return null
+                            return (
+                              <ThumbPendingOverlay
+                                geom={pageGeom(origIdx)}
+                                k={thumbRasterW / size.width}
+                                markups={mk}
+                                drawings={dw}
+                                textEdits={tes}
+                                erasedText={livePreview.get(origIdx)?.erased}
+                                textInserts={tis}
+                                imageEdits={ies}
+                                stamps={sts}
+                              />
+                            )
+                          })()}
+                      </div>
+                      <span className="pdf-thumb-no">{v + 1}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {(sidebar === 'thumbs' ||
+              (sidebar === 'outline' && !!outline) ||
+              sidebar === 'comments') && (
+              <div className="pdf-side-resizer" onPointerDown={startSidebarResize} />
+            )}
+            <div
+              ref={scrollRef}
+              className={`pdf-scroll${drawTool ? ' pdf-drawing' : ''}${nightMode ? ' pdf-night' : ''}`}
+              onScroll={() => {
+                handleScroll()
+                setSelPopup(null)
+                setAskPop(null)
+                setSelected(null)
+                clearLineHover()
+                clearBlockHover()
+              }}
+              onMouseUp={drawTool ? undefined : handleMouseUp}
+              onClick={(e) => {
+                // Clicking anywhere that isn't an annotation clears the selection
+                // (markup overlays are pointer-transparent; when hit they stopPropagation
+                // in handlePageClick before this runs)
+                if (
+                  !(e.target as Element).closest?.(
+                    '.pdf-draw-shape, .pdf-note-pin, .pdf-stamp-preview, .pdf-textedit-preview, .pdf-textinsert-preview, .pdf-textedit-input, .pdf-imgedit-layer, .pdf-imgedit-under, .pdf-del-popup',
+                  )
+                )
+                  setSelected(null)
+                if (!(e.target as Element).closest?.('.pdf-note-pin, .pdf-note-margin')) {
+                  setActiveNote(null)
+                  // With the note tool armed a click on a page (the draw layer) is a
+                  // placement, not a dismissal; clicking anywhere else discards the draft
+                  if (drawTool !== 'note' || !(e.target as Element).closest?.('.pdf-draw-layer'))
+                    setNoteDraft(null)
+                }
+              }}
+            >
+              {rows.map((row, r) => {
+                const rowVisible = visibleRows.has(r)
+                // Comments margin geometry: pin anchors relative to the margin column,
+                // which sits one flex gap right of the row's pages
+                const rowWidths = row.map((i) => Math.floor(dispSize(i).width * scale))
+                const rowW = rowWidths.reduce((a, b) => a + b, 0) + PAGE_GAP * (row.length - 1)
+                const pageOffset = (i: number) =>
+                  rowWidths.slice(0, i).reduce((a, b) => a + b, 0) + PAGE_GAP * i
+                const pinAnchor = (
+                  pageIdxInRow: number,
+                  geom: PageGeom,
+                  at: [number, number],
+                ): [number, number] => {
+                  const [vx, vy] = pdfToView(geom, at[0], at[1])
+                  return [
+                    pageOffset(pageIdxInRow) + vx * scale + 10 - (rowW + PAGE_GAP),
+                    vy * scale - 10,
+                  ]
+                }
+                const marginThreads: NoteMarginThread[] =
+                  noteMarginOn && rowVisible
+                    ? row.flatMap((origIdx, i) =>
+                        noteThreadsOn(origIdx).map((root) => {
+                          const [pinX, pinY] = pinAnchor(i, pageGeom(origIdx), root.at)
+                          return { origIdx, root, pinX, pinY }
+                        }),
+                      )
+                    : []
+                const draftIdxInRow = noteDraft ? row.indexOf(noteDraft.origIdx) : -1
+                const marginDraft: NoteMarginDraft | null =
+                  noteDraft && draftIdxInRow >= 0
+                    ? (() => {
+                        const [pinX, pinY] = pinAnchor(
+                          draftIdxInRow,
+                          pageGeom(noteDraft.origIdx),
+                          noteDraft.at,
+                        )
+                        return {
+                          // Placement identity (PDF coords, zoom-invariant): a new pin
+                          // remounts the draft card so stale text/timestamp never carry over
+                          placementKey: `${noteDraft.origIdx}:${noteDraft.at[0]}:${noteDraft.at[1]}`,
+                          origIdx: noteDraft.origIdx,
+                          pinX,
+                          pinY,
+                          color: drawColor,
+                        }
+                      })()
+                    : null
+                return (
+                  <div key={r} ref={setRowRef(r)} data-idx={r} className="pdf-row">
+                    {row.map((origIdx) => {
+                      const size = dispSize(origIdx)
+                      const geom = pageGeom(origIdx)
+                      return (
+                        <div
+                          key={origIdx}
+                          data-page={origIdx}
+                          className={`pdf-page${editTextMode && !readOnly ? ' pdf-editing-text' : ''}${
+                            pendingTextInsert ? ' pdf-inserting-text' : ''
+                          }`}
+                          style={
+                            {
+                              width: Math.floor(size.width * scale),
+                              height: Math.floor(size.height * scale),
+                              '--scale-factor': scale,
+                            } as CSSProperties
+                          }
+                          onClick={(e) => {
+                            if (Date.now() - blockDragReleaseAt.current < 400) return
+                            if (pendingTextInsert && !readOnly) {
+                              const pageBox = e.currentTarget.getBoundingClientRect()
+                              placeTextInsert(
+                                origIdx,
+                                (e.clientX - pageBox.left) / scale,
+                                (e.clientY - pageBox.top) / scale,
+                              )
+                            } else if (editTextMode && !readOnly) startTextEdit(origIdx, e)
+                            else handlePageClick(origIdx, e)
+                          }}
+                          onMouseMove={(e) => {
+                            if (pendingTextInsert && !readOnly) {
+                              const pageBox = e.currentTarget.getBoundingClientRect()
+                              setTextInsertPointer({
+                                pageIndex: origIdx,
+                                x: (e.clientX - pageBox.left) / scale,
+                                y: (e.clientY - pageBox.top) / scale,
+                              })
+                            } else if (editTextMode && !readOnly) {
+                              // move, not over: leaving the hover box across the static textLayer
+                              // background fires no over events; updateLineHover cheaply returns
+                              // while the anchor span is unchanged.
+                              updateLineHover(origIdx, e)
+                            }
+                          }}
+                          onMouseLeave={() => {
+                            setTextInsertPointer((pointer) =>
+                              pointer?.pageIndex === origIdx ? null : pointer,
+                            )
+                            if (editTextMode && !readOnly) {
+                              clearLineHover()
+                              clearBlockHover()
+                            }
+                          }}
+                        >
+                          {!isBlankPage(origIdx) &&
+                            (failedPages.has(origIdx + 1) ? (
+                              <div className="pdf-page-broken">
+                                <span>{t('loadError')}</span>
+                                <span>#{origIdx + 1}</span>
+                              </div>
+                            ) : (
+                              <PdfPage
+                                doc={doc}
+                                pageNo={origIdx + 1}
+                                scale={scale}
+                                rotationDelta={rotDelta(origIdx)}
+                                visible={rowVisible}
+                                onRenderState={pageRenderState}
+                              />
+                            ))}
+                          {livePreview.has(origIdx) &&
+                            (() => {
+                              const lp = livePreview.get(origIdx)!
+                              return (
+                                <img
+                                  className="pdf-page-livepreview"
+                                  src={`data:image/png;base64,${lp.png}`}
+                                  alt=""
+                                  style={{
+                                    left: lp.clip.x * scale,
+                                    top: lp.clip.y * scale,
+                                    width: lp.clip.width * scale,
+                                    height: lp.clip.height * scale,
+                                  }}
+                                />
+                              )
+                            })()}
+                          {pendingSign && (
+                            <SignDropOverlay
+                              sig={pendingSign}
+                              dispW={geomDispSize(geom).width}
+                              dispH={geomDispSize(geom).height}
+                              scale={scale}
+                              color={drawColor}
+                              title={t('signHint')}
+                              onPlace={(vx, vy) => placeSignature(origIdx, vx, vy)}
+                            />
+                          )}
+                          {imagePick && (
+                            <SignDropOverlay
+                              sig={imagePick}
+                              dispW={geomDispSize(geom).width}
+                              dispH={geomDispSize(geom).height}
+                              scale={scale}
+                              color={drawColor}
+                              title={
+                                pendingStaticFill ? t('formPlaceStaticHint') : t('imagePlaceHint')
+                              }
+                              onPlace={(vx, vy) => placeImage(origIdx, vx, vy)}
+                              placeK={pendingStaticFill ? staticFormFillPlaceK : imagePlaceK}
+                            />
+                          )}
+                          {/* Paragraph boxes (WPS-style): every text block outlined while
+                            edit-text mode is on; hovered one highlighted, all dimmed
+                            while the floating editor is open. The hovered block grows
+                            border grips — dragging them moves the whole block. */}
+                          {editTextMode &&
+                            !readOnly &&
+                            rowVisible &&
+                            (pageBlocks.get(origIdx) ?? []).map((b, i) => {
+                              const drawRect = blockDrawRect(origIdx, b)
+                              const box = pdfRectToCss(geom, drawRect, scale)
+                              const hovered =
+                                blockHover?.origIdx === origIdx && blockHover.idx === i
+                              const dragging = blockDrag?.origIdx === origIdx && blockDrag.idx === i
+                              const dragCss: CSSProperties = dragging
+                                ? {
+                                    transform: `translate(${blockDrag.to[0] - blockDrag.from[0]}px, ${
+                                      blockDrag.to[1] - blockDrag.from[1]
+                                    }px)`,
+                                  }
+                                : {}
+                              const grip = {
+                                onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+                                  if (e.button !== 0) return
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  e.currentTarget.setPointerCapture(e.pointerId)
+                                  setBlockDrag({
+                                    origIdx,
+                                    idx: i,
+                                    from: [e.clientX, e.clientY],
+                                    to: [e.clientX, e.clientY],
+                                  })
+                                },
+                                onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
+                                  setBlockDrag((cur) =>
+                                    cur ? { ...cur, to: [e.clientX, e.clientY] } : cur,
+                                  )
+                                },
+                                onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => {
+                                  blockDragReleaseAt.current = Date.now()
+                                  const dr = blockDrag
+                                  setBlockDrag(null)
+                                  if (!dr) return
+                                  const dxPx = e.clientX - dr.from[0]
+                                  const dyPx = e.clientY - dr.from[1]
+                                  if (Math.hypot(dxPx, dyPx) < 3) return
+                                  const [ax, ay] = viewToPdf(geom, 0, 0)
+                                  const [bx, by] = viewToPdf(geom, dxPx / scale, dyPx / scale)
+                                  commitBlockMove(origIdx, b, [bx - ax, by - ay])
+                                },
+                                onPointerCancel: () => setBlockDrag(null),
+                              }
+                              return (
+                                <Fragment key={i}>
+                                  <div
+                                    className={`pdf-textblock-box${hovered ? ' is-hover' : ''}${
+                                      textDraft ? ' is-faded' : ''
+                                    }`}
+                                    style={{ ...box, ...dragCss }}
+                                  />
+                                  {(hovered || dragging) && !textDraft && (
+                                    <div
+                                      className="pdf-textblock-frame"
+                                      style={{ ...box, ...dragCss }}
+                                      data-tip={t('textBlockMoveHint')}
+                                    >
+                                      <div className="pdf-textblock-grip grip-t" {...grip} />
+                                      <div className="pdf-textblock-grip grip-b" {...grip} />
+                                      <div className="pdf-textblock-grip grip-l" {...grip} />
+                                      <div className="pdf-textblock-grip grip-r" {...grip} />
+                                    </div>
+                                  )}
+                                  {dragging &&
+                                    (() => {
+                                      // The ghost previews the ORIGINAL text following the
+                                      // pointer; rows a pending edit claims are skipped —
+                                      // their styled previews follow the drag instead, so
+                                      // the user never sees the pre-edit look mid-drag
+                                      const claims = blockClaimEdits(origIdx, b)
+                                      const rows = b.lines
+                                        .map((l, j) => [l, j] as const)
+                                        .filter(
+                                          ([l]) =>
+                                            !claims.some(
+                                              (te) =>
+                                                overlapOfSmaller(te.input.rect, l.rect) >= 0.5,
+                                            ),
+                                        )
+                                      if (rows.length === 0) return null
+                                      return (
+                                        <div
+                                          className="pdf-textblock-ghost"
+                                          style={{ ...box, ...dragCss }}
+                                        >
+                                          {rows.map(([l, j]) => {
+                                            const lb = pdfRectToCss(
+                                              geom,
+                                              shiftRect(l.rect, [
+                                                drawRect[0] - b.rect[0],
+                                                drawRect[1] - b.rect[1],
+                                              ]),
+                                              scale,
+                                            )
+                                            const gf = l.font ? docFonts.get(l.font) : undefined
+                                            return (
+                                              <div
+                                                key={j}
+                                                className="pdf-textblock-ghost-line"
+                                                style={{
+                                                  left: lb.left - box.left,
+                                                  top: lb.top - box.top,
+                                                  height: lb.height,
+                                                  fontSize: l.fontSize * scale * 0.92,
+                                                  ...(gf ? { fontFamily: gf.css } : {}),
+                                                  ...(gf?.weight ? { fontWeight: gf.weight } : {}),
+                                                  ...(gf?.italic
+                                                    ? { fontStyle: 'italic' as const }
+                                                    : {}),
+                                                }}
+                                              >
+                                                {l.text}
+                                              </div>
+                                            )
+                                          })}
+                                        </div>
+                                      )
+                                    })()}
+                                </Fragment>
+                              )
+                            })}
+                          {editTextMode && !readOnly && lineHover?.origIdx === origIdx && (
+                            <div className="pdf-textline-hover" style={lineHover.box} />
+                          )}
+                          {rowVisible && (
+                            <>
+                              {pendingTextInsert && textInsertPointer?.pageIndex === origIdx && (
+                                <div
+                                  className="pdf-textinsert-placement-preview"
+                                  style={{
+                                    left: textInsertPointer.x * scale,
+                                    top: (textInsertPointer.y - pendingTextInsert.fontSize) * scale,
+                                    fontSize: pendingTextInsert.fontSize * scale * 0.92,
+                                    lineHeight: pendingTextInsert.lineLeading
+                                      ? `${pendingTextInsert.lineLeading * scale}px`
+                                      : 1.2,
+                                    color: `rgb(${pendingTextInsert.color.join(', ')})`,
+                                    whiteSpace: 'pre',
+                                    transform:
+                                      pendingTextInsert.align === 'center'
+                                        ? 'translateX(-50%)'
+                                        : pendingTextInsert.align === 'right'
+                                          ? 'translateX(-100%)'
+                                          : undefined,
+                                    textAlign: pendingTextInsert.align ?? 'left',
+                                  }}
+                                >
+                                  {pendingTextInsert.text}
+                                </div>
+                              )}
+                              {textInserts
+                                .filter((insert) => insert.input.pageIndex === origIdx)
+                                .map((insert) => {
+                                  const style = textInsertPreviewStyle(insert, geom, scale)
+                                  if (insertDrag?.id === insert.id) {
+                                    // Live drag: ride along under the pointer; the align shift
+                                    // (translateX) composes additively with the drag offset
+                                    style.transform = `translate(${insertDrag.to[0] - insertDrag.from[0]}px, ${
+                                      insertDrag.to[1] - insertDrag.from[1]
+                                    }px)${style.transform ? ` ${style.transform}` : ''}`
+                                  }
+                                  return (
+                                    <div
+                                      key={insert.id}
+                                      className={`pdf-textinsert-preview${
+                                        selected?.kind === 'textInsert' && selected.id === insert.id
+                                          ? ' is-selected'
+                                          : ''
+                                      }`}
+                                      style={style}
+                                      onPointerDown={(e) => {
+                                        if (e.button !== 0) return
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        e.currentTarget.setPointerCapture(e.pointerId)
+                                        setInsertDrag({
+                                          id: insert.id,
+                                          from: [e.clientX, e.clientY],
+                                          to: [e.clientX, e.clientY],
+                                        })
+                                      }}
+                                      onPointerMove={(e) => {
+                                        setInsertDrag((cur) =>
+                                          cur && cur.id === insert.id
+                                            ? { ...cur, to: [e.clientX, e.clientY] }
+                                            : cur,
+                                        )
+                                      }}
+                                      onPointerUp={(e) => {
+                                        const dr = insertDrag
+                                        setInsertDrag(null)
+                                        if (!dr || dr.id !== insert.id) return
+                                        const dxPx = e.clientX - dr.from[0]
+                                        const dyPx = e.clientY - dr.from[1]
+                                        // Below the threshold it's a plain click: selection runs
+                                        if (Math.hypot(dxPx, dyPx) < 3) return
+                                        blockDragReleaseAt.current = Date.now()
+                                        const [ax, ay] = viewToPdf(geom, 0, 0)
+                                        const [bx, by] = viewToPdf(geom, dxPx / scale, dyPx / scale)
+                                        applyEditOps([
+                                          {
+                                            op: 'patchTextInsert',
+                                            id: insert.id,
+                                            input: {
+                                              origin: [
+                                                insert.input.origin[0] + (bx - ax),
+                                                insert.input.origin[1] + (by - ay),
+                                              ],
+                                            },
+                                          },
+                                        ])
+                                        setSelected(null)
+                                      }}
+                                      onPointerCancel={() => setInsertDrag(null)}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        // The click synthesized from a completed drag must not
+                                        // pop the selection at the drop point
+                                        if (Date.now() - blockDragReleaseAt.current < 400) return
+                                        setSelected({
+                                          kind: 'textInsert',
+                                          id: insert.id,
+                                          ...popupPos(e.clientX, e.clientY),
+                                        })
+                                      }}
+                                      onDoubleClick={(e) => {
+                                        e.stopPropagation()
+                                        setSelected(null)
+                                        setPendingTextInsert(null)
+                                        setTextInsertEditId(insert.id)
+                                        setStaticTextPurpose('insert')
+                                        setStaticText(insert.input.text)
+                                        setStaticTextSize(insert.input.fontSize)
+                                        setStaticTextColor(rgb255ToHex(insert.input.color))
+                                        setStaticTextAlign(insert.input.align ?? 'left')
+                                        setStaticTextDialog(true)
+                                      }}
+                                    >
+                                      {insert.input.text}
+                                    </div>
+                                  )
+                                })}
+                              {/* Pending text edits: cover the original run and preview the replacement */}
+                              {textEdits
+                                .filter((te) => previewsTextEdit(te, origIdx, draftOwnedIds))
+                                .map((te) => {
+                                  const { style, coverStyle } = textEditPreviewParts(
+                                    te,
+                                    geom,
+                                    scale,
+                                    runErased(te),
+                                  )
+                                  // A border-drag of the block this edit addresses moves the
+                                  // styled preview live with the pointer (the drag ghost of
+                                  // the ORIGINAL text is suppressed for edited blocks — it
+                                  // would show the pre-edit look while dragging); the cover
+                                  // stays put, it hides the original ink
+                                  const draggedBlock =
+                                    blockDrag && blockDrag.origIdx === origIdx
+                                      ? pageBlocks.get(origIdx)?.[blockDrag.idx]
+                                      : undefined
+                                  if (
+                                    blockDrag &&
+                                    draggedBlock &&
+                                    (blockOwnerEdit(origIdx, draggedBlock)?.id === te.id ||
+                                      blockClaimEdits(origIdx, draggedBlock).some(
+                                        (c) => c.id === te.id,
+                                      ))
+                                  ) {
+                                    style.transform = `translate(${
+                                      blockDrag.to[0] - blockDrag.from[0]
+                                    }px, ${blockDrag.to[1] - blockDrag.from[1]}px)`
+                                    style.pointerEvents = 'none'
+                                    // Above the drag ghost (z 5): the ghost's paper
+                                    // background would hide the styled preview riding
+                                    // along in the block's claimed rows
+                                    style.zIndex = 6
+                                  }
+                                  return (
+                                    <Fragment key={te.id}>
+                                      {coverStyle && (
+                                        <div className="pdf-textedit-cover" style={coverStyle} />
+                                      )}
+                                      <div
+                                        className={`pdf-textedit-preview${
+                                          selected?.kind === 'textEdit' && selected.id === te.id
+                                            ? ' pdf-textedit-selected'
+                                            : ''
+                                        }`}
+                                        style={style}
+                                        data-tip={
+                                          editTextMode ? t('editTextHint') : t('removeMarkup')
+                                        }
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          if (editTextMode && !readOnly) {
+                                            draftSelectedRef.current = false
+                                            // A line edit inside a multi-line clustered
+                                            // paragraph reopens the whole paragraph with the
+                                            // pending change (and its styles) folded in —
+                                            // re-clicking edited text must not demote
+                                            // paragraph editing to that single line
+                                            if (isFoldableLineEdit(te.input)) {
+                                              const r = te.input.rect
+                                              const cx = (r[0] + r[2]) / 2
+                                              const cy = (r[1] + r[3]) / 2
+                                              const block = pageBlocks
+                                                .get(origIdx)
+                                                ?.find(
+                                                  (b) =>
+                                                    b.lines.length > 1 &&
+                                                    cx >= b.rect[0] &&
+                                                    cx <= b.rect[2] &&
+                                                    cy >= b.rect[1] &&
+                                                    cy <= b.rect[3],
+                                                )
+                                              if (
+                                                block &&
+                                                foldBlockValue(
+                                                  origIdx,
+                                                  block,
+                                                  joinBlockLines(block.lines.map((l) => l.text)),
+                                                )
+                                              ) {
+                                                startBlockEdit(origIdx, block)
+                                                return
+                                              }
+                                            }
+                                            const draft = pendingDraft(te)
+                                            // Unified selection model: the reopened draft's
+                                            // caret goes where the preview was clicked. The
+                                            // preview shows wrapped newText; the click's
+                                            // offset in its textContent maps onto the
+                                            // draft's logical value like a line-in-block.
+                                            {
+                                              const host = e.currentTarget
+                                              const cr = document.caretRangeFromPoint(
+                                                e.clientX,
+                                                e.clientY,
+                                              )
+                                              let pre: [number, number] | null = null
+                                              if (cr && host.contains(cr.startContainer)) {
+                                                let off = 0
+                                                const walk = document.createTreeWalker(
+                                                  host,
+                                                  NodeFilter.SHOW_TEXT,
+                                                )
+                                                for (
+                                                  let n = walk.nextNode();
+                                                  n;
+                                                  n = walk.nextNode()
+                                                ) {
+                                                  if (n === cr.startContainer) {
+                                                    pre = mapLineRangeToBlock(
+                                                      draft.value,
+                                                      host.textContent ?? '',
+                                                      off + cr.startOffset,
+                                                      off + cr.startOffset,
+                                                    )
+                                                    break
+                                                  }
+                                                  off += (n.textContent ?? '').length
+                                                }
+                                              }
+                                              draftPreselectRef.current = pre
+                                            }
+                                            setTextDraft(draft)
+                                          } else {
+                                            setSelected({
+                                              kind: 'textEdit',
+                                              id: te.id,
+                                              ...popupPos(e.clientX, e.clientY),
+                                            })
+                                          }
+                                        }}
+                                      >
+                                        {textEditPreviewContent(te, scale)}
+                                      </div>
+                                    </Fragment>
+                                  )
+                                })}
+                              {textDraft &&
+                                textDraft.origIdx === origIdx &&
+                                (() => {
+                                  // A reopened moved edit edits at its new position; rect
+                                  // itself stays the original (save-time match key + cover)
+                                  const box = pdfRectToCss(
+                                    geom,
+                                    textDraft.moveBy
+                                      ? shiftRect(textDraft.rect, textDraft.moveBy)
+                                      : textDraft.rect,
+                                    scale,
+                                  )
+                                  const fs = (textDraft.size ?? textDraft.fontSize) * scale * 0.92
+                                  const lines = textDraft.value.split('\n')
+                                  // Look-alike of the document's face, so the editor
+                                  // reads like the page (until the user picks a font)
+                                  const seedF = textDraft.font ? undefined : textDraft.seedFont
+                                  const draftCss = textDraft.font
+                                    ? EDIT_FONT_BY_ID.get(textDraft.font)?.css
+                                    : seedF?.css
+                                  const bodyFamily = getComputedStyle(document.body).fontFamily
+                                  const blk = textDraft.block
+                                  const sizePt = textDraft.size ?? textDraft.fontSize
+                                  const draftStyle = `${
+                                    textDraft.italic || seedF?.italic ? 'italic ' : ''
+                                  }${boldToken(textDraft.bold, !!textDraft.font, seedF?.weight)}`.trim()
+                                  // Block editor: width locks to the block so the textarea's
+                                  // soft wrap previews the reflow; height tracks the committed
+                                  // wrap count (in the block's own leading, plus headroom for
+                                  // the preview/commit measurement gap)
+                                  const leadPx = blk
+                                    ? blk.lineHeight * (sizePt / textDraft.fontSize) * scale
+                                    : fs * 1.2
+                                  const wrapCount = blk
+                                    ? lines.reduce(
+                                        (n, p) =>
+                                          n +
+                                          (p.trim()
+                                            ? wrapText(
+                                                p,
+                                                blk.widthPt,
+                                                sizePt,
+                                                draftCss ?? bodyFamily,
+                                                draftStyle,
+                                              ).length
+                                            : 1),
+                                        0,
+                                      )
+                                    : lines.length
+                                  // Line editor grows with the longest line (measured in the
+                                  // editor's own font) so typed text stays visible; cap at the
+                                  // page's right edge, beyond which the textarea scrolls
+                                  const editorFont =
+                                    `${draftStyle} ${fs}px ${draftCss ?? bodyFamily}`.trim()
+                                  // Selection-level styles: the textarea can't render
+                                  // mixed styles, so its text goes transparent and a
+                                  // mirror behind the caret shows them (metric-identical
+                                  // for colors; face/size/weight overrides may drift a
+                                  // little from the caret until the draft commits)
+                                  const draftStyles = textDraft.charStyles?.some((c) => c)
+                                    ? textDraft.charStyles
+                                    : undefined
+                                  const longest = Math.max(
+                                    ...lines.map((l) => measureTextWidth(l, editorFont)),
+                                  )
+                                  const pageEdgeCap =
+                                    geomDispSize(geom).width * scale - box.left - 8
+                                  const editorWidth = blk
+                                    ? box.width + 8
+                                    : Math.min(
+                                        Math.max(box.width, 120, longest + 12),
+                                        Math.max(pageEdgeCap, box.width, 120),
+                                      )
+                                  return (
+                                    <>
+                                      {textDraft.cover && !draftErased && (
+                                        <div
+                                          className="pdf-textedit-cover"
+                                          style={{
+                                            ...inflateCss(
+                                              pdfRectToCss(
+                                                geom,
+                                                unionCover(textDraft.rect, textDraft.cover),
+                                                scale,
+                                              ),
+                                              1.5,
+                                            ),
+                                            ...paperCss(false, textDraft.paper),
+                                          }}
+                                        />
+                                      )}
+                                      <div
+                                        className="pdf-textedit-editor"
+                                        style={{ left: box.left, top: box.top }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onBlur={(e) => {
+                                          // Commit only when focus leaves the editor entirely —
+                                          // clicking the style bar must not close the draft
+                                          if (!e.currentTarget.contains(e.relatedTarget)) {
+                                            commitTextDraft()
+                                          }
+                                        }}
+                                      >
+                                        <div ref={textEditBarRef} className="pdf-textedit-bar">
+                                          {editFonts.length > 0 && (
+                                            <Dropdown
+                                              className="pdf-textedit-fontsel"
+                                              tip={t('texteditFont')}
+                                              ariaLabel={t('texteditFont')}
+                                              value={textDraft.font ?? ''}
+                                              options={[
+                                                { value: '', label: t('texteditFontOriginal') },
+                                                ...editFonts.map((id) => ({
+                                                  value: id,
+                                                  label: EDIT_FONT_BY_ID.get(id)?.label ?? id,
+                                                })),
+                                              ]}
+                                              onPick={(v) => {
+                                                const id = v || undefined
+                                                applyDraftStyle(
+                                                  // "Original font" on a selection clears
+                                                  // the override back to the draft level
+                                                  () => ({ font: id ?? null }),
+                                                  (d) => ({ ...d, font: id }),
+                                                  true,
+                                                )
+                                              }}
+                                            />
+                                          )}
+                                          <input
+                                            className="pdf-textedit-sizenum"
+                                            type="number"
+                                            min={4}
+                                            max={200}
+                                            data-tip={t('watermarkSize')}
+                                            value={
+                                              textDraft.size ??
+                                              Math.round(textDraft.fontSize * 10) / 10
+                                            }
+                                            onChange={(e) => {
+                                              const v = Number(e.target.value)
+                                              if (v >= 1) {
+                                                applyDraftStyle(
+                                                  () => ({ size: v }),
+                                                  (d) => ({ ...d, size: v }),
+                                                  false,
+                                                )
+                                              }
+                                            }}
+                                          />
+                                          <button
+                                            className={`pdf-textedit-toggle${textDraft.bold ? ' active' : ''}`}
+                                            data-tip={t('texteditBold')}
+                                            onClick={() => toggleDraftFlag('bold')}
+                                          >
+                                            B
+                                          </button>
+                                          <button
+                                            className={`pdf-textedit-toggle pdf-textedit-toggle-i${
+                                              textDraft.italic ? ' active' : ''
+                                            }`}
+                                            data-tip={t('texteditItalic')}
+                                            onClick={() => toggleDraftFlag('italic')}
+                                          >
+                                            I
+                                          </button>
+                                          <span
+                                            ref={draftColorWrapRef}
+                                            className="pdf-textedit-colorwrap"
+                                          >
+                                            <button
+                                              className="pdf-textedit-swatch"
+                                              style={{
+                                                background:
+                                                  textDraft.color ?? textDraft.seedInk ?? '#000000',
+                                              }}
+                                              data-tip={t('drawColor')}
+                                              aria-label={t('drawColor')}
+                                              onClick={() => setDraftColorOpen((v) => !v)}
+                                            />
+                                            {draftColorOpen && (
+                                              <ColorPickerPopover
+                                                value={textDraft.color ?? textDraft.seedInk}
+                                                onPick={(hex) => applyDraftColor(hex, true)}
+                                                onClose={() => setDraftColorOpen(false)}
+                                              />
+                                            )}
+                                          </span>
+                                          {(textDraft.invisible ||
+                                            ocrPages.has(textDraft.origIdx)) && (
+                                            <button
+                                              className={`pdf-textedit-toggle${
+                                                textDraft.reveal ? ' active' : ''
+                                              }`}
+                                              data-tip={t('texteditReveal')}
+                                              aria-label={t('texteditReveal')}
+                                              aria-pressed={!!textDraft.reveal}
+                                              onClick={() =>
+                                                applyDraftStyle(
+                                                  () => ({}),
+                                                  (d) => ({
+                                                    ...d,
+                                                    reveal: d.reveal ? undefined : true,
+                                                  }),
+                                                  true,
+                                                )
+                                              }
+                                            >
+                                              <IconEye />
+                                            </button>
+                                          )}
+                                          <button
+                                            className="pdf-textedit-toggle pdf-textedit-trash"
+                                            data-tip={t('texteditDeleteRun')}
+                                            aria-label={t('texteditDeleteRun')}
+                                            onClick={deleteDraftRun}
+                                          >
+                                            <IconTrash />
+                                          </button>
+                                        </div>
+                                        <textarea
+                                          ref={draftTaRef}
+                                          className={`pdf-textedit-input${blk ? ' pdf-textedit-block' : ''}`}
+                                          style={{
+                                            width: editorWidth,
+                                            height: wrapCount * leadPx + (blk ? leadPx : 0) + 6,
+                                            fontSize: fs,
+                                            lineHeight: `${leadPx}px`,
+                                            ...paperCss(draftErased, textDraft.paper),
+                                            ...(blk && blk.align !== 'left'
+                                              ? { textAlign: blk.align }
+                                              : {}),
+                                            // Document-content color (user's pick, else the
+                                            // document's own ink), not chrome
+                                            ...(textDraft.color || textDraft.seedInk
+                                              ? { color: textDraft.color ?? textDraft.seedInk }
+                                              : {}),
+                                            ...(draftStyles
+                                              ? {
+                                                  color: 'transparent',
+                                                  caretColor:
+                                                    textDraft.color ??
+                                                    textDraft.seedInk ??
+                                                    'var(--pdf-textedit-ink)',
+                                                }
+                                              : {}),
+                                            ...(draftCss ? { fontFamily: draftCss } : {}),
+                                            ...(textDraft.bold
+                                              ? boldCss(true, !!textDraft.font, seedF?.weight)
+                                              : seedF?.weight
+                                                ? { fontWeight: seedF.weight }
+                                                : {}),
+                                            ...(textDraft.italic || seedF?.italic
+                                              ? { fontStyle: 'italic' }
+                                              : {}),
+                                          }}
+                                          value={textDraft.value}
+                                          autoFocus
+                                          onFocus={(e) => {
+                                            if (!draftSelectedRef.current) {
+                                              draftSelectedRef.current = true
+                                              const pre = draftPreselectRef.current
+                                              draftPreselectRef.current = null
+                                              const len = e.currentTarget.value.length
+                                              if (pre)
+                                                e.currentTarget.setSelectionRange(
+                                                  Math.min(pre[0], len),
+                                                  Math.min(pre[1], len),
+                                                )
+                                              else e.currentTarget.setSelectionRange(len, len)
+                                            }
+                                          }}
+                                          onChange={(e) => {
+                                            const v = e.target.value
+                                            setTextDraft((d) =>
+                                              d
+                                                ? {
+                                                    ...d,
+                                                    value: v,
+                                                    charStyles: d.charStyles?.some((c) => c)
+                                                      ? spliceCharColors(d.value, d.charStyles, v)
+                                                      : undefined,
+                                                  }
+                                                : d,
+                                            )
+                                          }}
+                                          onScroll={(e) => {
+                                            const g = draftGhostRef.current
+                                            if (g) g.scrollLeft = e.currentTarget.scrollLeft
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                              e.preventDefault()
+                                              commitTextDraft()
+                                            } else if (e.key === 'Escape') {
+                                              e.stopPropagation()
+                                              setTextDraft(null)
+                                            } else if (
+                                              (e.key === 'Backspace' || e.key === 'Delete') &&
+                                              textDraft.value === ''
+                                            ) {
+                                              // The editor is already empty: one more delete
+                                              // press removes the run itself
+                                              e.preventDefault()
+                                              deleteDraftRun()
+                                            }
+                                          }}
+                                        />
+                                        {draftStyles && (
+                                          <div
+                                            ref={draftGhostRef}
+                                            aria-hidden
+                                            className={`pdf-textedit-ghost${
+                                              blk ? ' pdf-textedit-block' : ''
+                                            }`}
+                                            style={{
+                                              width: editorWidth,
+                                              height: wrapCount * leadPx + (blk ? leadPx : 0) + 6,
+                                              fontSize: fs,
+                                              lineHeight: `${leadPx}px`,
+                                              ...(blk && blk.align !== 'left'
+                                                ? { textAlign: blk.align }
+                                                : {}),
+                                              color:
+                                                textDraft.color ??
+                                                textDraft.seedInk ??
+                                                'var(--pdf-textedit-ink)',
+                                              ...(draftCss ? { fontFamily: draftCss } : {}),
+                                              ...(textDraft.bold
+                                                ? boldCss(true, !!textDraft.font, seedF?.weight)
+                                                : seedF?.weight
+                                                  ? { fontWeight: seedF.weight }
+                                                  : {}),
+                                              ...(textDraft.italic || seedF?.italic
+                                                ? { fontStyle: 'italic' }
+                                                : {}),
+                                            }}
+                                          >
+                                            {colorSegments(textDraft.value, draftStyles).map(
+                                              (seg, i) => {
+                                                if (!seg.color)
+                                                  return <Fragment key={i}>{seg.text}</Fragment>
+                                                const s = decodeStyle(seg.color)
+                                                return (
+                                                  <span
+                                                    key={i}
+                                                    style={styleSegCss(s, scale, textDraft.font)}
+                                                  >
+                                                    {seg.text}
+                                                  </span>
+                                                )
+                                              },
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </>
+                                  )
+                                })()}
+                              {(imageEdits.some((ie) => ie.input.pageIndex === origIdx) ||
+                                (ribbonTab === 'fillForm' &&
+                                  savedStaticFormFills.some(
+                                    (record) => record.pageIndex === origIdx,
+                                  )) ||
+                                (editImageMode &&
+                                  pageImages.some((ref) => ref.pageIndex === origIdx))) && (
+                                <div
+                                  className={
+                                    editTextMode || drawTool || pendingSign || imagePick
+                                      ? 'pdf-imgedit-passive'
+                                      : undefined
+                                  }
+                                >
+                                  <ImageEditLayer
+                                    geom={geom}
+                                    scale={scale}
+                                    edits={imageEdits.filter(
+                                      (ie) => ie.input.pageIndex === origIdx,
+                                    )}
+                                    existing={[
+                                      ...(editImageMode
+                                        ? pageImages.filter((ref) => ref.pageIndex === origIdx)
+                                        : []),
+                                      ...(ribbonTab === 'fillForm'
+                                        ? savedStaticFormFills
+                                            .filter((record) => record.pageIndex === origIdx)
+                                            .map((record): PageImageRef => ({
+                                              pageIndex: record.pageIndex,
+                                              rect: record.rect,
+                                              aboveText: true,
+                                            }))
+                                        : []),
+                                    ].filter(
+                                      (ref, index, refs) =>
+                                        !claimedImageKeys.has(
+                                          `${ref.pageIndex}:${imageRectKey(ref.rect)}`,
+                                        ) &&
+                                        refs.findIndex(
+                                          (candidate) =>
+                                            candidate.pageIndex === ref.pageIndex &&
+                                            rectsNear(candidate.rect, ref.rect),
+                                        ) === index,
+                                    )}
+                                    selectedId={selected?.kind === 'imageEdit' ? selected.id : null}
+                                    selectedKey={
+                                      selected?.kind === 'pageImage' &&
+                                      selected.ref.pageIndex === origIdx
+                                        ? imageRectKey(selected.ref.rect)
+                                        : null
+                                    }
+                                    editHint={t('editImageHint')}
+                                    onSelectEdit={(id, x, y) =>
+                                      setSelected({ kind: 'imageEdit', id, ...popupPos(x, y) })
+                                    }
+                                    onSelectExisting={(ref, x, y) => {
+                                      prefetchExistingPng(ref)
+                                      setSelected({ kind: 'pageImage', ref, ...popupPos(x, y) })
+                                    }}
+                                    onRect={readOnly ? undefined : updateImageEditRect}
+                                    onExistingRect={
+                                      readOnly
+                                        ? undefined
+                                        : (ref, rect) => transformExisting(ref, rect)
+                                    }
+                                    existingPng={(ref) =>
+                                      existingPngs.get(`${ref.pageIndex}:${imageRectKey(ref.rect)}`)
+                                    }
+                                    onExistingDragStart={prefetchExistingPng}
+                                  />
+                                </div>
+                              )}
+                              {/* Preview of unsaved stamps; clicking selects the whole watermark/header-footer set */}
+                              {(stampPreview.get(origIdx) ?? []).map((s, si) => (
+                                <img
+                                  key={si}
+                                  className={`pdf-stamp-preview${selected?.kind === 'stamp' ? ' pdf-stamp-selected' : ''}`}
+                                  src={`data:image/png;base64,${s.image}`}
+                                  alt=""
+                                  data-tip={t('removeStamp')}
+                                  style={{
+                                    ...pdfRectToCss(geom, s.rect, scale),
+                                    opacity: s.opacity ?? 1,
+                                  }}
+                                  onClick={(e) =>
+                                    setSelected({
+                                      kind: 'stamp',
+                                      ...popupPos(e.clientX, e.clientY),
+                                    })
+                                  }
+                                />
+                              ))}
+                              {searchOpen && (
+                                <div className="pdf-search-layer">
+                                  {activeMatches.flatMap((m, mi) =>
+                                    m.pageIndex === origIdx
+                                      ? m.rects.map((r, ri) => (
+                                          <div
+                                            key={`${mi}-${ri}`}
+                                            className={`pdf-search-hit${mi === searchCurClamped ? ' pdf-search-hit-cur' : ''}`}
+                                            style={pdfRectToCss(geom, r, scale)}
+                                          />
+                                        ))
+                                      : [],
+                                  )}
+                                </div>
+                              )}
+                              {(() => {
+                                const ocr = ocrPages.get(origIdx)
+                                return ocr ? (
+                                  <OcrTextLayer data={ocr} geom={geom} scale={scale} />
+                                ) : null
+                              })()}
+                              <MarkupOverlay
+                                markups={markups.filter((m) => m.pageIndex === origIdx)}
+                                geom={geom}
+                                scale={scale}
+                                selectedId={selected?.kind === 'markup' ? selected.id : null}
+                              />
+                              {/* Selection outline for a saved markup annotation (the markup
+                                itself is painted in the canvas raster) */}
+                              {selected?.kind === 'savedMarkup' &&
+                                selected.annot.pageIndex === origIdx &&
+                                selected.annot.quads.map((q, i) => (
+                                  <div
+                                    key={i}
+                                    className="pdf-markup pdf-markup-selected"
+                                    style={pdfRectToCss(geom, quadToRect(q), scale)}
+                                  />
+                                ))}
+                              <DrawLayer
+                                geom={geom}
+                                scale={scale}
+                                pageWidth={size.width}
+                                pageHeight={size.height}
+                                drawings={drawings.filter((d) => d.input.pageIndex === origIdx)}
+                                savedNotes={savedNotePins(origIdx)}
+                                activeNoteKey={
+                                  activeNote?.origIdx === origIdx ? activeNote.rootKey : null
+                                }
+                                tool={readOnly ? null : drawTool}
+                                color={drawColor}
+                                strokeWidth={STROKE_WIDTH}
+                                selectedId={selected?.kind === 'drawing' ? selected.id : null}
+                                selectTitle={t('removeMarkup')}
+                                noteOpenTitle={t('noteOpen')}
+                                onCommit={(input) => commitDrawing(origIdx, input)}
+                                onNoteAt={(at) => {
+                                  setActiveNote(null)
+                                  setNoteDraft({ origIdx, at })
+                                }}
+                                onNoteOpen={(key) => {
+                                  setNoteDraft(null)
+                                  setActiveNote((prev) =>
+                                    prev?.origIdx === origIdx && prev.rootKey === key
+                                      ? null
+                                      : { origIdx, rootKey: key },
+                                  )
+                                }}
+                                onSelect={(id, x, y) =>
+                                  setSelected({ kind: 'drawing', id, ...popupPos(x, y) })
+                                }
+                                onMove={readOnly ? undefined : moveDrawing}
+                                onResize={readOnly ? undefined : resizeDrawing}
+                              />
+                              <RedactionLayer
+                                active={
+                                  !readOnly && !redactionCopyInFlight && drawTool === 'redact'
+                                }
+                                geom={geom}
+                                scale={scale}
+                                pageWidth={size.width}
+                                pageHeight={size.height}
+                                marks={redactions.filter((mark) => mark.pageIndex === origIdx)}
+                                markLabel={t('redact')}
+                                onCommit={(rect) =>
+                                  setRedactions((prev) => [
+                                    ...prev,
+                                    { id: newId(), pageIndex: origIdx, rect },
+                                  ])
+                                }
+                                onTooSmall={() => showNotice(t('redactHint'))}
+                              />
+                              <FormDesignLayer
+                                designing={
+                                  ribbonTab === 'formDesign' && !readOnly && !formDesignPreview
+                                }
+                                preview={ribbonTab === 'formDesign' && formDesignPreview}
+                                tool={
+                                  ribbonTab === 'formDesign' && !readOnly ? formDesignTool : null
+                                }
+                                geom={geom}
+                                scale={scale}
+                                pageWidth={size.width}
+                                pageHeight={size.height}
+                                fields={designFieldsByPage.get(origIdx) ?? []}
+                                selectedIds={selectedFormFieldIdSet}
+                                onCreate={(kind, rect, keep) =>
+                                  addFormField(kind, origIdx, rect, keep)
+                                }
+                                onSelect={(ids, mode) => {
+                                  setSelectedFormFieldIds((cur) => {
+                                    if (mode === 'replace') return ids
+                                    const next = cur.filter((x) => !ids.includes(x))
+                                    for (const id of ids) if (!cur.includes(id)) next.push(id)
+                                    return next
+                                  })
+                                  setFreshFormFieldId((cur) =>
+                                    ids.length === 1 && cur === ids[0] ? cur : null,
+                                  )
+                                }}
+                                onRects={(changes) => {
+                                  const fields = designFieldsByPage.get(origIdx) ?? []
+                                  applyDesignRects(
+                                    changes.flatMap(({ id, rect }) => {
+                                      const field = fields.find((x) => x.id === id)
+                                      return field ? [{ field, rect }] : []
+                                    }),
+                                  )
+                                }}
+                                onContextMenu={(e, fieldId) =>
+                                  setFormMenu({
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    fieldId,
+                                    pageIndex: origIdx,
+                                  })
+                                }
+                              />
+                              {ribbonTab === 'formDesign' &&
+                                !formDesignPreview &&
+                                selectedDesignField &&
+                                selectedDesignField.pageIndex === origIdx &&
+                                (() => {
+                                  const f = selectedDesignField
+                                  const box = pdfRectToCss(geom, f.rect, scale)
+                                  return (
+                                    <FormFieldProps
+                                      key={f.id}
+                                      field={f}
+                                      isNew={freshFormFieldId === f.id}
+                                      style={{ left: box.left, top: box.top + box.height + 6 }}
+                                      labels={{
+                                        required: t('formDesignRequired'),
+                                        multiLine: t('formDesignMultiLine'),
+                                        defaultValue: t('formDesignDefaultValue'),
+                                        defaultChecked: t('formDesignDefaultChecked'),
+                                        remove: t('formDesignDelete'),
+                                        done: t('formDesignDone'),
+                                        cancel: t('formDesignCancel'),
+                                        existingHint: t('formDesignExistingHint'),
+                                        exportValue: t('formDesignExportValue'),
+                                        radioGroupHint: t('formDesignRadioGroupHint'),
+                                        options: t('formDesignOptions'),
+                                        dateFormat: t('formDesignDateFormat'),
+                                      }}
+                                      onPatch={(input, key) => patchDesignField(f, input, key)}
+                                      onDelete={() => deleteFormField(f.id)}
+                                      onDone={() => {
+                                        setSelectedFormFieldId(null)
+                                        setFreshFormFieldId(null)
+                                        setFormDesignDoneSave((n) => n + 1)
+                                      }}
+                                      onCancel={() => {
+                                        if (!f.existing)
+                                          applyEditOps([{ op: 'removeFormField', id: f.id }])
+                                        setSelectedFormFieldId(null)
+                                        setFreshFormFieldId(null)
+                                      }}
+                                    />
+                                  )
+                                })()}
+                              {/* Ghost pin for the note being typed into the margin draft card */}
+                              {noteDraft?.origIdx === origIdx &&
+                                (() => {
+                                  const [vx, vy] = pdfToView(geom, noteDraft.at[0], noteDraft.at[1])
+                                  return (
+                                    <div
+                                      className="pdf-note-pin pdf-note-pin-ghost"
+                                      style={{
+                                        left: vx * scale,
+                                        top: vy * scale - 20,
+                                        background: cssRgb(drawColor),
+                                      }}
+                                    >
+                                      <svg
+                                        width="11"
+                                        height="11"
+                                        viewBox="0 0 16 16"
+                                        fill="none"
+                                        stroke="#fff"
+                                        strokeWidth="1.6"
+                                        aria-hidden
+                                      >
+                                        <path
+                                          d="M2.5 3.5h11v8h-6l-3 2.5V11.5h-2z"
+                                          strokeLinejoin="round"
+                                        />
+                                      </svg>
+                                    </div>
+                                  )
+                                })()}
+                              {!isBlankPage(origIdx) && (
+                                <LinkLayer
+                                  doc={doc}
+                                  pageNo={origIdx + 1}
+                                  geom={geom}
+                                  scale={scale}
+                                  onGoToDest={(dest) => void goToDest(dest)}
+                                />
+                              )}
+                              <FormLayer
+                                widgets={liveFormCatalog?.byPage.get(origIdx) ?? []}
+                                geom={geom}
+                                scale={scale}
+                                readOnly={readOnly}
+                                edits={formEdits}
+                                activeWidgetId={activeFormWidgetId}
+                                signedWidgetIds={signedFormWidgetIds}
+                                signatureLabel={t('formSignField')}
+                                dateInvalidLabel={(format) => t('formDateInvalid', { format })}
+                                datePickLabel={t('formDatePick')}
+                                registerControl={registerFormControl}
+                                onFocus={(widget) => {
+                                  setActiveFormWidgetId(widget.id)
+                                  // Form Design preview fills in place; leaving the tab would end the preview
+                                  if (ribbonTab !== 'formDesign') setRibbonTab('fillForm')
+                                }}
+                                onSignature={(widget) => openSignatureDialog(widget)}
+                                onEdit={(v2) =>
+                                  applyEditOps([{ op: 'setFormValue', value: v2 }], {
+                                    coalesceKey: `form:${v2.name}`,
+                                  })
+                                }
+                              />
+                            </>
+                          )}
+                        </div>
+                      )
+                    })}
+                    {noteMarginOn && (
+                      <NoteMarginColumn
+                        width={NOTE_MARGIN_W}
+                        threads={marginThreads}
+                        draft={marginDraft}
+                        activeKey={
+                          activeNote && row.includes(activeNote.origIdx) ? activeNote.rootKey : null
+                        }
+                        author={noteAuthor}
+                        lang={lang}
+                        readOnly={readOnly}
+                        t={t}
+                        onActivate={(th) => {
+                          setNoteDraft(null)
+                          setActiveNote({ origIdx: th.origIdx, rootKey: th.root.key })
+                        }}
+                        onReply={(th, text) => replyToNote(th.origIdx, th.root, text)}
+                        editingKey={noteEditDraft?.itemKey ?? null}
+                        editingText={noteEditDraft?.text ?? ''}
+                        onEditStart={(th, item) =>
+                          setNoteEditDraft({
+                            origIdx: th.origIdx,
+                            rootKey: th.root.key,
+                            itemKey: item.key,
+                            text: item.contents,
+                          })
+                        }
+                        onEditChange={(text) =>
+                          setNoteEditDraft((prev) => (prev ? { ...prev, text } : prev))
+                        }
+                        onEditCancel={() => setNoteEditDraft(null)}
+                        onEditSubmit={(_th, item) => {
+                          if (noteEditDraft) editNoteItem(item, noteEditDraft.text)
+                          setNoteEditDraft(null)
+                        }}
+                        onDeleteItem={(_th, item) => deleteNoteItem(item)}
+                        onClose={() => setActiveNote(null)}
+                        onDraftConfirm={confirmNoteDraft}
+                        onDraftCancel={() => setNoteDraft(null)}
+                      />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            {searchOpen && (
+              <div className="pdf-search-bar">
+                <input
+                  ref={searchInputRef}
+                  className="pdf-search-input"
+                  placeholder={t('search')}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') searchStep(e.shiftKey ? -1 : 1)
+                    else if (e.key === 'Escape') closeSearch()
+                  }}
+                />
+                <button
+                  className={`rb-icon pdf-search-opt${searchMatchCase ? ' is-active' : ''}`}
+                  data-tip={t('searchMatchCase')}
+                  aria-label={t('searchMatchCase')}
+                  aria-pressed={searchMatchCase}
+                  onClick={() => setSearchMatchCase((v) => !v)}
+                >
+                  Aa
+                </button>
+                <button
+                  className={`rb-icon pdf-search-opt${searchWholeWord ? ' is-active' : ''}`}
+                  data-tip={t('searchWholeWord')}
+                  aria-label={t('searchWholeWord')}
+                  aria-pressed={searchWholeWord}
+                  onClick={() => setSearchWholeWord((v) => !v)}
+                >
+                  W
+                </button>
+                <span className="pdf-search-count">
+                  {searchQuery.trim()
+                    ? activeMatches.length > 0
+                      ? t('searchCount', {
+                          current: searchCurClamped + 1,
+                          total: activeMatches.length,
+                        })
+                      : t('searchNoResults')
+                    : ''}
+                </span>
+                <button
+                  className="rb-icon"
+                  data-tip={t('searchPrev')}
+                  aria-label={t('searchPrev')}
+                  disabled={activeMatches.length === 0}
+                  onClick={() => searchStep(-1)}
+                >
+                  ‹
+                </button>
+                <button
+                  className="rb-icon"
+                  data-tip={t('searchNext')}
+                  aria-label={t('searchNext')}
+                  disabled={activeMatches.length === 0}
+                  onClick={() => searchStep(1)}
+                >
+                  ›
+                </button>
+                <button className="rb-icon" onClick={closeSearch}>
+                  ×
+                </button>
+              </div>
+            )}
+            {selPopup && (
+              <div
+                className="pdf-sel-popup"
+                style={{ left: selPopup.x, top: selPopup.y }}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                {!readOnly && (
+                  <>
+                    <button
+                      type="button"
+                      className={activeMarkupTypes.has('highlight') ? 'is-active' : undefined}
+                      data-tip={
+                        activeMarkupTypes.has('highlight') ? t('removeMarkup') : t('highlight')
+                      }
+                      aria-label={
+                        activeMarkupTypes.has('highlight') ? t('removeMarkup') : t('highlight')
+                      }
+                      onClick={() => applyMarkup('highlight')}
+                    >
+                      <span
+                        className="sel-swatch sel-swatch-hl"
+                        style={{ background: cssRgb(highlightColor) }}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      className={activeMarkupTypes.has('underline') ? 'is-active' : undefined}
+                      data-tip={
+                        activeMarkupTypes.has('underline') ? t('removeMarkup') : t('underline')
+                      }
+                      aria-label={
+                        activeMarkupTypes.has('underline') ? t('removeMarkup') : t('underline')
+                      }
+                      onClick={() => applyMarkup('underline')}
+                    >
+                      <span className="sel-swatch sel-swatch-ul">U</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={activeMarkupTypes.has('squiggly') ? 'is-active' : undefined}
+                      data-tip={
+                        activeMarkupTypes.has('squiggly') ? t('removeMarkup') : t('squiggly')
+                      }
+                      aria-label={
+                        activeMarkupTypes.has('squiggly') ? t('removeMarkup') : t('squiggly')
+                      }
+                      onClick={() => applyMarkup('squiggly')}
+                    >
+                      {/* Swatch painted inline from the palette so it always matches the applied color */}
+                      <span className="sel-swatch">
+                        <svg width="14" height="10" viewBox="0 0 28 10" fill="none" aria-hidden>
+                          <polyline
+                            points="1,5 4.5,1.5 8,8.5 11.5,1.5 15,8.5 18.5,1.5 22,8.5 25.5,5"
+                            stroke={cssRgb(MARKUP_COLORS.squiggly)}
+                            strokeWidth="2.2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={activeMarkupTypes.has('strikeout') ? 'is-active' : undefined}
+                      data-tip={
+                        activeMarkupTypes.has('strikeout') ? t('removeMarkup') : t('strikeout')
+                      }
+                      aria-label={
+                        activeMarkupTypes.has('strikeout') ? t('removeMarkup') : t('strikeout')
+                      }
+                      onClick={() => applyMarkup('strikeout')}
+                    >
+                      <span className="sel-swatch sel-swatch-st">S</span>
+                    </button>
+                    <span className="pdf-sel-popup-sep" aria-hidden />
+                  </>
+                )}
+                <button
+                  type="button"
+                  className="pdf-sel-ask"
+                  data-tip={t('aiAskTitle')}
+                  aria-label={t('aiAskBtn')}
+                  onClick={openAskPopover}
+                >
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden>
+                    <path
+                      d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3zM19 15l.85 2.3L22 18.15l-2.15.85L19 21.3l-.85-2.3-2.15-.85 2.15-.85L19 15z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                  {t('aiAskBtn')}
+                </button>
+              </div>
+            )}
+            {askPop && (
+              <AiAskPopover
+                rect={askPop.rect}
+                excerpt={askPop.excerpt}
+                readOnly={readOnly}
+                onSend={(text) => {
+                  setAskPop(null)
+                  runAiPreset(text)
+                }}
+                onClose={() => setAskPop(null)}
+              />
+            )}
+            {selected && (
+              <div
+                ref={delPopupRef}
+                className="pdf-del-popup"
+                style={{ left: selected.x, top: selected.y }}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                {selectedStaticTextTarget() && (
+                  <>
+                    <button
+                      type="button"
+                      data-tip={t('formEditText')}
+                      aria-label={t('formEditText')}
+                      onClick={startEditStaticText}
+                    >
+                      <IconFormText />
+                    </button>
+                    <span className="pdf-del-popup-sep" />
+                  </>
+                )}
+                {selectedImageLayer() !== null && (
+                  <>
+                    <button
+                      type="button"
+                      data-tip={t('imageRotateCw')}
+                      aria-label={t('imageRotateCw')}
+                      onClick={() => rotateSelected(1)}
+                    >
+                      <IconRotateCw />
+                    </button>
+                    <button
+                      type="button"
+                      data-tip={t('imageRotateCcw')}
+                      aria-label={t('imageRotateCcw')}
+                      onClick={() => rotateSelected(-1)}
+                    >
+                      <IconRotateCcw />
+                    </button>
+                    <button
+                      type="button"
+                      data-tip={t('imageFlipH')}
+                      aria-label={t('imageFlipH')}
+                      onClick={() => flipSelected('h')}
+                    >
+                      <IconFlipH />
+                    </button>
+                    <button
+                      type="button"
+                      data-tip={t('imageFlipV')}
+                      aria-label={t('imageFlipV')}
+                      onClick={() => flipSelected('v')}
+                    >
+                      <IconFlipV />
+                    </button>
+                    <span className="pdf-del-popup-sep" />
+                    <button
+                      type="button"
+                      data-tip={t('imageCrop')}
+                      aria-label={t('imageCrop')}
+                      onClick={() => openImageDialog('crop')}
+                    >
+                      <IconCrop />
+                    </button>
+                    <button
+                      type="button"
+                      data-tip={t('imageCutout')}
+                      aria-label={t('imageCutout')}
+                      onClick={() => openImageDialog('cutout')}
+                    >
+                      <IconCutout />
+                    </button>
+                    <button
+                      ref={opacityBtnRef}
+                      type="button"
+                      data-tip={t('imageOpacity')}
+                      aria-label={t('imageOpacity')}
+                      onClick={() => setOpacityMenu((v) => !v)}
+                    >
+                      <IconOpacity />
+                    </button>
+                    <button
+                      type="button"
+                      data-tip={t('imageReplace')}
+                      aria-label={t('imageReplace')}
+                      onClick={startReplaceImage}
+                    >
+                      <IconSwapImage />
+                    </button>
+                    {opacityMenu && (
+                      <div ref={opacityMenuRef} className="pdf-opacity-menu">
+                        {[0, 15, 30, 50, 65, 80, 95].map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => {
+                              setOpacityMenu(false)
+                              applyImageOpacity(p)
+                            }}
+                          >
+                            {p}%
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <span className="pdf-del-popup-sep" />
+                    <button type="button" onClick={toggleImageLayer}>
+                      {selectedImageLayer() === 'aboveText' ? <IconLayerDown /> : <IconLayerUp />}
+                      {t(
+                        selectedImageLayer() === 'aboveText'
+                          ? 'imageLayerBelow'
+                          : 'imageLayerAbove',
+                      )}
+                    </button>
+                    <span className="pdf-del-popup-sep" />
+                  </>
+                )}
+                <button type="button" className="pdf-del-popup-danger" onClick={deleteSelected}>
+                  <IconTrash />
+                  {t(
+                    selected.kind === 'pageImage' || selected.kind === 'imageEdit'
+                      ? 'deleteImage'
+                      : selected.kind === 'textInsert'
+                        ? 'deleteInsertedText'
+                        : 'deleteAnnotation',
+                  )}
+                </button>
+              </div>
+            )}
+            {deleteToast && (
+              <div className="pdf-toast" role="status">
+                <span>{t(deletedInsertedText ? 'insertedTextDeleted' : 'annotationDeleted')}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteToast(false)
+                    undo()
+                  }}
+                >
+                  {t('undo')}
+                </button>
+              </div>
+            )}
+            {notice && (
+              <div className="pdf-toast pdf-toast-notice" role="status">
+                <span>{notice}</span>
+                <button type="button" onClick={() => setNotice(null)}>
+                  {t('ok')}
+                </button>
+              </div>
+            )}
+            {ocrRun && (
+              <div className="pdf-toast pdf-toast-notice" role="status">
+                <span>
+                  {ocrRun.stop === null
+                    ? t('ocrRunning', { done: ocrRun.done, total: ocrRun.total })
+                    : ocrRun.stop === 'cap'
+                      ? t('ocrPageCap', {
+                          done: ocrRun.done,
+                          total: ocrRun.total,
+                          limit: AUTO_OCR_PAGE_CAP,
+                        })
+                      : t('ocrStopped', { done: ocrRun.done, total: ocrRun.total })}
+                </span>
+                {ocrRun.stop === null ? (
+                  <button type="button" onClick={() => ocrAbortRef.current?.abort()}>
+                    {t('cancel')}
+                  </button>
+                ) : (
+                  <>
+                    {ocrPending !== null && (
+                      <button
+                        type="button"
+                        onClick={() => startOcrPass(ocrPending, ocrRun?.done ?? 0)}
+                      >
+                        {t('ocrContinue')}
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setOcrRun(null)}>
+                      {t('ok')}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {thumbMenu && (
+              <div
+                ref={thumbMenuRef}
+                className="thumb-menu file-menu"
+                style={{ left: thumbMenu.x, top: thumbMenu.y }}
+              >
+                {!menuInGap && (
+                  <>
+                    <button
+                      onClick={() => {
+                        rotatePage(menuOrig, -90)
+                        setThumbMenu(null)
+                      }}
+                    >
+                      {t('rotateLeft')}
+                    </button>
+                    <button
+                      onClick={() => {
+                        rotatePage(menuOrig, 90)
+                        setThumbMenu(null)
+                      }}
+                    >
+                      {t('rotateRight')}
+                    </button>
+                    <button
+                      disabled={pageCount <= 1}
+                      onClick={() => {
+                        deletePage(menuOrig)
+                        setThumbMenu(null)
+                      }}
+                    >
+                      {t('deletePage')}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setThumbMenu(null)
+                        void extractPage(menuOrig)
+                      }}
+                    >
+                      {t('extractPage')}
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => {
+                    setThumbMenu(null)
+                    void insertPdf(menuInsertAfter)
+                  }}
+                >
+                  {t('insertPdf')}
+                </button>
+                <button
+                  onClick={() => {
+                    setThumbMenu(null)
+                    insertBlankPage(menuInsertAfter)
+                  }}
+                >
+                  {t('insertBlankPage')}
+                </button>
+              </div>
+            )}
+            {formMenu && (
+              <div
+                ref={formMenuRef}
+                className="thumb-menu file-menu"
+                style={{ left: formMenu.x, top: formMenu.y }}
+              >
+                {formMenu.fieldId && (
+                  <>
+                    <button
+                      disabled={selectedFormFieldIds.length !== 1}
+                      onClick={() => {
+                        setFormMenu(null)
+                        setSelectedFormFieldId(formMenu.fieldId)
+                      }}
+                    >
+                      {t('formDesignProperties')}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setFormMenu(null)
+                        copySelectedFormFields()
+                      }}
+                    >
+                      {t('formDesignCopy')}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setFormMenu(null)
+                        duplicateSelectedFormFields()
+                      }}
+                    >
+                      {t('formDesignDuplicate')}
+                    </button>
+                  </>
+                )}
+                <button
+                  disabled={formClipboardRef.current.length === 0}
+                  onClick={() => {
+                    setFormMenu(null)
+                    pasteFormFields(formMenu.pageIndex)
+                  }}
+                >
+                  {t('formDesignPaste')}
+                </button>
+                {formMenu.fieldId && (
+                  <>
+                    <div className="thumb-menu-sep" />
+                    {arrangeItems.map(([how, label, min]) => (
+                      <button
+                        key={how}
+                        disabled={selectedFormFieldIds.length < min}
+                        onClick={() => {
+                          setFormMenu(null)
+                          arrangeSelected(how)
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    <div className="thumb-menu-sep" />
+                    <button
+                      onClick={() => {
+                        setFormMenu(null)
+                        deleteSelectedFormFields()
+                      }}
+                    >
+                      {t('formDesignDelete')}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {stampDlg && (
+              <StampDialog t={t} onCancel={() => setStampDlg(false)} onApply={applyStamps} />
+            )}
+            {linkDraft && (
+              <LinkDialog
+                t={t}
+                pageCount={pageCount}
+                onCancel={() => setLinkDraft(null)}
+                onApply={(target) => {
+                  const draft = linkDraft
+                  setLinkDraft(null)
+                  if (!draft) return
+                  applyEditOps([
+                    {
+                      op: 'addDrawing',
+                      drawing: {
+                        kind: 'link',
+                        pageIndex: draft.pageIndex,
+                        rect: draft.rect,
+                        ...('destPage' in target
+                          ? { destPage: (visList[target.destPage - 1] ?? target.destPage - 1) + 1 }
+                          : target),
+                      },
+                    },
+                  ])
+                }}
+              />
+            )}
+            {imageDialog?.kind === 'crop' && (
+              <CropDialog
+                t={t}
+                image={imageDialog.image}
+                onCancel={() => setImageDialog(null)}
+                onApply={(png, crop) => {
+                  setImageDialog(null)
+                  commitBaked(imageDialog.target, png, crop)
+                }}
+              />
+            )}
+            {imageDialog?.kind === 'cutout' && (
+              <CutoutDialog
+                t={t}
+                image={imageDialog.image}
+                onCancel={() => setImageDialog(null)}
+                onApply={(png) => {
+                  setImageDialog(null)
+                  commitBaked(imageDialog.target, png)
+                }}
+              />
+            )}
+            {propsDlg && (
+              <PropertiesDialog
+                doc={doc}
+                fileName={fileName}
+                fileSize={fileSize}
+                pageCount={pageCount}
+                pending={metadata}
+                readOnly={readOnly}
+                t={t}
+                onCancel={() => setPropsDlg(false)}
+                onApply={(meta) => {
+                  setPropsDlg(false)
+                  applyEditOps([{ op: 'setMetadata', metadata: meta }])
+                }}
+              />
+            )}
+            {protectionDlg && (
+              <ProtectionDialog
+                t={t}
+                hasPassword={encryption !== null || documentEncrypted}
+                permissions={
+                  encryption?.permissions ?? {
+                    printing: true,
+                    modifying: true,
+                    annotating: true,
+                    copying: true,
+                  }
+                }
+                onApply={applyProtection}
+                onRemove={removeProtection}
+                onClose={() => setProtectionDlg(false)}
+              />
+            )}
+            {batesDlg && (
+              <BatesDialog
+                t={t}
+                pageCount={pageCount}
+                onApply={applyBates}
+                onClose={() => setBatesDlg(false)}
+              />
+            )}
+            {measureScaleDlg && (
+              <MeasureScaleDialog
+                t={t}
+                drawnPts={measureDrawnPts}
+                onApply={(unitsPerPt, unit) => {
+                  measureScaleRef.current = { unitsPerPt, unit }
+                  setMeasureScaleDlg(false)
+                  measureRecalibrateRef.current = false
+                  const pending = pendingMeasureRef.current
+                  pendingMeasureRef.current = null
+                  if (pending) {
+                    const pts = Math.hypot(
+                      pending.to[0] - pending.from[0],
+                      pending.to[1] - pending.from[1],
+                    )
+                    commitDrawing(pending.pageIndex, {
+                      ...pending,
+                      label: formatLength(pts, measureScaleRef.current),
+                    })
+                  }
+                  showNotice(t('measureCalibrated', { unit }))
+                }}
+                onClose={() => {
+                  // cancelling drops the reference line: committing it would
+                  // label it with a scale the user just refused to set
+                  pendingMeasureRef.current = null
+                  measureRecalibrateRef.current = false
+                  setMeasureScaleDlg(false)
+                }}
+              />
+            )}
+            {certSignDlg && (
+              <CertSignDialog
+                t={t}
+                filePath={filePath}
+                pageCount={pageCount}
+                currentPage={currentPage}
+                hasSignatures={digitalSignatures.length > 0}
+                onCancel={() => setCertSignDlg(false)}
+                onSigned={(path) => void adoptSignedFile(path)}
+              />
+            )}
+            {signaturesDlg && (
+              <SignaturesDialog
+                t={t}
+                signatures={digitalSignatures}
+                onClose={() => setSignaturesDlg(false)}
+                onGoToPage={(pageIndex) => scrollToPage(pageIndex + 1)}
+              />
+            )}
+            {signDlg && (
+              <SignatureDialog
+                color={drawColor}
+                t={t}
+                onCancel={() => {
+                  setSignDlg(false)
+                  setSignatureTarget(null)
+                }}
+                onConfirm={(sig) => {
+                  setSignDlg(false)
+                  if (signatureTarget) placeSignatureInField(sig, signatureTarget)
+                  else setPendingSign(sig)
+                }}
+              />
+            )}
+            {staticTextDialog && (
+              <div
+                className="pdf-modal-mask"
+                onClick={() => {
+                  setStaticTextDialog(false)
+                  setStaticTextEditTarget(null)
+                  setTextInsertEditId(null)
+                }}
+              >
+                <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="pdf-modal-title">
+                    {t(
+                      staticTextPurpose === 'insert'
+                        ? textInsertEditId
+                          ? 'editInsertedText'
+                          : 'insertTextTitle'
+                        : staticTextEditTarget
+                          ? 'formEditText'
+                          : 'formAddTextTitle',
+                    )}
+                  </div>
+                  <textarea
+                    className="pdf-modal-textarea"
+                    value={staticText}
+                    placeholder={t('formAddTextPlaceholder')}
+                    autoFocus
+                    onChange={(e) => setStaticText(e.target.value)}
+                  />
+                  <label className="pdf-field">
+                    <span>{t('formTextSize')}</span>
+                    <input
+                      className="pdf-modal-input"
+                      type="number"
+                      min={6}
+                      max={72}
+                      value={staticTextSize}
+                      onChange={(e) =>
+                        setStaticTextSize(Math.min(72, Math.max(6, Number(e.target.value) || 14)))
+                      }
+                    />
+                  </label>
+                  <div className="pdf-field-grid">
+                    <div ref={staticColorFieldRef} className="pdf-field pdf-color-field">
+                      <span>{t('formTextColor')}</span>
+                      <button
+                        type="button"
+                        className="pdf-color-trigger"
+                        aria-expanded={staticTextColorOpen}
+                        onClick={() => setStaticTextColorOpen((open) => !open)}
+                      >
+                        <span
+                          className="pdf-color-trigger-swatch"
+                          style={{ background: staticTextColor }}
+                        />
+                        <span>{staticTextColor.toUpperCase()}</span>
+                      </button>
+                      {staticTextColorOpen && (
+                        <ColorPickerPopover
+                          value={staticTextColor}
+                          onPick={setStaticTextColor}
+                          onClose={() => setStaticTextColorOpen(false)}
+                        />
+                      )}
+                    </div>
+                    <label className="pdf-field">
+                      <span>{t('formTextAlign')}</span>
+                      <Dropdown
+                        className="pdf-modal-dd"
+                        ariaLabel={t('formTextAlign')}
+                        value={staticTextAlign}
+                        options={[
+                          { value: 'left', label: t('formAlignLeft') },
+                          { value: 'center', label: t('formAlignCenter') },
+                          { value: 'right', label: t('formAlignRight') },
+                        ]}
+                        onPick={setStaticTextAlign}
+                      />
+                    </label>
+                  </div>
+                  <div className="pdf-modal-actions">
+                    <button
+                      className="pdf-modal-btn"
+                      onClick={() => {
+                        setStaticTextDialog(false)
+                        setStaticTextEditTarget(null)
+                        setTextInsertEditId(null)
+                      }}
+                    >
+                      {t('cancel')}
+                    </button>
+                    <button
+                      className="pdf-modal-btn primary"
+                      disabled={!staticText.trim()}
+                      onClick={confirmStaticFormText}
+                    >
+                      {t('ok')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {extractDlg && (
+              <div className="pdf-modal-mask" onClick={() => setExtractDlg(false)}>
+                <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="pdf-modal-title">{t('extractRangeTitle')}</div>
+                  <input
+                    className={`pdf-modal-input${extractInvalid ? ' invalid' : ''}`}
+                    value={extractInput}
+                    placeholder={t('extractRangeHint', { total: pageCount })}
+                    autoFocus
+                    onChange={(e) => {
+                      setExtractInput(e.target.value)
+                      setExtractInvalid(false)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') confirmExtract()
+                      else if (e.key === 'Escape') setExtractDlg(false)
+                    }}
+                  />
+                  <div className="pdf-modal-actions">
+                    <button className="pdf-modal-btn" onClick={() => setExtractDlg(false)}>
+                      {t('cancel')}
+                    </button>
+                    <button className="pdf-modal-btn primary" onClick={confirmExtract}>
+                      {t('ok')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {splitDlg && (
+              <div className="pdf-modal-mask" onClick={() => setSplitDlg(false)}>
+                <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="pdf-modal-title">{t('splitDlgTitle')}</div>
+                  <input
+                    className={`pdf-modal-input${splitInvalid ? ' invalid' : ''}`}
+                    value={splitInput}
+                    placeholder={t('splitDlgHint', { total: pageCount })}
+                    autoFocus
+                    onChange={(e) => {
+                      setSplitInput(e.target.value)
+                      setSplitInvalid(false)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') confirmSplit()
+                      else if (e.key === 'Escape') setSplitDlg(false)
+                    }}
+                  />
+                  <div className="pdf-modal-actions">
+                    <button className="pdf-modal-btn" onClick={() => setSplitDlg(false)}>
+                      {t('cancel')}
+                    </button>
+                    <button className="pdf-modal-btn primary" onClick={confirmSplit}>
+                      {t('ok')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            <PrintDialog print={print} />
+            {mergePagesDlg && (
+              <div className="pdf-modal-mask" onClick={() => setMergePagesDlg(false)}>
+                <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="pdf-modal-title">{t('mergePages')}</div>
+                  <div className="pdf-modal-hint">{t('mergePagesHint', { total: pageCount })}</div>
+                  <label className="pdf-modal-row">
+                    <span>{t('mergePagesCount')}</span>
+                    <input
+                      className={`pdf-modal-input${mergeCountInvalid ? ' invalid' : ''}`}
+                      value={mergeCount}
+                      autoFocus
+                      onChange={(e) => {
+                        setMergeCount(e.target.value)
+                        setMergeCountInvalid(false)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') confirmMergePages()
+                        else if (e.key === 'Escape') setMergePagesDlg(false)
+                      }}
+                    />
+                  </label>
+                  <div className="pdf-modal-row">
+                    <span>{t('mergePagesSeq')}</span>
+                    <label className="pdf-modal-check">
+                      <input
+                        type="radio"
+                        name="merge-seq"
+                        checked={mergeDirection === 'horizontal'}
+                        onChange={() => setMergeDirection('horizontal')}
+                      />
+                      {t('seqHorizontal')}
+                    </label>
+                    <label className="pdf-modal-check">
+                      <input
+                        type="radio"
+                        name="merge-seq"
+                        checked={mergeDirection === 'vertical'}
+                        onChange={() => setMergeDirection('vertical')}
+                      />
+                      {t('seqVertical')}
+                    </label>
+                  </div>
+                  <label className="pdf-modal-check">
+                    <input
+                      type="checkbox"
+                      checked={mergeSeparator}
+                      onChange={(e) => setMergeSeparator(e.target.checked)}
+                    />
+                    {t('mergePagesSeparator')}
+                  </label>
+                  <div className="pdf-modal-actions">
+                    <button className="pdf-modal-btn" onClick={() => setMergePagesDlg(false)}>
+                      {t('cancel')}
+                    </button>
+                    <button className="pdf-modal-btn primary" onClick={confirmMergePages}>
+                      {t('ok')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {replaceDlg && (
+              <div className="pdf-modal-mask" onClick={() => setReplaceDlg(false)}>
+                <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="pdf-modal-title">{t('replacePages')}</div>
+                  <input
+                    className={`pdf-modal-input${replaceInvalid ? ' invalid' : ''}`}
+                    value={replaceInput}
+                    placeholder={t('replaceRangeHint', { total: pageCount })}
+                    autoFocus
+                    onChange={(e) => {
+                      setReplaceInput(e.target.value)
+                      setReplaceInvalid(false)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') confirmReplace()
+                      else if (e.key === 'Escape') setReplaceDlg(false)
+                    }}
+                  />
+                  <div className="pdf-modal-actions">
+                    <button className="pdf-modal-btn" onClick={() => setReplaceDlg(false)}>
+                      {t('cancel')}
+                    </button>
+                    <button className="pdf-modal-btn primary" onClick={confirmReplace}>
+                      {t('ok')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {pageSizeDlg && (
+              <div className="pdf-modal-mask" onClick={() => setPageSizeDlg(false)}>
+                <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="pdf-modal-title">{t('pageSize')}</div>
+                  <div className="pdf-modal-hint">{t('pageSizeHint', { total: pageCount })}</div>
+                  <div className="pdf-modal-actions merge-pages-options">
+                    {PAPER_SIZES.slice(0, 3).map((p) => (
+                      <button
+                        key={p.label}
+                        className="pdf-modal-btn"
+                        onClick={() => applyPageSize(p.w, p.h)}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="pdf-modal-actions merge-pages-options">
+                    {PAPER_SIZES.slice(3).map((p) => (
+                      <button
+                        key={p.label}
+                        className="pdf-modal-btn"
+                        onClick={() => applyPageSize(p.w, p.h)}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="pdf-modal-actions">
+                    <button className="pdf-modal-btn" onClick={() => setPageSizeDlg(false)}>
+                      {t('cancel')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {splitPagesDlg && (
+              <div className="pdf-modal-mask" onClick={() => setSplitPagesDlg(false)}>
+                <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="pdf-modal-title">{t('splitPages')}</div>
+                  <div className="pdf-modal-hint">{t('splitPagesHint', { total: pageCount })}</div>
+                  <div className="pdf-modal-actions merge-pages-options">
+                    {([2, 4, 9] as const).map((n) => (
+                      <button key={n} className="pdf-modal-btn" onClick={() => runSplitPages(n)}>
+                        {t('splitNLabel', { n })}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="pdf-modal-actions">
+                    <button className="pdf-modal-btn" onClick={() => setSplitPagesDlg(false)}>
+                      {t('cancel')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {pageCropDlg && (
+              <CropDialog
+                t={t}
+                title={t('cropPages')}
+                image={pageCropDlg.png}
+                extraFooter={
+                  <label className="pdf-modal-check">
+                    <input
+                      type="checkbox"
+                      checked={cropAllPages}
+                      onChange={(e) => setCropAllPages(e.target.checked)}
+                    />
+                    {t('cropAllPages')}
+                  </label>
+                }
+                onApply={(_png, crop) => confirmPageCrop(crop)}
+                onCancel={() => setPageCropDlg(null)}
+              />
+            )}
+          </div>
+
+          <footer className="status-bar">
+            <div className="status-left">
+              <span className="status-item">
+                {t('appPageOf', { current: currentPage, total: pageCount })}
+              </span>
+            </div>
+            <div className="status-right">
+              <button
+                className="zoom-btn"
+                data-tip={t('zoomOut')}
+                aria-label={t('zoomOut')}
+                onClick={zoomOut}
+              >
+                −
+              </button>
+              <input
+                className="zoom-slider"
+                type="range"
+                min={MIN_SCALE * 100}
+                max={MAX_SCALE * 100}
+                step={5}
+                value={Math.round(scale * 100)}
+                onChange={(e) => applyScale(Number(e.target.value) / 100, null)}
+              />
+              <button
+                className="zoom-btn"
+                data-tip={t('zoomIn')}
+                aria-label={t('zoomIn')}
+                onClick={zoomIn}
+              >
+                +
+              </button>
+              <span className="zoom-value">{Math.round(scale * 100)}%</span>
+            </div>
+          </footer>
+        </div>
+      </div>
+    </div>
+  )
+}

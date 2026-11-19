@@ -1,0 +1,18 @@
+# Normalize line endings: everything text is committed with LF and checked
+# out as LF on every platform, so Windows clones (core.autocrlf=true) don't
+# fail the incremental prettier --check CI gate on CRLF.
+* text=auto eol=lf
+
+# Binary assets — never normalized or diffed as text.
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.ods binary
+*.pdf binary
+*.png binary
+*.ico binary
+*.icns binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary

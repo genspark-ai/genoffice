@@ -1,0 +1,6 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-section-start-clears-float/probe.docx",
+  "editor": ["06d4dfdc899eb46b", "f2fd8efe9a18c464", "49fe79fbf02095a2"],
+  "nested": ["796815c789bd91fe"],
+  "hf": []
+}

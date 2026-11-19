@@ -1,0 +1,30 @@
+{
+  "id": "cell-inherited-ea-strut",
+  "title": "CJK cell paragraphs inheriting the docDefaults East Asian face are that face's lines (SimSun 1.30), Latin neighbours Calibri's: the inheriting CJK cell takes the alias strut class like body paragraphs",
+  "section": "word-truths.md#L788",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf rules: docDefaults ascii Calibri / eastAsia SimSun 12, CJK row 16.08 (15.60 + gridline), Latin row 15.12, CJK with an ascii-only Times New Roman run 16.08",
+  "cases": [
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 0,
+      "expect": {
+        "classes": ["doc-ea-strut"],
+        "styles": ["--doc-line-factor:var(--doc-line-factor-cjk,1.7)", "--doc-lead-gap:0px"]
+      },
+      "note": "inheriting CJK: the document EA var sizes the line, .doc-ea-strut leads the box with the metric strut face when the EA face carries a Word alias"
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 1,
+      "expect": {
+        "styles": ["--doc-line-factor:var(--doc-line-factor-latin,1.2)"],
+        "notClasses": ["doc-ea-strut", "doc-grid-strut"]
+      }
+    }
+  ],
+  "docx": "probe.docx"
+}

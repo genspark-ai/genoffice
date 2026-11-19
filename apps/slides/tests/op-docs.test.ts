@@ -1,0 +1,112 @@
+/**
+ * Op docs ↔ registry coverage: the markdown docs (prompts/ops/*.md, parsed
+ * into OP_DOCS) are the single source the AI surfaces consume, so they must
+ * track the registry exactly — a new op without a doc block (or a block for a
+ * removed op) fails here, not in production.
+ */
+import { describe, it, expect } from 'vitest'
+import { addElement, createBlankPptx, openPptx } from '@genoffice/pptx-engine'
+import { runTxn, opNames } from '@genoffice/pptx-ops'
+import {
+  OP_DOCS,
+  OP_GROUPS,
+  OP_GUIDES,
+  opGuide,
+  opGuideCatalog,
+  opSignatureIndex,
+  opUsage,
+  opVocabulary,
+} from '@genoffice/pptx-ops'
+
+// pending: true entries document ops of an in-flight branch ahead of its
+// merge so the PRs stay independent; they are hidden from vocabulary and
+// usage until registered.
+const IN_FLIGHT = new Set(Object.keys(OP_DOCS).filter((n) => OP_DOCS[n]!.pending))
+
+describe('op docs coverage', () => {
+  it('every registered op has a doc line', () => {
+    const undocumented = opNames().filter((n) => !OP_DOCS[n])
+    expect(undocumented).toEqual([])
+  })
+
+  it('every doc line matches a registered op', () => {
+    const registered = new Set(opNames())
+    const stale = Object.keys(OP_DOCS).filter((n) => !registered.has(n) && !IN_FLIGHT.has(n))
+    expect(stale).toEqual([])
+  })
+
+  it('the vocabulary lists callable ops grouped, and hides byte/clipboard ops', () => {
+    const vocab = opVocabulary()
+    expect(vocab).toContain('tableMerge')
+    expect(vocab).toContain('applyHeaderFooter')
+    expect(vocab).toContain('groupElements')
+    expect(vocab).not.toContain('addPicture')
+    expect(vocab).not.toContain('pasteSlide')
+  })
+
+  it('every block carries a compact signature and a body', () => {
+    for (const [name, doc] of Object.entries(OP_DOCS)) {
+      expect(doc.sig, name).toMatch(/^\{/)
+      expect(doc.sig, name).not.toContain('`')
+      expect(doc.body.length, name).toBeGreaterThan(20)
+      expect(OP_GROUPS).toContain(doc.group)
+    }
+  })
+
+  it('the signature index lists exactly the callable ops, grouped', () => {
+    const index = opSignatureIndex()
+    for (const [name, doc] of Object.entries(OP_DOCS)) {
+      const line = `${name} ${doc.sig}`
+      if (doc.aiCallable === false || doc.pending) expect(index).not.toContain(line)
+      else expect(index).toContain(line)
+    }
+    for (const g of OP_GROUPS) expect(index).toContain(`## ${g}`)
+  })
+
+  it('every group has a guide with title, summary and the full markdown', () => {
+    for (const g of OP_GROUPS) {
+      const guide = OP_GUIDES[g]
+      expect(guide.title).toBeTruthy()
+      expect(guide.summary).toBeTruthy()
+      expect(opGuide(g)).toBe(guide.content)
+      expect(guide.content).toContain(`# ${guide.title}`)
+      expect(opGuideCatalog()).toContain(`${g} — ${guide.summary}`)
+    }
+    expect(opGuide('nope')).toBeUndefined()
+  })
+
+  it('pending ops are hidden from vocabulary and usage until registered', () => {
+    for (const name of IN_FLIGHT) {
+      expect(opVocabulary()).not.toContain(name)
+      expect(opUsage(name)).toBeUndefined()
+    }
+  })
+})
+
+describe('guided errors carry the op signature', () => {
+  it('a validation failure appends the one-line usage', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const el = addElement(opened.deck.slides[0]!, {
+      kind: 'textbox',
+      offset: { x: 0, y: 0, cx: 914400, cy: 457200 },
+      paragraphs: [{ runs: [{ text: 'T' }] }],
+    })
+    const r = runTxn(opened, {
+      ops: [{ op: 'setFill', target: { slide: 0, el: el.id } }], // fill missing
+    })
+    expect(r.applied).toBe(false)
+    expect(r.failures![0]!.error).toContain(`Usage: setFill ${OP_DOCS.setFill!.sig}`)
+  })
+
+  it('an unknown op name still returns the full vocabulary, without a usage line', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const r = runTxn(opened, { ops: [{ op: 'sparkle' }] })
+    expect(r.applied).toBe(false)
+    expect(r.failures![0]!.error).toContain('unknown op "sparkle"')
+    expect(r.failures![0]!.error).not.toContain('Usage:')
+  })
+
+  it('opUsage returns undefined for unknown names', () => {
+    expect(opUsage('sparkle')).toBeUndefined()
+  })
+})

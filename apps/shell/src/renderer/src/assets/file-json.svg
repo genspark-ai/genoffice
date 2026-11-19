@@ -1,0 +1,12 @@
+<svg width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_file_json)">
+<path d="M48 240L192 240C218.51 240 240 218.51 240 192L240 48C240 21.4903 218.51 1.91027e-05 192 1.67852e-05L48 4.19629e-06C21.4903 1.87874e-06 1.91027e-05 21.4903 1.67852e-05 48L4.19629e-06 192C1.87874e-06 218.51 21.4903 240 48 240Z" fill="#D97706"/>
+<path d="M100 70C82 70 86 92 86 106C86 118 78 124 66 124C78 124 86 130 86 142C86 156 82 178 100 178" stroke="white" stroke-width="14" stroke-linecap="round"/>
+<path d="M140 70C158 70 154 92 154 106C154 118 162 124 174 124C162 124 158 130 158 142C158 156 162 178 140 178" stroke="white" stroke-width="14" stroke-linecap="round"/>
+</g>
+<defs>
+<clipPath id="clip0_file_json">
+<rect width="240" height="240" fill="white"/>
+</clipPath>
+</defs>
+</svg>

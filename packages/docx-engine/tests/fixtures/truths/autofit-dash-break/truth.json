@@ -1,0 +1,35 @@
+{
+  "id": "autofit-dash-break",
+  "title": "A tblW-auto column's min-content word breaks after an en dash or em dash like a hyphen; U+2212 MINUS SIGN never breaks",
+  "section": "word-truths.md#L1187",
+  "probe_date": "2026-11-08",
+  "source": "probe build.py (A4 9026-twip column, Calibri 11, cell margins 108), Word for Mac direct PDF, pymupdf lines; the harness measures with the 0.52em heuristic, so the tolerances cover heuristic-vs-Calibri advance drift while keeping the broken and whole cases apart",
+  "cases": [
+    {
+      "kind": "autofitCols",
+      "block": 1,
+      "availTwips": 9026,
+      "expect": [1044, 7982],
+      "tol": 200,
+      "note": "'mmmm\\u2013mmmm' breaks after the en dash: Word wrapped 'mmmm\\u2013' | 'mmmm' (= 41.4 pt + margins); the second column takes the rest of the 9026 column"
+    },
+    {
+      "kind": "autofitCols",
+      "block": 3,
+      "availTwips": 9026,
+      "expect": [1154, 7872],
+      "tol": 200,
+      "note": "'mmmm\\u2014mmmm' breaks after the em dash: Word wrapped 'mmmm\\u2014' | 'mmmm' (= 46.9 pt + margins)"
+    },
+    {
+      "kind": "autofitCols",
+      "block": 5,
+      "availTwips": 9026,
+      "expect": [1732, 7294],
+      "tol": 260,
+      "note": "'mmmm\\u2212mmmm' never breaks at the minus sign: Word drew the column 86.6 pt = the whole string + margins"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

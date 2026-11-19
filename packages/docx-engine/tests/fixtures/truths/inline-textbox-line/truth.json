@@ -1,0 +1,34 @@
+{
+  "id": "inline-textbox-line",
+  "class": "pure",
+  "title": "An in-flow (wp:inline) text box paragraph is exactly the shape height",
+  "section": "word-truths.md#L1015",
+  "probe_date": "2026-11-05",
+  "source": "probe simsun.docx -> Word PDF: box top = previous line bottom (baseline + 2.88), next baseline = box bottom + 10.43-10.56 (Calibri ascent part), box rect 157.45 = cy",
+  "cases": [
+    {
+      "kind": "stylesheetRule",
+      "selector": ".doc-protected-textboxes:not(.doc-protected-floating)",
+      "expect": "border-width: 0",
+      "note": "the chip border (1px = 0.75pt top and bottom) leaves the flow for in-flow boxes"
+    },
+    {
+      "kind": "stylesheetRule",
+      "selector": ".doc-protected-textboxes:not(.doc-protected-floating) .doc-textbox",
+      "expect": "margin-top: 0; margin-bottom: 0",
+      "note": "the 2px box margin (1.5pt) leaves the flow too"
+    },
+    {
+      "kind": "stylesheetRule",
+      "selector": ".doc-protected-textboxes",
+      "expect": "margin: 0",
+      "note": "the wrapper itself already carried no spacing"
+    },
+    {
+      "kind": "stylesheetRule",
+      "selector": ".doc-protected.doc-protected-textboxes.doc-img-para",
+      "expect": "padding-bottom: calc(var(--doc-pic-effect-b, 0px) + var(--doc-pic-extra))",
+      "note": "the (m - 1) x single extra under the box, from the host paragraph's multiple (box-only vars)"
+    }
+  ]
+}

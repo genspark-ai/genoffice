@@ -1,0 +1,14 @@
+# Statically link the MSVC CRT so the shipped xlsx-sidecar.exe has no
+# vcruntime140.dll dependency: clean Windows installs lack the VC++
+# redistributable, and a sidecar that fails to spawn means every workbook
+# open fails silently.
+#
+# NOTE: cargo discovers .cargo/config.toml from the *working directory*,
+# not from --manifest-path. The sheets build runs cargo from apps/sheets,
+# so this file must be passed explicitly via `--config` (see the
+# native:build script in apps/sheets/package.json).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

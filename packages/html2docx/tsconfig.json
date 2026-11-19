@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    // DOM for the functions convert.ts serializes into the page
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // ported from untyped JS; tightened file by file, no logic changes
+    "strict": false,
+    "noImplicitAny": false
+  },
+  "include": ["src", "tests", "tools"]
+}

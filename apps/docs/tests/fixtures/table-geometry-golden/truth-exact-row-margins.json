@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/exact-row-margins/probe.docx",
+  "tables": 3,
+  "hashes": ["571b350303a390d2", "db72ad870cf56e6f", "aa26996ee6dbcf24"],
+  "staticTables": 3,
+  "staticHashes": ["3271c1b2062a62ce", "8bb0c1a4d820279e", "b477a040c1b7883c"]
+}

@@ -1,0 +1,76 @@
+{
+  "id": "bullet-marker-face-line",
+  "title": "A Symbol bullet lifts a Calibri list line to the Symbol ascent plus the text descent at 10/11/12 pt (12.72/14.04/15.36), Wingdings and text-face bullets never do, a line multiple adds (m - 1) x the text single line; the lift survives a Normal that names only an East Asian face",
+  "section": "word-truths.md#L818",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf item baselines, Letter, Calibri docDefaults, Normal rFonts eastAsia DengXian only, three-item lists: Symbol U+F0B7 10/11/12 pt single 12.72 / 13.92-14.16 / 15.36, line 276 14.40-14.64 / 16.08 / 17.28-17.52; Wingdings U+F0A7 12.24 / 13.44 / 14.64 and 13.92-14.16 / 15.36 / 16.80; text-face U+2022 the same as Wingdings. gen before the fix: the lift took the Normal's `font` (DengXian) as the text face and gave up (--li-marker-lh: 0, 15.4 pitch at 11 pt x 1.15 where Word has 16.08)",
+  "cases": [
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Symbol",
+      "markerPt": 10,
+      "textFont": "Calibri",
+      "textPt": 10,
+      "expect": 12.72,
+      "tol": 0.12
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Symbol",
+      "markerPt": 11,
+      "textFont": "Calibri",
+      "textPt": 11,
+      "expect": 14.04,
+      "tol": 0.15,
+      "note": "Word 13.92 / 14.16 alternating on the 0.24 pt device grid"
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Symbol",
+      "markerPt": 12,
+      "textFont": "Calibri",
+      "textPt": 12,
+      "expect": 15.36,
+      "tol": 0.12
+    },
+    {
+      "kind": "symbolBulletLinePt",
+      "symbolFont": "Wingdings",
+      "markerPt": 12,
+      "textFont": "Calibri",
+      "textPt": 12,
+      "expect": null,
+      "note": "Wingdings (asc 0.8989) never lifts: 14.64 = the Calibri 12 line"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 9,
+      "expect": {
+        "classes": ["doc-li"],
+        "stylesStartWith": ["--li-marker-lh: calc(", "--li-marker-va: bottom"],
+        "notStyles": ["--li-marker-lh: 0"]
+      },
+      "note": "Symbol 11 pt item under the EA-only Normal: lifted (Word 13.92-14.16)"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 13,
+      "expect": { "stylesStartWith": ["--li-marker-lh: calc(", "--li-marker-va: bottom"] },
+      "note": "Symbol 11 pt at line 276: lift + (m - 1) x single (Word 16.08)"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 33,
+      "expect": { "styles": ["--li-marker-lh: 0"], "notStyles": ["--li-marker-va"] },
+      "note": "Wingdings 11 pt: the substitute glyph's face must not grow the line (Word 13.44)"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 57,
+      "expect": { "notStyles": ["--li-marker-lh", "--li-marker-va"] },
+      "note": "text-face bullet 11 pt: no symbol face, no lift (Word 13.44)"
+    }
+  ],
+  "docx": "probe.docx"
+}

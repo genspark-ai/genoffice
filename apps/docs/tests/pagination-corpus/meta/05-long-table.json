@@ -1,0 +1,6 @@
+{
+  "title": "Long table across pages",
+  "tags": ["table", "cross-page", "table-header"],
+  "description": "30-row 4-column table, tests table splitting across pages",
+  "file": "05-long-table.docx"
+}

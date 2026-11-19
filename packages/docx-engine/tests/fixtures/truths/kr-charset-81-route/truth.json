@@ -1,0 +1,84 @@
+{
+  "id": "kr-charset-81-route",
+  "title": "Hangul-charset (81) fontTable entries lay out as Malgun Gothic, roman family as Batang",
+  "section": "word-truths.md#L528",
+  "probe_date": "2026-10-20",
+  "class": "pure",
+  "source": "probe krmiss.docx -> Word for Mac direct PDF, pymupdf rawdict; hangul and Latin br-lines, 11pt; font names are HCR Batang / HCR Dotum / squirrel-typeface probes (written as \\u escapes)",
+  "cases": [
+    {
+      "kind": "krRoute",
+      "font": "\ud568\ucd08\ub86c\ubc14\ud0d5",
+      "expect": "malgun",
+      "note": "HCR Batang: PANOSE serif, charset 81, modern"
+    },
+    {
+      "kind": "krRoute",
+      "font": "\ub2e4\ub78c\uc950\uc11c\uccb41",
+      "expect": "batang",
+      "note": "charset 81 + roman"
+    },
+    {
+      "kind": "krRoute",
+      "font": "\ub2e4\ub78c\uc950\uc11c\uccb42",
+      "expect": null,
+      "note": "charset 00 + roman: old rules"
+    },
+    {
+      "kind": "krRoute",
+      "font": "\ub2e4\ub78c\uc950\uc11c\uccb43",
+      "expect": "malgun",
+      "note": "charset 81, no PANOSE, auto"
+    },
+    {
+      "kind": "krRoute",
+      "font": "\ub2e4\ub78c\uc950\uc11c\uccb44",
+      "expect": null,
+      "note": "no charset"
+    },
+    {
+      "kind": "krRoute",
+      "font": "Squirrel Serif Probe",
+      "expect": "batang",
+      "note": "Latin name, charset 81 + roman"
+    },
+    {
+      "kind": "krRoute",
+      "font": "Squirrel Serif Probe2",
+      "expect": null,
+      "note": "Latin name, charset 00"
+    },
+    {
+      "kind": "krRoute",
+      "font": "\ud568\ucd08\ub86c\ub3cb\uc6c0",
+      "expect": "malgun",
+      "note": "HCR Dotum 020B modern"
+    },
+    {
+      "kind": "krRoute",
+      "font": "\ub2e4\ub78c\uc950\uc11c\uccb49",
+      "expect": "malgun",
+      "note": "PANOSE serif + modern"
+    },
+    {
+      "kind": "krRoute",
+      "font": "Squirrel Serif Probe3",
+      "expect": "malgun",
+      "note": "Latin name, charset 81, auto"
+    },
+    {
+      "kind": "factor",
+      "font": "\ud568\ucd08\ub86c\ubc14\ud0d5",
+      "expect": 1.7292,
+      "note": "Malgun class; 1.7305 -> 1.7292 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "\ub2e4\ub78c\uc950\uc11c\uccb41",
+      "expect": 1.3,
+      "note": "Batang class; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    }
+  ],
+  "docx": "probe.docx"
+}

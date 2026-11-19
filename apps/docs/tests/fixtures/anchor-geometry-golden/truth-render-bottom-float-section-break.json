@@ -1,0 +1,6 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-bottom-float-section-break/probe.docx",
+  "editor": ["73358ff6eff7b476", "a8591829b25824d8"],
+  "nested": ["31bd9b63a84be7c9"],
+  "hf": []
+}

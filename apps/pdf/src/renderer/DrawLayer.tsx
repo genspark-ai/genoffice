@@ -1,0 +1,688 @@
+import { useEffect, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
+import { pdfToView, viewToPdf } from './annotations'
+import type { PageGeom } from './annotations'
+import type { DrawingInput } from '../shared/ipc'
+
+export type DrawTool =
+  | 'ink'
+  | 'rect'
+  | 'ellipse'
+  | 'line'
+  | 'arrow'
+  | 'measure'
+  | 'note'
+  | 'redact'
+  | 'link'
+  | 'caret'
+  | 'polygon'
+
+/** Displayed-pixel box (scaled) */
+interface Box {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export interface LocalDrawing {
+  id: string
+  input: DrawingInput
+  /** Present when this drawing is the visual value placed into an AcroForm /Sig widget. */
+  formWidgetId?: string
+}
+
+/** A note pin to render for a comment already saved in the file */
+export interface SavedNotePin {
+  /** Thread key ('S<objNum>') passed back through onNoteOpen */
+  key: string
+  /** PDF user space (y up), top-left of the pin */
+  at: [number, number]
+  color: [number, number, number] | null
+  contents: string
+}
+
+/** Default pin color for saved notes without /C (document data, not themed chrome) */
+export const NOTE_FALLBACK_COLOR: [number, number, number] = [1, 0.78, 0.13]
+
+/** 5-color palette (0-1 rgb), same visual language as the markup floating bar */
+export const DRAW_COLORS: { name: string; rgb: [number, number, number] }[] = [
+  { name: 'red', rgb: [0.86, 0.22, 0.18] },
+  { name: 'yellow', rgb: [1, 0.78, 0.13] },
+  { name: 'green', rgb: [0.13, 0.65, 0.35] },
+  { name: 'blue', rgb: [0.17, 0.4, 1] },
+  { name: 'black', rgb: [0.15, 0.15, 0.15] },
+]
+
+export const cssRgb = (c: readonly [number, number, number]): string =>
+  `rgb(${Math.round(c[0] * 255)}, ${Math.round(c[1] * 255)}, ${Math.round(c[2] * 255)})`
+
+/** Click this close (display px) to the first vertex to close a polygon */
+const POLY_CLOSE_PX = 10
+
+/** Drawing SVG paths: PDF space → displayed page pixels */
+function toView(geom: PageGeom, scale: number, x: number, y: number): [number, number] {
+  const [vx, vy] = pdfToView(geom, x, y)
+  return [vx * scale, vy * scale]
+}
+
+function drawingShape(
+  d: DrawingInput,
+  geom: PageGeom,
+  scale: number,
+  /** Invisible fat outline: rendered under pointer-events:stroke so thin shapes are grabbable */
+  hit = false,
+): ReactElement | null {
+  if (d.kind === 'note') return null
+  if (d.kind === 'link') {
+    // Pending link boxes preview as dashed rects; saved links render in LinkLayer
+    const [ax, ay] = toView(geom, scale, d.rect[0], d.rect[1])
+    const [bx, by] = toView(geom, scale, d.rect[2], d.rect[3])
+    const stroke = hit ? 'transparent' : 'var(--accent)'
+    const w = hit ? Math.max(16, 2 * scale * 4) : Math.max(1, 1.5 * scale)
+    return (
+      <rect
+        x={Math.min(ax, bx)}
+        y={Math.min(ay, by)}
+        width={Math.abs(bx - ax)}
+        height={Math.abs(by - ay)}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={w}
+        strokeDasharray={`${4 * scale} ${3 * scale}`}
+      />
+    )
+  }
+  if (d.kind === 'image') {
+    if (hit) return null // the image body is already a full-area hit target
+    const [ax, ay] = toView(geom, scale, d.rect[0], d.rect[1])
+    const [bx, by] = toView(geom, scale, d.rect[2], d.rect[3])
+    return (
+      <image
+        href={`data:image/png;base64,${d.image}`}
+        x={Math.min(ax, bx)}
+        y={Math.min(ay, by)}
+        width={Math.abs(bx - ax)}
+        height={Math.abs(by - ay)}
+        preserveAspectRatio="none"
+      />
+    )
+  }
+  if (d.kind === 'caret') {
+    const stroke = hit ? 'transparent' : cssRgb(d.color)
+    const [vx, vy] = toView(geom, scale, d.point[0], d.point[1])
+    // Zoom-independent glyph: the saved annotation is drawn by the viewer at a
+    // fixed icon size, so the preview must not scale with the page either
+    const s = 8
+    return (
+      <path
+        d={`M${vx - s} ${vy + s * 0.75} L${vx} ${vy} L${vx + s} ${vy + s * 0.75}`}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={hit ? 16 : 1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    )
+  }
+  const stroke = hit ? 'transparent' : cssRgb(d.color)
+  const w = hit ? Math.max(16, d.width * scale * 4) : d.width * scale
+  if (d.kind === 'ink') {
+    return (
+      <>
+        {d.paths.map((path, i) => {
+          const pts: string[] = []
+          for (let j = 0; j < path.length; j += 2) {
+            const [vx, vy] = toView(geom, scale, path[j]!, path[j + 1]!)
+            pts.push(`${vx},${vy}`)
+          }
+          return (
+            <polyline
+              key={i}
+              points={pts.join(' ')}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={w}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )
+        })}
+      </>
+    )
+  }
+  if (d.kind === 'rect' || d.kind === 'ellipse') {
+    const [ax, ay] = toView(geom, scale, d.rect[0], d.rect[1])
+    const [bx, by] = toView(geom, scale, d.rect[2], d.rect[3])
+    const [x, y] = [Math.min(ax, bx), Math.min(ay, by)]
+    const [rw, rh] = [Math.abs(bx - ax), Math.abs(by - ay)]
+    return d.kind === 'rect' ? (
+      <rect x={x} y={y} width={rw} height={rh} fill="none" stroke={stroke} strokeWidth={w} />
+    ) : (
+      <ellipse
+        cx={x + rw / 2}
+        cy={y + rh / 2}
+        rx={rw / 2}
+        ry={rh / 2}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={w}
+      />
+    )
+  }
+  if (d.kind === 'polygon') {
+    const pts = d.vertices
+      .map(([x, y]) => {
+        const [vx, vy] = toView(geom, scale, x, y)
+        return `${vx},${vy}`
+      })
+      .join(' ')
+    return (
+      <polygon points={pts} fill="none" stroke={stroke} strokeWidth={w} strokeLinejoin="round" />
+    )
+  }
+  const [fx, fy] = toView(geom, scale, d.from[0], d.from[1])
+  const [tx, ty] = toView(geom, scale, d.to[0], d.to[1])
+  const head: ReactElement[] = []
+  if (d.kind === 'measure' && !hit && d.label) {
+    // the label previews beside the midpoint; the file's own appearance stream
+    // draws the same text in PDF space
+    head.push(
+      <text
+        key="label"
+        x={(fx + tx) / 2}
+        y={(fy + ty) / 2 - 6 * scale}
+        fill={cssRgb(d.color)}
+        stroke="none"
+        fontSize={Math.max(9, 9 * scale)}
+        textAnchor="middle"
+      >
+        {d.label}
+      </text>,
+    )
+  }
+  if (d.kind === 'arrow') {
+    const ang = Math.atan2(ty - fy, tx - fx)
+    const len = Math.max(9 * scale, w * 4.5)
+    for (const [i, off] of [-0.45, 0.45].entries()) {
+      head.push(
+        <line
+          key={i}
+          x1={tx}
+          y1={ty}
+          x2={tx - len * Math.cos(ang + off)}
+          y2={ty - len * Math.sin(ang + off)}
+          stroke={stroke}
+          strokeWidth={w}
+          strokeLinecap="round"
+        />,
+      )
+    }
+  }
+  return (
+    <>
+      <line x1={fx} y1={fy} x2={tx} y2={ty} stroke={stroke} strokeWidth={w} strokeLinecap="round" />
+      {head}
+    </>
+  )
+}
+
+/**
+ * Draw layer: with a tool active it takes over pointer events to draw on the page;
+ * otherwise it only renders existing shapes (click to select, drag to move; deletion is
+ * an explicit App action). Notes are placed at the click point; content is entered via
+ * an App dialog.
+ */
+export function DrawLayer({
+  geom,
+  scale,
+  pageWidth,
+  pageHeight,
+  drawings,
+  savedNotes,
+  activeNoteKey,
+  tool,
+  color,
+  strokeWidth,
+  selectedId,
+  selectTitle,
+  noteOpenTitle,
+  onCommit,
+  onNoteAt,
+  onNoteOpen,
+  onSelect,
+  onMove,
+  onResize,
+}: {
+  geom: PageGeom
+  scale: number
+  pageWidth: number
+  pageHeight: number
+  drawings: LocalDrawing[]
+  /** Pins for note comments saved in the file (roots of their threads) */
+  savedNotes: SavedNotePin[]
+  /** Thread key whose popover is open — its pin gets the selected outline */
+  activeNoteKey: string | null
+  tool: DrawTool | null
+  color: [number, number, number]
+  strokeWidth: number
+  selectedId: string | null
+  selectTitle: string
+  noteOpenTitle: string
+  onCommit: (input: DrawingInput) => void
+  onNoteAt: (at: [number, number]) => void
+  /** Open the comment-thread popover for a pin ('S<objNum>' saved / 'P<id>' pending) */
+  onNoteOpen: (key: string, x: number, y: number) => void
+  onSelect: (id: string, x: number, y: number) => void
+  /** Move a shape by a PDF-space delta; omit to disable dragging (read-only) */
+  onMove?: (id: string, dx: number, dy: number) => void
+  /** Replace an image drawing's PDF-space rect (corner-handle resize); omit to disable */
+  onResize?: (id: string, rect: [number, number, number, number]) => void
+}): ReactElement {
+  // In-progress stroke/drag, all in PDF-space coordinates
+  const [live, setLive] = useState<DrawingInput | null>(null)
+  const startRef = useRef<[number, number] | null>(null)
+  const inkRef = useRef<number[]>([])
+  // In-progress polygon: placed vertices plus the rubber end following the cursor
+  const [poly, setPoly] = useState<{
+    vertices: [number, number][]
+    cursor: [number, number] | null
+  } | null>(null)
+  const polyRef = useRef(poly)
+  polyRef.current = poly
+  // Dragging an existing shape: view coords (page-relative, scale=1)
+  const [drag, setDrag] = useState<{
+    id: string
+    from: [number, number]
+    to: [number, number]
+  } | null>(null)
+  // Corner-resizing a selected image: boxes in displayed px (scaled)
+  const [resize, setResize] = useState<{ id: string; corner: number; start: Box; box: Box } | null>(
+    null,
+  )
+
+  const toPdf = (e: ReactPointerEvent): [number, number] => {
+    const box = e.currentTarget.getBoundingClientRect()
+    return viewToPdf(geom, (e.clientX - box.left) / scale, (e.clientY - box.top) / scale)
+  }
+
+  const commitPolygon = (vertices: [number, number][]) => {
+    setPoly(null)
+    if (vertices.length < 3) return
+    onCommit({ kind: 'polygon', pageIndex: 0, color, width: strokeWidth, vertices })
+  }
+
+  // Leaving the polygon tool discards an unfinished vertex collection
+  useEffect(() => {
+    if (tool !== 'polygon') setPoly(null)
+  }, [tool])
+
+  // Enter closes the ring, Escape discards it (double-click closes too, like CAD tools)
+  useEffect(() => {
+    if (!poly) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        commitPolygon(polyRef.current?.vertices ?? [])
+      } else if (e.key === 'Escape') {
+        setPoly(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // commitPolygon closes over the current color/width/onCommit props
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poly])
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    if (!tool || e.button !== 0) return
+    e.preventDefault()
+    const at = toPdf(e)
+    if (tool === 'note') {
+      onNoteAt(at)
+      return
+    }
+    if (tool === 'caret') {
+      // A caret is placed by click, like a note — no drag
+      onCommit({ kind: 'caret', pageIndex: 0, color, point: at })
+      return
+    }
+    if (tool === 'polygon') {
+      e.currentTarget.setPointerCapture(e.pointerId)
+      const cur = polyRef.current
+      if (!cur) {
+        setPoly({ vertices: [at], cursor: at })
+        return
+      }
+      const [fx, fy] = toView(geom, scale, cur.vertices[0]![0], cur.vertices[0]![1])
+      const [tx, ty] = toView(geom, scale, at[0], at[1])
+      if (cur.vertices.length >= 3 && Math.hypot(tx - fx, ty - fy) < POLY_CLOSE_PX) {
+        commitPolygon(cur.vertices)
+        return
+      }
+      setPoly({ vertices: [...cur.vertices, at], cursor: at })
+      return
+    }
+    e.currentTarget.setPointerCapture(e.pointerId)
+    startRef.current = at
+    if (tool === 'ink') {
+      inkRef.current = [at[0], at[1]]
+      setLive({ kind: 'ink', pageIndex: 0, color, width: strokeWidth, paths: [inkRef.current] })
+    }
+  }
+
+  const onPointerMove = (e: ReactPointerEvent) => {
+    if (!tool) return
+    if (tool === 'polygon') {
+      if (polyRef.current) setPoly({ ...polyRef.current, cursor: toPdf(e) })
+      return
+    }
+    if (!startRef.current) return
+    const at = toPdf(e)
+    if (tool === 'ink') {
+      inkRef.current = [...inkRef.current, at[0], at[1]]
+      setLive({ kind: 'ink', pageIndex: 0, color, width: strokeWidth, paths: [inkRef.current] })
+    } else if (tool === 'rect' || tool === 'ellipse') {
+      const [sx, sy] = startRef.current
+      setLive({
+        kind: tool,
+        pageIndex: 0,
+        color,
+        width: strokeWidth,
+        rect: [Math.min(sx, at[0]), Math.min(sy, at[1]), Math.max(sx, at[0]), Math.max(sy, at[1])],
+      })
+    } else if (tool === 'link') {
+      const [sx, sy] = startRef.current
+      setLive({
+        kind: 'link',
+        pageIndex: 0,
+        rect: [Math.min(sx, at[0]), Math.min(sy, at[1]), Math.max(sx, at[0]), Math.max(sy, at[1])],
+      })
+    } else if (tool === 'line' || tool === 'arrow' || tool === 'measure') {
+      setLive({
+        kind: tool,
+        pageIndex: 0,
+        color,
+        width: strokeWidth,
+        from: startRef.current,
+        to: at,
+        // the label is the session's job: it needs the calibration, applied at commit
+        label: '',
+      })
+    }
+  }
+
+  const onPointerUp = () => {
+    const pending = live
+    startRef.current = null
+    inkRef.current = []
+    setLive(null)
+    if (!pending) return
+    // Discard empty shapes from a click-and-release
+    if (pending.kind === 'ink' && (pending.paths[0]?.length ?? 0) < 6) return
+    if (pending.kind === 'rect' || pending.kind === 'ellipse' || pending.kind === 'link') {
+      const [x1, y1, x2, y2] = pending.rect
+      if (x2 - x1 < 3 && y2 - y1 < 3) return
+    }
+    if (pending.kind === 'line' || pending.kind === 'arrow' || pending.kind === 'measure') {
+      if (Math.hypot(pending.to[0] - pending.from[0], pending.to[1] - pending.from[1]) < 4) return
+    }
+    onCommit(pending)
+  }
+
+  // The double-click's own second click re-added the last vertex — drop the twin, then close
+  const onDouble = () => {
+    const v = polyRef.current?.vertices
+    if (!v) return
+    const last = v.at(-1)!
+    const prev = v.at(-2)
+    commitPolygon(
+      prev && Math.hypot(last[0] - prev[0], last[1] - prev[1]) * scale < 4 ? v.slice(0, -1) : v,
+    )
+  }
+
+  // ── Drag-to-move an existing shape (no tool active) ──
+
+  const shapeViewPos = (e: ReactPointerEvent<SVGGElement>): [number, number] => {
+    const box = e.currentTarget.ownerSVGElement!.getBoundingClientRect()
+    return [(e.clientX - box.left) / scale, (e.clientY - box.top) / scale]
+  }
+
+  const shapeDown = (e: ReactPointerEvent<SVGGElement>, id: string) => {
+    if (tool || e.button !== 0) return
+    // Without preventDefault the drag would also start a text selection in the
+    // text layer underneath (and pop the markup bar on release)
+    e.preventDefault()
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const at = shapeViewPos(e)
+    setDrag({ id, from: at, to: at })
+  }
+
+  const shapeMove = (e: ReactPointerEvent<SVGGElement>) => {
+    if (drag && onMove) setDrag({ ...drag, to: shapeViewPos(e) })
+  }
+
+  const shapeUp = (e: ReactPointerEvent<SVGGElement>) => {
+    const d = drag
+    setDrag(null)
+    if (!d) return
+    // A sub-3px drag is a click: select instead of committing a no-op move
+    if (!onMove || Math.hypot(d.to[0] - d.from[0], d.to[1] - d.from[1]) * scale < 3) {
+      onSelect(d.id, e.clientX, e.clientY)
+      return
+    }
+    const [ax, ay] = viewToPdf(geom, d.from[0], d.from[1])
+    const [bx, by] = viewToPdf(geom, d.to[0], d.to[1])
+    onMove(d.id, bx - ax, by - ay)
+  }
+
+  // ── Corner-handle resize for a selected image (aspect ratio preserved) ──
+
+  const imgBox = (d: LocalDrawing): Box | null => {
+    if (d.input.kind !== 'image') return null
+    const [ax, ay] = toView(geom, scale, d.input.rect[0], d.input.rect[1])
+    const [bx, by] = toView(geom, scale, d.input.rect[2], d.input.rect[3])
+    return { x: Math.min(ax, bx), y: Math.min(ay, by), w: Math.abs(bx - ax), h: Math.abs(by - ay) }
+  }
+
+  const handleDown = (
+    e: ReactPointerEvent<SVGCircleElement>,
+    id: string,
+    corner: number,
+    box: Box,
+  ) => {
+    if (e.button !== 0 || !onResize) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setResize({ id, corner, start: box, box })
+  }
+
+  const handleMove = (e: ReactPointerEvent<SVGCircleElement>) => {
+    if (!resize) return
+    const svgBox = e.currentTarget.ownerSVGElement!.getBoundingClientRect()
+    const px = e.clientX - svgBox.left
+    const py = e.clientY - svgBox.top
+    const { start, corner } = resize
+    // Fixed point is the opposite corner; the scale factor follows the dominant axis
+    const fx = corner % 2 === 0 ? start.x + start.w : start.x
+    const fy = corner < 2 ? start.y + start.h : start.y
+    const k = Math.max(
+      Math.abs(px - fx) / start.w,
+      Math.abs(py - fy) / start.h,
+      16 / Math.max(start.w, start.h),
+    )
+    const w = start.w * k
+    const h = start.h * k
+    setResize({
+      ...resize,
+      box: { x: corner % 2 === 0 ? fx - w : fx, y: corner < 2 ? fy - h : fy, w, h },
+    })
+  }
+
+  const handleUp = () => {
+    const r = resize
+    setResize(null)
+    if (!r || !onResize) return
+    if (Math.abs(r.box.w - r.start.w) < 2 && Math.abs(r.box.h - r.start.h) < 2) return
+    const [ax, ay] = viewToPdf(geom, r.box.x / scale, r.box.y / scale)
+    const [bx, by] = viewToPdf(geom, (r.box.x + r.box.w) / scale, (r.box.y + r.box.h) / scale)
+    onResize(r.id, [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)])
+  }
+
+  /** Live transform mapping a shape's committed box onto the in-progress resize box */
+  const resizeTransform = (r: NonNullable<typeof resize>): string => {
+    const k = r.box.w / r.start.w
+    return `translate(${r.box.x - k * r.start.x} ${r.box.y - k * r.start.y}) scale(${k})`
+  }
+
+  return (
+    <>
+      <svg
+        className={`pdf-draw-layer${tool ? ' pdf-draw-active' : ''}`}
+        width={pageWidth * scale}
+        height={pageHeight * scale}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onDoubleClick={onDouble}
+      >
+        {drawings.map((d) =>
+          d.input.kind === 'note' ? null : (
+            <g
+              key={d.id}
+              className={`pdf-draw-shape${d.id === selectedId ? ' pdf-draw-selected' : ''}`}
+              transform={
+                drag?.id === d.id
+                  ? `translate(${(drag.to[0] - drag.from[0]) * scale} ${(drag.to[1] - drag.from[1]) * scale})`
+                  : resize?.id === d.id
+                    ? resizeTransform(resize)
+                    : undefined
+              }
+              onPointerDown={(e) => shapeDown(e, d.id)}
+              onPointerMove={shapeMove}
+              onPointerUp={shapeUp}
+              onPointerCancel={() => setDrag(null)}
+              style={{
+                pointerEvents: tool ? 'none' : d.input.kind === 'image' ? 'auto' : 'stroke',
+              }}
+            >
+              <title>{selectTitle}</title>
+              {!tool && drawingShape(d.input, geom, scale, true)}
+              {drawingShape(d.input, geom, scale)}
+            </g>
+          ),
+        )}
+        {/* Corner handles: shown for a selected image, drag to scale (aspect kept) */}
+        {!tool &&
+          !drag &&
+          onResize &&
+          selectedId &&
+          (() => {
+            const sel = drawings.find((d) => d.id === selectedId)
+            const committed = sel ? imgBox(sel) : null
+            if (!sel || !committed) return null
+            const box = resize?.id === sel.id ? resize.box : committed
+            const corners: [number, number, string][] = [
+              [box.x, box.y, 'nwse-resize'],
+              [box.x + box.w, box.y, 'nesw-resize'],
+              [box.x, box.y + box.h, 'nesw-resize'],
+              [box.x + box.w, box.y + box.h, 'nwse-resize'],
+            ]
+            return corners.map(([cx, cy, cursor], i) => (
+              <circle
+                key={i}
+                className="pdf-draw-handle"
+                cx={cx}
+                cy={cy}
+                r={5}
+                style={{ cursor, pointerEvents: 'all' }}
+                onPointerDown={(e) => handleDown(e, sel.id, i, committed)}
+                onPointerMove={handleMove}
+                onPointerUp={handleUp}
+                onPointerCancel={() => setResize(null)}
+              />
+            ))
+          })()}
+        {live && drawingShape(live, geom, scale)}
+        {poly && (
+          <>
+            {/* Rubber band: placed vertices plus the segment following the cursor */}
+            <polyline
+              points={[...poly.vertices, ...(poly.cursor ? [poly.cursor] : [])]
+                .map(([x, y]) => {
+                  const [vx, vy] = toView(geom, scale, x, y)
+                  return `${vx},${vy}`
+                })
+                .join(' ')}
+              fill="none"
+              stroke={cssRgb(color)}
+              strokeWidth={strokeWidth * scale}
+              strokeLinejoin="round"
+              strokeDasharray={`${4 * scale} ${3 * scale}`}
+            />
+            {/* Close affordance: the ring closes on a click at the first vertex */}
+            {poly.vertices.length >= 3 &&
+              (() => {
+                const [cx, cy] = toView(geom, scale, poly.vertices[0]![0], poly.vertices[0]![1])
+                return (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={POLY_CLOSE_PX / 2}
+                    fill="none"
+                    stroke={cssRgb(color)}
+                    strokeWidth={Math.max(1, 1.25 * scale)}
+                  />
+                )
+              })()}
+          </>
+        )}
+      </svg>
+      {[
+        ...savedNotes.map((n) => ({
+          key: n.key,
+          at: n.at,
+          color: n.color ?? NOTE_FALLBACK_COLOR,
+          contents: n.contents,
+        })),
+        ...drawings
+          .filter(
+            // Pending replies live inside their parent's popover, not as own pins
+            (d) => d.input.kind === 'note' && !d.input.replyToSaved && !d.input.replyToLocalId,
+          )
+          .map((d) => {
+            const note = d.input as Extract<DrawingInput, { kind: 'note' }>
+            return { key: `P${d.id}`, at: note.at, color: note.color, contents: note.contents }
+          }),
+      ].map((pin) => {
+        const [vx, vy] = toView(geom, scale, pin.at[0], pin.at[1])
+        const tip = `${pin.contents}\n\n${noteOpenTitle}`
+        return (
+          <button
+            key={pin.key}
+            className={`pdf-note-pin${pin.key === activeNoteKey ? ' pdf-note-pin-selected' : ''}`}
+            style={{ left: vx, top: vy - 20, background: cssRgb(pin.color) }}
+            data-tip={tip}
+            aria-label={tip}
+            onClick={(e) => onNoteOpen(pin.key, e.clientX, e.clientY)}
+          >
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="#fff"
+              strokeWidth="1.6"
+              aria-hidden
+            >
+              <path d="M2.5 3.5h11v8h-6l-3 2.5V11.5h-2z" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )
+      })}
+    </>
+  )
+}

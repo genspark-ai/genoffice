@@ -1,0 +1,19 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/pct-saved-grid-wins/probe.docx",
+  "tables": 5,
+  "hashes": [
+    "2e697814200b9b8f",
+    "b86f8dbf51a6374c",
+    "b86f8dbf51a6374c",
+    "2e697814200b9b8f",
+    "7cf8dfae17e9dbdc"
+  ],
+  "staticTables": 5,
+  "staticHashes": [
+    "b586f8815020b90b",
+    "f2c25e7e09a48ade",
+    "f2c25e7e09a48ade",
+    "b586f8815020b90b",
+    "19ccd16a574550b6"
+  ]
+}

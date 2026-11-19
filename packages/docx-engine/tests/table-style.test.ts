@@ -1,0 +1,331 @@
+import { describe, expect, it } from 'vitest'
+import { generateTableModelXml, parseDocx, saveDocx } from '../src/index'
+import { buildDocx } from './helpers/build-docx'
+
+const GRID_STYLE =
+  '<w:style w:type="table" w:styleId="GridBlue"><w:name w:val="Grid Table Blue"/>' +
+  '<w:tblStylePr w:type="firstRow"><w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr>' +
+  '<w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="4472C4"/></w:tcPr></w:tblStylePr>' +
+  '<w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/></w:tcPr></w:tblStylePr>' +
+  '</w:style>' +
+  '<w:style w:type="table" w:styleId="GridBlueChild"><w:name w:val="Child"/><w:basedOn w:val="GridBlue"/>' +
+  '<w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="EEEEEE"/></w:tcPr></w:tblStylePr>' +
+  '</w:style>'
+
+const row = (a: string, b: string, shd = '') =>
+  `<w:tr><w:tc>${shd ? `<w:tcPr>${shd}</w:tcPr>` : ''}<w:p><w:r><w:t>${a}</w:t></w:r></w:p></w:tc>` +
+  `<w:tc><w:p><w:r><w:t>${b}</w:t></w:r></w:p></w:tc></w:tr>`
+
+function styledTable(look: string, extra = ''): string {
+  return (
+    `<w:tbl><w:tblPr><w:tblStyle w:val="GridBlue"/>${look}</w:tblPr>` +
+    row('表头A', '表头B') +
+    row('一1', '一2', extra) +
+    row('二1', '二2') +
+    row('三1', '三2') +
+    '</w:tbl>'
+  )
+}
+
+describe('table styles (tblStyle display)', () => {
+  it('reads band1Horz / band2Horz tcBorders and lays them under the row cells', async () => {
+    const style =
+      '<w:style w:type="table" w:styleId="Band"><w:name w:val="Band"/>' +
+      '<w:tblStylePr w:type="firstRow"><w:tcPr><w:tcBorders>' +
+      '<w:bottom w:val="single" w:sz="12" w:space="0" w:color="666666"/></w:tcBorders></w:tcPr></w:tblStylePr>' +
+      '<w:tblStylePr w:type="band1Horz"><w:tcPr><w:tcBorders>' +
+      '<w:top w:val="single" w:sz="4" w:space="0" w:color="4EA72E"/>' +
+      '<w:bottom w:val="single" w:sz="4" w:space="0" w:color="4EA72E"/>' +
+      '<w:insideH w:val="nil"/></w:tcBorders></w:tcPr></w:tblStylePr>' +
+      '<w:tblStylePr w:type="band2Horz"><w:tcPr><w:tcMar><w:top w:w="40" w:type="dxa"/></w:tcMar></w:tcPr></w:tblStylePr>' +
+      '</w:style>'
+    const table = (look: string) =>
+      `<w:tbl><w:tblPr><w:tblStyle w:val="Band"/>${look}</w:tblPr>` +
+      row('h1', 'h2') +
+      row('a', 'b', '<w:tcBorders><w:top w:val="nil"/></w:tcBorders>') +
+      row('c', 'd') +
+      row('e', 'f') +
+      '</w:tbl>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: table('<w:tblLook w:firstRow="1" w:noHBand="0"/>'),
+        extraStylesXml: style,
+      }),
+    )
+    const line = { style: 'single', szEighths: 4, color: '4EA72E' }
+    expect(doc.styles.get('Band')!.tableDisplay?.band1Horz?.borders).toEqual({
+      top: line,
+      bottom: line,
+    })
+    const rows = doc.blocks[0].table!.rows
+    // the header row keeps its own condition; band1 rows carry the band lines (explicit nil on top)
+    expect(rows[0][0].borders).toEqual({
+      bottom: { style: 'single', szEighths: 12, color: '666666' },
+    })
+    expect(rows[1][0].borders).toEqual({ top: { style: 'nil' }, bottom: line })
+    expect(rows[1][1].borders).toEqual({ top: line, bottom: line })
+    expect(rows[2][0].borders).toBeUndefined()
+    expect(rows[2][0].cellMarTwips).toEqual({ top: 40 })
+    expect(rows[3][0].borders).toEqual({ top: line, bottom: line })
+
+    const off = await parseDocx(
+      await buildDocx({
+        bodyXml: table('<w:tblLook w:firstRow="1" w:noHBand="1"/>'),
+        extraStylesXml: style,
+      }),
+    )
+    expect(off.blocks[0].table!.rows[1][1].borders).toBeUndefined()
+  })
+
+  it('applies row-level w:tblPrEx borders / cell margins / shading to that row', async () => {
+    const ex =
+      '<w:tblPrEx><w:tblBorders>' +
+      '<w:top w:val="single" w:sz="6" w:space="0" w:color="002B49"/>' +
+      '<w:left w:val="single" w:sz="6" w:space="0" w:color="002B49"/>' +
+      '<w:bottom w:val="single" w:sz="6" w:space="0" w:color="002B49"/>' +
+      '<w:right w:val="single" w:sz="6" w:space="0" w:color="002B49"/>' +
+      '<w:insideH w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/>' +
+      '<w:insideV w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/>' +
+      '</w:tblBorders><w:tblCellMar><w:top w:w="80" w:type="dxa"/></w:tblCellMar>' +
+      '<w:shd w:val="clear" w:color="auto" w:fill="F0F4F8"/></w:tblPrEx>'
+    const exRow = (a: string, b: string, tcPr = '') =>
+      `<w:tr>${ex}<w:tc>${tcPr ? `<w:tcPr>${tcPr}</w:tcPr>` : ''}<w:p><w:r><w:t>${a}</w:t></w:r></w:p></w:tc>` +
+      `<w:tc><w:p><w:r><w:t>${b}</w:t></w:r></w:p></w:tc></w:tr>`
+    const bytes = await buildDocx({
+      bodyXml:
+        '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
+        row('h1', 'h2') +
+        exRow(
+          'a',
+          'b',
+          '<w:tcBorders><w:left w:val="nil"/></w:tcBorders><w:tcMar><w:top w:w="20" w:type="dxa"/></w:tcMar>',
+        ) +
+        exRow('c', 'd') +
+        '</w:tbl>',
+    })
+    const doc = await parseDocx(bytes)
+    const table = doc.blocks[0].table!
+    const outer = { style: 'single', szEighths: 6, color: '002B49' }
+    const inner = { style: 'single', szEighths: 4, color: 'D3D3D3' }
+    expect(table.rows[0][0].borders).toBeUndefined()
+    // not the table's first row: the exception's insideH meets the plain row above
+    expect(table.rows[1][0].borders).toEqual({
+      top: inner,
+      bottom: inner,
+      left: { style: 'nil' },
+      right: inner,
+    })
+    expect(table.rows[1][1].borders).toEqual({
+      top: inner,
+      bottom: inner,
+      left: inner,
+      right: outer,
+    })
+    expect(table.rows[1][0].cellMarTwips).toEqual({ top: 20 })
+    expect(table.rows[1][1].cellMarTwips).toEqual({ top: 80 })
+    expect(table.rows[1][1].fill).toBe('F0F4F8')
+    expect(table.rows[2][0].borders).toEqual({
+      top: inner,
+      bottom: outer,
+      left: outer,
+      right: inner,
+    })
+    expect(table.rawTblPrExs?.[1]).toBe(ex)
+    expect(table.rawTblPrExs?.[0]).toBeNull()
+    // a regenerated table still carries the exception bytes on both rows
+    const xml = generateTableModelXml(table, doc.blocks[0].originalXml ?? undefined)
+    expect(xml.split(ex).length - 1).toBe(2)
+  })
+
+  it('parses table styles with firstRow / banding and applies them per tblLook', async () => {
+    const bytes = await buildDocx({
+      bodyXml: styledTable('<w:tblLook w:firstRow="1" w:noHBand="0"/>'),
+      extraStylesXml: GRID_STYLE,
+    })
+    const doc = await parseDocx(bytes)
+    const info = doc.styles.get('GridBlue')!
+    expect(info.type).toBe('table')
+    expect(info.tableDisplay).toMatchObject({
+      firstRow: { fill: '4472C4', bold: true, color: 'FFFFFF' },
+      band1Fill: 'D9E2F3',
+    })
+
+    const rows = doc.blocks[0].table!.rows
+    expect(rows[0][0]).toMatchObject({ fill: '4472C4', bold: true, color: 'FFFFFF' })
+    // body rows: band1 / none / band1
+    expect(rows[1][0].fill).toBe('D9E2F3')
+    expect(rows[2][0].fill).toBeUndefined()
+    expect(rows[3][0].fill).toBe('D9E2F3')
+  })
+
+  it('layers conditional tcBorders / tcMar under explicit cell properties', async () => {
+    const style =
+      '<w:style w:type="table" w:styleId="Rule"><w:name w:val="Rule"/>' +
+      '<w:tblStylePr w:type="firstRow"><w:tcPr><w:tcBorders>' +
+      '<w:bottom w:val="single" w:sz="12" w:space="0" w:color="666666"/></w:tcBorders>' +
+      '<w:tcMar><w:bottom w:w="60" w:type="dxa"/></w:tcMar></w:tcPr></w:tblStylePr>' +
+      '<w:tblStylePr w:type="firstCol"><w:tcPr><w:tcBorders>' +
+      '<w:bottom w:val="single" w:sz="2"/><w:right w:val="single" w:sz="8"/></w:tcBorders>' +
+      '</w:tcPr></w:tblStylePr></w:style>'
+    const explicit =
+      '<w:tcBorders><w:bottom w:val="nil"/></w:tcBorders><w:tcMar><w:bottom w:w="20" w:type="dxa"/></w:tcMar>'
+    const table = (look: string) =>
+      `<w:tbl><w:tblPr><w:tblStyle w:val="Rule"/>${look}</w:tblPr>` +
+      `<w:tr><w:tc><w:tcPr>${explicit}</w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>` +
+      '<w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr>' +
+      row('c', 'd') +
+      '</w:tbl>'
+    const on = await parseDocx(
+      await buildDocx({
+        bodyXml: table('<w:tblLook w:firstRow="1" w:firstColumn="1"/>'),
+        extraStylesXml: style,
+      }),
+    )
+    const rows = on.blocks[0].table!.rows
+    // first row beats first column on the shared side; explicit nil / tcMar win
+    expect(rows[0][0].borders).toEqual({
+      bottom: { style: 'nil' },
+      right: { style: 'single', szEighths: 8 },
+    })
+    expect(rows[0][0].cellMarTwips).toEqual({ bottom: 20 })
+    expect(rows[0][1].borders).toEqual({
+      bottom: { style: 'single', szEighths: 12, color: '666666' },
+    })
+    expect(rows[0][1].cellMarTwips).toEqual({ bottom: 60 })
+    expect(rows[1][0].borders).toEqual({
+      bottom: { style: 'single', szEighths: 2 },
+      right: { style: 'single', szEighths: 8 },
+    })
+    expect(rows[1][1].borders).toBeUndefined()
+
+    const off = await parseDocx(
+      await buildDocx({
+        bodyXml: table('<w:tblLook w:firstRow="0" w:firstColumn="0"/>'),
+        extraStylesXml: style,
+      }),
+    )
+    expect(off.blocks[0].table!.rows[0][1].borders).toBeUndefined()
+    expect(off.blocks[0].table!.rows[1][0].borders).toBeUndefined()
+  })
+
+  it('honors noHBand and firstRow=0 flags', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: styledTable('<w:tblLook w:firstRow="0" w:noHBand="1"/>'),
+        extraStylesXml: GRID_STYLE,
+      }),
+    )
+    const rows = doc.blocks[0].table!.rows
+    expect(rows[0][0].fill).toBeUndefined()
+    expect(rows[0][0].bold).toBeUndefined()
+    expect(rows[1][0].fill).toBeUndefined()
+  })
+
+  it('groups band rows by tblStyleRowBandSize after the header row', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: styledTable('<w:tblStyleRowBandSize w:val="2"/><w:tblLook w:val="0420"/>'),
+        extraStylesXml: GRID_STYLE,
+      }),
+    )
+    const rows = doc.blocks[0].table!.rows
+    expect(rows[0][0].fill).toBe('4472C4')
+    expect(rows[1][0].fill).toBe('D9E2F3')
+    expect(rows[2][0].fill).toBe('D9E2F3')
+    expect(rows[3][0].fill).toBeUndefined()
+  })
+
+  it('takes the band size from the table style when the instance omits it', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: styledTable('<w:tblLook w:val="0420"/>'),
+        extraStylesXml: GRID_STYLE.replace(
+          '<w:name w:val="Grid Table Blue"/>',
+          '<w:name w:val="Grid Table Blue"/><w:tblPr><w:tblStyleRowBandSize w:val="2"/></w:tblPr>',
+        ),
+      }),
+    )
+    expect(doc.styles.get('GridBlue')!.tableDisplay!.rowBandSize).toBe(2)
+    const rows = doc.blocks[0].table!.rows
+    expect(rows[1][0].fill).toBe('D9E2F3')
+    expect(rows[2][0].fill).toBe('D9E2F3')
+    expect(rows[3][0].fill).toBeUndefined()
+  })
+
+  it('explicit cell shading beats the style', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: styledTable(
+          '<w:tblLook w:firstRow="1" w:noHBand="0"/>',
+          '<w:shd w:val="clear" w:color="auto" w:fill="FF0000"/>',
+        ),
+        extraStylesXml: GRID_STYLE,
+      }),
+    )
+    expect(doc.blocks[0].table!.rows[1][0].fill).toBe('FF0000')
+    expect(doc.blocks[0].table!.rows[1][1].fill).toBe('D9E2F3')
+  })
+
+  it('resolves basedOn chains between table styles', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        extraStylesXml: GRID_STYLE,
+      }),
+    )
+    const child = doc.styles.get('GridBlueChild')!
+    expect(child.tableDisplay).toMatchObject({
+      firstRow: { fill: '4472C4', bold: true },
+      band1Fill: 'EEEEEE',
+    })
+  })
+
+  it('deep-merges paraSpacing through basedOn (partial child keeps parent values)', async () => {
+    const spacedStyles =
+      '<w:style w:type="table" w:styleId="SpacedParent"><w:name w:val="Spaced"/>' +
+      '<w:pPr><w:spacing w:before="120" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:style>' +
+      '<w:style w:type="table" w:styleId="SpacedChild"><w:name w:val="Spaced Child"/><w:basedOn w:val="SpacedParent"/>' +
+      '<w:pPr><w:spacing w:after="60"/></w:pPr></w:style>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        extraStylesXml: spacedStyles,
+      }),
+    )
+    expect(doc.styles.get('SpacedChild')!.tableDisplay?.paraSpacing).toMatchObject({
+      beforeTwips: 120,
+      afterTwips: 60,
+      lineRawTwips: 240,
+      lineSpacing: 1,
+    })
+  })
+
+  it('deep-merges conditional tcBorders through basedOn (child keeps parent sides)', async () => {
+    const styles =
+      '<w:style w:type="table" w:styleId="RuleParent"><w:name w:val="Rule Parent"/>' +
+      '<w:tblStylePr w:type="firstRow"><w:tcPr><w:tcBorders>' +
+      '<w:top w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="12"/></w:tcBorders>' +
+      '<w:tcMar><w:top w:w="40" w:type="dxa"/></w:tcMar></w:tcPr></w:tblStylePr></w:style>' +
+      '<w:style w:type="table" w:styleId="RuleChild"><w:name w:val="Rule Child"/><w:basedOn w:val="RuleParent"/>' +
+      '<w:tblStylePr w:type="firstRow"><w:tcPr><w:tcBorders>' +
+      '<w:bottom w:val="single" w:sz="2"/></w:tcBorders>' +
+      '<w:tcMar><w:bottom w:w="60" w:type="dxa"/></w:tcMar></w:tcPr></w:tblStylePr></w:style>'
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>', extraStylesXml: styles }),
+    )
+    const first = doc.styles.get('RuleChild')!.tableDisplay?.firstRow
+    expect(first?.borders?.top).toBeTruthy()
+    expect(first?.borders?.bottom).toMatchObject({ szEighths: 2 })
+    expect(first?.cellMarTwips).toMatchObject({ top: 40, bottom: 60 })
+  })
+
+  it('style-derived display keeps untouched tables byte-identical', async () => {
+    const source = await buildDocx({
+      bodyXml: styledTable('<w:tblLook w:firstRow="1" w:noHBand="0"/>'),
+      extraStylesXml: GRID_STYLE,
+    })
+    const parsed = await parseDocx(source)
+    const saved = await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }])
+    expect(saved).toEqual(source)
+  })
+})

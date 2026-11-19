@@ -1,0 +1,39 @@
+{
+  "id": "render-hidden-paragraph",
+  "title": "A hidden text paragraph (mark + runs w:vanish) takes no space and lets the neighbours collapse like a body-level bookmarkEnd",
+  "section": "word-truths.md#L282",
+  "probe_date": "2026-10-22",
+  "class": "render",
+  "source": "build.py (= hidden-paragraph-collapse) -> t3_render-hidden-paragraph.pdf, Word for Mac direct PDF 2026-10-22: A4, Arial 10.5 after=0 line=240; P0 81.84 -> P2 99.84 (18.0 = 12 line + max(6, 6)) across the hidden paragraph; P3 112.08 -> P4 130.08 (18.0) across a bookmarkEnd; P2 -> P3 12.24 natural pitch",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 0,
+      "to": 2,
+      "expect": 18.0,
+      "tol": 0.3,
+      "note": "hidden text paragraph: zero height, 6 + 6 collapse to 6"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 3,
+      "to": 5,
+      "expect": 18.0,
+      "tol": 0.3,
+      "note": "bookmarkEnd marker: 18.0"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 2,
+      "to": 3,
+      "expect": 12.24,
+      "tol": 0.25,
+      "note": "natural Arial 10.5 pitch"
+    }
+  ],
+  "docx": "probe.docx"
+}

@@ -1,0 +1,18 @@
+{
+  "family": "Arial Arabic GO",
+  "source": {
+    "kind": "probe",
+    "date": "2026-10-14",
+    "probe": "Word Arial shapes a 57-letter pangram 269.2 vs the Noto Sans subset 325 (2026-10-13, 2026-10-14); box = Arial hhea 1854/434 over 2048"
+  },
+  "note": "Arial's own Arabic where the local Arial lacks it (Liberation Sans): Word\nArial shapes a 57-char pangram 269.2 vs the Noto Sans subset 325 (probe\n2026-10-13, 2026-10-14), box pinned to Arial hhea 1854/434 over 2048.",
+  "faces": [
+    {
+      "src": "url('./NotoSansArabic-Regular-subset.woff2') format('woff2')",
+      "sizeAdjust": 82.8,
+      "unicodeRange": "U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF",
+      "ascentOverride": 90.5,
+      "descentOverride": 21.2
+    }
+  ]
+}

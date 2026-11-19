@@ -1,0 +1,23 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/exact-row-advance/probe.docx",
+  "tables": 7,
+  "hashes": [
+    "65ec02bb6f82104f",
+    "4d6757e0e9210227",
+    "6eebef57decf4366",
+    "cb05ad37ebc60f4c",
+    "4d6757e0e9210227",
+    "33e1f7bf4cf93660",
+    "65ec02bb6f82104f"
+  ],
+  "staticTables": 7,
+  "staticHashes": [
+    "9421c1db174f494a",
+    "8938aabdd03064b0",
+    "7b3a9ba00509e7e5",
+    "af9bf2e3a4d99143",
+    "8938aabdd03064b0",
+    "af68f3957d48a4b6",
+    "9421c1db174f494a"
+  ]
+}

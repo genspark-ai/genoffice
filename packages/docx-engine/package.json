@@ -1,0 +1,36 @@
+{
+  "name": "@genoffice/docx-engine",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "docx parsing (Block tree with docxIndex anchors), OOXML fragment generation, paragraph-patch save",
+  "exports": {
+    ".": "./src/index.ts",
+    "./math": "./src/math.ts",
+    "./metafile": "./src/metafile.ts",
+    "./zip-splice": "./src/zip-splice.ts",
+    "./lazy-media": "./src/lazy-media.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "fixtures": "tsx scripts/generate-fixtures.ts"
+  },
+  "dependencies": {
+    "@genoffice/pptx-engine": "*",
+    "@genoffice/zip-gate": "*",
+    "fast-xml-parser": "^5.12.0",
+    "jszip": "^3.10.1",
+    "utif2": "^4.1.0",
+    "@genoffice/agent-core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "saxes": "^6.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}

@@ -1,0 +1,547 @@
+/**
+ * ODF style index: every `style:style` from content.xml's automatic styles and
+ * styles.xml's named styles, resolved along `style:parent-style-name` chains
+ * onto the flat text/paragraph property sets the two converters consume.
+ * Anything the chain cannot prove (a missing parent, a cycle) degrades to the
+ * properties gathered so far — an import filter never guesses.
+ */
+
+import { XNode, attr, firstChild, nodeAttrs, nodeChildren, nodeName } from './xml'
+import { emuToPt, emuToTwips, odfColorToHex, odfLengthToEmu } from './units'
+
+// w:start is a 32-bit decimal number
+const MAX_LIST_START = 0x7fffffff
+
+export interface OdfTextProps {
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  strike?: boolean
+  sizePt?: number
+  /** hex without '#' */
+  color?: string
+  font?: string
+  vertAlign?: 'superscript' | 'subscript'
+  caps?: 'all' | 'small'
+  resetUppercase?: boolean
+  resetSmallCaps?: boolean
+  /** run shading fill, hex without '#' */
+  shading?: string
+  /** `fo:letter-spacing` as docx's w:spacing, twips (negative when condensed) */
+  letterSpacingTw?: number
+  /** `style:text-scale` as docx's w:w, percent in 1..600 */
+  scalePct?: number
+}
+
+export interface OdfParaProps {
+  align?: 'left' | 'center' | 'right' | 'justify'
+  spaceBeforeTw?: number
+  spaceAfterTw?: number
+  /** multiple of single spacing (lineRule auto) */
+  lineSpacing?: number
+  /** fixed/at-least line height in twips */
+  lineAtLeastTw?: number
+  lineExactTw?: number
+  indentLeftTw?: number
+  indentRightTw?: number
+  indentFirstLineTw?: number
+  pageBreakBefore?: boolean
+  /** `fo:background-color` of the paragraph, hex without '#' */
+  background?: string
+  /** `fo:keep-with-next="always"` — keep the paragraph on the same page as the next */
+  keepNext?: boolean
+  /** `fo:keep-together="always"` — never split the paragraph across pages */
+  keepLines?: boolean
+}
+
+export interface OdfListLevel {
+  kind: 'bullet' | 'ordered'
+  bulletChar?: string
+  numFormat?: string
+  numPrefix?: string
+  numSuffix?: string
+  start?: number
+  indentLeftTw?: number
+  hangingTw?: number
+}
+
+interface StyleDef {
+  family: string
+  fontSizePercent?: number
+  parent?: string
+  text?: OdfTextProps
+  para?: OdfParaProps
+}
+
+export class OdfStyles {
+  private defs = new Map<string, StyleDef>()
+  private fonts = new Map<string, string>()
+  private lists = new Map<string, Map<number, OdfListLevel>>()
+  private columnWidths = new Map<string, number>()
+  private cellFills = new Map<string, string | null>()
+  private tableAligns = new Map<string, 'center' | 'right'>()
+  private cellAligns = new Map<string, 'center' | 'bottom' | null>()
+  private defaults: { text?: OdfTextProps; para?: OdfParaProps } = {}
+
+  constructor(contentRoots: XNode[] | null, stylesRoots: XNode[] | null) {
+    // named styles first, then automatic ones (later index wins on name clash —
+    // automatic styles are the ones the body actually references)
+    if (stylesRoots) this.collect(stylesRoots)
+    if (contentRoots) this.collect(contentRoots)
+  }
+
+  private collect(roots: XNode[]): void {
+    for (const root of roots) this.walkCollect(root)
+  }
+
+  private walkCollect(node: XNode): void {
+    const name = nodeName(node)
+    if (name === 'style:style') {
+      this.addStyle(node)
+    } else if (name === 'style:default-style') {
+      const family = attr(node, 'style:family')
+      if (family === 'paragraph' || family === 'text') {
+        const props = this.readProps(node)
+        if (family === 'text' && props.text)
+          this.defaults.text = { ...this.defaults.text, ...props.text }
+        if (family === 'paragraph' && props.para)
+          this.defaults.para = { ...this.defaults.para, ...props.para }
+        if (family === 'paragraph' && props.text)
+          this.defaults.text = { ...this.defaults.text, ...props.text }
+      }
+    } else if (name === 'text:list-style') {
+      this.addListStyle(node)
+    } else if (name === 'style:font-face') {
+      const declName = attr(node, 'style:name')
+      const family = attr(node, 'svg:font-family')
+      if (declName && family) {
+        this.fonts.set(declName, family.replace(/^['"]|['"]$/g, ''))
+      }
+    }
+    for (const child of nodeChildren(node)) this.walkCollect(child)
+  }
+
+  private addStyle(node: XNode): void {
+    const name = attr(node, 'style:name')
+    const family = attr(node, 'style:family')
+    if (!name || !family) return
+    if (family === 'table-column') {
+      this.defs.set(`${family}:${name}`, { family, parent: attr(node, 'style:parent-style-name') })
+      const properties =
+        firstChild(node, 'style:table-column-properties') ??
+        firstChild(node, 'style:column-properties')
+      const width = properties ? odfLengthToEmu(attr(properties, 'style:column-width')) : null
+      if (width !== null && width > 0) this.columnWidths.set(name, width)
+      return
+    }
+    if (family === 'table-cell') {
+      this.defs.set(`${family}:${name}`, { family, parent: attr(node, 'style:parent-style-name') })
+      const properties = firstChild(node, 'style:table-cell-properties')
+      const fill = properties ? odfColorToHex(attr(properties, 'fo:background-color')) : null
+      if (fill) this.cellFills.set(name, fill)
+      else if (properties && attr(properties, 'fo:background-color') === 'transparent')
+        this.cellFills.set(name, null)
+      // ODF spells vertical alignment top/middle/bottom/automatic in
+      // style:vertical-align; Word has no value for "top" because it is the
+      // default, so only the other two travel
+      const vertical = properties ? attr(properties, 'style:vertical-align') : undefined
+      const align = vertical === 'middle' ? 'center' : vertical === 'bottom' ? 'bottom' : null
+      // an explicit top is recorded too, so it overrides an inherited value
+      if (vertical) this.cellAligns.set(name, align)
+      return
+    }
+    if (family === 'table') {
+      // `table:align` places the table against the margins; "margins" is the
+      // default full-width behaviour and has no w:jc of its own
+      const properties = firstChild(node, 'style:table-properties')
+      const align = properties ? attr(properties, 'table:align') : undefined
+      if (align === 'center' || align === 'right') this.tableAligns.set(name, align)
+      return
+    }
+    const props = this.readProps(node)
+    const textProperties = firstChild(node, 'style:text-properties')
+    const fontSize = textProperties ? attr(textProperties, 'fo:font-size') : undefined
+    const percent = fontSize && /^(\d+(?:\.\d+)?)%$/.exec(fontSize.trim())
+    this.defs.set(`${family}:${name}`, {
+      family,
+      fontSizePercent: percent ? Number(percent[1]) : undefined,
+      parent: attr(node, 'style:parent-style-name'),
+      text: props.text,
+      para: props.para,
+    })
+  }
+
+  /** width of a table-column style, EMU; null when undeclared */
+  columnWidthEmu(styleName: string | undefined): number | null {
+    const seen = new Set<string>()
+    while (styleName && !seen.has(styleName)) {
+      seen.add(styleName)
+      const width = this.columnWidths.get(styleName)
+      if (width !== undefined) return width
+      styleName = this.defs.get(`table-column:${styleName}`)?.parent
+    }
+    return null
+  }
+
+  /** fill of a table-cell style, hex without '#'; null otherwise */
+  cellFill(styleName: string | undefined): string | null {
+    const seen = new Set<string>()
+    while (styleName && !seen.has(styleName)) {
+      seen.add(styleName)
+      if (this.cellFills.has(styleName)) return this.cellFills.get(styleName) ?? null
+      styleName = this.defs.get(`table-cell:${styleName}`)?.parent
+    }
+    return null
+  }
+
+  /** `table:align` of a table style, when the table is not flush with the margins */
+  tableAlign(styleName: string | undefined): 'center' | 'right' | null {
+    if (!styleName) return null
+    return this.tableAligns.get(styleName) ?? null
+  }
+
+  /** `style:vertical-align` of a table-cell style, in docx's vocabulary */
+  cellAlign(styleName: string | undefined): 'center' | 'bottom' | null {
+    const seen = new Set<string>()
+    while (styleName && !seen.has(styleName)) {
+      seen.add(styleName)
+      if (this.cellAligns.has(styleName)) return this.cellAligns.get(styleName) ?? null
+      styleName = this.defs.get(`table-cell:${styleName}`)?.parent
+    }
+    return null
+  }
+
+  private readProps(node: XNode): { text?: OdfTextProps; para?: OdfParaProps } {
+    let text: OdfTextProps | undefined
+    let para: OdfParaProps | undefined
+    for (const child of nodeChildren(node)) {
+      const childName = nodeName(child)
+      if (childName === 'style:text-properties') text = this.readTextProps(child)
+      else if (childName === 'style:paragraph-properties') para = this.readParaProps(child)
+    }
+    return { text, para }
+  }
+
+  private readTextProps(node: XNode): OdfTextProps | undefined {
+    const a = nodeAttrs(node)
+    const out: OdfTextProps = {}
+    if (a['fo:font-weight'] === 'bold' || a['fo:font-weight'] === 'normal')
+      out.bold = a['fo:font-weight'] === 'bold'
+    else if (/^[1-9]00$/.test(a['fo:font-weight'] ?? ''))
+      out.bold = Number(a['fo:font-weight']) >= 600
+    if (['italic', 'oblique', 'normal'].includes(a['fo:font-style']))
+      out.italic = a['fo:font-style'] !== 'normal'
+    if (a['style:text-underline-type'] !== undefined) {
+      out.underline = a['style:text-underline-type'] !== 'none'
+    } else if (a['style:text-underline-style'] !== undefined) {
+      out.underline = a['style:text-underline-style'] !== 'none'
+    }
+    const strike =
+      a['style:text-line-through-type'] ??
+      a['fo:text-line-through-type'] ??
+      a['style:text-line-through-style']
+    if (strike !== undefined) out.strike = strike !== 'none'
+    const size = odfLengthToEmu(a['fo:font-size'])
+    if (size !== null && size > 0) out.sizePt = Math.round(emuToPt(size) * 10) / 10
+    const color = odfColorToHex(a['fo:color'])
+    if (color) out.color = color
+    const shading = odfColorToHex(a['fo:background-color'])
+    if (shading) out.shading = shading
+    else if (a['fo:background-color'] === 'transparent') out.shading = undefined
+    const fontName = a['style:font-name']
+    if (fontName) out.font = this.fonts.get(fontName) ?? fontName
+    else if (a['fo:font-family']) out.font = a['fo:font-family'].replace(/^['"]|['"]$/g, '')
+    const position = a['style:text-position']
+    if (position) {
+      if (/^super/i.test(position.trim())) out.vertAlign = 'superscript'
+      else if (/^sub/i.test(position.trim())) out.vertAlign = 'subscript'
+      else if (/^0%(?:\s|$)/.test(position.trim())) out.vertAlign = undefined
+    }
+    const transform = a['style:text-transform'] ?? a['fo:text-transform']
+    if (transform === 'uppercase') out.caps = 'all'
+    else if (transform === 'lowercase') out.caps = undefined
+    else if (transform === 'capitalize') out.caps = undefined
+    if (transform === 'none') out.resetUppercase = true
+    if (a['fo:font-variant'] === 'normal') out.resetSmallCaps = true
+    if (a['fo:font-variant'] === 'small-caps') out.caps = 'small'
+    const letter = odfLengthToEmu(a['fo:letter-spacing'])
+    // 0 is kept: an explicit reset inside a spaced span has to override it
+    if (letter !== null) out.letterSpacingTw = emuToTwips(letter)
+    const scale = textScalePercent(a['style:text-scale'])
+    if (scale !== undefined) out.scalePct = scale
+    return Object.keys(out).length > 0 ? out : undefined
+  }
+
+  private readParaProps(node: XNode): OdfParaProps | undefined {
+    const a = nodeAttrs(node)
+    const out: OdfParaProps = {}
+    const align = a['fo:text-align']
+    if (align === 'start' || align === 'left') out.align = 'left'
+    else if (align === 'center') out.align = 'center'
+    else if (align === 'end' || align === 'right') out.align = 'right'
+    else if (align === 'justify') out.align = 'justify'
+    const before = odfLengthToEmu(a['fo:margin-top'] ?? a['fo:margin'])
+    if (before !== null) out.spaceBeforeTw = emuToTwips(before)
+    const after = odfLengthToEmu(a['fo:margin-bottom'] ?? a['fo:margin'])
+    if (after !== null) out.spaceAfterTw = emuToTwips(after)
+    const lineHeight = a['fo:line-height']
+    if (lineHeight) {
+      const percent = /^(\d+(?:\.\d+)?)%$/.exec(lineHeight.trim())
+      if (percent) {
+        const multiple = Number(percent[1]) / 100
+        // 1000% is already beyond what a consumer honors; anything larger is
+        // malformed input and would render as exponent notation in w:line
+        if (multiple > 0 && multiple <= 10) {
+          out.lineSpacing = multiple
+          out.lineExactTw = undefined
+        }
+      } else {
+        const fixed = odfLengthToEmu(lineHeight)
+        if (fixed !== null) {
+          out.lineExactTw = emuToTwips(fixed)
+          out.lineSpacing = undefined
+        }
+      }
+    }
+    const atLeast = odfLengthToEmu(a['style:line-height-at-least'])
+    if (atLeast !== null) out.lineAtLeastTw = emuToTwips(atLeast)
+    const exact = odfLengthToEmu(a['style:line-spacing'])
+    if (exact !== null) out.lineExactTw = emuToTwips(exact)
+    if (lineHeight?.trim() === 'normal') {
+      out.lineSpacing = 1
+      out.lineExactTw = undefined
+      out.lineAtLeastTw = undefined
+    }
+    const left = odfLengthToEmu(a['fo:margin-left'] ?? a['fo:margin'])
+    if (left !== null) out.indentLeftTw = emuToTwips(left)
+    const right = odfLengthToEmu(a['fo:margin-right'] ?? a['fo:margin'])
+    if (right !== null) out.indentRightTw = emuToTwips(right)
+    const first = odfLengthToEmu(a['fo:text-indent'])
+    if (first !== null) out.indentFirstLineTw = emuToTwips(first)
+    if (a['fo:break-before'] === 'page' || a['fo:break-before'] === 'auto')
+      out.pageBreakBefore = a['fo:break-before'] === 'page'
+    const background = odfColorToHex(a['fo:background-color'])
+    if (background) out.background = background
+    else if (a['fo:background-color'] === 'transparent') out.background = undefined
+    // ODF spells both as auto/always; "auto" is the default, so it only has to
+    // cancel a value an ancestor style set
+    const keepNext = a['fo:keep-with-next']
+    if (keepNext !== undefined) out.keepNext = keepNext === 'always'
+    const keepTogether = a['fo:keep-together']
+    if (keepTogether !== undefined) out.keepLines = keepTogether === 'always'
+    return Object.keys(out).length > 0 ? out : undefined
+  }
+
+  private addListStyle(node: XNode): void {
+    const name = attr(node, 'style:name')
+    if (!name) return
+    const levels = new Map<number, OdfListLevel>()
+    for (const child of nodeChildren(node)) {
+      const childName = nodeName(child)
+      const level = Number(attr(child, 'text:level'))
+      if (!Number.isInteger(level) || level < 1 || level > 10) continue
+      if (childName === 'text:list-level-style-bullet') {
+        levels.set(level, {
+          kind: 'bullet',
+          bulletChar: attr(child, 'text:bullet-char') ?? attr(child, 'style:bullet-char') ?? '•',
+          ...listLevelIndent(child),
+        })
+      } else if (
+        childName === 'text:list-level-style-number' ||
+        childName === 'text:list-level-style-roman'
+      ) {
+        const startValue = attr(child, 'text:start-value')
+        const start = startValue && /^\d+$/.test(startValue) ? Number(startValue) : NaN
+        levels.set(level, {
+          kind: 'ordered',
+          ...(start <= MAX_LIST_START ? { start } : {}),
+          numFormat: attr(child, 'style:num-format') ?? '1',
+          numPrefix: attr(child, 'style:num-prefix'),
+          numSuffix: attr(child, 'style:num-suffix'),
+          ...listLevelIndent(child),
+        })
+      }
+    }
+    // lists defined without level entries still name a style; give them the
+    // default bullet shape so the structure survives
+    this.lists.set(name, levels)
+  }
+
+  /** text/paragraph props for a style name, resolved along the parent chain. */
+  textProps(
+    styleName: string | undefined,
+    families: readonly string[],
+    includeDefaults = true,
+  ): OdfTextProps | null {
+    return this.resolve(styleName, families, includeDefaults).text
+  }
+
+  paraProps(styleName: string | undefined, families: readonly string[]): OdfParaProps | null {
+    return this.resolve(styleName, families).para
+  }
+
+  private resolve(
+    styleName: string | undefined,
+    families: readonly string[],
+    includeDefaults = true,
+  ): { text: OdfTextProps | null; para: OdfParaProps | null } {
+    const chain: StyleDef[] = []
+    const seen = new Set<string>()
+    let current = styleName
+    while (current && !seen.has(current)) {
+      seen.add(current)
+      const def = families.map((family) => this.defs.get(`${family}:${current}`)).find(Boolean)
+      if (!def) break
+      chain.push(def)
+      current = def.parent
+    }
+    let text: OdfTextProps = includeDefaults ? { ...(this.defaults.text ?? {}) } : {}
+    let para: OdfParaProps = { ...(this.defaults.para ?? {}) }
+    // parent first so the style itself wins
+    for (let index = chain.length - 1; index >= 0; index--) {
+      const inheritedSize = text.sizePt
+      if (chain[index].text) text = mergeTextProps(text, chain[index].text!)
+      const percent = chain[index].fontSizePercent
+      if (percent !== undefined && inheritedSize !== undefined) {
+        const size = (inheritedSize * percent) / 100
+        if (size > 0 && odfLengthToEmu(`${size}pt`) !== null) text.sizePt = size
+      }
+      if (chain[index].para) para = { ...para, ...chain[index].para }
+    }
+    return {
+      text: Object.keys(text).length > 0 ? text : null,
+      para: Object.keys(para).length > 0 ? para : null,
+    }
+  }
+
+  /** Levels of a `text:list-style`; null when the style is unknown. */
+  listLevels(styleName: string | undefined): Map<number, OdfListLevel> | null {
+    if (!styleName) return null
+    return this.lists.get(styleName) ?? null
+  }
+
+  /** Page geometry of the first master page: width/height/margins in twips. */
+  pageSetup(stylesRoots: XNode[] | null): {
+    widthTw: number
+    heightTw: number
+    marginTopTw: number
+    marginRightTw: number
+    marginBottomTw: number
+    marginLeftTw: number
+  } | null {
+    const properties = this.pageLayoutProperties(stylesRoots)
+    if (!properties) return null
+    const a = nodeAttrs(properties)
+    const width = odfLengthToEmu(a['fo:page-width'])
+    const height = odfLengthToEmu(a['fo:page-height'])
+    if (width === null || height === null || width <= 0 || height <= 0) return null
+    const margin = (key: string, fallback: string | undefined): number => {
+      const value = odfLengthToEmu(a[key] ?? fallback)
+      return value === null ? 0 : emuToTwips(Math.max(0, value))
+    }
+    return {
+      widthTw: emuToTwips(width),
+      heightTw: emuToTwips(height),
+      marginTopTw: margin('fo:margin-top', a['fo:margin']),
+      marginRightTw: margin('fo:margin-right', a['fo:margin']),
+      marginBottomTw: margin('fo:margin-bottom', a['fo:margin']),
+      marginLeftTw: margin('fo:margin-left', a['fo:margin']),
+    }
+  }
+
+  /** Page size of the first master page in EMU — the deck's slide size. */
+  pageSizeEmu(stylesRoots: XNode[] | null): { widthEmu: number; heightEmu: number } | null {
+    const properties = this.pageLayoutProperties(stylesRoots)
+    if (!properties) return null
+    const a = nodeAttrs(properties)
+    const width = odfLengthToEmu(a['fo:page-width'])
+    const height = odfLengthToEmu(a['fo:page-height'])
+    if (width === null || height === null || width <= 0 || height <= 0) return null
+    return { widthEmu: width, heightEmu: height }
+  }
+
+  private pageLayoutProperties(stylesRoots: XNode[] | null): XNode | null {
+    if (!stylesRoots) return null
+    let layoutName: string | null = null
+    const walk = (node: XNode): void => {
+      if (layoutName) return
+      if (nodeName(node) === 'style:master-page') {
+        layoutName = attr(node, 'style:page-layout-name') ?? null
+        return
+      }
+      for (const child of nodeChildren(node)) walk(child)
+    }
+    for (const root of stylesRoots) walk(root)
+    if (!layoutName) return null
+    let properties: XNode | null = null
+    const findLayout = (node: XNode): void => {
+      if (properties) return
+      if (nodeName(node) === 'style:page-layout' && attr(node, 'style:name') === layoutName) {
+        properties = firstChild(node, 'style:page-layout-properties')
+        return
+      }
+      for (const child of nodeChildren(node)) findLayout(child)
+    }
+    for (const root of stylesRoots) findLayout(root)
+    return properties
+  }
+}
+
+export function mergeTextProps(base: OdfTextProps, override: OdfTextProps): OdfTextProps {
+  const out = { ...base, ...override }
+  if (
+    override.caps === undefined &&
+    ((override.resetUppercase && base.caps === 'all') ||
+      (override.resetSmallCaps && base.caps === 'small'))
+  )
+    out.caps = undefined
+  return out
+}
+
+/** label-alignment indents of a list level (space-before + min-label-width). */
+function listLevelIndent(node: XNode): { indentLeftTw?: number; hangingTw?: number } {
+  const properties = firstChild(node, 'style:list-level-properties')
+  if (!properties) return {}
+  const alignment = firstChild(properties, 'style:list-level-label-alignment')
+  if (
+    attr(properties, 'text:list-level-position-and-space-mode') === 'label-alignment' &&
+    alignment
+  ) {
+    const left = odfLengthToEmu(attr(alignment, 'fo:margin-left'))
+    const first = odfLengthToEmu(attr(alignment, 'fo:text-indent'))
+    return {
+      ...(left !== null ? { indentLeftTw: emuToTwips(left) } : {}),
+      ...(first !== null && first <= 0 ? { hangingTw: emuToTwips(-first) } : {}),
+    }
+  }
+  const a = nodeAttrs(properties)
+  const spaceBefore = odfLengthToEmu(a['text:space-before'])
+  const minWidth = odfLengthToEmu(a['text:min-label-width'])
+  const indent = a['fo:text-indent']
+  const out: { indentLeftTw?: number; hangingTw?: number } = {}
+  if (spaceBefore !== null || minWidth !== null) {
+    const left = (spaceBefore ?? 0) + (minWidth ?? 0)
+    out.indentLeftTw = emuToTwips(left)
+  }
+  if (minWidth !== null) out.hangingTw = emuToTwips(minWidth)
+  if (indent !== undefined) {
+    const value = odfLengthToEmu(indent)
+    // ODF expresses the hanging as a negative first-line indent
+    if (value !== null && value < 0) out.hangingTw = emuToTwips(-value)
+  }
+  return out
+}
+
+/**
+ * `style:text-scale` is a percentage of the character width (20.417 in ODF's
+ * vocabulary); docx spells the same thing as `w:w` in 1..600, so wider values
+ * clamp there instead of writing a value no consumer accepts.
+ */
+function textScalePercent(text: string | undefined): number | undefined {
+  if (!text) return undefined
+  const match = /^(\d+(?:\.\d+)?)%?$/.exec(text.trim())
+  if (!match) return undefined
+  const value = Math.round(Number(match[1]))
+  if (!Number.isFinite(value) || value < 1) return undefined
+  return Math.min(value, 600)
+}

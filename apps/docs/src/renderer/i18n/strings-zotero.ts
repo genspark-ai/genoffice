@@ -1,0 +1,433 @@
+import { defineStrings } from '@genoffice/i18n'
+
+/** Strings for the Zotero ribbon tab. */
+export const zoteroStrings = defineStrings({
+  zh: {
+    zoteroCitation: '添加/编辑引文',
+    zoteroCitationTip: '使用 Zotero 添加引文；光标在现有引文中时可编辑',
+    zoteroBibliography: '添加/编辑参考文献表',
+    zoteroBibliographyTip: '使用 Zotero 添加或编辑参考文献表',
+    zoteroRefresh: '刷新',
+    zoteroRefreshTip: '刷新全部 Zotero 引文和参考文献表',
+    zoteroDocumentSettingsTip: 'Zotero 文档设置',
+    zoteroDocumentPreferences: '文档首选项',
+    zoteroRemoveCodes: '取消引文链接',
+    zoteroRemoveCodesTip: '将 Zotero 引文和参考文献表转为普通文本，之后 Zotero 不再更新它们',
+    zoteroConnectionError: '无法连接 Zotero。请先启动 Zotero，并保持桌面程序运行。',
+    zoteroOperationError: 'Zotero 操作失败。',
+    zoteroNoteFieldsUnsupported:
+      '此文档的脚注或尾注中含有 Zotero 引文，GenOffice 目前还不能更新它们。为保持参考文献表完整，已停用此文档的 Zotero 命令。',
+    zoteroGroup: 'Zotero',
+  },
+  en: {
+    zoteroCitation: 'Add/Edit Citation',
+    zoteroCitationTip: 'Add a citation with Zotero; place the cursor in a citation to edit it',
+    zoteroBibliography: 'Add/Edit Bibliography',
+    zoteroBibliographyTip: 'Add or edit the bibliography with Zotero',
+    zoteroRefresh: 'Refresh',
+    zoteroRefreshTip: 'Refresh all Zotero citations and bibliographies',
+    zoteroDocumentSettingsTip: 'Zotero document settings',
+    zoteroDocumentPreferences: 'Document Preferences',
+    zoteroRemoveCodes: 'Unlink Citations',
+    zoteroRemoveCodesTip:
+      'Turn Zotero citations and bibliographies into plain text that Zotero no longer updates',
+    zoteroConnectionError: 'Unable to connect to Zotero. Start Zotero and keep it running.',
+    zoteroOperationError: 'The Zotero operation failed.',
+    zoteroNoteFieldsUnsupported:
+      'This document has Zotero citations in footnotes or endnotes, which GenOffice cannot update yet. Zotero commands are turned off here so the bibliography stays intact.',
+    zoteroGroup: 'Zotero',
+  },
+  ja: {
+    zoteroCitation: '引用を追加/編集',
+    zoteroCitationTip: 'Zotero で引用を追加します。既存の引用内にカーソルを置くと編集できます',
+    zoteroBibliography: '文献目録を追加/編集',
+    zoteroBibliographyTip: 'Zotero で文献目録を追加または編集します',
+    zoteroRefresh: '更新',
+    zoteroRefreshTip: 'すべての Zotero 引用と文献目録を更新します',
+    zoteroDocumentSettingsTip: 'Zotero 文書設定',
+    zoteroDocumentPreferences: '文書の環境設定',
+    zoteroRemoveCodes: '引用のリンクを解除',
+    zoteroRemoveCodesTip:
+      'Zotero の引用と文献目録を通常のテキストに変換します。以後 Zotero では更新されません',
+    zoteroConnectionError: 'Zotero に接続できません。Zotero を起動したままにしてください。',
+    zoteroOperationError: 'Zotero の操作に失敗しました。',
+    zoteroNoteFieldsUnsupported:
+      'この文書の脚注または文末脚注に Zotero の引用が含まれていますが、GenOffice はまだ更新できません。参考文献一覧を保つため、この文書では Zotero コマンドを無効にしています。',
+    zoteroGroup: 'Zotero',
+  },
+  ko: {
+    zoteroCitation: '인용 추가/편집',
+    zoteroCitationTip: 'Zotero로 인용을 추가합니다. 기존 인용 안에 커서를 두면 편집할 수 있습니다',
+    zoteroBibliography: '참고 문헌 추가/편집',
+    zoteroBibliographyTip: 'Zotero로 참고 문헌을 추가하거나 편집합니다',
+    zoteroRefresh: '새로 고침',
+    zoteroRefreshTip: '모든 Zotero 인용과 참고 문헌을 새로 고칩니다',
+    zoteroDocumentSettingsTip: 'Zotero 문서 설정',
+    zoteroDocumentPreferences: '문서 환경설정',
+    zoteroRemoveCodes: '인용 연결 해제',
+    zoteroRemoveCodesTip:
+      'Zotero 인용과 참고 문헌을 일반 텍스트로 바꿉니다. 이후 Zotero에서 업데이트되지 않습니다',
+    zoteroConnectionError: 'Zotero에 연결할 수 없습니다. Zotero를 실행한 상태로 유지하세요.',
+    zoteroOperationError: 'Zotero 작업에 실패했습니다.',
+    zoteroNoteFieldsUnsupported:
+      '이 문서의 각주 또는 미주에 Zotero 인용이 있으며 GenOffice는 아직 이를 업데이트할 수 없습니다. 참고문헌을 그대로 유지하기 위해 이 문서에서는 Zotero 명령이 비활성화되었습니다.',
+    zoteroGroup: 'Zotero',
+  },
+  fr: {
+    zoteroCitation: 'Ajouter/Modifier une citation',
+    zoteroCitationTip:
+      'Ajouter une citation avec Zotero ; placer le curseur dedans pour la modifier',
+    zoteroBibliography: 'Ajouter/Modifier la bibliographie',
+    zoteroBibliographyTip: 'Ajouter ou modifier la bibliographie avec Zotero',
+    zoteroRefresh: 'Actualiser',
+    zoteroRefreshTip: 'Actualiser toutes les citations et bibliographies Zotero',
+    zoteroDocumentSettingsTip: 'Paramètres du document Zotero',
+    zoteroDocumentPreferences: 'Préférences du document',
+    zoteroRemoveCodes: 'Dissocier les citations',
+    zoteroRemoveCodesTip:
+      'Convertir les citations et bibliographies Zotero en texte brut que Zotero ne met plus à jour',
+    zoteroConnectionError:
+      'Impossible de se connecter à Zotero. Démarrez Zotero et laissez-le ouvert.',
+    zoteroOperationError: "L'opération Zotero a échoué.",
+    zoteroNoteFieldsUnsupported:
+      'Ce document contient des citations Zotero dans les notes de bas de page ou de fin, que GenOffice ne peut pas encore mettre à jour. Les commandes Zotero sont désactivées ici afin de préserver la bibliographie.',
+    zoteroGroup: 'Zotero',
+  },
+  de: {
+    zoteroCitation: 'Zitat hinzufügen/bearbeiten',
+    zoteroCitationTip: 'Zitat mit Zotero einfügen; zum Bearbeiten den Cursor in ein Zitat setzen',
+    zoteroBibliography: 'Literaturverzeichnis hinzufügen/bearbeiten',
+    zoteroBibliographyTip: 'Literaturverzeichnis mit Zotero einfügen oder bearbeiten',
+    zoteroRefresh: 'Aktualisieren',
+    zoteroRefreshTip: 'Alle Zotero-Zitate und Literaturverzeichnisse aktualisieren',
+    zoteroDocumentSettingsTip: 'Zotero-Dokumenteinstellungen',
+    zoteroDocumentPreferences: 'Dokumenteinstellungen',
+    zoteroRemoveCodes: 'Zitate entkoppeln',
+    zoteroRemoveCodesTip:
+      'Zotero-Zitate und Literaturverzeichnisse in normalen Text umwandeln, den Zotero nicht mehr aktualisiert',
+    zoteroConnectionError:
+      'Verbindung mit Zotero nicht möglich. Starten Sie Zotero und lassen Sie es geöffnet.',
+    zoteroOperationError: 'Der Zotero-Vorgang ist fehlgeschlagen.',
+    zoteroNoteFieldsUnsupported:
+      'Dieses Dokument enthält Zotero-Zitate in Fuß- oder Endnoten, die GenOffice noch nicht aktualisieren kann. Die Zotero-Befehle sind hier deaktiviert, damit das Literaturverzeichnis intakt bleibt.',
+    zoteroGroup: 'Zotero',
+  },
+  es: {
+    zoteroCitation: 'Añadir/Editar cita',
+    zoteroCitationTip: 'Añadir una cita con Zotero; coloque el cursor en una cita para editarla',
+    zoteroBibliography: 'Añadir/Editar bibliografía',
+    zoteroBibliographyTip: 'Añadir o editar la bibliografía con Zotero',
+    zoteroRefresh: 'Actualizar',
+    zoteroRefreshTip: 'Actualizar todas las citas y bibliografías de Zotero',
+    zoteroDocumentSettingsTip: 'Configuración del documento de Zotero',
+    zoteroDocumentPreferences: 'Preferencias del documento',
+    zoteroRemoveCodes: 'Desvincular citas',
+    zoteroRemoveCodesTip:
+      'Convertir las citas y bibliografías de Zotero en texto sin formato que Zotero ya no actualiza',
+    zoteroConnectionError: 'No se puede conectar con Zotero. Inicie Zotero y manténgalo abierto.',
+    zoteroOperationError: 'La operación de Zotero ha fallado.',
+    zoteroNoteFieldsUnsupported:
+      'Este documento tiene citas de Zotero en notas al pie o al final que GenOffice aún no puede actualizar. Los comandos de Zotero están desactivados aquí para mantener intacta la bibliografía.',
+    zoteroGroup: 'Zotero',
+  },
+  th: {
+    zoteroCitation: 'เพิ่ม/แก้ไขการอ้างอิง',
+    zoteroCitationTip: 'เพิ่มการอ้างอิงด้วย Zotero วางเคอร์เซอร์ในการอ้างอิงเพื่อแก้ไข',
+    zoteroBibliography: 'เพิ่ม/แก้ไขบรรณานุกรม',
+    zoteroBibliographyTip: 'เพิ่มหรือแก้ไขบรรณานุกรมด้วย Zotero',
+    zoteroRefresh: 'รีเฟรช',
+    zoteroRefreshTip: 'รีเฟรชการอ้างอิงและบรรณานุกรม Zotero ทั้งหมด',
+    zoteroDocumentSettingsTip: 'การตั้งค่าเอกสาร Zotero',
+    zoteroDocumentPreferences: 'การกำหนดลักษณะเอกสาร',
+    zoteroRemoveCodes: 'ยกเลิกการเชื่อมโยงการอ้างอิง',
+    zoteroRemoveCodesTip:
+      'แปลงการอ้างอิงและบรรณานุกรม Zotero เป็นข้อความธรรมดาที่ Zotero จะไม่อัปเดตอีก',
+    zoteroConnectionError: 'ไม่สามารถเชื่อมต่อกับ Zotero ได้ โปรดเปิด Zotero ทิ้งไว้',
+    zoteroOperationError: 'การดำเนินการ Zotero ล้มเหลว',
+    zoteroNoteFieldsUnsupported:
+      'เอกสารนี้มีการอ้างอิง Zotero ในเชิงอรรถหรืออ้างอิงท้ายเรื่อง ซึ่ง GenOffice ยังอัปเดตไม่ได้ คำสั่ง Zotero จึงถูกปิดไว้เพื่อรักษาบรรณานุกรมให้ครบถ้วน',
+    zoteroGroup: 'Zotero',
+  },
+  id: {
+    zoteroCitation: 'Tambah/Edit Kutipan',
+    zoteroCitationTip:
+      'Tambahkan kutipan dengan Zotero; letakkan kursor di kutipan untuk mengeditnya',
+    zoteroBibliography: 'Tambah/Edit Bibliografi',
+    zoteroBibliographyTip: 'Tambahkan atau edit bibliografi dengan Zotero',
+    zoteroRefresh: 'Segarkan',
+    zoteroRefreshTip: 'Segarkan semua kutipan dan bibliografi Zotero',
+    zoteroDocumentSettingsTip: 'Pengaturan dokumen Zotero',
+    zoteroDocumentPreferences: 'Preferensi Dokumen',
+    zoteroRemoveCodes: 'Lepas Tautan Kutipan',
+    zoteroRemoveCodesTip:
+      'Ubah kutipan dan bibliografi Zotero menjadi teks biasa yang tidak lagi diperbarui Zotero',
+    zoteroConnectionError:
+      'Tidak dapat terhubung ke Zotero. Jalankan Zotero dan biarkan tetap terbuka.',
+    zoteroOperationError: 'Operasi Zotero gagal.',
+    zoteroNoteFieldsUnsupported:
+      'Dokumen ini memiliki sitasi Zotero di catatan kaki atau catatan akhir yang belum dapat diperbarui GenOffice. Perintah Zotero dinonaktifkan di sini agar daftar pustaka tetap utuh.',
+    zoteroGroup: 'Zotero',
+  },
+  ru: {
+    zoteroCitation: 'Добавить/изменить цитату',
+    zoteroCitationTip: 'Добавить цитату через Zotero; для изменения поместите курсор внутрь цитаты',
+    zoteroBibliography: 'Добавить/изменить библиографию',
+    zoteroBibliographyTip: 'Добавить или изменить библиографию через Zotero',
+    zoteroRefresh: 'Обновить',
+    zoteroRefreshTip: 'Обновить все цитаты и библиографии Zotero',
+    zoteroDocumentSettingsTip: 'Параметры документа Zotero',
+    zoteroDocumentPreferences: 'Настройки документа',
+    zoteroRemoveCodes: 'Отвязать цитаты',
+    zoteroRemoveCodesTip:
+      'Преобразовать цитаты и библиографии Zotero в обычный текст, который Zotero больше не обновляет',
+    zoteroConnectionError:
+      'Не удалось подключиться к Zotero. Запустите Zotero и оставьте его открытым.',
+    zoteroOperationError: 'Операция Zotero завершилась с ошибкой.',
+    zoteroNoteFieldsUnsupported:
+      'В сносках или концевых сносках этого документа есть цитаты Zotero, которые GenOffice пока не может обновлять. Команды Zotero здесь отключены, чтобы библиография осталась целой.',
+    zoteroGroup: 'Zotero',
+  },
+  ar: {
+    zoteroCitation: 'إضافة/تحرير اقتباس',
+    zoteroCitationTip: 'أضف اقتباسًا باستخدام Zotero؛ ضع المؤشر داخل اقتباس لتعديله',
+    zoteroBibliography: 'إضافة/تحرير المراجع',
+    zoteroBibliographyTip: 'أضف قائمة المراجع أو عدّلها باستخدام Zotero',
+    zoteroRefresh: 'تحديث',
+    zoteroRefreshTip: 'تحديث جميع اقتباسات ومراجع Zotero',
+    zoteroDocumentSettingsTip: 'إعدادات مستند Zotero',
+    zoteroDocumentPreferences: 'تفضيلات المستند',
+    zoteroRemoveCodes: 'إلغاء ربط الاقتباسات',
+    zoteroRemoveCodesTip: 'تحويل اقتباسات ومراجع Zotero إلى نص عادي لا يحدّثه Zotero بعد ذلك',
+    zoteroConnectionError: 'تعذر الاتصال بـ Zotero. شغّل Zotero واتركه مفتوحًا.',
+    zoteroOperationError: 'فشلت عملية Zotero.',
+    zoteroNoteFieldsUnsupported:
+      'يحتوي هذا المستند على استشهادات Zotero في الحواشي السفلية أو الختامية، ولا يستطيع GenOffice تحديثها بعد. تم تعطيل أوامر Zotero هنا للحفاظ على قائمة المراجع سليمة.',
+    zoteroGroup: 'Zotero',
+  },
+  pt: {
+    zoteroCitation: 'Adicionar/Editar citação',
+    zoteroCitationTip: 'Adicione uma citação com o Zotero; posicione o cursor nela para editar',
+    zoteroBibliography: 'Adicionar/Editar bibliografia',
+    zoteroBibliographyTip: 'Adicione ou edite a bibliografia com o Zotero',
+    zoteroRefresh: 'Atualizar',
+    zoteroRefreshTip: 'Atualizar todas as citações e bibliografias do Zotero',
+    zoteroDocumentSettingsTip: 'Configurações do documento do Zotero',
+    zoteroDocumentPreferences: 'Preferências do documento',
+    zoteroRemoveCodes: 'Desvincular citações',
+    zoteroRemoveCodesTip:
+      'Converter as citações e bibliografias do Zotero em texto simples que o Zotero não atualiza mais',
+    zoteroConnectionError:
+      'Não foi possível conectar ao Zotero. Inicie o Zotero e mantenha-o aberto.',
+    zoteroOperationError: 'A operação do Zotero falhou.',
+    zoteroNoteFieldsUnsupported:
+      'Este documento tem citações do Zotero em notas de rodapé ou de fim que o GenOffice ainda não consegue atualizar. Os comandos do Zotero estão desativados aqui para manter a bibliografia intacta.',
+    zoteroGroup: 'Zotero',
+  },
+  it: {
+    zoteroCitation: 'Aggiungi/Modifica citazione',
+    zoteroCitationTip:
+      'Aggiungi una citazione con Zotero; posiziona il cursore in una citazione per modificarla',
+    zoteroBibliography: 'Aggiungi/Modifica bibliografia',
+    zoteroBibliographyTip: 'Aggiungi o modifica la bibliografia con Zotero',
+    zoteroRefresh: 'Aggiorna',
+    zoteroRefreshTip: 'Aggiorna tutte le citazioni e bibliografie Zotero',
+    zoteroDocumentSettingsTip: 'Impostazioni del documento Zotero',
+    zoteroDocumentPreferences: 'Preferenze documento',
+    zoteroRemoveCodes: 'Scollega citazioni',
+    zoteroRemoveCodesTip:
+      'Converti le citazioni e le bibliografie Zotero in testo normale che Zotero non aggiorna più',
+    zoteroConnectionError: 'Impossibile connettersi a Zotero. Avvia Zotero e lascialo aperto.',
+    zoteroOperationError: "L'operazione Zotero non è riuscita.",
+    zoteroNoteFieldsUnsupported:
+      'Questo documento contiene citazioni Zotero nelle note a piè di pagina o di chiusura, che GenOffice non può ancora aggiornare. I comandi Zotero sono disattivati qui per mantenere intatta la bibliografia.',
+    zoteroGroup: 'Zotero',
+  },
+  pl: {
+    zoteroCitation: 'Dodaj/edytuj cytowanie',
+    zoteroCitationTip: 'Dodaj cytowanie przez Zotero; umieść kursor w cytowaniu, aby je edytować',
+    zoteroBibliography: 'Dodaj/edytuj bibliografię',
+    zoteroBibliographyTip: 'Dodaj lub edytuj bibliografię przez Zotero',
+    zoteroRefresh: 'Odśwież',
+    zoteroRefreshTip: 'Odśwież wszystkie cytowania i bibliografie Zotero',
+    zoteroDocumentSettingsTip: 'Ustawienia dokumentu Zotero',
+    zoteroDocumentPreferences: 'Preferencje dokumentu',
+    zoteroRemoveCodes: 'Odłącz cytowania',
+    zoteroRemoveCodesTip:
+      'Zamień cytowania i bibliografie Zotero na zwykły tekst, którego Zotero już nie aktualizuje',
+    zoteroConnectionError: 'Nie można połączyć się z Zotero. Uruchom Zotero i pozostaw je otwarte.',
+    zoteroOperationError: 'Operacja Zotero nie powiodła się.',
+    zoteroNoteFieldsUnsupported:
+      'Ten dokument zawiera cytowania Zotero w przypisach dolnych lub końcowych, których GenOffice nie potrafi jeszcze aktualizować. Polecenia Zotero są tu wyłączone, aby bibliografia pozostała nienaruszona.',
+    zoteroGroup: 'Zotero',
+  },
+  cs: {
+    zoteroCitation: 'Přidat/upravit citaci',
+    zoteroCitationTip: 'Přidat citaci pomocí Zotera; pro úpravu umístěte kurzor do citace',
+    zoteroBibliography: 'Přidat/upravit bibliografii',
+    zoteroBibliographyTip: 'Přidat nebo upravit bibliografii pomocí Zotera',
+    zoteroRefresh: 'Aktualizovat',
+    zoteroRefreshTip: 'Aktualizovat všechny citace a bibliografie Zotero',
+    zoteroDocumentSettingsTip: 'Nastavení dokumentu Zotero',
+    zoteroDocumentPreferences: 'Předvolby dokumentu',
+    zoteroRemoveCodes: 'Odpojit citace',
+    zoteroRemoveCodesTip:
+      'Převést citace a bibliografie Zotero na prostý text, který už Zotero neaktualizuje',
+    zoteroConnectionError: 'K Zoteru se nelze připojit. Spusťte Zotero a nechte je otevřené.',
+    zoteroOperationError: 'Operace Zotero se nezdařila.',
+    zoteroNoteFieldsUnsupported:
+      'Tento dokument obsahuje citace Zotero v poznámkách pod čarou nebo vysvětlivkách, které GenOffice zatím neumí aktualizovat. Příkazy Zotero jsou zde vypnuté, aby bibliografie zůstala nedotčená.',
+    zoteroGroup: 'Zotero',
+  },
+  nl: {
+    zoteroCitation: 'Citatie toevoegen/bewerken',
+    zoteroCitationTip:
+      'Voeg een citatie toe met Zotero; plaats de cursor in een citatie om die te bewerken',
+    zoteroBibliography: 'Bibliografie toevoegen/bewerken',
+    zoteroBibliographyTip: 'Voeg de bibliografie toe of bewerk deze met Zotero',
+    zoteroRefresh: 'Vernieuwen',
+    zoteroRefreshTip: 'Vernieuw alle Zotero-citaties en bibliografieën',
+    zoteroDocumentSettingsTip: 'Zotero-documentinstellingen',
+    zoteroDocumentPreferences: 'Documentvoorkeuren',
+    zoteroRemoveCodes: 'Citaties ontkoppelen',
+    zoteroRemoveCodesTip:
+      'Zet Zotero-citaties en bibliografieën om in gewone tekst die Zotero niet meer bijwerkt',
+    zoteroConnectionError:
+      'Kan geen verbinding maken met Zotero. Start Zotero en laat het geopend.',
+    zoteroOperationError: 'De Zotero-bewerking is mislukt.',
+    zoteroNoteFieldsUnsupported:
+      'Dit document bevat Zotero-citaties in voet- of eindnoten die GenOffice nog niet kan bijwerken. Zotero-opdrachten zijn hier uitgeschakeld zodat de bibliografie intact blijft.',
+    zoteroGroup: 'Zotero',
+  },
+  ms: {
+    zoteroCitation: 'Tambah/Edit Petikan',
+    zoteroCitationTip:
+      'Tambah petikan dengan Zotero; letakkan kursor dalam petikan untuk mengeditnya',
+    zoteroBibliography: 'Tambah/Edit Bibliografi',
+    zoteroBibliographyTip: 'Tambah atau edit bibliografi dengan Zotero',
+    zoteroRefresh: 'Segar semula',
+    zoteroRefreshTip: 'Segar semula semua petikan dan bibliografi Zotero',
+    zoteroDocumentSettingsTip: 'Tetapan dokumen Zotero',
+    zoteroDocumentPreferences: 'Keutamaan Dokumen',
+    zoteroRemoveCodes: 'Nyahpaut Petikan',
+    zoteroRemoveCodesTip:
+      'Tukar petikan dan bibliografi Zotero kepada teks biasa yang tidak lagi dikemas kini oleh Zotero',
+    zoteroConnectionError:
+      'Tidak dapat menyambung ke Zotero. Mulakan Zotero dan biarkannya terbuka.',
+    zoteroOperationError: 'Operasi Zotero gagal.',
+    zoteroNoteFieldsUnsupported:
+      'Dokumen ini mempunyai petikan Zotero dalam nota kaki atau nota hujung yang belum boleh dikemas kini oleh GenOffice. Perintah Zotero dimatikan di sini supaya bibliografi kekal utuh.',
+    zoteroGroup: 'Zotero',
+  },
+  he: {
+    zoteroCitation: 'הוספה/עריכה של ציטוט',
+    zoteroCitationTip: 'הוספת ציטוט באמצעות Zotero; יש למקם את הסמן בציטוט כדי לערוך אותו',
+    zoteroBibliography: 'הוספה/עריכה של ביבליוגרפיה',
+    zoteroBibliographyTip: 'הוספה או עריכה של הביבליוגרפיה באמצעות Zotero',
+    zoteroRefresh: 'רענון',
+    zoteroRefreshTip: 'רענון כל הציטוטים והביבליוגרפיות של Zotero',
+    zoteroDocumentSettingsTip: 'הגדרות מסמך Zotero',
+    zoteroDocumentPreferences: 'העדפות מסמך',
+    zoteroRemoveCodes: 'ביטול קישור ציטוטים',
+    zoteroRemoveCodesTip:
+      'המרת הציטוטים והביבליוגרפיות של Zotero לטקסט רגיל ש-Zotero אינו מעדכן עוד',
+    zoteroConnectionError: 'לא ניתן להתחבר ל-Zotero. יש להפעיל את Zotero ולהשאיר אותו פתוח.',
+    zoteroOperationError: 'פעולת Zotero נכשלה.',
+    zoteroNoteFieldsUnsupported:
+      'מסמך זה מכיל ציטוטים של Zotero בהערות שוליים או הערות סיום, ש-GenOffice עדיין אינו יכול לעדכן. פקודות Zotero מושבתות כאן כדי לשמור על הביבליוגרפיה שלמה.',
+    zoteroGroup: 'Zotero',
+  },
+  hi: {
+    zoteroCitation: 'उद्धरण जोड़ें/संपादित करें',
+    zoteroCitationTip: 'Zotero से उद्धरण जोड़ें; संपादित करने के लिए कर्सर को उद्धरण में रखें',
+    zoteroBibliography: 'ग्रंथ सूची जोड़ें/संपादित करें',
+    zoteroBibliographyTip: 'Zotero से ग्रंथ सूची जोड़ें या संपादित करें',
+    zoteroRefresh: 'रीफ़्रेश करें',
+    zoteroRefreshTip: 'सभी Zotero उद्धरण और ग्रंथ सूचियाँ रीफ़्रेश करें',
+    zoteroDocumentSettingsTip: 'Zotero दस्तावेज़ सेटिंग',
+    zoteroDocumentPreferences: 'दस्तावेज़ प्राथमिकताएँ',
+    zoteroRemoveCodes: 'उद्धरण अनलिंक करें',
+    zoteroRemoveCodesTip:
+      'Zotero उद्धरणों और ग्रंथ सूचियों को सादे पाठ में बदलें, जिसे Zotero आगे अपडेट नहीं करता',
+    zoteroConnectionError: 'Zotero से कनेक्ट नहीं हो सका। Zotero शुरू करें और उसे खुला रखें।',
+    zoteroOperationError: 'Zotero कार्रवाई विफल रही।',
+    zoteroNoteFieldsUnsupported:
+      'इस दस्तावेज़ के फ़ुटनोट या एंडनोट में Zotero उद्धरण हैं, जिन्हें GenOffice अभी अपडेट नहीं कर सकता। ग्रंथसूची को सुरक्षित रखने के लिए यहाँ Zotero कमांड बंद हैं।',
+    zoteroGroup: 'Zotero',
+  },
+  'zh-TW': {
+    zoteroCitation: '新增/編輯引文',
+    zoteroCitationTip: '使用 Zotero 新增引文；游標位於現有引文中時可編輯',
+    zoteroBibliography: '新增/編輯參考文獻',
+    zoteroBibliographyTip: '使用 Zotero 新增或編輯參考文獻',
+    zoteroRefresh: '重新整理',
+    zoteroRefreshTip: '重新整理所有 Zotero 引文和參考文獻',
+    zoteroDocumentSettingsTip: 'Zotero 文件設定',
+    zoteroDocumentPreferences: '文件偏好設定',
+    zoteroRemoveCodes: '取消引文連結',
+    zoteroRemoveCodesTip: '將 Zotero 引文和參考文獻轉為純文字，之後 Zotero 不再更新',
+    zoteroConnectionError: '無法連線至 Zotero。請先啟動 Zotero，並保持桌面程式執行。',
+    zoteroOperationError: 'Zotero 操作失敗。',
+    zoteroNoteFieldsUnsupported:
+      '此文件的註腳或章節附註中含有 Zotero 引文，GenOffice 目前還無法更新它們。為保持參考文獻完整，已停用此文件的 Zotero 命令。',
+    zoteroGroup: 'Zotero',
+  },
+  vi: {
+    zoteroCitation: 'Thêm/Sửa trích dẫn',
+    zoteroCitationTip: 'Thêm trích dẫn bằng Zotero; đặt con trỏ vào trích dẫn để chỉnh sửa',
+    zoteroBibliography: 'Thêm/Sửa danh mục tài liệu tham khảo',
+    zoteroBibliographyTip: 'Thêm hoặc chỉnh sửa danh mục tài liệu tham khảo bằng Zotero',
+    zoteroRefresh: 'Làm mới',
+    zoteroRefreshTip: 'Làm mới tất cả trích dẫn và danh mục tài liệu tham khảo Zotero',
+    zoteroDocumentSettingsTip: 'Cài đặt tài liệu Zotero',
+    zoteroDocumentPreferences: 'Tùy chọn tài liệu',
+    zoteroRemoveCodes: 'Hủy liên kết trích dẫn',
+    zoteroRemoveCodesTip:
+      'Chuyển trích dẫn và danh mục tài liệu tham khảo Zotero thành văn bản thường mà Zotero không còn cập nhật',
+    zoteroConnectionError:
+      'Không thể kết nối với Zotero. Hãy khởi động Zotero và giữ ứng dụng luôn chạy.',
+    zoteroOperationError: 'Thao tác Zotero thất bại.',
+    zoteroNoteFieldsUnsupported:
+      'Tài liệu này có chứa trích dẫn Zotero trong chú thích cuối trang hoặc chú thích cuối tài liệu mà GenOffice hiện chưa thể cập nhật. Các lệnh Zotero đã bị tắt tại đây để giữ nguyên danh mục tài liệu tham khảo.',
+    zoteroGroup: 'Zotero',
+  },
+  tr: {
+    zoteroCitation: 'Alıntı Ekle/Düzenle',
+    zoteroCitationTip:
+      'Zotero ile alıntı ekleyin; düzenlemek için imleci bir alıntının içine getirin',
+    zoteroBibliography: 'Kaynakça Ekle/Düzenle',
+    zoteroBibliographyTip: 'Zotero ile kaynakça ekleyin veya düzenleyin',
+    zoteroRefresh: 'Yenile',
+    zoteroRefreshTip: 'Tüm Zotero alıntılarını ve kaynakçalarını yenile',
+    zoteroDocumentSettingsTip: 'Zotero belge ayarları',
+    zoteroDocumentPreferences: 'Belge Tercihleri',
+    zoteroRemoveCodes: 'Alıntıların Bağlantısını Kaldır',
+    zoteroRemoveCodesTip:
+      "Zotero alıntılarını ve kaynakçalarını, Zotero'nun artık güncellemediği düz metne dönüştür",
+    zoteroConnectionError:
+      'Zotero ile bağlantı kurulamadı. Zotero uygulamasını başlatın ve açık tutun.',
+    zoteroOperationError: 'Zotero işlemi başarısız oldu.',
+    zoteroNoteFieldsUnsupported:
+      'Bu belgenin dipnotlarında veya son notlarında GenOffice tarafından henüz güncellenemeyen Zotero alıntıları var. Kaynakçanın bozulmaması için Zotero komutları burada kapatıldı.',
+    zoteroGroup: 'Zotero',
+  },
+  hu: {
+    zoteroCitation: 'Hivatkozás hozzáadása/szerkesztése',
+    zoteroCitationTip:
+      'Hivatkozás beszúrása a Zoteróval; szerkesztéshez tedd a kurzort egy hivatkozásba',
+    zoteroBibliography: 'Irodalomjegyzék hozzáadása/szerkesztése',
+    zoteroBibliographyTip: 'Irodalomjegyzék beszúrása vagy szerkesztése a Zoteróval',
+    zoteroRefresh: 'Frissítés',
+    zoteroRefreshTip: 'Az összes Zotero-hivatkozás és -irodalomjegyzék frissítése',
+    zoteroDocumentSettingsTip: 'Zotero dokumentumbeállítások',
+    zoteroDocumentPreferences: 'Dokumentumbeállítások',
+    zoteroRemoveCodes: 'Hivatkozások leválasztása',
+    zoteroRemoveCodesTip:
+      'A Zotero-hivatkozások és -irodalomjegyzékek átalakítása egyszerű szöveggé, amelyet a Zotero már nem frissít',
+    zoteroConnectionError:
+      'Nem sikerült csatlakozni a Zoterohoz. Indítsd el a Zoterót, és hagyd futni.',
+    zoteroOperationError: 'A Zotero-művelet nem sikerült.',
+    zoteroNoteFieldsUnsupported:
+      'Ez a dokumentum lábjegyzetekben vagy végjegyzetekben tartalmaz Zotero-hivatkozásokat, amelyeket a GenOffice egyelőre nem tud frissíteni. A Zotero-parancsok itt le vannak tiltva, hogy az irodalomjegyzék érintetlen maradjon.',
+    zoteroGroup: 'Zotero',
+  },
+})

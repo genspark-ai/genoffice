@@ -1,0 +1,7 @@
+{
+  "source": "apps/docs/tests/pagination-corpus/docx/15-mixed-content.docx",
+  "tables": 4,
+  "hashes": ["bfc6261319cf95b3", "bfc6261319cf95b3", "bfc6261319cf95b3", "bfc6261319cf95b3"],
+  "staticTables": 4,
+  "staticHashes": ["11dd37dad7eb5c82", "11dd37dad7eb5c82", "11dd37dad7eb5c82", "11dd37dad7eb5c82"]
+}

@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/pct-no-tcw-distribution/probe.docx",
+  "tables": 2,
+  "hashes": ["8cf2e2928a938fdc", "8cf2e2928a938fdc"],
+  "staticTables": 2,
+  "staticHashes": ["d2bc4b9312334b21", "2d187eef012d13e9"]
+}

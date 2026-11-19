@@ -1,0 +1,6 @@
+{
+  "title": "Long Chinese text (docGrid)",
+  "tags": ["chinese", "docGrid", "multi-page"],
+  "description": "Pure Chinese with a w:docGrid lines grid, typical Chinese official-document format",
+  "file": "02-chinese-long-docgrid.docx"
+}

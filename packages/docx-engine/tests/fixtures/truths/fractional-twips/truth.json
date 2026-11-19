@@ -1,0 +1,43 @@
+{
+  "id": "fractional-twips",
+  "title": "Fractional twips are read and truncated",
+  "section": "word-truths.md#L385",
+  "probe_date": "2026-09-24",
+  "class": "pure",
+  "source": "probe f1_p1.docx, 21-line w:br paragraphs so a 1-twip difference shows as 1pt over 20 pitches, Word for Mac direct PDF",
+  "cases": [
+    {
+      "kind": "format",
+      "block": 0,
+      "expect": {
+        "spaceAfter": 200
+      }
+    },
+    {
+      "kind": "format",
+      "block": 1,
+      "expect": {
+        "spaceAfter": 199,
+        "spaceBefore": 60,
+        "lineRawTwips": 275
+      }
+    },
+    {
+      "kind": "format",
+      "block": 2,
+      "expect": {
+        "lineRule": "atLeast",
+        "lineRawTwips": 300
+      }
+    },
+    {
+      "kind": "format",
+      "block": 3,
+      "expect": {
+        "lineRule": "exact",
+        "lineRawTwips": 275
+      }
+    }
+  ],
+  "docx": "probe.docx"
+}

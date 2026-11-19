@@ -1,0 +1,248 @@
+/**
+ * Schema check for renderer-supplied AI settings. Apps wire it into their AI
+ * IPC handlers: 'ai:set-settings' (what gets persisted), 'ai:stream' and
+ * 'ai:chat' (what the main process acts on), and 'ai:codex-models' (the direct
+ * cliPath probe). SECURITY.md promises payloads are schema-checked in the main
+ * process; a compromised renderer must not be able to plant an arbitrary
+ * cliPath (later spawn()ed by the Codex app-server) or a baseUrl that would
+ * receive the user's gsk bearer token. Electron-free so unit tests can import
+ * it directly.
+ *
+ * Coercion follows the file's own house style (String() narrowing like the
+ * web-search handler, filename sanitizing like the style-template handler).
+ */
+import { statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
+import { normalizeCustomProfile } from './custom-profile'
+import { isThinkingEffort } from './thinking-effort'
+import { AI_PROVIDER_ADAPTERS, normalizeBaseUrl } from './registry'
+import type {
+  AiCustomEndpoint,
+  AiCustomProfile,
+  AiProviderConfig,
+  AiProviderId,
+  AiSettings,
+} from './types'
+
+const PROVIDER_IDS = Object.keys(AI_PROVIDER_ADAPTERS) as AiProviderId[]
+
+const MAX_API_KEY_LENGTH = 8192
+const MAX_MODEL_LENGTH = 256
+const MAX_CLI_PATH_LENGTH = 1024
+const MAX_ENDPOINT_ID_LENGTH = 64
+const MAX_ENDPOINT_NAME_LENGTH = 128
+const MAX_ENDPOINT_MODELS = 2000
+
+/**
+ * `~` / `~/…` (`~\…` on Windows) expanded against the real home directory, so
+ * a user with a non-ASCII home can keep the short form. Non-`~` values pass
+ * through untouched.
+ */
+function expandHome(value: string): string {
+  if (value === '~') return homedir()
+  if (value.startsWith('~/') || value.startsWith('~\\')) return join(homedir(), value.slice(2))
+  return value
+}
+
+/**
+ * Executable path accepted from the renderer. The Codex app-server hands it to
+ * child_process.spawn() without a shell, so metacharacters are inert and no
+ * character is rejected — including the non-ASCII user and directory names
+ * common in real home paths (`/Users/<name>/bin/codex`,
+ * `C:\Users\Ana María\codex.exe`). When the value looks like a path (`/`, `\`
+ * or `.` anywhere, or a leading `~`) rather than a bare command, it must exist
+ * as a file (`~` expanded for the check). A bare command name ("codex") is
+ * kept: it resolves via PATH at spawn time and a miss is a handled ENOENT.
+ * Empty means auto-detect.
+ */
+export function validCliPath(raw: unknown): raw is string {
+  if (typeof raw !== 'string') return false
+  const value = raw.trim()
+  if (value === '') return false
+  if (value.length > MAX_CLI_PATH_LENGTH) return false
+  if (/[./\\~]/.test(value)) {
+    // a path, not a bare command: it must be an existing file
+    try {
+      return statSync(expandHome(value)).isFile()
+    } catch {
+      return false
+    }
+  }
+  return true
+}
+
+/** http(s) URL with no embedded credentials, normalized like request time. */
+function sanitizeBaseUrl(raw: unknown): string | undefined {
+  try {
+    return normalizeBaseUrl(typeof raw === 'string' ? raw : '', '')
+  } catch {
+    return undefined
+  }
+}
+
+function sanitizeProviderConfig(input: unknown): AiProviderConfig {
+  const raw = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>
+  const config: AiProviderConfig = {
+    apiKey: String(raw.apiKey ?? '').slice(0, MAX_API_KEY_LENGTH),
+    model: String(raw.model ?? '').slice(0, MAX_MODEL_LENGTH),
+  }
+  if (raw.baseUrl !== undefined && raw.baseUrl !== null && raw.baseUrl !== '') {
+    const baseUrl = sanitizeBaseUrl(raw.baseUrl)
+    if (baseUrl !== undefined) config.baseUrl = baseUrl
+  }
+  const cliPath = sanitizeCliPath(raw.cliPath)
+  if (cliPath !== undefined) config.cliPath = cliPath
+  // Per-model thinking-effort picks: model id keys bounded like `model`, levels
+  // against the shipped ladder; anything else (unknown level, oversized map)
+  // is dropped wholesale rather than half-kept.
+  if (typeof raw.thinking === 'object' && raw.thinking !== null && !Array.isArray(raw.thinking)) {
+    const entries = Object.entries(raw.thinking as Record<string, unknown>)
+    if (entries.length <= 256) {
+      const thinking: Record<string, string> = {}
+      for (const [model, level] of entries) {
+        if (model === '' || model.length > MAX_MODEL_LENGTH || !isThinkingEffort(level)) continue
+        thinking[model] = level
+      }
+      if (Object.keys(thinking).length > 0) config.thinking = thinking
+    }
+  }
+  // A custom slot may carry a nested profile; normalizeCustomProfile bounds every
+  // field (protocol, headers via the HTTP-legality gate, sizes) and drops the rest.
+  const profile = normalizeCustomProfile(raw.profile)
+  if (profile !== undefined) config.profile = profile
+  return config
+}
+
+/**
+ * The spawnable form of a renderer-supplied cliPath (trimmed, `~` expanded —
+ * spawn() does not expand tilde), or undefined when it fails validCliPath.
+ */
+export function sanitizeCliPath(raw: unknown): string | undefined {
+  return validCliPath(raw) ? expandHome(raw.trim()) : undefined
+}
+
+function sanitizeMediaSettings(raw: Record<string, unknown>): AiSettings['media'] {
+  const media = { ...raw } as unknown as NonNullable<AiSettings['media']>
+  if (typeof raw.providers !== 'object' || raw.providers === null || Array.isArray(raw.providers)) {
+    return media
+  }
+  const providers: Record<string, unknown> = {}
+  for (const [id, value] of Object.entries(raw.providers as Record<string, unknown>)) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
+    const config = { ...(value as Record<string, unknown>) }
+    if (config.baseUrl !== undefined && config.baseUrl !== null && config.baseUrl !== '') {
+      const baseUrl = sanitizeBaseUrl(config.baseUrl)
+      if (baseUrl === undefined) delete config.baseUrl
+      else config.baseUrl = baseUrl
+    } else {
+      delete config.baseUrl
+    }
+    providers[id] = config
+  }
+  media.providers = providers as NonNullable<AiSettings['media']>['providers']
+  return media
+}
+
+function sanitizeCustomEndpoints(raw: unknown): AiCustomEndpoint[] {
+  if (!Array.isArray(raw)) return []
+  const out: AiCustomEndpoint[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue
+    const e = entry as Record<string, unknown>
+    const id = String(e.id ?? '')
+      .trim()
+      .slice(0, MAX_ENDPOINT_ID_LENGTH)
+    if (!id) continue
+    const config = sanitizeProviderConfig(e)
+    const models = Array.isArray(e.models)
+      ? e.models
+          .filter((m): m is string => typeof m === 'string')
+          .slice(0, MAX_ENDPOINT_MODELS)
+          .map((m) => m.slice(0, MAX_MODEL_LENGTH))
+      : undefined
+    // A stored entry carries its profile flat (api/headers/compat/… beside the
+    // identity fields); the nested `profile` form is normalized too, so a
+    // hand-edited file in either shape survives the gate.
+    const flat = normalizeCustomProfile(e) ?? {}
+    const nested: AiCustomProfile = config.profile ?? {}
+    const profile: AiCustomProfile = { ...flat, ...nested }
+    const endpoint: AiCustomEndpoint = {
+      id,
+      name: String(e.name ?? '').slice(0, MAX_ENDPOINT_NAME_LENGTH),
+      baseUrl: config.baseUrl ?? '',
+      apiKey: config.apiKey,
+      model: config.model,
+      // the endpoint record carries its own thinking picks (bounded by
+      // sanitizeProviderConfig) so the slot mirror can hand them to the request
+      ...(config.thinking ? { thinking: config.thinking } : {}),
+      ...(models && models.length > 0 ? { models } : {}),
+    }
+    for (const key of [
+      'api',
+      'apiKeyEnv',
+      'headers',
+      'idleTimeoutMs',
+      'compat',
+      'bodyExtras',
+      'modelProfiles',
+      'probedProfiles',
+    ] as const) {
+      if (profile[key] !== undefined) {
+        ;(endpoint as unknown as Record<string, unknown>)[key] = profile[key]
+      }
+    }
+    out.push(endpoint)
+  }
+  return out
+}
+
+/**
+ * Returns a sanitized copy of `input`, or null when the payload is not even
+ * the right shape (non-object, unknown provider). Invalid individual fields
+ * are dropped rather than rejecting the whole payload, so a half-filled
+ * provider config cannot brick the rest of the settings.
+ */
+export function sanitizeAiSettings(input: unknown): AiSettings | null {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return null
+  const raw = input as Record<string, unknown>
+  const provider = raw.provider
+  if (typeof provider !== 'string' || !PROVIDER_IDS.includes(provider as AiProviderId)) return null
+  if (typeof raw.providers !== 'object' || raw.providers === null || Array.isArray(raw.providers)) {
+    return null
+  }
+  const providers = {} as AiSettings['providers']
+  for (const [id, config] of Object.entries(raw.providers as Record<string, unknown>)) {
+    if (!PROVIDER_IDS.includes(id as AiProviderId)) continue
+    ;(providers as Record<string, AiProviderConfig>)[id] = sanitizeProviderConfig(config)
+  }
+  const settings: AiSettings = {
+    provider: provider as AiProviderId,
+    providers,
+  }
+  if (typeof raw.gskToolsEnabled === 'boolean') settings.gskToolsEnabled = raw.gskToolsEnabled
+  const customEndpoints = sanitizeCustomEndpoints(raw.customEndpoints)
+  if (customEndpoints.length > 0) {
+    settings.customEndpoints = customEndpoints
+    if (typeof raw.customEndpoint === 'string') {
+      settings.customEndpoint = raw.customEndpoint.slice(0, MAX_ENDPOINT_ID_LENGTH)
+    }
+  }
+  if (
+    typeof raw.maxOutputTokens === 'number' &&
+    Number.isFinite(raw.maxOutputTokens) &&
+    raw.maxOutputTokens > 0
+  ) {
+    settings.maxOutputTokens = Math.floor(raw.maxOutputTokens)
+  }
+  // media providers carry a baseUrl that receives their api key: same gate as
+  // the chat providers; search carries only enums and api keys
+  if (typeof raw.media === 'object' && raw.media !== null && !Array.isArray(raw.media)) {
+    settings.media = sanitizeMediaSettings(raw.media as Record<string, unknown>)
+  }
+  if (typeof raw.search === 'object' && raw.search !== null && !Array.isArray(raw.search)) {
+    settings.search = raw.search as AiSettings['search']
+  }
+  return settings
+}

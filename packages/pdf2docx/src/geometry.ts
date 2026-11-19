@@ -1,0 +1,255 @@
+/**
+ * Geometry primitives shared by every layer. All comparisons go through the
+ * tolerance helpers below — exact float equality on PDF coordinates is the
+ * single biggest crash source in the reference implementation (pdf2docx).
+ */
+
+/** Axis-aligned rectangle in PDF page space: origin bottom-left, y grows up. */
+export interface Rect {
+  /** left */
+  x0: number
+  /** bottom */
+  y0: number
+  /** right */
+  x1: number
+  /** top */
+  y1: number
+}
+
+/**
+ * Loop reductions instead of spreads: Math.min(...xs) passes every element as
+ * a function argument, so a page-sized array (~125k lines in CAD/map exports)
+ * threw RangeError before a single line rendered (V8 argument limit, measured).
+ * For finite values the semantics match Math.min/Math.max exactly, including
+ * the empty case (minOf → Infinity, maxOf → -Infinity).
+ */
+export function minOf(values: readonly number[]): number {
+  let m = Infinity
+  for (const v of values) if (v < m) m = v
+  return m
+}
+
+export function maxOf(values: readonly number[]): number {
+  let m = -Infinity
+  for (const v of values) if (v > m) m = v
+  return m
+}
+
+/** |a - b| <= tol */
+export const approxEq = (a: number, b: number, tol: number): boolean => Math.abs(a - b) <= tol
+
+/** a >= b within tolerance */
+export const gteTol = (a: number, b: number, tol: number): boolean => a >= b - tol
+
+/** a <= b within tolerance */
+export const lteTol = (a: number, b: number, tol: number): boolean => a <= b + tol
+
+export const rectWidth = (r: Rect): number => r.x1 - r.x0
+export const rectHeight = (r: Rect): number => r.y1 - r.y0
+export const rectArea = (r: Rect): number => Math.max(0, rectWidth(r)) * Math.max(0, rectHeight(r))
+export const rectCenterX = (r: Rect): number => (r.x0 + r.x1) / 2
+export const rectCenterY = (r: Rect): number => (r.y0 + r.y1) / 2
+
+export function rectUnion(a: Rect, b: Rect): Rect {
+  return {
+    x0: Math.min(a.x0, b.x0),
+    y0: Math.min(a.y0, b.y0),
+    x1: Math.max(a.x1, b.x1),
+    y1: Math.max(a.y1, b.y1),
+  }
+}
+
+export function rectUnionAll(rects: readonly Rect[]): Rect {
+  if (rects.length === 0) return { x0: 0, y0: 0, x1: 0, y1: 0 }
+  return rects.reduce(rectUnion)
+}
+
+/** bounding box of a point list, accumulated in a loop: a single path can carry
+ *  100k+ points (maps, CAD, chart exports) and Math.min(...points) would spread
+ *  them as arguments, throwing past the engine's argument-count limit */
+export function bboxOfPoints(points: readonly { x: number; y: number }[]): Rect {
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  for (const p of points) {
+    if (p.x < x0) x0 = p.x
+    if (p.x > x1) x1 = p.x
+    if (p.y < y0) y0 = p.y
+    if (p.y > y1) y1 = p.y
+  }
+  return { x0, y0, x1, y1 }
+}
+
+export function intersectArea(a: Rect, b: Rect): number {
+  const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)
+  const h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)
+  return w > 0 && h > 0 ? w * h : 0
+}
+
+/** intersection ÷ area of `a` (how much of `a` sits inside `b`); 0 for empty `a` */
+export function overlapRatio(a: Rect, b: Rect): number {
+  const area = rectArea(a)
+  return area > 0 ? intersectArea(a, b) / area : 0
+}
+
+/** vertical overlap length ÷ the shorter rect's height (0 when either is flat) */
+export function verticalOverlapRatio(a: Rect, b: Rect): number {
+  const overlap = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)
+  const minH = Math.min(rectHeight(a), rectHeight(b))
+  return minH > 0 ? Math.max(0, overlap) / minH : 0
+}
+
+// ── 1-D intervals (x/y projections for tables & column detection, P3) ──
+
+export interface Interval {
+  lo: number
+  hi: number
+}
+
+/** merge overlapping intervals, also closing gaps narrower than `minGap` */
+export function mergeIntervals(intervals: readonly Interval[], minGap = 0): Interval[] {
+  const sorted = [...intervals].sort((a, b) => a.lo - b.lo)
+  const out: Interval[] = []
+  for (const iv of sorted) {
+    const last = out[out.length - 1]
+    if (last && iv.lo - last.hi <= minGap) last.hi = Math.max(last.hi, iv.hi)
+    else out.push({ ...iv })
+  }
+  return out
+}
+
+/** pairwise intersection of two merged interval lists */
+export function intersectIntervals(a: readonly Interval[], b: readonly Interval[]): Interval[] {
+  const out: Interval[] = []
+  let i = 0
+  let j = 0
+  while (i < a.length && j < b.length) {
+    const lo = Math.max(a[i]!.lo, b[j]!.lo)
+    const hi = Math.min(a[i]!.hi, b[j]!.hi)
+    if (hi > lo) out.push({ lo, hi })
+    if (a[i]!.hi < b[j]!.hi) i++
+    else j++
+  }
+  return out
+}
+
+/** uncovered sub-intervals of [lo, hi] given merged `covered` */
+export function complementIntervals(
+  covered: readonly Interval[],
+  lo: number,
+  hi: number,
+): Interval[] {
+  const out: Interval[] = []
+  let cursor = lo
+  for (const iv of covered) {
+    if (iv.lo > cursor) out.push({ lo: cursor, hi: Math.min(iv.lo, hi) })
+    cursor = Math.max(cursor, iv.hi)
+    if (cursor >= hi) break
+  }
+  if (cursor < hi) out.push({ lo: cursor, hi })
+  return out.filter((iv) => iv.hi > iv.lo)
+}
+
+/** median of a non-empty list; 0 for an empty one */
+export function median(values: readonly number[]): number {
+  // Geometry inputs come from raw PDF numbers, so NaN/Infinity slip in.
+  // Ignoring them keeps one corrupt metric from poisoning the aggregate:
+  // callers' `|| 12` fallbacks catch NaN/0 but not Infinity, which would
+  // otherwise flow into thresholds (e.g. an infinite column gap never splits).
+  const finite = values.filter((v) => Number.isFinite(v))
+  if (finite.length === 0) return 0
+  const sorted = [...finite].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
+}
+
+/** grid resolution for coverageRatio (cells per axis) */
+const COVERAGE_GRID = 48
+
+/**
+ * Share of the page area covered by the union of `boxes`, approximated on a
+ * coarse occupancy grid (a cell counts once it overlaps any box's interior).
+ */
+export function coverageRatio(boxes: readonly Rect[], widthPt: number, heightPt: number): number {
+  if (widthPt <= 0 || heightPt <= 0) return 0
+  const n = COVERAGE_GRID
+  const grid = new Uint8Array(n * n)
+  const cw = widthPt / n
+  const ch = heightPt / n
+  for (const b of boxes) {
+    const cx0 = Math.max(0, Math.floor(b.x0 / cw))
+    const cx1 = Math.min(n - 1, Math.ceil(b.x1 / cw) - 1)
+    const cy0 = Math.max(0, Math.floor(b.y0 / ch))
+    const cy1 = Math.min(n - 1, Math.ceil(b.y1 / ch) - 1)
+    for (let y = cy0; y <= cy1; y++) {
+      for (let x = cx0; x <= cx1; x++) grid[y * n + x] = 1
+    }
+  }
+  let covered = 0
+  for (const cell of grid) covered += cell
+  return covered / (n * n)
+}
+
+/** a print content box must sit at least this far inside every page edge (pt) */
+const CONTENT_BOX_MIN_MARGIN_PT = 8
+/** … opposite margins agree within this (printers center the content box) */
+const CONTENT_BOX_MARGIN_TOL_PT = 4
+/** … and no margin eats more than this share of its page dimension */
+const CONTENT_BOX_MAX_MARGIN_RATIO = 0.2
+/** share of the page's ink objects that must sit inside the candidate box */
+const CONTENT_BOX_MIN_INK_SHARE = 0.97
+const CONTENT_BOX_INK_TOL_PT = 2
+
+/**
+ * Print content box (P35): browsers/print drivers lay the page out inside
+ * uniform margins, so the ink sits in a box centered on the page (Chromium's
+ * default A4 print: 0.6in margins). A fill whose bounds ARE that box is the
+ * page wash even though it never reaches the paper edge. `candidate` is such
+ * a fill's bounds; it qualifies when its margins are matching and modest and
+ * essentially every ink box on the page lies inside it (a drop shadow or a
+ * bleed decoration outside is tolerated).
+ */
+export function printContentBox(
+  candidate: Rect,
+  inkBoxes: readonly Rect[],
+  widthPt: number,
+  heightPt: number,
+): Rect | null {
+  if (inkBoxes.length === 0 || widthPt <= 0 || heightPt <= 0) return null
+  const box = {
+    x0: Math.max(0, candidate.x0),
+    y0: Math.max(0, candidate.y0),
+    x1: Math.min(widthPt, candidate.x1),
+    y1: Math.min(heightPt, candidate.y1),
+  }
+  if (box.x1 <= box.x0 || box.y1 <= box.y0) return null
+  const left = box.x0
+  const right = widthPt - box.x1
+  const bottom = box.y0
+  const top = heightPt - box.y1
+  if ([left, right, top, bottom].some((mg) => mg < CONTENT_BOX_MIN_MARGIN_PT)) return null
+  if (Math.max(left, right) > widthPt * CONTENT_BOX_MAX_MARGIN_RATIO) return null
+  if (Math.max(top, bottom) > heightPt * CONTENT_BOX_MAX_MARGIN_RATIO) return null
+  if (Math.abs(left - right) > CONTENT_BOX_MARGIN_TOL_PT) return null
+  if (Math.abs(top - bottom) > CONTENT_BOX_MARGIN_TOL_PT) return null
+  let inside = 0
+  for (const r of inkBoxes) {
+    if (
+      r.x0 >= box.x0 - CONTENT_BOX_INK_TOL_PT &&
+      r.x1 <= box.x1 + CONTENT_BOX_INK_TOL_PT &&
+      r.y0 >= box.y0 - CONTENT_BOX_INK_TOL_PT &&
+      r.y1 <= box.y1 + CONTENT_BOX_INK_TOL_PT
+    ) {
+      inside++
+    }
+  }
+  return inside / inkBoxes.length >= CONTENT_BOX_MIN_INK_SHARE ? box : null
+}
+
+/** `inner` spans at least `ratio` of `outer` in both dimensions (clipped to `outer`) */
+export function coversBox(inner: Rect, outer: Rect, ratio: number): boolean {
+  const w = Math.min(inner.x1, outer.x1) - Math.max(inner.x0, outer.x0)
+  const h = Math.min(inner.y1, outer.y1) - Math.max(inner.y0, outer.y0)
+  return w >= (outer.x1 - outer.x0) * ratio && h >= (outer.y1 - outer.y0) * ratio
+}

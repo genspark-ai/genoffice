@@ -1,0 +1,296 @@
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, dirname, extname, join } from 'node:path'
+import { PdfLoadError } from '@genoffice/pdf2docx'
+import { flagBool, flagString, type ParsedArgs } from '../args'
+import { csvToXlsx, sheetNameFromStem } from '../formats/csv'
+import { convertHwp } from '../formats/hwp'
+import { convertLegacyDoc } from '../formats/legacy-doc'
+import { convertLegacyPpt } from '../formats/legacy-ppt'
+import { convertOdp, convertOdt } from '../formats/odf'
+import { convertPdf, type PdfTarget } from '../formats/pdf'
+import { convertLegacyWorkbook, sheetToCsv } from '../formats/xlsx'
+import { exportViaApp, type AppExportTarget } from '../formats/app-export'
+import { htmlToMarkdown, markdownToDocx, markdownToHtml } from '../formats/markdown'
+import { closeDocument, documentHtml, openDocument } from '../formats/docx'
+import { extension, readInput, resolveInput, resolveOutput, writeOutput } from '../fs'
+import type { CommandContext, CommandDef } from '../registry'
+import { CliError, EXIT } from '../result'
+
+/** Conversions that run in this process. */
+const NODE_ROUTES: Record<string, readonly string[]> = {
+  pdf: ['docx', 'pptx', 'xlsx', 'md'],
+  csv: ['xlsx'],
+  xls: ['xlsx'],
+  xlsb: ['xlsx'],
+  ods: ['xlsx'],
+  ots: ['xlsx'],
+  odt: ['docx'],
+  ott: ['docx'],
+  hwpx: ['docx'],
+  hwp: ['docx'],
+  doc: ['docx'],
+  dot: ['docx'],
+  odp: ['pptx'],
+  otp: ['pptx'],
+  ppt: ['pptx'],
+  md: ['docx', 'html'],
+  markdown: ['docx', 'html'],
+  docx: ['md'],
+  xlsx: ['csv'],
+  xlsm: ['csv'],
+}
+
+/**
+ * Conversions the GenOffice binary runs for us in its hidden headless-export
+ * mode: anything that needs an app renderer (page layout for pdf, the Word
+ * editor's HTML export, html2docx). Mirrors HEADLESS_TARGETS in the shell.
+ */
+const APP_ROUTES: Record<string, readonly AppExportTarget[]> = {
+  pdf: ['html'],
+  csv: ['pdf'],
+  xls: ['pdf'],
+  md: ['pdf'],
+  markdown: ['pdf'],
+  docx: ['pdf', 'html'],
+  xlsx: ['pdf'],
+  xlsm: ['pdf'],
+  pptx: ['pdf'],
+  html: ['pdf', 'docx'],
+  htm: ['pdf', 'docx'],
+}
+
+const ROUTES: Record<string, readonly string[]> = Object.fromEntries(
+  [...new Set([...Object.keys(NODE_ROUTES), ...Object.keys(APP_ROUTES)])].map((from) => [
+    from,
+    [...(NODE_ROUTES[from] ?? []), ...(APP_ROUTES[from] ?? [])],
+  ]),
+)
+
+function appTarget(from: string, to: string): AppExportTarget | null {
+  const target = APP_ROUTES[from]?.find((t) => t === to)
+  return target ?? null
+}
+
+export const convertCommand: CommandDef = {
+  name: 'convert',
+  summary: 'Convert a document to another format using the GenOffice engines.',
+  usage: 'convert <file> --to <format> [--out <path>] [--force] [--password <pw>] [--sheet <name>]',
+  options: [
+    { name: 'to', value: 'format', description: 'target format: ' + describeRoutes() },
+    { name: 'out', value: 'path', description: 'output file (default: same name, new extension)' },
+    { name: 'force', description: 'overwrite an existing output file' },
+    { name: 'password', value: 'pw', description: 'password for an encrypted PDF' },
+    {
+      name: 'sheet',
+      value: 'name',
+      description: 'xlsx→csv: worksheet to export (default: the active one)',
+    },
+  ],
+  async run(args, ctx) {
+    const input = resolveInput(args.positionals[0], ctx)
+    const from = extension(input)
+    const to = flagString(args, 'to')?.toLowerCase()
+    if (!to)
+      throw new CliError(EXIT.usage, 'missing --to <format>', undefined, {
+        reason: 'missing_argument',
+      })
+    const targets = ROUTES[from]
+    if (!targets?.includes(to)) {
+      throw new CliError(
+        EXIT.usage,
+        `cannot convert .${from} to .${to}`,
+        { supported: describeRoutes() },
+        { reason: 'unsupported', suggestion: 'pick a route from detail.supported' },
+      )
+    }
+    // before run(): the sidecar and app routes write the output themselves
+    const output = resolveOutput(flagString(args, 'out'), ctx, {
+      fallback: join(dirname(input), `${basename(input, extname(input))}.${to}`),
+      force: flagBool(args, 'force'),
+      fresh: true,
+    })
+    if (samePath(input, output))
+      throw new CliError(
+        EXIT.usage,
+        `output path must differ from the input: ${output}`,
+        undefined,
+        {
+          reason: 'invalid_argument',
+          suggestion: 'pass a different --out',
+        },
+      )
+    const result = await run(input, from, to, output, args, ctx)
+    if (result.bytes) writeOutput(output, result.bytes)
+    return {
+      summary: `converted ${basename(input)} → ${basename(output)}`,
+      outputPath: output,
+      detail: result.detail,
+    }
+  },
+}
+
+function samePath(a: string, b: string): boolean {
+  const real = (p: string) => {
+    try {
+      return realpathSync.native(p)
+    } catch {
+      return join(realpathSync.native(dirname(p)), basename(p))
+    }
+  }
+  const [x, y] = [real(a), real(b)]
+  return process.platform === 'win32' ? x.toLowerCase() === y.toLowerCase() : x === y
+}
+
+interface Produced {
+  bytes?: Uint8Array
+  detail: Record<string, unknown>
+}
+
+async function run(
+  input: string,
+  from: string,
+  to: string,
+  output: string,
+  args: ParsedArgs,
+  ctx: CommandContext,
+): Promise<Produced> {
+  const password = flagString(args, 'password')
+  if (from === 'pdf' && (to === 'md' || to === 'html')) {
+    return convertPdfViaDocx(input, to, output, password, ctx)
+  }
+  const viaApp = appTarget(from, to)
+  if (viaApp) {
+    const r = await exportViaApp(input, viaApp, output, { env: ctx.env, log: ctx.log })
+    return { detail: { via: 'genoffice --headless-export', summary: r.summary } }
+  }
+  if (from === 'pdf') {
+    const r = await convertPdfOrThrow(input, to as PdfTarget, password, ctx)
+    return { bytes: r.bytes, detail: { pages: r.pages, warnings: r.warnings } }
+  }
+  if (from === 'md' || from === 'markdown') {
+    const text = Buffer.from(readInput(input)).toString('utf-8')
+    const title = basename(input, extname(input))
+    if (to === 'html') {
+      return { bytes: Buffer.from(await markdownToHtml(text, title), 'utf-8'), detail: { title } }
+    }
+    return { bytes: await markdownToDocx(text, { file: input, ctx }), detail: { title } }
+  }
+  if (from === 'csv') {
+    const sheet = sheetNameFromStem(basename(input, extname(input)))
+    return { bytes: await csvToXlsx(readInput(input), sheet), detail: { sheet } }
+  }
+  if (to === 'csv') {
+    const { csv, ...detail } = await sheetToCsv(input, { sheet: flagString(args, 'sheet') })
+    // UTF-8 BOM, as the app writes it, so Excel opens the file without a wizard
+    return { bytes: Buffer.from('\ufeff' + csv, 'utf-8'), detail }
+  }
+  if (to === 'md') return docxToMarkdown(readInput(input), ctx)
+  if (from === 'odt' || from === 'ott') {
+    const r = await convertOdt(readInput(input))
+    return { bytes: r.bytes, detail: r.detail }
+  }
+  if (from === 'hwpx' || from === 'hwp') {
+    const r = await convertHwp(readInput(input))
+    return { bytes: r.bytes, detail: r.detail }
+  }
+  if (from === 'odp' || from === 'otp') {
+    const r = await convertOdp(readInput(input))
+    return { bytes: r.bytes, detail: r.detail }
+  }
+  if (from === 'doc' || from === 'dot') {
+    const r = await convertLegacyDoc(readInput(input))
+    return { bytes: r.bytes, detail: r.detail }
+  }
+  if (from === 'ppt') {
+    const r = await convertLegacyPpt(readInput(input))
+    return { bytes: r.bytes, detail: r.detail }
+  }
+  const r = await convertLegacyWorkbook(input, output)
+  return { detail: { sheets: r.sheets, cells: r.cells } }
+}
+
+function describeRoutes(): string {
+  return Object.entries(ROUTES)
+    .map(([from, tos]) => `${from}→${tos.join('/')}`)
+    .join(', ')
+}
+
+async function docxToMarkdown(docx: Uint8Array, ctx: CommandContext): Promise<Produced> {
+  const doc = await openDocument(docx)
+  try {
+    const exported = documentHtml(doc)
+    const markdown = await htmlToMarkdown(exported.html)
+    if (exported.skipped.images > 0) {
+      ctx.warn({
+        code: 'images_dropped',
+        message: `${exported.skipped.images} image(s) have no Markdown form and were dropped`,
+        suggestion: 'use `genoffice docs read --html` when the images matter',
+      })
+    }
+    return {
+      bytes: Buffer.from(markdown.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n', 'utf-8'),
+      detail: {
+        blocks: doc.editor.state.doc.childCount,
+        skipped: exported.skipped,
+        formulas_as_text: exported.formulasAsText,
+      },
+    }
+  } finally {
+    closeDocument(doc)
+  }
+}
+
+/**
+ * PDF → Markdown / HTML goes through the Word reconstruction: pdf2docx
+ * rebuilds paragraphs, headings, lists and tables, then the docx routes
+ * serialize them. Markdown stays in-process; HTML needs the Word editor's
+ * exporter, so the intermediate .docx is handed to the app from a temp dir.
+ */
+async function convertPdfViaDocx(
+  input: string,
+  to: 'md' | 'html',
+  output: string,
+  password: string | undefined,
+  ctx: CommandContext,
+): Promise<Produced> {
+  const pdf = await convertPdfOrThrow(input, 'docx', password, ctx)
+  const via = { pages: pdf.pages, warnings: pdf.warnings, intermediate: 'docx' }
+  if (to === 'md') {
+    const md = await docxToMarkdown(pdf.bytes, ctx)
+    return { bytes: md.bytes, detail: { ...via, ...md.detail } }
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'genoffice-convert-'))
+  const docxPath = join(dir, `${basename(input, extname(input))}.docx`)
+  try {
+    writeFileSync(docxPath, pdf.bytes)
+    const r = await exportViaApp(docxPath, 'html', output, { env: ctx.env, log: ctx.log })
+    return { detail: { ...via, via: 'genoffice --headless-export', summary: r.summary } }
+  } finally {
+    try {
+      rmSync(dir, { recursive: true, force: true })
+    } catch (err) {
+      ctx.log(`could not remove temp dir ${dir}: ${String(err)}`)
+    }
+  }
+}
+
+async function convertPdfOrThrow(
+  input: string,
+  target: PdfTarget,
+  password: string | undefined,
+  ctx: CommandContext,
+) {
+  try {
+    return await convertPdf(readInput(input), target, {
+      password,
+      onProgress: (page, total) => ctx.log(`page ${page}/${total}`),
+    })
+  } catch (err) {
+    if (err instanceof PdfLoadError) {
+      const code = err.code === 'password-required' ? EXIT.file : EXIT.conversion
+      throw new CliError(code, err.message, { reason: err.code })
+    }
+    throw err
+  }
+}

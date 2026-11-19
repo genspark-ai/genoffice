@@ -1,0 +1,6 @@
+{
+  "title": "Multi-table document",
+  "tags": ["table", "multi-table", "table-header"],
+  "description": "5 tables interleaved with text, tests pagination of text between tables",
+  "file": "11-multi-tables.docx"
+}

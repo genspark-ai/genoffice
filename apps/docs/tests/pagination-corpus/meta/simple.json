@@ -1,0 +1,6 @@
+{
+  "title": "Simple Chinese Doc",
+  "file": "simple.docx",
+  "tags": ["fixture", "chinese", "heading", "simple"],
+  "description": "Simple Chinese document bundled in the repo (heading + 2 body paragraphs)"
+}

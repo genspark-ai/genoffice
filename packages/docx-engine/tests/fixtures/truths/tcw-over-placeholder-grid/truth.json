@@ -1,0 +1,23 @@
+{
+  "id": "tcw-over-placeholder-grid",
+  "title": "tblW auto: Word sizes columns from w:tcW, not a placeholder w:tblGrid",
+  "section": "word-truths.md#L199",
+  "probe_date": "2026-09-16",
+  "source": "probe probe4.py: tblGrid 2000x3 + tcW 3000x3 -> 150pt columns; tblGrid 10469 + tcW 6480 -> 6480-twip table centred (compat 14 and 15 identical)",
+  "cases": [
+    {
+      "kind": "tableCols",
+      "block": 1,
+      "expect": [3000, 3000, 3000],
+      "note": "tcW wins over the uniform placeholder grid"
+    },
+    {
+      "kind": "tableCols",
+      "block": 3,
+      "expect": [6480],
+      "note": "single tcW 6480 beats grid 10469"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

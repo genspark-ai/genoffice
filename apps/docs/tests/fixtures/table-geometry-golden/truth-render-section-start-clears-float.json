@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-section-start-clears-float/probe.docx",
+  "tables": 3,
+  "hashes": ["969fa1f5abb0044a", "7ec3cb9db7ea9302", "969fa1f5abb0044a"],
+  "staticTables": 3,
+  "staticHashes": ["34d18fe72f852176", "becb003731f4f155", "34d18fe72f852176"]
+}

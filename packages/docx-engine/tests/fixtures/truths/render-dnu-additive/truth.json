@@ -1,0 +1,39 @@
+{
+  "id": "render-dnu-additive",
+  "title": "Rendered additive paragraph spacing under doNotUseHTMLParagraphAutoSpacing",
+  "section": "word-truths.md#L644",
+  "probe_date": "2026-10-22",
+  "class": "render",
+  "source": "probe dnu_on.docx -> Word for Mac direct PDF (7 pages), pymupdf baselines; rendered as glyph-top distances between the first lines of the two paragraphs (same page, same face and size)",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 7
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 0,
+      "to": 1,
+      "expect": 33.12,
+      "tol": 0.2,
+      "note": "M: 12pt line + 10 + 11"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 4,
+      "to": 5,
+      "expect": 22.08,
+      "tol": 0.2,
+      "note": "N: 12 + 10"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 8,
+      "to": 9,
+      "expect": 22.08,
+      "tol": 0.2,
+      "note": "H: auto spacing is 0 under the flag"
+    }
+  ],
+  "docx": "probe.docx"
+}

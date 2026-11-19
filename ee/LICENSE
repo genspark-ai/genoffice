@@ -1,0 +1,30 @@
+GenOffice Enterprise License
+
+Copyright (c) 2026 Mainfunc, Inc.
+
+The software and associated documentation files under this directory
+("ee/") are the "Enterprise Software". The Enterprise Software is NOT
+covered by the Apache License 2.0 that applies to the rest of this
+repository.
+
+You may use, copy, and modify the Enterprise Software solely for
+development and testing purposes. Any other use — including production
+use, offering the Enterprise Software to third parties as a hosted or
+managed service, or distributing it or any modified version of it —
+requires a valid enterprise agreement with Mainfunc, Inc., and is
+limited to the scope of that agreement.
+
+You may not remove or alter any license, copyright, or trademark notice
+in the Enterprise Software.
+
+Third-party components bundled under this directory remain governed by
+their own licenses.
+
+THE ENTERPRISE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE ENTERPRISE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ENTERPRISE SOFTWARE.

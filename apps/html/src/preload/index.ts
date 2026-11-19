@@ -1,0 +1,166 @@
+import type { AiPanelPrefs } from '@genoffice/ui'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { Lang } from '@genoffice/i18n'
+import type { AiStreamChunk } from '@genoffice/ai-provider'
+import type { ProjectApi } from '@genoffice/project-store'
+import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
+import { AI_CHANNELS, HTML_CHANNELS } from '../shared/ipc'
+import type { AutoSaveDefault, ExportFormat, HtmlApi, SaveMode, UiTheme } from '../shared/ipc'
+
+const api: HtmlApi = {
+  consumePending: () => ipcRenderer.invoke(HTML_CHANNELS.consumePending),
+  openSourcePath: (path: string) => ipcRenderer.invoke('home:open-path', path),
+  consumeHeadlessExport: () => ipcRenderer.invoke(HTML_CHANNELS.consumeHeadlessExport),
+  headlessExportDone: (result: { ok: boolean; error?: string }) =>
+    ipcRenderer.send(HTML_CHANNELS.headlessExportDone, result),
+  readFile: (path) => ipcRenderer.invoke(HTML_CHANNELS.readFile, path),
+  updatePreview: (text) => ipcRenderer.send(HTML_CHANNELS.previewUpdate, text),
+  getPreviewInfo: () => ipcRenderer.invoke(HTML_CHANNELS.previewInfo),
+  setPresentFullScreen: (on) => ipcRenderer.invoke(HTML_CHANNELS.presentFullScreen, on),
+  presentInNewTab: (title) => ipcRenderer.invoke(HTML_CHANNELS.presentNewTab, title),
+  save: (request) => ipcRenderer.invoke(HTML_CHANNELS.save, request),
+  setDirty: (dirty) => ipcRenderer.send(HTML_CHANNELS.dirtyChanged, dirty),
+  onSaveRequest: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, mode: SaveMode) => handler(mode)
+    ipcRenderer.on(HTML_CHANNELS.saveRequest, listener)
+    return () => ipcRenderer.removeListener(HTML_CHANNELS.saveRequest, listener)
+  },
+  onCloseSaveRequest: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on(HTML_CHANNELS.closeSaveRequest, listener)
+    return () => ipcRenderer.removeListener(HTML_CHANNELS.closeSaveRequest, listener)
+  },
+  sendCloseSaveResult: (ok) => ipcRenderer.send(HTML_CHANNELS.closeSaveResult, ok),
+  sendSaveRequestAck: (ok) => ipcRenderer.send(HTML_CHANNELS.saveRequestAck, ok),
+  onReadTextRequest: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on(HTML_CHANNELS.readTextRequest, listener)
+    return () => ipcRenderer.removeListener(HTML_CHANNELS.readTextRequest, listener)
+  },
+  sendReadTextResult: (result) => ipcRenderer.send(HTML_CHANNELS.readTextResult, result),
+  onFileRenamed: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, newPath: string) => handler(newPath)
+    ipcRenderer.on(HTML_CHANNELS.fileRenamed, listener)
+    return () => ipcRenderer.removeListener(HTML_CHANNELS.fileRenamed, listener)
+  },
+  onFileChangedOnDisk: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, path: string) => handler(path)
+    ipcRenderer.on(HTML_CHANNELS.fileChangedOnDisk, listener)
+    return () => ipcRenderer.removeListener(HTML_CHANNELS.fileChangedOnDisk, listener)
+  },
+  ackFileChangedOnDisk: () => ipcRenderer.send(HTML_CHANNELS.ackFileChangedOnDisk),
+  setProvisionalTitle: (title) => ipcRenderer.send(HTML_CHANNELS.provisionalTitle, title),
+  pickImage: () => ipcRenderer.invoke(HTML_CHANNELS.pickImage),
+  saveImage: (data) => ipcRenderer.invoke(HTML_CHANNELS.saveImage, data),
+  readImage: (src) => ipcRenderer.invoke(HTML_CHANNELS.readImage, src),
+  pickAttachments: () => ipcRenderer.invoke(HTML_CHANNELS.filesPick),
+  addAttachmentPaths: (paths) => ipcRenderer.invoke(HTML_CHANNELS.filesAdd, paths),
+  addPastedImage: (data, ext) => ipcRenderer.invoke(HTML_CHANNELS.filesAddPastedImage, data, ext),
+  readAttachment: (path, offset, maxChars) =>
+    ipcRenderer.invoke(HTML_CHANNELS.filesRead, path, offset, maxChars),
+  readAttachmentImage: (path) => ipcRenderer.invoke(HTML_CHANNELS.filesReadImage, path),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
+  onExportRequest: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, format: ExportFormat) => handler(format)
+    ipcRenderer.on(HTML_CHANNELS.exportRequest, listener)
+    return () => ipcRenderer.removeListener(HTML_CHANNELS.exportRequest, listener)
+  },
+  onPrintRequest: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on(HTML_CHANNELS.printRequest, listener)
+    return () => ipcRenderer.removeListener(HTML_CHANNELS.printRequest, listener)
+  },
+  exportDocx: (request) => ipcRenderer.invoke(HTML_CHANNELS.exportDocx, request),
+  exportPdf: (request) => ipcRenderer.invoke(HTML_CHANNELS.exportPdf, request),
+  exportHtml: (request) => ipcRenderer.invoke(HTML_CHANNELS.exportHtml, request),
+  printHtml: (request) => ipcRenderer.invoke(HTML_CHANNELS.printHtml, request),
+  getLanguage: () => ipcRenderer.invoke(HTML_CHANNELS.getLanguage),
+  onLanguageChanged: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, lang: Lang) => handler(lang)
+    ipcRenderer.on(HTML_CHANNELS.languageChanged, listener)
+    return () => ipcRenderer.removeListener(HTML_CHANNELS.languageChanged, listener)
+  },
+  getTheme: () => ipcRenderer.invoke(HTML_CHANNELS.getTheme),
+  onThemeChanged: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, theme: UiTheme) => handler(theme)
+    ipcRenderer.on(HTML_CHANNELS.themeChanged, listener)
+    return () => ipcRenderer.removeListener(HTML_CHANNELS.themeChanged, listener)
+  },
+  getAutoSaveDefault: () => ipcRenderer.invoke(HTML_CHANNELS.getAutoSaveDefault),
+  onAutoSaveDefaultChanged: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, value: AutoSaveDefault) => handler(value)
+    ipcRenderer.on(HTML_CHANNELS.autoSaveDefaultChanged, listener)
+    return () => ipcRenderer.removeListener(HTML_CHANNELS.autoSaveDefaultChanged, listener)
+  },
+  getAiPanelPrefs: () => ipcRenderer.invoke(HTML_CHANNELS.getAiPanelPrefs),
+  setAiPanelPrefs: (patch) => ipcRenderer.invoke('app:set-ai-panel-prefs', patch),
+  onAiPanelPrefsChanged: (handler) => {
+    const listener = (_event: Electron.IpcRendererEvent, prefs: AiPanelPrefs) => handler(prefs)
+    ipcRenderer.on(HTML_CHANNELS.aiPanelPrefsChanged, listener)
+    return () => ipcRenderer.removeListener(HTML_CHANNELS.aiPanelPrefsChanged, listener)
+  },
+  onChromePressed: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on('app:chrome-pressed', listener)
+    return () => ipcRenderer.removeListener('app:chrome-pressed', listener)
+  },
+  getAiSettings: () => ipcRenderer.invoke(AI_CHANNELS.getSettings),
+  setAiSettings: (settings) => ipcRenderer.invoke(AI_CHANNELS.setSettings, settings),
+  onAiSettingsChanged: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on(AI_CHANNELS.settingsChanged, listener)
+    return () => ipcRenderer.removeListener(AI_CHANNELS.settingsChanged, listener)
+  },
+  openAiModelSettings: () => ipcRenderer.invoke(AI_CHANNELS.openModelSettings),
+  openSkillsSettings: () => ipcRenderer.invoke('ai:open-skills-settings'),
+  skillsList: () => ipcRenderer.invoke('ai:skills-list'),
+  skillText: (name: string) => ipcRenderer.invoke('ai:skill-text', name),
+  aiGskStatus: () => ipcRenderer.invoke(AI_CHANNELS.gskStatus),
+  aiStream: (request) => ipcRenderer.invoke(AI_CHANNELS.stream, request),
+  aiStreamCancel: (requestId) => ipcRenderer.invoke(AI_CHANNELS.streamCancel, requestId),
+  onAiStream: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, chunk: AiStreamChunk) => handler(chunk)
+    ipcRenderer.on(AI_CHANNELS.streamChunk, listener)
+    return () => ipcRenderer.removeListener(AI_CHANNELS.streamChunk, listener)
+  },
+  webSearch: (query, maxResults) => ipcRenderer.invoke(AI_CHANNELS.webSearch, query, maxResults),
+  imageSearch: (query, maxResults) =>
+    ipcRenderer.invoke(AI_CHANNELS.imageSearch, query, maxResults),
+  fetchImage: (url) => ipcRenderer.invoke(HTML_CHANNELS.fetchImage, url),
+  aiGenerateImage: (op) => ipcRenderer.invoke(HTML_CHANNELS.aiGenerateImage, op),
+}
+
+/** Chat persistence: the shared project:* handlers are registered once by the shell (docs-main registerProjectIpc) */
+const projectApi: Pick<ProjectApi, 'resolveChat' | 'appendChat' | 'loadChat' | 'rebindChat'> = {
+  resolveChat: (args) => ipcRenderer.invoke('project:resolveChat', args),
+  appendChat: (args) => ipcRenderer.invoke('project:appendChat', args),
+  loadChat: (args) => ipcRenderer.invoke('project:loadChat', args),
+  rebindChat: (args) => ipcRenderer.invoke('project:rebindChat', args),
+}
+
+/**
+ * Model file naming: the transport half of `suggestFileName`.
+ *
+ * Inlined rather than imported — a preload entry must stay a single-file bundle,
+ * or the sandbox drops every global it exposed. The one `ai:` channel is
+ * registered app-wide by the shell rather than by this app, the same arrangement
+ * the `project:*` bridge below already depends on.
+ *
+ * `content` crosses this bridge verbatim and the main process cannot see what
+ * this editor withheld, so what the caller hands over is exactly what the model
+ * sees. A caller that passed raw document text would undo its own redactions.
+ *
+ * The global is `aiNamingApi`, not `aiOffice`: `aiOffice` is the shell's home
+ * API, and a partial one in an editor window would shadow it there.
+ */
+const aiNamingApi = {
+  suggestFileName: (input: { content: string }) =>
+    ipcRenderer.invoke('ai:suggest-file-name', input),
+}
+
+contextBridge.exposeInMainWorld('htmlApi', api)
+contextBridge.exposeInMainWorld('aiNamingApi', aiNamingApi)
+contextBridge.exposeInMainWorld('projectApi', projectApi)
+
+// open documents dragged from the OS onto this tab as a new shell tab
+installDropOpenBridge()

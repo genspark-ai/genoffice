@@ -1,0 +1,6 @@
+{
+  "title": "Manual page breaks",
+  "tags": ["page-break", "forced-break"],
+  "description": "Two manual page breaks, tests breakAfter logic",
+  "file": "07-page-breaks.docx"
+}

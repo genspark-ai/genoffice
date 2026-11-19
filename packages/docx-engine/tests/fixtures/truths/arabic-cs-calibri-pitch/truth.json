@@ -1,0 +1,60 @@
+{
+  "id": "arabic-cs-calibri-pitch",
+  "title": "Arabic in a cs=\"Calibri\" run is drawn by Calibri's own Arabic glyphs and paced 1.22 like Latin Calibri",
+  "section": "word-truths.md#L487",
+  "probe_date": "2026-10-14",
+  "source": "probe cal.docx -> cal-word.pdf: 12pt 14.64, 14pt 17.04; line 276 -> 16.80/19.68; Calibri Light the same",
+  "cases": [
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 14.64,
+      "tol": 0.05,
+      "note": "cs Calibri 12",
+      "font": "Calibri"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 17.04,
+      "tol": 0.05,
+      "note": "cs Calibri 14",
+      "font": "Calibri"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 16.8,
+      "tol": 0.05,
+      "note": "cs Calibri 12 line 276",
+      "font": "Calibri"
+    },
+    {
+      "kind": "linePt",
+      "block": 3,
+      "expect": 19.68,
+      "tol": 0.05,
+      "note": "cs Calibri 14 line 276",
+      "font": "Calibri"
+    },
+    {
+      "kind": "linePt",
+      "block": 4,
+      "expect": 14.64,
+      "tol": 0.05,
+      "note": "Calibri Light 12",
+      "font": "Calibri Light"
+    },
+    {
+      "kind": "runProps",
+      "block": 4,
+      "run": 0,
+      "expect": {
+        "fontCs": "Calibri Light"
+      },
+      "note": "the cs slot names the Arabic face"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

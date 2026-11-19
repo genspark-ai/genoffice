@@ -1,0 +1,55 @@
+{
+  "id": "ja-face-pair-line-pitch",
+  "title": "A Japanese paragraph pairing a Latin ascii face with an MS Gothic / MS Mincho / MS PGothic eastAsia face paces every line at the East Asian factor whatever the Latin partner; gen leads the strut and the spans with the runs' own East Asian metric face",
+  "section": "word-truths.md#L1058",
+  "probe_date": "2026-11-07",
+  "class": "pure",
+  "source": "probes /tmp/msgothic-probe/explicit-plain.docx + explicit2.docx -> Word for Mac direct PDF (2026-11-07), pymupdf rawdict baselines, A4, docDefaults Calibri 11 + useFELayout, 4-line paragraphs alternating kana-only and kana + Latin lines: 12pt line=288 18.72 (18.48 once) for Cambria / Calibri / Times New Roman / Arial / Garamond / Aptos / Verdana / Century + MS Gothic or MS Mincho and for MS Gothic alone; 10.5pt single 13.68 (13.44 once); 12pt single 15.60 (15.36 once); MS PGothic the same",
+  "cases": [
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 18.72,
+      "tol": 0.1,
+      "note": "Cambria + MS Gothic 12pt line=288: the EA factor, not Cambria's 1.172 and no Chromium union"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 0,
+      "expect": {
+        "classes": ["doc-grid-strut"],
+        "styles": ["--doc-lead-gap: 0px"],
+        "stylesStartWith": ["--doc-line-factor:", "--doc-grid-strut-tail:"]
+      },
+      "note": "two declared faces: the metric strut face leads the strut and the EA spans (a FontFace registered at layout time names itself in --doc-strut-face; jsdom has no FontFace)"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 18.72,
+      "tol": 0.1,
+      "note": "Calibri + MS Gothic 12pt line=288"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 13.68,
+      "tol": 0.1,
+      "note": "Times New Roman + MS Mincho 10.5pt single"
+    },
+    {
+      "kind": "linePt",
+      "block": 3,
+      "expect": 15.6,
+      "tol": 0.1,
+      "note": "Arial + MS PGothic 12pt single"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 4,
+      "expect": { "notClasses": ["doc-grid-strut"] },
+      "note": "MS Gothic on both slots: a single face has no union to tame"
+    }
+  ],
+  "docx": "probe.docx"
+}

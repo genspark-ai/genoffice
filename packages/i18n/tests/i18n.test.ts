@@ -1,0 +1,291 @@
+import { describe, expect, it } from 'vitest'
+import {
+  createI18n,
+  format,
+  htmlDir,
+  htmlLang,
+  isLang,
+  isRtlLang,
+  LANGS,
+  macShortcutsToWin,
+  normalizeLang,
+  type Params,
+} from '../src/index'
+
+describe('normalizeLang', () => {
+  it('maps zh variants to zh', () => {
+    expect(normalizeLang('zh')).toBe('zh')
+    expect(normalizeLang('zh-CN')).toBe('zh')
+    expect(normalizeLang('zh-Hans-CN')).toBe('zh')
+  })
+
+  it('maps traditional-script zh variants to zh-TW', () => {
+    expect(normalizeLang('zh-TW')).toBe('zh-TW')
+    expect(normalizeLang('ZH-TW')).toBe('zh-TW')
+    expect(normalizeLang('zh-Hant')).toBe('zh-TW')
+    expect(normalizeLang('zh-Hant-TW')).toBe('zh-TW')
+    expect(normalizeLang('zh-HK')).toBe('zh-TW')
+    expect(normalizeLang('zh-MO')).toBe('zh-TW')
+  })
+
+  it('maps ja/ko variants to ja/ko', () => {
+    expect(normalizeLang('ja')).toBe('ja')
+    expect(normalizeLang('ja-JP')).toBe('ja')
+    expect(normalizeLang('ko')).toBe('ko')
+    expect(normalizeLang('KO-KR')).toBe('ko')
+  })
+
+  it('maps the newly added languages', () => {
+    expect(normalizeLang('fr')).toBe('fr')
+    expect(normalizeLang('fr-CA')).toBe('fr')
+    expect(normalizeLang('de-DE')).toBe('de')
+    expect(normalizeLang('es-419')).toBe('es')
+    expect(normalizeLang('th-TH')).toBe('th')
+    expect(normalizeLang('id-ID')).toBe('id')
+    expect(normalizeLang('in-ID')).toBe('id')
+    expect(normalizeLang('ru-RU')).toBe('ru')
+    expect(normalizeLang('ar-SA')).toBe('ar')
+    expect(normalizeLang('pt-BR')).toBe('pt')
+    expect(normalizeLang('pt-PT')).toBe('pt')
+    expect(normalizeLang('it-IT')).toBe('it')
+    expect(normalizeLang('pl-PL')).toBe('pl')
+    expect(normalizeLang('cs-CZ')).toBe('cs')
+    expect(normalizeLang('nl-NL')).toBe('nl')
+    expect(normalizeLang('ms-MY')).toBe('ms')
+    expect(normalizeLang('he-IL')).toBe('he')
+    expect(normalizeLang('iw-IL')).toBe('he')
+    expect(normalizeLang('hi-IN')).toBe('hi')
+  })
+
+  it('maps everything else (and missing) to en', () => {
+    expect(normalizeLang('en-US')).toBe('en')
+    expect(normalizeLang('en_US')).toBe('en')
+    expect(normalizeLang('sv-SE')).toBe('en')
+    expect(normalizeLang('')).toBe('en')
+    expect(normalizeLang(undefined)).toBe('en')
+    expect(normalizeLang(null)).toBe('en')
+  })
+
+  it('requires a BCP-47 boundary after the language code', () => {
+    expect(normalizeLang('deleted')).toBe('en')
+    expect(normalizeLang('french')).toBe('en')
+    expect(normalizeLang('thread')).toBe('en')
+    expect(normalizeLang('italian')).toBe('en')
+    expect(normalizeLang('hebrew')).toBe('en')
+    expect(normalizeLang('de')).toBe('de')
+    expect(normalizeLang('de-DE')).toBe('de')
+    expect(normalizeLang('de_DE')).toBe('de')
+    expect(normalizeLang('es-419')).toBe('es')
+  })
+})
+
+describe('isLang', () => {
+  it('accepts only supported languages', () => {
+    expect(isLang('zh')).toBe(true)
+    expect(isLang('en')).toBe(true)
+    expect(isLang('ja')).toBe(true)
+    expect(isLang('ko')).toBe(true)
+    expect(isLang('fr')).toBe(true)
+    expect(isLang('de')).toBe(true)
+    expect(isLang('es')).toBe(true)
+    expect(isLang('th')).toBe(true)
+    expect(isLang('id')).toBe(true)
+    expect(isLang('ru')).toBe(true)
+    expect(isLang('ar')).toBe(true)
+    expect(isLang('pt')).toBe(true)
+    expect(isLang('it')).toBe(true)
+    expect(isLang('pl')).toBe(true)
+    expect(isLang('cs')).toBe(true)
+    expect(isLang('nl')).toBe(true)
+    expect(isLang('ms')).toBe(true)
+    expect(isLang('he')).toBe(true)
+    expect(isLang('hi')).toBe(true)
+    expect(isLang('zh-TW')).toBe(true)
+    expect(isLang('zh-CN')).toBe(false)
+    expect(isLang(42)).toBe(false)
+  })
+})
+
+describe('htmlLang', () => {
+  it('maps every supported language to a BCP-47 tag', () => {
+    expect(htmlLang('zh')).toBe('zh-CN')
+    expect(htmlLang('en')).toBe('en-US')
+    expect(htmlLang('ja')).toBe('ja-JP')
+    expect(htmlLang('ko')).toBe('ko-KR')
+    expect(htmlLang('zh-TW')).toBe('zh-TW')
+    for (const lang of LANGS) expect(htmlLang(lang)).toMatch(/^[a-z]{2}-[A-Z]{2}$/)
+  })
+})
+
+describe('format', () => {
+  it('fills placeholders and keeps unknown ones', () => {
+    expect(format('已选 {n} 项', { n: 3 })).toBe('已选 3 项')
+    expect(format('{a} and {b}', { a: 'x' })).toBe('x and {b}')
+    expect(format('no params')).toBe('no params')
+  })
+
+  it('leaves the placeholder in place for a nullish param value', () => {
+    // hasOwn is true for a key explicitly set to undefined/null, and
+    // String(undefined) is the literal text "undefined"
+    expect(format('Deleted {n} files', { n: undefined } as unknown as Params)).toBe(
+      'Deleted {n} files',
+    )
+    expect(format('Deleted {n} files', { n: null } as unknown as Params)).toBe('Deleted {n} files')
+  })
+
+  it('does not leak prototype properties into placeholders', () => {
+    expect(format('{toString}', {})).toBe('{toString}')
+    expect(format('{constructor} and {valueOf}', {})).toBe('{constructor} and {valueOf}')
+    expect(format('{n}', { n: 1 })).toBe('1')
+  })
+})
+
+describe('macShortcutsToWin', () => {
+  it('rewrites single-modifier chords', () => {
+    expect(macShortcutsToWin('剪切 (⌘X)')).toBe('剪切 (Ctrl+X)')
+    expect(macShortcutsToWin('Save (⌘S).')).toBe('Save (Ctrl+S).')
+    expect(macShortcutsToWin('⌘1')).toBe('Ctrl+1')
+  })
+
+  it('rewrites multi-modifier chords in Ctrl, Alt, Shift order', () => {
+    expect(macShortcutsToWin('⇧⌘G')).toBe('Ctrl+Shift+G')
+    expect(macShortcutsToWin('⌘⇧V')).toBe('Ctrl+Shift+V')
+    expect(macShortcutsToWin('⌥⌘I')).toBe('Ctrl+Alt+I')
+    expect(macShortcutsToWin('⌥⇧⌘Z')).toBe('Ctrl+Alt+Shift+Z')
+  })
+
+  it('dedupes command and control into one Ctrl', () => {
+    expect(macShortcutsToWin('⌃⌘F')).toBe('Ctrl+F')
+  })
+
+  it('handles function keys, arrows and named keys', () => {
+    expect(macShortcutsToWin('⇧F5')).toBe('Shift+F5')
+    expect(macShortcutsToWin('⌘⇧↑')).toBe('Ctrl+Shift+↑')
+    expect(macShortcutsToWin('⌘⇧⌫')).toBe('Ctrl+Shift+Backspace')
+    expect(macShortcutsToWin('⌫')).toBe('Backspace')
+    expect(macShortcutsToWin('⌦')).toBe('Delete')
+    expect(macShortcutsToWin('⏎')).toBe('Enter')
+    expect(macShortcutsToWin('↩')).toBe('Enter')
+    expect(macShortcutsToWin('␣')).toBe('Space')
+  })
+
+  it('keeps the Ctrl side of dual-platform listings', () => {
+    expect(macShortcutsToWin('⌘/Ctrl+Enter 发送')).toBe('Ctrl+Enter 发送')
+    expect(macShortcutsToWin('⌘/Strg+Eingabetaste')).toBe('Strg+Eingabetaste')
+  })
+
+  it('rewrites modifier+word combos and bare modifiers', () => {
+    expect(macShortcutsToWin('⌘+Click to follow')).toBe('Ctrl+Click to follow')
+    expect(macShortcutsToWin('按住 ⌘ 并单击')).toBe('按住 Ctrl 并单击')
+  })
+
+  it('keeps a chord embedded before non-Latin text intact', () => {
+    expect(macShortcutsToWin('⌘S로 저장')).toBe('Ctrl+S로 저장')
+  })
+
+  it('leaves strings without Mac symbols untouched', () => {
+    const plain = 'Ctrl+S saves the file'
+    expect(macShortcutsToWin(plain)).toBe(plain)
+    expect(macShortcutsToWin('文件')).toBe('文件')
+  })
+})
+
+describe('shortcut rewrite order', () => {
+  it('rewrites the template before interpolation so values keep their glyphs', () => {
+    const template = 'Saved {name} (⌘S)'
+    const params = { name: 'Plan ⇧Final.xlsx' }
+    expect(format(macShortcutsToWin(template), params)).toBe('Saved Plan ⇧Final.xlsx (Ctrl+S)')
+    expect(macShortcutsToWin(format(template, params))).toBe('Saved Plan Shift+Final.xlsx (Ctrl+S)')
+  })
+})
+
+describe('createI18n', () => {
+  const t = createI18n({
+    zh: { hello: '你好 {name}', plain: '文件' },
+    en: { hello: 'Hello {name}', plain: 'Files' },
+    ja: { hello: 'こんにちは {name}', plain: 'ファイル' },
+    ko: { hello: '안녕하세요 {name}', plain: '파일' },
+    fr: { hello: 'Bonjour {name}', plain: 'Fichiers' },
+    de: { hello: 'Hallo {name}', plain: 'Dateien' },
+    es: { hello: 'Hola {name}', plain: 'Archivos' },
+    th: { hello: 'สวัสดี {name}', plain: 'ไฟล์' },
+    id: { hello: 'Halo {name}', plain: 'Berkas' },
+    ru: { hello: 'Привет, {name}', plain: 'Файлы' },
+    ar: { hello: 'مرحباً {name}', plain: 'الملفات' },
+    pt: { hello: 'Olá {name}', plain: 'Arquivos' },
+    it: { hello: 'Ciao {name}', plain: 'File' },
+    pl: { hello: 'Cześć {name}', plain: 'Pliki' },
+    cs: { hello: 'Ahoj {name}', plain: 'Soubory' },
+    nl: { hello: 'Hallo {name}', plain: 'Bestanden' },
+    ms: { hello: 'Helo {name}', plain: 'Fail' },
+    he: { hello: 'שלום {name}', plain: 'קבצים' },
+    hi: { hello: 'नमस्ते {name}', plain: 'फ़ाइलें' },
+    'zh-TW': { hello: '你好 {name}', plain: '檔案' },
+    vi: { hello: 'Xin chao {name}', plain: 'Tep' },
+    tr: { hello: 'Merhaba {name}', plain: 'Dosyalar' },
+    hu: { hello: 'Szia {name}', plain: 'Fájlok' },
+  })
+
+  it('translates per language with interpolation', () => {
+    expect(t('zh', 'hello', { name: '世界' })).toBe('你好 世界')
+    expect(t('en', 'hello', { name: 'world' })).toBe('Hello world')
+    expect(t('ja', 'hello', { name: '世界' })).toBe('こんにちは 世界')
+    expect(t('ko', 'plain')).toBe('파일')
+    expect(t('en', 'plain')).toBe('Files')
+    expect(t('fr', 'hello', { name: 'monde' })).toBe('Bonjour monde')
+    expect(t('ru', 'plain')).toBe('Файлы')
+    expect(t('ar', 'plain')).toBe('الملفات')
+    expect(t('pt', 'hello', { name: 'mundo' })).toBe('Olá mundo')
+    expect(t('he', 'plain')).toBe('קבצים')
+    expect(t('cs', 'plain')).toBe('Soubory')
+    expect(t('zh-TW', 'plain')).toBe('檔案')
+  })
+
+  it('falls back en -> zh -> key for a missing entry', () => {
+    const partial = createI18n({
+      zh: { a: 'zh-a', b: 'zh-b', c: 'zh-c' },
+      en: { a: 'en-a', b: 'en-b' },
+      fr: { a: 'fr-a' },
+    } as unknown as Parameters<typeof createI18n>[0])
+    expect(partial('fr', 'a')).toBe('fr-a')
+    expect(partial('fr', 'b')).toBe('en-b')
+    expect(partial('fr', 'c')).toBe('zh-c')
+    expect(partial('fr', 'd' as 'a')).toBe('d')
+    expect(partial('vi', 'a')).toBe('en-a')
+  })
+})
+
+describe('isRtlLang', () => {
+  it('flags the right-to-left UI languages', () => {
+    expect(isRtlLang('ar')).toBe(true)
+    expect(isRtlLang('he')).toBe(true)
+  })
+
+  it('leaves left-to-right languages and junk alone', () => {
+    expect(isRtlLang('zh')).toBe(false)
+    expect(isRtlLang('en')).toBe(false)
+    expect(isRtlLang('zh-TW')).toBe(false)
+    expect(isRtlLang('fa')).toBe(false) // not in LANGS today
+    expect(isRtlLang(undefined)).toBe(false)
+    expect(isRtlLang('')).toBe(false)
+  })
+})
+
+describe('htmlDir', () => {
+  it('agrees with isRtlLang on every shipped language', () => {
+    // the two functions exist so bootstraps write `dir` in one place; if they
+    // ever disagree, a language silently lays out the wrong way in one app
+    for (const lang of LANGS) expect(htmlDir(lang)).toBe(isRtlLang(lang) ? 'rtl' : 'ltr')
+  })
+
+  it('maps the right-to-left languages and nothing else', () => {
+    expect(htmlDir('ar')).toBe('rtl')
+    expect(htmlDir('he')).toBe('rtl')
+    for (const lang of ['en', 'zh', 'zh-TW', 'ja', 'th', 'he'.toUpperCase()]) {
+      expect(htmlDir(lang)).toBe('ltr')
+    }
+    expect(htmlDir(undefined)).toBe('ltr')
+    expect(htmlDir(null)).toBe('ltr')
+    expect(htmlDir('')).toBe('ltr')
+  })
+})

@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/cell-cs-mixed-line/probe.docx",
+  "tables": 1,
+  "hashes": ["8a71766da99b65bb"],
+  "staticTables": 1,
+  "staticHashes": ["b194b2de526988fc"]
+}

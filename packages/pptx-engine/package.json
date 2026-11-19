@@ -1,0 +1,36 @@
+{
+  "name": "@genoffice/pptx-engine",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "pptx parsing (Slide element tree with byte anchors + inheritance resolution), OOXML fragment generation, element-patch save",
+  "exports": {
+    ".": "./src/index.ts",
+    "./custgeom": "./src/custgeom.ts",
+    "./table-grid": "./src/table-grid.ts",
+    "./identity": "./src/identity.ts",
+    "./chart-workbook": "./src/chart-workbook.ts",
+    "./dgm-hier": "./src/dgm-hier.ts",
+    "./model3d": "./src/model3d.ts",
+    "./named-action": "./src/named-action.ts",
+    "./background-promote": "./src/background-promote.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@genoffice/zip-gate": "*",
+    "fast-xml-parser": "^5.12.0",
+    "jszip": "^3.10.1",
+    "@genoffice/agent-core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "pptxgenjs": "^4.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}

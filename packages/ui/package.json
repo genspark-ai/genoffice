@@ -1,0 +1,46 @@
+{
+  "name": "@genoffice/ui",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared renderer UI components for the office apps (AI panel composer, icons); styling stays per-app via the shared class names",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ai-panel-prefs": "./src/ai-panel-prefs.ts",
+    "./tokens.css": "./src/tokens.css",
+    "./screentip.css": "./src/screentip.css",
+    "./color-picker.css": "./src/color-picker.css",
+    "./dropdown.css": "./src/dropdown.css",
+    "./find-panel.css": "./src/find-panel.css",
+    "./ribbon-collapse.css": "./src/ribbon-collapse.css",
+    "./markdown.css": "./src/markdown.css",
+    "./ai-panel-prefs.css": "./src/ai-panel-prefs.css",
+    "./ai-scope-quote.css": "./src/ai-scope-quote.css",
+    "./ai-queue-strip.css": "./src/ai-queue-strip.css",
+    "./ai-usage.css": "./src/ai-usage.css",
+    "./image-dialogs.css": "./src/image-dialogs.css",
+    "./image-viewer.css": "./src/image-viewer.css",
+    "./fonts/*": "./src/fonts/*",
+    "./ai-model-picker.css": "./src/ai-model-picker.css",
+    "./ai-skills.css": "./src/ai-skills.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "dependencies": {
+    "@genoffice/i18n": "*",
+    "@genoffice/pptx-render": "*",
+    "@genoffice/agent-core": "*",
+    "@genoffice/ai-provider": "*"
+  }
+}

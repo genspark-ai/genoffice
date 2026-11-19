@@ -1,0 +1,22 @@
+{
+  "id": "render-hf-blank-header-push",
+  "title": "A header made of one empty paragraph pushes the body like a text header",
+  "section": "word-truths.md#L137",
+  "probe_date": "2026-09-06",
+  "class": "render",
+  "source": "A1_empty_plain.pdf re-measured 2026-10-22 (pymupdf): A4, pgMar top 720 / header 851, header = one empty Arial 12 paragraph; first body line glyph top 61.38 (baseline 72.24) against 36 without a header",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 1,
+      "expect": 61.38,
+      "tol": 0.6,
+      "note": "body top = header dist 42.55 + empty 12pt line 13.8 (strip) > 36pt margin; Arial 12 ascent 10.86 above the 72.24 baseline"
+    }
+  ],
+  "docx": "probe.docx"
+}

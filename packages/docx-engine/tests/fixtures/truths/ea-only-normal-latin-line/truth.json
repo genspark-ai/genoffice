@@ -1,0 +1,24 @@
+{
+  "id": "ea-only-normal-latin-line",
+  "title": "An EA-only Normal rFonts (theme minor in the eastAsia slot) never sets the Latin line height",
+  "section": "word-truths.md#L376",
+  "probe_date": "2026-09-23",
+  "source": "probe build.py: five variants (lang zh-CN / en-US / eastAsia zh-CN / useFELayout / no rFonts) all TNR 12pt pitch 13.68, only TimesNewRomanPSMT embedded",
+  "cases": [
+    {
+      "kind": "blockFace",
+      "block": 0,
+      "expect": "Times New Roman",
+      "note": "Latin text lays out with the docDefaults ascii slot, not the Normal EA theme slot (Aptos 1.22)"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 13.68,
+      "tol": 0.15,
+      "note": "TNR 12 single 13.68 (1.15 x 12 = 13.8)"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

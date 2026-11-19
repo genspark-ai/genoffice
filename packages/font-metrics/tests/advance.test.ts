@@ -1,0 +1,98 @@
+import { existsSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+import { evictOldestEntry } from '../src/advance'
+import { advanceWidths, fileAdvanceWidths, isFamilyInstalled } from '../src/index'
+
+const darwin = process.platform === 'darwin'
+const hasHelvetica = darwin && existsSync('/System/Library/Fonts/Helvetica.ttc')
+
+describe('isFamilyInstalled', () => {
+  it('resolves exact normalized family names only', () => {
+    expect(isFamilyInstalled('No Such Font Family ZZZ')).toBe(false)
+    expect(isFamilyInstalled('')).toBe(false)
+    if (!hasHelvetica) return
+    expect(isFamilyInstalled('Helvetica')).toBe(true)
+    expect(isFamilyInstalled('helvetica')).toBe(true)
+    expect(isFamilyInstalled('Helveticaish')).toBe(false)
+  })
+})
+
+describe('advanceWidths', () => {
+  it('returns null for uninstalled families', () => {
+    expect(advanceWidths('No Such Font Family ZZZ', 'x', 12)).toBeNull()
+  })
+
+  it('returns per-codepoint twips that scale linearly with size', () => {
+    if (!hasHelvetica) return
+    const at12 = advanceWidths('Helvetica', 'Hi x', 12)!
+    expect(at12).toHaveLength(4)
+    for (const w of at12) expect(w).toBeGreaterThan(0)
+    const at24 = advanceWidths('Helvetica', 'Hi x', 24)!
+    at24.forEach((w, i) => expect(w).toBeCloseTo(2 * at12[i]!, 6))
+    // 'i' is narrower than 'H' in a proportional face
+    expect(at12[1]!).toBeLessThan(at12[0]!)
+  })
+
+  it('selects a heavier face for bold and reports wider stems', () => {
+    if (!hasHelvetica) return
+    const sum = (a: number[]) => a.reduce((x, y) => x + y, 0)
+    const reg = advanceWidths('Helvetica', 'Hamburgefonstiv', 12)!
+    const bold = advanceWidths('Helvetica', 'Hamburgefonstiv', 12, { bold: true })!
+    expect(sum(bold)).toBeGreaterThan(sum(reg))
+  })
+
+  it('marks unmapped codepoints as NaN instead of guessing', () => {
+    if (!hasHelvetica) return
+    const w = advanceWidths('Helvetica', '\u{10FFF0}x', 12)!
+    expect(Number.isNaN(w[0]!)).toBe(true)
+    expect(w[1]!).toBeGreaterThan(0)
+  })
+})
+
+describe('fileAdvanceWidths', () => {
+  const carlito = new URL('../../ui/src/fonts/Carlito-Regular.ttf', import.meta.url).pathname
+
+  it('reads the bundled Carlito: m is 0.799 em (the Calibri 11 probe advance 175.7 twips)', () => {
+    const w = fileAdvanceWidths(carlito, 'm \u{10FFF0}', 11)!
+    expect(w).toHaveLength(3)
+    expect(w[0]!).toBeCloseTo(175.7, 0)
+    expect(w[1]!).toBeCloseTo(49.7, 0)
+    expect(Number.isNaN(w[2]!)).toBe(true)
+  })
+
+  it('returns null for a missing file', () => {
+    expect(fileAdvanceWidths('/no/such/font.ttf', 'x', 12)).toBeNull()
+  })
+})
+
+describe('evictOldestEntry', () => {
+  it('is a no-op below capacity', () => {
+    const cache = new Map([
+      ['a', 1],
+      ['b', 2],
+    ])
+    evictOldestEntry(cache, 8)
+    expect([...cache.keys()]).toEqual(['a', 'b'])
+  })
+
+  it('evicts only the oldest entry at capacity', () => {
+    const cache = new Map([
+      ['a', 1],
+      ['b', 2],
+      ['c', 3],
+    ])
+    evictOldestEntry(cache, 3)
+    expect([...cache.keys()]).toEqual(['b', 'c'])
+  })
+
+  it('evicts repeatedly until one slot is free', () => {
+    const cache = new Map([
+      ['a', 1],
+      ['b', 2],
+      ['c', 3],
+      ['d', 4],
+    ])
+    evictOldestEntry(cache, 2)
+    expect([...cache.keys()]).toEqual(['d'])
+  })
+})

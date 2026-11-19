@@ -1,0 +1,40 @@
+{
+  "family": "MS UI Gothic JA GO",
+  "source": {
+    "kind": "probe",
+    "date": "2026-09-03",
+    "probe": "advances from Word msgothic.ttc: proportional kana (hiragana 0.776em, katakana 0.744em, long vowel mark 0.816em), half-width brackets, 0.664em ideographic punctuation"
+  },
+  "faces": [
+    {
+      "src": "local('Hiragino Sans'), local('HiraginoSans-W3')",
+      "sizeAdjust": 77.58,
+      "unicodeRange": "U+3041-3096, U+3099-309F",
+      "display": null
+    },
+    {
+      "src": "local('Hiragino Sans'), local('HiraginoSans-W3')",
+      "sizeAdjust": 74.42,
+      "unicodeRange": "U+30A1-30FA, U+30FD-30FF",
+      "display": null
+    },
+    {
+      "src": "local('Hiragino Sans'), local('HiraginoSans-W3')",
+      "sizeAdjust": 81.64,
+      "unicodeRange": "U+30FC",
+      "display": null
+    },
+    {
+      "src": "local('Hiragino Sans'), local('HiraginoSans-W3')",
+      "sizeAdjust": 66.4,
+      "unicodeRange": "U+3000-3002",
+      "display": null
+    },
+    {
+      "src": "local('Hiragino Sans'), local('HiraginoSans-W3')",
+      "sizeAdjust": 50,
+      "unicodeRange": "U+3008-3011, U+3014-3015, U+30FB, U+FF08-FF09, U+FF1A-FF1B, U+FF3B, U+FF3D-FF3E, U+FF40, U+FF5B, U+FF5D",
+      "display": null
+    }
+  ]
+}

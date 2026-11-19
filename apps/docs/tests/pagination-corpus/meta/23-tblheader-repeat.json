@@ -1,0 +1,6 @@
+{
+  "title": "tblHeader repeated header",
+  "tags": ["table", "tblHeader", "cantSplit"],
+  "description": "Cross-page table with a tblHeader first row (repeated header placeholder on following pages) + some cantSplit rows",
+  "file": "23-tblheader-repeat.docx"
+}

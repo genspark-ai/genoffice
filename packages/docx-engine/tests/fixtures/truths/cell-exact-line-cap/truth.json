@@ -1,0 +1,48 @@
+{
+  "id": "cell-exact-line-cap",
+  "title": "Exact and atLeast rules inside cells: exact pins every line at the rule (24pt lines, 10pt lines clipping 11pt glyphs), atLeast lays max(rule, natural) per line",
+  "section": "word-truths.md#L788",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf rules: exact 480 two-line row 48.48, exact 200 row 20.40, atLeast 400 row 40.56, plain Calibri 11 two-line row 27.36",
+  "cases": [
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 0,
+      "expect": {
+        "styles": [
+          "line-height:24.0pt",
+          "--doc-lh-cap:24.0pt",
+          "--doc-lead-top:var(--doc-lead-exact, 0px)"
+        ]
+      },
+      "note": "the cap keeps a taller run from growing the line; lead-top puts the baseline at 0.8 h (styles.css)"
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 1,
+      "expect": {
+        "styles": ["line-height:10.0pt", "--doc-lh-cap:10.0pt"]
+      },
+      "note": "exact below the glyph height: Word clips, the cap stops the 11pt run box from re-growing the line"
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 2,
+      "expect": {
+        "styles": ["--doc-lh-cap:initial"]
+      },
+      "note": "a direct atLeast must not cap its runs at an inherited style-level exact rule"
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 3,
+      "expect": { "notStyles": ["--doc-lh-cap", "--doc-lead-top", "line-height"] }
+    }
+  ],
+  "docx": "probe.docx"
+}

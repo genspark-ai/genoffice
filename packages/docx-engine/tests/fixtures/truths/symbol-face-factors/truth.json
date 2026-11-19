@@ -1,0 +1,37 @@
+{
+  "id": "symbol-face-factors",
+  "title": "Symbol font line factors (Word DFonts hhea)",
+  "section": "word-truths.md#L10",
+  "section_title": "Font line-height factors and substitutions (Word for Mac)",
+  "probe_date": "2026-09-12",
+  "class": "pure",
+  "source": "fontTools over the Office-bundled faces, Word for Mac sample 035 line pitch 16.33px at 10pt",
+  "cases": [
+    {
+      "kind": "factor",
+      "font": "Symbol",
+      "expect": 1.2251
+    },
+    {
+      "kind": "factor",
+      "font": "Wingdings",
+      "expect": 1.1099
+    },
+    {
+      "kind": "factor",
+      "font": "Wingdings 2",
+      "expect": 1.0542
+    },
+    {
+      "kind": "factor",
+      "font": "Wingdings 3",
+      "expect": 1.1387
+    },
+    {
+      "kind": "factor",
+      "font": "Webdings",
+      "expect": 1.0
+    }
+  ],
+  "docx": "probe.docx"
+}

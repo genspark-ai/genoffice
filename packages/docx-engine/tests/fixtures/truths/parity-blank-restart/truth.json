@@ -1,0 +1,22 @@
+{
+  "id": "parity-blank-restart",
+  "title": "evenAndOddHeaders + a page-number restart on a nextPage section inserts a parity blank page",
+  "section": "word-truths.md#L570",
+  "probe_date": "2026-10-20",
+  "source": "prod corpus 20261020 sample 032 Word PDF: the restart-at-1 section after a 1-page section opens on page 3 (blank page 2) under w:evenAndOddHeaders; without the flag no blank page; section-end space-after never adds one",
+  "cases": [
+    {
+      "kind": "parityPages",
+      "expect": 3,
+      "note": "blank sheet so the odd restart lands on an odd physical page"
+    },
+    {
+      "kind": "parityPages",
+      "docx": "probe-off.docx",
+      "expect": 2,
+      "note": "same document without w:evenAndOddHeaders"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

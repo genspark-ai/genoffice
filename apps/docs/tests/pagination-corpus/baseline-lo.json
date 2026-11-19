@@ -1,0 +1,431 @@
+{
+  "01-simple-english": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 4,
+    "pageStarts": [
+      "Simple English Document",
+      "Lorem ipsum dolor sit amet consectetur a",
+      "Lorem ipsum dolor sit amet consectetur a",
+      "Lorem ipsum dolor sit amet consectetur a"
+    ],
+    "pageEnds": [
+      "exercitation ullamco laboris nisi",
+      "exercitation ullamco laboris nisi",
+      "exercitation ullamco laboris nisi",
+      "exercitation ullamco laboris nisi"
+    ]
+  },
+  "02-chinese-long-docgrid": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 7,
+    "pageStarts": [
+      "中文长篇文档测试",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变"
+    ],
+    "pageEnds": [
+      "各行各业的生产方式和商业模式。数",
+      "各行各业的生产方式和商业模式。数",
+      "各行各业的生产方式和商业模式。数",
+      "各行各业的生产方式和商业模式。数",
+      "各行各业的生产方式和商业模式。数",
+      "各行各业的生产方式和商业模式。数",
+      "各行各业的生产方式和商业模式。数"
+    ]
+  },
+  "03-mixed-lang": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 3,
+    "pageStarts": [
+      "中英文混排文档",
+      "Lorem ipsum dolor sit amet consectetur a",
+      "Lorem ipsum dolor sit amet consectetur a"
+    ],
+    "pageEnds": [
+      "在中国经济社会发展的重要历史时期，人工智",
+      "在中国经济社会发展的重要历史时期，人工智",
+      "dunt ut labore et dolore magna aliqua Ut"
+    ]
+  },
+  "04-headings-keepnext": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 7,
+    "pageStarts": [
+      "第 1 章 标题层级测试",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在",
+      "第 2.2 节",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在",
+      "第 5 章 标题层级测试",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在"
+    ],
+    "pageEnds": [
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在"
+    ]
+  },
+  "05-long-table": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 2,
+    "pageStarts": [
+      "长表格跨页测试",
+      "第 23 行第 1 列   第 23 行第 2 列   第 23 行第 3 列 "
+    ],
+    "pageEnds": [
+      " 第 22 行第 2 列   第 22 行第 3 列   第 22 行第 4 列",
+      "表格后续正文段落。"
+    ]
+  },
+  "06-with-footnotes": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 3,
+    "pageStarts": [
+      "含脚注文档测试",
+      "第 13 段正文，包含参考引用。13",
+      "在中国经济社会发展的重要历史时期，人工智"
+    ],
+    "pageEnds": [
+      "1111 这是第 11 条脚注内容，详见参考文献。",
+      "2020 这是第 20 条脚注内容，详见参考文献。",
+      "在中国经济社会发展的重要历史时期，人工智"
+    ]
+  },
+  "07-page-breaks": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 3,
+    "pageStarts": [
+      "分页符测试文档",
+      "第二页（强制分页符后）",
+      "第三页"
+    ],
+    "pageEnds": [
+      "在中国经济社会发展的重要历史时期，人工智",
+      "在中国经济社会发展的重要历史时期，人工智",
+      "在中国经济社会发展的重要历史时期，人工智"
+    ]
+  },
+  "08-multi-section-paper": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 2,
+    "pageStarts": [
+      "多节文档 - 第一节（A4 竖向）",
+      "第二节（A4 横向）"
+    ],
+    "pageEnds": [
+      "在中国经济社会发展的重要历史时期，人工智能技术的广",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广"
+    ]
+  },
+  "09-large-paragraph": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 5,
+    "pageStarts": [
+      "大段落测试",
+      "容，用于测试大段落的分页处理行为。这是一段很长的文字内容，用于测试大",
+      "大段落的分页处理行为。这是一段很长的文字内容，用于测试大段落的分页处",
+      "处理行为。这是一段很长的文字内容，用于测试大段落的分页处理行为。这是",
+      "是一段很长的文字内容，用于测试大段落的分页处理行为。这是一段很长的文"
+    ],
+    "pageEnds": [
+      "段很长的文字内容，用于测试大段落的分页处理行为。这是一段很长的文字内",
+      "内容，用于测试大段落的分页处理行为。这是一段很长的文字内容，用于测试",
+      "试大段落的分页处理行为。这是一段很长的文字内容，用于测试大段落的分页",
+      "页处理行为。这是一段很长的文字内容，用于测试大段落的分页处理行为。这",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在"
+    ]
+  },
+  "10-cn-official-doc": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 7,
+    "pageStarts": [
+      "关于深化体制改革的通知",
+      "职能转变，优化营商环境，提升治理效能，现就有关事项通知如下：为贯彻落",
+      "职能转变，优化营商环境，提升治理效能，现就有关事项通知如下：为贯彻落",
+      "附件 1：相关事项说明",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变"
+    ],
+    "pageEnds": [
+      "为贯彻落实党中央、国务院关于深化体制改革的重要决策部署，切实推进政府",
+      "为贯彻落实党中央、国务院关于深化体制改革的重要决策部署，切实推进政府",
+      "二○二六年七月二十六日",
+      "各行各业的生",
+      "各行各业的生",
+      "各行各业的生",
+      "各行各业的生"
+    ]
+  },
+  "11-multi-tables": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 3,
+    "pageStarts": [
+      "多表格文档",
+      "第 3 行第 1 列   第 3 行第 2 列   第 3 行第 3 列",
+      "第 8 行第 1 列   第 8 行第 2 列   第 8 行第 3 列"
+    ],
+    "pageEnds": [
+      "第 2 行第 1 列   第 2 行第 2 列   第 2 行第 3 列",
+      "第 7 行第 1 列   第 7 行第 2 列   第 7 行第 3 列",
+      "表格说明文字：以上数据来自系统统计。"
+    ]
+  },
+  "12-orphan-heading": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 3,
+    "pageStarts": [
+      "标题孤悬测试",
+      "Lorem ipsum dolor sit amet consectetur a",
+      "Lorem ipsum dolor sit amet consectetur a"
+    ],
+    "pageEnds": [
+      "incididunt ut labore",
+      "标题后面的正文段落，标题不应孤悬。",
+      "dunt ut labore et dolore magna aliqua Ut"
+    ]
+  },
+  "13-english-report": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 8,
+    "pageStarts": [
+      "Long English Report",
+      "Lorem ipsum dolor sit amet consectetur a",
+      "Lorem ipsum dolor sit amet consectetur a",
+      "Lorem ipsum dolor sit amet consectetur a",
+      "Lorem ipsum dolor sit amet consectetur a",
+      "Lorem ipsum dolor sit amet consectetur a",
+      "Lorem ipsum dolor sit amet consectetur a",
+      "Lorem ipsum dolor sit amet consectetur a"
+    ],
+    "pageEnds": [
+      "dolor sit",
+      "co laboris nisi ut aliquip ex ea commodo",
+      "co laboris nisi ut aliquip ex ea commodo",
+      "co laboris nisi ut aliquip ex ea commodo",
+      "co laboris nisi ut aliquip ex ea commodo",
+      "exercitation ullamco laboris nisi",
+      "exercitation ullamco laboris nisi",
+      "exercitation ullamco laboris nisi"
+    ]
+  },
+  "14-chinese-no-docgrid": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 5,
+    "pageStarts": [
+      "中文文档（无网格）",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广泛应用正在深刻改变"
+    ],
+    "pageEnds": [
+      "各行各业的生",
+      "各行各业的生",
+      "各行各业的生",
+      "各行各业的生",
+      "各行各业的生"
+    ]
+  },
+  "15-mixed-content": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 6,
+    "pageStarts": [
+      "混合内容文档",
+      "在中国经济社会发展的重要历史时期，人工智",
+      "第 2 行第 1 列   第 2 行第 2 列   第 2 行第 3 列",
+      "第 3 节 内容概述",
+      "第 3.2 分析结论",
+      "第 3 行第 1 列   第 3 行第 2 列   第 3 行第 3 列"
+    ],
+    "pageEnds": [
+      "在中国经济社会发展的重要历史时期，人工智",
+      "列 1 标题       列 2 标题    列 3 标题",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广",
+      "在中国经济社会发展的重要历史时期，人工智",
+      "第 2 行第 1 列   第 2 行第 2 列   第 2 行第 3 列",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广"
+    ]
+  },
+  "16-numbered-list": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 3,
+    "pageStarts": [
+      "编号列表文档",
+      "24. 列表项目：这是第 24 条列表内容，用于测试编号列表的分页行为。",
+      "49. 列表项目：这是第 49 条列表内容，用于测试编号列表的分页行为。"
+    ],
+    "pageEnds": [
+      "23. 列表项目：这是第 23 条列表内容，用于测试编号列表的分页行为。",
+      "48. 列表项目：这是第 48 条列表内容，用于测试编号列表的分页行为。",
+      "50. 列表项目：这是第 50 条列表内容，用于测试编号列表的分页行为。"
+    ]
+  },
+  "17-single-page": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 1,
+    "pageStarts": [
+      "单页短文档"
+    ],
+    "pageEnds": [
+      "第三段内容，文档到此结束。"
+    ]
+  },
+  "18-page-break-before": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 3,
+    "pageStarts": [
+      "pageBreakBefore 测试",
+      "此段落设置了 pageBreakBefore 属性",
+      "第二个 pageBreakBefore 段落"
+    ],
+    "pageEnds": [
+      "在中国经济社会发展的重要历史时期，人工智",
+      "在中国经济社会发展的重要历史时期，人工智",
+      "在中国经济社会发展的重要历史时期，人工智"
+    ]
+  },
+  "19-oversized-table": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 3,
+    "pageStarts": [
+      "超大表格测试",
+      "第 23 行第 1 列   第 23 行第 2 列   第 23 行第 3 列",
+      "第 48 行第 1 列   第 48 行第 2 列   第 48 行第 3 列"
+    ],
+    "pageEnds": [
+      "第 22 行第 1 列   第 22 行第 2 列   第 22 行第 3 列",
+      "第 47 行第 1 列   第 47 行第 2 列   第 47 行第 3 列",
+      "超大表格后续内容。"
+    ]
+  },
+  "20-cn-short-report": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 4,
+    "pageStarts": [
+      "人工智能办公系统建设方案",
+      "本方案旨在系统推进办公自动化智能升级，通过引入先进的人工智能",
+      "引入先进的人工智能技术，全面提升行政办公效率，降低运营成本，改善用户",
+      "本方案旨在系统推进办公自动化智能升级，通过引入先进的人工智能"
+    ],
+    "pageEnds": [
+      "体验，为现代化治理体系建设提供有力支撑。",
+      "体系建设提供有力支撑。   本方案旨在系统推进办公自动化智能升级，通过",
+      "体验，为现代化治理体系建设提供有力支撑。",
+      "体验，为现代化治理体系建设提供有力支撑。"
+    ]
+  },
+  "21-continuous-section": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 2,
+    "pageStarts": [
+      "连续节分隔符测试",
+      "续页节（内容紧接上节）"
+    ],
+    "pageEnds": [
+      "在中国经济社会发展的重要历史时期，人工智能技术的广",
+      "在中国经济社会发展的重要历史时期，人工智能技术的广"
+    ]
+  },
+  "22-two-columns": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 2,
+    "pageStarts": [
+      "双栏布局文档              在中国经济社会发展的重要历史时期，",
+      "在中国经济社会发展的重要历史时期，"
+    ],
+    "pageEnds": [
+      "人工智",
+      "人工智"
+    ]
+  },
+  "fixture-kitchen-sink": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 1,
+    "pageStarts": [
+      "第一章 概述"
+    ],
+    "pageEnds": [
+      "尾段。"
+    ]
+  },
+  "fixture-simple": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 1,
+    "pageStarts": [
+      "标题"
+    ],
+    "pageEnds": [
+      "第二段。"
+    ]
+  },
+  "kitchen-sink": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 1,
+    "pageStarts": [
+      "第一章 概述"
+    ],
+    "pageEnds": [
+      "尾段。"
+    ]
+  },
+  "simple": {
+    "source": "libreoffice",
+    "version": "LibreOffice 24.2.7.2 420(Build:2)",
+    "pages": 1,
+    "pageStarts": [
+      "标题"
+    ],
+    "pageEnds": [
+      "第二段。"
+    ]
+  },
+  "23-tblheader-repeat": {
+    "source": "libreoffice",
+    "version": "LibreOffice 26.2.3.2 70e089b17412e4cb7773e41413306b17a2328c34",
+    "pages": 3,
+    "pageStarts": [
+      "tblHeader 跨页表头重复测试",
+      "列 A 表头     列 B 表头",
+      "列 A 表头     列 B 表头"
+    ],
+    "pageEnds": [
+      "第 19 行 A             第 19 行 B",
+      "第 38 行 A   第 38 行 B",
+      "表后段落。"
+    ]
+  }
+}

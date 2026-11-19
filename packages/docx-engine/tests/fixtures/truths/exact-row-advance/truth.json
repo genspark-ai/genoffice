@@ -1,0 +1,67 @@
+{
+  "id": "exact-row-advance",
+  "title": "hRule=exact rows advance by trHeight + bottom cell margin, never the gridline",
+  "section": "word-truths.md#L621",
+  "probe_date": "2026-10-22",
+  "class": "pure",
+  "source": "probe exrow build.py -> Word for Mac direct PDF, pymupdf horizontal rules; Letter, Calibri 11, 1-col 6000-twip table, 4 exact rows per case",
+  "cases": [
+    {
+      "kind": "rowPt",
+      "block": 1,
+      "row": 0,
+      "expect": 74.0,
+      "tol": 0.1,
+      "note": "A trHeight 1480 sz 4 (Word 73.92/74.16)"
+    },
+    {
+      "kind": "rowPt",
+      "block": 3,
+      "row": 0,
+      "expect": 74.0,
+      "tol": 0.1,
+      "note": "B sz 8"
+    },
+    {
+      "kind": "rowPt",
+      "block": 5,
+      "row": 0,
+      "expect": 74.0,
+      "tol": 0.1,
+      "note": "C sz 24: the gridline sits inside the declared height"
+    },
+    {
+      "kind": "rowPt",
+      "block": 7,
+      "row": 0,
+      "expect": 27.0,
+      "tol": 0.05,
+      "note": "D 440 + tcMar 100/100: top margin inside, bottom added"
+    },
+    {
+      "kind": "rowPt",
+      "block": 9,
+      "row": 0,
+      "expect": 22.0,
+      "tol": 0.05,
+      "note": "E 440 mar 0"
+    },
+    {
+      "kind": "rowPt",
+      "block": 11,
+      "row": 0,
+      "expect": 22.0,
+      "tol": 0.05,
+      "note": "F 440 borderless (nil)"
+    },
+    {
+      "kind": "rowPt",
+      "block": 13,
+      "row": 0,
+      "expect": 24.24,
+      "tol": 0.02,
+      "note": "G 485 sz 4"
+    }
+  ],
+  "docx": "probe.docx"
+}

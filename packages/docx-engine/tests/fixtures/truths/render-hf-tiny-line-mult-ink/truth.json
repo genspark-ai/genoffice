@@ -1,0 +1,39 @@
+{
+  "id": "render-hf-tiny-line-mult-ink",
+  "title": "A header paragraph under an auto line multiple below 1 keeps its glyphs whole: the line box shrinks to the multiple (0.058 x 9.76 = 0.57 pt advance), the baseline sits at the ascent share of the shrunken line and the ink overhangs the strip top; the body top is not pushed",
+  "section": "word-truths.md#L904",
+  "probe_date": "2026-11-02",
+  "class": "render",
+  "docx": "probe.docx",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-11-02), pymupdf rawdict span bboxes and baselines, Letter, 1440 margins, header 720 (strip top 36), Calibri 11 docDefaults after 0 line 240, one nextPage section per header part, right-aligned Calibri 8 text under a sz 1 mark: line 14 baseline 36.48 (ink box 28.94-38.61, above the strip top), line 120 baseline 39.84, line 240 baseline 43.68 (= 36 + 0.952 x 8), so the baseline is top + m x ascent; two br-lines at line 14 advance 0.48 (36.48 / 36.96), two paragraphs at line 14 the same; body top 72.05 on every page. gen before the fix: the strip's overflow:hidden cut the glyph at the strip top (ink 36.0-38.0 of a 32.8-39.3 glyph)",
+  "cases": [
+    {
+      "kind": "headerInkInClip",
+      "page": 1,
+      "expect": true,
+      "note": "line 14 (0.058): the whole glyph box lies inside the strip's clip box"
+    },
+    { "kind": "headerInkInClip", "page": 2, "expect": true, "note": "line 120 (0.5)" },
+    {
+      "kind": "headerInkInClip",
+      "page": 4,
+      "expect": true,
+      "note": "two br-lines at line 14 overprint, both unclipped"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 1,
+      "control": 3,
+      "expect": 0,
+      "note": "a squeezed header never pushes the body (same body top as the line 240 control page)"
+    },
+    { "kind": "pageTextTopDeltaPt", "page": 2, "control": 3, "expect": 0 },
+    {
+      "kind": "headerTextTopPt",
+      "page": 3,
+      "expect": 36.14,
+      "tol": 1.0,
+      "note": "line 240 control: glyph box top at the strip top (gen Carlito box 36.75)"
+    }
+  ]
+}

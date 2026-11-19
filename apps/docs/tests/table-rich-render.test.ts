@@ -1,0 +1,619 @@
+import { describe, expect, it } from 'vitest'
+import { DOMSerializer } from '@tiptap/pm/model'
+import type { TableModel } from '@genoffice/docx-engine'
+import { renderTableSpec } from '../src/renderer/editor/protected-render'
+
+function renderTable(model: TableModel): HTMLElement {
+  const { dom } = DOMSerializer.renderSpec(document, renderTableSpec(model) as never)
+  return dom as HTMLElement
+}
+
+/** innerText equivalent (paragraph divs → one line each); jsdom does not implement innerText */
+function cellText(td: Element): string {
+  return Array.from(td.children)
+    .filter((c) => c.tagName === 'DIV')
+    .map((c) => c.textContent ?? '')
+    .join('\n')
+}
+
+const cell = (paras: string[], richParas?: TableModel['rows'][0][0]['richParas']) => ({
+  paras,
+  ...(richParas ? { richParas } : {}),
+})
+
+describe('renderTableSpec rich cell content', () => {
+  it('renders run-level sz/color/bold from richParas', () => {
+    const model: TableModel = {
+      rows: [
+        [
+          cell(
+            ['Big red', 'plain'],
+            [
+              {
+                runs: [
+                  { text: 'Big ', sizeHalfPoints: 15, color: 'FF0000', bold: true },
+                  { text: 'red', sizeHalfPoints: 15, italic: true },
+                ],
+              },
+              { runs: [{ text: 'plain' }] },
+            ],
+          ),
+        ],
+      ],
+    }
+    const td = renderTable(model).querySelector('td')!
+    const spans = td.querySelectorAll('span')
+    expect(spans).toHaveLength(3)
+    // renderSpec assigns style via cssText, so jsdom normalizes (spaces, rgb());
+    // assert on the attribute string, not CSSOM property reads
+    const first = spans[0].getAttribute('style')!
+    expect(first).toMatch(/font-size:\s*7\.5pt/)
+    expect(first).toMatch(/color:\s*(#FF0000|rgb\(255,\s*0,\s*0\))/i)
+    expect(first).toMatch(/font-weight:\s*700/)
+    const second = spans[1].getAttribute('style')!
+    expect(second).toMatch(/font-size:\s*7\.5pt/)
+    expect(second).toMatch(/font-style:\s*italic/)
+    expect(spans[2].getAttribute('style')).toBeNull()
+    expect(cellText(td)).toBe('Big red\nplain')
+  })
+
+  it('keeps innerText line semantics identical to the paras fallback', () => {
+    const paras = ['a', '', 'b']
+    const rich = renderTable({
+      rows: [[cell(paras, [{ runs: [{ text: 'a' }] }, { runs: [] }, { runs: [{ text: 'b' }] }])]],
+    }).querySelector('td')!
+    const plain = renderTable({ rows: [[cell(paras)]] }).querySelector('td')!
+    expect(cellText(rich)).toBe('a\n\nb')
+    expect(cellText(rich)).toBe(cellText(plain))
+    expect(rich.querySelectorAll('br')).toHaveLength(plain.querySelectorAll('br').length)
+  })
+
+  it('falls back to plain paras when richParas is absent', () => {
+    const td = renderTable({ rows: [[cell(['x', 'y'])]] }).querySelector('td')!
+    expect(td.querySelectorAll('span')).toHaveLength(0)
+    expect(cellText(td)).toBe('x\ny')
+  })
+
+  it('renders one empty line box for cells whose richParas hold no text', () => {
+    const td = renderTable({ rows: [[cell([''], [{ runs: [] }])]] }).querySelector('td')!
+    const paras = td.querySelectorAll(':scope > div')
+    expect(paras).toHaveLength(1)
+    expect(paras[0].classList.contains('doc-p-empty')).toBe(true)
+    expect(paras[0].querySelector('br')).not.toBeNull()
+  })
+
+  it('leads with the cs font chain for complex-script run text', () => {
+    const fonts = { font: 'Calibri', fontAscii: 'Calibri', csFont: 'Traditional Arabic' }
+    const model: TableModel = {
+      rows: [
+        [
+          cell(
+            ['مرحبا Hi'],
+            [
+              {
+                runs: [
+                  { text: 'مرحبا', ...fonts },
+                  { text: 'Hi', ...fonts },
+                ],
+              },
+            ],
+          ),
+        ],
+      ],
+    }
+    const spans = renderTable(model).querySelectorAll('td span:not(.doc-ltr-runs)')
+    const arabic = spans[0].getAttribute('style')!
+    expect(arabic).toMatch(/font-family:\s*['"]Traditional Arabic['"]/)
+    expect(arabic).toContain('Calibri')
+    // csFont present but text is Latin-only: keep the plain Latin chain
+    const latin = spans[1].getAttribute('style')!
+    expect(latin).toMatch(/font-family:\s*['"]Calibri['"]/)
+    expect(latin).not.toContain('Traditional Arabic')
+  })
+
+  it('renders both the text and the picture of a text+drawing run', () => {
+    const model: TableModel = {
+      rows: [
+        [
+          cell(
+            ['label'],
+            [
+              {
+                runs: [
+                  {
+                    text: 'label',
+                    bold: true,
+                    image: {
+                      dataUrl: 'data:image/png;base64,AA==',
+                      widthPx: 24,
+                      xml: '<w:drawing/>',
+                    },
+                  },
+                ],
+              },
+            ],
+          ),
+        ],
+      ],
+    }
+    const td = renderTable(model).querySelector('td')!
+    const span = td.querySelector('span')!
+    expect(span.textContent).toBe('label')
+    expect(span.getAttribute('style')).toMatch(/font-weight:\s*700/)
+    const img = td.querySelector('img.doc-inline-img')!
+    expect(img.getAttribute('src')).toBe('data:image/png;base64,AA==')
+    // text precedes the drawing (generate.ts / editable-path order)
+    expect(span.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('a picture-only cell paragraph takes exactly the image height (no descender slack)', () => {
+    const model: TableModel = {
+      rows: [
+        [
+          cell(
+            [''],
+            [
+              {
+                emptyRunSizeHalfPoints: 24,
+                emptyRunFontFamily: 'Times New Roman',
+                runs: [
+                  {
+                    text: '',
+                    image: {
+                      dataUrl: 'data:image/png;base64,AA==',
+                      widthPx: 300,
+                      heightPx: 200,
+                      xml: '<w:drawing/>',
+                    },
+                  },
+                ],
+              },
+            ],
+          ),
+        ],
+      ],
+    }
+    const para = renderTable(model).querySelector('td > div')!
+    expect(para.classList.contains('doc-p-picture')).toBe(true)
+    expect(para.classList.contains('doc-p-empty')).toBe(false)
+    expect(para.getAttribute('style')).toMatch(/line-height:\s*0(?:;|$)/)
+    expect(para.getAttribute('style')).not.toMatch(/font-size:12pt/)
+    expect(para.querySelector('img.doc-inline-img')).not.toBeNull()
+  })
+
+  it('paints table-style color/bold on the td, never the run aggregates', () => {
+    const aggregated: TableModel = {
+      rows: [[{ ...cell(['t'], [{ runs: [{ text: 't' }] }]), color: '112233', bold: true }]],
+    }
+    const plain = renderTable(aggregated).querySelector('td')!.getAttribute('style') ?? ''
+    expect(plain).not.toMatch(/color:/)
+    expect(plain).not.toMatch(/font-weight/)
+
+    const styled: TableModel = {
+      rows: [
+        [
+          {
+            ...cell(['t'], [{ runs: [{ text: 't' }] }]),
+            color: '112233',
+            bold: true,
+            styleColor: '112233',
+            styleBold: true,
+          },
+        ],
+      ],
+    }
+    const td = renderTable(styled).querySelector('td')!
+    const tdStyle = td.getAttribute('style')!
+    expect(tdStyle).toMatch(/color:\s*(#112233|rgb\(17,\s*34,\s*51\))/i)
+    expect(tdStyle).toMatch(/font-weight:\s*600/)
+    expect(td.querySelector('span')!.getAttribute('style')).toBeNull()
+  })
+})
+
+// jsdom's CSSOM drops min()/round() values on cssText assignment, so the
+// paragraph line-box styles are asserted on the raw spec
+type Spec = [string, Record<string, string>, ...unknown[]]
+const isSpec = (x: unknown): x is Spec => Array.isArray(x) && typeof x[0] === 'string'
+function findSpecs(spec: unknown, tag: string): Spec[] {
+  if (!isSpec(spec)) return []
+  const rest = spec.slice(2).flatMap((c) => findSpecs(c, tag))
+  return spec[0] === tag ? [spec, ...rest] : rest
+}
+const paraStyles = (model: TableModel): string[] =>
+  findSpecs(renderTableSpec(model), 'div').map((d) => d[1].style ?? '')
+
+const SINGLE_LH = 'line-height:var(--doc-line-grid,var(--doc-line-factor,1.2))'
+
+describe('renderTableSpec paragraph line box', () => {
+  it('gives each paragraph a run-size strut and its own single-spacing line height', () => {
+    const [style] = paraStyles({
+      rows: [
+        [
+          cell(
+            ['tiny'],
+            [
+              {
+                runs: [
+                  { text: 'ti', sizeHalfPoints: 14 },
+                  { text: 'ny', sizeHalfPoints: 12 },
+                ],
+                lineRule: 'auto',
+                lineRawTwips: 240,
+              },
+            ],
+          ),
+        ],
+      ],
+    })
+    expect(style).toContain('--doc-strut:6pt')
+    expect(style).toContain('font-size:var(--doc-strut)')
+    expect(style).toContain('--doc-line-factor:var(--doc-line-factor-latin,1.2)')
+    // explicit w:line=240 (single): re-evaluated at the paragraph's own strut size
+    expect(style).toContain(SINGLE_LH)
+  })
+
+  it('space-only runs never size the strut; a space-only cell paragraph takes the mark', () => {
+    const [mixed, spaceOnly, marked] = paraStyles({
+      rows: [
+        [
+          cell(
+            ['a  '],
+            [
+              {
+                runs: [
+                  { text: 'a', sizeHalfPoints: 14 },
+                  { text: '  ', sizeHalfPoints: 40 },
+                ],
+              },
+              { runs: [{ text: ' ', sizeHalfPoints: 8 }] },
+              { runs: [{ text: ' ', sizeHalfPoints: 8 }], emptyRunSizeHalfPoints: 8 },
+            ],
+          ),
+        ],
+      ],
+    })
+    expect(mixed).toContain('--doc-strut:7pt')
+    expect(spaceOnly).not.toContain('--doc-strut')
+    expect(spaceOnly).not.toContain('font-size')
+    expect(marked).not.toContain('--doc-strut')
+    expect(marked).toContain('font-size:4pt')
+  })
+
+  it('a tab-only paragraph is content, not a space-only spacer', () => {
+    const [tabOnly] = paraStyles({
+      rows: [[cell(['\t'], [{ runs: [{ text: '\t', sizeHalfPoints: 8 }] }])]],
+    })
+    expect(tabOnly).toContain('--doc-strut:4pt')
+  })
+
+  it('a run omitting its size caps the strut at the base size (mixed)', () => {
+    const [style] = paraStyles({
+      rows: [[cell(['ab'], [{ runs: [{ text: 'a', sizeHalfPoints: 14 }, { text: 'b' }] }])]],
+    })
+    expect(style).toContain('--doc-strut:min(7pt,var(--doc-base-fs,7pt))')
+    // no declared spacing: the stylesheet's paragraph-style / docDefaults rule decides
+    expect(style).not.toContain('line-height')
+  })
+
+  // the strut face carries the base face's box: fine for a cell row (the union
+  // of offset boxes grew 8.5pt YaHei rows +1pt), wrong for body lines in another
+  // face, which blockAttrs leaves unmarked (grid-strut test)
+  it('a declared-face CJK cell paragraph leads its boxes with the grid strut', () => {
+    const classes = findSpecs(
+      renderTableSpec({
+        rows: [
+          [
+            cell(
+              ['\u4e2d\u6587'],
+              [{ runs: [{ text: '\u4e2d\u6587', font: 'Microsoft YaHei', fontAscii: 'Calibri' }] }],
+            ),
+          ],
+        ],
+      }),
+      'div',
+    ).map((d) => d[1].class ?? '')
+    expect(classes.some((c) => c.split(' ').includes('doc-grid-strut'))).toBe(true)
+  })
+
+  it('restores exact line rule and explicit paragraph spacing', () => {
+    const [style] = paraStyles({
+      rows: [
+        [
+          cell(
+            ['x'],
+            [
+              {
+                runs: [{ text: 'x' }],
+                lineRule: 'exact',
+                lineRawTwips: 200,
+                spaceBefore: 80,
+                spaceAfter: 20,
+              },
+            ],
+          ),
+        ],
+      ],
+    })
+    expect(style).toContain('line-height:10.0pt')
+    expect(style).toContain('margin-top:4.0pt')
+    expect(style).toContain('margin-bottom:1.0pt')
+  })
+
+  it('fully declared Latin run fonts drive the factor and the strut face', () => {
+    const [style] = paraStyles({
+      rows: [
+        [cell(['latin'], [{ runs: [{ text: 'latin', font: 'Calibri', fontAscii: 'Calibri' }] }])],
+      ],
+    })
+    expect(style).toContain('--doc-line-factor:1.22')
+    expect(style).toMatch(/font-family:'Calibri'/)
+  })
+
+  it('mixed declared/inherited Latin runs take max() and keep the inherited face', () => {
+    const [style] = paraStyles({
+      rows: [
+        [
+          cell(
+            ['ab'],
+            [{ runs: [{ text: 'a', font: 'Calibri', fontAscii: 'Calibri' }, { text: 'b' }] }],
+          ),
+        ],
+      ],
+    })
+    expect(style).toContain('--doc-line-factor:max(var(--doc-line-factor-latin,1.2), 1.2207)')
+    expect(style).not.toContain('font-family')
+  })
+
+  it('eaSlotEmpty backfill is not a Latin font declaration', () => {
+    const [style] = paraStyles({
+      rows: [[cell(['x'], [{ runs: [{ text: 'x', font: 'SimSun', eaSlotEmpty: true }] }])]],
+    })
+    expect(style).toContain('--doc-line-factor:var(--doc-line-factor-latin,1.2)')
+  })
+
+  it('declared CJK run fonts drive the paragraph line factor', () => {
+    const [style] = paraStyles({
+      rows: [[cell(['宋体字'], [{ runs: [{ text: '宋体字', font: 'SimSun' }] }])]],
+    })
+    expect(style).toContain('--doc-line-factor:1.3')
+  })
+
+  it('JP-variant Noto run fonts take the JA substitution factor', () => {
+    const [style] = paraStyles({
+      rows: [[cell(['日本語'], [{ runs: [{ text: '日本語', font: 'Noto Sans CJK JP' }] }])]],
+    })
+    expect(style).toContain('--doc-line-factor:1.3')
+  })
+
+  it('plain-paras cells get script-based line factors per paragraph', () => {
+    const styles = paraStyles({ rows: [[cell(['中文', 'latin'])]] })
+    expect(styles).toHaveLength(2)
+    expect(styles[0]).toContain('--doc-line-factor:var(--doc-line-factor-cjk,1.7)')
+    expect(styles[1]).toContain('--doc-line-factor:var(--doc-line-factor-latin,1.2)')
+    expect(styles[1]).not.toContain('line-height')
+  })
+
+  it('a paragraph-style line multiple stays with the stylesheet rule; a table-style one is inlined', () => {
+    const eff = (source: string) =>
+      ({
+        source: { line: source },
+        spacing: {
+          before: 0,
+          after: 0,
+          beforeAuto: false,
+          afterAuto: false,
+          line: { rule: 'auto', raw: 254 },
+        },
+      }) as unknown as NonNullable<TableModel['rows'][0][0]['richParas']>[0]['effective']
+    const [styled, tableStyled] = paraStyles({
+      rows: [
+        [
+          cell(
+            ['a', 'b'],
+            [
+              { runs: [{ text: 'a' }], styleId: 'MsoNormal0', effective: eff('paraStyle') },
+              { runs: [{ text: 'b' }], effective: eff('tableStyle') },
+            ],
+          ),
+        ],
+      ],
+    })
+    expect(styled).not.toContain('line-height')
+    expect(tableStyled).toContain('line-height:')
+    expect(tableStyled).toContain('--doc-line-mult:1.06')
+  })
+})
+
+// bidiVisual mirrors column order via dir="rtl" on the <table>; each cell
+// paragraph's base direction stays its own (w:bidi / strong-script inference),
+// so weak-only text like "50,0 %" must not reorder to "% 50,0".
+describe('bidiVisual cell paragraph direction', () => {
+  it('cell paragraphs get explicit ltr unless their own content is RTL', () => {
+    const model: TableModel = {
+      bidiVisual: true,
+      rows: [
+        [
+          cell(['50,0 %'], [{ runs: [{ text: '50,0 %' }] }]),
+          cell(['مرحبا'], [{ runs: [{ text: 'مرحبا' }] }]),
+        ],
+      ],
+    }
+    const dom = renderTable(model)
+    expect(dom.getAttribute('dir')).toBe('rtl')
+    const paras = dom.querySelectorAll('td > div')
+    expect((paras[0] as HTMLElement).style.direction).toBe('ltr')
+    expect((paras[1] as HTMLElement).style.direction).toBe('rtl')
+  })
+
+  it('a start-aligned bidiVisual table hangs from the right margin with a mirrored indent', () => {
+    const model: TableModel = {
+      bidiVisual: true,
+      fixedLayout: true,
+      indentTwips: -893,
+      colWidthsTwips: [5000, 5253],
+      rows: [[cell(['a']), cell(['b'])]],
+    }
+    // jsdom re-serializes the style attribute with spaces
+    const styleOf = (m: TableModel) =>
+      (renderTable(m).getAttribute('style') ?? '').replace(/\s/g, '')
+    const style = styleOf(model)
+    expect(style).toContain('width:683px')
+    expect(style).toContain('margin-left:calc(var(--doc-content-w,100%)-683px+59.5px)')
+    // LTR tables keep the left-margin indent
+    expect(styleOf({ ...model, bidiVisual: false })).toContain('margin-left:-59.5px')
+  })
+
+  it('an explicit w:bidi cell paragraph stays rtl even with weak-only text', () => {
+    const model: TableModel = {
+      rows: [[cell(['50,0 %'], [{ runs: [{ text: '50,0 %' }], bidi: true }])]],
+    }
+    const paras = renderTable(model).querySelectorAll('td > div')
+    expect((paras[0] as HTMLElement).style.direction).toBe('rtl')
+  })
+})
+
+// w:textDirection cells: Word wraps rotated text into the row height driven by
+// the horizontal cells / trHeight; the absolute .cell-vert wrapper keeps the
+// vertical line out of flow so it cannot stretch the row group.
+describe('vertical-text cells (w:textDirection)', () => {
+  it('wraps btLr content in an out-of-flow .cell-vert with sideways-lr', () => {
+    const model: TableModel = {
+      rows: [[{ paras: ['rotated'], textDirection: 'btLr' }, cell(['plain'])]],
+    }
+    const tds = renderTable(model).querySelectorAll('td')
+    expect(tds[0].getAttribute('style')).toMatch(/position:\s*relative/)
+    expect(tds[0].getAttribute('style') ?? '').not.toContain('writing-mode')
+    const wrap = tds[0].querySelector(':scope > .cell-vert') as HTMLElement
+    expect(wrap.getAttribute('style')).toMatch(/writing-mode:\s*sideways-lr/)
+    expect(wrap.textContent).toBe('rotated')
+    expect(tds[1].querySelector('.cell-vert')).toBeNull()
+  })
+
+  it('emits the structural markers the .cell-vert flow switch selects on', () => {
+    // the CSS :has() rule (styles.css) needs: cell-vert-host on rotated cells,
+    // data-grid-gap on spacers, and the tr height style on declared-height rows
+    const model: TableModel = {
+      rows: [
+        [{ paras: ['rotated'], textDirection: 'btLr' }, cell(['plain'])],
+        [
+          { paras: ['rotated'], textDirection: 'btLr' },
+          { paras: [''], gridGap: true },
+        ],
+      ],
+      rowHeightsTwips: [null as unknown as number, 600],
+    }
+    const trs = renderTable(model).querySelectorAll('tr')
+    const [vertTd, horizTd] = Array.from(trs[0].children)
+    expect(vertTd.className).toContain('cell-vert-host')
+    expect(vertTd.querySelector(':scope > .cell-vert')).not.toBeNull()
+    expect(horizTd.className).not.toContain('cell-vert-host')
+    expect(horizTd.hasAttribute('data-grid-gap')).toBe(false)
+    const gapTd = trs[1].children[1]
+    expect(gapTd.getAttribute('data-grid-gap')).toBe('1')
+    expect(trs[1].getAttribute('style')).toContain('height')
+    expect(trs[0].getAttribute('style')).toBeNull()
+  })
+
+  it('vAlign center rides the .cell-vert wrapper as grid alignment', () => {
+    const model: TableModel = {
+      rows: [[{ paras: ['rotated'], textDirection: 'btLr', vAlign: 'center' }, cell(['plain'])]],
+    }
+    const wrap = renderTable(model).querySelector('.cell-vert') as HTMLElement
+    expect(wrap.getAttribute('style')).toMatch(/align-content:\s*safe center/)
+  })
+
+  it('a tbRl cell in an exact-height row rides the .cell-clip box', () => {
+    const model: TableModel = {
+      rows: [[{ paras: ['rotated'], textDirection: 'tbRl' }]],
+      rowHeightsTwips: [600],
+      rowHeightRules: ['exact'],
+    }
+    const td = renderTable(model).querySelector('td')!
+    const clipEl = td.querySelector(':scope > .cell-clip') as HTMLElement
+    expect(clipEl.getAttribute('style')).toMatch(/writing-mode:\s*vertical-rl/)
+  })
+})
+
+describe('renderTableSpec autospacing classes', () => {
+  it('marks auto-spaced cell paragraphs so the cell-boundary CSS can zero them', () => {
+    const model: TableModel = {
+      rows: [
+        [
+          cell(
+            ['a', 'b'],
+            [
+              { runs: [{ text: 'a' }], spaceBeforeAuto: true, spaceAfterAuto: true },
+              { runs: [{ text: 'b' }], spaceBeforeAuto: true },
+            ],
+          ),
+        ],
+      ],
+    }
+    const divs = [...renderTable(model).querySelectorAll('td > div')]
+    expect(divs.map((d) => d.className)).toEqual([
+      'doc-cell-para sp-auto-b sp-auto-a',
+      'doc-cell-para sp-auto-b',
+    ])
+    expect(divs[0].getAttribute('style')).toContain('margin-top: 14pt')
+  })
+})
+
+describe('renderTableSpec cell inset variables', () => {
+  it('emits border widths, per-side margins and the outer half-border table width', () => {
+    const model: TableModel = {
+      rows: [
+        [{ paras: ['a'], borders: { left: { style: 'single', szEighths: 16 } } }, cell(['b'])],
+      ],
+      colWidthsTwips: [1700, 1700],
+      borders: {
+        left: { style: 'single', szEighths: 4 },
+        right: { style: 'single', szEighths: 4 },
+        insideV: { style: 'single', szEighths: 4 },
+      },
+      cellMarTwips: { left: 108, right: 108 },
+    }
+    const table = renderTable(model)
+    // outer half-lines: the first cell's 3px tcBorder on the left, the table's 1px on the right
+    expect(table.getAttribute('style')).toContain('width: min(228px,')
+    expect(table.style.getPropertyValue('--doc-bw-v')).toBe('1px')
+    expect(table.style.getPropertyValue('--doc-cell-pad-r')).toBe('7.2px')
+    const td = table.querySelector('td') as HTMLElement
+    expect(td.style.getPropertyValue('--cell-bw-l')).toBe('3px')
+  })
+
+  it('emits the horizontal border snap deltas the row-height spacer reads', () => {
+    const model: TableModel = {
+      rows: [[{ paras: ['a'], borders: { top: { style: 'single', szEighths: 8 } } }, cell(['b'])]],
+      colWidthsTwips: [1700, 1700],
+      borders: {
+        top: { style: 'single', szEighths: 4 },
+        bottom: { style: 'single', szEighths: 12 },
+        insideH: { style: 'dotted', szEighths: 4 },
+      },
+    }
+    const table = renderTable(model)
+    expect(table.style.getPropertyValue('--doc-bd-t')).toBe('-0.333px')
+    expect(table.style.getPropertyValue('--doc-bd-b')).toBe('0.000px')
+    expect(table.style.getPropertyValue('--doc-bd-h')).toBe('-0.333px')
+    const td = table.querySelector('td') as HTMLElement
+    expect(td.style.getPropertyValue('--cell-bd-t')).toBe('0.333px')
+  })
+})
+
+describe('renderTableSpec RTL paragraphs', () => {
+  it('a style-inherited w:bidi cell paragraph is RTL and isolates its Latin runs LTR', () => {
+    const model: TableModel = {
+      rows: [[cell(['abc 123'], [{ runs: [{ text: 'abc 123' }], bidiInherited: true }])]],
+    }
+    const div = renderTable(model).querySelector('td > div') as HTMLElement
+    expect(div.getAttribute('style')).toMatch(/direction:\s*rtl/)
+    expect(div.querySelector(':scope > span.doc-ltr-runs')).not.toBeNull()
+  })
+  it('an rtl run keeps the RTL base: no LTR wrapper', () => {
+    const model: TableModel = {
+      rows: [[cell(['abc'], [{ runs: [{ text: 'abc', rtl: true }], bidi: true }])]],
+    }
+    const div = renderTable(model).querySelector('td > div') as HTMLElement
+    expect(div.querySelector('.doc-ltr-runs')).toBeNull()
+  })
+})

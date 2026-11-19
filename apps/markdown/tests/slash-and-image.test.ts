@@ -1,0 +1,308 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { buildSlashItems, filterSlashItems } from '../src/renderer/editor/slashCommand'
+import { dirOf, resolveImageSrc, unresolveImageSrc } from '../src/renderer/editor/localImage'
+import { moveSelectedBlocks, uiOp } from '../src/renderer/editor/ops'
+
+// Undestroyed views leave DOMObserver flush timers that fire after jsdom teardown
+// ("document is not defined" unhandled error) — destroy every editor we create.
+const editors: import('@tiptap/core').Editor[] = []
+afterEach(() => {
+  for (const e of editors.splice(0)) e.destroy()
+  vi.restoreAllMocks()
+})
+
+describe('filterSlashItems', () => {
+  const items = buildSlashItems()
+
+  it('returns everything for an empty query', () => {
+    expect(filterSlashItems(items, '').length).toBe(items.length)
+  })
+
+  it('matches by id', () => {
+    const hits = filterSlashItems(items, 'table')
+    expect(hits.map((i) => i.id)).toContain('table')
+  })
+
+  it('matches by keyword', () => {
+    const hits = filterSlashItems(items, 'todo')
+    expect(hits.map((i) => i.id)).toContain('task')
+  })
+
+  it('image item only appears when an insert handler is provided', () => {
+    expect(items.map((i) => i.id)).not.toContain('image')
+    const withImage = buildSlashItems({ insertImage: () => {} })
+    expect(withImage.map((i) => i.id)).toContain('image')
+  })
+})
+
+describe('resolveImageSrc', () => {
+  it('passes through absolute URLs', () => {
+    expect(resolveImageSrc('https://x.test/a.png', '/docs')).toBe('https://x.test/a.png')
+    expect(resolveImageSrc('data:image/png;base64,AA', '/docs')).toBe('data:image/png;base64,AA')
+  })
+
+  it('maps absolute POSIX paths to md-asset URLs', () => {
+    expect(resolveImageSrc('/tmp/pic.png', null)).toBe('md-asset:///tmp/pic.png')
+  })
+
+  it('resolves relative paths against the document directory', () => {
+    expect(resolveImageSrc('assets/p.png', '/Users/me/notes')).toBe(
+      'md-asset:///Users/me/notes/assets/p.png',
+    )
+  })
+
+  it('encodes special characters per segment', () => {
+    expect(resolveImageSrc('assets/图 1.png', '/n')).toBe('md-asset:///n/assets/%E5%9B%BE%201.png')
+  })
+
+  it('returns the authored value when relative with no base dir', () => {
+    expect(resolveImageSrc('assets/p.png', null)).toBe('assets/p.png')
+  })
+
+  it('does not double-encode an already percent-encoded path', () => {
+    expect(resolveImageSrc('%E5%9B%BE_files/image1.jpg', '/n')).toBe(
+      'md-asset:///n/%E5%9B%BE_files/image1.jpg',
+    )
+    expect(resolveImageSrc('/tmp/%E5%9B%BE.png', null)).toBe('md-asset:///tmp/%E5%9B%BE.png')
+  })
+
+  it('keeps a bare percent sign that is not an escape', () => {
+    expect(resolveImageSrc('100%.png', '/n')).toBe('md-asset:///n/100%25.png')
+  })
+})
+
+describe('slash block commands inside a list (lift-first behavior)', () => {
+  async function editorWith(md: string) {
+    const { Editor } = await import('@tiptap/core')
+    const { buildExtensions } = await import('../src/renderer/editor/extensions')
+    const editor = new Editor({
+      extensions: buildExtensions({
+        slashController: { onOpen() {}, onUpdate() {}, onKeyDown: () => false, onClose() {} },
+        slashItems: () => [],
+      }),
+      content: '',
+    })
+    editor.commands.setContent(md, { contentType: 'markdown' })
+    editors.push(editor)
+    return editor
+  }
+
+  /** absolute position right after `needle`, mimicking a caret after typed "/" */
+  function caretAfter(editor: import('@tiptap/core').Editor, needle: string): number {
+    let found = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (found >= 0) return false
+      if (node.isText && node.text?.includes(needle)) {
+        found = pos + node.text.indexOf(needle) + needle.length
+      }
+      return found < 0
+    })
+    expect(found).toBeGreaterThan(0)
+    return found
+  }
+
+  it('code block from a list item lifts out of the list instead of silently failing', async () => {
+    const editor = await editorWith('- first\n- second x/')
+    const caret = caretAfter(editor, 'x/')
+    editor.commands.setTextSelection(caret)
+    const code = buildSlashItems().find((i) => i.id === 'code')!
+    code.run(editor, { from: caret - 1, to: caret })
+    expect(editor.isActive('codeBlock')).toBe(true)
+    const md = editor.getMarkdown()
+    expect(md).toContain('- first')
+    expect(md).not.toContain('- second x')
+  })
+
+  it('heading from a task item lifts out of the task list', async () => {
+    const editor = await editorWith('- [ ] todo x/')
+    const caret = caretAfter(editor, 'x/')
+    editor.commands.setTextSelection(caret)
+    const h2 = buildSlashItems().find((i) => i.id === 'h2')!
+    h2.run(editor, { from: caret - 1, to: caret })
+    expect(editor.isActive('heading', { level: 2 })).toBe(true)
+    expect(editor.getMarkdown()).toContain('## todo x')
+  })
+
+  it('heading from a nested list item escapes every level', async () => {
+    const editor = await editorWith('- outer\n  - inner x/')
+    const caret = caretAfter(editor, 'x/')
+    editor.commands.setTextSelection(caret)
+    const h3 = buildSlashItems().find((i) => i.id === 'h3')!
+    h3.run(editor, { from: caret - 1, to: caret })
+    expect(editor.isActive('heading', { level: 3 })).toBe(true)
+    expect(editor.isActive('listItem')).toBe(false)
+  })
+})
+
+describe('block keymap commands (secondbrain parity)', () => {
+  async function editorWith(md: string) {
+    const { Editor } = await import('@tiptap/core')
+    const { buildExtensions } = await import('../src/renderer/editor/extensions')
+    const editor = new Editor({
+      extensions: buildExtensions({
+        slashController: { onOpen() {}, onUpdate() {}, onKeyDown: () => false, onClose() {} },
+        slashItems: () => [],
+      }),
+      content: '',
+    })
+    editor.commands.setContent(md, { contentType: 'markdown' })
+    editors.push(editor)
+    return editor
+  }
+
+  function placeIn(editor: import('@tiptap/core').Editor, needle: string) {
+    let found = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (found >= 0) return false
+      if (node.isText && node.text?.includes(needle)) found = pos + node.text.indexOf(needle) + 1
+      return found < 0
+    })
+    editor.commands.setTextSelection(found)
+  }
+
+  it('duplicateBlock copies the current top-level block below itself', async () => {
+    const editor = await editorWith('first\n\nsecond\n\nthird')
+    placeIn(editor, 'second')
+    expect(uiOp(editor, { op: 'duplicateBlocks', target: 'selection' })).toBe(true)
+    const texts: string[] = []
+    editor.state.doc.forEach((n) => texts.push(n.textContent))
+    expect(texts).toEqual(['first', 'second', 'second', 'third'])
+  })
+
+  it('deleteBlock removes the block and keeps at least one paragraph', async () => {
+    const editor = await editorWith('only block')
+    placeIn(editor, 'only')
+    expect(uiOp(editor, { op: 'deleteBlocks', target: 'selection' })).toBe(true)
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.textContent).toBe('')
+  })
+
+  it('moveBlockUp / moveBlockDown swap with the sibling and stop at edges', async () => {
+    const editor = await editorWith('alpha\n\nbeta\n\ngamma')
+    placeIn(editor, 'beta')
+    expect(moveSelectedBlocks(editor, -1)).toBe(true)
+    let texts: string[] = []
+    editor.state.doc.forEach((n) => texts.push(n.textContent))
+    expect(texts).toEqual(['beta', 'alpha', 'gamma'])
+    // caret followed the block — moving up again hits the edge
+    expect(moveSelectedBlocks(editor, -1)).toBe(false)
+    expect(moveSelectedBlocks(editor, 1)).toBe(true)
+    texts = []
+    editor.state.doc.forEach((n) => texts.push(n.textContent))
+    expect(texts).toEqual(['alpha', 'beta', 'gamma'])
+  })
+})
+
+describe('unresolveImageSrc', () => {
+  it('leaves non md-asset URLs untouched', () => {
+    expect(unresolveImageSrc('https://x.test/a.png', '/docs')).toBe('https://x.test/a.png')
+    expect(unresolveImageSrc('assets/p.png', '/docs')).toBe('assets/p.png')
+  })
+
+  it('maps a resolved URL back to the authored relative path', () => {
+    const url = resolveImageSrc('assets/p.png', '/Users/me/notes')
+    expect(unresolveImageSrc(url, '/Users/me/notes')).toBe('assets/p.png')
+  })
+
+  it('decodes encoded segments', () => {
+    const url = resolveImageSrc('assets/图 1.png', '/n')
+    expect(unresolveImageSrc(url, '/n')).toBe('assets/图 1.png')
+  })
+
+  it('falls back to the raw path when the URL has a stray percent sign', () => {
+    // decodeURIComponent throws on a lone `%`; parseHTML feeds every md-asset
+    // src through unresolveImageSrc, so the throw would break paste/load.
+    expect(unresolveImageSrc('md-asset:///tmp/100%.png', '/docs')).toBe('/tmp/100%.png')
+  })
+
+  it('keeps an absolute path when it lives outside the base dir', () => {
+    expect(unresolveImageSrc('md-asset:///tmp/pic.png', '/docs')).toBe('/tmp/pic.png')
+  })
+
+  it('round-trips Windows base dirs', () => {
+    const url = resolveImageSrc('assets/p.png', 'C:\\notes')
+    expect(unresolveImageSrc(url, 'C:\\notes')).toBe('assets/p.png')
+  })
+})
+
+describe('resolveImageSrc on Windows paths', () => {
+  it('keeps the drive colon unencoded in md-asset URLs', () => {
+    expect(resolveImageSrc('C:\\Users\\me\\pic.png', null)).toBe('md-asset:///C:/Users/me/pic.png')
+  })
+
+  it('resolves relative paths against a Windows base dir', () => {
+    expect(resolveImageSrc('assets/p.png', 'C:\\notes')).toBe('md-asset:///C:/notes/assets/p.png')
+  })
+})
+
+describe('dirOf', () => {
+  it('returns the filesystem root for root-level files', () => {
+    expect(dirOf('/note.md')).toBe('/')
+    expect(resolveImageSrc('a.png', dirOf('/note.md'))).toBe('md-asset:///a.png')
+  })
+
+  it('returns containing dirs for nested and Windows paths', () => {
+    expect(dirOf('/a/b.md')).toBe('/a')
+    expect(dirOf('C:\\a\\b.md')).toBe('C:\\a')
+  })
+})
+
+describe('buildPrintHtml', () => {
+  it('strips editor-only code block chrome from the print output', async () => {
+    const { buildPrintHtml } = await import('../src/renderer/export/printHtml')
+    const root = document.createElement('div')
+    root.innerHTML =
+      '<div class="md-codeblock"><div class="md-codeblock-bar"><select></select><button>Copy</button></div><pre><code>x = 1</code></pre></div>'
+    const html = buildPrintHtml(root, 'Doc')
+    expect(html).toContain('x = 1')
+    expect(html).not.toContain('md-codeblock-bar')
+    expect(html).not.toContain('<select')
+  })
+})
+
+describe('BlockDragHandle teardown', () => {
+  it('removes every long-lived listener and restores the container style', async () => {
+    const { Editor } = await import('@tiptap/core')
+    const { buildExtensions } = await import('../src/renderer/editor/extensions')
+    const wrapper = document.createElement('div')
+    const element = document.createElement('div')
+    wrapper.appendChild(element)
+    document.body.appendChild(wrapper)
+    const editor = new Editor({
+      element,
+      extensions: buildExtensions({
+        slashController: { onOpen() {}, onUpdate() {}, onKeyDown: () => false, onClose() {} },
+        slashItems: () => [],
+      }),
+      content: 'block',
+    })
+
+    const handle = wrapper.querySelector<HTMLElement>('.md-block-gutter')!
+    const grip = handle.querySelector<HTMLButtonElement>('.md-gutter-grip')!
+    const plus = handle.querySelector<HTMLButtonElement>('.md-gutter-plus')!
+    const handleRemove = vi.spyOn(handle, 'removeEventListener')
+    const gripRemove = vi.spyOn(grip, 'removeEventListener')
+    const plusRemove = vi.spyOn(plus, 'removeEventListener')
+    const documentRemove = vi.spyOn(document, 'removeEventListener')
+    const editorRemove = vi.spyOn(editor.view.dom, 'removeEventListener')
+
+    editor.destroy()
+
+    expect(editorRemove).toHaveBeenCalledWith('mousemove', expect.any(Function))
+    expect(editorRemove).toHaveBeenCalledWith('mouseenter', expect.any(Function))
+    expect(editorRemove).toHaveBeenCalledWith('mouseleave', expect.any(Function))
+    expect(handleRemove).toHaveBeenCalledWith('mousemove', expect.any(Function))
+    expect(handleRemove).toHaveBeenCalledWith('mouseenter', expect.any(Function))
+    expect(handleRemove).toHaveBeenCalledWith('mouseleave', expect.any(Function))
+    expect(gripRemove).toHaveBeenCalledWith('dragstart', expect.any(Function))
+    expect(gripRemove).toHaveBeenCalledWith('click', expect.any(Function))
+    expect(plusRemove).toHaveBeenCalledWith('click', expect.any(Function))
+    expect(documentRemove).toHaveBeenCalledWith('scroll', expect.any(Function), true)
+    expect(wrapper.style.position).toBe('')
+    expect(wrapper.querySelector('.md-block-gutter')).toBeNull()
+    expect(wrapper.querySelector('.md-block-menu')).toBeNull()
+
+    wrapper.remove()
+    vi.restoreAllMocks()
+  })
+})

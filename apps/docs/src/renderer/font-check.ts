@@ -1,0 +1,147 @@
+import type { ParsedDoc, TableModel } from '@genoffice/docx-engine'
+import { BUNDLED_FONTS, cssFontFamily, isBundledFont } from './text-layout/font-rules'
+
+const GENERIC = new Set(['serif', 'sans-serif', 'monospace'])
+
+/** every distinct font family the document declares */
+export function collectDocFonts(parsed: ParsedDoc): string[] {
+  const names = new Set<string>()
+  const add = (font?: string) => {
+    if (font) names.add(font)
+  }
+  const addRuns = (runs: readonly { font?: string; fontAscii?: string }[]) => {
+    for (const r of runs) {
+      add(r.font)
+      add(r.fontAscii)
+    }
+  }
+  const addTable = (table: TableModel) => {
+    for (const row of table.rows) {
+      for (const cell of row) {
+        for (const p of cell.richParas ?? []) addRuns(p.runs)
+        for (const nt of cell.nestedTables ?? []) addTable(nt)
+      }
+    }
+  }
+  for (const b of parsed.blocks) {
+    addRuns(b.runs ?? [])
+    for (const tb of b.textboxes ?? []) for (const p of tb.paras) addRuns(p.runs)
+    if (b.table) addTable(b.table)
+  }
+  add(parsed.docDefaults?.asciiFont)
+  add(parsed.docDefaults?.eastAsiaFont)
+  for (const s of parsed.styles.values()) {
+    add(s.display?.font)
+    add(s.display?.fontAscii)
+  }
+  return [...names]
+}
+
+/**
+ * The document's declared fonts that an alias update covers: the alias map
+ * only matters for a font the open document declares, so an update that
+ * touches no declared font must not reflow it (genoffice#2449).
+ */
+export function docFontsCoveredBy(parsed: ParsedDoc, names: readonly string[]): string[] {
+  const declared = new Set(collectDocFonts(parsed))
+  return names.filter((name) => declared.has(name))
+}
+
+// document.fonts.check is useless here: Chromium answers true for any family
+// (system-fallback rendering counts). Detect availability by measuring — an
+// unresolvable family inherits the exact metrics of the generic fallback.
+const SAMPLE = '永体宋黑Wmg10'
+
+function ctx2d(): CanvasRenderingContext2D | null {
+  try {
+    return document.createElement('canvas').getContext('2d')
+  } catch {
+    return null
+  }
+}
+
+function fontAvailableIn(cx: CanvasRenderingContext2D, family: string): boolean {
+  const q = `"${family.replace(/"/g, '')}"`
+  const width = (stack: string): number => {
+    cx.font = `16px ${stack}`
+    return cx.measureText(SAMPLE).width
+  }
+  return (
+    width(`${q}, monospace`) !== width('monospace') ||
+    width(`${q}, sans-serif`) !== width('sans-serif')
+  )
+}
+
+const symbolCoverCache = new Map<string, boolean>()
+/** outside the F020-F0FF range every symbol-encoded legacy font maps, so this always draws .notdef */
+const PUA_TOFU = '\uE000'
+
+/**
+ * Family installed AND covering every char of text — macOS ships a Symbol.ttf
+ * without the F0xx cmap. An uncovered PUA char renders the stack's .notdef
+ * (whose metrics differ from any other stack's), so the only reliable probe is
+ * comparing against a known .notdef in the same stack.
+ */
+export function symbolFontCovers(family: string, text: string): boolean {
+  const key = `${family}\u0000${text}`
+  const hit = symbolCoverCache.get(key)
+  if (hit !== undefined) return hit
+  const cx = ctx2d()
+  let covers = false
+  if (cx) {
+    cx.font = `32px "${family.replace(/"/g, '')}"`
+    const metrics = (s: string): string => {
+      const m = cx.measureText(s)
+      return [
+        m.width,
+        m.actualBoundingBoxLeft,
+        m.actualBoundingBoxRight,
+        m.actualBoundingBoxAscent,
+        m.actualBoundingBoxDescent,
+      ].join()
+    }
+    const tofu = metrics(PUA_TOFU)
+    covers = [...text].every((ch) => ch <= ' ' || metrics(ch) !== tofu)
+  }
+  symbolCoverCache.set(key, covers)
+  return covers
+}
+
+export interface FontSubstitution {
+  name: string
+  /** first available family in the fallback chain, null = only bundled fallback left */
+  substitute: string | null
+  /** the substitute is the user's pick in Font Substitution, not the app's own choice */
+  chosen?: true
+}
+
+/**
+ * Declared fonts that don't resolve on this system, with the family that
+ * actually renders instead (substitution used to be silent).
+ */
+export function checkMissingFonts(
+  names: string[],
+  chosen: (name: string) => string | null = () => null,
+): FontSubstitution[] {
+  if (typeof document === 'undefined') return []
+  const cx = ctx2d()
+  if (!cx) return []
+  const out: FontSubstitution[] = []
+  for (const name of names) {
+    // a picked stand-in answers to the missing font's name, so the probe below would call it installed
+    const pick = chosen(name)
+    if (pick) {
+      out.push({ name, substitute: pick, chosen: true })
+      continue
+    }
+    // a declared bundled face resolves in canvas yet still renders the subset fallback — report it
+    if (!isBundledFont(name) && fontAvailableIn(cx, name)) continue
+    const chain = cssFontFamily(name)
+      .split(',')
+      .map((s) => s.trim().replace(/^'|'$/g, ''))
+      .filter((c) => c !== name && !GENERIC.has(c))
+    const substitute = chain.find((c) => !BUNDLED_FONTS.has(c) && fontAvailableIn(cx, c)) ?? null
+    out.push({ name, substitute })
+  }
+  return out
+}

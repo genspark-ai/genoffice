@@ -1,0 +1,6 @@
+{
+  "title": "Large paragraph (cross-page)",
+  "tags": ["large-paragraph", "cross-page"],
+  "description": "One oversized paragraph spanning pages, tests intra-block splitting",
+  "file": "09-large-paragraph.docx"
+}

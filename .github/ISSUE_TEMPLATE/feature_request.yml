@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest a new capability or an improvement
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: app
+    attributes:
+      label: App
+      options:
+        - GenOffice Docs (docs)
+        - GenOffice Sheets (sheets)
+        - GenOffice Slides (slides)
+        - GenOffice PDF (pdf)
+        - GenOffice Markdown (markdown)
+        - Shell / home screen
+        - AI panel / providers
+        - Whole suite
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that is currently hard or impossible?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you like it to work? Alternatives you considered are welcome too.

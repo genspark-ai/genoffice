@@ -1,0 +1,43 @@
+{
+  "id": "prod-0924-face-rules",
+  "title": "Production Word PDFs 2026-09-24: Helvetica single line = 1.2 x size; a Korean-named family with fontTable altName Batang lays out as Batang",
+  "section": "word-truths.md#L397",
+  "probe_date": "2026-09-24",
+  "source": "corpus 2026-09-24 word.pdf measurements: sample 032 Helvetica 12.48/12.72 alternating at 10.5pt; sample 019 Korean-named NanumMyeongjo with altName Batang pitches 15.1 = 10 x 1.3029 x 1.15 although NanumMyeongjo is installed",
+  "cases": [
+    {
+      "kind": "factor",
+      "font": "Helvetica",
+      "expect": 1.2,
+      "note": "hhea 1.0 and win 1.175 are both wrong"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 12.6,
+      "tol": 0.05,
+      "note": "Helvetica 10.5pt 12.6 (Word 12.48/12.72 alternating)"
+    },
+    {
+      "kind": "factor",
+      "font": "\ub098\ub214\uba85\uc870",
+      "expect": 1.3,
+      "note": "Korean name + altName Batang -> Batang, not the installed NanumMyeongjo 1.5; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "NanumMyeongjo",
+      "expect": 1.4955,
+      "note": "the Latin name renders the OS asset real: hhea 1.1504 x 1.3 (NanumGothic probe 2026-10-22 confirms the x1.3 rule)"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 13.03,
+      "tol": 0.05,
+      "note": "10pt hangul line as Batang"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

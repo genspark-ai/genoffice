@@ -1,0 +1,42 @@
+import { CellValueType } from '@univerjs/core'
+import { describe, expect, it } from 'vitest'
+
+import { clipboardField, plainTextFromCells } from '../src/renderer/clipboard-tsv'
+
+describe('clipboard TSV serialization', () => {
+  it('booleans copy as TRUE/FALSE, not 1/0', () => {
+    expect(clipboardField({ v: 1, t: CellValueType.BOOLEAN })).toBe('TRUE')
+    expect(clipboardField({ v: 0, t: CellValueType.BOOLEAN })).toBe('FALSE')
+  })
+
+  it('serializes empty booleans as empty, not FALSE or TRUE', () => {
+    expect(clipboardField({ v: null, t: CellValueType.BOOLEAN })).toBe('')
+    expect(clipboardField({ v: undefined, t: CellValueType.BOOLEAN })).toBe('')
+    expect(clipboardField({ v: '', t: CellValueType.BOOLEAN })).toBe('')
+  })
+
+  it('prefers the formatted display text', () => {
+    expect(clipboardField({ v: 44614, displayV: '2/22/2022' })).toBe('2/22/2022')
+  })
+
+  it('quotes fields with embedded newlines and normalizes \\r to \\n', () => {
+    expect(clipboardField({ v: 'greater \r\rthan' })).toBe('"greater \n\nthan"')
+    expect(clipboardField({ v: 'a\r\rb' })).toBe('"a\n\nb"')
+    expect(clipboardField({ v: 'a\r\nb' })).toBe('"a\nb"')
+    expect(clipboardField({ v: 'a\tb' })).toBe('"a\tb"')
+    expect(clipboardField({ v: 'say "hi"' })).toBe('"say ""hi"""')
+    expect(clipboardField({ v: 'plain' })).toBe('plain')
+  })
+
+  it('keeps significant trailing newlines (quoted) instead of stripping them', () => {
+    expect(clipboardField({ v: 'a\n' })).toBe('"a\n"')
+    expect(clipboardField({ v: 'a\r\n' })).toBe('"a\n"')
+    expect(clipboardField({ v: 'plain' })).toBe('plain')
+  })
+
+  it('assembles rows with empty fields for missing cells (no column drift)', () => {
+    const cells: Record<string, { v: string }> = { '0:0': { v: 'a' }, '0:2': { v: 'c' } }
+    const plain = plainTextFromCells([0, 1], [0, 1, 2], (row, column) => cells[`${row}:${column}`])
+    expect(plain).toBe('a\t\tc\n\t\t')
+  })
+})

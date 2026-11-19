@@ -1,0 +1,20 @@
+{
+  "family": "Segoe UI Symbol GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-30",
+    "fonts": ["Segoe UI Symbol (Word DFonts)"],
+    "probe": "hhea 1.0791/0.2510 split at the 0.36em baseline"
+  },
+  "note": "Segoe UI Symbol, Word's fallback for a bullet glyph the paragraph face lacks\n(U+25B8 and friends): ships only inside Office, so the ink comes from the real\nface where installed, else Apple Symbols. The overrides carry its 1.3301em\nline (hhea 1.0791 / 0.2510) split at the same 0.36em baseline as above.",
+  "faces": [
+    {
+      "src": "local('Segoe UI Symbol'), local('SegoeUISymbol'), local('Apple Symbols'), local('AppleSymbols')",
+      "ascentOverride": 97.9,
+      "descentOverride": 35.1,
+      "lineGapOverride": 0,
+      "weight": null,
+      "style": null
+    }
+  ]
+}

@@ -1,0 +1,705 @@
+/**
+ * Slide show — the full-screen playback view.
+ *
+ * - A black show layer covering the whole window, attempting system full screen (restored on exit)
+ * - The playback sequence skips hidden slides (starting from a hidden slide still plays it)
+ * - Moving forward plays the target page's transition effect (CSS approximations of fade/push/wipe/split/circle/random)
+ * - In-page shape animations (Animations tab): moving forward plays animations step by step, turning the page only when done;
+ *   going back/jumping shows the all-animations-finished state
+ * - →/space/enter/PgDn/click next step/page; ←/PgUp previous page; Home/End first/last page;
+ *   B/. black screen, W/, white screen (any key or click restores); digits + Enter jump to that
+ *   slide number; Esc exits; advancing past the last page shows the "end of show" black screen
+ * - Right-click opens PowerPoint's show menu (next/previous/last viewed/see all slides/screen/end)
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { RenderNode, RenderSlide, ShapeRenderNode } from '@genoffice/pptx-render'
+import type {
+  AnimationItem,
+  LinkTargetOp,
+  ShapeKey,
+  ShowTiming,
+  TransitionKind,
+} from '../../shared/ipc'
+import { RecordingBar } from '../narration/RecordingBar'
+import { useNarrationRecording, type NarrationTake } from '../narration/use-recording'
+import { AnimatedSlideStage, useAnimPlayer } from './AnimatedSlide'
+import { ShowMediaLayer } from './ShowMediaLayer'
+import { useI18n } from '../i18n/locale'
+import { MorphStage } from './MorphStage'
+import { ContextMenu } from './ContextMenu'
+import { SlideThumb } from '../SlideThumb'
+import {
+  gotoPosition,
+  INITIAL_SHOW_KEYS,
+  pushVisited,
+  reduceShowKey,
+  toggleScreen,
+  type ShowKeyState,
+  type ShowScreen,
+} from '../show-keys'
+import { buildShowMenu } from '../show-menu'
+import {
+  computePlayOrder,
+  finishRehearse,
+  formatClock,
+  startRehearse,
+  switchRehearsePage,
+  type RehearseTiming,
+} from '../slideshow-utils'
+import { liftShowCurtain } from '../show-actions'
+
+const ANIMATED = [
+  'fade',
+  'push',
+  'wipe',
+  'split',
+  'circle',
+  'cover',
+  'pull',
+  'dissolve',
+  'zoom',
+] as const
+
+const IS_MAC = navigator.platform.toLowerCase().includes('mac')
+const GRID_THUMB_W = 200
+
+export function SlideShowView({
+  slides,
+  images,
+  startAt,
+  onExit,
+  customOrder,
+  rehearseMode,
+  onRehearseDone,
+  recordMode,
+  onRecordDone,
+}: {
+  slides: RenderSlide[]
+  images: Map<string, HTMLImageElement>
+  /** Start page (original index) */
+  startAt: number
+  /** Exit the show; lastIndex is the original index of the page dwelt on (for locating back in the edit view) */
+  onExit: (lastIndex: number) => void
+  /** Custom show: a specified playback sequence (original indexes), replacing the default full order when non-empty */
+  customOrder?: number[]
+  /** Rehearsal timing mode: shows a timer bar at the top and records each page's dwell time */
+  rehearseMode?: boolean
+  /** Rehearsal-end callback (called before onExit on exit); perPageSec is by original page index, unvisited pages are 0 */
+  onRehearseDone?: (perPageSec: number[]) => void
+  /** Record mode (Slide Show > Record): records the microphone narration of each slide */
+  recordMode?: boolean
+  /** Called before onExit with the recording, which resolves once the microphone stops */
+  onRecordDone?: (take: Promise<NarrationTake | null>) => void
+}) {
+  const { t } = useI18n()
+  // Playback sequence (original indexes): hidden pages skipped (except the start page); custom shows use the given order
+  const order = useMemo(
+    () => computePlayOrder(slides, startAt, customOrder),
+    [slides, startAt, customOrder],
+  )
+  const [pos, setPos] = useState(() => Math.max(0, order.indexOf(startAt)))
+  const [ended, setEnded] = useState(false)
+  /** Current transition animation: kind + replay nonce (key change re-triggers the CSS animation) */
+  const [anim, setAnim] = useState<{ kind: TransitionKind; nonce: number }>({
+    kind: 'none',
+    nonce: 0,
+  })
+  const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight })
+  /** False until the window covers the screen: the black root paints alone first so
+   *  the window snap / tab-strip bleed relayouts stay invisible (no windowed flash) */
+  const [covered, setCovered] = useState(false)
+  /** Per-page transition effects (prefetched once when the show starts, zero IPC on page turns) */
+  const transRef = useRef<TransitionKind[]>([])
+  /** Per-page advance time and narration (also prefetched once) */
+  const [timings, setTimings] = useState<ShowTiming[] | null>(null)
+  /** Per-page animation lists (also prefetched once) */
+  const [allAnims, setAllAnims] = useState<AnimationItem[][] | null>(null)
+  /** Per-page element Morph pairing keys (also prefetched once) */
+  const keysRef = useRef<ShapeKey[][]>([])
+  /** Per-page element hyperlinks (also prefetched once): sourceId → target; clicks hit-test against these */
+  const linksRef = useRef<Array<Map<string, LinkTargetOp>>>([])
+  /** Per-page run hyperlinks: "sourceId:para:run" → target; hit-tested against layout glyph runs */
+  const runLinksRef = useRef<Array<Map<string, LinkTargetOp>>>([])
+  /** Morph tween in progress: previous/target page original indexes + replay nonce */
+  const [morph, setMorph] = useState<{ fromIdx: number; toIdx: number; nonce: number } | null>(null)
+  /** How the current page was entered: forward = initial state playing step by step, others = all-finished state */
+  const navModeRef = useRef<'fresh' | 'all'>('fresh')
+  /** Key state (blackout + typed digits); the screen part mirrored into state for rendering */
+  const showKeysRef = useRef<ShowKeyState>(INITIAL_SHOW_KEYS)
+  const [blank, setBlank] = useState<ShowScreen>('none')
+  const setKeys = useCallback((k: ShowKeyState) => {
+    showKeysRef.current = k
+    setBlank(k.screen)
+  }, [])
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const menuRef = useRef(menu)
+  menuRef.current = menu
+  const [grid, setGrid] = useState(false)
+  const gridRef = useRef(grid)
+  gridRef.current = grid
+  /** Left button went down outside the open menu: that click only closes the menu, it must not advance */
+  const menuClickRef = useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all(slides.map((_, i) => window.slidesApi.getTransition(i))).then((kinds) => {
+      if (!cancelled) transRef.current = kinds
+    })
+    void Promise.all(slides.map((_, i) => window.slidesApi.getShowTiming(i))).then((list) => {
+      if (!cancelled) setTimings(list)
+    })
+    void Promise.all(slides.map((_, i) => window.slidesApi.getAnimations(i))).then((lists) => {
+      if (!cancelled) setAllAnims(lists)
+    })
+    void Promise.all(slides.map((_, i) => window.slidesApi.getShapeKeys(i))).then((keys) => {
+      if (!cancelled) keysRef.current = keys
+    })
+    void Promise.all(slides.map((_, i) => window.slidesApi.getSlideLinks(i))).then((lists) => {
+      if (!cancelled)
+        linksRef.current = lists.map(
+          (list) => new Map(list.map(({ sourceId, target }) => [sourceId, target])),
+        )
+    })
+    void Promise.all(slides.map((_, i) => window.slidesApi.getRunLinks(i))).then((lists) => {
+      if (!cancelled)
+        runLinksRef.current = lists.map(
+          (list) =>
+            new Map(
+              list.map((l) => [`${l.sourceId}:${l.paraIndex}:${l.runIndex}`, l.target] as const),
+            ),
+        )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [slides])
+
+  const slide = slides[order[pos]!]
+  const player = useAnimPlayer(slide?.heightPx ?? 540, slide?.widthPx ?? 960)
+  /** The slide as shown: a recorded narration plays without its picture */
+  const narrationIds = useMemo(
+    () => new Set(timings?.[order[pos]!]?.narrationIds ?? []),
+    [timings, order, pos],
+  )
+  const shownSlide = useMemo(
+    () =>
+      slide && narrationIds.size > 0
+        ? { ...slide, nodes: slide.nodes.filter((n) => !narrationIds.has(n.sourceId)) }
+        : slide,
+    [slide, narrationIds],
+  )
+
+  // ── Rehearsal timing: start timing the first page on entry; accumulate the previous page's dwell on turn; redraw the timer bar every 500ms ──
+  const rehearseRef = useRef<RehearseTiming | null>(null)
+  const [, setRehearseTick] = useState(0)
+  useEffect(() => {
+    if (!rehearseMode) return
+    rehearseRef.current = startRehearse(slides.length, order[pos] ?? startAt, Date.now())
+    const h = window.setInterval(() => setRehearseTick((n) => n + 1), 500)
+    return () => window.clearInterval(h)
+    // Initialize only once on entering the show (slides/order don't change during the show)
+  }, [rehearseMode]) // eslint-disable-line react-hooks/exhaustive-deps
+  const curIdx = order[pos]
+  useEffect(() => {
+    const t = rehearseRef.current
+    if (t && curIdx != null && curIdx !== t.currentIndex) {
+      rehearseRef.current = switchRehearsePage(t, curIdx, Date.now())
+    }
+  }, [curIdx])
+
+  // Load the page's animations when the page changes/prefetch completes (forward = initial state, back/jump = finished state)
+  useEffect(() => {
+    player.load(allAnims?.[order[pos]!] ?? [], navModeRef.current)
+  }, [allAnims, pos, order, player.load]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const recording = useNarrationRecording(!!recordMode, curIdx, ended)
+
+  const exitRef = useRef(() => {})
+  exitRef.current = () => {
+    if (recordMode && onRecordDone) onRecordDone(recording.finish())
+    // Rehearsal mode: report each page's dwell seconds before exit (ref nulled to prevent duplicate fullscreenchange triggers)
+    const t = rehearseRef.current
+    if (rehearseMode && onRehearseDone && t) {
+      rehearseRef.current = null
+      onRehearseDone(finishRehearse(t, Date.now()))
+    }
+    onExit(order[Math.min(pos, order.length - 1)] ?? startAt)
+  }
+
+  // System full screen: requested on entering the show; exiting/user leaving full screen ends the show.
+  // Entry is detected from the fullscreenchange event, not the requestFullscreen promise: inside the
+  // shell's WebContentsView the promise can stay pending/reject even though fullscreen engaged, which
+  // left the show mounted after Esc (fullscreen gone, show still covering the window).
+  useEffect(() => {
+    // already-fullscreen mounts (presenter view handing off to the normal show
+    // keeps fullscreen) never get a fullscreenchange, so seed from current state
+    let entered = !!document.fullscreenElement
+    let exitTimer = 0
+    let alive = true
+    // The IPC covers the screen in one main-side call (tab-strip bleed + macOS
+    // simpleFullScreen snap — no Space animation), all hidden behind this
+    // component's black root; the slide is revealed only once the viewport really
+    // reached screen size (500ms cap for stale preloads / unfullscreenable windows),
+    // so it never lays out at the pre-snap size and re-jumps. On macOS HTML
+    // fullscreen is skipped — it would only re-trigger the animated native
+    // fullscreen. Stale preloads lack the API and keep the old animated behavior.
+    const snapped = window.slidesApi.setShowFullScreen?.(true) ?? Promise.resolve()
+    void snapped
+      .catch(() => {})
+      .then(() => {
+        if (!IS_MAC) void document.documentElement.requestFullscreen?.().catch(() => {})
+        // Covered = the viewport spans the WHOLE screen, width and height (the
+        // bleed-only intermediate differs in height, a full-width window in
+        // height too — no partial state passes both). window.screen tracks the
+        // display the window is on, so narrower secondary displays settle at
+        // their own size. Deadline covers stale preloads that never snap.
+        const deadline = performance.now() + 500
+        const reveal = () => {
+          if (!alive) return
+          const w = window.innerWidth
+          const h = window.innerHeight
+          const settled = w >= screen.width && h >= screen.height
+          if (!settled && performance.now() < deadline) {
+            requestAnimationFrame(reveal)
+            return
+          }
+          setSize({ w, h })
+          setCovered(true)
+        }
+        requestAnimationFrame(reveal)
+      })
+    const onFsChange = () => {
+      if (document.fullscreenElement) {
+        entered = true
+        window.clearTimeout(exitTimer)
+        return
+      }
+      if (!entered) return
+      // Grace window before ending the show: a strict-mode remount briefly drops
+      // fullscreen (previous cleanup's exitFullscreen) and re-enters right away —
+      // only a loss that sticks means the user actually left fullscreen.
+      window.clearTimeout(exitTimer)
+      exitTimer = window.setTimeout(() => {
+        if (!document.fullscreenElement) exitRef.current()
+      }, 150)
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => {
+      alive = false
+      window.clearTimeout(exitTimer)
+      document.removeEventListener('fullscreenchange', onFsChange)
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+      void window.slidesApi.setShowFullScreen?.(false)
+      liftShowCurtain()
+    }
+  }, [])
+
+  // The click-time curtain (dropped in show-actions before this component mounted)
+  // is only needed until the show reveals — its own black root covers from there on
+  useEffect(() => {
+    if (covered) liftShowCurtain()
+  }, [covered])
+
+  useEffect(() => {
+    const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight })
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  /** Play-order positions left behind by navigation ("Last Viewed" walks it back) */
+  const visitedRef = useRef<number[]>([])
+  const goTo = useCallback(
+    (nextPos: number, animate: boolean, fromHistory = false) => {
+      const target = order[nextPos]
+      if (target == null) return
+      if (nextPos !== pos && !fromHistory) visitedRef.current = pushVisited(visitedRef.current, pos)
+      navModeRef.current = animate ? 'fresh' : 'all'
+      const current = order[pos]
+      let kind: TransitionKind = 'none'
+      if (animate) {
+        kind = transRef.current[target] ?? 'none'
+        if (kind === 'random') kind = ANIMATED[Math.floor(Math.random() * ANIMATED.length)]!
+      }
+      if (kind === 'morph' && current != null && current !== target) {
+        // Morph: skips the CSS page transition; MorphStage tweens elements from the previous page to the target
+        setMorph((m) => ({ fromIdx: current, toIdx: target, nonce: (m?.nonce ?? 0) + 1 }))
+        setAnim((a) => ({ kind: 'none', nonce: a.nonce + 1 }))
+      } else {
+        // Morphs that can't tween (start page/same page) degrade to fade-in
+        if (kind === 'morph') kind = 'fade'
+        setMorph(null)
+        setAnim((a) => ({ kind, nonce: a.nonce + 1 }))
+      }
+      setPos(nextPos)
+    },
+    [order, pos],
+  )
+
+  const lastViewed = useCallback(() => {
+    const p = visitedRef.current.pop()
+    if (p == null) return
+    setEnded(false)
+    goTo(p, false, true)
+  }, [goTo])
+
+  const next = useCallback(() => {
+    if (ended) {
+      exitRef.current()
+      return
+    }
+    // Advance in-page animations first; turn the page only when this page's animations are done
+    if (player.advance()) return
+    if (pos >= order.length - 1) setEnded(true)
+    else goTo(pos + 1, true)
+  }, [ended, pos, order.length, goTo, player.advance]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Saved timings (Rehearse Timings, Record) advance the show as in PowerPoint; clicks still do.
+  // The timer turns the page outright: a slide's recorded time covers its click animations too,
+  // so stepping one animation per timer would stall on an animated slide.
+  const advanceMs = curIdx == null ? null : (timings?.[curIdx]?.advanceMs ?? null)
+  const turnPage = useCallback(() => {
+    if (ended) return
+    if (pos >= order.length - 1) setEnded(true)
+    else goTo(pos + 1, true)
+  }, [ended, pos, order.length, goTo])
+  const turnPageRef = useRef(turnPage)
+  turnPageRef.current = turnPage
+  useEffect(() => {
+    if (recordMode || rehearseMode || ended || advanceMs == null) return
+    const timer = window.setTimeout(() => turnPageRef.current(), advanceMs)
+    return () => window.clearTimeout(timer)
+  }, [pos, advanceMs, ended, recordMode, rehearseMode])
+
+  const prev = useCallback(() => {
+    if (ended) {
+      setEnded(false)
+      return
+    }
+    if (pos > 0) goTo(pos - 1, false)
+  }, [ended, pos, goTo])
+
+  // Element hyperlinks during the show (PowerPoint behavior): a click on a linked element follows
+  // the link instead of advancing — slide links (Zoom/jump) go to that page, URLs open in the browser
+  const followLink = useCallback(
+    (target: LinkTargetOp) => {
+      if (target.kind === 'slide') {
+        const p = order.indexOf(target.slideIndex)
+        // Hidden pages aren't in the play order; ignore jumps to them (matching the skip semantics)
+        if (p >= 0) {
+          setEnded(false)
+          goTo(p, true)
+        }
+        return
+      }
+      if (target.kind === 'action') {
+        const jump = (p: number | null) => {
+          if (p == null || p < 0 || p >= order.length) return
+          setEnded(false)
+          goTo(p, true)
+        }
+        // Page moves only, like PowerPoint: no animation stepping, nothing past either end
+        switch (target.action) {
+          case 'nextslide':
+            jump(pos + 1)
+            return
+          case 'previousslide':
+            jump(pos - 1)
+            return
+          case 'firstslide':
+            jump(0)
+            return
+          case 'lastslide':
+            jump(order.length - 1)
+            return
+          case 'lastslideviewed':
+            lastViewed()
+            return
+          case 'endshow':
+            exitRef.current()
+            return
+        }
+      }
+      // Electron routes window.open to the system browser (setWindowOpenHandler denies in-app windows)
+      window.open(target.url, '_blank', 'noreferrer')
+    },
+    [order, goTo, pos, lastViewed],
+  )
+  /** Click/hover position → slide-model px → topmost linked element's target (null = no link there) */
+  const linkAt = useCallback(
+    (e: React.MouseEvent<HTMLElement>): LinkTargetOp | null => {
+      const cur = order[pos]
+      const links = (cur != null ? linksRef.current[cur] : undefined) ?? new Map()
+      const runLinks = (cur != null ? runLinksRef.current[cur] : undefined) ?? new Map()
+      if ((!links.size && !runLinks.size) || !slide) return null
+      const rect = e.currentTarget.getBoundingClientRect()
+      const kx = slide.widthPx / rect.width
+      return hitLink(
+        slide.nodes,
+        (e.clientX - rect.left) * kx,
+        (e.clientY - rect.top) * kx,
+        links,
+        runLinks,
+      )
+    },
+    [order, pos, slide],
+  )
+
+  // Keyboard navigation (capture beats the editor's generic shortcuts). The menu owns
+  // Escape while open; the slide grid closes on Escape instead of ending the show.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (menuRef.current) return
+      if (gridRef.current) {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          setGrid(false)
+        }
+        return
+      }
+      const r = reduceShowKey(showKeysRef.current, e.key)
+      if (!r) return
+      e.preventDefault()
+      setKeys(ended ? { ...r.state, screen: 'none' } : r.state)
+      switch (r.action.type) {
+        case 'exit':
+          exitRef.current()
+          return
+        case 'next':
+          next()
+          return
+        case 'prev':
+          prev()
+          return
+        case 'first':
+          setEnded(false)
+          goTo(0, false)
+          return
+        case 'last':
+          setEnded(false)
+          goTo(order.length - 1, false)
+          return
+        case 'goto': {
+          const p = gotoPosition(r.action.slideNumber, order)
+          if (p == null) return
+          setEnded(false)
+          goTo(p, false)
+          return
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [next, prev, goTo, order, ended, setKeys])
+
+  const onRootClick = (e: React.MouseEvent) => {
+    if ((e.target as Element).closest('.ctx-menu, .ss-grid')) return
+    if (showKeysRef.current.screen !== 'none') {
+      setKeys(INITIAL_SHOW_KEYS)
+      return
+    }
+    next()
+  }
+
+  if (!slide) return null
+  const fitW = Math.round(Math.min(size.w, (size.h * slide.widthPx) / slide.heightPx))
+  // Rehearsal timer bar values: current page dwell (including earlier revisit accumulation) + total elapsed
+  const rehearse = rehearseRef.current
+  const sinceEntered = rehearse ? Date.now() - rehearse.enteredAt : 0
+  const rehearseCurMs = rehearse
+    ? (rehearse.perPageMs[rehearse.currentIndex] ?? 0) + sinceEntered
+    : 0
+  const rehearseTotalMs = rehearse
+    ? rehearse.perPageMs.reduce((a, b) => a + b, 0) + sinceEntered
+    : 0
+
+  const menuItems = menu
+    ? buildShowMenu(
+        t,
+        {
+          pos,
+          count: order.length,
+          ended,
+          pending: player.pending,
+          hasLastViewed: visitedRef.current.length > 0,
+          screen: blank,
+        },
+        {
+          next,
+          prev,
+          lastViewed,
+          seeAll: () => setGrid(true),
+          setScreen: (sc) => {
+            if (!ended) setKeys(toggleScreen(showKeysRef.current, sc))
+          },
+          end: () => exitRef.current(),
+        },
+      )
+    : null
+
+  return (
+    <div
+      className="slideshow"
+      onClick={onRootClick}
+      onMouseDownCapture={(e) => {
+        menuClickRef.current =
+          menu != null && e.button === 0 && !(e.target as Element).closest('.ctx-menu')
+      }}
+      onClickCapture={(e) => {
+        if (!menuClickRef.current) return
+        menuClickRef.current = false
+        e.stopPropagation()
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        if (!covered || grid) return
+        setMenu({ x: e.clientX, y: e.clientY })
+      }}
+    >
+      {!covered ? null : ended ? (
+        <div className="ss-end">{t('paneShowEndedClick')}</div>
+      ) : (
+        <>
+          {morph && slides[morph.fromIdx] && slides[morph.toIdx] ? (
+            <div key={`morph-${morph.nonce}`} className="ss-frame">
+              <MorphStage
+                from={slides[morph.fromIdx]!}
+                to={slides[morph.toIdx]!}
+                fromKeys={keysRef.current[morph.fromIdx] ?? []}
+                toKeys={keysRef.current[morph.toIdx] ?? []}
+                images={images}
+                width={fitW}
+                onDone={() => setMorph(null)}
+              />
+            </div>
+          ) : (
+            <div
+              key={anim.nonce}
+              className={`ss-frame${anim.kind !== 'none' ? ` ss-anim-${anim.kind}` : ''}`}
+            >
+              <div
+                style={{ position: 'relative', width: fitW, margin: '0 auto' }}
+                onClick={(e) => {
+                  const target = linkAt(e)
+                  if (!target) return // Bubbles to the root onClick → next page
+                  e.stopPropagation()
+                  followLink(target)
+                }}
+                onMouseMove={(e) => {
+                  e.currentTarget.style.cursor = linkAt(e) ? 'pointer' : ''
+                }}
+              >
+                <AnimatedSlideStage
+                  slide={shownSlide!}
+                  images={images}
+                  width={fitW}
+                  states={player.states}
+                />
+                <ShowMediaLayer
+                  key={order[pos]!}
+                  slide={recordMode ? shownSlide! : slide}
+                  hiddenIds={narrationIds}
+                  slideIndex={order[pos]!}
+                  width={fitW}
+                  commands={player.mediaCmds}
+                  epoch={player.epoch}
+                  mediaBase={player.mediaBase}
+                />
+              </div>
+            </div>
+          )}
+          {recordMode && (
+            <RecordingBar
+              phase={recording.phase}
+              slideElapsedMs={recording.slideElapsedMs}
+              elapsedMs={recording.elapsedMs}
+              onTogglePause={recording.togglePause}
+            />
+          )}
+          {rehearseMode && rehearse && (
+            <div className="ss-rehearse" data-tip={t('paneShowRehearseTip')}>
+              <span className="ss-rehearse-cur">⏱ {formatClock(rehearseCurMs)}</span>
+              <span className="ss-rehearse-total">
+                {t('paneShowRehearseTotal', { time: formatClock(rehearseTotalMs) })}
+              </span>
+            </div>
+          )}
+          <div className="ss-counter">
+            {pos + 1} / {order.length}
+          </div>
+          {blank !== 'none' && <div className={blank === 'black' ? 'ss-black' : 'ss-white'} />}
+        </>
+      )}
+      {grid && (
+        <div
+          className="ss-grid"
+          onClick={(e) => {
+            e.stopPropagation()
+            setGrid(false)
+          }}
+        >
+          {order.map((idx, p) => (
+            <button
+              key={idx}
+              className={`ss-grid-item${p === pos ? ' ss-grid-cur' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                setGrid(false)
+                setEnded(false)
+                goTo(p, false)
+              }}
+            >
+              <SlideThumb slide={slides[idx]!} images={images} width={GRID_THUMB_W} />
+              <span className="ss-grid-num">{idx + 1}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {menu && menuItems && (
+        <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Topmost linked element at a point (slide-model px). Scans nodes back-to-front (z-order),
+ * descends into groups (children boxes are group-local); unlinked overlapping nodes don't block
+ * links underneath (lenient, matches the show's forgiving click behavior).
+ */
+function hitLink(
+  nodes: RenderNode[],
+  x: number,
+  y: number,
+  links: Map<string, LinkTargetOp>,
+  runLinks: Map<string, LinkTargetOp>,
+): LinkTargetOp | null {
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const n = nodes[i]!
+    const { box } = n
+    if (x < box.x || y < box.y || x > box.x + box.w || y > box.y + box.h) continue
+    if (n.type === 'group') {
+      const inner = hitLink(n.children, x - box.x, y - box.y, links, runLinks)
+      if (inner) return inner
+    }
+    // Run-level link on the glyph under the pointer beats the whole-element link (more specific)
+    const text = (n as ShapeRenderNode).text
+    if (text && runLinks.size) {
+      let para = -1
+      for (const ln of text.lines) {
+        if (ln.paraStart !== false) para++
+        const ly = box.y + text.insets.t + ln.top
+        if (y < ly || y > ly + ln.height) continue
+        for (const r of ln.runs) {
+          if (r.srcRunIdx == null) continue
+          const rx = box.x + text.insets.l + r.x
+          if (x < rx || x > rx + r.widthPx) continue
+          const target = runLinks.get(`${n.sourceId}:${para}:${r.srcRunIdx}`)
+          if (target) return target
+        }
+      }
+    }
+    const target = links.get(n.sourceId)
+    if (target) return target
+  }
+  return null
+}

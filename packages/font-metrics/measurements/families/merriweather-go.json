@@ -1,0 +1,36 @@
+{
+  "family": "Merriweather GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-10-20",
+    "fonts": ["Merriweather (M365 cloud cuts)", "Georgia"],
+    "probe": "cloud-font hmtx over sample lines per cut: regular 1.120x, bold 0.978x, italic 1.033x, bold italic 0.897x"
+  },
+  "note": "Merriweather (M365 cloud face Word renders real, hhea 1.257): Georgia\nrescaled to its advances per cut (cloud-font hmtx over sample lines:\nregular 1.120x, bold 0.978x, italic 1.033x, bold italic 0.897x)",
+  "faces": [
+    {
+      "src": "local('Georgia')",
+      "sizeAdjust": 112,
+      "display": null
+    },
+    {
+      "src": "local('Georgia-Bold'), local('Georgia Bold')",
+      "sizeAdjust": 97.8,
+      "weight": "bold",
+      "display": null
+    },
+    {
+      "src": "local('Georgia-Italic'), local('Georgia Italic')",
+      "sizeAdjust": 103.3,
+      "style": "italic",
+      "display": null
+    },
+    {
+      "src": "local('Georgia-BoldItalic'), local('Georgia Bold Italic')",
+      "sizeAdjust": 89.7,
+      "weight": "bold",
+      "style": "italic",
+      "display": null
+    }
+  ]
+}

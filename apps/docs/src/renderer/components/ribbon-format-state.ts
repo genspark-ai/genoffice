@@ -1,0 +1,493 @@
+import { hasLabelSheet } from '../mail-merge/label-sheet'
+import type { Editor } from '@tiptap/core'
+import type { Node as PmNode } from '@tiptap/pm/model'
+import { NodeSelection } from '@tiptap/pm/state'
+import { isInTable, mergeCells, selectedRect, splitCell } from '@tiptap/pm/tables'
+import type { Block, DocDefaults, Run, StyleInfo, TextboxDisplay } from '@genoffice/docx-engine'
+import { fieldTablesOf } from '../commands/reference-commands'
+import { canCommentAt } from '../editor/comments'
+import { getActiveSubEditor } from '../editor/active-editor'
+import { shapeWrapOf } from '../editor/floating-z-order'
+import { graphicSelected } from '../editor/graphics-fill'
+import { selectedBoxIndex } from '../editor/selected-box'
+import { splitTableAtSelection, tableCellsSelection } from '../editor/table-ops'
+import { effectiveBidi, selectionHasBidi } from '../editor/direction'
+import {
+  effectiveSizeHalfPoints,
+  selectedFonts,
+  selectedSizeMixed,
+} from '../editor/text-style-resolve'
+import { textHasCjk } from '../line-metrics'
+import { cachedByDoc } from '../doc-cache'
+
+/**
+ * Snapshot of every editor-state read the ribbon (and its tabs) shows at render
+ * time. App computes it each render and keeps the reference stable via
+ * useShallowStable, so React.memo skips the ribbon whenever none of these
+ * change (e.g. caret moves inside uniformly formatted text).
+ */
+export interface RibbonFormatState {
+  /** current PM doc: any content change invalidates the ribbon (doc-derived tab displays stay fresh) */
+  doc: PmNode | null
+  docEmpty: boolean
+  /** focused textbox sub-editor receiving ribbon commands (active-editor routing) */
+  sub: Editor | null
+  editable: boolean
+  inTable: boolean
+  canMergeCells: boolean
+  /** the body holds a mail-merge label table (Update Labels has something to update) */
+  labelSheet: boolean
+  canSplitCell: boolean
+  canSplitTable: boolean
+  /** something is selected where the caret is: text, cells or an object */
+  hasSelection: boolean
+  /** the document has a footnote or an endnote */
+  hasNotes: boolean
+  hasChart: boolean
+  /** New Comment has a selection, a word or an empty paragraph to hold on to */
+  canComment: boolean
+  /** the caret's paragraph has nothing in it */
+  inEmptyParagraph: boolean
+  hasTableOfFigures: boolean
+  hasIndex: boolean
+  hasTableOfAuthorities: boolean
+  imageSelected: boolean
+  /** the selected picture is an inline run picture (table / header cell): Size only */
+  inlinePicture: boolean
+  /** the selected picture is drawn from an SVG (an icon): Graphics Fill applies */
+  graphicSelected: boolean
+  /** the selected picture is a photo box of a multi-drawing paragraph: Arrange only */
+  pictureBox: boolean
+  imageDataUrl: string | null
+  imageWrap: string | null
+  imageAlign: string | null
+  imageWidthPx: number | null
+  imageHeightPx: number | null
+  imageFlipH: boolean
+  imageFlipV: boolean
+  imageHasDocxIndex: boolean
+  /** document position of the selected picture: per-picture UI state keys on it */
+  imageKey: number | null
+  textboxSelected: boolean
+  shapeFill: string | null
+  shapeBorderColor: string | null
+  /** outline width of the selected shape in CSS px (a:ln w; null = Word's own default) */
+  shapeBorderWidthPx: number | null
+  shapePrst: string | null
+  /** wps:bodyPr vert of the selected box; null = horizontal */
+  shapeVert: string | null
+  /**
+   * What the selected shape's own text agrees on, for the Shape Format Text
+   * group. Selecting a shape as an object leaves no text selection for a mark to
+   * hang off, so Word formats every run at once and lights a button only while
+   * the shape agrees throughout: one bold word among plain ones leaves Bold off,
+   * and pressing it bolds all of them. Null fields mean the runs disagree; a
+   * shape with no text to format has shapeHasText false.
+   */
+  shapeHasText: boolean
+  shapeTextBold: boolean
+  shapeTextItalic: boolean
+  shapeTextUnderline: boolean
+  shapeTextColor: string | null
+  shapeTextAlign: string | null
+  cellKey: number | null
+  cellHeightTwips: number | null
+  cellWidthPx: number | null
+  cellVAlign: string | null
+  cellTextDirection: string | null
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  strike: boolean
+  vertAlign: string | null
+  highlight: string | null
+  /** the text carries character shading (w:shd on the run) */
+  charShading: boolean
+  /** the text has a character border (w:bdr), its own or a style's */
+  charBorder: boolean
+  textColor: string | null
+  charStyleId: string | null
+  /** w:pStyle of the paragraph at the caret (null = the default paragraph style) */
+  paraStyleId: string | null
+  fontSizePt: number
+  /** selection spans more than one size: the size box shows blank (Word) */
+  fontSizeMixed: boolean
+  fontEastAsia: string | null
+  fontLatin: string | null
+  fontFamily: string
+  headingLevel: number | null
+  listBullet: boolean
+  listOrdered: boolean
+  align: string | null
+  /** RTL paragraph (w:bidi) at the cursor */
+  bidi: boolean
+  /** an RTL paragraph is at the cursor or inside the selection */
+  selectionBidi: boolean
+  lineSpacing: number | null
+  shadingFill: string | null
+  paraBorders: unknown
+  indentLeft: number
+  indentRight: number
+  spaceBefore: number
+  spaceAfter: number
+}
+
+export const EMPTY_FORMAT_STATE: RibbonFormatState = {
+  doc: null,
+  docEmpty: true,
+  sub: null,
+  editable: false,
+  inTable: false,
+  canMergeCells: false,
+  labelSheet: false,
+  canSplitCell: false,
+  canSplitTable: false,
+  hasSelection: false,
+  hasNotes: false,
+  hasChart: false,
+  canComment: false,
+  inEmptyParagraph: false,
+  hasTableOfFigures: false,
+  hasIndex: false,
+  hasTableOfAuthorities: false,
+  imageSelected: false,
+  inlinePicture: false,
+  graphicSelected: false,
+  pictureBox: false,
+  imageDataUrl: null,
+  imageWrap: null,
+  imageAlign: null,
+  imageWidthPx: null,
+  imageHeightPx: null,
+  imageFlipH: false,
+  imageFlipV: false,
+  imageHasDocxIndex: false,
+  imageKey: null,
+  textboxSelected: false,
+  shapeFill: null,
+  shapeBorderColor: null,
+  shapeBorderWidthPx: null,
+  shapePrst: null,
+  shapeVert: null,
+  shapeHasText: false,
+  shapeTextBold: false,
+  shapeTextItalic: false,
+  shapeTextUnderline: false,
+  shapeTextColor: null,
+  shapeTextAlign: null,
+  cellKey: null,
+  cellHeightTwips: null,
+  cellWidthPx: null,
+  cellVAlign: null,
+  cellTextDirection: null,
+  bold: false,
+  italic: false,
+  underline: false,
+  strike: false,
+  vertAlign: null,
+  highlight: null,
+  charShading: false,
+  charBorder: false,
+  textColor: null,
+  charStyleId: null,
+  paraStyleId: null,
+  fontSizePt: 11,
+  fontSizeMixed: false,
+  fontFamily: '',
+  fontEastAsia: '',
+  fontLatin: '',
+  headingLevel: null,
+  listBullet: false,
+  listOrdered: false,
+  align: null,
+  bidi: false,
+  selectionBidi: false,
+  lineSpacing: null,
+  shadingFill: null,
+  paraBorders: null,
+  indentLeft: 0,
+  indentRight: 0,
+  spaceBefore: 0,
+  spaceAfter: 0,
+}
+
+const NO_BLOCKS: Block[] = []
+
+const labelSheetOf = cachedByDoc(hasLabelSheet)
+
+// stops at the first character instead of building the whole document's text
+const docEmptyOf = cachedByDoc((doc: PmNode) => {
+  let empty = true
+  doc.descendants((node) => {
+    if (!empty) return false
+    if (node.isText && node.text?.trim()) empty = false
+    else if (node.isLeaf && !node.isText) empty = false
+    return empty
+  })
+  return empty
+})
+
+const holds = (has: (node: PmNode) => boolean) =>
+  cachedByDoc((doc: PmNode) => {
+    let found = false
+    doc.descendants((node) => {
+      if (has(node)) found = true
+      return !found
+    })
+    return found
+  })
+const hasNotesOf = holds((node) => node.type.name === 'docNoteRef')
+const hasChartOf = holds((node) => node.type.name === 'docProtected' && !!node.attrs.chartDisplay)
+
+const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null)
+const num = (v: unknown): number | null => {
+  const n = Number(v)
+  return Number.isFinite(n) && n !== 0 ? n : null
+}
+
+/** attrs of the paragraph-like node at the cursor (mirrors activeParaAttrs in ribbon-tabs) */
+export function paraAttrsOf(editor: Editor): Record<string, unknown> {
+  if (editor.isActive('docHeading')) return editor.getAttributes('docHeading')
+  if (editor.isActive('docListItem')) return editor.getAttributes('docListItem')
+  return editor.getAttributes('docParagraph')
+}
+
+/** what Borders and Shading opens on: the paragraph at the caret and the selected text */
+export function bordersShadingTarget(editor: Editor | null): {
+  paragraph: { borders: unknown; borderLines: unknown; fill: unknown; pattern: unknown }
+  text: { bdr: unknown; shading: unknown } | null
+  styled: boolean
+} {
+  const sub = getActiveSubEditor()
+  const ed = sub ?? editor
+  const para = !ed ? {} : sub ? sub.getAttributes('docParagraph') : paraAttrsOf(ed)
+  const mark = ed && !ed.state.selection.empty ? ed.getAttributes('docTextStyle') : null
+  return {
+    paragraph: {
+      borders: para.borders,
+      borderLines: para.borderLines,
+      fill: para.shadingFill,
+      pattern: para.shadingPattern,
+    },
+    text: mark ? { bdr: mark.bdr, shading: mark.shading } : null,
+    styled: !sub,
+  }
+}
+
+/**
+ * Fold every run and paragraph of a shape into what they all share. A run with
+ * no color of its own draws in the shape style's default (a:fontRef), so that is
+ * what the swatch reports — otherwise a new white-on-blue shape would read as
+ * having no color at all.
+ */
+function shapeTextStateOf(
+  box: TextboxDisplay | undefined,
+): Pick<
+  RibbonFormatState,
+  | 'shapeHasText'
+  | 'shapeTextBold'
+  | 'shapeTextItalic'
+  | 'shapeTextUnderline'
+  | 'shapeTextColor'
+  | 'shapeTextAlign'
+> {
+  const runs = box && !box.readOnly ? box.paras.flatMap((p) => p.runs) : []
+  if (!box || runs.length === 0) {
+    return {
+      shapeHasText: false,
+      shapeTextBold: false,
+      shapeTextItalic: false,
+      shapeTextUnderline: false,
+      shapeTextColor: null,
+      shapeTextAlign: null,
+    }
+  }
+  const every = (has: (run: Run) => boolean): boolean => runs.every(has)
+  // auto (Word's automatic colour) shows as "no colour" in the swatch
+  const colorOf = (r: Run): string | null =>
+    r.color === 'auto' ? null : (r.color ?? box.textColor ?? null)
+  const firstColor = colorOf(runs[0])
+  const firstAlign = box.paras[0]?.align ?? null
+  return {
+    shapeHasText: true,
+    shapeTextBold: every((r) => r.bold === true),
+    shapeTextItalic: every((r) => r.italic === true),
+    shapeTextUnderline: every((r) => r.underline === true),
+    shapeTextColor: every((r) => colorOf(r) === firstColor) ? firstColor : null,
+    shapeTextAlign: box.paras.every((p) => (p.align ?? null) === firstAlign) ? firstAlign : null,
+  }
+}
+
+export function computeFormatState(
+  editor: Editor | null,
+  styles?: Map<string, StyleInfo>,
+  docDefaults?: DocDefaults,
+  /** the parsed document, for what only its XML says (the tables the Update buttons rebuild) */
+  blocks: Block[] = NO_BLOCKS,
+): RibbonFormatState {
+  if (!editor || editor.isDestroyed) return EMPTY_FORMAT_STATE
+  const sub = getActiveSubEditor()
+  const ed = sub ?? editor
+
+  // Select Table / the move handle: the ribbon reads a selected table as every cell selected (Word)
+  const cells = sub ? null : tableCellsSelection(editor.state)
+  const tableState = cells ? editor.state.apply(editor.state.tr.setSelection(cells)) : editor.state
+  const inTable = !sub && isInTable(tableState)
+  let cellKey: number | null = null
+  let cellHeightTwips: number | null = null
+  let cellWidthPx: number | null = null
+  let cellVAlign: string | null = null
+  let cellTextDirection: string | null = null
+  let canSplitTable = false
+  if (inTable) {
+    try {
+      const rect = selectedRect(tableState)
+      const rowNode = rect.table.maybeChild(rect.top)
+      const cellPos = rect.map.map[rect.top * rect.map.width + rect.left]
+      const cellNode = tableState.doc.nodeAt(rect.tableStart + cellPos)
+      const colwidth = (cellNode?.attrs.colwidth as number[] | null) ?? null
+      cellKey = rect.tableStart * 100000 + cellPos
+      cellHeightTwips = (rowNode?.attrs.heightTwips as number | null) || null
+      cellWidthPx = colwidth?.[0] || null
+      cellVAlign = (cellNode?.attrs.vAlign as string | null) ?? null
+      cellTextDirection = (cellNode?.attrs.textDirection as string | null) ?? null
+      canSplitTable = splitTableAtSelection()(tableState)
+    } catch {
+      /* degenerate selection: leave cell fields empty like the old activeCellInfo */
+    }
+  }
+
+  const protAttrs = editor.getAttributes('docProtected')
+  const inlinePic = inlinePictureOf(ed)
+  const boxes = Array.isArray(protAttrs.textboxes)
+    ? (protAttrs.textboxes as TextboxDisplay[])
+    : null
+  const box = boxes && boxes.length > 0 ? boxes[selectedBoxIndex(editor.state)] : undefined
+  const pictureBox = !!box?.picture
+  const imageSelected =
+    !!inlinePic || pictureBox || (protAttrs.blockType === 'image' && !!protAttrs.imageDataUrl)
+
+  const textAttrs = ed.getAttributes('docTextStyle')
+  const fonts = selectedFonts(ed, styles, docDefaults)
+  // Word's font box names the slot matching the script at the caret; null = mixed
+  const displayFont = (): string => {
+    const { from, to } = ed.state.selection
+    const sample =
+      from === to
+        ? ed.state.doc.textBetween(
+            Math.max(0, from - 1),
+            Math.min(ed.state.doc.content.size, from + 1),
+          )
+        : ed.state.doc.textBetween(from, Math.min(to, from + 32), ' ')
+    const slot = textHasCjk(sample)
+      ? fonts.fontEastAsia === ''
+        ? fonts.fontLatin
+        : fonts.fontEastAsia
+      : fonts.fontLatin
+    return slot ?? ''
+  }
+  const paraAttrs = sub ? ed.getAttributes('docParagraph') : paraAttrsOf(editor)
+  const mainPara = paraAttrsOf(editor)
+  const tables = fieldTablesOf(editor.state.doc, blocks)
+  const caret = ed.state.selection
+
+  return {
+    doc: editor.state.doc,
+    docEmpty: docEmptyOf(editor.state.doc),
+    sub,
+    editable: editor.isEditable,
+    inTable,
+    canMergeCells: inTable && !!mergeCells(tableState),
+    labelSheet: labelSheetOf(editor.state.doc),
+    canSplitCell: inTable && !!splitCell(tableState),
+    canSplitTable,
+    hasSelection: !ed.state.selection.empty,
+    hasNotes: hasNotesOf(editor.state.doc),
+    hasChart: hasChartOf(editor.state.doc),
+    canComment: canCommentAt(editor),
+    inEmptyParagraph:
+      caret.empty && caret.$from.parent.isTextblock && caret.$from.parent.content.size === 0,
+    hasTableOfFigures: tables.figures,
+    hasIndex: tables.index,
+    hasTableOfAuthorities: tables.authorities,
+    imageSelected,
+    inlinePicture: !!inlinePic,
+    graphicSelected: imageSelected && graphicSelected(editor),
+    pictureBox,
+    imageDataUrl: inlinePic
+      ? str(inlinePic.dataUrl)
+      : pictureBox
+        ? str(box?.fillImageDataUrl)
+        : imageSelected
+          ? str(protAttrs.imageDataUrl)
+          : null,
+    imageWrap: inlinePic ? str(inlinePic.wrap) : box ? shapeWrapOf(box) : str(protAttrs.imageWrap),
+    imageAlign: str(protAttrs.imageAlign),
+    imageWidthPx: num(
+      inlinePic ? inlinePic.widthPx : pictureBox ? box?.widthPx : protAttrs.imageWidthPx,
+    ),
+    imageHeightPx: num(
+      inlinePic ? inlinePic.heightPx : pictureBox ? box?.heightPx : protAttrs.imageHeightPx,
+    ),
+    imageFlipH: !!protAttrs.imageFlipH,
+    imageFlipV: !!protAttrs.imageFlipV,
+    imageHasDocxIndex: protAttrs.docxIndex != null,
+    imageKey: imageSelected ? ed.state.selection.from : null,
+    textboxSelected: !!box && !pictureBox,
+    shapeFill: str(box?.fill),
+    shapeBorderColor: str(box?.borderColor),
+    shapeBorderWidthPx: num(box?.borderWidthPx),
+    shapePrst: str(box?.prst),
+    shapeVert: str(box?.vert),
+    ...shapeTextStateOf(box),
+    cellKey,
+    cellHeightTwips,
+    cellWidthPx,
+    cellVAlign,
+    cellTextDirection,
+    bold: ed.isActive('bold'),
+    italic: ed.isActive('italic'),
+    underline: ed.isActive('underline'),
+    strike: ed.isActive('strike'),
+    vertAlign: str(textAttrs.vertAlign),
+    highlight: str(textAttrs.highlight),
+    charShading: !!(textAttrs.shadingDisplay ?? textAttrs.shading),
+    charBorder: !!textAttrs.bdr,
+    textColor: textAttrs.color === 'auto' ? null : str(textAttrs.color),
+    charStyleId: str(textAttrs.styleId),
+    paraStyleId: str(paraAttrs.styleId),
+    fontSizePt: (effectiveSizeHalfPoints(ed, styles, docDefaults) ?? 20) / 2,
+    fontSizeMixed: selectedSizeMixed(ed, styles, docDefaults),
+    fontFamily: displayFont(),
+    ...fonts,
+    headingLevel: editor.isActive('docHeading')
+      ? Number(editor.getAttributes('docHeading').level ?? 1)
+      : null,
+    // a textbox paragraph carries its list on the listMarker attr instead of a
+    // docListItem node, so the buttons reflect the marker's kind while inside
+    listBullet: sub
+      ? paraAttrs.listMarker?.kind === 'bullet'
+      : editor.isActive('docListItem', { kind: 'bullet' }),
+    listOrdered: sub
+      ? paraAttrs.listMarker?.kind === 'ordered'
+      : editor.isActive('docListItem', { kind: 'ordered' }),
+    align: str(paraAttrs.align),
+    bidi: paraAttrs.bidi === true || paraAttrs.bidiInferred === true,
+    selectionBidi: effectiveBidi(paraAttrs) || (!sub && selectionHasBidi(editor)),
+    lineSpacing: typeof paraAttrs.lineSpacing === 'number' ? paraAttrs.lineSpacing : null,
+    shadingFill: str(paraAttrs.shadingFill),
+    paraBorders: paraAttrs.borders ?? null,
+    indentLeft: Number(mainPara.indentLeft) || 0,
+    indentRight: Number(mainPara.indentRight) || 0,
+    spaceBefore: Number(mainPara.spaceBefore) || 0,
+    spaceAfter: Number(mainPara.spaceAfter) || 0,
+  }
+}
+
+/** attrs of the run picture (in line or floating) under a node selection (rules excluded) */
+function inlinePictureOf(ed: Editor): Record<string, unknown> | null {
+  const sel = ed.state.selection
+  if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'docInlineImage') return null
+  const attrs = sel.node.attrs
+  return attrs.rule || !attrs.dataUrl ? null : attrs
+}

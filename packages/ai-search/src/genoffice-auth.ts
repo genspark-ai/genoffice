@@ -1,0 +1,671 @@
+/**
+ * GenOffice's own Genspark identity: device-code login (office_addin_auth,
+ * app_type=genoffice) minting a gsk API key named "genoffice" — the key_name
+ * lands in billing as billing_tag, attributing all traffic (incl. gsk CLI
+ * subprocesses) to GenOffice. Stored in ~/.genoffice/auth.json, deliberately
+ * NOT the shared config.json that Claw Desktop overwrites on every launch.
+ *
+ * Flow: POST /device_code → browser approve → poll /token for a 30-day Bearer
+ * → POST /session for a cookie → POST /api/api_tokens/create. The Bearer is
+ * kept to rebuild a session later (key revoke on logout).
+ */
+
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { asRecord, gskProxyUrl } from './shared'
+import { nativeWaf } from './native-waf'
+
+/** Progress event for the browser login flow. */
+export interface GskLoginProgress {
+  phase: 'url' | 'success' | 'error'
+  url?: string
+  expiresInSec?: number
+  /** 'network' | 'expired' | 'auth_url_rejected' | raw error text */
+  error?: string
+}
+
+const APP_TYPE = 'genoffice'
+const KEY_NAME = 'genoffice'
+const HTTP_TIMEOUT_MS = 30_000
+
+/** https on the endpoint's registrable domain only; IP literals and single-label
+ *  hosts have no subdomain tree (`evil.127.0.0.1` is a public DNS name). */
+export function isAllowedAuthUrl(raw: string, origin: string): URL | null {
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== 'https:') return null
+    const endpointHost = new URL(origin).hostname
+    const registrable = endpointHost.replace(/^www\./, '')
+    const flatHost =
+      endpointHost.startsWith('[') || /^[\d.]+$/.test(endpointHost) || !registrable.includes('.')
+    if (flatHost) return url.hostname === endpointHost ? url : null
+    if (url.hostname !== registrable && !url.hostname.endsWith(`.${registrable}`)) return null
+    return url
+  } catch {
+    return null
+  }
+}
+
+function baseUrl(): string {
+  return (process.env.GSK_BASE_URL || 'https://www.genspark.ai').replace(/\/$/, '')
+}
+
+let cachedFetch: typeof fetch | undefined
+
+/**
+ * Cloudflare bot-challenges /api/office_addin_auth for non-browser clients;
+ * Chromium's net.fetch passes (and exposes getSetCookie). Falls back to
+ * global fetch outside the Electron main process (tests). Note net.fetch is
+ * not spec fetch: an explicit Cookie header is forwarded, not stripped
+ * (verified against a header-echo server).
+ */
+function resolveFetch(): typeof fetch {
+  if (cachedFetch) return cachedFetch
+  let impl: typeof fetch = (...args) => fetch(...args)
+  if (process.versions.electron) {
+    try {
+      const require = createRequire(import.meta.url)
+      const { net } = require('electron') as { net?: { fetch?: typeof fetch } }
+      if (net?.fetch) impl = net.fetch.bind(net)
+    } catch {
+      /* non-main context: keep global fetch */
+    }
+  }
+  cachedFetch = impl
+  return impl
+}
+
+interface ProxySession {
+  setProxy: (config: { proxyRules: string }) => Promise<void>
+  fetch: typeof fetch
+}
+
+let proxyFetchCache: { url: string; impl: typeof fetch } | undefined
+let proxyFallbackPreferred = false
+
+// proxy/gateway rejections, not endpoint answers — must not mark a channel healthy
+const GATEWAY_ERROR_STATUSES = new Set([407, 502, 504])
+
+/**
+ * Retry channel when the primary fetch cannot connect: net.fetch follows only
+ * Chromium's own proxy config, so a proxy the bootstraps resolved from env
+ * vars — or a system proxy Chromium failed to apply — never reaches it. Pin a
+ * dedicated session to the registered proxy, keeping Chromium TLS (Node fetch
+ * is bot-challenged, see resolveFetch). null when no proxy is registered.
+ */
+async function proxyFallbackFetch(): Promise<typeof fetch | null> {
+  const proxyUrl = gskProxyUrl()
+  if (!proxyUrl) return null
+  if (proxyFetchCache?.url === proxyUrl) return proxyFetchCache.impl
+  let impl: typeof fetch = (...args) => fetch(...args)
+  if (process.versions.electron) {
+    try {
+      const require = createRequire(import.meta.url)
+      const { session } = require('electron') as {
+        session?: { fromPartition: (partition: string) => ProxySession }
+      }
+      if (session) {
+        const ses = session.fromPartition('genoffice-login-proxy')
+        await ses.setProxy({ proxyRules: proxyUrl })
+        impl = ses.fetch.bind(ses)
+      }
+    } catch {
+      /* non-main context: global fetch rides the bootstrap's undici dispatcher */
+    }
+  }
+  proxyFetchCache = { url: proxyUrl, impl }
+  return impl
+}
+
+/** Primary + fallback, ordered by which one last succeeded after a failover. */
+async function loginFetchChannels(): Promise<(typeof fetch)[]> {
+  const primary = resolveFetch()
+  const fallback = await proxyFallbackFetch()
+  if (!fallback) return [primary]
+  return proxyFallbackPreferred ? [fallback, primary] : [primary, fallback]
+}
+
+/** Override dir via GENOFFICE_AUTH_DIR (test isolation). */
+export function genofficeAuthPath(): string {
+  return join(process.env.GENOFFICE_AUTH_DIR || join(homedir(), '.genoffice'), 'auth.json')
+}
+
+export interface GenofficeAuth {
+  apiKey: string
+  keyId?: string
+  accessToken?: string
+}
+
+let cachedAuth: GenofficeAuth | null | undefined
+
+function readAuthFile(): GenofficeAuth | null {
+  try {
+    const raw = asRecord(JSON.parse(readFileSync(genofficeAuthPath(), 'utf-8')))
+    if (typeof raw.api_key !== 'string' || !raw.api_key) return null
+    return {
+      apiKey: raw.api_key,
+      ...(typeof raw.key_id === 'string' && raw.key_id ? { keyId: raw.key_id } : {}),
+      ...(typeof raw.access_token === 'string' && raw.access_token
+        ? { accessToken: raw.access_token }
+        : {}),
+    }
+  } catch {
+    return null
+  }
+}
+
+export function loadGenofficeAuth(): GenofficeAuth | null {
+  if (cachedAuth === undefined) cachedAuth = readAuthFile()
+  return cachedAuth
+}
+
+/** Drop the cache so the next read sees a key written by another process. */
+export function reloadGenofficeAuth(): void {
+  // File watchers reread API keys during remint; only session teardown invalidates cookie admission.
+  cachedAuth = undefined
+}
+
+/** The GenOffice-named api key; '' when not signed in. Cached (invalidated by login/logout). */
+export function genofficeApiKey(): string {
+  return loadGenofficeAuth()?.apiKey ?? ''
+}
+
+function saveAuth(auth: GenofficeAuth): void {
+  const path = genofficeAuthPath()
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(
+    path,
+    JSON.stringify(
+      { api_key: auth.apiKey, key_id: auth.keyId, access_token: auth.accessToken },
+      null,
+      2,
+    ) + '\n',
+    { mode: 0o600 },
+  )
+  cachedAuth = auth
+}
+
+function clearAuth(): void {
+  nativeWaf.clear()
+  try {
+    if (existsSync(genofficeAuthPath())) unlinkSync(genofficeAuthPath())
+  } catch {
+    /* local sign-out must not throw */
+  }
+  cachedAuth = null
+}
+
+// ── HTTP helpers ─────────────────────────────────────────────────────
+
+class LoginFlowError extends Error {
+  constructor(
+    /** matches GskLoginProgress.error conventions */
+    public reason: 'network' | 'expired' | string,
+  ) {
+    super(reason)
+  }
+}
+
+async function httpJson(
+  url: string,
+  init: RequestInit & { signal: AbortSignal },
+): Promise<{ resp: Response; json: Record<string, unknown> }> {
+  const flowSignal = init.signal
+  let resp: Response | undefined
+  const channels = await loginFetchChannels()
+  for (const [i, impl] of channels.entries()) {
+    try {
+      const attempt =
+        process.env.GENOFFICE_NATIVE_WAF !== '0' ? await nativeWaf.prepare(url, init, impl) : init
+      // per-attempt timeout: a blackholed direct connection would otherwise
+      // hang for the OS TCP timeout before the fallback ever runs
+      resp = await impl(url, {
+        ...attempt,
+        signal: AbortSignal.any([flowSignal, AbortSignal.timeout(HTTP_TIMEOUT_MS)]),
+      })
+    } catch (e) {
+      if (flowSignal.aborted) throw e
+      continue
+    }
+    // gateway statuses fail over like connect errors (endpoint 4xx such as the
+    // poll's authorization_pending still counts as a healthy channel)
+    if (GATEWAY_ERROR_STATUSES.has(resp.status)) continue
+    // the losing channel keeps losing on proxy-only networks — lead with the winner
+    if (i > 0) proxyFallbackPreferred = !proxyFallbackPreferred
+    break
+  }
+  if (!resp) throw new LoginFlowError('network')
+  let json: Record<string, unknown> = {}
+  try {
+    json = asRecord(await resp.json())
+  } catch {
+    /* non-JSON body; status checks below carry the error */
+  }
+  return { resp, json }
+}
+
+function sessionCookie(resp: Response): string {
+  const headers = resp.headers as Headers & { getSetCookie?: () => string[] }
+  const cookies = headers.getSetCookie?.() ?? []
+  if (cookies.length === 0) {
+    const single = resp.headers.get('set-cookie')
+    if (single) cookies.push(single)
+  }
+  return cookies.map((c) => c.split(';')[0]!).join('; ')
+}
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new DOMException('login cancelled', 'AbortError'))
+    }
+    // remove on resolve — the poll loop reuses one signal and would accumulate listeners
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+// ── Device-code login ────────────────────────────────────────────────
+
+// the endpoint picks both values; a hostile answer must not stretch a login
+// for years or poll at a crawl. 1h sits above every provider's real lifetime
+// (RFC 8628 example 1800s), so the clamp never truncates a valid code.
+const MAX_POLL_INTERVAL_MS = 10_000
+const MAX_LOGIN_SEC = 3600
+
+function clampLoginValue(value: unknown, fallback: number, max: number): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return fallback
+  return Math.min(n, max)
+}
+
+async function revokeKey(cookie: string, keyId: string, signal: AbortSignal): Promise<void> {
+  const url = `${baseUrl()}/api/api_tokens/revoke`
+  const init: RequestInit = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({ key_id: keyId }),
+    signal,
+  }
+  const fetcher = resolveFetch()
+  await fetcher(
+    url,
+    process.env.GENOFFICE_NATIVE_WAF !== '0' ? await nativeWaf.prepare(url, init, fetcher) : init,
+  )
+}
+
+/** Bearer token → session cookie. Shared by login (key create) and logout (key revoke). */
+async function establishSession(accessToken: string, signal: AbortSignal): Promise<string> {
+  const { resp } = await httpJson(`${baseUrl()}/api/office_addin_auth/session`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal,
+  })
+  const cookie = sessionCookie(resp)
+  if (!resp.ok || !cookie) throw new LoginFlowError(`session failed (HTTP ${resp.status})`)
+  return cookie
+}
+
+/** Server detail on a mint refused because the session is not a fresh login. */
+export const FRESH_AUTH_REQUIRED = 'fresh_browser_authentication_required'
+
+export type MintResult =
+  | { kind: 'ok'; apiKey: string; keyId?: string }
+  /** the session is too old to mint a key: only a new interactive login helps */
+  | { kind: 'fresh_auth_required' }
+  | { kind: 'error'; reason: string }
+
+/**
+ * Classifies an /api/api_tokens/create answer. A 403 carrying
+ * FRESH_AUTH_REQUIRED means "sign in again"; any other non-2xx or a body
+ * without a token is a plain error. (exported for tests)
+ */
+export function classifyMintResponse(status: number, json: Record<string, unknown>): MintResult {
+  if (status === 403 && json.detail === FRESH_AUTH_REQUIRED) return { kind: 'fresh_auth_required' }
+  const data = asRecord(json.data)
+  const apiKey = typeof data.token === 'string' ? data.token : ''
+  if (status >= 200 && status < 300 && apiKey) {
+    return {
+      kind: 'ok',
+      apiKey,
+      ...(typeof data.key_id === 'string' ? { keyId: data.key_id } : {}),
+    }
+  }
+  const message =
+    typeof json.message === 'string' && json.message
+      ? json.message
+      : typeof json.detail === 'string' && json.detail
+        ? json.detail
+        : status >= 200 && status < 300
+          ? 'API key creation failed'
+          : `API key creation failed (HTTP ${status})`
+  return { kind: 'error', reason: message }
+}
+
+async function mintKey(cookie: string, signal: AbortSignal): Promise<MintResult> {
+  const { resp, json } = await httpJson(`${baseUrl()}/api/api_tokens/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({ key_name: KEY_NAME }),
+    signal,
+  })
+  return classifyMintResponse(resp.status, json)
+}
+
+async function runDeviceLogin(
+  signal: AbortSignal,
+  emit: (progress: GskLoginProgress) => void,
+): Promise<void> {
+  const { resp, json } = await httpJson(
+    `${baseUrl()}/api/office_addin_auth/device_code?app_type=${APP_TYPE}`,
+    { method: 'POST', signal },
+  )
+  const code = String(json.device_code ?? '')
+  const authUrl = String(json.auth_url ?? '')
+  if (!resp.ok || !code || !authUrl) throw new LoginFlowError('network')
+  // the endpoint decides this URL and callers hand it to the OS opener
+  const allowed = isAllowedAuthUrl(authUrl, baseUrl())
+  if (!allowed) throw new LoginFlowError('auth_url_rejected')
+  const expiresInSec = clampLoginValue(json.expires_in, 600, MAX_LOGIN_SEC)
+  const pollMs = clampLoginValue(Number(json.poll_interval) * 1000, 2000, MAX_POLL_INTERVAL_MS)
+  emit({ phase: 'url', url: allowed.href, expiresInSec })
+
+  const deadline = Date.now() + expiresInSec * 1000
+  let accessToken: string
+  for (;;) {
+    if (Date.now() >= deadline) throw new LoginFlowError('expired')
+    await sleep(pollMs, signal)
+    const { json: poll } = await httpJson(`${baseUrl()}/api/office_addin_auth/token?code=${code}`, {
+      method: 'GET',
+      signal,
+    })
+    const status = String(poll.status ?? '')
+    if (status === 'pending') continue
+    if (status === 'approved') {
+      accessToken = String(poll.access_token ?? '')
+      if (!accessToken) throw new LoginFlowError('expired')
+      break
+    }
+    throw new LoginFlowError('expired')
+  }
+
+  // the session minted from a just-approved device code is a fresh login, so
+  // the server's fresh-auth gate passes here; a refusal anyway is reported, not retried
+  const cookie = await establishSession(accessToken, signal)
+  const minted = await mintKey(cookie, signal)
+  if (minted.kind === 'fresh_auth_required') throw new LoginFlowError('fresh_auth_required')
+  if (minted.kind === 'error') throw new LoginFlowError(minted.reason)
+  const previousKeyId = loadGenofficeAuth()?.keyId ?? staleKeyId
+  saveAuth({
+    apiKey: minted.apiKey,
+    ...(minted.keyId ? { keyId: minted.keyId } : {}),
+    accessToken,
+  })
+  staleKeyId = undefined
+  staleAccessToken = undefined
+  lastRemintedKey = undefined
+  // a completed login re-arms the one automatic re-login for the next rejected key
+  autoLoginLaunched = false
+  emit({ phase: 'success' })
+  // browser-approved logins only: the silent re-mint never went through the
+  // browser, so it must not pull the app window forward or toast
+  loginSuccessListener?.()
+  // re-login replaces the key: revoke the superseded one so it can't pile up
+  // server-side (best-effort — the new login must not fail on this)
+  if (previousKeyId && previousKeyId !== minted.keyId) {
+    try {
+      await revokeKey(cookie, previousKeyId, signal)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+let activeLogin: { cancel: () => void } | null = null
+
+/**
+ * Starts the GenOffice device-code login, cancelling a previous in-flight one
+ * (its device code would otherwise be approved into a dead flow). The caller
+ * opens `url` in the system browser. Returns whether the flow was started.
+ */
+export function startGenofficeLogin(onEvent?: (progress: GskLoginProgress) => void): boolean {
+  activeLogin?.cancel()
+  const emit = onEvent ?? (() => {})
+  const controller = new AbortController()
+  let done = false
+  const self = {
+    cancel: () => {
+      done = true
+      controller.abort()
+    },
+  }
+  activeLogin = self
+  const finish = (progress: GskLoginProgress) => {
+    if (done) return
+    done = true
+    if (activeLogin === self) activeLogin = null
+    emit(progress)
+  }
+  void runDeviceLogin(controller.signal, (progress) => {
+    if (done) return
+    if (progress.phase === 'url') emit(progress)
+    else finish(progress)
+  }).catch((e: unknown) => {
+    if (controller.signal.aborted) return
+    finish({
+      phase: 'error',
+      error: e instanceof LoginFlowError ? e.reason : String((e as Error)?.message ?? e),
+    })
+  })
+  return true
+}
+
+// ── Rejected-key recovery ────────────────────────────────────────────
+
+/** keyId of a key dropped after a 401, so the next login still revokes it */
+let staleKeyId: string | undefined
+/** Bearer kept from the dropped auth: the one silent re-mint attempt rides on it */
+let staleAccessToken: string | undefined
+/** a key that came from the silent re-mint: if it is rejected too, go straight to login */
+let lastRemintedKey: string | undefined
+/** one automatic browser launch per rejected key; reset by a completed login */
+let autoLoginLaunched = false
+let loginOpener: ((url: string) => void) | null = null
+let recovery: Promise<GskRecoveryOutcome> | null = null
+/** bumped by an explicit sign-out: a recovery started before it must not sign back in */
+let signOutGeneration = 0
+
+export type GskRecoveryOutcome =
+  /** the stored session minted a new key (server gate off) — the next call just works */
+  | 'reminted'
+  /** the device-code login was opened in the browser */
+  | 'login_started'
+  /** a login is needed but none was launched (already in flight, already tried once, or no opener) */
+  | 'login_required'
+
+/**
+ * Browser opener for the automatic re-login after a rejected key (this module
+ * is Electron-free). Registered by the main process; without one, recovery
+ * only signs out locally and the existing login button takes over.
+ */
+export function setGenofficeLoginOpener(openUrl: ((url: string) => void) | null): void {
+  loginOpener = openUrl
+}
+
+/** Fires after every browser-approved login lands (manual or automatic),
+ *  once the new key is saved. Registered by the main process to surface the
+ *  success in the app (this module is Electron-free); the silent re-mint
+ *  path never fires it. */
+let loginSuccessListener: (() => void) | null = null
+
+export function setGenofficeLoginSuccessListener(listener: (() => void) | null): void {
+  loginSuccessListener = listener
+}
+
+/**
+ * Drops GenOffice's own key from memory and disk when it equals `key` (the
+ * server answered 401: expired or revoked), so hasGskAuth() turns false and
+ * the existing sign-in UI shows. Returns whether our key was dropped.
+ */
+export function invalidateGenofficeKey(key: string): boolean {
+  // re-read disk: another process may already have replaced the rejected key
+  // with a fresh one, which must survive
+  reloadGenofficeAuth()
+  const auth = loadGenofficeAuth()
+  if (!key || !auth || auth.apiKey !== key) return false
+  staleKeyId = auth.keyId
+  staleAccessToken = auth.accessToken
+  clearAuth()
+  return true
+}
+
+async function remintWithStoredSession(accessToken: string, generation: number): Promise<boolean> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS)
+  try {
+    const cookie = await establishSession(accessToken, controller.signal)
+    const minted = await mintKey(cookie, controller.signal)
+    // fresh_auth_required (gate on) and every other failure fall back to the interactive login
+    if (minted.kind !== 'ok') return false
+    // the user signed out while this was in flight: the key must not land
+    if (generation !== signOutGeneration) return false
+    // another process may have logged in meanwhile; never overwrite its key
+    reloadGenofficeAuth()
+    if (loadGenofficeAuth()) return true
+    saveAuth({
+      apiKey: minted.apiKey,
+      ...(minted.keyId ? { keyId: minted.keyId } : {}),
+      accessToken,
+    })
+    staleKeyId = undefined
+    lastRemintedKey = minted.apiKey
+    return true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Recovery after a gsk-key call answered 401: drop the key, try one silent
+ * re-mint with the stored session, and when that is refused (the server
+ * requires a fresh login) open the device-code login once. Concurrent
+ * failures share one recovery; a login cancelled or expired leaves the
+ * signed-out state for the existing "sign in" button rather than relaunching.
+ * `allowLogin: false` (background/status calls) stops before the browser.
+ */
+export function recoverFromRejectedGskKey(
+  key: string,
+  options: { allowLogin?: boolean } = {},
+): Promise<GskRecoveryOutcome> {
+  const allowLogin = options.allowLogin ?? true
+  const generation = signOutGeneration
+  if (recovery) {
+    // a passive caller must not upgrade a shared run into a browser launch, nor
+    // the reverse; a sign-out while waiting ends the streak instead of retrying
+    return recovery.then((outcome) =>
+      outcome !== 'login_required' || !allowLogin || generation !== signOutGeneration
+        ? outcome
+        : recoverFromRejectedGskKey('', options),
+    )
+  }
+  const run = (async (): Promise<GskRecoveryOutcome> => {
+    const wasReminted = !!key && key === lastRemintedKey
+    invalidateGenofficeKey(key)
+    // the Bearer gets one silent attempt: a refused re-mint will be refused again
+    const bearer = staleAccessToken
+    staleAccessToken = undefined
+    if (!wasReminted && bearer && (await remintWithStoredSession(bearer, generation))) {
+      return 'reminted'
+    }
+    if (
+      !allowLogin ||
+      generation !== signOutGeneration ||
+      genofficeLoginInFlight() ||
+      autoLoginLaunched ||
+      !loginOpener
+    ) {
+      return 'login_required'
+    }
+    autoLoginLaunched = true
+    const open = loginOpener
+    startGenofficeLogin((progress) => {
+      if (progress.phase === 'url' && progress.url) open(progress.url)
+    })
+    return 'login_started'
+  })().finally(() => {
+    if (recovery === run) recovery = null
+  })
+  recovery = run
+  return run
+}
+
+/** True while a login started via startGenofficeLogin is in flight. */
+export function genofficeLoginInFlight(): boolean {
+  return activeLogin !== null
+}
+
+/**
+ * Fire-and-forget login for entry points without progress UI. Reuses an
+ * in-flight flow (restarting would strand it on a dead device code); openUrl
+ * is the caller's browser opener (this module is Electron-free).
+ */
+export function ensureGenofficeLogin(openUrl: (url: string) => void): void {
+  if (genofficeLoginInFlight()) return
+  startGenofficeLogin((progress) => {
+    if (progress.url) openUrl(progress.url)
+  })
+}
+
+/**
+ * Signs out of GenOffice only: best-effort server-side revoke of the
+ * genoffice key, then local removal. The shared gsk CLI login
+ * (~/.genspark-tool-cli) is untouched — terminal gsk and Claw keep working.
+ */
+export async function genofficeLogout(): Promise<void> {
+  // invalidate any in-flight recovery first: its re-mint or login must not undo this sign-out
+  signOutGeneration++
+  const auth = loadGenofficeAuth()
+  if (auth?.accessToken && auth.keyId) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS)
+    try {
+      const cookie = await establishSession(auth.accessToken, controller.signal)
+      await revokeKey(cookie, auth.keyId, controller.signal)
+    } catch {
+      /* revoke is best-effort; the local key removal below is the contract */
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  // an explicit sign-out must not be undone by a later silent re-mint
+  staleKeyId = undefined
+  staleAccessToken = undefined
+  clearAuth()
+}
+
+/** Test hook: drop the auth cache, fetch-channel and recovery state. */
+export function resetGenofficeAuthCache(): void {
+  cachedAuth = undefined
+  staleKeyId = undefined
+  staleAccessToken = undefined
+  lastRemintedKey = undefined
+  autoLoginLaunched = false
+  recovery = null
+  activeLogin?.cancel()
+  activeLogin = null
+  proxyFetchCache = undefined
+  proxyFallbackPreferred = false
+}
+
+/** Test hook: whether the proxy fallback channel is currently preferred. */
+export function genofficeProxyFallbackPreferred(): boolean {
+  return proxyFallbackPreferred
+}

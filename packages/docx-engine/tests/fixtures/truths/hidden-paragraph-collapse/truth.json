@@ -1,0 +1,44 @@
+{
+  "id": "hidden-paragraph-collapse",
+  "title": "Hidden paragraphs and body-level range markers take no space and let the neighbours' spacing collapse",
+  "section": "word-truths.md#L282",
+  "probe_date": "2026-09-23",
+  "source": "probe build.py (A4, Arial 10.5): after=120 -> hidden -> before=120 pitches 18.24 like no hidden paragraph; after=120 -> bookmarkEnd -> before=120 = 18.0 (max-collapse); the same docx exported by Word 2026-10-22 (t3_render-hidden-paragraph.pdf) pitches 18.0 across both the hidden paragraph and the bookmarkEnd",
+  "cases": [
+    {
+      "kind": "blockProps",
+      "block": 1,
+      "expect": {
+        "type": "passthrough",
+        "invisibleMarker": true
+      },
+      "note": "a text-carrying paragraph whose mark and every run are w:vanish is hidden (zero height, counter advances)"
+    },
+    {
+      "kind": "paraGapPt",
+      "from": 0,
+      "to": 2,
+      "expect": 6,
+      "tol": 0.01,
+      "note": "18.24 - 12 line = 6 = max(6, 6), not 6 + 6"
+    },
+    {
+      "kind": "blockProps",
+      "block": 4,
+      "expect": {
+        "invisibleMarker": true
+      },
+      "note": "body-level w:bookmarkEnd keeps its position, zero height"
+    },
+    {
+      "kind": "paraGapPt",
+      "from": 3,
+      "to": 5,
+      "expect": 6,
+      "tol": 0.01,
+      "note": "margins collapse through the marker: 18.0 pitch"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

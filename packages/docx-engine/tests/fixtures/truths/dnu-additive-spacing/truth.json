@@ -1,0 +1,41 @@
+{
+  "id": "dnu-additive-spacing",
+  "title": "doNotUseHTMLParagraphAutoSpacing: adjacent space-after and space-before add, auto spacing is 0",
+  "section": "word-truths.md#L644",
+  "probe_date": "2026-10-22",
+  "class": "pure",
+  "source": "probe dnu_on.docx -> Word for Mac direct PDF, pymupdf baselines; Letter, Arial 12 exact-240 lines, compat 15; baseline distances M 33.12 / N 22.08 / H 22.08 = 12pt line + gap",
+  "cases": [
+    {
+      "kind": "flags",
+      "expect": {
+        "doNotUseHTMLParagraphAutoSpacing": true
+      }
+    },
+    {
+      "kind": "paraGapPt",
+      "from": 0,
+      "to": 1,
+      "expect": 21,
+      "tol": 0.001,
+      "note": "M: after 200 + before 220 = 10 + 11"
+    },
+    {
+      "kind": "paraGapPt",
+      "from": 4,
+      "to": 5,
+      "expect": 10,
+      "tol": 0.001,
+      "note": "N: after 200 + before 0"
+    },
+    {
+      "kind": "paraGapPt",
+      "from": 8,
+      "to": 9,
+      "expect": 10,
+      "tol": 0.001,
+      "note": "H: beforeAutospacing counts 0 under the flag"
+    }
+  ],
+  "docx": "probe.docx"
+}

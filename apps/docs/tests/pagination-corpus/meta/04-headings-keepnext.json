@@ -1,0 +1,6 @@
+{
+  "title": "Multilevel headings document",
+  "tags": ["headings", "keepNext", "multi-section", "docGrid"],
+  "description": "5 chapters of multilevel headings (with keepNext styles), tests heading page-break behavior",
+  "file": "04-headings-keepnext.docx"
+}

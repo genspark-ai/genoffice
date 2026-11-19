@@ -1,0 +1,21 @@
+{
+  "id": "render-parity-blank-even",
+  "title": "The same restart on an even number (matching physical page 2) inserts no blank",
+  "section": "word-truths.md#L570",
+  "probe_date": "2026-10-22",
+  "class": "render",
+  "source": "PGNUM_START=2 build.py -> t3_render-parity-blank-even.pdf, Word for Mac direct PDF 2026-10-22: 2 pages, TOC on p2",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 2
+    },
+    {
+      "kind": "blockPage",
+      "block": 2,
+      "expect": 2,
+      "note": "TOC on physical page 2"
+    }
+  ],
+  "docx": "probe.docx"
+}

@@ -1,0 +1,6 @@
+{
+  "title": "kitchen-sink",
+  "file": "fixture-kitchen-sink.docx",
+  "tags": ["fixture", "real-world"],
+  "description": "Real test file copied from repo fixtures"
+}

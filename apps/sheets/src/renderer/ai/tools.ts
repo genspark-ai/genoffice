@@ -1,0 +1,1532 @@
+import { z } from 'zod'
+import type { AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
+import {
+  copyTargetBounds,
+  describeOperationErrors,
+  workbookOperationSchema,
+  type WorkbookOperation,
+} from '@genoffice/xlsx-gateway/domain/workbook-dsl'
+import {
+  columnLabel,
+  parseRange,
+  rangeCellCount,
+  formatAddress,
+  type RangeBounds,
+} from '@genoffice/xlsx-gateway/domain/cell-address'
+import type {
+  ApplyOutcome,
+  CellFormatState,
+  CellScalar,
+  ChangePlan,
+} from '@genoffice/xlsx-gateway/domain/workbook.types'
+import { t } from '../i18n/locale'
+import { formatRangeAggregate, type RangeAggregate } from './aggregate'
+import { guideCatalogSummary, loadGuides } from './guides'
+import { modelCellValueAt, NO_REDACTIONS, type RedactionIndex } from './redact'
+import { redactGuardForOps } from './redact-guard'
+
+/**
+ * The workbook DSL as an AgentSkill tool set: read-only context/reader tools
+ * and one propose tool. Mirrors the docx skill's read-before-write discipline
+ * (get_document_context / read_blocks / replace_blocks), but the mutating
+ * tool never touches the workbook directly — it only computes a ChangePlan
+ * and hands it to the SAME plan/apply path the manual flow uses, which now
+ * auto-applies immediately (undo via ⌘Z / inline button covers everything;
+ * the preview card only remains as a manual fallback when apply fails).
+ */
+
+/** raw shape the model sends for one operation; validated against workbookOperationSchema */
+export type ProposedOperation = Record<string, unknown>
+
+export interface SheetRef {
+  readonly id: string
+  readonly name: string
+  /** Data extent (from the xlsx dimension or known cells); may drift slightly
+   * after structural changes within the session */
+  readonly rows?: number
+  readonly columns?: number
+  /** Worksheet XML above the gateway save-patch cap: readable, never editable. */
+  readonly readOnlyOversized?: boolean
+}
+
+export interface ChartRef {
+  readonly path: string
+  readonly title: string
+  readonly types: string
+  readonly sheetId: string
+}
+
+/**
+ * The user's selection captured when they sent the message. The grid selection
+ * is live: users keep clicking around while the AI works, so reading it at
+ * tool-call time would silently retarget "this column" mid-run.
+ */
+export interface FrozenSelection {
+  /** A1 notation on the sheet it was taken from, clamped to the data extent so
+   *  a whole-column click is not reported as a million rows */
+  readonly a1: string
+  readonly sheetId: string
+  /** header names when the selection covers whole columns */
+  readonly columns?: readonly string[]
+}
+
+export interface ActiveSheetInfo {
+  readonly mode: 'demo' | 'lazy' | 'none'
+  /** lazy mode only: the file is too large for a full load — cached values
+   * stream in per viewport, and the live formula engine never sees the whole
+   * data (formula writes over the file's sheets are gated) */
+  readonly streaming?: boolean | undefined
+  readonly sheetId: string
+  readonly sheetName: string
+  /** demo mode only: current revision, needed for the CAS-checked plan() call */
+  readonly revision?: number
+  /** non-empty cell addresses known to the caller without an extra read */
+  readonly knownAddresses: readonly string[]
+  /** lazy mode only: the viewport-backed range currently present in Univer */
+  readonly loadedRange?: string | undefined
+  /** every sheet in the workbook, active one included */
+  readonly sheets: readonly SheetRef[]
+  /** the selection to interpret "this column / these rows" against, in A1
+   * notation (sheet-qualified when it is not the active sheet) */
+  readonly selection?: string | undefined
+  /** the selection above is the send-time snapshot rather than a live read */
+  readonly selectionFrozen?: boolean | undefined
+  /** header names of the columns the selection covers, when it covers whole
+   * ones — what the user means by "this column" */
+  readonly selectionColumns?: readonly string[] | undefined
+  /** merged ranges on the active sheet (A1 notation) */
+  readonly merges?: readonly string[] | undefined
+  /** charts in the workbook (imported files only) */
+  readonly charts?: readonly ChartRef[] | undefined
+}
+
+export interface FindCellsOptions {
+  /** empty only when errorsOnly is set */
+  readonly query: string
+  readonly regex: boolean
+  readonly lookIn: 'values' | 'formulas' | 'both'
+  readonly errorsOnly: boolean
+  readonly sheetId?: string | undefined
+  readonly maxResults: number
+}
+
+export interface FindCellsMatch {
+  readonly sheetName: string
+  readonly address: string
+  readonly value: CellScalar
+  readonly formula?: string | undefined
+}
+
+export interface FindCellsOutcome {
+  readonly matches: readonly FindCellsMatch[]
+  /** the scan stopped at maxResults or the scan budget; more matches may exist */
+  readonly truncated: boolean
+  /** sheets whose background indexing hasn't finished — results there may be partial */
+  readonly incompleteSheets: readonly string[]
+  readonly error?: string
+}
+
+export interface SelectRangeOutcome {
+  readonly ok: boolean
+  readonly sheetName?: string
+  readonly error?: string
+}
+
+export interface TraceCellSample {
+  readonly address: string
+  readonly value: CellScalar
+  readonly formula?: string | undefined
+}
+
+export interface TraceRefInfo {
+  /** display label like "B2:B9" or "Data!A1" */
+  readonly label: string
+  readonly cellCount: number
+  readonly samples: readonly TraceCellSample[]
+  /** some sampled value is a formula error (#REF!, #DIV/0!, …) */
+  readonly hasError: boolean
+  /** qualifier didn't match any sheet — external workbook or unresolvable */
+  readonly external?: boolean
+}
+
+export interface TracePrecedentsOutcome {
+  readonly formula?: string | undefined
+  readonly value?: CellScalar
+  readonly refs: readonly TraceRefInfo[]
+  /** the formula had more references than the tracer reports */
+  readonly truncatedRefs?: boolean
+  /** formula also uses defined names / identifiers the tracer cannot resolve */
+  readonly usesNames?: boolean
+  readonly error?: string
+}
+
+export interface TraceDependentInfo {
+  readonly sheetName: string
+  readonly address: string
+  readonly formula: string
+  readonly value: CellScalar
+}
+
+export interface TraceDependentsOutcome {
+  readonly dependents: readonly TraceDependentInfo[]
+  readonly truncated: boolean
+  readonly incompleteSheets: readonly string[]
+  readonly error?: string
+}
+
+/** every file type create_document can produce */
+export type CreateDocumentFileType = 'xlsx' | 'csv' | 'docx' | 'pdf' | 'md' | 'html'
+
+/** create_document request handed to the App: xlsx/csv name a worksheet to
+ * export; docx/pdf/md/html carry AI-authored content (routed to the docs flow).
+ * Members keep singleton discriminants so the type narrows properly. */
+export type CreateDocumentToolRequest =
+  | { type: 'xlsx'; sheetId?: string | undefined; title?: string | undefined }
+  | { type: 'csv'; sheetId?: string | undefined; title?: string | undefined }
+  | { type: 'docx'; title: string; content: string }
+  | { type: 'pdf'; title: string; content: string }
+  | { type: 'md'; title: string; content: string }
+  | { type: 'html'; title: string; content: string }
+
+export type CreateDocumentToolOutcome =
+  | {
+      ok: true
+      /** final file name including extension (title may default to the sheet name) */
+      name: string
+      /** absolute path when the file was written directly (docx opens a tab that saves itself) */
+      path?: string
+      /** xlsx/csv: the exported worksheet's name */
+      sheetName?: string
+      /** xlsx/csv: the sheet holds formulas — the file keeps computed values only */
+      hadFormulas?: boolean
+    }
+  | { ok: false; error: string }
+
+export interface SheetsSkillDeps {
+  getActiveSheetInfo(): ActiveSheetInfo
+  /** Ensure a lazy workbook range is present in Univer before reading it. */
+  ensureRangeLoaded?(range: RangeBounds, sheetId?: string): boolean | Promise<boolean>
+  /** cell values/formulas; reads the active sheet unless sheetId targets another */
+  readCells(
+    addresses: readonly string[],
+    sheetId?: string,
+  ): Record<string, { value: CellScalar; formula?: string }>
+  /** per-cell explicit formatting; cells with no explicit format are omitted */
+  readFormats(addresses: readonly string[], sheetId?: string): Record<string, CellFormatState>
+  /** formatted report of a sheet's feature state (filters, CF, DV, names, visuals, …) */
+  readSheetFeatures(sheetId?: string): string
+  /** workbook-wide value/formula search (ai/workbook-search.ts) */
+  findCells(options: FindCellsOptions): FindCellsOutcome | Promise<FindCellsOutcome>
+  /** activate a sheet, select a range, and scroll it into view */
+  selectRange(
+    sheetId: string | undefined,
+    bounds: RangeBounds,
+  ): SelectRangeOutcome | Promise<SelectRangeOutcome>
+  /** formula audit: what a formula reads (ai/formula-audit.ts) */
+  tracePrecedents(
+    sheetId: string | undefined,
+    address: string,
+  ): TracePrecedentsOutcome | Promise<TracePrecedentsOutcome>
+  /** formula audit: which formulas read a cell (ai/formula-audit.ts) */
+  traceDependents(
+    sheetId: string | undefined,
+    address: string,
+  ): TraceDependentsOutcome | Promise<TraceDependentsOutcome>
+  /** Batched statistics over a large range (lazy mode streams it through the
+   * sidecar without loading the grid) — the supported path for distinct
+   * counts / frequency questions that must never become COUNTIF formulas. */
+  aggregateRange?(
+    sheetId: string | undefined,
+    range: RangeBounds,
+  ): Promise<{ ok: true; aggregate: RangeAggregate } | { ok: false; error: string }>
+  /** `applied` resolves with the real apply result (the lazy path applies async);
+   * the tool awaits it so the model never hears "applied" for a batch that failed */
+  proposeOperations(
+    operations: readonly WorkbookOperation[],
+    summary: string,
+  ): { ok: true; plan: ChangePlan; applied?: Promise<ApplyOutcome> } | { ok: false; error: string }
+  /**
+   * The cells the reader withheld from the model, resolved per call so the
+   * index never goes stale behind a ref. Optional, and defaulting to "nothing
+   * withheld", so a test or a caller without a session pays nothing.
+   */
+  redactions?(): RedactionIndex
+  /** AI create_document: write a new standalone file (xlsx/csv from a
+   * worksheet; docx/pdf/md from content) into the default save folder and
+   * open it in a new tab (ai/create-document.ts). */
+  createDocument?(request: CreateDocumentToolRequest): Promise<CreateDocumentToolOutcome>
+}
+
+const MAX_READ_ADDRESSES = 100
+/** Max cells per streamed block; the App's ensureRangeLoaded enforces it too. */
+export const MAX_READ_RANGE_CELLS = 2000
+const MAX_AGGREGATE_CELLS = 1_000_000
+const MAX_AGGREGATE_TOP_VALUES = 50
+const DEFAULT_AGGREGATE_TOP_VALUES = 10
+/** Read-back after write: max number of formula cells whose results are read back */
+const MAX_READBACK_FORMULAS = 10
+/** Read-back after write: wait time (ms) for Univer's async formula recalc */
+const FORMULA_RECALC_DELAY_MS = 300
+const MAX_READ_FORMAT_CELLS = 200
+const MAX_FIND_RESULTS = 200
+const DEFAULT_FIND_RESULTS = 50
+
+export const WORKBOOK_TOOLS: AgentToolDef[] = [
+  {
+    name: 'get_workbook_context',
+    description:
+      'Get a workbook overview: all sheets (id/name/data-extent rows-columns), active sheet, current selection, known non-empty cell addresses. ' +
+      'For data-size questions (how many rows / how much data), answer from the data extent here instead of reading block by block; use read_range or read_cells when concrete values are needed.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'read_range',
+    description:
+      'Read current values/formulas by rectangular range, returning a grid with row numbers and column letters. ' +
+      'The requested range is not the worksheet data extent: never infer total row or record count from its ending row; use get_workbook_context. ' +
+      'This is the preferred way to read data; max 2000 cells — read larger regions in multiple calls.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        range: {
+          type: 'string',
+          description: 'Range like "A1:D20"; a single cell like "B2" is also accepted',
+        },
+        sheetId: {
+          type: 'string',
+          description:
+            'Sheet to read from (id from get_workbook_context); reads the active sheet when omitted',
+        },
+      },
+      required: ['range'],
+    },
+  },
+  {
+    name: 'aggregate_range',
+    description:
+      'Compute statistics for a range without reading or modifying it cell by cell: non-empty count, distinct-value count, ' +
+      'numeric sum/average/min/max, and the most frequent values. Handles very large ranges (up to 1,000,000 cells) efficiently. ' +
+      'ALWAYS use this for questions like "how many distinct suppliers/customers", value distributions, or column totals on large sheets — ' +
+      'never loop read_range over big data and never write COUNTIF/SUMPRODUCT distinct-count formulas (they are rejected as too expensive). ' +
+      'Aggregate one column at a time for meaningful distinct counts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        range: {
+          type: 'string',
+          description: 'Range like "D2:D88588" (typically one column, excluding the header)',
+        },
+        sheetId: {
+          type: 'string',
+          description: 'Target sheet id; the active sheet when omitted',
+        },
+        topValues: {
+          type: 'number',
+          description: 'How many most-frequent values to return (0-50, default 10)',
+        },
+      },
+      required: ['range'],
+    },
+  },
+  {
+    name: 'load_guide',
+    description:
+      'Load operation guide documents into context (field definitions, conventions, common mistakes). Except for the most basic single-cell reads/writes, load the relevant guides before generating propose_operations; several can be loaded at once. ' +
+      `Available guides: ${guideCatalogSummary()}`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        guides: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Guide names to load, e.g. ["writing","formatting"]',
+        },
+      },
+      required: ['guides'],
+    },
+  },
+  {
+    name: 'read_formats',
+    description:
+      'Read explicit cell formats in a range (bold/italic/underline/colors/number format/alignment/borders); only formatted cells are returned. ' +
+      'Use when you need to "reuse the format from somewhere" or inspect current formatting; max 200 cells.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        range: { type: 'string', description: 'Range like "A1:D20"' },
+        sheetId: {
+          type: 'string',
+          description:
+            'Sheet to read from (id from get_workbook_context); reads the active sheet when omitted',
+        },
+      },
+      required: ['range'],
+    },
+  },
+  {
+    name: 'read_sheet_features',
+    description:
+      "Read a worksheet's feature state: AutoFilter (range and column criteria), conditional formatting rules, data validation rules, defined names, " +
+      'freeze panes, hidden/protected status, shapes and images, and page setup pending save this session. ' +
+      'Read the current state before modifying or clearing any of these existing settings — never change them blindly.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sheetId: {
+          type: 'string',
+          description: 'Target sheet id; reads the active sheet when omitted',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'read_cells',
+    description:
+      'Read current values/formulas of specific scattered cells (use read_range for contiguous regions). Always read the affected cells before writing — never assume their contents.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        addresses: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of cell addresses, e.g. ["A1","B2"], max 100',
+        },
+        sheetId: {
+          type: 'string',
+          description:
+            'Sheet to read from (id from get_workbook_context); reads the active sheet when omitted',
+        },
+      },
+      required: ['addresses'],
+    },
+  },
+  {
+    name: 'find_cells',
+    description:
+      'Search the whole workbook (or one sheet) for cells whose value or formula matches a query; returns Sheet!Address with the cell content. ' +
+      'Plain text matches as a case-insensitive substring; regex=true treats the query as a case-insensitive JavaScript regex; ' +
+      'errors_only=true finds formula error cells (#REF!, #DIV/0!, #VALUE!, #NAME?, #N/A, #NUM!, #NULL!) and query may then be omitted. ' +
+      'For formula cells the matched value is the last calculated value. Prefer this over paging read_range when locating data or auditing errors.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Text or regex to find; may be omitted only when errors_only=true',
+        },
+        regex: {
+          type: 'boolean',
+          description: 'Treat query as a JavaScript regex (default false)',
+        },
+        look_in: {
+          type: 'string',
+          enum: ['values', 'formulas', 'both'],
+          default: 'both',
+          description: 'What to match against (default both)',
+        },
+        sheetId: {
+          type: 'string',
+          description: 'Restrict the search to one sheet; searches every sheet when omitted',
+        },
+        errors_only: {
+          type: 'boolean',
+          description: 'Find cells whose calculated value is a formula error (default false)',
+        },
+        max_results: {
+          type: 'integer',
+          description: `Maximum matches returned, default ${DEFAULT_FIND_RESULTS}, max ${MAX_FIND_RESULTS}`,
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'select_range',
+    description:
+      "Select a range in the grid and scroll the user's view to it, activating its sheet. " +
+      'Pure view navigation — changes no data, but it does replace whatever the user had selected. ' +
+      'Use it only when they asked to be moved ("take me there", "select those rows"); to merely point at a ' +
+      'location, cite it as [C42](sheetnav://C42) in your reply and let them click.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        range: {
+          type: 'string',
+          description: 'Range like "A1:D20"; a single cell is also accepted',
+        },
+        sheetId: { type: 'string', description: 'Target sheet id; defaults to the active sheet' },
+      },
+      required: ['range'],
+    },
+  },
+  {
+    name: 'trace_precedents',
+    description:
+      'List the cells/ranges a formula reads (its precedents) with their current values, flagging any precedent that itself holds an error value — ' +
+      'the first step when diagnosing a broken formula ("why is C10 #DIV/0!?"). Depth 1; call again on a suspect precedent to walk further up the chain. ' +
+      'Defined names are not expanded — resolve them via read_sheet_features and trace their ranges directly.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        address: { type: 'string', description: 'Formula cell to audit, e.g. "C10"' },
+        sheetId: {
+          type: 'string',
+          description: 'Sheet the cell lives on; defaults to the active sheet',
+        },
+      },
+      required: ['address'],
+    },
+  },
+  {
+    name: 'trace_dependents',
+    description:
+      'Find every formula in the workbook (all sheets) that reads a given cell — its dependents. ' +
+      'Use before changing or deleting a cell to see what would break, or to follow how an error value propagates downstream. ' +
+      'Dependents that reach the cell only through a defined name are not detected.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        address: { type: 'string', description: 'Target cell, e.g. "B2"' },
+        sheetId: {
+          type: 'string',
+          description: 'Sheet the cell lives on; defaults to the active sheet',
+        },
+      },
+      required: ['address'],
+    },
+  },
+  {
+    name: 'propose_operations',
+    description:
+      'Submit a batch of change operations, applied to the workbook immediately (the user can roll back with the [Undo] button or ⌘Z). Basic operations: ' +
+      '{op:"set_cell",sheetId,address,value} | {op:"set_formula",sheetId,address,formula(starts with =)} | ' +
+      '{op:"clear_cell",sheetId,address} | {op:"rename_sheet",sheetId,name}. ' +
+      'Field definitions for the remaining operations live in the guides — load_guide before using them: ' +
+      'writing(set_range/fill_range/copy_range/move_range/convert_to_values/clear_range/find_replace) | formatting(format_range) | ' +
+      'layout(sort_range/merge_cells/unmerge_cells/set_row_height/set_col_width/set_rows_hidden/set_cols_hidden/set_freeze/set_page_setup) | ' +
+      'structure(insert_rows/delete_rows/insert_cols/delete_cols/add_sheet/delete_sheet/' +
+      'duplicate_sheet/set_sheet_hidden/move_sheet/protect_sheet) | ' +
+      'charts(add_chart/edit_chart/delete_visual/add_sparkline/add_shape/edit_shape/add_image) | ' +
+      'pivot(add_pivot/refresh_pivot) | ' +
+      'table(add_table/add_table_row/add_table_column/delete_table_row/delete_table_column/delete_table) | ' +
+      'data(set_hyperlink/set_filter/clear_filter/set_filter_criteria/add_conditional_format/' +
+      'clear_conditional_formats/set_data_validation/set_note/add_defined_name/delete_defined_name). ' +
+      'Limits: structural operations (row/column insert-delete, sheet add/delete/duplicate/move/hide) cannot share a batch with other classes; at most 2000 expanded cell changes — ' +
+      'except the range-level bulk ops fill_range / copy_range / move_range / convert_to_values / clear_range / find_replace / sort_range / format_range, which handle up to 200,000 cells in one op ' +
+      '(use fill_range to fill a formula or pattern down a whole column instead of huge set_range batches, ' +
+      'copy_range to duplicate a large block once, move_range to move/cut a block — also to another sheet — instead of re-typing it cell by cell, convert_to_values to freeze formulas into their computed values); ' +
+      'sheetId must be an id returned by get_workbook_context.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        operations: {
+          type: 'array',
+          items: { type: 'object' },
+          description: 'Array of operations in the workbook DSL discriminated-union format',
+        },
+        summary: { type: 'string', description: 'One-sentence summary of this batch of changes' },
+      },
+      required: ['operations', 'summary'],
+    },
+  },
+  {
+    name: 'create_document',
+    description:
+      'Create a NEW standalone file in the default save folder and open it in a new tab; the current workbook is not modified. ' +
+      "Types 'xlsx' (default) and 'csv' export ONE worksheet of THIS workbook: pass sheetId (defaults to the active sheet); the file gets the sheet's current displayed values (formula results; formulas and formatting are not carried over) and content must be omitted. " +
+      'To split a workbook into separate files, call once per sheet. To export data that is not in a sheet yet, write it into a new sheet first (add_sheet + set_range), then export that sheet. ' +
+      "Types 'docx' and 'pdf' take simple HTML in content (<h1>-<h6>, <p>, <ul>/<ol>/<li>, <table>, <pre>, <blockquote>; inline <strong>/<em>/<u>/<s>); type 'md' takes Markdown source; type 'html' takes a complete standalone HTML page (opens in the HTML editor) — use these when the user wants a report/summary as its own document. " +
+      'title becomes the file name; xlsx/csv default it to the worksheet name.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['xlsx', 'csv', 'docx', 'pdf', 'md', 'html'],
+          description: "target file type (default 'xlsx')",
+        },
+        sheetId: {
+          type: 'string',
+          description:
+            'xlsx/csv only: the worksheet to export (id from get_workbook_context); defaults to the active sheet',
+        },
+        title: {
+          type: 'string',
+          description:
+            'file name without extension (required for docx/pdf/md; xlsx/csv default to the sheet name)',
+        },
+        content: {
+          type: 'string',
+          description:
+            'docx/pdf: simple HTML; md: Markdown source. Forbidden for xlsx/csv — their data comes from the worksheet',
+        },
+      },
+      required: [],
+    },
+  },
+]
+
+export interface ToolExecution {
+  output: string
+  isError?: boolean
+  /** true when propose_operations auto-applied a batch of changes */
+  mutated: boolean
+  summary: string
+}
+
+const fail = (summary: string, output: string): ToolExecution => ({
+  output,
+  isError: true,
+  mutated: false,
+  summary,
+})
+
+/** Optional sheetId input shared by the read tools: validated against the
+ * workbook's sheet list so a bad id fails with a clear message instead of
+ * silently reading empty cells. */
+function parseReadSheetId(
+  input: Record<string, unknown>,
+  info: ActiveSheetInfo,
+  summary: string,
+): { sheetId: string | undefined } | { fail: ToolExecution } {
+  const raw = input.sheetId
+  if (raw === undefined || raw === null) return { sheetId: undefined }
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return { fail: fail(summary, 'sheetId must be a non-empty string when given') }
+  }
+  const sheetId = raw.trim()
+  if (!info.sheets.some((sheet) => sheet.id === sheetId)) {
+    return {
+      fail: fail(summary, `Unknown sheet: ${sheetId} (use an id from get_workbook_context)`),
+    }
+  }
+  return { sheetId }
+}
+
+/** Clamp a range to the sheet's data extent before a streaming ensure; null
+ * when the range lies entirely outside it (nothing to stream — cells there
+ * are empty by definition). Sheets without a known extent pass through. */
+function clampToExtent(bounds: RangeBounds, sheet: SheetRef | undefined): RangeBounds | null {
+  if (sheet?.rows === undefined || sheet.columns === undefined) return bounds
+  const endRow = Math.min(bounds.endRow, sheet.rows - 1)
+  const endColumn = Math.min(bounds.endColumn, sheet.columns - 1)
+  if (endRow < bounds.startRow || endColumn < bounds.startColumn) return null
+  return { startRow: bounds.startRow, startColumn: bounds.startColumn, endRow, endColumn }
+}
+
+const RANGE_NOT_LOADED =
+  'The requested cells could not be fully loaded; retry after workbook indexing completes.'
+
+/** mirror of the docs/pdf tool-echo guard: reject tool-protocol output pasted
+ * as document content (create_document docx/pdf) */
+function contentEchoError(content: string): string | null {
+  if (/<\/?tool_response>/i.test(content)) {
+    return 'content contains a literal <tool_response> tag — that is tool-protocol output, not document content; retry with the actual document HTML'
+  }
+  if (/"index"\s*:\s*\d+\s*,\s*"type"\s*:\s*"/.test(content)) {
+    return 'content contains a raw JSON dump, not an HTML fragment; retry with simple HTML (e.g. <p>…</p>)'
+  }
+  return null
+}
+
+/** Shared input validation for the two formula-audit tools. */
+/**
+ * A reader that hands out a cell's value as the model may see it.
+ *
+ * The trace tools print cell values, and a cell the reader withheld keeps its
+ * real value on the sheet — that is the point of the feature. So every value
+ * they print goes through here, and a workbook with no marks pays one property
+ * read per cell.
+ */
+function cellProjector(
+  deps: SheetsSkillDeps,
+  sheetId: string | undefined,
+): (address: string, value: CellScalar) => CellScalar {
+  const index = deps.redactions?.() ?? NO_REDACTIONS
+  const target = sheetId ?? deps.getActiveSheetInfo().sheetId
+  return (address, value) => modelCellValueAt(index, target, address, value)
+}
+
+function parseAuditAddress(
+  input: Record<string, unknown>,
+  summary: string,
+): { address: string; sheetId: string | undefined } | { fail: ToolExecution } {
+  const raw = input.address
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return { fail: fail(summary, 'address must be a non-empty string') }
+  }
+  const address = raw.trim().toUpperCase().replace(/\$/g, '')
+  if (!/^[A-Z]{1,3}[1-9][0-9]{0,6}$/.test(address)) {
+    return {
+      fail: fail(summary, `Cannot parse cell address: ${raw} (expected a single cell like "C10")`),
+    }
+  }
+  const sheetIdRaw = input.sheetId
+  return {
+    address,
+    sheetId: typeof sheetIdRaw === 'string' && sheetIdRaw.trim() ? sheetIdRaw.trim() : undefined,
+  }
+}
+
+export function buildWorkbookContext(deps: SheetsSkillDeps): string {
+  const info = deps.getActiveSheetInfo()
+  if (info.mode === 'none') return 'No workbook is currently open.'
+  const dims = (sheet: SheetRef): string => {
+    if (sheet.rows === undefined || sheet.columns === undefined) return ''
+    if (sheet.rows === 0 || sheet.columns === 0) return ', no data (empty sheet)'
+    return `, data extent about ${sheet.rows} rows × ${sheet.columns} columns`
+  }
+  const active = info.sheets.find((sheet) => sheet.id === info.sheetId)
+  const lines = [
+    `Active sheet: ${info.sheetName} (id=${info.sheetId}${active ? dims(active) : ''})`,
+    info.mode === 'demo'
+      ? `Mode: demo workbook, current revision=${info.revision}`
+      : info.streaming
+        ? 'Mode: imported file in LARGE-FILE STREAMING MODE — the file is too big for a full load, so the grid ' +
+          'materializes the viewed region on demand. Consequences: (1) formulas you write stay live — their ' +
+          'referenced file cells are loaded into the engine automatically — but only within a session budget of ' +
+          '~50,000 referenced cells; batches beyond it are rejected: compute with aggregate_range and write static ' +
+          'values instead; (2) to extract/split rows, use copy_range with filterColumn/filterValues (copies matching ' +
+          'rows as static values, reading the real file data) into a sheet created with add_sheet rows/columns sized ' +
+          'to the expected data (aggregate_range gives per-value counts) — never FILTER-formula spills; ' +
+          '(3) add_pivot, refresh_pivot, duplicate_sheet, and filter edits are unavailable on the ' +
+          "file's sheets; sort_range works, but ranges of 2000 cells or fewer must be read_range'd (loaded) first. " +
+          'Sheets added this session are fully live and exempt from all of this.'
+        : 'Mode: imported real xlsx file (some regions may still be streaming in)',
+  ]
+  if (active?.rows && active.columns) {
+    lines.push(
+      `Active sheet data area: A1:${columnLabel(active.columns - 1)}${active.rows}` +
+        ' (answer data-size questions directly from this — do not tally block by block with read_range)',
+    )
+  }
+  if (info.sheets.length > 1) {
+    lines.push(
+      `All sheets: ${info.sheets.map((sheet) => `${sheet.name} (id=${sheet.id}${dims(sheet)})`).join(', ')}`,
+    )
+  }
+  const oversized = info.sheets.filter((sheet) => sheet.readOnlyOversized)
+  if (oversized.length > 0) {
+    lines.push(
+      `READ-ONLY sheets: ${oversized.map((sheet) => sheet.name).join(', ')} — the worksheet XML is above ` +
+        'the save-patch limit, so edits there can never be saved and every mutating op on them is rejected. ' +
+        'Read them freely (read_range/aggregate_range/copy_range source) and write results to other sheets.',
+    )
+  }
+  if (info.selection) {
+    const named = info.selectionColumns ?? []
+    // The range alone leaves the model to re-derive which column the user meant
+    // from the header row; name it here so "this column" resolves by meaning.
+    const columns = named.length
+      ? ` (the whole ${named.map((name) => `"${name}"`).join(', ')} column${named.length > 1 ? 's' : ''})`
+      : ''
+    lines.push(
+      info.selectionFrozen
+        ? `User selection: ${info.selection}${columns} — captured when the user sent this message, so it is ` +
+            'what "this column / these rows / the selected part" refers to. It stays fixed for the ' +
+            'whole run even if the user clicks elsewhere while you work.'
+        : `Current selection: ${info.selection}${columns}`,
+    )
+  }
+  if (info.loadedRange) {
+    lines.push(`Currently loaded viewport: ${info.loadedRange} (not the worksheet data extent)`)
+  }
+  if (info.merges && info.merges.length > 0) {
+    lines.push(`Merged ranges on the active sheet: ${info.merges.slice(0, 50).join(', ')}`)
+  }
+  if (info.charts && info.charts.length > 0) {
+    lines.push(
+      'Charts in the workbook (use the path below with edit_chart to edit an existing chart; use add_chart to create one):',
+    )
+    for (const chart of info.charts) {
+      lines.push(
+        `- ${chart.path} | title: ${chart.title || '(none)'} | type: ${chart.types} | sheetId: ${chart.sheetId}`,
+      )
+    }
+  }
+  if (info.knownAddresses.length > 0) {
+    lines.push(
+      `Known non-empty cells (may be incomplete): ${info.knownAddresses.slice(0, 200).join(', ')}`,
+    )
+  } else {
+    lines.push(
+      'No known non-empty cell information yet; read on demand with read_range/read_cells.',
+    )
+  }
+  return lines.join('\n')
+}
+
+function describeFormatState(format: CellFormatState): string {
+  const parts: string[] = []
+  if (format.bold) parts.push('bold')
+  if (format.italic) parts.push('italic')
+  if (format.underline) parts.push('underline')
+  if (format.strikethrough) parts.push('strikethrough')
+  if (format.fontFamily) parts.push(`font ${format.fontFamily}`)
+  if (format.fontSize) parts.push(`size ${format.fontSize}`)
+  if (format.fontColor) parts.push(`font color ${format.fontColor}`)
+  if (format.fillColor) parts.push(`fill ${format.fillColor}`)
+  if (format.numberFormat) parts.push(`number format ${format.numberFormat}`)
+  if (format.horizontalAlign) parts.push(`align ${format.horizontalAlign}`)
+  if (format.verticalAlign) parts.push(`valign ${format.verticalAlign}`)
+  if (format.wrapText) parts.push('wrap')
+  if (format.border) {
+    parts.push(
+      `border ${format.border.type}${format.border.color ? ` ${format.border.color}` : ''}`,
+    )
+  }
+  return parts.join(', ') || '(none)'
+}
+
+// Cell text is emitted into tab/newline-delimited tool output (read_range grid,
+// read_cells lists, plan summaries), where raw control characters would tear the
+// line/column structure apart and scramble the model's view of the grid. Escape
+// them — and backslash itself, so the encoding stays unambiguous. Univer streams
+// in-cell paragraph breaks as \r (the file model uses \n; see edit-journal's
+// dataStream conversion), so CR/CRLF are normalized to \n first: the model sees
+// a single line-break representation, and echoing the same `\n` escape inside
+// JSON string values of write operations round-trips into real line breaks.
+function escapeCellText(text: string): string {
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/\t/g, '\\t')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n/g, '\\n')
+}
+
+function formatCellScalar(cell: { value: CellScalar; formula?: string | undefined }): string {
+  // Formula cells prefer the value (the AI reasons from computed values, with
+  // the formula as provenance); when the value isn't computed yet, give only the
+  // formula
+  if (cell.formula) {
+    return cell.value === null || cell.value === undefined
+      ? escapeCellText(cell.formula)
+      : `${escapeCellText(String(cell.value))} (${escapeCellText(cell.formula)})`
+  }
+  if (cell.value === null) return '(empty)'
+  return escapeCellText(String(cell.value))
+}
+
+function formatPlanSummary(plan: ChangePlan): string {
+  const parts: string[] = []
+  if (plan.structuralChanges.length > 0) {
+    parts.push(plan.structuralChanges.map((change) => change.label).join('; '))
+  }
+  if (plan.formatChanges.length > 0) {
+    parts.push(plan.formatChanges.map((change) => change.label).join('; '))
+  }
+  if (plan.cellChanges.length > 0) {
+    const shown = plan.cellChanges.slice(0, 20)
+    const rest = plan.cellChanges.length - shown.length
+    parts.push(
+      shown
+        .map((c) => `${c.address}: ${formatCellScalar(c.before)} → ${formatCellScalar(c.after)}`)
+        .join('; ') + (rest > 0 ? `; …${rest} more cells` : ''),
+    )
+  }
+  if (plan.sheetRenames.length > 0) {
+    parts.push(plan.sheetRenames.map((r) => `sheet ${r.before} → ${r.after}`).join('; '))
+  }
+  return parts.join(' | ') || '(no changes)'
+}
+
+export function executeWorkbookTool(
+  call: AgentToolCall,
+  deps: SheetsSkillDeps,
+): ToolExecution | Promise<ToolExecution> {
+  switch (call.name) {
+    case 'get_workbook_context':
+      return {
+        output: buildWorkbookContext(deps),
+        mutated: false,
+        summary: t('aiToolWorkbookContext'),
+      }
+
+    case 'read_range': {
+      const raw = call.input.range
+      if (typeof raw !== 'string' || !raw.trim())
+        return fail(t('aiToolReadRange'), 'range must be a non-empty string')
+      let bounds
+      try {
+        bounds = parseRange(raw.trim().toUpperCase())
+      } catch {
+        return fail(t('aiToolReadRange'), `Cannot parse range: ${raw}`)
+      }
+      if (rangeCellCount(bounds) > MAX_READ_RANGE_CELLS) {
+        return fail(
+          t('aiToolReadRange'),
+          `The range contains more than ${MAX_READ_RANGE_CELLS} cells; read it in multiple calls`,
+        )
+      }
+      const info = deps.getActiveSheetInfo()
+      const parsedSheet = parseReadSheetId(call.input, info, t('aiToolReadRange'))
+      if ('fail' in parsedSheet) return parsedSheet.fail
+      const sheetId = parsedSheet.sheetId
+      const target = info.sheets.find((sheet) => sheet.id === (sheetId ?? info.sheetId))
+      if (target?.rows !== undefined && target.columns !== undefined) {
+        if (target.rows === 0 || target.columns === 0) {
+          return fail(t('aiToolReadRange'), 'The worksheet has no data (empty extent).')
+        }
+        if (bounds.endRow >= target.rows || bounds.endColumn >= target.columns) {
+          return fail(
+            t('aiToolReadRange'),
+            `The requested range is outside the worksheet data extent A1:${columnLabel(target.columns - 1)}${target.rows}.`,
+          )
+        }
+      }
+      const executeRead = (): ToolExecution => {
+        const normalizedRange = `${formatAddress(bounds.startRow, bounds.startColumn)}:${formatAddress(bounds.endRow, bounds.endColumn)}`
+        const metadata =
+          target?.rows && target.columns
+            ? `Read metadata: requested range ${normalizedRange}; authoritative worksheet data extent A1:${columnLabel(target.columns - 1)}${target.rows} (${target.rows} worksheet rows including any header). Do not infer total rows or records from the requested range.`
+            : `Read metadata: requested range ${normalizedRange}; worksheet data extent is unknown. Do not infer total rows or records from the requested range.`
+        const addresses: string[] = []
+        for (let row = bounds.startRow; row <= bounds.endRow; row += 1) {
+          for (let column = bounds.startColumn; column <= bounds.endColumn; column += 1) {
+            addresses.push(formatAddress(row, column))
+          }
+        }
+        const cells = deps.readCells(addresses, sheetId)
+        const header = [
+          '',
+          ...Array.from({ length: bounds.endColumn - bounds.startColumn + 1 }, (_, offset) =>
+            columnLabel(bounds.startColumn + offset),
+          ),
+        ].join('\t')
+        const rows: string[] = [metadata, header]
+        for (let row = bounds.startRow; row <= bounds.endRow; row += 1) {
+          const columns: string[] = [String(row + 1)]
+          for (let column = bounds.startColumn; column <= bounds.endColumn; column += 1) {
+            const cell = cells[formatAddress(row, column)]
+            columns.push(
+              cell
+                ? cell.value === null
+                  ? escapeCellText(cell.formula ?? '')
+                  : formatCellScalar(cell)
+                : '',
+            )
+          }
+          rows.push(columns.join('\t'))
+        }
+        return {
+          output: rows.join('\n'),
+          mutated: false,
+          summary: t('aiToolReadRangeOf', { range: raw.trim().toUpperCase() }),
+        }
+      }
+      const loading = deps.ensureRangeLoaded?.(bounds, sheetId)
+      if (loading instanceof Promise) {
+        return loading.then((loaded) =>
+          loaded
+            ? executeRead()
+            : fail(
+                t('aiToolReadRange'),
+                'The requested range could not be fully loaded; retry after workbook indexing completes.',
+              ),
+        )
+      }
+      if (loading === false) {
+        return fail(
+          t('aiToolReadRange'),
+          'The requested range could not be fully loaded; retry after workbook indexing completes.',
+        )
+      }
+      return executeRead()
+    }
+
+    case 'aggregate_range': {
+      const raw = call.input.range
+      if (typeof raw !== 'string' || !raw.trim())
+        return fail(t('aiToolAggregate'), 'range must be a non-empty string')
+      const rangeLabel = raw.trim().toUpperCase()
+      let bounds
+      try {
+        bounds = parseRange(rangeLabel)
+      } catch {
+        return fail(t('aiToolAggregate'), `Cannot parse range: ${raw}`)
+      }
+      if (rangeCellCount(bounds) > MAX_AGGREGATE_CELLS) {
+        return fail(
+          t('aiToolAggregate'),
+          `The range contains more than ${MAX_AGGREGATE_CELLS.toLocaleString('en-US')} cells; aggregate one column (or a smaller block) at a time.`,
+        )
+      }
+      if (!deps.aggregateRange) {
+        return fail(t('aiToolAggregate'), 'aggregate_range is not available in this context.')
+      }
+      const parsedSheet = parseReadSheetId(
+        call.input,
+        deps.getActiveSheetInfo(),
+        t('aiToolAggregate'),
+      )
+      if ('fail' in parsedSheet) return parsedSheet.fail
+      const sheetId = parsedSheet.sheetId
+      const topRaw = call.input.topValues
+      const topValues =
+        typeof topRaw === 'number' && Number.isFinite(topRaw)
+          ? Math.min(Math.max(Math.floor(topRaw), 0), MAX_AGGREGATE_TOP_VALUES)
+          : DEFAULT_AGGREGATE_TOP_VALUES
+      return deps.aggregateRange(sheetId, bounds).then((outcome) =>
+        outcome.ok
+          ? {
+              output: formatRangeAggregate(rangeLabel, outcome.aggregate, topValues),
+              mutated: false,
+              summary: t('aiToolAggregateOf', { range: rangeLabel }),
+            }
+          : fail(t('aiToolAggregate'), outcome.error),
+      )
+    }
+
+    case 'load_guide': {
+      const raw = call.input.guides
+      if (!Array.isArray(raw) || raw.length === 0)
+        return fail(t('aiToolLoadGuide'), 'guides must be a non-empty array')
+      const outcome = loadGuides(raw.map(String))
+      if (!outcome.ok) return fail(t('aiToolLoadGuide'), outcome.error)
+      return {
+        output: outcome.content,
+        mutated: false,
+        summary: t('aiToolLoadGuideOf', { names: raw.join(', ') }),
+      }
+    }
+
+    case 'read_formats': {
+      const raw = call.input.range
+      if (typeof raw !== 'string' || !raw.trim())
+        return fail(t('aiToolReadFormats'), 'range must be a non-empty string')
+      let bounds
+      try {
+        bounds = parseRange(raw.trim().toUpperCase())
+      } catch {
+        return fail(t('aiToolReadFormats'), `Cannot parse range: ${raw}`)
+      }
+      if (rangeCellCount(bounds) > MAX_READ_FORMAT_CELLS) {
+        return fail(
+          t('aiToolReadFormats'),
+          `The range contains more than ${MAX_READ_FORMAT_CELLS} cells; read it in multiple calls`,
+        )
+      }
+      const info = deps.getActiveSheetInfo()
+      const parsedSheet = parseReadSheetId(call.input, info, t('aiToolReadFormats'))
+      if ('fail' in parsedSheet) return parsedSheet.fail
+      const sheetId = parsedSheet.sheetId
+      const executeRead = (): ToolExecution => {
+        const addresses: string[] = []
+        for (let row = bounds.startRow; row <= bounds.endRow; row += 1) {
+          for (let column = bounds.startColumn; column <= bounds.endColumn; column += 1) {
+            addresses.push(formatAddress(row, column))
+          }
+        }
+        const formats = deps.readFormats(addresses, sheetId)
+        const lines = Object.entries(formats).map(
+          ([address, format]) => `${address}: ${describeFormatState(format)}`,
+        )
+        return {
+          output: lines.length > 0 ? lines.join('\n') : 'No explicit formats in this range.',
+          mutated: false,
+          summary: t('aiToolReadFormatsOf', { range: raw.trim().toUpperCase() }),
+        }
+      }
+      const target = info.sheets.find((sheet) => sheet.id === (sheetId ?? info.sheetId))
+      const ensureBounds = clampToExtent(bounds, target)
+      const loading = ensureBounds ? deps.ensureRangeLoaded?.(ensureBounds, sheetId) : true
+      if (loading instanceof Promise) {
+        return loading.then((loaded) =>
+          loaded ? executeRead() : fail(t('aiToolReadFormats'), RANGE_NOT_LOADED),
+        )
+      }
+      if (loading === false) return fail(t('aiToolReadFormats'), RANGE_NOT_LOADED)
+      return executeRead()
+    }
+
+    case 'read_sheet_features': {
+      const info = deps.getActiveSheetInfo()
+      const parsedSheet = parseReadSheetId(call.input, info, t('aiToolSheetFeatures'))
+      if ('fail' in parsedSheet) return parsedSheet.fail
+      const sheetId = parsedSheet.sheetId
+      const executeRead = (): ToolExecution => ({
+        output: deps.readSheetFeatures(sheetId),
+        mutated: false,
+        summary: t('aiToolSheetFeatures'),
+      })
+      // Filter/CF/validation/freeze models install on a sheet's first
+      // stream-in; reading a never-loaded sheet would report false "none"s.
+      const loading = deps.ensureRangeLoaded?.(
+        { startRow: 0, endRow: 0, startColumn: 0, endColumn: 0 },
+        sheetId,
+      )
+      if (loading instanceof Promise) {
+        return loading.then((loaded) =>
+          loaded ? executeRead() : fail(t('aiToolSheetFeatures'), RANGE_NOT_LOADED),
+        )
+      }
+      if (loading === false) return fail(t('aiToolSheetFeatures'), RANGE_NOT_LOADED)
+      return executeRead()
+    }
+
+    case 'read_cells': {
+      const raw = call.input.addresses
+      if (!Array.isArray(raw) || raw.length === 0)
+        return fail(t('aiToolReadCells'), 'addresses must be a non-empty array')
+      const info = deps.getActiveSheetInfo()
+      const parsedSheet = parseReadSheetId(call.input, info, t('aiToolReadCells'))
+      if ('fail' in parsedSheet) return parsedSheet.fail
+      const sheetId = parsedSheet.sheetId
+      const addresses = raw.slice(0, MAX_READ_ADDRESSES).map(String)
+      const executeRead = (): ToolExecution => {
+        const cells = deps.readCells(addresses, sheetId)
+        const lines = addresses.map((addr) => {
+          const cell = cells[addr]
+          return `${addr}: ${cell ? formatCellScalar(cell) : '(unknown)'}`
+        })
+        return {
+          output: lines.join('\n'),
+          mutated: false,
+          summary: t('aiToolReadCellsCount', { count: addresses.length }),
+        }
+      }
+      const ensure = deps.ensureRangeLoaded
+      if (!ensure) return executeRead()
+      // Unstreamed cells read as empty, so the covering box of the addresses
+      // is loaded first. Per-address fallback loads are NOT an option: the
+      // loaded-range bookkeeping is a single rectangle per sheet, so each
+      // load would evict the previous one and just-read cells would drop out
+      // of the editable region again.
+      let box: RangeBounds | null = null
+      for (const addr of addresses) {
+        let cell: RangeBounds
+        try {
+          cell = parseRange(addr.trim().toUpperCase())
+        } catch {
+          continue
+        }
+        box =
+          box === null
+            ? cell
+            : {
+                startRow: Math.min(box.startRow, cell.startRow),
+                endRow: Math.max(box.endRow, cell.endRow),
+                startColumn: Math.min(box.startColumn, cell.startColumn),
+                endColumn: Math.max(box.endColumn, cell.endColumn),
+              }
+      }
+      const target = info.sheets.find((sheet) => sheet.id === (sheetId ?? info.sheetId))
+      const boundsBox = box === null ? null : clampToExtent(box, target)
+      if (boundsBox === null) return executeRead()
+      // Whether the box needs streaming at all (demo workbook, fully preloaded
+      // import, session-added sheet) is the callback's call — it also rejects
+      // boxes too large to stream as one block.
+      return (async (): Promise<ToolExecution> => {
+        if (!(await ensure(boundsBox, sheetId))) {
+          return fail(
+            t('aiToolReadCells'),
+            'The requested cells could not be fully loaded — retry after workbook indexing completes; ' +
+              `on streamed workbooks a scatter spanning more than ${MAX_READ_RANGE_CELLS} cells must be split into closer-together read_cells calls.`,
+          )
+        }
+        return executeRead()
+      })()
+    }
+
+    case 'find_cells': {
+      const errorsOnly = call.input.errors_only === true
+      const query = typeof call.input.query === 'string' ? call.input.query.trim() : ''
+      if (!errorsOnly && !query) {
+        return fail(
+          t('aiToolFindCells'),
+          'query must be a non-empty string (or set errors_only=true)',
+        )
+      }
+      const lookInRaw = call.input.look_in
+      const maxRaw = Number(call.input.max_results)
+      const sheetIdRaw = call.input.sheetId
+      const options: FindCellsOptions = {
+        query,
+        regex: call.input.regex === true,
+        lookIn: lookInRaw === 'values' || lookInRaw === 'formulas' ? lookInRaw : 'both',
+        errorsOnly,
+        sheetId:
+          typeof sheetIdRaw === 'string' && sheetIdRaw.trim() ? sheetIdRaw.trim() : undefined,
+        maxResults:
+          Number.isFinite(maxRaw) && maxRaw >= 1
+            ? Math.min(Math.floor(maxRaw), MAX_FIND_RESULTS)
+            : DEFAULT_FIND_RESULTS,
+      }
+      const finish = (result: FindCellsOutcome): ToolExecution => {
+        if (result.error) return fail(t('aiToolFindCells'), result.error)
+        const lines = result.matches.map(
+          (match) => `${match.sheetName}!${match.address}: ${formatCellScalar(match)}`,
+        )
+        const header =
+          result.matches.length === 0
+            ? result.truncated
+              ? 'No matching cells found in the scanned region, but the search stopped at the scan budget before covering the whole workbook — do NOT conclude there are no matches; narrow the query or scope with sheetId and retry.'
+              : 'No matching cells found.'
+            : `${result.matches.length} matching cell(s)` +
+              (result.truncated
+                ? ' (search stopped at the cap — more may exist; narrow the query or scope with sheetId):'
+                : ':')
+        if (result.incompleteSheets.length > 0) {
+          lines.push(
+            `Note: background indexing has not finished on ${result.incompleteSheets.join(', ')} — matches there may be missing; retry later if something expected is absent.`,
+          )
+        }
+        return {
+          output: [header, ...lines].join('\n'),
+          mutated: false,
+          summary: errorsOnly
+            ? t('aiToolFindErrors', { count: result.matches.length })
+            : t('aiToolFindCellsOf', { query, count: result.matches.length }),
+        }
+      }
+      const outcome = deps.findCells(options)
+      return outcome instanceof Promise ? outcome.then(finish) : finish(outcome)
+    }
+
+    case 'select_range': {
+      const raw = call.input.range
+      if (typeof raw !== 'string' || !raw.trim())
+        return fail(t('aiToolSelectRange'), 'range must be a non-empty string')
+      let bounds: RangeBounds
+      try {
+        bounds = parseRange(raw.trim().toUpperCase().replace(/\$/g, ''))
+      } catch {
+        return fail(t('aiToolSelectRange'), `Cannot parse range: ${raw}`)
+      }
+      const sheetIdRaw = call.input.sheetId
+      const sheetId =
+        typeof sheetIdRaw === 'string' && sheetIdRaw.trim() ? sheetIdRaw.trim() : undefined
+      const normalized =
+        bounds.startRow === bounds.endRow && bounds.startColumn === bounds.endColumn
+          ? formatAddress(bounds.startRow, bounds.startColumn)
+          : `${formatAddress(bounds.startRow, bounds.startColumn)}:${formatAddress(bounds.endRow, bounds.endColumn)}`
+      const finish = (result: SelectRangeOutcome): ToolExecution => {
+        if (!result.ok) return fail(t('aiToolSelectRange'), result.error ?? 'Selection failed')
+        const label = `${result.sheetName ?? ''}!${normalized}`
+        return {
+          output: `Selected ${label} and scrolled it into view.`,
+          mutated: false,
+          summary: t('aiToolSelectRangeOf', { range: label }),
+        }
+      }
+      const outcome = deps.selectRange(sheetId, bounds)
+      return outcome instanceof Promise ? outcome.then(finish) : finish(outcome)
+    }
+
+    case 'trace_precedents': {
+      const parsed = parseAuditAddress(call.input, t('aiToolTracePrecedents'))
+      if ('fail' in parsed) return parsed.fail
+      const project = cellProjector(deps, parsed.sheetId)
+      const finish = (result: TracePrecedentsOutcome): ToolExecution => {
+        if (result.error) return fail(t('aiToolTracePrecedents'), result.error)
+        const summary = t('aiToolTracePrecedentsOf', { address: parsed.address })
+        if (!result.formula) {
+          return {
+            output: `${parsed.address} is not a formula cell; value: ${formatCellScalar({ value: project(parsed.address, result.value ?? null) })}. Nothing to trace upstream — use trace_dependents to see what reads it.`,
+            mutated: false,
+            summary,
+          }
+        }
+        // A formula's own value is its precedents' values added up, so a trace
+        // that reaches a withheld cell has to withhold the result too — showing
+        // `C10 = 42` when `B2` is the withheld number gives the number away
+        // just as plainly as printing `B2`.
+        const refValues = result.refs.flatMap((ref) => ref.samples)
+        const aPrecedentIsWithheld = refValues.some((s) => project(s.address, s.value) !== s.value)
+        const lines = [
+          `${parsed.address} = ${formatCellScalar({
+            value: aPrecedentIsWithheld
+              ? `(${parsed.address} reads a cell withheld from the model; value not shown)`
+              : project(parsed.address, result.value ?? null),
+            formula: result.formula,
+          })}`,
+          `Reads ${result.refs.length}${result.truncatedRefs ? '+' : ''} reference(s):`,
+        ]
+        for (const ref of result.refs) {
+          if (ref.external) {
+            lines.push(
+              `- ${ref.label}: external/unresolved reference (another workbook or unknown sheet)`,
+            )
+            continue
+          }
+          const shown = ref.samples
+            .map(
+              (sample) =>
+                `${sample.address}=${formatCellScalar({ ...sample, value: project(sample.address, sample.value) })}`,
+            )
+            .join('; ')
+          const rest = ref.cellCount - ref.samples.length
+          lines.push(
+            `- ${ref.label} (${ref.cellCount} cell(s))${ref.hasError ? ' ⚠️ contains error values' : ''}: ${shown}${rest > 0 ? `; …${rest} more` : ''}`,
+          )
+        }
+        if (result.truncatedRefs) {
+          lines.push('Note: the formula has more references than shown here.')
+        }
+        if (result.usesNames) {
+          lines.push(
+            'Note: the formula also uses defined names — list them with read_sheet_features and trace their ranges directly.',
+          )
+        }
+        return { output: lines.join('\n'), mutated: false, summary }
+      }
+      const outcome = deps.tracePrecedents(parsed.sheetId, parsed.address)
+      return outcome instanceof Promise ? outcome.then(finish) : finish(outcome)
+    }
+
+    case 'trace_dependents': {
+      const parsed = parseAuditAddress(call.input, t('aiToolTraceDependents'))
+      if ('fail' in parsed) return parsed.fail
+      const project = cellProjector(deps, parsed.sheetId)
+      // the cell being traced is withheld, so everything downstream of it is
+      // too: `=B2` beside a withheld B2 shows B2's value
+      const tracedIsWithheld = project(parsed.address, null) !== null
+      const finish = (result: TraceDependentsOutcome): ToolExecution => {
+        if (result.error) return fail(t('aiToolTraceDependents'), result.error)
+        const summary = t('aiToolTraceDependentsOf', {
+          address: parsed.address,
+          count: result.dependents.length,
+        })
+        const lines =
+          result.dependents.length === 0
+            ? [
+                `No formulas read ${parsed.address}. (Dependents that reach it only through a defined name are not detected.)`,
+              ]
+            : [
+                `${result.dependents.length}${result.truncated ? '+' : ''} formula cell(s) read ${parsed.address}:`,
+                ...result.dependents.map((dep) => {
+                  const sheetId = deps
+                    .getActiveSheetInfo()
+                    .sheets.find((sh) => sh.name === dep.sheetName)?.id
+                  const withheld =
+                    tracedIsWithheld ||
+                    modelCellValueAt(
+                      deps.redactions?.() ?? NO_REDACTIONS,
+                      sheetId,
+                      dep.address,
+                      dep.value,
+                    ) !== dep.value
+                  return `- ${dep.sheetName}!${dep.address} = ${formatCellScalar({
+                    value: withheld
+                      ? '(reads a cell withheld from the model; value not shown)'
+                      : dep.value,
+                    formula: dep.formula,
+                  })}`
+                }),
+              ]
+        if (result.truncated) {
+          lines.push('Note: stopped at the result cap — more dependents exist.')
+        }
+        if (result.incompleteSheets.length > 0) {
+          lines.push(
+            `Note: background indexing has not finished on ${result.incompleteSheets.join(', ')} — dependents there may be missing.`,
+          )
+        }
+        return { output: lines.join('\n'), mutated: false, summary }
+      }
+      const outcome = deps.traceDependents(parsed.sheetId, parsed.address)
+      return outcome instanceof Promise ? outcome.then(finish) : finish(outcome)
+    }
+
+    case 'propose_operations': {
+      const rawOps = call.input.operations
+      const summaryInput = call.input.summary
+      if (!Array.isArray(rawOps) || rawOps.length === 0) {
+        return fail(t('aiToolPropose'), 'operations must be a non-empty array')
+      }
+      if (typeof summaryInput !== 'string' || !summaryInput.trim()) {
+        return fail(t('aiToolPropose'), 'summary must not be empty')
+      }
+      const parsedOps = z.array(workbookOperationSchema).safeParse(rawOps)
+      if (!parsedOps.success) {
+        return fail(t('aiToolPropose'), describeOperationErrors(rawOps, parsedOps.error))
+      }
+      const operations: WorkbookOperation[] = parsedOps.data
+      // A cell the reader withheld still holds real data the model never saw,
+      // so a write landing on one destroys something the user chose to keep —
+      // silently, with the file still opening afterwards. Checked here, before
+      // the batch is planned or applied, so a refusal changes nothing.
+      const refusal = redactGuardForOps(
+        operations,
+        deps.redactions?.() ?? NO_REDACTIONS,
+        (sheetId) => deps.getActiveSheetInfo().sheets.find((sheet) => sheet.id === sheetId)?.name,
+        (sheetName) =>
+          deps.getActiveSheetInfo().sheets.find((sheet) => sheet.name === sheetName)?.id,
+      )
+      if (refusal) {
+        return fail(
+          t('aiToolPropose'),
+          `Rejected — none of the ${operations.length} operation(s) were applied (a batch is all-or-nothing): ${refusal.reason}`,
+        )
+      }
+      const outcome = deps.proposeOperations(operations, summaryInput.trim())
+      if (!outcome.ok) {
+        return fail(
+          t('aiToolPropose'),
+          `Rejected — none of the ${operations.length} operation(s) were applied (a batch is all-or-nothing): ${outcome.error}`,
+        )
+      }
+      const summary = summaryInput.trim()
+      const finish = (
+        appliedNotices: readonly string[] = [],
+      ): ToolExecution | Promise<ToolExecution> => {
+        const notes = [...outcome.plan.warnings, ...appliedNotices]
+        const warnings = notes.length > 0 ? `\nNote: ${notes.join('; ')}` : ''
+        const opCount =
+          outcome.plan.cellChanges.length +
+          outcome.plan.formatChanges.length +
+          outcome.plan.sheetRenames.length +
+          outcome.plan.structuralChanges.length
+        const base = `Auto-applied ${opCount} change(s) (undo via the side panel [Undo] button or ⌘Z): ${formatPlanSummary(outcome.plan)}${warnings}`
+        // Read-back after write (write → verify): formula cells fetch their
+        // computed values after the async recalc, so the AI sees real results and
+        // errors like #REF!/#DIV/0! instead of just what it wrote.
+        const formulaCells: { sheetId: string; address: string }[] = outcome.plan.cellChanges
+          .filter((c) => c.after.formula)
+          .map((c) => ({ sheetId: c.sheetId, address: c.address }))
+        // fill_range / copy_range / move_range apply as range-level bulk writes (no
+        // per-cell plan entries), so read back each target's corners to
+        // confirm the write actually landed and its shifted formulas compute.
+        for (const op of operations) {
+          if (op.op !== 'fill_range' && op.op !== 'copy_range' && op.op !== 'move_range') continue
+          const bounds = op.op === 'fill_range' ? parseRange(op.target) : copyTargetBounds(op)
+          const first = formatAddress(bounds.startRow, bounds.startColumn)
+          formulaCells.push({ sheetId: op.sheetId, address: first })
+          // A filtered copy's real extent is smaller than the worst-case
+          // bounds (and it writes no formulas) — read back only the anchor.
+          if (op.op === 'copy_range' && op.filterColumn !== undefined) continue
+          const last = formatAddress(bounds.endRow, bounds.endColumn)
+          if (last !== first) formulaCells.push({ sheetId: op.sheetId, address: last })
+        }
+        if (formulaCells.length === 0) {
+          return { output: base, mutated: true, summary }
+        }
+        return (async (): Promise<ToolExecution> => {
+          await new Promise((resolve) => setTimeout(resolve, FORMULA_RECALC_DELAY_MS))
+          const shown = formulaCells.slice(0, MAX_READBACK_FORMULAS)
+          // Cells are read per target sheet (operations may span sheets);
+          // addresses are prefixed with the sheet name only when they do.
+          const bySheet = new Map<string, string[]>()
+          for (const cell of shown) {
+            bySheet.set(cell.sheetId, [...(bySheet.get(cell.sheetId) ?? []), cell.address])
+          }
+          const sheetNames = new Map(
+            deps.getActiveSheetInfo().sheets.map((sheet) => [sheet.id, sheet.name]),
+          )
+          const lines: string[] = []
+          const redactions = deps.redactions?.() ?? NO_REDACTIONS
+          for (const [cellSheetId, addresses] of bySheet) {
+            const cells = deps.readCells(addresses, cellSheetId)
+            const prefix = bySheet.size > 1 ? `${sheetNames.get(cellSheetId) ?? cellSheetId}!` : ''
+            for (const addr of addresses) {
+              const raw = cells[addr]?.value
+              const v =
+                raw === null || raw === undefined
+                  ? raw
+                  : modelCellValueAt(redactions, cellSheetId, addr, raw)
+              lines.push(
+                `${prefix}${addr} = ${v === null || v === undefined ? '(still computing; verify with read_cells)' : String(v)}`,
+              )
+            }
+          }
+          const rest = formulaCells.length - shown.length
+          const hasError = lines.some((l) =>
+            /#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A|NUM!|NULL!)/.test(l),
+          )
+          return {
+            output:
+              `${base}\nFormula results: ${lines.join('; ')}${rest > 0 ? `; …${rest} more formula cells` : ''}` +
+              (hasError
+                ? '\n⚠️ Formula error values present — check references/divisors and fix them.'
+                : ''),
+            mutated: true,
+            summary,
+          }
+        })()
+      }
+      if (!outcome.applied) return finish()
+      return outcome.applied.then((applied) => {
+        if (applied.ok) return finish(applied.notices)
+        const reason = applied.reason ?? 'unknown reason'
+        return fail(
+          t('aiToolPropose'),
+          applied.partiallyApplied
+            ? `Apply failed MID-BATCH — operations before the failing one were already committed: ${reason}. ` +
+                'Read the affected ranges to see the current state before continuing; ' +
+                (applied.undoDropped
+                  ? 'the committed part is too large for the undo history — ⌘Z will NOT revert it.'
+                  : 'the whole partial batch is one undo step (⌘Z / [Undo]).')
+            : `Apply failed — the workbook is UNCHANGED: ${reason}. ` +
+                'Do not tell the user the changes were made; adjust the operations and retry, or explain the failure.',
+        )
+      })
+    }
+
+    case 'create_document': {
+      const summary = t('aiToolCreateDocument')
+      const create = deps.createDocument
+      if (!create) return fail(summary, 'create_document is not available in this context.')
+      const typeRaw = call.input.type === undefined ? 'xlsx' : String(call.input.type)
+      if (
+        typeRaw !== 'xlsx' &&
+        typeRaw !== 'csv' &&
+        typeRaw !== 'docx' &&
+        typeRaw !== 'pdf' &&
+        typeRaw !== 'md' &&
+        typeRaw !== 'html'
+      ) {
+        return fail(summary, 'type must be one of xlsx/csv/docx/pdf/md/html')
+      }
+      const title = typeof call.input.title === 'string' ? call.input.title.trim() : ''
+      if (typeRaw === 'xlsx' || typeRaw === 'csv') {
+        if (typeof call.input.content === 'string' && call.input.content.trim() !== '') {
+          return fail(
+            summary,
+            'content is forbidden for xlsx/csv — they export a worksheet. To create a file from new data, ' +
+              'write it into a sheet first (add_sheet + set_range via propose_operations), then export that sheet.',
+          )
+        }
+        const parsedSheet = parseReadSheetId(call.input, deps.getActiveSheetInfo(), summary)
+        if ('fail' in parsedSheet) return parsedSheet.fail
+        return create({
+          type: typeRaw,
+          sheetId: parsedSheet.sheetId,
+          ...(title ? { title } : {}),
+        }).then((outcome) => {
+          if (!outcome.ok) return fail(summary, outcome.error)
+          const note = outcome.hadFormulas
+            ? ' Note: the sheet contains formulas — the new file holds their current computed values only (no formulas or formatting).'
+            : ''
+          return {
+            output:
+              `Created ${outcome.name}${outcome.path ? ` at ${outcome.path}` : ''} from sheet ` +
+              `"${outcome.sheetName ?? ''}" and opened it in a new tab. The current workbook is unchanged.${note}`,
+            mutated: false,
+            summary: t('aiToolCreatedDocument', { name: outcome.name }),
+          }
+        })
+      }
+      if (!title) return fail(summary, 'title must not be empty')
+      const content = String(call.input.content ?? '')
+      if (!content.trim()) return fail(summary, 'content must not be empty')
+      if (typeRaw !== 'md') {
+        const echo = contentEchoError(content)
+        if (echo) return fail(summary, echo)
+      }
+      return create({ type: typeRaw, title, content }).then((outcome) => {
+        if (!outcome.ok) return fail(summary, outcome.error)
+        return {
+          output: outcome.path
+            ? `Created the new document at ${outcome.path} and opened it in a new tab.`
+            : `Created the new document "${outcome.name}" in a new tab; it saves itself into the default folder.`,
+          mutated: false,
+          summary: t('aiToolCreatedDocument', { name: outcome.name }),
+        }
+      })
+    }
+
+    default:
+      return fail(call.name, `Unknown tool: ${call.name}`)
+  }
+}

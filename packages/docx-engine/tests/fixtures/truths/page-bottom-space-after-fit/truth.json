@@ -1,0 +1,30 @@
+{
+  "id": "page-bottom-space-after-fit",
+  "title": "Page-bottom fit: the previous paragraph's space-after must fit, the last line needs only its single-spacing extent",
+  "section": "word-truths.md#L340",
+  "probe_date": "2026-09-23",
+  "source": "probes build.py -> afterfit.pdf (re-measured 2026-10-22: line 45 at 701.52, MARK S1 opens page 2 at 83.04) and build2.py -> afterfit2.docx T1 (1.5-line paragraph stays with 22pt left); Letter, TNR 12 single 13.8",
+  "cases": [
+    {
+      "kind": "pageStartBlocks",
+      "expect": [0, 2, 3, 6],
+      "note": "S1: 11pt spacer + 45 lines + 6 after leave 16pt -> MARK S1 pushed; S11 (after 0, 16pt left) stays; T1: 5pt spacer leaves 22pt, the 1.5-line paragraph stays (13.8 glyph extent fits, its 6.9 extra leading may overflow)"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 13.8,
+      "tol": 0.05,
+      "note": "TNR 12 single"
+    },
+    {
+      "kind": "linePt",
+      "block": 8,
+      "expect": 20.7,
+      "tol": 0.05,
+      "note": "line 360 pitch"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}
