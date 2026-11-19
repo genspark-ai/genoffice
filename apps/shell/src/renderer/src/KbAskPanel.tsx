@@ -8,6 +8,7 @@ import {
   createDocumentSkill,
   createIpcTransport,
   createKnowledgeBaseSkill,
+  formatKbSize,
   RUN_GENOFFICE_TOOL,
   withAttachedSkills,
   type AgentImage,
@@ -36,6 +37,7 @@ import type { ChatMessage, ChatMeta, ProjectApi } from '@genoffice/project-store
 import { useI18n } from './locale'
 import type { AttachmentAddResult } from '../../shared/home-api'
 import { AskAttachments } from './AskAttachments'
+import { FileBadge } from './file-badge'
 import { artifactFromCall, retryInstruction, settleArtifact, type Artifact } from './ask-artifacts'
 import { appendToolNote, toolNoteDetail, toolNoteKind, type ToolNote } from './ask-tool-notes'
 import sendEnterOn from './assets/send-enter-on.png'
@@ -198,6 +200,10 @@ export function KbAskPanel({
   const [dragOver, setDragOver] = useState(false)
   const [busy, setBusy] = useState(false)
   const [corpusCount, setCorpusCount] = useState<number | null>(null)
+  /** the corpus files themselves: the ref holds the same snapshot for the skill */
+  const [corpusFiles, setCorpusFiles] = useState<KbFileInfo[]>([])
+  /** whether the file list under the header is open */
+  const [corpusOpen, setCorpusOpen] = useState(false)
   const [gskEmail, setGskEmail] = useState<string | null>(null)
   const [provider, setProvider] = useState<string | null>(null)
   const corpusRef = useRef<KbFileInfo[]>([])
@@ -364,6 +370,18 @@ export function KbAskPanel({
     [onOpenModelSettings],
   )
 
+  /**
+   * One corpus snapshot in both places the panel needs it: the ref the
+   * knowledge-base skill reads synchronously, and the state the file list
+   * renders. The count comes from the same snapshot, so the header and the
+   * list can never disagree about what is in the corpus.
+   */
+  const applyCorpus = (files: KbFileInfo[]): void => {
+    corpusRef.current = files
+    setCorpusFiles(files)
+    setCorpusCount(files.length)
+  }
+
   useEffect(() => {
     // one corpus snapshot per mount; sends refresh it again (see ask()).
     // A bridge without the kb channel (defensive: the shell always exposes
@@ -374,11 +392,8 @@ export function KbAskPanel({
     }
     void window.aiOffice
       .kbList()
-      .then((files) => {
-        corpusRef.current = files
-        setCorpusCount(files.length)
-      })
-      .catch(() => setCorpusCount(0))
+      .then(applyCorpus)
+      .catch(() => applyCorpus([]))
     refreshSettings()
     void window.aiOffice
       .aiGskStatus()
@@ -614,9 +629,7 @@ export function KbAskPanel({
     runUsageRef.current = undefined
     // freshly starred files are answerable this very turn
     try {
-      const files = await window.aiOffice.kbList()
-      corpusRef.current = files
-      setCorpusCount(files.length)
+      applyCorpus(await window.aiOffice.kbList())
     } catch {
       // keep the mount snapshot
     }
@@ -721,10 +734,24 @@ export function KbAskPanel({
         </div>
       )}
       {corpusCount !== null && corpusCount > 0 && (
-        <div className="kb-ask-headbar">
-          <b>{t('askTitle')}</b>
-          <span>{t('askCorpusCount', { n: String(corpusCount) })}</span>
-        </div>
+        <>
+          <div className="kb-ask-headbar">
+            <b>{t('askTitle')}</b>
+            <span>{t('askCorpusCount', { n: String(corpusCount) })}</span>
+            <button
+              type="button"
+              className="kb-ask-corpus-toggle"
+              aria-expanded={corpusOpen}
+              onClick={() => setCorpusOpen((open) => !open)}
+            >
+              <IconChevron open={corpusOpen} />
+              {corpusOpen ? t('askCorpusHide') : t('askCorpusShow')}
+            </button>
+          </div>
+          {corpusOpen && (
+            <KbCorpusList files={corpusFiles} onOpenPath={onOpenPath} label={t('askCorpusList')} />
+          )}
+        </>
       )}
       {threads.length > 0 && (
         <div className="kb-ask-threads" role="tablist" aria-label={t('askThreadsTitle')}>
@@ -1030,6 +1057,62 @@ function IconStar(): React.JSX.Element {
       aria-hidden="true"
     >
       <path d="M12 3.6l2.6 5.2 5.8.9-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.7l5.8-.9z" />
+    </svg>
+  )
+}
+
+/**
+ * The starred files the knowledge-base answer can draw from: the list behind
+ * the header's count. Each row opens the file the way a citation does; the
+ * list is deliberately a plain exported component so it can be tested without
+ * mounting the whole panel.
+ */
+export function KbCorpusList({
+  files,
+  onOpenPath,
+  label,
+}: {
+  files: readonly KbFileInfo[]
+  onOpenPath: (path: string) => void
+  label: string
+}): React.JSX.Element {
+  return (
+    <div className="kb-ask-corpus" role="list" aria-label={label}>
+      {files.map((file) => (
+        <div key={file.path} role="listitem" className="kb-ask-corpus-item">
+          <button
+            type="button"
+            className="kb-ask-corpus-row"
+            title={file.path}
+            onClick={() => onOpenPath(file.path)}
+          >
+            <FileBadge ext={file.ext} size={16} />
+            <span className="kb-ask-corpus-name">{file.name}</span>
+            {file.folder && <span className="kb-ask-corpus-folder">{file.folder}</span>}
+            <span className="kb-ask-corpus-size">{formatKbSize(file.sizeBytes)}</span>
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** the disclosure chevron on the corpus toggle */
+function IconChevron({ open }: { open: boolean }): React.JSX.Element {
+  return (
+    <svg
+      className={open ? 'kb-ask-corpus-chevron open' : 'kb-ask-corpus-chevron'}
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" />
     </svg>
   )
 }
