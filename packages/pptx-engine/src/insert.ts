@@ -494,6 +494,12 @@ const IMAGE_MIME: Record<string, string> = {
   tiff: 'image/tiff',
 }
 
+/** True when addImageMediaAndRel can land this extension as a media part.
+    Lets ops refuse an unsupported format in validate, before any mutation. */
+export function imageExtensionSupported(extRaw: string): boolean {
+  return IMAGE_MIME[extRaw.toLowerCase()] !== undefined
+}
+
 const IMAGE_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
 
 export interface NewPictureOptions {

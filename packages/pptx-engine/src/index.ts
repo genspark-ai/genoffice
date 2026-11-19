@@ -183,6 +183,7 @@ export {
   addElement,
   addPicture,
   addImageMediaAndRel,
+  imageExtensionSupported,
   deleteElement,
   buildSpXml,
   buildTableXml,

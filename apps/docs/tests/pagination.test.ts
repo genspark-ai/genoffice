@@ -5714,7 +5714,11 @@ describe('computeSectionedSlicesF2 — multi-cell rows split per cell (Word row 
     expect(first.rowFills![0].targetPx).toBeCloseTo(310.2)
     expect(first.rowFills![0].extraPx).toBeCloseTo(9.8)
     const attrs = rowFillAttrs(first.rowFills![0].targetPx, first.rowFills![0].extraPx)
-    expect(attrs).toEqual({ style: 'height:310px', 'data-split-extra': '9.6' })
+    expect(attrs).toEqual({
+      style: 'height:310px',
+      'data-row-fill': '1',
+      'data-split-extra': '9.6',
+    })
     const again = plan({ height: 310, contentBottom: 300.4, cells, splitExtra: 9.6 })
     expect(again.rowFills![0].targetPx).toBeCloseTo(310.2)
     expect(again.rowFills![0].extraPx).toBeCloseTo(9.8)

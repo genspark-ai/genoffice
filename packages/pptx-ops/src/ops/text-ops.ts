@@ -18,6 +18,7 @@ import {
   ensureRunLinkRels,
   findGroupChild,
   groupChildSlices,
+  imageExtensionSupported,
   isConnectorXml,
   materializeSlide,
   patchGroupChildText,
@@ -165,6 +166,21 @@ register({
     for (const p of op.paragraphs as Array<{ runs?: Array<{ link?: unknown }> }>) {
       for (const r of p?.runs ?? []) {
         if (r && r.link !== undefined) requireLinkTarget('setText', r.link, 'runs[].link')
+      }
+    }
+    // picture bullets land in the apply phase — after the text and its link
+    // rels are already rewritten — so an unsupported format must be refused
+    // here, where a per_op batch skips the op whole instead of keeping its
+    // text and links (#2821)
+    for (const { patch } of collectParagraphFormatPatches(op.paragraphs as EditParagraph[])) {
+      if (
+        patch.bullet === 'blip' &&
+        patch.bulletImage !== undefined &&
+        !imageExtensionSupported(patch.bulletImage.ext)
+      ) {
+        throw new GuidedError(
+          `op "setText": unsupported picture bullet format ".${patch.bulletImage.ext}".`,
+        )
       }
     }
     if (op.group) {
