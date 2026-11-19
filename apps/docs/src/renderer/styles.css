@@ -175,8 +175,9 @@
   --docs-paper-comment-flash: rgb(130 171 81 / 45%);
   --docs-paper-comment-line: #82ab51;
   /* editing permission regions of a read-only protected document (Word's
-     "Highlight the regions I can edit": a pale yellow behind the text) */
+     "Highlight the regions I can edit": a pale yellow behind the text, olive brackets) */
   --docs-paper-perm-bg: rgb(255 240 120 / 30%);
+  --docs-paper-perm-bracket: #a8912b;
   /* printed markup is document output, not chrome: fixed values, identical in both themes;
      the balloon fill is the anchor tint composited over white (balloons sit on the gray strip) */
   --docs-print-markup-band: #f2f2f2;
@@ -5356,6 +5357,7 @@ th[data-rev-fmt] {
     --docs-paper-comment-flash: rgb(145 181 102 / 45%);
     --docs-paper-comment-line: #91b566;
     --docs-paper-perm-bg: rgb(118 105 30 / 30%);
+    --docs-paper-perm-bracket: #c2ad53;
     --docs-paper-ai-anchor-bg: rgb(74 116 197 / 14%);
     --docs-paper-ai-anchor-line: #4a74c5;
     --docs-paper-xe-ink: #c5ab7f;
@@ -16579,6 +16581,28 @@ tr > .page-gap-cut {
   background: var(--docs-paper-perm-bg);
 }
 
+/* Word's region brackets sit over the text at the region's edges and take no
+   width: over a template's own "[" / "]" they show as one olive bracket */
+.perm-region-bracket {
+  display: inline-block;
+  width: 0;
+  white-space: nowrap;
+  color: var(--docs-paper-perm-bracket);
+  font-weight: 700;
+  font-style: normal;
+  text-decoration: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+.perm-region-bracket > span {
+  display: inline-block;
+}
+
+.perm-region-bracket-close > span {
+  transform: translateX(-100%);
+}
+
 /* Word paints each paragraph's mark: a patch at the paragraph's end that
    takes no width, so line breaks, the caret and the alignment stay put; a
    picture line sets its height inline. An empty cell of a nested table (an
@@ -16606,6 +16630,7 @@ tr > .page-gap-cut {
   }
 
   .perm-region-mark,
+  .perm-region-bracket,
   .perm-region-nested .doc-cell-para::before {
     display: none;
   }

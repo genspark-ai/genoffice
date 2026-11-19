@@ -138,11 +138,26 @@ function paragraphMark(height: number): HTMLElement {
 }
 
 /**
+ * Word's region bracket: drawn over the text at the region's edge, taking no
+ * width, so a template that types its own "[" / "]" there shows one bracket
+ * (Word's, on top), not two.
+ */
+function regionBracket(side: 'open' | 'close'): HTMLElement {
+  const span = document.createElement('span')
+  span.className = `perm-region-bracket perm-region-bracket-${side}`
+  span.contentEditable = 'false'
+  const glyph = document.createElement('span')
+  glyph.textContent = side === 'open' ? '[' : ']'
+  span.appendChild(glyph)
+  return span
+}
+
+/**
  * Word's "Highlight the regions I can edit": a highlight behind the text of
  * every paragraph in an open region, tables nested in an open cell included,
  * and on each paragraph's mark: a patch at the paragraph's end, as tall as
- * its line (the full height beside a picture), taking no width. Word adds no
- * brackets of its own; fill-in templates type them.
+ * its line (the full height beside a picture), taking no width. Each region
+ * gets Word's olive brackets at its two ends (regionBracket).
  */
 function regionDecorations(doc: PmNode): DecorationSet {
   const decorations: Decoration[] = []
@@ -154,34 +169,59 @@ function regionDecorations(doc: PmNode): DecorationSet {
     }
     if (!node.isTextblock) return true
     const end = pos + node.nodeSize - 1
+    region.push({ start: pos + 1, end })
     if (node.content.size > 0) {
       decorations.push(Decoration.inline(pos + 1, end, { class: 'perm-region' }))
     }
     const height = paragraphMarkHeight(node)
     decorations.push(
       Decoration.widget(end, () => paragraphMark(height), {
-        side: 1,
+        side: 2,
         ignoreSelection: true,
         key: `perm-mark-${height}`,
       }),
     )
     return false
   }
+  let region: Array<{ start: number; end: number }> = []
+  const closeRegion = () => {
+    const first = region[0]
+    const last = region[region.length - 1]
+    if (first && last) {
+      decorations.push(
+        Decoration.widget(first.start, () => regionBracket('open'), {
+          side: -1,
+          ignoreSelection: true,
+          key: 'perm-open',
+        }),
+        Decoration.widget(last.end, () => regionBracket('close'), {
+          side: 1,
+          ignoreSelection: true,
+          key: 'perm-close',
+        }),
+      )
+    }
+    region = []
+  }
   doc.forEach((node, offset) => {
     if (isOpenTopBlock(node)) {
+      // consecutive open top-level paragraphs are one region
       mark(node, offset)
       return
     }
+    closeRegion()
     if (node.type.name !== 'docTable') return
     node.descendants((cell, cellPos) => {
       if (!CELL_TYPES.has(cell.type.name)) return true
       if (cell.attrs.permEditable === true) {
         const base = offset + 1 + cellPos + 1
         cell.descendants((child, childPos) => mark(child, base + childPos))
+        closeRegion()
       }
       return false
     })
   })
+  closeRegion()
   return DecorationSet.create(doc, decorations)
 }
 

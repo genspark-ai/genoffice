@@ -74,7 +74,7 @@ async function part(bytes: Uint8Array, path: string): Promise<string> {
 const count = (xml: string, re: RegExp) => [...xml.matchAll(re)].length
 
 describe('editing permission regions in the editor', () => {
-  it('highlights the text of the open regions, with no brackets of its own', async () => {
+  it('highlights the text of the open regions, with zero-width brackets at their ends', async () => {
     const { editor } = await open()
     const dom = editor.view.dom
     expect([...dom.querySelectorAll('.perm-region')].map((el) => el.textContent)).toEqual([
@@ -83,8 +83,12 @@ describe('editing permission regions in the editor', () => {
       'second',
       'open paragraph',
     ])
-    // Word draws no brackets; a template's own "[" / "]" are its text
-    expect(dom.textContent).not.toContain('[[')
+    // Word's brackets at each region's two ends: three regions (two cells and the
+    // open top-level paragraph); they take no width, so over a template's own
+    // "[" / "]" one bracket shows
+    const brackets = [...dom.querySelectorAll('.perm-region-bracket')]
+    expect(brackets.map((b) => b.textContent)).toEqual(['[', ']', '[', ']', '[', ']'])
+    expect(brackets[1]!.classList.contains('perm-region-bracket-close')).toBe(true)
     // and paints every paragraph's mark
     expect(dom.querySelectorAll('.perm-region-mark')).toHaveLength(4)
     editor.destroy()
@@ -135,7 +139,9 @@ describe('editing permission regions in the editor', () => {
   it('shows and guards nothing while disabled', async () => {
     const { editor } = await open(false)
     expect(
-      editor.view.dom.querySelectorAll('.perm-region, .perm-region-mark, .perm-region-nested'),
+      editor.view.dom.querySelectorAll(
+        '.perm-region, .perm-region-mark, .perm-region-nested, .perm-region-bracket',
+      ),
     ).toHaveLength(0)
     expect(typeAt(editor, 'Locked intro', 'x')).toBe(true)
     editor.destroy()
