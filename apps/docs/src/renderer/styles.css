@@ -14069,6 +14069,19 @@ tr > .page-gap-cut {
 }
 
 @media screen {
+  .comment-page {
+    position: absolute;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+    pointer-events: auto;
+  }
+
+  .comment-page-content {
+    position: relative;
+  }
+
   .comment-bubble:not(.rev-bubble) .comment-text {
     overflow: hidden;
   }

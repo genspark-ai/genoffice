@@ -225,6 +225,25 @@ describe('margin comment cards vs the Comments panel', () => {
     app.remove()
   })
 
+  it('preserves unsubmitted inline edits and their selection through margin reflow', () => {
+    const { app, wrap, pm, comments, handlers, calls } = build({ cards: true, focus: '7' })
+    wrap.querySelector<HTMLButtonElement>('.comment-entry .comment-more')!.click()
+    wrap.querySelector<HTMLButtonElement>('.comment-entry .comment-card-edit')!.click()
+    const edit = wrap.querySelector<HTMLTextAreaElement>('.comment-edit-input')!
+    edit.value = 'unfinished correction'
+    edit.setSelectionRange(4, 11)
+    syncMarginAnnotations(wrap, pm, comments, 1, [], undefined, handlers)
+    const restored = wrap.querySelector<HTMLTextAreaElement>('.comment-edit-input')
+    expect(restored).not.toBeNull()
+    expect(restored!.value).toBe('unfinished correction')
+    expect(restored!.selectionStart).toBe(4)
+    expect(restored!.selectionEnd).toBe(11)
+    expect(document.activeElement).toBe(restored)
+    restored!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true }))
+    expect(calls).toContain('edit:7:unfinished correction')
+    app.remove()
+  })
+
   it('keeps the anchor icon but no card while Show Comments is off or the panel hosts the threads', () => {
     const { app, wrap } = build({})
     expect(wrap.querySelectorAll('.comment-bubble')).toHaveLength(0)
