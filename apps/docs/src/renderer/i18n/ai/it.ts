@@ -10,6 +10,7 @@ export const it = {
   aiStarterContinue: 'Continua a scrivere da dove il documento si interrompe',
   aiStarterFillTemplate: 'Trova e compila i segnaposto nel documento',
   aiGskLoginBtn: 'Accedi a Genspark',
+  aiGskLoginOk: 'Accesso a Genspark effettuato',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: "Apri l'assistente IA",
   aiSummarizeBtn: 'Riassunto IA',

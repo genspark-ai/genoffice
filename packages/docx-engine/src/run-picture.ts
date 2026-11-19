@@ -2,9 +2,11 @@ import {
   applyImageWrap,
   resizeAnchoredPictureXml,
   resizeInlinePictureXml,
+  setDrawingAltText,
   swapAnchorWrap,
 } from './generate'
 import { HF_DRAWING_RE, hfMovablePictureFrag, runPictureAnchorOf } from './parse'
+import { decodeEntities } from './parse-xml-text'
 import type { HfPictureEdit, ImageWrap } from './types'
 
 const EMU_PER_PX = 9525
@@ -142,3 +144,13 @@ function resize(xml: string, next: RunPictureGeometry): string {
     ? resizeAnchoredPictureXml(xml, w, h)
     : resizeInlinePictureXml(xml, w, h)
 }
+
+/** The alternative text of a run-level picture; null when its fragment has nowhere to hold one (VML). */
+export function runPictureAltOf(xml: string): string | null {
+  const docPr = /<wp:docPr\b[^>]*>/.exec(xml)?.[0]
+  if (!docPr) return null
+  const descr = /\bdescr\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(docPr)
+  return decodeEntities(descr?.[1] ?? descr?.[2] ?? '')
+}
+
+export const setRunPictureAlt = setDrawingAltText

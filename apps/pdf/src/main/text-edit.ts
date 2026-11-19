@@ -2272,8 +2272,33 @@ export function visualLine(line: string): string {
   if (!letters || !letters.every((ch) => RTL_LETTER.test(ch))) return line
   if (/\p{N}/u.test(line)) return line
   const clusters = line.match(/.\p{M}*/gsu) ?? []
-  return clusters.reverse().join('')
+  // a reversed bracket keeps facing its content only if it is swapped for its pair
+  return clusters
+    .reverse()
+    .map((cluster) => MIRRORED[cluster] ?? cluster)
+    .join('')
 }
+
+const MIRRORED: Record<string, string> = {
+  '(': ')',
+  ')': '(',
+  '[': ']',
+  ']': '[',
+  '{': '}',
+  '}': '{',
+  '<': '>',
+  '>': '<',
+  '\u00ab': '\u00bb',
+  '\u00bb': '\u00ab',
+}
+
+/** every character an insert draws: its lines as written and as visualLine reorders them,
+ *  since a swapped bracket is a character the written line may not hold */
+const drawnText = (text: string): string =>
+  text
+    .split('\n')
+    .map((line) => line + visualLine(line))
+    .join('')
 
 /** Insert new searchable text objects without matching/removing existing page content. */
 export function applyTextInserts(
@@ -2316,7 +2341,7 @@ export function applyTextInserts(
       for (const [key, entries] of faces) {
         let group = entries
         const first = group[0]!.input
-        const merged = group.map(({ input }) => input.text.replace(/\n/g, '')).join('')
+        const merged = group.map(({ input }) => drawnText(input.text)).join('')
         const pseudoEdit: TextEditInput = {
           pageIndex: 0,
           rect: [0, 0, 0, 0],
@@ -2349,7 +2374,7 @@ export function applyTextInserts(
             }
             group = drawable
             if (!group.length) continue
-            const text = group.map(({ input }) => input.text.replace(/\n/g, '')).join('')
+            const text = group.map(({ input }) => drawnText(input.text)).join('')
             resolved = await resolveRebuildFont(m, 0, { ...pseudoEdit, newText: text }, text)
           }
           const { bytes: fontBytes, syntheticBold } = resolved

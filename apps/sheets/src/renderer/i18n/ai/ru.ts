@@ -5,6 +5,7 @@ export const ru = {
   aiEmptyBuildTitle: 'Пусть ИИ построит эту книгу за вас',
   aiEmptyBuildBody: 'Опишите нужную таблицу, данные или диаграмму — ИИ создаст их на месте.',
   aiGskLoginBtn: 'Войти в Genspark',
+  aiGskLoginOk: 'Выполнен вход в Genspark',
   aiUndelivered: 'Не отправлено',
   aiRetry: 'Повторить',
   aiOpenAssistant: 'Открыть ИИ-помощника',

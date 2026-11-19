@@ -5,11 +5,11 @@ import {
   type SectionSettings,
   type ThemeColors,
   type ThemeFonts,
-  type Watermark,
-  type WatermarkSpec,
 } from '@genoffice/docx-engine'
-import { WatermarkDialog, type WatermarkPageBox } from './WatermarkDialog'
 import { useI18n, type StringKey } from '../i18n/locale'
+import type { ActionCommandId } from '../../shared/commands'
+import { NONE, type ThemePayload } from '../commands/menu-commands'
+import { RbCommand, useRunCommand } from './ribbon-command'
 import {
   IconCaret,
   IconPageBorders,
@@ -18,14 +18,26 @@ import {
   IconThemeColors,
   IconThemeFonts,
   IconWatermark,
+  IconLineSpacing,
+  IconSetDefault,
 } from './icons'
 
 /** icon size for the big icon-over-label ribbon buttons (slides ribbon parity) */
 import { BIG, TabProps, toggleDropdown } from './ribbon-tabs'
+import { PARAGRAPH_SPACINGS, type ParagraphSpacing } from '../commands/paragraph-spacing'
 import { RibbonColorPalette } from './ribbon-color-palette'
 import { PageBorderDialog, type PageBorderScope } from './PageBorderDialog'
 
 /** Word-like theme presets: font pair + color scheme applied together */
+const SPACING_LABELS: Record<ParagraphSpacing['id'], StringKey> = {
+  none: 'ribbonPsNone',
+  compact: 'ribbonPsCompact',
+  tight: 'ribbonPsTight',
+  open: 'ribbonPsOpen',
+  relaxed: 'ribbonPsRelaxed',
+  double: 'ribbonPsDouble',
+}
+
 const THEME_PRESETS: Array<{ nameKey: StringKey; fonts: ThemeFonts; colors: ThemeColors }> = [
   {
     nameKey: 'ribbonThemeOffice',
@@ -165,20 +177,6 @@ const THEME_COLOR_PRESETS: Array<{ nameKey: StringKey; colors: ThemeColors }> = 
     },
   },
   {
-    nameKey: 'ribbonPaletteRedViolet',
-    colors: {
-      name: 'Red Violet',
-      dk2: '5F5F5F',
-      lt2: 'FFFDF7',
-      accent1: 'A83D4C',
-      accent2: 'D2554B',
-      accent3: 'E1734C',
-      accent4: '8D3B4B',
-      accent5: '54387F',
-      accent6: '7A99AC',
-    },
-  },
-  {
     nameKey: 'ribbonColorOrange',
     colors: {
       name: 'Orange',
@@ -192,31 +190,46 @@ const THEME_COLOR_PRESETS: Array<{ nameKey: StringKey; colors: ThemeColors }> = 
       accent6: '94A088',
     },
   },
+  {
+    nameKey: 'ribbonPaletteRedViolet',
+    colors: {
+      name: 'Red Violet',
+      dk2: '5F5F5F',
+      lt2: 'FFFDF7',
+      accent1: 'A83D4C',
+      accent2: 'D2554B',
+      accent3: 'E1734C',
+      accent4: '8D3B4B',
+      accent5: '54387F',
+      accent6: '7A99AC',
+    },
+  },
 ]
 
-const WATERMARK_KEYS: StringKey[] = [
+/** the preset texts of the Watermark gallery; other languages also get the two English ones */
+export const WATERMARK_KEYS: StringKey[] = [
   'ribbonWatermarkConfidential',
   'ribbonWatermarkNoCopy',
   'ribbonWatermarkDraft',
   'ribbonWatermarkSample',
 ]
 
+export const watermarkPresetsOf = (t: (key: StringKey) => string, lang: string): string[] => [
+  ...WATERMARK_KEYS.map((key) => t(key)),
+  ...(lang !== 'en' ? ['CONFIDENTIAL', 'DRAFT'] : []),
+]
+
 interface DesignTabProps extends TabProps {
   pageColor: string | null
-  onPageColor: (hex: string | null) => void
   section: SectionSettings | null
   onSection: (next: SectionSettings) => void
   /** Page Border dialog > Apply to: Whole document */
   onPageBorderAll: (props: SectionSettings['pageBorderProps'] | null) => void
   watermark: string | null
-  watermarkStyle: Omit<WatermarkSpec, 'text'> | null
   watermarkPicture: PictureWatermarkSpec | null
   /** the saved document's watermark shape, for reopening the dialog on it */
   watermarkDocImage: HfImage | null
-  onWatermark: (spec: Watermark | null) => void
   themeFonts: ThemeFonts | null
-  onThemeFonts: (fonts: ThemeFonts) => void
-  onThemeColors: (colors: ThemeColors) => void
 }
 
 export function DesignTab({
@@ -224,18 +237,13 @@ export function DesignTab({
   dropdown,
   setDropdown,
   pageColor,
-  onPageColor,
   section,
   onSection,
   onPageBorderAll,
   watermark,
-  watermarkStyle,
   watermarkPicture,
   watermarkDocImage,
-  onWatermark,
   themeFonts,
-  onThemeFonts,
-  onThemeColors,
 }: DesignTabProps) {
   const { t, lang } = useI18n()
   const [pageBorderDialog, setPageBorderDialog] = useState(false)
@@ -252,28 +260,15 @@ export function DesignTab({
         : { ...rest, pageBorder: false },
     )
   }
-  const watermarkPresets = [
-    ...WATERMARK_KEYS.map((key) => t(key)),
-    ...(lang !== 'en' ? ['CONFIDENTIAL', 'DRAFT'] : []),
-  ]
-  const [watermarkDialogOpen, setWatermarkDialogOpen] = useState(false)
-  const watermarkPageBox: WatermarkPageBox | null = section
-    ? {
-        pageWidthPt: section.pageWidth / 20,
-        pageHeightPt: section.pageHeight / 20,
-        marginWidthPt: (section.pageWidth - section.marginLeft - section.marginRight) / 20,
-        marginHeightPt: (section.pageHeight - section.marginTop - section.marginBottom) / 20,
-      }
-    : null
-  const applyTheme = (preset: (typeof THEME_PRESETS)[number]) => {
-    onThemeFonts(preset.fonts)
-    onThemeColors(preset.colors)
+  const watermarkPresets = watermarkPresetsOf(t, lang)
+  const runCommand = useRunCommand()
+  /** a pick from a gallery: run the command, close the gallery */
+  const pick = (id: ActionCommandId, payload?: string) => {
+    runCommand(id, payload)
     setDropdown(() => null)
   }
-  const customWatermark = () => {
-    setWatermarkDialogOpen(true)
-    setDropdown(() => null)
-  }
+  const pickTheme = (id: 'document-theme' | 'theme-fonts' | 'theme-colors', theme: ThemePayload) =>
+    pick(id, JSON.stringify(theme))
   return (
     <>
       <div className="ribbon-group">
@@ -294,7 +289,47 @@ export function DesignTab({
             {dropdown === 'theme' && (
               <div data-rb-panel="" className="layout-menu">
                 {THEME_PRESETS.map((p) => (
-                  <button key={p.nameKey} onClick={() => applyTheme(p)}>
+                  <button
+                    key={p.nameKey}
+                    onClick={() =>
+                      pickTheme('document-theme', { fonts: p.fonts, colors: p.colors })
+                    }
+                  >
+                    <span className="theme-accent-row">
+                      {['accent1', 'accent2', 'accent3', 'accent4'].map((k) => (
+                        <span
+                          key={k}
+                          className="theme-accent-dot"
+                          style={{ background: `#${p.colors[k as 'accent1']}` }}
+                        />
+                      ))}
+                    </span>
+                    {t(p.nameKey)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="rb-split-wrap">
+            <button
+              className="rb-big"
+              disabled={!hasDoc}
+              data-tip={t('ribbonThemeColorsTip')}
+              onClick={() => toggleDropdown(setDropdown, 'themecolors')}
+            >
+              <span className="rb-big-icon">
+                <IconThemeColors size={BIG} />
+                <IconCaret />
+              </span>
+              <span>{t('ribbonColors')}</span>
+            </button>
+            {dropdown === 'themecolors' && (
+              <div data-rb-panel="" className="layout-menu">
+                {THEME_COLOR_PRESETS.map((p) => (
+                  <button
+                    key={p.nameKey}
+                    onClick={() => pickTheme('theme-colors', { colors: p.colors })}
+                  >
                     <span className="theme-accent-row">
                       {['accent1', 'accent2', 'accent3', 'accent4'].map((k) => (
                         <span
@@ -333,10 +368,7 @@ export function DesignTab({
                         ? 'active'
                         : ''
                     }
-                    onClick={() => {
-                      onThemeFonts(p.fonts)
-                      setDropdown(() => null)
-                    }}
+                    onClick={() => pickTheme('theme-fonts', { fonts: p.fonts })}
                   >
                     {t(p.nameKey)}
                   </button>
@@ -344,43 +376,34 @@ export function DesignTab({
               </div>
             )}
           </div>
-          <div className="rb-split-wrap">
-            <button
-              className="rb-big"
-              disabled={!hasDoc}
-              data-tip={t('ribbonThemeColorsTip')}
-              onClick={() => toggleDropdown(setDropdown, 'themecolors')}
-            >
-              <span className="rb-big-icon">
-                <IconThemeColors size={BIG} />
+          <div className="rb-col rb-pair">
+            <div className="rb-split-wrap">
+              <button
+                className="rb-small"
+                disabled={!hasDoc}
+                data-tip={t('ribbonParagraphSpacing')}
+                onClick={() => toggleDropdown(setDropdown, 'paraspacing')}
+              >
+                <IconLineSpacing size={14} />
+                <span className="rb-small-label">{t('ribbonParagraphSpacing')}</span>
                 <IconCaret />
-              </span>
-              <span>{t('ribbonColors')}</span>
-            </button>
-            {dropdown === 'themecolors' && (
-              <div data-rb-panel="" className="layout-menu">
-                {THEME_COLOR_PRESETS.map((p) => (
-                  <button
-                    key={p.nameKey}
-                    onClick={() => {
-                      onThemeColors(p.colors)
-                      setDropdown(() => null)
-                    }}
-                  >
-                    <span className="theme-accent-row">
-                      {['accent1', 'accent2', 'accent3', 'accent4'].map((k) => (
-                        <span
-                          key={k}
-                          className="theme-accent-dot"
-                          style={{ background: `#${p.colors[k as 'accent1']}` }}
-                        />
-                      ))}
-                    </span>
-                    {t(p.nameKey)}
+              </button>
+              {dropdown === 'paraspacing' && (
+                <div data-rb-panel="" className="layout-menu">
+                  {PARAGRAPH_SPACINGS.map((s) => (
+                    <button key={s.id} onClick={() => pick('design-paragraph-spacing', s.id)}>
+                      {t(SPACING_LABELS[s.id])}
+                    </button>
+                  ))}
+                  <button onClick={() => pick('design-custom-paragraph-spacing')}>
+                    {t('ribbonPsCustom')}
                   </button>
-                ))}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
+            <RbCommand cmd="design-set-default" look="small">
+              <IconSetDefault size={14} />
+            </RbCommand>
           </div>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupDocFormatting')}</div>
@@ -390,6 +413,42 @@ export function DesignTab({
 
       <div className="ribbon-group">
         <div className="ribbon-group-items">
+          <div className="rb-split-wrap">
+            <button
+              className={`rb-big ${watermark || watermarkPicture || watermarkDocImage ? 'active' : ''}`}
+              disabled={!hasDoc}
+              data-tip={t('ribbonWatermarkTip')}
+              onClick={() => toggleDropdown(setDropdown, 'watermark')}
+            >
+              <span className="rb-big-icon">
+                <IconWatermark size={BIG} />
+                <IconCaret />
+              </span>
+              <span>{t('ribbonWatermark')}</span>
+            </button>
+            {dropdown === 'watermark' && (
+              <div data-rb-panel="" className="layout-menu">
+                {watermarkPresets.map((text) => (
+                  <button
+                    key={text}
+                    className={watermark === text ? 'active' : ''}
+                    onClick={() => pick('watermark', text)}
+                  >
+                    {text}
+                  </button>
+                ))}
+                <button onClick={() => pick('insert-watermark')}>
+                  {t('ribbonWatermarkCustom')}
+                </button>
+                <button
+                  className={!watermark && !watermarkPicture && !watermarkDocImage ? 'active' : ''}
+                  onClick={() => pick('watermark', NONE)}
+                >
+                  {t('ribbonWatermarkRemove')}
+                </button>
+              </div>
+            )}
+          </div>
           <div className="rb-split-wrap">
             <button
               className="rb-big"
@@ -411,51 +470,8 @@ export function DesignTab({
               <RibbonColorPalette
                 current={pageColor}
                 noneLabel={t('ribbonNoColor')}
-                onPick={(hex) => {
-                  onPageColor(hex)
-                  setDropdown(() => null)
-                }}
+                onPick={(hex) => pick('page-color', hex ?? NONE)}
               />
-            )}
-          </div>
-          <div className="rb-split-wrap">
-            <button
-              className={`rb-big ${watermark || watermarkPicture || watermarkDocImage ? 'active' : ''}`}
-              disabled={!hasDoc}
-              data-tip={t('ribbonWatermarkTip')}
-              onClick={() => toggleDropdown(setDropdown, 'watermark')}
-            >
-              <span className="rb-big-icon">
-                <IconWatermark size={BIG} />
-                <IconCaret />
-              </span>
-              <span>{t('ribbonWatermark')}</span>
-            </button>
-            {dropdown === 'watermark' && (
-              <div data-rb-panel="" className="layout-menu">
-                {watermarkPresets.map((text) => (
-                  <button
-                    key={text}
-                    className={watermark === text ? 'active' : ''}
-                    onClick={() => {
-                      onWatermark(text)
-                      setDropdown(() => null)
-                    }}
-                  >
-                    {text}
-                  </button>
-                ))}
-                <button onClick={customWatermark}>{t('ribbonWatermarkCustom')}</button>
-                <button
-                  className={!watermark && !watermarkPicture && !watermarkDocImage ? 'active' : ''}
-                  onClick={() => {
-                    onWatermark(null)
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonWatermarkRemove')}
-                </button>
-              </div>
             )}
           </div>
           <div className="rb-split-wrap">
@@ -475,20 +491,13 @@ export function DesignTab({
               <div data-rb-panel="" className="layout-menu">
                 <button
                   className={section.pageBorder && !section.pageBorderProps ? 'active' : ''}
-                  onClick={() => {
-                    const { pageBorderProps: _drop, ...rest } = section
-                    onSection({ ...rest, pageBorder: true })
-                    setDropdown(() => null)
-                  }}
+                  onClick={() => pick('page-border', 'box')}
                 >
                   {t('ribbonPageBorderBox')}
                 </button>
                 <button
                   className={!section.pageBorder ? 'active' : ''}
-                  onClick={() => {
-                    onSection({ ...section, pageBorder: false })
-                    setDropdown(() => null)
-                  }}
+                  onClick={() => pick('page-border', NONE)}
                 >
                   {t('ribbonNone')}
                 </button>
@@ -513,20 +522,6 @@ export function DesignTab({
           section={section}
           onApply={applyPageBorder}
           onClose={() => setPageBorderDialog(false)}
-        />
-      )}
-      {watermarkDialogOpen && (
-        <WatermarkDialog
-          current={{
-            text: watermark,
-            style: watermarkStyle,
-            picture: watermarkPicture,
-            docImage: watermarkDocImage,
-          }}
-          presets={watermarkPresets}
-          pageBox={watermarkPageBox}
-          onApply={onWatermark}
-          onClose={() => setWatermarkDialogOpen(false)}
         />
       )}
     </>

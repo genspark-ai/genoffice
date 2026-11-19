@@ -164,6 +164,23 @@ describe('nestedRowSplit widow control', () => {
 })
 
 describe('syncNestedTableGaps', () => {
+  it('keeps a gap at a picture line when the gap itself carries a picture', () => {
+    const { view, host } = nested(`<tr id="r"><td><p>above</p><img id="pic" /></td></tr>`)
+    const row = host.querySelector('#r') as HTMLTableRowElement
+    const cell = row.cells[0]
+    const el = host.querySelector('#pic') as HTMLElement
+    const turn: NestedTableGap = {
+      row,
+      gap: cellGap(),
+      cells: [{ mark: { cell, el }, gap: cellGap() }],
+    }
+    syncNestedTableGaps(view, [turn])
+    const gap = host.querySelector('.page-gap-nested') as HTMLElement
+    gap.append(document.createElement('img'))
+    syncNestedTableGaps(view, [turn])
+    expect(host.querySelector('.page-gap-nested')).toBe(gap)
+  })
+
   it('puts a gap row before the row, keeps it on a settled pass, clears it', () => {
     const { view, host } = nested(`
       <tr><td>1</td><td>a</td></tr><tr id="r2"><td>2</td><td>b</td></tr>`)

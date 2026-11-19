@@ -320,6 +320,8 @@ export interface PageCutOptions {
   evenOddHf?: boolean
   titlePgOf?: (section: number) => boolean | undefined
   pageNumberFmtOf?: (section: number) => string | undefined
+  /** what leads the page number of a page whose section numbers its pages by chapter */
+  chapterPrefixOf?: (slice: PageSlice) => string | undefined
   floatSplits?: FloatSplitPatch[]
   /** the measured floating boxes; each cut lists the ones its page owns (`boxes`) */
   floats?: readonly FloatBox[]
@@ -566,7 +568,9 @@ export function buildPageCuts(
       leadDropsSpaceBefore: leadDrops,
       ...(!leadDrops && leadKeepsPx !== undefined ? { leadMtPx: leadKeepsPx } : {}),
       pageNo,
-      display: formatPageNumber(pageNo, opts.pageNumberFmtOf?.(s.section)),
+      display:
+        (opts.chapterPrefixOf?.(s) ?? '') +
+        formatPageNumber(pageNo, opts.pageNumberFmtOf?.(s.section)),
       blank: s.end === s.start,
       floats: floats[i],
       anchored: anchored[i],

@@ -7,6 +7,7 @@
  * Asian-character figure.
  */
 
+import { eqLayoutText } from './editor/eq-layout'
 import type { TableModel } from '@genoffice/docx-engine'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { Selection } from '@tiptap/pm/state'
@@ -40,6 +41,27 @@ export function nonAsianWordCount(text: string): number {
 /** Word's Words figure: asian chars + non-asian words */
 export function countWords(text: string): number {
   return asianCharCount(text) + nonAsianWordCount(text)
+}
+
+export interface TextStats {
+  words: number
+  asianChars: number
+  nonAsianWords: number
+  charsNoSpace: number
+  charsWithSpace: number
+  paragraphs: number
+}
+
+/** the Word Count figures of plain text whose paragraphs are separated by \n */
+export function textStats(text: string): TextStats {
+  return {
+    words: countWords(text),
+    asianChars: asianCharCount(text),
+    nonAsianWords: nonAsianWordCount(text),
+    charsNoSpace: text.replace(/\s/g, '').length,
+    charsWithSpace: text.replace(/\n/g, '').length,
+    paragraphs: text.split('\n').filter((line) => line.trim() !== '').length,
+  }
 }
 
 /**
@@ -86,6 +108,7 @@ export function tableModelText(model: TableModel | null | undefined): string {
 export function leafTextForWordCount(leaf: ProseMirrorNode): string {
   if (leaf.type.name === 'docInlineMath') return String(leaf.attrs.text ?? '')
   if (leaf.type.name === 'docRuby') return String(leaf.attrs.base ?? '')
+  if (leaf.type.name === 'docEqLayout') return eqLayoutText(leaf.attrs)
   if (leaf.type.name === 'docNestedTable') {
     return tableModelText(leaf.attrs.model as TableModel | null)
   }

@@ -8,6 +8,7 @@ import {
   parseDocx,
   saveDocx,
 } from '@genoffice/docx-engine'
+import { allowDirtyFields } from '../../../packages/docx-engine/tests/helpers/dirty-fields'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { executeTool } from '../src/renderer/ai/tools'
 
@@ -235,12 +236,14 @@ describe('insertToc command', () => {
     expect(exec.isError).toBeFalsy()
     expect(exec.output).toContain('目录')
 
+    // no pages are laid out here, so the table has none to show: Word is left to build it
+    allowDirtyFields()
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
     const saved = await saveDocx(parsed, plan.saveBlocks)
     const reparsed = await parseDocx(saved)
     editor.destroy()
 
-    // real field with dirty begin + TOC styles present in the package
+    // real field (dirty for want of pages) + TOC styles present in the package
     expect(reparsed.internal.documentXml).toContain('w:fldCharType="begin" w:dirty="true"')
     expect(reparsed.internal.documentXml).toContain('<w:instrText xml:space="preserve"> TOC')
     expect(reparsed.internal.documentXml).toContain('<w:pStyle w:val="TOC1"/>')

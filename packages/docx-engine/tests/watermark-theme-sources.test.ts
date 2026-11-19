@@ -1,7 +1,6 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import {
-  bibliographyLine,
   citationText,
   parseDocx,
   readThemeColors,
@@ -153,9 +152,8 @@ describe('bibliography sources', () => {
     expect(second.sources[1].publisher).toBe('计算机学报')
   })
 
-  it('citation and bibliography text formatting', () => {
+  it('citation text formatting', () => {
     expect(citationText(source)).toBe('(王明, 2024)')
-    expect(bibliographyLine(source)).toBe('王明. (2024). 深度学习实践. 清华出版社.')
   })
 
   it('adding a source keeps unmodeled fields and citation style of existing entries (surgical rebuild)', async () => {

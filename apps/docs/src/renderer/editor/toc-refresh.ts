@@ -39,8 +39,12 @@ export function applyTocPageDisplays(
       kind?: string
       left?: string
       right?: string
+      noPage?: boolean
     } | null
-    if (field?.kind !== 'tocLine') return
+    if (field?.kind !== 'tocLine' || field.noPage) return
+    // a generated index, table of figures or authorities line is not a heading's entry
+    const genXml = node.attrs.genXml as string | null
+    if (genXml && !/<w:pStyle w:val="TOC\d"/.test(genXml)) return
     const key = (field.left ?? '').trim()
     const list = pagesOfTitle.get(key)
     if (!list) return

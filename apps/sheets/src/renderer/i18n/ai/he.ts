@@ -5,6 +5,7 @@ export const he = {
   aiEmptyBuildTitle: 'תנו ל-AI לבנות את חוברת העבודה הזו עבורכם',
   aiEmptyBuildBody: 'תארו את הטבלה, הנתונים או התרשים הדרושים — ה-AI יוצר אותם במקום.',
   aiGskLoginBtn: 'התחבר ל-Genspark',
+  aiGskLoginOk: 'מחובר ל-Genspark',
   aiUndelivered: 'לא נשלח',
   aiRetry: 'נסה שוב',
   aiOpenAssistant: 'פתיחת עוזר ה-AI',

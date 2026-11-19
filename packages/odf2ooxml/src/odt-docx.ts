@@ -83,7 +83,13 @@ export async function convertOdtToDocx(odt: Uint8Array): Promise<OdtToDocxResult
 
   const styles = new OdfStyles(pack.contentRoots, pack.stylesRoots)
   const drops = new Drops()
-  const ctx: WalkContext = { styles, families: ['text'], drops, images: [] }
+  const ctx: WalkContext = {
+    styles,
+    families: ['text'],
+    drops,
+    images: [],
+    repeatBudget: { slots: MAX_DOCUMENT_REPEAT_SLOTS },
+  }
   const drafts: Draft[] = []
   const listFrames: ListFrame[] = []
   let listCounter = 0
@@ -485,7 +491,7 @@ interface GridCell {
   /** built paragraph XML (links stripped: relationships live with generated blocks only) */
   contentXml: string
   fill: string | null
-  /** fo:vertical-align of the cell style, in docx's vocabulary */
+  /** style:vertical-align of the cell style, in docx's vocabulary */
   vAlign: 'center' | 'bottom' | null
 }
 
@@ -597,6 +603,8 @@ function readColumns(table: XNode, ctx: WalkContext): ColumnSpec[] {
  */
 const MAX_REPEATED_ROWS = 4096
 const MAX_TABLE_SLOTS = 65_536
+// tables multiply too: 40 of them at the table ceiling were a 305 MB document.xml
+const MAX_DOCUMENT_REPEAT_SLOTS = 4 * MAX_TABLE_SLOTS
 
 /** every `table:table-row` under a table, in document order; repeats not expanded yet */
 function rowNodes(table: XNode): XNode[] {
@@ -622,6 +630,8 @@ function expandRows(sources: XNode[], columnCount: number, ctx: WalkContext): XN
     MAX_REPEATED_ROWS,
     Math.floor(MAX_TABLE_SLOTS / Math.max(1, columnCount)),
   )
+  const columns = Math.max(1, columnCount)
+  const shared = ctx.repeatBudget
   let repeated = 0
   const push = (row: XNode): void => {
     const text = attr(row, 'table:number-rows-repeated')
@@ -630,9 +640,11 @@ function expandRows(sources: XNode[], columnCount: number, ctx: WalkContext): XN
     const asked = Number(text ?? '1')
     const claimed = Number.isFinite(asked) && asked > 1 ? Math.floor(asked) : 1
     // the row itself is never a repeat: only the copies after it spend budget
-    const budget = Math.max(0, rowBudget - repeated)
+    const left = shared ? Math.floor(shared.slots / columns) : Infinity
+    const budget = Math.max(0, Math.min(rowBudget - repeated, left))
     const copies = 1 + Math.min(repeat - 1, budget)
     repeated += copies - 1
+    if (shared) shared.slots -= (copies - 1) * columns
     for (let index = 0; index < copies; index++) out.push(row)
     if (copies < claimed) ctx.drops.add('repeated-table-rows', claimed - copies)
   }

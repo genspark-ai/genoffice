@@ -28,6 +28,8 @@ export const PAINTER_PARA_KEYS = [
   'lineRule',
   'lineRawTwips',
   'snapToGrid',
+  'suppressAutoHyphens',
+  'mirrorIndents',
   'indentLeft',
   'indentRight',
   'indentFirstLine',

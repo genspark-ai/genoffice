@@ -83,6 +83,7 @@ describe('runsToInline image runs', () => {
         marks: [{ type: 'bold' }],
         attrs: {
           dataUrl: 'data:image/png;base64,QUJD',
+          vector: null,
           widthPx: 96,
           heightPx: null,
           xml: '<w:drawing/>',
@@ -133,6 +134,7 @@ describe('runsToInline image runs', () => {
         type: 'docInlineImage',
         attrs: {
           dataUrl: 'data:image/png;base64,QUJD',
+          vector: null,
           widthPx: null,
           heightPx: null,
           xml: '<w:drawing/>',

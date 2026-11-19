@@ -11,6 +11,7 @@ import {
   FontDialog,
   ParagraphDialog,
 } from '../src/renderer/components/ContextMenu'
+import { insertTableAt } from '../src/renderer/components/ribbon-tabs'
 import { TRANSLATE_LANGS } from '../src/renderer/components/translate-langs'
 
 function createEditor(paraAttrs: Record<string, unknown> = {}): Editor {
@@ -64,13 +65,9 @@ function menuProps(editor: Editor, overrides: Record<string, unknown> = {}) {
     editor,
     menu: { x: 10, y: 10 },
     onClose: noop,
-    onFontDialog: noop,
-    onParagraphDialog: noop,
-    onLink: noop,
-    onNewComment: noop,
+    onCommand: noop,
     onViewImage: noop,
     onSaveImageAs: noop,
-    onAiPreset: noop,
     ...overrides,
   }
 }
@@ -99,32 +96,33 @@ describe('EditorContextMenu', () => {
     editor.destroy()
   })
 
-  it('disables New Comment when the caret has no word to anchor on', () => {
-    const editor = new Editor({
-      element: document.createElement('div'),
-      extensions: editorExtensions,
-      content: {
-        type: 'doc',
-        content: [{ type: 'docParagraph', attrs: { docxIndex: 0 } }],
-      },
-    })
-    const { container, unmount } = render(createElement(EditorContextMenu, menuProps(editor)))
-    const item = [...container.querySelectorAll<HTMLButtonElement>('.ctx-item')].find(
-      (b) => b.querySelector('.ctx-label')?.textContent === 'New Comment',
-    )!
-    expect(item.disabled).toBe(true)
-    unmount()
-    editor.destroy()
+  it('New Comment is live in an empty paragraph and off at a caret beside no word', () => {
+    const newComment = (paragraph: Record<string, unknown>) => {
+      const editor = new Editor({
+        element: document.createElement('div'),
+        extensions: editorExtensions,
+        content: { type: 'doc', content: [{ type: 'docParagraph', ...paragraph }] },
+      })
+      const { container, unmount } = render(createElement(EditorContextMenu, menuProps(editor)))
+      const item = [...container.querySelectorAll<HTMLButtonElement>('.ctx-item')].find(
+        (b) => b.querySelector('.ctx-label')?.textContent === 'New Comment',
+      )!
+      const { disabled } = item
+      unmount()
+      editor.destroy()
+      return disabled
+    }
+    expect(newComment({ attrs: { docxIndex: 0 } })).toBe(false)
+    expect(newComment({ content: [{ type: 'text', text: '... ...' }] })).toBe(true)
   })
 
   it('enables everything and routes New Comment / Font… when text is selected', () => {
     const editor = createEditor()
     select(editor, 1, 5)
-    const onNewComment = vi.fn()
-    const onFontDialog = vi.fn()
+    const onCommand = vi.fn()
     const onClose = vi.fn()
     const { container, unmount } = render(
-      createElement(EditorContextMenu, menuProps(editor, { onNewComment, onFontDialog, onClose })),
+      createElement(EditorContextMenu, menuProps(editor, { onCommand, onClose })),
     )
     const byLabel = (label: string) =>
       [...container.querySelectorAll<HTMLButtonElement>('.ctx-item')].find(
@@ -133,10 +131,10 @@ describe('EditorContextMenu', () => {
     expect(byLabel('Cut').disabled).toBe(false)
     expect(byLabel('New Comment').disabled).toBe(false)
     act(() => byLabel('New Comment').click())
-    expect(onNewComment).toHaveBeenCalledOnce()
+    expect(onCommand).toHaveBeenLastCalledWith('insert-comment')
     expect(onClose).toHaveBeenCalled()
     act(() => byLabel('Font…').click())
-    expect(onFontDialog).toHaveBeenCalledOnce()
+    expect(onCommand).toHaveBeenLastCalledWith('font-dialog')
     unmount()
     editor.destroy()
   })
@@ -144,17 +142,18 @@ describe('EditorContextMenu', () => {
   it('sends the selected text to the AI panel for Synonyms', () => {
     const editor = createEditor()
     select(editor, 1, 4)
-    const onAiPreset = vi.fn()
+    const onCommand = vi.fn()
     const { container, unmount } = render(
-      createElement(EditorContextMenu, menuProps(editor, { onAiPreset })),
+      createElement(EditorContextMenu, menuProps(editor, { onCommand })),
     )
     const synonym = [...container.querySelectorAll<HTMLButtonElement>('.ctx-item')].find(
       (b) => b.querySelector('.ctx-label')?.textContent === 'Synonyms',
     )!
     expect(synonym.disabled).toBe(false)
     act(() => synonym.click())
-    expect(onAiPreset).toHaveBeenCalledOnce()
-    expect(String(onAiPreset.mock.calls[0][0])).toContain('EVs')
+    expect(onCommand).toHaveBeenCalledOnce()
+    expect(onCommand.mock.calls[0][0]).toBe('ai-preset')
+    expect(String(onCommand.mock.calls[0][1])).toContain('EVs')
     unmount()
     editor.destroy()
   })
@@ -177,7 +176,9 @@ describe('FontDialog', () => {
   it('applies font marks to the selection on OK', () => {
     const editor = createEditor()
     select(editor, 1, 10)
-    const { container, unmount } = render(createElement(FontDialog, { editor, onClose: noop }))
+    const { container, unmount } = render(
+      createElement(FontDialog, { editor, onDefault: noop, onClose: noop }),
+    )
     const dds = container.querySelectorAll<HTMLButtonElement>('.gs-dd-btn')
     // Latin font, East Asian font, font style → bold, size → 12
     pickDropdown(container, dds[0]!, 'Arial')
@@ -263,7 +264,7 @@ describe('EditorContextMenu picture items', () => {
   const labels = (container: HTMLElement) =>
     [...container.querySelectorAll('.ctx-label')].map((el) => el.textContent)
 
-  it('shows View / Save Image As only when the click landed on a picture', () => {
+  it('a picture gets the picture menu Word shows, in the same order', () => {
     const editor = createEditor()
     const plain = render(createElement(EditorContextMenu, menuProps(editor)))
     expect(labels(plain.container)).not.toContain('View Image')
@@ -278,19 +279,46 @@ describe('EditorContextMenu picture items', () => {
         menuProps(editor, { menu: { x: 10, y: 10, imageSrc: src }, onViewImage, onSaveImageAs }),
       ),
     )
-    const names = labels(container)
-    // Word's picture menu: the clipboard trio first, then the picture items,
-    // and none of the text-only entries
-    expect(names.slice(0, 5)).toEqual(['Cut', 'Copy', 'Paste', 'View Image', 'Save Image As…'])
-    for (const gone of ['Paste as Plain Text', 'Font…', 'Paragraph…', 'Synonyms', 'Translate']) {
-      expect(names).not.toContain(gone)
-    }
     const byLabel = (label: string) =>
       [...container.querySelectorAll<HTMLButtonElement>('.ctx-item')].find(
         (b) => b.querySelector('.ctx-label')?.textContent === label,
       )!
+    const names = labels(container)
+    // Word's picture menu: the clipboard trio first, then the picture items,
+    // and none of the text-only entries
+    expect(names).toEqual([
+      'Cut',
+      'Copy',
+      'Paste',
+      'Save as Picture…',
+      'Change Picture',
+      'Group',
+      'Bring to Front',
+      'Send to Back',
+      'Hyperlink…',
+      'Insert Caption…',
+      'Wrap Text',
+      'View Alt Text…',
+      'Crop',
+      'Auto Crop',
+      'Size and Position…',
+      'Format Picture…',
+      'View Image',
+      'New Comment',
+    ])
+    // the items that act on the selected picture are greyed out while only the pointer is on one
+    for (const later of [
+      'Change Picture',
+      'Group',
+      'View Alt Text…',
+      'Auto Crop',
+      'Size and Position…',
+      'Format Picture…',
+    ]) {
+      expect(byLabel(later).disabled, later).toBe(true)
+    }
     byLabel('View Image').click()
-    byLabel('Save Image As…').click()
+    byLabel('Save as Picture…').click()
     expect(onViewImage).toHaveBeenCalledWith(src)
     expect(onSaveImageAs).toHaveBeenCalledWith(src)
     unmount()
@@ -333,14 +361,14 @@ describe('EditorContextMenu — Word hyperlink / field / spelling items', () => 
   it('replaces Hyperlink… with Edit / Open / Copy / Remove on a link run', () => {
     const editor = linkEditor()
     const onOpenLink = vi.fn()
-    const onLink = vi.fn()
+    const onCommand = vi.fn()
     const writeText = vi.fn(() => Promise.resolve())
     Object.assign(navigator, { clipboard: { writeText } })
     // "see " = 1..5, link = 5..13; the pointer position is what counts, not the caret
     const { container, unmount } = render(
       createElement(
         EditorContextMenu,
-        menuProps(editor, { menu: { x: 10, y: 10, pos: 8 }, onOpenLink, onLink }),
+        menuProps(editor, { menu: { x: 10, y: 10, pos: 8 }, onOpenLink, onCommand }),
       ),
     )
     const names = labels(container)
@@ -357,7 +385,7 @@ describe('EditorContextMenu — Word hyperlink / field / spelling items', () => 
     act(() => byLabel(container, 'Copy Hyperlink')!.click())
     expect(writeText).toHaveBeenCalledWith('https://example.com/a')
     act(() => byLabel(container, 'Edit Hyperlink…')!.click())
-    expect(onLink).toHaveBeenCalledOnce()
+    expect(onCommand).toHaveBeenLastCalledWith('insert-link')
     expect([editor.state.selection.from, editor.state.selection.to]).toEqual([5, 13])
     act(() => byLabel(container, 'Remove Hyperlink')!.click())
     expect(editor.state.doc.textContent).toBe('see the site now')
@@ -454,6 +482,37 @@ describe('EditorContextMenu — Word hyperlink / field / spelling items', () => 
     expect(spellAddWord).not.toHaveBeenCalled()
     await act(async () => {})
     expect(onRespell).toHaveBeenCalled()
+    unmount()
+    editor.destroy()
+  })
+})
+
+describe('EditorContextMenu \u2014 table items run the shared table commands', () => {
+  it('Insert Above and Table Properties send the commands the Table menu and the ribbon run', () => {
+    const editor = createEditor()
+    insertTableAt(editor, 2, 2)
+    let firstCell = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (firstCell < 0 && node.type.spec.tableRole?.endsWith('cell')) firstCell = pos
+    })
+    editor.commands.setTextSelection(firstCell + 2)
+    const onCommand = vi.fn()
+    const { container, unmount } = render(
+      createElement(EditorContextMenu, menuProps(editor, { onCommand })),
+    )
+    const byLabel = (label: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>('.ctx-item')].find((b) =>
+        b.querySelector('.ctx-label')?.textContent?.startsWith(label),
+      )!
+    act(() => {
+      // React synthesizes onMouseEnter from bubbling mouseover
+      byLabel('Insert').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      byLabel('Insert').dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+    })
+    act(() => byLabel('Insert Above').click())
+    expect(onCommand).toHaveBeenLastCalledWith('table-insert-rows-above')
+    act(() => byLabel('Table Properties').click())
+    expect(onCommand).toHaveBeenLastCalledWith('table-properties')
     unmount()
     editor.destroy()
   })
