@@ -1075,9 +1075,17 @@ export function docStyleCss(parsed: ParsedDocFull, live?: { typedGrid?: boolean 
       // line-height here made a style-level 14pt minimum render shorter than the
       // identical rule declared directly (genoffice#2806).
       decls.push('--doc-line-fixed:1')
-      rules.push(
-        `.doc-page [data-style="${CSS.escape(info.styleId)}"]:not(.doc-lh-fixed) span { line-height:min(calc(var(--doc-line-factor, 1.2) * 1em), var(--doc-lh-cap, 9999px)) }`,
-      )
+      if (!d.lineRawTwips) {
+        // line="0" atLeast is the natural-height form: its spans must still be
+        // pinned to the paragraph box so they do not re-snap to the grid.
+        rules.push(
+          `.doc-page [data-style="${CSS.escape(info.styleId)}"]:not(.doc-lh-fixed) span { line-height:inherit }`,
+        )
+      } else {
+        rules.push(
+          `.doc-page [data-style="${CSS.escape(info.styleId)}"]:not(.doc-lh-fixed) span { line-height:min(calc(var(--doc-line-factor, 1.2) * 1em), var(--doc-lh-cap, 9999px)) }`,
+        )
+      }
     }
     // CJK stretches (.doc-run-lf) re-resolve the style's line rule with their
     // own factor; the style rule beats the document-level .doc-run-lf rule
