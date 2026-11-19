@@ -14,6 +14,11 @@ import type {
   TableModel,
 } from './types'
 import { escapeXmlAttr, escapeXmlText } from './xml-utils'
+import {
+  injectIntoParagraph,
+  paragraphPermMarkers,
+  restoreParagraphPermMarkers,
+} from './perm-ranges'
 import { resolvePropChangeXml } from './revision-xml'
 
 export interface GenerateContext {
@@ -701,7 +706,7 @@ function patchCellXml(tcXml: string, paras: readonly CellParaPatch[]): string | 
       .join('')
   }
   const aligned = paras.length === originals.length
-  const body = paras
+  const rebuilt = paras
     .map((entry, i) => {
       if (entry === null) return originals[i] ?? ''
       if (typeof entry === 'string') {
@@ -723,8 +728,53 @@ function patchCellXml(tcXml: string, paras: readonly CellParaPatch[]): string | 
           : ''
       return `<w:p>${pPr}${emitted}${keep}</w:p>`
     })
+    // a rebuilt paragraph keeps its own editing-permission markers (fill-in
+    // templates open whole cells with them; dropping one re-locks the cell)
+    .map((pXml, i) =>
+      aligned && paras[i] !== null && originals[i] !== undefined
+        ? restoreParagraphPermMarkers(originals[i]!, pXml)
+        : pXml,
+    )
+  return openTag + tcPr + keepCellPermMarkers(tcXml, originals, rebuilt) + '</w:tc>'
+}
+
+/**
+ * Join a rebuilt cell's paragraphs, putting back any editing-permission
+ * marker the rebuild lost: markers of paragraphs that no longer line up
+ * (paragraphs added or removed) go to the start of the first and the end of
+ * the last paragraph, and markers that sat directly in the w:tc stay around
+ * the paragraphs. Every marker the original cell had appears exactly once.
+ */
+function keepCellPermMarkers(
+  tcXml: string,
+  originals: readonly string[],
+  rebuilt: string[],
+): string {
+  if (!tcXml.includes('<w:perm') || rebuilt.length === 0) return rebuilt.join('')
+  const body = rebuilt.join('')
+  const has = (marker: string) => body.includes(marker)
+  const fromParas = originals.map(paragraphPermMarkers)
+  const lostStarts = fromParas.flatMap((m) => m.starts).filter((m) => !has(m))
+  const lostEnds = fromParas.flatMap((m) => m.ends).filter((m) => !has(m))
+  if (lostStarts.length > 0) rebuilt[0] = injectIntoParagraph(rebuilt[0]!, lostStarts.join(''), '')
+  const last = rebuilt.length - 1
+  if (lostEnds.length > 0)
+    rebuilt[last] = injectIntoParagraph(rebuilt[last]!, '', lostEnds.join(''))
+  // markers that are direct children of the cell, not of a paragraph
+  const openTag = /^<w:tc(?: [^>]*)?>/.exec(tcXml)?.[0] ?? ''
+  const inner = tcXml.slice(openTag.length, tcXml.length - '</w:tc>'.length)
+  const direct = splitXmlChildren(inner).filter(
+    (c) => c.name === 'w:permStart' || c.name === 'w:permEnd',
+  )
+  const head = direct
+    .filter((c) => c.name === 'w:permStart')
+    .map((c) => c.xml)
     .join('')
-  return openTag + tcPr + body + '</w:tc>'
+  const tail = direct
+    .filter((c) => c.name === 'w:permEnd')
+    .map((c) => c.xml)
+    .join('')
+  return head + rebuilt.join('') + tail
 }
 
 /** cell paragraph texts carry tabs/breaks as control chars (extractRuns encoding);
@@ -2656,6 +2706,97 @@ function originalTblPrOf(tableXml: string): string | undefined {
 }
 
 export function generateTableModelXml(
+  model: TableModel,
+  originalTableXml?: string,
+  ctx?: Pick<GenerateContext, 'allocateBookmarkId'>,
+): string {
+  const xml = tableModelXml(model, originalTableXml, ctx)
+  return originalTableXml ? restoreTablePermMarkers(originalTableXml, xml) : xml
+}
+
+const PERM_MARKER_RE = /<w:perm(?:Start|End)\b[^>]*?\/>/g
+
+/**
+ * A table rebuilt from its model loses the editing-permission markers its
+ * original XML carried (fill-in templates open whole cells with them, ending
+ * column ranges between rows). Put them back at the granularity editing works
+ * at: markers between rows go after the same row, markers inside a cell go to
+ * the start (w:permStart) and end (w:permEnd) of that cell's paragraphs. Rows
+ * and cells are matched by position, clamped to the last one when the rebuilt
+ * table has fewer, so every marker of the original appears exactly once.
+ */
+export function restoreTablePermMarkers(originalXml: string, rebuiltXml: string): string {
+  if (!originalXml.includes('<w:perm')) return rebuiltXml
+  const markerKey = (m: string) =>
+    (m.startsWith('<w:permStart') ? 's' : 'e') + (/\bw:id="([^"]*)"/.exec(m)?.[1] ?? '')
+  const present = new Set([...rebuiltXml.matchAll(PERM_MARKER_RE)].map((m) => markerKey(m[0])))
+  const missing = (m: string) => !present.has(markerKey(m))
+
+  const innerStart = originalXml.indexOf('>', originalXml.indexOf('<w:tbl')) + 1
+  const innerEnd = originalXml.lastIndexOf('</w:tbl>')
+  if (innerStart <= 0 || innerEnd < innerStart) return rebuiltXml
+  const oRows = xmlSegments(originalXml, 'w:tr', innerStart, innerEnd)
+  const rRows = xmlSegments(rebuiltXml, 'w:tr', 0, rebuiltXml.length)
+  if (rRows.length === 0) return rebuiltXml
+
+  // per rebuilt paragraph: markers to add after its pPr (head) and before </w:p> (tail)
+  const paraEdits = new Map<number, { end: number; head: string; tail: string }>()
+  // plain insertions between rows
+  const inserts: Array<{ at: number; xml: string }> = []
+
+  // markers that are direct children of the table, between (or around) rows
+  let rowsSeen = 0
+  for (const child of splitXmlChildren(originalXml.slice(innerStart, innerEnd))) {
+    if (child.name === 'w:tr') rowsSeen++
+    else if ((child.name === 'w:permStart' || child.name === 'w:permEnd') && missing(child.xml)) {
+      const after = Math.min(rowsSeen, rRows.length) - 1
+      inserts.push({ at: after < 0 ? rRows[0]!.start : rRows[after]!.end, xml: child.xml })
+    }
+  }
+
+  // markers inside cells (and inside their paragraphs)
+  oRows.forEach((oRow, r) => {
+    const rRow = rRows[Math.min(r, rRows.length - 1)]!
+    const oCells = xmlSegments(originalXml, 'w:tc', oRow.start, oRow.end)
+    const rCells = xmlSegments(rebuiltXml, 'w:tc', rRow.start, rRow.end)
+    if (rCells.length === 0) return
+    oCells.forEach((oCell, c) => {
+      const cellXml = originalXml.slice(oCell.start, oCell.end)
+      if (!cellXml.includes('<w:perm')) return
+      const found = [...cellXml.matchAll(PERM_MARKER_RE)].map((m) => m[0])
+      const starts = found.filter((m) => m.startsWith('<w:permStart') && missing(m))
+      const ends = found.filter((m) => m.startsWith('<w:permEnd') && missing(m))
+      if (starts.length === 0 && ends.length === 0) return
+      const rCell = rCells[Math.min(c, rCells.length - 1)]!
+      const paras = xmlSegments(rebuiltXml, 'w:p', rCell.start, rCell.end)
+      if (paras.length === 0) return
+      const first = paras[0]!
+      const last = paras[paras.length - 1]!
+      const firstEdit = paraEdits.get(first.start) ?? { end: first.end, head: '', tail: '' }
+      firstEdit.head += starts.join('')
+      paraEdits.set(first.start, firstEdit)
+      const lastEdit = paraEdits.get(last.start) ?? { end: last.end, head: '', tail: '' }
+      lastEdit.tail += ends.join('')
+      paraEdits.set(last.start, lastEdit)
+    })
+  })
+
+  const replacements: Array<{ start: number; end: number; xml: string }> = [
+    ...[...paraEdits].map(([start, e]) => ({
+      start,
+      end: e.end,
+      xml: injectIntoParagraph(rebuiltXml.slice(start, e.end), e.head, e.tail),
+    })),
+    ...inserts.map((i) => ({ start: i.at, end: i.at, xml: i.xml })),
+  ]
+  // back to front, so earlier offsets stay valid
+  replacements.sort((a, b) => b.start - a.start || b.end - a.end)
+  let out = rebuiltXml
+  for (const rep of replacements) out = out.slice(0, rep.start) + rep.xml + out.slice(rep.end)
+  return out
+}
+
+function tableModelXml(
   model: TableModel,
   originalTableXml?: string,
   ctx?: Pick<GenerateContext, 'allocateBookmarkId'>,

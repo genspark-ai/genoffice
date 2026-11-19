@@ -127,6 +127,7 @@ import {
 } from './zotero-doc-props'
 import { applyPropertyChanges, type PropertyChanges } from './doc-properties'
 import { patchHfPicturesXml } from './run-picture'
+import { restoreParagraphPermMarkers } from './perm-ranges'
 
 /**
  * Relationship attributes are read quote-agnostically and with any spacing
@@ -1819,6 +1820,19 @@ export async function saveDocx(
     return { indexes, shell, first, last }
   })
 
+  // A rebuilt paragraph keeps its editing-permission markers. When one original
+  // paragraph became several blocks (a split), starts go to the first of them
+  // and ends to the last, so every marker id stays unique.
+  const permSpan = new Map<number, { first: number; last: number }>()
+  if (documentXml.includes('<w:perm')) {
+    finalBlocks.forEach((fb, i) => {
+      if (fb.kind !== 'generated' || fb.docxIndex === undefined) return
+      const span = permSpan.get(fb.docxIndex)
+      if (span) span.last = i
+      else permSpan.set(fb.docxIndex, { first: i, last: i })
+    })
+  }
+
   const parts: string[] = [...detachedOpaque]
   for (let i = 0; i < finalBlocks.length; i++) {
     const fb = finalBlocks[i]
@@ -1833,6 +1847,14 @@ export async function saveDocx(
     } else if (fb.kind === 'generated') {
       if (fb.docxIndex !== undefined) fbDocxIndex = fb.docxIndex
       xml = generateParagraphXml(fb.block, genCtx)
+      const span = fb.docxIndex !== undefined ? permSpan.get(fb.docxIndex) : undefined
+      const sourceEl = span ? elements[fb.docxIndex!] : undefined
+      if (span && sourceEl?.name === 'w:p') {
+        xml = restoreParagraphPermMarkers(documentXml.slice(sourceEl.start, sourceEl.end), xml, {
+          starts: span.first === i,
+          ends: span.last === i,
+        })
+      }
       // If the original paragraph was inside a w:sdt shell, re-wrap it. The
       // chain is flattened here to the outermost shell (nested regenerated
       // paragraphs inside several controls are not re-wrapped; an untouched

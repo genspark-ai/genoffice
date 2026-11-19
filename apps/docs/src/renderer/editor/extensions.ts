@@ -17,6 +17,7 @@ import { Editor, Extension, Node } from '@tiptap/core'
 import { SHAPE_INLINE_WRAP } from './floating-z-order'
 import { selectBoxAt, selectedBoxPlugin } from './selected-box'
 import { StreamingTailGuardExtension } from './streaming-tail-guard'
+import { PermRegionsExtension } from './perm-regions'
 import { wrapGroupCss, type WrapPicture } from './wrap-group'
 import type { ChainedCommands, RawCommands } from '@tiptap/core'
 import { Gapcursor, UndoRedo } from '@tiptap/extensions'
@@ -300,6 +301,8 @@ const anchorAttrs = {
   bookmarks: { default: null as string[] | null },
   /** Word internal bookmarks (_Ref/_Toc…): kept out of the bookmark manager, written back verbatim on paragraph rebuild so cross-references don't break */
   hiddenBookmarks: { default: null as string[] | null },
+  /** inside an editing permission range open to everyone: editable while the document is protected read-only (display only, never written back) */
+  permEditable: { default: false },
   /** Endpoints of cross-paragraph comment ranges (only one end in this paragraph); written back on paragraph rebuild to avoid orphan marks */
   commentStarts: { default: null as string[] | null },
   commentEnds: { default: null as string[] | null },
@@ -2647,6 +2650,8 @@ export const ListNumberingExtension = Extension.create<object, ListNumberingStor
 })
 
 const tableCellAttrs = {
+  /** the whole cell lies in an editing permission range open to everyone: editable while the document is protected read-only (display only, never written back) */
+  permEditable: { default: false },
   vAlign: { default: null as string | null },
   borders: { default: null as Record<string, unknown> | null },
   rawTcPr: { default: null as string | null },
@@ -7710,6 +7715,7 @@ export const AutoLinkOnDelimiter = Extension.create({
 
 export const editorExtensions = [
   StreamingTailGuardExtension,
+  PermRegionsExtension,
   ScriptFonts,
   DocDocument,
   DocText,

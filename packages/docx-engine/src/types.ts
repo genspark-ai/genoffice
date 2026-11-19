@@ -1492,6 +1492,8 @@ export interface CellMargins {
 export interface TableCell {
   /** paragraph texts inside the cell */
   paras: string[]
+  /** inside an editing permission range open to everyone (w:permStart w:edGrp="everyone"): editable in a read-only protected document */
+  permEditable?: boolean
   /** rich paragraph content; when present this is the formatting source of truth */
   richParas?: TableParagraph[]
   /** this cell's margin overrides (w:tcMar) */
@@ -1791,6 +1793,8 @@ export interface Block {
   docxIndex: number | null
   /** exact XML slice from the original document.xml (patch passthrough basis) */
   originalXml: string | null
+  /** top-level paragraph inside an editing permission range open to everyone: editable in a read-only protected document */
+  permEditable?: boolean
   /** expanded from a w:altChunk part: the chunk's own (modern) layout, not the host's compat mode */
   altChunk?: boolean
   /** heading level 1-9 (type === 'heading') */
