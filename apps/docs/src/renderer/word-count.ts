@@ -22,8 +22,28 @@ import type { Selection } from '@tiptap/pm/state'
 // (U+20000-U+3134F, high surrogates D840-D8BF); it stops at D8BF so emoji
 // (D83C-D83E high surrogates) and the planes 4-16 private-use area and
 // variation selectors supplement (D8C0-DBFF) are never counted as Asian chars.
+//
+// Word also counts four symbols as Asian characters wherever they stand: the
+// two-dot leader, the reference mark, prime and double prime (probe: "a" + one
+// of them + "b" is three words).
 const ASIAN_RE =
-  /[ᄀ-ᇿ⺀-⿟、-〿぀-ヿ㄀-ㄯ㄰-㆏㇀-ㇿ㐀-䶿一-鿿가-힯豈-﫿！-｠￠-￦]|[\uD840-\uD8BF][\uDC00-\uDFFF]/g
+  /^(?:[\u1100-\u11ff\u2e80-\u2fdf\u3001-\u303f\u3040-\u30ff\u3100-\u312f\u3130-\u318f\u31c0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff\uff01-\uff60\uffe0-\uffe6\u2025\u203b\u2032\u2033]|[\uD840-\uD8BF][\uDC00-\uDFFF])$/
+
+/**
+ * Symbols Word counts as Asian characters when they follow one (or follow such
+ * a symbol that does): curly quotes, the ellipsis, the middle dot and other
+ * East Asian "ambiguous width" marks. After a Latin letter they join its word
+ * ("a…b" is one word); after Han each is a character of its own (Han, two
+ * ellipses, Han is four). Probed one by one in Word for Mac 16, 2026-11-19;
+ * the guillemets, ASCII punctuation and the dashes stay as they are.
+ */
+const AFTER_ASIAN = new Set([
+  ...'\u00b7\u00b0\u00a7\u2122\u00d7\u00b1\u20ac\u2018\u2019\u201c\u201d\u2026\u00b6\u2020\u2030',
+  ...'\u00a8\u00b4\u02c6\u02dc\u00a1\u00bf\u2039\u203a',
+])
+
+/** zero-width characters: no word of their own, no split ("a" ZWSP "b" is one word) */
+const ZERO_WIDTH = new Set(['\u200b', '\ufeff'])
 
 /**
  * Word's non-Asian words (probed against Word for Mac 16, 2026-11-19): any run
@@ -32,34 +52,59 @@ const ASIAN_RE =
  * - whitespace: space, tab, line breaks, NBSP and the ideographic space. The
  *   thin, en and other typographic spaces join their neighbours ("a\u2009b" is
  *   one word).
- * - en dash, em dash, the bullet and the private-use symbol-font glyphs (a
- *   Symbol or Wingdings bullet, U+F0B7) split words and are not words
- *   themselves: "3248–3265" is two words, a lone "—" none.
+ * - en dash, em dash and the bullet, also as Symbol's private-use U+F0B7,
+ *   split words and are not words themselves: "3248–3265" is two words, a
+ *   lone "—" none. Other private-use glyphs (Wingdings bullets) are words.
  * - the Unicode hyphen (U+2010) and the arrows split words and are words of
  *   their own: "a→b" is three. The ASCII hyphen joins ("state-of-the-art").
  * Asian characters are counted one by one (asianCharCount) and split the runs
- * around them ("2026年8月2日": three non-Asian words).
+ * around them (a date written 2026, Han "year", 8, Han "month", 2, Han "day"
+ * is three non-Asian words and three Asian characters).
  */
 // explicit, not \s: JS counts the en/thin/hair spaces as whitespace, Word does not
-const WORD_SPACE_RE = /[ \t\n\r\f\v\u00a0\u3000\u2013\u2014\u2022\ue000-\uf8ff]+/
+const WORD_SPACE_RE = /[ \t\n\r\f\v\u00a0\u3000\u2013\u2014\u2022\uf0b7]+/
 const OWN_WORD_RE = /([\u2010\u2190-\u21ff])/
 
-export function asianCharCount(text: string): number {
-  return (text.match(ASIAN_RE) ?? []).length
+/** one pass over the text: the Asian characters, and the rest with them blanked out */
+function splitAsian(text: string): { asian: number; rest: string } {
+  let asian = 0
+  let rest = ''
+  let afterAsian = false
+  for (const ch of text) {
+    if (ZERO_WIDTH.has(ch)) continue
+    if (ASIAN_RE.test(ch) || (afterAsian && AFTER_ASIAN.has(ch))) {
+      asian++
+      rest += ' '
+      afterAsian = true
+    } else {
+      rest += ch
+      afterAsian = false
+    }
+  }
+  return { asian, rest }
 }
 
-export function nonAsianWordCount(text: string): number {
+function wordsOf(rest: string): number {
   let n = 0
-  for (const run of text.replace(ASIAN_RE, ' ').split(WORD_SPACE_RE)) {
+  for (const run of rest.split(WORD_SPACE_RE)) {
     if (!run) continue
     for (const part of run.split(OWN_WORD_RE)) if (part) n++
   }
   return n
 }
 
+export function asianCharCount(text: string): number {
+  return splitAsian(text).asian
+}
+
+export function nonAsianWordCount(text: string): number {
+  return wordsOf(splitAsian(text).rest)
+}
+
 /** Word's Words figure: asian chars + non-asian words */
 export function countWords(text: string): number {
-  return asianCharCount(text) + nonAsianWordCount(text)
+  const { asian, rest } = splitAsian(text)
+  return asian + wordsOf(rest)
 }
 
 /**
@@ -73,44 +118,97 @@ export function countWords(text: string): number {
  * a text range) both yield no text, and `countWords('')` is 0 — no separate
  * guard needed.
  */
-export function selectedWordCount(doc: ProseMirrorNode, selection: Selection): number {
+export function selectedWordCount(
+  doc: ProseMirrorNode,
+  selection: Selection,
+  defs?: Map<string, NumberingDef> | null,
+): number {
   // the same leaf reader as the total: an inline formula's text counts in both
-  return countWords(doc.textBetween(selection.from, selection.to, ' ', leafTextForWordCount))
+  const text = doc.textBetween(selection.from, selection.to, ' ', leafTextForWordCount)
+  if (selection.empty) return countWords(text)
+  // a list item's label counts when the selection holds the start of its text,
+  // so Select All shows the document total, as in Word
+  const labels = listLabels(doc, defs).filter(
+    (l) => l.pos + 1 >= selection.from && l.pos + 1 < selection.to,
+  )
+  return countWords(text) + countWords(labels.map((l) => l.text).join(' '))
 }
 
 /**
- * The list labels Word counts as words: an item's number ("1.", "a)") and a
- * bullet written as text (Word's Courier New "o"), but not a symbol-font bullet
- * (Word's U+F0B7: a private-use glyph, no word) nor a picture bullet. Word for
- * Mac 16 probe 2026-11-19: three numbered items "alpha", "beta", "gamma" are
- * six words, the same items under a Symbol bullet three, under "o" six. The
- * labels come from the numbering engine the editor draws them with.
+ * The list labels Word counts as words, by position: an item's number ("1.",
+ * "a)") and a bullet that is a word under the word rule ("o", a Wingdings
+ * square), but not Symbol's U+F0B7 bullet, a "•" or a dash bullet, nor a
+ * picture bullet. Word for Mac 16 probe 2026-11-19: three numbered items
+ * "alpha", "beta", "gamma" are six words, three under a Symbol bullet, six
+ * under "o" or a Wingdings square. The labels come from the numbering engine
+ * the editor draws them with, over the same items (the numbered anchor
+ * paragraph of a textbox block included).
  */
+export function listLabels(
+  doc: ProseMirrorNode,
+  defs: Map<string, NumberingDef> | null | undefined,
+): Array<{ pos: number; text: string }> {
+  if (!defs?.size) return []
+  // docs and defs are replaced, never mutated, on change: a selection change
+  // re-reads the last walk instead of walking the document again
+  const hit = labelCache.get(doc)
+  if (hit && hit.defs === defs) return hit.labels
+  const labels = walkListLabels(doc, defs)
+  labelCache.set(doc, { defs, labels })
+  return labels
+}
+
+const labelCache = new WeakMap<
+  ProseMirrorNode,
+  { defs: Map<string, NumberingDef>; labels: Array<{ pos: number; text: string }> }
+>()
+
+function walkListLabels(
+  doc: ProseMirrorNode,
+  defs: Map<string, NumberingDef>,
+): Array<{ pos: number; text: string }> {
+  const refs: ListItemRef[] = []
+  const at: number[] = []
+  doc.descendants((node, pos) => {
+    if (node.type.name === 'docListItem') {
+      const deleted =
+        !!node.attrs.paraMarkDel ||
+        (node.attrs.blockRevision as { kind?: string } | null)?.kind === 'del'
+      refs.push({
+        numId: (node.attrs.numId as string | null) ?? null,
+        ilvl: Number(node.attrs.ilvl) || 0,
+        ...(deleted ? { deleted: true } : {}),
+      })
+      at.push(pos)
+      return false
+    }
+    const stray =
+      node.type.name === 'docProtected' ? (node.attrs.strayList as ListItemRef | null) : null
+    if (stray) {
+      refs.push({ numId: stray.numId, ilvl: stray.ilvl })
+      at.push(pos)
+      return false
+    }
+    return true
+  })
+  if (refs.length === 0) return []
+  const out: Array<{ pos: number; text: string }> = []
+  computeListMarkerInfos(refs, defs).forEach((m, i) => {
+    if (!m || m.picBulletSrc || refs[i]!.deleted) return
+    // the glyph as authored: a symbol-font bullet stays in the private-use area
+    const text = m.symbolFont && m.symbolChar ? m.symbolChar : m.text
+    if (text) out.push({ pos: at[i]!, text })
+  })
+  return out
+}
+
+/** every list label's text, for the document's word count */
 export function listLabelText(
   doc: ProseMirrorNode,
   defs: Map<string, NumberingDef> | null | undefined,
 ): string {
-  if (!defs?.size) return ''
-  const refs: ListItemRef[] = []
-  doc.descendants((node) => {
-    if (node.type.name !== 'docListItem') return true
-    const deleted =
-      !!node.attrs.paraMarkDel ||
-      (node.attrs.blockRevision as { kind?: string } | null)?.kind === 'del'
-    refs.push({
-      numId: (node.attrs.numId as string | null) ?? null,
-      ilvl: Number(node.attrs.ilvl) || 0,
-      ...(deleted ? { deleted: true } : {}),
-    })
-    return false
-  })
-  if (refs.length === 0) return ''
-  return computeListMarkerInfos(refs, defs)
-    .map((m, i) => {
-      if (!m || m.picBulletSrc || refs[i]!.deleted) return ''
-      // the glyph as authored: a symbol-font bullet stays in the private-use area
-      return m.symbolFont && m.symbolChar ? m.symbolChar : m.text
-    })
+  return listLabels(doc, defs)
+    .map((l) => l.text)
     .join(' ')
 }
 

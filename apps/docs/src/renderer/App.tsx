@@ -6232,7 +6232,13 @@ export function App() {
   useEffect(() => {
     if (!editor) return
     const refreshSelection = () => {
-      setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
+      setSelectionWordCount(
+        selectedWordCount(
+          editor.state.doc,
+          editor.state.selection,
+          editor.storage.listNumbering?.defs,
+        ),
+      )
       setSelectionHead(editor.state.selection.head)
       // a caret move in the body ends the stop on a change outside it
       if (lastStoryRef.current !== null) setActiveStoryId(null)
@@ -6252,7 +6258,13 @@ export function App() {
       const started = performance.now()
       setWordCount(wordCountOfDoc(editor.state.doc, editor.storage.listNumbering?.defs))
       setRevisionRanges(doc ? revisionsOfDoc(editor.state.doc) : [])
-      setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
+      setSelectionWordCount(
+        selectedWordCount(
+          editor.state.doc,
+          editor.state.selection,
+          editor.storage.listNumbering?.defs,
+        ),
+      )
       slowWalk = performance.now() - started > WORD_COUNT_SLOW_WALK_MS
     }
     const onUpdate = () => {

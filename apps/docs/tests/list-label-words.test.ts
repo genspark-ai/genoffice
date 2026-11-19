@@ -10,7 +10,13 @@ import { Editor } from '@tiptap/core'
 import type { NumberingDef, NumberingLevel } from '@genoffice/docx-engine'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { buildDocumentContext } from '../src/renderer/ai/protocol'
-import { countWords, listLabelText } from '../src/renderer/word-count'
+import { TextSelection } from '@tiptap/pm/state'
+import {
+  countWords,
+  documentTextForWordCount,
+  listLabelText,
+  selectedWordCount,
+} from '../src/renderer/word-count'
 
 const level = (l: Partial<NumberingLevel>): NumberingLevel =>
   ({ numFmt: 'decimal', lvlText: '%1.', start: 1, ...l }) as NumberingLevel
@@ -23,7 +29,9 @@ const def = (numId: string, lvl: NumberingLevel): NumberingDef => ({
 const defs = new Map<string, NumberingDef>([
   ['1', def('1', level({}))],
   ['2', def('2', level({ numFmt: 'bullet', lvlText: 'o', font: 'Courier New' }))],
-  ['3', def('3', level({ numFmt: 'bullet', lvlText: '', font: 'Symbol' }))],
+  ['3', def('3', level({ numFmt: 'bullet', lvlText: '\uf0b7', font: 'Symbol' }))],
+  // Word's square bullet: a private-use Wingdings glyph that does count
+  ['4', def('4', level({ numFmt: 'bullet', lvlText: '\uf0a7', font: 'Wingdings' }))],
 ])
 
 const liveEditors: Editor[] = []
@@ -59,6 +67,39 @@ describe('list labels in the word count', () => {
     expect(countWords(listLabelText(listOf('1').state.doc, defs))).toBe(3)
     expect(countWords(listLabelText(listOf('2').state.doc, defs))).toBe(3)
     expect(countWords(listLabelText(listOf('3').state.doc, defs))).toBe(0)
+    expect(countWords(listLabelText(listOf('4').state.doc, defs))).toBe(3)
+  })
+
+  it('counts the labels a selection holds, so Select All shows the total', () => {
+    const { state } = listOf('1')
+    const all = TextSelection.create(state.doc, 1, state.doc.content.size - 1)
+    const total =
+      countWords(documentTextForWordCount(state.doc)) + countWords(listLabelText(state.doc, defs))
+    expect(selectedWordCount(state.doc, all, defs)).toBe(total)
+    // inside one item's text: its label stays out
+    const inside = TextSelection.create(state.doc, 2, 5)
+    expect(selectedWordCount(state.doc, inside, defs)).toBe(1)
+  })
+
+  it("counts the number of a textbox block's numbered anchor paragraph", () => {
+    // the editor numbers this stray line in the sequence too
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docListItem',
+            attrs: { docxIndex: null, kind: 'bullet', numId: '1', ilvl: 0 },
+            content: [{ type: 'text', text: 'alpha' }],
+          },
+          { type: 'docProtected', attrs: { strayList: { numId: '1', ilvl: 0 } } },
+        ],
+      },
+    })
+    liveEditors.push(editor)
+    expect(listLabelText(editor.state.doc, defs)).toBe('1. 2.')
   })
 
   it('counts nothing without numbering definitions', () => {
