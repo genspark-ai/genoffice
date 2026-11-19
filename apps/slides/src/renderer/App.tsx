@@ -1023,7 +1023,8 @@ export function App() {
     const tick = () => {
       if (saving || editing || editingCell || mouseDownRef.current) return
       void window.slidesApi.isDirty().then((d) => {
-        if (!d || saving) return
+        // notes typed into the pane reach the deck only when flushed, which save() does first
+        if ((!d && !notesDraftRef.current) || saving) return
         saving = true
         void save(true).finally(() => {
           saving = false
