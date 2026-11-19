@@ -5264,7 +5264,8 @@ export function App({
     loadWorkbookSkeleton(univerRef.current, selected)
     applyWorkbookNotes(univerRef.current, selected)
     threadStore.load(selected)
-    threadPane.close()
+    // a save reopens the same workbook: the user goes on with the comment they were on
+    if (!opts?.continueChat) threadPane.close()
     applyDefinedNames(univerRef.current, selected, state)
     const runtime = univerRef.current
     if (runtime) {
