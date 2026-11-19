@@ -21,6 +21,7 @@ import '@genoffice/ui/image-viewer.css'
 import './styles.css'
 import './fonts/fonts.css'
 import { applyAiPanelPrefs, installScreenTips } from '@genoffice/ui'
+import { connectAppWideMeasurementUnit } from './units'
 import { setAltChunkHtmlConverter } from '@genoffice/docx-engine'
 
 installScreenTips()
@@ -61,6 +62,19 @@ async function bootstrap(): Promise<void> {
   applyDocumentTheme(docTheme ?? 'follow')
   window.desktop?.onThemeChanged(applyTheme)
   window.desktop?.onDocumentThemeChanged?.(applyDocumentTheme)
+  // the app-wide unit (Settings ▸ General); before it answers, the locale default
+  const desktop = window.desktop
+  if (
+    desktop?.getMeasurementUnit &&
+    desktop.setMeasurementUnit &&
+    desktop.onMeasurementUnitChanged
+  ) {
+    connectAppWideMeasurementUnit({
+      get: () => desktop.getMeasurementUnit!(),
+      set: (unit) => desktop.setMeasurementUnit!(unit),
+      onChanged: (handler) => desktop.onMeasurementUnitChanged!(handler),
+    })
+  }
   await window.desktop
     ?.getAiPanelPrefs?.()
     .then(applyAiPanelPrefs)

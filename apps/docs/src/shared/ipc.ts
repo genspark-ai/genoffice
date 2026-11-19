@@ -428,6 +428,13 @@ export interface DesktopApi {
   getDocumentTheme(): Promise<DocTheme>
   /** document page theme switched from the shell home page */
   onDocumentThemeChanged(handler: (theme: DocTheme) => void): () => void
+  /** app-wide measurement unit (Settings ▸ General); the raw shell answer, validated by units.ts */
+  getMeasurementUnit?(): Promise<unknown>
+  /** pick the app-wide unit (null = follow the system region) */
+  setMeasurementUnit?(
+    unit: import('@genoffice/ui/measurement').MeasurementUnit | null,
+  ): Promise<unknown>
+  onMeasurementUnitChanged?(handler: (state: unknown) => void): () => void
   /** shell-wide AutoSave default (see useAutoSavePref) */
   getAutoSaveDefault(): Promise<AutoSaveDefault>
   onAutoSaveDefaultChanged(handler: (value: AutoSaveDefault) => void): () => void
