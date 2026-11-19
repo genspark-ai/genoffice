@@ -254,6 +254,7 @@ import {
   blockGapRects,
 } from './pagination'
 import { prepareFlow, sliceFlow, type PassContext } from './pagination-pass'
+import { anchorLineTop } from './pagination-lines'
 import {
   GAP_BAND,
   alignGapHfStrips,
@@ -272,6 +273,8 @@ import {
   setRowFills,
   syncAnchorBands,
   syncCutOverlays,
+  syncSeamOverlays,
+  type SeamOverlaySpec,
   syncFloatShifts,
   syncPageBorders,
   syncPageSheets,
@@ -4756,6 +4759,9 @@ export function App() {
         const carryGaps = new Map<number, number>()
         const overlayCutAnchors: LineAnchor[] = []
         const overlayPages: number[] = []
+        // zero-height cut points still paint a page seam (absolute overlay, no
+        // row-height feedback) so atLeast rows keep the gap without the long chin
+        const seamOverlays: SeamOverlaySpec[] = []
         const carries: FlowCarry[] = []
         const lineRectsOf = createLineRectsCache()
         const gapIds = new Set<string>()
@@ -5305,9 +5311,8 @@ export function App() {
               if (cutCell) {
                 // single-column row: insert a real inline gap band; bleed to the paper
                 // edges from the anchor's block (the widget's containing block)
-                const r = (
-                  anchorElement(anchor)?.closest('td > *, th > *') ?? cutCell
-                ).getBoundingClientRect()
+                const host = anchorElement(anchor)?.closest('td > *, th > *') ?? cutCell
+                const r = host.getBoundingClientRect()
                 gaps.push({
                   pos,
                   kind: 'cell',
@@ -5325,6 +5330,36 @@ export function App() {
               } else {
                 // multi-cell row: keep the zero-height dashed marker (no hfProps — it can't host header/footer strips)
                 gaps.push({ pos, kind: 'cut', page: k + 1, metrics })
+                // ...and draw the page-edge closing rules on a transparent
+                // overlay spanning the sheet, independent of the host cell.
+                const seamTop = anchorLineTop(anchor, factor)
+                if (seamTop !== null) {
+                  const seamCell = anchorElement(anchor)?.closest('td, th')
+                  // close the whole table, not just the cell that holds the
+                  // anchor: the seam rule must meet both outer borders
+                  const seamTable = seamCell?.closest('table') ?? seamCell
+                  const cellRect = seamTable?.getBoundingClientRect()
+                  const cellStyle = seamCell ? getComputedStyle(seamCell) : null
+                  seamOverlays.push({
+                    bottom: seamTop,
+                    marginBottom: metrics.marginBottom,
+                    marginTop: metrics.marginTop,
+                    left: 0,
+                    width: pmRect.width / factor,
+                    cell:
+                      cellRect && cellStyle
+                        ? {
+                            left: (cellRect.left - pmRect.left) / factor,
+                            width: cellRect.width / factor,
+                            color:
+                              cellStyle.borderTopColor ||
+                              cellStyle.borderRightColor ||
+                              'rgb(0, 0, 0)',
+                            thickness: parseFloat(cellStyle.borderTopWidth) || 1,
+                          }
+                        : undefined,
+                  })
+                }
               }
               return
             }
@@ -5334,7 +5369,12 @@ export function App() {
             const anchor =
               lineStartAnchor(b.el, cutOff, factor, lineRectsOf) ??
               nextLineAnchor(b.el, cutOff, factor, lineRectsOf)
-            const pos = anchor ? posFromAnchor(editor.view, anchor) : undefined
+            if (!anchor) {
+              console.warn('[pagination] no line anchor at page boundary', slice.start)
+              missCut('no line anchor at the cut')
+              return
+            }
+            const pos = posFromAnchor(editor.view, anchor)
             if (pos == null) {
               console.warn('[pagination] no line anchor at page boundary', slice.start)
               missCut('no line anchor at the cut')
@@ -5642,6 +5682,7 @@ export function App() {
         )
         stage('clampCells')
         syncCutOverlays((pm.closest('.page-wrap') as HTMLElement) ?? pm, overlayCutAnchors, factor)
+        syncSeamOverlays((pm.closest('.page-wrap') as HTMLElement) ?? pm, seamOverlays, factor)
         stage('cutOverlays')
         {
           // page border (w:pgBorders): per-page overlay boxes (w:display can
