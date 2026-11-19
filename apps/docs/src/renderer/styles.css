@@ -6636,6 +6636,18 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   --doc-grid-pitch: 0.0001px;
 }
 
+/* a row split over pages and filled to its declared height (setRowFills): Word
+   aligns a cell within each fragment, and the fill is the last fragment's own
+   minimum. Centered or bottom-aligned across the whole tr, the fill's extra
+   would push every fragment's content down (a center-aligned form cell
+   spanning four pages started 29px low on each, and a page lost two
+   references). The fill goes below the content instead. Inline vAlign styles,
+   hence the override. */
+.doc-table tr[data-row-fill] > td,
+.doc-table tr[data-row-fill] > th {
+  vertical-align: top !important;
+}
+
 /* empty paragraph in a cell: LO sizes it near the Latin single line, so it must
    not out-grow the row's content cells via the inherited CJK factor */
 .doc-table td .doc-p-empty,
