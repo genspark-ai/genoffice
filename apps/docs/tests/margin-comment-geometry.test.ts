@@ -65,6 +65,17 @@ describe('margin comment geometry', () => {
     f.app.remove()
   })
 
+  it('keeps text coordinates correct when reserving the comment column moves the wrap', () => {
+    const f = fixture()
+    f.wrap.getBoundingClientRect = () =>
+      box(f.wrap.classList.contains('has-markup-area') ? 0 : 100, 0, 1460, 2400)
+    f.pm.getBoundingClientRect = () => box(100, 0, 1200, 2400)
+    f.span('1', [box(200, 100, 80, 16)])
+    syncMarginAnnotations(f.wrap, f.pm, f.comments, 1)
+    expect(f.wrap.querySelector('.comment-leader')!.getAttribute('d')).toMatch(/^M 280 115 L /)
+    f.app.remove()
+  })
+
   it('anchors cross-paragraph ranges at their end marker rather than start block', () => {
     const f = fixture()
     const first = document.createElement('p')

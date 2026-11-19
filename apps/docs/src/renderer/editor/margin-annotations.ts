@@ -966,9 +966,10 @@ export function syncMarginAnnotations(
   // a left column pads the wrap on the paper's side: the paper just moved, so
   // re-measure it and carry the anchors (measured above) along
   const paperNow = pm.getBoundingClientRect()
-  const shiftX = (paperNow.left - pmRect.left) / f
-  const paperLeft = (paperNow.left - wrapRect.left) / f
-  const paperRight = (paperNow.right - wrapRect.left) / f
+  const wrapNow = wrap.getBoundingClientRect()
+  const shiftX = (paperNow.left - pmRect.left + wrapRect.left - wrapNow.left) / f
+  const paperLeft = (paperNow.left - wrapNow.left) / f
+  const paperRight = (paperNow.right - wrapNow.left) / f
   const bands = pageBandsOf(pm, wrapRect, wrapRect.height / f, f, cuts)
   const frames = pageFramesFromGaps(wrap, f, firstPage, cuts)
   const frameAt = (y: number) =>
