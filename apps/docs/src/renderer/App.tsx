@@ -500,6 +500,7 @@ import {
   type CommentsMode,
 } from './components/comments-mode'
 import { StylesPane } from './components/StylesPane'
+import { useStoredFlag } from './stored-flag'
 import { Ruler } from './components/Ruler'
 import { docBodyFont, docHasCjk, docLineFactor, docStyleCss, docThemeCss } from './doc-style-css'
 import { docFontsCoveredBy } from './font-check'
@@ -984,7 +985,8 @@ export function App() {
     setStatus(on ? t('appTitlePgOn') : t('appTitlePgOff'))
   }
   const [showMarks, setShowMarks] = useState(false)
-  const [showRuler, setShowRuler] = useState(false)
+  // Word keeps View ▸ Ruler on across documents and launches
+  const [showRuler, setShowRuler] = useStoredFlag('aidocs.showRuler')
   const [leftPane, setLeftPane] = useState<LeftPane>(loadLeftPane)
   const showNav = leftPane === 'nav'
   const setShowNav = useCallback((on: boolean) => setLeftPane(on ? 'nav' : null), [])
