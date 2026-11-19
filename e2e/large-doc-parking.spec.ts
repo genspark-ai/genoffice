@@ -204,7 +204,10 @@ test('large document: layout parking engages, reveals on caret and scroll', asyn
   const docPath = join(dir, 'large.docx')
   writeFileSync(docPath, await bigDocx())
   try {
-    await runOnce(false, docPath)
+    // the parking-off leg prints the A/B numbers for the research note and
+    // carries no assertions — it runs locally only, because two full
+    // launches of this document exceed the CI test budget
+    if (!process.env.CI) await runOnce(false, docPath)
     await runOnce(true, docPath)
   } finally {
     rmSync(dir, { recursive: true, force: true })
