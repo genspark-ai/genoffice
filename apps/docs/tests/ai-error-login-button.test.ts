@@ -187,4 +187,65 @@ describe('AI error bubble sign-in button', () => {
       delete (window as unknown as Record<string, unknown>).desktop
     }
   })
+
+  // The browser-approved login lands without anything navigating back to the
+  // app: the main process broadcasts it, and the panel must retire the inline
+  // sign-in button on the spot (the only confirmation an editor view gives).
+  it('retires the sign-in button when the login lands', async () => {
+    const editor = createEditor()
+    try {
+      let listener: ChunkListener | null = null
+      let loginLanded: (() => void) | null = null
+      ;(window as unknown as Record<string, unknown>).desktop = {
+        aiGskStatus: vi.fn(async () => ({ loggedIn: false })),
+        onAiStream: (l: ChunkListener) => {
+          listener = l
+          return () => {
+            listener = null
+          }
+        },
+        onGskLoginLanded: (handler: () => void) => {
+          loginLanded = handler
+          return () => {
+            loginLanded = null
+          }
+        },
+        aiStream: vi.fn(async (request: { requestId: string }) => {
+          listener?.({ requestId: request.requestId, type: 'error', error: 'HTTP 429: rate limit' })
+        }),
+        aiStreamCancel: vi.fn(async () => {}),
+      }
+      const mounted = mount(
+        createElement(AiPanel, {
+          editor,
+          blocks: [],
+          settings: settingsWith('genspark'),
+          open: true,
+          onExpand: () => {},
+          onCollapse: () => {},
+        }),
+      )
+      const container = mounted.container
+      const textarea = container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!
+      typeInto(textarea, 'summarize this')
+      const send = container.querySelector<HTMLButtonElement>('.ai-send-btn')!
+      await act(async () => {
+        send.click()
+        await flush()
+        await flush()
+        await flush()
+        await flush()
+      })
+      expect(container.querySelector('.ai-login-btn')).not.toBeNull()
+      await act(async () => {
+        loginLanded?.()
+        await flush()
+      })
+      expect(container.querySelector('.ai-login-btn')).toBeNull()
+      act(() => mounted.root.unmount())
+    } finally {
+      editor.destroy()
+      delete (window as unknown as Record<string, unknown>).desktop
+    }
+  })
 })

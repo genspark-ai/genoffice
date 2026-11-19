@@ -183,8 +183,7 @@ register({
     const { slide, el } = resolveElement(ctx, op)
     const p1 = op.p1 as { x: number; y: number }
     const p2 = op.p2 as { x: number; y: number }
-    // Resolve anchors before any mutation: per_op isolation does not roll back
-    // a failed apply, so a late throw would leave the connector moved
+    // Resolve anchors before any mutation, so a late throw has nothing to undo
     const start = toRef(
       slide,
       'start',

@@ -194,8 +194,8 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     // platforms — confirmed on the international docs (api.minimax.io) and
     // on the CN platform (platform.minimaxi.com, api base api.minimax.cn);
     // image-01 keeps api.minimaxi.com as its CN host
-    imageModels: ['MiniMax-H3-Image', 'MiniMax-H3-Image-Highspeed', 'image-01'],
-    defaultImageModel: 'MiniMax-H3-Image',
+    imageModels: ['image-01', 'MiniMax-H3-Image', 'MiniMax-H3-Image-Highspeed'],
+    defaultImageModel: 'image-01',
     analysisProtocol: 'openai-chat',
     analysisModels: ['MiniMax-M3'],
     defaultAnalysisModel: 'MiniMax-M3',

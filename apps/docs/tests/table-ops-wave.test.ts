@@ -264,10 +264,38 @@ describe('splitTableAtSelection', () => {
     expect(savedTableXml(editor, parsed, 0)).toContain('<w:tblCaption w:val="Totals"/>')
   })
 
-  it('is refused on the first row and cuts a crossing vertical merge into an empty cell', async () => {
+  it('from the first row puts an empty paragraph above the table, the caret in it', async () => {
+    const { editor } = await open(tableXml(2, 2))
+    const before: string[] = []
+    editor.state.doc.forEach((n) => before.push(n.type.name))
+    caretIn(editor, 0, 1)
+    expect(splitTableAtSelection()(editor.state)).toBe(true)
+    expect(run(editor, splitTableAtSelection())).toBe(true)
+    const kinds: string[] = []
+    editor.state.doc.forEach((n) => kinds.push(n.type.name))
+    const tableAtIndex = before.indexOf('docTable')
+    expect(kinds).toEqual([
+      ...before.slice(0, tableAtIndex),
+      'docParagraph',
+      ...before.slice(tableAtIndex),
+    ])
+    expect(grid(editor, 0)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    const { $from } = editor.state.selection
+    expect($from.parent.type.name).toBe('docParagraph')
+    expect($from.parent.textContent).toBe('')
+    expect($from.depth).toBe(1)
+    expect($from.index(0)).toBe(tableAtIndex)
+    editor.commands.undo()
+    const undone: string[] = []
+    editor.state.doc.forEach((n) => undone.push(n.type.name))
+    expect(undone).toEqual(before)
+  })
+
+  it('cuts a crossing vertical merge into an empty cell', async () => {
     const { editor } = await open(tableXml(3, 2))
-    caretIn(editor, 0, 0)
-    expect(run(editor, splitTableAtSelection())).toBe(false)
     selectCells(editor, [0, 0], [2, 0])
     run(editor, mergeCells)
     caretIn(editor, 1, 1)

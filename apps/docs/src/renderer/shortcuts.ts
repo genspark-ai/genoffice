@@ -12,12 +12,16 @@
  * Hide / Minimize / Quit, and Word itself differs on a few chords).
  */
 import { macShortcutsToWin, platformShortcuts } from '@genoffice/i18n'
+import type { ActionCommandId } from '../shared/commands'
 import type { StringKey } from './i18n/locale'
 
 export type ShortcutGroupId = 'file' | 'edit' | 'text' | 'para' | 'insert' | 'review' | 'view'
 
 export interface ShortcutDef {
   id: string
+  /** the command the chord runs; without one the binding is built in and cannot be reassigned */
+  cmd?: ActionCommandId
+  payload?: string
   group: ShortcutGroupId
   /** row label; reuses the command's existing translation wherever one exists */
   labelKey: StringKey
@@ -41,17 +45,17 @@ export const SHORTCUT_GROUPS: readonly { id: ShortcutGroupId; labelKey: StringKe
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
   // ---- File ----
-  { id: 'new', group: 'file', labelKey: 'appNew', keys: '⌘N' },
+  { id: 'new', cmd: 'new', group: 'file', labelKey: 'appNew', keys: '⌘N' },
   { id: 'new-window', group: 'file', labelKey: 'appScNewWindow', keys: '⇧⌘N' },
-  { id: 'open', group: 'file', labelKey: 'ribbonOpen', keys: '⌘O' },
-  { id: 'save', group: 'file', labelKey: 'appSave', keys: '⌘S' },
-  { id: 'save-as', group: 'file', labelKey: 'ribbonSaveAs', keys: '⇧⌘S' },
-  { id: 'print', group: 'file', labelKey: 'appPrintTitle', keys: '⌘P' },
+  { id: 'open', cmd: 'open', group: 'file', labelKey: 'ribbonOpen', keys: '⌘O / ⇧⌘O' },
+  { id: 'save', cmd: 'save', group: 'file', labelKey: 'appSave', keys: '⌘S' },
+  { id: 'save-as', cmd: 'save-as', group: 'file', labelKey: 'ribbonSaveAs', keys: '⇧⌘S' },
+  { id: 'print', cmd: 'print', group: 'file', labelKey: 'appPrintTitle', keys: '⌘P' },
   { id: 'close', group: 'file', labelKey: 'appClose', keys: '⌘W' },
 
   // ---- Edit ----
-  { id: 'undo', group: 'edit', labelKey: 'appUndo', keys: '⌘Z' },
-  { id: 'redo', group: 'edit', labelKey: 'appRedo', keys: '⇧⌘Z / ⌘Y' },
+  { id: 'undo', cmd: 'undo', group: 'edit', labelKey: 'appUndo', keys: '⌘Z' },
+  { id: 'redo', cmd: 'redo', group: 'edit', labelKey: 'appRedo', keys: '⇧⌘Z / ⌘Y' },
   { id: 'cut', group: 'edit', labelKey: 'appCut', keys: '⌘X' },
   { id: 'copy', group: 'edit', labelKey: 'appCopy', keys: '⌘C' },
   { id: 'paste', group: 'edit', labelKey: 'appPaste', keys: '⌘V' },
@@ -64,24 +68,49 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
     win: 'Ctrl+Shift+V',
   },
   { id: 'select-all', group: 'edit', labelKey: 'appScSelectAll', keys: '⌘A' },
-  { id: 'find', group: 'edit', labelKey: 'appFindPlaceholder', keys: '⌘F' },
+  { id: 'find', cmd: 'find', group: 'edit', labelKey: 'appFindPlaceholder', keys: '⌘F' },
   // ⌘H is macOS' Hide role and never reaches the window
-  { id: 'replace', group: 'edit', labelKey: 'appReplace', keys: '⌃H', win: 'Ctrl+H' },
+  {
+    id: 'replace',
+    cmd: 'replace',
+    group: 'edit',
+    labelKey: 'appReplace',
+    keys: '⌃H',
+    win: 'Ctrl+H',
+  },
   // Word for Mac's Go To; Windows Word uses Ctrl+G
-  { id: 'goto', group: 'edit', labelKey: 'appGoToTitle', keys: '⌥⌘G', win: 'Ctrl+G' },
-  { id: 'shortcuts', group: 'edit', labelKey: 'appScTitle', keys: '⌘/' },
+  { id: 'goto', cmd: 'goto', group: 'edit', labelKey: 'appGoToTitle', keys: '⌥⌘G', win: 'Ctrl+G' },
+  { id: 'shortcuts', cmd: 'shortcuts', group: 'edit', labelKey: 'appScTitle', keys: '⌘/' },
 
   // ---- Text formatting ----
-  { id: 'bold', group: 'text', labelKey: 'appFontBold', keys: '⌘B' },
-  { id: 'italic', group: 'text', labelKey: 'appFontItalic', keys: '⌘I' },
-  { id: 'underline', group: 'text', labelKey: 'appUnderline', keys: '⌘U' },
-  { id: 'font-dialog', group: 'text', labelKey: 'appFontDialogTitle', keys: '⌘D' },
-  { id: 'grow-font', group: 'text', labelKey: 'ribbonGrowFont', keys: '⇧⌘.' },
-  { id: 'shrink-font', group: 'text', labelKey: 'ribbonShrinkFont', keys: '⇧⌘,' },
+  { id: 'bold', cmd: 'bold', group: 'text', labelKey: 'appFontBold', keys: '⌘B' },
+  { id: 'italic', cmd: 'italic', group: 'text', labelKey: 'appFontItalic', keys: '⌘I' },
+  { id: 'underline', cmd: 'underline', group: 'text', labelKey: 'appUnderline', keys: '⌘U' },
+  {
+    id: 'font-dialog',
+    cmd: 'font-dialog',
+    group: 'text',
+    labelKey: 'appFontDialogTitle',
+    keys: '⌘D',
+  },
+  { id: 'grow-font', cmd: 'font-grow', group: 'text', labelKey: 'ribbonGrowFont', keys: '⇧⌘.' },
+  {
+    id: 'shrink-font',
+    cmd: 'font-shrink',
+    group: 'text',
+    labelKey: 'ribbonShrinkFont',
+    keys: '⇧⌘,',
+  },
   { id: 'grow-font-1pt', group: 'text', labelKey: 'appScGrowFont1', keys: '⌘]' },
   { id: 'shrink-font-1pt', group: 'text', labelKey: 'appScShrinkFont1', keys: '⌘[' },
-  { id: 'superscript', group: 'text', labelKey: 'ribbonSuperscript', keys: '⇧⌘= / ⌘.' },
-  { id: 'subscript', group: 'text', labelKey: 'ribbonSubscript', keys: '⌘,' },
+  {
+    id: 'superscript',
+    cmd: 'superscript',
+    group: 'text',
+    labelKey: 'ribbonSuperscript',
+    keys: '⇧⌘= / ⌘.',
+  },
+  { id: 'subscript', cmd: 'subscript', group: 'text', labelKey: 'ribbonSubscript', keys: '⌘,' },
   { id: 'change-case', group: 'text', labelKey: 'ribbonChangeCase', keys: '⇧F3' },
   { id: 'copy-format', group: 'text', labelKey: 'ribbonCopyFormat', keys: '⇧⌘C' },
   // Ctrl+Shift+V is Electron's paste-and-match-style accelerator off the Mac
@@ -95,12 +124,26 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'clear-formatting', group: 'text', labelKey: 'ribbonClearFormatting', keys: '⌃␣' },
 
   // ---- Paragraph formatting ----
-  { id: 'align-left', group: 'para', labelKey: 'appScAlignLeft', keys: '⌘L' },
-  { id: 'align-center', group: 'para', labelKey: 'appScAlignCenter', keys: '⌘E' },
-  { id: 'align-right', group: 'para', labelKey: 'appScAlignRight', keys: '⌘R' },
-  { id: 'align-justify', group: 'para', labelKey: 'appScJustify', keys: '⌘J' },
+  { id: 'align-left', cmd: 'align-left', group: 'para', labelKey: 'appScAlignLeft', keys: '⌘L' },
+  {
+    id: 'align-center',
+    cmd: 'align-center',
+    group: 'para',
+    labelKey: 'appScAlignCenter',
+    keys: '⌘E',
+  },
+  { id: 'align-right', cmd: 'align-right', group: 'para', labelKey: 'appScAlignRight', keys: '⌘R' },
+  {
+    id: 'align-justify',
+    cmd: 'align-justify',
+    group: 'para',
+    labelKey: 'appScJustify',
+    keys: '⌘J',
+  },
   {
     id: 'spacing-1',
+    cmd: 'line-spacing',
+    payload: '1',
     group: 'para',
     labelKey: 'ribbonLineSpacing',
     labelSuffix: ' 1.0',
@@ -108,6 +151,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   },
   {
     id: 'spacing-15',
+    cmd: 'line-spacing',
+    payload: '1.5',
     group: 'para',
     labelKey: 'ribbonLineSpacing',
     labelSuffix: ' 1.5',
@@ -115,6 +160,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   },
   {
     id: 'spacing-2',
+    cmd: 'line-spacing',
+    payload: '2',
     group: 'para',
     labelKey: 'ribbonLineSpacing',
     labelSuffix: ' 2.0',
@@ -122,9 +169,17 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   },
   // ⌘M is macOS' Minimize accelerator, so the indent chord is Control+M there
   // (Windows/Linux: plain Ctrl+M)
-  { id: 'indent', group: 'para', labelKey: 'ribbonIncreaseIndent', keys: '⌃M', win: 'Ctrl+M' },
+  {
+    id: 'indent',
+    cmd: 'indent-increase',
+    group: 'para',
+    labelKey: 'ribbonIncreaseIndent',
+    keys: '⌃M',
+    win: 'Ctrl+M',
+  },
   {
     id: 'outdent',
+    cmd: 'indent-decrease',
     group: 'para',
     labelKey: 'ribbonDecreaseIndent',
     keys: '⌃⇧M',
@@ -138,7 +193,13 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'style-h1', group: 'para', labelKey: 'ribbonStyleHeading1', keys: '⌥⌘1' },
   { id: 'style-h2', group: 'para', labelKey: 'ribbonStyleHeading2', keys: '⌥⌘2' },
   { id: 'style-h3', group: 'para', labelKey: 'ribbonStyleHeading3', keys: '⌥⌘3' },
-  { id: 'paragraph-dialog', group: 'para', labelKey: 'appParagraph', keys: '⌥⌘M' },
+  {
+    id: 'paragraph-dialog',
+    cmd: 'paragraph-dialog',
+    group: 'para',
+    labelKey: 'appParagraph',
+    keys: '⌥⌘M',
+  },
   { id: 'move-up', group: 'para', labelKey: 'appScMoveUp', keys: '⌥⇧↑' },
   { id: 'move-down', group: 'para', labelKey: 'appScMoveDown', keys: '⌥⇧↓' },
   { id: 'list-demote', group: 'para', labelKey: 'appScListDemote', keys: 'Tab' },
@@ -151,33 +212,98 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   },
 
   // ---- Insert ----
-  { id: 'page-break', group: 'insert', labelKey: 'ribbonPageBreak', keys: '⌘⏎' },
-  { id: 'column-break', group: 'insert', labelKey: 'appScColumnBreak', keys: '⇧⌘⏎' },
+  {
+    id: 'page-break',
+    cmd: 'insert-page-break',
+    group: 'insert',
+    labelKey: 'ribbonPageBreak',
+    keys: '⌘⏎',
+  },
+  {
+    id: 'column-break',
+    cmd: 'insert-column-break',
+    group: 'insert',
+    labelKey: 'appScColumnBreak',
+    keys: '⇧⌘⏎',
+  },
   { id: 'line-break', group: 'insert', labelKey: 'appScLineBreak', keys: '⇧⏎' },
-  { id: 'link', group: 'insert', labelKey: 'ribbonLink', keys: '⌘K' },
-  { id: 'comment', group: 'insert', labelKey: 'ribbonNewComment', keys: '⌥⌘A' },
-  { id: 'footnote', group: 'insert', labelKey: 'ribbonFootnote', keys: '⌥⌘F' },
+  { id: 'link', cmd: 'insert-link', group: 'insert', labelKey: 'ribbonLink', keys: '⌘K' },
+  {
+    id: 'comment',
+    cmd: 'insert-comment',
+    group: 'insert',
+    labelKey: 'ribbonNewComment',
+    keys: '⌥⌘A',
+  },
+  {
+    id: 'footnote',
+    cmd: 'insert-footnote',
+    group: 'insert',
+    labelKey: 'ribbonFootnote',
+    keys: '⌥⌘F',
+  },
   // Word itself splits here: ⌥⌘E on the Mac (⌥⌘D toggles the Dock), Alt+Ctrl+D on Windows
-  { id: 'endnote', group: 'insert', labelKey: 'ribbonEndnote', keys: '⌥⌘E', win: 'Ctrl+Alt+D' },
-  { id: 'field-date', group: 'insert', labelKey: 'ribbonFieldDate', keys: '⌥⇧D' },
-  { id: 'field-time', group: 'insert', labelKey: 'ribbonFieldTime', keys: '⌥⇧T' },
+  {
+    id: 'endnote',
+    cmd: 'insert-endnote',
+    group: 'insert',
+    labelKey: 'ribbonEndnote',
+    keys: '⌥⌘E',
+    win: 'Ctrl+Alt+D',
+  },
+  {
+    id: 'field-date',
+    cmd: 'insert-field',
+    payload: 'DATE',
+    group: 'insert',
+    labelKey: 'ribbonFieldDate',
+    keys: '⌥⇧D',
+  },
+  {
+    id: 'field-time',
+    cmd: 'insert-field',
+    payload: 'TIME',
+    group: 'insert',
+    labelKey: 'ribbonFieldTime',
+    keys: '⌥⇧T',
+  },
   { id: 'nbsp', group: 'insert', labelKey: 'appScNbsp', keys: '⇧⌘␣' },
   { id: 'nb-hyphen', group: 'insert', labelKey: 'appScNbHyphen', keys: '⇧⌘-' },
 
   // ---- Review & tools ----
-  { id: 'track-changes', group: 'review', labelKey: 'ribbonTrackChanges', keys: '⇧⌘E' },
-  { id: 'word-count', group: 'review', labelKey: 'appWordCountTitle', keys: '⇧⌘G' },
-  { id: 'proofread', group: 'review', labelKey: 'appScProofread', keys: 'F7' },
+  {
+    id: 'track-changes',
+    cmd: 'track-changes',
+    group: 'review',
+    labelKey: 'ribbonTrackChanges',
+    keys: '⇧⌘E',
+  },
+  {
+    id: 'word-count',
+    cmd: 'word-count',
+    group: 'review',
+    labelKey: 'appWordCountTitle',
+    keys: '⇧⌘G',
+  },
+  {
+    id: 'tools-spelling',
+    cmd: 'tools-spelling',
+    group: 'review',
+    labelKey: 'appSpellingTitle',
+    keys: '⌥⌘L',
+  },
+  { id: 'proofread', cmd: 'ai-proofread', group: 'review', labelKey: 'appScProofread', keys: 'F7' },
   { id: 'update-fields', group: 'review', labelKey: 'appUpdateField', keys: 'F9' },
   { id: 'toggle-field-codes', group: 'review', labelKey: 'appToggleFieldCodes', keys: '⌥F9' },
 
   // ---- View ----
-  { id: 'zoom-in', group: 'view', labelKey: 'ribbonZoomIn', keys: '⌘=' },
-  { id: 'zoom-out', group: 'view', labelKey: 'ribbonZoomOut', keys: '⌘-' },
-  { id: 'zoom-100', group: 'view', labelKey: 'ribbonZoom100Tip', keys: '⌘0' },
+  { id: 'zoom-in', cmd: 'zoom-in', group: 'view', labelKey: 'ribbonZoomIn', keys: '⌘=' },
+  { id: 'zoom-out', cmd: 'zoom-out', group: 'view', labelKey: 'ribbonZoomOut', keys: '⌘-' },
+  { id: 'zoom-100', cmd: 'zoom-100', group: 'view', labelKey: 'ribbonZoom100Tip', keys: '⌘0' },
   // Word for Mac uses ⌘8 for the ¶ toggle, Windows Ctrl+Shift+8; both work
   {
     id: 'formatting-marks',
+    cmd: 'show-marks',
     group: 'view',
     labelKey: 'ribbonShowMarks',
     keys: '⌘8',

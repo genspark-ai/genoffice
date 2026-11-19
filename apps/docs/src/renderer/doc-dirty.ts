@@ -7,6 +7,7 @@ import type { DefaultFonts, HeaderFooter, SectionInfo, StyleUpsert } from '@geno
 
 import { EMPTY_PENDING_NUMBERING } from './doc-state'
 import type { PendingNumbering } from './doc-state'
+import { fontsToWrite, type FontConversions } from './editor/font-conversion-history'
 
 export async function runGuardedDocumentAction(
   confirm: () => Promise<boolean>,
@@ -57,6 +58,22 @@ export interface DocDirtyState {
   titlePgDirty: boolean
   evenOddHfDirty: boolean
   mirrorMarginsDirty: boolean
+  autoHyphenationDirty: boolean
+  /** hyphenation rules set in this session; null when untouched */
+  hyphenationEdit: object | null
+  /** a default tab stop set in this session, twips; null when untouched */
+  defaultTabStopEdit: number | null
+  /** a gutter position set in this session; null when untouched */
+  gutterAtTopEdit: boolean | null
+  /** Convert Permanently: null when no conversion was made or written in this session */
+  fontConversions: FontConversions | null
+  compressPunctEdit: boolean | null
+  trackMovesEdit: boolean | null
+  strictKinsokuEdit: boolean | null
+  /** equation defaults set in this session; null when untouched */
+  mathPrEdit: object | null
+  /** footnote / endnote properties set in this session; null when untouched */
+  notePropsEdit: object | null
   trackRevisionsDirty: boolean
   watermarkDirty: boolean
   inksDirty: boolean
@@ -91,6 +108,16 @@ export function isDocDirty(s: DocDirtyState): boolean {
     s.titlePgDirty ||
     s.evenOddHfDirty ||
     s.mirrorMarginsDirty ||
+    s.autoHyphenationDirty ||
+    s.hyphenationEdit != null ||
+    s.defaultTabStopEdit != null ||
+    s.gutterAtTopEdit != null ||
+    fontsToWrite(s.fontConversions) ||
+    s.compressPunctEdit != null ||
+    s.trackMovesEdit != null ||
+    s.strictKinsokuEdit != null ||
+    s.mathPrEdit != null ||
+    s.notePropsEdit != null ||
     s.trackRevisionsDirty ||
     s.watermarkDirty ||
     s.inksDirty ||
@@ -129,7 +156,10 @@ export interface CrossDocEditStateSink {
  * mis-applying section indices, numbering restarts and style upserts on B's
  * next save. Single source of truth so the call sites cannot drift apart.
  */
-export function resetCrossDocEditState(sink: CrossDocEditStateSink): void {
+export function resetCrossDocEditState(
+  sink: CrossDocEditStateSink,
+  keepCommentUndoStore = false,
+): void {
   sink.setSectionsDirty([])
   sink.setTrailingStartType(null)
   sink.setSectionHfEdits({})
@@ -141,5 +171,5 @@ export function resetCrossDocEditState(sink: CrossDocEditStateSink): void {
   sink.setDefaultFonts?.(undefined)
   // parked comment metadata is document-scoped: a card parked by doc A's
   // delete must not revive when doc B happens to reuse an anchor id
-  sink.resetCommentUndoStore?.()
+  if (!keepCommentUndoStore) sink.resetCommentUndoStore?.()
 }

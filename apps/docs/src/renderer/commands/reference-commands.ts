@@ -1,0 +1,883 @@
+import type { Editor } from '@tiptap/core'
+import { NodeSelection } from '@tiptap/pm/state'
+import type {
+  Block,
+  CitationStyleId,
+  FieldTableLine,
+  FieldTablePageRun,
+  FieldTextRun,
+  SourceInfo,
+} from '@genoffice/docx-engine'
+import {
+  bibliographyFieldNodes,
+  bibliographyRange,
+  restyleCitations,
+} from '../editor/source-citations'
+import {
+  collectPlanEntries,
+  collectTocEntriesWithPages,
+  editorStyles,
+  fieldTableNodes,
+  findFieldRange,
+  findFieldRanges,
+  findTocRange,
+  headingPagesAt,
+  planEntriesWithPages,
+  tableSpecAt,
+  tocFieldNodes,
+  TOC_INSTR,
+  updateTocField,
+  xmlOfNode,
+  type TocRange,
+} from '../editor/toc-update'
+import {
+  authoritiesOptionsOf,
+  captionBody,
+  figuresOptionsOf,
+  indexHeadingPattern,
+  indexOptionsOf,
+  indexPageSep,
+  tocPlan,
+  type IndexTablesKind,
+  type TableSpec,
+} from '../editor/index-tables'
+import {
+  citationOf,
+  citationRuns,
+  citationSwitches,
+  resolveCitations,
+  shortCitationSwitches,
+  type Citation,
+} from '../editor/citations'
+import { collectBookmarks } from '../editor/cross-reference'
+import { indexEntryOptions, insertFieldMarks } from '../editor/index-entry'
+import { t } from '../i18n/locale'
+
+/**
+ * Puts generated blocks at the caret. With a block selected (a picture, a
+ * caption just inserted) they go below it: inserting over a node selection
+ * would replace the block.
+ */
+function insertBlocks(editor: Editor, nodes: Array<Record<string, unknown>>): void {
+  const { selection } = editor.state
+  if (selection instanceof NodeSelection) {
+    // below the top-level block that holds the selection
+    const below = selection.$to.depth > 0 ? selection.$to.after(1) : selection.to
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(below, nodes as never)
+      .run()
+    return
+  }
+  editor
+    .chain()
+    .focus()
+    .insertContent(nodes as never)
+    .run()
+}
+
+type PagesOf = (positions: number[]) => number[] | null
+
+/** puts a table in at the caret, or in place of the one it replaces */
+function placeTable(
+  editor: Editor,
+  nodes: Array<Record<string, unknown>>,
+  replace?: TocRange | null,
+): void {
+  if (!replace) return insertBlocks(editor, nodes)
+  editor
+    .chain()
+    .focus()
+    .deleteRange({ from: replace.from, to: replace.to })
+    .insertContentAt(replace.from, nodes as never)
+    .run()
+}
+
+/**
+ * A table of contents built from the document's headings, with their page
+ * numbers when known. With a spec the table follows its switches, and one
+ * the selection is in is rebuilt in place.
+ */
+export function insertToc(
+  editor: Editor,
+  blocks: Block[],
+  headingPages: () => number[] | null,
+  spec?: TableSpec,
+  pagesOf?: PagesOf,
+): void {
+  const replace = spec ? tableAtSelection(editor, blocks, 'toc')?.range : null
+  if (replace) {
+    updateTocField(editor, blocks, headingPages, spec, replace, pagesOf)
+    return
+  }
+  const entries = spec
+    ? planEntriesWithPages(
+        editor,
+        tocPlan(spec.instr),
+        pagesOf ?? headingPagesAt(editor, headingPages),
+      )
+    : collectTocEntriesWithPages(editor, headingPages)
+  const nodes = entries.length > 0 ? tocFieldNodes(entries, spec, !!spec, editorStyles(editor)) : []
+  if (nodes.length === 0) {
+    window.alert(t('ribbonTocNoHeadings'))
+    return
+  }
+  insertBlocks(editor, nodes)
+}
+
+/**
+ * The bibliography of the document's sources, under its heading. A document
+ * that has one already gets that one rewritten instead of a second.
+ */
+export function insertBibliography(
+  editor: Editor,
+  blocks: Block[],
+  sources: SourceInfo[],
+  style: CitationStyleId,
+): void {
+  if (sources.length === 0) {
+    window.alert(t('ribbonNoSources'))
+    return
+  }
+  if (bibliographyRange(editor.state.doc, blocks)) {
+    restyleCitations(editor, blocks, sources, style)
+    return
+  }
+  insertBlocks(editor, [
+    {
+      type: 'docHeading',
+      attrs: { docxIndex: null, styleId: null, aiChanged: false, level: 1 },
+      content: [{ type: 'text', text: t('ribbonBibliographyHeading') }],
+    },
+    ...bibliographyFieldNodes(editor, sources, style),
+  ])
+}
+
+const INDEX_INSTR = /<w:instrText[^>]*>\s*INDEX[\s\\]/
+
+// the References tab's index: pages right aligned behind dots, as it has always drawn its lines
+const RIBBON_INDEX_SPEC: TableSpec = { instr: ' INDEX \\e "\t" \\c "2" ', leader: 'dot' }
+
+/** the index of every marked entry, sorted; null with none marked */
+function indexFieldNodes(
+  editor: Editor,
+  pagesOf: PagesOf,
+  spec: TableSpec,
+): Array<Record<string, unknown>> | null {
+  const { doc } = editor.state
+  const topOf = (pos: number) => {
+    const $pos = doc.resolve(pos)
+    return $pos.depth === 0 ? pos : $pos.before(1)
+  }
+  const bookmarks = new Map(collectBookmarks(doc).map((b) => [b.name, topOf(b.pos)]))
+  const marks: Array<IndexMark & { pos: number }> = []
+  doc.forEach((block, pos) => {
+    block.descendants((node) => {
+      if (node.type.name !== 'docXeMark' || typeof node.attrs.ta === 'string' || node.attrs.tc)
+        return
+      const term = String(node.attrs.term).trim()
+      if (!term) return
+      const options = indexEntryOptions(node.attrs.switches as string | null)
+      // a page range entry stands where its bookmark is, not where it was marked
+      const at = (options.bookmark ? bookmarks.get(options.bookmark) : undefined) ?? pos
+      marks.push({ term, pos: at, ...options })
+    })
+  })
+  if (marks.length === 0) {
+    window.alert(t('ribbonNoIndexEntries'))
+    return null
+  }
+  const pages = pagesOf(marks.map((m) => m.pos))
+  const options = indexOptionsOf(spec)
+  const lines = indexLines(
+    marks.map(({ pos: _pos, ...m }, i) => ({
+      ...m,
+      ...(pages && pages.length === marks.length ? { page: pages[i] } : {}),
+    })),
+    options.runIn,
+    options.rightAlign ? undefined : indexPageSep(spec.instr),
+    { pattern: indexHeadingPattern(spec.instr), accented: options.accented },
+  )
+  return fieldTableNodes(
+    lines,
+    {
+      ...spec,
+      ...(options.rightAlign ? {} : { pageSep: indexPageSep(spec.instr) }),
+      noLink: true,
+      tabPos: 4300,
+    },
+    t('ribbonIndexFieldLabel'),
+    editorStyles(editor),
+  )
+}
+
+/** one marked entry as the index reads it */
+export interface IndexMark {
+  term: string
+  page?: number
+  /** the text the index shows in place of this mark's page (XE \t) */
+  cross?: string
+  bold?: boolean
+  italic?: boolean
+}
+
+interface IndexRefs {
+  pages: Array<{ page: number; bold: boolean; italic: boolean }>
+  crosses: string[]
+}
+
+const noRefs = (): IndexRefs => ({ pages: [], crosses: [] })
+
+function addRef(refs: IndexRefs, mark: IndexMark): void {
+  if (mark.cross) {
+    if (!refs.crosses.includes(mark.cross)) refs.crosses.push(mark.cross)
+    return
+  }
+  if (mark.page === undefined) return
+  const seen = refs.pages.find((p) => p.page === mark.page)
+  if (seen) {
+    seen.bold ||= !!mark.bold
+    seen.italic ||= !!mark.italic
+  } else refs.pages.push({ page: mark.page, bold: !!mark.bold, italic: !!mark.italic })
+}
+
+/** what follows an entry: its pages in order, then its cross-references */
+function refRuns(refs: IndexRefs): FieldTablePageRun[] {
+  const out: FieldTablePageRun[] = []
+  ;[...refs.pages]
+    .sort((a, b) => a.page - b.page)
+    .forEach((p, i) => {
+      if (i > 0) out.push({ text: ', ' })
+      out.push({
+        text: String(p.page),
+        ...(p.bold ? { bold: true } : {}),
+        ...(p.italic ? { italic: true } : {}),
+      })
+    })
+  if (refs.crosses.length > 0)
+    out.push({ text: `${out.length > 0 ? '. ' : ''}${refs.crosses.join('; ')}` })
+  return out
+}
+
+const runsText = (runs: FieldTablePageRun[]) => runs.map((r) => r.text).join('')
+
+const baseLetter = (letter: string) => [...letter.normalize('NFD')][0] ?? ''
+
+/** letters in heading order: by base letter, a plain letter ahead of its accented forms */
+const byLetter = (a: string, b: string): number =>
+  baseLetter(a).localeCompare(baseLetter(b)) || (a < b ? -1 : a > b ? 1 : 0)
+
+const HEADING_LETTER = /^[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}]$/u
+
+/**
+ * The letter an entry is filed under: its first letter in capitals, without
+ * its accent unless accented letters get headings of their own. '' for an
+ * entry that starts with a digit, a symbol or a script without letter headings.
+ */
+export function indexLetter(entry: string, accented: boolean): string {
+  const first = [...entry.trim()][0] ?? ''
+  const upper = first.toLocaleUpperCase()
+  const base = accented ? upper : baseLetter(upper)
+  return HEADING_LETTER.test(base) ? base : ''
+}
+
+/** the page side of a line: plain when nothing in it is bold or italic */
+function pageSide(refs: IndexRefs): Pick<FieldTableLine, 'pageNo' | 'pageRuns'> {
+  const runs = refRuns(refs)
+  return {
+    pageNo: runsText(runs),
+    ...(runs.some((r) => r.bold || r.italic) ? { pageRuns: runs } : {}),
+  }
+}
+
+/**
+ * The lines of an index. "Main:Sub" marks a subentry: indented, it takes a
+ * line of its own under the main entry; run-in, the subentries follow the
+ * main entry on its line. An entry marked with a cross-reference shows that
+ * text where its page would be.
+ */
+export function indexLines(
+  marks: IndexMark[],
+  runIn: boolean,
+  /** what joins an entry to its pages when they are part of the text (run-in lines) */
+  pageSep = ', ',
+  /** INDEX \h: a line above each letter's entries, "A" in the pattern standing for the letter */
+  headings: { pattern?: string; accented?: boolean } = {},
+): Array<FieldTableLine & { level: number }> {
+  const byText = (a: string, b: string) => a.localeCompare(b, 'zh-CN')
+  const letterOf = (name: string) => indexLetter(name, !!headings.accented)
+  // under headings the entries of a letter stay together: an accented letter is filed with
+  // its base letter, or (\a) forms a group of its own behind it
+  const byName =
+    headings.pattern === undefined
+      ? byText
+      : (a: string, b: string) => byLetter(letterOf(a), letterOf(b)) || byText(a, b)
+  const mains = new Map<string, { refs: IndexRefs; subs: Map<string, IndexRefs> }>()
+  for (const mark of marks) {
+    const cut = mark.term.indexOf(':')
+    const main = (cut === -1 ? mark.term : mark.term.slice(0, cut)).trim()
+    const sub = cut === -1 ? '' : mark.term.slice(cut + 1).trim()
+    if (!main) continue
+    const entry = mains.get(main) ?? { refs: noRefs(), subs: new Map<string, IndexRefs>() }
+    mains.set(main, entry)
+    if (!sub) addRef(entry.refs, mark)
+    else {
+      const refs = entry.subs.get(sub) ?? noRefs()
+      entry.subs.set(sub, refs)
+      addRef(refs, mark)
+    }
+  }
+  // an entry that only points elsewhere reads "Entry. See Other"
+  const named = (name: string, refs: IndexRefs) =>
+    refs.pages.length === 0 && refs.crosses.length > 0
+      ? `${name}. ${refs.crosses.join('; ')}`
+      : name
+  const out: Array<FieldTableLine & { level: number }> = []
+  let letter: string | null = null
+  for (const main of [...mains.keys()].sort(byName)) {
+    const { refs, subs } = mains.get(main)!
+    const names = [...subs.keys()].sort(byText)
+    if (headings.pattern !== undefined && letterOf(main) !== letter) {
+      letter = letterOf(main)
+      // the entries before the first letter (digits, symbols) stand without a heading
+      if (letter)
+        out.push({
+          // only the A stands for the letter: the rest of the pattern is literal
+          text: headings.pattern
+            .replace(/A/g, letter)
+            .replace(/a/g, letter.toLocaleLowerCase())
+            .trim(),
+          level: 1,
+          style: 'IndexHeading',
+          noPage: true,
+        })
+    }
+    if (runIn && names.length > 0) {
+      const withPages = (name: string, r: IndexRefs) =>
+        r.pages.length > 0
+          ? `${name}${pageSep.replace(/\t/g, ' ')}${runsText(refRuns(r))}`
+          : named(name, r)
+      out.push({
+        text: `${withPages(main, refs)}: ${names.map((n) => withPages(n, subs.get(n)!)).join('; ')}`,
+        noPage: true,
+        level: 1,
+        style: 'Index1',
+      })
+      continue
+    }
+    out.push({
+      text: named(main, refs),
+      level: 1,
+      style: 'Index1',
+      indent: 0,
+      ...(refs.pages.length > 0
+        ? pageSide(refs)
+        : { noPage: names.length > 0 || refs.crosses.length > 0 }),
+    })
+    for (const name of names) {
+      const r = subs.get(name)!
+      out.push({
+        text: named(name, r),
+        level: 2,
+        style: 'Index2',
+        indent: 240,
+        ...(r.pages.length > 0 ? pageSide(r) : r.crosses.length > 0 ? { noPage: true } : {}),
+      })
+    }
+  }
+  return out
+}
+
+export function insertIndex(
+  editor: Editor,
+  blocks: Block[],
+  pagesOf: PagesOf,
+  spec?: TableSpec,
+  /** rebuild the document's index of that order in place, wherever the selection is; without it, the one the selection is in */
+  nth?: number,
+): boolean {
+  const ranges = findFieldRanges(editor.state.doc, blocks, INDEX_INSTR)
+  const replace =
+    nth !== undefined ? ranges[nth] : spec ? tableAtSelection(editor, blocks, 'index')?.range : null
+  // the index to rebuild is gone: nothing is added in its place
+  if (nth !== undefined && !replace) return false
+  const nodes = indexFieldNodes(editor, pagesOf, spec ?? RIBBON_INDEX_SPEC)
+  if (nodes) placeTable(editor, nodes, replace)
+  return nodes !== null
+}
+
+/** the column count an index inserted with that spec (the ribbon's, without one) carries */
+export const indexColumnsOf = (spec?: TableSpec): number =>
+  indexOptionsOf(spec ?? RIBBON_INDEX_SPEC).columns
+
+/** whether the document has an entry an index can list: without one, building an index fails */
+export function hasIndexEntries(editor: Editor): boolean {
+  let found = false
+  editor.state.doc.descendants((node) => {
+    if (found) return false
+    found =
+      node.type.name === 'docXeMark' &&
+      typeof node.attrs.ta !== 'string' &&
+      !node.attrs.tc &&
+      String(node.attrs.term).trim() !== ''
+    return !found
+  })
+  return found
+}
+
+export interface BlockSpan {
+  index: number
+  firstBlock: number
+  lastBlock: number
+}
+
+/**
+ * Whether the index at top-level nodes [first, last] has its section to itself
+ * at each end. A section but the last may end in a paragraph of its own that
+ * only carries the break (`isBreakOnly`); any other block after the index is text
+ * that shares the section.
+ */
+export function indexSectionEdges(
+  [first, last]: [number, number],
+  sections: BlockSpan[],
+  isBreakOnly: (block: number) => boolean,
+): { home: BlockSpan; startsIt: boolean; endsIt: boolean } | null {
+  const at = (block: number) => sections.find((s) => block >= s.firstBlock && block <= s.lastBlock)
+  const home = at(first)
+  if (!home) return null
+  const closed = home.index < sections.length - 1 && home.lastBlock === last + 1
+  return {
+    home,
+    startsIt: first === 0 || at(first - 1)?.index !== home.index,
+    endsIt: home.lastBlock <= last || (closed && isBreakOnly(last + 1)),
+  }
+}
+
+/** every index of the document as its top-level nodes [first, last], in document order */
+export function indexBlockRanges(editor: Editor, blocks: Block[]): Array<[number, number]> {
+  const { doc } = editor.state
+  return findFieldRanges(doc, blocks, INDEX_INSTR).map((range) => [
+    doc.resolve(range.from).index(0),
+    doc.resolve(range.to).index(0) - 1,
+  ])
+}
+
+/** how many indexes start before that position: where a new one inserted there stands among them */
+export const indexesBefore = (editor: Editor, blocks: Block[], pos: number): number =>
+  findFieldRanges(editor.state.doc, blocks, INDEX_INSTR).filter((range) => range.from < pos).length
+
+/** which of the document's indexes the selection is in; -1 when in none */
+export const indexAtSelection = (editor: Editor, blocks: Block[]): number => {
+  const { from } = editor.state.selection
+  return findFieldRanges(editor.state.doc, blocks, INDEX_INSTR).findIndex(
+    (range) => from >= range.from && from < range.to,
+  )
+}
+
+/** rebuilds the document's index in place from the entries marked now */
+export function updateIndex(editor: Editor, blocks: Block[], pagesOf: PagesOf): boolean {
+  const range = findFieldRange(editor.state.doc, blocks, INDEX_INSTR)
+  if (!range) {
+    window.alert(t('ribbonIndexNotFound'))
+    return false
+  }
+  const spec = tableSpecAt(editor.state.doc, blocks, range.from, 'INDEX') ?? RIBBON_INDEX_SPEC
+  const nodes = indexFieldNodes(editor, pagesOf, spec)
+  if (!nodes) return false
+  placeTable(editor, nodes, range)
+  return true
+}
+
+/** a caption paragraph: its SEQ field's label, quoted or bare */
+const SEQ_LABEL = /<w:instrText[^>]*>\s*SEQ\s+(?:"([^"]+)"|([^\s\\<]+))/
+const FIGURES_INSTR = /<w:instrText[^>]*>\s*TOC\b[^<]*\\[ac][\s"]/
+
+const unescapeXml = (text: string): string =>
+  text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+
+/** the text a paragraph's OOXML shows: its w:t runs, field instructions left out */
+const textOfXml = (xml: string): string =>
+  unescapeXml([...xml.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((m) => m[1]).join(''))
+
+export interface CaptionEntry {
+  label: string
+  text: string
+  /** position of the caption's top-level node */
+  pos: number
+}
+
+/** every caption of the document, in order: the paragraphs that number themselves with a SEQ field */
+export function collectCaptions(editor: Editor, blocks: Block[]): CaptionEntry[] {
+  const out: CaptionEntry[] = []
+  editor.state.doc.forEach((node, pos) => {
+    const xml = xmlOfNode(node as never, blocks)
+    // a table's XML holds its cells' captions: only a paragraph is one itself
+    const seq = /^<w:p[\s>]/.test(xml) ? SEQ_LABEL.exec(xml) : null
+    if (!seq) return
+    // text typed since the file was read is in the node; a generated caption only has its XML
+    const text = node.textContent.trim() || textOfXml(xml).trim()
+    if (text) out.push({ label: unescapeXml(seq[1] ?? seq[2]), text, pos })
+  })
+  return out
+}
+
+/** the caption labels the document uses, in the order they first appear */
+export const captionLabels = (editor: Editor, blocks: Block[]): string[] => [
+  ...new Set(collectCaptions(editor, blocks).map((c) => c.label)),
+]
+
+function figuresFieldNodes(
+  editor: Editor,
+  blocks: Block[],
+  spec: TableSpec,
+  pagesOf: PagesOf,
+): Array<Record<string, unknown>> | null {
+  const options = figuresOptionsOf(spec)
+  const plan = tocPlan(spec.instr)
+  // a style or TC fields named in Options stand in for the label's captions
+  const listed = options.style || options.entryId
+  const captions: CaptionEntry[] = listed
+    ? collectPlanEntries(editor, {
+        ...plan,
+        headings: false,
+        outline: false,
+        entryFields: !!options.entryId,
+        entryLevels: null,
+      }).map((e) => ({ label: '', text: e.text, pos: e.pos }))
+    : collectCaptions(editor, blocks).filter((c) => c.label === options.label)
+  if (captions.length === 0) {
+    window.alert(t('ribbonTofNoCaptions'))
+    return null
+  }
+  const pages = pagesOf(captions.map((c) => c.pos))
+  const lines = captions.map((c, i) => ({
+    text: options.includeLabel || listed ? c.text : captionBody(c.text, c.label) || c.text,
+    level: 1,
+    style: 'TableofFigures',
+    noPage: !options.pageNumbers,
+    ...(pages && pages.length === captions.length ? { pageNo: pages[i] } : {}),
+  }))
+  return fieldTableNodes(
+    lines,
+    { ...spec, pageSep: plan.pageSep, noLink: !plan.hyperlinks },
+    t('ribbonItFigures'),
+    editorStyles(editor),
+  )
+}
+
+const figuresSpecOf = (label: string): TableSpec => ({
+  // the label is quoted inside the instruction: a quote of its own would end it early
+  instr: ` TOC \\h \\z \\c "${label.replace(/"/g, '')}" `,
+  leader: 'dot',
+})
+
+/**
+ * A table of figures over the captions of one label; the first label in use
+ * when none is named. With a spec the table follows its switches, and one
+ * the selection is in is rebuilt in place.
+ */
+export function insertTableOfFigures(
+  editor: Editor,
+  blocks: Block[],
+  pagesOf: PagesOf,
+  label?: string,
+  spec?: TableSpec,
+): void {
+  const options = spec ? figuresOptionsOf(spec) : null
+  const wanted = options
+    ? options.label || options.style || options.entryId
+    : label || captionLabels(editor, blocks)[0]
+  if (!wanted) {
+    window.alert(t('ribbonTofNoCaptions'))
+    return
+  }
+  const replace = spec ? tableAtSelection(editor, blocks, 'figures')?.range : null
+  const nodes = figuresFieldNodes(editor, blocks, spec ?? figuresSpecOf(wanted), pagesOf)
+  if (nodes) placeTable(editor, nodes, replace)
+}
+
+/** rebuilds the document's first table of figures in place, for the label it was made with */
+export function updateTableOfFigures(editor: Editor, blocks: Block[], pagesOf: PagesOf): boolean {
+  const range = findFieldRange(editor.state.doc, blocks, FIGURES_INSTR)
+  if (!range) {
+    window.alert(t('ribbonTofNotFound'))
+    return false
+  }
+  const spec = tableSpecAt(editor.state.doc, blocks, range.from, 'TOC')
+  if (!spec) return false
+  const nodes = figuresFieldNodes(editor, blocks, spec, pagesOf)
+  if (!nodes) return false
+  placeTable(editor, nodes, range)
+  return true
+}
+
+const AUTHORITIES_INSTR = /<w:instrText[^>]*>\s*TOA[\s\\]/
+
+/**
+ * Puts a citation marker at the position: the text before it is what it
+ * cites. With `mentions`, each of those positions takes the short citation
+ * alone, as Word's Mark All leaves the later mentions of an authority.
+ */
+export function markCitation(
+  editor: Editor,
+  at: number,
+  citation: Citation,
+  mentions: number[] = [],
+): void {
+  insertFieldMarks(editor, [
+    {
+      at,
+      attrs: {
+        term: '',
+        ta: citationSwitches(citation),
+        ...(citation.runs ? { taRuns: JSON.stringify(citation.runs) } : {}),
+      },
+    },
+    ...mentions.map((pos) => ({
+      at: pos,
+      attrs: { term: '', ta: shortCitationSwitches(citation.short) },
+    })),
+  ])
+}
+
+/** the citations marked in the document, each with the top-level block it sits in */
+export function collectCitations(editor: Editor): Array<Citation & { pos: number }> {
+  const out: Array<Citation & { pos: number }> = []
+  editor.state.doc.forEach((block, pos) => {
+    block.descendants((node) => {
+      if (node.type.name !== 'docXeMark' || typeof node.attrs.ta !== 'string') return
+      const runs = citationRuns(node.attrs.taRuns)
+      out.push({ ...citationOf(node.attrs.ta), ...(runs ? { runs } : {}), pos })
+    })
+  })
+  return resolveCitations(out)
+}
+
+/** the categories that have a citation, lowest first */
+export const citationCategories = (editor: Editor): number[] =>
+  [...new Set(collectCitations(editor).map((c) => c.category))].sort((a, b) => a - b)
+
+/** Word lists an authority cited on this many pages or more as "passim" (TOA \p) */
+const PASSIM_PAGES = 5
+
+function authoritiesFieldNodes(
+  editor: Editor,
+  spec: TableSpec,
+  headingOf: (category: number) => string,
+  pagesOf: PagesOf,
+): Array<Record<string, unknown>> | null {
+  const options = authoritiesOptionsOf(spec)
+  const all = collectCitations(editor)
+  const categories = options.category
+    ? [options.category]
+    : [...new Set(all.map((c) => c.category))].sort((a, b) => a - b)
+  const lines: Array<FieldTableLine & { level: number }> = []
+  for (const category of categories) {
+    const cited = all.filter((c) => c.category === category)
+    if (cited.length === 0) continue
+    const pages = pagesOf(cited.map((c) => c.pos))
+    // a citation made in several places is one line, with every page it is on
+    const byText = new Map<string, number[]>()
+    const formatted = new Map<string, FieldTextRun[]>()
+    cited.forEach((c, i) => {
+      const list = byText.get(c.long) ?? []
+      if (pages && pages.length === cited.length && !list.includes(pages[i])) list.push(pages[i])
+      byText.set(c.long, list)
+      if (options.keepFormatting && c.runs && !formatted.has(c.long)) formatted.set(c.long, c.runs)
+    })
+    lines.push({ text: headingOf(category), level: 1, style: 'TOAHeading' })
+    for (const [text, on] of [...byText.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      const pageNo =
+        options.passim && on.length >= PASSIM_PAGES ? 'passim' : on.sort((a, b) => a - b).join(', ')
+      lines.push({
+        text,
+        level: 2,
+        style: 'TableofAuthorities',
+        ...(formatted.has(text) ? { textRuns: formatted.get(text) } : {}),
+        ...(pageNo ? { pageNo } : {}),
+      })
+    }
+  }
+  if (lines.length === 0) {
+    window.alert(t('ribbonToaNone'))
+    return null
+  }
+  return fieldTableNodes(
+    lines,
+    { ...spec, noLink: true },
+    t('ribbonItAuthorities'),
+    editorStyles(editor),
+  )
+}
+
+const authoritiesSpecOf = (category?: number): TableSpec => ({
+  instr: category ? ` TOA \\h \\c "${Math.round(category)}" \\p ` : ' TOA \\h \\p ',
+  leader: 'dot',
+})
+
+/**
+ * A table of authorities: every category that has a citation, each under its
+ * heading, or the one category named. With a spec the table follows its
+ * switches, and one the selection is in is rebuilt in place.
+ */
+export function insertTableOfAuthorities(
+  editor: Editor,
+  blocks: Block[],
+  pagesOf: PagesOf,
+  headingOf: (category: number) => string,
+  category?: number,
+  spec?: TableSpec,
+): void {
+  const replace = spec ? tableAtSelection(editor, blocks, 'authorities')?.range : null
+  const nodes = authoritiesFieldNodes(
+    editor,
+    spec ?? authoritiesSpecOf(category),
+    headingOf,
+    pagesOf,
+  )
+  if (nodes) placeTable(editor, nodes, replace)
+}
+
+/** rebuilds the document's first table of authorities in place, for the categories it lists */
+export function updateTableOfAuthorities(
+  editor: Editor,
+  blocks: Block[],
+  pagesOf: PagesOf,
+  headingOf: (category: number) => string,
+): boolean {
+  const range = findFieldRange(editor.state.doc, blocks, AUTHORITIES_INSTR)
+  if (!range) {
+    window.alert(t('ribbonToaNotFound'))
+    return false
+  }
+  const spec = tableSpecAt(editor.state.doc, blocks, range.from, 'TOA')
+  if (!spec) return false
+  const nodes = authoritiesFieldNodes(editor, spec, headingOf, pagesOf)
+  if (!nodes) return false
+  placeTable(editor, nodes, range)
+  return true
+}
+
+export interface FieldTables {
+  figures: boolean
+  index: boolean
+  authorities: boolean
+}
+
+interface FieldTableCache {
+  originals: Map<number, string>
+  nodes: WeakMap<object, FieldTables>
+  docs: WeakMap<object, FieldTables>
+}
+const fieldTableCaches = new WeakMap<Block[], FieldTableCache>()
+
+/**
+ * Which of the tables the three Update buttons rebuild the document has. A
+ * node's answer is kept: an edit makes a new document out of the same nodes.
+ */
+export function fieldTablesOf(
+  doc: Parameters<typeof findFieldRange>[0],
+  blocks: Block[],
+): FieldTables {
+  let cache = fieldTableCaches.get(blocks)
+  if (!cache) {
+    const originals = new Map<number, string>()
+    for (const block of blocks)
+      if (block.docxIndex != null && block.originalXml)
+        originals.set(block.docxIndex, block.originalXml)
+    cache = { originals, nodes: new WeakMap(), docs: new WeakMap() }
+    fieldTableCaches.set(blocks, cache)
+  }
+  const known = cache.docs.get(doc)
+  if (known) return known
+  const { originals, nodes } = cache
+  const found: FieldTables = { figures: false, index: false, authorities: false }
+  doc.forEach((node) => {
+    let own = nodes.get(node)
+    if (!own) {
+      const xml = node.attrs.genXml
+        ? String(node.attrs.genXml)
+        : (originals.get(node.attrs.docxIndex as number) ?? '')
+      own = {
+        figures: FIGURES_INSTR.test(xml),
+        index: INDEX_INSTR.test(xml),
+        authorities: AUTHORITIES_INSTR.test(xml),
+      }
+      nodes.set(node, own)
+    }
+    found.figures ||= own.figures
+    found.index ||= own.index
+    found.authorities ||= own.authorities
+  })
+  cache.docs.set(doc, found)
+  return found
+}
+
+const TABLE_INSTR: Record<IndexTablesKind, RegExp> = {
+  toc: TOC_INSTR,
+  figures: FIGURES_INSTR,
+  index: INDEX_INSTR,
+  authorities: AUTHORITIES_INSTR,
+}
+
+/** the table of that kind the selection is in, with the switches it carries */
+export function tableAtSelection(
+  editor: Editor,
+  blocks: Block[],
+  kind: IndexTablesKind,
+): { range: TocRange; spec: TableSpec } | null {
+  const { doc, selection } = editor.state
+  const ranges = findFieldRanges(doc, blocks, TABLE_INSTR[kind])
+  // Word's own table of contents is a content control around the field
+  const sdt = kind === 'toc' ? findTocRange(doc, blocks) : null
+  if (sdt?.kind === 'sdt') ranges.push(sdt)
+  const range = ranges.find((r) => selection.from >= r.from && selection.from < r.to)
+  if (!range) return null
+  const keyword = kind === 'index' ? 'INDEX' : kind === 'authorities' ? 'TOA' : 'TOC'
+  const spec = tableSpecAt(doc, blocks, range.from, keyword)
+  return spec ? { range, spec } : null
+}
+
+/** a table spec as a command payload */
+export const tableSpecPayload = (spec: TableSpec): string => JSON.stringify(spec)
+
+/** the table spec a command payload carries; undefined for any other payload */
+export function tableSpecOfPayload(payload: string | undefined): TableSpec | undefined {
+  if (!payload?.startsWith('{')) return undefined
+  try {
+    const spec = JSON.parse(payload) as Partial<TableSpec>
+    return typeof spec.instr === 'string' && typeof spec.leader === 'string'
+      ? { instr: spec.instr, leader: spec.leader }
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** the command that inserts each kind of table; its payload is the table's spec */
+export const INDEX_TABLES_COMMAND = {
+  toc: 'insert-toc',
+  figures: 'insert-table-of-figures',
+  index: 'insert-index',
+  authorities: 'toa-insert',
+} as const satisfies Record<IndexTablesKind, string>
+
+/** the spec of the table of each kind the selection is in */
+export function indexTablesAtSelection(
+  editor: Editor | null,
+  blocks: Block[],
+): Partial<Record<IndexTablesKind, TableSpec>> {
+  const out: Partial<Record<IndexTablesKind, TableSpec>> = {}
+  if (!editor) return out
+  for (const kind of Object.keys(INDEX_TABLES_COMMAND) as IndexTablesKind[]) {
+    const found = tableAtSelection(editor, blocks, kind)
+    if (found) out[kind] = found.spec
+  }
+  return out
+}

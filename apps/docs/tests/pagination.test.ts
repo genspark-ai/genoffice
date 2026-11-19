@@ -28,6 +28,8 @@ import {
   wrapWidthSig,
   docGridPitchPt,
   sectionCharSpaceSpecs,
+  sectionCharCellSpecs,
+  docCharCellPt,
   docCharSpacePt,
   singleByteCharSpacePt,
   sectionColGeom,
@@ -77,6 +79,16 @@ const block = (top: number, height: number, extra?: Partial<BlockBox>): BlockBox
   height,
   ...extra,
 })
+
+import {
+  charCellSpacingCss,
+  charPitchPt,
+  charSpaceForPitch,
+  charSpaceInRange,
+  charsPerLine,
+  gridBaseSizePt,
+  maxCharsPerLine,
+} from '../src/renderer/char-grid'
 
 describe('computePageSlices', () => {
   it('empty document yields one page', () => {
@@ -1129,6 +1141,72 @@ describe('sectionCharSpaceSpecs / docCharSpacePt — docGrid character grid', ()
     expect(specs[0].el).toBe(blocks[1].el)
     expect(specs[0].charSpacePt).toBeCloseTo(-820 / 4096, 6)
     expect(docCharSpacePt(secsList)).toBeNull()
+  })
+})
+
+// Word probe 2026-10-22 (direct PDF, snapToChars charSpace=-820 in a file that
+// states no size): MS Mincho 10.5pt advances 11.8pt per character with the
+// glyph centred (first origin +0.65pt), an Arial 12pt run keeps its natural
+// advances and sits centred in 11 cells (129.8pt for 122.1pt of text). Two
+// files written by Word (12pt/+37949 and 10.5pt/+49418) state the same pitch
+// as their drawing grid: default paragraph size + charSpace/4096.
+describe('sectionCharCellSpecs / docCharCellPt: snapToChars cells', () => {
+  const snapSec = (charSpace?: number) =>
+    sec({
+      docGrid: {
+        type: 'snapToChars',
+        linePitch: 329,
+        ...(charSpace !== undefined && { charSpace }),
+      },
+    })
+  const el = () => document.createElement('p')
+
+  it('the cell is the base size plus charSpace/4096 pt', () => {
+    expect(docCharCellPt([snapSec(-820)], 12)).toBeCloseTo(11.8, 3)
+    expect(docCharCellPt([snapSec(37949)], 12)).toBeCloseTo(425.3 / 20, 2)
+    expect(docCharCellPt([snapSec(49418)], 10.5)).toBeCloseTo(451.3 / 20, 2)
+    expect(docCharCellPt([snapSec()], 10.5)).toBe(10.5)
+    expect(gridBaseSizePt(undefined, undefined)).toBe(12)
+    expect(gridBaseSizePt(undefined, { sizeHalfPoints: 21 })).toBe(10.5)
+  })
+
+  it('a snapped section takes the line grid and no per-character delta', () => {
+    expect(docGridPitchPt([snapSec(-820)])).toBeCloseTo(16.45, 6)
+    expect(docCharSpacePt([snapSec(-820)])).toBeNull()
+  })
+
+  it('other grids have no cells; mixed documents carry the cell per block', () => {
+    const lines = sec({ docGrid: { type: 'linesAndChars', linePitch: 329, charSpace: -820 } })
+    expect(docCharCellPt([lines], 12)).toBeNull()
+    expect(docCharCellPt([sec({})], 12)).toBeNull()
+    const blocks = [
+      block(0, 100, { section: 0, el: el() }),
+      block(100, 100, { section: 1, el: el() }),
+    ]
+    expect(sectionCharCellSpecs(blocks, [snapSec(-820), snapSec(-820)], 12)).toEqual([])
+    expect(docCharCellPt([lines, snapSec(-820)], 12)).toBeNull()
+    const specs = sectionCharCellSpecs(blocks, [lines, snapSec(-820)], 12)
+    expect(specs).toHaveLength(1)
+    expect(specs[0].el).toBe(blocks[1].el)
+    expect(specs[0].charCellPt).toBeCloseTo(11.8, 3)
+  })
+
+  it('a full-width character advances by as many whole cells as its size needs', () => {
+    expect(charCellSpacingCss(11.8)).toBe('calc(round(up, 1em - 0.01px, 11.8pt) - 1em)')
+  })
+
+  it('counts characters per line from the pitch and back', () => {
+    // Letter with 3.17 cm margins at 11pt: 39 characters of 11pt, 43 at the narrowest cell
+    const width = 432.3
+    expect(charsPerLine(width, charPitchPt(11, 0))).toBe(39)
+    expect(maxCharsPerLine(width, 11)).toBe(43)
+    for (const count of [20, 35, 39, 43]) {
+      const space = charSpaceForPitch(11, width / count)
+      expect(charsPerLine(width, charPitchPt(11, space))).toBe(count)
+      expect(charSpaceInRange(space, width, 11)).toBe(true)
+    }
+    expect(charSpaceInRange(charSpaceForPitch(11, width / 50), width, 11)).toBe(false)
+    expect(charSpaceInRange(0.5, width, 11)).toBe(false)
   })
 })
 

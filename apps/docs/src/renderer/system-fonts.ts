@@ -78,6 +78,13 @@ export function onFontAliasesChanged(cb: (names: readonly string[]) => void): ()
   }
 }
 
+/** a declared font started or stopped resolving: the subscribers re-style as for an alias */
+export function announceFontChange(names: readonly string[]): void {
+  for (const name of names) answeredNames.add(name)
+  answerSeq++
+  for (const listener of [...aliasListeners]) listener(names)
+}
+
 /** the alias request of the last open, so a headless export can wait for it */
 let pendingAliases: Promise<void> = Promise.resolve()
 

@@ -78,6 +78,18 @@ describe('promoteSlideBackground', () => {
     expect(texts.join(' ')).toContain('CONTENT')
   })
 
+  it('a padded fill color is promoted as the color, not as black', async () => {
+    const opened = await openPptx(await deckWithShapes([{ fill: '0B2545', lineTransparency: 100 }]))
+    const slide = opened.deck.slides[0]!
+    const shape = slide.elements[0] as { fill?: { type: string; color: string } }
+    shape.fill = { type: 'solid', color: ' #0B2545 ' }
+
+    expect(promoteSlideBackground(slide, opened.deck.size)).toBe(true)
+    expect(slide.background).toEqual({ type: 'solid', color: '#0B2545' })
+    const reopened = await openPptx(await savePptx(opened))
+    expect(reopened.deck.slides[0]!.background).toEqual({ type: 'solid', color: '#0B2545' })
+  })
+
   it('leaves shapes with a visible border alone', async () => {
     const opened = await openPptx(await deckWithShapes([{ visibleLine: true }]))
     const slide = opened.deck.slides[0]!

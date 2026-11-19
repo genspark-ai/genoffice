@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useState, type CSSProperties, type MutableRefObject, type ReactNode } from 'react'
 import type { SectionSettings } from '@genoffice/docx-engine'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { useModalKeys } from './modal-keys'
@@ -13,6 +13,13 @@ type Props = NonNullable<SectionSettings['pageBorderProps']>
 type SideSpec = NonNullable<NonNullable<Props['sides']>['top']>
 type Setting = 'none' | 'box' | 'shadow' | '3d' | 'custom'
 export type PageBorderScope = 'whole' | 'section'
+
+/** what the dialog would apply right now, and whether that differs from what it opened on */
+export interface PageBorderDraft {
+  props: Props | null
+  scope: PageBorderScope
+  touched: boolean
+}
 
 const SIDES: readonly PageBorderSideName[] = ['top', 'bottom', 'left', 'right']
 
@@ -336,16 +343,26 @@ export function pageBorderPropsOf(m: Model): Props | null {
 
 export function PageBorderDialog({
   section,
+  tabs,
+  scope,
+  draftRef,
   onApply,
   onClose,
 }: {
   section: SectionSettings
+  /** the tab row of Borders and Shading, when the dialog is its Page Border tab */
+  tabs?: ReactNode
+  /** the scope to open on, when the tab is come back to */
+  scope?: PageBorderScope
+  /** kept on what OK would apply, for the dialog around this tab to take along */
+  draftRef?: MutableRefObject<PageBorderDraft | null>
   onApply: (props: Props | null, scope: PageBorderScope) => void
   onClose: () => void
 }) {
   const { t } = useI18n()
   const keys = useModalKeys(onClose)
-  const [m, setM] = useState<Model>(() => modelOf(section))
+  const [m, setM] = useState<Model>(() => ({ ...modelOf(section), ...(scope ? { scope } : {}) }))
+  const [opened] = useState(() => JSON.stringify([pageBorderPropsOf(m), m.scope]))
   const [options, setOptions] = useState(false)
   const set = (patch: Partial<Model>) => setM((prev) => ({ ...prev, ...patch }))
   const allOn = { top: true, bottom: true, left: true, right: true }
@@ -377,6 +394,13 @@ export function PageBorderDialog({
   const inset = (side: PageBorderSideName) =>
     Math.min(28, Math.round((preview?.sides[side]?.insetPx ?? 0) / 3))
   const previewColor = `#${m.color ?? '000000'}`
+
+  if (draftRef)
+    draftRef.current = {
+      props,
+      scope: m.scope,
+      touched: JSON.stringify([props, m.scope]) !== opened,
+    }
 
   const submit = () => {
     onApply(props, m.scope)
@@ -411,7 +435,7 @@ export function PageBorderDialog({
           submit()
         }}
       >
-        <h2>{t('ribbonPbTitle')}</h2>
+        {tabs ?? <h2>{t('ribbonPbTitle')}</h2>}
         <div className="pb-columns">
           <fieldset className="pb-col pb-settings">
             <legend>{t('ribbonPbSetting')}</legend>

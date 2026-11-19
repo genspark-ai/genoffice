@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** PDF → editable accuracy bench (invoice / report class).
  *
- *  Converts a deterministic corpus (banded e-invoice, the #2669 redacted
+ *  Converts a deterministic corpus (banded e-invoice, the genoffice#2669 redacted
  *  real sample, bordered + borderless reports) with BOTH the genoffice
  *  pipeline and LibreOffice, scores every ground-truth field's survival
  *  (intact in one cell / split across cells / missing) plus the detail

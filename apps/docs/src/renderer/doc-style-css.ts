@@ -58,15 +58,19 @@ import { DARK_PAPER_HEX, DK_SIDE, darkPageBorderCss, darkPageColor } from './edi
 import { fillInk } from './editor/shading-ink'
 import { textOutlineDecl } from './editor/text-outline'
 import { textAlignDecl } from './editor/text-effects'
+import { underlineDecls } from './editor/run-typography'
 import {
   paraBorderCss,
   paraBorderPadding,
   paraBorderPaddingDecls,
+  paraBorderDropColor,
   paraBorderShadowDecls,
 } from './editor/hf-dom'
 
 /** lines laid out on list geometry: list items and the numbered stray line of a textbox anchor */
 const LIST_LINES = '.doc-li, .doc-li-stray'
+const SHY_ON = '--doc-shy:"\\AD"'
+const SHY_OFF = '--doc-shy:none'
 
 /** appended to every dark-twin subject: filled text boxes keep their authored colors */
 const DARK_TWIN_SUBJECT = ':where(:not(.doc-textbox-filled *))'
@@ -269,6 +273,12 @@ function listGroupSelectors(parsed: ParsedDocFull): string[] {
   ]
 }
 
+/** a style's indent as the margin, and as `--pind-s/e` for a direct border that stands out from it */
+function indentDecls(edge: 's' | 'e', twips: number): string[] {
+  const pt = `${(twips / 20).toFixed(1)}pt`
+  return [`margin-inline-${edge === 's' ? 'start' : 'end'}:${pt}`, `--pind-${edge}:${pt}`]
+}
+
 /**
  * Style-level paragraph shading and w:pBdr, same look as blockAttrs' direct
  * borders (which win as inline style); explicit pPr w:shd is inline and wins too.
@@ -295,8 +305,10 @@ function styleBorderDecls(d: StyleDisplay): { decls: string[]; darkDecls: string
     }
     decls.push(
       ...paraBorderPaddingDecls(paraBorderPadding(drawn, d.borderSides)),
-      ...paraBorderShadowDecls(d.borderSides),
+      ...paraBorderShadowDecls(d.borderSides).filter((decl) => !decl.startsWith('--dk-drop:')),
     )
+    const drop = paraBorderDropColor(d.borderSides)
+    if (drop) darkDecls.push(`--pbdr-drop-c:${darkPageColor(drop)}`)
   }
   return { decls, darkDecls }
 }
@@ -364,7 +376,11 @@ function rowClosing(closingSel: string): string {
   return cellClosingWith(closingSel, ':is(td, th):last-child')
 }
 
-export function docStyleCss(parsed: ParsedDocFull): string {
+/**
+ * `live.typedGrid`: whether a section has a typed line grid now, when the
+ * Document dialog changed it since the file was read.
+ */
+export function docStyleCss(parsed: ParsedDocFull, live?: { typedGrid?: boolean }): string {
   const rules: string[] = []
   const additive = parsed.doNotUseHTMLParagraphAutoSpacing === true
   const SB = spaceBeforeProp(additive)
@@ -422,7 +438,8 @@ export function docStyleCss(parsed: ParsedDocFull): string {
   // rules: App.tsx injects the .doc-page pitch (uniform docs) or per-block
   // pitches through the layout channel (mixed docs, sectionGridPitchSpecs).
   const textCtx = documentTextContext(parsed)
-  const typedGrid = readSections(parsed).some((s) => sectionGridPitchPt(s) != null)
+  const typedGrid =
+    live?.typedGrid ?? readSections(parsed).some((s) => sectionGridPitchPt(s) != null)
   // set when the body strut alias (@font-face below) also leads inheriting CJK paragraphs
   let eaStrut = false
   const gridBlocks = `.doc-page :is(p, h1, h2, h3, h4, h5, h6, .doc-li, .doc-textbox-para):not(.doc-lh-fixed)`
@@ -488,9 +505,18 @@ export function docStyleCss(parsed: ParsedDocFull): string {
   // except paragraphs opted out via w:suppressAutoHyphens (pPrDefault/Normal decide
   // the baseline here; explicit style values override per style below). Chromium
   // hyphenates only under an explicit lang; file-actions sets it on the editor root
-  // from docDefaults w:lang.
+  // from docDefaults w:lang. --doc-shy follows the same cascade for the break points
+  // we place ourselves (editor/hyphenation.ts): it draws them where words may break.
   if (parsed.autoHyphenation && !(normal?.suppressAutoHyphens ?? dd?.suppressAutoHyphens)) {
-    rules.push('.doc-page { hyphens:auto; -webkit-hyphens:auto }')
+    rules.push(`.doc-page { hyphens:auto; -webkit-hyphens:auto; ${SHY_ON} }`)
+    // the header and footer strips and the notes drawn beside the editor root
+    rules.push(`.page-wrap, .pv-page { ${SHY_ON} }`)
+  }
+  if (parsed.autoHyphenation) {
+    // a direct w:suppressAutoHyphens w:val="0" beats the paragraph style's opt-out
+    rules.push(
+      `.doc-page .doc-hyphens-on.doc-hyphens-on.doc-hyphens-on { hyphens:auto; -webkit-hyphens:auto; ${SHY_ON} }`,
+    )
   }
   // kill both halves of the CJK-Latin gap (Chromium's native text-autospace and
   // the .doc-autospace-pad margins); .page-wrap/.pv-page reach the hf strips
@@ -720,10 +746,8 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // style not based on Normal does not indent in Word
     {
       const decls: string[] = []
-      if (normal?.indentLeftTwips)
-        decls.push(`margin-inline-start:${(normal.indentLeftTwips / 20).toFixed(1)}pt`)
-      if (normal?.indentRightTwips)
-        decls.push(`margin-inline-end:${(normal.indentRightTwips / 20).toFixed(1)}pt`)
+      if (normal?.indentLeftTwips) decls.push(...indentDecls('s', normal.indentLeftTwips))
+      if (normal?.indentRightTwips) decls.push(...indentDecls('e', normal.indentRightTwips))
       if (decls.length > 0) {
         rules.push(
           `.doc-page :is(p, h1, h2, h3, h4, h5, h6, .doc-protected-field, .doc-protected-formula-display):not([data-style]) { ${decls.join(';')} }`,
@@ -917,6 +941,9 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       decls.push(
         `text-decoration:${[d.underline && 'underline', d.strike && 'line-through'].filter(Boolean).join(' ')}`,
       )
+      // one declaration styles every line of the rule: a struck style keeps plain lines
+      if (d.underline && !d.strike)
+        decls.push(...underlineDecls(d.underlineStyle, d.underlineColor))
     }
     // a Latin-only style (font === fontAscii) keeps the inherited East Asian
     // slot; a style without fonts inherits its paragraph's faces as before
@@ -1078,8 +1105,7 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       }
     }
     // explicit 0 emits too: a child style's w:ind 0 cancels its parent's indent
-    if (d.indentRightTwips != null)
-      decls.push(`margin-inline-end:${(d.indentRightTwips / 20).toFixed(1)}pt`)
+    if (d.indentRightTwips != null) decls.push(...indentDecls('e', d.indentRightTwips))
     // first-line indent must not hit list items (hanging is expressed by the
     // marker box; a style text-indent double-shifts the first line and leaks
     // into the ::before marker) — w:hanging feeds the fallback chain instead
@@ -1101,7 +1127,7 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       d.suppressAutoHyphens !== undefined
     ) {
       const h = d.suppressAutoHyphens ? 'manual' : 'auto'
-      decls.push(`hyphens:${h}`, `-webkit-hyphens:${h}`)
+      decls.push(`hyphens:${h}`, `-webkit-hyphens:${h}`, d.suppressAutoHyphens ? SHY_OFF : SHY_ON)
     }
     {
       const sb = styleBorderDecls(d)
@@ -1129,7 +1155,9 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     if (d.indentLeftTwips != null) {
       const s = `[data-style="${CSS.escape(info.styleId)}"]`
       const pt = (d.indentLeftTwips / 20).toFixed(1)
-      rules.push(`.doc-page ${s}:not(${LIST_LINES}) { margin-inline-start:${pt}pt }`)
+      rules.push(
+        `.doc-page ${s}:not(${LIST_LINES}) { ${indentDecls('s', d.indentLeftTwips).join(';')} }`,
+      )
       rules.push(`.doc-page :is(${LIST_LINES})${s} { --style-li-left:${pt}pt }`)
       // the toc level ladder (styles.css em padding) only stands in for a style without its own indent
       if (tocLevelOf(info.styleId, parsed.styles) !== null)

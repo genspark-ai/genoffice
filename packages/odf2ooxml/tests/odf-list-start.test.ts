@@ -19,16 +19,19 @@ it.each([0, 7])('preserves a list style start value of %s', async (start) => {
   )
   expect(xml).toContain('<w:start w:val="' + start + '"/>')
 })
-it.each(['-1', '1.5', 'invalid'])('keeps the default start for invalid %s', async (start) => {
-  const styles = `<text:list-style style:name="L"><text:list-level-style-number text:level="1" style:num-format="1" text:start-value="${start}"/></text:list-style>`
-  const xml = await convert(
-    '<text:list text:style-name="L"><text:list-item><text:p>Default</text:p></text:list-item></text:list>',
-    styles,
-    'word/numbering.xml',
-  )
-  expect(xml).not.toContain('<w:start w:val="' + start + '"/>')
-  expect(xml).toContain('<w:start w:val="1"/>')
-})
+it.each(['-1', '1.5', 'invalid', '', '5000000000'])(
+  'keeps the default start for invalid %s',
+  async (start) => {
+    const styles = `<text:list-style style:name="L"><text:list-level-style-number text:level="1" style:num-format="1" text:start-value="${start}"/></text:list-style>`
+    const xml = await convert(
+      '<text:list text:style-name="L"><text:list-item><text:p>Default</text:p></text:list-item></text:list>',
+      styles,
+      'word/numbering.xml',
+    )
+    expect(xml).not.toContain('<w:start w:val="' + start + '"/>')
+    expect(xml).toContain('<w:start w:val="1"/>')
+  },
+)
 
 const twoLevels =
   '<text:list-style style:name="L">' +

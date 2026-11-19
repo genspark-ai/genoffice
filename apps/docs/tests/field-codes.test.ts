@@ -135,14 +135,14 @@ describe('toggle field codes', () => {
 })
 
 describe('setFieldInstr', () => {
-  it('rewrites instruction and result, keeps other marks, flags the field dirty', () => {
+  it('rewrites instruction and result, keeps other marks; a result given with the code needs no update', () => {
     const editor = makeEditor()
     const numpages = fieldRangeAt(editor.state, 12)!
     expect(setFieldInstr(editor, numpages, 'SECTIONPAGES', '9')).toBe(true)
     expect(editor.state.doc.textContent).toBe('Page 3 of 9Dated 2026-01-01')
     const run = editor.state.doc.nodeAt(11)!
     const mark = run.marks.find((m) => m.type.name === 'instrField')!
-    expect(mark.attrs).toMatchObject({ instr: 'SECTIONPAGES', dirty: true })
+    expect(mark.attrs).toMatchObject({ instr: 'SECTIONPAGES', dirty: false })
     expect(run.marks.some((m) => m.type.name === 'bold')).toBe(true)
   })
 

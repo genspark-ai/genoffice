@@ -14,6 +14,7 @@ import {
   setSelectionAlign,
 } from '../src/renderer/editor/direction'
 import { en } from '../src/renderer/i18n/ribbon/en'
+import { ribbonControl } from '../src/renderer/commands/ribbon-controls'
 
 interface JsonNode {
   type: string
@@ -355,12 +356,9 @@ describe('ribbon direction buttons carry translated aria-labels', () => {
     expect(en.ribbonDirRtlTip).toMatch(/right.*left/i)
   })
 
-  it('wires both buttons with data-tip and aria-label (no new keys)', () => {
-    const ribbon = readFileSync(join(__dirname, '../src/renderer/components/Ribbon.tsx'), 'utf8')
-    for (const key of ['ribbonDirLtrTip', 'ribbonDirRtlTip']) {
-      expect(ribbon).toContain(`aria-label={t('${key}')}`)
-      expect(ribbon).toContain(`data-tip={t('${key}')}`)
-    }
+  it('names both buttons from those keys (no new keys)', () => {
+    expect(ribbonControl('direction-ltr').tip).toBe('ribbonDirLtrTip')
+    expect(ribbonControl('direction-rtl').tip).toBe('ribbonDirRtlTip')
   })
 })
 

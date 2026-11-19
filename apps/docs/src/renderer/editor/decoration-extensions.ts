@@ -1,4 +1,5 @@
 import { SEG_BREAKABLE_RE } from '../text-layout/script-rules'
+import { dropCapGapOf, dropCapLinesOf } from './drop-cap'
 import { Extension, type Editor } from '@tiptap/core'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
@@ -222,6 +223,8 @@ export function tabReflowStart(
 const TWIPS_PER_PX = 15
 /** fallback when the document's settings.xml declares no w:defaultTabStop (Word: 0.5") */
 const DEFAULT_TAB_TWIPS = 720
+/** the document's default tab stop was changed: every default tab is measured again */
+export const DEFAULT_TAB_STOP_CHANGED_EVENT = 'genoffice:default-tab-stop'
 
 export interface TabStopStorage {
   /** settings.xml w:defaultTabStop (twips); 0 = zero-width default tabs (Word barely advances) */
@@ -558,6 +561,7 @@ class TabLayoutView {
     // re-wrap TOC titles without touching the editor root's width
     document.addEventListener(DOC_CSS_COMMITTED_EVENT, this.onPhasedSettled)
     document.addEventListener(WRAP_WIDTHS_COMMITTED_EVENT, this.onPhasedSettled)
+    document.addEventListener(DEFAULT_TAB_STOP_CHANGED_EVENT, this.onPhasedSettled)
     if (typeof ResizeObserver !== 'undefined') {
       // width-only trigger: height changes on every keystroke
       this.resizeObserver = new ResizeObserver(() => {
@@ -610,6 +614,7 @@ class TabLayoutView {
     document.removeEventListener(PHASED_CONTENT_SETTLED_EVENT, this.onPhasedSettled)
     document.removeEventListener(DOC_CSS_COMMITTED_EVENT, this.onPhasedSettled)
     document.removeEventListener(WRAP_WIDTHS_COMMITTED_EVENT, this.onPhasedSettled)
+    document.removeEventListener(DEFAULT_TAB_STOP_CHANGED_EVENT, this.onPhasedSettled)
     this.resizeObserver?.disconnect()
     if (this.retryRaf) cancelAnimationFrame(this.retryRaf)
   }
@@ -1130,6 +1135,9 @@ export const DropCapExtension = Extension.create({
                 Decoration.node(offset, offset + node.nodeSize, {
                   'data-drop-cap': raw,
                   class: ownSize ? 'has-drop-cap drop-cap-own-size' : 'has-drop-cap',
+                  style:
+                    `--drop-cap-lines: ${dropCapLinesOf(raw)}` +
+                    (dropCapGapOf(raw) ? `; --drop-cap-gap: ${dropCapGapOf(raw) / 20}pt` : ''),
                 }),
               )
             })

@@ -5,6 +5,7 @@ export const zhTW = {
   aiEmptyBuildTitle: '讓 AI 幫你從零建表',
   aiEmptyBuildBody: '描述想要的表格、資料或圖表，AI 直接生成。',
   aiGskLoginBtn: '登入 Genspark',
+  aiGskLoginOk: '已登入 Genspark',
   aiUndelivered: '未傳送成功',
   aiRetry: '重試',
   aiOpenAssistant: '開啟 AI 助手',

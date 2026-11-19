@@ -15,6 +15,7 @@ apps/docs/src/renderer/fonts/stand-in-boxes.json
 apps/docs/tests/fixtures/font-metrics/
 apps/docs/src/renderer/fonts/fonts.generated.css
 apps/docs/src/renderer/line-factors.generated.ts
+apps/docs/src/renderer/icon-library/icons.json
 
 # Local-only acceptance drivers are intentionally outside CI.
 scripts/drivers/driver.*.mjs
