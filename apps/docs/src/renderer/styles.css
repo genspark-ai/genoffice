@@ -5078,6 +5078,78 @@ th[data-rev-fmt] {
   z-index: 1000;
 }
 
+/* vertical ruler (Word): left of the caret's page, zoomed with it. The anchor is a
+   zero-height box at the top of the page flow; the strip is placed from it */
+.vruler-anchor {
+  position: relative;
+  height: 0;
+}
+
+.vruler {
+  position: absolute;
+  width: 20px;
+  box-sizing: border-box;
+  background: var(--docs-ruler-bg);
+  border: 1px solid var(--docs-ruler-border);
+  border-radius: 2px;
+  font-size: 9px;
+  color: var(--docs-ruler-ink);
+  user-select: none;
+  overflow: hidden;
+  z-index: 5;
+}
+
+.vruler-zone {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: var(--docs-ruler-zone);
+}
+
+.vruler-num {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  transform: translateY(-50%);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.vruler-tick {
+  position: absolute;
+  right: 0;
+  width: 3px;
+  height: 1px;
+  background: var(--docs-ruler-tick);
+  pointer-events: none;
+}
+
+.vruler-tick-mid {
+  width: 6px;
+}
+
+.vruler-margin-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 7px;
+  transform: translateY(-50%);
+  cursor: row-resize;
+  z-index: 2;
+}
+
+.vruler-margin-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.ruler-drag-guide-h {
+  height: 0;
+  border-left: none;
+  border-top: 1px dotted var(--docs-ruler-ink);
+}
+
 /* contextual Header & Footer tab */
 .hf-ribbon-body {
   display: flex;
@@ -12597,6 +12669,7 @@ body.docs-crop-active
   .paste-chip,
   .ai-ask-pop,
   .ruler,
+  .vruler-anchor,
   .find-panel {
     display: none !important;
   }

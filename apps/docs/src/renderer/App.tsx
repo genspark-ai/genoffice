@@ -501,6 +501,7 @@ import {
 } from './components/comments-mode'
 import { StylesPane } from './components/StylesPane'
 import { Ruler } from './components/Ruler'
+import { VerticalRuler } from './components/VerticalRuler'
 import { docBodyFont, docHasCjk, docLineFactor, docStyleCss, docThemeCss } from './doc-style-css'
 import { docFontsCoveredBy } from './font-check'
 import { fontAliasAnswers, onFontAliasesChanged } from './system-fonts'
@@ -8668,6 +8669,20 @@ export function App() {
                               ...sec,
                               marginLeft: rulerSwap ? right : left,
                               marginRight: rulerSwap ? left : right,
+                            })
+                          }}
+                        />
+                      )}
+                      {showRuler && rulerSection && !multipage && (
+                        <VerticalRuler
+                          section={rulerSection}
+                          editor={editor}
+                          onMarginsChange={({ top, bottom }) => {
+                            const sec = sections[activeSection]?.settings ?? section
+                            ribbonActions.onSection({
+                              ...sec,
+                              marginTop: top,
+                              marginBottom: bottom,
                             })
                           }}
                         />
