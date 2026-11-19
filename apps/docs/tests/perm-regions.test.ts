@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { setPermRegionsEnabled } from '../src/renderer/editor/perm-regions'
+import { paragraphMarkHeight, setPermRegionsEnabled } from '../src/renderer/editor/perm-regions'
 
 /** a read-only protected fill-in template: two open cells, two open top-level paragraphs */
 const BODY = [
@@ -85,6 +85,8 @@ describe('editing permission regions in the editor', () => {
     ])
     // Word draws no brackets; a template's own "[" / "]" are its text
     expect(dom.textContent).not.toContain('[[')
+    // and paints every paragraph's mark
+    expect(dom.querySelectorAll('.perm-region-mark')).toHaveLength(4)
     editor.destroy()
   })
 
@@ -107,8 +109,8 @@ describe('editing permission regions in the editor', () => {
     const nestedTables = dom.querySelectorAll('.perm-region-nested')
     expect(nestedTables).toHaveLength(1)
     expect(nestedTables[0]!.textContent).toContain('Task')
-    // the empty paragraph after the nested table
-    expect(dom.querySelectorAll('.perm-region-empty')).toHaveLength(1)
+    // a mark at the end of 'Year 1' and of the empty paragraph after the nested table
+    expect(dom.querySelectorAll('.perm-region-mark')).toHaveLength(2)
     expect(dom.textContent).toContain('Locked')
     expect(
       [...dom.querySelectorAll('.perm-region')].some((el) => el.textContent === 'Locked'),
@@ -116,10 +118,24 @@ describe('editing permission regions in the editor', () => {
     editor.destroy()
   })
 
+  it('sizes a paragraph mark to an in-line picture, not a floating one', async () => {
+    const { editor } = await open()
+    const { docParagraph, docInlineImage } = editor.schema.nodes
+    const text = docParagraph!.create(null, editor.schema.text('caption'))
+    const picture = docParagraph!.create(null, [docInlineImage!.create({ heightPx: 300 })])
+    const floating = docParagraph!.create(null, [
+      docInlineImage!.create({ heightPx: 300, wrap: 'square' }),
+    ])
+    expect(paragraphMarkHeight(text)).toBe(0)
+    expect(paragraphMarkHeight(picture)).toBe(300)
+    expect(paragraphMarkHeight(floating)).toBe(0)
+    editor.destroy()
+  })
+
   it('shows and guards nothing while disabled', async () => {
     const { editor } = await open(false)
     expect(
-      editor.view.dom.querySelectorAll('.perm-region, .perm-region-empty, .perm-region-nested'),
+      editor.view.dom.querySelectorAll('.perm-region, .perm-region-mark, .perm-region-nested'),
     ).toHaveLength(0)
     expect(typeAt(editor, 'Locked intro', 'x')).toBe(true)
     editor.destroy()

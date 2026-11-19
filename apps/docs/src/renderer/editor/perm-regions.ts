@@ -113,10 +113,36 @@ export function permRegionsAllow(tr: Transaction): boolean {
 }
 
 /**
+ * Height of a paragraph's mark when the line is taller than the text: the
+ * tallest in-line picture (a floating one does not size the line). 0 = text.
+ */
+export function paragraphMarkHeight(node: PmNode): number {
+  let h = 0
+  node.forEach((child) => {
+    if (child.type.name !== 'docInlineImage' || child.attrs.wrap) return
+    const px = Number(child.attrs.heightPx)
+    if (px > h) h = px
+  })
+  return h
+}
+
+function paragraphMark(height: number): HTMLElement {
+  const span = document.createElement('span')
+  span.className = 'perm-region-mark'
+  span.contentEditable = 'false'
+  if (height > 0) {
+    span.style.height = `${height}px`
+    span.style.verticalAlign = 'baseline'
+  }
+  return span
+}
+
+/**
  * Word's "Highlight the regions I can edit": a highlight behind the text of
  * every paragraph in an open region, tables nested in an open cell included,
- * and a mark-sized patch on an empty paragraph where Word paints its paragraph
- * mark. Word adds no brackets of its own; fill-in templates type them.
+ * and on each paragraph's mark: a patch at the paragraph's end, as tall as
+ * its line (the full height beside a picture), taking no width. Word adds no
+ * brackets of its own; fill-in templates type them.
  */
 function regionDecorations(doc: PmNode): DecorationSet {
   const decorations: Decoration[] = []
@@ -127,10 +153,17 @@ function regionDecorations(doc: PmNode): DecorationSet {
       return false
     }
     if (!node.isTextblock) return true
+    const end = pos + node.nodeSize - 1
+    if (node.content.size > 0) {
+      decorations.push(Decoration.inline(pos + 1, end, { class: 'perm-region' }))
+    }
+    const height = paragraphMarkHeight(node)
     decorations.push(
-      node.content.size > 0
-        ? Decoration.inline(pos + 1, pos + node.nodeSize - 1, { class: 'perm-region' })
-        : Decoration.node(pos, pos + node.nodeSize, { class: 'perm-region-empty' }),
+      Decoration.widget(end, () => paragraphMark(height), {
+        side: 1,
+        ignoreSelection: true,
+        key: `perm-mark-${height}`,
+      }),
     )
     return false
   }
