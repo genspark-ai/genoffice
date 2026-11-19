@@ -8,6 +8,7 @@
 #include <QNetworkReply>
 #include <QPointer>
 #include <QProcess>
+#include <QSaveFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -88,9 +89,20 @@ private slots:
         });
         editor->setServiceHandler("confirmDocumentReplace", [](const QJsonArray&, Editor::Completion done) { done({{"result", true}}); });
         editor->setServiceHandler("saveDocument", [&](const QJsonArray& args, Editor::Completion done) {
-            savedBytes = QByteArray::fromBase64(args.first().toObject().value("data").toObject().value("base64").toString().toLatin1());
-            done({{"result", QJsonObject{{"ok", true}, {"committed", true}, {"pending", false},
-                {"document", QJsonObject{{"id", "host:document"}, {"name", "Document"}}}}}});
+            const auto request = args.first().toObject();
+            savedBytes = QByteArray::fromBase64(request.value("data").toObject().value("base64").toString().toLatin1());
+            QJsonObject result{{"ok", true}, {"committed", true}, {"pending", false},
+                {"document", QJsonObject{{"id", "host:document"}, {"name", "Document"}}}};
+            const auto path = request.value("requestedPath").toString();
+            if (!path.isEmpty()) {
+                QSaveFile output(path);
+                if (!output.open(QIODevice::WriteOnly) || output.write(savedBytes) != savedBytes.size() || !output.commit()) {
+                    done({{"result", QJsonObject{{"ok", false}, {"committed", false}, {"pending", true}, {"error", output.errorString()}}}});
+                    return;
+                }
+                result.insert("path", path);
+            }
+            done({{"result", result}});
         });
         QSignalSpy ready(editor.get(), &Editor::ready);
         QSignalSpy failed(editor.get(), &Editor::failed);
@@ -270,10 +282,16 @@ private slots:
         QVERIFY2(!formatted.value("isError").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(formatted).toJson())));
         QVERIFY(formatted.value("committed").toBool());
         QVERIFY(formatted.value("mutated").toBool());
-        const auto saved = callLiveTool("save_document", {{"path", workspace.filePath("formatted.docx")}, {"overwrite", true}});
+        const auto savedPath = workspace.filePath("formatted.docx");
+        const auto saved = callLiveTool("save_document", {{"path", savedPath}, {"overwrite", true}});
         QVERIFY2(saved.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(saved).toJson())));
         QVERIFY(!saved.value("pending").toBool());
+        QCOMPARE(saved.value("path").toString(), savedPath);
         QVERIFY(savedBytes.startsWith("PK"));
+        QFile savedFile(savedPath);
+        QVERIFY(savedFile.open(QIODevice::ReadOnly));
+        QCOMPARE(savedFile.readAll(), savedBytes);
+        savedFile.close();
         const auto savedQuery = callLiveTool("query_document", {{"containsText", "Queried Agent edit"}, {"limit", 1}});
         QVERIFY2(!savedQuery.value("isError").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(savedQuery).toJson())));
         const auto savedItems = QJsonDocument::fromJson(savedQuery.value("output").toString().toUtf8()).object().value("items").toArray();

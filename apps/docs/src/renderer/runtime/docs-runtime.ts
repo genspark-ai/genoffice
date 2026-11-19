@@ -72,9 +72,14 @@ interface DocumentGenerationState {
   queue: Promise<unknown>
 }
 
-export interface RuntimeDocument {
-  file?: { path: string; dirty: boolean; savedHash?: string }
+export interface DocsRuntimeFileState {
+  path: string
+  dirty: boolean
+  savedHash?: string
+}
 
+export interface RuntimeDocument {
+  file?: DocsRuntimeFileState
   annotations?: DocsAnnotations
   editor: Editor
   /** Changes when the host opens or replaces a document, not on each render. */
@@ -136,7 +141,7 @@ export interface DocsRuntimeClient {
   context(options?: { captureSelection?: boolean }): {
     documentId: string
     revision: number
-    file?: RuntimeDocument['file']
+    file?: DocsRuntimeFileState
     text: string
   }
   execute(call: AgentToolCall, signal?: AbortSignal): Promise<DocsOperationResult>
