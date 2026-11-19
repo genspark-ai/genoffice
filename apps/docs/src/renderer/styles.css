@@ -14068,6 +14068,34 @@ tr > .page-gap-cut {
   margin-left: 28px;
 }
 
+@media screen {
+  .comment-bubble:not(.rev-bubble) .comment-text {
+    overflow: hidden;
+  }
+
+  .comment-bubble.comment-expanded {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
+  .comment-bubble .comment-reading-toggle {
+    display: block;
+    margin: 2px 0 0 28px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 4px;
+    background: var(--hover);
+    color: var(--accent);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .comment-bubble .comment-reading-toggle[hidden] {
+    display: none;
+  }
+}
+
 .comment-bubble .comment-reply {
   margin: 6px 0 0 0;
   padding: 6px 0 0 0;

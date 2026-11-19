@@ -145,6 +145,16 @@ describe('margin comment cards vs the Comments panel', () => {
     app.remove()
   })
 
+  it('keeps a comment picture below its text while rebuilding the margin card', () => {
+    const { app, wrap, pm, comments, handlers } = build({ cards: true })
+    comments[0].image = { mime: 'image/png', base64: 'AAAA', widthPx: 20, heightPx: 20 }
+    syncMarginAnnotations(wrap, pm, comments, 1, [], undefined, handlers)
+    const image = wrap.querySelector('.comment-entry .comment-image')
+    expect(image).not.toBeNull()
+    expect(image?.previousElementSibling?.classList.contains('comment-text')).toBe(true)
+    app.remove()
+  })
+
   it('card head carries Resolve and ⋯ → Edit / Delete, like the panel card', () => {
     const { app, wrap, calls } = build({ cards: true, focus: '7' })
     const bubble = wrap.querySelector<HTMLElement>('.comment-bubble')!
@@ -198,6 +208,20 @@ describe('margin comment cards vs the Comments panel', () => {
     again.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     expect(calls).toEqual(['reply:7:half done'])
     expect(again.value).toBe('')
+    app.remove()
+  })
+
+  it('preserves an unsubmitted reply after focus moves to a card control', () => {
+    const { app, wrap, pm, comments, handlers } = build({ cards: true, focus: '7' })
+    const input = wrap.querySelector<HTMLInputElement>('.comment-reply-input')!
+    input.value = 'unfinished reply'
+    const control = wrap.querySelector<HTMLButtonElement>('.comment-like')!
+    control.focus()
+    syncMarginAnnotations(wrap, pm, comments, 1, [], undefined, handlers)
+    expect(wrap.querySelector<HTMLInputElement>('.comment-reply-input')!.value).toBe(
+      'unfinished reply',
+    )
+    expect(document.activeElement?.classList.contains('comment-reply-input')).toBe(false)
     app.remove()
   })
 

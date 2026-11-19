@@ -91,13 +91,14 @@ export async function parseRels(zip: JSZip, path: string): Promise<Map<string, R
   return rels
 }
 
-/** w:t text only: field instructions (w:instrText) and deleted runs are not part of the display text */
+/** Visible comment text and hard breaks; field instructions and deleted text stay out. */
 function resultTextOf(node: XNode): string {
   let out = ''
   for (const child of childrenOf(node)) {
     if ('#text' in child) continue
     const name = nameOf(child)
     if (name === 'w:t') out += textOf(child)
+    else if (name === 'w:br' || name === 'w:cr') out += '\n'
     else if (name !== 'w:instrText' && name !== 'w:delInstrText' && name !== 'w:delText')
       out += resultTextOf(child)
   }
