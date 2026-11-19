@@ -158,6 +158,11 @@ export interface Run {
    * paragraph can re-emit the markers without touching its neighbors.
    */
   commentIds?: string[]
+  /** Imported cross-paragraph range ends at this run boundary. Display metadata
+   * only: editors project these through their actual inline conversion. */
+  commentEndIds?: string[]
+  /** Cross-paragraph ends preceding the first run in a paragraph. Display only. */
+  commentEndBeforeIds?: string[]
   /** run is inside a w:ins (tracked insertion) */
   ins?: RevisionInfo
   /** run is inside a w:del (tracked deletion; text came from w:delText) */

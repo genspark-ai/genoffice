@@ -4410,6 +4410,23 @@ export function App({
             scroller.scrollLeft = scrollLeft
           }
         }
+        // Text line boxes can change when Blink restores the live CSS zoom.
+        // Measure screen anchors and page capacity only in that final display
+        // state, including fast passes that keep the existing pagination.
+        const pm = pmEl()
+        if (pm) {
+          syncMarginAnnotations(
+            (pm.closest('.page-wrap') as HTMLElement) ?? pm,
+            pm,
+            comments,
+            liveZoom,
+            doc.parsed.blocks,
+            editor.view,
+            marginHandlersRef.current,
+            pageLayoutRef.current?.cuts,
+            annotationFirstPageRef.current,
+          )
+        }
         if (fast) {
           fastPasses++
           const dbg = (window as unknown as Record<string, Record<string, unknown>>).__pageDebug
@@ -5649,18 +5666,7 @@ export function App({
             cuts,
           )
         }
-        syncMarginAnnotations(
-          (pm.closest('.page-wrap') as HTMLElement) ?? pm,
-          pm,
-          comments,
-          factor,
-          doc.parsed.blocks,
-          editor.view,
-          marginHandlersRef.current,
-          cuts,
-          annotationFirstPageRef.current,
-        )
-        stage('sheets+annotations')
+        stage('sheets')
         tSetGaps = performance.now() - tSet0
         if (obstaclesChanged) followUp('obstacles')
         // a fill just applied to a split row changed the table height under the slices

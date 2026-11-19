@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { CommentInfo } from '@genoffice/docx-engine'
+import { parseDocx, saveDocx, type CommentInfo } from '@genoffice/docx-engine'
 import { Editor } from '@tiptap/core'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { syncMarginAnnotations } from '../src/renderer/editor/margin-annotations'
+import { blocksToPmDoc, pmDocToSavePlan } from '../src/renderer/editor/convert'
+import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 
 const box = (left: number, top: number, width: number, height: number): DOMRect =>
   ({ left, top, right: left + width, bottom: top + height, width, height }) as DOMRect
@@ -33,6 +35,100 @@ function fixture() {
 }
 
 describe('margin comment geometry', () => {
+  it.each([
+    [
+      'notes',
+      '<w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:endnoteReference w:id="1"/></w:r>',
+      2,
+    ],
+    [
+      'ruby',
+      '<w:r><w:ruby><w:rt><w:r><w:t>phonetic</w:t></w:r></w:rt><w:rubyBase><w:r><w:t>base</w:t></w:r></w:rubyBase></w:ruby></w:r>',
+      1,
+    ],
+    ['math', '<m:oMath><m:r><m:t>x+y</m:t></m:r></m:oMath>', 1],
+  ])(
+    'uses actual inline positions after %s rather than XML text lengths',
+    async (_name, inline, units) => {
+      let parsed = await parseDocx(
+        await buildDocx({
+          bodyXml:
+            '<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>open</w:t></w:r></w:p>' +
+            `<w:p>${inline}<w:r><w:t>tail</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:t> suffix</w:t></w:r></w:p>`,
+          extraParts: ['footnote', 'endnote'].map((kind) => ({
+            path: `word/${kind}s.xml`,
+            contentType: `application/vnd.openxmlformats-officedocument.wordprocessingml.${kind}s+xml`,
+            xml: `<w:${kind}s xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:${kind} w:id="1"><w:p><w:r><w:t>Note content</w:t></w:r></w:p></w:${kind}></w:${kind}s>`,
+          })),
+        }),
+      )
+      const originalParagraph = parsed.blocks[1].originalXml
+      for (let pass = 0; pass < 2; pass++) {
+        const f = fixture()
+        const editor = new Editor({
+          element: document.createElement('div'),
+          extensions: editorExtensions,
+          content: blocksToPmDoc(parsed.blocks) as never,
+        })
+        f.pm.replaceWith(editor.view.dom)
+        editor.view.dom.classList.add('doc-page')
+        editor.view.dom.getBoundingClientRect = () => box(0, 0, 1200, 2400)
+        editor.view.coordsAtPos = (pos) => ({
+          left: pos * 10,
+          right: pos * 10,
+          top: 1200,
+          bottom: 1216,
+        })
+        syncMarginAnnotations(f.wrap, editor.view.dom, f.comments, 1, parsed.blocks, editor.view)
+        expect(f.wrap.querySelector('.comment-leader')!.getAttribute('d')).toMatch(
+          new RegExp(`^M ${(11 + Number(units)) * 10} 1215 L `),
+        )
+        const plan = pmDocToSavePlan(editor.getJSON() as never, parsed.blocks)
+        expect(plan.changedCount).toBe(0)
+        parsed = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+        expect(parsed.blocks[1].originalXml).toBe(originalParagraph)
+        editor.destroy()
+        f.app.remove()
+      }
+    },
+  )
+
+  it.each(['', '<w:r><w:t>untouched suffix</w:t></w:r>'])(
+    'keeps an endpoint at offset zero before %s through save and reopen',
+    async (suffix) => {
+      const bytes = await buildDocx({
+        bodyXml:
+          '<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>open</w:t></w:r></w:p>' +
+          `<w:p><w:commentRangeEnd w:id="1"/>${suffix}</w:p>`,
+      })
+      let parsed = await parseDocx(bytes)
+      for (let pass = 0; pass < 2; pass++) {
+        const f = fixture()
+        const editor = new Editor({
+          element: document.createElement('div'),
+          extensions: editorExtensions,
+          content: blocksToPmDoc(parsed.blocks) as never,
+        })
+        f.pm.replaceWith(editor.view.dom)
+        editor.view.dom.classList.add('doc-page')
+        editor.view.dom.getBoundingClientRect = () => box(0, 0, 1200, 2400)
+        editor.view.coordsAtPos = (pos) => ({
+          left: pos * 10,
+          right: pos * 10,
+          top: 1200,
+          bottom: 1216,
+        })
+        syncMarginAnnotations(f.wrap, editor.view.dom, f.comments, 1, parsed.blocks, editor.view)
+        expect(f.wrap.querySelector('.comment-leader')!.getAttribute('d')).toMatch(/^M 70 1215 L /)
+        const plan = pmDocToSavePlan(editor.getJSON() as never, parsed.blocks)
+        expect(plan.changedCount).toBe(0)
+        parsed = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+        editor.destroy()
+        f.app.remove()
+      }
+    },
+  )
+
   it('connects to the last visible fragment of the full marked range', () => {
     const f = fixture()
     f.span('1', [box(200, 100, 80, 16)])
@@ -108,7 +204,7 @@ describe('margin comment geometry', () => {
           },
           {
             type: 'docParagraph',
-            attrs: { docxIndex: 1, commentEnds: ['1'] },
+            attrs: { docxIndex: 1, commentEnds: ['1'], commentEndOffsets: { '1': 6 } },
             content: [{ type: 'text', text: 'target remaining' }],
           },
         ],

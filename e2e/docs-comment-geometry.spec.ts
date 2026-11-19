@@ -17,6 +17,11 @@ async function mixedPages(): Promise<Buffer> {
     await buildDocx({
       bodyXml:
         '<w:p><w:r><w:t>Before </w:t></w:r><w:commentRangeStart w:id="1"/><w:r><w:t>narrow </w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>target</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p>' +
+        Array.from(
+          { length: 18 },
+          (_, i) =>
+            `<w:p><w:r><w:rPr><w:sz w:val="21"/></w:rPr><w:t>Calibration line ${i}: regular text before the endpoint.</w:t></w:r></w:p>`,
+        ).join('') +
         '<w:p><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:bottom="1440" w:left="1440" w:right="1440"/></w:sectPr></w:pPr><w:commentRangeStart w:id="3"/><w:r><w:t>Cross range begins</w:t></w:r></w:p>' +
         '<w:p><w:r><w:t>Cross range ends</w:t></w:r><w:commentRangeEnd w:id="3"/><w:r><w:commentReference w:id="3"/><w:t xml:space="preserve"> untouched suffix</w:t></w:r></w:p>' +
         '<w:p><w:commentRangeStart w:id="2"/><w:r><w:t>wide target</w:t></w:r><w:commentRangeEnd w:id="2"/><w:r><w:commentReference w:id="2"/></w:r></w:p>',
@@ -132,6 +137,33 @@ test('comments follow real range endpoints and the width of their endpoint page'
           return Math.abs(next.cross.x - next.cross.right)
         })
         .toBeLessThan(1)
+    }
+    const slider = page.locator('.zoom-slider')
+    await slider.press('ArrowLeft')
+    await slider.press('ArrowLeft')
+    await expect(slider).toHaveValue('80')
+    await expect
+      .poll(async () => {
+        const next = await geometry()
+        return Math.max(
+          Math.abs(next.cross.x - next.cross.right),
+          Math.abs(next.cross.y - (next.cross.bottom - 0.8)),
+          Math.abs(next.point.x - next.target.right),
+          Math.abs(next.point.y - (next.target.bottom - 0.8)),
+        )
+      })
+      .toBeLessThan(1)
+    const zoomed = await geometry()
+    for (const [id, index] of [
+      ['1', 0],
+      ['2', 1],
+      ['3', 1],
+    ] as const) {
+      expect(Math.abs(zoomed.cards[id].left - zoomed.sheets[index].right - 14 * 0.8)).toBeLessThan(
+        1,
+      )
+      expect(zoomed.cards[id].top).toBeGreaterThanOrEqual(zoomed.sheets[index].top - 1)
+      expect(zoomed.cards[id].bottom).toBeLessThanOrEqual(zoomed.sheets[index].bottom + 1)
     }
   })
 })
