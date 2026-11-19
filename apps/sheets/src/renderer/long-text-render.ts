@@ -94,9 +94,10 @@ function clipWidth(ctx: RenderFontCtxLike): number {
 /**
  * Rich-text documents (our importer builds one for every cell holding manual
  * line breaks, joined or not) are laid out glyph by glyph for the render cache
- * and again for auto row height. An unwrapped single paragraph only ever shows
- * what fits across its overflow box, so cap the text handed to the layout and
- * let the overflow pass widen the few cells whose box turns out wider.
+ * and again for auto row height. An unwrapped cell only ever shows what fits
+ * its overflow box, so cap the text handed to the layout and let the overflow
+ * pass widen the few cells whose box turns out wider. Interior paragraph starts
+ * are kept inside the slice, so manually broken cells get the same treatment.
  */
 export const LONG_DOC_MAX_CHARS = 256
 
@@ -116,7 +117,6 @@ export function truncateDocForLayout(
   const breaks = (body.paragraphs ?? []).filter(
     (para: { startIndex: number }) => para.startIndex < textLen,
   )
-  if (breaks.length > 0) return doc
   const start = keepStart(stream.slice(0, textLen), maxChars, hAlign)
   const end = start + maxChars
   const textRuns = (body.textRuns ?? [])
@@ -126,6 +126,13 @@ export function truncateDocForLayout(
       st: Math.max(run.st, start) - start,
       ed: Math.min(run.ed, end) - start,
     }))
+  // A manual line break is just another paragraph start in the rich-text
+  // stream. Keep the ones inside the slice (shifted to its offsets) so a
+  // multiline cell still lays out as lines; the previous bail-out left all
+  // 30k characters of every such cell to be shaped on every scroll frame.
+  const interior = breaks
+    .filter((para) => para.startIndex > start && para.startIndex < end)
+    .map((para) => ({ ...para, startIndex: para.startIndex - start }))
   // Ranges, decorations, blocks and tables carry offsets into the full stream.
   const { customRanges: _cr, customDecorations: _cd, customBlocks: _cb, tables: _t, ...rest } = body
   return {
@@ -134,7 +141,7 @@ export function truncateDocForLayout(
       ...rest,
       dataStream: `${stream.slice(start, end)}\r\n`,
       textRuns,
-      paragraphs: [{ startIndex: maxChars }],
+      paragraphs: [...interior, { startIndex: maxChars }],
       sectionBreaks: [{ startIndex: maxChars + 1 }],
     },
   }
