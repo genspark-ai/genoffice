@@ -3038,7 +3038,7 @@ function buildCommentsExtendedXml(comments: CommentInfo[]): string {
   )
 }
 
-/** Aligned with parseComments' textOf: each w:p's w:t text, '\n' between paragraphs */
+/** Aligned with parseComments: visible text, hard breaks and '\n' between paragraphs. */
 function commentPlainText(commentXml: string): string {
   const paras: string[] = []
   // the self-closing form first: the open-to-close alternative would swallow it
@@ -3046,9 +3046,9 @@ function commentPlainText(commentXml: string): string {
   let p: RegExpExecArray | null
   while ((p = pRe.exec(commentXml)) !== null) {
     const texts: string[] = []
-    const tRe = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g
+    const tRe = /<w:(?:br|cr)\b[^>]*\/>|<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g
     let t: RegExpExecArray | null
-    while ((t = tRe.exec(p[0])) !== null) texts.push(t[1])
+    while ((t = tRe.exec(p[0])) !== null) texts.push(t[1] ?? '\n')
     paras.push(
       texts
         .join('')

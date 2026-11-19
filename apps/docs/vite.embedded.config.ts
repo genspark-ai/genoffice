@@ -5,6 +5,20 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   base: './',
   plugins: [react()],
+  // Linked worktree dependencies must not select another checkout's engine.
+  resolve: {
+    alias: {
+      '@genoffice/docx-engine/lazy-media': resolve(
+        __dirname,
+        '../../packages/docx-engine/src/lazy-media.ts',
+      ),
+      '@genoffice/docx-engine/zip-splice': resolve(
+        __dirname,
+        '../../packages/docx-engine/src/zip-splice.ts',
+      ),
+      '@genoffice/docx-engine': resolve(__dirname, '../../packages/docx-engine/src/index.ts'),
+    },
+  },
   build: {
     outDir: 'out/embedded',
     target: 'es2022',

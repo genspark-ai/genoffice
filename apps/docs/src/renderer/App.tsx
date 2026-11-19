@@ -8197,6 +8197,10 @@ export function App({
       else setCommentPopup(id)
     },
     onCommentSelect: (id) => setCommentFocus({ id, nonce: Date.now() }),
+    onCommentCollapse: (id) => {
+      setCommentFocus((focus) => (focus?.id === id ? null : focus))
+      setCommentPopup((popup) => (popup === id ? null : popup))
+    },
     onCommentReply: (id, text) => replyToComment(id, text),
     onCommentResolve: resolveComment,
     onCommentEdit: editComment,

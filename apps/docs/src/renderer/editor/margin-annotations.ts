@@ -34,6 +34,7 @@ import { absoluteDate, authorInitials, authorInk } from './comment-card'
 import { balloonRevKinds, currentBalloonMode } from './revision-view'
 import { trackChangesOptionsState } from './track-changes-options'
 import { commentEndpoints } from './comment-endpoints'
+import { setCommentPresentation } from './comment-presentation'
 
 export const MARKUP_AREA_W = 200
 /** Word's comment column: a separate strip right of the markup area (or of the page) */
@@ -80,6 +81,7 @@ export interface MarginHandlers {
   onCommentBalloon?: (id: string) => void
   /** margin card clicked: select that thread */
   onCommentSelect?: (id: string) => void
+  onCommentCollapse?: (id: string) => void
   /** Reply typed into a margin bubble's inline box */
   onCommentReply?: (id: string, text: string) => void
   onCommentResolve?: (id: string, done: boolean) => void
@@ -89,7 +91,7 @@ export interface MarginHandlers {
 
 type BubbleHandlers = Pick<
   MarginHandlers,
-  'onCommentReply' | 'onCommentResolve' | 'onCommentEdit' | 'onCommentDelete'
+  'onCommentReply' | 'onCommentResolve' | 'onCommentEdit' | 'onCommentDelete' | 'onCommentCollapse'
 >
 
 function makeBalloonIcon(c: CommentInfo, on: boolean, onJump: () => void): HTMLElement {
@@ -281,15 +283,6 @@ function makeBubble(
     const text = document.createElement('div')
     text.className = 'comment-text'
     text.textContent = c.text
-    if (c.image) {
-      // the picture a comment carries (genoffice#2040): shown under its text,
-      // sized by the saved extent like the editor draws body pictures
-      const img = document.createElement('img')
-      img.className = 'comment-image'
-      img.src = `data:${c.image.mime};base64,${c.image.base64}`
-      img.alt = ''
-      text.after(img)
-    }
     const head = makeCommentHead(c)
     const startEdit = () => {
       if (!h.onCommentEdit || entry.querySelector('textarea')) return
@@ -335,10 +328,29 @@ function makeBubble(
     const actions = makeCardActions(c, isRoot, replies.length, h, startEdit, flushEdits)
     if (actions) head.appendChild(actions)
     entry.append(head, text)
+    if (c.image) {
+      // the picture a comment carries (genoffice#2040): shown under its text,
+      // sized by the saved extent like the editor draws body pictures
+      const img = document.createElement('img')
+      img.className = 'comment-image'
+      img.src = `data:${c.image.mime};base64,${c.image.base64}`
+      img.alt = ''
+      text.after(img)
+    }
     bubble.appendChild(entry)
   }
   addEntry(root, true)
   for (const r of replies) addEntry(r, false)
+  const toggle = document.createElement('button')
+  toggle.type = 'button'
+  toggle.className = 'comment-reading-toggle'
+  toggle.hidden = true
+  toggle.addEventListener('click', (event) => {
+    event.stopPropagation()
+    if (bubble.classList.contains('comment-expanded')) h.onCommentCollapse?.(root.id)
+    else onJump()
+  })
+  bubble.appendChild(toggle)
   const onReply = h.onCommentReply
   if (onReply) {
     // Word's margin card: the Reply box is part of the selected card (.active, CSS), posts on Enter
@@ -807,6 +819,7 @@ export function syncMarginAnnotations(
     onCommentResolve: handlers?.onCommentResolve,
     onCommentEdit: handlers?.onCommentEdit,
     onCommentDelete: handlers?.onCommentDelete,
+    onCommentCollapse: handlers?.onCommentCollapse,
   }
   const endpoints = view ? commentEndpoints(view, blocks) : new Map<string, number>()
   const localThread = (
@@ -925,12 +938,16 @@ export function syncMarginAnnotations(
     wrap.appendChild(layer)
   }
   // selecting a card rebuilds this layer: carry a half-typed reply over to the new card
-  const typing = layer.querySelector<HTMLInputElement>('.comment-reply-input:focus')
-  const draft = typing && {
-    id: typing.closest<HTMLElement>('.comment-bubble')?.dataset.commentId,
-    value: typing.value,
-    caret: typing.selectionStart ?? typing.value.length,
-  }
+  const drafts = new Map(
+    [...layer.querySelectorAll<HTMLInputElement>('.comment-reply-input')].map((input) => [
+      input.closest<HTMLElement>('.comment-bubble')?.dataset.commentId,
+      {
+        value: input.value,
+        caret: input.selectionStart ?? input.value.length,
+        focused: document.activeElement === input,
+      },
+    ]),
+  )
   layer.textContent = ''
 
   // Word: revision balloons live in a markup strip glued to the page; comment cards
@@ -1031,6 +1048,13 @@ export function syncMarginAnnotations(
     const top = Math.max(p.top, st.prevBottom + BUBBLE_STACK_GAP, bands[st.bandIdx].top)
     bubble.style.top = `${top}px`
     layer.appendChild(bubble)
+    if (isCard)
+      setCommentPresentation(
+        bubble,
+        15,
+        bubble.classList.contains('active') || bubble.classList.contains('comment-popup'),
+        frame.bottom - top,
+      )
     if (
       !isCard &&
       top + bubble.offsetHeight > bands[st.bandIdx].bottom &&
@@ -1051,11 +1075,12 @@ export function syncMarginAnnotations(
     path.setAttribute('d', d)
     if (isCard) path.setAttribute('class', 'comment-leader')
     svg.appendChild(path)
-    if (draft && draft.id === bubble.dataset.commentId) {
+    const draft = drafts.get(bubble.dataset.commentId)
+    if (draft) {
       const input = bubble.querySelector<HTMLInputElement>('.comment-reply-input')
       if (input) {
         input.value = draft.value
-        input.focus()
+        if (draft.focused) input.focus()
         input.setSelectionRange(draft.caret, draft.caret)
       }
     }
