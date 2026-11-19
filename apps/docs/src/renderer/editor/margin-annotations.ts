@@ -292,14 +292,16 @@ function makeBubble(
     text.className = 'comment-text'
     text.textContent = c.text
     const head = makeCommentHead(c)
-    const draft = editDrafts.get(c.id)
+    let draft = editDrafts.get(c.id)
     const startEdit = () => {
       if (!h.onCommentEdit || entry.querySelector('textarea')) return
       const box = document.createElement('div')
       box.className = 'comment-reply-compose'
       const ta = document.createElement('textarea')
       ta.className = 'comment-edit-input'
-      ta.value = draft?.value ?? c.text
+      const restored = draft
+      draft = undefined
+      ta.value = restored?.value ?? c.text
       const row = document.createElement('div')
       row.className = 'comment-compose-actions'
       const cancel = () => {
@@ -331,7 +333,7 @@ function makeBubble(
       row.append(cancelBtn, saveBtn)
       box.append(ta, row)
       text.replaceWith(box)
-      ta.focus()
+      if (!restored) ta.focus({ preventScroll: true })
       ta.setSelectionRange(ta.value.length, ta.value.length)
     }
     const actions = makeCardActions(c, isRoot, replies.length, h, startEdit, flushEdits)
@@ -1066,6 +1068,7 @@ export function syncMarginAnnotations(
     (typeof frames)[number],
     { viewport: HTMLElement; content: HTMLElement; items: PageComment[] }
   >()
+  let focusAfterLayout: HTMLInputElement | HTMLTextAreaElement | undefined
   for (const p of placed) {
     const isCard = p.sticky
     const st = stacks.rev
@@ -1132,13 +1135,24 @@ export function syncMarginAnnotations(
         const clip = document.createElementNS(SVG_NS, 'clipPath')
         clip.id = clipId
         const rect = document.createElementNS(SVG_NS, 'rect')
-        rect.setAttribute('x', '0')
         rect.setAttribute('y', String(frame.top))
-        rect.setAttribute('width', String(wrapNow.width / f))
         rect.setAttribute('height', String(frame.bottom - frame.top))
         clip.appendChild(rect)
         svg.appendChild(clip)
       }
+      const clipRect = svg.querySelector<SVGRectElement>(`#${clipId} rect`)!
+      const oldLeft = Number(clipRect.getAttribute('x'))
+      const oldRight = oldLeft + Number(clipRect.getAttribute('width'))
+      const clipLeft = Math.min(oldLeft, p.x + shiftX, leaderEntry, left)
+      const clipRight = Math.max(
+        oldRight,
+        wrapNow.width / f,
+        p.x + shiftX,
+        leaderEntry,
+        left + width,
+      )
+      clipRect.setAttribute('x', String(clipLeft))
+      clipRect.setAttribute('width', String(clipRight - clipLeft))
       page.items.push({
         bubble,
         desiredTop: p.top - frame.top,
@@ -1155,14 +1169,14 @@ export function syncMarginAnnotations(
       const input = bubble.querySelector<HTMLInputElement>('.comment-reply-input')
       if (input) {
         input.value = draft.value
-        if (draft.focused) input.focus()
+        if (draft.focused) focusAfterLayout = input
         input.setSelectionRange(draft.caret, draft.caret)
       }
     }
     for (const input of bubble.querySelectorAll<HTMLTextAreaElement>('.comment-edit-input')) {
       const edit = editDrafts.get(input.closest<HTMLElement>('[data-entry-id]')?.dataset.entryId)
       if (!edit) continue
-      if (edit.focused) input.focus()
+      if (edit.focused) focusAfterLayout = input
       input.setSelectionRange(edit.from, edit.to)
     }
   }
@@ -1185,4 +1199,5 @@ export function syncMarginAnnotations(
     }
     page.viewport.dispatchEvent(new Event('scroll'))
   }
+  focusAfterLayout?.focus({ preventScroll: true })
 }

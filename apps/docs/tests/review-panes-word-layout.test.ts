@@ -244,6 +244,21 @@ describe('margin comment cards vs the Comments panel', () => {
     app.remove()
   })
 
+  it('does not resurrect a cancelled restored draft when editing again', () => {
+    const { app, wrap, pm, comments, handlers } = build({ cards: true, focus: '7' })
+    const edit = () => {
+      wrap.querySelector<HTMLButtonElement>('.comment-entry .comment-more')!.click()
+      wrap.querySelector<HTMLButtonElement>('.comment-entry .comment-card-edit')!.click()
+    }
+    edit()
+    wrap.querySelector<HTMLTextAreaElement>('.comment-edit-input')!.value = 'Discard this draft'
+    syncMarginAnnotations(wrap, pm, comments, 1, [], undefined, handlers)
+    wrap.querySelector<HTMLButtonElement>('.comment-compose-actions button')!.click()
+    edit()
+    expect(wrap.querySelector<HTMLTextAreaElement>('.comment-edit-input')!.value).toBe('hello')
+    app.remove()
+  })
+
   it('keeps the anchor icon but no card while Show Comments is off or the panel hosts the threads', () => {
     const { app, wrap } = build({})
     expect(wrap.querySelectorAll('.comment-bubble')).toHaveLength(0)

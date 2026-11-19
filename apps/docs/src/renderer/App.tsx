@@ -4406,9 +4406,11 @@ export function App({
           if (swapZoom) {
             zoomEl.style.zoom = String(liveZoom)
             factor = liveZoom
-            scroller.scrollTop = scrollTop
-            scroller.scrollLeft = scrollLeft
           }
+          // Natural measurement temporarily hides page gaps at every zoom,
+          // which can clamp the viewport even when no zoom swap was needed.
+          scroller.scrollTop = scrollTop
+          scroller.scrollLeft = scrollLeft
         }
         // Text line boxes can change when Blink restores the live CSS zoom.
         // Measure screen anchors and page capacity only in that final display

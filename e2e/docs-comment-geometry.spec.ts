@@ -2,6 +2,31 @@
 import { buildDocx } from '../packages/docx-engine/tests/helpers/build-docx'
 import { withCommentEditor } from './docs-comment-fixture'
 
+test('a popup connector remains visible through the card edge without reserving a column', async () => {
+  test.setTimeout(120_000)
+  await withCommentEditor(await mixedPages(), async (page) => {
+    await expect(page.locator('.comment-bubble')).toHaveCount(3)
+    await page.locator('.ribbon-mode-split > button[aria-pressed]').first().click()
+    await expect(page.locator('.comment-bubble')).toHaveCount(0)
+    await page.locator('.comment-balloon[data-comment-id="1"]').click()
+    await expect(page.locator('.comment-popup[data-comment-id="1"]')).toBeVisible()
+    await expect(page.locator('.page-wrap')).not.toHaveClass(/has-markup-area/)
+    const bounds = await page.locator('.comment-leader[data-comment-id="1"]').evaluate((el) => {
+      const path = el as SVGPathElement
+      const end = path.getPointAtLength(path.getTotalLength()).matrixTransform(path.getScreenCTM()!)
+      const id = /#([^)]*)/.exec(path.getAttribute('clip-path')!)![1]
+      const clip = document.getElementById(id)!.querySelector('rect')!
+      const x = Number(clip.getAttribute('x'))
+      const width = Number(clip.getAttribute('width'))
+      const left = new DOMPoint(x, 0).matrixTransform(path.getScreenCTM()!).x
+      const right = new DOMPoint(x + width, 0).matrixTransform(path.getScreenCTM()!).x
+      return { end: end.x, left, right }
+    })
+    expect(bounds.end).toBeGreaterThanOrEqual(bounds.left)
+    expect(bounds.end).toBeLessThanOrEqual(bounds.right)
+  })
+})
+
 const comments =
   '<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
   ['1', '2', '3']
