@@ -35,6 +35,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { appendsAtEnd, touchedTopLevelBlocks } from './touched-blocks'
 import { containsNode, localEditBlocks, touchedNeedsRecompute } from './local-edit'
 import { BalloonMarkersExtension } from './balloon-markers'
+import { CommentEndpointsExtension } from './comment-endpoints'
 import { installProseMirrorPerf } from './prosemirror-perf'
 import type { EditorView } from '@tiptap/pm/view'
 import {
@@ -7426,6 +7427,7 @@ export const editorExtensions = [
   InsMark,
   DelMark,
   UndoRedo,
+  CommentEndpointsExtension,
   MultiSelect,
   SearchHighlightExtension,
   FormattingMarksExtension,

@@ -11,6 +11,7 @@ import type { DocsHostedIdentity } from '../shared/document-host'
  * so state never goes stale.
  */
 import type { Editor } from '@tiptap/core'
+import { commentEndpoints } from './editor/comment-endpoints'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { history } from '@tiptap/pm/history'
 import { modelTextOf, type RedactableNode } from './ai/redact-view'
@@ -634,6 +635,7 @@ export async function loadFile(
         phasedHostFor(ctx),
         blocksToPmDoc(parsed.blocks, readSections(parsed), pmDocOptions(parsed)),
       )
+      commentEndpoints(ctx.editor!.view, parsed.blocks)
       resetEditorHistory(ctx.editor!)
       if (tier !== 'readOnly') focusDocumentStart(ctx.editor!)
       noteDocumentSwapped()
@@ -809,6 +811,7 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
       ctx.editor!.commands.setContent(
         blocksToPmDoc(parsed.blocks, readSections(parsed), pmDocOptions(parsed)) as never,
       )
+      commentEndpoints(ctx.editor!.view, parsed.blocks)
       resetEditorHistory(ctx.editor!)
       focusDocumentStart(ctx.editor!)
       noteDocumentSwapped()
@@ -1626,6 +1629,7 @@ async function saveOnce(
           .setMeta(TRACK_IGNORE, true)
           .setContent(rebasedPm as never)
           .run()
+        commentEndpoints(editor.view, reparsed.blocks)
         resetEditorHistory(editor)
         const chain = editor
           .chain()

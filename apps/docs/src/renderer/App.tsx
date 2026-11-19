@@ -1012,6 +1012,7 @@ export function App({
   const [findFocusGoTo, setFindFocusGoTo] = useState(0)
   // last pagination pass, read by the Go To tab (page / section / line targets)
   const pageLayoutRef = useRef<PageLayout | null>(null)
+  const annotationFirstPageRef = useRef<{ left: number; width: number } | undefined>(undefined)
   /** live section list of the last pass (header obstacles of the next pass) */
   const lastSecListRef = useRef<SectionInfo[] | null>(null)
   const cutsNow = useCallback(() => pageLayoutRef.current?.cuts, [])
@@ -5635,6 +5636,7 @@ export function App({
           const firstFrame = pbSec
             ? { left: pageLeftOf(pbSec), width: twipsToPx(pbSec.pageWidth) }
             : undefined
+          annotationFirstPageRef.current = firstFrame
           syncPageBorders(wrapEl, borderStyle, factor, firstFrame, cuts)
           stage('pageBorders')
           syncLineNumbers(wrapEl, pm, blocks, secList ?? [], factor, blockMetaOf, firstFrame, cuts)
@@ -5656,6 +5658,7 @@ export function App({
           editor.view,
           marginHandlersRef.current,
           cuts,
+          annotationFirstPageRef.current,
         )
         stage('sheets+annotations')
         tSetGaps = performance.now() - tSet0
@@ -8169,6 +8172,8 @@ export function App({
       doc.parsed.blocks,
       editor.view,
       marginHandlersRef.current,
+      pageLayoutRef.current?.cuts,
+      annotationFirstPageRef.current,
     )
     // only the flags on the root matter here; the pagination pass owns every other input
     // eslint-disable-next-line react-hooks/exhaustive-deps
