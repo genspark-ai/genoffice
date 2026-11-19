@@ -8,7 +8,17 @@ import React, { useEffect, useRef, useState } from 'react'
 import type { PictureRenderNode, RenderNode, ShapeRenderNode } from '@genoffice/pptx-render'
 import type { GradientFillSpec, SetEffectsPatch } from '../../shared/ipc'
 import { Dropdown, useDismissablePopover } from '@genoffice/ui'
+import {
+  UNIT_STEP,
+  formatLength,
+  fromUnit,
+  parseLength,
+  toUnit,
+  twipsPerUnit,
+  twipsToEmu,
+} from '@genoffice/ui/measurement'
 import { useI18n } from '../i18n/locale'
+import { unitSuffixes as localUnitSuffixes, useMeasurementUnit } from '../measurement-unit'
 import { pathGradientCanvas } from '../konva-adapter'
 import { ColorWell } from './ColorWell'
 import { IconSidebarCollapse } from './icons'
@@ -812,6 +822,7 @@ export function FormatPane({
   onChartPointColor,
 }: Props) {
   const { t } = useI18n()
+  const unit = useMeasurementUnit()
   // The color picker fires change repeatedly while dragging; debounce before IPC
   const fillTimer = useRef<number | null>(null)
   const debouncedFill = (sourceId: string, value: string) => {
@@ -1239,12 +1250,22 @@ export function FormatPane({
     </div>
   )
 
-  // ---- PPT Size/Position section helpers: values are shown in cm / ° / % ----
+  // ---- PPT Size/Position section helpers: lengths in the app-wide unit
+  // (Settings ▸ General), angles in °, scale in %. View px ↔ twips: 1 px = 15 twips
   const vscale = viewScale ?? 1
-  const pxPerCm = (96 / 2.54) * vscale
+  const pxPerUnit = (twipsPerUnit(unit) / 15) * vscale
+  /** one spinner click */
+  const stepPx = UNIT_STEP[unit] * pxPerUnit
   const MIN_SIZE_PX = 1
   const fmtNum = (v: number) => String(Math.round(v * 100) / 100)
-  const fmtCm = (px: number) => `${fmtNum(px / pxPerCm)} ${t('paneSizeCm')}`
+  const unitSuffixes = localUnitSuffixes(t)
+  const toTwips = (px: number) => (px / vscale) * 15
+  const fmtLen = (px: number) => formatLength(toTwips(px), unit, unitSuffixes[unit])
+  /** a typed length (any unit suffix, or a bare number in the current unit) as view px */
+  const parseLen = (raw: string): number | null => {
+    const twips = parseLength(raw, unit, unitSuffixes)
+    return twips === null ? null : (twips / 15) * vscale
+  }
 
   // ---- Effects section: values shown in pt/°/%, the op speaks EMU ----
   const pxToEmu = (px: number) => Math.round((px / vscale) * 9525)
@@ -1552,21 +1573,21 @@ export function FormatPane({
                 <>
                   {spinRow(
                     t('paneSizeHeight'),
-                    fmtCm(box.h),
+                    fmtLen(box.h),
                     (raw) => {
-                      const v = parseFloat(raw)
-                      if (!Number.isNaN(v) && v > 0) sizeCommit({ h: v * pxPerCm })
+                      const v = parseLen(raw)
+                      if (v !== null && v > 0) sizeCommit({ h: v })
                     },
-                    (dir) => sizeCommit({ h: box.h + dir * 0.1 * pxPerCm }),
+                    (dir) => sizeCommit({ h: box.h + dir * stepPx }),
                   )}
                   {spinRow(
                     t('paneSizeWidth'),
-                    fmtCm(box.w),
+                    fmtLen(box.w),
                     (raw) => {
-                      const v = parseFloat(raw)
-                      if (!Number.isNaN(v) && v > 0) sizeCommit({ w: v * pxPerCm })
+                      const v = parseLen(raw)
+                      if (v !== null && v > 0) sizeCommit({ w: v })
                     },
-                    (dir) => sizeCommit({ w: box.w + dir * 0.1 * pxPerCm }),
+                    (dir) => sizeCommit({ w: box.w + dir * stepPx }),
                   )}
                   {spinRow(
                     t('paneSizeRotation'),
@@ -1614,22 +1635,22 @@ export function FormatPane({
                 <>
                   {spinRow(
                     t('panePosH'),
-                    fmtCm(
+                    fmtLen(
                       posFromH === 'center' && slideSizePx
                         ? box.x + box.w / 2 - slideSizePx.w / 2
                         : box.x,
                     ),
                     (raw) => {
-                      const v = parseFloat(raw)
-                      if (Number.isNaN(v)) return
+                      const v = parseLen(raw)
+                      if (v === null) return
                       commit({
                         x:
                           posFromH === 'center' && slideSizePx
-                            ? slideSizePx.w / 2 + v * pxPerCm - box.w / 2
-                            : v * pxPerCm,
+                            ? slideSizePx.w / 2 + v - box.w / 2
+                            : v,
                       })
                     },
-                    (dir) => commit({ x: box.x + dir * 0.1 * pxPerCm }),
+                    (dir) => commit({ x: box.x + dir * stepPx }),
                   )}
                   <div className="fp-prow">
                     <span>{t('panePosFrom')}</span>
@@ -1648,22 +1669,22 @@ export function FormatPane({
                   </div>
                   {spinRow(
                     t('panePosV'),
-                    fmtCm(
+                    fmtLen(
                       posFromV === 'center' && slideSizePx
                         ? box.y + box.h / 2 - slideSizePx.h / 2
                         : box.y,
                     ),
                     (raw) => {
-                      const v = parseFloat(raw)
-                      if (Number.isNaN(v)) return
+                      const v = parseLen(raw)
+                      if (v === null) return
                       commit({
                         y:
                           posFromV === 'center' && slideSizePx
-                            ? slideSizePx.h / 2 + v * pxPerCm - box.h / 2
-                            : v * pxPerCm,
+                            ? slideSizePx.h / 2 + v - box.h / 2
+                            : v,
                       })
                     },
-                    (dir) => commit({ y: box.y + dir * 0.1 * pxPerCm }),
+                    (dir) => commit({ y: box.y + dir * stepPx }),
                   )}
                   <div className="fp-prow">
                     <span>{t('panePosFrom')}</span>
@@ -2395,19 +2416,20 @@ export function FormatPane({
                   ).map(([side, key]) =>
                     spinRow(
                       t(key),
-                      fmtCm(shape.text!.insets[side]),
+                      fmtLen(shape.text!.insets[side]),
                       (raw) => {
-                        const v = parseFloat(raw)
-                        if (!Number.isNaN(v) && v >= 0)
+                        const twips = parseLength(raw, unit, unitSuffixes)
+                        if (twips !== null && twips >= 0)
                           onTextBodyProps(node.sourceId, {
-                            insets: { [side]: Math.round(v * 360000) },
+                            insets: { [side]: twipsToEmu(twips) },
                           })
                       },
                       (dir) => {
-                        const curCm = shape.text!.insets[side] / pxPerCm
-                        const next = Math.max(0, Math.round((curCm + dir * 0.1) * 100) / 100)
+                        // step from the shown (rounded) value so clicks land on round numbers
+                        const cur = toUnit(toTwips(shape.text!.insets[side]), unit)
+                        const next = Math.max(0, cur + dir * UNIT_STEP[unit])
                         onTextBodyProps(node.sourceId, {
-                          insets: { [side]: Math.round(next * 360000) },
+                          insets: { [side]: twipsToEmu(fromUnit(next, unit)) },
                         })
                       },
                     ),

@@ -106,3 +106,34 @@ describe('formatRulerValue', () => {
     expect(cm.endsWith(' cm')).toBe(true)
   })
 })
+
+describe('every app-wide unit', () => {
+  it('labels millimeters, points and picas at readable steps', () => {
+    for (const [unit, step] of [
+      ['mm', 10],
+      ['pt', 50],
+      ['pi', 2],
+    ] as const) {
+      const ticks = computeRulerTicks({
+        rulerLen: SLIDE_W,
+        origin: 0,
+        slideLen: SLIDE_W,
+        zoom: 1,
+        unit,
+      })
+      const zero = ticks.find((t) => t.label === '0')!
+      const next = ticks
+        .filter((t) => t.label === String(step))
+        .sort((a, b) => a.pos - b.pos)
+        .at(-1)!
+      expect(next.pos - zero.pos).toBeCloseTo(step * PX_PER_UNIT[unit])
+    }
+  })
+
+  it('reads guides out in the chosen unit', () => {
+    // 6.67in from center = 480pt = 40pi = 169.3mm
+    expect(formatRulerValue(0, SLIDE_W, 'pt')).toBe('480 pt')
+    expect(formatRulerValue(0, SLIDE_W, 'pi')).toBe('40 pi')
+    expect(formatRulerValue(0, SLIDE_W, 'mm')).toBe('169.3 mm')
+  })
+})

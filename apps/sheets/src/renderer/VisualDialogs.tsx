@@ -4,15 +4,28 @@
  */
 import { useState } from 'react'
 
+import {
+  DECIMALS,
+  UNIT_SUFFIX,
+  emuToTwips,
+  toUnit,
+  twipsPerUnit,
+  twipsToEmu,
+  type MeasurementUnit,
+} from '@genoffice/ui/measurement'
+import { useMeasurementUnit } from '@genoffice/ui/use-measurement-unit'
+
 import type { WorkbookVisualObject } from '../shared/desktop-api'
 import { useI18n } from './i18n/locale'
 import { useModalDialog } from './modal-dialog'
 import type { VisualDialogKind } from './visual-arrange-actions'
 import { EMU_PER_PIXEL, type ShapeEditChanges } from './WorkbookVisuals'
 
-const EMU_PER_CM = 360_000
-const pxToCm = (px: number): number => (px * EMU_PER_PIXEL) / EMU_PER_CM
-const cmToPx = (cm: number): number => (cm * EMU_PER_CM) / EMU_PER_PIXEL
+// Size fields speak the app-wide measurement unit (Settings ▸ General)
+const pxToLength = (px: number, unit: MeasurementUnit): number =>
+  toUnit(emuToTwips(px * EMU_PER_PIXEL), unit)
+const lengthToPx = (value: number, unit: MeasurementUnit): number =>
+  twipsToEmu(value * twipsPerUnit(unit)) / EMU_PER_PIXEL
 const format = (value: number): string => (Math.round(value * 100) / 100).toString()
 
 /// Size and Properties commits size/rotation and placement in one apply so
@@ -150,8 +163,11 @@ function SizePropertiesDialog({
 }: VisualDialogProps): React.JSX.Element {
   const { t } = useI18n()
   const canResize = frame !== null && visual.kind !== 'chart'
-  const [width, setWidth] = useState(format(pxToCm(frame?.width ?? 0)))
-  const [height, setHeight] = useState(format(pxToCm(frame?.height ?? 0)))
+  // the unit the dialog opened in; a change in Settings while it is open would reinterpret typed numbers
+  const openedUnit = useMeasurementUnit()
+  const [unit] = useState(openedUnit)
+  const [width, setWidth] = useState(format(pxToLength(frame?.width ?? 0, unit)))
+  const [height, setHeight] = useState(format(pxToLength(frame?.height ?? 0, unit)))
   const [lockAspect, setLockAspect] = useState(visual.kind === 'image')
   const [rotation, setRotation] = useState(format(visual.rotation ?? 0))
   // Session objects save as two-cell anchors; file objects without editAs
@@ -160,23 +176,24 @@ function SizePropertiesDialog({
   const [editAs, setEditAs] = useState(initialEditAs)
   const [error, setError] = useState(false)
   const ratio = frame && frame.height > 0 ? frame.width / frame.height : 1
+  const stepAttr = String(10 ** -DECIMALS[unit])
 
   const onWidth = (value: string): void => {
     setWidth(value)
     setError(false)
-    const cm = Number(value)
-    if (lockAspect && Number.isFinite(cm) && cm > 0) setHeight(format(cm / ratio))
+    const n = Number(value)
+    if (lockAspect && Number.isFinite(n) && n > 0) setHeight(format(n / ratio))
   }
   const onHeight = (value: string): void => {
     setHeight(value)
     setError(false)
-    const cm = Number(value)
-    if (lockAspect && Number.isFinite(cm) && cm > 0) setWidth(format(cm * ratio))
+    const n = Number(value)
+    if (lockAspect && Number.isFinite(n) && n > 0) setWidth(format(n * ratio))
   }
 
   const apply = (): void => {
-    const nextWidth = cmToPx(Number(width))
-    const nextHeight = cmToPx(Number(height))
+    const nextWidth = lengthToPx(Number(width), unit)
+    const nextHeight = lengthToPx(Number(height), unit)
     const nextRotation = Number(rotation)
     if (
       (canResize && (!Number.isFinite(nextWidth) || nextWidth < 1)) ||
@@ -220,24 +237,24 @@ function SizePropertiesDialog({
             <span>{t('dlgSizeHeight')}</span>
             <input
               type="number"
-              step="0.01"
-              min="0.01"
+              step={stepAttr}
+              min={stepAttr}
               autoFocus
               value={height}
               onChange={(event) => onHeight(event.target.value)}
             />
-            <span>cm</span>
+            <span>{UNIT_SUFFIX[unit]}</span>
           </label>
           <label className="visual-dialog-field">
             <span>{t('dlgSizeWidth')}</span>
             <input
               type="number"
-              step="0.01"
-              min="0.01"
+              step={stepAttr}
+              min={stepAttr}
               value={width}
               onChange={(event) => onWidth(event.target.value)}
             />
-            <span>cm</span>
+            <span>{UNIT_SUFFIX[unit]}</span>
           </label>
           <label className="visual-dialog-field">
             <span>{t('dlgSizeRotation')}</span>

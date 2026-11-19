@@ -178,7 +178,7 @@ export const ko = {
   ribbonBulletHangNarrow: '좁게',
   ribbonBulletHangNormal: '표준',
   ribbonBulletHangWide: '넓게',
-  ribbonBulletHangCustomTip: '사용자 지정 글머리 기호 들여쓰기(px, Enter로 적용)',
+  ribbonBulletHangCustomTip: '사용자 지정 글머리 기호 들여쓰기({unit}, Enter로 적용)',
   ribbonBulletSize: '글머리 기호 크기',
   ribbonBulletColor: '글머리 기호 색',
   ribbonNumberStyle: '번호 매기기 스타일',

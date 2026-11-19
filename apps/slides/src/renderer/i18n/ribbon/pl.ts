@@ -177,7 +177,7 @@ export const pl = {
   ribbonBulletHangNarrow: 'Wąskie',
   ribbonBulletHangNormal: 'Standardowe',
   ribbonBulletHangWide: 'Szerokie',
-  ribbonBulletHangCustomTip: 'Niestandardowe wcięcie punktora (px, Enter aby zastosować)',
+  ribbonBulletHangCustomTip: 'Niestandardowe wcięcie punktora ({unit}, Enter aby zastosować)',
   ribbonBulletSize: 'Rozmiar punktora',
   ribbonBulletColor: 'Kolor punktora',
   ribbonNumberStyle: 'Styl numeracji',

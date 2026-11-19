@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./ai-panel-prefs": "./src/ai-panel-prefs.ts",
     "./measurement": "./src/measurement.ts",
+    "./use-measurement-unit": "./src/use-measurement-unit.ts",
     "./tokens.css": "./src/tokens.css",
     "./screentip.css": "./src/screentip.css",
     "./color-picker.css": "./src/color-picker.css",

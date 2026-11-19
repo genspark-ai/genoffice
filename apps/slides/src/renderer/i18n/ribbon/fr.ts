@@ -180,7 +180,7 @@ export const fr = {
   ribbonBulletHangNarrow: 'Étroit',
   ribbonBulletHangNormal: 'Normal',
   ribbonBulletHangWide: 'Large',
-  ribbonBulletHangCustomTip: 'Retrait de puce personnalisé (px, Entrée pour appliquer)',
+  ribbonBulletHangCustomTip: 'Retrait de puce personnalisé ({unit}, Entrée pour appliquer)',
   ribbonBulletSize: 'Taille de puce',
   ribbonBulletColor: 'Couleur de puce',
   ribbonNumberStyle: 'Style de numérotation',

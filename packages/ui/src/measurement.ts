@@ -115,9 +115,9 @@ export function parseLength(
 ): number | null {
   const m = /^\s*([+-]?(?:\d+[.,]?\d*|[.,]\d+))\s*(.*?)\s*$/.exec(text)
   if (!m) return null
-  const value = Number(m[1].replace(',', '.'))
+  const value = Number((m[1] ?? '').replace(',', '.'))
   if (!Number.isFinite(value)) return null
-  const suffix = m[2].toLowerCase()
+  const suffix = (m[2] ?? '').toLowerCase()
   if (suffix === '') return fromUnit(value, unit)
   if (localSuffixes) {
     for (const u of MEASUREMENT_UNITS) {

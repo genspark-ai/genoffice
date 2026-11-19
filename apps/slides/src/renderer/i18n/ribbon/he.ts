@@ -172,7 +172,7 @@ export const he = {
   ribbonBulletHangNarrow: 'צר',
   ribbonBulletHangNormal: 'רגיל',
   ribbonBulletHangWide: 'רחב',
-  ribbonBulletHangCustomTip: 'הזחת תבליט מותאמת אישית (px, Enter להחלה)',
+  ribbonBulletHangCustomTip: 'הזחת תבליט מותאמת אישית ({unit}, Enter להחלה)',
   ribbonBulletSize: 'גודל תבליט',
   ribbonBulletColor: 'צבע תבליט',
   ribbonNumberStyle: 'סגנון מספור',
