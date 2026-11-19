@@ -44,6 +44,12 @@ const HAND_STAND_IN_CHAINS: Record<string, [string[], Generic]> = {
   cambria: [['Caladea', 'Cambria Cyrillic GO', BOX, CJK_SERIF], 'serif'],
   'times new roman': [['Liberation Serif', BOX, CJK_SERIF], 'serif'],
   'segoe ui': [['Segoe UI GO', 'Noto Sans CJK GO', 'GenOffice PUA Blank'], 'sans-serif'],
+  // M365 cloud faces Word downloads; macOS ships the same Linotype design as
+  // Avenir Next (Regular, Medium, Demi Bold, Bold), so the text keeps its look
+  // and weights instead of falling to the generic sans
+  'avenir next lt pro': [['Avenir Next', CJK_SANS], 'sans-serif'],
+  'avenir next lt pro demi': [['Avenir Next Demi Bold', 'Avenir Next', CJK_SANS], 'sans-serif'],
+  'avenir next lt pro light': [['Avenir Light', 'Avenir Next', CJK_SANS], 'sans-serif'],
   'ms pmincho': [JA_SERIF, 'serif'],
   'malgun gothic': [KO_SANS, 'sans-serif'],
   batang: [KO_SERIF, 'serif'],
