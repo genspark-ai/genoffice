@@ -1,4 +1,5 @@
 import { FloatWatch } from './editor/float-watch'
+import { attachCommentUndoSync, resetCommentUndoStore } from './editor/comment-undo-sync'
 import { scriptFontHtml } from './editor/script-fonts'
 import { carryDocSeen } from './ai/tools'
 import { DOC_CSS_COMMITTED_EVENT, WRAP_WIDTHS_COMMITTED_EVENT } from './editor/cjk-punct-shrink'
@@ -499,6 +500,7 @@ import {
   type CommentsMode,
 } from './components/comments-mode'
 import { StylesPane } from './components/StylesPane'
+import { useStoredFlag } from './stored-flag'
 import { Ruler } from './components/Ruler'
 import { docBodyFont, docHasCjk, docLineFactor, docStyleCss, docThemeCss } from './doc-style-css'
 import { docFontsCoveredBy } from './font-check'
@@ -983,7 +985,8 @@ export function App() {
     setStatus(on ? t('appTitlePgOn') : t('appTitlePgOff'))
   }
   const [showMarks, setShowMarks] = useState(false)
-  const [showRuler, setShowRuler] = useState(false)
+  // Word keeps View ▸ Ruler on across documents and launches
+  const [showRuler, setShowRuler] = useStoredFlag('aidocs.showRuler')
   const [leftPane, setLeftPane] = useState<LeftPane>(loadLeftPane)
   const showNav = leftPane === 'nav'
   const setShowNav = useCallback((on: boolean) => setLeftPane(on ? 'nav' : null), [])
@@ -2303,6 +2306,7 @@ export function App() {
   fileCtxRef.current = {
     editor,
     doc,
+    resetCommentUndoStore,
     dirtyRef,
     saveInFlightRef,
     saveIncompleteRef,
@@ -7961,7 +7965,18 @@ export function App() {
     }
     refresh()
     editor.on('transaction', refresh)
+    // comment metadata rides PM undo/redo: deleted comments come back whole,
+    // undo of an add removes them again (Word parity)
+    const detachCommentSync = attachCommentUndoSync(
+      editor,
+      () => commentsLiveRef.current,
+      (entries) => {
+        setComments(entries)
+        setCommentsDirty(true)
+      },
+    )
     return () => {
+      detachCommentSync()
       editor.off('transaction', refresh)
     }
   }, [editor])

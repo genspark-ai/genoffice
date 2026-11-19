@@ -110,7 +110,7 @@ import type { PdfInternalLink } from '../shared/ipc'
 import type { SaveAsExportFormat } from '../shared/save-as-format'
 import { showToast } from './components/toast-bus'
 import { buildStandaloneHtml } from './html-export'
-import { aiPanelInitiallyOpen } from '@genoffice/ui'
+import { aiPanelInitiallyOpen, shortFileError } from '@genoffice/ui'
 
 /** An export waiting for the pagination preview to mount; resolve settles the caller's exportPdf promise. */
 export type PendingPdfExport = {
@@ -124,6 +124,9 @@ export type PendingPdfExport = {
 export interface FileActionContext {
   editor: Editor | null
   doc: DocState | null
+  /** clears the comment-undo graveyard on a document swap (optional: tests
+   *  build partial contexts) */
+  resetCommentUndoStore?: () => void
   dirtyRef: { current: boolean }
   saveInFlightRef: { current: boolean }
   saveIncompleteRef: { current: boolean }
@@ -643,8 +646,10 @@ export async function loadFile(
   } catch (err) {
     if (generation !== openGeneration) return 'superseded'
     // visible failure: the status-bar line alone is easy to miss under the start screen
-    ctx.setStatus(t('appOpenFailed', { error: String(err) }))
-    showToast(t('appOpenFailed', { error: String(err) }), 'error')
+    console.error('[docs] open failed', err)
+    const detail = shortFileError(err)
+    ctx.setStatus(t('appOpenFailed', { error: detail }))
+    showToast(t('appOpenFailed', { error: detail }), 'error')
     return 'failed'
   }
 }
@@ -762,7 +767,8 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     return true
   } catch (err) {
     if (generation !== openGeneration) return
-    ctx.setStatus(t('appNewFailed', { error: String(err) }))
+    console.error('[docs] create failed', err)
+    ctx.setStatus(t('appNewFailed', { error: shortFileError(err) }))
     return false
   }
 }
@@ -1442,8 +1448,11 @@ async function saveOnce(
     if (!auto) showToast(t('appSaved'))
     return true
   } catch (err) {
-    ctx.setStatus(t('appSaveFailed', { error: String(err) }))
-    if (!auto) showToast(t('appSaveFailed', { error: String(err) }), 'error')
+    // The toast stays short; keep the technical detail in the console.
+    console.error('[docs] save failed', err)
+    const detail = shortFileError(err)
+    ctx.setStatus(t('appSaveFailed', { error: detail }))
+    if (!auto) showToast(t('appSaveFailed', { error: detail }), 'error')
     return false
   } finally {
     ctx.saveInFlightRef.current = false

@@ -1,4 +1,4 @@
-import JSZip from 'jszip'
+﻿import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { convertOdtToDocx, OdfConvertError } from '../src/index'
 
@@ -12,7 +12,7 @@ const NAMESPACES =
   ' xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"' +
   ' xmlns:xlink="http://www.w3.org/1999/xlink"'
 
-/** 1×1 red PNG */
+/** 1Ã—1 red PNG */
 const PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
@@ -180,7 +180,7 @@ describe('convertOdtToDocx', () => {
       '</text:list-item><text:list-item><text:p>second</text:p></text:list-item></text:list>'
     const listStyle =
       '<text:list-style style:name="L1">' +
-      '<text:list-level-style-bullet text:level="1" style:bullet-char="•">' +
+      '<text:list-level-style-bullet text:level="1" style:bullet-char="â€¢">' +
       '<style:list-level-properties text:space-before="0.5cm" text:min-label-width="0.4cm"/></text:list-level-style-bullet>' +
       '<text:list-level-style-number text:level="2" style:num-format="1" style:num-suffix=".">' +
       '<style:list-level-properties text:space-before="1cm" text:min-label-width="0.4cm"/></text:list-level-style-number>' +
@@ -211,6 +211,33 @@ describe('convertOdtToDocx', () => {
     expect(document).toMatch(/<w:tblW[^>]*\/><w:jc w:val="center"\/><w:tblBorders>/)
     expect(document).toMatch(/<w:tblW[^>]*\/><w:jc w:val="right"\/><w:tblBorders>/)
     expect(document.match(/<w:jc /g) ?? []).toHaveLength(2)
+  })
+
+  it('carries a cell style style:vertical-align into w:vAlign', async () => {
+    const automatic =
+      '<style:style style:name="cm" style:family="table-cell"><style:table-cell-properties fo:background-color="#ffff99" style:vertical-align="middle"/></style:style>' +
+      '<style:style style:name="cb" style:family="table-cell"><style:table-cell-properties style:vertical-align="bottom"/></style:style>' +
+      '<style:style style:name="ct" style:family="table-cell"><style:table-cell-properties style:vertical-align="top"/></style:style>' +
+      // the fo: name is not what a table cell carries, so it must not be read
+      '<style:style style:name="cf" style:family="table-cell"><style:table-cell-properties fo:vertical-align="middle"/></style:style>'
+    const body =
+      '<table:table table:name="T"><table:table-column table:number-columns-repeated="4"/>' +
+      '<table:table-row>' +
+      '<table:table-cell table:style-name="cm"><text:p>middle</text:p></table:table-cell>' +
+      '<table:table-cell table:style-name="cb"><text:p>bottom</text:p></table:table-cell>' +
+      '<table:table-cell table:style-name="ct"><text:p>top</text:p></table:table-cell>' +
+      '<table:table-cell table:style-name="cf"><text:p>foreign</text:p></table:table-cell>' +
+      '</table:table-row></table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body, automatic)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    // middle is Word's "center"; bottom keeps its name; top is the default
+    expect(document).toContain('<w:vAlign w:val="center"/>')
+    expect(document).toContain('<w:vAlign w:val="bottom"/>')
+    expect(document.match(/<w:vAlign /g) ?? []).toHaveLength(2)
+    // vAlign follows shd in CT_TcPr
+    expect(document).toContain(
+      '<w:shd w:val="clear" w:color="auto" w:fill="FFFF99"/><w:vAlign w:val="center"/>',
+    )
   })
 
   it('imports a table with widths, spans and a cell fill', async () => {
@@ -267,7 +294,7 @@ describe('convertOdtToDocx', () => {
   it('does not widen a declared grid for a fully merged first row', async () => {
     // LibreOffice's shape for a 3-column table whose first row is merged: the
     // anchored cell plus one covered placeholder per merged-in column. The span
-    // does not add grid positions of its own — the placeholders are its slots.
+    // does not add grid positions of its own â€” the placeholders are its slots.
     const body =
       '<table:table table:name="T">' +
       '<table:table-column table:number-columns-repeated="3"/>' +
@@ -327,6 +354,72 @@ describe('convertOdtToDocx', () => {
     expect(document).toContain('bottom right')
   })
 
+  it('repeats a row table:number-rows-repeated asks for', async () => {
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-column/>' +
+      '<table:table-row table:number-rows-repeated="3"><table:table-cell><text:p>once</text:p></table:table-cell></table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    // the attribute is shorthand for three copies of the row, not one row
+    expect(document.match(/<w:tr>/g) ?? []).toHaveLength(3)
+    expect(document.match(/once/g) ?? []).toHaveLength(3)
+    // nothing was lost, so nothing is reported as dropped
+    expect(result.dropped).toEqual([])
+  })
+
+  it('bounds the rows a table repeats, not only one row element', async () => {
+    // the per-element cap alone still multiplies: 50 elements each claiming
+    // 1048576 copies over 64 columns was 51,200 rows / 3.3M cells / 380 MB
+    const row =
+      '<table:table-row table:number-rows-repeated="1048576">' +
+      '<table:table-cell table:number-columns-repeated="64"><text:p>f</text:p></table:table-cell>' +
+      '</table:table-row>'
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-column table:number-columns-repeated="64"/>' +
+      row.repeat(50) +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    const rows = (document.match(/<w:tr>/g) ?? []).length
+    // 64 columns divide the 65,536-slot ceiling into 1024 repeat rows; every row
+    // element keeps its first copy and the repeats share that one table budget
+    expect(rows).toBeLessThanOrEqual(50 + 1024)
+    expect(rows).toBeGreaterThan(1024)
+    expect(result.dropped).toEqual([{ what: 'repeated-table-rows', count: 50 * 1048576 - rows }])
+  })
+
+  it('spends the repeat budget across the whole table, not per row element', async () => {
+    // one narrow column: the slot ceiling does not bind, the 4096-row count does
+    const row =
+      '<table:table-row table:number-rows-repeated="1048576">' +
+      '<table:table-cell><text:p>f</text:p></table:table-cell></table:table-row>'
+    const body =
+      '<table:table table:name="T"><table:table-column/>' + row.repeat(6) + '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    const rows = (document.match(/<w:tr>/g) ?? []).length
+    expect(rows).toBeLessThanOrEqual(6 + 4096)
+    expect(rows).toBeGreaterThan(1024)
+    expect(result.dropped).toEqual([{ what: 'repeated-table-rows', count: 6 * 1048576 - rows }])
+  })
+
+  it('bounds a row repeat like the column reader does', async () => {
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-column/>' +
+      '<table:table-row table:number-rows-repeated="100000"><table:table-cell><text:p>filler</text:p></table:table-cell></table:table-row>' +
+      '</table:table>'
+    const result = await convertOdtToDocx(await buildOdt(contentXml(body)))
+    const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
+    // readColumns caps a repeat at 1024; the row reader uses the same clamp
+    expect(document.match(/<w:tr>/g) ?? []).toHaveLength(1024)
+    // and the copies the clamp and the budget cut are reported, not lost silently
+    expect(result.dropped).toEqual([{ what: 'repeated-table-rows', count: 100000 - 1024 }])
+  })
+
   it('bounds a row span to the rows that exist', async () => {
     // table:number-rows-spanned is producer-controlled: an unclamped 200000
     // allocated that many empty rows, and Infinity never returned.
@@ -381,7 +474,7 @@ describe('convertOdtToDocx', () => {
     const body = '<text:p>page</text:p>'
     const result = await convertOdtToDocx(await buildOdt(contentXml(body), stylesXml('', PAGE_A4)))
     const document = (await readDocxEntry(result.docx, 'word/document.xml')) ?? ''
-    // 21cm → 11906 twips, 29.7cm → 16838 twips, 2cm → 1134
+    // 21cm â†’ 11906 twips, 29.7cm â†’ 16838 twips, 2cm â†’ 1134
     expect(document).toContain('w:pgSz w:w="11906" w:h="16838"')
     expect(document).toContain('w:pgMar w:top="1134"')
   })

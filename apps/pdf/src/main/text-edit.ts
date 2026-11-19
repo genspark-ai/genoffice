@@ -629,6 +629,35 @@ interface PageTextObj {
   ordinals: readonly number[]
 }
 
+/**
+ * The codepoints pdfium puts in place of a hyphen it folded into a line break:
+ * U+FFFE from the textpage read (`FPDFText_GetText`), U+0002 from the per-object
+ * read (`FPDFTextObj_GetText`). Neither can be a painted character.
+ */
+const HYPHEN_MARKERS = ['\u0002', '\uFFFE'] as const
+
+function replaceMarkers(s: string, replacement: string): string {
+  let out = s
+  for (const marker of HYPHEN_MARKERS) out = out.replaceAll(marker, replacement)
+  return out
+}
+
+/**
+ * Restore the hyphen and the break the marker stands for. Every consumer that
+ * reads whole page text — extraction, search, save verification — compares
+ * against the hyphen the page really draws and the line boundary the break
+ * names, and got a noncharacter instead.
+ */
+export const restoreLineHyphens = (s: string): string => replaceMarkers(s, '-\n')
+
+/**
+ * Restore just the hyphen. One object's text ends where its own glyphs end — the
+ * break falls between objects — and the page char list carries one entry for the
+ * hyphen glyph, so keeping one codepoint here is what holds the advance/origin
+ * attribution 1:1 (see `cpLen` below).
+ */
+const restoreObjectHyphens = (s: string): string => replaceMarkers(s, '-')
+
 function collectTextObjects(m: Pdfium, page: number, textPage: number): PageTextObj[] {
   const out: PageTextObj[] = []
   const bl = m._malloc(4)
@@ -644,7 +673,7 @@ function collectTextObjects(m: Pdfium, page: number, textPage: number): PageText
     if (len > 2) {
       const buf = m._malloc(len)
       m._FPDFTextObj_GetText(obj, textPage, buf, len)
-      text = Buffer.from(m.HEAPU8.buffer, buf, len - 2).toString('utf16le')
+      text = restoreObjectHyphens(Buffer.from(m.HEAPU8.buffer, buf, len - 2).toString('utf16le'))
       m._free(buf)
     }
     if (!m._FPDFPageObj_GetBounds(obj, bl, bb, br, bt)) return
@@ -2222,6 +2251,30 @@ export function textInsertAxes(rotate = 0): readonly [number, number, number, nu
   }
 }
 
+/**
+ * A strong right-to-left letter: Hebrew (incl. the presentation forms), Arabic
+ * (incl. the presentation forms) and the RTL scripts that sit between them —
+ * Syriac, Thaana, NKo, Samaritan, Mandaic and Arabic Extended-A/B.
+ */
+const RTL_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u
+
+/**
+ * The line in the order pdfium must be handed it. `FPDFText_SetText` lays a text
+ * object's glyphs out left to right in the order it receives, so a Hebrew phrase
+ * passed in logical order reads mirrored on the page (and extracts mirrored,
+ * which then fails save verification). When every letter of the line is RTL and
+ * the line holds no digits — bidi leaves pure-RTL text as one run, and digits
+ * would stay left-to-right inside it — reverse the grapheme clusters. Mixed
+ * directions and numbers are left untouched: they need a full bidi pass.
+ */
+export function visualLine(line: string): string {
+  const letters = line.match(/\p{L}/gu)
+  if (!letters || !letters.every((ch) => RTL_LETTER.test(ch))) return line
+  if (/\p{N}/u.test(line)) return line
+  const clusters = line.match(/.\p{M}*/gsu) ?? []
+  return clusters.reverse().join('')
+}
+
 /** Insert new searchable text objects without matching/removing existing page content. */
 export function applyTextInserts(
   bytes: Uint8Array,
@@ -2343,7 +2396,7 @@ export function applyTextInserts(
                 for (const [lineIndex, line] of input.text.split('\n').entries()) {
                   if (!line) continue
                   const obj = m._FPDFPageObj_CreateTextObj(doc, font, input.fontSize)
-                  const textPtr = utf16Ptr(m, line)
+                  const textPtr = utf16Ptr(m, visualLine(line))
                   const ok = m._FPDFText_SetText(obj, textPtr)
                   m._free(textPtr)
                   if (!ok) {
