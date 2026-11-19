@@ -24,7 +24,7 @@
  *   thread in the Comments panel.
  */
 import type { CommentInfo } from '@genoffice/docx-engine'
-import { PAGE_TURN_SEL } from './pagination-gaps'
+import { PAGE_TURN_SEL, pageFramesFromGaps } from './pagination-gaps'
 import { pagePaperEdges, pageReaderShadow, type PageCut } from '../pagination-cuts'
 import type { EditorView } from '@tiptap/pm/view'
 import type { Mark as PmMark, Node as PmNode } from '@tiptap/pm/model'
@@ -33,6 +33,7 @@ import { collectRevisions } from './revisions'
 import { absoluteDate, authorInitials, authorInk } from './comment-card'
 import { balloonRevKinds, currentBalloonMode } from './revision-view'
 import { trackChangesOptionsState } from './track-changes-options'
+import { commentEndpoints } from './comment-endpoints'
 
 export const MARKUP_AREA_W = 200
 /** Word's comment column: a separate strip right of the markup area (or of the page) */
@@ -747,6 +748,7 @@ export function syncMarginAnnotations(
   view?: EditorView,
   handlers?: MarginHandlers,
   cuts?: readonly PageCut[],
+  firstPage?: { left: number; width: number },
 ): void {
   const f = zoomFactor
   const wrapRect = wrap.getBoundingClientRect()
@@ -782,10 +784,12 @@ export function syncMarginAnnotations(
     }
   }
   // one bubble per open top-level thread that has an anchor range in the body
-  const anchorOf = new Map<string, HTMLElement>()
+  const anchorOf = new Map<string, DOMRect>()
   for (const span of pm.querySelectorAll<HTMLElement>('.doc-comment')) {
+    const rect = [...span.getClientRects()].filter((r) => r.height > 0).at(-1)
+    if (!rect) continue
     for (const id of (span.dataset.commentIds ?? '').split(' ')) {
-      if (id && !anchorOf.has(id)) anchorOf.set(id, span)
+      if (id) anchorOf.set(id, rect)
     }
   }
   type Placed = {
@@ -804,7 +808,13 @@ export function syncMarginAnnotations(
     onCommentEdit: handlers?.onCommentEdit,
     onCommentDelete: handlers?.onCommentDelete,
   }
-  const localThread = (c: CommentInfo, rect: DOMRect, blockAnchor: HTMLElement | null) => {
+  const endpoints = view ? commentEndpoints(view, blocks) : new Map<string, number>()
+  const localThread = (
+    c: CommentInfo,
+    rect: DOMRect,
+    blockAnchor: HTMLElement | null,
+    textAnchor = blockAnchor === null,
+  ) => {
     // block-anchored threads have no .doc-comment span: flash the block itself
     const flash = blockAnchor ? () => flashEls([blockAnchor]) : () => flashAnchors(pm, c.id)
     const top = (rect.top - wrapRect.top) / f
@@ -823,8 +833,8 @@ export function syncMarginAnnotations(
       top,
       // leader start: end of the marked range, or start of the anchor paragraph's
       // first line for range-less comments (bare w:commentReference on an empty run)
-      y: blockAnchor ? top + Math.min(rect.height / f, 16) : (rect.bottom - wrapRect.top) / f - 1,
-      x: ((blockAnchor ? rect.left : rect.right) - wrapRect.left) / f,
+      y: textAnchor ? (rect.bottom - wrapRect.top) / f - 1 : top + Math.min(rect.height / f, 16),
+      x: ((textAnchor ? rect.right : rect.left) - wrapRect.left) / f,
       make: () => {
         const bubble = makeBubble(
           c,
@@ -843,22 +853,31 @@ export function syncMarginAnnotations(
   }
   for (const c of comments) {
     if (inline || c.parentId || c.done) continue
-    const el = anchorOf.get(c.id)
-    const rect = el ? [...el.getClientRects()].find((r) => r.height > 0) : undefined
+    const endpoint = endpoints.get(c.id)
+    if (endpoint !== undefined && view) {
+      const point = view.coordsAtPos(endpoint, -1)
+      const anchor = view.domAtPos(endpoint, -1).node
+      const el = anchor.nodeType === 1 ? (anchor as HTMLElement) : anchor.parentElement
+      localThread(c, new DOMRect(point.left, point.top, 0, point.bottom - point.top), el, true)
+      continue
+    }
+    const rect = anchorOf.get(c.id)
     if (rect) {
       localThread(c, rect, null)
       continue
     }
-    // no mark in the body: anchor to the block whose XML carries the reference
-    const idRe = new RegExp(
-      `<w:comment(?:Reference|RangeStart)\\b[^>]*w:id="${c.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`,
-    )
-    const block = blocks?.find(
-      (b) => b.docxIndex != null && b.originalXml && idRe.test(b.originalXml),
-    )
+    // Cross-paragraph ranges carry block markers rather than text marks.
+    // The end marker wins even when the reference or start lives elsewhere.
+    const markerBlock = (kind: string) => {
+      const idRe = new RegExp(
+        `<w:comment${kind}\\b[^>]*w:id=["']${c.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`,
+      )
+      return blocks?.find((b) => b.docxIndex != null && b.originalXml && idRe.test(b.originalXml))
+    }
+    const block = markerBlock('RangeEnd') ?? markerBlock('Reference') ?? markerBlock('RangeStart')
     const blockEl =
       block && (pm.querySelector(`[data-idx="${block.docxIndex}"]`) as HTMLElement | null)
-    const blockRect = blockEl && [...blockEl.getClientRects()].find((r) => r.height > 0)
+    const blockRect = blockEl && [...blockEl.getClientRects()].filter((r) => r.height > 0).at(-1)
     if (blockEl && blockRect) localThread(c, blockRect, blockEl)
   }
 
@@ -934,6 +953,11 @@ export function syncMarginAnnotations(
   const paperLeft = (paperNow.left - wrapRect.left) / f
   const paperRight = (paperNow.right - wrapRect.left) / f
   const bands = pageBandsOf(pm, wrapRect, wrapRect.height / f, f, cuts)
+  const frames = pageFramesFromGaps(wrap, f, firstPage, cuts)
+  const frameAt = (y: number) =>
+    frames.find((frame) => y >= frame.top && y <= frame.bottom) ??
+    frames.find((frame) => y < frame.top) ??
+    frames[frames.length - 1]
   if (revColumn) {
     for (const b of bands) {
       const strip = document.createElement('div')
@@ -962,10 +986,14 @@ export function syncMarginAnnotations(
 
   // Word's anchor glyphs: one per commented line, stacked inside the right page margin
   let prevIconBottom = -Infinity
+  let iconFrame = frames[0]
   for (const p of icons) {
+    const frame = frameAt(p.top)
+    if (frame !== iconFrame) prevIconBottom = -Infinity
+    iconFrame = frame
     const icon = p.make()
     const top = Math.max(p.top, prevIconBottom + BALLOON_STACK_GAP)
-    icon.style.left = `${paperRight - BALLOON_ICON_X}px`
+    icon.style.left = `${frame.left + frame.width - BALLOON_ICON_X}px`
     icon.style.top = `${top}px`
     layer.appendChild(icon)
     prevIconBottom = top + BALLOON_ICON_W
@@ -979,9 +1007,6 @@ export function syncMarginAnnotations(
   const revBubbleW = opts.balloonWidth - BUBBLE_PAD
   const cardW = COMMENT_AREA_W - COMMENT_CARD_PAD
   const revLeft = leftSide ? paperLeft - BUBBLE_ENTRY_X - revBubbleW : paperRight + BUBBLE_ENTRY_X
-  const cardLeft = leftSide
-    ? paperLeft - revW - COMMENT_ENTRY_X - cardW
-    : paperRight + revW + COMMENT_ENTRY_X
   const entryX = leftSide ? paperLeft - BUBBLE_ENTRY_X / 2 : paperRight + BUBBLE_ENTRY_X / 2
   const stacks = {
     rev: { bandIdx: 0, prevBottom: -Infinity },
@@ -995,6 +1020,10 @@ export function syncMarginAnnotations(
       st.prevBottom = -Infinity
     }
     const bubble = p.make()
+    const frame = frameAt(p.y)
+    const cardLeft = leftSide
+      ? frame.left - revW - COMMENT_ENTRY_X - cardW
+      : frame.left + frame.width + revW + COMMENT_ENTRY_X
     const left = isCard ? cardLeft : revLeft
     const width = isCard ? cardW : revBubbleW
     bubble.style.left = `${left}px`
@@ -1013,10 +1042,12 @@ export function syncMarginAnnotations(
     st.prevBottom = top + bubble.offsetHeight
     const edge = leftSide ? left + width : left
     const path = document.createElementNS(SVG_NS, 'path')
-    // a card's leader runs from its anchor glyph, not across the markup strip
-    const d = isCard
-      ? `M ${leftSide ? paperLeft + BALLOON_ICON_X : paperRight - BALLOON_ICON_X + BALLOON_ICON_W} ${p.top + BALLOON_ICON_W / 2} L ${edge} ${top + 9}`
-      : `M ${p.x + shiftX} ${p.y} L ${entryX} ${p.y} L ${edge} ${top + 9}`
+    const leaderEntry = isCard
+      ? leftSide
+        ? frame.left - BUBBLE_ENTRY_X / 2
+        : frame.left + frame.width + BUBBLE_ENTRY_X / 2
+      : entryX
+    const d = `M ${p.x + shiftX} ${p.y} L ${leaderEntry} ${p.y} L ${edge} ${top + 9}`
     path.setAttribute('d', d)
     if (isCard) path.setAttribute('class', 'comment-leader')
     svg.appendChild(path)
