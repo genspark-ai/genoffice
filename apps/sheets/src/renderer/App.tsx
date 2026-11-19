@@ -490,6 +490,7 @@ import {
   readChartVector as readChartVectorImpl,
   type VisualSyncContext,
 } from './visual-edit-sync'
+import { formulaResultSyncBounds } from './chart-sync-pending'
 import {
   frameChangeEdit,
   handleVisualCommand,
@@ -2808,8 +2809,16 @@ export function App({
       (event) => {
         if (journalSuppression.active) return
         // The formula engine re-applies cached results with these execution
-        // options; they are derived state, never user edits.
+        // options; they are derived state, never user edits. They can still
+        // land inside a chart series' c:f range, so dirty those cells for the
+        // live chart sync (the user's own edit already queued its bounds).
         const options = event.options as { fromFormula?: boolean } | undefined
+        const resultSync = formulaResultSyncBounds(
+          { id: event.id, options, params: event.params },
+          (id) => id === SET_RANGE_VALUES_MUTATION,
+          cellValueBounds,
+        )
+        if (resultSync) queueChartDataSync(resultSync.sheetId, resultSync.bounds)
         if (options?.fromFormula) return
         // The copy finished (or failed); a stale source must not claim a
         // later, unrelated insert-sheet.
