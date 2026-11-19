@@ -94,6 +94,13 @@ type BubbleHandlers = Pick<
   'onCommentReply' | 'onCommentResolve' | 'onCommentEdit' | 'onCommentDelete' | 'onCommentCollapse'
 >
 
+interface CommentEditDraft {
+  value: string
+  from: number
+  to: number
+  focused: boolean
+}
+
 function makeBalloonIcon(c: CommentInfo, on: boolean, onJump: () => void): HTMLElement {
   const btn = document.createElement('button')
   btn.type = 'button'
@@ -268,6 +275,7 @@ function makeBubble(
   replies: CommentInfo[],
   onJump: () => void,
   h: BubbleHandlers,
+  editDrafts: ReadonlyMap<string | undefined, CommentEditDraft>,
 ): HTMLElement {
   const bubble = document.createElement('div')
   bubble.className = 'comment-bubble'
@@ -284,13 +292,14 @@ function makeBubble(
     text.className = 'comment-text'
     text.textContent = c.text
     const head = makeCommentHead(c)
+    const draft = editDrafts.get(c.id)
     const startEdit = () => {
       if (!h.onCommentEdit || entry.querySelector('textarea')) return
       const box = document.createElement('div')
       box.className = 'comment-reply-compose'
       const ta = document.createElement('textarea')
       ta.className = 'comment-edit-input'
-      ta.value = c.text
+      ta.value = draft?.value ?? c.text
       const row = document.createElement('div')
       row.className = 'comment-compose-actions'
       const cancel = () => {
@@ -338,6 +347,7 @@ function makeBubble(
       text.after(img)
     }
     bubble.appendChild(entry)
+    if (draft) startEdit()
   }
   addEntry(root, true)
   for (const r of replies) addEntry(r, false)
@@ -857,6 +867,7 @@ export function syncMarginAnnotations(
             handlers?.onCommentSelect?.(c.id)
           },
           bubbleHandlers,
+          editDrafts,
         )
         if (flags.focus === c.id) bubble.classList.add('active')
         if (popup) bubble.classList.add('comment-popup')
@@ -948,10 +959,27 @@ export function syncMarginAnnotations(
       },
     ]),
   )
+  const editDrafts = new Map(
+    [...layer.querySelectorAll<HTMLTextAreaElement>('.comment-edit-input')].map((input) => [
+      input.closest<HTMLElement>('[data-entry-id]')?.dataset.entryId,
+      {
+        value: input.value,
+        from: input.selectionStart,
+        to: input.selectionEnd,
+        focused: document.activeElement === input,
+      },
+    ]),
+  )
   const scrollOffsets = new Map(
     [...layer.querySelectorAll<HTMLElement>('.comment-page')].map((page) => [
       page.dataset.page,
       page.scrollTop,
+    ]),
+  )
+  const contentOffsets = new Map(
+    [...layer.querySelectorAll<HTMLElement>('.comment-bubble')].map((bubble) => [
+      bubble.dataset.commentId,
+      bubble.scrollTop,
     ]),
   )
   layer.textContent = ''
@@ -1131,21 +1159,30 @@ export function syncMarginAnnotations(
         input.setSelectionRange(draft.caret, draft.caret)
       }
     }
+    for (const input of bubble.querySelectorAll<HTMLTextAreaElement>('.comment-edit-input')) {
+      const edit = editDrafts.get(input.closest<HTMLElement>('[data-entry-id]')?.dataset.entryId)
+      if (!edit) continue
+      if (edit.focused) input.focus()
+      input.setSelectionRange(edit.from, edit.to)
+    }
   }
   for (const [frame, page] of pages) {
-    const layout = () =>
+    const layout = (scrollTop?: number) => {
       layoutCommentPage(
         page.viewport,
         page.content,
         page.items,
         frame.bottom - frame.top,
         BUBBLE_STACK_GAP,
+        scrollTop,
       )
-    layout()
-    for (const image of page.content.querySelectorAll<HTMLImageElement>('.comment-image')) {
-      if (!image.complete) image.addEventListener('load', layout, { once: true })
     }
-    page.viewport.scrollTop = scrollOffsets.get(page.viewport.dataset.page) ?? 0
+    layout(scrollOffsets.get(page.viewport.dataset.page) ?? 0)
+    for (const { bubble } of page.items)
+      bubble.scrollTop = contentOffsets.get(bubble.dataset.commentId) ?? 0
+    for (const image of page.content.querySelectorAll<HTMLImageElement>('.comment-image')) {
+      if (!image.complete) image.addEventListener('load', () => layout(), { once: true })
+    }
     page.viewport.dispatchEvent(new Event('scroll'))
   }
 }
