@@ -264,10 +264,21 @@ export function applyParagraphStyleId(
           attrs.level = headingLevel ?? node.attrs.level
           attrs.outlineOnly = null
         }
+        // Clicking the already-active gallery card must be a no-op:
+        // setNodeMarkup always emits a ReplaceAroundStep even with identical
+        // attrs, which dirties the doc and triggers a whole save/reparse/
+        // pagination pass — the "freeze, then nothing changed" of issue #2211.
+        const unchanged =
+          type === node.type &&
+          (node.attrs.styleId ?? null) === styleId &&
+          (type !== schema.nodes.docHeading ||
+            ((node.attrs.level ?? 1) === (attrs.level ?? 1) &&
+              (node.attrs.outlineOnly ?? null) === null))
+        if (unchanged) continue
         tr.setNodeMarkup(pos, type === node.type ? undefined : type, attrs)
         shedMajorityDirectFormatting(tr, pos)
       }
-      return targets.length > 0
+      return tr.steps.length > 0
     })
     .run()
 }
