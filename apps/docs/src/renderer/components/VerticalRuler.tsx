@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { SectionSettings } from '@genoffice/docx-engine'
 import { t } from '../i18n/locale'
 import { useMeasurement } from '../use-measurement'
 import { GAP_BAND, PAGE_TURN_SEL } from '../editor/pagination-gaps'
+import { useRulerFollow } from './ruler-follow'
 import {
   INDENT_SNAP_TWIPS,
   MAX_RULER_INCHES,
@@ -16,9 +17,8 @@ import {
 
 const twipsToPx = (twips: number) => (twips / 1440) * 96
 
-/** strip width and its distance from the paper's left edge, CSS px */
+/** strip width, CSS px before zoom */
 export const VRULER_WIDTH = 20
-const VRULER_GAP = 4
 
 export interface VerticalRulerDims {
   pageHeight: number
@@ -83,38 +83,29 @@ export function pageIndexAt(tops: readonly number[], y: number): number {
   return idx
 }
 
-interface Frame {
-  /** paper top and left edge relative to the anchor, unzoomed CSS px */
-  top: number
-  left: number
-}
-
-function measureFrame(anchor: HTMLElement, editor: Editor | null): Frame | null {
-  const live = anchor.parentElement
-  const pm = live?.querySelector<HTMLElement>('.page-wrap .ProseMirror')
-  if (!live || !pm) return null
-  const zoomEl = anchor.closest<HTMLElement>('.doc-zoom')
-  const factor = Number.parseFloat(zoomEl?.style.zoom ?? '') || 1
-  const aRect = anchor.getBoundingClientRect()
+/**
+ * Top of the caret's page relative to the ruler's bar, in the bar's zoomed
+ * coordinates (screen px / zoom), or null before the editor is laid out.
+ */
+function measurePageTop(bar: HTMLElement, editor: Editor | null, zoom: number): number | null {
+  if (!editor || editor.isDestroyed) return null
+  const pm = editor.view.dom as HTMLElement
+  if (!pm.isConnected) return null
+  const barRect = bar.getBoundingClientRect()
   const pmRect = pm.getBoundingClientRect()
   const gaps = Array.from(pm.querySelectorAll<HTMLElement>(PAGE_TURN_SEL)).map((g) => ({
     top: g.getBoundingClientRect().top,
     marginBottomPx: Number.parseFloat(g.style.getPropertyValue('--gap-mb')) || 0,
   }))
-  const tops = pageTopsOnScreen(pmRect.top, gaps, factor)
+  const tops = pageTopsOnScreen(pmRect.top, gaps, zoom)
   let caretY = pmRect.top
-  if (editor && !editor.isDestroyed) {
-    try {
-      caretY = editor.view.coordsAtPos(editor.state.selection.head).top
-    } catch {
-      /* position not laid out yet: stay on the first page */
-    }
+  try {
+    caretY = editor.view.coordsAtPos(editor.state.selection.head).top
+  } catch {
+    /* position not laid out yet: stay on the first page */
   }
   const pageTop = tops[pageIndexAt(tops, caretY)] ?? pmRect.top
-  return {
-    top: (pageTop - aRect.top) / factor,
-    left: (pmRect.left - aRect.left) / factor - VRULER_WIDTH - VRULER_GAP,
-  }
+  return (pageTop - barRect.top) / zoom
 }
 
 /** a dotted line across the window at the dragged margin */
@@ -135,17 +126,25 @@ function dragGuide(rulerRect: DOMRect) {
 }
 
 /**
- * Word's vertical ruler: left of the page the caret is on, numbered from the
- * top margin outward, with gray top/bottom margin zones whose edges drag to
- * set the section's top and bottom margins. Zoomed with the page.
+ * Word's vertical ruler: a fixed strip at the left of the document view whose
+ * scale lines up with the page the caret is on, numbered from the top margin
+ * outward, with gray top/bottom margin zones whose edges drag to set the
+ * section's top and bottom margins. The scale follows the zoom; the strip
+ * stays put while the pages scroll.
  */
 export function VerticalRuler({
   section,
   editor,
+  zoom = 1,
+  top = 0,
   onMarginsChange,
 }: {
   section: SectionSettings
   editor: Editor | null
+  /** document zoom factor (1 = 100%) */
+  zoom?: number
+  /** where the strip starts in the document area (below the horizontal ruler), px */
+  top?: number
   onMarginsChange?: (margins: { top: number; bottom: number }) => void
 }) {
   const dims = verticalRulerDims(section)
@@ -153,42 +152,16 @@ export function VerticalRuler({
   const height = twipsToPx(dims.pageHeight)
   const marginTop = twipsToPx(dims.marginTop)
   const marginBottom = twipsToPx(dims.marginBottom)
-  const anchorRef = useRef<HTMLDivElement>(null)
-  const [frame, setFrame] = useState<Frame | null>(null)
-
-  // follow the caret's page and the canvas layout: one measure per frame at most
-  const rafRef = useRef(0)
-  const schedule = useRef(() => {})
-  schedule.current = () => {
-    if (rafRef.current) return
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = 0
-      const anchor = anchorRef.current
-      if (!anchor) return
-      const next = measureFrame(anchor, editor)
-      setFrame((prev) =>
-        prev && next && Math.abs(prev.top - next.top) < 0.5 && Math.abs(prev.left - next.left) < 0.5
-          ? prev
-          : next,
-      )
-    })
-  }
-  useLayoutEffect(() => schedule.current())
-  useEffect(() => {
-    const run = () => schedule.current()
-    editor?.on('transaction', run)
-    const pm = anchorRef.current?.parentElement?.querySelector('.page-wrap .ProseMirror')
-    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(run)
-    if (pm && ro) ro.observe(pm)
-    window.addEventListener('resize', run)
-    return () => {
-      editor?.off('transaction', run)
-      ro?.disconnect()
-      window.removeEventListener('resize', run)
-      cancelAnimationFrame(rafRef.current)
-      rafRef.current = 0
-    }
-  }, [editor])
+  const barRef = useRef<HTMLDivElement>(null)
+  const [pageTop, setPageTop] = useState<number | null>(null)
+  useRulerFollow(editor, () => {
+    const bar = barRef.current
+    if (!bar) return
+    const next = measurePageTop(bar, editor, zoom)
+    setPageTop((prev) =>
+      prev !== null && next !== null && Math.abs(prev - next) < 0.25 ? prev : next,
+    )
+  })
 
   const ticks = rulerTicks(dims.pageHeight, dims.marginTop, measure.unit)
 
@@ -279,45 +252,51 @@ export function VerticalRuler({
   )
 
   return (
-    <div className="vruler-anchor" ref={anchorRef}>
-      {frame && (
-        <div
-          className="vruler"
-          role="group"
-          aria-label={t('appRulerVertical')}
-          style={{ top: frame.top, left: frame.left, height }}
-        >
+    <div
+      className="vruler-bar"
+      ref={barRef}
+      style={{ top, width: Math.ceil((VRULER_WIDTH + 4) * zoom) }}
+    >
+      <div className="vruler-zoom" style={{ zoom }}>
+        {pageTop !== null && (
           <div
-            className="vruler-zone"
-            ref={(el) => {
-              zoneRefs.current.top = el
-            }}
-            style={{ top: 0, height: marginTop }}
-          />
-          <div
-            className="vruler-zone"
-            ref={(el) => {
-              zoneRefs.current.bottom = el
-            }}
-            style={{ top: height - marginBottom, height: marginBottom }}
-          />
-          {ticks.map((tk) =>
-            tk.kind === 'num' ? (
-              <span key={tk.pos} className="vruler-num" style={{ top: twipsToPx(tk.pos) }}>
-                {tk.label}
-              </span>
-            ) : (
-              <span
-                key={tk.pos}
-                className={tk.kind === 'mid' ? 'vruler-tick vruler-tick-mid' : 'vruler-tick'}
-                style={{ top: twipsToPx(tk.pos) }}
-              />
-            ),
-          )}
-          {onMarginsChange && marginHandle('top')}
-          {onMarginsChange && marginHandle('bottom')}
-        </div>
-      )}
+            className="vruler"
+            role="group"
+            aria-label={t('appRulerVertical')}
+            style={{ top: pageTop, height }}
+          >
+            <div
+              className="vruler-zone"
+              ref={(el) => {
+                zoneRefs.current.top = el
+              }}
+              style={{ top: 0, height: marginTop }}
+            />
+            <div
+              className="vruler-zone"
+              ref={(el) => {
+                zoneRefs.current.bottom = el
+              }}
+              style={{ top: height - marginBottom, height: marginBottom }}
+            />
+            {ticks.map((tk) =>
+              tk.kind === 'num' ? (
+                <span key={tk.pos} className="vruler-num" style={{ top: twipsToPx(tk.pos) }}>
+                  {tk.label}
+                </span>
+              ) : (
+                <span
+                  key={tk.pos}
+                  className={tk.kind === 'mid' ? 'vruler-tick vruler-tick-mid' : 'vruler-tick'}
+                  style={{ top: twipsToPx(tk.pos) }}
+                />
+              ),
+            )}
+            {onMarginsChange && marginHandle('top')}
+            {onMarginsChange && marginHandle('bottom')}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
