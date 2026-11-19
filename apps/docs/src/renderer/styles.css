@@ -13255,10 +13255,10 @@ body.docs-crop-active
 }
 
 /* Non-text content shows as a small empty box where it sits in the text,
-   and expands back into itself while the pointer rests on it (issue #2654).
-   Display-only: the DOM and the caret are untouched and everything stays
-   editable in page view; the node's native title names the thing on hover.
-   Floating and wrapped pictures come back into the flow as the box. */
+ * and expands back into itself while the pointer rests on it (#2654).
+ * Display-only: the DOM and the caret are untouched and everything stays
+ * editable in page view; the node's native title names the thing on hover.
+ * Floating and wrapped pictures come back into the flow as the box. */
 .view-story
   .doc-page
   :is(img.doc-inline-img[data-inline-image='1'], span.doc-inline-math, sup.doc-note-ref) {
