@@ -658,6 +658,22 @@ export const restoreLineHyphens = (s: string): string => replaceMarkers(s, '-\n'
  */
 const restoreObjectHyphens = (s: string): string => replaceMarkers(s, '-')
 
+/** Two-pass read: FPDFTextObj_GetText's length argument and return value are BYTES
+ *  including the 2-byte NUL terminator, and a too-small buffer is left untouched
+ *  (not truncated) — a fixed buffer would silently yield garbage for long runs. */
+function readTextObject(m: Pdfium, obj: number, textPage: number): string {
+  const len = m._FPDFTextObj_GetText(obj, textPage, 0, 0)
+  if (len <= 2) return ''
+  const buf = m._malloc(len)
+  if (!buf) return ''
+  try {
+    m._FPDFTextObj_GetText(obj, textPage, buf, len)
+    return restoreObjectHyphens(Buffer.from(m.HEAPU8.buffer, buf, len - 2).toString('utf16le'))
+  } finally {
+    m._free(buf)
+  }
+}
+
 function collectTextObjects(m: Pdfium, page: number, textPage: number): PageTextObj[] {
   const out: PageTextObj[] = []
   const bl = m._malloc(4)
@@ -665,17 +681,7 @@ function collectTextObjects(m: Pdfium, page: number, textPage: number): PageText
   const br = m._malloc(4)
   const bt = m._malloc(4)
   walkPageText(m, page, FPDF_PAGEOBJ_TEXT, ({ obj, chain, ordinals, topIndex, toPage }) => {
-    // Two-pass read: FPDFTextObj_GetText's length argument and return value are BYTES
-    // including the 2-byte NUL terminator, and a too-small buffer is left untouched
-    // (not truncated) — a fixed buffer would silently yield garbage for long runs
-    const len = m._FPDFTextObj_GetText(obj, textPage, 0, 0)
-    let text = ''
-    if (len > 2) {
-      const buf = m._malloc(len)
-      m._FPDFTextObj_GetText(obj, textPage, buf, len)
-      text = restoreObjectHyphens(Buffer.from(m.HEAPU8.buffer, buf, len - 2).toString('utf16le'))
-      m._free(buf)
-    }
+    const text = readTextObject(m, obj, textPage)
     if (!m._FPDFPageObj_GetBounds(obj, bl, bb, br, bt)) return
     const local: [number, number, number, number] = [
       m.HEAPF32[bl >> 2]!,
@@ -2827,6 +2833,32 @@ async function validateTextEditsInner(
 }
 
 /**
+ * PDFium builds one shared text page for the whole page. When two text objects
+ * paint the same origin and share a prefix, that text page keeps the first
+ * object's string and gives the second only its distinct tail ("abc" + "d" for
+ * a pair of abc/abd objects), so FPDFTextObj_GetText on the shared text page
+ * cannot report what the second object really carries. Reading an object with
+ * the other page-owned objects removed from a temporarily rebuilt page gives the
+ * complete string; every object is put back before returning.
+ */
+function isolatedPageObjectText(m: Pdfium, page: number, objects: readonly number[]): string {
+  let out = ''
+  for (const target of objects) {
+    const others = objects.filter((obj) => obj !== target)
+    for (const obj of others) m._FPDFPage_RemoveObject(page, obj)
+    let isolatedTextPage = 0
+    try {
+      isolatedTextPage = m._FPDFText_LoadPage(page)
+      if (isolatedTextPage) out += readTextObject(m, target, isolatedTextPage)
+    } finally {
+      if (isolatedTextPage) m._FPDFText_ClosePage(isolatedTextPage)
+      for (const obj of others) m._FPDFPage_InsertObject(page, obj)
+    }
+  }
+  return out
+}
+
+/**
  * Read-back verification: confirm every applied edit's replacement text is actually
  * extractable from the produced bytes. Runs on the final output (after the pdf-lib
  * round-trip), before it reaches disk — a failure aborts the save with the original
@@ -2862,7 +2894,7 @@ export function verifyTextEdits(
             failures.push({ pageIndex, reason: 'page unreadable in saved output' })
           continue
         }
-        const textPage = m._FPDFText_LoadPage(page)
+        let textPage = m._FPDFText_LoadPage(page)
         try {
           // NFC on both sides: ToUnicode CMaps canonicalize singleton codepoints (e.g.
           // compatibility ideograph U+F900 extracts as U+8C48) — the glyph on the page is
@@ -2873,12 +2905,31 @@ export function verifyTextEdits(
           // The object-preserving rebuild can leave a reflowed line contiguous
           // only visually, not in stream order — accept either
           const visualText = canon(joinRows(objects))
+          // Last resort for overlapping objects: only rebuild the page when a
+          // line is genuinely absent from the shared text page, so normal saves
+          // never pay for the per-object reads.
+          let isolated: string | null = null
+          const isolatedCanon = (): string => {
+            if (isolated === null) {
+              m._FPDFText_ClosePage(textPage)
+              textPage = 0
+              const pageOwned = objects.filter((o) => o.chain.length === 0).map((o) => o.obj)
+              isolated = canon(isolatedPageObjectText(m, page, pageOwned))
+            }
+            return isolated
+          }
           for (const newText of texts) {
             // Every non-empty line must be extractable (rebuilt runs are one object per line)
             const missing = newText
               .split('\n')
               .map(canon)
-              .filter((l) => l.length > 0 && !pageText.includes(l) && !visualText.includes(l))
+              .filter(
+                (l) =>
+                  l.length > 0 &&
+                  !pageText.includes(l) &&
+                  !visualText.includes(l) &&
+                  !isolatedCanon().includes(l),
+              )
             if (missing.length > 0) {
               const snippet = missing[0]!.slice(0, 20)
               failures.push({
@@ -2888,7 +2939,7 @@ export function verifyTextEdits(
             }
           }
         } finally {
-          m._FPDFText_ClosePage(textPage)
+          if (textPage) m._FPDFText_ClosePage(textPage)
           m._FPDF_ClosePage(page)
         }
       }
