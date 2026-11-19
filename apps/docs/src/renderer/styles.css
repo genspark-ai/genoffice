@@ -16604,23 +16604,46 @@ tr > .page-gap-cut {
 }
 
 /* Word paints each paragraph's mark: a patch at the paragraph's end that
-   takes no width, so line breaks, the caret and the alignment stay put; a
-   picture line sets its height inline. An empty cell of a nested table (an
-   atom, drawn without widgets) gets the same patch. */
-.perm-region-mark,
-.perm-region-nested .doc-cell-para:not(:has(> span))::before {
+   takes no room at all, so line breaks, line heights, the caret and the
+   alignment stay put. The mark is a zero-size box on the baseline (a box with
+   height would stretch the line wherever the font's content area is taller
+   than its line pitch: 1px a line under Avenir Next, a page over a long form);
+   the patch is painted from it. A picture line sets --perm-mark-h to the
+   picture's height, standing on the baseline like the picture. An empty cell
+   of a nested table (an atom, drawn without widgets) gets the same patch over
+   its one line. */
+.perm-region-mark {
+  position: relative;
   display: inline-block;
-  width: 0.5em;
-  height: 1em;
-  margin-right: -0.5em;
-  vertical-align: text-bottom;
-  background: var(--docs-paper-perm-bg);
+  width: 0;
+  height: 0;
+  vertical-align: baseline;
   pointer-events: none;
   user-select: none;
 }
 
+.perm-region-mark::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: var(--perm-mark-drop, -0.25em);
+  width: 0.5em;
+  height: var(--perm-mark-h, 1em);
+  background: var(--docs-paper-perm-bg);
+}
+
+.perm-region-nested .doc-cell-para:not(:has(> span)) {
+  position: relative;
+}
+
 .perm-region-nested .doc-cell-para:not(:has(> span))::before {
   content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0.5em;
+  background: var(--docs-paper-perm-bg);
+  pointer-events: none;
 }
 
 @media print {

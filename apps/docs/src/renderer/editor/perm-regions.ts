@@ -131,8 +131,8 @@ function paragraphMark(height: number): HTMLElement {
   span.className = 'perm-region-mark'
   span.contentEditable = 'false'
   if (height > 0) {
-    span.style.height = `${height}px`
-    span.style.verticalAlign = 'baseline'
+    span.style.setProperty('--perm-mark-h', `${height}px`)
+    span.style.setProperty('--perm-mark-drop', '0px')
   }
   return span
 }

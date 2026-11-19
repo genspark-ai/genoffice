@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Editor } from '@tiptap/core'
 import JSZip from 'jszip'
 import { parseDocx, saveDocx } from '@genoffice/docx-engine'
@@ -133,6 +136,41 @@ describe('editing permission regions in the editor', () => {
     expect(paragraphMarkHeight(text)).toBe(0)
     expect(paragraphMarkHeight(picture)).toBe(300)
     expect(paragraphMarkHeight(floating)).toBe(0)
+    editor.destroy()
+  })
+
+  it('keeps the marks out of the line box: zero size on the baseline, patch painted', async () => {
+    // a mark with height stretches every line it sits on wherever the font's
+    // content area is taller than its pitch (Avenir Next: 1px a line, a page
+    // over a long grant form), so the box stays empty and ::before paints
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../src/renderer/styles.css'),
+      'utf8',
+    )
+    const rule = (sel: string) => {
+      const at = css.indexOf(`${sel} {`)
+      expect(at).toBeGreaterThan(-1)
+      return css.slice(at, css.indexOf('}', at))
+    }
+    const mark = rule('.perm-region-mark')
+    expect(mark).toMatch(/height: 0;/)
+    expect(mark).toMatch(/vertical-align: baseline;/)
+    expect(rule('.perm-region-mark::before')).toMatch(/position: absolute;/)
+    expect(rule('.perm-region-nested .doc-cell-para:not(:has(> span))::before')).toMatch(
+      /position: absolute;/,
+    )
+
+    // a picture line hands its height to the patch, not to the box
+    const { editor } = await open()
+    const { docInlineImage } = editor.schema.nodes
+    const end = posOf(editor, 'open paragraph') + 'open paragraph'.length
+    editor.view.dispatch(editor.state.tr.insert(end, docInlineImage!.create({ heightPx: 120 })))
+    const tall = [...editor.view.dom.querySelectorAll<HTMLElement>('.perm-region-mark')].filter(
+      (m) => m.style.getPropertyValue('--perm-mark-h'),
+    )
+    expect(tall).toHaveLength(1)
+    expect(tall[0]!.style.getPropertyValue('--perm-mark-h')).toBe('120px')
+    expect(tall[0]!.style.height).toBe('')
     editor.destroy()
   })
 
