@@ -14,7 +14,9 @@ const css = readFileSync(join(__dirname, '../src/renderer/styles.css'), 'utf8')
 describe('print canvas', () => {
   it('paints the paper behind the page boxes and pins the light scheme', () => {
     const print = css.slice(css.indexOf('@media print {'))
-    const scheme = print.match(/\n {2}html \{\n {4}color-scheme: light;\n {2}\}/)
+    // the theme rules beat the bare selector, so the pin only holds as
+    // !important — that is the form this test claims
+    const scheme = print.match(/html \{[^}]*color-scheme: light !important;/)
     expect(scheme, 'print light scheme on html').toBeTruthy()
     const canvas = print.match(/\n {2}html,\n {2}body,\n {2}#root \{([^}]*)\}/)
     expect(canvas, 'print canvas rule').toBeTruthy()
