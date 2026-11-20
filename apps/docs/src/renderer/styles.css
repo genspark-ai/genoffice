@@ -5230,6 +5230,116 @@ th[data-rev-fmt] {
   z-index: 1000;
 }
 
+/* Rulers (View ▸ Ruler) are chrome around the document view, as in Word:
+   the horizontal bar sits above the scrolling pages and the vertical strip at
+   their left; only their scales follow the page (components/RulerBar.tsx,
+   VerticalRuler.tsx) */
+.ruler-bar {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  background: var(--canvas);
+}
+
+.ruler-bar-host {
+  position: absolute;
+  top: 3px;
+}
+
+.ruler-bar .ruler {
+  margin: 0;
+}
+
+.editor-area.with-rulers {
+  position: relative;
+}
+
+.editor-area.with-rulers .editor-scroll {
+  padding-left: 40px;
+}
+
+.vruler-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  overflow: hidden;
+  z-index: 5;
+  background: var(--canvas);
+}
+
+.vruler-zoom {
+  position: absolute;
+  top: 0;
+  left: 2px;
+  width: 20px;
+  height: 0;
+}
+
+.vruler {
+  position: absolute;
+  width: 20px;
+  box-sizing: border-box;
+  background: var(--docs-ruler-bg);
+  border: 1px solid var(--docs-ruler-border);
+  border-radius: 2px;
+  font-size: 9px;
+  color: var(--docs-ruler-ink);
+  user-select: none;
+  overflow: hidden;
+  z-index: 5;
+}
+
+.vruler-zone {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: var(--docs-ruler-zone);
+}
+
+.vruler-num {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  transform: translateY(-50%);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.vruler-tick {
+  position: absolute;
+  right: 0;
+  width: 3px;
+  height: 1px;
+  background: var(--docs-ruler-tick);
+  pointer-events: none;
+}
+
+.vruler-tick-mid {
+  width: 6px;
+}
+
+.vruler-margin-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 7px;
+  transform: translateY(-50%);
+  cursor: row-resize;
+  z-index: 2;
+}
+
+.vruler-margin-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.ruler-drag-guide-h {
+  height: 0;
+  border-left: none;
+  border-top: 1px dotted var(--docs-ruler-ink);
+}
+
 /* contextual Header & Footer tab */
 .hf-ribbon-body {
   display: flex;
@@ -13166,6 +13276,8 @@ body.docs-crop-active
   .paste-chip,
   .ai-ask-pop,
   .ruler,
+  .ruler-bar,
+  .vruler-bar,
   .find-panel {
     display: none !important;
   }
