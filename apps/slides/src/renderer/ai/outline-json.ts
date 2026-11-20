@@ -32,6 +32,24 @@ function normalizeSmartQuotes(s: string): string {
     .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'")
 }
 
+/** `, "key":` right after a quote: the string ended and the next member starts. */
+const KEY_BOUNDARY = /^\s*,\s*"[^"\\\n]{1,64}"\s*:/
+/** A swallowed member boundary inside a string: `…", "key": …`. */
+const SWALLOWED_MEMBER = /",\s*"[\w.-]{1,64}"\s*:/
+
+/**
+ * A repair that parsed but merged two members into one, or turned value text into a key, is
+ * wrong data; failing lets the caller ask the model again instead.
+ */
+function looksMisrepaired(value: unknown): boolean {
+  if (typeof value === 'string') return SWALLOWED_MEMBER.test(value)
+  if (Array.isArray(value)) return value.some(looksMisrepaired)
+  if (value && typeof value === 'object') {
+    return Object.entries(value).some(([k, v]) => /[",]/.test(k) || looksMisrepaired(v))
+  }
+  return false
+}
+
 /**
  * Escape unescaped " inside string values, and write bare newlines/tabs as JSON escapes.
  * Heuristic: if the character after " (skipping whitespace) isn't , } ] : or the end, treat it
@@ -62,13 +80,15 @@ export function escapeBrokenStringLiterals(json: string, lowQuotes = true): stri
     }
     if (c === '\u201E') lowQuoteOpen = lowQuotes
     else if (c === '\u201D' || c === '\u201C') lowQuoteOpen = false
-    if (c === '"' && lowQuoteOpen) {
+    // A " that starts the next key (`", "key":`) is never a low-9 closer.
+    if (c === '"' && lowQuoteOpen && !KEY_BOUNDARY.test(json.slice(i + 1, i + 80))) {
       lowQuoteOpen = false
       out += '\\"'
       i++
       continue
     }
     if (c === '"') {
+      lowQuoteOpen = false
       let j = i + 1
       while (j < json.length && /\s/.test(json[j]!)) j++
       const next = json[j]
@@ -112,6 +132,9 @@ export function parseOutlineJson(text: string): OutlineJson | null {
     stripTrailingCommas(raw),
     normalizeSmartQuotes(raw),
     stripTrailingCommas(normalizeSmartQuotes(raw)),
+  ]
+  // Quote repairs guess where strings end; a guess that merged members is rejected, not returned.
+  const repaired = [
     escapeBrokenStringLiterals(raw),
     escapeBrokenStringLiterals(raw, false),
     escapeBrokenStringLiterals(normalizeSmartQuotes(raw)),
@@ -124,6 +147,12 @@ export function parseOutlineJson(text: string): OutlineJson | null {
     seen.add(c)
     const obj = tryParse(c)
     if (obj) return obj
+  }
+  for (const c of repaired) {
+    if (seen.has(c)) continue
+    seen.add(c)
+    const obj = tryParse(c)
+    if (obj && !looksMisrepaired(obj)) return obj
   }
   return null
 }

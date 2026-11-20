@@ -4,6 +4,7 @@
  * with openPptx and assert on the parsed model (true roundtrip, no mocks).
  */
 import { describe, it, expect } from 'vitest'
+import { parseLenientJson } from '../src/slides/lenient-json'
 import { openPptx, type TextElement, type PictureElement } from '@genoffice/pptx-engine'
 import { HeuristicMetrics } from '@genoffice/pptx-render'
 import { parsePageSpec, buildPagePptx, type PageSpec } from '../src/slides/page-spec'
@@ -490,5 +491,14 @@ describe('buildPagePptx shape flip', () => {
     ) as TextElement | undefined
     expect(el?.transform.flipV).toBe(true)
     expect(el?.anchor.originalXml).toContain('flipV="1"')
+  })
+})
+
+describe('parseLenientJson', () => {
+  it('rejects a quote repair that merges two members', () => {
+    expect(parseLenientJson('{"k0":"y"z",","k1":"„Minta", aalma"}').ok).toBe(false)
+  })
+  it('keeps a plain-quoted value intact after a low-9 quote closed in the previous member', () => {
+    expect(parseLenientJson('{"a":"„x","b":"y "q" z"}')).toEqual({ ok: true, value: { a: '„x', b: 'y "q" z' } })
   })
 })

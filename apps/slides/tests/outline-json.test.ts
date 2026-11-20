@@ -69,3 +69,9 @@ describe('extractJsonObject / escapeBrokenStringLiterals', () => {
     expect(JSON.parse(fixed)).toEqual({ a: '说"你好"吧' })
   })
 })
+
+describe('parseOutlineJson quote-repair guard', () => {
+  it('rejects a quote repair that merges two members', () => {
+    expect(parseOutlineJson('{"k0":"y"z",","k1":"„Minta", aalma"}')).toBeNull()
+  })
+})
