@@ -2,7 +2,11 @@
 //! block, so a column scan never parses unrelated cell records.
 use super::*;
 
-pub(crate) fn write_chunk(path: &Path, chunk: &ChunkData) -> Result<(), SidecarError> {
+pub(crate) fn write_chunk(
+    path: &Path,
+    chunk: &ChunkData,
+    reserve_bytes: impl FnOnce(usize) -> Result<(), SidecarError>,
+) -> Result<(), SidecarError> {
     let mut columns = std::collections::BTreeMap::<usize, Vec<&CellRecord>>::new();
     for cell in &chunk.cells {
         columns.entry(cell.column).or_default().push(cell);
@@ -16,6 +20,7 @@ pub(crate) fn write_chunk(path: &Path, chunk: &ChunkData) -> Result<(), SidecarE
         directory.extend_from_slice(&offset.to_le_bytes());
         serde_json::to_writer(&mut payload, &cells)?;
     }
+    reserve_bytes(4 + directory.len() + payload.len())?;
     let mut file = BufWriter::new(File::create(path)?);
     file.write_all(&((directory.len() / 8) as u32).to_le_bytes())?;
     file.write_all(&directory)?;

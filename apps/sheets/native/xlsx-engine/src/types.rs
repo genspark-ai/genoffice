@@ -585,6 +585,9 @@ pub struct RangeResult {
     /// Protection, merges, filters and other sheet-wide metadata are known.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub metadata_ready: bool,
+    /// Early scan failed; the full index can still supply the metadata.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub metadata_scan_failed: bool,
 }
 
 /// One `<filterColumn>` of a worksheet autoFilter: checked values

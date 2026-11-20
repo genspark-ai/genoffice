@@ -1248,6 +1248,7 @@ export const workbookRangeResultSchema = z
     indexingComplete: z.boolean(),
     /// Older sidecars publish the sheet-wide metadata at indexingComplete.
     metadataReady: z.boolean().optional(),
+    metadataScanFailed: z.boolean().optional(),
   })
   .strict()
 

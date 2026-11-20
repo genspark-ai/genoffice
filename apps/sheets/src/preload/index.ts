@@ -2317,6 +2317,7 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
     indexedThroughRow: input.indexedThroughRow,
     indexingComplete: input.indexingComplete,
     ...(input.metadataReady === true ? { metadataReady: true } : {}),
+    ...(input.metadataScanFailed === true ? { metadataScanFailed: true } : {}),
   }
 }
 

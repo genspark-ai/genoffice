@@ -901,7 +901,9 @@ export function App({
       new URLSearchParams(window.location.search).get('openingWorkbook') === '1',
   )
   const [emptyCsvNotice, setEmptyCsvNotice] = useState(false)
-  const [progressivePreview, setProgressivePreview] = useState(false)
+  const [progressivePreview, setProgressivePreview] = useState<
+    'appReadOnlyIndexing' | 'appReadOnlyMetadataFailed' | null
+  >(null)
   const previewLock = useRef<string | null>(null)
   const lastPreviewToast = useRef(0)
   const installingFileSkeleton = useRef(false)
@@ -5156,7 +5158,13 @@ export function App({
     const now = Date.now()
     if (now - lastPreviewToast.current < 800) return
     lastPreviewToast.current = now
-    showToast(t('appReadOnlyIndexing'), 'info', 'top-right')
+    const activeSheetId = univerRef.current?.univerAPI
+      .getActiveWorkbook()
+      ?.getActiveSheet()
+      ?.getSheetId()
+    const failed =
+      activeSheetId && lazyWorkbookRef.current?.metadataScanFailedSheets?.has(activeSheetId)
+    showToast(t(failed ? 'appReadOnlyMetadataFailed' : 'appReadOnlyIndexing'), 'info', 'top-right')
   }
 
   function syncProgressivePreview(sheetId: string): void {
@@ -5164,7 +5172,7 @@ export function App({
     const runtime = univerRef.current
     const workbook = runtime?.univerAPI.getActiveWorkbook()
     if (!runtime || !workbook || !state || workbook.getId() !== `file-${state.file.sha256}`) {
-      setProgressivePreview(false)
+      setProgressivePreview(null)
       return
     }
     const preview =
@@ -5176,7 +5184,13 @@ export function App({
       setProgressivePreviewEditable(runtime, workbook, true)
       previewLock.current = null
     }
-    setProgressivePreview(preview)
+    setProgressivePreview(
+      !preview
+        ? null
+        : state.metadataScanFailedSheets?.has(sheetId)
+          ? 'appReadOnlyMetadataFailed'
+          : 'appReadOnlyIndexing',
+    )
   }
 
   async function openLazyWorkbook(
@@ -5248,6 +5262,15 @@ export function App({
       ...(progressive
         ? {
             deferredSparklines: new Map(),
+            metadataScanFailedSheets: new Set(),
+            onMetadataScanFailed: (sheetId: string) => {
+              if (lazyWorkbookRef.current !== state) return
+              const active = univerRef.current?.univerAPI
+                .getActiveWorkbook()
+                ?.getActiveSheet()
+                ?.getSheetId()
+              if (active === sheetId) syncProgressivePreview(sheetId)
+            },
             onProgressiveSheetReady: (sheetId: string) => {
               const runtime = univerRef.current
               if (!runtime || lazyWorkbookRef.current !== state) return
@@ -5442,7 +5465,7 @@ export function App({
       setProgressivePreviewEditable(previousRuntime, previousWorkbook, true)
     }
     previewLock.current = null
-    setProgressivePreview(false)
+    setProgressivePreview(null)
     installingFileSkeleton.current = progressive
     try {
       loadWorkbookSkeleton(univerRef.current, selected)
@@ -6285,7 +6308,7 @@ export function App({
           openingWorkbook
             ? t('appOpeningWorkbook')
             : progressivePreview
-              ? t('appReadOnlyIndexing')
+              ? t(progressivePreview)
               : message
         }
         emptyCsvNotice={emptyCsvNotice}

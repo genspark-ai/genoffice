@@ -558,7 +558,7 @@ fn parallel_metadata_scan_preserves_sheet_protection_after_cell_data() {
 }
 
 #[test]
-fn progressive_open_prioritizes_the_active_sheet_and_prefetches_its_neighbour() {
+fn progressive_open_prioritizes_the_active_sheet_and_prefetches_visible_sheets() {
     if !THREADS {
         return;
     }
@@ -577,26 +577,41 @@ fn progressive_open_prioritizes_the_active_sheet_and_prefetches_its_neighbour() 
             r#"<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
               <bookViews><workbookView activeTab="1"/></bookViews><sheets>
               <sheet name="Other" sheetId="1" r:id="rId1"/>
-              <sheet name="Active" sheetId="2" r:id="rId2"/></sheets></workbook>"#,
+              <sheet name="Active" sheetId="2" r:id="rId2"/>
+              <sheet name="Hidden" sheetId="3" state="hidden" r:id="rId3"/>
+              <sheet name="Next" sheetId="4" r:id="rId4"/>
+              <sheet name="Distant" sheetId="5" r:id="rId5"/></sheets></workbook>"#,
         ),
         (
             "xl/_rels/workbook.xml.rels",
             r#"<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/>
-               <Relationship Id="rId2" Target="worksheets/sheet2.xml"/></Relationships>"#,
+               <Relationship Id="rId2" Target="worksheets/sheet2.xml"/>
+               <Relationship Id="rId3" Target="worksheets/sheet3.xml"/>
+               <Relationship Id="rId4" Target="worksheets/sheet4.xml"/>
+               <Relationship Id="rId5" Target="worksheets/sheet5.xml"/></Relationships>"#,
         ),
         ("xl/worksheets/sheet1.xml", &sheet),
         ("xl/worksheets/sheet2.xml", &sheet),
+        ("xl/worksheets/sheet3.xml", &sheet),
+        ("xl/worksheets/sheet4.xml", &sheet),
+        ("xl/worksheets/sheet5.xml", &sheet),
     ]);
     let mut sessions = WorkbookSessions::new();
     let opened = sessions
         .open_with_options(&path, "en", None, true, &AtomicBool::new(false))
         .unwrap();
     assert_eq!(opened.active_tab, 1);
-    assert!(opened.sheets.iter().all(|sheet| sheet.progressive));
+    assert!(opened.sheets[1].progressive);
     assert_eq!(opened.sheets[1].stored_cell_count, None);
     let session = &sessions.sessions[&opened.session_id];
-    assert!(session.runtimes[0].handle.is_none());
     assert!(session.runtimes[1].handle.is_some());
+    assert!(
+        session
+            .runtimes
+            .iter()
+            .enumerate()
+            .all(|(index, runtime)| { runtime.started == (index == opened.active_tab) })
+    );
 
     let first_cell = CellRange {
         start_row: 0,
@@ -612,7 +627,8 @@ fn progressive_open_prioritizes_the_active_sheet_and_prefetches_its_neighbour() 
         Some(CellValue::String("Preview".into()))
     );
 
-    for runtime in &sessions.sessions[&opened.session_id].runtimes {
+    {
+        let runtime = &sessions.sessions[&opened.session_id].runtimes[1];
         let (lock, ready) = &*runtime.state;
         let (index, _) = ready
             .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(10), |index| {
@@ -635,6 +651,57 @@ fn progressive_open_prioritizes_the_active_sheet_and_prefetches_its_neighbour() 
     assert_eq!(counts.value_cell_count, 2);
     assert_eq!(counts.value_row_count, 257);
     assert_eq!(counts.value_column_count, 2);
+    let session = &sessions.sessions[&opened.session_id];
+    for index in [0, 1, 3] {
+        assert!(session.runtimes[index].started);
+        assert!(!session.runtimes[index].prefetching);
+    }
+    assert!(!session.runtimes[2].started);
+    assert!(!session.runtimes[2].metadata_started);
+    assert!(session.runtimes[4].prefetching);
+
+    // Simulate an independent scan failing to open its worksheet entry.
+    // The range status must surface that failure until the index supplies
+    // authoritative protection and the other sheet metadata.
+    let session = sessions.sessions.get_mut(&opened.session_id).unwrap();
+    let worksheet_path = std::mem::replace(
+        &mut session.runtimes[2].worksheet_path,
+        "xl/worksheets/missing.xml".into(),
+    );
+    session.metadata_job(2)();
+    session.runtimes[2].worksheet_path = worksheet_path;
+    let status = session
+        .read_range(2, &first_cell, RangeReadMode::Status, None)
+        .unwrap();
+    assert!(status.metadata_scan_failed);
+    assert!(!status.metadata_ready);
+    assert!(!status.indexing_complete);
+    let preview = session
+        .read_range(2, &first_cell, RangeReadMode::Viewport, None)
+        .unwrap();
+    assert!(preview.metadata_scan_failed);
+    assert!(preview.sheet_protection.is_none());
+
+    // A budget below the size of any nonempty chunk must prevent a write
+    // until the index is requested. The same worker then finishes normally.
+    session.start_parser(2, Some(1)).unwrap();
+    let (lock, condition) = &*session.runtimes[2].state;
+    let (index, _) = condition
+        .wait_timeout_while(lock.lock().unwrap(), Duration::from_millis(100), |index| {
+            index.chunk_files.is_empty() && index.error.is_none()
+        })
+        .unwrap();
+    assert!(index.chunk_files.is_empty() && index.error.is_none());
+    assert_eq!(index.prefetch_bytes_remaining, Some(1));
+    drop(index);
+    session.ensure_parser(2).unwrap();
+    session.runtimes[2].handle.take().unwrap().join().unwrap();
+    let recovered = session
+        .read_range(2, &first_cell, RangeReadMode::Viewport, None)
+        .unwrap();
+    assert!(recovered.indexing_complete && recovered.metadata_ready);
+    assert!(!recovered.metadata_scan_failed);
+    assert!(recovered.sheet_protection.is_some());
     sessions.close(&opened.session_id).unwrap();
 }
 

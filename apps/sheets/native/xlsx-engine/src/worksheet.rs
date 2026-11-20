@@ -256,6 +256,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                             &mut pending_formulas,
                             cache_directory,
                             state,
+                            cancelled,
                             row_chunk.saturating_mul(CHUNK_ROW_COUNT).saturating_sub(1),
                         )?;
                         chunk_index = row_chunk;
@@ -290,6 +291,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                             &mut pending_formulas,
                             cache_directory,
                             state,
+                            cancelled,
                             cell_chunk.saturating_mul(CHUNK_ROW_COUNT).saturating_sub(1),
                         )?;
                         chunk_index = cell_chunk;
@@ -487,6 +489,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                             &mut pending_formulas,
                             cache_directory,
                             state,
+                            cancelled,
                             cell_chunk.saturating_mul(CHUNK_ROW_COUNT).saturating_sub(1),
                         )?;
                         chunk_index = cell_chunk;
@@ -1027,6 +1030,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                     &mut pending_formulas,
                     cache_directory,
                     state,
+                    cancelled,
                     latest_row,
                 )?;
                 break;
@@ -1404,13 +1408,15 @@ pub(crate) fn row_property<R: std::io::BufRead>(
     }))
 }
 
-pub(crate) fn flush_chunk(
+#[allow(clippy::too_many_arguments)]
+fn flush_chunk(
     sheet_index: usize,
     chunk_index: usize,
     chunk: &mut ChunkData,
     pending_formulas: &mut Vec<CellRecord>,
     cache_directory: &Path,
     state: &Arc<(Mutex<SheetIndex>, Condvar)>,
+    cancelled: &AtomicBool,
     indexed_through_row: usize,
 ) -> Result<(), SidecarError> {
     let path = cache_directory.join(format!("sheet-{sheet_index}-chunk-{chunk_index}.bin"));
@@ -1426,12 +1432,31 @@ pub(crate) fn flush_chunk(
             hidden: row.hidden,
         })
         .collect();
+    let (lock, condition) = &**state;
     if has_data {
-        chunks::write_chunk(&path, chunk)?;
+        chunks::write_chunk(&path, chunk, |bytes| {
+            let index = lock
+                .lock()
+                .map_err(|_| SidecarError::Io("Worksheet index lock was poisoned.".into()))?;
+            let mut index = condition
+                .wait_while(index, |index| {
+                    !cancelled.load(Ordering::Acquire)
+                        && index
+                            .prefetch_bytes_remaining
+                            .is_some_and(|left| left < bytes)
+                })
+                .map_err(|_| SidecarError::Io("Worksheet index wait failed.".into()))?;
+            if cancelled.load(Ordering::Acquire) {
+                return Err(SidecarError::cancelled());
+            }
+            if let Some(left) = &mut index.prefetch_bytes_remaining {
+                *left -= bytes;
+            }
+            Ok(())
+        })?;
         chunk.cells.clear();
         chunk.rows.clear();
     }
-    let (lock, condition) = &**state;
     let mut index = lock
         .lock()
         .map_err(|_| SidecarError::Io("Worksheet index lock was poisoned.".into()))?;

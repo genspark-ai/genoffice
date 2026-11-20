@@ -59,6 +59,8 @@ pub use visuals::{CellStyle, MediaResult, ThemeFonts, VisualObject};
 use visuals::{ColorContext, SheetVisualSource, SourceFormats};
 
 const CHUNK_ROW_COUNT: usize = 256;
+const PREFETCH_CACHE_BUDGET: usize = 256 * 1024 * 1024;
+const MIN_PREFETCH_BYTES_PER_SHEET: usize = 64 * 1024 * 1024;
 const MAX_RANGE_CELLS: usize = 100_000;
 const RANGE_WAIT: Duration = Duration::from_millis(750);
 /// Reads this far past the indexed row would only burn the full RANGE_WAIT;
@@ -594,6 +596,7 @@ impl WorkbookSessions {
             cache_directory: cache_directory.path().to_path_buf(),
             cancelled: Arc::new(AtomicBool::new(false)),
             prefetch: Vec::new(),
+            pending_prefetch_active: None,
         };
         if let Some(active) = std::iter::once(active_tab)
             .chain(0..sheets.len())
@@ -601,7 +604,8 @@ impl WorkbookSessions {
         {
             if sheets.iter().any(|sheet| sheet.progressive) {
                 session.ensure_parser(active)?;
-                session.prefetch_sheets(active);
+                session.ensure_metadata(active);
+                session.pending_prefetch_active = THREADS.then_some(active);
             }
         }
         self.sessions.insert(session_id.clone(), session);
@@ -659,7 +663,17 @@ impl WorkbookSessions {
         if !matches!(mode, RangeReadMode::Status) {
             session.ensure_metadata(sheet_index);
         }
-        session.read_range(sheet_index, range, mode, sparse_rows)
+        let result = session.read_range(sheet_index, range, mode, sparse_rows)?;
+        if session.pending_prefetch_active == Some(sheet_index)
+            && (result.indexing_complete
+                || (result.metadata_ready && result.indexed_through_row.is_some()))
+        {
+            // Let the active sheet supply its first rows and protection
+            // before speculative indexing competes for CPU and disk.
+            session.pending_prefetch_active = None;
+            session.prefetch_sheets(sheet_index);
+        }
+        Ok(result)
     }
 
     pub fn read_formula_cells(
@@ -791,6 +805,7 @@ struct WorkbookSession {
     cache_directory: PathBuf,
     cancelled: Arc<AtomicBool>,
     prefetch: Vec<JoinHandle<()>>,
+    pending_prefetch_active: Option<usize>,
 }
 
 type SheetJob = Box<dyn FnOnce() + Send>;
@@ -815,89 +830,87 @@ impl WorkbookSession {
     }
 
     fn ensure_parser(&mut self, sheet_index: usize) -> Result<(), SidecarError> {
-        let started = Arc::clone(&self.runtimes[sheet_index].started);
-        if started.swap(true, Ordering::AcqRel) {
+        let runtime = &mut self.runtimes[sheet_index];
+        if runtime.prefetching {
+            let (lock, condition) = &*runtime.state;
+            let mut index = lock
+                .lock()
+                .map_err(|_| SidecarError::Io("Worksheet index lock was poisoned.".into()))?;
+            index.prefetch_bytes_remaining = None;
+            runtime.prefetching = false;
+            condition.notify_all();
+        }
+        if runtime.started {
             return Ok(());
         }
+        self.start_parser(sheet_index, None)
+    }
+
+    fn start_parser(
+        &mut self,
+        sheet_index: usize,
+        prefetch_bytes: Option<usize>,
+    ) -> Result<(), SidecarError> {
         let job = self.cell_index_job(sheet_index);
+        let runtime = &mut self.runtimes[sheet_index];
+        runtime
+            .state
+            .0
+            .lock()
+            .map_err(|_| SidecarError::Io("Worksheet index lock was poisoned.".into()))?
+            .prefetch_bytes_remaining = prefetch_bytes;
         if THREADS {
-            match thread::Builder::new()
-                .name(format!("xlsx-index-{sheet_index}"))
-                .spawn(job)
-            {
-                Ok(handle) => self.runtimes[sheet_index].handle = Some(handle),
-                Err(error) => {
-                    started.store(false, Ordering::Release);
-                    return Err(error.into());
-                }
-            }
+            runtime.handle = Some(
+                thread::Builder::new()
+                    .name(format!("xlsx-index-{sheet_index}"))
+                    .spawn(job)?,
+            );
         } else {
             job();
         }
+        runtime.started = true;
+        runtime.prefetching = prefetch_bytes.is_some();
         Ok(())
     }
 
     fn prefetch_sheets(&mut self, active: usize) {
+        // Index the two nearest visible tabs in full. Beyond those, reserve
+        // each worker its own share so one large tab cannot use the budget
+        // on its own. The worker parks at the byte limit and resumes on demand.
         let cores = thread::available_parallelism().map_or(1, |count| count.get());
-        let mut neighbours: Vec<_> = (0..self.sheets.len()).filter(|&i| i != active).collect();
-        neighbours.sort_by_key(|&i| (self.sheets[i].hidden, active.abs_diff(i)));
-
-        // The active index is already running. Give its metadata a worker of
-        // its own, and share the remaining cores between metadata and cache
-        // jobs for neighbouring sheets. A viewport request can claim any
-        // queued cache job immediately.
-        self.ensure_metadata(active);
-        let metadata: VecDeque<_> = neighbours
+        let slots = (PREFETCH_CACHE_BUDGET / MIN_PREFETCH_BYTES_PER_SHEET)
+            .min((cores.saturating_sub(2) / 2).max(1));
+        let visible: Vec<_> = self
+            .sheets
             .iter()
-            .copied()
-            .filter(|&i| self.sheets[i].progressive)
-            .map(|i| {
-                let started = Arc::clone(&self.runtimes[i].metadata_started);
-                let job = self.metadata_job(i);
-                Box::new(move || {
-                    if !started.swap(true, Ordering::AcqRel) {
-                        job();
-                    }
-                }) as SheetJob
-            })
+            .enumerate()
+            .filter(|&(_, sheet)| !sheet.hidden)
+            .map(|(index, _)| index)
             .collect();
-        let indexes: VecDeque<SheetJob> = neighbours
-            .into_iter()
-            .map(|i| {
-                let started = Arc::clone(&self.runtimes[i].started);
-                let job = self.cell_index_job(i);
-                Box::new(move || {
-                    if !started.swap(true, Ordering::AcqRel) {
-                        job();
-                    }
-                }) as SheetJob
-            })
+        let Some(position) = visible.iter().position(|&index| index == active) else {
+            return;
+        };
+        let mut others: Vec<_> = visible
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i != position)
             .collect();
-        let available = cores.saturating_sub(2);
-        let metadata_workers = metadata.len().min((available / 2).max(1));
-        self.start_prefetch_workers(metadata, metadata_workers, "xlsx-sheet-metadata");
-        self.start_prefetch_workers(
-            indexes,
-            available.saturating_sub(metadata_workers).max(1),
-            "xlsx-cache",
-        );
-    }
-
-    fn start_prefetch_workers(&mut self, jobs: VecDeque<SheetJob>, workers: usize, name: &str) {
-        let workers = workers.min(jobs.len());
-        let jobs = Arc::new(Mutex::new(jobs));
-        for _ in 0..workers {
-            let jobs = Arc::clone(&jobs);
-            let cancelled = Arc::clone(&self.cancelled);
-            if let Ok(handle) = thread::Builder::new().name(name.into()).spawn(move || {
-                while !cancelled.load(Ordering::Acquire) {
-                    let Some(job) = jobs.lock().ok().and_then(|mut jobs| jobs.pop_front()) else {
-                        break;
-                    };
-                    job();
-                }
-            }) {
-                self.prefetch.push(handle);
+        others.sort_by_key(|&(i, _)| (position.abs_diff(i), i < position));
+        let (neighbours, remaining) = others.split_at(others.len().min(2));
+        let budgeted: Vec<_> = remaining
+            .iter()
+            .map(|&(_, &index)| index)
+            .filter(|&index| !self.runtimes[index].started)
+            .take(slots)
+            .collect();
+        let share = PREFETCH_CACHE_BUDGET.checked_div(budgeted.len());
+        let jobs = neighbours
+            .iter()
+            .map(|&(_, &index)| (index, None))
+            .chain(budgeted.into_iter().map(|index| (index, share)));
+        for (index, budget) in jobs {
+            if !self.runtimes[index].started && self.start_parser(index, budget).is_ok() {
+                self.ensure_metadata(index);
             }
         }
     }
@@ -912,29 +925,38 @@ impl WorkbookSession {
         Box::new(move || {
             // The full index also reads the tail. It remains the fallback if
             // this speculative scan cannot produce the metadata.
-            let _ = read_worksheet_metadata(
+            if let Err(error) = read_worksheet_metadata(
                 &path,
                 &worksheet_path,
                 sheet_index,
                 &colors,
                 &state,
                 &cancelled,
-            );
+            ) && !cancelled.load(Ordering::Acquire)
+            {
+                record_metadata_scan_failure(&state, sheet_index, &error);
+            }
         })
     }
 
     fn ensure_metadata(&mut self, sheet_index: usize) {
-        let started = Arc::clone(&self.runtimes[sheet_index].metadata_started);
-        if !self.sheets[sheet_index].progressive || started.swap(true, Ordering::AcqRel) {
+        if !THREADS
+            || !self.sheets[sheet_index].progressive
+            || self.runtimes[sheet_index].metadata_started
+        {
             return;
         }
+        self.runtimes[sheet_index].metadata_started = true;
         let job = self.metadata_job(sheet_index);
         match thread::Builder::new()
             .name("xlsx-visible-metadata".into())
             .spawn(job)
         {
             Ok(handle) => self.prefetch.push(handle),
-            Err(_) => started.store(false, Ordering::Release),
+            Err(error) => {
+                let runtime = &self.runtimes[sheet_index];
+                record_metadata_scan_failure(&runtime.state, sheet_index, &error.into());
+            }
         }
     }
 
@@ -1020,11 +1042,13 @@ impl WorkbookSession {
         let indexed_through_row = index.indexed_through_row;
         let indexing_complete = index.complete;
         let metadata_ready = index.decorations.is_some();
+        let metadata_scan_failed = !metadata_ready && index.metadata_scan_failed;
         if matches!(mode, RangeReadMode::Status) {
             return Ok(RangeResult {
                 indexed_through_row,
                 indexing_complete,
                 metadata_ready,
+                metadata_scan_failed,
                 ..RangeResult::default()
             });
         }
@@ -1138,6 +1162,7 @@ impl WorkbookSession {
             indexed_through_row,
             indexing_complete,
             metadata_ready,
+            metadata_scan_failed,
         })
     }
 
@@ -1184,7 +1209,8 @@ impl WorkbookSession {
     fn close(mut self) -> Result<(), SidecarError> {
         self.cancelled.store(true, Ordering::Release);
         for runtime in &self.runtimes {
-            let (_, condition) = &*runtime.state;
+            let (lock, condition) = &*runtime.state;
+            let _index = lock.lock();
             condition.notify_all();
         }
         for runtime in &mut self.runtimes {
@@ -1209,9 +1235,23 @@ struct SheetRuntime {
     worksheet_path: String,
     state: Arc<(Mutex<SheetIndex>, Condvar)>,
     /// Indexing has begun, on a thread or inline.
-    started: Arc<AtomicBool>,
-    metadata_started: Arc<AtomicBool>,
+    started: bool,
+    prefetching: bool,
+    metadata_started: bool,
     handle: Option<JoinHandle<()>>,
+}
+
+fn record_metadata_scan_failure(
+    state: &Arc<(Mutex<SheetIndex>, Condvar)>,
+    sheet_index: usize,
+    error: &SidecarError,
+) {
+    eprintln!("Early XLSX metadata scan failed for worksheet {sheet_index}: {error}");
+    let (lock, condition) = &**state;
+    if let Ok(mut index) = lock.lock() {
+        index.metadata_scan_failed = true;
+        condition.notify_all();
+    }
 }
 
 impl SheetRuntime {
@@ -1219,8 +1259,9 @@ impl SheetRuntime {
         Self {
             worksheet_path,
             state: Arc::new((Mutex::new(SheetIndex::default()), Condvar::new())),
-            started: Arc::new(AtomicBool::new(false)),
-            metadata_started: Arc::new(AtomicBool::new(false)),
+            started: false,
+            prefetching: false,
+            metadata_started: false,
             handle: None,
         }
     }
@@ -1232,7 +1273,9 @@ struct SheetIndex {
     complete: bool,
     error: Option<String>,
     chunk_files: HashMap<usize, PathBuf>,
+    prefetch_bytes_remaining: Option<usize>,
     decorations: Option<SheetDecorations>,
+    metadata_scan_failed: bool,
     /// Formula cells collected while indexing, capped at MAX_FORMULA_CELLS.
     /// Shared-formula followers are not counted: they live in
     /// `shared_formula_groups`, published once indexing completes.

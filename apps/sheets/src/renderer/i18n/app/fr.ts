@@ -721,7 +721,10 @@ export const fr = {
     'Formules recalculées selon vos modifications — {count} ont conservé leurs valeurs en cache (fonctions absentes du moteur de secours).',
   appRecalcDone:
     'Formules recalculées selon vos modifications ({count} cellules, moteur de secours).',
-  appReadOnlyIndexing: 'Aperçu en lecture seule pendant l’indexation de la feuille.',
+  appReadOnlyIndexing:
+    'Aperçu en lecture seule pendant la vérification de la protection de la feuille.',
+  appReadOnlyMetadataFailed:
+    'Impossible de vérifier la protection de la feuille à l’avance. La feuille reste en lecture seule jusqu’à la fin de l’indexation.',
   appIndexing: 'Indexation de {name} : {rows} lignes prêtes.',
   appStreamingRows: 'Chargement en flux de {name} : {rows} lignes disponibles.',
   appLoadRangeFailed: 'Impossible de charger la zone visible.',
