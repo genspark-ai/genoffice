@@ -710,7 +710,9 @@ export const de = {
   appRecalcPartial:
     'Formeln anhand Ihrer Bearbeitungen neu berechnet — {count} behielten zwischengespeicherte Werte (Funktionen, die dem Ersatzmodul fehlen).',
   appRecalcDone: 'Formeln anhand Ihrer Bearbeitungen neu berechnet ({count} Zellen, Ersatzmodul).',
-  appReadOnlyIndexing: 'Schreibgeschützte Vorschau, während das Blatt indiziert wird.',
+  appReadOnlyIndexing: 'Schreibgeschützte Vorschau, während der Blattschutz geprüft wird.',
+  appReadOnlyMetadataFailed:
+    'Der Blattschutz konnte nicht vorab gelesen werden. Bis zum Ende der Indizierung ist das Blatt schreibgeschützt.',
   appIndexing: '{name} wird indiziert: {rows} Zeilen bereit.',
   appStreamingRows: '{name} wird gestreamt: {rows} Zeilen verfügbar.',
   appLoadRangeFailed: 'Der sichtbare Bereich kann nicht geladen werden.',

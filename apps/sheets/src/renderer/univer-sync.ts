@@ -3558,6 +3558,7 @@ async function loadRange(
       }
       const status = await readSheetRangeMapped(state, sheetId, anchor, sheetMeta, 'status')
       if (!isCurrent()) return
+      if (status) recordMetadataScanFailure(state, sheetId, status.raw)
       if (
         status &&
         !status.raw.indexingComplete &&
@@ -3575,6 +3576,7 @@ async function loadRange(
       waitForRequestedRange ? undefined : 'viewport',
     )
     if (!isCurrent()) return
+    if (mapped) recordMetadataScanFailure(state, sheetId, mapped.raw)
     const richFamilies = mapped ? richRunFamilies(mapped.screen.cells) : null
     if (richFamilies?.size) {
       await untilCellFontsLoaded(registerCellFontAliases(richFamilies))
@@ -6575,6 +6577,23 @@ export async function ensureSheetFileState(
   return false
 }
 
+function recordMetadataScanFailure(
+  state: LazyWorkbookState,
+  sheetId: string,
+  result: WorkbookRangeResult,
+): void {
+  const failures = state.metadataScanFailedSheets
+  if (
+    result.metadataScanFailed &&
+    failures &&
+    !failures.has(sheetId) &&
+    !state.sheetProtections.has(sheetId)
+  ) {
+    failures.add(sheetId)
+    state.onMetadataScanFailed?.(sheetId)
+  }
+}
+
 /// Records protection and other sheet metadata as soon as the tail arrives.
 function captureSheetFileState(
   state: LazyWorkbookState,
@@ -6585,6 +6604,7 @@ function captureSheetFileState(
   if (!state.sheetProtections.has(sheetId)) {
     state.sheetProtections.set(sheetId, fileSheetProtection(result.sheetProtection))
   }
+  state.metadataScanFailedSheets?.delete(sheetId)
   if (!state.sheetPageBreaks.has(sheetId)) {
     state.sheetPageBreaks.set(sheetId, {
       rowBreaks: [...result.rowBreaks],

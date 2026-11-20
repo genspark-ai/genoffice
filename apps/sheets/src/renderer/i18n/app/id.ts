@@ -657,7 +657,9 @@ export const id = {
   appRecalcPartial:
     'Rumus dihitung ulang dari pengeditan Anda — {count} mempertahankan nilai cache (fungsi yang tidak ada di mesin cadangan).',
   appRecalcDone: 'Rumus dihitung ulang dari pengeditan Anda ({count} sel, mesin cadangan).',
-  appReadOnlyIndexing: 'Pratinjau hanya baca selama lembar diindeks.',
+  appReadOnlyIndexing: 'Pratinjau hanya baca selama perlindungan lembar diperiksa.',
+  appReadOnlyMetadataFailed:
+    'Perlindungan lembar tidak dapat diperiksa lebih awal. Pengeditan tersedia setelah pengindeksan selesai.',
   appIndexing: 'Mengindeks {name}: {rows} baris siap.',
   appStreamingRows: 'Memuat {name} secara streaming: {rows} baris tersedia.',
   appLoadRangeFailed: 'Tidak dapat memuat rentang yang terlihat.',

@@ -92,6 +92,8 @@ export interface LazyWorkbookState {
   /// conditional formatting / filters / validations were not yet available,
   /// so an already-loaded range must not satisfy the next load request.
   readonly decorationsPendingSheets: Set<string>
+  readonly metadataScanFailedSheets?: Set<string>
+  onMetadataScanFailed?(sheetId: string): void
   /// Refresh the view once a progressively opened sheet has its full file state.
   onProgressiveSheetReady?(sheetId: string): void
   readonly deferredSparklines?: Map<string, WorkbookFile['sheets'][number]['sparklines']>
