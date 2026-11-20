@@ -3807,10 +3807,6 @@ th[data-rev-fmt] {
   outline: none;
 }
 
-.page-hf-editor .doc-textbox-para {
-  min-height: 1.3em;
-}
-
 /* PAGE / NUMPAGES atoms show the live number (decoration attribute); a selected field takes the selection tint */
 .hf-field {
   border-radius: 2px;

@@ -638,6 +638,9 @@ export function insertHfInstrField(editor: Editor, instr: string, value: string)
 
 export const HF_COMMIT_EVENT = 'ai-docs-commit-tables'
 
+/** pause in typing after which an open strip commits what it holds (a re-pagination per pause) */
+export const HF_LIVE_COMMIT_MS = 250
+
 /** focus moving here keeps the header editor open (ribbon formatting acts on it, Word-style) */
 const KEEP_OPEN_SELECTOR = '.ribbon, [data-rb-panel], .modal, .modal-backdrop, .ctx-menu'
 
@@ -668,6 +671,7 @@ export function mountHfEditor(
 ): HfEditorHandle {
   const value =
     opts.blank && hfIsBlank(opts.value) ? { ...opts.value, paras: [opts.blank] } : opts.value
+  let scheduleLive = () => {}
   const editor: Editor = new Editor({
     element: host,
     extensions: hfSubExtensions,
@@ -699,7 +703,10 @@ export function mountHfEditor(
       },
     },
     onFocus: () => setActiveSubEditor(editor),
-    onTransaction: ({ transaction }) => notifySubEditorState(transaction.docChanged),
+    onTransaction: ({ transaction }) => {
+      notifySubEditorState(transaction.docChanged)
+      if (transaction.docChanged) scheduleLive()
+    },
   })
   editor.view.dispatch(
     editor.state.tr.setMeta(hfFieldNumbersKey, {
@@ -717,6 +724,19 @@ export function mountHfEditor(
     return JSON.stringify(doc) === initialSig ? null : hfValueFromDoc(doc, value, initialDoc)
   }
   let exited = false
+  // Word lays the page out again as the part grows: a pause in typing commits
+  // what is there, so the body moves below a taller header while it is open
+  let liveTimer: ReturnType<typeof setTimeout> | null = null
+  const commitLive = () => {
+    liveTimer = null
+    if (exited) return
+    const next = changed()
+    if (next) opts.onCommit(next)
+  }
+  scheduleLive = () => {
+    if (liveTimer) clearTimeout(liveTimer)
+    liveTimer = setTimeout(commitLive, HF_LIVE_COMMIT_MS)
+  }
   const onCommitEvent = () => {
     const next = changed()
     if (next) opts.onCommit(next)
@@ -739,6 +759,7 @@ export function mountHfEditor(
   const close = (commit: boolean) => {
     if (exited) return
     exited = true
+    if (liveTimer) clearTimeout(liveTimer)
     host.removeEventListener('focusout', onFocusOut)
     window.removeEventListener(HF_COMMIT_EVENT, onCommitEvent)
     const edited = changed()

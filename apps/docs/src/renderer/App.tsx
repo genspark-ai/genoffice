@@ -5209,7 +5209,9 @@ export function App() {
     let secWidthSig = ''
     let charSpaceSig = ''
     const colWidthPass = newWidthPassState()
-    const pmEl = () => document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
+    // the body editor: an open first-page header editor is an earlier .ProseMirror
+    const pmEl = () =>
+      document.querySelector('.editor-scroll .ProseMirror.doc-page') as HTMLElement | null
     const locate = () => {
       const pm = pmEl()
       if (!pm || slices.length === 0) return
@@ -7308,7 +7310,7 @@ export function App() {
   const documentStats = useCallback((): DocStats | null => {
     if (!editor) return null
     const text = documentTextForWordCount(editor.state.doc)
-    const pm = document.querySelector('.ProseMirror')
+    const pm = document.querySelector('.ProseMirror.doc-page')
     const zoomFactor = zoom / 100
     let lines = 0
     if (pm) {
@@ -8274,7 +8276,7 @@ export function App() {
     (anchor: string, tocTitle = '') => {
       let target: Element | null = null
       if (anchor === TOP_ANCHOR) {
-        document.querySelector('.ProseMirror')?.firstElementChild?.scrollIntoView({
+        document.querySelector('.ProseMirror.doc-page')?.firstElementChild?.scrollIntoView({
           behavior: 'smooth',
           block: 'start',
         })
@@ -9622,7 +9624,7 @@ export function App() {
   // selection / popup changes only restyle the margin layer: redraw it without a pagination pass
   useEffect(() => {
     if (!editor || !doc) return
-    const pm = document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
+    const pm = document.querySelector('.editor-scroll .ProseMirror.doc-page') as HTMLElement | null
     const wrap = pm?.closest('.page-wrap') as HTMLElement | null
     if (!pm || !wrap) return
     syncMarginAnnotations(

@@ -5,10 +5,12 @@
  * line whose right stop lies past the column reaches out to it while editing,
  * as the strip draws it and as Word sets it (probe 2026-11-20).
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Editor } from '@tiptap/core'
-import type { HeaderFooter, StyleInfo } from '@genoffice/docx-engine'
+import type { HeaderFooter, ParsedDocFull, StyleInfo } from '@genoffice/docx-engine'
+import { docStyleCss } from '../src/renderer/doc-style-css'
 import {
+  HF_LIVE_COMMIT_MS,
   hfStopReachCss,
   mountHfEditor,
   type HfEditorHandle,
@@ -133,5 +135,49 @@ describe('opening a blank part', () => {
       hfStopReachCss(JSON.stringify([{ pos: 50, val: 'right', rel: 'margin' }]), null),
     ).toBeNull()
     expect(hfStopReachCss(null, null)).toBeNull()
+  })
+})
+
+describe('typing into an open part', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('commits after a pause, so the page is laid out again while it is open', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const { handle, editor, commits } = mount({ text: '' })
+    editor.commands.insertContent('Line one')
+    vi.advanceTimersByTime(HF_LIVE_COMMIT_MS - 1)
+    expect(commits).toHaveLength(0)
+    editor.commands.insertContent(' and more')
+    vi.advanceTimersByTime(HF_LIVE_COMMIT_MS - 1)
+    // each keystroke restarts the pause
+    expect(commits).toHaveLength(0)
+    vi.advanceTimersByTime(1)
+    expect(commits).toHaveLength(1)
+    expect(commits[0].paras![0].runs).toEqual([{ text: 'Line one and more' }])
+    expect(editor.isDestroyed).toBe(false)
+    handle.exit()
+    expect(commits.at(-1)!.paras![0].runs).toEqual([{ text: 'Line one and more' }])
+  })
+
+  it('drops a pending commit when the part is discarded', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const { handle, editor, commits } = mount({ text: '' })
+    editor.commands.insertContent('Gone')
+    handle.discard()
+    vi.advanceTimersByTime(HF_LIVE_COMMIT_MS * 2)
+    expect(commits).toHaveLength(0)
+  })
+})
+
+describe("the first page's header and the last page's footer", () => {
+  it("take the document's face, not the app's UI font", () => {
+    ;(globalThis as { CSS?: unknown }).CSS ??= { escape: (x: string) => x }
+    const parsed = {
+      styles: new Map(),
+      docDefaults: { asciiFont: 'Aptos', sizeHalfPoints: 24 },
+      blocks: [],
+    } as unknown as ParsedDocFull
+    // they are .doc-page siblings: the body's font-family rule does not reach them
+    expect(docStyleCss(parsed)).toMatch(/\.page-wrap > \.page-hf \{ font-family:[^}]*Aptos/)
   })
 })
