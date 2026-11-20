@@ -1617,11 +1617,16 @@ function parseFormulaCellsRequest(input: unknown): WorkbookFormulaCellsRequest {
     !isRecord(input) ||
     !isUuid(input.sessionId) ||
     typeof input.sheetId !== 'string' ||
-    input.sheetId.length === 0
+    input.sheetId.length === 0 ||
+    (input.background !== undefined && typeof input.background !== 'boolean')
   ) {
     throw new Error('Invalid formula-cells request.')
   }
-  return { sessionId: input.sessionId, sheetId: input.sheetId }
+  return {
+    sessionId: input.sessionId,
+    sheetId: input.sheetId,
+    ...(input.background === true ? { background: true } : {}),
+  }
 }
 
 function parseSharedFormulaGroup(group: unknown): WorkbookSharedFormulaGroup {

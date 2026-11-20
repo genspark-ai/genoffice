@@ -47,6 +47,8 @@ pub enum Command {
         rows: Option<Vec<usize>>,
         #[serde(default)]
         mode: RangeReadMode,
+        #[serde(default)]
+        foreground: bool,
     },
     Close {
         #[serde(rename = "sessionId")]
@@ -63,6 +65,8 @@ pub enum Command {
         session_id: String,
         #[serde(rename = "sheetId")]
         sheet_id: String,
+        #[serde(default)]
+        background: bool,
     },
     FindCells(FindCellsRequest),
     FilterRows(FilterRequest),
@@ -71,6 +75,8 @@ pub enum Command {
         session_id: String,
         #[serde(rename = "sheetId")]
         sheet_id: String,
+        #[serde(default)]
+        background: bool,
     },
     Cancel {
         #[serde(rename = "targetRequestId")]
@@ -573,8 +579,16 @@ pub fn handle_request(
             range,
             rows,
             mode,
+            foreground,
         } => sessions
-            .read_range_with_mode(&session_id, &sheet_id, &range, mode, rows.as_deref())
+            .read_range_with_mode(
+                &session_id,
+                &sheet_id,
+                &range,
+                mode,
+                rows.as_deref(),
+                foreground,
+            )
             .and_then(to_json_value),
         Command::Close { session_id } => {
             // A resident recalc model can dwarf the session itself (an
@@ -596,8 +610,9 @@ pub fn handle_request(
         Command::ReadFormulaCells {
             session_id,
             sheet_id,
+            background,
         } => sessions
-            .read_formula_cells(&session_id, &sheet_id)
+            .read_formula_cells(&session_id, &sheet_id, background)
             .and_then(to_json_value),
         Command::FilterRows(request) => sessions
             .filter_rows(request, &in_flight.flag())
@@ -608,8 +623,9 @@ pub fn handle_request(
         Command::ReadRowOutline {
             session_id,
             sheet_id,
+            background,
         } => sessions
-            .read_row_outline(&session_id, &sheet_id)
+            .read_row_outline(&session_id, &sheet_id, background)
             .and_then(to_json_value),
         // Normally intercepted out of band by the reader thread; through this
         // path (tests) it still marks the target for the skip check above.

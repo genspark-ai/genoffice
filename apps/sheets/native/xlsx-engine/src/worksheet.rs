@@ -23,6 +23,7 @@ pub(crate) fn index_worksheet(
     progressive: bool,
     state: &Arc<(Mutex<SheetIndex>, Condvar)>,
     cancelled: &AtomicBool,
+    on_formula: &mut dyn FnMut(&str),
 ) -> Result<(), SidecarError> {
     let mut archive = ZipArchive::new(File::open(workbook_path)?)?;
     let hyperlinks = visuals::hyperlink_targets(&mut archive, worksheet_path)?;
@@ -41,6 +42,7 @@ pub(crate) fn index_worksheet(
         hyperlinks,
         state,
         cancelled,
+        on_formula,
     )?;
     publish_sheet_metadata(
         &mut archive,
@@ -77,6 +79,7 @@ pub(crate) fn read_worksheet_metadata(
         hyperlinks,
         state,
         cancelled,
+        &mut |_| {},
     )?;
     publish_sheet_metadata(
         &mut archive,
@@ -133,6 +136,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
     link_targets: HashMap<String, String>,
     state: &Arc<(Mutex<SheetIndex>, Condvar)>,
     cancelled: &AtomicBool,
+    on_formula: &mut dyn FnMut(&str),
 ) -> Result<Option<(SheetDecorations, Option<String>)>, SidecarError> {
     let mut buffer = Vec::new();
     let mut cell_builder: Option<CellBuilder> = None;
@@ -498,7 +502,9 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                     if let Some(cell) =
                         builder.finish(shared_strings, styled_xfs, rich_image_cells)?
                     {
-                        if cell.formula.is_some() && !shared_follower {
+                        if let Some(formula) = cell.formula.as_deref().filter(|_| !shared_follower)
+                        {
+                            on_formula(formula);
                             pending_formulas.push(cell.clone());
                         }
                         chunk.cells.push(cell);

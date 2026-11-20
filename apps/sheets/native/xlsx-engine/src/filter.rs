@@ -429,7 +429,7 @@ impl WorkbookSession {
         if let Some(projection) = self.filter_columns.get(key) {
             return Ok(projection);
         }
-        let (lock, _) = &*self.runtimes[sheet].state;
+        let (lock, _) = &*self.runtimes[sheet];
         let index = lock
             .lock()
             .map_err(|_| SidecarError::Io("Worksheet index lock was poisoned.".into()))?;
@@ -497,7 +497,7 @@ impl WorkbookSession {
     ) -> Result<FilterResult, SidecarError> {
         let bounds = file_bounds(&request.spans, self.sheets[sheet].row_count);
         if let Some((_, end)) = bounds {
-            let (lock, _) = &*self.runtimes[sheet].state;
+            let (lock, _) = &*self.runtimes[sheet];
             let index = lock
                 .lock()
                 .map_err(|_| SidecarError::Io("Worksheet index lock was poisoned.".into()))?;
@@ -726,6 +726,7 @@ mod tests {
                 },
                 RangeReadMode::Viewport,
                 Some(&matches),
+                false,
             )
             .unwrap();
         assert_eq!(
