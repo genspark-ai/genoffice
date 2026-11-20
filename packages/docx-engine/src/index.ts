@@ -183,6 +183,7 @@ export {
   BLANK_BULLET_NUM_ID,
   BLANK_ORDERED_NUM_ID,
   BLANK_STYLES_BY_NAME,
+  BLANK_STYLE_ON_TOGGLES_BY_ID,
   buildBlankDocx,
   customLevelFromNumberingLevel,
   customLevelXml,
@@ -192,6 +193,7 @@ export {
   paperSizeForRegion,
   type BlankDocxOptions,
   type BlankPaperSize,
+  type BlankStyleToggles,
   type CustomNumberingLevel,
 } from './blank'
 export {

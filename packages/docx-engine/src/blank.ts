@@ -164,6 +164,77 @@ export const BLANK_STYLES_BY_NAME: ReadonlyMap<
   }),
 )
 
+/** the boolean toggles the template's own rPr / pPr can carry, per layer */
+const BLANK_RUN_TOGGLES = [
+  'w:b',
+  'w:bCs',
+  'w:i',
+  'w:iCs',
+  'w:strike',
+  'w:caps',
+  'w:smallCaps',
+  'w:vanish',
+] as const
+const BLANK_PARAGRAPH_TOGGLES = [
+  'w:keepNext',
+  'w:keepLines',
+  'w:widowControl',
+  'w:contextualSpacing',
+] as const
+
+/** is the tag present in this XML fragment switched on (no explicit off)? */
+const blankToggleOn = (xml: string, tag: string): boolean => {
+  const m = new RegExp(`<${tag.replace(':', '\\:')}((?:\\s[^>]*)?)/>`).exec(xml)
+  if (!m) return false
+  return !/w:val="(?:0|false|off)"/.test(m[1] ?? '')
+}
+
+export interface BlankStyleToggles {
+  /** rPr toggles the template chain turns ON (w:b, w:i, …) */
+  run: readonly string[]
+  /** pPr toggles the template chain turns ON (w:keepNext, w:contextualSpacing, …) */
+  paragraph: readonly string[]
+}
+
+/** styleId -> the toggles the template style chain turns ON. A legacy document
+    whose style maps onto a template style inherits these silently once it
+    carries the template's w:styleId — so a property its own chain leaves
+    silent must be stated explicitly off instead (a plain-heading document
+    mapped onto the bold template headings would otherwise come out bold). */
+export const BLANK_STYLE_ON_TOGGLES_BY_ID: ReadonlyMap<string, BlankStyleToggles> = (() => {
+  const own = new Map<string, { basedOn?: string; run: string[]; paragraph: string[] }>()
+  for (const m of stylesXml().matchAll(
+    /<w:style [^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g,
+  )) {
+    const id = m[1]!
+    const body = m[2] ?? ''
+    const rPr = /<w:rPr>([\s\S]*?)<\/w:rPr>/.exec(body)?.[1] ?? ''
+    const pPr = /<w:pPr>([\s\S]*?)<\/w:pPr>/.exec(body)?.[1] ?? ''
+    own.set(id, {
+      basedOn: /<w:basedOn w:val="([^"]+)"/.exec(body)?.[1],
+      run: BLANK_RUN_TOGGLES.filter((tag) => blankToggleOn(rPr, tag)),
+      paragraph: BLANK_PARAGRAPH_TOGGLES.filter((tag) => blankToggleOn(pPr, tag)),
+    })
+  }
+  const folded = new Map<string, BlankStyleToggles>()
+  const fold = (id: string, seen = new Set<string>()): BlankStyleToggles => {
+    const cached = folded.get(id)
+    if (cached) return cached
+    const def = own.get(id)
+    if (!def || seen.has(id)) return { run: [], paragraph: [] }
+    seen.add(id)
+    const base = def.basedOn ? fold(def.basedOn, seen) : { run: [], paragraph: [] }
+    const toggles: BlankStyleToggles = {
+      run: [...new Set([...base.run, ...def.run])],
+      paragraph: [...new Set([...base.paragraph, ...def.paragraph])],
+    }
+    folded.set(id, toggles)
+    return toggles
+  }
+  for (const id of own.keys()) fold(id)
+  return folded
+})()
+
 function bulletLevels(): string {
   let xml = ''
   for (let ilvl = 0; ilvl < 5; ilvl++) {

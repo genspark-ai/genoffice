@@ -157,6 +157,10 @@ export interface ParagraphFormatting {
   /** sprmPFKeepFollow: keep with next */
   keepNext?: boolean
   pageBreakBefore?: boolean
+  /** no legacy sprm sets it: the resolver stamps it false when a mapped
+      template style turns spacing collapse on and the chain is silent, so the
+      explicit off in the written pPr beats the template's on */
+  contextualSpacing?: boolean
   indentLeftTwips?: number
   indentRightTwips?: number
   indentFirstLineTwips?: number

@@ -116,10 +116,11 @@ const UNDERLINE_KINDS = new Set([
 ])
 
 /**
- * Map one stage-2 run to a docx-engine Run. Explicit "off" toggles are dropped
- * because the blank template's defaults are already off and docx-engine writes
- * w:b/w:i/w:u only when the value is true (styles that might turn them back on
- * arrive in stage 3b).
+ * Map one stage-2 run to a docx-engine Run. Bold/italic/strike keep an explicit
+ * "off": a paragraph riding a template style that turns the toggle on (the
+ * headings are bold) must be able to state its own off, or the template's on
+ * leaks in. Underline still maps only the underlined kinds — "none" is the
+ * absence the template also has.
  */
 export function toDocxRun(run: FormattedRun): Run {
   const formatting = run.formatting
@@ -127,10 +128,10 @@ export function toDocxRun(run: FormattedRun): Run {
   // the run's character style (w:rStyle) — the resolver stamped the id only
   // when the style exists and is not the null "Default Paragraph Font"
   if (formatting.styleId) out.styleId = formatting.styleId
-  if (formatting.bold) out.bold = true
-  if (formatting.italic) out.italic = true
+  if (formatting.bold !== undefined) out.bold = formatting.bold
+  if (formatting.italic !== undefined) out.italic = formatting.italic
   if (formatting.rtl) out.rtl = true
-  if (formatting.strike) out.strike = true
+  if (formatting.strike !== undefined) out.strike = formatting.strike
   if (formatting.underline !== undefined && UNDERLINE_KINDS.has(formatting.underline))
     out.underline = true
   if (formatting.fontSizeHalfPoints !== undefined)
@@ -151,9 +152,10 @@ export function toDocxRun(run: FormattedRun): Run {
     if (color !== undefined) out.color = color
   }
   if (formatting.colorRgb !== undefined) out.color = formatting.colorRgb
-  if (formatting.hidden) out.vanishOwn = true
-  if (formatting.caps) out.caps = 'all'
-  else if (formatting.smallCaps) out.caps = 'small'
+  if (formatting.hidden !== undefined) out.vanishOwn = formatting.hidden
+  if (formatting.caps === true) out.caps = 'all'
+  else if (formatting.smallCaps === true) out.caps = 'small'
+  else if (formatting.caps === false || formatting.smallCaps === false) out.caps = 'none'
   const fonts = formatting.fontNames
   if (fonts) {
     const primary = fonts.eastAsia ?? fonts.ascii
@@ -351,13 +353,15 @@ export function toParaFormat(formatting: ParagraphFormatting): ParaFormat | unde
     out.indentFirstLine = formatting.indentFirstLineTwips
   if (formatting.spacingBeforeTwips !== undefined) out.spaceBefore = formatting.spacingBeforeTwips
   if (formatting.spacingAfterTwips !== undefined) out.spaceAfter = formatting.spacingAfterTwips
-  if (formatting.keepNext) out.keepNext = true
-  if (formatting.keepLines) out.keepLines = true
+  if (formatting.keepNext !== undefined) out.keepNext = formatting.keepNext
+  if (formatting.keepLines !== undefined) out.keepLines = formatting.keepLines
+  if (formatting.contextualSpacing !== undefined)
+    out.contextualSpacing = formatting.contextualSpacing
   if (formatting.shading) {
     const fill = shadingFillOf(formatting.shading)
     if (fill !== undefined) out.shadingFill = fill
   }
-  if (formatting.pageBreakBefore) out.pageBreakBefore = true
+  if (formatting.pageBreakBefore !== undefined) out.pageBreakBefore = formatting.pageBreakBefore
   if (formatting.lineSpacing !== undefined) {
     if (formatting.lineSpacing.multiple) {
       // Word's single line spacing is 240 twips, so dyaLine/240 is the multiplier

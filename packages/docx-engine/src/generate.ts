@@ -3639,14 +3639,23 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
     })
   }
   // the Cs twins carry the same flag for complex-script text; without them clicking Bold
-  // on Arabic or Hebrew changes nothing on screen, which is what Word writes too
-  if (run.bold) {
-    out.push({ name: 'w:b', xml: '<w:b/>' }, { name: 'w:bCs', xml: '<w:bCs/>' })
+  // on Arabic or Hebrew changes nothing on screen, which is what Word writes too.
+  // Explicit false is written as val="0": a run whose paragraph rides a style
+  // that turns the toggle on must be able to state its own off.
+  if (run.bold !== undefined) {
+    out.push(
+      { name: 'w:b', xml: run.bold ? '<w:b/>' : '<w:b w:val="0"/>' },
+      { name: 'w:bCs', xml: run.bold ? '<w:bCs/>' : '<w:bCs w:val="0"/>' },
+    )
   }
-  if (run.italic) {
-    out.push({ name: 'w:i', xml: '<w:i/>' }, { name: 'w:iCs', xml: '<w:iCs/>' })
+  if (run.italic !== undefined) {
+    out.push(
+      { name: 'w:i', xml: run.italic ? '<w:i/>' : '<w:i w:val="0"/>' },
+      { name: 'w:iCs', xml: run.italic ? '<w:iCs/>' : '<w:iCs w:val="0"/>' },
+    )
   }
-  if (run.strike) out.push({ name: 'w:strike', xml: '<w:strike/>' })
+  if (run.strike !== undefined)
+    out.push({ name: 'w:strike', xml: run.strike ? '<w:strike/>' : '<w:strike w:val="0"/>' })
   if (run.caps === 'all') out.push({ name: 'w:caps', xml: '<w:caps/>' })
   else if (run.caps === 'small') out.push({ name: 'w:smallCaps', xml: '<w:smallCaps/>' })
   else if (run.caps === 'none') {

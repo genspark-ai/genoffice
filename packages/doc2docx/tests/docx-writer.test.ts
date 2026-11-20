@@ -116,9 +116,11 @@ describe('toDocxRun mapping', () => {
     expect(toDocxRun({ text: 'x', formatting: { highlight: 17 } }).highlight).toBeUndefined()
   })
 
-  it('drops explicit "off" formatting instead of inventing w:val="0" (blank template default is off)', () => {
+  it('keeps an explicit "off" toggle as val="0" (a template-mapped style may turn the toggle on)', () => {
     expect(toDocxRun({ text: 'x', formatting: { bold: false, italic: false } })).toEqual({
       text: 'x',
+      bold: false,
+      italic: false,
     })
   })
 })
