@@ -274,6 +274,7 @@ export async function loadRowOutlines(
 ): Promise<void> {
   const sheets = state.file.sheets.filter((sheet) => (sheet.outlineLevelRow ?? 0) > 0)
   if (sheets.length === 0) return
+  const progressive = state.file.sheets.some((sheet) => sheet.progressive)
   const deadline = Date.now() + 180_000
   for (const sheet of sheets) {
     for (;;) {
@@ -283,6 +284,7 @@ export async function loadRowOutlines(
         result = await window.desktopApi.readWorkbookRowOutline({
           sessionId: state.file.sessionId,
           sheetId: sheet.id,
+          ...(progressive ? { background: true } : {}),
         })
       } catch {
         return

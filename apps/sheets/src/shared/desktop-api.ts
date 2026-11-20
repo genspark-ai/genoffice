@@ -914,6 +914,7 @@ export const workbookRangeRequestSchema = z
     // Interactive reads never wait in the sidecar command queue. Status
     // requests return only progress when the visible cells are already loaded.
     mode: z.enum(['viewport', 'status']).optional(),
+    foreground: z.boolean().optional(),
     rows: z.array(z.number().int().nonnegative()).min(1).max(512).optional(),
     range: z
       .object({
@@ -1255,6 +1256,9 @@ export const workbookFormulaCellsRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
     sheetId: z.string().min(1),
+    // A workbook-wide background scan observes the index without starting
+    // or accelerating a sheet the user has not visited.
+    background: z.boolean().optional(),
   })
   .strict()
 

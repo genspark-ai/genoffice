@@ -1775,7 +1775,8 @@ export async function activateFormulaClosure(
 
   const inputs: ClosureSheetInput[] = []
   let indexedCount = 0
-  const activeSheetId = state.file.sheets.some((sheet) => sheet.progressive)
+  const progressive = state.file.sheets.some((sheet) => sheet.progressive)
+  const activeSheetId = progressive
     ? runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId()
     : undefined
   const active = state.file.sheets.find((sheet) => sheet.id === activeSheetId)
@@ -1791,6 +1792,7 @@ export async function activateFormulaClosure(
         result = await window.desktopApi.readWorkbookFormulas({
           sessionId: state.file.sessionId,
           sheetId: sheet.id,
+          ...(progressive ? { background: true } : {}),
         })
       } catch {
         return giveUp()
@@ -2244,9 +2246,10 @@ export async function readSheetRangeMapped(
   screenRange: IRange,
   sheet: WorkbookFile['sheets'][number],
   mode?: WorkbookRangeRequest['mode'],
+  foreground = false,
 ): Promise<MappedRangeRead | null> {
   try {
-    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet, mode)
+    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet, mode, foreground)
   } catch (error: unknown) {
     // Every range read in the app funnels through here, so this is the one
     // place a crashed sidecar can be noticed. The gate is the main process's
@@ -2255,7 +2258,7 @@ export async function readSheetRangeMapped(
     // session." and is NOT a crash, so it must surface as an ordinary error
     // instead of re-opening the file and orphaning a session.
     if (!sidecarCrashNotified || !(await recoverSidecarSession(state))) throw error
-    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet, mode)
+    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet, mode, foreground)
   }
 }
 
@@ -2264,7 +2267,8 @@ async function readSheetRangeMappedOnce(
   sheetId: string,
   screenRange: IRange,
   sheet: WorkbookFile['sheets'][number],
-  mode?: WorkbookRangeRequest['mode'],
+  mode: WorkbookRangeRequest['mode'],
+  foreground: boolean,
 ): Promise<MappedRangeRead | null> {
   const ops = state.editJournal.structuralOps.get(sheetId) ?? []
   const fileSheetId = lazyFileSheetId(state, sheetId)
@@ -2286,6 +2290,7 @@ async function readSheetRangeMappedOnce(
         sessionId: state.file.sessionId,
         sheetId: fileSheetId,
         ...(mode ? { mode } : {}),
+        ...(foreground && startRow === screenRange.startRow ? { foreground: true } : {}),
         range: { ...screenRange, startRow, endRow },
       })
       cells.push(...batch.cells)
@@ -2304,6 +2309,7 @@ async function readSheetRangeMappedOnce(
         sessionId: state.file.sessionId,
         sheetId: fileSheetId,
         ...(mode ? { mode } : {}),
+        ...(foreground ? { foreground: true } : {}),
         range: screenRange,
       })
     }
@@ -2341,6 +2347,7 @@ async function readSheetRangeMappedOnce(
       sessionId: state.file.sessionId,
       sheetId: fileSheetId,
       ...(mode ? { mode } : {}),
+      ...(foreground && startRow === fileRange.startRow ? { foreground: true } : {}),
       range: { ...fileRange, startRow, endRow },
     })
     cells.push(...batch.cells)
@@ -3533,6 +3540,8 @@ async function loadRange(
   try {
     const sheetMeta = lazySheetMeta(state, sheetId)
     if (!sheetMeta) return
+    const foreground =
+      isActiveSheet(runtime, sheetId) && state.file.sheets.some((sheet) => sheet.progressive)
     const isCurrent = () =>
       lazyWorkbookRef.current === state && state.loadingKeys.get(sheetId) === requestKey
     const scheduleViewportRetry = (delay: number): void => {
@@ -3556,7 +3565,14 @@ async function loadRange(
         startColumn: range.startColumn,
         endColumn: range.startColumn,
       }
-      const status = await readSheetRangeMapped(state, sheetId, anchor, sheetMeta, 'status')
+      const status = await readSheetRangeMapped(
+        state,
+        sheetId,
+        anchor,
+        sheetMeta,
+        'status',
+        foreground,
+      )
       if (!isCurrent()) return
       if (status) recordMetadataScanFailure(state, sheetId, status.raw)
       if (
@@ -3574,6 +3590,7 @@ async function loadRange(
       range,
       sheetMeta,
       waitForRequestedRange ? undefined : 'viewport',
+      foreground && isActiveSheet(runtime, sheetId),
     )
     if (!isCurrent()) return
     if (mapped) recordMetadataScanFailure(state, sheetId, mapped.raw)
