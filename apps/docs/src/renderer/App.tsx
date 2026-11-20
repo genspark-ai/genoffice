@@ -746,7 +746,9 @@ import {
 } from './components/comments-mode'
 import { StylesPane } from './components/StylesPane'
 import { useStoredFlag } from './stored-flag'
-import { Ruler } from './components/Ruler'
+import { Ruler, rulerDims } from './components/Ruler'
+import { RulerBar, rulerBarHeight } from './components/RulerBar'
+import { VerticalRuler } from './components/VerticalRuler'
 import { docBodyFont, docHasCjk, docLineFactor, docStyleCss, docThemeCss } from './doc-style-css'
 import { fontAliasAnswers, onFontAliasesChanged } from './system-fonts'
 import { isDocDirty, runGuardedCandidate, runGuardedDocumentAction } from './doc-dirty'
@@ -10045,6 +10047,8 @@ export function App() {
     rulerBase && rulerSwap
       ? { ...rulerBase, marginLeft: rulerBase.marginRight, marginRight: rulerBase.marginLeft }
       : rulerBase
+  /** View ▸ Ruler: fixed bars around the document view (none in Multiple Pages) */
+  const rulersShown = Boolean(doc && showRuler && rulerSection && !multipage)
   const docZoomStyle = {
     zoom: zoom / 100,
     '--page-w': canvasBox ? `${paperW}px` : undefined,
@@ -10322,7 +10326,46 @@ export function App() {
               />
             )}
             {doc && <PasteOptionsChip editor={editor} />}
-            <div className="editor-area">
+            <div className={rulersShown ? 'editor-area with-rulers' : 'editor-area'}>
+              {rulersShown && rulerSection && (
+                <RulerBar
+                  editor={editor}
+                  zoom={zoom / 100}
+                  pageWidthPx={(rulerDims(rulerSection).pageWidth / 1440) * 96}
+                >
+                  <Ruler
+                    section={rulerSection}
+                    editor={editor}
+                    onTabStopsChange={(stops) => {
+                      if (!editor) return
+                      setParaAttrs(editor, { tabStops: stops ? JSON.stringify(stops) : null })
+                    }}
+                    onIndentsChange={(attrs) => {
+                      if (editor) setParaAttrs(editor, { ...attrs })
+                    }}
+                    onMarginsChange={({ left, right }) => {
+                      const sec = sections[activeSection]?.settings ?? section
+                      ribbonActions.onSection({
+                        ...sec,
+                        marginLeft: rulerSwap ? right : left,
+                        marginRight: rulerSwap ? left : right,
+                      })
+                    }}
+                  />
+                </RulerBar>
+              )}
+              {rulersShown && rulerSection && (
+                <VerticalRuler
+                  section={rulerSection}
+                  editor={editor}
+                  zoom={zoom / 100}
+                  top={rulerBarHeight(zoom / 100)}
+                  onMarginsChange={({ top, bottom }) => {
+                    const sec = sections[activeSection]?.settings ?? section
+                    ribbonActions.onSection({ ...sec, marginTop: top, marginBottom: bottom })
+                  }}
+                />
+              )}
               <main
                 className={`editor-scroll${imageDragOver ? ' image-drop-target' : ''}${doc ? '' : ' start-screen-host'}`}
                 ref={scrollContainerRef}
@@ -10383,27 +10426,6 @@ export function App() {
                           : undefined
                       }
                     >
-                      {showRuler && rulerSection && !multipage && (
-                        <Ruler
-                          section={rulerSection}
-                          editor={editor}
-                          onTabStopsChange={(stops) => {
-                            if (!editor) return
-                            setParaAttrs(editor, { tabStops: stops ? JSON.stringify(stops) : null })
-                          }}
-                          onIndentsChange={(attrs) => {
-                            if (editor) setParaAttrs(editor, { ...attrs })
-                          }}
-                          onMarginsChange={({ left, right }) => {
-                            const sec = sections[activeSection]?.settings ?? section
-                            ribbonActions.onSection({
-                              ...sec,
-                              marginLeft: rulerSwap ? right : left,
-                              marginRight: rulerSwap ? left : right,
-                            })
-                          }}
-                        />
-                      )}
                       <div
                         className={`${mixedPaper ? 'page-wrap paper-mixed' : 'page-wrap'}${hfEditing ? ' hf-editing' : ''}`}
                         style={
