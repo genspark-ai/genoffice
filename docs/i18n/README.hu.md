@@ -275,6 +275,26 @@ az elrendezés átkerülnek. Hogy az egyes formátumoknál mi marad meg és mi v
 - **Szkriptelhető.** Egy `genoffice` parancssori eszköz, egy ügynök-képesség és egy MCP-kiszolgáló a Claude Code, a Claude Desktop, a Codex, a Cursor és más ügynökök szolgálatába állít minden motort – ez is helyben, a gépeden.
 - **Ingyenes**, magánszemélyeknek és csapatoknak egyaránt.
 
+## Futtatás böngészőben
+
+Az asztali alkalmazás HTTP-n is kiszolgálhatja magát: indítsd el a
+`genoffice --web-server` kapcsolóval, és nyisd meg a `http://127.0.0.1:8931/`
+címet egy böngészőfülön. A hat szerkesztő ugyanazok a bundle-ök, amelyeket az
+asztali ablak betölt, és ugyanazokkal a motorokkal beszélnek WebSocketen
+keresztül — a kezdőképernyőről nyithatsz és menthetsz fájlokat, és minden
+ugyanazokon a feldolgozási láncokon jelenik meg.
+
+- A szolgáltatás mindig megköveteli a hozzáférési tokenjét: induláskor egy
+  `?token=…` URL-t ír ki, amely cookie-t ad a böngészőnek — ezt az URL-t oszd
+  meg, ne a csupasz portot. A `--web-port` és a `--web-host` áthelyezi (LAN
+  esetén kösd a `0.0.0.0`-ra, és a kinyomtatott címet nyisd meg a másik
+  eszközről); a `--web-token` általad választott tokent rögzít.
+- Egy kicsi, fejnélküli API csomagolja a CLI-t szkriptekhez:
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
+  a `POST /api/info` a dokumentum szerkezeti összefoglalóját adja vissza.
+- A helyi fájlok húzással történő megnyitása és a natív nyomtatás továbbra is
+  csak asztalon érhető el.
+
 ## AI-háttérrendszerek
 
 **Jelentkezz be a Gensparkkal**, és nincs mit beállítani: a modellhívások a Genspark-proxyn keresztül mennek (Claude, GPT és Gemini modellcsaládok), az ügynökök pedig webes és képkeresést, képgenerálást, valamint kép-, hang- és videóelemzést kapnak.

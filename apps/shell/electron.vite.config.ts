@@ -8,7 +8,13 @@ export default defineConfig({
   // so externalizing them would break Node ESM resolution at runtime.
   main: {
     // node:sqlite is a Node 22+ builtin the bundler's builtin list may predate
-    build: { rollupOptions: { external: ['node:sqlite'] } },
+    // bufferutil/utf-8-validate are ws's optional native accelerators — not
+    // installed here, and a bundled stub for them crashes on the first frame;
+    // external keeps the require, whose failure ws catches and falls back to
+    // its pure-JS path
+    build: {
+      rollupOptions: { external: ['node:sqlite', 'bufferutil', 'utf-8-validate'] },
+    },
   },
   preload: {
     build: {
