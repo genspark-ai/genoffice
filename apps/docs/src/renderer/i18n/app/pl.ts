@@ -266,6 +266,7 @@ export const pl = {
   appAcPasteFromOther: 'Wklejanie z innych programów:',
   appPrefsTitle: 'Preferencje',
   appPrefsUnitsLabel: 'Jednostki miary',
+  appPrefsParkingLabel: 'Opóźnione układanie zawartości poza ekranem (eksperymentalne)',
   appUnitInches: 'Cale',
   appUnitCentimeters: 'Centymetry',
   appUnitMillimeters: 'Milimetry',

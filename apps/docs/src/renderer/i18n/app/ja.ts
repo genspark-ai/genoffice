@@ -277,6 +277,7 @@ export const ja = {
   appAcPasteFromOther: '他のプログラムからの貼り付け:',
   appPrefsTitle: '環境設定',
   appPrefsUnitsLabel: '使用する単位',
+  appPrefsParkingLabel: '画面外のコンテンツを遅延レイアウト(実験的機能)',
   appUnitInches: 'インチ',
   appUnitCentimeters: 'センチメートル',
   appUnitMillimeters: 'ミリメートル',

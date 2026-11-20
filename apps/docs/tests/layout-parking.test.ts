@@ -9,6 +9,7 @@
  * update meta replaces the set wholesale.
  */
 import { Editor } from '@tiptap/core'
+import { TextSelection } from '@tiptap/pm/state'
 import { describe, expect, it } from 'vitest'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import * as mod from '../src/renderer/editor/layout-parking'
@@ -199,6 +200,40 @@ describe('the parking plugin through a real editor', () => {
     expect(el1.classList.contains('cv-parked')).toBe(true)
     setParking(editor, [])
     expect(el1.classList.contains('cv-parked')).toBe(false)
+  })
+
+  it('a selection-only transaction keeps the entries identity', () => {
+    const editor = makeEditor()
+    setParking(editor, [{ pos: 0, h: 50 }])
+    const before = parkingKey.getState(editor.state)!.entries
+    apply(editor, (tr) => tr.setSelection(TextSelection.create(tr.doc, 4)))
+    // the decoration set is cached per entries identity: a caret move must
+    // not force a rebuild
+    expect(parkingKey.getState(editor.state)!.entries).toBe(before)
+  })
+
+  it('typing away from every parked block keeps the entries identity', () => {
+    const editor = makeEditor()
+    setParking(editor, [{ pos: 0, h: 50 }])
+    const before = parkingKey.getState(editor.state)!.entries
+    apply(editor, (tr) => tr.insertText('x', tr.doc.content.size - 1))
+    expect(parkingKey.getState(editor.state)!.entries).toBe(before)
+  })
+
+  it('an edit that moves a parked position replaces the entries', () => {
+    const editor = makeEditor()
+    const positions: number[] = []
+    let pos = 0
+    for (let i = 0; i < 6; i++) {
+      positions.push(pos)
+      pos += editor.state.doc.child(i).nodeSize
+    }
+    setParking(editor, [{ pos: positions[2]!, h: 50 }])
+    const before = parkingKey.getState(editor.state)!.entries
+    // text into the first paragraph shifts every later block's position
+    apply(editor, (tr) => tr.insertText('x', 4))
+    expect(parkingKey.getState(editor.state)!.entries).not.toBe(before)
+    expect(parkingKey.getState(editor.state)!.entries[0]!.pos).toBe(positions[2]! + 1)
   })
 
   function apply(editor: Editor, fn: (tr: import('@tiptap/pm/state').Transaction) => void) {

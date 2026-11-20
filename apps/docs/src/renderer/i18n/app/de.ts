@@ -273,6 +273,7 @@ export const de = {
   appAcPasteFromOther: 'Einfügen aus anderen Programmen:',
   appPrefsTitle: 'Einstellungen',
   appPrefsUnitsLabel: 'Maßeinheit',
+  appPrefsParkingLabel: 'Inhalte außerhalb des Bildschirms verzögert layouten (experimentell)',
   appUnitInches: 'Zoll',
   appUnitCentimeters: 'Zentimeter',
   appUnitMillimeters: 'Millimeter',

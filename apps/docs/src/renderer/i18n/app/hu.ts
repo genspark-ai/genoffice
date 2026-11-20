@@ -264,6 +264,7 @@ export const hu = {
   appAcPasteFromOther: 'Beillesztés más programokból:',
   appPrefsTitle: 'Beállítások',
   appPrefsUnitsLabel: 'Mértékek megjelenítése:',
+  appPrefsParkingLabel: 'Képernyőn kívüli tartalom késleltetett elrendezése (kísérleti)',
   appUnitInches: 'Hüvelyk',
   appUnitCentimeters: 'Centiméter',
   appUnitMillimeters: 'Milliméter',

@@ -9,6 +9,10 @@ import { defineConfig } from '@playwright/test'
  */
 export default defineConfig({
   testDir: '.',
+  // e2e/local holds research probes that must never burn CI budget — they
+  // wedge the Electron CDP attach and run for many minutes per launch (see
+  // e2e/local/large-doc-parking.spec.ts for the local run command)
+  testIgnore: ['**/local/**'],
   outputDir: './test-results',
   timeout: 90_000,
   fullyParallel: false,

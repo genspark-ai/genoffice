@@ -265,6 +265,7 @@ export const zh = {
   appAcPasteFromOther: '从其他程序粘贴：',
   appPrefsTitle: '偏好设置',
   appPrefsUnitsLabel: '度量单位',
+  appPrefsParkingLabel: '屏幕外内容延迟排版(实验性)',
   appUnitInches: '英寸',
   appUnitCentimeters: '厘米',
   appUnitMillimeters: '毫米',

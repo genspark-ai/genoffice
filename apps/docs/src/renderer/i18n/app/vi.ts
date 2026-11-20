@@ -259,6 +259,7 @@ export const vi = {
   appAcPasteFromOther: 'Dán từ chương trình khác:',
   appPrefsTitle: 'Tùy chọn',
   appPrefsUnitsLabel: 'Đơn vị đo',
+  appPrefsParkingLabel: 'Bố cục nội dung ngoài màn hình theo cách trì hoãn (thử nghiệm)',
   appUnitInches: 'Inch',
   appUnitCentimeters: 'Xentimét',
   appUnitMillimeters: 'Milimét',

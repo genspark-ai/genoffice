@@ -261,6 +261,7 @@ export const cs = {
   appAcPasteFromOther: 'Vkládání z jiných programů:',
   appPrefsTitle: 'Předvolby',
   appPrefsUnitsLabel: 'Zobrazovat míry v jednotkách',
+  appPrefsParkingLabel: 'Obsah mimo obrazovku rozložit až později (experimentální)',
   appUnitInches: 'Palce',
   appUnitCentimeters: 'Centimetry',
   appUnitMillimeters: 'Milimetry',

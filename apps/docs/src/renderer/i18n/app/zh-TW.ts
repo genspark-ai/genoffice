@@ -249,6 +249,7 @@ export const zhTW = {
   appAcPasteFromOther: '從其他程式貼上：',
   appPrefsTitle: '偏好設定',
   appPrefsUnitsLabel: '度量單位',
+  appPrefsParkingLabel: '螢幕外內容延遲排版(實驗性)',
   appUnitInches: '英吋',
   appUnitCentimeters: '公分',
   appUnitMillimeters: '公釐',

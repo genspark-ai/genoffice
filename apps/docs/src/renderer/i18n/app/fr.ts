@@ -271,6 +271,7 @@ export const fr = {
   appAcPasteFromOther: 'Collage à partir d’autres programmes :',
   appPrefsTitle: 'Préférences',
   appPrefsUnitsLabel: 'Afficher les mesures en',
+  appPrefsParkingLabel: 'Mise en page différée du contenu hors écran (expérimental)',
   appUnitInches: 'Pouces',
   appUnitCentimeters: 'Centimètres',
   appUnitMillimeters: 'Millimètres',

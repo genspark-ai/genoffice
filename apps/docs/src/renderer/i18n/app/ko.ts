@@ -277,6 +277,7 @@ export const ko = {
   appAcPasteFromOther: '다른 프로그램에서 붙여넣기:',
   appPrefsTitle: '기본 설정',
   appPrefsUnitsLabel: '측정 단위',
+  appPrefsParkingLabel: '화면 밖 콘텐츠 지연 레이아웃(실험적 기능)',
   appUnitInches: '인치',
   appUnitCentimeters: '센티미터',
   appUnitMillimeters: '밀리미터',

@@ -253,6 +253,7 @@ export const he = {
   appAcPasteFromOther: 'הדבקה מתוכניות אחרות:',
   appPrefsTitle: 'העדפות',
   appPrefsUnitsLabel: 'הצג מידות ביחידות',
+  appPrefsParkingLabel: 'פריסת תוכן מחוץ למסך בדילוג (ניסיוני)',
   appUnitInches: "אינצ'ים",
   appUnitCentimeters: 'סנטימטרים',
   appUnitMillimeters: 'מילימטרים',

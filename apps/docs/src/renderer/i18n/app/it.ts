@@ -267,6 +267,7 @@ export const it = {
   appAcPasteFromOther: 'Incolla da altri programmi:',
   appPrefsTitle: 'Preferenze',
   appPrefsUnitsLabel: 'Mostra misure in',
+  appPrefsParkingLabel: 'Layout differito del contenuto fuori schermo (sperimentale)',
   appUnitInches: 'Pollici',
   appUnitCentimeters: 'Centimetri',
   appUnitMillimeters: 'Millimetri',

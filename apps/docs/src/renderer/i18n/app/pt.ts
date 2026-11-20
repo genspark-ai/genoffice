@@ -262,6 +262,7 @@ export const pt = {
   appAcPasteFromOther: 'Colar de outros programas:',
   appPrefsTitle: 'Preferências',
   appPrefsUnitsLabel: 'Mostrar medidas em',
+  appPrefsParkingLabel: 'Diagramar tardiamente o conteúdo fora da tela (experimental)',
   appUnitInches: 'Polegadas',
   appUnitCentimeters: 'Centímetros',
   appUnitMillimeters: 'Milímetros',

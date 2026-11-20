@@ -14,6 +14,11 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
  * reveals it (spec: skipped content stops being skipped when it is
  * on-screen, focused or selected).
  *
+ * Opt-in: this extension never parks on its own — entries arrive only via
+ * the parkingKey meta, and the App side dispatches that meta only when the
+ * user has enabled parking in Preferences (layout-parking-pref) and the
+ * sticky per-block cost gate (parkingArmDecided) has armed.
+ *
  * The parked state lives as ProseMirror **node decorations**, not as CSS
  * classes stamped from the outside: tiptap re-asserts its editor
  * attributes on every view flush and the measurement passes rebuild gap
@@ -22,13 +27,19 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
  * IPC boundary). Decorations are PM-managed state — they map across
  * transactions and are re-applied to whatever DOM PM renders.
  *
+ * Cost shape, honestly: entries are mapped across every transaction (O(n)
+ * position walks, n = parked blocks) and the decoration set is rebuilt
+ * whenever the document or the entry list changes (O(n) `nodeAt` lookups).
+ * Only selection-only transactions reuse the previous set. That is real
+ * work on the typing path — acceptable because n stays in the low
+ * thousands only for documents that opted in and measured expensive, and
+ * because it replaces the O(document) style recalc/layout/paint the
+ * prototype exists to remove.
+ *
  * The measurement pass must sample real layout, so parking rides under a
  * `parking-suppressed` class on the editor element for the pass (the CSS
  * forces `content-visibility: visible`); the caller toggles it around the
- * pass and dispatches a fresh parking decision at the pass end. The
- * prototype targets the continuous single-column print canvas at zoom 1:
- * columned canvases translate blocks per column and vertical text re-wraps
- * per line, so the caller keeps those off.
+ * pass and dispatches a fresh parking decision at the pass end.
  */
 
 export interface ParkEntry {
@@ -103,6 +114,33 @@ export const LayoutParkingExtension = Extension.create({
   name: 'layoutParking',
 
   addProseMirrorPlugins() {
+    // the decoration set, rebuilt only when the entries or the document
+    // actually change: selection-only transactions and scroll-driven view
+    // updates re-read the previous set instead of walking every entry again
+    let cached: {
+      entries: ParkEntry[]
+      doc: ProseMirrorNode
+      set: DecorationSet
+    } | null = null
+
+    const decorationsFor = (doc: ProseMirrorNode, entries: ParkEntry[]): DecorationSet => {
+      if (cached && cached.entries === entries && cached.doc === doc) return cached.set
+      const decos: Decoration[] = []
+      for (const entry of entries) {
+        const node = doc.nodeAt(entry.pos)
+        if (!node) continue
+        decos.push(
+          Decoration.node(entry.pos, entry.pos + node.nodeSize, {
+            class: 'cv-parked',
+            style: `--park-h:${Math.round(entry.h)}px`,
+          }),
+        )
+      }
+      const set = DecorationSet.create(doc, decos)
+      cached = { entries, doc, set }
+      return set
+    }
+
     return [
       new Plugin<ParkingState>({
         key: parkingKey,
@@ -115,10 +153,15 @@ export const LayoutParkingExtension = Extension.create({
             // map the parked positions across the transaction; an entry whose
             // position merged away is dropped and re-derives at the next pass
             const entries: ParkEntry[] = []
+            let moved = false
             for (const entry of prev.entries) {
               const pos = tr.mapping.map(entry.pos, -1)
+              if (pos !== entry.pos) moved = true
               if (pos >= 0 && pos <= tr.doc.content.size) entries.push({ pos, h: entry.h })
             }
+            // positions untouched (selection or decoration-only transactions):
+            // keep the previous array so the decoration cache stays valid
+            if (!moved && entries.length === prev.entries.length) return prev
             return { entries }
           },
         },
@@ -126,19 +169,7 @@ export const LayoutParkingExtension = Extension.create({
           decorations(state) {
             const { entries } = parkingKey.getState(state) ?? { entries: [] }
             if (entries.length === 0) return DecorationSet.empty
-            const doc: ProseMirrorNode = state.doc
-            const decos: Decoration[] = []
-            for (const entry of entries) {
-              const node = doc.nodeAt(entry.pos)
-              if (!node) continue
-              decos.push(
-                Decoration.node(entry.pos, entry.pos + node.nodeSize, {
-                  class: 'cv-parked',
-                  style: `--park-h:${Math.round(entry.h)}px`,
-                }),
-              )
-            }
-            return DecorationSet.create(doc, decos)
+            return decorationsFor(state.doc, entries)
           },
         },
         view(_view: EditorView) {

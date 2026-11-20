@@ -256,6 +256,7 @@ export const en = {
   appAcPasteFromOther: 'Pasting from other programs:',
   appPrefsTitle: 'Preferences',
   appPrefsUnitsLabel: 'Show measurements in units of',
+  appPrefsParkingLabel: 'Lay out offscreen content lazily (experimental)',
   appUnitInches: 'Inches',
   appUnitCentimeters: 'Centimeters',
   appUnitMillimeters: 'Millimeters',

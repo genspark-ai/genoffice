@@ -263,6 +263,7 @@ export const id = {
   appAcPasteFromOther: 'Menempel dari program lain:',
   appPrefsTitle: 'Preferensi',
   appPrefsUnitsLabel: 'Tampilkan pengukuran dalam satuan',
+  appPrefsParkingLabel: 'Tata letak konten di luar layar secara tertunda (eksperimental)',
   appUnitInches: 'Inci',
   appUnitCentimeters: 'Sentimeter',
   appUnitMillimeters: 'Milimeter',

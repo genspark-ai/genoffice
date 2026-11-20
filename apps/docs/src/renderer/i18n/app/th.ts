@@ -259,6 +259,7 @@ export const th = {
   appAcPasteFromOther: 'การวางจากโปรแกรมอื่น:',
   appPrefsTitle: 'การตั้งค่า',
   appPrefsUnitsLabel: 'แสดงหน่วยวัดเป็น',
+  appPrefsParkingLabel: 'จัดวางเนื้อหานอกหน้าจอแบบเลื่อนออกไปก่อน (ฟีเจอร์ทดลอง)',
   appUnitInches: 'นิ้ว',
   appUnitCentimeters: 'เซนติเมตร',
   appUnitMillimeters: 'มิลลิเมตร',

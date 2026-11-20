@@ -256,6 +256,7 @@ export const ar = {
   appAcPasteFromOther: 'اللصق من برامج أخرى:',
   appPrefsTitle: 'التفضيلات',
   appPrefsUnitsLabel: 'إظهار القياسات بوحدة',
+  appPrefsParkingLabel: 'تخطيط المحتوى خارج الشاشة مؤجلاً (تجريبي)',
   appUnitInches: 'بوصة',
   appUnitCentimeters: 'سنتيمتر',
   appUnitMillimeters: 'مليمتر',

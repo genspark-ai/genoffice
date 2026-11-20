@@ -175,6 +175,7 @@ import {
   parkDecisions,
   PARK_SUPPRESSED_CLASS,
 } from './editor/layout-parking'
+import { layoutParkingOptedIn, subscribeLayoutParkingPref } from './layout-parking-pref'
 import {
   comparePlanToBlocks,
   planByElement,
@@ -4257,21 +4258,46 @@ export function App() {
     // Chromium skips their subtrees — typing cost stops growing with the
     // document. The parked state rides PM node decorations (layout-parking
     // extension), so no amount of tiptap attribute re-assertion or gap-
-    // widget rebuilding wipes it. Columned canvases translate blocks per
-    // column and vertical text re-wraps per line, so parking is for the
-    // continuous single-column print canvas only. The e2e probe flips
-    // __layoutParkingOff to measure the difference.
+    // widget rebuilding wipes it.
+    //
+    // Parking is opt-in (layout-parking-pref): off until the user enables it
+    // in Preferences. The window globals are development overrides; an
+    // explicit flag wins over the preference in either direction
+    // (__layoutParkingOff forces off even when opted in, __layoutParkingOn
+    // forces on without touching the stored preference).
+    //
+    // Known limitations, accepted for the prototype:
+    // - the band equates BlockBox.top (pagination flow px) with scrollTop
+    //   (scroller px) only at zoom 1, and a constant canvas-padding offset
+    //   shifts both sides equally — so parking is suppressed at any other
+    //   zoom (the zoom state is this effect's `zoom` dependency).
+    // - columned canvases translate blocks per column and vertical text
+    //   re-wraps per line, so parking is for the continuous single-column
+    //   print canvas only.
+    // - find, comment balloons and AI anchors do not wake a parked block
+    //   they point into (skipped content reveals on scroll, focus and
+    //   selection — not on a programmatic anchor jump).
+    // - a selection spanning parked blocks measures against remembered
+    //   heights; only the caret path (typing into a parked block) is pinned.
+    // - each scroll frame re-decides the whole set (rAF-coalesced, over
+    //   remembered heights) and a doc-changing transaction rebuilds the
+    //   decoration set from every entry — see dispatchParking and the
+    //   layoutParking plugin.
     let parkingArmed = false
-    const parkingActive = () =>
-      parkingArmed &&
-      !(window as unknown as Record<string, unknown>).__layoutParkingOff &&
-      !hasVertical &&
-      colMode === 'none' &&
-      viewMode === 'print' &&
-      !readMode
-    // BlockBox.top is pagination flow px and scrollTop is scroller px: same
-    // family once zoom is 1 (a constant canvas-padding offset on both sides
-    // shifts the band equally, prototype-acceptable).
+    let parkingPrefOn = layoutParkingOptedIn()
+    const parkingActive = () => {
+      const dev = window as unknown as Record<string, unknown>
+      if (dev.__layoutParkingOff === true) return false
+      if (dev.__layoutParkingOn !== true && !parkingPrefOn) return false
+      return (
+        parkingArmed &&
+        zoom === 100 &&
+        !hasVertical &&
+        colMode === 'none' &&
+        viewMode === 'print' &&
+        !readMode
+      )
+    }
     const dispatchParking = () => {
       if (!editor) return
       const current = parkingKey.getState(editor.state)
@@ -4295,6 +4321,12 @@ export function App() {
         return
       editor.view.dispatch(editor.state.tr.setMeta(parkingKey, { entries }))
     }
+    // a mid-session preference flip re-decides immediately: opting in parks
+    // the offscreen set at the next dispatch, opting out reveals everything
+    const offParkingPref = subscribeLayoutParkingPref(() => {
+      parkingPrefOn = layoutParkingOptedIn()
+      dispatchParking()
+    })
     /** top-level child count at the last pass: a streaming pass whose only
      *  trigger is the appended tail (dirty ≥ this) may carry the prefix's
      *  line/row samples; any user edit below the frontier (dirty < this)
@@ -6032,6 +6064,7 @@ export function App() {
       if (hfTimer) window.clearTimeout(hfTimer)
       document.fonts.removeEventListener('loadingdone', onLoadingDone)
       offFontAliases()
+      offParkingPref()
       scroller.removeEventListener('scroll', locate)
       scroller.removeEventListener('scroll', reparkOnScroll)
       editor?.off('update', onDocUpdate)

@@ -267,6 +267,7 @@ export const es = {
   appAcPasteFromOther: 'Pegar desde otros programas:',
   appPrefsTitle: 'Preferencias',
   appPrefsUnitsLabel: 'Mostrar medidas en',
+  appPrefsParkingLabel: 'Maquetar con retraso el contenido fuera de la pantalla (experimental)',
   appUnitInches: 'Pulgadas',
   appUnitCentimeters: 'Centímetros',
   appUnitMillimeters: 'Milímetros',

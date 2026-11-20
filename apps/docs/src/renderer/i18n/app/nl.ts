@@ -271,6 +271,7 @@ export const nl = {
   appAcPasteFromOther: 'Plakken vanuit andere programma’s:',
   appPrefsTitle: 'Voorkeuren',
   appPrefsUnitsLabel: 'Maateenheid',
+  appPrefsParkingLabel: 'Inhoud buiten beeld pas later indelen (experimenteel)',
   appUnitInches: 'Inches',
   appUnitCentimeters: 'Centimeters',
   appUnitMillimeters: 'Millimeters',

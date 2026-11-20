@@ -7,25 +7,39 @@
  * only mechanism facts are asserted.
  *
  * A plain-text document of the same page count must NOT park (the wake-up
- * tax is a net loss there — ROUTE-B-RESEARCH.md section 6); that side is
- * covered by the gate unit tests (parkingArmDecided).
+ * tax is a net loss there); that side is covered by the gate unit tests
+ * (parkingArmDecided).
  *
- * Local only, not in CI:
- *   npx playwright test e2e/large-doc-parking.spec.ts
+ * Local only: this directory is in the main config's testIgnore, so the CI
+ * sweep never collects it — opening this document wedges Playwright's
+ * Electron CDP attach (electron.launch never resolves — observed locally
+ * and on CI runners alike, twice, each burning the full 15-minute budget),
+ * and two full launches exceed the CI test budget even where the launch
+ * succeeds. The mechanism's CI coverage lives in the gate unit tests.
+ *
+ * Run locally (build first: `npm run build:all`):
+ *   npx playwright test --config e2e/local/playwright.local.config.ts
+ *
+ * Parking is opt-in (Preferences ▸ layout parking, layout-parking-pref);
+ * the probe exercises the development override window.__layoutParkingOn so
+ * it measures the mechanism, not the settings UI. window.__layoutParkingOff
+ * forces parking back off for an A/B leg.
  */
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import JSZip from 'jszip'
 import { test, expect, type Page } from '@playwright/test'
-import { launchShell, waitForPageWithUrl } from './helpers'
+import { launchShell, waitForPageWithUrl } from '../helpers'
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 
 const p = (text: string) => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`
 const TABLES = 40
 const ROWS = 30
-/** paragraphs per table: intro + closing */
+/** blocks in the probe document: per table an intro and a closing paragraph
+ *  plus ROWS table rows (page.evaluate callbacks cannot see these Node
+ *  constants — indexes derived from them are inlined at the use sites) */
 const BLOCKS = TABLES * 2 + TABLES * ROWS
 const MID_BLOCK = Math.floor(BLOCKS / 2)
 
@@ -107,9 +121,12 @@ async function runOnce(parking: boolean, docPath: string): Promise<void> {
   try {
     const page = await waitForPageWithUrl(app, '://docs/')
     await page.locator('.doc-page p').first().waitFor({ timeout: 60_000 })
-    if (!parking)
+    // parking is opt-in and off by default: the probe rides the development
+    // override (set before the first pass ends, so the sticky gate arms with
+    // parking wanted); the off leg just never sets it
+    if (parking)
       await page.evaluate(
-        () => ((window as never as Record<string, unknown>).__layoutParkingOff = true),
+        () => ((window as never as Record<string, unknown>).__layoutParkingOn = true),
       )
     // the first passes run with nothing parked; parking engages at pass end
     await page.waitForFunction(
@@ -119,6 +136,13 @@ async function runOnce(parking: boolean, docPath: string): Promise<void> {
       },
       { timeout: 180_000 },
     )
+    if (parking)
+      // the flag may have landed after the pass that armed the gate: wait
+      // until a dispatch actually parked the offscreen set
+      await page.waitForFunction(
+        () => document.querySelectorAll('.ProseMirror .cv-parked').length > 0,
+        { timeout: 120_000 },
+      )
 
     const before = await page.evaluate(() => {
       const dbg = (window as never as Record<string, Record<string, unknown>>).__pageDebug
@@ -158,24 +182,29 @@ async function runOnce(parking: boolean, docPath: string): Promise<void> {
         remeasureMs: dbg?.remeasureMs as number,
       }
     })
-    // the typed text must be in the document (caret reveal worked)
+    // the typed text must be in the document (caret reveal worked); the
+    // mid paragraph index is MID_BLOCK (1280 blocks, floor(/2)) inlined —
+    // page callbacks cannot see Node constants
     const landed = await page.evaluate(() => {
-      const el = document.querySelectorAll('.doc-page p')[MID_BLOCK] as HTMLElement
+      const el = document.querySelectorAll('.doc-page p')[640] as HTMLElement
       return el.textContent ?? ''
     })
     expect(landed).toContain('quick brown fox')
 
-    // scroll into parked territory: content reveals on arrival
-    await page.evaluate(() => {
+    // scroll into parked territory: content reveals on arrival. The check
+    // reads the paragraph the scroll targeted (60 from the end, passed as an
+    // argument — page callbacks cannot see Node constants)
+    const farIdx = await page.evaluate(() => {
       const els = document.querySelectorAll('.doc-page p')
       const far = els[els.length - 60] as HTMLElement
       far.scrollIntoView()
+      return els.length - 60
     })
     await page.waitForTimeout(600)
-    const farVisible = await page.evaluate(() => {
-      const far = document.querySelectorAll('.doc-page p')[BLOCKS - 8] as HTMLElement
+    const farVisible = await page.evaluate((idx) => {
+      const far = document.querySelectorAll('.doc-page p')[idx] as HTMLElement
       return getComputedStyle(far).contentVisibility
-    })
+    }, farIdx)
     expect(farVisible).not.toBe('auto')
 
     console.log(
@@ -200,12 +229,9 @@ async function runOnce(parking: boolean, docPath: string): Promise<void> {
   }
 }
 
-// A research probe, not a CI pin: opening this document wedges Playwright's
-// Electron CDP attach (electron.launch never resolves — observed locally and
-// on CI runners alike, twice, each burning the full 15-minute budget), so the
-// probe cannot run reliably outside a developer's watchful eyes. The
-// mechanism's CI coverage lives in the gate unit tests (parkingArmDecided).
-test.skip(process.env.CI !== undefined, 'local-only probe: the launch wedges CDP attach in CI')
+// Not collected by the CI sweep (e2e/local is in the main config's
+// testIgnore): the reason lives in the file header — the launch wedges CDP
+// attach in CI and two full launches exceed the CI budget.
 
 test('large document: layout parking engages, reveals on caret and scroll', async () => {
   test.setTimeout(900_000)
@@ -214,8 +240,8 @@ test('large document: layout parking engages, reveals on caret and scroll', asyn
   writeFileSync(docPath, await bigDocx())
   try {
     // the parking-off leg prints the A/B numbers for the research note and
-    // carries no assertions — two full launches of this document exceed the
-    // CI test budget even where the launch succeeds
+    // carries no assertions — parking is off by default, so it simply never
+    // sets the development override
     if (!process.env.CI) await runOnce(false, docPath)
     await runOnce(true, docPath)
   } finally {
