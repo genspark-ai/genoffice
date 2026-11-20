@@ -1140,6 +1140,7 @@ const DECISION_ENDPOINTS: { value: DecisionEndpoint; label: string }[] = [
   { value: 'liquid-ultra', label: 'Liquid AI (d1-ultra)' },
   { value: 'openai', label: 'OpenAI (gpt-6-luna)' },
   { value: 'gemini', label: 'Google (gemini-decision-1)' },
+  { value: 'microsoft-decision', label: 'Microsoft (Decision 1.1 · OpenRouter)' },
   { value: 'cloudflare', label: 'Cloudflare (Clef)' },
   { value: 'cloudflare-flash', label: 'Cloudflare (Clef-flash)' },
   { value: 'kev', label: 'Kev (local)' },
@@ -1671,7 +1672,9 @@ function AiMediaPane({
               {keyRow(
                 'set-search-jev-key',
                 fileSearch.keys[fileSearch.endpoint],
-                fileSearch.endpoint === 'openrouter' ? 'sk-or-…' : 'API Key',
+                fileSearch.endpoint === 'openrouter' || fileSearch.endpoint === 'microsoft-decision'
+                  ? 'sk-or-…'
+                  : 'API Key',
                 (v) =>
                   setFileSearch({
                     ...fileSearch,

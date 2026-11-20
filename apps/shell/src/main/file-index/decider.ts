@@ -74,6 +74,10 @@ const ENDPOINTS: Record<Exclude<DecisionEndpoint, 'custom'>, EndpointSpec> = {
     url: 'https://generativelanguage.googleapis.com/v1beta/decisions',
     model: 'gemini-decision-1',
   },
+  'microsoft-decision': {
+    url: 'https://openrouter.ai/api/alpha/decisions',
+    model: 'microsoft/microsoft-decision-1.1',
+  },
   cloudflare: { url: '', model: '@cf/cloudflare/clef' },
   'cloudflare-flash': { url: '', model: '@cf/cloudflare/clef-flash' },
   kev: { url: KEV_URL, model: 'kev-latest', local: true },
@@ -158,7 +162,9 @@ const TIMEOUT_MS = 4000
 /** rounding slack on the returned distribution, not a semantic tolerance */
 const PROB_TOLERANCE = 0.02
 /** OpenRouter may resolve to a dated snapshot of the pinned version */
-const OPENROUTER_MODEL_PATTERN = /^typesafe\/jev-1\.13(?:-\d{8})?$/
+/** the OpenRouter-hosted routes echo a model we can pin; a dated snapshot suffix may ride along */
+const OPENROUTER_MODEL_PATTERN =
+  /^(?:typesafe\/jev-1\.13|microsoft\/microsoft-decision-1\.1)(?:-\d{8})?$/
 
 export interface JevDocument {
   title: string
@@ -271,15 +277,18 @@ export function prepare(
         { type: 'score', instructions: instructions(i), criteria: CRITERIA },
       ]),
     )
-    if (opts.endpoint === 'openrouter') {
-      // pin the route to TypeSafe: other providers cannot return score distributions
+    if (opts.endpoint === 'openrouter' || opts.endpoint === 'microsoft-decision') {
+      // pin the route to the endpoint's own provider: other providers cannot
+      // return score distributions, and both OpenRouter-hosted routes carry
+      // the same privacy guarantees (zdr, no training, no fallback)
       const provider = {
-        only: ['typesafe'],
+        only: [opts.endpoint === 'microsoft-decision' ? 'microsoft' : 'typesafe'],
         allow_fallbacks: false,
         zdr: true,
         data_collection: 'deny',
       }
-      return JSON.stringify({ model: ENDPOINTS.openrouter.model, state, questions, provider })
+      const model = ENDPOINTS[opts.endpoint as 'openrouter' | 'microsoft-decision'].model
+      return JSON.stringify({ model, state, questions, provider })
     }
     return JSON.stringify({ model: bodyModel(opts), state, questions })
   }
@@ -386,7 +395,7 @@ export function validate(raw: unknown, count: number, endpoint: DecisionEndpoint
   // at all — its answers ride the same keyed map below
   if (endpoint === 'direct') {
     if (r.model !== ENDPOINTS.direct.model) throw new Error('model-mismatch')
-  } else if (endpoint === 'openrouter') {
+  } else if (endpoint === 'openrouter' || endpoint === 'microsoft-decision') {
     if (typeof r.model !== 'string' || !OPENROUTER_MODEL_PATTERN.test(r.model))
       throw new Error('model-mismatch')
     if (Array.isArray(r.warnings) && r.warnings.length) throw new Error('provider-warning')
