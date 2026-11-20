@@ -74,6 +74,18 @@ import {
   enforceStaticLineRules,
   hyphenPieces,
 } from '../editor/hyphenation-static'
+import { commentInitials } from '../editor/balloon-markers'
+
+/** Word's margin label, e.g. "Commented [A1]: ". A producer that omits the
+ *  comment's own initials still gets them from the author's name — the same
+ *  rule the inline `[initials N]` tags use. */
+export function commentBalloonLabel(
+  comment: Pick<CommentInfo, 'author' | 'initials'> | undefined,
+  no: number,
+  prefix: string,
+): string {
+  return `${prefix} [${comment ? commentInitials(comment) : ''}${no}]: `
+}
 
 /** a note run's text, cut where the document hyphenates */
 function noteRunContent(para: ReadonlyArray<{ text: string }>, index: number): React.ReactNode {
@@ -1693,7 +1705,7 @@ export function PaginationPreview({
                       .filter(Boolean)
                       .join('\n')
                     // Word labels by initials + running number: "Commented [KICC1]"
-                    const label = `${t('appPvCommented')} [${root?.initials ?? ''}${sp.no}]: `
+                    const label = commentBalloonLabel(root, sp.no, t('appPvCommented'))
                     orderFloor = Math.max(orderFloor, anchorTop)
                     items.push({
                       key: `c${sp.id}`,
