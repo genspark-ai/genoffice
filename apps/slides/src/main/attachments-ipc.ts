@@ -7,8 +7,12 @@
  */
 import { app, dialog, ipcMain } from 'electron'
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { showOpenDialogWithMemory, sharedPathGrants } from '@genoffice/electron-utils'
+import { basename, join } from 'node:path'
+import {
+  isBesideDocument,
+  showOpenDialogWithMemory,
+  sharedPathGrants,
+} from '@genoffice/electron-utils'
 import { sessions } from './session-state'
 import { parseFileToText } from '@genoffice/file-parse'
 import type {
@@ -190,11 +194,9 @@ export function registerAttachmentIpc(): void {
    *  whitelist was the only bar between a compromised renderer and
    *  arbitrary file reads. */
   function canReadAttachment(wcId: number, filePath: string): boolean {
-    if (sharedPathGrants().has(wcId, filePath)) return true
-    const deckPath = sessions.get(wcId)?.path
-    if (!deckPath) return false
-    const rel = relative(dirname(deckPath), resolve(filePath))
-    return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+    return (
+      sharedPathGrants().has(wcId, filePath) || isBesideDocument(sessions.get(wcId)?.path, filePath)
+    )
   }
 
   ipcMain.handle(

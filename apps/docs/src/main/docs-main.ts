@@ -71,6 +71,7 @@ import {
   readBodyCapped,
   writeJsonAtomic,
   restrictFileToOwner,
+  isBesideDocument,
   sharedPathGrants,
   recoveryCopyDiskNewer,
   readLegacyImportSkip,
@@ -4086,11 +4087,7 @@ const pendingDecryptByWc = new Map<number, string>()
  *  the extension whitelist was the only bar between a compromised renderer
  *  and arbitrary file reads. */
 function canReadAttachment(wcId: number, filePath: string): boolean {
-  if (sharedPathGrants().has(wcId, filePath)) return true
-  const docPath = openDocByWc.get(wcId)
-  if (!docPath) return false
-  const rel = relative(dirname(docPath), resolve(filePath))
-  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+  return sharedPathGrants().has(wcId, filePath) || isBesideDocument(openDocByWc.get(wcId), filePath)
 }
 
 function rememberOpenDoc(wcId: number, filePath: string): void {

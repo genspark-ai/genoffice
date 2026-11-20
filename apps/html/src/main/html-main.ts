@@ -41,6 +41,7 @@ import {
   readBodyCapped,
   printHtmlDocument,
   type PrintDialogOutcome,
+  isBesideDocument,
   sharedPathGrants,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
@@ -897,11 +898,8 @@ const dirtyByWc = new Set<number>()
  *  whitelist was the only bar between a compromised renderer and arbitrary
  *  file reads. */
 function canReadAttachment(wcId: number, filePath: string): boolean {
-  if (sharedPathGrants().has(wcId, filePath)) return true
   const docPath = savePathByWc.get(wcId) ?? openPathByWc.get(wcId)
-  if (!docPath) return false
-  const rel = relative(dirname(docPath), resolve(filePath))
-  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+  return sharedPathGrants().has(wcId, filePath) || isBesideDocument(docPath, filePath)
 }
 /** Latest buffer text pushed by each renderer; served by html-preview:// to the preview iframe */
 const previewTextByWc = new Map<number, string>()

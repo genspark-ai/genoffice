@@ -1,5 +1,6 @@
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createPathGrants } from '../src/path-grants'
+import { createPathGrants, isBesideDocument } from '../src/path-grants'
 
 describe('createPathGrants', () => {
   it('grants and verifies per view', () => {
@@ -39,5 +40,19 @@ describe('createPathGrants', () => {
     let live = 0
     for (let i = 0; i < 600; i++) if (grants.has(1, `/tmp/f${i}.txt`)) live++
     expect(live).toBeLessThanOrEqual(512)
+  })
+})
+
+describe('isBesideDocument', () => {
+  const dir = '/Users/someone/notes'
+  it('accepts siblings, the document itself and subdirectory notes', () => {
+    expect(isBesideDocument(join(dir, 'a.md'), join(dir, 'b.md'))).toBe(true)
+    expect(isBesideDocument(join(dir, 'a.md'), join(dir, 'sub', 'note.md'))).toBe(true)
+    expect(isBesideDocument(join(dir, 'a.md'), join(dir, 'a.md'))).toBe(true)
+  })
+  it('refuses the directory itself, anything outside it, and a missing document', () => {
+    expect(isBesideDocument(join(dir, 'a.md'), dir)).toBe(false)
+    expect(isBesideDocument(join(dir, 'a.md'), join(dir, '..', 'elsewhere.md'))).toBe(false)
+    expect(isBesideDocument(undefined, join(dir, 'b.md'))).toBe(false)
   })
 })

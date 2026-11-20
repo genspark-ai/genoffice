@@ -24,7 +24,7 @@ import { runCopyEmfHelper } from './copy-emf-helper'
 import { refreshCsvDigest } from './csv-digest'
 import { ImportRegistry } from './import-registry'
 import { createServer } from 'node:http'
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 
 import {
   app,
@@ -81,6 +81,7 @@ import {
   configuredAuthorName,
   readLegacyImportSkip,
   writeLegacyImportSkip,
+  isBesideDocument,
   sharedPathGrants,
 } from '@genoffice/electron-utils'
 import { createMainProcessProxyDispatcher } from '@genoffice/electron-utils/main-proxy'
@@ -2138,10 +2139,8 @@ function canReadAttachment(wcId: number, filePath: string): boolean {
   if (sharedPathGrants().has(wcId, filePath)) return true
   const tab = sheetsTabs.get(wcId)
   if (!tab) return false
-  for (const session of tab.sessions.values()) {
-    const rel = relative(dirname(session.path), resolve(filePath))
-    if (rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)) return true
-  }
+  for (const session of tab.sessions.values())
+    if (isBesideDocument(session.path, filePath)) return true
   return false
 }
 

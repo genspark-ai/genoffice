@@ -61,6 +61,7 @@ import {
   DROP_OPEN_CHANNEL,
   USER_FILE_PATHS_SEEN_CHANNEL,
   seenFilePaths,
+  isBesideDocument,
   sharedPathGrants,
   GITHUB_REPO_URL,
   appMenuLabels,
@@ -3883,12 +3884,15 @@ function isRevealablePath(path: string): boolean {
 }
 
 /** Wiki links resolve beside the document that holds them, and a wiki note
- *  commonly opens a sibling the user never opened alone. A folder the user
- *  has a document open in therefore counts as revealed for the open channel
- *  (#2758 review): still the user's own active workspace, not the disk. */
+ *  commonly opens a sibling — or a note in a subfolder ([[sub/Note]]) — the
+ *  user never opened alone. A directory the user has a document open in,
+ *  including its subdirectories, therefore counts as revealed for the open
+ *  channel: still the user's own active workspace, not the disk. A document
+ *  in a detached window counts the same. */
 function isBesideOpenDocument(path: string): boolean {
-  const dir = dirname(resolve(path))
-  return tabManager?.openFilePaths().some((open) => dirname(resolve(open)) === dir) ?? false
+  const resolved = resolve(path)
+  const openPaths = [...(tabManager?.openFilePaths() ?? []), ...detachedFilePaths()]
+  return openPaths.some((open) => isBesideDocument(open, resolved))
 }
 
 function isAnyRoot(path: string): boolean {
@@ -4247,6 +4251,15 @@ let currentUiScale = 1
  * window. Each gets it on `did-finish-load`, because a stylesheet inserted
  * before the document exists is thrown away.
  */
+/** Grants die with the view: a webContents id is never reused, and a closed
+ *  view's ledger entries would otherwise keep paths readable for the whole
+ *  process life (the ledger comment promises this wiring; here it is). */
+function installGrantRelease(): void {
+  app.on('web-contents-created', (_event, contents) => {
+    contents.once('destroyed', () => sharedPathGrants().release(contents.id))
+  })
+}
+
 function installUiScale(): void {
   currentUiScale = readUiScale(APP_SETTINGS_PATH())
   app.on('web-contents-created', (_event, contents) => {
@@ -5247,7 +5260,9 @@ function registerHomeIpc(): void {
       !sharedPathGrants().has(event.sender.id, path)
     )
       return
-    sharedPathGrants().grant(event.sender.id, [path])
+    // no grant here: opening is its own authority, and a grant to the calling
+    // view would let any view read anything beside a folder root or a recent
+    // through files:read without ever opening it
     openDocumentPath(path)
     fileIndexer?.refresh()
   })
@@ -7513,6 +7528,7 @@ app.whenReady().then(async () => {
   void startMcpFromSettings(currentMcpSettings()).catch((error) => {
     console.error('[mcp] failed to start on boot:', error)
   })
+  installGrantRelease()
   installUiScale()
   createShellWindow()
   // deferred to ready: labels need currentLang(), which reads app.getLocale()

@@ -15,7 +15,7 @@
 /// another view's reads. The ledger holds no Electron imports — callers wire
 /// `release` to their own destroyed handlers and keep this unit-testable.
 
-import { resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 
 /** grants per view; soft-capped so a runaway caller cannot grow it forever */
 const MAX_GRANTS_PER_VIEW = 512
@@ -65,4 +65,15 @@ export function createPathGrants(): PathGrants {
       byView.delete(wcId)
     },
   }
+}
+
+/** whether filePath sits inside the directory of docPath — the open
+ *  document's neighbors, including a subdirectory ([[sub/Note]] resolves
+ *  there); the directory itself and anything outside the tree are refused.
+ *  The one "beside" rule every app's read gate shares, kept here so the
+ *  apps cannot drift apart. */
+export function isBesideDocument(docPath: string | undefined, filePath: string): boolean {
+  if (!docPath) return false
+  const rel = relative(dirname(resolve(docPath)), resolve(filePath))
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
 }
