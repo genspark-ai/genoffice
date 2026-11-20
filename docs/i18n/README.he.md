@@ -259,7 +259,7 @@ skill ובלי לפתוח חלון, ולקבל 29 כלים בתוספת מדרי
   `‎--web-port` ו-`‎--web-host` מזיזים אותו (אגדו `0.0.0.0` לרשת המקומית
   ופתחו את הכתובת שהודפסה מהמכשיר האחר); `‎--web-token` קובע אסימון לבחירתכם.
 - API חסר-ראש קטן עוטף את ה-CLI לסקריפטים:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
   `POST /api/info` מחזיר סיכום מבנה של המסמך.
 - גרירת קבצים מקומיים והדפסה מקורית נשארות לשולחן העבודה בלבד.
 

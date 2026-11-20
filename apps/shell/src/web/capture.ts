@@ -86,6 +86,18 @@ export function installWebIpcCapture(): void {
   }
   wrapRemove('removeListener')
   wrapRemove('off')
+
+  // removeAllListeners(channel) wipes the desktop side in one call; the mirror
+  // must forget the channel too, or dispatchSend would keep replaying
+  // listeners the app already discarded
+  const removeAllListeners = (ipcMain as unknown as Record<string, unknown>).removeAllListeners as
+    ((ch: string) => void) | undefined
+  if (removeAllListeners) {
+    ;(ipcMain as unknown as Record<string, unknown>).removeAllListeners = (channel: string) => {
+      sendListeners.delete(channel)
+      removeAllListeners(channel)
+    }
+  }
 }
 
 function removeSendListener(channel: string, fn: IpcHandler): void {
