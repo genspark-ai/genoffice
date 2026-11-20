@@ -37,7 +37,12 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent, SetStateAction } fro
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { handleDocsControl, type ControlRequest } from './control'
-import { DOMParser as PmDOMParser, type Mark as PmMark, Slice as PmSlice } from '@tiptap/pm/model'
+import {
+  DOMParser as PmDOMParser,
+  type Mark as PmMark,
+  type Node as PmNode,
+  Slice as PmSlice,
+} from '@tiptap/pm/model'
 import { NodeSelection, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
 import {
@@ -202,7 +207,15 @@ import { makeGapNotesEl, measureNoteHeightDom, noteRowMetrics } from './editor/n
 import { AiAskPopover } from './components/AiAskPopover'
 import { EDIT_QUEUE_MAX, selectionForAnchor, type DocsEditQueueItem } from './ai/edit-queue'
 import { addQueueAnchor, clearQueueAnchors, removeQueueAnchors } from './editor/ai-queue-anchors'
-import { countWords, documentTextForWordCount, selectedWordCount, textStats } from './word-count'
+import {
+  asianCharCount,
+  countWords,
+  documentTextForWordCount,
+  listLabelText,
+  nonAsianWordCount,
+  selectedWordCount,
+  textStats,
+} from './word-count'
 import { CommentsPanel } from './components/CommentsPanel'
 import { EquationModal } from './components/EquationModal'
 import { HeaderFooterArea } from './components/HeaderFooterArea'
@@ -898,7 +911,18 @@ const sortDialogScope = (state: EditorState) => {
 
 // O(doc) derivations cached by PM doc reference: caret moves and unrelated
 // state updates reuse the last result instead of re-walking the whole document
-const wordCountOfDoc = cachedByDoc((d) => countWords(documentTextForWordCount(d)))
+/** the status bar's words: the text plus the list numbers Word counts (listLabelText);
+ *  cached by doc and numbering defs (an edit to either replaces the reference) */
+const wordCountOfDoc = (() => {
+  const cache = new WeakMap<PmNode, { defs: unknown; words: number }>()
+  return (doc: PmNode, defs: Map<string, NumberingDef> | undefined): number => {
+    const hit = cache.get(doc)
+    if (hit && hit.defs === defs) return hit.words
+    const words = countWords(documentTextForWordCount(doc)) + countWords(listLabelText(doc, defs))
+    cache.set(doc, { defs, words })
+    return words
+  }
+})()
 const revisionsOfDoc = cachedByDoc((d) => collectRevisions(d))
 
 /**
@@ -7216,7 +7240,13 @@ export function App() {
   useEffect(() => {
     if (!editor) return
     const refreshSelection = () => {
-      setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
+      setSelectionWordCount(
+        selectedWordCount(
+          editor.state.doc,
+          editor.state.selection,
+          editor.storage.listNumbering?.defs,
+        ),
+      )
       setSelectionHead(editor.state.selection.head)
       // a caret move in the body ends the stop on a change outside it
       if (lastStoryRef.current !== null) setActiveStoryId(null)
@@ -7234,9 +7264,15 @@ export function App() {
     const refresh = () => {
       timer = 0
       const started = performance.now()
-      setWordCount(wordCountOfDoc(editor.state.doc))
+      setWordCount(wordCountOfDoc(editor.state.doc, editor.storage.listNumbering?.defs))
       setRevisionRanges(doc ? revisionsOfDoc(editor.state.doc) : [])
-      setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
+      setSelectionWordCount(
+        selectedWordCount(
+          editor.state.doc,
+          editor.state.selection,
+          editor.storage.listNumbering?.defs,
+        ),
+      )
       slowWalk = performance.now() - started > WORD_COUNT_SLOW_WALK_MS
     }
     const onUpdate = () => {
@@ -7276,7 +7312,18 @@ export function App() {
       if (node.isTextblock && documentTextForWordCount(node).trim() !== '') paragraphs++
       return true
     })
-    return { ...textStats(text), pages: pageInfo.total, paragraphs, lines }
+    // Word counts list numbers as words (listLabelText), not as characters
+    const labels = listLabelText(editor.state.doc, editor.storage.listNumbering?.defs)
+    const stats = textStats(text)
+    return {
+      ...stats,
+      words: stats.words + countWords(labels),
+      asianChars: stats.asianChars + asianCharCount(labels),
+      nonAsianWords: stats.nonAsianWords + nonAsianWordCount(labels),
+      pages: pageInfo.total,
+      paragraphs,
+      lines,
+    }
   }, [editor, zoom, pageInfo.total])
   const openStats = useCallback(() => {
     const body = documentStats()
