@@ -48,7 +48,7 @@ chmod +x GenOffice-<version>.AppImage
 
 Precisa do runtime FUSE 2. Se preferir não o instalar, execute-o com `--appimage-extract-and-run` e a sandbox funciona a partir do diretório extraído.
 
-## A versão que está a executar
+## A versão que você está executando
 
 **Configurações ▸ Sobre** é onde o aplicativo comunica a versão que tem, o canal que segue e onde vive o projeto. Quando é publicada uma versão mais recente nesse canal, o mesmo painel oferece a atualização; uma instalação por Flatpak, Nix ou Docker não o faz, porque essas são substituídas pela ferramenta que as lá colocou.
 
