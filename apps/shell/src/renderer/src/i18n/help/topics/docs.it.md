@@ -18,9 +18,9 @@ Le schede: **Home / Inserisci / Disegno / Layout / Progettazione / Riferimenti /
 
 - **Revisione**: **Editor** controlla l'intero documento per ortografia, grammatica e punteggiatura; **Traduci**; controllo ortografico; commenti (**Commenti con IA** lavora quelli aperti); revisioni con le viste Tutte le modifiche/Revisioni semplici, accetta/rifiuta e **Riepilogo revisioni IA**; conteggio delle parole; **Confronta** con un altro file; **Proteggi documento**.
 - **Visualizza**: cinque modi per guardare il file — **Layout di stampa**, **Layout Web**, **Struttura**, **Modalità di lettura** e **Anteprima pagine**; riduci/ingrandisci/100 %/larghezza pagina/una pagina; **Pannello IA**; **Modalità scura**; righello, griglia e riquadro di spostamento; **Nuova scheda**, **Dividi** e **Cambia scheda**; la finestra di dialogo ricercabile delle **scorciatoie da tastiera**.
-- **Struttura dedotta**: i paragrafi che sembrano titoli ma non hanno uno stile titolo compaiono nel pannello di navigazione contrassegnati come dedotti; applicare uno stile titolo li rende reali.
   - **Modalità scura** scurisce la pagina e la tela intorno, mai il nastro: è la divisione di Word fra una superficie di modifica scura e una finestra scura. La scelta viene ricordata e in ogni caso prevail sull'aspetto dell'app.
   - **Dividi** apre un secondo riquadro sotto che scorre in modo indipendente e rispecchia il primo; chiudilo con la × sul suo bordo.
+- **Struttura dedotta**: i paragrafi che sembrano titoli ma non hanno uno stile titolo compaiono contrassegnati come dedotti nella visualizzazione **Struttura** e nella visualizzazione **Story** — ma solo finché il documento non contiene alcuno stile titolo reale; applicare uno stile titolo li rende reali.
 
 ## Il riquadro di navigazione
 
@@ -86,8 +86,9 @@ Fai clic destro ovunque nel corpo del testo — il menu si adatta all'elemento s
 
 - Salva .docx riscrivendo solo i paragrafi modificati — il contenuto non toccato resta identico byte per byte.
 - Esporta in PDF (con l'impaginazione corrente) e in immagini pagina per pagina.
-- **Anteprima di stampa sul cursore**: aprendo Stampa si va subito alla pagina del cursore invece che alla pagina 1.
 
 ## Stampa
 
 ctrl+P tramite la finestra di dialogo di sistema, con pagine WYSIWYG.
+
+- **Anteprima di stampa sul cursore**: aprendo Stampa si va subito alla pagina del cursore invece che alla pagina 1.

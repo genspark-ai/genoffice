@@ -5,7 +5,7 @@ O editor de PDF tem cinco guias na faixa de opções: **Página Inicial / Anotar
 ## Leitura e navegação
 
 - Barra lateral esquerda: **Miniaturas** (clique para saltar, o intervalo visível fica destacado) ou **Estrutura** (os marcadores, quando existem).
-- **Favoritos editáveis**: o painel de estrutura permite adicionar, renomear e excluir marcadores; as alterações são gravadas no arquivo ao salvar.
+- **Marcadores editáveis**: o painel de estrutura permite adicionar, renomear e excluir marcadores; as alterações são gravadas no arquivo ao salvar.
 - Zoom: o controle de proporção no canto inferior direito; ctrl+roda ajusta o zoom por degraus.
 - Rotação: por página ou em todas as páginas a partir do menu Páginas; as rotações são gravadas ao salvar.
 - Pesquisar: ctrl+F para procurar em todo o texto com todas as ocorrências realçadas.

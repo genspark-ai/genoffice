@@ -18,9 +18,9 @@ Tab: **Laman Utama / Sisip / Lukis / Tataletak / Reka Bentuk / Rujukan / Semakan
 
 - **Semakan**: **Editor** menyemak keseluruhan dokumen dari segi ejaan, tatabahasa dan tanda baca; **Terjemah**; pemeriksaan ejaan; komen (**Komen dengan AI** mengendalikan yang masih terbuka); jejak perubahan dengan paparan Semua Penandaan / Penandaan Ringkas, terima/tolak, dan **Ringkasan semakan AI**; kiraan perkataan; **Banding** dengan fail lain; **Lindungi Dokumen**.
 - **PANDANGAN**: lima cara untuk melihat fail — **Tataletak Cetakan**, **Tataletak Web**, **Rangka**, **Mod Baca** dan **Pratonton Halaman**; zum keluar/masuk/100 %/lebar halaman/satu halaman; **Panel AI**; **Mod Gelap**; pembaris, garisan grid dan anak tetingkap navigasi; **Tab Baharu**, **Pisah** dan **Tukar Tab**; dialog pintasan papan kekunci yang boleh dicari.
-- **Kerangka yang disimpulkan**: perenggan yang kelihatan seperti tajuk tetapi tiada gaya tajuk muncul dalam panel navigasi bertanda disimpulkan; gunakan gaya tajuk untuk menjadikannya tajuk sebenar.
   - **Mod Gelap** mengegelapkan halaman dan kanvas di sekelilingnya, tetapi tidak pernah ribbon — pemisahan Word antara permukaan penyuntingan gelap dan tingkap gelap. Pilihan ini diingat, dan dalam apa jua keadaan ia mendahului tema aplikasi.
   - **Pisah** membuka anak tetingkap kedua di bawah yang menatal secara bebas dan mencerminkan yang pertama; tutup dengan × pada tepinya.
+- **Kerangka yang disimpulkan**: perenggan yang kelihatan seperti tajuk tetapi tiada gaya tajuk muncul bertanda disimpulkan dalam **Pandangan Rangka** dan **Pandangan Cerita** — tetapi hanya jika dokumen langsung tidak mempunyai sebarang gaya tajuk sebenar; gunakan gaya tajuk untuk menjadikannya tajuk sebenar.
 
 ## Panel navigasi
 
@@ -84,8 +84,9 @@ Klik kanan di mana-mana bahagian teks, dan menu akan mengikut apa yang anda klik
 
 - Menyimpan .docx menulis semula hanya perenggan yang berubah. Kandungan yang tidak disentuh kekal sama bait demi bait.
 - Eksport ke PDF (mengikut pemenggalan semasa) dan ke imej setiap halaman.
-- **Pratonton cetak mengikut kursor**: membuka Cetak terus pergi ke halaman tempat kursor berada, bukan halaman 1.
 
 ## Cetak
 
 ctrl+P melalui dialog sistem, dengan halaman seperti yang dipaparkan.
+
+- **Pratonton cetak mengikut kursor**: membuka Cetak terus pergi ke halaman tempat kursor berada, bukan halaman 1.

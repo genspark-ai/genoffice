@@ -18,9 +18,9 @@ Guias: **Página Inicial / Inserir / Desenhar / Layout / Design / Referências /
 
 - **Revisão**: **Editor** revê a ortografia, a gramática e a pontuação de todo o documento; **Traduzir**; verificação ortográfica; comentários (**Comentários com IA** trata os que estão abertos); controlar alterações com as vistas Toda a Marcação / Marcação Simples, aceitar/rejeitar e **Resumo de revisões com IA**; contagem de palavras; **Comparar** com outro arquivo; **Proteger Documento**.
 - **Exibir**: cinco formas de ver o arquivo — **Layout de Impressão**, **Layout da Web**, **Estrutura de Tópicos**, **Modo de Leitura** e **Visualização de Páginas**; reduzir/ampliar/100 %/largura da página/uma página; **Painel de IA**; **Modo Escuro**; régua, linhas de grade e o painel de navegação; **Nova Guia**, **Dividir** e **Alternar Guias**; a janela pesquisável de **atalhos de teclado**.
-- **Estrutura inferida**: parágrafos que parecem títulos mas não têm estilo de título aparecem no painel de navegação marcados como inferidos; aplicar um estilo de título os torna reais.
   - O **Modo Escuro** escurece a página e a tela à volta dela, nunca a faixa de opções — a divisão do Word entre uma superfície de edição escura e uma janela escura. A escolha fica salva e, em qualquer caso, prevalece sobre o tema do aplicativo.
   - **Dividir** abre um segundo painel por baixo, que desliza de forma independente e espelha o primeiro; feche-o com o × no seu limite.
+- **Estrutura inferida**: parágrafos que parecem títulos mas não têm estilo de título aparecem marcados como inferidos no modo **Estrutura de Tópicos** e no modo **História** — mas apenas enquanto o documento não tiver nenhum estilo de título real; aplicar um estilo de título os torna reais.
 
 ## O painel de navegação
 
@@ -73,8 +73,9 @@ Clique com o botão direito em qualquer ponto do texto — o menu acompanha aqui
 
 - Salvar em .docx reescreve apenas os parágrafos que mudaram — o conteúdo não tocado permanece byte a byte igual.
 - Exporta PDF (com a paginação atual) e imagens de cada página.
-- **Pré-visualização de impressão no cursor**: abrir Imprimir vai direto para a página em que o cursor está, em vez da página 1.
 
 ## Imprimir
 
 ctrl+P pela caixa de diálogo do sistema, com as páginas exatamente como serão impressas.
+
+- **Pré-visualização de impressão no cursor**: abrir Imprimir vai direto para a página em que o cursor está, em vez da página 1.

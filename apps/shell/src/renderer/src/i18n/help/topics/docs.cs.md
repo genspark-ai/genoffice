@@ -18,9 +18,9 @@ Karty: **Domů / Vložení / Kreslení / Rozložení / Návrh / Odkazy / Revize 
 
 - **Revize**: **Editor** prověří celý dokument — pravopis, gramatiku i interpunkci; **Přeložit**; kontrolu pravopisu; komentáře (**Vyřešit komentáře pomocí AI** zpracuje ty otevřené); sledování změn se zobrazeními Všechny značky / Jednoduché značky, přijetí/odmítnutí a **Souhrn revizí od AI**; počítání slov; **Porovnat** s jiným souborem; **Zamknout dokument**.
 - **Zobrazení**: pět způsobů, jak se na soubor podívat — **Rozložení při tisku**, **Rozložení webové stránky**, **Osnova**, **Režim čtení** a **Náhled stránky**; oddálit/přiblížit/100 %/šířka stránky/jedna stránka; **Panel AI**; **Tmavý režim**; pravítko, mřížka a navigační podokno; **Nová karta**, **Rozdělit** a **Přepnout karty**; prohledávatelný dialog **klávesových zkratek**.
-- **Odvozená osnova**: odstavce, které vypadají jako nadpisy, ale nemají styl nadpisu, se v navigačním panelu zobrazí s označením odvozené; po použití stylu nadpisu se z nich stanou skutečné nadpisy.
   - **Tmavý režim** ztmaví stránku a plátno kolem ní, nikoli ale pás — je to Wordovo rozdělení mezi tmavou plochu úprav a tmavé okno. Volba se pamatuje a v každém případě má přednost před motivem aplikace.
   - **Rozdělit** otevře pod ním druhé podokno, které se posouvá nezávisle a zrcadlí první; zavřete ho křížkem × na jeho okraji.
+- **Odvozená osnova**: odstavce, které vypadají jako nadpisy, ale nemají styl nadpisu, se s označením odvozené zobrazí ve zobrazení **Osnova** a ve zobrazení **Příběh** — ale jen dokud dokument neobsahuje žádné skutečné styly nadpisů; po použití stylu nadpisu se z nich stanou skutečné nadpisy.
 
 ## Podokno procházení
 
@@ -82,8 +82,9 @@ Klikněte pravým tlačítkem kamkoli do textu — nabídka se přizpůsobí tom
 
 - Ukládání .docx přepisuje pouze změněné odstavce — nedotčený obsah zůstává beze změny bajt po bajtu.
 - Export do PDF (s aktuálním stránkováním) a na obrázky po jednotlivých stránkách.
-- **Náhled tisku u kurzoru**: otevření tisku přejde přímo na stránku s kurzorem místo na stránku 1.
 
 ## Tisk
 
 ctrl+P přes systémový dialog, stránky WYSIWYG.
+
+- **Náhled tisku u kurzoru**: otevření tisku přejde přímo na stránku s kurzorem místo na stránku 1.

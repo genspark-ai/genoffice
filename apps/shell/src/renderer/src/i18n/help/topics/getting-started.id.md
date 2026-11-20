@@ -11,7 +11,7 @@ Jendela ini terdiri dari tiga bagian:
 - **Bilah tab (atas)**: setiap file yang terbuka adalah sebuah tab. Tab Beranda paling kiri selalu ada dan tidak bisa ditutup; tab lainnya adalah dokumen Anda. Klik dua kali sebuah tab untuk mengganti nama file-nya secara langsung.
 - **Area konten**: editor (atau Beranda) milik tab yang sedang aktif.
 - **Bilah menu**: pada menu bar sistem di macOS, di bagian atas jendela pada Windows/Linux. Menu File/Edit/Tampilan berganti mengikuti editor yang aktif.
-- **Skala antarmuka**: **Tampilan ▸ Perbesar / Perkecil / Atur ulang** menskalakan seluruh jendela antara 80%–150% (⌘⌃= / ⌘⌃- / ⌘⌃0 di macOS; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 di lainnya).
+- **Skala antarmuka**: **Tampilan ▸ Perbesar Antarmuka / Perkecil Antarmuka / Atur Ulang Skala Antarmuka ke 100%** menskalakan seluruh jendela antara 80%–150% (⌘⌃= / ⌘⌃- / ⌘⌃0 di macOS; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 di lainnya).
 
 ## Membuat dokumen
 

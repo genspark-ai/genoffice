@@ -18,9 +18,9 @@ Onglets : **Accueil / Insertion / Dessin / Mise en page / Création / Référenc
 
 - **Révision** : **Éditeur** relit tout le document — orthographe, grammaire et ponctuation ; **Traduire** ; vérification orthographique ; commentaires (**Commentaires par IA** traite ceux qui sont ouverts) ; suivi des modifications avec les vues Toutes les marques / Marques simples, accepter/refuser, et **Résumé IA des révisions** ; comptage des mots ; **Comparer** avec un autre fichier ; **Protéger le document**.
 - **Affichage** : cinq façons de regarder le fichier — **Page**, **Web**, **Plan**, **Mode Lecture** et **Aperçu des pages** ; zoom arrière/avant/100 %/largeur de la page/une page ; **Volet IA** ; **Mode sombre** ; règle, quadrillage et volet de navigation ; **Nouvel onglet**, **Fractionner** et **Changer d'onglet** ; la boîte de dialogue de **raccourcis clavier** consultable.
-- **Plan déduit** : les paragraphes qui ressemblent à des titres sans style de titre apparaissent dans le volet de navigation marqués comme déduits ; appliquer un style de titre les rend réels.
   - **Mode sombre** assombrit la page et le canevas autour d’elle, jamais le ruban — la séparation de Word entre une surface d’édition sombre et une fenêtre sombre. Le choix est mémorisé et l’emporte sur le thème de l’application dans tous les cas.
   - **Fractionner** ouvre un second volet en dessous qui défile indépendamment et reflète le premier ; fermez-le avec le × sur son bord.
+- **Plan déduit** : les paragraphes qui ressemblent à des titres sans style de titre apparaissent marqués comme déduits dans le mode **Plan** et le mode **Story** — mais seulement tant que le document ne contient aucun vrai style de titre ; appliquer un style de titre les rend réels.
 
 ## Le volet de navigation
 
@@ -73,8 +73,9 @@ Clic droit n’importe où dans le corps — le menu correspond à ce que vous a
 
 - Enregistre du .docx en ne réécrivant que les paragraphes modifiés — le contenu intact reste identique octet pour octet.
 - Exporte en PDF (selon la pagination en cours) et en images page par page.
-- **Aperçu avant impression au curseur** : ouvrir Impression va directement à la page du curseur au lieu de la page 1.
 
 ## Impression
 
 ctrl+P via la boîte de dialogue du système, pages en WYSIWYG.
+
+- **Aperçu avant impression au curseur** : ouvrir Impression va directement à la page du curseur au lieu de la page 1.

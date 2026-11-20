@@ -18,9 +18,9 @@ Tabs: **Start / Invoegen / Tekenen / Indeling / Ontwerpen / Verwijzingen / Contr
 
 - **Controleren**: **Editor** controleert het hele document op spelling, grammatica en interpunctie; **Vertalen**; spellingcontrole; opmerkingen (**AI-opmerkingen** werkt de openstaande door); wijzigingen bijhouden met de weergaven Alle markeringen / Eenvoudige markeringen, accepteren/weigeren en **AI-revisieoverzicht**; woordentelling; **Vergelijken** met een ander bestand; **Document beveiligen**.
 - **Beeld**: vijf manieren om het bestand te bekijken — **Afdrukweergave**, **Webindeling**, **Overzicht**, **Leesmodus** en **Paginavoorbeeld**; uitzoomen/innen/100 %/paginabreedte/één pagina; **AI-deelvenster**; **Donkere modus**; liniaal, rasterlijnen en het navigatiedeelvenster; **Nieuw tabblad**, **Splitsen** en **Tabbladen wisselen**; het doorzoekbare dialoogvenster met **sneltoetsen**.
-- **Afgeleide structuur**: alinea's die op koppen lijken maar geen kopstijl hebben, verschijnen in het navigatiepaneel gemarkeerd als afgeleid; met een kopstijl worden het echte koppen.
   - **Donkere modus** verduistert de pagina en het tekenvlak eromheen, nooit het lint — Words splitsing tussen een donker bewerkingsvlak en een donker venster. De keuze wordt onthouden en wint hoe dan ook boven het app-thema.
   - **Splitsen** opent daaronder een tweede deelvenster dat onafhankelijk scrolt en het eerste spiegelt; sluit het met de × op de rand.
+- **Afgeleide structuur**: alinea's die op koppen lijken maar geen kopstijl hebben, verschijnen gemarkeerd als afgeleid in de **Overzichtsweergave** en de **Storyweergave** — maar alleen zolang het document helemaal geen echte kopstijlen bevat; met een kopstijl worden het echte koppen.
 
 ## Het navigatievenster
 
@@ -86,8 +86,9 @@ Rechtermuisklik ergens in de tekst — het menu volgt waarop je klikte. Hoofdgro
 
 - Opslaan als .docx herschrijft alleen de gewijzigde alinea's — ongewijzigde inhoud blijft byte voor byte hetzelfde.
 - Exporteren naar pdf (met de huidige paginering) en naar afbeeldingen per pagina.
-- **Afdrukvoorbeeld bij de cursor**: Afdrukken openen gaat direct naar de pagina waar de cursor staat in plaats van pagina 1.
 
 ## Afdrukken
 
 ctrl+P via het systeemvenster, met WYSIWYG-pagina's.
+
+- **Afdrukvoorbeeld bij de cursor**: Afdrukken openen gaat direct naar de pagina waar de cursor staat in plaats van pagina 1.
