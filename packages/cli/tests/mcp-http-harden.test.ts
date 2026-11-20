@@ -269,6 +269,29 @@ describe('mcp http loopback Host guard', () => {
   })
 })
 
+describe('mcp http non-loopback refusal', () => {
+  it('refuses before anything binds and leaves no scratch directory behind', async () => {
+    const before = new Set(
+      readdirSync(tmpdir()).filter((e) => e.startsWith(`genoffice-mcp-http-${process.pid}-`)),
+    )
+    await expect(
+      startHttp({
+        port: 0,
+        host: '0.0.0.0',
+        cwd: tempDir(),
+        env: { ...process.env, GENOFFICE_AUDIT_LOG: 'off', GENOFFICE_ALLOWED_ROOTS: '' },
+        log: () => {},
+        registry: defaultRegistry(),
+      }),
+    ).rejects.toThrow(/refusing to serve the MCP HTTP API on a non-loopback address/)
+    // the refusal disposed the FileStore: no new scratch directory remains
+    const after = readdirSync(tmpdir()).filter(
+      (e) => e.startsWith(`genoffice-mcp-http-${process.pid}-`) && !before.has(e),
+    )
+    expect(after).toEqual([])
+  })
+})
+
 /** Writes a raw request so a test can control the Host header byte for byte. */
 function rawRequest(port: number, request: string): Promise<string> {
   return new Promise((resolve, reject) => {
