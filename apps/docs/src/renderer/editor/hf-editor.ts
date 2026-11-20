@@ -18,6 +18,7 @@ import {
   type HeaderFooter,
   type HfCellParaProps,
   type HfParagraph,
+  type TabStop,
   type HfTableCell,
   type HfTableRow,
   type Run,
@@ -28,8 +29,9 @@ import { pictureVectorOf } from './picture-vectors'
 import { inlineToRuns, runsToInline, type PmNode } from './convert'
 import { setDkBackground, setDkBackgroundImage, setDkBorder } from './dark-page'
 import { TextboxParagraph, textboxSubExtensions } from './extensions'
+import { TWIPS_PER_PX } from './anchor-geometry'
 import { hfCellGeometry, hfRowStyle } from './hf-dom'
-import { hfParasOf } from './hf-text'
+import { hfIsBlank, hfParasOf } from './hf-text'
 
 export type HfFieldKind = 'PAGE' | 'NUMPAGES' | 'SECTIONPAGES'
 
@@ -132,6 +134,27 @@ const HF_PARA_KEYS = [
   'bidi',
 ] as const
 
+/**
+ * Word sets a segment at a stop past the right margin (the built-in Header
+ * style's right stop at 6.5" on a narrower column, probe 2026-11-20), as the
+ * strip draws it: the editor line reaches out to its farthest stop instead of
+ * the tab pinning the segment to the column edge. `tabStops` is the node's
+ * JSON attribute; null when nothing reaches past the column.
+ */
+export function hfStopReachCss(tabStops: unknown, indentRight: unknown): string | null {
+  if (typeof tabStops !== 'string' || indentRight) return null
+  let stops: TabStop[]
+  try {
+    stops = JSON.parse(tabStops) as TabStop[]
+  } catch {
+    return null
+  }
+  const set = stops.filter((s) => s.val !== 'clear' && !s.rel).map((s) => s.pos)
+  if (set.length === 0) return null
+  const reach = Math.max(...set) / TWIPS_PER_PX
+  return `margin-right:min(0px, calc(100% - ${reach.toFixed(1)}px))`
+}
+
 const HfParagraphNode = TextboxParagraph.extend({
   addAttributes() {
     return {
@@ -147,6 +170,8 @@ const HfParagraphNode = TextboxParagraph.extend({
     const attrs = spec[1]
     if (props.node.attrs.tabStops) attrs['data-tab-stops'] = String(props.node.attrs.tabStops)
     if (props.node.attrs.bidi) attrs.dir = 'rtl'
+    const reach = hfStopReachCss(props.node.attrs.tabStops, props.node.attrs.indentRight)
+    if (reach) attrs.style = attrs.style ? `${attrs.style};${reach}` : reach
     return spec
   },
 })
@@ -635,14 +660,18 @@ export function mountHfEditor(
     /** the edited page's section page count (SECTIONPAGES); defaults to pageTotal */
     sectionPages?: string
     spellcheck: boolean
+    /** the paragraph a blank part starts with (Word: the Header / Footer style, hfBlankPara) */
+    blank?: HfParagraph
     onCommit: (next: HeaderFooter) => void
     onExit: () => void
   },
 ): HfEditorHandle {
+  const value =
+    opts.blank && hfIsBlank(opts.value) ? { ...opts.value, paras: [opts.blank] } : opts.value
   const editor: Editor = new Editor({
     element: host,
     extensions: hfSubExtensions,
-    content: hfDocJson(opts.value),
+    content: hfDocJson(value),
     editorProps: {
       attributes: { class: 'page-hf-editor', spellcheck: opts.spellcheck ? 'true' : 'false' },
       handleKeyDown: (view, event) => {
@@ -685,7 +714,7 @@ export function mountHfEditor(
 
   const changed = (): HeaderFooter | null => {
     const doc = editor.getJSON() as PmNode
-    return JSON.stringify(doc) === initialSig ? null : hfValueFromDoc(doc, opts.value, initialDoc)
+    return JSON.stringify(doc) === initialSig ? null : hfValueFromDoc(doc, value, initialDoc)
   }
   let exited = false
   const onCommitEvent = () => {

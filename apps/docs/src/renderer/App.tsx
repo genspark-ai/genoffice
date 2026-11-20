@@ -180,7 +180,7 @@ import {
   renumber,
   type AiNotesAccess,
 } from './ai/note-ops'
-import { applyHfText, hfEditText } from './editor/hf-text'
+import { applyHfText, hfBlankPara, hfEditText } from './editor/hf-text'
 import {
   insertHfField,
   liveHfFieldOf,
@@ -6661,7 +6661,12 @@ export function App() {
         // re-anchor them to the paper before the strips are measured/aligned
         alignTableGapFills(pm, factor)
         stage('tableGapFills')
-        if ((secWSpecs.length > 0 || mirrorMargins) && section) {
+        // the stylesheet centers a strip on the paper: it sits on the left margin
+        // only when the side margins are equal
+        const offCenter = (secList?.map((s) => s.settings) ?? [section]).some(
+          (s) => s != null && s.marginLeft !== s.marginRight,
+        )
+        if ((secWSpecs.length > 0 || mirrorMargins || offCenter) && section) {
           const cSet = secList?.[0]?.settings ?? section
           alignGapHfStrips(pm, pageLeftOf(cSet) + twipsToPx(cSet.marginLeft), factor)
         }
@@ -8503,6 +8508,7 @@ export function App() {
       pageTotal: el.dataset.hfTotal ?? '1',
       sectionPages: el.dataset.hfSectionPages,
       spellcheck: spellcheckActive,
+      blank: hfBlankPara(kind, fileCtxRef.current.doc?.parsed.styles),
       onCommit: (next) => {
         committed = true
         // the ribbon may have unlinked the section since the editor opened
@@ -8568,15 +8574,12 @@ export function App() {
   openHfEditorRef.current = openHfEditor
   // Word: a double-click anywhere in a page's top or bottom margin opens that
   // page's header or footer, empty or not (the strips cover only their text)
-  const hfMarginHitOf = (e: { target: EventTarget | null; clientX: number; clientY: number }) => {
-    if (readMode || isProtected || viewMode !== 'print') return null
-    if (!(e.target instanceof Element) || e.target.closest(HF_MARGIN_SKIP)) return null
-    if (e.target.closest('.page-hf')) return null
+  /** every page's top and bottom margin on the canvas, from the last pagination pass */
+  const marginBandsNow = () => {
     const layout = pageLayoutRef.current
     const pm = editor?.view.dom
     if (!layout || layout.cuts.length === 0 || !pm) return null
     const r = pm.getBoundingClientRect()
-    if (e.clientX < r.left || e.clientX > r.right) return null
     const zf = zoom / 100
     const secList = layout.flow?.secList
     const bands = pageMarginBands(
@@ -8589,7 +8592,15 @@ export function App() {
         return set ? effectiveBottomPx(set, cut.hf.footerPx) : 0
       },
     )
-    return hfBandAt(bands, (e.clientY - r.top) / zf)
+    return { bands, rect: r, zf }
+  }
+  const hfMarginHitOf = (e: { target: EventTarget | null; clientX: number; clientY: number }) => {
+    if (readMode || isProtected || viewMode !== 'print') return null
+    if (!(e.target instanceof Element) || e.target.closest(HF_MARGIN_SKIP)) return null
+    if (e.target.closest('.page-hf')) return null
+    const now = marginBandsNow()
+    if (!now || e.clientX < now.rect.left || e.clientX > now.rect.right) return null
+    return hfBandAt(now.bands, (e.clientY - now.rect.top) / now.zf)
   }
   const hfMarginHitRef = useRef(hfMarginHitOf)
   hfMarginHitRef.current = hfMarginHitOf
@@ -8724,6 +8735,21 @@ export function App() {
     hfSections.length > 1
       ? t(kind === 'header' ? 'appHfHeaderSectionTag' : 'appHfFooterSectionTag', { n: si + 1 })
       : null
+
+  // Word marks the part being edited by a line across the page where the body
+  // starts (header) or ends (footer), tagged with the part's name
+  const hfBoundary = (() => {
+    if (!hfEditing || viewMode !== 'print') return null
+    const band = marginBandsNow()?.bands[hfEditing.pageIdx]
+    if (!band) return null
+    const { kind, section: si, variant } = hfEditing
+    return {
+      kind,
+      y: kind === 'header' ? band.headerBottom : band.footerTop,
+      label: hfSectionLabel(kind, si) ?? t(kind === 'header' ? 'ribbonHeader' : 'ribbonFooter'),
+      linked: hfLinkedAt(si, kind, variant) === true,
+    }
+  })()
 
   // Word: double-clicking a picture only selects it (the press already did);
   // the image viewer stays on the context menu
@@ -10117,7 +10143,8 @@ export function App() {
     lastPageMargins &&
     (paperW - lastBox.width > 0.5 ||
       Math.abs(lastBox.contentWidth - canvasBox.contentWidth) > 0.5 ||
-      mirrorMargins)
+      mirrorMargins ||
+      lastPageMargins.left !== lastPageMargins.right)
       ? {
           width: `${lastBox.contentWidth}px`,
           left: `${pageLeftOf(lastSection!) + twipsToPx(lastPageMargins.left)}px`,
@@ -10126,12 +10153,15 @@ export function App() {
         }
       : undefined
   // symmetric pin for the leading header (it belongs to the first section): the
-  // widened shared paper would otherwise re-center it at the wrong x
+  // widened shared paper, or side margins that differ, would otherwise center it
+  // at the wrong x
   const edgeHeaderStyle =
     canvasBox &&
     canvasSection &&
     firstPageMargins &&
-    (paperW - canvasBox.width > 0.5 || mirrorMargins)
+    (paperW - canvasBox.width > 0.5 ||
+      mirrorMargins ||
+      firstPageMargins.left !== firstPageMargins.right)
       ? {
           width: `${canvasBox.contentWidth}px`,
           left: `${pageLeftOf(canvasSection) + twipsToPx(firstPageMargins.left)}px`,
@@ -10544,6 +10574,7 @@ export function App() {
                           <HeaderFooterArea
                             kind="header"
                             value={shownHeader ?? { text: '' }}
+                            blank={hfBlankPara('header', doc?.parsed.styles)}
                             images={hfImagesOf('header')}
                             readOnly={isProtected || readMode}
                             onCommit={(next) => {
@@ -10553,7 +10584,6 @@ export function App() {
                             pageNo={firstPageNoText}
                             pageTotal={pageInfo.total}
                             sectionPages={edgeSectionPages?.first}
-                            sectionLabel={hfSectionLabel('header', 0)}
                             editRequest={
                               hfAreaEditRequest?.kind === 'header' ? hfAreaEditRequest.nonce : null
                             }
@@ -10585,6 +10615,20 @@ export function App() {
                             }
                           />
                         )}
+                        {hfBoundary && (
+                          <div
+                            className={`hf-boundary hf-boundary-${hfBoundary.kind}`}
+                            style={{ top: `${hfBoundary.y}px` }}
+                            contentEditable={false}
+                          >
+                            <span className="hf-boundary-tag">{hfBoundary.label}</span>
+                            {hfBoundary.linked && (
+                              <span className="hf-boundary-tag hf-boundary-tag-end">
+                                {t('appHfSameAsPrevious')}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         <EditorContent editor={editor} />
                         {/* footnotes already shown per page in page gaps aren't repeated at the end (last page's footnotes still live here) */}
                         <PageFootnotes
@@ -10612,6 +10656,7 @@ export function App() {
                           <HeaderFooterArea
                             kind="footer"
                             value={shownFooter ?? { text: '' }}
+                            blank={hfBlankPara('footer', doc?.parsed.styles)}
                             images={hfImagesOf('footer')}
                             readOnly={isProtected || readMode}
                             onCommit={(next) => {
@@ -10627,8 +10672,6 @@ export function App() {
                             pageNo={lastPageNoText}
                             pageTotal={pageInfo.total}
                             sectionPages={edgeSectionPages?.last}
-                            linked={hfLinkedAt(lastSectionIdx, 'footer', footerAreaView)}
-                            sectionLabel={hfSectionLabel('footer', lastSectionIdx)}
                             editRequest={
                               hfAreaEditRequest?.kind === 'footer' ? hfAreaEditRequest.nonce : null
                             }

@@ -7823,6 +7823,7 @@ function hfParagraphs(
       ...(frameXAlign ? { frameXAlign } : {}),
       ...(emptySz ? { emptyRunSizeHalfPoints: emptySz } : {}),
       ...(emptyFont ? { emptyRunFont: emptyFont } : {}),
+      ...(styleId && styles?.has(styleId) ? { styleId } : {}),
       runs,
     })
     out.push(...anchoredBoxes)

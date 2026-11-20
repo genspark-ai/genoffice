@@ -992,6 +992,10 @@ export interface SectionInfo {
 
 /** one rich paragraph of a header / footer part */
 export interface HfParagraph extends ParaFormat {
+  /** w:pStyle (a style the document defines): written back on save, so Word keeps
+   *  the paragraph in its Header / Footer style. Its properties are already
+   *  resolved into this format; the reference only names the style. */
+  styleId?: string
   /** w:framePr w:xAlign — text frame floated at the margin edge; the line
    *  overlays the following paragraph's flow line instead of stacking (Word) */
   frameXAlign?: 'left' | 'center' | 'right'
