@@ -1575,35 +1575,48 @@ export async function renderPreviewPages(
   await waitForFullContent()
   if (printJobActive || ctx.pendingMixedExportRef.current)
     return { ok: false, error: 'a print or export job is running; try again when it finishes' }
-  if (!previewIsOpen()) {
-    ctx.setShowPagePreview(true)
-    // React mounts the preview and paginates its sheets after a paint
-    for (let i = 0; i < 120 && previewPageEls().length === 0; i++)
-      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
-  }
-  const pvPages = previewPageEls()
-  if (pvPages.length === 0) return { ok: false, error: 'the pagination preview did not mount' }
+  // the lock is claimed before any await: an export starting during the mount
+  // wait must see a busy print job, not race one still "checking"
   printJobActive = true
+  // a preview this call opened is a preview this call closes again — the tool
+  // runs after every create_document / write_document, and the user should not
+  // end up in the pagination view after each generation
+  const closePreview = !previewIsOpen()
+  if (closePreview) ctx.setShowPagePreview(true)
   const appRoot = appRootEl()
   appRoot?.classList.add('pv-exporting')
   try {
+    if (closePreview) {
+      // React mounts the preview and paginates its sheets after a paint; a
+      // timer, not rAF — a hidden tab fires no frames and the tool would hang
+      // until the user came back. Ten seconds: a heavy document paginates for
+      // a while (the export path's deferral waits the same kind of span).
+      for (let i = 0; i < 100 && previewPageEls().length === 0; i++)
+        await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    const pvPages = previewPageEls()
+    if (pvPages.length === 0) return { ok: false, error: 'the pagination preview did not mount' }
     const keep = Math.max(1, Math.min(maxPages, pvPages.length))
     pvPages.forEach((page, i) => page.classList.toggle('pv-print-skip', i >= keep))
-    const first = pvPages[0] as HTMLElement
-    const w = Math.round((Number.parseFloat(first.style.width) / 96) * 1440)
-    const h = Math.round((Number.parseFloat(first.style.height) / 96) * 1440)
-    const scale = setPrintZoom()
     try {
-      const part = await window.desktop.printPdfBuffer(w, h, scale)
-      if (!part.ok || !part.base64) return { ok: false, error: part.error ?? 'print failed' }
-      return { ok: true, base64: part.base64 }
+      const first = pvPages[0] as HTMLElement
+      const w = Math.round((Number.parseFloat(first.style.width) / 96) * 1440)
+      const h = Math.round((Number.parseFloat(first.style.height) / 96) * 1440)
+      const scale = setPrintZoom()
+      try {
+        const part = await window.desktop.printPdfBuffer(w, h, scale)
+        if (!part.ok || !part.base64) return { ok: false, error: part.error ?? 'print failed' }
+        return { ok: true, base64: part.base64 }
+      } finally {
+        clearPrintZoom()
+      }
     } finally {
-      clearPrintZoom()
+      pvPages.forEach((page) => page.classList.remove('pv-print-skip'))
     }
   } finally {
-    pvPages.forEach((page) => page.classList.remove('pv-print-skip'))
     appRoot?.classList.remove('pv-exporting')
     printJobActive = false
+    if (closePreview) ctx.setShowPagePreview(false)
   }
 }
 

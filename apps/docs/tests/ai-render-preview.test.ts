@@ -10,6 +10,7 @@ import { Editor } from '@tiptap/core'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { createDocsSkill } from '../src/renderer/ai/docs-skill'
 import { executeTool, renderPreviewGuard } from '../src/renderer/ai/tools'
+import { renderPreviewPages } from '../src/renderer/file-actions'
 import type { NumIds } from '../src/renderer/ai/protocol'
 
 vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', () => ({ default: 'worker.js' }))
@@ -217,5 +218,72 @@ describe('the render_preview tool', () => {
         { name: 'render_preview', ok: true },
       ]),
     ).toBeNull()
+  })
+})
+
+describe('renderPreviewPages (the print stage itself)', () => {
+  const previewDom = (): void => {
+    document.body.innerHTML =
+      '<div class="app"><div class="pagination-preview">' +
+      '<div class="pv-page" style="width: 794px; height: 1123px"></div>' +
+      '<div class="pv-page" style="width: 794px; height: 1123px"></div>' +
+      '<div class="pv-page" style="width: 794px; height: 1123px"></div>' +
+      '</div></div>'
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('prints one job at the first kept page size, skips the rest, restores everything', async () => {
+    previewDom()
+    const printPdfBuffer = vi.fn(async () => ({ ok: true, base64: 'cGFnZXM=' }))
+    vi.stubGlobal('window', Object.assign(window, { desktop: { printPdfBuffer } }))
+    const previewCalls: boolean[] = []
+    const ctx = {
+      pendingMixedExportRef: { current: null },
+      setShowPagePreview: (show: boolean) => previewCalls.push(show),
+    }
+    const result = await renderPreviewPages(ctx as never, 2)
+    expect(result).toEqual({ ok: true, base64: 'cGFnZXM=' })
+    // one job at the first page's size in twips (794px / 96 * 1440)
+    expect(printPdfBuffer).toHaveBeenCalledTimes(1)
+    expect(printPdfBuffer.mock.calls[0]?.slice(0, 2)).toEqual([11910, 16845])
+    // the skip classes are removed again and the preview stays as it was
+    for (const page of document.querySelectorAll('.pv-page'))
+      expect(page.classList.contains('pv-print-skip')).toBe(false)
+    // the preview was already open, so the stage does not touch its state
+    expect(previewCalls).toEqual([])
+    // a busy print job is refused instead of interleaving
+    const busy = { pendingMixedExportRef: { current: {} }, setShowPagePreview: () => {} }
+    await expect(renderPreviewPages(busy as never, 2)).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining('print or export job'),
+    })
+    expect(printPdfBuffer).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the preview, waits on timers, and closes it again when it opened it', async () => {
+    const printPdfBuffer = vi.fn()
+    vi.stubGlobal('window', Object.assign(window, { desktop: { printPdfBuffer } }))
+    const previewCalls: boolean[] = []
+    const ctx = {
+      pendingMixedExportRef: { current: null },
+      setShowPagePreview: (show: boolean) => previewCalls.push(show),
+    }
+    vi.useFakeTimers()
+    let result: Awaited<ReturnType<typeof renderPreviewPages>>
+    const run = renderPreviewPages(ctx as never, 2).then((r) => {
+      result = r
+    })
+    // the mount wait is a timer loop (a hidden tab fires no frames): let it
+    // spend its ten seconds against a DOM that never mounts the preview
+    await vi.advanceTimersByTimeAsync(10_100)
+    await run
+    vi.useRealTimers()
+    expect(result!).toEqual({ ok: false, error: 'the pagination preview did not mount' })
+    expect(printPdfBuffer).not.toHaveBeenCalled()
+    // opened, then closed — the tool does not leave the user in the preview
+    expect(previewCalls).toEqual([true, false])
   })
 })
