@@ -171,6 +171,19 @@ function readFilter(filter: ArrayValueObject, rowCount: number): boolean[] {
   return out
 }
 
+/** a blank output cell: the engine chokes on null entries downstream (INDEX
+    raises inside the formula engine and the workbook's next formulas die with
+    it), so blanks travel as empty text */
+function blankCell(): StringValueObject {
+  return textValue('')
+}
+
+/** ascending by the raw value, numbers numeric and everything else as text */
+function compareRawValues(a: { raw: unknown }, b: { raw: unknown }): number {
+  if (typeof a.raw === 'number' && typeof b.raw === 'number') return a.raw - b.raw
+  return String(a.raw ?? '').localeCompare(String(b.raw ?? ''))
+}
+
 /** an output array from a cell-object matrix (errors stay errors, numbers
     keep their type) */
 function arrayOf(cells: (BaseValueObject | null)[][]): ArrayValueObject {
@@ -228,10 +241,7 @@ function orderGroups(grouped: Grouped, sortOrder: number, keyColumns: number): G
   if (column >= keyColumns) return grouped
   const order = grouped.keys
     .map((key, index) => ({ raw: key[column]?.getValue(), index }))
-    .sort((a, b) => {
-      if (typeof a.raw === 'number' && typeof b.raw === 'number') return (a.raw - b.raw) * direction
-      return String(a.raw ?? '').localeCompare(String(b.raw ?? '')) * direction
-    })
+    .sort((a, b) => compareRawValues(a, b) * direction)
     .map((entry) => entry.index)
   return { keys: order.map((at) => grouped.keys[at]!), rows: order.map((at) => grouped.rows[at]!) }
 }
@@ -352,11 +362,15 @@ class GroupByFunction extends BaseFunction {
       const head: (BaseValueObject | null)[] = []
       const generated = headerMode.generate ? generatedHeaders(keyColumns, valueColumns) : null
       for (let column = 0; column < keyColumns; column++) {
-        head.push(generated ? textValue(generated[column]!) : (rowFields.get(0, column) ?? null))
+        head.push(
+          generated ? textValue(generated[column]!) : (rowFields.get(0, column) ?? blankCell()),
+        )
       }
       for (let column = 0; column < valueColumns; column++) {
         head.push(
-          generated ? textValue(generated[keyColumns + column]!) : (values.get(0, column) ?? null),
+          generated
+            ? textValue(generated[keyColumns + column]!)
+            : (values.get(0, column) ?? blankCell()),
         )
       }
       out.push(head)
@@ -371,7 +385,7 @@ class GroupByFunction extends BaseFunction {
     if (totalDepth.value > 0 && ordered.keys.length > 0) {
       const total: (BaseValueObject | null)[] = []
       for (let column = 0; column < keyColumns; column++) {
-        total.push(column === 0 ? textValue(TOTAL_LABEL) : null)
+        total.push(column === 0 ? textValue(TOTAL_LABEL) : blankCell())
       }
       for (let column = 0; column < valueColumns; column++) {
         total.push(aggregateRows(values, dataRows, column, fnName, this._functionService))
@@ -414,11 +428,12 @@ class PivotByFunction extends BaseFunction {
     if ('error' in headers) return headers.error
     const rowTotal = numberArg(variants[5], 1)
     if ('error' in rowTotal) return rowTotal.error
-    const rowSort = numberArg(variants[6], 0)
+    // missing sort orders are Excel's ascending by the first field of their axis
+    const rowSort = numberArg(variants[6], 1)
     if ('error' in rowSort) return rowSort.error
     const colTotal = numberArg(variants[7], 1)
     if ('error' in colTotal) return colTotal.error
-    const colSort = numberArg(variants[8], 0)
+    const colSort = numberArg(variants[8], 1)
     if ('error' in colSort) return colSort.error
     const filterVariant = variants[9]
     const rowCount = Math.min(
@@ -456,29 +471,43 @@ class PivotByFunction extends BaseFunction {
       colRows[index]!.push(row)
     }
     const orderedRows = orderGroups(grouped, rowSort.value, keyColumns)
-    // the column keys order: a negative col_sort_order reverses first-seen
+    // the column keys order: col_sort_order names the column axis's own sort,
+    // ascending by default, negative for descending
+    const colDirection = colSort.value < 0 ? -1 : 1
     let columnOrder = colKeys.map((unused, index) => index)
     if (colSort.value !== 0 && colKeys.length > 1) {
-      columnOrder = colSort.value > 0 ? columnOrder : [...columnOrder].reverse()
+      columnOrder = colKeys
+        .map((key, index) => ({ raw: key.getValue(), index }))
+        .sort((a, b) => compareRawValues(a, b) * colDirection)
+        .map((entry) => entry.index)
     }
     const out: (BaseValueObject | null)[][] = []
-    if (headerMode.show) {
-      const head: (BaseValueObject | null)[] = []
-      const generated = headerMode.generate ? generatedHeaders(keyColumns, 0) : null
-      for (let column = 0; column < keyColumns; column++) {
-        head.push(generated ? textValue(generated[column]!) : (rowFields.get(0, column) ?? null))
-      }
-      for (const index of columnOrder) head.push(colKeys[index]!)
-      if (rowTotal.value > 0) head.push(textValue(TOTAL_LABEL))
-      out.push(head)
+    // the column keys always ride the first row — they are the pivot's column
+    // axis, not a header — with the row-field names in the corner when field
+    // headers show and blank cells when they do not
+    const head: (BaseValueObject | null)[] = []
+    const generated = headerMode.generate ? generatedHeaders(keyColumns, 0) : null
+    for (let column = 0; column < keyColumns; column++) {
+      head.push(
+        headerMode.show
+          ? generated
+            ? textValue(generated[column]!)
+            : (rowFields.get(0, column) ?? blankCell())
+          : blankCell(),
+      )
     }
+    for (const index of columnOrder) head.push(colKeys[index]!)
+    if (rowTotal.value > 0) head.push(textValue(TOTAL_LABEL))
+    out.push(head)
     for (let group = 0; group < orderedRows.keys.length; group++) {
       const row: (BaseValueObject | null)[] = [...orderedRows.keys[group]!]
       const rows = new Set(orderedRows.rows[group]!)
       for (const index of columnOrder) {
         const slice = colRows[index]!.filter((at) => rows.has(at))
         row.push(
-          slice.length > 0 ? aggregateRows(values, slice, 0, fnName, this._functionService) : null,
+          slice.length > 0
+            ? aggregateRows(values, slice, 0, fnName, this._functionService)
+            : blankCell(),
         )
       }
       if (rowTotal.value > 0) {
@@ -489,7 +518,7 @@ class PivotByFunction extends BaseFunction {
     if (colTotal.value > 0 && dataRows.length > 0) {
       const total: (BaseValueObject | null)[] = []
       for (let column = 0; column < keyColumns; column++) {
-        total.push(column === 0 ? textValue(TOTAL_LABEL) : null)
+        total.push(column === 0 ? textValue(TOTAL_LABEL) : blankCell())
       }
       for (const index of columnOrder) {
         total.push(aggregateRows(values, colRows[index]!, 0, fnName, this._functionService))
@@ -535,7 +564,7 @@ const EXCEL_365_AGGREGATOR_DESCRIPTIONS: IFunctionInfo[] = [
       },
       {
         name: 'field_headers',
-        detail: '0 no headers, 1 headers, 2 auto',
+        detail: '0 no headers, 1 hidden, 2 generate, 3 show',
         example: '',
         require: 0,
         repeat: 0,
@@ -594,7 +623,7 @@ const EXCEL_365_AGGREGATOR_DESCRIPTIONS: IFunctionInfo[] = [
       },
       {
         name: 'field_headers',
-        detail: '0 no headers, 1 headers, 2 auto',
+        detail: '0 no headers, 1 hidden, 2 generate, 3 show',
         example: '',
         require: 0,
         repeat: 0,

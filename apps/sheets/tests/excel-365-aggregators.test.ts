@@ -88,7 +88,7 @@ describe('GROUPBY and PIVOTBY', () => {
     // auto headers shown: the detected header row, then the groups
     expect(await calc('=INDEX(GROUPBY(B1:B4,C1:C4,SUM),1,1)')).toBe('Category')
     expect(await calc('=INDEX(GROUPBY(B1:B4,C1:C4,SUM),2,1)')).toBe('Fruit')
-    // merrick's case: numeric values argue no headers, groups sort ascending
+    // numeric values argue no headers, groups sort ascending
     // by the row field, and the grand total is there without asking
     expect(await calc('=INDEX(GROUPBY(B2:B4,C2:C4,SUM),1,1)')).toBe('Fruit')
     expect(await calc('=INDEX(GROUPBY(B2:B4,C2:C4,SUM),1,2)')).toBe(30)
@@ -118,12 +118,26 @@ describe('GROUPBY and PIVOTBY', () => {
     expect(await calc('=INDEX(GROUPBY(B2:B3,C2:C3,SUM,0,1,-1),2,1)')).toBe('Total')
     // the filter array drops Banana before grouping: 10 + 30
     expect(await calc('=SUM(GROUPBY(B1:B4,C1:C4,SUM,3,0,0,{TRUE;TRUE;FALSE;TRUE}))')).toBe(40)
-    // PIVOTBY: Apple under Fruit = 10; Carrot under Veg = 30 (spill matrix)
-    expect(await calc('=INDEX(PIVOTBY(A2:A4,B2:B4,C2:C4,SUM,0),1,2)')).toBe(10)
-    expect(await calc('=INDEX(PIVOTBY(A2:A4,B2:B4,C2:C4,SUM,0),3,3)')).toBe(30)
-    // PIVOTBY's automatic headers: detected and shown from the same values
+    // PIVOTBY: the column keys always ride the first row (they are the pivot's
+    // column axis, not a header), blank corner without field names, and the
+    // grand total column and row Excel shows by default
+    expect(await calc('=INDEX(PIVOTBY(A2:A4,B2:B4,C2:C4,SUM,0),1,2)')).toBe('Fruit')
+    expect(await calc('=INDEX(PIVOTBY(A2:A4,B2:B4,C2:C4,SUM,0),1,3)')).toBe('Veg')
+    expect(await calc('=INDEX(PIVOTBY(A2:A4,B2:B4,C2:C4,SUM,0),1,4)')).toBe('Total')
+    // Apple under Fruit = 10; Carrot under Veg = 30 (rows shifted by the keys row)
+    expect(await calc('=INDEX(PIVOTBY(A2:A4,B2:B4,C2:C4,SUM,0),2,2)')).toBe(10)
+    expect(await calc('=INDEX(PIVOTBY(A2:A4,B2:B4,C2:C4,SUM,0),4,3)')).toBe(30)
+    // an empty intersection is blank and does not take the workbook down
+    expect(String(await calc('=INDEX(PIVOTBY(A2:A4,B2:B4,C2:C4,SUM,0),2,3)'))).toBe('')
+    // col_sort_order -1 puts the column keys in descending order
+    expect(await calc('=INDEX(PIVOTBY(A2:A4,B2:B4,C2:C4,SUM,0,1,1,1,-1),1,2)')).toBe('Veg')
+    // PIVOTBY's automatic headers: detected and shown — the row field's name
+    // rides the keys row's corner
     expect(await calc('=INDEX(PIVOTBY(A1:A4,B1:B4,C1:C4,SUM),1,1)')).toBe('Product')
-    // a plain formula elsewhere is untouched
+    // a GROUPBY total row over two row fields: the label cells past the first
+    // are blanks a reader can touch without crashing
+    expect(String(await calc('=INDEX(GROUPBY(A2:B4,C2:C4,SUM),4,2)'))).toBe('')
+    // the workbook still calculates plainly afterwards
     expect(await calc('=SUM(C2:C4)')).toBe(60)
     univer.dispose()
   }, 60_000)
