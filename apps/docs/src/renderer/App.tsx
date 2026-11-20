@@ -688,6 +688,7 @@ import {
   resolvedCommentsPluginKey,
   revisionDisplayState,
 } from './editor/extensions'
+import { setPermRegionsEnabled } from './editor/perm-regions'
 import { resolveDarkPage, writeDarkPagePref } from './dark-page-pref'
 import { useDocThemeIsDark, useUiThemeIsDark } from './ui-theme'
 import { type InkAnnotation, type InkTool } from './editor/ink'
@@ -2617,6 +2618,22 @@ export function App() {
     editRestriction === 'comments'
   /** comments restriction: body read-only but adding comments stays allowed */
   const commentsAllowed = !writeLocked && editRestriction === 'comments'
+  /**
+   * Read-only protection with regions open to everyone (Word's editing
+   * exceptions, w:permStart w:edGrp="everyone"): those regions stay editable
+   * and highlighted, the rest of the body stays locked (PermRegionsExtension).
+   */
+  const permRegionsActive = useMemo(
+    () =>
+      !writeLocked &&
+      editRestriction === 'readOnly' &&
+      !!doc?.parsed.blocks.some(
+        (block) =>
+          block.permEditable === true ||
+          !!block.table?.rows.some((row) => row.some((cell) => cell.permEditable === true)),
+      ),
+    [writeLocked, editRestriction, doc],
+  )
   /** trackedChanges restriction: editing allowed, revision recording forced on */
   const trackChangesForced = !writeLocked && editRestriction === 'trackedChanges'
 
@@ -2632,14 +2649,15 @@ export function App() {
   // StreamingTailGuardExtension; saves wait for the full content).
   useEffect(() => {
     if (!editor) return
-    setEditorEditable(editor, !readMode && !isProtected)
+    setEditorEditable(editor, !readMode && (!isProtected || permRegionsActive))
+    setPermRegionsEnabled(editor, !readMode && permRegionsActive)
     if (!readMode) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setReadMode(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [editor, readMode, isProtected])
+  }, [editor, readMode, isProtected, permRegionsActive])
 
   // Track Changes: the recorder plugin reads its toggle from extension storage
   useEffect(() => {
