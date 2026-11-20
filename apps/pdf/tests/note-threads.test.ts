@@ -88,8 +88,8 @@ describe('toSavedNote', () => {
     expect(note!.timeMs).toBe(Date.UTC(2026, 7, 12, 9, 30, 0))
   })
 
-  it('skips non-Text, hidden, Group and ref-less annotations', () => {
-    expect(toSavedNote(raw({ annotationType: 9 }), 0)).toBeNull()
+  it('skips unsupported, hidden, Group and ref-less annotations', () => {
+    expect(toSavedNote(raw({ annotationType: 2 }), 0)).toBeNull()
     expect(toSavedNote(raw({ hidden: true }), 0)).toBeNull()
     expect(toSavedNote(raw({ replyType: 'Group' }), 0)).toBeNull()
     expect(toSavedNote(raw({ id: 'annot_x' }), 0)).toBeNull()

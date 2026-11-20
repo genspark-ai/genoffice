@@ -81,7 +81,29 @@ function annotMatches(m: Pdfium, annot: number, d: AnnotDeleteInput): boolean {
   if (m._FPDFAnnot_GetSubtype(annot) !== SUBTYPE_CODE[d.subtype]) return false
   const rect = annotRect(m, annot)
   if (!rect) return false
-  if (d.subtype === 'note' ? !cornersClose(rect, d.rect) : !rectsClose(rect, d.rect)) return false
+  if (d.quadPoints?.length) {
+    if (
+      d.quadPoints.some((value) => !Number.isFinite(value)) ||
+      d.quadPoints.length % 8 ||
+      m._FPDFAnnot_CountAttachmentPoints(annot) !== d.quadPoints.length / 8
+    )
+      return false
+    const ptr = m._malloc(32)
+    try {
+      for (let index = 0; index < d.quadPoints.length / 8; index++) {
+        if (!m._FPDFAnnot_GetAttachmentPoints(annot, index, ptr)) return false
+        for (let point = 0; point < 8; point++) {
+          if (
+            Math.abs(m.HEAPF32[(ptr >> 2) + point]! - d.quadPoints[index * 8 + point]!) > RECT_TOL
+          )
+            return false
+        }
+      }
+    } finally {
+      m._free(ptr)
+    }
+  } else if (d.subtype === 'note' ? !cornersClose(rect, d.rect) : !rectsClose(rect, d.rect))
+    return false
   return d.contents === undefined || annotContents(m, annot) === d.contents
 }
 
