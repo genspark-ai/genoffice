@@ -68,6 +68,36 @@ describe('applyParagraphStyle', () => {
     expect(editor.state.doc.child(0).attrs.styleId).toBe('Normal')
     editor.destroy()
   })
+
+  it('re-applying the active style is a no-op (no doc-changing transaction)', () => {
+    const editor = makeEditor()
+    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 3)))
+    applyParagraphStyleId(editor, 'Normal', null)
+
+    const before = editor.state.doc
+    const txns: Array<{ docChanged: boolean; steps: number }> = []
+    const capture = ({ transaction }: { transaction: { docChanged: boolean; steps: unknown[] } }) =>
+      txns.push({ docChanged: transaction.docChanged, steps: transaction.steps.length })
+    editor.on('transaction', capture)
+    applyParagraphStyleId(editor, 'Normal', null) // same style, same type
+    editor.off('transaction', capture)
+
+    expect(editor.state.doc).toBe(before)
+    expect(txns.every((t) => !t.docChanged && t.steps === 0)).toBe(true)
+    editor.destroy()
+  })
+
+  it('re-applying the same heading level is also a no-op, a real change still applies', () => {
+    const editor = makeEditor()
+    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 3)))
+    applyParagraphStyle(editor, 'h1')
+    const before = editor.state.doc
+    applyParagraphStyle(editor, 'h1')
+    expect(editor.state.doc).toBe(before)
+    applyParagraphStyle(editor, 'h2') // a real change must still apply
+    expect(editor.state.doc.child(0).attrs.level).toBe(2)
+    editor.destroy()
+  })
 })
 
 describe('Word\u2019s 50% rule for direct character formatting', () => {
