@@ -4,6 +4,7 @@ import { VIEW_IMAGE_CHANNEL, type MarkdownImage, type PdfInternalLink } from '..
 import { toCommandMenuState, type CommandMenuState } from '../shared/commands'
 import type { KeyOverrides } from '../shared/keybindings'
 import type { AiPanelPrefs } from '@genoffice/ui'
+import { MEASUREMENT_UNIT_CHANNELS } from '@genoffice/ui/measurement'
 import type {
   AiChatRequest,
   AiSettings,
@@ -49,6 +50,13 @@ const api: DesktopApi = {
     const listener = (_event: IpcRendererEvent, theme: DocTheme) => handler(theme)
     ipcRenderer.on('app:document-theme-changed', listener)
     return () => ipcRenderer.removeListener('app:document-theme-changed', listener)
+  },
+  getMeasurementUnit: () => ipcRenderer.invoke(MEASUREMENT_UNIT_CHANNELS.get),
+  setMeasurementUnit: (unit) => ipcRenderer.invoke(MEASUREMENT_UNIT_CHANNELS.set, unit),
+  onMeasurementUnitChanged: (handler) => {
+    const listener = (_event: IpcRendererEvent, state: unknown) => handler(state)
+    ipcRenderer.on(MEASUREMENT_UNIT_CHANNELS.changed, listener)
+    return () => ipcRenderer.removeListener(MEASUREMENT_UNIT_CHANNELS.changed, listener)
   },
   getAutoSaveDefault: () => ipcRenderer.invoke('app:get-auto-save-default'),
   onAutoSaveDefaultChanged: (handler) => {

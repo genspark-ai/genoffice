@@ -4,8 +4,17 @@
  * sizes so a deck prints edge to edge on that paper.
  */
 
-export const EMU_PER_UNIT = { mm: 36000, cm: 360000, in: 914400 } as const
-export type SizeUnit = keyof typeof EMU_PER_UNIT
+import { DECIMALS, type MeasurementUnit } from '@genoffice/ui/measurement'
+
+export type SizeUnit = MeasurementUnit
+/** listed in the order the Units menu shows them */
+export const EMU_PER_UNIT: Record<SizeUnit, number> = {
+  in: 914400,
+  cm: 360000,
+  mm: 36000,
+  pt: 12700,
+  pi: 152400,
+}
 
 /** ECMA-376 ST_SlideSizeCoordinate: 1 inch to 56 inches per side */
 export const MIN_SLIDE_EMU = 914400
@@ -56,10 +65,9 @@ export function lengthToEmu(value: string, unit: SizeUnit): number | null {
   return emu >= MIN_SLIDE_EMU && emu <= MAX_SLIDE_EMU ? emu : null
 }
 
-/** EMU shown in `unit`, without trailing zeros (2 decimals; 1 for mm) */
+/** EMU shown in `unit`, without trailing zeros (2 decimals; 1 for mm and pt) */
 export function emuToLength(emu: number, unit: SizeUnit): string {
-  const digits = unit === 'mm' ? 1 : 2
-  return String(Number((emu / EMU_PER_UNIT[unit]).toFixed(digits)))
+  return String(Number((emu / EMU_PER_UNIT[unit]).toFixed(DECIMALS[unit])))
 }
 
 const DEFAULT_KEY = 'ai-slides-default-size'

@@ -178,7 +178,7 @@ export const ja = {
   ribbonBulletHangNarrow: '狭い',
   ribbonBulletHangNormal: '標準',
   ribbonBulletHangWide: '広い',
-  ribbonBulletHangCustomTip: 'カスタム箇条書きインデント（px、Enter で適用）',
+  ribbonBulletHangCustomTip: 'カスタム箇条書きインデント（{unit}、Enter で適用）',
   ribbonBulletSize: '行頭文字のサイズ',
   ribbonBulletColor: '行頭文字の色',
   ribbonNumberStyle: '番号書式',

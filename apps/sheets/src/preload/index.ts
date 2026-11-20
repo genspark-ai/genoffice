@@ -1,4 +1,5 @@
 import type { AiPanelPrefs } from '@genoffice/ui'
+import { MEASUREMENT_UNIT_CHANNELS } from '@genoffice/ui/measurement'
 import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 
 import type {
@@ -97,6 +98,12 @@ const desktopApi: DesktopApi = {
     const listener = (_event: Electron.IpcRendererEvent, theme: UiTheme) => handler(theme)
     ipcRenderer.on('app:theme-changed', listener)
     return () => ipcRenderer.removeListener('app:theme-changed', listener)
+  },
+  getMeasurementUnit: () => ipcRenderer.invoke(MEASUREMENT_UNIT_CHANNELS.get),
+  onMeasurementUnitChanged(handler) {
+    const listener = (_event: Electron.IpcRendererEvent, state: unknown) => handler(state)
+    ipcRenderer.on(MEASUREMENT_UNIT_CHANNELS.changed, listener)
+    return () => ipcRenderer.removeListener(MEASUREMENT_UNIT_CHANNELS.changed, listener)
   },
   getDocumentTheme: async () => {
     const result: unknown = await ipcRenderer.invoke('app:get-document-theme')

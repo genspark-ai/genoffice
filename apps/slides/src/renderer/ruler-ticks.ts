@@ -1,11 +1,18 @@
 /** Ruler tick math (PowerPoint-style): 0 sits at the slide center and values
- * grow toward both edges, in inches or centimeters. Pure module so the tick
- * layout is unit-testable without the DOM. */
+ * grow toward both edges, in the app-wide measurement unit. Pure module so the
+ * tick layout is unit-testable without the DOM. */
+import { DECIMALS, type MeasurementUnit } from '@genoffice/ui/measurement'
 
-export type RulerUnit = 'in' | 'cm'
+export type RulerUnit = MeasurementUnit
 
 /** Slide px per unit at zoom 1 (FIT_WIDTH viewport: 1280px ↔ 13.33in ↔ 96dpi) */
-export const PX_PER_UNIT: Record<RulerUnit, number> = { in: 96, cm: 96 / 2.54 }
+export const PX_PER_UNIT: Record<RulerUnit, number> = {
+  in: 96,
+  cm: 96 / 2.54,
+  mm: 96 / 25.4,
+  pt: 96 / 72,
+  pi: 16,
+}
 
 export type RulerTick = {
   /** ruler-local CSS px */
@@ -15,7 +22,7 @@ export type RulerTick = {
 }
 
 /** Smallest label step (whole units) whose on-screen distance stays readable */
-const LABEL_STEPS = [1, 2, 5, 10, 20, 50, 100]
+const LABEL_STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500]
 
 export function computeRulerTicks({
   rulerLen,
@@ -62,6 +69,6 @@ export function computeRulerTicks({
  * PowerPoint's guide drag readout). */
 export function formatRulerValue(frac: number, slideLen: number, unit: RulerUnit): string {
   const v = Math.abs((frac - 0.5) * slideLen) / PX_PER_UNIT[unit]
-  const txt = v.toFixed(2).replace(/\.?0+$/, '') || '0'
+  const txt = v.toFixed(DECIMALS[unit]).replace(/\.?0+$/, '') || '0'
   return `${txt} ${unit}`
 }

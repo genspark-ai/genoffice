@@ -175,7 +175,7 @@ export const tr = {
   ribbonBulletHangNarrow: 'Dar',
   ribbonBulletHangNormal: 'Normal',
   ribbonBulletHangWide: 'Geniş',
-  ribbonBulletHangCustomTip: 'Özel madde işareti girintisi (px, uygulamak için Enter)',
+  ribbonBulletHangCustomTip: 'Özel madde işareti girintisi ({unit}, uygulamak için Enter)',
   ribbonBulletSize: 'Madde işareti boyutu',
   ribbonBulletColor: 'Madde işareti rengi',
   ribbonNumberStyle: 'Numaralandırma stili',

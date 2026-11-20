@@ -179,7 +179,7 @@ export const de = {
   ribbonBulletHangNormal: 'Normal',
   ribbonBulletHangWide: 'Breit',
   ribbonBulletHangCustomTip:
-    'Benutzerdefinierter Aufzählungseinzug (px, Eingabetaste zum Anwenden)',
+    'Benutzerdefinierter Aufzählungseinzug ({unit}, Eingabetaste zum Anwenden)',
   ribbonBulletSize: 'Aufzählungszeichengröße',
   ribbonBulletColor: 'Aufzählungszeichenfarbe',
   ribbonNumberStyle: 'Nummerierungsformat',

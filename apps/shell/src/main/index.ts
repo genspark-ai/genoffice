@@ -319,6 +319,13 @@ import {
   sameAiPanelPrefs,
   type AiPanelPrefs,
 } from '@genoffice/ui/ai-panel-prefs'
+import {
+  MEASUREMENT_UNIT_CHANNELS,
+  defaultMeasurementUnit,
+  isMeasurementUnit,
+  measurementUnitForRegion,
+  type MeasurementUnitState,
+} from '@genoffice/ui/measurement'
 import type { TabKind } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
 import { showErrorDialog } from './error-dialog'
@@ -5437,6 +5444,28 @@ function registerHomeIpc(): void {
   ipcMain.handle(HOME_CHANNELS.getDocumentTheme, (): DocTheme => currentDocTheme())
   // editor tabs ask via the app-wide channel (symmetric with app:get-theme)
   ipcMain.handle('app:get-document-theme', (): DocTheme => currentDocTheme())
+
+  // measurement units (Settings ▸ General): one preference for every editor's
+  // rulers and length fields; unset follows the system region (an English UI
+  // in a metric country still gets centimeters)
+  const measurementUnitState = (): MeasurementUnitState => {
+    const saved = readAppSettings(APP_SETTINGS_PATH()).measurementUnit
+    if (isMeasurementUnit(saved)) return { unit: saved, explicit: true }
+    const unit =
+      measurementUnitForRegion(app.getLocaleCountryCode()) ??
+      defaultMeasurementUnit(app.getLocale() || 'en-US')
+    return { unit, explicit: false }
+  }
+  ipcMain.handle(MEASUREMENT_UNIT_CHANNELS.get, (): MeasurementUnitState => measurementUnitState())
+  ipcMain.handle(MEASUREMENT_UNIT_CHANNELS.set, (_event, unit: unknown): MeasurementUnitState => {
+    if (unit !== null && !isMeasurementUnit(unit)) return measurementUnitState()
+    writeAppSetting(APP_SETTINGS_PATH(), 'measurementUnit', unit)
+    const state = measurementUnitState()
+    for (const wc of webContents.getAllWebContents()) {
+      if (!wc.isDestroyed()) wc.send(MEASUREMENT_UNIT_CHANNELS.changed, state)
+    }
+    return state
+  })
 
   ipcMain.handle(HOME_CHANNELS.setDocumentTheme, (_event, theme: unknown) => {
     if (theme !== 'light' && theme !== 'dark' && theme !== 'follow') return

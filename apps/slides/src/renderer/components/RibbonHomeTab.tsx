@@ -12,6 +12,8 @@ import { armColorInput } from '../color-input'
 import { displayFontFamily } from '../konva-adapter'
 import { useSystemFontFamilies } from '../system-fonts'
 import { useFontCatalog } from '../font-manager'
+import { parseLengthEmu } from '@genoffice/ui/measurement'
+import { unitSuffixes, useMeasurementUnit } from '../measurement-unit'
 import {
   GensparkMark,
   IconAiBeautify,
@@ -210,11 +212,13 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
     fontRow++
     return undefined
   }
-  const EMU_PER_PX = 9525
+  // typed in the app-wide unit (Settings ▸ General); any other unit suffix also reads
+  const lengthUnit = useMeasurementUnit()
+  const lengthSuffixes = unitSuffixes(t)
   const commitHangDraft = () => {
-    const px = parseFloat(hangDraft.replace(',', '.'))
-    if (!Number.isFinite(px) || px < 0 || !hasSelection) return
-    onParagraphFormat({ bulletHangEmu: Math.round(px * EMU_PER_PX) })
+    const emu = parseLengthEmu(hangDraft, lengthUnit, lengthSuffixes)
+    if (emu === null || emu < 0 || !hasSelection) return
+    onParagraphFormat({ bulletHangEmu: emu })
   }
   const [symDraft, setSymDraft] = useState('')
   const commitSymDraft = () => {
@@ -1124,8 +1128,10 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                   <input
                     className="rb-bullet-hang rb-bullet-hang-input"
                     disabled={!hasSelection}
-                    data-tip={t('ribbonBulletHangCustomTip')}
-                    placeholder="px"
+                    data-tip={t('ribbonBulletHangCustomTip', {
+                      unit: lengthSuffixes[lengthUnit],
+                    })}
+                    placeholder={lengthSuffixes[lengthUnit]}
                     value={hangDraft}
                     onMouseDown={(e) => e.stopPropagation()}
                     onChange={(e) => setHangDraft(e.target.value)}

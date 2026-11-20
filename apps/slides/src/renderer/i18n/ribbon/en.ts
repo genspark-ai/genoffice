@@ -174,7 +174,7 @@ export const en = {
   ribbonBulletHangNarrow: 'Narrow',
   ribbonBulletHangNormal: 'Normal',
   ribbonBulletHangWide: 'Wide',
-  ribbonBulletHangCustomTip: 'Custom bullet indent (px, Enter to apply)',
+  ribbonBulletHangCustomTip: 'Custom bullet indent ({unit}, Enter to apply)',
   ribbonBulletSize: 'Bullet size',
   ribbonBulletColor: 'Bullet color',
   ribbonNumberStyle: 'Numbering style',

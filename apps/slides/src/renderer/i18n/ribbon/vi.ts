@@ -174,7 +174,7 @@ export const vi = {
   ribbonBulletHangNarrow: 'Hẹp',
   ribbonBulletHangNormal: 'Bình thường',
   ribbonBulletHangWide: 'Rộng',
-  ribbonBulletHangCustomTip: 'Thụt lề đầu dòng tùy chỉnh (px, nhấn Enter để áp dụng)',
+  ribbonBulletHangCustomTip: 'Thụt lề đầu dòng tùy chỉnh ({unit}, nhấn Enter để áp dụng)',
   ribbonBulletSize: 'Kích cỡ dấu đầu dòng',
   ribbonBulletColor: 'Màu dấu đầu dòng',
   ribbonNumberStyle: 'Kiểu đánh số',
