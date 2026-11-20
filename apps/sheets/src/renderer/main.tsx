@@ -14,6 +14,7 @@ import '@genoffice/ui/ribbon-collapse.css'
 import '@genoffice/ui/markdown.css'
 import '@genoffice/ui/ai-panel-prefs.css'
 import '@genoffice/ui/ai-scope-quote.css'
+import '@genoffice/ui/image-viewer.css'
 import '@univerjs/preset-sheets-core/lib/index.css'
 
 import { App } from './App'
