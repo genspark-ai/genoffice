@@ -159,9 +159,9 @@ impl SourceFormats {
                 };
                 match event {
                     Event::Start(element) | Event::Empty(element)
-                        if element.local_name().as_ref() == b"row" =>
+                        if element.local_name().as_ref() == "row" =>
                     {
-                        let row = attribute_value(&reader, &element, b"r")
+                        let row = attribute_value(&reader, &element, "r")
                             .ok()
                             .flatten()
                             .and_then(|value| value.parse::<u64>().ok());
@@ -170,9 +170,9 @@ impl SourceFormats {
                         }
                     }
                     Event::Start(element) | Event::Empty(element)
-                        if element.local_name().as_ref() == b"c" =>
+                        if element.local_name().as_ref() == "c" =>
                     {
-                        let Ok(Some(address)) = attribute_value(&reader, &element, b"r") else {
+                        let Ok(Some(address)) = attribute_value(&reader, &element, "r") else {
                             buffer.clear();
                             continue;
                         };
@@ -180,7 +180,7 @@ impl SourceFormats {
                             buffer.clear();
                             continue;
                         }
-                        let index = match attribute_value(&reader, &element, b"s").ok().flatten() {
+                        let index = match attribute_value(&reader, &element, "s").ok().flatten() {
                             Some(index) => index.parse().ok(),
                             None => Some(0),
                         };
@@ -189,7 +189,7 @@ impl SourceFormats {
                             break;
                         }
                     }
-                    Event::End(element) if element.local_name().as_ref() == b"sheetData" => break,
+                    Event::End(element) if element.local_name().as_ref() == "sheetData" => break,
                     Event::Eof => break,
                     _ => {}
                 }
@@ -248,9 +248,9 @@ fn cell_style_index(archive: &mut ZipArchive<File>, path: &str, cell: &str) -> O
     loop {
         match reader.read_event_into(&mut buffer).ok()? {
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"row" =>
+                if element.local_name().as_ref() == "row" =>
             {
-                let row = attribute_value(&reader, &element, b"r")
+                let row = attribute_value(&reader, &element, "r")
                     .ok()
                     .flatten()
                     .and_then(|value| value.parse::<u64>().ok());
@@ -259,21 +259,21 @@ fn cell_style_index(archive: &mut ZipArchive<File>, path: &str, cell: &str) -> O
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"c" =>
+                if element.local_name().as_ref() == "c" =>
             {
-                if attribute_value(&reader, &element, b"r")
+                if attribute_value(&reader, &element, "r")
                     .ok()
                     .flatten()
                     .as_deref()
                     == Some(cell)
                 {
-                    return match attribute_value(&reader, &element, b"s").ok().flatten() {
+                    return match attribute_value(&reader, &element, "s").ok().flatten() {
                         Some(index) => index.parse().ok(),
                         None => Some(0),
                     };
                 }
             }
-            Event::End(element) if element.local_name().as_ref() == b"sheetData" => return None,
+            Event::End(element) if element.local_name().as_ref() == "sheetData" => return None,
             Event::Eof => return None,
             _ => {}
         }

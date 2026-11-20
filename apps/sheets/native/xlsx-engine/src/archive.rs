@@ -115,10 +115,7 @@ fn entry_text_contains(entry: impl std::io::Read, needle: &str) -> Result<bool, 
             .map_err(|error| SidecarError::Workbook(error.to_string()))?;
         match event {
             Event::Text(text) => {
-                let decoded = text
-                    .decode()
-                    .map_err(|error| SidecarError::Workbook(error.to_string()))?;
-                run.push_str(&decoded);
+                run.push_str(&text.xml10_content());
             }
             Event::GeneralRef(reference) => {
                 run.push_str(&crate::general_ref_text(&reference)?);

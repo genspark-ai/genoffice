@@ -3,6 +3,8 @@
 
 use std::borrow::Cow;
 
+use quick_xml::XmlVersion;
+
 use super::*;
 
 /// Budget for the parts `read_zip_string` materialises whole (workbook.xml,
@@ -125,16 +127,16 @@ pub(crate) fn copy_entry_bounded<R: Read, W: Write>(
 }
 
 pub(crate) fn attribute_value<R: std::io::BufRead>(
-    reader: &Reader<R>,
+    _reader: &Reader<R>,
     element: &BytesStart<'_>,
-    name: &[u8],
+    name: &str,
 ) -> Result<Option<String>, SidecarError> {
     for attribute in element.attributes().with_checks(false) {
         let attribute = attribute.map_err(|error| SidecarError::Workbook(error.to_string()))?;
         if attribute.key.local_name().as_ref() == name {
             return Ok(Some(
                 attribute
-                    .decode_and_unescape_value(reader.decoder())?
+                    .normalized_value(XmlVersion::Implicit1_0)?
                     .into_owned(),
             ));
         }
@@ -154,9 +156,7 @@ pub(crate) fn general_ref_text(
     {
         return Ok(character.to_string());
     }
-    let name = reference
-        .decode()
-        .map_err(|error| SidecarError::Workbook(error.to_string()))?;
+    let name = reference.xml10_content();
     Ok(match name.as_ref() {
         "amp" => "&".into(),
         "lt" => "<".into(),
@@ -245,14 +245,11 @@ pub(crate) fn preserves_space<R: std::io::BufRead>(
     reader: &Reader<R>,
     element: &BytesStart<'_>,
 ) -> Result<bool, SidecarError> {
-    Ok(attribute_value(reader, element, b"space")?.as_deref() == Some("preserve"))
+    Ok(attribute_value(reader, element, "space")?.as_deref() == Some("preserve"))
 }
 
 pub(crate) fn decode_text(text: &quick_xml::events::BytesText<'_>) -> Result<String, SidecarError> {
-    let decoded = text
-        .decode()
-        .map_err(|error| SidecarError::Workbook(error.to_string()))?;
-    quick_xml::escape::unescape(&decoded)
+    quick_xml::escape::unescape(&text.xml10_content())
         .map(|value| value.into_owned())
         .map_err(|error| SidecarError::Workbook(error.to_string()))
 }
@@ -262,7 +259,5 @@ pub(crate) fn decode_text(text: &quick_xml::events::BytesText<'_>) -> Result<Str
 pub(crate) fn decode_cdata(
     text: &quick_xml::events::BytesCData<'_>,
 ) -> Result<String, SidecarError> {
-    text.decode()
-        .map(|value| value.into_owned())
-        .map_err(|error| SidecarError::Workbook(error.to_string()))
+    Ok(text.xml10_content().into_owned())
 }
