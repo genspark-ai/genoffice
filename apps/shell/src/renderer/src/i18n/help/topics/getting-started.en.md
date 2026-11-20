@@ -1,40 +1,40 @@
 # Quick start: the interface and the basics
 
-GenOffice is an office suite that runs entirely on your machine: one window, one row of tabs, holding six editors — Docs (word processing), Sheets (spreadsheets), Slides (presentations), PDF, Markdown and HTML. Files are genuine .docx / .xlsx / .pptx / .pdf, fully interchangeable with Word, Excel and PowerPoint. No network required.
+GenOffice is a desktop office suite that runs entirely on your own machine, bringing six full editors—Docs for word processing, Sheets for spreadsheets, Slides for presentations, PDF, Markdown, and HTML—together inside one window and one shared row of tabs. Every editor reads and writes genuine .docx, .xlsx, .pptx, and .pdf files that round-trip cleanly with Microsoft Word, Excel, and PowerPoint, with no internet connection required for your everyday document work.
 
 ## Interface overview
 
 ![The Home screen](img/home-screen.png)
 
-The window has three parts:
+When you launch GenOffice, the workspace is organized around three main areas plus a window-wide interface scale control:
 
-- **Tab strip (top)**: every open file is a tab. The leftmost Home tab is always present and cannot be closed; the other tabs are your documents. Double-click a tab to rename its file inline.
-- **Content area**: the editor (or Home) belonging to the active tab.
-- **Menu bar**: in the system menu bar on macOS, at the window top on Windows/Linux. File/Edit/View menus switch to match the active editor.
-- **Interface scale**: **View ▸ Zoom In / Zoom Out / Reset** scales the whole window between 80% and 150% (⌘⌃= / ⌘⌃- / ⌘⌃0 on macOS; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 elsewhere).
+- **Tab strip (top)**: Every file you open gets its own tab along the top of the window so you can switch, reorder, or tear off documents just like browser tabs. The leftmost **Home** tab is permanently pinned and cannot be closed, giving you an instant way back to your file lists, while any saved document tab can be double-clicked (or right-clicked via **Rename**) to rename its underlying file on disk inline.
+- **Content area**: The main workspace below the tab strip automatically switches to show the full editor (or the Home screen) belonging to whichever tab is currently active.
+- **Menu bar**: Located in the system menu bar at the top of the screen on macOS and along the top edge of the window on Windows and Linux, the File, Edit, and View menus dynamically swap their commands to match the active editor tab.
+- **Interface scale**: When working on a high-DPI monitor, a large external display, or a compact laptop screen, you can scale the entire application interface—tabs, ribbons, sidebars, and dialogs together—between **80% and 150%** using **View ▸ Zoom In / Zoom Out / Reset** (`⌘⌃=` / `⌘⌃-` / `⌘⌃0` on macOS; `Ctrl+Alt+=` / `Ctrl+Alt+-` / `Ctrl+Alt+0` on Windows and Linux), while native window controls (macOS traffic lights and Windows/Linux caption buttons) automatically keep their reserved clearance so tabs never slide underneath them.
 
 ## Creating a document
 
-Any of:
+Whenever you want to start a fresh document, you can pick whichever of these three entry points is closest at hand:
 
-- Click a quick-create card in the [Quick start](help://getting-started) section of **Home** (AI Docs, AI Sheets, AI Slides, ...).
-- Menu **File ▸ New**: Docs (⌘N/ctrl+N), Sheets, Slides, Markdown, HTML or PDF.
-- Drag a file onto the window, or double-click it in your file manager (if GenOffice is the default app).
+- Click one of the quick-create cards in the [Quick start](help://getting-started) strip at the top of **Home** (**AI Docs**, **AI Sheets**, **AI Slides**, **AI Markdown**, **AI HTML**, or **AI PDF**) to open a new file of that type straight in its editor.
+- Open **File ▸ New** from the menu bar at any time and choose **Docs** (`⌘N` / `Ctrl+N`), **Sheets**, **Slides**, **Markdown**, **HTML**, or **PDF**.
+- Drag an existing file from Finder or File Explorer directly into the GenOffice window, or simply double-click the file on your desktop once GenOffice is registered as your default handler.
 
-A new document opens untitled; the file on disk is only created at the first save.
+Aside from blank PDFs (which are created on disk immediately so the PDF engine can operate on a real file), newly created documents open as untitled in-memory drafts first and only write a file to disk the first time you save them.
 
 ## Opening files
 
-- Menu **File ▸ Open** (⌘O/ctrl+O) opens the system picker: .docx / .doc / .xlsx / .xls / .csv / .tsv / .pptx / .ppt / .pdf / .md / .html.
-- Click anything in Home's **Recent** list.
-- `genoffice <file>` from a terminal also opens files.
+- Choose **File ▸ Open** (`⌘O` / `Ctrl+O`) from the menu bar to open your operating system's file picker, with native support for `.docx`, `.doc`, `.xlsx`, `.xls`, `.csv`, `.tsv`, `.pptx`, `.ppt`, `.pdf`, `.md`, `.html`, `.txt`, and `.json` files (multi-select opens each chosen file in its own tab).
+- Click any row in the **Recent**, **Starred**, or **Folders** views on the Home screen to open that file immediately, or switch to its existing tab if it is already open.
+- Run `genoffice <file>` from a terminal or shell script to hand a file directly to the running GenOffice window from the command line.
 
-## The save model
+## How saving and AutoSave work
 
-- **Manual save**: ⌘S/ctrl+S, or File ▸ Save / Save As. The first save asks for location and name.
-- **Autosave** turns on only after you have saved the file manually at least once — a PDF you only read is never silently rewritten. Autosave fires shortly after content changes.
-- Closing a tab with unsaved changes asks Save / Discard / Cancel first.
-- Every write lands atomically (temp file + rename), so a power cut cannot leave half a file.
+- **Manual Save and Save As**: Press `⌘S` / `Ctrl+S` or choose **File ▸ Save / Save As** at any time to write your changes to disk; on a brand-new untitled document, the first save prompts you to pick a destination folder and file name.
+- **Safe AutoSave activation**: AutoSave turns on for a document only after you have saved that file manually at least once—that way, a PDF or Word document you merely open to read is never silently rewritten or given a new modification timestamp behind your back. Once active, AutoSave writes your latest edits to disk shortly after you pause typing.
+- **Unsaved-change protection**: If you try to close a tab or quit the window while a document still has unsaved edits, GenOffice always stops and asks whether to **Save**, **Discard**, or **Cancel** before closing.
+- **Atomic disk writes**: Every save writes to a temporary file alongside your document first and swaps it into place with an atomic rename, ensuring that an unexpected power loss or crash mid-save can never leave you with a corrupted, half-written file.
 
 ## Common shortcuts
 
@@ -47,13 +47,13 @@ A new document opens untitled; the file on disk is only created at the first sav
 | Open this manual | F1    | F1              |
 | Fold the ribbon  | ⌥⌘R   | Ctrl+F1         |
 
-**Folding the ribbon** works in every editor. The tab row stays and the command band below it hides; the selected tab doubles as the collapse control, so while the ribbon is folded no tab is selected and pressing any tab brings the band back. Double-clicking a tab does the same. Which way you left it is remembered per editor. Docs adds a middle density: **⌥⌘K** / Ctrl+Alt+K compacts the band to icons only, remembered the same way.
+**Folding and compacting the ribbon** works across every ribbon-based editor in the suite. Pressing `⌥⌘R` (`Ctrl+F1` on Windows and Linux) or double-clicking the active ribbon tab title hides the command band below while keeping the top row of tab labels visible, freeing up vertical room for your document; clicking any ribbon tab brings the command band right back, and each editor remembers how you left it between sessions. For times when you want the buttons visible without taking up full height, Docs also offers a middle **compact** density (`⌥⌘K` on macOS, `Ctrl+Alt+K` on Windows and Linux) that strips the text labels and leaves a sleek single row of icons.
 
-Shortcuts inside each editor (format painter, find & replace, table ops, ...) are in their chapters; Docs additionally ships a searchable keyboard-shortcuts dialog (**⌘/**) covering its own chords in full.
+Editor-specific shortcuts (format painter, find and replace, table operations, slide show controls, and more) are covered in each editor's own chapter and in the full Keyboard Shortcuts reference; inside Docs, you can also press **⌘/** (`Ctrl+/`) at any time to open a live searchable keyboard-shortcuts dialog.
 
 ## The Option+Command chords
 
-Option+Command is the layer Word reserves for structured jumps, and GenOffice fills it the same way. Docs takes most of it; Sheets takes two of its own for Excel parity; one chord works everywhere.
+Desktop Word reserves the `Option+Command` modifier layer (`Ctrl+Alt` on Windows and Linux) for structural jumps and document styles, and GenOffice maps that layer the exact same way so your existing muscle memory carries over. Docs uses most of these chords, Sheets claims two of them for Excel border parity, and one chord works globally across every editor.
 
 **Docs**
 
@@ -67,26 +67,26 @@ Option+Command is the layer Word reserves for structured jumps, and GenOffice fi
 | ⌥⌘E             | Insert endnote     | Ctrl+Alt+D         |
 | ⌥⌘G             | Go To              | Ctrl+G             |
 
-Two of these move on Windows, for the same reason Word splits them. **macOS owns ⌥⌘D** — it shows and hides the Dock — so endnote is ⌥⌘E on the Mac and Ctrl+Alt+D everywhere else. And **Go To** drops the Alt: Ctrl+G, where the Mac chord carries it.
+Two of these chords differ slightly between macOS and Windows for the exact same reason Microsoft Word splits them. Because **macOS reserves `⌥⌘D` system-wide** to show and hide the Dock, inserting an endnote uses `⌥⌘E` on a Mac while keeping the familiar `Ctrl+Alt+D` on Windows and Linux; similarly, **Go To** uses `⌥⌘G` on macOS (leaving `⌘G` and `⇧⌘G` for Find Next and Word Count) and simplifies to `Ctrl+G` on Windows.
 
-**Sheets**, while the grid has focus
+**Sheets** (while the spreadsheet grid has focus)
 
 | Chord (macOS) | What it does    | Windows / Linux |
 | ------------- | --------------- | --------------- |
 | ⌥⌘0           | Outside borders | Ctrl+Shift+7    |
 | ⌥⌘−           | No border       | Ctrl+Shift+−    |
 
-Windows is not a rewrite of the Mac pair. Excel for Mac gives Sheets **both** — ⌘⇧7 and ⌥⌘0 are two keys for the same outside border — so on Windows the command keeps the Ctrl+Shift slot it already had and the Option layer is simply absent.
+Here too, the platform difference reflects genuine Excel conventions rather than an arbitrary remap: Excel for Mac supports **both** `⌘⇧7` and `⌥⌘0` for applying outside borders, whereas Excel on Windows has always kept outside borders and border removal on `Ctrl+Shift+7` and `Ctrl+Shift+-`.
 
-Note that **⌥⌘0 means Normal in Docs and Outside borders in Sheets**. They never appear in the same editor, so nothing collides in use, but ⌥⌘0 is spoken for and is not available as a global chord.
+Notice that **`⌥⌘0` applies the Normal body style in Docs and applies Outside Borders in Sheets**. Because the two editors live in separate tabs and never share focus at the same moment, the two bindings never collide in practice—though it does mean `⌥⌘0` is spoken for and cannot be assigned as a suite-wide global shortcut.
 
-**Every editor**: **⌥⌘R / Ctrl+F1** folds the ribbon, as described above.
+**Every editor**: As noted earlier, **`⌥⌘R` / `Ctrl+F1`** folds or unfolds the ribbon toolbar from anywhere in the suite.
 
-That leaves ⌥⌘D free for GenOffice to use on macOS, if a future command wants it.
+Keeping that layout consistent across the suite leaves the rest of the modifier layer clean and predictable on both macOS and Windows.
 
 ## Where to go next
 
-- Where files live: [The Home screen](help://home-screen).
-- Managing many open files: [Tabs and window management](help://tabs-and-windows).
-- Having the AI do the work: [The AI assistant panel](help://ai-panel).
-- Language, theme, default apps: [Settings, language, theme and MCP integrations](help://settings-integrations).
+- Organizing your recent files, starred items, local folders, and knowledge-base Q&A: see [The Home screen](help://home-screen).
+- Working with many open documents, inline tab renaming, and tear-off windows: see [Tabs and window management](help://tabs-and-windows).
+- Letting the built-in AI assistant draft, rewrite, analyze, and format your documents: see [The AI assistant panel](help://ai-panel).
+- Changing the UI language, light/dark theme, default file associations, and coding-agent connections: see [Settings, language, theme and MCP integrations](help://settings-integrations).
