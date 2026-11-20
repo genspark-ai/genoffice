@@ -139,6 +139,8 @@ export const nl = {
   aiSumImageSearchDone: 'Afbeeldingen gezocht met "{query}" ({count} afbeeldingen)',
   aiSumAnalyzeMedia: 'Media analyseren',
   aiSumAnalyzeMediaDone: 'Media geanalyseerd',
+  aiSumRenderPreview: "Pagina's worden gerenderd voor de layoutcontrole",
+  aiSumRenderPreviewDone: 'Layout gecontroleerd',
   aiSumInsertImage: 'Afbeelding invoegen',
   aiSumInsertWebImage: 'Webafbeelding ingevoegd',
   aiSumGenerateImage: 'Afbeelding genereren',

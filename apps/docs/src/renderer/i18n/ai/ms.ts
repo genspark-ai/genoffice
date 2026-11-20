@@ -137,6 +137,8 @@ export const ms = {
   aiSumImageSearchDone: 'Carian imej "{query}" ({count} imej)',
   aiSumAnalyzeMedia: 'Analisis media',
   aiSumAnalyzeMediaDone: 'Media dianalisis',
+  aiSumRenderPreview: 'Memerender halaman untuk audit susun atur',
+  aiSumRenderPreviewDone: 'Susun atur diaudit',
   aiSumInsertImage: 'Sisipkan imej',
   aiSumInsertWebImage: 'Imej web disisipkan',
   aiSumGenerateImage: 'Jana imej',

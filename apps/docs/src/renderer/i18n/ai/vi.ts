@@ -137,6 +137,8 @@ export const vi = {
   aiSumImageSearchDone: 'Đã tìm hình ảnh "{query}" ({count} hình ảnh)',
   aiSumAnalyzeMedia: 'Phân tích phương tiện',
   aiSumAnalyzeMediaDone: 'Đã phân tích phương tiện',
+  aiSumRenderPreview: 'Đang kết xuất trang để kiểm tra bố cục',
+  aiSumRenderPreviewDone: 'Đã kiểm tra bố cục',
   aiSumInsertImage: 'Chèn hình ảnh',
   aiSumInsertWebImage: 'Đã chèn hình ảnh trên web',
   aiSumGenerateImage: 'Tạo hình ảnh',

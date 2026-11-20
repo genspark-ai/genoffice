@@ -774,6 +774,7 @@ import {
   saveAsTemplate as saveAsTemplateImpl,
   newFile as newFileImpl,
   printDoc as printDocImpl,
+  renderPreviewPages,
   save as saveImpl,
   suggestedSaveAsName,
   writeRecoveryCopy as writeRecoveryCopyImpl,
@@ -10263,6 +10264,7 @@ export function App() {
               commentsAccess={aiCommentsAccess}
               hfAccess={aiHfAccess}
               pageSetupAccess={aiPageSetupAccess}
+              renderPreview={(maxPages) => renderPreviewPages(fileCtxRef.current, maxPages)}
               docExtras={aiDocExtras}
               notesAccess={aiNotesAccess}
               trackChanges={trackChanges}

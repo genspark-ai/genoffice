@@ -136,6 +136,8 @@ export const tr = {
   aiSumImageSearchDone: 'Resim araması "{query}" ({count} resim)',
   aiSumAnalyzeMedia: 'Medyayı çözümle',
   aiSumAnalyzeMediaDone: 'Medya çözümlendi',
+  aiSumRenderPreview: 'Düzen denetimi için sayfalar işleniyor',
+  aiSumRenderPreviewDone: 'Düzen denetlendi',
   aiSumInsertImage: 'Resim ekle',
   aiSumInsertWebImage: 'Web resmi eklendi',
   aiSumGenerateImage: 'Resim oluştur',

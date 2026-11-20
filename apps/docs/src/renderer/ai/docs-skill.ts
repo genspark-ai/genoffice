@@ -11,6 +11,7 @@ import {
 } from './protocol'
 import type { AiDocWriter } from './doc-writer'
 import type { AiPageSetupAccess } from './page-setup'
+import type { RenderPreviewPagesFn } from './tools'
 import {
   AGENT_TOOLS,
   executeTool,
@@ -19,6 +20,7 @@ import {
   type AiHeaderFooterAccess,
   type FrozenSelection,
   type AiDocExtras,
+  renderPreviewGuard,
 } from './tools'
 import type { AiNotesAccess } from './note-ops'
 
@@ -49,6 +51,8 @@ export function createDocsSkill(
   getNotes?: () => AiNotesAccess | undefined,
   /** same as imageGenAvailable, for analyze_media (seeing pictures that are in the document) */
   mediaAnalysisAvailable?: () => boolean,
+  /** the print stage render_preview runs through (App-owned; the tool never prints outside the print pipeline) */
+  getRenderPreview?: () => RenderPreviewPagesFn | undefined,
 ): AgentSkill {
   // Selection frozen per run: tools act on the range the prompt described,
   // not on wherever the user's live selection has wandered mid-run. The doc
@@ -58,7 +62,12 @@ export function createDocsSkill(
   const mediaToolsOff = (): Set<string> => {
     const hidden = new Set<string>()
     if (imageGenAvailable?.() === false) hidden.add('generate_image')
-    if (mediaAnalysisAvailable?.() === false) hidden.add('analyze_media')
+    if (mediaAnalysisAvailable?.() === false) {
+      hidden.add('analyze_media')
+      // the visual self-check rides the same vision model: without it there is
+      // nothing to audit with, and the guard below stays silent to match
+      hidden.add('render_preview')
+    }
     return hidden
   }
   const mediaOffNote = (): string =>
@@ -109,6 +118,11 @@ export function createDocsSkill(
         getPageSetup?.(),
         getExtras?.(),
         getNotes?.(),
+        getRenderPreview?.(),
       ),
+    // the visual self-check: a run that wrote the document wholesale but never
+    // rendered it gets exactly one forced look (the loop caps the correction)
+    verifyResponse: (_finalText, executed) =>
+      renderPreviewGuard(executed, mediaAnalysisAvailable?.() !== false),
   }
 }

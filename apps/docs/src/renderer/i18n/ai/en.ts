@@ -136,6 +136,8 @@ export const en = {
   aiSumImageSearchDone: 'Image search "{query}" ({count} images)',
   aiSumAnalyzeMedia: 'Analyze media',
   aiSumAnalyzeMediaDone: 'Analyzed media',
+  aiSumRenderPreview: 'Rendering pages for a layout audit',
+  aiSumRenderPreviewDone: 'Layout audited',
   aiSumInsertImage: 'Insert image',
   aiSumInsertWebImage: 'Inserted web image',
   aiSumGenerateImage: 'Generate image',

@@ -141,6 +141,8 @@ export const hu = {
   aiSumImageSearchDone: 'Képkeresés: „{query}” ({count} kép)',
   aiSumAnalyzeMedia: 'Média elemzése',
   aiSumAnalyzeMediaDone: 'Média elemezve',
+  aiSumRenderPreview: 'Oldalak renderelése elrendezés-audithoz',
+  aiSumRenderPreviewDone: 'Elrendezés auditálva',
   aiSumInsertImage: 'Kép beszúrása',
   aiSumInsertWebImage: 'Webes kép beszúrva',
   aiSumGenerateImage: 'Kép generálása',

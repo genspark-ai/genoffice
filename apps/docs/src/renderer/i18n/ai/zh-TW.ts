@@ -129,6 +129,8 @@ export const zhTW = {
   aiSumImageSearchDone: '搜圖「{query}」({count} 張)',
   aiSumAnalyzeMedia: '分析媒體',
   aiSumAnalyzeMediaDone: '已分析媒體',
+  aiSumRenderPreview: '渲染頁面並審查版面',
+  aiSumRenderPreviewDone: '版面已審查',
   aiSumInsertImage: '插入圖片',
   aiSumInsertWebImage: '插入網路圖片',
   aiSumGenerateImage: '生成配圖',

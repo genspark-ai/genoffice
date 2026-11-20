@@ -1,0 +1,289 @@
+/**
+ * render_preview: the visual self-check for agent-generated documents. The
+ * guard is a pure function over the executed tool list; the executor runs
+ * the print-to-PDF buffer through pdf.js and hands the page images to the
+ * media-analysis pipeline. The vision model itself is stubbed — what these
+ * tests pin is the wiring and the guard's triggers.
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Editor } from '@tiptap/core'
+import { editorExtensions } from '../src/renderer/editor/extensions'
+import { createDocsSkill } from '../src/renderer/ai/docs-skill'
+import { executeTool, renderPreviewGuard } from '../src/renderer/ai/tools'
+import { renderPreviewPages } from '../src/renderer/file-actions'
+import type { NumIds } from '../src/renderer/ai/protocol'
+
+vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', () => ({ default: 'worker.js' }))
+
+const fakePage = () => ({
+  getViewport: () => ({ width: 100, height: 140 }),
+  render: () => ({ promise: Promise.resolve() }),
+  cleanup: () => {},
+})
+
+vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
+  GlobalWorkerOptions: { workerSrc: '' },
+  getDocument: () => ({
+    promise: Promise.resolve({
+      numPages: 2,
+      getPage: async () => fakePage(),
+    }),
+    destroy: async () => {},
+  }),
+}))
+
+const liveEditors: Editor[] = []
+
+function createEditor(): Editor {
+  const editor = new Editor({
+    element: document.createElement('div'),
+    extensions: editorExtensions,
+    content: {
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          attrs: { docxIndex: null },
+          content: [{ type: 'text', text: 'Body text.' }],
+        },
+      ],
+    } as never,
+  })
+  liveEditors.push(editor)
+  return editor
+}
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+const numIds = {} as NumIds
+
+const pageSetup = {
+  current: () =>
+    ({
+      settings: { pageWidth: 12240, pageHeight: 15840 },
+    }) as never,
+} as never
+
+describe('renderPreviewGuard', () => {
+  const gen = (name: string, ok = true) => ({ name, ok })
+
+  it('forces a look after a wholesale generation', () => {
+    const correction = renderPreviewGuard(
+      [gen('create_document'), gen('get_document_context')],
+      true,
+    )
+    expect(correction).toContain('render_preview')
+  })
+
+  it('forces a look after a streamed rewrite', () => {
+    expect(renderPreviewGuard([gen('write_document')], true)).toContain('render_preview')
+  })
+
+  it('stays silent once the run rendered and audited', () => {
+    expect(renderPreviewGuard([gen('create_document'), gen('render_preview')], true)).toBeNull()
+  })
+
+  it('stays silent for small edits and failed runs', () => {
+    expect(renderPreviewGuard([gen('apply_ops')], true)).toBeNull()
+    expect(renderPreviewGuard([gen('create_document', false)], true)).toBeNull()
+    expect(renderPreviewGuard([], true)).toBeNull()
+  })
+
+  it('disables with no vision model', () => {
+    expect(renderPreviewGuard([gen('create_document')], false)).toBeNull()
+  })
+})
+
+describe('the render_preview tool', () => {
+  it('prints through the injected pipeline, audits through the media pipeline, returns the text', async () => {
+    const renderPreview = vi.fn(async (maxPages: number) => {
+      // only the pages the audit keeps print (the pipeline clamps 1..4)
+      expect(maxPages).toBe(3)
+      return { ok: true as const, base64: 'ZmFrZQ==' }
+    })
+    const analyzeMedia = vi.fn(async (_op: { mediaUrls: string[] }) => ({
+      text: 'No layout problems found.',
+    }))
+    vi.stubGlobal('window', Object.assign(window, { desktop: { analyzeMedia } }))
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(
+      'data:image/jpeg;base64,QUJD',
+    )
+
+    const editor = createEditor()
+    const r = await executeTool(
+      editor,
+      { name: 'render_preview', input: {} } as never,
+      numIds,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      pageSetup,
+      undefined,
+      undefined,
+      renderPreview,
+    )
+    expect(r.isError).toBeFalsy()
+    expect(r.output).toContain('No layout problems found.')
+    expect(analyzeMedia).toHaveBeenCalledTimes(1)
+    const op = analyzeMedia.mock.calls[0]![0] as { mediaUrls: string[]; requirements: string }
+    expect(op.mediaUrls.every((u) => u.startsWith('data:image/jpeg;base64,'))).toBe(true)
+    expect(op.requirements).toContain('Audit the visual layout')
+  })
+
+  it('surfaces a render failure as a tool error', async () => {
+    vi.stubGlobal('window', Object.assign(window, { desktop: {} }))
+    const renderPreview = vi.fn(async () => ({ ok: false as const, error: 'print failed' }))
+    const editor = createEditor()
+    const r = await executeTool(
+      editor,
+      { name: 'render_preview', input: {} } as never,
+      numIds,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      pageSetup,
+      undefined,
+      undefined,
+      renderPreview,
+    )
+    expect(r.isError).toBe(true)
+    expect(r.output).toContain('print failed')
+  })
+
+  it('never prints outside the print pipeline: no injected stage, no print', async () => {
+    const printPdfBuffer = vi.fn()
+    vi.stubGlobal(
+      'window',
+      Object.assign(window, { desktop: { printPdfBuffer, analyzeMedia: vi.fn() } }),
+    )
+    const editor = createEditor()
+    const r = await executeTool(
+      editor,
+      { name: 'render_preview', input: {} } as never,
+      numIds,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      pageSetup,
+    )
+    expect(r.isError).toBe(true)
+    expect(r.output).toContain('the print pipeline is unavailable')
+    expect(printPdfBuffer).not.toHaveBeenCalled()
+  })
+
+  it('is hidden when no media provider is available', () => {
+    const skill = createDocsSkill(
+      () => createEditor(),
+      () => numIds,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => false,
+    )
+    const names = skill.tools.map((t) => t.name)
+    expect(names).not.toContain('render_preview')
+    expect(names).not.toContain('analyze_media')
+    // and the guard matches: eyes off, no correction
+    expect(skill.verifyResponse?.('done', [{ name: 'create_document', ok: true }])).toBeNull()
+  })
+
+  it('the skill guard fires after a generation without a render', () => {
+    const skill = createDocsSkill(
+      () => createEditor(),
+      () => numIds,
+    )
+    expect(
+      skill.verifyResponse?.('The document is ready.', [{ name: 'create_document', ok: true }]),
+    )!.toContain('render_preview')
+    expect(
+      skill.verifyResponse?.('Ready.', [
+        { name: 'create_document', ok: true },
+        { name: 'render_preview', ok: true },
+      ]),
+    ).toBeNull()
+  })
+})
+
+describe('renderPreviewPages (the print stage itself)', () => {
+  const previewDom = (): void => {
+    document.body.innerHTML =
+      '<div class="app"><div class="pagination-preview">' +
+      '<div class="pv-page" style="width: 794px; height: 1123px"></div>' +
+      '<div class="pv-page" style="width: 794px; height: 1123px"></div>' +
+      '<div class="pv-page" style="width: 794px; height: 1123px"></div>' +
+      '</div></div>'
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('prints one job at the first kept page size, skips the rest, restores everything', async () => {
+    previewDom()
+    const printPdfBuffer = vi.fn(async () => ({ ok: true, base64: 'cGFnZXM=' }))
+    vi.stubGlobal('window', Object.assign(window, { desktop: { printPdfBuffer } }))
+    const previewCalls: boolean[] = []
+    const ctx = {
+      pendingMixedExportRef: { current: null },
+      setShowPagePreview: (show: boolean) => previewCalls.push(show),
+    }
+    const result = await renderPreviewPages(ctx as never, 2)
+    expect(result).toEqual({ ok: true, base64: 'cGFnZXM=' })
+    // one job at the first page's size in twips (794px / 96 * 1440)
+    expect(printPdfBuffer).toHaveBeenCalledTimes(1)
+    expect(printPdfBuffer.mock.calls[0]?.slice(0, 2)).toEqual([11910, 16845])
+    // the skip classes are removed again and the preview stays as it was
+    for (const page of document.querySelectorAll('.pv-page'))
+      expect(page.classList.contains('pv-print-skip')).toBe(false)
+    // the preview was already open, so the stage does not touch its state
+    expect(previewCalls).toEqual([])
+    // a busy print job is refused instead of interleaving
+    const busy = { pendingMixedExportRef: { current: {} }, setShowPagePreview: () => {} }
+    await expect(renderPreviewPages(busy as never, 2)).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining('print or export job'),
+    })
+    expect(printPdfBuffer).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the preview, waits on timers, and closes it again when it opened it', async () => {
+    const printPdfBuffer = vi.fn()
+    vi.stubGlobal('window', Object.assign(window, { desktop: { printPdfBuffer } }))
+    const previewCalls: boolean[] = []
+    const ctx = {
+      pendingMixedExportRef: { current: null },
+      setShowPagePreview: (show: boolean) => previewCalls.push(show),
+    }
+    vi.useFakeTimers()
+    let result: Awaited<ReturnType<typeof renderPreviewPages>>
+    const run = renderPreviewPages(ctx as never, 2).then((r) => {
+      result = r
+    })
+    // the mount wait is a timer loop (a hidden tab fires no frames): let it
+    // spend its ten seconds against a DOM that never mounts the preview
+    await vi.advanceTimersByTimeAsync(10_100)
+    await run
+    vi.useRealTimers()
+    expect(result!).toEqual({ ok: false, error: 'the pagination preview did not mount' })
+    expect(printPdfBuffer).not.toHaveBeenCalled()
+    // opened, then closed — the tool does not leave the user in the preview
+    expect(previewCalls).toEqual([true, false])
+  })
+})

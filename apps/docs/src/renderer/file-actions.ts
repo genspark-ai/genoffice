@@ -1943,6 +1943,76 @@ function deferExportToPreview(ctx: FileActionContext, outPath?: string): Promise
   })
 }
 
+/** The context slice the AI's render_preview needs: the export exclusivity ref
+    and the preview toggle (AiPanel threads an App-owned callback down). */
+export type RenderPreviewContext = Pick<
+  FileActionContext,
+  'pendingMixedExportRef' | 'setShowPagePreview'
+>
+export type RenderPreviewResult = { ok: true; base64: string } | { ok: false; error: string }
+
+/**
+ * The AI render_preview's print stage: the pagination preview mounted, only the
+ * pages the audit keeps printed (the rest pv-print-skip'd), the print lock held
+ * so a real export cannot interleave the classes. printGroupsMerged's comment
+ * records what one whole-document print job costs on a 40-page table-heavy
+ * document and that repeated failures can take the renderer down — printing
+ * every page to keep three would walk that path after every create_document /
+ * write_document. One job at the first kept page's size, like the uniform-paper
+ * export path.
+ */
+export async function renderPreviewPages(
+  ctx: RenderPreviewContext,
+  maxPages: number,
+): Promise<RenderPreviewResult> {
+  await waitForFullContent()
+  if (printJobActive || ctx.pendingMixedExportRef.current)
+    return { ok: false, error: 'a print or export job is running; try again when it finishes' }
+  // the lock is claimed before any await: an export starting during the mount
+  // wait must see a busy print job, not race one still "checking"
+  printJobActive = true
+  // a preview this call opened is a preview this call closes again — the tool
+  // runs after every create_document / write_document, and the user should not
+  // end up in the pagination view after each generation
+  const closePreview = !previewIsOpen()
+  if (closePreview) ctx.setShowPagePreview(true)
+  const appRoot = appRootEl()
+  appRoot?.classList.add('pv-exporting')
+  try {
+    if (closePreview) {
+      // React mounts the preview and paginates its sheets after a paint; a
+      // timer, not rAF — a hidden tab fires no frames and the tool would hang
+      // until the user came back. Ten seconds: a heavy document paginates for
+      // a while (the export path's deferral waits the same kind of span).
+      for (let i = 0; i < 100 && previewPageEls().length === 0; i++)
+        await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    const pvPages = previewPageEls()
+    if (pvPages.length === 0) return { ok: false, error: 'the pagination preview did not mount' }
+    const keep = Math.max(1, Math.min(maxPages, pvPages.length))
+    pvPages.forEach((page, i) => page.classList.toggle('pv-print-skip', i >= keep))
+    try {
+      const first = pvPages[0] as HTMLElement
+      const w = Math.round((Number.parseFloat(first.style.width) / 96) * 1440)
+      const h = Math.round((Number.parseFloat(first.style.height) / 96) * 1440)
+      const scale = setPrintZoom()
+      try {
+        const part = await window.desktop.printPdfBuffer(w, h, scale)
+        if (!part.ok || !part.base64) return { ok: false, error: part.error ?? 'print failed' }
+        return { ok: true, base64: part.base64 }
+      } finally {
+        clearPrintZoom()
+      }
+    } finally {
+      pvPages.forEach((page) => page.classList.remove('pv-print-skip'))
+    }
+  } finally {
+    appRoot?.classList.remove('pv-exporting')
+    printJobActive = false
+    if (closePreview) ctx.setShowPagePreview(false)
+  }
+}
+
 // Concurrent exports would trample each other's pv-print-skip classes and
 // interleave print jobs; while one is printing, further calls report busy.
 // A parked deferral cannot hold the flag (its resume call has to get
