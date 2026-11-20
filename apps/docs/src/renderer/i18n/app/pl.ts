@@ -362,6 +362,7 @@ export const pl = {
   appAcExDontCorrect: 'Nie poprawiaj:',
   appPrefsTitle: 'Preferencje',
   appPrefsUnitsLabel: 'Jednostki miary',
+  appPrefsParkingLabel: 'Opóźnione układanie zawartości poza ekranem (eksperymentalne)',
   appUnitInches: 'Cale',
   appUnitCentimeters: 'Centymetry',
   appUnitMillimeters: 'Milimetry',

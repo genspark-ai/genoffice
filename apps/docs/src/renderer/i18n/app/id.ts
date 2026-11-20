@@ -359,6 +359,7 @@ export const id = {
   appAcExDontCorrect: 'Jangan koreksi:',
   appPrefsTitle: 'Preferensi',
   appPrefsUnitsLabel: 'Tampilkan pengukuran dalam satuan',
+  appPrefsParkingLabel: 'Tata letak konten di luar layar secara tertunda (eksperimental)',
   appUnitInches: 'Inci',
   appUnitCentimeters: 'Sentimeter',
   appUnitMillimeters: 'Milimeter',

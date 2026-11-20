@@ -3298,6 +3298,21 @@ th[data-rev-fmt] {
   margin-top: 0 !important;
 }
 
+/* Layout parking (#2781 route-B prototype): offscreen top-level blocks skip
+   style recalc, layout and paint between measurement passes, so typing cost
+   stops growing with the document. `auto <px>` remembers the last real
+   rendered height, so the scrollbar and the page-gap positions hold still
+   while a block is parked. Suppressed while a pass (or a fast pass) samples:
+   they must read real boxes, same lifecycle as measuring-natural. */
+.ProseMirror .cv-parked {
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--park-h, 200px);
+}
+
+.ProseMirror.parking-suppressed .cv-parked {
+  content-visibility: visible;
+}
+
 /* natural-flow measuring state: in-paragraph gap widgets force a line break at
    the PREVIOUS pass's cut position, so measuring with them in layout can only
    re-confirm that cut even after decoration-only reflows (justify space-shrink)

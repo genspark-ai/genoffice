@@ -362,6 +362,7 @@ export const hu = {
   appAcExDontCorrect: 'Ne javítsa:',
   appPrefsTitle: 'Beállítások',
   appPrefsUnitsLabel: 'Mértékek megjelenítése:',
+  appPrefsParkingLabel: 'Képernyőn kívüli tartalom késleltetett elrendezése (kísérleti)',
   appUnitInches: 'Hüvelyk',
   appUnitCentimeters: 'Centiméter',
   appUnitMillimeters: 'Milliméter',

@@ -218,6 +218,15 @@ import { sectionNotePropsOf, setNoteProps, type NoteKind } from './note-format'
 import { PaginationPreview } from './components/PaginationPreview'
 import { imageParaPaginationMeta, paraPaginationMeta, tableWidowOff } from './editor/para-flags'
 import {
+  parkingArmDecided,
+  parkingEntriesFor,
+  parkingKey,
+  parkBand,
+  parkDecisions,
+  PARK_SUPPRESSED_CLASS,
+} from './editor/layout-parking'
+import { layoutParkingOptedIn, subscribeLayoutParkingPref } from './layout-parking-pref'
+import {
   comparePlanToBlocks,
   planByElement,
   planDiffHistogram,
@@ -5240,6 +5249,81 @@ export function App() {
     let lastPre: PageSlice[] = []
     let lastOut: SliceOutputs | null = null
     let lastSecSig = ''
+
+    // Layout parking (route-B prototype for #2781): between measurement
+    // passes, offscreen top-level blocks carry content-visibility so
+    // Chromium skips their subtrees — typing cost stops growing with the
+    // document. The parked state rides PM node decorations (layout-parking
+    // extension), so no amount of tiptap attribute re-assertion or gap-
+    // widget rebuilding wipes it.
+    //
+    // Parking is opt-in (layout-parking-pref): off until the user enables it
+    // in Preferences. The window globals are development overrides; an
+    // explicit flag wins over the preference in either direction
+    // (__layoutParkingOff forces off even when opted in, __layoutParkingOn
+    // forces on without touching the stored preference).
+    //
+    // Known limitations, accepted for the prototype:
+    // - the band equates BlockBox.top (pagination flow px) with scrollTop
+    //   (scroller px) only at zoom 1, and a constant canvas-padding offset
+    //   shifts both sides equally — so parking is suppressed at any other
+    //   zoom (the zoom state is this effect's `zoom` dependency).
+    // - columned canvases translate blocks per column and vertical text
+    //   re-wraps per line, so parking is for the continuous single-column
+    //   print canvas only.
+    // - find, comment balloons and AI anchors do not wake a parked block
+    //   they point into (skipped content reveals on scroll, focus and
+    //   selection — not on a programmatic anchor jump).
+    // - a selection spanning parked blocks measures against remembered
+    //   heights; only the caret path (typing into a parked block) is pinned.
+    // - each scroll frame re-decides the whole set (rAF-coalesced, over
+    //   remembered heights) and a doc-changing transaction rebuilds the
+    //   decoration set from every entry — see dispatchParking and the
+    //   layoutParking plugin.
+    let parkingArmed = false
+    let parkingPrefOn = layoutParkingOptedIn()
+    const parkingActive = () => {
+      const dev = window as unknown as Record<string, unknown>
+      if (dev.__layoutParkingOff === true) return false
+      if (dev.__layoutParkingOn !== true && !parkingPrefOn) return false
+      return (
+        parkingArmed &&
+        zoom === 100 &&
+        !hasVertical &&
+        colMode === 'none' &&
+        viewMode === 'print' &&
+        !readMode
+      )
+    }
+    const dispatchParking = () => {
+      if (!editor) return
+      const current = parkingKey.getState(editor.state)
+      if (!parkingActive() || lastBlocks.length === 0) {
+        if (!current || current.entries.length === 0) return
+        editor.view.dispatch(editor.state.tr.setMeta(parkingKey, { entries: [] }))
+        return
+      }
+      const pm = pmEl()
+      if (!pm || pm.classList.contains(PARK_SUPPRESSED_CLASS)) return
+      const band = parkBand(scroller as HTMLElement)
+      const boxes = lastBlocks.map((b) => ({ top: b.top, height: b.height }))
+      const decisions = parkDecisions(boxes, band)
+      const heights = lastBlocks.map((b) => b.height)
+      const entries = parkingEntriesFor(editor.state.doc, decisions, heights)
+      if (
+        current &&
+        current.entries.length === entries.length &&
+        current.entries.every((e, i) => e.pos === entries[i]!.pos && e.h === entries[i]!.h)
+      )
+        return
+      editor.view.dispatch(editor.state.tr.setMeta(parkingKey, { entries }))
+    }
+    // a mid-session preference flip re-decides immediately: opting in parks
+    // the offscreen set at the next dispatch, opting out reveals everything
+    const offParkingPref = subscribeLayoutParkingPref(() => {
+      parkingPrefOn = layoutParkingOptedIn()
+      dispatchParking()
+    })
     /** top-level child count at the last pass: a streaming pass whose only
      *  trigger is the appended tail (dirty ≥ this) may carry the prefix's
      *  line/row samples; any user edit below the frontier (dirty < this)
@@ -5405,6 +5489,10 @@ export function App() {
       fastEdits = new Set()
       const dirty = dirtyFrom
       dirtyFrom = Infinity
+      // parked blocks would sample as their remembered size: a pass and the
+      // fast passes must read real layout (they re-park in the finally)
+      const parkPm = pmEl()
+      if (parkPm) parkPm.classList.add(PARK_SUPPRESSED_CLASS)
       try {
         const zoomEl = scroller.querySelector<HTMLElement>('.doc-zoom')
         // the canvas zoom as applied, not this closure's: a pass reaching the
@@ -5442,9 +5530,19 @@ export function App() {
         locate()
       } finally {
         lastPassMs = performance.now() - lastPassAt
+        // the sticky cost gate: a document that has proven expensive to lay
+        // out arms parking; a cheap one never does (the wake-up tax would be
+        // a net loss, see layout-parking.ts for the measured numbers)
+        parkingArmed = parkingArmDecided(lastPassMs, lastBlocks.length, parkingArmed)
         // a pass that threw between the add and the pre-setPageGaps remove
         // must not leave the gap widgets hidden
         pmEl()?.classList.remove('measuring-natural')
+        // the pass sampled real layout: park everything offscreen again so
+        // the idle time until the next pass skips it (the suppressed class
+        // comes off first so the decorations bite again)
+        const afterPm = pmEl()
+        if (afterPm) afterPm.classList.remove(PARK_SUPPRESSED_CLASS)
+        dispatchParking()
       }
     }
     const remeasurePass = (dirty: number | null) => {
@@ -7003,6 +7101,20 @@ export function App() {
     const landed = fontAliasAnswers()
     if (landed.seq !== seenAliasSeqRef.current) onAliases(landed.names)
     scroller.addEventListener('scroll', locate, { passive: true })
+    // scrolling shifts the parking band: parked blocks entering the viewport
+    // reveal (Chromium does this for skipped content anyway), blocks leaving
+    // it park again. rAF-coalesced; parked boxes report remembered sizes so
+    // the decision walk is cheap.
+    let reparkQueued = false
+    const reparkOnScroll = () => {
+      if (reparkQueued) return
+      reparkQueued = true
+      requestAnimationFrame(() => {
+        reparkQueued = false
+        dispatchParking()
+      })
+    }
+    scroller.addEventListener('scroll', reparkOnScroll, { passive: true })
     const onDocUpdate = ({ transaction }: { transaction: Transaction }) => {
       resetWidthPassHistory(colWidthPass)
       onUpdate(singleInlineEditIndex(transaction), firstChangedTopLevelIndex(transaction))
@@ -7061,7 +7173,9 @@ export function App() {
       if (hfTimer) window.clearTimeout(hfTimer)
       document.fonts.removeEventListener('loadingdone', onLoadingDone)
       offFontAliases()
+      offParkingPref()
       scroller.removeEventListener('scroll', locate)
+      scroller.removeEventListener('scroll', reparkOnScroll)
       editor?.off('update', onDocUpdate)
       editor?.off('transaction', onShrinkTr)
     }

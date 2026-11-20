@@ -350,6 +350,7 @@ export const ar = {
   appAcExDontCorrect: 'عدم التصحيح:',
   appPrefsTitle: 'التفضيلات',
   appPrefsUnitsLabel: 'إظهار القياسات بوحدة',
+  appPrefsParkingLabel: 'تخطيط المحتوى خارج الشاشة مؤجلاً (تجريبي)',
   appUnitInches: 'بوصة',
   appUnitCentimeters: 'سنتيمتر',
   appUnitMillimeters: 'مليمتر',

@@ -285,6 +285,7 @@ import { CheckboxToggleExtension } from './checkbox-toggle'
 import { DoubleClickWordExtension } from './dblclick-word'
 import { OutlineViewExtension } from './outline-view'
 import { StoryViewExtension } from './story-view'
+import { LayoutParkingExtension } from './layout-parking'
 import { PageGapNavExtension } from './page-gap-nav'
 import { TrailingTableExitExtension } from './trailing-table-exit'
 import { carriedBlock, carriedNoteRef } from './carried-nodes'
@@ -8188,4 +8189,5 @@ export const editorExtensions = [
   BalloonMarkersExtension,
   AutoDirectionExtension,
   StoryViewExtension,
+  LayoutParkingExtension,
 ]

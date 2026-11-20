@@ -360,6 +360,8 @@ export const ru = {
   appAcExDontCorrect: 'Не исправлять:',
   appPrefsTitle: 'Параметры',
   appPrefsUnitsLabel: 'Единицы измерения',
+  appPrefsParkingLabel:
+    'Отложенная вёрстка содержимого за пределами экрана (экспериментальная функция)',
   appUnitInches: 'Дюймы',
   appUnitCentimeters: 'Сантиметры',
   appUnitMillimeters: 'Миллиметры',

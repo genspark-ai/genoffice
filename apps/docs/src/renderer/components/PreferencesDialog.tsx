@@ -1,13 +1,22 @@
-/** Word ▸ Preferences ▸ General: measurement units (the only setting so far). */
+/** Word ▸ Preferences ▸ General: measurement units and the layout-parking
+ * opt-in (route-B prototype, #2781 — parking stays off until it is asked for). */
+import { useEffect, useState } from 'react'
 import { useI18n } from '../i18n/locale'
 import { MEASUREMENT_UNITS, setMeasurementUnit, isMeasurementUnit } from '../units'
 import { UNIT_NAME_KEYS, useMeasurementUnit } from '../use-measurement'
+import {
+  layoutParkingOptedIn,
+  setLayoutParkingOptedIn,
+  subscribeLayoutParkingPref,
+} from '../layout-parking-pref'
 import { useModalKeys } from './modal-keys'
 
 export function PreferencesDialog({ onClose }: { onClose: () => void }) {
   const { t } = useI18n()
   const modalKeys = useModalKeys(onClose)
   const unit = useMeasurementUnit()
+  const [parking, setParking] = useState(layoutParkingOptedIn)
+  useEffect(() => subscribeLayoutParkingPref(() => setParking(layoutParkingOptedIn())), [])
 
   return (
     <div
@@ -33,6 +42,15 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
               </option>
             ))}
           </select>
+        </label>
+        <label className="protect-check">
+          <input
+            type="checkbox"
+            checked={parking}
+            onChange={(e) => setLayoutParkingOptedIn(e.target.checked)}
+          />
+          <span className="ctl" aria-hidden="true" />
+          {t('appPrefsParkingLabel')}
         </label>
         <div className="modal-actions">
           <button className="btn-primary" onClick={onClose}>

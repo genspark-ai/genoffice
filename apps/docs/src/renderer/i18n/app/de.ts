@@ -371,6 +371,7 @@ export const de = {
   appAcExDontCorrect: 'Nicht korrigieren:',
   appPrefsTitle: 'Einstellungen',
   appPrefsUnitsLabel: 'Maßeinheit',
+  appPrefsParkingLabel: 'Inhalte außerhalb des Bildschirms verzögert layouten (experimentell)',
   appUnitInches: 'Zoll',
   appUnitCentimeters: 'Zentimeter',
   appUnitMillimeters: 'Millimeter',

@@ -362,6 +362,7 @@ export const ms = {
   appAcExDontCorrect: 'Jangan betulkan:',
   appPrefsTitle: 'Keutamaan',
   appPrefsUnitsLabel: 'Paparkan ukuran dalam unit',
+  appPrefsParkingLabel: 'Susun atur kandungan di luar skrin secara tertunda (eksperimen)',
   appUnitInches: 'Inci',
   appUnitCentimeters: 'Sentimeter',
   appUnitMillimeters: 'Milimeter',

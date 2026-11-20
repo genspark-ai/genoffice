@@ -346,6 +346,7 @@ export const he = {
   appAcExDontCorrect: 'ללא תיקון:',
   appPrefsTitle: 'העדפות',
   appPrefsUnitsLabel: 'הצג מידות ביחידות',
+  appPrefsParkingLabel: 'פריסת תוכן מחוץ למסך בדילוג (ניסיוני)',
   appUnitInches: "אינצ'ים",
   appUnitCentimeters: 'סנטימטרים',
   appUnitMillimeters: 'מילימטרים',

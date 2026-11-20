@@ -357,6 +357,7 @@ export const tr = {
   appAcExDontCorrect: 'Düzeltme:',
   appPrefsTitle: 'Tercihler',
   appPrefsUnitsLabel: 'Ölçü birimi',
+  appPrefsParkingLabel: 'Ekran dışı içeriği sonradan düzenle (deneysel)',
   appUnitInches: 'İnç',
   appUnitCentimeters: 'Santimetre',
   appUnitMillimeters: 'Milimetre',

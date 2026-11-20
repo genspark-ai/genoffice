@@ -370,6 +370,7 @@ export const fr = {
   appAcExDontCorrect: 'Ne pas corriger :',
   appPrefsTitle: 'Préférences',
   appPrefsUnitsLabel: 'Afficher les mesures en',
+  appPrefsParkingLabel: 'Mise en page différée du contenu hors écran (expérimental)',
   appUnitInches: 'Pouces',
   appUnitCentimeters: 'Centimètres',
   appUnitMillimeters: 'Millimètres',

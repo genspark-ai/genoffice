@@ -359,6 +359,7 @@ export const pt = {
   appAcExDontCorrect: 'Não corrigir:',
   appPrefsTitle: 'Preferências',
   appPrefsUnitsLabel: 'Mostrar medidas em',
+  appPrefsParkingLabel: 'Diagramar tardiamente o conteúdo fora da tela (experimental)',
   appUnitInches: 'Polegadas',
   appUnitCentimeters: 'Centímetros',
   appUnitMillimeters: 'Milímetros',

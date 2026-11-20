@@ -357,6 +357,7 @@ export const hi = {
   appAcExDontCorrect: 'न सुधारें:',
   appPrefsTitle: 'प्राथमिकताएँ',
   appPrefsUnitsLabel: 'माप की इकाई',
+  appPrefsParkingLabel: 'स्क्रीन के बाहर की सामग्री का लेआउट बाद में करें (प्रयोगात्मक)',
   appUnitInches: 'इंच',
   appUnitCentimeters: 'सेंटीमीटर',
   appUnitMillimeters: 'मिलीमीटर',

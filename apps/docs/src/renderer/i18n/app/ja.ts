@@ -374,6 +374,7 @@ export const ja = {
   appAcExDontCorrect: '修正しない文字列:',
   appPrefsTitle: '環境設定',
   appPrefsUnitsLabel: '使用する単位',
+  appPrefsParkingLabel: '画面外のコンテンツを遅延レイアウト(実験的機能)',
   appUnitInches: 'インチ',
   appUnitCentimeters: 'センチメートル',
   appUnitMillimeters: 'ミリメートル',

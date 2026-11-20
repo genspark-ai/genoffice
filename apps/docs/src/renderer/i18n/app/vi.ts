@@ -354,6 +354,7 @@ export const vi = {
   appAcExDontCorrect: 'Không sửa:',
   appPrefsTitle: 'Tùy chọn',
   appPrefsUnitsLabel: 'Đơn vị đo',
+  appPrefsParkingLabel: 'Bố cục nội dung ngoài màn hình theo cách trì hoãn (thử nghiệm)',
   appUnitInches: 'Inch',
   appUnitCentimeters: 'Xentimét',
   appUnitMillimeters: 'Milimét',

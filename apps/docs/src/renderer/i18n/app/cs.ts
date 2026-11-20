@@ -358,6 +358,7 @@ export const cs = {
   appAcExDontCorrect: 'Neopravovat:',
   appPrefsTitle: 'Předvolby',
   appPrefsUnitsLabel: 'Zobrazovat míry v jednotkách',
+  appPrefsParkingLabel: 'Obsah mimo obrazovku rozložit až později (experimentální)',
   appUnitInches: 'Palce',
   appUnitCentimeters: 'Centimetry',
   appUnitMillimeters: 'Milimetry',
