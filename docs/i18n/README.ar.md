@@ -268,7 +268,7 @@ OpenAI (عنوان أساسي + مفتاح)، بما في ذلك خوادم ال
 البحث والوسائط مزوِّدوه الخاصون بحسب القدرة تحت **AI Media & Search**: Serper
 أو Serply أو SearchApi أو Tavily أو Parallel أو Keenable أو Exa أو Firecrawl للبحث عبر
 الويب — وKeenable كذلك لا يحتاج إلى مفتاح، فالمفتاح يرفع حدود الاستخدام فقط؛
-وOpenAI أو Gemini أو Doubao/Seedream أو GLM أو Grok أو Qwen أو MiniMax أو Stability أو FLUX أو أي
+وOpenAI أو Gemini أو Doubao/Seedream أو GLM أو Grok أو Qwen أو MiniMax أو Kling أو Stability أو FLUX أو أي
 نقطة نهاية للصور متوافقة مع OpenAI لتوليد الصور وتحليل الصور والفيديو.
 
 تأتي الحزمة كاملةً بثلاثة مظاهر: فاتح وداكن ومظهر النظام. تغيّر المظاهر فقط ما

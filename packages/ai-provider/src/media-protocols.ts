@@ -10,7 +10,6 @@
  */
 
 import { createHmac } from 'node:crypto'
-import { KLING_BASE_URL } from './media'
 import { aiFetch } from './fetch'
 import { endpointUrl } from './protocols/shared'
 import { httpBodyDetail } from './http-error'
@@ -18,6 +17,7 @@ import { openAiContentText, readCappedResponseText } from './protocols/shared'
 import {
   DASHSCOPE_BASE_URL,
   GEMINI_MEDIA_BASE_URL,
+  KLING_BASE_URL,
   MINIMAX_BASE_URL,
   OPENAI_IMAGES_BASE_URL,
   getMediaProviderMeta,
@@ -419,17 +419,19 @@ function base64url(input: Buffer): string {
   return input.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-/** Kling authenticates with a JWT signed HS256 from an access key (the ak
- *  claim) and a secret key; the key field carries both as
- *  `access-key:secret-key` so no settings shape grows a second field. */
+/** Kling authenticates with a JWT signed HS256 with the secret key; the
+ *  access key rides the `iss` claim, `exp` is issued for 30 minutes and `nbf`
+ *  starts validity five seconds back (the open-platform authentication guide's
+ *  shape). The key field carries both values as `access-key:secret-key` so no
+ *  settings shape grows a second field. */
 export function klingJwt(accessKey: string, secretKey: string, now = Date.now()): string {
   const header = base64url(Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })))
   const payload = base64url(
     Buffer.from(
       JSON.stringify({
-        ak: accessKey,
+        iss: accessKey,
         exp: Math.floor(now / 1000) + 1800,
-        iat: Math.floor(now / 1000) - 5,
+        nbf: Math.floor(now / 1000) - 5,
       }),
     ),
   )
@@ -449,11 +451,28 @@ function klingKeyPair(config: AiMediaProviderConfig): { accessKey: string; secre
   return { accessKey: config.apiKey.slice(0, sep), secretKey: config.apiKey.slice(sep + 1) }
 }
 
+/** a poll body carrying an explicit terminal task failure; a non-200 status is
+ *  usually transient (gateway blip, rate limit, 5xx), while a real task failure
+ *  still answers with the task envelope (`task_status` failed/canceled) */
+function klingTerminalFailure(body: string): string | undefined {
+  let json: unknown
+  try {
+    json = JSON.parse(body)
+  } catch {
+    return undefined
+  }
+  const data = asRecord(asRecord(json).data)
+  const status = data.task_status
+  if (status !== 'failed' && status !== 'canceled') return undefined
+  return String(data.task_status_msg ?? status)
+}
+
 async function generateImageKling(
   config: AiMediaProviderConfig,
   model: string,
   input: GenerateImageInput,
   signal: AbortSignal,
+  pollMs: number = KLING_POLL_MS,
 ): Promise<MediaBlob> {
   if (input.references?.length) {
     throw new Error(
@@ -486,16 +505,26 @@ async function generateImageKling(
   // 10-minute generate guard expires
   for (;;) {
     if (signal.aborted) throw new Error('Image generation failed: aborted')
-    await new Promise((resolve) => setTimeout(resolve, KLING_POLL_MS))
+    await new Promise((resolve) => setTimeout(resolve, pollMs))
     const poll = await aiFetch(endpointUrl(base, `/v1/images/generations/${taskId}`), {
       headers: { Authorization: bearer },
       signal,
     })
-    if (!poll.ok) return failFrom('Image generation failed:', poll)
+    if (!poll.ok) {
+      // keep polling through transient non-200 answers until the timeout guard
+      // expires; only an explicit task-failure body aborts the wait
+      const body = await readCappedResponseText(poll, {
+        maxBytes: MAX_ERROR_BODY_BYTES,
+        onOverflow: 'truncate',
+      })
+      const failed = klingTerminalFailure(body)
+      if (failed) throw new Error(`Image generation failed: ${failed}`)
+      continue
+    }
     const polled = await readJson('Image generation failed:', poll)
     const data = asRecord(polled.data)
     const status = data.task_status
-    if (status === 'failed') {
+    if (status === 'failed' || status === 'canceled') {
       throw new Error(`Image generation failed: ${String(data.task_status_msg ?? status)}`)
     }
     if (status !== 'succeed') continue
@@ -1036,11 +1065,17 @@ function requireBaseUrl(meta: AiMediaProviderMeta, config: AiMediaProviderConfig
   }
 }
 
+export interface GenerateImageOptions {
+  /** poll interval for the async-task vendors (Kling); tests shrink the 3 s default */
+  pollMs?: number
+}
+
 export async function generateImageWithProvider(
   provider: ByokMediaProviderId,
   config: AiMediaProviderConfig,
   input: GenerateImageInput,
   signal?: AbortSignal,
+  options?: GenerateImageOptions,
 ): Promise<MediaBlob> {
   const meta = metaOf(provider)
   requireBaseUrl(meta, config)
@@ -1061,7 +1096,7 @@ export async function generateImageWithProvider(
     case 'mai':
       return generateImageMai(config, model, input, guard)
     case 'kling':
-      return generateImageKling(config, model, input, guard)
+      return generateImageKling(config, model, input, guard, options?.pollMs)
     case 'openai-images':
       return generateImageOpenAi(provider, config, model, input, guard)
   }

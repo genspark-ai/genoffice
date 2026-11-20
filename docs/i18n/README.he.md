@@ -264,7 +264,7 @@ Command Code ו-OpenCode Zen/Go, ובנוסף שדה מותאם אישית לכ�
 תואם-OpenAI (כתובת בסיס + מפתח), כולל שרתי מודלים מקומיים. לחיפוש ולמדיה יש
 ספקים נפרדים לפי יכולת תחת **AI Media & Search**: Serper,‏ Serply,‏ SearchApi,‏ Tavily,‏
 Parallel,‏ Keenable,‏ Exa או Firecrawl לחיפוש
-ברשת, ו-OpenAI,‏ Gemini,‏ Doubao/Seedream,‏ GLM,‏ Grok,‏ Qwen,‏ MiniMax,‏ Stability,‏ FLUX או
+ברשת, ו-OpenAI,‏ Gemini,‏ Doubao/Seedream,‏ GLM,‏ Grok,‏ Qwen,‏ MiniMax,‏ Kling,‏ Stability,‏ FLUX או
 כל endpoint תואם-OpenAI ליצירת תמונות ולניתוח תמונה/וידאו.
 
 כל החבילה מגיעה עם ערכות עיצוב בהיר, כהה ומצב מערכת. ערכות העיצוב משנות רק
