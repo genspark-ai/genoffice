@@ -46,6 +46,40 @@ export function numberDisplayLocale(): string | undefined {
   return displayLocale
 }
 
+/// numfmt.format for a surface that shows the number next to the grid (chart
+/// labels, the copied image of a range): it follows the display locale like
+/// the grid does. Interchange text (CSV export, TSV on the clipboard) keeps
+/// numfmt's neutral en-US output so it reads back unchanged.
+export function formatForDisplay(pattern: string, value: number): string {
+  return numfmt.format(pattern, value, {
+    throws: false,
+    ...(displayLocale ? { locale: displayLocale } : {}),
+  }) as string
+}
+
+const separatorCache = new Map<string, { group: string; decimal: string }>()
+
+function localeSeparators(locale: string): { group: string; decimal: string } {
+  let seps = separatorCache.get(locale)
+  if (!seps) {
+    // `#,##0.0` of 1234.5 is `1<group>234<decimal>5` in every numfmt locale.
+    const probe = String(numfmt.format('#,##0.0', 1234.5, { locale, nbsp: true, throws: false }))
+    const m = /^1(\D*)234(\D+)5$/.exec(probe)
+    seps = m ? { group: m[1] ?? '', decimal: m[2] ?? '.' } : { group: ',', decimal: '.' }
+    separatorCache.set(locale, seps)
+  }
+  return seps
+}
+
+/// A plain en-US number text (`3.5`, `1.5E+05`, `1,234.5`) with the display
+/// locale's separators: `3,5`, `1,5E+05`, `1 234,5` in Hungarian.
+export function localizeNumberText(text: string): string {
+  if (!displayLocale) return text
+  const { group, decimal } = localeSeparators(displayLocale)
+  if (group === ',' && decimal === '.') return text
+  return text.replace(/[.,]/g, (c) => (c === '.' ? decimal : group))
+}
+
 /// Horizontal room a cell's text never gets: Univer's 2+2px cell padding
 /// plus the 1px blur offset. Every width-vs-text rule here (General digit
 /// budget, #### overflow, `*x` fill) measures against `width - CELL_INSET_PX`.
@@ -76,6 +110,10 @@ function toScientific(value: number, decimals: number): string {
  * the scientific mantissa) until the text fits the column's char budget.
  */
 export function formatGeneral(value: number, budget: number): string {
+  return localizeNumberText(formatGeneralText(value, budget))
+}
+
+function formatGeneralText(value: number, budget: number): string {
   if (!Number.isFinite(value)) return String(value)
   const base = numfmt.format('General', value)
   if (base.length <= budget) return base
@@ -868,7 +906,7 @@ export function installNumberFormatFix(
       if (cfPattern !== undefined && !isDefaultFormat(cfPattern)) {
         const cfValue =
           date1904 && isCalendarDatePattern(cfPattern) ? (raw as number) + DATE_1904_OFFSET : raw
-        const key = `CF ${cfPattern} ${cfValue}`
+        const key = `CF ${displayLocale ?? ''} ${cfPattern} ${cfValue}`
         let text = cache.get(key)
         if (text === undefined) {
           text = safeFormat(cfPattern, cfValue)
@@ -895,7 +933,7 @@ export function installNumberFormatFix(
           mergedSpanWidth(location.worksheet, location.row, location.col) ??
             location.worksheet.getColumnWidth(location.col),
         )
-        const key = `G ${raw} ${budget}`
+        const key = `G ${displayLocale ?? ''} ${raw} ${budget}`
         let text = cache.get(key)
         if (text === undefined) {
           text = formatGeneral(raw, budget)
@@ -906,7 +944,7 @@ export function installNumberFormatFix(
         return next({ ...cell, v: text, t: CellValueType.NUMBER })
       }
       if (date1904 && isCalendarDatePattern(pattern as string)) {
-        const key = `1904 ${pattern} ${raw}`
+        const key = `1904 ${displayLocale ?? ''} ${pattern} ${raw}`
         let text = cache.get(key)
         if (text === undefined) {
           text = safeFormat(pattern as string, (raw as number) + DATE_1904_OFFSET)
