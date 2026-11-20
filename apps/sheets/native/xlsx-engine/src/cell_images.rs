@@ -104,9 +104,9 @@ pub(crate) fn read_sheet_cell_images(
         let empty = matches!(&event, Event::Empty(_));
         match event {
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"row" =>
+                if element.local_name().as_ref() == "row" =>
             {
-                current_row = attribute_value(&reader, &element, b"r")?
+                current_row = attribute_value(&reader, &element, "r")?
                     .and_then(|value| value.parse::<usize>().ok())
                     .filter(|value| *value > 0)
                     .map(|value| value - 1)
@@ -115,14 +115,14 @@ pub(crate) fn read_sheet_cell_images(
                 next_column = 0;
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"c" =>
+                if element.local_name().as_ref() == "c" =>
             {
-                let (row, column) = match attribute_value(&reader, &element, b"r")? {
+                let (row, column) = match attribute_value(&reader, &element, "r")? {
                     Some(address) => parse_address(&address).unwrap_or((current_row, next_column)),
                     None => (current_row, next_column),
                 };
                 next_column = column + 1;
-                let media_path = attribute_value(&reader, &element, b"vm")?
+                let media_path = attribute_value(&reader, &element, "vm")?
                     .and_then(|value| value.parse::<u32>().ok())
                     .and_then(|vm| images_by_vm.get(&vm));
                 if let Some(media_path) = media_path {
@@ -130,7 +130,7 @@ pub(crate) fn read_sheet_cell_images(
                 }
                 current_cell = (!empty && media_path.is_none()).then_some((row, column));
             }
-            Event::Start(element) if element.local_name().as_ref() == b"f" => {
+            Event::Start(element) if element.local_name().as_ref() == "f" => {
                 in_formula = current_cell.is_some() && !images_by_name.is_empty();
                 formula.clear();
             }
@@ -139,7 +139,7 @@ pub(crate) fn read_sheet_cell_images(
             Event::GeneralRef(reference) if in_formula => {
                 formula.push_str(&general_ref_text(&reference)?)
             }
-            Event::End(element) if element.local_name().as_ref() == b"f" => {
+            Event::End(element) if element.local_name().as_ref() == "f" => {
                 if let Some(media_path) =
                     dispimg_name(&formula).and_then(|name| images_by_name.get(name))
                 {
@@ -149,7 +149,7 @@ pub(crate) fn read_sheet_cell_images(
                 }
                 in_formula = false;
             }
-            Event::End(element) if element.local_name().as_ref() == b"c" => {
+            Event::End(element) if element.local_name().as_ref() == "c" => {
                 current_cell = None;
             }
             Event::Eof => break,

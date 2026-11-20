@@ -1958,12 +1958,12 @@ pub(crate) fn read_worksheet_without_cells(
     loop {
         match reader.read_event_into(&mut buffer)? {
             Event::Eof => break,
-            Event::Start(start) if start.local_name().as_ref() == b"sheetData" => {
+            Event::Start(start) if start.local_name().as_ref() == "sheetData" => {
                 let end = start.to_end().into_owned();
                 reader.read_to_end_into(end.name(), &mut skipped)?;
                 skipped.clear();
             }
-            Event::Empty(empty) if empty.local_name().as_ref() == b"sheetData" => {}
+            Event::Empty(empty) if empty.local_name().as_ref() == "sheetData" => {}
             event => writer.write_event(event)?,
         }
         buffer.clear();
