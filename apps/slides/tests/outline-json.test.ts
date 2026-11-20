@@ -41,6 +41,18 @@ describe('parseOutlineJson', () => {
     expect(obj?.core_hook).toBe('钩子')
   })
 
+  it('repairs a low-9 opening quote closed with a plain " (Hungarian/German copy)', () => {
+    // Shape measured from glm-5.3-flash: „…" with an ASCII closer, followed by : or ,
+    const broken =
+      '{"core_hook":"A „kis cég, nagy számok" gondolat","pages":[{"title":"Termékek","brief":"Kiemelt doboz: a „hónap meglepetése": füzet. Az „EcoLine", a sláger.","layout":"kpi_cards_row","image_queries":[]}]}'
+    expect(() => JSON.parse(broken)).toThrow()
+    const obj = parseOutlineJson(broken)
+    expect(obj?.core_hook).toBe('A „kis cég, nagy számok" gondolat')
+    expect((obj!.pages as Array<{ brief: string }>)[0]!.brief).toBe(
+      'Kiemelt doboz: a „hónap meglepetése": füzet. Az „EcoLine", a sláger.',
+    )
+  })
+
   it('returns null when completely broken', () => {
     expect(parseOutlineJson('not json at all')).toBeNull()
     expect(parseOutlineJson('{')).toBeNull()
@@ -55,5 +67,11 @@ describe('extractJsonObject / escapeBrokenStringLiterals', () => {
   it('quotes inside values are escaped so it can be parsed', () => {
     const fixed = escapeBrokenStringLiterals('{"a":"说"你好"吧"}')
     expect(JSON.parse(fixed)).toEqual({ a: '说"你好"吧' })
+  })
+})
+
+describe('parseOutlineJson quote-repair guard', () => {
+  it('rejects a quote repair that merges two members', () => {
+    expect(parseOutlineJson('{"k0":"y"z",","k1":"„Minta", aalma"}')).toBeNull()
   })
 })
