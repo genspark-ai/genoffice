@@ -1,6 +1,6 @@
 /// Allow-edit ranges are kept in current screen coordinates on
-/// LazyWorkbookState: mapped from file space once when a sheet finishes
-/// indexing, then incrementally through each recorded structural op — so the
+/// LazyWorkbookState: mapped from file space once on load,
+/// then incrementally through each recorded structural op — so the
 /// dialog and the save read them without further translation (the save's
 /// protectedRanges rewrite runs after structural replay).
 

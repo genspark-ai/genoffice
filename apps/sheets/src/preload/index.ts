@@ -25,6 +25,7 @@ import type {
   WorkbookCellStyle,
   WorkbookConditionalRule,
   WorkbookFile,
+  WorkbookFilterResult,
   WorkbookFindCellsRequest,
   WorkbookFindCellsResult,
   WorkbookFormulaCellsRequest,
@@ -244,6 +245,13 @@ const desktopApi: DesktopApi = {
       validatedRequest,
     )
     return parseFormulaCellsResult(result)
+  },
+  async filterWorkbookRows(request) {
+    assertWorkbookSessionRequest(request)
+    // Main validates the filter payload and the sidecar response. This
+    // sandboxed bridge must not import the runtime schema and its npm deps.
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.filterWorkbookRows, request)
+    return parseFilterResult(result)
   },
   async findWorkbookCells(request) {
     const validatedRequest = parseFindCellsRequest(request)
@@ -1325,11 +1333,23 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
         ...(columnWidth.styleIndex === undefined ? {} : { styleIndex: columnWidth.styleIndex }),
       }
     })
+    const protection = sheet.protection
+    if (protection !== undefined && !isRecord(protection)) {
+      throw new Error('Invalid worksheet protection metadata.')
+    }
     return {
       id: sheet.id,
       name: sheet.name,
       rowCount: sheet.rowCount,
       columnCount: sheet.columnCount,
+      ...(protection === undefined
+        ? {}
+        : {
+            protection: {
+              sheetProtection: parseSheetProtection(protection.sheetProtection),
+              protectedRanges: parseProtectedRanges(protection.protectedRanges),
+            },
+          }),
       // The renderer's oversized-sheet write gate needs this; omitting it
       // silently disables the gate (older sidecars don't report it).
       ...(isPositiveInteger(sheet.sourceXmlBytes) ? { sourceXmlBytes: sheet.sourceXmlBytes } : {}),
@@ -1469,7 +1489,18 @@ function parseRangeRequest(input: WorkbookRangeRequest): WorkbookRangeRequest {
     !isNonnegativeInteger(endColumn) ||
     startRow > endRow ||
     startColumn > endColumn ||
-    (endRow - startRow + 1) * (endColumn - startColumn + 1) > 100_000
+    (input.rows !== undefined &&
+      (!Array.isArray(input.rows) ||
+        !input.rows.length ||
+        input.rows.length > 512 ||
+        input.rows.some(
+          (row, i, rows) =>
+            !isNonnegativeInteger(row) ||
+            row < startRow ||
+            row > endRow ||
+            (i > 0 && row <= rows[i - 1]!),
+        ))) ||
+    (input.rows?.length ?? endRow - startRow + 1) * (endColumn - startColumn + 1) > 100_000
   ) {
     throw new Error('Invalid workbook range request.')
   }
@@ -1686,6 +1717,41 @@ function parseFormulaCellsResult(input: unknown): WorkbookFormulaCellsResult {
     indexingComplete: input.indexingComplete,
     truncated: input.truncated,
   }
+}
+
+function parseFilterResult(input: unknown): WorkbookFilterResult {
+  if (!isRecord(input) || typeof input.ready !== 'boolean') {
+    throw new Error('Invalid worksheet filter response.')
+  }
+  const { ready, hidden, page } = input
+  if (hidden !== undefined && (typeof hidden !== 'string' || hidden.length > 174_764)) {
+    throw new Error('Invalid worksheet filter mask.')
+  }
+  if (page === undefined) return { ready, ...(hidden === undefined ? {} : { hidden }) }
+  if (
+    !isRecord(page) ||
+    !isNonnegativeInteger(page.total) ||
+    !Array.isArray(page.values) ||
+    page.values.length > 200
+  ) {
+    throw new Error('Invalid worksheet filter page.')
+  }
+  const values = page.values.map((entry: unknown) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.text !== 'string' ||
+      !isNonnegativeInteger(entry.count) ||
+      (entry.styleIndex !== undefined && !isNonnegativeInteger(entry.styleIndex))
+    ) {
+      throw new Error('Invalid worksheet filter value.')
+    }
+    return {
+      text: entry.text,
+      count: entry.count,
+      ...(entry.styleIndex === undefined ? {} : { styleIndex: entry.styleIndex }),
+    }
+  })
+  return { ready, page: { total: page.total, values } }
 }
 
 const FIND_LOOK_IN = new Set(['values', 'formulas', 'formulas_only', 'both'])
@@ -2195,37 +2261,53 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
       ...(rule.prompt === undefined ? {} : { prompt: rule.prompt }),
     }
   })
-  let sheetProtection: WorkbookRangeResult['sheetProtection'] = null
-  if (input.sheetProtection !== null && input.sheetProtection !== undefined) {
-    const protection = input.sheetProtection
-    if (
-      !isRecord(protection) ||
-      typeof protection.protected !== 'boolean' ||
-      typeof protection.hasPassword !== 'boolean'
-    ) {
-      throw new Error('Invalid workbook sheet protection.')
-    }
-    sheetProtection = {
-      protected: protection.protected,
-      hasPassword: protection.hasPassword,
-      ...(protection.allow === undefined
-        ? {}
-        : { allow: parseSheetProtectionAllow(protection.allow) }),
-      ...(protection.password === undefined
-        ? {}
-        : { password: parseSheetPasswordHash(protection.password) }),
-    }
-  }
   const parseBreaks = (value: unknown, label: string): number[] => {
     if (!Array.isArray(value) || value.length > 1_024 || !value.every(isNonnegativeInteger)) {
       throw new Error(`Invalid workbook ${label} response.`)
     }
     return value as number[]
   }
-  if (!Array.isArray(input.protectedRanges) || input.protectedRanges.length > 1_024) {
+  return {
+    cells,
+    rows,
+    merges,
+    hyperlinks,
+    conditionalRules,
+    autoFilter: input.autoFilter === null ? null : parseCellArea(input.autoFilter),
+    autoFilterColumns,
+    dataValidations,
+    sheetProtection: parseSheetProtection(input.sheetProtection),
+    rowBreaks: parseBreaks(input.rowBreaks, 'row breaks'),
+    colBreaks: parseBreaks(input.colBreaks, 'column breaks'),
+    protectedRanges: parseProtectedRanges(input.protectedRanges),
+    pageSetup: parsePagePrintSettings(input.pageSetup),
+    indexedThroughRow: input.indexedThroughRow,
+    indexingComplete: input.indexingComplete,
+  }
+}
+
+function parseSheetProtection(input: unknown): WorkbookRangeResult['sheetProtection'] {
+  if (input === null || input === undefined) return null
+  if (
+    !isRecord(input) ||
+    typeof input.protected !== 'boolean' ||
+    typeof input.hasPassword !== 'boolean'
+  ) {
+    throw new Error('Invalid workbook sheet protection.')
+  }
+  return {
+    protected: input.protected,
+    hasPassword: input.hasPassword,
+    ...(input.allow === undefined ? {} : { allow: parseSheetProtectionAllow(input.allow) }),
+    ...(input.password === undefined ? {} : { password: parseSheetPasswordHash(input.password) }),
+  }
+}
+
+function parseProtectedRanges(input: unknown): WorkbookRangeResult['protectedRanges'] {
+  if (!Array.isArray(input) || input.length > 1_024) {
     throw new Error('Invalid workbook protected ranges response.')
   }
-  const protectedRanges = input.protectedRanges.map((range) => {
+  return input.map((range) => {
     if (
       !isRecord(range) ||
       typeof range.name !== 'string' ||
@@ -2238,23 +2320,6 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
     }
     return { name: range.name, sqref: range.sqref, hasPassword: range.hasPassword }
   })
-  return {
-    cells,
-    rows,
-    merges,
-    hyperlinks,
-    conditionalRules,
-    autoFilter: input.autoFilter === null ? null : parseCellArea(input.autoFilter),
-    autoFilterColumns,
-    dataValidations,
-    sheetProtection,
-    rowBreaks: parseBreaks(input.rowBreaks, 'row breaks'),
-    colBreaks: parseBreaks(input.colBreaks, 'column breaks'),
-    protectedRanges,
-    pageSetup: parsePagePrintSettings(input.pageSetup),
-    indexedThroughRow: input.indexedThroughRow,
-    indexingComplete: input.indexingComplete,
-  }
 }
 
 function parsePagePrintSettings(input: unknown): WorkbookRangeResult['pageSetup'] {
