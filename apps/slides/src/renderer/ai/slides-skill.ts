@@ -2602,15 +2602,20 @@ async function executeTool(
  * ({label}, {text}, {value}…) despite the string schema; String(o) would show "[object Object]".
  */
 export function clarifyOptionText(o: unknown): string {
-  if (typeof o === 'string') return o
+  if (typeof o === 'string') return o.trim()
   if (o && typeof o === 'object') {
     const rec = o as Record<string, unknown>
     for (const key of ['label', 'text', 'value', 'title', 'name']) {
       const v = rec[key]
-      if (typeof v === 'string' && v.trim()) return v
+      if (typeof v === 'string' && v.trim()) return v.trim()
       if (typeof v === 'number') return String(v)
     }
-    return ''
+    // Unknown keys ({key, desc}…): the longest string value is the readable one.
+    let best = ''
+    for (const v of Object.values(rec)) {
+      if (typeof v === 'string' && v.trim().length > best.length) best = v.trim()
+    }
+    return best
   }
-  return o == null ? '' : String(o)
+  return o == null ? '' : String(o).trim()
 }

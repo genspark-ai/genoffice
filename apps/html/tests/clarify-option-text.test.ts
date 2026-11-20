@@ -8,5 +8,8 @@ describe('clarifyOptionText', () => {
     expect(clarifyOptionText({ title: 'Dark' })).toBe('Dark')
     expect(clarifyOptionText({ id: 1 })).toBe('')
     expect(clarifyOptionText(undefined)).toBe('')
+    expect(clarifyOptionText({ key: 'a', desc: 'Formal' })).toBe('Formal')
+    expect(clarifyOptionText('  ')).toBe('')
+    expect(clarifyOptionText(' Casual ')).toBe('Casual')
   })
 })
