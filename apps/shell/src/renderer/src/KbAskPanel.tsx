@@ -28,6 +28,7 @@ import {
   addTokenUsage,
   createFileNav,
   shortFileError,
+  useImeEnterGuard,
   Markdown,
   type AiTokenUsageView,
 } from '@genoffice/ui'
@@ -213,9 +214,20 @@ export function KbAskPanel({
   const mention = useMemo(() => mentionToken(draft), [draft])
   /** corpus files matching the typed mention, in starred order */
   const mentionFiles = useMemo(
-    () => (mention ? matchMentionFiles(corpusRef.current, mention.query) : []),
-    [mention, corpusCount],
+    () => (mention ? matchMentionFiles(corpusFiles, mention.query) : []),
+    [mention, corpusFiles],
   )
+  /** whether the reader has moved into the list; Enter picks only after that */
+  const [mentionNavigated, setMentionNavigated] = useState(false)
+  /** Escape closes the list without deleting what the reader typed */
+  const [mentionDismissed, setMentionDismissed] = useState(false)
+  // a new query is a new list: the highlight restarts at the top and the
+  // dismissal lifts, so typing reopens what Escape closed
+  useEffect(() => {
+    setMentionIndex(0)
+    setMentionNavigated(false)
+    setMentionDismissed(false)
+  }, [mention])
   const settingsRef = useRef<AiSettings | null>(null)
   const loopRef = useRef<AgentLoop<unknown> | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -584,29 +596,35 @@ export function KbAskPanel({
   }
 
   /** @ list keys: captured before the composer's own Enter/Escape handling */
+  const imeEnter = useImeEnterGuard()
   const onMentionKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    if (!mention) return
-    if (event.key === 'Escape') {
+    const decided = mentionKeyAction({
+      key: event.key,
+      shiftKey: event.shiftKey,
+      isImeConfirm: imeEnter.isImeConfirm(event.nativeEvent),
+      listOpen: mention !== null && !mentionDismissed,
+      listLength: mentionFiles.length,
+      navigated: mentionNavigated,
+    })
+    if (decided.action === 'none') return
+    if (decided.action === 'dismiss') {
+      // close the list and keep the text: the token stays for further typing
       event.preventDefault()
       event.stopPropagation()
-      setDraft(removeMentionToken(draft, mention.start))
+      setMentionDismissed(true)
       return
     }
-    if (mentionFiles.length === 0) return
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    if (decided.action === 'move') {
       event.preventDefault()
       event.stopPropagation()
-      setMentionIndex((index) =>
-        nextMentionIndex(index, event.key === 'ArrowDown' ? 1 : -1, mentionFiles.length),
-      )
+      setMentionNavigated(true)
+      setMentionIndex((index) => nextMentionIndex(index, decided.step, mentionFiles.length))
       return
     }
-    if (event.key === 'Enter' || event.key === 'Tab') {
-      event.preventDefault()
-      event.stopPropagation()
-      const file = mentionFiles[Math.min(mentionIndex, mentionFiles.length - 1)]
-      if (file) pickMention(file)
-    }
+    event.preventDefault()
+    event.stopPropagation()
+    const file = mentionFiles[Math.min(mentionIndex, mentionFiles.length - 1)]
+    if (file) pickMention(file)
   }
 
   /** image attachments go multimodal with the question; a failed read is reported, not fatal */
@@ -1014,14 +1032,25 @@ export function KbAskPanel({
           {attachNotice}
         </p>
       )}
-      {corpusCount !== null && corpusCount > 0 && draft === '' && (
-        <p className="kb-ask-mention-hint">{t('askMentionHint')}</p>
+      {corpusCount !== null && corpusCount > 0 && (
+        <p
+          className="kb-ask-mention-hint"
+          style={draft === '' ? undefined : { visibility: 'hidden' }}
+        >
+          {t('askMentionHint')}
+        </p>
       )}
-      <div className="kb-ask-input-wrap" onKeyDownCapture={onMentionKeyDown}>
+      <div
+        className="kb-ask-input-wrap"
+        onKeyDownCapture={onMentionKeyDown}
+        onCompositionStart={imeEnter.handleCompositionStart}
+        onCompositionEnd={imeEnter.handleCompositionEnd}
+      >
         {mention &&
+          !mentionDismissed &&
           (mentionFiles.length > 0 ? (
             <div className="kb-ask-mention" role="listbox" aria-label={t('askMentionTitle')}>
-              {mentionFiles.map((file, index) => (
+              {mentionFiles.slice(0, MENTION_LIST_CAP).map((file, index) => (
                 <button
                   key={file.path}
                   type="button"
@@ -1031,6 +1060,11 @@ export function KbAskPanel({
                     index === mentionIndex ? 'kb-ask-mention-row active' : 'kb-ask-mention-row'
                   }
                   title={file.path}
+                  ref={
+                    index === mentionIndex
+                      ? (el) => el?.scrollIntoView({ block: 'nearest' })
+                      : undefined
+                  }
                   onMouseDown={(event) => {
                     event.preventDefault()
                     pickMention(file)
@@ -1235,6 +1269,42 @@ export function removeMentionToken(value: string, start: number): string {
 export function nextMentionIndex(index: number, step: number, length: number): number {
   if (length <= 0) return 0
   return (((index + step) % length) + length) % length
+}
+
+/** Rendered rows of the @ list; the corpus can be bigger than the popup. */
+export const MENTION_LIST_CAP = 50
+
+export type MentionKeyAction =
+  { action: 'pick' } | { action: 'move'; step: 1 | -1 } | { action: 'dismiss' } | { action: 'none' }
+
+/**
+ * One keydown against the open @ list, decided before the composer sees it.
+ *
+ * An IME confirmation (the event's isComposing, the legacy 229 keyCode, or the
+ * guard's composition flag) belongs to the candidate window, never to the
+ * list — Enter or Escape during composition must leave the token alone.
+ * Escape closes the list and keeps the typed text. Enter picks only once the
+ * reader has moved into the list with the arrow keys; a bare Enter (and
+ * Shift+Enter always) belongs to the composer even when a trailing token
+ * matches a corpus file — otherwise "what did we send to @acme" could never
+ * be sent with a folder named acme. Tab is an explicit pick anywhere.
+ */
+export function mentionKeyAction(input: {
+  key: string
+  shiftKey: boolean
+  isImeConfirm: boolean
+  listOpen: boolean
+  listLength: number
+  navigated: boolean
+}): MentionKeyAction {
+  if (!input.listOpen || input.isImeConfirm) return { action: 'none' }
+  if (input.key === 'Escape') return { action: 'dismiss' }
+  if (input.listLength === 0) return { action: 'none' }
+  if (input.key === 'ArrowDown') return { action: 'move', step: 1 }
+  if (input.key === 'ArrowUp') return { action: 'move', step: -1 }
+  if (input.key === 'Tab' || (input.key === 'Enter' && !input.shiftKey && input.navigated))
+    return { action: 'pick' }
+  return { action: 'none' }
 }
 
 function IconInfo(): React.JSX.Element {

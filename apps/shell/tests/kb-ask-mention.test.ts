@@ -3,6 +3,7 @@ import type { KbFileInfo } from '@genoffice/agent-core'
 import {
   matchMentionFiles,
   mentionToken,
+  mentionKeyAction,
   nextMentionIndex,
   removeMentionToken,
 } from '../src/renderer/src/KbAskPanel'
@@ -90,5 +91,49 @@ describe('picking a mention', () => {
     expect(nextMentionIndex(0, -1, 3)).toBe(2)
     expect(nextMentionIndex(2, 1, 3)).toBe(0)
     expect(nextMentionIndex(1, 1, 0)).toBe(0)
+  })
+})
+
+describe('deciding a keydown against the open @ list', () => {
+  const base = {
+    key: 'Enter',
+    shiftKey: false,
+    isImeConfirm: false,
+    listOpen: true,
+    listLength: 3,
+    navigated: false,
+  }
+
+  it('leaves an IME confirmation alone, for Enter and for Escape', () => {
+    // the candidate window's keys are not list keys even when the key name matches
+    expect(mentionKeyAction({ ...base, isImeConfirm: true }).action).toBe('none')
+    expect(mentionKeyAction({ ...base, key: 'Escape', isImeConfirm: true }).action).toBe('none')
+    expect(mentionKeyAction({ ...base, key: 'a', isImeConfirm: true }).action).toBe('none')
+  })
+
+  it('dismisses on Escape, which keeps the typed token', () => {
+    expect(mentionKeyAction({ ...base, key: 'Escape' })).toEqual({ action: 'dismiss' })
+    // a closed list is the composer's: its own Escape stops the run
+    expect(mentionKeyAction({ ...base, key: 'Escape', listOpen: false }).action).toBe('none')
+  })
+
+  it('picks on Tab anywhere, and on Enter only after the reader moved into the list', () => {
+    // a trailing @word takes over Enter only once the arrows were used —
+    // "what did we send to @acme" must still send with a folder named acme
+    expect(mentionKeyAction(base)).toEqual({ action: 'none' })
+    expect(mentionKeyAction({ ...base, navigated: true })).toEqual({ action: 'pick' })
+    expect(mentionKeyAction({ ...base, key: 'Tab' })).toEqual({ action: 'pick' })
+  })
+
+  it('Shift+Enter always passes through for a newline', () => {
+    expect(mentionKeyAction({ ...base, shiftKey: true }).action).toBe('none')
+    expect(mentionKeyAction({ ...base, shiftKey: true, navigated: true }).action).toBe('none')
+  })
+
+  it('moves with the arrows and stops at an empty list', () => {
+    expect(mentionKeyAction({ ...base, key: 'ArrowDown' })).toEqual({ action: 'move', step: 1 })
+    expect(mentionKeyAction({ ...base, key: 'ArrowUp' })).toEqual({ action: 'move', step: -1 })
+    expect(mentionKeyAction({ ...base, key: 'ArrowDown', listLength: 0 }).action).toBe('none')
+    expect(mentionKeyAction({ ...base, key: 'Enter', listLength: 0 }).action).toBe('none')
   })
 })
