@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildStreamedChartGrid,
   cacheLessRefs,
+  formulaResultSyncBounds,
   hasPendingFormulaCells,
   unionBounds,
 } from '../src/renderer/chart-sync-pending'
@@ -186,5 +187,47 @@ describe('unionBounds', () => {
         { startRow: 5, endRow: 5, startColumn: 1, endColumn: 2 },
       ),
     ).toEqual({ startRow: 1, endRow: 5, startColumn: 1, endColumn: 11 })
+  })
+})
+
+describe('formulaResultSyncBounds', () => {
+  const isSetValues = (id: string) => id === 'sheet.mutation.set-range-values'
+  const boundsOf = () => ({ startRow: 1, endRow: 1, startColumn: 11, endColumn: 11 })
+
+  it('dirties the cells written by a formula-engine result', () => {
+    expect(
+      formulaResultSyncBounds(
+        {
+          id: 'sheet.mutation.set-range-values',
+          options: { fromFormula: true },
+          params: { subUnitId: 'sheet1', cellValue: { 1: { 11: { v: 42 } } } },
+        },
+        isSetValues,
+        boundsOf,
+      ),
+    ).toEqual({
+      sheetId: 'sheet1',
+      bounds: { startRow: 1, endRow: 1, startColumn: 11, endColumn: 11 },
+    })
+  })
+
+  it('ignores user edits and non-value engine mutations', () => {
+    const params = { subUnitId: 'sheet1', cellValue: { 1: { 11: { v: 42 } } } }
+    // A user edit has no fromFormula option.
+    expect(
+      formulaResultSyncBounds(
+        { id: 'sheet.mutation.set-range-values', params },
+        isSetValues,
+        boundsOf,
+      ),
+    ).toBeNull()
+    // An engine mutation that is not a value write must not dirty chart sync.
+    expect(
+      formulaResultSyncBounds(
+        { id: 'sheet.mutation.set-numfmt', options: { fromFormula: true }, params },
+        isSetValues,
+        boundsOf,
+      ),
+    ).toBeNull()
   })
 })
