@@ -13,7 +13,13 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { bodyModel, endpointUrl, type DecisionCallOptions } from '../src/main/file-index/decider'
+import {
+  bodyModel,
+  endpointUrl,
+  prepare,
+  validate,
+  type DecisionCallOptions,
+} from '../src/main/file-index/decider'
 import {
   DEFAULT_FILE_SEARCH_SETTINGS,
   normalizeFileSearchSettings,
@@ -70,6 +76,70 @@ describe('decision model routes', () => {
     expect(endpointUrl(opts({ endpoint: 'microsoft-decision' }))).toBe(
       'https://openrouter.ai/api/alpha/decisions',
     )
+  })
+
+  it('the OpenRouter-hosted bodies carry the provider pin and the echo guard accepts their models', () => {
+    // both routes on openrouter.ai must speak the OpenRouter shape: the
+    // provider block keeps the excerpts on the pinned vendor with zdr / no
+    // training / no fallback, and the reader rejects a model echo off the
+    // pattern and any provider warning
+    for (const endpoint of ['openrouter', 'microsoft-decision'] as const) {
+      const { body } = prepare(
+        'pick the hiring doc',
+        [{ title: 'a', heading: '', text: 'b' }],
+        opts({ endpoint }),
+      )
+      const parsed = JSON.parse(body) as {
+        model: string
+        provider?: {
+          only: string[]
+          allow_fallbacks: boolean
+          zdr: boolean
+          data_collection: string
+        }
+        state?: unknown
+        questions?: unknown
+      }
+      expect(parsed.model).toBe(
+        endpoint === 'openrouter' ? 'typesafe/jev-1.13' : 'microsoft/microsoft-decision-1.1',
+      )
+      expect(parsed.provider).toEqual({
+        only: [endpoint === 'openrouter' ? 'typesafe' : 'microsoft'],
+        allow_fallbacks: false,
+        zdr: true,
+        data_collection: 'deny',
+      })
+      expect(parsed.state).toBeDefined()
+      expect(parsed.questions).toBeDefined()
+    }
+    // the echo guard: right pattern passes, a foreign model and a provider
+    // warning are refused
+    const answer = (model: unknown, warnings?: string[]) => ({
+      model,
+      answers: {
+        d0: {
+          type: 'score',
+          score: 1,
+          confidence: 0.5,
+          probabilities: { 0: 0.25, 1: 0.5, 2: 0.25 },
+        },
+      },
+      ...(warnings ? { warnings } : {}),
+    })
+    expect(
+      validate(answer('microsoft/microsoft-decision-1.1'), 1, 'microsoft-decision').scores,
+    ).toEqual([1])
+    expect(() => validate(answer('typesafe/jev-1.13'), 1, 'microsoft-decision')).toThrow(
+      'model-mismatch',
+    )
+    expect(() => validate(answer('openai/gpt-4'), 1, 'openrouter')).toThrow('model-mismatch')
+    expect(() =>
+      validate(
+        answer('microsoft/microsoft-decision-1.1', ['rate limited']),
+        1,
+        'microsoft-decision',
+      ),
+    ).toThrow('provider-warning')
   })
 
   it('shares one URL between a vendor s sizes', () => {
