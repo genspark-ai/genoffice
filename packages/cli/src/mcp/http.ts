@@ -312,6 +312,18 @@ export async function startHttp(opts: HttpServeOptions): Promise<HttpHandle> {
     },
   }
 
+  if (!opts.token && !LOOPBACK_HOSTS.has(host)) {
+    // Refuse before anything binds: this server exposes document read/write
+    // tools with no authentication, and refusing after listen would leave the
+    // socket accepting connections for its lifetime and the scratch directory
+    // behind on disk. Someone who genuinely wants LAN access sets --token —
+    // which is exactly the check this refusal exists to force.
+    files.dispose()
+    throw new Error(
+      'refusing to serve the MCP HTTP API on a non-loopback address without --token: ' +
+        'the tools read and write files with no authentication; bind 127.0.0.1 or pass --token',
+    )
+  }
   await new Promise<void>((resolve, reject) => {
     httpServer.once('error', reject)
     httpServer.listen(opts.port, host, () => {
@@ -323,18 +335,6 @@ export async function startHttp(opts: HttpServeOptions): Promise<HttpHandle> {
       resolve()
     })
   })
-  if (!opts.token && !LOOPBACK_HOSTS.has(host)) {
-    // Refuse rather than warn: this server exposes document read/write tools
-    // with no authentication, and a warning scrolls past while the socket
-    // stays open. Someone who genuinely wants LAN access sets --token —
-    // which is exactly the check this refusal exists to force.
-    httpServer.close()
-    httpServer.closeAllConnections()
-    throw new Error(
-      'refusing to serve the MCP HTTP API on a non-loopback address without --token: ' +
-        'the tools read and write files with no authentication; bind 127.0.0.1 or pass --token',
-    )
-  }
   log(`[mcp] listening on ${handle.url}/mcp (uploads: PUT ${handle.url}/files/<name>)`)
   return handle
 }

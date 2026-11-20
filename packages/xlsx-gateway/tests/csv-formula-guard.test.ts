@@ -17,6 +17,13 @@ describe('startsLikeSpreadsheetFormula', () => {
     expect(startsLikeSpreadsheetFormula('@server|book!A1')).toBe(true)
   })
 
+  it('flags a function call anywhere behind the prefix, not only right after it', () => {
+    expect(startsLikeSpreadsheetFormula('+1+WEBSERVICE(A1)')).toBe(true)
+    expect(startsLikeSpreadsheetFormula('-1+HYPERLINK(A1)')).toBe(true)
+    expect(startsLikeSpreadsheetFormula('-(HYPERLINK(A1))')).toBe(true)
+    expect(startsLikeSpreadsheetFormula('+A1&WEBSERVICE(A1)')).toBe(true)
+  })
+
   it('leaves the shapes that do not evaluate as data (the review false positives)', () => {
     // an accounting-format zero / a bare dash / a bullet-ish line
     expect(startsLikeSpreadsheetFormula('-')).toBe(false)
@@ -28,6 +35,10 @@ describe('startsLikeSpreadsheetFormula', () => {
     // a plus/minus sign that opens nothing executable
     expect(startsLikeSpreadsheetFormula('-(A1)')).toBe(false)
     expect(startsLikeSpreadsheetFormula('+word')).toBe(false)
+    expect(startsLikeSpreadsheetFormula('+86 138')).toBe(false)
+    // prose parenthesis: "note (" has a space, so it is not read as a call —
+    // the name( shape (no space) is what a formula is written as
+    expect(startsLikeSpreadsheetFormula('- see note (below)')).toBe(false)
   })
 
   it('skips leading whitespace like a spreadsheet does', () => {
