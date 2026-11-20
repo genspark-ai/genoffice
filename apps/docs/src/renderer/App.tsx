@@ -196,6 +196,7 @@ import {
   type HfSectionState,
 } from './hf-sections'
 import { installHfFloatEdit, tagHfFloatEl } from './editor/hf-float-edit'
+import { HF_MARGIN_SKIP, hfBandAt, pageMarginBands } from './editor/hf-margin-hit'
 import { hfFooterLine, hfLayoutResolved, hfPhantomSpec, hfWithPhantom } from './hf-phantom'
 import { hfVariantHeightsPx, sectionHfHeights } from './hf-heights'
 import { makeGapNotesEl, measureNoteHeightDom, noteRowMetrics } from './editor/note-dom'
@@ -5761,20 +5762,10 @@ export function App() {
             secList
               ? { columnW: hfPartWidthPx(secList, hf.section, kind, hf.variant, hf.owner) }
               : {}
-          // Like Word there is no variant switcher: a header/footer part is edited on a
-          // page that shows it. The edge areas cover page 1's header and the last page's
-          // footer; a gap strip for any other (section, variant) pair is kept even while
-          // the part is empty so it still has a double-click target (an empty even-page
-          // header, a first-page footer on a multi-page document, ...)
-          const edgeHeaderHf = slices.length > 0 ? pageHfOf(0, 'header') : null
-          const edgeFooterHf = slices.length > 0 ? pageHfOf(slices.length - 1, 'footer') : null
-          const gapStripNeeded = (
-            gap: ReturnType<typeof pageHfOf>,
-            edge: ReturnType<typeof pageHfOf> | null,
-          ) =>
-            hfHasVisibleContent(gap.value, gap.images) ||
-            gap.variant !== edge?.variant ||
-            gap.section !== edge.section
+          // Like Word there is no variant switcher: a header/footer part is edited on the
+          // page that shows it. Every page turn carries both strips, empty ones too, so a
+          // double-click in any page's margin opens its own part in place (hfMarginDblClick)
+          // instead of the copy on the first or last page.
           /** page geometry a page's floating header images position against */
           const floatBoxOf = (pageIdx: number): HfFloatBox => {
             const s = secList?.[slices[pageIdx].section]?.settings ?? section
@@ -5918,7 +5909,7 @@ export function App() {
             const gapFooter = pageHfOf(k, 'footer')
             const gapHeader = pageHfOf(k + 1, 'header')
             const hfEls: HTMLElement[] = []
-            if (gapStripNeeded(gapFooter, edgeFooterHf)) {
+            {
               const box = sectionPageBox(prevSec)
               const el = makeGapHfEl({
                 kind: 'footer',
@@ -5950,7 +5941,7 @@ export function App() {
               el.style.setProperty('--hf-ml', `${bodyLeftOf(prevSec, k)}px`)
               hfEls.push(el)
             }
-            if (gapStripNeeded(gapHeader, edgeHeaderHf)) {
+            {
               const box = sectionPageBox(nextSec)
               const el = makeGapHfEl({
                 kind: 'header',
@@ -8510,6 +8501,46 @@ export function App() {
   }
   const openHfEditorRef = useRef(openHfEditor)
   openHfEditorRef.current = openHfEditor
+  // Word: a double-click anywhere in a page's top or bottom margin opens that
+  // page's header or footer, empty or not (the strips cover only their text)
+  const hfMarginHitOf = (e: { target: EventTarget | null; clientX: number; clientY: number }) => {
+    if (readMode || isProtected || viewMode !== 'print') return null
+    if (!(e.target instanceof Element) || e.target.closest(HF_MARGIN_SKIP)) return null
+    if (e.target.closest('.page-hf')) return null
+    const layout = pageLayoutRef.current
+    const pm = editor?.view.dom
+    if (!layout || layout.cuts.length === 0 || !pm) return null
+    const r = pm.getBoundingClientRect()
+    if (e.clientX < r.left || e.clientX > r.right) return null
+    const zf = zoom / 100
+    const secList = layout.flow?.secList
+    const bands = pageMarginBands(
+      layout.cuts,
+      parseFloat(getComputedStyle(pm).paddingTop) || 0,
+      r.height / zf,
+      (page) => {
+        const cut = layout.cuts[page]!
+        const set = secList?.[cut.section]?.settings ?? section
+        return set ? effectiveBottomPx(set, cut.hf.footerPx) : 0
+      },
+    )
+    return hfBandAt(bands, (e.clientY - r.top) / zf)
+  }
+  const hfMarginHitRef = useRef(hfMarginHitOf)
+  hfMarginHitRef.current = hfMarginHitOf
+  const hfMarginDblClickRef = useRef((e: ReactMouseEvent) => {
+    const hit = hfMarginHitRef.current(e)
+    if (hit) openHfEditorRef.current(hit.kind, hit.page)
+  })
+  // the body keeps its selection: no word under a margin double-click
+  useEffect(() => {
+    if (!editor) return
+    const storage = editor.storage.doubleClickWord
+    storage.claimed = (event) => hfMarginHitRef.current(event) != null
+    return () => {
+      storage.claimed = null
+    }
+  }, [editor])
   // floating header pictures: moved and resized in header editing, reached from
   // the body by a double-click (Word)
   const hfFloatEditRef = useRef({ open: openHfEditor, commit: commitHfPictureAt, editable: false })
@@ -8636,6 +8667,7 @@ export function App() {
     if (!target.closest('.doc-page')) return
     const gap = target.closest('.page-gap-hf') as HTMLElement | null
     if (gap) startGapHfEditRef.current(gap)
+    else hfMarginDblClickRef.current(e)
   }, [])
 
   // genoffice CLI (`open --block`, `selection`): the shell evaluates this hook
