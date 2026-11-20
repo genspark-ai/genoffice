@@ -283,6 +283,8 @@ export interface AnnotDeleteInput {
   /** PDF object number (pdf.js annotation id "123R" → 123) */
   objNum: number
   subtype: MarkupType | 'note' | 'polygon'
+  /** Text-markup geometry when rect reflects a synthesized viewer appearance. */
+  quadPoints?: number[]
   /** Annotation /Rect in PDF user space, for fallback matching */
   rect: [number, number, number, number]
   /** /Contents to match. Required identity for notes: every comment of a thread shares
@@ -290,20 +292,26 @@ export interface AnnotDeleteInput {
   contents?: string
 }
 
-/** Reply target: a note (Text) annotation saved in the file. The object number is only a
+/** Reply target: a Text or supported text-markup comment saved in the file. The object number is only a
     lookup hint — pdfium stages that run before pdf-lib may renumber objects — so the
     parent is confirmed by rect + contents at write time. */
 export interface NoteReplyTarget {
+  /** Absent for legacy Text comments. */
+  subtype?: MarkupType | 'note'
+  quadPoints?: number[]
   objNum: number
   rect: [number, number, number, number]
   contents: string
 }
 
-/** Rewrite the /Contents of a note (Text) annotation saved in the file, in place —
+/** Rewrite the /Contents of a Text or supported text-markup comment saved in the file, in place —
     the object keeps its number so saved replies' /IRT chains stay intact (unlike
     delete + re-add). Identity matches like NoteReplyTarget: rect + current contents,
     with the object number as a tie-break hint. */
 export interface NoteEditInput {
+  /** Absent for legacy Text comments. */
+  subtype?: MarkupType | 'note'
+  quadPoints?: number[]
   pageIndex: number
   objNum: number
   rect: [number, number, number, number]

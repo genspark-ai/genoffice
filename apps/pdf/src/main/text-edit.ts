@@ -49,6 +49,8 @@ export interface Pdfium {
   _PDFiumExt_CloseFileWriter(writer: number): void
   _FPDF_LoadMemDocument(ptr: number, size: number, password: number): number
   _FPDF_CloseDocument(doc: number): void
+  _FPDFAnnot_CountAttachmentPoints(annot: number): number
+  _FPDFAnnot_GetAttachmentPoints(annot: number, index: number, points: number): number
   _FPDF_LoadPage(doc: number, index: number): number
   _FPDF_ClosePage(page: number): void
   _FPDF_GetPageCount(doc: number): number
