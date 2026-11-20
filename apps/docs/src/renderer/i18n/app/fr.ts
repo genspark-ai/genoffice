@@ -512,7 +512,7 @@ export const fr = {
   appLangItalian: 'italien',
   appLangPolish: 'polonais',
   appLangCzech: 'tchèque',
-  appLangDutch: 'nederlands',
+  appLangDutch: 'néerlandais',
   appLangMalay: 'malais',
   appLangHebrew: 'hébreu',
   appLangHindi: 'hindi',
