@@ -62,7 +62,11 @@ export function currentAfterHistory(
     const index = slides.findIndex((slide) => slide.partPath === partPath)
     if (index >= 0) return index
   }
-  return Math.min(current, slides.length - 1)
+  // A deck can be empty (the last slide was deleted), and the saved index can
+  // be negative. Clamp into [0, count-1] so the restored anchor always names a
+  // slide: setCurrent(-1) leaves the canvas with no current slide and the next
+  // normalizeSelection seeds a negative selection.
+  return Math.max(0, Math.min(current, slides.length - 1))
 }
 
 /** Where the moved slides sit after landing as a block at insertAt (a gap 0..count in the pre-move order). */
