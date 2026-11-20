@@ -10,7 +10,7 @@ Az AI-modell beállításairól külön cikk szól; az **AI média és keresés*
 
 ## Nyelv
 
-- A Beállítások **22 felületi nyelvet** kínálnak: angol, egyszerűsített kínai, japán, koreai, francia, német, spanyol, thai, indonéz, orosz, arab, portugál, olasz, lengyel, cseh, holland, maláj, héber, hindi, hagyományos kínai, vietnámi, török.
+- A Beállítások **23 felületi nyelvet** kínálnak: angol, egyszerűsített kínai, japán, koreai, francia, német, spanyol, thai, indonéz, orosz, arab, portugál, olasz, lengyel, cseh, holland, maláj, héber, hindi, hagyományos kínai, vietnámi, török, magyar.
 - A váltás azonnal életbe lép, és megmarad; a natív menüsor is az új nyelven épül újra.
 
 ## Téma
