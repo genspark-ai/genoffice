@@ -9,7 +9,8 @@
  * Failure is silent by contract: the text and HTML formats the grid wrote
  * stay untouched, and off Windows (or without the helper) nothing is sent.
  */
-import { CellValueType, extractPureTextFromCell, numfmt, type ICellData } from '@univerjs/core'
+import { CellValueType, extractPureTextFromCell, type ICellData } from '@univerjs/core'
+import { formatForDisplay, localizeNumberText } from './numfmt-fix'
 
 import { FULL_LOAD_MAX_CELLS } from './app-constants'
 import type { CopyEmfRequest } from '../shared/desktop-api'
@@ -70,10 +71,10 @@ export function copyEmfCellDisplay(
   if (typeof cell.v === 'number') {
     const pattern = (cell.s as { n?: { pattern?: string } } | null)?.n?.pattern
     if (pattern && pattern !== 'General') {
-      const text = numfmt.format(pattern, cell.v, { throws: false })
+      const text = formatForDisplay(pattern, cell.v)
       if (typeof text === 'string') return { v: text, a: 'r' }
     }
-    return { v: String(cell.v), a: 'r' }
+    return { v: localizeNumberText(String(cell.v)), a: 'r' }
   }
   const text = typeof cell.v === 'string' ? cell.v : extractPureTextFromCell(cell as ICellData)
   return { v: text, a: 'l' }

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { BooleanNumber, numfmt } from '@univerjs/core'
+import { BooleanNumber } from '@univerjs/core'
+import { formatForDisplay, localizeNumberText } from './numfmt-fix'
 import { Dropdown, shapePreviewPath, useDismissablePopover } from '@genoffice/ui'
 
 import type { createUniver } from './create-univer'
@@ -3775,7 +3776,7 @@ type ChartLabelPosition = ChartMetadata['dataLabelPosition']
 function formatPieValue(value: number, formatCode: string | undefined): string {
   if (formatCode && formatCode !== 'General') {
     try {
-      return numfmt.format(formatCode, value, { throws: false }).trim()
+      return formatForDisplay(formatCode, value).trim()
     } catch {
       // Unparseable format: fall through to the plain rendering.
     }
@@ -3813,18 +3814,18 @@ function formatLabelValue(
   // Full format codes (currency symbols, literals) go through numfmt like
   // the axis; the digit-count shorthand below only backs up codes it rejects.
   try {
-    const text = numfmt.format(formatCode, value, { throws: false })
+    const text = formatForDisplay(formatCode, value)
     if (typeof text === 'string' && text.trim() !== '') return text.trim()
   } catch {
     // fall through to the shorthand rendering
   }
   const decimals = /0\.(0+)/.exec(formatCode)?.[1]?.length ?? 0
-  if (formatCode.includes('%')) return `${(value * 100).toFixed(decimals)}%`
+  if (formatCode.includes('%')) return localizeNumberText(`${(value * 100).toFixed(decimals)}%`)
   const fixed = value.toFixed(decimals)
-  if (!formatCode.includes(',')) return fixed
+  if (!formatCode.includes(',')) return localizeNumberText(fixed)
   const [whole, fraction] = fixed.split('.')
   const grouped = Number(whole).toLocaleString('en-US')
-  return fraction ? `${grouped}.${fraction}` : grouped
+  return localizeNumberText(fraction ? `${grouped}.${fraction}` : grouped)
 }
 
 /// Corner note when the drawing shows fewer categories than the data has.
@@ -4003,7 +4004,7 @@ function CategoryGroupBand({
 export function formatAxisValue(value: number, numberFormat: string | undefined): string {
   if (numberFormat && numberFormat !== 'General' && !numberFormat.includes('%')) {
     try {
-      const text = numfmt.format(numberFormat, value, { throws: false })
+      const text = formatForDisplay(numberFormat, value)
       if (typeof text === 'string' && text !== '') return text
     } catch {
       // fall through to the plain rendering
@@ -4012,7 +4013,7 @@ export function formatAxisValue(value: number, numberFormat: string | undefined)
   if (numberFormat?.includes('%')) return `${Math.round(value * 100)}%`
   // Excel prints full numbers on value axes; abbreviating disagreed with the data labels.
   const clean = Number(value.toPrecision(12))
-  return clean.toLocaleString('en-US', { maximumFractionDigits: 4 })
+  return localizeNumberText(clean.toLocaleString('en-US', { maximumFractionDigits: 4 }))
 }
 
 function VerticalAxis({
