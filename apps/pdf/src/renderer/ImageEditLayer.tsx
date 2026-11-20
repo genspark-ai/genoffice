@@ -282,6 +282,7 @@ export function ImageEditLayer({
         e.input.kind === 'transformImage' || e.input.kind === 'replaceImage'
           ? (((e.input.quarterTurns ?? 0) % 4) + 4) % 4
           : 0
+      const below = isBelow(e)
       const img = (
         <img
           key={e.id}
@@ -291,11 +292,23 @@ export function ImageEditLayer({
           data-tip={editHint}
           alt=""
           draggable={false}
-          {...pointerProps(target, e.input.rect)}
+          {...(below ? {} : pointerProps(target, e.input.rect))}
         />
       )
-      if (isBelow(e)) underImgs.push(img)
-      else mainEls.push(img)
+      if (below) {
+        // drawn under the page canvas so the text stays on top, where no click reaches it:
+        // the edited picture keeps a hit target above, like an untouched one
+        underImgs.push(img)
+        mainEls.push(
+          <div
+            key={`${e.id}-hit`}
+            className={`pdf-imgedit-hit${sel ? ' pdf-imgedit-selected' : ''}`}
+            style={dragStyle(target, e.input.rect)}
+            data-tip={editHint}
+            {...pointerProps(target, e.input.rect)}
+          />,
+        )
+      } else mainEls.push(img)
     } else {
       mainEls.push(
         <div
