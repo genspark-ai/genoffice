@@ -348,7 +348,7 @@ modèles locaux. La recherche et les médias disposent de leurs propres
 fournisseurs par fonctionnalité sous **IA Médias et Recherche** : Serper,
 Serply, SearchApi, Tavily, Parallel, Keenable, Exa ou Firecrawl pour la
 recherche web, et OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax,
-Stability, FLUX ou tout point de terminaison d'images compatible OpenAI pour
+Kling, Stability, FLUX ou tout point de terminaison d'images compatible OpenAI pour
 la génération d'images et l'analyse d'images/vidéos, ainsi que DeepSeek V4.1
 Flash pour l'analyse d'images.
 

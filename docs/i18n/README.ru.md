@@ -339,7 +339,7 @@ Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlo
 серверы моделей. Поиск и работа с медиа настраиваются через отдельных
 провайдеров по каждой возможности в разделе **Медиа и поиск ИИ**: Serper,
 Serply, SearchApi, Tavily, Parallel, Keenable, Exa или Firecrawl для веб-поиска
-и OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX или любой
+и OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX или любой
 совместимый с OpenAI эндпоинт для генерации изображений и анализа
 изображений/видео, а также DeepSeek V4.1 Flash для анализа изображений.
 

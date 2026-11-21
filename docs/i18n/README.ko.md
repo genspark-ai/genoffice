@@ -327,7 +327,7 @@ OpenCode Zen/Go가 있으며, 로컬 모델 서버를 포함한 모든 OpenAI �
 미디어는 **AI 미디어 및 검색**에서 기능별로 별도 공급자를 설정할 수
 있습니다: 웹 검색은 Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa
 또는 Firecrawl, 이미지 생성과 이미지/비디오 분석은 OpenAI,
-Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX 또는 OpenAI 호환
+Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX 또는 OpenAI 호환
 이미지 엔드포인트 중에서 선택하며, 이미지 분석에는 DeepSeek V4.1 Flash도 쓸 수
 있습니다.
 

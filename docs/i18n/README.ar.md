@@ -330,7 +330,7 @@ Desktop وCursor وأي عميل MCP آخر تشغيل `genoffice mcp` بأنف�
 OpenAI (عنوان أساسي + مفتاح)، بما في ذلك خوادم النماذج المحلية. ولكل من
 البحث والوسائط مزوِّدوه الخاصون بحسب القدرة تحت **AI Media & Search**: Serper
 أو Serply أو SearchApi أو Tavily أو Parallel أو Keenable أو Exa أو Firecrawl للبحث عبر
-الويب، وOpenAI أو Gemini أو Doubao/Seedream أو GLM أو Grok أو Qwen أو MiniMax أو Stability أو FLUX أو أي
+الويب، وOpenAI أو Gemini أو Doubao/Seedream أو GLM أو Grok أو Qwen أو MiniMax أو Kling, Stability أو FLUX أو أي
 نقطة نهاية للصور متوافقة مع OpenAI لتوليد الصور وتحليل الصور والفيديو، إضافة
 إلى DeepSeek V4.1 Flash لتحليل الصور.
 

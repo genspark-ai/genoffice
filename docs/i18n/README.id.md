@@ -342,7 +342,7 @@ dan OpenCode Zen/Go, plus slot khusus untuk endpoint apa pun yang kompatibel
 dengan OpenAI (base URL + kunci), termasuk server model lokal. Pencarian dan
 media memiliki penyedia tersendiri per kemampuan di bawah **AI Media &
 Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa, atau Firecrawl
-untuk pencarian web, dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX, atau
+untuk pencarian web, dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX, atau
 endpoint gambar apa pun yang kompatibel dengan OpenAI untuk generasi gambar serta
 analisis gambar/video, plus DeepSeek V4.1 Flash untuk analisis gambar.
 

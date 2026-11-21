@@ -193,11 +193,12 @@ export type AiMediaProviderId =
   | 'stability'
   | 'bfl'
   | 'microsoft'
+  | 'kling'
   | 'custom'
 
 /** wire shape of the image endpoint */
 export type AiImageProtocol =
-  'openai-images' | 'gemini' | 'dashscope' | 'minimax' | 'stability' | 'bfl' | 'mai'
+  'openai-images' | 'gemini' | 'dashscope' | 'minimax' | 'stability' | 'bfl' | 'mai' | 'kling'
 /** wire shape of the understanding endpoint */
 export type AiAnalysisProtocol = 'openai-chat' | 'gemini'
 

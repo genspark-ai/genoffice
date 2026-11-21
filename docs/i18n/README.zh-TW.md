@@ -361,7 +361,7 @@ OpenCode Zen/Go，另外還有一個自訂欄位可填入任何相容 OpenAI 的
 **AI 媒體與搜尋**下設定獨立的服務商：網頁搜尋可選 Serper、Serply、
 SearchApi、
 Tavily、Parallel、Keenable、Exa 或 Firecrawl；圖片生成與圖片／影片分析可選
-OpenAI、Gemini、Doubao/Seedream、GLM、Grok、Qwen、MiniMax、Stability、FLUX，
+OpenAI、Gemini、Doubao/Seedream、GLM、Grok、Qwen、MiniMax、Kling, Stability、FLUX，
 或任何相容 OpenAI 的圖片服務端點，圖片分析另外還可選 DeepSeek V4.1 Flash。
 
 **TypeSafe Jev** 會為主畫面的檔案搜尋重新排序。在 **AI 媒體與搜尋 →

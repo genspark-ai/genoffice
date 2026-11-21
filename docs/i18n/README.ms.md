@@ -344,7 +344,7 @@ serasi dengan OpenAI (URL asas + kunci), termasuk pelayan model setempat.
 Carian dan media mempunyai pembekal tersendiri mengikut keupayaan di bawah
 **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa atau
 Firecrawl untuk carian web, dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
-Qwen, MiniMax, Stability, FLUX atau mana-mana titik akhir imej serasi OpenAI
+Qwen, MiniMax, Kling, Stability, FLUX atau mana-mana titik akhir imej serasi OpenAI
 untuk penjanaan imej dan analisis imej/video, ditambah DeepSeek V4.1 Flash
 untuk analisis imej.
 

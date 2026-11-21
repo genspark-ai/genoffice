@@ -325,7 +325,7 @@ OpenAI-compatible แบบกำหนดเอง (base URL + คีย์) �
 ในเครื่องด้วย การค้นหาและมีเดียมีผู้ให้บริการแยกตามความสามารถของตัวเอง
 ภายใต้ **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable,
 Exa หรือ Firecrawl สำหรับการค้นหาเว็บ และ OpenAI, Gemini, Doubao/Seedream,
-GLM, Grok, Qwen, MiniMax, Stability, FLUX หรือ endpoint ที่รองรับ OpenAI-compatible ใดๆ
+GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX หรือ endpoint ที่รองรับ OpenAI-compatible ใดๆ
 สำหรับการสร้างภาพและการวิเคราะห์ภาพ/วิดีโอ รวมถึง DeepSeek V4.1 Flash
 สำหรับการวิเคราะห์ภาพ
 

@@ -350,7 +350,7 @@ z OpenAI (adres bazowy + klucz), w tym lokalnych serwerów modeli.
 Wyszukiwanie i media mają własnych dostawców przypisanych do konkretnej
 funkcji w sekcji **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel,
 Keenable, Exa lub Firecrawl do wyszukiwania w internecie oraz OpenAI,
-Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX lub dowolny endpoint
+Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX lub dowolny endpoint
 obrazów zgodny z OpenAI do generowania obrazów oraz analizy obrazu i wideo,
 a także DeepSeek V4.1 Flash do analizy obrazu.
 

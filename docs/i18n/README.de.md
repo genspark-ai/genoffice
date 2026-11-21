@@ -345,7 +345,7 @@ jeden OpenAI-kompatiblen Endpunkt (Basis-URL + Schlüssel), einschließlich
 lokaler Modell-Server. Suche und Medien haben eigene Anbieter je Fähigkeit
 unter **KI-Medien & Suche**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa oder
 Firecrawl für die Websuche und OpenAI, Gemini, Doubao/Seedream, GLM,
-Grok, Qwen, MiniMax, Stability, FLUX oder jeder OpenAI-kompatible Bild-Endpunkt für
+Grok, Qwen, MiniMax, Kling, Stability, FLUX oder jeder OpenAI-kompatible Bild-Endpunkt für
 Bildgenerierung und Bild-/Videoanalyse sowie DeepSeek V4.1 Flash für die
 Bildanalyse.
 

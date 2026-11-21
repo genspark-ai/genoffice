@@ -342,7 +342,7 @@ compatível com OpenAI (URL base + chave), incluindo servidores de modelo
 locais. Busca e mídia têm seus próprios provedores por capacidade em **IA de
 Mídia e Busca**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa ou Firecrawl
 para busca na web, e OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen,
-MiniMax, Stability, FLUX ou qualquer endpoint de imagens compatível com
+MiniMax, Kling, Stability, FLUX ou qualquer endpoint de imagens compatível com
 OpenAI para geração de imagens e análise de imagem/vídeo, além do DeepSeek
 V4.1 Flash para análise de imagem.
 

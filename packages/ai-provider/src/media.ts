@@ -16,6 +16,7 @@ export const DASHSCOPE_BASE_URL = 'https://dashscope.aliyuncs.com'
 export const MINIMAX_BASE_URL = 'https://api.minimax.io/v1'
 export const STABILITY_BASE_URL = 'https://api.stability.ai'
 export const BFL_BASE_URL = 'https://api.bfl.ai'
+export const KLING_BASE_URL = 'https://api-beijing.klingai.com'
 /** DeepSeek's OpenAI-compatible root; the Vision + Files API live at https://api.deepseek.com */
 export const DEEPSEEK_MEDIA_BASE_URL = 'https://api.deepseek.com/v1'
 
@@ -228,6 +229,22 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     // production-recommended default, FLUX 3 Image is the newest generation
     imageModels: ['flux-2-pro', 'flux-3-image', 'flux-pro-1.1'],
     defaultImageModel: 'flux-2-pro',
+    analysisModels: [],
+    defaultAnalysisModel: '',
+    videoAnalysis: false,
+  },
+  {
+    id: 'kling',
+    label: 'Kling AI (Kuaishou)',
+    description:
+      'Kling Image 4.0 generation (8K); the key is access-key:secret-key, signed as a JWT locally; images come from a task that is polled until done. CN endpoint by default (api.klingai.com for global)',
+    keyPlaceholder: 'access-key:secret-key',
+    defaultBaseUrl: KLING_BASE_URL,
+    imageProtocol: 'kling',
+    // per the Kling API changelog: Image 4.0 is the newest generation model;
+    // the async task body carries model_name, not model
+    imageModels: ['kling-image-4.0'],
+    defaultImageModel: 'kling-image-4.0',
     analysisModels: [],
     defaultAnalysisModel: '',
     videoAnalysis: false,

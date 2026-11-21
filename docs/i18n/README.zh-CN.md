@@ -298,7 +298,7 @@ GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty、Opper�
 一个自定义槽位可接入任何 OpenAI 兼容端点（Base URL + 密钥），包括本地模型服务。
 搜索和媒体能力在 **AI 媒体与搜索** 下按能力分别配置服务商：网页搜索可选 Serper、
 Serply、SearchApi、Tavily、Parallel、Keenable、Exa 或 Firecrawl；图片生成和图片/视频解析可选 OpenAI、Gemini、
-Doubao/Seedream、GLM、Grok、Qwen、MiniMax、Stability、FLUX 或任何 OpenAI 兼容的图片端点，
+Doubao/Seedream、GLM、Grok、Qwen、MiniMax、Kling, Stability、FLUX 或任何 OpenAI 兼容的图片端点，
 图片解析另可选 DeepSeek V4.1 Flash。
 
 **TypeSafe Jev** 为主屏幕的文件搜索重新排序。在 **AI 媒体与搜索 → 本地文件搜索**

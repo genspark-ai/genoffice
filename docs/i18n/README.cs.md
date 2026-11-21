@@ -336,7 +336,7 @@ a OpenCode Zen/Go, plus vlastní slot pro jakýkoli OpenAI kompatibilní
 endpoint (base URL + klíč), včetně lokálních serverů s modely. Vyhledávání
 a média mají vlastní poskytovatele pro každou schopnost pod **AI Media
 & Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa nebo Firecrawl
-pro webové vyhledávání a OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX
+pro webové vyhledávání a OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX
 nebo jakýkoli OpenAI kompatibilní endpoint pro obrázky, generování obrázků
 a analýzu obrázků/videa, plus DeepSeek V4.1 Flash pro analýzu obrázků.
 

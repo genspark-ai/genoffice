@@ -1168,3 +1168,167 @@ describe('generateImageWithProvider (mai)', () => {
     ).rejects.toThrow(/Failed/)
   })
 })
+
+describe('generateImageWithProvider: kling', () => {
+  const klingConfig = {
+    apiKey: 'ak-demo:sk-demo-secret',
+    imageModel: 'kling-image-4.0',
+    analysisModel: '',
+  }
+  // shrinks the 3 s poll interval so the async-task tests stay off the 5 s default timeout
+  const shortPoll = { pollMs: 1 }
+
+  function klingResponses() {
+    const png = `data:image/png;base64,${PNG_B64}`
+    let calls = 0
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      calls++
+      const href = String(url)
+      if (href.endsWith('/v1/images/generations') && calls === 1) {
+        return jsonResponse({ code: 0, data: { task_id: 'task-7', task_status: 'submitted' } })
+      }
+      if (href.includes('/v1/images/generations/task-7') && calls === 2) {
+        return jsonResponse({ code: 0, data: { task_id: 'task-7', task_status: 'processing' } })
+      }
+      if (href.includes('/v1/images/generations/task-7')) {
+        return jsonResponse({
+          code: 0,
+          data: {
+            task_id: 'task-7',
+            task_status: 'succeed',
+            task_result: { images: [{ index: 0, url: png }] },
+          },
+        })
+      }
+      // the image download
+      return new Response(new Uint8Array(PNG), {
+        status: 200,
+        headers: { 'content-type': 'image/png' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('signs a JWT from access-key:secret-key, submits model_name, polls to the image URL', async () => {
+    const fetchMock = klingResponses()
+    const out = await generateImageWithProvider(
+      'kling',
+      klingConfig,
+      { prompt: 'a cat on a sofa', aspectRatio: '16:9' },
+      undefined,
+      shortPoll,
+    )
+    expect(out.mime).toBe('image/png')
+    const [submitUrl, submitInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(submitUrl).toBe('https://api-beijing.klingai.com/v1/images/generations')
+    expect((submitInit.headers as Record<string, string>).Authorization).toMatch(
+      /^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/,
+    )
+    const body = JSON.parse(String(submitInit.body))
+    expect(body.model_name).toBe('kling-image-4.0')
+    expect(body.prompt).toBe('a cat on a sofa')
+    expect(body.aspect_ratio).toBe('16:9')
+    const [pollUrl] = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
+    expect(pollUrl).toBe('https://api-beijing.klingai.com/v1/images/generations/task-7')
+    // the JWT payload carries the claims Kling's authentication guide requires:
+    // the access key as iss, exp 30 minutes ahead, nbf five seconds back
+    const auth = (submitInit.headers as Record<string, string>).Authorization.slice(7)
+    const payload = JSON.parse(Buffer.from(auth.split('.')[1]!, 'base64url').toString('utf8'))
+    expect(payload.iss).toBe('ak-demo')
+    expect(payload.exp).toBe(payload.nbf + 1805)
+    const nowSec = Math.floor(Date.now() / 1000)
+    expect(payload.nbf).toBeLessThanOrEqual(nowSec)
+    expect(payload.exp).toBeGreaterThan(nowSec)
+  })
+
+  it('surfaces the task failure message', async () => {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const href = String(url)
+      if (href.endsWith('/v1/images/generations')) {
+        return jsonResponse({ code: 0, data: { task_id: 'task-9', task_status: 'submitted' } })
+      }
+      return jsonResponse({
+        code: 0,
+        data: { task_id: 'task-9', task_status: 'failed', task_status_msg: 'content flagged' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      generateImageWithProvider('kling', klingConfig, { prompt: 'x' }, undefined, shortPoll),
+    ).rejects.toThrow('content flagged')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries a transient non-200 poll response and still delivers the image', async () => {
+    let polls = 0
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const href = String(url)
+      if (href.endsWith('/v1/images/generations')) {
+        return jsonResponse({ code: 0, data: { task_id: 'task-11', task_status: 'submitted' } })
+      }
+      if (href.includes('/v1/images/generations/task-11')) {
+        polls += 1
+        if (polls === 1) return new Response('<html>bad gateway</html>', { status: 502 })
+        return jsonResponse({
+          code: 0,
+          data: {
+            task_id: 'task-11',
+            task_status: 'succeed',
+            task_result: { images: [{ index: 0, url: `data:image/png;base64,${PNG_B64}` }] },
+          },
+        })
+      }
+      // the image download
+      return new Response(new Uint8Array(PNG), {
+        status: 200,
+        headers: { 'content-type': 'image/png' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await generateImageWithProvider(
+      'kling',
+      klingConfig,
+      { prompt: 'x' },
+      undefined,
+      shortPoll,
+    )
+    expect(out.mime).toBe('image/png')
+    expect(polls).toBe(2)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
+  it('a non-200 poll carrying an explicit task failure aborts instead of retrying', async () => {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const href = String(url)
+      if (href.endsWith('/v1/images/generations')) {
+        return jsonResponse({ code: 0, data: { task_id: 'task-12', task_status: 'submitted' } })
+      }
+      return jsonResponse(
+        {
+          code: 0,
+          data: { task_id: 'task-12', task_status: 'failed', task_status_msg: 'content flagged' },
+        },
+        500,
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      generateImageWithProvider('kling', klingConfig, { prompt: 'x' }, undefined, shortPoll),
+    ).rejects.toThrow('content flagged')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects a key without the access-key:secret-key pair before any request', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      generateImageWithProvider(
+        'kling',
+        { apiKey: 'just-one-value', imageModel: 'kling-image-4.0', analysisModel: '' },
+        { prompt: 'x' },
+      ),
+    ).rejects.toThrow('access-key:secret-key')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})

@@ -260,7 +260,7 @@ GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty、Opper�
 カスタム枠も用意されています。検索とメディア関連は **AI メディア＆検索** の下で機能ごとに個
 別のプロバイダーを設定できます：Web 検索には Serper、Serply、SearchApi、Tavily、Parallel、Keenable、Exa、
 Firecrawl のいずれかが使えます。画像生成と画像／動画解析には OpenAI、Gemini、Doubao/Seedream、GLM、
-Grok、Qwen、MiniMax、Stability、FLUX、または任意の OpenAI 互換の画像エンドポイントが使え、
+Grok、Qwen、MiniMax、Kling, Stability、FLUX、または任意の OpenAI 互換の画像エンドポイントが使え、
 画像解析には DeepSeek V4.1 Flash も使えます。
 
 **TypeSafe Jev** は、ホーム画面のファイル検索を並べ替えます。**AI メディア＆検索 →
