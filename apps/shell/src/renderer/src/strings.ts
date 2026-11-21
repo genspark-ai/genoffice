@@ -213,6 +213,10 @@ export const strings = {
     saveLocation: '默认保存位置',
     setRestoreSession: '启动时重新打开上次的文档',
     setRestoreSessionDesc: '关闭 GenOffice 时打开的文档会在下次启动时自动重新打开。',
+    setExcludedFolders: '排除的文件夹',
+    setExcludedFoldersDesc: '这些文件夹下的文件不会进入最近列表、搜索和会话恢复。',
+    setExcludedFoldersAdd: '添加文件夹…',
+    setExcludedFoldersEmpty: '尚未排除任何文件夹',
     setTabSleep: '休眠不活跃的标签页',
     setTabSleepDesc:
       '标签页多到一定数量后，长时间没有查看的会释放内存；回到它时会重新打开文件。有未保存修改或已固定的标签页不会休眠。',
@@ -764,6 +768,11 @@ export const strings = {
     setRestoreSession: 'Reopen documents from last time',
     setRestoreSessionDesc:
       'Documents open when GenOffice closes reopen automatically the next time it starts.',
+    setExcludedFolders: 'Excluded folders',
+    setExcludedFoldersDesc:
+      'Files under these folders stay out of recents, search and session restore.',
+    setExcludedFoldersAdd: 'Add folder…',
+    setExcludedFoldersEmpty: 'Nothing excluded yet',
     setTabSleep: 'Sleep inactive tabs',
     setTabSleepDesc:
       'Once many tabs are open, ones you have not looked at for a while release their memory and reopen their file when you return. Tabs with unsaved changes or pinned tabs never sleep.',
@@ -1330,6 +1339,11 @@ export const strings = {
     setRestoreSession: 'Mở lại tài liệu của lần trước',
     setRestoreSessionDesc:
       'Các tài liệu đang mở khi đóng GenOffice sẽ tự động mở lại vào lần khởi động tiếp theo.',
+    setExcludedFolders: 'Thư mục loại trừ',
+    setExcludedFoldersDesc:
+      'Tệp trong các thư mục này không vào danh sách gần đây, tìm kiếm và khôi phục phiên.',
+    setExcludedFoldersAdd: 'Thêm thư mục…',
+    setExcludedFoldersEmpty: 'Chưa loại trừ thư mục nào',
     setTabSleep: 'Tạm ngủ các thẻ không hoạt động',
     setTabSleepDesc:
       'Khi mở nhiều thẻ, những thẻ lâu không xem sẽ giải phóng bộ nhớ và mở lại tệp khi bạn quay lại. Thẻ có thay đổi chưa lưu hoặc đã ghim sẽ không ngủ.',
@@ -1901,6 +1915,11 @@ export const strings = {
     setRestoreSession: 'Son oturumdaki belgeleri yeniden aç',
     setRestoreSessionDesc:
       'GenOffice kapatılırken açık olan belgeler bir sonraki başlatmada otomatik olarak yeniden açılır.',
+    setExcludedFolders: 'Hariç tutulan klasörler',
+    setExcludedFoldersDesc:
+      'Bu klasörlerdeki dosyalar son kullanılanlar, arama ve oturum geri yükleme dışında tutulur.',
+    setExcludedFoldersAdd: 'Klasör ekle…',
+    setExcludedFoldersEmpty: 'Hariç tutulan klasör yok',
     setTabSleep: 'Etkin olmayan sekmeleri uyut',
     setTabSleepDesc:
       'Çok sayıda sekme açıkken bir süredir bakmadıklarınız belleklerini serbest bırakır ve geri döndüğünüzde dosyalarını yeniden açar. Kaydedilmemiş değişiklikleri olan veya sabitlenmiş sekmeler hiçbir zaman uyumaz.',
@@ -2479,6 +2498,11 @@ export const strings = {
     setRestoreSession: 'Legutóbbi dokumentumok újranyitása',
     setRestoreSessionDesc:
       'A GenOffice bezárásakor nyitva lévő dokumentumok a következő indításkor automatikusan megnyílnak.',
+    setExcludedFolders: 'Kizárt mappák',
+    setExcludedFoldersDesc:
+      'E mappák fájljai nem kerülnek a legutóbbiakba, a keresésbe és a munkamenet-helyreállításba.',
+    setExcludedFoldersAdd: 'Mappa hozzáadása…',
+    setExcludedFoldersEmpty: 'Nincs kizárt mappa',
     setTabSleep: 'Inaktív lapok elaltatása',
     setTabSleepDesc:
       'Ha már sok lap van megnyitva, azok, amelyeket egy ideje nem néztél meg, felszabadítják a memóriájukat, és visszatéréskor újra betöltik a fájljukat. A mentetlen módosításokat tartalmazó lapok és a rögzített lapok soha nem kerülnek alvó állapotba.',
@@ -3067,6 +3091,11 @@ export const strings = {
     setRestoreSession: '前回のドキュメントを再度開く',
     setRestoreSessionDesc:
       'GenOffice を閉じたときに開いていたドキュメントを、次回起動時に自動で開き直します。',
+    setExcludedFolders: '除外フォルダー',
+    setExcludedFoldersDesc:
+      'これらのフォルダー内のファイルは、最近使った項目・検索・セッション復元の対象外になります。',
+    setExcludedFoldersAdd: 'フォルダーを追加…',
+    setExcludedFoldersEmpty: '除外されたフォルダーはありません',
     setTabSleep: '非アクティブなタブをスリープ',
     setTabSleepDesc:
       '多くのタブを開いているとき、しばらく見ていないタブはメモリを解放し、戻ったときにファイルを再度開きます。未保存の変更があるタブやピン留めしたタブはスリープしません。',
@@ -3645,6 +3674,10 @@ export const strings = {
     setRestoreSession: '지난번 문서 다시 열기',
     setRestoreSessionDesc:
       'GenOffice를 닫을 때 열려 있던 문서를 다음 실행 시 자동으로 다시 엽니다.',
+    setExcludedFolders: '제외된 폴더',
+    setExcludedFoldersDesc: '이 폴더 안의 파일은 최근 목록, 검색, 세션 복원에서 제외됩니다.',
+    setExcludedFoldersAdd: '폴더 추가…',
+    setExcludedFoldersEmpty: '제외된 폴더가 없습니다',
     setTabSleep: '비활성 탭 절전',
     setTabSleepDesc:
       '탭이 많이 열려 있으면 한동안 보지 않은 탭은 메모리를 해제하고 돌아올 때 파일을 다시 엽니다. 저장하지 않은 변경이 있거나 고정된 탭은 절전되지 않습니다.',
@@ -4224,6 +4257,11 @@ export const strings = {
     setRestoreSession: 'Rouvrir les documents de la dernière fois',
     setRestoreSessionDesc:
       'Les documents ouverts à la fermeture de GenOffice se rouvrent automatiquement au prochain démarrage.',
+    setExcludedFolders: 'Dossiers exclus',
+    setExcludedFoldersDesc:
+      'Les fichiers de ces dossiers sont exclus des récents, de la recherche et de la restauration de session.',
+    setExcludedFoldersAdd: 'Ajouter un dossier…',
+    setExcludedFoldersEmpty: 'Aucun dossier exclu',
     setTabSleep: 'Mettre en veille les onglets inactifs',
     setTabSleepDesc:
       'Lorsque de nombreux onglets sont ouverts, ceux que vous n’avez pas consultés depuis un moment libèrent leur mémoire et rouvrent leur fichier à votre retour. Les onglets avec des modifications non enregistrées ou épinglés ne sont jamais mis en veille.',
@@ -4820,6 +4858,11 @@ export const strings = {
     setRestoreSession: 'Dokumente vom letzten Mal wieder öffnen',
     setRestoreSessionDesc:
       'Dokumente, die beim Schließen von GenOffice geöffnet waren, werden beim nächsten Start automatisch wieder geöffnet.',
+    setExcludedFolders: 'Ausgeschlossene Ordner',
+    setExcludedFoldersDesc:
+      'Dateien in diesen Ordnern bleiben außerhalb von „Zuletzt verwendet“, der Suche und der Sitzungswiederherstellung.',
+    setExcludedFoldersAdd: 'Ordner hinzufügen…',
+    setExcludedFoldersEmpty: 'Keine Ordner ausgeschlossen',
     setTabSleep: 'Inaktive Tabs schlafen legen',
     setTabSleepDesc:
       'Sind viele Tabs offen, geben länger nicht angesehene ihren Speicher frei und öffnen ihre Datei bei der Rückkehr neu. Tabs mit ungespeicherten Änderungen oder angeheftete Tabs schlafen nie.',
@@ -5408,6 +5451,11 @@ export const strings = {
     setRestoreSession: 'Volver a abrir los documentos de la última vez',
     setRestoreSessionDesc:
       'Los documentos abiertos al cerrar GenOffice se vuelven a abrir automáticamente la próxima vez que se inicie.',
+    setExcludedFolders: 'Carpetas excluidas',
+    setExcludedFoldersDesc:
+      'Los archivos de estas carpetas quedan fuera de recientes, búsqueda y restauración de sesión.',
+    setExcludedFoldersAdd: 'Añadir carpeta…',
+    setExcludedFoldersEmpty: 'Ninguna carpeta excluida',
     setTabSleep: 'Suspender pestañas inactivas',
     setTabSleepDesc:
       'Con muchas pestañas abiertas, las que no has mirado durante un tiempo liberan su memoria y vuelven a abrir el archivo al regresar. Las pestañas con cambios sin guardar o fijadas nunca se suspenden.',
@@ -5988,6 +6036,11 @@ export const strings = {
     setRestoreSession: 'เปิดเอกสารจากครั้งที่แล้วอีกครั้ง',
     setRestoreSessionDesc:
       'เอกสารที่เปิดอยู่ตอนปิด GenOffice จะเปิดขึ้นอีกครั้งโดยอัตโนมัติเมื่อเริ่มโปรแกรมครั้งถัดไป',
+    setExcludedFolders: 'โฟลเดอร์ที่ยกเว้น',
+    setExcludedFoldersDesc:
+      'ไฟล์ในโฟลเดอร์เหล่านี้จะไม่อยู่ในรายการล่าสุด การค้นหา และการกู้คืนเซสชัน',
+    setExcludedFoldersAdd: 'เพิ่มโฟลเดอร์…',
+    setExcludedFoldersEmpty: 'ยังไม่มีโฟลเดอร์ที่ยกเว้น',
     setTabSleep: 'พักแท็บที่ไม่ได้ใช้งาน',
     setTabSleepDesc:
       'เมื่อเปิดแท็บจำนวนมาก แท็บที่ไม่ได้ดูสักพักจะคืนหน่วยความจำและเปิดไฟล์ใหม่เมื่อคุณกลับมา แท็บที่มีการเปลี่ยนแปลงที่ยังไม่บันทึกหรือปักหมุดไว้จะไม่พัก',
@@ -6560,6 +6613,11 @@ export const strings = {
     setRestoreSession: 'Buka kembali dokumen dari sesi terakhir',
     setRestoreSessionDesc:
       'Dokumen yang terbuka saat GenOffice ditutup akan dibuka kembali secara otomatis saat dijalankan berikutnya.',
+    setExcludedFolders: 'Folder yang dikecualikan',
+    setExcludedFoldersDesc:
+      'Berkas di folder ini tidak masuk daftar terbaru, pencarian, dan pemulihan sesi.',
+    setExcludedFoldersAdd: 'Tambah folder…',
+    setExcludedFoldersEmpty: 'Belum ada folder yang dikecualikan',
     setTabSleep: 'Tidurkan tab tidak aktif',
     setTabSleepDesc:
       'Saat banyak tab terbuka, tab yang lama tidak dilihat melepaskan memorinya dan membuka kembali berkasnya saat Anda kembali. Tab dengan perubahan belum disimpan atau yang disematkan tidak pernah tidur.',
@@ -7138,6 +7196,11 @@ export const strings = {
     setRestoreSession: 'Открывать документы прошлого сеанса',
     setRestoreSessionDesc:
       'Документы, открытые при закрытии GenOffice, автоматически откроются при следующем запуске.',
+    setExcludedFolders: 'Исключённые папки',
+    setExcludedFoldersDesc:
+      'Файлы в этих папках не попадают в недавние, поиск и восстановление сеанса.',
+    setExcludedFoldersAdd: 'Добавить папку…',
+    setExcludedFoldersEmpty: 'Нет исключённых папок',
     setTabSleep: 'Усыплять неактивные вкладки',
     setTabSleepDesc:
       'Когда открыто много вкладок, давно не просматриваемые освобождают память и заново открывают файл при возврате. Вкладки с несохранёнными изменениями и закреплённые не усыпляются.',
@@ -7717,6 +7780,11 @@ export const strings = {
     setRestoreSession: 'إعادة فتح مستندات المرة السابقة',
     setRestoreSessionDesc:
       'تُعاد فتح المستندات المفتوحة عند إغلاق GenOffice تلقائيًا في المرة التالية التي يبدأ فيها.',
+    setExcludedFolders: 'مجلدات مستبعدة',
+    setExcludedFoldersDesc:
+      'الملفات في هذه المجلدات لا تظهر في الأخيرة ولا في البحث ولا في استعادة الجلسة.',
+    setExcludedFoldersAdd: 'إضافة مجلد…',
+    setExcludedFoldersEmpty: 'لا توجد مجلدات مستبعدة',
     setTabSleep: 'إسبات علامات التبويب غير النشطة',
     setTabSleepDesc:
       'عند فتح علامات تبويب كثيرة، تحرّر التي لم تطّلع عليها منذ فترة ذاكرتها وتعيد فتح ملفها عند عودتك. علامات التبويب ذات التغييرات غير المحفوظة أو المثبّتة لا تُسبَت أبدًا.',
@@ -8286,6 +8354,11 @@ export const strings = {
     setRestoreSession: 'Reabrir os documentos da última vez',
     setRestoreSessionDesc:
       'Os documentos abertos ao fechar o GenOffice são reabertos automaticamente na próxima vez que ele for iniciado.',
+    setExcludedFolders: 'Pastas excluídas',
+    setExcludedFoldersDesc:
+      'Os arquivos nessas pastas ficam fora de recentes, pesquisa e restauração de sessão.',
+    setExcludedFoldersAdd: 'Adicionar pasta…',
+    setExcludedFoldersEmpty: 'Nenhuma pasta excluída',
     setTabSleep: 'Suspender guias inativas',
     setTabSleepDesc:
       'As guias que você não acessa há algum tempo liberam memória e reabrem o arquivo quando você volta. Guias fixadas ou com alterações não salvas nunca são suspensas.',
@@ -8863,6 +8936,11 @@ export const strings = {
     setRestoreSession: "Riapri i documenti dell'ultima volta",
     setRestoreSessionDesc:
       'I documenti aperti alla chiusura di GenOffice si riaprono automaticamente al successivo avvio.',
+    setExcludedFolders: 'Cartelle escluse',
+    setExcludedFoldersDesc:
+      'I file in queste cartelle restano fuori da recenti, ricerca e ripristino della sessione.',
+    setExcludedFoldersAdd: 'Aggiungi cartella…',
+    setExcludedFoldersEmpty: 'Nessuna cartella esclusa',
     setTabSleep: 'Sospendi le schede inattive',
     setTabSleepDesc:
       'Con molte schede aperte, quelle che non guardi da un po’ liberano la memoria e riaprono il file al tuo ritorno. Le schede con modifiche non salvate o fissate non vengono mai sospese.',
@@ -9439,6 +9517,11 @@ export const strings = {
     setRestoreSession: 'Otwieraj ponownie dokumenty z ostatniej sesji',
     setRestoreSessionDesc:
       'Dokumenty otwarte w chwili zamknięcia GenOffice zostaną automatycznie otwarte przy następnym uruchomieniu.',
+    setExcludedFolders: 'Wykluczone foldery',
+    setExcludedFoldersDesc:
+      'Pliki w tych folderach nie trafiają do ostatnich, wyszukiwania i przywracania sesji.',
+    setExcludedFoldersAdd: 'Dodaj folder…',
+    setExcludedFoldersEmpty: 'Brak wykluczonych folderów',
     setTabSleep: 'Usypiaj nieaktywne karty',
     setTabSleepDesc:
       'Gdy otwartych jest wiele kart, te dawno nieoglądane zwalniają pamięć i ponownie otwierają plik po powrocie. Karty z niezapisanymi zmianami lub przypięte nigdy nie są usypiane.',
@@ -10240,6 +10323,11 @@ export const strings = {
     setRestoreSession: 'Znovu otevřít dokumenty z minula',
     setRestoreSessionDesc:
       'Dokumenty otevřené při zavření GenOffice se při příštím spuštění automaticky znovu otevřou.',
+    setExcludedFolders: 'Vyloučené složky',
+    setExcludedFoldersDesc:
+      'Soubory v těchto složkách se nezobrazují v nedávných, hledání ani v obnově relace.',
+    setExcludedFoldersAdd: 'Přidat složku…',
+    setExcludedFoldersEmpty: 'Žádné vyloučené složky',
     setTabSleep: 'Uspávat neaktivní karty',
     setTabSleepDesc:
       'Když je otevřeno mnoho karet, ty dlouho nezobrazené uvolní paměť a při návratu znovu otevřou soubor. Karty s neuloženými změnami nebo připnuté se nikdy neuspí.',
@@ -10580,6 +10668,11 @@ export const strings = {
     setRestoreSession: 'Documenten van de vorige keer opnieuw openen',
     setRestoreSessionDesc:
       'Documenten die open waren toen GenOffice werd gesloten, worden bij de volgende start automatisch opnieuw geopend.',
+    setExcludedFolders: 'Uitgesloten mappen',
+    setExcludedFoldersDesc:
+      'Bestanden in deze mappen blijven buiten Recent, zoeken en sessieherstel.',
+    setExcludedFoldersAdd: 'Map toevoegen…',
+    setExcludedFoldersEmpty: 'Geen mappen uitgesloten',
     setTabSleep: 'Inactieve tabbladen laten slapen',
     setTabSleepDesc:
       'Als er veel tabbladen open zijn, geven tabbladen die u een tijd niet hebt bekeken hun geheugen vrij en openen ze het bestand opnieuw als u terugkeert. Tabbladen met niet-opgeslagen wijzigingen of vastgemaakte tabbladen slapen nooit.',
@@ -11153,6 +11246,11 @@ export const strings = {
     setRestoreSession: 'Buka semula dokumen dari kali terakhir',
     setRestoreSessionDesc:
       'Dokumen yang dibuka semasa GenOffice ditutup akan dibuka semula secara automatik apabila ia dimulakan seterusnya.',
+    setExcludedFolders: 'Folder dikecualikan',
+    setExcludedFoldersDesc:
+      'Fail dalam folder ini tidak masuk senarai terkini, carian dan pemulihan sesi.',
+    setExcludedFoldersAdd: 'Tambah folder…',
+    setExcludedFoldersEmpty: 'Tiada folder dikecualikan',
     setTabSleep: 'Tidurkan tab tidak aktif',
     setTabSleepDesc:
       'Apabila banyak tab dibuka, tab yang lama tidak dilihat melepaskan memorinya dan membuka semula failnya apabila anda kembali. Tab dengan perubahan belum disimpan atau yang disemat tidak akan tidur.',
@@ -11724,6 +11822,10 @@ export const strings = {
     setRestoreSession: 'פתיחה מחדש של המסמכים מהפעם הקודמת',
     setRestoreSessionDesc:
       'מסמכים שהיו פתוחים כש-GenOffice נסגרה ייפתחו מחדש אוטומטית בהפעלה הבאה.',
+    setExcludedFolders: 'תיקיות שהוחרגו',
+    setExcludedFoldersDesc: 'קבצים בתיקיות אלה לא יופיעו באחרונים, בחיפוש ובשחזור ההפעלה.',
+    setExcludedFoldersAdd: 'הוסף תיקייה…',
+    setExcludedFoldersEmpty: 'אין תיקיות שהוחרגו',
     setTabSleep: 'השהה כרטיסיות לא פעילות',
     setTabSleepDesc:
       'כשפתוחות כרטיסיות רבות, כרטיסיות שלא נצפו זמן מה משחררות את הזיכרון ופותחות מחדש את הקובץ כשחוזרים אליהן. כרטיסיות עם שינויים שלא נשמרו או מוצמדות לעולם לא מושהות.',
@@ -12285,6 +12387,11 @@ export const strings = {
     setRestoreSession: 'पिछली बार के दस्तावेज़ फिर से खोलें',
     setRestoreSessionDesc:
       'GenOffice बंद करते समय खुले दस्तावेज़ अगली बार शुरू होने पर अपने-आप फिर से खुल जाते हैं।',
+    setExcludedFolders: 'बहिष्कृत फ़ोल्डर',
+    setExcludedFoldersDesc:
+      'इन फ़ोल्डर की फ़ाइलें हाल की सूची, खोज और सत्र पुनर्स्थापना में नहीं आतीं।',
+    setExcludedFoldersAdd: 'फ़ोल्डर जोड़ें…',
+    setExcludedFoldersEmpty: 'अभी कोई फ़ोल्डर बहिष्कृत नहीं है',
     setTabSleep: 'निष्क्रिय टैब को सुलाएँ',
     setTabSleepDesc:
       'कई टैब खुले होने पर, जिन्हें आपने कुछ समय से नहीं देखा वे मेमोरी छोड़ देते हैं और लौटने पर फ़ाइल फिर खोलते हैं। बिना सहेजे बदलाव वाले या पिन किए गए टैब कभी नहीं सोते।',
@@ -12845,6 +12952,10 @@ export const strings = {
     saveLocation: '預設儲存位置',
     setRestoreSession: '啟動時重新開啟上次的文件',
     setRestoreSessionDesc: '關閉 GenOffice 時開啟的文件會在下次啟動時自動重新開啟。',
+    setExcludedFolders: '排除的資料夾',
+    setExcludedFoldersDesc: '這些資料夾下的檔案不會進入最近清單、搜尋與工作階段還原。',
+    setExcludedFoldersAdd: '新增資料夾…',
+    setExcludedFoldersEmpty: '尚未排除任何資料夾',
     setTabSleep: '休眠閒置的標籤頁',
     setTabSleepDesc:
       '開啟的標籤頁多到一定數量後，長時間未查看的會釋放記憶體；回到它時會重新開啟檔案。有未儲存變更或已釘選的標籤頁不會休眠。',
