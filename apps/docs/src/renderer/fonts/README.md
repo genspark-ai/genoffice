@@ -273,6 +273,31 @@ letters (only digits/punctuation); Latin text in a cs-font run falls through to
 the rest of the chain. Word substitutes a missing Arabic font with a naskh-style
 serif, so unknown Arabic families default to the Naskh chain.
 
+## Story view writing faces
+
+| Font                      | Role                                             |
+| ------------------------- | ------------------------------------------------ |
+| Monaspace Neon (variable) | the writing view's default face (`--story-face`) |
+| IBM Plex Mono Reg/Bold    | its mono fallback in the same stack              |
+
+Source: Monaspace Neon from [githubnext/monaspace](https://github.com/githubnext/monaspace)
+release v1.400 (`Variable Fonts/Monaspace Neon Var.ttf`, SIL OFL 1.1); IBM Plex
+Mono Regular/Bold statics from [Google Fonts](https://fonts.google.com/specimen/IBM+Plex+Mono)
+(SIL OFL 1.1). The story view names these two families first
+(`styles.css --story-face`, followed by installed writing fonts and system
+fallbacks); bundling them keeps the writing view's type identical on machines
+that have neither installed, without webfont fetches.
+
+Both ship **unmodified upstream files under their own family names** — no
+subsetting, no renames — so the OFL Reserved Font Name clause (GitHub reserves
+"Monaspace"; IBM reserves "Plex") does not apply. Monaspace Neon is the
+upstream variable TTF (glyf outlines, wght 200–800): one file covers regular
+through bold, and it meets the TrueType-outline rule under "Outline format"
+(the upstream webfonts are CFF and would print as Type3 paths). The variable
+file carries the Latin repertoire; CJK and other scripts fall through the
+`--story-face` stack to the system faces as before. Registration lives in
+`fonts.css` ("Writing-view faces").
+
 ## PUA blanker
 
 | Font                              | Role                                             |

@@ -13572,6 +13572,92 @@ body.docs-crop-active
   background: var(--hover);
 }
 
+/* ---- Story view: the frame. The chrome leaves, the way read mode presents a
+   document — the words on a plain background, one bar along the bottom. The
+   bar's actions (bold, italic, link, list, track changes, focus) are the only
+   formatting the view offers; everything about how the document looks belongs
+   to the page view. ---- */
+
+.story-chrome .ribbon,
+.story-chrome .ai-dock,
+.story-chrome .nav-pane,
+.story-chrome .comments-pane,
+.story-chrome .split-pane {
+  display: none !important;
+}
+
+.story-chrome .editor-scroll {
+  background: var(--canvas);
+  padding-top: 24px;
+}
+
+/* the Word/WPS crop marks belong to the page: a writing view has no page */
+.view-story .page-wrap::before,
+.view-story .page-wrap::after,
+.view-story .page-gap-paper::after {
+  display: none;
+}
+
+/* the bar: one row of plain text labels, no icons (iA Writer's) */
+.story-bar {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  max-width: calc(100vw - 48px);
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 15px;
+  background: var(--surface);
+  box-shadow: var(--docs-shadow-chip);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.story-bar-btn {
+  border: none;
+  background: none;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.story-bar-btn:hover {
+  background: var(--hover);
+}
+
+/* a switch shows its state in place: the label itself carries it */
+.story-bar-btn.on {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.story-bar-gap {
+  width: 1px;
+  height: 14px;
+  background: var(--border-strong);
+  margin: 0 4px;
+}
+
+.story-bar-count {
+  padding: 0 8px;
+  color: var(--text-tertiary);
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* Focus: everything but the caret's sentence dims (editor/story-view.ts paints
+   the .story-dim ranges) */
+.view-story .story-dim {
+  opacity: 0.25;
+}
+
 /* ---- Web Layout: document fills the window width, no page chrome ---- */
 
 .view-web {
@@ -13752,9 +13838,26 @@ body.docs-crop-active
 .view-story {
   --story-gutter: 3.25rem;
   --story-marker-ink: var(--docs-paper-ink-faint);
-  --story-face: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  /* one face set by the view, never by the document. The writing fonts first —
+     whichever is installed on the machine takes over, a missing one just
+     falls through — then the system stack. The bundled defaults (Monaspace
+     Neon, IBM Plex Mono) come with the font bundling itself. */
+  --story-face:
+    'Monaspace Neon', 'iA Writer Mono S', 'iA Writer Quattro S', 'IBM Plex Mono', 'Iosevka Etoile',
+    'Recursive', system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --story-size: 16px;
   --story-leading: 1.7;
+  /* authorship inks (storyAuthorshipCss, revision-filters.ts): the own user's
+     suggestions take one colour, everyone else's a single shared one, and
+     AI-written text a gradient — theme-aware through the revision palette. */
+  --story-suggest-own: var(--docs-paper-rev-ink-1);
+  --story-suggest-others: var(--docs-paper-rev-ink-2);
+  --story-ai-ink: var(--docs-paper-rev-ink-3);
+  --story-ai-grad: linear-gradient(
+    100deg,
+    var(--docs-paper-rev-ink-3),
+    var(--docs-paper-rev-ink-1)
+  );
 }
 
 /* the canvas shrinks to the column: no page, no margins, no header/footer */
@@ -13894,6 +13997,103 @@ body.docs-crop-active
   font-size: inherit;
   font-weight: inherit;
   font-style: inherit;
+}
+
+/* Non-text content shows as a small empty box where it sits in the text,
+ * and expands back into itself while the pointer rests on it (#2654).
+ * Display-only: the DOM and the caret are untouched and everything stays
+ * editable in page view; the node's native title names the thing on hover.
+ * Floating and wrapped pictures come back into the flow as the box. */
+.view-story
+  .doc-page
+  :is(img.doc-inline-img[data-inline-image='1'], span.doc-inline-math, sup.doc-note-ref) {
+  display: inline-block;
+  width: 2.6em;
+  height: 1.15em;
+  vertical-align: baseline;
+  margin-inline: 0.15em;
+  border: 1px solid var(--story-marker-ink);
+  border-radius: 3px;
+  overflow: hidden;
+  position: static !important;
+  float: none !important;
+}
+
+.view-story .doc-page :is(img.doc-inline-img[data-inline-image='1'], span.doc-inline-math) {
+  color: transparent;
+  object-fit: fill;
+}
+
+/* collapsed the marker rides the box (0.7em); hovered it drops back to the
+   Word superscript scale the page view pins (note-separator-css.test.ts) */
+.view-story .doc-page sup.doc-note-ref:not(:hover) {
+  font-size: 0.7em;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.view-story
+  .doc-page
+  :is(img.doc-inline-img[data-inline-image='1'], span.doc-inline-math, sup.doc-note-ref):hover {
+  width: auto;
+  min-width: 2.6em;
+  height: auto;
+  overflow: visible;
+  color: inherit;
+}
+
+/* floating (wp:anchor) pictures: the zero-size anchor becomes the box */
+.view-story .doc-page .doc-inline-img-anchor {
+  display: inline-block;
+  position: static !important;
+  float: none !important;
+  width: 2.6em;
+  height: 1.15em;
+  margin-inline: 0.15em;
+  vertical-align: baseline;
+  border: 1px solid var(--story-marker-ink);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.view-story .doc-page .doc-inline-img-anchor > img {
+  position: static !important;
+  float: none !important;
+  opacity: 0;
+}
+
+.view-story .doc-page .doc-inline-img-anchor:hover {
+  width: auto;
+  height: auto;
+  overflow: visible;
+}
+
+.view-story .doc-page .doc-inline-img-anchor:hover > img {
+  opacity: 1;
+}
+
+/* text boxes, block pictures and charts collapse to one slim bar */
+.view-story .doc-page .doc-protected:not(.doc-protected-invisible) {
+  position: static !important;
+  float: none !important;
+  max-height: 2.4em;
+  overflow: hidden;
+  margin-block: 0.35em;
+  border: 1px solid var(--story-marker-ink);
+  border-radius: 3px;
+}
+
+.view-story .doc-page .doc-protected:not(.doc-protected-invisible):not(:hover) > * {
+  visibility: hidden;
+}
+
+.view-story .doc-page .doc-protected:not(.doc-protected-invisible):hover {
+  max-height: none;
+  overflow: visible;
+}
+
+.view-story .doc-page .doc-protected:not(.doc-protected-invisible):hover > * {
+  visibility: visible;
 }
 
 /* ---- Gridlines: alignment grid inside the text area (content-box = inside margins) ---- */
