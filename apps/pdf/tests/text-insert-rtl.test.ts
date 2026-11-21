@@ -38,6 +38,11 @@ describe('visual order of an inserted line', () => {
     expect(visualLine(reversed)).toBe(SHALOM)
   })
 
+  it('swaps paired brackets so they still face the text they enclose', () => {
+    expect(visualLine('(\u05e9\u05dc\u05d5\u05dd)')).toBe('(\u05dd\u05d5\u05dc\u05e9)')
+    expect(visualLine('\u05d0 [\u05d1]')).toBe('[\u05d1] \u05d0')
+  })
+
   it('leaves directions it cannot lay out alone', () => {
     // mixed directions and digits need a full bidi pass; reordering them here
     // would invent an order neither side asked for
@@ -57,6 +62,23 @@ describe('inserting a right-to-left line', () => {
     // unreordered insert extracts mirrored and the save fence refuses the write
     const page = (await readPdfText(result.bytes)).pages[0]!
     expect(page.text).toBe(text)
+    expect(await verifyTextEdits(result.bytes, [{ pageIndex: 0, newText: text }])).toEqual([])
+  })
+
+  it('verifies the save of a bracketed right-to-left line', async () => {
+    const text = '(\u05e9\u05dc\u05d5\u05dd)'
+    if (!canDrawText(text, 'arial')) return // machine has no Hebrew-capable face
+    const result = await applyTextInserts(await blankPage(), [insert(text)])
+    expect(result.skipped).toEqual([])
+    expect(await verifyTextEdits(result.bytes, [{ pageIndex: 0, newText: text }])).toEqual([])
+  })
+
+  it('draws a line that holds only one bracket of a pair', async () => {
+    // the swapped bracket is not in the written line, so the subset must cover it
+    const text = '\u05e9\u05dc\u05d5\u05dd)'
+    if (!canDrawText(text, 'arial')) return
+    const result = await applyTextInserts(await blankPage(), [insert(text)])
+    expect(result.skipped).toEqual([])
     expect(await verifyTextEdits(result.bytes, [{ pageIndex: 0, newText: text }])).toEqual([])
   })
 })

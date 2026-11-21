@@ -9,6 +9,7 @@ export const ms = {
   aiStarterContinue: 'Teruskan menulis dari bahagian akhir dokumen',
   aiStarterFillTemplate: 'Cari dan isi ruang letak dalam dokumen ini',
   aiGskLoginBtn: 'Log masuk ke Genspark',
+  aiGskLoginOk: 'Berjaya log masuk ke Genspark',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'Buka pembantu AI',
   aiSummarizeBtn: 'Ringkasan AI',

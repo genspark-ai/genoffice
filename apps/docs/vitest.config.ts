@@ -59,7 +59,11 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     // the engine's display-only `effective` keys stay out of saved-model toEqual
-    setupFiles: [local('../../packages/docx-engine/tests/setup-equality.ts')],
+    setupFiles: [
+      local('../../packages/docx-engine/tests/setup-equality.ts'),
+      // every package a test saves must read back as strict XML
+      local('../../packages/docx-engine/tests/setup-strict-xml.ts'),
+    ],
     environment: 'jsdom',
     testTimeout: 20000,
   },

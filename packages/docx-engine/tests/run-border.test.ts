@@ -1,6 +1,8 @@
 /** character borders (w:bdr): exam answer boxes drawn around runs */
 import { describe, expect, it } from 'vitest'
-import { parseDocx } from '../src/index'
+import JSZip from 'jszip'
+import { parseDocx, saveDocx } from '../src/index'
+import type { Run } from '../src/types'
 import { buildDocx } from './helpers/build-docx'
 
 const run = (rPr: string, text: string) =>
@@ -61,5 +63,63 @@ describe('run border parse', () => {
     expect(inherited.bdr).toEqual({ val: 'dotted', sz: 4 })
     expect(bare.bdr).toEqual({ val: 'dotted', sz: 4 })
     expect(charWins.bdr).toEqual({ val: 'single', sz: 8, color: 'FF0000', space: 2 })
+  })
+})
+
+describe('run border save', () => {
+  const OWN = '<w:bdr w:val="single" w:sz="6" w:space="1" w:color="000000"/>'
+  const BOXED_STYLE =
+    '<w:style w:type="character" w:styleId="Boxed"><w:name w:val="Boxed"/><w:rPr>' +
+    '<w:bdr w:val="single" w:sz="8" w:space="2" w:color="FF0000"/></w:rPr></w:style>'
+
+  /** re-saves the first paragraph from its runs, as the editor does after an edit there */
+  async function resave(body: string, edit: (runs: Run[]) => Run[], extraStylesXml = '') {
+    const parsed = await parseDocx(await buildDocx({ bodyXml: body, extraStylesXml }))
+    const runs = edit((parsed.blocks[0] as { runs: Run[] }).runs)
+    const saved = await saveDocx(parsed, [
+      { kind: 'generated', block: { type: 'paragraph', runs }, docxIndex: 0 },
+    ])
+    return (await JSZip.loadAsync(saved)).file('word/document.xml')!.async('string')
+  }
+
+  it("reads the run's own border apart from one a style gives", async () => {
+    const body = '<w:p>' + run(OWN, 'own') + run('<w:rStyle w:val="Boxed"/>', 'styled') + '</w:p>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: body, extraStylesXml: BOXED_STYLE }))
+    const [own, styled] = (parsed.blocks[0] as { runs: Run[] }).runs
+    expect(own.bdrOwn).toEqual({ val: 'single', sz: 6, color: '000000', space: 1 })
+    expect(styled.bdr).toBeDefined()
+    expect(styled.bdrOwn).toBeUndefined()
+  })
+
+  it('writes a border set on new text', async () => {
+    const xml = await resave('<w:p><w:r><w:t>plain</w:t></w:r></w:p>', (runs) => [
+      { ...runs[0], bdrOwn: { val: 'single', sz: 4 } },
+    ])
+    expect(xml).toContain('<w:bdr w:val="single" w:sz="4" w:space="0" w:color="auto"/>')
+  })
+
+  it('keeps the bytes of a border that was not touched', async () => {
+    const xml = await resave('<w:p>' + run(OWN + '<w:b/>', 'boxed') + '</w:p>', (runs) =>
+      runs.map((r) => ({ ...r, text: 'boxed and edited' })),
+    )
+    expect(xml).toContain(OWN)
+    expect(xml.match(/<w:bdr/g)).toHaveLength(1)
+  })
+
+  it('writes an explicit no-border when the border is taken off', async () => {
+    const xml = await resave('<w:p>' + run(OWN, 'boxed') + '</w:p>', (runs) =>
+      runs.map((r) => ({ ...r, bdrOwn: null })),
+    )
+    expect(xml).toContain('<w:bdr w:val="nil"/>')
+    expect(xml).not.toContain('w:sz="6"')
+  })
+
+  it("does not copy a style's border onto the run", async () => {
+    const xml = await resave(
+      '<w:p>' + run('<w:rStyle w:val="Boxed"/>', 'styled') + '</w:p>',
+      (runs) => runs.map((r) => ({ ...r, text: 'styled and edited' })),
+      BOXED_STYLE,
+    )
+    expect(xml).not.toContain('<w:bdr')
   })
 })

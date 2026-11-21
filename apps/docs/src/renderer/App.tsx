@@ -2,11 +2,29 @@ import { FloatWatch } from './editor/float-watch'
 import { attachCommentUndoSync, resetCommentUndoStore } from './editor/comment-undo-sync'
 import { scriptFontHtml } from './editor/script-fonts'
 import { carryDocSeen } from './ai/tools'
-import { DOC_CSS_COMMITTED_EVENT, WRAP_WIDTHS_COMMITTED_EVENT } from './editor/cjk-punct-shrink'
+import {
+  DOC_CSS_COMMITTED_EVENT,
+  WRAP_WIDTHS_COMMITTED_EVENT,
+  setStrictKinsoku,
+} from './editor/cjk-punct-shrink'
 import { justifyShrinkPluginKey } from './editor/justify-shrink'
-import { tabReflowMeta } from './editor/decoration-extensions'
+import {
+  docHyphenationSig,
+  hyphenationConfigOf,
+  hyphenationDictFor,
+  hyphenationReady,
+  hyphenationRelayout,
+  hyphenationSettingsOf,
+  hyphenationZoneApplies,
+  loadHyphenation,
+  onDocHyphenationChange,
+  setHyphenation,
+  type HyphenationSettings,
+} from './editor/hyphenation'
+import { DEFAULT_TAB_STOP_CHANGED_EVENT, tabReflowMeta } from './editor/decoration-extensions'
 import { deletedAnything, touchesNode, touchedText } from './editor/touched-blocks'
 import {
+  createElement,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -20,7 +38,8 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { handleDocsControl, type ControlRequest } from './control'
 import { DOMParser as PmDOMParser, type Mark as PmMark, Slice as PmSlice } from '@tiptap/pm/model'
-import { NodeSelection, TextSelection, type Command, type Transaction } from '@tiptap/pm/state'
+import { NodeSelection, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
+import { CellSelection } from '@tiptap/pm/tables'
 import {
   Dropdown,
   ImageViewer,
@@ -31,11 +50,21 @@ import {
   useAiSidebarEnabled,
   WebShareChip,
 } from '@genoffice/ui'
-import { commentAnchors, commentIdsAt, wordRangeAtCaret } from './editor/comments'
+import { commentAnchors, commentIdsAt } from './editor/comments'
 import { isCommandLetter } from './command-letter'
-import { setFieldInstr, toggleAllFieldCodes, type FieldRange } from './editor/field-codes'
+import {
+  PAGE_FIELD_INSTR,
+  setFieldInstr,
+  toggleAllFieldCodes,
+  type FieldRange,
+} from './editor/field-codes'
+import { refreshTableFormulas } from './editor/table-formula'
 import { linkTarget } from './editor/link-actions'
+import { TOP_ANCHOR, anchorPos } from './editor/link-targets'
 import { FieldDialog } from './components/FieldDialog'
+import { createLabelSheet } from './mail-merge/label-sheet'
+import { layoutSection } from './mail-merge/layout'
+import { formatFieldNumber, formatFieldText } from './editor/field-switches'
 import { markdownPasteHtml } from './editor/markdown-paste'
 import { pasteTextSlice, singleCellPasteText } from './editor/paste-text'
 import {
@@ -70,12 +99,15 @@ import {
   applySectionSettings,
   applySectionStartType,
   applyTitlePg,
+  readSections,
   verifyProtectionPassword,
   type Block,
   type CommentInfo,
   type CustomNumberingLevel,
   type NumberingDef,
+  type PageNumberChapter,
   type DocProtection,
+  type PropertyChanges,
   type WriteProtection,
   mergeFieldName,
   nextNoteId,
@@ -84,11 +116,13 @@ import {
   type HfPictureEdit,
   type HfImage,
   type NoteInfo,
+  type NoteProps,
   type NoteSeparator,
   type TextboxDisplay,
   type ParsedDocFull,
   type SectionInfo,
   type SectionSettings,
+  type CitationStyleId,
   type SourceInfo,
   pendingHeadingLevel,
   pictureWatermarkPreviewImage,
@@ -103,12 +137,14 @@ import {
   type Watermark,
   type WatermarkSpec,
   type CommentImage,
+  type MathPr,
+  DEFAULT_MATH_PR,
 } from '@genoffice/docx-engine'
 import type {
   AiDocContent,
   AiSettings,
-  MenuCommand,
   MergeDataSource,
+  MergeOutputMode,
   OpenDocxResult,
 } from '../shared/ipc'
 import { AI_PROVIDERS } from '../shared/ipc'
@@ -121,7 +157,12 @@ import { ZoteroDocumentController } from './zotero/controller'
 import { AiPanel, aiRevisionAuthor } from './ai/AiPanel'
 import type { AiCommentsAccess, AiDocExtras, AiHeaderFooterAccess } from './ai/tools'
 import type { AiStyleInfo } from './ai/style-ops'
-import { applyResolvedPageSetup, describeSection, type AiPageSetupAccess } from './ai/page-setup'
+import {
+  applyResolvedPageSetup,
+  describeSection,
+  mergePendingPgNum,
+  type AiPageSetupAccess,
+} from './ai/page-setup'
 import {
   dropRemovedPendingSections,
   patchPendingSectPr,
@@ -129,10 +170,16 @@ import {
   rewritePendingSectPrs,
   sectionIndexAtBlock,
 } from './ai/pending-sections'
-import { protectedNoteMarkBlock, type AiNotesAccess } from './ai/note-ops'
+import {
+  noteBlockSections,
+  protectedNoteMarkBlock,
+  renumber,
+  type AiNotesAccess,
+} from './ai/note-ops'
 import { applyHfText, hfEditText } from './editor/hf-text'
 import {
   insertHfField,
+  liveHfFieldOf,
   insertHfInstrField,
   insertHfPicture,
   mountHfEditor,
@@ -156,18 +203,19 @@ import { makeGapNotesEl, measureNoteHeightDom, noteRowMetrics } from './editor/n
 import { AiAskPopover } from './components/AiAskPopover'
 import { EDIT_QUEUE_MAX, selectionForAnchor, type DocsEditQueueItem } from './ai/edit-queue'
 import { addQueueAnchor, clearQueueAnchors, removeQueueAnchors } from './editor/ai-queue-anchors'
-import {
-  asianCharCount,
-  countWords,
-  documentTextForWordCount,
-  nonAsianWordCount,
-  selectedWordCount,
-} from './word-count'
+import { countWords, documentTextForWordCount, selectedWordCount, textStats } from './word-count'
 import { CommentsPanel } from './components/CommentsPanel'
 import { EquationModal } from './components/EquationModal'
 import { HeaderFooterArea } from './components/HeaderFooterArea'
 import { PageFootnotes, PageEndnotes } from './components/PageNoteAreas'
-import type { NoteKind } from './note-format'
+import {
+  endnoteHomesOf,
+  groupSectionEndnotes,
+  setSectionEndnotes,
+  type EndnoteHomes,
+  type SectionEndnoteGroup,
+} from './editor/section-endnotes'
+import { sectionNotePropsOf, setNoteProps, type NoteKind } from './note-format'
 import { PaginationPreview } from './components/PaginationPreview'
 import { imageParaPaginationMeta, paraPaginationMeta, tableWidowOff } from './editor/para-flags'
 import {
@@ -226,12 +274,15 @@ import {
   wrapWidthSig,
   sectionTopMarginSpecs,
   sectionWidthSpecs,
+  mirrorIndentSpecs,
   mirrorMarginSpecs,
   paperWidthPx,
   pageLeftPx,
   sectionGridPitchPt,
   sectionGridPitchSpecs,
   docCharSpacePt,
+  docCharCellPt,
+  sectionCharCellSpecs,
   sectionCharSpaceSpecs,
   singleByteCharSpacePt,
   type ColumnBlockPlacement,
@@ -273,6 +324,12 @@ import {
   setRowFills,
   syncAnchorBands,
   syncCutOverlays,
+  syncNestedTableGaps,
+  nestedRowAtCut,
+  nestedRowSplit,
+  type NestedTableGap,
+  NESTED_ROW_TOL_PX,
+  tableGridCols,
   syncFloatShifts,
   syncPageBorders,
   syncPageSheets,
@@ -298,7 +355,9 @@ import { layoutMultipage, multipageColumns, multipageZoomForColumns } from './mu
 import { setColumnLayout } from './editor/column-layout'
 import { pageMargins } from './page-margins'
 import { syncLineNumbers } from './editor/line-numbers'
+import { syncColumnRules } from './editor/column-rules'
 import { formattingMarksPluginKey, sectionBreakMap } from './editor/formatting-marks'
+import { draftAutoBreaks, syncDraftBreaks } from './editor/draft-view'
 import {
   COMMENT_AREA_W,
   clearMarginAnnotations,
@@ -336,6 +395,165 @@ import { useShallowStable, useStableCallbacks } from './use-stable'
 import { FindPanel } from './components/FindPanel'
 import { ZoomDialog } from './components/ZoomDialog'
 import { TrackChangesOptionsDialog } from './components/TrackChangesOptionsDialog'
+import { displayForPrint, HighlightChangesDialog } from './components/HighlightChangesDialog'
+import { DocumentDialog, gutterMoved } from './components/DocumentDialog'
+import {
+  pageSetupChange,
+  patchSections,
+  recordPageSetupChange,
+  replayedPageSetup,
+  type PageSetupPatch,
+  type PageSetupState,
+} from './editor/page-setup-history'
+import { ChangeCaseDialog } from './components/ChangeCaseDialog'
+import { DateTimeDialog } from './components/DateTimeDialog'
+import { ColumnsDialog } from './components/ColumnsDialog'
+import { SymbolDialog } from './components/SymbolDialog'
+import { FootnoteDialog, type NoteSettings } from './components/FootnoteDialog'
+import { fontSymbolPayload } from './editor/font-symbol'
+import { IconsDialog } from './components/IconsDialog'
+import { prepareLibraryIcons } from './editor/insert-icons'
+import { PageNumbersDialog } from './components/PageNumbersDialog'
+import { TabsDialog } from './components/TabsDialog'
+import { BulletsNumberingDialog } from './components/BulletsNumberingDialog'
+import { NO_LIST_STYLE_ID, listStyleEntries } from './list-styles'
+import { TranslationLanguageDialog } from './components/TranslationLanguageDialog'
+import { IndexTablesDialog } from './components/IndexTablesDialog'
+import {
+  captionLabels,
+  INDEX_TABLES_COMMAND,
+  indexBlockRanges,
+  indexSectionEdges,
+  indexTablesAtSelection,
+  markCitation,
+  tableSpecPayload,
+} from './commands/reference-commands'
+import { CITATION_CATEGORY_LABELS, MarkCitationDialog } from './components/MarkCitationDialog'
+import { citationRunsOf } from './editor/citations'
+import { MarkIndexEntryDialog } from './components/MarkIndexEntryDialog'
+import { collectBookmarks } from './editor/cross-reference'
+import {
+  indexEntrySwitches,
+  indexEntryTerm,
+  insertFieldMarks,
+  markIndexEntries,
+  occurrenceEnds,
+} from './editor/index-entry'
+import { HyphenationDialog, ManualHyphenationDialog } from './components/HyphenationDialog'
+import { refreshLimitDefaults } from './editor/equation'
+import { mathDefaultsCss, setMathLimits } from './editor/math-defaults'
+import { MATH_WRAP_CHANGED_EVENT, setMathWrapRules } from './editor/math-wrap'
+import { RevealFormattingDialog, revealedStyleName } from './components/RevealFormattingDialog'
+import { AutoTextDialog } from './components/AutoTextDialog'
+import { LanguageDialog } from './components/LanguageDialog'
+import { setMergePreview } from './editor/merge-preview'
+import { DEFAULT_CITATION_STYLE, nextFieldId } from './editor/source-citations'
+import type { MergePrompt } from './mail-merge/template'
+import { SelectionPane } from './components/SelectionPane'
+import { CitationsPane } from './components/CitationsPane'
+import { selectChartForData } from './editor/page-objects'
+import {
+  languageSlot,
+  noProofOf,
+  parseLangAttr,
+  proofingLanguageOf,
+  setProofingLanguage,
+} from './editor/proofing-language'
+import {
+  autoTextEntries,
+  deleteAutoText,
+  insertAutoText,
+  saveAutoText,
+  selectionClip,
+  selectionSnippet,
+  type AutoTextEntry,
+} from './editor/auto-text'
+import { PhoneticGuideDialog } from './components/PhoneticGuideDialog'
+import { EncloseCharactersDialog } from './components/EncloseCharactersDialog'
+import { CombineCharactersDialog } from './components/CombineCharactersDialog'
+import {
+  applyEqLayout,
+  eqLayoutFontOf,
+  eqLayoutTargetOf,
+  type EqLayoutKind,
+  type EqLayoutTarget,
+} from './editor/eq-layout'
+import { FitTextDialog } from './components/FitTextDialog'
+import { TextEffectsDialog } from './components/TextEffectsDialog'
+import { pickAndInsertFile } from './editor/insert-file'
+import { pickAndAutoMark } from './editor/index-automark'
+import { applyTextFx, textFillOf, textFxOf } from './editor/text-fx'
+import { fitTextOf, setFitText, textStretch, toggleEaLayout } from './editor/asian-layout'
+import { applyRuby, rubyTargetOf, type RubyTarget } from './editor/phonetic-guide'
+import { PropertiesDialog } from './components/PropertiesDialog'
+import type { ChartType } from './components/chart-types'
+import {
+  BordersShadingDialog,
+  FontSubstitutionDialog,
+  sectionWithPageBorder,
+} from './components/BordersShadingDialog'
+import { RULE_FIELD_INSTR, ruleNeedsList, type MergeRule } from './mail-merge/rules'
+import { checkMissingFonts, collectDocFonts, docFontsCoveredBy } from './font-check'
+import { fontSubstituteOf, setFontSubstitute } from './font-substitutes'
+import { convertFontsInEditor } from './editor/convert-fonts'
+import {
+  fontsBeingRestored,
+  replayedFontConversions,
+  withFontsConverted,
+  withFontsReverted,
+  type FontConversions,
+} from './editor/font-conversion-history'
+import {
+  AltTextDialog,
+  EquationOptionsDialog,
+  LineNumbersDialog,
+  NumberDialog,
+  ParagraphSpacingDialog,
+  ReduceFileSizeDialog,
+  InsertFileRangeDialog,
+  TemplateGalleryDialog,
+  RenameDialog,
+  SizePositionDialog,
+  SortDialog,
+  TextDirectionDialog,
+  moveErrorKey,
+} from './components/MenuDialogs'
+import {
+  applyPictureGeometry,
+  selectedPictureAlt,
+  selectedPictureGeometry,
+  setSelectedPictureAlt,
+} from './editor/picture-props'
+import { saveDesignDefault, saveFontDefault, savePageDefault } from './design-default'
+import { charCellSpacingCss, gridBaseSizePt } from './char-grid'
+import { sortScope, sortSelection, type SortRefusal } from './editor/sort-paragraphs'
+import {
+  FilterRecipientsDialog,
+  FindRecipientDialog,
+  RecipientsDialog,
+  RuleDialog,
+} from './components/RecipientDialogs'
+import {
+  EMPTY_RECIPIENT_QUERY,
+  activeRecords,
+  findRecipient,
+  type RecipientQuery,
+} from './mail-merge/recipients'
+import { ribbonLangKey } from './components/translate-langs'
+import { setTranslationLanguage, translationLanguage } from './translate-lang'
+import { redactTextBetween, type RedactableNode } from './ai/redact-view'
+import { parseTabStops, tabStopsAttr } from './components/tab-stops'
+import { MailMergePanel } from './components/MailMergePanel'
+import { MERGE_RANGE_ALL, type MergeRange } from './mail-merge/range'
+import { DropCapDialog, dropCapValueOf } from './components/DropCapDialog'
+import { dropCapFontOf } from './editor/drop-cap'
+import {
+  datePictureOf,
+  formatDatePicture,
+  toFullWidth,
+  wantsFullWidth,
+} from './editor/date-picture'
+import { PasteSpecialDialog } from './components/PasteSpecialDialog'
 import {
   loadTrackChangesOptions,
   movesByAuthor,
@@ -345,7 +563,15 @@ import {
   type TrackChangesOptions,
 } from './editor/track-changes-options'
 import type { PageLayout } from './editor/goto'
-import { Ribbon, type ConvertFormat } from './components/Ribbon'
+import { Ribbon } from './components/Ribbon'
+import { BookmarkModal, CaptionModal, CrossRefModal } from './components/ReferenceDialogs'
+import { fieldLinkBookmark, refreshNoteRefFields } from './editor/note-ref-fields'
+import { xmlOfNode } from './editor/toc-update'
+import { setAutoCaptionBlocks } from './editor/auto-caption'
+import { watermarkPresetsOf } from './components/ribbon-design-tab'
+import { WatermarkDialog, watermarkPageBoxOf } from './components/WatermarkDialog'
+import { CropDialog, CutoutDialog } from './components/PictureDialogs'
+import { replaceSelectedPictureBytes } from './editor/picture-bytes'
 import {
   AdjustListIndentsDialog,
   DefineBulletDialog,
@@ -357,11 +583,14 @@ import {
 import {
   documentListPresets,
   numberPresetLevels,
+  customizeLibraryCard,
+  listLibrary,
   recentListPresets,
   rememberListPreset,
 } from './list-presets'
-import { computeFormatState } from './components/ribbon-format-state'
+import { bordersShadingTarget, computeFormatState } from './components/ribbon-format-state'
 import {
+  IconDraftView,
   IconOutlineView,
   IconStoryView,
   IconPrintLayout,
@@ -375,18 +604,24 @@ import { ToastHost } from './components/toast'
 import {
   imageSizeOf,
   AI_REWRITE_ACK_KEY,
+  ChartInsertModal,
   LinkInsertModal,
   TableInsertModal,
   applyParagraphStyle,
   clearParagraphFormatting,
+  applyGalleryStyle,
+  clearAllFormatting,
+  insertBlankPageAt,
   insertImageFromDataUrl,
   insertImageViaDialog,
   insertPageBreakAt,
   setParaAttrs,
+  activeParaAttrs,
+  insertTableAt,
   type RevisionDisplayMode,
   type ViewMode,
 } from './components/ribbon-tabs'
-import { ComparePanel } from './components/ComparePanel'
+import { CompareDocumentsDialog } from './components/CompareDocumentsDialog'
 import {
   EditorContextMenu,
   FontDialog,
@@ -401,22 +636,19 @@ import {
   SplitCellsDialog,
   type TableDialogKind,
 } from './components/TableDialogs'
+import {
+  ConvertTableToTextDialog,
+  ConvertTextToTableDialog,
+  FormulaDialog,
+} from './components/TableConvertDialogs'
 import { TablePropertiesDialog } from './components/TablePropertiesDialog'
 import { showToast } from './components/toast-bus'
-import { setTableAutoFit, toggleRepeatHeaderRows } from './editor/table-properties'
-import { distributeSelectedColumns } from './editor/table-sizing'
-import {
-  deleteTableColumn,
-  distributeRowsEvenly,
-  editableOrToast,
-  ensureCaretInTable,
-  insertRowsOrColumns,
-  selectTablePart,
-  splitTableAtSelection,
-} from './editor/table-ops'
-import { deleteRow, deleteTable, mergeCells } from '@tiptap/pm/tables'
+import { editableOrToast, ensureCaretInTable, keepCellSelection } from './editor/table-ops'
 import { PromptModal } from './components/PromptModal'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
+import { CustomizeKeyboardDialog } from './components/CustomizeKeyboardDialog'
+import { setKeyLayerRunner } from './key-layer'
+import { SpellingDialog } from './components/SpellingDialog'
 import { WordCountDialog, type DocStats } from './components/WordCountDialog'
 import { AutoCorrectDialog } from './components/AutoCorrectDialog'
 import { PreferencesDialog } from './components/PreferencesDialog'
@@ -424,18 +656,31 @@ import { applyCase, nextCaseMode, selectionText } from './editor/case-transform'
 import { stepHangingIndent, stepParagraphIndent } from './editor/indent'
 import { PasswordDialog } from './components/PasswordDialog'
 import { ProtectDialog, type ProtectDialogResult } from './components/ProtectDialog'
-import { t, useI18n } from './i18n/locale'
+import { t, useI18n, type StringKey } from './i18n/locale'
 import {
   getActiveSubEditor,
   setActiveSubEditor,
   subscribeSubEditorState,
 } from './editor/active-editor'
 import { installSelectionBar } from './editor/selection-bar'
-import type { CompareEntry } from './editor/compare'
 import { collectHeadings } from './editor/headings'
-import { updateTocField } from './editor/toc-update'
 import { applyTocPageDisplays, backfillTocPageDom } from './editor/toc-refresh'
+import { renumberSeqFields, unreliableSeqLabelsOf } from './editor/field-results'
 import { setSelectionAlign } from './editor/direction'
+import {
+  firstListNumId,
+  markupShown,
+  runMenuCommand,
+  canRepeatCommand,
+  type CommandHost,
+  type PictureDialogKind,
+} from './commands/menu-commands'
+import { FALLBACK_STYLES, defaultParagraphStyleId } from './style-gallery'
+import { NONE, type ActionCommandId } from '../shared/commands'
+import { menuCommandState } from './commands/menu-state'
+import { textDirectionContext } from './commands/text-direction'
+import { useEditTarget } from './commands/edit-target'
+import { onEditableChange, setEditorEditable } from './editor/editable'
 
 import {
   editorExtensions,
@@ -491,7 +736,7 @@ import {
   type BalloonMode,
 } from './editor/revision-view'
 import { setInlineComments } from './editor/balloon-markers'
-import { NavPane } from './components/NavPane'
+import { NavPane, type NavTab } from './components/NavPane'
 import { loadLeftPane, saveLeftPane, type LeftPane } from './components/pane-width'
 import {
   commentsView,
@@ -502,9 +747,10 @@ import {
 } from './components/comments-mode'
 import { StylesPane } from './components/StylesPane'
 import { useStoredFlag } from './stored-flag'
-import { Ruler } from './components/Ruler'
+import { Ruler, rulerDims } from './components/Ruler'
+import { RulerBar, rulerBarHeight } from './components/RulerBar'
+import { VerticalRuler } from './components/VerticalRuler'
 import { docBodyFont, docHasCjk, docLineFactor, docStyleCss, docThemeCss } from './doc-style-css'
-import { docFontsCoveredBy } from './font-check'
 import { fontAliasAnswers, onFontAliasesChanged } from './system-fonts'
 import { isDocDirty, runGuardedCandidate, runGuardedDocumentAction } from './doc-dirty'
 import {
@@ -520,11 +766,13 @@ import {
 } from './doc-state'
 import {
   applyAiDocContent as applyAiDocContentImpl,
+  buildDocBytes as buildDocBytesImpl,
   exportPdf as exportPdfImpl,
   exportHtml as exportHtmlImpl,
   exportMarkdown as exportMarkdownImpl,
   exportImages as exportImagesImpl,
   loadFile as loadFileImpl,
+  saveAsTemplate as saveAsTemplateImpl,
   newFile as newFileImpl,
   printDoc as printDocImpl,
   save as saveImpl,
@@ -533,6 +781,8 @@ import {
   type FileActionContext,
   type PendingPdfExport,
 } from './file-actions'
+import { reduceFileSize } from './reduce-file-size'
+import { selectedPictureSources } from './reduce-pictures'
 import { BlockIndex } from './pagination-index'
 import { isPhasedContentPending } from './phased-content'
 import { sameSectionInfos } from './pagination-sections'
@@ -587,6 +837,11 @@ import {
   hasPreviousList,
   setNumberingValue as setNumberingValueImpl,
   createCustomListDef as createCustomListDefImpl,
+  listStyleNum as listStyleNumImpl,
+  addListStyle as addListStyleImpl,
+  deleteListStyle as deleteListStyleImpl,
+  listStylesInUse,
+  listNumberingState,
   restartNumbering as restartNumberingImpl,
   type NumberingContext,
 } from './numbering-actions'
@@ -596,10 +851,12 @@ import {
   cancelNewComment as cancelNewCommentImpl,
   clearInks as clearInksImpl,
   commentThreadAtCaret as commentThreadAtCaretImpl,
-  compareWithFile as compareWithFileImpl,
   deleteAllComments as deleteAllCommentsImpl,
+  pickCompareFile,
+  runCompare,
   deleteComment as deleteCommentImpl,
   deleteCommentAtCaret as deleteCommentAtCaretImpl,
+  convertNotes as convertNotesImpl,
   deleteNote as deleteNoteImpl,
   editComment as editCommentImpl,
   gotoComment as gotoCommentImpl,
@@ -628,6 +885,17 @@ function hashStr(str: string): number {
 }
 
 const EMPTY_BLOCKS: Block[] = []
+const NO_SECT_ENDNOTES: SectionEndnoteGroup[] = []
+
+const SORT_REFUSALS: Record<SortRefusal, StringKey> = {
+  needsParagraphs: 'ribbonSortNeedsParagraphs',
+  mergedCells: 'ribbonSortMergedCells',
+}
+
+const sortDialogScope = (state: EditorState) => {
+  const scope = sortScope(state)
+  return typeof scope === 'string' ? null : scope
+}
 
 // O(doc) derivations cached by PM doc reference: caret moves and unrelated
 // state updates reuse the last result instead of re-walking the whole document
@@ -760,28 +1028,6 @@ const DEFAULT_SETTINGS: AiSettings = {
   ) as AiSettings['providers'],
 }
 
-/** Table menu items that are plain editor commands (the dialogs and Distribute Rows are handled inline) */
-const TABLE_MENU_COMMANDS: Partial<Record<MenuCommand, (widthPx: number) => Command>> = {
-  'table-insert-rows-above': (w) => insertRowsOrColumns(1, 'above', w),
-  'table-insert-rows-below': (w) => insertRowsOrColumns(1, 'below', w),
-  'table-insert-cols-left': (w) => insertRowsOrColumns(1, 'left', w),
-  'table-insert-cols-right': (w) => insertRowsOrColumns(1, 'right', w),
-  'table-delete-table': () => deleteTable,
-  'table-delete-columns': () => deleteTableColumn,
-  'table-delete-rows': () => deleteRow,
-  'table-select-table': () => selectTablePart('table'),
-  'table-select-column': () => selectTablePart('column'),
-  'table-select-row': () => selectTablePart('row'),
-  'table-select-cell': () => selectTablePart('cell'),
-  'table-merge-cells': () => mergeCells,
-  'table-split-table': () => splitTableAtSelection(),
-  'table-autofit-contents': (w) => setTableAutoFit('contents', w),
-  'table-autofit-window': (w) => setTableAutoFit('window', w),
-  'table-autofit-fixed': (w) => setTableAutoFit('fixed', w),
-  'table-distribute-columns': (w) => distributeSelectedColumns(w),
-  'table-repeat-header': () => toggleRepeatHeaderRows(),
-}
-
 /** heading level after a define_style patch: null outlineLevel drops heading status, a number sets it, absent keeps the current */
 /** An encrypted file is not a document yet: the replace guard waits until the
  *  password prompt has decrypted one (submitDocPwd), so a cancelled or wrong
@@ -807,6 +1053,14 @@ function shadowPlanDiff(
     }
   }
   return diffs
+}
+
+/** the language a new phonetic guide is tagged with, by UI language, when the document names none */
+const RUBY_LANGS: Record<string, string> = {
+  zh: 'zh-CN',
+  'zh-TW': 'zh-TW',
+  ja: 'ja-JP',
+  ko: 'ko-KR',
 }
 
 export function App() {
@@ -911,17 +1165,111 @@ export function App() {
   const [evenOddHfDirty, setEvenOddHfDirty] = useState(false)
   const [mirrorMargins, setMirrorMargins] = useState(false)
   const [mirrorMarginsDirty, setMirrorMarginsDirty] = useState(false)
+  const pageSetupStateRef = useRef<PageSetupState | null>(null)
+  /** a page setup command is running: the state it started from, and whether it also edited the document */
+  const pageSetupUndoRef = useRef<{ before: PageSetupState; edited: boolean } | null>(null)
+  /** call before a command changes page setup: the change becomes one undo step once state settles */
+  const armPageSetupUndo = () => {
+    if (pageSetupUndoRef.current || !pageSetupStateRef.current) return
+    pageSetupUndoRef.current = { before: pageSetupStateRef.current, edited: false }
+    forceRender()
+  }
+  const [autoHyphenation, setAutoHyphenation] = useState(false)
+  const [autoHyphenationDirty, setAutoHyphenationDirty] = useState(false)
+  const [hyphenationEdit, setHyphenationEdit] = useState<Partial<HyphenationSettings> | null>(null)
+  /** a Manual… run is going through the document: the page shows where words would break */
+  const [manualHyphenation, setManualHyphenation] = useState(false)
+  const [showSpelling, setShowSpelling] = useState(false)
+  const manualHyphenationRef = useRef(false)
+  const [defaultTabStopEdit, setDefaultTabStopEdit] = useState<number | null>(null)
+  /** settings.xml w:gutterAtTop as set in this session; null when untouched */
+  const [gutterAtTopEdit, setGutterAtTopEdit] = useState<boolean | null>(null)
+  /** Convert Permanently of Font Substitution: what the save has to write and what earlier saves wrote; null when untouched */
+  const [fontConversions, setFontConversions] = useState<FontConversions | null>(null)
+  /** settings.xml m:mathPr as set in this session; null when untouched */
+  const [mathPrEdit, setMathPrEdit] = useState<MathPr | null>(null)
+  /** footnote / endnote properties set in this session (only the fields changed); null when untouched */
+  const [notePropsEdit, setNotePropsEdit] = useState<NoteSettings | null>(null)
+  /** bumped when the marks were renumbered outside an edit of the note lists */
+  const [noteRenumbered, setNoteRenumbered] = useState(0)
+  const noteSettings = useMemo<NoteSettings>(
+    () => ({
+      footnote: { ...doc?.parsed.footnoteProps, ...notePropsEdit?.footnote },
+      endnote: { ...doc?.parsed.endnoteProps, ...notePropsEdit?.endnote },
+    }),
+    [doc, notePropsEdit],
+  )
+  const notesBeneathText = noteSettings.footnote.pos === 'beneathText'
+  /** note numbering in effect per section: settings.xml and this session's document-wide edit, then the section's own */
+  const documentNoteProps = useMemo<NoteSettings>(
+    () => ({
+      footnote: { ...doc?.parsed.settingsNoteProps?.footnote, ...notePropsEdit?.footnote },
+      endnote: { ...doc?.parsed.settingsNoteProps?.endnote, ...notePropsEdit?.endnote },
+    }),
+    [doc, notePropsEdit],
+  )
+  const sectionNoteProps = useMemo(
+    () =>
+      sectionNotePropsOf(
+        documentNoteProps,
+        // the last section is written from its own state
+        sections.length > 0
+          ? sections.map((s, i) => (i === sections.length - 1 && section) || s.settings)
+          : section
+            ? [section]
+            : [],
+      ),
+    [documentNoteProps, sections, section],
+  )
+  /** settings.xml w:characterSpacingControl as set in this session; null when untouched */
+  const [compressPunctEdit, setCompressPunctEdit] = useState<boolean | null>(null)
+  /** Track moves set in this session; the document carries it (settings.xml w:doNotTrackMoves) */
+  const [trackMovesEdit, setTrackMovesEdit] = useState<boolean | null>(null)
+  const trackMoves = trackMovesEdit ?? doc?.parsed.doNotTrackMoves !== true
+  /** settings.xml w:strictFirstAndLastChars as set in this session; null when untouched */
+  const [strictKinsokuEdit, setStrictKinsokuEdit] = useState<boolean | null>(null)
+  // read where the document CSS is rebuilt outside a render (font and style refreshes)
+  const autoHyphenationRef = useRef(autoHyphenation)
+  autoHyphenationRef.current = autoHyphenation
+  // a typed line grid set in the Document dialog: the document CSS is built from the
+  // file, so it is told what the sections say now (for the document it was set on)
+  const liveTypedGridRef = useRef<{ parsed: ParsedDocFull; typed: boolean } | null>(null)
+  const liveDocCss = useCallback(
+    (parsed: ParsedDocFull): string =>
+      docStyleCss(
+        {
+          ...parsed,
+          autoHyphenation: autoHyphenationRef.current || manualHyphenationRef.current,
+        },
+        liveTypedGridRef.current?.parsed === fileCtxRef.current.doc?.parsed
+          ? { typedGrid: liveTypedGridRef.current?.typed }
+          : undefined,
+      ),
+    [],
+  )
   const [pageInfo, setPageInfo] = useState({ current: 1, total: 1 })
   // last page's number for the document-end footer: text for the page marker, num for
   // even/odd parity (section restarts / pageNumberFmt make both differ from the physical count)
   const [lastPageNo, setLastPageNo] = useState<{ text: string; num: number } | null>(null)
+  const [firstPageNo, setFirstPageNo] = useState<string | null>(null)
   /** SECTIONPAGES of the first and last pages (the canvas's own header and footer strips) */
   const [edgeSectionPages, setEdgeSectionPages] = useState<{ first: number; last: number } | null>(
     null,
   )
   /** Page-number-format dialog + pending final-section pgNumType write (non-final sections rewrite sectPr via pgNumDirtySections) */
-  const [pgNumModal, setPgNumModal] = useState<{ fmt: string; start: string } | null>(null)
-  const [pgNumEdit, setPgNumEdit] = useState<{ fmt?: string; start?: number } | null>(null)
+  const [pgNumModal, setPgNumModal] = useState<{
+    fmt: string
+    start: string
+    restart: boolean
+    /** the heading level whose number leads the page number; '' = none */
+    chapStyle: string
+    chapSep: string
+  } | null>(null)
+  const [pgNumEdit, setPgNumEdit] = useState<{
+    fmt?: string
+    start?: number
+    chapter?: PageNumberChapter | null
+  } | null>(null)
   const [pgNumDirtySections, setPgNumDirtySections] = useState<number[]>([])
   /** Pending numbering definitions to append (saved via SaveOptions.numbering; restart numbering / new list definitions) */
   const [pendingNumbering, setPendingNumbering] =
@@ -981,6 +1329,7 @@ export function App() {
   /** "Different first page" toggle (ribbon checkbox); page 1's header/footer become the first-page variant, as in Word */
   const toggleTitlePg = (on: boolean) => {
     hfEditorRef.current?.exit()
+    armPageSetupUndo()
     setTitlePg(on)
     setTitlePgDirty(true)
     setStatus(on ? t('appTitlePgOn') : t('appTitlePgOff'))
@@ -992,6 +1341,10 @@ export function App() {
   const showNav = leftPane === 'nav'
   const setShowNav = useCallback((on: boolean) => setLeftPane(on ? 'nav' : null), [])
   const closeNav = useCallback(() => setLeftPane(null), [])
+  const [navTab, setNavTab] = useState<NavTab>('headings')
+  const [navTabRequest, setNavTabRequest] = useState<{ tab: NavTab; nonce: number } | null>(null)
+  const clearNavTabRequest = useCallback(() => setNavTabRequest(null), [])
+  const showThumbnails = showNav && navTab === 'pages'
   // Review → Reviewing Pane: the outermost right-edge panel (Word's vertical pane)
   const [showReviewPane, setShowReviewPane] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('print')
@@ -1014,6 +1367,7 @@ export function App() {
   const [findFocusInput, setFindFocusInput] = useState(0)
   const [findFocusReplace, setFindFocusReplace] = useState(0)
   const [findFocusGoTo, setFindFocusGoTo] = useState(0)
+  const [findStep, setFindStep] = useState<{ dir: 1 | -1; nonce: number } | null>(null)
   // last pagination pass, read by the Go To tab (page / section / line targets)
   const pageLayoutRef = useRef<PageLayout | null>(null)
   /** live section list of the last pass (header obstacles of the next pass) */
@@ -1029,12 +1383,20 @@ export function App() {
     return pageLayoutRef.current
   }, [])
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [showCustomizeKeyboard, setShowCustomizeKeyboard] = useState(false)
   const [showAutoCorrect, setShowAutoCorrect] = useState(false)
+  const [autoTextList, setAutoTextList] = useState(autoTextEntries)
   const [showPreferences, setShowPreferences] = useState(false)
+  const commandHostRef = useRef<CommandHost | null>(null)
+  const runCommand = useCallback((command: ActionCommandId, payload?: string) => {
+    if (commandHostRef.current) runMenuCommand(commandHostRef.current, command, payload)
+  }, [])
   const ribbonActionsRef = useRef<{
     stepFontSize?: (dir: 1 | -1) => void
     nudgeFontSize?: (dir: 1 | -1) => void
+    toggleRibbon?: () => void
   }>({})
+  const [ribbonCollapsed, setRibbonCollapsed] = useState(false)
   // Show Comments (Word's top-right toggle): Contextual cards beside the page or the List panel
   const [showComments, setShowComments] = useState(true)
   const [commentsMode, setCommentsModeState] = useState<CommentsMode>(loadCommentsMode)
@@ -1048,6 +1410,8 @@ export function App() {
   // Contextual mode opens the panel for a composer or a focus the margin cannot host; it stays until closed
   const [commentPanelOpen, setCommentPanelOpen] = useState(false)
   const [showStylesPane, setShowStylesPane] = useState(false)
+  const [showSelectionPane, setShowSelectionPane] = useState(false)
+  const [showCitationsPane, setShowCitationsPane] = useState(false)
   const [commentFocus, setCommentFocus] = useState<{
     id: string
     nonce: number
@@ -1128,12 +1492,28 @@ export function App() {
   const [notesDirty, setNotesDirty] = useState(false)
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [sourcesDirty, setSourcesDirty] = useState(false)
+  const [citationStyle, setCitationStyle] = useState<CitationStyleId | null>(null)
   const [zoteroDocumentData, setZoteroDocumentDataState] = useState('')
   const [zoteroDocumentDataDirty, setZoteroDocumentDataDirty] = useState(false)
   const zoteroDocumentDataRef = useRef('')
   const setZoteroDocumentData = useCallback((value: string) => {
     zoteroDocumentDataRef.current = value
     setZoteroDocumentDataState(value)
+  }, [])
+  const zoteroNoteFields =
+    footnotes.some((note) => note.zoteroField) || endnotes.some((note) => note.zoteroField)
+  const [zoteroInstalled, setZoteroInstalled] = useState(false)
+  useEffect(() => {
+    let live = true
+    const check = () =>
+      void window.desktop.zoteroAvailable?.().then((found) => live && setZoteroInstalled(found))
+    check()
+    // Zotero installed or started while the document is open
+    window.addEventListener('focus', check)
+    return () => {
+      live = false
+      window.removeEventListener('focus', check)
+    }
   }, [])
   const [themeFonts, setThemeFonts] = useState<ThemeFonts | null>(null)
   const [themeFontsDirty, setThemeFontsDirty] = useState(false)
@@ -1164,8 +1544,14 @@ export function App() {
     localStorage.setItem(BALLOON_MODE_KEY, balloonMode)
   }, [balloonMode])
   /** Track Changes Options (Word's Advanced Options): screen markup styling + recorder switches */
-  const [tcOptions, setTcOptions] = useState<TrackChangesOptions>(loadTrackChangesOptions)
+  const [tcPrefs, setTcPrefs] = useState<TrackChangesOptions>(loadTrackChangesOptions)
+  const tcOptions = useMemo(() => ({ ...tcPrefs, trackMoves }), [tcPrefs, trackMoves])
+  const setTcOptions = (next: TrackChangesOptions) => {
+    setTcPrefs(next)
+    if (next.trackMoves !== trackMoves) setTrackMovesEdit(next.trackMoves)
+  }
   const [showTcOptions, setShowTcOptions] = useState(false)
+  const [showHighlightChanges, setShowHighlightChanges] = useState(false)
   const tcOptionsStyle = useMemo(() => trackChangesOptionsCss(tcOptions), [tcOptions])
   // the original view restores old formatting via decorations: sync the mode and trigger one repaint
   const balloonsActive = markupPrintsIn(revisionDisplay, viewMode)
@@ -1211,10 +1597,7 @@ export function App() {
   const [removePersonalInfoDirty, setRemovePersonalInfoDirty] = useState(false)
   /** modify password entered (or set by the user this session) — false = write-locked, document read-only */
   const [modifyUnlocked, setModifyUnlocked] = useState(true)
-  const [compareResult, setCompareResult] = useState<{
-    otherName: string
-    entries: CompareEntry[]
-  } | null>(null)
+  const [compareDialog, setCompareDialog] = useState<'compare' | 'combine' | null>(null)
   const [autoSave, setAutoSave] = useAutoSavePref('aidocs.autoSave', window.desktop)
   // tab closed but this renderer kept alive (shell freeze workaround): go inert
   const [tornDown, setTornDown] = useState(false)
@@ -1259,12 +1642,100 @@ export function App() {
     // stylesheet is in the DOM (setContent measured against the previous one)
     document.dispatchEvent(new Event(DOC_CSS_COMMITTED_EVENT))
   }, [docCss, liveLineFactor, themeFonts, themeColors, revisionDisplay])
-  const [stats, setStats] = useState<DocStats | null>(null)
+  // header and footer strips break by the document's hyphenation rules: other rules, other heights
+  useEffect(() => onDocHyphenationChange(() => setHfMeasureEpoch((e) => e + 1)), [])
+  const [stats, setStats] = useState<{ body: DocStats; notes: DocStats } | null>(null)
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [fieldEdit, setFieldEdit] = useState<FieldRange | null>(null)
   const [showTableModal, setShowTableModal] = useState(false)
   const [showZoomDialog, setShowZoomDialog] = useState(false)
   const [showEquationModal, setShowEquationModal] = useState(false)
+  /** the Insert Chart dialog and the type it opens on; null while closed */
+  const [chartModal, setChartModal] = useState<{ type?: ChartType; pick: number } | null>(null)
+  const [showBookmarkModal, setShowBookmarkModal] = useState(false)
+  const [showCrossRefModal, setShowCrossRefModal] = useState(false)
+  const [showCaptionModal, setShowCaptionModal] = useState(false)
+  useEffect(() => setAutoCaptionBlocks(() => fileCtxRef.current.doc?.parsed.blocks ?? []), [])
+  const [showDocumentDialog, setShowDocumentDialog] = useState(false)
+  const [showChangeCase, setShowChangeCase] = useState(false)
+  const [showDateTime, setShowDateTime] = useState(false)
+  const [showDropCap, setShowDropCap] = useState(false)
+  const [showWatermarkDialog, setShowWatermarkDialog] = useState(false)
+  const [showColumnsDialog, setShowColumnsDialog] = useState(false)
+  const [showSymbolDialog, setShowSymbolDialog] = useState(false)
+  const [showIconsDialog, setShowIconsDialog] = useState(false)
+  const [showPageNumbers, setShowPageNumbers] = useState(false)
+  const [showBulletsNumbering, setShowBulletsNumbering] = useState(false)
+  const [showTranslationLanguage, setShowTranslationLanguage] = useState(false)
+  const [showIndexTables, setShowIndexTables] = useState(false)
+  const [showHyphenation, setShowHyphenation] = useState(false)
+  const [showEquationOptions, setShowEquationOptions] = useState(false)
+  const [showFootnoteDialog, setShowFootnoteDialog] = useState(false)
+  const [showRevealFormatting, setShowRevealFormatting] = useState(false)
+  const [showRecipients, setShowRecipients] = useState(false)
+  const [showFilterRecipients, setShowFilterRecipients] = useState(false)
+  const [showFindRecipient, setShowFindRecipient] = useState(false)
+  const [showProperties, setShowProperties] = useState(false)
+  const [showRename, setShowRename] = useState(false)
+  const [showBordersShading, setShowBordersShading] = useState(false)
+  const [showFontSubstitution, setShowFontSubstitution] = useState(false)
+  const [mergeRule, setMergeRule] = useState<MergeRule | null>(null)
+  const [showNumber, setShowNumber] = useState(false)
+  const [showSort, setShowSort] = useState(false)
+  const [showTextDirection, setShowTextDirection] = useState(false)
+  const [showAltText, setShowAltText] = useState(false)
+  const [showLineNumbers, setShowLineNumbers] = useState(false)
+  const [showReduceFileSize, setShowReduceFileSize] = useState(false)
+  const [reduceSelection, setReduceSelection] = useState<string[]>([])
+  const [showTemplateGallery, setShowTemplateGallery] = useState(false)
+  const [insertFileRange, setInsertFileRange] = useState<{
+    fileName: string
+    bookmarks: string[]
+    answer: (range: string | null | undefined) => void
+  } | null>(null)
+  const [showParagraphSpacing, setShowParagraphSpacing] = useState(false)
+  const [showSizePosition, setShowSizePosition] = useState(false)
+  // Word's Focus: the page alone, still editable; Esc brings the window back
+  const [focusMode, setFocusMode] = useState(false)
+  useEffect(() => {
+    if (!focusMode) return
+    const onKey = (e: KeyboardEvent) => {
+      // an open dialog takes the Escape for itself
+      if (e.key === 'Escape' && !document.querySelector('.modal-backdrop')) setFocusMode(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [focusMode])
+  const [propertyChanges, setPropertyChanges] = useState<PropertyChanges | null>(null)
+  const [showInsertField, setShowInsertField] = useState(false)
+  const [pasteSpecialTarget, setPasteSpecialTarget] = useState<Editor | null>(null)
+  const [tabsTarget, setTabsTarget] = useState<Editor | null>(null)
+  const [fitTextTarget, setFitTextTarget] = useState<Editor | null>(null)
+  const [textEffectsTarget, setTextEffectsTarget] = useState<Editor | null>(null)
+  const [languageTarget, setLanguageTarget] = useState<Editor | null>(null)
+  const [markCitationAt, setMarkCitationAt] = useState<{
+    text: string
+    from: number
+    at: number
+  } | null>(null)
+  const [markEntryAt, setMarkEntryAt] = useState<{ text: string; at: number } | null>(null)
+  const [autoText, setAutoText] = useState<{
+    mode: 'new' | 'insert'
+    suggestedName: string
+    entries: AutoTextEntry[]
+  } | null>(null)
+  const [eqLayoutDialog, setEqLayoutDialog] = useState<{
+    editor: Editor
+    kind: EqLayoutKind
+    target: EqLayoutTarget
+  } | null>(null)
+  const [phoneticGuide, setPhoneticGuide] = useState<{ editor: Editor; target: RubyTarget } | null>(
+    null,
+  )
+  const [pictureDialog, setPictureDialog] = useState<{
+    kind: PictureDialogKind
+    dataUrl: string
+  } | null>(null)
   const [eqEditTarget, setEqEditTarget] = useState<{
     pos: number
     latex: string
@@ -1313,6 +1784,27 @@ export function App() {
   )
   // section content width the table commands / dialogs fit the grid into (same formula as the ribbon)
   const tableSection = sections[activeSection]?.settings ?? section
+  /** the default paragraph style's spacing: what was set in this session, else what the file says */
+  const defaultStyleSpacing = () => {
+    const styles = ribbonStylesRef.current
+    const styleId = defaultParagraphStyleId(styles) ?? 'Normal'
+    const pending = styleUpserts[styleId]?.pPr
+    const info = styles?.get(styleId)?.display
+    return {
+      before: pending?.spaceBeforeTwips ?? info?.spaceBeforeTwips,
+      after: pending?.spaceAfterTwips ?? info?.spaceAfterTwips,
+      line: pending?.lineSpacing ?? info?.lineSpacing,
+      // a pending spacing is always a multiple; the file's may be an exact height
+      multiple: pending?.lineSpacing != null || (info?.lineRule ?? 'auto') === 'auto',
+    }
+  }
+  const defaultParagraphSpacing = () => {
+    const { before, after, line, multiple } = defaultStyleSpacing()
+    return { beforeTwips: before ?? 0, afterTwips: after ?? 0, line: multiple && line ? line : 1 }
+  }
+  // the last section's first-page choice is the live toggle; an earlier section's is what the file says
+  const activeTitlePg =
+    activeSection >= sections.length - 1 ? titlePg : (sections[activeSection]?.titlePg ?? false)
   const tableSectionWidthPx = tableSection
     ? Math.max(
         1,
@@ -1824,6 +2316,7 @@ export function App() {
     const saved = live ? sections.findIndex((s) => s.lastBlockIndex === live.lastBlockIndex) : -1
     const cur = (saved >= 0 ? sections[saved].settings : undefined) ?? section
     if (!cur) return
+    armPageSetupUndo()
     const next = { ...cur, [kind === 'header' ? 'headerDist' : 'footerDist']: twips }
     if (saved >= 0) editSectionSettings((_s, i) => (i === saved ? next : null))
     if (sections.length <= 1 || saved < 0 || saved === sections.length - 1) {
@@ -2133,12 +2626,14 @@ export function App() {
     if (trackChangesForced && !trackChanges) setTrackChanges(true)
   }, [trackChangesForced, trackChanges])
 
+  useEffect(() => (editor ? onEditableChange(editor, forceRender) : undefined), [editor])
+
   // Read Mode / Protect Document: the document becomes read-only; Esc leaves Read Mode.
   // A phased open stays editable (the append boundary is guarded by
   // StreamingTailGuardExtension; saves wait for the full content).
   useEffect(() => {
     if (!editor) return
-    editor.setEditable(!readMode && !isProtected)
+    setEditorEditable(editor, !readMode && !isProtected)
     if (!readMode) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setReadMode(false)
@@ -2187,18 +2682,30 @@ export function App() {
     if (readMode && viewMode !== 'print') setViewMode('print')
   }, [readMode, viewMode])
 
+  // the preview reads the canvas as pages: Draft gives way in the render that mounts it
+  const draftBreaksRef = useRef<HTMLDivElement>(null)
+  const draftHeldRef = useRef(false)
+  const viewModeRef = useRef(viewMode)
+  viewModeRef.current = viewMode
+  const showPreview = useCallback((show: boolean) => {
+    if (show && viewModeRef.current === 'draft') {
+      draftHeldRef.current = true
+      setViewMode('print')
+    }
+    setShowPagePreview(show)
+  }, [])
+  useEffect(() => {
+    if (showPagePreview || !draftHeldRef.current) return
+    draftHeldRef.current = false
+    if (viewMode === 'print') setViewMode('draft')
+  }, [showPagePreview, viewMode])
+
   // window title follows the document, so the OS window list and Switch Window show file names
   useEffect(() => {
     document.title = doc ? doc.fileName : 'GenOffice Docs'
   }, [doc])
 
   useEffect(() => window.desktop.onTeardown?.(() => setTornDown(true)), [])
-
-  // keep the native View menu's checkmarks (AI Sidebar / Dark Mode) in sync
-  // (the IPC field keeps its historical darkCanvas name)
-  useEffect(() => {
-    window.desktop.reportViewMenuState?.({ aiSidebar: showAi, darkCanvas: darkPage })
-  }, [showAi, darkPage])
 
   // Crash-recovery copy: while the document is dirty, push a serialized
   // copy to the main process every 30s; a normal save (or discarding on close) removes
@@ -2324,7 +2831,7 @@ export function App() {
     setDocLoading,
     setReadMode,
     setLargeDocSpellOff,
-    setShowPagePreview,
+    setShowPagePreview: showPreview,
     section,
     sectionDirty,
     sections,
@@ -2339,6 +2846,8 @@ export function App() {
     pageColorDirty,
     setPageColor,
     setPageColorDirty,
+    propertyChanges,
+    setPropertyChanges,
     header,
     headerDirty,
     footer,
@@ -2368,6 +2877,32 @@ export function App() {
     mirrorMarginsDirty,
     setMirrorMargins,
     setMirrorMarginsDirty,
+    autoHyphenation,
+    autoHyphenationDirty,
+    setAutoHyphenation,
+    setAutoHyphenationDirty,
+    hyphenationEdit,
+    setHyphenationEdit,
+    endManualHyphenation: () => {
+      manualHyphenationRef.current = false
+      setManualHyphenation(false)
+    },
+    defaultTabStopEdit,
+    setDefaultTabStopEdit,
+    gutterAtTopEdit,
+    setGutterAtTopEdit,
+    fontConversions,
+    setFontConversions,
+    compressPunctEdit,
+    setCompressPunctEdit,
+    trackMovesEdit,
+    setTrackMovesEdit,
+    strictKinsokuEdit,
+    setStrictKinsokuEdit,
+    mathPrEdit,
+    setMathPrEdit,
+    notePropsEdit,
+    setNotePropsEdit,
     pgNumEdit,
     pgNumDirtySections,
     setPgNumEdit,
@@ -2415,6 +2950,8 @@ export function App() {
     sourcesDirty,
     setSources,
     setSourcesDirty,
+    citationStyle,
+    setCitationStyle,
     zoteroDocumentData,
     zoteroDocumentDataDirty,
     setZoteroDocumentData,
@@ -2447,7 +2984,6 @@ export function App() {
       setModifyUnlocked(!wp?.hash)
       setModifyPwdPrompt(wp?.hash ? { value: '', errorKey: '' } : null)
     },
-    setCompareResult,
     promptDocxPassword: (info) =>
       setDocPwdPrompt({ path: info.path, name: info.name, value: '', errorKey: '', busy: false }),
   }
@@ -2532,6 +3068,18 @@ export function App() {
       runGuardedCandidate(
         () => window.desktop.confirmDocumentReplace(),
         () => window.desktop.openDocx(),
+        commitOpenedFile,
+        replacesDocument,
+      ),
+    [commitOpenedFile],
+  )
+
+  /** `fromGallery` names a template of the templates folder; without it the user picks a file */
+  const newFromTemplate = useCallback(
+    (fromGallery?: string) =>
+      runGuardedCandidate(
+        () => window.desktop.confirmDocumentReplace(),
+        () => window.desktop.openTemplate(fromGallery),
         commitOpenedFile,
         replacesDocument,
       ),
@@ -2643,6 +3191,50 @@ export function App() {
 
   /** the recipient list the user picked; null until they pick one */
   const [mergeSource, setMergeSource] = useState<MergeDataSource | null>(null)
+  const [mergePanel, setMergePanel] = useState<{ mode: MergeOutputMode; pick: number } | null>(null)
+  const [mergeRecordIndex, setMergeRecordIndex] = useState(0)
+  const [mergeRange, setMergeRange] = useState<MergeRange>(MERGE_RANGE_ALL)
+  /** rows of the list the user unticked, the conditions the rest must meet and their order */
+  const [mergeExcluded, setMergeExcluded] = useState<ReadonlySet<number>>(() => new Set())
+  const [mergeQuery, setMergeQuery] = useState<RecipientQuery>(EMPTY_RECIPIENT_QUERY)
+  // a new list starts whole, at its first record; the old index may be past its end
+  useEffect(() => {
+    setMergeRecordIndex(0)
+    setMergeRange(MERGE_RANGE_ALL)
+    setMergeExcluded(new Set())
+    setMergeQuery(EMPTY_RECIPIENT_QUERY)
+  }, [mergeSource])
+  /** the list as the preview and the merge take it */
+  const mergeRecipients = useMemo(
+    () =>
+      mergeSource && {
+        ...mergeSource,
+        records: activeRecords(mergeSource.records, mergeExcluded, mergeQuery),
+      },
+    [mergeSource, mergeExcluded, mergeQuery],
+  )
+  const mergeRecipientCount = mergeRecipients?.records.length ?? 0
+  // Merge All Windows has a window to bring back only while one stands outside the tab strip
+  const [windowsDetached, setWindowsDetached] = useState(false)
+  useEffect(() => {
+    let live = true
+    void window.desktop.detachedWindowCount?.().then((n) => live && setWindowsDetached(n > 0))
+    const off = window.desktop.onDetachedWindowsChanged?.((n) => setWindowsDetached(n > 0))
+    return () => {
+      live = false
+      off?.()
+    }
+  }, [])
+  /** Preview Results: the merge fields show the current recipient instead of their names */
+  const [mergePreview, setMergePreviewOn] = useState(false)
+  const previewRecord = (mergePreview && mergeRecipients?.records[mergeRecordIndex]) || null
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) setMergePreview(editor, previewRecord)
+  }, [editor, previewRecord])
+  useEffect(
+    () => setMergeRecordIndex((index) => Math.max(Math.min(index, mergeRecipientCount - 1), 0)),
+    [mergeRecipientCount],
+  )
 
   /** open the file dialog and read the recipient list the user chose */
   const pickMergeDataSource = useCallback(async () => {
@@ -2661,11 +3253,29 @@ export function App() {
     )
   }, [])
 
+  /** a question an Ask or Fill-in rule puts during the merge, and where its answer goes */
+  const [mergeQuestion, setMergeQuestion] = useState<{
+    prompt: MergePrompt
+    total: number
+    answer: (text: string) => void
+  } | null>(null)
+
   /** build the merged documents and write them where the user says */
   const mergeMailings = useCallback(
     async (request: MailMergeRequest): Promise<MailMergeResponse> => {
       try {
-        const files = await buildMailMergeFiles(fileCtxRef.current, request)
+        const files = await buildMailMergeFiles(
+          fileCtxRef.current,
+          request,
+          (prompt) =>
+            new Promise<string>((answer) =>
+              setMergeQuestion({
+                prompt,
+                total: (request.firstRecord ?? 1) + request.records.length - 1,
+                answer,
+              }),
+            ),
+        )
         if (files.length === 0) return { ok: false, error: t('appMergeNothingToWrite') }
         const written = await window.desktop.writeMergeOutput({
           mode: request.mode,
@@ -2766,8 +3376,14 @@ export function App() {
       xml = applyTitlePg(xml, titlePg)
     }
     if (isLast ? pgNumEdit !== null : pgNumDirtySections.includes(idx)) {
-      const pg = isLast ? pgNumEdit : { fmt: sec.pageNumberFmt, start: sec.pageNumberStart }
-      xml = applyPageNumType(xml, pg?.fmt, pg?.start)
+      const pg = isLast
+        ? pgNumEdit
+        : {
+            fmt: sec.pageNumberFmt,
+            start: sec.pageNumberStart,
+            chapter: sec.pageNumberChapter ?? null,
+          }
+      xml = applyPageNumType(xml, pg?.fmt, pg?.start, pg?.chapter)
     }
     return xml
   }
@@ -2778,8 +3394,8 @@ export function App() {
       afterBlockIndex?: number,
       // the AI tool's own section mirror (fresh between renders) and the sectPr copy it chose
       ai?: { sectPr: string; sections: SectionInfo[] },
-    ) => {
-      if (!editor || !doc) return
+    ): boolean => {
+      if (!editor || !doc) return false
       const pmDoc = editor.state.doc
       const live = ai?.sections ?? sections
       // an explicit block (AI tool) targets that block's section instead of the cursor's
@@ -2878,6 +3494,7 @@ export function App() {
       } else {
         setStatus(t('appSectionBreakPending'))
       }
+      return created !== null
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- effectiveSectPrXml is rebuilt per render from the state listed here
     [
@@ -2894,6 +3511,10 @@ export function App() {
       pgNumDirtySections,
     ],
   )
+  // "This point forward" needs the section after the new break modelled at once: a saved
+  // document, and a caret section that is not itself waiting behind an unsaved break
+  const canApplyForward =
+    !!doc?.filePath && sections.length > 0 && !sections[activeSection]?.pendingBreak
   const insertSectionBreakRef = useRef(insertSectionBreak)
   insertSectionBreakRef.current = insertSectionBreak
 
@@ -2936,6 +3557,10 @@ export function App() {
 
   /** which list dialog is open (ribbon galleries and the right-click menu open them) */
   const [listDialog, setListDialog] = useState<ListDialogKind | null>(null)
+  /** the library card the open define dialog customizes */
+  const [listCard, setListCard] = useState<number | null>(null)
+  /** the list style Bullets and Numbering opens on: one just added */
+  const [addedListStyle, setAddedListStyle] = useState<string | undefined>()
   const [listRecentsEpoch, setListRecentsEpoch] = useState(0)
   const recentLists = useMemo(
     () => ({
@@ -2958,6 +3583,15 @@ export function App() {
     }
     return documentListPresets(defs.values())
   }, [doc, pendingNumbering.newDefs, editor])
+  const listStyles = useMemo(
+    () =>
+      listStyleEntries(
+        doc?.parsed.listStyles,
+        pendingNumbering.styleDefs,
+        pendingNumbering.removedStyles,
+      ),
+    [doc, pendingNumbering.styleDefs, pendingNumbering.removedStyles],
+  )
   const applyDefinedList = useCallback(
     (levels: CustomNumberingLevel[], kind: 'bullets' | 'numbers' | 'multi') => {
       if (!editor) return
@@ -3000,6 +3634,13 @@ export function App() {
         if (start > 1) levels[0] = { ...levels[0], start }
         return createCustomListDef(levels)
       },
+      insertTable: (cols) => insertTableAt(editor, 1, cols, true),
+      autoText: autoTextEntries,
+      insertAutoText: (entry) => insertAutoText(editor, entry),
+      openOptions: () => {
+        setAutoTextList(autoTextEntries())
+        setShowAutoCorrect(true)
+      },
     }
     return () => {
       storage.hooks = null
@@ -3009,22 +3650,35 @@ export function App() {
   // ---- Inline fields: insertion and F9 update (cached results recomputed locally) ----
 
   const fieldValue = useCallback(
-    (instr: string): string => {
+    (instr: string, lang?: string): string => {
       const kw = instr.trim().split(/\s+/)[0]?.toUpperCase()
       const now = new Date()
+      const picture = datePictureOf(instr)
+      const dated = (text: string) => (wantsFullWidth(instr) ? toFullWidth(text) : text)
       switch (kw) {
         case 'DATE':
         case 'CREATEDATE':
         case 'SAVEDATE':
-          return now.toLocaleDateString('zh-CN')
+          return dated(
+            picture
+              ? formatDatePicture(now, picture, lang)
+              : now.toLocaleDateString(lang ?? 'zh-CN'),
+          )
         case 'TIME':
-          return now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+          return dated(
+            picture
+              ? formatDatePicture(now, picture, lang)
+              : now.toLocaleTimeString(lang ?? 'zh-CN', { hour: '2-digit', minute: '2-digit' }),
+          )
         case 'NUMPAGES':
-          return String(pageInfo.total)
+          return formatFieldNumber(instr, pageInfo.total)
         case 'PAGE':
-          return String(pageInfo.current)
+          return formatFieldNumber(instr, pageInfo.current)
         case 'FILENAME':
-          return doc?.fileName ?? ''
+          return formatFieldText(
+            instr,
+            (/\\p\b/i.test(instr) ? doc?.filePath : null) ?? doc?.fileName ?? '',
+          )
         case 'MERGEFIELD': {
           // a merge field shows its name in guillemets until the merge fills it
           const name = mergeFieldName(instr)
@@ -3038,16 +3692,51 @@ export function App() {
   )
 
   const insertField = useCallback(
-    (instr: string) => {
+    (instr: string, lang?: string) => {
       if (!editor) return
-      const value = fieldValue(instr) || ' '
-      editor
+      // a table of contents entry shows nothing: it is a marker, as an index entry is
+      const entry = /^\s*TC\s+(\S[\s\S]*?)\s*$/i.exec(instr)?.[1]
+      if (entry && !getActiveSubEditor()) {
+        insertFieldMarks(editor, [
+          { at: editor.state.selection.to, attrs: { term: '', tc: entry } },
+        ])
+        setStatus(t('appFieldInserted', { instr }))
+        return
+      }
+      const value = fieldValue(instr, lang) || ' '
+      // a caret in a header, footer or text box takes the field, as it takes typing
+      const sub = getActiveSubEditor()
+      const target = sub?.isEditable && sub.schema.marks.instrField ? sub : editor
+      // a header or footer keeps page numbers live: its own field node, not a cached result
+      const live = liveHfFieldOf(instr)
+      if (live && target.schema.nodes.hfField) {
+        insertHfField(target, live)
+        setStatus(t('appFieldInserted', { instr }))
+        return
+      }
+      target
         .chain()
         .focus()
         .insertContent({
           type: 'text',
           text: value,
-          marks: [{ type: 'instrField', attrs: { instr } }],
+          marks: [
+            {
+              type: 'instrField',
+              attrs: RULE_FIELD_INSTR.test(instr)
+                ? { instr, fieldId: nextFieldId(target.state.doc), fieldPart: 'single' }
+                : { instr },
+            },
+            // Word names the months and days of a date field in the language of its text
+            ...(lang && target.schema.marks.docTextStyle
+              ? [
+                  {
+                    type: 'docTextStyle',
+                    attrs: { lang: JSON.stringify({ [languageSlot(lang)]: lang }) },
+                  },
+                ]
+              : []),
+          ],
         })
         .unsetMark('instrField')
         .run()
@@ -3056,31 +3745,59 @@ export function App() {
     [editor, fieldValue],
   )
 
-  /** F9: recompute all inline field caches (PAGE/NUMPAGES/date-time/file name); REF/TOC are recomputed when Word opens the file */
+  /** F9: recompute the inline field caches (PAGE/NUMPAGES/date-time/file name, caption numbers, formulas); TOC has its own Update Table */
   const updateFields = useCallback(() => {
     if (!editor) return
     const { state, view } = editor
     const jobs: Array<{ from: number; to: number; text: string; marks: readonly PmMark[] }> = []
+    let changed = 0
     state.doc.descendants((node, pos) => {
       if (!node.isText) return
       const mark = node.marks.find((m) => m.type.name === 'instrField')
       if (!mark) return
-      const next = fieldValue(String(mark.attrs.instr))
-      if (next && next !== node.text) {
-        jobs.push({ from: pos, to: pos + node.nodeSize, text: next, marks: node.marks })
-      }
+      const slots = parseLangAttr(
+        node.marks.find((m) => m.type.name === 'docTextStyle')?.attrs.lang,
+      )
+      const next = fieldValue(
+        String(mark.attrs.instr),
+        slots?.val ?? slots?.eastAsia ?? slots?.bidi,
+      )
+      // a page field keeps the mark it has: its page here is the one in view, not its own
+      const paged = PAGE_FIELD_INSTR.test(String(mark.attrs.instr))
+      if (!next || (next === node.text && (paged || mark.attrs.dirty !== true))) return
+      if (next !== node.text) changed++
+      // any other field recomputed here carries its result: nothing is left for Word to update
+      const marks = paged
+        ? node.marks
+        : node.marks.map((m) =>
+            m === mark ? mark.type.create({ ...mark.attrs, dirty: false }) : m,
+          )
+      jobs.push({ from: pos, to: pos + node.nodeSize, text: next, marks })
     })
-    if (jobs.length === 0) {
-      setStatus(t('appNoFieldsToUpdate'))
-      return
-    }
     let tr = state.tr
     for (const j of jobs.sort((a, b) => b.from - a.from)) {
       tr = tr.replaceWith(j.from, j.to, state.schema.text(j.text, [...j.marks]))
     }
+    const noteRefs = refreshNoteRefFields(tr, {
+      above: t('ribbonCrossRefAbove'),
+      below: t('ribbonCrossRefBelow'),
+    })
+    const blocks = doc?.parsed.blocks ?? EMPTY_BLOCKS
+    const updated =
+      changed +
+      noteRefs +
+      refreshTableFormulas(tr) +
+      renumberSeqFields(tr, blocks, {
+        skip: unreliableSeqLabelsOf(blocks, state.schema),
+        dropDirty: true,
+      })
+    if (!tr.docChanged) {
+      setStatus(t('appNoFieldsToUpdate'))
+      return
+    }
     view.dispatch(tr)
-    setStatus(t('appFieldsUpdated', { n: jobs.length }))
-  }, [editor, fieldValue])
+    setStatus(updated === 0 ? t('appNoFieldsToUpdate') : t('appFieldsUpdated', { n: updated }))
+  }, [editor, fieldValue, doc])
 
   // editorRef: lets the handlePaste closure (the useEditor config exists before the instance) reach the instance
   useEffect(() => {
@@ -3172,7 +3889,10 @@ export function App() {
     const sec = sections[Math.min(activeSection, sections.length - 1)]
     setPgNumModal({
       fmt: sec?.pageNumberFmt ?? 'decimal',
-      start: sec?.pageNumberStart !== undefined ? String(sec.pageNumberStart) : '',
+      start: sec?.pageNumberStart !== undefined ? String(sec.pageNumberStart) : '1',
+      restart: sec?.pageNumberStart !== undefined,
+      chapStyle: sec?.pageNumberChapter ? String(sec.pageNumberChapter.style) : '',
+      chapSep: sec?.pageNumberChapter?.sep ?? 'hyphen',
     })
   }, [sections, activeSection])
 
@@ -3181,12 +3901,17 @@ export function App() {
     if (!pgNumModal) return
     const fmt = pgNumModal.fmt === 'decimal' ? undefined : pgNumModal.fmt
     const start =
-      pgNumModal.start.trim() === '' ? undefined : Math.max(0, parseInt(pgNumModal.start, 10) || 0)
+      !pgNumModal.restart || pgNumModal.start.trim() === ''
+        ? undefined
+        : Math.max(0, parseInt(pgNumModal.start, 10) || 0)
+    const chapter = pgNumModal.chapStyle
+      ? { style: Number(pgNumModal.chapStyle), sep: pgNumModal.chapSep }
+      : null
     const idx = sections.length > 0 ? Math.min(activeSection, sections.length - 1) : -1
     if (idx >= 0) {
       const patched = editor
         ? rewritePendingSectPrs(editor, sections, (s, i) =>
-            i === idx ? applyPageNumType(s.sectPrXml, fmt, start) : null,
+            i === idx ? applyPageNumType(s.sectPrXml, fmt, start, chapter) : null,
           )
         : sections
       setSections((prev) =>
@@ -3196,6 +3921,7 @@ export function App() {
                 ...s,
                 pageNumberFmt: fmt,
                 pageNumberStart: start,
+                pageNumberChapter: chapter ?? undefined,
                 sectPrXml: patched[i]?.sectPrXml ?? s.sectPrXml,
               }
             : s,
@@ -3206,6 +3932,7 @@ export function App() {
       setPgNumEdit({
         ...(fmt !== undefined ? { fmt } : {}),
         ...(start !== undefined ? { start } : {}),
+        chapter,
       })
     } else {
       setPgNumDirtySections((d) => (d.includes(idx) ? d : [...d, idx]))
@@ -3233,12 +3960,11 @@ export function App() {
   useEffect(() => {
     ;(window as unknown as Record<string, unknown>).__exportPdf = exportPdf
     ;(window as unknown as Record<string, unknown>).__exportImages = exportImages
-    ;(window as unknown as Record<string, unknown>).__openPagePreview = () =>
-      setShowPagePreview(true)
+    ;(window as unknown as Record<string, unknown>).__openPagePreview = () => showPreview(true)
     ;(window as unknown as Record<string, unknown>).__setRevisionDisplay = (
       mode: RevisionDisplayMode,
     ) => setRevisionDisplay(mode)
-  }, [exportPdf, exportImages])
+  }, [exportPdf, exportImages, showPreview])
 
   // Headless export mode (--headless-export): this renderer lives in a hidden
   // window whose only job is to run the File menu's PDF or HTML export against
@@ -3314,6 +4040,24 @@ export function App() {
     return () => window.clearTimeout(timer)
   }, [showPagePreview, pendingExportTick, exportPdf])
 
+  // Highlight Changes > in printed document: the print sheet prints the live pages, so
+  // the Markup view switches while the sheet is open and comes back when it closes
+  const [printHighlight, setPrintHighlight] = useState<boolean | null>(null)
+  const printRestoreDisplayRef = useRef<RevisionDisplayMode | null>(null)
+  useEffect(() => {
+    if (showPrintDialog) {
+      // a rerun while the sheet is open still restores the view the screen had before it
+      const screen = printRestoreDisplayRef.current ?? revisionDisplayRef.current
+      const target = displayForPrint(screen, printHighlight)
+      if (target === revisionDisplayRef.current) return
+      printRestoreDisplayRef.current = screen
+      setRevisionDisplay(target)
+    } else if (printRestoreDisplayRef.current) {
+      setRevisionDisplay(printRestoreDisplayRef.current)
+      printRestoreDisplayRef.current = null
+    }
+  }, [showPrintDialog, printHighlight])
+
   const closePrintDialog = useCallback(() => {
     setShowPrintDialog(false)
     if (printAutoOpenedPreviewRef.current) {
@@ -3353,11 +4097,12 @@ export function App() {
     setCommentFocus,
     setInkAnnotations,
     setInksDirty,
-    setCompareResult,
+    currentDocBytes: () => buildDocBytesImpl(fileCtxRef.current),
     get revisionFilter() {
       return revisionFilterRef.current
     },
     showRevision: (target) => showRevision(target),
+    showAllMarkup: () => setRevisionDisplay('all'),
     storyRevisions: () => storyRevisionsRef.current,
     applyStoryRevisions: (targets, mode, all) => applyStoryRevisions(targets, mode, all),
     currentStoryRevision: () =>
@@ -3367,6 +4112,108 @@ export function App() {
   const insertNote = useCallback((kind: 'footnote' | 'endnote') => {
     setNotePrompt({ kind })
   }, [])
+
+  /** what the dialog opens on: the caret's section's numbering, and the document's placement (the page has one) */
+  /** the section the caret's notes are numbered in (a new paragraph after a saved break is in the next one) */
+  const noteSectionAtCaret = (): number => {
+    const head = editor?.state.selection.$head
+    const at =
+      editor && head && head.depth > 0
+        ? noteBlockSections(editor.state.doc, sections)[head.index(0)]
+        : undefined
+    return Math.min(at ?? activeSection, Math.max(sections.length - 1, 0))
+  }
+  const activeNoteProps = (kind: NoteKind): NoteProps => {
+    const { pos: _own, ...numbering } = sectionNoteProps[noteSectionAtCaret()]?.[kind] ?? {}
+    const pos = noteSettings[kind].pos
+    return { ...numbering, ...(pos ? { pos } : {}) }
+  }
+  const renumberNotes = (props: typeof sectionNoteProps) => {
+    if (!editor) return
+    setNoteProps(props, sections)
+    const tr = editor.state.tr
+    renumber(tr, 'footnote')
+    renumber(tr, 'endnote')
+    // the numbers follow the setting, which is an undo step of its own
+    if (tr.docChanged) editor.view.dispatch(tr.setMeta('addToHistory', false))
+  }
+  const noteNumberingSigOf = (props: typeof sectionNoteProps, list: readonly SectionInfo[]) =>
+    JSON.stringify([
+      props.map((p) =>
+        [p.footnote, p.endnote].map((k) => [
+          k.numFmt,
+          k.numStart ?? 1,
+          k.numRestart === 'eachSect',
+        ]),
+      ),
+      list.map((s) => [s.lastBlockIndex, s.pendingBreak ? 1 : 0]),
+    ])
+  const noteNumberingSig = noteNumberingSigOf(sectionNoteProps, sections)
+  /** the numbering the marks were last counted under; a file opens counted by the engine */
+  const noteNumberingRef = useRef<{ parsed: unknown; sig: string } | null>(null)
+  useEffect(() => {
+    if (!editor || !doc) return
+    const counted = noteNumberingRef.current
+    noteNumberingRef.current = { parsed: doc.parsed, sig: noteNumberingSig }
+    if (counted?.parsed !== doc.parsed) {
+      const opened = readSections(doc.parsed)
+      const sig = noteNumberingSigOf(
+        sectionNotePropsOf(
+          doc.parsed.settingsNoteProps,
+          opened.map((s) => s.settings),
+        ),
+        opened,
+      )
+      if (sig === noteNumberingSig) return
+    } else if (counted.sig === noteNumberingSig) return
+    // a section added, removed or given other note properties: its marks count again
+    renumberNotes(sectionNoteProps)
+    setNoteRenumbered((n) => n + 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, doc, noteNumberingSig])
+
+  // the Footnote and Endnote dialog's Apply: the marks renumber and redraw now, the file takes it on save.
+  // A section's own properties win over the document's, so a document-wide change goes into every section too.
+  const applyNoteSettings = (delta: NoteSettings, scope: 'document' | 'section') => {
+    if (!editor) return
+    const last = Math.max(sections.length - 1, 0)
+    const at = noteSectionAtCaret()
+    const hit = (i: number) => scope === 'document' || i === at
+    const own = (s: SectionSettings): SectionSettings => ({
+      ...s,
+      ...(Object.keys(delta.footnote).length > 0
+        ? { footnotePr: { ...s.footnotePr, ...delta.footnote } }
+        : {}),
+      ...(Object.keys(delta.endnote).length > 0
+        ? { endnotePr: { ...s.endnotePr, ...delta.endnote } }
+        : {}),
+    })
+    editSectionSettings((s, i) => (hit(i) ? own(s.settings) : null))
+    if (section && hit(last)) {
+      setSection(own(section))
+      setSectionDirty(true)
+    }
+    const earlier = sections.map((_, i) => i).filter((i) => i < last && hit(i))
+    if (earlier.length > 0) setSectionsDirty((d) => [...new Set([...d, ...earlier])])
+    if (scope === 'document')
+      setNotePropsEdit({
+        footnote: { ...notePropsEdit?.footnote, ...delta.footnote },
+        endnote: { ...notePropsEdit?.endnote, ...delta.endnote },
+      })
+    const next = sectionNoteProps.map((p, i) =>
+      hit(i)
+        ? {
+            footnote: { ...p.footnote, ...delta.footnote },
+            endnote: { ...p.endnote, ...delta.endnote },
+          }
+        : p,
+    )
+    renumberNotes(next)
+    noteNumberingRef.current = doc && {
+      parsed: doc.parsed,
+      sig: noteNumberingSigOf(next, sections),
+    }
+  }
 
   const editNote = useCallback((kind: 'footnote' | 'endnote', id: string) => {
     setNotePrompt({ kind, id })
@@ -3522,7 +4369,6 @@ export function App() {
   )
   const removeInks = useCallback((ids: string[]) => removeInksImpl(reviewCtxRef.current, ids), [])
   const clearInks = useCallback(() => clearInksImpl(reviewCtxRef.current), [])
-  const compareWithFile = useCallback(() => compareWithFileImpl(reviewCtxRef.current), [])
 
   // the ribbon's revision badge walks every block: paced with the word count below
   const [revisionRanges, setRevisionRanges] = useState<RevisionRange[]>([])
@@ -3731,9 +4577,11 @@ export function App() {
       no: number,
       sec: SectionSettings,
       kind: NoteKind,
+      fmt?: string,
     ): { height: number; lineHeightPx: number; fontSizePt: number; fontFamily?: string } => {
       const contentW = twipsToPx(sec.pageWidth - sec.marginLeft - sec.marginRight)
-      const key = `${kind}|${fn?.id ?? ''}|${no}|${Math.round(contentW)}|${fn?.styleId ?? ''}|${fn?.text ?? ''}|${revisionDisplay}`
+      // the grid snaps the line height: sections of one width can differ in it
+      const key = `${kind}|${fn?.id ?? ''}|${no}|${fmt ?? ''}|${Math.round(contentW)}|${sec.docGrid?.type ?? ''}:${sec.docGrid?.linePitch ?? ''}|${fn?.styleId ?? ''}|${fn?.text ?? ''}|${revisionDisplay}`
       let v = cache.get(key)
       if (!v) {
         const style = noteStyleOf(fn)
@@ -3743,6 +4591,7 @@ export function App() {
           measureNoteHeightDom(
             {
               no,
+              ...(fmt ? { fmt } : {}),
               text: fn?.text ?? '',
               ...(richParas ? { richParas } : {}),
               ...(fn?.noRefMark ? { noRefMark: true as const } : {}),
@@ -3767,25 +4616,37 @@ export function App() {
   // the numbers the body shows right now: inserting or deleting a note renumbers
   // its in-text marks in document order, and the note areas must say the same
   const noteMarkNumbers = useMemo(() => {
-    const out = new Map<string, number>()
+    const out = new Map<string, { num: number; fmt?: string }>()
     editorRef.current?.state.doc.descendants((node) => {
       if (node.type.name !== 'docNoteRef') return true
       const key = `${node.attrs.kind}:${node.attrs.id}`
-      if (!out.has(key)) out.set(key, Number(node.attrs.num))
+      if (!out.has(key))
+        out.set(key, {
+          num: Number(node.attrs.num),
+          ...(typeof node.attrs.fmt === 'string' ? { fmt: node.attrs.fmt } : {}),
+        })
       return false
     })
     return out
-    // the lists change whenever marks are added or removed
+    // the lists change whenever marks are added or removed, the note settings when they are renumbered
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [footnotes, endnotes, doc])
+  }, [footnotes, endnotes, doc, sectionNoteProps, noteRenumbered])
 
   // display number of a note: the mark in the body, else the engine's body-order
   // numbering (numStart / eachSect applied), else the list position
   const noteNo = useCallback(
     (kind: 'footnote' | 'endnote', id: string, index: number): number =>
-      noteMarkNumbers.get(`${kind}:${id}`) ??
+      noteMarkNumbers.get(`${kind}:${id}`)?.num ??
       doc?.parsed.noteNumbers?.[`${kind}:${id}`] ??
       index + 1,
+    [noteMarkNumbers, doc],
+  )
+  // the number format of a note: its section's, as its mark in the body carries it
+  const noteFmt = useCallback(
+    (kind: 'footnote' | 'endnote', id: string): string | undefined => {
+      const mark = noteMarkNumbers.get(`${kind}:${id}`)
+      return mark ? mark.fmt : doc?.parsed.noteNumFmts?.[`${kind}:${id}`]
+    },
     [noteMarkNumbers, doc],
   )
 
@@ -3804,17 +4665,38 @@ export function App() {
         if (!sec) continue
         const fn = footnotes.find((f) => f.id === run.noteRef!.id)
         bands.push({
-          heightPx: noteRenderInfoOf(fn, noOf.get(run.noteRef!.id) ?? 0, sec, 'footnote').height,
+          heightPx: noteRenderInfoOf(
+            fn,
+            noOf.get(run.noteRef!.id) ?? 0,
+            sec,
+            'footnote',
+            noteFmt('footnote', run.noteRef!.id),
+          ).height,
         })
       }
       // the once-per-page separator is charged by the pagination engine, not per block
       return bands
     },
-    [footnotes, sections, section, noteRenderInfoOf, noteNo],
+    [footnotes, sections, section, noteRenderInfoOf, noteNo, noteFmt],
   )
 
   // typed w:docGrid line pitch (pt) when every section shares one; null = no snapping
   const gridPitchPt = useMemo(() => docGridPitchPt(sections), [sections])
+  const typedGridNow = useMemo(
+    () => sections.some((s) => sectionGridPitchPt(s) != null),
+    [sections],
+  )
+  useEffect(() => {
+    const parsed = doc?.parsed
+    if (!parsed) return
+    const kept = liveTypedGridRef.current
+    const first = kept?.parsed !== parsed
+    liveTypedGridRef.current = { parsed, typed: typedGridNow }
+    // a document just read: its CSS was built from the same sections
+    if (first || kept.typed === typedGridNow) return
+    const live = liveStylesRef.current
+    setDocCss(liveDocCss(live?.parsed === parsed ? { ...parsed, styles: live.styles } : parsed))
+  }, [typedGridNow, doc?.parsed, liveDocCss])
   // mixed grids: .doc-page keeps the first typed pitch as the inheritance
   // fallback (floats/notes/web view); print blocks get per-section overrides
   // via sectionGridPitchSpecs on the layout channel
@@ -3830,6 +4712,8 @@ export function App() {
   // w:docGrid charSpace character grid: uniform per-character letter-spacing
   // delta (pt); mixed docs deliver it per block via sectionCharSpaceSpecs
   const charSpacePt = useMemo(() => docCharSpacePt(sections), [sections])
+  // the default paragraph style's size, which a snapToChars section counts its cells from
+  const gridBasePtRef = useRef(12)
   // balanceSingleByteDoubleByteWidth: single-byte characters get half the delta
   const balancedGrid = doc?.parsed.balanceDbcsSpacing === true
 
@@ -4008,10 +4892,12 @@ export function App() {
           const page = band
             ? pageOfY(slices, b.top + (b.spaceBeforePx ?? 0) + band.offset)
             : blockPage
-          const info = noteRenderInfoOf(fn, noOf.get(id) ?? 0, sec, 'footnote')
+          const fmt = noteFmt('footnote', id)
+          const info = noteRenderInfoOf(fn, noOf.get(id) ?? 0, sec, 'footnote', fmt)
           const richParas = noteRunsInView(revisionDisplay, fn.richParas)
           out[page]?.push({
             no: noOf.get(id) ?? 0,
+            ...(fmt ? { fmt } : {}),
             id,
             text: fn.text,
             ...(richParas ? { richParas } : {}),
@@ -4033,19 +4919,20 @@ export function App() {
       section,
       noteRenderInfoOf,
       noteNo,
+      noteFmt,
       revisionDisplay,
     ],
   )
 
-  // endnote-area entries (placed together at the document end, shared by pagination preview and page slicing): height measured with the final section's content width
-  const endnoteItems = useMemo<PageNoteItem[]>(() => {
-    if (!section || endnotes.length === 0) return []
-    const sec = sections[sections.length - 1]?.settings ?? section
-    return endnotes.map((n, i) => {
+  // an endnote entry as drawn in a section: its height and line box at that section's width and grid
+  const endnoteItemIn = useCallback(
+    (n: NoteInfo, i: number, sec: SectionSettings): PageNoteItem => {
       const no = noteNo('endnote', n.id, i)
-      const info = noteRenderInfoOf(n, no, sec, 'endnote')
+      const fmt = noteFmt('endnote', n.id)
+      const info = noteRenderInfoOf(n, no, sec, 'endnote', fmt)
       const richParas = noteRunsInView(revisionDisplay, n.richParas)
       return {
+        ...(fmt ? { fmt } : {}),
         no,
         id: n.id,
         text: n.text,
@@ -4056,8 +4943,70 @@ export function App() {
         fontSizePt: info.fontSizePt,
         ...(info.fontFamily ? { fontFamily: info.fontFamily } : {}),
       }
-    })
-  }, [endnotes, sections, section, noteRenderInfoOf, noteNo, revisionDisplay])
+    },
+    [noteRenderInfoOf, noteNo, noteFmt, revisionDisplay],
+  )
+  // endnote-area entries (shared by pagination preview and page slicing), in the final section
+  const allEndnoteItems = useMemo<PageNoteItem[]>(() => {
+    if (!section || endnotes.length === 0) return []
+    const sec = sections[sections.length - 1]?.settings ?? section
+    return endnotes.map((n, i) => endnoteItemIn(n, i, sec))
+  }, [endnotes, sections, section, endnoteItemIn])
+
+  // w:endnotePr w:pos="sectEnd": each section's endnotes print at its end (a section
+  // that suppresses them hands them on); the last section's stay in the end area
+  const sectEndnotesOn =
+    noteSettings.endnote.pos === 'sectEnd' && sections.length > 1 && endnotes.length > 0
+  const endnoteHomesRef = useRef<EndnoteHomes | null>(null)
+  // read while rendering, so the first layout of a file already has the rows in place
+  const endnoteHomes = useMemo(() => {
+    if (!editor || !sectEndnotesOn) return null
+    const next = endnoteHomesOf(editor.state.doc, sections)
+    if (endnoteHomesRef.current?.sig !== next.sig) endnoteHomesRef.current = next
+    return endnoteHomesRef.current
+    // docVersion: the doc identity is what changes, and it is not a React value
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, sectEndnotesOn, sections, endnotes, docVersion])
+  const endnoteLayout = useMemo(() => {
+    if (!sectEndnotesOn || !endnoteHomes) return null
+    const { groups, tail } = groupSectionEndnotes(
+      allEndnoteItems,
+      endnoteHomes,
+      sections.map((s) => !!s.settings.noEndnote),
+    )
+    const listed = new Map(endnotes.map((n, i) => [n.id, [n, i] as const]))
+    return {
+      tail,
+      // a row takes the width and grid of the section it is printed in
+      groups: groups.map((group) => {
+        const sec = sections[group.section]?.settings
+        return {
+          ...group,
+          items: group.items.map((item) => {
+            const at = listed.get(item.id)
+            return sec && at ? endnoteItemIn(at[0], at[1], sec) : item
+          }),
+        }
+      }),
+    }
+  }, [sectEndnotesOn, endnoteHomes, allEndnoteItems, sections, endnotes, endnoteItemIn])
+  /** the entries of the end-of-document area */
+  const endnoteItems = endnoteLayout?.tail ?? allEndnoteItems
+  const sectEndnoteGroups = endnoteLayout?.groups ?? NO_SECT_ENDNOTES
+  const tailEndnotes = useMemo(() => {
+    if (!endnoteLayout) return endnotes
+    const ids = new Set(endnoteLayout.tail.map((item) => item.id))
+    return endnotes.filter((n) => ids.has(n.id))
+  }, [endnotes, endnoteLayout])
+  const editNoteRef = useRef(editNote)
+  editNoteRef.current = editNote
+  // before the pagination pass below: it measures the rows this puts in the flow
+  useEffect(() => {
+    if (editor)
+      setSectionEndnotes(editor.view, sectEndnoteGroups, sections, (id) =>
+        editNoteRef.current('endnote', id),
+      )
+  }, [editor, sectEndnoteGroups, sections])
 
   // canvas column mode:
   //  - 'uniform': every section shares one equal-width multi-column spec (and is LTR) —
@@ -4162,6 +5111,7 @@ export function App() {
     if (!doc || !section) {
       setPageInfo({ current: 1, total: 1 })
       setLastPageNo(null)
+      setFirstPageNo(null)
       setEdgeSectionPages(null)
       pageLayoutRef.current = null
       return
@@ -4702,15 +5652,8 @@ export function App() {
       if (slices.length > 0) {
         const lastIdx = slices.length - 1
         const num = secList ? pageNumbers(slices, secList)[lastIdx] : slices.length
-        setLastPageNo({
-          num,
-          text: secList
-            ? formatPageNumber(
-                num,
-                secList[Math.min(slices[lastIdx].section, secList.length - 1)]?.pageNumberFmt,
-              )
-            : String(num),
-        })
+        setLastPageNo({ num, text: cuts[lastIdx]?.display ?? String(num) })
+        setFirstPageNo(cuts[0]?.display ?? null)
         const counts = sectionPageCounts(slices)
         const first = counts[0]
         const last = counts[lastIdx]
@@ -4723,18 +5666,15 @@ export function App() {
       // pristine open keeps the file's numbers. History-exempt: a field result
       // change is not an edit to undo.
       if (editor && dirtyRef.current && slices.length > 0) {
-        const nums = secList ? pageNumbers(slices, secList) : slices.map((_, n) => n + 1)
         const byEl = new Map(blocks.filter((b) => b.el).map((b) => [b.el as HTMLElement, b.top]))
         const headings = collectHeadings(editor.state.doc, editor.storage.listNumbering?.styles)
-        // formatted with the owning section's pgNumType, like the header/footer numbers
+        // as the header/footer numbers show it: the section's format, and its chapter number
         const displays = headings.map((h) => {
           const dom = editor.view.nodeDOM(h.pos) as HTMLElement | null
           const top = dom ? byEl.get(dom) : undefined
           if (top === undefined) return undefined
-          const idx = Math.min(Math.max(pageOfY(slices, top) + 1, 1), nums.length)
-          const fmt =
-            secList?.[Math.min(slices[idx - 1].section, secList.length - 1)]?.pageNumberFmt
-          return formatPageNumber(nums[idx - 1] ?? idx, fmt)
+          const idx = Math.min(Math.max(pageOfY(slices, top) + 1, 1), slices.length)
+          return cuts[idx - 1]?.display
         })
         const tr = editor.state.tr
         if (applyTocPageDisplays(editor.state.doc, tr, headings, displays)) {
@@ -4758,6 +5698,7 @@ export function App() {
         // skips the same distance to start beside the last portion)
         const carryGaps = new Map<number, number>()
         const overlayCutAnchors: LineAnchor[] = []
+        const nestedGaps: NestedTableGap[] = []
         const overlayPages: number[] = []
         const carries: FlowCarry[] = []
         const lineRectsOf = createLineRectsCache()
@@ -5060,7 +6001,7 @@ export function App() {
                     // Page / Odd & Even toggle can swap the variant behind identical
                     // text), or stale PAGE/NUMPAGES / strip insets / edit targets
                     // survive reuse
-                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${sectionPages[k]}/${sectionPages[k + 1]}·${gapFooter.section}${gapFooter.variant[0]}·${gapHeader.section}${gapHeader.variant[0]}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}·g${mixedWidths ? 1 : 0}:${stripGeomSig(prevSec, k)}:${stripGeomSig(nextSec, k + 1)}`,
+                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${sectionPages[k]}/${sectionPages[k + 1]}·${gapFooter.section}${gapFooter.variant[0]}·${gapHeader.section}${gapHeader.variant[0]}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}·g${mixedWidths ? 1 : 0}:${stripGeomSig(prevSec, k)}:${stripGeomSig(nextSec, k + 1)}·h${docHyphenationSig()}`,
                   }
                 : {}
             // previous page's footnotes: rendered into the top of the gap (page-bottom area), with the gap enlarged by the reserved height.
@@ -5086,7 +6027,7 @@ export function App() {
                 footnoteLineHeightPx(prevSec.docGrid),
                 (id) => editNote('footnote', id),
               )
-              notesKey = `${Math.round(fnH)}:${notesLeft.toFixed(1)}:${items.map((n) => `${n.no}${n.text}`).join('|')}`
+              notesKey = `${Math.round(fnH)}:${notesLeft.toFixed(1)}:${noteSettings.footnote.numFmt ?? ''}${notesBeneathText ? 'b' : ''}:${items.map((n) => `${n.no}${n.fmt ?? ''}${n.text}`).join('|')}:h${docHyphenationSig()}`
               notesMetrics = {
                 ...notesMetrics,
                 marginBottom: metrics.marginBottom + fnH,
@@ -5109,7 +6050,7 @@ export function App() {
                 return
               }
               // footnotes sit at the paper bottom (Word): shift past the padding
-              if (notes && pad > 0) notes.style.top = `${5 + pad}px`
+              if (notes && pad > 0 && !notesBeneathText) notes.style.top = `${5 + pad}px`
               gaps.push({
                 el,
                 page: k + 1,
@@ -5227,20 +6168,7 @@ export function App() {
                   // the spanning gap cell must cover exactly the table's column
                   // grid: a wider colSpan adds phantom columns, which collapses
                   // colgroup-less fixed-layout tables to ~1px columns (makeGapEl)
-                  const gridCols = Math.max(
-                    1,
-                    ...Array.from(
-                      tr
-                        .closest('table')
-                        ?.querySelectorAll<HTMLTableRowElement>(':scope > tbody > tr') ?? [],
-                    )
-                      .filter(
-                        (r) =>
-                          !r.classList.contains('page-gap') &&
-                          !r.classList.contains('page-repeat-header'),
-                      )
-                      .map((r) => Array.from(r.cells).reduce((s, c) => s + c.colSpan, 0)),
-                  )
+                  const gridCols = tableGridCols(tr.closest('table'))
                   for (let d = $pos.depth; d > 0; d--) {
                     if ($pos.node(d).type.name === 'docTableRow') {
                       // no notes area in table gaps: pad the full remainder
@@ -5293,8 +6221,79 @@ export function App() {
                 return
               }
               // anchors inside the read-only nested-table NodeView have no distinct PM
-              // position (posAtDOM collapses them all to the node start): overlay markers
+              // position (posAtDOM collapses them all to the node start), so no widget
+              // can reach them: the gaps go into the view's DOM (syncNestedTableGaps,
+              // pos is unused there), and a turn neither helper can place stays an
+              // overlay marker
               if (anchorElement(anchor)?.closest('.doc-nested-table')) {
+                // a turn between two of its rows: an in-table gap row, padded to the
+                // paper bottom like a row cut
+                const row = nestedRowAtCut(anchor, NESTED_ROW_TOL_PX * factor)
+                const table = row?.closest('table')
+                if (row && table) {
+                  const tablePad = Math.round(remaining)
+                  nestedGaps.push({
+                    row,
+                    gap: {
+                      pos: 0,
+                      kind: 'table',
+                      cols: tableGridCols(table),
+                      page: k + 1,
+                      boundaryY: slice.start,
+                      metrics:
+                        tablePad > 0
+                          ? {
+                              ...metrics,
+                              marginBottom: metrics.marginBottom + tablePad,
+                              bodyMarginBottom: metrics.marginBottom,
+                            }
+                          : metrics,
+                      ...hfProps,
+                    },
+                  })
+                  return
+                }
+                // a turn between a row's lines: Word splits the row, each cell
+                // carrying on at the next page's top
+                // Word 2013+ cells keep widow/orphan control (as planRowSplit)
+                const cellWidow = b.modernTableHeaders === true && !b.cellWidowOff
+                const split = nestedRowSplit(
+                  anchor,
+                  factor,
+                  NESTED_ROW_TOL_PX,
+                  (cell, off) => nextLineAnchor(cell, off, factor, lineRectsOf),
+                  cellWidow,
+                )
+                if (split) {
+                  const last = split.cells.length - 1
+                  nestedGaps.push({
+                    row: split.row,
+                    gap: { pos: 0, kind: 'cell', page: k + 1, boundaryY: slice.start, metrics },
+                    cells: split.cells.map(({ mark, liftPx, block }, i) => {
+                      const r = block.getBoundingClientRect()
+                      return {
+                        mark,
+                        liftPx,
+                        gap: {
+                          pos: 0,
+                          kind: 'cell' as const,
+                          page: k + 1,
+                          boundaryY: slice.start,
+                          metrics: {
+                            ...metrics,
+                            marginBottom: metrics.marginBottom + liftPx,
+                            bodyMarginBottom: metrics.marginBottom,
+                            marginLeft: (r.left - pmRect.left) / factor - pageLeftOf(nextSec),
+                            marginRight: (pmRect.right - r.right) / factor - pageLeftOf(nextSec),
+                          },
+                          // one set of header/footer strips, on the gap painted last
+                          ...(i === last ? hfProps : {}),
+                        },
+                      }
+                    }),
+                  })
+                  return
+                }
                 overlayCutAnchors.push(anchor)
                 overlayPages.push(k + 1)
                 return
@@ -5377,10 +6376,10 @@ export function App() {
           }
           // silently dropped boundaries merge two pages into one giant page — surface them
           const boundaries = slices.slice(1).filter((s, k) => s.start !== slices[k].start).length
-          if (gaps.length + overlayCutAnchors.length !== boundaries) {
+          if (gaps.length + nestedGaps.length + overlayCutAnchors.length !== boundaries) {
             gapBoundaryMismatch++
             console.warn(
-              `[pagination] ${gaps.length + overlayCutAnchors.length} page gaps built for ${boundaries} boundaries`,
+              `[pagination] ${gaps.length + nestedGaps.length + overlayCutAnchors.length} page gaps built for ${boundaries} boundaries`,
             )
           }
           // DOM-only (contenteditable=false subtrees the save path never reads);
@@ -5523,7 +6522,7 @@ export function App() {
         }
         // the cuts learn the gap widgets' geometry: every page reader below
         // (float shifts, cell boxes, frames, status bar, thumbnails) reads them
-        applyGapLedger(cuts, gapLedgerOf(gaps, overlayPages))
+        applyGapLedger(cuts, gapLedgerOf([...gaps, ...nestedGaps.map((g) => g.gap)], overlayPages))
         if (pageLayoutRef.current) pageLayoutRef.current.carries = carries
         // no gap widgets (web / read mode, one page): the flow is the page
         const ledgered = cuts.some((c) => c.gap)
@@ -5532,6 +6531,8 @@ export function App() {
         pm.classList.remove('measuring-natural')
         setPageGaps(editor.view, gaps, firstPageFloats, layoutBatch)
         stage('pageGaps')
+        // Draft keeps what decides where lines wrap, so its page breaks are the print layout's
+        const wrapsAsPrint = (viewMode === 'print' || viewMode === 'draft') && !readMode
         // mixed-column canvas: paint the engine's regions via per-block width/translate decorations
         const colSpecs =
           viewMode === 'print' && !readMode && colMode === 'mixed' && secList
@@ -5548,16 +6549,18 @@ export function App() {
             : []
         // sections whose content width differs from the canvas section: per-block wrap widths
         const secWSpecs =
-          viewMode === 'print' && !readMode && secList && hfHs
+          wrapsAsPrint && secList && hfHs
             ? sectionWidthSpecs(blocks, secList, sectionGeoms(secList, hfHs), paperWPx)
             : []
         // sections disagreeing on the typed docGrid pitch: per-block pitch vars
-        const gridSpecs =
-          viewMode === 'print' && !readMode && secList ? sectionGridPitchSpecs(blocks, secList) : []
+        const gridSpecs = wrapsAsPrint && secList ? sectionGridPitchSpecs(blocks, secList) : []
         // sections disagreeing on the docGrid charSpace delta: per-block letter-spacing vars
         const charSpecs =
-          viewMode === 'print' && !readMode && secList
-            ? sectionCharSpaceSpecs(blocks, secList, doc.parsed.balanceDbcsSpacing === true)
+          wrapsAsPrint && secList
+            ? [
+                ...sectionCharSpaceSpecs(blocks, secList, doc.parsed.balanceDbcsSpacing === true),
+                ...sectionCharCellSpecs(blocks, secList, gridBasePtRef.current),
+              ]
             : []
         // sections disagreeing on the top margin: per-block --doc-margin-top for page-relative anchors
         const topSpecs =
@@ -5576,6 +6579,14 @@ export function App() {
                 secList ? pageNumbers(slices, secList) : slices.map((_, n) => n + 1),
               )
             : []
+        const mirrorIndSpecs =
+          viewMode === 'print' && !readMode && pm.querySelector('.doc-mirror-ind')
+            ? mirrorIndentSpecs(
+                blocks,
+                slices,
+                secList ? pageNumbers(slices, secList) : slices.map((_, n) => n + 1),
+              )
+            : []
         // sectPr w:textDirection sections: writing-mode boxes placed sideways (width wins)
         const vertSpecs =
           viewMode === 'print' && !readMode && secList && hfHs
@@ -5589,6 +6600,7 @@ export function App() {
           sectStartSpecs,
           secWSpecs,
           mirrorSpecs,
+          mirrorIndSpecs,
           colSpecs,
           vaSpecs,
           vertSpecs,
@@ -5611,6 +6623,8 @@ export function App() {
         layoutBatch.commit()
         tCommit = performance.now() - tCommit0
         stage('commit')
+        // page turns between nested-table rows: gap rows inside the read-only views
+        syncNestedTableGaps(editor.view, nestedGaps)
         // in-table gap bands live in the spanning cell's coordinate space:
         // re-anchor them to the paper before the strips are measured/aligned
         alignTableGapFills(pm, factor)
@@ -5646,6 +6660,33 @@ export function App() {
         stage('clampCells')
         syncCutOverlays((pm.closest('.page-wrap') as HTMLElement) ?? pm, overlayCutAnchors, factor)
         stage('cutOverlays')
+        const draftLayer = draftBreaksRef.current
+        if (draftLayer) {
+          // columns and vertical text flow as one plain column here: its page starts are not the print layout's
+          const breaks =
+            viewMode === 'draft' && colMode === 'none' && !hasVertical
+              ? draftAutoBreaks(cuts, blocks, {
+                  endsInPageBreak: (i) => blocks[i]?.el?.querySelector('br.doc-page-br') != null,
+                  startsWithMark: (i) =>
+                    blocks[i]?.breakBeforeBr === true ||
+                    blocks[i]?.el?.classList.contains('page-break-before') === true,
+                })
+              : []
+          // the layer sits outside the zoomed canvas: its px are screen px
+          const layerTop = draftLayer.getBoundingClientRect().top
+          const flowTop = pm.getBoundingClientRect().top + mTopPx * factor
+          syncDraftBreaks(
+            draftLayer,
+            breaks.map((b) => {
+              const el = b.block === undefined ? undefined : blocks[b.block]?.el
+              const above = b.block ? blocks[b.block - 1]?.el : undefined
+              const top = el ? el.getBoundingClientRect().top : flowTop + b.y * factor
+              // between two paragraphs the rule sits in the space between them
+              const from = el && above ? above.getBoundingClientRect().bottom : top
+              return (Math.min(from, top) + top) / 2 - layerTop
+            }),
+          )
+        }
         {
           // page border (w:pgBorders): per-page overlay boxes (w:display can
           // exclude pages; the border must not run through the page gaps)
@@ -5659,6 +6700,16 @@ export function App() {
           stage('pageBorders')
           syncLineNumbers(wrapEl, pm, blocks, secList ?? [], factor, blockMetaOf, firstFrame, cuts)
           stage('lineNumbers')
+          syncColumnRules(
+            wrapEl,
+            pm,
+            blocks,
+            viewMode === 'print' && !readMode ? (secList ?? []) : [],
+            factor,
+            firstFrame,
+            cuts,
+          )
+          stage('columnRules')
           // differing-width documents paint one sheet per page (the shared paper is transparent)
           syncPageSheets(
             wrapEl,
@@ -5703,7 +6754,7 @@ export function App() {
         const cSig =
           charSpecs.length === 0
             ? ''
-            : `${charSpecs.length}:${[...new Set(charSpecs.map((s) => s.charSpacePt))].join(',')}`
+            : `${charSpecs.length}:${[...new Set(charSpecs.map((s) => s.charSpacePt ?? `c${s.charCellPt}`))].join(',')}`
         if (cSig !== charSpaceSig) {
           charSpaceSig = cSig
           wrapWidthsChanged = true
@@ -5918,7 +6969,7 @@ export function App() {
         const live = liveStylesRef.current
         if (parsed) {
           setDocCss(
-            docStyleCss(live?.parsed === parsed ? { ...parsed, styles: live.styles } : parsed),
+            liveDocCss(live?.parsed === parsed ? { ...parsed, styles: live.styles } : parsed),
           )
         }
       }
@@ -5945,7 +6996,7 @@ export function App() {
       if (!docFontsCoveredBy(parsed, names).length) return
       bumpLineSampleFontEpoch()
       const live = liveStylesRef.current
-      setDocCss(docStyleCss(live?.parsed === parsed ? { ...parsed, styles: live.styles } : parsed))
+      setDocCss(liveDocCss(live?.parsed === parsed ? { ...parsed, styles: live.styles } : parsed))
       onUpdate()
     }
     const offFontAliases = onFontAliasesChanged(onAliases)
@@ -5985,6 +7036,10 @@ export function App() {
         return
       }
       if (props.transaction.getMeta(floatFlowChangedMeta)) followUp('float-flow')
+      if (hyphenationRelayout(props.transaction)) {
+        bumpLineSampleFontEpoch()
+        followUp('hyphenation')
+      }
       const tabFrom = props.transaction.getMeta(tabReflowMeta) as number | undefined
       if (tabFrom !== undefined && editor) {
         const { doc: pmDoc } = editor.state
@@ -5992,8 +7047,15 @@ export function App() {
       }
     }
     editor?.on('transaction', onShrinkTr)
+    // an equation wrapped to its column after the pass measured it is taller now
+    const onMathWrap = (e: Event) => {
+      const bi = lastBlocks.findIndex((b) => b.el === (e as CustomEvent<HTMLElement>).detail)
+      followUpAt('math-wrap', bi >= 0 ? bi : null)
+    }
+    document.addEventListener(MATH_WRAP_CHANGED_EVENT, onMathWrap)
     return () => {
       disposed = true
+      document.removeEventListener(MATH_WRAP_CHANGED_EVENT, onMathWrap)
       floatWatch.dispose()
       flushPaginationRef.current = () => {}
       if (timer) window.clearTimeout(timer)
@@ -6016,6 +7078,9 @@ export function App() {
     blockPlans,
     pageFootnotesOf,
     endnoteItems,
+    sectEndnoteGroups,
+    noteSettings,
+    notesBeneathText,
     editNote,
     canvasTop,
     effTopSingle,
@@ -6025,12 +7090,15 @@ export function App() {
     hfHeightsOf,
     measureSingleFlow,
     colGeomsFor,
+    colMode,
+    hasVertical,
     header,
     footer,
     hfVariants,
     titlePg,
     evenOddHf,
     mirrorMargins,
+    autoHyphenation,
     hfState,
     hfSections,
     hfResolveAt,
@@ -6187,9 +7255,9 @@ export function App() {
     }
   }, [editor, doc, docLoading])
 
-  /** Word word-count dialog: pages/lines estimated from the current layout */
-  const openStats = useCallback(() => {
-    if (!editor) return
+  /** the counts of Word's Word Count dialog: pages/lines estimated from the current layout */
+  const documentStats = useCallback((): DocStats | null => {
+    if (!editor) return null
     const text = documentTextForWordCount(editor.state.doc)
     const pm = document.querySelector('.ProseMirror')
     const zoomFactor = zoom / 100
@@ -6209,17 +7277,15 @@ export function App() {
       if (node.isTextblock && documentTextForWordCount(node).trim() !== '') paragraphs++
       return true
     })
-    setStats({
-      pages: pageInfo.total,
-      words: countWords(text),
-      asianChars: asianCharCount(text),
-      nonAsianWords: nonAsianWordCount(text),
-      charsNoSpace: text.replace(/\s/g, '').length,
-      charsWithSpace: text.replace(/\n/g, '').length,
-      paragraphs,
-      lines,
-    })
+    return { ...textStats(text), pages: pageInfo.total, paragraphs, lines }
   }, [editor, zoom, pageInfo.total])
+  const openStats = useCallback(() => {
+    const body = documentStats()
+    if (!body) return
+    const notes = textStats([...footnotes, ...endnotes].map((note) => note.text).join('\n'))
+    // a note's lines are not laid out where they can be measured: one per paragraph
+    setStats({ body, notes: { ...notes, pages: 0, lines: notes.paragraphs } })
+  }, [documentStats, footnotes, endnotes])
 
   // Review > Editor, the Tools menu and Word's F7 all run the same AI proofread
   // behind the one-time whole-document-rewrite acknowledgement
@@ -6428,8 +7494,7 @@ export function App() {
         canEdit
       ) {
         e.preventDefault()
-        const attrs = { lineSpacing: SPACING_KEYS[e.code], lineRule: null, lineRawTwips: null }
-        setParaAttrs(getActiveSubEditor() ?? editor, attrs)
+        runCommand('line-spacing', String(SPACING_KEYS[e.code]))
       }
       // Paragraph styles ⌥⌘0 Normal / ⌥⌘1..3 headings (Ctrl+Shift+N is taken by New Window)
       const STYLE_KEYS: Record<string, 'p' | 'h1' | 'h2' | 'h3'> = {
@@ -6461,7 +7526,7 @@ export function App() {
         canEdit
       ) {
         e.preventDefault()
-        ribbonActionsRef.current.stepFontSize?.(e.code === 'Period' ? 1 : -1)
+        runCommand(e.code === 'Period' ? 'font-grow' : 'font-shrink')
       }
       // Word's one-point nudge ⌘] / ⌘[
       if (
@@ -6489,13 +7554,7 @@ export function App() {
             : null
       if ((e.metaKey || e.ctrlKey) && !e.altKey && vertAlign && editor && canEdit) {
         e.preventDefault()
-        const target = getActiveSubEditor() ?? editor
-        const current = target.getAttributes('docTextStyle').vertAlign
-        target
-          .chain()
-          .focus()
-          .setMark('docTextStyle', { vertAlign: current === vertAlign ? null : vertAlign })
-          .run()
+        runCommand(vertAlign)
       }
       // Word's Shift+F3 case ring
       if (e.shiftKey && e.key === 'F3' && editor && canEdit) {
@@ -6527,7 +7586,7 @@ export function App() {
       // Formatting marks: ⌘8 in Word for Mac, Ctrl+Shift+8 on Windows
       if ((e.metaKey || e.ctrlKey) && !e.altKey && e.code === 'Digit8' && doc) {
         e.preventDefault()
-        setShowMarks((v) => !v)
+        runCommand('show-marks')
       }
       // Track changes ⇧⌘E; forced by an editing restriction it cannot be turned off
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyE' && doc) {
@@ -6537,14 +7596,13 @@ export function App() {
       // Word count ⇧⌘G
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyG' && doc) {
         e.preventDefault()
-        openStats()
+        runCommand('word-count')
       }
       // New comment ⌥⌘A (Word for Mac; Windows Word's Ctrl+Alt+M stays on the
       // Paragraph dialog here)
       if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyA' && doc && canEdit) {
         e.preventDefault()
-        setShowComments(true)
-        startNewComment()
+        runCommand('insert-comment')
       }
       // Footnote ⌥⌘F, endnote ⌥⌘E on the Mac / Ctrl+Alt+D on Windows. The
       // endnote key is platform-exclusive: ⌥⌘D belongs to the macOS Dock.
@@ -6553,7 +7611,7 @@ export function App() {
         const note = e.code === 'KeyF' ? 'footnote' : e.code === endnoteCode ? 'endnote' : null
         if (note) {
           e.preventDefault()
-          insertNote(note)
+          runCommand(note === 'footnote' ? 'insert-footnote' : 'insert-endnote')
         }
       }
       // Date / time fields ⌥⇧D / ⌥⇧T
@@ -6561,13 +7619,13 @@ export function App() {
         const instr = e.code === 'KeyD' ? 'DATE' : e.code === 'KeyT' ? 'TIME' : null
         if (instr) {
           e.preventDefault()
-          insertField(instr)
+          runCommand('insert-field', instr)
         }
       }
       // Proofread F7 (Word's spelling & grammar check)
       if (e.key === 'F7' && !e.shiftKey && doc) {
         e.preventDefault()
-        runAiProofread()
+        runCommand('ai-proofread')
       }
     }
     window.addEventListener('keydown', handler)
@@ -6578,11 +7636,7 @@ export function App() {
     editor,
     doc,
     updateFields,
-    openStats,
-    startNewComment,
-    insertNote,
-    insertField,
-    runAiProofread,
+    runCommand,
     trackChangesForced,
     isProtected,
     toggleTrackChangesByUser,
@@ -6599,232 +7653,580 @@ export function App() {
     return () => window.removeEventListener('ai-docs-edit-inline-math', handler)
   }, [editor, doc])
 
-  // native application menu → renderer commands
-  useEffect(() => {
-    return window.desktop.onMenuCommand((command, payload) => {
-      const align = (value: 'left' | 'center' | 'right' | 'justify') =>
-        editor && setSelectionAlign(editor, value)
-      switch (command) {
-        case 'new':
-          void newFile()
-          break
-        case 'open':
-          void openFile()
-          break
-        case 'open-path':
-          if (payload) void openRecent(payload)
-          break
-        case 'save':
-          void save(false)
-          break
-        case 'save-as':
-          void save(true)
-          break
-        case 'name-with-ai':
-          void nameWithAi()
-          break
-        case 'undo':
-          editor?.chain().focus().undo().run()
-          break
-        case 'redo':
-          editor?.chain().focus().redo().run()
-          break
-        case 'zoom-in':
-          setZoom((z) => stepDocsZoom(z, 1))
-          break
-        case 'zoom-out':
-          setZoom((z) => stepDocsZoom(z, -1))
-          break
-        case 'zoom-100':
-          setZoom(100)
-          break
-        case 'zoom-set':
-          if (payload) setZoom(clampDocsZoom(Number(payload)))
-          break
-        case 'zoom-page-width':
-          zoomFit('width')
-          break
-        case 'zoom-whole-page':
-          zoomFit('page')
-          break
-        case 'zoom-multi-page':
-          zoomFit('multi')
-          break
-        case 'toggle-ai':
-          setShowAi((v) => !v)
-          break
-        case 'toggle-dark':
-          updateDarkPage(!darkPageRef.current)
-          break
-        case 'insert-table':
-          // Word semantics: the menu opens the Insert Table dialog (custom rows/cols)
-          if (editor && doc) setShowTableModal(true)
-          break
-        case 'insert-image':
-          if (editor && doc) void insertImageViaDialog(editor)
-          break
-        case 'insert-page-break':
-          if (editor && doc) insertPageBreakAt(editor)
-          break
-        case 'insert-link':
-          if (editor && doc) setShowLinkModal(true)
-          break
-        case 'insert-equation':
-          if (editor && doc) setShowEquationModal(true)
-          break
-        // Menu parity with the shortcuts and the right-click menu
-        case 'insert-comment':
-          if (editor && doc) {
-            setShowComments(true)
-            startNewComment()
-          }
-          break
-        case 'font-dialog':
-          if (doc) setShowFontDialog(true)
-          break
-        case 'paragraph-dialog':
-          if (doc) setShowParaDialog(true)
-          break
-        case 'word-count':
-          if (doc) openStats()
-          break
-        case 'ai-proofread':
-          if (doc) runAiProofread()
-          break
-        case 'shortcuts':
-          setShowShortcuts(true)
-          break
-        case 'autocorrect-options':
-          setShowAutoCorrect(true)
-          break
-        case 'preferences':
-          setShowPreferences(true)
-          break
-        case 'table-gridlines':
-          toggleTableGridlines()
-          break
-        case 'table-insert-cells':
-        case 'table-delete-cells':
-        case 'table-split-cells':
-        case 'table-properties':
-          if (!editor || !doc || !editableOrToast(editor)) break
-          if (!ensureCaretInTable(editor.state, editor.view.dispatch)) {
-            showToast(t('ribbonNotInTable'), 'error')
-            break
-          }
-          setTableDialog(
-            command === 'table-insert-cells'
-              ? 'insertCells'
-              : command === 'table-delete-cells'
-                ? 'deleteCells'
-                : command === 'table-split-cells'
-                  ? 'splitCells'
-                  : 'properties',
-          )
-          break
-        default:
-          if (command.startsWith('table-')) {
-            if (!editor || !doc) break
-            // selecting is fine on a read-only document; everything else edits
-            if (!command.startsWith('table-select-') && !editableOrToast(editor)) break
-            if (!ensureCaretInTable(editor.state, editor.view.dispatch)) {
-              showToast(t('ribbonNotInTable'), 'error')
-              break
-            }
-            editor.view.focus()
-            const cmd = TABLE_MENU_COMMANDS[command]?.(tableSectionWidthPx)
-            if (command === 'table-distribute-rows') distributeRowsEvenly(editor.view)
-            else if (cmd) cmd(editor.state, editor.view.dispatch)
-          }
-          break
-        // menu accelerators reach the strip / textbox editor that has focus, like the ribbon
-        case 'bold':
-          ;(getActiveSubEditor() ?? editor)?.chain().focus().toggleMark('bold').run()
-          break
-        case 'italic':
-          ;(getActiveSubEditor() ?? editor)?.chain().focus().toggleMark('italic').run()
-          break
-        case 'underline':
-          ;(getActiveSubEditor() ?? editor)?.chain().focus().toggleMark('underline').run()
-          break
-        case 'align-left':
-          align('left')
-          break
-        case 'align-center':
-          align('center')
-          break
-        case 'align-right':
-          align('right')
-          break
-        case 'align-justify':
-          align('justify')
-          break
-        case 'page-setup':
-          setRibbonTabRequest({ tab: 'layout', nonce: Date.now() })
-          break
-        case 'find':
-          if (doc) {
-            setShowFind(true)
-            setFindFocusInput((n) => n + 1)
-          }
-          break
-        case 'replace':
-          if (doc) {
-            setShowFind(true)
-            setFindFocusReplace((n) => n + 1)
-          }
-          break
-        case 'goto':
-          if (doc) {
-            setShowFind(true)
-            setFindFocusGoTo((n) => n + 1)
-          }
-          break
-        case 'export-pdf':
-          void exportPdf()
-          break
-        case 'export-html':
-          void exportHtml()
-          break
-        case 'export-markdown':
-          void exportMarkdown()
-          break
-        case 'export-images':
-          void exportImages()
-          break
-        case 'print':
-          if (doc) void printDoc()
-          break
-      }
-    })
-  }, [
+  // one host for every entry point that runs a command; rebuilt each render so a handler reads current state
+  // the selection of whichever editor has the caret: a text box, a header or footer, or the body
+  const hyphenationSettings = hyphenationSettingsOf(doc?.parsed, hyphenationEdit)
+  const applyHyphenation = (next: HyphenationSettings & { auto: boolean }, manual = false) => {
+    const parsed = doc?.parsed
+    if (!editor || !parsed) return
+    const edit: Partial<HyphenationSettings> = {}
+    if (next.caps !== hyphenationSettings.caps) edit.caps = next.caps
+    if (next.limit !== hyphenationSettings.limit) edit.limit = next.limit
+    if (next.zoneTwips !== hyphenationSettings.zoneTwips) edit.zoneTwips = next.zoneTwips
+    const rulesChanged = Object.keys(edit).length > 0
+    if (!rulesChanged && next.auto === autoHyphenation && manual === manualHyphenationRef.current)
+      return
+    if (rulesChanged) setHyphenationEdit({ ...hyphenationEdit, ...edit })
+    // words break at other places now with no change to the content: the cached line
+    // samples are stale, and the pagination effect runs a pass on the new value
+    bumpLineSampleFontEpoch()
+    if (next.auto !== autoHyphenation) {
+      // set before the CSS below is built; the render that follows writes the same value
+      autoHyphenationRef.current = next.auto
+      setAutoHyphenation(next.auto)
+      setAutoHyphenationDirty(true)
+    }
+    manualHyphenationRef.current = manual
+    setManualHyphenation(manual)
+    const live = liveStylesRef.current
+    setDocCss(liveDocCss(live?.parsed === parsed ? { ...parsed, styles: live.styles } : parsed))
+    // Chromium hyphenates only under an explicit lang, as on open (file-actions)
+    const docLang = next.auto ? parsed.docDefaults?.lang : undefined
+    if (docLang) editor.view.dom.setAttribute('lang', docLang)
+    else editor.view.dom.removeAttribute('lang')
+    const config = hyphenationConfigOf(parsed, next.auto || manual, next)
+    const elsewhere = hyphenationConfigOf(parsed, next.auto, next)
+    const hand = () => {
+      if (fileCtxRef.current.doc?.parsed === parsed) setHyphenation(editor, config, elsewhere)
+    }
+    if (config.dict && !hyphenationReady(config.dict)) void loadHyphenation(config.dict).then(hand)
+    else hand()
+  }
+  const mathPr = mathPrEdit ?? doc?.parsed.mathPr ?? DEFAULT_MATH_PR
+  // after the commit: the wrap measures against the stylesheet this render wrote
+  useEffect(() => setMathWrapRules(mathPr), [mathPr])
+  const applyMathPr = (next: MathPr) => {
+    if (!editor || !doc) return
+    setMathPrEdit(next)
+    setMathLimits(next)
+    refreshLimitDefaults(editor)
+  }
+  const selectedProjection = (): string => {
+    const target = getActiveSubEditor() ?? editor
+    if (!target || target.state.selection.empty) return ''
+    const { from, to } = target.state.selection
+    return redactTextBetween(target.getJSON() as RedactableNode, from, to, ' ').trim()
+  }
+  commandHostRef.current = {
     editor,
-    doc,
-    newFile,
-    openFile,
-    openRecent,
-    save,
-    nameWithAi,
-    exportPdf,
-    exportHtml,
-    exportMarkdown,
-    exportImages,
-    printDoc,
+    hasDoc: Boolean(doc),
+    get gridBasePt() {
+      return gridBasePtRef.current
+    },
+    newFile: () => void newFile(),
+    openFile: () => void openFile(),
+    openRecent: (path) => void openRecent(path),
+    save: (saveAs) => void save(saveAs),
+    newFromTemplate: () => setShowTemplateGallery(true),
+    saveAsTemplate: () => void saveAsTemplateImpl(fileCtxRef.current),
+    nameWithAi: () => void nameWithAi(),
+    exportPdf: () => void exportPdf(),
+    exportHtml: () => void exportHtml(),
+    exportMarkdown: () => void exportMarkdown(),
+    exportImages: () => void exportImages(),
+    printDoc: () => void printDoc(),
+    stepZoom: (dir) => setZoom((z) => stepDocsZoom(z, dir)),
+    setZoom: (pct) => setZoom(clampDocsZoom(pct)),
     zoomFit,
-    openStats,
-    startNewComment,
-    runAiProofread,
+    toggleAi: () => setShowAi((v) => !v),
+    toggleDark: () => updateDarkPage(!darkPageRef.current),
+    toggleMarks: () => setShowMarks((v) => !v),
+    toggleStylesPane: () => setShowStylesPane((v) => !v),
+    toggleSelectionPane: () => setShowSelectionPane((v) => !v),
+    toggleCitationsPane: () => setShowCitationsPane((v) => !v),
+    toggleDrawing: () => {
+      if (inkTool !== 'select') return setInkTool('select')
+      // the pen's controls are on the Draw tab, and the ribbon puts the pen away off it
+      setRibbonTabRequest({ tab: 'draw', nonce: Date.now() })
+      setInkTool(inkActive.kind)
+    },
+    setDesignAsDefault: () => {
+      const { before, after, line, multiple } = defaultStyleSpacing()
+      saveDesignDefault({
+        ...(themeFonts ? { fonts: themeFonts } : {}),
+        ...(themeColors ? { colors: themeColors } : {}),
+        ...(after != null && line != null && multiple
+          ? { spacing: { ...(before ? { beforeTwips: before } : {}), afterTwips: after, line } }
+          : {}),
+      })
+      setStatus(t('ribbonSetAsDefaultDone'))
+    },
+    nothingToCrop: () => setStatus(t('ribbonAutoCropNothing')),
+    selectChartData: () => {
+      if (editor && !selectChartForData(editor)) setStatus(t('ribbonSelectDataNone'))
+    },
+    stepFontSize: (dir) => ribbonActionsRef.current.stepFontSize?.(dir),
+    clearFormatting: () =>
+      editor && clearAllFormatting(editor, getActiveSubEditor(), ribbonStylesRef.current),
+    createListDef: (levels) => {
+      setListRecentsEpoch((n) => n + 1)
+      return createCustomListDef(levels)
+    },
+    listStyleNum: (styleId) => {
+      const style = listStyles.find((s) => s.styleId === styleId)
+      return style ? listStyleNumImpl(numberingCtxRef.current, style) : null
+    },
+    openListDialog: (kind, card) => {
+      setListCard(card ?? null)
+      setListDialog(kind)
+    },
+    addListStyle: (name, levels) => {
+      const styleId = addListStyleImpl(numberingCtxRef.current, name, levels, listStyles)
+      if (!styleId) return
+      setListDialog(null)
+      setAddedListStyle(styleId)
+      setShowBulletsNumbering(true)
+    },
+    deleteListStyle: (styleId) => {
+      const style = listStyles.find((s) => s.styleId === styleId)
+      if (style) deleteListStyleImpl(numberingCtxRef.current, style)
+    },
+    applyStyle: (styleId) => {
+      const styles = ribbonStylesRef.current
+      // a document without a style table still offers the built-in gallery set
+      const info = (styles ?? FALLBACK_STYLES).get(styleId)
+      if (editor && info)
+        applyGalleryStyle(editor, getActiveSubEditor(), info, styles, formatState.charStyleId)
+    },
+    aiPreset: (text) => {
+      setShowAi(true)
+      setAiPreset({ text, nonce: Date.now(), autoRun: true })
+    },
+    applyHeadingLevel: (level) => {
+      if (editor) applyParagraphStyle(editor, level ? `h${level}` : 'p', ribbonStylesRef.current)
+    },
+    checkSpelling: () => setShowSpelling(true),
+    thesaurus: () => {
+      // a word or a short phrase, as on the right-click menu; the model reads the projection
+      const text = selectedProjection()
+      if (!text || text.length > 20) return setStatus(t('appThesaurusSelect'))
+      setShowAi(true)
+      setAiPreset({ text: t('appSynonymsPrompt', { text }), nonce: Date.now(), autoRun: true })
+    },
+    translate: (scope) => {
+      const langName = t(ribbonLangKey(translationLanguage(lang)))
+      if (scope === 'selection') {
+        // the passage goes in the request, as on the right-click menu, so a text box's is found
+        const text = selectedProjection()
+        if (!text) return setStatus(t('appTranslateSelect'))
+        setShowAi(true)
+        setAiPreset({
+          text: t('appTranslateSelectionPrompt', { lang: langName, text }),
+          nonce: Date.now(),
+          autoRun: true,
+        })
+        return
+      }
+      // a whole-document rewrite asks once, as the ribbon's Translate does
+      if (
+        localStorage.getItem(AI_REWRITE_ACK_KEY) !== '1' &&
+        !window.confirm(t('ribbonAiRewriteConfirm'))
+      )
+        return
+      localStorage.setItem(AI_REWRITE_ACK_KEY, '1')
+      setShowAi(true)
+      setAiPreset({
+        text: t('ribbonTranslatePrompt', { lang: langName }),
+        nonce: Date.now(),
+        autoRun: true,
+      })
+    },
+    pickMergeDataSource: () => void pickMergeDataSource(),
+    toggleMergePreview: () => setMergePreviewOn((on) => !on),
+    hasMergeSource: Boolean(mergeSource),
+    openRuleDialog: setMergeRule,
+    onDisk: Boolean(doc?.filePath),
+    moveFile: () =>
+      void window.desktop.moveDoc().then((result) => {
+        if (result && !result.ok) setStatus(t(moveErrorKey(result)))
+      }),
+    toggleReadOnlyRecommended: () => {
+      const { recommended, ...rest } = writeProtection ?? {}
+      const next: WriteProtection = recommended ? rest : { ...rest, recommended: true }
+      setWriteProtection(Object.keys(next).length > 0 ? next : null)
+      setWriteProtectionDirty(true)
+      dirtyRef.current = true
+    },
+    listNumId: (kind, reuse) =>
+      (reuse ? firstListNumId(doc?.parsed.blocks ?? EMPTY_BLOCKS, kind) : null) ??
+      allocateListNumId(kind),
+    openDialog: (dialog) =>
+      ({
+        table: setShowTableModal,
+        link: setShowLinkModal,
+        equation: setShowEquationModal,
+        bookmark: setShowBookmarkModal,
+        crossReference: setShowCrossRefModal,
+        caption: setShowCaptionModal,
+        document: setShowDocumentDialog,
+        changeCase: setShowChangeCase,
+        dateTime: setShowDateTime,
+        dropCap: setShowDropCap,
+        watermark: setShowWatermarkDialog,
+        columns: setShowColumnsDialog,
+        symbol: setShowSymbolDialog,
+        pageNumbers: setShowPageNumbers,
+        bulletsNumbering: setShowBulletsNumbering,
+        translationLanguage: setShowTranslationLanguage,
+        indexTables: setShowIndexTables,
+        hyphenation: setShowHyphenation,
+        equationOptions: setShowEquationOptions,
+        footnote: setShowFootnoteDialog,
+        revealFormatting: setShowRevealFormatting,
+        recipients: setShowRecipients,
+        filterRecipients: setShowFilterRecipients,
+        findRecipient: setShowFindRecipient,
+        properties: setShowProperties,
+        rename: setShowRename,
+        bordersShading: setShowBordersShading,
+        fontSubstitution: setShowFontSubstitution,
+        number: setShowNumber,
+        // Word refuses a table with merged cells before its dialog opens
+        sort: (open: boolean) => {
+          if (editor && sortScope(editor.state) === 'mergedCells')
+            setStatus(t(SORT_REFUSALS.mergedCells))
+          else setShowSort(open)
+        },
+        textDirection: setShowTextDirection,
+        altText: setShowAltText,
+        lineNumbers: setShowLineNumbers,
+        icons: setShowIconsDialog,
+        paragraphSpacing: setShowParagraphSpacing,
+        reduceFileSize: (open: boolean) => {
+          setReduceSelection(open && editor ? selectedPictureSources(editor.state) : [])
+          setShowReduceFileSize(open)
+        },
+        sizePosition: setShowSizePosition,
+        field: setShowInsertField,
+        font: setShowFontDialog,
+        paragraph: setShowParaDialog,
+        shortcuts: setShowShortcuts,
+        customizeKeyboard: setShowCustomizeKeyboard,
+        autocorrect: (open: boolean) => {
+          if (open) setAutoTextList(autoTextEntries())
+          setShowAutoCorrect(open)
+        },
+        preferences: setShowPreferences,
+      })[dialog](true),
+    openChartDialog: (type) => setChartModal((open) => ({ type, pick: (open?.pick ?? 0) + 1 })),
+    openTableDialog: setTableDialog,
+    openPasteSpecial: setPasteSpecialTarget,
+    openTabsDialog: setTabsTarget,
+    openMarkCitation: () => {
+      if (!editor) return
+      const { from, to } = editor.state.selection
+      setMarkCitationAt({ text: editor.state.doc.textBetween(from, to, ' ').trim(), from, at: to })
+    },
+    openMarkIndexEntry: () => {
+      if (!editor) return
+      const { from, to } = editor.state.selection
+      setMarkEntryAt({ text: editor.state.doc.textBetween(from, to, ' ').trim(), at: to })
+    },
+    setIndexSection: (nth, change, wrap) => {
+      if (!editor || !doc) return
+      const range = indexBlockRanges(editor, doc.parsed.blocks)[nth]
+      if (!range) return
+      const access = aiPageSetupAccess
+      const sectionAt = (block: number) =>
+        access.list().find((s) => block >= s.firstBlock && block <= s.lastBlock)
+      const blocks = doc.parsed.blocks
+      const edges = indexSectionEdges(range, access.list(), (block) => {
+        const node = editor.state.doc.maybeChild(block)
+        return (
+          !!node &&
+          node.textContent === '' &&
+          xmlOfNode(node as never, blocks).includes('<w:sectPr')
+        )
+      })
+      if (!edges) return
+      const { startsIt, endsIt } = edges
+      let [first, last] = range
+      if (!wrap && !(startsIt && endsIt)) return
+      armPageSetupUndo()
+      if (!startsIt) {
+        if (access.insertBreak('continuous', first - 1)) return
+        first++
+        last++
+      }
+      if (!endsIt && access.insertBreak('continuous', last)) return
+      const home = sectionAt(first)
+      const current = home && access.current(home.index)
+      if (home && current) access.set(home.index, { settings: change(current.settings) })
+      // as after a section break: the layout follows the sections of the file
+      if (doc.filePath) pendingSectionSaveRef.current = true
+    },
+    autoMarkIndex: () => {
+      if (!editor) return
+      void pickAndAutoMark(editor).then((result) => {
+        if (result.status === 'password') setStatus(t('appDocPwdTitle'))
+        else if (result.status === 'failed')
+          setStatus(t('ribbonItAutoMarkFailed', { error: result.error }))
+        else if (result.status === 'marked')
+          setStatus(
+            result.count > 0
+              ? t('ribbonItAutoMarked', { count: String(result.count) })
+              : t('ribbonItAutoMarkNone'),
+          )
+      })
+    },
+    insertFile: () => {
+      if (!editor) return
+      const notesOf = (kind: 'footnote' | 'endnote') =>
+        kind === 'footnote' ? reviewCtxRef.current.footnotes : reviewCtxRef.current.endnotes
+      void pickAndInsertFile(editor, {
+        notes: {
+          list: notesOf,
+          add: (kind, notes) => {
+            const ctx = reviewCtxRef.current
+            const next = [...notesOf(kind), ...notes]
+            ;(kind === 'footnote' ? ctx.setFootnotes : ctx.setEndnotes)(next)
+            ctx.setNotesDirty(true)
+          },
+        },
+        askRange: (fileName, bookmarks) =>
+          new Promise((answer) => setInsertFileRange({ fileName, bookmarks, answer })),
+      }).then((result) => {
+        if (result.status === 'password') setStatus(t('appDocPwdTitle'))
+        else if (result.status === 'empty') setStatus(t('ribbonInsertFileEmpty'))
+        else if (result.status === 'failed')
+          setStatus(t('ribbonInsertFileFailed', { error: result.error }))
+        else if (result.status === 'inserted' && result.leftOut > 0)
+          setStatus(t('ribbonInsertFileLeftOut', { count: String(result.leftOut) }))
+      })
+    },
+    openAutoText: (mode) => {
+      if (!editor) return
+      if (mode === 'new' && editor.state.selection.empty) {
+        setStatus(t('ribbonAutoTextSelect'))
+        return
+      }
+      setAutoText({ mode, suggestedName: selectionSnippet(editor), entries: autoTextEntries() })
+    },
+    citationHeading: (category) => t(CITATION_CATEGORY_LABELS[category] ?? 'ribbonToaOther'),
+    openLanguage: (target) => {
+      if (target.state.selection.empty) setStatus(t('ribbonProofingSelect'))
+      else setLanguageTarget(target)
+    },
+    openTextEffects: setTextEffectsTarget,
+    openFitText: (target) => {
+      if (textStretch(target.state)) setFitTextTarget(target)
+      else setStatus(t('ribbonAsianSelect'))
+    },
+    toggleAsianLayout: (target, kind) => {
+      if (!toggleEaLayout(target, kind)) setStatus(t('ribbonAsianSelect'))
+    },
+    openPhoneticGuide: (target) => {
+      const ruby = rubyTargetOf(target.state)
+      if (ruby) setPhoneticGuide({ editor: target, target: ruby })
+      else setStatus(t('ribbonPgSelect'))
+    },
+    openEqLayout: (target, kind) => {
+      const found = eqLayoutTargetOf(target.state, kind)
+      if (found) setEqLayoutDialog({ editor: target, kind, target: found })
+      else setStatus(t(kind === 'enclose' ? 'ribbonEcSelect' : 'ribbonCcSelect'))
+    },
+    openPictureDialog: (kind, dataUrl) => setPictureDialog({ kind, dataUrl }),
+    pickImage: () => window.desktop.pickImage(),
+    openFind: (tab) => {
+      setShowFind(true)
+      ;({ find: setFindFocusInput, replace: setFindFocusReplace, goto: setFindFocusGoTo })[tab](
+        (n) => n + 1,
+      )
+    },
+    findStep: (dir) => {
+      if (!showFind) {
+        setShowFind(true)
+        setFindFocusInput((n) => n + 1)
+        return
+      }
+      setFindStep((s) => ({ dir, nonce: (s?.nonce ?? 0) + 1 }))
+    },
+    showLayoutTab: () => setRibbonTabRequest({ tab: 'layout', nonce: Date.now() }),
+    openMailMerge: (mode) => setMergePanel((open) => ({ mode, pick: (open?.pick ?? 0) + 1 })),
+    showTableDesignTab: () => setRibbonTabRequest({ tab: 'tableDesign', nonce: Date.now() }),
+    defineTableStyle: (style) => {
+      upsertStyleDef(
+        ribbonStylesRef.current?.has('TableNormal') ? { ...style, basedOn: 'TableNormal' } : style,
+      )
+    },
+    showObjectFormatTab: () => {
+      const tab = formatState.imageSelected
+        ? 'pictureFormat'
+        : formatState.textboxSelected
+          ? 'shapeFormat'
+          : null
+      if (tab) setRibbonTabRequest({ tab, nonce: Date.now() })
+      else setStatus(t('ribbonFormatObjectSelect'))
+    },
+    insertField,
+    insertNote,
+    editNote,
+    noNotes: () => setStatus(t('ribbonNoNotes')),
+    blocks: doc?.parsed.blocks ?? EMPTY_BLOCKS,
+    sources,
+    citationStyle: citationStyle ?? DEFAULT_CITATION_STYLE,
+    setCitationStyle: (style) => {
+      setCitationStyle(style)
+      setSourcesDirty(true)
+    },
+    headingPages: () => ribbonActions.headingPages(),
+    pagesOf: (positions) => {
+      const layout = editor && section ? layoutNow() : null
+      if (!editor || !layout || layout.cuts.length === 0) return null
+      return headingPagesOf(
+        layout.blocks,
+        layout.cuts,
+        positions.map((pos) => editor.view.nodeDOM(pos) as HTMLElement | null),
+      ).pages
+    },
+    review: {
+      toggleSpellcheck: () => ribbonActions.onSpellcheck(!spellcheckActive),
+      resetIgnoredWords: () =>
+        void window.desktop.spellResetIgnored?.().then(() => {
+          setRespellNonce((n) => n + 1)
+          setStatus(t('ribbonIgnoredWordsReset'))
+        }),
+      deleteComment: (id) => (id ? deleteComment(id) : ribbonActions.onDeleteComment()),
+      resolveComment: (id) => {
+        const thread = id ?? commentThreadAtCaretImpl(reviewCtxRef.current)
+        if (thread) resolveComment(thread, true)
+      },
+      replyToComment: (id) => {
+        setShowComments(true)
+        setCommentFocus({ id, nonce: Date.now(), reply: true })
+      },
+      deleteAllComments: (resolvedOnly) => ribbonActions.onDeleteAllComments(resolvedOnly),
+      gotoComment: (dir) => ribbonActions.onGotoComment(dir),
+      toggleComments: () => ribbonActions.onShowComments(),
+      toggleTrackChanges: () => ribbonActions.onTrackChanges(!trackChanges),
+      revisionDisplay,
+      setRevisionDisplay: (mode) => ribbonActions.onRevisionDisplay(mode),
+      toggleMarkup: (kind) => {
+        const filter = revisionFilterRef.current
+        if (typeof kind === 'string') {
+          setRevisionFilter({ ...filter, [kind]: !filter[kind] })
+          return
+        }
+        const hidden = filter.hiddenAuthors
+        setRevisionFilter({
+          ...filter,
+          hiddenAuthors: hidden.includes(kind.author)
+            ? hidden.filter((a) => a !== kind.author)
+            : [...hidden, kind.author],
+        })
+      },
+      setBalloonMode,
+      openTrackChangesOptions: () => setShowTcOptions(true),
+      openHighlightChanges: () => setShowHighlightChanges(true),
+      resolveRevisions: (action, scope) =>
+        action === 'accept'
+          ? ribbonActions.onAcceptRevision(scope)
+          : ribbonActions.onRejectRevision(scope),
+      gotoRevision: (dir) => ribbonActions.onGotoRevision(dir),
+      toggleReviewPane: () => ribbonActions.onToggleReviewPane(),
+      compare: () => setCompareDialog('compare'),
+      combine: () => setCompareDialog('combine'),
+      protect: () => ribbonActions.onProtectDoc(),
+    },
+    design: {
+      setThemeFonts: (fonts) => ribbonActions.onThemeFonts(fonts),
+      setThemeColors: (colors) => ribbonActions.onThemeColors(colors),
+      setPageColor: (hex) => ribbonActions.onPageColor(hex),
+      setWatermark: (text) => ribbonActions.onWatermark(text),
+      setParagraphSpacing: ({ beforeTwips = 0, afterTwips, line }) => {
+        const styles = ribbonStylesRef.current
+        const styleId = defaultParagraphStyleId(styles) ?? 'Normal'
+        upsertStyleDef({
+          styleId,
+          ...(styles?.has(styleId) ? {} : { builtIn: true }),
+          pPr: { spaceBeforeTwips: beforeTwips, spaceAfterTwips: afterTwips, lineSpacing: line },
+        })
+      },
+    },
+    view: {
+      mode: viewMode,
+      setMode: switchView,
+      readMode,
+      setReadMode: setReadModeExclusive,
+      openPagePreview: () => showPreview(true),
+      openZoomDialog: () => setShowZoomDialog(true),
+      toggleRuler: () => setShowRuler((v) => !v),
+      toggleGrid: () => setShowGrid((v) => !v),
+      toggleNavigation: () => setShowNav(!showNav),
+      toggleThumbnails: () => {
+        if (showThumbnails) return setShowNav(false)
+        setNavTabRequest({ tab: 'pages', nonce: Date.now() })
+        setShowNav(true)
+      },
+      toggleSplit: () => setSplitView((v) => !v),
+      toggleRibbon: () => ribbonActionsRef.current.toggleRibbon?.(),
+      toggleFocus: () => {
+        if (!focusMode) setStatus(t('ribbonFocusHint'))
+        setFocusMode(!focusMode)
+      },
+      newWindow: () => void window.desktop.openNewTab(doc?.filePath ?? null),
+      arrangeAll: () => void window.desktop.arrangeAllWindows(),
+      mergeWindows: () => void window.desktop.gatherWindows(),
+    },
+    headerFooter: {
+      header: shownHeader,
+      footer: shownFooter,
+      setHeader: (next) => ribbonActions.onHeader(next),
+      setFooter: (next) => ribbonActions.onFooter(next),
+      setFacingPageNumber: (kind, side) => ribbonActions.onFacingPageNumber(kind, side),
+      edit: (kind) => ribbonActions.onHfEdit(kind),
+      openPageNumberFormat: () => ribbonActions.onPageNumFormat(),
+    },
+    headerFooterAction: (action) => ribbonActions.onHfAction(action),
+    setInkTool,
+    clearInk: () => ribbonActions.onInkClearAll(),
+    section: sections[activeSection]?.settings ?? section,
+    setSection: (next) => ribbonActions.onSection(next),
+    setSectionsIn: (scope, change, breakType) =>
+      ribbonActions.onSectionsIn(scope, change, breakType),
+    setMirrorMargins: (on) => ribbonActions.onMirrorMargins(on),
+    setGutterAtTop: (atTop) => ribbonActions.onGutterAtTop(atTop),
+    setSectionStart: (type) => ribbonActions.onSectionStart(type),
+    insertSectionBreak: (type) => ribbonActions.onInsertSectionBreak(type),
+    insertImage: () => editor && void insertImageViaDialog(editor),
+    insertPageBreak: () => editor && insertPageBreakAt(editor),
+    insertBlankPage: () => editor && insertBlankPageAt(editor),
+    newComment: () => {
+      setShowComments(true)
+      startNewComment()
+    },
+    wordCount: openStats,
+    aiProofread: runAiProofread,
     toggleTableGridlines,
     tableSectionWidthPx,
-    updateDarkPage,
-  ])
+    notInTable: () => showToast(t('ribbonNotInTable'), 'error'),
+  }
+  // native application menu → renderer commands
+  useEffect(() => window.desktop.onMenuCommand(runCommand), [runCommand])
+  useEffect(() => {
+    setKeyLayerRunner(runCommand)
+    return () => setKeyLayerRunner(null)
+  }, [runCommand])
 
   // Resolve the bookmark anchor against the original block XML, fall back to
   // matching the heading text of a TOC entry.
   const jumpToAnchor = useCallback(
     (anchor: string, tocTitle = '') => {
       let target: Element | null = null
-      if (anchor && doc) {
+      if (anchor === TOP_ANCHOR) {
+        document.querySelector('.ProseMirror')?.firstElementChild?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        })
+        return
+      }
+      // the live document first: a bookmark or heading anchor added since the file was read
+      const livePos = anchor && editor ? anchorPos(editor.state.doc, anchor) : null
+      if (livePos !== null && editor) {
+        const dom = editor.view.nodeDOM(livePos)
+        if (dom instanceof Element) target = dom
+      }
+      if (!target && anchor && doc) {
         const block = doc.parsed.blocks.find((b) => b.originalXml?.includes(`w:name="${anchor}"`))
         if (block && block.docxIndex !== null) {
           target = document.querySelector(`.ProseMirror [data-idx="${block.docxIndex}"]`)
@@ -6841,10 +8243,10 @@ export function App() {
       }
       target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     },
-    [doc],
+    [doc, editor],
   )
 
-  /** ⌘-click / Open Hyperlink: browser for http(s) (main-process openExternal), in-document jump for #bookmark */
+  /** ⌘-click / Open Hyperlink: browser or mail program (main-process openExternal), in-document jump for #bookmark */
   const openLink = useCallback(
     (href: string, tocTitle = '') => {
       const target = linkTarget(href)
@@ -6885,10 +8287,22 @@ export function App() {
         return
       }
       if (!mod) return
-      const line = (e.target as HTMLElement).closest('.doc-toc-line') as HTMLElement | null
+      // a cross-reference inserted as a hyperlink (\\h) goes to what it refers to
+      const field = (e.target as HTMLElement).closest('[data-instr-field]') as HTMLElement | null
+      const linked = fieldLinkBookmark(field?.dataset.instrField ?? '')
+      if (linked) {
+        // to a note, the caret goes with it, as in Word: left on the reference, it would scroll the page back
+        const at = editor ? anchorPos(editor.state.doc, linked) : null
+        if (editor && at !== null && editor.state.doc.nodeAt(at)?.type.name === 'docNoteRef')
+          editor.chain().setNodeSelection(at).scrollIntoView().run()
+        return jumpToAnchor(linked)
+      }
+      const line = (e.target as HTMLElement).closest(
+        '.doc-toc-line:not([data-toc-nolink])',
+      ) as HTMLElement | null
       if (line) jumpToAnchor(line.dataset.tocAnchor ?? '', line.dataset.tocTitle ?? '')
     },
-    [comments, openLink, jumpToAnchor],
+    [comments, openLink, jumpToAnchor, editor],
   )
 
   /** Editor right-click menu, only inside the document body */
@@ -6984,15 +8398,20 @@ export function App() {
           const hit = editor.view.posAtCoords({ left: x, top: y })
           if (hit) {
             pos = hit.pos
-            const { from, to } = editor.state.selection
-            if (hit.pos < from || hit.pos > to) {
-              editor.commands.setTextSelection(hit.pos)
-            }
+            // every range: a selection of cells is one range a cell, and stays when the press lands in any
+            const { selection } = editor.state
+            const inside = selection.ranges.some(
+              ({ $from, $to }) => hit.pos >= $from.pos && hit.pos <= $to.pos,
+            )
+            if (!inside) editor.commands.setTextSelection(hit.pos)
+            else if (selection instanceof CellSelection) keepCellSelection(editor, selection)
           }
         }
       }
       const anchorEl = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null
-      const tocLine = (e.target as HTMLElement).closest('.doc-toc-line') as HTMLElement | null
+      const tocLine = (e.target as HTMLElement).closest(
+        '.doc-toc-line:not([data-toc-nolink])',
+      ) as HTMLElement | null
       const link = anchorEl
         ? { href: anchorEl.getAttribute('href') ?? '' }
         : tocLine
@@ -7071,15 +8490,15 @@ export function App() {
   applyStoryRevisionsRef.current = applyStoryRevisions
   const commitHfAtRef = useRef(commitHfAt)
   commitHfAtRef.current = commitHfAt
-  const firstPageNoText = formatPageNumber(
-    sections[0]?.pageNumberStart ?? 1,
-    sections[0]?.pageNumberFmt,
-  )
+  const firstPageNoText =
+    firstPageNo ?? formatPageNumber(sections[0]?.pageNumberStart ?? 1, sections[0]?.pageNumberFmt)
   const lastPageNoText = lastPageNo?.text ?? String(pageInfo.total)
   const lastPageIdx = Math.max(0, pageInfo.total - 1)
   /** open the strip editor for `kind` on page `pageIdx` (default: the document's first header / last footer) */
   const openHfEditor = (kind: 'header' | 'footer', pageIdx?: number) => {
     hfEditorRef.current?.exit()
+    // only Print Layout shows the strips
+    if (viewMode !== 'print') switchView('print')
     const edge =
       pageIdx === undefined || (kind === 'header' ? pageIdx === 0 : pageIdx === lastPageIdx)
     const el = edge
@@ -7114,6 +8533,7 @@ export function App() {
   }, [])
   const toggleEvenOddHf = (on: boolean) => {
     hfEditorRef.current?.exit()
+    armPageSetupUndo()
     setEvenOddHf(on)
     setEvenOddHfDirty(true)
     setStatus(on ? t('appEvenOddOn') : t('appEvenOddOff'))
@@ -7264,13 +8684,13 @@ export function App() {
         liveStylesRef.current = { parsed, styles: r.styles }
         setLiveStyles({ parsed, styles: r.styles })
         editor.storage.listNumbering.styles = r.styles
-        setDocCss(docStyleCss({ ...parsed, styles: r.styles }))
+        setDocCss(liveDocCss({ ...parsed, styles: r.styles }))
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [doc, styleUpserts, defaultFonts, editor])
+  }, [doc, styleUpserts, defaultFonts, editor, liveDocCss])
   // shallow-stable snapshot of every editor read the ribbon displays: caret moves
   // that change none of it keep the reference, so the memoized Ribbon skips
   const formatState = useShallowStable(
@@ -7278,6 +8698,7 @@ export function App() {
       editor,
       liveStyles?.parsed === doc?.parsed ? liveStyles?.styles : doc?.parsed.styles,
       doc?.parsed.docDefaults,
+      doc?.parsed.blocks,
     ),
   )
 
@@ -7292,6 +8713,27 @@ export function App() {
   )
   const ribbonStylesRef = useRef(ribbonStyles)
   ribbonStylesRef.current = ribbonStyles
+  const gridBasePt = useMemo(
+    () => gridBaseSizePt(ribbonStyles, doc?.parsed.docDefaults),
+    [ribbonStyles, doc],
+  )
+  gridBasePtRef.current = gridBasePt
+  const snapsToChars = useMemo(
+    () => sections.some((s) => s.settings.docGrid?.type === 'snapToChars'),
+    [sections],
+  )
+  const charCellPt = useMemo(() => docCharCellPt(sections, gridBasePt), [sections, gridBasePt])
+  const gridFont = useMemo(() => {
+    const d = ribbonStyles?.get(defaultParagraphStyleId(ribbonStyles) ?? '')?.display
+    const dd = doc?.parsed.docDefaults
+    return {
+      latin: d?.fontAscii ?? d?.font ?? dd?.asciiFont ?? '',
+      eastAsia: d?.eastAsiaFont ?? dd?.eastAsiaFont ?? '',
+      sizeHalfPoints: Math.round(gridBasePt * 2),
+      bold: (d?.bold ?? dd?.bold) === true,
+      italic: (d?.italic ?? dd?.italic) === true,
+    }
+  }, [ribbonStyles, doc, gridBasePt])
 
   /** every function prop of the memoized Ribbon, with stable identities (dispatches into the latest render's closures) */
   // ---- selection-scoped AI edit queue ----
@@ -7391,7 +8833,7 @@ export function App() {
       list,
       add: (kind, text) => {
         const id = nextNoteId(list(kind))
-        commit(kind, [...list(kind), { id, text }])
+        commit(kind, [...list(kind), { id, text, created: true }])
         return id
       },
       remove: (kind, id) => {
@@ -7461,16 +8903,22 @@ export function App() {
     const ctx = fileCtxRef.current
     if (!ctx.doc) return 'no document is open'
     const prev = aiStyleUpsertsRef.current[up.styleId]
+    // a removal or a copied definition stands alone; a style made again after its removal starts clean
+    const whole = up.remove || up.sourceXml !== undefined
     const next = {
       ...aiStyleUpsertsRef.current,
-      [up.styleId]: prev
-        ? {
-            ...prev,
-            ...up,
-            pPr: up.pPr || prev.pPr ? { ...prev.pPr, ...up.pPr } : undefined,
-            rPr: up.rPr || prev.rPr ? { ...prev.rPr, ...up.rPr } : undefined,
-          }
-        : up,
+      [up.styleId]: whole
+        ? up
+        : prev?.remove
+          ? { ...up, replace: true as const }
+          : prev
+            ? {
+                ...prev,
+                ...up,
+                pPr: up.pPr || prev.pPr ? { ...prev.pPr, ...up.pPr } : undefined,
+                rPr: up.rPr || prev.rPr ? { ...prev.rPr, ...up.rPr } : undefined,
+              }
+            : up,
     }
     aiStyleUpsertsRef.current = next
     ctx.setStyleUpserts(next)
@@ -7495,6 +8943,10 @@ export function App() {
           const upserts = aiStyleUpsertsRef.current
           const parsed = (id: string) => ctx.doc?.parsed.styles.get(id)
           for (const up of Object.values(upserts)) {
+            if (up.remove) {
+              out.delete(up.styleId)
+              continue
+            }
             const cur = out.get(up.styleId)
             const headingLevel = pendingHeadingLevel(up.styleId, (id) => upserts[id], parsed)
             out.set(up.styleId, {
@@ -7634,7 +9086,8 @@ export function App() {
             setTitlePg(resolved.titlePg)
             setTitlePgDirty(true)
           }
-          if (resolved.pgNum) setPgNumEdit(resolved.pgNum)
+          const pgNum = resolved.pgNum
+          if (pgNum) setPgNumEdit((pending) => mergePendingPgNum(pending, pgNum))
         } else {
           setSectionsDirty((d) => (d.includes(index) ? d : [...d, index]))
           if (resolved.pgNum) setPgNumDirtySections((d) => (d.includes(index) ? d : [...d, index]))
@@ -7676,15 +9129,101 @@ export function App() {
     [editor],
   )
 
+  const gutterAtTop = gutterAtTopEdit ?? doc?.parsed.gutterAtTop ?? false
+  const activeStartType: SectionInfo['startType'] =
+    (activeSection >= sections.length - 1 ? trailingStartType : null) ??
+    sections[activeSection]?.startType ??
+    'nextPage'
+
+  pageSetupStateRef.current = {
+    section,
+    sections,
+    trailingStartType,
+    mirrorMargins,
+    gutterAtTop,
+    titlePg,
+    evenOddHf,
+    notes: documentNoteProps,
+    sectionNotes: sectionNoteProps,
+    autoHyphenation,
+    hyphenation: hyphenationSettings,
+  }
+  useEffect(() => {
+    const armed = pageSetupUndoRef.current
+    pageSetupUndoRef.current = null
+    if (!armed || !editor || !pageSetupStateRef.current) return
+    const change = pageSetupChange(armed.before, pageSetupStateRef.current)
+    if (change) recordPageSetupChange(editor, change, armed.edited)
+  })
+  const replayPageSetup = (patch: PageSetupPatch) => {
+    const last = sections.length - 1
+    if (patch.sections) {
+      setSections((prev) => patchSections(prev, patch))
+      // the last section and one behind an unsaved break are not written from the dirty list
+      const rewritten = Object.keys(patch.sections)
+        .map(Number)
+        .filter((i) => i < last && !sections[i]?.pendingBreak)
+      if (rewritten.length > 0) setSectionsDirty((d) => [...new Set([...d, ...rewritten])])
+    }
+    if (patch.section) {
+      setSection((s) => s && { ...s, ...patch.section })
+      setSectionDirty(true)
+    }
+    // back to the file's start type is still a value to write: a save may have come in between
+    if ('trailingStartType' in patch)
+      setTrailingStartType(patch.trailingStartType ?? patch.sections?.[last]?.startType ?? null)
+    if (patch.mirrorMargins !== undefined) {
+      setMirrorMargins(patch.mirrorMargins)
+      setMirrorMarginsDirty(true)
+    }
+    if (patch.gutterAtTop !== undefined) setGutterAtTopEdit(patch.gutterAtTop)
+    if (patch.titlePg !== undefined || patch.evenOddHf !== undefined) hfEditorRef.current?.exit()
+    if (patch.titlePg !== undefined) {
+      setTitlePg(patch.titlePg)
+      setTitlePgDirty(true)
+    }
+    if (patch.evenOddHf !== undefined) {
+      setEvenOddHf(patch.evenOddHf)
+      setEvenOddHfDirty(true)
+    }
+    // the marks renumber once the sections and this settle (the numbering effect)
+    const notes = patch.notes
+    if (notes)
+      setNotePropsEdit((edit) => ({
+        footnote: { ...edit?.footnote, ...notes.footnote },
+        endnote: { ...edit?.endnote, ...notes.endnote },
+      }))
+    if (patch.hyphenation || patch.autoHyphenation !== undefined) {
+      const next = {
+        ...hyphenationSettings,
+        ...patch.hyphenation,
+        auto: patch.autoHyphenation ?? autoHyphenation,
+      }
+      // it dispatches, and this runs inside the undo's own dispatch
+      queueMicrotask(() => applyHyphenation(next, manualHyphenationRef.current))
+    }
+  }
+  const replayPageSetupRef = useRef(replayPageSetup)
+  replayPageSetupRef.current = replayPageSetup
+  useEffect(() => {
+    if (!editor) return
+    const onTransaction = ({ transaction }: { transaction: Transaction }) => {
+      const armed = pageSetupUndoRef.current
+      if (armed && transaction.docChanged && transaction.getMeta('addToHistory') !== false)
+        armed.edited = true
+      for (const patch of replayedPageSetup(transaction)) replayPageSetupRef.current(patch)
+      for (const { fonts, converting } of replayedFontConversions(transaction))
+        setFontConversions((state) =>
+          converting ? withFontsConverted(state, fonts) : withFontsReverted(state, fonts),
+        )
+    }
+    editor.on('transaction', onTransaction)
+    return () => {
+      editor.off('transaction', onTransaction)
+    }
+  }, [editor])
+
   const ribbonActions = useStableCallbacks({
-    allocateNumId: (kind: 'bullet' | 'ordered') => allocateListNumId(kind),
-    createListDef: (levels: CustomNumberingLevel[]) => {
-      setListRecentsEpoch((n) => n + 1)
-      return createCustomListDef(levels)
-    },
-    onListDialog: (kind: ListDialogKind) => setListDialog(kind),
-    onParagraphDialog: () => setShowParaDialog(true),
-    onPasteDefaults: () => setShowAutoCorrect(true),
     onTableDialog: (kind: TableDialogKind) => {
       if (
         editor &&
@@ -7697,15 +9236,9 @@ export function App() {
     onOpen: () => void openFile(),
     onSave: () => void save(false),
     onSaveAs: () => void save(true),
-    onConvert: (format: ConvertFormat) => {
-      if (format === 'pdf') void exportPdf()
-      else if (format === 'html') void exportHtml()
-      else if (format === 'md') void exportMarkdown()
-      else exportImages()
-    },
     onNameWithAi: () => void nameWithAi(),
-    onToggleAi: () => setShowAi((v) => !v),
     onSection: (next: SectionSettings) => {
+      armPageSetupUndo()
       // layout applies to the cursor's section; the final section's sectPr goes through SaveOptions.section (also drives canvas geometry)
       editSectionSettings((_s, i) => (i === activeSection ? next : null))
       if (sections.length <= 1 || activeSection === sections.length - 1) {
@@ -7716,9 +9249,57 @@ export function App() {
         setStatus(t('appSectionSettingsApplied', { n: activeSection + 1 }))
       }
     },
+    onSectionsIn: (
+      scope: 'whole' | 'forward',
+      change: (s: SectionSettings) => SectionSettings,
+      breakType: SectionInfo['startType'],
+    ) => {
+      armPageSetupUndo()
+      if (scope === 'whole') {
+        editSectionSettings((s) => change(s.settings))
+        if (section) {
+          setSection(change(section))
+          setSectionDirty(true)
+        }
+        const earlier = sections.slice(0, -1).map((_, i) => i)
+        if (earlier.length > 0) setSectionsDirty((d) => [...new Set([...d, ...earlier])])
+        return
+      }
+      if (!canApplyForward) return
+      // a later section behind an unsaved break saves from its break paragraph: written there too
+      const patched = editor
+        ? rewritePendingSectPrs(editor, sections, (s, i) =>
+            i > activeSection ? applySectionSettings(s.sectPrXml, change(s.settings)) : null,
+          )
+        : sections
+      // the break's own section takes the caret's index; everything after it changes
+      const made = insertSectionBreak(breakType)
+      const shift = made ? 1 : 0
+      const from = activeSection + shift
+      const count = sections.length + shift
+      setSections((prev) =>
+        prev.map((s, i) =>
+          i < from
+            ? s
+            : {
+                ...s,
+                settings: change(s.settings),
+                sectPrXml: (i > from && patched[i - shift]?.sectPrXml) || s.sectPrXml,
+              },
+        ),
+      )
+      const earlier = Array.from({ length: count - 1 - from }, (_, k) => from + k)
+      if (earlier.length > 0) setSectionsDirty((d) => [...new Set([...d, ...earlier])])
+      // the last section is written from its own state
+      if (section) {
+        setSection(change(section))
+        setSectionDirty(true)
+      }
+    },
     onPageBorderAll: (props: SectionSettings['pageBorderProps'] | null) => {
       const bordered = ({ pageBorderProps: _drop, ...s }: SectionSettings): SectionSettings =>
         props ? { ...s, pageBorder: true, pageBorderProps: props } : { ...s, pageBorder: false }
+      armPageSetupUndo()
       editSectionSettings((s) => bordered(s.settings))
       if (section) {
         setSection(bordered(section))
@@ -7736,6 +9317,7 @@ export function App() {
         orientation === 'landscape'
           ? { ...s, orientation, pageWidth: portraitH, pageHeight: portraitW }
           : { ...s, orientation, pageWidth: portraitW, pageHeight: portraitH }
+      armPageSetupUndo()
       editSectionSettings((s) => sized(s.settings))
       if (section) {
         setSection(sized(section))
@@ -7746,8 +9328,32 @@ export function App() {
     },
     onMirrorMargins: (on: boolean) => {
       if (on === mirrorMargins) return
+      armPageSetupUndo()
       setMirrorMargins(on)
       setMirrorMarginsDirty(true)
+    },
+    onGutterAtTop: (atTop: boolean) => {
+      if (atTop === gutterAtTop) return
+      armPageSetupUndo()
+      setGutterAtTopEdit(atTop)
+      // the caret's section is written by the command that carries this change
+      editSectionSettings((s, i) => {
+        const moved = gutterMoved(s.settings, atTop)
+        return i === activeSection || moved === s.settings ? null : moved
+      })
+      if (section && sections.length > 1 && activeSection !== sections.length - 1)
+        setSection(gutterMoved(section, atTop))
+    },
+    onSectionStart: (type: SectionInfo['startType']) => {
+      const sec = sections[activeSection]
+      if (sec?.pendingBreak || type === activeStartType) return
+      armPageSetupUndo()
+      if (sec)
+        setSections((prev) =>
+          prev.map((s, i) => (i === activeSection ? { ...s, startType: type } : s)),
+        )
+      if (sections.length <= 1 || activeSection === sections.length - 1) setTrailingStartType(type)
+      else setSectionsDirty((d) => (d.includes(activeSection) ? d : [...d, activeSection]))
     },
     onInsertSectionBreak: (type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage') =>
       insertSectionBreak(type),
@@ -7789,20 +9395,20 @@ export function App() {
     onZoomFit: zoomFit,
     onZoomDialog: () => setShowZoomDialog(true),
     onDarkPage: updateDarkPage,
-    onAiPreset: (text: string) => {
-      // Word's Editor / Translate start working as soon as they're clicked
-      setShowAi(true)
-      setAiPreset({ text, nonce: Date.now(), autoRun: true })
-    },
     onHeader: (next: HeaderFooter) => commitHfAt(0, 'header', headerAreaView, next),
     onPageNumFormat: openPgNumModal,
-    onInsertField: insertField,
-    onPickMergeDataSource: () => void pickMergeDataSource(),
-    onMergeMailings: mergeMailings,
+    onFacingPageNumber: (kind: 'header' | 'footer', side: 'inside' | 'outside') => {
+      const si = kind === 'header' ? 0 : lastSectionIdx
+      // odd pages are the right-hand ones: their outer edge is the right
+      const odd = side === 'outside' ? 'right' : 'left'
+      const even = side === 'outside' ? 'left' : 'right'
+      if (!evenOddHf) toggleEvenOddHf(true)
+      commitHfAt(si, kind, 'default', hfPageNumberOnly(odd))
+      commitHfAt(si, kind, 'even', hfPageNumberOnly(even))
+    },
     onFooter: (next: HeaderFooter) => commitHfAt(lastSectionIdx, 'footer', footerAreaView, next),
     onHfAction: (action: HfAction) => onHfAction(action),
     onHfEdit: (kind: 'header' | 'footer') => openHfEditor(kind),
-    onShowMarks: setShowMarks,
     onShowRuler: setShowRuler,
     onShowNav: setShowNav,
     onShowComments: () => toggleShowComments(),
@@ -7827,7 +9433,10 @@ export function App() {
       const body = filterRevisions(collectRevisions(editor.state.doc), revisionFilterRef.current)
       const stories = filterRevisions(storyRevisionsRef.current, revisionFilterRef.current)
       const ranges: RevisionRange[] = [...body, ...stories]
-      if (ranges.length === 0) return
+      if (ranges.length === 0) {
+        setStatus(t('appReviewPaneEmpty'))
+        return
+      }
       // after a stop outside the body the walk continues from that entry
       const at = ranges.findIndex((r) => r.story && r.story.id === lastStoryRef.current)
       setActiveStoryId(null)
@@ -7843,12 +9452,11 @@ export function App() {
       if (target) showRevision(target)
     },
     onProtectDoc: () => setShowProtectDialog(true),
-    onCompare: () => void compareWithFile(),
     onViewMode: switchView,
     onReadMode: setReadModeExclusive,
     onShowGrid: setShowGrid,
     onSplitView: setSplitView,
-    onPagePreview: () => setShowPagePreview(true),
+    onPagePreview: () => showPreview(true),
   })
 
   // the panel closes; Contextual cards stay unless the panel was the List view itself
@@ -7981,6 +9589,115 @@ export function App() {
       editor.off('transaction', refresh)
     }
   }, [editor])
+
+  // the native menu's check marks and greyed-out items follow the document, as in Word
+  const editTarget = useEditTarget(editor)
+  const menuHasDoc = Boolean(doc)
+  const {
+    editable: menuEditable,
+    inTable: menuInTable,
+    canMergeCells: menuCanMerge,
+    labelSheet: menuLabelSheet,
+    hasSelection: menuHasSelection,
+    imageSelected: menuPictureSelected,
+    hasNotes: menuHasNotes,
+    hasChart: menuHasChart,
+    canSplitTable: menuCanSplitTable,
+    canComment: menuCanComment,
+    inEmptyParagraph: menuInEmptyParagraph,
+    hasTableOfFigures: menuHasTableOfFigures,
+    hasIndex: menuHasIndex,
+    hasTableOfAuthorities: menuHasTableOfAuthorities,
+  } = formatState
+  const menuHasComments = comments.length > 0
+  const menuHasMergeSource = Boolean(mergeSource)
+  const menuInTextBox = Boolean(formatState.sub)
+  const menuCanRepeat = canRepeatCommand({ editor })
+  useEffect(() => {
+    window.desktop.reportCommandState?.(
+      menuCommandState({
+        aiSidebar: showAi,
+        darkPage,
+        hasDoc: menuHasDoc,
+        editable: menuEditable,
+        inTable: menuInTable,
+        inTextBox: menuInTextBox,
+        spellcheck: spellcheckActive,
+        readOnlyRecommended: Boolean(writeProtection?.recommended),
+        onDisk: Boolean(doc?.filePath),
+        view: {
+          mode: viewMode,
+          readMode,
+          ruler: showRuler,
+          grid: showGrid,
+          navigation: showNav,
+          thumbnails: showThumbnails,
+          markup: markupShown(revisionDisplay),
+          ribbon: !ribbonCollapsed,
+          focus: focusMode,
+          reviewPane: showReviewPane,
+        },
+        cellsSelected: menuCanMerge,
+        labelSheet: menuLabelSheet,
+        hasSelection: menuHasSelection,
+        pictureSelected: menuPictureSelected,
+        hasNotes: menuHasNotes,
+        hasChart: menuHasChart,
+        canSplitTable: menuCanSplitTable,
+        canComment: menuCanComment,
+        inEmptyParagraph: menuInEmptyParagraph,
+        hasComments: menuHasComments,
+        hasTableOfFigures: menuHasTableOfFigures,
+        hasIndex: menuHasIndex,
+        hasTableOfAuthorities: menuHasTableOfAuthorities,
+        hasMergeSource: menuHasMergeSource,
+        windowsDetached,
+        canUndo: histState.canUndo,
+        canRedo: histState.canRedo,
+        canRepeat: menuCanRepeat,
+        target: editTarget,
+      }),
+    )
+  }, [
+    showAi,
+    darkPage,
+    menuHasDoc,
+    menuEditable,
+    menuInTable,
+    menuInTextBox,
+    spellcheckActive,
+    viewMode,
+    readMode,
+    showRuler,
+    showGrid,
+    showNav,
+    showThumbnails,
+    revisionDisplay,
+    ribbonCollapsed,
+    focusMode,
+    doc?.filePath,
+    writeProtection?.recommended,
+    showReviewPane,
+    menuCanMerge,
+    menuLabelSheet,
+    menuHasSelection,
+    menuPictureSelected,
+    menuHasNotes,
+    menuHasChart,
+    menuCanSplitTable,
+    menuCanComment,
+    menuInEmptyParagraph,
+    menuHasComments,
+    menuHasTableOfFigures,
+    menuHasIndex,
+    menuHasTableOfAuthorities,
+    menuHasMergeSource,
+    windowsDetached,
+    histState.canUndo,
+    histState.canRedo,
+    menuCanRepeat,
+    editTarget,
+  ])
   const quickActions = useMemo(
     () => (
       <>
@@ -8262,10 +9979,14 @@ export function App() {
     if (!editor) return
     editor.view.dispatch(
       editor.state.tr
-        .setMeta(formattingMarksPluginKey, { on: showMarks, breaks: sectionBreakMap(sections) })
+        .setMeta(formattingMarksPluginKey, {
+          // Draft shows every break as a labelled rule, marks on or off
+          on: showMarks || viewMode === 'draft',
+          breaks: sectionBreakMap(sections),
+        })
         .setMeta('addToHistory', false),
     )
-  }, [editor, showMarks, sections, lang])
+  }, [editor, showMarks, viewMode, sections, lang])
 
   if (!editor) return null
 
@@ -8327,6 +10048,8 @@ export function App() {
     rulerBase && rulerSwap
       ? { ...rulerBase, marginLeft: rulerBase.marginRight, marginRight: rulerBase.marginLeft }
       : rulerBase
+  /** View ▸ Ruler: fixed bars around the document view (none in Multiple Pages) */
+  const rulersShown = Boolean(doc && showRuler && rulerSection && !multipage)
   const docZoomStyle = {
     zoom: zoom / 100,
     '--page-w': canvasBox ? `${paperW}px` : undefined,
@@ -8370,7 +10093,7 @@ export function App() {
 
   return (
     <div
-      className={`app ${readMode ? 'read-mode' : ''}${commentsUi.panel ? ' comments-pane-open' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}${balloonsActive && balloonMode === 'revisions' ? ' rev-balloon' : ''}${revisionFilter.insDel ? '' : ' rev-hide-insdel'}${revisionFilter.format ? '' : ' rev-hide-format'}${tcOptions.balloonLines ? '' : ' markup-no-lines'}`}
+      className={`app ${readMode ? 'read-mode' : ''}${focusMode ? ' focus-mode' : ''}${commentsUi.panel ? ' comments-pane-open' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}${balloonsActive && balloonMode === 'revisions' ? ' rev-balloon' : ''}${revisionFilter.insDel ? '' : ' rev-hide-insdel'}${revisionFilter.format ? '' : ' rev-hide-format'}${tcOptions.balloonLines ? '' : ' markup-no-lines'}`}
       data-balloons={balloonsActive ? balloonMode : undefined}
       data-comment-cards={commentsUi.cards ? '' : undefined}
       data-comment-focus={commentFocus?.id}
@@ -8378,6 +10101,7 @@ export function App() {
     >
       <ToastHost />
       {docCss && <style data-doc-css="">{docCss}</style>}
+      {doc && <style data-doc-css="">{mathDefaultsCss(mathPr)}</style>}
       {revisionAuthorStyle && <style data-rev-authors="">{revisionAuthorStyle}</style>}
       {tcOptionsStyle && <style data-rev-options="">{tcOptionsStyle}</style>}
       {liveLineFactor != null && (
@@ -8395,7 +10119,14 @@ export function App() {
             : ''
         } }`}</style>
       )}
-      {doc && balancedGrid && (
+      {doc && charCellPt != null && (
+        <style>{`.doc-page { --doc-char-snap:${charCellSpacingCss(charCellPt)} }`}</style>
+      )}
+      {doc && snapsToChars && (
+        // snapToChars: a full-width character takes whole cells and sits centred in them
+        <style>{`.doc-page .doc-east-asian-font:not(.doc-east-asian-halfwidth, [style*='letter-spacing'] .doc-east-asian-font, .page-gap-hf *) { letter-spacing: var(--doc-char-snap, var(--doc-char-space, normal)); position: relative; inset-inline-start: calc(var(--doc-char-snap, 0px) / 2) }`}</style>
+      )}
+      {doc && balancedGrid && !snapsToChars && (
         // full-width spans take the whole delta back (halfwidth kana stay single-byte);
         // an inline run letter-spacing still wins
         <style>{`.doc-page .doc-east-asian-font:not(.doc-east-asian-halfwidth, [style*='letter-spacing'] .doc-east-asian-font, .page-gap-hf *) { letter-spacing: var(--doc-char-space, normal) }`}</style>
@@ -8421,20 +10152,21 @@ export function App() {
       )}
       <Ribbon
         actionsRef={ribbonActionsRef}
+        onRibbonCollapsed={setRibbonCollapsed}
+        readOnlyRecommended={Boolean(writeProtection?.recommended)}
+        mergePreview={mergePreview}
+        windowsDetached={windowsDetached}
         quickActions={quickActions}
-        mergeSource={mergeSource}
+        mergeSource={mergeRecipients}
+        mergeRecordIndex={mergeRecordIndex}
+        onMergeRecordIndex={setMergeRecordIndex}
+        mergeRange={mergeRange}
+        onMergeRange={setMergeRange}
         editor={editor}
         formatState={formatState}
         hasDoc={!!doc}
-        onFind={() => {
-          setShowFind(true)
-          setFindFocusInput((n) => n + 1)
-        }}
-        onReplace={() => {
-          setShowFind(true)
-          setFindFocusReplace((n) => n + 1)
-        }}
-        blocks={doc?.parsed.blocks ?? EMPTY_BLOCKS}
+        onCommand={runCommand}
+        editTarget={editTarget}
         styles={ribbonStyles}
         docDefaults={doc?.parsed.docDefaults}
         documentListPresets={documentLists}
@@ -8446,7 +10178,6 @@ export function App() {
         mirrorMargins={mirrorMargins}
         pageColor={pageColor}
         watermark={watermark}
-        watermarkStyle={watermarkStyle}
         watermarkPicture={watermarkPicture}
         watermarkDocImage={
           watermarkDirty
@@ -8460,9 +10191,9 @@ export function App() {
         inkActiveId={inkActiveId}
         inkCount={inkAnnotations.length}
         sources={sources}
-        zoteroNoteFields={
-          footnotes.some((note) => note.zoteroField) || endnotes.some((note) => note.zoteroField)
-        }
+        citationStyle={citationStyle}
+        zoteroNoteFields={zoteroNoteFields}
+        showZotero={zoteroInstalled || zoteroDocumentData !== '' || zoteroNoteFields}
         zoom={Math.round(zoom)}
         darkPage={darkPage}
         tabRequest={ribbonTabRequest}
@@ -8473,7 +10204,6 @@ export function App() {
         showRuler={showRuler}
         showNav={showNav}
         showStylesPane={showStylesPane}
-        onShowStylesPane={setShowStylesPane}
         commentCount={comments.length}
         showComments={showComments}
         commentsMode={commentsMode}
@@ -8481,13 +10211,10 @@ export function App() {
         openCommentCount={comments.filter((c) => !c.parentId && c.done !== true).length}
         resolvedCommentCount={comments.filter((c) => !c.parentId && c.done === true).length}
         commentAtCaret={commentThreadAtCaretImpl(reviewCtxRef.current) !== null}
-        canComment={!editor.state.selection.empty || wordRangeAtCaret(editor) !== null}
         trackChanges={trackChanges}
         spellcheck={spellcheckActive}
         revisionDisplay={revisionDisplay}
         balloonMode={balloonMode}
-        onBalloonMode={setBalloonMode}
-        onTrackChangesOptions={() => setShowTcOptions(true)}
         revisionCount={revisionCount}
         revisionFilter={revisionFilter}
         revisionAuthors={reviewAuthors}
@@ -8498,7 +10225,6 @@ export function App() {
         protectActive={
           isProtected || trackChangesForced || (doc?.encrypted ?? false) || !!writeProtection?.hash
         }
-        filePath={doc?.filePath ?? null}
         viewMode={viewMode}
         readMode={readMode}
         showGrid={showGrid}
@@ -8567,10 +10293,12 @@ export function App() {
                   // and land focus on the replace / go-to field
                   setFindFocusReplace(0)
                   setFindFocusGoTo(0)
+                  setFindStep(null)
                 }}
                 focusFindNonce={findFocusInput}
                 focusReplaceNonce={findFocusReplace}
                 focusGoToNonce={findFocusGoTo}
+                stepRequest={findStep}
                 layout={() => pageLayoutRef.current}
               />
             )}
@@ -8582,6 +10310,9 @@ export function App() {
                 pageInfo={pageInfo}
                 onClose={closeNav}
                 cuts={cutsNow}
+                tabRequest={navTabRequest}
+                onTabRequestDone={clearNavTabRequest}
+                onTabChange={setNavTab}
               />
             )}
             {doc && (
@@ -8596,7 +10327,46 @@ export function App() {
               />
             )}
             {doc && <PasteOptionsChip editor={editor} />}
-            <div className="editor-area">
+            <div className={rulersShown ? 'editor-area with-rulers' : 'editor-area'}>
+              {rulersShown && rulerSection && (
+                <RulerBar
+                  editor={editor}
+                  zoom={zoom / 100}
+                  pageWidthPx={(rulerDims(rulerSection).pageWidth / 1440) * 96}
+                >
+                  <Ruler
+                    section={rulerSection}
+                    editor={editor}
+                    onTabStopsChange={(stops) => {
+                      if (!editor) return
+                      setParaAttrs(editor, { tabStops: stops ? JSON.stringify(stops) : null })
+                    }}
+                    onIndentsChange={(attrs) => {
+                      if (editor) setParaAttrs(editor, { ...attrs })
+                    }}
+                    onMarginsChange={({ left, right }) => {
+                      const sec = sections[activeSection]?.settings ?? section
+                      ribbonActions.onSection({
+                        ...sec,
+                        marginLeft: rulerSwap ? right : left,
+                        marginRight: rulerSwap ? left : right,
+                      })
+                    }}
+                  />
+                </RulerBar>
+              )}
+              {rulersShown && rulerSection && (
+                <VerticalRuler
+                  section={rulerSection}
+                  editor={editor}
+                  zoom={zoom / 100}
+                  top={rulerBarHeight(zoom / 100)}
+                  onMarginsChange={({ top, bottom }) => {
+                    const sec = sections[activeSection]?.settings ?? section
+                    ribbonActions.onSection({ ...sec, marginTop: top, marginBottom: bottom })
+                  }}
+                />
+              )}
               <main
                 className={`editor-scroll${imageDragOver ? ' image-drop-target' : ''}${doc ? '' : ' start-screen-host'}`}
                 ref={scrollContainerRef}
@@ -8629,6 +10399,9 @@ export function App() {
                   }
                 }}
               >
+                {doc && viewMode === 'draft' && (
+                  <div className="draft-breaks" ref={draftBreaksRef} />
+                )}
                 {doc ? (
                   <div
                     className={docZoomClass}
@@ -8654,27 +10427,6 @@ export function App() {
                           : undefined
                       }
                     >
-                      {showRuler && rulerSection && !multipage && (
-                        <Ruler
-                          section={rulerSection}
-                          editor={editor}
-                          onTabStopsChange={(stops) => {
-                            if (!editor) return
-                            setParaAttrs(editor, { tabStops: stops ? JSON.stringify(stops) : null })
-                          }}
-                          onIndentsChange={(attrs) => {
-                            if (editor) setParaAttrs(editor, { ...attrs })
-                          }}
-                          onMarginsChange={({ left, right }) => {
-                            const sec = sections[activeSection]?.settings ?? section
-                            ribbonActions.onSection({
-                              ...sec,
-                              marginLeft: rulerSwap ? right : left,
-                              marginRight: rulerSwap ? left : right,
-                            })
-                          }}
-                        />
-                      )}
                       <div
                         className={`${mixedPaper ? 'page-wrap paper-mixed' : 'page-wrap'}${hfEditing ? ' hf-editing' : ''}`}
                         style={
@@ -8743,13 +10495,15 @@ export function App() {
                           notes={footnotes}
                           skipIds={gapNoteIds}
                           numberOf={(n, i) => noteNo('footnote', n.id, i)}
+                          fmtOf={(n) => noteFmt('footnote', n.id)}
                           onEdit={(id) => editNote('footnote', id)}
                           onDelete={(id) => deleteNote('footnote', id)}
                         />
                         <PageEndnotes
-                          notes={endnotes}
+                          notes={tailEndnotes}
                           top={endnotesAreaTop}
-                          numberOf={(n, i) => noteNo('endnote', n.id, i)}
+                          numberOf={(n) => noteNo('endnote', n.id, endnotes.indexOf(n))}
+                          fmtOf={(n) => noteFmt('endnote', n.id)}
                           onEdit={(id) => editNote('endnote', id)}
                           onDelete={(id) => deleteNote('endnote', id)}
                         />
@@ -8892,6 +10646,8 @@ export function App() {
                 editor={editor}
                 styles={ribbonStyles}
                 docDefaults={doc.parsed.docDefaults}
+                docName={doc.fileName}
+                docBytes={doc.parsed.internal.originalBytes}
                 fs={formatState}
                 canEdit={formatState.editable}
                 pending={styleUpserts}
@@ -8900,12 +10656,16 @@ export function App() {
                 onClose={() => setShowStylesPane(false)}
               />
             )}
-            {doc && compareResult && (
-              <ComparePanel
-                otherName={compareResult.otherName}
-                entries={compareResult.entries}
-                onClose={() => setCompareResult(null)}
+            {doc && showCitationsPane && (
+              <CitationsPane
+                sources={sources}
+                canInsert={formatState.editable}
+                onInsert={(tag) => runCommand('insert-citation', tag)}
+                onClose={() => setShowCitationsPane(false)}
               />
+            )}
+            {doc && editor && showSelectionPane && (
+              <SelectionPane editor={editor} onClose={() => setShowSelectionPane(false)} />
             )}
             {doc && showReviewPane && (
               <ReviewingPane
@@ -8995,6 +10755,14 @@ export function App() {
                     <IconOutlineView size={14} />
                   </button>
                   <button
+                    className={`status-view-btn${viewMode === 'draft' ? ' on' : ''}`}
+                    data-tip={t('ribbonDraft')}
+                    aria-label={t('ribbonDraft')}
+                    onClick={() => switchView('draft')}
+                  >
+                    <IconDraftView size={14} />
+                  </button>
+                  <button
                     className={`status-view-btn${viewMode === 'story' ? ' on' : ''}`}
                     data-tip={t('ribbonStoryView')}
                     aria-label={t('ribbonStoryView')}
@@ -9041,12 +10809,644 @@ export function App() {
       </div>
 
       {showShortcuts && <ShortcutsDialog onClose={() => setShowShortcuts(false)} />}
+      {showCustomizeKeyboard && (
+        <CustomizeKeyboardDialog
+          styles={ribbonStyles ?? FALLBACK_STYLES}
+          onClose={() => setShowCustomizeKeyboard(false)}
+        />
+      )}
       {showLinkModal && <LinkInsertModal editor={editor} onClose={() => setShowLinkModal(false)} />}
+      {showBookmarkModal && (
+        <BookmarkModal editor={editor} onClose={() => setShowBookmarkModal(false)} />
+      )}
+      {pictureDialog &&
+        editor &&
+        createElement(pictureDialog.kind === 'crop' ? CropDialog : CutoutDialog, {
+          dataUrl: pictureDialog.dataUrl,
+          onApply: (png: string) => {
+            setPictureDialog(null)
+            void replaceSelectedPictureBytes(editor, png)
+          },
+          onCancel: () => setPictureDialog(null),
+        })}
+      {showCaptionModal && editor && (
+        <CaptionModal
+          editor={editor}
+          blocks={doc?.parsed.blocks ?? EMPTY_BLOCKS}
+          onClose={() => setShowCaptionModal(false)}
+        />
+      )}
+      {showCrossRefModal && (
+        <CrossRefModal
+          editor={editor}
+          blocks={doc?.parsed.blocks ?? EMPTY_BLOCKS}
+          notes={{ footnote: footnotes, endnote: endnotes }}
+          pagesOf={(positions) => commandHostRef.current?.pagesOf(positions) ?? null}
+          onClose={() => setShowCrossRefModal(false)}
+        />
+      )}
+      {chartModal && (
+        <ChartInsertModal
+          editor={editor}
+          initialType={chartModal.type}
+          pick={chartModal.pick}
+          onClose={() => setChartModal(null)}
+        />
+      )}
+      {showChangeCase && (
+        <ChangeCaseDialog
+          onApply={(mode) => runCommand('change-case', mode)}
+          onClose={() => setShowChangeCase(false)}
+        />
+      )}
+      {showColumnsDialog && (
+        <ColumnsDialog
+          key={activeSection}
+          section={sections[activeSection]?.settings ?? section ?? DEFAULT_SECTION}
+          multiSection={sections.length > 1}
+          canApplyForward={canApplyForward}
+          onApply={(value) => runCommand('columns-settings', JSON.stringify(value))}
+          onClose={() => setShowColumnsDialog(false)}
+        />
+      )}
+      {editor && doc && mergePanel && (
+        <MailMergePanel
+          editor={editor}
+          source={mergeRecipients}
+          onPickSource={() => void pickMergeDataSource()}
+          onInsertField={insertField}
+          onMerge={mergeMailings}
+          recordIndex={mergeRecordIndex}
+          onRecordIndex={setMergeRecordIndex}
+          range={mergeRange}
+          initialMode={mergePanel.mode}
+          pick={mergePanel.pick}
+          onLabelSheet={(layout) => {
+            if (!createLabelSheet(editor, layout)) return
+            ribbonActions.onSection(layoutSection(layout, section))
+            setMergePanel(null)
+          }}
+          onClose={() => setMergePanel(null)}
+        />
+      )}
+      {mergeQuestion && (
+        <PromptModal
+          key={mergeQuestion.prompt.key}
+          title={
+            mergeQuestion.prompt.record === null
+              ? mergeQuestion.prompt.prompt
+              : `${mergeQuestion.prompt.prompt} (${t('ribbonMailingsRecord', {
+                  n: mergeQuestion.prompt.record,
+                  total: mergeQuestion.total,
+                })})`
+          }
+          initial={mergeQuestion.prompt.fallback}
+          allowEmpty
+          onSubmit={mergeQuestion.answer}
+          onClose={() => {
+            // closing without an answer takes the field's default
+            mergeQuestion.answer(mergeQuestion.prompt.fallback)
+            setMergeQuestion((open) => (open === mergeQuestion ? null : open))
+          }}
+        />
+      )}
+      {autoText && editor && (
+        <AutoTextDialog
+          {...autoText}
+          onSave={(name) => saveAutoText(editor, name)}
+          onInsert={(entry) => insertAutoText(editor, entry)}
+          onDelete={(name) => {
+            deleteAutoText(name)
+            setAutoText({ ...autoText, entries: autoTextEntries() })
+          }}
+          onClose={() => setAutoText(null)}
+        />
+      )}
+      {markCitationAt && editor && (
+        <MarkCitationDialog
+          selected={markCitationAt.text}
+          onMark={(citation, all) =>
+            markCitation(
+              editor,
+              markCitationAt.at,
+              {
+                ...citation,
+                runs: citationRunsOf(
+                  editor.state.doc,
+                  markCitationAt.from,
+                  markCitationAt.at,
+                  citation.long,
+                ),
+              },
+              all
+                ? occurrenceEnds(editor, citation.short ?? '', true).filter(
+                    (pos) => pos <= markCitationAt.from || pos > markCitationAt.at,
+                  )
+                : [],
+            )
+          }
+          onClose={() => setMarkCitationAt(null)}
+        />
+      )}
+      {markEntryAt && editor && (
+        <MarkIndexEntryDialog
+          selected={markEntryAt.text}
+          bookmarks={collectBookmarks(editor.state.doc).map((b) => b.name)}
+          onMark={(entry, all) =>
+            markIndexEntries(
+              editor,
+              all ? occurrenceEnds(editor, markEntryAt.text) : [markEntryAt.at],
+              indexEntryTerm(entry),
+              indexEntrySwitches(entry),
+            )
+          }
+          onClose={() => setMarkEntryAt(null)}
+        />
+      )}
+      {languageTarget && (
+        <LanguageDialog
+          current={proofingLanguageOf(languageTarget)}
+          noProof={noProofOf(languageTarget)}
+          onApply={(tag, skip) => setProofingLanguage(languageTarget, tag, skip)}
+          onClose={() => setLanguageTarget(null)}
+        />
+      )}
+      {textEffectsTarget && (
+        <TextEffectsDialog
+          fx={textFxOf(textEffectsTarget)}
+          color={textFillOf(textEffectsTarget)}
+          onApply={(fx, color) => applyTextFx(textEffectsTarget, fx, color)}
+          onClose={() => setTextEffectsTarget(null)}
+        />
+      )}
+      {fitTextTarget && (
+        <FitTextDialog
+          width={fitTextOf(fitTextTarget)}
+          onApply={(twips) => setFitText(fitTextTarget, twips)}
+          onClose={() => setFitTextTarget(null)}
+        />
+      )}
+      {eqLayoutDialog?.kind === 'enclose' && (
+        <EncloseCharactersDialog
+          text={eqLayoutDialog.target.existing?.b ?? eqLayoutDialog.target.text}
+          enclosure={eqLayoutDialog.target.existing?.a ?? null}
+          style={eqLayoutDialog.target.existing?.style ?? null}
+          onApply={(layout) =>
+            applyEqLayout(
+              eqLayoutDialog.editor,
+              eqLayoutDialog.target,
+              layout && { kind: 'enclose', ...layout },
+            )
+          }
+          onClose={() => setEqLayoutDialog(null)}
+        />
+      )}
+      {eqLayoutDialog?.kind === 'combine' && (
+        <CombineCharactersDialog
+          text={eqLayoutDialog.target.text}
+          combined={!!eqLayoutDialog.target.existing}
+          {...eqLayoutFontOf(eqLayoutDialog.editor.state, eqLayoutDialog.target)}
+          onApply={(text, picked) =>
+            applyEqLayout(
+              eqLayoutDialog.editor,
+              eqLayoutDialog.target,
+              text === null ? null : { kind: 'combine', text },
+              picked,
+            )
+          }
+          onClose={() => setEqLayoutDialog(null)}
+        />
+      )}
+      {phoneticGuide && (
+        <PhoneticGuideDialog
+          base={phoneticGuide.target.base}
+          rt={phoneticGuide.target.rt}
+          align={phoneticGuide.target.align}
+          reading={phoneticGuide.target.reading}
+          onApply={(edit) =>
+            applyRuby(
+              phoneticGuide.editor,
+              phoneticGuide.target,
+              edit,
+              doc?.parsed.docDefaults?.eastAsiaLang ?? RUBY_LANGS[lang] ?? 'zh-CN',
+            )
+          }
+          onClose={() => setPhoneticGuide(null)}
+        />
+      )}
+      {tabsTarget && (
+        <TabsDialog
+          stops={parseTabStops(activeParaAttrs(tabsTarget).tabStops).stops}
+          defaultStop={editor?.storage.tabStops.defaultTabStopTwips ?? 720}
+          onApply={(stops, defaultStop) => {
+            setParaAttrs(tabsTarget, {
+              tabStops: tabStopsAttr(activeParaAttrs(tabsTarget).tabStops, stops),
+            })
+            if (editor && defaultStop !== (editor.storage.tabStops.defaultTabStopTwips ?? 720)) {
+              editor.storage.tabStops.defaultTabStopTwips = defaultStop
+              editor.storage.listNumbering.defaultTabTwips = defaultStop
+              setDefaultTabStopEdit(defaultStop)
+              document.dispatchEvent(new Event(DEFAULT_TAB_STOP_CHANGED_EVENT))
+            }
+          }}
+          onClose={() => setTabsTarget(null)}
+        />
+      )}
+      {mergeSource && showRecipients && (
+        <RecipientsDialog
+          source={mergeSource}
+          excluded={mergeExcluded}
+          onApply={setMergeExcluded}
+          onClose={() => setShowRecipients(false)}
+        />
+      )}
+      {mergeSource && showFilterRecipients && (
+        <FilterRecipientsDialog
+          fields={mergeSource.fields}
+          query={mergeQuery}
+          onApply={setMergeQuery}
+          onClose={() => setShowFilterRecipients(false)}
+        />
+      )}
+      {mergeRecipients && showFindRecipient && (
+        <FindRecipientDialog
+          fields={mergeRecipients.fields}
+          onFind={(text, field) => {
+            const found = findRecipient(mergeRecipients.records, mergeRecordIndex, text, field)
+            if (found >= 0) setMergeRecordIndex(found)
+            return found >= 0
+          }}
+          onClose={() => setShowFindRecipient(false)}
+        />
+      )}
+      {mergeRule && (mergeSource || !ruleNeedsList(mergeRule)) && (
+        <RuleDialog
+          rule={mergeRule}
+          fields={mergeSource?.fields ?? []}
+          onInsert={insertField}
+          onClose={() => setMergeRule(null)}
+        />
+      )}
+      {doc && showFontSubstitution && (
+        <FontSubstitutionDialog
+          fonts={checkMissingFonts(
+            [...new Set([...collectDocFonts(doc.parsed), ...fontsBeingRestored(fontConversions)])],
+            fontSubstituteOf,
+          ).filter((font) => !(font.name in (fontConversions?.pending ?? {})))}
+          onSubstitute={setFontSubstitute}
+          onConvert={(fonts) => {
+            convertFontsInEditor(editor, fonts)
+            setFontConversions((state) => withFontsConverted(state, fonts))
+          }}
+          onClose={() => setShowFontSubstitution(false)}
+        />
+      )}
+      {showBordersShading && (
+        <BordersShadingDialog
+          {...bordersShadingTarget(editor)}
+          section={section}
+          onCommand={runCommand}
+          onPageBorder={(props, scope) => {
+            if (scope === 'whole') return ribbonActions.onPageBorderAll(props)
+            if (section) ribbonActions.onSection(sectionWithPageBorder(section, props))
+          }}
+          onHorizontalLine={
+            editor.isEditable && !getActiveSubEditor()
+              ? () => runCommand('insert-horizontal-line')
+              : undefined
+          }
+          onClose={() => setShowBordersShading(false)}
+        />
+      )}
+      {doc && showRename && (
+        <RenameDialog
+          fileName={doc.fileName}
+          onRename={(name) => window.desktop.renameDoc(name)}
+          onClose={() => setShowRename(false)}
+        />
+      )}
+      {editor && showNumber && (
+        <NumberDialog
+          onInsert={(text) =>
+            (getActiveSubEditor() ?? editor).chain().focus().insertContent(text).run()
+          }
+          onClose={() => setShowNumber(false)}
+        />
+      )}
+      {editor && showSort && (
+        <SortDialog
+          loadScope={() => sortDialogScope(editor.state)}
+          onSort={(options) => {
+            const refused = sortSelection(editor, options)
+            if (refused) setStatus(t(SORT_REFUSALS[refused]))
+          }}
+          onClose={() => setShowSort(false)}
+        />
+      )}
+      {showParagraphSpacing && (
+        <ParagraphSpacingDialog
+          current={defaultParagraphSpacing()}
+          onApply={(next) => runCommand('design-paragraph-spacing', JSON.stringify(next))}
+          onClose={() => setShowParagraphSpacing(false)}
+        />
+      )}
+      {showTemplateGallery && (
+        <TemplateGalleryDialog
+          // the gallery stays up when the picker is cancelled or the replace is declined
+          onCreate={(name) =>
+            newFromTemplate(name).then((made) => made && setShowTemplateGallery(false))
+          }
+          onBrowse={() => newFromTemplate().then((made) => made && setShowTemplateGallery(false))}
+          onClose={() => setShowTemplateGallery(false)}
+        />
+      )}
+      {insertFileRange && (
+        <InsertFileRangeDialog
+          fileName={insertFileRange.fileName}
+          bookmarks={insertFileRange.bookmarks}
+          onAnswer={(range) => {
+            insertFileRange.answer(range)
+            setInsertFileRange(null)
+          }}
+        />
+      )}
+      {doc && showReduceFileSize && (
+        <ReduceFileSizeDialog
+          selectedPictures={reduceSelection.length}
+          onReduce={(ppi, deleteCropped, selectedOnly) =>
+            reduceFileSize(fileCtxRef.current, {
+              ppi,
+              deleteCropped,
+              ...(selectedOnly ? { only: reduceSelection } : {}),
+            })
+          }
+          onClose={() => setShowReduceFileSize(false)}
+        />
+      )}
+      {showLineNumbers && (
+        <LineNumbersDialog
+          current={(sections[activeSection]?.settings ?? section)?.lineNumbers}
+          onApply={(next) =>
+            runCommand('layout-line-numbers', next ? JSON.stringify(next) : 'none')
+          }
+          onClose={() => setShowLineNumbers(false)}
+        />
+      )}
+      {editor && showAltText && (
+        <AltTextDialog
+          current={selectedPictureAlt(editor) ?? ''}
+          onApply={(alt) => setSelectedPictureAlt(editor, alt)}
+          onClose={() => setShowAltText(false)}
+        />
+      )}
+      {editor && showSizePosition && selectedPictureGeometry(editor) && (
+        <SizePositionDialog
+          current={selectedPictureGeometry(editor)!}
+          onApply={(next) => applyPictureGeometry(editor, next)}
+          onClose={() => setShowSizePosition(false)}
+        />
+      )}
+      {editor && showTextDirection && (
+        <TextDirectionDialog
+          context={textDirectionContext(
+            editor,
+            formatState.cellTextDirection,
+            sections[activeSection]?.settings ?? section,
+          )}
+          onApply={(direction) => runCommand('format-text-direction', direction)}
+          onClose={() => setShowTextDirection(false)}
+        />
+      )}
+      {doc && showProperties && (
+        <PropertiesDialog
+          fileName={doc.fileName}
+          properties={doc.parsed.properties}
+          pending={propertyChanges}
+          loadStats={documentStats}
+          loadHeadings={() =>
+            editor ? collectHeadings(editor.state.doc, editor.storage.listNumbering?.styles) : []
+          }
+          editable={formatState.editable}
+          loadFileInfo={async () => (doc.filePath ? window.desktop.fileInfo() : null)}
+          onApply={(changes) => {
+            setPropertyChanges((pending) => ({
+              core: { ...pending?.core, ...changes.core },
+              app: { ...pending?.app, ...changes.app },
+              custom: { ...pending?.custom, ...changes.custom },
+              customKinds: { ...pending?.customKinds, ...changes.customKinds },
+            }))
+            dirtyRef.current = true
+          }}
+          onClose={() => setShowProperties(false)}
+        />
+      )}
+      {showRevealFormatting && (
+        <RevealFormattingDialog
+          format={formatState}
+          styleName={revealedStyleName(
+            formatState.paraStyleId ?? defaultParagraphStyleId(ribbonStyles) ?? 'Normal',
+            ribbonStyles,
+          )}
+          onClose={() => setShowRevealFormatting(false)}
+        />
+      )}
+      {showHyphenation && (
+        <HyphenationDialog
+          auto={autoHyphenation}
+          settings={hyphenationSettings}
+          hasPatterns={hyphenationDictFor(doc?.parsed.docDefaults?.lang) !== null}
+          zoneApplies={hyphenationZoneApplies(doc?.parsed)}
+          canEdit={editor?.isEditable === true}
+          onApply={(next) => {
+            armPageSetupUndo()
+            applyHyphenation(next)
+          }}
+          onManual={(next) => {
+            armPageSetupUndo()
+            applyHyphenation({ ...next, auto: false }, true)
+          }}
+          onClose={() => setShowHyphenation(false)}
+        />
+      )}
+      {manualHyphenation && editor && (
+        <ManualHyphenationDialog
+          editor={editor}
+          onClose={() => applyHyphenation({ ...hyphenationSettings, auto: autoHyphenation })}
+        />
+      )}
+      {showEquationOptions && (
+        <EquationOptionsDialog
+          current={mathPr}
+          onApply={applyMathPr}
+          onClose={() => setShowEquationOptions(false)}
+        />
+      )}
+      {showIndexTables && (
+        <IndexTablesDialog
+          captionLabels={editor && doc ? captionLabels(editor, doc.parsed.blocks) : []}
+          existing={indexTablesAtSelection(editor, doc?.parsed.blocks ?? [])}
+          styles={ribbonStyles}
+          pendingStyles={styleUpserts}
+          onUpsertStyle={upsertStyleDef}
+          onApply={(kind, spec, formatStyles) => {
+            formatStyles.forEach(upsertStyleDef)
+            runCommand(INDEX_TABLES_COMMAND[kind], tableSpecPayload(spec))
+          }}
+          onAutoMark={() => runCommand('index-automark')}
+          onMarkCitation={() => runCommand('toa-mark-citation')}
+          onMarkEntry={() => runCommand('mark-index-entry')}
+          onClose={() => setShowIndexTables(false)}
+        />
+      )}
+      {showTranslationLanguage && (
+        <TranslationLanguageDialog
+          current={translationLanguage(lang)}
+          onApply={setTranslationLanguage}
+          onClose={() => setShowTranslationLanguage(false)}
+        />
+      )}
+      {showBulletsNumbering && (
+        <BulletsNumberingDialog
+          onApply={({ kind, levels }) =>
+            levels
+              ? runCommand('list-preset', JSON.stringify({ levels, recent: kind }))
+              : runCommand('list-none')
+          }
+          onCustomize={(kind, card) =>
+            runCommand('list-dialog', card === undefined ? kind : `${kind}#${card}`)
+          }
+          listStyles={listStyles}
+          listStylesInUse={listStylesInUse(editor, doc?.parsed.numbering)}
+          initialStyleId={addedListStyle}
+          onAddListStyle={() => runCommand('list-dialog', 'style')}
+          onDeleteListStyle={(styleId) => runCommand('list-style-delete', styleId)}
+          onApplyListStyle={(styleId) =>
+            styleId === NO_LIST_STYLE_ID
+              ? runCommand('list-none')
+              : runCommand('list-style', styleId)
+          }
+          numbering={listNumberingState(editor)}
+          onNumbering={(mode) => (mode === 'restart' ? restartNumbering() : continueNumbering())}
+          onClose={() => {
+            setShowBulletsNumbering(false)
+            setAddedListStyle(undefined)
+          }}
+        />
+      )}
+      {showPageNumbers && (
+        <PageNumbersDialog
+          showOnFirst={!activeTitlePg}
+          firstLocked={activeSection < sections.length - 1}
+          onApply={(place, align, showOnFirst) => {
+            runCommand('page-number', `${place},${align}`)
+            // Word hides the number on the first page by giving that page a header and footer of its own
+            if (showOnFirst === activeTitlePg) toggleTitlePg(!showOnFirst)
+          }}
+          onFormat={() => runCommand('page-number-format')}
+          onClose={() => setShowPageNumbers(false)}
+        />
+      )}
+      {showIconsDialog && (
+        <IconsDialog
+          onInsert={async (names) => {
+            await prepareLibraryIcons(names)
+            setShowIconsDialog(false)
+            runCommand('insert-icon', names.join(','))
+          }}
+          onClose={() => setShowIconsDialog(false)}
+        />
+      )}
+      {showSymbolDialog && (
+        <SymbolDialog
+          onInsert={(symbol, font) =>
+            font
+              ? runCommand('insert-font-symbol', fontSymbolPayload(font, symbol))
+              : runCommand('insert-symbol', symbol)
+          }
+          onClose={() => setShowSymbolDialog(false)}
+        />
+      )}
+      {showWatermarkDialog && (
+        <WatermarkDialog
+          current={{
+            text: watermark,
+            style: watermarkStyle,
+            picture: watermarkPicture,
+            docImage: watermarkDirty
+              ? null
+              : (doc?.parsed.headerImages?.find((img) => img.wordArt || img.watermark) ?? null),
+          }}
+          presets={watermarkPresetsOf(t, lang)}
+          pageBox={watermarkPageBoxOf(sections[activeSection]?.settings ?? section)}
+          onApply={ribbonActions.onWatermark}
+          onClose={() => setShowWatermarkDialog(false)}
+        />
+      )}
+      {showDropCap && editor && (
+        <DropCapDialog
+          current={dropCapValueOf(editor.getAttributes('docParagraph').dropCap)}
+          font={(() => {
+            const letter = dropCapFontOf(editor.state)
+            const shown = letter.eastAsian ? formatState.fontEastAsia : formatState.fontLatin
+            return letter.font || shown || ''
+          })()}
+          onApply={({ position, lines, gap }, font) =>
+            runCommand(
+              'drop-cap',
+              position === 'none'
+                ? NONE
+                : `${position},${lines},${gap}${font === undefined ? '' : `,${font}`}`,
+            )
+          }
+          onClose={() => setShowDropCap(false)}
+        />
+      )}
+      {showDateTime && (
+        <DateTimeDialog
+          language={editor ? proofingLanguageOf(getActiveSubEditor() ?? editor) : ''}
+          onInsert={({ picture, asField, lang, fullWidth }) => {
+            if (!asField) {
+              const text = formatDatePicture(new Date(), picture, lang)
+              runCommand('insert-symbol', fullWidth ? toFullWidth(text) : text)
+              return
+            }
+            const instr = `DATE \\@ "${picture}"${fullWidth ? ' \\* DBCHAR' : ''}`
+            const marked = editor ? proofingLanguageOf(getActiveSubEditor() ?? editor) : ''
+            if (lang === 'en-US' && !marked) runCommand('insert-field', instr)
+            else runCommand('insert-date-field', `${lang},${instr}`)
+          }}
+          onClose={() => setShowDateTime(false)}
+        />
+      )}
+      {showInsertField && (
+        <FieldDialog
+          instr=""
+          pageIsLive={!!getActiveSubEditor()?.schema.nodes.hfField}
+          onClose={() => setShowInsertField(false)}
+          onSubmit={(instr) => runCommand('insert-field', instr)}
+        />
+      )}
+      {pasteSpecialTarget && (
+        <PasteSpecialDialog
+          editor={pasteSpecialTarget}
+          onClose={() => setPasteSpecialTarget(null)}
+        />
+      )}
       {fieldEdit && (
         <FieldDialog
           instr={fieldEdit.instr}
           onClose={() => setFieldEdit(null)}
-          onSubmit={(instr) => setFieldInstr(editor, fieldEdit, instr, fieldValue(instr))}
+          onSubmit={(instr) => {
+            if (!editor || !setFieldInstr(editor, fieldEdit, instr, fieldValue(instr))) return
+            // a formula or a caption number is computed here, so its new code needs no update by Word
+            const tr = editor.state.tr
+            const blocks = doc?.parsed.blocks ?? EMPTY_BLOCKS
+            refreshTableFormulas(tr)
+            renumberSeqFields(tr, blocks, {
+              skip: unreliableSeqLabelsOf(blocks, editor.schema),
+            })
+            if (tr.docChanged) editor.view.dispatch(tr.setMeta('appendedTransaction', tr))
+          }}
         />
       )}
       {showTableModal && (
@@ -9062,6 +11462,90 @@ export function App() {
           fitValue={fitZoomFor}
           onApply={(target) => (typeof target === 'number' ? setZoom(target) : zoomFit(target))}
           onClose={() => setShowZoomDialog(false)}
+        />
+      )}
+      {showDocumentDialog && (sections[activeSection]?.settings ?? section) && (
+        <DocumentDialog
+          // the caret's section can settle after the dialog opens: it starts over on that section
+          key={activeSection}
+          sectionIndex={activeSection}
+          section={(sections[activeSection]?.settings ?? section)!}
+          startType={activeStartType}
+          startLocked={!!sections[activeSection]?.pendingBreak}
+          gutterAtTop={gutterAtTop}
+          multiSection={sections.length > 1}
+          mirror={mirrorMargins}
+          titlePg={activeTitlePg}
+          titlePgLocked={activeSection < sections.length - 1}
+          evenOdd={evenOddHf}
+          gridFont={gridFont}
+          canApplyForward={canApplyForward}
+          canSuppressEndnotes={
+            noteSettings.endnote.pos === 'sectEnd' && activeSection < sections.length - 1
+          }
+          onApply={(changes) => {
+            const {
+              titlePg: _titlePg,
+              evenOdd: _evenOdd,
+              gridFont: fontChanges,
+              ...sectionChanges
+            } = changes
+            // the font first: the character pitch that comes with it is counted from its size
+            if (fontChanges) {
+              const styleId = defaultParagraphStyleId(ribbonStyles) ?? 'Normal'
+              const { latin, eastAsia, ...rest } = fontChanges
+              upsertStyleDef({
+                styleId,
+                ...(ribbonStyles?.has(styleId) ? {} : { builtIn: true }),
+                rPr: {
+                  ...rest,
+                  ...(latin !== undefined && { font: latin }),
+                  ...(eastAsia !== undefined && { eastAsiaFont: eastAsia }),
+                },
+              })
+              if (fontChanges.sizeHalfPoints) gridBasePtRef.current = fontChanges.sizeHalfPoints / 2
+            }
+            if (Object.keys(sectionChanges).length > 0)
+              runCommand('document-settings', JSON.stringify(sectionChanges))
+            if (changes.titlePg !== undefined) toggleTitlePg(changes.titlePg)
+            if (changes.evenOdd !== undefined) toggleEvenOddHf(changes.evenOdd)
+          }}
+          onDefault={(page) => {
+            savePageDefault(page)
+            setStatus(t('ribbonDocDefaultDone'))
+          }}
+          onPageSetup={() => runCommand('page-setup')}
+          onBorders={() => runCommand('format-borders-shading')}
+          onLineNumbers={() => runCommand('layout-line-numbering-options')}
+          onClose={() => setShowDocumentDialog(false)}
+        />
+      )}
+      {showHighlightChanges && (
+        <HighlightChangesDialog
+          trackChanges={trackChanges}
+          trackLocked={isProtected || trackChangesForced}
+          display={revisionDisplay}
+          print={printHighlight}
+          trackMoves={trackMoves}
+          onApply={({ track, moves, display, print }) => {
+            if (track !== trackChanges) setTrackChangesByUser(track)
+            if (moves !== trackMoves) setTrackMovesEdit(moves)
+            if (display) setRevisionDisplay(display)
+            setPrintHighlight(print)
+          }}
+          onOptions={() => setShowTcOptions(true)}
+          onClose={() => setShowHighlightChanges(false)}
+        />
+      )}
+      {compareDialog && doc && (
+        <CompareDocumentsDialog
+          mode={compareDialog}
+          currentName={doc.fileName}
+          userName={authorName()}
+          canWrite={!!editor?.isEditable}
+          onPick={pickCompareFile}
+          onRun={(request) => void runCompare(reviewCtxRef.current, request)}
+          onClose={() => setCompareDialog(null)}
         />
       )}
       {showTcOptions && (
@@ -9087,30 +11571,18 @@ export function App() {
           editor={editor}
           menu={ctxMenu}
           onClose={() => setCtxMenu(null)}
-          onFontDialog={() => setShowFontDialog(true)}
-          onParagraphDialog={() => setShowParaDialog(true)}
-          onLink={() => setShowLinkModal(true)}
-          onNewComment={startNewComment}
+          onCommand={runCommand}
           onRedact={startRedaction}
           onUnredact={clearRedaction}
           onViewImage={setViewImage}
           onSaveImageAs={saveImageAs}
-          onAiPreset={(text) => {
-            setShowAi(true)
-            setAiPreset({ text, nonce: Date.now(), autoRun: true })
-          }}
           onRestartNumbering={restartNumbering}
           onContinueNumbering={continueNumbering}
-          onSetNumberingValue={() => setListDialog('value')}
-          onAdjustListIndents={() => setListDialog('indents')}
           onChangeListLevel={changeListLevel}
           onUpdateFields={updateFields}
-          onUpdateToc={() => updateTocField(editor, doc.parsed.blocks, headingPages)}
           onEditField={setFieldEdit}
           onOpenLink={(href) => openLink(href, ctxMenu.link?.tocTitle)}
           onRespell={() => requestAnimationFrame(() => setRespellNonce((n) => n + 1))}
-          onTableDialog={ribbonActions.onTableDialog}
-          sectionContentWidthPx={tableSectionWidthPx}
           revisions={
             isProtected || trackChangesForced
               ? null
@@ -9125,20 +11597,8 @@ export function App() {
                   onAll: (action) => handleRevision(action, 'all'),
                 }
           }
-          comment={{
-            id: ctxCommentId,
-            onReply: (id) => {
-              setShowComments(true)
-              setCommentFocus({ id, nonce: Date.now(), reply: true })
-            },
-            onDelete: deleteComment,
-            onResolve: (id) => resolveComment(id, true),
-          }}
-          trackChanges={
-            isProtected || trackChangesForced
-              ? null
-              : { on: trackChanges, onToggle: toggleTrackChangesByUser }
-          }
+          comment={{ id: ctxCommentId }}
+          trackChanges={isProtected || trackChangesForced ? null : { on: trackChanges }}
         />
       )}
       {viewImage && (
@@ -9158,14 +11618,47 @@ export function App() {
         />
       )}
       {doc && showFontDialog && (
-        <FontDialog editor={editor} onClose={() => setShowFontDialog(false)} />
+        <FontDialog
+          editor={editor}
+          onDefault={(font) => {
+            saveFontDefault(font)
+            setStatus(t('appFontDefaultDone'))
+          }}
+          onClose={() => setShowFontDialog(false)}
+        />
       )}
       {doc && showParaDialog && (
         <ParagraphDialog
           editor={editor}
           styles={ribbonStyles}
           pageWidth={section?.pageWidth}
+          typography={{
+            compressPunctuation: compressPunctEdit ?? doc?.parsed.compressPunctuation === true,
+            strictKinsoku: strictKinsokuEdit ?? doc?.parsed.strictFirstAndLastChars === true,
+            onChange: (compress) => {
+              setCompressPunctEdit(compress)
+              // the same two switches the file's value sets on open; every paragraph re-measures
+              editor.storage.cjkPunctShrink.enabled = compress
+              editor.storage.cjkPunctShrink.hangPunct = !compress
+              document.dispatchEvent(new Event(DOC_CSS_COMMITTED_EVENT))
+            },
+            onStrictKinsoku: (strict) => {
+              setStrictKinsokuEdit(strict)
+              setStrictKinsoku(editor, strict)
+            },
+          }}
           onClose={() => setShowParaDialog(false)}
+          onTabs={() => runCommand('format-tabs')}
+          onSetDefault={(pPr) => {
+            if (Object.keys(pPr).length === 0) return
+            const styleId = defaultParagraphStyleId(ribbonStyles) ?? 'Normal'
+            upsertStyleDef({
+              styleId,
+              ...(ribbonStyles?.has(styleId) ? {} : { builtIn: true }),
+              pPr,
+            })
+            setStatus(t('appParaDefaultDone'))
+          }}
         />
       )}
       {doc && redactTarget && (
@@ -9205,6 +11698,19 @@ export function App() {
       {doc && tableDialog === 'deleteCells' && (
         <DeleteCellsDialog editor={editor} onClose={() => setTableDialog(null)} />
       )}
+      {doc && tableDialog === 'textToTable' && (
+        <ConvertTextToTableDialog
+          editor={editor}
+          sectionContentWidthPx={tableSectionWidthPx}
+          onClose={() => setTableDialog(null)}
+        />
+      )}
+      {doc && tableDialog === 'tableToText' && (
+        <ConvertTableToTextDialog editor={editor} onClose={() => setTableDialog(null)} />
+      )}
+      {doc && tableDialog === 'formula' && (
+        <FormulaDialog editor={editor} onClose={() => setTableDialog(null)} />
+      )}
       {doc && tableDialog === 'cellMargins' && (
         <CellMarginsDialog
           editor={editor}
@@ -9214,13 +11720,15 @@ export function App() {
       )}
       {doc && listDialog === 'bullet' && (
         <DefineBulletDialog
-          ilvl={listTarget?.ilvl ?? 0}
+          // a card is defined from its first level, whatever level the caret is on
+          ilvl={listCard === null ? (listTarget?.ilvl ?? 0) : 0}
+          initial={listCard === null ? undefined : listLibrary('bullets')[listCard]?.[0]}
           onApply={(levels, picture) => {
             if (picture) {
               const id = addPictureBullet(numberingCtxRef.current, picture)
-              const at = listTarget?.ilvl ?? 0
+              const at = listCard === null ? (listTarget?.ilvl ?? 0) : 0
               levels = levels.map((l, i) => (i === at ? { ...l, picBulletId: id } : l))
-            }
+            } else if (listCard !== null) customizeLibraryCard('bullets', listCard, levels)
             applyDefinedList(levels, 'bullets')
           }}
           onClose={() => setListDialog(null)}
@@ -9228,15 +11736,34 @@ export function App() {
       )}
       {doc && listDialog === 'number' && (
         <DefineNumberFormatDialog
-          ilvl={listTarget?.ilvl ?? 0}
-          onApply={(levels) => applyDefinedList(levels, 'numbers')}
+          ilvl={listCard === null ? (listTarget?.ilvl ?? 0) : 0}
+          initial={listCard === null ? undefined : listLibrary('numbers')[listCard]?.[0]}
+          onApply={(levels) => {
+            if (listCard !== null) customizeLibraryCard('numbers', listCard, levels)
+            applyDefinedList(levels, 'numbers')
+          }}
           onClose={() => setListDialog(null)}
         />
       )}
       {doc && listDialog === 'multi' && (
         <DefineMultilevelDialog
           styles={[...doc.parsed.styles.values()]}
-          onApply={(levels) => applyDefinedList(levels, 'multi')}
+          initial={listCard === null ? undefined : listLibrary('multi')[listCard]}
+          onApply={(levels) => {
+            if (listCard !== null) customizeLibraryCard('multi', listCard, levels)
+            applyDefinedList(levels, 'multi')
+          }}
+          onClose={() => setListDialog(null)}
+        />
+      )}
+      {doc && listDialog === 'style' && (
+        <DefineMultilevelDialog
+          styles={[]}
+          takenStyleNames={[
+            ...listStyles.map((s) => s.name.toLowerCase()),
+            ...[...doc.parsed.styles.values()].map((s) => s.name.toLowerCase()),
+          ]}
+          onApply={(levels, name) => runCommand('list-style-add', JSON.stringify({ name, levels }))}
           onClose={() => setListDialog(null)}
         />
       )}
@@ -9267,6 +11794,31 @@ export function App() {
             editor?.commands.focus()
           }}
           onClose={() => setListDialog(null)}
+        />
+      )}
+
+      {doc && showFootnoteDialog && (
+        <FootnoteDialog
+          settings={{
+            footnote: activeNoteProps('footnote'),
+            endnote: activeNoteProps('endnote'),
+          }}
+          multiSection={sections.length > 1}
+          counts={{ footnote: footnotes.length, endnote: endnotes.length }}
+          onApply={(next, scope) => {
+            setShowFootnoteDialog(false)
+            armPageSetupUndo()
+            applyNoteSettings(next, scope)
+          }}
+          onInsert={(kind, customMark) => {
+            setShowFootnoteDialog(false)
+            setNotePrompt(customMark ? { kind, customMark } : { kind })
+          }}
+          onConvert={(mode) => convertNotesImpl(reviewCtxRef.current, mode)}
+          onClose={() => {
+            setShowFootnoteDialog(false)
+            editor?.commands.focus()
+          }}
         />
       )}
 
@@ -9346,7 +11898,7 @@ export function App() {
           watermarkDirty={watermarkDirty}
           pendingWatermark={pendingWatermarkImage}
           blockMetaOf={blockMetaOf}
-          footnotesBeneathText={doc.parsed.footnoteProps?.pos === 'beneathText'}
+          footnotesBeneathText={noteSettings.footnote.pos === 'beneathText'}
           endnoteItems={endnoteItems}
           resolveHf={(secs, si, kind, variant) =>
             hfLayoutResolved(
@@ -9364,12 +11916,16 @@ export function App() {
             // (line boxes must keep column wrapping); transforms are neutralized by its
             // measuring-columns state. Row-fill heights stay too: a split declared-height
             // row keeps its stretched height as real layout for the preview measure.
-            if (editor) setPageGaps(editor.view, [])
+            if (editor) {
+              setPageGaps(editor.view, [])
+              syncNestedTableGaps(editor.view, [])
+            }
             const wrap = document.querySelector('.editor-scroll .page-wrap')
             if (wrap) {
               syncCutOverlays(wrap as HTMLElement, [], 1)
               syncPageBorders(wrap as HTMLElement, null, 1)
               syncLineNumbers(wrap as HTMLElement, wrap as HTMLElement, [], [], 1)
+              syncColumnRules(wrap as HTMLElement, wrap as HTMLElement, [], [], 1)
               syncPageSheets(wrap as HTMLElement, 1, null)
               clearMarginAnnotations(wrap as HTMLElement)
               clearFloatShifts(wrap as HTMLElement)
@@ -9388,9 +11944,36 @@ export function App() {
         <PrintDialog editor={editor} onClose={closePrintDialog} setStatus={setStatus} />
       )}
 
-      {stats && <WordCountDialog stats={stats} onClose={() => setStats(null)} />}
+      {showSpelling && doc && editor && (
+        <SpellingDialog editor={editor} onClose={() => setShowSpelling(false)} />
+      )}
 
-      {showAutoCorrect && <AutoCorrectDialog onClose={() => setShowAutoCorrect(false)} />}
+      {stats && (
+        <WordCountDialog stats={stats.body} notes={stats.notes} onClose={() => setStats(null)} />
+      )}
+
+      {showAutoCorrect && editor && (
+        <AutoCorrectDialog
+          onClose={() => setShowAutoCorrect(false)}
+          selection={selectionClip(editor)}
+          autoText={{
+            entries: autoTextList,
+            suggestedName: selectionSnippet(editor),
+            onAdd: (name) => {
+              saveAutoText(editor, name)
+              setAutoTextList(autoTextEntries())
+            },
+            onInsert: (entry) => {
+              setShowAutoCorrect(false)
+              insertAutoText(editor, entry)
+            },
+            onDelete: (name) => {
+              deleteAutoText(name)
+              setAutoTextList(autoTextEntries())
+            },
+          }}
+        />
+      )}
       {showPreferences && <PreferencesDialog onClose={() => setShowPreferences(false)} />}
 
       {docPwdPrompt && (
@@ -9441,7 +12024,7 @@ export function App() {
           className="modal-backdrop"
           onMouseDown={(e) => e.target === e.currentTarget && setPgNumModal(null)}
         >
-          <div className="modal">
+          <div className="modal pgnum-dialog" role="dialog" aria-label={t('appPageNumFormatTitle')}>
             <h2>{t('appPageNumFormatTitle')}</h2>
             <label className="pgnum-row">
               {t('appNumberFormat')}
@@ -9460,22 +12043,82 @@ export function App() {
                 onPick={(v) => setPgNumModal({ ...pgNumModal, fmt: v })}
               />
             </label>
-            <label className="pgnum-row">
-              {t('appStartAt')}
+            <label className="pgnum-check">
+              <input
+                type="checkbox"
+                name="pgnum-chapter"
+                checked={pgNumModal.chapStyle !== ''}
+                onChange={(e) =>
+                  setPgNumModal({ ...pgNumModal, chapStyle: e.target.checked ? '1' : '' })
+                }
+              />
+              {t('appPgNumIncludeChapter')}
+            </label>
+            <label className={`pgnum-row pgnum-sub${pgNumModal.chapStyle ? '' : ' disabled'}`}>
+              {t('appPgNumChapterStyle')}
+              <select
+                name="pgnum-chapter-style"
+                disabled={!pgNumModal.chapStyle}
+                value={pgNumModal.chapStyle || '1'}
+                onChange={(e) => setPgNumModal({ ...pgNumModal, chapStyle: e.target.value })}
+              >
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((level) => (
+                  <option key={level} value={level}>
+                    {t('ribbonStyleHeadingN', { n: level })}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={`pgnum-row pgnum-sub${pgNumModal.chapStyle ? '' : ' disabled'}`}>
+              {t('appPgNumSeparator')}
+              <select
+                name="pgnum-chapter-sep"
+                disabled={!pgNumModal.chapStyle}
+                value={pgNumModal.chapSep}
+                onChange={(e) => setPgNumModal({ ...pgNumModal, chapSep: e.target.value })}
+              >
+                <option value="hyphen">-</option>
+                <option value="period">.</option>
+                <option value="colon">:</option>
+                <option value="emDash">—</option>
+                <option value="enDash">–</option>
+              </select>
+            </label>
+            <h3 className="pgnum-title">{t('appPgNumbering')}</h3>
+            <label className="pgnum-check">
+              <input
+                type="radio"
+                name="pgnum-restart"
+                checked={!pgNumModal.restart}
+                onChange={() => setPgNumModal({ ...pgNumModal, restart: false })}
+              />
+              {t('appContinueFromPrev')}
+            </label>
+            <div className="pgnum-row">
+              <label className="pgnum-check">
+                <input
+                  type="radio"
+                  name="pgnum-restart"
+                  checked={pgNumModal.restart}
+                  onChange={() => setPgNumModal({ ...pgNumModal, restart: true })}
+                />
+                {t('appStartAt')}
+              </label>
               <input
                 type="number"
                 min={0}
-                placeholder={t('appContinueFromPrev')}
+                aria-label={t('appStartAt')}
                 value={pgNumModal.start}
-                onChange={(e) => setPgNumModal({ ...pgNumModal, start: e.target.value })}
+                onChange={(e) =>
+                  setPgNumModal({ ...pgNumModal, start: e.target.value, restart: true })
+                }
               />
-            </label>
-            <p className="pgnum-hint">
-              {t('appPgNumHintBlank')}
-              {sections.length > 1
-                ? t('appPgNumAppliesTo', { n: Math.min(activeSection, sections.length - 1) + 1 })
-                : ''}
-            </p>
+            </div>
+            {sections.length > 1 && (
+              <p className="pgnum-hint">
+                {t('appPgNumSectionN', { n: Math.min(activeSection, sections.length - 1) + 1 })}
+              </p>
+            )}
             <div className="modal-actions">
               <button onClick={() => setPgNumModal(null)}>{t('appCancel')}</button>
               <button className="btn-primary" onClick={applyPgNumFormat}>

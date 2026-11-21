@@ -6,6 +6,7 @@ export const es = {
   aiEmptyBuildBody:
     'Describe la tabla, los datos o el gráfico que necesitas: la IA los crea directamente.',
   aiGskLoginBtn: 'Iniciar sesión en Genspark',
+  aiGskLoginOk: 'Sesión iniciada en Genspark',
   aiUndelivered: 'No enviado',
   aiRetry: 'Reintentar',
   aiOpenAssistant: 'Abrir el asistente de IA',

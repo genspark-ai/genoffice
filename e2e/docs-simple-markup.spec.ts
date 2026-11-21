@@ -97,14 +97,15 @@ test.describe('docs Simple Markup view', () => {
       await expect(root).not.toHaveClass(/rev-display-/)
       await expect(page.locator('.doc-del', { hasText: 'removed words' })).toBeVisible()
       await page.locator('.ribbon-tab', { hasText: /^Review$/ }).click()
-      const markup = page.getByRole('button', { name: 'Markup', exact: true })
+      const markup = page.getByRole('button', { name: 'Markup Options', exact: true })
+      const display = page.getByRole('button', { name: 'Display for Review', exact: true })
       await markup.click()
       await page.locator('.layout-menu button', { hasText: 'Show Revisions in Balloons' }).click()
       const delBubble = page.locator('.rev-bubble-del', { hasText: 'removed words' })
       await expect(delBubble).toBeVisible({ timeout: 20_000 })
       await expect(delBubble.locator('.rev-bubble-author')).toHaveText('Ann')
 
-      await markup.click()
+      await display.click()
       await page.locator('.layout-menu button', { hasText: 'Simple Markup' }).click()
       await expect(root).toHaveClass(/rev-display-simple/)
       const bars = page.locator('.change-bar')
@@ -150,19 +151,25 @@ test.describe('docs Simple Markup view', () => {
         )
         .toBe('ok')
 
-      // Markup menu in Word's order with the current view ticked
-      await markup.click()
+      // Display for Review in Word's order with the current view ticked, and named on the button
+      await expect(display).toHaveText('Simple Markup')
+      await display.click()
       await expect(page.locator('.layout-menu button')).toHaveText([
         'Simple Markup ✓',
         'All Markup',
         'No Markup',
         'Original',
+      ])
+      // in a narrow window the stack is icons only and the open menu lies over Markup Options
+      await display.click()
+      await markup.click()
+      await expect(page.locator('.layout-menu button')).toHaveText([
         'Insertions and Deletions ✓',
         'Formatting ✓',
-        'Ann ✓',
         'Show Revisions in Balloons ✓',
         'Show All Revisions Inline',
         'Show Only Comments and Formatting in Balloons',
+        'Ann ✓',
         'Track Changes Options…',
       ])
       await markup.click()
@@ -205,7 +212,7 @@ test.describe('docs Simple Markup view', () => {
 
       // back in Simple Markup, Next lands on the visible insertion and stays;
       // the following Next reaches the hidden deletion and falls back to All Markup
-      await markup.click()
+      await display.click()
       await page.locator('.layout-menu button', { hasText: 'Simple Markup' }).click()
       await expect(root).toHaveClass(/rev-display-simple/)
       await page.locator('.doc-page p', { hasText: 'Alpha opens' }).first().click()
@@ -218,7 +225,7 @@ test.describe('docs Simple Markup view', () => {
       await expect(page.locator('.rev-bubble-del', { hasText: 'removed words' })).toBeVisible()
 
       // a row bar carries a node position: the click still lands the caret in that row
-      await markup.click()
+      await display.click()
       await page.locator('.layout-menu button', { hasText: 'Simple Markup' }).click()
       await expect(root).toHaveClass(/rev-display-simple/)
       await expect(bars).toHaveCount(4)

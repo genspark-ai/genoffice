@@ -4,7 +4,12 @@ import JSZip from 'jszip'
 import { buildBlankDocx, parseDocx, saveDocx } from '@genoffice/docx-engine'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { insertTableAt } from '../src/renderer/components/ribbon-tabs'
-import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
+import {
+  blocksToPmDoc,
+  pmDocToSavePlan,
+  tableFormattingSignature,
+  type PmNode,
+} from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 
 async function openBlank() {
@@ -100,5 +105,25 @@ describe('table cell paragraph style and bookmarks survive the save', () => {
     expect(ids).toContain('1')
     expect(new Set(ids).size).toBe(ids.length)
     editor.destroy()
+  })
+
+  it('a bookmark-only change on a cell paragraph changes the formatting signature', () => {
+    const table = (attrs: Record<string, unknown>): PmNode => ({
+      type: 'docTable',
+      content: [
+        {
+          type: 'docTableRow',
+          content: [
+            {
+              type: 'docTableCell',
+              content: [{ type: 'docParagraph', attrs, content: [{ type: 'text', text: 'cell' }] }],
+            },
+          ],
+        },
+      ],
+    })
+    const plain = tableFormattingSignature(table({}))
+    expect(tableFormattingSignature(table({ bookmarks: ['Anchor'] }))).not.toBe(plain)
+    expect(tableFormattingSignature(table({ hiddenBookmarks: ['_Toc1'] }))).not.toBe(plain)
   })
 })

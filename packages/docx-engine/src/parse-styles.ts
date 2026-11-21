@@ -33,6 +33,7 @@ import type {
   DocDefaults,
   Run,
   StyleDisplay,
+  ListStyleInfo,
   StyleInfo,
   TableCondFormat,
   TableStyleDisplay,
@@ -149,19 +150,24 @@ export async function parseStyles(
   zip: JSZip,
   theme?: ThemeColors | null,
   themeFonts?: ThemeFonts | null,
-): Promise<{ styles: Map<string, StyleInfo>; docDefaults?: DocDefaults }> {
+): Promise<{
+  styles: Map<string, StyleInfo>
+  docDefaults?: DocDefaults
+  listStyles: Array<Omit<ListStyleInfo, 'levels'>>
+}> {
   const styles = new Map<string, StyleInfo>()
+  const listStyles: Array<Omit<ListStyleInfo, 'levels'>> = []
   const file = zip.file('word/styles.xml')
-  if (!file) return { styles, docDefaults: { ...BUILT_IN_DOC_DEFAULTS } }
+  if (!file) return { styles, docDefaults: { ...BUILT_IN_DOC_DEFAULTS }, listStyles }
   let parsed: XNode[]
   try {
     parsed = xmlParser.parse(await file.async('string')) as XNode[]
   } catch (err) {
     console.warn('styles.xml unparseable, styles degraded to empty:', err)
-    return { styles, docDefaults: { ...BUILT_IN_DOC_DEFAULTS } }
+    return { styles, docDefaults: { ...BUILT_IN_DOC_DEFAULTS }, listStyles }
   }
   const root = parsed.find((n) => nameOf(n) === 'w:styles')
-  if (!root) return { styles, docDefaults: { ...BUILT_IN_DOC_DEFAULTS } }
+  if (!root) return { styles, docDefaults: { ...BUILT_IN_DOC_DEFAULTS }, listStyles }
 
   let docDefaults: DocDefaults | undefined
   let declaredPPrDefault = false
@@ -279,9 +285,22 @@ export async function parseStyles(
   for (const styleNode of findChildren(root, 'w:style')) {
     const attrs = attrsOf(styleNode)
     const type = attrs['w:type']
-    if (type !== 'paragraph' && type !== 'character' && type !== 'table') continue
     const styleId = attrs['w:styleId']
     if (!styleId) continue
+    if (type === 'numbering') {
+      const numId = attrsOf(
+        findChild(findChild(findChild(styleNode, 'w:pPr') ?? {}, 'w:numPr') ?? {}, 'w:numId') ?? {},
+      )['w:val']
+      listStyles.push({
+        styleId,
+        name: attrsOf(findChild(styleNode, 'w:name') ?? {})['w:val'] ?? styleId,
+        ...(numId !== undefined && numId !== '0' ? { numId } : {}),
+        ...(attrs['w:customStyle'] === '1' ? { custom: true } : {}),
+        ...(attrs['w:default'] === '1' ? { isDefault: true } : {}),
+      })
+      continue
+    }
+    if (type !== 'paragraph' && type !== 'character' && type !== 'table') continue
     const name = attrsOf(findChild(styleNode, 'w:name') ?? {})['w:val'] ?? styleId
     let headingLevel: number | undefined
     if (type === 'paragraph') {
@@ -475,6 +494,8 @@ export async function parseStyles(
     'sizeCsHalfPoints',
     'rtl',
     'underline',
+    'underlineStyle',
+    'underlineColor',
     'strike',
     'font',
     'fontAscii',
@@ -510,7 +531,7 @@ export async function parseStyles(
     if (b.type === 'character' && a.type === 'paragraph') b.linkedCharShell = true
   }
 
-  return { styles, docDefaults }
+  return { styles, docDefaults, listStyles }
 }
 
 function mergeTableDisplay(
@@ -728,6 +749,11 @@ function styleDisplayOf(
     if (rtl !== undefined) display.rtl = rtl
     const u = attrsOf(findChild(rPr, 'w:u') ?? {})['w:val']
     if (u) display.underline = u !== 'none'
+    if (u && u !== 'none') {
+      // set even when plain, so a derived style's single line replaces an inherited double
+      display.underlineStyle = u
+      display.underlineColor = attrsOf(findChild(rPr, 'w:u') ?? {})['w:color'] ?? 'auto'
+    }
     const strike = onOffOf(rPr, 'w:strike')
     if (strike !== undefined) display.strike = strike
     const bdrNode = findChild(rPr, 'w:bdr')

@@ -164,10 +164,13 @@ function normalizeItemId(value: string): string {
  * without them): the property parts and thumbnail the package root relates,
  * and the document-structure parts a saved document always carries
  * (genoffice#2554). An explicit path that names one is a refusal, not an
- * unknown path.
+ * unknown path. docProps/custom.xml is deliberately absent: it is optional in
+ * OPC and Word opens a package without it, it is what a pre-filing scrub
+ * exists to remove (matter IDs and DMS tags live there), and the pass already
+ * drops the root relationship and the [Content_Types] override with it.
  */
 const STRUCTURAL_PART_RE: RegExp[] = [
-  /^docProps\/(?:core|app|custom)\.xml$/i,
+  /^docProps\/(?:core|app)\.xml$/i,
   /^docProps\/thumbnail\./i,
   /^word\/(?:styles|settings|numbering|fontTable|webSettings)\.xml$/i,
   /^word\/theme\//i,

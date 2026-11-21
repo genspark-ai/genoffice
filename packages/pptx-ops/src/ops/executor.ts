@@ -6,8 +6,8 @@
  *   touches nothing;
  * - atomic (default): snapshot → apply all → any failure restores the snapshot,
  *   the deck is untouched and the failure carries a guided error;
- * - per_op: each op applies independently; failures are collected per index and
- *   skipped, successes stay.
+ * - per_op: each op applies independently; a failed op is restored to the
+ *   state before it, failures are collected per index, successes stay.
  *
  * Snapshots clone the slides deep and the archive entry map shallow — entry
  * buffers are replaced wholesale, never mutated (the same invariant the
@@ -104,6 +104,41 @@ function restoreSnapshot(opened: OpenedPptx, snap: Snapshot): void {
   const entries = opened.archive.entries as Map<string, unknown>
   entries.clear()
   for (const [k, v] of snap.entries) entries.set(k, v)
+}
+
+interface Checkpoint {
+  snap: Snapshot
+  touched: Set<string>
+  parts: Map<string, Slide>
+}
+
+/** per_op: the state one op may change. Parts an earlier op already edited are
+    copied (their edits live only in the parse cache until the flush); seeded
+    parts stay the caller's objects and are left alone. */
+function takeCheckpoint(opened: OpenedPptx, ctx: OpContext, seeded: Set<string>): Checkpoint {
+  const parts = new Map<string, Slide>()
+  for (const part of ctx.touchedParts) {
+    const slide = ctx.parts.get(part)
+    if (slide && !seeded.has(part)) parts.set(part, structuredClone(slide))
+  }
+  return { snap: takeSnapshot(opened), touched: new Set(ctx.touchedParts), parts }
+}
+
+function restoreCheckpoint(
+  opened: OpenedPptx,
+  ctx: OpContext,
+  seeded: Set<string>,
+  cp: Checkpoint,
+): void {
+  restoreSnapshot(opened, cp.snap)
+  for (const part of ctx.touchedParts) {
+    if (seeded.has(part)) continue
+    const copy = cp.parts.get(part)
+    if (copy) ctx.parts.set(part, copy)
+    else ctx.parts.delete(part)
+  }
+  ctx.touchedParts.clear()
+  for (const part of cp.touched) ctx.touchedParts.add(part)
 }
 
 function planLine(i: number, op: Op): string {
@@ -234,15 +269,18 @@ export function runTxn(opened: OpenedPptx, req: TxnRequest): TxnResult {
     return { applied: true, records }
   }
 
+  const seeded = new Set(req.parts?.keys())
   const records: OpRecord[] = []
   const failures: OpFailure[] = [...planFailures]
   const failedIdx = new Set(planFailures.map((f) => f.index))
   for (const [i, op] of req.ops.entries()) {
     if (failedIdx.has(i)) continue
+    const checkpoint = takeCheckpoint(opened, ctx, seeded)
     try {
       records.push(applyStamped(op, ctx))
       hardenTargetIdentity(op, ctx)
     } catch (e) {
+      restoreCheckpoint(opened, ctx, seeded, checkpoint)
       failures.push({ index: i, op, error: withUsage(op, message(e)) })
     }
   }

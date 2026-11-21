@@ -762,6 +762,11 @@ const desktopApi: DesktopApi = {
   async aiGskLogin() {
     await ipcRenderer.invoke(IPC_CHANNELS.aiGskLogin)
   },
+  onGskLoginLanded(handler) {
+    const listener = () => handler()
+    ipcRenderer.on(IPC_CHANNELS.aiGskLoginLanded, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.aiGskLoginLanded, listener)
+  },
   async webSearch(query, maxResults) {
     if (typeof query !== 'string' || !query.trim() || query.length > 512) {
       throw new Error('Invalid search query.')
@@ -1289,6 +1294,8 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
         column: comment.column,
         author: comment.author,
         text: comment.text,
+        ...(comment.thread === undefined ? {} : { thread: parseCommentThread(comment.thread) }),
+        ...(comment.image === undefined ? {} : { image: parseCommentImage(comment.image) }),
       }
     })
     const columnWidths = sheet.columnWidths.map((columnWidth) => {
@@ -3638,6 +3645,58 @@ function parseSparklineGroups(input: unknown): {
   })
 }
 
+/// A threaded comment's identity and replies (`sheetThreadSchema` in desktop-api.ts).
+function parseCommentThread(input: unknown) {
+  if (
+    !isRecord(input) ||
+    !isStringUpTo(input.id, 64) ||
+    !isStringUpTo(input.personId, 64) ||
+    !isStringUpTo(input.author, 255) ||
+    !isStringUpTo(input.dT, 40) ||
+    typeof input.done !== 'boolean' ||
+    typeof input.text !== 'string' ||
+    !Array.isArray(input.replies) ||
+    input.replies.length > 500
+  ) {
+    throw new Error('Invalid worksheet comment thread.')
+  }
+  const replies = input.replies.map((reply) => {
+    if (
+      !isRecord(reply) ||
+      !isStringUpTo(reply.id, 64) ||
+      !isStringUpTo(reply.personId, 64) ||
+      !isStringUpTo(reply.author, 255) ||
+      !isStringUpTo(reply.dT, 40) ||
+      !isStringUpTo(reply.text, 32_767)
+    ) {
+      throw new Error('Invalid worksheet comment thread.')
+    }
+    return {
+      id: reply.id,
+      personId: reply.personId,
+      author: reply.author,
+      dT: reply.dT,
+      text: reply.text,
+    }
+  })
+  return {
+    id: input.id,
+    personId: input.personId,
+    author: input.author,
+    dT: input.dT,
+    done: input.done,
+    text: input.text,
+    replies,
+  }
+}
+
+function parseCommentImage(input: unknown): { id: string } {
+  if (!isRecord(input) || typeof input.id !== 'string') {
+    throw new Error('Invalid worksheet comment picture.')
+  }
+  return { id: input.id }
+}
+
 function parseCellImages(input: unknown): { id: string; row: number; column: number }[] {
   if (!Array.isArray(input) || input.length > 500) {
     throw new Error('Invalid worksheet cell-image metadata.')
@@ -4638,6 +4697,11 @@ function isCellScalar(input: unknown): input is string | number | boolean | null
 
 function isOptionalString(input: unknown): input is string | undefined {
   return input === undefined || typeof input === 'string'
+}
+
+/// A thread's author or person id may be empty: the file names nobody.
+function isStringUpTo(input: unknown, maxLength: number): input is string {
+  return typeof input === 'string' && input.length <= maxLength
 }
 
 function isBoundedString(input: unknown, maxLength: number): input is string {

@@ -39,6 +39,16 @@ describe('sameBorderGroup', () => {
     ).toBe(false)
   })
 
+  it('a shadowed box and a plain one are two groups', () => {
+    const plain = { borders: 'tblr', borderLines: JSON.stringify({ t: { szPt: 1 } }) }
+    const shadowed = {
+      borders: 'tblr',
+      borderLines: JSON.stringify({ t: { szPt: 1, shadow: true } }),
+    }
+    expect(sameBorderGroup(plain, shadowed)).toBe(false)
+    expect(sameBorderGroup(shadowed, { ...shadowed })).toBe(true)
+  })
+
   it('border-less paragraphs never merge', () => {
     expect(sameBorderGroup({}, {})).toBe(false)
     expect(sameBorderGroup({ borders: 'b' }, {})).toBe(false)

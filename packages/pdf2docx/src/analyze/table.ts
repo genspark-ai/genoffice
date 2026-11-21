@@ -684,7 +684,7 @@ const STREAM_VALLEY_SUPPORT = 2
  * the wide one — usually a label's intra-word space — is dropped. */
 const STREAM_BOUNDARY_SPACING_PT = 24
 /**
- * Stream columns inside a merged band (P39 invoice, #2669): a form's outer
+ * Stream columns inside a merged band (P39 invoice, genoffice#2669): a form's outer
  * frame and full-width rules solve into ONE grid, and the borderless detail
  * table living in one band has no interior rules of its own — that band
  * merges into a single giant cell and the line items' columns collapse into
@@ -773,7 +773,7 @@ export function augmentGridStreamColumns(grid: TableGrid, chars: readonly PdfCha
       // corroborate the valley with the lines' own word gaps: ≥2 distinct
       // lines must have consecutive units whose gap spans across it. One
       // line is not enough — it is that line's private space (the grand-
-      // total label's intra-word gap, #2669's sample); two lines make it a
+      // total label's intra-word gap, genoffice#2669's sample); two lines make it a
       // channel the whole band's text respects, which is what a column is.
       let covering = 0
       for (const line of bandLines) {

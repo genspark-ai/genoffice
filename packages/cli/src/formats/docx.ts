@@ -88,6 +88,7 @@ async function docsModules() {
     floating,
     noteOps,
     tableOps,
+    fieldResults,
   ] = await Promise.all([
     import('@tiptap/core'),
     import('../../../../apps/docs/src/renderer/editor/extensions'),
@@ -104,6 +105,7 @@ async function docsModules() {
     import('../../../../apps/docs/src/renderer/ai/floating-ops'),
     import('../../../../apps/docs/src/renderer/ai/note-ops'),
     import('../../../../apps/docs/src/renderer/ai/table-ops'),
+    import('../../../../apps/docs/src/renderer/editor/field-results'),
   ])
   locale.setModuleLang('en')
   return {
@@ -121,6 +123,7 @@ async function docsModules() {
     floating,
     noteOps,
     tableOps,
+    fieldResults,
   }
 }
 
@@ -259,6 +262,8 @@ export async function blankDocument(options?: {
 }
 
 export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
+  // caption numbers are saved as results
+  doc.mods.fieldResults.settleFieldResults(doc.editor, doc.parsed.blocks)
   const plan = doc.mods.convert.pmDocToSavePlan(doc.editor.getJSON() as never, doc.parsed.blocks)
   const { side } = doc
   const hf = (slot: HfSlot) => (side.hfDirty.has(slot) ? (side.hf[slot] ?? undefined) : undefined)
