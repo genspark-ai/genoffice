@@ -1008,6 +1008,9 @@ export const nl = {
     'Overzichtsweergave: alleen de kophiërarchie weergeven; koppen blijven bewerkbaar',
   ribbonStoryView: 'Story',
   ribbonStoryViewTip: 'Story: schrijven zonder de opmaak van het document',
+  storyBarList: 'Lijst',
+  storyBarFocus: 'Focus',
+  storyBarLeave: 'Story verlaten',
   ribbonReadMode: 'Leesmodus',
   ribbonReadModeTip:
     'Leesmodus: het lint verbergen om geconcentreerd te lezen; druk op Esc om af te sluiten',

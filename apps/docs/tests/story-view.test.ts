@@ -14,9 +14,14 @@ import { describe, expect, it } from 'vitest'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
+  storyEscLeavesView,
+  storyFocusSentence,
   storyHeadingLevel,
   storyIsQuote,
   storyMarkerFor,
+  storyScrollHost,
+  storyTypewriterDelta,
+  storyTypewriterScrollDue,
   type StoryStyle,
   type StoryStyles,
 } from '../src/renderer/editor/story-view'
@@ -260,5 +265,316 @@ describe('story view: typing takes the paragraph style', () => {
       { text: 'redq', marks: ['docTextStyle'] },
     ])
     editor.destroy()
+  })
+})
+
+const THREE_SENTENCES = {
+  type: 'doc',
+  content: [
+    {
+      type: 'docParagraph',
+      content: [{ type: 'text', text: 'First one ends here. Second one goes on. Third one too.' }],
+    },
+    { type: 'docParagraph', content: [{ type: 'text', text: 'Another block entirely.' }] },
+  ],
+}
+
+describe('story view Focus: the sentence the caret sits in', () => {
+  it('runs from after the previous terminator to the next one', () => {
+    const text = 'First one ends here. Second one goes on. Third one too.'
+    // the caret on the S of Second: the sentence starts at 21, ends after its dot
+    const [from, to] = storyFocusSentence(text, 21)
+    // the trailing space of the gap rides the next sentence's range
+    expect(text.slice(from, to)).toBe('Second one goes on. ')
+  })
+
+  it('a block without a terminator reads as one sentence', () => {
+    expect(storyFocusSentence('no stops at all', 5)).toEqual([0, 15])
+  })
+
+  it('the CJK terminators end a sentence the same way', () => {
+    const text = '\u7B2C\u4E00\u53E5\u3002\u7B2C\u4E8C\uFF01\u7B2C\u4E09'
+    const [from, to] = storyFocusSentence(text, 4)
+    expect(text.slice(from, to)).toBe('\u7B2C\u4E8C\uFF01')
+  })
+
+  it('the caret in the gap after a terminator starts the next sentence', () => {
+    const text = 'First one ends here.  Second starts.'
+    // the caret on the second space of the gap: the next sentence is active
+    const [from, to] = storyFocusSentence(text, 21)
+    expect(text.slice(from, to)).toBe('Second starts.')
+  })
+
+  it('a dot inside a number does not end a sentence', () => {
+    const text = 'Pi is about 3.14 in most books.'
+    // the caret after "3.14 in": the dots of 3.14 are not terminators, the
+    // block reads as the one sentence the caret sits in
+    const [from, to] = storyFocusSentence(text, 17)
+    expect(text.slice(from, to)).toBe(text)
+  })
+
+  it('a dot inside a host name and a version do not end a sentence', () => {
+    const text = 'See example.com for details. Version v2.0.1 ships today.'
+    // the caret inside "example": the host's dot is not a terminator, the
+    // sentence runs to its own stop
+    const [from, to] = storyFocusSentence(text, 7)
+    expect(text.slice(from, to)).toBe('See example.com for details. ')
+    // the caret inside "v2.0.1": the version's dots keep it whole too
+    const [vFrom, vTo] = storyFocusSentence(text, 40)
+    expect(text.slice(vFrom, vTo)).toBe('Version v2.0.1 ships today.')
+  })
+
+  it('a terminator before a closing quote ends the sentence at the quote', () => {
+    const text = 'He said "Stop." Then he left.'
+    // the caret on "Then": the previous sentence ends past the closing quote
+    const [from, to] = storyFocusSentence(text, 16)
+    expect(text.slice(0, from)).toBe('He said "Stop." ')
+    expect(text.slice(from, to)).toBe('Then he left.')
+  })
+})
+
+describe('story view: the Escape that leaves the view', () => {
+  const esc = (over: Partial<KeyboardEvent> = {}): KeyboardEvent =>
+    ({
+      key: 'Escape',
+      defaultPrevented: false,
+      isComposing: false,
+      target: null,
+      ...over,
+    }) as KeyboardEvent
+
+  it('a plain Escape on the editor leaves the view', () => {
+    expect(storyEscLeavesView(esc(), false)).toBe(true)
+  })
+
+  it('an Escape of an open IME composition does not', () => {
+    expect(storyEscLeavesView(esc({ isComposing: true }), false)).toBe(false)
+  })
+
+  it('an Escape a transient overlay already consumed does not', () => {
+    expect(storyEscLeavesView(esc({ defaultPrevented: true }), false)).toBe(false)
+  })
+
+  it('an Escape while an overlay that owns it is open does not', () => {
+    // the context menu, the comment popup, the dialogs each close their own Escape
+    expect(storyEscLeavesView(esc(), true)).toBe(false)
+  })
+
+  it('an Escape inside the find panel belongs to the panel', () => {
+    const host = document.createElement('div')
+    host.className = 'find-panel'
+    document.body.append(host)
+    expect(storyEscLeavesView(esc({ target: host }), false)).toBe(false)
+    host.remove()
+  })
+
+  it('another key never leaves the view', () => {
+    expect(storyEscLeavesView(esc({ key: 'Enter' }), false)).toBe(false)
+  })
+
+  // the chip listens in the capture phase: both listeners sit on window, the
+  // story view's bubble listener registers first (the view is entered before a
+  // paste creates the chip), so a bubble-phase chip handler ran too late and
+  // one Escape both dismissed the chip and left the view
+  it('an Escape dismissing the paste options chip reaches the story listener already consumed', () => {
+    let storySaw = 'unseen'
+    const storyOnKey = (e: KeyboardEvent) => {
+      storySaw = storyEscLeavesView(e, false) ? 'leaves' : 'stays'
+    }
+    const chipOnKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') e.preventDefault()
+    }
+    window.addEventListener('keydown', storyOnKey)
+    window.addEventListener('keydown', chipOnKey, true)
+    try {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
+    } finally {
+      window.removeEventListener('keydown', storyOnKey)
+      window.removeEventListener('keydown', chipOnKey, true)
+    }
+    expect(storySaw).toBe('stays')
+  })
+})
+
+describe('story view Focus: the dim ranges', () => {
+  /** the text the view dims, with the caret parked inside the second sentence */
+  function dimmedText(editor: Editor): string {
+    return [...editor.view.dom.querySelectorAll('.story-dim')]
+      .map((el) => el.textContent)
+      .join('\n')
+  }
+
+  it("dims every sentence but the caret's, in every block", () => {
+    const editor = makeEditor(THREE_SENTENCES)
+    editor.commands.setStoryViewActive(true)
+    editor.commands.setStoryViewFocus(true)
+    editor.commands.setTextSelection(23) // inside "Second"
+    const dim = dimmedText(editor)
+    expect(dim).toContain('First one ends here.')
+    expect(dim).toContain('Third one too.')
+    expect(dim).toContain('Another block entirely.')
+    expect(dim).not.toContain('Second')
+    editor.destroy()
+  })
+
+  it('follows the caret: moving repaints the dim around the new sentence', () => {
+    const editor = makeEditor(THREE_SENTENCES)
+    editor.commands.setStoryViewActive(true)
+    editor.commands.setStoryViewFocus(true)
+    editor.commands.setTextSelection(2) // inside "First"
+    expect(dimmedText(editor)).not.toContain('First')
+    expect(dimmedText(editor)).toContain('Second one goes on.')
+    editor.destroy()
+  })
+
+  it('dims nothing while Focus is off, and nothing outside the view', () => {
+    const editor = makeEditor(THREE_SENTENCES)
+    editor.commands.setStoryViewActive(true)
+    editor.commands.setStoryViewFocus(false)
+    expect(editor.view.dom.querySelectorAll('.story-dim')).toHaveLength(0)
+    editor.commands.setStoryViewFocus(true)
+    editor.commands.setStoryViewActive(false)
+    expect(editor.view.dom.querySelectorAll('.story-dim')).toHaveLength(0)
+    editor.destroy()
+  })
+
+  it('a block holding an inline object stays visible when it is the active one', () => {
+    const editor = makeEditor({
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          content: [{ type: 'text', text: 'Plain words here. More words.' }],
+        },
+        {
+          type: 'docParagraph',
+          content: [{ type: 'text', text: 'With an object. ' }, { type: 'docNoteRef' }],
+        },
+      ],
+    } as never)
+    editor.commands.setStoryViewActive(true)
+    editor.commands.setStoryViewFocus(true)
+    editor.commands.setTextSelection(3) // inside the first block
+    // the second block (inline object) dims whole; the active block's sentence
+    // logic ran without touching positions it could not compute
+    expect(dimmedText(editor)).toContain('With an object.')
+    editor.destroy()
+  })
+})
+
+describe('story view frame: the chrome leaves and Focus dims', () => {
+  it('the ribbon and the panes are hidden in the story frame', () => {
+    expect(blocksFor('.story-chrome .ribbon')).toContain('display: none')
+    expect(blocksFor('.story-chrome .ai-dock')).toContain('display: none')
+    expect(blocksFor('.story-chrome .nav-pane')).toContain('display: none')
+    expect(blocksFor('.story-chrome .comments-pane')).toContain('display: none')
+  })
+
+  it('the find panel stays available in the story frame', () => {
+    // Ctrl/Cmd+F still sets showFind here, so the frame hides the chrome
+    // panes but not the panel — hiding it made the shortcut read as dead
+    expect(blocksFor('.story-chrome .find-panel')).toBe('')
+  })
+
+  it('the story canvas uses the themed canvas, not the print-preview one', () => {
+    expect(blocksFor('.story-chrome .editor-scroll')).toContain('var(--canvas)')
+  })
+
+  it('the crop marks belong to the page and do not show here', () => {
+    expect(blocksFor('.view-story .page-wrap::before')).toContain('display: none')
+    expect(blocksFor('.view-story .page-gap-paper::after')).toContain('display: none')
+  })
+
+  it('the dim rides a decoration class scoped to the view', () => {
+    expect(blocksFor('.view-story .story-dim')).toContain('opacity: 0.25')
+  })
+
+  it('the face comes from the writing fonts when they are installed', () => {
+    expect(blocksFor('.view-story')).toContain('Monaspace Neon')
+    expect(blocksFor('.view-story')).toContain('IBM Plex Mono')
+    expect(blocksFor('.view-story')).toContain('system-ui')
+  })
+
+  it('the bar is plain text labels in one row', () => {
+    expect(blocksFor('.story-bar')).toContain('position: fixed')
+    expect(blocksFor('.story-bar-btn')).toContain('font: inherit')
+  })
+})
+
+describe('Focus typewriter scroll: the caret line keeps to the middle', () => {
+  it('moves the caret line center to the viewport center', () => {
+    // a 100..700 viewport centers on 400; the caret line 200..216 centers on
+    // 208, so the page scrolls up by 192 to bring it to the middle
+    expect(storyTypewriterDelta(200, 216, 100, 700)).toBe(-192)
+    // already centered: the page does not move
+    expect(storyTypewriterDelta(392, 408, 100, 700)).toBe(0)
+    // below the middle: scrolls back down
+    expect(storyTypewriterDelta(600, 616, 100, 700)).toBe(208)
+    // one line under the middle: a small move
+    expect(storyTypewriterDelta(404, 424, 100, 700)).toBe(14)
+  })
+
+  it('clamps at the document edges by physics, not by a dead zone', () => {
+    // the first line cannot reach the middle: the delta asks for more than
+    // the scroller has, and scrollTop clamps at 0 — the rule iA Writer runs
+    expect(storyTypewriterDelta(10, 26, 0, 700)).toBe(-332)
+  })
+
+  it('the host is the nearest scrolling ancestor', () => {
+    const wrap = document.createElement('div')
+    wrap.style.overflowY = 'auto'
+    const inner = document.createElement('div')
+    wrap.appendChild(inner)
+    document.body.appendChild(wrap)
+    try {
+      const host = storyScrollHost({ dom: inner })
+      expect(host).not.toBeNull()
+      // jsdom has no layout: the wrapper's rect reads all zeroes
+      expect(host!.top).toBe(0)
+      expect(host!.bottom).toBe(0)
+    } finally {
+      wrap.remove()
+    }
+  })
+
+  it('without a scrolling ancestor the page scroller takes over', () => {
+    const host = storyScrollHost({ dom: document.createElement('div') })
+    expect(host).not.toBeNull()
+    expect(host!.top).toBe(0)
+    expect(host!.bottom).toBe(window.innerHeight)
+  })
+
+  it('only a caret the user moved re-centers — not a remote edit, not a drag', () => {
+    // Focus just switched on: one re-center
+    expect(storyTypewriterScrollDue(null, { active: true, collapsed: true, head: 10 })).toBe(true)
+    // typing: the caret moved, collapsed — scroll
+    expect(
+      storyTypewriterScrollDue(
+        { active: true, head: 10 },
+        { active: true, collapsed: true, head: 12 },
+      ),
+    ).toBe(true)
+    // a transaction that does not move the caret (a remote or AI edit, a
+    // decoration refresh): the viewport stays where the user scrolled it
+    expect(
+      storyTypewriterScrollDue(
+        { active: true, head: 10 },
+        { active: true, collapsed: true, head: 10 },
+      ),
+    ).toBe(false)
+    // a drag selection (a range): the line would follow the head every frame
+    expect(
+      storyTypewriterScrollDue(
+        { active: true, head: 10 },
+        { active: true, collapsed: false, head: 40 },
+      ),
+    ).toBe(false)
+    // Focus off: never
+    expect(
+      storyTypewriterScrollDue(
+        { active: true, head: 10 },
+        { active: false, collapsed: true, head: 10 },
+      ),
+    ).toBe(false)
   })
 })
