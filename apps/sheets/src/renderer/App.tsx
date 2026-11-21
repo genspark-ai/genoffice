@@ -463,6 +463,7 @@ import { installFormulaNullResultFix } from './formula-null-result'
 import { installNumberFormatFix } from './numfmt-fix'
 import { installIfsEmptySetFix } from './ifs-empty-set'
 import { installExcel365Functions } from './excel-365-functions'
+import { installFormulaLocaleCoercion } from './formula-locale-coercion'
 import { installCriteriaCompareCacheFix } from './criteria-compare-cache'
 import { installRateFallback } from './rate-function'
 import {
@@ -2490,6 +2491,9 @@ export function App({
     // MINIFS/MAXIFS over zero matching cells return 0, not blank.
     const ifsEmptySetDisposable = installIfsEmptySetFix(runtime)
     const excel365Disposable = installExcel365Functions(runtime)
+    // Text numbers coerce by the session's separators, like Excel: "15,68"
+    // computes as 15.68 under a comma-decimal language instead of 1568 (#2883).
+    const localeCoercionDisposable = installFormulaLocaleCoercion(getLang)
     // Repeated *IF(S) '=' compares on text columns survive the inverted-
     // index cache when the criteria was number-coerced ("2026-06").
     const criteriaCompareCacheDisposable = installCriteriaCompareCacheFix()
@@ -3944,6 +3948,7 @@ export function App({
       rateFallbackDisposable.dispose()
       ifsEmptySetDisposable.dispose()
       excel365Disposable.dispose()
+      localeCoercionDisposable.dispose()
       criteriaCompareCacheDisposable.dispose()
       formulaLexerFixDisposable.dispose()
       sheetRenameFixDisposable.dispose()
