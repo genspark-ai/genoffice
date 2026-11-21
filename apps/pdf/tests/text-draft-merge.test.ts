@@ -78,6 +78,24 @@ describe('mergeTextDraft: the reveal toggle on the OCR bake layer', () => {
     expect(mergeTextDraft([e], d, ctx)).toEqual([])
   })
 
+  it('toggling the eye on a pure move keeps the move and takes the new eye state', () => {
+    // a moved run reopened with its text untouched: only the eye changes
+    const moved = edit({ translate: [12, -4] })
+    const on = editsOf(
+      mergeTextDraft([moved], draft({ reveal: true, invisible: true, editId: 'e1' }), ctx),
+    )
+    expect(on).toHaveLength(1)
+    expect(on[0]!.input.translate).toEqual([12, -4])
+    expect(on[0]!.input.reveal).toBe(true)
+    // and off again: the move is still there, the reveal is not
+    const off = editsOf(mergeTextDraft(on, draft({ invisible: true, editId: 'e1' }), ctx))
+    expect(off).toHaveLength(1)
+    expect(off[0]!.input.translate).toEqual([12, -4])
+    expect(off[0]!.input.reveal).toBeUndefined()
+    // untouched, eye as it was: nothing to merge
+    expect(mergeTextDraft([moved], draft({ invisible: true, editId: 'e1' }), ctx)).toBeNull()
+  })
+
   it('a reopened edit without the eye keeps the text change invisible', () => {
     const e = edit({ newText: 'Scanned wordz' })
     const d = draft({ value: 'Scanned wordz3', editId: 'e1' })

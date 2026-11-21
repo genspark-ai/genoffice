@@ -1,3 +1,4 @@
+export { shortFileError } from './file-error'
 export { AiPanelSideButton } from './AiPanelSideButton'
 export { WebShareChip } from './WebShareChip'
 export { WEB_SHARE_LABELS, type WebShareLabels } from './strings-web-share'

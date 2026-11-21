@@ -30,6 +30,7 @@ vi.mock('../src/main/shaped-metrics', () => ({
 import {
   createSystemFontMetrics,
   familyAvailable,
+  fontFileKey,
   resetFontRegistry,
   setUserFontDir,
 } from '../src/main/fonts'
@@ -268,5 +269,14 @@ describe('variable-font family names alias to the static family and back', () =>
     expect(familyAvailable('Zqvnothing')).toBe(false)
     expect(familyAvailable('Zqvstat Variable')).toBe(true)
     expect(familyAvailable('Zqvvar')).toBe(true)
+  })
+})
+
+describe('fontFileKey', () => {
+  it('keys a font in a vendor subdir by its file name', () => {
+    expect(fontFileKey('truetype/dejavu/DejaVuSans.ttf')).toBe('dejavusans')
+    expect(fontFileKey('DejaVuSans.ttf')).toBe('dejavusans')
+    expect(fontFileKey('opentype/noto/NotoSansSC[wght].ttf')).toBe('notosanssc')
+    expect(fontFileKey('truetype/readme.txt')).toBeNull()
   })
 })

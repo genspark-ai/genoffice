@@ -51,7 +51,7 @@ export function bmpToPng(bytes: Uint8Array): Uint8Array | null {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const pixelOffset = view.getUint32(10, true)
   const headerSize = view.getUint32(14, true)
-  if (headerSize < 40) return null // OS/2 BITMAPCOREHEADER: not worth carrying
+  if (headerSize < 40 || headerSize > bytes.length - 14) return null // OS/2 BITMAPCOREHEADER or a header the file cannot hold: not worth carrying
   const width = view.getInt32(18, true)
   const rawHeight = view.getInt32(22, true)
   const bitCount = view.getUint16(28, true)
@@ -69,6 +69,7 @@ export function bmpToPng(bytes: Uint8Array): Uint8Array | null {
   if (pixelOffset + stride * height > bytes.length) return null
 
   let palette: Uint8Array | null = null
+  let paletteEntries = 0
   if (bitCount <= 8) {
     // biClrUsed is the file's word: never more entries than the bit count indexes
     const colors = Math.min(view.getUint32(46, true) || 1 << bitCount, 1 << bitCount)
@@ -78,6 +79,7 @@ export function bmpToPng(bytes: Uint8Array): Uint8Array | null {
       palette[i * 3] = bytes[start + i * 4 + 2]
       palette[i * 3 + 1] = bytes[start + i * 4 + 1]
       palette[i * 3 + 2] = bytes[start + i * 4]
+      paletteEntries++
     }
   }
 
@@ -133,6 +135,9 @@ export function bmpToPng(bytes: Uint8Array): Uint8Array | null {
         const byte = bytes[srcRow + (bitIndex >> 3)]
         const shift = 8 - bitCount - (bitIndex & 7)
         const index = (byte >> shift) & ((1 << bitCount) - 1)
+        // A pixel naming a palette entry the file does not carry used to decode
+        // as an invented black colour, silently emitting a wrong picture.
+        if (index >= paletteEntries) return null
         r = palette![index * 3] ?? 0
         g = palette![index * 3 + 1] ?? 0
         b = palette![index * 3 + 2] ?? 0

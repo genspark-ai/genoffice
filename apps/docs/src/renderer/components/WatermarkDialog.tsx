@@ -9,6 +9,7 @@ import {
   textWatermarkPreviewImage,
   type HfImage,
   type PictureWatermarkSpec,
+  type SectionSettings,
   type Watermark,
   type WatermarkSpec,
 } from '@genoffice/docx-engine'
@@ -119,6 +120,19 @@ async function pictureFromDocImage(
   const factor = ((img.widthPx ?? 0) * 0.75) / naturalWPt
   if (factor > 0 && Math.abs(factor - autoFactor) > 0.01) spec.scale = Math.round(factor * 100)
   return spec
+}
+
+/** the page the preview draws: the section's paper and the area inside its margins */
+export function watermarkPageBoxOf(
+  section: SectionSettings | null | undefined,
+): WatermarkPageBox | null {
+  if (!section) return null
+  return {
+    pageWidthPt: section.pageWidth / 20,
+    pageHeightPt: section.pageHeight / 20,
+    marginWidthPt: (section.pageWidth - section.marginLeft - section.marginRight) / 20,
+    marginHeightPt: (section.pageHeight - section.marginTop - section.marginBottom) / 20,
+  }
 }
 
 export function WatermarkDialog({

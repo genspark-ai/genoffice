@@ -1,5 +1,5 @@
 /**
- * #2669 regression: an e-invoice whose form is an outer frame plus
+ * genoffice#2669 regression: an e-invoice whose form is an outer frame plus
  * full-width band rules, with the borderless detail table (item name /
  * spec / unit / quantity / unit price / amount / tax rate / tax amount)
  * living in one band that has no interior rules of its own. The lattice
@@ -37,7 +37,7 @@ function tableRows(xml: string): string[][] {
   )
 }
 
-describe('invoice band columns (#2669)', () => {
+describe('invoice band columns (genoffice#2669)', () => {
   it('keeps the detail band columns, the tax ID and the remark lines apart', async () => {
     const pdfium = await loadPdfium()
     const result = await convertPdfToDocx(new Uint8Array(readFileSync(SAMPLE)), { pdfium })
@@ -49,20 +49,22 @@ describe('invoice band columns (#2669)', () => {
     const rows = tableRows(xml)
     expect(rows.length).toBeGreaterThanOrEqual(4)
     // the detail band's row holds the real columns, not one glued stream
-    const detail = rows.find((r) => r.some((c) => c.includes('项目名称')))!
+    const detail = rows.find((r) => r.some((c) => c.includes('\u9879\u76ee\u540d\u79f0')))!
     expect(detail).toBeDefined()
     const texts = detail.join('\u0001')
-    expect(texts).toContain('规格型号')
-    expect(texts).toContain('单')
-    expect(texts).toContain('税率')
+    expect(texts).toContain('\u89c4\u683c\u578b\u53f7')
+    expect(texts).toContain('\u5355')
+    expect(texts).toContain('\u7a0e\u7387')
     // the item line's own columns: description | quantity | unit price | tax
-    expect(texts).toContain('*生活服务*样例服务')
+    expect(texts).toContain('*\u751f\u6d3b\u670d\u52a1*\u6837\u4f8b\u670d\u52a1')
     expect(texts).toContain('100.000000000000')
     expect(texts).toContain('1%')
     // the description cell no longer swallows the header labels
-    const descCell = detail.find((c) => c.includes('*生活服务*样例服务'))!
-    expect(descCell).not.toContain('规格型号')
-    expect(descCell).not.toContain('数量')
+    const descCell = detail.find((c) =>
+      c.includes('*\u751f\u6d3b\u670d\u52a1*\u6837\u4f8b\u670d\u52a1'),
+    )!
+    expect(descCell).not.toContain('\u89c4\u683c\u578b\u53f7')
+    expect(descCell).not.toContain('\u6570\u91cf')
   })
 
   it('keeps each remark line its own paragraph instead of interleaving rows', async () => {
@@ -70,14 +72,20 @@ describe('invoice band columns (#2669)', () => {
     const result = await convertPdfToDocx(new Uint8Array(readFileSync(SAMPLE)), { pdfium })
     const xml = await docXml(result.docx)
     const rows = tableRows(xml)
-    const remarks = rows.find((r) => r.some((c) => c.includes('备注')))!
-    const remarkCell = remarks.find((c) => c.includes('购买方地址'))!
+    const remarks = rows.find((r) => r.some((c) => c.includes('\u5907\u6ce8')))!
+    const remarkCell = remarks.find((c) => c.includes('\u8d2d\u4e70\u65b9\u5730\u5740'))!
     // each semicolon-terminated field stays whole and in order
-    expect(remarkCell).toContain('购买方地址:示例市示例区示例路1号;')
-    expect(remarkCell).toContain('购方开户银行:示例银行示例支行;')
-    expect(remarkCell).toContain('销售方地址:示例市示例区示例街2号;')
+    expect(remarkCell).toContain(
+      '\u8d2d\u4e70\u65b9\u5730\u5740:\u793a\u4f8b\u5e02\u793a\u4f8b\u533a\u793a\u4f8b\u8def1\u53f7;',
+    )
+    expect(remarkCell).toContain(
+      '\u8d2d\u65b9\u5f00\u6237\u94f6\u884c:\u793a\u4f8b\u94f6\u884c\u793a\u4f8b\u652f\u884c;',
+    )
+    expect(remarkCell).toContain(
+      '\u9500\u552e\u65b9\u5730\u5740:\u793a\u4f8b\u5e02\u793a\u4f8b\u533a\u793a\u4f8b\u88572\u53f7;',
+    )
     // the bank account digits are one run, not interleaved with stray 111s
     expect(remarkCell).toContain('111111111111111111111')
-    expect(remarkCell).not.toMatch(/电话:\d+;111/)
+    expect(remarkCell).not.toMatch(/\u7535\u8bdd:\d+;111/)
   })
 })

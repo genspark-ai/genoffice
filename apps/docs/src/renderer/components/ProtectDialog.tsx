@@ -20,6 +20,7 @@ import {
 } from '@genoffice/docx-engine'
 import { useI18n } from '../i18n/locale'
 import { FieldError, PasswordInput } from './PasswordInput'
+import { Unavailable } from './Unavailable'
 
 /** every field: undefined = unchanged; null = remove; value = set */
 export interface ProtectDialogResult {
@@ -252,22 +253,26 @@ export function ProtectDialog({
               {t(MODE_LABEL_KEYS[m])}
             </label>
           ))}
+          <Unavailable id="protect.sections">
+            <button type="button" className="protect-sections" disabled>
+              {t('appProtectSections')}
+            </button>
+          </Unavailable>
         </div>
-        {protectOn && (
-          <label className="fld">
-            {t('appProtectPwdOptional')} <span className="fld-opt">{t('appOptionalBlank')}</span>
-            <PasswordInput
-              maxLength={255}
-              value={protectPwd}
-              hideReveal={protectPwd === KEEP}
-              onChange={(v) => {
-                setProtectPwd(v)
-                clearError()
-              }}
-              onKeyDown={onEnter}
-            />
-          </label>
-        )}
+        <label className="fld">
+          {t('appProtectPwdOptional')} <span className="fld-opt">{t('appOptionalBlank')}</span>
+          <PasswordInput
+            maxLength={255}
+            disabled={!protectOn}
+            value={protectOn ? protectPwd : ''}
+            hideReveal={protectPwd === KEEP}
+            onChange={(v) => {
+              setProtectPwd(v)
+              clearError()
+            }}
+            onKeyDown={onEnter}
+          />
+        </label>
         {locked && protectionChanged && (
           <label className="fld">
             {t('appProtectUnlockPwd')}

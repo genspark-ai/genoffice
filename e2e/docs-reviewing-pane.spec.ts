@@ -67,7 +67,10 @@ test.describe('docs Reviewing Pane', () => {
       await page.locator('.doc-page p', { hasText: 'Alpha opens' }).first().waitFor()
 
       await page.locator('.ribbon-tab', { hasText: /^Review$/ }).click()
-      await page.getByRole('button', { name: 'Reviewing Pane', exact: true }).click()
+      await page
+        .locator('[data-ribbon-body]')
+        .getByRole('button', { name: 'Reviewing', exact: true })
+        .click()
       const pane = page.locator('.review-pane')
       await expect(pane).toBeVisible()
       // The Reviewing Pane occupies the workspace's outermost right edge.
@@ -96,7 +99,7 @@ test.describe('docs Reviewing Pane', () => {
       await expect(cards.nth(2)).toContainText('second reviewer')
 
       // the second reviewer's insertion does not share the first reviewer's ink
-      await page.getByRole('button', { name: 'Markup', exact: true }).click()
+      await page.getByRole('button', { name: 'Display for Review', exact: true }).click()
       await page.locator('.layout-menu button', { hasText: 'All Markup' }).click()
       const annInk = await page
         .locator('.doc-ins', { hasText: 'inserted words' })
@@ -119,7 +122,7 @@ test.describe('docs Reviewing Pane', () => {
       await expect(pane.locator('.review-pane-sum-line').nth(1)).toHaveText('Deletions:0')
 
       // Specific People: unticking Ben hides his change from view and pane
-      await page.getByRole('button', { name: 'Markup', exact: true }).click()
+      await page.getByRole('button', { name: 'Markup Options', exact: true }).click()
       await page.locator('.layout-menu button', { hasText: /^Ben/ }).click()
       await expect(cards).toHaveCount(1)
       await expect(pane.locator('.review-pane-hidden')).toHaveText('1 hidden by filters')
@@ -130,7 +133,7 @@ test.describe('docs Reviewing Pane', () => {
 
       // Navigation stays on the left; the right Reviewing Pane toggles independently.
       await page.locator('.ribbon-tab', { hasText: /^View$/ }).click()
-      await page.locator('.rb-big', { hasText: /^Navigation Pane$/ }).click()
+      await page.locator(':is(.rb-big, .rb-small)', { hasText: /^Navigation Pane$/ }).click()
       const navigation = page.locator('.nav-pane:not(.review-pane)')
       await expect(navigation).toBeVisible()
       await expect(pane).toBeVisible()
@@ -140,10 +143,16 @@ test.describe('docs Reviewing Pane', () => {
       expect(navigationBox.x + navigationBox.width).toBeLessThanOrEqual(sharedScrollBox.x + 1)
       expect(sharedPaneBox.x).toBeGreaterThanOrEqual(sharedScrollBox.x + sharedScrollBox.width - 1)
       await page.locator('.ribbon-tab', { hasText: /^Review$/ }).click()
-      await page.getByRole('button', { name: 'Reviewing Pane', exact: true }).click()
+      await page
+        .locator('[data-ribbon-body]')
+        .getByRole('button', { name: 'Reviewing', exact: true })
+        .click()
       await expect(pane).toHaveCount(0)
       await expect(navigation).toBeVisible()
-      await page.getByRole('button', { name: 'Reviewing Pane', exact: true }).click()
+      await page
+        .locator('[data-ribbon-body]')
+        .getByRole('button', { name: 'Reviewing', exact: true })
+        .click()
       await expect(pane).toBeVisible()
       await expect(navigation).toBeVisible()
     } finally {

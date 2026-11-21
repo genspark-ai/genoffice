@@ -1,6 +1,7 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import {
+  customPropertyKind,
   parseDocx,
   parsePropertyChanges,
   saveDocx,
@@ -112,6 +113,23 @@ describe('document properties', () => {
       Final: 'bool',
       Filed: 'filetime',
     })
+  })
+
+  it('keeps imported Word-style application metadata byte-identical on a content save', async () => {
+    const input = await docxWithProps()
+    const before = input.slice()
+    const doc = await parseDocx(input)
+    const saved = await saveDocx(
+      doc,
+      [
+        ...originalOrder(doc),
+        { kind: 'generated', block: { type: 'paragraph', runs: [{ text: 'Added content' }] } },
+      ],
+      { savedAt: '2026-07-28T08:30:00Z' },
+    )
+    expect(await partOf(saved, 'docProps/app.xml')).toBe(await partOf(input, 'docProps/app.xml'))
+    expect((await parseDocx(saved)).properties.app.appVersion).toBe('16.0000')
+    expect(input).toEqual(before)
   })
 
   it('a document without docProps has no properties but still opens', async () => {
@@ -304,6 +322,112 @@ describe('typed custom properties', () => {
       expect(block(after)).toBe(block(before))
       expect(block(after)).not.toBe('')
     }
+  })
+
+  it('stores a value as the kind asked for, whatever its type was', async () => {
+    const custom = await saveWith({
+      custom: {
+        Due: '2026-11-17',
+        Budget: '1250.5',
+        Copies: '3',
+        Signed: 'true',
+        Code: '42',
+        // an existing text property turned into a number, an existing number into text
+        MatterId: '114',
+        Pages: '42',
+        // the stored type holds while the kind is the same
+        Filed: '2026-12-01',
+      },
+      customKinds: {
+        Due: 'date',
+        Budget: 'number',
+        Copies: 'number',
+        Signed: 'bool',
+        Code: 'text',
+        MatterId: 'number',
+        Pages: 'text',
+        Filed: 'date',
+      },
+    })
+    const value = (name: string): string =>
+      new RegExp(`<property\\b[^>]*name="${name}"[^>]*>([\\s\\S]*?)</property>`).exec(
+        custom,
+      )?.[1] ?? ''
+    expect(value('Due')).toBe('<vt:filetime>2026-11-17T00:00:00Z</vt:filetime>')
+    expect(value('Budget')).toBe('<vt:r8>1250.5</vt:r8>')
+    expect(value('Copies')).toBe('<vt:i4>3</vt:i4>')
+    expect(value('Signed')).toBe('<vt:bool>true</vt:bool>')
+    expect(value('Code')).toBe('<vt:lpwstr>42</vt:lpwstr>')
+    expect(value('MatterId')).toBe('<vt:i4>114</vt:i4>')
+    expect(value('Pages')).toBe('<vt:lpwstr>42</vt:lpwstr>')
+    expect(value('Filed')).toBe('<vt:filetime>2026-12-01T00:00:00Z</vt:filetime>')
+    // a changed property keeps its pid; the new ones follow the largest
+    expect(custom).toMatch(/pid="2" name="MatterId"/)
+    expect(custom).toMatch(/pid="7" name="Due"/)
+  })
+
+  it('a value that does not fit the kind asked for is kept as text', async () => {
+    const custom = await saveWith({
+      custom: { Due: 'next week', Copies: 'three' },
+      customKinds: { Due: 'date', Copies: 'number' },
+    })
+    expect(custom).toContain('<vt:lpwstr>next week</vt:lpwstr>')
+    expect(custom).toContain('<vt:lpwstr>three</vt:lpwstr>')
+  })
+
+  it('reads a stored vt type as one of the four kinds of the Custom tab', () => {
+    expect(customPropertyKind('lpwstr')).toBe('text')
+    expect(customPropertyKind('i8')).toBe('number')
+    expect(customPropertyKind('r8')).toBe('number')
+    expect(customPropertyKind('bool')).toBe('bool')
+    expect(customPropertyKind('filetime')).toBe('date')
+    expect(customPropertyKind('date')).toBe('date')
+    expect(customPropertyKind('vector')).toBeNull()
+    expect(customPropertyKind(undefined)).toBeNull()
+  })
+
+  it('creates the custom part with its content type and relationship when the package has none', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: BODY }))
+    const out = await saveDocx(doc, originalOrder(doc), {
+      properties: {
+        custom: { Client: 'Example Ltd', Due: '2026-11-17' },
+        customKinds: { Due: 'date' },
+      },
+    })
+    const custom = await partOf(out, 'docProps/custom.xml')
+    expect(custom).toContain(
+      '<property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="Client"><vt:lpwstr>Example Ltd</vt:lpwstr></property>',
+    )
+    expect(custom).toContain('pid="3" name="Due"><vt:filetime>2026-11-17T00:00:00Z</vt:filetime>')
+    expect(await partOf(out, '[Content_Types].xml')).toContain(
+      '<Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/>',
+    )
+    expect(await partOf(out, '_rels/.rels')).toMatch(
+      /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/custom-properties" Target="docProps\/custom\.xml"/,
+    )
+    const reparsed = await parseDocx(out)
+    expect(reparsed.properties.custom).toEqual({
+      Client: 'Example Ltd',
+      Due: '2026-11-17T00:00:00Z',
+    })
+    expect(reparsed.properties.customTypes).toEqual({ Client: 'lpwstr', Due: 'filetime' })
+  })
+
+  it('a change to one custom property leaves core.xml, app.xml and the other properties byte for byte', async () => {
+    const source = await docxWithProps()
+    const doc = await parseDocx(source)
+    const out = await saveDocx(doc, originalOrder(doc), {
+      properties: { custom: { Reviewer: null, Client: 'Example Ltd' } },
+    })
+    const before = await partOf(source, 'docProps/custom.xml')
+    const after = await partOf(out, 'docProps/custom.xml')
+    const removed = /<property\b[^>]*name="Reviewer"[^>]*>[\s\S]*?<\/property>/.exec(before)![0]
+    const added =
+      '<property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="7" name="Client"><vt:lpwstr>Example Ltd</vt:lpwstr></property>'
+    expect(after).toBe(
+      before.replace(removed, '').replace('</Properties>', added + '</Properties>'),
+    )
+    expect(await partOf(out, 'docProps/app.xml')).toBe(await partOf(source, 'docProps/app.xml'))
   })
 
   it('removes a typed property with null', async () => {

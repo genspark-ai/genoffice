@@ -10,6 +10,7 @@ import {
   newDocumentCorePropertiesXml,
 } from './doc-properties'
 import { PPR_CHILD_ORDER } from './generate'
+import { escapeXmlAttr } from './xml-utils'
 import type { NumberingLevel } from './types'
 
 /**
@@ -477,6 +478,34 @@ export function abstractNumXml(
   return `<w:abstractNum w:abstractNumId="${abstractNumId}">${body}</w:abstractNum>`
 }
 
+/** An abstractNum of a named list style: the defining one (w:styleLink + levels) or a reference to it (w:numStyleLink) */
+export function listStyleAbstractNumXml(
+  abstractNumId: string,
+  link: { styleLink: string } | { numStyleLink: string },
+  levels: CustomNumberingLevel[] = [],
+): string {
+  const linkXml =
+    'styleLink' in link
+      ? `<w:styleLink w:val="${escapeXmlAttr(link.styleLink)}"/>`
+      : `<w:numStyleLink w:val="${escapeXmlAttr(link.numStyleLink)}"/>`
+  return (
+    `<w:abstractNum w:abstractNumId="${abstractNumId}"><w:multiLevelType w:val="multilevel"/>` +
+    `${linkXml}${customLevels(levels)}</w:abstractNum>`
+  )
+}
+
+/** A w:style of type "numbering" whose w:numPr names the w:num over its defining abstractNum */
+export function listStyleXml(
+  styleId: string,
+  def: { name: string; numId: string; custom?: boolean },
+): string {
+  return (
+    `<w:style w:type="numbering"${def.custom ? ' w:customStyle="1"' : ''} w:styleId="${escapeXmlAttr(styleId)}">` +
+    `<w:name w:val="${escapeXmlAttr(def.name)}"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/>` +
+    `<w:pPr><w:numPr><w:numId w:val="${def.numId}"/></w:numPr></w:pPr></w:style>`
+  )
+}
+
 /** The blank template's numbering.xml (bullet numId 1 / decimal numId 2);
  *  base content used when the document has no such part */
 export const BLANK_NUMBERING_XML =
@@ -545,7 +574,7 @@ export interface BlankDocxOptions {
   createdAt?: Date
   /** docProps/app.xml Application; defaults to "GenOffice". */
   application?: string
-  /** docProps/app.xml AppVersion; defaults to the docx-engine package version. */
+  /** docProps/app.xml AppVersion; defaults to the OOXML-formatted engine major/minor. */
   appVersion?: string
   /** docProps/app.xml Template; defaults to Word's "Normal.dotm". */
   template?: string

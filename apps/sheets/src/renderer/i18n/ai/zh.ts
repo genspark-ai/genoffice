@@ -4,6 +4,7 @@ export const zh = {
   aiEmptyBuildTitle: '让 AI 帮你从零建表',
   aiEmptyBuildBody: '描述想要的表格、数据或图表，AI 直接生成。',
   aiGskLoginBtn: '登录 Genspark',
+  aiGskLoginOk: '已登录 Genspark',
   aiUndelivered: '未发送成功',
   aiRetry: '重试',
   aiOpenAssistant: '打开 AI 助手',

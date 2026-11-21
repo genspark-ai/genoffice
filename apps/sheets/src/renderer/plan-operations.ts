@@ -17,6 +17,7 @@ import {
 } from '@genoffice/xlsx-gateway/domain/cell-address'
 import {
   CHART_EDIT_TYPES,
+  chartCellLimitError,
   chartDataFromColumns,
   chartDataFromValues,
 } from '@genoffice/xlsx-gateway/domain/chart-visual'
@@ -284,9 +285,8 @@ export function proposeOperations(
           }
           if (operation.op === 'add_chart') {
             const bounds = parseRange(operation.dataRange)
-            if (rangeCellCount(bounds) > 2000) {
-              return { ok: false, error: 'add_chart dataRange covers more than 2000 cells.' }
-            }
+            const limit = chartCellLimitError(bounds, operation.columns)
+            if (limit) return { ok: false, error: limit }
             // Named columns are geometry the plan can fully settle without
             // values: each letter must land inside the range (the schema
             // already guarantees ≥2 distinct letter shapes).

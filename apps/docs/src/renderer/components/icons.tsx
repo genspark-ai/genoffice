@@ -204,6 +204,370 @@ function LetterA({ dx = 0 }: { dx?: number }) {
   return <path d={`M${2.43 + dx} 12.5 ${5.67 + dx} 4l3.25 8.5M${3.55 + dx} 9.56h4.24`} />
 }
 
+/** phonetic guide: the shared A with a reading set above it */
+export function IconPhoneticGuide(props: IconProps) {
+  return (
+    <Svg {...props} paint={1.4}>
+      <path d="M2.6 13.4 5.67 6.2l3.07 7.2M3.7 11.1h3.94" />
+      <path d="M3.3 3.2h4.74" />
+      <path d="M10.9 13.4V6.2M10.9 9.2h2.6M13.5 6.2v7.2" />
+    </Svg>
+  )
+}
+
+/** character border: the shared A in a box */
+export function IconCharBorder(props: IconProps) {
+  return (
+    <Svg {...props} paint={1.4}>
+      <rect x="1.9" y="1.9" width="12.2" height="12.2" rx="0.9" />
+      <path d="M5 11.9 8 4.6l3 7.3M6.05 9.5h3.9" />
+    </Svg>
+  )
+}
+
+/** text effects: the shared A in outline with a glint */
+export function IconTextEffects(props: IconProps) {
+  return (
+    <Svg {...props} paint={1.4}>
+      <path d="M2.2 13 6.4 3.2 10.6 13M3.75 9.6h5.3" />
+      <path d="M12.6 3v3M11.1 4.5h3M12.6 9.4v2.2M11.5 10.5h2.2" />
+    </Svg>
+  )
+}
+
+/** character shading: the shared A on a tinted ground */
+export function IconCharShading(props: IconProps) {
+  return (
+    <Svg {...props} paint={1.4}>
+      <rect
+        x="1.9"
+        y="1.9"
+        width="12.2"
+        height="12.2"
+        rx="0.9"
+        fill="currentColor"
+        fillOpacity="0.18"
+        stroke="none"
+      />
+      <path d="M5 11.9 8 4.6l3 7.3M6.05 9.5h3.9" />
+    </Svg>
+  )
+}
+
+/** enclose characters: the shared A in a ring */
+export function IconEncloseChars(props: IconProps) {
+  return (
+    <Svg {...props} paint={1.4}>
+      <circle cx="8" cy="8" r="6.2" />
+      <path d="M5.6 11 8 5l2.4 6M6.45 9h3.1" />
+    </Svg>
+  )
+}
+
+/** Asian layout: a line of text turned to run down the page */
+export function IconAsianLayout(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 3.4h6.2M3 6.4h6.2M3 9.4h6.2M3 12.4h6.2" />
+      <path d="M12.4 3.2v9.6M10.8 11.2l1.6 1.6 1.6-1.6" />
+    </Svg>
+  )
+}
+
+/** distributed: full lines held between two margins */
+export function IconAlignDistributed(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.2 2.6v10.8M13.8 2.6v10.8" />
+      <path d="M4.4 4.4h7.2M4.4 8h7.2M4.4 11.6h7.2" />
+    </Svg>
+  )
+}
+
+/** icons: a few simple pictograms side by side */
+export function IconIconSet(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="4.6" cy="4.8" r="2.3" />
+      <rect x="9" y="2.6" width="4.5" height="4.5" rx="0.6" />
+      <path d="M2.4 13.2 4.7 9.2 7 13.2z" />
+      <circle cx="11.3" cy="11.2" r="2.1" />
+    </Svg>
+  )
+}
+
+/** date and time: a calendar leaf with a clock at its corner */
+export function IconDateTime(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.4 4.2h9.6v3.2M2.4 4.2v8.2h4.4M2.4 6.8h9.6M5 2.6v2.6M9.4 2.6v2.6" />
+      <circle cx="11" cy="11" r="2.9" />
+      <path d="M11 9.6V11l1 .8" />
+    </Svg>
+  )
+}
+
+export function IconNumberSign(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6.2 2.6 4.8 13.4M11.2 2.6 9.8 13.4M2.8 6h10.6M2.6 10h10.6" />
+    </Svg>
+  )
+}
+
+export function IconGlobe(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="8" r="5.6" />
+      <path d="M2.4 8h11.2M8 2.4c1.9 1.6 2.8 3.5 2.8 5.6S9.9 12 8 13.6C6.1 12 5.2 10.1 5.2 8S6.1 4 8 2.4" />
+    </Svg>
+  )
+}
+
+/** resolve: a comment balloon with a tick */
+export function IconResolveComment(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.6 3h10.8v7.4H7.4L4.6 13v-2.6h-2z" />
+      <path d="M5.8 6.8 7.4 8.4l3-3" />
+    </Svg>
+  )
+}
+
+/** always open read-only: a page with a lock */
+export function IconReadOnlyDoc(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8 13.6H3.4V2.4h6l3 3v2.2M9.2 2.6v3h3" />
+      <rect x="9" y="10.4" width="4.6" height="3.4" rx="0.5" />
+      <path d="M10 10.4V9.5a1.3 1.3 0 0 1 2.6 0v.9" />
+    </Svg>
+  )
+}
+
+/** draft: the text alone, without the page */
+export function IconDraftView(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.6 3.2h10.8M2.6 6.4h10.8M2.6 9.6h10.8M2.6 12.8h6.4" />
+    </Svg>
+  )
+}
+
+/** focus: the page alone between four corner marks */
+export function IconFocusView(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.4 5V2.4H5M11 2.4h2.6V5M13.6 11v2.6H11M5 13.6H2.4V11" />
+      <rect x="5.4" y="4.6" width="5.2" height="6.8" rx="0.5" />
+    </Svg>
+  )
+}
+
+/** set as default: a tick in a ring */
+export function IconSetDefault(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="8" r="5.6" />
+      <path d="M5.4 8.2 7.2 10l3.4-3.6" />
+    </Svg>
+  )
+}
+
+export function IconTextDirection(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 3.2h6M6 3.2v7" />
+      <path d="M11.6 3v9.6M9.8 10.8l1.8 1.8 1.8-1.8" />
+    </Svg>
+  )
+}
+
+export function IconLineNumbers(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.6 3.2v2.6M2.2 9.4c.9-.7 1.6-.2 1.2.6l-1.3 1.6h1.6" />
+      <path d="M6.4 4.4h7M6.4 8h7M6.4 11.6h7" />
+    </Svg>
+  )
+}
+
+export function IconHyphenation(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.6 4h4.6M2.6 12h4.6M9.4 4h4M9.4 12h4M6.6 8h2.8" />
+    </Svg>
+  )
+}
+
+export function IconSelectionPane(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.4" y="2.8" width="11.2" height="10.4" rx="0.8" />
+      <path d="M9.4 2.8v10.4M10.9 5.6h1.4M10.9 8h1.4M10.9 10.4h1.4" />
+    </Svg>
+  )
+}
+
+export function IconAlignObjects(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.6 2.4v11.2" />
+      <rect x="4.8" y="3.8" width="7.6" height="3" rx="0.4" />
+      <rect x="4.8" y="9.2" width="4.6" height="3" rx="0.4" />
+    </Svg>
+  )
+}
+
+export function IconGroupObjects(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="4" y="4" width="5" height="5" rx="0.4" />
+      <rect x="7" y="7" width="5" height="5" rx="0.4" />
+      <path d="M2.4 4V2.4H4M12 2.4h1.6V4M13.6 12v1.6H12M4 13.6H2.4V12" />
+    </Svg>
+  )
+}
+
+export function IconAddText(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.6 3.4h8M2.6 6.6h8M2.6 9.8h4.4" />
+      <path d="M11.4 9.6v4M9.4 11.6h4" />
+    </Svg>
+  )
+}
+
+export function IconNextFootnote(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.6 12.6h6M3.4 3.4h3.4M5.1 3.4v6" />
+      <path d="M9.4 5.6h4M11.6 3.6l2 2-2 2" />
+    </Svg>
+  )
+}
+
+export function IconShowNotes(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.6" y="2.4" width="10.8" height="11.2" rx="0.8" />
+      <path d="M2.6 9.4h10.8M4.6 11.4h5" />
+    </Svg>
+  )
+}
+
+export function IconCitationsPane(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.4" y="2.8" width="11.2" height="10.4" rx="0.8" />
+      <path d="M4.6 6.4c0-.9.5-1.4 1.4-1.4M7.4 6.4c0-.9.5-1.4 1.4-1.4M4.6 9.4h6.8M4.6 11.2h4.4" />
+    </Svg>
+  )
+}
+
+export function IconMarkCitation(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 6.6C3 5 3.9 4 5.4 4M7.6 6.6C7.6 5 8.5 4 10 4" />
+      <path d="M3 10.4h5M11.6 8.6v4.8M9.2 11h4.8" />
+    </Svg>
+  )
+}
+
+/** table of authorities: a page of entries with their page numbers */
+export function IconToa(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="2.4" width="10" height="11.2" rx="0.8" />
+      <path d="M5.2 5.4h5.6M5.2 8h3M10 8h.8M5.2 10.6h3M10 10.6h.8" />
+    </Svg>
+  )
+}
+
+export function IconEnvelope(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.2" y="3.8" width="11.6" height="8.4" rx="0.8" />
+      <path d="M2.6 4.4 8 8.6l5.4-4.2" />
+    </Svg>
+  )
+}
+
+export function IconLabels(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.4" y="2.6" width="5" height="4.6" rx="0.5" />
+      <rect x="8.6" y="2.6" width="5" height="4.6" rx="0.5" />
+      <rect x="2.4" y="8.8" width="5" height="4.6" rx="0.5" />
+      <rect x="8.6" y="8.8" width="5" height="4.6" rx="0.5" />
+    </Svg>
+  )
+}
+
+export function IconRecipients(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="6" cy="5.4" r="2.2" />
+      <path d="M2.2 13c.3-2.4 1.7-3.6 3.8-3.6s3.5 1.2 3.8 3.6" />
+      <path d="M10.6 3.4a2.1 2.1 0 0 1 0 4M11.6 9.6c1.3.5 2 1.6 2.2 3.4" />
+    </Svg>
+  )
+}
+
+export function IconEditList(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.6 3.6h7M2.6 6.8h5M2.6 10h3.4" />
+      <path d="M8.2 13.2l.5-2.2 4-4 1.7 1.7-4 4z" />
+    </Svg>
+  )
+}
+
+export function IconFilter(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.4 3h11.2L9.4 8v4.6l-2.8-1.4V8z" />
+    </Svg>
+  )
+}
+
+/** rules: one path that forks in two */
+export function IconRules(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8 2.6v3M8 5.6 4 9v3.6M8 5.6 12 9v3.6" />
+      <circle cx="8" cy="2.6" r="0.6" />
+      <path d="M2.8 12.6h2.4M10.8 12.6h2.4" />
+    </Svg>
+  )
+}
+
+export function IconChevronFirst(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 3.4v9.2M11.6 3.6 7 8l4.6 4.4" />
+    </Svg>
+  )
+}
+
+export function IconChevronLast(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3.4v9.2M4.4 3.6 9 8l-4.6 4.4" />
+    </Svg>
+  )
+}
+
+/** finish and merge: a page with a tick */
+export function IconFinishMerge(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9.4 13.6H3.4V2.4h6l3 3v2.4M9.2 2.6v3h3" />
+      <path d="M8.6 11.2l1.8 1.8 3.2-3.6" />
+    </Svg>
+  )
+}
+
 export function IconGrowFont(props: IconProps) {
   return (
     <Svg {...props} paint={1.4}>
@@ -511,6 +875,16 @@ export function IconLink(props: IconProps) {
       <path d="M 6.91 9.09 9.09 6.91" />
       <path d="M 7.55 5.09 8.91 3.72 a 2.37 2.37 0 0 1 3.37 3.37 L 10.91 8.46" />
       <path d="M 8.46 10.91 7.09 12.28 a 2.37 2.37 0 0 1 -3.37 -3.37 l 1.37 -1.36" />
+    </Svg>
+  )
+}
+
+export function IconUnlink(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 7.55 5.09 8.91 3.72 a 2.37 2.37 0 0 1 3.37 3.37 L 10.91 8.46" />
+      <path d="M 8.46 10.91 7.09 12.28 a 2.37 2.37 0 0 1 -3.37 -3.37 l 1.37 -1.36" />
+      <path d="M 3 3 13 13" />
     </Svg>
   )
 }
@@ -1500,6 +1874,15 @@ export function IconArrangeAll(props: IconProps) {
     <Svg {...props}>
       <rect x="3" y="3.38" width="10.01" height="4" rx="0.62" />
       <rect x="3" y="8.62" width="10.01" height="4" rx="0.62" />
+    </Svg>
+  )
+}
+
+export function IconMergeWindows(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="3.38" width="10.01" height="9.24" rx="0.62" />
+      <path d="M 3 6.08 h 10.01 M 6.34 3.38 v 2.7 M 9.67 3.38 v 2.7" />
     </Svg>
   )
 }
