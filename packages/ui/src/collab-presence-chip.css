@@ -1,0 +1,27 @@
+/* Status-bar presence chip: one avatar per other member of the room. It
+   shares the host app's .status-btn chrome; only the avatars are its own. */
+
+.collab-presence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.collab-presence-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  color: var(--color-btn-primary-text);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 600;
+  user-select: none;
+}
+
+.collab-presence-count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
