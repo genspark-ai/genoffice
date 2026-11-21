@@ -293,6 +293,15 @@ const api: DesktopApi = {
     ipcRenderer.on('menu:command', listener)
     return () => ipcRenderer.removeListener('menu:command', listener)
   },
+  onPastePlain: (handler: () => void) => {
+    const listener = () => {
+      handler()
+      // ack so the main process runs the paste only once the flag is armed
+      ipcRenderer.send('docs:paste-plain-armed')
+    }
+    ipcRenderer.on('docs:paste-plain', listener)
+    return () => ipcRenderer.removeListener('docs:paste-plain', listener)
+  },
   onCloseCheck: (handler: () => void) => {
     const listener = () => handler()
     ipcRenderer.on('docs:close-check', listener)

@@ -78,6 +78,7 @@ import {
   pushDownWebInlineStyles,
 } from './editor/paste-web-html'
 import {
+  armPlainPaste,
   beginForeignPaste,
   caretParaFormat,
   caretStyleMark,
@@ -86,6 +87,7 @@ import {
   lastForeignPasteMode,
   mergeFormattingFragment,
   stashPastePayload,
+  takePlainPaste,
   takeTextReroute,
 } from './editor/paste-options'
 import { PasteOptionsChip } from './components/PasteOptionsChip'
@@ -1900,8 +1902,14 @@ export function App() {
         if (!data) return false
         const html = data.getData('text/html')
         // text-mode foreign paste (default setting or chip choice): the whole
-        // payload goes down the plain-text lane, formatting like typing
-        if (takeTextReroute()) {
+        // payload goes down the plain-text lane, formatting like typing.
+        // Paste and Match Style (⌥⇧⌘V / Ctrl+Shift+V) joins it: the clipboard's
+        // text goes in literally whatever flavors the event carries, never
+        // through the Markdown lane below (#2856). Both flags are one-shot and
+        // consumed before deciding, so an armed match-style can't leak into a
+        // later plain Cmd+V.
+        const matchStyle = takePlainPaste()
+        if (matchStyle || takeTextReroute()) {
           const plain = data.getData('text/plain') || htmlFallbackText(html)
           if (plain) {
             const slice = pasteTextSlice(plain, view.state.selection.$from, view)
@@ -8202,6 +8210,9 @@ export function App() {
   }
   // native application menu → renderer commands
   useEffect(() => window.desktop.onMenuCommand(runCommand), [runCommand])
+  // the menu's paste-and-match-style arms the plain-paste flag just before its
+  // paste event fires, so the editor skips the Markdown lane (see #2856)
+  useEffect(() => window.desktop.onPastePlain(armPlainPaste), [])
   useEffect(() => {
     setKeyLayerRunner(runCommand)
     return () => setKeyLayerRunner(null)
