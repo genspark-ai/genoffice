@@ -42,6 +42,9 @@ import {
   webContents,
 } from 'electron'
 import {
+  EXCLUDED_FOLDERS_KEY,
+  isUnderExcludedFolder,
+  readExcludedFolders,
   abortOnDestroyed,
   appMenuLabels,
   appMenuTemplate,
@@ -7112,6 +7115,8 @@ const APP_SETTINGS_PATH = () => join(app.getPath('userData'), 'app-settings.json
 const RECENT_LIMIT = 100
 
 function pushRecent(filePath: string): void {
+  // a file under an excluded folder never enters the recents list (#2844)
+  if (isUnderExcludedFolder(filePath, excludedFolderPaths())) return
   const recent = readJson<string[]>(RECENT_PATH(), [])
   // Every save lands here (autosave = every 30s): skip the write and the menu
   // rebuild when the file is already at the head of the list
@@ -7130,7 +7135,20 @@ function pushRecent(filePath: string): void {
  *  No existence filter: a transiently unavailable path (disconnected drive,
  *  pending mount) must stay listed — the stat layer flags it instead (r158) */
 export function readRecentFiles(): string[] {
-  return readJson<string[]>(RECENT_PATH(), [])
+  // filtered on read, not purged: lift the exclusion and the older entries come back
+  const excluded = excludedFolderPaths()
+  const recent = readJson<string[]>(RECENT_PATH(), [])
+  return excluded.length === 0 ? recent : recent.filter((p) => !isUnderExcludedFolder(p, excluded))
+}
+
+/** folders excluded from recents, search and session restore (#2844); the
+ *  settings file is the shell's, read here with the same JSON helpers */
+function excludedFolderPaths(): string[] {
+  try {
+    return readExcludedFolders(readJson<Record<string, unknown>>(APP_SETTINGS_PATH(), {}))
+  } catch {
+    return []
+  }
 }
 
 export function recordRecentFile(filePath: string): void {

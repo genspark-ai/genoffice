@@ -7,7 +7,8 @@ import { extractText } from './extract'
 import { scanFiles, type ScannedFile } from './scan'
 
 export type WorkerRequest =
-  { id: number; type: 'extract'; path: string } | { id: number; type: 'scan'; root: string }
+  | { id: number; type: 'extract'; path: string }
+  | { id: number; type: 'scan'; root: string; excludedFolders?: readonly string[] }
 
 export type WorkerResponse =
   | { id: number; type: 'extract'; result: Awaited<ReturnType<typeof extractText>> }
@@ -18,7 +19,7 @@ parentPort?.on('message', async (req: WorkerRequest) => {
     const result = await extractText(req.path)
     parentPort?.postMessage({ id: req.id, type: 'extract', result } satisfies WorkerResponse)
   } else {
-    const { files, truncated } = scanFiles(req.root)
+    const { files, truncated } = scanFiles(req.root, {}, req.excludedFolders ?? [])
     parentPort?.postMessage({ id: req.id, type: 'scan', files, truncated } satisfies WorkerResponse)
   }
 })
