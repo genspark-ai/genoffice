@@ -296,6 +296,7 @@ const COPIED_CELL_ATTRS = [
   'cellMar',
   'textDirection',
   'noWrap',
+  'fitText',
   'align',
   'bold',
   'color',

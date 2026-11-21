@@ -111,18 +111,29 @@ export interface FontSubstitution {
   name: string
   /** first available family in the fallback chain, null = only bundled fallback left */
   substitute: string | null
+  /** the substitute is the user's pick in Font Substitution, not the app's own choice */
+  chosen?: true
 }
 
 /**
  * Declared fonts that don't resolve on this system, with the family that
  * actually renders instead (substitution used to be silent).
  */
-export function checkMissingFonts(names: string[]): FontSubstitution[] {
+export function checkMissingFonts(
+  names: string[],
+  chosen: (name: string) => string | null = () => null,
+): FontSubstitution[] {
   if (typeof document === 'undefined') return []
   const cx = ctx2d()
   if (!cx) return []
   const out: FontSubstitution[] = []
   for (const name of names) {
+    // a picked stand-in answers to the missing font's name, so the probe below would call it installed
+    const pick = chosen(name)
+    if (pick) {
+      out.push({ name, substitute: pick, chosen: true })
+      continue
+    }
     // a declared bundled face resolves in canvas yet still renders the subset fallback — report it
     if (!isBundledFont(name) && fontAvailableIn(cx, name)) continue
     const chain = cssFontFamily(name)

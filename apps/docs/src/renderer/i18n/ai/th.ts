@@ -9,6 +9,7 @@ export const th = {
   aiStarterContinue: 'เขียนต่อจากเนื้อหาที่มีอยู่',
   aiStarterFillTemplate: 'ค้นหาและกรอกตัวยึดตำแหน่งในเอกสาร',
   aiGskLoginBtn: 'ลงชื่อเข้าใช้ Genspark',
+  aiGskLoginOk: 'ลงชื่อเข้าใช้ Genspark แล้ว',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'เปิดผู้ช่วย AI',
   aiSummarizeBtn: 'สรุปด้วย AI',

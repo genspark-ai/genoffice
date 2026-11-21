@@ -89,3 +89,35 @@ describe('settings.xml w:trackRevisions', () => {
     expect(await resave('', { mirrorMargins: true })).not.toContain('trackRevisions')
   })
 })
+
+describe('settings.xml w:doNotTrackMoves', () => {
+  it('parses the flag', async () => {
+    expect((await parseDocx(await docWithSettings('<w:doNotTrackMoves/>'))).doNotTrackMoves).toBe(
+      true,
+    )
+    expect((await parseDocx(await docWithSettings(''))).doNotTrackMoves).toBeUndefined()
+  })
+
+  it('writes the flag at its CT_Settings position when moves are no longer tracked', async () => {
+    const xml = await resave(
+      '<w:zoom w:percent="100"/><w:trackRevisions/><w:doNotTrackFormatting/><w:defaultTabStop w:val="720"/>',
+      { trackMoves: false },
+    )
+    expect(childNamesOf(xml)).toEqual([
+      'w:zoom',
+      'w:trackRevisions',
+      'w:doNotTrackMoves',
+      'w:doNotTrackFormatting',
+      'w:defaultTabStop',
+    ])
+  })
+
+  it('removes the flag when moves are tracked again and leaves it alone otherwise', async () => {
+    expect(await resave('<w:doNotTrackMoves/>', { trackMoves: true })).not.toContain(
+      'doNotTrackMoves',
+    )
+    expect(await resave('<w:doNotTrackMoves/>', { trackRevisions: true })).toContain(
+      '<w:doNotTrackMoves/>',
+    )
+  })
+})

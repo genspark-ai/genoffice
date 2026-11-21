@@ -299,11 +299,13 @@ function paragraphIndents(editor: Editor): ParagraphIndents {
     const cs = el ? getComputedStyle(el) : null
     const isList = editor.isActive('docListItem')
     if (cs) {
+      // a left / right border standing out by w:space moved the margin, not the indent
+      const outset = (name: string) => cssLengthToTwips(cs.getPropertyValue(name)) ?? 0
       if (left === null)
         left =
           (cssLengthToTwips(cs.marginInlineStart) ?? 0) +
-          (isList ? (cssLengthToTwips(cs.paddingInlineStart) ?? 0) : 0)
-      if (right === null) right = cssLengthToTwips(cs.marginInlineEnd) ?? 0
+          (isList ? (cssLengthToTwips(cs.paddingInlineStart) ?? 0) : outset('--pbdr-os'))
+      if (right === null) right = (cssLengthToTwips(cs.marginInlineEnd) ?? 0) + outset('--pbdr-oe')
       if (firstLine === null) {
         const textIndent = cssLengthToTwips(cs.textIndent) ?? 0
         if (isList && textIndent <= 0) {

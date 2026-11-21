@@ -1,17 +1,7 @@
 import { createHash } from 'node:crypto'
-import { constants } from 'node:fs'
-import {
-  copyFile,
-  lstat,
-  mkdir,
-  readFile,
-  readdir,
-  realpath,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises'
+import { lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { copyFileExclusive } from '@genoffice/electron-utils/copy-file'
 import { atomicWriteFile } from './atomic-write'
 
 export const ASSET_MANIFEST_FILENAME = '.genoffice-assets.json'
@@ -335,7 +325,7 @@ export async function copyImageIntoOwnedAssets(
   sourcePath: string,
 ): Promise<string> {
   return createOwnedAsset(documentPath, basename(sourcePath), (target) =>
-    copyFile(sourcePath, target, constants.COPYFILE_EXCL),
+    copyFileExclusive(sourcePath, target),
   )
 }
 
@@ -1067,7 +1057,7 @@ export async function prepareAssetsForSaveAs(
           if (reservedNames.has(name)) continue
           const target = join(targetAssetsDir, name)
           try {
-            await copyFile(safeSource, target, constants.COPYFILE_EXCL)
+            await copyFileExclusive(safeSource, target)
             copied = { name, sha256: await sha256File(target) }
             break
           } catch (error) {

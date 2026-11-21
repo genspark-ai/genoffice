@@ -17,7 +17,7 @@ describe('univerLocaleFor', () => {
   })
 
   it('falls back to English where Univer ships no pack', () => {
-    for (const lang of ['en', 'th', 'nl', 'ms', 'he', 'hi', 'tr']) {
+    for (const lang of ['en', 'th', 'nl', 'ms', 'he', 'hi', 'tr', 'hu']) {
       expect(univerLocaleFor(lang)).toBeNull()
     }
   })

@@ -161,7 +161,7 @@ O F1 abre o **guia do usuário**, não esta lista. A folha de atalhos é `⌘/` 
 
 O GenOffice Sheets é uma grade compatível com o Excel. A maioria dos atalhos abaixo são os do Excel que já conhece.
 
-> **A edição ganha.** Quase todos os atalhos do Sheets são ignorados enquanto edita uma célula ou escreve na **barra de fórmulas**, para que escrever, mover o cursor e a tecla Retrocesso mantenham o seu significado habitual de edição de texto. Se uma tecla parecer não fazer nada, verifique se está a meio de uma edição: pressione primeiro Esc ou Enter e tente de novo. Os comandos que atuam sobre a seleção também não fazem nada enquanto houver uma caixa de diálogo aberta. Onde uma combinação seja a exceção a esta regra, a tabela indica-o.
+> **A edição ganha.** Quase todos os atalhos do Sheets são ignorados enquanto edita uma célula ou escreve na **barra de fórmulas**, para que escrever, mover o cursor e a tecla Retrocesso mantenham o seu significado habitual de edição de texto. Se uma tecla parecer não fazer nada, verifique se está no meio de uma edição: pressione primeiro Esc ou Enter e tente de novo. Os comandos que atuam sobre a seleção também não fazem nada enquanto houver uma caixa de diálogo aberta. Onde uma combinação seja a exceção a esta regra, a tabela indica-o.
 
 Duas convenções são próprias do Sheets. `⌘` e `⌃` ocupam a mesma posição de modificador — ambas são aceites em todas as plataformas, por isso `⌘1` e `Ctrl+1` são a mesma combinação. **Uma célula de Windows / Linux vazia significa que a combinação só existe no macOS.**
 
@@ -417,7 +417,7 @@ Começar do slide atual aceita `⌘⏎` além de `⇧F5` no macOS. No Windows, e
 | Diapositivo anterior     | ← ↑ Page Up       | Left, Up, Page Up                    |
 | Sair da vista de leitura | Esc               | Esc                                  |
 
-Pressione **Esc** para sair daquilo em que estiver — um corte, uma forma que está a desenhar, **Editar pontos**, um grupo, a caneta, o marcador ou a borracha, o leitor multimédia ou a **vista de leitura** — e para limpar a seleção.
+Pressione **Esc** para sair daquilo em que estiver — um corte, uma forma que você está desenhando, **Editar pontos**, um grupo, a caneta, o marcador ou a borracha, o leitor multimédia ou a **vista de leitura** — e para limpar a seleção.
 
 Outras duas são modificadores e não combinações: mantenha **Shift** pressionado enquanto desenha para manter as proporções da forma nova, e mantenha **Shift** pressionado enquanto roda para encaixar em passos de 15°.
 

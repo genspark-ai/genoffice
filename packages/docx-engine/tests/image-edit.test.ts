@@ -39,6 +39,33 @@ describe('image metadata parsing', () => {
   })
 })
 
+describe('alternative text', () => {
+  const PICTURE = IMAGE_PARAGRAPH_XML.replace(
+    '<a:graphic ',
+    '<wp:docPr id="1" name="Picture 1"/><a:graphic ',
+  )
+  const described = PICTURE.replace('name="Picture 1"', 'name="Picture 1" descr="A &amp; B"')
+
+  it('is read from the drawing', async () => {
+    const plain = await parseDocx(await buildDocx({ bodyXml: PICTURE, withImage: true }))
+    expect(plain.blocks[0].imageAlt).toBeUndefined()
+    const doc = await parseDocx(await buildDocx({ bodyXml: described, withImage: true }))
+    expect(doc.blocks[0].imageAlt).toBe('A & B')
+  })
+
+  it('is written, replaced and removed on the drawing, and nowhere else', () => {
+    const set = patchImageParagraphXml(PICTURE, { altText: 'a "red" <kite>' })
+    expect(set).toMatch(/<wp:docPr\b[^>]* descr="a &quot;red&quot; &lt;kite&gt;"/)
+    const again = patchImageParagraphXml(set, { altText: 'other' })
+    expect(again.match(/descr=/g)).toHaveLength(1)
+    expect(again).toMatch(/<wp:docPr\b[^>]* descr="other"/)
+    expect(patchImageParagraphXml(again, { altText: '' })).toBe(PICTURE)
+    expect(patchImageParagraphXml(described, { widthPx: 10, heightPx: 10 })).toContain(
+      'descr="A &amp; B"',
+    )
+  })
+})
+
 describe('patchImageParagraphXml', () => {
   it('rewrites wp:extent and a:ext size', () => {
     const xml =
@@ -138,6 +165,19 @@ describe('image posOffset (free-position drag)', () => {
     )
     // Original structure untouched
     expect(out).toContain('relativeHeight="251658240"')
+  })
+
+  it('patchImageParagraphXml turns an alignment keyword into the dragged offset', () => {
+    const aligned = ANCHOR_IMAGE_XML.replace(
+      /(<wp:positionH[^>]*>)<wp:posOffset>-?\d+<\/wp:posOffset>/,
+      '$1<wp:align>left</wp:align>',
+    )
+    expect(aligned).toContain('<wp:align>left</wp:align>')
+    const out = patchImageParagraphXml(aligned, { posOffsetX: 1905000 })
+    expect(out).toContain(
+      '<wp:positionH relativeFrom="column"><wp:posOffset>1905000</wp:posOffset></wp:positionH>',
+    )
+    expect(out).not.toContain('<wp:align>')
   })
 
   it('patchImageParagraphXml leaves images without posOffset unchanged', () => {

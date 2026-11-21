@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { Editor } from '@tiptap/core'
+import type { Mark } from '@tiptap/pm/model'
 import type { Selection, Transaction } from '@tiptap/pm/state'
+import type { RunOpenType } from '@genoffice/docx-engine'
 import { Dropdown, isSymbolFontFamily, type DropdownOption } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { fontFamiliesFor, systemFamiliesBesidesCandidates } from '../font-list'
@@ -8,7 +10,18 @@ import { fontSizeLabel, fontSizeOptions, parseFontSize } from '../font-sizes'
 import { useSystemFontFamilies } from '../system-fonts'
 import { charScaleEm, wordKerns } from '../line-metrics'
 import { cssFontFamily } from '../text-layout/font-rules'
+import type { FontDefault } from '../design-default'
+import {
+  UNDERLINE_STYLES,
+  declsToStyle,
+  emphasisDecls,
+  mergeOtfAttr,
+  otfFeatureSettings,
+  parseOtfAttr,
+  underlineDecls,
+} from '../editor/run-typography'
 import { useModalKeys } from './modal-keys'
+import { Unavailable } from './Unavailable'
 
 /**
  * Word's Font dialog: the Font tab (faces, style, size, color, effects) and the
@@ -25,6 +38,32 @@ const FONT_STYLES: Array<{ key: string; nameKey: StringKey }> = [
   { key: 'bold', nameKey: 'appFontBold' },
   { key: 'boldItalic', nameKey: 'appFontBoldItalic' },
 ]
+
+const UNDERLINE_NAMES: Record<(typeof UNDERLINE_STYLES)[number], StringKey> = {
+  single: 'appUnderline',
+  double: 'ribbonTcMarkDoubleUnderline',
+  thick: 'appFontULThick',
+  dotted: 'appFontULDotted',
+  dash: 'appFontULDashed',
+  wave: 'appFontULWavy',
+}
+
+const EMPHASIS_MARKS: Array<{ key: string; nameKey: StringKey }> = [
+  { key: 'dot', nameKey: 'appFontEmDot' },
+  { key: 'comma', nameKey: 'appFontEmComma' },
+  { key: 'circle', nameKey: 'appFontEmCircle' },
+  { key: 'underDot', nameKey: 'appFontEmUnderDot' },
+]
+
+const LIGATURES: Array<{ key: string; nameKey: StringKey }> = [
+  { key: 'none', nameKey: 'ribbonNone' },
+  { key: 'standard', nameKey: 'appFontLigStandard' },
+  { key: 'standardContextual', nameKey: 'appFontLigStandardContextual' },
+  { key: 'historicalDiscretional', nameKey: 'appFontLigHistorical' },
+  { key: 'all', nameKey: 'appFontLigAll' },
+]
+
+const STYLISTIC_SET_COUNT = 20
 
 type SpacingMode = 'normal' | 'expanded' | 'condensed'
 type PositionMode = 'normal' | 'raised' | 'lowered'
@@ -101,12 +140,14 @@ export function charSpacingAttrs(
  * setMark('docTextStyle') for the dialog: merges `attrs` over each text node's
  * existing mark in every selection range (a table CellSelection is several) and,
  * when the scale changed, recomputes that node's w:w letter-spacing
- * approximation in the same step, so one undo reverts it all.
+ * approximation in the same step, so one undo reverts it all. `otf` goes over
+ * each node's own OpenType features, key by key.
  */
 export function setTextStyleWithScale(
   tr: Transaction,
   ranges: ReadonlyArray<{ from: number; to: number }>,
   attrs: Record<string, unknown>,
+  otf?: RunOpenType,
 ): boolean {
   const type = tr.doc.type.schema.marks.docTextStyle
   if (ranges.every((r) => r.from === r.to)) {
@@ -118,6 +159,7 @@ export function setTextStyleWithScale(
       const pct = merged.charScalePct as number | null
       merged.charScaleEm = pct && pct !== 100 ? charScaleEm('x', pct) : null
     }
+    if (otf) merged.otf = mergeOtfAttr(merged.otf, otf)
     tr.addStoredMark(type.create(merged))
     return true
   }
@@ -129,7 +171,51 @@ export function setTextStyleWithScale(
         const pct = merged.charScalePct as number | null
         merged.charScaleEm = pct && pct !== 100 ? charScaleEm(node.text, pct, merged) : null
       }
+      if (otf) merged.otf = mergeOtfAttr(merged.otf, otf)
       tr.addMark(Math.max(pos, from), Math.min(pos + node.nodeSize, to), type.create(merged))
+    })
+  }
+  return true
+}
+
+/**
+ * The dialog's underline fields over each text node's own underline. `line` is a
+ * w:u value or 'none'; undefined leaves each node's line as it is, so a colour
+ * alone recolours the underlined text and underlines nothing else.
+ */
+export function setUnderlineMark(
+  tr: Transaction,
+  ranges: ReadonlyArray<{ from: number; to: number }>,
+  change: { line?: string; color?: string | null },
+): boolean {
+  const type = tr.doc.type.schema.marks.underline
+  const next = (base: Mark | undefined): Mark | null | undefined => {
+    if (change.line === 'none') return null
+    if (change.line === undefined && !base) return undefined
+    return type.create({
+      line:
+        change.line === undefined
+          ? (base?.attrs.line ?? null)
+          : change.line === 'single'
+            ? null
+            : change.line,
+      color: change.color === undefined ? (base?.attrs.color ?? null) : change.color,
+    })
+  }
+  if (ranges.every((r) => r.from === r.to)) {
+    const mark = next((tr.storedMarks ?? tr.selection.$from.marks()).find((m) => m.type === type))
+    if (mark === null) tr.removeStoredMark(type)
+    else if (mark) tr.addStoredMark(mark)
+    return true
+  }
+  for (const { from, to } of ranges) {
+    tr.doc.nodesBetween(from, to, (node, pos) => {
+      if (!node.isText) return
+      const mark = next(node.marks.find((m) => m.type === type))
+      const start = Math.max(pos, from)
+      const end = Math.min(pos + node.nodeSize, to)
+      if (mark === null) tr.removeMark(start, end, type)
+      else if (mark) tr.addMark(start, end, mark)
     })
   }
   return true
@@ -168,7 +254,22 @@ export function fontTabAttrs(
   return out
 }
 
-export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () => void }) {
+/** the colour Default… keeps: automatic and black are what a document has without one */
+export function fontDefaultColor(colorHex: string): string | undefined {
+  const hex = colorHex.replace('#', '').toUpperCase()
+  return /^[0-9A-F]{6}$/.test(hex) && hex !== '000000' ? hex : undefined
+}
+
+export function FontDialog({
+  editor,
+  onDefault,
+  onClose,
+}: {
+  editor: Editor
+  /** Default…: the dialog's font becomes what new blank documents start with */
+  onDefault: (font: FontDefault) => void
+  onClose: () => void
+}) {
   const { t, lang } = useI18n()
   const modalKeys = useModalKeys(onClose)
   const fontFamilies = fontFamiliesFor(lang)
@@ -196,7 +297,18 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
   )
   const [style, setStyle] = useState<string>(initialStyle)
   const [color, setColor] = useState(`#${(textAttrs.color as string | null) ?? '000000'}`)
-  const [underline, setUnderline] = useState(editor.isActive('underline'))
+  const underlineAttrs = editor.getAttributes('underline')
+  const [underline, setUnderline] = useState<string>(
+    editor.isActive('underline') ? ((underlineAttrs.line as string | null) ?? 'single') : 'none',
+  )
+  // null is Automatic: the line takes the text colour
+  const [underlineColor, setUnderlineColor] = useState<string | null>(
+    (underlineAttrs.color as string | null) ?? null,
+  )
+  const [em, setEm] = useState<string>(
+    textAttrs.em && textAttrs.em !== 'none' ? String(textAttrs.em) : 'none',
+  )
+  const [otf, setOtf] = useState<RunOpenType>(() => parseOtfAttr(textAttrs.otf) ?? {})
   const [strike, setStrike] = useState(editor.isActive('strike'))
   const [vertAlign, setVertAlign] = useState<string>((textAttrs.vertAlign as string | null) ?? '')
   const [dstrike, setDstrike] = useState(textAttrs.dstrike === true)
@@ -224,6 +336,11 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
     touch(group)
   }
 
+  const setOtfField = <K extends keyof RunOpenType>(key: K, value: RunOpenType[K]) => {
+    setOtf((prev) => ({ ...prev, [key]: value }))
+    touch(`otf.${key}`)
+  }
+
   const apply = () => {
     if (!editor.isEditable) {
       onClose()
@@ -237,6 +354,14 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
       effects.vanish = hidden ? true : textAttrs.vanish ? false : null
       effects.vanishOwn = hidden ? true : textAttrs.vanish ? false : null
     }
+    if (touched.has('em')) effects.em = em
+    const otfPatch: RunOpenType = {}
+    if (touched.has('otf.ligatures')) otfPatch.ligatures = otf.ligatures ?? 'none'
+    if (touched.has('otf.numSpacing')) otfPatch.numSpacing = otf.numSpacing ?? 'default'
+    if (touched.has('otf.numForm')) otfPatch.numForm = otf.numForm ?? 'default'
+    if (touched.has('otf.stylisticSets')) otfPatch.stylisticSets = otf.stylisticSets ?? []
+    if (touched.has('otf.cntxtAlts')) otfPatch.cntxtAlts = otf.cntxtAlts ?? false
+    const hasOtf = Object.keys(otfPatch).length > 0
     const styleAttrs: Record<string, unknown> = {
       ...fontTabAttrs(
         { fontLatin, fontEastAsia, sizePt: size, colorHex: color, vertAlign },
@@ -247,19 +372,40 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
     }
     const ranges = selectionRanges(editor.state.selection)
     let chain = editor.chain().focus()
-    if (Object.keys(styleAttrs).length > 0)
-      chain = chain.command(({ tr }) => setTextStyleWithScale(tr, ranges, styleAttrs))
+    if (Object.keys(styleAttrs).length > 0 || hasOtf)
+      chain = chain.command(({ tr }) =>
+        setTextStyleWithScale(tr, ranges, styleAttrs, hasOtf ? otfPatch : undefined),
+      )
     if (touched.has('style')) {
       const wantBold = style === 'bold' || style === 'boldItalic'
       const wantItalic = style === 'italic' || style === 'boldItalic'
       chain = wantBold ? chain.setMark('bold') : chain.unsetMark('bold')
       chain = wantItalic ? chain.setMark('italic') : chain.unsetMark('italic')
     }
-    if (touched.has('underline'))
-      chain = underline ? chain.setMark('underline') : chain.unsetMark('underline')
+    if (touched.has('underline') || touched.has('underlineColor'))
+      chain = chain.command(({ tr }) =>
+        setUnderlineMark(tr, ranges, {
+          line: touched.has('underline') ? underline : undefined,
+          color: touched.has('underlineColor') ? underlineColor : undefined,
+        }),
+      )
     if (touched.has('strike')) chain = strike ? chain.setMark('strike') : chain.unsetMark('strike')
     chain.run()
     onClose()
+  }
+
+  // Word's Default… applies the dialog as OK does and keeps its font for new documents
+  const keepAsDefault = () => {
+    const keptColor = touched.has('color') || textAttrs.color ? fontDefaultColor(color) : undefined
+    onDefault({
+      ...(fontLatin ? { latin: fontLatin } : {}),
+      ...(fontEastAsia ? { eastAsia: fontEastAsia } : {}),
+      sizeHalfPoints: Math.round(size * 2),
+      ...(style === 'bold' || style === 'boldItalic' ? { bold: true } : {}),
+      ...(style === 'italic' || style === 'boldItalic' ? { italic: true } : {}),
+      ...(keptColor ? { color: keptColor } : {}),
+    })
+    apply()
   }
 
   const fontPicker = (value: string, onPick: (v: string) => void, label: string) => (
@@ -293,9 +439,19 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
     </label>
   )
 
-  const check = (label: string, checked: boolean, onChange: (v: boolean) => void) => (
+  const check = (
+    label: string,
+    checked: boolean,
+    onChange: (v: boolean) => void,
+    disabled = false,
+  ) => (
     <label className="font-check">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
       {label}
     </label>
   )
@@ -319,8 +475,29 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
   const scaleEm = adv.scalePct !== 100 ? charScaleEm(t('appFontPreviewSample'), adv.scalePct) : 0
   const positionPt =
     adv.position === 'normal' ? 0 : adv.positionPt * (adv.position === 'lowered' ? -1 : 1)
+  const underlined = underline !== 'none'
+  const underlineSample = (line: string) => (
+    <span
+      className="font-underline-sample"
+      style={{ textDecorationLine: 'underline', ...declsToStyle(underlineDecls(line, null)) }}
+    >
+      {'\u00a0'.repeat(16)}
+    </span>
+  )
+  const picker = <K extends string>(
+    label: string,
+    value: K,
+    options: ReadonlyArray<DropdownOption<K>>,
+    onPick: (v: K) => void,
+  ) => (
+    <label>
+      {label}
+      <Dropdown value={value} ariaLabel={label} options={options} onPick={onPick} />
+    </label>
+  )
+  const ligatures = otf.ligatures ?? 'none'
+  const stylisticSet = String(otf.stylisticSets?.[0] ?? 0)
   const decorations = [
-    underline ? 'underline' : '',
     strike && dstrike ? 'line-through double' : strike || dstrike ? 'line-through' : '',
     hidden ? 'underline dotted' : '',
   ]
@@ -369,7 +546,60 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
             onChange={(e) => field('color', setColor)(e.target.value)}
           />
         </label>
-        {check(t('appUnderline'), underline, field('underline', setUnderline))}
+        {picker(
+          t('appFontUnderlineStyle'),
+          underline,
+          [
+            { value: 'none', label: t('appParaSpecialNone') },
+            ...UNDERLINE_STYLES.map((line) => ({
+              value: line as string,
+              label: t(UNDERLINE_NAMES[line]),
+              render: underlineSample(line),
+            })),
+            // a line from the file the list does not offer stays what it is
+            ...(underlined && !(UNDERLINE_STYLES as readonly string[]).includes(underline)
+              ? [{ value: underline, label: underline, render: underlineSample(underline) }]
+              : []),
+          ],
+          field('underline', setUnderline),
+        )}
+        <label>
+          {t('appFontUnderlineColor')}
+          <input
+            type="color"
+            className="font-color-input"
+            aria-label={t('appFontUnderlineColor')}
+            disabled={!underlined}
+            value={`#${underlineColor ?? color.replace('#', '')}`}
+            onChange={(e) =>
+              field(
+                'underlineColor',
+                setUnderlineColor,
+              )(e.target.value.replace('#', '').toUpperCase())
+            }
+          />
+        </label>
+        {check(
+          t('ribbonAutomatic'),
+          underlineColor === null,
+          (v) =>
+            field(
+              'underlineColor',
+              setUnderlineColor,
+            )(v ? null : color.replace('#', '').toUpperCase()),
+          !underlined,
+        )}
+        {picker(
+          t('appFontEmphasisMark'),
+          em,
+          [
+            { value: 'none', label: t('appParaSpecialNone') },
+            ...EMPHASIS_MARKS.map((m) => ({ value: m.key, label: t(m.nameKey) })),
+          ],
+          field('em', setEm),
+        )}
+      </div>
+      <div className="font-dialog-row font-effects" aria-label={t('appFontEffects')}>
         {check(t('appStrikethrough'), strike, field('strike', setStrike))}
         {check(t('appSuperscript'), vertAlign === 'superscript', (v) =>
           field('vertAlign', setVertAlign)(v ? 'superscript' : ''),
@@ -377,8 +607,6 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
         {check(t('appSubscript'), vertAlign === 'subscript', (v) =>
           field('vertAlign', setVertAlign)(v ? 'subscript' : ''),
         )}
-      </div>
-      <div className="font-dialog-row font-effects" aria-label={t('appFontEffects')}>
         {check(t('appDoubleStrikethrough'), dstrike, (v) => {
           setDstrike(v)
           touch('dstrike')
@@ -480,6 +708,62 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
         />
         <span>{t('appKerningPointsAbove')}</span>
       </div>
+      <Unavailable id="font.snap-to-grid">
+        <div className="font-dialog-row">{check(t('appFontSnapToGrid'), true, () => {}, true)}</div>
+      </Unavailable>
+      <h3 className="font-group">{t('appFontTypography')}</h3>
+      <div className="font-dialog-row">
+        {picker(
+          t('appFontLigatures'),
+          ligatures,
+          [
+            ...LIGATURES.map((l) => ({ value: l.key, label: t(l.nameKey) })),
+            ...(LIGATURES.some((l) => l.key === ligatures)
+              ? []
+              : [{ value: ligatures, label: ligatures }]),
+          ],
+          (v) => setOtfField('ligatures', v),
+        )}
+        {picker(
+          t('appFontNumSpacing'),
+          otf.numSpacing ?? 'default',
+          [
+            { value: 'default', label: t('appFontDefaultValue') },
+            { value: 'proportional', label: t('appFontNumProportional') },
+            { value: 'tabular', label: t('appFontNumTabular') },
+          ],
+          (v) => setOtfField('numSpacing', v),
+        )}
+      </div>
+      <div className="font-dialog-row">
+        {picker(
+          t('appFontNumForms'),
+          otf.numForm ?? 'default',
+          [
+            { value: 'default', label: t('appFontDefaultValue') },
+            { value: 'lining', label: t('appFontNumLining') },
+            { value: 'oldStyle', label: t('appFontNumOldStyle') },
+          ],
+          (v) => setOtfField('numForm', v),
+        )}
+        {picker(
+          t('appFontStylisticSets'),
+          stylisticSet,
+          [
+            { value: '0', label: t('appFontDefaultValue') },
+            ...Array.from({ length: STYLISTIC_SET_COUNT }, (_, i) => ({
+              value: String(i + 1),
+              label: String(i + 1),
+            })),
+          ],
+          (v) => setOtfField('stylisticSets', v === '0' ? [] : [Number(v)]),
+        )}
+      </div>
+      <div className="font-dialog-row">
+        {check(t('appFontContextualAlts'), otf.cntxtAlts === true, (v) =>
+          setOtfField('cntxtAlts', v),
+        )}
+      </div>
     </>
   )
 
@@ -525,13 +809,30 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
             opacity: hidden ? 0.5 : undefined,
             letterSpacing: spacingPt || scaleEm ? `calc(${spacingPt}pt + ${scaleEm}em)` : undefined,
             fontKerning: touched.has('kern') ? (adv.kern ? 'normal' : 'none') : undefined,
+            // as on the page, where ligatures and contextual forms are off until a run asks
+            fontVariantLigatures: 'none',
+            fontFeatureSettings: otfFeatureSettings(otf) ?? undefined,
           }}
         >
-          <span style={{ verticalAlign: positionPt ? `${positionPt}pt` : undefined }}>
+          <span
+            style={{
+              verticalAlign: positionPt ? `${positionPt}pt` : undefined,
+              ...(underlined
+                ? {
+                    textDecorationLine: 'underline',
+                    ...declsToStyle(underlineDecls(underline, underlineColor)),
+                  }
+                : {}),
+              ...declsToStyle(emphasisDecls(em)),
+            }}
+          >
             {t('appFontPreviewSample')}
           </span>
         </div>
         <div className="modal-actions">
+          <button type="button" name="default" className="font-default-btn" onClick={keepAsDefault}>
+            {t('ribbonDocDefault')}
+          </button>
           <button className="btn-ghost" onClick={onClose}>
             {t('appCancel')}
           </button>

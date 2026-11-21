@@ -693,7 +693,7 @@ test.describe.serial('docs Word interaction smoke', () => {
 
   test('11 navigation pane: heading click moves the caret, search counts hits', async () => {
     await showTab('View')
-    await editor.locator('.rb-big', { hasText: /^Navigation Pane$/ }).click()
+    await editor.locator(':is(.rb-big, .rb-small)', { hasText: /^Navigation Pane$/ }).click()
     const pane = editor.locator('.nav-pane')
     await pane.waitFor()
     const rows = pane.locator('.nav-row')

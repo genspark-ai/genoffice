@@ -1,12 +1,13 @@
 // DOM measurement of the continuous-flow render: block boxes, floats, note
 // anchors, endnote / float-spill synthetic blocks and block metadata.
-import type {
-  BlockBox,
-  BlockMetaOf,
-  FloatBox,
-  MeasuredContent,
-  PageNoteItem,
-  PageSlice,
+import {
+  SECT_NOTE_CLASS,
+  type BlockBox,
+  type BlockMetaOf,
+  type FloatBox,
+  type MeasuredContent,
+  type PageNoteItem,
+  type PageSlice,
 } from './pagination-types'
 import type { EditorView } from '@tiptap/pm/view'
 import { rangeSlot } from './dom-range'
@@ -401,6 +402,25 @@ export function measureBlocks(
     }
     if (el.classList.contains('page-float-carry')) {
       carryApplied += rect.height / zoomFactor
+      continue
+    }
+    // an endnote row at a section's end (section-endnotes.ts): one whole line, so
+    // the page turns between entries as it does in the end-of-document area
+    if (el.classList.contains(SECT_NOTE_CLASS)) {
+      if (rect.height <= 0) continue
+      const top = (rect.top - origin - gapAccum) / zoomFactor
+      const height = rect.height / zoomFactor
+      blocks.push({
+        top,
+        height,
+        domHeight: height,
+        lineBoxes: [{ offsetInBlock: 0, height }],
+        widowControl: false,
+        isEndnotes: true,
+        widthPx: rect.width / zoomFactor,
+        el,
+      })
+      totalHeight = Math.max(totalHeight, top + height)
       continue
     }
     // floating-anchor boxes: absolute children of a zero-height wrapper; record

@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { latexToOmml, ommlToMathML } from '@genoffice/docx-engine'
 import { t, useI18n, type StringKey } from '../i18n/locale'
+import { autoCaptionInserted } from '../editor/auto-caption'
 import { equationBlockJson, inlineEquationNodeJson } from '../editor/equation'
+import { mathLimits } from '../editor/math-defaults'
+import { equationAutoCorrect } from './equation-autocorrect'
 import { useModalKeys } from './modal-keys'
 
 /** Built-in equation library (the common preset set for the "Insert Equation" dropdown) */
@@ -46,7 +49,9 @@ export const BUILTIN_EQUATIONS: Array<{ name: string; nameKey: StringKey; latex:
 
 /** Build an equation block from LaTeX and insert it (protected block, genXml goes through the save path) */
 export function insertEquationFromLatex(editor: Editor, latex: string): void {
+  const before = editor.state.doc
   editor.chain().focus().insertContent(equationBlockJson(latex)).run()
+  autoCaptionInserted(editor, 'equation', before)
 }
 
 /** Insert an inline equation at the cursor that flows with the text */
@@ -65,8 +70,8 @@ export interface MathEditTarget {
 function previewOf(latex: string): { mathml: string } | { error: string } | null {
   if (!latex.trim()) return null
   try {
-    const omml = latexToOmml(latex)
-    const mathml = ommlToMathML(`<m:oMath>${omml}</m:oMath>`)
+    const omml = latexToOmml(latex, mathLimits())
+    const mathml = ommlToMathML(`<m:oMath>${omml}</m:oMath>`, mathLimits())
     return mathml ? { mathml } : { error: t('appPreviewUnavailable') }
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) }
@@ -127,7 +132,7 @@ export function EquationModal({
           LaTeX
           <input
             value={latex}
-            onChange={(e) => setLatex(e.target.value)}
+            onChange={(e) => setLatex(equationAutoCorrect(latex, e.target.value))}
             placeholder={t('appLatexPlaceholder')}
             onKeyDown={(e) => e.key === 'Enter' && insert()}
             autoFocus

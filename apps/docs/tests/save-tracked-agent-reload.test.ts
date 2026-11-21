@@ -68,6 +68,7 @@ async function fixture(tracking: boolean) {
           target.doc = updater(target.doc)
         }
       if (prop in target) return Reflect.get(target, prop)
+      if (prop === 'endManualHyphenation') return noop
       if (typeof prop === 'string' && (/^set[A-Z]/.test(prop) || /^on[A-Z]/.test(prop))) return noop
       return undefined
     },

@@ -327,7 +327,7 @@ describe('index entries (XE)', () => {
     expect(doc.blocks[0].runs?.[0]?.instrField).toBe('PAGE')
   })
 
-  it('generateIndexFieldXml sorts, dedupes and wraps in one dirty INDEX field', () => {
+  it('generateIndexFieldXml sorts, dedupes and wraps in one INDEX field, dirty for want of pages', () => {
     const paras = generateIndexFieldXml(['术语B', '术语A', '术语A'])
     expect(paras).toHaveLength(2)
     expect(paras[0]).toContain('fldCharType="begin" w:dirty="true"')
@@ -339,11 +339,15 @@ describe('index entries (XE)', () => {
 })
 
 describe('captions', () => {
-  it('generateCaptionXml emits a dirty SEQ field with the static number', () => {
+  it('generateCaptionXml emits a SEQ field with its number as the result, unmarked', () => {
     const xml = generateCaptionXml('图', 3, '系统架构')
     expect(xml).toContain(' SEQ 图 \\* ARABIC ')
-    expect(xml).toContain('w:dirty="true"')
+    expect(xml).not.toContain('w:dirty')
     expect(xml).toContain('<w:t>3</w:t>')
+    // a number that is only a guess is left for Word to renumber
+    expect(generateCaptionXml('Figure', 3, '', { dirty: true })).toContain(
+      '<w:fldChar w:fldCharType="begin" w:dirty="true"/>',
+    )
     expect(xml).toContain('系统架构')
   })
 

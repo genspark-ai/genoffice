@@ -182,6 +182,23 @@ describe('native editable tables', () => {
     expect(many.every((width) => width > 0)).toBe(true)
   })
 
+  it('writes a text mark its attributes in the order the schema declares them', async () => {
+    // a table's formatting signature serialises mark attributes in order and compares what
+    // the file gave with what the editor holds: another order reads as an edit to every table
+    const { editor, parsed } = await openTable()
+    const declared = Object.keys(editor.schema.marks.docTextStyle.spec.attrs ?? {})
+    const written: string[][] = []
+    const visit = (node: PmNode): void => {
+      for (const mark of node.marks ?? [])
+        if (mark.type === 'docTextStyle') written.push(Object.keys(mark.attrs ?? {}))
+      for (const child of node.content ?? []) visit(child)
+    }
+    visit(blocksToPmDoc(parsed.blocks) as unknown as PmNode)
+    expect(written.length).toBeGreaterThan(0)
+    for (const keys of written) expect(keys).toEqual(declared.filter((key) => keys.includes(key)))
+    editor.destroy()
+  })
+
   it('converts imported tables to schema-native editable nodes', async () => {
     const { editor } = await openTable()
     const json = editor.getJSON() as unknown as PmNode
@@ -215,10 +232,19 @@ describe('native editable tables', () => {
           textEffect: null,
           dstrike: null,
           glow: null,
+          textShadow: null,
+          textReflection: null,
+          fxOwn: null,
           positionHalfPoints: null,
           bdr: null,
+          bdrOwn: null,
+          fitText: null,
+          eaLayout: null,
+          lang: null,
+          noProof: null,
           vertAlign: null,
           em: null,
+          otf: null,
           boldOff: null,
           italicOff: null,
           kern: null,

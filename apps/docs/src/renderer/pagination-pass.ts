@@ -173,10 +173,44 @@ export function sliceFlow(flow: PreparedFlow, ctx: PassContext): SlicedFlow {
     pageNumberFmtOf: secList
       ? (si) => secList[Math.min(si, secList.length - 1)]?.pageNumberFmt
       : undefined,
+    chapterPrefixOf: secList?.some((s) => s.pageNumberChapter)
+      ? chapterPrefixes(blocks, secList)
+      : undefined,
     floatSplits: out.floatSplits,
     floats,
   })
   return { slices, cuts, resumed: !!resume }
+}
+
+const CHAPTER_SEPARATORS: Record<string, string> = {
+  hyphen: '-',
+  period: '.',
+  colon: ':',
+  emDash: '\u2014',
+  enDash: '\u2013',
+}
+
+/** the chapter number of a page: the number of the last heading of the section's
+ *  chapter level that starts on or before it */
+export function chapterPrefixes(
+  blocks: readonly BlockBox[],
+  secList: readonly SectionInfo[],
+): (slice: PageSlice) => string | undefined {
+  const headings: Array<{ top: number; level: number; no: string }> = []
+  for (const b of blocks) {
+    const m = /^(\d):(.*)$/.exec(b.el?.getAttribute('data-chapter') ?? '')
+    if (m) headings.push({ top: b.top, level: Number(m[1]), no: m[2] })
+  }
+  return (slice) => {
+    const chapter = secList[Math.min(slice.section, secList.length - 1)]?.pageNumberChapter
+    if (!chapter) return undefined
+    let no: string | undefined
+    for (const h of headings) {
+      if (h.top >= slice.end) break
+      if (h.level === chapter.style) no = h.no
+    }
+    return no === undefined ? undefined : no + (CHAPTER_SEPARATORS[chapter.sep] ?? '-')
+  }
 }
 
 /** Move the boxes of a pulled-up anchor paragraph (floatPullUps) with it: the
