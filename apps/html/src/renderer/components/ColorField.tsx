@@ -2,9 +2,28 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode, Ref } from 'react'
 import { createPortal } from 'react-dom'
 import { ColorPicker, useDismissablePopover } from '@genoffice/ui'
-import { useI18n } from '../i18n/locale'
+import { useI18n, type StringKey } from '../i18n/locale'
 
 const POP_WIDTH = 260
+
+/** The palette's named swatches (`ColorSwatch.name`), named in the user's language as Word names them */
+export const COLOR_NAME_KEYS: Record<string, StringKey> = {
+  White: 'colorWhite',
+  Black: 'colorBlack',
+  'Light Gray': 'colorLightGray',
+  'Blue Gray': 'colorBlueGray',
+  Blue: 'colorBlue',
+  'Sky Blue': 'colorSkyBlue',
+  'Light Blue': 'colorLightBlue',
+  'Dark Blue': 'colorDarkBlue',
+  Orange: 'colorOrange',
+  Green: 'colorGreen',
+  'Light Green': 'colorLightGreen',
+  Purple: 'colorPurple',
+  'Dark Red': 'colorDarkRed',
+  Red: 'colorRed',
+  Yellow: 'colorYellow',
+}
 
 interface PopProps {
   /** current #rrggbb, '' when unset / transparent */
@@ -68,6 +87,11 @@ export function ColorPop(p: PopProps) {
           themeColors: t('themeColors'),
           standardColors: t('standardColors'),
           moreColors: t('moreColors'),
+          shadeTip: (r, c) => t('themeColorShade', { r, c }),
+          colorName: (swatch) => {
+            const key = COLOR_NAME_KEYS[swatch.name]
+            return key ? t(key) : swatch.name
+          },
         }}
         onPick={(hex) => {
           p.onPick(hex ? hex.toLowerCase() : null)

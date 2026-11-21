@@ -26,7 +26,7 @@ describe('new-list indent is live', () => {
     editor.storage.listNumbering.defs = parsed.numbering
 
     // ribbon toggleList path on a blank doc: no reusable numId in the body → allocate
-    let pending = { newDefs: [], restartNums: [] } as never as {
+    let pending = { newDefs: [], restartNums: [], styleNums: [], styleDefs: [] } as never as {
       newDefs: unknown[]
       restartNums: unknown[]
     }

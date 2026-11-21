@@ -629,6 +629,51 @@ interface PageTextObj {
   ordinals: readonly number[]
 }
 
+/**
+ * The codepoints pdfium puts in place of a hyphen it folded into a line break:
+ * U+FFFE from the textpage read (`FPDFText_GetText`), U+0002 from the per-object
+ * read (`FPDFTextObj_GetText`). Neither can be a painted character.
+ */
+const HYPHEN_MARKERS = ['\u0002', '\uFFFE'] as const
+
+function replaceMarkers(s: string, replacement: string): string {
+  let out = s
+  for (const marker of HYPHEN_MARKERS) out = out.replaceAll(marker, replacement)
+  return out
+}
+
+/**
+ * Restore the hyphen and the break the marker stands for. Every consumer that
+ * reads whole page text — extraction, search, save verification — compares
+ * against the hyphen the page really draws and the line boundary the break
+ * names, and got a noncharacter instead.
+ */
+export const restoreLineHyphens = (s: string): string => replaceMarkers(s, '-\n')
+
+/**
+ * Restore just the hyphen. One object's text ends where its own glyphs end — the
+ * break falls between objects — and the page char list carries one entry for the
+ * hyphen glyph, so keeping one codepoint here is what holds the advance/origin
+ * attribution 1:1 (see `cpLen` below).
+ */
+const restoreObjectHyphens = (s: string): string => replaceMarkers(s, '-')
+
+/** Two-pass read: FPDFTextObj_GetText's length argument and return value are BYTES
+ *  including the 2-byte NUL terminator, and a too-small buffer is left untouched
+ *  (not truncated) — a fixed buffer would silently yield garbage for long runs. */
+function readTextObject(m: Pdfium, obj: number, textPage: number): string {
+  const len = m._FPDFTextObj_GetText(obj, textPage, 0, 0)
+  if (len <= 2) return ''
+  const buf = m._malloc(len)
+  if (!buf) return ''
+  try {
+    m._FPDFTextObj_GetText(obj, textPage, buf, len)
+    return restoreObjectHyphens(Buffer.from(m.HEAPU8.buffer, buf, len - 2).toString('utf16le'))
+  } finally {
+    m._free(buf)
+  }
+}
+
 function collectTextObjects(m: Pdfium, page: number, textPage: number): PageTextObj[] {
   const out: PageTextObj[] = []
   const bl = m._malloc(4)
@@ -636,17 +681,7 @@ function collectTextObjects(m: Pdfium, page: number, textPage: number): PageText
   const br = m._malloc(4)
   const bt = m._malloc(4)
   walkPageText(m, page, FPDF_PAGEOBJ_TEXT, ({ obj, chain, ordinals, topIndex, toPage }) => {
-    // Two-pass read: FPDFTextObj_GetText's length argument and return value are BYTES
-    // including the 2-byte NUL terminator, and a too-small buffer is left untouched
-    // (not truncated) — a fixed buffer would silently yield garbage for long runs
-    const len = m._FPDFTextObj_GetText(obj, textPage, 0, 0)
-    let text = ''
-    if (len > 2) {
-      const buf = m._malloc(len)
-      m._FPDFTextObj_GetText(obj, textPage, buf, len)
-      text = Buffer.from(m.HEAPU8.buffer, buf, len - 2).toString('utf16le')
-      m._free(buf)
-    }
+    const text = readTextObject(m, obj, textPage)
     if (!m._FPDFPageObj_GetBounds(obj, bl, bb, br, bt)) return
     const local: [number, number, number, number] = [
       m.HEAPF32[bl >> 2]!,
@@ -2222,6 +2257,55 @@ export function textInsertAxes(rotate = 0): readonly [number, number, number, nu
   }
 }
 
+/**
+ * A strong right-to-left letter: Hebrew (incl. the presentation forms), Arabic
+ * (incl. the presentation forms) and the RTL scripts that sit between them —
+ * Syriac, Thaana, NKo, Samaritan, Mandaic and Arabic Extended-A/B.
+ */
+const RTL_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u
+
+/**
+ * The line in the order pdfium must be handed it. `FPDFText_SetText` lays a text
+ * object's glyphs out left to right in the order it receives, so a Hebrew phrase
+ * passed in logical order reads mirrored on the page (and extracts mirrored,
+ * which then fails save verification). When every letter of the line is RTL and
+ * the line holds no digits — bidi leaves pure-RTL text as one run, and digits
+ * would stay left-to-right inside it — reverse the grapheme clusters. Mixed
+ * directions and numbers are left untouched: they need a full bidi pass.
+ */
+export function visualLine(line: string): string {
+  const letters = line.match(/\p{L}/gu)
+  if (!letters || !letters.every((ch) => RTL_LETTER.test(ch))) return line
+  if (/\p{N}/u.test(line)) return line
+  const clusters = line.match(/.\p{M}*/gsu) ?? []
+  // a reversed bracket keeps facing its content only if it is swapped for its pair
+  return clusters
+    .reverse()
+    .map((cluster) => MIRRORED[cluster] ?? cluster)
+    .join('')
+}
+
+const MIRRORED: Record<string, string> = {
+  '(': ')',
+  ')': '(',
+  '[': ']',
+  ']': '[',
+  '{': '}',
+  '}': '{',
+  '<': '>',
+  '>': '<',
+  '\u00ab': '\u00bb',
+  '\u00bb': '\u00ab',
+}
+
+/** every character an insert draws: its lines as written and as visualLine reorders them,
+ *  since a swapped bracket is a character the written line may not hold */
+const drawnText = (text: string): string =>
+  text
+    .split('\n')
+    .map((line) => line + visualLine(line))
+    .join('')
+
 /** Insert new searchable text objects without matching/removing existing page content. */
 export function applyTextInserts(
   bytes: Uint8Array,
@@ -2263,7 +2347,7 @@ export function applyTextInserts(
       for (const [key, entries] of faces) {
         let group = entries
         const first = group[0]!.input
-        const merged = group.map(({ input }) => input.text.replace(/\n/g, '')).join('')
+        const merged = group.map(({ input }) => drawnText(input.text)).join('')
         const pseudoEdit: TextEditInput = {
           pageIndex: 0,
           rect: [0, 0, 0, 0],
@@ -2296,7 +2380,7 @@ export function applyTextInserts(
             }
             group = drawable
             if (!group.length) continue
-            const text = group.map(({ input }) => input.text.replace(/\n/g, '')).join('')
+            const text = group.map(({ input }) => drawnText(input.text)).join('')
             resolved = await resolveRebuildFont(m, 0, { ...pseudoEdit, newText: text }, text)
           }
           const { bytes: fontBytes, syntheticBold } = resolved
@@ -2343,7 +2427,7 @@ export function applyTextInserts(
                 for (const [lineIndex, line] of input.text.split('\n').entries()) {
                   if (!line) continue
                   const obj = m._FPDFPageObj_CreateTextObj(doc, font, input.fontSize)
-                  const textPtr = utf16Ptr(m, line)
+                  const textPtr = utf16Ptr(m, visualLine(line))
                   const ok = m._FPDFText_SetText(obj, textPtr)
                   m._free(textPtr)
                   if (!ok) {
@@ -2774,6 +2858,32 @@ async function validateTextEditsInner(
 }
 
 /**
+ * PDFium builds one shared text page for the whole page. When two text objects
+ * paint the same origin and share a prefix, that text page keeps the first
+ * object's string and gives the second only its distinct tail ("abc" + "d" for
+ * a pair of abc/abd objects), so FPDFTextObj_GetText on the shared text page
+ * cannot report what the second object really carries. Reading an object with
+ * the other page-owned objects removed from a temporarily rebuilt page gives the
+ * complete string; every object is put back before returning.
+ */
+function isolatedPageObjectText(m: Pdfium, page: number, objects: readonly number[]): string {
+  let out = ''
+  for (const target of objects) {
+    const others = objects.filter((obj) => obj !== target)
+    for (const obj of others) m._FPDFPage_RemoveObject(page, obj)
+    let isolatedTextPage = 0
+    try {
+      isolatedTextPage = m._FPDFText_LoadPage(page)
+      if (isolatedTextPage) out += readTextObject(m, target, isolatedTextPage)
+    } finally {
+      if (isolatedTextPage) m._FPDFText_ClosePage(isolatedTextPage)
+      for (const obj of others) m._FPDFPage_InsertObject(page, obj)
+    }
+  }
+  return out
+}
+
+/**
  * Read-back verification: confirm every applied edit's replacement text is actually
  * extractable from the produced bytes. Runs on the final output (after the pdf-lib
  * round-trip), before it reaches disk — a failure aborts the save with the original
@@ -2809,7 +2919,7 @@ export function verifyTextEdits(
             failures.push({ pageIndex, reason: 'page unreadable in saved output' })
           continue
         }
-        const textPage = m._FPDFText_LoadPage(page)
+        let textPage = m._FPDFText_LoadPage(page)
         try {
           // NFC on both sides: ToUnicode CMaps canonicalize singleton codepoints (e.g.
           // compatibility ideograph U+F900 extracts as U+8C48) — the glyph on the page is
@@ -2820,12 +2930,31 @@ export function verifyTextEdits(
           // The object-preserving rebuild can leave a reflowed line contiguous
           // only visually, not in stream order — accept either
           const visualText = canon(joinRows(objects))
+          // Last resort for overlapping objects: only rebuild the page when a
+          // line is genuinely absent from the shared text page, so normal saves
+          // never pay for the per-object reads.
+          let isolated: string | null = null
+          const isolatedCanon = (): string => {
+            if (isolated === null) {
+              m._FPDFText_ClosePage(textPage)
+              textPage = 0
+              const pageOwned = objects.filter((o) => o.chain.length === 0).map((o) => o.obj)
+              isolated = canon(isolatedPageObjectText(m, page, pageOwned))
+            }
+            return isolated
+          }
           for (const newText of texts) {
             // Every non-empty line must be extractable (rebuilt runs are one object per line)
             const missing = newText
               .split('\n')
               .map(canon)
-              .filter((l) => l.length > 0 && !pageText.includes(l) && !visualText.includes(l))
+              .filter(
+                (l) =>
+                  l.length > 0 &&
+                  !pageText.includes(l) &&
+                  !visualText.includes(l) &&
+                  !isolatedCanon().includes(l),
+              )
             if (missing.length > 0) {
               const snippet = missing[0]!.slice(0, 20)
               failures.push({
@@ -2835,7 +2964,7 @@ export function verifyTextEdits(
             }
           }
         } finally {
-          m._FPDFText_ClosePage(textPage)
+          if (textPage) m._FPDFText_ClosePage(textPage)
           m._FPDF_ClosePage(page)
         }
       }

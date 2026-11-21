@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { ipcMain, type WebContents } from 'electron'
 import type { ZoteroCommandResult, ZoteroRendererResponse } from '../shared/ipc'
+import { zoteroAvailable } from './zotero-detect'
 import { ZoteroWireClient, type ZoteroWireRequest } from './zotero-wire'
 
 const clients = new Map<number, ZoteroWireClient>()
@@ -36,6 +37,8 @@ function requestRenderer(contents: WebContents, request: ZoteroWireRequest): Pro
 export function registerZoteroIpc(): void {
   if (registered) return
   registered = true
+
+  ipcMain.handle('zotero:available', () => zoteroAvailable())
 
   ipcMain.handle('zotero:command', async (event, command: string): Promise<ZoteroCommandResult> => {
     if (!/^(addEditCitation|addEditBibliography|refresh|setDocPrefs|removeCodes)$/.test(command)) {

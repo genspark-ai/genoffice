@@ -188,4 +188,15 @@ describe('readClipboardPayload', () => {
     expect(pasteText).toHaveBeenCalledWith('fallback', expect.anything())
     editor.destroy()
   })
+
+  it('names the clipboard source only when the HTML declares one', async () => {
+    const { clipboardSource } = await import('../src/renderer/components/PasteSpecialDialog')
+    expect(
+      clipboardSource(
+        '<html><head><meta name=Generator content="Microsoft Word 15"></head></html>',
+      ),
+    ).toBe('Microsoft Word 15')
+    expect(clipboardSource("<meta content='Sheets' name='generator'>")).toBe('Sheets')
+    expect(clipboardSource('<p>plain</p>')).toBe('')
+  })
 })

@@ -92,3 +92,20 @@ describe('drop cap roundtrip', () => {
     expect(replaced).not.toContain('w:dropCap="drop"')
   })
 })
+
+describe('drop cap distance from text', () => {
+  it('reads w:hSpace and writes it back when it changes', async () => {
+    const withGap = DROP_CAP_P.replace('w:lines="3"', 'w:lines="3" w:hSpace="144"')
+    const doc = await parseDocx(await buildDocx({ bodyXml: withGap }))
+    expect(doc.blocks[0].format?.dropCap).toEqual({ type: 'drop', lines: 3, hSpace: 144 })
+    const plain = await parseDocx(await buildDocx({ bodyXml: DROP_CAP_P }))
+    expect(plain.blocks[0].format?.dropCap).toEqual({ type: 'drop', lines: 3 })
+    const { mergePPrFormat } = await import('../src/generate')
+    const rawPPr =
+      '<w:pPr><w:framePr w:dropCap="drop" w:lines="3" w:wrap="around" w:vAnchor="text" w:hAnchor="text"/></w:pPr>'
+    // unchanged: the bytes stay
+    expect(mergePPrFormat(rawPPr, { dropCap: { type: 'drop', lines: 3 } })).toBe(rawPPr)
+    const moved = mergePPrFormat(rawPPr, { dropCap: { type: 'drop', lines: 3, hSpace: 288 } })
+    expect(moved).toContain('w:dropCap="drop" w:lines="3" w:hSpace="288"')
+  })
+})

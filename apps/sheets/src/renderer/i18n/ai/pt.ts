@@ -5,6 +5,7 @@ export const pt = {
   aiEmptyBuildTitle: 'Deixe a IA montar esta pasta de trabalho para você',
   aiEmptyBuildBody: 'Descreva a tabela, os dados ou o gráfico que precisa — a IA cria na hora.',
   aiGskLoginBtn: 'Entrar no Genspark',
+  aiGskLoginOk: 'Conectado ao Genspark',
   aiUndelivered: 'Não enviado',
   aiRetry: 'Tentar novamente',
   aiOpenAssistant: 'Abrir assistente de IA',

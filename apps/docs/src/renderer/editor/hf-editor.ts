@@ -22,7 +22,9 @@ import {
   type HfTableRow,
   type Run,
 } from '@genoffice/docx-engine'
+import { subEditorClosing } from '../commands/repeat'
 import { dropActiveSubEditor, notifySubEditorState, setActiveSubEditor } from './active-editor'
+import { pictureVectorOf } from './picture-vectors'
 import { inlineToRuns, runsToInline, type PmNode } from './convert'
 import { setDkBackground, setDkBackgroundImage, setDkBorder } from './dark-page'
 import { TextboxParagraph, textboxSubExtensions } from './extensions'
@@ -471,7 +473,13 @@ function newPicturesOf(paras: HfParagraph[], prev?: HeaderFooter['newPictures'])
     const token = new RegExp(`r:embed="(${NEW_PICTURE_TOKEN_PREFIX}[0-9]+)"`).exec(xml)?.[1]
     if (!token) continue
     const bytes = /^data:(image\/(?:png|jpeg|gif));base64,(.+)$/s.exec(run.image?.dataUrl ?? '')
-    if (bytes) out[token] = { base64: bytes[2], mime: bytes[1] as 'image/png' }
+    const svgBase64 = bytes ? pictureVectorOf(bytes[2]) : undefined
+    if (bytes)
+      out[token] = {
+        base64: bytes[2],
+        mime: bytes[1] as 'image/png',
+        ...(svgBase64 ? { svgBase64 } : {}),
+      }
     else if (prev?.[token]) out[token] = prev[token]
   }
   return Object.keys(out).length > 0 ? out : undefined
@@ -575,6 +583,14 @@ export function insertHfPicture(
       },
     })
     .run()
+}
+
+const HF_FIELD_KINDS: readonly HfFieldKind[] = ['PAGE', 'NUMPAGES', 'SECTIONPAGES']
+
+/** the live header/footer field a bare instruction names; one with switches keeps its cached form */
+export function liveHfFieldOf(instr: string): HfFieldKind | null {
+  const bare = instr.trim().toUpperCase()
+  return HF_FIELD_KINDS.find((kind) => kind === bare) ?? null
 }
 
 export function insertHfField(editor: Editor, kind: HfFieldKind): void {
@@ -696,7 +712,10 @@ export function mountHfEditor(
     exited = true
     host.removeEventListener('focusout', onFocusOut)
     window.removeEventListener(HF_COMMIT_EVENT, onCommitEvent)
-    const next = commit ? changed() : null
+    const edited = changed()
+    const next = commit ? edited : null
+    // a discarded strip still counts: its owner drained or replaced what it held
+    subEditorClosing(editor, edited !== null)
     dropActiveSubEditor(editor)
     editor.destroy()
     if (next) opts.onCommit(next)

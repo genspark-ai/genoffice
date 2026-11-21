@@ -235,6 +235,8 @@ function revertPropChange(els: El[], xml: string, change: El): Edit[] {
     const keepFrom = children(els, holder).find(
       (c) => c.name === 'w:rPr' || c.name === 'w:sectPr' || c === change,
     )!
+    // nothing but the record: one edit, or the removal would swallow the insertion at its start
+    if (keepFrom === change) return [{ start: holder.innerStart, end: change.end, text: oldInner }]
     return [
       { start: holder.innerStart, end: keepFrom.start, text: oldInner },
       { start: change.start, end: change.end, text: '' },

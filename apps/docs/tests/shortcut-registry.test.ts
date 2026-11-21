@@ -13,6 +13,7 @@ import {
   type ShortcutDef,
 } from '../src/renderer/shortcuts'
 import { strings } from '../src/renderer/i18n/strings'
+import { COMMANDS, type CommandDef } from '../src/shared/commands'
 
 // alternates are listed as "A / B"; the separator has to keep ⌘/ itself intact
 const chords = (def: ShortcutDef, isMac: boolean) => shortcutKeys(def, isMac).split(' / ')
@@ -63,8 +64,14 @@ describe('shortcut registry', () => {
   })
 
   it('lists every menu accelerator', () => {
+    // most live in the command table; the menu builder still spells a few itself
     const source = readFileSync(join(__dirname, '../src/main/docs-main.ts'), 'utf8')
-    const accelerators = [...source.matchAll(/accelerator: '([^']+)'/g)].map((m) => m[1])
+    const accelerators = [
+      ...Object.values<CommandDef>(COMMANDS).flatMap((def) =>
+        typeof def.accelerator === 'string' ? [def.accelerator] : [],
+      ),
+      ...[...source.matchAll(/accelerator: '([^']+)'/g)].map((m) => m[1]),
+    ]
     expect(accelerators.length).toBeGreaterThan(15)
     const listed = new Set(SHORTCUTS.flatMap((def) => chords(def, false)))
     for (const accelerator of accelerators) {

@@ -16,6 +16,7 @@ import {
 } from '@genoffice/docx-engine'
 import type { DocState, PendingNumbering } from './doc-state'
 import { t } from './i18n/locale'
+import { newListStyleId, type ListStyleEntry } from './list-styles'
 
 /** The App state the numbering actions need; built fresh per call. */
 export interface NumberingContext {
@@ -35,6 +36,9 @@ export function nextNumId(ctx: NumberingContext): string {
     max = Math.max(max, parseInt(id, 10) || 0)
   for (const d of ctx.pendingNumbering.newDefs) max = Math.max(max, parseInt(d.numId, 10) || 0)
   for (const r of ctx.pendingNumbering.restartNums) max = Math.max(max, parseInt(r.numId, 10) || 0)
+  for (const l of ctx.pendingNumbering.styleNums)
+    max = Math.max(max, parseInt(l.numId, 10) || 0, parseInt(l.define?.numId ?? '', 10) || 0)
+  for (const s of ctx.pendingNumbering.styleDefs) max = Math.max(max, parseInt(s.numId, 10) || 0)
   max = Math.max(max, ctx.numIdFloorRef.current)
   ctx.numIdFloorRef.current = max + 1
   return String(max + 1)
@@ -93,6 +97,156 @@ export function createCustomListDef(
     if (l.pStyle) ctx.linkStyle?.(l.pStyle, numId, i)
   })
   return numId
+}
+
+/**
+ * The list that follows a named list style: the document's or this session's
+ * existing one, so the numbering runs on, else a new w:num linked to the style.
+ * A style the document lacks is defined along with it.
+ */
+export function listStyleNum(
+  ctx: NumberingContext,
+  style: ListStyleEntry,
+): { numId: string; kind: 'bullet' | 'ordered' } | null {
+  if (!ctx.doc || style.levels.length === 0) return null
+  const kind = style.levels[0].numFmt === 'bullet' ? ('bullet' as const) : ('ordered' as const)
+  const { numbering, listStyles } = ctx.doc.parsed
+  const own = listStyles?.find((s) => s.styleId === style.styleId)
+  const existing =
+    [...numbering.values()].find(
+      (d) =>
+        d.listStyleId === style.styleId &&
+        d.numId !== own?.numId &&
+        Object.keys(d.startOverrides).length === 0,
+    )?.numId ?? ctx.pendingNumbering.styleNums.find((l) => l.styleId === style.styleId)?.numId
+  if (existing) return { numId: existing, kind }
+  const numId = nextNumId(ctx)
+  const made = ctx.pendingNumbering.styleDefs.find((s) => s.styleId === style.styleId)
+  const define = own
+    ? undefined
+    : {
+        name: style.name,
+        numId: made?.numId ?? nextNumId(ctx),
+        levels: style.levels,
+        ...(style.custom ? { custom: true as const } : {}),
+      }
+  ctx.setPendingNumbering((p) => ({
+    ...p,
+    styleNums: [...p.styleNums, { numId, styleId: style.styleId, ...(define ? { define } : {}) }],
+  }))
+  overlayNumberingDef(ctx, {
+    numId,
+    abstractNumId: `pending-${numId}`,
+    levels:
+      (own?.numId !== undefined && numbering.get(own.numId)?.levels) ||
+      Object.fromEntries(style.levels.map((l, i) => [i, numberingLevelFromCustom(l)])),
+    startOverrides: {},
+    listStyleId: style.styleId,
+  })
+  return { numId, kind }
+}
+
+/** A new named list style of the document, as the List Styles tab's Add defines it; null when the name is taken */
+export function addListStyle(
+  ctx: NumberingContext,
+  name: string,
+  levels: CustomNumberingLevel[],
+  shown: ListStyleEntry[],
+): string | null {
+  const wanted = name.trim()
+  if (!ctx.doc || !wanted || levels.length === 0) return null
+  const { styles, listStyles = [] } = ctx.doc.parsed
+  const lower = wanted.toLowerCase()
+  if (shown.some((s) => s.name.toLowerCase() === lower)) return null
+  for (const s of styles.values()) if (s.name.toLowerCase() === lower) return null
+  const styleId = newListStyleId(
+    wanted,
+    (id) =>
+      styles.has(id) ||
+      listStyles.some((s) => s.styleId === id) ||
+      shown.some((s) => s.styleId === id),
+  )
+  const numId = nextNumId(ctx)
+  ctx.setPendingNumbering((p) => ({
+    ...p,
+    styleDefs: [...p.styleDefs, { styleId, name: wanted, numId, levels }],
+  }))
+  return styleId
+}
+
+/**
+ * Deletes a list style of the document. Its lists keep their definitions as
+ * ordinary ones, so nothing dangles after an undo, and the body paragraphs
+ * that followed the style become plain paragraphs in one undoable edit.
+ */
+export function deleteListStyle(ctx: NumberingContext, style: ListStyleEntry): void {
+  const { editor, doc } = ctx
+  if (!editor || !doc || !style.custom) return
+  const { styleId } = style
+  const store = editor.storage.listNumbering as { defs: Map<string, NumberingDef> }
+  const kind = style.levels[0]?.numFmt === 'bullet' ? ('bullet' as const) : ('ordered' as const)
+  const inDocument = doc.parsed.listStyles?.some((s) => s.styleId === styleId) ?? false
+  const tr = editor.state.tr
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'docListItem') return true
+    const numId = node.attrs.numId == null ? undefined : String(node.attrs.numId)
+    const def =
+      numId === undefined ? undefined : (store.defs.get(numId) ?? doc.parsed.numbering.get(numId))
+    if (def?.listStyleId === styleId)
+      tr.setNodeMarkup(pos, editor.schema.nodes.docParagraph, node.attrs, node.marks)
+    return false
+  })
+  const defs = new Map([...doc.parsed.numbering, ...store.defs])
+  for (const [numId, def] of defs)
+    if (def.listStyleId === styleId) defs.set(numId, { ...def, listStyleId: undefined })
+  store.defs = defs
+  ctx.setPendingNumbering((p) => ({
+    ...p,
+    newDefs: [
+      ...p.newDefs,
+      ...p.styleNums
+        .filter((l) => l.styleId === styleId)
+        .map((l) => ({
+          numId: l.numId,
+          kind,
+          // level edits made since the style was applied live on the defining entry
+          levels:
+            p.styleNums.find((d) => d.styleId === styleId && d.define)?.define?.levels ??
+            style.levels,
+        })),
+    ],
+    styleNums: p.styleNums.filter((l) => l.styleId !== styleId),
+    styleDefs: p.styleDefs.filter((s) => s.styleId !== styleId),
+    removedStyles:
+      inDocument && !p.removedStyles.includes(styleId)
+        ? [...p.removedStyles, styleId]
+        : p.removedStyles,
+  }))
+  if (tr.docChanged) editor.view.dispatch(tr)
+}
+
+/** ids of the list styles the body's list items follow, and the one at the caret */
+export function listStylesInUse(
+  editor: Editor | null,
+  parsed: Map<string, NumberingDef> | undefined,
+): { used: Set<string>; current: string | null } {
+  const used = new Set<string>()
+  if (!editor) return { used, current: null }
+  const store = editor.storage.listNumbering as { defs: Map<string, NumberingDef> }
+  const styleOf = (numId: unknown) =>
+    numId == null
+      ? undefined
+      : (store.defs.get(String(numId)) ?? parsed?.get(String(numId)))?.listStyleId
+  editor.state.doc.descendants((node) => {
+    if (node.type.name !== 'docListItem') return true
+    const styleId = styleOf(node.attrs.numId)
+    if (styleId) used.add(styleId)
+    return false
+  })
+  const current = editor.isActive('docListItem')
+    ? (styleOf(editor.getAttributes('docListItem').numId) ?? null)
+    : null
+  return { used, current }
 }
 
 /** data URL of a pending picture bullet (parsed ones already carry picBulletSrc on the level) */
@@ -163,7 +317,37 @@ export function editListLevel(
     : { numFmt: 'decimal', lvlText: `%${ilvl + 1}.`, indentLeft: 720 * (ilvl + 1), hanging: 360 }
   const level: CustomNumberingLevel = { ...base, ...patch }
   const abstractNumId = target.def.abstractNumId
-  if (abstractNumId.startsWith('pending-')) {
+  const styleId = target.def.listStyleId
+  const ownNumId = ctx.doc?.parsed.listStyles?.find((s) => s.styleId === styleId)?.numId
+  const styleAbstract =
+    ownNumId !== undefined ? ctx.doc?.parsed.numbering.get(ownNumId)?.abstractNumId : undefined
+  const defined = ctx.pendingNumbering.styleNums.some((l) => l.styleId === styleId && l.define)
+  if (styleId && (styleAbstract !== undefined || defined)) {
+    // a list that links to a style has no levels of its own: the level is the style's
+    ctx.setPendingNumbering((p) => ({
+      ...p,
+      styleNums: p.styleNums.map((l) =>
+        l.styleId === styleId && l.define
+          ? {
+              ...l,
+              define: {
+                ...l.define,
+                levels: Object.assign([...l.define.levels], { [ilvl]: level }),
+              },
+            }
+          : l,
+      ),
+      levelEdits:
+        styleAbstract === undefined
+          ? p.levelEdits
+          : [
+              ...p.levelEdits.filter(
+                (e) => !(e.abstractNumId === styleAbstract && e.ilvl === ilvl),
+              ),
+              { abstractNumId: styleAbstract, ilvl, level },
+            ],
+    }))
+  } else if (abstractNumId.startsWith('pending-')) {
     const pendingNumId = abstractNumId.slice('pending-'.length)
     ctx.setPendingNumbering((p) => ({
       ...p,
@@ -199,7 +383,7 @@ export function editListLevel(
   const overlay = numberingLevelFromCustom(level, picBulletSrc(ctx, level.picBulletId))
   const next = new Map(store.defs)
   for (const [id, def] of next) {
-    if (def.abstractNumId !== abstractNumId) continue
+    if (def.abstractNumId !== abstractNumId && !(styleId && def.listStyleId === styleId)) continue
     next.set(id, { ...def, levels: { ...def.levels, [ilvl]: overlay } })
   }
   store.defs = next
@@ -345,6 +529,7 @@ export function pruneUnreferencedNumbering(
   }
   walk(doc)
   const newDefs = pending.newDefs.filter((d) => used.has(d.numId))
+  const styleNums = pending.styleNums.filter((l) => used.has(l.numId))
   const picIds = new Set<number>()
   for (const d of newDefs)
     for (const l of d.levels ?? []) if (l.picBulletId !== undefined) picIds.add(l.picBulletId)
@@ -355,6 +540,12 @@ export function pruneUnreferencedNumbering(
     restartNums: pending.restartNums.filter((r) => used.has(r.numId)),
     levelEdits: pending.levelEdits,
     picBullets: pending.picBullets.filter((p) => picIds.has(p.id)),
+    styleNums,
+    // a style a kept list already defines is written once, by that list
+    styleDefs: pending.styleDefs.filter(
+      (s) => !styleNums.some((l) => l.define && l.styleId === s.styleId),
+    ),
+    removedStyles: pending.removedStyles,
   }
 }
 
@@ -397,6 +588,30 @@ function previousListNumId(editor: Editor, curNumId: string): string | null {
       prev = node.attrs.numId as string
   })
   return prev
+}
+
+export type ListNumberingMode = 'restart' | 'continue'
+
+/**
+ * How the caret's numbered item counts: on from an earlier item of its list, or
+ * as the start of one (which an earlier list can take back in). Null outside
+ * a numbered list.
+ */
+export function listNumberingState(
+  editor: Editor | null,
+): { mode: ListNumberingMode; canContinue: boolean } | null {
+  if (!editor?.isActive('docListItem')) return null
+  const { numId, kind } = editor.getAttributes('docListItem')
+  if (numId == null || kind !== 'ordered') return null
+  const at = editor.state.selection.$from.index(0)
+  let continues = false
+  editor.state.doc.forEach((node, _offset, idx) => {
+    if (idx < at && node.type.name === 'docListItem' && node.attrs.numId === numId) continues = true
+  })
+  return {
+    mode: continues ? 'continue' : 'restart',
+    canContinue: continues || previousListNumId(editor, String(numId)) !== null,
+  }
 }
 
 /** Context menu: restart numbering (new num + startOverride pointing at the same abstractNum;

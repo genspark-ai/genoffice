@@ -6,6 +6,7 @@ export const de = {
   aiEmptyBuildBody:
     'Beschreibe die gewünschte Tabelle, Daten oder Diagramme — die KI erstellt sie direkt.',
   aiGskLoginBtn: 'Bei Genspark anmelden',
+  aiGskLoginOk: 'Bei Genspark angemeldet',
   aiUndelivered: 'Nicht gesendet',
   aiRetry: 'Erneut versuchen',
   aiOpenAssistant: 'KI-Assistenten öffnen',

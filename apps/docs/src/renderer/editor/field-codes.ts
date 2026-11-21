@@ -184,10 +184,14 @@ export const FieldCodesExtension = Extension.create({
   },
 })
 
+/** PAGE, NUMPAGES, PAGEREF: saved with `w:dirty`, as their page is not computed for the file */
+export const PAGE_FIELD_INSTR = /^\s*(?:PAGE|NUMPAGES|PAGEREF)\b/i
+
 /**
  * Edit Field… OK: rewrite the instruction and refresh the cached result in
- * one step (`value` empty = keep the old result, e.g. REF fields Word
- * recomputes on open). The run's other marks survive.
+ * one step. `value` empty = this editor has no result for the new code: the
+ * old one stays and the field is marked for Word to update on open. The
+ * run's other marks survive.
  */
 export function setFieldInstr(
   editor: Editor,
@@ -200,7 +204,12 @@ export function setFieldInstr(
   const { state } = editor
   const markType = state.schema.marks.instrField
   if (!markType) return false
-  const mark = markType.create({ ...range.mark.attrs, instr: next, dirty: true })
+  // a page field keeps the mark: its page is Word's to compute
+  const mark = markType.create({
+    ...range.mark.attrs,
+    instr: next,
+    dirty: !value || PAGE_FIELD_INSTR.test(next),
+  })
   const text = value || state.doc.textBetween(range.from, range.to, '')
   if (!text) return false
   const runMarks = state.doc.nodeAt(range.from)?.marks ?? []

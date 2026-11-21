@@ -19,7 +19,7 @@ export const fr = {
   ribbonLangItalian: 'italien',
   ribbonLangPolish: 'polonais',
   ribbonLangCzech: 'tchèque',
-  ribbonLangDutch: 'nederlands',
+  ribbonLangDutch: 'néerlandais',
   ribbonLangMalay: 'malais',
   ribbonLangHebrew: 'hébreu',
   ribbonLangHindi: 'hindi',

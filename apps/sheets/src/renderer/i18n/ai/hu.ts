@@ -6,6 +6,7 @@ export const hu = {
   aiEmptyBuildBody:
     'Írd le a szükséges táblázatot, adatot vagy diagramot — az AI a helyén hozza létre.',
   aiGskLoginBtn: 'Bejelentkezés a Gensparkba',
+  aiGskLoginOk: 'Bejelentkezve a Gensparkba',
   aiUndelivered: 'Nem sikerült elküldeni',
   aiRetry: 'Újra',
   aiOpenAssistant: 'AI-asszisztens megnyitása',

@@ -17,6 +17,7 @@ File Word, Excel, PowerPoint, dan PDF, diedit oleh Anda dan AI Anda, disimpan ke
   <a href="https://github.com/genspark-ai/genoffice/releases/latest"><img src="https://img.shields.io/github/v/release/genspark-ai/genoffice" alt="Latest release"></a>
   <a href="https://github.com/genspark-ai/genoffice/releases"><img src="https://img.shields.io/github/downloads/genspark-ai/genoffice/total" alt="Downloads"></a>
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub stars"></a>
+  <a href="https://x.com/merrickbuilds"><img src="https://img.shields.io/badge/follow-%40merrickbuilds-000000?logo=x&logoColor=white" alt="Follow @merrickbuilds on X"></a>
 </p>
 
 <p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <b>Bahasa Indonesia</b> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.hu.md">Magyar</a></p>
@@ -28,6 +29,7 @@ File Word, Excel, PowerPoint, dan PDF, diedit oleh Anda dan AI Anda, disimpan ke
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Situs Web</b></a> ·
   <a href="https://genoffice.ai/join"><b>Komunitas</b></a> ·
+  <a href="https://x.com/merrickbuilds"><b>X</b></a> ·
   <a href="../../PRIVACY.md"><b>Privasi</b></a>
 </p>
 
@@ -38,8 +40,10 @@ menghadirkan agen AI di samping setiap dokumen — bukan sekadar kotak obrolan
 yang ditempelkan di sisi layar, melainkan editor yang membaca file, membuat
 perubahan, dan menunjukkan dengan tepat bagian mana yang diubah. File ODF
 (`.odt`, `.ods`, `.odp`, serta templat `.ott`/`.ots`/`.otp`) terbuka sebagai
-salinan OOXML yang bisa diedit; impornya bersifat open-only — saat menyimpan,
-yang ditulis selalu OOXML, tidak pernah ODF.
+salinan OOXML yang bisa diedit, begitu pula file lama Word `.doc`/`.dot`,
+Excel 97 `.xls`, dan PowerPoint 97–2003 `.ppt` serta dokumen Hancom (`.hwp`,
+`.hwpx`); impornya bersifat open-only — saat menyimpan, yang ditulis selalu
+OOXML, tidak pernah format sumbernya.
 
 - **Format asli, byte-preserving.** Hanya bagian yang Anda edit yang ditulis
   ulang. Bagian lain dari file tetap sama persis, byte demi byte, sehingga
@@ -56,10 +60,21 @@ yang ditulis selalu OOXML, tidak pernah ODF.
   perangkat Anda sendiri. Konversi PDF → Word / Excel / PowerPoint, Markdown →
   Word, dan HTML → Word semuanya berjalan on-device. Hanya panggilan AI yang
   meninggalkan perangkat, menuju penyedia yang Anda pilih.
+- **Temukan file dari isinya.** Layar beranda menelusuri nama, folder, dan
+  teks lengkap file `.docx`, `.xlsx`, `.pptx`, PDF, Markdown, dan HTML Anda
+  dari indeks SQLite lokal, termasuk teks CJK. Secara opsional, hasil teratas
+  diurutkan ulang oleh **[TypeSafe Jev](https://typesafe.ai/)**, model
+  penilaian System One, sehingga file yang menjawab pertanyaan Anda muncul
+  paling atas.
+- **Tanyai file Anda, lengkap dengan sumbernya.** Beri bintang pada sekumpulan
+  dokumen, dan **Ask AI** di layar beranda menjawab pertanyaan lintas dokumen
+  tersebut, dengan mengutip file di balik setiap pernyataan sehingga Anda bisa
+  membukanya dan memeriksanya.
 - **Kunci API Anda sendiri, atau tanpa kunci sama sekali.** Masuk dengan
   Genspark dan lewati urusan kunci API, atau gunakan kunci Anda sendiri untuk
   Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
-  Mistral, OpenRouter, Requesty, atau endpoint apa pun yang kompatibel dengan OpenAI,
+  Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, atau
+  endpoint apa pun yang kompatibel dengan OpenAI,
   termasuk server lokal.
 - **Dapat dijalankan lewat skrip dan siap untuk agen.** Aplikasi ini
   menyertakan baris perintah `genoffice` dan sebuah skill untuk Claude Code,
@@ -74,7 +89,9 @@ detail dan persyaratan ada di bagian [Download](#download).
 
 ## Demo
 
-Enam aplikasi, satu panel AI, dan satu baris perintah untuk coding agent Anda.
+Enam aplikasi, satu panel AI, pencarian file yang diurutkan ulang oleh
+TypeSafe Jev, Ask AI yang menjawab dari file berbintang Anda lengkap dengan
+sumbernya, dan satu baris perintah untuk coding agent Anda.
 Setiap tangkapan layar adalah aplikasi asli di macOS, dengan AI yang dijalankan
 dari prompt yang bisa Anda baca di panel.
 
@@ -100,7 +117,7 @@ dari prompt yang bisa Anda baca di panel.
 </tr>
 <tr>
 <td><b>Bangun sheet-nya</b> — dari satu kalimat, agen menambahkan sheet Summary dengan rumus <code>SUMIF</code> yang sebenarnya per wilayah dan kategori, menyisipkan grafik kolom, dan menerapkan 43 perubahan sebagai satu batch yang bisa dibatalkan sekaligus.</td>
-<td><b>Tanyakan langsung</b> — pertanyaan tentang workbook dijawab lengkap dengan penalarannya, dan sel yang dipakai muncul sebagai kutipan yang bisa diklik. Di baliknya: mesin `.xlsx` Rust buatan sendiri, pivot table, slicer, pemformatan bersyarat, penelusuran rumus, serta gambar yang disematkan ke dalam sel sebagai rich value native Excel — saat dibuka lagi di Excel, gambarnya tetap berada di sel.Catatan sel dapat memuat gambar, yang ditampilkan di bawah popup catatan.</td>
+<td><b>Tanyakan langsung</b> — pertanyaan tentang workbook dijawab lengkap dengan penalarannya, dan sel yang dipakai muncul sebagai kutipan yang bisa diklik. Di baliknya: mesin `.xlsx` Rust buatan sendiri, pivot table, slicer, pemformatan bersyarat, penelusuran rumus, serta gambar yang disematkan ke dalam sel sebagai rich value native Excel — saat dibuka lagi di Excel, gambarnya tetap berada di sel. Catatan sel dapat memuat gambar, yang ditampilkan di bawah popup catatan.</td>
 </tr>
 </table>
 
@@ -185,7 +202,54 @@ gambar secara inline. Panel **Backlinks** mencantumkan setiap catatan yang
 mengarah ke catatan yang sedang terbuka, dan tampilan **Graph** memetakan
 tautan di seluruh vault.
 
-### 7 · CLI — coding agent Anda menjalankan GenOffice, di mesin Anda
+### <a id="7--search--find-the-file-that-answers-the-question-with-typesafe-jev"></a>7 · Pencarian — temukan file yang menjawab pertanyaan Anda, dengan TypeSafe Jev
+
+Setiap file di folder kerja Anda diindeks di perangkat: nama, folder, dan
+teks hasil ekstraksi dari file Word, Excel, PowerPoint, PDF, Markdown, dan
+HTML, dalam indeks teks lengkap SQLite dengan tokenisasi yang memahami CJK.
+Aktifkan **Jev search reranking** dan 20 hasil lokal teratas dinilai oleh
+[TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
+model System One yang mengembalikan satu skor relevansi terkalibrasi per
+dokumen dalam satu panggilan, alih-alih menghasilkan teks. Daftar diurutkan
+ulang berdasarkan skor itu; jika panggilan gagal atau melewati batas waktu,
+urutan lokal tetap dipakai.
+
+<img src="../assets/readme/search-jev-motion.webp" alt="Rekaman layar dari layar beranda GenOffice: mengetik laptop refresh policy menampilkan kebijakan cache browser, rencana penyegaran merek, dan jadwal penyegaran dashboard lebih dulu, sementara dokumen standar peralatan berada paling akhir; halaman Settings menunjukkan Jev search reranking diaktifkan di bawah AI Media & Search dengan endpoint TypeSafe; pencarian yang sama kemudian menampilkan dokumen standar peralatan di urutan pertama dengan lencana Jev di samping jumlah hasil" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/search-jev-before-after.webp" alt="Dua daftar hasil untuk kueri laptop refresh policy berdampingan: tanpa Jev, jadwal penyegaran dashboard, rencana penyegaran merek, dan kebijakan penyegaran cache browser berada di atas dan dokumen standar peralatan perusahaan ada di urutan kelima; dengan Jev, dokumen standar peralatan, yang memuat siklus penggantian laptop tiga tahun, berada di urutan pertama"></td>
+<td width="50%"><img src="../assets/readme/search-jev-settings.webp" alt="GenOffice Settings, halaman AI Media & Search: blok Local file search dengan sakelar Jev search reranking, pilihan endpoint antara OpenRouter dan TypeSafe, dan kolom kunci API"></td>
+</tr>
+<tr>
+<td><b>Kata yang sama, jawaban yang berbeda</b> — "laptop refresh policy" cocok kata demi kata dengan kebijakan penyegaran cache browser, rencana penyegaran merek, dan jadwal penyegaran dashboard, sehingga peringkat teks lengkap menempatkan ketiganya di atas. Jev membaca kutipannya dan memindahkan dokumen standar peralatan, yang memuat siklus penggantian tiga tahun, ke urutan teratas. Lencana <b>Jev</b> di samping jumlah hasil menunjukkan kapan urutan itu berasal dari model.</td>
+<td><b>Mati secara default, cukup satu sakelar untuk menyalakannya</b> — Settings → AI Media & Search → Local file search. Pilih OpenRouter atau TypeSafe langsung, tempel kunci, lalu klik Test connection. Hanya saat sakelar menyala, kutipan dari hasil teratas meninggalkan perangkat; indeksnya sendiri tidak pernah.</td>
+</tr>
+</table>
+
+### 8 · Ask AI — file berbintang Anda, dijawab lengkap dengan sumbernya
+
+Beri bintang pada file yang Anda kerjakan, dan **Ask AI** di layar beranda
+memperlakukannya sebagai basis pengetahuan. Ajukan pertanyaan dalam bahasa
+sehari-hari; agen menelusuri file berbintang, membaca yang diperlukannya, dan
+menjawab dengan kutipan setelah setiap pernyataan. Klik sebuah kutipan dan
+file-nya terbuka di aplikasi yang sesuai. Lampirkan file ke pertanyaan dengan
+menyeret, menempel, atau lewat menu **+** — gambar dikirim ke model sebagai
+masukan visual — dan setiap pertanyaan disimpan sebagai percakapan tersendiri:
+berpindah di antaranya, memulai yang baru, menghapus salah satunya; daftarnya
+tetap ada setelah aplikasi dimulai ulang.
+
+<img src="../assets/readme/home-ask-ai-motion.webp" alt="Rekaman layar Ask AI GenOffice: pertanyaan quick summary, what drove our Q3 growth and how did Asia-Pacific perform, diketik di layar beranda; agen membaca dua file berbintang dan menjawab dengan peluncuran Aurora X1 dan ekspansi Asia-Pasifik, setiap pernyataan diikuti chip kutipan yang menyebut laporan kuartalan atau workbook penjualan regional; klik pada chip workbook membukanya di Sheets dengan baris Asia-Pacific disorot" width="100%">
+
+Ask AI menelusuri indeks teks lengkap on-device yang sama dengan
+[Pencarian](#7--search--find-the-file-that-answers-the-question-with-typesafe-jev)
+dan membaca file halaman demi halaman, sehingga model hanya melihat hasil
+pencarian dan bagian yang dimintanya, lewat penyedia yang Anda pilih. Ia juga
+bisa memanggil CLI `genoffice` bawaan untuk membuat file secara langsung;
+masing-masing muncul sebagai kartu artefak di bawah jawaban, dan satu klik
+membukanya.
+
+### 9 · CLI — coding agent Anda menjalankan GenOffice, di mesin Anda
 
 GenOffice menyertakan baris perintah `genoffice` dan sebuah skill agen. Pasang
 skill itu, dan Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode,
@@ -205,7 +269,7 @@ lewat engine yang sama dengan aplikasinya, tanpa membuka satu jendela pun.
 </tr>
 </table>
 
-### 8 · MCP — alat yang sama lewat Model Context Protocol
+### 10 · MCP — alat yang sama lewat Model Context Protocol
 
 Setiap perintah `genoffice` juga merupakan alat MCP. Claude Code, Claude
 Desktop, Cursor, dan MCP client lainnya bisa menjalankan sendiri `genoffice
@@ -227,9 +291,9 @@ terlihat sambil Anda menyaksikannya.
 </tr>
 </table>
 
-### 9 · File lama — `.doc`, `.xls`, dan `.ppt` dari era 2000-an juga bisa dibuka
+### 11 · File lama — `.doc`, `.xls`, dan `.ppt` dari era 2000-an juga bisa dibuka
 
-File `.doc` Word 97–2003, `.xls` Excel, atau `.ppt` PowerPoint dibuka sebagai salinan hasil konversi `.docx`, `.xlsx`, atau `.pptx` yang dibuat di komputer Anda; file asli tidak pernah diubah. Gambar, tabel, rumus, format angka, isian, dan tata letak ikut terbawa.
+File `.doc` Word 97–2003, `.xls` Excel, atau `.ppt` PowerPoint dibuka sebagai salinan hasil konversi `.docx`, `.xlsx`, atau `.pptx` yang dibuat di komputer Anda; file asli tidak pernah diubah. Gambar, tabel, rumus, format angka, isian, dan tata letak ikut terbawa. Apa yang dipertahankan dan apa yang hilang pada tiap format dijelaskan di [File lama dan ODF dibuka sebagai salinan hasil konversi](#legacy-and-odf-files-open-as-converted-copies).
 
 <img src="../assets/readme/legacy-formats-motion.webp" alt="Selang waktu GenOffice membuka file .ppt, .doc, dan .xls dari laporan tahunan fiktif 2004, lalu satu slide ditampilkan di PowerPoint di samping dek hasil konversi di GenOffice" width="100%">
 
@@ -252,6 +316,13 @@ File `.doc` Word 97–2003, `.xls` Excel, atau `.ppt` PowerPoint dibuka sebagai 
   sistem untuk hasil pindaian.
 - **Markdown dan HTML juga**, dengan panel AI yang sama dan ekspor lokal ke
   Word.
+- **Pencarian yang menemukan jawaban, bukan sekadar kata kunci.** Pencarian
+  teks lengkap di semua dokumen dalam folder Anda, diindeks di perangkat,
+  dengan pengurutan ulang opsional oleh TypeSafe Jev, model penilaian System
+  One.
+- **Ask AI di seluruh file Anda.** Beri bintang pada file yang penting dan
+  ajukan pertanyaan dalam bahasa sehari-hari; setiap jawaban mengutip file
+  asalnya, cukup satu klik untuk membukanya.
 - **Skill.** Skill siap pakai atau `SKILL.md` buatan sendiri, dilampirkan dari menu **+** di panel AI mana pun.
 - **Dapat dijalankan lewat skrip.** Baris perintah `genoffice`, skill agen,
   dan server MCP menempatkan setiap engine untuk melayani Claude Code,
@@ -271,18 +342,30 @@ dan OpenCode Zen/Go, plus slot khusus untuk endpoint apa pun yang kompatibel
 dengan OpenAI (base URL + kunci), termasuk server model lokal. Pencarian dan
 media memiliki penyedia tersendiri per kemampuan di bawah **AI Media &
 Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa, atau Firecrawl
-untuk pencarian web — Keenable juga tanpa kunci; kunci hanya menaikkan batas
-lajunya — dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX, atau
-endpoint apa pun yang kompatibel dengan OpenAI untuk generasi gambar serta
-analisis gambar/video.
+untuk pencarian web, dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX, atau
+endpoint gambar apa pun yang kompatibel dengan OpenAI untuk generasi gambar serta
+analisis gambar/video, plus DeepSeek V4.1 Flash untuk analisis gambar.
+
+**TypeSafe Jev** mengurutkan ulang hasil pencarian file di layar beranda. Di
+bawah **AI Media & Search → Local file search**, aktifkan Jev search reranking
+dan pilih endpoint: [OpenRouter](https://openrouter.ai/typesafe) (model
+`typesafe/jev-1.13`) atau API milik TypeSafe sendiri. Kuncinya hanya disimpan
+di perangkat ini. Fitur ini mati secara default; saat aktif, kutipan dari 20
+hasil lokal teratas dikirim untuk dinilai dan tidak ada hal lain yang
+meninggalkan mesin.
+
+**Parallel** bisa dipakai tanpa akun: Search MCP gratisnya (dengan batas laju)
+menjadi pencarian web default setiap kali tidak ada login Genspark atau kunci
+pencarian yang dikonfigurasi, dan dijalankan lebih dulu sebelum scraping
+DuckDuckGo. Pilih Parallel di bawah Web search dan masukkan kunci
+[Parallel](https://platform.parallel.ai/) untuk memakai Search API sebagai
+gantinya. Keenable juga tanpa kunci; kunci hanya menaikkan batas lajunya.
 
 Seluruh suite mendukung tema terang, gelap, dan sistem. Tema hanya mengubah
 tampilan di layar: ekspor, cetakan, dan file yang disimpan selalu
 mempertahankan warna asli dokumen.
 
-<a id="skills"></a>
-
-## Skill
+## <a id="skills"></a>Skill
 
 Skill adalah berkas `SKILL.md` yang memberi tahu AI cara mengerjakan satu tugas dengan baik: laporan mingguan, NDA, rencana pelajaran.
 GenOffice menyertakan sekumpulan skill dan menerima skill buatan Anda, dalam format yang sama dengan yang dipakai agen pemrograman.
@@ -292,9 +375,7 @@ GenOffice menyertakan sekumpulan skill dan menerima skill buatan Anda, dalam for
 
 ---
 
-<a id="command-line-and-agent-skill"></a>
-
-## Baris perintah dan skill agen
+## <a id="command-line-and-agent-skill"></a>Baris perintah dan skill agen
 
 Semua yang bisa dilakukan aplikasi terhadap sebuah file, bisa dilakukan baris
 perintah `genoffice` dari terminal: memeriksa, mengonversi, membuat, membaca,
@@ -327,7 +408,7 @@ dan bagaimana memeriksa hasil kerjanya sendiri.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, ppt → pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -344,7 +425,7 @@ mencantumkan daftar perintah saat ini; referensi lengkapnya ada di
 
 ### Apa yang sebenarnya dijalankan agen
 
-Deck Tata Surya di demo di atas hanya butuh satu prompt di Claude Code. Di
+Deck Tata Surya di [demo](#demo) hanya butuh satu prompt di Claude Code. Di
 baliknya, agen mengikuti alur kerja bertahap dari skill dan CLI memeriksa
 setiap tahap sebelum tahap berikutnya dimulai:
 
@@ -366,9 +447,7 @@ Tidak ada panggilan model yang terjadi di dalam `genoffice`: agen yang
 berpikir, CLI yang membangun dan memeriksa, dan hasilnya terbuka di GenOffice
 atau PowerPoint sebagai `.pptx` biasa.
 
-<a id="mcp-server"></a>
-
-### Server MCP
+### <a id="mcp-server"></a>Server MCP
 
 Perintah yang sama tersedia sebagai alat [Model Context Protocol](https://modelcontextprotocol.io)
 untuk asisten yang tidak bisa menjalankan terminal, atau yang tidak ingin
@@ -379,6 +458,7 @@ cuplikan siap salin di **Pengaturan → Integrasi → MCP**:
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A · `genoffice mcp`** (disarankan) | Server stdio yang dijalankan sendiri oleh asisten; GenOffice tidak perlu terbuka. Satu alat per perintah (`info`, `convert`, `create_docx`, `create_xlsx`, `create_pptx`, `create_pdf`, `docs_read` / `docs_apply` / `docs_check`, `sheet_*`, `slides_*`, `render`, `guide`, `search`, `image`, `media`, `open`) plus alur deck bertahap `deck_start` → `deck_page` → `deck_build` → `deck_replace`. Ops, spesifikasi, dan Markdown dikirim inline, jadi client tanpa sistem file pun tetap bisa jalan. |
 | **B · Server HTTP lokal**            | Berjalan di dalam aplikasi GenOffice pada `http://127.0.0.1:3093/mcp` (Streamable HTTP, dengan SSE lama). Alatnya menjalankan tab editor Word yang terlihat: `create_session`, `insert_content`, `replace_blocks`, `apply_ops`, `read_document`, `save_session`, dan Anda menyaksikan dokumen terbentuk. Mati secara default; nyalakan di panel pengaturan yang sama.                                                                                                                                   |
+| **C · `genoffice mcp --http`**       | Kumpulan alat stdio sebagai server Streamable HTTP untuk client di mesin lain: container, sandbox, atau mesin bersama di jaringan Anda. File ikut berpindah bersama panggilan: `PUT /files/<name>` mengunggah satu file dan mengembalikan URL, setiap parameter `file` menerima URL http(s), dan alat yang menulis file mengembalikannya sebagai URL unduhan plus, bila ukurannya kecil, byte-nya sebagai resource MCP. `--host 0.0.0.0` membukanya ke jaringan, `--token` melindunginya.               |
 
 ```bash
 # Claude Code
@@ -386,9 +466,27 @@ claude mcp add --transport stdio genoffice -- genoffice mcp
 ```
 
 ```jsonc
-// Cursor, Claude Desktop, atau MCP client lain mana pun
+// Cursor, Claude Desktop or any other MCP client
 { "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
 ```
+
+```bash
+# On the machine that has GenOffice (private network; add --token for a shared box)
+genoffice mcp --http 3093 --host 0.0.0.0 --token "$GENOFFICE_MCP_TOKEN"
+
+# From the client: upload, then use the URL wherever a tool takes a file
+curl -T report.docx -H "Authorization: Bearer $GENOFFICE_MCP_TOKEN" http://server:3093/files/
+#   → { "url": "http://server:3093/files/<id>/report.docx", ... }
+#   docs_read({ "file": "http://server:3093/files/<id>/report.docx" })
+#   docs_apply(...) → output_url, downloadable with curl -o
+```
+
+Lewat HTTP, setiap sesi mendapat folder kerja sementara pribadi, path relatif
+dan folder deck di-resolve di dalamnya, `open` tidak ditawarkan, dan bila
+`GENOFFICE_ALLOWED_ROOTS` tidak disetel, alat tidak bisa keluar dari
+penyimpanan file milik server sendiri. `render`, `convert` ke PDF, dan
+`create_pdf` tetap menjalankan proses GenOffice tersembunyi, jadi host
+headless memerlukan aplikasi yang terpasang dan display virtual (`xvfb-run`).
 
 `genoffice` di sini adalah CLI yang disertakan di dalam aplikasi (di macOS
 `/Applications/GenOffice.app/Contents/Resources/cli/genoffice`; panel
@@ -400,7 +498,7 @@ server MCP bisa berdampingan dan asisten memilih salah satunya. Fitur cloud
 GenOffice; sisanya berjalan lokal, dan `GENOFFICE_ALLOWED_ROOTS` membatasi
 setiap alat hanya ke folder yang Anda daftarkan.
 
-Deck energi terbarukan dalam demo di atas adalah gambaran, dari sisi
+Deck energi terbarukan di [demo](#demo) adalah gambaran, dari sisi
 protokol, satu prompt di Claude Code yang hanya menyambungkan server MCP
 `genoffice`:
 
@@ -424,9 +522,7 @@ sekali tidak menyentuh shell: figur, foto, semua panduan, pemeriksaan, dan
 render berjalan sebagai hasil panggilan alat MCP. Hanya `search` dan `media`
 yang keluar dari mesin, ke penyedia yang dikonfigurasi di GenOffice.
 
-<a id="download"></a>
-
-## Download
+## <a id="download"></a>Download
 
 | Platform                             | Persyaratan                                           | Unduh                                                                                      |
 | ------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -458,6 +554,11 @@ Di Fedora / keluarga RHEL / openSUSE, pasang rpm sebagai gantinya:
 sudo dnf install ./genoffice-<version>.x86_64.rpm     # Fedora / RHEL family
 sudo zypper install ./genoffice-<version>.x86_64.rpm  # openSUSE
 ```
+
+Paket deb dan rpm juga menambahkan templat kosong untuk Dolphin di KDE Plasma:
+klik kanan di sebuah folder → **Create New** menampilkan _GenOffice Document_,
+_GenOffice Spreadsheet_, dan _GenOffice Presentation_. Templat itu berada di
+`/usr/share/templates` dan ikut terhapus bersama paketnya.
 
 AppImage berjalan langsung di tempat: pasang runtime FUSE 2
 (`sudo apt install libfuse2`; di Ubuntu 24.04 paketnya bernama
@@ -493,6 +594,32 @@ save      ─► dirty blocks → OOXML fragments (referencing existing styles o
 Tur paket demi paket (engine docx/pptx, `pdf2docx`, `html2docx`, agent core,
 dan provider) ada di [CONTRIBUTING.md](../../CONTRIBUTING.md#engine-packages).
 
+### <a id="legacy-and-odf-files-open-as-converted-copies"></a>File lama dan ODF dibuka sebagai salinan hasil konversi
+
+Format yang tidak bisa ditulis balik oleh GenOffice — Word lama `.doc`/`.dot`,
+Hancom `.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, PowerPoint lama `.ppt`, dan
+keluarga OpenDocument (`.odt`, `.ott`, `.ods`, `.ots`, `.odp`, `.otp`) — adalah
+impor, bukan file native.
+Membuka salah satunya mengonversinya di mesin Anda menjadi salinan `.docx`,
+`.xlsx`, atau `.pptx`, lalu membuka salinan itu; file asli tidak pernah dibaca
+lagi dan tidak pernah ditulis.
+
+- Docs dan Slides lebih dulu menanyakan di mana salinan disimpan (secara
+  default `.docx`/`.pptx` pendamping di samping file asli), sehingga setiap
+  Save berikutnya tersimpan di sana. Sebuah `.ppt` dikonversi beserta master,
+  geometri bentuk, isian, gambar, dan format teksnya, sehingga deck tampak
+  seperti yang ditampilkan PowerPoint; catatan, animasi, transisi, dan
+  hyperlink belum ikut terbawa.
+- Sheets langsung membuka workbook hasil konversi dan mengarahkan Save pertama
+  lewat Save As ke `.xlsx` baru. `.csv` adalah pengecualian: ia mempertahankan
+  identitasnya dan Save menulis nilai kembali ke `.csv`, seperti yang
+  dilakukan Excel.
+- Konversi bersifat satu arah dan bisa menghilangkan fitur yang dimiliki
+  format sumber tetapi tidak dimiliki OOXML. `.doc`, `.ppt`, `.hwp`, dan format
+  ODF menampilkan dialog konfirmasi yang menyatakan hal itu; centang "Convert
+  without asking next time" untuk melewatinya, dan "Ask before converting
+  legacy files" di Settings → General mengaktifkannya kembali.
+
 ## Pengembangan
 
 ```bash
@@ -522,6 +649,8 @@ GenOffice terus dikembangkan secara aktif dan masukan Anda membentuk arahnya.
 - **Gabung ke grup chat GenOffice** di
   [GenTeam](https://genoffice.ai/join) untuk mengobrol dengan tim dan
   pengguna lain.
+- **Ikuti [@merrickbuilds](https://x.com/merrickbuilds) di X** untuk catatan
+  rilis, demo, dan apa yang sedang dibangun berikutnya.
 - **Beri bintang (star) pada repo ini** jika GenOffice bermanfaat bagi Anda —
   ini cara terbaik untuk mendukung proyek ini.
 
@@ -542,6 +671,9 @@ Ya. GenOffice membuka dan menyimpan file `.docx`, `.xlsx`, dan `.pptx` asli.
 Penyimpanan bersifat byte-preserving: bagian file yang tidak Anda sentuh
 ditulis kembali byte demi byte, sehingga dokumen tetap berfungsi normal di
 Microsoft Office.
+File lama `.doc`/`.dot`, `.xls`, dan `.ppt` juga bisa dibuka, sebagai salinan
+hasil konversi `.docx`/`.xlsx`/`.pptx` — lihat [File lama dan ODF dibuka
+sebagai salinan hasil konversi](#legacy-and-odf-files-open-as-converted-copies).
 
 </details>
 
@@ -580,7 +712,7 @@ gambar halaman.
 
 Ya. Selain masuk lewat Genspark tanpa kunci API, GenOffice mendukung
 penggunaan kunci Anda sendiri untuk Claude, OpenAI, Gemini, DeepSeek, Kimi,
-GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, dan OpenCode Zen/Go,
+GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, dan OpenCode Zen/Go,
 plus endpoint apa pun yang kompatibel dengan OpenAI — termasuk server model
 lokal. Pencarian, generasi gambar, dan analisis gambar/video menggunakan
 kunci tersendiri di Settings → AI Media & Search.
@@ -669,6 +801,11 @@ GenOffice tidak akan mungkin ada tanpa proyek-proyek open-source berikut:
 - [libeot](https://github.com/umanwizard/libeot) (MPL-2.0) — decoder
   MicroType Express untuk font PowerPoint yang disematkan, diporting ke
   TypeScript.
+- [rhwp](https://github.com/edwardkim/rhwp) (MIT) — membaca dokumen biner
+  `.hwp` menjadi HWPX untuk impor Hancom; build WebAssembly-nya memuat crate
+  Rust dan port hwp-extract dari Volexity yang tercantum dalam pemberitahuan
+  pihak ketiga. "한글", "한컴", "HWP", dan "HWPX" adalah merek dagang terdaftar
+  milik Hancom Inc.; GenOffice tidak berafiliasi dengan Hancom.
 - [React](https://react.dev/) (MIT) — lapisan UI setiap aplikasi.
 - [Mermaid](https://mermaid.js.org/) (MIT) dan [KaTeX](https://katex.org/)
   (MIT) — diagram dan matematika di Markdown dan Docs.

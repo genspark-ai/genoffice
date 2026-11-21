@@ -29,8 +29,8 @@ export interface DocState {
 }
 
 /** A restored recovery snapshot has not reached the original path yet. */
-export function openedFileStartsDirty(result: { recovered?: boolean }): boolean {
-  return result.recovered === true
+export function openedFileStartsDirty(result: { recovered?: boolean; unsaved?: boolean }): boolean {
+  return result.recovered === true || result.unsaved === true
 }
 
 /** Pending numbering definitions to append (saved via SaveOptions.numbering) */
@@ -53,6 +53,26 @@ export interface PendingNumbering {
   }>
   /** picture bullets (w:numPicBullet) referenced by pending levels */
   picBullets: Array<{ id: number; base64: string; mime: 'image/png' | 'image/jpeg' | 'image/gif' }>
+  /** lists following a named list style; `define` creates a style the document lacks */
+  styleNums: Array<{
+    numId: string
+    styleId: string
+    define?: {
+      name: string
+      numId: string
+      levels: import('@genoffice/docx-engine').CustomNumberingLevel[]
+      custom?: true
+    }
+  }>
+  /** list styles made in the dialog: saved with the document even when no list follows them yet */
+  styleDefs: Array<{
+    styleId: string
+    name: string
+    numId: string
+    levels: import('@genoffice/docx-engine').CustomNumberingLevel[]
+  }>
+  /** list styles of the document that were deleted */
+  removedStyles: string[]
 }
 
 export const EMPTY_PENDING_NUMBERING: PendingNumbering = {
@@ -60,6 +80,9 @@ export const EMPTY_PENDING_NUMBERING: PendingNumbering = {
   restartNums: [],
   levelEdits: [],
   picBullets: [],
+  styleNums: [],
+  styleDefs: [],
+  removedStyles: [],
 }
 
 export function pendingNumberingDirty(p: PendingNumbering): boolean {
@@ -67,7 +90,10 @@ export function pendingNumberingDirty(p: PendingNumbering): boolean {
     p.newDefs.length > 0 ||
     p.restartNums.length > 0 ||
     p.levelEdits.length > 0 ||
-    p.picBullets.length > 0
+    p.picBullets.length > 0 ||
+    p.styleNums.length > 0 ||
+    p.styleDefs.length > 0 ||
+    p.removedStyles.length > 0
   )
 }
 

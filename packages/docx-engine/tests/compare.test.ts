@@ -81,14 +81,15 @@ describe('document comparison (tracked changes)', () => {
     expect(summary.deletedParagraphs).toBe(1)
   })
 
-  it('a non-paragraph block keeps the block-level wrapper (the shape Word writes for tables)', async () => {
-    const tableA =
-      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>' +
-      '<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>old cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
-    const tableB =
-      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>' +
-      '<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>new cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
-    const { xml } = await compare(UNCHANGED_P + tableA, UNCHANGED_P + tableB)
+  it('a table whose shape changed keeps the block-level wrapper (the shape Word writes for tables)', async () => {
+    const row = (text: string) =>
+      `<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc></w:tr>`
+    const table = (rows: string) =>
+      `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>${rows}</w:tbl>`
+    const { xml } = await compare(
+      UNCHANGED_P + table(row('old cell')),
+      UNCHANGED_P + table(row('new cell') + row('second row')),
+    )
     expect(xml).toMatch(/<w:del\b[^>]*>\s*<w:tbl[\s>]/)
     expect(xml).toMatch(/<w:ins\b[^>]*>\s*<w:tbl[\s>]/)
   })

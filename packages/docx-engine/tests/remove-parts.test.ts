@@ -22,6 +22,7 @@ const CONTENT_TYPES_XML =
   '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
   '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
   '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
+  '<Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/>' +
   '<Override PartName="/customXml/item1.xml" ContentType="application/xml"/>' +
   '<Override PartName="/customXml/itemProps1.xml" ContentType="application/vnd.openxmlformats-officedocument.customXmlProperties+xml"/>' +
   '<Override PartName="/word/webextensions/webextension1.xml" ContentType="application/vnd.ms-office.webextension+xml"/>' +
@@ -33,6 +34,7 @@ const ROOT_RELS_XML =
   '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
   '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
   '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' +
+  '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps" Target="docProps/custom.xml"/>' +
   '</Relationships>'
 
 const DOCUMENT_RELS_XML =
@@ -91,6 +93,13 @@ const DATA_BINDING_SDT_XML =
   `w:xpath="/ns0:matter/ns0:client" w:storeItemID="${STORE_ITEM_ID}"/></w:sdtPr>` +
   '<w:sdtContent><w:p><w:r><w:t>Acme</w:t></w:r></w:p></w:sdtContent></w:sdt>'
 
+const CUSTOM_PROPS_XML =
+  XML_DECL +
+  '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" ' +
+  'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
+  '<property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="MatterID">' +
+  '<vt:lpwstr>ACME-042</vt:lpwstr></property></Properties>'
+
 function documentXml(withDataBinding: boolean): string {
   return (
     XML_DECL +
@@ -117,6 +126,7 @@ async function fixtureDocx(opts: { dataBinding?: boolean } = {}): Promise<Uint8A
   zip.file('word/_rels/document.xml.rels', DOCUMENT_RELS_XML)
   zip.file('word/styles.xml', STYLES_XML)
   zip.file('docProps/core.xml', CORE_PROPS_XML)
+  zip.file('docProps/custom.xml', CUSTOM_PROPS_XML)
   zip.file('customXml/item1.xml', CUSTOM_XML_ITEM_XML)
   zip.file('customXml/itemProps1.xml', CUSTOM_XML_ITEM_PROPS_XML)
   zip.file('customXml/_rels/item1.xml.rels', CUSTOM_XML_RELS_XML)
@@ -252,6 +262,25 @@ describe('remove_parts package scrub', () => {
     expect(contentTypes).toContain('Extension="xml"')
     expect(contentTypes).toContain('Extension="rels"')
     expect(contentTypes).not.toContain('webextension')
+  })
+
+  it('lets a scrub remove docProps/custom.xml with its root rel and content-type entry', async () => {
+    const bytes = await fixtureDocx()
+    // optional in OPC (Word opens a package without it) and what a pre-filing
+    // scrub exists to remove: matter IDs and DMS tags live there
+    const plan = await planRemoveParts(bytes, { paths: ['docProps/custom.xml'] })
+    expect(plan.refusedPaths).toEqual([])
+    const saved = await saveFixture(bytes, { paths: ['docProps/custom.xml'] })
+    const parts = await bytesOf(saved)
+    expect(parts.has('docProps/custom.xml')).toBe(false)
+    // core stays: it is the package's required identity
+    expect(parts.has('docProps/core.xml')).toBe(true)
+    const rootRels = await textOf(saved, '_rels/.rels')
+    expect(rootRels).not.toContain('docProps/custom.xml')
+    expect(rootRels).toContain('docProps/core.xml')
+    const contentTypes = await textOf(saved, '[Content_Types].xml')
+    expect(contentTypes).not.toContain('/docProps/custom.xml')
+    expect(contentTypes).toContain('/docProps/core.xml')
   })
 
   it('refuses the main document part, its rels and the story parts', async () => {

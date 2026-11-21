@@ -17,6 +17,7 @@ Soubory Word, Excel, PowerPoint a PDF, upravované vámi a vaší AI, ukládané
   <a href="https://github.com/genspark-ai/genoffice/releases/latest"><img src="https://img.shields.io/github/v/release/genspark-ai/genoffice" alt="Nejnovější verze"></a>
   <a href="https://github.com/genspark-ai/genoffice/releases"><img src="https://img.shields.io/github/downloads/genspark-ai/genoffice/total" alt="Stažení"></a>
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="Hvězdy na GitHubu"></a>
+  <a href="https://x.com/merrickbuilds"><img src="https://img.shields.io/badge/follow-%40merrickbuilds-000000?logo=x&logoColor=white" alt="Sledujte @merrickbuilds na X"></a>
 </p>
 
 <p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <b>Čeština</b> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.hu.md">Magyar</a></p>
@@ -28,6 +29,7 @@ Soubory Word, Excel, PowerPoint a PDF, upravované vámi a vaší AI, ukládané
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Web</b></a> ·
   <a href="https://genoffice.ai/join"><b>Komunita</b></a> ·
+  <a href="https://x.com/merrickbuilds"><b>X</b></a> ·
   <a href="../../PRIVACY.md"><b>Soukromí</b></a>
 </p>
 
@@ -37,8 +39,10 @@ upravuje PDF, Markdown a HTML a ke každému dokumentu přidává AI agenta —
 nejde o přilepené chatovací okno, ale o editor, který soubor přečte,
 provede požadovanou úpravu a přesně vám ukáže, čeho se dotkl. Soubory ODF
 (`.odt`, `.ods`, `.odp` a šablony `.ott`/`.ots`/`.otp`) se otevírají jako
-editovatelné kopie OOXML; import podporuje jen otevírání — ukládání zapisuje
-výhradně OOXML, nikdy ODF.
+editovatelné kopie OOXML, stejně jako starší soubory Wordu `.doc`/`.dot`,
+Excelu 97 `.xls` a PowerPointu 97–2003 `.ppt` a dokumenty Hancom (`.hwp`,
+`.hwpx`); import podporuje jen otevírání — ukládání zapisuje výhradně OOXML,
+nikdy zdrojový formát.
 
 - **Skutečné formáty, zachování na úrovni bajtů.** Přepíše se jen to, co
   upravíte. Vše ostatní v souboru zůstává bajtově identické, takže dokumenty
@@ -55,10 +59,20 @@ výhradně OOXML, nikdy ODF.
   i převádějí přímo na vašem počítači. PDF → Word / Excel / PowerPoint
   a Markdown → Word i HTML → Word běží celé na zařízení. Zařízení opouštějí
   jen volání AI, a to k poskytovateli, kterého si sami vyberete.
+- **Hledejte soubory podle toho, co říkají.** Domovská obrazovka prohledává
+  názvy, složky a plný text vašich souborů `.docx`, `.xlsx`, `.pptx`, PDF,
+  Markdown a HTML v lokálním indexu SQLite, včetně CJK. Volitelně nejlepší
+  výsledky přeřadí **[TypeSafe Jev](https://typesafe.ai/)**, posuzovací model
+  System One, takže soubor, který odpovídá na vaši otázku, je první.
+- **Ptejte se svých souborů, se zdroji.** Označte sadu dokumentů hvězdičkou
+  a **Ask AI** na domovské obrazovce odpovídá na otázky napříč nimi a u každého
+  tvrzení cituje soubor, ze kterého vychází, takže jej můžete otevřít
+  a ověřit.
 - **Vaše klíče, nebo žádné.** Přihlaste se přes Genspark a klíče nepotřebujete,
   nebo použijte vlastní klíč pro Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM,
-  Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty nebo jakýkoli OpenAI
-  kompatibilní endpoint, včetně lokálních serverů.
+  Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper
+  Inference, Atlas Cloud nebo jakýkoli OpenAI kompatibilní endpoint, včetně
+  lokálních serverů.
 - **Skriptovatelný a připravený pro agenty.** Aplikace obsahuje příkazový
   řádek `genoffice` a skill pro Claude Code, Codex, Cursor, Gemini CLI,
   GitHub Copilot, OpenCode a Windsurf, takže kódovací agent může na vašem
@@ -70,9 +84,11 @@ výhradně OOXML, nikdy ODF.
 [Linux](https://github.com/genspark-ai/genoffice/releases/latest) (deb, rpm, AppImage) —
 podrobnosti a požadavky najdete v sekci [Stažení](#download).
 
-## Ukázka
+## <a id="demo"></a>Ukázka
 
-Šest aplikací, jeden AI panel a příkazový řádek pro vašeho kódovacího agenta.
+Šest aplikací, jeden AI panel, vyhledávání souborů přeřazované modelem
+TypeSafe Jev, Ask AI, které odpovídá z vašich souborů s hvězdičkou a uvádí
+zdroje, a příkazový řádek pro vašeho kódovacího agenta.
 Každý snímek obrazovky je ze skutečné aplikace na macOS, s AI ovládanou
 promptem, který si můžete přečíst v panelu.
 
@@ -98,7 +114,7 @@ promptem, který si můžete přečíst v panelu.
 </tr>
 <tr>
 <td><b>Vytvořte to</b> — z jedné věty agent přidá list Summary se skutečnými vzorci <code>SUMIF</code> podle regionu a kategorie, vloží sloupcový graf a všech 43 změn provede jako jednu dávku, kterou lze vrátit.</td>
-<td><b>Zeptejte se</b> — dotazy k sešitu se vracejí s odůvodněním a konkrétními buňkami použitými jako klikatelné citace. Pod kapotou: vlastní Rust engine `.xlsx`, kontingenční tabulky, filtry, podmíněné formátování, sledování vzorců a obrázky vložené do buněk jako nativní rich values Excelu — Excel je po opětovném otevření najde stále v buňce.Poznámka buňky může obsahovat obrázek, zobrazený pod vyskakovacím okénkem poznámky.</td>
+<td><b>Zeptejte se</b> — dotazy k sešitu se vracejí s odůvodněním a konkrétními buňkami použitými jako klikatelné citace. Pod kapotou: vlastní Rust engine `.xlsx`, kontingenční tabulky, filtry, podmíněné formátování, sledování vzorců a obrázky vložené do buněk jako nativní rich values Excelu — Excel je po opětovném otevření najde stále v buňce. Poznámka buňky může obsahovat obrázek, zobrazený pod vyskakovacím okénkem poznámky.</td>
 </tr>
 </table>
 
@@ -183,7 +199,52 @@ doplňování názvů poznámek a `![[…]]` vloží poznámku nebo obrázek př
 do textu. Panel **Backlinks** vypíše každou poznámku, která ukazuje na tu
 otevřenou, a pohled **Graph** zmapuje odkazy celého trezoru.
 
-### 7 · CLI — váš kódovací agent řídí GenOffice, na vašem počítači
+### <a id="7--search--find-the-file-that-answers-the-question-with-typesafe-jev"></a>7 · Vyhledávání — najděte soubor, který odpovídá na otázku, s TypeSafe Jev
+
+Každý soubor ve vaší pracovní složce se indexuje přímo na zařízení: názvy,
+složky a extrahovaný text souborů Word, Excel, PowerPoint, PDF, Markdown
+a HTML, ve fulltextovém indexu SQLite s tokenizací, která počítá s CJK.
+Zapněte **Jev search reranking** a 20 nejlepších lokálních výsledků posoudí
+[TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
+model System One, který místo generování textu vrátí v jediném volání jedno
+kalibrované skóre relevance pro každý dokument. Seznam se podle tohoto skóre
+přeřadí; pokud volání selže nebo vyprší jeho časový limit, zůstane lokální
+pořadí.
+
+<img src="../assets/readme/search-jev-motion.webp" alt="Záznam obrazovky domovské obrazovky GenOffice: po zadání laptop refresh policy se nejprve vypíší zásady pro mezipaměť prohlížeče, plán obnovy značky a harmonogram obnovování dashboardu, zatímco dokument se standardy vybavení je poslední; stránka Nastavení ukazuje zapnutý přepínač Jev search reranking v části AI Media & Search s endpointem TypeSafe; stejné hledání pak ukazuje dokument se standardy vybavení na prvním místě s odznakem Jev vedle počtu výsledků" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/search-jev-before-after.webp" alt="Dva seznamy výsledků pro dotaz laptop refresh policy vedle sebe: bez Jev vedou harmonogram obnovování dashboardu, plán obnovy značky a zásady obnovování mezipaměti prohlížeče a dokument se standardy firemního vybavení je pátý; s Jev je dokument se standardy vybavení, který uvádí tříletý cyklus výměny notebooků, první"></td>
+<td width="50%"><img src="../assets/readme/search-jev-settings.webp" alt="Nastavení GenOffice, stránka AI Media & Search: blok Local file search s přepínačem Jev search reranking, volbou endpointu mezi OpenRouter a TypeSafe a polem pro API klíč"></td>
+</tr>
+<tr>
+<td><b>Stejná slova, jiné odpovědi</b> — „laptop refresh policy“ se slovo od slova shoduje se zásadami obnovování mezipaměti prohlížeče, plánem obnovy značky i harmonogramem obnovování dashboardu, takže fulltextové řazení je dá na první místa. Jev si přečte úryvky a posune nahoru dokument se standardy vybavení — ten, který uvádí tříletý cyklus výměny. Odznak <b>Jev</b> vedle počtu výsledků ukazuje, kdy pořadí určil model.</td>
+<td><b>Ve výchozím stavu vypnuto, zapíná se jedním přepínačem</b> — Nastavení → AI Media & Search → Local file search. Zvolte OpenRouter nebo přímo TypeSafe, vložte klíč a klikněte na Test connection. Úryvky nejlepších výsledků opouštějí zařízení jen při zapnutém přepínači; samotný index nikdy.</td>
+</tr>
+</table>
+
+### 8 · Ask AI — vaše soubory s hvězdičkou, zodpovězené se zdroji
+
+Označte hvězdičkou soubory, se kterými pracujete, a **Ask AI** na domovské
+obrazovce s nimi zachází jako se znalostní bází. Položte otázku běžným
+jazykem; agent prohledá soubory s hvězdičkou, přečte ty, které potřebuje,
+a odpoví s citací za každým tvrzením. Kliknete na citaci a soubor se otevře
+ve správné aplikaci. K otázce můžete přiložit soubory přetažením, vložením
+nebo z nabídky **+** — obrázky dostane model jako vizuální vstup — a každá
+otázka se uchová jako samostatná konverzace: přepínejte mezi nimi, založte
+novou, některou smažte; seznam přežije restart.
+
+<img src="../assets/readme/home-ask-ai-motion.webp" alt="Záznam obrazovky GenOffice Ask AI: na domovské obrazovce se zadá otázka quick summary, what drove our Q3 growth and how did Asia-Pacific perform; agent přečte dva soubory s hvězdičkou a odpoví uvedením produktu Aurora X1 a expanzí v asijsko-pacifickém regionu, přičemž za každým tvrzením následuje citační čip s názvem čtvrtletní zprávy nebo regionálního sešitu prodejů; kliknutí na čip sešitu jej otevře v Sheets se zvýrazněným řádkem Asia-Pacific" width="100%">
+
+Ask AI prohledává stejný fulltextový index na zařízení jako
+[Vyhledávání](#7--search--find-the-file-that-answers-the-question-with-typesafe-jev)
+a čte soubory po stránkách, takže model vidí jen nalezené výsledky a pasáže,
+o které si řekl, přes poskytovatele, kterého jste zvolili. Umí také zavolat
+vestavěné CLI `genoffice` a soubory rovnou vytvořit; každý se objeví pod
+odpovědí jako karta artefaktu a kliknutím se otevře.
+
+### 9 · CLI — váš kódovací agent řídí GenOffice, na vašem počítači
 
 GenOffice obsahuje příkazový řádek `genoffice` a agentní skill. Nainstalujte
 skill a Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode nebo
@@ -203,7 +264,7 @@ přes stejné enginy jako aplikace, aniž by otevřely jediné okno.
 </tr>
 </table>
 
-### 8 · MCP — stejné nástroje přes Model Context Protocol
+### 10 · MCP — stejné nástroje přes Model Context Protocol
 
 Každý příkaz `genoffice` je zároveň nástrojem MCP. Claude Code, Claude
 Desktop, Cursor a jakýkoli jiný MCP klient si mohou sami spustit `genoffice
@@ -212,7 +273,7 @@ plus referenční příručky k operacím jako zdroje (resources). Druhý,
 HTTP server uvnitř aplikace umožňuje agentovi sestavit dokument Word přímo
 ve viditelné záložce editoru, zatímco se díváte.
 
-<img src="../assets/readme/mcp-deck-motion.webp" alt="Zrychlený záznam toho, jak Claude Code staví osmislajdovou investorskou prezentaci o obnovitelné energii přes MCP server genoffice: hledá obrázky a fotografie, kontroluje každou kandidátní fotografii pomocí media, deck_start zapíše stylový list a osnovu, deck_page přidává vždy jednu zkontrolovanou stránku, deck_build sestaví .pptx a slides_render vrátí obrázek každého slajdu; hotová prezentace se pak otevře v GenOffice Slides" width="100%">
+<img src="../assets/readme/mcp-deck-motion.webp" alt="Zrychlený záznam toho, jak Claude Code staví osmislajdovou investorskou prezentaci o obnovitelné energii přes MCP server genoffice: hledá čísla a fotografie, kontroluje každou kandidátní fotografii pomocí media, deck_start zapíše stylový list a osnovu, deck_page přidává vždy jednu zkontrolovanou stránku, deck_build sestaví .pptx a slides_render vrátí obrázek každého slajdu; hotová prezentace se pak otevře v GenOffice Slides" width="100%">
 
 <table>
 <tr>
@@ -220,16 +281,16 @@ ve viditelné záložce editoru, zatímco se díváte.
 <td width="50%"><img src="../assets/readme/mcp-integrations.webp" alt="Nastavení GenOffice, stránka Integrations, část MCP: jednořádkový příkaz claude mcp add pro Claude Code, blok JSON pro Cursor, Claude Desktop a další MCP klienty, a níže možnost lokálního HTTP serveru"></td>
 </tr>
 <tr>
-<td><b>Jeden prompt, 38 volání nástrojů, žádný shell</b> — „Vytvoř osmislajdovou investorskou prezentaci o obnovitelné energii v roce 2026, se skutečnou fotografií na titulní straně a všude, kde fotografie pomůže.“ Agent stáhne obrázky a fotografie pomocí <code>search</code>, zeptá se <code>media</code>, zda je každá kandidátní fotografie skutečnou fotografií, zavolá <code>deck_start</code> se stylovým listem a osnovou, poté <code>deck_page</code> pro každý slajd; každá stránka je zkontrolována proti osnově a paletě, než je přijata, <code>deck_build</code> sestaví <code>.pptx</code>, <code>slides_audit</code> hledá přetečení, <code>slides_render</code> vrátí PNG pro každý slajd jako obrazový obsah, na který se model může podívat, a <code>deck_replace</code> opraví tři stránky, které se mu nelíbily.</td>
+<td><b>Jeden prompt, 38 volání nástrojů, žádný shell</b> — „Vytvoř osmislajdovou investorskou prezentaci o obnovitelné energii v roce 2026, se skutečnou fotografií na titulní straně a všude, kde fotografie pomůže.“ Agent stáhne čísla a fotografie pomocí <code>search</code>, zeptá se <code>media</code>, zda je každá kandidátní fotografie skutečnou fotografií, zavolá <code>deck_start</code> se stylovým listem a osnovou, poté <code>deck_page</code> pro každý slajd; každá stránka je zkontrolována proti osnově a paletě, než je přijata, <code>deck_build</code> sestaví <code>.pptx</code>, <code>slides_audit</code> hledá přetečení, <code>slides_render</code> vrátí PNG pro každý slajd jako obrazový obsah, na který se model může podívat, a <code>deck_replace</code> opraví tři stránky, které se mu nelíbily.</td>
 <td><b>Připojte se jednou, z Nastavení → Integrace</b> — zkopírujte řádek <code>claude mcp add</code> pro Claude Code, nebo blok JSON do Cursoru, Claude Desktop či jiného MCP klienta. Možnost B zapíná lokální HTTP server pro viditelný editor Word. Obojí je popsáno v sekci <a href="#mcp-server">MCP server</a>.</td>
 </tr>
 </table>
 
-### 9 · Starší soubory — otevřou se i `.doc`, `.xls` a `.ppt` z nultých let
+### 11 · Starší soubory — otevřou se i `.doc`, `.xls` a `.ppt` z nultých let
 
-Soubor `.doc` z Wordu 97–2003, excelový `.xls` nebo powerpointový `.ppt` se otevře jako převedená kopie `.docx`, `.xlsx` nebo `.pptx` vytvořená ve vašem počítači; původní soubor se nikdy nemění. Obrázky, tabulky, vzorce, formáty čísel, výplně a rozvržení se přenesou.
+Soubor `.doc` z Wordu 97–2003, excelový `.xls` nebo powerpointový `.ppt` se otevře jako převedená kopie `.docx`, `.xlsx` nebo `.pptx` vytvořená ve vašem počítači; původní soubor se nikdy nemění. Obrázky, tabulky, vzorce, formáty čísel, výplně a rozvržení se přenesou. Co který formát zachová a co zahodí, popisuje sekce [Starší soubory a soubory ODF se otevírají jako převedené kopie](#legacy-and-odf-files-open-as-converted-copies).
 
-<img src="../assets/readme/legacy-formats-motion.webp" alt="Časosběr: GenOffice otevírá soubory .ppt, .doc a .xls fiktivní výroční zprávy za rok 2004, poté jeden snímek zobrazený v PowerPointu vedle převedené prezentace v GenOffice" width="100%">
+<img src="../assets/readme/legacy-formats-motion.webp" alt="Časosběr: GenOffice otevírá tři soubory fiktivní výroční zprávy za rok 2004: šestisnímkový .ppt prolistovaný ve Slides, .doc s titulním obrázkem a podbarvenou tabulkou posouvaný v Docs a tabulku prodejů .xls se součty v Sheets; poté jeden snímek zobrazený vedle sebe, původní .ppt v PowerPointu vedle převedené prezentace v GenOffice" width="100%">
 
 ## Proč GenOffice
 
@@ -249,6 +310,13 @@ Soubor `.doc` z Wordu 97–2003, excelový `.xls` nebo powerpointový `.ppt` se 
 - **PDF udělané správně.** Upravujte text přímo na stránce a převádějte PDF
   do Word, Excel nebo PowerPoint na zařízení, se systémovým OCR pro skeny.
 - **Také Markdown a HTML**, se stejným panelem AI a místním exportem do Word.
+- **Vyhledávání, které najde odpověď, ne klíčové slovo.** Fulltextové
+  vyhledávání ve všech dokumentech ve vašich složkách, indexované na
+  zařízení, s volitelným přeřazením modelem TypeSafe Jev, posuzovacím modelem
+  System One.
+- **Ask AI napříč vašimi soubory.** Označte hvězdičkou soubory, na kterých
+  záleží, a ptejte se běžným jazykem; každá odpověď cituje soubor, ze kterého
+  pochází, a ten je na jedno kliknutí.
 - **Skilly.** Hotové skilly nebo vlastní `SKILL.md`, připojené z nabídky **+** v kterémkoli AI panelu.
 - **Skriptovatelný.** Příkazový řádek `genoffice`, agentní skill a MCP
   server dávají každý engine do služeb Claude Code, Claude Desktop, Codex,
@@ -268,18 +336,30 @@ a OpenCode Zen/Go, plus vlastní slot pro jakýkoli OpenAI kompatibilní
 endpoint (base URL + klíč), včetně lokálních serverů s modely. Vyhledávání
 a média mají vlastní poskytovatele pro každou schopnost pod **AI Media
 & Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa nebo Firecrawl
-pro webové vyhledávání — i Keenable je bez klíče; klíč pouze zvýší limity
-počtu požadavků — a OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX
+pro webové vyhledávání a OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Kling, Stability, FLUX
 nebo jakýkoli OpenAI kompatibilní endpoint pro obrázky, generování obrázků
-a analýzu obrázků/videa.
+a analýzu obrázků/videa, plus DeepSeek V4.1 Flash pro analýzu obrázků.
+
+**TypeSafe Jev** přeřazuje výsledky vyhledávání souborů na domovské obrazovce.
+Pod **AI Media & Search → Local file search** zapněte Jev search reranking
+a zvolte endpoint: [OpenRouter](https://openrouter.ai/typesafe) (model
+`typesafe/jev-1.13`) nebo vlastní API TypeSafe. Klíč se ukládá pouze na tomto
+zařízení. Ve výchozím stavu je funkce vypnutá; když je zapnutá, odesílají se
+k posouzení úryvky 20 nejlepších lokálních výsledků a nic jiného počítač
+neopouští.
+
+**Parallel** funguje bez účtu: jeho bezplatné Search MCP (s omezením počtu
+požadavků) je výchozím webovým vyhledáváním, kdykoli není nastaveno přihlášení
+přes Genspark ani klíč pro vyhledávání, a má přednost před scrapováním
+DuckDuckGo. Chcete-li místo toho používat Search API, vyberte Parallel pod
+Web search a zadejte klíč [Parallel](https://platform.parallel.ai/). I Keenable
+je bez klíče; klíč pouze zvýší limity počtu požadavků.
 
 Celý balík nabízí světlý, tmavý a systémový vzhled. Vzhledy mění pouze to,
 co je vidět na obrazovce: exporty, tisky a uložené soubory si vždy zachovávají
 vlastní barvy dokumentu.
 
-<a id="skills"></a>
-
-## Skilly
+## <a id="skills"></a>Skilly
 
 Skill je soubor `SKILL.md`, který AI říká, jak dobře zvládnout jeden úkol: týdenní report, NDA, plán hodiny.
 GenOffice jich sadu dodává a přijímá i vaše vlastní, ve stejném formátu, jaký používají programovací agenti.
@@ -289,9 +369,7 @@ GenOffice jich sadu dodává a přijímá i vaše vlastní, ve stejném formátu
 
 ---
 
-<a id="command-line-and-agent-skill"></a>
-
-## Příkazový řádek a agentní skill
+## <a id="command-line-and-agent-skill"></a>Příkazový řádek a agentní skill
 
 Vše, co aplikace umí se souborem, umí příkazový řádek `genoffice`
 z terminálu: prohlížet, převádět, vytvářet, číst a upravovat Word, Excel,
@@ -323,7 +401,7 @@ práci.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, ppt → pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -339,7 +417,7 @@ s návodnou chybovou hláškou. `genoffice help` vypíše aktuální sadu přík
 
 ### Co agent ve skutečnosti spouští
 
-Prezentace o sluneční soustavě v ukázce výše vznikla z jediného promptu
+Prezentace o sluneční soustavě v [ukázce](#demo) vznikla z jediného promptu
 v Claude Code. Agent za ní postupoval podle fázovaného pracovního postupu ze
 skillu a CLI zkontrolovalo každou fázi, než začala další:
 
@@ -361,9 +439,7 @@ Uvnitř `genoffice` neprobíhá žádné volání modelu: agent přemýšlí, CL
 a kontroluje a výsledek se otevře v GenOffice nebo PowerPointu jako obyčejný
 soubor `.pptx`.
 
-<a id="mcp-server"></a>
-
-### MCP server
+### <a id="mcp-server"></a>MCP server
 
 Stejné příkazy jsou dostupné jako nástroje [Model Context Protocol](https://modelcontextprotocol.io)
 pro asistenty, kteří neumí spustit terminál nebo kterým byste ho raději
@@ -374,6 +450,7 @@ zkopírování v **Nastavení → Integrace → MCP**:
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **A · `genoffice mcp`** (doporučeno) | stdio server, který si asistent spustí sám; GenOffice nemusí být otevřené. Jeden nástroj na příkaz (`info`, `convert`, `create_docx`, `create_xlsx`, `create_pptx`, `create_pdf`, `docs_read` / `docs_apply` / `docs_check`, `sheet_*`, `slides_*`, `render`, `guide`, `search`, `image`, `media`, `open`) plus fázovaný postup sestavování prezentace `deck_start` → `deck_page` → `deck_build` → `deck_replace`. Operace, specifikace a Markdown se předávají přímo v argumentech, takže funguje i klient bez souborového systému. |
 | **B · Lokální HTTP server**          | Běží uvnitř aplikace GenOffice na `http://127.0.0.1:3093/mcp` (Streamable HTTP, se starším SSE). Jeho nástroje ovládají viditelnou záložku editoru Word: `create_session`, `insert_content`, `replace_blocks`, `apply_ops`, `read_document`, `save_session` — a vy sledujete, jak dokument vzniká. Ve výchozím stavu vypnutý; zapíná se ve stejném panelu nastavení.                                                                                                                                                                 |
+| **C · `genoffice mcp --http`**       | Sada stdio nástrojů jako Streamable HTTP server pro klienty na jiných počítačích: kontejner, sandbox, sdílený stroj ve vaší síti. Soubory cestují s voláními: `PUT /files/<name>` jeden nahraje a vrátí URL, každý parametr `file` přijímá http(s) URL a nástroj, který zapisuje soubor, jej vrátí jako URL ke stažení a u malých souborů navíc jako bajty v MCP resource. `--host 0.0.0.0` jej otevře do sítě, `--token` jej chrání.                                                                                                |
 
 ```bash
 # Claude Code
@@ -381,9 +458,27 @@ claude mcp add --transport stdio genoffice -- genoffice mcp
 ```
 
 ```jsonc
-// Cursor, Claude Desktop nebo jakýkoli jiný MCP klient
+// Cursor, Claude Desktop or any other MCP client
 { "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
 ```
+
+```bash
+# On the machine that has GenOffice (private network; add --token for a shared box)
+genoffice mcp --http 3093 --host 0.0.0.0 --token "$GENOFFICE_MCP_TOKEN"
+
+# From the client: upload, then use the URL wherever a tool takes a file
+curl -T report.docx -H "Authorization: Bearer $GENOFFICE_MCP_TOKEN" http://server:3093/files/
+#   → { "url": "http://server:3093/files/<id>/report.docx", ... }
+#   docs_read({ "file": "http://server:3093/files/<id>/report.docx" })
+#   docs_apply(...) → output_url, downloadable with curl -o
+```
+
+Přes HTTP dostane každá relace soukromou pracovní složku, relativní cesty
+a složky prezentací se vyhodnocují uvnitř ní, `open` se nenabízí a bez
+nastaveného `GENOFFICE_ALLOWED_ROOTS` nemohou nástroje opustit vlastní
+úložiště souborů serveru. `render`, `convert` do PDF a `create_pdf` stále
+spouštějí skrytý proces GenOffice, takže hostitel bez displeje potřebuje
+nainstalovanou aplikaci a virtuální displej (`xvfb-run`).
 
 `genoffice` je tady CLI dodávané uvnitř aplikace (na macOS
 `/Applications/GenOffice.app/Contents/Resources/cli/genoffice`; panel
@@ -395,7 +490,7 @@ server mohou koexistovat a asistent si jeden z nich vybere. Cloudové funkce
 GenOffice; všechno ostatní běží lokálně a `GENOFFICE_ALLOWED_ROOTS` omezuje
 každý nástroj na složky, které uvedete.
 
-Prezentace o obnovitelné energii z dema výše je to, jak jeden prompt v
+Prezentace o obnovitelné energii z [ukázky](#demo) je to, jak jeden prompt v
 Claude Code s připojeným pouze MCP serverem `genoffice` vypadá ze strany
 protokolu:
 
@@ -415,13 +510,11 @@ deck_replace(dir, n, page) ×3 · slides_render(file, out)
 ```
 
 Osmatřicet volání, zhruba třináct minut, a asistent se ani jednou nedotkl
-shellu: obrázky, fotografie, průvodci, kontroly i rendery cestovaly jako
+shellu: čísla, fotografie, průvodci, kontroly i rendery cestovaly jako
 výsledky volání MCP nástrojů. Pouze `search` a `media` opustily počítač, k
 poskytovateli nastavenému v GenOffice.
 
-<a id="download"></a>
-
-## Stažení
+## <a id="download"></a>Stažení
 
 | Platforma                            | Požadavky                                             | Stažení                                                                                        |
 | ------------------------------------ | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -452,6 +545,11 @@ Na Fedoře / v rodině RHEL / na openSUSE nainstalujte místo toho rpm balíček
 sudo dnf install ./genoffice-<version>.x86_64.rpm     # Fedora / RHEL family
 sudo zypper install ./genoffice-<version>.x86_64.rpm  # openSUSE
 ```
+
+Balíčky deb a rpm přidávají také prázdné šablony pro Dolphin v KDE Plasma:
+kliknutí pravým tlačítkem ve složce → **Create New** nabídne _GenOffice
+Document_, _GenOffice Spreadsheet_ a _GenOffice Presentation_. Jsou uložené
+v `/usr/share/templates` a odstraní se spolu s balíčkem.
 
 AppImage běží na místě: nainstalujte runtime FUSE 2
 (`sudo apt install libfuse2`; na Ubuntu 24.04 se balíček jmenuje `libfuse2t64`),
@@ -486,6 +584,31 @@ save      ─► dirty blocks → OOXML fragments (referencing existing styles o
 Prohlídka balíčků po balíčcích (enginy docx/pptx, `pdf2docx`, `html2docx`,
 jádro agenta a poskytovatelé) je v [CONTRIBUTING.md](../../CONTRIBUTING.md#engine-packages).
 
+### <a id="legacy-and-odf-files-open-as-converted-copies"></a>Starší soubory a soubory ODF se otevírají jako převedené kopie
+
+Formáty, které GenOffice neumí zapsat zpět — starší Word `.doc`/`.dot`, Hancom
+`.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, starší PowerPoint `.ppt` a rodina
+OpenDocument (`.odt`, `.ott`, `.ods`, `.ots`, `.odp`, `.otp`) — jsou importy,
+ne nativní soubory.
+Otevřením se takový soubor na vašem počítači převede na kopii `.docx`,
+`.xlsx` nebo `.pptx` a otevře se tato kopie; originál se už znovu nečte
+a nikdy se do něj nezapisuje.
+
+- Docs a Slides se nejprve zeptají, kam kopii uložit (ve výchozím stavu
+  stejnojmenný `.docx`/`.pptx` vedle originálu), takže každé pozdější Uložit
+  míří tam. Soubor `.ppt` se převádí včetně předloh, geometrie tvarů, výplní,
+  obrázků a formátování textu, takže prezentace vypadá tak, jak ji ukazoval
+  PowerPoint; poznámky, animace, přechody a hypertextové odkazy se zatím
+  nepřenášejí.
+- Sheets otevře převedený sešit rovnou a první Uložit nasměruje přes Uložit
+  jako do nového `.xlsx`. Výjimkou je `.csv`: zachovává si svou identitu
+  a Uložit zapisuje hodnoty zpět do `.csv`, stejně jako Excel.
+- Převod je jednosměrný a může zahodit funkce, které zdrojový formát má, ale
+  OOXML ne. U `.doc`, `.ppt`, `.hwp` a formátů ODF na to upozorní potvrzovací
+  dialog; zaškrtnutím „Convert without asking next time“ jej příště přeskočíte
+  a volba „Ask before converting legacy files“ v Nastavení → Obecné jej znovu
+  zapne.
+
 ## Vývoj
 
 ```bash
@@ -514,6 +637,8 @@ GenOffice je v aktivním vývoji a vaše zpětná vazba jej utváří.
 - **Připojte se ke skupinovému chatu GenOffice** na
   [GenTeam](https://genoffice.ai/join), kde si můžete promluvit s týmem
   i ostatními uživateli.
+- **Sledujte [@merrickbuilds](https://x.com/merrickbuilds) na X** — poznámky
+  k vydání, ukázky a to, na čem se právě pracuje.
 - **Ohvězdičkujte repozitář**, pokud je pro vás GenOffice užitečný — je to
   nejlepší způsob, jak projekt podpořit.
 
@@ -533,6 +658,9 @@ zkušební verze, žádný placený tarif pro samotné aplikace.
 Ano. GenOffice otevírá a ukládá nativní soubory `.docx`, `.xlsx` a `.pptx`.
 Ukládání zachovává bajty: části souboru, kterých jste se nedotkli, se zapíší
 zpět beze změny, takže dokumenty dál fungují v Microsoft Office.
+Otevírají se i starší soubory `.doc`/`.dot`, `.xls` a `.ppt`, a to jako
+převedené kopie `.docx`/`.xlsx`/`.pptx` — viz [Starší soubory a soubory ODF se
+otevírají jako převedené kopie](#legacy-and-odf-files-open-as-converted-copies).
 
 </details>
 
@@ -569,7 +697,7 @@ OCR, takže se převedou na editovatelný text, ne na obrázek stránky.
 
 Ano. Kromě bezklíčového přihlášení Genspark GenOffice podporuje vlastní klíč
 pro Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
-Mistral, OpenRouter, Requesty a OpenCode Zen/Go, plus jakýkoli OpenAI kompatibilní
+Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud a OpenCode Zen/Go, plus jakýkoli OpenAI kompatibilní
 endpoint — včetně lokálních serverů s modely. Vyhledávání, generování obrázků
 a analýza obrázků/videa mají vlastní klíče pod Nastavení → AI Media & Search.
 
@@ -653,6 +781,12 @@ GenOffice by nebyl možný bez těchto open-source projektů:
 - [libeot](https://github.com/umanwizard/libeot) (MPL-2.0) — dekodér
   MicroType Express pro vložená písma PowerPointu, přenesený do
   TypeScriptu.
+- [rhwp](https://github.com/edwardkim/rhwp) (MIT) — čte binární dokumenty
+  `.hwp` do HWPX pro import z Hancomu; jeho sestavení pro WebAssembly obsahuje
+  crates v Rustu a port Volexity hwp-extract uvedené v přehledu licencí
+  třetích stran. „한글“, „한컴“, „HWP“ a „HWPX“ jsou registrované ochranné
+  známky společnosti Hancom Inc.; GenOffice není se společností Hancom nijak
+  spojen.
 - [React](https://react.dev/) (MIT) — vrstva uživatelského rozhraní každé
   aplikace.
 - [Mermaid](https://mermaid.js.org/) (MIT) a [KaTeX](https://katex.org/)

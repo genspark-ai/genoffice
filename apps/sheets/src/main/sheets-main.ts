@@ -5369,7 +5369,11 @@ async function openWorkbookSession(
       ...opened,
       // The renderer-facing path is what the user opened: for a restored
       // recovery copy that is the original file, not the copy under userData.
+      // The name mirrors it: the sidecar names the session after the private
+      // snapshot (a uuid under the session directory), which must not reach
+      // the status line, export base names or the skeleton header.
       path: restoreTarget ?? path,
+      name: basename(restoreTarget ?? path),
       sha256: digest,
       fileBytes,
       readOnly: false,
