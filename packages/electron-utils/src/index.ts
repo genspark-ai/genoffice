@@ -181,3 +181,10 @@ export {
   writePdfDefaultZoom,
   type PdfDefaultZoom,
 } from './pdf-zoom-prefs'
+export {
+  tileRects,
+  tileWindows,
+  TILE_MIN_ROW_HEIGHT,
+  type TileRect,
+  type TileWindow,
+} from './window-tiles'

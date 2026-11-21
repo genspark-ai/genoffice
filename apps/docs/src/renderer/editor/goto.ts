@@ -1,10 +1,10 @@
 /**
  * Word's Edit ▸ Go To: resolve a target (page, section, line, bookmark, comment,
- * note, table, heading) to a document position. Document-structure targets are
+ * note, field, table, graphic, equation, object, heading) to a document position. Document-structure targets are
  * read from the ProseMirror doc; page / section / line targets need the last
  * pagination pass (`PageLayout`), which App feeds through a ref.
  */
-import type { Node as PmNode } from '@tiptap/pm/model'
+import type { Mark, Node as PmNode } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import { BlockIndex } from '../pagination-index'
 import type { FlowCarry, PageCut } from '../pagination-cuts'
@@ -28,7 +28,11 @@ export type GoToTarget =
   | 'comment'
   | 'footnote'
   | 'endnote'
+  | 'field'
   | 'table'
+  | 'graphic'
+  | 'equation'
+  | 'object'
   | 'heading'
 
 export const GOTO_TARGETS: readonly GoToTarget[] = [
@@ -39,7 +43,11 @@ export const GOTO_TARGETS: readonly GoToTarget[] = [
   'comment',
   'footnote',
   'endnote',
+  'field',
   'table',
+  'graphic',
+  'equation',
+  'object',
   'heading',
 ]
 
@@ -71,12 +79,46 @@ export interface PageLayout {
   pageNotes: PageNoteItem[][]
 }
 
+const FIELD_MARKS = new Set(['instrField', 'refField'])
+
+/** Word's Graphic: pictures, charts and diagrams; an embedded OLE object is an Object instead */
+const isGraphic = (node: PmNode): boolean =>
+  !node.attrs.oleProgId &&
+  !node.attrs.decorative &&
+  (node.attrs.blockType === 'image' ||
+    !!node.attrs.chartDisplay ||
+    !!node.attrs.genChart ||
+    !!node.attrs.diagramDisplay)
+
 /** structural targets in document order (bookmarks carry their name as label) */
 export function listGoToItems(doc: PmNode, target: GoToTarget): GoToItem[] {
   const items: GoToItem[] = []
   const seenComments = new Set<string>()
+  let lastField: Mark | null = null
   doc.descendants((node, pos) => {
+    const sealed = node.type.name === 'docProtected'
     switch (target) {
+      case 'field': {
+        const mark = node.marks.find((m) => FIELD_MARKS.has(m.type.name)) ?? null
+        // one field can span several text nodes (formatting changes inside its result)
+        if (mark && !(lastField && mark.eq(lastField)))
+          items.push({ pos, label: node.text?.slice(0, 60) ?? '' })
+        lastField = node.isInline ? mark : null
+        if (node.type.name === 'docEqLayout' || (sealed && node.attrs.fieldDisplay))
+          items.push({ pos, label: String(node.attrs.previewText ?? '').slice(0, 60) })
+        return !sealed
+      }
+      case 'graphic':
+        if (node.type.name === 'docInlineImage' || (sealed && isGraphic(node)))
+          items.push({ pos, label: String(node.attrs.imageAlt ?? node.attrs.label ?? '') })
+        return !sealed
+      case 'equation':
+        if (node.type.name === 'docInlineMath' || (sealed && node.attrs.formulaDisplay))
+          items.push({ pos, label: String(node.attrs.text ?? node.attrs.previewText ?? '') })
+        return !sealed
+      case 'object':
+        if (sealed && node.attrs.oleProgId) items.push({ pos, label: String(node.attrs.oleProgId) })
+        return !sealed
       case 'heading':
         if (node.type.name === 'docHeading')
           items.push({ pos, label: node.textContent.slice(0, 60) })

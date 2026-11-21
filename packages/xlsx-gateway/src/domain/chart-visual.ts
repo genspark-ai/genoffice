@@ -1,6 +1,6 @@
 import * as numfmt from 'numfmt'
 
-import { columnLabel, parseAddress, parseRange, rangeCellCount } from './cell-address'
+import { columnLabel, parseAddress, parseRange, type RangeBounds } from './cell-address'
 
 /// Chart visual built from a data range. Structurally a subset of the shared
 /// WorkbookVisualObject so both the demo snapshot and the lazy edit journal
@@ -680,6 +680,25 @@ export function chartDataFromValues(
   return series.length > 0 ? { byRow, hasHeaderRow, hasCategoryColumn, categories, series } : null
 }
 
+/// The 2000-cell gate shared by the visual builder, the demo workbook and the
+/// sheets plan. With `columns` only those columns are charted — first the labels,
+/// then the series — so the cells between them are never read. Counting the whole
+/// rectangle refused a wide table whose first and last columns are charted even
+/// when far fewer than 2000 cells are used; count the named columns over the
+/// range's rows instead, and keep the rectangle count for the detected layout.
+export function chartCellLimitError(
+  bounds: RangeBounds,
+  columns?: readonly string[] | undefined,
+): string | null {
+  const rows = bounds.endRow - bounds.startRow + 1
+  const cells = columns ? columns.length * rows : rows * (bounds.endColumn - bounds.startColumn + 1)
+  return cells > 2000
+    ? columns
+      ? 'add_chart columns cover more than 2000 cells.'
+      : 'add_chart dataRange covers more than 2000 cells.'
+    : null
+}
+
 /// Named-columns chart data (genoffice#2528): the caller knows the table's shape and
 /// names the columns of the dataRange to chart — first the labels, then one
 /// series each. Nothing is detected: the first row is the header, every named
@@ -851,9 +870,8 @@ const CHART_KIND_TO_TYPES: Record<BuildChartVisualInput['chartType'], string[]> 
 /// Insert Chart. The default anchor sits two columns right of the data.
 export function buildChartVisual(input: BuildChartVisualInput): SheetVisual {
   const bounds = parseRange(input.dataRange)
-  if (rangeCellCount(bounds) > 2000) {
-    throw new Error('add_chart dataRange covers more than 2000 cells.')
-  }
+  const limit = chartCellLimitError(bounds, input.columns)
+  if (limit) throw new Error(limit)
   const parsed = input.columns
     ? chartDataFromColumns(input.values, input.columns, bounds)
     : chartDataFromValues(input.values)

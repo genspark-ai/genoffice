@@ -18,6 +18,7 @@ export const tr = {
   aiQcStopped: 'Düzen denetimi durduruldu',
   aiQcCapped: '{count} sayfa daha denetlenmedi (çalıştırma başına sınır)',
   aiGskLoginBtn: 'Genspark’a giriş yap',
+  aiGskLoginOk: 'Genspark’a giriş yapıldı',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'AI asistanı aç',
   aiFactCheckBtn: 'AI Doğruluk Denetimi',

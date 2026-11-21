@@ -115,6 +115,7 @@ export function tcPrRestoreAttrs(oldXml: string): Record<string, unknown> {
     textDirection: dir?.startsWith('tbRl') ? 'tbRl' : dir?.startsWith('btLr') ? 'btLr' : null,
     cellMar: cellMarginsOf(oldXml, 'w:tcMar'),
     noWrap: flagOn(oldXml, 'w:noWrap'),
+    fitText: flagOn(oldXml, 'w:tcFitText'),
     tcPrEdited: true,
   }
 }

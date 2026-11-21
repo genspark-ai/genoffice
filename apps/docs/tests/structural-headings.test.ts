@@ -120,6 +120,26 @@ describe('collectStructuralHeadings: positive shapes', () => {
     ])
   })
 
+  it('keeps C. and D. at the level of A. and B.', () => {
+    expect(
+      infer([
+        para([text('I. Background')]),
+        para([text('First body paragraph.')]),
+        para([text('B. Terms')]),
+        para([text('Second body paragraph.')]),
+        para([text('C. Fees')]),
+        para([text('Third body paragraph.')]),
+        para([text('D. Notices')]),
+        para([text('Fourth body paragraph.')]),
+      ]),
+    ).toEqual([
+      { text: 'I. Background', level: 1, basis: 'number' },
+      { text: 'B. Terms', level: 2, basis: 'number' },
+      { text: 'C. Fees', level: 2, basis: 'number' },
+      { text: 'D. Notices', level: 2, basis: 'number' },
+    ])
+  })
+
   it('drops a numbering kind the accepted headings never use', () => {
     expect(
       infer([

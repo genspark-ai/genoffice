@@ -107,11 +107,11 @@ describe('FindPanel', () => {
     const editor = createEditor('hello world')
     const { container, unmount } = render(createElement(FindPanel, { editor, onClose: () => {} }))
     expect(container.querySelectorAll('.find-tab')).toHaveLength(3)
-    expect(container.querySelectorAll('.find-row')).toHaveLength(2)
+    expect(container.querySelectorAll('.find-row')).toHaveLength(3)
     act(() => {
       container.querySelectorAll<HTMLButtonElement>('.find-tab')[1].click()
     })
-    expect(container.querySelectorAll('.find-row')).toHaveLength(3)
+    expect(container.querySelectorAll('.find-row')).toHaveLength(4)
     expect(container.querySelectorAll('.find-action')).toHaveLength(2)
     unmount()
     editor.destroy()

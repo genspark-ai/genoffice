@@ -6,6 +6,7 @@ export const tr = {
   aiEmptyBuildBody:
     'İhtiyacınız olan tabloyu, verileri veya grafiği açıklayın — AI bunu yerinde oluşturur.',
   aiGskLoginBtn: 'Genspark’ta oturum aç',
+  aiGskLoginOk: 'Genspark’a giriş yapıldı',
   aiUndelivered: 'Gönderilmedi',
   aiRetry: 'Yeniden dene',
   aiOpenAssistant: 'AI asistanını aç',

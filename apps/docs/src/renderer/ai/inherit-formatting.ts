@@ -41,6 +41,8 @@ const INHERITED_PARA_ATTRS = [
   'styleSpaceBeforeAuto',
   'styleSpaceAfterAuto',
   'contextualSpacing',
+  'suppressAutoHyphens',
+  'mirrorIndents',
   'pageBreakBefore',
   'bidi',
   'autoSpace',

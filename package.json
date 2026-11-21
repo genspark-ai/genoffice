@@ -21,6 +21,7 @@
     "format": "node tools/format-changed.mjs --write",
     "format:check": "node tools/format-changed.mjs --check",
     "check:theme-colors": "node tools/check-theme-colors.mjs",
+    "check:docs-commands": "node tools/check-docs-commands.mjs",
     "check:inline-rules": "node tools/check-inline-rules.mjs",
     "check:page-cut-readers": "node tools/check-page-cut-readers.mjs",
     "check:table-layout-rules": "node tools/check-table-layout-rules.mjs",

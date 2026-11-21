@@ -262,13 +262,13 @@ describe('touchedText / deletedAnything: the cheap CJK scan', () => {
   })
 
   it('returns CJK when CJK arrives', () => {
-    const tr = listedState().tr.insertText('合同', 4)
+    const tr = listedState().tr.insertText('\u5408\u540c', 4)
     expect(textHasCjk(touchedText(tr) ?? '')).toBe(true)
   })
 
   it('sees a replacement as CJK arrived and content deleted', () => {
     const state = listedState()
-    const tr = state.tr.replaceWith(4, 7, state.schema.text('替换'))
+    const tr = state.tr.replaceWith(4, 7, state.schema.text('\u66ff\u6362'))
     expect(textHasCjk(touchedText(tr) ?? '')).toBe(true)
     expect(deletedAnything(tr)).toBe(true)
   })

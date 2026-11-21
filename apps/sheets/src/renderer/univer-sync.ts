@@ -3559,12 +3559,9 @@ async function loadRange(
         state.retryTimers.set(sheetId, timer)
       }
     } else if (isActiveSheet(runtime, sheetId)) {
-      setMessage(
-        t('appStreamingRows', {
-          name: state.file.name,
-          rows: sheet?.rowCount.toLocaleString() ?? '?',
-        }),
-      )
+      // every row is available: the streaming notice clears instead of
+      // lingering after the load with the session's internal file name (genoffice#2841)
+      setMessage('')
     }
   } catch (error: unknown) {
     if (lazyWorkbookRef.current === state && isActiveSheet(runtime, sheetId)) {

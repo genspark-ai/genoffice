@@ -5,6 +5,7 @@ export const th = {
   aiEmptyBuildTitle: 'ให้ AI สร้างเวิร์กบุ๊กนี้ให้คุณ',
   aiEmptyBuildBody: 'อธิบายตาราง ข้อมูล หรือแผนภูมิที่ต้องการ แล้ว AI จะสร้างให้ทันที',
   aiGskLoginBtn: 'ลงชื่อเข้าใช้ Genspark',
+  aiGskLoginOk: 'ลงชื่อเข้าใช้ Genspark แล้ว',
   aiUndelivered: 'ส่งไม่สำเร็จ',
   aiRetry: 'ลองอีกครั้ง',
   aiOpenAssistant: 'เปิดผู้ช่วย AI',
