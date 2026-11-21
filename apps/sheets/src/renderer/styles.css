@@ -1861,6 +1861,37 @@ button.check-item:hover {
   font-size: 16px;
 }
 
+/* A remote snapshot replaced the grid while edits were pending. The journal
+   keeps those edits for save, but the user is told the screen changed. */
+.collab-overwrite-notice {
+  position: absolute;
+  z-index: 21;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.collab-overwrite-notice span {
+  flex: 1;
+}
+
+.collab-overwrite-notice button {
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-size: 16px;
+  cursor: pointer;
+}
+
 /* ================= status bar (unified with docs/slides) ================= */
 
 .status-bar {

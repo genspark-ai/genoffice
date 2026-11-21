@@ -80,6 +80,18 @@ export {
   OPENABLE_DOC_RE,
   partitionDropPayload,
 } from './drop-open'
+export {
+  WEB_SHARE_CHANNELS,
+  installWebShareBridge,
+  type WebShareBridgeStatus,
+} from './web-share-bridge'
+export {
+  collabChannels,
+  type CollabBridge,
+  type CollabChannels,
+  type CollabJoinReply,
+} from './collab-protocol'
+export { installCollabBridge } from './collab-bridge'
 export { safeExternalUrl, type SafeExternalUrlOptions } from './safe-external-url'
 export {
   fetchWithSsrfGuard,

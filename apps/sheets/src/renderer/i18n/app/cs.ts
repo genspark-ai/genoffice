@@ -1,6 +1,7 @@
 import type { zh } from './zh'
 
 export const cs = {
+  appCollabOverwriteNotice: 'Změny od spolupracovníka byly použity na tento sešit. Vaše neuložené úpravy ({count}) čekají a budou zapsány při uložení.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Skrýt výběr před AI',
   redactDialogDesc:

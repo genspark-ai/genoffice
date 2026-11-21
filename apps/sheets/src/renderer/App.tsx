@@ -17,6 +17,7 @@ import {
   matrixBounds,
   modelCellValue,
   navigateToAnchor,
+  projectVisualEdits,
   workbookStructureLocked,
   queueFormulaRecalc,
   queueSparklineInstall,
@@ -39,6 +40,7 @@ import {
   runHeadlessRendererExport,
 } from '@genoffice/electron-utils/headless-export'
 import {
+  collabRemoteApply,
   commitActiveCellEditor,
   installJournalSuppressionUndoFilter,
   installLoadAutoHeightGate,
@@ -164,6 +166,7 @@ import {
   chartSupportsSeriesReplace,
   withDefaultBarLabels,
   type CellBounds,
+  type SheetVisual,
 } from '@genoffice/xlsx-gateway/domain/chart-visual'
 import { InMemoryWorkbookAdapter } from '@genoffice/xlsx-gateway/domain/in-memory-workbook'
 import { cfRuleUnsaveableReason, iconSetSaveable } from '@genoffice/xlsx-gateway/gateway/xlsx-cf'
@@ -516,6 +519,7 @@ import {
   recordRemoveNumfmt,
   recordSetNumfmt,
   recordSetRangeValues,
+  recordVisualAdd,
   recordSheetHidden,
   recordSheetTabColor,
   recordSheetDuplicate,
@@ -567,6 +571,11 @@ import { ExternalLinksPanel } from './ExternalLinksPanel'
 import { breakExternalLinkFlow, updateExternalLinksFlow } from './external-links-flow'
 import { externalFileTarget } from './external-link-target'
 import { applyExternalLinkValues, journalExternalLinkLiterals } from './univer-sync'
+import { SheetsCollab } from './collab'
+import { RemoteSelections } from './RemoteSelections'
+import { applyRemoteWorkbookSnapshot } from './collab-apply'
+import { snapshotLiveWorkbook } from './collab-snapshot'
+import type { CollabBridge } from '@genoffice/electron-utils/collab-protocol'
 import { TimelineFieldPicker, TimelinePanels, type TimelineUiState } from './TimelinePanel'
 import type { DefinedNameAction, DefinedNameRow } from './NameManagerDialog'
 import { workbookMediaDataUrl } from './workbook-media'
@@ -717,6 +726,25 @@ export function App({
   /// The workbook's refreshable data connections (web queries for now).
   const [queryConnections, setQueryConnections] = useState<QueryConnection[]>([])
   const [pendingEdits, setPendingEdits] = useState(0)
+  /// The collab client reads the pending count from a ref: it is created once
+  /// and must not be rebuilt on every edit.
+  const pendingEditsRef = useRef(0)
+  useEffect(() => {
+    pendingEditsRef.current = pendingEdits
+  }, [pendingEdits])
+  /// Count of unsaved edits that a remote snapshot landed on top of. Shown as
+  /// a dismissible notice in the grid so a silent overwrite never happens.
+  const [collabOverwriteCount, setCollabOverwriteCount] = useState(0)
+  /// Journal entries merge in place, so `pendingEdits` (the entry count) does
+  /// not change when the same cell is edited again. Collaboration publishes on
+  /// this monotonic nonce instead, which bumps on every recorded edit.
+  const [editNonce, setEditNonce] = useState(0)
+  const noteEdit = useCallback((count: number) => {
+    setPendingEdits(count)
+    // A remote snapshot lands in the journal so it can be saved, but must not
+    // echo straight back into the room.
+    if (!collabRemoteApply.active) setEditNonce((value) => value + 1)
+  }, [])
   /// The note-picture lookup reads the file through a ref: the hover-card
   /// install lives once per runtime while the file changes across loads.
   const workbookFileRef = useRef<WorkbookFile | null>(null)
@@ -736,6 +764,114 @@ export function App({
   /// action buttons are greyed out on a fully empty sheet.
   const [sheetHasContent, setSheetHasContent] = useState(false)
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null)
+  /// Real-time collaboration: the room of this workbook's path. A session that
+  /// works alone never publishes — the room's member count is the switch, so
+  /// the lone editor behaves exactly as before.
+  const collabRef = useRef<SheetsCollab | null>(null)
+  /// The active sheet travels through a ref: the collaboration client must not
+  /// be rebuilt when the selection moves.
+  const activeSheetIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const bridge = (window as unknown as { collabApi?: CollabBridge }).collabApi
+    if (!bridge) return
+    /// Charts are not Univer cells, so they ride in the snapshot explicitly.
+    /// File workbooks keep them in the lazy state (file visuals + session adds,
+    /// projected by edits); demo workbooks keep them in the adapter snapshot.
+    const liveVisuals = (): readonly WorkbookVisualObject[] => {
+      const state = lazyWorkbookRef.current
+      if (!state) return adapterRef.current.getSnapshot().sheets.flatMap((s) => s.visuals ?? [])
+      const edits = state.editJournal.visualEdits
+      const file = edits.size === 0 ? state.file.visuals : projectVisualEdits(state.file.visuals, edits)
+      return [...file, ...state.editJournal.visualAdds]
+    }
+    const collab = new SheetsCollab({
+      bridge,
+      snapshot: () => {
+        const base = adapterRef.current.getSnapshot()
+        return JSON.stringify(
+          snapshotLiveWorkbook(univerRef.current, base.revision, liveVisuals()),
+        )
+      },
+      apply: (raw) => {
+        const { visuals } = applyRemoteWorkbookSnapshot(univerRef.current, raw)
+        if (visuals.length === 0) return
+        // Merge by id into the journal so the charts both render (the visual
+        // installer reads visualAdds) and survive the next save.
+        const state = lazyWorkbookRef.current
+        if (!state) {
+          // Demo workbooks have no journal; updating the adapter snapshot plus
+          // a reinstall is the closest analogue, and they have no file to save.
+          return
+        }
+        const known = new Set([
+          ...state.file.visuals.map((v) => v.id),
+          ...state.editJournal.visualAdds.map((v) => v.id),
+        ])
+        collabRemoteApply.active = true
+        try {
+          let added = 0
+          for (const visual of visuals) {
+            if (known.has(visual.id)) continue
+            known.add(visual.id)
+            recordVisualAdd(state.editJournal, visual as WorkbookVisualObject)
+            added += 1
+          }
+          if (added === 0) return
+          noteEdit(journalSize(state.editJournal))
+          const runtime = univerRef.current
+          if (runtime) {
+            queueVisualInstall(
+              runtime,
+              lazyWorkbookRef,
+              visualDisposablesRef,
+              visualInstallTimerRef,
+              chartEditRef,
+              chartVectorRef,
+              shapeEditRef,
+            )
+          }
+        } finally {
+          collabRemoteApply.active = false
+        }
+      },
+      hasPendingEdits: () => pendingEditsRef.current,
+      onRemoteOverwrite: (count) => setCollabOverwriteCount(count),
+      presence: () => {
+        // what the other members see: who is here and where they are
+        const workbook = univerRef.current?.univerAPI.getActiveWorkbook()
+        const sheet = workbook?.getActiveSheet()
+        const range = sheet?.getSelection()?.getActiveRange()?.getA1Notation()
+        return JSON.stringify({
+          id: collabRef.current?.awarenessId ?? 0,
+          name: threadStore.authorName(),
+          sheetId: sheet?.getSheetId(),
+          sheetName: sheet?.getSheetName(),
+          range: range ?? undefined,
+        })
+      },
+    })
+    collabRef.current = collab
+    return () => {
+      collabRef.current = null
+      void collab.close()
+    }
+  }, [])
+  useEffect(() => {
+    activeSheetIdRef.current = activeSheetId
+  }, [activeSheetId])
+  useEffect(() => {
+    setCollabOverwriteCount(0)
+    void collabRef.current?.open(workbookFile?.path ?? '')
+  }, [workbookFile])
+  useEffect(() => {
+    collabRef.current?.publish()
+  }, [editNonce])
+  // The presence follows the selection, which changes without an edit, so it is
+  // republished on a slow heartbeat as well.
+  useEffect(() => {
+    const timer = setInterval(() => collabRef.current?.publishPresence(), 5000)
+    return () => clearInterval(timer)
+  }, [])
   const recomputeSheetContent = useCallback(() => {
     setSheetHasContent(() => {
       // A file opened from disk always counts as having content.
@@ -2598,7 +2734,7 @@ export function App({
       const state = lazyWorkbookRef.current
       if (!state) return
       recordNoteChange(state.editJournal, sheetId)
-      setPendingEdits(journalSize(state.editJournal))
+      noteEdit(journalSize(state.editJournal))
     }
     void window.desktopApi.getUserDisplayName?.().then((name) => threadStore.setAuthor(name))
     const offAuthorChanged = window.desktopApi.onUserDisplayNameChanged?.((name) =>
@@ -2939,7 +3075,7 @@ export function App({
               renameChartRefsForSheet(state, previousName, params.name)
             }
           }
-          setPendingEdits(journalSize(state.editJournal))
+          noteEdit(journalSize(state.editJournal))
           return
         }
         // Move-range carries its sheet ids inside from/to, not at top level.
@@ -2964,13 +3100,13 @@ export function App({
           // Moved cells feed charts too, same as value mutations.
           if (fromSheet && fromRange) queueChartDataSync(fromSheet, fromRange)
           if (toSheet && toRange) queueChartDataSync(toSheet, toRange)
-          setPendingEdits(journalSize(state.editJournal))
+          noteEdit(journalSize(state.editJournal))
           return
         }
         // Workbook-level: defined-name mutations carry no subUnitId.
         if (DEFINED_NAME_MUTATIONS.has(event.id)) {
           recordDefinedNamesChange(state.editJournal)
-          setPendingEdits(journalSize(state.editJournal))
+          noteEdit(journalSize(state.editJournal))
           return
         }
         // The sheets-note mutations name their sheet `sheetId`, not
@@ -2981,7 +3117,7 @@ export function App({
           const noteSheetId = (params as { sheetId?: string }).sheetId ?? params.subUnitId
           if (noteSheetId) {
             recordNoteChange(state.editJournal, noteSheetId)
-            setPendingEdits(journalSize(state.editJournal))
+            noteEdit(journalSize(state.editJournal))
           }
           return
         }
@@ -3060,7 +3196,7 @@ export function App({
           if (pageBreakLayersRef.current.has(params.subUnitId)) {
             installPageBreakLayers(params.subUnitId)
           }
-          setPendingEdits(journalSize(state.editJournal))
+          noteEdit(journalSize(state.editJournal))
           return
         }
         if (FILTER_MUTATIONS.has(event.id)) {
@@ -3077,18 +3213,18 @@ export function App({
           if (event.id === 'sheet.mutation.remove-filter') {
             resetLargeFilter(state, params.subUnitId)
           }
-          setPendingEdits(journalSize(state.editJournal))
+          noteEdit(journalSize(state.editJournal))
           return
         }
         if (CF_MUTATIONS.has(event.id)) {
           recordCfChange(state.editJournal, params.subUnitId)
-          setPendingEdits(journalSize(state.editJournal))
+          noteEdit(journalSize(state.editJournal))
           return
         }
         if (DV_MUTATIONS.has(event.id)) {
           if (params.subUnitId) {
             recordDvChange(state.editJournal, params.subUnitId)
-            setPendingEdits(journalSize(state.editJournal))
+            noteEdit(journalSize(state.editJournal))
           }
           return
         }
@@ -3104,7 +3240,7 @@ export function App({
               frozenRows,
               frozenColumns,
             })
-            setPendingEdits(journalSize(state.editJournal))
+            noteEdit(journalSize(state.editJournal))
             // The streaming eviction guard and the frozen strip loaders read
             // the freeze from the parsed file model, which an in-session
             // freeze never reached — the guard stayed off and the next window
@@ -3139,7 +3275,7 @@ export function App({
             recordPageSetup(state.editJournal, gridlines.subUnitId, {
               showGridlines: gridlines.showGridlines === 1,
             })
-            setPendingEdits(journalSize(state.editJournal))
+            noteEdit(journalSize(state.editJournal))
           }
           return
         }
@@ -3157,7 +3293,7 @@ export function App({
             recordPageSetup(state.editJournal, rtl.subUnitId, {
               rightToLeft: rtl.rightToLeft === 1,
             })
-            setPendingEdits(journalSize(state.editJournal))
+            noteEdit(journalSize(state.editJournal))
           }
           refreshSheetRender(runtime)
           return
@@ -3176,7 +3312,7 @@ export function App({
             recordPageSetup(state.editJournal, zoom.subUnitId, {
               zoomScale: Math.min(400, Math.max(10, Math.round(zoom.zoomRatio * 100))),
             })
-            setPendingEdits(journalSize(state.editJournal))
+            noteEdit(journalSize(state.editJournal))
           }
           return
         }
@@ -3185,7 +3321,7 @@ export function App({
             journalRangeSnapshot(runtime, state, params.subUnitId, params.range, params.order)
             // Sorted cells feed charts too, same as value mutations.
             queueChartDataSync(params.subUnitId, params.range)
-            setPendingEdits(journalSize(state.editJournal))
+            noteEdit(journalSize(state.editJournal))
           }
           return
         }
@@ -3328,7 +3464,7 @@ export function App({
           if (activeSheet?.getSheetId() === params.subUnitId) {
             void loadVisibleRange(runtime, lazyWorkbookRef, activeSheet, setMessage)
           }
-          setPendingEdits(journalSize(state.editJournal))
+          noteEdit(journalSize(state.editJournal))
           return
         }
         if (merge) {
@@ -3344,7 +3480,7 @@ export function App({
               },
             })
           }
-          setPendingEdits(journalSize(state.editJournal))
+          noteEdit(journalSize(state.editJournal))
           return
         }
         // Copy-sheet batches a large source's cellData into follow-up chunk
@@ -3372,7 +3508,7 @@ export function App({
                   sharedFormulaResolverFor(runtime, params.subUnitId),
                 )
         if (recorded.length === 0) return
-        setPendingEdits(journalSize(state.editJournal))
+        noteEdit(journalSize(state.editJournal))
         const contentEdited = recorded.some(
           (entry) => entry.hasValue || entry.formula !== undefined,
         )
@@ -3419,7 +3555,7 @@ export function App({
       runtime.univerAPI.Event.BeforeCommandExecute,
       (event) => {
         const state = lazyWorkbookRef.current
-        if (journalSuppression.active || !state) return
+        if (journalSuppression.active || collabRemoteApply.active || !state) return
         if (event.id === SET_RANGE_VALUES_COMMAND || event.id === SET_RANGE_VALUES_MUTATION) {
           // Quadratic array-criteria formulas (distinct-count COUNTIF idioms
           // over 80k+ rows) freeze the main-thread formula engine for
@@ -3573,7 +3709,7 @@ export function App({
               setMessage(t('appLargeFilterApplying'))
               void action(runtime, state)
                 .then(() => {
-                  setPendingEdits(journalSize(state.editJournal))
+                  noteEdit(journalSize(state.editJournal))
                   setMessage(t('appReadyInitial'))
                 })
                 .catch((error: unknown) => setMessage(String(error)))
@@ -5762,7 +5898,7 @@ export function App({
   function refreshLazyVisuals(state: LazyWorkbookState): void {
     const runtime = univerRef.current
     if (!runtime || lazyWorkbookRef.current !== state) return
-    setPendingEdits(journalSize(state.editJournal))
+    noteEdit(journalSize(state.editJournal))
     setVisualEditTick((tick) => tick + 1)
     queueVisualInstall(
       runtime,
@@ -6042,6 +6178,7 @@ export function App({
           onClose={() => setChartDialog(null)}
         />
       )}
+      <RemoteSelections runtime={getRuntime} />
       <ExcelShell
         openingWorkbook={openingWorkbook}
         prompt={prompt}
@@ -6080,6 +6217,12 @@ export function App({
         formatPainterActive={formatPainterActive}
         statusMessage={openingWorkbook ? t('appOpeningWorkbook') : message}
         emptyCsvNotice={emptyCsvNotice}
+        collabOverwriteNotice={
+          collabOverwriteCount > 0
+            ? t('appCollabOverwriteNotice', { count: collabOverwriteCount })
+            : null
+        }
+        onDismissCollabOverwrite={() => setCollabOverwriteCount(0)}
         onOpenWorkbook={() => void handleInspectWorkbook()}
         onDismissEmptyCsvNotice={() => setEmptyCsvNotice(false)}
         aiBusy={aiBusy}
@@ -6667,7 +6810,7 @@ export function App({
     )
     state.sheetProtectedRanges.set(sheetId, hashed)
     recordProtectedRangesChange(state.editJournal, sheetId)
-    setPendingEdits(journalSize(state.editJournal))
+    noteEdit(journalSize(state.editJournal))
     setMessage(t('appRangesRecorded', { count: ranges.length }))
     return null
   }

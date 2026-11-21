@@ -1,6 +1,7 @@
 import type { zh } from './zh'
 
 export const ms = {
+  appCollabOverwriteNotice: 'Perubahan daripada rakan sekerja telah digunakan pada buku kerja ini. Suntingan anda yang belum disimpan ({count}) masih tertunggak dan akan ditulis semasa menyimpan.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Sembunyikan pilihan daripada AI',
   redactDialogDesc:

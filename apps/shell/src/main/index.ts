@@ -30,6 +30,13 @@ import {
 } from 'electron'
 import type { MenuItemConstructorOptions, NativeImage, Rectangle, WebContents } from 'electron'
 import { atomicCopyFile, atomicWriteFile } from './atomic-write'
+// first statement of the module body: the capture wrapper must be installed
+// before any ipcMain registration below (and in the app modules) so the web
+// bridge can reach every handler
+import { installWebIpcCapture } from '../web/capture'
+installWebIpcCapture()
+import { parseWebServerArgv } from '../web/index'
+import { startWebShare, stopWebShare, webShareStatus } from '../web/share'
 import { openTrash } from './trash'
 import { registerAiNamingIpc } from './ai-naming-service'
 import { tabStripOverlay } from './title-bar-overlay'
@@ -485,6 +492,9 @@ if (headlessArgv.kind !== 'none') {
   setHeadlessMode(true)
   app.dock?.hide()
 }
+
+/** --web-server (or GENOFFICE_WEB=1): also serve the suite to browsers */
+const webServerArgv = parseWebServerArgv(process.argv)
 
 // The product rename from "AI Office" to GenOffice changed the userData path; migrate old user data once
 if (app.isPackaged) {
@@ -4980,6 +4990,19 @@ function statEntries(paths: string[]): Promise<RecentEntry[]> {
   return statPathEntriesAsync(paths, new Set(readStarredFiles()))
 }
 
+let webShareIpcRegistered = false
+
+/** Status-bar share chips (every editor): runtime start/stop for the web
+ *  service. One registration — the service is process-wide by design; the
+ *  chips in all six editors drive this same set of channels. */
+function registerWebShareIpc(): void {
+  if (webShareIpcRegistered) return
+  webShareIpcRegistered = true
+  ipcMain.handle('web-share:status', () => webShareStatus())
+  ipcMain.handle('web-share:start', async () => startWebShare())
+  ipcMain.handle('web-share:stop', () => stopWebShare())
+}
+
 function registerHomeIpc(): void {
   // signed-in means GenOffice's own device-code login; the shared gsk CLI key
   // is only a silent fallback, deliberately not shown here to nudge users onto our key
@@ -7254,6 +7277,10 @@ app.on('second-instance', (_event, argv, _cwd, additionalData) => {
 installNavigationGuard(app)
 installContextMenu(app, () => contextMenuLabels(currentLang()))
 registerAiIpc()
+// the collaboration rooms live in this process: a desktop window and a
+// browser tab of the same document are members of the same room. The relay
+// carries a CRDT and is loaded on its own, so the shell's module stays light.
+void import('../../../docs/src/main/collab').then((collab) => collab.registerCollabIpc())
 const openHomeSettings = (section: 'aiModel' | 'skills'): void => {
   const win = shellWindow
   if (!win || win.isDestroyed()) return
@@ -7272,6 +7299,7 @@ registerAiNamingIpc(() => currentLang())
 registerProjectIpc()
 registerDocsIpc()
 registerHomeIpc()
+registerWebShareIpc()
 registerIntegrationsIpc({
   settingsPath: APP_SETTINGS_PATH,
   window: () => shellWindow,
@@ -7363,6 +7391,15 @@ app.whenReady().then(async () => {
     currentLang()
     await runHeadlessExportEntry(headlessArgv)
     return
+  }
+  if (webServerArgv.enabled) {
+    // the web front end shares this process: same handlers, same sidecar, same
+    // file access. Started before the window so a --hidden web service boots
+    // without flashing a desktop window. Routed through the share controller
+    // so the editors' status-bar chips reflect it.
+    void startWebShare(webServerArgv.overrides).catch((err: unknown) => {
+      console.error('[web] server failed to start:', err)
+    })
   }
   const lockData = () =>
     pendingLaunchPaths.length > 0

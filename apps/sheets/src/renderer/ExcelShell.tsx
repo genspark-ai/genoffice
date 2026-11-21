@@ -1,5 +1,5 @@
 import type { IFunctionInfo } from '@univerjs/engine-formula'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { platformShortcuts } from '@genoffice/i18n'
 import {
   Dropdown,
@@ -11,6 +11,10 @@ import {
   rememberAiPanelOpen,
   useAiSidebarEnabled,
   type AiTokenUsageView,
+  CollabPresenceChip,
+  currentCollabPresence,
+  subscribeCollabPresence,
+  WebShareChip,
 } from '@genoffice/ui'
 
 import {
@@ -298,6 +302,9 @@ interface ExcelShellProps {
   /// Left side of the status bar (ready / streaming / AI progress messages).
   readonly statusMessage: string
   readonly emptyCsvNotice: boolean
+  /** a remote snapshot overwrote the grid while edits were pending */
+  readonly collabOverwriteNotice: string | null
+  readonly onDismissCollabOverwrite: () => void
   readonly onOpenWorkbook: () => void
   readonly onDismissEmptyCsvNotice: () => void
   /// Zoom of the active sheet in percent, echoed by the status-bar slider.
@@ -557,6 +564,8 @@ export function ExcelShell({
   openingWorkbook,
   statusMessage,
   emptyCsvNotice,
+  collabOverwriteNotice,
+  onDismissCollabOverwrite,
   onOpenWorkbook,
   onDismissEmptyCsvNotice,
   zoomPercent,
@@ -589,7 +598,7 @@ export function ExcelShell({
   onFillSeries,
   onGetFillSeriesContext,
 }: ExcelShellProps): React.JSX.Element {
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
   const [activeTab, setActiveTab] = useState<RibbonTab>('Home')
   const collapse = useRibbonCollapse('ai-sheets-ribbon-collapsed', {
     collapse: t('appRibbonCollapse'),
@@ -599,6 +608,17 @@ export function ExcelShell({
     expandFull: t('appRibbonExpand'),
   })
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
+  // the other members of the room, read from the presence store
+  const presence = useSyncExternalStore(subscribeCollabPresence, currentCollabPresence)
+  const presenceMembers = useMemo(
+    () =>
+      [...presence.values()].map((member) => ({
+        id: member.id,
+        name: member.name,
+        location: member.location,
+      })),
+    [presence],
+  )
   const [isCopilotOpen, setIsCopilotOpen] = useState(() =>
     aiPanelInitiallyOpen('ai-sheets-show-ai'),
   )
@@ -1077,6 +1097,19 @@ export function ExcelShell({
         <div className="sheet-main">
           <section className="workbook-area">
             <div id="univer-container" className="spreadsheet" />
+            {collabOverwriteNotice && (
+              <div className="collab-overwrite-notice" role="status">
+                <span>{collabOverwriteNotice}</span>
+                <button
+                  type="button"
+                  className="collab-overwrite-notice-close"
+                  aria-label={t('appClose')}
+                  onClick={onDismissCollabOverwrite}
+                >
+                  ×
+                </button>
+              </div>
+            )}
             {emptyCsvNotice && (
               <div className="csv-empty-notice" role="status">
                 <span>{t('appCsvEmpty')}</span>
@@ -1121,6 +1154,8 @@ export function ExcelShell({
               <span className="status-msg">{statusMessage}</span>
             </div>
             <div className="status-right">
+              <WebShareChip lang={lang} />
+              <CollabPresenceChip members={presenceMembers} />
               {/* One-of-N view switcher, so it is a radiogroup rather than a
                   second set of buttons named like the View tab's. */}
               <div

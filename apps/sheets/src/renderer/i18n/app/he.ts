@@ -1,6 +1,7 @@
 import type { zh } from './zh'
 
 export const he = {
+  appCollabOverwriteNotice: 'השינויים של עמית הוחלו על חוברת העבודה הזאת. העריכות שלא נשמרו ({count}) עדיין ממתינות וייכתבו בעת השמירה.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'הסתרת הבחירה מהמודל',
   redactDialogDesc:

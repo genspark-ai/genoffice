@@ -1,6 +1,7 @@
 import type { zh } from './zh'
 
 export const pl = {
+  appCollabOverwriteNotice: 'Zmiany współpracownika zostały zastosowane do tego skoroszytu. Twoje niezapisane edycje ({count}) pozostają w oczekiwaniu i zostaną zapisane przy zapisywaniu.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Ukryj zaznaczenie przed AI',
   redactDialogDesc:

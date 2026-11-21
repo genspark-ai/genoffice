@@ -21,6 +21,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { runCopyEmfHelper } from './copy-emf-helper'
+import { registerSheetsCollabIpc } from './collab'
 import { refreshCsvDigest } from './csv-digest'
 import { ImportRegistry } from './import-registry'
 import { createServer } from 'node:http'
@@ -2787,6 +2788,21 @@ export function createSheetsView(
   return view
 }
 
+/** web-server mode: a browser tab registers the same session the desktop view
+ *  would (sidecar client, per-tab session state, queued open when a path was
+ *  requested). The tab object the bridge passes behaves like a WebContents for
+ *  everything registerSheetsSession and queueWorkbookForView touch
+ *  (id/once/destroyed). AI channels stay with the shell-wide registration
+ *  (registerSheetsIpc's includeAiHandlers:false rule in shell mode). */
+export function createSheetsWebTab(webContents: WebContents, path?: string | null): void {
+  const client = sidecar ?? new XlsxSidecarClient(resolveSidecarPath())
+  sidecar = client
+  client.start()
+  registerSheetsIpc()
+  registerSheetsSession(webContents, client)
+  if (path) queueWorkbookForView(webContents, path)
+}
+
 // ---- Chat attachments: local files parsed and fed to the agent (copied from
 // the apps/docs docs-main attachment pipeline) ----
 
@@ -3041,6 +3057,7 @@ function grantCsvExportTarget(wcId: number, path: string): void {
 }
 
 export function registerSheetsIpc(): void {
+  registerSheetsCollabIpc()
   if (coreIpcRegistered) return
   coreIpcRegistered = true
 
