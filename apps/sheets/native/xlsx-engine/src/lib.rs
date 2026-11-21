@@ -27,6 +27,7 @@ pub mod recalc;
 mod rels_normalize;
 mod richdata;
 mod shared_formulas;
+mod shared_strings;
 pub mod spreadsheetml;
 pub mod stream_patch;
 mod visuals;
@@ -52,6 +53,7 @@ use cell_images::*;
 use formula_dependencies::DependencyCatalog;
 use index_scheduler::{IndexScheduler, IndexState, IndexWorker, MetadataJob};
 use refs::*;
+use shared_strings::SharedStrings;
 use sparklines::*;
 use table_styles::*;
 pub use types::*;
@@ -304,7 +306,6 @@ impl WorkbookSessions {
         visuals::read_indexed_palette(&mut archive, &mut color_context)?;
         let theme_colors = color_context.palette_hex();
         let theme_fonts = visuals::read_theme_fonts(&mut archive)?;
-        let shared_strings = Arc::new(read_shared_strings(&mut archive, &color_context)?);
         let (declarations, workbook_protection, active_tab, date_1904) =
             read_sheet_declarations(&mut archive)?;
         let relationships = read_workbook_relationships(&mut archive)?;
@@ -339,22 +340,25 @@ impl WorkbookSessions {
                     || name.starts_with("xl/embeddings/")
             });
         let mut headers = Vec::with_capacity(sources.len());
+        let mut untrusted_extents = Vec::with_capacity(sources.len());
         for source in &sources {
             if cancelled.load(Ordering::Acquire) {
                 return Err(SidecarError::cancelled());
             }
-            let header = if progressive
+            let can_stream = progressive
                 && source.is_large()
                 && !visuals::read_relationships(&mut archive, &source.path)?
                     .values()
                     .any(|rel| {
                         let kind = &rel.relationship_type;
                         kind.ends_with("/drawing") || kind.ends_with("/oleObject")
-                    }) {
+                    });
+            let header = if can_stream {
                 read_progressive_sheet_header(&mut archive, &source.path, &color_context)?
             } else {
                 None
             };
+            untrusted_extents.push(can_stream && header.is_none());
             headers.push(header);
         }
         let parallelism = if THREADS && sources.len() > 1 {
@@ -383,12 +387,15 @@ impl WorkbookSessions {
                     &workbook_path,
                     &sources[index..end],
                     &headers[index..end],
+                    &untrusted_extents[index..end],
+                    &color_context,
                     cancelled,
                 );
             }
             let header = headers[index].take();
             let progressive = header.is_some();
-            let dimensions = match header {
+            let mut scanned = scanned_metadata.pop_front().flatten().transpose()?;
+            let dimensions = match header.or_else(|| scanned.as_mut()?.dimensions.take()) {
                 Some(header) => header,
                 None => read_sheet_dimensions(
                     &mut archive,
@@ -429,12 +436,11 @@ impl WorkbookSessions {
                     })
                 })
                 .collect();
-            let scanned = scanned_metadata.pop_front().flatten();
             let (protection, sparklines, ole_objects) = if progressive {
                 (SheetProtectionMetadata::default(), Vec::new(), Vec::new())
             } else {
                 let xml = match scanned {
-                    Some(scanned) => scanned?,
+                    Some(scanned) => scanned.envelope,
                     None => visuals::read_worksheet_without_cells(
                         &mut archive,
                         worksheet_path,
@@ -592,13 +598,25 @@ impl WorkbookSessions {
             .unwrap_or("workbook.xlsx")
             .to_owned();
         let progressive = sheets.iter().any(|sheet| sheet.progressive);
+        let session_cancelled = Arc::new(AtomicBool::new(false));
+        let shared_strings = SharedStrings::open(
+            &mut archive,
+            &workbook_path,
+            cache_directory.path(),
+            &color_context,
+            progressive,
+            Arc::clone(&session_cancelled),
+        )?;
+        if cancelled.load(Ordering::Acquire) {
+            return Err(SidecarError::cancelled());
+        }
         let sources = Arc::new(IndexSources {
             path: workbook_path,
             cache_directory: cache_directory.path().to_path_buf(),
             shared_strings,
             styled_xfs,
             color_context,
-            cancelled: Arc::new(AtomicBool::new(false)),
+            cancelled: session_cancelled,
             dependencies: (THREADS && progressive)
                 .then(|| DependencyCatalog::new(&sheets, &defined_names)),
         });
@@ -852,7 +870,7 @@ struct WorkbookSession {
 struct IndexSources {
     path: PathBuf,
     cache_directory: PathBuf,
-    shared_strings: Arc<Vec<SharedString>>,
+    shared_strings: SharedStrings,
     styled_xfs: Arc<Vec<bool>>,
     color_context: ColorContext,
     cancelled: Arc<AtomicBool>,
@@ -1157,6 +1175,8 @@ impl WorkbookSession {
 
     fn close(self) -> Result<(), SidecarError> {
         self.scheduler.close();
+        // Drop the string table and join its writer before removing the cache.
+        drop(self.scheduler);
         if self.cache_directory.exists() {
             fs::remove_dir_all(&self.cache_directory)?;
         }

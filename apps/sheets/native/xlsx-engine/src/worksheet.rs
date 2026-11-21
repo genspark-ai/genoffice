@@ -3,6 +3,7 @@
 //! setup and header/footer text into the session's `SheetIndex`.
 
 use super::*;
+use crate::shared_strings::SharedStringReader;
 
 /// The worksheet extension carrying x14 data validations. Excel parks
 /// cross-sheet rules in an extension of its own; the x14 conditional
@@ -16,7 +17,7 @@ pub(crate) fn index_worksheet(
     worksheet_path: &str,
     sheet_index: usize,
     cache_directory: &Path,
-    shared_strings: &[SharedString],
+    shared_strings: &SharedStrings,
     styled_xfs: &[bool],
     colors: &ColorContext,
     rich_image_cells: &HashSet<(usize, usize)>,
@@ -33,7 +34,7 @@ pub(crate) fn index_worksheet(
         worksheet_path,
         sheet_index,
         cache_directory,
-        shared_strings,
+        &mut shared_strings.reader()?,
         styled_xfs,
         colors,
         rich_image_cells,
@@ -70,7 +71,7 @@ pub(crate) fn read_worksheet_metadata(
         worksheet_path,
         sheet_index,
         Path::new(""),
-        &[],
+        &mut SharedStringReader::Memory(&[]),
         &[],
         colors,
         &HashSet::new(),
@@ -127,7 +128,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
     worksheet_path: &str,
     sheet_index: usize,
     cache_directory: &Path,
-    shared_strings: &[SharedString],
+    shared_strings: &mut SharedStringReader<'_>,
     styled_xfs: &[bool],
     colors: &ColorContext,
     rich_image_cells: &HashSet<(usize, usize)>,
@@ -1545,7 +1546,7 @@ impl CellBuilder {
 
     fn finish(
         self,
-        shared_strings: &[SharedString],
+        shared_strings: &mut SharedStringReader<'_>,
         styled_xfs: &[bool],
         rich_image_cells: &HashSet<(usize, usize)>,
     ) -> Result<Option<CellRecord>, SidecarError> {
@@ -1562,18 +1563,16 @@ impl CellBuilder {
             _ if picture => None,
             // Empty <v/> or a stale index degrades to a valueless styled cell;
             // erroring here used to blank the whole sheet.
-            Some("s") => match self
-                .raw_value
-                .parse::<usize>()
-                .ok()
-                .and_then(|index| shared_strings.get(index))
-            {
-                Some(shared) => {
-                    rich = shared.runs.clone();
-                    Some(CellValue::String(shared.text.clone()))
-                }
-                None => None,
-            },
+            Some("s") => {
+                let shared = match self.raw_value.parse::<usize>() {
+                    Ok(index) => shared_strings.get(index)?,
+                    Err(_) => None,
+                };
+                shared.map(|shared| {
+                    rich = shared.runs;
+                    CellValue::String(shared.text)
+                })
+            }
             Some("inlineStr") => {
                 let mut inline_runs = self.inline_runs;
                 for run in &mut inline_runs {
