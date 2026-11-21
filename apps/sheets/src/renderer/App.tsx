@@ -418,6 +418,8 @@ import { installFormulaStreamHold } from './formula-stream-hold'
 import { installRichTextBidiFix } from './rich-text-bidi-fix'
 import { installRtlTextDirectionFix } from './rtl-text-fix'
 import { installRtlGridMirror } from './rtl-grid-mirror'
+import { installGridlinePrecision } from './gridline-precision'
+import { installDeferredVerticalThumb } from './vertical-thumb-scroll'
 import { installVertAlignRender } from './vert-align-render'
 import { installMultiRowAutofit } from './autofit-multi-row'
 import { registerExcelJumpNav } from './excel-jump-nav'
@@ -2387,7 +2389,9 @@ export function App({
     installRtlTextDirectionFix()
     // sheetView rightToLeft="1": mirror the grid geometry (column A on the
     // right, headers on the right) while keeping logical indices.
+    installGridlinePrecision()
     installRtlGridMirror()
+    installDeferredVerticalThumb()
     // Univer defines the right-to-left command/mutation pair but never
     // registers it; without this the View tab's toggle would silently no-op.
     installRightToLeftCommand(runtime)
