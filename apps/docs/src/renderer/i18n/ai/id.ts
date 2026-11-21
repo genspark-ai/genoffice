@@ -9,6 +9,7 @@ export const id = {
   aiStarterContinue: 'Lanjutkan menulis dari bagian akhir dokumen',
   aiStarterFillTemplate: 'Temukan dan isi placeholder di dokumen ini',
   aiGskLoginBtn: 'Masuk ke Genspark',
+  aiGskLoginOk: 'Berhasil masuk ke Genspark',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'Buka asisten AI',
   aiSummarizeBtn: 'Ringkasan AI',

@@ -4295,6 +4295,16 @@ textarea:focus {
   width: 560px;
 }
 
+/* nine categories are wider than the card: they wrap instead of widening
+   the single grid column (and with it the grid and the actions) past it */
+.icons-dialog .dialog-tabs {
+  flex-wrap: wrap;
+}
+
+.icons-dialog .dialog-tabs button {
+  white-space: nowrap;
+}
+
 .icons-toolbar {
   display: flex;
   gap: 10px;

@@ -1,6 +1,6 @@
 /**
  * A rejected op contributes no model or package changes, while preceding and
- * following successful operations stay (#2821): setText rewrote the runs and
+ * following successful operations stay (genoffice#2821): setText rewrote the runs and
  * their link rels before the picture-bullet landing failed, so a per_op batch
  * kept the rejected op's text and hyperlink. The bullet format is now refused
  * in validate — the plan phase — where a per_op batch skips the op whole.

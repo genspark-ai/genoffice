@@ -68,4 +68,16 @@ describe('preload whitelist names every sidecar wire field', () => {
       .map(([, where]) => where)
     expect(missing).toEqual([])
   })
+  it('covers the comments of workbookFileSchema', () => {
+    const keys = new Map<string, string>()
+    objectKeys(workbookFileSchema, 'file', keys)
+    const commentKeys = [...keys.entries()].filter(([, where]) =>
+      where.startsWith('file.sheets[].comments[]'),
+    )
+    expect(commentKeys.map(([key]) => key)).toEqual(expect.arrayContaining(['thread', 'replies']))
+    const missing = commentKeys
+      .filter(([key]) => !preloadSource.includes(key))
+      .map(([, where]) => where)
+    expect(missing).toEqual([])
+  })
 })

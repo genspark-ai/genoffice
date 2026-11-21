@@ -62,6 +62,12 @@ describe('history selection', () => {
     expect(currentAfterHistory(before.slice(0, 3), 3, 'D')).toBe(2)
     expect(currentAfterHistory(before, 2)).toBe(2)
   })
+
+  it('restores a valid anchor for an empty deck or a negative saved index', () => {
+    expect(currentAfterHistory([], 3)).toBe(0)
+    expect(currentAfterHistory([], 3, 'A')).toBe(0)
+    expect(currentAfterHistory(before, -2)).toBe(0)
+  })
 })
 
 /** Applies moveSlide steps the way the engine does: remove, then insert at `to`. */

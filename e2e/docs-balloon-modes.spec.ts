@@ -97,7 +97,7 @@ test.describe('docs Show Markup balloons', () => {
       expect(await wrap.evaluate((el) => el.style.getPropertyValue('--markup-w'))).toBe('460px')
 
       await page.locator('.ribbon-tab', { hasText: /^Review$/ }).click()
-      const markup = page.getByRole('button', { name: 'Markup', exact: true })
+      const markup = page.getByRole('button', { name: 'Markup Options', exact: true })
       await markup.click()
       const items = page.locator('.layout-menu button[role="menuitemradio"]')
       await expect(items).toHaveText([

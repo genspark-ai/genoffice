@@ -5,6 +5,7 @@ export const en = {
   aiEmptyBuildTitle: 'Let AI build this workbook for you',
   aiEmptyBuildBody: 'Describe the table, data, or chart you need — AI creates it in place.',
   aiGskLoginBtn: 'Sign in to Genspark',
+  aiGskLoginOk: 'Signed in to Genspark',
   aiUndelivered: 'Not sent',
   aiRetry: 'Retry',
   aiOpenAssistant: 'Open AI assistant',

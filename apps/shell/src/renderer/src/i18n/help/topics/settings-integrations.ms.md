@@ -10,7 +10,7 @@ Konfigurasi model mempunyai babnya sendiri; dalam **Media & Carian AI** anda men
 
 ## Bahasa
 
-- Tetapan menawarkan **22 bahasa antara muka**: Inggeris, Cina ringkas, Jepun, Korea, Perancis, Jerman, Sepanyol, Thai, Indonesia, Rusia, Arab, Portugis, Itali, Poland, Czech, Belanda, Melayu, Ibrani, Hindi, Cina tradisional, Vietnam, dan Turki.
+- Tetapan menawarkan **23 bahasa antara muka**: Inggeris, Cina ringkas, Jepun, Korea, Perancis, Jerman, Sepanyol, Thai, Indonesia, Rusia, Arab, Portugis, Itali, Poland, Czech, Belanda, Melayu, Ibrani, Hindi, Cina tradisional, Vietnam, Turki, dan Hungary.
 - Pertukaran bahasa berkuat kuasa serta-merta dan kekal, manakala bar menu sistem dibina semula dalam bahasa baharu itu.
 
 ## Tema

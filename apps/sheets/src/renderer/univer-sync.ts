@@ -3560,7 +3560,7 @@ async function loadRange(
       }
     } else if (isActiveSheet(runtime, sheetId)) {
       // every row is available: the streaming notice clears instead of
-      // lingering after the load with the session's internal file name (#2841)
+      // lingering after the load with the session's internal file name (genoffice#2841)
       setMessage('')
     }
   } catch (error: unknown) {

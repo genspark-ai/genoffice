@@ -1,6 +1,6 @@
 # Ligar um agente de programação
 
-O GenOffice fala o Model Context Protocol, por isso um agente de programação consegue ler, escrever e renderizar os seus documentos através dos mesmos motores que o aplicativo usa. O agente não está a adivinhar um formato de arquivo: recebe os esquemas tipados das operações a partir das mesmas definições contra as quais o executor valida.
+O GenOffice fala o Model Context Protocol, por isso um agente de programação consegue ler, escrever e renderizar os seus documentos através dos mesmos motores que o aplicativo usa. O agente não está adivinhando um formato de arquivo: recebe os esquemas tipados das operações a partir das mesmas definições contra as quais o executor valida.
 
 ## Registrá-lo a partir do aplicativo
 

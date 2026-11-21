@@ -17,6 +17,7 @@ Fail Word, Excel, PowerPoint dan PDF, disunting oleh anda dan AI anda, disimpan 
   <a href="https://github.com/genspark-ai/genoffice/releases/latest"><img src="https://img.shields.io/github/v/release/genspark-ai/genoffice" alt="Latest release"></a>
   <a href="https://github.com/genspark-ai/genoffice/releases"><img src="https://img.shields.io/github/downloads/genspark-ai/genoffice/total" alt="Downloads"></a>
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub stars"></a>
+  <a href="https://x.com/merrickbuilds"><img src="https://img.shields.io/badge/follow-%40merrickbuilds-000000?logo=x&logoColor=white" alt="Follow @merrickbuilds on X"></a>
 </p>
 
 <p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <b>Bahasa Melayu</b> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.hu.md">Magyar</a></p>
@@ -28,6 +29,7 @@ Fail Word, Excel, PowerPoint dan PDF, disunting oleh anda dan AI anda, disimpan 
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Laman Web</b></a> ·
   <a href="https://genoffice.ai/join"><b>Komuniti</b></a> ·
+  <a href="https://x.com/merrickbuilds"><b>X</b></a> ·
   <a href="../../PRIVACY.md"><b>Privasi</b></a>
 </p>
 
@@ -38,8 +40,10 @@ AI di sebelah setiap dokumen — bukan sekadar kotak sembang yang ditampal di
 tepi, tetapi editor yang membaca fail, membuat perubahan itu, dan menunjukkan
 kepada anda dengan tepat apa yang disentuhnya. Fail ODF (`.odt`, `.ods`,
 `.odp` dan templat `.ott`/`.ots`/`.otp`) dibuka sebagai salinan OOXML yang
-boleh disunting; pengimportan hanya untuk membuka — penyimpanan menulis
-OOXML, tidak pernah ODF.
+boleh disunting, begitu juga fail Word lama `.doc`/`.dot`, Excel 97 `.xls`
+dan PowerPoint 97–2003 `.ppt` serta dokumen Hancom (`.hwp`, `.hwpx`);
+pengimportan hanya untuk membuka — penyimpanan menulis OOXML, tidak pernah
+format sumber.
 
 - **Format sebenar, terpelihara bit demi bit.** Hanya bahagian yang anda
   sunting akan ditulis semula. Selebihnya dalam fail terus terpelihara
@@ -58,11 +62,21 @@ OOXML, tidak pernah ODF.
   ditukar terus pada mesin anda. PDF → Word / Excel / PowerPoint, Markdown →
   Word dan HTML → Word semuanya berjalan di peranti sendiri. Hanya panggilan
   AI yang keluar dari mesin, kepada pembekal pilihan anda.
+- **Cari fail berdasarkan kandungannya.** Skrin utama mencari nama, folder
+  dan teks penuh fail `.docx`, `.xlsx`, `.pptx`, PDF, Markdown dan HTML anda
+  daripada indeks SQLite setempat, termasuk CJK. Secara pilihan, hasil
+  teratas disusun semula kedudukannya oleh
+  **[TypeSafe Jev](https://typesafe.ai/)**, model pertimbangan System One,
+  supaya fail yang menjawab soalan anda muncul dahulu.
+- **Tanya fail anda, berserta sumber.** Bintangkan satu set dokumen dan
+  **Ask AI** pada skrin utama menjawab soalan merentasi kesemuanya, sambil
+  merujuk fail di sebalik setiap dakwaan supaya anda boleh membukanya dan
+  menyemak.
 - **Kunci anda sendiri atau tiada langsung.** Log masuk dengan Genspark dan
   anda tidak perlu sebarang kunci, atau bawa kunci anda sendiri untuk Claude,
   OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral,
-  OpenRouter, Requesty, atau mana-mana titik akhir yang serasi dengan OpenAI, termasuk
-  pelayan setempat.
+  OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, atau mana-mana
+  titik akhir yang serasi dengan OpenAI, termasuk pelayan setempat.
 - **Boleh dijalankan melalui skrip dan sedia untuk agen.** Aplikasi ini
   disertakan dengan baris arahan `genoffice` dan skill untuk Claude Code,
   Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode dan Windsurf, jadi agen
@@ -76,7 +90,9 @@ butiran dan keperluan dalam [Muat Turun](#download).
 
 ## Demo
 
-Enam aplikasi, satu panel AI, dan satu baris arahan untuk agen pengekodan anda.
+Enam aplikasi, satu panel AI, carian fail yang disusun semula kedudukannya
+oleh TypeSafe Jev, Ask AI yang menjawab daripada fail berbintang anda
+berserta sumber, dan satu baris arahan untuk agen pengekodan anda.
 Setiap tangkapan skrin ialah aplikasi sebenar pada macOS, dengan AI dipandu
 oleh gesaan yang boleh anda baca dalam panel.
 
@@ -102,7 +118,7 @@ oleh gesaan yang boleh anda baca dalam panel.
 </tr>
 <tr>
 <td><b>Bina ia</b> — daripada satu ayat, agen menambah helaian Summary dengan <code>SUMIF</code> sebenar mengikut wilayah dan kategori, menyisipkan carta lajur, dan melaksanakan 43 perubahan itu sebagai satu kelompok yang boleh dibuat asal.</td>
-<td><b>Tanya ia</b> — soalan tentang buku kerja itu dijawab dengan penaakulan serta sel sebenar yang digunakan sebagai rujukan yang boleh diklik. Di sebaliknya: enjin <code>.xlsx</code> Rust buatan sendiri, jadual pangsi, penghiris, pemformatan bersyarat, penyusuran formula, dan gambar yang dibenamkan dalam sel sebagai rich value native Excel — Excel membukanya semula dan ia masih berada dalam sel itu.Nota sel boleh membawa gambar, yang dipaparkan di bawah popup nota.</td>
+<td><b>Tanya ia</b> — soalan tentang buku kerja itu dijawab dengan penaakulan serta sel sebenar yang digunakan sebagai rujukan yang boleh diklik. Di sebaliknya: enjin <code>.xlsx</code> Rust buatan sendiri, jadual pangsi, penghiris, pemformatan bersyarat, penyusuran formula, dan gambar yang dibenamkan dalam sel sebagai rich value native Excel — Excel membukanya semula dan ia masih berada dalam sel itu. Nota sel boleh membawa gambar, yang dipaparkan di bawah popup nota.</td>
 </tr>
 </table>
 
@@ -116,7 +132,7 @@ oleh gesaan yang boleh anda baca dalam panel.
 <td width="50%"><img src="../assets/readme/slides-ai.webp" alt="GenOffice Slides: slaid penutup yang direka bagi deck 11 slaid yang sama, dengan jalur lakaran kecil di kiri dan panel AI meringkaskan jalan ceritanya"></td>
 </tr>
 <tr>
-<td><b>Satu baris masuk</b> — "Create a 10-slide investor pitch deck for Aurora Home…". GenOffice merancang jalan cerita, menyelidik angka-angka itu, dan merangka setiap slaid terus pada kanvas sebagai `.pptx` sebenar.</td>
+<td><b>Satu baris masuk</b> — "Create a 10-slide investor pitch deck for Aurora Home…". GenOffice merancang jalan cerita, menyelidik angka-angka itu, dan merangka setiap slaid terus pada kanvas sebagai <code>.pptx</code> sebenar.</td>
 <td><b>Deck siap keluar</b> — sebelas slaid yang direka dengan tipografi, imej yang konsisten dan seruan tindakan penutup; teruskan menyunting dengan induk (masters), susun atur, garis pandu pintar dan pemangkasan tidak merosakkan, atau minta panel menggayakan semula, menulis semula dan menyusun semula. Sisipkan <code>.glb</code> dan ia menjadi model 3D sebenar: putarkannya dengan menyeret dalam editor, disimpan dengan cara PowerPoint menyimpan 3D, dan masih 3D dalam PowerPoint.</td>
 </tr>
 </table>
@@ -135,7 +151,7 @@ dengan cara yang sama.
 </tr>
 <tr>
 <td><b>Sunting di dalam halaman</b> — mod Edit text menggariskan setiap blok teks untuk ditaip semula di tempatnya; strim kandungan ditulis semula melalui PDFium dengan fon asal, bukan anotasi yang sekadar menutup. Tanya AI tentang laporan panjang dan dapatkan jawapan dengan rujukan halaman.</td>
-<td><b>Tukar di peranti sendiri</b> — <b>PDF Converter → PDF to Word</b> menghasilkan `.docx` yang boleh disunting dan dibuka dalam Docs di sebelah sumbernya, dengan tajuk, baris statistik dan perenggan yang utuh. Sasaran Excel dan PowerPoint berfungsi dengan cara yang sama; halaman yang diimbas melalui OCR sistem.</td>
+<td><b>Tukar di peranti sendiri</b> — <b>PDF Converter → PDF to Word</b> menghasilkan <code>.docx</code> yang boleh disunting dan dibuka dalam Docs di sebelah sumbernya, dengan tajuk, baris statistik dan perenggan yang utuh. Sasaran Excel dan PowerPoint berfungsi dengan cara yang sama; halaman yang diimbas melalui OCR sistem.</td>
 </tr>
 </table>
 
@@ -177,7 +193,7 @@ gaya — sebelum membina satu fail `.html` mandiri berdasarkan token-token itu.
 </tr>
 <tr>
 <td><b>Tanya AI tentang pilihan teks</b> — pilih mana-mana ayat dan cip <b>Ask AI</b> akan muncul: taip arahan atau pilih cadangan, hantar serta-merta, atau baris beberapa suntingan berlabuh dan jalankan dalam satu pusingan. Kemasukan yang sama wujud dalam setiap aplikasi.</td>
-<td><b>Dipaparkan, disimpan sebagai Markdown biasa</b> — tajuk, senarai, jadual, imej, blok kod dan gambar rajah Mermaid dalam editor blok Tiptap, ditulis semula sebagai `.md` biasa, dengan eksport <b>Markdown → Word</b> yang sepenuhnya setempat.</td>
+<td><b>Dipaparkan, disimpan sebagai Markdown biasa</b> — tajuk, senarai, jadual, imej, blok kod dan gambar rajah Mermaid dalam editor blok Tiptap, ditulis semula sebagai <code>.md</code> biasa, dengan eksport <b>Markdown → Word</b> yang sepenuhnya setempat.</td>
 </tr>
 </table>
 
@@ -187,7 +203,53 @@ pelengkap nama nota, dan `![[…]]` membenamkan nota atau gambar secara
 sebaris. Panel **Backlinks** menyenaraikan setiap nota yang menunjuk kepada
 nota yang sedang dibuka, dan paparan **Graph** memetakan pautan seluruh vault.
 
-### 7 · CLI — agen pengekodan anda memandu GenOffice, pada mesin anda
+### <a id="7--search--find-the-file-that-answers-the-question-with-typesafe-jev"></a>7 · Carian — cari fail yang menjawab soalan, dengan TypeSafe Jev
+
+Setiap fail dalam folder kerja anda diindeks di peranti sendiri: nama, folder
+dan teks yang diekstrak daripada fail Word, Excel, PowerPoint, PDF, Markdown
+dan HTML, dalam indeks teks penuh SQLite dengan pentokenan yang peka CJK.
+Hidupkan **Jev search reranking** dan 20 hasil setempat teratas dinilai oleh
+[TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
+model System One yang memulangkan satu skor kerelevanan terkalibrasi bagi
+setiap dokumen dalam satu panggilan dan bukannya menjana teks. Senarai itu
+disusun semula mengikut skor tersebut; jika panggilan gagal atau tamat masa,
+susunan setempat dikekalkan.
+
+<img src="../assets/readme/search-jev-motion.webp" alt="Rakaman skrin bagi skrin utama GenOffice: menaip laptop refresh policy menyenaraikan dasar cache pelayar, pelan penyegaran jenama dan jadual penyegaran papan pemuka dahulu manakala dokumen piawaian peralatan berada di tempat terakhir; halaman Settings menunjukkan Jev search reranking dihidupkan di bawah AI Media & Search dengan titik akhir TypeSafe; carian yang sama kemudian menunjukkan dokumen piawaian peralatan di tempat pertama dengan lencana Jev di sebelah kiraan hasil" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/search-jev-before-after.webp" alt="Dua senarai hasil bagi pertanyaan laptop refresh policy secara bersebelahan: tanpa Jev, jadual penyegaran papan pemuka, pelan penyegaran jenama dan dasar penyegaran cache pelayar mendahului dan dokumen piawaian peralatan syarikat berada di tempat kelima; dengan Jev, dokumen piawaian peralatan, yang menyatakan kitaran penggantian komputer riba tiga tahun, berada di tempat pertama"></td>
+<td width="50%"><img src="../assets/readme/search-jev-settings.webp" alt="GenOffice Settings, halaman AI Media & Search: blok Local file search dengan suis Jev search reranking, pilihan titik akhir antara OpenRouter dan TypeSafe, serta medan kunci API"></td>
+</tr>
+<tr>
+<td><b>Perkataan sama, jawapan berbeza</b> — "laptop refresh policy" sepadan perkataan demi perkataan dengan dasar penyegaran cache pelayar, pelan penyegaran jenama dan jadual penyegaran papan pemuka, jadi pemeringkatan teks penuh meletakkannya di hadapan. Jev membaca petikan dan mengalihkan dokumen piawaian peralatan, iaitu dokumen yang menyatakan kitaran penggantian tiga tahun, ke tempat teratas. Lencana <b>Jev</b> di sebelah kiraan hasil menunjukkan bila susunan itu datang daripada model.</td>
+<td><b>Dimatikan secara lalai, satu suis untuk menghidupkannya</b> — Settings → AI Media & Search → Local file search. Pilih OpenRouter atau TypeSafe secara terus, tampal kunci, tekan Test connection. Hanya apabila suis itu dihidupkan barulah petikan hasil teratas keluar dari peranti; indeks itu sendiri tidak pernah keluar.</td>
+</tr>
+</table>
+
+### 8 · Ask AI — fail berbintang anda, dijawab berserta sumber
+
+Bintangkan fail yang anda gunakan dan **Ask AI** pada skrin utama
+menganggapnya sebagai pangkalan pengetahuan. Ajukan soalan dalam bahasa
+biasa; agen mencari dalam fail berbintang, membaca fail yang diperlukannya
+dan menjawab dengan rujukan selepas setiap dakwaan. Klik satu rujukan dan
+fail itu dibuka dalam aplikasi yang betul. Lampirkan fail pada soalan dengan
+menyeret, menampal atau daripada menu **+** — imej dihantar kepada model
+sebagai input visual — dan setiap soalan disimpan sebagai perbualannya
+sendiri: beralih antara perbualan, mulakan yang baharu, padam satu, dan
+senarai itu kekal selepas aplikasi dimulakan semula.
+
+<img src="../assets/readme/home-ask-ai-motion.webp" alt="Rakaman skrin GenOffice Ask AI: soalan ringkasan pantas, apa yang memacu pertumbuhan Q3 kita dan bagaimana prestasi Asia-Pasifik, ditaip pada skrin utama; agen membaca dua fail berbintang dan menjawab dengan pelancaran Aurora X1 dan pengembangan Asia-Pasifik, setiap dakwaan diikuti cip rujukan yang menamakan laporan suku tahunan atau buku kerja jualan serantau; satu klik pada cip buku kerja membukanya dalam Sheets dengan baris Asia-Pasifik diserlahkan" width="100%">
+
+Ask AI mencari dalam indeks teks penuh di peranti yang sama seperti
+[Carian](#7--search--find-the-file-that-answers-the-question-with-typesafe-jev)
+dan membaca fail halaman demi halaman, jadi model hanya melihat hasil carian
+dan petikan yang dimintanya, melalui pembekal pilihan anda. Ia juga boleh
+memanggil CLI `genoffice` terbina dalam untuk membina fail terus; setiap satu
+muncul sebagai kad artifak di bawah jawapan, dan satu klik membukanya.
+
+### 9 · CLI — agen pengekodan anda memandu GenOffice, pada mesin anda
 
 GenOffice disertakan dengan baris arahan `genoffice` dan skill agen. Pasang
 skill itu dan Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode
@@ -208,7 +270,7 @@ tetingkap.
 </tr>
 </table>
 
-### 8 · MCP — alat yang sama melalui Model Context Protocol
+### 10 · MCP — alat yang sama melalui Model Context Protocol
 
 Setiap arahan `genoffice` turut menjadi alat MCP. Claude Code, Claude
 Desktop, Cursor dan mana-mana klien MCP lain boleh memulakan `genoffice
@@ -230,9 +292,9 @@ tab editor yang kelihatan sementara anda memerhati.
 </tr>
 </table>
 
-### 9 · Fail lama — `.doc`, `.xls` dan `.ppt` dari era 2000-an juga boleh dibuka
+### 11 · Fail lama — `.doc`, `.xls` dan `.ppt` dari era 2000-an juga boleh dibuka
 
-Fail `.doc` Word 97–2003, `.xls` Excel atau `.ppt` PowerPoint dibuka sebagai salinan `.docx`, `.xlsx` atau `.pptx` yang ditukar pada komputer anda; fail asal tidak pernah diubah. Imej, jadual, formula, format nombor, isian dan susun atur dibawa bersama.
+Fail `.doc` Word 97–2003, `.xls` Excel atau `.ppt` PowerPoint dibuka sebagai salinan `.docx`, `.xlsx` atau `.pptx` yang ditukar pada komputer anda; fail asal tidak pernah diubah. Imej, jadual, formula, format nombor, isian dan susun atur dibawa bersama. Apa yang dikekalkan dan digugurkan oleh setiap format diterangkan dalam [Fail lama dan ODF dibuka sebagai salinan yang ditukar](#legacy-and-odf-files-open-as-converted-copies).
 
 <img src="../assets/readme/legacy-formats-motion.webp" alt="Selang masa GenOffice membuka fail .ppt, .doc dan .xls bagi laporan tahunan rekaan 2004, kemudian satu slaid dipaparkan dalam PowerPoint di sebelah dek yang ditukar dalam GenOffice" width="100%">
 
@@ -255,6 +317,13 @@ Fail `.doc` Word 97–2003, `.xls` Excel atau `.ppt` PowerPoint dibuka sebagai s
   sistem untuk hasil imbasan.
 - **Markdown dan HTML juga**, dengan panel AI yang sama dan eksport setempat
   ke Word.
+- **Carian yang menemui jawapan, bukan kata kunci.** Carian teks penuh
+  merentasi setiap dokumen dalam folder anda, diindeks di peranti sendiri,
+  dengan penyusunan semula pilihan oleh TypeSafe Jev, model pertimbangan
+  System One.
+- **Ask AI merentasi fail anda.** Bintangkan fail yang penting dan ajukan
+  soalan dalam bahasa biasa; setiap jawapan merujuk fail asalnya, hanya satu
+  klik jauhnya.
 - **Skill.** Skill sedia ada atau `SKILL.md` anda sendiri, dilampirkan dari menu **+** di mana-mana panel AI.
 - **Boleh dijalankan melalui skrip.** Baris arahan `genoffice`, skill agen
   dan pelayan MCP meletakkan setiap enjin di bawah khidmat Claude Code,
@@ -274,18 +343,32 @@ dan OpenCode Zen/Go, ditambah slot tersuai untuk mana-mana titik akhir yang
 serasi dengan OpenAI (URL asas + kunci), termasuk pelayan model setempat.
 Carian dan media mempunyai pembekal tersendiri mengikut keupayaan di bawah
 **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa atau
-Firecrawl untuk carian web — Keenable juga boleh digunakan tanpa kunci, kunci
-hanya meningkatkan had kadar; dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
-Qwen, MiniMax, Stability, FLUX atau mana-mana titik akhir imej serasi OpenAI untuk penjanaan
-imej dan analisis imej/video.
+Firecrawl untuk carian web, dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
+Qwen, MiniMax, Stability, FLUX atau mana-mana titik akhir imej serasi OpenAI
+untuk penjanaan imej dan analisis imej/video, ditambah DeepSeek V4.1 Flash
+untuk analisis imej.
+
+**TypeSafe Jev** menyusun semula kedudukan carian fail pada skrin utama. Di
+bawah **AI Media & Search → Local file search**, hidupkan Jev search
+reranking dan pilih titik akhir:
+[OpenRouter](https://openrouter.ai/typesafe) (model `typesafe/jev-1.13`) atau
+API TypeSafe sendiri. Kunci itu disimpan pada peranti ini sahaja. Ia
+dimatikan secara lalai; apabila dihidupkan, petikan 20 hasil setempat teratas
+dihantar untuk dinilai dan tiada apa-apa lagi yang keluar dari mesin.
+
+**Parallel** berfungsi tanpa akaun: Search MCP percumanya (dengan had kadar)
+ialah carian web lalai apabila tiada log masuk Genspark atau kunci carian
+ditetapkan, dan ia dijalankan sebelum pengikisan DuckDuckGo. Pilih Parallel
+di bawah Web search dan masukkan kunci
+[Parallel](https://platform.parallel.ai/) untuk menggunakan Search API
+sebagai gantinya. Keenable juga tidak memerlukan kunci; kunci hanya
+meningkatkan had kadar.
 
 Keseluruhan rangkaian ini disertakan dengan tema terang, gelap dan sistem.
 Tema hanya mengubah apa yang dipaparkan pada skrin: eksport, cetakan dan fail
 yang disimpan sentiasa mengekalkan warna sebenar dokumen itu.
 
-<a id="skills"></a>
-
-## Skill
+## <a id="skills"></a>Skill
 
 Skill ialah fail `SKILL.md` yang memberitahu AI cara melakukan satu tugas dengan baik: laporan mingguan, NDA, rancangan pengajaran.
 GenOffice menyertakan satu set skill dan menerima skill anda sendiri, dalam format yang sama digunakan oleh agen pengekodan.
@@ -295,9 +378,7 @@ GenOffice menyertakan satu set skill dan menerima skill anda sendiri, dalam form
 
 ---
 
-<a id="command-line-and-agent-skill"></a>
-
-## Baris arahan dan skill agen
+## <a id="command-line-and-agent-skill"></a>Baris arahan dan skill agen
 
 Segala yang boleh dilakukan aplikasi pada sesuatu fail boleh dilakukan oleh
 baris arahan `genoffice` dari terminal: memeriksa, menukar, mencipta, membaca
@@ -330,7 +411,7 @@ menyuntingnya, dan cara menyemak hasil kerjanya sendiri.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, ppt → pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -347,7 +428,7 @@ arahan semasa; rujukan penuh ada dalam
 
 ### Apa yang sebenarnya dijalankan oleh agen
 
-Deck Sistem Suria dalam demo di atas hanya memerlukan satu gesaan dalam Claude
+Deck Sistem Suria dalam [demo](#demo) hanya memerlukan satu gesaan dalam Claude
 Code. Di sebaliknya, agen mengikuti aliran kerja berperingkat skill itu dan
 CLI menyemak setiap peringkat sebelum peringkat seterusnya bermula:
 
@@ -369,9 +450,7 @@ Tiada panggilan model berlaku di dalam `genoffice`: agen yang berfikir, CLI
 yang membina dan menyemak, dan hasilnya dibuka dalam GenOffice atau PowerPoint
 sebagai `.pptx` biasa.
 
-<a id="mcp-server"></a>
-
-### Pelayan MCP
+### <a id="mcp-server"></a>Pelayan MCP
 
 Arahan yang sama tersedia sebagai alat [Model Context Protocol](https://modelcontextprotocol.io)
 untuk pembantu yang tidak boleh menjalankan terminal, atau yang anda lebih
@@ -382,6 +461,7 @@ ditunjukkan dengan cebisan sedia salin dalam **Tetapan → Integrasi → MCP**:
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A · `genoffice mcp`** (disyorkan) | Pelayan stdio yang pembantu mulakan sendiri; GenOffice tidak perlu dibuka. Satu alat bagi setiap arahan (`info`, `convert`, `create_docx`, `create_xlsx`, `create_pptx`, `create_pdf`, `docs_read` / `docs_apply` / `docs_check`, `sheet_*`, `slides_*`, `render`, `guide`, `search`, `image`, `media`, `open`) ditambah aliran deck berperingkat `deck_start` → `deck_page` → `deck_build` → `deck_replace`. Ops, spesifikasi dan Markdown dihantar terus dalam argumen, jadi klien tanpa sistem fail tetap berfungsi. |
 | **B · Pelayan HTTP tempatan**       | Berjalan di dalam aplikasi GenOffice pada `http://127.0.0.1:3093/mcp` (Streamable HTTP, dengan SSE lama). Alatnya memandu tab editor Word yang kelihatan: `create_session`, `insert_content`, `replace_blocks`, `apply_ops`, `read_document`, `save_session`, dan anda melihat dokumen itu terbentuk. Dimatikan secara lalai; hidupkan pada panel tetapan yang sama.                                                                                                                                                    |
+| **C · `genoffice mcp --http`**      | Set alat stdio sebagai pelayan Streamable HTTP untuk klien pada mesin lain: kontena, sandbox, mesin kongsi dalam rangkaian anda. Fail bergerak bersama panggilan: `PUT /files/<name>` memuat naik satu fail dan memulangkan URL, setiap parameter `file` menerima URL http(s), dan alat yang menulis fail memulangkannya sebagai URL muat turun serta, apabila kecil, bait-baitnya sebagai sumber MCP. `--host 0.0.0.0` membukanya kepada rangkaian, `--token` melindunginya.                                           |
 
 ```bash
 # Claude Code
@@ -389,9 +469,27 @@ claude mcp add --transport stdio genoffice -- genoffice mcp
 ```
 
 ```jsonc
-// Cursor, Claude Desktop atau mana-mana klien MCP lain
+// Cursor, Claude Desktop or any other MCP client
 { "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
 ```
+
+```bash
+# On the machine that has GenOffice (private network; add --token for a shared box)
+genoffice mcp --http 3093 --host 0.0.0.0 --token "$GENOFFICE_MCP_TOKEN"
+
+# From the client: upload, then use the URL wherever a tool takes a file
+curl -T report.docx -H "Authorization: Bearer $GENOFFICE_MCP_TOKEN" http://server:3093/files/
+#   → { "url": "http://server:3093/files/<id>/report.docx", ... }
+#   docs_read({ "file": "http://server:3093/files/<id>/report.docx" })
+#   docs_apply(...) → output_url, downloadable with curl -o
+```
+
+Melalui HTTP, setiap sesi mendapat folder kerja peribadi, laluan relatif dan
+folder deck diselesaikan di dalamnya, `open` tidak ditawarkan, dan apabila
+`GENOFFICE_ALLOWED_ROOTS` tidak ditetapkan, alat-alat itu tidak boleh keluar
+dari stor fail pelayan itu sendiri. `render`, `convert` ke PDF dan
+`create_pdf` masih memulakan proses GenOffice tersembunyi, jadi hos headless
+memerlukan aplikasi itu dipasang serta paparan maya (`xvfb-run`).
 
 `genoffice` di sini ialah CLI yang disertakan di dalam aplikasi (pada macOS
 `/Applications/GenOffice.app/Contents/Resources/cli/genoffice`; panel
@@ -404,7 +502,7 @@ GenOffice; selebihnya berjalan secara tempatan, dan
 `GENOFFICE_ALLOWED_ROOTS` mengehadkan setiap alat kepada folder yang anda
 senaraikan.
 
-Deck tenaga boleh diperbaharui dalam demo di atas ialah gambaran, dari sudut
+Deck tenaga boleh diperbaharui dalam [demo](#demo) ialah gambaran, dari sudut
 protokol, satu gesaan dalam Claude Code yang hanya menyambungkan pelayan
 MCP `genoffice`:
 
@@ -428,9 +526,7 @@ langsung tidak menyentuh shell: rajah, foto, semua panduan, semakan dan
 render bergerak sebagai hasil panggilan alat MCP. Hanya `search` dan `media`
 meninggalkan mesin, kepada pembekal yang dikonfigurasikan dalam GenOffice.
 
-<a id="download"></a>
-
-## Muat Turun
+## <a id="download"></a>Muat Turun
 
 | Platform                             | Keperluan                                             | Muat Turun                                                                                |
 | ------------------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
@@ -462,6 +558,11 @@ Pada Fedora / keluarga RHEL / openSUSE, pasang fail rpm sebaliknya:
 sudo dnf install ./genoffice-<version>.x86_64.rpm     # Fedora / RHEL family
 sudo zypper install ./genoffice-<version>.x86_64.rpm  # openSUSE
 ```
+
+Fail deb dan rpm juga menambah templat kosong untuk Dolphin dalam KDE Plasma:
+klik kanan dalam folder → **Create New** menyenaraikan _GenOffice Document_,
+_GenOffice Spreadsheet_ dan _GenOffice Presentation_. Templat itu berada
+dalam `/usr/share/templates` dan dibuang bersama pakej.
 
 AppImage berjalan di tempatnya: pasang runtime FUSE 2
 (`sudo apt install libfuse2`; pada Ubuntu 24.04 paketnya bernama
@@ -497,6 +598,32 @@ Lawatan pakej demi pakej (enjin docx/pptx, `pdf2docx`, `html2docx`, teras
 agen dan pembekal) terdapat dalam
 [CONTRIBUTING.md](../../CONTRIBUTING.md#engine-packages).
 
+### <a id="legacy-and-odf-files-open-as-converted-copies"></a>Fail lama dan ODF dibuka sebagai salinan yang ditukar
+
+Format yang tidak dapat ditulis semula oleh GenOffice — Word lama
+`.doc`/`.dot`, Hancom `.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, PowerPoint
+lama `.ppt`, dan keluarga OpenDocument (`.odt`, `.ott`, `.ods`, `.ots`,
+`.odp`, `.otp`) — ialah import, bukan fail asli.
+Membuka salah satunya menukarkannya pada mesin anda kepada salinan `.docx`,
+`.xlsx` atau `.pptx` dan membuka salinan itu; fail asal tidak dibaca lagi dan
+tidak pernah ditulis.
+
+- Docs dan Slides bertanya dahulu di mana salinan itu hendak diletakkan
+  (secara lalai, `.docx`/`.pptx` senama di sebelah fail asal), jadi setiap
+  Save selepas itu disimpan di situ. Fail `.ppt` ditukar bersama induk
+  (masters), geometri bentuk, isian, gambar dan pemformatan teksnya, jadi
+  deck itu kelihatan seperti yang dipaparkan PowerPoint; nota, animasi,
+  peralihan dan hiperpautan belum dibawa bersama.
+- Sheets membuka buku kerja yang ditukar itu serta-merta dan menghalakan Save
+  yang pertama melalui Save As ke fail `.xlsx` baharu. `.csv` ialah
+  pengecualian: ia mengekalkan identitinya dan Save menulis nilai kembali ke
+  `.csv`, seperti yang dilakukan Excel.
+- Penukaran ini sehala dan boleh menggugurkan ciri yang ada pada format
+  sumber tetapi tiada pada OOXML. `.doc`, `.ppt`, `.hwp` dan format ODF
+  memaparkan dialog pengesahan yang menyatakan hal ini; tandakan "Convert
+  without asking next time" untuk melangkauinya, dan "Ask before converting
+  legacy files" dalam Settings → General menghidupkannya semula.
+
 ## Pembangunan
 
 ```bash
@@ -525,6 +652,8 @@ GenOffice sedang dibangunkan secara aktif dan maklum balas anda membentuknya.
 - **Sertai sembang kumpulan GenOffice** di
   [GenTeam](https://genoffice.ai/join) untuk berbual dengan pasukan dan
   pengguna lain.
+- **Ikuti [@merrickbuilds](https://x.com/merrickbuilds) di X** untuk nota
+  keluaran, demo dan apa yang sedang dibina seterusnya.
 - **Berikan bintang pada repo ini** jika GenOffice bermanfaat untuk anda —
   ini cara terbaik untuk menyokong projek ini.
 
@@ -544,6 +673,9 @@ percubaan, tiada peringkat berbayar untuk aplikasi itu sendiri.
 Ya. GenOffice membuka dan menyimpan fail asli `.docx`, `.xlsx` dan `.pptx`.
 Penyimpanan terpelihara bit demi bit: bahagian fail yang tidak anda sentuh
 ditulis semula seadanya, jadi dokumen kekal berfungsi dalam Microsoft Office.
+Fail lama `.doc`/`.dot`, `.xls` dan `.ppt` juga boleh dibuka, sebagai salinan
+`.docx`/`.xlsx`/`.pptx` yang ditukar — lihat [Fail lama dan ODF dibuka
+sebagai salinan yang ditukar](#legacy-and-odf-files-open-as-converted-copies).
 
 </details>
 
@@ -582,7 +714,8 @@ halaman.
 
 Ya. Selain log masuk Genspark tanpa kunci, GenOffice menyokong bawa kunci
 anda sendiri untuk Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao,
-MiniMax, Grok, Mistral, OpenRouter, Requesty dan OpenCode Zen/Go, ditambah mana-mana
+MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper Inference,
+Atlas Cloud dan OpenCode Zen/Go, ditambah mana-mana
 titik akhir serasi OpenAI — termasuk pelayan model setempat. Carian,
 penjanaan imej dan analisis imej/video memerlukan kunci tersendiri di bawah
 Settings → AI Media & Search.
@@ -669,6 +802,11 @@ GenOffice tidak akan wujud tanpa projek-projek sumber terbuka ini:
   bagi sidecar xlsx Rust.
 - [libeot](https://github.com/umanwizard/libeot) (MPL-2.0) — penyahkod
   MicroType Express untuk fon PowerPoint terbenam, yang diport ke TypeScript.
+- [rhwp](https://github.com/edwardkim/rhwp) (MIT) — membaca dokumen `.hwp`
+  binari ke dalam HWPX untuk import Hancom; binaan WebAssembly-nya membawa
+  crate Rust dan port hwp-extract Volexity yang disenaraikan dalam notis
+  pihak ketiga. "한글", "한컴", "HWP" dan "HWPX" ialah tanda dagangan berdaftar
+  Hancom Inc.; GenOffice tidak bergabung dengan Hancom.
 - [React](https://react.dev/) (MIT) — lapisan UI setiap aplikasi.
 - [Mermaid](https://mermaid.js.org/) (MIT) dan [KaTeX](https://katex.org/)
   (MIT) — rajah dan matematik dalam Markdown dan Docs.

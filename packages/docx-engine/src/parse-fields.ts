@@ -1,4 +1,5 @@
 // Field-code display (PAGE, TOC, REF, ...) and TOC entry numbering.
+import { fieldInstructionOfXml, fieldSwitchArg, parseFieldInstruction } from './field-switches'
 import { inlineEqFieldResults } from './eq-field'
 import { computeListMarkers, type ListItemRef } from './list-markers'
 import { decodeEntities, plainText } from './parse-xml-text'
@@ -42,13 +43,56 @@ export function tocLevelOf(styleId: string, styles?: Map<string, StyleInfo>): nu
   const m =
     /^TOC ?([1-9])$/i.exec(styleId) ?? /^toc ?([1-9])$/i.exec(styles?.get(styleId)?.name ?? '')
   if (m) return parseInt(m[1], 10)
-  // table-of-figures entries (TOC \c field results) are level-1 toc lines
+  const name = styles?.get(styleId)?.name ?? ''
+  // table-of-figures entries (TOC \c field results) and a table of authorities'
+  // heading (TOA field results) are level-1 toc lines
   if (
-    /^TableofFigures$/i.test(styleId) ||
-    /^table of figures$/i.test(styles?.get(styleId)?.name ?? '')
+    /^(TableofFigures|TOAHeading)$/i.test(styleId) ||
+    /^(table of figures|toa heading)$/i.test(name)
   )
     return 1
+  // its entries sit one level in, under the heading
+  if (/^TableofAuthorities$/i.test(styleId) || /^table of authorities$/i.test(name)) return 2
   return null
+}
+
+/** index entry level: styleId "Index1" (Word) / "Index 1", or the style's name "index 1" */
+export function indexLevelOf(styleId: string, styles?: Map<string, StyleInfo>): number | null {
+  const m =
+    /^Index ?([1-9])$/i.exec(styleId) ?? /^index ([1-9])$/i.exec(styles?.get(styleId)?.name ?? '')
+  return m ? parseInt(m[1], 10) : null
+}
+
+const RUN_TAB = /<w:tab\s*[/]>|<w:tab>\s*<[/]w:tab>/
+
+/**
+ * An entry of an index whose page number sits behind a tab (INDEX \e with a
+ * tab): a table line like a TOC entry. Entries with the page after a comma,
+ * run-in lines and letter headings have no tab and stay ordinary text.
+ */
+export function isIndexTabEntry(xml: string, styles?: Map<string, StyleInfo>): boolean {
+  const styleId = tagAttr(xml, 'w:pStyle', 'w:val') ?? ''
+  return indexLevelOf(styleId, styles) !== null && RUN_TAB.test(xml)
+}
+
+/**
+ * Follows the document's top-level elements in order: the returned function
+ * says whether the element it is given lies in the result of an INDEX field.
+ */
+export function indexFieldTracker(): (xml: string) => boolean {
+  let open = false
+  let depth = 0
+  return (xml) => {
+    if (!open) {
+      if (!/<w:instrText[^>]*>\s*INDEX[\s\\<]/.test(xml)) return false
+      open = true
+      depth = 0
+    }
+    depth += (xml.match(/w:fldCharType="begin"/g) ?? []).length
+    depth -= (xml.match(/w:fldCharType="end"/g) ?? []).length
+    if (depth <= 0) open = false
+    return true
+  }
 }
 
 const TAB_LEADERS = ['none', 'dot', 'hyphen', 'underscore', 'heavy', 'middleDot'] as const
@@ -254,10 +298,49 @@ function resultRuns(
   return out
 }
 
+/** the runs that make up a TOC line's page text, when one of them is directly bold or italic */
+function tocPageRuns(runs: ResultRun[], right: string): FieldDisplay['rightRuns'] {
+  const out: NonNullable<FieldDisplay['rightRuns']> = []
+  let rest = right
+  for (let i = runs.length - 1; i >= 0 && rest !== ''; i--) {
+    const { text, run } = runs[i]
+    if (text === '') continue
+    if (!rest.endsWith(text)) return undefined
+    rest = rest.slice(0, rest.length - text.length)
+    out.unshift({
+      text,
+      ...(run.bold && run.source.bold === 'direct' ? { bold: true } : {}),
+      ...(run.italic && run.source.italic === 'direct' ? { italic: true } : {}),
+    })
+  }
+  return rest === '' && out.some((r) => r.bold || r.italic) ? out : undefined
+}
+
+/** the runs that make up a TOC line's title, when one of them is directly bold, italic or underlined */
+function tocTitleRuns(runs: ResultRun[], left: string): FieldDisplay['leftRuns'] {
+  const out: NonNullable<FieldDisplay['leftRuns']> = []
+  let rest = left
+  for (const { text, run } of runs) {
+    if (rest === '') break
+    if (text === '') continue
+    if (!rest.startsWith(text)) return undefined
+    rest = rest.slice(text.length)
+    out.push({
+      text,
+      ...(run.bold && run.source.bold === 'direct' ? { bold: true } : {}),
+      ...(run.italic && run.source.italic === 'direct' ? { italic: true } : {}),
+      ...(run.underline && run.source.underline === 'direct' ? { underline: true } : {}),
+    })
+  }
+  return rest === '' && out.some((r) => r.bold || r.italic || r.underline) ? out : undefined
+}
+
 export function fieldDisplayOf(
   xml: string,
   styles?: Map<string, StyleInfo>,
   resolver?: ResolveCtx,
+  /** the paragraph lies in the result of an INDEX field */
+  inIndex = false,
 ): FieldDisplay | undefined {
   const ctx = resolverOrBare(resolver)
   const styleId = tagAttr(xml, 'w:pStyle', 'w:val') ?? ''
@@ -270,12 +353,20 @@ export function fieldDisplayOf(
   // unstyled entries indent through their own w:ind, styled ones through the level ladder;
   // a TOC-styled paragraph without a tab run (title, spacer) is a plain line with no leader
   const tabRun = /<w:tab\s*[/]>|<w:tab>\s*<[/]w:tab>|<w:delText(?:\s|>)/.test(xml)
+  const indexLevel = inIndex && isIndexTabEntry(xml, styles) ? indexLevelOf(styleId, styles) : null
   const tocLevel =
     styledLevel !== null && tabRun
       ? styledLevel
-      : unstyledTocEntry(xml, pPr, eff.tabStops)
-        ? (styledLevel ?? 1)
-        : null
+      : (indexLevel ?? (unstyledTocEntry(xml, pPr, eff.tabStops) ? (styledLevel ?? 1) : null))
+  if (indexLevel !== null) {
+    // one source of indent: the wrapper paints what the Index style carries, the entry body
+    // only what a direct w:ind adds to it, and the TOC level ladder never applies
+    const styleLeft =
+      resolveParagraphPropsXml(`<w:p><w:pPr><w:pStyle w:val="${styleId}"/></w:pPr></w:p>`, ctx)
+        .indent.left ?? 0
+    geometry.indentLeftTwips =
+      eff.source.indentLeft === 'direct' ? Math.max(0, (eff.indent.left ?? 0) - styleLeft) : 0
+  }
   if (styledLevel !== null) {
     delete geometry.indentLeftTwips
     delete geometry.indentRightTwips
@@ -345,10 +436,14 @@ export function fieldDisplayOf(
     // the page number's own (often inherited) face: a Calibri page under a
     // Century Gothic title deepens the line by Calibri's descent (Word probe)
     const pageFont = right && runs.length > 1 ? runs[runs.length - 1].run.fonts.ascii : undefined
+    const rightRuns = tocPageRuns(runs, decodeEntities(right))
+    const leftRuns = num ? undefined : tocTitleRuns(runs, left)
     return {
       kind: 'tocLine',
       left,
       right: decodeEntities(right).trim(),
+      ...(leftRuns ? { leftRuns } : {}),
+      ...(rightRuns ? { rightRuns } : {}),
       level: tocLevel,
       ...(num ? { num } : {}),
       // the number sits where the first line starts (left indent plus the first-line indent)
@@ -463,6 +558,33 @@ export function applyTocEntryNumbers(blocks: Block[], numbering: Map<string, Num
     const marker = markers[i]
     // bullets make no sense in front of a TOC entry; only ordered markers show
     if (marker && !/^[•◦▪➢❖✓]$/.test(marker)) fd.num = marker
+  }
+}
+
+const TABLE_FIELD_INSTR = /<w:instrText[^>]*>\s*(?:TOC|INDEX|TOA)[\s\\]/
+
+/**
+ * The lines of a table that is not linked to its targets (a TOC without \h,
+ * an index, a table of authorities) are plain text in Word: they take noLink,
+ * as the lines the editor generates for such a table do.
+ */
+export function applyTableLinkFlags(blocks: Block[]): void {
+  let depth = 0
+  let open: { noLink: boolean } | null = null
+  for (const block of blocks) {
+    const xml = block.originalXml
+    if (!xml) continue
+    if (!open) {
+      if (!TABLE_FIELD_INSTR.test(xml)) continue
+      const instr = parseFieldInstruction(fieldInstructionOfXml(xml))
+      open = { noLink: instr.keyword !== 'TOC' || fieldSwitchArg(instr, 'h') === undefined }
+      depth = 0
+    }
+    const fd = block.fieldDisplay
+    if (open.noLink && block.type === 'passthrough' && fd?.kind === 'tocLine') fd.noLink = true
+    depth += (xml.match(/w:fldCharType="begin"/g) ?? []).length
+    depth -= (xml.match(/w:fldCharType="end"/g) ?? []).length
+    if (depth <= 0) open = null
   }
 }
 

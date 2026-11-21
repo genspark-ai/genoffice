@@ -61,12 +61,13 @@ export function removeLink(editor: Editor, range: { from: number; to: number }):
 
 export type LinkTarget = { kind: 'external'; url: string } | { kind: 'anchor'; name: string } | null
 
-/** what Open Hyperlink does with an address: browser for http(s), in-document jump for #bookmark */
+/** what Open Hyperlink does with an address: browser for http(s), mail program for mailto, in-document jump for #bookmark */
 export function linkTarget(href: string): LinkTarget {
   const text = href.trim()
   if (!text) return null
   if (text.startsWith('#')) return text.length > 1 ? { kind: 'anchor', name: text.slice(1) } : null
   if (/^https?:\/\//i.test(text)) return { kind: 'external', url: text }
+  if (/^mailto:[^\s@]+@[^\s@]+$/i.test(text.split('?')[0])) return { kind: 'external', url: text }
   // bare domains from imported documents ("www.example.com")
   if (/^www\.[^\s/]+\.[a-z]{2,}(?:[/?#].*)?$/i.test(text))
     return { kind: 'external', url: `https://${text}` }

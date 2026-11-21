@@ -19,6 +19,7 @@ import {
 } from '../pagination-cuts'
 import { pageOfY as pageOfCut } from '../pagination-slices'
 import { TopLevelPositions } from './top-level-pos'
+import { sectionNoteSlot } from './section-endnotes'
 import { appliedFloatShift, floatShiftTarget, layoutHealth, writeFloatShift } from './layout-health'
 
 const anchorRange = rangeSlot()
@@ -806,7 +807,13 @@ export function setPageGaps(
     ordinal++
     let pos: number
     let kind: GapKind
-    if ('el' in gap) {
+    let side = -1
+    const noteSlot = 'el' in gap ? sectionNoteSlot(view, gap.el) : null
+    if (noteSlot) {
+      // a page opening at a section-end endnote row: the gap goes right before that row's widget
+      kind = 'block'
+      ;({ pos, side } = noteSlot)
+    } else if ('el' in gap) {
       kind = 'block'
       try {
         let after: number
@@ -863,7 +870,7 @@ export function setPageGaps(
     }
     const toDOM = () => buildGapEl(gap, kind)
     const spec: GapWidgetSpec = {
-      side: -1,
+      side,
       // keyed by page ordinal, NOT pos: edits above a gap shift its mapped
       // position without changing the page, so an ordinal key lets sameGaps
       // skip the dispatch entirely and lets PM reuse the widget DOM when a
@@ -907,8 +914,6 @@ export function setPageGaps(
   }
   if (batch) batch.then(bridge)
   else bridge()
-  // clearing every gap (preview, read mode) clears the nested-table gap rows too
-  if (gaps.length === 0) syncNestedTableGaps(view, [])
 }
 
 /** Line top of a cut anchor (screen px); falls back to the parent element's top. */
@@ -1165,7 +1170,10 @@ function nestedGapKey(g: NestedTableGap): string {
     .map(({ mark, gap }) => {
       const where =
         'el' in mark
-          ? `el${Array.from(mark.cell.querySelectorAll('img, svg, canvas')).indexOf(mark.el)}`
+          ? `el${Array.from(mark.cell.querySelectorAll('img, svg, canvas'))
+              // a gap's own header/footer pictures come and go with the gap
+              .filter((el) => !el.closest('.page-gap'))
+              .indexOf(mark.el)}`
           : `t${mark.text}`
       return `${mark.cell.cellIndex}:${where}:${gapContentKey(gap)}`
     })

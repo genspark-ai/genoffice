@@ -214,7 +214,7 @@ describe('docStyleCss — style indent vs list geometry', () => {
   it('style w:ind skips list items and becomes the --li-left fallback', () => {
     const css = docStyleCss(parsedWithStyle({ indentLeftTwips: 720 }))
     expect(css).toContain(
-      '.doc-page [data-style="ListParagraph"]:not(.doc-li, .doc-li-stray) { margin-inline-start:36.0pt }',
+      '.doc-page [data-style="ListParagraph"]:not(.doc-li, .doc-li-stray) { margin-inline-start:36.0pt;--pind-s:36.0pt }',
     )
     expect(css).toContain(
       '.doc-page :is(.doc-li, .doc-li-stray)[data-style="ListParagraph"] { --style-li-left:36.0pt }',

@@ -43,15 +43,15 @@ function visitDocs(node: ts.Node): void {
   ts.forEachChild(node, visitDocs)
 }
 visitDocs(docs)
-const branch = ready!.statements.findIndex(
-  (node) => ts.isIfStatement(node) && node.expression.getText(shell).includes('headlessArgv.kind'),
+const branch = ready!.statements.find(
+  (node): node is ts.IfStatement =>
+    ts.isIfStatement(node) && node.expression.getText(shell).includes('headlessArgv.kind'),
 )
-if (branch < 0 || !languageHandler)
+if (!branch || !languageHandler)
   throw new Error('Headless ready entry or Docs language bridge missing')
-const entry = ready!.statements
-  .slice(0, branch + 1)
-  .map((node) => node.getText(shell))
-  .join('\n')
+const headlessSteps = (branch.thenStatement as ts.Block).statements.map((node) =>
+  node.getText(shell),
+)
 const directories: string[] = []
 afterEach(() => {
   setUiLang('zh')
@@ -91,18 +91,6 @@ it.each([
           getLanguage = handler
         },
       },
-      setDelimitedImportLimit: () => {},
-      currentCsvImportLimitMb: () => 1,
-      setTimeout: () => 0,
-      installRendererProtocol: () => {},
-      DOCS_OUT: '',
-      SHEETS_OUT: '',
-      SLIDES_OUT: '',
-      PDF_OUT: '',
-      MARKDOWN_OUT: '',
-      HTML_OUT: '',
-      __dirname: '/',
-      join,
       headlessArgv: { kind: 'ok' },
       runHeadlessExportEntry: async () => {
         exported = await getLanguage!()
@@ -115,11 +103,11 @@ it.each([
         }).outputText,
         context,
       )
-    // Execute production startup and the real Docs IPC registration without
-    // importing the Electron entrypoint or constructing any window.
+    // only the headless branch runs: the startup steps before it change often
+    // and have nothing to do with the language
     execute(currentLang.getText(shell))
     execute(languageHandler!.getText(docs))
-    await execute(`(async () => { ${entry} })()`)
+    await execute(`(async () => { ${headlessSteps.join('\n')} })()`)
     expect(exported).toBe(expected)
     expect(readFileSync(settings, 'utf8')).toBe(original)
   },

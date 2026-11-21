@@ -10,7 +10,7 @@ AI modeli yapılandırmasının kendi makalesi vardır; **AI Medya ve Arama**, g
 
 ## Dil
 
-- Ayarlar **22 arayüz dili** sunar: İngilizce, Basitleştirilmiş Çince, Japonca, Korece, Fransızca, Almanca, İspanyolca, Tayca, Endonezce, Rusça, Arapça, Portekizce, İtalyanca, Lehçe, Çekçe, Felemenkçe, Malayca, İbranice, Hintçe, Geleneksel Çince, Vietnamca, Türkçe.
+- Ayarlar **23 arayüz dili** sunar: İngilizce, Basitleştirilmiş Çince, Japonca, Korece, Fransızca, Almanca, İspanyolca, Tayca, Endonezce, Rusça, Arapça, Portekizce, İtalyanca, Lehçe, Çekçe, Felemenkçe, Malayca, İbranice, Hintçe, Geleneksel Çince, Vietnamca, Türkçe, Macarca.
 - Geçiş hemen uygulanır ve kalıcıdır; yerel menü çubuğu dille birlikte yeniden oluşturulur.
 
 ## Tema

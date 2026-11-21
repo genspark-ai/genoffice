@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 function readFlag(key: string, fallback: boolean): boolean {
   try {
@@ -14,10 +14,17 @@ function readFlag(key: string, fallback: boolean): boolean {
  * Ruler: kept in this app's local storage, read when a window opens and
  * followed live when another Docs window changes it.
  */
-export function useStoredFlag(key: string, fallback = false): [boolean, (on: boolean) => void] {
+export function useStoredFlag(
+  key: string,
+  fallback = false,
+): [boolean, (on: boolean | ((prev: boolean) => boolean)) => void] {
   const [on, setOn] = useState(() => readFlag(key, fallback))
+  const current = useRef(on)
+  current.current = on
   const set = useCallback(
-    (next: boolean) => {
+    (value: boolean | ((prev: boolean) => boolean)) => {
+      const next = typeof value === 'function' ? value(current.current) : value
+      current.current = next
       setOn(next)
       try {
         globalThis.localStorage?.setItem(key, next ? '1' : '0')

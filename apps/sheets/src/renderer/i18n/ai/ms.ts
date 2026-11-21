@@ -5,6 +5,7 @@ export const ms = {
   aiEmptyBuildTitle: 'Biarkan AI membina buku kerja ini untuk anda',
   aiEmptyBuildBody: 'Terangkan jadual, data atau carta yang anda perlukan — AI terus menciptanya.',
   aiGskLoginBtn: 'Log masuk ke Genspark',
+  aiGskLoginOk: 'Berjaya log masuk ke Genspark',
   aiUndelivered: 'Tidak dihantar',
   aiRetry: 'Cuba lagi',
   aiOpenAssistant: 'Buka pembantu AI',

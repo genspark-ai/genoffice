@@ -22,12 +22,16 @@ import { blocksToPmDoc, pmDocToSavePlan } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { EMPTY_PENDING_NUMBERING, type PendingNumbering } from '../src/renderer/doc-state'
 import {
+  addListStyle,
   addPictureBullet,
   allocateListNumId,
   changeListLevel,
   createCustomListDef,
   currentListValue,
+  deleteListStyle,
   editListLevel,
+  listStyleNum,
+  listStylesInUse,
   pruneUnreferencedNumbering,
   setNumberingValue,
   type NumberingContext,
@@ -41,6 +45,7 @@ import {
   previewLevelText,
 } from '../src/renderer/list-presets'
 import { toggleParaSpace } from '../src/renderer/components/ribbon-tabs'
+import { NO_LIST_STYLE_ID, listStyleEntries, listStylePreview } from '../src/renderer/list-styles'
 
 const PNG_1PX =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
@@ -57,8 +62,8 @@ interface Harness {
   save: () => Promise<Awaited<ReturnType<typeof parseDocx>> & { zip: JSZip }>
 }
 
-async function harness(): Promise<Harness> {
-  const parsed = await parseDocx(await buildBlankDocx())
+async function harness(bytes?: Uint8Array): Promise<Harness> {
+  const parsed = await parseDocx(bytes ?? (await buildBlankDocx()))
   const editor = new Editor({
     element: document.createElement('div'),
     extensions: editorExtensions,
@@ -514,6 +519,267 @@ describe('Define New Number Format / Multilevel', () => {
       'α, β, γ, ...',
     ])
     expect(presetKey([czech])).not.toBe(presetKey([greek]))
+  })
+})
+
+describe('List Styles', () => {
+  const entry = (styles: ReturnType<typeof listStyleEntries>, id: string) =>
+    styles.find((s) => s.styleId === id)!
+
+  it("offers Word's four built-ins in a document that defines none, No List first", async () => {
+    const h = await harness()
+    const styles = listStyleEntries(h.parsed.listStyles)
+    expect(styles.map((s) => s.styleId)).toEqual([
+      NO_LIST_STYLE_ID,
+      '111111',
+      '1ai',
+      'ArticleSection',
+    ])
+    expect(styles.slice(1).every((s) => !s.inDocument && s.levels.length === 9)).toBe(true)
+    expect(listStylePreview(entry(styles, '111111').levels).slice(0, 3)).toEqual([
+      '1.',
+      '1.1.',
+      '1.1.1.',
+    ])
+    expect(listStylePreview(entry(styles, '1ai').levels)).toEqual([
+      '1)',
+      'a)',
+      'i)',
+      '(1)',
+      '(a)',
+      '(i)',
+      '1.',
+      'a.',
+      'i.',
+    ])
+    expect(listStylePreview(entry(styles, 'ArticleSection').levels).slice(0, 4)).toEqual([
+      'Article I.',
+      'Section 1.01',
+      '(a)',
+      '(i)',
+    ])
+    expect(listStyleNum(h.ctx, entry(styles, NO_LIST_STYLE_ID))).toBeNull()
+  })
+
+  it('applies a built-in: live markers, the style and its linked list in the save, the same list on reopen', async () => {
+    const h = await harness()
+    const style = entry(listStyleEntries(h.parsed.listStyles), '1ai')
+    const list = listStyleNum(h.ctx, style)!
+    expect(list.kind).toBe('ordered')
+    threeItems(h.editor, list.numId)
+    changeListLevel(h.editor, 1)
+    expect(markers(h.editor)).toEqual(['1)', '2)', 'a)'])
+    expect(listStylesInUse(h.editor, h.parsed.numbering)).toEqual({
+      used: new Set(['1ai']),
+      current: '1ai',
+    })
+    // a second application in the session runs the same list on
+    expect(listStyleNum(h.ctx, style)).toEqual(list)
+    expect(h.pending().styleNums).toHaveLength(1)
+
+    const saved = await h.save()
+    const xml = await numberingXml(saved.zip)
+    const linking =
+      /<w:abstractNum w:abstractNumId="(\d+)"><w:multiLevelType w:val="multilevel"\/><w:numStyleLink w:val="1ai"\/><\/w:abstractNum>/.exec(
+        xml,
+      )!
+    expect(xml).toContain(
+      `<w:num w:numId="${list.numId}"><w:abstractNumId w:val="${linking[1]}"/></w:num>`,
+    )
+    expect(xml).toMatch(/<w:styleLink w:val="1ai"\/><w:lvl w:ilvl="0">/)
+    const stylesXml = await saved.zip.file('word/styles.xml')!.async('string')
+    expect(stylesXml).toContain(
+      '<w:style w:type="numbering" w:styleId="1ai"><w:name w:val="Outline List 1"/>',
+    )
+    const documentXml = await saved.zip.file('word/document.xml')!.async('string')
+    expect(documentXml.match(new RegExp(`<w:numId w:val="${list.numId}"/>`, 'g'))).toHaveLength(3)
+    expect(saved.blocks.filter((b) => b.list).map((b) => b.list)).toMatchObject([
+      { numId: list.numId, ilvl: 0 },
+      { numId: list.numId, ilvl: 0 },
+      { numId: list.numId, ilvl: 1 },
+    ])
+    expect(saved.numbering.get(list.numId)!.listStyleId).toBe('1ai')
+
+    const reopened = await harness(await saved.zip.generateAsync({ type: 'uint8array' }))
+    const again = entry(listStyleEntries(reopened.parsed.listStyles), '1ai')
+    expect(again.inDocument).toBe(true)
+    expect(again.levels.slice(0, 3).map((l) => l.lvlText)).toEqual(['%1)', '%2)', '%3)'])
+    expect(markers(reopened.editor)).toEqual(['1)', '2)', 'a)'])
+    expect(listStylesInUse(reopened.editor, reopened.parsed.numbering).current).toBe('1ai')
+    // the document has both the style and a list following it: nothing new is written
+    expect(listStyleNum(reopened.ctx, again)).toEqual(list)
+    expect(reopened.pending().styleNums).toEqual([])
+  })
+
+  it('Adjust List Indents on a list that follows a style changes the style: a new one in its definition, an existing one in its abstractNum', async () => {
+    const h = await harness()
+    const list = listStyleNum(h.ctx, entry(listStyleEntries(h.parsed.listStyles), '1ai'))!
+    threeItems(h.editor, list.numId)
+    expect(editListLevel(h.ctx, { indentLeft: 1440, hanging: 720 })).toBe(true)
+    const saved = await h.save()
+    const style = saved.listStyles!.find((s) => s.styleId === '1ai')!
+    expect(style.levels[0]).toMatchObject({ lvlText: '%1)', indentLeft: 1440, hanging: 720 })
+    expect(saved.numbering.get(list.numId)!.levels[0]).toMatchObject({ indentLeft: 1440 })
+    expect(await numberingXml(saved.zip)).toMatch(/<w:numStyleLink w:val="1ai"\/><\/w:abstractNum>/)
+
+    // reopened and stripped back to plain paragraphs, the style is the document's own
+    const zip = saved.zip
+    zip.file(
+      'word/document.xml',
+      (await zip.file('word/document.xml')!.async('string')).replace(
+        /<w:numPr>.*?<\/w:numPr>/g,
+        '',
+      ),
+    )
+    const again = await harness(await zip.generateAsync({ type: 'uint8array' }))
+    const fresh = listStyleNum(again.ctx, entry(listStyleEntries(again.parsed.listStyles), '1ai'))!
+    threeItems(again.editor, fresh.numId)
+    expect(editListLevel(again.ctx, { indentLeft: 2160, hanging: 720 })).toBe(true)
+    const resaved = await again.save()
+    expect(resaved.listStyles!.find((s) => s.styleId === '1ai')!.levels[0]).toMatchObject({
+      indentLeft: 2160,
+    })
+    expect((await numberingXml(resaved.zip)).match(/<w:styleLink w:val="1ai"\/>/g)).toHaveLength(1)
+  })
+
+  it('an applied style that is undone before the save leaves no trace in the package', async () => {
+    const h = await harness()
+    listStyleNum(h.ctx, entry(listStyleEntries(h.parsed.listStyles), '111111'))
+    const saved = await h.save()
+    expect(saved.listStyles?.some((s) => s.styleId === '111111') ?? false).toBe(false)
+  })
+
+  it("lists the document's own list styles after the built-ins and follows their levels", async () => {
+    const blank = await JSZip.loadAsync(await buildBlankDocx())
+    const stylesXml = await blank.file('word/styles.xml')!.async('string')
+    blank.file(
+      'word/styles.xml',
+      stylesXml.replace(
+        '</w:styles>',
+        '<w:style w:type="numbering" w:styleId="Clauses" w:customStyle="1"><w:name w:val="Clauses"/>' +
+          '<w:pPr><w:numPr><w:numId w:val="40"/></w:numPr></w:pPr></w:style></w:styles>',
+      ),
+    )
+    const numbering = await blank.file('word/numbering.xml')!.async('string')
+    blank.file(
+      'word/numbering.xml',
+      numbering
+        .replace(
+          /<w:num /,
+          '<w:abstractNum w:abstractNumId="40"><w:multiLevelType w:val="multilevel"/><w:styleLink w:val="Clauses"/>' +
+            '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="upperLetter"/><w:lvlText w:val="%1:"/></w:lvl>' +
+            '</w:abstractNum><w:num ',
+        )
+        .replace(
+          '</w:numbering>',
+          '<w:num w:numId="40"><w:abstractNumId w:val="40"/></w:num></w:numbering>',
+        ),
+    )
+    const h = await harness(await blank.generateAsync({ type: 'uint8array' }))
+    const styles = listStyleEntries(h.parsed.listStyles)
+    expect(styles.map((s) => s.styleId)).toEqual([
+      NO_LIST_STYLE_ID,
+      '111111',
+      '1ai',
+      'ArticleSection',
+      'Clauses',
+    ])
+    const list = listStyleNum(h.ctx, entry(styles, 'Clauses'))!
+    expect(list.numId).not.toBe('40')
+    expect(h.pending().styleNums).toEqual([{ numId: list.numId, styleId: 'Clauses' }])
+    threeItems(h.editor, list.numId)
+    expect(markers(h.editor)).toEqual(['A:', 'B:', 'C:'])
+    const saved = await h.save()
+    const xml = await numberingXml(saved.zip)
+    expect(xml.match(/<w:styleLink w:val="Clauses"\/>/g)).toHaveLength(1)
+    expect(xml.match(/<w:numStyleLink w:val="Clauses"\/>/g)).toHaveLength(1)
+    expect(saved.numbering.get(list.numId)!.levels[0]).toMatchObject({ numFmt: 'upperLetter' })
+  })
+
+  const shown = (h: Harness) =>
+    listStyleEntries(h.parsed.listStyles, h.pending().styleDefs, h.pending().removedStyles)
+
+  it('Add: a named style is saved unused, is listed on reopen, and its name cannot be taken twice', async () => {
+    const h = await harness()
+    const styleId = addListStyle(h.ctx, 'My Steps', MULTILEVEL_LIBRARY[0], shown(h))!
+    expect(styleId).toBe('MySteps')
+    expect(addListStyle(h.ctx, ' my steps ', MULTILEVEL_LIBRARY[0], shown(h))).toBeNull()
+    expect(addListStyle(h.ctx, 'Normal', MULTILEVEL_LIBRARY[0], shown(h))).toBeNull()
+    expect(shown(h).map((s) => s.styleId)).toContain('MySteps')
+    expect(entry(shown(h), 'MySteps')).toMatchObject({ custom: true, inDocument: false })
+
+    const unused = await h.save()
+    expect(unused.listStyles!.find((s) => s.styleId === 'MySteps')).toMatchObject({
+      name: 'My Steps',
+      custom: true,
+    })
+
+    // applied, the list defines the style itself: it is still written once
+    const list = listStyleNum(h.ctx, entry(shown(h), 'MySteps'))!
+    threeItems(h.editor, list.numId)
+    expect(markers(h.editor)).toEqual(['1)', '2)', '3)'])
+    const saved = await h.save()
+    const xml = await numberingXml(saved.zip)
+    expect(xml.match(/<w:styleLink w:val="MySteps"\/>/g)).toHaveLength(1)
+    expect(saved.numbering.get(list.numId)!.listStyleId).toBe('MySteps')
+
+    const reopened = await harness(await saved.zip.generateAsync({ type: 'uint8array' }))
+    expect(entry(shown(reopened), 'MySteps')).toMatchObject({
+      label: 'My Steps',
+      custom: true,
+      inDocument: true,
+    })
+    expect(markers(reopened.editor)).toEqual(['1)', '2)', '3)'])
+    expect(listStylesInUse(reopened.editor, reopened.parsed.numbering).current).toBe('MySteps')
+  })
+
+  it('Delete: the style leaves the document, its paragraphs turn plain, and an undo leaves an ordinary list', async () => {
+    const first = await harness()
+    addListStyle(first.ctx, 'My Steps', MULTILEVEL_LIBRARY[0], shown(first))
+    const list = listStyleNum(first.ctx, entry(shown(first), 'MySteps'))!
+    threeItems(first.editor, list.numId)
+    const saved = await first.save()
+
+    const h = await harness(await saved.zip.generateAsync({ type: 'uint8array' }))
+    deleteListStyle(h.ctx, entry(shown(h), '1ai'))
+    expect(h.pending().removedStyles).toEqual([])
+    deleteListStyle(h.ctx, entry(shown(h), 'MySteps'))
+    expect(shown(h).map((s) => s.styleId)).not.toContain('MySteps')
+    expect(h.editor.state.doc.childCount).toBe(3)
+    h.editor.state.doc.forEach((node) => expect(node.type.name).toBe('docParagraph'))
+    expect(h.editor.state.doc.textContent).toBe('onetwothree')
+
+    const plain = await h.save()
+    expect(plain.listStyles?.some((s) => s.styleId === 'MySteps') ?? false).toBe(false)
+    expect(await plain.zip.file('word/styles.xml')!.async('string')).not.toContain('MySteps')
+    expect(await numberingXml(plain.zip)).not.toContain('tyleLink w:val="MySteps"')
+    expect(plain.blocks.some((b) => b.list)).toBe(false)
+
+    h.editor.commands.undo()
+    expect(markers(h.editor)).toEqual(['1)', '2)', '3)'])
+    expect(listStylesInUse(h.editor, h.parsed.numbering).used.size).toBe(0)
+    const listed = await h.save()
+    expect(listed.listStyles?.some((s) => s.styleId === 'MySteps') ?? false).toBe(false)
+    expect(listed.numbering.get(list.numId)!.listStyleId).toBeUndefined()
+    expect(listed.numbering.get(list.numId)!.levels[1]).toMatchObject({ numFmt: 'lowerLetter' })
+    expect(listed.blocks.filter((b) => b.list)).toHaveLength(3)
+  })
+
+  it('Delete of a style added in this session writes nothing of it', async () => {
+    const h = await harness()
+    addListStyle(h.ctx, 'Draft', MULTILEVEL_LIBRARY[0], shown(h))
+    const list = listStyleNum(h.ctx, entry(shown(h), 'Draft'))!
+    threeItems(h.editor, list.numId)
+    editListLevel(h.ctx, { indentLeft: 1234 })
+    deleteListStyle(h.ctx, entry(shown(h), 'Draft'))
+    expect(h.pending()).toMatchObject({ styleDefs: [], styleNums: [], removedStyles: [] })
+    const saved = await h.save()
+    expect(await saved.zip.file('word/styles.xml')!.async('string')).not.toContain('Draft')
+    expect(saved.blocks.some((b) => b.list)).toBe(false)
+    // undone, the list is an ordinary one that keeps the level as it was last edited
+    h.editor.commands.undo()
+    const listed = await h.save()
+    expect(listed.numbering.get(list.numId)!.levels[0]).toMatchObject({ indentLeft: 1234 })
   })
 })
 

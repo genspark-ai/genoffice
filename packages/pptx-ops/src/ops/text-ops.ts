@@ -13,12 +13,12 @@ import {
 } from '../font-size'
 import {
   addImageMediaAndRel,
+  isSupportedImageExt,
   cleanupSupersededSlideResources,
   DEFAULT_BODY_INSETS,
   ensureRunLinkRels,
   findGroupChild,
   groupChildSlices,
-  imageExtensionSupported,
   isConnectorXml,
   materializeSlide,
   patchGroupChildText,
@@ -128,6 +128,14 @@ function textMovedInPlace(paragraphs: EditParagraph[]): boolean {
  * Picture-bullet source → media part + slide rel, once per distinct image within a
  * transaction; the engine patch carries only the landed rel.
  */
+function requireBulletImageFormat(opName: string, ext: unknown): void {
+  if (typeof ext === 'string' && !isSupportedImageExt(ext)) {
+    throw new GuidedError(
+      `op "${opName}": unsupported picture bullet format ".${ext}" (png/jpg/jpeg/gif/bmp/webp/tif supported).`,
+    )
+  }
+}
+
 function landBulletImage(
   opened: OpenedPptx,
   slide: Slide,
@@ -163,25 +171,15 @@ register({
     if (!Array.isArray(op.paragraphs)) {
       throw new GuidedError('op "setText" needs "paragraphs": an EditParagraph array.')
     }
-    for (const p of op.paragraphs as Array<{ runs?: Array<{ link?: unknown }> }>) {
+    for (const p of op.paragraphs as Array<{
+      runs?: Array<{ link?: unknown }>
+      bullet?: unknown
+      bulletImage?: { ext?: unknown }
+    }>) {
       for (const r of p?.runs ?? []) {
         if (r && r.link !== undefined) requireLinkTarget('setText', r.link, 'runs[].link')
       }
-    }
-    // picture bullets land in the apply phase — after the text and its link
-    // rels are already rewritten — so an unsupported format must be refused
-    // here, where a per_op batch skips the op whole instead of keeping its
-    // text and links (#2821)
-    for (const { patch } of collectParagraphFormatPatches(op.paragraphs as EditParagraph[])) {
-      if (
-        patch.bullet === 'blip' &&
-        patch.bulletImage !== undefined &&
-        !imageExtensionSupported(patch.bulletImage.ext)
-      ) {
-        throw new GuidedError(
-          `op "setText": unsupported picture bullet format ".${patch.bulletImage.ext}".`,
-        )
-      }
+      if (p?.bullet === 'blip') requireBulletImageFormat('setText', p.bulletImage?.ext)
     }
     if (op.group) {
       const { index, slide } = resolveSlide(ctx, op)
@@ -384,6 +382,7 @@ register({
           'op "setParagraphFormat": bullet "blip" needs "format.bulletImage": { base64, ext }.',
         )
       }
+      requireBulletImageFormat('setParagraphFormat', img.ext)
     }
     if (fmt.rtl !== undefined && typeof fmt.rtl !== 'boolean') {
       throw new GuidedError('op "setParagraphFormat": "format.rtl" must be a boolean.')
