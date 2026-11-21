@@ -10,6 +10,7 @@ Semua file yang terbuka berbagi satu jendela; bilah tab di atas berpindah di ant
 - **Menutup**: tanda × pada tab, atau ⌘W/ctrl+W. Perubahan yang belum disimpan akan ditanyakan lebih dulu.
 - **Baru**: tanda + di ujung kanan bilah.
 - **Aktif seketika**: menekan sebuah tab langsung berpindah begitu ditekan, tanpa menunggu klik selesai.
+- **Ganti nama berkas**: klik dua kali tabnya, atau klik kanan tab dan pilih **Ganti nama**; satu klik hanya mengaktifkan tab.
 
 ## Mengganti nama: klik dua kali sebuah tab
 

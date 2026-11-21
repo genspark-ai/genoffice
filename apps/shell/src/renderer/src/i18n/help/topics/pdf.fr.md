@@ -5,6 +5,7 @@ L’éditeur PDF a cinq onglets de ruban : **Accueil / Annoter / Édition / Page
 ## Lecture et navigation
 
 - Barre latérale gauche : les **Vignettes** (cliquez pour sauter, la plage visible est mise en évidence) ou les **Signets** (le sommaire, lorsqu’il existe).
+- **Signets modifiables** : le volet Plan permet d'ajouter, renommer et supprimer des signets ; les modifications sont réécrites dans le fichier à l'enregistrement.
 - Zoom : le contrôle de ratio en bas à droite ; ctrl+molette règle le zoom par crans.
 - Rotation : page par page ou pour toutes les pages depuis le menu Pages ; les rotations sont réécrites à l’enregistrement.
 - Recherche : ctrl+F en texte intégral, toutes les occurrences sont mises en évidence.
@@ -57,6 +58,7 @@ Six outils : **Dessin, Rectangle, Ellipse, Flèche, Note**, plus le **Caviarder 
 - **Modifier le texte** : cliquez sur le texte pour le modifier bloc par bloc (moteur pdfium ; polices appariées au mieux).
 - **Insérer du texte** : placez un texte consultable avec la police, la taille et la couleur de votre choix.
 - **Insérer une image / un tampon**.
+- **Calque de texte OCR** : **Reconnaître le texte** sur une page numérisée ajoute un calque de texte interrogeable ; le calque se modifie sur place et l'image de la page reste dessous (icône œil pour comparer).
 - Formulaires : les champs AcroForm se remplissent directement ; les valeurs sont écrites à l’enregistrement.
 
 ## Signatures

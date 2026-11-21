@@ -5,6 +5,7 @@ Der PDF-Editor hat fünf Tabs im Menüband: **Start / Anmerken / Bearbeiten / Se
 ## Lesen und navigieren
 
 - Linke Seitenleiste: **Miniaturen** (anklicken zum Springen, der sichtbare Bereich ist hervorgehoben) oder **Gliederung** (Lesezeichen, sofern vorhanden).
+- **Bearbeitbare Lesezeichen**: Im Gliederungsbereich lassen sich Lesezeichen hinzufügen, umbenennen und löschen; Änderungen werden beim Speichern in die Datei geschrieben.
 - Zoom: die Verhältnissteuerung unten rechts; Strg+Radrad zoomt stufenweise.
 - Drehung: einzelne oder alle Seiten über das Menü „Seiten“; Drehungen werden beim Speichern zurückgeschrieben.
 - Suche: Strg+F als Volltextsuche, alle Treffer werden hervorgehoben.
@@ -57,6 +58,7 @@ Sechs Werkzeuge: **Freihand, Rechteck, Ellipse, Pfeil, Notiz** sowie **Bereich s
 - **Text bearbeiten**: Klicken Sie auf Text, um ihn Block für Block zu bearbeiten (pdfium-Engine; Schriften werden möglichst passend gewählt).
 - **Text einfügen**: Setzen Sie durchsuchbaren Text mit Schriftart, Größe und Farbe Ihrer Wahl ab.
 - **Bild / Stempel einfügen**.
+- **OCR-Textebene**: **Text erkennen** fügt einer gescannten Seite eine durchsuchbare Textebene hinzu; die Ebene lässt sich direkt bearbeiten, das Seitenbild bleibt darunter (Augensymbol zum Vergleichen).
 - Formulare: AcroForm-Felder lassen sich direkt ausfüllen; die Werte werden beim Speichern geschrieben.
 
 ## Signaturen

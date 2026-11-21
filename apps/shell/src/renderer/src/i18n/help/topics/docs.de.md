@@ -20,6 +20,7 @@ Tabs: **Start / Einfügen / Zeichnen / Layout / Entwurf / Referenzen / Überprü
 - **Ansicht**: fünf Wege, die Datei anzusehen — **Drucklayout**, **Weblayout**, **Gliederung**, **Lesemodus** und **Seitenvorschau**; Verkleinern/Vergrößern/100 %/Seitenbreite/Eine Seite; **KI-Bereich**; **Dunkler Modus**; Lineal, Gitternetzlinien und der Navigationsbereich; **Neue Registerkarte**, **Teilen** und **Registerkarte wechseln**; der durchsuchbare Dialog für **Tastenkombinationen**.
   - **Dunkler Modus** dunkelt die Seite und die Arbeitsfläche um sie herum ab, niemals das Menüband — Words Trennung zwischen dunkler Bearbeitungsfläche und dunklem Fenster. Die Wahl wird gemerkt und gewinnt in jedem Fall über das App-Design.
   - **Teilen** öffnet darunter einen zweiten Bereich, der unabhängig scrollt und den ersten spiegelt; schließen Sie ihn mit dem × an seinem Rand.
+- **Abgeleitete Gliederung**: Absätze, die wie Überschriften aussehen, aber keinen Überschriftenstil haben, erscheinen in der **Gliederungsansicht** und der **Story-Ansicht** als abgeleitet — und nur, solange das Dokument überhaupt keine echten Überschriftenstile enthält; mit einem Überschriftenstil werden sie echte Überschriften.
 
 ## Der Navigationsbereich
 
@@ -76,3 +77,5 @@ Rechtsklicken Sie irgendwo im Text — das Menü richtet sich nach dem, was Sie 
 ## Drucken
 
 ctrl+P über den Systemdialog, WYSIWYG-Seiten.
+
+- **Druckvorschau ab Cursor**: Beim Öffnen von Drucken springt die Vorschau auf die Seite des Cursors statt immer auf Seite 1.

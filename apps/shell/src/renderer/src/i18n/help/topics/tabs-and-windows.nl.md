@@ -10,6 +10,7 @@ Alle geopende bestanden delen één venster; de tabbladenbalk bovenaan wisselt t
 - **Sluiten**: de × op het tabblad, of ⌘W/ctrl+W. Bij onopgeslagen wijzigingen wordt eerst gevraagd.
 - **Nieuw**: de + aan het rechtereinde van de balk.
 - **Activering is direct**: een tabblad indrukken wisselt meteen om, zonder te wachten tot de klik klaar is.
+- **Een bestand hernoemen**: dubbelklik op het tabblad, of klik met de rechtermuisknop op het tabblad en kies **Hernoemen**; één klik activeert alleen het tabblad.
 
 ## Hernoemen: dubbelklik op een tabblad
 

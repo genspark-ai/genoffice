@@ -10,6 +10,7 @@ Tutti i file aperti condividono una sola finestra; la barra delle schede in alto
 - **Chiudi**: la × sulla scheda, oppure ⌘W/ctrl+W. Se ci sono modifiche non salvate ti viene prima chiesto.
 - **Nuova**: il + all'estremità destra della barra.
 - **L'attivazione è immediata**: premendo una scheda il cambio avviene subito, senza attendere che il clic finisca.
+- **Rinominare un file**: fai doppio clic sulla scheda, oppure clic destro sulla scheda e scegli **Rinomina**; un solo clic attiva soltanto la scheda.
 
 ## Rinomina: fai doppio clic su una scheda
 

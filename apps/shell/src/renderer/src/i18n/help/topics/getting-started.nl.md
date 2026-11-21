@@ -11,6 +11,7 @@ Het venster bestaat uit drie delen:
 - **Tabbladenbalk (boven)**: elk geopend bestand is een tabblad. Het meest linkse Start-tabblad is er altijd en kan niet worden gesloten; de andere tabbladen zijn je documenten. Dubbelklik op een tabblad om de bestandsnaam ter plekke te hernoemen.
 - **Inhoudsgebied**: de editor (of Start) die bij het actieve tabblad hoort.
 - **Menubalk**: op macOS in de systeemmenubalk, op Windows/Linux bovenaan het venster. De menu's Bestand/Bewerken/Beeld passen zich aan aan de actieve editor.
+- **Interfaceschaal**: **Beeld ▸ Interface vergroten / Interface verkleinen / Interfaceschaal herstellen naar 100%** schaalt het hele venster tussen 80% en 150% (⌘⌃= / ⌘⌃- / ⌘⌃0 op macOS; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 elders).
 
 ## Een document maken
 

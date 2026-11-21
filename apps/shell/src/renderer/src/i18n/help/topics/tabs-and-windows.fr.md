@@ -10,6 +10,7 @@ Tous les fichiers ouverts partagent une seule fenêtre ; la barre d’onglets en
 - **Fermer** : la × de l’onglet, ou ⌘W/ctrl+W. Les modifications non enregistrées déclenchent une demande de confirmation.
 - **Nouveau** : le + à l’extrémité droite de la barre.
 - **L’activation est immédiate** : appuyer sur un onglet bascule tout de suite, sans attendre la fin du clic.
+- **Renommer un fichier** : double-cliquez sur son onglet, ou cliquez droit sur l'onglet et choisissez **Renommer** ; un simple clic ne fait qu'activer l'onglet.
 
 ## Renommer : double-cliquez sur un onglet
 

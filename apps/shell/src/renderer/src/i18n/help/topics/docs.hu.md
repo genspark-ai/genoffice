@@ -20,6 +20,7 @@ Lapok: **Kezdőlap / Beszúrás / Rajzolás / Elrendezés / Tervezés / Hivatkoz
 - **Nézet**: öt mód a fájl megtekintésére — **Nyomtatási elrendezés**, **Webes elrendezés**, **Vázlat**, **Olvasó mód** és **Oldal-előnézet**; kicsinyítés/nagyítás/100%/oldalszélesség/egy oldal; **AI-panel**; **Sötét mód**; vonalzó, rácsvonalak és a navigációs panel; **Új lap**, **Felosztás** és **Váltás lapok között**; a kereshető **billentyűparancs-ablak**.
   - A **Sötét mód** besötétíti az oldalt és a körülötte lévő vásznat, de sosem a menüszalagot — ugyanúgy, ahogy a Wordben is különválik a sötét szerkesztőfelület és a sötét ablak. A választás megmarad, és minden esetben elsőbbséget élvez az alkalmazás témájával szemben.
   - A **Felosztás** egy második panelt nyit alul, amely önállóan görget, és az elsőt tükrözi; a szélén lévő ×-szel zárható be.
+- **Következtetett vázlat**: a címsorhoz hasonló, de címsorstílus nélküli bekezdések következtetett jelöléssel jelennek meg a **Vázlatnézetben** és a **Történetnézetben** — de csak addig, amíg a dokumentum egyáltalán nem tartalmaz valódi címsorstílust; címsorstílus alkalmazásával valódi címsorokká válnak.
 
 ## A navigációs panel
 
@@ -76,3 +77,5 @@ Kattints jobb gombbal bárhol a szövegtörzsben — a menü attól függ, amire
 ## Nyomtatás
 
 ctrl+P a rendszer nyomtatási párbeszédpaneljén keresztül, WYSIWYG oldalakkal.
+
+- **Nyomtatási kép a kurzornál**: a Nyomtatás megnyitása egyenesen a kurzor oldalára ugrik az 1. oldal helyett.

@@ -50,7 +50,7 @@ Ayarlar, GenOffice'i .docx / .xlsx / .pptx / .pdf ve benzerleri için işleyici 
 
 - Oturum açma girişi (ayarlar veya bulut proje listesi) bir **cihaz kodu** akışı kullanır: GenOffice bir kod gösterir ve tarayıcıda oturum açma sayfasını açar; tamamlandığında otomatik olarak devam eder.
 - Oturum açma yalnızca şunlar için kullanılır: bulut proje listesi ve Genspark'ın barındırılan modelleri. Onsuz her yerel özellik ve özel modeller çalışmaya devam eder.
-- Oturumu kapatmak ayarlarda tek tıktır.
+- Oturumu kapatma önce onay ister, ardından Genspark hesabına bağlı tüm AI özelliklerinden (bulut projeleri ve barındırılan modeller) çıkış yapar; yerel özellikler çalışmaya devam eder.
 
 ## MCP tümleştirmesi (ileri düzey kullanıcılar / AI istemcileri için)
 

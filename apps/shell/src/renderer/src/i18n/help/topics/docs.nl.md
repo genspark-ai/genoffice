@@ -20,6 +20,7 @@ Tabs: **Start / Invoegen / Tekenen / Indeling / Ontwerpen / Verwijzingen / Contr
 - **Beeld**: vijf manieren om het bestand te bekijken — **Afdrukweergave**, **Webindeling**, **Overzicht**, **Leesmodus** en **Paginavoorbeeld**; uitzoomen/innen/100 %/paginabreedte/één pagina; **AI-deelvenster**; **Donkere modus**; liniaal, rasterlijnen en het navigatiedeelvenster; **Nieuw tabblad**, **Splitsen** en **Tabbladen wisselen**; het doorzoekbare dialoogvenster met **sneltoetsen**.
   - **Donkere modus** verduistert de pagina en het tekenvlak eromheen, nooit het lint — Words splitsing tussen een donker bewerkingsvlak en een donker venster. De keuze wordt onthouden en wint hoe dan ook boven het app-thema.
   - **Splitsen** opent daaronder een tweede deelvenster dat onafhankelijk scrolt en het eerste spiegelt; sluit het met de × op de rand.
+- **Afgeleide structuur**: alinea's die op koppen lijken maar geen kopstijl hebben, verschijnen gemarkeerd als afgeleid in de **Overzichtsweergave** en de **Storyweergave** — maar alleen zolang het document helemaal geen echte kopstijlen bevat; met een kopstijl worden het echte koppen.
 
 ## Het navigatievenster
 
@@ -89,3 +90,5 @@ Rechtermuisklik ergens in de tekst — het menu volgt waarop je klikte. Hoofdgro
 ## Afdrukken
 
 ctrl+P via het systeemvenster, met WYSIWYG-pagina's.
+
+- **Afdrukvoorbeeld bij de cursor**: Afdrukken openen gaat direct naar de pagina waar de cursor staat in plaats van pagina 1.

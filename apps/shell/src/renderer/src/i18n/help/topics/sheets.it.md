@@ -52,6 +52,7 @@ La scheda Formule, pulsante per pulsante:
 ![La scheda Formule](img/sheets-formulas.png)
 
 - **Inserisci funzione** (fx): cerca le funzioni con una procedura guidata per gli argomenti.
+- **Funzioni di Excel 365**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE e PERCENTOF sono disponibili nella barra della formula (firme di Excel; i pattern regex non sicuri vengono rifiutati).
 - **Sommatoria automatica** (menu a tendina): SOMMA con un clic, più media/conteggio/massimo/minimo.
 - **Usate di recente / Finanziarie / Logiche / Testo / Data e ora / Ricerca e riferimento / Matematiche e trigonometriche / Altre**: sfoglia e inserisci funzioni per categoria.
 - **Gestore nomi**: visualizza, crea ed elimina intervalli con nome.

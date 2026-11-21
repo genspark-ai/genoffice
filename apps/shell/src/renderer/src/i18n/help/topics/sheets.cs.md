@@ -52,6 +52,7 @@ Karta Vzorce, tlačítko po tlačítku:
 ![Karta Vzorce](img/sheets-formulas.png)
 
 - **Vložit funkci** (fx): vyhledá funkce s průvodcem po argumentech.
+- **Funkce Excel 365**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE a PERCENTOF jsou dostupné ve vzorcovém řádku (signatury Excelu; nebezpečné regex vzory jsou odmítnuty).
 - **Automatický součet** (rozbalovací seznam): SUMA jedním kliknutím, dále průměr/počet/maximum/minimum.
 - **Nedávno použité / Finanční / Logické / Textové / Datum a čas / Vyhledávání a reference / Matematické a trigonometrické / Další**: procházejte a vkládejte funkce podle kategorie.
 - **Správce názvů**: zobrazit, vytvořit a odstranit pojmenované oblasti.

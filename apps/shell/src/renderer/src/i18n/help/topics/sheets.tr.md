@@ -52,6 +52,7 @@ Formüller sekmesi, düğme düğme:
 ![Formüller sekmesi](img/sheets-formulas.png)
 
 - **İşlev ekle** (fx): bağımsız değişken sihirbazıyla işlev arayın.
+- **Excel 365 işlevleri**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE ve PERCENTOF formül çubuğunda kullanılabilir (Excel imzaları; güvenli olmayan regex desenleri reddedilir).
 - **Otomatik Toplam** (açılır liste): tek tıkla SUM, ayrıca ortalama/sayı/en büyük/en küçük.
 - **Son kullanılan / Finansal / Mantıksal / Metin / Tarih ve saat / Arama ve başvuru / Matematik ve trigonometri / Diğer**: işlevlere kategoriye göre göz atın ve ekleyin.
 - **Ad yöneticisi**: adlandırılmış aralıkları görüntüleyin, oluşturun ve silin.

@@ -5,6 +5,7 @@ Editor PDF mempunyai lima tab pada reben: **Laman Utama / Anotasi / Edit / Halam
 ## Membaca dan navigasi
 
 - Bar sisi kiri: **lakaran kenit** untuk melompat ke slaid dengan julat yang kelihatan ditanda, atau **kerangka** untuk penanda halaman apabila ia wujud.
+- **Penanda buku boleh diedit**: panel kerangka boleh menambah, menamakan semula dan memadam penanda buku; perubahan ditulis semula pada fail semasa menyimpan.
 - Zum: kawalan nisbah di penjuru kanan bawah. Gunakan ctrl dan roda tetikus untuk menukar zum secara berperingkat.
 - Putaran: setiap halaman atau kesemua halaman melalui menu Halaman, dan putaran itu ditulis semula semasa menyimpan.
 - Carian: ctrl+F untuk mencari teks penuh, dengan semua hasil ditanda.
@@ -59,6 +60,7 @@ Enam alat disediakan: **dakwat, segi empat, elips, anak panah, dan nota**, serta
 - **Sunting teks**: klik teks untuk menyuntingnya blok demi blok, menggunakan enjin pdfium dan memadankan fon sebaik mungkin.
 - **Sisip teks**: masukkan teks yang boleh dicari dengan pilihan fon, saiz, dan warna.
 - **Sisip imej atau set**.
+- **Lapisan teks OCR**: **Kenal teks** pada halaman yang diimbas menambah lapisan teks boleh cari; lapisan boleh diedit di tempat manakala imej halaman kekal di bawahnya (ikon mata untuk membandingkan).
 - Borang: medan AcroForm boleh diisi terus, dan nilainya ditulis semasa menyimpan.
 
 ## Tandatangan

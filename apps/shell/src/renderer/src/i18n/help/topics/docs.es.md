@@ -20,6 +20,7 @@ Pestañas: **Inicio / Insertar / Dibujar / Disposición / Diseño / Referencias 
 - **Vista**: cinco maneras de mirar el archivo — **Diseño de impresión**, **Diseño web**, **Esquema**, **Modo de lectura** y **Vista previa de páginas**; alejar/acercar/100 %/ancho de página/una página; **Panel de IA**; **Modo oscuro**; regla, líneas de la cuadrícula y el panel de navegación; **Nueva pestaña**, **Dividir** y **Cambiar de pestaña**; el cuadro de diálogo de **atajos de teclado** en el que se puede buscar.
   - **Modo oscuro** oscurece la página y el lienzo que la rodea, nunca la cinta — la división de Word entre una superficie de edición oscura y una ventana oscura. La elección se recuerda y gana sobre el tema de la aplicación en cualquier caso.
   - **Dividir** abre un segundo panel debajo que se desplaza de forma independiente y refleja el primero; ciérralo con la × de su borde.
+- **Esquema inferido**: los párrafos que parecen títulos pero no tienen estilo de título aparecen marcados como inferidos en la vista **Esquema** y en la vista **Historia** — pero solo mientras el documento no contenga ningún estilo de título real; al aplicar un estilo de título se convierten en reales.
 
 ## El panel de navegación
 
@@ -76,3 +77,5 @@ Haga clic derecho en cualquier parte del cuerpo: el menú se ajusta a lo que ha 
 ## Imprimir
 
 ctrl+P a través del cuadro de diálogo del sistema, con páginas WYSIWYG.
+
+- **Vista previa de impresión en el cursor**: abrir Imprimir va directamente a la página donde está el cursor en vez de a la página 1.

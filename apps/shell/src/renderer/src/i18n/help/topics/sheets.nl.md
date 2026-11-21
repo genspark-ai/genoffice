@@ -52,6 +52,7 @@ Het tabblad Formules, knop voor knop:
 ![Het tabblad Formules](img/sheets-formulas.png)
 
 - **Functie invoegen** (fx): zoek functies met een argumentwizard.
+- **Excel 365-functies**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE en PERCENTOF zijn beschikbaar in de formulebalk (Excel-signaturen; onveilige regex-patronen worden geweigerd).
 - **Autosom** (keuzelijst): SOM met één klik, plus gemiddelde/aantal/max/min.
 - **Onlangs gebruikt / Financieel / Logisch / Tekst / Datum en tijd / Zoeken en verwijzen / Wiskundig en trigonometrisch / Meer**: blader door functies per categorie en voeg ze in.
 - **Naambeheer**: bekijk, maak en verwijder benoemde bereiken.

@@ -52,6 +52,7 @@ A Képletek lap, gombonként:
 ![A Képletek lap](img/sheets-formulas.png)
 
 - **Függvény beszúrása** (fx): függvények keresése, argumentumokat segítő varázslóval.
+- **Excel 365 függvények**: a REGEXTEST, REGEXEXTRACT, REGEXREPLACE és PERCENTOF elérhető a képletsorban (Excel-szignatúrák; a nem biztonságos regex-minták elutasítva).
 - **AutoSzum** (legördülő): SZUM egy kattintással, plusz átlag/darabszám/max/min.
 - **Legutóbb használt / Pénzügyi / Logikai / Szöveg / Dátum és idő / Keresés és hivatkozás / Matematikai és trigonometriai / Továbbiak**: függvények böngészése és beszúrása kategória szerint.
 - **Névkezelő**: elnevezett tartományok megtekintése, létrehozása és törlése.

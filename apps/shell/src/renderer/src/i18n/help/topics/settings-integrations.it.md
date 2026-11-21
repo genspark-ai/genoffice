@@ -50,7 +50,7 @@ Le impostazioni possono registrare GenOffice come gestore dei file .docx / .xlsx
 
 - Il punto d'ingresso per l'accesso (nelle impostazioni o nell'elenco dei progetti cloud) usa un flusso con **codice dispositivo**: GenOffice mostra un codice e apre la pagina di accesso nel browser; una volta completato, l'operazione prosegue automaticamente.
 - L'accesso serve soltanto per: l'elenco dei progetti cloud e i modelli ospitati da Genspark. Senza di esso ogni funzione locale e i modelli personalizzati continuano a funzionare.
-- La disconnessione si fa con un clic nelle impostazioni.
+- La disconnessione chiede prima conferma, poi disconnette tutte le funzioni IA legate all'account Genspark (progetti cloud e modelli ospitati); le funzioni locali continuano a funzionare.
 
 ## Integrazione MCP (per utenti avanzati / client IA)
 

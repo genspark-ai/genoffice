@@ -5,6 +5,7 @@ L'editor PDF ha cinque schede nella barra multifunzione: **Home / Annota / Modif
 ## Lettura e navigazione
 
 - Barra laterale sinistra: ** miniature** (fai clic per saltare, con l'intervallo visibile evidenziato) oppure **struttura** (segnalibri, quando presenti).
+- **Segnalibri modificabili**: il pannello struttura permette di aggiungere, rinominare ed eliminare segnalibri; le modifiche vengono riscritte nel file al salvataggio.
 - Zoom: il controllo del rapporto in basso a destra; ctrl+rotellina cambia lo zoom a scatti.
 - Rotazione: per singola pagina o per tutte dal menu Pagine; le rotazioni vengono riscritte al salvataggio.
 - Ricerca: ctrl+F a testo completo con tutte le occorrenze evidenziate.
@@ -57,6 +58,7 @@ Sei strumenti: **inchiostro, rettangolo, ellisse, freccia, nota**, più il **riq
 - **Modifica testo**: fai clic sul testo per modificarlo blocco per blocco (motore pdfium; caratteri abbinati per quanto possibile).
 - **Inserisci testo**: inserisci testo ricercabile con il carattere, la dimensione e il colore che preferisci.
 - **Inserisci immagine / timbro**.
+- **Livello di testo OCR**: **Riconosci testo** su una pagina scansionata aggiunge un livello di testo ricercabile; il livello è modificabile sul posto e l'immagine della pagina resta sotto (icona dell'occhio per confrontare).
 - Moduli: i campi AcroForm si compilano direttamente; i valori vengono scritti al salvataggio.
 
 ## Firme

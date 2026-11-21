@@ -9,6 +9,7 @@ Les modèles et les clés se configurent dans les Paramètres (la ligne de compt
 - **Genspark hébergé** : connectez-vous (flux par code d’appareil) et utilisez-le — aucune configuration.
 - **Points de terminaison personnalisés (BYOK)** : Paramètres ▸ IA prend une URL de base et une clé API par protocole — compatible OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) et plus. Les clés sont stockées dans le fichier de paramètres de l'application sur cet ordinateur et envoyées uniquement dans les en-têtes de requête. Atlas Cloud figure parmi les protocoles intégrés.
 - Un modèle différent peut être choisi par capacité : chat/génération, génération d’images, analyse d’images.
+- **MiniMax H3-Image** et **MiniMax H3-Image Highspeed** sont disponibles pour la génération d'images aux côtés d'image-01 (jusqu'à 16 images de référence pour une édition).
 - **Tester la connexion** : vérifie que le point de terminaison est joignable et que le modèle est visible avant d’enregistrer.
 - Les URL de base peuvent porter un chemin et une chaîne de requête (style passerelle) ; les chemins de point de terminaison sont concaténés correctement.
 

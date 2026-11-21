@@ -52,6 +52,7 @@ L’onglet Formules, bouton par bouton :
 ![L’onglet Formules](img/sheets-formulas.png)
 
 - **Insérer une fonction** (fx) : recherche des fonctions avec un assistant d’arguments.
+- **Fonctions Excel 365** : REGEXTEST, REGEXEXTRACT, REGEXREPLACE et PERCENTOF sont disponibles dans la barre de formule (signatures Excel ; les expressions régulières dangereuses sont refusées).
 - **Somme automatique** (menu déroulant) : SOMME en un clic, plus moyenne/compte/max/min.
 - **Fonctions récentes / Financières / Logiques / Texte / Date et heure / Recherche et référence / Maths et trigonométrie / Plus** : parcourez et insérez les fonctions par catégorie.
 - **Gestionnaire de noms** : afficher, créer et supprimer des plages nommées.

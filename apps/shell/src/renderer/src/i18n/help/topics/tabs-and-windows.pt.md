@@ -10,6 +10,7 @@ Todos os arquivos abertos compartilham uma janela; a barra de guias no topo muda
 - **Fechar**: o × na guia, ou ⌘W/ctrl+W. Se houver alterações não salvas, o GenOffice pergunta primeiro.
 - **Nova**: o + no extremo direito da barra.
 - **Ativação imediata**: pressionar uma guia muda para ela logo que é pressionada, sem esperar que o clique termine.
+- **Renomear um arquivo**: clique duas vezes na aba, ou clique com o botão direito na aba e escolha **Renomear**; um clique simples apenas ativa a aba.
 
 ## Renomear: clique duas vezes em uma guia
 

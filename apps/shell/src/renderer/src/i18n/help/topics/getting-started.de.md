@@ -11,6 +11,7 @@ Das Fenster besteht aus drei Teilen:
 - **Tab-Leiste (oben)**: Jede geöffnete Datei ist ein Tab. Der Start-Tab ganz links ist immer vorhanden und lässt sich nicht schließen; die übrigen Tabs sind Ihre Dokumente. Ein Doppelklick auf einen Tab benennt die Datei direkt dort um.
 - **Inhaltsbereich**: der zum aktiven Tab gehörende Editor (oder die Startseite).
 - **Menü**: unter macOS in der Systemmenüleiste, unter Windows/Linux oben im Fenster. Die Menüs Datei/Bearbeiten/Ansicht wechseln passend zum aktiven Editor.
+- **Oberflächenskalierung**: **Ansicht ▸ Oberfläche vergrößern / Oberfläche verkleinern / Zoom der Oberfläche auf 100% zurücksetzen** skaliert das ganze Fenster zwischen 80 % und 150 % (⌘⌃= / ⌘⌃- / ⌘⌃0 unter macOS; sonst ctrl+alt+= / ctrl+alt+- / ctrl+alt+0).
 
 ## Ein Dokument anlegen
 

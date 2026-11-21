@@ -5,6 +5,7 @@ Editor PDF punya lima tab di pita: **Beranda / Anotasi / Edit / Halaman / Tampil
 ## Membaca dan navigasi
 
 - Bilah sisi kiri: **Gambar mini** (klik untuk melompat, rentang yang terlihat disorot) atau **Kerangka** (bookmark, jika ada).
+- **Bookmark yang dapat diedit**: panel kerangka dapat menambah, mengganti nama, dan menghapus bookmark; perubahan ditulis kembali saat menyimpan.
 - Zoom: kendali rasio di kanan bawah; ctrl+roda mengubah tingkat zoom.
 - Rotasi: per halaman atau semua halaman dari menu Halaman; rotasi ditulis kembali saat menyimpan.
 - Cari: ctrl+F untuk mencari seluruh teks dengan semua hasil disorot.
@@ -57,6 +58,7 @@ Enam alat: **Gambar, Persegi, Elips, Panah, Catatan**, ditambah **Redaksi area**
 - **Edit teks**: klik teks untuk mengeditnya per blok (mesin pdfium; pencocokan font-contain semaksimal mungkin).
 - **Sisipkan teks**: tempatkan teks yang bisa dicari dengan pilihan font/ukuran/warna.
 - **Sisipkan gambar / stempel**.
+- **Lapisan teks OCR**: **Kenali teks** pada halaman hasil pindai menambahkan lapisan teks yang dapat dicari; lapisan dapat diedit langsung sementara gambar halaman tetap di bawahnya (ikon mata untuk membandingkan).
 - Formulir: bidang AcroForm dapat diisi langsung; nilainya ditulis saat menyimpan.
 
 ## Tanda tangan

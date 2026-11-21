@@ -20,6 +20,7 @@ Guias: **Página Inicial / Inserir / Desenhar / Layout / Design / Referências /
 - **Exibir**: cinco formas de ver o arquivo — **Layout de Impressão**, **Layout da Web**, **Estrutura de Tópicos**, **Modo de Leitura** e **Visualização de Páginas**; reduzir/ampliar/100 %/largura da página/uma página; **Painel de IA**; **Modo Escuro**; régua, linhas de grade e o painel de navegação; **Nova Guia**, **Dividir** e **Alternar Guias**; a janela pesquisável de **atalhos de teclado**.
   - O **Modo Escuro** escurece a página e a tela à volta dela, nunca a faixa de opções — a divisão do Word entre uma superfície de edição escura e uma janela escura. A escolha fica salva e, em qualquer caso, prevalece sobre o tema do aplicativo.
   - **Dividir** abre um segundo painel por baixo, que desliza de forma independente e espelha o primeiro; feche-o com o × no seu limite.
+- **Estrutura inferida**: parágrafos que parecem títulos mas não têm estilo de título aparecem marcados como inferidos no modo **Estrutura de Tópicos** e no modo **História** — mas apenas enquanto o documento não tiver nenhum estilo de título real; aplicar um estilo de título os torna reais.
 
 ## O painel de navegação
 
@@ -76,3 +77,5 @@ Clique com o botão direito em qualquer ponto do texto — o menu acompanha aqui
 ## Imprimir
 
 ctrl+P pela caixa de diálogo do sistema, com as páginas exatamente como serão impressas.
+
+- **Pré-visualização de impressão no cursor**: abrir Imprimir vai direto para a página em que o cursor está, em vez da página 1.

@@ -11,6 +11,7 @@ Cửa sổ gồm ba phần:
 - **Dải thẻ (phía trên)**: mỗi tập tin đang mở là một thẻ. Thẻ Trang chủ ngoài cùng bên trái luôn tồn tại và không thể đóng; các thẻ còn lại là tài liệu của bạn. Nhấp đúp vào một thẻ để đổi tên tập tin ngay tại chỗ.
 - **Vùng nội dung**: trình soạn thảo (hoặc Trang chủ) thuộc thẻ đang hoạt động.
 - **Dải menu**: trên dải menu hệ thống của macOS, ở trên cửa sổ trên Windows/Linux. Các menu File/Edit/View đổi theo trình soạn thảo đang hoạt động.
+- **Tỷ lệ giao diện**: **Xem ▸ Phóng to giao diện / Thu nhỏ giao diện / Đặt lại mức phóng giao diện về 100%** thu phóng toàn bộ cửa sổ trong khoảng 80%–150% (⌘⌃= / ⌘⌃- / ⌘⌃0 trên macOS; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 ở nơi khác).
 
 ## Tạo tài liệu
 

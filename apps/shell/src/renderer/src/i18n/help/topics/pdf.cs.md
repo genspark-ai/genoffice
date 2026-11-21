@@ -5,6 +5,7 @@ Editor PDF má pět karet na pásku: **Domů / Anotace / Úpravy / Stránky / Zo
 ## Čtení a navigace
 
 - Levý postranní panel: **miniatury** (kliknutím přeskočíte, viditelný rozsah je zvýrazněn) nebo **osnova** (záložky, pokud jsou k dispozici).
+- **Upravitelné záložky**: panel osnovy umožňuje přidávat, přejmenovávat a mazat záložky; změny se při uložení zapíší do souboru.
 - Přiblížení: ovladač poměru vpravo dole; ctrl+kolečko mění přiblížení po stupních.
 - Otáčení: jednotlivé stránky nebo všechny z nabídky Stránky; otočení se při uložení zapíší zpět do souboru.
 - Vyhledávání: ctrl+F v celém textu se zvýrazněním všech nálezů.
@@ -57,6 +58,7 @@ Co očekávat:
 - **Upravit text**: kliknutím na text jej upravíte po blocích (engine pdfium; písma se přiřazují s nejlepším možným přiblížením).
 - **Vložit text**: vloží dohledávatelný text s libovolným písmem, velikostí a barvou.
 - **Vložit obrázek / razítko**.
+- **Textová vrstva OCR**: **Rozpoznat text** na naskenované stránce přidá prohledávatelnou textovou vrstvu; vrstvu lze upravovat na místě a obrázek stránky zůstává pod ní (ikona oka pro porovnání).
 - Formuláře: pole AcroForm se vyplňují přímo; hodnoty se zapisují při uložení.
 
 ## Podpisy
