@@ -10,6 +10,7 @@ import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-doc
 import {
   charSpacingAttrs,
   charSpacingFromAttrs,
+  fontDefaultColor,
   fontTabAttrs,
   selectionRanges,
   setTextStyleWithScale,
@@ -416,5 +417,11 @@ describe('mixed selections keep untouched fields', () => {
     expect(z.text).toBe('Z')
     expect(z.marks[0].attrs).toMatchObject({ charScalePct: 150, charScaleEm: 0.26 })
     editor.destroy()
+  })
+
+  it('Default keeps a real colour only: automatic and black stay unset', () => {
+    expect(fontDefaultColor('#c00000')).toBe('C00000')
+    expect(fontDefaultColor('#auto')).toBeUndefined()
+    expect(fontDefaultColor('#000000')).toBeUndefined()
   })
 })

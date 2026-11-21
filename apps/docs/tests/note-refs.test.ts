@@ -84,9 +84,29 @@ describe('footnote / endnote reference conversion', () => {
     const inline = runsToInline(runs)
     expect(inline).toEqual([
       { type: 'text', text: 'body' },
-      { type: 'docNoteRef', attrs: { kind: 'footnote', id: '3', num: 2, rawRPr: null } },
+      {
+        type: 'docNoteRef',
+        attrs: {
+          kind: 'footnote',
+          id: '3',
+          num: 2,
+          fmt: 'decimal',
+          mark: null,
+          rawRPr: null,
+          hiddenBookmarks: null,
+        },
+      },
       { type: 'text', text: 'continued' },
     ])
+    expect(inlineToRuns(inline)).toEqual(runs)
+  })
+
+  it('carries a bookmark on the mark alone (a NOTEREF target) both ways', () => {
+    const runs: Run[] = [
+      { text: '2', noteRef: { kind: 'footnote', id: '3', bookmarks: ['_Ref42'] } },
+    ]
+    const inline = runsToInline(runs)
+    expect(inline[0]?.attrs?.hiddenBookmarks).toEqual(['_Ref42'])
     expect(inlineToRuns(inline)).toEqual(runs)
   })
 
@@ -95,13 +115,31 @@ describe('footnote / endnote reference conversion', () => {
     const inline = runsToInline(runs)
     expect(inline).toEqual([
       { type: 'text', text: 'artificial intelligence' },
-      { type: 'docXeMark', attrs: { term: 'artificial intelligence' } },
+      {
+        type: 'docXeMark',
+        attrs: {
+          term: 'artificial intelligence',
+          ta: null,
+          taRuns: null,
+          tc: null,
+          switches: null,
+        },
+      },
     ])
     // splits back into a plain text run + an empty XE-carrier run
     expect(inlineToRuns(inline)).toEqual([
       { text: 'artificial intelligence' },
       { text: '', xeTerm: 'artificial intelligence' },
     ])
+    // a citation rides the same atom, and comes back as the TA field's switches
+    const cited: Run[] = [{ text: '', xeTerm: '', taInstr: '\\l "Baldwin" \\c 1' }]
+    expect(runsToInline(cited)).toEqual([
+      {
+        type: 'docXeMark',
+        attrs: { term: '', ta: '\\l "Baldwin" \\c 1', taRuns: null, tc: null, switches: null },
+      },
+    ])
+    expect(inlineToRuns(runsToInline(cited))).toEqual(cited)
   })
 
   it('renders both atoms in the editor schema without dropping them', () => {

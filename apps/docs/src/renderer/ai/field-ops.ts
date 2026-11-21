@@ -6,9 +6,10 @@ import { posAfterText } from './after-text'
 /**
  * Word field ops: insert an inline field with a locally computed (or given)
  * result, bookmark a paragraph for REF / PAGEREF, and refresh the fields the
- * editor can compute. What only Word can compute (page numbers, document
- * properties) is written with the begin fldChar marked dirty, so Word
- * refreshes it on open.
+ * editor can compute. A field inserted without a computed result is marked
+ * dirty: the save gives a caption number its value and clears the mark (see
+ * field-results), and what only Word can compute (page numbers, document
+ * properties, a REF with a position switch) keeps it, so Word updates it on open.
  */
 
 export interface FieldOpHelpers {
@@ -29,7 +30,39 @@ const BLOCKED: Record<string, string> = {
   FORMCHECKBOX: 'form fields are not supported',
   FORMTEXT: 'form fields are not supported',
   FORMDROPDOWN: 'form fields are not supported',
-  ADDIN: 'add-in fields are not supported',
+  ADDIN:
+    'the only add-in field accepted is a Zotero citation: args "ZOTERO_ITEM CSL_CITATION {json}" with result',
+}
+const ZOTERO_CITATION_ARGS = /^\s*ZOTERO_ITEM\s+CSL_CITATION\s+(\{[\s\S]*\})\s*$/
+
+/** null when args are a Zotero citation instruction the integration can refresh, else why not */
+function zoteroCitationProblem(args: unknown): string | null {
+  if (typeof args !== 'string') return BLOCKED.ADDIN!
+  const m = ZOTERO_CITATION_ARGS.exec(args)
+  if (!m) return BLOCKED.ADDIN!
+  let data: unknown
+  try {
+    data = JSON.parse(m[1]!)
+  } catch {
+    return 'the CSL_CITATION payload is not valid JSON'
+  }
+  const items = (data as { citationItems?: unknown } | null)?.citationItems
+  if (!Array.isArray(items) || items.length === 0)
+    return 'the CSL_CITATION payload needs a non-empty citationItems array'
+  // Zotero resolves an item by its uris, its id, or the embedded itemData
+  const resolvable = (item: unknown): boolean => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return false
+    const { uris, uri, id, itemData } = item as Record<string, unknown>
+    return (
+      (Array.isArray(uris) && uris.length > 0) ||
+      (Array.isArray(uri) && uri.length > 0) ||
+      typeof id === 'string' ||
+      typeof id === 'number' ||
+      (!!itemData && typeof itemData === 'object')
+    )
+  }
+  if (!items.every(resolvable)) return 'every item in citationItems needs uris, id or itemData'
+  return null
 }
 /** result defaults to "1" and Word recomputes on open */
 const COUNTER_FIELDS = new Set([
@@ -41,6 +74,8 @@ const COUNTER_FIELDS = new Set([
   'NUMCHARS',
   'PAGEREF',
 ])
+/** inserted dirty, given its result when the document is saved */
+const SETTLED_ON_SAVE = new Set(['SEQ'])
 const DATE_FIELDS = new Set(['DATE', 'TIME', 'CREATEDATE', 'SAVEDATE', 'PRINTDATE'])
 /** marks that never carry over onto an inserted field result */
 const NO_INHERIT = new Set([
@@ -412,6 +447,8 @@ function resolveField(op: Op, doc: PmNode, pos: number, now = new Date()): Resol
     if (value !== undefined && given === undefined) return { instr, result: value, dirty: false }
     return { instr, result: needsResult(), dirty: true }
   }
+  // Zotero owns its citations: it rewrites the result on refresh, Word must not
+  if (type === 'ADDIN') return { instr, result: needsResult(), dirty: false }
   if (COUNTER_FIELDS.has(type)) return { instr, result: given ?? '1', dirty: true }
   return { instr, result: needsResult(), dirty: true }
 }
@@ -465,7 +502,7 @@ function runInsertField(op: Op, env: RunEnv, h: FieldOpHelpers): OpResult {
     matched: 1,
     changed: 1,
     skippedProtected: 0,
-    detail: `{ ${r.instr} } = "${r.result}"${r.dirty ? ' (Word recomputes on open)' : ''}`,
+    detail: `{ ${r.instr} } = "${r.result}"${r.dirty && !SETTLED_ON_SAVE.has(keywordOf(r.instr)) ? ' (Word recomputes on open)' : ''}`,
   }
 }
 
@@ -530,7 +567,7 @@ function runUpdateFields(op: Op, env: RunEnv, h: FieldOpHelpers, now = new Date(
   const runs = fieldRuns(tr.doc)
   const seq = new Map<string, number>()
   let recomputed = 0
-  let dirtied = 0
+  let left = 0
   let missing = 0
   const retag = (marks: readonly Mark[], dirty: boolean | null) =>
     marks.map((m) =>
@@ -562,12 +599,9 @@ function runUpdateFields(op: Op, env: RunEnv, h: FieldOpHelpers, now = new Date(
       if (scope !== 'all' && scope !== 'REF') continue
       const name = String(run.ref.attrs.name)
       const instr = run.ref.attrs.instr as string | null
+      // \p / \n / \r … results are Word's: the field stays as it is
       if (instr && !plainRefSwitches(instr.replace(REF_HEAD_RE, ''))) {
-        // \p / \n / \r … results are Word's: keep the cached text, make sure Word refreshes it
-        if (run.ref.attrs.dirty !== true) {
-          rewrite(run, run.text, true)
-          dirtied++
-        }
+        left++
         continue
       }
       const target = findBookmark(tr.doc, name)
@@ -594,30 +628,23 @@ function runUpdateFields(op: Op, env: RunEnv, h: FieldOpHelpers, now = new Date(
             : (seq.get(id) ?? 0) + 1
       seq.set(id, value)
       if (scope !== 'all' && scope !== 'SEQ') continue
-      rewrite(run, formatSeqNumber(value, switchOf(args, '*')), true)
+      rewrite(run, formatSeqNumber(value, switchOf(args, '*')), null)
       recomputed++
     } else if (keyword === 'DATE' || keyword === 'TIME') {
       if (scope !== 'all' && scope !== 'DATE') continue
       rewrite(run, dateResult(keyword, args, now), false)
       recomputed++
-    } else if (
-      scope === 'all' &&
-      keyword !== 'MERGEFIELD' &&
-      !/^(?:ADDIN|FORMCHECKBOX)$/.test(keyword) &&
-      run.instr!.attrs.dirty !== true &&
-      !run.instr!.attrs.beginXml
-    ) {
-      rewrite(run, run.text, true)
-      dirtied++
+    } else if (scope === 'all' && keyword !== 'MERGEFIELD') {
+      left++
     }
   }
   const parts = [`${recomputed} recomputed`]
-  if (dirtied) parts.push(`${dirtied} marked for Word to recompute on open`)
+  if (left) parts.push(`${left} left with the result they have (not computed here)`)
   if (missing) parts.push(`${missing} REF field(s) point at a missing bookmark`)
   return {
     op: 'updateFields',
     matched: runs.length,
-    changed: recomputed + dirtied,
+    changed: recomputed,
     skippedProtected: 0,
     detail: parts.join(', '),
   }
@@ -627,7 +654,7 @@ export function fieldOpDefs(h: FieldOpHelpers): OpDef[] {
   const insertField: OpDef = {
     name: 'insertField',
     signature:
-      '{ op: "insertField", target, type: "SEQ"|"REF"|"PAGEREF"|"DATE"|"TIME"|"MERGEFIELD"|"IF"|"PAGE"|"NUMPAGES"|"AUTHOR"|..., args?: string, result?: string, position?: "start"|"end", afterText?: string }  // insert a Word field into exactly one paragraph, at its end unless position or afterText says otherwise; args is the instruction after the keyword ({ SEQ Figure \\* ARABIC } = type "SEQ", args "Figure \\* ARABIC"). Computed here: SEQ (visible fields with that identifier so far + 1), REF/PAGEREF (the bookmarked paragraph; insertBookmark creates one), DATE/TIME (now, \\@ picture), MERGEFIELD («Name»), IF with literal operands; PAGE/NUMPAGES show "1"; anything else needs result, the text shown until Word updates it. Fields only Word can compute are marked dirty and refresh when the file opens in Word',
+      '{ op: "insertField", target, type: "SEQ"|"REF"|"PAGEREF"|"DATE"|"TIME"|"MERGEFIELD"|"IF"|"PAGE"|"NUMPAGES"|"AUTHOR"|..., args?: string, result?: string, position?: "start"|"end", afterText?: string }  // insert a Word field into exactly one paragraph, at its end unless position or afterText says otherwise; args is the instruction after the keyword ({ SEQ Figure \\* ARABIC } = type "SEQ", args "Figure \\* ARABIC"). Computed here: SEQ (visible fields with that identifier so far + 1), REF/PAGEREF (the bookmarked paragraph; insertBookmark creates one), DATE/TIME (now, \\@ picture), MERGEFIELD («Name»), IF with literal operands; PAGE/NUMPAGES show "1"; anything else needs result, the text shown until Word updates it. SEQ gets its real number when the document is saved; any other field that is not computed here (page numbers included) is marked dirty and refreshes when the file opens in Word. A Zotero citation is type "ADDIN", args "ZOTERO_ITEM CSL_CITATION {json}" (the Zotero Word-plugin payload: citationItems with uris, itemData, locator/label for pages) and result the formatted citation; Zotero\'s Refresh keeps it and the bibliography in sync',
     keys: ['type', 'args', 'result', 'position', 'afterText'],
     target: 'required',
     validate(op, where) {
@@ -635,9 +662,15 @@ export function fieldOpDefs(h: FieldOpHelpers): OpDef[] {
       if (shape) return shape
       if (typeof op.type !== 'string' || !/^[A-Za-z]+$/.test(op.type))
         return `${where}: type must be a field keyword such as SEQ, REF or DATE`
-      const blocked = BLOCKED[op.type.toUpperCase()]
-      if (blocked)
-        return `${where}: ${op.type.toUpperCase()} fields cannot be inserted this way; ${blocked}`
+      const keyword = op.type.toUpperCase()
+      if (keyword === 'ADDIN') {
+        const problem = zoteroCitationProblem(op.args)
+        if (problem) return `${where}: ADDIN fields cannot be inserted this way; ${problem}`
+        if (typeof op.result !== 'string' || op.result === '')
+          return `${where}: a Zotero citation needs result, the formatted citation text, e.g. "(Smith, 2020, p. 4)"`
+      } else if (BLOCKED[keyword]) {
+        return `${where}: ${keyword} fields cannot be inserted this way; ${BLOCKED[keyword]}`
+      }
       if (op.args !== undefined && typeof op.args !== 'string')
         return `${where}: args must be a string`
       if (op.result !== undefined && (typeof op.result !== 'string' || op.result === ''))
@@ -670,7 +703,7 @@ export function fieldOpDefs(h: FieldOpHelpers): OpDef[] {
   const updateFields: OpDef = {
     name: 'updateFields',
     signature:
-      '{ op: "updateFields", scope?: "all"|"SEQ"|"REF"|"DATE" }  // recompute the inline fields the editor can: SEQ numbering in document order, REF results from their bookmarks, DATE/TIME to now; with scope "all" every other field (PAGE, NUMPAGES, AUTHOR...) is marked dirty so Word recomputes it on open. Table-of-contents blocks are untouched (insertToc rebuilds one)',
+      '{ op: "updateFields", scope?: "all"|"SEQ"|"REF"|"DATE" }  // recompute the inline fields the editor can: SEQ numbering in document order, REF results from their bookmarks, DATE/TIME to now; every other field (AUTHOR, a REF with \\p...) keeps the result it has. Table-of-contents blocks are untouched (insertToc rebuilds one)',
     keys: ['scope'],
     target: 'none',
     validate(op, where) {

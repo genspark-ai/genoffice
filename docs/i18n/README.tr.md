@@ -39,8 +39,10 @@ kaydeder, PDF, Markdown ve HTML düzenler ve her belgenin yanına bir yapay zek�
 ajanı koyar — kenara iliştirilmiş bir sohbet kutusu değil, dosyayı okuyan,
 değişikliği yapan ve tam olarak neye dokunduğunu size gösteren bir düzenleyici.
 ODF dosyaları (`.odt`, `.ods`, `.odp` ve `.ott`/`.ots`/`.otp` şablonları)
-düzenlenebilir OOXML kopyaları olarak açılır; içe aktarma yalnızca açma
-yönündedir — kaydetme her zaman OOXML yazar, asla ODF yazmaz.
+düzenlenebilir OOXML kopyaları olarak açılır; eski Word `.doc`/`.dot`,
+Excel 97 `.xls` ve PowerPoint 97–2003 `.ppt` dosyaları ile Hancom belgeleri
+(`.hwp`, `.hwpx`) de öyle. İçe aktarma yalnızca açma yönündedir — kaydetme
+her zaman OOXML yazar, asla kaynak biçimi yazmaz.
 
 - **Gerçek biçimler, bayt bayt korunur.** Yalnızca düzenlediğiniz kısım yeniden
   yazılır. Dosyadaki diğer her şey bayt bayt korunur; böylece belgeler Word,
@@ -114,7 +116,7 @@ yönlendirilmiştir.
 </tr>
 <tr>
 <td><b>Oluşturun</b> — tek bir cümleden ajan, bölge ve kategoriye göre gerçek <code>SUMIF</code> formülleri içeren bir Summary sayfası ekler, bir sütun grafiği yerleştirir ve 43 değişikliği tek bir geri alınabilir toplu işlem olarak uygular.</td>
-<td><b>Sorun</b> — çalışma kitabıyla ilgili sorular, gerekçesiyle ve kullanılan hücreler tıklanabilir alıntılar olarak geri döner. Arka planda: kendi geliştirdiğimiz Rust tabanlı <code>.xlsx</code> motoru, özet tablolar, dilimleyiciler, koşullu biçimlendirme, formül izleme ve hücrelere Excel'in yerel zengin değerleri olarak gömülen resimler — Excel onları yeniden açtığında hâlâ hücrenin içindedir.Hücre notları bir resim taşıyabilir; resim, notun açılır penceresinin altında gösterilir.</td>
+<td><b>Sorun</b> — çalışma kitabıyla ilgili sorular, gerekçesiyle ve kullanılan hücreler tıklanabilir alıntılar olarak geri döner. Arka planda: kendi geliştirdiğimiz Rust tabanlı <code>.xlsx</code> motoru, özet tablolar, dilimleyiciler, koşullu biçimlendirme, formül izleme ve hücrelere Excel'in yerel zengin değerleri olarak gömülen resimler — Excel onları yeniden açtığında hâlâ hücrenin içindedir. Hücre notları bir resim taşıyabilir; resim, notun açılır penceresinin altında gösterilir.</td>
 </tr>
 </table>
 
@@ -197,7 +199,7 @@ nota tıklanarak gidilir, `[[` yazmak not adı tamamlama sunar ve `![[…]]` bir
 notu ya da resmi satır içine gömer. **Backlinks** paneli, açık nota işaret eden
 her notu listeler ve **Graph** görünümü tüm kasanın bağlantılarını haritalar.
 
-### 7 · Arama — soruyu yanıtlayan dosyayı bulun, TypeSafe Jev ile
+### <a id="7--search--find-the-file-that-answers-the-question-with-typesafe-jev"></a>7 · Arama — soruyu yanıtlayan dosyayı bulun, TypeSafe Jev ile
 
 Çalışma klasörünüzdeki her dosya cihaz üzerinde dizinlenir: adlar, klasörler
 ve Word, Excel, PowerPoint, PDF, Markdown ve HTML dosyalarından çıkarılan
@@ -287,7 +289,7 @@ belgesi oluşturmasına izin verir.
 
 ### 11 · Eski dosyalar — 2000'lerden kalma `.doc`, `.xls` ve `.ppt` dosyaları da açılır
 
-Word 97–2003 `.doc`, Excel `.xls` veya PowerPoint `.ppt` dosyası, bilgisayarınızda oluşturulan dönüştürülmüş bir `.docx`, `.xlsx` veya `.pptx` kopyası olarak açılır; özgün dosya hiçbir zaman değiştirilmez. Görseller, tablolar, formüller, sayı biçimleri, dolgular ve düzen aktarılır.
+Word 97–2003 `.doc`, Excel `.xls` veya PowerPoint `.ppt` dosyası, bilgisayarınızda oluşturulan dönüştürülmüş bir `.docx`, `.xlsx` veya `.pptx` kopyası olarak açılır; özgün dosya hiçbir zaman değiştirilmez. Görseller, tablolar, formüller, sayı biçimleri, dolgular ve düzen aktarılır. Her biçimin neyi koruduğu ve neyi bıraktığı [Eski ve ODF dosyaları dönüştürülmüş kopyalar olarak açılır](#legacy-and-odf-files-open-as-converted-copies) bölümünde yer alır.
 
 <img src="../assets/readme/legacy-formats-motion.webp" alt="GenOffice'in kurgusal bir 2004 faaliyet raporuna ait .ppt, .doc ve .xls dosyalarını açtığı hızlandırılmış görüntü; ardından bir slayt PowerPoint'te, yanında GenOffice'te dönüştürülmüş sunu" width="100%">
 
@@ -379,7 +381,7 @@ de kabul eder.
 
 ---
 
-## Komut satırı ve ajan skill'i
+## <a id="command-line-and-agent-skill"></a>Komut satırı ve ajan skill'i
 
 Uygulamaların bir dosyaya yapabildiği her şeyi `genoffice` komut satırı bir
 terminalden yapabilir: Word, Excel, PowerPoint, PDF, Markdown ve HTML'yi aynı
@@ -411,7 +413,7 @@ ve kendi işini nasıl kontrol edeceğini öğretir.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, ppt → pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -450,7 +452,7 @@ genoffice open deck/solar-system.pptx
 oluşturmayı ve kontrolü CLI yapar ve sonuç GenOffice'te ya da PowerPoint'te
 sıradan bir `.pptx` olarak açılır.
 
-### MCP sunucusu
+### <a id="mcp-server"></a>MCP sunucusu
 
 Aynı komutlar, terminal çalıştıramayan ya da terminal vermeyi tercih
 etmediğiniz asistanlar için [Model Context Protocol](https://modelcontextprotocol.io)
@@ -525,7 +527,7 @@ rakamlar, fotoğraflar, kılavuzlar, kontroller ve işlenmiş görüntülerin ta
 MCP araç sonuçları olarak yolculuk etti. Makineden yalnızca `search` ve
 `media`, GenOffice'te yapılandırılan sağlayıcıya gitti.
 
-## İndir
+## <a id="download"></a>İndir
 
 | Platform                             | Gereksinimler                                         | İndirme                                                                                |
 | ------------------------------------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
@@ -556,6 +558,11 @@ Fedora / RHEL ailesi / openSUSE üzerinde bunun yerine rpm'i kurun:
 sudo dnf install ./genoffice-<version>.x86_64.rpm     # Fedora / RHEL family
 sudo zypper install ./genoffice-<version>.x86_64.rpm  # openSUSE
 ```
+
+Deb ve rpm ayrıca KDE Plasma'nın Dolphin'i için boş şablonlar ekler: bir
+klasörde sağ tıklayın → **Create New** altında _GenOffice Document_,
+_GenOffice Spreadsheet_ ve _GenOffice Presentation_ listelenir. Şablonlar
+`/usr/share/templates` içinde durur ve paketle birlikte kaldırılır.
 
 AppImage olduğu yerde çalışır: FUSE 2 çalışma zamanını kurun
 (`sudo apt install libfuse2`; Ubuntu 24.04'te paket `libfuse2t64`), dosyayı
@@ -590,6 +597,32 @@ save      ─► dirty blocks → OOXML fragments (referencing existing styles o
 Paket paket tur (docx/pptx motorları, `pdf2docx`, `html2docx`, ajan çekirdeği
 ve sağlayıcılar) [CONTRIBUTING.md](../../CONTRIBUTING.md#engine-packages)
 dosyasındadır.
+
+### <a id="legacy-and-odf-files-open-as-converted-copies"></a>Eski ve ODF dosyaları dönüştürülmüş kopyalar olarak açılır
+
+GenOffice'in geri yazamadığı biçimler — eski Word `.doc`/`.dot`, Hancom
+`.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, eski PowerPoint `.ppt` ve
+OpenDocument ailesi (`.odt`, `.ott`, `.ods`, `.ots`, `.odp`, `.otp`) — yerel
+dosyalar değil, içe aktarmalardır.
+Bunlardan birini açmak, dosyayı makinenizde bir `.docx`, `.xlsx` veya `.pptx`
+kopyasına dönüştürür ve o kopyayı açar; özgün dosya bir daha okunmaz ve asla
+yazılmaz.
+
+- Docs ve Slides önce kopyanın nereye konacağını sorar (varsayılan olarak
+  özgün dosyanın yanındaki aynı adlı `.docx`/`.pptx`); böylece sonraki her
+  Kaydet oraya yazılır. Bir `.ppt`; asıl slaytları, şekil geometrisi,
+  dolguları, resimleri ve metin biçimlendirmesiyle dönüştürülür, yani sunum
+  PowerPoint'in gösterdiği gibi görünür; notlar, animasyonlar, geçişler ve
+  köprüler henüz aktarılmaz.
+- Sheets dönüştürülmüş çalışma kitabını hemen açar ve ilk Kaydet'i Farklı
+  Kaydet üzerinden yeni bir `.xlsx` dosyasına yönlendirir. `.csv` istisnadır:
+  kimliğini korur ve Kaydet, Excel'in yaptığı gibi değerleri `.csv` dosyasına
+  geri yazar.
+- Dönüştürme tek yönlüdür ve kaynak biçimin taşıdığı ama OOXML'in taşımadığı
+  özellikleri düşürebilir. `.doc`, `.ppt`, `.hwp` ve ODF biçimleri bunu
+  belirten bir onay iletişim kutusu gösterir; atlamak için "Convert without
+  asking next time" seçeneğini işaretleyin, Ayarlar → General altındaki "Ask
+  before converting legacy files" ise onu yeniden açar.
 
 ## Geliştirme
 
@@ -640,6 +673,9 @@ deneme süresi yok, uygulamaların kendisi için ücretli katman yok.
 Evet. GenOffice yerel `.docx`, `.xlsx` ve `.pptx` dosyalarını açar ve kaydeder.
 Kaydetme bayt bayt korur: dosyanın dokunmadığınız kısımları bayt bayt geri
 yazılır; böylece belgeler Microsoft Office'te çalışmaya devam eder.
+Eski `.doc`/`.dot`, `.xls` ve `.ppt` dosyaları da dönüştürülmüş
+`.docx`/`.xlsx`/`.pptx` kopyaları olarak açılır — bkz. [Eski ve ODF dosyaları
+dönüştürülmüş kopyalar olarak açılır](#legacy-and-odf-files-open-as-converted-copies).
 
 </details>
 
@@ -761,6 +797,11 @@ GenOffice, şu açık kaynak projeler olmadan mümkün olmazdı:
   sürecinin okuma ve hesaplama katmanları.
 - [libeot](https://github.com/umanwizard/libeot) (MPL-2.0) — gömülü PowerPoint
   yazı tipleri için TypeScript'e taşınmış MicroType Express çözücüsü.
+- [rhwp](https://github.com/edwardkim/rhwp) (MIT) — Hancom içe aktarması için
+  ikili `.hwp` belgelerini HWPX'e okur; WebAssembly derlemesi, üçüncü taraf
+  bildirimlerinde listelenen Rust crate'lerini ve Volexity hwp-extract
+  uyarlamasını içerir. "한글", "한컴", "HWP" ve "HWPX", Hancom Inc.'in tescilli
+  ticari markalarıdır; GenOffice'in Hancom ile bir bağlantısı yoktur.
 - [React](https://react.dev/) (MIT) — her uygulamanın arayüz katmanı.
 - [Mermaid](https://mermaid.js.org/) (MIT) ve [KaTeX](https://katex.org/)
   (MIT) — Markdown ve Docs'ta diyagramlar ve matematik.

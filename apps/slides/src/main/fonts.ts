@@ -25,7 +25,7 @@ import {
   readSync,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import * as opentype from 'opentype.js'
@@ -224,6 +224,13 @@ function norm(s: string): string {
     .normalize('NFKC')
     .toLowerCase()
     .replace(/[\s\-_]/g, '')
+}
+
+/** Index key of a scanned font file; the scan returns paths relative to its root, the key is the file name alone */
+export function fontFileKey(relPath: string): string | null {
+  const m = /^(.+)\.(ttf|otf|ttc|otc)$/i.exec(basename(relPath))
+  // Strip the variable-font axis suffix: NotoSansSC[wght].ttf -> notosanssc
+  return m ? norm(m[1]!.replace(/\[[^\]]*\]$/, '')) : null
 }
 
 // Japanese fonts: Windows families/filenames and macOS Hiragino serve as each other's fallback
@@ -791,11 +798,8 @@ class FontRegistry {
 
   private addFlatDir(dir: string, files: string[]): void {
     for (const name of files) {
-      const m = /^(.+)\.(ttf|otf|ttc|otc)$/i.exec(name)
-      if (!m) continue
-      // Strip the variable-font axis suffix: NotoSansSC[wght].ttf -> notosanssc
-      const key = norm(m[1]!.replace(/\[[^\]]*\]$/, ''))
-      if (!this.index.has(key)) this.index.set(key, join(dir, name))
+      const key = fontFileKey(name)
+      if (key && !this.index.has(key)) this.index.set(key, join(dir, name))
     }
   }
 

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { parseDocx } from '../src/parse'
-import { patchRunPictureXml, type RunPictureGeometry } from '../src/run-picture'
+import {
+  patchRunPictureXml,
+  runPictureAltOf,
+  setRunPictureAlt,
+  type RunPictureGeometry,
+} from '../src/run-picture'
 import type { Run } from '../src/types'
 import { buildDocx, IMAGE_PARAGRAPH_XML } from './helpers/build-docx'
 
@@ -199,5 +204,35 @@ describe('run-level picture geometry on save', () => {
     const vml =
       '<w:pict><v:shape style="width:10pt;height:10pt"><v:imagedata r:id="rId1"/></v:shape></w:pict>'
     expect(patchRunPictureXml(vml, { wrap: 'front', offsetXEmu: 5 })).toBe(vml)
+  })
+})
+
+describe('run picture alternative text', () => {
+  const drawing = /<w:drawing>[\s\S]*<\/w:drawing>/
+    .exec(IMAGE_PARAGRAPH_XML)![0]
+    .replace(/(<wp:extent\b[^>]*\/>)/, '$1<wp:docPr id="1" name="Picture 1"/>')
+
+  it('reads, sets and removes wp:docPr descr, leaving the rest of the drawing alone', () => {
+    const bare = setRunPictureAlt(drawing, '')
+    expect(runPictureAltOf(bare)).toBe('')
+    const described = setRunPictureAlt(bare, 'Sales "Q3" & <costs>')
+    expect(described).toContain('descr="Sales &quot;Q3&quot; &amp; &lt;costs&gt;"')
+    expect(runPictureAltOf(described)).toBe('Sales "Q3" & <costs>')
+    expect(setRunPictureAlt(described, 'Chart').match(/descr=/g)).toHaveLength(1)
+    expect(setRunPictureAlt(described, '')).toBe(bare)
+  })
+
+  it('writes the picture\u2019s own docPr, not one further in', () => {
+    const nested = drawing.replace('</wp:inline>', '<wp:docPr id="9" name="Inner"/></wp:inline>')
+    const out = setRunPictureAlt(nested, 'Outer')
+    expect(out.match(/descr="Outer"/g)).toHaveLength(1)
+    expect(out.indexOf('descr="Outer"')).toBeLessThan(out.indexOf('name="Inner"'))
+  })
+
+  it('has no alternative text for a VML picture', () => {
+    const vml =
+      '<w:pict><v:shape style="width:10pt;height:10pt"><v:imagedata r:id="rId1"/></v:shape></w:pict>'
+    expect(runPictureAltOf(vml)).toBeNull()
+    expect(setRunPictureAlt(vml, 'Logo')).toBe(vml)
   })
 })

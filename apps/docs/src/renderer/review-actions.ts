@@ -5,16 +5,21 @@
  * ReviewContext built fresh per call so state never goes stale.
  */
 import type { Editor } from '@tiptap/core'
+import type { Node as PmNode } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import {
+  compareDocuments,
   nextNoteId,
   parseDocx,
+  readSections,
   type CommentImage,
   type CommentInfo,
   type NoteInfo,
+  type ParsedDocFull,
 } from '@genoffice/docx-engine'
 import type { Dispatch, SetStateAction } from 'react'
 import { authorName } from './author-name'
+import type { CompareRequest, CompareSide } from './compare-request'
 import { fetchDocBytes } from './doc-bytes'
 import type { DocState } from './doc-state'
 import {
@@ -27,22 +32,20 @@ import {
   removeCommentFromDoc,
   removeCommentsFromDoc,
   wordRangeAtCaret,
+  emptyParagraphAtCaret,
 } from './editor/comments'
-import {
-  blockTexts,
-  compareParagraphs,
-  editorBlockTexts,
-  type CompareEntry,
-} from './editor/compare'
+import { combineDocuments } from './editor/combine'
+import { blocksToPmDoc, pmDocOptions } from './editor/convert'
 import { pendingCommentPluginKey } from './editor/extensions'
 import type { InkAnnotation } from './editor/ink'
-import { renumber } from './ai/note-ops'
+import { renumber, type NoteKind } from './ai/note-ops'
 import {
   TRACK_IGNORE,
   acceptAllRevisions,
   applyRevisions,
   collectRevisions,
   rejectAllRevisions,
+  revisionDateNow,
   type RevisionRange,
   revisionCount,
 } from './editor/revisions'
@@ -59,6 +62,8 @@ import { t } from './i18n/locale'
 export interface NotePrompt {
   kind: 'footnote' | 'endnote'
   id?: string
+  /** a new note that takes this mark instead of a number */
+  customMark?: string
 }
 
 /** The App state the review actions need; built fresh per call. */
@@ -83,11 +88,14 @@ export interface ReviewContext {
   setCommentFocus: (focus: { id: string; nonce: number } | null) => void
   setInkAnnotations: Dispatch<SetStateAction<InkAnnotation[]>>
   setInksDirty: (dirty: boolean) => void
-  setCompareResult: (value: { otherName: string; entries: CompareEntry[] } | null) => void
+  /** the open document as a save would write it now, unsaved edits included */
+  currentDocBytes: () => Promise<Uint8Array | null>
   /** Show Markup filters: "shown" scopes and the current-change pick honour them */
   revisionFilter: RevisionFilter
   /** a change hidden by the Markup view needs All Markup before it can be shown */
   showRevision: (target: RevisionRange) => void
+  /** switch the Markup view to All Markup */
+  showAllMarkup: () => void
   /** pending changes in notes, header / footer parts and textboxes (document order after the body) */
   storyRevisions: () => StoryRevision[]
   /** the change outside the body Next / Previous last landed on, while it is still pending */
@@ -112,13 +120,19 @@ export function submitNote(ctx: ReviewContext, text: string): void {
     setList(list.map((n) => (n.id === id ? { ...n, text } : n)))
   } else {
     const newId = nextNoteId(list)
-    setList([...list, { id: newId, text }])
+    const mark = ctx.notePrompt.customMark
+    setList([
+      ...list,
+      mark
+        ? { id: newId, text: `${mark} ${text}`, noRefMark: true, customMark: mark, created: true }
+        : { id: newId, text, created: true },
+    ])
     ctx.editor
       .chain()
       .focus()
       .insertContent({
         type: 'docNoteRef',
-        attrs: { kind, id: newId, num: list.length + 1 },
+        attrs: { kind, id: newId, num: list.length + 1, mark: mark ?? null },
       } as never)
       .run()
     // the mark lands at the caret, which can be above marks that are already
@@ -155,6 +169,57 @@ export function deleteNote(ctx: ReviewContext, kind: 'footnote' | 'endnote', id:
   if (tr.docChanged) editor.view.dispatch(tr)
 }
 
+export type NoteConversion = 'toEndnotes' | 'toFootnotes' | 'swap'
+
+/**
+ * Word's Convert Notes: every footnote becomes an endnote, every endnote a
+ * footnote, or both at once. A note whose reference mark lives only in a
+ * protected block's XML stays what it is. Returns how many notes changed kind.
+ */
+export function convertNotes(ctx: ReviewContext, mode: NoteConversion): number {
+  const editor = ctx.editor
+  if (!editor) return 0
+  const lists = { footnote: ctx.footnotes, endnote: ctx.endnotes }
+  const moving = new Map<string, { pos: number; node: PmNode }[]>()
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'docNoteRef') return true
+    const kind = node.attrs.kind as NoteKind
+    if (mode === (kind === 'footnote' ? 'toFootnotes' : 'toEndnotes')) return false
+    const key = `${kind}:${node.attrs.id}`
+    moving.set(key, [...(moving.get(key) ?? []), { pos, node }])
+    return false
+  })
+  const next = {
+    footnote: lists.footnote.filter((n) => !moving.has(`footnote:${n.id}`)),
+    endnote: lists.endnote.filter((n) => !moving.has(`endnote:${n.id}`)),
+  }
+  const tr = editor.state.tr
+  let converted = 0
+  for (const from of ['footnote', 'endnote'] as const) {
+    const to = from === 'footnote' ? 'endnote' : 'footnote'
+    for (const note of lists[from]) {
+      const refs = moving.get(`${from}:${note.id}`)
+      if (!refs) continue
+      const id = nextNoteId(next[to])
+      // only a note the file holds has bytes to carry over: a new one may sit on a deleted note's id
+      const origin = note.origin ?? (note.created ? undefined : { kind: from, id: note.id })
+      next[to].push({ ...note, id, ...(origin ? { origin } : {}) })
+      for (const { pos, node } of refs)
+        tr.setNodeMarkup(pos, undefined, { ...node.attrs, kind: to, id })
+      converted++
+    }
+  }
+  if (converted === 0) return 0
+  renumber(tr, 'footnote')
+  renumber(tr, 'endnote')
+  // the note lists are not on the undo stack: an undone mark would point at a note that is gone
+  editor.view.dispatch(tr.setMeta('addToHistory', false))
+  ctx.setFootnotes(next.footnote)
+  ctx.setEndnotes(next.endnote)
+  ctx.setNotesDirty(true)
+  return converted
+}
+
 // ---- Review: comments / revisions / compare / protection ----
 
 /** keeps the picked range highlighted while the composer holds focus */
@@ -178,11 +243,11 @@ export function startNewComment(ctx: ReviewContext): void {
   if (editor.state.selection.empty) {
     // Word anchors on the word under a collapsed caret rather than refusing
     const word = wordRangeAtCaret(editor)
-    if (!word) {
+    if (word) editor.commands.setTextSelection(word)
+    else if (emptyParagraphAtCaret(editor.state) === null) {
       ctx.setStatus(t('appSelectTextToComment'))
       return
     }
-    editor.commands.setTextSelection(word)
   }
   const { from, to } = editor.state.selection
   setPendingCommentRange(ctx, { from, to })
@@ -350,6 +415,11 @@ export function handleRevision(
   const stories = ctx.storyRevisions()
   // stories first: textbox entries address their anchor node by position, which body edits shift
   if (scope === 'all') {
+    // Word keeps Accept All and Reject All live with nothing tracked: say so, change nothing
+    if (stories.length === 0 && collectRevisions(editor.state.doc).length === 0) {
+      ctx.setStatus(t('appNoRevisionsToHandle'))
+      return
+    }
     ctx.applyStoryRevisions(stories, action, true)
     if (action === 'accept') acceptAllRevisions(editor)
     else rejectAllRevisions(editor)
@@ -460,27 +530,120 @@ export function clearInks(ctx: ReviewContext): void {
   ctx.setStatus(t('appInksCleared'))
 }
 
-/** Compare: pick a second .docx and diff it against the open document */
-export async function compareWithFile(ctx: ReviewContext): Promise<void> {
-  if (!ctx.doc) return
-  const other = await window.desktop.openDocx()
-  if (!other) return
-  // password-protected comparison target: not wired through the decrypt prompt (yet)
-  if ('needsPassword' in other) {
-    ctx.setStatus(t('appCompareFailed', { error: t('appDocPwdTitle') }))
-    return
-  }
+/** the dialog's Browse: a .docx read whole, the tab's own document untouched */
+export async function pickCompareFile(): Promise<
+  Extract<CompareSide, { kind: 'file' }> | { error: string } | null
+> {
+  const picked = await window.desktop.pickDocx()
+  if (!picked) return null
+  if ('needsPassword' in picked) return { error: t('appDocPwdTitle') }
   try {
-    const otherParsed = await parseDocx(await fetchDocBytes(other.dataUrl))
-    const entries = compareParagraphs(
-      ctx.editor
-        ? editorBlockTexts(ctx.editor.getJSON(), ctx.doc.parsed.blocks)
-        : blockTexts(ctx.doc.parsed.blocks),
-      blockTexts(otherParsed.blocks),
-    )
-    ctx.setCompareResult({ otherName: other.name, entries })
+    const parsed = await parseDocx(await fetchDocBytes(picked.dataUrl))
+    const core = parsed.properties?.core ?? {}
+    return {
+      kind: 'file',
+      name: picked.name,
+      parsed,
+      author: core.lastModifiedBy?.trim() || core.creator?.trim() || authorName(),
+    }
   } catch (err) {
-    ctx.setStatus(t('appCompareFailed', { error: String(err) }))
+    return { error: String(err) }
+  }
+}
+
+/**
+ * Compare Documents / Combine Documents, as the dialog asked: into a new
+ * document the whole comparison (body, tables, headers and footers, notes,
+ * formatting, moves) opens as an untitled redline; into the open document the
+ * text differences are written as tracked changes in one undoable edit.
+ */
+export async function runCompare(ctx: ReviewContext, request: CompareRequest): Promise<void> {
+  const failed = request.mode === 'combine' ? 'appCombineFailed' : 'appCompareFailed'
+  const other = request.original.kind === 'file' ? request.original : request.revised
+  const name = other.kind === 'file' ? other.name : ''
+  try {
+    if (request.target === 'new') {
+      const side = async (s: CompareSide): Promise<ParsedDocFull | null> => {
+        if (s.kind === 'file') return s.parsed
+        const bytes = await ctx.currentDocBytes()
+        return bytes ? parseDocx(bytes) : null
+      }
+      const original = await side(request.original)
+      const revised = await side(request.revised)
+      if (!original || !revised) return
+      const { bytes, summary } = await compareDocuments(original, revised, {
+        author: request.author,
+        date: revisionDateNow(),
+        granularity: request.granularity,
+        settings: request.settings,
+        keepRevisions: request.mode === 'combine',
+      })
+      const changes =
+        summary.insertions +
+        summary.deletions +
+        summary.formatChanges +
+        summary.moves +
+        summary.carried
+      const left = summary.skipped > 0 ? ` ${t('appCombineSkipped', { n: summary.skipped })}` : ''
+      if (changes === 0) {
+        ctx.setStatus(t('appCompareNoDifference') + left)
+        return
+      }
+      await window.desktop.openResultTab(bytes)
+      ctx.setStatus(
+        t('appCompareOpened', {
+          ins: summary.insertions,
+          del: summary.deletions,
+          fmt: summary.formatChanges,
+          moves: summary.moves,
+          author: request.author,
+        }) + left,
+      )
+      return
+    }
+    const editor = ctx.editor
+    if (!ctx.doc || !editor || other.kind !== 'file') return
+    const styles = ctx.doc.parsed.styles
+    const summary = combineDocuments(
+      editor,
+      blocksToPmDoc(other.parsed.blocks, readSections(other.parsed), pmDocOptions(other.parsed))
+        .content ?? [],
+      {
+        author: request.author,
+        date: revisionDateNow(),
+        hasStyle: (id) => styles.has(id),
+        granularity: request.granularity,
+        ignore: {
+          case: !request.settings.caseChanges,
+          whitespace: !request.settings.whiteSpace,
+        },
+        tables: request.settings.tables,
+        openIsRevised: request.target === 'revised',
+        keepRevisions: request.mode === 'combine',
+      },
+    )
+    if (!summary.related) {
+      ctx.setStatus(t('appCombineUnrelated', { name }))
+      return
+    }
+    const changed = summary.insertions + summary.deletions + (summary.carried ?? 0) > 0
+    if (changed) {
+      ctx.dirtyRef.current = true
+      ctx.showAllMarkup()
+    }
+    const left = summary.skipped > 0 ? ` ${t('appCombineSkipped', { n: summary.skipped })}` : ''
+    ctx.setStatus(
+      (changed
+        ? t('appCombineDone', {
+            name,
+            ins: summary.insertions,
+            del: summary.deletions,
+            author: request.author,
+          })
+        : t('appCombineSame', { name })) + left,
+    )
+  } catch (err) {
+    ctx.setStatus(t(failed, { error: String(err) }))
   }
 }
 

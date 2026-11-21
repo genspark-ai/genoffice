@@ -20,7 +20,7 @@ async function settingsOf(bytes: Uint8Array): Promise<string> {
 const count = (xml: string, tag: string): number =>
   (xml.match(new RegExp(`<${tag}`, 'g')) ?? []).length
 
-async function saveWithFlags(settingsInner: string, options: Record<string, boolean>) {
+async function saveWithFlags(settingsInner: string, options: Record<string, boolean | number>) {
   const source = await buildDocx({
     bodyXml: BODY,
     extraParts: [
@@ -119,5 +119,104 @@ describe('settings flags written as an element pair', () => {
     )
     expect(count(xml, 'w:documentProtection')).toBe(1)
     expect(xml).not.toContain('</w:documentProtection>')
+  })
+
+  it('writes w:autoHyphenation once when switched on, and takes it out when switched off', async () => {
+    const on = await saveWithFlags('<w:defaultTabStop w:val="720"/>', { autoHyphenation: true })
+    expect(count(on, 'w:autoHyphenation')).toBe(1)
+    // CT_Settings order: the flag follows the default tab stop
+    expect(on.indexOf('<w:defaultTabStop')).toBeLessThan(on.indexOf('<w:autoHyphenation'))
+    const reparsed = await saveWithFlags('<w:autoHyphenation/>', { autoHyphenation: true })
+    expect(count(reparsed, 'w:autoHyphenation')).toBe(1)
+    const off = await saveWithFlags('<w:autoHyphenation/>', { autoHyphenation: false })
+    expect(count(off, 'w:autoHyphenation')).toBe(0)
+  })
+})
+
+describe('the gutter position', () => {
+  it('writes w:gutterAtTop once in schema order, reads it back and takes it out', async () => {
+    const on = await saveWithFlags('<w:zoom w:percent="100"/><w:defaultTabStop w:val="720"/>', {
+      gutterAtTop: true,
+    })
+    expect(count(on, 'w:gutterAtTop')).toBe(1)
+    expect(on.indexOf('<w:gutterAtTop')).toBeLessThan(on.indexOf('<w:defaultTabStop'))
+    const again = await saveWithFlags('<w:gutterAtTop></w:gutterAtTop>', { gutterAtTop: true })
+    expect(count(again, 'w:gutterAtTop')).toBe(1)
+    const off = await saveWithFlags('<w:gutterAtTop/>', { gutterAtTop: false })
+    expect(count(off, 'w:gutterAtTop')).toBe(0)
+  })
+})
+
+describe('the default tab stop', () => {
+  it('replaces the one the file has, where it stands', async () => {
+    const xml = await saveWithFlags(
+      '<w:zoom w:percent="100"/><w:defaultTabStop w:val="720"/><w:characterSpacingControl w:val="doNotCompress"/>',
+      { defaultTabStopTwips: 360 },
+    )
+    expect(count(xml, 'w:defaultTabStop')).toBe(1)
+    expect(xml).toContain(
+      '<w:zoom w:percent="100"/><w:defaultTabStop w:val="360"/><w:characterSpacingControl',
+    )
+  })
+
+  it('is added in schema order to a part that has none, and read back', async () => {
+    const source = await buildDocx({
+      bodyXml: BODY,
+      extraParts: [
+        {
+          path: 'word/settings.xml',
+          xml: settingsPart('<w:zoom w:percent="100"/><w:compat/>'),
+          contentType: SETTINGS_TYPE,
+        },
+      ],
+    })
+    const saved = await saveDocx(await parseDocx(source), [{ kind: 'original', docxIndex: 0 }], {
+      defaultTabStopTwips: 1080,
+    })
+    expect(await settingsOf(saved)).toContain(
+      '<w:zoom w:percent="100"/><w:defaultTabStop w:val="1080"/><w:compat/>',
+    )
+    expect((await parseDocx(saved)).defaultTabStopTwips).toBe(1080)
+  })
+
+  it('writes w:characterSpacingControl in place, replacing the value the file had', async () => {
+    const on = await saveWithFlags('<w:defaultTabStop w:val="720"/><w:compat/>', {
+      compressPunctuation: true,
+    })
+    expect(on).toContain('<w:characterSpacingControl w:val="compressPunctuation"/>')
+    expect(on.indexOf('<w:defaultTabStop')).toBeLessThan(on.indexOf('<w:characterSpacingControl'))
+    expect(on.indexOf('<w:characterSpacingControl')).toBeLessThan(on.indexOf('<w:compat'))
+    const off = await saveWithFlags(
+      '<w:characterSpacingControl w:val="compressPunctuationAndJapaneseKana"/>',
+      { compressPunctuation: false },
+    )
+    expect(count(off, 'w:characterSpacingControl')).toBe(1)
+    expect(off).toContain('<w:characterSpacingControl w:val="doNotCompress"/>')
+    const reopened = await parseDocx(
+      await buildDocx({
+        bodyXml: BODY,
+        extraParts: [{ path: 'word/settings.xml', xml: on, contentType: SETTINGS_TYPE }],
+      }),
+    )
+    expect(reopened.compressPunctuation).toBe(true)
+  })
+
+  it('writes and removes w:strictFirstAndLastChars, and reads it back', async () => {
+    const on = await saveWithFlags('<w:defaultTabStop w:val="720"/><w:compat/>', {
+      strictFirstAndLastChars: true,
+    })
+    expect(count(on, 'w:strictFirstAndLastChars')).toBe(1)
+    expect(on.indexOf('<w:strictFirstAndLastChars')).toBeLessThan(on.indexOf('<w:compat'))
+    const reopened = await parseDocx(
+      await buildDocx({
+        bodyXml: BODY,
+        extraParts: [{ path: 'word/settings.xml', xml: on, contentType: SETTINGS_TYPE }],
+      }),
+    )
+    expect(reopened.strictFirstAndLastChars).toBe(true)
+    const off = await saveWithFlags('<w:strictFirstAndLastChars/>', {
+      strictFirstAndLastChars: false,
+    })
+    expect(count(off, 'w:strictFirstAndLastChars')).toBe(0)
   })
 })

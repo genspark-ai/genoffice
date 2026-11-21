@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
-import { TextSelection, type Transaction } from '@tiptap/pm/state'
+import { NodeSelection, TextSelection, type Transaction } from '@tiptap/pm/state'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { searchPluginKey } from '../editor/extensions'
 import {
@@ -60,6 +60,8 @@ interface FindPanelProps {
   focusReplaceNonce?: number
   /** Go To shortcut / menu: switch to the Go To tab */
   focusGoToNonce?: number
+  /** Find Next / Find Previous from the menu: each new nonce steps once in that direction */
+  stepRequest?: { dir: 1 | -1; nonce: number } | null
   /** last pagination pass, for page / section / line targets */
   layout?: () => PageLayout | null
 }
@@ -86,7 +88,11 @@ const TARGET_KEYS: Record<GoToTarget, StringKey> = {
   comment: 'appGoToComment',
   footnote: 'appGoToFootnote',
   endnote: 'appGoToEndnote',
+  field: 'ribbonField',
   table: 'appGoToTable',
+  graphic: 'appGoToGraphic',
+  equation: 'ribbonCaptionEquation',
+  object: 'appGoToObject',
   heading: 'appGoToHeading',
 }
 
@@ -99,14 +105,17 @@ function lastAtOrBefore(positions: Array<number | null>, caret: number): number 
   return idx
 }
 
-/** place the caret at `pos` (nearest valid text position) and bring it on screen */
+/** place the caret at `pos` (nearest valid text position) and bring it on screen; a picture or other sealed object is selected whole */
 function jumpTo(editor: Editor, pos: number): void {
   const { state, view } = editor
   const clamped = Math.max(0, Math.min(pos, state.doc.content.size))
-  const sel = TextSelection.near(state.doc.resolve(clamped), 1)
+  const $pos = state.doc.resolve(clamped)
+  const at = $pos.nodeAfter
+  const whole = at && at.isAtom && !at.isText && NodeSelection.isSelectable(at)
+  const sel = whole ? NodeSelection.create(state.doc, clamped) : TextSelection.near($pos, 1)
   view.dispatch(state.tr.setSelection(sel).scrollIntoView())
-  const { node } = view.domAtPos(sel.from)
-  const el = node instanceof HTMLElement ? node : node.parentElement
+  const dom = whole ? view.nodeDOM(clamped) : view.domAtPos(sel.from).node
+  const el = dom instanceof HTMLElement ? dom : dom?.parentElement
   el?.scrollIntoView({ block: 'center' })
 }
 
@@ -116,6 +125,7 @@ export function FindPanel({
   focusFindNonce,
   focusReplaceNonce,
   focusGoToNonce,
+  stepRequest,
   layout,
 }: FindPanelProps) {
   const { t } = useI18n()
@@ -140,6 +150,10 @@ export function FindPanel({
   const indexRef = useRef(0)
   const matchesRef = useRef<FindMatch[]>([])
   const scanTokenRef = useRef<{ aborted: boolean } | null>(null)
+  // Word's "Current Selection" scope: the range chosen when the scope was set, kept in step with edits
+  const scopeRef = useRef<Range | null>(null)
+  const [inSelection, setInSelection] = useState(false)
+  const [hasSelection, setHasSelection] = useState(() => !editor.state.selection.empty)
 
   const options = useMemo<FindOptions>(
     () => ({ matchCase, wholeWord, mode, matchWidth }),
@@ -167,7 +181,9 @@ export function FindPanel({
   )
 
   const commit = useCallback(
-    (ranges: FindMatch[], keepIndex: number) => {
+    (found: FindMatch[], keepIndex: number) => {
+      const scope = scopeRef.current
+      const ranges = scope ? found.filter((m) => m.from >= scope.from && m.to <= scope.to) : found
       const active = ranges.length === 0 ? 0 : Math.min(keepIndex, ranges.length - 1)
       setMatches(ranges)
       matchesRef.current = ranges
@@ -305,6 +321,32 @@ export function FindPanel({
     }
   }, [editor, scheduleRefresh])
 
+  useEffect(() => {
+    const onTransaction = ({ transaction }: { transaction: Transaction }) => {
+      const scope = scopeRef.current
+      if (scope && transaction.docChanged)
+        scopeRef.current = {
+          from: transaction.mapping.map(scope.from, -1),
+          to: transaction.mapping.map(scope.to, 1),
+        }
+    }
+    const onSelection = () => setHasSelection(!editor.state.selection.empty)
+    editor.on('transaction', onTransaction)
+    editor.on('selectionUpdate', onSelection)
+    return () => {
+      editor.off('transaction', onTransaction)
+      editor.off('selectionUpdate', onSelection)
+    }
+  }, [editor])
+
+  const pickScope = (selection: boolean) => {
+    const { from, to, empty } = editor.state.selection
+    if (selection && empty) return
+    scopeRef.current = selection ? { from, to } : null
+    setInSelection(selection)
+    refresh(query)
+  }
+
   const close = useCallback(() => {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current)
     timerRef.current = null
@@ -348,6 +390,13 @@ export function FindPanel({
     },
     [flushPending, query, goTo],
   )
+  const stepRef = useRef(step)
+  stepRef.current = step
+  const stepNonce = stepRequest?.nonce ?? 0
+  const stepDir = stepRequest?.dir ?? 1
+  useEffect(() => {
+    if (stepNonce) stepRef.current(stepDir)
+  }, [stepNonce, stepDir])
 
   /** insert the replacement, splitting the block wherever the template had a paragraph mark */
   const applyReplacement = useCallback(
@@ -575,6 +624,20 @@ export function FindPanel({
               </button>
             )}
           </div>
+          <label className="find-row find-scope">
+            <span className="find-hint">{t('appFindIn')}</span>
+            <select
+              className="find-select"
+              name="find-scope"
+              value={inSelection ? 'selection' : 'main'}
+              onChange={(e) => pickScope(e.target.value === 'selection')}
+            >
+              <option value="main">{t('ribbonPbApplyWhole')}</option>
+              <option value="selection" disabled={!inSelection && !hasSelection}>
+                {t('appFindInSelection')}
+              </option>
+            </select>
+          </label>
           {error && (
             <div className="find-error" role="alert">
               {t(error)}

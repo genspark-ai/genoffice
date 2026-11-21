@@ -17,6 +17,7 @@ File Word, Excel, PowerPoint e PDF, modificati da te e dalla tua AI, salvati neg
   <a href="https://github.com/genspark-ai/genoffice/releases/latest"><img src="https://img.shields.io/github/v/release/genspark-ai/genoffice" alt="Latest release"></a>
   <a href="https://github.com/genspark-ai/genoffice/releases"><img src="https://img.shields.io/github/downloads/genspark-ai/genoffice/total" alt="Downloads"></a>
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub stars"></a>
+  <a href="https://x.com/merrickbuilds"><img src="https://img.shields.io/badge/follow-%40merrickbuilds-000000?logo=x&logoColor=white" alt="Follow @merrickbuilds on X"></a>
 </p>
 
 <p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.ar.md">العربية</a> · <a href="README.ru.md">Русский</a> · <b>Italiano</b> · <a href="README.nl.md">Nederlands</a> · <a href="README.pl.md">Polski</a> · <a href="README.cs.md">Čeština</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ms.md">Bahasa Melayu</a> · <a href="README.th.md">ไทย</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.he.md">עברית</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.hu.md">Magyar</a></p>
@@ -28,6 +29,7 @@ File Word, Excel, PowerPoint e PDF, modificati da te e dalla tua AI, salvati neg
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Sito web</b></a> ·
   <a href="https://genoffice.ai/join"><b>Community</b></a> ·
+  <a href="https://x.com/merrickbuilds"><b>X</b></a> ·
   <a href="../../PRIVACY.md"><b>Privacy</b></a>
 </p>
 
@@ -37,8 +39,10 @@ permette di modificare PDF, Markdown e HTML, e affianca un agente AI a ogni
 documento — non una chat incollata a fianco, ma un editor che legge il file,
 applica la modifica e ti mostra esattamente cosa ha toccato. I file ODF
 (`.odt`, `.ods`, `.odp` e i modelli `.ott`/`.ots`/`.otp`) si aprono come copie
-OOXML modificabili; l'importazione è di sola apertura — il salvataggio scrive
-OOXML, mai ODF.
+OOXML modificabili, e così anche i vecchi file Word `.doc`/`.dot`, Excel 97
+`.xls` e PowerPoint 97–2003 `.ppt` e i documenti Hancom (`.hwp`, `.hwpx`);
+le importazioni sono di sola apertura — il salvataggio scrive OOXML, mai il
+formato di origine.
 
 - **Formati reali, preservati byte per byte.** Viene riscritto solo ciò che
   modifichi. Tutto il resto del file resta identico byte per byte, così i
@@ -56,10 +60,21 @@ OOXML, mai ODF.
   si convertono sul tuo computer. Le conversioni PDF → Word / Excel /
   PowerPoint, Markdown → Word e HTML → Word avvengono tutte in locale. Solo
   le chiamate AI lasciano la macchina, verso il provider che scegli.
+- **Trova i file da ciò che dicono.** La schermata iniziale cerca nei nomi,
+  nelle cartelle e nel testo completo dei tuoi file `.docx`, `.xlsx`, `.pptx`,
+  PDF, Markdown e HTML tramite un indice SQLite locale, CJK incluso.
+  Facoltativamente, i primi risultati vengono riordinati da
+  **[TypeSafe Jev](https://typesafe.ai/)**, il modello di giudizio System
+  One, così il file che risponde alla tua domanda compare per primo.
+- **Interroga i tuoi file, con le fonti.** Aggiungi una stella a un insieme
+  di documenti e **Ask AI**, nella schermata iniziale, risponde alle domande
+  attingendo a tutti, citando il file dietro ogni affermazione così puoi
+  aprirlo e verificare.
 - **Le tue chiavi, o nessuna.** Accedi con Genspark e non dovrai configurare
   nulla, oppure usa la tua chiave per Claude, OpenAI, Gemini, DeepSeek, Kimi,
-  GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty o qualsiasi endpoint
-  compatibile con OpenAI, inclusi i server locali.
+  GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper,
+  Cheaper Inference, Atlas Cloud o qualsiasi endpoint compatibile con OpenAI,
+  inclusi i server locali.
 - **Scriptabile e pronto per gli agenti.** L'app include una riga di comando
   `genoffice` e uno skill per Claude Code, Codex, Cursor, Gemini CLI, GitHub
   Copilot, OpenCode e Windsurf, così un agente di coding può creare,
@@ -73,8 +88,9 @@ dettagli e requisiti nella sezione [Download](#download).
 
 ## Demo
 
-Sei app, un solo pannello AI e una riga di comando per il tuo agente di
-coding. Ogni screenshot mostra l'app reale su macOS, con l'AI guidata dal
+Sei app, un solo pannello AI, una ricerca di file riordinata da TypeSafe Jev,
+un Ask AI che risponde dai tuoi file con stella citando le fonti, e una riga
+di comando per il tuo agente di coding. Ogni screenshot mostra l'app reale su macOS, con l'AI guidata dal
 prompt che puoi leggere nel pannello.
 
 ### 1 · Docs — apri e modifica `.docx` con un'AI che puoi controllare
@@ -99,7 +115,7 @@ prompt che puoi leggere nel pannello.
 </tr>
 <tr>
 <td><b>Costruiscilo</b> — da una singola frase l'agente aggiunge un foglio Summary con vere <code>SUMIF</code> per area e categoria, inserisce un grafico a colonne e applica le 43 modifiche come un unico batch annullabile.</td>
-<td><b>Interrogalo</b> — le domande sulla cartella di lavoro ottengono risposta con il ragionamento e le celle esatte usate come citazioni cliccabili. Dietro le quinte: un motore <code>.xlsx</code> Rust proprietario, tabelle pivot, filtri dati, formattazione condizionale, tracciamento delle formule e immagini incorporate nelle celle come rich value nativi di Excel — Excel le riapre ancora nella cella.Le note di cella possono contenere un’immagine, mostrata sotto il popup della nota.</td>
+<td><b>Interrogalo</b> — le domande sulla cartella di lavoro ottengono risposta con il ragionamento e le celle esatte usate come citazioni cliccabili. Dietro le quinte: un motore <code>.xlsx</code> Rust proprietario, tabelle pivot, filtri dati, formattazione condizionale, tracciamento delle formule e immagini incorporate nelle celle come rich value nativi di Excel — Excel le riapre ancora nella cella. Le note di cella possono contenere un’immagine, mostrata sotto il popup della nota.</td>
 </tr>
 </table>
 
@@ -183,7 +199,54 @@ della nota, e `![[…]]` incorpora una nota o un'immagine inline. Un pannello
 **Backlinks** elenca ogni nota che rimanda a quella aperta, e la vista
 **Graph** mappa i collegamenti dell'intero vault.
 
-### 7 · CLI — il tuo agente di coding guida GenOffice, sul tuo computer
+### <a id="7--search--find-the-file-that-answers-the-question-with-typesafe-jev"></a>7 · Ricerca — trova il file che risponde alla domanda, con TypeSafe Jev
+
+Ogni file nella tua cartella di lavoro viene indicizzato in locale: nomi,
+cartelle e il testo estratto dei file Word, Excel, PowerPoint, PDF, Markdown
+e HTML, in un indice full-text SQLite con tokenizzazione adatta al CJK.
+Attiva **Jev search reranking** e i primi 20 risultati locali vengono
+giudicati da
+[TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
+il modello System One che restituisce un punteggio di pertinenza calibrato
+per documento in un'unica chiamata, invece di generare testo. L'elenco viene
+riordinato in base a quel punteggio; se la chiamata fallisce o va in timeout,
+resta l'ordine locale.
+
+<img src="../assets/readme/search-jev-motion.webp" alt="Registrazione dello schermo della schermata iniziale di GenOffice: digitando laptop refresh policy compaiono per primi una policy sulla cache del browser, un piano di brand refresh e una pianificazione di aggiornamento delle dashboard, mentre il documento sugli standard delle dotazioni è ultimo; la pagina Impostazioni mostra Jev search reranking attivato sotto AI Media & Search con l'endpoint TypeSafe; la stessa ricerca mostra poi il documento sugli standard delle dotazioni per primo, con un badge Jev accanto al numero di risultati" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/search-jev-before-after.webp" alt="Due elenchi di risultati affiancati per la ricerca laptop refresh policy: senza Jev sono in testa la pianificazione di aggiornamento delle dashboard, il piano di brand refresh e la policy di aggiornamento della cache del browser, e il documento sugli standard delle dotazioni aziendali è quinto; con Jev il documento sugli standard delle dotazioni, che indica il ciclo di sostituzione triennale dei laptop, è primo"></td>
+<td width="50%"><img src="../assets/readme/search-jev-settings.webp" alt="Impostazioni di GenOffice, pagina AI Media & Search: il blocco Local file search con l'interruttore Jev search reranking, la scelta dell'endpoint tra OpenRouter e TypeSafe e il campo della chiave API"></td>
+</tr>
+<tr>
+<td><b>Stesse parole, risposte diverse</b> — "laptop refresh policy" corrisponde parola per parola a una policy di aggiornamento della cache del browser, a un piano di brand refresh e a una pianificazione di aggiornamento delle dashboard, quindi il ranking full-text li mette per primi. Jev legge gli estratti e porta in cima il documento sugli standard delle dotazioni, quello che indica il ciclo di sostituzione triennale. Il badge <b>Jev</b> accanto al numero di risultati mostra quando l'ordine arriva dal modello.</td>
+<td><b>Disattivato di default, un interruttore per attivarlo</b> — Settings → AI Media & Search → Local file search. Scegli OpenRouter o TypeSafe diretto, incolla una chiave, premi Test connection. Solo quando l'interruttore è attivo gli estratti dei primi risultati lasciano il dispositivo; l'indice in sé mai.</td>
+</tr>
+</table>
+
+### 8 · Ask AI — i tuoi file con stella, con risposte e fonti
+
+Aggiungi una stella ai file con cui lavori e **Ask AI**, nella schermata
+iniziale, li tratta come una knowledge base. Fai una domanda in linguaggio
+naturale; l'agente cerca nei file con stella, legge quelli che gli servono e
+risponde con una citazione dopo ogni affermazione. Clicca su una citazione e
+il file si apre nell'app giusta. Allega file alla domanda trascinandoli,
+incollandoli o dal menu **+** — le immagini arrivano al modello come input
+visivo — e ogni domanda viene conservata come conversazione a sé: passa
+dall'una all'altra, avviane una nuova, eliminane una; l'elenco sopravvive al
+riavvio.
+
+<img src="../assets/readme/home-ask-ai-motion.webp" alt="Registrazione dello schermo di Ask AI in GenOffice: nella schermata iniziale viene digitata la domanda quick summary, what drove our Q3 growth and how did Asia-Pacific perform; l'agente legge due file con stella e risponde con il lancio di Aurora X1 e l'espansione in Asia-Pacifico, e ogni affermazione è seguita da un chip di citazione che nomina il report trimestrale o la cartella di lavoro delle vendite regionali; un clic sul chip della cartella di lavoro la apre in Sheets con la riga Asia-Pacifico evidenziata" width="100%">
+
+Ask AI cerca nello stesso indice full-text locale della
+[Ricerca](#7--search--find-the-file-that-answers-the-question-with-typesafe-jev)
+e legge i file a pagine, così il modello vede solo i risultati e i passaggi
+che ha chiesto, tramite il provider che hai scelto. Può anche chiamare la
+CLI `genoffice` integrata per creare direttamente dei file; ognuno compare
+come scheda artefatto sotto la risposta, e un clic lo apre.
+
+### 9 · CLI — il tuo agente di coding guida GenOffice, sul tuo computer
 
 GenOffice include una riga di comando `genoffice` e uno skill per agenti.
 Installa lo skill e Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot,
@@ -203,7 +266,7 @@ Office reali con gli stessi motori delle app, senza aprire una finestra.
 </tr>
 </table>
 
-### 8 · MCP — gli stessi strumenti tramite il Model Context Protocol
+### 10 · MCP — gli stessi strumenti tramite il Model Context Protocol
 
 Ogni comando `genoffice` è anche uno strumento MCP. Claude Code, Claude
 Desktop, Cursor e qualsiasi altro client MCP possono avviare `genoffice mcp`
@@ -225,9 +288,9 @@ Word in una scheda dell'editor visibile mentre osservi.
 </tr>
 </table>
 
-### 9 · File datati — si aprono anche i `.doc`, `.xls` e `.ppt` degli anni 2000
+### 11 · File datati — si aprono anche i `.doc`, `.xls` e `.ppt` degli anni 2000
 
-Un `.doc` di Word 97–2003, un `.xls` di Excel o un `.ppt` di PowerPoint si apre come copia convertita `.docx`, `.xlsx` o `.pptx`, creata sul tuo computer; il file originale non viene mai modificato. Immagini, tabelle, formule, formati numerici, riempimenti e layout vengono mantenuti.
+Un `.doc` di Word 97–2003, un `.xls` di Excel o un `.ppt` di PowerPoint si apre come copia convertita `.docx`, `.xlsx` o `.pptx`, creata sul tuo computer; il file originale non viene mai modificato. Immagini, tabelle, formule, formati numerici, riempimenti e layout vengono mantenuti. Cosa conserva e cosa perde ciascun formato è descritto in [I file datati e ODF si aprono come copie convertite](#legacy-and-odf-files-open-as-converted-copies).
 
 <img src="../assets/readme/legacy-formats-motion.webp" alt="Time-lapse di GenOffice che apre i file .ppt, .doc e .xls di un bilancio annuale fittizio del 2004, poi una diapositiva mostrata in PowerPoint accanto alla presentazione convertita in GenOffice" width="100%">
 
@@ -251,6 +314,13 @@ Un `.doc` di Word 97–2003, un `.xls` di Excel o un `.ppt` di PowerPoint si apr
   scansioni.
 - **Anche Markdown e HTML**, con lo stesso pannello AI e l'esportazione locale
   in Word.
+- **Una ricerca che trova la risposta, non la parola chiave.** Ricerca
+  full-text su ogni documento nelle tue cartelle, indicizzata in locale, con
+  riordinamento facoltativo da parte di TypeSafe Jev, il modello di giudizio
+  System One.
+- **Ask AI su tutti i tuoi file.** Aggiungi una stella ai file che contano e
+  fai domande in linguaggio naturale; ogni risposta cita il file da cui
+  proviene, a un clic di distanza.
 - **Skills.** Skill pronti all’uso o il tuo `SKILL.md`, allegati dal menu **+** di qualsiasi pannello IA.
 - **Scriptabile.** Una riga di comando `genoffice`, uno skill per agenti e
   un server MCP mettono ogni motore al servizio di Claude Code, Claude
@@ -272,15 +342,30 @@ locali. Ricerca e media hanno i propri provider per singola funzionalità
 sotto **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa o
 Firecrawl per la ricerca web, e OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
 Qwen, MiniMax, Stability, FLUX o qualsiasi endpoint di immagini compatibile con OpenAI per la
-generazione di immagini e l'analisi di immagini/video.
+generazione di immagini e l'analisi di immagini/video, più DeepSeek V4.1
+Flash per l'analisi delle immagini.
+
+**TypeSafe Jev** riordina la ricerca di file della schermata iniziale. Sotto
+**AI Media & Search → Local file search**, attiva Jev search reranking e
+scegli un endpoint: [OpenRouter](https://openrouter.ai/typesafe) (modello
+`typesafe/jev-1.13`) oppure l'API di TypeSafe. La chiave viene salvata solo
+su questo dispositivo. È disattivato di default; quando è attivo, gli
+estratti dei primi 20 risultati locali vengono inviati per il giudizio e
+nient'altro lascia la macchina.
+
+**Parallel** funziona senza account: il suo Search MCP gratuito (con limiti
+di frequenza) è la ricerca web predefinita ogni volta che non è configurato
+né un accesso Genspark né una chiave di ricerca, e viene eseguito prima dello
+scraping di DuckDuckGo. Seleziona Parallel in Web search e inserisci una
+chiave [Parallel](https://platform.parallel.ai/) per usare invece la Search
+API. Anche Keenable funziona senza chiave; una chiave aumenta solo i limiti
+di frequenza.
 
 L'intera suite include i temi chiaro, scuro e di sistema. I temi cambiano
 solo ciò che vedi a schermo: esportazioni, stampe e file salvati mantengono
 sempre i colori originali del documento.
 
-<a id="skills"></a>
-
-## Skills
+## <a id="skills"></a>Skills
 
 Uno skill è un `SKILL.md` che spiega all’IA come svolgere bene un compito: un report settimanale, un NDA, un piano di lezione.
 GenOffice ne include una raccolta e accetta i tuoi, nello stesso formato usato dagli agenti di codifica.
@@ -290,9 +375,7 @@ GenOffice ne include una raccolta e accetta i tuoi, nello stesso formato usato d
 
 ---
 
-<a id="command-line-and-agent-skill"></a>
-
-## Riga di comando e skill per agenti
+## <a id="command-line-and-agent-skill"></a>Riga di comando e skill per agenti
 
 Tutto ciò che le app possono fare a un file, la riga di comando `genoffice`
 può farlo da un terminale: ispezionare, convertire, creare, leggere e
@@ -325,7 +408,7 @@ come controllare il proprio lavoro.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, ppt → pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -342,7 +425,7 @@ comandi attualmente disponibili; il riferimento completo è in
 
 ### Cosa esegue davvero l'agente
 
-La presentazione sul Sistema Solare della demo qui sopra ha richiesto un
+La presentazione sul Sistema Solare della [demo](#demo) ha richiesto un
 solo prompt in Claude Code. Dietro le quinte, l'agente ha seguito il flusso
 di lavoro a fasi dello skill e la CLI ha controllato ogni fase prima di
 avviare la successiva:
@@ -365,9 +448,7 @@ Nessuna chiamata a un modello avviene dentro `genoffice`: l'agente pensa, la
 CLI costruisce e controlla, e il risultato si apre in GenOffice o PowerPoint
 come un normale `.pptx`.
 
-<a id="mcp-server"></a>
-
-### Server MCP
+### <a id="mcp-server"></a>Server MCP
 
 Gli stessi comandi sono disponibili come strumenti
 [Model Context Protocol](https://modelcontextprotocol.io), per gli
@@ -379,6 +460,7 @@ pronti da copiare in **Impostazioni → Integrazioni → MCP**:
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A · `genoffice mcp`** (consigliato) | Un server stdio che l'assistente avvia da sé; GenOffice non deve essere aperto. Uno strumento per comando (`info`, `convert`, `create_docx`, `create_xlsx`, `create_pptx`, `create_pdf`, `docs_read` / `docs_apply` / `docs_check`, `sheet_*`, `slides_*`, `render`, `guide`, `search`, `image`, `media`, `open`) più il flusso di presentazione a fasi `deck_start` → `deck_page` → `deck_build` → `deck_replace`. Operazioni, specifiche e Markdown vengono passati inline, quindi funziona anche un client senza file system. |
 | **B · Server HTTP locale**            | Gira dentro l'app GenOffice su `http://127.0.0.1:3093/mcp` (Streamable HTTP, con SSE legacy). I suoi strumenti guidano una scheda dell'editor Word visibile: `create_session`, `insert_content`, `replace_blocks`, `apply_ops`, `read_document`, `save_session`, e osservi il documento prendere forma. Disattivato di default; attivalo nello stesso pannello delle impostazioni.                                                                                                                                               |
+| **C · `genoffice mcp --http`**        | Il set di strumenti stdio come server Streamable HTTP per client su altre macchine: un container, una sandbox, una macchina condivisa nella tua rete. I file viaggiano con le chiamate: `PUT /files/<name>` ne carica uno e restituisce un URL, ogni parametro `file` accetta un URL http(s), e uno strumento che scrive un file lo restituisce come URL di download più, se è piccolo, i byte come risorsa MCP. `--host 0.0.0.0` lo apre alla rete, `--token` lo protegge.                                                      |
 
 ```bash
 # Claude Code
@@ -386,9 +468,28 @@ claude mcp add --transport stdio genoffice -- genoffice mcp
 ```
 
 ```jsonc
-// Cursor, Claude Desktop o qualsiasi altro client MCP
+// Cursor, Claude Desktop or any other MCP client
 { "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
 ```
+
+```bash
+# On the machine that has GenOffice (private network; add --token for a shared box)
+genoffice mcp --http 3093 --host 0.0.0.0 --token "$GENOFFICE_MCP_TOKEN"
+
+# From the client: upload, then use the URL wherever a tool takes a file
+curl -T report.docx -H "Authorization: Bearer $GENOFFICE_MCP_TOKEN" http://server:3093/files/
+#   → { "url": "http://server:3093/files/<id>/report.docx", ... }
+#   docs_read({ "file": "http://server:3093/files/<id>/report.docx" })
+#   docs_apply(...) → output_url, downloadable with curl -o
+```
+
+Via HTTP ogni sessione riceve una cartella di lavoro privata, i percorsi
+relativi e le cartelle delle presentazioni vengono risolti al suo interno,
+`open` non è disponibile e, se `GENOFFICE_ALLOWED_ROOTS` non è impostata, gli
+strumenti non possono uscire dall'archivio file del server. `render`,
+`convert` verso PDF e `create_pdf` avviano comunque un processo GenOffice
+nascosto, quindi un host headless ha bisogno dell'app installata e di un
+display virtuale (`xvfb-run`).
 
 Qui `genoffice` è la CLI inclusa nell'app (su macOS
 `/Applications/GenOffice.app/Contents/Resources/cli/genoffice`; il pannello
@@ -401,7 +502,7 @@ l'assistente ne sceglie uno. Le funzionalità cloud (`search`, `image`,
 resto gira in locale, e `GENOFFICE_ALLOWED_ROOTS` limita ogni strumento
 alle cartelle che indichi.
 
-La presentazione sulle energie rinnovabili della demo qui sopra è come
+La presentazione sulle energie rinnovabili della [demo](#demo) è come
 appare, dal lato del protocollo, un solo prompt in Claude Code con
 collegato solo il server MCP di `genoffice`:
 
@@ -426,9 +527,7 @@ sono arrivati tutti come risultati di strumenti MCP. Solo `search` e
 `media` hanno lasciato la macchina, verso il provider configurato in
 GenOffice.
 
-<a id="download"></a>
-
-## Download
+## <a id="download"></a>Download
 
 | Piattaforma                                | Requisiti                                             | Download                                                                                   |
 | ------------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -460,6 +559,11 @@ Su Fedora / famiglia RHEL / openSUSE, installa invece l'rpm:
 sudo dnf install ./genoffice-<version>.x86_64.rpm     # Fedora / RHEL family
 sudo zypper install ./genoffice-<version>.x86_64.rpm  # openSUSE
 ```
+
+Il deb e l'rpm aggiungono anche modelli vuoti per Dolphin di KDE Plasma: clic
+destro in una cartella → **Crea nuovo** elenca _GenOffice Document_,
+_GenOffice Spreadsheet_ e _GenOffice Presentation_. Si trovano in
+`/usr/share/templates` e vengono rimossi con il pacchetto.
 
 L'AppImage viene eseguito così com'è: installa il runtime FUSE 2
 (`sudo apt install libfuse2`; su Ubuntu 24.04 il pacchetto è `libfuse2t64`),
@@ -496,6 +600,32 @@ Il tour package per package (motori docx/pptx, `pdf2docx`, `html2docx`, il
 core dell'agente e i provider) si trova in
 [CONTRIBUTING.md](../../CONTRIBUTING.md#engine-packages).
 
+### <a id="legacy-and-odf-files-open-as-converted-copies"></a>I file datati e ODF si aprono come copie convertite
+
+I formati che GenOffice non può riscrivere — i vecchi Word `.doc`/`.dot`,
+Hancom `.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, i vecchi PowerPoint `.ppt` e
+la famiglia OpenDocument (`.odt`, `.ott`, `.ods`, `.ots`, `.odp`, `.otp`) —
+sono importazioni, non file nativi.
+Aprirne uno lo converte sul tuo computer in una copia `.docx`, `.xlsx` o
+`.pptx` e apre quella copia; l'originale non viene mai più letto né scritto.
+
+- Docs e Slides chiedono prima dove mettere la copia (per impostazione
+  predefinita il `.docx`/`.pptx` omonimo accanto all'originale), così ogni
+  salvataggio successivo finisce lì. Un `.ppt` viene convertito con i suoi
+  master, la geometria delle forme, i riempimenti, le immagini e la
+  formattazione del testo, quindi la presentazione appare come la mostrava
+  PowerPoint; note, animazioni, transizioni e collegamenti ipertestuali non
+  vengono ancora trasferiti.
+- Sheets apre subito la cartella di lavoro convertita e instrada il primo
+  salvataggio attraverso Salva con nome verso un nuovo `.xlsx`. `.csv` è
+  l'eccezione: mantiene la propria identità e il salvataggio riscrive i
+  valori nel `.csv`, come fa Excel.
+- La conversione è a senso unico e può perdere funzionalità che il formato
+  di origine ha ma OOXML no. `.doc`, `.ppt`, `.hwp` e i formati ODF mostrano
+  una finestra di conferma che lo dice; spunta "Convert without asking next
+  time" per saltarla, e "Ask before converting legacy files" in Settings →
+  General la riattiva.
+
 ## Sviluppo
 
 ```bash
@@ -525,6 +655,8 @@ GenOffice è in sviluppo attivo e il tuo feedback lo plasma.
 - **Unisciti alla chat di gruppo di GenOffice** su
   [GenTeam](https://genoffice.ai/join) per parlare con il team e con altri
   utenti.
+- **Segui [@merrickbuilds](https://x.com/merrickbuilds) su X** per note di
+  rilascio, demo e ciò che verrà costruito in seguito.
 - **Metti una stella al repo** se GenOffice ti è utile — è il modo migliore
   per supportare il progetto.
 
@@ -545,6 +677,9 @@ Sì. GenOffice apre e salva file nativi `.docx`, `.xlsx` e `.pptx`. Il
 salvataggio preserva i byte: le parti del file che non hai toccato vengono
 riscritte byte per byte, così i documenti continuano a funzionare in
 Microsoft Office.
+Si aprono anche i vecchi file `.doc`/`.dot`, `.xls` e `.ppt`, come copie
+convertite `.docx`/`.xlsx`/`.pptx` — vedi [I file datati e ODF si aprono come
+copie convertite](#legacy-and-odf-files-open-as-converted-copies).
 
 </details>
 
@@ -584,7 +719,7 @@ invece che in un'immagine di pagina.
 
 Sì. Oltre all'accesso Genspark senza chiavi, GenOffice supporta l'uso della
 tua chiave per Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao,
-MiniMax, Grok, Mistral, OpenRouter, Requesty e OpenCode Zen/Go, più qualsiasi endpoint
+MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud e OpenCode Zen/Go, più qualsiasi endpoint
 compatibile con OpenAI — inclusi i server con modelli locali. Ricerca,
 generazione di immagini e analisi di immagini/video richiedono le proprie
 chiavi in Settings → AI Media & Search.
@@ -673,6 +808,11 @@ GenOffice non sarebbe possibile senza questi progetti open source:
 - [libeot](https://github.com/umanwizard/libeot) (MPL-2.0) — il decoder
   MicroType Express per i font PowerPoint incorporati, portato in
   TypeScript.
+- [rhwp](https://github.com/edwardkim/rhwp) (MIT) — legge i documenti `.hwp`
+  binari convertendoli in HWPX per l'importazione Hancom; la sua build
+  WebAssembly include i crate Rust e il port Volexity di hwp-extract elencati
+  nelle note di terze parti. "한글", "한컴", "HWP" e "HWPX" sono marchi
+  registrati di Hancom Inc.; GenOffice non è affiliato a Hancom.
 - [React](https://react.dev/) (MIT) — il livello dell'interfaccia utente di
   ogni app.
 - [Mermaid](https://mermaid.js.org/) (MIT) e [KaTeX](https://katex.org/)

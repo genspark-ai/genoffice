@@ -3,7 +3,8 @@ import { inflateRawSync } from 'node:zlib'
 /**
  * PowerPoint 2007+ saves a shape's DrawingML as a metroBlob (OPT 0x03a9), an
  * OPC package whose drs/shapexml.xml carries what the legacy records cannot
- * (a per-paragraph first-line indent); its text is blanked, so only geometry is read.
+ * (a per-paragraph first-line indent, an outline switched off without the
+ * legacy fLine flag); its text is blanked, so only geometry is read.
  */
 
 function zipEntry(bytes: Uint8Array, name: string): Uint8Array | null {
@@ -64,4 +65,13 @@ export function metroParagraphIndents(
     })
   }
   return out
+}
+
+/** true when the blob's own outline is `<a:ln><a:noFill/>`; undefined when it says nothing */
+export function metroLineHidden(blob: Uint8Array): true | undefined {
+  const xml = zipEntry(blob, 'drs/shapexml.xml')
+  if (!xml) return undefined
+  const spPr = /<p:spPr\b[^>]*>([\s\S]*?)<\/p:spPr>/.exec(Buffer.from(xml).toString('utf8'))?.[1]
+  const ln = spPr && /<a:ln\b[^>]*>([\s\S]*?)<\/a:ln>/.exec(spPr)?.[1]
+  return ln && /^\s*<a:noFill\b/.test(ln) ? true : undefined
 }

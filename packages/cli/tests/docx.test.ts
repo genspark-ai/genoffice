@@ -284,7 +284,7 @@ describe('genoffice docx (docs editor under jsdom)', () => {
           blockIndex: b.index,
           type: 'SEQ',
           result: '1',
-          dirty: true,
+          dirty: false,
           protected: true,
         }),
       ]),
@@ -337,7 +337,9 @@ describe('genoffice docx (docs editor under jsdom)', () => {
     const xml = await zip.file('word/document.xml')!.async('string')
     expect(xml).toContain(`<w:footnoteReference w:id="${notes[0]!.id}"/>`)
     expect(xml).toContain('w:name="Opening"')
-    expect(xml).toMatch(/w:dirty="true"[\s\S]{0,60} SEQ Figure \\\* ARABIC /)
+    // the caption number is saved as the field's result: Word has nothing to update
+    expect(xml).toMatch(/ SEQ Figure \\\* ARABIC <\/w:instrText>[\s\S]{0,120}<w:t[^>]*>1<\/w:t>/)
+    expect(xml).not.toContain('w:dirty')
 
     // edit_note patches the note text in place: same id, same reference mark
     const edit = join(dir, 'edit.json')

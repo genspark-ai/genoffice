@@ -18,6 +18,7 @@ export const zhTW = {
   aiQcStopped: '版式檢查已停止',
   aiQcCapped: '其餘 {count} 頁未檢查(單次上限)',
   aiGskLoginBtn: '登入 Genspark',
+  aiGskLoginOk: '已登入 Genspark',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: '開啟 AI 助手',
   aiFactCheckBtn: 'AI 事實核查',

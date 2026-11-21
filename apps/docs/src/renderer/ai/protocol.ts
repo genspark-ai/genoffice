@@ -1,3 +1,4 @@
+import { eqLayoutText } from '../editor/eq-layout'
 import type { Editor } from '@tiptap/core'
 import { REDACT_MARK } from './redact'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
@@ -155,7 +156,7 @@ export const AGENT_SYSTEM_PROMPT = [
   "- Dates follow the user's locale; never change text outside the placeholders.",
   '',
   '# Fields, footnotes & endnotes',
-  '- insertField writes real Word fields (SEQ caption numbers, DATE/TIME, REF/PAGEREF to a bookmark, MERGEFIELD, PAGE/NUMPAGES, AUTHOR…). Results the editor cannot compute (page numbers, document properties) are placeholders marked for Word to recompute when the file opens; mention that when you report. TOC → insertToc, never insertField.',
+  '- insertField writes real Word fields (SEQ caption numbers, DATE/TIME, REF/PAGEREF to a bookmark, MERGEFIELD, PAGE/NUMPAGES, AUTHOR…). Caption numbers get their real value when the document is saved. Results the editor cannot compute (page numbers, document properties, a REF with a position switch) are placeholders marked for Word to recompute when the file opens; mention that when you report. TOC → insertToc, never insertField.',
   '- insert_footnote / insert_endnote put a superscript reference mark into a block (after afterText, else at its end) and store the note text; read_notes lists notes with ids and anchored blocks; edit_note changes the text of one in place (findReplace inside the note, id kept); delete_note removes one with its mark. Notes are not document blocks — never reach them via block indexes or rewrite a block just to change its note.',
   '',
   '# Headers & footers',
@@ -352,6 +353,7 @@ function inlineAtomToHtml(node: PmNode, image?: ImageSrcMapper, refs?: ImageRefs
     return source ? `<formula>${escapeHtml(source)}</formula>` : ''
   }
   if (node.type === 'docRuby') return escapeHtml(String(node.attrs?.base ?? ''))
+  if (node.type === 'docEqLayout') return escapeHtml(eqLayoutText(node.attrs ?? {}))
   return ''
 }
 
@@ -527,13 +529,38 @@ export function serializeRangeToHtml(
   const json = redactNode(editor.getJSON() as RedactableNode) as PmNode
   const children = (json.content ?? []).slice(startIndex, endIndex + 1)
   const parts: string[] = []
-  let listBuffer: { kind: string; items: string[] } | null = null
-
+  // Open lists, outermost first; a deeper Word level (ilvl) nests a list inside the open item,
+  // which is how parseList reads it back.
+  let listHtml = ''
+  let listBase = 0
+  const openLists: string[] = []
+  const listTag = (kind: string) => (kind === 'ordered' ? 'ol' : 'ul')
+  const closeList = () => {
+    listHtml += `</li></${listTag(openLists.pop()!)}>`
+  }
   const flushList = () => {
-    if (!listBuffer) return
-    const tag = listBuffer.kind === 'ordered' ? 'ol' : 'ul'
-    parts.push(`<${tag}>${listBuffer.items.join('')}</${tag}>`)
-    listBuffer = null
+    if (!openLists.length) return
+    while (openLists.length) closeList()
+    parts.push(listHtml)
+    listHtml = ''
+  }
+  const addListItem = (kind: string, ilvl: number, html: string) => {
+    // a range that starts mid-list: the shallowest level seen so far is the top
+    if (!openLists.length || ilvl < listBase) listBase = ilvl
+    const depth = Math.min(Math.max(ilvl - listBase, 0) + 1, openLists.length + 1)
+    while (openLists.length > depth) closeList()
+    if (openLists.length === depth && openLists[depth - 1] !== kind) {
+      if (depth === 1) {
+        flushList()
+        listBase = ilvl
+      } else closeList()
+    }
+    if (openLists.length < depth) {
+      listHtml += `<${listTag(kind)}><li>${html}`
+      openLists.push(kind)
+    } else {
+      listHtml += `</li><li>${html}`
+    }
   }
   const inlineSel = (i: number): InlineSelection | undefined => {
     if (!sel) return undefined
@@ -558,11 +585,11 @@ export function serializeRangeToHtml(
       parts.push(`<h${level}>${inlineToHtml(node.content, inlineSel(i), image, refs)}</h${level}>`)
     } else if (node.type === 'docListItem') {
       const kind = (node.attrs?.kind as string) ?? 'bullet'
-      if (!listBuffer || listBuffer.kind !== kind) {
-        flushList()
-        listBuffer = { kind, items: [] }
-      }
-      listBuffer.items.push(`<li>${inlineToHtml(node.content, inlineSel(i), image, refs)}</li>`)
+      addListItem(
+        kind,
+        Number(node.attrs?.ilvl) || 0,
+        inlineToHtml(node.content, inlineSel(i), image, refs),
+      )
     } else if (node.type === 'docParagraph') {
       flushList()
       if (isCodeParagraph(node)) {

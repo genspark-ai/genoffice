@@ -1,12 +1,16 @@
+import { hasLabelSheet } from '../mail-merge/label-sheet'
 import type { Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { NodeSelection } from '@tiptap/pm/state'
 import { isInTable, mergeCells, selectedRect, splitCell } from '@tiptap/pm/tables'
-import type { DocDefaults, Run, StyleInfo, TextboxDisplay } from '@genoffice/docx-engine'
+import type { Block, DocDefaults, Run, StyleInfo, TextboxDisplay } from '@genoffice/docx-engine'
+import { fieldTablesOf } from '../commands/reference-commands'
+import { canCommentAt } from '../editor/comments'
 import { getActiveSubEditor } from '../editor/active-editor'
 import { shapeWrapOf } from '../editor/floating-z-order'
+import { graphicSelected } from '../editor/graphics-fill'
 import { selectedBoxIndex } from '../editor/selected-box'
-import { tableCellsSelection } from '../editor/table-ops'
+import { splitTableAtSelection, tableCellsSelection } from '../editor/table-ops'
 import { effectiveBidi, selectionHasBidi } from '../editor/direction'
 import {
   effectiveSizeHalfPoints,
@@ -31,12 +35,27 @@ export interface RibbonFormatState {
   editable: boolean
   inTable: boolean
   canMergeCells: boolean
+  /** the body holds a mail-merge label table (Update Labels has something to update) */
+  labelSheet: boolean
   canSplitCell: boolean
-  /** Split Table needs a row above the caret's */
   canSplitTable: boolean
+  /** something is selected where the caret is: text, cells or an object */
+  hasSelection: boolean
+  /** the document has a footnote or an endnote */
+  hasNotes: boolean
+  hasChart: boolean
+  /** New Comment has a selection, a word or an empty paragraph to hold on to */
+  canComment: boolean
+  /** the caret's paragraph has nothing in it */
+  inEmptyParagraph: boolean
+  hasTableOfFigures: boolean
+  hasIndex: boolean
+  hasTableOfAuthorities: boolean
   imageSelected: boolean
   /** the selected picture is an inline run picture (table / header cell): Size only */
   inlinePicture: boolean
+  /** the selected picture is drawn from an SVG (an icon): Graphics Fill applies */
+  graphicSelected: boolean
   /** the selected picture is a photo box of a multi-drawing paragraph: Arrange only */
   pictureBox: boolean
   imageDataUrl: string | null
@@ -55,6 +74,8 @@ export interface RibbonFormatState {
   /** outline width of the selected shape in CSS px (a:ln w; null = Word's own default) */
   shapeBorderWidthPx: number | null
   shapePrst: string | null
+  /** wps:bodyPr vert of the selected box; null = horizontal */
+  shapeVert: string | null
   /**
    * What the selected shape's own text agrees on, for the Shape Format Text
    * group. Selecting a shape as an object leaves no text selection for a mark to
@@ -80,6 +101,10 @@ export interface RibbonFormatState {
   strike: boolean
   vertAlign: string | null
   highlight: string | null
+  /** the text carries character shading (w:shd on the run) */
+  charShading: boolean
+  /** the text has a character border (w:bdr), its own or a style's */
+  charBorder: boolean
   textColor: string | null
   charStyleId: string | null
   /** w:pStyle of the paragraph at the caret (null = the default paragraph style) */
@@ -114,10 +139,20 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   editable: false,
   inTable: false,
   canMergeCells: false,
+  labelSheet: false,
   canSplitCell: false,
   canSplitTable: false,
+  hasSelection: false,
+  hasNotes: false,
+  hasChart: false,
+  canComment: false,
+  inEmptyParagraph: false,
+  hasTableOfFigures: false,
+  hasIndex: false,
+  hasTableOfAuthorities: false,
   imageSelected: false,
   inlinePicture: false,
+  graphicSelected: false,
   pictureBox: false,
   imageDataUrl: null,
   imageWrap: null,
@@ -133,6 +168,7 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   shapeBorderColor: null,
   shapeBorderWidthPx: null,
   shapePrst: null,
+  shapeVert: null,
   shapeHasText: false,
   shapeTextBold: false,
   shapeTextItalic: false,
@@ -150,6 +186,8 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   strike: false,
   vertAlign: null,
   highlight: null,
+  charShading: false,
+  charBorder: false,
   textColor: null,
   charStyleId: null,
   paraStyleId: null,
@@ -173,6 +211,10 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   spaceAfter: 0,
 }
 
+const NO_BLOCKS: Block[] = []
+
+const labelSheetOf = cachedByDoc(hasLabelSheet)
+
 // stops at the first character instead of building the whole document's text
 const docEmptyOf = cachedByDoc((doc: PmNode) => {
   let empty = true
@@ -185,6 +227,18 @@ const docEmptyOf = cachedByDoc((doc: PmNode) => {
   return empty
 })
 
+const holds = (has: (node: PmNode) => boolean) =>
+  cachedByDoc((doc: PmNode) => {
+    let found = false
+    doc.descendants((node) => {
+      if (has(node)) found = true
+      return !found
+    })
+    return found
+  })
+const hasNotesOf = holds((node) => node.type.name === 'docNoteRef')
+const hasChartOf = holds((node) => node.type.name === 'docProtected' && !!node.attrs.chartDisplay)
+
 const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null)
 const num = (v: unknown): number | null => {
   const n = Number(v)
@@ -192,10 +246,32 @@ const num = (v: unknown): number | null => {
 }
 
 /** attrs of the paragraph-like node at the cursor (mirrors activeParaAttrs in ribbon-tabs) */
-function paraAttrsOf(editor: Editor): Record<string, unknown> {
+export function paraAttrsOf(editor: Editor): Record<string, unknown> {
   if (editor.isActive('docHeading')) return editor.getAttributes('docHeading')
   if (editor.isActive('docListItem')) return editor.getAttributes('docListItem')
   return editor.getAttributes('docParagraph')
+}
+
+/** what Borders and Shading opens on: the paragraph at the caret and the selected text */
+export function bordersShadingTarget(editor: Editor | null): {
+  paragraph: { borders: unknown; borderLines: unknown; fill: unknown; pattern: unknown }
+  text: { bdr: unknown; shading: unknown } | null
+  styled: boolean
+} {
+  const sub = getActiveSubEditor()
+  const ed = sub ?? editor
+  const para = !ed ? {} : sub ? sub.getAttributes('docParagraph') : paraAttrsOf(ed)
+  const mark = ed && !ed.state.selection.empty ? ed.getAttributes('docTextStyle') : null
+  return {
+    paragraph: {
+      borders: para.borders,
+      borderLines: para.borderLines,
+      fill: para.shadingFill,
+      pattern: para.shadingPattern,
+    },
+    text: mark ? { bdr: mark.bdr, shading: mark.shading } : null,
+    styled: !sub,
+  }
 }
 
 /**
@@ -246,6 +322,8 @@ export function computeFormatState(
   editor: Editor | null,
   styles?: Map<string, StyleInfo>,
   docDefaults?: DocDefaults,
+  /** the parsed document, for what only its XML says (the tables the Update buttons rebuild) */
+  blocks: Block[] = NO_BLOCKS,
 ): RibbonFormatState {
   if (!editor || editor.isDestroyed) return EMPTY_FORMAT_STATE
   const sub = getActiveSubEditor()
@@ -273,7 +351,7 @@ export function computeFormatState(
       cellWidthPx = colwidth?.[0] || null
       cellVAlign = (cellNode?.attrs.vAlign as string | null) ?? null
       cellTextDirection = (cellNode?.attrs.textDirection as string | null) ?? null
-      canSplitTable = rect.top > 0
+      canSplitTable = splitTableAtSelection()(tableState)
     } catch {
       /* degenerate selection: leave cell fields empty like the old activeCellInfo */
     }
@@ -310,6 +388,8 @@ export function computeFormatState(
   }
   const paraAttrs = sub ? ed.getAttributes('docParagraph') : paraAttrsOf(editor)
   const mainPara = paraAttrsOf(editor)
+  const tables = fieldTablesOf(editor.state.doc, blocks)
+  const caret = ed.state.selection
 
   return {
     doc: editor.state.doc,
@@ -318,10 +398,21 @@ export function computeFormatState(
     editable: editor.isEditable,
     inTable,
     canMergeCells: inTable && !!mergeCells(tableState),
+    labelSheet: labelSheetOf(editor.state.doc),
     canSplitCell: inTable && !!splitCell(tableState),
     canSplitTable,
+    hasSelection: !ed.state.selection.empty,
+    hasNotes: hasNotesOf(editor.state.doc),
+    hasChart: hasChartOf(editor.state.doc),
+    canComment: canCommentAt(editor),
+    inEmptyParagraph:
+      caret.empty && caret.$from.parent.isTextblock && caret.$from.parent.content.size === 0,
+    hasTableOfFigures: tables.figures,
+    hasIndex: tables.index,
+    hasTableOfAuthorities: tables.authorities,
     imageSelected,
     inlinePicture: !!inlinePic,
+    graphicSelected: imageSelected && graphicSelected(editor),
     pictureBox,
     imageDataUrl: inlinePic
       ? str(inlinePic.dataUrl)
@@ -347,6 +438,7 @@ export function computeFormatState(
     shapeBorderColor: str(box?.borderColor),
     shapeBorderWidthPx: num(box?.borderWidthPx),
     shapePrst: str(box?.prst),
+    shapeVert: str(box?.vert),
     ...shapeTextStateOf(box),
     cellKey,
     cellHeightTwips,
@@ -359,6 +451,8 @@ export function computeFormatState(
     strike: ed.isActive('strike'),
     vertAlign: str(textAttrs.vertAlign),
     highlight: str(textAttrs.highlight),
+    charShading: !!(textAttrs.shadingDisplay ?? textAttrs.shading),
+    charBorder: !!textAttrs.bdr,
     textColor: textAttrs.color === 'auto' ? null : str(textAttrs.color),
     charStyleId: str(textAttrs.styleId),
     paraStyleId: str(paraAttrs.styleId),

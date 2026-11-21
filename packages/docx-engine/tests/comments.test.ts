@@ -180,6 +180,57 @@ describe('comment parsing', () => {
   })
 })
 
+describe('a comment on an empty paragraph', () => {
+  const EMPTY_COMMENTED_P =
+    '<w:p><w:commentRangeStart w:id="1"/><w:commentRangeEnd w:id="1"/>' +
+    '<w:r><w:commentReference w:id="1"/></w:r></w:p>'
+  const build = () =>
+    buildDocx({
+      bodyXml: '<w:p><w:r><w:t>above</w:t></w:r></w:p>' + EMPTY_COMMENTED_P,
+      extraParts: [
+        {
+          path: 'word/comments.xml',
+          xml: COMMENTS_XML,
+          contentType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+        },
+      ],
+    })
+
+  it('is read as a range the paragraph holds, since no run can carry it', async () => {
+    const doc = await parseDocx(await build())
+    expect(doc.blocks[1].runs ?? []).toEqual([])
+    expect(doc.blocks[1].commentStarts).toEqual(['1'])
+    expect(doc.blocks[1].commentEnds).toEqual(['1'])
+    // a range around text still rides on its runs
+    const marked = await parseDocx(await buildCommentedDocx())
+    expect(marked.blocks[0].commentStarts).toBeUndefined()
+    expect(marked.blocks[0].commentEnds).toBeUndefined()
+  })
+
+  it('a new one is written as a range around nothing with its reference, and read back', async () => {
+    const doc = await parseDocx(await build())
+    const finalBlocks: SaveBlock[] = [
+      { kind: 'original', docxIndex: doc.blocks[0].docxIndex! },
+      { kind: 'original', docxIndex: doc.blocks[1].docxIndex! },
+      {
+        kind: 'generated',
+        block: { type: 'paragraph', commentStarts: ['2'], commentEnds: ['2'], runs: [] },
+      },
+    ]
+    const saved = await saveDocx(doc, finalBlocks)
+    const docXml = await (await JSZip.loadAsync(saved)).file('word/document.xml')!.async('string')
+    expect(docXml).toContain(
+      '<w:commentRangeStart w:id="2"/><w:commentRangeEnd w:id="2"/>' +
+        '<w:r><w:commentReference w:id="2"/></w:r>',
+    )
+    const again = await parseDocx(saved)
+    expect(again.blocks[2].commentStarts).toEqual(['2'])
+    expect(again.blocks[2].commentEnds).toEqual(['2'])
+    expect(again.comments.map((c) => c.id)).toEqual(['1', '2'])
+  })
+})
+
 describe('comment save fidelity', () => {
   it('no edits -> byte-identical output including comments.xml', async () => {
     const bytes = await buildCommentedDocx()

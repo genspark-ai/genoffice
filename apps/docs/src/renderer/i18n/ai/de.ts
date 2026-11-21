@@ -9,6 +9,7 @@ export const de = {
   aiStarterContinue: 'Dort weiterschreiben, wo das Dokument aufhört',
   aiStarterFillTemplate: 'Platzhalter im Dokument finden und ausfüllen',
   aiGskLoginBtn: 'Bei Genspark anmelden',
+  aiGskLoginOk: 'Bei Genspark angemeldet',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'KI-Assistenten öffnen',
   aiSummarizeBtn: 'KI-Zusammenfassung',

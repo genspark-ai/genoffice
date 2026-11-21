@@ -22,6 +22,7 @@ import {
   type StyleMap,
 } from '../style-gallery'
 import { addMultiSelectRanges, clearMultiSelect } from '../editor/multi-select'
+import { unstyleDocument } from '../editor/style-delete'
 import { IconClearFormat, IconClose } from './icons'
 import type { RibbonFormatState } from './ribbon-format-state'
 import {
@@ -31,6 +32,7 @@ import {
   clearAllFormatting,
 } from './ribbon-tabs'
 import { StyleDialog, formValuesOf, upsertFromForm, type StyleFormValues } from './StyleDialog'
+import { StyleOrganizerDialog } from './StyleOrganizerDialog'
 
 type Show = 'recommended' | 'all' | 'inUse'
 
@@ -92,6 +94,9 @@ interface Props {
   editor: Editor
   styles: StyleMap | undefined
   docDefaults?: DocDefaults
+  /** the open file: its name and the bytes its styles part is read from */
+  docName: string
+  docBytes: Uint8Array
   fs: RibbonFormatState
   canEdit: boolean
   /** definitions already queued for the save (the live map catches up asynchronously) */
@@ -111,6 +116,8 @@ export function StylesPane({
   editor,
   styles,
   docDefaults,
+  docName,
+  docBytes,
   fs,
   canEdit,
   pending,
@@ -126,7 +133,13 @@ export function StylesPane({
     target: StyleInfo | null
     initial: StyleFormValues
   } | null>(null)
-  const map = useMemo<StyleMap>(() => styles ?? new Map(), [styles])
+  const [organizer, setOrganizer] = useState(false)
+  // a style deleted here is gone at once; the resolved map catches up after
+  const map = useMemo<StyleMap>(() => {
+    const live = new Map(styles ?? [])
+    for (const up of Object.values(pending)) if (up.remove) live.delete(up.styleId)
+    return live
+  }, [styles, pending])
   const used = useMemo(() => collectUsedStyleIds(fs.doc, map), [fs.doc, map])
   const entries = useMemo(() => {
     if (show === 'recommended') return quickStyleEntries(map, used)
@@ -173,6 +186,20 @@ export function StylesPane({
   }
   const instanceCount = (info: StyleInfo) =>
     fs.sub ? 0 : styleInstanceRanges(editor.state.doc, info, map).length
+
+  /** Word's rule: only a style the user made can go, and never the default one */
+  const deletable = (info: StyleInfo | null): info is StyleInfo =>
+    !!info && !!info.custom && !info.isDefault && info.type !== 'table'
+  const removeStyle = (styleId: string, type: 'paragraph' | 'character') => {
+    unstyleDocument(editor, styleId, type)
+    onUpsert({ styleId, remove: true })
+  }
+  const deleteStyle = (info: StyleInfo) => {
+    const name = styleLabel(info, t)
+    if (!window.confirm(t('appStyleDeleteConfirm', { name }))) return
+    removeStyle(info.styleId, info.type === 'character' ? 'character' : 'paragraph')
+    onNotice(t('appStyleDeleted', { name }))
+  }
 
   const clearFormatting = () => clearAllFormatting(editor, fs.sub, map)
 
@@ -255,10 +282,33 @@ export function StylesPane({
         </button>
         <button
           className="styles-pane-new"
+          disabled={!canEdit || !current || (!!fs.sub && current.type !== 'character')}
+          onClick={() => current && setDialog({ target: current, initial: formValuesOf(current) })}
+        >
+          {t('ribbonStyleModify')}
+        </button>
+        <button
+          className="styles-pane-new"
           disabled={!canEdit || !!fs.sub || !current}
           onClick={() => current && selectInstances(current)}
         >
           {t('ribbonSelectAll')}
+        </button>
+        <button
+          className="styles-pane-new"
+          name="deleteStyle"
+          disabled={!canEdit || !!fs.sub || !deletable(current)}
+          onClick={() => deletable(current) && deleteStyle(current)}
+        >
+          {t('ribbonGroupDelete')}
+        </button>
+        <button
+          className="styles-pane-new"
+          name="organizer"
+          disabled={!canEdit}
+          onClick={() => setOrganizer(true)}
+        >
+          {t('ribbonStyleOrganizer')}
         </button>
       </div>
       <div className="styles-pane-section">{t('ribbonStylesApply')}</div>
@@ -386,6 +436,17 @@ export function StylesPane({
             </button>
           </div>
         </div>
+      )}
+      {organizer && (
+        <StyleOrganizerDialog
+          docName={docName}
+          docBytes={docBytes}
+          pending={pending}
+          onUpsert={onUpsert}
+          onDelete={removeStyle}
+          onNotice={onNotice}
+          onClose={() => setOrganizer(false)}
+        />
       )}
       {dialog && (
         <StyleDialog

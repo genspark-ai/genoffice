@@ -2,8 +2,17 @@
 // anchor metadata and page-position resolution, group transforms.
 import { attrsOf, childrenOf, findChild, nameOf, type XNode } from './xml-utils'
 import { EMU_PER_PX } from './parse-xml-text'
+import { placedOutsideGroup, type GroupXfrm } from './group-drawings'
 import { DEFAULT_THEME_COLORS } from './theme'
-import type { SectionSettings, TextGlow, TextOutline, TextboxDisplay, ThemeColors } from './types'
+import type {
+  SectionSettings,
+  TextGlow,
+  TextOutline,
+  TextReflection,
+  TextShadow,
+  TextboxDisplay,
+  ThemeColors,
+} from './types'
 
 /**
  * Display-only extraction of anchored textboxes: DrawingML (wps:wsp, converter
@@ -603,6 +612,46 @@ export function w14GlowOf(rPr: XNode, theme?: ThemeColors | null): TextGlow | un
   }
 }
 
+/** w14:shadow outer shadow (blur and distance in EMU, direction in 60000ths of a degree) */
+export function w14ShadowOf(rPr: XNode, theme?: ThemeColors | null): TextShadow | undefined {
+  const shadow = findChild(rPr, 'w14:shadow')
+  if (!shadow) return undefined
+  const rgb = w14ColorRgb(shadow, theme)
+  if (!rgb) return undefined
+  const attrs = attrsOf(shadow)
+  const emu = (name: string) => parseInt(attrs[name] ?? '', 10) || 0
+  const colorNode = findChild(shadow, 'w14:srgbClr') ?? findChild(shadow, 'w14:schemeClr')
+  const alphaRaw = parseInt(
+    attrsOf(findChild(colorNode ?? {}, 'w14:alpha') ?? {})['w14:val'] ?? '',
+    10,
+  )
+  const alpha = alphaRaw >= 0 && alphaRaw < 100000 ? alphaRaw / 100000 : undefined
+  return {
+    color: rgbHex(rgb),
+    ...(alpha !== undefined ? { alpha } : {}),
+    blurPt: Math.round((emu('w14:blurRad') / 12700) * 100) / 100,
+    distPt: Math.round((emu('w14:dist') / 12700) * 100) / 100,
+    dirDeg: Math.round(emu('w14:dir') / 60000),
+  }
+}
+
+/** w14:reflection (alphas and positions in 1000ths of a percent, blur and distance in EMU) */
+export function w14ReflectionOf(rPr: XNode): TextReflection | undefined {
+  const reflection = findChild(rPr, 'w14:reflection')
+  if (!reflection) return undefined
+  const attrs = attrsOf(reflection)
+  const num = (name: string) => parseInt(attrs[name] ?? '', 10) || 0
+  const startAlpha = num('w14:stA') / 100000
+  const endPos = num('w14:endPos') / 100000
+  if (!(startAlpha > 0) || !(endPos > 0)) return undefined
+  return {
+    startAlpha: Math.min(1, startAlpha),
+    endPos: Math.min(1, endPos),
+    blurPt: Math.round((num('w14:blurRad') / 12700) * 100) / 100,
+    distPt: Math.round((num('w14:dist') / 12700) * 100) / 100,
+  }
+}
+
 export interface ExtractTextboxOpts {
   /** include textless preset shapes (stars, block arrows…) as display boxes */
   shapes?: boolean
@@ -624,9 +673,34 @@ export interface GroupCtm {
   sy: number
   tx: number
   ty: number
+  /** the groups from the outermost in, once one of them is turned or mirrored (the affine part cannot say that) */
+  turned?: GroupLevel[]
+}
+
+interface GroupLevel {
+  group: GroupXfrm
+  chOff: { x: number; y: number }
+  chExt: { cx: number; cy: number }
 }
 
 export const IDENTITY_CTM: GroupCtm = { sx: 1, sy: 1, tx: 0, ty: 0 }
+
+function xfrmNumbers(xfrm: XNode): GroupXfrm {
+  const num = (node: XNode | undefined, key: string): number => {
+    const v = parseInt(attrsOf(node ?? {})[key] ?? '', 10)
+    return Number.isFinite(v) ? v : 0
+  }
+  const on = (key: string): boolean => /^(?:1|true)$/.test(attrsOf(xfrm)[key] ?? '')
+  return {
+    x: num(findChild(xfrm, 'a:off'), 'x'),
+    y: num(findChild(xfrm, 'a:off'), 'y'),
+    cx: num(findChild(xfrm, 'a:ext'), 'cx'),
+    cy: num(findChild(xfrm, 'a:ext'), 'cy'),
+    rot: num(xfrm, 'rot'),
+    flipH: on('flipH'),
+    flipV: on('flipV'),
+  }
+}
 
 /** wpg:wgp / wpg:grpSp xfrm (off/ext vs chOff/chExt) composed onto `outer` */
 export function composeGroupCtm(group: XNode, outer: GroupCtm): GroupCtm | null {
@@ -636,20 +710,74 @@ export function composeGroupCtm(group: XNode, outer: GroupCtm): GroupCtm | null 
     const v = parseInt(attrsOf(node ?? {})[key] ?? '', 10)
     return Number.isFinite(v) ? v : dflt
   }
-  const ox = num(findChild(xfrm, 'a:off'), 'x', 0)
-  const oy = num(findChild(xfrm, 'a:off'), 'y', 0)
-  const ex = num(findChild(xfrm, 'a:ext'), 'cx', 0)
-  const ey = num(findChild(xfrm, 'a:ext'), 'cy', 0)
+  const own = xfrmNumbers(xfrm)
+  const { x: ox, y: oy, cx: ex, cy: ey } = own
   const chOffX = num(findChild(xfrm, 'a:chOff'), 'x', 0)
   const chOffY = num(findChild(xfrm, 'a:chOff'), 'y', 0)
   const chExtX = num(findChild(xfrm, 'a:chExt'), 'cx', 0)
   const chExtY = num(findChild(xfrm, 'a:chExt'), 'cy', 0)
   const sx = ex > 0 && chExtX > 0 ? ex / chExtX : 1
   const sy = ey > 0 && chExtY > 0 ? ey / chExtY : 1
+  const level: GroupLevel = {
+    group: own,
+    chOff: { x: chOffX, y: chOffY },
+    chExt: { cx: chExtX > 0 ? chExtX : ex, cy: chExtY > 0 ? chExtY : ey },
+  }
+  const turns = own.rot !== 0 || own.flipH || own.flipV
+  const turned = outer.turned
+    ? [...outer.turned, level]
+    : turns
+      ? [...plainLevels(outer), level]
+      : undefined
   return {
     sx: outer.sx * sx,
     sy: outer.sy * sy,
     tx: outer.tx + outer.sx * (ox - chOffX * sx),
     ty: outer.ty + outer.sy * (oy - chOffY * sy),
+    ...(turned ? { turned } : {}),
   }
+}
+
+/** the unturned groups `ctm` stands for, as one level */
+function plainLevels(ctm: GroupCtm): GroupLevel[] {
+  if (ctm.sx === 1 && ctm.sy === 1 && ctm.tx === 0 && ctm.ty === 0) return []
+  return [
+    {
+      group: { x: ctm.tx, y: ctm.ty, cx: ctm.sx, cy: ctm.sy, rot: 0, flipH: false, flipV: false },
+      chOff: { x: 0, y: 0 },
+      chExt: { cx: 1, cy: 1 },
+    },
+  ]
+}
+
+/** Where a child of turned or mirrored groups stands, placed as Ungroup writes it; null when none is turned. */
+export function placedInGroups(xfrm: XNode | undefined, ctm: GroupCtm | null): GroupXfrm | null {
+  if (!xfrm || !ctm?.turned) return null
+  let placed = xfrmNumbers(xfrm)
+  for (let i = ctm.turned.length - 1; i >= 0; i--) {
+    const level = ctm.turned[i]
+    placed = placedOutsideGroup(placed, level.group, level.chOff, level.chExt)
+  }
+  return placed
+}
+
+export function placeGroupedBox(
+  box: {
+    offsetXEmu?: number
+    offsetYEmu?: number
+    rotDeg?: number
+    flipH?: boolean
+    flipV?: boolean
+  },
+  placed: GroupXfrm,
+): void {
+  box.offsetXEmu = Math.round(placed.x)
+  box.offsetYEmu = Math.round(placed.y)
+  const deg = Math.round(placed.rot / 60000) % 360
+  if (deg) box.rotDeg = deg
+  else delete box.rotDeg
+  if (placed.flipH) box.flipH = true
+  else delete box.flipH
+  if (placed.flipV) box.flipV = true
+  else delete box.flipV
 }

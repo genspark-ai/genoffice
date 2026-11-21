@@ -7,6 +7,8 @@
  * Asian-character figure.
  */
 
+import { eqLayoutText } from './editor/eq-layout'
+import type { TableModel } from '@genoffice/docx-engine'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { Selection } from '@tiptap/pm/state'
 
@@ -41,6 +43,27 @@ export function countWords(text: string): number {
   return asianCharCount(text) + nonAsianWordCount(text)
 }
 
+export interface TextStats {
+  words: number
+  asianChars: number
+  nonAsianWords: number
+  charsNoSpace: number
+  charsWithSpace: number
+  paragraphs: number
+}
+
+/** the Word Count figures of plain text whose paragraphs are separated by \n */
+export function textStats(text: string): TextStats {
+  return {
+    words: countWords(text),
+    asianChars: asianCharCount(text),
+    nonAsianWords: nonAsianWordCount(text),
+    charsNoSpace: text.replace(/\s/g, '').length,
+    charsWithSpace: text.replace(/\n/g, '').length,
+    paragraphs: text.split('\n').filter((line) => line.trim() !== '').length,
+  }
+}
+
 /**
  * Words inside the current selection, for the status bar's "selected/total"
  * figure. Word shows that pair while a selection exists and the plain total
@@ -62,13 +85,32 @@ export function documentTextForWordCount(doc: ProseMirrorNode): string {
   return doc.textBetween(0, doc.content.size, ' ', leafTextForWordCount)
 }
 
+/** a nested table's paragraph texts, cell by cell, deeper nested tables included */
+export function tableModelText(model: TableModel | null | undefined): string {
+  if (!model?.rows) return ''
+  const parts: string[] = []
+  for (const row of model.rows) {
+    for (const cell of row) {
+      parts.push(...(cell.paras ?? []))
+      for (const inner of cell.nestedTables ?? []) parts.push(tableModelText(inner))
+    }
+  }
+  return parts.join(' ')
+}
+
 /**
- * Text an atomic inline leaf contributes to a word count. No doc schema
- * defines `spec.leafText`, so only the two nodes with text of their own
- * (inline math, ruby base) need naming; every other atom contributes nothing.
+ * Text an atomic leaf contributes to a word count. No doc schema defines
+ * `spec.leafText`, so the nodes with text of their own are named here: inline
+ * math, a ruby base, and a table nested in a cell (an atom drawn from its
+ * model, whose words Word counts like any other); every other atom
+ * contributes nothing.
  */
 export function leafTextForWordCount(leaf: ProseMirrorNode): string {
   if (leaf.type.name === 'docInlineMath') return String(leaf.attrs.text ?? '')
   if (leaf.type.name === 'docRuby') return String(leaf.attrs.base ?? '')
+  if (leaf.type.name === 'docEqLayout') return eqLayoutText(leaf.attrs)
+  if (leaf.type.name === 'docNestedTable') {
+    return tableModelText(leaf.attrs.model as TableModel | null)
+  }
   return leaf.type.spec.leafText?.(leaf) ?? ''
 }
